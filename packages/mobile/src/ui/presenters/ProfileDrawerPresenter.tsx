@@ -17,10 +17,7 @@ import {
   iconDefaults,
 } from "@/ui/components/icons";
 import { toneHex } from "@/ui/components/foundation/tones";
-import {
-  DEFAULT_TRIAL_DAYS,
-  type SubscriptionTierName,
-} from "@/domain/models/subscription";
+import { type SubscriptionTierName } from "@/domain/models/subscription";
 import { weightInUnit, type WeightUnit } from "@/shared/utils";
 import { ModeSwitchCardPresenter } from "./ModeSwitchCardPresenter";
 import { SignOutConfirmDialog } from "./SignOutConfirmDialog";
@@ -221,8 +218,11 @@ export function ProfileDrawerPresenter({
               </Pill>
             ) : null}
             {subscription?.inTrial ? (
+              // Numberless — the pill shows a user is IN a trial (real backend
+              // `inTrial`), but we don't fabricate a day count: the real length
+              // comes from Apple's offer, not a client constant.
               <Pill tone="ember" size="xs">
-                {`${DEFAULT_TRIAL_DAYS}-DAY TRIAL`}
+                FREE TRIAL
               </Pill>
             ) : null}
           </View>

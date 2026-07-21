@@ -58,9 +58,10 @@ export interface IOSPurchaseFlowPresenterProps {
    * product on the shown cycle (RevenueCat's real answer). Per-tier so a
    * banner only shows on a tile whose own product grants a trial. */
   isTierTrialEligible: (tier: SubscriptionTierName) => boolean;
-  /** Free-trial length (days) advertised on every tile — derived from the
-   * product's Apple intro offer, falling back to DEFAULT_TRIAL_DAYS. */
-  trialDurationDays: number;
+  /** Free-trial length (days) advertised on every tile — derived ONLY from the
+   * product's real Apple intro offer. `null` when no real offer is surfaced;
+   * the tile then shows NO trial banner (we never guess a duration). */
+  trialDurationDays: number | null;
   hasTrialEligibilityData: boolean;
 
   /** Tiers whose ANNUAL plan shows "Contact Sales" instead of an IAP button
@@ -120,6 +121,7 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
       const isPremiumCurrent = currentTier === "premium";
       const showPremiumTrial =
         hasTrialEligibilityData &&
+        trialDurationDays !== null &&
         isTierTrialEligible("premium") &&
         !isPremiumCurrent;
       cards.push(
@@ -129,7 +131,11 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
           billingCycle={billingCycle}
           isCurrent={isPremiumCurrent}
           showTrialBanner={showPremiumTrial}
-          trialBannerText={`${trialDurationDays}-day free trial`}
+          trialBannerText={
+            trialDurationDays !== null
+              ? `${trialDurationDays}-day free trial`
+              : undefined
+          }
           onPress={() => onTierSelect("premium")}
           disabled={isProcessing || isRestoring}
           getFeaturesList={getFeaturesList}
@@ -167,6 +173,7 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
           billingCycle === "yearly" && contactSalesTiers.has(baseName);
         const showTrialBanner =
           hasTrialEligibilityData &&
+          trialDurationDays !== null &&
           isTierTrialEligible(baseName) &&
           !isCurrent &&
           !isContactSales;
@@ -179,7 +186,11 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
             isStandardCurrent={false}
             isProCurrent={isCurrent}
             showProTrialBanner={showTrialBanner}
-            trialBannerText={`${trialDurationDays}-day free trial`}
+            trialBannerText={
+              trialDurationDays !== null
+                ? `${trialDurationDays}-day free trial`
+                : undefined
+            }
             contactSalesMode={isContactSales}
             onContactSales={() => onContactSales(baseName)}
             onStandardPress={() => {}}

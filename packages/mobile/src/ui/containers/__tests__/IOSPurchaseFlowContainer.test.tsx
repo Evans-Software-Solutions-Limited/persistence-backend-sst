@@ -165,24 +165,45 @@ describe("IOSPurchaseFlowContainer", () => {
     );
   });
 
-  it("shows the trial banner only when RevenueCat reports the product intro-eligible", async () => {
-    // Ineligible per RevenueCat → no trial banner (the backend flags say
-    // eligible, but on-device eligibility is the source of truth now).
+  it("shows no trial banner when RevenueCat reports the product intro-ineligible", async () => {
     const { adapters, purchases } = makeAdapters();
     purchases.introEligibility = { "app.persistence.premium.monthly": false };
     renderContainer(adapters);
     await waitFor(() =>
       expect(screen.getByTestId("subscription-card-premium")).toBeTruthy(),
     );
-    expect(screen.queryByText("14-day free trial")).toBeNull();
+    expect(screen.queryByText(/free trial/i)).toBeNull();
   });
 
-  it("shows the trial banner when RevenueCat reports the product eligible", async () => {
+  it("shows NO trial banner when eligible but no real offer is surfaced (introTrialDays null → never guess a duration)", async () => {
+    // Brad's production scenario: RevenueCat says eligible but the ASC intro
+    // offer isn't surfacing (introTrialDays null). We must show nothing rather
+    // than a guessed number.
     const { adapters, purchases } = makeAdapters();
     purchases.introEligibility = { "app.persistence.premium.monthly": true };
     renderContainer(adapters);
     await waitFor(() =>
-      expect(screen.getByText("14-day free trial")).toBeTruthy(),
+      expect(screen.getByTestId("subscription-card-premium")).toBeTruthy(),
+    );
+    expect(screen.queryByText(/free trial/i)).toBeNull();
+  });
+
+  it("shows the trial banner with the REAL derived period when eligible and the product carries an offer", async () => {
+    const { adapters, purchases } = makeAdapters();
+    purchases.packages = [
+      {
+        packageId: "$rc_monthly",
+        productId: "app.persistence.premium.monthly",
+        tier: "premium",
+        billingCycle: "monthly",
+        priceString: "£9.99",
+        introTrialDays: 7, // real Apple offer surfaced by RevenueCat
+      },
+    ];
+    purchases.introEligibility = { "app.persistence.premium.monthly": true };
+    renderContainer(adapters);
+    await waitFor(() =>
+      expect(screen.getByText("7-day free trial")).toBeTruthy(),
     );
   });
 
