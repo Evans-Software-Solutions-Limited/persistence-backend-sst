@@ -863,6 +863,15 @@ export const ptClientRelationships = pgTable(
     startDate: text("start_date"),
     endDate: text("end_date"),
     notes: text("notes"),
+    // Current-consent stamp (26-coach-data-sharing-consent). Set on grant
+    // (email-invite accept / invite-code redeem), cleared to NULL on
+    // withdraw/termination (Leave Coach / Remove Client) — a cheap "is
+    // consent currently in force" read. The full grant/withdraw HISTORY
+    // (across re-invite cycles, since this row is revived, not re-inserted)
+    // lives in the append-only `data_sharing_consents` table below.
+    // Migration: 20260720230030_data_sharing_consents.sql.
+    consentGivenAt: timestamp("consent_given_at", { withTimezone: true }),
+    consentVersion: text("consent_version"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
   },
@@ -870,6 +879,43 @@ export const ptClientRelationships = pgTable(
     uniqueIndex("pt_client_relationships_trainer_client_idx").on(
       t.trainerId,
       t.clientId,
+    ),
+  ],
+);
+
+// ─── Data-Sharing Consents (26-coach-data-sharing-consent) ─────────────────────
+// Append-only accountability log (UK GDPR Art 5(2)/Art 9(2)(a)) of every
+// coach data-sharing consent grant/withdraw event. One row per event, so the
+// full history survives a re-invite cycle (the relationship row is revived,
+// not re-inserted — a column on that row alone would lose prior cycles).
+// Migration: 20260720230030_data_sharing_consents.sql.
+export const dataSharingConsents = pgTable(
+  "data_sharing_consents",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    trainerId: uuid("trainer_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    action: text("action").notNull(),
+    consentVersion: text("consent_version").notNull(),
+    // 'invite_accept' | 'invite_code_redeem' | 'leave_coach' | 'coach_removed'
+    source: text("source").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index("data_sharing_consents_client_trainer_ts").on(
+      t.clientId,
+      t.trainerId,
+      t.createdAt.desc(),
+    ),
+    check(
+      "data_sharing_consents_action_check",
+      sql`${t.action} IN ('grant', 'withdraw')`,
     ),
   ],
 );
@@ -1651,6 +1697,9 @@ export type NewFriendship = typeof friendships.$inferInsert;
 
 export type PtClientRelationship = typeof ptClientRelationships.$inferSelect;
 export type NewPtClientRelationship = typeof ptClientRelationships.$inferInsert;
+
+export type DataSharingConsent = typeof dataSharingConsents.$inferSelect;
+export type NewDataSharingConsent = typeof dataSharingConsents.$inferInsert;
 
 export type TrainerActionAudit = typeof trainerActionsAudit.$inferSelect;
 export type NewTrainerActionAudit = typeof trainerActionsAudit.$inferInsert;

@@ -39,6 +39,17 @@ vi.mock("../../seats/trainerSeats", () => ({
     notifyLimitReached(...(args as [])),
 }));
 
+// 26-coach-data-sharing-consent: recordDataSharingConsent is unit-tested on
+// its own (recordDataSharingConsent.test.ts) — mocked here so the accept-tx
+// queue assertions stay focused on the relationship write, not the insert
+// plumbing (mirrors auditTrainerAction being mocked in
+// endCoachClientRelationship.test.ts).
+const recordConsent = vi.fn(async () => {});
+vi.mock("../../../relationships/recordDataSharingConsent", () => ({
+  recordDataSharingConsent: (...args: unknown[]) =>
+    recordConsent(...(args as [])),
+}));
+
 const auth = {
   authorization: "Bearer token",
   "Content-Type": "application/json",
@@ -126,7 +137,11 @@ describe("trainersRespondToRequestHandler", () => {
     const { trainersRespondToRequestHandler } =
       await import("../trainersRespondToRequestHandler");
     const res = await trainersRespondToRequestHandler.handle(
-      post("rel-1", { action: "accept" }),
+      post("rel-1", {
+        action: "accept",
+        consent: true,
+        consentVersion: "v1-2026-07",
+      }),
     );
     expect(res.status).toBe(200);
     const body = (await res.json()) as any;
@@ -134,6 +149,44 @@ describe("trainersRespondToRequestHandler", () => {
     expect(body.data.status).toBe("active");
     expect(body.data.trainerId).toBe("trainer-1");
     expect(notifyLimitReached).not.toHaveBeenCalled();
+    // 26-coach-data-sharing-consent: grant recorded in the same tx.
+    expect(recordConsent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        trainerId: "trainer-1",
+        clientId: "client-id",
+        action: "grant",
+        consentVersion: "v1-2026-07",
+        source: "invite_accept",
+      }),
+    );
+  });
+
+  it("400 consent_required when accepting without consent — nothing activated", async () => {
+    (getDb as any).mockReturnValue(txDb([]));
+    const { trainersRespondToRequestHandler } =
+      await import("../trainersRespondToRequestHandler");
+    const res = await trainersRespondToRequestHandler.handle(
+      post("rel-1", { action: "accept", consentVersion: "v1-2026-07" }),
+    );
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as any;
+    expect(body.code).toBe("consent_required");
+    expect(evaluateActiveSeat).not.toHaveBeenCalled();
+    expect(recordConsent).not.toHaveBeenCalled();
+  });
+
+  it("400 consent_required when accepting without a consentVersion — nothing activated", async () => {
+    (getDb as any).mockReturnValue(txDb([]));
+    const { trainersRespondToRequestHandler } =
+      await import("../trainersRespondToRequestHandler");
+    const res = await trainersRespondToRequestHandler.handle(
+      post("rel-1", { action: "accept", consent: true }),
+    );
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as any;
+    expect(body.code).toBe("consent_required");
+    expect(evaluateActiveSeat).not.toHaveBeenCalled();
+    expect(recordConsent).not.toHaveBeenCalled();
   });
 
   it("409 when the trainer is at their client-slot cap (client actor → NOT a 402 upsell) + notifies the trainer", async () => {
