@@ -128,6 +128,17 @@ export interface StoragePort {
   markMutationCompleted(id: number): void;
   markMutationFailed(id: number, errorMessage: string): void;
   /**
+   * Flip an entry to `permanently_failed` — a permanent client error
+   * (4xx except 408/429) the drain must NOT auto-retry. Unlike
+   * `markMutationFailed` this does NOT increment `retry_count` (there is no
+   * retry to budget); the status alone makes it terminal. Excluded from
+   * `getPendingMutations` (no in-drain retry storm), but returned by
+   * `getFailedExhaustedEntries` (visible in the review UI) and re-openable by
+   * `resetFailedEntries` (recoverable after an app fix — otherwise it'd be
+   * silently stranded, the exact M13 gap that read path closed for `failed`).
+   */
+  markMutationPermanentlyFailed(id: number, errorMessage: string): void;
+  /**
    * Rewrite the payload of an already-queued mutation, in place. Only
    * touches entries still in `pending` or `failed` — never an `in_flight`
    * entry (a drain may have already serialized its body) nor a
@@ -192,8 +203,9 @@ export interface StoragePort {
   discardEntries(ids: readonly number[]): void;
   /**
    * Read every entry that has exhausted its retry budget:
-   * `status = 'failed' AND retry_count >= max_retries`. FIFO order
-   * (oldest first), mirroring `getBlockedEntries`.
+   * `status = 'failed' AND retry_count >= max_retries`, OR
+   * `status = 'permanently_failed'` (a permanent 4xx that never entered the
+   * retry loop). FIFO order (oldest first), mirroring `getBlockedEntries`.
    *
    * M13 sync-hardening: `getPendingMutations()` deliberately excludes
    * these rows forever (retry_count < max_retries is part of its WHERE
@@ -209,10 +221,11 @@ export interface StoragePort {
    */
   getFailedExhaustedEntries(): SyncQueueEntry[];
   /**
-   * Flip the given entry ids from `failed` back to `pending`, zeroing
-   * `retry_count` and clearing `error_message` — the "self-heal" half of
-   * the reconnect flow. Conditional on `status = 'failed'` (mirrors
-   * `unblockEntries`'s conditional on `blocked_entitlement`) so a stale id
+   * Flip the given entry ids from `failed` or `permanently_failed` back to
+   * `pending`, zeroing `retry_count` and clearing `error_message` — the
+   * "self-heal" half of the reconnect flow. Conditional on
+   * `status IN ('failed', 'permanently_failed')` (mirrors `unblockEntries`'s
+   * conditional on `blocked_entitlement`) so a stale id
    * that's already been discarded, or that a concurrent drain already
    * moved to `in_flight`/`completed`, is silently skipped rather than
    * corrupting an unrelated row.

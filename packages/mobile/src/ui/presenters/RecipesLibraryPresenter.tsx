@@ -231,9 +231,20 @@ function RecipeRow({
             {recipe.secondaryLine}
           </Text>
         </View>
-        <View alignItems="flex-end" gap={6}>
+        <View alignItems="flex-end" gap={2}>
           <Text fontFamily="$mono" fontWeight="600" fontSize={18} color="$gold">
             {recipe.kcal ?? "—"}
+          </Text>
+          <Text
+            fontFamily="$body"
+            fontWeight="600"
+            fontSize={8.5}
+            letterSpacing={0.4}
+            textTransform="uppercase"
+            color="$text3"
+            marginBottom={2}
+          >
+            per serving
           </Text>
           <IconChevronR size={12} color="#8A8A98" />
         </View>

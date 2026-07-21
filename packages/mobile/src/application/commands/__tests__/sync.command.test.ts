@@ -121,6 +121,97 @@ describe("processSyncQueue", () => {
     expect(captureSyncFailure).toHaveBeenCalledTimes(1);
   });
 
+  it("marks a permanent 4xx as permanently_failed on the FIRST attempt, reports once, never retries", async () => {
+    storage.enqueueMutation({
+      entityType: "nutrition_entry",
+      entityId: "local-e1",
+      operation: "create",
+      payload: { recipeId: "r1", mealSlot: "dinner", servings: 1 },
+      endpoint: "/nutrition/entries",
+      method: "POST",
+    });
+    const id = storage.getPendingMutations()[0].id;
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 400,
+      text: async () => "macros_required_for_custom_entry",
+    });
+
+    const result = await processSyncQueue(storage, auth, "https://api.test");
+
+    expect(result.failed).toBe(1);
+    // Terminal immediately — no retry budget burned, gone from the drain pool.
+    expect(storage.getPendingMutations()).toHaveLength(0);
+    const exhausted = storage.getFailedExhaustedEntries();
+    expect(exhausted).toHaveLength(1);
+    expect(exhausted[0].id).toBe(id);
+    expect(exhausted[0].status).toBe("permanently_failed");
+    expect(exhausted[0].retryCount).toBe(0); // never incremented
+    expect(captureSyncFailure).toHaveBeenCalledTimes(1);
+
+    // A second drain must NOT re-attempt it (no second fetch, no repeat report).
+    mockFetch.mockClear();
+    await processSyncQueue(storage, auth, "https://api.test");
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(captureSyncFailure).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps 429 (and other transient statuses) on the retryable path", async () => {
+    storage.enqueueMutation({
+      entityType: "nutrition_entry",
+      entityId: "local-e2",
+      operation: "create",
+      payload: { foodId: "f1", mealSlot: "lunch", servings: 1 },
+      endpoint: "/nutrition/entries",
+      method: "POST",
+    });
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 429,
+      text: async () => "rate limited",
+    });
+
+    await processSyncQueue(storage, auth, "https://api.test");
+
+    // Still retryable: back in the pending pool with a burned retry, NOT
+    // permanently_failed, and no premature terminal report.
+    expect(storage.getPendingMutations()).toHaveLength(1);
+    expect(storage.getPendingMutations()[0].status).toBe("failed");
+    expect(storage.getFailedExhaustedEntries()).toHaveLength(0);
+    expect(captureSyncFailure).not.toHaveBeenCalled();
+  });
+
+  it("resetFailedEntries reopens a permanently_failed entry so a fix can resurrect it", async () => {
+    storage.enqueueMutation({
+      entityType: "nutrition_entry",
+      entityId: "local-e3",
+      operation: "create",
+      payload: { recipeId: "r1", mealSlot: "dinner", servings: 1 },
+      endpoint: "/nutrition/entries",
+      method: "POST",
+    });
+    const id = storage.getPendingMutations()[0].id;
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 400,
+      text: async () => "bad",
+    });
+    await processSyncQueue(storage, auth, "https://api.test");
+    expect(storage.getFailedExhaustedEntries()[0].status).toBe(
+      "permanently_failed",
+    );
+
+    // Simulate the Retry CTA after an app/server fix — now the POST succeeds.
+    storage.resetFailedEntries([id]);
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ data: { id: "e3" } }),
+    });
+    const result = await processSyncQueue(storage, auth, "https://api.test");
+    expect(result.succeeded).toBe(1);
+    expect(storage.getFailedExhaustedEntries()).toHaveLength(0);
+  });
+
   it("swaps a local workout id to the server id when its create flushes", async () => {
     const localWorkoutId = "local-1784398059991-45kx3l";
     const serverWorkoutId = "11111111-1111-4111-8111-111111111111";

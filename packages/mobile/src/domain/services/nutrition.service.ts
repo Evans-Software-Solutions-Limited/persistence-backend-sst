@@ -95,6 +95,19 @@ export function scaleRecipeMacros(recipe: Recipe, servings: number): MacroSum {
   };
 }
 
+/**
+ * Guarded per-serving divisor for a recipe/create-form whole-recipe macro
+ * total — a non-positive or absent `servings` count is treated as a single
+ * serving (so the whole total displays unchanged) rather than dividing by
+ * zero. DISPLAY only: the recipe's stored `total_*` and a create-form's
+ * `providedTotals` sent on save stay whole-recipe — only what's rendered on
+ * screen (recipe detail, library cards, the create form's live macro total,
+ * QuickAdd's saved-recipes list) is divided by this.
+ */
+export function perServingDivisor(servings: number | null): number {
+  return servings !== null && servings > 0 ? servings : 1;
+}
+
 /** Flatten a day aggregate's slot buckets back into one entry list. */
 export function flattenFuelEntries(fuel: FuelToday): NutritionEntry[] {
   return [

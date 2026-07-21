@@ -12,6 +12,36 @@ import { pendingPreferenceOverrides } from "@/application/notifications/queries/
 import { parseEntitlementDeniedResponseText } from "@/shared/errors/parseEntitlement";
 import { captureSyncFailure } from "@/lib/sentry";
 
+/** A non-OK HTTP response from a sync POST/PUT/DELETE, carrying the status so
+ * the drain can classify permanent vs transient failures. */
+class SyncHttpError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = "SyncHttpError";
+  }
+}
+
+/**
+ * A permanent client error the drain must NOT retry: a 4xx that a re-send of
+ * the identical request can never turn into a 2xx (malformed body, missing
+ * ref, forbidden, gone, conflict). 408 (Request Timeout) and 429 (Too Many
+ * Requests) are excluded — those ARE worth retrying. 402 is excluded too: it's
+ * handled earlier as a `blocked_entitlement` outcome, and a malformed 402 body
+ * deliberately falls through to the transient path (never fabricate a verdict).
+ */
+function isPermanentClientError(status: number): boolean {
+  return (
+    status >= 400 &&
+    status < 500 &&
+    status !== 402 &&
+    status !== 408 &&
+    status !== 429
+  );
+}
+
 export type SyncResult = {
   processed: number;
   succeeded: number;
@@ -129,7 +159,10 @@ export async function processSyncQueue(
             continue;
           }
         }
-        throw new Error(`HTTP ${response.status}: ${body}`);
+        throw new SyncHttpError(
+          response.status,
+          `HTTP ${response.status}: ${body}`,
+        );
       }
 
       // M3 Phase 3b: capture the `/sessions/record` augmented response
@@ -350,14 +383,29 @@ export async function processSyncQueue(
       succeeded++;
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";
+
+      // A permanent client error (4xx except 402/408/429) can never succeed on
+      // a re-send, so mark it terminally `permanently_failed` NOW — no retry
+      // budget burned, no "exhausted retries" masquerade. It still surfaces via
+      // getFailedExhaustedEntries + Sentry, and stays recoverable via the Retry
+      // CTA (resetFailedEntries) once a fix ships.
+      const isPermanent =
+        err instanceof SyncHttpError && isPermanentClientError(err.status);
+
       // Terminal failure: this attempt exhausts the retry budget, so the drain
       // will never pick this entry up again (`getPendingMutations` gates on
       // `retry_count < max_retries`) — a silently-stuck mutation with no user
       // recovery path. Compute this BEFORE `markMutationFailed`: it reads
       // `entry.retryCount` as the snapshot value (pre-increment) for both the
       // SQLite adapter and the in-memory double (which mutates the live entry).
-      const isTerminalFailure = entry.retryCount + 1 >= entry.maxRetries;
-      storage.markMutationFailed(entry.id, message);
+      const isTerminalFailure =
+        isPermanent || entry.retryCount + 1 >= entry.maxRetries;
+
+      if (isPermanent) {
+        storage.markMutationPermanentlyFailed(entry.id, message);
+      } else {
+        storage.markMutationFailed(entry.id, message);
+      }
       failed++;
       // Report the terminal failure to Sentry so it isn't invisible (the
       // local-workout-id 500 went unseen for exactly this reason). Best-effort:

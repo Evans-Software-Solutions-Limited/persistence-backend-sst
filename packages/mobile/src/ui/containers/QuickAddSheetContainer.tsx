@@ -4,6 +4,7 @@ import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useAuth } from "@/ui/hooks/useAuth";
 import { useFuelSheets } from "@/state/fuel-sheets";
 import { useGetMeals } from "@/ui/hooks/useGetMeals";
+import { useGetRecipes } from "@/ui/hooks/useGetRecipes";
 import { useSearchFoods } from "@/ui/hooks/useSearchFoods";
 import { useLogEntry } from "@/ui/hooks/useLogEntry";
 import { useNutritionAiGate } from "@/ui/hooks/useNutritionAiGate";
@@ -16,12 +17,14 @@ import { localDayISO } from "@/shared/utils";
 import {
   MEAL_SLOTS,
   entryDisplayLabel,
+  perServingDivisor,
   type EntryNameLookups,
 } from "@/domain/services";
 import type { Food, MealSlot } from "@/domain/models/nutrition";
 import {
   QuickAddSheetPresenter,
   type QuickAddMeal,
+  type QuickAddRecipe,
   type QuickAddStage,
   type QuickAddYesterday,
 } from "@/ui/presenters/QuickAddSheetPresenter";
@@ -75,6 +78,7 @@ export function QuickAddSheetContainer() {
   }, [visible, close]);
 
   const meals = useGetMeals();
+  const recipes = useGetRecipes();
   const logEntry = useLogEntry();
   const aiGate = useNutritionAiGate();
   const online = useOnlineStatus();
@@ -151,6 +155,22 @@ export function QuickAddSheetContainer() {
     [meals.data],
   );
 
+  // Recipe `total_*` are WHOLE-recipe totals — a saved recipe's row shows the
+  // PER-SERVING kcal (matches the Recipe library/detail per-serving fix),
+  // guarding a zero/absent servings count.
+  const savedRecipes: QuickAddRecipe[] = useMemo(
+    () =>
+      (recipes.data ?? []).map((r) => ({
+        id: r.id,
+        name: r.name,
+        kcal:
+          r.totalKcal === null
+            ? 0
+            : Math.round(r.totalKcal / perServingDivisor(r.servings)),
+      })),
+    [recipes.data],
+  );
+
   // Noon-UTC of the user-local day (matches the habit-completion pattern): the
   // sync-queue command derives the cache day-key by slicing this ISO string, so
   // anchoring at noon UTC keeps the optimistic entry in TODAY's bucket for every
@@ -184,6 +204,21 @@ export function QuickAddSheetContainer() {
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       await logEntry.mutate({
         mealId: id,
+        mealSlot: slot,
+        servings: 1,
+        loggedAt: loggedAt(),
+      });
+      notifyMutated();
+      close();
+    },
+    [slot, logEntry, notifyMutated, close],
+  );
+
+  const onLogRecipe = useCallback(
+    async (id: string) => {
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      await logEntry.mutate({
+        recipeId: id,
         mealSlot: slot,
         servings: 1,
         loggedAt: loggedAt(),
@@ -247,8 +282,10 @@ export function QuickAddSheetContainer() {
       aiOffline={!online}
       yesterday={yesterday}
       savedMeals={savedMeals}
+      savedRecipes={savedRecipes}
       onLogYesterday={() => void onLogYesterday()}
       onLogMeal={(id) => void onLogMeal(id)}
+      onLogRecipe={(id) => void onLogRecipe(id)}
       onScan={() => {
         // No explicit close() — `openScan` flips the shared store to "scan",
         // which drops this sheet's `visible` to false (the guarded onSheetClose

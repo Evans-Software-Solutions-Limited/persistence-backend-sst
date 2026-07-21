@@ -91,13 +91,14 @@ describe("RecipesLibraryPresenter", () => {
     expect(queryByText("Oats + Yogurt")).toBeNull();
   });
 
-  it("renders recipe rows with macro pills and presses through to onSelectRecipe", () => {
+  it("renders recipe rows with macro pills, a per-serving affordance, and presses through to onSelectRecipe", () => {
     const { getByTestId, getByText, props } = render({ tab: "Recipes" });
     expect(getByText("Protein oats")).toBeTruthy();
     expect(getByText("P 32g")).toBeTruthy();
     expect(getByText("C 58g")).toBeTruthy();
     expect(getByText("F 8g")).toBeTruthy();
     expect(getByText("1 serving · My recipe")).toBeTruthy();
+    expect(getByText("per serving")).toBeTruthy();
     fireEvent.press(getByTestId("recipes-library-recipe-r1"));
     expect(props.onSelectRecipe).toHaveBeenCalledWith("r1");
   });

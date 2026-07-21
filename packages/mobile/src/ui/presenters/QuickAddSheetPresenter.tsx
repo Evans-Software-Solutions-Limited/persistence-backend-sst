@@ -14,6 +14,7 @@ import { toneHex } from "@/ui/components/foundation/tones";
 import {
   IconBack,
   IconBarcode,
+  IconBook,
   IconCamera,
   IconChevronR,
   IconClipboard,
@@ -55,6 +56,11 @@ const intl = (n: number) => Math.round(n).toLocaleString("en-US");
 
 export type QuickAddYesterday = { items: string[]; kcal: number };
 export type QuickAddMeal = { id: string; name: string; kcal: number };
+/** A saved recipe row for the menu stage's "Recipes" list — `kcal` is
+ * PER-SERVING (the container divides the recipe's whole-recipe total by its
+ * servings count, guarded), matching the Recipe library/detail per-serving
+ * fix. */
+export type QuickAddRecipe = { id: string; name: string; kcal: number };
 export type QuickAddStage = "menu" | "search" | "describe" | "describeConfirm";
 
 export type QuickAddSheetProps = {
@@ -69,8 +75,10 @@ export type QuickAddSheetProps = {
   // Menu data
   yesterday: QuickAddYesterday | null;
   savedMeals: readonly QuickAddMeal[];
+  savedRecipes: readonly QuickAddRecipe[];
   onLogYesterday: () => void;
   onLogMeal: (id: string) => void;
+  onLogRecipe: (id: string) => void;
   onScan: () => void;
   onSnap: () => void;
   onSearch: () => void;
@@ -196,8 +204,10 @@ function MenuStage(props: QuickAddSheetProps) {
     aiOffline,
     yesterday,
     savedMeals,
+    savedRecipes,
     onLogYesterday,
     onLogMeal,
+    onLogRecipe,
     onScan,
     onSnap,
     onSearch,
@@ -316,6 +326,64 @@ function MenuStage(props: QuickAddSheetProps) {
                       fontVariant={["tabular-nums"]}
                     >
                       {intl(m.kcal)} kcal
+                    </Text>
+                  </View>
+                  <IconChevronR size={14} color="#8A8A98" />
+                </View>
+              </Pressable>
+            ))}
+          </Card>
+        </View>
+      ) : null}
+
+      {savedRecipes.length > 0 ? (
+        <View>
+          <SectionLabel>Recipes</SectionLabel>
+          <Card pad={0} radius={14}>
+            {savedRecipes.map((r, i) => (
+              <Pressable
+                key={r.id}
+                onPress={() => onLogRecipe(r.id)}
+                testID={`quick-add-recipe-${r.id}`}
+                accessibilityRole="button"
+                accessibilityLabel={r.name}
+              >
+                <View
+                  flexDirection="row"
+                  alignItems="center"
+                  gap={12}
+                  paddingVertical={12}
+                  paddingHorizontal={14}
+                  borderTopWidth={i ? 1 : 0}
+                  borderColor="$border"
+                >
+                  <View
+                    width={32}
+                    height={32}
+                    borderRadius={8}
+                    alignItems="center"
+                    justifyContent="center"
+                    backgroundColor="$primaryDim"
+                  >
+                    <IconBook size={14} color={primary} />
+                  </View>
+                  <View flex={1}>
+                    <Text
+                      fontFamily="$display"
+                      fontWeight="700"
+                      fontSize={14}
+                      color="$text"
+                      numberOfLines={1}
+                    >
+                      {r.name}
+                    </Text>
+                    <Text
+                      fontFamily="$mono"
+                      fontSize={11}
+                      color="$text3"
+                      fontVariant={["tabular-nums"]}
+                    >
+                      {intl(r.kcal)} kcal / serving
                     </Text>
                   </View>
                   <IconChevronR size={14} color="#8A8A98" />

@@ -256,6 +256,54 @@ describe("InMemoryStorageAdapter", () => {
     });
   });
 
+  describe("permanently_failed (non-retryable 4xx)", () => {
+    const enqueueOne = () => {
+      storage.enqueueMutation({
+        entityType: "nutrition_entry",
+        entityId: "e1",
+        operation: "create",
+        payload: { recipeId: "r1" },
+        endpoint: "/nutrition/entries",
+        method: "POST",
+      });
+      return storage.getPendingMutations()[0].id;
+    };
+
+    it("marks terminal without burning retry budget, drops from the pending pool, surfaces in exhausted", () => {
+      const id = enqueueOne();
+      storage.markMutationPermanentlyFailed(id, "HTTP 400: bad");
+
+      expect(storage.getPendingMutations()).toHaveLength(0);
+      const exhausted = storage.getFailedExhaustedEntries();
+      expect(exhausted).toHaveLength(1);
+      expect(exhausted[0].status).toBe("permanently_failed");
+      expect(exhausted[0].retryCount).toBe(0);
+      expect(exhausted[0].errorMessage).toBe("HTTP 400: bad");
+    });
+
+    it("resetFailedEntries reopens it to pending", () => {
+      const id = enqueueOne();
+      storage.markMutationPermanentlyFailed(id, "bad");
+      storage.resetFailedEntries([id]);
+
+      const pending = storage.getPendingMutations();
+      expect(pending).toHaveLength(1);
+      expect(pending[0].status).toBe("pending");
+      expect(storage.getFailedExhaustedEntries()).toHaveLength(0);
+    });
+
+    it("getSyncStats folds it into the failed count", () => {
+      const id = enqueueOne();
+      storage.markMutationPermanentlyFailed(id, "bad");
+      expect(storage.getSyncStats()).toEqual({
+        pending: 0,
+        failed: 1,
+        inFlight: 0,
+        blocked: 0,
+      });
+    });
+  });
+
   describe("blocked_entitlement (M10.6)", () => {
     const verdict = {
       feature: "create_workout" as const,

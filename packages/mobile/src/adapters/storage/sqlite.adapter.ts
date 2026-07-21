@@ -133,7 +133,7 @@ export class SQLiteStorageAdapter implements StoragePort {
         -- CHECK in place. Post-rebuild, every install converges on this
         -- shape and markMutationBlocked has no fallback path to worry
         -- about.
-        status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'in_flight', 'failed', 'completed', 'blocked_entitlement')),
+        status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'in_flight', 'failed', 'completed', 'blocked_entitlement', 'permanently_failed')),
         retry_count INTEGER NOT NULL DEFAULT 0,
         max_retries INTEGER NOT NULL DEFAULT 3,
         error_message TEXT,
@@ -555,9 +555,14 @@ export class SQLiteStorageAdapter implements StoragePort {
     // https://www.sqlite.org/lang_altertable.html#otheralter).
     //
     // Detection: inspect sqlite_master.sql for the stored CREATE TABLE
-    // statement. If it lacks 'blocked_entitlement', the table is on the
-    // pre-M10.6 CHECK and needs rebuilding. Fresh installs always have
-    // the marker (the IF NOT EXISTS landed the new schema).
+    // statement. The marker is the NEWEST status value in the CHECK —
+    // 'permanently_failed' (added for the non-retryable-4xx classification).
+    // A table missing it is on an older CHECK (which also covers pre-M10.6
+    // tables missing 'blocked_entitlement'), so this one rebuild relaxes the
+    // CHECK to the full current set and subsumes the original M10.6
+    // blocked_entitlement migration. Fresh installs always have the marker
+    // (the IF NOT EXISTS landed the new schema). When adding a future status
+    // value, bump this marker to it.
     //
     // Rebuild is wrapped in withTransactionSync so a power-loss / crash
     // mid-migration rolls back atomically — no half-rebuilt state. Hot
@@ -568,7 +573,7 @@ export class SQLiteStorageAdapter implements StoragePort {
       `SELECT sql FROM sqlite_master WHERE type='table' AND name='sync_queue'`,
     ) as { sql: string } | null;
     const needsRebuild =
-      tableDef !== null && !tableDef.sql.includes("blocked_entitlement");
+      tableDef !== null && !tableDef.sql.includes("permanently_failed");
     if (needsRebuild) {
       const sourceColumns = db.getAllSync(`PRAGMA table_info(sync_queue)`) as {
         name: string;
@@ -590,7 +595,7 @@ export class SQLiteStorageAdapter implements StoragePort {
             payload TEXT NOT NULL,
             endpoint TEXT NOT NULL,
             method TEXT NOT NULL,
-            status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'in_flight', 'failed', 'completed', 'blocked_entitlement')),
+            status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'in_flight', 'failed', 'completed', 'blocked_entitlement', 'permanently_failed')),
             retry_count INTEGER NOT NULL DEFAULT 0,
             max_retries INTEGER NOT NULL DEFAULT 3,
             error_message TEXT,
@@ -773,6 +778,18 @@ export class SQLiteStorageAdapter implements StoragePort {
     );
   }
 
+  markMutationPermanentlyFailed(id: number, errorMessage: string): void {
+    const db = this.getDb();
+    // Terminal state for a permanent 4xx — status alone makes it terminal, so
+    // `retry_count` is deliberately NOT incremented (there was no retry to
+    // budget). Excluded from `getPendingMutations`; surfaced by
+    // `getFailedExhaustedEntries` and re-openable by `resetFailedEntries`.
+    db.runSync(
+      `UPDATE sync_queue SET status = 'permanently_failed', error_message = ?, updated_at = datetime('now') WHERE id = ?`,
+      [errorMessage, id],
+    );
+  }
+
   updateMutationPayload(id: number, payload: unknown): void {
     const db = this.getDb();
     // Status-conditional rewrite: only a `pending`/`failed` entry can have
@@ -858,7 +875,9 @@ export class SQLiteStorageAdapter implements StoragePort {
   getFailedExhaustedEntries(): SyncQueueEntry[] {
     const db = this.getDb();
     const rows = db.getAllSync(
-      `SELECT * FROM sync_queue WHERE status = 'failed' AND retry_count >= max_retries
+      `SELECT * FROM sync_queue
+       WHERE (status = 'failed' AND retry_count >= max_retries)
+          OR status = 'permanently_failed'
        ORDER BY created_at ASC`,
     ) as Record<string, unknown>[];
     return rows.map(mapRow);
@@ -867,10 +886,12 @@ export class SQLiteStorageAdapter implements StoragePort {
   resetFailedEntries(ids: readonly number[]): void {
     if (ids.length === 0) return;
     const db = this.getDb();
-    // Conditional on `status = 'failed'` — mirrors `unblockEntries` — so a
-    // stale id (already discarded, or claimed by a concurrent drain since
-    // the caller's read) is silently skipped instead of corrupting an
-    // unrelated row.
+    // Conditional on `status IN ('failed', 'permanently_failed')` — mirrors
+    // `unblockEntries` — so a stale id (already discarded, or claimed by a
+    // concurrent drain since the caller's read) is silently skipped instead of
+    // corrupting an unrelated row. Both terminal states re-open here so a fix
+    // (reconnect for a transient exhaustion, an app update for a permanent
+    // 4xx) can resurrect the stranded mutation.
     db.withTransactionSync(() => {
       const placeholders = ids.map(() => "?").join(",");
       db.runSync(
@@ -879,7 +900,8 @@ export class SQLiteStorageAdapter implements StoragePort {
              retry_count = 0,
              error_message = NULL,
              updated_at = datetime('now')
-         WHERE id IN (${placeholders}) AND status = 'failed'`,
+         WHERE id IN (${placeholders})
+           AND status IN ('failed', 'permanently_failed')`,
         ids as unknown as number[],
       );
     });
@@ -896,7 +918,11 @@ export class SQLiteStorageAdapter implements StoragePort {
     const stats: SyncStats = { pending: 0, failed: 0, inFlight: 0, blocked: 0 };
     for (const row of rows) {
       if (row.status === "pending") stats.pending = row.count;
-      else if (row.status === "failed") stats.failed = row.count;
+      // `permanently_failed` folds into `failed` — both are "needs attention"
+      // for the review banner; the stat doesn't distinguish transient-exhausted
+      // from permanent.
+      else if (row.status === "failed" || row.status === "permanently_failed")
+        stats.failed += row.count;
       else if (row.status === "in_flight") stats.inFlight = row.count;
       else if (row.status === "blocked_entitlement") stats.blocked = row.count;
     }

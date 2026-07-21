@@ -189,6 +189,15 @@ export class InMemoryStorageAdapter implements StoragePort {
     }
   }
 
+  markMutationPermanentlyFailed(id: number, errorMessage: string): void {
+    // Parity with SQLite: terminal 4xx state, `retryCount` untouched.
+    const entry = this.queue.find((e) => e.id === id);
+    if (entry) {
+      entry.status = "permanently_failed";
+      entry.errorMessage = errorMessage;
+    }
+  }
+
   updateMutationPayload(id: number, payload: unknown): void {
     // Mirror the SQLite adapter: only `pending`/`failed` entries are
     // rewritable. An in-flight entry may already be mid-flush; a
@@ -243,7 +252,9 @@ export class InMemoryStorageAdapter implements StoragePort {
     // Parity with SQLite: FIFO order (insertion-ordered already, we
     // just push to the end).
     return this.queue.filter(
-      (e) => e.status === "failed" && e.retryCount >= e.maxRetries,
+      (e) =>
+        (e.status === "failed" && e.retryCount >= e.maxRetries) ||
+        e.status === "permanently_failed",
     );
   }
 
@@ -252,7 +263,8 @@ export class InMemoryStorageAdapter implements StoragePort {
     const idSet = new Set(ids);
     for (const entry of this.queue) {
       if (!idSet.has(entry.id)) continue;
-      if (entry.status !== "failed") continue;
+      if (entry.status !== "failed" && entry.status !== "permanently_failed")
+        continue;
       entry.status = "pending";
       entry.retryCount = 0;
       entry.errorMessage = null;
@@ -263,7 +275,11 @@ export class InMemoryStorageAdapter implements StoragePort {
     const stats: SyncStats = { pending: 0, failed: 0, inFlight: 0, blocked: 0 };
     for (const entry of this.queue) {
       if (entry.status === "pending") stats.pending++;
-      else if (entry.status === "failed") stats.failed++;
+      else if (
+        entry.status === "failed" ||
+        entry.status === "permanently_failed"
+      )
+        stats.failed++;
       else if (entry.status === "in_flight") stats.inFlight++;
       else if (entry.status === "blocked_entitlement") stats.blocked++;
     }

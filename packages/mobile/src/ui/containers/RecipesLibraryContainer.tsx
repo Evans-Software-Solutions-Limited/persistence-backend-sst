@@ -5,6 +5,7 @@ import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useAuth } from "@/ui/hooks/useAuth";
 import { useGetMeals } from "@/ui/hooks/useGetMeals";
 import { useGetRecipes } from "@/ui/hooks/useGetRecipes";
+import { perServingDivisor } from "@/domain/services";
 import {
   RecipesLibraryPresenter,
   type LibraryTab,
@@ -91,13 +92,19 @@ export function RecipesLibraryContainer() {
             : r.source === "manual"
               ? "My recipe"
               : r.source;
+        // Recipe cards show PER-SERVING macros (whole-recipe `total_*` ÷
+        // servings, guarded) — a saved MEAL preset stays whole (one serving),
+        // so this division only applies to the Recipes tab's rows.
+        const div = perServingDivisor(r.servings);
+        const perServing = (total: number | null): number | null =>
+          total === null ? null : Math.round(total / div);
         return {
           id: r.id,
           name: r.name,
-          kcal: r.totalKcal,
-          proteinG: r.totalProteinG,
-          carbsG: r.totalCarbsG,
-          fatG: r.totalFatG,
+          kcal: perServing(r.totalKcal),
+          proteinG: perServing(r.totalProteinG),
+          carbsG: perServing(r.totalCarbsG),
+          fatG: perServing(r.totalFatG),
           secondaryLine: `${servingsLabel} · ${sourceLabel}`,
         };
       });
