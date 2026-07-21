@@ -193,29 +193,27 @@ export function IOSPurchaseFlowContainer() {
       setIsProcessing(true);
       try {
         const result = await purchaseMutation.mutateAsync(pkg.packageId);
-        // result is the active-entitlement snapshot; RevenueCat has already
-        // confirmed the purchase on Apple's side at this point. But the
-        // backend's `user_subscriptions` row is only updated by an ASYNC
-        // RevenueCat→backend webhook, so trusting it alone (or the raw
-        // on-device tier) risks showing "Activated!" while the server still
-        // says `free`. Force a server-side reconcile via `syncSubscription`
-        // and prefer ITS tier for the success screen when it confirms a paid
-        // plan. If the sync comes back `free` or errors (e.g. a transient
+        // `result` is the active-entitlement snapshot; RevenueCat has already
+        // confirmed the purchase on Apple's side at this point, so the tier
+        // the user just bought (`tier`) is authoritative for the success
+        // screen. The backend's `user_subscriptions` row is only updated by
+        // an ASYNC RevenueCat→backend webhook, so force a server-side
+        // reconcile via `syncSubscription` here to persist the entitlement +
+        // invalidate the subscription/profile caches BEFORE navigating —
+        // without this, coach-mode / the drawer could briefly read `free`.
+        // The sync is for the DB write, NOT to override display: we always
+        // route with the purchased `tier`. If sync errors (e.g. a transient
         // 502), don't block a purchase RevenueCat already reported as
-        // successful — fall back to the purchased tier so a legitimate
-        // fresh purchase isn't stuck behind a flaky sync call.
+        // successful — the webhook reconciles the row shortly after.
         void result;
-        let confirmedTier: SubscriptionTierName = tier;
         try {
-          const sub = await syncMutation.mutateAsync();
-          if (sub.tierName !== "free") {
-            confirmedTier = sub.tierName;
-          }
+          await syncMutation.mutateAsync();
         } catch {
           // Sync failed — proceed with the purchased tier; the purchase
-          // itself already succeeded on Apple's side.
+          // itself already succeeded on Apple's side and the webhook will
+          // reconcile the DB row.
         }
-        router.push(`/(auth)/success?tier=${confirmedTier}` as Href);
+        router.push(`/(auth)/success?tier=${tier}` as Href);
       } catch (err) {
         const error = err as { kind?: string; message?: string };
         // User dismissed the native sheet — silent (no alert), matching the

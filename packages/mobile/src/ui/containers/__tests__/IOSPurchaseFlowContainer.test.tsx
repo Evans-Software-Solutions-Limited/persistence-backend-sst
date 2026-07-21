@@ -223,7 +223,7 @@ describe("IOSPurchaseFlowContainer", () => {
     expect(purchases.purchaseCalls).toHaveLength(0);
   });
 
-  it("purchase flow: tap premium → purchases the package → syncs → routes to success with the confirmed tier", async () => {
+  it("purchase flow: tap premium → purchases the package → syncs (to persist) → routes to success with the PURCHASED tier", async () => {
     const { adapters, purchases } = makeAdapters();
     const api = adapters.api as InMemoryApiAdapter;
     purchases.nextPurchaseResponse = {
@@ -237,9 +237,13 @@ describe("IOSPurchaseFlowContainer", () => {
         },
       ],
     };
-    // Server-side sync confirms the paid tier — the success screen should
-    // use ITS tier, not just re-echo the purchased tier.
-    api.nextSyncSubscriptionResult = freeSub({ tierName: "premium" });
+    // Apple has already approved the purchase, so the tier the user just
+    // bought is authoritative for the success screen. Sync runs to PERSIST
+    // the entitlement server-side, not to override the displayed tier — so
+    // even if the reconcile momentarily reports a DIFFERENT paid tier (e.g.
+    // an upgrade where RevenueCat's REST snapshot still lags on the old
+    // plan), the success screen must still show the tier just purchased.
+    api.nextSyncSubscriptionResult = freeSub({ tierName: "individual_trainer" });
     renderContainer(adapters);
     await waitFor(() =>
       expect(screen.getByTestId("subscription-card-premium")).toBeTruthy(),
@@ -252,7 +256,9 @@ describe("IOSPurchaseFlowContainer", () => {
     await waitFor(() =>
       expect(purchases.purchaseCalls).toEqual(["$rc_monthly"]),
     );
+    // Sync is still called (to persist + invalidate caches)…
     await waitFor(() => expect(api.syncSubscriptionCalls).toBe(1));
+    // …but the success route uses the PURCHASED tier, not the synced one.
     expect(mockPush).toHaveBeenCalledWith("/(auth)/success?tier=premium");
   });
 
