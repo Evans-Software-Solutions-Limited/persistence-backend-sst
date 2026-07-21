@@ -41,6 +41,11 @@ vi.mock("../../../relationships/assertTrainerCanActForClient", () => ({
   assertTrainerCanActForClient: (...args: unknown[]) => assertActGuard(...args),
 }));
 
+const auditClientDataReadMock = vi.fn(async () => undefined);
+vi.mock("../../../relationships/auditClientDataRead", () => ({
+  auditClientDataRead: (...a: unknown[]) => auditClientDataReadMock(...(a as [])),
+}));
+
 const DENY_NOT_CLIENT = {
   allowed: false as const,
   reason: "no_relationship" as const,
@@ -104,6 +109,7 @@ describe("programme handlers", () => {
     trainerMocks.isTrainer.mockResolvedValue(true);
     guardMocks.hasActiveRelationship.mockResolvedValue(true);
     assertActGuard.mockResolvedValue({ allowed: true });
+    auditClientDataReadMock.mockResolvedValue(undefined);
   });
 
   describe("GET /trainers/me/clients/:clientId/active-programme", () => {
@@ -185,6 +191,31 @@ describe("programme handlers", () => {
       );
       expect(res.status).toBe(200);
       expect(((await res.json()) as any).data).toBeNull();
+    });
+
+    it("logs a coach read-audit row (category=active_programme) after the guard passes", async () => {
+      assignmentMocks.getActiveProgrammeForClient.mockResolvedValue(null);
+      const h = await load();
+      const res = await h.handle(
+        authed("/trainers/me/clients/c1/active-programme"),
+      );
+      expect(res.status).toBe(200);
+      expect(auditClientDataReadMock).toHaveBeenCalledWith({
+        trainerId: "trainer-id",
+        clientId: "c1",
+        dataCategory: "active_programme",
+        route: "/trainers/me/clients/:clientId/active-programme",
+      });
+    });
+
+    it("still returns 200 if the read-audit write throws", async () => {
+      auditClientDataReadMock.mockRejectedValue(new Error("audit db down"));
+      assignmentMocks.getActiveProgrammeForClient.mockResolvedValue(null);
+      const h = await load();
+      const res = await h.handle(
+        authed("/trainers/me/clients/c1/active-programme"),
+      );
+      expect(res.status).toBe(200);
     });
   });
 

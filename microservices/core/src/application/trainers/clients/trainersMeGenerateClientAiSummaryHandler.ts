@@ -8,6 +8,7 @@ import {
   getUser,
 } from "@persistence/api-utils/auth/supabaseAuth";
 import { assertTrainerCanActForClient } from "../../relationships/assertTrainerCanActForClient";
+import { auditClientDataRead } from "../../relationships/auditClientDataRead";
 import {
   assertEntitlement,
   EntitlementError,
@@ -105,6 +106,19 @@ export const trainersMeGenerateClientAiSummaryHandler = new Elysia()
           ctx.set.status = 429;
           return { error: "ai_daily_limit" };
         }
+
+        // Coach read-audit (specs/27-coach-health-data-read-audit) — logged
+        // only after the entitlement + daily-ceiling gates pass, i.e. once a
+        // real read is about to happen (a cache hit still reads the Client
+        // Detail modules a–f used to ground the summary). Logging before the
+        // gates would over-report a "view" for coaches who get a 402/429 and
+        // read no data.
+        await auditClientDataRead({
+          trainerId,
+          clientId,
+          dataCategory: "ai_summary",
+          route: "/trainers/me/clients/:clientId/ai-summary",
+        }).catch(() => {});
 
         // 4. covers_date = the CONCLUDED (previous) client-local day.
         const tz = await resolveClientTz(clientId);

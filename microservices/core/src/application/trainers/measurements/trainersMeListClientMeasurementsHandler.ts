@@ -6,14 +6,16 @@ import {
 } from "@persistence/api-utils/auth/supabaseAuth";
 import { MeasurementService } from "../../repositories/measurementService";
 import { assertTrainerCanActForClient } from "../../relationships/assertTrainerCanActForClient";
+import { auditClientDataRead } from "../../relationships/auditClientDataRead";
 
 /**
  * GET /trainers/me/clients/:clientId/measurements — parity read (cross-cuts
  * § 1.2). The on-behalf POST shipped in Phase 2; this is the new parity GET
  * letting a coach list a client's body measurements (newest-first). Same wire
- * shape as the self measurement list. Reads are NOT audited (cross-cuts § 1.4).
- * Authorization via the shared `assertTrainerCanActForClient` gate
- * (cross-cuts § 1.3).
+ * shape as the self measurement list. Authorization via the shared
+ * `assertTrainerCanActForClient` gate (cross-cuts § 1.3). The read itself is
+ * logged to the append-only coach read-audit (specs/27-coach-health-data-read-audit)
+ * AFTER the gate passes, via the best-effort `auditClientDataRead` helper.
  */
 export const trainersMeListClientMeasurementsHandler = new Elysia()
   .derive(async ({ headers }) => ({
@@ -32,6 +34,13 @@ export const trainersMeListClientMeasurementsHandler = new Elysia()
         ctx.set.status = verdict.status;
         return verdict.body;
       }
+
+      await auditClientDataRead({
+        trainerId,
+        clientId,
+        dataCategory: "measurements",
+        route: "/trainers/me/clients/:clientId/measurements",
+      }).catch(() => {});
 
       const { limit, offset } = ctx.query;
       const measurements = await ctx.MeasurementRepository.list(

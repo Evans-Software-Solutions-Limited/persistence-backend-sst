@@ -7,6 +7,7 @@ import {
 import { HabitConfigService } from "../../repositories/habitConfigService";
 import { NutritionTargetService } from "../../repositories/nutritionTargetService";
 import { assertTrainerCanActForClient } from "../../relationships/assertTrainerCanActForClient";
+import { auditClientDataRead } from "../../relationships/auditClientDataRead";
 import {
   HABIT_CATEGORIES,
   HABIT_CATEGORY_ORDER,
@@ -18,8 +19,10 @@ import {
  * GET /trainers/me/clients/:clientId/habits/config — a coach reads the client's
  * habit config FROM THE DB (18-habit-setup Phase 18.3; design.md § 3.2, STORY-006
  * AC 6.5). Same five-category shape as the self GET; `assignedByCoach`/`locked`
- * are computed so the coach UI can render attribution. Reads aren't audited
- * (cross-cuts § 1.4). Auth via the shared gate (cross-cuts § 1.3).
+ * are computed so the coach UI can render attribution. Auth via the shared
+ * gate (cross-cuts § 1.3). The read is logged to the coach read-audit
+ * (specs/27-coach-health-data-read-audit) AFTER the gate passes, via the
+ * best-effort `auditClientDataRead` helper.
  */
 export const trainersMeGetClientHabitConfigHandler = new Elysia()
   .derive(async ({ headers }) => ({
@@ -39,6 +42,13 @@ export const trainersMeGetClientHabitConfigHandler = new Elysia()
         ctx.set.status = verdict.status;
         return verdict.body;
       }
+
+      await auditClientDataRead({
+        trainerId,
+        clientId,
+        dataCategory: "habits",
+        route: "/trainers/me/clients/:clientId/habits/config",
+      }).catch(() => {});
 
       const configured = await ctx.HabitConfigRepository.listForUser(clientId);
       const byCategory = new Map(configured.map((c) => [c.category, c]));

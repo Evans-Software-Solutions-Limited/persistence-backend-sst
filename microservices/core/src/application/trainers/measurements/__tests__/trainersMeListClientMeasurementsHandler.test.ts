@@ -25,6 +25,11 @@ vi.mock("../../../relationships/assertTrainerCanActForClient", () => ({
   assertTrainerCanActForClient: vi.fn(),
 }));
 
+const auditClientDataReadMock = vi.fn(async () => undefined);
+vi.mock("../../../relationships/auditClientDataRead", () => ({
+  auditClientDataRead: (...a: unknown[]) => auditClientDataReadMock(...(a as [])),
+}));
+
 const repoList = vi.fn();
 vi.mock("../../../repositories/measurementRepository", () => ({
   MeasurementRepository: vi.fn(() => ({ list: repoList })),
@@ -50,6 +55,7 @@ describe("trainersMeListClientMeasurementsHandler", () => {
     vi.clearAllMocks();
     (assertTrainerCanActForClient as any).mockResolvedValue({ allowed: true });
     repoList.mockResolvedValue([{ id: "x-1" }]);
+    auditClientDataReadMock.mockResolvedValue(undefined);
   });
 
   it("requires auth", async () => {
@@ -88,5 +94,32 @@ describe("trainersMeListClientMeasurementsHandler", () => {
     const body = (await res.json()) as any;
     expect(body.data).toEqual([{ id: "x-1" }]);
     expect(repoList).toHaveBeenCalledWith("client-1", 20, 0);
+  });
+
+  it("logs a coach read-audit row (category=measurements) after the gate passes", async () => {
+    const { trainersMeListClientMeasurementsHandler } =
+      await import("../trainersMeListClientMeasurementsHandler");
+    const res = await trainersMeListClientMeasurementsHandler.handle(
+      get("client-1"),
+    );
+    expect(res.status).toBe(200);
+    expect(auditClientDataReadMock).toHaveBeenCalledWith({
+      trainerId: "trainer-id",
+      clientId: "client-1",
+      dataCategory: "measurements",
+      route: "/trainers/me/clients/:clientId/measurements",
+    });
+  });
+
+  it("still returns 200 with the client's measurements if the read-audit write throws", async () => {
+    auditClientDataReadMock.mockRejectedValue(new Error("audit db down"));
+    const { trainersMeListClientMeasurementsHandler } =
+      await import("../trainersMeListClientMeasurementsHandler");
+    const res = await trainersMeListClientMeasurementsHandler.handle(
+      get("client-1"),
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as any;
+    expect(body.data).toEqual([{ id: "x-1" }]);
   });
 });

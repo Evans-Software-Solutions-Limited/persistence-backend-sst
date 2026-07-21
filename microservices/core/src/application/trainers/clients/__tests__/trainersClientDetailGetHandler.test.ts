@@ -31,6 +31,11 @@ vi.mock("../../../repositories/clientDetailRepository", () => ({
   ClientDetailRepository: vi.fn(() => ({ getClientDetail })),
 }));
 
+const auditClientDataReadMock = vi.fn(async () => undefined);
+vi.mock("../../../relationships/auditClientDataRead", () => ({
+  auditClientDataRead: (...a: unknown[]) => auditClientDataReadMock(...(a as [])),
+}));
+
 import { assertTrainerCanActForClient } from "../../../relationships/assertTrainerCanActForClient";
 
 const auth = { authorization: "Bearer token" };
@@ -80,6 +85,7 @@ describe("trainersClientDetailGetHandler", () => {
     vi.clearAllMocks();
     verdict.value = { allowed: true };
     getClientDetail.mockResolvedValue(FULL);
+    auditClientDataReadMock.mockResolvedValue(undefined);
   });
 
   it("requires auth (401 without a bearer token)", async () => {
@@ -142,5 +148,28 @@ describe("trainersClientDetailGetHandler", () => {
       "client-1",
     );
     expect(getClientDetail).toHaveBeenCalledWith("trainer-id", "client-1");
+  });
+
+  it("logs a coach read-audit row (category=client_detail_aggregate) after the gate passes", async () => {
+    const { trainersClientDetailGetHandler } =
+      await import("../trainersClientDetailGetHandler");
+    const res = await trainersClientDetailGetHandler.handle(get("client-1"));
+    expect(res.status).toBe(200);
+    expect(auditClientDataReadMock).toHaveBeenCalledWith({
+      trainerId: "trainer-id",
+      clientId: "client-1",
+      dataCategory: "client_detail_aggregate",
+      route: "/trainers/me/clients/:clientId",
+    });
+  });
+
+  it("still returns 200 with the client detail aggregate if the read-audit write throws", async () => {
+    auditClientDataReadMock.mockRejectedValue(new Error("audit db down"));
+    const { trainersClientDetailGetHandler } =
+      await import("../trainersClientDetailGetHandler");
+    const res = await trainersClientDetailGetHandler.handle(get("client-1"));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as any;
+    expect(body.data.client.id).toBe("client-1");
   });
 });

@@ -2,6 +2,7 @@ import Elysia, { t } from "elysia";
 import { HomeReadService } from "../../repositories/homeReadService";
 import { parseBodyTrendWindow } from "../../progress/getBodyTrendHandler";
 import { assertTrainerCanActForClient } from "../../relationships/assertTrainerCanActForClient";
+import { auditClientDataRead } from "../../relationships/auditClientDataRead";
 import {
   getAuthUser,
   requireAuth,
@@ -43,6 +44,13 @@ export const trainersClientBodyTrendHandler = new Elysia()
         ctx.set.status = verdict.status;
         return verdict.body;
       }
+
+      await auditClientDataRead({
+        trainerId,
+        clientId,
+        dataCategory: "body_trend",
+        route: "/clients/:clientId/body-trend",
+      }).catch(() => {});
 
       const windowDays = parseBodyTrendWindow(ctx.query.window);
       const tz = await ctx.HomeReadRepository.getUserTimezone(clientId);

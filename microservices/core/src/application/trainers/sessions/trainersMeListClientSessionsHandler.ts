@@ -6,6 +6,7 @@ import {
 } from "@persistence/api-utils/auth/supabaseAuth";
 import { SessionService } from "../../repositories/sessionService";
 import { assertTrainerCanActForClient } from "../../relationships/assertTrainerCanActForClient";
+import { auditClientDataRead } from "../../relationships/auditClientDataRead";
 
 /**
  * GET /trainers/me/clients/:clientId/sessions — parity read (cross-cuts § 1.2,
@@ -14,8 +15,9 @@ import { assertTrainerCanActForClient } from "../../relationships/assertTrainerC
  * reuses its session-list mapping unchanged.
  *
  * Authorization goes through the shared `assertTrainerCanActForClient` gate
- * (role-first, then active relationship — cross-cuts § 1.3). Reads are NOT
- * audited (only on-behalf writes are — cross-cuts § 1.4).
+ * (role-first, then active relationship — cross-cuts § 1.3). The read is
+ * logged to the coach read-audit (specs/27-coach-health-data-read-audit) AFTER
+ * the gate passes, via the best-effort `auditClientDataRead` helper.
  */
 export const trainersMeListClientSessionsHandler = new Elysia()
   .derive(async ({ headers }) => ({
@@ -34,6 +36,13 @@ export const trainersMeListClientSessionsHandler = new Elysia()
         ctx.set.status = verdict.status;
         return verdict.body;
       }
+
+      await auditClientDataRead({
+        trainerId,
+        clientId,
+        dataCategory: "sessions",
+        route: "/trainers/me/clients/:clientId/sessions",
+      }).catch(() => {});
 
       const { limit, offset, status } = ctx.query;
       const sessions = await ctx.SessionRepository.list(clientId, {
