@@ -28,8 +28,10 @@ import type {
   CreateMealInput,
   CreateRecipeInput,
   EditEntryInput,
+  EstimatedRecipeMacros,
   EstimateFromPhotoInput,
   EstimateFromTextInput,
+  EstimateRecipeInput,
   ExtractedRecipe,
   ExtractRecipePhotoInput,
   Food,
@@ -2249,11 +2251,20 @@ export class InMemoryApiAdapter implements ApiPort {
     confidence: 0.96,
     notes: null,
   };
-  /** When set, both `extractRecipeFromPhoto` and `resolveIngredient` return
-   * this error instead. */
+  /** When set, `extractRecipeFromPhoto`, `resolveIngredient`, AND
+   * `estimateRecipe` return this error instead. */
   public nextRecipeAiError: { status: number; message: string } | null = null;
   public extractRecipeFromPhotoCalls: ExtractRecipePhotoInput[] = [];
   public resolveIngredientCalls: ResolveIngredientInput[] = [];
+  /** Canned whole-recipe estimate `estimateRecipe` returns by default. */
+  public estimatedRecipeMacros: EstimatedRecipeMacros = {
+    kcal: 620,
+    proteinG: 40,
+    carbsG: 55,
+    fatG: 22,
+    confidence: 0.82,
+  };
+  public estimateRecipeCalls: EstimateRecipeInput[] = [];
 
   async extractRecipeFromPhoto(
     input: ExtractRecipePhotoInput,
@@ -2291,6 +2302,17 @@ export class InMemoryApiAdapter implements ApiPort {
     };
     this.foods.push(food);
     return this.mayFail<Food>(food);
+  }
+
+  async estimateRecipe(
+    input: EstimateRecipeInput,
+  ): Promise<Result<EstimatedRecipeMacros, ApiError>> {
+    this.estimateRecipeCalls.push(input);
+    if (this.nextRecipeAiError) {
+      const { status, message } = this.nextRecipeAiError;
+      return fail<ApiError>({ kind: "api", code: "server", message, status });
+    }
+    return this.mayFail<EstimatedRecipeMacros>(this.estimatedRecipeMacros);
   }
 
   /** Client-side relationships fixture (Requests screen + You section). */

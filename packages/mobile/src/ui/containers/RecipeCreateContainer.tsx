@@ -1,13 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { router } from "expo-router";
 import { useRecipeDraft } from "@/state/recipe-draft";
-import { computeRecipeDraftMacros } from "@/domain/services";
-import type { Food, RecipeIngredientInput } from "@/domain/models/nutrition";
+import { computeRecipeDraftMacros, type MacroSum } from "@/domain/services";
+import type {
+  CreateRecipeInput,
+  Food,
+  RecipeIngredientInput,
+} from "@/domain/models/nutrition";
 import type { ApiError } from "@/shared/errors";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useCreateRecipe } from "@/ui/hooks/useCreateRecipe";
 import { useSearchFoods } from "@/ui/hooks/useSearchFoods";
 import { useResolveIngredient } from "@/ui/hooks/useResolveIngredient";
+import { useEstimateRecipe } from "@/ui/hooks/useEstimateRecipe";
 import { useNutritionAiGate } from "@/ui/hooks/useNutritionAiGate";
 import {
   RecipeCreatePresenter,
@@ -59,6 +64,7 @@ export function RecipeCreateContainer() {
   const { storage } = useAdapters();
   const createRecipe = useCreateRecipe();
   const resolveIngredient = useResolveIngredient();
+  const estimateRecipe = useEstimateRecipe();
   const aiGate = useNutritionAiGate();
 
   const nextRowIdRef = useRef(0);
@@ -91,6 +97,33 @@ export function RecipeCreateContainer() {
     }
     return [emptyRow(nextRowId())];
   });
+
+  // Recipe-import macros fix — consume the import seed's scraped nutrition
+  // (per-serving) as a WHOLE-recipe `providedTotals`, and carry the seed's
+  // source/sourceUrl through to the save payload. Only an "import" seed
+  // (RecipeImportContainer) sets `source`/`sourceUrl`/`nutrition` at all — a
+  // direct "Create a recipe" visit or a Snap-a-recipe seed stays "manual".
+  const [providedTotals, setProvidedTotals] = useState<MacroSum | null>(() => {
+    const seed = useRecipeDraft.getState().seed;
+    if (!seed || seed.source !== "import" || !seed.nutrition) return null;
+    const multiplier = seed.servings ?? 1;
+    const n = seed.nutrition;
+    return {
+      kcal: (n.kcal ?? 0) * multiplier,
+      proteinG: (n.proteinG ?? 0) * multiplier,
+      carbsG: (n.carbsG ?? 0) * multiplier,
+      fatG: (n.fatG ?? 0) * multiplier,
+    };
+  });
+  const [source] = useState<NonNullable<CreateRecipeInput["source"]>>(() => {
+    const seedSource = useRecipeDraft.getState().seed?.source;
+    if (seedSource === "import") return "url_import";
+    if (seedSource === "snap") return "ai_extracted";
+    return "manual";
+  });
+  const [sourceUrl] = useState<string | undefined>(
+    () => useRecipeDraft.getState().seed?.sourceUrl ?? undefined,
+  );
 
   // Read once — clear immediately after the initial render so a later blank
   // visit to this same route never inherits a stale seed.
@@ -164,10 +197,24 @@ export function RecipeCreateContainer() {
     setRows((prev) =>
       prev.map((r) =>
         r.id === id
-          ? { ...r, foodId: food.id, foodName: food.name, name: food.name }
+          ? {
+              ...r,
+              foodId: food.id,
+              foodName: food.name,
+              name: food.name,
+              // A blank quantity/unit means the row was never given one (e.g.
+              // an import seed's free-text line) — default it from the linked
+              // food's own serving so the ingredient-derived macro total has
+              // something to scale, rather than silently contributing 0.
+              quantity: r.quantity === null ? food.servingSize : r.quantity,
+              unit: r.unit ? r.unit : food.servingUnit,
+            }
           : r,
       ),
     );
+    // Linking a food switches the recipe back into ingredient-derived mode —
+    // any AI/import whole-recipe total no longer reflects the current rows.
+    setProvidedTotals(null);
     setActiveSearchRowId(null);
     setSearchQuery("");
   }, []);
@@ -202,10 +249,18 @@ export function RecipeCreateContainer() {
         setRows((prev) =>
           prev.map((r) =>
             r.id === id
-              ? { ...r, foodId: food.id, foodName: food.name, name: food.name }
+              ? {
+                  ...r,
+                  foodId: food.id,
+                  foodName: food.name,
+                  name: food.name,
+                  quantity: r.quantity === null ? food.servingSize : r.quantity,
+                  unit: r.unit ? r.unit : food.servingUnit,
+                }
               : r,
           ),
         );
+        setProvidedTotals(null);
         setActiveSearchRowId(null);
         setSearchQuery("");
       }
@@ -228,14 +283,74 @@ export function RecipeCreateContainer() {
     pendingResolveRowIdRef.current = null;
   }, [resolveIngredient.error]);
 
-  const macroTotal = useMemo(
+  const derivedMacroTotal = useMemo(
     () =>
       computeRecipeDraftMacros(
-        rows.map((r) => ({ foodId: r.foodId, quantity: r.quantity })),
+        rows.map((r) => ({
+          foodId: r.foodId,
+          quantity: r.quantity,
+          unit: r.unit,
+        })),
         (foodId) => storage.getCachedFoodById(foodId),
       ),
     [rows, storage],
   );
+  // A whole-recipe total (import scrape or AI estimate) takes precedence over
+  // the ingredient-derived sum — see `providedTotals` / `onEstimateWholeRecipe`.
+  const macroTotal = providedTotals ?? derivedMacroTotal;
+
+  const [estimateMessage, setEstimateMessage] = useState<string | null>(null);
+  const pendingEstimateRef = useRef(false);
+
+  const onEstimateWholeRecipe = useCallback(async () => {
+    if (!aiGate.allowed) {
+      aiGate.gateProps.onUpgrade();
+      return;
+    }
+    setEstimateMessage(null);
+    // Feed the AI the structured quantity/unit when the user set them (import
+    // seeds embed the amount in the free-text name; manually-added rows keep it
+    // in quantity/unit) so a whole-recipe estimate isn't left guessing amounts.
+    const ingredients = rows
+      .map((r) => {
+        const label = (r.foodName || r.name).trim();
+        if (!label) return "";
+        const amount =
+          r.quantity !== null
+            ? `${r.quantity}${r.unit ? ` ${r.unit}` : ""} `
+            : "";
+        return `${amount}${label}`;
+      })
+      .filter((s) => s.length > 0);
+    pendingEstimateRef.current = true;
+    const result = await estimateRecipe.mutate({
+      name: name.trim(),
+      ingredients,
+      servings: servings ?? undefined,
+    });
+    if (result) {
+      pendingEstimateRef.current = false;
+      setProvidedTotals({
+        kcal: result.kcal,
+        proteinG: result.proteinG,
+        carbsG: result.carbsG,
+        fatG: result.fatG,
+      });
+    }
+    // On failure `pendingEstimateRef` stays set — the effect below attributes
+    // the message once the hook's `error` state lands (avoids reading the
+    // stale `estimateRecipe` closure captured at call time — same reasoning
+    // as `onCreateWithAi`'s `pendingResolveRowIdRef`).
+  }, [aiGate, rows, name, servings, estimateRecipe]);
+
+  useEffect(() => {
+    const err: ApiError | null = estimateRecipe.error;
+    if (!err || !pendingEstimateRef.current) return;
+    setEstimateMessage(
+      err.status === 429 ? RESOLVE_LIMIT_MESSAGE : RESOLVE_GENERIC_MESSAGE,
+    );
+    pendingEstimateRef.current = false;
+  }, [estimateRecipe.error]);
 
   const validRows = useMemo(
     () => rows.filter((r) => r.foodId !== null || r.name.trim().length > 0),
@@ -271,6 +386,9 @@ export function RecipeCreateContainer() {
         instructions:
           trimmedInstructions.length > 0 ? trimmedInstructions : undefined,
         ingredients,
+        source,
+        ...(sourceUrl !== undefined ? { sourceUrl } : {}),
+        ...(providedTotals !== null ? { providedTotals } : {}),
       });
       if (recipe) {
         router.replace(`/(app)/fuel/recipe/${recipe.id}` as never);
@@ -278,7 +396,17 @@ export function RecipeCreateContainer() {
     } finally {
       setSaving(false);
     }
-  }, [canSave, validRows, name, servings, instructions, createRecipe]);
+  }, [
+    canSave,
+    validRows,
+    name,
+    servings,
+    instructions,
+    createRecipe,
+    source,
+    sourceUrl,
+    providedTotals,
+  ]);
 
   const rowVMs: IngredientRowVM[] = rows.map((r) => ({
     id: r.id,
@@ -315,6 +443,10 @@ export function RecipeCreateContainer() {
       resolvingRowId={resolvingRowId}
       rowMessages={rowMessages}
       macroTotal={macroTotal}
+      macrosProvided={providedTotals !== null}
+      onEstimateWholeRecipe={() => void onEstimateWholeRecipe()}
+      isEstimatingRecipe={estimateRecipe.isEstimating}
+      estimateRecipeMessage={estimateMessage}
       canSave={canSave}
       isSaving={saving}
       onSave={() => void onSave()}

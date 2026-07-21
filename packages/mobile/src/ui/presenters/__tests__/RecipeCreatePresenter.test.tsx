@@ -61,6 +61,10 @@ function render(over: Partial<RecipeCreatePresenterProps> = {}) {
     resolvingRowId: null,
     rowMessages: {},
     macroTotal: { kcal: 0, proteinG: 0, carbsG: 0, fatG: 0 },
+    macrosProvided: false,
+    onEstimateWholeRecipe: jest.fn(),
+    isEstimatingRecipe: false,
+    estimateRecipeMessage: null,
     canSave: false,
     isSaving: false,
     onSave: jest.fn(),
@@ -278,10 +282,55 @@ describe("RecipeCreatePresenter", () => {
     expect(getByTestId("recipe-create-macro-hint")).toBeTruthy();
   });
 
-  it("hides the no-macros hint once a row is linked", () => {
+  it("shows the no-macros hint even when a row is linked but the total is still 0 (unset quantity)", () => {
+    // Recipe-import macros fix: the hint tracks what the pills actually show,
+    // not merely "is a food linked" — a linked row with a 0/unset quantity
+    // still renders 0 macros.
+    const { getByTestId } = render({
+      rows: [row({ id: "row-0", foodId: "f1", foodName: "Chicken" })],
+      macroTotal: { kcal: 0, proteinG: 0, carbsG: 0, fatG: 0 },
+    });
+    expect(getByTestId("recipe-create-macro-hint")).toBeTruthy();
+  });
+
+  it("hides the no-macros hint once the macro total is non-zero", () => {
     const { queryByTestId } = render({
       rows: [row({ id: "row-0", foodId: "f1", foodName: "Chicken" })],
+      macroTotal: { kcal: 330, proteinG: 62, carbsG: 0, fatG: 7 },
     });
     expect(queryByTestId("recipe-create-macro-hint")).toBeNull();
+  });
+
+  it("shows the 'Estimate whole recipe with AI' button and fires onEstimateWholeRecipe", () => {
+    const { getByTestId, props } = render();
+    const btn = getByTestId("recipe-create-estimate-recipe");
+    fireEvent.press(btn);
+    expect(props.onEstimateWholeRecipe).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows Estimating… and disables the button while isEstimatingRecipe", () => {
+    const { getByText, props } = render({ isEstimatingRecipe: true });
+    expect(getByText("Estimating…")).toBeTruthy();
+    fireEvent.press(getByText("Estimating…"));
+    expect(props.onEstimateWholeRecipe).not.toHaveBeenCalled();
+  });
+
+  it("shows the whole-recipe-estimate caption when macrosProvided is true", () => {
+    const { getByTestId, queryByTestId } = render({ macrosProvided: true });
+    expect(getByTestId("recipe-create-macro-provided-caption")).toBeTruthy();
+    const { queryByTestId: queryByTestIdFalse } = render({
+      macrosProvided: false,
+    });
+    expect(
+      queryByTestIdFalse("recipe-create-macro-provided-caption"),
+    ).toBeNull();
+    expect(queryByTestId("recipe-create-macro-provided-caption")).toBeTruthy();
+  });
+
+  it("shows a whole-recipe AI failure message", () => {
+    const { getByTestId } = render({
+      estimateRecipeMessage: "Daily AI limit reached — it resets tomorrow.",
+    });
+    expect(getByTestId("recipe-create-estimate-recipe-message")).toBeTruthy();
   });
 });

@@ -49,6 +49,8 @@ export function RecipeImportContainer() {
           unit: null,
         })),
         source: "import",
+        nutrition: recipe.nutrition,
+        sourceUrl: recipe.sourceUrl,
       });
       router.replace("/(app)/fuel/recipe-create" as never);
       return;

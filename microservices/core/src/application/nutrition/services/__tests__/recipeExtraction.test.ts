@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import {
   extractRecipeFromPhoto,
   estimateFoodMacros,
+  estimateRecipeMacros,
 } from "../recipeExtraction";
 import { AiUnreadableError, AiUnavailableError } from "../aiBedrockClient";
 import type { MinimalBedrockClient } from "../aiBedrockClient";
@@ -55,6 +56,23 @@ function foodMacrosToolUseResponse(input: unknown) {
         name: "report_food_macros",
         input,
       },
+    ],
+  };
+}
+
+const VALID_RECIPE_MACROS_INPUT = {
+  kcal: 1200,
+  proteinG: 60,
+  carbsG: 140,
+  fatG: 40,
+  confidence: 0.7,
+};
+
+function recipeMacrosToolUseResponse(input: unknown) {
+  return {
+    stop_reason: "tool_use" as const,
+    content: [
+      { type: "tool_use" as const, name: "report_recipe_macros", input },
     ],
   };
 }
@@ -622,5 +640,123 @@ describe("estimateFoodMacros", () => {
     await expect(
       estimateFoodMacros({ name: "chicken thigh" }, { client }),
     ).rejects.toThrow(AiUnreadableError);
+  });
+});
+
+describe("estimateRecipeMacros", () => {
+  it("sends name + servings + ingredient lines with forced tool use, using AI_TEXT_MODEL_ID", async () => {
+    const create = vi
+      .fn()
+      .mockResolvedValue(
+        recipeMacrosToolUseResponse(VALID_RECIPE_MACROS_INPUT),
+      );
+    const client: MinimalBedrockClient = { messages: { create } };
+
+    await estimateRecipeMacros(
+      {
+        name: "Chicken Curry",
+        ingredients: ["500g chicken", "1 onion"],
+        servings: 4,
+      },
+      { client },
+    );
+
+    expect(create).toHaveBeenCalledTimes(1);
+    const [params] = create.mock.calls[0];
+    expect(params.model).toBe("eu.anthropic.claude-haiku-4-5-20251001-v1:0");
+    expect(params.tool_choice).toEqual({
+      type: "tool",
+      name: "report_recipe_macros",
+    });
+    const text = params.messages[0].content[0].text as string;
+    expect(text).toContain("Chicken Curry");
+    expect(text).toContain("Servings: 4");
+    expect(text).toContain("- 500g chicken");
+    expect(text).toContain("- 1 onion");
+  });
+
+  it("returns a well-typed EstimatedRecipeMacros on a happy parse", async () => {
+    const client = fakeClient(async () =>
+      recipeMacrosToolUseResponse(VALID_RECIPE_MACROS_INPUT),
+    );
+    const result = await estimateRecipeMacros(
+      { name: "Curry", ingredients: ["x"], servings: 2 },
+      { client },
+    );
+    expect(result).toEqual(VALID_RECIPE_MACROS_INPUT);
+  });
+
+  it("handles an empty ingredient list and omits the servings line", async () => {
+    const create = vi
+      .fn()
+      .mockResolvedValue(
+        recipeMacrosToolUseResponse(VALID_RECIPE_MACROS_INPUT),
+      );
+    const client: MinimalBedrockClient = { messages: { create } };
+
+    await estimateRecipeMacros(
+      { name: "Mystery", ingredients: [], servings: null },
+      { client },
+    );
+
+    const text = create.mock.calls[0][0].messages[0].content[0].text as string;
+    expect(text).toContain("(no ingredient list provided)");
+    expect(text).not.toContain("Servings:");
+  });
+
+  it("clamps negative macros to 0 and out-of-range confidence to [0,1]", async () => {
+    const client = fakeClient(async () =>
+      recipeMacrosToolUseResponse({
+        kcal: -50,
+        proteinG: 10,
+        carbsG: 20,
+        fatG: 5,
+        confidence: 1.4,
+      }),
+    );
+    const result = await estimateRecipeMacros(
+      { name: "R", ingredients: ["x"] },
+      { client },
+    );
+    expect(result.kcal).toBe(0);
+    expect(result.confidence).toBe(1);
+  });
+
+  it("throws AiUnreadableError when no tool_use block is present", async () => {
+    const client = fakeClient(async () => ({
+      stop_reason: "end_turn" as const,
+      content: [{ type: "text" as const, text: "nope" }],
+    }));
+    await expect(
+      estimateRecipeMacros({ name: "R", ingredients: ["x"] }, { client }),
+    ).rejects.toThrow(AiUnreadableError);
+  });
+
+  it("throws AiUnreadableError when the tool input is not an object", async () => {
+    const client = fakeClient(async () => recipeMacrosToolUseResponse(null));
+    await expect(
+      estimateRecipeMacros({ name: "R", ingredients: ["x"] }, { client }),
+    ).rejects.toThrow(AiUnreadableError);
+  });
+
+  it("rejects a non-finite macro (NaN kcal)", async () => {
+    const client = fakeClient(async () =>
+      recipeMacrosToolUseResponse({
+        ...VALID_RECIPE_MACROS_INPUT,
+        kcal: Number.NaN,
+      }),
+    );
+    await expect(
+      estimateRecipeMacros({ name: "R", ingredients: ["x"] }, { client }),
+    ).rejects.toThrow(AiUnreadableError);
+  });
+
+  it("throws AiUnavailableError when the model call keeps failing", async () => {
+    const client = fakeClient(async () => {
+      throw Object.assign(new Error("boom"), { status: 500 });
+    });
+    await expect(
+      estimateRecipeMacros({ name: "R", ingredients: ["x"] }, { client }),
+    ).rejects.toThrow(AiUnavailableError);
   });
 });

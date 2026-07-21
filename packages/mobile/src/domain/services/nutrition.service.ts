@@ -21,6 +21,7 @@ import type {
   NutritionTarget,
   Recipe,
 } from "@/domain/models/nutrition";
+import { servingScaleFactor } from "./units";
 
 export type MacroSum = {
   kcal: number;
@@ -656,20 +657,26 @@ export type RecipeDraftIngredientRow = {
   foodId: string | null;
   /** Absolute amount in the row's own unit (grams, ml, …); null = unset. */
   quantity: number | null;
+  /** The row's own unit (e.g. "g", "kg", "cups"); null/empty = unitless. */
+  unit: string | null;
 };
 
 /**
  * Client-side live macro total for the create-recipe form (`recipe-create`
- * route): sum of each LINKED row's food macros × quantity/servingSize.
- * Unlinked rows (no `foodId`) and rows with a null/non-positive quantity
- * contribute 0 — the presenter renders a "no macros — link a food" hint for
- * those rather than silently omitting them from the total.
+ * route): sum of each LINKED row's food macros × `servingScaleFactor` (mass-
+ * unit-aware scaling — see `./units`, which converts kg/oz/lb against a
+ * gram-based food serving exactly rather than naively dividing quantity by
+ * servingSize). Unlinked rows (no `foodId`) and rows with a null/non-positive
+ * quantity contribute 0 — the presenter renders a "no macros" hint for those
+ * rather than silently omitting them from the total.
  *
  * This REPLACES the prototype's fictional "auto-estimate macros" AI toggle:
- * there's no such backend capability — a recipe's macros are always derived
- * from its linked foods, exactly like `createRecipeCommand`'s optimistic
- * totals and the server's own materialisation on `POST /recipes`. Pure; no
- * rounding until the final sum (avoids compounding per-row rounding error).
+ * a recipe's macros are either derived from its linked foods (this function)
+ * or, when ingredients aren't linked, the whole-recipe AI estimate
+ * (`useEstimateRecipe`) / an imported page's scraped totals — both surfaced
+ * via `providedTotals` on the create form, bypassing this function entirely.
+ * Pure; no rounding until the final sum (avoids compounding per-row rounding
+ * error).
  */
 export function computeRecipeDraftMacros(
   rows: readonly RecipeDraftIngredientRow[],
@@ -682,8 +689,12 @@ export function computeRecipeDraftMacros(
       }
       const food = getFood(row.foodId);
       if (!food) return acc;
-      const size = food.servingSize > 0 ? food.servingSize : 100;
-      const factor = row.quantity / size;
+      const factor = servingScaleFactor(
+        row.quantity,
+        row.unit,
+        food.servingSize,
+        food.servingUnit,
+      );
       return {
         kcal: acc.kcal + food.kcal * factor,
         proteinG: acc.proteinG + food.proteinG * factor,

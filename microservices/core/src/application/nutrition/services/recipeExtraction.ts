@@ -43,6 +43,7 @@ const FOOD_MACROS_MAX_TOKENS = 400;
 
 const REPORT_RECIPE_TOOL_NAME = "report_recipe";
 const REPORT_FOOD_MACROS_TOOL_NAME = "report_food_macros";
+const REPORT_RECIPE_MACROS_TOOL_NAME = "report_recipe_macros";
 
 export type ExtractedIngredient = {
   name: string;
@@ -66,6 +67,14 @@ export type EstimatedFoodMacros = {
   proteinG: number;
   carbsG: number;
   fatG: number; // PER 100 g
+  confidence: number; // 0..1
+};
+
+export type EstimatedRecipeMacros = {
+  kcal: number;
+  proteinG: number;
+  carbsG: number;
+  fatG: number; // TOTAL for the whole recipe (all servings)
   confidence: number; // 0..1
 };
 
@@ -126,6 +135,23 @@ const REPORT_FOOD_MACROS_TOOL = {
   input_schema: REPORT_FOOD_MACROS_SCHEMA,
 };
 
+const REPORT_RECIPE_MACROS_SCHEMA = {
+  type: "object",
+  properties: {
+    kcal: { type: "number", minimum: 0 },
+    proteinG: { type: "number", minimum: 0 },
+    carbsG: { type: "number", minimum: 0 },
+    fatG: { type: "number", minimum: 0 },
+    confidence: { type: "number", minimum: 0, maximum: 1 },
+  },
+  required: ["kcal", "proteinG", "carbsG", "fatG", "confidence"],
+};
+
+const REPORT_RECIPE_MACROS_TOOL = {
+  name: REPORT_RECIPE_MACROS_TOOL_NAME,
+  input_schema: REPORT_RECIPE_MACROS_SCHEMA,
+};
+
 // ─── Prompts ─────────────────────────────────────────────────────────────
 
 const RECIPE_INSTRUCTIONS = `You are transcribing a recipe from a photographed DOCUMENT — a cookbook page, a printed recipe card, a screenshot of a recipe website or app, or handwritten notes. This is NOT a photo of food on a plate: do not estimate what food is being eaten or its portion size. READ and TRANSCRIBE what is written.
@@ -149,6 +175,15 @@ const FOOD_MACROS_INSTRUCTIONS = `You are a nutrition-estimation assistant. Give
 - confidence (0-1): your confidence in these values being representative of a generic version of this food — lower it if the name is ambiguous (it could plausibly refer to very different foods) or unfamiliar.
 
 Call the report_food_macros tool with your findings. Do not respond with plain text.`;
+
+const RECIPE_MACROS_INSTRUCTIONS = `You are a nutrition-estimation assistant. Given a recipe's name, its full ingredient list, and how many servings it makes, estimate the TOTAL macronutrients for the ENTIRE recipe as prepared — i.e. the sum across ALL servings combined, NOT per serving.
+
+- kcal, proteinG, carbsG, fatG: totals for the whole recipe (every serving added together). Interpret each ingredient's stated quantity/unit (e.g. "200g", "2 cups", "3 large eggs") and sum their contributions. If a quantity is missing or vague, assume a typical amount for that ingredient in this dish.
+- confidence (0-1): your confidence in the totals — lower it when quantities are missing/ambiguous or ingredients are unusual.
+
+Treat the servings count as context for sanity-checking the total's scale; still return the WHOLE-recipe total, not the per-serving figure.
+
+Call the report_recipe_macros tool with your findings. Do not respond with plain text.`;
 
 // ─── Public API ──────────────────────────────────────────────────────────
 
@@ -214,6 +249,48 @@ export async function estimateFoodMacros(
   if (!macros) {
     throw new AiUnreadableError(
       "ai_response_shape_invalid: report_food_macros input did not match EstimatedFoodMacros",
+    );
+  }
+  return macros;
+}
+
+export async function estimateRecipeMacros(
+  input: { name: string; ingredients: string[]; servings?: number | null },
+  deps: { client?: MinimalBedrockClient } = {},
+): Promise<EstimatedRecipeMacros> {
+  const client = deps.client ?? getDefaultClient();
+
+  const ingredientLines =
+    input.ingredients.length > 0
+      ? input.ingredients.map((i) => `- ${i}`).join("\n")
+      : "(no ingredient list provided)";
+  const servingsLine =
+    typeof input.servings === "number" && input.servings > 0
+      ? `\nServings: ${input.servings}`
+      : "";
+
+  const content: ContentBlockParam[] = [
+    {
+      type: "text",
+      text: `${RECIPE_MACROS_INSTRUCTIONS}\n\nRecipe: "${input.name}"${servingsLine}\nIngredients:\n${ingredientLines}`,
+    },
+  ];
+
+  const response = await createWithRetry(client, {
+    // A whole-recipe total from a name + ingredient list is the same "cheap
+    // text task" shape as the single-ingredient estimate — reuse that model.
+    model: FOOD_MACROS_MODEL_ID,
+    max_tokens: FOOD_MACROS_MAX_TOKENS,
+    messages: [{ role: "user", content }],
+    tools: [REPORT_RECIPE_MACROS_TOOL],
+    tool_choice: { type: "tool", name: REPORT_RECIPE_MACROS_TOOL_NAME },
+  });
+
+  const rawInput = findToolUse(response, REPORT_RECIPE_MACROS_TOOL_NAME);
+  const macros = validateRecipeMacrosShape(rawInput);
+  if (!macros) {
+    throw new AiUnreadableError(
+      "ai_response_shape_invalid: report_recipe_macros input did not match EstimatedRecipeMacros",
     );
   }
   return macros;
@@ -338,6 +415,37 @@ function validateFoodMacrosShape(input: unknown): EstimatedFoodMacros | null {
 
   return {
     name: obj.name,
+    kcal: clampNonNegative(obj.kcal as number),
+    proteinG: clampNonNegative(obj.proteinG as number),
+    carbsG: clampNonNegative(obj.carbsG as number),
+    fatG: clampNonNegative(obj.fatG as number),
+    confidence: clamp01(obj.confidence as number),
+  };
+}
+
+/**
+ * Validates the `report_recipe_macros` tool input against
+ * `EstimatedRecipeMacros` (whole-recipe totals; no `name` field). Same
+ * non-finite-rejects + clamp rules as `validateFoodMacrosShape`.
+ */
+function validateRecipeMacrosShape(
+  input: unknown,
+): EstimatedRecipeMacros | null {
+  if (typeof input !== "object" || input === null) return null;
+  const obj = input as Record<string, unknown>;
+
+  const numericFields = [
+    "kcal",
+    "proteinG",
+    "carbsG",
+    "fatG",
+    "confidence",
+  ] as const;
+  for (const field of numericFields) {
+    if (!Number.isFinite(obj[field])) return null;
+  }
+
+  return {
     kcal: clampNonNegative(obj.kcal as number),
     proteinG: clampNonNegative(obj.proteinG as number),
     carbsG: clampNonNegative(obj.carbsG as number),

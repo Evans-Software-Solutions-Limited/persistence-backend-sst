@@ -84,8 +84,10 @@ import type {
   CreateMealInput,
   CreateRecipeInput,
   EditEntryInput,
+  EstimatedRecipeMacros,
   EstimateFromPhotoInput,
   EstimateFromTextInput,
+  EstimateRecipeInput,
   ExtractedRecipe,
   ExtractRecipePhotoInput,
   Food,
@@ -1052,6 +1054,18 @@ export interface ApiPort {
   resolveIngredient(
     input: ResolveIngredientInput,
   ): Promise<Result<Food, ApiError>>;
+
+  /**
+   * Recipe-import macros fix — AI estimate of a recipe's WHOLE totals (as
+   * opposed to `resolveIngredient`'s single-ingredient resolve), used by the
+   * create-recipe form's "Estimate whole recipe with AI" action when the
+   * ingredients aren't (all) linked to foods
+   * (`POST /nutrition/ai/estimate-recipe`). Same gating / error-mapping
+   * contract as `resolveIngredient` (402/422/429/503).
+   */
+  estimateRecipe(
+    input: EstimateRecipeInput,
+  ): Promise<Result<EstimatedRecipeMacros, ApiError>>;
 
   // -- Client side of the coach↔client handshake (10-trainer-features) --
   /**

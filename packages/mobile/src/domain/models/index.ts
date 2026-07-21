@@ -147,6 +147,7 @@ export {
   type EntriesBySlot,
   type FuelToday,
   type ImportedRecipe,
+  type RecipeNutrition,
   type LogEntryInput,
   type EditEntryInput,
   type SetTargetsInput,
@@ -156,4 +157,6 @@ export {
   type MealItemInput,
   type CreateMealInput,
   type ResolveBarcodeResult,
+  type EstimateRecipeInput,
+  type EstimatedRecipeMacros,
 } from "./nutrition";

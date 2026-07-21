@@ -13,6 +13,7 @@ import {
   useCreateRecipe,
   useDeleteEntry,
   useEditEntry,
+  useEstimateRecipe,
   useExtractRecipePhoto,
   type ExtractRecipeResult,
   useGetFuelToday,
@@ -396,6 +397,30 @@ describe("mutation hooks (optimistic cache + queue drain)", () => {
     expect(storage.getCachedRecipes(USER)).toHaveLength(1);
   });
 
+  it("useCreateRecipe prefers input.providedTotals over the ingredient-derived sum", async () => {
+    const { storage, wrapper } = setup();
+    storage.cacheFoods([food]);
+    const { result } = renderHook(() => useCreateRecipe(), { wrapper });
+    await act(async () => {
+      const r = await result.current.mutate({
+        name: "Imported soup",
+        servings: 4,
+        // No linked ingredients (import free-text lines) — the derived sum
+        // would be 0, but providedTotals is authoritative.
+        ingredients: [
+          { customName: "Water", quantity: 1, unit: "", sortOrder: 0 },
+        ],
+        source: "url_import",
+        sourceUrl: "https://x.test/soup",
+        providedTotals: { kcal: 400, proteinG: 20, carbsG: 40, fatG: 8 },
+      });
+      expect(r?.totalKcal).toBe(400);
+      expect(r?.totalProteinG).toBe(20);
+      expect(r?.source).toBe("url_import");
+      expect(r?.sourceUrl).toBe("https://x.test/soup");
+    });
+  });
+
   it("useCreateMeal inserts an optimistic meal with provisional totals", async () => {
     const { storage, wrapper } = setup();
     storage.cacheFoods([food]);
@@ -505,6 +530,7 @@ describe("useImportRecipeUrl", () => {
       instructions: "Boil",
       ingredients: ["water"],
       sourceUrl: "",
+      nutrition: null,
     };
     const { result } = renderHook(() => useImportRecipeUrl(), { wrapper });
     let res;
@@ -623,6 +649,46 @@ describe("useResolveIngredient", () => {
       res = await result.current.mutate("Chicken breast");
     });
     expect(res).toBeNull();
+    expect(result.current.error?.status).toBe(429);
+  });
+});
+
+describe("useEstimateRecipe", () => {
+  it("returns the whole-recipe estimate on success", async () => {
+    const { api, wrapper } = setup();
+    const { result } = renderHook(() => useEstimateRecipe(), { wrapper });
+    let res: Awaited<ReturnType<typeof result.current.mutate>>;
+    await act(async () => {
+      res = await result.current.mutate({
+        name: "Chicken bowl",
+        ingredients: ["Chicken breast", "Rice"],
+        servings: 2,
+      });
+    });
+    expect(res!).toEqual(api.estimatedRecipeMacros);
+    expect(api.estimateRecipeCalls).toEqual([
+      {
+        name: "Chicken bowl",
+        ingredients: ["Chicken breast", "Rice"],
+        servings: 2,
+      },
+    ]);
+    expect(result.current.error).toBeNull();
+    expect(result.current.isEstimating).toBe(false);
+  });
+
+  it("returns null and surfaces the error on failure", async () => {
+    const { api, wrapper } = setup();
+    api.nextRecipeAiError = { status: 429, message: "ai_daily_limit" };
+    const { result } = renderHook(() => useEstimateRecipe(), { wrapper });
+    let res: Awaited<ReturnType<typeof result.current.mutate>>;
+    await act(async () => {
+      res = await result.current.mutate({
+        name: "Chicken bowl",
+        ingredients: ["Chicken breast"],
+      });
+    });
+    expect(res!).toBeNull();
     expect(result.current.error?.status).toBe(429);
   });
 });

@@ -24,22 +24,28 @@ export function useCreateRecipe(): {
   const mutate = useCallback(
     async (input: CreateRecipeInput) => {
       if (!userId) return null;
-      // Provisional client-side totals from linked foods × quantity.
-      const totals = input.ingredients.reduce(
-        (acc, ing) => {
-          const food = ing.foodId
-            ? storage.getCachedFoodById(ing.foodId)
-            : null;
-          if (!food) return acc;
-          return {
-            kcal: acc.kcal + food.kcal * ing.quantity,
-            proteinG: acc.proteinG + food.proteinG * ing.quantity,
-            carbsG: acc.carbsG + food.carbsG * ing.quantity,
-            fatG: acc.fatG + food.fatG * ing.quantity,
-          };
-        },
-        { kcal: 0, proteinG: 0, carbsG: 0, fatG: 0 },
-      );
+      // Recipe-import macros fix: a client-supplied whole-recipe total (import
+      // scrape or the whole-recipe AI estimate) is authoritative — prefer it
+      // over the ingredient-derived sum so the optimistic local recipe
+      // doesn't flash 0 macros while unlinked ingredient rows wait on the
+      // server round-trip to materialise them.
+      const totals =
+        input.providedTotals ??
+        input.ingredients.reduce(
+          (acc, ing) => {
+            const food = ing.foodId
+              ? storage.getCachedFoodById(ing.foodId)
+              : null;
+            if (!food) return acc;
+            return {
+              kcal: acc.kcal + food.kcal * ing.quantity,
+              proteinG: acc.proteinG + food.proteinG * ing.quantity,
+              carbsG: acc.carbsG + food.carbsG * ing.quantity,
+              fatG: acc.fatG + food.fatG * ing.quantity,
+            };
+          },
+          { kcal: 0, proteinG: 0, carbsG: 0, fatG: 0 },
+        );
       const recipe = createRecipeCommand(
         { storage, userId, idFactory: localIdFactory },
         input,

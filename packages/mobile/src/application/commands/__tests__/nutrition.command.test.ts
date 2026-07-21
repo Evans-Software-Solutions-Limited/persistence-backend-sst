@@ -492,10 +492,29 @@ describe("createRecipeCommand", () => {
     );
     expect(recipe.id).toBe("local-id1");
     expect(recipe.totalKcal).toBe(150);
+    expect(recipe.source).toBe("manual");
+    expect(recipe.sourceUrl).toBeNull();
     expect(storage.getCachedRecipe(USER, recipe.id)?.name).toBe("Bowl");
     const post = storage.getPendingMutations()[0];
     expect(post.endpoint).toBe("/recipes");
     expect(post.entityType).toBe("recipe");
+  });
+
+  it("carries input.source / input.sourceUrl through to the optimistic recipe", () => {
+    const storage = new InMemoryStorageAdapter();
+    const recipe = createRecipeCommand(
+      deps(storage),
+      {
+        name: "Soup",
+        servings: 4,
+        ingredients: [],
+        source: "url_import",
+        sourceUrl: "https://x.test/soup",
+      },
+      { kcal: 400, proteinG: 20, carbsG: 40, fatG: 8 },
+    );
+    expect(recipe.source).toBe("url_import");
+    expect(recipe.sourceUrl).toBe("https://x.test/soup");
   });
 });
 
