@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.6.0...persistence-v1.7.0) (2026-07-21)
+
+
+### Features
+
+* **recipes:** pull macros through import + whole-recipe AI estimate + unit-aware totals ([#289](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/289)) ([2bb4efc](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/2bb4efce2fe6ac911ab516df0bd4ee7e2523c5f3))
+
 ## [1.6.0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.5.0...persistence-v1.6.0) (2026-07-21)
 
 
