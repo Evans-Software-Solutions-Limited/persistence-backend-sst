@@ -3,6 +3,7 @@ import { Alert } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useAcceptInviteCode } from "@/ui/hooks/useTrainerInviteCodes";
 import { usePendingInvite } from "@/state/pending-invite";
+import { CONSENT_VERSION } from "@/domain/models/consent";
 import { AcceptInvitePresenter } from "@/ui/presenters/AcceptInvitePresenter";
 
 /**
@@ -18,6 +19,14 @@ import { AcceptInvitePresenter } from "@/ui/presenters/AcceptInvitePresenter";
  * You. Domain failures map the backend's `acceptCode` to inline copy
  * (NOT a paywall/upsell — `coach_client_limit_reached` is a plain client-
  * facing message, mirroring the backend's own framing).
+ *
+ * 26-coach-data-sharing-consent: redemption is the client's own action AND
+ * the point their data starts flowing to the coach (once accepted) — so it's
+ * the UK GDPR Art 9(2)(a) explicit-consent moment for this whole flow (the
+ * later coach accept needs no consent of its own). Tapping "Join" no longer
+ * redeems directly — it opens `<DataSharingConsentSheet>`; only confirming
+ * the sheet's affirmative, never-pre-ticked checkbox actually calls
+ * `accept.mutate`.
  */
 export function AcceptInviteContainer() {
   const router = useRouter();
@@ -26,6 +35,7 @@ export function AcceptInviteContainer() {
 
   const [code, setCode] = useState(() => (params.code ?? "").toUpperCase());
   const [errorMessage, setErrorMessage] = useState("");
+  const [consentVisible, setConsentVisible] = useState(false);
 
   // We've arrived on the redeem screen (the code, if any, is now in the URL) —
   // clear the auth-flow stash so it can't resurface on a later sign-in
@@ -39,12 +49,23 @@ export function AcceptInviteContainer() {
     else router.replace("/(app)/(tabs)/you");
   }, [router]);
 
-  const handleSubmit = useCallback(async () => {
+  // "Join" opens the consent sheet — it does NOT redeem the code itself.
+  const handleSubmit = useCallback(() => {
     setErrorMessage("");
+    if (code.trim() === "") return;
+    setConsentVisible(true);
+  }, [code]);
+
+  const onConsentClose = useCallback(() => {
+    setConsentVisible(false);
+  }, []);
+
+  const handleConsentConfirm = useCallback(async () => {
     const trimmed = code.trim();
     if (trimmed === "") return;
 
-    const result = await accept.mutate(trimmed);
+    const result = await accept.mutate(trimmed, true, CONSENT_VERSION);
+    setConsentVisible(false);
 
     if (result.ok) {
       const data = result.value;
@@ -78,6 +99,11 @@ export function AcceptInviteContainer() {
       case "coach_client_limit_reached":
         setErrorMessage("This coach's client list is full.");
         break;
+      case "consent_required":
+        // Should be unreachable — the sheet only confirms with consent:true —
+        // but typed defensively for a client/backend version mismatch.
+        setErrorMessage("Please confirm you agree to share your data.");
+        break;
       default:
         setErrorMessage(
           result.error.message ||
@@ -94,6 +120,9 @@ export function AcceptInviteContainer() {
       errorMessage={errorMessage}
       onSubmit={handleSubmit}
       onBack={onBack}
+      consentVisible={consentVisible}
+      onConsentClose={onConsentClose}
+      onConsentConfirm={handleConsentConfirm}
     />
   );
 }

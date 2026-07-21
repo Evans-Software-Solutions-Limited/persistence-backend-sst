@@ -208,7 +208,11 @@ describe("trainersRespondToRequestHandler", () => {
     const { trainersRespondToRequestHandler } =
       await import("../trainersRespondToRequestHandler");
     const res = await trainersRespondToRequestHandler.handle(
-      post("rel-1", { action: "accept" }),
+      post("rel-1", {
+        action: "accept",
+        consent: true,
+        consentVersion: "v1-2026-07",
+      }),
     );
     expect(res.status).toBe(409);
     const body = (await res.json()) as any;
@@ -241,7 +245,11 @@ describe("trainersRespondToRequestHandler", () => {
     const { trainersRespondToRequestHandler } =
       await import("../trainersRespondToRequestHandler");
     const res = await trainersRespondToRequestHandler.handle(
-      post("rel-1", { action: "accept" }),
+      post("rel-1", {
+        action: "accept",
+        consent: true,
+        consentVersion: "v1-2026-07",
+      }),
     );
     expect(res.status).toBe(404);
     const body = (await res.json()) as any;

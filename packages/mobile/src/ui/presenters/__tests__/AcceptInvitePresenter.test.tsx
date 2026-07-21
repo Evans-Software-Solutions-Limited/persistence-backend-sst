@@ -12,6 +12,9 @@ function baseProps(): AcceptInvitePresenterProps {
     errorMessage: "",
     onSubmit: jest.fn(),
     onBack: jest.fn(),
+    consentVisible: false,
+    onConsentClose: jest.fn(),
+    onConsentConfirm: jest.fn(),
   };
 }
 
@@ -81,5 +84,42 @@ describe("AcceptInvitePresenter", () => {
       getByTestId("accept-invite-submit").props.accessibilityState?.disabled,
     ).toBe(true);
     expect(getByTestId("accept-invite-code-input").props.editable).toBe(false);
+  });
+
+  // 26-coach-data-sharing-consent
+  describe("data-sharing consent sheet", () => {
+    it("does not render the consent sheet's confirm control until it's opened", () => {
+      const { queryByTestId } = renderWithTheme(
+        <AcceptInvitePresenter {...baseProps()} consentVisible={false} />,
+      );
+      expect(queryByTestId("accept-invite-consent-confirm")).toBeNull();
+    });
+
+    it("renders the consent sheet with an unticked checkbox and a disabled confirm when open", () => {
+      const { getByTestId } = renderWithTheme(
+        <AcceptInvitePresenter {...baseProps()} consentVisible />,
+      );
+      expect(
+        getByTestId("accept-invite-consent-checkbox").props.accessibilityState
+          ?.checked,
+      ).toBe(false);
+      expect(
+        getByTestId("accept-invite-consent-confirm").props.accessibilityState
+          ?.disabled,
+      ).toBe(true);
+    });
+
+    it("cannot confirm until the checkbox is ticked, then confirms with it ticked", () => {
+      const props = { ...baseProps(), consentVisible: true };
+      const { getByTestId } = renderWithTheme(
+        <AcceptInvitePresenter {...props} />,
+      );
+      fireEvent.press(getByTestId("accept-invite-consent-confirm"));
+      expect(props.onConsentConfirm).not.toHaveBeenCalled();
+
+      fireEvent.press(getByTestId("accept-invite-consent-checkbox"));
+      fireEvent.press(getByTestId("accept-invite-consent-confirm"));
+      expect(props.onConsentConfirm).toHaveBeenCalledTimes(1);
+    });
   });
 });

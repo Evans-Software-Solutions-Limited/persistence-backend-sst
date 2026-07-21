@@ -1,4 +1,4 @@
-import { render } from "@testing-library/react-native";
+import { act, render } from "@testing-library/react-native";
 import type { RequestsPresenterProps } from "@/ui/presenters/RequestsPresenter";
 import type { ClientTrainerRelationship } from "@/domain/models/clientRelationship";
 
@@ -118,12 +118,61 @@ describe("RequestsContainer", () => {
     expect(props().requests[0].relationshipId).toBe("rel-legacy");
   });
 
-  it("wires accept / decline to respond", () => {
+  it("wires decline straight to respond (no consent step)", () => {
     render(<RequestsContainer />);
-    props().onAccept("rel-1");
     props().onDecline("rel-2");
-    expect(mockRespond).toHaveBeenCalledWith("rel-1", "accept");
     expect(mockRespond).toHaveBeenCalledWith("rel-2", "decline");
+  });
+
+  // 26-coach-data-sharing-consent: accepting is no longer a direct call to
+  // `respond` — it opens the consent sheet, and only confirming the sheet
+  // calls `respond` with `consent:true` + the version.
+  describe("data-sharing consent gate on accept", () => {
+    it("onAccept opens the consent sheet WITHOUT calling respond", () => {
+      render(<RequestsContainer />);
+      expect(props().consentVisible).toBe(false);
+
+      act(() => {
+        props().onAccept("rel-1");
+      });
+
+      expect(props().consentVisible).toBe(true);
+      expect(mockRespond).not.toHaveBeenCalled();
+    });
+
+    it("onConsentConfirm calls respond with consent:true + CONSENT_VERSION for the accepted relationship, then closes the sheet", async () => {
+      render(<RequestsContainer />);
+      act(() => {
+        props().onAccept("rel-1");
+      });
+
+      await act(async () => {
+        await props().onConsentConfirm();
+      });
+
+      expect(mockRespond).toHaveBeenCalledWith(
+        "rel-1",
+        "accept",
+        true,
+        "v1-2026-07",
+      );
+      expect(props().consentVisible).toBe(false);
+    });
+
+    it("onConsentClose dismisses the sheet without calling respond", () => {
+      render(<RequestsContainer />);
+      act(() => {
+        props().onAccept("rel-1");
+      });
+      expect(props().consentVisible).toBe(true);
+
+      act(() => {
+        props().onConsentClose();
+      });
+
+      expect(props().consentVisible).toBe(false);
+      expect(mockRespond).not.toHaveBeenCalled();
+    });
   });
 
   it("goes back when possible", () => {

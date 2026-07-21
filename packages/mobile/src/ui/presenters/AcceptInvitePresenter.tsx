@@ -4,6 +4,7 @@ import { Text, View } from "@tamagui/core";
 import { Btn, HeaderBar, IconBtn } from "@/ui/components/foundation";
 import { toneHex } from "@/ui/components/foundation/tones";
 import { IconBack } from "@/ui/components/icons";
+import { DataSharingConsentSheet } from "@/ui/presenters/DataSharingConsentSheet";
 
 /**
  * <AcceptInvitePresenter> — the athlete's invite-code redeem screen (Coach
@@ -25,8 +26,14 @@ export type AcceptInvitePresenterProps = {
   isSubmitting: boolean;
   /** Inline domain-error copy (empty string = no error shown). */
   errorMessage: string;
+  /** Opens the consent sheet — does NOT redeem the code itself (see `onConsentConfirm`). */
   onSubmit: () => void;
   onBack: () => void;
+  /** 26-coach-data-sharing-consent: drives <DataSharingConsentSheet>, opened by `onSubmit`. */
+  consentVisible: boolean;
+  onConsentClose: () => void;
+  /** Only this actually redeems the code — see `AcceptInviteContainer`. */
+  onConsentConfirm: () => void;
 };
 
 export function AcceptInvitePresenter({
@@ -36,6 +43,9 @@ export function AcceptInvitePresenter({
   errorMessage,
   onSubmit,
   onBack,
+  consentVisible,
+  onConsentClose,
+  onConsentConfirm,
 }: AcceptInvitePresenterProps) {
   const insets = useSafeAreaInsets();
   const submitDisabled = code.trim() === "" || isSubmitting;
@@ -115,6 +125,14 @@ export function AcceptInvitePresenter({
           Join
         </Btn>
       </View>
+      <DataSharingConsentSheet
+        visible={consentVisible}
+        onClose={onConsentClose}
+        onConfirm={onConsentConfirm}
+        isSubmitting={isSubmitting}
+        confirmLabel="Join"
+        testIDPrefix="accept-invite"
+      />
     </View>
   );
 }

@@ -1744,6 +1744,11 @@ export class InMemoryApiAdapter implements ApiPort {
 
   /** Captures every `acceptTrainerInviteCode` request for assertions. */
   public acceptInviteCodeCalls: string[] = [];
+  /** Captures the consent/consentVersion args passed to `acceptTrainerInviteCode`. */
+  public acceptInviteCodeConsentCalls: {
+    consent: boolean;
+    consentVersion: string;
+  }[] = [];
   /** Next success value returned by `acceptTrainerInviteCode`. */
   public nextAcceptInviteCodeResult: AcceptInviteCodeResult = {
     success: true,
@@ -1763,8 +1768,11 @@ export class InMemoryApiAdapter implements ApiPort {
 
   async acceptTrainerInviteCode(
     code: string,
+    consent: boolean,
+    consentVersion: string,
   ): Promise<Result<AcceptInviteCodeResult, AcceptInviteCodeApiError>> {
     this.acceptInviteCodeCalls.push(code);
+    this.acceptInviteCodeConsentCalls.push({ consent, consentVersion });
     if (this.shouldFail) {
       return fail<AcceptInviteCodeApiError>(
         this.failError as AcceptInviteCodeApiError,
@@ -2291,6 +2299,8 @@ export class InMemoryApiAdapter implements ApiPort {
   public respondToRelationshipCalls: {
     relationshipId: string;
     action: RelationshipResponseAction;
+    consent?: boolean;
+    consentVersion?: string;
   }[] = [];
 
   async getClientRelationships(
@@ -2305,8 +2315,15 @@ export class InMemoryApiAdapter implements ApiPort {
   async respondToRelationship(
     relationshipId: string,
     action: RelationshipResponseAction,
+    consent?: boolean,
+    consentVersion?: string,
   ): Promise<Result<RelationshipResponseResult, ApiError>> {
-    this.respondToRelationshipCalls.push({ relationshipId, action });
+    this.respondToRelationshipCalls.push({
+      relationshipId,
+      action,
+      consent,
+      consentVersion,
+    });
     const result = this.mayFail<RelationshipResponseResult>({
       relationshipId,
       trainerId: "trainer-test",

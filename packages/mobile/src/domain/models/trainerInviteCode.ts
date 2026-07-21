@@ -48,13 +48,19 @@ export type AcceptInviteCodeResult = {
  *   - exists                   (409) — relationship already exists
  *   - code_already_used        (409) — single-use code already redeemed
  *   - coach_client_limit_reached (409) — the trainer's client-slot cap is full
+ *   - consent_required         (400) — 26-coach-data-sharing-consent: missing
+ *     `consent`/`consentVersion`. The UI gates this via the affirmative
+ *     checkbox in `<DataSharingConsentSheet>` before the call is ever made,
+ *     so this should be unreachable in practice — typed defensively for a
+ *     client/backend version mismatch.
  */
 export type AcceptInviteCodeErrorCode =
   | "invalid_code"
   | "self_invite"
   | "exists"
   | "code_already_used"
-  | "coach_client_limit_reached";
+  | "coach_client_limit_reached"
+  | "consent_required";
 
 /**
  * `ApiError` extended with the structured accept-invite-code domain `code`

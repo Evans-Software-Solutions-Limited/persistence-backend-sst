@@ -77,9 +77,36 @@ describe("useClientRelationships", () => {
       await result.current.respond("rel-1", "accept");
     });
 
-    expect(api.respondToRelationship).toHaveBeenCalledWith("rel-1", "accept");
+    expect(api.respondToRelationship).toHaveBeenCalledWith(
+      "rel-1",
+      "accept",
+      undefined,
+      undefined,
+    );
     expect(result.current.data).toHaveLength(0);
     expect(result.current.pendingIds.has("rel-1")).toBe(false);
+  });
+
+  it("threads consent/consentVersion through to the adapter on accept (26-coach-data-sharing-consent)", async () => {
+    const api: StubApi = {
+      getClientRelationships: jest.fn(async () => ok([rel()])),
+      respondToRelationship: jest.fn(async () => ok({})),
+    };
+    const { result } = renderHook(() => useClientRelationships("pending"), {
+      wrapper: wrapperFor(api),
+    });
+    await waitFor(() => expect(result.current.data).toHaveLength(1));
+
+    await act(async () => {
+      await result.current.respond("rel-1", "accept", true, "v1-2026-07");
+    });
+
+    expect(api.respondToRelationship).toHaveBeenCalledWith(
+      "rel-1",
+      "accept",
+      true,
+      "v1-2026-07",
+    );
   });
 
   it("respond keeps the row when the call fails", async () => {

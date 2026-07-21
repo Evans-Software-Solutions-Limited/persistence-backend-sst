@@ -17,6 +17,15 @@ vi.mock("../auditTrainerAction", () => ({
     auditTrainerAction(...(args as [])),
 }));
 
+// 26-coach-data-sharing-consent: recordDataSharingConsent is unit-tested on
+// its own (recordDataSharingConsent.test.ts) — mocked here so the teardown-tx
+// queue assertions stay focused on the relationship/assignment writes.
+const recordConsent = vi.fn(async () => {});
+vi.mock("../recordDataSharingConsent", () => ({
+  recordDataSharingConsent: (...args: unknown[]) =>
+    recordConsent(...(args as [])),
+}));
+
 /**
  * Thenable query-builder mock (one queue entry == one awaited query),
  * extended from trainersRespondToClientRequestHandler.test.ts's `executor`
@@ -123,6 +132,20 @@ describe("endCoachClientRelationship", () => {
     expect(setArgs.updatedAt).toBeInstanceOf(Date);
     expect(ex.where).toHaveBeenCalledTimes(3); // update + 2 deletes
 
+    // 26-coach-data-sharing-consent: withdrawal clears the current-consent
+    // stamp on the SAME update, and appends a `withdraw` row — source
+    // `coach_removed` for a trainer-initiated end.
+    expect(setArgs.consentGivenAt).toBeNull();
+    expect(setArgs.consentVersion).toBeNull();
+    expect(recordConsent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        trainerId: "trainer-1",
+        clientId: "client-1",
+        action: "withdraw",
+        source: "coach_removed",
+      }),
+    );
+
     // PgDialect render guard: prove the two DELETEs are scoped by the right
     // columns, not merely "some where clause ran" — a mocked builder would
     // pass this test even with clientId/trainerId swapped or dropped.
@@ -159,6 +182,16 @@ describe("endCoachClientRelationship", () => {
         payload: expect.objectContaining({ initiatedBy: "client" }),
       }),
     );
+    // 26-coach-data-sharing-consent: client-initiated end (Leave Coach) records
+    // source `leave_coach`, distinct from the trainer-initiated case above.
+    expect(recordConsent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        trainerId: "trainer-1",
+        clientId: "client-1",
+        action: "withdraw",
+        source: "leave_coach",
+      }),
+    );
   });
 
   it("404 when the soft-end UPDATE matches no row (not-active / not-yours / AI-trainer) — no deletes, no audit", async () => {
@@ -176,5 +209,6 @@ describe("endCoachClientRelationship", () => {
     expect(result).toEqual({ ok: false, status: 404 });
     expect(ex.delete).not.toHaveBeenCalled();
     expect(auditTrainerAction).not.toHaveBeenCalled();
+    expect(recordConsent).not.toHaveBeenCalled();
   });
 });
