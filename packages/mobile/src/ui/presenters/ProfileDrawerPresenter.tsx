@@ -251,14 +251,16 @@ export function ProfileDrawerPresenter({
         <DrawerRow
           icon={<IconMedal {...iconDefaults({ size: 16 })} />}
           title="Achievements"
-          // Count omitted until 06-progress-goals ships useGetAchievements.
+          // Badge the count of unlocked achievements once there's at least one;
+          // a fresh account (0 / undefined) keeps the neutral "View" framing to
+          // match the encouraging empty states on the screen itself.
           sub={
-            achievementsCount != null
-              ? `${achievementsCount} of 12 unlocked`
+            achievementsCount
+              ? `${achievementsCount} unlocked`
               : "View your achievements"
           }
           trailing={
-            achievementsCount != null ? (
+            achievementsCount ? (
               <Pill tone="gold" size="xs">
                 {String(achievementsCount)}
               </Pill>

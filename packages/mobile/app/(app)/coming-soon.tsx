@@ -53,11 +53,6 @@ const COPY = {
     description:
       "Health-app connections surface here once 07-health-integration ships its profile screen.",
   },
-  achievements: {
-    icon: "trophy-outline" as const,
-    title: "Achievements",
-    description: "Your achievements grid arrives with 06-progress-goals.",
-  },
   notifications: {
     icon: "notifications-outline" as const,
     title: "Notifications",

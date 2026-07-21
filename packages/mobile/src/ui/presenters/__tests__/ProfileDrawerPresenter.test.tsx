@@ -187,15 +187,22 @@ describe("ProfileDrawerPresenter", () => {
     expect(queryByTestId("health-connected-dot")).toBeNull();
   });
 
-  it("omits the achievements pill until a count is supplied", () => {
+  it("omits the achievements pill until there is a non-zero count", () => {
     const { queryByText, rerender } = renderDrawer({
       achievementsCount: undefined,
     });
-    // No "N of 12 unlocked" sub yet.
-    expect(queryByText(/of 12 unlocked/)).toBeNull();
+    // Undefined → neutral "View" framing, no unlocked badge.
+    expect(queryByText("View your achievements")).toBeTruthy();
+    expect(queryByText(/unlocked/)).toBeNull();
 
+    // Zero → still the neutral framing (fresh account, no "0" badge).
+    rerender(<ProfileDrawerPresenter {...baseProps} achievementsCount={0} />);
+    expect(queryByText("View your achievements")).toBeTruthy();
+    expect(queryByText(/unlocked/)).toBeNull();
+
+    // Non-zero → badge + "N unlocked".
     rerender(<ProfileDrawerPresenter {...baseProps} achievementsCount={3} />);
-    expect(queryByText("3 of 12 unlocked")).toBeTruthy();
+    expect(queryByText("3 unlocked")).toBeTruthy();
   });
 
   it("hides the Subscription section while subscription is unresolved", () => {

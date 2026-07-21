@@ -143,19 +143,14 @@ describe("TrainHubContainer", () => {
     expect(getByTestId("workouts-body")).toBeTruthy();
   });
 
-  it("shows a search action (not Create) on the Workouts segment", () => {
-    const { getByLabelText, queryByText } = renderWithTheme(
+  it("shows neither Create nor a search action on the Workouts segment", () => {
+    // Legacy has no header search icon on the workouts tab (it filtered via an
+    // inline SearchBar), so the Workouts segment header carries no action.
+    const { queryByLabelText, queryByText } = renderWithTheme(
       <TrainHubContainer />,
     );
-    expect(getByLabelText("Search workouts")).toBeTruthy();
+    expect(queryByLabelText("Search workouts")).toBeNull();
     expect(queryByText("Create")).toBeNull();
-  });
-
-  it("the Workouts-segment search action is pressable (no-op until 04 wires it)", () => {
-    const { getByLabelText } = renderWithTheme(<TrainHubContainer />);
-    // Placeholder handler — pressing must not throw or navigate.
-    fireEvent.press(getByLabelText("Search workouts"));
-    expect(mockPush).not.toHaveBeenCalled();
   });
 
   it("switches to Exercises: title, body, Create action + persists the segment", () => {

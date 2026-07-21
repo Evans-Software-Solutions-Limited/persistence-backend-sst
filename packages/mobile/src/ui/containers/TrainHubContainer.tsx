@@ -5,8 +5,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useTrainSegment } from "@/ui/hooks/useTrainSegment";
 import { useClientRelationships } from "@/ui/hooks/useClientRelationships";
-import { Btn, IconBtn, Segmented } from "@/ui/components/foundation";
-import { IconPlus, IconSearch } from "@/ui/components/icons";
+import { Btn, Segmented } from "@/ui/components/foundation";
+import { IconPlus } from "@/ui/components/icons";
 import { ExerciseListContainer } from "@/ui/containers/ExerciseListContainer";
 import { WorkoutsListContainer } from "@/ui/containers/WorkoutsListContainer";
 import { TrainOverviewContainer } from "@/ui/containers/TrainOverviewContainer";
@@ -86,11 +86,6 @@ export function TrainHubContainer() {
   // overlap the status bar (battery/clock).
   const insets = useSafeAreaInsets();
 
-  const openSearch = () => {
-    // TODO(04-workout-management § STORY-007): open the Exercises search
-    // sheet. Placeholder handler — the owning content wires the real one.
-  };
-
   return (
     <View flex={1} paddingTop={insets.top} testID="train-hub">
       {/* Hub header — inline flex-end row (prototype-hubs.jsx:15–33). */}
@@ -135,13 +130,6 @@ export function TrainHubContainer() {
           >
             Create
           </Btn>
-        ) : effectiveSegment === "Workouts" ? (
-          <IconBtn
-            icon={<IconSearch size={18} />}
-            tone="ghost"
-            onPress={openSearch}
-            accessibilityLabel="Search workouts"
-          />
         ) : null}
       </View>
 

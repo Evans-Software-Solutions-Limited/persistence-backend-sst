@@ -229,7 +229,7 @@ describe("WorkoutsListContainer", () => {
     expect(mockRouterPush).toHaveBeenCalledWith("/(app)/workouts/create");
   });
 
-  it("at-limit users see the indicator and Upgrade routes to subscription management", async () => {
+  it("at-limit users see the indicator and Upgrade routes to subscription selection", async () => {
     const storage = new InMemoryStorageAdapter();
     seedSlices(storage, {
       mine: [buildWorkout({ id: "w-1", name: "Push Day" })],
@@ -244,7 +244,7 @@ describe("WorkoutsListContainer", () => {
     expect(await findByText("Push Day")).toBeTruthy();
     fireEvent.press(await findByText("Upgrade Now"));
     expect(mockRouterPush).toHaveBeenCalledWith(
-      "/(app)/subscription-management",
+      "/(auth)/subscription-selection",
     );
   }, 30_000);
 

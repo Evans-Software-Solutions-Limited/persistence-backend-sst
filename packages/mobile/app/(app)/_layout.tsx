@@ -209,6 +209,15 @@ export default function AppLayout() {
           options={{ title: "Coming soon", headerShown: true }}
         />
         {/*
+          Go-live: real Achievements screen (was coming-soon?feature=
+          achievements). Same "no own HeaderBar, native header for the title
+          + back affordance" convention as coming-soon above.
+        */}
+        <Stack.Screen
+          name="achievements"
+          options={{ title: "Achievements", headerShown: true }}
+        />
+        {/*
           Cluster 2b account-deletion soft-delete: the restore-account gate.
           AuthGate (app/_layout.tsx) redirects here for a signed-in user
           whose profile carries a non-null `deletedAt`. No back affordance
