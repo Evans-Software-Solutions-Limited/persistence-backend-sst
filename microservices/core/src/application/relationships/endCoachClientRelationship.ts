@@ -73,6 +73,26 @@ export async function endCoachClientRelationship({
   initiatedBy,
 }: EndCoachClientRelationshipArgs): Promise<EndCoachClientRelationshipResult> {
   const outcome = await getDb().transaction(async (tx) => {
+    // Capture the version the client actually consented under BEFORE the update
+    // nulls it — an UPDATE ... SET consent_version = null ... RETURNING would
+    // return the (now-null) new value, so the append-only withdrawal record
+    // would otherwise be stamped with the current CONSENT_VERSION constant
+    // rather than the version the client granted (wrong once the constant bumps).
+    const current = await tx
+      .select({ consentVersion: ptClientRelationships.consentVersion })
+      .from(ptClientRelationships)
+      .where(
+        and(
+          eq(ptClientRelationships.trainerId, trainerId),
+          eq(ptClientRelationships.clientId, clientId),
+          eq(ptClientRelationships.status, "active"),
+          eq(ptClientRelationships.isAiTrainer, false),
+        ),
+      )
+      .limit(1);
+    const withdrawnConsentVersion =
+      current[0]?.consentVersion ?? CONSENT_VERSION;
+
     const updated = await tx
       .update(ptClientRelationships)
       .set({
@@ -143,7 +163,7 @@ export async function endCoachClientRelationship({
       trainerId,
       clientId,
       action: "withdraw",
-      consentVersion: CONSENT_VERSION,
+      consentVersion: withdrawnConsentVersion,
       source: initiatedBy === "client" ? "leave_coach" : "coach_removed",
       tx,
     });
