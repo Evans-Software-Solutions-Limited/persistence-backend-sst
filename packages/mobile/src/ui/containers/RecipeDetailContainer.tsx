@@ -6,7 +6,7 @@ import { useGetRecipe } from "@/ui/hooks/useGetRecipe";
 import { useLogEntry } from "@/ui/hooks/useLogEntry";
 import { useFuelSheets } from "@/state/fuel-sheets";
 import { localDayISO } from "@/shared/utils";
-import { defaultMealSlot } from "@/domain/services";
+import { defaultMealSlot, perServingDivisor } from "@/domain/services";
 import {
   RecipeDetailPresenter,
   type RecipeIngredientVM,
@@ -48,6 +48,14 @@ export function RecipeDetailContainer({ id }: { id: string }) {
           : r.source;
     return `${servingsLabel} · ${sourceLabel}`;
   }, [recipe.data]);
+
+  // Recipe `total_*` are WHOLE-recipe totals (one serving = total /
+  // servings) — the pills display per-serving so "N servings" doesn't read
+  // as a contradiction next to a whole-recipe kcal figure. Guards a
+  // zero/absent servings count by treating the recipe as a single serving.
+  const perServingDiv = perServingDivisor(recipe.data?.servings ?? null);
+  const perServingMacro = (total: number | null): number | null =>
+    total === null ? null : Math.round(total / perServingDiv);
 
   const ingredients: RecipeIngredientVM[] = useMemo(() => {
     const r = recipe.data;
@@ -94,10 +102,10 @@ export function RecipeDetailContainer({ id }: { id: string }) {
       name={recipe.data?.name ?? ""}
       emoji="🥘"
       secondaryLine={secondaryLine}
-      kcal={recipe.data?.totalKcal ?? null}
-      proteinG={recipe.data?.totalProteinG ?? null}
-      carbsG={recipe.data?.totalCarbsG ?? null}
-      fatG={recipe.data?.totalFatG ?? null}
+      kcal={perServingMacro(recipe.data?.totalKcal ?? null)}
+      proteinG={perServingMacro(recipe.data?.totalProteinG ?? null)}
+      carbsG={perServingMacro(recipe.data?.totalCarbsG ?? null)}
+      fatG={perServingMacro(recipe.data?.totalFatG ?? null)}
       ingredients={ingredients}
       instructions={recipe.data?.instructions ?? null}
       onLogToToday={() => void onLogToToday()}

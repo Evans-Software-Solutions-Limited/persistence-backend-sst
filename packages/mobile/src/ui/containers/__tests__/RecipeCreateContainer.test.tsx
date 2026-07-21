@@ -347,6 +347,40 @@ describe("RecipeCreateContainer", () => {
     expect(mockProbe.last?.macroTotal.proteinG).toBe(62);
   });
 
+  it("divides the displayed live macro total by servings once set", () => {
+    const { adapters, storage } = makeAdapters();
+    storage.cacheFoods([chicken]);
+    render(
+      <Wrapper adapters={adapters}>
+        <RecipeCreateContainer />
+      </Wrapper>,
+    );
+    const id = mockProbe.last!.rows[0].id;
+    act(() => mockProbe.last!.onLinkFood(id, chicken));
+    act(() => mockProbe.last!.onChangeRowQuantity(id, 200));
+    // 200g of a per-100g food → 330 kcal whole-recipe.
+    act(() => mockProbe.last!.onServingsChange(3));
+    expect(mockProbe.last?.macroTotal.kcal).toBe(110); // 330 / 3, rounded
+    expect(mockProbe.last?.macroTotal.proteinG).toBe(21); // 62 / 3, rounded
+  });
+
+  it("guards a zero/null servings value in the displayed macro total (whole total unchanged)", () => {
+    const { adapters, storage } = makeAdapters();
+    storage.cacheFoods([chicken]);
+    render(
+      <Wrapper adapters={adapters}>
+        <RecipeCreateContainer />
+      </Wrapper>,
+    );
+    const id = mockProbe.last!.rows[0].id;
+    act(() => mockProbe.last!.onLinkFood(id, chicken));
+    act(() => mockProbe.last!.onChangeRowQuantity(id, 200));
+    act(() => mockProbe.last!.onServingsChange(0));
+    expect(mockProbe.last?.macroTotal.kcal).toBe(330);
+    act(() => mockProbe.last!.onServingsChange(null));
+    expect(mockProbe.last?.macroTotal.kcal).toBe(330);
+  });
+
   it("canSave is false with no name, true once a name + a named/linked row exist", () => {
     const { adapters } = makeAdapters();
     render(
@@ -626,7 +660,7 @@ describe("RecipeCreateContainer", () => {
     );
   });
 
-  it("seeds providedTotals from an import seed's per-serving nutrition × servings", () => {
+  it("seeds providedTotals from an import seed's per-serving nutrition × servings, displayed back per-serving", () => {
     useRecipeDraft.getState().setSeed({
       title: "Soup",
       servings: 4,
@@ -642,11 +676,15 @@ describe("RecipeCreateContainer", () => {
         <RecipeCreateContainer />
       </Wrapper>,
     );
+    // The seed's per-serving nutrition (100/5/10/2) is scaled ×4 servings into
+    // `providedTotals` (whole-recipe, sent on save unchanged) — the DISPLAYED
+    // pill total divides that back down by servings, landing back on the
+    // original per-serving figures.
     expect(mockProbe.last?.macroTotal).toEqual({
-      kcal: 400,
-      proteinG: 20,
-      carbsG: 40,
-      fatG: 8,
+      kcal: 100,
+      proteinG: 5,
+      carbsG: 10,
+      fatG: 2,
     });
     expect(mockProbe.last?.macrosProvided).toBe(true);
   });

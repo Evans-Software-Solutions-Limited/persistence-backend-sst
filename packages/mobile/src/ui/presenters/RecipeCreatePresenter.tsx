@@ -531,7 +531,7 @@ export function RecipeCreatePresenter(props: RecipeCreatePresenterProps) {
             color="$text3"
             marginBottom={8}
           >
-            LIVE MACRO TOTAL
+            LIVE MACRO TOTAL · PER SERVING
           </Text>
           <View flexDirection="row" gap={8}>
             <Pill tone="gold" size="xs">{`${macroTotal.kcal} KCAL`}</Pill>

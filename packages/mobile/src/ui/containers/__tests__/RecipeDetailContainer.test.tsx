@@ -164,8 +164,12 @@ describe("RecipeDetailContainer", () => {
     await waitFor(() => expect(mockProbe.last?.found).toBe(true));
     expect(mockProbe.last?.name).toBe("Chicken & rice bowl");
     expect(mockProbe.last?.secondaryLine).toBe("2 servings · My recipe");
-    expect(mockProbe.last?.kcal).toBe(640);
-    expect(mockProbe.last?.proteinG).toBe(55);
+    // Recipe totals are WHOLE-recipe (640 kcal / 2 servings, 55g protein / 2)
+    // — the detail screen shows PER-SERVING macros.
+    expect(mockProbe.last?.kcal).toBe(320);
+    expect(mockProbe.last?.proteinG).toBe(28);
+    expect(mockProbe.last?.carbsG).toBe(35);
+    expect(mockProbe.last?.fatG).toBe(7);
     expect(mockProbe.last?.ingredients).toEqual([
       { id: "i1", label: "Chicken breast · 300 g" },
       { id: "i2", label: "Jasmine rice · 200 g" },
@@ -227,6 +231,52 @@ describe("RecipeDetailContainer", () => {
     await waitFor(() =>
       expect(mockProbe.last?.secondaryLine).toBe("1 serving · My recipe"),
     );
+  });
+
+  it("guards a zero servings count by treating the whole-recipe total as one serving", async () => {
+    const { adapters, api, storage } = makeAdapters();
+    storage.cacheRecipe(USER, buildRecipe({ servings: 0 }));
+    jest
+      .spyOn(api, "getRecipe")
+      .mockResolvedValue(
+        fail({ kind: "api", code: "server", message: "down", status: 500 }),
+      );
+
+    render(
+      <Wrapper adapters={adapters}>
+        <RecipeDetailContainer id="r1" />
+      </Wrapper>,
+    );
+
+    await waitFor(() => expect(mockProbe.last?.kcal).toBe(640));
+  });
+
+  it("passes through null macros unchanged (not yet materialised)", async () => {
+    const { adapters, api, storage } = makeAdapters();
+    storage.cacheRecipe(
+      USER,
+      buildRecipe({
+        totalKcal: null,
+        totalProteinG: null,
+        totalCarbsG: null,
+        totalFatG: null,
+      }),
+    );
+    jest
+      .spyOn(api, "getRecipe")
+      .mockResolvedValue(
+        fail({ kind: "api", code: "server", message: "down", status: 500 }),
+      );
+
+    render(
+      <Wrapper adapters={adapters}>
+        <RecipeDetailContainer id="r1" />
+      </Wrapper>,
+    );
+
+    await waitFor(() => expect(mockProbe.last?.found).toBe(true));
+    expect(mockProbe.last?.kcal).toBeNull();
+    expect(mockProbe.last?.proteinG).toBeNull();
   });
 
   it("falls back to the raw source label when it isn't 'manual' and there's no source URL", async () => {

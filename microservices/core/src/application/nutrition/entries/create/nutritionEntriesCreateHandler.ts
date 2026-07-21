@@ -1,6 +1,8 @@
 import Elysia, { t } from "elysia";
 import { NutritionEntryService } from "../../../repositories/nutritionEntryService";
 import { FoodService } from "../../../repositories/foodService";
+import { RecipeService } from "../../../repositories/recipeService";
+import { MealService } from "../../../repositories/mealService";
 import {
   getAuthUser,
   requireAuth,
@@ -10,12 +12,20 @@ import {
 /**
  * POST /nutrition/entries — log a food/recipe/meal entry into a meal slot.
  *
- * Macro authority: when `foodId` is supplied the server RE-DERIVES the macros
- * from the referenced `foods` row × servings (never trusts client math, per
- * BACKEND_BRIEF § 2). For a true one-off (no reference) the client-supplied
- * macros are used. recipe/meal references carry server-materialised totals
- * already, so their client-supplied macros are accepted in M9; full server-side
- * recipe/meal re-derivation lands with those repositories.
+ * Macro authority: the server RE-DERIVES macros from the referenced row ×
+ * servings and never trusts client math (BACKEND_BRIEF § 2):
+ * - `foodId` → the food's per-serving macros × `servings`.
+ * - `recipeId` → the recipe's PER-SERVING macros (`total_* / recipe.servings`)
+ *   × `servings`. A recipe stores whole-recipe totals, so logging N servings
+ *   is N portions of the dish, not N whole recipes.
+ * - `mealId` → the meal's total (a meal preset is itself one serving) ×
+ *   `servings`.
+ * Only a true one-off (no reference) uses client-supplied macros.
+ *
+ * Fixing this closed a production crash: recipe/meal logs sent only the ref +
+ * servings (no macros), the handler derived nothing for them, hit the
+ * "macros required" guard → 400, and the sync queue retried the permanent 400
+ * to exhaustion (`nutrition_entry/create` Sentry).
  */
 export const nutritionEntriesCreateHandler = new Elysia()
   .derive(async ({ headers }) => ({
@@ -24,6 +34,8 @@ export const nutritionEntriesCreateHandler = new Elysia()
   .onBeforeHandle(requireAuth)
   .use(NutritionEntryService)
   .use(FoodService)
+  .use(RecipeService)
+  .use(MealService)
   .post(
     "/nutrition/entries",
     async (ctx) => {
@@ -46,6 +58,35 @@ export const nutritionEntriesCreateHandler = new Elysia()
         proteinG = food.proteinG * body.servings;
         carbsG = food.carbsG * body.servings;
         fatG = food.fatG * body.servings;
+      } else if (body.recipeId) {
+        const recipe = await ctx.RecipeRepository.getById(
+          body.recipeId,
+          userId,
+        );
+        if (!recipe) {
+          ctx.set.status = 400;
+          return { error: "recipe_not_found" };
+        }
+        // Recipe totals are whole-recipe; a logged serving is one portion, so
+        // scale per-serving (total / recipe.servings) by the logged count. A
+        // 0/invalid servings count falls back to 1 to avoid divide-by-zero.
+        const perServing = recipe.servings > 0 ? recipe.servings : 1;
+        const factor = body.servings / perServing;
+        kcal = (recipe.totalKcal ?? 0) * factor;
+        proteinG = (recipe.totalProteinG ?? 0) * factor;
+        carbsG = (recipe.totalCarbsG ?? 0) * factor;
+        fatG = (recipe.totalFatG ?? 0) * factor;
+      } else if (body.mealId) {
+        const meal = await ctx.MealRepository.getById(body.mealId, userId);
+        if (!meal) {
+          ctx.set.status = 400;
+          return { error: "meal_not_found" };
+        }
+        // A saved meal preset is itself one serving — scale its total by count.
+        kcal = meal.totalKcal * body.servings;
+        proteinG = meal.totalProteinG * body.servings;
+        carbsG = meal.totalCarbsG * body.servings;
+        fatG = meal.totalFatG * body.servings;
       }
 
       if (

@@ -121,6 +121,187 @@ describe("processSyncQueue", () => {
     expect(captureSyncFailure).toHaveBeenCalledTimes(1);
   });
 
+  it("marks a permanent 4xx as permanently_failed on the FIRST attempt, reports once, never retries", async () => {
+    storage.enqueueMutation({
+      entityType: "nutrition_entry",
+      entityId: "local-e1",
+      operation: "create",
+      payload: { recipeId: "r1", mealSlot: "dinner", servings: 1 },
+      endpoint: "/nutrition/entries",
+      method: "POST",
+    });
+    const id = storage.getPendingMutations()[0].id;
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 400,
+      text: async () => "macros_required_for_custom_entry",
+    });
+
+    const result = await processSyncQueue(storage, auth, "https://api.test");
+
+    expect(result.failed).toBe(1);
+    // Terminal immediately — no retry budget burned, gone from the drain pool.
+    expect(storage.getPendingMutations()).toHaveLength(0);
+    const exhausted = storage.getFailedExhaustedEntries();
+    expect(exhausted).toHaveLength(1);
+    expect(exhausted[0].id).toBe(id);
+    expect(exhausted[0].status).toBe("permanently_failed");
+    expect(exhausted[0].retryCount).toBe(0); // never incremented
+    expect(captureSyncFailure).toHaveBeenCalledTimes(1);
+
+    // A second drain must NOT re-attempt it (no second fetch, no repeat report).
+    mockFetch.mockClear();
+    await processSyncQueue(storage, auth, "https://api.test");
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(captureSyncFailure).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps 401 retryable (transient auth blip), not permanently_failed", async () => {
+    storage.enqueueMutation({
+      entityType: "workout",
+      entityId: "w1",
+      operation: "create",
+      payload: { name: "Push" },
+      endpoint: "/workouts",
+      method: "POST",
+    });
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 401,
+      text: async () => "unauthorized",
+    });
+
+    await processSyncQueue(storage, auth, "https://api.test");
+
+    expect(storage.getPendingMutations()).toHaveLength(1);
+    expect(storage.getPendingMutations()[0].status).toBe("failed");
+    expect(storage.getFailedExhaustedEntries()).toHaveLength(0);
+    expect(captureSyncFailure).not.toHaveBeenCalled();
+  });
+
+  it("swaps a queued log's local recipeId when the recipe create flushes, so the log hits the real recipe", async () => {
+    // Offline batch: a recipe create + a log referencing its local id are both
+    // queued. FIFO: the recipe create flushes first and swaps the log's ref.
+    storage.enqueueMutation({
+      entityType: "recipe",
+      entityId: "local-r1",
+      operation: "create",
+      payload: { name: "Curry", servings: 4 },
+      endpoint: "/recipes",
+      method: "POST",
+    });
+    storage.enqueueMutation({
+      entityType: "nutrition_entry",
+      entityId: "local-e1",
+      operation: "create",
+      payload: { recipeId: "local-r1", mealSlot: "dinner", servings: 1 },
+      endpoint: "/nutrition/entries",
+      method: "POST",
+    });
+
+    const sentRecipeIds: unknown[] = [];
+    mockFetch.mockImplementation(async (url: string, opts) => {
+      const body = JSON.parse((opts as { body: string }).body);
+      if (url.endsWith("/recipes")) {
+        return { ok: true, json: async () => ({ data: { id: "srv-r1" } }) };
+      }
+      // The log POST: capture whatever recipeId it carried — must be the
+      // swapped server id, never the local one, or the server would 404.
+      sentRecipeIds.push(body.recipeId);
+      return { ok: true, json: async () => ({ data: { id: "srv-e1" } }) };
+    });
+
+    const result = await processSyncQueue(storage, auth, "https://api.test");
+
+    expect(result.succeeded).toBe(2);
+    expect(sentRecipeIds).toEqual(["srv-r1"]);
+    expect(storage.getPendingMutations()).toHaveLength(0);
+    expect(storage.getFailedExhaustedEntries()).toHaveLength(0);
+  });
+
+  it("keeps a 4xx on a log still referencing an unsynced local recipe id RETRYABLE (deferred), not permanently_failed", async () => {
+    // The recipe create hasn't succeeded yet (e.g. it failed this drain), so
+    // the log still points at the local id and 404s — that's deferred, not a
+    // permanent failure, so the next drain (after the swap lands) can succeed.
+    storage.enqueueMutation({
+      entityType: "nutrition_entry",
+      entityId: "local-e1",
+      operation: "create",
+      payload: { recipeId: "local-r1", mealSlot: "dinner", servings: 1 },
+      endpoint: "/nutrition/entries",
+      method: "POST",
+    });
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 400,
+      text: async () => "recipe_not_found",
+    });
+
+    await processSyncQueue(storage, auth, "https://api.test");
+
+    const pending = storage.getPendingMutations();
+    expect(pending).toHaveLength(1);
+    expect(pending[0].status).toBe("failed");
+    expect(storage.getFailedExhaustedEntries()).toHaveLength(0);
+    expect(captureSyncFailure).not.toHaveBeenCalled();
+  });
+
+  it("keeps 429 (and other transient statuses) on the retryable path", async () => {
+    storage.enqueueMutation({
+      entityType: "nutrition_entry",
+      entityId: "local-e2",
+      operation: "create",
+      payload: { foodId: "f1", mealSlot: "lunch", servings: 1 },
+      endpoint: "/nutrition/entries",
+      method: "POST",
+    });
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 429,
+      text: async () => "rate limited",
+    });
+
+    await processSyncQueue(storage, auth, "https://api.test");
+
+    // Still retryable: back in the pending pool with a burned retry, NOT
+    // permanently_failed, and no premature terminal report.
+    expect(storage.getPendingMutations()).toHaveLength(1);
+    expect(storage.getPendingMutations()[0].status).toBe("failed");
+    expect(storage.getFailedExhaustedEntries()).toHaveLength(0);
+    expect(captureSyncFailure).not.toHaveBeenCalled();
+  });
+
+  it("resetFailedEntries reopens a permanently_failed entry so a fix can resurrect it", async () => {
+    storage.enqueueMutation({
+      entityType: "nutrition_entry",
+      entityId: "local-e3",
+      operation: "create",
+      payload: { recipeId: "r1", mealSlot: "dinner", servings: 1 },
+      endpoint: "/nutrition/entries",
+      method: "POST",
+    });
+    const id = storage.getPendingMutations()[0].id;
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 400,
+      text: async () => "bad",
+    });
+    await processSyncQueue(storage, auth, "https://api.test");
+    expect(storage.getFailedExhaustedEntries()[0].status).toBe(
+      "permanently_failed",
+    );
+
+    // Simulate the Retry CTA after an app/server fix — now the POST succeeds.
+    storage.resetFailedEntries([id]);
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ data: { id: "e3" } }),
+    });
+    const result = await processSyncQueue(storage, auth, "https://api.test");
+    expect(result.succeeded).toBe(1);
+    expect(storage.getFailedExhaustedEntries()).toHaveLength(0);
+  });
+
   it("swaps a local workout id to the server id when its create flushes", async () => {
     const localWorkoutId = "local-1784398059991-45kx3l";
     const serverWorkoutId = "11111111-1111-4111-8111-111111111111";

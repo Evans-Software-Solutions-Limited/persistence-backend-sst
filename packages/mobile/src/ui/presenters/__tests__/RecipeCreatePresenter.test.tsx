@@ -265,6 +265,11 @@ describe("RecipeCreatePresenter", () => {
     expect(props.onCloseRowSearch).toHaveBeenCalledTimes(1);
   });
 
+  it("labels the macro total as per-serving", () => {
+    const { getByText } = render();
+    expect(getByText("LIVE MACRO TOTAL · PER SERVING")).toBeTruthy();
+  });
+
   it("shows the live macro total pills", () => {
     const { getByText } = render({
       macroTotal: { kcal: 640, proteinG: 55, carbsG: 70, fatG: 14 },

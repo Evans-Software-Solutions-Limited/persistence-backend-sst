@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { router } from "expo-router";
 import { useRecipeDraft } from "@/state/recipe-draft";
-import { computeRecipeDraftMacros, type MacroSum } from "@/domain/services";
+import {
+  computeRecipeDraftMacros,
+  perServingDivisor,
+  type MacroSum,
+} from "@/domain/services";
 import type {
   CreateRecipeInput,
   Food,
@@ -297,7 +301,18 @@ export function RecipeCreateContainer() {
   );
   // A whole-recipe total (import scrape or AI estimate) takes precedence over
   // the ingredient-derived sum — see `providedTotals` / `onEstimateWholeRecipe`.
-  const macroTotal = providedTotals ?? derivedMacroTotal;
+  const wholeRecipeMacroTotal = providedTotals ?? derivedMacroTotal;
+  // DISPLAY only: the pills show PER-SERVING macros (whole-recipe total ÷
+  // servings, guarded) so they read consistently with the recipe detail/
+  // library per-serving fix — the value actually POSTed on save
+  // (`providedTotals`, whole-recipe) is untouched.
+  const perServingDiv = perServingDivisor(servings);
+  const macroTotal: MacroSum = {
+    kcal: Math.round(wholeRecipeMacroTotal.kcal / perServingDiv),
+    proteinG: Math.round(wholeRecipeMacroTotal.proteinG / perServingDiv),
+    carbsG: Math.round(wholeRecipeMacroTotal.carbsG / perServingDiv),
+    fatG: Math.round(wholeRecipeMacroTotal.fatG / perServingDiv),
+  };
 
   const [estimateMessage, setEstimateMessage] = useState<string | null>(null);
   const pendingEstimateRef = useRef(false);

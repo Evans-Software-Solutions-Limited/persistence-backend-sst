@@ -12,6 +12,69 @@ import { pendingPreferenceOverrides } from "@/application/notifications/queries/
 import { parseEntitlementDeniedResponseText } from "@/shared/errors/parseEntitlement";
 import { captureSyncFailure } from "@/lib/sentry";
 
+/** A non-OK HTTP response from a sync POST/PUT/DELETE, carrying the status so
+ * the drain can classify permanent vs transient failures. */
+class SyncHttpError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = "SyncHttpError";
+  }
+}
+
+/**
+ * A permanent client error the drain must NOT retry: a 4xx that a re-send of
+ * the identical request can never turn into a 2xx (malformed body, missing
+ * ref, gone, conflict). Excluded (i.e. kept RETRYABLE):
+ * - 401 Unauthorized — the token is refreshed per-entry; a session-refresh
+ *   race right after reconnect (exactly when a batch drains) can send a
+ *   stale/absent token, and a retry with a fresh one succeeds. Marking it
+ *   permanent would strand every entry behind a momentary auth blip.
+ * - 403 Forbidden — can be transient in this app: a coach action queued while
+ *   role/subscription state is diverged (the coach-mode 403 trap) succeeds once
+ *   the entitlement trigger re-syncs.
+ * - 408 Request Timeout / 429 Too Many Requests — explicitly retry-worthy.
+ * - 402 — handled earlier as `blocked_entitlement`; a malformed 402 body
+ *   deliberately falls through to the transient path (never fabricate a verdict).
+ */
+function isPermanentClientError(status: number): boolean {
+  return (
+    status >= 400 &&
+    status < 500 &&
+    status !== 401 &&
+    status !== 402 &&
+    status !== 403 &&
+    status !== 408 &&
+    status !== 429
+  );
+}
+
+/**
+ * Does this payload still reference a dependency's `local-…` id (a recipe/
+ * meal/food/workout created offline-first that hasn't synced yet)? Such a
+ * reference resolves when the dependency's create flushes and its
+ * `swapLocal*Id` rewrites the STORED payload — but this drain already
+ * snapshotted the stale payload via `getPendingMutations()`, so the send in
+ * THIS pass still carries the local id and 4xxs (e.g. `recipe_not_found`).
+ * That failure is DEFERRED, not permanent: the next drain re-reads the
+ * now-swapped row and succeeds. So a 4xx here must stay retryable rather than
+ * become `permanently_failed` (which would strand it before the retry).
+ */
+function referencesUnsyncedLocalId(payload: string): boolean {
+  let body: Record<string, unknown>;
+  try {
+    body = JSON.parse(payload) as Record<string, unknown>;
+  } catch {
+    return false;
+  }
+  return (["recipeId", "mealId", "foodId", "workoutId"] as const).some((k) => {
+    const v = body[k];
+    return typeof v === "string" && v.startsWith("local-");
+  });
+}
+
 export type SyncResult = {
   processed: number;
   succeeded: number;
@@ -129,7 +192,10 @@ export async function processSyncQueue(
             continue;
           }
         }
-        throw new Error(`HTTP ${response.status}: ${body}`);
+        throw new SyncHttpError(
+          response.status,
+          `HTTP ${response.status}: ${body}`,
+        );
       }
 
       // M3 Phase 3b: capture the `/sessions/record` augmented response
@@ -260,6 +326,50 @@ export async function processSyncQueue(
         }
       }
 
+      // Recipe / meal create: a queued `POST /nutrition/entries` may have
+      // frozen this recipe's/meal's `local-…` id as its `recipeId`/`mealId`
+      // (user created it, then logged it before the create round-tripped). Swap
+      // the local id to the server id so that log hits the real row instead of
+      // 404ing (`recipe_not_found`/`meal_not_found`) → `permanently_failed`.
+      // Mirrors the workout→session-payload swap above.
+      if (
+        entry.entityType === "recipe" &&
+        entry.operation === "create" &&
+        entry.entityId !== null
+      ) {
+        try {
+          const body = (await response.json()) as { data?: { id?: string } };
+          const serverId = body.data?.id;
+          if (serverId && serverId !== entry.entityId) {
+            storage.swapLocalRecipeId(entry.entityId, serverId);
+          }
+        } catch (err) {
+          console.warn(
+            "[sync] POST /recipes succeeded but id-swap failed; a log created against this recipe may stay stuck until the next full refresh:",
+            err,
+          );
+        }
+      }
+
+      if (
+        entry.entityType === "meal" &&
+        entry.operation === "create" &&
+        entry.entityId !== null
+      ) {
+        try {
+          const body = (await response.json()) as { data?: { id?: string } };
+          const serverId = body.data?.id;
+          if (serverId && serverId !== entry.entityId) {
+            storage.swapLocalMealId(entry.entityId, serverId);
+          }
+        } catch (err) {
+          console.warn(
+            "[sync] POST /meals succeeded but id-swap failed; a log created against this meal may stay stuck until the next full refresh:",
+            err,
+          );
+        }
+      }
+
       // 09: a flushed `POST /notifications/preferences` echoes the
       // server's authoritative merged JSONB column (RETURNING). Reset the
       // local cache to it so an optimistic toggle that raced a concurrent
@@ -350,14 +460,34 @@ export async function processSyncQueue(
       succeeded++;
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";
+
+      // A permanent client error (4xx except 402/408/429) can never succeed on
+      // a re-send, so mark it terminally `permanently_failed` NOW — no retry
+      // budget burned, no "exhausted retries" masquerade. It still surfaces via
+      // getFailedExhaustedEntries + Sentry, and stays recoverable via the Retry
+      // CTA (resetFailedEntries) once a fix ships.
+      const isPermanent =
+        err instanceof SyncHttpError &&
+        isPermanentClientError(err.status) &&
+        // A 4xx on a mutation still pointing at an unsynced dependency's
+        // `local-…` id is deferred, not permanent — it resolves on the next
+        // drain once the dependency create's swapLocal*Id lands.
+        !referencesUnsyncedLocalId(entry.payload);
+
       // Terminal failure: this attempt exhausts the retry budget, so the drain
       // will never pick this entry up again (`getPendingMutations` gates on
       // `retry_count < max_retries`) — a silently-stuck mutation with no user
       // recovery path. Compute this BEFORE `markMutationFailed`: it reads
       // `entry.retryCount` as the snapshot value (pre-increment) for both the
       // SQLite adapter and the in-memory double (which mutates the live entry).
-      const isTerminalFailure = entry.retryCount + 1 >= entry.maxRetries;
-      storage.markMutationFailed(entry.id, message);
+      const isTerminalFailure =
+        isPermanent || entry.retryCount + 1 >= entry.maxRetries;
+
+      if (isPermanent) {
+        storage.markMutationPermanentlyFailed(entry.id, message);
+      } else {
+        storage.markMutationFailed(entry.id, message);
+      }
       failed++;
       // Report the terminal failure to Sentry so it isn't invisible (the
       // local-workout-id 500 went unseen for exactly this reason). Best-effort:

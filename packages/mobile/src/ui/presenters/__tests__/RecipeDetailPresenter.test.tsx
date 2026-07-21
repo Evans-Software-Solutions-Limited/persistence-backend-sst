@@ -38,6 +38,7 @@ describe("RecipeDetailPresenter", () => {
       "Chicken & rice bowl",
     );
     expect(getByText("2 servings · My recipe")).toBeTruthy();
+    expect(getByTestId("recipe-detail-per-serving-caption")).toBeTruthy();
     expect(getByText("640 KCAL")).toBeTruthy();
     expect(getByText("P 55G")).toBeTruthy();
     expect(getByText("C 70G")).toBeTruthy();
