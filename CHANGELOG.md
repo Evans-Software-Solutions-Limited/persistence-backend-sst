@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.6.0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.5.0...persistence-v1.6.0) (2026-07-21)
+
+
+### Features
+
+* **coaching:** coach data-sharing consent (spec 26) ([#287](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/287)) ([cb8c8c4](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/cb8c8c43582a0cb6f36667493f78cd0f320a57b9))
+* **coaching:** coach health-data read-audit (spec 27) ([#286](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/286)) ([e9c90ee](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/e9c90ee6e91bba36a7897c50fc9005a907f661fb))
+* **coaching:** coach↔client offboarding (bidirectional relationship end) ([#284](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/284)) ([3b64678](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/3b646782a654869479c55bd544a6303fdea4dd38))
+* **mobile:** achievements screen + paywall route fix + remove dead search (go-live) ([#285](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/285)) ([81c204e](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/81c204e3d16b117319ec7f8474adef5cd72b27a7))
+* **mobile:** add set-new-password screen to complete password recovery ([#278](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/278)) ([a44bd95](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/a44bd9530a349a9d6f440e4b761b0eba44143905))
+* **mobile:** consistent 14-day trial copy, derived from the intro offer ([#279](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/279)) ([db47971](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/db4797118f1010340073bf73e025b3016c8489f6))
+* **mobile:** handle persistencemobile://auth/callback deep link ([#277](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/277)) ([24338db](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/24338db7265c775cd0c2345ee0bcb6ef574a89ee))
+* **mobile:** iOS trial banner from RevenueCat eligibility + Contact Sales for annual business tiers ([#281](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/281)) ([b42b7fa](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/b42b7fad5aea422136e26711879e8be49f03ff2d))
+* **revenuecat:** surface cancelled-but-active state on the iOS rail ([#283](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/283)) ([59d0354](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/59d03549fe3d11b6e0f2ed066a67d5d175f29aa6))
+* **web:** add /auth/callback page for cross-device email confirmation ([#275](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/275)) ([45941ff](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/45941ffd94016751484b6cf30c82030adfeb674b))
+
+
+### Bug Fixes
+
+* **mobile:** bridge restored tier to success screen so restore doesn't lag on free ([#282](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/282)) ([4743eff](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/4743eff818c8cd516495896109c7bf6a80a55bec))
+* **revenuecat:** skip webhook events for users not in this backend ([#280](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/280)) ([ed7a6f1](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/ed7a6f113d09efb0d5e659b6bf718f2136d4a142))
+
 ## [1.5.0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.4.0...persistence-v1.5.0) (2026-07-19)
 
 
