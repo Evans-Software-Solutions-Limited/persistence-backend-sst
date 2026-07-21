@@ -107,10 +107,15 @@ describe("useAcceptInviteCode", () => {
       | Result<AcceptInviteCodeResult, AcceptInviteCodeApiError>
       | undefined;
     await act(async () => {
-      res = await result.current.mutate("AB23CD");
+      res = await result.current.mutate("AB23CD", true, "v1-2026-07");
     });
     expect(res?.ok).toBe(true);
     expect(api.acceptInviteCodeCalls).toEqual(["AB23CD"]);
+    // 26-coach-data-sharing-consent: consent/consentVersion are threaded
+    // through to the adapter call.
+    expect(api.acceptInviteCodeConsentCalls).toEqual([
+      { consent: true, consentVersion: "v1-2026-07" },
+    ]);
   });
 
   it.each([
@@ -129,7 +134,7 @@ describe("useAcceptInviteCode", () => {
       | Result<AcceptInviteCodeResult, AcceptInviteCodeApiError>
       | undefined;
     await act(async () => {
-      res = await result.current.mutate("BAD000");
+      res = await result.current.mutate("BAD000", true, "v1-2026-07");
     });
     expect(res?.ok).toBe(false);
     if (res && !res.ok) expect(res.error.acceptCode).toBe(code);

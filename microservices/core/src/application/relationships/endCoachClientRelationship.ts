@@ -6,6 +6,8 @@ import {
 } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
 import { auditTrainerAction } from "./auditTrainerAction";
+import { recordDataSharingConsent } from "./recordDataSharingConsent";
+import { CONSENT_VERSION } from "./consent";
 
 export interface EndCoachClientRelationshipArgs {
   trainerId: string;
@@ -54,6 +56,14 @@ function todayISODate(): string {
  * assignment only *references* a session (`completed_session_id`), so deleting
  * the assignment row never removes the session.
  *
+ * 26-coach-data-sharing-consent: this is ALSO the withdrawal mechanism —
+ * "withdraw as easily as granted" is made literally true by reusing this one
+ * teardown for both Leave Coach and Remove Client. Step 1's soft-end clears
+ * `consent_given_at`/`consent_version` to NULL on the SAME update (no extra
+ * query); step 4a appends a `data_sharing_consents` `withdraw` row, source
+ * `leave_coach` when `initiatedBy: "client"`, `coach_removed` when
+ * `initiatedBy: "trainer"`.
+ *
  * The best-effort counterparty notification is emitted by the CALLER
  * post-commit (the recipient flips by direction), never here.
  */
@@ -63,12 +73,36 @@ export async function endCoachClientRelationship({
   initiatedBy,
 }: EndCoachClientRelationshipArgs): Promise<EndCoachClientRelationshipResult> {
   const outcome = await getDb().transaction(async (tx) => {
+    // Capture the version the client actually consented under BEFORE the update
+    // nulls it — an UPDATE ... SET consent_version = null ... RETURNING would
+    // return the (now-null) new value, so the append-only withdrawal record
+    // would otherwise be stamped with the current CONSENT_VERSION constant
+    // rather than the version the client granted (wrong once the constant bumps).
+    const current = await tx
+      .select({ consentVersion: ptClientRelationships.consentVersion })
+      .from(ptClientRelationships)
+      .where(
+        and(
+          eq(ptClientRelationships.trainerId, trainerId),
+          eq(ptClientRelationships.clientId, clientId),
+          eq(ptClientRelationships.status, "active"),
+          eq(ptClientRelationships.isAiTrainer, false),
+        ),
+      )
+      .limit(1);
+    const withdrawnConsentVersion =
+      current[0]?.consentVersion ?? CONSENT_VERSION;
+
     const updated = await tx
       .update(ptClientRelationships)
       .set({
         status: "terminated",
         endDate: todayISODate(),
         updatedAt: new Date(),
+        // 26-coach-data-sharing-consent: withdrawal clears the current-consent
+        // stamp on the SAME update — no extra query.
+        consentGivenAt: null,
+        consentVersion: null,
       })
       .where(
         and(
@@ -118,6 +152,19 @@ export async function endCoachClientRelationship({
         programmesRemoved: programmes.length,
         workoutAssignmentsRemoved: assignments.length,
       },
+      tx,
+    });
+
+    // 26-coach-data-sharing-consent: append-only withdrawal record, same tx
+    // as the consent-stamp clear above. Source mirrors the direction: the
+    // client's own Leave Coach button IS the withdrawal action; a trainer-
+    // initiated removal also ends sharing, recorded distinctly.
+    await recordDataSharingConsent({
+      trainerId,
+      clientId,
+      action: "withdraw",
+      consentVersion: withdrawnConsentVersion,
+      source: initiatedBy === "client" ? "leave_coach" : "coach_removed",
       tx,
     });
 

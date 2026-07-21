@@ -1897,7 +1897,11 @@ describe("SSTApiAdapter Trainer invite-code / QR (Coach Mode Phase 8)", () => {
       });
 
       const adapter = new SSTApiAdapter();
-      const result = await adapter.acceptTrainerInviteCode("AB23CD");
+      const result = await adapter.acceptTrainerInviteCode(
+        "AB23CD",
+        true,
+        "v1-2026-07",
+      );
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.value.relationshipId).toBe("rel-1");
@@ -1906,7 +1910,13 @@ describe("SSTApiAdapter Trainer invite-code / QR (Coach Mode Phase 8)", () => {
         "/trainers/accept-invite-code",
       );
       const body = JSON.parse(fetchMock.mock.calls[0][1]?.body as string);
-      expect(body).toEqual({ code: "AB23CD" });
+      // 26-coach-data-sharing-consent: consent/consentVersion ride on the
+      // same POST body.
+      expect(body).toEqual({
+        code: "AB23CD",
+        consent: true,
+        consentVersion: "v1-2026-07",
+      });
     });
 
     it.each([
@@ -1915,6 +1925,7 @@ describe("SSTApiAdapter Trainer invite-code / QR (Coach Mode Phase 8)", () => {
       ["exists", 409],
       ["code_already_used", 409],
       ["coach_client_limit_reached", 409],
+      ["consent_required", 400],
     ] as const)(
       "stamps %s (status %d) onto AcceptInviteCodeApiError.acceptCode",
       async (code, status) => {
@@ -1926,7 +1937,11 @@ describe("SSTApiAdapter Trainer invite-code / QR (Coach Mode Phase 8)", () => {
         });
 
         const adapter = new SSTApiAdapter();
-        const result = await adapter.acceptTrainerInviteCode("BAD000");
+        const result = await adapter.acceptTrainerInviteCode(
+          "BAD000",
+          true,
+          "v1-2026-07",
+        );
         expect(result.ok).toBe(false);
         if (result.ok) return;
         expect(result.error.acceptCode).toBe(code);
@@ -1941,11 +1956,71 @@ describe("SSTApiAdapter Trainer invite-code / QR (Coach Mode Phase 8)", () => {
       });
 
       const adapter = new SSTApiAdapter();
-      const result = await adapter.acceptTrainerInviteCode("AB23CD");
+      const result = await adapter.acceptTrainerInviteCode(
+        "AB23CD",
+        true,
+        "v1-2026-07",
+      );
       expect(result.ok).toBe(false);
       if (result.ok) return;
       expect(result.error.code).toBe("network");
       expect(result.error.acceptCode).toBeUndefined();
+    });
+  });
+
+  describe("respondToRelationship", () => {
+    it("sends consent + consentVersion on the POST body when accepting (26-coach-data-sharing-consent)", async () => {
+      const fetchMock = installFetchMock(async () => {
+        return new Response(
+          JSON.stringify({
+            data: {
+              relationshipId: "rel-1",
+              trainerId: "trainer-1",
+              status: "active",
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      });
+
+      const adapter = new SSTApiAdapter();
+      const result = await adapter.respondToRelationship(
+        "rel-1",
+        "accept",
+        true,
+        "v1-2026-07",
+      );
+      expect(result.ok).toBe(true);
+      expect(String(fetchMock.mock.calls[0][0])).toContain(
+        "/clients/me/relationships/rel-1/respond",
+      );
+      const body = JSON.parse(fetchMock.mock.calls[0][1]?.body as string);
+      expect(body).toEqual({
+        action: "accept",
+        consent: true,
+        consentVersion: "v1-2026-07",
+      });
+    });
+
+    it("omits consent/consentVersion from the POST body when declining", async () => {
+      const fetchMock = installFetchMock(async () => {
+        return new Response(
+          JSON.stringify({
+            data: {
+              relationshipId: "rel-1",
+              trainerId: "trainer-1",
+              status: "terminated",
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      });
+
+      const adapter = new SSTApiAdapter();
+      const result = await adapter.respondToRelationship("rel-1", "decline");
+      expect(result.ok).toBe(true);
+      const body = JSON.parse(fetchMock.mock.calls[0][1]?.body as string);
+      expect(body).toEqual({ action: "decline" });
     });
   });
 

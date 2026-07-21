@@ -1587,13 +1587,22 @@ export class SSTApiAdapter implements ApiPort {
 
   async acceptTrainerInviteCode(
     code: string,
+    consent: boolean,
+    consentVersion: string,
   ): Promise<Result<AcceptInviteCodeResult, AcceptInviteCodeApiError>> {
     // Mirrors `inviteClient`'s `requestRaw` special-case: success is
     // `{ data: AcceptInviteCodeResult }`; a domain failure is a flat
     // `{ code, message }` body the adapter stamps onto `acceptCode`.
+    // 26-coach-data-sharing-consent: `consent`/`consentVersion` are REQUIRED
+    // by the backend on this call (400 `consent_required` otherwise) — the
+    // caller (`AcceptInviteContainer`, via `<DataSharingConsentSheet>`) has
+    // already gated this on the affirmative checkbox before invoking it.
     const result = await this.requestRaw<
       { data: AcceptInviteCodeResult } | { code: string; message: string }
-    >("/trainers/accept-invite-code", { method: "POST", body: { code } });
+    >("/trainers/accept-invite-code", {
+      method: "POST",
+      body: { code, consent, consentVersion },
+    });
     if (!result.ok) {
       return fail<AcceptInviteCodeApiError>(result.error);
     }
@@ -1825,10 +1834,21 @@ export class SSTApiAdapter implements ApiPort {
   async respondToRelationship(
     relationshipId: string,
     action: RelationshipResponseAction,
+    consent?: boolean,
+    consentVersion?: string,
   ): Promise<Result<RelationshipResponseResult, ApiError>> {
+    // 26-coach-data-sharing-consent: consent/consentVersion only matter (and
+    // are only sent) on "accept" — the backend 400s consent_required if
+    // they're missing there; "decline" needs neither.
     return this.requestEnvelope<RelationshipResponseResult>(
       `/clients/me/relationships/${relationshipId}/respond`,
-      { method: "POST", body: { action } },
+      {
+        method: "POST",
+        body:
+          action === "accept"
+            ? { action, consent, consentVersion }
+            : { action },
+      },
     );
   }
 

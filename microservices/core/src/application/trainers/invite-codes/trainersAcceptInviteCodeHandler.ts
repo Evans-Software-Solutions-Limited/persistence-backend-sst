@@ -18,12 +18,13 @@ import {
   evaluateTrainerJoinSeat,
   notifyTrainerClientLimitReached,
 } from "../seats/trainerSeats";
+import { recordDataSharingConsent } from "../../relationships/recordDataSharingConsent";
 
 /**
  * POST /trainers/accept-invite-code — client enters a trainer's invite code
  * to create a relationship. No trainer-role gate (this is the client action).
  *
- * Body: { code: string }
+ * Body: { code: string, consent: boolean, consentVersion: string }
  *
  * Validates the code is active + not expired, creates a pending relationship,
  * marks the code as used.
@@ -35,6 +36,15 @@ import {
  * pending INSERT), so the trainer would otherwise receive nothing. We emit a
  * `pt_request` / `physio_request` notification to the trainer here, AFTER the
  * transaction commits, so a rollback never leaves an orphan notification.
+ *
+ * 26-coach-data-sharing-consent: the CLIENT is the actor here, and the
+ * relationship only goes `active` LATER when the coach accepts — so consent
+ * must be captured at REDEMPTION, not at the coach's accept. `consent:true` +
+ * a non-empty `consentVersion` are REQUIRED — missing either 400s with
+ * `consent_required` before any DB work (the code is NOT consumed). On
+ * success, in the SAME transaction that creates/revives the pending row:
+ * stamp `consent_given_at`/`consent_version` and append a
+ * `data_sharing_consents` `grant` row (source `invite_code_redeem`).
  */
 /**
  * Discriminated result of the accept-invite-code transaction: either the
@@ -73,8 +83,24 @@ export const trainersAcceptInviteCodeHandler = new Elysia()
     async (ctx) => {
       const { sub: userId } = getUser(ctx);
       const db = getDb();
-      const { code } = ctx.body as { code: string };
+      const { code, consent, consentVersion } = ctx.body as {
+        code: string;
+        consent?: boolean;
+        consentVersion?: string;
+      };
       const normalizedCode = code.toUpperCase().trim();
+
+      // 26-coach-data-sharing-consent: redemption is the client's consent
+      // capture point. Reject BEFORE any DB work (no transaction started, the
+      // code stays unconsumed) if the client hasn't affirmatively consented.
+      if (!consent || !consentVersion) {
+        ctx.set.status = 400;
+        return {
+          code: "consent_required",
+          message:
+            "Explicit consent to share your data with this coach is required to connect.",
+        };
+      }
 
       const result = await db.transaction(
         async (tx): Promise<AcceptInviteCodeTxResult> => {
@@ -206,7 +232,9 @@ export const trainersAcceptInviteCodeHandler = new Elysia()
             };
           }
 
-          // Create or revive the relationship
+          // Create or revive the relationship. The consent stamp
+          // (consent_given_at/consent_version) rides along on this SAME
+          // insert/update — no extra query — validated non-empty above.
           let relationshipId: string;
           if (existingRel) {
             // Revive dormant relationship. Re-stamp initiated_by='client' — a
@@ -219,6 +247,8 @@ export const trainersAcceptInviteCodeHandler = new Elysia()
                 initiatedBy: "client",
                 endDate: null,
                 updatedAt: new Date(),
+                consentGivenAt: new Date(),
+                consentVersion,
               })
               .where(eq(ptClientRelationships.id, existingRel.id));
             relationshipId = existingRel.id;
@@ -235,10 +265,22 @@ export const trainersAcceptInviteCodeHandler = new Elysia()
                 status: "pending",
                 initiatedBy: "client",
                 relationshipReason: "Joined via invite code",
+                consentGivenAt: new Date(),
+                consentVersion,
               } as NewPtClientRelationship)
               .returning({ id: ptClientRelationships.id });
             relationshipId = inserted[0].id;
           }
+
+          // Append-only accountability log (spec 26) — same tx as the stamp.
+          await recordDataSharingConsent({
+            trainerId,
+            clientId: userId,
+            action: "grant",
+            consentVersion: consentVersion as string,
+            source: "invite_code_redeem",
+            tx,
+          });
 
           // Client display name for the trainer-facing notification copy.
           const clientRows = await tx
@@ -317,6 +359,12 @@ export const trainersAcceptInviteCodeHandler = new Elysia()
     {
       body: t.Object({
         code: t.String({ minLength: 1, maxLength: 10 }),
+        // Required (checked at runtime, not schema-level) — see
+        // 26-coach-data-sharing-consent above. Optional here so a
+        // missing/absent value 400s as `consent_required` rather than a
+        // generic 422 schema-validation error.
+        consent: t.Optional(t.Boolean()),
+        consentVersion: t.Optional(t.String()),
       }),
     },
   );

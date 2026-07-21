@@ -882,10 +882,20 @@ export interface ApiPort {
    * `{ code, message }` body — the adapter surfaces `code` on
    * `AcceptInviteCodeApiError.acceptCode` (mirrors `InviteApiError`):
    * invalid_code (404) | self_invite (400) | exists (409) |
-   * code_already_used (409) | coach_client_limit_reached (409).
+   * code_already_used (409) | coach_client_limit_reached (409) |
+   * consent_required (400).
+   *
+   * 26-coach-data-sharing-consent: `consent`/`consentVersion` are REQUIRED —
+   * the redeem is the client's own action, so this is the consent-capture
+   * point for the whole client-initiated handshake (the later coach accept,
+   * `respondToClientRelationship`, needs no consent of its own). Callers
+   * MUST route through `<DataSharingConsentSheet>`'s affirmative checkbox
+   * before calling this — see `AcceptInviteContainer`.
    */
   acceptTrainerInviteCode(
     code: string,
+    consent: boolean,
+    consentVersion: string,
   ): Promise<Result<AcceptInviteCodeResult, AcceptInviteCodeApiError>>;
 
   /**
@@ -1062,10 +1072,19 @@ export interface ApiPort {
    * the relationship to `active` (the backend trigger then notifies the
    * trainer); decline terminates it. 404 when no pending row matches (not
    * owned / already actioned).
+   *
+   * 26-coach-data-sharing-consent: `consent`/`consentVersion` are REQUIRED
+   * when `action === "accept"` — the backend 400s `consent_required`
+   * otherwise (nothing activated). Omitted for `decline` (nothing is being
+   * shared). Callers MUST route accept through
+   * `<DataSharingConsentSheet>`'s affirmative checkbox before calling this
+   * with `action: "accept"` — see `RequestsContainer`.
    */
   respondToRelationship(
     relationshipId: string,
     action: RelationshipResponseAction,
+    consent?: boolean,
+    consentVersion?: string,
   ): Promise<Result<RelationshipResponseResult, ApiError>>;
 
   /**

@@ -18,10 +18,17 @@ export type ClientRelationshipsState = {
    * Accept/decline a pending request. On success the row is removed from the
    * local list optimistically (it has left the queried set). Returns the
    * Result so the caller can surface errors.
+   *
+   * 26-coach-data-sharing-consent: `consent`/`consentVersion` are REQUIRED
+   * when `action === "accept"` (the backend 400s `consent_required`
+   * otherwise) — the caller must route accept through
+   * `<DataSharingConsentSheet>`'s affirmative checkbox first.
    */
   respond: (
     relationshipId: string,
     action: RelationshipResponseAction,
+    consent?: boolean,
+    consentVersion?: string,
   ) => Promise<Result<unknown, ApiError>>;
   /** relationshipIds with an in-flight respond() call (for per-row busy UI). */
   pendingIds: ReadonlySet<string>;
@@ -67,9 +74,19 @@ export function useClientRelationships(
   const refresh = useCallback(() => load("refresh"), [load]);
 
   const respond = useCallback(
-    async (relationshipId: string, action: RelationshipResponseAction) => {
+    async (
+      relationshipId: string,
+      action: RelationshipResponseAction,
+      consent?: boolean,
+      consentVersion?: string,
+    ) => {
       setPendingIds((prev) => new Set(prev).add(relationshipId));
-      const result = await api.respondToRelationship(relationshipId, action);
+      const result = await api.respondToRelationship(
+        relationshipId,
+        action,
+        consent,
+        consentVersion,
+      );
       if (result.ok) {
         // The row has left the pending/active query set — drop it locally.
         setData((prev) =>

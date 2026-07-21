@@ -48,12 +48,20 @@ export function useCreateInviteCode(): {
  * Redeem a trainer's invite code as the current (client) user
  * (`POST /trainers/accept-invite-code`). On a domain failure the returned
  * `AcceptInviteCodeApiError` carries `acceptCode` (invalid_code |
- * self_invite | exists | code_already_used | coach_client_limit_reached)
- * so the redeem screen can map it to copy without string-matching.
+ * self_invite | exists | code_already_used | coach_client_limit_reached |
+ * consent_required) so the redeem screen can map it to copy without
+ * string-matching.
+ *
+ * 26-coach-data-sharing-consent: `consent`/`consentVersion` are REQUIRED —
+ * the caller (`AcceptInviteContainer`) must route through
+ * `<DataSharingConsentSheet>`'s affirmative checkbox before calling
+ * `mutate`.
  */
 export function useAcceptInviteCode(): {
   mutate: (
     code: string,
+    consent: boolean,
+    consentVersion: string,
   ) => Promise<Result<AcceptInviteCodeResult, AcceptInviteCodeApiError>>;
   isPending: boolean;
 } {
@@ -61,10 +69,10 @@ export function useAcceptInviteCode(): {
   const [isPending, setIsPending] = useState(false);
 
   const mutate = useCallback(
-    async (code: string) => {
+    async (code: string, consent: boolean, consentVersion: string) => {
       setIsPending(true);
       try {
-        return await api.acceptTrainerInviteCode(code);
+        return await api.acceptTrainerInviteCode(code, consent, consentVersion);
       } finally {
         setIsPending(false);
       }

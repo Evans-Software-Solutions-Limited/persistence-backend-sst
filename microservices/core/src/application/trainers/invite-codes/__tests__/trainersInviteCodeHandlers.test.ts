@@ -55,6 +55,16 @@ vi.mock("../../seats/trainerSeats", () => ({
     notifyLimitReached(...(args as [])),
 }));
 
+// 26-coach-data-sharing-consent: recordDataSharingConsent is unit-tested on
+// its own (recordDataSharingConsent.test.ts) — mocked here so the accept-tx
+// queue assertions stay focused on the relationship write, not the insert
+// plumbing (mirrors trainersRelationshipsHandlers.test.ts).
+const recordConsent = vi.fn(async () => {});
+vi.mock("../../../relationships/recordDataSharingConsent", () => ({
+  recordDataSharingConsent: (...args: unknown[]) =>
+    recordConsent(...(args as [])),
+}));
+
 const auth = {
   authorization: "Bearer token",
   "Content-Type": "application/json",
@@ -344,12 +354,38 @@ describe("trainersAcceptInviteCodeHandler", () => {
     expect(res.status).toBe(401);
   });
 
+  it("400 consent_required when redeeming without consent — code NOT consumed", async () => {
+    (getDb as any).mockReturnValue(txDb([]));
+    const { trainersAcceptInviteCodeHandler } =
+      await import("../trainersAcceptInviteCodeHandler");
+    const res = await trainersAcceptInviteCodeHandler.handle(
+      post({ code: "ABC123", consentVersion: "v1-2026-07" }),
+    );
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as any;
+    expect(body.code).toBe("consent_required");
+    expect(recordConsent).not.toHaveBeenCalled();
+  });
+
+  it("400 consent_required when redeeming without a consentVersion — code NOT consumed", async () => {
+    (getDb as any).mockReturnValue(txDb([]));
+    const { trainersAcceptInviteCodeHandler } =
+      await import("../trainersAcceptInviteCodeHandler");
+    const res = await trainersAcceptInviteCodeHandler.handle(
+      post({ code: "ABC123", consent: true }),
+    );
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as any;
+    expect(body.code).toBe("consent_required");
+    expect(recordConsent).not.toHaveBeenCalled();
+  });
+
   it("404 for an invalid / expired code", async () => {
     (getDb as any).mockReturnValue(txDb([[]])); // no code found
     const { trainersAcceptInviteCodeHandler } =
       await import("../trainersAcceptInviteCodeHandler");
     const res = await trainersAcceptInviteCodeHandler.handle(
-      post({ code: "NOPE12" }),
+      post({ code: "NOPE12", consent: true, consentVersion: "v1-2026-07" }),
     );
     expect(res.status).toBe(404);
     const body = (await res.json()) as any;
@@ -363,7 +399,7 @@ describe("trainersAcceptInviteCodeHandler", () => {
     const { trainersAcceptInviteCodeHandler } =
       await import("../trainersAcceptInviteCodeHandler");
     const res = await trainersAcceptInviteCodeHandler.handle(
-      post({ code: "ABC123" }),
+      post({ code: "ABC123", consent: true, consentVersion: "v1-2026-07" }),
     );
     expect(res.status).toBe(400);
     const body = (await res.json()) as any;
@@ -380,7 +416,7 @@ describe("trainersAcceptInviteCodeHandler", () => {
     const { trainersAcceptInviteCodeHandler } =
       await import("../trainersAcceptInviteCodeHandler");
     const res = await trainersAcceptInviteCodeHandler.handle(
-      post({ code: "ABC123" }),
+      post({ code: "ABC123", consent: true, consentVersion: "v1-2026-07" }),
     );
     expect(res.status).toBe(409);
     const body = (await res.json()) as any;
@@ -400,7 +436,7 @@ describe("trainersAcceptInviteCodeHandler", () => {
     const { trainersAcceptInviteCodeHandler } =
       await import("../trainersAcceptInviteCodeHandler");
     const res = await trainersAcceptInviteCodeHandler.handle(
-      post({ code: "ABC123" }),
+      post({ code: "ABC123", consent: true, consentVersion: "v1-2026-07" }),
     );
     expect(res.status).toBe(409);
     const body = (await res.json()) as any;
@@ -422,13 +458,23 @@ describe("trainersAcceptInviteCodeHandler", () => {
     const { trainersAcceptInviteCodeHandler } =
       await import("../trainersAcceptInviteCodeHandler");
     const res = await trainersAcceptInviteCodeHandler.handle(
-      post({ code: "ABC123" }),
+      post({ code: "ABC123", consent: true, consentVersion: "v1-2026-07" }),
     );
     expect(res.status).toBe(201);
     const body = (await res.json()) as any;
     expect(body.data.success).toBe(true);
     expect(body.data.relationshipId).toBe("rel-new");
     expect(body.data.trainerName).toBe("Coach Carter");
+    // 26-coach-data-sharing-consent: grant recorded in the same tx as redemption.
+    expect(recordConsent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        trainerId: "trainer-1",
+        clientId: "user-id",
+        action: "grant",
+        consentVersion: "v1-2026-07",
+        source: "invite_code_redeem",
+      }),
+    );
   });
 
   it("notifies the trainer of the new request on success", async () => {
@@ -445,7 +491,9 @@ describe("trainersAcceptInviteCodeHandler", () => {
     );
     const { trainersAcceptInviteCodeHandler } =
       await import("../trainersAcceptInviteCodeHandler");
-    await trainersAcceptInviteCodeHandler.handle(post({ code: "ABC123" }));
+    await trainersAcceptInviteCodeHandler.handle(
+      post({ code: "ABC123", consent: true, consentVersion: "v1-2026-07" }),
+    );
 
     expect(notificationCreate).toHaveBeenCalledTimes(1);
     expect(notificationCreate).toHaveBeenCalledWith(
@@ -473,7 +521,9 @@ describe("trainersAcceptInviteCodeHandler", () => {
     });
     const { trainersAcceptInviteCodeHandler } =
       await import("../trainersAcceptInviteCodeHandler");
-    await trainersAcceptInviteCodeHandler.handle(post({ code: "ABC123" }));
+    await trainersAcceptInviteCodeHandler.handle(
+      post({ code: "ABC123", consent: true, consentVersion: "v1-2026-07" }),
+    );
 
     expect(ex.values).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -481,6 +531,9 @@ describe("trainersAcceptInviteCodeHandler", () => {
         clientId: "user-id",
         status: "pending",
         initiatedBy: "client",
+        // 26-coach-data-sharing-consent: the stamp rides the same insert.
+        consentGivenAt: expect.any(Date),
+        consentVersion: "v1-2026-07",
       }),
     );
   });
@@ -499,7 +552,9 @@ describe("trainersAcceptInviteCodeHandler", () => {
     );
     const { trainersAcceptInviteCodeHandler } =
       await import("../trainersAcceptInviteCodeHandler");
-    await trainersAcceptInviteCodeHandler.handle(post({ code: "ABC123" }));
+    await trainersAcceptInviteCodeHandler.handle(
+      post({ code: "ABC123", consent: true, consentVersion: "v1-2026-07" }),
+    );
 
     expect(notificationCreate).toHaveBeenCalledWith(
       "trainer-1",
@@ -523,7 +578,7 @@ describe("trainersAcceptInviteCodeHandler", () => {
     const { trainersAcceptInviteCodeHandler } =
       await import("../trainersAcceptInviteCodeHandler");
     const res = await trainersAcceptInviteCodeHandler.handle(
-      post({ code: "ABC123" }),
+      post({ code: "ABC123", consent: true, consentVersion: "v1-2026-07" }),
     );
     expect(res.status).toBe(201);
   });
@@ -544,11 +599,21 @@ describe("trainersAcceptInviteCodeHandler", () => {
     const { trainersAcceptInviteCodeHandler } =
       await import("../trainersAcceptInviteCodeHandler");
     const res = await trainersAcceptInviteCodeHandler.handle(
-      post({ code: "ABC123" }),
+      post({ code: "ABC123", consent: true, consentVersion: "v1-2026-07" }),
     );
     expect(res.status).toBe(201);
     const body = (await res.json()) as any;
     expect(body.data.relationshipId).toBe("rel-old");
+    // 26-coach-data-sharing-consent: grant recorded on the revive path too.
+    expect(recordConsent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        trainerId: "trainer-1",
+        clientId: "user-id",
+        action: "grant",
+        consentVersion: "v1-2026-07",
+        source: "invite_code_redeem",
+      }),
+    );
   });
 
   it("409 coach_client_limit_reached when the trainer is at cap — code NOT claimed, trainer notified (client actor → NOT a 402)", async () => {
@@ -572,7 +637,7 @@ describe("trainersAcceptInviteCodeHandler", () => {
     const { trainersAcceptInviteCodeHandler } =
       await import("../trainersAcceptInviteCodeHandler");
     const res = await trainersAcceptInviteCodeHandler.handle(
-      post({ code: "ABC123" }),
+      post({ code: "ABC123", consent: true, consentVersion: "v1-2026-07" }),
     );
     expect(res.status).toBe(409);
     const body = (await res.json()) as any;

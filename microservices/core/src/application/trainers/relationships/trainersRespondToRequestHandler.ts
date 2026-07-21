@@ -12,6 +12,7 @@ import {
   evaluateTrainerClientsActiveSeat,
   notifyTrainerClientLimitReached,
 } from "../seats/trainerSeats";
+import { recordDataSharingConsent } from "../../relationships/recordDataSharingConsent";
 
 /**
  * Discriminated result of the accept transaction: success, a client-slot cap
@@ -41,7 +42,7 @@ type RespondAcceptTxResult =
  * POST /clients/me/relationships/:relationshipId/respond — the CLIENT accepts
  * or declines a pending trainer request.
  *
- * Body: { action: "accept" | "decline" }
+ * Body: { action: "accept" | "decline", consent?: boolean, consentVersion?: string }
  *
  * The canonical connection flow is coach-initiated → client-accepted (the
  * coach creates a `pending` relationship via email invite or invite code).
@@ -56,6 +57,15 @@ type RespondAcceptTxResult =
  * (`client_id = userId`) and be `pending`. The status guard in the UPDATE
  * WHERE closes the race where two taps (or a concurrent trainer action) both
  * try to move the row — only the first update matches `status = 'pending'`.
+ *
+ * 26-coach-data-sharing-consent: `accept` is the point the CLIENT agrees to
+ * share their health data with this coach (UK GDPR Art 9(2)(a) explicit
+ * consent). `consent:true` + a non-empty `consentVersion` are REQUIRED on
+ * accept — missing either 400s with `consent_required` and activates
+ * nothing. On a successful accept, in the SAME transaction that flips
+ * pending→active: stamp `consent_given_at`/`consent_version` on the row and
+ * append a `data_sharing_consents` `grant` row (source `invite_accept`).
+ * `decline` needs no consent (nothing is being shared).
  */
 export const trainersRespondToRequestHandler = new Elysia()
   .derive(async ({ headers }) => ({
@@ -68,7 +78,23 @@ export const trainersRespondToRequestHandler = new Elysia()
       const { sub: userId } = getUser(ctx);
       const db = getDb();
       const { relationshipId } = ctx.params as { relationshipId: string };
-      const { action } = ctx.body as { action: "accept" | "decline" };
+      const { action, consent, consentVersion } = ctx.body as {
+        action: "accept" | "decline";
+        consent?: boolean;
+        consentVersion?: string;
+      };
+
+      // 26-coach-data-sharing-consent: accept is a consent-capture point.
+      // Reject BEFORE any DB work (no transaction started, nothing
+      // activated) if the client hasn't affirmatively consented.
+      if (action === "accept" && (!consent || !consentVersion)) {
+        ctx.set.status = 400;
+        return {
+          code: "consent_required",
+          message:
+            "Explicit consent to share your data with this coach is required to accept.",
+        };
+      }
 
       // Decline never consumes a seat → keep the original single-statement
       // conditional UPDATE (atomic against a concurrent move).
@@ -170,10 +196,17 @@ export const trainersRespondToRequestHandler = new Elysia()
           }
 
           // Activate. Conditional on status='pending' still guards a concurrent
-          // client-side move (double tap / concurrent decline).
+          // client-side move (double tap / concurrent decline). The consent
+          // stamp rides along on this SAME update (no extra query) — consent
+          // + consentVersion were validated non-empty above.
           const updated = await tx
             .update(ptClientRelationships)
-            .set({ status: "active", updatedAt: new Date() })
+            .set({
+              status: "active",
+              updatedAt: new Date(),
+              consentGivenAt: new Date(),
+              consentVersion,
+            })
             .where(
               and(
                 eq(ptClientRelationships.id, relationshipId),
@@ -195,6 +228,16 @@ export const trainersRespondToRequestHandler = new Elysia()
               message: "No pending request found for this relationship",
             };
           }
+
+          // Append-only accountability log (spec 26) — same tx as the stamp.
+          await recordDataSharingConsent({
+            trainerId: row.trainerId,
+            clientId: userId,
+            action: "grant",
+            consentVersion: consentVersion as string,
+            source: "invite_accept",
+            tx,
+          });
 
           return {
             data: {
@@ -220,6 +263,12 @@ export const trainersRespondToRequestHandler = new Elysia()
       params: t.Object({ relationshipId: t.String({ minLength: 1 }) }),
       body: t.Object({
         action: t.Union([t.Literal("accept"), t.Literal("decline")]),
+        // Required (checked at runtime, not schema-level) when action ===
+        // "accept" — see 26-coach-data-sharing-consent above. Optional here
+        // so a missing/absent value 400s as `consent_required` rather than a
+        // generic 422 schema-validation error.
+        consent: t.Optional(t.Boolean()),
+        consentVersion: t.Optional(t.String()),
       }),
     },
   );

@@ -91,7 +91,25 @@ describe("AcceptInviteContainer", () => {
     expect(usePendingInvite.getState().pendingCode).toBeNull();
   });
 
-  it("success: alerts 'Request sent to <trainer> — awaiting their acceptance', then navigates back on OK", async () => {
+  it("Join opens the consent sheet WITHOUT redeeming the code", async () => {
+    const { api, adapters } = makeAdapters();
+    const { getByTestId, queryByTestId } = renderWithTheme(
+      <AdapterProvider adapters={adapters}>
+        <AcceptInviteContainer />
+      </AdapterProvider>,
+    );
+    fireEvent.changeText(getByTestId("accept-invite-code-input"), "AB23CD");
+    expect(queryByTestId("accept-invite-consent-confirm")).toBeNull();
+
+    act(() => {
+      fireEvent.press(getByTestId("accept-invite-submit"));
+    });
+
+    expect(getByTestId("accept-invite-consent-confirm")).toBeTruthy();
+    expect(api.acceptInviteCodeCalls).toEqual([]);
+  });
+
+  it("success: ticking + confirming the consent sheet redeems with consent:true + CONSENT_VERSION, alerts, then navigates back on OK", async () => {
     const { api, adapters } = makeAdapters();
     api.nextAcceptInviteCodeResult = {
       success: true,
@@ -105,10 +123,20 @@ describe("AcceptInviteContainer", () => {
       </AdapterProvider>,
     );
     fireEvent.changeText(getByTestId("accept-invite-code-input"), "AB23CD");
-    await act(async () => {
+    act(() => {
       fireEvent.press(getByTestId("accept-invite-submit"));
     });
+    act(() => {
+      fireEvent.press(getByTestId("accept-invite-consent-checkbox"));
+    });
+    await act(async () => {
+      fireEvent.press(getByTestId("accept-invite-consent-confirm"));
+    });
+
     expect(api.acceptInviteCodeCalls).toEqual(["AB23CD"]);
+    expect(api.acceptInviteCodeConsentCalls).toEqual([
+      { consent: true, consentVersion: "v1-2026-07" },
+    ]);
     expect(alertSpy).toHaveBeenCalledWith(
       "Request sent",
       "Request sent to Coach Carter — awaiting their acceptance.",
@@ -128,6 +156,7 @@ describe("AcceptInviteContainer", () => {
     ["exists", "You're already connected to this coach."],
     ["code_already_used", "This code has already been used."],
     ["coach_client_limit_reached", "This coach's client list is full."],
+    ["consent_required", "Please confirm you agree to share your data."],
   ] as const)(
     "maps the %s domain error to inline copy (not a paywall)",
     async (code, expectedMessage) => {
@@ -139,8 +168,14 @@ describe("AcceptInviteContainer", () => {
         </AdapterProvider>,
       );
       fireEvent.changeText(getByTestId("accept-invite-code-input"), "BAD000");
-      await act(async () => {
+      act(() => {
         fireEvent.press(getByTestId("accept-invite-submit"));
+      });
+      act(() => {
+        fireEvent.press(getByTestId("accept-invite-consent-checkbox"));
+      });
+      await act(async () => {
+        fireEvent.press(getByTestId("accept-invite-consent-confirm"));
       });
       expect(getByTestId("accept-invite-error").props.children).toBe(
         expectedMessage,

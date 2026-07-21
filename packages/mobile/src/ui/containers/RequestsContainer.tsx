@@ -1,6 +1,7 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useRouter } from "expo-router";
 import { useClientRelationships } from "@/ui/hooks/useClientRelationships";
+import { CONSENT_VERSION } from "@/domain/models/consent";
 import { RequestsPresenter } from "@/ui/presenters/RequestsPresenter";
 
 /**
@@ -15,6 +16,13 @@ import { RequestsPresenter } from "@/ui/presenters/RequestsPresenter";
  * rows, but this screen filters them out client-side too so they never show
  * as "acceptable" here — only TRAINER-initiated pendings (email invite /
  * unredeemed code) are the athlete's to review.
+ *
+ * 26-coach-data-sharing-consent: accepting is the client's UK GDPR Art 9(2)(a)
+ * explicit-consent moment. Tapping "Accept" no longer calls `respond`
+ * directly — it opens `<DataSharingConsentSheet>` (via `consentTarget`); only
+ * confirming the sheet's affirmative, never-pre-ticked checkbox calls
+ * `respond(id, "accept", true, CONSENT_VERSION)`. Dismissing the sheet
+ * without ticking leaves the request untouched (still pending).
  */
 export function RequestsContainer() {
   const router = useRouter();
@@ -30,23 +38,41 @@ export function RequestsContainer() {
     [data],
   );
 
+  // The relationshipId awaiting the client's consent confirmation — non-null
+  // is the sheet's `visible` signal. `isConfirming` drives the sheet's
+  // confirm-button busy state independently of `pendingIds` (which the hook
+  // only populates once the actual `respond` call starts).
+  const [consentTarget, setConsentTarget] = useState<string | null>(null);
+  const [isConfirming, setIsConfirming] = useState(false);
+
   const onBack = useCallback(() => {
     if (router.canGoBack()) router.back();
     else router.replace("/(app)/(tabs)/you");
   }, [router]);
 
-  const onAccept = useCallback(
-    (id: string) => {
-      void respond(id, "accept");
-    },
-    [respond],
-  );
+  const onAccept = useCallback((id: string) => {
+    setConsentTarget(id);
+  }, []);
   const onDecline = useCallback(
     (id: string) => {
       void respond(id, "decline");
     },
     [respond],
   );
+
+  const onConsentClose = useCallback(() => {
+    setConsentTarget(null);
+  }, []);
+  const onConsentConfirm = useCallback(async () => {
+    if (consentTarget === null) return;
+    setIsConfirming(true);
+    try {
+      await respond(consentTarget, "accept", true, CONSENT_VERSION);
+    } finally {
+      setIsConfirming(false);
+      setConsentTarget(null);
+    }
+  }, [consentTarget, respond]);
 
   return (
     <RequestsPresenter
@@ -59,6 +85,10 @@ export function RequestsContainer() {
       onBack={onBack}
       onAccept={onAccept}
       onDecline={onDecline}
+      consentVisible={consentTarget !== null}
+      onConsentClose={onConsentClose}
+      onConsentConfirm={onConsentConfirm}
+      isConsentSubmitting={isConfirming}
     />
   );
 }

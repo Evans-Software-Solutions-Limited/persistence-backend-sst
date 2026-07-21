@@ -13,6 +13,7 @@ import { IconBack, IconUser } from "@/ui/components/icons";
 import { initialsOf } from "@/shared/utils";
 import type { ApiError } from "@/shared/errors";
 import type { ClientTrainerRelationship } from "@/domain/models/clientRelationship";
+import { DataSharingConsentSheet } from "@/ui/presenters/DataSharingConsentSheet";
 
 /**
  * <RequestsPresenter> — incoming coach requests the client can accept or
@@ -32,6 +33,11 @@ export type RequestsPresenterProps = {
   onBack: () => void;
   onAccept: (relationshipId: string) => void;
   onDecline: (relationshipId: string) => void;
+  /** 26-coach-data-sharing-consent: drives <DataSharingConsentSheet>, opened by `onAccept`. */
+  consentVisible: boolean;
+  onConsentClose: () => void;
+  onConsentConfirm: () => void;
+  isConsentSubmitting: boolean;
 };
 
 /** Human label for a trainer role. */
@@ -125,6 +131,10 @@ export function RequestsPresenter(props: RequestsPresenterProps) {
     onBack,
     onAccept,
     onDecline,
+    consentVisible,
+    onConsentClose,
+    onConsentConfirm,
+    isConsentSubmitting,
   } = props;
   const insets = useSafeAreaInsets();
   const hasAny = requests.length > 0;
@@ -206,6 +216,14 @@ export function RequestsPresenter(props: RequestsPresenterProps) {
           ))
         )}
       </ScrollView>
+      <DataSharingConsentSheet
+        visible={consentVisible}
+        onClose={onConsentClose}
+        onConfirm={onConsentConfirm}
+        isSubmitting={isConsentSubmitting}
+        confirmLabel="Accept"
+        testIDPrefix="requests"
+      />
     </View>
   );
 }
