@@ -822,7 +822,10 @@ describe("computeRecipeDraftMacros", () => {
   it("sums a single linked row scaled by quantity/servingSize", () => {
     // 200g of a food whose macros are per-100g → doubled.
     expect(
-      computeRecipeDraftMacros([{ foodId: "f1", quantity: 200 }], getFood),
+      computeRecipeDraftMacros(
+        [{ foodId: "f1", quantity: 200, unit: "g" }],
+        getFood,
+      ),
     ).toEqual({ kcal: 300, proteinG: 10, carbsG: 54, fatG: 6 });
   });
 
@@ -830,8 +833,8 @@ describe("computeRecipeDraftMacros", () => {
     expect(
       computeRecipeDraftMacros(
         [
-          { foodId: "f1", quantity: 100 },
-          { foodId: "f1", quantity: 50 },
+          { foodId: "f1", quantity: 100, unit: "g" },
+          { foodId: "f1", quantity: 50, unit: "g" },
         ],
         getFood,
       ),
@@ -840,32 +843,70 @@ describe("computeRecipeDraftMacros", () => {
 
   it("contributes 0 for an unlinked row (no foodId)", () => {
     expect(
-      computeRecipeDraftMacros([{ foodId: null, quantity: 100 }], getFood),
+      computeRecipeDraftMacros(
+        [{ foodId: null, quantity: 100, unit: "g" }],
+        getFood,
+      ),
     ).toEqual({ kcal: 0, proteinG: 0, carbsG: 0, fatG: 0 });
   });
 
   it("contributes 0 for a null quantity", () => {
     expect(
-      computeRecipeDraftMacros([{ foodId: "f1", quantity: null }], getFood),
+      computeRecipeDraftMacros(
+        [{ foodId: "f1", quantity: null, unit: "g" }],
+        getFood,
+      ),
     ).toEqual({ kcal: 0, proteinG: 0, carbsG: 0, fatG: 0 });
   });
 
   it("contributes 0 for a zero/negative quantity", () => {
     expect(
-      computeRecipeDraftMacros([{ foodId: "f1", quantity: 0 }], getFood),
+      computeRecipeDraftMacros(
+        [{ foodId: "f1", quantity: 0, unit: "g" }],
+        getFood,
+      ),
     ).toEqual({ kcal: 0, proteinG: 0, carbsG: 0, fatG: 0 });
     expect(
-      computeRecipeDraftMacros([{ foodId: "f1", quantity: -5 }], getFood),
+      computeRecipeDraftMacros(
+        [{ foodId: "f1", quantity: -5, unit: "g" }],
+        getFood,
+      ),
     ).toEqual({ kcal: 0, proteinG: 0, carbsG: 0, fatG: 0 });
   });
 
   it("contributes 0 when the linked foodId isn't resolvable (cache miss)", () => {
     expect(
-      computeRecipeDraftMacros([{ foodId: "missing", quantity: 100 }], getFood),
+      computeRecipeDraftMacros(
+        [{ foodId: "missing", quantity: 100, unit: "g" }],
+        getFood,
+      ),
     ).toEqual({ kcal: 0, proteinG: 0, carbsG: 0, fatG: 0 });
   });
 
-  it("falls back to a 100g basis when servingSize is 0", () => {
+  it("scales exactly across mass units (kg ingredient vs a per-100g food)", () => {
+    // 0.5 kg of a per-100g food = 5 servings, via `servingScaleFactor` — the
+    // case the naive quantity/servingSize divide got catastrophically wrong.
+    expect(
+      computeRecipeDraftMacros(
+        [{ foodId: "f1", quantity: 0.5, unit: "kg" }],
+        getFood,
+      ),
+    ).toEqual({ kcal: 750, proteinG: 25, carbsG: 135, fatG: 15 });
+  });
+
+  it("a linked row with a null quantity still contributes 0 (not NaN)", () => {
+    expect(
+      computeRecipeDraftMacros(
+        [{ foodId: "f1", quantity: null, unit: "kg" }],
+        getFood,
+      ),
+    ).toEqual({ kcal: 0, proteinG: 0, carbsG: 0, fatG: 0 });
+  });
+
+  it("returns 0 (not a 100g-basis guess) when the food's servingSize is 0", () => {
+    // Parity with the backend's `servingScaleFactor`: a non-positive serving
+    // size can't be scaled against, so it contributes 0 rather than assuming
+    // a 100g basis (the mobile-only fallback this replaced).
     const zeroSizeFoods: Record<string, Food> = {
       f2: food({
         id: "f2",
@@ -878,10 +919,10 @@ describe("computeRecipeDraftMacros", () => {
     };
     expect(
       computeRecipeDraftMacros(
-        [{ foodId: "f2", quantity: 50 }],
+        [{ foodId: "f2", quantity: 50, unit: "g" }],
         (id) => zeroSizeFoods[id] ?? null,
       ),
-    ).toEqual({ kcal: 100, proteinG: 10, carbsG: 0, fatG: 0 });
+    ).toEqual({ kcal: 0, proteinG: 0, carbsG: 0, fatG: 0 });
   });
 
   it("returns all-zero for an empty row list", () => {

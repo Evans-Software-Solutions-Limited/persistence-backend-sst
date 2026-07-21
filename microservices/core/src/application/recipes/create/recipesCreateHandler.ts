@@ -10,10 +10,22 @@ import {
 } from "@persistence/api-utils/auth/supabaseAuth";
 
 /**
- * POST /recipes — create a manual recipe. The server materialises the macro
- * totals from the ingredients' linked foods (deterministic, no AI — STORY-006
- * AC 6.3); free-text ingredients contribute 0 until the M9.5 AI estimate path.
+ * POST /recipes — create a recipe (manual, URL-imported, or AI-estimated).
+ *
+ * Macro totals: the server materialises them from the ingredients' linked
+ * foods (deterministic — STORY-006 AC 6.3). Free-text ingredients contribute
+ * 0. When the recipe's macros came from a NON-ingredient source instead — a
+ * URL import that carried Schema.org `nutrition`, or a whole-recipe AI
+ * estimate — the client sends `providedTotals` (the whole-recipe totals it
+ * displayed) and those are stored verbatim. This is the user's own recipe (no
+ * cross-user trust boundary like `nutrition_entries`), so storing what the
+ * user saw is correct and avoids a preview≠saved divergence. `providedTotals`
+ * wins when present; otherwise we derive from ingredients.
  */
+// Recipe ORIGIN (matches the `recipes.source` vocabulary in schema.ts).
+// Orthogonal to how macros were derived — a whole-recipe AI *macro* estimate
+// rides on `providedTotals`, not on `source`.
+const ALLOWED_SOURCES = ["manual", "url_import", "ai_extracted"] as const;
 export const recipesCreateHandler = new Elysia()
   .derive(async ({ headers }) => ({
     user: await getAuthUser(headers.authorization),
@@ -34,7 +46,11 @@ export const recipesCreateHandler = new Elysia()
       ];
       const foods = await ctx.FoodRepository.getByIds(foodIds, userId);
       const foodsById = new Map<string, FoodDTO>(foods.map((f) => [f.id, f]));
-      const totals = roundTotals(materialiseTotals(ingredients, foodsById));
+      const derived = materialiseTotals(ingredients, foodsById);
+
+      // `providedTotals` (from a scrape / whole-recipe AI estimate) wins when
+      // present — it's what the user saw. Otherwise derive from ingredients.
+      const totals = roundTotals(ctx.body.providedTotals ?? derived);
 
       const recipe = await ctx.RecipeRepository.create(
         userId,
@@ -43,7 +59,8 @@ export const recipesCreateHandler = new Elysia()
           photoUrl: ctx.body.photoUrl,
           servings: ctx.body.servings,
           instructions: ctx.body.instructions,
-          source: "manual",
+          source: ctx.body.source ?? "manual",
+          sourceUrl: ctx.body.sourceUrl,
           ingredients,
         },
         totals,
@@ -60,6 +77,19 @@ export const recipesCreateHandler = new Elysia()
         // can't be negative (negative factor in materialiseTotals). PR #124.
         servings: t.Number({ exclusiveMinimum: 0 }),
         instructions: t.Optional(t.String()),
+        source: t.Optional(t.Union(ALLOWED_SOURCES.map((s) => t.Literal(s)))),
+        sourceUrl: t.Optional(t.String()),
+        // Whole-recipe totals from a non-ingredient source (URL-import
+        // `nutrition` or a whole-recipe AI estimate). Stored verbatim when
+        // present; macros can't be negative.
+        providedTotals: t.Optional(
+          t.Object({
+            kcal: t.Number({ minimum: 0 }),
+            proteinG: t.Number({ minimum: 0 }),
+            carbsG: t.Number({ minimum: 0 }),
+            fatG: t.Number({ minimum: 0 }),
+          }),
+        ),
         ingredients: t.Array(
           t.Object({
             foodId: t.Optional(t.String()),

@@ -138,8 +138,10 @@ import type {
   CreateMealInput,
   CreateRecipeInput,
   EditEntryInput,
+  EstimatedRecipeMacros,
   EstimateFromPhotoInput,
   EstimateFromTextInput,
+  EstimateRecipeInput,
   ExtractedRecipe,
   ExtractRecipePhotoInput,
   Food,
@@ -1819,6 +1821,15 @@ export class SSTApiAdapter implements ApiPort {
       method: "POST",
       body: input,
     });
+  }
+
+  async estimateRecipe(
+    input: EstimateRecipeInput,
+  ): Promise<Result<EstimatedRecipeMacros, ApiError>> {
+    return this.requestEnvelope<EstimatedRecipeMacros>(
+      "/nutrition/ai/estimate-recipe",
+      { method: "POST", body: input },
+    );
   }
 
   // -- Client side of the coach↔client handshake (10-trainer-features) --

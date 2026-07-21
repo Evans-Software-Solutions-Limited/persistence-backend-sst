@@ -168,6 +168,20 @@ export type ImportedRecipe = {
   instructions: string | null;
   ingredients: string[];
   sourceUrl: string;
+  /**
+   * PER-SERVING macros scraped from the page's Schema.org `nutrition` block,
+   * when present; `null` when the page had none. Recipe-import macros fix —
+   * the create form multiplies this by `servings` to seed `providedTotals`.
+   */
+  nutrition: RecipeNutrition | null;
+};
+
+/** Per-serving macros scraped from a recipe page (`ImportedRecipe.nutrition`). */
+export type RecipeNutrition = {
+  kcal: number | null;
+  proteinG: number | null;
+  carbsG: number | null;
+  fatG: number | null;
 };
 
 // -- Write inputs (mirror the backend `t.Object` request bodies) --
@@ -233,6 +247,20 @@ export type CreateRecipeInput = {
   servings: number;
   instructions?: string;
   ingredients: RecipeIngredientInput[];
+  /** `manual` (default server-side) | `url_import` | `ai_extracted`. */
+  source?: string;
+  sourceUrl?: string;
+  /**
+   * Whole-recipe macro totals supplied by the client (import scrape or the
+   * whole-recipe AI estimate) rather than derived from linked ingredients.
+   * When present the server stores it verbatim.
+   */
+  providedTotals?: {
+    kcal: number;
+    proteinG: number;
+    carbsG: number;
+    fatG: number;
+  };
 };
 
 export type MealItemInput = {
@@ -330,4 +358,24 @@ export type ExtractRecipePhotoInput = {
 /** `POST /nutrition/ai/resolve-ingredient` request body. */
 export type ResolveIngredientInput = {
   name: string;
+};
+
+/**
+ * `POST /nutrition/ai/estimate-recipe` request body — the whole-recipe AI
+ * estimate (as opposed to `resolveIngredient`'s single-ingredient resolve).
+ * `ingredients` are free-text display lines (name, or "name · qty unit").
+ */
+export type EstimateRecipeInput = {
+  name: string;
+  ingredients: string[];
+  servings?: number;
+};
+
+/** `POST /nutrition/ai/estimate-recipe` response — WHOLE-recipe totals. */
+export type EstimatedRecipeMacros = {
+  kcal: number;
+  proteinG: number;
+  carbsG: number;
+  fatG: number;
+  confidence: number;
 };

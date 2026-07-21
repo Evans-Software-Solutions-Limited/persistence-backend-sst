@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { RecipeNutrition } from "@/domain/models/nutrition";
 
 /**
  * useRecipeDraft — the seam between the Import-from-URL / Snap-a-recipe-photo
@@ -24,6 +25,17 @@ export type RecipeDraftSeed = {
   instructions: string | null;
   ingredients: RecipeDraftIngredientSeed[];
   source: "manual" | "import" | "snap";
+  /**
+   * Recipe-import macros fix — PER-SERVING macros scraped from the imported
+   * page (`ImportedRecipe.nutrition`), carried through so the create form can
+   * seed `providedTotals` (whole-recipe = per-serving × servings). Undefined/
+   * null for non-import seeds (manual/snap) and for an import with no scraped
+   * nutrition.
+   */
+  nutrition?: RecipeNutrition | null;
+  /** The import source URL, carried through so the create form can pass it to
+   * `CreateRecipeInput.sourceUrl`. Undefined/null for non-import seeds. */
+  sourceUrl?: string | null;
 };
 
 export interface RecipeDraftState {

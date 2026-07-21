@@ -122,6 +122,7 @@ describe("RecipeImportContainer", () => {
       instructions: "Boil it",
       ingredients: ["Water", "Salt"],
       sourceUrl: "",
+      nutrition: null,
     };
     render(
       <Wrapper adapters={adapters}>
@@ -146,7 +147,46 @@ describe("RecipeImportContainer", () => {
         { name: "Salt", quantity: null, unit: null },
       ],
       source: "import",
+      nutrition: null,
+      // The in-memory fake's importRecipeUrl echoes back the requested URL
+      // (mirrors the real scrape endpoint returning the page it fetched).
+      sourceUrl: "https://x.test/soup",
     });
+  });
+
+  it("on success with scraped per-serving nutrition: carries it through to the seed", async () => {
+    const { adapters, api } = makeAdapters();
+    api.importedRecipe = {
+      name: "Soup",
+      servings: 4,
+      instructions: "Boil it",
+      ingredients: ["Water", "Salt"],
+      sourceUrl: "https://x.test/soup",
+      nutrition: { kcal: 100, proteinG: 5, carbsG: 10, fatG: 2 },
+    };
+    render(
+      <Wrapper adapters={adapters}>
+        <RecipeImportContainer />
+      </Wrapper>,
+    );
+    act(() => mockProbe.last!.onUrlChange("https://x.test/soup"));
+    await act(async () => {
+      mockProbe.last!.onImport();
+    });
+    await waitFor(() =>
+      expect(mockRouterReplace).toHaveBeenCalledWith(
+        "/(app)/fuel/recipe-create",
+      ),
+    );
+    expect(useRecipeDraft.getState().seed?.nutrition).toEqual({
+      kcal: 100,
+      proteinG: 5,
+      carbsG: 10,
+      fatG: 2,
+    });
+    expect(useRecipeDraft.getState().seed?.sourceUrl).toBe(
+      "https://x.test/soup",
+    );
   });
 
   it("on 422 (no microdata): shows the no-microdata stage", async () => {

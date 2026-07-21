@@ -362,7 +362,14 @@ function reflectWaterHabit(
   storage.invalidateHome(userId);
 }
 
-/** Optimistically insert a recipe + enqueue its create (server materialises totals). */
+/**
+ * Optimistically insert a recipe + enqueue its create (server materialises
+ * totals). `optimisticTotals` is normally derived from the linked
+ * ingredients (see `useCreateRecipe`), but the recipe-import-macros fix
+ * lets the caller supply `input.providedTotals` (import scrape / whole-
+ * recipe AI estimate) instead — `useCreateRecipe` already prefers that over
+ * its own derived sum, so `optimisticTotals` reflects it here too.
+ */
 export function createRecipeCommand(
   deps: NutritionCommandDeps,
   input: CreateRecipeInput,
@@ -381,8 +388,8 @@ export function createRecipeCommand(
     photoUrl: input.photoUrl ?? null,
     servings: input.servings,
     instructions: input.instructions ?? null,
-    source: "manual",
-    sourceUrl: null,
+    source: input.source ?? "manual",
+    sourceUrl: input.sourceUrl ?? null,
     totalKcal: optimisticTotals.kcal,
     totalProteinG: optimisticTotals.proteinG,
     totalCarbsG: optimisticTotals.carbsG,

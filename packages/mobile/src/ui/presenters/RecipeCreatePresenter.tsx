@@ -76,6 +76,17 @@ export type RecipeCreatePresenterProps = {
   rowMessages: Readonly<Record<string, string>>;
 
   macroTotal: MacroSum;
+  /** True when `macroTotal` came from an import scrape / whole-recipe AI
+   * estimate (`providedTotals`) rather than the linked-ingredient sum. */
+  macrosProvided: boolean;
+  /** "Estimate whole recipe with AI" — a whole-recipe macro estimate for when
+   * ingredients aren't (all) linked to foods. */
+  onEstimateWholeRecipe: () => void;
+  /** True while the whole-recipe AI estimate is in flight. */
+  isEstimatingRecipe: boolean;
+  /** Whole-recipe AI-estimate failure message (e.g. the daily-limit copy). */
+  estimateRecipeMessage: string | null;
+
   canSave: boolean;
   isSaving: boolean;
   onSave: () => void;
@@ -339,6 +350,10 @@ export function RecipeCreatePresenter(props: RecipeCreatePresenterProps) {
     resolvingRowId,
     rowMessages,
     macroTotal,
+    macrosProvided,
+    onEstimateWholeRecipe,
+    isEstimatingRecipe,
+    estimateRecipeMessage,
     canSave,
     isSaving,
     onSave,
@@ -346,7 +361,14 @@ export function RecipeCreatePresenter(props: RecipeCreatePresenterProps) {
     testID = "recipe-create-screen",
   } = props;
 
-  const hasLinkedRow = rows.some((r) => r.foodId !== null);
+  // Whether the pills currently show anything — not "is a food linked", since
+  // a linked row with no quantity set still contributes 0 (recipe-import
+  // macros fix: the "no macros" hint should track what's actually displayed).
+  const hasMacros =
+    macroTotal.kcal > 0 ||
+    macroTotal.proteinG > 0 ||
+    macroTotal.carbsG > 0 ||
+    macroTotal.fatG > 0;
 
   return (
     <SafeAreaView
@@ -490,8 +512,10 @@ export function RecipeCreatePresenter(props: RecipeCreatePresenterProps) {
         </View>
 
         {/* Live macro total — replaces the prototype's fictional "auto-estimate
-            macros" AI toggle. There's no such backend capability; a recipe's
-            macros are always the sum of its LINKED ingredients' foods. */}
+            macros" AI toggle. A recipe's macros come from either its LINKED
+            ingredients' foods (default), an imported page's scraped totals, or
+            the whole-recipe AI estimate below — the latter two arrive via
+            `macroTotal`/`macrosProvided` already resolved by the container. */}
         <Card
           pad={14}
           radius={14}
@@ -515,7 +539,18 @@ export function RecipeCreatePresenter(props: RecipeCreatePresenterProps) {
             <Pill tone="gold" size="xs">{`C ${macroTotal.carbsG}G`}</Pill>
             <Pill tone="ember" size="xs">{`F ${macroTotal.fatG}G`}</Pill>
           </View>
-          {!hasLinkedRow ? (
+          {macrosProvided ? (
+            <Text
+              fontFamily="$body"
+              fontSize={10.5}
+              color="$text3"
+              marginTop={6}
+              testID="recipe-create-macro-provided-caption"
+            >
+              Whole-recipe estimate
+            </Text>
+          ) : null}
+          {!hasMacros ? (
             <Text
               fontFamily="$body"
               fontSize={11.5}
@@ -523,7 +558,34 @@ export function RecipeCreatePresenter(props: RecipeCreatePresenterProps) {
               marginTop={8}
               testID="recipe-create-macro-hint"
             >
-              No macros yet — link a food to an ingredient to see totals build.
+              No macros yet — link a food to each ingredient (and set a
+              quantity), or estimate the whole recipe with AI.
+            </Text>
+          ) : null}
+          <View marginTop={10} alignSelf="flex-start">
+            <Btn
+              variant="soft"
+              tone="gold"
+              size="sm"
+              icon={<IconSparkles size={13} />}
+              onPress={onEstimateWholeRecipe}
+              disabled={isEstimatingRecipe}
+              testID="recipe-create-estimate-recipe"
+            >
+              {isEstimatingRecipe
+                ? "Estimating…"
+                : "Estimate whole recipe with AI"}
+            </Btn>
+          </View>
+          {estimateRecipeMessage ? (
+            <Text
+              fontFamily="$body"
+              fontSize={11.5}
+              color="$ember"
+              marginTop={8}
+              testID="recipe-create-estimate-recipe-message"
+            >
+              {estimateRecipeMessage}
             </Text>
           ) : null}
         </Card>

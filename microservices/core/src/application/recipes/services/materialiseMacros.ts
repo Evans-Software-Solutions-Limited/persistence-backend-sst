@@ -1,4 +1,5 @@
 import type { FoodDTO } from "../../repositories/foodRepository";
+import { servingScaleFactor } from "./units";
 
 export type IngredientInput = {
   foodId?: string | null;
@@ -18,10 +19,11 @@ export type MacroTotals = {
 /**
  * Server-authoritative recipe/meal totals (STORY-006 AC 6.3) — deterministic,
  * no AI. For each ingredient linked to a food, the contribution is the food's
- * per-serving macros scaled by (quantity / servingSize) — i.e. quantity is
- * expressed in the food's own serving unit. Ingredients with no `foodId`
- * (free-text customName) contribute 0 in M9 (can't be computed without a food
- * row); the AI auto-estimate path that fills those is deferred to M9.5.
+ * per-serving macros scaled by `servingScaleFactor` — exact gram conversion
+ * when both the ingredient and the food serving are mass units, else
+ * quantity/servingSize (see units.ts). Ingredients with no `foodId` (free-text
+ * customName) contribute 0 — they need a linked food or the whole-recipe AI
+ * estimate to carry macros.
  */
 export function materialiseTotals(
   ingredients: IngredientInput[],
@@ -32,7 +34,12 @@ export function materialiseTotals(
       if (!ing.foodId) return acc;
       const food = foodsById.get(ing.foodId);
       if (!food || food.servingSize <= 0) return acc;
-      const factor = ing.quantity / food.servingSize;
+      const factor = servingScaleFactor(
+        ing.quantity,
+        ing.unit,
+        food.servingSize,
+        food.servingUnit,
+      );
       return {
         kcal: acc.kcal + food.kcal * factor,
         proteinG: acc.proteinG + food.proteinG * factor,

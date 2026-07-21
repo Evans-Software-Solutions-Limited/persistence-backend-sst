@@ -595,4 +595,278 @@ describe("RecipeCreateContainer", () => {
     act(() => mockProbe.last!.onBack());
     expect(mockRouterBack).toHaveBeenCalledTimes(1);
   });
+
+  it("onLinkFood defaults a blank quantity/unit from the linked food's own serving", () => {
+    const { adapters } = makeAdapters();
+    render(
+      <Wrapper adapters={adapters}>
+        <RecipeCreateContainer />
+      </Wrapper>,
+    );
+    const id = mockProbe.last!.rows[0].id;
+    act(() => mockProbe.last!.onLinkFood(id, chicken));
+    expect(mockProbe.last?.rows[0]).toEqual(
+      expect.objectContaining({ quantity: 100, unit: "g" }),
+    );
+  });
+
+  it("onLinkFood does not override an already-set quantity/unit", () => {
+    const { adapters } = makeAdapters();
+    render(
+      <Wrapper adapters={adapters}>
+        <RecipeCreateContainer />
+      </Wrapper>,
+    );
+    const id = mockProbe.last!.rows[0].id;
+    act(() => mockProbe.last!.onChangeRowQuantity(id, 50));
+    act(() => mockProbe.last!.onChangeRowUnit(id, "tbsp"));
+    act(() => mockProbe.last!.onLinkFood(id, chicken));
+    expect(mockProbe.last?.rows[0]).toEqual(
+      expect.objectContaining({ quantity: 50, unit: "tbsp" }),
+    );
+  });
+
+  it("seeds providedTotals from an import seed's per-serving nutrition × servings", () => {
+    useRecipeDraft.getState().setSeed({
+      title: "Soup",
+      servings: 4,
+      instructions: null,
+      ingredients: [{ name: "Water", quantity: null, unit: null }],
+      source: "import",
+      nutrition: { kcal: 100, proteinG: 5, carbsG: 10, fatG: 2 },
+      sourceUrl: "https://x.test/soup",
+    });
+    const { adapters } = makeAdapters();
+    render(
+      <Wrapper adapters={adapters}>
+        <RecipeCreateContainer />
+      </Wrapper>,
+    );
+    expect(mockProbe.last?.macroTotal).toEqual({
+      kcal: 400,
+      proteinG: 20,
+      carbsG: 40,
+      fatG: 8,
+    });
+    expect(mockProbe.last?.macrosProvided).toBe(true);
+  });
+
+  it("an import seed without nutrition leaves providedTotals null but still routes source=url_import on save", async () => {
+    useRecipeDraft.getState().setSeed({
+      title: "Soup",
+      servings: null,
+      instructions: null,
+      ingredients: [{ name: "Water", quantity: null, unit: null }],
+      source: "import",
+      nutrition: null,
+      sourceUrl: "https://x.test/soup",
+    });
+    const { adapters, storage } = makeAdapters();
+    render(
+      <Wrapper adapters={adapters}>
+        <RecipeCreateContainer />
+      </Wrapper>,
+    );
+    expect(mockProbe.last?.macrosProvided).toBe(false);
+
+    await act(async () => {
+      mockProbe.last!.onSave();
+    });
+    await waitFor(() => expect(mockRouterReplace).toHaveBeenCalled());
+    const recipeId = String(mockRouterReplace.mock.calls[0]![0])
+      .split("/")
+      .pop()!;
+    const saved = storage.getCachedRecipe(USER, recipeId);
+    expect(saved?.source).toBe("url_import");
+    expect(saved?.sourceUrl).toBe("https://x.test/soup");
+  });
+
+  it("linking a food after an import seed clears providedTotals (back to ingredient-derived)", () => {
+    useRecipeDraft.getState().setSeed({
+      title: "Soup",
+      servings: 2,
+      instructions: null,
+      ingredients: [{ name: "Chicken breast", quantity: null, unit: null }],
+      source: "import",
+      nutrition: { kcal: 100, proteinG: 5, carbsG: 10, fatG: 2 },
+      sourceUrl: "https://x.test/soup",
+    });
+    const { adapters } = makeAdapters();
+    render(
+      <Wrapper adapters={adapters}>
+        <RecipeCreateContainer />
+      </Wrapper>,
+    );
+    expect(mockProbe.last?.macrosProvided).toBe(true);
+    const id = mockProbe.last!.rows[0].id;
+    act(() => mockProbe.last!.onLinkFood(id, chicken));
+    expect(mockProbe.last?.macrosProvided).toBe(false);
+  });
+
+  it("onEstimateWholeRecipe routes to the upgrade prompt when the AI gate denies", async () => {
+    mockAiGate.allowed = false;
+    const { adapters, api } = makeAdapters();
+    render(
+      <Wrapper adapters={adapters}>
+        <RecipeCreateContainer />
+      </Wrapper>,
+    );
+    await act(async () => {
+      mockProbe.last!.onEstimateWholeRecipe();
+    });
+    expect(mockAiGate.onUpgrade).toHaveBeenCalledTimes(1);
+    expect(api.estimateRecipeCalls).toHaveLength(0);
+  });
+
+  it("onEstimateWholeRecipe sets the macro total from the AI estimate on success", async () => {
+    const { adapters, api } = makeAdapters();
+    api.estimatedRecipeMacros = {
+      kcal: 620,
+      proteinG: 40,
+      carbsG: 55,
+      fatG: 22,
+      confidence: 0.8,
+    };
+    render(
+      <Wrapper adapters={adapters}>
+        <RecipeCreateContainer />
+      </Wrapper>,
+    );
+    act(() => mockProbe.last!.onNameChange("Bowl"));
+    const id = mockProbe.last!.rows[0].id;
+    act(() => mockProbe.last!.onChangeRowName(id, "Chicken breast"));
+    await act(async () => {
+      mockProbe.last!.onEstimateWholeRecipe();
+    });
+    await waitFor(() =>
+      expect(mockProbe.last?.macroTotal).toEqual({
+        kcal: 620,
+        proteinG: 40,
+        carbsG: 55,
+        fatG: 22,
+      }),
+    );
+    expect(mockProbe.last?.macrosProvided).toBe(true);
+    expect(api.estimateRecipeCalls).toEqual([
+      { name: "Bowl", ingredients: ["Chicken breast"], servings: undefined },
+    ]);
+  });
+
+  it("onEstimateWholeRecipe includes a row's structured quantity in the ingredient line", async () => {
+    const { adapters, api } = makeAdapters();
+    api.estimatedRecipeMacros = {
+      kcal: 100,
+      proteinG: 5,
+      carbsG: 10,
+      fatG: 2,
+      confidence: 0.6,
+    };
+    render(
+      <Wrapper adapters={adapters}>
+        <RecipeCreateContainer />
+      </Wrapper>,
+    );
+    act(() => mockProbe.last!.onNameChange("Bowl"));
+    const id = mockProbe.last!.rows[0].id;
+    act(() => mockProbe.last!.onChangeRowName(id, "Chicken breast"));
+    act(() => mockProbe.last!.onChangeRowQuantity(id, 200));
+    await act(async () => {
+      mockProbe.last!.onEstimateWholeRecipe();
+    });
+    expect(api.estimateRecipeCalls).toEqual([
+      {
+        name: "Bowl",
+        ingredients: ["200 Chicken breast"],
+        servings: undefined,
+      },
+    ]);
+  });
+
+  it("onEstimateWholeRecipe surfaces the daily-limit message on 429", async () => {
+    const { adapters, api } = makeAdapters();
+    api.nextRecipeAiError = { status: 429, message: "ai_daily_limit" };
+    render(
+      <Wrapper adapters={adapters}>
+        <RecipeCreateContainer />
+      </Wrapper>,
+    );
+    act(() => mockProbe.last!.onNameChange("Bowl"));
+    await act(async () => {
+      mockProbe.last!.onEstimateWholeRecipe();
+    });
+    await waitFor(() =>
+      expect(mockProbe.last?.estimateRecipeMessage).toMatch(/Daily AI limit/),
+    );
+    expect(mockProbe.last?.macrosProvided).toBe(false);
+  });
+
+  it("onSave includes source/sourceUrl/providedTotals in the enqueued POST body for an import seed", async () => {
+    useRecipeDraft.getState().setSeed({
+      title: "Soup",
+      servings: 4,
+      instructions: null,
+      ingredients: [{ name: "Water", quantity: null, unit: null }],
+      source: "import",
+      nutrition: { kcal: 100, proteinG: 5, carbsG: 10, fatG: 2 },
+      sourceUrl: "https://x.test/soup",
+    });
+    const { adapters } = makeAdapters();
+    render(
+      <Wrapper adapters={adapters}>
+        <RecipeCreateContainer />
+      </Wrapper>,
+    );
+    await act(async () => {
+      mockProbe.last!.onSave();
+    });
+    await waitFor(() => expect(mockRouterReplace).toHaveBeenCalled());
+    // The optimistic write flushes synchronously inside `onSave` (`useCreateRecipe`
+    // awaits `processSyncQueue` before returning) — by the time we assert, the
+    // mutation has already been marked `completed` and dropped from
+    // `getPendingMutations()`, so assert on the actual POST body instead.
+    const fetchMock = (globalThis as unknown as { fetch: jest.Mock }).fetch;
+    const recipePosts = fetchMock.mock.calls.filter(([url]: [string]) =>
+      url.endsWith("/recipes"),
+    );
+    // The mock isn't cleared between `it` blocks in this file — take the most
+    // recent /recipes POST (this test's own), not the first ever recorded.
+    const recipePost = recipePosts[recipePosts.length - 1];
+    expect(recipePost).toBeDefined();
+    const body = JSON.parse(recipePost[1].body as string);
+    expect(body).toEqual(
+      expect.objectContaining({
+        source: "url_import",
+        sourceUrl: "https://x.test/soup",
+        providedTotals: { kcal: 400, proteinG: 20, carbsG: 40, fatG: 8 },
+      }),
+    );
+  });
+
+  it("a snap-photo seed saves with source=ai_extracted", async () => {
+    useRecipeDraft.getState().setSeed({
+      title: "Traybake",
+      servings: 2,
+      instructions: null,
+      ingredients: [{ name: "Chicken", quantity: null, unit: null }],
+      source: "snap",
+    });
+    const { adapters } = makeAdapters();
+    render(
+      <Wrapper adapters={adapters}>
+        <RecipeCreateContainer />
+      </Wrapper>,
+    );
+    await act(async () => {
+      mockProbe.last!.onSave();
+    });
+    await waitFor(() => expect(mockRouterReplace).toHaveBeenCalled());
+    const fetchMock = (globalThis as unknown as { fetch: jest.Mock }).fetch;
+    const recipePosts = fetchMock.mock.calls.filter(([url]: [string]) =>
+      url.endsWith("/recipes"),
+    );
+    const body = JSON.parse(
+      recipePosts[recipePosts.length - 1][1].body as string,
+    );
+    expect(body.source).toBe("ai_extracted");
+  });
 });
