@@ -33,7 +33,8 @@ vi.mock("../../../relationships/assertTrainerCanActForClient", () => ({
   assertTrainerCanActForClient: (...a: unknown[]) => assertMock(...a),
 }));
 vi.mock("../../../relationships/auditClientDataRead", () => ({
-  auditClientDataRead: (...a: unknown[]) => auditClientDataReadMock(...(a as [])),
+  auditClientDataRead: (...a: unknown[]) =>
+    auditClientDataReadMock(...(a as [])),
 }));
 vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getAuthUser: vi.fn(async (h: string | undefined) =>

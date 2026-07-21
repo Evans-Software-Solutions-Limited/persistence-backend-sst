@@ -27,7 +27,8 @@ vi.mock("../../../relationships/assertTrainerCanActForClient", () => ({
 
 const auditClientDataReadMock = vi.fn(async () => undefined);
 vi.mock("../../../relationships/auditClientDataRead", () => ({
-  auditClientDataRead: (...a: unknown[]) => auditClientDataReadMock(...(a as [])),
+  auditClientDataRead: (...a: unknown[]) =>
+    auditClientDataReadMock(...(a as [])),
 }));
 
 const repoList = vi.fn();
