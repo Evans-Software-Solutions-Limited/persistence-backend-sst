@@ -223,8 +223,9 @@ describe("IOSPurchaseFlowContainer", () => {
     expect(purchases.purchaseCalls).toHaveLength(0);
   });
 
-  it("purchase flow: tap premium → purchases the package → routes to success", async () => {
+  it("purchase flow: tap premium → purchases the package → syncs → routes to success with the confirmed tier", async () => {
     const { adapters, purchases } = makeAdapters();
+    const api = adapters.api as InMemoryApiAdapter;
     purchases.nextPurchaseResponse = {
       ok: true,
       entitlements: [
@@ -236,6 +237,9 @@ describe("IOSPurchaseFlowContainer", () => {
         },
       ],
     };
+    // Server-side sync confirms the paid tier — the success screen should
+    // use ITS tier, not just re-echo the purchased tier.
+    api.nextSyncSubscriptionResult = freeSub({ tierName: "premium" });
     renderContainer(adapters);
     await waitFor(() =>
       expect(screen.getByTestId("subscription-card-premium")).toBeTruthy(),
@@ -248,8 +252,68 @@ describe("IOSPurchaseFlowContainer", () => {
     await waitFor(() =>
       expect(purchases.purchaseCalls).toEqual(["$rc_monthly"]),
     );
-    // The purchased tier is threaded to the success screen so it renders the
-    // correct plan immediately (the RC webhook lags the /subscriptions/me read).
+    await waitFor(() => expect(api.syncSubscriptionCalls).toBe(1));
+    expect(mockPush).toHaveBeenCalledWith("/(auth)/success?tier=premium");
+  });
+
+  it("purchase flow: sync returns free after a successful purchase → still routes to success using the purchased tier (Apple already confirmed it)", async () => {
+    const { adapters, purchases } = makeAdapters();
+    const api = adapters.api as InMemoryApiAdapter;
+    purchases.nextPurchaseResponse = {
+      ok: true,
+      entitlements: [
+        {
+          entitlementId: "premium",
+          tier: "premium",
+          productId: "app.persistence.premium.monthly",
+          expiresAt: null,
+        },
+      ],
+    };
+    // Default `api.mySubscription` stays "free" — sync falls back to it.
+    renderContainer(adapters);
+    await waitFor(() =>
+      expect(screen.getByTestId("subscription-card-premium")).toBeTruthy(),
+    );
+    await act(async () => {
+      fireEvent.press(
+        screen.getByTestId("subscription-card-premium-subscribe"),
+      );
+    });
+    await waitFor(() => expect(api.syncSubscriptionCalls).toBe(1));
+    expect(mockPush).toHaveBeenCalledWith("/(auth)/success?tier=premium");
+  });
+
+  it("purchase flow: sync errors (502) after a successful purchase → still routes to success using the purchased tier", async () => {
+    const { adapters, purchases } = makeAdapters();
+    const api = adapters.api as InMemoryApiAdapter;
+    purchases.nextPurchaseResponse = {
+      ok: true,
+      entitlements: [
+        {
+          entitlementId: "premium",
+          tier: "premium",
+          productId: "app.persistence.premium.monthly",
+          expiresAt: null,
+        },
+      ],
+    };
+    api.nextSyncSubscriptionError = {
+      kind: "api",
+      code: "server",
+      message: "subscription_sync_failed",
+      status: 502,
+    };
+    renderContainer(adapters);
+    await waitFor(() =>
+      expect(screen.getByTestId("subscription-card-premium")).toBeTruthy(),
+    );
+    await act(async () => {
+      fireEvent.press(
+        screen.getByTestId("subscription-card-premium-subscribe"),
+      );
+    });
+    await waitFor(() => expect(api.syncSubscriptionCalls).toBe(1));
     expect(mockPush).toHaveBeenCalledWith("/(auth)/success?tier=premium");
   });
 
@@ -319,8 +383,9 @@ describe("IOSPurchaseFlowContainer", () => {
     expect(mockPush).not.toHaveBeenCalled();
   });
 
-  it("restore: bridges the restored tier to the success screen (no free-tier lag)", async () => {
+  it("restore: on-device entitlements + server-confirmed paid sub → syncs then navigates to success with the CONFIRMED tier", async () => {
     const { adapters, purchases } = makeAdapters();
+    const api = adapters.api as InMemoryApiAdapter;
     purchases.nextRestoreResponse = {
       ok: true,
       entitlements: [
@@ -332,6 +397,7 @@ describe("IOSPurchaseFlowContainer", () => {
         },
       ],
     };
+    api.nextSyncSubscriptionResult = freeSub({ tierName: "premium" });
     renderContainer(adapters);
     await waitFor(() =>
       expect(screen.getByTestId("ios-purchase-restore")).toBeTruthy(),
@@ -340,27 +406,64 @@ describe("IOSPurchaseFlowContainer", () => {
       fireEvent.press(screen.getByTestId("ios-purchase-restore"));
     });
     await waitFor(() => expect(purchases.restoreCalls).toBe(1));
-    // Navigates to success with the restored tier rather than showing an alert
-    // that would leave the paywall on the stale free tier during the webhook race.
+    await waitFor(() => expect(api.syncSubscriptionCalls).toBe(1));
+    // Navigates to success with the SERVER-confirmed tier, not the raw
+    // on-device entitlement — the whole point of the sync gate.
     expect(mockPush).toHaveBeenCalledWith("/(auth)/success?tier=premium");
-    expect(alertSpy).not.toHaveBeenCalledWith(
-      "Purchases Restored",
-      expect.any(String),
-    );
+    expect(alertSpy).not.toHaveBeenCalled();
   });
 
-  it("restore: falls back to an alert when the restored entitlement maps to no known tier", async () => {
+  it("restore: on-device entitlements present but sync reports free → no success navigation, shows the couldn't-confirm alert", async () => {
     const { adapters, purchases } = makeAdapters();
+    const api = adapters.api as InMemoryApiAdapter;
     purchases.nextRestoreResponse = {
       ok: true,
       entitlements: [
         {
-          entitlementId: "legacy_unknown",
-          tier: null,
+          entitlementId: "premium",
+          tier: "premium",
           productId: null,
           expiresAt: null,
         },
       ],
+    };
+    // Default `api.mySubscription` is free — sync falls back to it, i.e. the
+    // server could not confirm an active entitlement for this Apple ID.
+    renderContainer(adapters);
+    await waitFor(() =>
+      expect(screen.getByTestId("ios-purchase-restore")).toBeTruthy(),
+    );
+    await act(async () => {
+      fireEvent.press(screen.getByTestId("ios-purchase-restore"));
+    });
+    await waitFor(() => expect(purchases.restoreCalls).toBe(1));
+    await waitFor(() => expect(api.syncSubscriptionCalls).toBe(1));
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(alertSpy).toHaveBeenCalledWith(
+      "Couldn't Confirm Subscription",
+      expect.stringContaining("couldn't confirm an active subscription"),
+    );
+  });
+
+  it("restore: on-device entitlements present but sync errors (502) → no success navigation, shows the soft/transient alert", async () => {
+    const { adapters, purchases } = makeAdapters();
+    const api = adapters.api as InMemoryApiAdapter;
+    purchases.nextRestoreResponse = {
+      ok: true,
+      entitlements: [
+        {
+          entitlementId: "premium",
+          tier: "premium",
+          productId: null,
+          expiresAt: null,
+        },
+      ],
+    };
+    api.nextSyncSubscriptionError = {
+      kind: "api",
+      code: "server",
+      message: "subscription_sync_failed",
+      status: 502,
     };
     renderContainer(adapters);
     await waitFor(() =>
@@ -370,10 +473,11 @@ describe("IOSPurchaseFlowContainer", () => {
       fireEvent.press(screen.getByTestId("ios-purchase-restore"));
     });
     await waitFor(() => expect(purchases.restoreCalls).toBe(1));
+    await waitFor(() => expect(api.syncSubscriptionCalls).toBe(1));
     expect(mockPush).not.toHaveBeenCalled();
     expect(alertSpy).toHaveBeenCalledWith(
-      "Purchases Restored",
-      expect.any(String),
+      "Almost There",
+      expect.stringContaining("couldn't confirm your plan"),
     );
   });
 

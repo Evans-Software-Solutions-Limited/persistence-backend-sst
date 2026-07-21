@@ -1067,6 +1067,12 @@ export class SSTApiAdapter implements ApiPort {
     return this.requestEnvelope<MySubscription>("/subscriptions/me");
   }
 
+  async syncSubscription() {
+    return this.requestEnvelope<MySubscription>("/subscriptions/sync", {
+      method: "POST",
+    });
+  }
+
   async createSubscription(
     input: CreateSubscriptionInput,
   ): Promise<Result<CreateSubscriptionResult, ApiError>> {

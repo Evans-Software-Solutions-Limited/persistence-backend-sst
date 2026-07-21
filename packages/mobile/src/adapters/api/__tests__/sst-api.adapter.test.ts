@@ -604,6 +604,80 @@ describe("SSTApiAdapter.getMySubscription (M10)", () => {
   });
 });
 
+describe("SSTApiAdapter.syncSubscription", () => {
+  it("POSTs /subscriptions/sync with no body and unwraps the refreshed subscription", async () => {
+    const mock = installFetchMock(async () => {
+      return new Response(
+        JSON.stringify({
+          data: {
+            subscriptionId: "us_1",
+            tierName: "premium",
+            paymentStatus: "active",
+            billingCycle: "monthly",
+            startsAt: "2026-01-01T00:00:00.000Z",
+            expiresAt: "2030-01-01T00:00:00.000Z",
+            cancelledAt: null,
+            trialEndsAt: null,
+            externalSubscriptionId: "sub_test",
+            tierDisplayName: "Premium",
+            tierDescription: null,
+            workoutLimit: null,
+            aiAccess: true,
+            aiWorkoutLimit: 6,
+            gymBuddyAccess: true,
+            trainerClientLimit: null,
+            isTrainerTier: false,
+            role: "user",
+            hasUsedUserTrial: false,
+            hasUsedTrainerTrial: false,
+            isEligibleForUserTrial: true,
+            isEligibleForTrainerTrial: true,
+            scheduledChange: null,
+          },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.syncSubscription();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.tierName).toBe("premium");
+    expect(mock.mock.calls[0][0]).toBe("http://test.local/subscriptions/sync");
+    expect(mock.mock.calls[0][1]?.method).toBe("POST");
+  });
+
+  it("maps a 502 subscription_sync_failed (RevenueCat REST unreachable) to a generic api error", async () => {
+    installFetchMock(async () => {
+      return new Response(
+        JSON.stringify({ error: "subscription_sync_failed" }),
+        { status: 502 },
+      );
+    });
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.syncSubscription();
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe("api");
+    expect(result.error.status).toBe(502);
+    expect(result.error.message).toBe("subscription_sync_failed");
+  });
+
+  it("maps 401 → api/unauthorized", async () => {
+    installFetchMock(async () => {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+      });
+    });
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.syncSubscription();
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("unauthorized");
+  });
+});
+
 describe("SSTApiAdapter.createSubscription (M7 / M10)", () => {
   it("POSTs camelCase input as snake_case body and returns the M10 domain shape", async () => {
     const mock = installFetchMock(async () => {
