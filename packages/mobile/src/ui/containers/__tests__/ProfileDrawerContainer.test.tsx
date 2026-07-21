@@ -78,6 +78,11 @@ jest.mock("@/ui/hooks/useHealthData", () => ({
   useHealthData: () => mockHealth,
 }));
 
+let mockAchievementsData: unknown[] | null = null;
+jest.mock("@/ui/hooks/useGetAchievements", () => ({
+  useGetAchievements: () => ({ data: mockAchievementsData }),
+}));
+
 // eslint-disable-next-line import/first
 import { useDrawer } from "@/state/drawer";
 // eslint-disable-next-line import/first
@@ -103,6 +108,7 @@ beforeEach(() => {
     permissionStatus: { steps: "granted", bodyWeight: "not_determined" },
     refresh: mockRefresh,
   };
+  mockAchievementsData = null;
 });
 
 describe("ProfileDrawerContainer", () => {
@@ -153,10 +159,14 @@ describe("ProfileDrawerContainer", () => {
     expect(lastProps?.isTrainerEligible).toBe(true);
   });
 
-  it("stubs achievements + client counts (06 / 10 not shipped)", () => {
+  it("derives achievementsCount from useGetAchievements; stubs clientCount (10 not shipped)", () => {
     renderWithTheme(<ProfileDrawerContainer />);
     expect(lastProps?.achievementsCount).toBeUndefined();
     expect(lastProps?.clientCount).toBeUndefined();
+
+    mockAchievementsData = [{ id: "a1" }, { id: "a2" }, { id: "a3" }];
+    renderWithTheme(<ProfileDrawerContainer />);
+    expect(lastProps?.achievementsCount).toBe(3);
   });
 
   it("each row handler closes the drawer then pushes its route", () => {
@@ -165,7 +175,7 @@ describe("ProfileDrawerContainer", () => {
 
     const cases: [string, string][] = [
       ["onOpenProfile", "/(app)/profile/edit"],
-      ["onOpenAchievements", "/(app)/coming-soon?feature=achievements"],
+      ["onOpenAchievements", "/(app)/achievements"],
       ["onOpenHealth", "/(app)/profile/health"],
       ["onOpenSubscription", "/(auth)/subscription-selection"],
       ["onOpenNotifications", "/(app)/profile/notifications"],

@@ -93,7 +93,7 @@ export function WorkoutsListContainer() {
   }, []);
 
   const onUpgrade = useCallback(() => {
-    router.push("/(app)/subscription-management" as never);
+    router.push("/(auth)/subscription-selection" as never);
   }, []);
 
   const onOpen = useCallback((workoutId: string) => {

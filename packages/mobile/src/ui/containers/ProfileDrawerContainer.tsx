@@ -5,6 +5,7 @@ import { useDrawer } from "@/state/drawer";
 import { useHealthSync } from "@/state/health-sync";
 import { useUserMode } from "@/state/user-mode";
 import { useAuth } from "@/ui/hooks/useAuth";
+import { useGetAchievements } from "@/ui/hooks/useGetAchievements";
 import { useHealthData } from "@/ui/hooks/useHealthData";
 import { useModeSwitch } from "@/ui/hooks/useModeSwitch";
 import { useMySubscription } from "@/ui/hooks/useMySubscription";
@@ -35,6 +36,10 @@ export function ProfileDrawerContainer() {
   const { data: subscription } = useMySubscription();
   const health = useHealthData();
   const { signOut } = useAuth();
+  // Cache-first count for the drawer row's Pill — same source the
+  // Achievements screen itself reads (go-live: was hardcoded `undefined`,
+  // which suppressed the count Pill entirely).
+  const { data: achievementsData } = useGetAchievements();
 
   const [isSigningOut, setIsSigningOut] = useState(false);
 
@@ -112,7 +117,7 @@ export function ProfileDrawerContainer() {
             }
           : undefined
       }
-      achievementsCount={undefined}
+      achievementsCount={achievementsData?.length}
       healthConnected={healthConnected}
       mode={mode}
       isTrainerEligible={isTrainerEligible}
@@ -120,9 +125,7 @@ export function ProfileDrawerContainer() {
       isSigningOut={isSigningOut}
       onSwitchMode={(next) => switchMode(next)}
       onOpenProfile={() => pushFrom("/(app)/profile/edit")}
-      onOpenAchievements={() =>
-        pushFrom("/(app)/coming-soon?feature=achievements")
-      }
+      onOpenAchievements={() => pushFrom("/(app)/achievements")}
       onOpenHealth={() => pushFrom("/(app)/profile/health")}
       onOpenSubscription={() => pushFrom("/(auth)/subscription-selection")}
       onOpenNotifications={() => pushFrom("/(app)/profile/notifications")}
