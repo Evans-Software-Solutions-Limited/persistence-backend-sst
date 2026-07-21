@@ -31,6 +31,12 @@ vi.mock("../../../relationships/assertTrainerCanActForClient", () => ({
   assertTrainerCanActForClient: (...args: unknown[]) => assertGuard(...args),
 }));
 
+const auditClientDataReadMock = vi.fn(async () => undefined);
+vi.mock("../../../relationships/auditClientDataRead", () => ({
+  auditClientDataRead: (...a: unknown[]) =>
+    auditClientDataReadMock(...(a as [])),
+}));
+
 const repo = {
   getUserTimezone: vi.fn(async () => "Europe/London"),
   getBodyTrend: vi.fn(async () => [
@@ -74,6 +80,7 @@ describe("trainersClientBodyTrendHandler", () => {
       { date: "2026-06-20", weightKg: 80, bodyFat: 21 },
       { date: "2026-06-25", weightKg: 79.2, bodyFat: 20.4 },
     ]);
+    auditClientDataReadMock.mockResolvedValue(undefined);
   });
 
   it("requires auth", async () => {
@@ -129,5 +136,28 @@ describe("trainersClientBodyTrendHandler", () => {
       90,
       "Europe/London",
     );
+  });
+
+  it("logs a coach read-audit row (category=body_trend) after the guard passes", async () => {
+    const { trainersClientBodyTrendHandler } =
+      await import("../trainersClientBodyTrendHandler");
+    const res = await trainersClientBodyTrendHandler.handle(get("client-1"));
+    expect(res.status).toBe(200);
+    expect(auditClientDataReadMock).toHaveBeenCalledWith({
+      trainerId: "trainer-id",
+      clientId: "client-1",
+      dataCategory: "body_trend",
+      route: "/clients/:clientId/body-trend",
+    });
+  });
+
+  it("still returns 200 with the trend series if the read-audit write throws", async () => {
+    auditClientDataReadMock.mockRejectedValue(new Error("audit db down"));
+    const { trainersClientBodyTrendHandler } =
+      await import("../trainersClientBodyTrendHandler");
+    const res = await trainersClientBodyTrendHandler.handle(get("client-1"));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as any;
+    expect(body.data).toHaveLength(2);
   });
 });

@@ -22,6 +22,7 @@ const recordMock = vi.hoisted(() => vi.fn(async () => undefined));
 const getClientDetailMock = vi.hoisted(() =>
   vi.fn(async () => CLIENT_DETAIL_FIXTURE),
 );
+const auditClientDataReadMock = vi.hoisted(() => vi.fn(async () => undefined));
 
 vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getAuthUser: vi.fn(async (authHeader: string | undefined) => {
@@ -45,6 +46,10 @@ vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
 
 vi.mock("../../../relationships/assertTrainerCanActForClient", () => ({
   assertTrainerCanActForClient: gateMock,
+}));
+
+vi.mock("../../../relationships/auditClientDataRead", () => ({
+  auditClientDataRead: auditClientDataReadMock,
 }));
 
 vi.mock("../../../entitlement/assertEntitlement", async () => {
@@ -210,6 +215,7 @@ describe("trainersMeGenerateClientAiSummaryHandler", () => {
     insertInitialMock.mockResolvedValue(true);
     updateRefreshMock.mockResolvedValue(undefined);
     recordMock.mockResolvedValue(undefined);
+    auditClientDataReadMock.mockResolvedValue(undefined);
   });
 
   it("401 when unauthenticated — never reaches the gate", async () => {
@@ -252,6 +258,8 @@ describe("trainersMeGenerateClientAiSummaryHandler", () => {
     const res = await app.handle(authedRequest());
     expect(res.status).toBe(402);
     expect(generateSummaryMock).not.toHaveBeenCalled();
+    // No data was read, so no read-audit row is written.
+    expect(auditClientDataReadMock).not.toHaveBeenCalled();
   });
 
   it("429 ai_daily_limit when the coach is at the per-coach ceiling", async () => {
@@ -262,6 +270,8 @@ describe("trainersMeGenerateClientAiSummaryHandler", () => {
     expect(await res.json()).toEqual({ error: "ai_daily_limit" });
     expect(generateSummaryMock).not.toHaveBeenCalled();
     expect(recordMock).not.toHaveBeenCalled();
+    // At-ceiling: no data read, so no read-audit row.
+    expect(auditClientDataReadMock).not.toHaveBeenCalled();
   });
 
   it("no row → auto-generates, inserts refresh_count=0, records usage, canManualRefresh true", async () => {
@@ -388,5 +398,24 @@ describe("trainersMeGenerateClientAiSummaryHandler", () => {
     );
     expect(res.status).toBe(200);
     expect(insertInitialMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("logs a coach read-audit row (category=ai_summary) after the gate passes", async () => {
+    const app = await buildApp();
+    const res = await app.handle(authedRequest());
+    expect(res.status).toBe(200);
+    expect(auditClientDataReadMock).toHaveBeenCalledWith({
+      trainerId: "trainer-1",
+      clientId: "client-1",
+      dataCategory: "ai_summary",
+      route: "/trainers/me/clients/:clientId/ai-summary",
+    });
+  });
+
+  it("still returns 200 if the read-audit write throws", async () => {
+    auditClientDataReadMock.mockRejectedValue(new Error("audit db down"));
+    const app = await buildApp();
+    const res = await app.handle(authedRequest());
+    expect(res.status).toBe(200);
   });
 });

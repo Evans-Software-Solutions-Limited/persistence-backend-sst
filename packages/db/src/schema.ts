@@ -951,6 +951,44 @@ export const trainerActionsAudit = pgTable(
   ],
 );
 
+// ─── Client Data Access Log (specs/27-coach-health-data-read-audit) ─────────
+// Append-only audit of coach READS of client health/fitness data (UK GDPR Art
+// 5(2) accountability) — the read-side counterpart to trainerActionsAudit
+// above, which only covers WRITES. Populated by `auditClientDataRead`
+// (application/relationships/auditClientDataRead.ts), called AFTER
+// `assertTrainerCanActForClient` passes so only authorized reads are logged.
+// De-duped within a rolling window per (trainer, client, category) — see the
+// helper. Retention: 12 months, pruned by `cleanup_old_health_data()`.
+// Migration: 20260721000000_client_data_access_log.sql.
+export const clientDataAccessLog = pgTable(
+  "client_data_access_log",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    trainerId: uuid("trainer_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    dataCategory: text("data_category").notNull(),
+    route: text("route").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index("client_data_access_log_client_ts").on(
+      t.clientId,
+      t.createdAt.desc(),
+    ),
+    index("client_data_access_log_trainer_client_ts").on(
+      t.trainerId,
+      t.clientId,
+      t.createdAt.desc(),
+    ),
+  ],
+);
+
 // ─── Client AI Summaries (Coach Mode Phase 6) ────────────────────────────────
 //
 // One row per (trainer, client, concluded client-local day) — the cache behind
@@ -1703,6 +1741,8 @@ export type NewDataSharingConsent = typeof dataSharingConsents.$inferInsert;
 
 export type TrainerActionAudit = typeof trainerActionsAudit.$inferSelect;
 export type NewTrainerActionAudit = typeof trainerActionsAudit.$inferInsert;
+export type ClientDataAccessLog = typeof clientDataAccessLog.$inferSelect;
+export type NewClientDataAccessLog = typeof clientDataAccessLog.$inferInsert;
 export type ClientAiSummary = typeof clientAiSummaries.$inferSelect;
 export type NewClientAiSummary = typeof clientAiSummaries.$inferInsert;
 export type ActionType = (typeof actionTypeEnum.enumValues)[number];

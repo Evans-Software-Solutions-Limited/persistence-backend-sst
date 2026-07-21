@@ -12,6 +12,7 @@ const nutritionTargetRepoMock = {
 const configureMock = vi.fn();
 const disableMock = vi.fn();
 const assertMock = vi.fn();
+const auditClientDataReadMock = vi.fn(async () => undefined);
 
 vi.mock("../../../repositories/habitConfigRepository", () => ({
   HabitConfigRepository: vi.fn(() => configRepoMock),
@@ -30,6 +31,10 @@ vi.mock("../disableClientHabit", () => ({
 }));
 vi.mock("../../../relationships/assertTrainerCanActForClient", () => ({
   assertTrainerCanActForClient: (...a: unknown[]) => assertMock(...a),
+}));
+vi.mock("../../../relationships/auditClientDataRead", () => ({
+  auditClientDataRead: (...a: unknown[]) =>
+    auditClientDataReadMock(...(a as [])),
 }));
 vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getAuthUser: vi.fn(async (h: string | undefined) =>
@@ -70,6 +75,7 @@ beforeEach(() => {
   habitRepoMock.list.mockResolvedValue([]);
   nutritionTargetRepoMock.get.mockResolvedValue(null);
   assertMock.mockResolvedValue({ allowed: true });
+  auditClientDataReadMock.mockResolvedValue(undefined);
 });
 
 describe("GET /trainers/me/clients/:clientId/habits/config", () => {
@@ -143,6 +149,31 @@ describe("GET /trainers/me/clients/:clientId/habits/config", () => {
     const calories = body.data.find((d) => d.category === "calories");
     expect(calories.targetValue).toBe(2800);
     expect(nutritionTargetRepoMock.get).toHaveBeenCalledWith("c1");
+  });
+
+  it("logs a coach read-audit row (category=habits) after the gate passes", async () => {
+    const { trainersMeGetClientHabitConfigHandler } =
+      await import("../trainersMeGetClientHabitConfigHandler");
+    const res = await trainersMeGetClientHabitConfigHandler.handle(
+      req("/trainers/me/clients/c1/habits/config", "GET"),
+    );
+    expect(res.status).toBe(200);
+    expect(auditClientDataReadMock).toHaveBeenCalledWith({
+      trainerId: "trainer-1",
+      clientId: "c1",
+      dataCategory: "habits",
+      route: "/trainers/me/clients/:clientId/habits/config",
+    });
+  });
+
+  it("still returns 200 if the read-audit write throws", async () => {
+    auditClientDataReadMock.mockRejectedValue(new Error("audit db down"));
+    const { trainersMeGetClientHabitConfigHandler } =
+      await import("../trainersMeGetClientHabitConfigHandler");
+    const res = await trainersMeGetClientHabitConfigHandler.handle(
+      req("/trainers/me/clients/c1/habits/config", "GET"),
+    );
+    expect(res.status).toBe(200);
   });
 });
 
@@ -243,5 +274,30 @@ describe("GET /trainers/me/clients/:clientId/habit-completions", () => {
       goalId: undefined,
       windowDays: 14,
     });
+  });
+
+  it("logs a coach read-audit row (category=habits) after the gate passes", async () => {
+    const { trainersMeListClientHabitCompletionsHandler } =
+      await import("../trainersMeListClientHabitCompletionsHandler");
+    const res = await trainersMeListClientHabitCompletionsHandler.handle(
+      req("/trainers/me/clients/c1/habit-completions", "GET"),
+    );
+    expect(res.status).toBe(200);
+    expect(auditClientDataReadMock).toHaveBeenCalledWith({
+      trainerId: "trainer-1",
+      clientId: "c1",
+      dataCategory: "habits",
+      route: "/trainers/me/clients/:clientId/habit-completions",
+    });
+  });
+
+  it("still returns 200 if the read-audit write throws", async () => {
+    auditClientDataReadMock.mockRejectedValue(new Error("audit db down"));
+    const { trainersMeListClientHabitCompletionsHandler } =
+      await import("../trainersMeListClientHabitCompletionsHandler");
+    const res = await trainersMeListClientHabitCompletionsHandler.handle(
+      req("/trainers/me/clients/c1/habit-completions", "GET"),
+    );
+    expect(res.status).toBe(200);
   });
 });

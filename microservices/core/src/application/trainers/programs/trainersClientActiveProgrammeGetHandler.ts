@@ -1,6 +1,7 @@
 import Elysia, { t } from "elysia";
 import { ProgramService } from "../../repositories/programService";
 import { assertTrainerCanActForClient } from "../../relationships/assertTrainerCanActForClient";
+import { auditClientDataRead } from "../../relationships/auditClientDataRead";
 import {
   getAuthUser,
   requireAuth,
@@ -19,7 +20,9 @@ import { todayIso } from "./shared";
  * guard consolidation) — role check first, then an ACTIVE, non-AI relationship
  * with :clientId, then client-not-soft-deleted (Cluster 2a). Replaces the
  * former inline relationship-only check. This is a read of a single client's
- * derived programme state, so no audit row.
+ * derived programme state, so no `trainer_actions_audit` row — but it IS
+ * logged to the coach read-audit (specs/27-coach-health-data-read-audit,
+ * category `active_programme`) AFTER the gate passes.
  */
 export const trainersClientActiveProgrammeGetHandler = new Elysia()
   .derive(async ({ headers }) => ({
@@ -38,6 +41,13 @@ export const trainersClientActiveProgrammeGetHandler = new Elysia()
         ctx.set.status = verdict.status;
         return verdict.body;
       }
+
+      await auditClientDataRead({
+        trainerId,
+        clientId,
+        dataCategory: "active_programme",
+        route: "/trainers/me/clients/:clientId/active-programme",
+      }).catch(() => {});
 
       const programme =
         await ctx.ProgramAssignmentRepository.getActiveProgrammeForClient(

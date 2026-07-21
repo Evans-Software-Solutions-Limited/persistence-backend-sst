@@ -6,15 +6,18 @@ import {
 } from "@persistence/api-utils/auth/supabaseAuth";
 import { HabitService } from "../../repositories/habitService";
 import { assertTrainerCanActForClient } from "../../relationships/assertTrainerCanActForClient";
+import { auditClientDataRead } from "../../relationships/auditClientDataRead";
 import { parseWindowDays } from "../../habits/listHabitCompletionsHandler";
 
 /**
  * GET /trainers/me/clients/:clientId/habit-completions — a coach reads a
  * client's habit completion history for the trainer dashboard (18-habit-setup
  * Phase 18.3 — T-18.3.2; design.md § 3.2, STORY-006 AC 6.5). Same wire shape as
- * the self `GET /habit-completions` (optional `goalId`, `window=Nd`). Reads
- * aren't audited (cross-cuts § 1.4). Auth via the shared gate (cross-cuts § 1.3);
- * values come FROM THE DB (locked decision 7 — trainers never touch HealthKit).
+ * the self `GET /habit-completions` (optional `goalId`, `window=Nd`). Auth via
+ * the shared gate (cross-cuts § 1.3); values come FROM THE DB (locked
+ * decision 7 — trainers never touch HealthKit). The read is logged to the
+ * coach read-audit (specs/27-coach-health-data-read-audit) AFTER the gate
+ * passes, via the best-effort `auditClientDataRead` helper.
  */
 export const trainersMeListClientHabitCompletionsHandler = new Elysia()
   .derive(async ({ headers }) => ({
@@ -33,6 +36,13 @@ export const trainersMeListClientHabitCompletionsHandler = new Elysia()
         ctx.set.status = verdict.status;
         return verdict.body;
       }
+
+      await auditClientDataRead({
+        trainerId,
+        clientId,
+        dataCategory: "habits",
+        route: "/trainers/me/clients/:clientId/habit-completions",
+      }).catch(() => {});
 
       const { goalId, window } = ctx.query;
       const completions = await ctx.HabitRepository.list(clientId, {

@@ -25,6 +25,12 @@ vi.mock("../../../relationships/assertTrainerCanActForClient", () => ({
   assertTrainerCanActForClient: vi.fn(),
 }));
 
+const auditClientDataReadMock = vi.fn(async () => undefined);
+vi.mock("../../../relationships/auditClientDataRead", () => ({
+  auditClientDataRead: (...a: unknown[]) =>
+    auditClientDataReadMock(...(a as [])),
+}));
+
 const repoList = vi.fn();
 vi.mock("../../../repositories/sessionRepository", () => ({
   SessionRepository: vi.fn(() => ({ list: repoList })),
@@ -50,6 +56,7 @@ describe("trainersMeListClientSessionsHandler", () => {
     vi.clearAllMocks();
     (assertTrainerCanActForClient as any).mockResolvedValue({ allowed: true });
     repoList.mockResolvedValue([{ id: "x-1" }]);
+    auditClientDataReadMock.mockResolvedValue(undefined);
   });
 
   it("requires auth", async () => {
@@ -91,5 +98,32 @@ describe("trainersMeListClientSessionsHandler", () => {
       "client-1",
       expect.objectContaining({ limit: 20, offset: 0 }),
     );
+  });
+
+  it("logs a coach read-audit row (category=sessions) after the verdict allows", async () => {
+    const { trainersMeListClientSessionsHandler } =
+      await import("../trainersMeListClientSessionsHandler");
+    const res = await trainersMeListClientSessionsHandler.handle(
+      get("client-1"),
+    );
+    expect(res.status).toBe(200);
+    expect(auditClientDataReadMock).toHaveBeenCalledWith({
+      trainerId: "trainer-id",
+      clientId: "client-1",
+      dataCategory: "sessions",
+      route: "/trainers/me/clients/:clientId/sessions",
+    });
+  });
+
+  it("still returns 200 with the client's sessions if the read-audit write throws", async () => {
+    auditClientDataReadMock.mockRejectedValue(new Error("audit db down"));
+    const { trainersMeListClientSessionsHandler } =
+      await import("../trainersMeListClientSessionsHandler");
+    const res = await trainersMeListClientSessionsHandler.handle(
+      get("client-1"),
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as any;
+    expect(body.data).toEqual([{ id: "x-1" }]);
   });
 });

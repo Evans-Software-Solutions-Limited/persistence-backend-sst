@@ -6,13 +6,15 @@ import {
 } from "@persistence/api-utils/auth/supabaseAuth";
 import { GoalService } from "../../repositories/goalService";
 import { assertTrainerCanActForClient } from "../../relationships/assertTrainerCanActForClient";
+import { auditClientDataRead } from "../../relationships/auditClientDataRead";
 
 /**
  * GET /trainers/me/clients/:clientId/goals — parity read (cross-cuts § 1.2)
  * letting a coach list a client's goals (self-set and coach-assigned alike).
- * Same query + wire shape as the self `GET /goals`. Reads are NOT audited
- * (cross-cuts § 1.4). Authorization via the shared `assertTrainerCanActForClient`
- * gate (cross-cuts § 1.3).
+ * Same query + wire shape as the self `GET /goals`. Authorization via the
+ * shared `assertTrainerCanActForClient` gate (cross-cuts § 1.3). The read is
+ * logged to the coach read-audit (specs/27-coach-health-data-read-audit) AFTER
+ * the gate passes, via the best-effort `auditClientDataRead` helper.
  */
 export const trainersMeListClientGoalsHandler = new Elysia()
   .derive(async ({ headers }) => ({
@@ -31,6 +33,13 @@ export const trainersMeListClientGoalsHandler = new Elysia()
         ctx.set.status = verdict.status;
         return verdict.body;
       }
+
+      await auditClientDataRead({
+        trainerId,
+        clientId,
+        dataCategory: "goals",
+        route: "/trainers/me/clients/:clientId/goals",
+      }).catch(() => {});
 
       const { limit, offset } = ctx.query;
       const goals = await ctx.GoalRepository.list(
