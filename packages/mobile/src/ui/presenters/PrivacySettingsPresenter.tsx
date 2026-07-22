@@ -147,7 +147,9 @@ export function PrivacySettingsPresenter({
           <Text style={styles.sectionDescription}>
             Permanently delete your account and all associated data — profile,
             workouts, sessions, nutrition, measurements, and goals. This cannot
-            be undone.
+            be undone. If you have an active Apple subscription, deleting your
+            account won&apos;t cancel it — cancel it separately in Settings →
+            Subscriptions.
           </Text>
           <TouchableOpacity
             style={[styles.option, styles.dangerOption]}

@@ -26,6 +26,15 @@ describe("PrivacySettingsPresenter — account deletion (Apple 5.1.1(v))", () =>
     expect(props.onDeleteAccount).toHaveBeenCalledTimes(1);
   });
 
+  it("warns up-front that deleting the account does NOT cancel an Apple subscription (5.1.1(v))", () => {
+    // Apple bills the subscription at the account level; account deletion
+    // can't stop it, so the section must tell the user to cancel it in the
+    // App Store (mirrors the confirm dialog's notice).
+    const { queryByText } = setup();
+    expect(queryByText(/active Apple subscription/i)).not.toBeNull();
+    expect(queryByText(/Settings → Subscriptions/i)).not.toBeNull();
+  });
+
   it("no longer promises account deletion via support", () => {
     const { queryByText } = setup();
     // The old footer falsely promised "account deletion at any time by
