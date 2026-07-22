@@ -113,9 +113,8 @@ export interface IntroOffer {
 /**
  * Convert a product's introductory offer into whole trial days — but ONLY when
  * it's a FREE trial (zero price). A paid intro offer, an absent offer, or an
- * unrecognised period unit returns `null` so callers fall back to
- * `DEFAULT_TRIAL_DAYS`. Keeps app copy tied to what Apple actually grants
- * rather than a hardcoded number.
+ * unrecognised period unit returns `null` so callers render NO trial banner.
+ * Keeps app copy tied to what Apple actually grants rather than a guess.
  */
 export function freeTrialDaysFromIntroOffer(
   introOffer: IntroOffer | null | undefined,
@@ -139,18 +138,19 @@ export function freeTrialDaysFromIntroOffer(
 
 /**
  * The free-trial length (days) to advertise for an offering: the first package
- * carrying a free-trial intro offer wins, else `fallbackDays`. All products
- * share the same 14-day offer in practice, so one value is correct for every
- * card; deriving it means the banner can never drift from the store.
+ * carrying a free-trial intro offer wins, else `null`. All products share the
+ * same intro offer in practice, so one value is correct for every card.
+ *
+ * Returns `null` — NOT a hardcoded fallback — when no package surfaces a real
+ * offer (App Store Connect offer missing/unapproved, or not yet synced by
+ * RevenueCat). Callers must render NO trial banner in that case: advertising a
+ * guessed duration risks promising the user something Apple won't grant.
  */
-export function offeringTrialDays(
-  packages: PurchaseProduct[],
-  fallbackDays: number,
-): number {
+export function offeringTrialDays(packages: PurchaseProduct[]): number | null {
   for (const pkg of packages) {
     if (pkg.introTrialDays != null && pkg.introTrialDays > 0) {
       return pkg.introTrialDays;
     }
   }
-  return fallbackDays;
+  return null;
 }

@@ -354,7 +354,7 @@ describe("deriveTrialEligibility", () => {
     scheduledChange: null,
   };
 
-  it("returns a 14-day trial for 'premium' when eligible (consistent across all tiers)", () => {
+  it("returns a DEFAULT_TRIAL_DAYS (7) trial for 'premium' when eligible (consistent across all tiers)", () => {
     expect(
       deriveTrialEligibility({
         tierName: "premium",
@@ -363,7 +363,7 @@ describe("deriveTrialEligibility", () => {
         isTrialEligibleUser: true,
         isTrialEligibleTrainer: false,
       }),
-    ).toEqual({ isTrialEligible: true, trialDuration: 14 });
+    ).toEqual({ isTrialEligible: true, trialDuration: 7 });
   });
 
   it("returns null trial for 'premium' when ineligible", () => {
@@ -378,7 +378,7 @@ describe("deriveTrialEligibility", () => {
     ).toEqual({ isTrialEligible: false, trialDuration: null });
   });
 
-  it("returns 14-day trial for any trainer tier when eligible (post tier-simplification — all trainer tiers carry the former Pro entitlements)", () => {
+  it("returns DEFAULT_TRIAL_DAYS (7) trial for any trainer tier when eligible (post tier-simplification — all trainer tiers carry the former Pro entitlements)", () => {
     expect(
       deriveTrialEligibility({
         tierName: "individual_trainer",
@@ -387,7 +387,7 @@ describe("deriveTrialEligibility", () => {
         isTrialEligibleUser: false,
         isTrialEligibleTrainer: true,
       }),
-    ).toEqual({ isTrialEligible: true, trialDuration: 14 });
+    ).toEqual({ isTrialEligible: true, trialDuration: 7 });
     expect(
       deriveTrialEligibility({
         tierName: "small_business",
@@ -396,7 +396,7 @@ describe("deriveTrialEligibility", () => {
         isTrialEligibleUser: false,
         isTrialEligibleTrainer: true,
       }),
-    ).toEqual({ isTrialEligible: true, trialDuration: 14 });
+    ).toEqual({ isTrialEligible: true, trialDuration: 7 });
   });
 
   it("returns no-trial for the free tier", () => {

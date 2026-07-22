@@ -143,7 +143,7 @@ describe("TrainerSubscriptionCard", () => {
         onProPress={jest.fn()}
       />,
     );
-    expect(screen.getByText("14-day free trial")).toBeTruthy();
+    expect(screen.getByText("Free trial")).toBeTruthy();
   });
 
   it("uses custom trialBannerText when provided", () => {

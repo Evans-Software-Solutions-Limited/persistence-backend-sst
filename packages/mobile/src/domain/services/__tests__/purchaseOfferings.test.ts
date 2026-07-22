@@ -178,11 +178,11 @@ describe("offeringTrialDays", () => {
       pkg({ tier: "premium", introTrialDays: null }),
       pkg({ tier: "individual_trainer", introTrialDays: 14 }),
     ];
-    expect(offeringTrialDays(packages, 99)).toBe(14);
+    expect(offeringTrialDays(packages)).toBe(14);
   });
 
-  it("falls back when no package carries a free-trial offer", () => {
-    expect(offeringTrialDays([pkg({ introTrialDays: null })], 14)).toBe(14);
-    expect(offeringTrialDays([], 14)).toBe(14);
+  it("returns null when no package carries a real free-trial offer (never guesses a duration)", () => {
+    expect(offeringTrialDays([pkg({ introTrialDays: null })])).toBeNull();
+    expect(offeringTrialDays([])).toBeNull();
   });
 });

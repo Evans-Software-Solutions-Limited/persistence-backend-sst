@@ -83,7 +83,8 @@ export interface PurchaseProduct {
    * or `null` when the product has no free-trial intro offer (paid intro, no
    * offer, or before the App Store Connect offer is live). The paywall reads
    * this so trial copy reflects Apple's actual offer; it falls back to
-   * `DEFAULT_TRIAL_DAYS` when null. See `freeTrialDaysFromIntroOffer`.
+   * null when the product carries no real free-trial offer — callers then show
+   * no trial banner (never a guessed duration). See `freeTrialDaysFromIntroOffer`.
    */
   introTrialDays: number | null;
 }

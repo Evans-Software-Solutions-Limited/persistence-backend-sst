@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, Linking } from "react-native";
 import { useLocalSearchParams, useRouter, type Href } from "expo-router";
 import {
-  DEFAULT_TRIAL_DAYS,
   type BillingCycle,
   type SubscriptionTierName,
 } from "@/domain/models/subscription";
@@ -130,11 +129,13 @@ export function IOSPurchaseFlowContainer() {
     () => derivePurchasableTiers(packages),
     [packages],
   );
-  // Trial length advertised on the paywall — derived from the product's Apple
-  // introductory offer, falling back to DEFAULT_TRIAL_DAYS until the offer is
-  // live in App Store Connect / RevenueCat.
+  // Trial length advertised on the paywall — derived ONLY from the product's
+  // Apple introductory offer. `null` when RevenueCat hasn't surfaced a real
+  // offer (offer missing/unapproved in App Store Connect, or not yet synced):
+  // in that case we show NO trial banner rather than guess a duration and
+  // over-promise the user. See offeringTrialDays.
   const trialDurationDays = useMemo(
-    () => offeringTrialDays(packages, DEFAULT_TRIAL_DAYS),
+    () => offeringTrialDays(packages),
     [packages],
   );
 

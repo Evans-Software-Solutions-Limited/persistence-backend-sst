@@ -25,17 +25,18 @@ export type SubscriptionTierName =
   | "medium_enterprise";
 
 /**
- * Fallback free-trial length in days, used for paywall/drawer copy when the
- * actual introductory-offer period isn't available from the store product
- * (e.g. the Stripe rail, or before RevenueCat has surfaced the intro offer).
+ * Free-trial length in days for the (now-unused) Stripe rail's copy.
  *
- * The real trial is an App Store Connect Introductory Offer (14-day free
- * trial on every auto-renewable sub); RevenueCat reflects its period on the
- * product, which the iOS rail derives at runtime. This constant keeps every
- * tier consistent at 14 days and stops the copy drifting from what Apple
- * charges when the offer can't be read.
+ * The LIVE rail is RevenueCat/Apple IAP only: the iOS paywall derives the real
+ * trial period from the product's App Store Connect introductory offer
+ * (`introPrice` → `offeringTrialDays`) and shows NO trial when that offer isn't
+ * surfaced — it never falls back to a guessed number (we won't over-promise).
+ *
+ * This constant survives only in `SubscriptionSelectionPresenter` (the Stripe
+ * rail), which is dead code pending removal (Stripe isn't used). Kept at 7 to
+ * match the current ASC offer while that rail still exists.
  */
-export const DEFAULT_TRIAL_DAYS = 14;
+export const DEFAULT_TRIAL_DAYS = 7;
 
 /**
  * Profile role. Drives the auto-default on the Subscription Selection

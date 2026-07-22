@@ -201,7 +201,7 @@ export function TrainerSubscriptionCard({
                 !contactSalesMode && (
                   <View style={styles.trialBannerColumn}>
                     <Text style={styles.trialBannerColumnText}>
-                      {trialBannerText ?? "14-day free trial"}
+                      {trialBannerText ?? "Free trial"}
                     </Text>
                   </View>
                 )}
