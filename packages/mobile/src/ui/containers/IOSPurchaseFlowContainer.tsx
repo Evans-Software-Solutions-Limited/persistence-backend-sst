@@ -11,7 +11,6 @@ import {
 } from "@/domain/services/subscriptionService";
 import {
   findPackageForTier,
-  offeringTrialDays,
   purchasableTiers as derivePurchasableTiers,
 } from "@/domain/services/purchaseOfferings";
 import { usePurchases } from "@/ui/hooks/usePurchases";
@@ -129,14 +128,23 @@ export function IOSPurchaseFlowContainer() {
     () => derivePurchasableTiers(packages),
     [packages],
   );
-  // Trial length advertised on the paywall — derived ONLY from the product's
-  // Apple introductory offer. `null` when RevenueCat hasn't surfaced a real
-  // offer (offer missing/unapproved in App Store Connect, or not yet synced):
-  // in that case we show NO trial banner rather than guess a duration and
-  // over-promise the user. See offeringTrialDays.
-  const trialDurationDays = useMemo(
-    () => offeringTrialDays(packages),
-    [packages],
+  // Trial length advertised on EACH card — derived ONLY from THAT tier's own
+  // product's Apple introductory offer, on the shown billing cycle. `null`
+  // when the product surfaces no real free-trial offer (offer missing/
+  // unapproved in App Store Connect, or not yet synced) → that card shows NO
+  // trial banner rather than guess a duration. Per-tier (NOT one global value
+  // across all cards): otherwise the first product with any offer stamped its
+  // duration on every card — e.g. a premium product with a 1-week offer would
+  // wrongly render a trainer product's 2-week offer, or vice-versa. Mirrors
+  // isTierTrialEligible's per-tier shape.
+  const tierTrialDays = useCallback(
+    (tier: SubscriptionTierName): number | null => {
+      const pkg = findPackageForTier(packages, tier, billingCycle);
+      return pkg?.introTrialDays != null && pkg.introTrialDays > 0
+        ? pkg.introTrialDays
+        : null;
+    },
+    [packages, billingCycle],
   );
 
   // Trial eligibility = Apple's real on-device answer (per Apple ID, per
@@ -323,7 +331,7 @@ export function IOSPurchaseFlowContainer() {
       selectedRole={selectedRole}
       purchasableTiers={purchasableTiers}
       isTierTrialEligible={isTierTrialEligible}
-      trialDurationDays={trialDurationDays}
+      tierTrialDays={tierTrialDays}
       hasTrialEligibilityData={hasTrialEligibilityData}
       contactSalesTiers={CONTACT_SALES_ANNUAL_TIERS}
       onContactSales={handleContactSales}

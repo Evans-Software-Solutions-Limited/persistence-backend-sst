@@ -58,10 +58,12 @@ export interface IOSPurchaseFlowPresenterProps {
    * product on the shown cycle (RevenueCat's real answer). Per-tier so a
    * banner only shows on a tile whose own product grants a trial. */
   isTierTrialEligible: (tier: SubscriptionTierName) => boolean;
-  /** Free-trial length (days) advertised on every tile — derived ONLY from the
-   * product's real Apple intro offer. `null` when no real offer is surfaced;
-   * the tile then shows NO trial banner (we never guess a duration). */
-  trialDurationDays: number | null;
+  /** Free-trial length (days) for a SPECIFIC tile — derived ONLY from THAT
+   * tier's own product's real Apple intro offer, on the shown cycle. `null`
+   * when that product surfaces no real offer; the tile then shows NO trial
+   * banner (we never guess a duration). Per-tier so each card reflects its own
+   * product (e.g. premium 1-week vs a trainer 2-week offer independently). */
+  tierTrialDays: (tier: SubscriptionTierName) => number | null;
   hasTrialEligibilityData: boolean;
 
   /** Tiers whose ANNUAL plan shows "Contact Sales" instead of an IAP button
@@ -96,7 +98,7 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
     selectedRole,
     purchasableTiers,
     isTierTrialEligible,
-    trialDurationDays,
+    tierTrialDays,
     hasTrialEligibilityData,
     contactSalesTiers,
     onContactSales,
@@ -119,9 +121,10 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
     const cards: React.ReactElement[] = [];
     if (premium) {
       const isPremiumCurrent = currentTier === "premium";
+      const premiumTrialDays = tierTrialDays("premium");
       const showPremiumTrial =
         hasTrialEligibilityData &&
-        trialDurationDays !== null &&
+        premiumTrialDays !== null &&
         isTierTrialEligible("premium") &&
         !isPremiumCurrent;
       cards.push(
@@ -132,8 +135,8 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
           isCurrent={isPremiumCurrent}
           showTrialBanner={showPremiumTrial}
           trialBannerText={
-            trialDurationDays !== null
-              ? `${trialDurationDays}-day free trial`
+            premiumTrialDays !== null
+              ? `${premiumTrialDays}-day free trial`
               : undefined
           }
           onPress={() => onTierSelect("premium")}
@@ -150,7 +153,7 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
     currentTier,
     hasTrialEligibilityData,
     isTierTrialEligible,
-    trialDurationDays,
+    tierTrialDays,
     isProcessing,
     isRestoring,
     onTierSelect,
@@ -171,9 +174,10 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
         // "Contact Sales" CTA instead of a purchase button (and no trial).
         const isContactSales =
           billingCycle === "yearly" && contactSalesTiers.has(baseName);
+        const trainerTrialDays = tierTrialDays(baseName);
         const showTrialBanner =
           hasTrialEligibilityData &&
-          trialDurationDays !== null &&
+          trainerTrialDays !== null &&
           isTierTrialEligible(baseName) &&
           !isCurrent &&
           !isContactSales;
@@ -187,8 +191,8 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
             isProCurrent={isCurrent}
             showProTrialBanner={showTrialBanner}
             trialBannerText={
-              trialDurationDays !== null
-                ? `${trialDurationDays}-day free trial`
+              trainerTrialDays !== null
+                ? `${trainerTrialDays}-day free trial`
                 : undefined
             }
             contactSalesMode={isContactSales}
@@ -207,7 +211,7 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
     currentTier,
     hasTrialEligibilityData,
     isTierTrialEligible,
-    trialDurationDays,
+    tierTrialDays,
     contactSalesTiers,
     onContactSales,
     isProcessing,

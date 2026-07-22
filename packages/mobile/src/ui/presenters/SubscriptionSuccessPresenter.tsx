@@ -1,5 +1,5 @@
 import React from "react";
-import { StatusBar, StyleSheet, Text, View } from "react-native";
+import { ScrollView, StatusBar, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Button } from "@/ui/components/Button";
@@ -44,7 +44,11 @@ export function SubscriptionSuccessPresenter(
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="light-content" backgroundColor={color.$bg} />
 
-      <View style={styles.content}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.messageSection}>
           <Text style={styles.title}>Subscription Activated!</Text>
           <Text style={styles.message}>{successMessage}</Text>
@@ -94,7 +98,7 @@ export function SubscriptionSuccessPresenter(
             testID="success-go-home"
           />
         </View>
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -104,9 +108,18 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: color.$bg,
   },
-  content: {
+  scroll: {
     flex: 1,
+  },
+  // `flexGrow: 1` (not `flex: 1`) so the content centres when it fits and
+  // grows/scrolls when it doesn't — the whole point of the fix (tall content /
+  // large Dynamic Type / trainer tier with a Manage-Clients CTA overflowed a
+  // fixed centred View and clipped, with no way to scroll). Vertical padding
+  // keeps the title clear of the status bar when scrolled to the top.
+  content: {
+    flexGrow: 1,
     paddingHorizontal: 8,
+    paddingVertical: 24,
     justifyContent: "center",
     alignItems: "center",
   },
