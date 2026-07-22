@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.7.1](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.7.0...persistence-v1.7.1) (2026-07-22)
+
+
+### Bug Fixes
+
+* **recipes:** logging crash + per-serving display + recipe picker + non-retryable 4xx sync ([#291](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/291)) ([9a2cd52](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/9a2cd5288ffaf270d74e9a01834dc686876d5654))
+* **subscription:** confirm restore/purchase server-side before "Activated!" (+ POST /subscriptions/sync) ([#294](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/294)) ([84f3a25](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/84f3a254efec87d3df0d1374a341e8ec9083f9c9))
+* **subscription:** show a free trial only from the real RevenueCat offer, never a guess ([#292](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/292)) ([b118a53](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/b118a538ebe8cc78073f18d54d499eab1f0ad8fd))
+
 ## [1.7.0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.6.0...persistence-v1.7.0) (2026-07-21)
 
 
