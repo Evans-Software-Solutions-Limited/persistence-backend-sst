@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.3](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.7.2...persistence-v1.7.3) (2026-07-22)
+
+
+### Bug Fixes
+
+* **mobile:** note that account deletion won't cancel an Apple subscription ([#300](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/300)) ([ef497b8](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/ef497b847a7dfb9167bd3307a5c6f3d4aa4ee123))
+
 ## [1.7.2](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.7.1...persistence-v1.7.2) (2026-07-22)
 
 
