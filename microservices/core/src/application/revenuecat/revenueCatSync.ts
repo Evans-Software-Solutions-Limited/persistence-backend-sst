@@ -2,7 +2,7 @@ import {
   LIVE_SUBSCRIPTION_STATUSES,
   SubscriptionRepository,
 } from "../repositories/subscriptionRepository";
-import { fetchActiveEntitlements, fetchAutoRenewOff } from "./revenueCatClient";
+import { fetchCustomerSubscriptions } from "./revenueCatClient";
 import { pickDesiredSubscription } from "./entitlements";
 
 /**
@@ -46,18 +46,18 @@ export async function syncRevenueCatCustomer(appUserId: string): Promise<void> {
     return;
   }
 
-  const entitlements = await fetchActiveEntitlements(appUserId);
-  const desired = pickDesiredSubscription(entitlements);
+  const subscriptions = await fetchCustomerSubscriptions(appUserId);
+  const desired = pickDesiredSubscription(subscriptions);
 
   const rcExternalId = `rc_${appUserId}`;
 
   if (desired !== null) {
     // Cosmetic "cancelled but active" flag: auto-renew OFF while still in the
-    // paid period. Fetched separately (fail-safe → false); drives the in-app
+    // paid period, read from the same subscriptions snapshot. Drives the in-app
     // "cancelled — active until X" banner. `cancelledAt` is set to now when off
     // (the banner only needs it non-null; the date shown is `expiresAt`), and
     // cleared when auto-renew is back on so an uncancellation removes the flag.
-    const autoRenewOff = await fetchAutoRenewOff(appUserId);
+    const autoRenewOff = desired.autoRenewOff;
 
     const values = {
       tierName: desired.tier,
