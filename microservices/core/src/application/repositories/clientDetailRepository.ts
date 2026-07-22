@@ -11,7 +11,11 @@ import {
   workoutSessions,
 } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
-import { clientRosterBand, initialsFromName } from "./trainerRepository";
+import {
+  clientAdherence,
+  clientRosterBand,
+  initialsFromName,
+} from "./trainerRepository";
 import { HomeReadRepository } from "./homeReadRepository";
 import { VolumeRepository } from "./volumeRepository";
 import { NutritionTargetRepository } from "./nutritionTargetRepository";
@@ -317,6 +321,14 @@ export class ClientDetailRepository {
     };
   }
 
+  /**
+   * `windowEnd` is always the client-local `todayISO` at this call site (the
+   * caller never passes a historical end date), so the upper bound can be a
+   * plain strict `<` against it — that alone excludes a due-TODAY assignment
+   * (QA-18): it's neither completed nor genuinely missed yet, so it must not
+   * drag adherence to 0%. Mirrors the `dueDate < now` MISSED-flag bound in
+   * `trainerRepository.getMissedCountsByClient` / `getAdherenceRows`.
+   */
   private async getAdherence(
     trainerId: string,
     clientId: string,
@@ -324,8 +336,8 @@ export class ClientDetailRepository {
     windowEnd: string,
   ): Promise<{ overall: number | null; band: AdherenceModule["band"] }> {
     const db = getDb();
-    // Same computation the roster row uses: completed vs total workout
-    // assignments due in the window, scoped to THIS trainer.
+    // Same computation the roster row uses: completed vs total past-due
+    // workout assignments due in the window, scoped to THIS trainer.
     const rows = await db
       .select({
         completed: sql<number>`count(*) filter (where ${workoutAssignments.status} = 'completed')::int`,
@@ -338,15 +350,17 @@ export class ClientDetailRepository {
           eq(workoutAssignments.clientId, clientId),
           sql`${workoutAssignments.dueDate} is not null`,
           sql`${workoutAssignments.dueDate} >= ${windowStart}`,
-          sql`${workoutAssignments.dueDate} <= ${windowEnd}`,
+          sql`${workoutAssignments.dueDate} < ${windowEnd}`,
         ),
       );
     const total = rows[0]?.total ?? 0;
     const completed = rows[0]?.completed ?? 0;
-    // Brand-new client — no program and no assignments in the window → "not
-    // enough data yet" (null/null), never 0%/crisis (design.md § Module a).
-    if (total === 0) return { overall: null, band: null };
-    const overall = Math.round((completed / total) * 100);
+    // Brand-new / lightly-scheduled client — fewer than ADHERENCE_MIN_SAMPLE
+    // past-due assignments → "not enough data yet" (null/null), never
+    // 0%/crisis (design.md § Module a; QA-18 grace). Shares the threshold with
+    // the roster path via `clientAdherence` so the two never disagree.
+    const overall = clientAdherence(completed, total);
+    if (overall === null) return { overall: null, band: null };
     return { overall, band: clientRosterBand(overall) };
   }
 

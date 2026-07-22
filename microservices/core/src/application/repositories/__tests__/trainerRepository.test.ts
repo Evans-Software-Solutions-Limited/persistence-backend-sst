@@ -84,10 +84,19 @@ describe("TrainerRepository", () => {
       expect(adherenceBand(0)).toBe("atRisk");
     });
 
-    it("clientAdherence excludes zero-assignment clients", async () => {
-      const { clientAdherence } = await import("../trainerRepository");
+    it("clientAdherence excludes clients below ADHERENCE_MIN_SAMPLE (QA-18 grace)", async () => {
+      const { clientAdherence, ADHERENCE_MIN_SAMPLE } =
+        await import("../trainerRepository");
+      expect(ADHERENCE_MIN_SAMPLE).toBe(3);
+      // Zero assignments — the original no-data guard, still a subset of the
+      // grace.
       expect(clientAdherence(0, 0)).toBeNull();
-      expect(clientAdherence(1, 2)).toBe(50);
+      // 1-2 past-due assignments — below the minimum sample, null (not a real
+      // %) even though a raw ratio would be computable.
+      expect(clientAdherence(1, 2)).toBeNull();
+      expect(clientAdherence(0, 1)).toBeNull();
+      // At and above the threshold — a real, meaningful percentage.
+      expect(clientAdherence(1, 3)).toBe(33);
       expect(clientAdherence(3, 4)).toBe(75);
     });
 
@@ -475,7 +484,13 @@ describe("TrainerRepository", () => {
       const db = dbWithSelects([]);
       (getDb as any).mockReturnValue(db);
       expect(
-        await repo.getAdherenceRows("t1", [], new Date(), new Date()),
+        await repo.getAdherenceRows(
+          "t1",
+          [],
+          new Date(),
+          new Date(),
+          new Date(),
+        ),
       ).toEqual([]);
       expect(db.select).not.toHaveBeenCalled();
     });
@@ -496,11 +511,66 @@ describe("TrainerRepository", () => {
         ["c1", "c2"],
         new Date("2026-01-01"),
         new Date("2026-02-01"),
+        new Date("2026-02-01"),
       );
       expect(rows).toEqual([
         { clientId: "c1", completed: 2, total: 4 },
         { clientId: "c2", completed: 0, total: 0 },
       ]);
+    });
+
+    it("WHERE clause is past-due only — due_date < now, not <= (QA-18)", async () => {
+      const { TrainerRepository } = await import("../trainerRepository");
+      const repo = new TrainerRepository();
+      let capturedWhere: unknown;
+      const builder: any = {};
+      for (const m of ["from", "groupBy"]) {
+        builder[m] = vi.fn(() => builder);
+      }
+      builder.where = vi.fn((cond: unknown) => {
+        capturedWhere = cond;
+        return builder;
+      });
+      builder.then = (resolve: (v: unknown[]) => unknown) => resolve([]);
+      (getDb as any).mockReturnValue({ select: vi.fn(() => builder) });
+
+      await repo.getAdherenceRows(
+        "t1",
+        ["c1"],
+        new Date("2026-06-24T00:00:00Z"),
+        new Date("2026-07-22T00:00:00Z"), // windowEnd === today
+        new Date("2026-07-22T00:00:00Z"), // now === today
+      );
+
+      const rendered = renderWhere(capturedWhere);
+      // Both bounds are present: the window's own upper bound stays inclusive
+      // (`<= windowEnd`, needed so historical windows keep their last day),
+      // but there's an ADDITIONAL strict `< now` bound — that's the one that
+      // excludes a due-today assignment when windowEnd === now (QA-18).
+      expect(rendered).toContain('"due_date" <= ');
+      expect(rendered).toContain('"due_date" < ');
+      // Lower bound stays inclusive.
+      expect(rendered).toContain('"due_date" >= ');
+      // Two distinct upper-bound params ($4 window end, $5 now) — not the
+      // same value reused, confirming the extra bound is really a separate
+      // clause rather than a no-op duplicate.
+      expect(rendered.match(/\$\d+/g)).toEqual(["$1", "$2", "$3", "$4", "$5"]);
+    });
+
+    it("historical window is unaffected — the extra now-bound is a no-op when windowEnd is already in the past", async () => {
+      const { TrainerRepository } = await import("../trainerRepository");
+      const repo = new TrainerRepository();
+      (getDb as any).mockReturnValue(
+        dbWithSelects([[{ clientId: "c1", completed: 5, total: 10 }]]),
+      );
+      const rows = await repo.getAdherenceRows(
+        "t1",
+        ["c1"],
+        new Date("2026-05-25T00:00:00Z"),
+        new Date("2026-06-23T00:00:00Z"), // windowEnd well before now
+        new Date("2026-07-22T00:00:00Z"), // now
+      );
+      expect(rows).toEqual([{ clientId: "c1", completed: 5, total: 10 }]);
     });
   });
 
@@ -735,10 +805,11 @@ describe("TrainerRepository", () => {
         newClients: 1,
         churn: 0,
         retention: 100,
-        // c1 90% (strong), c2 50% (atRisk)
+        // c1 90% (strong), c2 50% (atRisk). c2's total is 4 (>= ADHERENCE_MIN_SAMPLE)
+        // so the QA-18 low-sample grace doesn't swallow this genuinely-computed %.
         adhThis: [
           { clientId: "c1", completed: 9, total: 10 },
-          { clientId: "c2", completed: 1, total: 2 },
+          { clientId: "c2", completed: 2, total: 4 },
         ],
         // prev mean 70%
         adhPrev: [{ clientId: "c1", completed: 7, total: 10 }],
@@ -977,6 +1048,78 @@ describe("TrainerRepository", () => {
       expect(byId.get("stel").flags).toEqual([]);
     });
 
+    // ─── QA-18 — brand-new client shows neutral "not enough data", not crisis ──
+
+    it("QA-18: a just-onboarded client with 1-2 past-due assignments gets null/null, never 0%/crisis", async () => {
+      const { TrainerRepository } = await import("../trainerRepository");
+      const repo = new TrainerRepository();
+      stubRoster(repo, {
+        roster: [
+          {
+            clientId: "new1",
+            clientName: "New One",
+            avatarUrl: null,
+            status: "active",
+          },
+          {
+            clientId: "new2",
+            clientName: "New Two",
+            avatarUrl: null,
+            status: "active",
+          },
+        ],
+        adherence: [
+          // 1 past-due assignment, 0 completed — a raw ratio would be 0%
+          // (crisis), but the sample is too small to be meaningful.
+          { clientId: "new1", completed: 0, total: 1 },
+          // 2 past-due assignments, 0 completed — still below the threshold.
+          { clientId: "new2", completed: 0, total: 2 },
+        ],
+        lastSeen: new Map(),
+        missed: new Map(),
+        prs: new Set(),
+      });
+
+      const result = await repo.getClients(
+        "t1",
+        new Date("2026-05-15T00:00:00Z"),
+      );
+      const byId = new Map(result.map((c) => [c.id, c]));
+      expect(byId.get("new1")?.adherence).toBeNull();
+      expect(byId.get("new1")?.band).toBeNull();
+      expect(byId.get("new2")?.adherence).toBeNull();
+      expect(byId.get("new2")?.band).toBeNull();
+    });
+
+    it("QA-18: an established client with >=3 past-due assignments and low completion still shows real crisis (grace doesn't mask genuine struggle)", async () => {
+      const { TrainerRepository } = await import("../trainerRepository");
+      const repo = new TrainerRepository();
+      stubRoster(repo, {
+        roster: [
+          {
+            clientId: "struggling",
+            clientName: "Strug Gling",
+            avatarUrl: null,
+            status: "active",
+          },
+        ],
+        adherence: [
+          // 4 past-due assignments, only 1 completed → 25%, genuinely crisis.
+          { clientId: "struggling", completed: 1, total: 4 },
+        ],
+        lastSeen: new Map(),
+        missed: new Map(),
+        prs: new Set(),
+      });
+
+      const result = await repo.getClients(
+        "t1",
+        new Date("2026-05-15T00:00:00Z"),
+      );
+      expect(result[0].adherence).toBe(25);
+      expect(result[0].band).toBe("crisis");
+    });
+
     it("derives NEW PR / N MISSED / Nd IDLE flags when they apply", async () => {
       const { TrainerRepository } = await import("../trainerRepository");
       const repo = new TrainerRepository();
@@ -1112,7 +1255,13 @@ describe("TrainerRepository", () => {
         expect.any(Date),
         now,
       );
-      expect(adhSpy).toHaveBeenCalledWith("t1", ["c1"], expect.any(Date), now);
+      expect(adhSpy).toHaveBeenCalledWith(
+        "t1",
+        ["c1"],
+        expect.any(Date),
+        now,
+        now,
+      );
     });
 
     it("uses the Date.now() default when no `now` is supplied", async () => {

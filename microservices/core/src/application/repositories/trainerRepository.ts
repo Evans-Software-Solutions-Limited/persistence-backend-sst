@@ -197,6 +197,16 @@ const RETENTION_WINDOW_DAYS = 90;
 const RECENT_ACTIVITY_LIMIT = 20;
 const TOP_PROGRAMS_LIMIT = 3;
 
+/**
+ * Minimum count of *past-due* assignments a client needs before a v1
+ * adherence % / band is considered meaningful (QA-18). Below this, a
+ * just-onboarded client whose only assignment(s) are still due today (or
+ * barely past-due) would otherwise round to a real 0%/crisis reading off a
+ * sample of 1-2 — that's noise, not signal. Tunable; not derived from any
+ * spec constant.
+ */
+export const ADHERENCE_MIN_SAMPLE = 3;
+
 const ADHERENCE_STRONG_MIN = 85;
 const ADHERENCE_WOBBLING_MIN = 65;
 
@@ -260,14 +270,16 @@ export function adherenceBand(pct: number): ClientHealthBand {
 /**
  * v1 per-client adherence over a window: % of assignments with
  * `status='completed'` among those whose `due_date` falls in the window.
- * Returns `null` when the client has zero such assignments (excluded from the
- * average and shown as no-band).
+ * Returns `null` when the client has fewer than `ADHERENCE_MIN_SAMPLE`
+ * past-due assignments (QA-18) — too small a sample to be meaningful, and
+ * `total === 0` is just the floor of that same guard. Null-adherence clients
+ * are excluded from the average and shown as no-band.
  */
 export function clientAdherence(
   completed: number,
   total: number,
 ): number | null {
-  if (total === 0) return null;
+  if (total < ADHERENCE_MIN_SAMPLE) return null;
   return Math.round((completed / total) * 100);
 }
 
@@ -725,8 +737,18 @@ export class TrainerRepository {
 
   /**
    * Per-client adherence counters over a window (assignments whose `due_date`
-   * is within [windowStart, windowEnd]). `due_date` is stored as a `text`
-   * column (YYYY-MM-DD) so we compare on the date literal.
+   * is within [windowStart, windowEnd] AND strictly before `now`). `due_date`
+   * is stored as a `text` column (YYYY-MM-DD) so we compare on the date
+   * literal.
+   *
+   * The `dueDate < now` bound is deliberate (QA-18): an assignment due TODAY
+   * is neither completed nor genuinely missed yet, so it must not count as a
+   * 0% failure. This mirrors the MISSED-flag bound in
+   * `getMissedCountsByClient` (`dueDate < nowDate`) — "past-due" means the
+   * same thing in both places. For the historical (previous) window callers
+   * pass, `windowEnd` already falls before `now`, so the extra bound is a
+   * no-op there; it only changes behaviour for the live window, where
+   * `windowEnd` is `now` itself.
    *
    * Scoped to `trainerId`: a client can be jointly coached (multiple active
    * `pt_client_relationships` rows differing only by `trainer_id`), so without
@@ -738,11 +760,13 @@ export class TrainerRepository {
     clientIds: string[],
     windowStart: Date,
     windowEnd: Date,
+    now: Date,
   ): Promise<AdherenceRow[]> {
     if (clientIds.length === 0) return [];
     const db = getDb();
     const startDate = windowStart.toISOString().slice(0, 10);
     const endDate = windowEnd.toISOString().slice(0, 10);
+    const nowDate = now.toISOString().slice(0, 10);
     const rows = await db
       .select({
         clientId: workoutAssignments.clientId,
@@ -757,6 +781,8 @@ export class TrainerRepository {
           sql`${workoutAssignments.dueDate} is not null`,
           sql`${workoutAssignments.dueDate} >= ${startDate}`,
           sql`${workoutAssignments.dueDate} <= ${endDate}`,
+          // Past-due only (QA-18) — see doc comment above.
+          sql`${workoutAssignments.dueDate} < ${nowDate}`,
         ),
       )
       // Group by the column reference (ordinal would also work; the column
@@ -1030,8 +1056,8 @@ export class TrainerRepository {
       this.countNewClientsThisMonth(trainerId, monthStart),
       this.countChurnThisQuarter(trainerId, quarterStart),
       this.getRetention(trainerId, daysAgo(now, RETENTION_WINDOW_DAYS)),
-      this.getAdherenceRows(trainerId, clientIds, win1Start, win1End),
-      this.getAdherenceRows(trainerId, clientIds, win0Start, win0End),
+      this.getAdherenceRows(trainerId, clientIds, win1Start, win1End, now),
+      this.getAdherenceRows(trainerId, clientIds, win0Start, win0End, now),
       this.getClientPRsThisMonth(clientIds, monthStart),
       this.getProgramStats(trainerId, clientIds),
       this.getRecentActivity(trainerId, activeClients, now),
@@ -1133,7 +1159,7 @@ export class TrainerRepository {
       clientsWithPRs,
       programInfoByClient,
     ] = await Promise.all([
-      this.getAdherenceRows(trainerId, clientIds, winStart, now),
+      this.getAdherenceRows(trainerId, clientIds, winStart, now, now),
       this.getLastSeenByClient(clientIds),
       this.getMissedCountsByClient(trainerId, clientIds, winStart, now),
       this.getClientsWithPRsThisMonth(clientIds, monthStart),
