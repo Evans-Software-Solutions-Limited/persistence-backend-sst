@@ -28,6 +28,8 @@ import {
 // e.g. 00:30 BST Monday is still Sunday in UTC — which put the test's UTC "today"
 // in the PREVIOUS Mon→Sun window and failed `weekDates.indexOf(today)` on Mondays.
 import { localDayISO } from "@/shared/utils";
+import { defaultHabitConfig } from "@/domain/models/habit-config";
+import { useReflectStepsHabit } from "@/ui/hooks/useReflectStepsHabit";
 
 const mockFetch = jest.fn(async () => ({
   ok: true,
@@ -233,6 +235,86 @@ describe("Progress/Home read hooks (cache-first + refresh)", () => {
     // wherever it falls in the week — no longer always the last column.
     expect(result.current.habits[0].days).toHaveLength(7);
     expect(result.current.habits[0].days.filter(Boolean)).toHaveLength(1);
+  });
+
+  // BRIEF-7 QA-1..QA-4 (mobile half): Gym/Calories never write a real
+  // habit_completions row, so their grid tile is DERIVED — the backend
+  // returns synthetic `derived-<goalId>-<date>` rows only when the caller
+  // opts in with `includeDerived: true`.
+  it("useGetHabits opts into includeDerived and ticks Gym from a synthetic derived row", async () => {
+    const { api, wrapper } = setup();
+    const today = localDayISO();
+    api.habitConfigs = [
+      {
+        category: "gym",
+        enabled: true,
+        goalId: "g-gym",
+        assignedByCoach: false,
+        locked: false,
+        targetValue: 3,
+        unit: "x",
+        period: "weekly",
+        completionRule: "count",
+        daysPerWeek: null,
+        tolerancePct: null,
+        pending: null,
+      },
+    ];
+    // Gym never writes a real completion — this row is the DERIVED shape the
+    // backend synthesises, id-tagged `derived-…`.
+    api.habitCompletions = [
+      {
+        id: `derived-g-gym-${today}`,
+        userId: USER,
+        goalId: "g-gym",
+        completedAt: `${today}T12:00:00.000Z`,
+        localCompletedDate: today,
+        value: null,
+      },
+    ];
+    const { result } = renderHook(() => useGetHabits(), { wrapper });
+    await waitFor(() => expect(result.current.habits.length).toBe(1));
+
+    expect(api.lastGetHabitCompletionsParams).toMatchObject({
+      window: "7d",
+      includeDerived: true,
+    });
+    const gym = result.current.habits.find((h) => h.id === "g-gym");
+    expect(gym?.days.filter(Boolean)).toHaveLength(1);
+  });
+
+  it("never persists a derived-id row to the offline cache", async () => {
+    const { api, storage, wrapper } = setup();
+    const today = localDayISO();
+    api.habitCompletions = [
+      {
+        id: `derived-g-cal-${today}`,
+        userId: USER,
+        goalId: "g-cal",
+        completedAt: `${today}T12:00:00.000Z`,
+        localCompletedDate: today,
+        value: null,
+      },
+      {
+        id: "h-real",
+        userId: USER,
+        goalId: "g-water",
+        completedAt: `${today}T12:00:00.000Z`,
+        localCompletedDate: today,
+        value: null,
+      },
+    ];
+    const { result } = renderHook(() => useGetHabits(), { wrapper });
+    // Both rows reach the in-memory grid state (real + derived merge)...
+    await waitFor(() => expect(result.current.data?.length).toBe(2));
+
+    // ...but only the REAL row is ever written to the SQLite cache — a
+    // derived row must never enter the offline store, so nothing could ever
+    // route it through the toggle mutation / sync-queue path.
+    const cached = storage.getCachedHabitCompletions(USER, {});
+    expect(cached).toHaveLength(1);
+    expect(cached[0].id).toBe("h-real");
+    expect(cached.some((c) => c.id.startsWith("derived-"))).toBe(false);
   });
 
   describe("buildHabitGrid (config-aware)", () => {
@@ -511,5 +593,95 @@ describe("Progress/Home mutation hooks", () => {
     });
     // in-memory adapter returns freezeTokens: 0 for the streak
     expect(storage.getCachedStreaks(USER)[0].freezeTokens).toBe(0);
+  });
+});
+
+// BRIEF-7 QA-1..QA-4 (mobile half) — the reactive steps→habit bridge trigger
+// point. Mirrors the water/sleep bridge behaviour (tick/un-tick/idempotent)
+// but driven by re-rendering with a new `steps` value instead of a user
+// action, since that's how HomeContainer actually calls this hook.
+describe("useReflectStepsHabit", () => {
+  const stepsHabitConfig = (
+    over: Partial<import("@/domain/models/habit-config").HabitConfig> = {},
+  ): import("@/domain/models/habit-config").HabitConfig => ({
+    ...defaultHabitConfig("steps"),
+    enabled: true,
+    goalId: "g-steps",
+    targetValue: 8000,
+    ...over,
+  });
+
+  it("ticks the steps habit once steps reach the configured target", async () => {
+    const { storage, wrapper } = setup();
+    storage.cacheHabitConfigs(USER, [stepsHabitConfig()]);
+
+    const { rerender } = renderHook(
+      ({ steps }: { steps: number | null }) => useReflectStepsHabit(steps),
+      { wrapper, initialProps: { steps: null as number | null } },
+    );
+    expect(
+      storage.getCachedHabitCompletions(USER, { goalId: "g-steps" }),
+    ).toHaveLength(0);
+
+    rerender({ steps: 8200 });
+    await waitFor(() =>
+      expect(
+        storage.getCachedHabitCompletions(USER, { goalId: "g-steps" }),
+      ).toHaveLength(1),
+    );
+  });
+
+  it("does not tick while steps stay below the target", async () => {
+    const { storage, wrapper } = setup();
+    storage.cacheHabitConfigs(USER, [stepsHabitConfig()]);
+
+    const { rerender } = renderHook(
+      ({ steps }: { steps: number | null }) => useReflectStepsHabit(steps),
+      { wrapper, initialProps: { steps: null as number | null } },
+    );
+    rerender({ steps: 1200 });
+    rerender({ steps: 4000 });
+
+    await waitFor(() => {
+      expect(storage.getPendingMutations()).toHaveLength(0);
+    });
+    expect(
+      storage.getCachedHabitCompletions(USER, { goalId: "g-steps" }),
+    ).toHaveLength(0);
+  });
+
+  it("does not double-write once already ticked, across repeated re-reads", async () => {
+    const { storage, wrapper } = setup();
+    storage.cacheHabitConfigs(USER, [stepsHabitConfig()]);
+
+    const { rerender } = renderHook(
+      ({ steps }: { steps: number | null }) => useReflectStepsHabit(steps),
+      { wrapper, initialProps: { steps: null as number | null } },
+    );
+    rerender({ steps: 8200 });
+    await waitFor(() =>
+      expect(
+        storage.getCachedHabitCompletions(USER, { goalId: "g-steps" }),
+      ).toHaveLength(1),
+    );
+    rerender({ steps: 9000 });
+    rerender({ steps: 9500 });
+
+    const habitMutations = storage
+      .getPendingMutations()
+      .filter((m) => m.entityType === "habit_completion");
+    expect(habitMutations).toHaveLength(1);
+  });
+
+  it("is a no-op with no steps habit configured", async () => {
+    const { storage, wrapper } = setup();
+    const { rerender } = renderHook(
+      ({ steps }: { steps: number | null }) => useReflectStepsHabit(steps),
+      { wrapper, initialProps: { steps: null as number | null } },
+    );
+    rerender({ steps: 12000 });
+    await waitFor(() => {
+      expect(storage.getPendingMutations()).toHaveLength(0);
+    });
   });
 });

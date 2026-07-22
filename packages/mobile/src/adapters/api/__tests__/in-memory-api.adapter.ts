@@ -1168,12 +1168,27 @@ export class InMemoryApiAdapter implements ApiPort {
   async getStreaks() {
     return this.mayFail<Streak[]>(this.streaks);
   }
-  async getHabitCompletions(params?: { goalId?: string; window?: string }) {
+  async getHabitCompletions(params?: {
+    goalId?: string;
+    window?: string;
+    includeDerived?: boolean;
+  }) {
+    // Fixture-driven test double: `includeDerived` doesn't derive anything
+    // itself (that's a backend concern) — tests that want a derived row in
+    // the mix seed one directly into `habitCompletions` (id `derived-…`) and
+    // can assert on `includeDerived` via `this.lastGetHabitCompletionsParams`.
+    this.lastGetHabitCompletionsParams = params ?? null;
     const rows = params?.goalId
       ? this.habitCompletions.filter((h) => h.goalId === params.goalId)
       : this.habitCompletions;
     return this.mayFail<HabitCompletion[]>(rows);
   }
+  /** Records the last `getHabitCompletions` call's params for assertions. */
+  public lastGetHabitCompletionsParams: {
+    goalId?: string;
+    window?: string;
+    includeDerived?: boolean;
+  } | null = null;
   /** Settable habit-config fixture (self). */
   public habitConfigs: HabitConfigEntry[] = [];
   /** Settable habit-config fixture (per client, coach reads). */

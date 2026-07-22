@@ -1096,6 +1096,70 @@ describe("StreakRepository", () => {
     });
   });
 
+  describe("getDerivedHabitCompletions (BRIEF-7 QA-1..QA-4 mobile half)", () => {
+    it("maps derived grid rows to synthetic completion-shaped rows on their qualifying days only", async () => {
+      const spy = vi
+        .spyOn(StreakRepository.prototype, "getDerivedHabitGridRows")
+        .mockResolvedValue([
+          { goalId: "gym-goal", days: [false, true, true] },
+          { goalId: "cal-goal", days: [false, false, false] },
+        ]);
+      const rows = await new StreakRepository().getDerivedHabitCompletions(
+        "u1",
+        GRID_WINDOW,
+        "Europe/London",
+      );
+      expect(spy).toHaveBeenCalledWith("u1", GRID_WINDOW, "Europe/London");
+      expect(rows).toEqual([
+        {
+          id: "derived-gym-goal-2026-06-09",
+          userId: "u1",
+          goalId: "gym-goal",
+          completedAt: new Date("2026-06-09T12:00:00.000Z"),
+          localCompletedDate: "2026-06-09",
+          value: null,
+        },
+        {
+          id: "derived-gym-goal-2026-06-10",
+          userId: "u1",
+          goalId: "gym-goal",
+          completedAt: new Date("2026-06-10T12:00:00.000Z"),
+          localCompletedDate: "2026-06-10",
+          value: null,
+        },
+      ]);
+      spy.mockRestore();
+    });
+
+    it("returns [] when no habit qualifies on any day in the window", async () => {
+      const spy = vi
+        .spyOn(StreakRepository.prototype, "getDerivedHabitGridRows")
+        .mockResolvedValue([
+          { goalId: "gym-goal", days: [false, false, false] },
+        ]);
+      const rows = await new StreakRepository().getDerivedHabitCompletions(
+        "u1",
+        GRID_WINDOW,
+        "Europe/London",
+      );
+      expect(rows).toEqual([]);
+      spy.mockRestore();
+    });
+
+    it("returns [] immediately when getDerivedHabitGridRows returns [] (empty window / no enabled Gym+Calories habit)", async () => {
+      const spy = vi
+        .spyOn(StreakRepository.prototype, "getDerivedHabitGridRows")
+        .mockResolvedValue([]);
+      const rows = await new StreakRepository().getDerivedHabitCompletions(
+        "u1",
+        GRID_WINDOW,
+        "Europe/London",
+      );
+      expect(rows).toEqual([]);
+      spy.mockRestore();
+    });
+  });
+
   describe("weekIntersectsHoliday / getCollectionHabitStreak", () => {
     it("weekIntersectsHoliday true when a range overlaps", async () => {
       (getDb as any).mockReturnValue({

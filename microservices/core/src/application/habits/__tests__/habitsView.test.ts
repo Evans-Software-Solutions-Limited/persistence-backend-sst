@@ -45,6 +45,18 @@ describe("habitsGridWindow", () => {
       "2026-06-10",
     ]);
   });
+
+  // BRIEF-7 QA-1..QA-4 (mobile half): GET /habit-completions derives over the
+  // caller's own `window=Nd`, not always 7 — `days` generalises the window
+  // size while keeping the default (and every existing 7-day caller) intact.
+  it("supports an overridable window size, today still last", () => {
+    expect(habitsGridWindow(NOW, LON, 3)).toEqual([
+      "2026-06-08",
+      "2026-06-09",
+      "2026-06-10",
+    ]);
+    expect(habitsGridWindow(NOW, LON, 1)).toEqual(["2026-06-10"]);
+  });
 });
 
 // BRIEF-7 QA-1..QA-4 (device-QA sweep): Gym + Calories never write a

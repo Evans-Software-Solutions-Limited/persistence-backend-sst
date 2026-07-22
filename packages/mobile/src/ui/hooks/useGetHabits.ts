@@ -115,7 +115,25 @@ export function buildHabitGrid(
  *
  * Now also fetches habit configs so the grid shows all enabled habits
  * even when no completions have been logged this week.
+ *
+ * BRIEF-7 QA-1..QA-4 (mobile half): fetches with `includeDerived: true` so
+ * the Gym/Calories tiles — which never write a real `habit_completions` row —
+ * tick from the backend's synthetic `derived-<goalId>-<date>` rows the same
+ * way a real completion would (`buildHabitGrid` buckets by goalId + date
+ * either way). Those synthetic rows are READ-ONLY: `cacheDerivedFiltered`
+ * strips any `derived-`-id row before it reaches `cacheHabitCompletions`, so
+ * they NEVER land in the offline SQLite cache and therefore can never be
+ * picked up by anything that scans it (there is no such scan today, but this
+ * guarantees one could never accidentally start syncing a synthetic row).
+ * The toggle-habit mutation path (`setHabitCompletion`) is separately safe by
+ * construction — a grid tap calls it with `{goalId, day, done}`, never a
+ * completion's own `id`, so a derived row's id is never even read on that
+ * path.
  */
+function stripDerivedRows(rows: HabitCompletion[]): HabitCompletion[] {
+  return rows.filter((r) => !r.id.startsWith("derived-"));
+}
+
 export function useGetHabits(): HabitsState {
   const { api } = useAdapters();
   const [configs, setConfigs] = useState<HabitConfigEntry[]>([]);
@@ -128,9 +146,13 @@ export function useGetHabits(): HabitsState {
         isStale: true,
       };
     },
-    fetcher: (api) => api.getHabitCompletions({ window: "7d" }),
+    fetcher: (api) =>
+      api.getHabitCompletions({ window: "7d", includeDerived: true }),
+    // Only REAL completions get persisted to the offline cache — derived
+    // rows are recomputed server-side every request and must never be
+    // written locally (see the READ-ONLY note above).
     write: (storage, userId, value) =>
-      storage.cacheHabitCompletions(userId, value),
+      storage.cacheHabitCompletions(userId, stripDerivedRows(value)),
   });
 
   // Fetch habit configs (fire-and-forget; non-blocking)

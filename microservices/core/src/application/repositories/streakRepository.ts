@@ -12,6 +12,7 @@ import {
   userGoals,
   userStreaks,
   workoutSessions,
+  type HabitCompletion,
   type UserStreak,
 } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
@@ -506,6 +507,46 @@ export class StreakRepository implements StreakDataPort, StreakCronDataPort {
       });
     }
     return rows;
+  }
+
+  /**
+   * DERIVED synthetic `habit_completions`-shaped rows for Gym + Calories, for
+   * `GET /habit-completions?includeDerived=true` (BRIEF-7 QA-1..QA-4 mobile
+   * half). The mobile Home grid reads `GET /habit-completions` directly (not
+   * `GET /users/me/home`), so it needs the same derived qualifying days
+   * `getDerivedHabitGridRows` computes for the web/home aggregate, surfaced
+   * as completion-shaped rows it can bucket exactly like a real one
+   * (`buildHabitGrid` on mobile buckets by `goalId` + `localCompletedDate`).
+   *
+   * Reuses `getDerivedHabitGridRows` verbatim (no re-querying) so the two
+   * endpoints can never disagree on which days qualify. Computed fresh every
+   * request (derive-on-read) — NEVER persisted. The synthetic id
+   * (`derived-<goalId>-<date>`) is a caller-side signal: mobile must treat
+   * any `derived-`-prefixed row as read-only and never route it through the
+   * toggle mutation / sync-queue path.
+   */
+  async getDerivedHabitCompletions(
+    userId: string,
+    window: string[],
+    tz: string,
+  ): Promise<HabitCompletion[]> {
+    const rows = await this.getDerivedHabitGridRows(userId, window, tz);
+    const completions: HabitCompletion[] = [];
+    for (const row of rows) {
+      row.days.forEach((met, i) => {
+        if (!met) return;
+        const date = window[i];
+        completions.push({
+          id: `derived-${row.goalId}-${date}`,
+          userId,
+          goalId: row.goalId,
+          completedAt: new Date(`${date}T12:00:00.000Z`),
+          localCompletedDate: date,
+          value: null,
+        });
+      });
+    }
+    return completions;
   }
 
   /**

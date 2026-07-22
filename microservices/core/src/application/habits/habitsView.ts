@@ -30,11 +30,15 @@ export interface CompletionLike {
  * StreakRepository.getDerivedHabitGridRows, BRIEF-7 QA-1..QA-4) compute
  * against the identical window this grid uses, rather than re-deriving it and
  * risking drift.
+ *
+ * `days` defaults to 7 (the Home grid's fixed window) but is overridable so
+ * GET /habit-completions?includeDerived=true (mobile BRIEF-7 QA-1..QA-4) can
+ * derive over its own caller-supplied `window=Nd` instead of always 7.
  */
-export function habitsGridWindow(now: Date, tz: string): string[] {
+export function habitsGridWindow(now: Date, tz: string, days = 7): string[] {
   const today = localDateISO(now, tz);
   const window: string[] = [];
-  for (let i = 6; i >= 0; i -= 1) window.push(addDaysISO(today, -i));
+  for (let i = days - 1; i >= 0; i -= 1) window.push(addDaysISO(today, -i));
   return window;
 }
 

@@ -5,6 +5,7 @@ import { useScrollToTopOnTabPress } from "@/ui/hooks/useScrollToTopOnTabPress";
 import { useAuth } from "@/ui/hooks/useAuth";
 import { useGetHome } from "@/ui/hooks/useGetHome";
 import { useHealthData } from "@/ui/hooks/useHealthData";
+import { useReflectStepsHabit } from "@/ui/hooks/useReflectStepsHabit";
 import { useUnreadNotificationCount } from "@/ui/hooks/useUnreadNotificationCount";
 import { useHealthSync } from "@/state/health-sync";
 import { useGetHabits } from "@/ui/hooks/useGetHabits";
@@ -84,6 +85,14 @@ export function HomeContainer() {
   // Spec: 07-health-integration/design.md § "Values merge into the presenter
   // view-model beside the backend payload".
   const healthSteps = health.stepsToday;
+  // BRIEF-7 QA-1..QA-4: steps is HealthKit-only (device-tracked, read-only —
+  // design.md § 7.3), so there's no explicit "log steps" action to bridge
+  // from. This is the reactive trigger point instead: whenever the steps
+  // reading changes (mount/foreground/focus re-reads via useHealthData),
+  // reflect it into the Steps habit completion so the grid ticks the same
+  // way a real completion would. Best-effort + idempotent — a no-op when no
+  // steps habit is configured, or once the day is already ticked/un-ticked.
+  useReflectStepsHabit(healthSteps);
   const homeData = useMemo(() => {
     const data = home.data;
     if (!data || healthSteps == null) return data;
