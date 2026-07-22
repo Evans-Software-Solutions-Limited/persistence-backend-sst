@@ -190,6 +190,7 @@ export function WeekFreq({
               accessibilityLabel={`${n} days`}
               disabled={disabled}
               onPress={() => onChange(n)}
+              hitSlop={{ top: 10, bottom: 10, left: 4, right: 4 }}
             >
               <View
                 width={13}

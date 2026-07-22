@@ -1,6 +1,8 @@
+import { router } from "expo-router";
 import { useCallback, useMemo } from "react";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useAuth } from "@/ui/hooks/useAuth";
+import { useCoachLibrarySegment } from "@/ui/hooks/useCoachLibrarySegment";
 import { useGetCoachOverview } from "@/ui/hooks/useGetCoachOverview";
 import { useGetStreaks } from "@/ui/hooks/useGetStreaks";
 import { useModeSwitch } from "@/ui/hooks/useModeSwitch";
@@ -140,6 +142,15 @@ export function CoachYouContainer() {
 
   const noop = useCallback(() => {}, []);
 
+  // "View all programmes" → the coach Programs hub, pinned to the Programmes
+  // segment (QA-16, device-QA batch, BRIEF-7). Mirrors HomeContainer's
+  // onOpenWorkoutsList: pin the segment first so the hub doesn't land on
+  // whatever it last showed, then navigate.
+  const onViewAllPrograms = useCallback(() => {
+    useCoachLibrarySegment.getState().setSegment("Programmes");
+    router.push("/(app)/(tabs)/programs" as never);
+  }, []);
+
   return (
     <CoachYouPresenter
       overview={overview.data}
@@ -163,7 +174,7 @@ export function CoachYouContainer() {
       onOpenCoachSettings={openDrawer}
       onInvite={onInvite}
       onStartSession={noop}
-      onViewAllPrograms={noop}
+      onViewAllPrograms={onViewAllPrograms}
     />
   );
 }

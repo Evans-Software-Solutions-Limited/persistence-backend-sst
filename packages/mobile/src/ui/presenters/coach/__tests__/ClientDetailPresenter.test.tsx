@@ -539,6 +539,15 @@ describe("ClientDetailPresenter — helper edge cases", () => {
     expect(getByText("Cher")).toBeTruthy();
   });
 
+  // QA-15 (device-QA batch, BRIEF-7): an empty name (onboarding hasn't set
+  // one yet) must fall back to "New client", not render blank.
+  it("falls back to 'New client' when the aggregate's name is empty", () => {
+    const detail = fullDetail();
+    detail.client.name = "";
+    const { getByText } = render({ detail, clientName: "" });
+    expect(getByText("New client")).toBeTruthy();
+  });
+
   it("hides the missed pill when planned == completed (missed 0)", () => {
     const detail = fullDetail({
       thisWeek: {

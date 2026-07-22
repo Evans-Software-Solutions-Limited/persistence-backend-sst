@@ -9,6 +9,7 @@ import type { Adapters } from "@/shared/types";
 import type { CoachYouPresenterProps } from "@/ui/presenters/CoachYouPresenter";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import { useAddClientSheet } from "@/state/add-client-sheet";
+import { useCoachLibrarySegment } from "@/ui/hooks/useCoachLibrarySegment";
 import { CoachYouContainer, buildSessionCaption } from "../CoachYouContainer";
 import { makeCoachOverview } from "@/ui/presenters/coach/__tests__/coachOverview.fixture";
 
@@ -16,8 +17,10 @@ const mockSwitchMode = jest.fn();
 const mockProbe: { last: CoachYouPresenterProps | null } = { last: null };
 
 const mockPush = jest.fn();
+const mockRouterPush = jest.fn();
 jest.mock("expo-router", () => ({
   useRouter: () => ({ push: mockPush }),
+  router: { push: (...args: unknown[]) => mockRouterPush(...args) },
 }));
 jest.mock("@/ui/hooks/useModeSwitch", () => ({
   useModeSwitch: () => ({ switchMode: mockSwitchMode }),
@@ -130,6 +133,7 @@ describe("CoachYouContainer", () => {
   beforeEach(() => {
     mockProbe.last = null;
     mockSwitchMode.mockClear();
+    mockRouterPush.mockClear();
     useAddClientSheet.setState({ open: false, onInvited: null });
   });
 
@@ -238,6 +242,24 @@ describe("CoachYouContainer", () => {
     await waitFor(() => expect(mockProbe.last).not.toBeNull());
     act(() => mockProbe.last?.onSwitchToAthlete());
     expect(mockSwitchMode).toHaveBeenCalledWith("athlete", "you");
+  });
+
+  // QA-16 (device-QA batch, BRIEF-7): "Programmes" in coach You was wired to
+  // a no-op. Must pin the Coach Library hub's segment to "Programmes" AND
+  // navigate to the Programs tab.
+  it("view-all-programmes pins the Programmes segment and navigates to the Programs tab", async () => {
+    const { adapters, api } = makeAdapters();
+    api.coachOverview = makeCoachOverview();
+    useCoachLibrarySegment.setState({ segment: "Workouts" });
+    render(
+      <Wrapper adapters={adapters}>
+        <CoachYouContainer />
+      </Wrapper>,
+    );
+    await waitFor(() => expect(mockProbe.last).not.toBeNull());
+    act(() => mockProbe.last?.onViewAllPrograms?.());
+    expect(useCoachLibrarySegment.getState().segment).toBe("Programmes");
+    expect(mockRouterPush).toHaveBeenCalledWith("/(app)/(tabs)/programs");
   });
 
   it("opens the AddClient sheet (registering the overview refresh) on invite", async () => {
