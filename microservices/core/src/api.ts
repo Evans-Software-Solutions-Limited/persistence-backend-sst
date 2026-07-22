@@ -65,10 +65,7 @@ import { useFreezeTokenHandler } from "./application/progress/useFreezeTokenHand
 import { getStreaksHandler } from "./application/progress/getStreaksHandler";
 import { handleStripeWebhook } from "./application/stripe/stripeWebhookHandler";
 import { handleRevenueCatWebhook } from "./application/revenuecat/revenueCatWebhookHandler";
-import { subscriptionsCreateHandler } from "./application/subscriptions/create/subscriptionsCreateHandler";
-import { subscriptionsCancelHandler } from "./application/subscriptions/cancel/subscriptionsCancelHandler";
-import { subscriptionsTiersHandler } from "./application/subscriptions/tiers/subscriptionsTiersHandler";
-import { subscriptionsMeHandler } from "./application/subscriptions/me/subscriptionsMeHandler";
+import { subscriptionsRoutes } from "./application/subscriptionsRoutes";
 import { notificationsListHandler } from "./application/notifications/list/notificationsListHandler";
 import { notificationsUpdateAllHandler } from "./application/notifications/updateAll/notificationsUpdateAllHandler";
 import { notificationsUpdateHandler } from "./application/notifications/update/notificationsUpdateHandler";
@@ -177,10 +174,7 @@ const app = new Elysia()
   .use(getAchievementsHandler)
   .use(getStreaksHandler)
   .use(useFreezeTokenHandler)
-  .use(subscriptionsTiersHandler)
-  .use(subscriptionsMeHandler)
-  .use(subscriptionsCreateHandler)
-  .use(subscriptionsCancelHandler)
+  .use(subscriptionsRoutes)
   // M7 — notifications. `notificationsUpdateAllHandler` MUST be
   // registered BEFORE `notificationsUpdateHandler` so the literal
   // PATCH /notifications/all isn't captured as `:id = "all"` by the

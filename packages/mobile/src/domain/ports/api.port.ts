@@ -417,6 +417,26 @@ export interface ApiPort {
   getMySubscription(): Promise<Result<MySubscription, ApiError>>;
 
   /**
+   * Force a server-side reconciliation of the caller's RevenueCat customer
+   * (re-fetch RevenueCat REST + upsert `user_subscriptions`) and return the
+   * refreshed subscription in the SAME shape as `getMySubscription`.
+   *
+   * The RevenueCat→backend webhook that normally keeps `user_subscriptions`
+   * current is async, so a just-completed purchase or restore can leave the
+   * DB reporting `free` for a window after RevenueCat/Apple already granted
+   * the entitlement. Call this to make the DB deterministically reflect the
+   * entitlement on demand — used by the iOS purchase flow to confirm the
+   * entitlement server-side before showing the "Activated!" screen, rather
+   * than trusting the on-device RevenueCat snapshot alone.
+   *
+   * Wraps `POST /subscriptions/sync`. Auth required, no request body.
+   * Errors: `502` (`subscription_sync_failed`) when RevenueCat REST is
+   * unreachable; 500/404 otherwise — all surface as a generic `ApiError`
+   * via `mapHttpErrorToApiError`.
+   */
+  syncSubscription(): Promise<Result<MySubscription, ApiError>>;
+
+  /**
    * Create a Stripe subscription. Folds five flows on the backend (new
    * sub / reinstate / upgrade / downgrade / cycle-change / 3DS), but the
    * mobile contract is a single call — the backend's dispatch precedence

@@ -157,7 +157,19 @@ export function RecipeDetailPresenter({
             <Text fontFamily="$body" fontSize={12} color="$text3">
               {secondaryLine}
             </Text>
-            <View flexDirection="row" gap={8} marginTop={8}>
+            <Text
+              fontFamily="$display"
+              fontWeight="600"
+              fontSize={9.5}
+              letterSpacing={1}
+              textTransform="uppercase"
+              color="$text3"
+              marginTop={8}
+              testID="recipe-detail-per-serving-caption"
+            >
+              Per serving
+            </Text>
+            <View flexDirection="row" gap={8} marginTop={6}>
               <Pill tone="gold" size="xs">
                 {kcal ?? "—"} KCAL
               </Pill>

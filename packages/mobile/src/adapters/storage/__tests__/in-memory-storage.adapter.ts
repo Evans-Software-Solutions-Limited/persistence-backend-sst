@@ -189,6 +189,15 @@ export class InMemoryStorageAdapter implements StoragePort {
     }
   }
 
+  markMutationPermanentlyFailed(id: number, errorMessage: string): void {
+    // Parity with SQLite: terminal 4xx state, `retryCount` untouched.
+    const entry = this.queue.find((e) => e.id === id);
+    if (entry) {
+      entry.status = "permanently_failed";
+      entry.errorMessage = errorMessage;
+    }
+  }
+
   updateMutationPayload(id: number, payload: unknown): void {
     // Mirror the SQLite adapter: only `pending`/`failed` entries are
     // rewritable. An in-flight entry may already be mid-flush; a
@@ -243,7 +252,9 @@ export class InMemoryStorageAdapter implements StoragePort {
     // Parity with SQLite: FIFO order (insertion-ordered already, we
     // just push to the end).
     return this.queue.filter(
-      (e) => e.status === "failed" && e.retryCount >= e.maxRetries,
+      (e) =>
+        (e.status === "failed" && e.retryCount >= e.maxRetries) ||
+        e.status === "permanently_failed",
     );
   }
 
@@ -252,7 +263,8 @@ export class InMemoryStorageAdapter implements StoragePort {
     const idSet = new Set(ids);
     for (const entry of this.queue) {
       if (!idSet.has(entry.id)) continue;
-      if (entry.status !== "failed") continue;
+      if (entry.status !== "failed" && entry.status !== "permanently_failed")
+        continue;
       entry.status = "pending";
       entry.retryCount = 0;
       entry.errorMessage = null;
@@ -263,7 +275,11 @@ export class InMemoryStorageAdapter implements StoragePort {
     const stats: SyncStats = { pending: 0, failed: 0, inFlight: 0, blocked: 0 };
     for (const entry of this.queue) {
       if (entry.status === "pending") stats.pending++;
-      else if (entry.status === "failed") stats.failed++;
+      else if (
+        entry.status === "failed" ||
+        entry.status === "permanently_failed"
+      )
+        stats.failed++;
       else if (entry.status === "in_flight") stats.inFlight++;
       else if (entry.status === "blocked_entitlement") stats.blocked++;
     }
@@ -419,6 +435,67 @@ export class InMemoryStorageAdapter implements StoragePort {
         }
       }
     }
+  }
+
+  private rewriteQueuedEntryRef(
+    field: "recipeId" | "mealId",
+    localId: string,
+    serverId: string,
+  ): void {
+    for (const e of this.queue) {
+      if (e.entityType !== "nutrition_entry" || e.status === "completed")
+        continue;
+      let body: Record<string, unknown>;
+      try {
+        body = JSON.parse(e.payload) as Record<string, unknown>;
+      } catch {
+        continue;
+      }
+      if (body[field] === localId) {
+        body[field] = serverId;
+        e.payload = JSON.stringify(body);
+      }
+    }
+  }
+
+  swapLocalRecipeId(localId: string, serverId: string): void {
+    if (localId === serverId) return;
+    for (const map of this.recipesCache.values()) {
+      const recipe = map.get(localId);
+      if (recipe) {
+        map.delete(localId);
+        map.set(serverId, { ...recipe, id: serverId });
+      }
+    }
+    for (const e of this.queue) {
+      if (e.entityType === "recipe" && e.entityId === localId) {
+        e.entityId = serverId;
+        if (e.endpoint === `/recipes/${localId}`) {
+          e.endpoint = `/recipes/${serverId}`;
+        }
+      }
+    }
+    this.rewriteQueuedEntryRef("recipeId", localId, serverId);
+  }
+
+  swapLocalMealId(localId: string, serverId: string): void {
+    if (localId === serverId) return;
+    for (const map of this.mealsCache.values()) {
+      const meal = map.get(localId);
+      if (meal) {
+        map.delete(localId);
+        map.set(serverId, { ...meal, id: serverId });
+      }
+    }
+    for (const e of this.queue) {
+      if (e.entityType === "meal" && e.entityId === localId) {
+        e.entityId = serverId;
+        if (e.endpoint === `/meals/${localId}`) {
+          e.endpoint = `/meals/${serverId}`;
+        }
+      }
+    }
+    this.rewriteQueuedEntryRef("mealId", localId, serverId);
   }
 
   getCachedReferenceList(kind: ReferenceListKind): ReferenceList | null {

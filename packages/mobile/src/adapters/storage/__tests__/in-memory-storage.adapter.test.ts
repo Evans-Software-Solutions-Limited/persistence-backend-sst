@@ -256,6 +256,120 @@ describe("InMemoryStorageAdapter", () => {
     });
   });
 
+  describe("permanently_failed (non-retryable 4xx)", () => {
+    const enqueueOne = () => {
+      storage.enqueueMutation({
+        entityType: "nutrition_entry",
+        entityId: "e1",
+        operation: "create",
+        payload: { recipeId: "r1" },
+        endpoint: "/nutrition/entries",
+        method: "POST",
+      });
+      return storage.getPendingMutations()[0].id;
+    };
+
+    it("marks terminal without burning retry budget, drops from the pending pool, surfaces in exhausted", () => {
+      const id = enqueueOne();
+      storage.markMutationPermanentlyFailed(id, "HTTP 400: bad");
+
+      expect(storage.getPendingMutations()).toHaveLength(0);
+      const exhausted = storage.getFailedExhaustedEntries();
+      expect(exhausted).toHaveLength(1);
+      expect(exhausted[0].status).toBe("permanently_failed");
+      expect(exhausted[0].retryCount).toBe(0);
+      expect(exhausted[0].errorMessage).toBe("HTTP 400: bad");
+    });
+
+    it("resetFailedEntries reopens it to pending", () => {
+      const id = enqueueOne();
+      storage.markMutationPermanentlyFailed(id, "bad");
+      storage.resetFailedEntries([id]);
+
+      const pending = storage.getPendingMutations();
+      expect(pending).toHaveLength(1);
+      expect(pending[0].status).toBe("pending");
+      expect(storage.getFailedExhaustedEntries()).toHaveLength(0);
+    });
+
+    it("getSyncStats folds it into the failed count", () => {
+      const id = enqueueOne();
+      storage.markMutationPermanentlyFailed(id, "bad");
+      expect(storage.getSyncStats()).toEqual({
+        pending: 0,
+        failed: 1,
+        inFlight: 0,
+        blocked: 0,
+      });
+    });
+  });
+
+  describe("swapLocalRecipeId / swapLocalMealId", () => {
+    it("re-keys the cached recipe and rewrites a queued log's recipeId reference", () => {
+      storage.cacheRecipe("u1", {
+        id: "local-r1",
+        userId: "u1",
+        name: "Curry",
+        servings: 4,
+        totalKcal: 800,
+      } as unknown as Parameters<typeof storage.cacheRecipe>[1]);
+      storage.enqueueMutation({
+        entityType: "nutrition_entry",
+        entityId: "local-e1",
+        operation: "create",
+        payload: { recipeId: "local-r1", mealSlot: "dinner", servings: 1 },
+        endpoint: "/nutrition/entries",
+        method: "POST",
+      });
+
+      storage.swapLocalRecipeId("local-r1", "srv-r1");
+
+      expect(storage.getCachedRecipe("u1", "local-r1")).toBeNull();
+      expect(storage.getCachedRecipe("u1", "srv-r1")?.id).toBe("srv-r1");
+      const queued = storage.getPendingMutations()[0];
+      expect(JSON.parse(queued.payload).recipeId).toBe("srv-r1");
+    });
+
+    it("re-keys the cached meal and rewrites a queued log's mealId reference", () => {
+      storage.cacheMeal("u1", {
+        id: "local-m1",
+        userId: "u1",
+        name: "Lunch",
+        totalKcal: 500,
+      } as unknown as Parameters<typeof storage.cacheMeal>[1]);
+      storage.enqueueMutation({
+        entityType: "nutrition_entry",
+        entityId: "local-e2",
+        operation: "create",
+        payload: { mealId: "local-m1", mealSlot: "lunch", servings: 1 },
+        endpoint: "/nutrition/entries",
+        method: "POST",
+      });
+
+      storage.swapLocalMealId("local-m1", "srv-m1");
+
+      expect(storage.getCachedMeals("u1").map((m) => m.id)).toEqual(["srv-m1"]);
+      expect(JSON.parse(storage.getPendingMutations()[0].payload).mealId).toBe(
+        "srv-m1",
+      );
+    });
+
+    it("is a no-op when the ids match", () => {
+      storage.enqueueMutation({
+        entityType: "nutrition_entry",
+        entityId: "local-e3",
+        operation: "create",
+        payload: { recipeId: "local-r9", mealSlot: "dinner", servings: 1 },
+        endpoint: "/nutrition/entries",
+        method: "POST",
+      });
+      storage.swapLocalRecipeId("local-r9", "local-r9");
+      expect(
+        JSON.parse(storage.getPendingMutations()[0].payload).recipeId,
+      ).toBe("local-r9");
+    });
+  });
+
   describe("blocked_entitlement (M10.6)", () => {
     const verdict = {
       feature: "create_workout" as const,

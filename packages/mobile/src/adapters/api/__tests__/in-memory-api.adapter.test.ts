@@ -672,6 +672,131 @@ describe("InMemoryApiAdapter", () => {
       expect(result.value.tierName).toBe("premium");
     });
 
+    it("syncSubscription returns not_found when neither nextSyncSubscriptionResult nor mySubscription is set", async () => {
+      const result = await api.syncSubscription();
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.code).toBe("not_found");
+    });
+
+    it("syncSubscription falls back to mySubscription when nextSyncSubscriptionResult is unset", async () => {
+      api.mySubscription = {
+        subscriptionId: "us_1",
+        tierName: "premium",
+        paymentStatus: "active",
+        billingCycle: "monthly",
+        startsAt: "2026-01-01T00:00:00.000Z",
+        expiresAt: "2030-01-01T00:00:00.000Z",
+        cancelledAt: null,
+        trialEndsAt: null,
+        externalSubscriptionId: "sub_1",
+        tierDisplayName: "Premium",
+        tierDescription: null,
+        workoutLimit: null,
+        aiAccess: true,
+        aiWorkoutLimit: 6,
+        gymBuddyAccess: true,
+        trainerClientLimit: null,
+        isTrainerTier: false,
+        role: "user",
+        hasUsedUserTrial: false,
+        hasUsedTrainerTrial: false,
+        isEligibleForUserTrial: true,
+        isEligibleForTrainerTrial: true,
+        scheduledChange: null,
+      };
+      const result = await api.syncSubscription();
+      expect(api.syncSubscriptionCalls).toBe(1);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.tierName).toBe("premium");
+    });
+
+    it("syncSubscription prefers nextSyncSubscriptionResult over mySubscription when both are set", async () => {
+      api.mySubscription = {
+        subscriptionId: null,
+        tierName: "free",
+        paymentStatus: "active",
+        billingCycle: null,
+        startsAt: "2026-01-01T00:00:00.000Z",
+        expiresAt: null,
+        cancelledAt: null,
+        trialEndsAt: null,
+        externalSubscriptionId: null,
+        tierDisplayName: "Free",
+        tierDescription: null,
+        workoutLimit: 3,
+        aiAccess: false,
+        aiWorkoutLimit: 0,
+        gymBuddyAccess: false,
+        trainerClientLimit: null,
+        isTrainerTier: false,
+        role: "user",
+        hasUsedUserTrial: false,
+        hasUsedTrainerTrial: false,
+        isEligibleForUserTrial: true,
+        isEligibleForTrainerTrial: true,
+        scheduledChange: null,
+      };
+      api.nextSyncSubscriptionResult = {
+        ...api.mySubscription,
+        subscriptionId: "us_2",
+        tierName: "premium",
+      };
+      const result = await api.syncSubscription();
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.tierName).toBe("premium");
+    });
+
+    it("syncSubscription returns nextSyncSubscriptionError once, then falls back to the default behaviour", async () => {
+      api.mySubscription = {
+        subscriptionId: "us_1",
+        tierName: "premium",
+        paymentStatus: "active",
+        billingCycle: "monthly",
+        startsAt: "2026-01-01T00:00:00.000Z",
+        expiresAt: "2030-01-01T00:00:00.000Z",
+        cancelledAt: null,
+        trialEndsAt: null,
+        externalSubscriptionId: "sub_1",
+        tierDisplayName: "Premium",
+        tierDescription: null,
+        workoutLimit: null,
+        aiAccess: true,
+        aiWorkoutLimit: 6,
+        gymBuddyAccess: true,
+        trainerClientLimit: null,
+        isTrainerTier: false,
+        role: "user",
+        hasUsedUserTrial: false,
+        hasUsedTrainerTrial: false,
+        isEligibleForUserTrial: true,
+        isEligibleForTrainerTrial: true,
+        scheduledChange: null,
+      };
+      api.nextSyncSubscriptionError = {
+        kind: "api",
+        code: "server",
+        message: "subscription_sync_failed",
+        status: 502,
+      };
+      const first = await api.syncSubscription();
+      expect(first.ok).toBe(false);
+      if (!first.ok) expect(first.error.status).toBe(502);
+
+      const second = await api.syncSubscription();
+      expect(second.ok).toBe(true);
+      if (!second.ok) return;
+      expect(second.value.tierName).toBe("premium");
+    });
+
+    it("syncSubscription surfaces the shared shouldFail flag", async () => {
+      api.shouldFail = true;
+      const result = await api.syncSubscription();
+      expect(result.ok).toBe(false);
+    });
+
     it("createSubscription captures input + counter + returns the canned response", async () => {
       const result = await api.createSubscription({
         tierName: "premium",

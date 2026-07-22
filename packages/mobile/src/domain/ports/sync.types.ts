@@ -28,7 +28,15 @@ export type SyncStatus =
   | "in_flight"
   | "failed"
   | "completed"
-  | "blocked_entitlement";
+  | "blocked_entitlement"
+  // A permanent client error (4xx except 401/402/403/408/429): retrying the same request
+  // can never succeed, so the drain must NOT auto-retry it (that just burns
+  // the retry budget and reports "exhausted retries" as if it were transient).
+  // Excluded from `getPendingMutations`, but surfaced via
+  // `getFailedExhaustedEntries` + recoverable via `resetFailedEntries` (e.g.
+  // after an app update fixes the underlying request), same as an exhausted
+  // `failed` entry.
+  | "permanently_failed";
 
 /**
  * Server's entitlement verdict captured on a `blocked_entitlement` entry.

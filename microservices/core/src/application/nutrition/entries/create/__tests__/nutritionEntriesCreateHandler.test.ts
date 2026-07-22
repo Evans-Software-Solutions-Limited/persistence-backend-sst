@@ -3,6 +3,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const entryMocks = { create: vi.fn() };
 const foodMocks = { getById: vi.fn() };
+const recipeMocks = { getById: vi.fn() };
+const mealMocks = { getById: vi.fn() };
 
 vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getAuthUser: vi.fn(async (h: string | undefined) =>
@@ -24,6 +26,12 @@ vi.mock("../../../../repositories/nutritionEntryRepository", () => ({
 }));
 vi.mock("../../../../repositories/foodRepository", () => ({
   FoodRepository: vi.fn().mockImplementation(() => foodMocks),
+}));
+vi.mock("../../../../repositories/recipeRepository", () => ({
+  RecipeRepository: vi.fn().mockImplementation(() => recipeMocks),
+}));
+vi.mock("../../../../repositories/mealRepository", () => ({
+  MealRepository: vi.fn().mockImplementation(() => mealMocks),
 }));
 
 function post(body: unknown, auth = true) {
@@ -120,6 +128,128 @@ describe("nutritionEntriesCreateHandler", () => {
         fatG: 10,
       }),
     );
+  });
+
+  it("re-derives recipe macros PER SERVING (total / recipe.servings × servings)", async () => {
+    // Recipe makes 4 servings totalling 800 kcal → 200 kcal/serving.
+    recipeMocks.getById.mockResolvedValue({
+      id: "r1",
+      servings: 4,
+      totalKcal: 800,
+      totalProteinG: 40,
+      totalCarbsG: 100,
+      totalFatG: 20,
+    });
+    const { nutritionEntriesCreateHandler } =
+      await import("../nutritionEntriesCreateHandler");
+    const res = await nutritionEntriesCreateHandler.handle(
+      post({
+        recipeId: "r1",
+        mealSlot: "dinner",
+        servings: 1, // one portion
+        loggedAt: "2026-06-21T19:00:00.000Z",
+      }),
+    );
+    expect(res.status).toBe(201);
+    expect(recipeMocks.getById).toHaveBeenCalledWith("r1", "test-user-id");
+    expect(entryMocks.create).toHaveBeenCalledWith(
+      "test-user-id",
+      expect.objectContaining({
+        kcal: 200,
+        proteinG: 10,
+        carbsG: 25,
+        fatG: 5,
+      }),
+    );
+  });
+
+  it("treats a recipe with 0/invalid servings as 1 (no divide-by-zero)", async () => {
+    recipeMocks.getById.mockResolvedValue({
+      id: "r1",
+      servings: 0,
+      totalKcal: 500,
+      totalProteinG: null,
+      totalCarbsG: null,
+      totalFatG: null,
+    });
+    const { nutritionEntriesCreateHandler } =
+      await import("../nutritionEntriesCreateHandler");
+    const res = await nutritionEntriesCreateHandler.handle(
+      post({
+        recipeId: "r1",
+        mealSlot: "lunch",
+        servings: 1,
+        loggedAt: "2026-06-21T12:00:00.000Z",
+      }),
+    );
+    expect(res.status).toBe(201);
+    expect(entryMocks.create).toHaveBeenCalledWith(
+      "test-user-id",
+      expect.objectContaining({ kcal: 500, proteinG: 0, carbsG: 0, fatG: 0 }),
+    );
+  });
+
+  it("400s when the referenced recipe is missing", async () => {
+    recipeMocks.getById.mockResolvedValue(null);
+    const { nutritionEntriesCreateHandler } =
+      await import("../nutritionEntriesCreateHandler");
+    const res = await nutritionEntriesCreateHandler.handle(
+      post({
+        recipeId: "missing",
+        mealSlot: "lunch",
+        servings: 1,
+        loggedAt: "2026-06-21T12:00:00.000Z",
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as any).error).toBe("recipe_not_found");
+  });
+
+  it("re-derives meal macros as the meal total × servings", async () => {
+    mealMocks.getById.mockResolvedValue({
+      id: "m1",
+      totalKcal: 500,
+      totalProteinG: 30,
+      totalCarbsG: 50,
+      totalFatG: 15,
+    });
+    const { nutritionEntriesCreateHandler } =
+      await import("../nutritionEntriesCreateHandler");
+    const res = await nutritionEntriesCreateHandler.handle(
+      post({
+        mealId: "m1",
+        mealSlot: "breakfast",
+        servings: 2,
+        loggedAt: "2026-06-21T08:00:00.000Z",
+      }),
+    );
+    expect(res.status).toBe(201);
+    expect(mealMocks.getById).toHaveBeenCalledWith("m1", "test-user-id");
+    expect(entryMocks.create).toHaveBeenCalledWith(
+      "test-user-id",
+      expect.objectContaining({
+        kcal: 1000,
+        proteinG: 60,
+        carbsG: 100,
+        fatG: 30,
+      }),
+    );
+  });
+
+  it("400s when the referenced meal is missing", async () => {
+    mealMocks.getById.mockResolvedValue(null);
+    const { nutritionEntriesCreateHandler } =
+      await import("../nutritionEntriesCreateHandler");
+    const res = await nutritionEntriesCreateHandler.handle(
+      post({
+        mealId: "missing",
+        mealSlot: "lunch",
+        servings: 1,
+        loggedAt: "2026-06-21T12:00:00.000Z",
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as any).error).toBe("meal_not_found");
   });
 
   it("400s when the referenced food is missing", async () => {

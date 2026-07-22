@@ -71,6 +71,7 @@ export {
   setFuelTargets,
   scaleFoodMacros,
   scaleRecipeMacros,
+  perServingDivisor,
   activityMultiplier,
   bmrMifflinStJeor,
   tdee,

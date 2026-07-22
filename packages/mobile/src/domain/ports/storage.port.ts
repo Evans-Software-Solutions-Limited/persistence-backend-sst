@@ -128,6 +128,17 @@ export interface StoragePort {
   markMutationCompleted(id: number): void;
   markMutationFailed(id: number, errorMessage: string): void;
   /**
+   * Flip an entry to `permanently_failed` — a permanent client error
+   * (4xx except 408/429) the drain must NOT auto-retry. Unlike
+   * `markMutationFailed` this does NOT increment `retry_count` (there is no
+   * retry to budget); the status alone makes it terminal. Excluded from
+   * `getPendingMutations` (no in-drain retry storm), but returned by
+   * `getFailedExhaustedEntries` (visible in the review UI) and re-openable by
+   * `resetFailedEntries` (recoverable after an app fix — otherwise it'd be
+   * silently stranded, the exact M13 gap that read path closed for `failed`).
+   */
+  markMutationPermanentlyFailed(id: number, errorMessage: string): void;
+  /**
    * Rewrite the payload of an already-queued mutation, in place. Only
    * touches entries still in `pending` or `failed` — never an `in_flight`
    * entry (a drain may have already serialized its body) nor a
@@ -192,8 +203,9 @@ export interface StoragePort {
   discardEntries(ids: readonly number[]): void;
   /**
    * Read every entry that has exhausted its retry budget:
-   * `status = 'failed' AND retry_count >= max_retries`. FIFO order
-   * (oldest first), mirroring `getBlockedEntries`.
+   * `status = 'failed' AND retry_count >= max_retries`, OR
+   * `status = 'permanently_failed'` (a permanent 4xx that never entered the
+   * retry loop). FIFO order (oldest first), mirroring `getBlockedEntries`.
    *
    * M13 sync-hardening: `getPendingMutations()` deliberately excludes
    * these rows forever (retry_count < max_retries is part of its WHERE
@@ -209,10 +221,11 @@ export interface StoragePort {
    */
   getFailedExhaustedEntries(): SyncQueueEntry[];
   /**
-   * Flip the given entry ids from `failed` back to `pending`, zeroing
-   * `retry_count` and clearing `error_message` — the "self-heal" half of
-   * the reconnect flow. Conditional on `status = 'failed'` (mirrors
-   * `unblockEntries`'s conditional on `blocked_entitlement`) so a stale id
+   * Flip the given entry ids from `failed` or `permanently_failed` back to
+   * `pending`, zeroing `retry_count` and clearing `error_message` — the
+   * "self-heal" half of the reconnect flow. Conditional on
+   * `status IN ('failed', 'permanently_failed')` (mirrors `unblockEntries`'s
+   * conditional on `blocked_entitlement`) so a stale id
    * that's already been discarded, or that a concurrent drain already
    * moved to `in_flight`/`completed`, is silently skipped rather than
    * corrupting an unrelated row.
@@ -821,6 +834,26 @@ export interface StoragePort {
    * references `localId`.
    */
   swapLocalWorkoutId(localId: string, serverId: string): void;
+
+  /**
+   * Rewrite a recipe's optimistic `local-…` id to the server-assigned id once
+   * its `POST /recipes` create flushes. A recipe is created offline-first with
+   * a `local-…` id (`createRecipeCommand`); anything that froze that id before
+   * the create synced still points at it — the cached recipe row and, critically,
+   * the `recipeId` inside any queued `POST /nutrition/entries` payload (the log
+   * body is frozen at enqueue time, so a user who creates a recipe and logs it
+   * before the create round-trips enqueues an entry referencing the `local-…`
+   * id). Without this swap that entry syncs against
+   * `RecipeRepository.getById('local-…')` → 400 `recipe_not_found` →
+   * `permanently_failed`, and the logged food silently vanishes. Mirrors
+   * `swapLocalWorkoutId`'s payload-reference rewrite. Called from the sync
+   * worker's reply path. No-op when the ids match or nothing references `localId`.
+   */
+  swapLocalRecipeId(localId: string, serverId: string): void;
+
+  /** As `swapLocalRecipeId`, for a saved meal's `local-…` id and the `mealId`
+   * reference inside queued `/nutrition/entries` payloads. */
+  swapLocalMealId(localId: string, serverId: string): void;
 
   /**
    * Read the rest-timer state (started-at + total-seconds) for the

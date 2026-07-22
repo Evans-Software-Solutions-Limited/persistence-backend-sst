@@ -19,6 +19,7 @@ import { usePurchaseOfferings } from "@/ui/hooks/usePurchaseOfferings";
 import { useIntroEligibility } from "@/ui/hooks/useIntroEligibility";
 import { usePurchasePackage } from "@/ui/hooks/usePurchasePackage";
 import { useRestorePurchases } from "@/ui/hooks/useRestorePurchases";
+import { useSyncSubscription } from "@/ui/hooks/useSyncSubscription";
 import { useMySubscription } from "@/ui/hooks/useMySubscription";
 import { useSubscriptionTiers } from "@/ui/hooks/useSubscriptionTiers";
 import { IOSPurchaseFlowPresenter } from "@/ui/presenters/IOSPurchaseFlowPresenter";
@@ -79,6 +80,7 @@ export function IOSPurchaseFlowContainer() {
   const offeringsQuery = usePurchaseOfferings();
   const purchaseMutation = usePurchasePackage();
   const restoreMutation = useRestorePurchases();
+  const syncMutation = useSyncSubscription();
 
   const subscriptionData = subQuery.data ?? null;
   const role = subscriptionData?.role;
@@ -192,15 +194,26 @@ export function IOSPurchaseFlowContainer() {
       setIsProcessing(true);
       try {
         const result = await purchaseMutation.mutateAsync(pkg.packageId);
-        // result is the active-entitlement snapshot; server truth lands via
-        // the RC webhook and useMySubscription reconciles. Pass the purchased
-        // tier to the success screen so it renders the correct plan (and the
-        // trainer "Manage Clients" CTA) immediately — the async webhook often
-        // hasn't upserted `user_subscriptions` by the time the success screen
-        // refetches `/subscriptions/me`, so relying on that read alone shows
-        // the stale (free) tier. Unlike the Stripe path (synchronous server
-        // write), the IAP path must bridge the on-device truth forward.
+        // `result` is the active-entitlement snapshot; RevenueCat has already
+        // confirmed the purchase on Apple's side at this point, so the tier
+        // the user just bought (`tier`) is authoritative for the success
+        // screen. The backend's `user_subscriptions` row is only updated by
+        // an ASYNC RevenueCat→backend webhook, so force a server-side
+        // reconcile via `syncSubscription` here to persist the entitlement +
+        // invalidate the subscription/profile caches BEFORE navigating —
+        // without this, coach-mode / the drawer could briefly read `free`.
+        // The sync is for the DB write, NOT to override display: we always
+        // route with the purchased `tier`. If sync errors (e.g. a transient
+        // 502), don't block a purchase RevenueCat already reported as
+        // successful — the webhook reconciles the row shortly after.
         void result;
+        try {
+          await syncMutation.mutateAsync();
+        } catch {
+          // Sync failed — proceed with the purchased tier; the purchase
+          // itself already succeeded on Apple's side and the webhook will
+          // reconcile the DB row.
+        }
         router.push(`/(auth)/success?tier=${tier}` as Href);
       } catch (err) {
         const error = err as { kind?: string; message?: string };
@@ -225,37 +238,52 @@ export function IOSPurchaseFlowContainer() {
         setIsProcessing(false);
       }
     },
-    [isProcessing, purchases, packages, billingCycle, purchaseMutation, router],
+    [
+      isProcessing,
+      purchases,
+      packages,
+      billingCycle,
+      purchaseMutation,
+      syncMutation,
+      router,
+    ],
   );
 
   const handleRestore = useCallback(async () => {
-    if (isProcessing || restoreMutation.isPending) return;
+    if (isProcessing || restoreMutation.isPending || syncMutation.isPending) {
+      return;
+    }
     try {
       const entitlements = await restoreMutation.mutateAsync();
-      if (entitlements.length > 0) {
-        // Bridge the restored tier forward to the success screen exactly like
-        // the purchase path: a restore that had to re-associate the sub to this
-        // App User ID fires an ASYNC RevenueCat transfer webhook, so the
-        // `/subscriptions/me` refetch usually wins the race and returns the
-        // stale (free) tier — leaving the user on "free" despite a successful
-        // restore. The success screen prefers the `tier` param over that racy
-        // read (SubscriptionSuccessContainer), so the correct plan shows
-        // immediately while the webhook reconciles. Fall back to an alert only
-        // when the restored entitlement maps to no known tier.
-        const restoredTier =
-          entitlements.find((e) => e.tier !== null)?.tier ?? null;
-        if (restoredTier !== null) {
-          router.push(`/(auth)/success?tier=${restoredTier}` as Href);
-          return;
-        }
-        Alert.alert(
-          "Purchases Restored",
-          "Your subscription has been restored.",
-        );
-      } else {
+      if (entitlements.length === 0) {
         Alert.alert(
           "Nothing to Restore",
           "We couldn't find any previous purchases for this Apple ID.",
+        );
+        return;
+      }
+      // On-device RevenueCat reports entitlements, but that's not proof the
+      // backend will grant access: unlike a fresh purchase (which Apple has
+      // just approved), a restore can legitimately find stale/expired
+      // entitlements RevenueCat still has cached, or the restore may need an
+      // async RC transfer webhook to re-associate the sub to this App User ID
+      // before the backend can see it. So — unlike the purchase path — we
+      // gate success STRICTLY on the server confirming a paid tier here;
+      // don't fall back to the on-device tier on an inconclusive/failed sync.
+      try {
+        const sub = await syncMutation.mutateAsync();
+        if (sub.tierName !== "free") {
+          router.push(`/(auth)/success?tier=${sub.tierName}` as Href);
+          return;
+        }
+        Alert.alert(
+          "Couldn't Confirm Subscription",
+          "We couldn't confirm an active subscription for this Apple ID. If you believe this is an error, contact support.",
+        );
+      } catch {
+        Alert.alert(
+          "Almost There",
+          "We restored your purchases on this device but couldn't confirm your plan just yet — it can take a moment. Pull to refresh or reopen the app shortly.",
         );
       }
     } catch (err) {
@@ -265,7 +293,7 @@ export function IOSPurchaseFlowContainer() {
         error.message ?? "Couldn't restore purchases. Please try again.",
       );
     }
-  }, [isProcessing, restoreMutation, router]);
+  }, [isProcessing, restoreMutation, syncMutation, router]);
 
   const handleManageInAppStore = useCallback(() => {
     void Linking.openURL(APP_STORE_SUBSCRIPTIONS_URL);
@@ -303,7 +331,7 @@ export function IOSPurchaseFlowContainer() {
       isCancelledButActive={isCancelledButActive}
       currentTierDisplayName={displayInfo.currentTierDisplayName}
       isProcessing={isProcessing}
-      isRestoring={restoreMutation.isPending}
+      isRestoring={restoreMutation.isPending || syncMutation.isPending}
       onBillingCycleChange={setBillingCycle}
       onTierSelect={(tier) => void handleTierSelect(tier)}
       onRoleChange={setSelectedRole}

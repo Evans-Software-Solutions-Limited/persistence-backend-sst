@@ -180,12 +180,15 @@ describe("scaleRecipeMacros", () => {
     });
   });
 
-  it("returns zeros when the recipe yield is 0 (no divide-by-zero)", () => {
+  it("falls back to a divisor of 1 when the recipe yield is 0 — matching the server (no divide-by-zero, no post-reconcile jump)", () => {
+    // Server derives perServing = recipe.servings > 0 ? recipe.servings : 1,
+    // so logging 2 servings of a 0-yield recipe = total × 2. The client's
+    // optimistic value must agree.
     expect(scaleRecipeMacros(recipe({ servings: 0 }), 2)).toEqual({
-      kcal: 0,
-      proteinG: 0,
-      carbsG: 0,
-      fatG: 0,
+      kcal: 1600,
+      proteinG: 120,
+      carbsG: 160,
+      fatG: 40,
     });
   });
 

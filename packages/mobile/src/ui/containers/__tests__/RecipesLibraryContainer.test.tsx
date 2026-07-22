@@ -325,7 +325,7 @@ describe("RecipesLibraryContainer", () => {
     );
   });
 
-  it("renders recipe rows with a servings/source secondary line and macro fields", async () => {
+  it("renders recipe rows with a servings/source secondary line and PER-SERVING macro fields", async () => {
     const { adapters, api, storage } = makeAdapters();
     storage.cacheRecipes(USER, [buildRecipe({ servings: 2 })]);
     jest
@@ -340,19 +340,57 @@ describe("RecipesLibraryContainer", () => {
       </Wrapper>,
     );
 
+    // buildRecipe()'s totals (420/32/58/8) are WHOLE-recipe — the card shows
+    // them divided by servings (2 here): 210/16/29/4.
     await waitFor(() =>
       expect(mockProbe.last?.recipes).toEqual([
         {
           id: "r1",
           name: "Protein oats",
-          kcal: 420,
-          proteinG: 32,
-          carbsG: 58,
-          fatG: 8,
+          kcal: 210,
+          proteinG: 16,
+          carbsG: 29,
+          fatG: 4,
           secondaryLine: "2 servings · My recipe",
         },
       ]),
     );
+  });
+
+  it("guards a zero recipe servings count by treating the whole-recipe total as one serving", async () => {
+    const { adapters, api, storage } = makeAdapters();
+    storage.cacheRecipes(USER, [buildRecipe({ servings: 0 })]);
+    jest
+      .spyOn(api, "getRecipes")
+      .mockResolvedValue(
+        fail({ kind: "api", code: "server", message: "down", status: 500 }),
+      );
+
+    render(
+      <Wrapper adapters={adapters}>
+        <RecipesLibraryContainer />
+      </Wrapper>,
+    );
+
+    await waitFor(() => expect(mockProbe.last?.recipes[0]?.kcal).toBe(420));
+  });
+
+  it("does not divide MEAL card totals by servings (a meal preset is one serving)", async () => {
+    const { adapters, api, storage } = makeAdapters();
+    storage.cacheMeal(USER, buildMeal({ totalKcal: 480 }));
+    jest
+      .spyOn(api, "getMeals")
+      .mockResolvedValue(
+        fail({ kind: "api", code: "server", message: "down", status: 500 }),
+      );
+
+    render(
+      <Wrapper adapters={adapters}>
+        <RecipesLibraryContainer />
+      </Wrapper>,
+    );
+
+    await waitFor(() => expect(mockProbe.last?.meals[0]?.kcal).toBe(480));
   });
 
   it("shows a hostname secondary line for an imported recipe", async () => {

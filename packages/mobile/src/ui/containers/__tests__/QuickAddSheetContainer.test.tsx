@@ -7,7 +7,7 @@ import type { AuthSession } from "@/domain/ports/auth.port";
 import { ok } from "@/shared/errors";
 import type { Adapters } from "@/shared/types";
 import { localDayISO } from "@/shared/utils";
-import type { Food, Meal } from "@/domain/models/nutrition";
+import type { Food, Meal, Recipe } from "@/domain/models/nutrition";
 import { useFuelSheets } from "@/state/fuel-sheets";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import type { QuickAddSheetProps } from "@/ui/presenters/QuickAddSheetPresenter";
@@ -71,6 +71,25 @@ const meal: Meal = {
   totalFatG: 12,
   items: [],
 };
+
+function buildRecipe(overrides: Partial<Recipe> = {}): Recipe {
+  return {
+    id: "r1",
+    userId: USER,
+    name: "Protein oats",
+    photoUrl: null,
+    servings: 2,
+    instructions: null,
+    source: "manual",
+    sourceUrl: null,
+    totalKcal: 420,
+    totalProteinG: 32,
+    totalCarbsG: 58,
+    totalFatG: 8,
+    ingredients: [],
+    ...overrides,
+  };
+}
 
 function makeAdapters() {
   const api = new InMemoryApiAdapter();
@@ -166,6 +185,50 @@ describe("QuickAddSheetContainer", () => {
     ).toBe(1);
     expect(Haptics.notificationAsync as jest.Mock).toHaveBeenCalled();
     expect(useFuelSheets.getState().sheet).toBeNull();
+  });
+
+  it("surfaces saved recipes per-serving and logs one on tap", async () => {
+    const { adapters, storage } = makeAdapters();
+    storage.cacheRecipes(USER, [buildRecipe({ servings: 2, totalKcal: 420 })]);
+    render(
+      <Wrapper adapters={adapters}>
+        <QuickAddSheetContainer />
+      </Wrapper>,
+    );
+    act(() => useFuelSheets.getState().openQuickAdd("lunch"));
+    // Recipe totals are WHOLE-recipe (420 kcal / 2 servings) — the QuickAdd
+    // row shows PER-SERVING, matching the Recipe library/detail fix.
+    await waitFor(() =>
+      expect(
+        mockProbe.last?.savedRecipes.find((r) => r.id === "r1")?.kcal,
+      ).toBe(210),
+    );
+
+    await act(async () => {
+      mockProbe.last!.onLogRecipe("r1");
+    });
+    expect(
+      storage.getCachedFuelToday(USER, localDayISO())?.entriesBySlot.lunch
+        .length,
+    ).toBe(1);
+    expect(Haptics.notificationAsync as jest.Mock).toHaveBeenCalled();
+    expect(useFuelSheets.getState().sheet).toBeNull();
+  });
+
+  it("guards a non-positive recipe servings count by treating it as one serving", async () => {
+    const { adapters, storage } = makeAdapters();
+    storage.cacheRecipes(USER, [buildRecipe({ servings: 0, totalKcal: 300 })]);
+    render(
+      <Wrapper adapters={adapters}>
+        <QuickAddSheetContainer />
+      </Wrapper>,
+    );
+    act(() => useFuelSheets.getState().openQuickAdd("lunch"));
+    await waitFor(() =>
+      expect(
+        mockProbe.last?.savedRecipes.find((r) => r.id === "r1")?.kcal,
+      ).toBe(300),
+    );
   });
 
   it("opens the search stage, selects a food, and logs it", async () => {

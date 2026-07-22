@@ -83,16 +83,32 @@ export function scaleFoodMacros(food: Food, servings: number): MacroSum {
 /**
  * Recipe macros scaled to `servings`. Recipe `total_*` are the totals for the
  * recipe's own `servings`, so one logged serving = total / recipe.servings.
- * Guards a zero/absent recipe yield (→ 0 macros rather than NaN).
+ * A zero/absent recipe yield falls back to a divisor of 1 — MATCHING the
+ * server's derivation in `nutritionEntriesCreateHandler` (`perServing =
+ * recipe.servings > 0 ? recipe.servings : 1`), so the optimistic local total
+ * equals what the server persists (no post-reconcile jump).
  */
 export function scaleRecipeMacros(recipe: Recipe, servings: number): MacroSum {
-  const per = recipe.servings > 0 ? servings / recipe.servings : 0;
+  const per = servings / (recipe.servings > 0 ? recipe.servings : 1);
   return {
     kcal: Math.round((recipe.totalKcal ?? 0) * per),
     proteinG: Math.round((recipe.totalProteinG ?? 0) * per),
     carbsG: Math.round((recipe.totalCarbsG ?? 0) * per),
     fatG: Math.round((recipe.totalFatG ?? 0) * per),
   };
+}
+
+/**
+ * Guarded per-serving divisor for a recipe/create-form whole-recipe macro
+ * total — a non-positive or absent `servings` count is treated as a single
+ * serving (so the whole total displays unchanged) rather than dividing by
+ * zero. DISPLAY only: the recipe's stored `total_*` and a create-form's
+ * `providedTotals` sent on save stay whole-recipe — only what's rendered on
+ * screen (recipe detail, library cards, the create form's live macro total,
+ * QuickAdd's saved-recipes list) is divided by this.
+ */
+export function perServingDivisor(servings: number | null): number {
+  return servings !== null && servings > 0 ? servings : 1;
 }
 
 /** Flatten a day aggregate's slot buckets back into one entry list. */

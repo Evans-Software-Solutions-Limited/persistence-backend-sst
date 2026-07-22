@@ -47,8 +47,10 @@ function render(over: Partial<QuickAddSheetProps> = {}) {
     aiOffline: false,
     yesterday: { items: ["Oatmeal", "Greek yogurt"], kcal: 480 },
     savedMeals: [{ id: "m1", name: "Standard breakfast", kcal: 480 }],
+    savedRecipes: [{ id: "r1", name: "Protein oats", kcal: 420 }],
     onLogYesterday: jest.fn(),
     onLogMeal: jest.fn(),
+    onLogRecipe: jest.fn(),
     onScan: jest.fn(),
     onSnap: jest.fn(),
     onSearch: jest.fn(),
@@ -118,6 +120,19 @@ describe("QuickAddSheetPresenter — menu stage", () => {
     expect(props.onSnap).toHaveBeenCalled();
     expect(props.onSearch).toHaveBeenCalled();
     expect(props.onManual).toHaveBeenCalled();
+  });
+
+  it("renders the saved-recipes list and logs one on tap", () => {
+    const { getByTestId, getByText, props } = render();
+    expect(getByTestId("quick-add-recipe-r1")).toBeTruthy();
+    expect(getByText("Protein oats")).toBeTruthy();
+    fireEvent.press(getByTestId("quick-add-recipe-r1"));
+    expect(props.onLogRecipe).toHaveBeenCalledWith("r1");
+  });
+
+  it("hides the Recipes section when there are no saved recipes", () => {
+    const { queryByTestId } = render({ savedRecipes: [] });
+    expect(queryByTestId("quick-add-recipe-r1")).toBeNull();
   });
 });
 

@@ -88,6 +88,8 @@ export function syncStatusLabel(status: SyncStatus): string {
       return "Syncing...";
     case "failed":
       return "Sync failed";
+    case "permanently_failed":
+      return "Sync failed";
     case "completed":
       return "Synced";
     case "blocked_entitlement":
