@@ -243,7 +243,9 @@ describe("IOSPurchaseFlowContainer", () => {
     // even if the reconcile momentarily reports a DIFFERENT paid tier (e.g.
     // an upgrade where RevenueCat's REST snapshot still lags on the old
     // plan), the success screen must still show the tier just purchased.
-    api.nextSyncSubscriptionResult = freeSub({ tierName: "individual_trainer" });
+    api.nextSyncSubscriptionResult = freeSub({
+      tierName: "individual_trainer",
+    });
     renderContainer(adapters);
     await waitFor(() =>
       expect(screen.getByTestId("subscription-card-premium")).toBeTruthy(),
