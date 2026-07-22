@@ -301,14 +301,19 @@ export function ProfileContainer() {
   const isInitialLoading =
     profilePage.payload === null && profilePage.isRefreshing;
 
-  // Surface refresh failures as a non-blocking banner when we have
-  // cached data to show under it. Suppress when there's no cache and
-  // we're still loading — the loader speaks for itself. Sign-out
-  // errors take precedence (more user-actionable).
-  const refreshErrorMessage =
-    profilePage.payload !== null && profilePage.error
+  // Surface refresh/load failures so the screen is never a silent dead-end.
+  // - With cached data: a non-blocking "showing cached data" banner over it.
+  // - With an EMPTY cache (first sign-in, when the fetch is most exposed to a
+  //   cold-start timeout or blip): an actionable "pull to retry" message —
+  //   otherwise the failed one-shot auto-fetch leaves the profile stuck with
+  //   no loader, no data, and no way to recover but an app restart. Mirrors
+  //   HomeContainer, which surfaces its error regardless of cache state.
+  // Sign-out errors take precedence (more user-actionable).
+  const refreshErrorMessage = profilePage.error
+    ? profilePage.payload !== null
       ? "Couldn't refresh — showing cached data."
-      : null;
+      : "Couldn't load your profile. Pull down to retry."
+    : null;
   const errorMessage = signOutError ?? refreshErrorMessage;
 
   return (
