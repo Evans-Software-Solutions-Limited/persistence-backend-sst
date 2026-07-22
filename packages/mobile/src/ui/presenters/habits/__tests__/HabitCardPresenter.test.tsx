@@ -107,6 +107,50 @@ describe("HabitCardPresenter", () => {
     expect(queryByTestId("card-attribution")).toBeNull();
   });
 
+  it("QA-6: coach viewing their own locked-for-athlete habit gets LIVE controls (isCoach=true)", () => {
+    const locked: HabitConfig = {
+      ...enabledWater(),
+      assignedByCoach: true,
+      assignedByName: "Bradley Evans",
+      locked: true,
+    };
+    const { getByTestId, props } = render(locked, { isCoach: true });
+    // Switch is enabled for the assigning coach.
+    fireEvent.press(getByTestId("card-switch"));
+    expect(props.onToggle).toHaveBeenCalledWith(false);
+    // Target stepper is enabled too.
+    fireEvent.press(getByTestId("card-target-inc"));
+    expect(props.onTargetChange).toHaveBeenCalled();
+    // Days/week pip is enabled.
+    fireEvent.press(getByTestId("card-freq-pip-4"));
+    expect(props.onFreqChange).toHaveBeenCalledWith(4);
+  });
+
+  it("QA-6: athlete self-view (isCoach=false) stays locked — existing behaviour preserved", () => {
+    const locked: HabitConfig = {
+      ...enabledWater(),
+      assignedByCoach: true,
+      assignedByName: "Bradley Evans",
+      locked: true,
+    };
+    const { getByTestId, props } = render(locked, { isCoach: false });
+    fireEvent.press(getByTestId("card-switch"));
+    expect(props.onToggle).not.toHaveBeenCalled();
+  });
+
+  it("QA-6: coach-locked calories nutrition deep-link is unaffected by isCoach (stays a live read-only link either way)", () => {
+    const cals: HabitConfig = {
+      ...defaultHabitConfig("calories"),
+      enabled: true,
+      goalId: "g-cals",
+      locked: true,
+      assignedByCoach: true,
+    };
+    const { getByTestId, props } = render(cals, { isCoach: true });
+    fireEvent.press(getByTestId("card-nutrition-link"));
+    expect(props.onAdjustNutrition).toHaveBeenCalled();
+  });
+
   it("coach-assigned but unlocked (relationship ended): attribution persists as history, controls enabled", () => {
     const transferred: HabitConfig = {
       ...enabledWater(),

@@ -33,8 +33,16 @@ import { Row, Stepper, Switch, WeekFreq } from "./HabitControls";
  * States beyond the prototype (all spec-required, design.md § 9):
  *  - coach-assigned → a <CoachAttribution> badge with the coach's name (Phase
  *    11); while the relationship is active the habit is also locked (controls
- *    disabled). Attribution persists as history after the relationship ends;
+ *    disabled) for the ATHLETE viewing their own habits. Attribution persists
+ *    as history after the relationship ends;
  *  - pending → a "Starts Monday" tag on the changed control's row.
+ *
+ * Lock is coach-aware (QA-6 fix): `config.locked` means "coach-assigned +
+ * relationship active" from the backend's point of view, without regard to
+ * WHO is looking. The assigning coach editing their own client must still be
+ * able to change the habit they just assigned (the write-side already allows
+ * this — only a DIFFERENT coach's habit 403s) — only the athlete's self-view
+ * should render it locked. Hence `locked = config.locked && !isCoach`.
  */
 
 const ICON_FOR: Record<
@@ -60,6 +68,10 @@ export type HabitCardProps = {
   onLeniencyChange: (next: number) => void;
   /** Calories deep-link → Fuel Targets editor. */
   onAdjustNutrition: () => void;
+  /** The viewer is the assigning coach editing a client's habits — a
+   *  coach-locked habit (`config.locked`) is never locked out for them, only
+   *  for the athlete's own self-view. */
+  isCoach?: boolean;
   testID?: string;
 };
 
@@ -75,13 +87,16 @@ export function HabitCardPresenter({
   onFreqChange,
   onLeniencyChange,
   onAdjustNutrition,
+  isCoach = false,
   testID,
 }: HabitCardProps) {
   const meta = HABIT_CATEGORY_META[config.category];
   const tone = meta.tone;
   const t = toneTokens(tone);
   const on = config.enabled;
-  const locked = config.locked;
+  // Coach-aware lock (QA-6): the assigning coach can always edit; only the
+  // athlete's self-view is locked out of a coach-assigned habit.
+  const locked = config.locked && !isCoach;
   const Glyph = ICON_FOR[config.category];
 
   // Display value: while a pending edit is queued, the UI shows the NEW value

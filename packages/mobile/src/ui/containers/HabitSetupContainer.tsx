@@ -81,6 +81,21 @@ export function HabitSetupContainer({
   const [skipped, setSkipped] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  // Transient "Saved" confirmation (QA-6: Save had no success feedback,
+  // making a persisted-but-invisible write read as "tapping Save does
+  // nothing"). Mirrors the "Copied" transient-local-state pattern used by
+  // AddClientSheetContainer — no toast/snackbar primitive exists in the app.
+  const [justSaved, setJustSaved] = useState(false);
+  const justSavedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  useEffect(() => {
+    return () => {
+      if (justSavedTimeoutRef.current)
+        clearTimeout(justSavedTimeoutRef.current);
+    };
+  }, []);
+
   // Baseline = the user's last SAVED INTENT, keyed by category. We start from
   // the loaded live config, but apply any queued pending edit OVER it so the
   // baseline reflects what the user last committed — not just the live row.
@@ -295,6 +310,12 @@ export function HabitSetupContainer({
       // in state), so mark the draft null to force a re-seed on the next render.
       setDraft(null);
       seededSignature.current = null;
+      // Success feedback (QA-6) — only reached once the writes + reconcile
+      // above succeeded (a rejection skips straight to `finally`).
+      if (justSavedTimeoutRef.current)
+        clearTimeout(justSavedTimeoutRef.current);
+      setJustSaved(true);
+      justSavedTimeoutRef.current = setTimeout(() => setJustSaved(false), 2000);
     } finally {
       setSaving(false);
     }
@@ -343,6 +364,7 @@ export function HabitSetupContainer({
       isCoach={isCoachView}
       canSave={canSave}
       saving={saving}
+      justSaved={justSaved}
       deferredChangesPending={hasDeferredChanges}
       title={
         isCoachView

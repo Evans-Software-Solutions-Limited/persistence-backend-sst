@@ -116,4 +116,31 @@ describe("HabitSetupPresenter", () => {
     const { getByText } = render({ canSave: false, saving: true });
     expect(getByText("Saving…")).toBeTruthy();
   });
+
+  it("QA-6: shows a 'Saved' confirmation near the Save button when justSaved is true", () => {
+    expect(
+      render({ justSaved: true }).getByTestId("habit-setup-saved"),
+    ).toBeTruthy();
+    expect(
+      render({ justSaved: false }).queryByTestId("habit-setup-saved"),
+    ).toBeNull();
+    // Default (justSaved omitted) also doesn't show it.
+    expect(render().queryByTestId("habit-setup-saved")).toBeNull();
+  });
+
+  it("QA-6: forwards isCoach down to each HabitCardPresenter so coach-locked habits stay editable", () => {
+    const configs = allConfigs();
+    configs.water = {
+      ...configs.water,
+      enabled: true,
+      goalId: "g-water",
+      assignedByCoach: true,
+      locked: true,
+    };
+    const { getByTestId, props } = render({ configs, isCoach: true });
+    // If isCoach wasn't forwarded, the switch would be disabled and this
+    // press would be a no-op.
+    fireEvent.press(getByTestId("habit-setup-card-water-switch"));
+    expect(props.onToggle).toHaveBeenCalledWith("water", false);
+  });
 });

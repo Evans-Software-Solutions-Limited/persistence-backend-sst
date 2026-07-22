@@ -41,6 +41,11 @@ export type HabitSetupPresenterProps = {
   canSave: boolean;
   /** A save is committing → Save shows "Saving…" and is disabled. */
   saving: boolean;
+  /** A save just completed successfully → briefly show "Saved" next to the
+   *  Save button (QA-6: coach Save had no success feedback). Transient local
+   *  state owned by the container, mirroring the "Copied" pattern used
+   *  elsewhere in the app (no toast/snackbar primitive exists). */
+  justSaved?: boolean;
   /** A saved edit/disable is deferred to next Monday → show the "starts
    *  Monday" banner so the deferral (esp. turning a habit off) isn't invisible. */
   deferredChangesPending?: boolean;
@@ -75,6 +80,7 @@ export function HabitSetupPresenter({
   isCoach = false,
   canSave,
   saving,
+  justSaved = false,
   deferredChangesPending = false,
   title = "Your habits",
   intro,
@@ -185,6 +191,7 @@ export function HabitSetupPresenter({
             onFreqChange={(next) => onFreqChange(category, next)}
             onLeniencyChange={(next) => onLeniencyChange(category, next)}
             onAdjustNutrition={onAdjustNutrition}
+            isCoach={isCoach}
             testID={`${testID}-card-${category}`}
           />
         ))}
@@ -235,6 +242,18 @@ export function HabitSetupPresenter({
         borderColor="$border"
         testID={`${testID}-save-footer`}
       >
+        {justSaved ? (
+          <Text
+            fontFamily="$body"
+            fontSize={12}
+            color="$success"
+            textAlign="center"
+            marginBottom={8}
+            testID={`${testID}-saved`}
+          >
+            Saved
+          </Text>
+        ) : null}
         <Btn
           variant="filled"
           tone={isCoach ? "trainer" : "primary"}
