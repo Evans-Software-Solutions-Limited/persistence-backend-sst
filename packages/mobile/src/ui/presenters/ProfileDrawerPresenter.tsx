@@ -106,6 +106,13 @@ export type ProfileDrawerPresenterProps = {
   /** Undefined until 10-trainer-features ships useTrainerClients. */
   clientCount?: number;
   isSigningOut?: boolean;
+  /**
+   * True when the profile fetch has failed with no cached payload to fall back
+   * on (QA-9). Swaps the infinite "Loading…" for an actionable error + retry.
+   */
+  profileErrored?: boolean;
+  /** Manual retry for the errored empty state. */
+  onRetryProfile?: () => void;
   onSwitchMode: (next: "athlete" | "coach") => void | Promise<void>;
   onOpenProfile: () => void;
   onOpenAchievements: () => void;
@@ -143,6 +150,8 @@ export function ProfileDrawerPresenter({
   isTrainerEligible,
   clientCount,
   isSigningOut = false,
+  profileErrored = false,
+  onRetryProfile,
   onSwitchMode,
   onOpenProfile,
   onOpenAchievements,
@@ -154,7 +163,10 @@ export function ProfileDrawerPresenter({
 }: ProfileDrawerPresenterProps) {
   const [confirmSignOut, setConfirmSignOut] = useState(false);
 
-  // First-paint / cache-loading state — profile hasn't resolved yet.
+  // First-paint / cache-loading state — profile hasn't resolved yet. When the
+  // fetch has failed outright with nothing cached (QA-9), surface an actionable
+  // error + retry instead of an infinite "Loading…" (the drawer has no
+  // pull-to-refresh, so a permanent loader was a dead end after logout→login).
   if (!profile) {
     return (
       <BottomSheet visible={visible} onClose={onClose} height="tall">
@@ -172,10 +184,45 @@ export function ProfileDrawerPresenter({
               fontSize={24}
               color="$text3"
             >
-              Loading…
+              {profileErrored ? "Couldn't load profile" : "Loading…"}
             </Text>
           </View>
         </View>
+        {profileErrored ? (
+          <View gap={12} testID="profile-drawer-error">
+            <Text fontFamily="$body" fontSize={13} color="$text2">
+              {
+                "We couldn't load your profile. Check your connection and try again."
+              }
+            </Text>
+            {onRetryProfile ? (
+              <Pressable
+                onPress={onRetryProfile}
+                accessibilityRole="button"
+                accessibilityLabel="Retry loading profile"
+                testID="profile-drawer-retry"
+                style={({ pressed }) => ({
+                  paddingVertical: 14,
+                  borderWidth: 1,
+                  borderColor: "rgba(255,255,255,0.16)",
+                  borderRadius: 12,
+                  opacity: pressed ? 0.8 : 1,
+                  alignItems: "center",
+                  justifyContent: "center",
+                })}
+              >
+                <Text
+                  fontFamily="$display"
+                  fontWeight="600"
+                  fontSize={13}
+                  color="$text"
+                >
+                  Try again
+                </Text>
+              </Pressable>
+            ) : null}
+          </View>
+        ) : null}
       </BottomSheet>
     );
   }
