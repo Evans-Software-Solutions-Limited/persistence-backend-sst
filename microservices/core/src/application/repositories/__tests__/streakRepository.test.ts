@@ -823,6 +823,279 @@ describe("StreakRepository", () => {
     });
   });
 
+  // ── BRIEF-7 QA-1..QA-4: derived Home-grid rows for Gym + Calories ─────────
+  // buildHabitsGrid is pure row-existence over habit_completions, which Gym
+  // (`count`) and Calories (`within_tolerance`) never write. These per-day
+  // queries derive the SAME qualification getCollectionHabitAggregates scores
+  // weekly, just resolved to actual days over the grid's own window.
+  const selectWhereGroupBy = (val: unknown) => ({
+    from: () => ({ where: () => ({ groupBy: () => Promise.resolve(val) }) }),
+  });
+  const GRID_WINDOW = ["2026-06-08", "2026-06-09", "2026-06-10"];
+
+  describe("getDerivedHabitGridRows (BRIEF-7 QA-1..QA-4)", () => {
+    it("returns [] immediately for an empty window (no DB round-trip)", async () => {
+      expect(
+        await new StreakRepository().getDerivedHabitGridRows(
+          "u1",
+          [],
+          "Europe/London",
+        ),
+      ).toEqual([]);
+    });
+
+    it("returns [] when no Gym/Calories habit is enabled", async () => {
+      (getDb as any).mockReturnValue({ select: () => enabledJoin([]) });
+      expect(
+        await new StreakRepository().getDerivedHabitGridRows(
+          "u1",
+          GRID_WINDOW,
+          "Europe/London",
+        ),
+      ).toEqual([]);
+    });
+
+    describe("Gym", () => {
+      it("marks a day true when >= 1 completed session lands on it, false otherwise", async () => {
+        let call = 0;
+        (getDb as any).mockReturnValue({
+          select: () =>
+            call++ === 0
+              ? enabledJoin([
+                  { goalId: "gym-goal", category: "gym", tolerancePct: null },
+                ])
+              : selectWhereGroupBy([{ day: "2026-06-09" }]),
+        });
+        const rows = await new StreakRepository().getDerivedHabitGridRows(
+          "u1",
+          GRID_WINDOW,
+          "Europe/London",
+        );
+        expect(rows).toEqual([
+          { goalId: "gym-goal", days: [false, true, false] },
+        ]);
+      });
+
+      it("an enabled habit with zero sessions in the window still renders an all-false row (tile stays visible)", async () => {
+        let call = 0;
+        (getDb as any).mockReturnValue({
+          select: () =>
+            call++ === 0
+              ? enabledJoin([
+                  { goalId: "gym-goal", category: "gym", tolerancePct: null },
+                ])
+              : selectWhereGroupBy([]),
+        });
+        const rows = await new StreakRepository().getDerivedHabitGridRows(
+          "u1",
+          GRID_WINDOW,
+          "Europe/London",
+        );
+        expect(rows).toEqual([
+          { goalId: "gym-goal", days: [false, false, false] },
+        ]);
+      });
+
+      it("normalises a real-driver Date cell to the same YYYY-MM-DD key as the string-mock shape", async () => {
+        let call = 0;
+        (getDb as any).mockReturnValue({
+          select: () =>
+            call++ === 0
+              ? enabledJoin([
+                  { goalId: "gym-goal", category: "gym", tolerancePct: null },
+                ])
+              : selectWhereGroupBy([
+                  { day: new Date("2026-06-09T00:00:00.000Z") },
+                ]),
+        });
+        const rows = await new StreakRepository().getDerivedHabitGridRows(
+          "u1",
+          GRID_WINDOW,
+          "Europe/London",
+        );
+        expect(rows[0].days).toEqual([false, true, false]);
+      });
+
+      it("only counts COMPLETED sessions — an in-progress/abandoned session is excluded by the WHERE (rendered SQL)", async () => {
+        let call = 0;
+        let executedWhere: unknown;
+        (getDb as any).mockReturnValue({
+          select: () =>
+            call++ === 0
+              ? enabledJoin([
+                  { goalId: "gym-goal", category: "gym", tolerancePct: null },
+                ])
+              : {
+                  from: () => ({
+                    where: (w: unknown) => {
+                      executedWhere = w;
+                      return { groupBy: () => Promise.resolve([]) };
+                    },
+                  }),
+                },
+        });
+        await new StreakRepository().getDerivedHabitGridRows(
+          "u1",
+          GRID_WINDOW,
+          "Europe/London",
+        );
+        const { sql, params } = new PgDialect().sqlToQuery(
+          executedWhere as never,
+        );
+        expect(sql).toContain('"status" = ');
+        expect(params).toContain("completed");
+      });
+    });
+
+    describe("Calories", () => {
+      it("marks a day true when kcal is within tolerance (inclusive bounds — matches countCalorieToleranceDays), false outside", async () => {
+        let call = 0;
+        let executed: unknown;
+        (getDb as any).mockReturnValue({
+          select: () =>
+            call++ === 0
+              ? enabledJoin([
+                  {
+                    goalId: "cal-goal",
+                    category: "calories",
+                    tolerancePct: "10",
+                  },
+                ])
+              : selectWhereLimit([{ daily: "2000" }]), // Fuel target
+          execute: (q: unknown) => {
+            executed = q;
+            return Promise.resolve([{ d: "2026-06-09" }]);
+          },
+        });
+        const rows = await new StreakRepository().getDerivedHabitGridRows(
+          "u1",
+          GRID_WINDOW,
+          "Europe/London",
+        );
+        expect(rows).toEqual([
+          { goalId: "cal-goal", days: [false, true, false] },
+        ]);
+        const { sql, params } = new PgDialect().sqlToQuery(executed as never);
+        expect(sql.toLowerCase()).toContain("between");
+        expect(params).toContain(1800); // 2000 - 10%
+        expect(params).toContain(2200); // 2000 + 10%
+      });
+
+      it("resolves the target against the live Fuel target, falling back to the 2000 default when none is set", async () => {
+        let call = 0;
+        let executed: unknown;
+        (getDb as any).mockReturnValue({
+          select: () =>
+            call++ === 0
+              ? enabledJoin([
+                  {
+                    goalId: "cal-goal",
+                    category: "calories",
+                    tolerancePct: "0",
+                  },
+                ])
+              : selectWhereLimit([]), // no nutrition_targets row
+          execute: (q: unknown) => {
+            executed = q;
+            return Promise.resolve([]);
+          },
+        });
+        await new StreakRepository().getDerivedHabitGridRows(
+          "u1",
+          GRID_WINDOW,
+          "Europe/London",
+        );
+        const { params } = new PgDialect().sqlToQuery(executed as never);
+        expect(params).toContain(2000); // category default, 0% tolerance both bounds
+      });
+
+      it("an enabled habit with no qualifying days still renders an all-false row", async () => {
+        let call = 0;
+        (getDb as any).mockReturnValue({
+          select: () =>
+            call++ === 0
+              ? enabledJoin([
+                  {
+                    goalId: "cal-goal",
+                    category: "calories",
+                    tolerancePct: "10",
+                  },
+                ])
+              : selectWhereLimit([{ daily: "2000" }]),
+          execute: () => Promise.resolve([]),
+        });
+        const rows = await new StreakRepository().getDerivedHabitGridRows(
+          "u1",
+          GRID_WINDOW,
+          "Europe/London",
+        );
+        expect(rows).toEqual([
+          { goalId: "cal-goal", days: [false, false, false] },
+        ]);
+      });
+
+      it("defaults a null tolerancePct to 0% (exact-target day only)", async () => {
+        let call = 0;
+        let executed: unknown;
+        (getDb as any).mockReturnValue({
+          select: () =>
+            call++ === 0
+              ? enabledJoin([
+                  {
+                    goalId: "cal-goal",
+                    category: "calories",
+                    tolerancePct: null,
+                  },
+                ])
+              : selectWhereLimit([{ daily: "2000" }]),
+          execute: (q: unknown) => {
+            executed = q;
+            return Promise.resolve([]);
+          },
+        });
+        await new StreakRepository().getDerivedHabitGridRows(
+          "u1",
+          GRID_WINDOW,
+          "Europe/London",
+        );
+        const { params } = new PgDialect().sqlToQuery(executed as never);
+        // 0% tolerance ⇒ both bounds collapse to the target itself (2000).
+        expect(params.filter((p) => p === 2000)).toHaveLength(2);
+      });
+    });
+
+    it("computes Gym + Calories together, resolving the Fuel target exactly once", async () => {
+      let selectCall = 0;
+      (getDb as any).mockReturnValue({
+        select: () => {
+          const n = selectCall++;
+          if (n === 0) {
+            return enabledJoin([
+              { goalId: "gym-goal", category: "gym", tolerancePct: null },
+              { goalId: "cal-goal", category: "calories", tolerancePct: "10" },
+            ]);
+          }
+          if (n === 1) return selectWhereLimit([{ daily: "2000" }]); // fuel target — fetched once
+          return selectWhereGroupBy([{ day: "2026-06-09" }]); // gym days
+        },
+        execute: () => Promise.resolve([{ d: "2026-06-10" }]), // calorie days
+      });
+      const rows = await new StreakRepository().getDerivedHabitGridRows(
+        "u1",
+        GRID_WINDOW,
+        "Europe/London",
+      );
+      expect(rows).toEqual([
+        { goalId: "gym-goal", days: [false, true, false] },
+        { goalId: "cal-goal", days: [false, false, true] },
+      ]);
+      // Exactly 2 select() round-trips before the per-habit day queries: the
+      // enabled-habits join, then ONE daily_kcal lookup shared by the single
+      // Calories habit — not re-fetched per habit.
+      expect(selectCall).toBe(3); // enabled join + fuel target + gym groupBy
+    });
+  });
+
   describe("weekIntersectsHoliday / getCollectionHabitStreak", () => {
     it("weekIntersectsHoliday true when a range overlaps", async () => {
       (getDb as any).mockReturnValue({
