@@ -892,6 +892,48 @@ export class InMemoryApiAdapter implements ApiPort {
     return this.mayFail<MySubscription>(this.mySubscription);
   }
 
+  /** Count of `syncSubscription` calls. */
+  public syncSubscriptionCalls = 0;
+
+  /**
+   * Value returned by `syncSubscription` on success. `null` (the default)
+   * falls back to `mySubscription`, since a real server-side reconcile
+   * normally reflects the same row `getMySubscription` reads. Set
+   * explicitly when a test needs the synced result to diverge from the
+   * `/subscriptions/me` snapshot — e.g. modelling a restore/purchase that
+   * confirms a paid tier while the on-device snapshot still reads free.
+   */
+  public nextSyncSubscriptionResult: MySubscription | null = null;
+
+  /**
+   * When set, `syncSubscription` returns this `ApiError` instead of a
+   * success value — consumed once, mirroring `nextCreateInviteCodeError`.
+   * Use to simulate the backend's `502 subscription_sync_failed`
+   * (RevenueCat REST unreachable) from `POST /subscriptions/sync`.
+   */
+  public nextSyncSubscriptionError: ApiError | null = null;
+
+  async syncSubscription(): Promise<Result<MySubscription, ApiError>> {
+    this.syncSubscriptionCalls += 1;
+    if (this.shouldFail) {
+      return fail<ApiError>(this.failError);
+    }
+    if (this.nextSyncSubscriptionError !== null) {
+      const error = this.nextSyncSubscriptionError;
+      this.nextSyncSubscriptionError = null;
+      return fail<ApiError>(error);
+    }
+    const sub = this.nextSyncSubscriptionResult ?? this.mySubscription;
+    if (!sub) {
+      return fail<ApiError>({
+        kind: "api",
+        code: "not_found",
+        message: "No subscription",
+      });
+    }
+    return this.mayFail<MySubscription>(sub);
+  }
+
   /**
    * Last `createSubscription` input captured, so containers + presenters
    * can be asserted against the exact payload they sent. `null` until
