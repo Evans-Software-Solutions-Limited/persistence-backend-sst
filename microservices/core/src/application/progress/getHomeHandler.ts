@@ -101,7 +101,7 @@ export const getHomeHandler = new Elysia()
         (t) => t?.dailyKcal ?? null,
       ),
       ctx.HomeReadRepository.getActiveProgramme(userId, today),
-      ctx.HomeReadRepository.getTodaysTraining(userId),
+      ctx.HomeReadRepository.getTodaysTraining(userId, today),
       // specs/20-sleep-quicklog STORY-002 AC 2.5 — the same `today` basis the
       // rest of this handler already computes (user's local wake-day).
       ctx.SleepRepository.getForDate(userId, today),

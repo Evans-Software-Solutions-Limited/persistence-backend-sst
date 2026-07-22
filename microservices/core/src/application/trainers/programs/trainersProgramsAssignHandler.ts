@@ -8,6 +8,7 @@ import {
 } from "@persistence/api-utils/auth/supabaseAuth";
 import { hasActiveRelationship } from "../relationships/activeRelationshipGuard";
 import { ISO_DATE_PATTERN, todayIso } from "./shared";
+import { emitTrainerOnBehalfNotification } from "../onBehalfNotifications";
 
 /**
  * POST /trainers/me/programs/:id/assign — assign a programme to an active
@@ -19,6 +20,14 @@ import { ISO_DATE_PATTERN, todayIso } from "./shared";
  * Audit note (T-19.2.9): `trainer_actions_audit` (spec-10 Phase 10.1/10.2)
  * doesn't exist yet — when it lands, this write gains a transactional
  * audit row per cross-cuts § 1.4.
+ *
+ * Notification (QA-10, device-QA sweep BRIEF-7): the occurrence
+ * materialisation used to fire a legacy per-row DB trigger
+ * (`assignment_notifications`), so assigning ONE programme flooded the
+ * client with N pushes (one per occurrence). That trigger is dropped
+ * (migration 20260722120000) — this handler now emits exactly ONE
+ * `workout_assigned` notification per programme assignment, post-commit,
+ * best-effort, mirroring `assignClientWorkoutOnBehalf`.
  */
 export const trainersProgramsAssignHandler = new Elysia()
   .derive(async ({ headers }) => ({
@@ -74,6 +83,24 @@ export const trainersProgramsAssignHandler = new Elysia()
           message: "Add workouts to the programme before assigning it",
         };
       }
+
+      await emitTrainerOnBehalfNotification({
+        clientId: ctx.body.clientId,
+        trainerId: userId,
+        // Reuses the existing `workout_assigned` enum value — a distinct
+        // "programme_assigned" type would need its own enum migration for
+        // no behavioural gain (this IS a workout-assignment notification).
+        type: "workout_assigned",
+        title: "New programme from your coach",
+        buildMessage: (coachName) => `${coachName} assigned you a programme`,
+        // No athlete-facing programme detail route exists yet (`/programs`
+        // and `/programs/:id` are coach-only, per app/(app)/programs/*) — the
+        // programme + its "Today's training" occurrences surface on Home, so
+        // the deep link lands there. Flagging as a judgment call.
+        deepLink: "/(app)/(tabs)",
+        relatedEntityType: "program_assignment",
+        relatedEntityId: result.assignment.id,
+      });
 
       ctx.set.status = 201;
       return { data: result.assignment };

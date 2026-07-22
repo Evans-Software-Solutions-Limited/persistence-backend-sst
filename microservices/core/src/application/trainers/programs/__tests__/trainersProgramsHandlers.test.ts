@@ -93,6 +93,11 @@ vi.mock("../../relationships/activeRelationshipGuard", () => ({
   hasActiveRelationship: (...args: unknown[]) =>
     guardMocks.hasActiveRelationship(...args),
 }));
+vi.mock("../../onBehalfNotifications", () => ({
+  emitTrainerOnBehalfNotification: vi.fn(async () => {}),
+}));
+
+import { emitTrainerOnBehalfNotification } from "../../onBehalfNotifications";
 
 const authed = (url: string, init: { method?: string; body?: unknown } = {}) =>
   new Request(`http://localhost${url}`, {
@@ -472,6 +477,42 @@ describe("programme handlers", () => {
         }),
         expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
       );
+    });
+
+    // QA-10 (device-QA sweep BRIEF-7) — the legacy per-row DB trigger used to
+    // fire once per MATERIALISED occurrence (a flood for one programme
+    // assign); the fix emits exactly one app-level notification per
+    // programme assignment instead.
+    it("emits exactly ONE workout_assigned notification per programme assignment", async () => {
+      assignmentMocks.assign.mockResolvedValue({
+        assignment: { id: "pa-1" },
+      });
+      const { trainersProgramsAssignHandler } =
+        await import("../trainersProgramsAssignHandler");
+      const res = await trainersProgramsAssignHandler.handle(
+        authed("/trainers/me/programs/p-1/assign", { method: "POST", body }),
+      );
+      expect(res.status).toBe(201);
+      expect(emitTrainerOnBehalfNotification).toHaveBeenCalledTimes(1);
+      expect(emitTrainerOnBehalfNotification).toHaveBeenCalledWith(
+        expect.objectContaining({
+          clientId: "client-1",
+          trainerId: "trainer-id",
+          type: "workout_assigned",
+          relatedEntityType: "program_assignment",
+          relatedEntityId: "pa-1",
+        }),
+      );
+    });
+
+    it("does not notify when the assign fails (404/409/422)", async () => {
+      assignmentMocks.assign.mockResolvedValueOnce({ error: "not_found" });
+      const { trainersProgramsAssignHandler } =
+        await import("../trainersProgramsAssignHandler");
+      await trainersProgramsAssignHandler.handle(
+        authed("/trainers/me/programs/p-1/assign", { method: "POST", body }),
+      );
+      expect(emitTrainerOnBehalfNotification).not.toHaveBeenCalled();
     });
 
     it("rejects a malformed startDate at the schema layer", async () => {
