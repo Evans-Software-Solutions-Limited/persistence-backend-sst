@@ -43,7 +43,7 @@ function defaultProps(): IOSPurchaseFlowPresenterProps {
     selectedRole: "user",
     purchasableTiers: new Set(["premium", "individual_trainer"]),
     isTierTrialEligible: () => true,
-    trialDurationDays: 14,
+    tierTrialDays: () => 14,
     hasTrialEligibilityData: true,
     contactSalesTiers: new Set(["small_business", "medium_enterprise"]),
     onContactSales: jest.fn(),
@@ -83,11 +83,19 @@ describe("IOSPurchaseFlowPresenter", () => {
     expect(props.onTierSelect).toHaveBeenCalledWith("premium");
   });
 
-  it("advertises the trial length from trialDurationDays (not a hardcoded number)", () => {
+  it("advertises EACH tier's own trial length (per-tier, not one global number)", () => {
+    // Regression: previously one product's offer was stamped on every card, so
+    // a premium 1-week offer could render as a trainer's "14-day". The premium
+    // (user) card must show ITS product's 7 days and never a trainer's 14.
     render(
-      <IOSPurchaseFlowPresenter {...defaultProps()} trialDurationDays={30} />,
+      <IOSPurchaseFlowPresenter
+        {...defaultProps()}
+        selectedRole="user"
+        tierTrialDays={(tier) => (tier === "premium" ? 7 : 14)}
+      />,
     );
-    expect(screen.getByText("30-day free trial")).toBeTruthy();
+    expect(screen.getByText("7-day free trial")).toBeTruthy();
+    expect(screen.queryByText("14-day free trial")).toBeNull();
   });
 
   it("shows the trial banner per-tier — only on tiers whose own product is eligible", () => {
@@ -110,6 +118,36 @@ describe("IOSPurchaseFlowPresenter", () => {
     );
     // Exactly one trainer card shows the banner (individual_trainer), not SB.
     expect(screen.getAllByText("14-day free trial")).toHaveLength(1);
+  });
+
+  it("renders DIFFERENT trial durations across trainer cards (each from its own product)", () => {
+    // Locks the per-tier guarantee: two simultaneously-eligible trainer cards
+    // must each show THEIR product's duration, not a single shared number.
+    const SMALL_BUSINESS: SubscriptionTier = {
+      ...PREMIUM,
+      tierName: "small_business",
+      displayName: "Small Business",
+      isTrainerTier: true,
+    };
+    render(
+      <IOSPurchaseFlowPresenter
+        {...defaultProps()}
+        subscriptionTiers={[PREMIUM, INDIVIDUAL_TRAINER, SMALL_BUSINESS]}
+        selectedRole="trainer"
+        billingCycle="monthly"
+        isTierTrialEligible={() => true}
+        tierTrialDays={(tier) =>
+          tier === "individual_trainer"
+            ? 14
+            : tier === "small_business"
+              ? 7
+              : null
+        }
+      />,
+    );
+    // Both distinct durations render at once; medium_enterprise (null) shows none.
+    expect(screen.getByText("14-day free trial")).toBeTruthy();
+    expect(screen.getByText("7-day free trial")).toBeTruthy();
   });
 
   it("renders trainer cards under the trainer role", () => {
