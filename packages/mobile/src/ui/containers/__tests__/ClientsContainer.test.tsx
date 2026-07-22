@@ -277,9 +277,13 @@ describe("ClientsContainer", () => {
     );
   });
 
-  it("opens the AddClient sheet from the header + (registering a refresh)", async () => {
+  it("opens the AddClient sheet from the header + (registering an invalidate + refresh)", async () => {
     const { adapters, api } = makeAdapters(makeTrainerSub());
     api.trainerClients = makeTrainerClients();
+    const invalidateSpy = jest.spyOn(
+      adapters.storage,
+      "invalidateTrainerClients",
+    );
     render(
       <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
         <ClientsContainer />
@@ -293,11 +297,14 @@ describe("ClientsContainer", () => {
     expect(state.open).toBe(true);
     expect(typeof state.onInvited).toBe("function");
 
-    // Firing the registered callback re-pulls the roster (slot/flag refresh).
+    // Firing the registered callback invalidates the SQLite roster slot
+    // (QA-14b — so a cache-first re-read can't serve back the stale list)
+    // BEFORE re-pulling the roster (slot/flag refresh).
     const before = api.getTrainerClientsCalls;
     await act(async () => {
       state.onInvited?.();
     });
+    expect(invalidateSpy).toHaveBeenCalledWith("u-1");
     await waitFor(() =>
       expect(api.getTrainerClientsCalls).toBeGreaterThan(before),
     );
@@ -376,7 +383,10 @@ describe("ClientsContainer", () => {
 
     /** Build adapters + render, pre-loaded with the pending-coach-request
      * roster, then switch to the "All" segment so the pending row shows. */
-    async function renderOnAllSegment(): Promise<InMemoryApiAdapter> {
+    async function renderOnAllSegment(): Promise<{
+      api: InMemoryApiAdapter;
+      adapters: Adapters;
+    }> {
       const { adapters, api } = makeAdapters(makeTrainerSub());
       api.trainerClients = rosterWithPendingCoachRequest();
       render(
@@ -393,7 +403,7 @@ describe("ClientsContainer", () => {
       await waitFor(() =>
         expect(screen.getByTestId("client-row-c-noah-accept")).toBeTruthy(),
       );
-      return api;
+      return { api, adapters };
     }
 
     it("a clientId search param defaults the segment to All (so the just-joined pending isn't hidden)", async () => {
@@ -414,14 +424,53 @@ describe("ClientsContainer", () => {
       ).toBe(true);
     });
 
+    it("QA-14b: a clientId arriving on an ALREADY-MOUNTED screen (push tapped while on the tab) also refreshes the roster", async () => {
+      const { adapters, api } = makeAdapters(makeTrainerSub());
+      api.trainerClients = makeTrainerClients();
+      const queryClient = makeQueryClient();
+      const { rerender } = render(
+        <Wrapper adapters={adapters} queryClient={queryClient}>
+          <ClientsContainer />
+        </Wrapper>,
+      );
+      await waitFor(() =>
+        expect(screen.getByTestId("client-row-c-priya")).toBeTruthy(),
+      );
+      const before = api.getTrainerClientsCalls;
+
+      // The Clients tab stays mounted; a redeem-notification tap updates the
+      // route's clientId param reactively (not a remount) — simulate that by
+      // mutating the shared mock param object and forcing a re-render.
+      mockSearchParams.clientId = "c-noah";
+      await act(async () => {
+        rerender(
+          <Wrapper adapters={adapters} queryClient={queryClient}>
+            <ClientsContainer />
+          </Wrapper>,
+        );
+      });
+
+      expect(
+        screen.getByTestId("clients-segmented-option-All").props
+          .accessibilityState.selected,
+      ).toBe(true);
+      await waitFor(() =>
+        expect(api.getTrainerClientsCalls).toBeGreaterThan(before),
+      );
+    });
+
     it("only a client-initiated pending row gets the accept/decline affordance", async () => {
       await renderOnAllSegment();
       // The other (active) rows never render the affordance.
       expect(screen.queryByTestId("client-row-c-priya-accept")).toBeNull();
     });
 
-    it("accept calls respond(accept) then refreshes the roster", async () => {
-      const api = await renderOnAllSegment();
+    it("accept invalidates the roster's SQLite slot, THEN refreshes it (QA-14b)", async () => {
+      const { api, adapters } = await renderOnAllSegment();
+      const invalidateSpy = jest.spyOn(
+        adapters.storage,
+        "invalidateTrainerClients",
+      );
       const before = api.getTrainerClientsCalls;
       await act(async () => {
         fireEvent.press(screen.getByTestId("client-row-c-noah-accept"));
@@ -429,19 +478,29 @@ describe("ClientsContainer", () => {
       expect(api.respondToClientRelationshipCalls).toEqual([
         { relationshipId: "rel-noah", action: "accept" },
       ]);
+      expect(invalidateSpy).toHaveBeenCalledWith("u-1");
       await waitFor(() =>
         expect(api.getTrainerClientsCalls).toBeGreaterThan(before),
       );
     });
 
-    it("decline calls respond(decline)", async () => {
-      const api = await renderOnAllSegment();
+    it("decline also invalidates the roster's SQLite slot then refreshes (QA-14b)", async () => {
+      const { api, adapters } = await renderOnAllSegment();
+      const invalidateSpy = jest.spyOn(
+        adapters.storage,
+        "invalidateTrainerClients",
+      );
+      const before = api.getTrainerClientsCalls;
       await act(async () => {
         fireEvent.press(screen.getByTestId("client-row-c-noah-decline"));
       });
       expect(api.respondToClientRelationshipCalls).toEqual([
         { relationshipId: "rel-noah", action: "decline" },
       ]);
+      expect(invalidateSpy).toHaveBeenCalledWith("u-1");
+      await waitFor(() =>
+        expect(api.getTrainerClientsCalls).toBeGreaterThan(before),
+      );
     });
 
     it("disables both buttons while the accept/decline call is in flight (optimistic busy state)", async () => {

@@ -1,5 +1,7 @@
 import { router, useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { getApiBaseUrl } from "@/adapters/api";
+import { processSyncQueue } from "@/application/commands/sync.command";
 import type { Workout } from "@/domain/models/workout";
 import { useUserMode } from "@/state/user-mode";
 import { useAdapters } from "@/ui/hooks/useAdapters";
@@ -28,7 +30,7 @@ import { CoachWorkoutLibraryPresenter } from "@/ui/presenters/coach/CoachWorkout
 export function CoachWorkoutLibraryContainer({
   embedded = false,
 }: { embedded?: boolean } = {}) {
-  const { api, storage } = useAdapters();
+  const { api, auth, storage } = useAdapters();
   const { session } = useAuth();
   const userId = session?.userId ?? null;
   const mode = useUserMode((s) => s.mode);
@@ -67,6 +69,18 @@ export function CoachWorkoutLibraryContainer({
       inFlightRef.current = true;
       if (isRefresh) setIsRefreshing(true);
       try {
+        // Drain the sync queue BEFORE the GET — otherwise a just-created
+        // workout's optimistic POST is still queued and this fetch returns
+        // the pre-create list, so the new workout appears to vanish until
+        // the next focus (mirrors useWorkouts' refresh()).
+        try {
+          await processSyncQueue(storage, auth, getApiBaseUrl());
+        } catch (err) {
+          console.error(
+            "[CoachWorkoutLibraryContainer] queue flush failed:",
+            err,
+          );
+        }
         const result = await api.getWorkouts({ type: "mine" });
         if (result.ok) {
           storage.cacheCoachWorkoutLibrary(userId, result.value.workouts);
@@ -83,7 +97,7 @@ export function CoachWorkoutLibraryContainer({
         setIsRefreshing(false);
       }
     },
-    [api, storage, userId],
+    [api, auth, storage, userId],
   );
 
   // Cache-first refresh: re-read on every focus (also picks up a workout

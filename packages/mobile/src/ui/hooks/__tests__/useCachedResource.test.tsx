@@ -374,6 +374,44 @@ describe("useCachedResource — cold-start retry", () => {
     errSpy.mockRestore();
   });
 
+  it("releases inFlightRef when the mount auto-refresh's fetcher THROWS, so a later refresh() isn't a permanent no-op (QA-14a regression)", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    // The fetcher REJECTS (throws) instead of resolving a Result — this is
+    // the shape that used to skip the `inFlightRef.current = false` /
+    // `setIsRefreshing(false)` resets entirely (they lived at the end of the
+    // IIFE with no try/finally), stranding `inFlightRef` at `true` forever.
+    const errSpy = jest.spyOn(console, "error").mockImplementation(() => {});
+    const fetcher = jest
+      .fn<Promise<Result<number, ApiError>>, [ApiPort]>()
+      .mockRejectedValueOnce(new Error("boom"))
+      .mockResolvedValueOnce(ok(9));
+
+    const { result } = renderHook(
+      () => useCachedResource(staleConfig(fetcher)),
+      {
+        wrapper: wrap(makeAdapters(api, storage)),
+      },
+    );
+
+    // Mount auto-refresh fires (delay 0), throws once, and the IIFE's
+    // finally must still release inFlightRef/isRefreshing.
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(result.current.isRefreshing).toBe(false);
+
+    // The regression: without the fix, inFlightRef stays true forever, so
+    // this refresh() early-returns and the fetcher is never called again.
+    await act(async () => {
+      await result.current.refresh();
+    });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(result.current.data).toBe(9);
+    errSpy.mockRestore();
+  });
+
   it("does NOT retry when a stale cache is already present (single attempt)", async () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();

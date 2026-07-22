@@ -18,6 +18,8 @@ import {
   computeClientSeatVerdict,
   nextTrainerTierUp,
 } from "@/ui/hooks/useFeatureGate";
+import { useAdapters } from "@/ui/hooks/useAdapters";
+import { useAuth } from "@/ui/hooks/useAuth";
 import { useMySubscription } from "@/ui/hooks/useMySubscription";
 import { useGetTrainerClients } from "@/ui/hooks/useGetTrainerClients";
 import { useRespondToClientRequest } from "@/ui/hooks/useTrainerInviteCodes";
@@ -61,6 +63,8 @@ import {
  *       specs/milestones/M8-coach/PHASE_8_INVITE_QR_BRIEF.md (Phase 8).
  */
 export function ClientsContainer() {
+  const { storage } = useAdapters();
+  const { session } = useAuth();
   const subQuery = useMySubscription();
   const gate = useFeatureGate("trainer_clients");
   const roster = useGetTrainerClients();
@@ -77,15 +81,26 @@ export function ClientsContainer() {
     new Set(),
   );
 
+  const refreshRoster = roster.refresh;
+
   // A deep-linked clientId (from the redeem-notification tap) must surface the
   // just-joined PENDING client — which only shows under the "All" segment. The
   // useState initializer above only fires on first mount; the Clients tab stays
   // mounted, so a tap while already on it updates `clientId` reactively but not
   // the segment. Sync it here so the affordance appears on the common
   // already-mounted path too (Phase 8 — Inspector Brad).
+  //
+  // Also refresh the roster here (QA-14b): a client who joined by code
+  // arrives at this deep link via a push notification while the Clients tab
+  // may already be mounted underneath — without a refresh here the new
+  // pending row wouldn't appear until the next focus or a manual pull, i.e.
+  // the user would need to restart/re-navigate to see the client they just
+  // tapped through to see.
   useEffect(() => {
-    if (clientId) setSegment("All");
-  }, [clientId]);
+    if (!clientId) return;
+    setSegment("All");
+    void refreshRoster();
+  }, [clientId, refreshRoster]);
 
   const clients = useMemo(() => roster.data ?? [], [roster.data]);
   const activeCount = useMemo(
@@ -100,8 +115,6 @@ export function ClientsContainer() {
     () => computeClientSeatVerdict(subscription, activeCount),
     [subscription, activeCount],
   );
-
-  const refreshRoster = roster.refresh;
 
   // Re-fetch on refocus (spec 25 coach↔client offboarding AC-1.3) — a client
   // removed from Client Detail invalidates the roster cache and navigates
@@ -121,12 +134,25 @@ export function ClientsContainer() {
     }, [refreshRoster]),
   );
 
+  const userId = session?.userId ?? null;
+
+  // Invalidate the roster's SQLite slot before re-fetching (QA-14b): the
+  // cache-first `useCachedResource` read otherwise happily serves the
+  // stale-but-not-yet-expired roster back while the refresh is in flight
+  // (and if the refresh silently no-ops for any reason, the stale cache
+  // would linger even longer). Forcing the slot stale means the re-read
+  // that follows can't paper over a failed refresh.
+  const invalidateAndRefresh = useCallback(() => {
+    if (userId) storage.invalidateTrainerClients(userId);
+    void refreshRoster();
+  }, [storage, userId, refreshRoster]);
+
   const onInvite = useCallback(() => {
     // Register the roster refresh so a successful invite re-pulls the list.
     openSheet(() => {
-      void refreshRoster();
+      invalidateAndRefresh();
     });
-  }, [openSheet, refreshRoster]);
+  }, [openSheet, invalidateAndRefresh]);
 
   // "Change subscription" from the at-cap warning → subscription selection,
   // pre-selecting the next trainer tier up when there is one.
@@ -158,7 +184,11 @@ export function ClientsContainer() {
         return next;
       });
       if (result.ok) {
-        void refreshRoster();
+        // `respondToClientRelationship` is a direct-online call (no sync
+        // queue involvement) — the mutation has already resolved on the
+        // server by the time we get here, so invalidate-then-refresh runs
+        // strictly after it, in order.
+        invalidateAndRefresh();
         return;
       }
       // Same client-slot cap backstop + copy as the invite-sheet's 402
@@ -178,7 +208,7 @@ export function ClientsContainer() {
           "Failed to update the request. Please try again.",
       );
     },
-    [respondMutate, refreshRoster],
+    [respondMutate, invalidateAndRefresh],
   );
   const onAcceptClient = useCallback(
     (relationshipId: string) => {
