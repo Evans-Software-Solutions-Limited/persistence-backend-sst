@@ -442,6 +442,29 @@ describe("ProfileContainer", () => {
     });
   });
 
+  it("surfaces an actionable retry message when the cache is EMPTY and the first fetch fails (first-sign-in stuck-loading regression)", async () => {
+    // First sign-in: cache is empty, so the one-shot auto-refresh fires and
+    // is the fetch most exposed to a cold-start timeout / blip. Before the fix
+    // the error was suppressed on an empty cache → silent, unrecoverable
+    // spinner-then-empty screen. Now it must surface an actionable message
+    // (pull-to-refresh is the recovery affordance) rather than a dead end.
+    const { adapters, api } = await createTestAdapters();
+    api.shouldFail = true;
+    api.profilePage = makeProfilePagePayload();
+
+    const { getByTestId } = render(
+      <TestWrapper adapters={adapters}>
+        <ProfileContainer />
+      </TestWrapper>,
+    );
+
+    await waitFor(() => {
+      expect(getByTestId("stub-error").props.children).toContain("retry");
+    });
+    // Not stuck in the initial loader once the failed fetch settles.
+    expect(getByTestId("stub-initial-loading").props.children).toBe("false");
+  });
+
   it("prompts on sign-out via Alert and signs out on confirm", async () => {
     const { adapters, storage } = await createTestAdapters();
     storage.cacheExercises([
