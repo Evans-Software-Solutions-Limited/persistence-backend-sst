@@ -19,7 +19,7 @@ export function Privacy() {
       <section className="legal">
         <span className="kicker c-accent legal-kicker">Legal</span>
         <h1>Privacy Policy</h1>
-        <p className="legal-updated">Last updated: 21 July 2026</p>
+        <p className="legal-updated">Last updated: 22 July 2026</p>
 
         <p>
           Persistence ("we", "us", "our") is a fitness-tracking application
@@ -31,9 +31,7 @@ export function Privacy() {
         </p>
         <p>
           We are registered with the UK Information Commissioner's Office (ICO).
-          {/* TODO: replace the bracketed text below with the ICO reference (Z…) once it is issued. */}{" "}
-          Our ICO registration number is{" "}
-          <strong>[to be added once issued]</strong>.
+          Our ICO registration number is <strong>ZC204325</strong>.
         </p>
         <p>
           This policy explains what data we collect, how we use it, the legal
