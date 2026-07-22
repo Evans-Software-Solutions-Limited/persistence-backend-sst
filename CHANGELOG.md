@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.7.2](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.7.1...persistence-v1.7.2) (2026-07-22)
+
+
+### Bug Fixes
+
+* **mobile:** per-tier trial banner + scrollable subscription success ([#297](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/297)) ([39e2528](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/39e25281f5997c5bbe9c2232d987b62a8443700c))
+* **mobile:** profile no longer stuck loading when first-sign-in fetch fails ([#296](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/296)) ([6ab5d27](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/6ab5d272a28ff48d246f948fa7b2b9d6656a82eb))
+* **subscription:** resolve RevenueCat entitlements from /subscriptions (ingestion blocker) ([#298](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/298)) ([0dc770f](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/0dc770fb12561817611185d364a2b912495e89c3))
+
 ## [1.7.1](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.7.0...persistence-v1.7.1) (2026-07-22)
 
 
