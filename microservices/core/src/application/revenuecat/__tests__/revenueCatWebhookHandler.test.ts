@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { NormalizedSubscription } from "../entitlements";
 
 // ─── Mocks ────────────────────────────────────────────────────────────
 // vi.hoisted so these initialise BEFORE the hoisted vi.mock factories run
@@ -13,8 +14,7 @@ const {
   claimMock,
   markDoneMock,
   markFailedMock,
-  fetchEntMock,
-  autoRenewOffMock,
+  fetchSubsMock,
 } = vi.hoisted(() => ({
   findByExternalIdMock: vi.fn(),
   updateByIdMock: vi.fn(),
@@ -25,8 +25,7 @@ const {
   claimMock: vi.fn(),
   markDoneMock: vi.fn(),
   markFailedMock: vi.fn(),
-  fetchEntMock: vi.fn(),
-  autoRenewOffMock: vi.fn(),
+  fetchSubsMock: vi.fn(),
 }));
 
 vi.mock("../../repositories/subscriptionRepository", () => ({
@@ -50,8 +49,7 @@ vi.mock("../../repositories/revenuecatWebhookEventsRepository", () => ({
 }));
 
 vi.mock("../revenueCatClient", () => ({
-  fetchActiveEntitlements: fetchEntMock,
-  fetchAutoRenewOff: autoRenewOffMock,
+  fetchCustomerSubscriptions: fetchSubsMock,
   getRevenueCatWebhookSecret: () => "rc_whsec_test",
 }));
 
@@ -63,6 +61,21 @@ import {
 } from "../revenueCatWebhookHandler";
 
 const SECRET = "rc_whsec_test";
+
+/** A normalised access-granting subscription (what fetchCustomerSubscriptions returns). */
+function subFixture(
+  over: Partial<NormalizedSubscription> = {},
+): NormalizedSubscription {
+  return {
+    tier: "premium",
+    expiresAt: null,
+    billingCycle: "monthly",
+    productId: null,
+    store: null,
+    autoRenewOff: false,
+    ...over,
+  };
+}
 
 function buildRequest({
   body = JSON.stringify({
@@ -139,8 +152,7 @@ describe("handleRevenueCatWebhook", () => {
     upsertByExternalIdMock.mockResolvedValue({ id: "us1" });
     cancelLiveMock.mockResolvedValue(0);
     userExistsMock.mockResolvedValue(true);
-    autoRenewOffMock.mockResolvedValue(false);
-    fetchEntMock.mockResolvedValue([]);
+    fetchSubsMock.mockResolvedValue([]);
   });
 
   it("401 when the Authorization header is missing (claim not attempted)", async () => {
@@ -172,17 +184,17 @@ describe("handleRevenueCatWebhook", () => {
     const res = await handleRevenueCatWebhook(buildRequest());
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ duplicate: true });
-    expect(fetchEntMock).not.toHaveBeenCalled();
+    expect(fetchSubsMock).not.toHaveBeenCalled();
   });
 
-  it("active entitlement → cancels live siblings then upserts the canonical row (atomic, no find→insert)", async () => {
-    fetchEntMock.mockResolvedValue([
-      {
+  it("access-granting subscription → cancels live siblings then upserts the canonical row (atomic, no find→insert)", async () => {
+    fetchSubsMock.mockResolvedValue([
+      subFixture({
         tier: "premium",
         expiresAt: new Date("2026-07-01T00:00:00.000Z"),
-        productId: "premium_monthly",
+        productId: "prod_x",
         store: "app_store",
-      },
+      }),
     ]);
     const res = await handleRevenueCatWebhook(buildRequest());
     expect(res.status).toBe(200);
@@ -204,11 +216,32 @@ describe("handleRevenueCatWebhook", () => {
     expect(markDoneMock).toHaveBeenCalledWith("evt_1");
   });
 
-  it("sets cancelledAt when auto-renew is OFF (cancelled but active)", async () => {
-    fetchEntMock.mockResolvedValue([
-      { tier: "premium", expiresAt: null, productId: null, store: null },
+  it("threads the subscription's tier + expiry + store through to the write (the ingestion fix)", async () => {
+    const expiresAt = new Date(1784807419000);
+    fetchSubsMock.mockResolvedValue([
+      subFixture({
+        tier: "individual_trainer",
+        expiresAt,
+        productId: "prod1a5681d5cd",
+        store: "app_store",
+      }),
     ]);
-    autoRenewOffMock.mockResolvedValue(true);
+    await handleRevenueCatWebhook(buildRequest());
+    expect(upsertByExternalIdMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tierName: "individual_trainer",
+        expiresAt,
+        metadata: expect.objectContaining({
+          source: "revenuecat",
+          store: "app_store",
+          product_id: "prod1a5681d5cd",
+        }),
+      }),
+    );
+  });
+
+  it("sets cancelledAt when auto-renew is OFF (cancelled but active)", async () => {
+    fetchSubsMock.mockResolvedValue([subFixture({ autoRenewOff: true })]);
     const res = await handleRevenueCatWebhook(buildRequest());
     expect(res.status).toBe(200);
     const values = upsertByExternalIdMock.mock.calls[0][0] as {
@@ -218,10 +251,7 @@ describe("handleRevenueCatWebhook", () => {
   });
 
   it("leaves cancelledAt null when auto-renew is ON", async () => {
-    fetchEntMock.mockResolvedValue([
-      { tier: "premium", expiresAt: null, productId: null, store: null },
-    ]);
-    autoRenewOffMock.mockResolvedValue(false);
+    fetchSubsMock.mockResolvedValue([subFixture({ autoRenewOff: false })]);
     await handleRevenueCatWebhook(buildRequest());
     const values = upsertByExternalIdMock.mock.calls[0][0] as {
       cancelledAt: Date | null;
@@ -229,13 +259,11 @@ describe("handleRevenueCatWebhook", () => {
     expect(values.cancelledAt).toBeNull();
   });
 
-  it("active entitlement → cancels siblings BEFORE the upsert (no active-unique violation when re-activating across rails)", async () => {
+  it("access-granting subscription → cancels siblings BEFORE the upsert (no active-unique violation when re-activating across rails)", async () => {
     // A sibling row (e.g. a Stripe mirror) may be live while the rc_ mirror is
     // (re)activated. cancelLiveSubscriptions MUST run before the upsert, else two
     // live rows for one user trip the user_subscriptions_active_unique index.
-    fetchEntMock.mockResolvedValue([
-      { tier: "premium", expiresAt: null, productId: null, store: null },
-    ]);
+    fetchSubsMock.mockResolvedValue([subFixture({ tier: "premium" })]);
     const res = await handleRevenueCatWebhook(buildRequest());
     expect(res.status).toBe(200);
     const cancelOrder = cancelLiveMock.mock.invocationCallOrder[0];
@@ -251,7 +279,7 @@ describe("handleRevenueCatWebhook", () => {
     expect(updateByIdMock).not.toHaveBeenCalled();
   });
 
-  it("skips an anonymous app_user_id (no entitlement fetch, no writes)", async () => {
+  it("skips an anonymous app_user_id (no subscription fetch, no writes)", async () => {
     const body = JSON.stringify({
       event: {
         id: "evt_anon",
@@ -261,7 +289,7 @@ describe("handleRevenueCatWebhook", () => {
     });
     const res = await handleRevenueCatWebhook(buildRequest({ body }));
     expect(res.status).toBe(200);
-    expect(fetchEntMock).not.toHaveBeenCalled();
+    expect(fetchSubsMock).not.toHaveBeenCalled();
     expect(updateByIdMock).not.toHaveBeenCalled();
     expect(insertMock).not.toHaveBeenCalled();
     expect(upsertByExternalIdMock).not.toHaveBeenCalled();
@@ -275,19 +303,19 @@ describe("handleRevenueCatWebhook", () => {
     userExistsMock.mockResolvedValue(false);
     const res = await handleRevenueCatWebhook(buildRequest());
     expect(res.status).toBe(200);
-    expect(fetchEntMock).not.toHaveBeenCalled();
+    expect(fetchSubsMock).not.toHaveBeenCalled();
     expect(upsertByExternalIdMock).not.toHaveBeenCalled();
     expect(cancelLiveMock).not.toHaveBeenCalled();
     expect(findByExternalIdMock).not.toHaveBeenCalled();
     expect(markDoneMock).toHaveBeenCalledWith("evt_1");
   });
 
-  it("no active entitlement + existing live rc row → cancels it (revert to free)", async () => {
+  it("no access-granting subscription + existing live rc row → cancels it (revert to free)", async () => {
     findByExternalIdMock.mockResolvedValue({
       id: "us9",
       paymentStatus: "active",
     });
-    fetchEntMock.mockResolvedValue([]);
+    fetchSubsMock.mockResolvedValue([]);
     const res = await handleRevenueCatWebhook(buildRequest());
     expect(res.status).toBe(200);
     expect(updateByIdMock).toHaveBeenCalledWith("us9", {
@@ -295,9 +323,9 @@ describe("handleRevenueCatWebhook", () => {
     });
   });
 
-  it("no active entitlement + no existing row → no writes", async () => {
+  it("no access-granting subscription + no existing row → no writes", async () => {
     findByExternalIdMock.mockResolvedValue(null);
-    fetchEntMock.mockResolvedValue([]);
+    fetchSubsMock.mockResolvedValue([]);
     const res = await handleRevenueCatWebhook(buildRequest());
     expect(res.status).toBe(200);
     expect(updateByIdMock).not.toHaveBeenCalled();
@@ -315,13 +343,13 @@ describe("handleRevenueCatWebhook", () => {
       },
     });
     await handleRevenueCatWebhook(buildRequest({ body }));
-    expect(fetchEntMock).toHaveBeenCalledTimes(2);
-    expect(fetchEntMock).toHaveBeenCalledWith("a");
-    expect(fetchEntMock).toHaveBeenCalledWith("b");
+    expect(fetchSubsMock).toHaveBeenCalledTimes(2);
+    expect(fetchSubsMock).toHaveBeenCalledWith("a");
+    expect(fetchSubsMock).toHaveBeenCalledWith("b");
   });
 
   it("marks the event failed + returns 500 when the sync throws", async () => {
-    fetchEntMock.mockRejectedValue(new Error("rc down"));
+    fetchSubsMock.mockRejectedValue(new Error("rc down"));
     const res = await handleRevenueCatWebhook(buildRequest());
     expect(res.status).toBe(500);
     expect(markFailedMock).toHaveBeenCalledWith("evt_1", "rc down");
@@ -339,6 +367,6 @@ describe("handleRevenueCatWebhook", () => {
       "connection terminated",
     );
     expect(markDoneMock).not.toHaveBeenCalled();
-    expect(fetchEntMock).not.toHaveBeenCalled();
+    expect(fetchSubsMock).not.toHaveBeenCalled();
   });
 });

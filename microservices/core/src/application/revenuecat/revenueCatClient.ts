@@ -1,7 +1,9 @@
 import { getEnv } from "@persistence/api-utils/env";
 import {
+  billingCycleFromPeriodMs,
   rcEntitlementToTier,
-  type NormalizedEntitlement,
+  TIER_RANK,
+  type NormalizedSubscription,
 } from "./entitlements";
 
 /**
@@ -30,16 +32,38 @@ export function getRevenueCatWebhookSecret(): string {
   return getEnv("REVENUECAT_WEBHOOK_SECRET");
 }
 
-/** Raw shape of one `active_entitlements` list item (parsed defensively). */
-interface RawActiveEntitlement {
-  entitlement_id?: unknown;
-  expires_at?: unknown;
-  product_identifier?: unknown;
+/**
+ * Raw shape of one `GET /customers/{id}/subscriptions` list item (parsed
+ * defensively — confirmed against a real v2 sandbox response 2026-07-22). The
+ * human entitlement id we map to a tier is nested at
+ * `entitlements.items[].lookup_key`; the top-level `product_id` is a RevenueCat
+ * OBJECT id (`prod…`, not the store product id).
+ */
+interface RawSubscriptionEntitlement {
+  lookup_key?: unknown;
+}
+interface RawCustomerSubscription {
+  gives_access?: unknown;
+  auto_renewal_status?: unknown;
+  current_period_starts_at?: unknown;
+  current_period_ends_at?: unknown;
+  ends_at?: unknown;
+  product_id?: unknown;
   store?: unknown;
+  entitlements?: { items?: RawSubscriptionEntitlement[] };
 }
 
-interface ActiveEntitlementsResponse {
-  items?: RawActiveEntitlement[];
+interface CustomerSubscriptionsResponse {
+  items?: RawCustomerSubscription[];
+}
+
+/**
+ * Epoch-ms for a RevenueCat timestamp. v2 returns period timestamps as ms
+ * numbers, but we reuse `parseRcTimestamp` so an ISO string (should the shape
+ * ever change) is tolerated rather than silently dropped to null.
+ */
+function asEpochMs(raw: unknown): number | null {
+  return parseRcTimestamp(raw)?.getTime() ?? null;
 }
 
 /**
@@ -59,38 +83,70 @@ export function parseRcTimestamp(raw: unknown): Date | null {
   return null;
 }
 
-/** Normalise one raw entitlement; `null` when the id is missing/unmodelled. */
-export function normalizeEntitlement(
-  raw: RawActiveEntitlement,
-): NormalizedEntitlement | null {
-  if (typeof raw.entitlement_id !== "string") return null;
-  const tier = rcEntitlementToTier(raw.entitlement_id);
+/**
+ * Normalise one raw subscription; `null` when it grants no access or carries no
+ * entitlement we model. Picks the highest-ranked modelled entitlement on the
+ * subscription (a sub can list several; the tier is the best one).
+ */
+export function normalizeSubscription(
+  raw: RawCustomerSubscription,
+): NormalizedSubscription | null {
+  // Guard the item itself, not just its fields: a null/non-object entry in the
+  // v2 `items` array would otherwise throw here, bubble through the webhook's
+  // catch → markFailed → 500, and RevenueCat would retry the same malformed
+  // payload forever. Skip it instead (a payment path must always converge).
+  if (typeof raw !== "object" || raw === null) return null;
+  if (raw.gives_access !== true) return null;
+
+  const entitlementItems = Array.isArray(raw.entitlements?.items)
+    ? raw.entitlements.items
+    : [];
+  let tier: NormalizedSubscription["tier"] | null = null;
+  for (const ent of entitlementItems) {
+    if (typeof ent.lookup_key !== "string") continue;
+    const mapped = rcEntitlementToTier(ent.lookup_key);
+    if (mapped === null) continue;
+    if (tier === null || TIER_RANK[mapped] > TIER_RANK[tier]) tier = mapped;
+  }
   if (tier === null) return null;
+
+  const startMs = asEpochMs(raw.current_period_starts_at);
+  const endMs = asEpochMs(raw.current_period_ends_at) ?? asEpochMs(raw.ends_at);
+
   return {
     tier,
-    expiresAt: parseRcTimestamp(raw.expires_at),
-    productId:
-      typeof raw.product_identifier === "string"
-        ? raw.product_identifier
-        : null,
+    expiresAt: endMs === null ? null : new Date(endMs),
+    billingCycle: billingCycleFromPeriodMs(startMs, endMs),
+    productId: typeof raw.product_id === "string" ? raw.product_id : null,
     store: typeof raw.store === "string" ? raw.store : null,
+    autoRenewOff: raw.auto_renewal_status === "will_not_renew",
   };
 }
 
 /**
- * Fetch a customer's active entitlements from RevenueCat. Throws on a non-2xx
- * response so the webhook handler marks the event `failed` and RevenueCat
- * retries — a transient RevenueCat outage must NOT be silently treated as
- * "no entitlements" (which would revoke a paying user's access).
+ * Fetch a customer's access-granting subscriptions from RevenueCat v2
+ * (`GET /customers/{id}/subscriptions`) and normalise them — tier (from the
+ * nested `entitlements.items[].lookup_key`), expiry, product, store and
+ * auto-renew, all in one call.
+ *
+ * Sourced from `/subscriptions` rather than `/active_entitlements` because the
+ * latter returns only the entitlement OBJECT id (`entl…`), which we can't map
+ * to a tier, and no product/store — the root cause of subscriptions never
+ * reaching `user_subscriptions`. It also folds in the former separate
+ * `fetchAutoRenewOff` call.
+ *
+ * Throws on a non-2xx response so the webhook handler marks the event `failed`
+ * and RevenueCat retries — a transient outage must NOT be silently treated as
+ * "no subscriptions" (which would revoke a paying user's access).
  */
-export async function fetchActiveEntitlements(
+export async function fetchCustomerSubscriptions(
   appUserId: string,
-): Promise<NormalizedEntitlement[]> {
+): Promise<NormalizedSubscription[]> {
   const key = getRevenueCatApiKey();
   const projectId = getRevenueCatProjectId();
   const url = `${RC_API_BASE}/projects/${projectId}/customers/${encodeURIComponent(
     appUserId,
-  )}/active_entitlements`;
+  )}/subscriptions`;
 
   const res = await fetch(url, {
     method: "GET",
@@ -99,68 +155,13 @@ export async function fetchActiveEntitlements(
 
   if (!res.ok) {
     throw new Error(
-      `RevenueCat active_entitlements failed: ${res.status} ${res.statusText}`,
+      `RevenueCat subscriptions failed: ${res.status} ${res.statusText}`,
     );
   }
 
-  const json = (await res.json()) as ActiveEntitlementsResponse;
+  const json = (await res.json()) as CustomerSubscriptionsResponse;
   const items = Array.isArray(json.items) ? json.items : [];
   return items
-    .map(normalizeEntitlement)
-    .filter((e): e is NormalizedEntitlement => e !== null);
-}
-
-/** Raw shape of one `subscriptions` list item (parsed defensively). */
-interface RawSubscription {
-  auto_renewal_status?: unknown;
-  gives_access?: unknown;
-}
-
-interface SubscriptionsResponse {
-  items?: RawSubscription[];
-}
-
-/**
- * Whether the customer has turned OFF auto-renew on a subscription that still
- * grants access — i.e. "cancelled but active" (in the paid period, won't
- * renew). Drives the in-app "cancelled — active until X" banner on the iOS
- * rail (Apple owns the cancel UX; the app only reflects it).
- *
- * Reads RevenueCat v2 `GET /customers/{id}/subscriptions` and looks for an
- * access-granting item whose `auto_renewal_status` is `will_not_renew` (the
- * field RevenueCat provides specifically so integrators don't have to derive
- * cancellation from `unsubscribe_detected_at`).
- *
- * FAIL-SAFE + COSMETIC: this only toggles a display flag — access is decided
- * elsewhere (active entitlement + expiry). Any error, a non-2xx, or an
- * unexpected shape resolves to `false` (banner simply doesn't show — the prior
- * behaviour), so a subscriptions-endpoint hiccup can never fail the webhook or
- * revoke access. The exact `auto_renewal_status` / `gives_access` field
- * spellings are doc-derived; confirm against a real sandbox response at the
- * 12.11 IAP sign-off (a wrong spelling just leaves the banner hidden).
- */
-export async function fetchAutoRenewOff(appUserId: string): Promise<boolean> {
-  try {
-    const key = getRevenueCatApiKey();
-    const projectId = getRevenueCatProjectId();
-    const url = `${RC_API_BASE}/projects/${projectId}/customers/${encodeURIComponent(
-      appUserId,
-    )}/subscriptions`;
-
-    const res = await fetch(url, {
-      method: "GET",
-      headers: { Authorization: `Bearer ${key}` },
-    });
-    if (!res.ok) return false;
-
-    const json = (await res.json()) as SubscriptionsResponse;
-    const items = Array.isArray(json.items) ? json.items : [];
-    return items.some(
-      (item) =>
-        item.gives_access === true &&
-        item.auto_renewal_status === "will_not_renew",
-    );
-  } catch {
-    return false;
-  }
+    .map(normalizeSubscription)
+    .filter((s): s is NormalizedSubscription => s !== null);
 }
