@@ -29,8 +29,11 @@ export function TrainOverviewContainer() {
   }, [refreshHome]);
 
   // Kept-alive tab — refresh the active programme / today's training on
-  // re-entry (skips the mount focus).
-  useRefreshOnFocus(onRefresh);
+  // re-entry (skips the mount focus). Silent → no spinner flash.
+  const onFocusRefresh = useCallback(() => {
+    void refreshHome({ silent: true });
+  }, [refreshHome]);
+  useRefreshOnFocus(onFocusRefresh);
 
   const onOpenWorkout = useCallback(
     (workoutId: string) => {

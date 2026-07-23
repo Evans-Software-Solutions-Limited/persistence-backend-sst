@@ -177,6 +177,29 @@ describe("useWorkouts", () => {
     );
   });
 
+  it("refresh({ silent: true }) fetches without toggling isRefreshing", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheWorkoutsList("test-user", "mine", [], null);
+    storage.cacheWorkoutsList("test-user", "assigned", [], null);
+    storage.cacheWorkoutsList("test-user", "default", [], null);
+    api.workouts.push(buildWorkout({ id: "w-silent", name: "Silent" }));
+
+    const { result } = renderHook(() => useWorkouts(), {
+      wrapper: wrap(makeAdapters(api, storage)),
+    });
+    await waitFor(() => expect(result.current.refresh).toBeDefined());
+
+    await act(async () => {
+      await result.current.refresh({ silent: true });
+    });
+    // Silent refresh still lands data, but never flips the spinner flag.
+    await waitFor(() =>
+      expect(result.current.mine.workouts[0]?.name).toBe("Silent"),
+    );
+    expect(result.current.isRefreshing).toBe(false);
+  });
+
   it("dedupes concurrent refresh() calls onto a single in-flight promise per user", async () => {
     // Slow-down the in-memory API so that two refresh() calls overlap
     // and the second one hits the inFlightRef early-return branch.

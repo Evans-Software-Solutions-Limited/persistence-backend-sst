@@ -14,8 +14,9 @@ export type FuelTodayState = {
   isStale: boolean;
   isRefreshing: boolean;
   error: ApiError | null;
-  /** Network refresh: drain the queue, fetch server-truth, reconcile cache. */
-  refresh: () => Promise<void>;
+  /** Network refresh: drain the queue, fetch server-truth, reconcile cache.
+   *  `{ silent: true }` skips the `isRefreshing` toggle (background/focus). */
+  refresh: (opts?: { silent?: boolean }) => Promise<void>;
   /**
    * Synchronous re-read of the local cache into state — no network. The Fuel
    * container calls this immediately after an optimistic mutation so the ring /
@@ -74,38 +75,42 @@ export function useGetFuelToday(date: string): FuelTodayState {
   }, [userId, date]);
 
   const inFlightRef = useRef(false);
-  const refresh = useCallback(async () => {
-    if (!userId || inFlightRef.current) return;
-    const key = `${userId}:${date}`;
-    inFlightRef.current = true;
-    setIsRefreshing(true);
-    setError(null);
-    try {
+  const refresh = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      if (!userId || inFlightRef.current) return;
+      const key = `${userId}:${date}`;
+      inFlightRef.current = true;
+      const showSpinner = !opts?.silent;
+      if (showSpinner) setIsRefreshing(true);
+      setError(null);
       try {
-        await processSyncQueue(storage, auth, getApiBaseUrl());
-      } catch (err) {
-        console.error("[useGetFuelToday] queue flush failed:", err);
+        try {
+          await processSyncQueue(storage, auth, getApiBaseUrl());
+        } catch (err) {
+          console.error("[useGetFuelToday] queue flush failed:", err);
+        }
+        if (latestKeyRef.current !== key) return;
+        const result = await api.getFuelToday(date);
+        if (!result.ok) {
+          if (latestKeyRef.current === key) setError(result.error);
+          return;
+        }
+        if (latestKeyRef.current !== key) return;
+        storage.cacheFuelToday(userId, date, result.value);
+        // Mirror the target into its own cache so the Targets editor reads it
+        // offline even if the user never opened that screen online.
+        if (result.value.targets) {
+          storage.cacheNutritionTarget(userId, result.value.targets);
+        }
+        setData(result.value);
+        setIsStale(false);
+      } finally {
+        if (showSpinner) setIsRefreshing(false);
+        inFlightRef.current = false;
       }
-      if (latestKeyRef.current !== key) return;
-      const result = await api.getFuelToday(date);
-      if (!result.ok) {
-        if (latestKeyRef.current === key) setError(result.error);
-        return;
-      }
-      if (latestKeyRef.current !== key) return;
-      storage.cacheFuelToday(userId, date, result.value);
-      // Mirror the target into its own cache so the Targets editor reads it
-      // offline even if the user never opened that screen online.
-      if (result.value.targets) {
-        storage.cacheNutritionTarget(userId, result.value.targets);
-      }
-      setData(result.value);
-      setIsStale(false);
-    } finally {
-      setIsRefreshing(false);
-      inFlightRef.current = false;
-    }
-  }, [api, auth, storage, userId, date]);
+    },
+    [api, auth, storage, userId, date],
+  );
 
   const autoRefreshedRef = useRef<string | null>(null);
   useEffect(() => {

@@ -274,11 +274,13 @@ export function YouContainer() {
       // only auto-fetch once per mount; refresh them on focus so a workout /
       // achievement / measurement logged elsewhere shows on re-entry rather
       // than staying stale until a pull-to-refresh.
-      void refreshRelationships();
-      void refreshStreaks();
-      void refreshAchievements();
-      void refreshVolume();
-      void refreshPRs();
+      // Silent → background refresh without flashing the pull-to-refresh
+      // spinner on every return to the You tab.
+      void refreshRelationships({ silent: true });
+      void refreshStreaks({ silent: true });
+      void refreshAchievements({ silent: true });
+      void refreshVolume({ silent: true });
+      void refreshPRs({ silent: true });
     }, [
       reloadBody,
       refreshRelationships,

@@ -76,7 +76,7 @@ export function FuelContainer() {
   // stable callback from useGetFuelToday.
   const refreshFuel = fuel.refresh;
   const onFocusRefreshFuel = useCallback(() => {
-    void refreshFuel();
+    void refreshFuel({ silent: true });
   }, [refreshFuel]);
   useRefreshOnFocus(onFocusRefreshFuel);
   // Device-QA #5/#7 — the water tracker's display unit follows the user's

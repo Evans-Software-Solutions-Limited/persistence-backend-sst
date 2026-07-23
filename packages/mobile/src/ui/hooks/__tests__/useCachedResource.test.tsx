@@ -207,6 +207,42 @@ describe("useCachedResource — reload() reactive bridge (regression)", () => {
       storage.getCachedHabitCompletions(USER, { goalId: "cell" })[0].value,
     ).toBe(42);
   });
+
+  it("refresh({ silent: true }) updates data WITHOUT toggling isRefreshing", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    writeCache(storage, 1);
+    // Gate the fetch so we can observe isRefreshing WHILE it's in flight.
+    let release: (() => void) | null = null;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    const fetcher = jest.fn(async () => {
+      await gate;
+      return ok(99);
+    });
+
+    const { result } = renderHook(
+      () => useCachedResource(scalarConfig(fetcher)),
+      { wrapper: wrap(makeAdapters(api, storage)) },
+    );
+    expect(result.current.data).toBe(1);
+
+    let done: Promise<void>;
+    act(() => {
+      done = result.current.refresh({ silent: true });
+    });
+    // A silent refresh must NOT flip the RefreshControl-bound flag, even while
+    // the fetch is in flight (this is what keeps a focus refresh spinner-free).
+    expect(result.current.isRefreshing).toBe(false);
+
+    await act(async () => {
+      release?.();
+      await done;
+    });
+    await waitFor(() => expect(result.current.data).toBe(99));
+    expect(result.current.isRefreshing).toBe(false);
+  });
 });
 
 /**

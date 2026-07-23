@@ -252,7 +252,15 @@ export function CoachHomeContainer() {
   }, [refreshClients, refreshStreaks, refreshHome]);
 
   // Kept-alive tab — refresh the coach triage list on re-entry (skips mount).
-  useRefreshOnFocus(onRefresh);
+  // Silent → background refresh without a spinner flash.
+  const onFocusRefresh = useCallback(() => {
+    void Promise.all([
+      refreshClients({ silent: true }),
+      refreshStreaks({ silent: true }),
+      refreshHome({ silent: true }),
+    ]).catch(() => {});
+  }, [refreshClients, refreshStreaks, refreshHome]);
+  useRefreshOnFocus(onFocusRefresh);
 
   const onOpenClient = useCallback(
     (clientId: string) => {

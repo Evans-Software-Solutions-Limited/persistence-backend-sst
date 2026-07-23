@@ -68,7 +68,12 @@ export type CachedResourceState<T> = {
   isStale: boolean;
   isRefreshing: boolean;
   error: ApiError | null;
-  refresh: () => Promise<void>;
+  /**
+   * Network refresh: drain the queue, fetch server-truth, reconcile cache.
+   * Pass `{ silent: true }` for a background/focus refresh that updates data
+   * WITHOUT toggling `isRefreshing` (so it doesn't flash the RefreshControl).
+   */
+  refresh: (opts?: { silent?: boolean }) => Promise<void>;
   /**
    * Synchronous cache re-read: re-runs `read` and pushes the result into local
    * state, with NO network call. This is the reactive bridge for optimistic
@@ -147,19 +152,27 @@ export function useCachedResource<T>(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api, auth, storage, userId]);
 
-  const refresh = useCallback(async () => {
-    if (!userId || inFlightRef.current) return;
-    inFlightRef.current = true;
-    setIsRefreshing(true);
-    setError(null);
-    try {
-      const err = await attemptFetch();
-      if (err && latestUserRef.current === userId) setError(err);
-    } finally {
-      setIsRefreshing(false);
-      inFlightRef.current = false;
-    }
-  }, [userId, attemptFetch]);
+  const refresh = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      if (!userId || inFlightRef.current) return;
+      inFlightRef.current = true;
+      // `silent` fetches server-truth WITHOUT toggling `isRefreshing`, so a
+      // background/focus refresh doesn't flash the RefreshControl spinner (a
+      // programmatic `refreshing={true}` shows the pull spinner even without a
+      // pull). Pull-to-refresh omits it and keeps the visible indicator.
+      const showSpinner = !opts?.silent;
+      if (showSpinner) setIsRefreshing(true);
+      setError(null);
+      try {
+        const err = await attemptFetch();
+        if (err && latestUserRef.current === userId) setError(err);
+      } finally {
+        if (showSpinner) setIsRefreshing(false);
+        inFlightRef.current = false;
+      }
+    },
+    [userId, attemptFetch],
+  );
 
   const reload = useCallback(() => {
     if (!userId) return;

@@ -179,7 +179,16 @@ export function HomeContainer() {
   // Tabs stay mounted, so without a focus refresh Home shows stale rings /
   // volume / PRs / workouts on every re-entry until a pull-to-refresh. Skips
   // the mount focus (the cache-first hooks already auto-fetch once there).
-  useRefreshOnFocus(onRefresh);
+  // SILENT so it refreshes in the background without flashing the pull-to-
+  // refresh spinner on every tab return.
+  const onFocusRefresh = useCallback(() => {
+    void Promise.all([
+      refreshHome({ silent: true }),
+      refreshHabits({ silent: true }),
+      refreshWorkouts({ silent: true }),
+    ]);
+  }, [refreshHome, refreshHabits, refreshWorkouts]);
+  useRefreshOnFocus(onFocusRefresh);
 
   // Steps has no explicit "log" action — it reflects into the Steps habit
   // reactively whenever the HealthKit read changes (useReflectStepsHabit

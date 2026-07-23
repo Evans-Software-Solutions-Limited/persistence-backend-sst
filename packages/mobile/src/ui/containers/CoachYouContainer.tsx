@@ -131,7 +131,14 @@ export function CoachYouContainer() {
   }, [refreshOverview, refreshStreaks]);
 
   // Kept-alive tab — refresh business stats / client health on re-entry.
-  useRefreshOnFocus(onRefresh);
+  // Silent → background refresh without a spinner flash.
+  const onFocusRefresh = useCallback(() => {
+    void Promise.all([
+      refreshOverview({ silent: true }),
+      refreshStreaks({ silent: true }),
+    ]);
+  }, [refreshOverview, refreshStreaks]);
+  useRefreshOnFocus(onFocusRefresh);
 
   const onSwitchToAthlete = useCallback(() => {
     void switchMode("athlete", "you");

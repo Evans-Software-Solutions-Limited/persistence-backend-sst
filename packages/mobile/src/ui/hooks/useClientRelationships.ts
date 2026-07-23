@@ -12,8 +12,9 @@ export type ClientRelationshipsState = {
   isLoading: boolean;
   isRefreshing: boolean;
   error: ApiError | null;
-  /** Re-fetch from the network. */
-  refresh: () => Promise<void>;
+  /** Re-fetch from the network. `{ silent: true }` skips the `isRefreshing`
+   *  toggle so a focus/background refresh doesn't flash a spinner. */
+  refresh: (opts?: { silent?: boolean }) => Promise<void>;
   /**
    * Accept/decline a pending request. On success the row is removed from the
    * local list optimistically (it has left the queried set). Returns the
@@ -52,8 +53,9 @@ export function useClientRelationships(
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
 
   const load = useCallback(
-    async (mode: "initial" | "refresh") => {
-      if (mode === "refresh") setIsRefreshing(true);
+    async (mode: "initial" | "refresh", silent?: boolean) => {
+      const showSpinner = mode === "refresh" && !silent;
+      if (showSpinner) setIsRefreshing(true);
       const result = await api.getClientRelationships(status);
       if (result.ok) {
         setData(result.value);
@@ -62,7 +64,7 @@ export function useClientRelationships(
         setError(result.error);
       }
       setIsLoading(false);
-      setIsRefreshing(false);
+      if (showSpinner) setIsRefreshing(false);
     },
     [api, status],
   );
@@ -71,7 +73,10 @@ export function useClientRelationships(
     void load("initial");
   }, [load]);
 
-  const refresh = useCallback(() => load("refresh"), [load]);
+  const refresh = useCallback(
+    (opts?: { silent?: boolean }) => load("refresh", opts?.silent),
+    [load],
+  );
 
   const respond = useCallback(
     async (
