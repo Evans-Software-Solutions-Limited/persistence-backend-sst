@@ -590,8 +590,20 @@ describe("ClientDetailRepository.getClientDetail", () => {
         byTable: {
           profiles: [{ tz: "Europe/London" }],
           habit_configs: [
-            { goalId: "water-goal", category: "water", label: "Water" },
-            { goalId: "gym-goal", category: "gym", label: "Gym" },
+            {
+              goalId: "water-goal",
+              category: "water",
+              label: "Water",
+              targetValue: "2",
+              unit: "l",
+            },
+            {
+              goalId: "gym-goal",
+              category: "gym",
+              label: "Gym",
+              targetValue: "4",
+              unit: "x",
+            },
           ],
         },
       }),
@@ -611,9 +623,17 @@ describe("ClientDetailRepository.getClientDetail", () => {
       category: "water",
       met: true,
       pct: 1,
+      targetValue: 2,
+      unit: "l",
     });
     // gym: 2 of 4 sessions → not met, pct 0.5
-    expect(gym).toMatchObject({ label: "Gym", met: false, pct: 0.5 });
+    expect(gym).toMatchObject({
+      label: "Gym",
+      met: false,
+      pct: 0.5,
+      targetValue: 4,
+      unit: "x",
+    });
     // Collection not satisfied — gym unmet.
     expect(h.collectionSatisfied).toBe(false);
   });
@@ -632,8 +652,20 @@ describe("ClientDetailRepository.getClientDetail", () => {
           // …but the coach HAS configured them, so the Targets summary lists
           // them (regression: previously the whole card showed "no habits set").
           habit_configs: [
-            { goalId: "steps-goal", category: "steps", label: "Steps" },
-            { goalId: "sleep-goal", category: "sleep", label: "Sleep" },
+            {
+              goalId: "steps-goal",
+              category: "steps",
+              label: "Steps",
+              targetValue: "8000",
+              unit: "steps",
+            },
+            {
+              goalId: "sleep-goal",
+              category: "sleep",
+              label: "Sleep",
+              targetValue: "8",
+              unit: "h",
+            },
           ],
         },
       }),
@@ -650,6 +682,75 @@ describe("ClientDetailRepository.getClientDetail", () => {
     expect(h.habits.map((x) => x.label).sort()).toEqual(["Sleep", "Steps"]);
     // No EFFECTIVE (scored) habits this week → collection can't be satisfied.
     expect(h.collectionSatisfied).toBe(false);
+  });
+
+  it("habits — calories category excluded (shown via dedicated calorie-hit module)", async () => {
+    streaks.getCollectionHabitAggregates.mockResolvedValue([]);
+    streaks.getCollectionHabitStreak.mockResolvedValue({
+      currentCount: 0,
+    } as any);
+    (getDb as any).mockReturnValue(
+      makeDb({
+        byTable: {
+          profiles: [{ tz: "Europe/London" }],
+          habit_configs: [
+            {
+              goalId: "steps-goal",
+              category: "steps",
+              label: "Steps",
+              targetValue: "8000",
+              unit: "steps",
+            },
+            {
+              goalId: "cal-goal",
+              category: "calories",
+              label: "Calories",
+              targetValue: "2000",
+              unit: "kcal",
+            },
+          ],
+        },
+      }),
+    );
+    const out = await new ClientDetailRepository().getClientDetail(
+      "trainer-1",
+      "client-1",
+      NOW,
+    );
+    expect(out.habits).not.toBeNull();
+    // Only steps — calories excluded since it's displayed by the calorie-hit module.
+    expect(out.habits!.habits).toHaveLength(1);
+    expect(out.habits!.habits[0].category).toBe("steps");
+  });
+
+  it("habits — null when ONLY calories habit is configured (all excluded)", async () => {
+    streaks.getCollectionHabitAggregates.mockResolvedValue([]);
+    streaks.getCollectionHabitStreak.mockResolvedValue({
+      currentCount: 0,
+    } as any);
+    (getDb as any).mockReturnValue(
+      makeDb({
+        byTable: {
+          profiles: [{ tz: "Europe/London" }],
+          habit_configs: [
+            {
+              goalId: "cal-goal",
+              category: "calories",
+              label: "Calories",
+              targetValue: "2000",
+              unit: "kcal",
+            },
+          ],
+        },
+      }),
+    );
+    const out = await new ClientDetailRepository().getClientDetail(
+      "trainer-1",
+      "client-1",
+      NOW,
+    );
+    // Only calories configured → effectively no displayable habits → null.
+    expect(out.habits).toBeNull();
   });
 
   it("habits — null only when the client has NO configured habits at all", async () => {

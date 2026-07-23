@@ -430,6 +430,8 @@ describe("ClientDetailPresenter — TargetsCard", () => {
               category: "water",
               met: true,
               pct: 1,
+              targetValue: 2,
+              unit: "l",
             },
             {
               goalId: "h-steps",
@@ -437,6 +439,8 @@ describe("ClientDetailPresenter — TargetsCard", () => {
               category: "steps",
               met: false,
               pct: 0.6,
+              targetValue: 8000,
+              unit: "steps",
             },
           ],
         },
@@ -446,6 +450,9 @@ describe("ClientDetailPresenter — TargetsCard", () => {
     expect(getByTestId("client-detail-target-habit-h-steps")).toBeTruthy();
     // A not-yet-met habit shows its progress %.
     expect(getByText("60%")).toBeTruthy();
+    // Target values are displayed alongside the label.
+    expect(getByText("8000 steps")).toBeTruthy();
+    expect(getByText("2 l")).toBeTruthy();
   });
 
   it("shows the empty-habits hint when no habits are configured", () => {

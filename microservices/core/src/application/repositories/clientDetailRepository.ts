@@ -570,6 +570,8 @@ export class ClientDetailRepository {
         goalId: habitConfigs.goalId,
         category: habitConfigs.category,
         label: goalTypes.name,
+        targetValue: habitConfigs.targetValue,
+        unit: habitConfigs.unit,
       })
       .from(habitConfigs)
       .innerJoin(userGoals, eq(habitConfigs.goalId, userGoals.id))
@@ -579,7 +581,13 @@ export class ClientDetailRepository {
       );
     if (configs.length === 0) return null;
 
-    const habits = configs.map((c) => {
+    // Exclude calories — shown via the dedicated calorie-hit module above.
+    const nonCalorieConfigs = configs.filter((c) => c.category !== "calories");
+    if (nonCalorieConfigs.length === 0) return null;
+
+    const habits = nonCalorieConfigs.map((c) => {
+      const tv = Number(c.targetValue) || 0;
+      const u = c.unit ?? "";
       const a = aggByGoal.get(c.goalId);
       if (!a) {
         // Configured but not effective this week yet — a target to aim for.
@@ -589,6 +597,8 @@ export class ClientDetailRepository {
           category: c.category ?? "",
           met: false,
           pct: 0,
+          targetValue: tv,
+          unit: u,
         };
       }
       return {
@@ -603,6 +613,8 @@ export class ClientDetailRepository {
           qualifyingDays: a.qualifyingDays,
           sessionCount: a.sessionCount,
         }),
+        targetValue: tv,
+        unit: u,
       };
     });
 

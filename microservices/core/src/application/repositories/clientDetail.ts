@@ -73,6 +73,10 @@ export interface HabitSatisfaction {
   met: boolean; // this habit's WEEK met (weekMet, collection.ts)
   /** Progress toward the week's requirement, clamped 0..1. */
   pct: number;
+  /** The configured target value (e.g. 5000 for steps, 2 for water). */
+  targetValue: number;
+  /** Display unit (e.g. "steps", "l", "h", "x"). */
+  unit: string;
 }
 
 export interface HabitsModule {
