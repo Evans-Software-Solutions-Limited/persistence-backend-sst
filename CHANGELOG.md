@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.4](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.7.3...persistence-v1.7.4) (2026-07-23)
+
+
+### Bug Fixes
+
+* BRIEF-7 device-QA sweep — all 20 pre-production bugs (QA-1…QA-20) ([#303](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/303)) ([006c0e0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/006c0e00e29bd502b3761913367f6f796d7a5f8d))
+
 ## [1.7.3](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.7.2...persistence-v1.7.3) (2026-07-22)
 
 
