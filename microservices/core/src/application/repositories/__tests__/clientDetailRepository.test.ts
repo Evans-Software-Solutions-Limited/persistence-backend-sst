@@ -146,6 +146,8 @@ describe("ClientDetailRepository.getClientDetail", () => {
     // Adherence — no assignments in window → not-enough-data (null/null).
     expect(out.adherence.overall).toBeNull();
     expect(out.adherence.band).toBeNull();
+    // No preferredUnits column in the fixture row → null-safe default.
+    expect(out.client.preferredUnits).toBeNull();
     // Module d/e/f — all null when nothing set up.
     expect(out.calorieHit).toBeNull();
     expect(out.goal).toBeNull();
@@ -193,6 +195,7 @@ describe("ClientDetailRepository.getClientDetail", () => {
           avatarUrl: "http://a/1.png",
           dateOfBirth: "1990-01-01",
           heightCm: "172.50",
+          preferredUnits: "imperial",
         },
       ],
       [{ status: "pending" }], // relationship status read
@@ -232,6 +235,7 @@ describe("ClientDetailRepository.getClientDetail", () => {
     expect(out.client.ageYears).toBe(36);
     expect(out.client.heightCm).toBe(172.5);
     expect(out.client.status).toBe("pending");
+    expect(out.client.preferredUnits).toBe("imperial");
   });
 
   it("adherence — completed/total → % + 5-band via clientRosterBand", async () => {

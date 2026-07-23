@@ -151,11 +151,12 @@ describe("EditNutritionTargetsSheet", () => {
     expect(screen.getByTestId("edit-target-dailyKcal").props.value).toBe(
       "2400",
     );
-    // Fill the remaining required fields.
+    // Fill the remaining required fields. Water defaults to LITRES display
+    // (device-QA follow-up) — "2" L converts to 8 cups on save (2 / 0.25).
     fireEvent.changeText(screen.getByTestId("edit-target-proteinG"), "180");
     fireEvent.changeText(screen.getByTestId("edit-target-carbsG"), "250");
     fireEvent.changeText(screen.getByTestId("edit-target-fatG"), "70");
-    fireEvent.changeText(screen.getByTestId("edit-target-waterCups"), "8");
+    fireEvent.changeText(screen.getByTestId("edit-target-waterCups"), "2");
     await act(async () => {
       fireEvent.press(screen.getByTestId("edit-nutrition-targets-submit"));
     });
@@ -171,6 +172,69 @@ describe("EditNutritionTargetsSheet", () => {
       },
     });
     expect(useEditNutritionTargetsSheet.getState().open).toBe(false);
+  });
+
+  it("water defaults to litres display + round-trips: stored cups shown as litres, typed litres saved as cups", async () => {
+    const { adapters, api } = makeAdapters();
+    render(
+      <Wrapper adapters={adapters}>
+        <EditNutritionTargetsSheet />
+      </Wrapper>,
+    );
+    act(() => {
+      useEditNutritionTargetsSheet.getState().openSheet("client-9", {
+        dailyKcal: 2000,
+        proteinG: 150,
+        carbsG: 200,
+        fatG: 60,
+        waterCups: 6, // stored cups → 1.5 L displayed (6 * 0.25)
+      });
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("edit-target-waterCups")).toBeTruthy(),
+    );
+    expect(screen.getByTestId("edit-target-waterCups").props.value).toBe("1.5");
+
+    // Re-typing a litres value round-trips back to cups on save.
+    fireEvent.changeText(screen.getByTestId("edit-target-waterCups"), "3");
+    await act(async () => {
+      fireEvent.press(screen.getByTestId("edit-nutrition-targets-submit"));
+    });
+    expect(api.setClientNutritionTargetCalls[0].input.waterCups).toBe(12); // 3 / 0.25
+  });
+
+  it("shows + saves cups directly for an imperial client", async () => {
+    const { adapters, api } = makeAdapters();
+    render(
+      <Wrapper adapters={adapters}>
+        <EditNutritionTargetsSheet />
+      </Wrapper>,
+    );
+    act(() => {
+      useEditNutritionTargetsSheet.getState().openSheet(
+        "client-9",
+        {
+          dailyKcal: 2000,
+          proteinG: 150,
+          carbsG: 200,
+          fatG: 60,
+          waterCups: 6,
+        },
+        undefined,
+        "cups",
+      );
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("edit-target-waterCups")).toBeTruthy(),
+    );
+    // Imperial client — the stored cups value is shown verbatim, no conversion.
+    expect(screen.getByTestId("edit-target-waterCups").props.value).toBe("6");
+
+    fireEvent.changeText(screen.getByTestId("edit-target-waterCups"), "9");
+    await act(async () => {
+      fireEvent.press(screen.getByTestId("edit-nutrition-targets-submit"));
+    });
+    expect(api.setClientNutritionTargetCalls[0].input.waterCups).toBe(9);
   });
 
   it("keeps Save disabled until every field is a valid whole number", async () => {
@@ -261,7 +325,8 @@ describe("EditNutritionTargetsSheet", () => {
 
     fireEvent.press(screen.getByTestId("edit-calc-sex-male"));
     fireEvent.changeText(screen.getByTestId("edit-calc-weight"), "80");
-    fireEvent.changeText(screen.getByTestId("edit-calc-water"), "8");
+    // Water defaults to litres display — "2" L → 8 cups on save.
+    fireEvent.changeText(screen.getByTestId("edit-calc-water"), "2");
 
     await waitFor(() =>
       expect(screen.getByTestId("edit-calc-preview")).toBeTruthy(),

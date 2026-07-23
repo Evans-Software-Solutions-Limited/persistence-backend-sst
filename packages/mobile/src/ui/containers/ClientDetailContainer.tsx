@@ -24,6 +24,7 @@ import {
 } from "@/ui/presenters/coach/ClientDetailPresenter";
 import type { ActiveProgramme, BodyTrendPoint } from "@/domain/models/progress";
 import type { TrendData } from "@/ui/presenters/BodyTrendPresenter";
+import { preferredVolumeUnit } from "@/shared/utils";
 
 /**
  * Build the <BodyTrendPresenter> props from a trend series — the same
@@ -304,6 +305,9 @@ export function ClientDetailContainer() {
           : null,
       ),
       refreshAll,
+      // Device-QA follow-up: the water field follows the CLIENT's own
+      // preferred unit (default litres; imperial → cups), not the coach's.
+      preferredVolumeUnit(client?.preferredUnits),
     );
   }, [id, openEditTargets, detail.data, refreshAll]);
 

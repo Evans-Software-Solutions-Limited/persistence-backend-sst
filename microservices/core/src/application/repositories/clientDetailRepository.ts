@@ -284,6 +284,7 @@ export class ClientDetailRepository {
         avatarUrl: profiles.avatarUrl,
         dateOfBirth: profiles.dateOfBirth,
         heightCm: profiles.heightCm,
+        preferredUnits: profiles.preferredUnits,
       })
       .from(profiles)
       .where(eq(profiles.id, clientId))
@@ -318,6 +319,8 @@ export class ClientDetailRepository {
       status,
       ageYears: ageYearsFrom(p?.dateOfBirth ?? null, now),
       heightCm: p?.heightCm != null ? Number(p.heightCm) : null,
+      preferredUnits:
+        (p?.preferredUnits as "metric" | "imperial" | null) ?? null,
     };
   }
 
