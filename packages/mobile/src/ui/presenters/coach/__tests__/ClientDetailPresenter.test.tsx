@@ -27,6 +27,7 @@ function fullDetail(over: Partial<ClientDetail> = {}): ClientDetail {
       status: "active",
       ageYears: 32,
       heightCm: 178,
+      preferredUnits: null,
     },
     adherence: {
       overall: 64,
