@@ -300,21 +300,37 @@ describe("FuelTargetsPresenter", () => {
     expect(onFatPctChange).toHaveBeenCalledWith(25);
   });
 
-  it("shows the water goal + increments/decrements within bounds", () => {
+  it("shows the water goal in litres by default (device-QA #5/#7 — metric default) + increments/decrements within bounds", () => {
     const onWaterCupsChange = jest.fn();
     const { getByTestId } = renderWithTheme(
       <FuelTargetsPresenter
         {...makeProps({ waterCups: 8, onWaterCupsChange })}
       />,
     );
-    expect(getByTestId("fuel-targets-water-cups").props.children).toEqual([
-      8,
-      " cups",
-    ]);
+    // 8 cups × 0.25 = 2.0 L — the stepper still steps by 1 CUP underneath.
+    expect(getByTestId("fuel-targets-water-cups").props.children).toBe("2.0 L");
     fireEvent.press(getByTestId("fuel-targets-water-plus"));
     expect(onWaterCupsChange).toHaveBeenCalledWith(9);
     fireEvent.press(getByTestId("fuel-targets-water-minus"));
     expect(onWaterCupsChange).toHaveBeenCalledWith(7);
+  });
+
+  it("volumeUnit=cups shows the raw cup count (imperial, matching pre-fix behaviour)", () => {
+    const onWaterCupsChange = jest.fn();
+    const { getByTestId } = renderWithTheme(
+      <FuelTargetsPresenter
+        {...makeProps({
+          waterCups: 8,
+          onWaterCupsChange,
+          volumeUnit: "cups",
+        })}
+      />,
+    );
+    expect(getByTestId("fuel-targets-water-cups").props.children).toBe(
+      "8 cups",
+    );
+    fireEvent.press(getByTestId("fuel-targets-water-plus"));
+    expect(onWaterCupsChange).toHaveBeenCalledWith(9);
   });
 
   it("clamps the water goal at the minimum (1 cup)", () => {

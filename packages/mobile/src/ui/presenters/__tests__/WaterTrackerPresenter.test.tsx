@@ -65,4 +65,38 @@ describe("WaterTrackerPresenter", () => {
     const { getByTestId } = render({ goal: 0, cups: 0 });
     expect(getByTestId("fuel-water-cup-0")).toBeTruthy();
   });
+
+  // ── device-QA #5/#7 — imperial users see cups, not litres ────────────────
+
+  it("defaults to litres when volumeUnit is omitted (metric/unset)", () => {
+    const { getByText } = render({ cups: 6, goal: 8 });
+    expect(getByText("1.5")).toBeTruthy();
+    expect(getByText("/ 2.0 L")).toBeTruthy();
+  });
+
+  it("volumeUnit=cups shows the raw stored cup count, not litres", () => {
+    const { getByText } = render({ cups: 6, goal: 8, volumeUnit: "cups" });
+    expect(getByText("6")).toBeTruthy();
+    expect(getByText("/ 8 cups")).toBeTruthy();
+  });
+
+  it("volumeUnit=cups: the cup-increment mechanic is unchanged (+/- and tap still send cups)", () => {
+    const { getByTestId, props } = render({
+      cups: 6,
+      goal: 8,
+      volumeUnit: "cups",
+    });
+    fireEvent.press(getByTestId("fuel-water-plus"));
+    expect(props.onSetCups).toHaveBeenCalledWith(7);
+    fireEvent.press(getByTestId("fuel-water-cup-3"));
+    expect(props.onSetCups).toHaveBeenCalledWith(4);
+  });
+
+  it("volumeUnit=cups: labels the grid cells + +/- buttons in cups", () => {
+    const { getByLabelText } = render({ cups: 0, goal: 8, volumeUnit: "cups" });
+    expect(getByLabelText("Set water to 1 cups")).toBeTruthy();
+    expect(getByLabelText("Set water to 8 cups")).toBeTruthy();
+    expect(getByLabelText("Add 1 cup of water")).toBeTruthy();
+    expect(getByLabelText("Remove 1 cup of water")).toBeTruthy();
+  });
 });

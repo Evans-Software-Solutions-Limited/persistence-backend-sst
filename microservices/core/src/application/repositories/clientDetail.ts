@@ -99,6 +99,10 @@ export interface ClientDetailHeader {
   status: "active" | "pending";
   ageYears: number | null; // from profiles.date_of_birth; null if absent
   heightCm: number | null; // profiles.height_cm; null if absent
+  /** profiles.preferred_units — the CLIENT's own display-unit preference
+   *  (device-QA follow-up: coach edit-targets water field should follow the
+   *  client's unit, not the coach's). Null when unset/unresolved. */
+  preferredUnits: "metric" | "imperial" | null;
 }
 
 export interface ClientDetailThisWeek {

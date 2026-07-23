@@ -551,4 +551,31 @@ describe("HabitSetupContainer (coach)", () => {
     act(() => props().onAdjustNutrition());
     expect(mockPush).not.toHaveBeenCalledWith("/(app)/fuel/targets");
   });
+
+  // ---------------------------------------------------------------------
+  // QA-6 — a coach Save that persists but gives no feedback reads as
+  // "tapping Save does nothing". Assert the underlying write fires AND the
+  // transient "Saved" confirmation flag surfaces afterwards.
+  // ---------------------------------------------------------------------
+  it("QA-6: after a successful coach save, justSaved flips true and the configure call fired", async () => {
+    renderContainer("client-9", (api) => {
+      api.clientHabitConfigs = { "client-9": [] };
+    });
+    await waitFor(() => expect(captured.props).not.toBeNull());
+    expect(props().justSaved).toBe(false);
+
+    act(() => props().onToggle("water", true));
+    await waitFor(() => expect(props().configs.water.enabled).toBe(true));
+
+    await act(async () => props().onSave());
+
+    const put = mockFetch.mock.calls.find(
+      ([url, opts]) =>
+        String(url).endsWith(
+          "/trainers/me/clients/client-9/habits/water/config",
+        ) && (opts as { method?: string })?.method === "PUT",
+    );
+    expect(put).toBeDefined();
+    await waitFor(() => expect(props().justSaved).toBe(true));
+  });
 });

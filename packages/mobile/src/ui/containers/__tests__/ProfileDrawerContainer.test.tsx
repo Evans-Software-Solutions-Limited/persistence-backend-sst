@@ -53,8 +53,18 @@ let mockProfilePayload: unknown = {
     weightKg: 79.8,
   },
 };
+let mockProfileError: unknown = null;
+let mockProfileRefreshing = false;
+let mockProfileAutoRetrying = false;
+const mockProfileRefresh = jest.fn();
 jest.mock("@/ui/hooks/useProfilePage", () => ({
-  useProfilePage: () => ({ payload: mockProfilePayload }),
+  useProfilePage: () => ({
+    payload: mockProfilePayload,
+    error: mockProfileError,
+    isRefreshing: mockProfileRefreshing,
+    isAutoRetrying: mockProfileAutoRetrying,
+    refresh: mockProfileRefresh,
+  }),
 }));
 
 let mockSubscription: unknown = {
@@ -98,6 +108,10 @@ beforeEach(() => {
   mockSwitchMode.mockClear();
   mockSignOut.mockClear();
   mockRefresh.mockClear();
+  mockProfileRefresh.mockClear();
+  mockProfileError = null;
+  mockProfileRefreshing = false;
+  mockProfileAutoRetrying = false;
   // Reset cross-screen health grant signal + drawer/mode state.
   useHealthSync.setState({ revision: 0 });
   useDrawer.setState({ open: false });
@@ -224,6 +238,54 @@ describe("ProfileDrawerContainer", () => {
         weightKg: 79.8,
       },
     };
+  });
+
+  it("flags profileErrored only when the fetch failed with an empty cache and no retry in flight (QA-9)", () => {
+    // Errored empty state: no payload, an error, and auto-retry exhausted.
+    mockProfilePayload = null;
+    mockProfileError = { kind: "api", code: "server", message: "boom" };
+    mockProfileRefreshing = false;
+    renderWithTheme(<ProfileDrawerContainer />);
+    expect(lastProps?.profileErrored).toBe(true);
+
+    // Still retrying (isRefreshing) → keep the loader, not the error.
+    mockProfileRefreshing = true;
+    renderWithTheme(<ProfileDrawerContainer />);
+    expect(lastProps?.profileErrored).toBe(false);
+
+    // In a backoff gap between auto-retries (not refreshing, but auto-retry
+    // still active) → hold the loader; the error card must not flash in.
+    mockProfileRefreshing = false;
+    mockProfileAutoRetrying = true;
+    renderWithTheme(<ProfileDrawerContainer />);
+    expect(lastProps?.profileErrored).toBe(false);
+    mockProfileAutoRetrying = false;
+
+    // Error but a cached payload exists → render the profile, never the error.
+    mockProfilePayload = {
+      profile: { fullName: "Bradley Evans", email: "brad@example.com" },
+    };
+    mockProfileRefreshing = false;
+    renderWithTheme(<ProfileDrawerContainer />);
+    expect(lastProps?.profileErrored).toBe(false);
+
+    mockProfileError = null;
+    mockProfilePayload = {
+      profile: {
+        fullName: "Bradley Evans",
+        email: "brad@example.com",
+        dateOfBirth: "1990-01-15",
+        weightKg: 79.8,
+      },
+    };
+  });
+
+  it("onRetryProfile delegates to useProfilePage().refresh (QA-9)", () => {
+    renderWithTheme(<ProfileDrawerContainer />);
+    act(() => {
+      (lastProps?.onRetryProfile as () => void)();
+    });
+    expect(mockProfileRefresh).toHaveBeenCalledTimes(1);
   });
 
   it("maps null profile fields to safe fallbacks", () => {

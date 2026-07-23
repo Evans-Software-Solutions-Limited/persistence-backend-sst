@@ -211,8 +211,36 @@ describe("ProfileDrawerPresenter", () => {
   });
 
   it("renders a loading state when profile is undefined", () => {
-    const { getByText } = renderDrawer({ profile: undefined });
+    const { getByText, queryByTestId } = renderDrawer({ profile: undefined });
     expect(getByText("Loading…")).toBeTruthy();
+    // No error affordance while merely loading.
+    expect(queryByTestId("profile-drawer-error")).toBeNull();
+  });
+
+  it("renders an error + retry instead of an infinite loader when errored (QA-9)", () => {
+    const onRetryProfile = jest.fn();
+    const { getByText, getByTestId, queryByText } = renderDrawer({
+      profile: undefined,
+      profileErrored: true,
+      onRetryProfile,
+    });
+    // No stuck "Loading…" — an actionable error headline instead.
+    expect(queryByText("Loading…")).toBeNull();
+    expect(getByText("Couldn't load profile")).toBeTruthy();
+    expect(getByTestId("profile-drawer-error")).toBeTruthy();
+
+    fireEvent.press(getByTestId("profile-drawer-retry"));
+    expect(onRetryProfile).toHaveBeenCalledTimes(1);
+  });
+
+  it("errored state omits the retry button when no handler is provided", () => {
+    const { getByTestId, queryByTestId } = renderDrawer({
+      profile: undefined,
+      profileErrored: true,
+      onRetryProfile: undefined,
+    });
+    expect(getByTestId("profile-drawer-error")).toBeTruthy();
+    expect(queryByTestId("profile-drawer-retry")).toBeNull();
   });
 
   it("loading state close button fires onClose", () => {

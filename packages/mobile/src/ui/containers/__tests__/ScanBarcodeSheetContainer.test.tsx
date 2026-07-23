@@ -5,7 +5,7 @@ import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-s
 import type { AuthSession } from "@/domain/ports/auth.port";
 import { ok } from "@/shared/errors";
 import type { Adapters } from "@/shared/types";
-import { localDayISO } from "@/shared/utils";
+import { localDayISO, previousDayISO } from "@/shared/utils";
 import type { Food } from "@/domain/models/nutrition";
 import { useFuelSheets } from "@/state/fuel-sheets";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
@@ -99,7 +99,12 @@ describe("ScanBarcodeSheetContainer", () => {
     mockProbe.last = null;
     jest.clearAllMocks();
     act(() =>
-      useFuelSheets.setState({ sheet: null, slot: "breakfast", rev: 0 }),
+      useFuelSheets.setState({
+        sheet: null,
+        slot: "breakfast",
+        date: localDayISO(),
+        rev: 0,
+      }),
     );
   });
 
@@ -218,6 +223,49 @@ describe("ScanBarcodeSheetContainer", () => {
     expect(mockProbe.last?.scaled.kcal).toBe(735);
     act(() => mockProbe.last!.onPortionDec()); // 0.75 cups
     await waitFor(() => expect(mockProbe.last?.effectiveGrams).toBe(184));
+  });
+
+  it("logs onto the active day, not always today (BRIEF-7 QA-20)", async () => {
+    const { adapters, storage } = makeAdapters();
+    storage.cacheFoods([food]);
+    const pastDay = previousDayISO(previousDayISO(localDayISO()));
+    render(
+      <Wrapper adapters={adapters}>
+        <ScanBarcodeSheetContainer />
+      </Wrapper>,
+    );
+    act(() => useFuelSheets.getState().setDate(pastDay));
+    act(() => useFuelSheets.getState().openScan("snack"));
+    await act(async () => {
+      mockProbe.last!.onBarcodeScanned("5012345678900");
+    });
+    await waitFor(() => expect(mockProbe.last?.stage).toBe("found"));
+
+    await act(async () => {
+      mockProbe.last!.onAdd();
+    });
+
+    expect(
+      storage.getCachedFuelToday(USER, pastDay)?.entriesBySlot.snack.length,
+    ).toBe(1);
+    expect(
+      storage.getCachedFuelToday(USER, localDayISO())?.entriesBySlot.snack
+        .length ?? 0,
+    ).toBe(0);
+  });
+
+  it("surfaces a day-context line only when the active day isn't today", () => {
+    const { adapters } = makeAdapters();
+    render(
+      <Wrapper adapters={adapters}>
+        <ScanBarcodeSheetContainer />
+      </Wrapper>,
+    );
+    act(() => useFuelSheets.getState().openScan("snack"));
+    expect(mockProbe.last?.dayContext).toBeUndefined();
+
+    act(() => useFuelSheets.getState().setDate(previousDayISO(localDayISO())));
+    expect(mockProbe.last?.dayContext).toEqual(expect.any(String));
   });
 
   it("defaults the Serving tab to the real pack serving (OFF serving_quantity)", async () => {

@@ -125,4 +125,18 @@ describe("ScanBarcodeSheetPresenter", () => {
       render({ stage: "unavailable" }).getByTestId("scan-unavailable"),
     ).toBeTruthy();
   });
+
+  it('shows a plain "QUICK LOG" eyebrow with no day-context', () => {
+    const { getByText, queryByText } = render();
+    expect(getByText("QUICK LOG")).toBeTruthy();
+    expect(queryByText(/QUICK LOG ·/)).toBeNull();
+  });
+
+  it("appends the day-context to the eyebrow when logging onto a past day (BRIEF-7 QA-20)", () => {
+    const { getByText, queryByText } = render({
+      dayContext: "TUESDAY · JUL 21",
+    });
+    expect(getByText("QUICK LOG · TUESDAY · JUL 21")).toBeTruthy();
+    expect(queryByText("QUICK LOG")).toBeNull();
+  });
 });

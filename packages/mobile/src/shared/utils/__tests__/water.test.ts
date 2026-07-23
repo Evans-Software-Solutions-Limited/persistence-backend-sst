@@ -3,6 +3,8 @@ import {
   LITRES_PER_CUP,
   cupsToLitres,
   litresToCups,
+  formatLitres,
+  preferredVolumeUnit,
 } from "../water";
 
 describe("water unit conversion", () => {
@@ -35,5 +37,31 @@ describe("water unit conversion", () => {
     for (let c = 0; c <= 20; c += 1) {
       expect(litresToCups(cupsToLitres(c))).toBe(c);
     }
+  });
+});
+
+describe("formatLitres", () => {
+  it("shows 1 dp for a clean 0.5 L mark", () => {
+    expect(formatLitres(2)).toBe("2.0");
+    expect(formatLitres(1.5)).toBe("1.5");
+  });
+
+  it("shows 2 dp when the value lands off a 0.5 L mark", () => {
+    expect(formatLitres(1.25)).toBe("1.25");
+  });
+});
+
+describe("preferredVolumeUnit (device-QA #5/#7)", () => {
+  it("defaults to litres for metric", () => {
+    expect(preferredVolumeUnit("metric")).toBe("l");
+  });
+
+  it("defaults to litres when unset/unknown (owner's locked default)", () => {
+    expect(preferredVolumeUnit(undefined)).toBe("l");
+    expect(preferredVolumeUnit(null)).toBe("l");
+  });
+
+  it("shows cups for imperial", () => {
+    expect(preferredVolumeUnit("imperial")).toBe("cups");
   });
 });

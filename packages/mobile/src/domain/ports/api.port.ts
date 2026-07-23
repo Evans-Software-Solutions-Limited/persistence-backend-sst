@@ -569,6 +569,16 @@ export interface ApiPort {
   getHabitCompletions(params?: {
     goalId?: string;
     window?: string;
+    /**
+     * Fold in SYNTHETIC derived rows for the Gym/Calories habits — categories
+     * that never write a real `habit_completions` row (Gym is a logged
+     * workout_session count; Calories is scored off nutrition_entries) — so
+     * the Home grid ticks them too (BRIEF-7 QA-1..QA-4). Default false: every
+     * other caller of this endpoint is unaffected. A derived row's `id`
+     * starts with `derived-` — callers MUST treat it as read-only and never
+     * route it through the toggle-habit mutation/sync path.
+     */
+    includeDerived?: boolean;
   }): Promise<Result<HabitCompletion[], ApiError>>;
   /** Fetch the user's habit config (all 5 categories, enabled or defaults). */
   getHabitConfigs(): Promise<Result<HabitConfigEntry[], ApiError>>;

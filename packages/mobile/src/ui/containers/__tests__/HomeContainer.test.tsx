@@ -130,7 +130,12 @@ describe("HomeContainer (V2)", () => {
   beforeEach(() => {
     mockProbe.last = null;
     mockPush.mockClear();
-    useFuelSheets.setState({ sheet: null, slot: "breakfast", rev: 0 });
+    useFuelSheets.setState({
+      sheet: null,
+      slot: "breakfast",
+      date: localDayISO(),
+      rev: 0,
+    });
   });
 
   it("renders the presenter and populates the home payload from the API", async () => {
@@ -350,6 +355,20 @@ describe("HomeContainer (V2)", () => {
     act(() => mockProbe.last?.onOpenMealLog());
     expect(mockPush).toHaveBeenCalledWith("/(app)/(tabs)/fuel");
     expect(useFuelSheets.getState().sheet).toBe("quickAdd");
+    expect(useFuelSheets.getState().date).toBe(localDayISO());
+  });
+
+  it("quick-log Meal forces the shared sheet store back to today even if a prior Fuel-tab session left it on a past day (QA-20)", async () => {
+    const { adapters } = makeAdapters();
+    act(() => useFuelSheets.getState().setDate("2020-01-01"));
+    render(
+      <Wrapper adapters={adapters}>
+        <HomeContainer />
+      </Wrapper>,
+    );
+    await waitFor(() => expect(mockProbe.last).not.toBeNull());
+    act(() => mockProbe.last?.onOpenMealLog());
+    expect(useFuelSheets.getState().date).toBe(localDayISO());
   });
 
   it("regression fix: toggling a configured habit with a value writes it to the optimistic cache row", async () => {

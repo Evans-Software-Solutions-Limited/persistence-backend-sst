@@ -77,6 +77,10 @@ function ClientRowBase({
 }: ClientRowProps) {
   const display = client.band ? BAND_DISPLAY[client.band] : null;
   const subtitle = buildClientSubtitle(client, now);
+  // QA-15 (device-QA batch, BRIEF-7): onboarding may not have set a name yet —
+  // fall back rather than render a blank row (mirrors CoachYouContainer's
+  // "?" initials fallback).
+  const displayName = client.name.trim() || "New client";
   const needsCoachAccept =
     client.status === "pending" &&
     client.initiatedBy === "client" &&
@@ -89,7 +93,7 @@ function ClientRowBase({
       testID={testID}
       onPress={() => onPress(client.id)}
       accessibilityRole="button"
-      accessibilityLabel={client.name}
+      accessibilityLabel={displayName}
       style={({ pressed }) => ({ opacity: pressed ? 0.8 : 1 })}
     >
       <View
@@ -102,7 +106,7 @@ function ClientRowBase({
         borderColor="$border"
         minHeight={44}
       >
-        <Avatar initials={client.initials} size={40} tone="trainer" />
+        <Avatar initials={client.initials || "?"} size={40} tone="trainer" />
 
         <View flex={1} minWidth={0}>
           <View
@@ -119,7 +123,7 @@ function ClientRowBase({
               color="$text"
               numberOfLines={1}
             >
-              {client.name}
+              {displayName}
             </Text>
             {client.flags.map((flag, i) => (
               <Pill key={`${flag.label}-${i}`} tone={flag.tone} size="xs">
@@ -180,7 +184,7 @@ function ClientRowBase({
                   pct={client.adherence / 100}
                   color={toneHex(display.tone).base}
                   height={4}
-                  accessibilityLabel={`${client.name} adherence ${client.adherence}%`}
+                  accessibilityLabel={`${displayName} adherence ${client.adherence}%`}
                 />
               </View>
               <Text

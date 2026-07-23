@@ -1,4 +1,4 @@
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
   achievements,
   bodyMeasurements,
@@ -12,6 +12,7 @@ import {
   userGoals,
   userStreaks,
   workoutSessions,
+  type HabitCompletion,
   type UserStreak,
 } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
@@ -37,7 +38,18 @@ import {
 } from "../streaks/collection";
 import type { HabitCompletionRule } from "../habits/habitCategories";
 import { resolveCalorieHabitTarget } from "../habits/habitCategories";
+import type { HabitGridRow } from "../habits/habitsView";
 import { HabitConfigRepository } from "./habitConfigRepository";
+
+/** Normalise a Postgres `::date` cell: postgres-js returns a JS `Date` for the
+ * real driver, but the vitest mocks stub plain strings — both must collapse
+ * to the same YYYY-MM-DD key (Inspector note, mirrors
+ * VolumeRepository.dailyVolume / ClientDetailRepository.dailyKcalTotals). */
+function normalizeDateCell(cell: unknown): string {
+  return cell instanceof Date
+    ? cell.toISOString().slice(0, 10)
+    : String(cell).slice(0, 10);
+}
 
 /**
  * DB-backed implementation of the streak engine + cron data ports
@@ -414,6 +426,191 @@ export class StreakRepository implements StreakDataPort, StreakCronDataPort {
       ) t
     `)) as unknown as Array<{ days: number }>;
     return Number(rows[0]?.days ?? 0);
+  }
+
+  /**
+   * DERIVED per-day Home-grid rows for Gym (`count`) + Calories
+   * (`within_tolerance`) — the two habit categories `buildHabitsGrid` can
+   * never fill from `habit_completions` because neither ever writes a
+   * completion row (BRIEF-7 QA-1..QA-4, device-QA sweep; design.md § 1.1).
+   * This computes the SAME per-day qualification the collection streak scores
+   * (`getCollectionHabitAggregates`), just resolved to actual qualifying DAYS
+   * within the grid's own rolling window instead of a weekly count, and over
+   * whatever window the caller passes — the Home grid's window is [today-6 …
+   * today] (`habitsGridWindow`), which is NOT the Mon–Sun collection week, so
+   * this deliberately takes `window` as data rather than recomputing it.
+   *
+   * Every ACTIVE Gym/Calories `habit_configs` row gets a row here regardless
+   * of `effective_from` or whether it has any qualifying days yet (an
+   * all-false row) — unlike the collection streak, the grid is a completion
+   * *history* render, not a streak-eligibility gate, so a freshly-enabled
+   * habit still needs its tile to show up. Calories is scored against the
+   * user's live Nutrition Fuel-Target (`getUserDailyKcal` +
+   * `resolveCalorieHabitTarget`), never the `habit_configs` snapshot, for the
+   * same single-source-of-truth reason `getCollectionHabitAggregates` does —
+   * so the grid and the streak can never disagree on a given day.
+   */
+  async getDerivedHabitGridRows(
+    userId: string,
+    window: string[],
+    tz: string,
+  ): Promise<HabitGridRow[]> {
+    if (window.length === 0) return [];
+    const db = getDb();
+    const startDate = window[0];
+    const endDate = window[window.length - 1];
+
+    const enabled = await db
+      .select({
+        goalId: habitConfigs.goalId,
+        category: habitConfigs.category,
+        tolerancePct: habitConfigs.tolerancePct,
+      })
+      .from(habitConfigs)
+      .innerJoin(userGoals, eq(habitConfigs.goalId, userGoals.id))
+      .where(
+        and(
+          eq(habitConfigs.userId, userId),
+          eq(userGoals.isActive, true),
+          inArray(habitConfigs.category, ["gym", "calories"]),
+        ),
+      );
+    if (enabled.length === 0) return [];
+
+    const hasCalorieHabit = enabled.some((h) => h.category === "calories");
+    const dailyKcal = hasCalorieHabit
+      ? await this.getUserDailyKcal(userId)
+      : null;
+    const calorieTarget = resolveCalorieHabitTarget(dailyKcal);
+
+    const rows: HabitGridRow[] = [];
+    for (const h of enabled) {
+      const qualifyingDays =
+        h.category === "gym"
+          ? await this.getCompletedWorkoutDaysInWindow(
+              userId,
+              startDate,
+              endDate,
+              tz,
+            )
+          : await this.getCalorieToleranceDaysInWindow(
+              userId,
+              startDate,
+              endDate,
+              tz,
+              calorieTarget,
+              h.tolerancePct != null ? Number(h.tolerancePct) : 0,
+            );
+      rows.push({
+        goalId: h.goalId,
+        days: window.map((d) => qualifyingDays.has(d)),
+      });
+    }
+    return rows;
+  }
+
+  /**
+   * DERIVED synthetic `habit_completions`-shaped rows for Gym + Calories, for
+   * `GET /habit-completions?includeDerived=true` (BRIEF-7 QA-1..QA-4 mobile
+   * half). The mobile Home grid reads `GET /habit-completions` directly (not
+   * `GET /users/me/home`), so it needs the same derived qualifying days
+   * `getDerivedHabitGridRows` computes for the web/home aggregate, surfaced
+   * as completion-shaped rows it can bucket exactly like a real one
+   * (`buildHabitGrid` on mobile buckets by `goalId` + `localCompletedDate`).
+   *
+   * Reuses `getDerivedHabitGridRows` verbatim (no re-querying) so the two
+   * endpoints can never disagree on which days qualify. Computed fresh every
+   * request (derive-on-read) — NEVER persisted. The synthetic id
+   * (`derived-<goalId>-<date>`) is a caller-side signal: mobile must treat
+   * any `derived-`-prefixed row as read-only and never route it through the
+   * toggle mutation / sync-queue path.
+   */
+  async getDerivedHabitCompletions(
+    userId: string,
+    window: string[],
+    tz: string,
+  ): Promise<HabitCompletion[]> {
+    const rows = await this.getDerivedHabitGridRows(userId, window, tz);
+    const completions: HabitCompletion[] = [];
+    for (const row of rows) {
+      row.days.forEach((met, i) => {
+        if (!met) return;
+        const date = window[i];
+        completions.push({
+          id: `derived-${row.goalId}-${date}`,
+          userId,
+          goalId: row.goalId,
+          completedAt: new Date(`${date}T12:00:00.000Z`),
+          localCompletedDate: date,
+          value: null,
+        });
+      });
+    }
+    return completions;
+  }
+
+  /**
+   * The set of local days in [startDate, endDate] with >= 1 completed
+   * `workout_session` (Gym `count` rule). Bucketed identically to
+   * `getCollectionHabitAggregates`' session-count query (same `AT TIME ZONE`
+   * expr + `completed` status filter) so the grid and the collection streak
+   * can never disagree on which days count.
+   */
+  private async getCompletedWorkoutDaysInWindow(
+    userId: string,
+    startDate: string,
+    endDate: string,
+    tz: string,
+  ): Promise<Set<string>> {
+    const db = getDb();
+    const dayExpr = sql<string>`(${workoutSessions.completedAt} AT TIME ZONE ${tz})::date`;
+    const rows = await db
+      .select({ day: dayExpr })
+      .from(workoutSessions)
+      .where(
+        and(
+          eq(workoutSessions.userId, userId),
+          eq(workoutSessions.status, "completed"),
+          sql`(${workoutSessions.completedAt} AT TIME ZONE ${tz})::date BETWEEN ${startDate} AND ${endDate}`,
+        ),
+      )
+      // Ordinal GROUP BY — a second render of `dayExpr` here would bind a NEW
+      // parameter than the one in SELECT, tripping Postgres 42803
+      // (reference_drizzle_groupby_param_bug; mirrors VolumeRepository.dailyVolume).
+      .groupBy(sql`1`);
+    return new Set(rows.map((r) => normalizeDateCell(r.day)));
+  }
+
+  /**
+   * The set of local days in [startDate, endDate] whose summed
+   * `nutrition_entries` kcal falls within `target ± tolerancePct%` (Calories
+   * `within_tolerance` rule). Mirrors `countCalorieToleranceDays`'s bucketing
+   * + inclusivity exactly (same `HAVING ... BETWEEN lower AND upper`), so the
+   * grid tile and the collection streak's day-count agree bound-for-bound —
+   * including the deliberately non-monotonic upper bound (design.md § 1.1:
+   * eating past it un-completes the day; this is not "fixed" to `>= target`).
+   */
+  private async getCalorieToleranceDaysInWindow(
+    userId: string,
+    startDate: string,
+    endDate: string,
+    tz: string,
+    target: number,
+    tolerancePct: number,
+  ): Promise<Set<string>> {
+    const db = getDb();
+    const factor = tolerancePct / 100;
+    const lower = target * (1 - factor);
+    const upper = target * (1 + factor);
+    const rows = (await db.execute(sql`
+      SELECT (${nutritionEntries.loggedAt} AT TIME ZONE ${tz})::date AS d
+      FROM ${nutritionEntries}
+      WHERE ${nutritionEntries.userId} = ${userId}
+        AND (${nutritionEntries.loggedAt} AT TIME ZONE ${tz})::date BETWEEN ${startDate} AND ${endDate}
+      GROUP BY 1
+      HAVING coalesce(sum(${nutritionEntries.kcal}), 0) BETWEEN ${lower} AND ${upper}
+    `)) as unknown as Array<{ d: unknown }>;
+    return new Set(rows.map((r) => normalizeDateCell(r.d)));
   }
 
   /**

@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { PgDialect } from "drizzle-orm/pg-core";
 
 vi.mock("@persistence/db/client", () => ({ getDb: vi.fn() }));
 
@@ -175,7 +176,10 @@ describe("HomeReadRepository", () => {
           },
         ]),
     });
-    const items = await new HomeReadRepository().getTodaysTraining("u1");
+    const items = await new HomeReadRepository().getTodaysTraining(
+      "u1",
+      "2026-06-10",
+    );
     expect(items).toEqual([
       {
         assignmentId: "wa1",
@@ -205,6 +209,33 @@ describe("HomeReadRepository", () => {
         assignedByName: null,
       },
     ]);
+  });
+
+  // QA-11 (device-QA sweep BRIEF-7) SQL-render guard — the canned chain above
+  // returns rows regardless of the real `.where()` predicate, so a dropped/
+  // wrong due-date filter would still pass. Rendering the captured predicate
+  // via PgDialect asserts the emitted SQL text (mocked-DB SQL blind spot the
+  // repo's MEMORY warns about, reference_drizzle_groupby_param_bug.md).
+  it("getTodaysTraining scopes to today-or-earlier due dates, or null (do-anytime)", async () => {
+    const capture: { where?: unknown } = {};
+    const recording: any = {};
+    for (const k of ["from", "innerJoin", "leftJoin", "orderBy"]) {
+      recording[k] = () => recording;
+    }
+    recording.where = (cond: unknown) => {
+      capture.where = cond;
+      return recording;
+    };
+    recording.limit = vi.fn().mockResolvedValue([]);
+    (getDb as any).mockReturnValue({ select: () => recording });
+
+    await new HomeReadRepository().getTodaysTraining("u1", "2026-06-10");
+
+    const dialect = new PgDialect();
+    const where = dialect.sqlToQuery(capture.where as never).sql;
+    expect(where).toContain('"workout_assignments"."due_date"');
+    expect(where).toMatch(/is null/i);
+    expect(where).toContain("<=");
   });
 
   it("getActiveProgramme + ensureProgrammeMaterialized delegate to the assignment repo", async () => {

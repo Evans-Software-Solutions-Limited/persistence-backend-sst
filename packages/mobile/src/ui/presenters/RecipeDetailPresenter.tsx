@@ -38,6 +38,12 @@ export type RecipeDetailPresenterProps = {
   instructions: string | null;
   onLogToToday: () => void;
   isLogging: boolean;
+  /** "TUESDAY · JUL 21" — set ONLY when Fuel is viewing a day other than
+   * today (BRIEF-7 QA-20 day-context), so the CTA doesn't silently log to
+   * today while the user thinks they're logging onto the day they navigated
+   * to. Undefined on today: the button keeps its original "Log to today"
+   * copy. */
+  dayContext?: string;
   testID?: string;
 };
 
@@ -58,6 +64,7 @@ export function RecipeDetailPresenter({
   instructions,
   onLogToToday,
   isLogging,
+  dayContext,
   testID = "recipe-detail-screen",
 }: RecipeDetailPresenterProps) {
   const insets = useSafeAreaInsets();
@@ -274,7 +281,7 @@ export function RecipeDetailPresenter({
           disabled={isLogging}
           testID="recipe-detail-log"
         >
-          Log to today
+          {dayContext ? `Log to ${dayContext}` : "Log to today"}
         </Btn>
       </ScrollView>
     </View>

@@ -35,3 +35,31 @@ export function cupsToLitres(cups: number): number {
 export function litresToCups(litres: number): number {
   return Math.round(litres / LITRES_PER_CUP);
 }
+
+/**
+ * Litres display formatting (device-QA #5/#7 — habit/Fuel water unit
+ * consistency). 1 dp normally (e.g. "2.0"), 2 dp when a 0.25 L step lands on a
+ * non-zero hundredths digit (e.g. "1.25") so the value is never truncated.
+ * Extracted from `WaterTrackerPresenter`'s original inline `fmtLitres` so both
+ * the Fuel water surfaces and the water HABIT target share one formatter.
+ */
+export function formatLitres(litres: number): string {
+  const twoDp = litres.toFixed(2);
+  return twoDp.endsWith("0") ? litres.toFixed(1) : twoDp;
+}
+
+/** The user's preferred volume DISPLAY unit (device-QA #5/#7). Habits (the
+ *  water habit target) and the Fuel water tracker/target both read this — it
+ *  never affects storage, which stays litres (habit_configs) / cups
+ *  (water_log) exactly as before.
+ *
+ *  DEFAULT IS LITRES (Brad's decision 2026-07-22): metric or an unset/unknown
+ *  preference both resolve to litres; only an explicit "imperial" preference
+ *  shows cups. */
+export type VolumeUnit = "l" | "cups";
+
+export function preferredVolumeUnit(
+  preferredUnits?: "metric" | "imperial" | null,
+): VolumeUnit {
+  return preferredUnits === "imperial" ? "cups" : "l";
+}

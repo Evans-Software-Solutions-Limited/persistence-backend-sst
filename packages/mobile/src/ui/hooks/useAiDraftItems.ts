@@ -1,7 +1,8 @@
 import { useCallback, useRef, useState } from "react";
 import * as Haptics from "expo-haptics";
 import { rescaleAiFoodItem, sumKeptAiItemsKcal } from "@/domain/services";
-import { localDayISO } from "@/shared/utils";
+import { loggedAtNoonUtc } from "@/shared/utils";
+import { useFuelSheets } from "@/state/fuel-sheets";
 import type { AiEstimate, MealSlot } from "@/domain/models/nutrition";
 import type { AiDraftItem } from "@/ui/presenters/AiDraftConfirmPresenter";
 import { useLogEntry } from "./useLogEntry";
@@ -52,6 +53,11 @@ export type UseAiDraftItems = {
 
 export function useAiDraftItems(): UseAiDraftItems {
   const logEntry = useLogEntry();
+  // The day this draft confirms into (QA-20) — kept in sync with the Fuel
+  // screen's viewed day by <FuelContainer>, so confirming an AI draft from
+  // a past-day view (via Quick-add's "Or describe it…" or the Snap sheet)
+  // lands on that day, not always today.
+  const activeDate = useFuelSheets((s) => s.date);
   const [items, setItemsState] = useState<AiDraftItem[]>([]);
   // Original AI-estimated items as set by the container. Grams edits always
   // rescale from THIS basis, not the current (already-rescaled) item — so
@@ -96,7 +102,7 @@ export function useAiDraftItems(): UseAiDraftItems {
         void Haptics.notificationAsync(
           Haptics.NotificationFeedbackType.Success,
         );
-        const loggedAt = `${localDayISO()}T12:00:00.000Z`;
+        const loggedAt = loggedAtNoonUtc(activeDate);
         for (const item of kept) {
           await logEntry.mutate({
             mealSlot: slot,
@@ -117,7 +123,7 @@ export function useAiDraftItems(): UseAiDraftItems {
         setConfirming(false);
       }
     },
-    [items, logEntry],
+    [items, logEntry, activeDate],
   );
 
   return {

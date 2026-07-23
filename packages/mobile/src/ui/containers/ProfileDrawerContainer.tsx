@@ -31,8 +31,24 @@ export function ProfileDrawerContainer() {
   const isTrainerEligible = useUserMode((s) => s.isTrainerEligible);
   const { switchMode } = useModeSwitch();
 
-  const { payload } = useProfilePage();
+  const {
+    payload,
+    error: profileFetchError,
+    isRefreshing: isProfileRefreshing,
+    isAutoRetrying: isProfileAutoRetrying,
+    refresh: refreshProfile,
+  } = useProfilePage();
   const profileData = payload?.profile;
+  // Errored empty state (QA-9): the fetch failed and there's nothing cached to
+  // show. `useProfilePage` auto-retries a bounded number of times; we only
+  // surface the error once those are exhausted — `isAutoRetrying` stays true
+  // through the backoff gaps (when `isRefreshing` momentarily drops), so the
+  // loader holds continuously instead of flickering the error card in and out.
+  const profileErrored =
+    payload === null &&
+    profileFetchError !== null &&
+    !isProfileRefreshing &&
+    !isProfileAutoRetrying;
   const { data: subscription } = useMySubscription();
   const health = useHealthData();
   const { signOut } = useAuth();
@@ -118,6 +134,8 @@ export function ProfileDrawerContainer() {
           : undefined
       }
       achievementsCount={achievementsData?.length}
+      profileErrored={profileErrored}
+      onRetryProfile={() => void refreshProfile()}
       healthConnected={healthConnected}
       mode={mode}
       isTrainerEligible={isTrainerEligible}

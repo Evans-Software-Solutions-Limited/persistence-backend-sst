@@ -20,6 +20,11 @@ import { useUserMode } from "@/state/user-mode";
 // eslint-disable-next-line import/first
 import { equivalentTab, useModeSwitch } from "@/ui/hooks/useModeSwitch";
 
+// Captured once, pristine — QA-17's test below swaps in a fake `switchTo`
+// with a controllable persist delay, then restores this original so it
+// doesn't bleed into later tests.
+const ORIGINAL_SWITCH_TO = useUserMode.getState().switchTo;
+
 beforeEach(() => {
   mockNavigate.mockReset();
   useDrawer.setState({ open: true });
@@ -99,5 +104,41 @@ describe("useModeSwitch", () => {
     expect(useUserMode.getState().mode).toBe("athlete");
     expect(useDrawer.getState().open).toBe(true);
     expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  // QA-17 (device-QA batch, BRIEF-7): navigation must not be deferred behind
+  // the AsyncStorage persist. Fake `switchTo` mirrors the real store's shape
+  // (flip `mode` synchronously, THEN await a persist) but with a persist that
+  // stays pending until the test resolves it, so a regression back to
+  // `await switchTo(next)` before computing the target/path would show up as
+  // `router.navigate` NOT having been called yet at the synchronous checkpoint.
+  it("navigates in the same tick as the mode flip, without waiting for the persist", async () => {
+    let resolvePersist: () => void = () => {};
+    const persistPending = new Promise<void>((resolve) => {
+      resolvePersist = resolve;
+    });
+    const fakeSwitchTo = jest.fn(async (next: "athlete" | "coach") => {
+      useUserMode.setState({ mode: next });
+      await persistPending;
+    });
+    useUserMode.setState({ switchTo: fakeSwitchTo });
+
+    const { result } = renderHook(() => useModeSwitch());
+    let switchPromise!: Promise<void>;
+
+    act(() => {
+      switchPromise = result.current.switchMode("coach", "train");
+    });
+
+    // Synchronous checkpoint — the persist promise is still pending, but the
+    // mode flip and the navigate call have already happened.
+    expect(useUserMode.getState().mode).toBe("coach");
+    expect(mockNavigate).toHaveBeenCalledWith("/(app)/(tabs)/clients");
+
+    resolvePersist();
+    await act(async () => {
+      await switchPromise;
+      useUserMode.setState({ switchTo: ORIGINAL_SWITCH_TO });
+    });
   });
 });

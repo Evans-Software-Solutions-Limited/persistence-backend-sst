@@ -31,6 +31,7 @@ function stubDetail(clientId: string, title: string): ClientDetail {
       status: "active",
       ageYears: null,
       heightCm: null,
+      preferredUnits: null,
     },
     adherence: { overall: null, band: null, categories: [] },
     prs: [],

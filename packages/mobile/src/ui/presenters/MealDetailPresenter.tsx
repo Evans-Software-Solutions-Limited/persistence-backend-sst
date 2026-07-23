@@ -31,6 +31,10 @@ export type MealDetailPresenterProps = {
   fatG: number;
   onLogToToday: () => void;
   isLogging: boolean;
+  /** "TUESDAY · JUL 21" — set ONLY when Fuel is viewing a day other than
+   * today (BRIEF-7 QA-20 day-context). Undefined on today: the button keeps
+   * its original "Log to today" copy. */
+  dayContext?: string;
   testID?: string;
 };
 
@@ -48,6 +52,7 @@ export function MealDetailPresenter({
   fatG,
   onLogToToday,
   isLogging,
+  dayContext,
   testID = "meal-detail-screen",
 }: MealDetailPresenterProps) {
   const insets = useSafeAreaInsets();
@@ -176,7 +181,7 @@ export function MealDetailPresenter({
           disabled={isLogging}
           testID="meal-detail-log"
         >
-          Log to today
+          {dayContext ? `Log to ${dayContext}` : "Log to today"}
         </Btn>
       </ScrollView>
     </View>

@@ -282,9 +282,17 @@ function ClientHeader({
   onBack: () => void;
   onRemoveClient: () => void;
 }) {
-  const name = detail?.client.name ?? fallbackName ?? "Client";
+  // QA-15 (device-QA batch, BRIEF-7): a `??` chain doesn't catch an empty
+  // string (onboarding may not have set a name yet), so fall back explicitly
+  // — mirrors ClientRow's "New client" fallback.
+  const name =
+    detail?.client.name?.trim() || fallbackName?.trim() || "New client";
+  // Same empty-string guard as `name`: `??` would let a stored "" through and
+  // render a blank avatar (QA-15).
   const initials =
-    detail?.client.initials ?? (fallbackName ? initialsOf(fallbackName) : "?");
+    detail?.client.initials?.trim() ||
+    (fallbackName ? initialsOf(fallbackName) : "") ||
+    "?";
   const age = detail?.client.ageYears ?? null;
   const heightCm = detail?.client.heightCm ?? null;
   const programmeLabel = activeProgramme?.name ?? null;

@@ -18,6 +18,12 @@ import {
   recommendedSplit,
   type Sex,
 } from "@/domain/services/nutrition.service";
+import {
+  cupsToLitres,
+  formatLitres,
+  litresToCups,
+  type VolumeUnit,
+} from "@/shared/utils";
 
 /**
  * <EditNutritionTargetsSheet> — the coach sets a client's daily kcal + macros
@@ -66,8 +72,43 @@ export function parseBodyStat(raw: string): number | null {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
+/**
+ * Parse the water field's text into the STORED/wire grain (whole cups),
+ * reading it in the CLIENT's preferred display unit (device-QA follow-up).
+ * Under "cups" this is byte-for-byte `parseTargetField` (whole, non-negative
+ * integer). Under "l" (default) the field accepts a non-negative decimal
+ * litres value and rounds to the nearest whole cup via `litresToCups` — the
+ * same rounding the athlete-side Fuel Targets water goal relies on. Blank or
+ * unparseable text is null either way (same "every field required" gate the
+ * other target fields use).
+ */
+export function parseWaterInput(raw: string, unit: VolumeUnit): number | null {
+  if (unit === "cups") return parseTargetField(raw);
+  const trimmed = raw.trim();
+  if (!/^\d+(\.\d+)?$/.test(trimmed)) return null;
+  const litres = Number.parseFloat(trimmed);
+  if (!Number.isFinite(litres) || litres < 0) return null;
+  return litresToCups(litres);
+}
+
+/**
+ * The water field's SEEDED display text, converting the stored cups value
+ * (or null) into the client's preferred unit — the inverse of
+ * `parseWaterInput`, used only to hydrate the field when the sheet opens.
+ */
+function waterCupsToText(
+  cups: number | null | undefined,
+  unit: VolumeUnit,
+): string {
+  if (cups == null) return "";
+  return unit === "cups" ? String(cups) : formatLitres(cupsToLitres(cups));
+}
+
+// Water is handled separately below (not in this list) since its display
+// unit/parsing depends on the client's `volumeUnit`, unlike these four which
+// are always whole units in their stated grain.
 const FIELDS: {
-  key: "dailyKcal" | "proteinG" | "carbsG" | "fatG" | "waterCups";
+  key: "dailyKcal" | "proteinG" | "carbsG" | "fatG";
   label: string;
   unit: string;
 }[] = [
@@ -75,7 +116,6 @@ const FIELDS: {
   { key: "proteinG", label: "Protein", unit: "g / day" },
   { key: "carbsG", label: "Carbs", unit: "g / day" },
   { key: "fatG", label: "Fat", unit: "g / day" },
-  { key: "waterCups", label: "Water", unit: "cups / day" },
 ];
 
 const SEX_OPTIONS: { id: Sex; label: string }[] = [
@@ -175,6 +215,10 @@ export function EditNutritionTargetsSheet() {
   const initial = useEditNutritionTargetsSheet((s) => s.initial);
   const onSaved = useEditNutritionTargetsSheet((s) => s.onSaved);
   const closeSheet = useEditNutritionTargetsSheet((s) => s.closeSheet);
+  // The CLIENT's preferred display unit for the water field (device-QA
+  // follow-up) — default litres, cups only for an explicitly-imperial client.
+  const volumeUnit = useEditNutritionTargetsSheet((s) => s.volumeUnit);
+  const isCups = volumeUnit === "cups";
 
   const { api } = useAdapters();
 
@@ -185,7 +229,10 @@ export function EditNutritionTargetsSheet() {
   const [proteinG, setProteinG] = useState("");
   const [carbsG, setCarbsG] = useState("");
   const [fatG, setFatG] = useState("");
-  const [waterCups, setWaterCups] = useState("");
+  // Water — text is in the CLIENT's display unit (litres by default, cups if
+  // imperial), not always cups; `parseWaterInput`/`waterCupsToText` convert at
+  // the edges. Shared by both manual and calculator modes, same as before.
+  const [waterText, setWaterText] = useState("");
 
   // Calculator fields.
   const [sex, setSex] = useState<Sex | null>(null);
@@ -206,14 +253,12 @@ export function EditNutritionTargetsSheet() {
     proteinG,
     carbsG,
     fatG,
-    waterCups,
   };
   const setters: Record<(typeof FIELDS)[number]["key"], (v: string) => void> = {
     dailyKcal: setDailyKcal,
     proteinG: setProteinG,
     carbsG: setCarbsG,
     fatG: setFatG,
-    waterCups: setWaterCups,
   };
 
   // Seed from the aggregate's module d when the sheet opens; reset on close.
@@ -230,7 +275,7 @@ export function EditNutritionTargetsSheet() {
     setProteinG(asText(initial?.proteinG));
     setCarbsG(asText(initial?.carbsG));
     setFatG(asText(initial?.fatG));
-    setWaterCups(asText(initial?.waterCups));
+    setWaterText(waterCupsToText(initial?.waterCups, volumeUnit));
     // Calculator prefill — age + height come from the client header; the coach
     // adds sex + weight (not on the header).
     setSex(null);
@@ -242,25 +287,26 @@ export function EditNutritionTargetsSheet() {
     setMacroMode("recommended");
     setError(null);
     setSubmitting(false);
-  }, [open, initial]);
+  }, [open, initial, volumeUnit]);
 
   // Manual payload — every field required + a non-negative integer (the backend
   // validator `t.Number({ minimum: 0 })` rejects partial / negative bodies).
-  // Non-null iff all five parse, which is exactly what gates Save in manual
-  // mode — no `preset` key here, so the manual write is byte-for-byte unchanged.
+  // Water is parsed in the CLIENT's display unit and converted to whole cups
+  // via `parseWaterInput`; the OTHER four fields are unchanged. Non-null iff
+  // all five parse, which is exactly what gates Save in manual mode — no
+  // `preset` key here, so the manual write is byte-for-byte unchanged.
   const manualPayload = useMemo<SetTargetsInput | null>(() => {
-    const nums = [dailyKcal, proteinG, carbsG, fatG, waterCups].map(
-      parseTargetField,
-    );
-    if (nums.some((v) => v === null)) return null;
+    const nums = [dailyKcal, proteinG, carbsG, fatG].map(parseTargetField);
+    const water = parseWaterInput(waterText, volumeUnit);
+    if (nums.some((v) => v === null) || water === null) return null;
     return {
       dailyKcal: nums[0] as number,
       proteinG: nums[1] as number,
       carbsG: nums[2] as number,
       fatG: nums[3] as number,
-      waterCups: nums[4] as number,
+      waterCups: water,
     };
-  }, [dailyKcal, proteinG, carbsG, fatG, waterCups]);
+  }, [dailyKcal, proteinG, carbsG, fatG, waterText, volumeUnit]);
 
   // Calculator preview — the SAME derivation the athlete's Fuel Targets screen
   // runs. `custom` macro mode is never selectable here, so the customSplit arg
@@ -283,10 +329,11 @@ export function EditNutritionTargetsSheet() {
   );
 
   // Calculator payload — the computed kcal/macros plus a manually-entered water
-  // target (water isn't part of TDEE). `preset` records which macro split was
+  // target (water isn't part of TDEE), read in the client's display unit the
+  // same way the manual payload does. `preset` records which macro split was
   // used, mirroring the athlete save path.
   const calcPayload = useMemo<SetTargetsInput | null>(() => {
-    const water = parseTargetField(waterCups);
+    const water = parseWaterInput(waterText, volumeUnit);
     if (preview.kcal === null || preview.macroGrams === null || water === null)
       return null;
     return {
@@ -297,7 +344,7 @@ export function EditNutritionTargetsSheet() {
       waterCups: water,
       preset: macroMode,
     };
-  }, [preview, waterCups, macroMode]);
+  }, [preview, waterText, volumeUnit, macroMode]);
 
   const activePayload = mode === "manual" ? manualPayload : calcPayload;
   const canSave = clientId !== null && activePayload !== null && !submitting;
@@ -346,21 +393,36 @@ export function EditNutritionTargetsSheet() {
         </View>
 
         {mode === "manual" ? (
-          FIELDS.map((f) => (
-            <View key={f.key} gap={8}>
-              <SectionLabel>{`${f.label} · ${f.unit}`}</SectionLabel>
+          <>
+            {FIELDS.map((f) => (
+              <View key={f.key} gap={8}>
+                <SectionLabel>{`${f.label} · ${f.unit}`}</SectionLabel>
+                <TextInput
+                  value={values[f.key]}
+                  onChangeText={setters[f.key]}
+                  placeholder="0"
+                  placeholderTextColor="#8A8A98"
+                  keyboardType="number-pad"
+                  autoCorrect={false}
+                  testID={`edit-target-${f.key}`}
+                  style={INPUT_STYLE}
+                />
+              </View>
+            ))}
+            <View gap={8}>
+              <SectionLabel>{`Water · ${isCups ? "cups / day" : "L / day"}`}</SectionLabel>
               <TextInput
-                value={values[f.key]}
-                onChangeText={setters[f.key]}
+                value={waterText}
+                onChangeText={setWaterText}
                 placeholder="0"
                 placeholderTextColor="#8A8A98"
-                keyboardType="number-pad"
+                keyboardType={isCups ? "number-pad" : "decimal-pad"}
                 autoCorrect={false}
-                testID={`edit-target-${f.key}`}
+                testID="edit-target-waterCups"
                 style={INPUT_STYLE}
               />
             </View>
-          ))
+          </>
         ) : (
           <View gap={16} testID="edit-nutrition-calculator">
             {/* Sex */}
@@ -517,13 +579,13 @@ export function EditNutritionTargetsSheet() {
 
             {/* Water — not part of the TDEE calculation. */}
             <View gap={8}>
-              <SectionLabel>Water · cups / day</SectionLabel>
+              <SectionLabel>{`Water · ${isCups ? "cups / day" : "L / day"}`}</SectionLabel>
               <TextInput
-                value={waterCups}
-                onChangeText={setWaterCups}
+                value={waterText}
+                onChangeText={setWaterText}
                 placeholder="0"
                 placeholderTextColor="#8A8A98"
-                keyboardType="number-pad"
+                keyboardType={isCups ? "number-pad" : "decimal-pad"}
                 autoCorrect={false}
                 testID="edit-calc-water"
                 style={INPUT_STYLE}

@@ -146,6 +146,8 @@ describe("ClientDetailRepository.getClientDetail", () => {
     // Adherence — no assignments in window → not-enough-data (null/null).
     expect(out.adherence.overall).toBeNull();
     expect(out.adherence.band).toBeNull();
+    // No preferredUnits column in the fixture row → null-safe default.
+    expect(out.client.preferredUnits).toBeNull();
     // Module d/e/f — all null when nothing set up.
     expect(out.calorieHit).toBeNull();
     expect(out.goal).toBeNull();
@@ -193,6 +195,7 @@ describe("ClientDetailRepository.getClientDetail", () => {
           avatarUrl: "http://a/1.png",
           dateOfBirth: "1990-01-01",
           heightCm: "172.50",
+          preferredUnits: "imperial",
         },
       ],
       [{ status: "pending" }], // relationship status read
@@ -232,6 +235,7 @@ describe("ClientDetailRepository.getClientDetail", () => {
     expect(out.client.ageYears).toBe(36);
     expect(out.client.heightCm).toBe(172.5);
     expect(out.client.status).toBe("pending");
+    expect(out.client.preferredUnits).toBe("imperial");
   });
 
   it("adherence — completed/total → % + 5-band via clientRosterBand", async () => {
@@ -264,6 +268,98 @@ describe("ClientDetailRepository.getClientDetail", () => {
       "Check-ins",
       "Sleep",
     ]);
+  });
+
+  it("QA-18: a just-onboarded client with 1-2 past-due assignments gets null/null, never 0%/crisis", async () => {
+    (getDb as any).mockReturnValue(
+      makeDb({
+        byTable: {
+          profiles: [{ tz: "Europe/London" }],
+          // 2 past-due assignments, 0 completed — a raw ratio would be 0%
+          // (crisis), but the sample is below ADHERENCE_MIN_SAMPLE (3).
+          workout_assignments: [{ completed: 0, total: 2 }],
+        },
+      }),
+    );
+    const out = await new ClientDetailRepository().getClientDetail(
+      "trainer-1",
+      "client-1",
+      NOW,
+    );
+    expect(out.adherence.overall).toBeNull();
+    expect(out.adherence.band).toBeNull();
+    const workoutsCat = out.adherence.categories.find(
+      (c) => c.label === "Workouts completed",
+    )!;
+    expect(workoutsCat.available).toBe(false);
+    expect(workoutsCat.pct).toBeNull();
+  });
+
+  it("QA-18: an established client with >=3 past-due assignments and low completion still shows real crisis", async () => {
+    (getDb as any).mockReturnValue(
+      makeDb({
+        byTable: {
+          profiles: [{ tz: "Europe/London" }],
+          // 4 past-due assignments, 1 completed → 25%, genuinely crisis.
+          workout_assignments: [{ completed: 1, total: 4 }],
+        },
+      }),
+    );
+    const out = await new ClientDetailRepository().getClientDetail(
+      "trainer-1",
+      "client-1",
+      NOW,
+    );
+    expect(out.adherence.overall).toBe(25);
+    expect(out.adherence.band).toBe("crisis");
+  });
+
+  it("QA-18: the adherence WHERE clause is past-due only — due_date < windowEnd, not <=", async () => {
+    let capturedWhere: unknown;
+    const select = () => {
+      let fromTable: string | null = null;
+      const chain: any = {};
+      for (const k of [
+        "innerJoin",
+        "leftJoin",
+        "groupBy",
+        "orderBy",
+        "limit",
+        "offset",
+      ]) {
+        chain[k] = () => chain;
+      }
+      chain.from = (tbl: unknown) => {
+        fromTable = is(tbl, Table) ? getTableName(tbl as Table) : String(tbl);
+        return chain;
+      };
+      chain.where = (cond: unknown) => {
+        if (fromTable === "workout_assignments") capturedWhere = cond;
+        return chain;
+      };
+      chain.then = (res: any, rej: any) => {
+        const byTable: Record<string, unknown[]> = {
+          profiles: [{ tz: "Europe/London" }],
+          workout_assignments: [{ completed: 0, total: 0 }],
+        };
+        const rows = fromTable ? (byTable[fromTable] ?? []) : [];
+        return Promise.resolve(rows).then(res, rej);
+      };
+      return chain;
+    };
+    (getDb as any).mockReturnValue({ select, execute: async () => [] });
+
+    await new ClientDetailRepository().getClientDetail(
+      "trainer-1",
+      "client-1",
+      NOW,
+    );
+
+    const { sql } = new PgDialect().sqlToQuery(capturedWhere as never);
+    const low = sql.toLowerCase();
+    expect(low).toContain('"due_date" < ');
+    expect(low).not.toContain('"due_date" <=');
+    expect(low).toContain('"due_date" >= ');
   });
 
   it("calorie hit — TOTALS ONLY, ±10% boundary, calorie category lit from daysHit/daysLogged", async () => {

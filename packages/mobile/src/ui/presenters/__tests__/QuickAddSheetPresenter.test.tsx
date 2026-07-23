@@ -134,6 +134,20 @@ describe("QuickAddSheetPresenter — menu stage", () => {
     const { queryByTestId } = render({ savedRecipes: [] });
     expect(queryByTestId("quick-add-recipe-r1")).toBeNull();
   });
+
+  it('shows a plain "QUICK ADD" eyebrow with no day-context', () => {
+    const { getByText, queryByText } = render();
+    expect(getByText("QUICK ADD")).toBeTruthy();
+    expect(queryByText(/QUICK ADD ·/)).toBeNull();
+  });
+
+  it("appends the day-context to the eyebrow when logging onto a past day (BRIEF-7 QA-20)", () => {
+    const { getByText, queryByText } = render({
+      dayContext: "TUESDAY · JUL 21",
+    });
+    expect(getByText("QUICK ADD · TUESDAY · JUL 21")).toBeTruthy();
+    expect(queryByText("QUICK ADD")).toBeNull();
+  });
 });
 
 describe("QuickAddSheetPresenter — search stage", () => {

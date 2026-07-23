@@ -101,6 +101,7 @@ function fullDetail(over: Partial<ClientDetail> = {}): ClientDetail {
       status: "active",
       ageYears: 30,
       heightCm: 180,
+      preferredUnits: null,
     },
     adherence: { overall: 82, band: "wobbling", categories: [] },
     prs: [],
@@ -269,6 +270,49 @@ describe("ClientDetailContainer — populated", () => {
     expect(s.open).toBe(true);
     expect(s.clientId).toBe("client-1");
     expect(s.initial?.dailyKcal).toBe(2200);
+  });
+
+  it("onEditTargets defaults the water field's volume unit to litres for a metric/undefined client", async () => {
+    useEditNutritionTargetsSheet.setState({
+      open: false,
+      clientId: null,
+      initial: null,
+      onSaved: null,
+      volumeUnit: "cups", // pre-dirty the store so a stale value can't pass
+    });
+    const { adapters, api } = makeAdapters();
+    api.clientDetails["client-1"] = fullDetail(); // client.preferredUnits: null
+    renderWith(adapters);
+    await waitFor(() => expect(props().detail).not.toBeNull());
+    props().onEditTargets();
+    expect(useEditNutritionTargetsSheet.getState().volumeUnit).toBe("l");
+  });
+
+  it("onEditTargets passes cups for an imperial client", async () => {
+    useEditNutritionTargetsSheet.setState({
+      open: false,
+      clientId: null,
+      initial: null,
+      onSaved: null,
+      volumeUnit: "l",
+    });
+    const { adapters, api } = makeAdapters();
+    api.clientDetails["client-1"] = fullDetail({
+      client: {
+        id: "client-1",
+        name: "Jordan Blake",
+        initials: "JB",
+        avatarUrl: null,
+        status: "active",
+        ageYears: 30,
+        heightCm: 180,
+        preferredUnits: "imperial",
+      },
+    });
+    renderWith(adapters);
+    await waitFor(() => expect(props().detail).not.toBeNull());
+    props().onEditTargets();
+    expect(useEditNutritionTargetsSheet.getState().volumeUnit).toBe("cups");
   });
 
   it("onAssignGoal opens the goal sheet in create mode", async () => {

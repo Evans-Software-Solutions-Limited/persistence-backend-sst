@@ -1197,9 +1197,16 @@ export class SSTApiAdapter implements ApiPort {
   async getHabitCompletions(params?: {
     goalId?: string;
     window?: string;
+    includeDerived?: boolean;
   }): Promise<Result<HabitCompletion[], ApiError>> {
     return this.requestEnvelope<HabitCompletion[]>("/habit-completions", {
-      params,
+      params: {
+        goalId: params?.goalId,
+        window: params?.window,
+        // Omit entirely when false/undefined — the backend default (no
+        // derived rows) already matches, so no need to send `includeDerived=false`.
+        includeDerived: params?.includeDerived ? "true" : undefined,
+      },
     });
   }
 

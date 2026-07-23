@@ -48,6 +48,11 @@ const streakMock = vi.hoisted(() => ({
   getActiveStreaksForUser: vi.fn(async () => [
     { id: "s1", streakType: "workout_streak", currentCount: 4 },
   ]),
+  // BRIEF-7 QA-1..QA-4: derived Gym/Calories grid rows, merged into
+  // buildHabitsGrid's output on GET /users/me/home. Default: no derived rows
+  // (no enabled Gym/Calories habit) so existing habits-grid assertions are
+  // unaffected unless a test overrides this.
+  getDerivedHabitGridRows: vi.fn(async () => [] as any[]),
 }));
 // specs/20-sleep-quicklog STORY-002 AC 2.5 — Home "sleep" micro-pill.
 // Default: no record → the pill stays null (matches the pre-existing
@@ -94,6 +99,7 @@ vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
 
 const AUTH = { authorization: "Bearer t" };
 
+import { localDateISO } from "../../streaks/period";
 import { getTodayRingsHandler } from "../getTodayRingsHandler";
 import { getHomeHandler } from "../getHomeHandler";
 import { getRecentPRsHandler } from "../getRecentPRsHandler";
@@ -173,6 +179,45 @@ describe("Home/You endpoints", () => {
       workoutId: "w1",
       assignedByType: "personal_trainer",
     });
+  });
+
+  it("GET /users/me/home merges DERIVED Gym/Calories rows into the completions-based habits grid (BRIEF-7 QA-1..QA-4)", async () => {
+    // A manual habit (Water) still comes from habit_completions, unaffected.
+    const today = localDateISO(new Date(), "Europe/London");
+    habitMock.list.mockResolvedValueOnce([
+      { goalId: "water-goal", localCompletedDate: today } as any,
+    ]);
+    // Gym/Calories never write a completion row — StreakRepository derives
+    // their tile straight from workout_sessions / nutrition_entries.
+    streakMock.getDerivedHabitGridRows.mockResolvedValueOnce([
+      {
+        goalId: "gym-goal",
+        days: [false, false, false, false, false, false, true],
+      },
+      {
+        goalId: "cal-goal",
+        days: [false, false, false, false, false, false, false],
+      },
+    ] as any);
+
+    const res = await getHomeHandler.handle(
+      new Request("http://localhost/users/me/home", { headers: AUTH }),
+    );
+    const { data } = (await res.json()) as any;
+
+    expect(data.habits).toHaveLength(3);
+    expect(
+      data.habits.find((r: any) => r.goalId === "water-goal"),
+    ).toBeTruthy();
+    const gymRow = data.habits.find((r: any) => r.goalId === "gym-goal");
+    expect(gymRow.days[6]).toBe(true); // today, derived from a logged session
+    const calRow = data.habits.find((r: any) => r.goalId === "cal-goal");
+    expect(calRow.days.every((d: boolean) => d === false)).toBe(true); // enabled, no qualifying day yet — tile still renders
+    expect(streakMock.getDerivedHabitGridRows).toHaveBeenCalledWith(
+      "u1",
+      expect.any(Array),
+      "Europe/London",
+    );
   });
 
   it("GET /users/me/home returns micro.sleep as the formatted duration when a record exists (specs/20-sleep-quicklog STORY-002 AC 2.5)", async () => {

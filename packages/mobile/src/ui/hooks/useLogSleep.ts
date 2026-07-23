@@ -2,6 +2,7 @@ import { useCallback } from "react";
 import { getApiBaseUrl } from "@/adapters/api";
 import { processSyncQueue } from "@/application/commands/sync.command";
 import { logSleepCommand } from "@/application/commands/log-sleep.command";
+import { localIdFactory } from "@/application/commands/localId";
 import type { LogSleepInput } from "@/domain/ports/api.port";
 import type { Result, ValidationError } from "@/shared/errors";
 import { fail } from "@/shared/errors";
@@ -28,7 +29,10 @@ export function useLogSleep(): {
           fields: { durationMinutes: "Not signed in." },
         });
       }
-      const result = logSleepCommand({ storage, userId }, input);
+      const result = logSleepCommand(
+        { storage, userId, idFactory: localIdFactory },
+        input,
+      );
       if (!result.ok) return result;
       try {
         await processSyncQueue(storage, auth, getApiBaseUrl());

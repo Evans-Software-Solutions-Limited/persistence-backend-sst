@@ -1,14 +1,39 @@
 import { fireEvent, waitFor } from "@testing-library/react-native";
 import React from "react";
-import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
-import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
 import type { AuthSession } from "@/domain/ports/auth.port";
 import type { Workout } from "@/domain/models/workout";
 import { fail, ok } from "@/shared/errors";
 import type { Adapters } from "@/shared/types";
 import { useUserMode } from "@/state/user-mode";
+
+// QA-12 regression: assert `load()` drains the sync queue BEFORE the GET, so
+// a just-created workout's still-queued optimistic POST doesn't get
+// overtaken by a GET that returns the pre-create list. Mocking the module
+// (mirrors SyncFailedContainer.test.tsx) lets us both spy on the call and
+// record it into a shared order array against `api.getWorkouts`.
+const mockProcessSyncQueue = jest.fn(async (..._args: unknown[]) => ({
+  succeeded: 0,
+  failed: 0,
+  blocked: 0,
+}));
+jest.mock("@/application/commands/sync.command", () => ({
+  ...jest.requireActual("@/application/commands/sync.command"),
+  processSyncQueue: (...args: unknown[]) => mockProcessSyncQueue(...args),
+}));
+jest.mock("@/adapters/api", () => ({
+  ...jest.requireActual("@/adapters/api"),
+  getApiBaseUrl: () => "https://api.test",
+}));
+
+// eslint-disable-next-line import/first
+import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
+// eslint-disable-next-line import/first
+import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
+// eslint-disable-next-line import/first
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
+// eslint-disable-next-line import/first
 import { CoachWorkoutLibraryContainer } from "@/ui/containers/CoachWorkoutLibraryContainer";
+// eslint-disable-next-line import/first
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 
 const mockReplace = jest.fn();
@@ -199,6 +224,29 @@ describe("CoachWorkoutLibraryContainer", () => {
     expect(
       storage.getCachedCoachWorkoutLibrary("user-1")?.map((w) => w.id),
     ).toEqual(["w-fresh"]);
+  });
+
+  it("QA-12: drains the sync queue BEFORE the GET, so a just-created workout's queued POST lands first", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    const order: string[] = [];
+    mockProcessSyncQueue.mockImplementation(async () => {
+      order.push("queue");
+      return { succeeded: 1, failed: 0, blocked: 0 };
+    });
+    jest.spyOn(api, "getWorkouts").mockImplementation(async () => {
+      order.push("get");
+      return ok({ workouts: [], total: 0, quota: null });
+    });
+    renderWithTheme(
+      withAdapters(
+        makeAdapters(api, storage),
+        <CoachWorkoutLibraryContainer />,
+      ),
+    );
+    await waitFor(() => expect(api.getWorkouts).toHaveBeenCalled());
+    expect(mockProcessSyncQueue).toHaveBeenCalledTimes(1);
+    expect(order).toEqual(["queue", "get"]);
   });
 
   it("keeps the cached library when the refresh fails (offline)", async () => {

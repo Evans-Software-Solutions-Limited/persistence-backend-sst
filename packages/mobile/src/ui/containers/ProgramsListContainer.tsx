@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { useGetPrograms } from "@/ui/hooks/useGetPrograms";
 import {
   ProgramsListPresenter,
@@ -16,12 +16,25 @@ import {
  * subscription/feature gate is layered here — an entitlement lapse surfaces as
  * the presenter's error state. Header "+" and the dashed CTA both route to the
  * create editor; a row press opens the edit editor.
+ *
+ * QA-13: `api.createProgram` (ProgramEditorContainer's create branch) is a
+ * direct online call that doesn't write the `cached_programs` slot this
+ * screen reads, so without a refetch-on-focus, returning here from the
+ * editor after creating a programme showed the stale pre-create list —
+ * mirrors `CoachWorkoutLibraryContainer`'s focus-refresh pattern.
  */
 export function ProgramsListContainer() {
   const programsState = useGetPrograms();
 
   const [searchQuery, setSearchQuery] = useState("");
   const [segment, setSegment] = useState<ProgramSegment>("Active");
+
+  const refresh = programsState.refresh;
+  useFocusEffect(
+    useCallback(() => {
+      void refresh();
+    }, [refresh]),
+  );
 
   const programs = useMemo(
     () => programsState.data ?? [],

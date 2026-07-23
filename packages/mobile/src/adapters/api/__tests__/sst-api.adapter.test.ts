@@ -1400,6 +1400,7 @@ describe("SSTApiAdapter Programs (19-programs, Phase 9 mobile — coach F1)", ()
               status: "active",
               ageYears: 32,
               heightCm: 178,
+              preferredUnits: null,
             },
             adherence: { overall: 64, band: "atRisk", categories: [] },
             prs: [],
@@ -2303,5 +2304,44 @@ describe("SSTApiAdapter sleep quick-log (20-sleep-quicklog)", () => {
     const adapter = new SSTApiAdapter();
     const result = await adapter.getSleepToday("2026-07-16");
     expect(result.ok).toBe(false);
+  });
+});
+
+// BRIEF-7 QA-1..QA-4 (mobile half): `includeDerived` is opt-in — omitted
+// (not `includeDerived=false`) when the caller doesn't ask for it, so an
+// older/other caller's request URL is byte-identical to before this change.
+describe("SSTApiAdapter.getHabitCompletions includeDerived", () => {
+  function installOkFetch() {
+    return installFetchMock(async () => {
+      return new Response(JSON.stringify({ data: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+  }
+
+  it("omits includeDerived from the query string when not passed", async () => {
+    const fetchMock = installOkFetch();
+    const adapter = new SSTApiAdapter();
+    await adapter.getHabitCompletions({ window: "7d" });
+    const url = String(fetchMock.mock.calls[0][0]);
+    expect(url).toContain("window=7d");
+    expect(url).not.toContain("includeDerived");
+  });
+
+  it("omits includeDerived when explicitly false", async () => {
+    const fetchMock = installOkFetch();
+    const adapter = new SSTApiAdapter();
+    await adapter.getHabitCompletions({ window: "7d", includeDerived: false });
+    const url = String(fetchMock.mock.calls[0][0]);
+    expect(url).not.toContain("includeDerived");
+  });
+
+  it("sends includeDerived=true when requested", async () => {
+    const fetchMock = installOkFetch();
+    const adapter = new SSTApiAdapter();
+    await adapter.getHabitCompletions({ window: "7d", includeDerived: true });
+    const url = String(fetchMock.mock.calls[0][0]);
+    expect(url).toContain("includeDerived=true");
   });
 });

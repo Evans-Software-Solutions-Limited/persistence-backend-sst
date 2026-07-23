@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, lte, or, sql } from "drizzle-orm";
 import {
   achievements,
   bodyMeasurements,
@@ -120,9 +120,19 @@ export class HomeReadRepository {
    * section, due-date ascending (nulls last). Mirrors the assigned slice of
    * dashboardRepository.getRecentWorkouts so both surfaces order + attribute
    * identically.
+   *
+   * QA-11 (device-QA sweep BRIEF-7): scoped to TODAY + OVERDUE + null-due
+   * (do-anytime ad-hoc) rows via `today` — without this the programme-assign
+   * materialisation (which writes every future occurrence up front / on the
+   * indefinite-horizon top-up) meant this list showed every future occurrence
+   * too, not just what's actually due. The coach-side mirror
+   * (`ProgramAssignmentRepository.listOpenAssignmentsForClient`) stays
+   * unfiltered on purpose — the coach legitimately needs to see the whole
+   * plan.
    */
   async getTodaysTraining(
     userId: string,
+    today: string,
     limit = 10,
   ): Promise<TodaysTrainingItem[]> {
     const db = getDb();
@@ -144,6 +154,10 @@ export class HomeReadRepository {
           eq(workoutAssignments.clientId, userId),
           eq(workoutAssignments.status, "assigned"),
           eq(workoutAssignments.showInPlan, true),
+          or(
+            isNull(workoutAssignments.dueDate),
+            lte(workoutAssignments.dueDate, today),
+          ),
         ),
       )
       .orderBy(sql`${workoutAssignments.dueDate} asc nulls last`)

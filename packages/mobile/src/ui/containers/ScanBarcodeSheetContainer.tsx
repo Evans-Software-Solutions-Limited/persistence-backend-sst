@@ -4,7 +4,7 @@ import * as Haptics from "expo-haptics";
 import { useFuelSheets } from "@/state/fuel-sheets";
 import { useResolveBarcode } from "@/ui/hooks/useResolveBarcode";
 import { useLogEntry } from "@/ui/hooks/useLogEntry";
-import { localDayISO } from "@/shared/utils";
+import { dayLabel, loggedAtNoonUtc, localDayISO } from "@/shared/utils";
 import {
   portionToServings,
   scaleFoodMacros,
@@ -31,9 +31,15 @@ const DUPLICATE_MS = 2000;
 export function ScanBarcodeSheetContainer() {
   const sheet = useFuelSheets((s) => s.sheet);
   const slotFromStore = useFuelSheets((s) => s.slot);
+  // The day this scan flow logs into (QA-20) — kept in sync with the Fuel
+  // screen's viewed day by <FuelContainer>.
+  const activeDate = useFuelSheets((s) => s.date);
   const close = useFuelSheets((s) => s.close);
   const notifyMutated = useFuelSheets((s) => s.notifyMutated);
   const visible = sheet === "scan";
+  // Day-context line (QA-20) — only surfaced on a past day.
+  const dayContext =
+    activeDate === localDayISO() ? undefined : dayLabel(activeDate);
 
   // gorhom fires onClose on any close (incl. a controlled handoff). Only a
   // genuine dismiss of THIS sheet should clear the shared store — mirrors the
@@ -153,18 +159,20 @@ export function ScanBarcodeSheetContainer() {
       foodId: food.id,
       mealSlot: slot,
       servings: servingsScale,
-      // Noon-UTC of the local day keeps the optimistic entry in today's cache
-      // bucket for every timezone (the command slices this for the day-key).
-      loggedAt: `${localDayISO()}T12:00:00.000Z`,
+      // Noon-UTC of the ACTIVE day (QA-20 — not always today) keeps the
+      // optimistic entry in that day's cache bucket for every timezone (the
+      // command slices this for the day-key).
+      loggedAt: loggedAtNoonUtc(activeDate),
     });
     notifyMutated();
     close();
-  }, [food, slot, servingsScale, logEntry, notifyMutated, close]);
+  }, [food, slot, servingsScale, logEntry, notifyMutated, close, activeDate]);
 
   return (
     <ScanBarcodeSheetPresenter
       visible={visible}
       onClose={onSheetClose}
+      dayContext={dayContext}
       stage={stage}
       hasPermission={permission?.granted ?? false}
       onRequestPermission={() => void requestPermission()}

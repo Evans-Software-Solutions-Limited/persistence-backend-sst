@@ -1,4 +1,5 @@
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -30,6 +31,10 @@ const mockFetch = jest.fn(async () => ({
 (globalThis as Record<string, unknown>).fetch = mockFetch;
 
 const mockPush = jest.fn();
+// Capture the focus callback so a test can invoke it manually (wrapped in
+// act) to simulate returning to this tab, rather than firing it on every
+// render — mirrors ClientsContainer.test.tsx.
+const focusCallbacks: (() => void)[] = [];
 jest.mock("expo-router", () => ({
   __esModule: true,
   router: {
@@ -42,6 +47,10 @@ jest.mock("expo-router", () => ({
     replace: jest.fn(),
     back: jest.fn(),
   }),
+  useFocusEffect: (cb: () => void) => {
+    focusCallbacks.length = 0;
+    focusCallbacks.push(cb);
+  },
 }));
 jest.mock("@/adapters/api", () => ({
   ...jest.requireActual("@/adapters/api"),
@@ -170,6 +179,34 @@ describe("ProgramsListContainer", () => {
     );
     fireEvent.press(screen.getByTestId("program-row-p-42"));
     expect(mockPush).toHaveBeenCalledWith("/(app)/programs/p-42");
+  });
+
+  it("QA-13: refetches on refocus (a programme created in the editor becomes visible on return)", async () => {
+    const { adapters, api } = makeAdapters();
+    api.programs = [makeProgram({ id: "p-1" })];
+    render(
+      <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
+        <ProgramsListContainer />
+      </Wrapper>,
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("program-row-p-1")).toBeTruthy(),
+    );
+    const beforeRefocus = api.listProgramsCalls;
+
+    // Simulate: a programme was created in the editor (a direct online call
+    // that doesn't write `cached_programs`) and the coach navigated back —
+    // the Programmes tab regains focus and must re-fetch to pick it up.
+    api.programs = [...api.programs, makeProgram({ id: "p-new" })];
+    await act(async () => {
+      focusCallbacks[0]?.();
+    });
+    await waitFor(() =>
+      expect(api.listProgramsCalls).toBeGreaterThan(beforeRefocus),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("program-row-p-new")).toBeTruthy(),
+    );
   });
 
   it("renders the empty state when the trainer has no programmes", async () => {

@@ -87,6 +87,22 @@ describe("ClientRow", () => {
     expect(getByText("88% · Strong")).toBeTruthy();
   });
 
+  // QA-15 (device-QA batch, BRIEF-7): onboarding may not have set a name/
+  // initials yet — the row must fall back rather than render blank.
+  it("falls back to 'New client' + '?' initials when name/initials are empty", () => {
+    const { getByText, getByTestId } = renderWithTheme(
+      <ClientRow
+        client={{ ...byId("c-noah"), name: "", initials: "" }}
+        onPress={jest.fn()}
+        now={FIXED_NOW}
+        testID="row"
+      />,
+    );
+    expect(getByText("New client")).toBeTruthy();
+    expect(getByTestId("row").props.accessibilityLabel).toBe("New client");
+    expect(getByText("?")).toBeTruthy();
+  });
+
   it("fires onPress with the client id", () => {
     const onPress = jest.fn();
     const { getByTestId } = renderWithTheme(

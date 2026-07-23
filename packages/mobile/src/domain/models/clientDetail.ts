@@ -112,6 +112,10 @@ export type ClientDetailHeader = {
   status: "active" | "pending";
   ageYears: number | null;
   heightCm: number | null;
+  /** profiles.preferred_units — the CLIENT's own display-unit preference
+   *  (device-QA follow-up: coach edit-targets water field follows the
+   *  client's unit, defaulting to litres). Null when unset/unresolved. */
+  preferredUnits: "metric" | "imperial" | null;
 };
 
 export type ClientDetailThisWeek = {

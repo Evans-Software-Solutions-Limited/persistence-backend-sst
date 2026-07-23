@@ -2,6 +2,7 @@ import Elysia from "elysia";
 import { VolumeService } from "../repositories/volumeService";
 import { HomeReadService } from "../repositories/homeReadService";
 import { HabitService } from "../repositories/habitService";
+import { StreakReadService } from "../repositories/streakReadService";
 import { NutritionEntryService } from "../repositories/nutritionEntryService";
 import { NutritionTargetService } from "../repositories/nutritionTargetService";
 import { SleepService } from "../repositories/sleepService";
@@ -15,7 +16,11 @@ import { DEFAULT_GOAL_STEPS, DEFAULT_TARGET_KG } from "./loadRings";
 import { weekStartISO, DEFAULT_WORKOUTS_PER_WEEK } from "./window";
 import { addDaysISO, localDateISO } from "../streaks/period";
 import { fillWeekDays, computeDeltaPct } from "./volumeView";
-import { buildHabitsGrid } from "../habits/habitsView";
+import {
+  buildHabitsGrid,
+  habitsGridWindow,
+  mergeDerivedHabitRows,
+} from "../habits/habitsView";
 import { formatSleepDuration } from "./formatSleepDuration";
 
 const RECENT_PR_LIMIT = 5;
@@ -34,6 +39,7 @@ export const getHomeHandler = new Elysia()
   .use(VolumeService)
   .use(HomeReadService)
   .use(HabitService)
+  .use(StreakReadService)
   .use(NutritionEntryService)
   .use(NutritionTargetService)
   .use(SleepService)
@@ -60,6 +66,11 @@ export const getHomeHandler = new Elysia()
     const thisWeekEnd = addDaysISO(thisWeekStart, 6);
     const lastWeekStart = addDaysISO(thisWeekStart, -7);
     const lastWeekEnd = addDaysISO(thisWeekStart, -1);
+    // The habits grid's OWN rolling window ([today-6 … today]) — distinct from
+    // the Mon–Sun collection-streak week above. Shared with buildHabitsGrid
+    // via the same helper so the derived Gym/Calories rows can never drift
+    // from the completion-based rows' window (BRIEF-7 QA-1..QA-4).
+    const habitsWindow = habitsGridWindow(now, tz);
 
     // One fully-parallel fan-out. `thisKg` (the current Mon–Sun total) powers
     // BOTH the volume ring and the weekly-volume card, and `steps` feeds the
@@ -77,6 +88,7 @@ export const getHomeHandler = new Elysia()
       streak,
       recentPRs,
       completions,
+      derivedHabitRows,
       kcal,
       kcalTarget,
       activeProgramme,
@@ -96,12 +108,16 @@ export const getHomeHandler = new Elysia()
       ctx.HomeReadRepository.getActiveWorkoutStreakCount(userId),
       ctx.HomeReadRepository.getRecentPRs(userId, RECENT_PR_LIMIT),
       ctx.HabitRepository.list(userId, { windowDays: 7 }),
+      // BRIEF-7 QA-1..QA-4: Gym (count) + Calories (within_tolerance) never
+      // write a habit_completions row, so their grid tile is DERIVED straight
+      // from workout_sessions / nutrition_entries, merged below.
+      ctx.StreakRepository.getDerivedHabitGridRows(userId, habitsWindow, tz),
       ctx.NutritionEntryRepository.sumKcalForDay(userId, today),
       ctx.NutritionTargetRepository.get(userId).then(
         (t) => t?.dailyKcal ?? null,
       ),
       ctx.HomeReadRepository.getActiveProgramme(userId, today),
-      ctx.HomeReadRepository.getTodaysTraining(userId),
+      ctx.HomeReadRepository.getTodaysTraining(userId, today),
       // specs/20-sleep-quicklog STORY-002 AC 2.5 — the same `today` basis the
       // rest of this handler already computes (user's local wake-day).
       ctx.SleepRepository.getForDate(userId, today),
@@ -136,7 +152,10 @@ export const getHomeHandler = new Elysia()
           workouts: { completed, target: DEFAULT_WORKOUTS_PER_WEEK },
         },
         recentPRs,
-        habits: buildHabitsGrid(completions, now, tz),
+        habits: mergeDerivedHabitRows(
+          buildHabitsGrid(completions, now, tz),
+          derivedHabitRows,
+        ),
         todayWorkout: [],
         // specs/19-programs STORY-005 — the athlete Home "Your programme"
         // card + "Today's training" section. Additive; null/[] when the

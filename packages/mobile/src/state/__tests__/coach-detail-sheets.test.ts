@@ -95,6 +95,19 @@ describe("useEditNutritionTargetsSheet store", () => {
     expect(useEditNutritionTargetsSheet.getState().initial).toBeNull();
     useEditNutritionTargetsSheet.getState().closeSheet();
   });
+
+  it("volumeUnit defaults to litres, follows an explicit unit, and resets to litres on close", () => {
+    useEditNutritionTargetsSheet.getState().openSheet("c-3", null);
+    expect(useEditNutritionTargetsSheet.getState().volumeUnit).toBe("l");
+    useEditNutritionTargetsSheet.getState().closeSheet();
+
+    useEditNutritionTargetsSheet
+      .getState()
+      .openSheet("c-3", null, undefined, "cups");
+    expect(useEditNutritionTargetsSheet.getState().volumeUnit).toBe("cups");
+    useEditNutritionTargetsSheet.getState().closeSheet();
+    expect(useEditNutritionTargetsSheet.getState().volumeUnit).toBe("l");
+  });
 });
 
 describe("useAssignGoalSheet store", () => {

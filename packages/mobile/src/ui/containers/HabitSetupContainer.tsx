@@ -3,6 +3,7 @@ import { useRouter } from "expo-router";
 
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useAuth } from "@/ui/hooks/useAuth";
+import { useDashboard } from "@/ui/hooks/useDashboard";
 import { useGetHabitConfig } from "@/ui/hooks/useGetHabitConfig";
 import { useGetClientHabitConfig } from "@/ui/hooks/useGetClientHabitConfig";
 import {
@@ -20,6 +21,7 @@ import {
 } from "@/domain/models/habit-config";
 import type { HabitCompletion } from "@/domain/models/habit-completion";
 import { deriveCollectionStreak } from "@/domain/services";
+import { preferredVolumeUnit } from "@/shared/utils";
 
 /**
  * <HabitSetupContainer> — wires the habit-setup screen (18-habit-setup, Phase
@@ -56,6 +58,18 @@ export function HabitSetupContainer({
   const userId = session?.userId ?? null;
   const isCoachView = !!clientId;
 
+  // Device-QA #5/#7 — the water target's display unit follows the SELF
+  // viewer's `preferredUnits` (default litres). Coach mode has no read of the
+  // CLIENT's preference anywhere in the client-detail contract today (adding
+  // one is backend plumbing, out of scope for this light-touch fix — flagged
+  // in the PR), so coach view always renders litres, matching the pre-fix
+  // behaviour exactly; `preferredVolumeUnit(undefined)` already defaults
+  // there for free.
+  const dashboard = useDashboard();
+  const volumeUnit = preferredVolumeUnit(
+    isCoachView ? undefined : dashboard.payload?.profile.preferredUnits,
+  );
+
   const selfConfig = useGetHabitConfig();
   const clientConfig = useGetClientHabitConfig(clientId);
   const configsList: HabitConfig[] = isCoachView
@@ -80,6 +94,21 @@ export function HabitSetupContainer({
 
   const [skipped, setSkipped] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  // Transient "Saved" confirmation (QA-6: Save had no success feedback,
+  // making a persisted-but-invisible write read as "tapping Save does
+  // nothing"). Mirrors the "Copied" transient-local-state pattern used by
+  // AddClientSheetContainer — no toast/snackbar primitive exists in the app.
+  const [justSaved, setJustSaved] = useState(false);
+  const justSavedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  useEffect(() => {
+    return () => {
+      if (justSavedTimeoutRef.current)
+        clearTimeout(justSavedTimeoutRef.current);
+    };
+  }, []);
 
   // Baseline = the user's last SAVED INTENT, keyed by category. We start from
   // the loaded live config, but apply any queued pending edit OVER it so the
@@ -295,6 +324,12 @@ export function HabitSetupContainer({
       // in state), so mark the draft null to force a re-seed on the next render.
       setDraft(null);
       seededSignature.current = null;
+      // Success feedback (QA-6) — only reached once the writes + reconcile
+      // above succeeded (a rejection skips straight to `finally`).
+      if (justSavedTimeoutRef.current)
+        clearTimeout(justSavedTimeoutRef.current);
+      setJustSaved(true);
+      justSavedTimeoutRef.current = setTimeout(() => setJustSaved(false), 2000);
     } finally {
       setSaving(false);
     }
@@ -341,8 +376,10 @@ export function HabitSetupContainer({
       atRisk={atRisk}
       skipped={skipped}
       isCoach={isCoachView}
+      volumeUnit={volumeUnit}
       canSave={canSave}
       saving={saving}
+      justSaved={justSaved}
       deferredChangesPending={hasDeferredChanges}
       title={
         isCoachView

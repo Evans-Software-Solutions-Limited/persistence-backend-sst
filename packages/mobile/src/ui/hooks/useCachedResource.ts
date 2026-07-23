@@ -194,22 +194,38 @@ export function useCachedResource<T>(
     setError(null);
 
     void (async () => {
-      let lastError: ApiError | null = null;
-      for (let attempt = 0; attempt < delays.length; attempt++) {
-        if (cancelled || latestUserRef.current !== userId) break;
-        if (delays[attempt] > 0) {
-          await sleep(delays[attempt]);
+      try {
+        let lastError: ApiError | null = null;
+        for (let attempt = 0; attempt < delays.length; attempt++) {
           if (cancelled || latestUserRef.current !== userId) break;
+          if (delays[attempt] > 0) {
+            await sleep(delays[attempt]);
+            if (cancelled || latestUserRef.current !== userId) break;
+          }
+          // Even if `attemptFetch` THROWS (fetcher rejects, or
+          // processSyncQueue rethrows past its own try/catch), the
+          // `finally` below still releases `inFlightRef` — otherwise a
+          // thrown rejection here would leave `inFlightRef.current` stuck
+          // `true` forever, and `refresh()`'s `if (inFlightRef.current)
+          // return` would silently no-op on every future call until an
+          // app restart (QA-14a).
+          lastError = await attemptFetch();
+          if (!lastError) break; // success — attemptFetch already wrote `data`
+          if (!isRetryableColdStartError(lastError)) break; // 4xx: don't retry
         }
-        lastError = await attemptFetch();
-        if (!lastError) break; // success — attemptFetch already wrote `data`
-        if (!isRetryableColdStartError(lastError)) break; // 4xx: don't retry
+        if (!cancelled && lastError && latestUserRef.current === userId) {
+          setError(lastError);
+        }
+      } catch (err) {
+        // `attemptFetch` isn't supposed to throw (it returns the ApiError
+        // on failure), but a misbehaving `fetcher` rejecting instead of
+        // resolving a `Result` must not escape as an unhandled rejection
+        // off this void-called IIFE — log and fall through to `finally`.
+        console.error("[useCachedResource] mount auto-refresh failed:", err);
+      } finally {
+        if (!cancelled) setIsRefreshing(false);
+        inFlightRef.current = false;
       }
-      if (!cancelled && lastError && latestUserRef.current === userId) {
-        setError(lastError);
-      }
-      if (!cancelled) setIsRefreshing(false);
-      inFlightRef.current = false;
     })();
 
     return () => {
