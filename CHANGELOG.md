@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.5](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.7.4...persistence-v1.7.5) (2026-07-23)
+
+
+### Bug Fixes
+
+* client-detail habits/goal + Training tab targets ([#307](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/307)) ([2308056](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/2308056be38ed6924a6cb07bde57fafe5cc2f9f6))
+
 ## [1.7.4](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.7.3...persistence-v1.7.4) (2026-07-23)
 
 
