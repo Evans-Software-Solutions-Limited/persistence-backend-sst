@@ -188,7 +188,9 @@ export class ProgramRepository {
           eq(programAssignments.clientId, athleteId),
         ),
       )
-      .orderBy(desc(programAssignments.createdAt))
+      // `id` as a secondary key makes the pick deterministic when two
+      // assignments (a re-assign) share an identical `createdAt`.
+      .orderBy(desc(programAssignments.createdAt), desc(programAssignments.id))
       .limit(1);
     const assignment = assignmentRows[0];
     if (!assignment) return null;

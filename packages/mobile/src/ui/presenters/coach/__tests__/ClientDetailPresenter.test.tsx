@@ -442,8 +442,8 @@ describe("ClientDetailPresenter — TargetsCard", () => {
         },
       }),
     });
-    expect(getByTestId("client-detail-target-habit-water")).toBeTruthy();
-    expect(getByTestId("client-detail-target-habit-steps")).toBeTruthy();
+    expect(getByTestId("client-detail-target-habit-h-water")).toBeTruthy();
+    expect(getByTestId("client-detail-target-habit-h-steps")).toBeTruthy();
     // A not-yet-met habit shows its progress %.
     expect(getByText("60%")).toBeTruthy();
   });

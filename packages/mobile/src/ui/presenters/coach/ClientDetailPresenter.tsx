@@ -1077,7 +1077,7 @@ function TargetsCard({
             paddingVertical={10}
             borderTopWidth={1}
             borderColor="$border"
-            testID={`client-detail-target-habit-${slug(h.label)}`}
+            testID={`client-detail-target-habit-${h.goalId}`}
           >
             <Text
               fontFamily="$display"
