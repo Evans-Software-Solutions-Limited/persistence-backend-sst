@@ -27,7 +27,6 @@ export { useGetBodyMeasurements } from "./useGetBodyMeasurements";
 export { useGetAchievements } from "./useGetAchievements";
 export { useGetStreaks } from "./useGetStreaks";
 export { useGetHabits, buildHabitGrid, type HabitsState } from "./useGetHabits";
-export { useToggleHabitDay } from "./useToggleHabitDay";
 export { useLogMeasurement } from "./useLogMeasurement";
 export { useUseFreezeToken } from "./useUseFreezeToken";
 
