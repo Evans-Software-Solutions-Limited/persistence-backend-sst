@@ -19,6 +19,7 @@ import {
   type HabitCategory,
   type HabitConfig,
 } from "@/domain/models/habit-config";
+import { LITRES_PER_CUP, litresToCups, type VolumeUnit } from "@/shared/utils";
 import { Row, Stepper, Switch, WeekFreq } from "./HabitControls";
 
 /**
@@ -43,6 +44,16 @@ import { Row, Stepper, Switch, WeekFreq } from "./HabitControls";
  * able to change the habit they just assigned (the write-side already allows
  * this — only a DIFFERENT coach's habit 403s) — only the athlete's self-view
  * should render it locked. Hence `locked = config.locked && !isCoach`.
+ *
+ * WATER is the only habit category with a unit ambiguity (device-QA #5/#7,
+ * 2026-07-22): `targetValue` is always CANONICAL LITRES (`habit_configs`,
+ * unit "l" — unchanged, no schema/migration). `volumeUnit` controls DISPLAY
+ * only — "l" (default) renders/steps in litres exactly as before; "cups"
+ * (imperial) renders the target as cups and steps by a full cup (0.25 L) per
+ * tap instead of the raw 0.1 L grain, so the displayed cup count moves by a
+ * whole cup each press. Every write still converts back to litres before
+ * calling `onTargetChange` — the wire/storage contract never changes. Other
+ * categories ignore `volumeUnit` entirely.
  */
 
 const ICON_FOR: Record<
@@ -72,6 +83,11 @@ export type HabitCardProps = {
    *  coach-locked habit (`config.locked`) is never locked out for them, only
    *  for the athlete's own self-view. */
   isCoach?: boolean;
+  /** Display unit for the WATER category's target only (device-QA #5/#7) —
+   *  "l" (default) is unchanged; "cups" shows/steps the target in cups while
+   *  `onTargetChange` still receives litres. Ignored by every other
+   *  category. */
+  volumeUnit?: VolumeUnit;
   testID?: string;
 };
 
@@ -88,6 +104,7 @@ export function HabitCardPresenter({
   onLeniencyChange,
   onAdjustNutrition,
   isCoach = false,
+  volumeUnit = "l",
   testID,
 }: HabitCardProps) {
   const meta = HABIT_CATEGORY_META[config.category];
@@ -121,14 +138,35 @@ export function HabitCardPresenter({
     return pendingTol !== undefined;
   };
 
+  // Water + imperial: step by a full cup (0.25 L) instead of the raw 0.1 L
+  // grain, so the cups DISPLAY moves by exactly 1 whole cup per tap. Every
+  // other category/unit combination keeps the metadata-defined step
+  // unchanged. `displayTarget` (and what's sent to `onTargetChange`) stays
+  // canonical litres either way — only the step SIZE changes.
+  const isWaterCups = config.category === "water" && volumeUnit === "cups";
+  const targetStep = isWaterCups ? LITRES_PER_CUP : meta.target.step;
+
   const stepTarget = (dir: number) =>
     onTargetChange(
       clampStep(
-        displayTarget + dir * meta.target.step,
+        displayTarget + dir * targetStep,
         meta.target.min,
         meta.target.max,
       ),
     );
+
+  // Stepper display: water+cups renders/steps the litres value as a whole
+  // cup count (`litresToCups` rounds — exact for any target that's a
+  // multiple of 0.25 L, which the cup-aligned step above guarantees going
+  // forward). Every other case renders the canonical litres value via the
+  // existing `formatTarget`.
+  const targetDisplayValue = isWaterCups
+    ? litresToCups(displayTarget)
+    : displayTarget;
+  const targetFormat = isWaterCups
+    ? (v: number) => String(v)
+    : (v: number) => formatTarget(config.category, v);
+  const targetUnit = isWaterCups ? "cups" : meta.unit;
 
   return (
     <Card
@@ -248,9 +286,9 @@ export function HabitCardPresenter({
             <Row label={meta.target.label} first>
               <View alignItems="flex-end" gap={2}>
                 <Stepper
-                  value={displayTarget}
-                  unit={meta.unit}
-                  format={(v) => formatTarget(config.category, v)}
+                  value={targetDisplayValue}
+                  unit={targetUnit}
+                  format={targetFormat}
                   tone={tone}
                   onDec={() => stepTarget(-1)}
                   onInc={() => stepTarget(1)}

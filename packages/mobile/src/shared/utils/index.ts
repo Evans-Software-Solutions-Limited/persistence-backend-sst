@@ -14,10 +14,13 @@ export {
 } from "./date";
 export { newIdempotencyKey } from "./idempotency";
 export {
+  type VolumeUnit,
   ML_PER_CUP,
   LITRES_PER_CUP,
   cupsToLitres,
   litresToCups,
+  formatLitres,
+  preferredVolumeUnit,
 } from "./water";
 export {
   type WeightUnit,

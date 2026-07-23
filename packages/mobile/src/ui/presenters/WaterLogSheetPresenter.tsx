@@ -1,5 +1,6 @@
 import { Text, View } from "@tamagui/core";
 import { BottomSheet, Btn } from "@/ui/components/foundation";
+import type { VolumeUnit } from "@/shared/utils";
 import { WaterTrackerPresenter } from "./WaterTrackerPresenter";
 
 /**
@@ -17,6 +18,9 @@ export type WaterLogSheetProps = {
   cups: number;
   goal: number;
   onSetCups: (cups: number) => void;
+  /** Preferred display unit (device-QA #5/#7) — "l" (default) shows litres,
+   *  "cups" shows the stored count directly. Display only. */
+  volumeUnit?: VolumeUnit;
   testID?: string;
 };
 
@@ -26,6 +30,7 @@ export function WaterLogSheetPresenter({
   cups,
   goal,
   onSetCups,
+  volumeUnit = "l",
   testID = "water-log-sheet",
 }: WaterLogSheetProps) {
   return (
@@ -40,13 +45,15 @@ export function WaterLogSheetPresenter({
     >
       <View gap={16}>
         <Text fontFamily="$body" fontSize={13} color="$text3">
-          Tap a cup or use +/- (0.25 L each) to set how much water you&apos;ve
-          had today.
+          {volumeUnit === "cups"
+            ? "Tap a cup or use +/- (1 cup each) to set how much water you've had today."
+            : "Tap a cup or use +/- (0.25 L each) to set how much water you've had today."}
         </Text>
         <WaterTrackerPresenter
           cups={cups}
           goal={goal}
           onSetCups={onSetCups}
+          volumeUnit={volumeUnit}
           testID="water-log-tracker"
         />
         <Btn

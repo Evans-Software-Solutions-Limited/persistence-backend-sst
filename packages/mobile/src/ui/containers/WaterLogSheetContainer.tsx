@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as Haptics from "expo-haptics";
+import { useDashboard } from "@/ui/hooks/useDashboard";
 import { useGetWaterToday } from "@/ui/hooks/useGetWaterToday";
 import { useSetWater } from "@/ui/hooks/useSetWater";
-import { localDayISO } from "@/shared/utils";
+import { localDayISO, preferredVolumeUnit } from "@/shared/utils";
 import { WaterLogSheetPresenter } from "@/ui/presenters/WaterLogSheetPresenter";
 
 /**
@@ -22,6 +23,13 @@ export function WaterLogSheetContainer({
   const date = localDayISO();
   const water = useGetWaterToday(date);
   const setWater = useSetWater();
+  // Device-QA #5/#7 — reuses the already-cached dashboard payload (Home's own
+  // data source) for the display-unit preference rather than adding a new
+  // field.
+  const dashboard = useDashboard();
+  const volumeUnit = preferredVolumeUnit(
+    dashboard.payload?.profile.preferredUnits,
+  );
 
   const serverCups = water.data?.cups ?? 0;
   const goal = water.data?.goal ?? 8;
@@ -61,6 +69,7 @@ export function WaterLogSheetContainer({
       cups={cups}
       goal={goal}
       onSetCups={onSetCups}
+      volumeUnit={volumeUnit}
     />
   );
 }

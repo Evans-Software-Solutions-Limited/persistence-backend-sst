@@ -57,9 +57,12 @@ import {
 } from "@/domain/services/nutrition.service";
 import type { ProfileGender } from "@/domain/models/profilePage";
 import {
+  cupsToLitres,
   formatHeight,
+  formatLitres,
   weightInUnit,
   type HeightUnit,
+  type VolumeUnit,
   type WeightUnit,
 } from "@/shared/utils";
 
@@ -112,9 +115,15 @@ export type FuelTargetsPresenterProps = {
   onCarbsPctChange: (pct: number) => void;
   onFatPctChange: (pct: number) => void;
 
-  /** Daily water goal in cups (STORY-004 AC 4.2). */
+  /** Daily water goal in cups (STORY-004 AC 4.2) — the stored/wire grain,
+   *  unchanged. */
   waterCups: number;
   onWaterCupsChange: (cups: number) => void;
+  /** Preferred display unit for the water goal (device-QA #5/#7) — "l"
+   *  (default) shows litres, "cups" shows the stored count directly
+   *  (imperial). Display only; the +/- stepper still steps by 1 cup and
+   *  `onWaterCupsChange` still receives cups. */
+  volumeUnit?: VolumeUnit;
 
   testID?: string;
 };
@@ -153,6 +162,7 @@ export function FuelTargetsPresenter({
   onFatPctChange,
   waterCups,
   onWaterCupsChange,
+  volumeUnit = "l",
   testID = "fuel-targets-screen",
 }: FuelTargetsPresenterProps) {
   const insets = useSafeAreaInsets();
@@ -310,7 +320,11 @@ export function FuelTargetsPresenter({
           onFatPctChange={onFatPctChange}
         />
 
-        <WaterGoalSection cups={waterCups} onChange={onWaterCupsChange} />
+        <WaterGoalSection
+          cups={waterCups}
+          onChange={onWaterCupsChange}
+          volumeUnit={volumeUnit}
+        />
       </ScrollView>
     </View>
   );
@@ -1039,6 +1053,12 @@ function MacroSliderRow({
 // has no water field at all), but required by the spec/smoke-test and by
 // `SetTargetsInput.waterCups` (a mandatory field on save). A minimal cups
 // stepper consistent with the app's existing droplet iconography.
+//
+// Device-QA #5/#7 (2026-07-22): DISPLAYS in the user's preferred volume unit
+// (default litres; imperial shows cups, matching the pre-fix behaviour). The
+// +/- stepper always steps by exactly 1 CUP and `onChange` always receives
+// cups — `waterCups`/`SetTargetsInput.waterCups` never changes shape; only
+// the rendered label converts.
 
 const MIN_WATER_CUPS = 1;
 const MAX_WATER_CUPS = 20;
@@ -1046,13 +1066,22 @@ const MAX_WATER_CUPS = 20;
 function WaterGoalSection({
   cups,
   onChange,
+  volumeUnit = "l",
 }: {
   cups: number;
   onChange: (cups: number) => void;
+  volumeUnit?: VolumeUnit;
 }) {
+  const isCups = volumeUnit === "cups";
+  const displayText = isCups
+    ? `${cups} cups`
+    : `${formatLitres(cupsToLitres(cups))} L`;
   return (
     <View>
-      <SectionHead title="Water goal" sub="Cups per day" />
+      <SectionHead
+        title="Water goal"
+        sub={isCups ? "Cups per day" : "Litres per day"}
+      />
       <Card pad={14} radius={12}>
         <View
           flexDirection="row"
@@ -1068,7 +1097,7 @@ function WaterGoalSection({
               color="$text"
               testID="fuel-targets-water-cups"
             >
-              {cups} cups
+              {displayText}
             </Text>
           </View>
           <View flexDirection="row" alignItems="center" gap={10}>

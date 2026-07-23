@@ -9,6 +9,7 @@ import {
   type HabitCategory,
   type HabitConfig,
 } from "@/domain/models/habit-config";
+import type { VolumeUnit } from "@/shared/utils";
 import { HabitCardPresenter } from "./HabitCardPresenter";
 import { StreakSectionPresenter } from "./StreakSectionPresenter";
 
@@ -37,6 +38,11 @@ export type HabitSetupPresenterProps = {
   skipped: boolean;
   /** Coach view → the Save button reads the trainer accent. */
   isCoach?: boolean;
+  /** Display unit for the WATER category's target (device-QA #5/#7) — "l"
+   *  (default) is unchanged; "cups" (imperial) displays/steps it in cups.
+   *  Forwarded to every `<HabitCardPresenter>`; every other category
+   *  ignores it. */
+  volumeUnit?: VolumeUnit;
   /** Draft diverges from the last-saved baseline and no save is in flight. */
   canSave: boolean;
   /** A save is committing → Save shows "Saving…" and is disabled. */
@@ -78,6 +84,7 @@ export function HabitSetupPresenter({
   atRisk,
   skipped,
   isCoach = false,
+  volumeUnit = "l",
   canSave,
   saving,
   justSaved = false,
@@ -192,6 +199,7 @@ export function HabitSetupPresenter({
             onLeniencyChange={(next) => onLeniencyChange(category, next)}
             onAdjustNutrition={onAdjustNutrition}
             isCoach={isCoach}
+            volumeUnit={volumeUnit}
             testID={`${testID}-card-${category}`}
           />
         ))}

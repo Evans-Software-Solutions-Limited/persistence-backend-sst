@@ -12,7 +12,7 @@ import {
   IconTarget,
   IconX,
 } from "@/ui/components/icons";
-import { localDayISO } from "@/shared/utils";
+import { localDayISO, type VolumeUnit } from "@/shared/utils";
 import type { ApiError } from "@/shared/errors";
 import type { MealSlot } from "@/domain/models/nutrition";
 import { MacroHeroPresenter, type MacroLineVM } from "./MacroHeroPresenter";
@@ -82,6 +82,9 @@ export type FuelPresenterProps = {
   // Water
   waterCups: number;
   waterGoal: number;
+  /** Preferred display unit for the water tracker (device-QA #5/#7) — "l"
+   *  (default) shows litres, "cups" shows the stored count directly. */
+  volumeUnit?: VolumeUnit;
 
   // Handlers
   onOpenTargets: () => void;
@@ -364,6 +367,7 @@ export function FuelPresenter(props: FuelPresenterProps) {
     slots,
     waterCups,
     waterGoal,
+    volumeUnit = "l",
     onOpenTargets,
     onOpenCalendar,
     onScan,
@@ -527,6 +531,7 @@ export function FuelPresenter(props: FuelPresenterProps) {
             cups={waterCups}
             goal={waterGoal}
             onSetCups={onSetWater}
+            volumeUnit={volumeUnit}
           />
         </View>
       </ScrollView>

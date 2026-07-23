@@ -4,6 +4,7 @@ import { useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { useScrollToTopOnTabPress } from "@/ui/hooks/useScrollToTopOnTabPress";
 import { useAdapters } from "@/ui/hooks/useAdapters";
+import { useDashboard } from "@/ui/hooks/useDashboard";
 import { useGetFuelToday } from "@/ui/hooks/useGetFuelToday";
 import { useGetRecipes } from "@/ui/hooks/useGetRecipes";
 import { useGetMeals } from "@/ui/hooks/useGetMeals";
@@ -16,6 +17,7 @@ import {
   addDaysISO,
   dayLabel,
   localDayISO,
+  preferredVolumeUnit,
   previousDayISO,
 } from "@/shared/utils";
 import { toneHex } from "@/ui/components/foundation/tones";
@@ -68,6 +70,15 @@ export function FuelContainer() {
   const [calendarOpen, setCalendarOpen] = useState(false);
 
   const fuel = useGetFuelToday(date);
+  // Device-QA #5/#7 — the water tracker's display unit follows the user's
+  // `preferredUnits` (metric/imperial), defaulting to litres. Reuses the
+  // already-cached dashboard payload (Home's data source) rather than adding
+  // a new field/endpoint — cache-first, so this is at worst a background
+  // refresh already covered by Home's own read of the same cache.
+  const dashboard = useDashboard();
+  const volumeUnit = preferredVolumeUnit(
+    dashboard.payload?.profile.preferredUnits,
+  );
   const recipes = useGetRecipes();
   const meals = useGetMeals();
   const setWater = useSetWater();
@@ -286,6 +297,7 @@ export function FuelContainer() {
       slots={slots}
       waterCups={consumed.waterCups}
       waterGoal={target?.waterCups ?? 8}
+      volumeUnit={volumeUnit}
       onOpenTargets={() => router.push("/(app)/fuel/targets")}
       onOpenCalendar={onOpenCalendar}
       onScan={() => openScan("breakfast")}

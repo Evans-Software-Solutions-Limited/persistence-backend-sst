@@ -246,4 +246,39 @@ describe("HabitCardPresenter", () => {
     fireEvent.press(getByTestId("card-nutrition-link"));
     expect(props.onAdjustNutrition).toHaveBeenCalled();
   });
+
+  // ── device-QA #5/#7 — water target follows the preferred volume unit ────
+
+  it("water defaults to litres when volumeUnit is omitted (unchanged behaviour)", () => {
+    const { getByTestId } = render(enabledWater());
+    expect(getByTestId("card-target-value").props.children).toBe("2.0");
+  });
+
+  it("water + volumeUnit=cups displays the target in cups (2.0 L → 8 cups)", () => {
+    const { getByTestId } = render(enabledWater(), { volumeUnit: "cups" });
+    expect(getByTestId("card-target-value").props.children).toBe("8");
+  });
+
+  it("water + volumeUnit=cups: +/- steps a full cup (0.25 L) and still writes canonical litres", () => {
+    const { getByTestId, props } = render(enabledWater(), {
+      volumeUnit: "cups",
+    });
+    fireEvent.press(getByTestId("card-target-inc"));
+    // 2.0 L + 0.25 L = 2.25 L (canonical), not the raw 0.1 L grain.
+    expect(props.onTargetChange).toHaveBeenCalledWith(2.25);
+    fireEvent.press(getByTestId("card-target-dec"));
+    expect(props.onTargetChange).toHaveBeenCalledWith(1.75);
+  });
+
+  it("volumeUnit=cups only affects the water category — gym stays unchanged", () => {
+    const gym: HabitConfig = {
+      ...defaultHabitConfig("gym"),
+      enabled: true,
+      goalId: "g-gym",
+    };
+    const { getByTestId, props } = render(gym, { volumeUnit: "cups" });
+    expect(getByTestId("card-target-value").props.children).toBe("3");
+    fireEvent.press(getByTestId("card-target-inc"));
+    expect(props.onTargetChange).toHaveBeenCalledWith(4);
+  });
 });

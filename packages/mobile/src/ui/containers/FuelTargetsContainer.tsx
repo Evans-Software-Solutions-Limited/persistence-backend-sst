@@ -27,11 +27,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "expo-router";
 
 import { useProfilePage } from "@/ui/hooks/useProfilePage";
+import { useDashboard } from "@/ui/hooks/useDashboard";
 import { useGetNutritionTarget } from "@/ui/hooks/useGetNutritionTarget";
 import { useGetBodyMeasurements } from "@/ui/hooks/useGetBodyMeasurements";
 import { useSetTargets } from "@/ui/hooks/useSetTargets";
 import { useFuelSheets } from "@/state/fuel-sheets";
-import { computeAge, localDayISO } from "@/shared/utils";
+import { computeAge, localDayISO, preferredVolumeUnit } from "@/shared/utils";
 import {
   computeFuelTargetsPreview,
   computeManualFuelTargetsPreview,
@@ -53,6 +54,15 @@ const DEFAULT_MACRO_MODE: MacroPresetMode = "recommended";
 export function FuelTargetsContainer() {
   const router = useRouter();
   const profilePage = useProfilePage();
+  // Device-QA #5/#7 — the water goal's display unit follows the user's
+  // `preferredUnits`, defaulting to litres. `ProfilePageProfile` has no
+  // `preferredUnits` field (it carries the independent weightUnit/heightUnit
+  // instead), so this reuses the dashboard payload (already cached for Home)
+  // rather than adding a new field to the profile-page contract.
+  const dashboard = useDashboard();
+  const volumeUnit = preferredVolumeUnit(
+    dashboard.payload?.profile.preferredUnits,
+  );
   const target = useGetNutritionTarget();
   const body = useGetBodyMeasurements(30);
   const { mutate: setTargets } = useSetTargets();
@@ -284,6 +294,7 @@ export function FuelTargetsContainer() {
       onFatPctChange={onFatPctChange}
       waterCups={waterCups}
       onWaterCupsChange={onWaterCupsChange}
+      volumeUnit={volumeUnit}
     />
   );
 }

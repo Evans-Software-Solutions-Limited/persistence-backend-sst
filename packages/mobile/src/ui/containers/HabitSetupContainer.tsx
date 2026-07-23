@@ -3,6 +3,7 @@ import { useRouter } from "expo-router";
 
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useAuth } from "@/ui/hooks/useAuth";
+import { useDashboard } from "@/ui/hooks/useDashboard";
 import { useGetHabitConfig } from "@/ui/hooks/useGetHabitConfig";
 import { useGetClientHabitConfig } from "@/ui/hooks/useGetClientHabitConfig";
 import {
@@ -20,6 +21,7 @@ import {
 } from "@/domain/models/habit-config";
 import type { HabitCompletion } from "@/domain/models/habit-completion";
 import { deriveCollectionStreak } from "@/domain/services";
+import { preferredVolumeUnit } from "@/shared/utils";
 
 /**
  * <HabitSetupContainer> — wires the habit-setup screen (18-habit-setup, Phase
@@ -55,6 +57,18 @@ export function HabitSetupContainer({
   const { session } = useAuth();
   const userId = session?.userId ?? null;
   const isCoachView = !!clientId;
+
+  // Device-QA #5/#7 — the water target's display unit follows the SELF
+  // viewer's `preferredUnits` (default litres). Coach mode has no read of the
+  // CLIENT's preference anywhere in the client-detail contract today (adding
+  // one is backend plumbing, out of scope for this light-touch fix — flagged
+  // in the PR), so coach view always renders litres, matching the pre-fix
+  // behaviour exactly; `preferredVolumeUnit(undefined)` already defaults
+  // there for free.
+  const dashboard = useDashboard();
+  const volumeUnit = preferredVolumeUnit(
+    isCoachView ? undefined : dashboard.payload?.profile.preferredUnits,
+  );
 
   const selfConfig = useGetHabitConfig();
   const clientConfig = useGetClientHabitConfig(clientId);
@@ -362,6 +376,7 @@ export function HabitSetupContainer({
       atRisk={atRisk}
       skipped={skipped}
       isCoach={isCoachView}
+      volumeUnit={volumeUnit}
       canSave={canSave}
       saving={saving}
       justSaved={justSaved}
