@@ -578,4 +578,21 @@ describe("HabitSetupContainer (coach)", () => {
     expect(put).toBeDefined();
     await waitFor(() => expect(props().justSaved).toBe(true));
   });
+
+  // A successful save should return the user to where they came from (the
+  // Client Detail / previous screen), not leave them parked on the setup sheet.
+  it("redirects back after a successful save", async () => {
+    renderContainer("client-9", (api) => {
+      api.clientHabitConfigs = { "client-9": [] };
+    });
+    await waitFor(() => expect(captured.props).not.toBeNull());
+
+    act(() => props().onToggle("water", true));
+    await waitFor(() => expect(props().configs.water.enabled).toBe(true));
+
+    mockBack.mockClear();
+    await act(async () => props().onSave());
+
+    await waitFor(() => expect(mockBack).toHaveBeenCalled());
+  });
 });

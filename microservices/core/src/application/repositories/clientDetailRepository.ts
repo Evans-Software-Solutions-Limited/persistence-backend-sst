@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import {
   bodyMeasurements,
   goalTypes,
@@ -484,7 +484,19 @@ export class ClientDetailRepository {
       })
       .from(userGoals)
       .innerJoin(goalTypes, eq(userGoals.goalTypeId, goalTypes.id))
-      .where(and(eq(userGoals.userId, clientId), eq(userGoals.isActive, true)))
+      .where(
+        and(
+          eq(userGoals.userId, clientId),
+          eq(userGoals.isActive, true),
+          // The primary-goal card is a body/training goal (Weight Loss, Muscle
+          // Gain, …) rendered on a weight axis — NOT a habit. Habit goal types
+          // (water/gym/steps/sleep/calories) carry `category = 'habit'` and are
+          // surfaced by the habits module; including them here made the newest
+          // habit (e.g. Calories) masquerade as the primary goal, rendering the
+          // client's bodyweight with the habit's unit ("67 kcal"). Exclude them.
+          sql`${goalTypes.category} is distinct from 'habit'`,
+        ),
+      )
       .orderBy(desc(userGoals.createdAt))
       .limit(1);
     const g = rows[0];
@@ -536,18 +548,24 @@ export class ClientDetailRepository {
     weekStart: string,
     weekEnd: string,
   ): Promise<HabitsModule | null> {
+    // Per-habit WEEK satisfaction for the habits EFFECTIVE this week — the
+    // streak-scoring set, gated on `effective_from <= weekStart` (§ 4.4).
     const aggregates = await this.streaks.getCollectionHabitAggregates(
       clientId,
       weekStart,
       weekEnd,
       tz,
     );
-    if (aggregates.length === 0) return null;
+    const aggByGoal = new Map(aggregates.map((a) => [a.goalId, a]));
 
-    // Labels + categories for the enabled habits (goal_types.name via FK).
-    const goalIds = aggregates.map((a) => a.goalId);
+    // The Targets summary is "what the coach has set for this client" — NOT the
+    // streak-scoring set — so list EVERY active habit config regardless of
+    // `effective_from`. A habit whose `effective_from` is a future Monday (a
+    // fresh enable, § 4.4) is configured-but-not-yet-scored: show it as a
+    // target to aim for (0% / not started this week) rather than hiding the
+    // whole card, which made a client with habits set look like they had none.
     const db = getDb();
-    const meta = await db
+    const configs = await db
       .select({
         goalId: habitConfigs.goalId,
         category: habitConfigs.category,
@@ -557,21 +575,26 @@ export class ClientDetailRepository {
       .innerJoin(userGoals, eq(habitConfigs.goalId, userGoals.id))
       .innerJoin(goalTypes, eq(userGoals.goalTypeId, goalTypes.id))
       .where(
-        and(
-          eq(habitConfigs.userId, clientId),
-          inArray(habitConfigs.goalId, goalIds),
-        ),
+        and(eq(habitConfigs.userId, clientId), eq(userGoals.isActive, true)),
       );
-    const metaByGoal = new Map(
-      meta.map((m) => [m.goalId, { category: m.category, label: m.label }]),
-    );
+    if (configs.length === 0) return null;
 
-    const habits = aggregates.map((a) => {
-      const m = metaByGoal.get(a.goalId);
+    const habits = configs.map((c) => {
+      const a = aggByGoal.get(c.goalId);
+      if (!a) {
+        // Configured but not effective this week yet — a target to aim for.
+        return {
+          goalId: c.goalId,
+          label: c.label ?? "Habit",
+          category: c.category ?? "",
+          met: false,
+          pct: 0,
+        };
+      }
       return {
-        goalId: a.goalId,
-        label: m?.label ?? "Habit",
-        category: m?.category ?? "",
+        goalId: c.goalId,
+        label: c.label ?? "Habit",
+        category: c.category ?? "",
         met: weekMet(a),
         pct: habitProgressPct({
           completionRule: a.completionRule,
@@ -587,7 +610,11 @@ export class ClientDetailRepository {
     return {
       habits,
       collectionStreak: streakRow?.currentCount ?? 0,
-      collectionSatisfied: habits.length > 0 && habits.every((h) => h.met),
+      // Collection satisfaction stays scored on EFFECTIVE habits only (anti-
+      // gaming § 4.4): a not-yet-effective habit is loggable but not part of
+      // this week's requirement, so it can't make the collection unsatisfied.
+      collectionSatisfied:
+        aggregates.length > 0 && aggregates.every((a) => weekMet(a)),
     };
   }
 

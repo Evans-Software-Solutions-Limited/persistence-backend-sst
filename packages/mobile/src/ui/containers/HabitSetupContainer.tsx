@@ -330,6 +330,12 @@ export function HabitSetupContainer({
         clearTimeout(justSavedTimeoutRef.current);
       setJustSaved(true);
       justSavedTimeoutRef.current = setTimeout(() => setJustSaved(false), 2000);
+      // Redirect back to where the user came from (the coach's Client Detail,
+      // or the athlete's previous screen) once the save has landed — the
+      // destination re-fetches on focus and shows the saved habits, so the
+      // setup sheet is a task the user completes and leaves, not a dead-end
+      // that just flashes "Saved" in place.
+      if (router.canGoBack()) router.back();
     } finally {
       setSaving(false);
     }
@@ -343,6 +349,7 @@ export function HabitSetupContainer({
     isCoachView,
     refreshClientConfig,
     reloadSelfConfig,
+    router,
   ]);
 
   const canSave = dirty && !saving;

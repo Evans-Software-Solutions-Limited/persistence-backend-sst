@@ -1,6 +1,7 @@
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { useRouter } from "expo-router";
 import { useGetHome } from "@/ui/hooks/useGetHome";
+import { useGetHabitConfig } from "@/ui/hooks/useGetHabitConfig";
 import { useRefreshOnFocus } from "@/ui/hooks/useRefreshOnFocus";
 import { TrainOverviewPresenter } from "@/ui/presenters/TrainOverviewPresenter";
 
@@ -12,10 +13,9 @@ import { TrainOverviewPresenter } from "@/ui/presenters/TrainOverviewPresenter";
  * Reuses `useGetHome` (both Home and Train read the same cached payload) rather
  * than a bespoke endpoint.
  *
- * NOTE: the athlete Goals surface was hidden for launch (goals were an inert,
- * half-shipped feature — decision C). The goal building blocks (GoalSheet,
- * GoalCard, useGoalSheet, goals.command) are parked for the future
- * "make goals real" spec.
+ * Also surfaces the athlete's habit configs via `useGetHabitConfig` so the
+ * Training tab acts as an informative "what should I aim for" sheet — showing
+ * the targets/habits the coach has set alongside the training programme.
  */
 export function TrainOverviewContainer() {
   const router = useRouter();
@@ -23,6 +23,12 @@ export function TrainOverviewContainer() {
   const home = useGetHome();
   const refreshHome = home.refresh;
   const activeProgramme = home.data?.activeProgramme ?? null;
+
+  const habitConfig = useGetHabitConfig();
+  const enabledHabits = useMemo(
+    () => habitConfig.configs.filter((c) => c.enabled),
+    [habitConfig.configs],
+  );
 
   const onRefresh = useCallback(() => {
     void refreshHome();
@@ -55,6 +61,7 @@ export function TrainOverviewContainer() {
     <TrainOverviewPresenter
       activeProgramme={activeProgramme}
       todaysTraining={home.data?.todaysTraining ?? []}
+      habits={enabledHabits}
       isRefreshing={home.isRefreshing}
       onRefresh={onRefresh}
       onOpenWorkout={onOpenWorkout}
