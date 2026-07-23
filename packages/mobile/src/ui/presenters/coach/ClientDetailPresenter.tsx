@@ -1079,14 +1079,22 @@ function TargetsCard({
             borderColor="$border"
             testID={`client-detail-target-habit-${h.goalId}`}
           >
-            <Text
-              fontFamily="$display"
-              fontSize={13}
-              fontWeight="500"
-              color="$text"
-            >
-              {h.label}
-            </Text>
+            <View flexDirection="row" alignItems="center" gap={6} flex={1}>
+              <Text
+                fontFamily="$display"
+                fontSize={13}
+                fontWeight="500"
+                color="$text"
+              >
+                {h.label}
+              </Text>
+              {h.targetValue > 0 ? (
+                <Text fontFamily="$mono" fontSize={11} color="$text3">
+                  {h.targetValue}
+                  {h.unit ? ` ${h.unit}` : ""}
+                </Text>
+              ) : null}
+            </View>
             <Pill tone={h.met ? "success" : "neutral"} size="xs">
               {h.met ? "On track" : `${Math.round((h.pct ?? 0) * 100)}%`}
             </Pill>

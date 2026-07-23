@@ -86,6 +86,10 @@ export type HabitSatisfaction = {
   met: boolean;
   /** Progress toward the week's requirement, 0..1. */
   pct: number;
+  /** The configured target value (e.g. 5000 for steps, 2 for water). */
+  targetValue: number;
+  /** Display unit (e.g. "steps", "l", "h", "x"). */
+  unit: string;
 };
 
 /** Module f — habits + weekly collection streak. */
