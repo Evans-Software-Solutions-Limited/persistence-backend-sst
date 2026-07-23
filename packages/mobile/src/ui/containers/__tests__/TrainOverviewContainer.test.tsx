@@ -18,9 +18,17 @@ jest.mock("@/adapters/api", () => ({
 }));
 
 const mockPush = jest.fn();
-jest.mock("expo-router", () => ({
-  useRouter: () => ({ push: mockPush }),
-}));
+jest.mock("expo-router", () => {
+  const React = jest.requireActual("react") as typeof import("react");
+  return {
+    useRouter: () => ({ push: mockPush }),
+    // Run the focus callback once on mount (= first focus, which
+    // useRefreshOnFocus skips) so the container's focus-refresh wiring doesn't
+    // throw and existing assertions are unaffected.
+    useFocusEffect: (cb: () => void | (() => void)) =>
+      React.useEffect(cb, [cb]),
+  };
+});
 
 const captured: { props: TrainOverviewPresenterProps | null } = { props: null };
 jest.mock("@/ui/presenters/TrainOverviewPresenter", () => ({

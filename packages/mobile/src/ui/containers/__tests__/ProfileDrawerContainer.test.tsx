@@ -74,8 +74,12 @@ let mockSubscription: unknown = {
   tierDescription: "Unlimited workouts · AI coach · Macros",
   tierDisplayName: "Premium",
 };
+const mockRefetchSubscription = jest.fn();
 jest.mock("@/ui/hooks/useMySubscription", () => ({
-  useMySubscription: () => ({ data: mockSubscription }),
+  useMySubscription: () => ({
+    data: mockSubscription,
+    refetch: mockRefetchSubscription,
+  }),
 }));
 
 const mockRefresh = jest.fn();
@@ -89,8 +93,12 @@ jest.mock("@/ui/hooks/useHealthData", () => ({
 }));
 
 let mockAchievementsData: unknown[] | null = null;
+const mockRefreshAchievements = jest.fn();
 jest.mock("@/ui/hooks/useGetAchievements", () => ({
-  useGetAchievements: () => ({ data: mockAchievementsData }),
+  useGetAchievements: () => ({
+    data: mockAchievementsData,
+    refresh: mockRefreshAchievements,
+  }),
 }));
 
 // eslint-disable-next-line import/first
@@ -108,6 +116,8 @@ beforeEach(() => {
   mockSwitchMode.mockClear();
   mockSignOut.mockClear();
   mockRefresh.mockClear();
+  mockRefetchSubscription.mockClear();
+  mockRefreshAchievements.mockClear();
   mockProfileRefresh.mockClear();
   mockProfileError = null;
   mockProfileRefreshing = false;
@@ -374,6 +384,20 @@ describe("ProfileDrawerContainer", () => {
       useHealthSync.getState().markConnected();
     });
     expect(mockRefresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("refetches subscription + achievements when the drawer opens (self-heal a slow/failed cold start)", () => {
+    useDrawer.setState({ open: true });
+    renderWithTheme(<ProfileDrawerContainer />);
+    expect(mockRefetchSubscription).toHaveBeenCalledTimes(1);
+    expect(mockRefreshAchievements).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not refetch on open while the drawer stays closed", () => {
+    useDrawer.setState({ open: false });
+    renderWithTheme(<ProfileDrawerContainer />);
+    expect(mockRefetchSubscription).not.toHaveBeenCalled();
+    expect(mockRefreshAchievements).not.toHaveBeenCalled();
   });
 
   it("onSignOut swallows a sign-out failure without throwing", async () => {

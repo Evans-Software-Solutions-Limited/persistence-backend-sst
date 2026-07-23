@@ -9,6 +9,7 @@ import { useReflectStepsHabit } from "@/ui/hooks/useReflectStepsHabit";
 import { useUnreadNotificationCount } from "@/ui/hooks/useUnreadNotificationCount";
 import { useHealthSync } from "@/state/health-sync";
 import { useGetHabits } from "@/ui/hooks/useGetHabits";
+import { useRefreshOnFocus } from "@/ui/hooks/useRefreshOnFocus";
 import { useWorkouts } from "@/ui/hooks/useWorkouts";
 import { useTrainSegment } from "@/ui/hooks/useTrainSegment";
 import { useStaggeredEntry } from "@/ui/hooks/useStaggeredEntry";
@@ -174,6 +175,20 @@ export function HomeContainer() {
   const onRefresh = useCallback(() => {
     void Promise.all([refreshHome(), refreshHabits(), refreshWorkouts()]);
   }, [refreshHome, refreshHabits, refreshWorkouts]);
+
+  // Tabs stay mounted, so without a focus refresh Home shows stale rings /
+  // volume / PRs / workouts on every re-entry until a pull-to-refresh. Skips
+  // the mount focus (the cache-first hooks already auto-fetch once there).
+  // SILENT so it refreshes in the background without flashing the pull-to-
+  // refresh spinner on every tab return.
+  const onFocusRefresh = useCallback(() => {
+    void Promise.all([
+      refreshHome({ silent: true }),
+      refreshHabits({ silent: true }),
+      refreshWorkouts({ silent: true }),
+    ]);
+  }, [refreshHome, refreshHabits, refreshWorkouts]);
+  useRefreshOnFocus(onFocusRefresh);
 
   // Steps has no explicit "log" action — it reflects into the Steps habit
   // reactively whenever the HealthKit read changes (useReflectStepsHabit

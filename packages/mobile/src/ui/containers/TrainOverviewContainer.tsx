@@ -1,6 +1,7 @@
 import { useCallback } from "react";
 import { useRouter } from "expo-router";
 import { useGetHome } from "@/ui/hooks/useGetHome";
+import { useRefreshOnFocus } from "@/ui/hooks/useRefreshOnFocus";
 import { TrainOverviewPresenter } from "@/ui/presenters/TrainOverviewPresenter";
 
 /**
@@ -26,6 +27,13 @@ export function TrainOverviewContainer() {
   const onRefresh = useCallback(() => {
     void refreshHome();
   }, [refreshHome]);
+
+  // Kept-alive tab — refresh the active programme / today's training on
+  // re-entry (skips the mount focus). Silent → no spinner flash.
+  const onFocusRefresh = useCallback(() => {
+    void refreshHome({ silent: true });
+  }, [refreshHome]);
+  useRefreshOnFocus(onFocusRefresh);
 
   const onOpenWorkout = useCallback(
     (workoutId: string) => {

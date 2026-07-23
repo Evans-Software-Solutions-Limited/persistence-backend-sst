@@ -6,6 +6,7 @@ import { useScrollToTopOnTabPress } from "@/ui/hooks/useScrollToTopOnTabPress";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useDashboard } from "@/ui/hooks/useDashboard";
 import { useGetFuelToday } from "@/ui/hooks/useGetFuelToday";
+import { useRefreshOnFocus } from "@/ui/hooks/useRefreshOnFocus";
 import { useGetRecipes } from "@/ui/hooks/useGetRecipes";
 import { useGetMeals } from "@/ui/hooks/useGetMeals";
 import { useSetWater } from "@/ui/hooks/useSetWater";
@@ -70,6 +71,14 @@ export function FuelContainer() {
   const [calendarOpen, setCalendarOpen] = useState(false);
 
   const fuel = useGetFuelToday(date);
+  // Kept-alive tab — re-pull the day's fuel on re-entry so totals/water/macros
+  // reflect logs made elsewhere (skips the mount focus). `fuel.refresh` is a
+  // stable callback from useGetFuelToday.
+  const refreshFuel = fuel.refresh;
+  const onFocusRefreshFuel = useCallback(() => {
+    void refreshFuel({ silent: true });
+  }, [refreshFuel]);
+  useRefreshOnFocus(onFocusRefreshFuel);
   // Device-QA #5/#7 — the water tracker's display unit follows the user's
   // `preferredUnits` (metric/imperial), defaulting to litres. Reuses the
   // already-cached dashboard payload (Home's data source) rather than adding

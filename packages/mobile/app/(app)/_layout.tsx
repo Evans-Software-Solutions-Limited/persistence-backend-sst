@@ -16,6 +16,7 @@ import { ScanBarcodeSheetContainer } from "../../src/ui/containers/ScanBarcodeSh
 import { SnapAISheetContainer } from "../../src/ui/containers/SnapAISheetContainer";
 import { ExerciseFiltersProvider } from "../../src/ui/hooks/useExerciseFilters";
 import { useAutoRetryOnUpgrade } from "../../src/ui/hooks/useAutoRetryOnUpgrade";
+import { useForegroundSubscriptionRefresh } from "../../src/ui/hooks/useForegroundSubscriptionRefresh";
 import { useHealthBodyPushSync } from "../../src/ui/hooks/useHealthBodyPushSync";
 import { useNotificationBadge } from "../../src/ui/hooks/useNotificationBadge";
 import { useNotificationDeepLink } from "../../src/ui/hooks/useNotificationDeepLink";
@@ -59,6 +60,10 @@ export default function AppLayout() {
   // own `processSyncQueue` call so freshly-unblocked entries land
   // without waiting for the next foreground tick.
   useAutoRetryOnUpgrade();
+  // Re-validate the shared subscription query on every foreground so the
+  // permanently-mounted drawer / eligibility / auto-retry consumers self-heal
+  // a failed cold-start fetch without needing a full app restart.
+  useForegroundSubscriptionRefresh();
   // 09.6: route notification taps (cold-start + background) to their deep
   // link. Mounted in the authenticated tree so router targets resolve.
   useNotificationDeepLink();

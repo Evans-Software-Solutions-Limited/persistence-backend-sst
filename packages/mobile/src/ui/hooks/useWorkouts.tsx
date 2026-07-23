@@ -25,7 +25,8 @@ import { useAuth } from "./useAuth";
 export type WorkoutsState = WorkoutsQueryResult & {
   isRefreshing: boolean;
   error: ApiError | null;
-  refresh: () => Promise<void>;
+  /** `{ silent: true }` refreshes without toggling `isRefreshing` (focus). */
+  refresh: (opts?: { silent?: boolean }) => Promise<void>;
   /**
    * Re-read the cache without hitting the network. Use this when an
    * external mutation (e.g. a workout created from the modal stack)
@@ -78,58 +79,62 @@ export function useWorkouts(): WorkoutsState {
     promise: Promise<void>;
   } | null>(null);
 
-  const refresh = useCallback(async () => {
-    if (!userId) return;
-    if (inFlightRef.current && inFlightRef.current.userId === userId) {
-      return inFlightRef.current.promise;
-    }
-    setIsRefreshing(true);
-    setError(null);
-    const work = (async () => {
-      try {
-        // Drain the sync queue BEFORE fetching. Otherwise the GET races
-        // any pending POST/PATCH/DELETE — the server returns a list
-        // that doesn't yet reflect the user's optimistic mutation, the
-        // adapter overwrites cache with the stale response, and the
-        // optimistic row vanishes (or in the delete case, comes back).
-        // Flushing first means the server sees every queued mutation
-        // before we ask it for the canonical list.
-        try {
-          await processSyncQueue(storage, auth, getApiBaseUrl());
-        } catch (err) {
-          // Queue worker errors are isolated per-entry inside
-          // processSyncQueue; an outer throw means a shell-level
-          // failure (e.g. base-URL config). Log and continue —
-          // refusing to refresh would be worse than fetching.
-          console.error("[useWorkouts] queue flush failed:", err);
-        }
-        if (latestUserIdRef.current !== userId) return;
-        const results = await refreshAllWorkouts(
-          api,
-          storage,
-          userId,
-          isTrainerEligible,
-        );
-        if (latestUserIdRef.current !== userId) return;
-        // Surface the first error we see; cache writes for successful
-        // sections already happened inside refreshWorkouts.
-        const firstFail =
-          (!results.mine.ok && results.mine.error) ||
-          (!results.assigned.ok && results.assigned.error) ||
-          (!results.default.ok && results.default.error);
-        if (firstFail) setError(firstFail);
-        setSnapshot(getWorkoutsQuery(storage, userId));
-        setCacheVersion((v) => v + 1);
-      } finally {
-        setIsRefreshing(false);
-        if (inFlightRef.current?.userId === userId) {
-          inFlightRef.current = null;
-        }
+  const refresh = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      if (!userId) return;
+      if (inFlightRef.current && inFlightRef.current.userId === userId) {
+        return inFlightRef.current.promise;
       }
-    })();
-    inFlightRef.current = { userId, promise: work };
-    return work;
-  }, [api, auth, storage, userId, isTrainerEligible]);
+      const showSpinner = !opts?.silent;
+      if (showSpinner) setIsRefreshing(true);
+      setError(null);
+      const work = (async () => {
+        try {
+          // Drain the sync queue BEFORE fetching. Otherwise the GET races
+          // any pending POST/PATCH/DELETE — the server returns a list
+          // that doesn't yet reflect the user's optimistic mutation, the
+          // adapter overwrites cache with the stale response, and the
+          // optimistic row vanishes (or in the delete case, comes back).
+          // Flushing first means the server sees every queued mutation
+          // before we ask it for the canonical list.
+          try {
+            await processSyncQueue(storage, auth, getApiBaseUrl());
+          } catch (err) {
+            // Queue worker errors are isolated per-entry inside
+            // processSyncQueue; an outer throw means a shell-level
+            // failure (e.g. base-URL config). Log and continue —
+            // refusing to refresh would be worse than fetching.
+            console.error("[useWorkouts] queue flush failed:", err);
+          }
+          if (latestUserIdRef.current !== userId) return;
+          const results = await refreshAllWorkouts(
+            api,
+            storage,
+            userId,
+            isTrainerEligible,
+          );
+          if (latestUserIdRef.current !== userId) return;
+          // Surface the first error we see; cache writes for successful
+          // sections already happened inside refreshWorkouts.
+          const firstFail =
+            (!results.mine.ok && results.mine.error) ||
+            (!results.assigned.ok && results.assigned.error) ||
+            (!results.default.ok && results.default.error);
+          if (firstFail) setError(firstFail);
+          setSnapshot(getWorkoutsQuery(storage, userId));
+          setCacheVersion((v) => v + 1);
+        } finally {
+          if (showSpinner) setIsRefreshing(false);
+          if (inFlightRef.current?.userId === userId) {
+            inFlightRef.current = null;
+          }
+        }
+      })();
+      inFlightRef.current = { userId, promise: work };
+      return work;
+    },
+    [api, auth, storage, userId, isTrainerEligible],
+  );
 
   // One-shot auto-refresh when any section is stale (or no cache).
   const autoRefreshedForUserRef = useRef<string | null>(null);
