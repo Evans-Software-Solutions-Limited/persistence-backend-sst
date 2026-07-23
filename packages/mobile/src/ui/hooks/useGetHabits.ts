@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   Habit,
   HabitCompletion,
@@ -11,6 +11,7 @@ import {
 } from "@/domain/models/habit-config";
 import { localDayISO, weekStartMondayISO } from "@/shared/utils";
 import { useAdapters } from "@/ui/hooks/useAdapters";
+import { useAuth } from "@/ui/hooks/useAuth";
 import {
   useCachedResource,
   type CachedResourceState,
@@ -134,9 +135,36 @@ function stripDerivedRows(rows: HabitCompletion[]): HabitCompletion[] {
   return rows.filter((r) => !r.id.startsWith("derived-"));
 }
 
+function isDerivedRow(r: HabitCompletion): boolean {
+  return r.id.startsWith("derived-");
+}
+
 export function useGetHabits(): HabitsState {
   const { api } = useAdapters();
+  const { session } = useAuth();
+  const userId = session?.userId ?? null;
   const [configs, setConfigs] = useState<HabitConfigEntry[]>([]);
+
+  // Derived Gym/Calories rows are STRIPPED from the SQLite cache (write, below),
+  // so they live only in-memory. `useCachedResource.reload()` — fired after
+  // every optimistic grid toggle — re-points `res.data` at the (stripped)
+  // cache, which would blank the Gym/Calories tiles until the next network
+  // refresh (Inspector Brad 🟠). Hold the last-fetched derived rows in a ref
+  // that survives `reload`, and re-merge them into the grid. The fetcher
+  // captures them on EVERY fetch (including an empty capture when a fetch
+  // genuinely returns none, so a habit that stops qualifying clears), while a
+  // reload leaves the ref untouched — a toggle on water/steps/sleep doesn't
+  // change calorie/gym derivation, so persisting them across the reload is
+  // correct. `refresh()` reconciles with the server.
+  const derivedRowsRef = useRef<HabitCompletion[]>([]);
+
+  // Drop a prior user's derived rows on a session change so they can't flash
+  // under the newly signed-in user before their first fetch lands.
+  const derivedUserRef = useRef<string | null>(userId);
+  if (derivedUserRef.current !== userId) {
+    derivedUserRef.current = userId;
+    derivedRowsRef.current = [];
+  }
 
   const res = useCachedResource<HabitCompletion[]>({
     read: (storage, userId) => {
@@ -146,8 +174,18 @@ export function useGetHabits(): HabitsState {
         isStale: true,
       };
     },
-    fetcher: (api) =>
-      api.getHabitCompletions({ window: "7d", includeDerived: true }),
+    fetcher: async (api) => {
+      const result = await api.getHabitCompletions({
+        window: "7d",
+        includeDerived: true,
+      });
+      // Capture derived rows into the ref on every fetch (empty when none), so
+      // they survive the cache-backed reload() the toggle path triggers.
+      if (result.ok) {
+        derivedRowsRef.current = result.value.filter(isDerivedRow);
+      }
+      return result;
+    },
     // Only REAL completions get persisted to the offline cache — derived
     // rows are recomputed server-side every request and must never be
     // written locally (see the READ-ONLY note above).
@@ -175,9 +213,19 @@ export function useGetHabits(): HabitsState {
     return Array.from({ length: 7 }, (_, i) => addDays(monday, i));
   }, [todayISO]);
 
-  const habits = useMemo(
-    () => buildHabitGrid(res.data ?? [], weekDates, configs),
-    [res.data, weekDates, configs],
-  );
+  // Build from REAL cached completions (res.data, with any derived rows a fresh
+  // fetch left in it stripped out to avoid double-counting) PLUS the persisted
+  // derived rows from the ref — so the Gym/Calories tiles stay ticked across a
+  // reload() and only change on a real refresh. `res.data` identity changing on
+  // fetch/reload drives the recompute; the ref is read at that point.
+  const habits = useMemo(() => {
+    const realRows = (res.data ?? []).filter((r) => !isDerivedRow(r));
+    return buildHabitGrid(
+      [...realRows, ...derivedRowsRef.current],
+      weekDates,
+      configs,
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [res.data, weekDates, configs]);
   return { ...res, habits, weekDates };
 }

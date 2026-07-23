@@ -317,6 +317,58 @@ describe("Progress/Home read hooks (cache-first + refresh)", () => {
     expect(cached.some((c) => c.id.startsWith("derived-"))).toBe(false);
   });
 
+  it("keeps derived Gym/Calories ticks across a reload() (post-toggle refresh)", async () => {
+    // Regression (Inspector Brad 🟠): the toggle path calls reload(), which
+    // re-reads the SQLite cache — and derived rows are deliberately stripped
+    // from that cache. Without the in-memory derived ref, the Gym tile would
+    // blank after any grid toggle until a manual pull-to-refresh.
+    const { api, wrapper } = setup();
+    const today = localDayISO();
+    api.habitConfigs = [
+      {
+        category: "gym",
+        enabled: true,
+        goalId: "g-gym",
+        assignedByCoach: false,
+        locked: false,
+        targetValue: 3,
+        unit: "x",
+        period: "weekly",
+        completionRule: "count",
+        daysPerWeek: null,
+        tolerancePct: null,
+        pending: null,
+      },
+    ];
+    api.habitCompletions = [
+      {
+        id: `derived-g-gym-${today}`,
+        userId: USER,
+        goalId: "g-gym",
+        completedAt: `${today}T12:00:00.000Z`,
+        localCompletedDate: today,
+        value: null,
+      },
+    ];
+    const { result } = renderHook(() => useGetHabits(), { wrapper });
+    await waitFor(() =>
+      expect(
+        result.current.habits
+          .find((h) => h.id === "g-gym")
+          ?.days.filter(Boolean),
+      ).toHaveLength(1),
+    );
+
+    // Simulate the post-toggle cache re-read.
+    act(() => result.current.reload());
+
+    // The derived Gym tick survives — reload re-points res.data at the
+    // (derived-stripped) cache, but the in-memory ref re-merges it.
+    expect(
+      result.current.habits.find((h) => h.id === "g-gym")?.days.filter(Boolean),
+    ).toHaveLength(1);
+  });
+
   describe("buildHabitGrid (config-aware)", () => {
     const week = [
       "2026-06-22",
