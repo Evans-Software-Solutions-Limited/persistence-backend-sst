@@ -72,6 +72,7 @@ import type {
 import type {
   AssignProgramInput,
   AssignWorkoutInput,
+  AthleteProgramDetail,
   CreateProgramInput,
   ProgramAssignmentRow,
   ProgramDetail,
@@ -1163,6 +1164,17 @@ export interface ApiPort {
    * when not found / not owned.
    */
   getProgram(id: string): Promise<Result<ProgramDetail, ApiError>>;
+
+  /**
+   * ATHLETE-facing programme read (`GET /programs/:id`): the programme
+   * metadata + its ordered workout cycle + the caller's own assignment
+   * context (status + current week). Authorised by the caller being a client
+   * of the programme; 404 `not_found` when not assigned / missing (no
+   * existence leak). Distinct from `getProgram` (the coach owner-scoped read).
+   */
+  getAthleteProgram(
+    id: string,
+  ): Promise<Result<AthleteProgramDetail, ApiError>>;
 
   /**
    * Create a programme (`POST /trainers/me/programs`). 422

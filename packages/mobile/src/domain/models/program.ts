@@ -63,6 +63,30 @@ export type ProgramDetail = ProgramSummary & {
 export type Program = ProgramDetail;
 
 /**
+ * Athlete-facing programme detail (`GET /programs/:id`). Metadata + ordered
+ * workout cycle + the athlete's OWN assignment context (status + current
+ * week). Mirrors the backend `AthleteProgramDetail` 1:1; deliberately has NO
+ * `assignments` (other clients' data). Consumed by the read-only athlete
+ * programme screen so a client can open their assigned plan and start any
+ * workout in it.
+ */
+export type AthleteProgramDetail = {
+  id: string;
+  name: string;
+  description: string | null;
+  durationWeeks: number | null;
+  daysPerWeek: number;
+  workoutCount: number;
+  /** The athlete's assignment status for this programme. */
+  status: string;
+  startDate: string;
+  endDate: string | null;
+  /** 1-based calendar week the athlete is currently in. */
+  week: number;
+  workouts: ProgramWorkoutEntry[];
+};
+
+/**
  * Raw DB row returned by `POST /trainers/me/programs/:id/assign`
  * (`ProgramAssignment`, NOT the list-friendly `ProgramAssignmentEntry`).
  * camelCase wire == domain shape, passthrough.

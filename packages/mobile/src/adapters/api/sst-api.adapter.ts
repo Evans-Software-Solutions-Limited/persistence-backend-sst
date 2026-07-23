@@ -75,6 +75,7 @@ import type {
 import type {
   AssignProgramInput,
   AssignWorkoutInput,
+  AthleteProgramDetail,
   CreateProgramInput,
   ProgramAssignmentRow,
   ProgramDetail,
@@ -1899,6 +1900,12 @@ export class SSTApiAdapter implements ApiPort {
 
   async getProgram(id: string): Promise<Result<ProgramDetail, ApiError>> {
     return this.requestEnvelope<ProgramDetail>(`/trainers/me/programs/${id}`);
+  }
+
+  async getAthleteProgram(
+    id: string,
+  ): Promise<Result<AthleteProgramDetail, ApiError>> {
+    return this.requestEnvelope<AthleteProgramDetail>(`/programs/${id}`);
   }
 
   async createProgram(

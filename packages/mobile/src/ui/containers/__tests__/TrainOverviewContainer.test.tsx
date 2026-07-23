@@ -137,6 +137,17 @@ describe("<TrainOverviewContainer>", () => {
     expect(mockPush).toHaveBeenCalledWith("/(app)/workouts/w-9");
   });
 
+  it("onOpenProgramme routes to the athlete programme view (not the coach editor)", async () => {
+    const { adapters, storage } = makeAdapters();
+    storage.cacheHome(USER, homePayload());
+
+    renderContainer(adapters);
+    await waitFor(() => expect(props().activeProgramme?.programId).toBe("p-1"));
+
+    props().onOpenProgramme?.();
+    expect(mockPush).toHaveBeenCalledWith("/(app)/programs/view/p-1");
+  });
+
   it("onRefresh refetches the home payload from the network", async () => {
     const { adapters, storage } = makeAdapters();
     storage.cacheHome(USER, homePayload());

@@ -86,16 +86,11 @@ export type HomePresenterProps = {
   onLogWater: () => void;
   /** Opens the Sleep quick-log sheet (specs/20-sleep-quicklog STORY-001 AC 1.1). */
   onOpenSleep: () => void;
-  onToggleHabitDay: (
-    goalId: string,
-    day: string,
-    done: boolean,
-    value?: number | null,
-  ) => void;
   /** Open the habit-setup screen (18-habit-setup STORY-007). */
   onManageHabits: () => void;
-  /** Calories grid row (non-toggleable) → deep-links to Fuel instead. */
-  onOpenCaloriesFromGrid: () => void;
+  /** Open the athlete programme view (read-only) from the "Your programme"
+   *  card. Absent → the card is not pressable. */
+  onOpenProgramme?: () => void;
   onOpenCoach: () => void;
   /** Forwarded by the container for tab-press scroll-to-top. */
   scrollRef?: RefObject<ScrollView | null>;
@@ -133,9 +128,8 @@ export function HomePresenter(props: HomePresenterProps) {
     onOpenMealLog,
     onLogWater,
     onOpenSleep,
-    onToggleHabitDay,
     onManageHabits,
-    onOpenCaloriesFromGrid,
+    onOpenProgramme,
     onOpenCoach,
     scrollRef,
     todayISO = new Date().toISOString().slice(0, 10),
@@ -215,6 +209,7 @@ export function HomePresenter(props: HomePresenterProps) {
               totalWeeks={activeProgramme.totalWeeks}
               coachName={activeProgramme.assignedByName ?? null}
               accent="primary"
+              onPress={onOpenProgramme}
               testID="home-programme-card"
             />
           </View>
@@ -261,9 +256,7 @@ export function HomePresenter(props: HomePresenterProps) {
             <HabitsGridPresenter
               habits={habits}
               weekDates={weekDates}
-              onToggle={onToggleHabitDay}
               onManageHabits={onManageHabits}
-              onOpenNonToggleable={onOpenCaloriesFromGrid}
             />
           </Section>
         </Animated.View>

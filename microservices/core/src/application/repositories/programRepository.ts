@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, or, sql } from "drizzle-orm";
 import {
   profiles,
   programAssignments,
@@ -55,6 +55,28 @@ export interface ProgramAssignmentEntry {
 export interface ProgramDetail extends ProgramSummary {
   workouts: ProgramWorkoutEntry[];
   assignments: ProgramAssignmentEntry[];
+}
+
+/**
+ * Athlete-facing programme detail (specs/19-programs — athlete read).
+ * Metadata + ordered cycle + the athlete's OWN assignment context (status +
+ * current week). Deliberately OMITS `assignments` — that's other clients'
+ * data and must never leak to an athlete.
+ */
+export interface AthleteProgramDetail {
+  id: string;
+  name: string;
+  description: string | null;
+  durationWeeks: number | null;
+  daysPerWeek: number;
+  workoutCount: number;
+  /** The athlete's assignment status for this programme. */
+  status: string;
+  startDate: string;
+  endDate: string | null;
+  /** 1-based calendar week the athlete is currently in. */
+  week: number;
+  workouts: ProgramWorkoutEntry[];
 }
 
 export interface ProgramInput {
@@ -134,6 +156,83 @@ export class ProgramRepository {
   ): Promise<ProgramDetail | null> {
     const db = getDb();
     return this.fetchDetail(db, trainerId, id, today);
+  }
+
+  /**
+   * Athlete-scoped programme read (specs/19-programs — athlete view). Returns
+   * the programme + its ordered workout cycle ONLY when the caller has an
+   * assignment to it (any status — a completed/skipped programme stays
+   * viewable as history). Authorisation is the assignment itself: no
+   * assignment → null (→ 404, no existence leak, mirrors the coach 404).
+   * NEVER returns other clients' assignments.
+   */
+  async getForAthlete(
+    athleteId: string,
+    id: string,
+    today: string,
+  ): Promise<AthleteProgramDetail | null> {
+    const db = getDb();
+
+    // Prefer the most-recent assignment (a re-assigned programme keeps the
+    // latest start date / status for the week computation).
+    const assignmentRows = await db
+      .select({
+        startDate: programAssignments.startDate,
+        endDate: programAssignments.endDate,
+        status: programAssignments.status,
+      })
+      .from(programAssignments)
+      .where(
+        and(
+          eq(programAssignments.programId, id),
+          eq(programAssignments.clientId, athleteId),
+        ),
+      )
+      .orderBy(desc(programAssignments.createdAt))
+      .limit(1);
+    const assignment = assignmentRows[0];
+    if (!assignment) return null;
+
+    const programRows = await db
+      .select()
+      .from(workoutPrograms)
+      .where(eq(workoutPrograms.id, id))
+      .limit(1);
+    const program = programRows[0];
+    if (!program) return null;
+
+    const structure = await db
+      .select({
+        id: programWorkouts.id,
+        workoutId: programWorkouts.workoutId,
+        position: programWorkouts.position,
+        name: workouts.name,
+        estimatedDurationMinutes: workouts.estimatedDurationMinutes,
+      })
+      .from(programWorkouts)
+      .innerJoin(workouts, eq(workouts.id, programWorkouts.workoutId))
+      .where(eq(programWorkouts.programId, id))
+      .orderBy(asc(programWorkouts.position));
+
+    return {
+      id: program.id,
+      name: program.name,
+      description: program.description,
+      durationWeeks: program.durationWeeks,
+      daysPerWeek: program.daysPerWeek,
+      workoutCount: structure.length,
+      status: assignment.status,
+      startDate: assignment.startDate,
+      endDate: assignment.endDate,
+      week: currentWeek(assignment.startDate, today, program.durationWeeks),
+      workouts: structure.map((s) => ({
+        id: s.id,
+        workoutId: s.workoutId,
+        position: s.position,
+        name: s.name,
+        estimatedDurationMinutes: s.estimatedDurationMinutes,
+      })),
+    };
   }
 
   async create(

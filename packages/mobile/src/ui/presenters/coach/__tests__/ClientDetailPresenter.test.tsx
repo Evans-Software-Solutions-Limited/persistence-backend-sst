@@ -395,12 +395,18 @@ describe("ClientDetailPresenter — Body trend (kept from #146)", () => {
 });
 
 describe("ClientDetailPresenter — TargetsCard", () => {
-  it("renders the calorie target + '—' for unmapped fields, edit fires onEditTargets", () => {
-    const { getByTestId, getAllByText, props } = render();
+  it("renders the calorie target; 'Edit all' edits the habit set", () => {
+    const { getByTestId, getByText, props } = render();
     expect(getByTestId("client-detail-targets")).toBeTruthy();
-    // Protein/Workouts/Volume are unmapped → em-dash.
-    expect(getAllByText("—").length).toBeGreaterThanOrEqual(3);
+    expect(getByText("2400")).toBeTruthy();
+    // "Edit all" aligns to the habit set (habits ARE the client's targets).
     fireEvent.press(getByTestId("client-detail-targets-edit"));
+    expect(props.onManageHabits).toHaveBeenCalledTimes(1);
+  });
+
+  it("tapping the calorie row opens the calorie-target editor", () => {
+    const { getByTestId, props } = render();
+    fireEvent.press(getByTestId("client-detail-target-calories"));
     expect(props.onEditTargets).toHaveBeenCalledTimes(1);
   });
 
@@ -410,31 +416,43 @@ describe("ClientDetailPresenter — TargetsCard", () => {
     });
     expect(getByTestId("client-detail-target-calories")).toBeTruthy();
   });
-});
 
-describe("ClientDetailPresenter — ThisWeekCard", () => {
-  it("renders mini-stats + daily bars", () => {
-    const { getByTestId, getByText } = render();
-    expect(getByTestId("client-detail-this-week")).toBeTruthy();
-    expect(getByText("4/5")).toBeTruthy();
-    expect(getByTestId("client-detail-daily-bars")).toBeTruthy();
-  });
-
-  it("shows '—' nulls when thisWeek is degraded", () => {
-    const { getByText } = render({
+  it("renders the client's habits as their daily targets", () => {
+    const { getByTestId, getByText } = render({
       detail: fullDetail({
-        thisWeek: {
-          workoutsCompleted: 0,
-          workoutsPlanned: null,
-          volumeKg: null,
-          prs: 0,
-          checkIns: null,
+        habits: {
+          collectionStreak: 3,
+          collectionSatisfied: false,
+          habits: [
+            {
+              goalId: "h-water",
+              label: "Water",
+              category: "water",
+              met: true,
+              pct: 1,
+            },
+            {
+              goalId: "h-steps",
+              label: "Steps",
+              category: "steps",
+              met: false,
+              pct: 0.6,
+            },
+          ],
         },
-        volume: { weekKg: null, daily: [] },
       }),
     });
-    // volume + check-ins render "—"; daily-bars shows the empty caption.
-    expect(getByText("No sessions logged this week yet.")).toBeTruthy();
+    expect(getByTestId("client-detail-target-habit-water")).toBeTruthy();
+    expect(getByTestId("client-detail-target-habit-steps")).toBeTruthy();
+    // A not-yet-met habit shows its progress %.
+    expect(getByText("60%")).toBeTruthy();
+  });
+
+  it("shows the empty-habits hint when no habits are configured", () => {
+    const { getByTestId } = render({
+      detail: fullDetail({ habits: null }),
+    });
+    expect(getByTestId("client-detail-targets-empty")).toBeTruthy();
   });
 });
 
@@ -473,12 +491,6 @@ describe("ClientDetailPresenter — ProgrammeCard + habits entry", () => {
     fireEvent.press(getByTestId("client-detail-assign-programme"));
     expect(props.onAssignProgramme).toHaveBeenCalledTimes(1);
   });
-
-  it("keeps the Manage habits entry", () => {
-    const { getByTestId, props } = render();
-    fireEvent.press(getByTestId("client-detail-manage-habits"));
-    expect(props.onManageHabits).toHaveBeenCalledTimes(1);
-  });
 });
 
 describe("ClientDetailPresenter — CoachNotesCard", () => {
@@ -514,7 +526,7 @@ describe("ClientDetailPresenter — helper edge cases", () => {
     expect(getByTestId("client-detail-name")).toBeTruthy();
   });
 
-  it("handles NaN note dates + NaN daily-bar dates without crashing", () => {
+  it("handles NaN note dates without crashing", () => {
     const detail = fullDetail({
       notes: [
         {
@@ -525,14 +537,9 @@ describe("ClientDetailPresenter — helper edge cases", () => {
           createdAt: "not-a-date",
         },
       ],
-      volume: {
-        weekKg: 100,
-        daily: [{ date: "not-a-date", volumeKg: 100 }],
-      },
     });
     const { getByTestId } = render({ detail });
     expect(getByTestId("client-detail-note-n-bad")).toBeTruthy();
-    expect(getByTestId("client-detail-daily-bars")).toBeTruthy();
   });
 
   it("renders a single-word client name (initials fallback path)", () => {

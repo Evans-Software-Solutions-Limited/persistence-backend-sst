@@ -216,6 +216,74 @@ describe("ProgramRepository", () => {
     });
   });
 
+  describe("getForAthlete", () => {
+    const ATHLETE = "athlete-1";
+
+    it("returns null when the athlete has no assignment (no existence leak)", async () => {
+      const db = makeDb({ selects: [[]] });
+      vi.mocked(getDb).mockReturnValue(db);
+      expect(await repo.getForAthlete(ATHLETE, "prog-1", TODAY)).toBeNull();
+      // Short-circuits before the programme lookup.
+      expect(db.select).toHaveBeenCalledTimes(1);
+    });
+
+    it("returns null when the programme row is missing", async () => {
+      const db = makeDb({
+        selects: [
+          [{ startDate: "2026-06-26", endDate: null, status: "started" }],
+          [],
+        ],
+      });
+      vi.mocked(getDb).mockReturnValue(db);
+      expect(await repo.getForAthlete(ATHLETE, "prog-1", TODAY)).toBeNull();
+    });
+
+    it("assembles athlete detail scoped to the caller (own status + week, ordered cycle, NO other clients)", async () => {
+      const db = makeDb({
+        selects: [
+          // assignment (7 days before TODAY → week 2)
+          [
+            {
+              startDate: "2026-06-26",
+              endDate: "2026-07-23",
+              status: "started",
+            },
+          ],
+          [programRow],
+          [
+            {
+              id: "pw-1",
+              workoutId: "w-a",
+              position: 0,
+              name: "Push",
+              estimatedDurationMinutes: 45,
+            },
+            {
+              id: "pw-2",
+              workoutId: "w-b",
+              position: 1,
+              name: "Pull",
+              estimatedDurationMinutes: null,
+            },
+          ],
+        ],
+      });
+      vi.mocked(getDb).mockReturnValue(db);
+
+      const out = await repo.getForAthlete(ATHLETE, "prog-1", TODAY);
+      expect(out).not.toBeNull();
+      expect(out!.id).toBe("prog-1");
+      expect(out!.status).toBe("started");
+      expect(out!.week).toBe(2);
+      expect(out!.workoutCount).toBe(2);
+      expect(out!.workouts.map((w) => w.workoutId)).toEqual(["w-a", "w-b"]);
+      // The athlete payload must never carry other clients' assignments.
+      expect(out as unknown as Record<string, unknown>).not.toHaveProperty(
+        "assignments",
+      );
+    });
+  });
+
   describe("create", () => {
     it("rejects a cycle containing workouts the coach cannot read", async () => {
       // Two unique ids requested; only one comes back readable.

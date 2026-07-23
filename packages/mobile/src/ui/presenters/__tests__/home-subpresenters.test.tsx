@@ -77,6 +77,16 @@ describe("WeeklyVolumePresenter", () => {
 });
 
 describe("HabitsGridPresenter", () => {
+  const WEEK = [
+    "2026-06-04",
+    "2026-06-05",
+    "2026-06-06",
+    "2026-06-07",
+    "2026-06-08",
+    "2026-06-09",
+    "2026-06-10",
+  ];
+
   it("renders habit rows + 7-day cells", () => {
     const { getByTestId } = renderWithTheme(
       <HabitsGridPresenter
@@ -88,16 +98,7 @@ describe("HabitsGridPresenter", () => {
             days: [true, true, false, true, false, true, false],
           },
         ]}
-        weekDates={[
-          "2026-06-04",
-          "2026-06-05",
-          "2026-06-06",
-          "2026-06-07",
-          "2026-06-08",
-          "2026-06-09",
-          "2026-06-10",
-        ]}
-        onToggle={jest.fn()}
+        weekDates={WEEK}
       />,
     );
     expect(getByTestId("habits-grid")).toBeTruthy();
@@ -105,19 +106,7 @@ describe("HabitsGridPresenter", () => {
 
   it("shows an empty grid (locked cells + setup hint) when there are no habits", () => {
     const { getByTestId, getByText } = renderWithTheme(
-      <HabitsGridPresenter
-        habits={[]}
-        weekDates={[
-          "2026-06-04",
-          "2026-06-05",
-          "2026-06-06",
-          "2026-06-07",
-          "2026-06-08",
-          "2026-06-09",
-          "2026-06-10",
-        ]}
-        onToggle={jest.fn()}
-      />,
+      <HabitsGridPresenter habits={[]} weekDates={WEEK} />,
     );
     expect(getByTestId("habits-grid-empty")).toBeTruthy();
     expect(getByText("Get started by setting your habits")).toBeTruthy();
@@ -128,16 +117,7 @@ describe("HabitsGridPresenter", () => {
     const { getByTestId } = renderWithTheme(
       <HabitsGridPresenter
         habits={[]}
-        weekDates={[
-          "2026-06-04",
-          "2026-06-05",
-          "2026-06-06",
-          "2026-06-07",
-          "2026-06-08",
-          "2026-06-09",
-          "2026-06-10",
-        ]}
-        onToggle={jest.fn()}
+        weekDates={WEEK}
         onManageHabits={onManageHabits}
       />,
     );
@@ -157,16 +137,7 @@ describe("HabitsGridPresenter", () => {
             days: [false, false, false, false, false, false, false],
           },
         ]}
-        weekDates={[
-          "2026-06-04",
-          "2026-06-05",
-          "2026-06-06",
-          "2026-06-07",
-          "2026-06-08",
-          "2026-06-09",
-          "2026-06-10",
-        ]}
-        onToggle={jest.fn()}
+        weekDates={WEEK}
         onManageHabits={onManageHabits}
       />,
     );
@@ -174,64 +145,25 @@ describe("HabitsGridPresenter", () => {
     expect(onManageHabits).toHaveBeenCalled();
   });
 
-  const WEEK = [
-    "2026-06-04",
-    "2026-06-05",
-    "2026-06-06",
-    "2026-06-07",
-    "2026-06-08",
-    "2026-06-09",
-    "2026-06-10",
-  ];
-
-  it("regression fix: tapping a configured Water tile threads targetValue through onToggle", () => {
-    const onToggle = jest.fn();
-    const { getByLabelText } = renderWithTheme(
+  it("is READ-ONLY: day cells are not pressable (no toggle surface)", () => {
+    // The grid reflects logged activity; it must not expose a button/toggle on
+    // day cells. A done tile still renders with its state in the a11y label.
+    const { getByLabelText, queryByRole } = renderWithTheme(
       <HabitsGridPresenter
         habits={[
           {
             id: "g-water",
             label: "Water",
             tone: "primary",
-            days: [false, false, false, false, false, false, false],
-            targetValue: 2,
+            days: [false, false, false, false, false, false, true],
           },
         ]}
         weekDates={WEEK}
-        onToggle={onToggle}
       />,
     );
-    fireEvent.press(getByLabelText("Water 2026-06-10 not done"));
-    expect(onToggle).toHaveBeenCalledWith("g-water", "2026-06-10", true, 2);
-  });
-
-  it("regression fix: Calories (toggleable=false) never calls onToggle — taps deep-link instead", () => {
-    const onToggle = jest.fn();
-    const onOpenNonToggleable = jest.fn();
-    const { getAllByLabelText } = renderWithTheme(
-      <HabitsGridPresenter
-        habits={[
-          {
-            id: "g-calories",
-            label: "Calories",
-            tone: "gold",
-            days: [false, false, false, false, false, false, false],
-            targetValue: null,
-            toggleable: false,
-          },
-        ]}
-        weekDates={WEEK}
-        onToggle={onToggle}
-        onOpenNonToggleable={onOpenNonToggleable}
-      />,
-    );
-    // Every day-cell in a read-only row shares the same "set in Fuel" label —
-    // any of the 7 taps must deep-link, never toggle.
-    const cells = getAllByLabelText("Calories — set in Fuel");
-    expect(cells).toHaveLength(7);
-    fireEvent.press(cells[3]);
-    expect(onToggle).not.toHaveBeenCalled();
-    expect(onOpenNonToggleable).toHaveBeenCalledWith("g-calories");
+    // The last day (today) is done → labelled, but not a button.
+    expect(getByLabelText("Water 2026-06-10 done")).toBeTruthy();
+    expect(queryByRole("button")).toBeNull();
   });
 });
 
