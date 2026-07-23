@@ -18,7 +18,6 @@ import {
   useGetStreaks,
   useGetHabits,
   buildHabitGrid,
-  useToggleHabitDay,
   useLogMeasurement,
   useUseFreezeToken,
 } from "@/ui/hooks";
@@ -591,21 +590,6 @@ describe("Progress/Home read hooks (cache-first + refresh)", () => {
 });
 
 describe("Progress/Home mutation hooks", () => {
-  it("useToggleHabitDay flips the cache + enqueues", async () => {
-    const { storage, wrapper } = setup();
-    const { result } = renderHook(() => useToggleHabitDay(), { wrapper });
-    await act(async () => {
-      await result.current.mutate({
-        goalId: "g1",
-        day: "2026-06-10",
-        done: true,
-      });
-    });
-    expect(
-      storage.getCachedHabitCompletions(USER, { goalId: "g1" }),
-    ).toHaveLength(1);
-  });
-
   it("useLogMeasurement appends body-trend + validates", async () => {
     const { storage, wrapper } = setup();
     const { result } = renderHook(() => useLogMeasurement(), { wrapper });

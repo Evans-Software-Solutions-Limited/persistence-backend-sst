@@ -39,7 +39,7 @@ import type {
   CalorieHitModule,
   ClientDetail,
   GoalModule,
-  VolumeModule,
+  HabitsModule,
 } from "@/domain/models/clientDetail";
 import type { ActiveProgramme } from "@/domain/models/progress";
 import type { CoachClientAssignment } from "@/domain/ports/api.port";
@@ -236,10 +236,10 @@ export function ClientDetailPresenter(props: ClientDetailProps) {
 
           <TargetsCard
             calorieHit={detail?.calorieHit ?? null}
-            onEdit={onEditTargets}
+            habits={detail?.habits ?? null}
+            onEditCalories={onEditTargets}
+            onManageHabits={onManageHabits}
           />
-
-          <ThisWeekCard detail={detail} />
 
           <AdherenceBreakdown adherence={detail?.adherence ?? null} />
 
@@ -248,7 +248,6 @@ export function ClientDetailPresenter(props: ClientDetailProps) {
             onOpenProgramme={onOpenProgramme}
             onAssignProgramme={onAssignProgramme}
             onAssignWorkout={onAssignWorkout}
-            onManageHabits={onManageHabits}
           />
 
           <UpcomingSessionsCard
@@ -962,25 +961,22 @@ function BodyTrendSection({
 // ── TargetsCard ──────────────────────────────────────────────────────────────
 function TargetsCard({
   calorieHit,
-  onEdit,
+  habits,
+  onEditCalories,
+  onManageHabits,
 }: {
   calorieHit: CalorieHitModule | null;
-  onEdit: () => void;
+  habits: HabitsModule | null;
+  onEditCalories: () => void;
+  onManageHabits: () => void;
 }) {
-  // Module d only carries the calorie target. Protein / workouts / volume
-  // aren't in the aggregate → "—" (the prototype's four-tile grid, degraded).
-  const tiles: { label: string; value: string; unit: string; tone: Tone }[] = [
-    {
-      label: "Calories",
-      value:
-        calorieHit?.targetKcal != null ? String(calorieHit.targetKcal) : "—",
-      unit: "kcal / day",
-      tone: "gold",
-    },
-    { label: "Protein", value: "—", unit: "g / day", tone: "primary" },
-    { label: "Workouts", value: "—", unit: "per week", tone: "ember" },
-    { label: "Volume", value: "—", unit: "t / week", tone: "trainer" },
-  ];
+  // The client's daily targets = their configured habits, plus the calorie
+  // target (the one manually-set numeric target). Protein / workouts / volume
+  // tiles were removed — they were never populated (always "—") and read as
+  // noise. "Edit all" edits the habit set; the calorie target has its own
+  // inline edit (it's set via the nutrition-target sheet, not habit setup).
+  const habitRows = habits?.habits ?? [];
+  const kcal = calorieHit?.targetKcal;
 
   return (
     <Card pad={0} radius={16} testID="client-detail-targets">
@@ -989,7 +985,7 @@ function TargetsCard({
         alignItems="center"
         justifyContent="space-between"
         padding={16}
-        paddingBottom={8}
+        paddingBottom={12}
       >
         <Text
           fontFamily="$display"
@@ -1000,9 +996,9 @@ function TargetsCard({
           Targets
         </Text>
         <Pressable
-          onPress={onEdit}
+          onPress={onManageHabits}
           accessibilityRole="button"
-          accessibilityLabel="Edit targets"
+          accessibilityLabel="Edit all targets"
           testID="client-detail-targets-edit"
           style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
         >
@@ -1016,196 +1012,105 @@ function TargetsCard({
           </Text>
         </Pressable>
       </View>
-      <View flexDirection="row" flexWrap="wrap">
-        {tiles.map((t, i) => (
-          <Pressable
-            key={t.label}
-            onPress={onEdit}
-            accessibilityRole="button"
-            accessibilityLabel={`Edit ${t.label}`}
-            testID={`client-detail-target-${t.label.toLowerCase()}`}
-            style={({ pressed }) => ({
-              width: "50%",
-              opacity: pressed ? 0.7 : 1,
-            })}
-          >
-            <View
-              gap={4}
-              paddingVertical={12}
-              paddingHorizontal={16}
-              borderTopWidth={1}
-              borderColor="$border"
-              borderRightWidth={i % 2 === 0 ? 1 : 0}
-            >
-              <Text
-                fontFamily="$display"
-                fontSize={10.5}
-                fontWeight="600"
-                letterSpacing={1.7}
-                textTransform="uppercase"
-                color="$text3"
-              >
-                {t.label}
-              </Text>
-              <View flexDirection="row" alignItems="baseline" gap={4}>
-                <Text
-                  fontFamily="$mono"
-                  fontSize={22}
-                  fontWeight="700"
-                  color={toneHex(t.tone).base}
-                >
-                  {t.value}
-                </Text>
-                <Text fontFamily="$mono" fontSize={10.5} color="$text3">
-                  {t.unit}
-                </Text>
-              </View>
-            </View>
-          </Pressable>
-        ))}
-      </View>
-    </Card>
-  );
-}
 
-// ── ThisWeekCard ─────────────────────────────────────────────────────────────
-function ThisWeekCard({ detail }: { detail: ClientDetail | null }) {
-  const tw = detail?.thisWeek ?? null;
-  const workouts =
-    tw != null
-      ? tw.workoutsPlanned != null
-        ? `${tw.workoutsCompleted}/${tw.workoutsPlanned}`
-        : String(tw.workoutsCompleted)
-      : "—";
-  const volume =
-    tw?.volumeKg != null ? `${(tw.volumeKg / 1000).toFixed(1)}t` : "—";
-  const prs = tw != null ? String(tw.prs) : "—";
-  const checkIns = tw?.checkIns != null ? `${tw.checkIns}/7` : "—";
-
-  return (
-    <View testID="client-detail-this-week">
-      <View marginBottom={10} paddingHorizontal={2}>
-        <Text
-          fontFamily="$display"
-          fontSize={10.5}
-          fontWeight="600"
-          letterSpacing={1.7}
-          textTransform="uppercase"
-          color="$text3"
-        >
-          This week
-        </Text>
-        <Text
-          fontFamily="$display"
-          fontWeight="700"
-          fontSize={24}
-          letterSpacing={-0.5}
-          color="$text"
-        >
-          Activity
-        </Text>
-      </View>
-
-      <Card pad={16} radius={16}>
+      {/* Calorie target — the one manually-set numeric target, edited via the
+          nutrition-target sheet (own pencil), not habit setup. */}
+      <Pressable
+        onPress={onEditCalories}
+        accessibilityRole="button"
+        accessibilityLabel="Edit calorie target"
+        testID="client-detail-target-calories"
+        style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
+      >
         <View
           flexDirection="row"
-          gap={12}
-          paddingBottom={12}
-          borderBottomWidth={1}
+          alignItems="center"
+          justifyContent="space-between"
+          paddingHorizontal={16}
+          paddingVertical={12}
+          borderTopWidth={1}
           borderColor="$border"
         >
-          <MiniStat label="Workouts" value={workouts} tone="primary" />
-          <MiniStat label="Volume" value={volume} />
-          <MiniStat label="PRs" value={prs} tone="gold" />
-          <MiniStat label="Check-ins" value={checkIns} tone="success" />
+          <View>
+            <Text
+              fontFamily="$display"
+              fontSize={10.5}
+              fontWeight="600"
+              letterSpacing={1.7}
+              textTransform="uppercase"
+              color="$text3"
+            >
+              Calories
+            </Text>
+            <View
+              flexDirection="row"
+              alignItems="baseline"
+              gap={4}
+              marginTop={2}
+            >
+              <Text
+                fontFamily="$mono"
+                fontSize={22}
+                fontWeight="700"
+                color={toneHex("gold").base}
+              >
+                {kcal != null ? String(kcal) : "—"}
+              </Text>
+              <Text fontFamily="$mono" fontSize={10.5} color="$text3">
+                kcal / day
+              </Text>
+            </View>
+          </View>
+          <IconEdit size={15} color="#8A8A98" />
         </View>
-        <DailyBars volume={detail?.volume ?? null} />
-      </Card>
-    </View>
-  );
-}
+      </Pressable>
 
-function MiniStat({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: string;
-  tone?: Tone;
-}) {
-  return (
-    <View flex={1}>
-      <Text
-        fontFamily="$display"
-        fontSize={9.5}
-        fontWeight="600"
-        letterSpacing={0.95}
-        textTransform="uppercase"
-        color="$text3"
-      >
-        {label}
-      </Text>
-      <Text
-        fontFamily="$mono"
-        fontSize={18}
-        fontWeight="600"
-        color={tone ? toneHex(tone).base : "$text"}
-        marginTop={2}
-      >
-        {value}
-      </Text>
-    </View>
-  );
-}
-
-function DailyBars({ volume }: { volume: VolumeModule | null }) {
-  const daily = volume?.daily ?? [];
-  const max = daily.reduce((m, d) => Math.max(m, d.volumeKg), 0);
-
-  return (
-    <View marginTop={14} testID="client-detail-daily-bars">
-      <Text
-        fontFamily="$display"
-        fontSize={10.5}
-        fontWeight="600"
-        letterSpacing={1.7}
-        textTransform="uppercase"
-        color="$text3"
-        marginBottom={8}
-      >
-        Daily activity
-      </Text>
-      {daily.length === 0 ? (
-        <Text fontFamily="$body" fontSize={12} color="$text3">
-          No sessions logged this week yet.
-        </Text>
+      {/* Daily habits — the client's other targets (from habit setup). */}
+      {habitRows.length > 0 ? (
+        habitRows.map((h) => (
+          <View
+            key={h.goalId}
+            flexDirection="row"
+            alignItems="center"
+            justifyContent="space-between"
+            paddingHorizontal={16}
+            paddingVertical={10}
+            borderTopWidth={1}
+            borderColor="$border"
+            testID={`client-detail-target-habit-${h.goalId}`}
+          >
+            <Text
+              fontFamily="$display"
+              fontSize={13}
+              fontWeight="500"
+              color="$text"
+            >
+              {h.label}
+            </Text>
+            <Pill tone={h.met ? "success" : "neutral"} size="xs">
+              {h.met ? "On track" : `${Math.round((h.pct ?? 0) * 100)}%`}
+            </Pill>
+          </View>
+        ))
       ) : (
-        <View flexDirection="row" alignItems="flex-end" gap={6} height={64}>
-          {daily.map((d, i) => {
-            const h = max > 0 ? Math.max(4, (d.volumeKg / max) * 50) : 4;
-            return (
-              <View key={`${d.date}-${i}`} flex={1} alignItems="center" gap={4}>
-                <View
-                  width="100%"
-                  height={h}
-                  backgroundColor={d.volumeKg > 0 ? "$primary" : "$surface4"}
-                  borderRadius={3}
-                />
-                <Text
-                  fontFamily="$display"
-                  fontSize={9.5}
-                  fontWeight="600"
-                  color="$text3"
-                >
-                  {dayLetter(d.date)}
-                </Text>
-              </View>
-            );
-          })}
+        <View
+          paddingHorizontal={16}
+          paddingVertical={12}
+          borderTopWidth={1}
+          borderColor="$border"
+        >
+          <Text
+            fontFamily="$body"
+            fontSize={12.5}
+            color="$text3"
+            testID="client-detail-targets-empty"
+          >
+            No daily habits set — tap Edit all to set this client&rsquo;s
+            habits.
+          </Text>
         </View>
       )}
-    </View>
+    </Card>
   );
 }
 
@@ -1321,13 +1226,11 @@ function ProgrammeSection({
   onOpenProgramme,
   onAssignProgramme,
   onAssignWorkout,
-  onManageHabits,
 }: {
   activeProgramme: ActiveProgramme | null;
   onOpenProgramme: () => void;
   onAssignProgramme: () => void;
   onAssignWorkout: () => void;
-  onManageHabits: () => void;
 }) {
   return (
     <View gap={16}>
@@ -1379,21 +1282,6 @@ function ProgrammeSection({
             </Btn>
           </View>
         )}
-      </Section>
-
-      <Section
-        eyebrow="Habits"
-        title="Daily habits"
-        testID="client-detail-habits"
-      >
-        <Btn
-          variant="soft"
-          tone="trainer"
-          onPress={onManageHabits}
-          testID="client-detail-manage-habits"
-        >
-          Manage habits
-        </Btn>
       </Section>
     </View>
   );
@@ -1524,12 +1412,6 @@ function weightText(kg: number | null, unit: string | null): string {
   if (kg == null) return "—";
   const u = unit ?? "kg";
   return `${kg} ${u}`;
-}
-
-function dayLetter(dateISO: string): string {
-  const d = new Date(dateISO);
-  if (Number.isNaN(d.getTime())) return "";
-  return ["S", "M", "T", "W", "T", "F", "S"][d.getUTCDay()] ?? "";
 }
 
 function shortDate(iso: string): string {

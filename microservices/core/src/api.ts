@@ -88,6 +88,10 @@ import { trainersClientBodyTrendHandler } from "./application/trainers/measureme
 import { trainersProgramsListHandler } from "./application/trainers/programs/trainersProgramsListHandler";
 import { trainersProgramsCreateHandler } from "./application/trainers/programs/trainersProgramsCreateHandler";
 import { trainersProgramsGetHandler } from "./application/trainers/programs/trainersProgramsGetHandler";
+// Athlete-facing programme detail (specs/19-programs — athlete view): a client
+// reads a programme assigned to them (metadata + workout cycle) to open it and
+// start a workout. Distinct from the coach owner-scoped GET above.
+import { programGetHandler } from "./application/programs/programGetHandler";
 import { trainersProgramsUpdateHandler } from "./application/trainers/programs/trainersProgramsUpdateHandler";
 import { trainersProgramsDeleteHandler } from "./application/trainers/programs/trainersProgramsDeleteHandler";
 import { trainersProgramsAssignHandler } from "./application/trainers/programs/trainersProgramsAssignHandler";
@@ -214,6 +218,9 @@ const app = new Elysia()
   .use(trainersProgramsAssignHandler)
   .use(trainersProgramsUnassignHandler)
   .use(trainersClientActiveProgrammeGetHandler)
+  // Athlete-facing programme read (assignment-scoped) — lets a client open the
+  // programme their coach assigned and start its workouts.
+  .use(programGetHandler)
   .use(trainersClientWorkoutAssignmentsCreateHandler)
   .use(trainersClientWorkoutAssignmentsDeleteHandler)
   // M18 (Live-session) — coach-side client-assignments surface: GET the

@@ -1,5 +1,5 @@
 import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ScrollView } from "react-native";
 import { useScrollToTopOnTabPress } from "@/ui/hooks/useScrollToTopOnTabPress";
 import { useAuth } from "@/ui/hooks/useAuth";
@@ -9,7 +9,6 @@ import { useReflectStepsHabit } from "@/ui/hooks/useReflectStepsHabit";
 import { useUnreadNotificationCount } from "@/ui/hooks/useUnreadNotificationCount";
 import { useHealthSync } from "@/state/health-sync";
 import { useGetHabits } from "@/ui/hooks/useGetHabits";
-import { useToggleHabitDay } from "@/ui/hooks/useToggleHabitDay";
 import { useWorkouts } from "@/ui/hooks/useWorkouts";
 import { useTrainSegment } from "@/ui/hooks/useTrainSegment";
 import { useStaggeredEntry } from "@/ui/hooks/useStaggeredEntry";
@@ -45,7 +44,6 @@ export function HomeContainer() {
   const health = useHealthData();
   const notificationCount = useUnreadNotificationCount();
   const habitsState = useGetHabits();
-  const toggle = useToggleHabitDay();
   const workoutsState = useWorkouts();
   const profile = useProfilePage();
   const [weighInOpen, setWeighInOpen] = useState(false);
@@ -177,6 +175,16 @@ export function HomeContainer() {
     void Promise.all([refreshHome(), refreshHabits(), refreshWorkouts()]);
   }, [refreshHome, refreshHabits, refreshWorkouts]);
 
+  // Steps has no explicit "log" action — it reflects into the Steps habit
+  // reactively whenever the HealthKit read changes (useReflectStepsHabit
+  // above). That write goes to the same cache the read-only grid reads, so
+  // re-point the grid at it here (runs after the reflect effect) to tick the
+  // Steps tile the moment the count crosses target — no pull-to-refresh.
+  useEffect(() => {
+    if (healthSteps == null) return;
+    reloadHabits();
+  }, [healthSteps, reloadHabits]);
+
   const onOpenWorkout = useCallback(
     (workoutId: string) => {
       router.push(`/(app)/workouts/${workoutId}` as never);
@@ -208,42 +216,28 @@ export function HomeContainer() {
     [router],
   );
 
-  const onToggleHabitDay = useCallback(
-    (goalId: string, day: string, done: boolean, value?: number | null) => {
-      // Regression fix (18-habit-setup): once a habit is configured,
-      // value_gte/within_tolerance completions require a `value` server-side
-      // — pass the grid's threaded targetValue through so the POST doesn't
-      // 422. `value` is intentionally omitted (not coerced to null) for a
-      // habit that doesn't carry one (Gym) so the wire payload stays
-      // unchanged for it.
-      void toggle.mutate(
-        value != null ? { goalId, day, done, value } : { goalId, day, done },
-      );
-      // The command writes the optimistic completion to the cache
-      // synchronously (before `mutate`'s first await), so re-reading the cache
-      // now flips the tile instantly — without waiting on the network drain,
-      // and it works offline. `refresh` (on pull-to-refresh / focus) still
-      // reconciles with server truth afterward. Without this the tile stayed
-      // frozen until a re-mount (navigate away/back) — the grid's `data`
-      // snapshot only updated on a successful fetch.
-      reloadHabits();
-    },
-    [toggle, reloadHabits],
-  );
-
-  // Calories can't be toggled from this grid — the backend scores it from
-  // nutrition_entries, never habit_completions — so its row deep-links to the
-  // Fuel Targets/today surface instead (mirrors HabitCardPresenter's Calories
-  // deep-link).
-  const onOpenCaloriesFromGrid = useCallback(() => {
-    router.push("/(app)/fuel/targets" as never);
-  }, [router]);
+  // The Home habits grid is READ-ONLY: it reflects what the user has actually
+  // logged, it is not a toggle surface. Every category ticks from its own
+  // logging flow — water/sleep reflect into the habit completion on log (see
+  // reflectWaterHabit / reflectSleepHabit), steps reflects on the HealthKit
+  // read (useReflectStepsHabit above), and gym/calories derive server-side.
+  // All those flows write optimistically to the SAME cache the grid reads;
+  // `reloadHabits()` (below) re-points the grid at that cache so the tick
+  // shows immediately without a pull-to-refresh.
 
   // Habits section → the habit-setup screen (18-habit-setup STORY-007): the
   // empty-state CTA + the persistent "Manage" affordance. Pushes over the tabs.
   const onManageHabits = useCallback(() => {
     router.push("/(app)/habits-setup" as never);
   }, [router]);
+
+  // "Your programme" card → the read-only athlete programme view (its full
+  // workout list, each startable). Athlete-scoped route, not the coach editor.
+  const activeProgrammeId = homeData?.activeProgramme?.programId ?? null;
+  const onOpenProgramme = useCallback(() => {
+    if (!activeProgrammeId) return;
+    router.push(`/(app)/programs/view/${activeProgrammeId}` as never);
+  }, [router, activeProgrammeId]);
 
   // Home bell → notifications list (home.jsx HomeHeader; the 09.5-intended
   // entry point — the route docstring at app/(app)/notifications.tsx names the
@@ -269,9 +263,18 @@ export function HomeContainer() {
     openQuickAdd("breakfast");
   }, [router, openQuickAdd, setFuelActiveDate]);
   const openWater = useCallback(() => setWaterOpen(true), []);
-  const closeWater = useCallback(() => setWaterOpen(false), []);
+  // Logging water/sleep reflects into the habit completion cache synchronously
+  // (reflectWaterHabit / reflectSleepHabit). Re-point the read-only grid at
+  // that cache on close so the tick shows immediately — no pull-to-refresh.
+  const closeWater = useCallback(() => {
+    setWaterOpen(false);
+    reloadHabits();
+  }, [reloadHabits]);
   const openSleep = useCallback(() => setSleepOpen(true), []);
-  const closeSleep = useCallback(() => setSleepOpen(false), []);
+  const closeSleep = useCallback(() => {
+    setSleepOpen(false);
+    reloadHabits();
+  }, [reloadHabits]);
 
   return (
     <>
@@ -308,9 +311,8 @@ export function HomeContainer() {
         onOpenMealLog={onOpenMealLog}
         onLogWater={openWater}
         onOpenSleep={openSleep}
-        onToggleHabitDay={onToggleHabitDay}
         onManageHabits={onManageHabits}
-        onOpenCaloriesFromGrid={onOpenCaloriesFromGrid}
+        onOpenProgramme={onOpenProgramme}
         onOpenCoach={noop}
       />
       <WeighInSheetContainer visible={weighInOpen} onClose={closeWeighIn} />

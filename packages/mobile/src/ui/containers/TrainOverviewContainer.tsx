@@ -21,6 +21,7 @@ export function TrainOverviewContainer() {
 
   const home = useGetHome();
   const refreshHome = home.refresh;
+  const activeProgramme = home.data?.activeProgramme ?? null;
 
   const onRefresh = useCallback(() => {
     void refreshHome();
@@ -33,13 +34,23 @@ export function TrainOverviewContainer() {
     [router],
   );
 
+  // Open the athlete programme view (read-only) — a programme is a
+  // multi-workout plan, so the athlete can see everything in it and start any
+  // workout. Routes to the athlete-scoped screen, NOT the coach editor.
+  const programId = activeProgramme?.programId ?? null;
+  const onOpenProgramme = useCallback(() => {
+    if (!programId) return;
+    router.push(`/(app)/programs/view/${programId}` as never);
+  }, [router, programId]);
+
   return (
     <TrainOverviewPresenter
-      activeProgramme={home.data?.activeProgramme ?? null}
+      activeProgramme={activeProgramme}
       todaysTraining={home.data?.todaysTraining ?? []}
       isRefreshing={home.isRefreshing}
       onRefresh={onRefresh}
       onOpenWorkout={onOpenWorkout}
+      onOpenProgramme={onOpenProgramme}
     />
   );
 }

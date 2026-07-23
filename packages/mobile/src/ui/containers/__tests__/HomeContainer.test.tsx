@@ -257,32 +257,10 @@ describe("HomeContainer (V2)", () => {
     expect(mockPush).toHaveBeenCalledWith("/(app)/notifications");
   });
 
-  it("toggling a habit writes the optimistic completion to cache", async () => {
-    const { adapters, storage } = makeAdapters();
-    render(
-      <Wrapper adapters={adapters}>
-        <HomeContainer />
-      </Wrapper>,
-    );
-    await waitFor(() => expect(mockProbe.last).not.toBeNull());
-    await act(async () => {
-      mockProbe.last?.onToggleHabitDay("g1", "2026-06-10", true);
-    });
-    await waitFor(() =>
-      expect(
-        storage.getCachedHabitCompletions(USER, { goalId: "g1" }),
-      ).toHaveLength(1),
-    );
-  });
-
-  it("regression: toggling a habit flips the grid tile without a re-mount", async () => {
-    // Seed an ENABLED habit config so the `g-water` row is present in the grid
-    // regardless of completions (config-driven path — the real product shape).
-    // The tile boolean for a given day is what the toggle must flip. Anchor on
-    // today's LOCAL day: that's what `useGetHabits.read` reads back (its
-    // `since` = this week's Monday) and what `buildHabitGrid` indexes `days[i]`
-    // against.
-    const today = localDayISO();
+  it("read-only grid: exposes habits and passes NO toggle handler", async () => {
+    // The Home grid reflects logged activity — it is not a toggle surface.
+    // The container must build the grid rows (config-driven) but expose no
+    // per-cell toggle callback to the presenter.
     const { adapters, api } = makeAdapters();
     api.habitConfigs = [
       {
@@ -305,43 +283,100 @@ describe("HomeContainer (V2)", () => {
         <HomeContainer />
       </Wrapper>,
     );
-    // The config-driven row is present; today's tile starts FALSE (no
-    // completion logged yet).
-    const weekDates = await waitFor(() => {
+    await waitFor(() => {
       const row = mockProbe.last?.habits.find((h) => h.id === "g-water");
       if (!row) throw new Error("g-water row not in grid yet");
-      return mockProbe.last!.weekDates;
     });
-    const dayIndex = weekDates.indexOf(today);
-    expect(dayIndex).toBeGreaterThanOrEqual(0);
+    // No toggle affordance is wired through to the presenter (read-only).
     expect(
-      mockProbe.last?.habits.find((h) => h.id === "g-water")?.days[dayIndex],
-    ).toBe(false);
+      (mockProbe.last as unknown as { onToggleHabitDay?: unknown })
+        .onToggleHabitDay,
+    ).toBeUndefined();
+    expect(
+      (mockProbe.last as unknown as { onOpenCaloriesFromGrid?: unknown })
+        .onOpenCaloriesFromGrid,
+    ).toBeUndefined();
+  });
 
-    // Toggle ON: the command writes the optimistic completion to the cache
-    // synchronously (value threaded from the config target), then the container
-    // calls reloadHabits() — a mounted re-render (NO unmount/re-render of the
-    // tree here) must flip today's tile to TRUE. Pre-fix (no reload wiring) the
-    // grid stayed frozen at false until a navigate-away/back re-mount.
-    await act(async () => {
-      mockProbe.last?.onToggleHabitDay("g-water", today, true, 2);
+  it("reflects a logged habit into the grid without a manual toggle", async () => {
+    // A HealthKit steps read ≥ target reflects into the Steps habit completion
+    // (useReflectStepsHabit) and the container reloads habits so the tile ticks
+    // with no pull-to-refresh. Seed the config in BOTH api (grid row) and
+    // storage (the reflect reads the local config), and return the completion
+    // from the API so the assertion is deterministic regardless of the
+    // reflect-vs-fetch write ordering.
+    const today = localDayISO();
+    const { adapters, api, storage } = makeAdapters({
+      isAvailable: async () => true,
+      getStepsToday: async () => ok(9000),
     });
+    const stepsConfig = {
+      category: "steps" as const,
+      enabled: true,
+      goalId: "g-steps",
+      assignedByCoach: false,
+      assignedByName: null,
+      locked: false,
+      targetValue: 8000,
+      unit: "steps",
+      period: "daily" as const,
+      completionRule: "value_gte" as const,
+      daysPerWeek: 7,
+      tolerancePct: null,
+      pending: null,
+    };
+    api.habitConfigs = [stepsConfig];
+    storage.cacheHabitConfigs(USER, [stepsConfig]);
+    api.habitCompletions = [
+      {
+        id: "c-steps-today",
+        userId: USER,
+        goalId: "g-steps",
+        completedAt: `${today}T12:00:00.000Z`,
+        localCompletedDate: today,
+        value: 8000,
+      },
+    ];
+    render(
+      <Wrapper adapters={adapters}>
+        <HomeContainer />
+      </Wrapper>,
+    );
+    const dayIndex = await waitFor(() => {
+      const i = mockProbe.last?.weekDates.indexOf(today) ?? -1;
+      if (i < 0) throw new Error("today not in weekDates yet");
+      return i;
+    });
+    // The Steps tile shows ticked for today with no toggle interaction.
     await waitFor(() =>
       expect(
-        mockProbe.last?.habits.find((h) => h.id === "g-water")?.days[dayIndex],
+        mockProbe.last?.habits.find((h) => h.id === "g-steps")?.days[dayIndex],
       ).toBe(true),
     );
+  });
 
-    // Inverse: toggling done=false removes the completion synchronously and
-    // reloadHabits() re-renders the mounted grid back to false.
-    await act(async () => {
-      mockProbe.last?.onToggleHabitDay("g-water", today, false);
-    });
-    await waitFor(() =>
-      expect(
-        mockProbe.last?.habits.find((h) => h.id === "g-water")?.days[dayIndex],
-      ).toBe(false),
+  it("opening the 'Your programme' card routes to the athlete programme view", async () => {
+    const { adapters, api } = makeAdapters();
+    api.nextActiveProgramme = {
+      assignmentId: "pa-1",
+      programId: "p-1",
+      name: "Strength Foundations",
+      week: 2,
+      totalWeeks: 8,
+      endDate: null,
+      startDate: "2026-06-01",
+      assignedByName: "Coach Jane",
+    };
+    render(
+      <Wrapper adapters={adapters}>
+        <HomeContainer />
+      </Wrapper>,
     );
+    await waitFor(() =>
+      expect(mockProbe.last?.activeProgramme?.programId).toBe("p-1"),
+    );
+    act(() => mockProbe.last?.onOpenProgramme?.());
+    expect(mockPush).toHaveBeenCalledWith("/(app)/programs/view/p-1");
   });
 
   it("quick-log Meal jumps to Fuel and opens the add-food sheet", async () => {
@@ -369,40 +404,5 @@ describe("HomeContainer (V2)", () => {
     await waitFor(() => expect(mockProbe.last).not.toBeNull());
     act(() => mockProbe.last?.onOpenMealLog());
     expect(useFuelSheets.getState().date).toBe(localDayISO());
-  });
-
-  it("regression fix: toggling a configured habit with a value writes it to the optimistic cache row", async () => {
-    const { adapters, storage } = makeAdapters();
-    render(
-      <Wrapper adapters={adapters}>
-        <HomeContainer />
-      </Wrapper>,
-    );
-    await waitFor(() => expect(mockProbe.last).not.toBeNull());
-    await act(async () => {
-      // The grid's onToggle signature carries the habit's live targetValue as
-      // a 4th arg (threaded from buildHabitGrid) — the backend 422s a
-      // value_gte completion with none once the habit is configured.
-      mockProbe.last?.onToggleHabitDay("g-water", "2026-06-10", true, 2);
-    });
-    await waitFor(() => {
-      const rows = storage.getCachedHabitCompletions(USER, {
-        goalId: "g-water",
-      });
-      expect(rows).toHaveLength(1);
-      expect(rows[0].value).toBe(2);
-    });
-  });
-
-  it("regression fix: Calories deep-link (non-toggleable grid row) navigates to Fuel Targets", async () => {
-    const { adapters } = makeAdapters();
-    render(
-      <Wrapper adapters={adapters}>
-        <HomeContainer />
-      </Wrapper>,
-    );
-    await waitFor(() => expect(mockProbe.last).not.toBeNull());
-    act(() => mockProbe.last?.onOpenCaloriesFromGrid());
-    expect(mockPush).toHaveBeenCalledWith("/(app)/fuel/targets");
   });
 });

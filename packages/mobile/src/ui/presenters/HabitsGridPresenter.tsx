@@ -7,9 +7,16 @@ import { localDayISO } from "@/shared/utils";
 /**
  * <HabitsGridPresenter> — Home Mon→Sun habit grid (06-progress-goals,
  * STORY-004; home.jsx:227–268). Dense 18pt <HabitTile> cells. `weekDates` is
- * the 7 YYYY-MM-DD of the current week, Monday-first; tapping a cell toggles
- * that day. Today is highlighted wherever it falls; days after today are locked
- * (upcoming), days before today without a completion read as missed.
+ * the 7 YYYY-MM-DD of the current week, Monday-first.
+ *
+ * READ-ONLY: the grid is a reflection of what the user has actually logged —
+ * it is NOT a manual toggle surface. Every habit category now ticks from its
+ * real logging flow (water/sleep/steps reflect on log; gym/calories derive
+ * server-side), so a cell is filled iff the day's habit was genuinely hit.
+ * Cells are non-interactive; the only affordance is the header "Manage" link
+ * to the habit-setup screen. Today is highlighted wherever it falls; days
+ * after today read as locked (upcoming), days before today without a
+ * completion read as missed.
  */
 
 export type HabitVM = {
@@ -17,29 +24,11 @@ export type HabitVM = {
   label: string;
   tone: HabitTone;
   days: boolean[]; // length 7, Mon→Sun (aligns with weekDates)
-  /**
-   * The value a completion for this habit must carry (regression fix — the
-   * backend 422s a value_gte/within_tolerance completion with none). Threaded
-   * through so `onToggle` can send it; `undefined`/`null` for a habit that
-   * doesn't require one (Gym).
-   */
-  targetValue?: number | null;
-  /**
-   * False for Calories: the backend scores it from `nutrition_entries`, never
-   * `habit_completions`, so a completion row here is inert. Defaults to true.
-   */
-  toggleable?: boolean;
 };
 
 export type HabitsGridProps = {
   habits: HabitVM[];
   weekDates: string[]; // 7 YYYY-MM-DD, Monday-first
-  onToggle: (
-    goalId: string,
-    day: string,
-    done: boolean,
-    value?: number | null,
-  ) => void;
   /**
    * Navigate to the habit-setup screen (18-habit-setup STORY-007). Drives the
    * empty-state CTA and the persistent "Manage" affordance in the header. When
@@ -47,13 +36,6 @@ export type HabitsGridProps = {
    * callers that predate the setup screen unbroken.
    */
   onManageHabits?: () => void;
-  /**
-   * A non-toggleable habit's row (Calories) deep-links here instead of
-   * toggling — mirrors `HabitCardPresenter`'s Calories deep-link to Fuel
-   * Targets. Required when any habit has `toggleable === false`; the row is
-   * still tappable without it, just inert.
-   */
-  onOpenNonToggleable?: (goalId: string) => void;
   testID?: string;
 };
 
@@ -68,9 +50,7 @@ const CELL = 18;
 export function HabitsGridPresenter({
   habits,
   weekDates,
-  onToggle,
   onManageHabits,
-  onOpenNonToggleable,
   testID = "habits-grid",
 }: HabitsGridProps) {
   const todayISO = localDayISO();
@@ -148,63 +128,50 @@ export function HabitsGridPresenter({
         </Pressable>
       ) : null}
 
-      {habits.map((h) => {
-        // Regression fix: Calories can't be meaningfully toggled from this
-        // grid (the engine scores it from nutrition_entries, not
-        // habit_completions) — its row renders read-only, deep-linking to
-        // Fuel on tap instead of flipping a cell.
-        const toggleable = h.toggleable ?? true;
-        return (
-          <View
-            key={h.id}
-            flexDirection="row"
-            alignItems="center"
-            paddingVertical={4}
-            paddingHorizontal={4}
-            borderTopWidth={1}
-            borderColor="$border"
-          >
-            <Text flex={1} fontSize={13} fontWeight="500" color="$text">
-              {h.label}
-            </Text>
-            <View flexDirection="row" gap={8}>
-              {h.days.map((done, i) => {
-                const iso = weekDates[i];
-                // YYYY-MM-DD compares lexicographically = chronologically.
-                const isToday = iso === todayISO;
-                const isFuture = iso > todayISO;
-                const state = done
-                  ? "done"
-                  : isToday
-                    ? "today"
-                    : isFuture
-                      ? "locked" // upcoming day this week — not "missed"
-                      : "missed";
-                return (
-                  <HabitTile
-                    key={weekDates[i]}
-                    state={state}
-                    tone={h.tone}
-                    size={CELL}
-                    onPress={() =>
-                      toggleable
-                        ? onToggle(h.id, weekDates[i], !done, h.targetValue)
-                        : onOpenNonToggleable?.(h.id)
-                    }
-                    accessibilityLabel={
-                      toggleable
-                        ? `${h.label} ${weekDates[i]} ${
-                            done ? "done" : "not done"
-                          }`
-                        : `${h.label} — set in Fuel`
-                    }
-                  />
-                );
-              })}
-            </View>
+      {habits.map((h) => (
+        <View
+          key={h.id}
+          flexDirection="row"
+          alignItems="center"
+          paddingVertical={4}
+          paddingHorizontal={4}
+          borderTopWidth={1}
+          borderColor="$border"
+        >
+          <Text flex={1} fontSize={13} fontWeight="500" color="$text">
+            {h.label}
+          </Text>
+          <View flexDirection="row" gap={8}>
+            {h.days.map((done, i) => {
+              const iso = weekDates[i];
+              // YYYY-MM-DD compares lexicographically = chronologically.
+              const isToday = iso === todayISO;
+              const isFuture = iso > todayISO;
+              const state = done
+                ? "done"
+                : isToday
+                  ? "today"
+                  : isFuture
+                    ? "locked" // upcoming day this week — not "missed"
+                    : "missed";
+              // READ-ONLY: no onPress — the grid reflects logged activity, it
+              // is not a toggle surface. Habits are hit via their own logging
+              // flows (water/sleep/steps reflect on log; gym/calories derive).
+              return (
+                <HabitTile
+                  key={weekDates[i]}
+                  state={state}
+                  tone={h.tone}
+                  size={CELL}
+                  accessibilityLabel={`${h.label} ${weekDates[i]} ${
+                    done ? "done" : "not done"
+                  }`}
+                />
+              );
+            })}
           </View>
-        );
-      })}
+        </View>
+      ))}
     </Card>
   );
 }

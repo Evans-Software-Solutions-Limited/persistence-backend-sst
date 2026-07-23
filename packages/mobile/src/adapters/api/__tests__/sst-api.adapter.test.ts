@@ -1580,6 +1580,59 @@ describe("SSTApiAdapter Programs (19-programs, Phase 9 mobile — coach F1)", ()
     expect(result.error.code).toBe("not_found");
   });
 
+  it("getAthleteProgram unwraps the { data } envelope + hits the athlete path", async () => {
+    const fetchMock = installFetchMock(async () => {
+      return new Response(
+        JSON.stringify({
+          data: {
+            id: "program-1",
+            name: "Strength Block",
+            description: "Linear progression",
+            durationWeeks: 8,
+            daysPerWeek: 4,
+            workoutCount: 1,
+            status: "started",
+            startDate: "2026-07-01",
+            endDate: "2026-08-26",
+            week: 2,
+            workouts: [
+              {
+                id: "pw-1",
+                workoutId: "workout-1",
+                position: 0,
+                name: "Push Day",
+                estimatedDurationMinutes: 45,
+              },
+            ],
+          },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.getAthleteProgram("program-1");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.week).toBe(2);
+    expect(result.value.workouts).toHaveLength(1);
+    expect(String(fetchMock.mock.calls[0][0])).toContain("/programs/program-1");
+  });
+
+  it("getAthleteProgram maps a 404 (not assigned/missing) to a not_found ApiError", async () => {
+    installFetchMock(async () => {
+      return new Response(JSON.stringify({ error: "not found" }), {
+        status: 404,
+      });
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.getAthleteProgram("missing");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("not_found");
+  });
+
   it("createProgram returns the created ProgramDetail on 201", async () => {
     installFetchMock(async () => {
       return new Response(

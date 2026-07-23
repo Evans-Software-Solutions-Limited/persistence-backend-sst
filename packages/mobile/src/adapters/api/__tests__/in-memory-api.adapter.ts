@@ -114,6 +114,7 @@ import type {
 import type {
   AssignProgramInput,
   AssignWorkoutInput,
+  AthleteProgramDetail,
   CreateProgramInput,
   ProgramAssignmentRow,
   ProgramDetail,
@@ -2521,6 +2522,28 @@ export class InMemoryApiAdapter implements ApiPort {
   async listPrograms(): Promise<Result<ProgramSummary[], ApiError>> {
     this.listProgramsCalls += 1;
     return this.mayFail<ProgramSummary[]>([...this.programs]);
+  }
+
+  /** Detail fixture returned by `getAthleteProgram`. Defaults to null (404). */
+  public athleteProgramDetail: AthleteProgramDetail | null = null;
+  public getAthleteProgramCalls: string[] = [];
+
+  async getAthleteProgram(
+    id: string,
+  ): Promise<Result<AthleteProgramDetail, ApiError>> {
+    this.getAthleteProgramCalls.push(id);
+    if (
+      this.athleteProgramDetail === null ||
+      this.athleteProgramDetail.id !== id
+    ) {
+      return fail<ApiError>({
+        kind: "api",
+        code: "not_found",
+        message: "Programme not found",
+        status: 404,
+      });
+    }
+    return this.mayFail<AthleteProgramDetail>(this.athleteProgramDetail);
   }
 
   async getProgram(id: string): Promise<Result<ProgramDetail, ApiError>> {
