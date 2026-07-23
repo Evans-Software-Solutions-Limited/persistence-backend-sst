@@ -156,7 +156,12 @@ describe("SnapAISheetContainer", () => {
       base64: "BASE64DATA",
     } as never);
     act(() =>
-      useFuelSheets.setState({ sheet: null, slot: "breakfast", rev: 0 }),
+      useFuelSheets.setState({
+        sheet: null,
+        slot: "breakfast",
+        date: localDayISO(),
+        rev: 0,
+      }),
     );
   });
 

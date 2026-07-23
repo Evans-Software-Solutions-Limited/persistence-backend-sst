@@ -6,7 +6,7 @@ import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-s
 import type { AuthSession } from "@/domain/ports/auth.port";
 import { ok } from "@/shared/errors";
 import type { Adapters } from "@/shared/types";
-import { localDayISO } from "@/shared/utils";
+import { localDayISO, previousDayISO } from "@/shared/utils";
 import type { Food, Meal, Recipe } from "@/domain/models/nutrition";
 import { useFuelSheets } from "@/state/fuel-sheets";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
@@ -143,7 +143,12 @@ describe("QuickAddSheetContainer", () => {
     mockAiGate.allowed = false;
     mockAiGate.onUpgrade = jest.fn();
     act(() =>
-      useFuelSheets.setState({ sheet: null, slot: "breakfast", rev: 0 }),
+      useFuelSheets.setState({
+        sheet: null,
+        slot: "breakfast",
+        date: localDayISO(),
+        rev: 0,
+      }),
     );
   });
 
@@ -414,6 +419,119 @@ describe("QuickAddSheetContainer", () => {
         "Standard breakfast",
       ]),
     );
+  });
+
+  describe("day-aware logging (BRIEF-7 QA-20)", () => {
+    it("logs onto the active day, not always today", async () => {
+      const { adapters, storage } = makeAdapters();
+      storage.cacheFoods([food]);
+      const pastDay = previousDayISO(previousDayISO(localDayISO()));
+      render(
+        <Wrapper adapters={adapters}>
+          <QuickAddSheetContainer />
+        </Wrapper>,
+      );
+      act(() => useFuelSheets.getState().setDate(pastDay));
+      act(() => useFuelSheets.getState().openQuickAdd("snack"));
+      act(() => mockProbe.last!.onSearch());
+      act(() => mockProbe.last!.onSelect(food));
+      await waitFor(() => expect(mockProbe.last?.selected?.id).toBe("f1"));
+
+      await act(async () => {
+        mockProbe.last!.onAdd();
+      });
+      expect(
+        storage.getCachedFuelToday(USER, pastDay)?.entriesBySlot.snack.length,
+      ).toBe(1);
+      // Never written into today's bucket.
+      expect(
+        storage.getCachedFuelToday(USER, localDayISO())?.entriesBySlot.snack
+          .length ?? 0,
+      ).toBe(0);
+    });
+
+    it("surfaces a day-context line only when the active day isn't today", () => {
+      const { adapters } = makeAdapters();
+      render(
+        <Wrapper adapters={adapters}>
+          <QuickAddSheetContainer />
+        </Wrapper>,
+      );
+      act(() => useFuelSheets.getState().openQuickAdd("breakfast"));
+      expect(mockProbe.last?.dayContext).toBeUndefined();
+
+      act(() =>
+        useFuelSheets.getState().setDate(previousDayISO(localDayISO())),
+      );
+      expect(mockProbe.last?.dayContext).toEqual(expect.any(String));
+      expect(mockProbe.last?.dayContext).not.toBe("Today");
+    });
+
+    it("'same as yesterday' rebases to the day before the ACTIVE day, not real-yesterday", async () => {
+      const { adapters, storage } = makeAdapters();
+      storage.cacheFoods([food]);
+      // Active day = 2 days ago; the rebase target is 3 days ago — deliberately
+      // NOT real-yesterday, so a stray `localDayISO()`-based read would miss it.
+      const activeDay = previousDayISO(previousDayISO(localDayISO()));
+      const dayBeforeActive = previousDayISO(activeDay);
+      storage.cacheFuelToday(USER, dayBeforeActive, {
+        date: dayBeforeActive,
+        targets: null,
+        consumed: {
+          kcal: 300,
+          proteinG: 10,
+          carbsG: 50,
+          fatG: 5,
+          waterCups: 0,
+        },
+        remainingKcal: 0,
+        entriesBySlot: {
+          breakfast: [
+            {
+              id: "y1",
+              userId: USER,
+              foodId: "f1",
+              recipeId: null,
+              mealId: null,
+              mealSlot: "breakfast",
+              servings: 1,
+              kcal: 300,
+              proteinG: 10,
+              carbsG: 50,
+              fatG: 5,
+              loggedAt: `${dayBeforeActive}T08:00:00.000Z`,
+              loggedByUserId: null,
+              aiEstimated: false,
+              aiConfidence: null,
+              customName: null,
+            },
+          ],
+          lunch: [],
+          snack: [],
+          dinner: [],
+        },
+      });
+      render(
+        <Wrapper adapters={adapters}>
+          <QuickAddSheetContainer />
+        </Wrapper>,
+      );
+      act(() => useFuelSheets.getState().setDate(activeDay));
+      act(() => useFuelSheets.getState().openQuickAdd("breakfast"));
+      await waitFor(() =>
+        expect(mockProbe.last?.yesterday?.items.length).toBe(1),
+      );
+
+      await act(async () => {
+        mockProbe.last!.onLogYesterday();
+      });
+      // The re-logged entry lands on the ACTIVE day (loggedAt anchor), not on
+      // `dayBeforeActive` and not on real-today.
+      expect(
+        storage.getCachedFuelToday(USER, activeDay)?.entriesBySlot.breakfast
+          .length,
+      ).toBe(1);
+    });
   });
 
   it("onClose is a no-op when the sheet is already hidden (handoff guard)", () => {

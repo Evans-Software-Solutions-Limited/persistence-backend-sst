@@ -6,7 +6,7 @@ import { useAuth } from "@/ui/hooks/useAuth";
 import { useGetMeals } from "@/ui/hooks/useGetMeals";
 import { useLogEntry } from "@/ui/hooks/useLogEntry";
 import { useFuelSheets } from "@/state/fuel-sheets";
-import { localDayISO } from "@/shared/utils";
+import { dayLabel, loggedAtNoonUtc, localDayISO } from "@/shared/utils";
 import { defaultMealSlot } from "@/domain/services";
 import { MealDetailPresenter } from "@/ui/presenters/MealDetailPresenter";
 
@@ -32,6 +32,12 @@ export function MealDetailContainer({ id }: { id: string }) {
   const meals = useGetMeals();
   const logEntry = useLogEntry();
   const notifyMutated = useFuelSheets((s) => s.notifyMutated);
+  // The day Fuel is viewing (QA-20) — kept in sync by <FuelContainer>, so
+  // logging a meal from a past-day view lands on that day, not today.
+  const activeDate = useFuelSheets((s) => s.date);
+  // Day-context (QA-20) — only surfaced on a past day.
+  const dayContext =
+    activeDate === localDayISO() ? undefined : dayLabel(activeDate);
   const [isLogging, setIsLogging] = useState(false);
 
   const meal = useMemo(
@@ -77,14 +83,14 @@ export function MealDetailContainer({ id }: { id: string }) {
         mealId: id,
         mealSlot: defaultMealSlot(new Date()),
         servings: 1,
-        loggedAt: `${localDayISO()}T12:00:00.000Z`,
+        loggedAt: loggedAtNoonUtc(activeDate),
       });
       notifyMutated();
       router.back();
     } finally {
       setIsLogging(false);
     }
-  }, [id, logEntry, notifyMutated]);
+  }, [id, logEntry, notifyMutated, activeDate]);
 
   return (
     <MealDetailPresenter
@@ -101,6 +107,7 @@ export function MealDetailContainer({ id }: { id: string }) {
       fatG={meal?.totalFatG ?? 0}
       onLogToToday={() => void onLogToToday()}
       isLogging={isLogging}
+      dayContext={dayContext}
     />
   );
 }

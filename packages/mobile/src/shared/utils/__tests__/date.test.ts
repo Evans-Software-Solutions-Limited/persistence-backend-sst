@@ -3,6 +3,10 @@ import {
   localDayISO,
   weekStartMondayISO,
   timeGreeting,
+  addDaysISO,
+  previousDayISO,
+  loggedAtNoonUtc,
+  dayLabel,
 } from "../date";
 
 describe("timeGreeting", () => {
@@ -105,5 +109,61 @@ describe("isIsoDateString", () => {
 
   it("rejects April 31 (a month that doesn't have 31 days)", () => {
     expect(isIsoDateString("2026-04-31")).toBe(false);
+  });
+});
+
+describe("addDaysISO", () => {
+  it("steps forward and backward within a month", () => {
+    expect(addDaysISO("2026-07-15", 1)).toBe("2026-07-16");
+    expect(addDaysISO("2026-07-15", -1)).toBe("2026-07-14");
+  });
+
+  it("crosses a month boundary in both directions", () => {
+    expect(addDaysISO("2026-07-31", 1)).toBe("2026-08-01");
+    expect(addDaysISO("2026-08-01", -1)).toBe("2026-07-31");
+  });
+
+  it("crosses a year boundary", () => {
+    expect(addDaysISO("2026-12-31", 1)).toBe("2027-01-01");
+    expect(addDaysISO("2027-01-01", -1)).toBe("2026-12-31");
+  });
+
+  it("is a no-op for delta 0", () => {
+    expect(addDaysISO("2026-07-15", 0)).toBe("2026-07-15");
+  });
+});
+
+describe("previousDayISO", () => {
+  it("returns the day before, crossing month/year boundaries", () => {
+    expect(previousDayISO("2026-07-15")).toBe("2026-07-14");
+    expect(previousDayISO("2026-08-01")).toBe("2026-07-31");
+    expect(previousDayISO("2027-01-01")).toBe("2026-12-31");
+  });
+});
+
+describe("loggedAtNoonUtc", () => {
+  it("anchors a day to noon UTC", () => {
+    expect(loggedAtNoonUtc("2026-07-15")).toBe("2026-07-15T12:00:00.000Z");
+  });
+});
+
+describe("dayLabel", () => {
+  it('returns "Today" when the day matches the injected today', () => {
+    expect(dayLabel("2026-07-15", new Date(2026, 6, 15))).toBe("Today");
+  });
+
+  it("returns the weekday · short-month day format for any other day", () => {
+    // 2026-07-14 is a Tuesday.
+    expect(dayLabel("2026-07-14", new Date(2026, 6, 15))).toBe(
+      "TUESDAY · JUL 14",
+    );
+  });
+
+  it("defaults `today` to now when omitted", () => {
+    expect(dayLabel(localDayISO())).toBe("Today");
+  });
+
+  it("returns an empty string for a malformed day", () => {
+    expect(dayLabel("not-a-date", new Date(2026, 6, 15))).toBe("");
   });
 });

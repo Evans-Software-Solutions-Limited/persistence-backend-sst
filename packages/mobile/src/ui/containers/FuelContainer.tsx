@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ScrollView } from "react-native";
 import { useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
@@ -12,7 +12,12 @@ import { useDeleteEntry } from "@/ui/hooks/useDeleteEntry";
 import { useNutritionAiGate } from "@/ui/hooks/useNutritionAiGate";
 import { useOnlineStatus } from "@/ui/hooks/useOnlineStatus";
 import { useFuelSheets } from "@/state/fuel-sheets";
-import { localDayISO } from "@/shared/utils";
+import {
+  addDaysISO,
+  dayLabel,
+  localDayISO,
+  previousDayISO,
+} from "@/shared/utils";
 import { toneHex } from "@/ui/components/foundation/tones";
 import {
   MEAL_SLOTS,
@@ -43,17 +48,6 @@ const MACRO_COLORS = {
   fat: toneHex("ember").base,
 };
 
-/** "MONDAY · MAR 25" from a YYYY-MM-DD day (user-local, deterministic). */
-export function fuelDateLabel(dayIso: string): string {
-  const d = new Date(`${dayIso}T00:00:00`);
-  if (Number.isNaN(d.getTime())) return "";
-  const weekday = d
-    .toLocaleDateString("en-US", { weekday: "long" })
-    .toUpperCase();
-  const month = d.toLocaleDateString("en-US", { month: "short" }).toUpperCase();
-  return `${weekday} · ${month} ${d.getDate()}`;
-}
-
 export function FuelContainer() {
   const router = useRouter();
   const { storage } = useAdapters();
@@ -61,7 +55,18 @@ export function FuelContainer() {
   const scrollRef = useRef<ScrollView>(null);
   useScrollToTopOnTabPress(scrollRef);
 
-  const date = localDayISO();
+  // The viewed day (QA-19). Starts on today; prev/next chevrons + the
+  // calendar picker step it, clamped to <= today (Tier A is past+today only —
+  // FRONTEND_BRIEF § day-picker post-M9, revised for BRIEF-7). Everything
+  // downstream (useGetFuelToday, water/delete mutations, the sheet store) is
+  // already date-parameterised, so re-pointing this one piece of state is
+  // the whole day-nav wiring.
+  const [date, setDate] = useState(localDayISO());
+  const todayIso = localDayISO();
+  const canGoNext = date < todayIso;
+
+  const [calendarOpen, setCalendarOpen] = useState(false);
+
   const fuel = useGetFuelToday(date);
   const recipes = useGetRecipes();
   const meals = useGetMeals();
@@ -73,6 +78,30 @@ export function FuelContainer() {
   const openQuickAdd = useFuelSheets((s) => s.openQuickAdd);
   const openSnap = useFuelSheets((s) => s.openSnap);
   const sheetRev = useFuelSheets((s) => s.rev);
+  const setActiveDate = useFuelSheets((s) => s.setDate);
+
+  // Keep the shared sheet store's active day in sync with the day being
+  // viewed (QA-20) — Scan/Quick-add/Snap AND the pushed Recipe/Meal-detail
+  // routes all read `useFuelSheets().date` for `loggedAt`, so this is the
+  // single point where "which day am I logging to" gets threaded out of the
+  // Fuel screen's own state.
+  useEffect(() => {
+    setActiveDate(date);
+  }, [date, setActiveDate]);
+
+  const onPrevDay = useCallback(() => {
+    setDate((d) => previousDayISO(d));
+  }, []);
+  const onNextDay = useCallback(() => {
+    setDate((d) => (d < localDayISO() ? addDaysISO(d, 1) : d));
+  }, []);
+  const onOpenCalendar = useCallback(() => setCalendarOpen(true), []);
+  const onCloseCalendar = useCallback(() => setCalendarOpen(false), []);
+  const onSelectDate = useCallback((iso: string) => {
+    const today = localDayISO();
+    setDate(iso > today ? today : iso);
+    setCalendarOpen(false);
+  }, []);
 
   const data = fuel.data;
   const target = data?.targets ?? null;
@@ -232,7 +261,14 @@ export function FuelContainer() {
   return (
     <FuelPresenter
       scrollRef={scrollRef}
-      dateLabel={fuelDateLabel(date)}
+      dateLabel={dayLabel(date)}
+      selectedDate={date}
+      canGoNext={canGoNext}
+      onPrevDay={onPrevDay}
+      onNextDay={onNextDay}
+      calendarOpen={calendarOpen}
+      onCloseCalendar={onCloseCalendar}
+      onSelectDate={onSelectDate}
       hasData={data !== null}
       isLoading={isLoading}
       isRefreshing={fuel.isRefreshing}
@@ -251,9 +287,7 @@ export function FuelContainer() {
       waterCups={consumed.waterCups}
       waterGoal={target?.waterCups ?? 8}
       onOpenTargets={() => router.push("/(app)/fuel/targets")}
-      onOpenCalendar={() => {
-        /* day-picker is post-M9 (today-only in Tier A) */
-      }}
+      onOpenCalendar={onOpenCalendar}
       onScan={() => openScan("breakfast")}
       onSnap={() => {
         // Offline takes precedence — the row button is already disabled in

@@ -13,7 +13,12 @@ import {
   useAiDraftItems,
   draftItemsFromEstimate,
 } from "@/ui/hooks/useAiDraftItems";
-import { localDayISO } from "@/shared/utils";
+import {
+  dayLabel,
+  loggedAtNoonUtc,
+  localDayISO,
+  previousDayISO,
+} from "@/shared/utils";
 import {
   MEAL_SLOTS,
   entryDisplayLabel,
@@ -44,15 +49,6 @@ import {
  *             specs/13-nutrition-tracking/tasks.md T-13.11.2
  */
 
-/** YYYY-MM-DD for the day before `dayIso` (UTC-anchored so it can't double-step
- * for positive UTC offsets — parsing `${dayIso}T00:00:00` as local time then
- * re-serialising to UTC already rolls the date back east of UTC). */
-function previousDayISO(dayIso: string): string {
-  const d = new Date(`${dayIso}T00:00:00.000Z`);
-  d.setUTCDate(d.getUTCDate() - 1);
-  return d.toISOString().slice(0, 10);
-}
-
 export function QuickAddSheetContainer() {
   const { storage, api } = useAdapters();
   const { session } = useAuth();
@@ -60,6 +56,10 @@ export function QuickAddSheetContainer() {
 
   const sheet = useFuelSheets((s) => s.sheet);
   const slotFromStore = useFuelSheets((s) => s.slot);
+  // The day this Quick-add flow logs into (QA-20) — kept in sync with the
+  // Fuel screen's viewed day by <FuelContainer>, so a past-day view logs onto
+  // that day rather than always today.
+  const activeDate = useFuelSheets((s) => s.date);
   const close = useFuelSheets((s) => s.close);
   const openScan = useFuelSheets((s) => s.openScan);
   const openSnap = useFuelSheets((s) => s.openSnap);
@@ -113,6 +113,10 @@ export function QuickAddSheetContainer() {
   }, [visible, slotFromStore, setDescribeItems]);
 
   const mealLabel = MEAL_SLOTS.find((m) => m.slot === slot)?.label ?? "Meal";
+  // Day-context line (QA-20) — only surfaced on a past day, so the sheet
+  // doesn't read as a blind add when the Fuel screen is viewing history.
+  const dayContext =
+    activeDate === localDayISO() ? undefined : dayLabel(activeDate);
 
   const lookups: EntryNameLookups = useMemo(
     () => ({
@@ -130,20 +134,20 @@ export function QuickAddSheetContainer() {
     [storage, userId],
   );
 
-  // "From yesterday" for this slot, read straight from the cached day aggregate.
+  // "From yesterday" for this slot, read straight from the cached day
+  // aggregate. Rebased to the day BEFORE the active day (QA-20 owner
+  // decision) — on a past-day view this reads "the day before the day
+  // you're viewing", not always literally yesterday.
   const yesterday: QuickAddYesterday | null = useMemo(() => {
     if (!userId || !visible) return null;
-    const prev = storage.getCachedFuelToday(
-      userId,
-      previousDayISO(localDayISO()),
-    );
+    const prev = storage.getCachedFuelToday(userId, previousDayISO(activeDate));
     const entries = prev?.entriesBySlot[slot] ?? [];
     if (entries.length === 0) return null;
     return {
       items: entries.map((e) => entryDisplayLabel(e, lookups)),
       kcal: entries.reduce((a, e) => a + e.kcal, 0),
     };
-  }, [storage, userId, visible, slot, lookups]);
+  }, [storage, userId, visible, slot, lookups, activeDate]);
 
   const savedMeals: QuickAddMeal[] = useMemo(
     () =>
@@ -171,18 +175,16 @@ export function QuickAddSheetContainer() {
     [recipes.data],
   );
 
-  // Noon-UTC of the user-local day (matches the habit-completion pattern): the
-  // sync-queue command derives the cache day-key by slicing this ISO string, so
-  // anchoring at noon UTC keeps the optimistic entry in TODAY's bucket for every
-  // timezone (a local-noon anchor drifts to the previous day for tz > +12).
-  const loggedAt = () => `${localDayISO()}T12:00:00.000Z`;
+  // Noon-UTC of the ACTIVE day (QA-20 — not always today): the sync-queue
+  // command derives the cache day-key by slicing this ISO string, so
+  // anchoring at noon UTC keeps the optimistic entry in the viewed day's
+  // bucket for every timezone (a local-noon anchor drifts to the previous
+  // day for tz > +12). See shared/utils/date.ts `loggedAtNoonUtc`.
+  const loggedAt = loggedAtNoonUtc(activeDate);
 
   const onLogYesterday = useCallback(async () => {
     if (!userId) return;
-    const prev = storage.getCachedFuelToday(
-      userId,
-      previousDayISO(localDayISO()),
-    );
+    const prev = storage.getCachedFuelToday(userId, previousDayISO(activeDate));
     const entries = prev?.entriesBySlot[slot] ?? [];
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     for (const e of entries) {
@@ -192,12 +194,21 @@ export function QuickAddSheetContainer() {
         mealId: e.mealId ?? undefined,
         mealSlot: slot,
         servings: e.servings,
-        loggedAt: loggedAt(),
+        loggedAt,
       });
     }
     notifyMutated();
     close();
-  }, [storage, userId, slot, logEntry, notifyMutated, close]);
+  }, [
+    storage,
+    userId,
+    slot,
+    logEntry,
+    notifyMutated,
+    close,
+    activeDate,
+    loggedAt,
+  ]);
 
   const onLogMeal = useCallback(
     async (id: string) => {
@@ -206,12 +217,12 @@ export function QuickAddSheetContainer() {
         mealId: id,
         mealSlot: slot,
         servings: 1,
-        loggedAt: loggedAt(),
+        loggedAt,
       });
       notifyMutated();
       close();
     },
-    [slot, logEntry, notifyMutated, close],
+    [slot, logEntry, notifyMutated, close, loggedAt],
   );
 
   const onLogRecipe = useCallback(
@@ -221,12 +232,12 @@ export function QuickAddSheetContainer() {
         recipeId: id,
         mealSlot: slot,
         servings: 1,
-        loggedAt: loggedAt(),
+        loggedAt,
       });
       notifyMutated();
       close();
     },
-    [slot, logEntry, notifyMutated, close],
+    [slot, logEntry, notifyMutated, close, loggedAt],
   );
 
   const onAdd = useCallback(async () => {
@@ -236,11 +247,11 @@ export function QuickAddSheetContainer() {
       foodId: selected.id,
       mealSlot: slot,
       servings,
-      loggedAt: loggedAt(),
+      loggedAt,
     });
     notifyMutated();
     close();
-  }, [selected, slot, servings, logEntry, notifyMutated, close]);
+  }, [selected, slot, servings, logEntry, notifyMutated, close, loggedAt]);
 
   const onSubmitDescribe = useCallback(async () => {
     const description = describeText.trim();
@@ -277,6 +288,7 @@ export function QuickAddSheetContainer() {
       visible={visible}
       onClose={onSheetClose}
       mealLabel={mealLabel}
+      dayContext={dayContext}
       stage={stage}
       aiLocked={!aiGate.allowed}
       aiOffline={!online}

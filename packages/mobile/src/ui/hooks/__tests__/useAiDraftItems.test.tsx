@@ -6,7 +6,8 @@ import type { AuthSession } from "@/domain/ports/auth.port";
 import type { AiEstimate } from "@/domain/models/nutrition";
 import { ok } from "@/shared/errors";
 import type { Adapters } from "@/shared/types";
-import { localDayISO } from "@/shared/utils";
+import { localDayISO, previousDayISO } from "@/shared/utils";
+import { useFuelSheets } from "@/state/fuel-sheets";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import {
   draftItemsFromEstimate,
@@ -117,6 +118,31 @@ describe("draftItemsFromEstimate", () => {
 });
 
 describe("useAiDraftItems", () => {
+  beforeEach(() => {
+    act(() => useFuelSheets.getState().setDate(localDayISO()));
+  });
+
+  it("confirm logs onto the shared store's active day, not always today (BRIEF-7 QA-20)", async () => {
+    const { adapters, storage } = makeAdapters();
+    const pastDay = previousDayISO(previousDayISO(localDayISO()));
+    act(() => useFuelSheets.getState().setDate(pastDay));
+    const { result } = renderHook(() => useAiDraftItems(), {
+      wrapper: wrapper(adapters),
+    });
+    act(() => result.current.setItems(draftItemsFromEstimate(estimate)));
+
+    await act(async () => {
+      await result.current.confirm("lunch");
+    });
+    expect(
+      storage.getCachedFuelToday(USER, pastDay)?.entriesBySlot.lunch.length,
+    ).toBe(1);
+    expect(
+      storage.getCachedFuelToday(USER, localDayISO())?.entriesBySlot.lunch
+        .length ?? 0,
+    ).toBe(0);
+  });
+
   it("starts with an empty item list and 0 total", () => {
     const { adapters } = makeAdapters();
     const { result } = renderHook(() => useAiDraftItems(), {

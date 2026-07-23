@@ -1,8 +1,16 @@
 import { act } from "@testing-library/react-native";
 import { useFuelSheets } from "@/state/fuel-sheets";
+import { localDayISO } from "@/shared/utils";
 
 function reset() {
-  act(() => useFuelSheets.setState({ sheet: null, slot: "breakfast", rev: 0 }));
+  act(() =>
+    useFuelSheets.setState({
+      sheet: null,
+      slot: "breakfast",
+      date: localDayISO(),
+      rev: 0,
+    }),
+  );
 }
 
 describe("useFuelSheets", () => {
@@ -54,5 +62,22 @@ describe("useFuelSheets", () => {
     act(() => useFuelSheets.getState().notifyMutated());
     act(() => useFuelSheets.getState().notifyMutated());
     expect(useFuelSheets.getState().rev).toBe(2);
+  });
+
+  it("defaults the active day to today", () => {
+    expect(useFuelSheets.getState().date).toBe(localDayISO());
+  });
+
+  it("setDate updates the active day (QA-20)", () => {
+    act(() => useFuelSheets.getState().setDate("2026-07-01"));
+    expect(useFuelSheets.getState().date).toBe("2026-07-01");
+  });
+
+  it("a quickAdd→scan handoff does not touch the active day", () => {
+    act(() => useFuelSheets.getState().setDate("2026-06-15"));
+    act(() => useFuelSheets.getState().openQuickAdd("lunch"));
+    act(() => useFuelSheets.getState().openScan());
+    expect(useFuelSheets.getState().sheet).toBe("scan");
+    expect(useFuelSheets.getState().date).toBe("2026-06-15");
   });
 });

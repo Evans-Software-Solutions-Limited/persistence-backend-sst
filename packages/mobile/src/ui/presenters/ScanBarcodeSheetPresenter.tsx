@@ -56,6 +56,9 @@ export type ScanScaledMacros = {
 export type ScanBarcodeSheetProps = {
   visible: boolean;
   onClose: () => void;
+  /** "TUESDAY · JUL 21" — set ONLY when logging onto a day other than today
+   * (BRIEF-7 QA-20 day-context); omitted on today. */
+  dayContext?: string;
   stage: ScanStage;
   hasPermission: boolean;
   onRequestPermission: () => void;
@@ -152,6 +155,7 @@ function FoundCard({ food, scaled }: { food: Food; scaled: ScanScaledMacros }) {
 export function ScanBarcodeSheetPresenter({
   visible,
   onClose,
+  dayContext,
   stage,
   hasPermission,
   onRequestPermission,
@@ -191,7 +195,7 @@ export function ScanBarcodeSheetPresenter({
       visible={visible}
       onClose={onClose}
       title="Scan barcode"
-      eyebrow="QUICK LOG"
+      eyebrow={dayContext ? `QUICK LOG · ${dayContext}` : "QUICK LOG"}
       accent="primary"
       height="tall"
       testID={testID}

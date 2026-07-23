@@ -7,6 +7,10 @@ export {
   localDayISO,
   weekStartMondayISO,
   timeGreeting,
+  addDaysISO,
+  previousDayISO,
+  loggedAtNoonUtc,
+  dayLabel,
 } from "./date";
 export { newIdempotencyKey } from "./idempotency";
 export {

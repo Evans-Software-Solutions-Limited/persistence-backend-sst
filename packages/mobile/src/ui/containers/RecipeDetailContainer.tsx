@@ -5,7 +5,7 @@ import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useGetRecipe } from "@/ui/hooks/useGetRecipe";
 import { useLogEntry } from "@/ui/hooks/useLogEntry";
 import { useFuelSheets } from "@/state/fuel-sheets";
-import { localDayISO } from "@/shared/utils";
+import { dayLabel, loggedAtNoonUtc, localDayISO } from "@/shared/utils";
 import { defaultMealSlot, perServingDivisor } from "@/domain/services";
 import {
   RecipeDetailPresenter,
@@ -30,6 +30,13 @@ export function RecipeDetailContainer({ id }: { id: string }) {
   const recipe = useGetRecipe(id);
   const logEntry = useLogEntry();
   const notifyMutated = useFuelSheets((s) => s.notifyMutated);
+  // The day Fuel is viewing (QA-20) — kept in sync by <FuelContainer>, so
+  // logging a recipe from a past-day view lands on that day, not today.
+  const activeDate = useFuelSheets((s) => s.date);
+  // Day-context (QA-20) — only surfaced on a past day so "Log to today"
+  // doesn't silently mislead while Fuel is viewing history.
+  const dayContext =
+    activeDate === localDayISO() ? undefined : dayLabel(activeDate);
   const [isLogging, setIsLogging] = useState(false);
 
   const found = recipe.data !== null;
@@ -83,14 +90,14 @@ export function RecipeDetailContainer({ id }: { id: string }) {
         recipeId: id,
         mealSlot: defaultMealSlot(new Date()),
         servings: 1,
-        loggedAt: `${localDayISO()}T12:00:00.000Z`,
+        loggedAt: loggedAtNoonUtc(activeDate),
       });
       notifyMutated();
       router.back();
     } finally {
       setIsLogging(false);
     }
-  }, [id, logEntry, notifyMutated]);
+  }, [id, logEntry, notifyMutated, activeDate]);
 
   return (
     <RecipeDetailPresenter
@@ -110,6 +117,7 @@ export function RecipeDetailContainer({ id }: { id: string }) {
       instructions={recipe.data?.instructions ?? null}
       onLogToToday={() => void onLogToToday()}
       isLogging={isLogging}
+      dayContext={dayContext}
     />
   );
 }

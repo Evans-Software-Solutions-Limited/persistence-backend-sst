@@ -51,6 +51,14 @@ describe("MealDetailPresenter", () => {
     expect(props.onLogToToday).toHaveBeenCalledTimes(1);
   });
 
+  it('reads "Log to <day>" when Fuel is viewing a past day (BRIEF-7 QA-20)', () => {
+    const { getByText, queryByText } = render({
+      dayContext: "TUESDAY · JUL 21",
+    });
+    expect(getByText("Log to TUESDAY · JUL 21")).toBeTruthy();
+    expect(queryByText("Log to today")).toBeNull();
+  });
+
   it("shows a blocking loader while loading with nothing found yet", () => {
     const { getByTestId, queryByTestId } = render({
       found: false,

@@ -37,6 +37,7 @@ const EXPECTED_ICON_NAMES = [
   "IconCamera",
   "IconDroplet",
   "IconChevronR",
+  "IconChevronL",
   "IconChevronD",
   "IconArrowUp",
   "IconArrowR",

@@ -38,6 +38,58 @@ export function localDayISO(d: Date = new Date()): string {
 }
 
 /**
+ * addDaysISO — `YYYY-MM-DD`, `delta` days from `dayIso`. UTC-anchored (parses
+ * `${dayIso}T00:00:00.000Z` and steps `setUTCDate`) so it can't double-step for
+ * timezones east of UTC — parsing as LOCAL time then re-serialising to UTC
+ * would already roll the date forward before the delta is even applied.
+ *
+ * Shared by Fuel day-navigation (QA-19) and "same as yesterday" rebasing
+ * (QA-20) — both need to step a calendar day forward/back with no tz drift.
+ */
+export function addDaysISO(dayIso: string, delta: number): string {
+  const d = new Date(`${dayIso}T00:00:00.000Z`);
+  d.setUTCDate(d.getUTCDate() + delta);
+  return d.toISOString().slice(0, 10);
+}
+
+/** `YYYY-MM-DD` for the day before `dayIso`. */
+export function previousDayISO(dayIso: string): string {
+  return addDaysISO(dayIso, -1);
+}
+
+/**
+ * loggedAtNoonUtc — the noon-UTC anchor every nutrition log entry point uses
+ * for `loggedAt`. Noon-UTC (not midnight) keeps the optimistic entry in
+ * `dayIso`'s cache bucket for every timezone — the sync-queue command derives
+ * the cache day-key by slicing this ISO string, and a local-midnight anchor
+ * would drift into the previous day's bucket for timezones west of UTC.
+ *
+ * Single source for the `${day}T12:00:00.000Z` anchor previously duplicated
+ * across QuickAddSheetContainer, ScanBarcodeSheetContainer,
+ * RecipeDetailContainer, MealDetailContainer, and useAiDraftItems (QA-20).
+ */
+export function loggedAtNoonUtc(dayIso: string): string {
+  return `${dayIso}T12:00:00.000Z`;
+}
+
+/**
+ * dayLabel — "Today" for the current local day, else "MONDAY · MAR 25"
+ * (weekday + short month + day). Shared by the Fuel day-nav header (QA-19)
+ * and the QuickAdd/Scan sheets' day-context line (QA-20) so a past day reads
+ * consistently everywhere it's surfaced. `today` is injectable for tests.
+ */
+export function dayLabel(dayIso: string, today: Date = new Date()): string {
+  if (dayIso === localDayISO(today)) return "Today";
+  const d = new Date(`${dayIso}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return "";
+  const weekday = d
+    .toLocaleDateString("en-US", { weekday: "long" })
+    .toUpperCase();
+  const month = d.toLocaleDateString("en-US", { month: "short" }).toUpperCase();
+  return `${weekday} · ${month} ${d.getDate()}`;
+}
+
+/**
  * timeGreeting — "Good morning" / "Good afternoon" / "Good evening" for the
  * given local time (defaults to now). Matches the Home header greeting
  * (home.jsx HomeHeader). Boundaries: morning [05:00, 12:00), afternoon

@@ -15,7 +15,7 @@ import { useTrainSegment } from "@/ui/hooks/useTrainSegment";
 import { useStaggeredEntry } from "@/ui/hooks/useStaggeredEntry";
 import { useUserMode } from "@/state/user-mode";
 import { useDrawer } from "@/state/drawer";
-import { initialsOf, timeGreeting } from "@/shared/utils";
+import { initialsOf, localDayISO, timeGreeting } from "@/shared/utils";
 import { useProfilePage } from "@/ui/hooks/useProfilePage";
 import { useFuelSheets } from "@/state/fuel-sheets";
 import { HomePresenter } from "@/ui/presenters/HomePresenter";
@@ -52,6 +52,7 @@ export function HomeContainer() {
   const [waterOpen, setWaterOpen] = useState(false);
   const [sleepOpen, setSleepOpen] = useState(false);
   const openQuickAdd = useFuelSheets((s) => s.openQuickAdd);
+  const setFuelActiveDate = useFuelSheets((s) => s.setDate);
 
   // Map the user's own workouts → carousel items (home.jsx WorkoutCarousel).
   const workoutItems = useMemo(
@@ -256,11 +257,17 @@ export function HomeContainer() {
   const closeWeighIn = useCallback(() => setWeighInOpen(false), []);
 
   // Quick-log: "Log meal" jumps to the Fuel tab and opens the add-food sheet;
-  // "Water" opens the water-log sheet (logs to the M9 water log).
+  // "Water" opens the water-log sheet (logs to the M9 water log). Home has no
+  // day-nav concept — it always means "today" — so force the shared sheet
+  // store's active day to today right before opening (QA-20 defence in
+  // depth): the Fuel tab may already be mounted with an OLDER day left over
+  // from a previous session's day-nav, and this quick-log must never
+  // silently inherit that.
   const onOpenMealLog = useCallback(() => {
     router.push("/(app)/(tabs)/fuel" as never);
+    setFuelActiveDate(localDayISO());
     openQuickAdd("breakfast");
-  }, [router, openQuickAdd]);
+  }, [router, openQuickAdd, setFuelActiveDate]);
   const openWater = useCallback(() => setWaterOpen(true), []);
   const closeWater = useCallback(() => setWaterOpen(false), []);
   const openSleep = useCallback(() => setSleepOpen(true), []);

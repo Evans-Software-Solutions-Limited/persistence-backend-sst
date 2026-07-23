@@ -6,7 +6,7 @@ import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-s
 import type { AuthSession } from "@/domain/ports/auth.port";
 import { ok } from "@/shared/errors";
 import type { Adapters } from "@/shared/types";
-import { localDayISO } from "@/shared/utils";
+import { localDayISO, previousDayISO } from "@/shared/utils";
 import { useFuelSheets } from "@/state/fuel-sheets";
 import type {
   Food,
@@ -195,7 +195,11 @@ describe("FuelContainer", () => {
     // entry name resolved from the cached food
     const breakfast = p.slots.find((s) => s.slot === "breakfast")!;
     expect(breakfast.rows[0]?.name).toBe("Oatmeal");
-    expect(p.dateLabel).toMatch(/·/);
+    // Viewing today (the default) reads "Today", not the weekday · month
+    // format — that format is reserved for a past day (BRIEF-7 QA-19).
+    expect(p.dateLabel).toBe("Today");
+    expect(p.selectedDate).toBe(localDayISO());
+    expect(p.canGoNext).toBe(false);
   });
 
   it("locks the AI (Snap) affordance in M9", async () => {
@@ -268,7 +272,7 @@ describe("FuelContainer", () => {
     expect(mockPush).toHaveBeenCalledWith("/(app)/fuel/recipes");
   });
 
-  it("opens the scan + quick-add sheets and is calendar-safe", async () => {
+  it("opens the scan + quick-add sheets and the calendar modal", async () => {
     const { adapters, storage } = makeAdapters();
     storage.cacheFuelToday(USER, localDayISO(), makeFuel());
     render(
@@ -294,9 +298,137 @@ describe("FuelContainer", () => {
     act(() => mockProbe.last!.onLog());
     expect(useFuelSheets.getState().sheet).toBe("quickAdd");
 
-    // Snap routes to the upgrade prompt (gate stubbed); calendar is a no-op.
+    // Snap routes to the upgrade prompt (gate stubbed).
     act(() => mockProbe.last!.onSnap());
+
+    // The calendar icon opens the month-grid modal (BRIEF-7 QA-19) — no
+    // longer the M9 no-op.
+    expect(mockProbe.last!.calendarOpen).toBe(false);
     act(() => mockProbe.last!.onOpenCalendar());
+    await waitFor(() => expect(mockProbe.last!.calendarOpen).toBe(true));
+    act(() => mockProbe.last!.onCloseCalendar());
+    await waitFor(() => expect(mockProbe.last!.calendarOpen).toBe(false));
+  });
+
+  describe("day navigation (BRIEF-7 QA-19 + QA-20)", () => {
+    it("steps back/forward a day, re-reading the cache + re-labelling the header", async () => {
+      const { adapters, storage } = makeAdapters();
+      const today = localDayISO();
+      const yesterday = previousDayISO(today);
+      storage.cacheFuelToday(USER, today, makeFuel());
+      storage.cacheFuelToday(USER, yesterday, {
+        ...makeFuel(),
+        consumed: {
+          kcal: 500,
+          proteinG: 20,
+          carbsG: 60,
+          fatG: 10,
+          waterCups: 2,
+        },
+        remainingKcal: 1500,
+      });
+      render(
+        <Wrapper adapters={adapters}>
+          <FuelContainer />
+        </Wrapper>,
+      );
+      await waitFor(() => expect(mockProbe.last?.hasData).toBe(true));
+      expect(mockProbe.last!.consumedKcal).toBe(300);
+      expect(mockProbe.last!.dateLabel).toBe("Today");
+      // Forward is disabled while viewing today (past+today only, Tier A).
+      expect(mockProbe.last!.canGoNext).toBe(false);
+
+      act(() => mockProbe.last!.onPrevDay());
+      await waitFor(() => expect(mockProbe.last!.consumedKcal).toBe(500));
+      expect(mockProbe.last!.dateLabel).not.toBe("Today");
+      expect(mockProbe.last!.selectedDate).toBe(yesterday);
+      expect(mockProbe.last!.canGoNext).toBe(true);
+
+      act(() => mockProbe.last!.onNextDay());
+      await waitFor(() => expect(mockProbe.last!.consumedKcal).toBe(300));
+      expect(mockProbe.last!.dateLabel).toBe("Today");
+      expect(mockProbe.last!.canGoNext).toBe(false);
+    });
+
+    it("onNextDay is a no-op past today (forward-disabled defence in depth)", async () => {
+      const { adapters, storage } = makeAdapters();
+      storage.cacheFuelToday(USER, localDayISO(), makeFuel());
+      render(
+        <Wrapper adapters={adapters}>
+          <FuelContainer />
+        </Wrapper>,
+      );
+      await waitFor(() => expect(mockProbe.last?.hasData).toBe(true));
+      act(() => mockProbe.last!.onNextDay());
+      await waitFor(() => expect(mockProbe.last!.hasData).toBe(true));
+      expect(mockProbe.last!.selectedDate).toBe(localDayISO());
+    });
+
+    it("selecting a day from the calendar modal jumps there and closes it", async () => {
+      const { adapters, storage } = makeAdapters();
+      const today = localDayISO();
+      const yesterday = previousDayISO(today);
+      storage.cacheFuelToday(USER, today, makeFuel());
+      storage.cacheFuelToday(USER, yesterday, {
+        ...makeFuel(),
+        consumed: {
+          kcal: 500,
+          proteinG: 20,
+          carbsG: 60,
+          fatG: 10,
+          waterCups: 2,
+        },
+        remainingKcal: 1500,
+      });
+      render(
+        <Wrapper adapters={adapters}>
+          <FuelContainer />
+        </Wrapper>,
+      );
+      await waitFor(() => expect(mockProbe.last?.hasData).toBe(true));
+      act(() => mockProbe.last!.onOpenCalendar());
+      expect(mockProbe.last!.calendarOpen).toBe(true);
+
+      act(() => mockProbe.last!.onSelectDate(yesterday));
+      await waitFor(() => expect(mockProbe.last!.consumedKcal).toBe(500));
+      expect(mockProbe.last!.selectedDate).toBe(yesterday);
+      expect(mockProbe.last!.calendarOpen).toBe(false);
+    });
+
+    it("selecting a future day from the calendar clamps to today (defence in depth)", async () => {
+      const { adapters, storage } = makeAdapters();
+      storage.cacheFuelToday(USER, localDayISO(), makeFuel());
+      render(
+        <Wrapper adapters={adapters}>
+          <FuelContainer />
+        </Wrapper>,
+      );
+      await waitFor(() => expect(mockProbe.last?.hasData).toBe(true));
+      const future = `${Number(localDayISO().slice(0, 4)) + 1}-01-01`;
+      act(() => mockProbe.last!.onSelectDate(future));
+      await waitFor(() => expect(mockProbe.last!.hasData).toBe(true));
+      expect(mockProbe.last!.selectedDate).toBe(localDayISO());
+    });
+
+    it("keeps the shared sheet store's active day in sync with the viewed day (QA-20)", async () => {
+      const { adapters, storage } = makeAdapters();
+      const today = localDayISO();
+      const yesterday = previousDayISO(today);
+      storage.cacheFuelToday(USER, today, makeFuel());
+      storage.cacheFuelToday(USER, yesterday, makeFuel());
+      render(
+        <Wrapper adapters={adapters}>
+          <FuelContainer />
+        </Wrapper>,
+      );
+      await waitFor(() => expect(mockProbe.last?.hasData).toBe(true));
+      expect(useFuelSheets.getState().date).toBe(today);
+
+      act(() => mockProbe.last!.onPrevDay());
+      await waitFor(() =>
+        expect(useFuelSheets.getState().date).toBe(yesterday),
+      );
+    });
   });
 
   it("delete optimistically removes the entry and drains the DELETE", async () => {

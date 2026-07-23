@@ -7,7 +7,7 @@ import type { AuthSession } from "@/domain/ports/auth.port";
 import type { Food, Recipe } from "@/domain/models/nutrition";
 import { fail, ok } from "@/shared/errors";
 import type { Adapters } from "@/shared/types";
-import { localDayISO } from "@/shared/utils";
+import { localDayISO, previousDayISO } from "@/shared/utils";
 import { useFuelSheets } from "@/state/fuel-sheets";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import type { RecipeDetailPresenterProps } from "@/ui/presenters/RecipeDetailPresenter";
@@ -141,7 +141,12 @@ describe("RecipeDetailContainer", () => {
     mockRouterBack.mockClear();
     jest.clearAllMocks();
     act(() =>
-      useFuelSheets.setState({ sheet: null, slot: "breakfast", rev: 0 }),
+      useFuelSheets.setState({
+        sheet: null,
+        slot: "breakfast",
+        date: localDayISO(),
+        rev: 0,
+      }),
     );
   });
 
@@ -356,6 +361,35 @@ describe("RecipeDetailContainer", () => {
     expect(Haptics.notificationAsync as jest.Mock).toHaveBeenCalled();
     expect(useFuelSheets.getState().rev).toBe(1);
     expect(mockRouterBack).toHaveBeenCalledTimes(1);
+  });
+
+  it("logs onto the active day (not always today) and reflects it as a day-context CTA (BRIEF-7 QA-20)", async () => {
+    const { adapters, storage } = makeAdapters();
+    storage.cacheRecipe(USER, buildRecipe());
+    const pastDay = previousDayISO(previousDayISO(localDayISO()));
+    act(() => useFuelSheets.getState().setDate(pastDay));
+    render(
+      <Wrapper adapters={adapters}>
+        <RecipeDetailContainer id="r1" />
+      </Wrapper>,
+    );
+    await waitFor(() => expect(mockProbe.last?.found).toBe(true));
+    expect(mockProbe.last?.dayContext).toEqual(expect.any(String));
+
+    await act(async () => {
+      mockProbe.last!.onLogToToday();
+    });
+
+    const entries = Object.values(
+      storage.getCachedFuelToday(USER, pastDay)!.entriesBySlot,
+    ).flat();
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.recipeId).toBe("r1");
+    // Never written into today's bucket.
+    const todayEntries = Object.values(
+      storage.getCachedFuelToday(USER, localDayISO())?.entriesBySlot ?? {},
+    ).flat();
+    expect(todayEntries).toHaveLength(0);
   });
 
   it("Back routes back", async () => {

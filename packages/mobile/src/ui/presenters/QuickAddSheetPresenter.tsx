@@ -67,6 +67,11 @@ export type QuickAddSheetProps = {
   visible: boolean;
   onClose: () => void;
   mealLabel: string;
+  /** "TUESDAY · JUL 21" — set ONLY when logging onto a day other than today
+   * (BRIEF-7 QA-20 day-context), so a past-day Quick add doesn't read as a
+   * blind add to today. Undefined/omitted on today — the eyebrow stays
+   * "QUICK ADD" unchanged, matching the pre-day-nav copy. */
+  dayContext?: string;
   stage: QuickAddStage;
   aiLocked: boolean;
   /** True when offline — Snap AND "Or describe it…" are disabled (both are
@@ -832,6 +837,7 @@ export function QuickAddSheetPresenter(props: QuickAddSheetProps) {
     visible,
     onClose,
     mealLabel,
+    dayContext,
     stage,
     testID = "quick-add-sheet",
   } = props;
@@ -840,7 +846,7 @@ export function QuickAddSheetPresenter(props: QuickAddSheetProps) {
       visible={visible}
       onClose={onClose}
       title={`Add to ${mealLabel}`}
-      eyebrow="QUICK ADD"
+      eyebrow={dayContext ? `QUICK ADD · ${dayContext}` : "QUICK ADD"}
       accent="primary"
       height="tall"
       testID={testID}
