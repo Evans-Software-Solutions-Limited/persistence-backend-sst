@@ -267,9 +267,26 @@ export function YouContainer() {
   // (Inspector Brad). Network GET, unlike the body cache re-read above.
   useFocusEffect(
     useCallback(() => {
+      // Body trend: silent cache re-read (no spinner) — the weigh-in write is
+      // local, so this reflects it instantly on re-entry.
       reloadBody();
+      // The remaining You reads are network cache-first hooks that otherwise
+      // only auto-fetch once per mount; refresh them on focus so a workout /
+      // achievement / measurement logged elsewhere shows on re-entry rather
+      // than staying stale until a pull-to-refresh.
       void refreshRelationships();
-    }, [reloadBody, refreshRelationships]),
+      void refreshStreaks();
+      void refreshAchievements();
+      void refreshVolume();
+      void refreshPRs();
+    }, [
+      reloadBody,
+      refreshRelationships,
+      refreshStreaks,
+      refreshAchievements,
+      refreshVolume,
+      refreshPRs,
+    ]),
   );
 
   const onUseToken = useCallback(async () => {

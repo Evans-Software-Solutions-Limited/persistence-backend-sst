@@ -198,9 +198,15 @@ let mockStreaksState: CachedResourceState<Streak[]>;
 let mockHomeState: CachedResourceState<HomePayload>;
 let mockProfileFullName: string | null;
 
-jest.mock("expo-router", () => ({
-  useRouter: () => ({ push: mockPush, navigate: mockNavigate }),
-}));
+jest.mock("expo-router", () => {
+  const React = jest.requireActual("react") as typeof import("react");
+  return {
+    useRouter: () => ({ push: mockPush, navigate: mockNavigate }),
+    // Once-on-mount focus (first focus is skipped by useRefreshOnFocus).
+    useFocusEffect: (cb: () => void | (() => void)) =>
+      React.useEffect(cb, [cb]),
+  };
+});
 jest.mock("@/ui/hooks/useModeSwitch", () => ({
   useModeSwitch: () => ({ switchMode: mockSwitchMode }),
 }));

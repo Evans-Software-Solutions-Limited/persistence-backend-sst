@@ -5,6 +5,7 @@ import { useAuth } from "@/ui/hooks/useAuth";
 import { useCoachLibrarySegment } from "@/ui/hooks/useCoachLibrarySegment";
 import { useGetCoachOverview } from "@/ui/hooks/useGetCoachOverview";
 import { useGetStreaks } from "@/ui/hooks/useGetStreaks";
+import { useRefreshOnFocus } from "@/ui/hooks/useRefreshOnFocus";
 import { useModeSwitch } from "@/ui/hooks/useModeSwitch";
 import { useDrawer } from "@/state/drawer";
 import { useAddClientSheet } from "@/state/add-client-sheet";
@@ -128,6 +129,9 @@ export function CoachYouContainer() {
   const onRefresh = useCallback(() => {
     void Promise.all([refreshOverview(), refreshStreaks()]);
   }, [refreshOverview, refreshStreaks]);
+
+  // Kept-alive tab — refresh business stats / client health on re-entry.
+  useRefreshOnFocus(onRefresh);
 
   const onSwitchToAthlete = useCallback(() => {
     void switchMode("athlete", "you");

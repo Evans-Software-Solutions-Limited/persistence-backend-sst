@@ -18,10 +18,16 @@ const mockProbe: { last: CoachYouPresenterProps | null } = { last: null };
 
 const mockPush = jest.fn();
 const mockRouterPush = jest.fn();
-jest.mock("expo-router", () => ({
-  useRouter: () => ({ push: mockPush }),
-  router: { push: (...args: unknown[]) => mockRouterPush(...args) },
-}));
+jest.mock("expo-router", () => {
+  const React = jest.requireActual("react") as typeof import("react");
+  return {
+    useRouter: () => ({ push: mockPush }),
+    router: { push: (...args: unknown[]) => mockRouterPush(...args) },
+    // Once-on-mount focus (first focus is skipped by useRefreshOnFocus).
+    useFocusEffect: (cb: () => void | (() => void)) =>
+      React.useEffect(cb, [cb]),
+  };
+});
 jest.mock("@/ui/hooks/useModeSwitch", () => ({
   useModeSwitch: () => ({ switchMode: mockSwitchMode }),
 }));

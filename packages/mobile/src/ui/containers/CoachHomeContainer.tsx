@@ -3,6 +3,7 @@ import { useRouter } from "expo-router";
 import { useAuth } from "@/ui/hooks/useAuth";
 import { useGetTrainerClients } from "@/ui/hooks/useGetTrainerClients";
 import { useGetStreaks } from "@/ui/hooks/useGetStreaks";
+import { useRefreshOnFocus } from "@/ui/hooks/useRefreshOnFocus";
 import { useGetHome } from "@/ui/hooks/useGetHome";
 import { useProfilePage } from "@/ui/hooks/useProfilePage";
 import { useModeSwitch } from "@/ui/hooks/useModeSwitch";
@@ -249,6 +250,9 @@ export function CoachHomeContainer() {
       () => {},
     );
   }, [refreshClients, refreshStreaks, refreshHome]);
+
+  // Kept-alive tab — refresh the coach triage list on re-entry (skips mount).
+  useRefreshOnFocus(onRefresh);
 
   const onOpenClient = useCallback(
     (clientId: string) => {

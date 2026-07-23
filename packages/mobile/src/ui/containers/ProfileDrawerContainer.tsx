@@ -49,13 +49,31 @@ export function ProfileDrawerContainer() {
     profileFetchError !== null &&
     !isProfileRefreshing &&
     !isProfileAutoRetrying;
-  const { data: subscription } = useMySubscription();
+  const { data: subscription, refetch: refetchSubscription } =
+    useMySubscription();
   const health = useHealthData();
   const { signOut } = useAuth();
   // Cache-first count for the drawer row's Pill — same source the
   // Achievements screen itself reads (go-live: was hardcoded `undefined`,
   // which suppressed the count Pill entirely).
-  const { data: achievementsData } = useGetAchievements();
+  const { data: achievementsData, refresh: refreshAchievements } =
+    useGetAchievements();
+
+  // The drawer is mounted permanently (sibling of the Stack), so its
+  // subscription query + achievements read only fetch once at app launch. If
+  // that cold-start fetch was slow or failed, opening the drawer would show no
+  // subscription/coach-switch and a stale achievements count until a full app
+  // restart. Re-validate both on the open transition (false→true) so the
+  // drawer always reflects current state. `refetchSubscription` also re-settles
+  // trainer eligibility (fed from the same query via useUserModeEligibility).
+  const wasOpen = useRef(false);
+  useEffect(() => {
+    if (open && !wasOpen.current) {
+      void refetchSubscription();
+      void refreshAchievements();
+    }
+    wasOpen.current = open;
+  }, [open, refetchSubscription, refreshAchievements]);
 
   const [isSigningOut, setIsSigningOut] = useState(false);
 

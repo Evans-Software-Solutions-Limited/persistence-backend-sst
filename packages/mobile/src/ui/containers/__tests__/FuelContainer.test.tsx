@@ -19,11 +19,22 @@ import { FuelContainer } from "../FuelContainer";
 
 const mockPush = jest.fn();
 const mockProbe: { last: FuelPresenterProps | null } = { last: null };
+// Holder so a test can re-fire the focus callback (simulate returning to Fuel).
+const mockFuelFocus: { cb: (() => void | (() => void)) | null } = { cb: null };
 
-jest.mock("expo-router", () => ({
-  useRouter: () => ({ push: mockPush }),
-  useNavigation: () => ({ addListener: () => () => {} }),
-}));
+jest.mock("expo-router", () => {
+  const React = jest.requireActual("react") as typeof import("react");
+  return {
+    useRouter: () => ({ push: mockPush }),
+    useNavigation: () => ({ addListener: () => () => {} }),
+    // Capture + run once on mount (= first focus, which useRefreshOnFocus
+    // skips); a test re-fires via mockFuelFocus.cb() to exercise re-entry.
+    useFocusEffect: (cb: () => void | (() => void)) => {
+      mockFuelFocus.cb = cb;
+      React.useEffect(cb, [cb]);
+    },
+  };
+});
 jest.mock("@/adapters/api", () => ({
   ...jest.requireActual("@/adapters/api"),
   getApiBaseUrl: () => "https://api.test",
@@ -170,6 +181,24 @@ describe("FuelContainer", () => {
     mockProbe.last = null;
     mockPush.mockClear();
     jest.clearAllMocks();
+  });
+
+  it("re-pulls the day's fuel when the tab regains focus (skips the mount focus)", async () => {
+    const { adapters, storage } = makeAdapters();
+    storage.cacheFuelToday(USER, localDayISO(), makeFuel());
+    const spy = jest.spyOn(adapters.api, "getFuelToday");
+    render(
+      <Wrapper adapters={adapters}>
+        <FuelContainer />
+      </Wrapper>,
+    );
+    await waitFor(() => expect(mockProbe.last?.hasData).toBe(true));
+    const before = spy.mock.calls.length;
+    // Re-entry (second focus) → refresh; the mount focus was skipped.
+    await act(async () => {
+      mockFuelFocus.cb?.();
+    });
+    await waitFor(() => expect(spy.mock.calls.length).toBeGreaterThan(before));
   });
 
   it("derives the presenter view-model from the cached day aggregate", async () => {
