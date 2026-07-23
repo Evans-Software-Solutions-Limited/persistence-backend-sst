@@ -618,6 +618,53 @@ describe("ClientDetailRepository.getClientDetail", () => {
     expect(h.collectionSatisfied).toBe(false);
   });
 
+  it("habits — configured-but-not-yet-effective habits still surface as targets (0%), not an empty card", async () => {
+    // Aggregates are the streak-SCORING set (effective_from <= weekStart, §4.4);
+    // a fresh enable whose effective_from is a future Monday is absent here…
+    streaks.getCollectionHabitAggregates.mockResolvedValue([]);
+    streaks.getCollectionHabitStreak.mockResolvedValue({
+      currentCount: 0,
+    } as any);
+    (getDb as any).mockReturnValue(
+      makeDb({
+        byTable: {
+          profiles: [{ tz: "Europe/London" }],
+          // …but the coach HAS configured them, so the Targets summary lists
+          // them (regression: previously the whole card showed "no habits set").
+          habit_configs: [
+            { goalId: "steps-goal", category: "steps", label: "Steps" },
+            { goalId: "sleep-goal", category: "sleep", label: "Sleep" },
+          ],
+        },
+      }),
+    );
+    const out = await new ClientDetailRepository().getClientDetail(
+      "trainer-1",
+      "client-1",
+      NOW,
+    );
+    expect(out.habits).not.toBeNull();
+    const h = out.habits!;
+    expect(h.habits).toHaveLength(2);
+    expect(h.habits.every((x) => x.met === false && x.pct === 0)).toBe(true);
+    expect(h.habits.map((x) => x.label).sort()).toEqual(["Sleep", "Steps"]);
+    // No EFFECTIVE (scored) habits this week → collection can't be satisfied.
+    expect(h.collectionSatisfied).toBe(false);
+  });
+
+  it("habits — null only when the client has NO configured habits at all", async () => {
+    streaks.getCollectionHabitAggregates.mockResolvedValue([]);
+    (getDb as any).mockReturnValue(
+      makeDb({ byTable: { profiles: [{ tz: "Europe/London" }] } }),
+    );
+    const out = await new ClientDetailRepository().getClientDetail(
+      "trainer-1",
+      "client-1",
+      NOW,
+    );
+    expect(out.habits).toBeNull();
+  });
+
   it("recentSessions — client's completed sessions newest-first, ISO completedAt", async () => {
     (getDb as any).mockReturnValue(
       makeDb({
