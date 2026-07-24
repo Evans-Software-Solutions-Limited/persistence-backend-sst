@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.6](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.7.5...persistence-v1.7.6) (2026-07-23)
+
+
+### Bug Fixes
+
+* **client-detail:** show habit target values, drop duplicate calories row ([#309](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/309)) ([0e589d0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/0e589d020028ba0955be19e700312120d092beef))
+
 ## [1.7.5](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.7.4...persistence-v1.7.5) (2026-07-23)
 
 
