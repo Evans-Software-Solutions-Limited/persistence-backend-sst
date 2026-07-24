@@ -138,7 +138,7 @@ export function Pricing() {
     title:
       "Pricing — Persistence Gym & Coaching App | Free, Premium & Premium+ (GBP)",
     description:
-      "Simple GBP pricing for athletes, coaches and teams. Free forever, Premium from £12.99/mo, Premium+ with AnyGym, plus three coach tiers and Persistence for Teams.",
+      "Simple GBP pricing for athletes, coaches and teams. Free forever, Premium from £12.99/mo, Premium+ with AnyGym and AnyMeal, plus three coach tiers and Persistence for Teams.",
     path: "/pricing",
   });
 
@@ -220,13 +220,16 @@ export function Pricing() {
 
               {/* Premium+ */}
               <div className="plan flagship" data-reveal style={d(200)}>
-                <span className="plan-ribbon gold">Flagship · AnyGym</span>
+                <span className="plan-ribbon gold">
+                  Flagship · AnyGym + AnyMeal
+                </span>
                 <div className="plan-name">Premium+</div>
                 <div className="plan-status soon">Coming soon</div>
-                <PlanPrice m={19.99} y={199.99} cycle={cycle} />
+                <PlanPrice m={29.99} y={299.99} cycle={cycle} />
                 <p className="plan-desc">
                   The full adaptive suite. Scan your gym and Persistence builds
-                  a workout around exactly what's there.
+                  a workout around exactly what's there — then plans the meals
+                  that hit your numbers.
                 </p>
                 <ul className="plan-feats">
                   <Feat head>Everything in Premium, plus</Feat>
@@ -235,6 +238,10 @@ export function Pricing() {
                   </Feat>
                   <Feat>
                     <b>AnyGym equipment scan</b> — equipment-aware programming
+                  </Feat>
+                  <Feat>
+                    <b>AnyMeal meal planning</b> — food plans &amp;
+                    fill-your-macros ideas
                   </Feat>
                   <Feat>Program import</Feat>
                 </ul>
@@ -405,7 +412,8 @@ export function Pricing() {
                 <p>
                   Premium gives you unlimited tracking plus Snap AI nutrition
                   logging. Premium+ adds the full adaptive suite — AI workout
-                  suggestions, AnyGym equipment scan and program import.
+                  suggestions, AnyGym equipment scan, AnyMeal meal planning and
+                  program import.
                 </p>
               </div>
               <div className="faq-item">
