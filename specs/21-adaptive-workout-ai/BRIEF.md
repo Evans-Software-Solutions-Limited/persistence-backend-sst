@@ -76,3 +76,38 @@ endpoints they’ll build on.
 
 `bun run typecheck · lint · prettier:check · build · test:unit` (≥90% on changed
 files) + Inspector-Brad-local before the PR; merge on green.
+
+---
+
+## Readiness sense-check (2026-07-24)
+
+Brad asked whether AnyGym is "fully scoped, ready to be picked up next."
+Verdict: **brief-ready, not build-ready.** What stands between this file and a
+pickup-able state:
+
+1. **The triplet doesn't exist.** This is a Phase-0 brief; per the header the
+   `requirements.md`/`design.md`/`tasks.md` triplet is authored when work goes
+   active. That authoring session (~1 focused session) is the actual next step.
+2. **Designs exist but live off-repo.** Brad confirms the Claude design
+   prototypes are ready (`design_handoff_site_and_anygym` — D7 journey, D1
+   scan, D6 swap). They are referenced by a `~/Downloads` path; commit them (or
+   a stable exported copy) somewhere durable before the authoring session so a
+   remote/parallel agent can read them.
+3. **Two data-model decisions are still open** (parent↔variation linkage;
+   saved-gym persistence — recommended defaults are in § Decisions above,
+   needing only Brad's confirm).
+4. **Tier-gating divergence to reconcile:** the GTM-EXPANSION § 3 table gives
+   Premium 10/day generation+scan; `marketing/WEBSITE_PRICING_SPEC.md` (later,
+   shipped to the site) makes scan+generation a hard Premium+ gate — and its
+   2026-07-17 revision **dropped the free AI taster entirely** (Free's cap is
+   now "3 Custom Workouts", superseding both the GTM table and the pricing
+   spec's own § 6.1/§ 7 taster copy). The triplet should inherit the latest
+   pricing-spec position, confirm the taster's fate with Brad, and note P0
+   (premium_plus tier restructure) is now a **shared prerequisite with spec-26
+   AnyMeal**.
+5. **Adapt-vs-generate scope is settled** (this brief: AnyGym = adapt-existing;
+   generate-from-scratch is the separate M19-P2 flow) — carry that split into
+   the triplet explicitly, since the marketing copy blurs them.
+
+Not blockers: the equipment model, swap ranker, Bedrock adapter, entitlement
+and ceiling patterns are all shipped and verified (§ Reuse).
