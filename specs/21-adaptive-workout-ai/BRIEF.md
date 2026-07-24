@@ -93,9 +93,16 @@ pickup-able state:
    scan, D6 swap). They are referenced by a `~/Downloads` path; commit them (or
    a stable exported copy) somewhere durable before the authoring session so a
    remote/parallel agent can read them.
-3. **Two data-model decisions are still open** (parent↔variation linkage;
-   saved-gym persistence — recommended defaults are in § Decisions above,
-   needing only Brad's confirm).
+   **Update 2026-07-24:** a design pass is running in parallel right now
+   (Brad-driven). **The executing agent should NOT block on committed design
+   files — the design brief/handoff will be passed in chat when the build
+   session starts.** If it isn't in the session prompt, ask Brad for it before
+   writing UI code; don't invent screens.
+3. ~~**Two data-model decisions are still open**~~ **RESOLVED — Brad
+   2026-07-24: both recommended defaults confirmed** (nullable
+   self-referential `parent_workout_id` + `variation_kind` + `source_gym_id`
+   linkage; `saved_gyms` table with FK from the variation, per § Decisions
+   above). The triplet authors against these.
 4. **Tier-gating divergence to reconcile:** the GTM-EXPANSION § 3 table gives
    Premium 10/day generation+scan; `marketing/WEBSITE_PRICING_SPEC.md` (later,
    shipped to the site) makes scan+generation a hard Premium+ gate — and its

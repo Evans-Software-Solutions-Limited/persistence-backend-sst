@@ -28,7 +28,7 @@ free (10× monthly).
 | --- | --- | --- | --- |
 | Free | £0 | — | LIVE |
 | Premium | £12.99 | £129.99 | LIVE |
-| Premium+ | £19.99 | £199.99 | LAUNCH |
+| Premium+ | £29.99 | £299.99 | LAUNCH |
 
 ### What each plan includes — aligned to the shipped site (updated 2026-07-17)
 
@@ -52,17 +52,29 @@ free (10× monthly).
 - Photo & free-text AI nutrition logging
 - Smart swap suggestions
 
-**Premium+ — £19.99/mo** — the athlete flagship (shown "Coming soon"; phase 2 ≈ Aug 2026)
+**Premium+ — £29.99/mo** — the athlete flagship (shown "Coming soon"; phase 2 ≈ Aug 2026)
 
 - Everything in Premium, plus the adaptive suite:
   - **AI Workout Suggestions**
   - **AnyGym equipment scan** — equipment-aware programming
+  - **AnyMeal meal planning** — food plans & fill-your-macros ideas
   - Program import
 
 > **Positioning note:** the "scan-your-gym → AI builds a workout that fits it"
 > story is a deliberately hard Premium+ gate. Diverges from the earlier
 > GTM-Expansion proposal (which gave Premium 10/day generation + scan) — the
 > site follows this spec, not that table.
+
+> **REPRICED + AnyMeal added (Brad, 2026-07-24):** Premium+ moved £19.99 →
+> **£29.99/mo · £299.99/yr** on the strength of the two-hero suite (spec-26
+> AnyMeal joins AnyGym). Market basis: AI-programming apps alone sit at
+> $29.99–34.99/mo (Ladder, Juggernaut AI); MyFitnessPal's meal-planning tier is
+> $24.99/mo; Premium+ spans tracking + AI training + AI meal planning. Changed
+> while Premium+ is non-purchasable (no ASC products, no catalog row) — zero
+> grandfathering. **No free taster** (supersedes § 6.1 and the § 7 taster copy
+> below a second time): the hard gate stands; time-boxed promotions run through
+> RevenueCat promotional entitlements instead. Site updated same day
+> (`Pricing.tsx`, `Support.tsx`).
 
 ---
 
@@ -144,6 +156,26 @@ Recommendation: a coined hero name (lead candidate **AnyGym**) with
 "equipment-aware programming" as the plain-English descriptor beneath it. Verify
 availability before committing, and use the same name consistently across app,
 site and marketing.
+
+**Availability check run 2026-07-24 (web-level, not a formal IPO search) —
+Brad confirmed both names, risk noted:**
+
+- **AnyGym** 🟠 — **AnyGym Ltd exists**: a UK company (founded 2016,
+  any-gym.com, LinkedIn presence) selling pay-as-you-go access to UK gyms.
+  Same country, same industry sector, different product (access marketplace vs
+  a software feature). No registered UK trade mark surfaced in web searches,
+  but the search was inconclusive — this is the collision that matters.
+- **AnyMeal** 🟡 — an **"AnyMeal — Food Diary" app exists on the App Store**
+  (id 6473067335, nutrition category); plus an old open-source recipe tool of
+  the same name. No trade-mark registration surfaced.
+- **Mitigations:** both are used as *in-app feature names* under the
+  Persistence house mark ("Persistence AnyGym"), not standalone app names —
+  materially lower risk than a competing app title. Before spending real
+  marketing money on either name, run the formal checks this section already
+  calls for: UK IPO trade-mark search (classes 9/41/42/44), Companies House,
+  and domain/social handles. If AnyGym Ltd proves to hold a registered mark,
+  the fallback candidate remains "Kit-Aware" (above) and the AnyMeal sibling
+  would rename in sympathy.
 
 ---
 

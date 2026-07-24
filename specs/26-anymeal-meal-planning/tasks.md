@@ -5,9 +5,11 @@
 > `design.md` sections. Gates on every PR: prettier · typecheck · lint · build
 > · test:unit (≥90% on changed files) + Inspector-Brad-local.
 >
-> **Do not start P1+ until the Brad checkpoints are answered**
-> (`requirements.md § Open checkpoints` — tier gating and ceilings change
-> handler code; branding changes copy everywhere).
+> **Checkpoints all resolved (Brad, 2026-07-24)** — see
+> `requirements.md § Open checkpoints`. Build is unblocked end-to-end:
+> Premium+ hard gate (no taster), ceilings 20/5/10, branding confirmed,
+> **Phase 3 is v1 scope** (async-job infra in-scope; coordinate with
+> spec-20).
 
 ## Phase 0 — Foundations (backend-heavy, no AI, agent-executable)
 
@@ -23,7 +25,7 @@
 - [ ] **1.1 Candidate-assembly service** (pool query: curated locale rows + user foods/recipes/meals − pattern/avoid filters + like bias, cap ~200) + PgDialect render test — design § 1 stage 1.
 - [ ] **1.2 Bedrock composition adapter** for suggest (forced tool schema: items from candidates only; `AI_MEAL_MODEL_ID` config) — design § 1 stage 2; CI on canned responses.
 - [ ] **1.3 `verifyComposition` service** (macro recompute, tolerance, avoid re-check, one repair round) + hostile-payload tests — design § 1 stage 3.
-- [ ] **1.4 `POST /nutrition/ai/meal-suggest`** — guard order auth → `meal_ai` entitlement/taster → `AI_MEAL_SUGGEST_DAILY_LIMIT` ceiling → pipeline; `ai_usage_log` real-inference-only — AC 3.3, 3.4, 3.6.
+- [ ] **1.4 `POST /nutrition/ai/meal-suggest`** — guard order auth → `meal_ai` entitlement (hard gate, no taster) → `AI_MEAL_SUGGEST_DAILY_LIMIT` ceiling → pipeline; `ai_usage_log` real-inference-only — AC 3.3, 3.4, 3.6.
 - [ ] **1.5 Mobile suggest sheet** (remaining-macros read, shape/steer, generating state, suggestion cards, draft-confirm → log via existing entries path, save-as-recipe/meal, offline-disabled state, 402/429 surfaces) — AC 3.1–3.7.
 
 ## Phase 2 — Day plans
@@ -36,7 +38,7 @@
 - [ ] **2.6 Mobile plan flow**: config sheet → generating → draft review (meal cards, swap/edit/remove with deterministic recompute) → accept — AC 4.1, 4.3–4.5.
 - [ ] **2.7 Mobile Fuel integration**: AnyMeal card states, ghost rows in meal log, plan Today/adherence view, SQLite plan cache — AC 5.1–5.3.
 
-## Phase 3 — Week plans + shopping list (post-checkpoint 6)
+## Phase 3 — Week plans + shopping list (IN v1 — decided 2026-07-24)
 
 - [ ] **3.1 Async-job execution model** — coordinate with spec-20 (whichever lands first builds it; single design home) — design § 1 sizing; AC 6.1.
 - [ ] **3.2 Week generation** (7-day group, variety/batch-cook constraints, per-day regenerate) — AC 6.1, 6.2.
@@ -47,5 +49,5 @@
 ## Cross-cutting (every phase)
 
 - [ ] Disclaimer + medical-scope copy exactly per requirements (AC 1.2, 1.5, 3.4) — legal surface, no paraphrasing drift.
-- [ ] Tier/taster gating verified per checkpoint answers; unauthorized-tier tests (403/402 paths).
+- [ ] Tier gating (Premium+ hard gate) verified; unauthorized-tier tests (403/402 paths).
 - [ ] STATE.md + `specs/README.md` index updated as slices land.

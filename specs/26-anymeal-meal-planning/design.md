@@ -84,9 +84,10 @@ Worst-case per-user/day (Haiku-class, ~$1/MTok in · $5/MTok out): 20 suggests
 (~4k in + 0.6k out ≈ £0.006 each) + 5 day-plans (~5k in + 2.5k out ≈ £0.014
 each) + 10 swaps (≈ £0.005 each) ≈ **£0.23/day → ~£7/mo ceiling-saturated** —
 same order as the Snap ceiling buffer (~£7.30/mo) and comfortably inside the
-£19.99 Premium+ price (the profit-buffer rule: AI cost can never equal what the
-user pays; ceilings are a cost backstop, not a product quota). `ai_usage_log`
-counts real inferences only (402/429 pre-checks write no row).
+Premium+ price — £29.99/mo as of the 2026-07-24 reprice (the profit-buffer
+rule: AI cost can never equal what the user pays; ceilings are a cost
+backstop, not a product quota). `ai_usage_log` counts real inferences only
+(402/429 pre-checks write no row).
 
 ---
 
@@ -175,7 +176,7 @@ synced in v1).
 
 New application dir: `src/application/nutrition/anymeal/` (preferences,
 candidates, verification, plans, ai). All handlers: `requireAuth` →
-entitlement/taster → ceiling → work; every repository method `userId`-first;
+entitlement → ceiling → work; every repository method `userId`-first;
 ownership checks on plan ids (`get(userId, id)` shape).
 
 | Endpoint                                       | Notes                                                                                                                                            |
@@ -195,12 +196,13 @@ ownership checks on plan ids (`get(userId, id)` shape).
 Entitlement: new `EntitlementFeature` value `meal_ai` resolved from the tier
 catalog (Premium+ flag — reuses the M19-P0 `premium_plus` row; if AnyMeal lands
 first, the tier-restructure migration is a shared prerequisite, flagged in
-requirements § Dependencies). Taster (if confirmed): lifetime pooled count over
-the two AnyMeal AI endpoints in `ai_usage_log` vs `AI_MEAL_TASTER_LIMIT` —
-exact clone of the AnyGym taster mechanism so the two pools stay separate but
-identically shaped. Ceilings: `AI_MEAL_SUGGEST_DAILY_LIMIT` (20) ·
-`AI_MEAL_PLAN_DAILY_LIMIT` (5) · `AI_MEAL_SWAP_DAILY_LIMIT` (10), tier-aware
-resolution read-in-handler (#156 pattern, no generic limits table).
+requirements § Dependencies). **No taster (Brad 2026-07-24)** — hard 402 with
+the upgrade payload for free/premium; comps/promos arrive as RevenueCat
+promotional entitlements through the existing webhook → `user_subscriptions`
+path, which this feature sees as a normal Premium+ grant (zero extra code).
+Ceilings (locked 2026-07-24): `AI_MEAL_SUGGEST_DAILY_LIMIT` (20) ·
+`AI_MEAL_PLAN_DAILY_LIMIT` (5) · `AI_MEAL_SWAP_DAILY_LIMIT` (10), env-tunable,
+tier-aware resolution read-in-handler (#156 pattern, no generic limits table).
 
 ### Verification & safety testing (dangerous area)
 
@@ -245,15 +247,14 @@ Screens/components (containers + presenters, Fuel visual language —
 Offline: reads (preferences, active plan, shopping list) from SQLite cache;
 `log` writes queue through the existing sync-queue; AI affordances disabled
 offline with the Snap copy pattern. 402/429 surfaces reuse `useFeatureGate` +
-the shipped upgrade sheet; taster chip copy is a conversion surface (AnyGym D3
-parity).
+the shipped upgrade sheet (no taster surfaces — decision 4).
 
 ---
 
 ## 5. Decision record
 
-| Date       | Decision                                                                                                        | By              |
-| ---------- | --------------------------------------------------------------------------------------------------------------- | --------------- |
-| 2026-07-24 | Spec authored; candidate-constrained pipeline; deterministic-twice allergen posture; UK-first locale preference | Claude (w/Brad) |
-| 2026-07-24 | Slots stay 4 in the log; plans carry own labels + logSlot mapping (no hot-table migration)                      | Claude proposal |
-| pending    | Checkpoints 1–6 (requirements § Open checkpoints)                                                               | Brad            |
+| Date       | Decision                                                                                                                                                                              | By              |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------- |
+| 2026-07-24 | Spec authored; candidate-constrained pipeline; deterministic-twice allergen posture; UK-first locale preference                                                                       | Claude (w/Brad) |
+| 2026-07-24 | Slots stay 4 in the log; plans carry own labels + logSlot mapping (no hot-table migration)                                                                                            | Claude proposal |
+| 2026-07-24 | Checkpoints 1–6 ALL resolved: branding confirmed, Premium+ hard gate NO taster (RC promos), ceilings 20/5/10, site repriced £29.99 + AnyMeal added, allergen set signed off, P3 in v1 | Brad            |

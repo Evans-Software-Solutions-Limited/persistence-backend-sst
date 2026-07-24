@@ -1,9 +1,10 @@
 # 26 — AnyMeal (AI meal planning): Requirements
 
 > **Authored 2026-07-24** from Brad's scoping session (Premium+ nutrition
-> support). "AnyMeal" is the working brand — the nutrition sibling of AnyGym
-> (one word, same naming system; availability/trademark check pending, same as
-> `marketing/WEBSITE_PRICING_SPEC.md § 5` requires for AnyGym). This spec covers
+> support). "AnyMeal" is the **confirmed** brand (Brad, same day) — the
+> nutrition sibling of AnyGym (one word, same naming system; web-level
+> availability check run, findings + formal-IPO-search caveat in
+> `marketing/WEBSITE_PRICING_SPEC.md § 5`). This spec covers
 > the **meal-inspiration + food-plan layer on top of the shipped Fuel stack**
 > (`specs/13-nutrition-tracking` is authoritative for logging, targets, recipes,
 > barcode and Snap AI — this spec composes them, it does not redefine them).
@@ -70,18 +71,18 @@ Marketing-wise the two form the Premium+ "adaptive suite" pair.
 
 ## Locked decisions (proposed at authoring — ⚠ marks Brad checkpoints)
 
-| #   | Decision              | Value                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| --- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | AI shape              | **Candidate-constrained composition.** Deterministic layer pre-filters foods/recipes (locale, dietary pattern, avoidances, macro fit) and computes ALL macro numbers from the verified `foods` DB; the model selects/composes from candidates and writes names, portions-as-multipliers, and reasons only. Never pure "AI invents a meal with AI macros."                                                                                                                                                 |
-| 2   | Avoidance enforcement | **Deterministic, twice.** Avoidances/dietary pattern filter the candidate pool BEFORE the model, and a server-side verification pass re-checks every ingredient of every proposed meal AFTER the model. A verification failure never reaches the user silently. Allergy-grade items additionally always render the label-check disclaimer.                                                                                                                                                                |
-| 3   | Draft-confirm         | AI output is never logged or persisted as active without explicit user confirmation — same rule as Snap AI and AnyGym (`AiDraftConfirmPresenter` pattern).                                                                                                                                                                                                                                                                                                                                                |
-| 4   | Tier gating           | ⚠ **Premium+** for plan generation (joins the adaptive suite next to AnyGym). Fill-my-macros suggestions: proposal = also Premium+ with a **lifetime taster pool** (N free, env-tunable) as the conversion hook. NB the AnyGym taster mechanism was specced (GTM § 3 P0) but the shipped site copy later dropped it (pricing spec: Free's cap is "3 Custom Workouts") — so the taster question is genuinely open for BOTH features. Checkpoint: Brad decides suggestion tier + whether any taster exists. |
-| 5   | Localisation          | **UK-first.** v1 ships `en-GB` only, but locale is a stored preference from day 1. Candidate pool draws from the UK-curated OFF seed (shipped, M9 `DATA_SOURCING § 5`); prompts carry UK-availability constraints; users can flag "hard to find here" on any ingredient, which feeds their personal exclusions (and, aggregated, the curation backlog).                                                                                                                                                   |
-| 6   | Meal-slot mapping     | Plans support **2–6 meals/day** but the shipped Fuel log keeps its 4 fixed slots (`breakfast/lunch/snack/dinner`, DB check constraint untouched). Plan meals carry their own label ("Meal 3 · Post-gym snack") plus a `logSlot` mapping; multiple plan meals may map to one slot (the log already allows multiple entries per slot). No hot-table migration.                                                                                                                                              |
-| 7   | Recipes source        | No licensed third-party recipe DB in v1. Plan meals are (a) the user's own recipes/meals, (b) AI-composed simple recipes whose ingredients are verified `foods` rows (macros computed server-side), or (c) curated system recipes (system-owned rows, same pattern as template workouts #257) added over time. Ingredient-level grounding beats recipe APIs.                                                                                                                                              |
-| 8   | Reuse                 | `nutrition_targets` is the single source of targets (no separate plan targets editor — plans snapshot it). `recipes`/`meals`/`foods`/`nutrition_entries` are reused as-is. Bedrock adapter (M9.5 `aiEstimation.ts` pattern), entitlement + `ai_usage_log` ceilings (#156 pattern) reused.                                                                                                                                                                                                                 |
-| 9   | Offline posture       | Generation/suggestion are **online-only** (same as Snap: AI calls never enter the sync queue). Accepted plans and preferences are cached in SQLite and fully readable offline; log-from-plan writes queue offline like any manual entry.                                                                                                                                                                                                                                                                  |
-| 10  | Medical scope         | AnyMeal is a lifestyle/fitness feature. **No medical-diet claims** (renal, diabetic dosing, ARFID etc.), no medical-condition inputs, and a persistent "not medical advice / consult a professional" line in the preferences flow. Dietary requirements are patterns + exclusions, not prescriptions.                                                                                                                                                                                                     |
+| #   | Decision              | Value                                                                                                                                                                                                                                                                                                                                                                                                         |
+| --- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | AI shape              | **Candidate-constrained composition.** Deterministic layer pre-filters foods/recipes (locale, dietary pattern, avoidances, macro fit) and computes ALL macro numbers from the verified `foods` DB; the model selects/composes from candidates and writes names, portions-as-multipliers, and reasons only. Never pure "AI invents a meal with AI macros."                                                     |
+| 2   | Avoidance enforcement | **Deterministic, twice.** Avoidances/dietary pattern filter the candidate pool BEFORE the model, and a server-side verification pass re-checks every ingredient of every proposed meal AFTER the model. A verification failure never reaches the user silently. Allergy-grade items additionally always render the label-check disclaimer.                                                                    |
+| 3   | Draft-confirm         | AI output is never logged or persisted as active without explicit user confirmation — same rule as Snap AI and AnyGym (`AiDraftConfirmPresenter` pattern).                                                                                                                                                                                                                                                    |
+| 4   | Tier gating           | **DECIDED (Brad 2026-07-24): Premium+ hard gate for BOTH surfaces (suggestions + plan generation). NO taster.** Time-boxed promotions run through RevenueCat promotional entitlements (the existing individual-grant rail) — no taster code path. Historical note: the AnyGym taster was specced (GTM § 3 P0) then dropped from the shipped site copy; this decision settles it for the whole adaptive suite. |
+| 5   | Localisation          | **UK-first.** v1 ships `en-GB` only, but locale is a stored preference from day 1. Candidate pool draws from the UK-curated OFF seed (shipped, M9 `DATA_SOURCING § 5`); prompts carry UK-availability constraints; users can flag "hard to find here" on any ingredient, which feeds their personal exclusions (and, aggregated, the curation backlog).                                                       |
+| 6   | Meal-slot mapping     | Plans support **2–6 meals/day** but the shipped Fuel log keeps its 4 fixed slots (`breakfast/lunch/snack/dinner`, DB check constraint untouched). Plan meals carry their own label ("Meal 3 · Post-gym snack") plus a `logSlot` mapping; multiple plan meals may map to one slot (the log already allows multiple entries per slot). No hot-table migration.                                                  |
+| 7   | Recipes source        | No licensed third-party recipe DB in v1. Plan meals are (a) the user's own recipes/meals, (b) AI-composed simple recipes whose ingredients are verified `foods` rows (macros computed server-side), or (c) curated system recipes (system-owned rows, same pattern as template workouts #257) added over time. Ingredient-level grounding beats recipe APIs.                                                  |
+| 8   | Reuse                 | `nutrition_targets` is the single source of targets (no separate plan targets editor — plans snapshot it). `recipes`/`meals`/`foods`/`nutrition_entries` are reused as-is. Bedrock adapter (M9.5 `aiEstimation.ts` pattern), entitlement + `ai_usage_log` ceilings (#156 pattern) reused.                                                                                                                     |
+| 9   | Offline posture       | Generation/suggestion are **online-only** (same as Snap: AI calls never enter the sync queue). Accepted plans and preferences are cached in SQLite and fully readable offline; log-from-plan writes queue offline like any manual entry.                                                                                                                                                                      |
+| 10  | Medical scope         | AnyMeal is a lifestyle/fitness feature. **No medical-diet claims** (renal, diabetic dosing, ARFID etc.), no medical-condition inputs, and a persistent "not medical advice / consult a professional" line in the preferences flow. Dietary requirements are patterns + exclusions, not prescriptions.                                                                                                         |
 
 ---
 
@@ -121,7 +122,7 @@ Marketing-wise the two form the Premium+ "adaptive suite" pair.
 - 3.3 [ ] `POST /nutrition/ai/meal-suggest` returns 2–3 suggestions, each: name, why-it-fits reason, composed items (each resolving to a `foods`/`recipes` row + quantity), and macro totals **computed server-side from the composed rows**, fitting the remaining budget within tolerance (design § Verification).
 - 3.4 [ ] Every suggestion passed the avoidance verification; allergen-relevant suggestions render the label-check disclaimer inline.
 - 3.5 [ ] One tap logs a suggestion into a chosen slot via the existing `POST /nutrition/entries` path (draft-confirm first — no silent log); "save as recipe/meal" is offered where the shape warrants it.
-- 3.6 [ ] Gating per Locked decision 4 (402 upgrade surface when not entitled; taster pool if confirmed) and a per-endpoint daily ceiling (429 `ai_daily_limit`, #156 pattern).
+- 3.6 [ ] Gating per Locked decision 4 (Premium+ hard gate — 402 upgrade surface when not entitled, no taster) and a per-endpoint daily ceiling (429 `ai_daily_limit`, #156 pattern).
 - 3.7 [ ] Offline: affordance disabled with "needs a connection" copy (Snap parity).
 
 ## User stories — P2 (day-plan generation)
@@ -194,9 +195,30 @@ ships in P3.)_
 
 ## Open checkpoints for Brad
 
-1. **Branding**: "AnyMeal" final? (Availability/trademark check alongside AnyGym's.)
-2. **Tier gating** (Locked decision 4): suggestions tier + taster pool size; plan generation Premium+-only?
-3. **Ceilings**: proposed defaults — suggest 20/day, plan-generate 5/day, swap 10/day (all env-tunable, cost-bounded under the £19.99 price; design § Cost).
-4. **Marketing site**: add AnyMeal to the Premium+ card copy (currently AI Workout Suggestions / AnyGym scan / Program import)?
-5. **Allergen vocabulary**: sign off the fixed allergen chip set (UK FIC 14) + disclaimer copy.
-6. **P3 timing**: week plans + shopping list ride v1 or fast-follow? (Async-job infra is the cost — shared with spec-20.)
+> **ALL RESOLVED — Brad, 2026-07-24 (same-day sign-off in the scoping
+> session):**
+
+1. **Branding — ✅ CONFIRMED**: "AnyMeal" (with "AnyGym") is final.
+   Availability check run at web level: an "AnyMeal — Food Diary" App Store
+   app and AnyGym Ltd (UK gym-access company) both exist — findings + formal
+   IPO-search recommendation recorded in
+   `marketing/WEBSITE_PRICING_SPEC.md § 5`. Names are used as in-app feature
+   brands under the Persistence house mark.
+2. **Tier gating — ✅ DECIDED**: suggestions AND plan generation are both
+   **Premium+ hard-gated. NO taster** for the adaptive suite. Time-boxed
+   promotions run through RevenueCat promotional entitlements instead (the
+   existing individual-grant rail) — no taster code path is built.
+3. **Ceilings — ✅ DECIDED**: suggest 20/day · plan-generate 5/day · swap
+   10/day, env-tunable, as proposed. (Cost maths in design § Cost — now
+   against the £29.99 price.)
+4. **Marketing site — ✅ DONE 2026-07-24**: AnyMeal added to the Premium+
+   card/FAQ AND **Premium+ repriced £19.99 → £29.99/mo · £299.99/yr**
+   (`Pricing.tsx`, `Support.tsx`; rationale + market table in
+   `WEBSITE_PRICING_SPEC.md § 1`). Changed pre-purchasability — no
+   grandfathering.
+5. **Allergen vocabulary — ✅ SIGNED OFF**: UK FIC 14-derived chip set +
+   disclaimer copy as written in STORY-001.
+6. **P3 timing — ✅ DECIDED: week plans + shopping list are IN v1.** The
+   async-job execution model is therefore in-scope for this spec's v1 build
+   (coordinate the shared design with spec-20 at build time, per design § 1
+   Sizing).
