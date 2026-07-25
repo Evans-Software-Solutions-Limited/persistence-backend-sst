@@ -56,7 +56,7 @@ INSERT INTO subscription_tiers (
   features, analytics_access, export_access, is_active
 ) VALUES (
   'premium_plus', 'Premium+',
-  'Everything in Premium, plus 30 AI-generated workouts per month. The adaptive suite — Loadout and Mealprint — unlocks on this plan when it ships.',
+  'The top athlete plan. Everything in Premium today; the adaptive suite — Loadout and Mealprint — unlocks on this plan when it ships.',
   29.99, 299.99, 'GBP',
   NULL, true, 30, true, true, true,
   NULL, false,
@@ -93,8 +93,9 @@ WHERE tier_name IN (
 --
 --    This column is not dead copy: `SubscriptionRepository.findForUser`
 --    returns it as `tierDescription` and the Profile Drawer renders it
---    verbatim for every paying coach, so the claim survives in the product
---    until it is fixed HERE. TypeScript cannot reach it.
+--    verbatim — for every user, including free ones via the synthesised
+--    free-tier row — so the claim survives in the product until it is fixed
+--    HERE. TypeScript cannot reach it.
 --
 --    The AI buddy half of the sentence stays — the AI weekly client
 --    summary is real (`POST /trainers/me/clients/:clientId/ai-summary`).

@@ -123,8 +123,12 @@ describe("premium_plus tier migration", () => {
   it("strips the trainer-analytics claim from the trainer tier descriptions", () => {
     // Rendered in the Profile Drawer for every paying coach, so the claim
     // survives in the product unless the migration fixes the data.
-    const strip = sql.slice(sql.indexOf("SET description = regexp_replace"));
-    expect(strip).toContain("and trainer analytics");
+    const s0 = sql.indexOf("SET description = regexp_replace");
+    const strip = sql.slice(s0, sql.indexOf(";", s0));
+    // Assert the ANCHORED PATTERN ITSELF, not just the LIKE guard below it
+    // — a pattern that can never match would silently no-op while every
+    // looser assertion still passed.
+    expect(strip).toContain("' and trainer analytics\\.$'");
     for (const tier of [
       "individual_trainer",
       "small_business",
@@ -138,7 +142,11 @@ describe("premium_plus tier migration", () => {
     expect(sql).toContain(
       "ADD COLUMN IF NOT EXISTS loadout_access boolean NOT NULL DEFAULT false",
     );
-    const grant = sql.slice(sql.indexOf("SET loadout_access = true"));
+    // Bound the slice to this statement. Step 4 was appended after this
+    // test was written and its own tier-name list would otherwise satisfy
+    // three of the four assertions below regardless of what step 3 says.
+    const g0 = sql.indexOf("SET loadout_access = true");
+    const grant = sql.slice(g0, sql.indexOf(";", g0));
     for (const tier of [
       "premium_plus",
       "individual_trainer",
