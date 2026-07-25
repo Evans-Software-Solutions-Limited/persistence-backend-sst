@@ -117,6 +117,20 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
     onManageInAppStore,
   } = props;
 
+  // A user can hold a tier that isn't in the rendered catalog — e.g. a
+  // RevenueCat promotional grant of a tier still seeded is_active=false
+  // pre-launch. No card is then marked current, so without this guard the
+  // remaining cards render as buyable "free trial"s and a comped user can
+  // be nudged onto a WORSE tier than the one they were given. Suppress
+  // trial banners in that state; they are not genuinely trial-eligible.
+  //
+  // Hoisted above BOTH memos: the trainer loop resolves three fixed tier
+  // names out of the catalog and has exactly the same hole if a trainer
+  // tier is ever held while inactive — which is now a supported state.
+  const holdsUnlistedPaidTier =
+    currentTier !== "free" &&
+    !subscriptionTiers.some((t) => t.tierName === currentTier);
+
   const userTierCards = useMemo(() => {
     // Catalog-driven, not a hardcoded "premium" lookup — M19-P0 added a
     // second consumer tier (`premium_plus`) above Premium, and any future
@@ -144,16 +158,6 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
           a.tierName.localeCompare(b.tierName),
       );
     const cards: React.ReactElement[] = [];
-    // A user can hold a tier that isn't in the rendered catalog — e.g. a
-    // RevenueCat promotional grant of a tier still seeded is_active=false
-    // pre-launch. No card is then marked current, so without this guard
-    // every cheaper consumer card would render as a buyable "free trial",
-    // and tapping one DOWNGRADES the user off the tier they were comped
-    // into. Suppress trial banners entirely in that state (they are not
-    // genuinely trial-eligible — they already hold a paid tier).
-    const holdsUnlistedPaidTier =
-      currentTier !== "free" &&
-      !subscriptionTiers.some((t) => t.tierName === currentTier);
     for (const tier of consumerTiers) {
       const isTierCurrent = currentTier === tier.tierName;
       const trialDays = tierTrialDays(tier.tierName);
@@ -182,6 +186,7 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
     }
     return cards;
   }, [
+    holdsUnlistedPaidTier,
     subscriptionTiers,
     billingCycle,
     currentTier,
@@ -214,7 +219,8 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
           trainerTrialDays !== null &&
           isTierTrialEligible(baseName) &&
           !isCurrent &&
-          !isContactSales;
+          !isContactSales &&
+          !holdsUnlistedPaidTier;
         cards.push(
           <TrainerSubscriptionCard
             key={baseName}
@@ -240,6 +246,7 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
     }
     return cards;
   }, [
+    holdsUnlistedPaidTier,
     subscriptionTiers,
     billingCycle,
     currentTier,

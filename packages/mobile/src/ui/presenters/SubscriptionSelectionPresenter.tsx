@@ -143,6 +143,20 @@ export function SubscriptionSelectionPresenter(
   // tier-rank map to keep in sync). Basic was dropped in the earlier tier
   // simplification — see migration 20260526120000_simplify_tier_model
   // and CLAUDE.md "Migration intent".
+  // A user can hold a tier that isn't in the rendered catalog — e.g. a
+  // RevenueCat promotional grant of a tier still seeded is_active=false
+  // pre-launch. No card is then marked current, so without this guard the
+  // remaining cards render as buyable "free trial"s and a comped user can
+  // be nudged onto a WORSE tier than the one they were given. Suppress
+  // trial banners in that state; they are not genuinely trial-eligible.
+  //
+  // Hoisted above BOTH memos: the trainer loop resolves three fixed tier
+  // names out of the catalog and has exactly the same hole if a trainer
+  // tier is ever held while inactive — which is now a supported state.
+  const holdsUnlistedPaidTier =
+    currentTier !== "free" &&
+    !subscriptionTiers.some((t) => t.tierName === currentTier);
+
   const userTierCards = useMemo(() => {
     const consumerTiers = subscriptionTiers
       .filter(
@@ -165,16 +179,6 @@ export function SubscriptionSelectionPresenter(
           a.tierName.localeCompare(b.tierName),
       );
     const cards: React.ReactElement[] = [];
-    // A user can hold a tier that isn't in the rendered catalog — e.g. a
-    // RevenueCat promotional grant of a tier still seeded is_active=false
-    // pre-launch. No card is then marked current, so without this guard
-    // every cheaper consumer card would render as a buyable "free trial",
-    // and tapping one DOWNGRADES the user off the tier they were comped
-    // into. Suppress trial banners entirely in that state (they are not
-    // genuinely trial-eligible — they already hold a paid tier).
-    const holdsUnlistedPaidTier =
-      currentTier !== "free" &&
-      !subscriptionTiers.some((t) => t.tierName === currentTier);
 
     for (const tier of consumerTiers) {
       const isTierCurrent = currentTier === tier.tierName;
@@ -201,6 +205,7 @@ export function SubscriptionSelectionPresenter(
 
     return cards;
   }, [
+    holdsUnlistedPaidTier,
     subscriptionTiers,
     billingCycle,
     currentTier,
@@ -231,7 +236,10 @@ export function SubscriptionSelectionPresenter(
       if (tier) {
         const isCurrent = currentTier === tier.tierName;
         const showTrialBanner =
-          hasTrialEligibilityData && isTrialEligibleTrainer && !isCurrent;
+          hasTrialEligibilityData &&
+          isTrialEligibleTrainer &&
+          !isCurrent &&
+          !holdsUnlistedPaidTier;
 
         cards.push(
           <TrainerSubscriptionCard
@@ -253,6 +261,7 @@ export function SubscriptionSelectionPresenter(
 
     return cards;
   }, [
+    holdsUnlistedPaidTier,
     subscriptionTiers,
     billingCycle,
     currentTier,
@@ -516,14 +525,16 @@ export function getFeaturesList(
       features.push(`${tier.trainerClientLimit} client slots`);
     }
     // "Analytics & Reporting" and "Data Export" used to be pushed here off
-    // tier.analyticsAccess / tier.exportAccess. Both were removed (Brad,
-    // 2026-07-25): NEITHER FEATURE IS BUILT. Nothing in the app or the
-    // backend gates an analytics screen or an export path on those flags —
-    // their only effect anywhere was these two bullets, so every coach
-    // paywall card was advertising two features that do not exist.
+    // tier.analyticsAccess / tier.exportAccess. Removed 2026-07-25 (Brad):
+    // neither feature is built, and nothing in the app or backend gates an
+    // analytics screen or an export path on those flags.
     //
-    // The catalog columns are left in place for whenever the features are
-    // actually specced and built; they simply no longer sell anything.
+    // NOTE: this `isTrainer` branch is currently UNREACHABLE at runtime —
+    // both presenters render trainer tiers via TrainerSubscriptionCard,
+    // which does not take getFeaturesList, and pass isTrainer={false} to
+    // SubscriptionCard. The user-visible coach claim lived in
+    // TrainerSubscriptionCard and was removed there too. Kept in sync so
+    // this branch doesn't reintroduce the claim if it is ever wired up.
     if (tier.features.ai_buddy || tier.tierName.endsWith("_pro")) {
       features.push("AI Buddy Included");
     }

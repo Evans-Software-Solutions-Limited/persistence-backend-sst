@@ -110,10 +110,15 @@ export function TrainerSubscriptionCard({
             <Ionicons name="checkmark" size={18} color={color.$primary} />
             <Text style={styles.featureText}>{clientSlots} client slots</Text>
           </View>
-          <View style={styles.feature}>
-            <Ionicons name="checkmark" size={18} color={color.$primary} />
-            <Text style={styles.featureText}>Analytics & reporting</Text>
-          </View>
+          {/*
+            "Analytics & reporting" was hardcoded here (legacy parity with
+            components/subscription/TrainerSubscriptionCard.tsx:75). Removed
+            2026-07-25 on Brad's instruction: there is no analytics feature.
+            Nothing in the app or backend gates an analytics screen, and the
+            subscription_tiers.analytics_access flag it nominally described
+            gates nothing either. A paywall must not sell what doesn't exist.
+            Restore when the feature actually ships.
+          */}
         </View>
 
         <View>

@@ -86,11 +86,15 @@ describe("premium_plus tier migration", () => {
   });
 
   it("does not claim analytics or export — neither feature is built", () => {
-    // analytics_access / export_access are the two fields before is_active.
-    // Nothing gates a real analytics screen or export path on them, and the
-    // paywall bullets they used to drive were removed, so a new billing row
-    // must not set them true. Flip only when the features actually ship.
-    expect(tuple).toMatch(/false,\s*false,\s*false\s*\n?\)/);
+    // Nothing gates a real analytics screen or export path on these flags,
+    // and the paywall claims they nominally described were removed, so a
+    // new billing row must not set them true. Flip only when the features
+    // actually ship. (Distinct from the is_active assertion above: this one
+    // fails if either neighbour is flipped true while is_active stays
+    // false.)
+    expect(tuple).not.toMatch(/true,\s*false,\s*false\s*\n?\)/);
+    expect(tuple).not.toMatch(/false,\s*true,\s*false\s*\n?\)/);
+    expect(tuple).not.toMatch(/true,\s*true,\s*false\s*\n?\)/);
   });
 
   it("is a consumer tier with unlimited workouts and 30 AI workouts", () => {

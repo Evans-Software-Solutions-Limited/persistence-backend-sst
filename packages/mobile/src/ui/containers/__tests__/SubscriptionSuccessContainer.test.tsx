@@ -264,11 +264,11 @@ describe("getSubscriptionBenefits", () => {
     }
   });
 
-  it("adds AI Analytics for any trainer tier (post tier-simplification — all trainer tiers carry the former Pro entitlements)", () => {
+  it("adds AI client insights for any trainer tier, without claiming analytics (not a built feature)", () => {
     const benefits = getSubscriptionBenefits("individual_trainer");
-    expect(benefits.some((b) => b.title === "AI Analytics & Gym Buddy")).toBe(
-      true,
-    );
+    expect(
+      benefits.some((b) => b.title === "AI client insights & Gym Buddy"),
+    ).toBe(true);
   });
 });
 

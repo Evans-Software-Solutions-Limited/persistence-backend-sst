@@ -124,9 +124,10 @@ describe("IOSPurchaseFlowPresenter", () => {
 
   it("never renders a trainer-named tier as a consumer card, even if is_trainer_tier is falsy", () => {
     // mapTierRowToWire coerces a NULL is_trainer_tier to false, so a
-    // trainer row with the flag unset lands in the consumer filter AND is
-    // still picked up by the trainer section's allow-list — rendering the
-    // same tier twice. The allow-list exclusion prevents that.
+    // trainer row with the flag unset would fall into the consumer filter
+    // and render a coach plan in the User tab. (The two sections are
+    // mutually exclusive via the role toggle, so it is a wrong-tab bug,
+    // not a double render.) The allow-list exclusion prevents it.
     const misflaggedTrainer: SubscriptionTier = {
       ...INDIVIDUAL_TRAINER,
       isTrainerTier: false,
@@ -141,11 +142,8 @@ describe("IOSPurchaseFlowPresenter", () => {
     const consumerCards = screen
       .getAllByTestId(/^subscription-card-/)
       .map((el) => el.props.testID);
-    expect(
-      consumerCards.filter(
-        (id) => id === "subscription-card-individual_trainer",
-      ).length,
-    ).toBeLessThanOrEqual(1);
+    expect(consumerCards).not.toContain("subscription-card-individual_trainer");
+    expect(consumerCards).toContain("subscription-card-premium");
   });
 
   it("orders two same-priced consumer tiers deterministically by tierName", () => {

@@ -305,8 +305,25 @@ describe("SubscriptionSelectionPresenter — interactions", () => {
   });
 });
 
+describe("SubscriptionSelectionPresenter — comped tier not in catalog", () => {
+  it("suppresses trial banners when the user holds a paid tier missing from the catalog", () => {
+    // Mirrors the iOS-rail guard. A promotional premium_plus grant while
+    // the tier is still seeded is_active=false never reaches the catalog,
+    // so no card is marked current — without the guard every cheaper card
+    // renders as a buyable free trial and can nudge a comped user onto a
+    // worse tier than the one they were given.
+    render(
+      <SubscriptionSelectionPresenter
+        {...defaultProps()}
+        currentTier="premium_plus"
+      />,
+    );
+    expect(screen.queryByText(/free trial/i)).toBeNull();
+  });
+});
+
 describe("getFeaturesList", () => {
-  it("derives trainer features (client slots, analytics, AI Buddy — post tier-simplification, all trainer tiers carry the former Pro entitlements)", () => {
+  it("derives trainer features (client slots + AI Buddy — no analytics/export, neither is built)", () => {
     const features = getFeaturesList(INDIVIDUAL_TRAINER, true);
     expect(features).toContain("2 client slots");
     expect(features).toContain("AI Buddy Included");
