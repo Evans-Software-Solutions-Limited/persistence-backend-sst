@@ -37,7 +37,7 @@ export function MarketingNav({ current }: { current?: "pricing" }) {
         <div className="nav-r">
           <div className="nav-links">
             <SectionLink hash="pillars">Product</SectionLink>
-            <SectionLink hash="anygym">AnyGym</SectionLink>
+            <SectionLink hash="loadout">Loadout</SectionLink>
             <SectionLink hash="coach">For coaches</SectionLink>
             <Link to="/pricing" className={current === "pricing" ? "current" : undefined}>
               Pricing

@@ -236,13 +236,13 @@ export function Home() {
           </div>
         </section>
 
-        {/* ── AnyGym ── */}
-        <section className="sec-pad anygym" id="anygym">
+        {/* ── Loadout ── */}
+        <section className="sec-pad adapt" id="loadout">
           <div className="c">
-            <div className="anygym-grid">
-              <div className="anygym-left">
+            <div className="adapt-grid">
+              <div className="adapt-left">
                 <span className="kicker c-accent" data-reveal>
-                  AnyGym · Premium+
+                  Loadout · Premium+
                 </span>
                 <div
                   className="soon-badge"
@@ -252,19 +252,19 @@ export function Home() {
                   Coming soon
                 </div>
                 <h2 className="disp" data-reveal style={d(80)}>
-                  AnyGym. Any kit.
+                  Loadout. Any kit.
                   <br />
                   <span className="it">Same programme.</span>
                 </h2>
                 <p data-reveal style={d(160)}>
-                  Scan your gym or tell Persistence what you've got. AnyGym
+                  Scan your gym or tell Persistence what you've got. Loadout
                   rebuilds today's session around exactly what's in front of you
                   — a hotel gym, a garage rack, or a single barbell. Never skip
                   a session for the lack of the right machine again.
                 </p>
-                <div className="anygym-steps" data-reveal style={d(220)}>
-                  <div className="anystep">
-                    <span className="anystep-n">1</span>
+                <div className="adapt-steps" data-reveal style={d(220)}>
+                  <div className="adaptstep">
+                    <span className="adaptstep-n">1</span>
                     <div>
                       <b>Scan or tell it</b>
                       <span>
@@ -273,18 +273,18 @@ export function Home() {
                       </span>
                     </div>
                   </div>
-                  <div className="anystep">
-                    <span className="anystep-n">2</span>
+                  <div className="adaptstep">
+                    <span className="adaptstep-n">2</span>
                     <div>
-                      <b>AnyGym adapts</b>
+                      <b>Loadout adapts</b>
                       <span>
                         Your programme is re-mapped to available equipment —
                         same targets, matched movements.
                       </span>
                     </div>
                   </div>
-                  <div className="anystep">
-                    <span className="anystep-n">3</span>
+                  <div className="adaptstep">
+                    <span className="adaptstep-n">3</span>
                     <div>
                       <b>Train &amp; stay on plan</b>
                       <span>
@@ -296,7 +296,7 @@ export function Home() {
                 </div>
                 <Link
                   to="/pricing#teams"
-                  className="anygym-b2b"
+                  className="adapt-b2b"
                   data-reveal
                   style={d(300)}
                 >
@@ -308,56 +308,180 @@ export function Home() {
                   </span>
                 </Link>
               </div>
-              <div className="anymock" data-reveal style={d(200)}>
-                <div className="anymock-head">
+              <div className="adaptmock" data-reveal style={d(200)}>
+                <div className="adaptmock-head">
                   <span className="lbl">Today · Upper body</span>
                   <span className="loc">
                     <PinIcon width={12} height={12} />
                     Hotel gym
                   </span>
                 </div>
-                <div className="anychips">
-                  <div className="anychip">
+                <div className="adaptchips">
+                  <div className="adaptchip">
                     <CheckIcon />
                     Dumbbells
                   </div>
-                  <div className="anychip">
+                  <div className="adaptchip">
                     <CheckIcon />
                     Bench
                   </div>
-                  <div className="anychip">
+                  <div className="adaptchip">
                     <CheckIcon />
                     Cable machine
                   </div>
-                  <div className="anychip off">No barbell</div>
-                  <div className="anychip off">No leg press</div>
+                  <div className="adaptchip off">No barbell</div>
+                  <div className="adaptchip off">No leg press</div>
                 </div>
-                <div className="anydivide">
+                <div className="adaptdivide">
                   <span className="ln" />
                   <span className="tx">↓ Adapted for you</span>
                   <span className="ln" />
                 </div>
-                <div className="anyworkout">
-                  <div className="anyex">
+                <div className="adaptworkout">
+                  <div className="adaptex">
                     <span className="ix">A1</span>
                     <span className="nm">Dumbbell bench press</span>
                     <span className="st">4 × 8</span>
                   </div>
-                  <div className="anyex">
+                  <div className="adaptex">
                     <span className="ix">A2</span>
                     <span className="nm">Single-arm cable row</span>
                     <span className="st">4 × 10</span>
                   </div>
-                  <div className="anyex">
+                  <div className="adaptex">
                     <span className="ix">B1</span>
                     <span className="nm">Incline DB press</span>
                     <span className="swap">swapped</span>
                     <span className="st">3 × 12</span>
                   </div>
-                  <div className="anyex">
+                  <div className="adaptex">
                     <span className="ix">B2</span>
                     <span className="nm">Cable face pull</span>
                     <span className="st">3 × 15</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ── Mealprint ── */}
+        <section className="sec-pad adapt" id="mealprint">
+          <div className="c">
+            <div className="adapt-grid">
+              <div className="adapt-left">
+                <span className="kicker c-accent" data-reveal>
+                  Mealprint · Premium+
+                </span>
+                <div
+                  className="soon-badge"
+                  data-reveal
+                  style={{ ...d(60), marginLeft: 5 }}
+                >
+                  Coming soon
+                </div>
+                <h2 className="disp" data-reveal style={d(80)}>
+                  Mealprint. Your macros,
+                  <br />
+                  <span className="it">on your plate.</span>
+                </h2>
+                <p data-reveal style={d(160)}>
+                  Tell Persistence your targets, your tastes and what you avoid.
+                  Mealprint plans real meals that hit your numbers — built from
+                  food you'll actually find in a UK supermarket — and drops them
+                  into Fuel, one tap to log.
+                </p>
+                <div className="adapt-steps" data-reveal style={d(220)}>
+                  <div className="adaptstep">
+                    <span className="adaptstep-n">1</span>
+                    <div>
+                      <b>Tell it your tastes</b>
+                      <span>
+                        Dietary needs, foods to avoid, favourites, and how many
+                        meals a day suit you.
+                      </span>
+                    </div>
+                  </div>
+                  <div className="adaptstep">
+                    <span className="adaptstep-n">2</span>
+                    <div>
+                      <b>Mealprint plans</b>
+                      <span>
+                        A day — or a week — of meals matched to your calories
+                        and macros, shopping list included.
+                      </span>
+                    </div>
+                  </div>
+                  <div className="adaptstep">
+                    <span className="adaptstep-n">3</span>
+                    <div>
+                      <b>Eat, log, adjust</b>
+                      <span>
+                        Planned meals land in your Fuel log one tap at a time.
+                        Swap anything that doesn't appeal.
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <Link
+                  to="/pricing#athletes"
+                  className="adapt-b2b"
+                  data-reveal
+                  style={d(300)}
+                >
+                  <span>
+                    Part of <b>Premium+</b> with Loadout
+                  </span>
+                  <span className="go">
+                    See plans &amp; pricing <span className="arw">→</span>
+                  </span>
+                </Link>
+              </div>
+              <div className="adaptmock" data-reveal style={d(200)}>
+                <div className="adaptmock-head">
+                  <span className="lbl">Tomorrow · 2,450 kcal target</span>
+                  <span className="loc">
+                    <PinIcon width={12} height={12} />
+                    Your supermarket
+                  </span>
+                </div>
+                <div className="adaptchips">
+                  <div className="adaptchip">
+                    <CheckIcon />
+                    Vegetarian
+                  </div>
+                  <div className="adaptchip">
+                    <CheckIcon />4 meals
+                  </div>
+                  <div className="adaptchip off">No peanuts</div>
+                  <div className="adaptchip off">No mushrooms</div>
+                </div>
+                <div className="adaptdivide">
+                  <span className="ln" />
+                  <span className="tx">↓ Planned for you</span>
+                  <span className="ln" />
+                </div>
+                <div className="adaptworkout">
+                  <div className="adaptex">
+                    <span className="ix">B</span>
+                    <span className="nm">Greek yogurt &amp; berry bowl</span>
+                    <span className="st">420 kcal</span>
+                  </div>
+                  <div className="adaptex">
+                    <span className="ix">L</span>
+                    <span className="nm">Halloumi &amp; grain box</span>
+                    <span className="st">640 kcal</span>
+                  </div>
+                  <div className="adaptex">
+                    <span className="ix">S</span>
+                    <span className="nm">Protein oat pot</span>
+                    <span className="swap">swapped</span>
+                    <span className="st">310 kcal</span>
+                  </div>
+                  <div className="adaptex">
+                    <span className="ix">D</span>
+                    <span className="nm">Paneer curry &amp; rice</span>
+                    <span className="st">720 kcal</span>
                   </div>
                 </div>
               </div>
