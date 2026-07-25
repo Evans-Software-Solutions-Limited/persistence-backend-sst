@@ -31,10 +31,17 @@ describe("Pricing", () => {
     expect(
       within(flagship).getAllByText(/coming soon/i).length,
     ).toBeGreaterThan(0);
-    expect(within(flagship).getByText(/Loadout equipment scan/i)).toBeDefined();
+    expect(
+      within(flagship).getByText(/adapt any workout to the equipment/i),
+    ).toBeDefined();
     expect(
       within(flagship).getByText(/Mealprint meal planning/i),
     ).toBeDefined();
+    // Scope is Loadout + Mealprint only (Brad, 2026-07-25) — the card must
+    // not sell AI workout generation or program import, neither of which
+    // is built or planned.
+    expect(within(flagship).queryByText(/AI Workout Suggestions/i)).toBeNull();
+    expect(within(flagship).queryByText(/Program import/i)).toBeNull();
     expect(within(flagship).getByText("29.99")).toBeDefined();
     // Renamed 2026-07-24 — the old feature brands must not resurface
     // anywhere in the rendered document (copy, ids, classes, hrefs).

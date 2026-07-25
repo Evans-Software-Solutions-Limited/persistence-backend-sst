@@ -34,7 +34,7 @@ const MARQUEE: { d: string; label: string }[] = [
   { d: "M22 12h-4l-3 9L9 3l-3 9H2", label: "HealthKit native" },
   { d: "M17 21v-2a4 4 0 0 0-4-4H5", label: "Coach mode" },
   { d: "M13 2L3 14h9l-1 8 10-12h-9z", label: "Rest timer haptics" },
-  { d: "M18 20V10M12 20V4M6 20v-6", label: "Advanced analytics" },
+  { d: "M18 20V10M12 20V4M6 20v-6", label: "Progress charts" },
 ];
 
 /** Cursor-following spotlight on the pillar cards. */

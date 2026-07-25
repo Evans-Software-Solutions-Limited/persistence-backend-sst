@@ -203,8 +203,8 @@ export function Pricing() {
                 <div className="plan-status live">Live at launch</div>
                 <PlanPrice m={12.99} y={129.99} cycle={cycle} />
                 <p className="plan-desc">
-                  The complete tracking experience with unlimited AI assistance
-                  and deep analytics.
+                  The complete tracking experience, with AI nutrition logging
+                  and unlimited history.
                 </p>
                 <ul className="plan-feats">
                   <Feat head>Everything in Free, plus</Feat>
@@ -234,16 +234,13 @@ export function Pricing() {
                 <ul className="plan-feats">
                   <Feat head>Everything in Premium, plus</Feat>
                   <Feat>
-                    <b>AI Workout Suggestions</b>
-                  </Feat>
-                  <Feat>
-                    <b>Loadout equipment scan</b> — equipment-aware programming
+                    <b>Loadout</b> — adapt any workout to the equipment you
+                    actually have, scan included
                   </Feat>
                   <Feat>
                     <b>Mealprint meal planning</b> — food plans &amp;
                     fill-your-macros ideas
                   </Feat>
-                  <Feat>Program import</Feat>
                 </ul>
                 <SoonCta label="Coming soon" className="btn-line" />
               </div>
@@ -411,9 +408,9 @@ export function Pricing() {
                 <h4>What's the difference between Premium and Premium+?</h4>
                 <p>
                   Premium gives you unlimited tracking plus Snap AI nutrition
-                  logging. Premium+ adds the full adaptive suite — AI workout
-                  suggestions, Loadout equipment scan, Mealprint meal planning
-                  and program import.
+                  logging. Premium+ adds the adaptive suite — Loadout, which
+                  re-maps any workout to the equipment in front of you, and
+                  Mealprint meal planning.
                 </p>
               </div>
               <div className="faq-item">
