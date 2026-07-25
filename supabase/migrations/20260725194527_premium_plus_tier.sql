@@ -11,9 +11,37 @@
 -- `004_subscriptions_and_roles.sql`), so unlike an enum-backed column this
 -- needs no `ALTER TYPE … ADD VALUE` step; a new tier is just a new row.
 --
--- 1. Insert the `premium_plus` row. Mirrors `premium`'s gym-buddy /
---    analytics / export flags (same consumer feature set), raises the AI
---    workout allowance to 30/month, and is NOT a trainer tier.
+-- 1. Insert the `premium_plus` row.
+--
+--    SEEDED INACTIVE (`is_active = false`). This is deliberate and is the
+--    most important line in the file. `SubscriptionTiersRepository
+--    .listActive()` filters on `is_active`, and the M19-P0 paywall rewrite
+--    makes both rails render EVERY active non-trainer row — so an active
+--    row here would put a buyable £29.99/mo card on the live iOS paywall
+--    the moment this migration lands, selling a tier whose only
+--    differentiator (Loadout + Mealprint) does not exist yet. A buyer
+--    would pay 2.3x Premium's price and receive Premium. The marketing
+--    site agrees the tier is not live yet: packages/web Pricing.tsx
+--    renders Premium+ as "Coming soon".
+--
+--    The row still EXISTS, which is what matters for correctness: the
+--    `user_subscriptions.tier_name` FK resolves, so a RevenueCat
+--    promotional entitlement can be granted and synced before launch
+--    without the webhook FK-failing into a retry loop.
+--
+--    Launch = a one-line `UPDATE subscription_tiers SET is_active = true
+--    WHERE tier_name = 'premium_plus';` shipped with the Loadout release.
+--
+--    Flags: gym-buddy mirrors `premium` (same consumer feature set).
+--    `analytics_access` / `export_access` are set true where `premium` is
+--    seeded false — a DELIBERATE divergence, since the top consumer tier
+--    must not carry fewer entitlements than the one below it, and the
+--    marketing site advertises analytics + export on both. Both flags are
+--    inert today (read only by the trainer branch of `getFeaturesList`
+--    and the legacy `has_feature_access` RPC); `premium`'s seeded `false`
+--    looks like catalog drift against the marketing copy and is worth a
+--    separate review. AI workout allowance is raised to 30/month. Not a
+--    trainer tier.
 --
 --    `ON CONFLICT (tier_name) DO NOTHING` makes the insert idempotent for
 --    re-runs, but note it will NOT correct a pre-existing `premium_plus`
@@ -34,8 +62,8 @@ INSERT INTO subscription_tiers (
   29.99, 299.99, 'GBP',
   NULL, true, 30, true, true, true,
   NULL, false,
-  '{"workouts": "unlimited", "ai_workouts": 30, "gym_buddy": true, "gym_buddy_can_create": true, "gym_buddy_can_suggest": true, "progress": true}',
-  true, true, true
+  '{"workouts": "unlimited", "ai_workouts": 30, "gym_buddy": true, "gym_buddy_can_create": true, "gym_buddy_can_suggest": true, "progress": true, "loadout": true, "mealprint": true}',
+  true, true, false
 )
 ON CONFLICT (tier_name) DO NOTHING;
 

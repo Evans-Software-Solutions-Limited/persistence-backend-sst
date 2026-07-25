@@ -18,6 +18,7 @@ import { CurrentSubscriptionStatusCard } from "@/ui/components/subscription/Curr
 import { PLogoDrawLoader } from "@/ui/components/PLogoDrawLoader";
 import { SubscriptionCard } from "@/ui/components/subscription/SubscriptionCard";
 import { TrainerSubscriptionCard } from "@/ui/components/subscription/TrainerSubscriptionCard";
+import { TRAINER_TIER_NAMES } from "@/domain/services/subscriptionService";
 import { getFeaturesList } from "@/ui/presenters/SubscriptionSelectionPresenter";
 import { color } from "@/ui/theme/tokens";
 
@@ -123,8 +124,25 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
     // first (ascending `priceMonthly` — the catalog's own ordering signal,
     // so no separate mobile-side tier-rank map to keep in sync).
     const consumerTiers = subscriptionTiers
-      .filter((t) => !t.isTrainerTier && t.tierName !== "free")
-      .sort((a, b) => a.priceMonthly - b.priceMonthly);
+      .filter(
+        (t) =>
+          !t.isTrainerTier &&
+          t.tierName !== "free" &&
+          // Belt-and-braces: `mapTierRowToWire` coerces a NULL
+          // `is_trainer_tier` to false, so a trainer row with the flag
+          // unset would fall into this consumer filter AND still be
+          // picked up by the trainer section's explicit allow-list —
+          // rendering the same tier twice. Exclude the allow-list here.
+          !TRAINER_TIER_NAMES.has(t.tierName),
+      )
+      // Cheapest first. Secondary sort on tierName so two same-priced
+      // tiers have a stable order — `listActive` orders by price_monthly
+      // with no tiebreak, so Postgres row order is otherwise arbitrary.
+      .sort(
+        (a, b) =>
+          a.priceMonthly - b.priceMonthly ||
+          a.tierName.localeCompare(b.tierName),
+      );
     const cards: React.ReactElement[] = [];
     for (const tier of consumerTiers) {
       const isTierCurrent = currentTier === tier.tierName;

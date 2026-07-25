@@ -106,7 +106,7 @@ export function isCancelledButActive(
  * Returns false when eligibility data hasn't loaded yet (legacy
  * comment: "to avoid flickering").
  */
-const TRAINER_TIER_NAMES: ReadonlySet<SubscriptionTierName> = new Set([
+export const TRAINER_TIER_NAMES: ReadonlySet<SubscriptionTierName> = new Set([
   "individual_trainer",
   "small_business",
   "medium_enterprise",

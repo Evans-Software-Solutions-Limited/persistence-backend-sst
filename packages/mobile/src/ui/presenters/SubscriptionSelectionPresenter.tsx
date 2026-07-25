@@ -23,6 +23,7 @@ import { CurrentSubscriptionStatusCard } from "@/ui/components/subscription/Curr
 import { OfflineBanner } from "@/ui/components/subscription/OfflineBanner";
 import { PaymentMethodForm } from "@/ui/components/subscription/PaymentMethodForm";
 import { PLogoDrawLoader } from "@/ui/components/PLogoDrawLoader";
+import { TRAINER_TIER_NAMES } from "@/domain/services/subscriptionService";
 import { SubscriptionCard } from "@/ui/components/subscription/SubscriptionCard";
 import { TrainerSubscriptionCard } from "@/ui/components/subscription/TrainerSubscriptionCard";
 import { color } from "@/ui/theme/tokens";
@@ -144,8 +145,25 @@ export function SubscriptionSelectionPresenter(
   // and CLAUDE.md "Migration intent".
   const userTierCards = useMemo(() => {
     const consumerTiers = subscriptionTiers
-      .filter((t) => !t.isTrainerTier && t.tierName !== "free")
-      .sort((a, b) => a.priceMonthly - b.priceMonthly);
+      .filter(
+        (t) =>
+          !t.isTrainerTier &&
+          t.tierName !== "free" &&
+          // Belt-and-braces: `mapTierRowToWire` coerces a NULL
+          // `is_trainer_tier` to false, so a trainer row with the flag
+          // unset would fall into this consumer filter AND still be
+          // picked up by the trainer section's explicit allow-list —
+          // rendering the same tier twice. Exclude the allow-list here.
+          !TRAINER_TIER_NAMES.has(t.tierName),
+      )
+      // Cheapest first. Secondary sort on tierName so two same-priced
+      // tiers have a stable order — `listActive` orders by price_monthly
+      // with no tiebreak, so Postgres row order is otherwise arbitrary.
+      .sort(
+        (a, b) =>
+          a.priceMonthly - b.priceMonthly ||
+          a.tierName.localeCompare(b.tierName),
+      );
     const cards: React.ReactElement[] = [];
 
     for (const tier of consumerTiers) {
@@ -528,6 +546,18 @@ export function getFeaturesList(
     features.push(
       "Reps Gym Buddy - there to buddy you on your fitness journey",
     );
+  }
+
+  // The adaptive suite — Premium+'s entire reason to exist (M19-P0).
+  // Catalog-driven off the `features` JSONB rather than a tier-name check,
+  // so the copy follows whatever the catalog says a tier includes. Without
+  // these two rows the £29.99 card renders bullets byte-identical to the
+  // £12.99 one apart from the AI-workout count, i.e. it sells nothing.
+  if (tier.features.loadout) {
+    features.push("Loadout - adapt any workout to the equipment you have");
+  }
+  if (tier.features.mealprint) {
+    features.push("Mealprint - AI meal planning around your targets");
   }
 
   return features;

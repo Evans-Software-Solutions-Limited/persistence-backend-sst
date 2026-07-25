@@ -335,6 +335,37 @@ describe("getFeaturesList", () => {
     expect(features.some((f) => f.includes("Reps Gym Buddy"))).toBe(true);
   });
 
+  // M19-P0: Premium+ costs 2.3x Premium, and without these two rows its
+  // card renders bullets byte-identical to Premium's apart from the AI
+  // count — i.e. the flagship's entire value proposition is missing at the
+  // point of sale. Driven off the catalog `features` JSONB, not tier name.
+  it("renders the adaptive-suite rows for a tier whose catalog features include them", () => {
+    const premiumPlus = {
+      ...PREMIUM,
+      tierName: "premium_plus" as const,
+      aiWorkoutLimit: 30,
+      features: {
+        workouts: "unlimited",
+        progress: true,
+        gym_buddy: true,
+        loadout: true,
+        mealprint: true,
+      },
+    };
+    const features = getFeaturesList(premiumPlus, false);
+    expect(features.some((f) => f.startsWith("Loadout"))).toBe(true);
+    expect(features.some((f) => f.startsWith("Mealprint"))).toBe(true);
+    expect(features).toContain("30 AI workouts per month");
+    // ...and it is genuinely differentiated from the tier below it.
+    expect(features).not.toEqual(getFeaturesList(PREMIUM, false));
+  });
+
+  it("omits the adaptive-suite rows for a tier whose catalog features lack them", () => {
+    const features = getFeaturesList(PREMIUM, false);
+    expect(features.some((f) => f.startsWith("Loadout"))).toBe(false);
+    expect(features.some((f) => f.startsWith("Mealprint"))).toBe(false);
+  });
+
   it("uses features.workouts === 'unlimited' as the unlimited signal", () => {
     const features = getFeaturesList(
       { ...PREMIUM, workoutLimit: 10, features: { workouts: "unlimited" } },
