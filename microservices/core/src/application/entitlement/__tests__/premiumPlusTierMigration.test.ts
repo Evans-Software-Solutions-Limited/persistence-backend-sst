@@ -104,11 +104,14 @@ describe("premium_plus tier migration", () => {
     expect(tuple).toMatch(/\n\s*NULL,\s*false,/);
   });
 
-  it("advertises the adaptive suite in the features JSONB", () => {
+  it("advertises the adaptive suite in the features JSONB, and nothing unbuilt", () => {
     // The paywall renders these two keys as the tier's selling points.
     expect(tuple).toContain('"loadout": true');
     expect(tuple).toContain('"mealprint": true');
-    expect(tuple).toContain('"ai_workouts": 30');
+    // Gym Buddy is an entitlement stub and there is no workout-generation
+    // path — the JSONB must not carry either (Brad, 2026-07-25).
+    expect(tuple).not.toContain("gym_buddy");
+    expect(tuple).not.toContain("ai_workouts");
   });
 
   it("does not promise the adaptive suite to a comped pre-launch user", () => {
