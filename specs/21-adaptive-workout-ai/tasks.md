@@ -15,7 +15,9 @@ Acceptance criteria: `requirements.md` US-11.
 
 - [ ] **T-P0.1 [B]** Migration `<ts>_premium_plus_tier.sql`: insert the
       `premium_plus` catalog row (£29.99 / £299.99, GBP, `ai_access` true,
-      `workout_limit` NULL) with `ON CONFLICT (tier_name) DO NOTHING`; add
+      `workout_limit` NULL, **`is_active` FALSE** — design § 9.1; an active
+      row publishes a buyable card for a feature that doesn't exist) with
+      `ON CONFLICT (tier_name) DO NOTHING`; add
       `subscription_tiers.loadout_access boolean NOT NULL DEFAULT false`; set it
       true for `premium_plus` + the three trainer tiers. Template =
       `20260526120000_simplify_tier_model.sql` step 1. **No enum ALTER** —
@@ -52,6 +54,14 @@ Acceptance criteria: `requirements.md` US-11.
       `SubscriptionSuccessContainer.tsx:74,94`, and the display/tone maps
       (`SubscriptionBadge`, `ProfileDrawerPresenter`, `GreetingSection`,
       `FeatureGatePrompt`, `SyncBlockedPresenter`, `SyncBlockedBannerMount`).
+- [ ] **T-P0.9b [B]** Give `SubscriptionTiersRepository.listActive()` an
+      explicit column projection omitting `loadout_access`, so the public
+      catalog endpoint stays readable on a database that hasn't had the
+      migration hand-applied yet (design § 9.1).
+- [ ] **T-P0.9c [B]** Add a migration-value test (price, `is_active`, flags,
+      features JSONB) — CI never executes SQL, and `ai_workout_limit` is
+      rendered straight into paywall copy. Precedent:
+      `subscriptionTierSeed.test.ts`.
 - [ ] **T-P0.10 [O]** Hand Brad the ASC/RC runbook **in chat, not committed**:
       two ASC products at £29.99 / £299.99, an RC entitlement whose
       **lookup_key is literally `premium_plus`**, both products attached to the

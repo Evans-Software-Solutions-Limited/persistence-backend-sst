@@ -586,6 +586,32 @@ tiers.
 If the row already exists at the wrong figure, that is a reviewed data op, not
 a migration re-run.
 
+**Seed the row `is_active = false`.** This is the single most important value
+in the migration. `SubscriptionTiersRepository.listActive()` filters on
+`is_active`, and § 9.3's catalog-driven paywall renders **every** active
+non-trainer row — so an active row publishes a buyable £29.99/mo card the
+moment the migration lands, selling a tier whose only differentiator does not
+exist yet. Either the buyer taps a dead end, or (once the ASC products from
+§ 12 exist) they pay 2.3× Premium and receive Premium. The marketing site
+already says "Coming soon".
+
+The row still **exists**, which is what correctness needs: the
+`user_subscriptions.tier_name` FK resolves, so a RevenueCat promotional
+entitlement can be granted and synced before launch without the webhook
+FK-failing into a retry loop.
+
+**Launch is then a one-line data op** —
+`UPDATE subscription_tiers SET is_active = true WHERE tier_name =
+'premium_plus';` — shipped as its own migration with the Loadout release,
+once Phase 2 is device-verified.
+
+**Do not read the catalog with a bare `select()`.** `listActive()` backs a
+public, unauthenticated endpoint; a bare select emits every column named in
+`schema.ts`, so a Lambda deployed before the hand-applied production migration
+throws Postgres 42703 and shows every user "Failed to Load Subscription
+Options". Project explicitly, and leave `loadout_access` out until something
+reads it.
+
 ### 9.2 Backend registration (each one is required)
 
 1. `assertEntitlement.ts:89-94` — `SubscriptionTierName` union.
