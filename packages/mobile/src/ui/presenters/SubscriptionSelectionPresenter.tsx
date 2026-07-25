@@ -165,11 +165,24 @@ export function SubscriptionSelectionPresenter(
           a.tierName.localeCompare(b.tierName),
       );
     const cards: React.ReactElement[] = [];
+    // A user can hold a tier that isn't in the rendered catalog — e.g. a
+    // RevenueCat promotional grant of a tier still seeded is_active=false
+    // pre-launch. No card is then marked current, so without this guard
+    // every cheaper consumer card would render as a buyable "free trial",
+    // and tapping one DOWNGRADES the user off the tier they were comped
+    // into. Suppress trial banners entirely in that state (they are not
+    // genuinely trial-eligible — they already hold a paid tier).
+    const holdsUnlistedPaidTier =
+      currentTier !== "free" &&
+      !subscriptionTiers.some((t) => t.tierName === currentTier);
 
     for (const tier of consumerTiers) {
       const isTierCurrent = currentTier === tier.tierName;
       const showTrial =
-        hasTrialEligibilityData && isTrialEligibleUser && !isTierCurrent;
+        hasTrialEligibilityData &&
+        isTrialEligibleUser &&
+        !isTierCurrent &&
+        !holdsUnlistedPaidTier;
       cards.push(
         <SubscriptionCard
           key={tier.tierName}

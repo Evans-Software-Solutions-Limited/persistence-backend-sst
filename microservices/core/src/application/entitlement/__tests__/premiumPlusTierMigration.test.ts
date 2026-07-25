@@ -49,11 +49,24 @@ function valuesTuple(sql: string): string {
     .join("\n");
 }
 
+/** The migration with every `--` comment line removed. */
+function stripComments(sql: string): string {
+  return sql
+    .split("\n")
+    .filter((l) => !l.trim().startsWith("--"))
+    .join("\n");
+}
+
 describe("premium_plus tier migration", () => {
-  const sql = readFileSync(findMigration(), "utf8");
-  const tuple = valuesTuple(sql);
+  const raw = readFileSync(findMigration(), "utf8");
+  const sql = stripComments(raw);
+  const tuple = valuesTuple(raw);
 
   it("inserts the premium_plus row idempotently", () => {
+    // Asserted against the COMMENT-STRIPPED sql: the migration's own
+    // rationale block quotes "ON CONFLICT (tier_name) DO NOTHING", so
+    // against the raw file this would pass on prose even if the real
+    // clause were deleted.
     expect(sql).toContain("INSERT INTO subscription_tiers");
     expect(sql).toContain("ON CONFLICT (tier_name) DO NOTHING");
     expect(tuple).toContain("'premium_plus'");

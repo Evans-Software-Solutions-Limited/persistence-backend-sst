@@ -122,6 +122,71 @@ describe("IOSPurchaseFlowPresenter", () => {
     expect(props.onTierSelect).toHaveBeenCalledWith("premium_plus");
   });
 
+  it("never renders a trainer-named tier as a consumer card, even if is_trainer_tier is falsy", () => {
+    // mapTierRowToWire coerces a NULL is_trainer_tier to false, so a
+    // trainer row with the flag unset lands in the consumer filter AND is
+    // still picked up by the trainer section's allow-list — rendering the
+    // same tier twice. The allow-list exclusion prevents that.
+    const misflaggedTrainer: SubscriptionTier = {
+      ...INDIVIDUAL_TRAINER,
+      isTrainerTier: false,
+    };
+    render(
+      <IOSPurchaseFlowPresenter
+        {...defaultProps()}
+        subscriptionTiers={[PREMIUM, misflaggedTrainer]}
+        purchasableTiers={new Set(["premium", "individual_trainer"])}
+      />,
+    );
+    const consumerCards = screen
+      .getAllByTestId(/^subscription-card-/)
+      .map((el) => el.props.testID);
+    expect(
+      consumerCards.filter(
+        (id) => id === "subscription-card-individual_trainer",
+      ).length,
+    ).toBeLessThanOrEqual(1);
+  });
+
+  it("orders two same-priced consumer tiers deterministically by tierName", () => {
+    // listActive orders by price_monthly with no secondary key, so equal
+    // prices come back in arbitrary Postgres order. Without the
+    // localeCompare tiebreak this assertion is a coin flip.
+    const samePrice: SubscriptionTier = {
+      ...PREMIUM_PLUS,
+      priceMonthly: PREMIUM.priceMonthly,
+    };
+    render(
+      <IOSPurchaseFlowPresenter
+        {...defaultProps()}
+        subscriptionTiers={[samePrice, PREMIUM]}
+        purchasableTiers={new Set(["premium", "premium_plus"])}
+      />,
+    );
+    const ids = screen
+      .getAllByTestId(/^subscription-card-/)
+      .map((el) => el.props.testID);
+    expect(ids.indexOf("subscription-card-premium")).toBeLessThan(
+      ids.indexOf("subscription-card-premium_plus"),
+    );
+  });
+
+  it("suppresses trial banners when the user holds a paid tier missing from the catalog", () => {
+    // A promotional premium_plus grant while the tier is still seeded
+    // is_active=false: it never reaches the catalog, so no card is marked
+    // current. Without the guard, Premium renders as a buyable free trial
+    // and tapping it downgrades a comped user.
+    render(
+      <IOSPurchaseFlowPresenter
+        {...defaultProps()}
+        subscriptionTiers={[PREMIUM, INDIVIDUAL_TRAINER]}
+        currentTier="premium_plus"
+        purchasableTiers={new Set(["premium", "individual_trainer"])}
+      />,
+    );
+    expect(screen.queryByText(/free trial/i)).toBeNull();
+  });
+
   it("advertises EACH tier's own trial length (per-tier, not one global number)", () => {
     // Regression: previously one product's offer was stamped on every card, so
     // a premium 1-week offer could render as a trainer's "14-day". The premium

@@ -558,8 +558,28 @@ export class SubscriptionRepository {
     if (!subRow) {
       // Synthesise a free-tier shape. The free tier MUST exist in the
       // catalog (seeded by migration 004_subscriptions_and_roles.sql).
+      // EXPLICIT projection — same reason as
+      // `SubscriptionTiersRepository.listActive()`. A bare `.select()`
+      // emits every column named in `schema.ts`, coupling this path to
+      // migration state. That matters more here than on the catalog
+      // endpoint: this branch runs for EVERY user with no live
+      // subscription (every free user, every lapsed user) on app start,
+      // and again on POST /subscriptions/sync (restore purchases). On a
+      // Lambda deployed before the hand-applied production migration, an
+      // unknown column throws Postgres 42703 and both endpoints 500.
+      // Project only what the free-tier shape below actually reads.
       const freeTierRows = await db
-        .select()
+        .select({
+          tierName: subscriptionTiers.tierName,
+          displayName: subscriptionTiers.displayName,
+          description: subscriptionTiers.description,
+          workoutLimit: subscriptionTiers.workoutLimit,
+          aiAccess: subscriptionTiers.aiAccess,
+          aiWorkoutLimit: subscriptionTiers.aiWorkoutLimit,
+          gymBuddyAccess: subscriptionTiers.gymBuddyAccess,
+          trainerClientLimit: subscriptionTiers.trainerClientLimit,
+          isTrainerTier: subscriptionTiers.isTrainerTier,
+        })
         .from(subscriptionTiers)
         .where(eq(subscriptionTiers.tierName, "free"))
         .limit(1);
