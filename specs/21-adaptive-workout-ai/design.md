@@ -594,10 +594,14 @@ a migration re-run.
    subscriber would be reported as free in every 402 verdict.
 3. `assertEntitlement.ts:900-914` — `nextTrainerTierUp` (exhaustive switch;
    compile error until handled).
-4. `assertEntitlement.ts:642-649` — `pickUpgradeTier`: decide whether a denied
-   free user is pointed at `premium` or `premium_plus`. **Feature-dependent** —
-   `create_workout` should still say `premium`; `loadout` must say
-   `premium_plus`. Take the upgrade target from the feature, not the role alone.
+4. `assertEntitlement.ts:642-649` — `pickUpgradeTier` must eventually be
+   **feature-dependent**: `create_workout` keeps pointing at `premium`, while a
+   `loadout` denial must point at `premium_plus`. **This belongs in Phase 0, not
+   P0.** `loadout` does not exist as an `EntitlementFeature` until Phase 0
+   (T-0.8), so building the seam in P0 ships a branch that cannot execute and a
+   coverage suppression to hide it. Add the parameter, the
+   Premium+-only feature set and the branch together with `loadout` itself,
+   where all three are reachable and testable in one change.
 5. `revenuecat/entitlements.ts:16-21` — `RC_ENTITLEMENT_IDS`.
 6. `revenuecat/entitlements.ts:28-40` — `rcEntitlementToTier`.
 7. `revenuecat/entitlements.ts:47-53` — `TIER_RANK`, renumbered so
