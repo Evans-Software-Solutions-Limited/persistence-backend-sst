@@ -31,6 +31,14 @@ const INDIVIDUAL_TRAINER: SubscriptionTier = {
   isTrainerTier: true,
   trainerClientLimit: 2,
 };
+const PREMIUM_PLUS: SubscriptionTier = {
+  ...PREMIUM,
+  tierName: "premium_plus",
+  displayName: "Premium+",
+  priceMonthly: 29.99,
+  priceYearly: 299.99,
+  aiWorkoutLimit: 30,
+};
 
 function defaultProps(): IOSPurchaseFlowPresenterProps {
   return {
@@ -81,6 +89,37 @@ describe("IOSPurchaseFlowPresenter", () => {
     expect(screen.getByTestId("subscription-card-premium")).toBeTruthy();
     fireEvent.press(screen.getByTestId("subscription-card-premium-subscribe"));
     expect(props.onTierSelect).toHaveBeenCalledWith("premium");
+  });
+
+  it("renders exactly one consumer card when the catalog has no premium_plus row (M19-P0 — pre-existing catalog shape unaffected)", () => {
+    render(<IOSPurchaseFlowPresenter {...defaultProps()} />);
+    expect(screen.getByTestId("subscription-card-premium")).toBeTruthy();
+    expect(screen.queryByTestId("subscription-card-premium_plus")).toBeNull();
+  });
+
+  it("renders a second consumer card, cheapest-first, when the catalog includes premium_plus (M19-P0)", () => {
+    const props = defaultProps();
+    render(
+      <IOSPurchaseFlowPresenter
+        {...props}
+        subscriptionTiers={[PREMIUM_PLUS, PREMIUM, INDIVIDUAL_TRAINER]}
+        purchasableTiers={
+          new Set(["premium", "premium_plus", "individual_trainer"])
+        }
+      />,
+    );
+    expect(screen.getByTestId("subscription-card-premium")).toBeTruthy();
+    expect(screen.getByTestId("subscription-card-premium_plus")).toBeTruthy();
+    const allCardTestIds = screen
+      .getAllByTestId(/^subscription-card-/)
+      .map((el) => el.props.testID);
+    expect(allCardTestIds.indexOf("subscription-card-premium")).toBeLessThan(
+      allCardTestIds.indexOf("subscription-card-premium_plus"),
+    );
+    fireEvent.press(
+      screen.getByTestId("subscription-card-premium_plus-subscribe"),
+    );
+    expect(props.onTierSelect).toHaveBeenCalledWith("premium_plus");
   });
 
   it("advertises EACH tier's own trial length (per-tier, not one global number)", () => {

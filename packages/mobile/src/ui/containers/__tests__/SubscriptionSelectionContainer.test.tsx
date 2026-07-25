@@ -114,7 +114,18 @@ function makeAdapters(): {
   const auth = new InMemoryAuthAdapter();
   const payments = new MockPaymentsAdapter();
   const netInfo = new InMemoryNetInfoAdapter();
-  api.subscriptionTiers = [BASIC_TIER, PREMIUM_TIER];
+  // BASIC_TIER intentionally excluded here — post tier-simplification the
+  // catalog has exactly one consumer row (`premium`), and BASIC_TIER's
+  // `tierName` is ALSO "premium" (a stale relic from before Basic was
+  // dropped from the catalog — see the "BASIC_TIER dropped post
+  // tier-simplification" comment further down this file). Two rows
+  // sharing one `tierName` violates the real `subscription_tiers` UNIQUE
+  // constraint and made `getByTestId("subscription-card-premium")` match
+  // twice once M19-P0's presenter change iterates every consumer tier
+  // instead of doing a single `.find()` (which silently picked whichever
+  // came first). `BASIC_TIER` itself is kept only as the base object
+  // `PREMIUM_TIER` spreads from.
+  api.subscriptionTiers = [PREMIUM_TIER];
   api.mySubscription = freeSub();
   auth.currentSession = {
     accessToken: "tok",
@@ -668,10 +679,9 @@ describe("SubscriptionSelectionContainer", () => {
     const { adapters, api } = makeAdapters();
     api.mySubscription = freeSub({ role: "personal_trainer" });
     api.subscriptionTiers = [
-      BASIC_TIER,
       PREMIUM_TIER,
       {
-        ...BASIC_TIER,
+        ...PREMIUM_TIER,
         tierName: "individual_trainer",
         isTrainerTier: true,
         trainerClientLimit: 10,
@@ -695,10 +705,9 @@ describe("SubscriptionSelectionContainer", () => {
     api.mySubscription = freeSub({ role: "physiotherapist" });
     // Add trainer tiers so we can detect the toggle landed correctly.
     api.subscriptionTiers = [
-      BASIC_TIER,
       PREMIUM_TIER,
       {
-        ...BASIC_TIER,
+        ...PREMIUM_TIER,
         tierName: "individual_trainer",
         isTrainerTier: true,
         trainerClientLimit: 10,

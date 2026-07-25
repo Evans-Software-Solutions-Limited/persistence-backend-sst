@@ -20,6 +20,7 @@ import { useBlockedSyncEntries } from "@/ui/hooks/useBlockedSyncEntries";
 const TIER_DISPLAY_NAMES: Record<SubscriptionTierName, string> = {
   free: "Free",
   premium: "Premium",
+  premium_plus: "Premium+",
   individual_trainer: "Individual Trainer",
   small_business: "Small Business Trainer",
   medium_enterprise: "Medium / Enterprise Trainer",

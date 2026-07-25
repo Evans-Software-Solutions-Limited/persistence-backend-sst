@@ -16,6 +16,10 @@ describe("rcEntitlementToTier", () => {
     expect(rcEntitlementToTier("medium_enterprise")).toBe("medium_enterprise");
   });
 
+  it("maps the premium_plus entitlement id to its tier (M19-P0)", () => {
+    expect(rcEntitlementToTier("premium_plus")).toBe("premium_plus");
+  });
+
   it("returns null for unknown / free ids (forward-compatible)", () => {
     expect(rcEntitlementToTier("free")).toBeNull();
     expect(rcEntitlementToTier("something_new")).toBeNull();
@@ -112,5 +116,33 @@ describe("pickDesiredSubscription", () => {
       sub({ tier: "premium", expiresAt: dated, store: "dated" }),
     ]);
     expect(result?.store).toBe("dated");
+  });
+
+  it("resolves to premium_plus over premium when both are active (M19-P0 TIER_RANK precedence)", () => {
+    // A customer holding both entitlements (e.g. mid-upgrade sandbox state,
+    // or a promotional Premium+ grant stacked on an existing Premium sub)
+    // must resolve to the higher-ranked Premium+, not whichever sorts first.
+    const result = pickDesiredSubscription([
+      sub({ tier: "premium", store: "premium_sub" }),
+      sub({ tier: "premium_plus", store: "premium_plus_sub" }),
+    ]);
+    expect(result?.tier).toBe("premium_plus");
+    expect(result?.store).toBe("premium_plus_sub");
+  });
+
+  it("resolves to premium_plus regardless of array order (rank wins over position)", () => {
+    const result = pickDesiredSubscription([
+      sub({ tier: "premium_plus" }),
+      sub({ tier: "premium" }),
+    ]);
+    expect(result?.tier).toBe("premium_plus");
+  });
+
+  it("ranks premium_plus below every trainer tier", () => {
+    const result = pickDesiredSubscription([
+      sub({ tier: "premium_plus" }),
+      sub({ tier: "individual_trainer" }),
+    ]);
+    expect(result?.tier).toBe("individual_trainer");
   });
 });

@@ -80,6 +80,7 @@ describe("SubscriptionBadge", () => {
     const tiers = [
       "free",
       "premium",
+      "premium_plus",
       "individual_trainer",
       "small_business",
       "medium_enterprise",
@@ -91,5 +92,33 @@ describe("SubscriptionBadge", () => {
       expect(screen.getByTestId(`subscription-badge-${tier}`)).toBeTruthy();
       unmount();
     }
+  });
+
+  it("renders 'Premium+' label for the premium_plus tier (M19-P0)", () => {
+    render(<SubscriptionBadge tier="premium_plus" paymentStatus="active" />);
+    expect(screen.getByText("Premium+")).toBeTruthy();
+    expect(screen.getByTestId("subscription-badge-premium_plus")).toBeTruthy();
+  });
+
+  it("shares the premium palette for premium_plus (consumer tier, not trainer) — M19-P0", () => {
+    function backgroundColorOf(tier: "premium" | "premium_plus") {
+      const { unmount } = render(
+        <SubscriptionBadge tier={tier} paymentStatus="active" />,
+      );
+      const badge = screen.getByTestId(`subscription-badge-${tier}`);
+      const style = ([] as unknown[]).concat(badge.props.style) as {
+        backgroundColor?: string;
+      }[];
+      const backgroundColor = style.find(
+        (s) => s?.backgroundColor,
+      )?.backgroundColor;
+      unmount();
+      return backgroundColor;
+    }
+
+    const premiumBg = backgroundColorOf("premium");
+    const premiumPlusBg = backgroundColorOf("premium_plus");
+    expect(premiumBg).toBeDefined();
+    expect(premiumPlusBg).toBe(premiumBg);
   });
 });

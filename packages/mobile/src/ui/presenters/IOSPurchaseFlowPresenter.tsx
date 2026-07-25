@@ -117,29 +117,34 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
   } = props;
 
   const userTierCards = useMemo(() => {
-    const premium = subscriptionTiers.find((t) => t.tierName === "premium");
+    // Catalog-driven, not a hardcoded "premium" lookup — M19-P0 added a
+    // second consumer tier (`premium_plus`) above Premium, and any future
+    // one lands here automatically. Non-trainer, non-free rows, cheapest
+    // first (ascending `priceMonthly` — the catalog's own ordering signal,
+    // so no separate mobile-side tier-rank map to keep in sync).
+    const consumerTiers = subscriptionTiers
+      .filter((t) => !t.isTrainerTier && t.tierName !== "free")
+      .sort((a, b) => a.priceMonthly - b.priceMonthly);
     const cards: React.ReactElement[] = [];
-    if (premium) {
-      const isPremiumCurrent = currentTier === "premium";
-      const premiumTrialDays = tierTrialDays("premium");
-      const showPremiumTrial =
+    for (const tier of consumerTiers) {
+      const isTierCurrent = currentTier === tier.tierName;
+      const trialDays = tierTrialDays(tier.tierName);
+      const showTrial =
         hasTrialEligibilityData &&
-        premiumTrialDays !== null &&
-        isTierTrialEligible("premium") &&
-        !isPremiumCurrent;
+        trialDays !== null &&
+        isTierTrialEligible(tier.tierName) &&
+        !isTierCurrent;
       cards.push(
         <SubscriptionCard
-          key={premium.tierName}
-          tier={premium}
+          key={tier.tierName}
+          tier={tier}
           billingCycle={billingCycle}
-          isCurrent={isPremiumCurrent}
-          showTrialBanner={showPremiumTrial}
+          isCurrent={isTierCurrent}
+          showTrialBanner={showTrial}
           trialBannerText={
-            premiumTrialDays !== null
-              ? `${premiumTrialDays}-day free trial`
-              : undefined
+            trialDays !== null ? `${trialDays}-day free trial` : undefined
           }
-          onPress={() => onTierSelect("premium")}
+          onPress={() => onTierSelect(tier.tierName)}
           disabled={isProcessing || isRestoring}
           getFeaturesList={getFeaturesList}
           isTrainer={false}

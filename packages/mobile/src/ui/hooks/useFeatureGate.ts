@@ -253,6 +253,7 @@ const TRAINER_TIER_LADDER: Record<
 > = {
   free: "individual_trainer",
   premium: "individual_trainer",
+  premium_plus: "individual_trainer",
   individual_trainer: "small_business",
   small_business: "medium_enterprise",
   medium_enterprise: null,

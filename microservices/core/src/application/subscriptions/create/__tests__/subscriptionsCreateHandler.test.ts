@@ -290,6 +290,24 @@ describe("subscriptionsCreateHandler — pure helpers", () => {
     });
   });
 
+  it("resolveTrial treats premium_plus as a user tier too (M19-P0) — same has_used_user_trial gate as premium, not a separate flag", async () => {
+    const { __internals } = await import("../subscriptionsCreateHandler");
+    const { resolveTrial } = __internals;
+    expect(resolveTrial("premium_plus", false, true, false, false)).toEqual({
+      days: 7,
+      flag: "user",
+    });
+    // Already used the (shared) user trial → no second trial via premium_plus.
+    expect(resolveTrial("premium_plus", false, true, true, false)).toEqual({
+      days: 0,
+      flag: null,
+    });
+    expect(resolveTrial("premium_plus", false, false, false, false)).toEqual({
+      days: 0,
+      flag: null,
+    });
+  });
+
   it("resolveTrial returns 14-day trainer trial for any trainer tier when eligible", async () => {
     // Post tier-simplification (20260526120000_simplify_tier_model.sql):
     // Standard trainer tiers gone; all surviving trainer tiers carry

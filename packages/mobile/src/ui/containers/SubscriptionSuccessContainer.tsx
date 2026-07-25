@@ -72,6 +72,7 @@ function isTrainerTierName(tier: SubscriptionTierName): boolean {
 const KNOWN_TIER_NAMES: Record<SubscriptionTierName, true> = {
   free: true,
   premium: true,
+  premium_plus: true,
   individual_trainer: true,
   small_business: true,
   medium_enterprise: true,
@@ -91,7 +92,7 @@ export function getSuccessMessage(tier: SubscriptionTierName): string {
   if (isTrainerTierName(tier)) {
     return "Your trainer subscription is now active! You can start managing clients and building your fitness business.";
   }
-  if (tier === "premium") {
+  if (tier === "premium" || tier === "premium_plus") {
     return "Your premium subscription is now active! Enjoy advanced features and personalized workout recommendations.";
   }
   return "Your subscription is now active! Enjoy all the premium features available to you.";

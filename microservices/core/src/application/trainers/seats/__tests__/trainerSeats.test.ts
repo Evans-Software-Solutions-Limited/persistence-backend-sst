@@ -103,6 +103,12 @@ describe("nextTrainerTierUp", () => {
     expect(nextTrainerTierUp("free")).toBe("individual_trainer");
     expect(nextTrainerTierUp("premium")).toBe("individual_trainer");
   });
+
+  it("maps premium_plus to the cheapest trainer tier, same as premium (M19-P0 — consumer tier, no trainer tier of its own)", async () => {
+    const { nextTrainerTierUp } =
+      await import("../../../entitlement/assertEntitlement");
+    expect(nextTrainerTierUp("premium_plus")).toBe("individual_trainer");
+  });
 });
 
 describe("evaluateTrainerClientsActiveSeat (active-cap verdict)", () => {

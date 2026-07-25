@@ -120,7 +120,12 @@ export function shouldShowTrialBanner(
   tierName: SubscriptionTierName,
 ): boolean {
   if (!eligibility) return false;
-  if (tierName === "premium") return eligibility.isEligibleForUserTrial;
+  // `premium_plus` (M19-P0) shares the SAME user-trial eligibility flag as
+  // `premium` — one trial per user across the consumer track, not one per
+  // tier (mirrors the backend's `resolveTrial` in
+  // subscriptionsCreateHandler.ts).
+  if (tierName === "premium" || tierName === "premium_plus")
+    return eligibility.isEligibleForUserTrial;
   if (TRAINER_TIER_NAMES.has(tierName))
     return eligibility.isEligibleForTrainerTrial;
   return false;
@@ -138,10 +143,12 @@ export function shouldShowTrialBanner(
  * Satisfies: requirements.md AC 12.3, 12.7
  */
 const USER_TRACK_RANK: Partial<Record<SubscriptionTierName, number>> = {
-  // Post tier-simplification: Basic is gone — Premium is the only paid
-  // user tier. Free=0, Premium=1.
+  // Post tier-simplification: Basic is gone — Premium was the only paid
+  // user tier until M19-P0 added Premium+ above it.
+  // Free=0, Premium=1, Premium+=2.
   free: 0,
   premium: 1,
+  premium_plus: 2,
 };
 
 const TRAINER_TRACK_RANK: Partial<Record<SubscriptionTierName, number>> = {

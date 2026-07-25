@@ -426,6 +426,11 @@ export function deriveChangeType(input: {
  *     trainer tiers existed; all surviving trainer tiers carry the
  *     former Pro entitlements (AI buddy etc.) so the suffix check is
  *     gone.
+ *   - `premium_plus` (M19-P0, spec-21 § 9.1) — also a user tier: 7 days,
+ *     gated on the SAME `has_used_user_trial` flag as `premium` (one
+ *     trial per user across the consumer track, not one per tier —
+ *     otherwise a user could trial `premium` then immediately trial
+ *     `premium_plus` for a second free week).
  *   - Anything else — no trial.
  */
 function resolveTrial(
@@ -437,7 +442,7 @@ function resolveTrial(
 ): { days: number; flag: "user" | "trainer" | null } {
   if (!useTrial) return { days: 0, flag: null };
 
-  const isUserTier = tierName === "premium";
+  const isUserTier = tierName === "premium" || tierName === "premium_plus";
   if (isUserTier) {
     if (hasUsedUserTrial) return { days: 0, flag: null };
     return { days: USER_TIER_TRIAL_DAYS, flag: "user" };

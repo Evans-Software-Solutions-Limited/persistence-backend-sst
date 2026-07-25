@@ -30,6 +30,16 @@ const PREMIUM: SubscriptionTier = {
   stripePriceIdMonthly: "price_premium_m",
   stripePriceIdYearly: "price_premium_y",
 };
+const PREMIUM_PLUS: SubscriptionTier = {
+  ...PREMIUM,
+  tierName: "premium_plus",
+  displayName: "Premium+",
+  priceMonthly: 29.99,
+  priceYearly: 299.99,
+  aiWorkoutLimit: 30,
+  stripePriceIdMonthly: null,
+  stripePriceIdYearly: null,
+};
 const INDIVIDUAL_TRAINER: SubscriptionTier = {
   ...PREMIUM,
   tierName: "individual_trainer",
@@ -135,6 +145,42 @@ describe("SubscriptionSelectionPresenter — render states", () => {
     // Free and the dropped basic tier are never rendered.
     expect(screen.queryByTestId("subscription-card-free")).toBeNull();
     expect(screen.queryByTestId("subscription-card-basic")).toBeNull();
+  });
+
+  it("renders exactly one consumer card when the catalog has no premium_plus row (M19-P0 — pre-existing catalog shape is unaffected)", () => {
+    render(<SubscriptionSelectionPresenter {...defaultProps()} />);
+    expect(screen.getByTestId("subscription-card-premium")).toBeTruthy();
+    expect(screen.queryByTestId("subscription-card-premium_plus")).toBeNull();
+  });
+
+  it("renders a second consumer card, cheapest-first, when the catalog includes premium_plus (M19-P0)", () => {
+    render(
+      <SubscriptionSelectionPresenter
+        {...defaultProps()}
+        subscriptionTiers={[
+          PREMIUM_PLUS,
+          PREMIUM,
+          INDIVIDUAL_TRAINER,
+          SMALL_BUSINESS,
+        ]}
+      />,
+    );
+    expect(screen.getByTestId("subscription-card-premium")).toBeTruthy();
+    expect(screen.getByTestId("subscription-card-premium_plus")).toBeTruthy();
+    // Cheapest-first ordering (ascending priceMonthly) — premium (£12.99)
+    // renders before premium_plus (£29.99) regardless of catalog order.
+    const premiumCard = screen.getByTestId("subscription-card-premium");
+    const premiumPlusCard = screen.getByTestId(
+      "subscription-card-premium_plus",
+    );
+    const allCardTestIds = screen
+      .getAllByTestId(/^subscription-card-/)
+      .map((el) => el.props.testID);
+    expect(allCardTestIds.indexOf("subscription-card-premium")).toBeLessThan(
+      allCardTestIds.indexOf("subscription-card-premium_plus"),
+    );
+    expect(premiumCard).toBeTruthy();
+    expect(premiumPlusCard).toBeTruthy();
   });
 
   it("renders trainer cards when selectedRole is 'trainer'", () => {
@@ -325,6 +371,16 @@ describe("getFeaturesList", () => {
     );
     expect(features).toContain("Progress tracking");
   });
+
+  it("derives user-tier features for premium_plus (unlimited workouts + its own 30-AI quota + gym buddy) — M19-P0", () => {
+    const features = getFeaturesList(PREMIUM_PLUS, false);
+    expect(features).toContain("Unlimited workouts");
+    // Read from the catalog's aiWorkoutLimit (30), NOT premium's
+    // hardcoded "6" — a Premium+ card must never show Premium's copy.
+    expect(features).toContain("30 AI workouts per month");
+    expect(features).not.toContain("6 AI workouts per month");
+    expect(features.some((f) => f.includes("Reps Gym Buddy"))).toBe(true);
+  });
 });
 
 describe("deriveTrialEligibility", () => {
@@ -374,6 +430,30 @@ describe("deriveTrialEligibility", () => {
         subscription: null,
         isTrialEligibleUser: false,
         isTrialEligibleTrainer: false,
+      }),
+    ).toEqual({ isTrialEligible: false, trialDuration: null });
+  });
+
+  it("treats 'premium_plus' as trial-eligible on the SAME user-track flag as 'premium' (M19-P0 — one trial per user, not per tier)", () => {
+    expect(
+      deriveTrialEligibility({
+        tierName: "premium_plus",
+        isReinstatingCurrentTier: false,
+        subscription: null,
+        isTrialEligibleUser: true,
+        isTrialEligibleTrainer: false,
+      }),
+    ).toEqual({ isTrialEligible: true, trialDuration: 7 });
+  });
+
+  it("returns null trial for 'premium_plus' when the user-track flag is ineligible", () => {
+    expect(
+      deriveTrialEligibility({
+        tierName: "premium_plus",
+        isReinstatingCurrentTier: false,
+        subscription: null,
+        isTrialEligibleUser: false,
+        isTrialEligibleTrainer: true,
       }),
     ).toEqual({ isTrialEligible: false, trialDuration: null });
   });

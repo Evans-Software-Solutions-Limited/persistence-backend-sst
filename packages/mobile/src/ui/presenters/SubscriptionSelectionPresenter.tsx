@@ -135,26 +135,32 @@ export function SubscriptionSelectionPresenter(
     onPaymentMethodError,
   } = props;
 
-  // User-tier cards: premium only (Basic was dropped in the tier
+  // User-tier cards: catalog-driven, not a hardcoded "premium" lookup —
+  // M19-P0 added a second consumer tier (`premium_plus`) above Premium.
+  // Non-trainer, non-free rows, cheapest first (ascending `priceMonthly`
+  // — the catalog's own ordering signal, so no separate mobile-side
+  // tier-rank map to keep in sync). Basic was dropped in the earlier tier
   // simplification — see migration 20260526120000_simplify_tier_model
-  // and CLAUDE.md "Migration intent").
+  // and CLAUDE.md "Migration intent".
   const userTierCards = useMemo(() => {
-    const premium = subscriptionTiers.find((t) => t.tierName === "premium");
+    const consumerTiers = subscriptionTiers
+      .filter((t) => !t.isTrainerTier && t.tierName !== "free")
+      .sort((a, b) => a.priceMonthly - b.priceMonthly);
     const cards: React.ReactElement[] = [];
 
-    if (premium) {
-      const isPremiumCurrent = currentTier === "premium";
-      const showPremiumTrial =
-        hasTrialEligibilityData && isTrialEligibleUser && !isPremiumCurrent;
+    for (const tier of consumerTiers) {
+      const isTierCurrent = currentTier === tier.tierName;
+      const showTrial =
+        hasTrialEligibilityData && isTrialEligibleUser && !isTierCurrent;
       cards.push(
         <SubscriptionCard
-          key={premium.tierName}
-          tier={premium}
+          key={tier.tierName}
+          tier={tier}
           billingCycle={billingCycle}
-          isCurrent={isPremiumCurrent}
-          showTrialBanner={showPremiumTrial}
+          isCurrent={isTierCurrent}
+          showTrialBanner={showTrial}
           trialBannerText={`${DEFAULT_TRIAL_DAYS}-day free trial`}
-          onPress={() => onTierSelect("premium")}
+          onPress={() => onTierSelect(tier.tierName)}
           disabled={!!selectedTierForPayment || isProcessingSubscription}
           getFeaturesList={getFeaturesList}
           isTrainer={false}
@@ -502,16 +508,23 @@ export function getFeaturesList(
   if (tier.features.progress) features.push("Progress tracking");
 
   if (tier.features.ai || tier.aiAccess) {
-    // Post tier-simplification: Premium gets a quota (6/mo); trainer
-    // tiers get "AI workout generation" + the AI Buddy. Basic dropped.
-    if (tier.tierName === "premium") {
-      features.push("6 AI workouts per month");
+    // Post tier-simplification: Premium / Premium+ get a numeric quota
+    // (`aiWorkoutLimit`, read from the catalog rather than a hardcoded
+    // "6" so Premium+'s 30/mo doesn't render Premium's copy — M19-P0);
+    // trainer tiers get "AI workout generation" + the AI Buddy instead.
+    // Basic dropped.
+    if (tier.tierName === "premium" || tier.tierName === "premium_plus") {
+      features.push(`${tier.aiWorkoutLimit} AI workouts per month`);
     } else {
       features.push("AI workout generation");
     }
   }
 
-  if (tier.features.gym_buddy || tier.tierName === "premium") {
+  if (
+    tier.features.gym_buddy ||
+    tier.tierName === "premium" ||
+    tier.tierName === "premium_plus"
+  ) {
     features.push(
       "Reps Gym Buddy - there to buddy you on your fitness journey",
     );
@@ -570,7 +583,10 @@ export function deriveTrialEligibility(args: {
     };
   }
 
-  if (tierName === "premium") {
+  if (tierName === "premium" || tierName === "premium_plus") {
+    // premium_plus (M19-P0) is trial-eligible on the SAME user track as
+    // premium — one trial per user across the consumer track, not one
+    // per tier (mirrors `resolveTrial` in subscriptionsCreateHandler.ts).
     return {
       isTrialEligible: isTrialEligibleUser,
       trialDuration: isTrialEligibleUser ? DEFAULT_TRIAL_DAYS : null,

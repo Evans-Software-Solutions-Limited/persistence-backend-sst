@@ -10,16 +10,19 @@
  */
 
 /**
- * Eight named tiers plus `free`. The `free` tier is the default
+ * Named tiers plus `free`. The `free` tier is the default
  * starting state for any signed-in user and is never shown as a
  * buyable card (`requirements.md` AC 1.2). Post tier-simplification
- * (20260526120000_simplify_tier_model.sql) the remaining 4 paid tiers
- * are Premium (only paid user tier) + three trainer tiers by business
- * size. Basic + all Standard trainer variants were dropped.
+ * (20260526120000_simplify_tier_model.sql) the paid tiers were Premium
+ * (only paid user tier) + three trainer tiers by business size. Basic +
+ * all Standard trainer variants were dropped. `premium_plus` was added
+ * in M19-P0 (spec-21 § 9.1) — a second, higher consumer tier above
+ * `premium` gating the adaptive-workout suite (Loadout + Mealprint).
  */
 export type SubscriptionTierName =
   | "free"
   | "premium"
+  | "premium_plus"
   | "individual_trainer"
   | "small_business"
   | "medium_enterprise";

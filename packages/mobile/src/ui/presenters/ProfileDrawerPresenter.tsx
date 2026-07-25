@@ -44,6 +44,8 @@ export function tierBadge(tier: SubscriptionTierName): string | null {
       return null;
     case "premium":
       return "PREMIUM";
+    case "premium_plus":
+      return "PREMIUM+";
     case "individual_trainer":
     case "small_business":
     case "medium_enterprise":
@@ -57,6 +59,7 @@ export function tierPillTone(tier: SubscriptionTierName): PillTone {
     case "free":
       return "neutral";
     case "premium":
+    case "premium_plus":
       return "gold";
     case "individual_trainer":
     case "small_business":
