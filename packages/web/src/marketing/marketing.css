@@ -1521,7 +1521,7 @@
   flex-shrink: 0;
 }
 
-/* ── AnyGym ───────────────────────────────────────────────────────────── */
+/* ── Adaptive suite (Loadout + Mealprint) ─────────────────────────────── */
 .mkt .adapt {
   border-top: 1px solid var(--m-line);
   background: linear-gradient(180deg, transparent, var(--m-bg-2));
