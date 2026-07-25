@@ -1,9 +1,9 @@
-# 26 — AnyMeal (AI meal planning): Design
+# 26 — Mealprint (AI meal planning): Design
 
 > Companion to `requirements.md` (2026-07-24). Architecture for both tracks
 > (backend + mobile), per Kiro discipline. Reuses the shipped Fuel stack
 > (`specs/13-nutrition-tracking/design.md`) and the M9.5 Bedrock adapter; the
-> generation pipeline deliberately mirrors AnyGym's candidate-constrained move
+> generation pipeline deliberately mirrors Loadout's candidate-constrained move
 > (`specs/21-adaptive-workout-ai/BRIEF.md`, GTM-EXPANSION § 3 P2) so the two
 > features stay architecturally twinned.
 
@@ -11,7 +11,7 @@
 
 ## 1. The generation pipeline (the core design)
 
-Every AnyMeal AI surface (suggest, day plan, week plan, per-meal swap) runs the
+Every Mealprint AI surface (suggest, day plan, week plan, per-meal swap) runs the
 same four-stage pipeline. **The model never owns numbers or safety; the
 deterministic layers do.**
 
@@ -26,7 +26,7 @@ deterministic layers do.**
       name match; unknown-tag rows excluded from allergen-filtered pools)
     - PLUS like-list bias (flagged, not enforced)
     - capped ~150–200 candidates (id, name, kcal/P/C/F per serving,
-      serving info, tags) — same cap philosophy as AnyGym's ~150 exercises
+      serving info, tags) — same cap philosophy as Loadout's ~150 exercises
 [2] AI COMPOSITION (Bedrock, forced tool use — aiEstimation.ts pattern)
     - prompt: targets/remaining budget, meal structure, effort, locale
       constraints ("UK supermarket availability…"), steer, candidate list
@@ -69,7 +69,7 @@ Design consequences:
   quality underwhelms). No image tokens; candidate list ≈ 3–5k input tokens.
 - **Suggest**: ≤600 output tokens → seconds, comfortably synchronous.
 - **Day plan**: 4–6 meals ≈ 1.5–2.5k output tokens → synchronous with the
-  AnyGym P2 budget (raise MAX_TOKENS, ~20s ceiling, ONE attempt + the single
+  Loadout P2 budget (raise MAX_TOKENS, ~20s ceiling, ONE attempt + the single
   verification repair round only if time allows) under the 30s API Gateway
   ceiling.
 - **Week plan (P3)**: 7 × day busts the ceiling → **async-job model** (job
@@ -126,7 +126,7 @@ nutrition_preferences (
 One row per user (PK = user_id, upsert semantics like `nutrition_targets`).
 "Hard to find near me" (STORY-007) appends into `avoid_foods` with a
 `hardtofind:` prefix convention kept out of UI copy, and writes an
-`anymeal_ingredient_feedback` row (user_id, food_id/custom name, created_at) as
+`mealprint_ingredient_feedback` row (user_id, food_id/custom name, created_at) as
 the aggregate curation signal — a tiny append-only table, no UI.
 
 ### 2.3 Plans (P2)
@@ -174,7 +174,7 @@ synced in v1).
 
 ## 3. Backend (Elysia · microservices/core)
 
-New application dir: `src/application/nutrition/anymeal/` (preferences,
+New application dir: `src/application/nutrition/mealprint/` (preferences,
 candidates, verification, plans, ai). All handlers: `requireAuth` →
 entitlement → ceiling → work; every repository method `userId`-first;
 ownership checks on plan ids (`get(userId, id)` shape).
@@ -194,7 +194,7 @@ ownership checks on plan ids (`get(userId, id)` shape).
 | `GET /nutrition/plans/group/:id/shopping-list` | P3, derived aggregation                                                                                                                          |
 
 Entitlement: new `EntitlementFeature` value `meal_ai` resolved from the tier
-catalog (Premium+ flag — reuses the M19-P0 `premium_plus` row; if AnyMeal lands
+catalog (Premium+ flag — reuses the M19-P0 `premium_plus` row; if Mealprint lands
 first, the tier-restructure migration is a shared prerequisite, flagged in
 requirements § Dependencies). **No taster (Brad 2026-07-24)** — hard 402 with
 the upgrade payload for free/premium; comps/promos arrive as RevenueCat
@@ -222,15 +222,15 @@ tier-aware resolution read-in-handler (#156 pattern, no generic limits table).
 
 ## 4. Mobile (packages/mobile · hexagonal)
 
-Ports: `anymeal.port.ts` (preferences get/put, suggest, planGenerate, planCrud,
+Ports: `mealprint.port.ts` (preferences get/put, suggest, planGenerate, planCrud,
 swap, logPlanMeal) → SST API adapter + SQLite storage adapter (preferences +
 accepted plans cached; drafts are in-memory only). Zustand for the draft-review
-state (mirror of the AnyGym review-flow store shape).
+state (mirror of the Loadout review-flow store shape).
 
 Screens/components (containers + presenters, Fuel visual language —
 `nutrition.jsx` tokens):
 
-1. **AnyMeal entry card** on Fuel (below QuickAddRow): no-plan state = "What
+1. **Mealprint entry card** on Fuel (below QuickAddRow): no-plan state = "What
    should I eat?" + "Plan my day"; active-plan state = today progress strip.
 2. **Preferences wizard/editor** — chips + steppers per STORY-001; also
    reachable from Fuel Targets ("Food preferences" row).
@@ -253,8 +253,8 @@ the shipped upgrade sheet (no taster surfaces — decision 4).
 
 ## 5. Decision record
 
-| Date       | Decision                                                                                                                                                                              | By              |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------- |
-| 2026-07-24 | Spec authored; candidate-constrained pipeline; deterministic-twice allergen posture; UK-first locale preference                                                                       | Claude (w/Brad) |
-| 2026-07-24 | Slots stay 4 in the log; plans carry own labels + logSlot mapping (no hot-table migration)                                                                                            | Claude proposal |
-| 2026-07-24 | Checkpoints 1–6 ALL resolved: branding confirmed, Premium+ hard gate NO taster (RC promos), ceilings 20/5/10, site repriced £29.99 + AnyMeal added, allergen set signed off, P3 in v1 | Brad            |
+| Date       | Decision                                                                                                                                                                                | By              |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------- |
+| 2026-07-24 | Spec authored; candidate-constrained pipeline; deterministic-twice allergen posture; UK-first locale preference                                                                         | Claude (w/Brad) |
+| 2026-07-24 | Slots stay 4 in the log; plans carry own labels + logSlot mapping (no hot-table migration)                                                                                              | Claude proposal |
+| 2026-07-24 | Checkpoints 1–6 ALL resolved: branding confirmed, Premium+ hard gate NO taster (RC promos), ceilings 20/5/10, site repriced £29.99 + Mealprint added, allergen set signed off, P3 in v1 | Brad            |

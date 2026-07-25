@@ -56,8 +56,8 @@ free (10× monthly).
 
 - Everything in Premium, plus the adaptive suite:
   - **AI Workout Suggestions**
-  - **AnyGym equipment scan** — equipment-aware programming
-  - **AnyMeal meal planning** — food plans & fill-your-macros ideas
+  - **Loadout equipment scan** — equipment-aware programming
+  - **Mealprint meal planning** — food plans & fill-your-macros ideas
   - Program import
 
 > **Positioning note:** the "scan-your-gym → AI builds a workout that fits it"
@@ -67,7 +67,7 @@ free (10× monthly).
 
 > **REPRICED + AnyMeal added (Brad, 2026-07-24):** Premium+ moved £19.99 →
 > **£29.99/mo · £299.99/yr** on the strength of the two-hero suite (spec-26
-> AnyMeal joins AnyGym). Market basis: AI-programming apps alone sit at
+> Mealprint joins Loadout). Market basis: AI-programming apps alone sit at
 > $29.99–34.99/mo (Ladder, Juggernaut AI); MyFitnessPal's meal-planning tier is
 > $24.99/mo; Premium+ spans tracking + AI training + AI meal planning. Changed
 > while Premium+ is non-purchasable (no ASC products, no catalog row) — zero
@@ -143,7 +143,8 @@ to direct outreach only.
 
 ## 5. Equipment-adaptive feature name
 
-**Status: TBC.** Working candidates and assessment (needs a live App Store +
+**Status: DECIDED 2026-07-24 — "Loadout" + "Mealprint" (see the FINAL DECISION
+block at the end of this section). Original assessment kept for the record.** Working candidates and assessment (needs a live App Store +
 UK IPO trademark + domain check to confirm — not yet run):
 
 | Candidate | Read |
@@ -176,6 +177,20 @@ Brad confirmed both names, risk noted:**
   and domain/social handles. If AnyGym Ltd proves to hold a registered mark,
   the fallback candidate remains "Kit-Aware" (above) and the AnyMeal sibling
   would rename in sympathy.
+
+**FINAL DECISION (Brad, 2026-07-24, same day): both names RETIRED and
+replaced — the features are now "Loadout" (equipment-adaptive training) and
+"Mealprint" (meal planning).** Vetting basis: "Loadout" — no fitness app, gym
+brand or UK company found; residual: a lapsed-looking 2013 US mark for a dead
+video game and YETI's "LoadOut" bucket line (different goods). "Mealprint" —
+no app or company found (nearest: Nutrino's "Foodprint", a different word).
+Rejected en route: GymForge (existing tracker + an equipment-aware AI builder
+app), Gymsmith (HypertroFit home-gym planner + 2021 US mark), all -Forge/-Fit
+compounds (crowded). Both used as in-app feature names under the Persistence
+house mark; ™ from day 1. Brad to run the free UK IPO word-mark searches
+(classes 9/41/42/44) and optionally self-file (£170/class, or Right Start
+£200) before marketing spend. Site, specs and tests renamed 2026-07-24 (tests
+now assert the old names never resurface).
 
 ---
 

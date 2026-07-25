@@ -1,4 +1,10 @@
-# spec-21 — Adaptive Workout AI (“AnyGym”) · Phase 0 brief
+# spec-21 — Adaptive Workout AI (“Loadout”, formerly “AnyGym”) · Phase 0 brief
+
+> **RENAMED 2026-07-24 (Brad): the feature brand is now “Loadout.”** “AnyGym”
+> was retired after availability vetting found AnyGym Ltd, a UK fitness
+> company (decision + evidence: `marketing/WEBSITE_PRICING_SPEC.md § 5`).
+> “AnyGym” below and in the design-handoff file/asset names is historical —
+> read it as Loadout; all user-facing copy, specs, and code say Loadout.
 
 > **STATUS: PARKED — build AFTER launch.** Persistence ships in its current
 > state first (see `specs/milestones/GO-LIVE-FINAL/`). AnyGym is the flagship
@@ -110,8 +116,8 @@ pickup-able state:
    now "3 Custom Workouts", superseding both the GTM table and the pricing
    spec's own § 6.1/§ 7 taster copy). The triplet should inherit the latest
    pricing-spec position, confirm the taster's fate with Brad, and note P0
-   (premium_plus tier restructure) is now a **shared prerequisite with spec-26
-   AnyMeal**.
+   (premium*plus tier restructure) is now a **shared prerequisite with spec-26
+   Mealprint**. *(Taster resolved 2026-07-24: NO taster — RC promos instead.)\_
 5. **Adapt-vs-generate scope is settled** (this brief: AnyGym = adapt-existing;
    generate-from-scratch is the separate M19-P2 flow) — carry that split into
    the triplet explicitly, since the marketing copy blurs them.

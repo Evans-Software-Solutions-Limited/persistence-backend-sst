@@ -1,4 +1,4 @@
-# 26 — AnyMeal (AI meal planning): Tasks
+# 26 — Mealprint (AI meal planning): Tasks
 
 > Execution reservoir — milestone briefs cut scoped slices from here
 > (`specs/_agent.md`). Every item traces to `requirements.md` ACs and
@@ -15,7 +15,7 @@
 
 - [ ] **0.1 Migration + schema.ts: `foods` tag columns** (`allergen_tags`, `category_tags`, `locale_tags` + GIN indexes) — design § 2.1; AC 2.1. Idempotent; prod apply flagged MANUAL.
 - [ ] **0.2 Seed/delta ETL extension** — project OFF `allergens_tags`/`categories_tags`/`countries_tags` in the DuckDB filter; backfill curated rows; delta cron carries tags — AC 2.1.
-- [ ] **0.3 Migration + schema.ts: `nutrition_preferences`** (+ `anymeal_ingredient_feedback`) — design § 2.2; AC 1.3, 7.2.
+- [ ] **0.3 Migration + schema.ts: `nutrition_preferences`** (+ `mealprint_ingredient_feedback`) — design § 2.2; AC 1.3, 7.2.
 - [ ] **0.4 `avoidanceFilter` pure service + exhaustive tests** (patterns × tags × name-match × unknown-tag) — design § 3 dangerous area; AC 2.2, 2.3.
 - [ ] **0.5 Preferences endpoints** `GET/PUT /nutrition/preferences` + repository (userId-scoped, upsert, vocabulary validation, write-normalisation) + PgDialect WHERE-render test — AC 1.3.
 - [ ] **0.6 Mobile: preferences port/adapter/SQLite cache + wizard & editor UI** (chips, allergen-vs-dislike distinction, disclaimer copy, skippable, Fuel Targets entry row) — AC 1.1–1.5.
@@ -36,7 +36,7 @@
 - [ ] **2.4 `POST /nutrition/ai/plan-meal-swap`** (single-meal regenerate, hold others, ceiling) — AC 4.4.
 - [ ] **2.5 `POST /nutrition/plans/:id/meals/:mealId/log`** (existing entry service, linkage, offline-queueable) — AC 5.2.
 - [ ] **2.6 Mobile plan flow**: config sheet → generating → draft review (meal cards, swap/edit/remove with deterministic recompute) → accept — AC 4.1, 4.3–4.5.
-- [ ] **2.7 Mobile Fuel integration**: AnyMeal card states, ghost rows in meal log, plan Today/adherence view, SQLite plan cache — AC 5.1–5.3.
+- [ ] **2.7 Mobile Fuel integration**: Mealprint card states, ghost rows in meal log, plan Today/adherence view, SQLite plan cache — AC 5.1–5.3.
 
 ## Phase 3 — Week plans + shopping list (IN v1 — decided 2026-07-24)
 
