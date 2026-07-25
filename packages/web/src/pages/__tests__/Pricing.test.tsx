@@ -36,8 +36,9 @@ describe("Pricing", () => {
       within(flagship).getByText(/Mealprint meal planning/i),
     ).toBeDefined();
     expect(within(flagship).getByText("29.99")).toBeDefined();
-    // Renamed 2026-07-24 — the old feature brands must not resurface.
-    const text = document.body.textContent ?? "";
+    // Renamed 2026-07-24 — the old feature brands must not resurface
+    // anywhere in the rendered document (copy, ids, classes, hrefs).
+    const text = document.documentElement.innerHTML;
     expect(text).not.toMatch(
       /\banygym\b|\bany gym\b|\banymeal\b|\bany meal\b/i,
     );

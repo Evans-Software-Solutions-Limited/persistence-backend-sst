@@ -9,8 +9,10 @@ describe("Home", () => {
     expect(screen.getByText("One loop.")).toBeDefined();
     expect(screen.getByText("Same programme.")).toBeDefined();
     // Feature brands are Loadout + Mealprint (renamed from AnyGym/AnyMeal
-    // 2026-07-24) — the old names must not resurface anywhere on the page.
-    const text = document.body.textContent ?? "";
+    // 2026-07-24) — the old names must not resurface anywhere in the rendered
+    // document (copy, ids, classes, hrefs). index.html's static head is
+    // outside this render and is guarded by review, not this test.
+    const text = document.documentElement.innerHTML;
     expect(text).not.toMatch(
       /\banygym\b|\bany gym\b|\banymeal\b|\bany meal\b/i,
     );
