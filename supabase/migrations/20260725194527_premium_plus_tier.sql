@@ -33,15 +33,13 @@
 --    WHERE tier_name = 'premium_plus';` shipped with the Loadout release.
 --
 --    Flags: gym-buddy mirrors `premium` (same consumer feature set).
---    `analytics_access` / `export_access` are set true where `premium` is
---    seeded false — a DELIBERATE divergence, since the top consumer tier
---    must not carry fewer entitlements than the one below it, and the
---    marketing site advertises analytics + export on both. Both flags are
---    inert today (read only by the trainer branch of `getFeaturesList`
---    and the legacy `has_feature_access` RPC); `premium`'s seeded `false`
---    looks like catalog drift against the marketing copy and is worth a
---    separate review. AI workout allowance is raised to 30/month. Not a
---    trainer tier.
+--    `analytics_access` and `export_access` are BOTH FALSE, matching
+--    `premium`. Neither feature is built (Brad, 2026-07-25) — nothing in
+--    the app or backend gates an analytics screen or an export path on
+--    them, and the two paywall bullets they used to drive have been
+--    removed. A new billing row must not claim entitlements that do not
+--    exist; set them true if and when the features ship. AI workout
+--    allowance is raised to 30/month. Not a trainer tier.
 --
 --    `ON CONFLICT (tier_name) DO NOTHING` makes the insert idempotent for
 --    re-runs, but note it will NOT correct a pre-existing `premium_plus`
@@ -63,7 +61,7 @@ INSERT INTO subscription_tiers (
   NULL, true, 30, true, true, true,
   NULL, false,
   '{"workouts": "unlimited", "ai_workouts": 30, "gym_buddy": true, "gym_buddy_can_create": true, "gym_buddy_can_suggest": true, "progress": true, "loadout": true, "mealprint": true}',
-  true, true, false
+  false, false, false
 )
 ON CONFLICT (tier_name) DO NOTHING;
 

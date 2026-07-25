@@ -65,9 +65,19 @@ describe("premium_plus tier migration", () => {
   });
 
   it("is seeded INACTIVE so it is not purchasable before Loadout ships", () => {
-    // Last field of the tuple, immediately before the closing paren.
-    expect(tuple).toMatch(/true,\s*true,\s*false\s*\n?\)/);
-    expect(tuple).not.toMatch(/true,\s*true,\s*true\s*\n?\)/);
+    // Trailing tuple fields are analytics_access, export_access, is_active.
+    // is_active MUST be the false one; assert the whole trio so a careless
+    // edit to either neighbour can't shift the position silently.
+    expect(tuple).toMatch(/false,\s*false,\s*false\s*\n?\)/);
+    expect(tuple).not.toMatch(/,\s*true\s*\n?\)/);
+  });
+
+  it("does not claim analytics or export — neither feature is built", () => {
+    // analytics_access / export_access are the two fields before is_active.
+    // Nothing gates a real analytics screen or export path on them, and the
+    // paywall bullets they used to drive were removed, so a new billing row
+    // must not set them true. Flip only when the features actually ship.
+    expect(tuple).toMatch(/false,\s*false,\s*false\s*\n?\)/);
   });
 
   it("is a consumer tier with unlimited workouts and 30 AI workouts", () => {

@@ -312,20 +312,20 @@ describe("getFeaturesList", () => {
     expect(features).toContain("AI Buddy Included");
   });
 
-  it("includes analytics when analyticsAccess flag is set", () => {
+  // Brad, 2026-07-25: neither analytics nor export is a built feature —
+  // nothing gates an analytics screen or an export path on these flags, so
+  // the paywall must not sell them. Inverted from the old tests, which
+  // asserted the bullets WERE rendered.
+  it("never advertises analytics or export, even when the catalog flags are set", () => {
     const features = getFeaturesList(
-      { ...INDIVIDUAL_TRAINER, analyticsAccess: true },
+      { ...INDIVIDUAL_TRAINER, analyticsAccess: true, exportAccess: true },
       true,
     );
-    expect(features).toContain("Analytics & Reporting");
-  });
-
-  it("includes data export when exportAccess flag is set", () => {
-    const features = getFeaturesList(
-      { ...INDIVIDUAL_TRAINER, exportAccess: true },
-      true,
-    );
-    expect(features).toContain("Data Export");
+    expect(features).not.toContain("Analytics & Reporting");
+    expect(features).not.toContain("Data Export");
+    // The rows that ARE real still render.
+    expect(features).toContain("2 client slots");
+    expect(features).toContain("AI Buddy Included");
   });
 
   it("derives user-tier features for premium (unlimited workouts + 6 AI + gym buddy)", () => {

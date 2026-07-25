@@ -502,12 +502,15 @@ export function getFeaturesList(
     if (tier.trainerClientLimit) {
       features.push(`${tier.trainerClientLimit} client slots`);
     }
-    if (tier.analyticsAccess) {
-      features.push("Analytics & Reporting");
-    }
-    if (tier.exportAccess) {
-      features.push("Data Export");
-    }
+    // "Analytics & Reporting" and "Data Export" used to be pushed here off
+    // tier.analyticsAccess / tier.exportAccess. Both were removed (Brad,
+    // 2026-07-25): NEITHER FEATURE IS BUILT. Nothing in the app or the
+    // backend gates an analytics screen or an export path on those flags —
+    // their only effect anywhere was these two bullets, so every coach
+    // paywall card was advertising two features that do not exist.
+    //
+    // The catalog columns are left in place for whenever the features are
+    // actually specced and built; they simply no longer sell anything.
     if (tier.features.ai_buddy || tier.tierName.endsWith("_pro")) {
       features.push("AI Buddy Included");
     }
