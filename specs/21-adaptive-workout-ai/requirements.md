@@ -294,8 +294,8 @@ US-9.
   (the mocked-`getDb` blind spot).
 - **Performance.** Candidate pre-filtering happens in SQL, not in memory over
   the whole library, and must not fan out into per-exercise round trips. A
-  programme-level adaptation is explicitly bounded at **50 workouts** (413
-  beyond that, no silent truncation) — `design.md` § 7.3.
+  programme-level adaptation is explicitly bounded at **120 workouts** — 413
+  beyond that, never a silent truncation (`design.md` § 7.3).
 - **Offline.** A saved variation is a normal workout and syncs through the
   existing SQLite/queue path; adaptation itself requires connectivity.
 - **UI fidelity.** Mobile screens follow the design handoff (D7, with D1 for

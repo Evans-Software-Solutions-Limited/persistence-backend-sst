@@ -96,7 +96,9 @@ Acceptance criteria: `requirements.md` US-11.
 - [ ] **T-0.7 [B]** `GET /workouts/:id/variations` (caller-owned only) and
       `POST /workouts/:id/variations` (persist a reviewed plan in one
       transaction, with provenance), the latter behind the `loadout`
-      entitlement.
+      entitlement **and `canRead` on the parent** (AC-1.2 — the guard ships in
+      this phase, not Phase 1, or the endpoint spends a phase able to persist a
+      variation of a workout the caller may not read).
 - [ ] **T-0.8 [B]** `EntitlementFeature` gains `"loadout"`; add `assertLoadout`
       reading `subscription_tiers.loadout_access`; **route it explicitly** —
       `assertEntitlement.ts:249` allows any unrouted feature (design § 5.1).
@@ -188,7 +190,7 @@ Acceptance criteria: `requirements.md` US-11.
 - [ ] **T-4.2 [B]** Programme-level preview + create-variant; each adapted
       workout is itself a workout variation; `program_workouts.position`
       preserved. Assemble the candidate pool **once** for the union of all
-      muscles across the programme; cap at **50 workouts** → 413 beyond, no
+      muscles across the programme; cap at **120 workouts** → 413 beyond, no
       silent truncation (design § 7.3).
 - [ ] **T-4.3 [B]** Assign from the variant via the existing programme-assignment
       path; `assertTrainerCanActForClient` on every entry point (AC-8.4).

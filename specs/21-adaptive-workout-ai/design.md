@@ -96,8 +96,11 @@ ALTER TABLE saved_gyms ENABLE ROW LEVEL SECURITY;  -- backend-only, zero policie
   connection `getDb()` uses.
 - The Drizzle mirror needs an **expression** index (`lower(btrim(name))`), so
   `uniqueIndex("saved_gyms_user_name_key")` must take an SQL fragment rather
-  than a bare column. The installed drizzle-orm (`^0.44.2`) accepts SQL
-  expressions in `.on()`, so the mirror is straightforward.
+  than a bare column. The installed drizzle-orm (`^0.44.2`) should accept an
+  SQL expression in `.on()`, but **no index in this repo does it today** — all
+  ~11 `uniqueIndex().on()` calls in `schema.ts` use bare columns — so treat it
+  as unverified. If it doesn't work, declare the index in SQL only and comment
+  the mirror; the index still exists in the database either way.
 
 ### 2.2 Workout linkage
 
@@ -238,8 +241,8 @@ All mounted in a **new `loadoutRoutes.ts` sub-app**, not on the root chain —
 with one deliberate exception (`GET /exercises/substitutes`, below). The root
 `.use()` chain in `api.ts` is at TS's instantiation-depth ceiling — spec-25 hit
 TS2589 there and had to nest. Precedent sub-apps mount late:
-`nutritionRoutes` (`api.ts:181`), `subscriptionsRoutes` (`:236`),
-`trainersOnBehalfRoutes` (`:240`).
+`subscriptionsRoutes` (`api.ts:181`), `trainersOnBehalfRoutes` (`:236`),
+`nutritionRoutes` (`:240`).
 
 | Method   | Path                            | Phase | Guard                                 | Notes                                                |
 | -------- | ------------------------------- | ----- | ------------------------------------- | ---------------------------------------------------- |
@@ -481,8 +484,14 @@ mints a `user_override` reason code for it. Visibility, by contrast, is a
 data-isolation control and is never negotiable: an override cannot be used to
 smuggle in another coach's private exercise.
 
-The override is persisted as `workout_exercises.is_user_override` (§ 2.3), so
-the flag is a stored fact rather than a claim the client re-asserts.
+The override is persisted as `workout_exercises.is_user_override` (§ 2.3) so
+the variation can explain itself later. Note that **on the create path the flag
+is a client-supplied claim** — the row does not exist yet — so a client could
+set it on every row and skip containment wholesale. That is acceptable
+precisely because containment is a _quality_ check, not a security control:
+visibility, which is the security control, is re-verified on every row
+regardless. Do not later reuse `is_user_override` as a server-attested fact for
+a gate where it would matter.
 
 ### 7.2 Reasons
 
@@ -504,8 +513,12 @@ scoring — the candidate pool is assembled once for the union of _all_ muscles
 across the programme and reused for every workout — so the work is roughly
 linear in `workout_exercises` rows, not in round trips. Even so:
 
-- Cap a single programme adaptation at **50 workouts**; beyond that return 413
+- Cap a single programme adaptation at **120 workouts**; beyond that return 413
   with a message to adapt the programme in parts. No silent truncation.
+  ⚠ **Brad checkpoint:** confirm 120. A tighter bound (e.g. 50) would trip on
+  ordinary blocks — 12 weeks × 5 sessions is 60, a 13-week cycle is 52 — and
+  the cost analysis above does not justify one, since the candidate pool is
+  assembled once for the whole programme.
 - The 30s API Gateway ceiling that constrains § 8 does **not** bind here,
   because nothing calls Bedrock. If Phase 5 ever puts a model in this path, the
   programme case must move to the async-job model first — that is the point at
@@ -630,8 +643,9 @@ _total_ `Record<SubscriptionTierName, …>` types or exhaustive switches, so the
   errors): the mobile `SubscriptionTierName` union
   (`domain/models/subscription.ts:20-25`), `useFeatureGate.ts:250`
   `TRAINER_TIER_LADDER`, `SyncBlockedPresenter:49`, `SyncBlockedBannerMount:22`,
-  `FeatureGatePrompt:48`, `SubscriptionBadge:42,46,56`,
-  `ProfileDrawerPresenter:41,55` (exhaustive switches, no `default`), and
+  `FeatureGatePrompt:48`, `SubscriptionBadge:44` (the `TIER_DISPLAY_NAMES`
+  Record only — see below), `ProfileDrawerPresenter:41,55` (exhaustive
+  switches, no `default`), and
   `SubscriptionSuccessContainer:72` — whose in-code comment says it exists
   _specifically_ to force this compile error.
 - **Silent 1** — `subscriptionService.ts:140` `USER_TRACK_RANK` is
@@ -641,6 +655,14 @@ _total_ `Record<SubscriptionTierName, …>` types or exhaustive switches, so the
 - **Silent 2** — `useFeatureGate.ts:106` `USER_UPGRADE_CHAIN` is also `Partial`,
   in the same file where `TRAINER_TIER_LADDER` is total. Same file, opposite
   safety.
+- **Silent 3** — `SubscriptionBadge.tsx:52-63` `variantFor` is a switch **with a
+  `default: return "trainer"`**. The total Record two lines above it _does_
+  compile-error, so a developer lands in the file — but fixing that error does
+  not fix `variantFor`, and Premium+ would render in the violet trainer palette.
+  Treat `premium_plus` like `premium` here.
+- **Silent 4** — `subscriptionService.ts:115-127` `shouldShowTrialBanner` falls
+  through to `return false` for any tier that is neither `premium` nor a trainer
+  tier, so a Premium+ buyer sees no trial banner — a direct AC-11.6 miss.
 - `GreetingSection.tsx:32` is loosely typed but has a `|| "Free"` fallback
   (L58), so it degrades to the wrong label rather than `undefined`.
 
