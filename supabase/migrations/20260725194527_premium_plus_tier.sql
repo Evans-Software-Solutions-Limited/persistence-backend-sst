@@ -56,7 +56,7 @@ INSERT INTO subscription_tiers (
   features, analytics_access, export_access, is_active
 ) VALUES (
   'premium_plus', 'Premium+',
-  'Everything in Premium, plus the adaptive suite: Loadout (adapt any workout or programme to the equipment you actually have) and Mealprint (AI meal planning). 30 AI-generated workouts per month.',
+  'Everything in Premium, plus 30 AI-generated workouts per month. The adaptive suite — Loadout and Mealprint — unlocks on this plan when it ships.',
   29.99, 299.99, 'GBP',
   NULL, true, 30, true, true, true,
   NULL, false,
@@ -85,3 +85,31 @@ WHERE tier_name IN (
   'small_business',
   'medium_enterprise'
 );
+
+-- 4. Strip the "trainer analytics" claim from the trainer tier
+--    descriptions. There is NO analytics feature (Brad, 2026-07-25) —
+--    nothing in the app or backend gates an analytics screen, and the
+--    paywall bullets that made the same claim were removed in this branch.
+--
+--    This column is not dead copy: `SubscriptionRepository.findForUser`
+--    returns it as `tierDescription` and the Profile Drawer renders it
+--    verbatim for every paying coach, so the claim survives in the product
+--    until it is fixed HERE. TypeScript cannot reach it.
+--
+--    The AI buddy half of the sentence stays — the AI weekly client
+--    summary is real (`POST /trainers/me/clients/:clientId/ai-summary`).
+--
+--    Idempotent: the anchored pattern no longer matches once rewritten, so
+--    a re-run is a no-op.
+UPDATE subscription_tiers
+SET description = regexp_replace(
+  description,
+  ' and trainer analytics\.$',
+  '.'
+)
+WHERE tier_name IN (
+  'individual_trainer',
+  'small_business',
+  'medium_enterprise'
+)
+  AND description LIKE '%and trainer analytics.';

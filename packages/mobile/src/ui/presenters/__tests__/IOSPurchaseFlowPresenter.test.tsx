@@ -185,6 +185,22 @@ describe("IOSPurchaseFlowPresenter", () => {
     expect(screen.queryByText(/free trial/i)).toBeNull();
   });
 
+  it("suppresses trainer-card trial banners in the same state", () => {
+    // The trainer loop resolves fixed tier names out of the catalog and has
+    // the identical hole — a held-but-unlisted tier marks no card current,
+    // so every trainer card would offer a trial.
+    render(
+      <IOSPurchaseFlowPresenter
+        {...defaultProps()}
+        selectedRole="trainer"
+        subscriptionTiers={[PREMIUM, INDIVIDUAL_TRAINER]}
+        currentTier="premium_plus"
+        purchasableTiers={new Set(["premium", "individual_trainer"])}
+      />,
+    );
+    expect(screen.queryByText(/free trial/i)).toBeNull();
+  });
+
   it("advertises EACH tier's own trial length (per-tier, not one global number)", () => {
     // Regression: previously one product's offer was stamped on every card, so
     // a premium 1-week offer could render as a trainer's "14-day". The premium

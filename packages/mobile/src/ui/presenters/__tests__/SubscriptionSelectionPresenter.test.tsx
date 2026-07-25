@@ -320,6 +320,20 @@ describe("SubscriptionSelectionPresenter — comped tier not in catalog", () => 
     );
     expect(screen.queryByText(/free trial/i)).toBeNull();
   });
+
+  it("suppresses trainer-card trial banners in the same state", () => {
+    // The trainer loop resolves fixed tier names out of the catalog and has
+    // the identical hole — a held-but-unlisted tier marks no card current,
+    // so every trainer card would offer a trial.
+    render(
+      <SubscriptionSelectionPresenter
+        {...defaultProps()}
+        selectedRole="trainer"
+        currentTier="premium_plus"
+      />,
+    );
+    expect(screen.queryByText(/free trial/i)).toBeNull();
+  });
 });
 
 describe("getFeaturesList", () => {

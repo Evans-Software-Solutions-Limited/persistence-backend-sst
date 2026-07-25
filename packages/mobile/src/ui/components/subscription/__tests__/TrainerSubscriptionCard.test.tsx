@@ -47,6 +47,26 @@ describe("TrainerSubscriptionCard", () => {
     expect(toJSON()).toBeNull();
   });
 
+  it("never advertises analytics — the feature does not exist", () => {
+    // The live coach paywall bullet. Nothing in the app or backend gates an
+    // analytics screen, and this card is what a coach actually sees — the
+    // getFeaturesList isTrainer branch that also carried the claim is
+    // unreachable, so THIS is the regression guard that matters.
+    render(
+      <TrainerSubscriptionCard
+        standardTier={STD}
+        proTier={PRO}
+        billingCycle="monthly"
+        isStandardCurrent={false}
+        isProCurrent={false}
+        onStandardPress={jest.fn()}
+        onProPress={jest.fn()}
+      />,
+    );
+    expect(screen.queryByText(/analytics/i)).toBeNull();
+    expect(screen.queryByText(/reporting & analytics/i)).toBeNull();
+  });
+
   it("derives display name from tier name family — small_business", () => {
     render(
       <TrainerSubscriptionCard

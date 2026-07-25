@@ -111,6 +111,29 @@ describe("premium_plus tier migration", () => {
     expect(tuple).toContain('"ai_workouts": 30');
   });
 
+  it("does not promise the adaptive suite to a comped pre-launch user", () => {
+    // The row is reachable before launch via a RevenueCat promotional
+    // entitlement, and `description` is rendered verbatim in the Profile
+    // Drawer — so it must describe what the user HAS today, not what the
+    // tier will include once Loadout and Mealprint ship.
+    expect(tuple).toContain("when it ships");
+    expect(tuple).not.toMatch(/plus the adaptive suite:/);
+  });
+
+  it("strips the trainer-analytics claim from the trainer tier descriptions", () => {
+    // Rendered in the Profile Drawer for every paying coach, so the claim
+    // survives in the product unless the migration fixes the data.
+    const strip = sql.slice(sql.indexOf("SET description = regexp_replace"));
+    expect(strip).toContain("and trainer analytics");
+    for (const tier of [
+      "individual_trainer",
+      "small_business",
+      "medium_enterprise",
+    ]) {
+      expect(strip).toContain(`'${tier}'`);
+    }
+  });
+
   it("adds loadout_access and grants it to Premium+ and every trainer tier", () => {
     expect(sql).toContain(
       "ADD COLUMN IF NOT EXISTS loadout_access boolean NOT NULL DEFAULT false",
