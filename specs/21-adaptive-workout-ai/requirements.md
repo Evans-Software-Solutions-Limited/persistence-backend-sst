@@ -129,7 +129,9 @@ As a user mid-flow, I can tell Loadout what kit is available in three ways.
   `equipment_type_ids` become the equipment context.
 - **AC-2.2 (manual)** I can select equipment from a checklist grouped by
   category (free weights / machines / cables / bodyweight / cardio), driven by
-  `equipment_types` — no hardcoded client-side list.
+  `equipment_types` — no hardcoded client-side list. **`equipment_types` has no
+  `category` column today**; adding and backfilling it is Phase-0 work, not
+  Phase-2 (`design.md` § 2.3b). An uncategorised row renders under "Other".
 - **AC-2.3 (scan)** I can photograph the gym; detected equipment is returned as
   a **draft** I confirm or edit before it is used. Detection never writes
   anything on its own.
@@ -189,7 +191,8 @@ As a user mid-flow, I can tell Loadout what kit is available in three ways.
 - **AC-5.4** A variation is a normal workout for every downstream purpose —
   loggable, in history, deletable — except that it is **not** independently
   listed in the owner's main library (it belongs under its parent) and deleting
-  the parent does not silently delete it (see `design.md` § Deletion).
+  the parent does not silently delete it (see `design.md` § 2.2, the
+  `ON DELETE SET NULL` rationale).
 
 ### US-6 — Variations are grouped under the parent
 
@@ -254,6 +257,30 @@ As a user mid-flow, I can tell Loadout what kit is available in three ways.
 - **AC-10.2** The deterministic re-map (D7) has **no** ceiling and writes no
   usage rows — it costs nothing to run.
 
+### US-11 — Premium+ exists as a real, purchasable tier (P0)
+
+The tier restructure is a shared prerequisite with spec-26 Mealprint and carries
+user-visible behaviour of its own, so it gets its own ACs rather than riding on
+US-9.
+
+- **AC-11.1** `premium_plus` exists in the `subscription_tiers` catalog at
+  £29.99/mo and £299.99/yr, `is_active`, non-trainer.
+- **AC-11.2** The consumer paywall renders a Premium+ card **from the catalog**,
+  not from a hardcoded tier name — adding a future consumer tier requires no
+  presenter change. Both rails (the live iOS rail and the Stripe rail) behave
+  the same.
+- **AC-11.3** A RevenueCat entitlement with lookup key `premium_plus` resolves
+  to the `premium_plus` tier, and **outranks `premium`** when both are active.
+- **AC-11.4** A Premium+ product id maps to the `premium_plus` tier, never to
+  `premium` — the substring ladder is ordered correctly.
+- **AC-11.5** A Premium+ subscriber is reported as `premium_plus` everywhere
+  tier is surfaced — never collapsed to `free` (the `coerceTierName` trap) and
+  never rendered as an empty label.
+- **AC-11.6** A Premium+ purchase is trial-eligible on the user track, like
+  Premium.
+- **AC-11.7** Upgrading to Premium+ unblocks queued sync entries that were
+  gated on a paid tier (the `USER_TRACK_RANK` trap).
+
 ## Non-functional requirements
 
 - **Data isolation.** Every Loadout repository method takes `userId` first and
@@ -266,8 +293,9 @@ As a user mid-flow, I can tell Loadout what kit is available in three ways.
   of every new visibility/ownership query is rendered via `PgDialect` in a test
   (the mocked-`getDb` blind spot).
 - **Performance.** Candidate pre-filtering happens in SQL, not in memory over
-  the whole library. A programme-level adaptation is bounded (see `design.md`
-  § Sizing) and must not fan out into per-exercise round trips.
+  the whole library, and must not fan out into per-exercise round trips. A
+  programme-level adaptation is explicitly bounded at **50 workouts** (413
+  beyond that, no silent truncation) — `design.md` § 7.3.
 - **Offline.** A saved variation is a normal workout and syncs through the
   existing SQLite/queue path; adaptation itself requires connectivity.
 - **UI fidelity.** Mobile screens follow the design handoff (D7, with D1 for

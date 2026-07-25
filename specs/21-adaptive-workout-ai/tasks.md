@@ -11,6 +11,8 @@
 
 ## Phase P0 — `premium_plus` tier restructure (shared prerequisite with spec-26)
 
+Acceptance criteria: `requirements.md` US-11.
+
 - [ ] **T-P0.1 [B]** Migration `<ts>_premium_plus_tier.sql`: insert the
       `premium_plus` catalog row (£29.99 / £299.99, GBP, `ai_access` true,
       `workout_limit` NULL) with `ON CONFLICT (tier_name) DO NOTHING`; add
@@ -71,8 +73,17 @@
       **ON DELETE SET NULL**), `variation_kind` (+ idempotent CHECK),
       `source_gym_id` (FK → saved_gyms, SET NULL), `source_equipment_type_ids`;
       partial index on `parent_workout_id` (design § 2.2).
-- [ ] **T-0.3 [B]** Migration: `workout_exercises.substituted_from_exercise_id` + `substitution_reason`, **plus `workout_exercises(workout_id)`** — that
-      table has no indexes today and is on the hot read path (design § 2.3).
+- [ ] **T-0.3 [B]** Migration: `workout_exercises.substituted_from_exercise_id`,
+      `substitution_reason` (**jsonb**, not text — § 7.2) and
+      `is_user_override`. **Add no new index** — `001_initial_schema.sql:699-702`
+      already creates two `workout_id` indexes plus a composite, and
+      `CREATE INDEX IF NOT EXISTS` matches on name, so a differently-named one
+      would silently become a third duplicate (design § 2.3). Mirror the
+      existing indexes into `schema.ts` instead.
+- [ ] **T-0.3b [B]** Migration: `equipment_types.category` + idempotent backfill
+      of the 28 seeded rows into the five design groups; project it from
+      `GET /exercises/equipment` (design § 2.3b). Phase 0, not Phase 2 —
+      deferring forces an out-of-phase migration (AC-2.2).
 - [ ] **T-0.4 [B]** `schema.ts` mirror for T-0.1…T-0.3 + `SavedGym` /
       `NewSavedGym` exports. Explicit projections only (the
       `equipment_types.description` live-DB drift, design § 2.5).
@@ -89,10 +100,14 @@
 - [ ] **T-0.8 [B]** `EntitlementFeature` gains `"loadout"`; add `assertLoadout`
       reading `subscription_tiers.loadout_access`; **route it explicitly** —
       `assertEntitlement.ts:249` allows any unrouted feature (design § 5.1).
-- [ ] **T-0.9 [B]** Add `isNull(workouts.parentWorkoutId)` to
-      `buildListWhereClause`'s `mine` branch only (design § 4).
+- [ ] **T-0.9 [B]** Add `isNull(workouts.parentWorkoutId)` to **both** `mine`
+      paths in `buildListWhereClause` — the `ownerLibraryOnly` branch too, or
+      trainers still see every variation (design § 4). Variations are created
+      `visibility = 'private'` (design § 2.2).
 - [ ] **T-0.10 [B]** New `loadoutRoutes.ts` sub-app; mount it in `api.ts` —
       **not** a root `.use()` chain extension (TS2589 ceiling, design § 3).
+      `GET /exercises/substitutes` is the one route that does NOT go in it
+      (T-1.7).
 - [ ] **T-0.11 [B]** Tests — `PgDialect` renders (mine-branch `parent IS NULL`,
       saved-gym `user_id`, variations `parent_workout_id` + `created_by`),
       two-user isolation, 402 on the guarded create, 409/400/404 paths.
@@ -114,11 +129,16 @@
       persisted.
 - [ ] **T-1.5 [B]** Structured reason codes (design § 7) — no UI copy in the
       backend.
-- [ ] **T-1.6 [B]** `POST /workouts/:id/variations` re-verifies containment +
-      visibility on every submitted row (the preview response is untrusted on
-      the way back in).
-- [ ] **T-1.7 [B]** `GET /exercises/substitutes` → `{ best, others }`,
-      registered **before** `exercisesGetHandler` (design § 6.4).
+- [ ] **T-1.6 [B]** `POST /workouts/:id/variations` re-verifies **visibility on
+      every** submitted row but **containment only on rows not flagged
+      `is_user_override`** — AC-4.2/4.3 permit a deliberate incompatible pick,
+      and verifying containment everywhere would reject exactly that case
+      (design § 7.1). Also `canRead` on the parent.
+- [ ] **T-1.7 [B]** `GET /exercises/substitutes` → `{ best, others }`, shipped
+      as its own handler next to `exercisesSearchHandler` and registered
+      **before** `exercisesGetHandler` (`api.ts:122`) — a late-mounting sub-app
+      cannot satisfy that ordering (design § 3, § 6.4). Add it to a
+      route-ordering test.
 - [ ] **T-1.8 [B]** Tests — ranker unit cases incl. NULL `secondary_muscles` /
       NULL `equipment_required`; a `PgDialect` test that fails against an
       `&&` implementation; targets preserved byte-for-byte; parent untouched
@@ -139,6 +159,8 @@
       filter in `SwapExercisePopover.tsx:131-142`; used by both surfaces
       (AC-4.4). Persistence stays `substitute-exercise.command.ts`.
 - [ ] **T-2.8 [M]** "Saved setups" list on the parent + `saved` success screen.
+- [ ] **T-2.8b [M]** "Save & start" — persist the variation and start a session
+      against it in one action (AC-5.3), reusing the existing start-session path.
 - [ ] **T-2.9 [M]** Saved-gym management list in Settings/Profile (AC-7.2).
 - [ ] **T-2.10 [M]** Tests + a device-verify checklist in the PR body.
 
@@ -165,7 +187,9 @@
       (design § 2.4).
 - [ ] **T-4.2 [B]** Programme-level preview + create-variant; each adapted
       workout is itself a workout variation; `program_workouts.position`
-      preserved.
+      preserved. Assemble the candidate pool **once** for the union of all
+      muscles across the programme; cap at **50 workouts** → 413 beyond, no
+      silent truncation (design § 7.3).
 - [ ] **T-4.3 [B]** Assign from the variant via the existing programme-assignment
       path; `assertTrainerCanActForClient` on every entry point (AC-8.4).
 - [ ] **T-4.4 [M]** Coach programme detail entry, per-workout entry, review,

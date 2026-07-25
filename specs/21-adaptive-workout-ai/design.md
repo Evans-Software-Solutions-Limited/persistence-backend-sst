@@ -96,10 +96,8 @@ ALTER TABLE saved_gyms ENABLE ROW LEVEL SECURITY;  -- backend-only, zero policie
   connection `getDb()` uses.
 - The Drizzle mirror needs an **expression** index (`lower(btrim(name))`), so
   `uniqueIndex("saved_gyms_user_name_key")` must take an SQL fragment rather
-  than a bare column. Verify the installed drizzle version accepts an SQL
-  expression in `.on()`; if it does not, declare the index in SQL only and add
-  a code comment — the index still exists in the database, Drizzle only needs
-  it for introspection parity.
+  than a bare column. The installed drizzle-orm (`^0.44.2`) accepts SQL
+  expressions in `.on()`, so the mirror is straightforward.
 
 ### 2.2 Workout linkage
 
@@ -121,15 +119,32 @@ plus an idempotent CHECK (guarded with the
 `20260703120000_programs_unified_model.sql`):
 
 ```sql
-ALTER TABLE workouts ADD CONSTRAINT workouts_variation_kind_check
-  CHECK (variation_kind IS NULL OR variation_kind IN ('loadout'));
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'workouts_variation_kind_check'
+  ) THEN
+    ALTER TABLE workouts ADD CONSTRAINT workouts_variation_kind_check
+      CHECK (variation_kind IS NULL OR variation_kind IN ('loadout'));
+  END IF;
+END $$;
 ```
+
+A bare `ADD CONSTRAINT` is **not** idempotent and fails on re-run — write the
+guarded form, not the shorthand.
 
 **`ON DELETE SET NULL` is deliberate.** With § 4's library predicate, deleting a
 parent turns its variations into ordinary standalone workouts that reappear in
 the owner's library — they are never silently destroyed (AC-5.4), and no
 cleanup job is needed. `CASCADE` would delete a user's training history's
 worth of variations behind one tap; `RESTRICT` would make parents undeletable.
+
+**A variation is always created `visibility = 'private'`**, never inheriting the
+parent's. § 4 only patches the `mine` list branch; the `default` branch is
+`visibility = 'public' AND (created_by IS NULL OR created_by != userId)`
+(`workoutRepository.ts:487-495`), so a variation of a public parent that
+inherited `public` would land in every other user's browse — carrying the
+owner's gym kit with it.
 
 **`source_equipment_type_ids` is a frozen snapshot**, not a join. A saved gym
 can be renamed, re-kitted or deleted (AC-7.3); the variation must still be able
@@ -147,17 +162,53 @@ moment either side is hand-edited. Flagged for Brad; cheap to drop if refused.
 ALTER TABLE workout_exercises
   ADD COLUMN IF NOT EXISTS substituted_from_exercise_id uuid
     REFERENCES exercises(id) ON DELETE SET NULL,
-  ADD COLUMN IF NOT EXISTS substitution_reason text;
-
--- workout_exercises has NO indexes declared today and is on the hot read path
--- for every workout fetch; variations multiply its row count.
-CREATE INDEX IF NOT EXISTS workout_exercises_workout_idx
-  ON workout_exercises (workout_id);
+  ADD COLUMN IF NOT EXISTS substitution_reason jsonb,
+  ADD COLUMN IF NOT EXISTS is_user_override boolean NOT NULL DEFAULT false;
 ```
 
+`substitution_reason` is **`jsonb`, not `text`** — § 7 requires the reason to be
+a structured, localisable code (`{ code, missingEquipment, matchedOn }`), and
+AC-3.3 requires it to survive into the saved variation. A `text` column would
+force JSON-in-string.
+
+`is_user_override` records that the athlete deliberately picked this row
+(AC-4.3), which is what lets the save path skip containment re-verification for
+it without weakening the check everywhere else (§ 7).
+
+**No new index.** `workout_exercises` looks index-free in `schema.ts`, but
+`supabase/migrations/001_initial_schema.sql:699-702` already creates
+`idx_workout_exercises_workout`, `idx_workout_exercises_workout_id` (an
+already-redundant pair on the same column) and a composite
+`(workout_id, superset_group)`. `CREATE INDEX IF NOT EXISTS` matches on **name**,
+not definition, so adding a differently-named index would silently create a
+third duplicate on a hot write path. Mirror the existing indexes into
+`schema.ts` instead; tidying the redundant pair is out of scope.
+
 Swap count is **derived** (`count(substituted_from_exercise_id)`), so it can
-never drift from the rows. The reason line survives into the saved variation,
-which is what makes a two-week-old variation legible.
+never drift from the rows. The reason survives into the saved variation, which
+is what makes a two-week-old variation legible.
+
+### 2.3b `equipment_types.category`
+
+AC-2.2 requires the manual picker to be grouped by category from the API rather
+than a hardcoded client list, and `equipment_types` has **no category column**
+today (`id, name, description, created_at` — sibling reference tables
+`accessibility_tags` and `goal_types` both do have one).
+
+```sql
+ALTER TABLE equipment_types
+  ADD COLUMN IF NOT EXISTS category text;
+```
+
+Backfill the 28 seeded rows into the five design groups (free weights /
+machines / cables / bodyweight / cardio) with an explicit idempotent
+`UPDATE … WHERE category IS NULL`, and extend
+`GET /exercises/equipment` to project it (nullable — an uncategorised row
+renders under "Other" rather than disappearing).
+
+**This lands in Phase 0, not Phase 2.** It is only consumed by the mobile
+picker, but deferring it would force an out-of-phase migration after the Phase-0
+migration window has closed.
 
 ### 2.4 Programme linkage (Phase 4)
 
@@ -183,27 +234,38 @@ wiring — this codebase has none; joins are hand-written.
 
 ## 3. Endpoints
 
-All mounted in a **new `loadoutRoutes.ts` sub-app**, not on the root chain.
-The root `.use()` chain in `api.ts` is at TS's instantiation-depth ceiling —
-spec-25 hit TS2589 there and had to nest. Precedent sub-apps: `nutritionRoutes`,
-`subscriptionsRoutes`, `trainersOnBehalfRoutes`.
+All mounted in a **new `loadoutRoutes.ts` sub-app**, not on the root chain —
+with one deliberate exception (`GET /exercises/substitutes`, below). The root
+`.use()` chain in `api.ts` is at TS's instantiation-depth ceiling — spec-25 hit
+TS2589 there and had to nest. Precedent sub-apps mount late:
+`nutritionRoutes` (`api.ts:181`), `subscriptionsRoutes` (`:236`),
+`trainersOnBehalfRoutes` (`:240`).
 
-| Method   | Path                            | Phase | Guard              | Notes                                                |
-| -------- | ------------------------------- | ----- | ------------------ | ---------------------------------------------------- |
-| `GET`    | `/saved-gyms`                   | 0     | auth               | caller's gyms, newest first                          |
-| `POST`   | `/saved-gyms`                   | 0     | auth               | 409 on duplicate name; 400 on unknown equipment id   |
-| `PATCH`  | `/saved-gyms/:id`               | 0     | auth + ownership   | name and/or equipment                                |
-| `DELETE` | `/saved-gyms/:id`               | 0     | auth + ownership   | variations survive (`source_gym_id` → NULL)          |
-| `GET`    | `/workouts/:id/variations`      | 0     | auth + parent read | caller-owned variations of that parent               |
-| `POST`   | `/workouts/:id/variations`      | 0     | auth + **loadout** | persist a reviewed adaptation; 402 when not entitled |
-| `POST`   | `/workouts/:id/loadout/preview` | 1     | auth + **loadout** | compute, persist nothing                             |
-| `POST`   | `/ai/equipment-scan`            | 3     | auth + **loadout** | + daily ceiling (§ 8)                                |
-| `GET`    | `/exercises/substitutes`        | 1     | auth               | ranked picker feed (§ 6.4)                           |
+| Method   | Path                            | Phase | Guard                                 | Notes                                                |
+| -------- | ------------------------------- | ----- | ------------------------------------- | ---------------------------------------------------- |
+| `GET`    | `/saved-gyms`                   | 0     | auth                                  | caller's gyms, newest first                          |
+| `POST`   | `/saved-gyms`                   | 0     | auth                                  | 409 on duplicate name; 400 on unknown equipment id   |
+| `PATCH`  | `/saved-gyms/:id`               | 0     | auth + ownership                      | name and/or equipment                                |
+| `DELETE` | `/saved-gyms/:id`               | 0     | auth + ownership                      | variations survive (`source_gym_id` → NULL)          |
+| `GET`    | `/workouts/:id/variations`      | 0     | auth + parent read                    | caller-owned variations of that parent               |
+| `POST`   | `/workouts/:id/variations`      | 0     | auth + parent `canRead` + **loadout** | persist a reviewed adaptation; 402 when not entitled |
+| `POST`   | `/workouts/:id/loadout/preview` | 1     | auth + **loadout**                    | compute, persist nothing                             |
+| `POST`   | `/ai/equipment-scan`            | 3     | auth + **loadout**                    | + daily ceiling (§ 8)                                |
+| `GET`    | `/exercises/substitutes`        | 1     | auth                                  | ranked picker feed (§ 6.4)                           |
 
-Route-ordering: all Loadout paths are 2–3 segments under distinct prefixes, so
-none collides with the `/workouts/:id` or `/exercises/:id` matchers. `GET
-/exercises/substitutes` **must be registered before `exercisesGetHandler`** —
-the same trap `api.ts:119-121` documents for `exercisesSearchHandler`.
+Route-ordering: the `/saved-gyms/*`, `/workouts/:id/variations` and
+`/workouts/:id/loadout/preview` paths sit under distinct prefixes or at a
+deeper segment count, so none collides with the `/workouts/:id` matcher, and
+`loadoutRoutes` can mount late like its precedents.
+
+**`GET /exercises/substitutes` is the exception and does not live in
+`loadoutRoutes`.** It must be registered **before `exercisesGetHandler`**
+(`api.ts:122`) or the `/exercises/:id` matcher captures `substitutes` as a
+literal id — the trap `api.ts:119-121` documents for `exercisesSearchHandler`.
+A late-mounting sub-app cannot satisfy that. Ship it as its own handler mounted
+immediately next to `exercisesSearchHandler`, and add it to the existing
+route-ordering test (`application/__tests__/trainersOnBehalfRouteOrdering.test.ts`
+is the precedent).
 
 Handler boilerplate is the repeated per-handler `.derive(getAuthUser)` +
 `.onBeforeHandle(requireAuth)` + `.use(Service)` shape — there is no shared
@@ -218,7 +280,7 @@ observed in `workoutRepository.ts`: **list/create take `(userId, …)`; per-row
 reads/writes take `(id, userId, …)`**.
 
 Ownership is folded into the `WHERE` of the mutating statement — never a
-separate `SELECT` first (`workoutRepository.ts:406-411`: _"no separate SELECT,
+separate `SELECT` first (`workoutRepository.ts:398-401`: _"no separate SELECT,
 no TOCTOU window"_), and a zero-row result is a **404**, with no 403/404
 distinction.
 
@@ -226,11 +288,20 @@ distinction.
 
 ## 4. Library pollution
 
-`workoutRepository.buildListWhereClause` (L448) `mine` branch is
-`eq(workouts.createdBy, userId)` with no exclusion. Four Loadout variations
-would become four extra cards in "My Workouts".
+`workoutRepository.buildListWhereClause` (L446) has **two** `mine` paths, and
+neither excludes variations:
 
-Fix: add `isNull(workouts.parentWorkoutId)` to the `mine` branch only.
+```ts
+return ownerLibraryOnly
+  ? and(eq(workouts.createdBy, userId), eq(workouts.showInOwnerLibrary, true)) // L458-462
+  : eq(workouts.createdBy, userId); // L463
+```
+
+Four Loadout variations would become four extra cards in "My Workouts".
+
+Fix: add `isNull(workouts.parentWorkoutId)` to **both** `mine` paths. Patching
+only the second leaves trainers — who call with `ownerLibraryOnly: true` — still
+seeing every variation.
 
 Rejected alternative: setting `show_in_owner_library = false` on variations.
 That column has a specific, documented meaning (coach-authoring de-crowding,
@@ -341,12 +412,24 @@ One SQL query per adaptation, not per exercise:
 2. **One** `select` over `exercises` with: containment filter, primary-muscle
    overlap against that union, the existing `buildVisibilityCondition(userId)`,
    explicit projection, `LIMIT 400`.
-3. Score in TypeScript, per source row, as a **pure function**
-   `rankSubstitutes(source, candidates, context): RankedCandidate[]`.
+3. **One** lookup of the caller's previously-logged exercise ids (a `DISTINCT
+exercise_id` over their session-exercise history, intersected with the
+   candidate ids) — this is the data source for the "logged before" signal,
+   which otherwise has none.
+4. Score in TypeScript, per source row, as a **pure function**:
+
+```ts
+rankSubstitutes(
+  source: SourceExercise,
+  candidates: CandidateExercise[],
+  context: { equipmentTypeIds: string[]; loggedExerciseIds: ReadonlySet<string> },
+): RankedCandidate[];
+```
 
 This keeps the ranker exhaustively unit-testable without a database, avoids N
-round trips, and keeps the visibility predicate in exactly one place. If the
-cap truncates (>400 candidates), log it — no silent truncation.
+round trips, and keeps the visibility predicate in exactly one place. Both
+queries are independent and can run concurrently. If the cap truncates (>400
+candidates), log it — no silent truncation.
 
 ### 6.4 `GET /exercises/substitutes`
 
@@ -379,14 +462,55 @@ exerciseId, from?, reason, sets, reps, rest, supersetGroup, sortOrder }`.
 Nothing is written. `POST /workouts/:id/variations` takes the reviewed plan
 back (the client may have overridden rows) and persists it in one transaction:
 insert the variation workout, then its `workout_exercises` with provenance.
-The server re-verifies containment and visibility on every submitted row —
-the preview response is not trusted on the way back in.
+The preview response is **not** trusted on the way back in.
 
-**Reason strings are server-generated and structured**, not free prose:
+### 7.1 What the save path re-verifies
+
+Two different checks, with deliberately different scope:
+
+| Check                        | Applies to                              | On failure |
+| ---------------------------- | --------------------------------------- | ---------- |
+| Exercise **read-visibility** | **every** submitted row                 | 403 / 400  |
+| Equipment **containment**    | rows **not** flagged as a user override | 400        |
+
+The asymmetry is required by AC-4.2 and AC-4.3: the athlete may deliberately
+pick an incompatible exercise from the full library after an explicit
+"doesn't fit your kit" acknowledgement. Re-verifying containment on _every_
+row would reject exactly the case the ACs mandate — and the design already
+mints a `user_override` reason code for it. Visibility, by contrast, is a
+data-isolation control and is never negotiable: an override cannot be used to
+smuggle in another coach's private exercise.
+
+The override is persisted as `workout_exercises.is_user_override` (§ 2.3), so
+the flag is a stored fact rather than a claim the client re-asserts.
+
+### 7.2 Reasons
+
+**Server-generated and structured**, not free prose:
 `{ code: "equipment_unavailable" | "kept_compatible" | "no_candidate" |
-"user_override", missingEquipment: [...], matchedOn: [...] }`. The mobile layer
-renders copy from the code. This keeps the copy localisable and keeps the
-backend free of UI strings.
+"user_override", missingEquipment: [...], matchedOn: [...] }`, stored in the
+`substitution_reason` **jsonb** column. The mobile layer renders copy from the
+code. This keeps copy localisable and the backend free of UI strings.
+
+### 7.3 Sizing
+
+An adaptation is **pure SQL plus in-memory scoring** — no model call, no
+network hop per exercise — so a single workout is comfortably inside the
+request budget.
+
+**Programme-level (Phase 4) is where this needs a bound.** A 12-week ×
+4-sessions programme is ~48 workouts. The cost is still two queries plus
+scoring — the candidate pool is assembled once for the union of _all_ muscles
+across the programme and reused for every workout — so the work is roughly
+linear in `workout_exercises` rows, not in round trips. Even so:
+
+- Cap a single programme adaptation at **50 workouts**; beyond that return 413
+  with a message to adapt the programme in parts. No silent truncation.
+- The 30s API Gateway ceiling that constrains § 8 does **not** bind here,
+  because nothing calls Bedrock. If Phase 5 ever puts a model in this path, the
+  programme case must move to the async-job model first — that is the point at
+  which Loadout would need the same job infrastructure Mealprint's week plans
+  and programme import need, and it must not be built twice.
 
 ---
 
@@ -490,21 +614,35 @@ The GTM brief's "no code-side tier list, verify it degrades gracefully" is
   compiled and tested) and `IOSPurchaseFlowPresenter.tsx:120-142` (**the live
   rail**) both do `find(t => t.tierName === "premium")`. A `premium_plus`
   catalog row renders **no card at all** — invisible and unpurchasable.
-- `purchaseOfferings.ts:48-65` `tierFromProductId` is a substring ladder; a
-  product id containing `premium_plus` matches `"premium"` **first**. The
-  `premium_plus` branch must go **above** the `premium` branch — a genuine
-  mis-grant bug, not cosmetics.
-- `subscriptionService.ts:144` `USER_TRACK_RANK` is a `Partial<Record<…>>`, so
-  it does **not** compile-error; an unranked tier makes `tierSatisfies` return
-  false and `useAutoRetryOnUpgrade` never unblocks queued sync entries for a
-  Premium+ upgrader. Silent.
-- Compile-error forcing functions (good): `useFeatureGate.ts:254-258`
-  `TRAINER_TIER_LADDER` and the mobile `SubscriptionTierName` union
-  (`domain/models/subscription.ts:20-25`).
-- Display/styling maps that would render `undefined`:
-  `SyncBlockedPresenter:49`, `SyncBlockedBannerMount:22`, `GreetingSection:34`,
+- `purchaseOfferings.ts:48-63` `tierFromProductId` is a `.toLowerCase()` +
+  sequential `.includes()` ladder. There is no `premium_plus` branch today, so a
+  `…premium_plus…` product id falls into the `premium` branch and **grants the
+  wrong tier**. The new branch must be inserted **above** `premium` — a genuine
+  mis-grant bug, not cosmetics. (Note the ladder already tests `enterprise` and
+  `business` before `premium`, so ordering discipline is the established
+  convention here, not a new idea.)
+
+**The genuinely silent failures are only two.** Most of the tier maps are
+_total_ `Record<SubscriptionTierName, …>` types or exhaustive switches, so they
+**fail the build** on a new union member — which is the behaviour we want:
+
+- Compile-error forcing functions (good, no action needed beyond fixing the
+  errors): the mobile `SubscriptionTierName` union
+  (`domain/models/subscription.ts:20-25`), `useFeatureGate.ts:250`
+  `TRAINER_TIER_LADDER`, `SyncBlockedPresenter:49`, `SyncBlockedBannerMount:22`,
   `FeatureGatePrompt:48`, `SubscriptionBadge:42,46,56`,
-  `ProfileDrawerPresenter:45,59`, `SubscriptionSuccessContainer:74,94`.
+  `ProfileDrawerPresenter:41,55` (exhaustive switches, no `default`), and
+  `SubscriptionSuccessContainer:72` — whose in-code comment says it exists
+  _specifically_ to force this compile error.
+- **Silent 1** — `subscriptionService.ts:140` `USER_TRACK_RANK` is
+  `Partial<Record<…>>`, so it does not compile-error; an unranked tier makes
+  `tierSatisfies` return false and `useAutoRetryOnUpgrade` never unblocks queued
+  sync entries for a Premium+ upgrader.
+- **Silent 2** — `useFeatureGate.ts:106` `USER_UPGRADE_CHAIN` is also `Partial`,
+  in the same file where `TRAINER_TIER_LADDER` is total. Same file, opposite
+  safety.
+- `GreetingSection.tsx:32` is loosely typed but has a `|| "Free"` fallback
+  (L58), so it degrades to the wrong label rather than `undefined`.
 
 **P0's mobile task is therefore "make the paywall genuinely catalog-driven for
 the consumer track"** — iterate the non-trainer catalog rows in tier-rank order
@@ -526,21 +664,29 @@ Screens recreate design D7 in the app's existing primitives and tokens
 prototype code, no raw hex (the `no-raw-hex-colors` lint enforces this), the
 container/presenter seam as everywhere else.
 
-| Step       | Screen                                                     | Notes                                                   |
-| ---------- | ---------------------------------------------------------- | ------------------------------------------------------- |
-| `detail`   | Loadout entry card on workout detail + "Saved setups" list | Locked + upsell sheet when not entitled                 |
-| `collect`  | Scan / Pick equipment / reuse a saved gym                  | Equipment groups come from the API, not a constant      |
-| `scan`     | Camera → draft-confirm (design D1)                         | `SnapAISheetContainer` transport: ≤1080px, q0.7, base64 |
-| `manual`   | Grouped chips + name field + save toggle                   |                                                         |
-| `adapting` | Skeleton                                                   | Real request, not a timer                               |
-| `review`   | Per-row KEPT/SWAPPED + reason + swap sheet                 | Shared component with D6 (AC-4.4)                       |
-| `saved`    | Success                                                    | "your original stays exactly as it was"                 |
+| Step       | Screen                                                     | Notes                                                               |
+| ---------- | ---------------------------------------------------------- | ------------------------------------------------------------------- |
+| `detail`   | Loadout entry card on workout detail + "Saved setups" list | Locked + upsell sheet when not entitled                             |
+| `collect`  | Scan / Pick equipment / reuse a saved gym                  | Equipment groups come from the API, not a constant                  |
+| `scan`     | Camera → draft-confirm (design D1)                         | `SnapAISheetContainer` transport: resize + q0.7 + base64 (see note) |
+| `manual`   | Grouped chips + name field + save toggle                   |                                                                     |
+| `adapting` | Skeleton                                                   | Real request, not a timer                                           |
+| `review`   | Per-row KEPT/SWAPPED + reason + swap sheet                 | Shared component with D6 (AC-4.4)                                   |
+| `saved`    | Success                                                    | "your original stays exactly as it was"                             |
 
 Coach mode is the same machine in the trainer tone with programme-level entry
 and an assign action (AC-8.3).
 
+> **Payload-size note.** `SnapAISheetContainer.tsx:119` resizes with
+> `[{ resize: { width: MAX_DIMENSION } }]` — **width only**, despite its own doc
+> comment (L21) saying "long edge". A portrait photo therefore still exceeds
+> 1080 on the height axis, and a small image is upscaled. Budget the Phase-3
+> payload against that reality, or fix the transport (a shared fix would also
+> help Snap AI).
+
 **One shared `EquipmentAwareSwapSheet`** replaces the ad-hoc filtering in
-`SwapExercisePopover.tsx:131-142` and serves both the standalone swap and the
+`SwapExercisePopover.tsx:131-142` (whose header comment at L17-19 documents the
+gap: _"V2 has no `similar_to` API"_) and serves both the standalone swap and the
 Loadout review row. Its persistence path is the untouched
 `substitute-exercise.command.ts`.
 
