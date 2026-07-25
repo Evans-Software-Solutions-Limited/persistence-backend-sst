@@ -8,8 +8,24 @@ describe("Home", () => {
     expect(screen.getByText("Track everything.")).toBeDefined();
     expect(screen.getByText("One loop.")).toBeDefined();
     expect(screen.getByText("Same programme.")).toBeDefined();
-    // AnyGym is always one word.
-    expect(screen.queryByText(/any gym\.?\s+premium/i)).toBeNull();
+    // Feature brands are Loadout + Mealprint (renamed from AnyGym/AnyMeal
+    // 2026-07-24) — the old names must not resurface anywhere on the page.
+    const text = document.body.textContent ?? "";
+    expect(text).not.toMatch(
+      /\banygym\b|\bany gym\b|\banymeal\b|\bany meal\b/i,
+    );
+    expect(screen.getByText("Loadout · Premium+")).toBeDefined();
+    expect(screen.getByText("Mealprint · Premium+")).toBeDefined();
+  });
+
+  it("renders the Mealprint section with plan mock and Premium+ link", () => {
+    renderPage(<Home />);
+    expect(screen.getByText("on your plate.")).toBeDefined();
+    expect(screen.getByText("Mealprint plans")).toBeDefined();
+    expect(screen.getByText(/Greek yogurt & berry bowl/)).toBeDefined();
+    // The section CTA links to pricing.
+    const cta = screen.getByText(/See plans & pricing/).closest("a");
+    expect(cta?.getAttribute("href")).toBe("/pricing#athletes");
   });
 
   it("shows the App Store CTA as a non-linking 'coming soon' state", () => {

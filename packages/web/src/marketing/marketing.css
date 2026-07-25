@@ -1522,7 +1522,7 @@
 }
 
 /* ── AnyGym ───────────────────────────────────────────────────────────── */
-.mkt .anygym {
+.mkt .adapt {
   border-top: 1px solid var(--m-line);
   background: linear-gradient(180deg, transparent, var(--m-bg-2));
 }
@@ -1550,13 +1550,13 @@
   background: var(--m-gold);
   box-shadow: 0 0 8px var(--m-gold);
 }
-.mkt .anygym-grid {
+.mkt .adapt-grid {
   display: grid;
   grid-template-columns: 0.95fr 1.05fr;
   gap: 56px;
   align-items: center;
 }
-.mkt .anygym-left h2 {
+.mkt .adapt-left h2 {
   font-family: var(--m-disp);
   font-weight: 700;
   letter-spacing: -0.03em;
@@ -1566,10 +1566,10 @@
   margin: 20px 0 20px;
   text-wrap: balance;
 }
-.mkt .anygym-left h2 .it {
+.mkt .adapt-left h2 .it {
   color: var(--m-accent-t);
 }
-.mkt .anygym-left > p {
+.mkt .adapt-left > p {
   font-size: 16.5px;
   line-height: 1.65;
   color: var(--m-text-2);
@@ -1577,19 +1577,19 @@
   margin-bottom: 28px;
   text-wrap: pretty;
 }
-.mkt .anygym-steps {
+.mkt .adapt-steps {
   display: flex;
   flex-direction: column;
   gap: 2px;
   margin-bottom: 30px;
 }
-.mkt .anystep {
+.mkt .adaptstep {
   display: flex;
   gap: 16px;
   align-items: flex-start;
   padding: 14px 0;
 }
-.mkt .anystep-n {
+.mkt .adaptstep-n {
   width: 30px;
   height: 30px;
   border-radius: 9px;
@@ -1603,19 +1603,19 @@
   justify-content: center;
   flex-shrink: 0;
 }
-.mkt .anystep b {
+.mkt .adaptstep b {
   font-size: 15px;
   font-weight: 600;
   color: var(--m-text);
   display: block;
   margin-bottom: 3px;
 }
-.mkt .anystep span {
+.mkt .adaptstep span {
   font-size: 13.5px;
   color: var(--m-text-3);
   line-height: 1.5;
 }
-.mkt .anygym-b2b {
+.mkt .adapt-b2b {
   display: inline-flex;
   align-items: center;
   gap: 10px;
@@ -1626,14 +1626,14 @@
   border-radius: 999px;
   padding: 10px 8px 10px 18px;
 }
-.mkt .anygym-b2b:hover {
+.mkt .adapt-b2b:hover {
   color: var(--m-text-2);
 }
-.mkt .anygym-b2b b {
+.mkt .adapt-b2b b {
   color: var(--m-text);
   font-weight: 600;
 }
-.mkt .anygym-b2b .go {
+.mkt .adapt-b2b .go {
   background: var(--m-accent);
   color: var(--m-accent-btn-fg);
   font-weight: 600;
@@ -1644,10 +1644,10 @@
   align-items: center;
   gap: 6px;
 }
-.mkt .anygym-b2b:hover .arw {
+.mkt .adapt-b2b:hover .arw {
   transform: translateX(3px);
 }
-.mkt .anymock {
+.mkt .adaptmock {
   position: relative;
   background: linear-gradient(180deg, var(--m-surface), var(--m-bg-2));
   border: 1px solid var(--m-line);
@@ -1656,7 +1656,7 @@
   overflow: hidden;
   box-shadow: var(--m-shadow-card);
 }
-.mkt .anymock::before {
+.mkt .adaptmock::before {
   content: "";
   position: absolute;
   top: -40%;
@@ -1666,21 +1666,21 @@
   background: radial-gradient(circle, var(--m-accent-dim), transparent 65%);
   pointer-events: none;
 }
-.mkt .anymock-head {
+.mkt .adaptmock-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 18px;
   position: relative;
 }
-.mkt .anymock-head .lbl {
+.mkt .adaptmock-head .lbl {
   font-family: var(--m-mono);
   font-size: 10px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--m-text-4);
 }
-.mkt .anymock-head .loc {
+.mkt .adaptmock-head .loc {
   font-size: 12px;
   color: var(--m-accent-t);
   font-family: var(--m-mono);
@@ -1688,13 +1688,13 @@
   align-items: center;
   gap: 6px;
 }
-.mkt .anychips {
+.mkt .adaptchips {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 20px;
 }
-.mkt .anychip {
+.mkt .adaptchip {
   font-size: 12px;
   color: var(--m-text-2);
   background: var(--m-accent-dim);
@@ -1705,41 +1705,41 @@
   align-items: center;
   gap: 6px;
 }
-.mkt .anychip.off {
+.mkt .adaptchip.off {
   color: var(--m-text-4);
   background: var(--m-surface-2);
   border-color: var(--m-line);
   text-decoration: line-through;
   text-decoration-color: var(--m-text-4);
 }
-.mkt .anychip svg {
+.mkt .adaptchip svg {
   width: 12px;
   height: 12px;
 }
-.mkt .anydivide {
+.mkt .adaptdivide {
   display: flex;
   align-items: center;
   gap: 12px;
   margin: 6px 0 16px;
 }
-.mkt .anydivide .ln {
+.mkt .adaptdivide .ln {
   flex: 1;
   height: 1px;
   background: var(--m-line);
 }
-.mkt .anydivide .tx {
+.mkt .adaptdivide .tx {
   font-family: var(--m-mono);
   font-size: 10px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--m-accent-t);
 }
-.mkt .anyworkout {
+.mkt .adaptworkout {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
-.mkt .anyex {
+.mkt .adaptex {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -1748,7 +1748,7 @@
   border: 1px solid var(--m-line);
   border-radius: 12px;
 }
-.mkt .anyex .ix {
+.mkt .adaptex .ix {
   width: 28px;
   height: 28px;
   border-radius: 8px;
@@ -1762,18 +1762,18 @@
   font-weight: 500;
   flex-shrink: 0;
 }
-.mkt .anyex .nm {
+.mkt .adaptex .nm {
   flex: 1;
   font-size: 13.5px;
   color: var(--m-text);
   font-weight: 500;
 }
-.mkt .anyex .st {
+.mkt .adaptex .st {
   font-family: var(--m-mono);
   font-size: 11px;
   color: var(--m-text-3);
 }
-.mkt .anyex .swap {
+.mkt .adaptex .swap {
   font-family: var(--m-mono);
   font-size: 9.5px;
   color: var(--m-ember-t);
@@ -2647,7 +2647,7 @@
   .mkt .hero-phone {
     order: -1;
   }
-  .mkt .anygym-grid {
+  .mkt .adapt-grid {
     grid-template-columns: 1fr;
     gap: 40px;
   }

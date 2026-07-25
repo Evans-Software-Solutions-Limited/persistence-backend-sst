@@ -27,7 +27,8 @@ export function MarketingFooter() {
           <div className="footer-col">
             <h4>Product</h4>
             <SectionLink hash="pillars">Features</SectionLink>
-            <SectionLink hash="anygym">AnyGym</SectionLink>
+            <SectionLink hash="loadout">Loadout</SectionLink>
+            <SectionLink hash="mealprint">Mealprint</SectionLink>
             <SectionLink hash="coach">For coaches</SectionLink>
             <Link to="/pricing">Pricing</Link>
           </div>

@@ -138,7 +138,7 @@ export function Pricing() {
     title:
       "Pricing — Persistence Gym & Coaching App | Free, Premium & Premium+ (GBP)",
     description:
-      "Simple GBP pricing for athletes, coaches and teams. Free forever, Premium from £12.99/mo, Premium+ with AnyGym and AnyMeal, plus three coach tiers and Persistence for Teams.",
+      "Simple GBP pricing for athletes, coaches and teams. Free forever, Premium from £12.99/mo, Premium+ with Loadout and Mealprint, plus three coach tiers and Persistence for Teams.",
     path: "/pricing",
   });
 
@@ -221,7 +221,7 @@ export function Pricing() {
               {/* Premium+ */}
               <div className="plan flagship" data-reveal style={d(200)}>
                 <span className="plan-ribbon gold">
-                  Flagship · AnyGym + AnyMeal
+                  Flagship · Loadout + Mealprint
                 </span>
                 <div className="plan-name">Premium+</div>
                 <div className="plan-status soon">Coming soon</div>
@@ -237,10 +237,10 @@ export function Pricing() {
                     <b>AI Workout Suggestions</b>
                   </Feat>
                   <Feat>
-                    <b>AnyGym equipment scan</b> — equipment-aware programming
+                    <b>Loadout equipment scan</b> — equipment-aware programming
                   </Feat>
                   <Feat>
-                    <b>AnyMeal meal planning</b> — food plans &amp;
+                    <b>Mealprint meal planning</b> — food plans &amp;
                     fill-your-macros ideas
                   </Feat>
                   <Feat>Program import</Feat>
@@ -344,7 +344,7 @@ export function Pricing() {
                     people.
                   </h2>
                   <p>
-                    With AnyGym, your people keep their programme no matter
+                    With Loadout, your people keep their programme no matter
                     where they train — any equipment, any location. Give your
                     organisation Persistence seats and everyone stays
                     consistent, wherever the day takes them.
@@ -358,8 +358,8 @@ export function Pricing() {
                     <a href={TEAMS_MAILTO} className="btn btn-fill">
                       Contact sales
                     </a>
-                    <Link to="/#anygym" className="btn btn-line">
-                      See how AnyGym works
+                    <Link to="/#loadout" className="btn btn-line">
+                      See how Loadout works
                     </Link>
                   </div>
                   <p className="teams-fine">
@@ -369,7 +369,7 @@ export function Pricing() {
                 </div>
                 <div className="teams-right">
                   <div className="teams-stat">
-                    <span className="n">AnyGym</span>
+                    <span className="n">Loadout</span>
                     <span className="l">
                       Programmes adapt to whatever equipment is on site
                     </span>
@@ -412,8 +412,8 @@ export function Pricing() {
                 <p>
                   Premium gives you unlimited tracking plus Snap AI nutrition
                   logging. Premium+ adds the full adaptive suite — AI workout
-                  suggestions, AnyGym equipment scan, AnyMeal meal planning and
-                  program import.
+                  suggestions, Loadout equipment scan, Mealprint meal planning
+                  and program import.
                 </p>
               </div>
               <div className="faq-item">

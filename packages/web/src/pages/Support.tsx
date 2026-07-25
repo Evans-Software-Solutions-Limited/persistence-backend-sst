@@ -152,7 +152,7 @@ export function Support() {
                 <p>
                   Free covers full logging and nutrition tracking. Premium adds
                   unlimited history, analytics and AI logging; Premium+ adds
-                  AnyGym and AnyMeal. Compare them on the{" "}
+                  Loadout and Mealprint. Compare them on the{" "}
                   <Link to="/pricing">pricing page</Link>.
                 </p>
               </div>

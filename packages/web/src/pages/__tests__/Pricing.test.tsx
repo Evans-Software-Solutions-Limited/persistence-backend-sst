@@ -23,7 +23,7 @@ describe("Pricing", () => {
     expect(screen.getAllByText(/2 months free/i).length).toBeGreaterThan(0);
   });
 
-  it("keeps AnyGym one word and marks Premium+ as coming soon", () => {
+  it("shows the Loadout + Mealprint flagship as coming soon at £29.99", () => {
     renderPage(<Pricing />);
     const flagship = screen
       .getByText("Premium+")
@@ -31,7 +31,16 @@ describe("Pricing", () => {
     expect(
       within(flagship).getAllByText(/coming soon/i).length,
     ).toBeGreaterThan(0);
-    expect(within(flagship).getByText(/AnyGym equipment scan/i)).toBeDefined();
+    expect(within(flagship).getByText(/Loadout equipment scan/i)).toBeDefined();
+    expect(
+      within(flagship).getByText(/Mealprint meal planning/i),
+    ).toBeDefined();
+    expect(within(flagship).getByText("29.99")).toBeDefined();
+    // Renamed 2026-07-24 — the old feature brands must not resurface.
+    const text = document.body.textContent ?? "";
+    expect(text).not.toMatch(
+      /\banygym\b|\bany gym\b|\banymeal\b|\bany meal\b/i,
+    );
   });
 
   it("does NOT ship founding / waitlist content", () => {
