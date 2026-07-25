@@ -130,12 +130,15 @@ export function TrainerSubscriptionCard({
               <Ionicons name="checkmark" size={18} color={color.$primary} />
               <Text style={styles.proFeatureText}>AI supported reporting</Text>
             </View>
-            <View style={styles.proFeature}>
-              <Ionicons name="checkmark" size={18} color={color.$primary} />
-              <Text style={styles.proFeatureText}>
-                Client access to Reps buddy
-              </Text>
-            </View>
+            {/*
+              "Client access to Reps buddy" removed 2026-07-25 (Brad):
+              gym_buddy is an entitlement stub — assertEntitlement returns
+              { allowed: true } with no backend surface and no UI. The
+              "AI supported reporting" row above it STAYS: the AI weekly
+              client summary is real (POST
+              /trainers/me/clients/:clientId/ai-summary, rendered in the
+              coach Client Detail screen).
+            */}
           </View>
         </View>
       </View>

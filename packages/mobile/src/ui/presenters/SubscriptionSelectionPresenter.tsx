@@ -552,34 +552,25 @@ export function getFeaturesList(
 
   if (tier.features.progress) features.push("Progress tracking");
 
+  // Brad, 2026-07-25: the only unshipped features we advertise are Loadout
+  // and Mealprint. The old rows here were "N AI workouts per month" and
+  // "Reps Gym Buddy…" — there is NO workout-generation path anywhere in
+  // application/workouts, and `gym_buddy` is an explicit entitlement stub
+  // (assertEntitlement returns { allowed: true } with no backend surface
+  // and no UI). Both are gone.
+  //
+  // What ai_access actually unlocks TODAY is Snap AI: nutrition logging
+  // from a photo or free text (M9.5, shipped). That is the honest Premium
+  // differentiator, so it takes their place.
   if (tier.features.ai || tier.aiAccess) {
-    // Post tier-simplification: Premium / Premium+ get a numeric quota
-    // (`aiWorkoutLimit`, read from the catalog rather than a hardcoded
-    // "6" so Premium+'s 30/mo doesn't render Premium's copy — M19-P0);
-    // trainer tiers get "AI workout generation" + the AI Buddy instead.
-    // Basic dropped.
-    if (tier.tierName === "premium" || tier.tierName === "premium_plus") {
-      features.push(`${tier.aiWorkoutLimit} AI workouts per month`);
-    } else {
-      features.push("AI workout generation");
-    }
-  }
-
-  if (
-    tier.features.gym_buddy ||
-    tier.tierName === "premium" ||
-    tier.tierName === "premium_plus"
-  ) {
-    features.push(
-      "Reps Gym Buddy - there to buddy you on your fitness journey",
-    );
+    features.push("AI nutrition logging from a photo or free text");
   }
 
   // The adaptive suite — Premium+'s entire reason to exist (M19-P0).
   // Catalog-driven off the `features` JSONB rather than a tier-name check,
   // so the copy follows whatever the catalog says a tier includes. Without
-  // these two rows the £29.99 card renders bullets byte-identical to the
-  // £12.99 one apart from the AI-workout count, i.e. it sells nothing.
+  // these two rows the £29.99 card renders bullets identical to the £12.99
+  // one, i.e. it sells nothing.
   if (tier.features.loadout) {
     features.push("Loadout - adapt any workout to the equipment you have");
   }

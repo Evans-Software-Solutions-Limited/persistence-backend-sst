@@ -60,7 +60,7 @@ INSERT INTO subscription_tiers (
   29.99, 299.99, 'GBP',
   NULL, true, 30, true, true, true,
   NULL, false,
-  '{"workouts": "unlimited", "ai_workouts": 30, "gym_buddy": true, "gym_buddy_can_create": true, "gym_buddy_can_suggest": true, "progress": true, "loadout": true, "mealprint": true}',
+  '{"workouts": "unlimited", "progress": true, "loadout": true, "mealprint": true}',
   false, false, false
 )
 ON CONFLICT (tier_name) DO NOTHING;
@@ -86,22 +86,30 @@ WHERE tier_name IN (
   'medium_enterprise'
 );
 
--- 4. Strip the "trainer analytics" claim from the trainer tier
---    descriptions. There is NO analytics feature (Brad, 2026-07-25) —
---    nothing in the app or backend gates an analytics screen, and the
---    paywall bullets that made the same claim were removed in this branch.
+-- 4. Strip every UNBUILT feature claim from the tier descriptions.
+--
+--    Brad, 2026-07-25: the only unshipped features we advertise are
+--    Loadout and Mealprint. Analytics, data export, "gym buddy" and
+--    "AI-generated workouts" are all sold in this column today and NONE
+--    of them exist — no analytics screen, no export path, `gym_buddy` is
+--    an explicit entitlement stub with no backend surface and no UI, and
+--    there is no workout-generation path anywhere in
+--    `application/workouts/`.
 --
 --    This column is not dead copy: `SubscriptionRepository.findForUser`
 --    returns it as `tierDescription` and the Profile Drawer renders it
 --    verbatim — for every user, including free ones via the synthesised
---    free-tier row — so the claim survives in the product until it is fixed
---    HERE. TypeScript cannot reach it.
+--    free-tier row — so these claims survive in the product until they are
+--    fixed HERE. TypeScript cannot reach them.
 --
---    The AI buddy half of the sentence stays — the AI weekly client
---    summary is real (`POST /trainers/me/clients/:clientId/ai-summary`).
+--    The AI-buddy half of the trainer sentence stays: the AI weekly client
+--    summary is real (`POST /trainers/me/clients/:clientId/ai-summary`,
+--    rendered in the coach Client Detail screen).
 --
---    Idempotent: the anchored pattern no longer matches once rewritten, so
---    a re-run is a no-op.
+--    Idempotent: each statement rewrites to text its own predicate no
+--    longer matches, so a re-run is a no-op.
+
+-- 4a. Trainer tiers: drop the analytics claim, keep the AI buddy.
 UPDATE subscription_tiers
 SET description = regexp_replace(
   description,
@@ -114,3 +122,14 @@ WHERE tier_name IN (
   'medium_enterprise'
 )
   AND description LIKE '%and trainer analytics.';
+
+-- 4b. Consumer tiers: drop the AI-workout quota and gym-buddy claims.
+UPDATE subscription_tiers
+SET description = 'Workout and nutrition tracking, with a 3 workout limit.'
+WHERE tier_name = 'free'
+  AND description LIKE '%gym buddy%';
+
+UPDATE subscription_tiers
+SET description = 'Unlimited workouts and history, plus AI nutrition logging from a photo or free text.'
+WHERE tier_name = 'premium'
+  AND description LIKE '%gym buddy%';

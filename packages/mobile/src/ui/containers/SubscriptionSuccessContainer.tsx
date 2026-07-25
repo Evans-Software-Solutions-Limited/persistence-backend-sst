@@ -44,14 +44,13 @@ export function getSubscriptionBenefits(
   // Post tier-simplification: all surviving trainer tiers carry the
   // former Pro entitlements (AI Buddy etc.). Was `_pro` suffix-checked.
   if (isTrainerTierName(tier)) {
-    // Analytics dropped from this copy 2026-07-25 (Brad): no analytics
-    // feature exists. Reps Gym Buddy and the AI client summaries DO, so
-    // they stay.
+    // Analytics and Gym Buddy both dropped from this copy 2026-07-25
+    // (Brad): neither exists. The AI weekly client summary does, so that
+    // is what this benefit now describes.
     benefits.push({
       icon: "sparkles",
-      title: "AI client insights & Gym Buddy",
-      description:
-        "AI client summaries & Reps Gym Buddy support for personal use & clients",
+      title: "AI client insights",
+      description: "AI weekly summaries of each client's training and habits",
     });
   }
 

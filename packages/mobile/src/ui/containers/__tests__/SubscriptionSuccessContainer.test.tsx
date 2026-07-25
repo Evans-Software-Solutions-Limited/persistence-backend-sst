@@ -266,9 +266,7 @@ describe("getSubscriptionBenefits", () => {
 
   it("adds AI client insights for any trainer tier, without claiming analytics (not a built feature)", () => {
     const benefits = getSubscriptionBenefits("individual_trainer");
-    expect(
-      benefits.some((b) => b.title === "AI client insights & Gym Buddy"),
-    ).toBe(true);
+    expect(benefits.some((b) => b.title === "AI client insights")).toBe(true);
   });
 });
 

@@ -359,11 +359,18 @@ describe("getFeaturesList", () => {
     expect(features).toContain("AI Buddy Included");
   });
 
-  it("derives user-tier features for premium (unlimited workouts + 6 AI + gym buddy)", () => {
+  it("derives user-tier features for premium — AI nutrition logging, no unbuilt claims", () => {
     const features = getFeaturesList(PREMIUM, false);
     expect(features).toContain("Unlimited workouts");
-    expect(features).toContain("6 AI workouts per month");
-    expect(features.some((f) => f.includes("Reps Gym Buddy"))).toBe(true);
+    expect(features).toContain(
+      "AI nutrition logging from a photo or free text",
+    );
+    // Neither exists (Brad, 2026-07-25): no workout-generation path, and
+    // gym_buddy is an entitlement stub with no backend surface or UI.
+    expect(features.some((f) => f.includes("AI workouts per month"))).toBe(
+      false,
+    );
+    expect(features.some((f) => f.includes("Gym Buddy"))).toBe(false);
   });
 
   // M19-P0: Premium+ costs 2.3x Premium, and without these two rows its
@@ -378,7 +385,6 @@ describe("getFeaturesList", () => {
       features: {
         workouts: "unlimited",
         progress: true,
-        gym_buddy: true,
         loadout: true,
         mealprint: true,
       },
@@ -386,7 +392,6 @@ describe("getFeaturesList", () => {
     const features = getFeaturesList(premiumPlus, false);
     expect(features.some((f) => f.startsWith("Loadout"))).toBe(true);
     expect(features.some((f) => f.startsWith("Mealprint"))).toBe(true);
-    expect(features).toContain("30 AI workouts per month");
     // ...and it is genuinely differentiated from the tier below it.
     expect(features).not.toEqual(getFeaturesList(PREMIUM, false));
   });
@@ -413,7 +418,7 @@ describe("getFeaturesList", () => {
     expect(features).toContain("25 workouts per month");
   });
 
-  it("falls back to workoutLimit when features.workouts is absent — generic AI label for non-premium", () => {
+  it("falls back to workoutLimit when features.workouts is absent", () => {
     const tier = {
       ...PREMIUM,
       tierName: "free" as const,
@@ -423,7 +428,9 @@ describe("getFeaturesList", () => {
     };
     const features = getFeaturesList(tier, false);
     expect(features).toContain("5 workouts per month");
-    expect(features).toContain("AI workout generation");
+    expect(features).toContain(
+      "AI nutrition logging from a photo or free text",
+    );
   });
 
   it("adds Progress tracking when features.progress is true", () => {
@@ -432,16 +439,6 @@ describe("getFeaturesList", () => {
       false,
     );
     expect(features).toContain("Progress tracking");
-  });
-
-  it("derives user-tier features for premium_plus (unlimited workouts + its own 30-AI quota + gym buddy) — M19-P0", () => {
-    const features = getFeaturesList(PREMIUM_PLUS, false);
-    expect(features).toContain("Unlimited workouts");
-    // Read from the catalog's aiWorkoutLimit (30), NOT premium's
-    // hardcoded "6" — a Premium+ card must never show Premium's copy.
-    expect(features).toContain("30 AI workouts per month");
-    expect(features).not.toContain("6 AI workouts per month");
-    expect(features.some((f) => f.includes("Reps Gym Buddy"))).toBe(true);
   });
 });
 
