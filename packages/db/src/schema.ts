@@ -349,9 +349,12 @@ export const savedGyms = pgTable(
     // deliberately declares the bare-column form — it exists to record the
     // index's NAME and rough shape, not to reproduce its predicate. The
     // authoritative definition is `saved_gyms_user_name_key` in
-    // `20260726120000_saved_gyms.sql`; the repository does its own
-    // case-insensitive pre-check and maps a unique violation to 409, so nothing
-    // depends on this mirror being expression-accurate.
+    // `20260726120000_saved_gyms.sql`.
+    //
+    // Nothing depends on this mirror being expression-accurate: the repository
+    // detects a duplicate by CATCHING the unique violation and mapping it to 409
+    // — deliberately NOT by a pre-flight SELECT, which would be racy. Do not
+    // "simplify" that catch away on the strength of this comment.
     uniqueIndex("saved_gyms_user_name_key").on(t.userId, t.name),
     index("saved_gyms_user_created_idx").on(t.userId, t.createdAt.desc()),
   ],

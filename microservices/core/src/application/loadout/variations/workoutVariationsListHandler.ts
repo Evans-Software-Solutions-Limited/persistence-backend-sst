@@ -13,7 +13,7 @@ import {
  * list: gym name, kit snapshot, swap count and age per variation.
  *
  * TWO gates, both necessary:
- *   1. `canReadWorkout` on the PARENT — you can only list setups for a workout
+ *   1. `findReadableWorkout` on the PARENT — you can only list setups for a workout
  *      you're allowed to open (own / public / friends / assigned). Read, not
  *      own, per AC-1.2.
  *   2. `created_by = caller` inside `listVariations` — two athletes adapting the
@@ -40,11 +40,11 @@ export const workoutVariationsListHandler = new Elysia()
       const { sub: userId } = getUser(ctx);
       const parentId = ctx.params.id;
 
-      const canRead = await ctx.WorkoutRepository.canReadWorkout(
+      const parent = await ctx.WorkoutRepository.findReadableWorkout(
         parentId,
         userId,
       );
-      if (!canRead) {
+      if (!parent) {
         // One 404 for "missing" and "not allowed" alike — no 403/404
         // distinction, so a caller can't probe for workouts they can't see.
         ctx.set.status = 404;

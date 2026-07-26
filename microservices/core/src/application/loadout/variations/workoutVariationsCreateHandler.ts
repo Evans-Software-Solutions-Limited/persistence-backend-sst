@@ -90,13 +90,28 @@ export const workoutVariationsCreateHandler = new Elysia()
         };
       }
 
-      const canRead = await ctx.WorkoutRepository.canReadWorkout(
+      const parent = await ctx.WorkoutRepository.findReadableWorkout(
         parentId,
         userId,
       );
-      if (!canRead) {
+      if (!parent) {
         ctx.set.status = 404;
         return { code: "not_found", message: "Workout not found" };
+      }
+
+      // A variation of a variation would be UNREACHABLE from every listing
+      // surface: the `parent_workout_id IS NULL` library predicate hides it, and
+      // `listVariations(root)` filters on `parent_workout_id = root` so it never
+      // appears under the original either. Adapt the ROOT workout again instead —
+      // that is also the semantically right thing, since each variation is a
+      // point-in-time adaptation OF the original, not of another adaptation.
+      if (parent.parentWorkoutId != null) {
+        ctx.set.status = 400;
+        return {
+          code: "PARENT_IS_A_VARIATION",
+          message: "Adapt the original workout, not one of its saved setups",
+          rootWorkoutId: parent.parentWorkoutId,
+        };
       }
 
       const verdict = await assertEntitlement(userId, "loadout");
@@ -104,11 +119,32 @@ export const workoutVariationsCreateHandler = new Elysia()
         throw new EntitlementError(verdict, "loadout");
       }
 
-      // Read-visibility on EVERY submitted row — see the header comment.
-      const unreadable = await ctx.ExerciseRepository.findUnreadableExerciseIds(
-        userId,
-        exercises.map((ex) => ex.exerciseId),
+      // Read-visibility on every submitted row, with ONE exemption: rows
+      // carried over from the parent.
+      //
+      // `findReadableWorkout` grants own / public / friends / assigned, but the
+      // exercise-catalogue predicate (`buildVisibilityCondition`) grants only
+      // system / own-custom / programme-assigned / workout-assigned — there is no
+      // "this exercise is in a workout I can read" branch. Without the exemption,
+      // adapting a PUBLIC template or a friend's workout that uses the owner's
+      // custom exercises would 400 on an exercise the caller is looking at on
+      // screen — exactly the case AC-1.2 mandates.
+      //
+      // The exemption grants nothing new: `fetchExercisesForWorkouts` embeds
+      // exercise fields WITHOUT the catalogue predicate (documented as
+      // intentional in `exerciseRepository.ts`), so these rows are already
+      // readable via workout detail. Anything NOT in the parent — i.e. every
+      // swap — must still pass the catalogue predicate, which is what stops an
+      // adaptation being used to smuggle in another coach's private exercise.
+      const parentExerciseIds = new Set(
+        await ctx.WorkoutRepository.listExerciseIdsForWorkout(parentId),
       );
+      const unreadable = (
+        await ctx.ExerciseRepository.findUnreadableExerciseIds(
+          userId,
+          exercises.map((ex) => ex.exerciseId),
+        )
+      ).filter((id) => !parentExerciseIds.has(id));
       if (unreadable.length > 0) {
         ctx.set.status = 400;
         return {
@@ -133,6 +169,22 @@ export const workoutVariationsCreateHandler = new Elysia()
         }
       }
 
+      // The frozen kit snapshot gets the SAME validation the saved-gym kit gets.
+      // It is not decorative: Phase 2 renders it as the variation's kit summary
+      // and Phase 4 reads it back as the equipment context, so a bogus id becomes
+      // a chip with no name and a duplicate becomes the same chip twice.
+      const kit = sourceEquipmentTypeIds ?? [];
+      const unknownKit =
+        await ctx.SavedGymRepository.findUnknownEquipmentTypeIds(kit);
+      if (unknownKit.length > 0) {
+        ctx.set.status = 400;
+        return {
+          code: "UNKNOWN_EQUIPMENT_TYPE",
+          message: "One or more equipment types do not exist",
+          unknownEquipmentTypeIds: unknownKit,
+        };
+      }
+
       const variation = await ctx.WorkoutRepository.createVariation(
         userId,
         parentId,
@@ -141,7 +193,10 @@ export const workoutVariationsCreateHandler = new Elysia()
           description: description ?? null,
           estimatedDurationMinutes: estimatedDurationMinutes ?? 30,
           sourceGymId: sourceGymId ?? null,
-          sourceEquipmentTypeIds: sourceEquipmentTypeIds ?? [],
+          // Deduped for the same reason SavedGymRepository dedupes: two picker
+          // paths can select the same chip, and storing it twice changes nothing
+          // except making the kit summary and Phase 1's containment checks noisier.
+          sourceEquipmentTypeIds: Array.from(new Set(kit)),
           exercises,
         },
       );

@@ -2,7 +2,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const workoutRepositoryMocks = {
-  canReadWorkout: vi.fn(),
+  findReadableWorkout: vi.fn(),
+  listExerciseIdsForWorkout: vi.fn(),
   listVariations: vi.fn(),
   createVariation: vi.fn(),
   getById: vi.fn(),
@@ -19,6 +20,7 @@ const exerciseRepositoryMocks = {
 
 const savedGymRepositoryMocks = {
   getById: vi.fn(),
+  findUnknownEquipmentTypeIds: vi.fn(),
 };
 
 // Hoisted so the vi.mock factory can reference it (factories run before
@@ -102,6 +104,15 @@ function req(
   });
 }
 
+/** A readable ROOT parent — `parentWorkoutId: null` is what makes it adaptable. */
+const readableRootParent = {
+  id: PARENT_ID,
+  name: "Full Body",
+  createdBy: "user-a",
+  visibility: "private",
+  parentWorkoutId: null,
+};
+
 const validPlan = {
   name: "Full Body · Hotel gym",
   sourceGymId: GYM_ID,
@@ -120,7 +131,9 @@ const validPlan = {
 describe("GET /workouts/:id/variations", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    workoutRepositoryMocks.canReadWorkout.mockResolvedValue(true);
+    workoutRepositoryMocks.findReadableWorkout.mockResolvedValue(
+      readableRootParent,
+    );
     workoutRepositoryMocks.listVariations.mockResolvedValue([]);
   });
 
@@ -152,7 +165,7 @@ describe("GET /workouts/:id/variations", () => {
   });
 
   it("404s when the caller cannot read the parent, and lists nothing", async () => {
-    workoutRepositoryMocks.canReadWorkout.mockResolvedValue(false);
+    workoutRepositoryMocks.findReadableWorkout.mockResolvedValue(null);
     const { workoutVariationsListHandler } =
       await import("../workoutVariationsListHandler");
     const res = await workoutVariationsListHandler.handle(
@@ -222,8 +235,14 @@ describe("POST /workouts/:id/variations", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     assertEntitlementMock.mockResolvedValue({ allowed: true });
-    workoutRepositoryMocks.canReadWorkout.mockResolvedValue(true);
+    workoutRepositoryMocks.findReadableWorkout.mockResolvedValue(
+      readableRootParent,
+    );
+    // Default: the parent carries no rows, so nothing is exempt and every
+    // submitted id must pass the catalogue predicate on its own merits.
+    workoutRepositoryMocks.listExerciseIdsForWorkout.mockResolvedValue([]);
     exerciseRepositoryMocks.findUnreadableExerciseIds.mockResolvedValue([]);
+    savedGymRepositoryMocks.findUnknownEquipmentTypeIds.mockResolvedValue([]);
     savedGymRepositoryMocks.getById.mockResolvedValue({
       id: GYM_ID,
       name: "Hotel gym",
@@ -325,7 +344,7 @@ describe("POST /workouts/:id/variations", () => {
   // you can't see returns 404 and tells you nothing. A 402 would confirm the
   // workout exists.
   it("404s on an unreadable parent WITHOUT evaluating entitlement", async () => {
-    workoutRepositoryMocks.canReadWorkout.mockResolvedValue(false);
+    workoutRepositoryMocks.findReadableWorkout.mockResolvedValue(null);
     const { workoutVariationsCreateHandler } =
       await import("../workoutVariationsCreateHandler");
     const res = await workoutVariationsCreateHandler.handle(
@@ -394,6 +413,129 @@ describe("POST /workouts/:id/variations", () => {
       exerciseRepositoryMocks.findUnreadableExerciseIds,
     ).toHaveBeenCalledWith("user-a", [EX_1]);
     expect(workoutRepositoryMocks.createVariation).not.toHaveBeenCalled();
+  });
+
+  // THE AC-1.2 CASE. `findReadableWorkout` grants public/friends, but the
+  // exercise-catalogue predicate does not — so without the parent exemption,
+  // adapting a public template that uses the owner's custom exercises would 400
+  // on an exercise the caller is looking at on screen.
+  it("201s when an unreadable exercise is CARRIED OVER from the readable parent", async () => {
+    // The catalogue says no…
+    exerciseRepositoryMocks.findUnreadableExerciseIds.mockResolvedValue([EX_1]);
+    // …but the parent workout contains it, and the caller can read that parent.
+    workoutRepositoryMocks.listExerciseIdsForWorkout.mockResolvedValue([EX_1]);
+
+    const { workoutVariationsCreateHandler } =
+      await import("../workoutVariationsCreateHandler");
+    const res = await workoutVariationsCreateHandler.handle(
+      req(`/workouts/${PARENT_ID}/variations`, {
+        method: "POST",
+        body: validPlan,
+      }),
+    );
+
+    expect(res.status).toBe(201);
+    expect(
+      workoutRepositoryMocks.listExerciseIdsForWorkout,
+    ).toHaveBeenCalledWith(PARENT_ID);
+  });
+
+  // The exemption must be scoped to the parent's OWN rows — a swap the caller
+  // can't see is still rejected, which is what stops an adaptation being used to
+  // smuggle in another coach's private exercise.
+  it("still 400s an unreadable exercise that is NOT in the parent", async () => {
+    const OTHER_EX = "55555555-5555-4555-8555-555555555555";
+    exerciseRepositoryMocks.findUnreadableExerciseIds.mockResolvedValue([
+      OTHER_EX,
+    ]);
+    workoutRepositoryMocks.listExerciseIdsForWorkout.mockResolvedValue([EX_1]);
+
+    const { workoutVariationsCreateHandler } =
+      await import("../workoutVariationsCreateHandler");
+    const res = await workoutVariationsCreateHandler.handle(
+      req(`/workouts/${PARENT_ID}/variations`, {
+        method: "POST",
+        body: {
+          ...validPlan,
+          exercises: [{ exerciseId: OTHER_EX, sortOrder: 0 }],
+        },
+      }),
+    );
+
+    expect(res.status).toBe(400);
+    expect((await res.json()) as any).toMatchObject({
+      code: "EXERCISE_NOT_VISIBLE",
+      unreadableExerciseIds: [OTHER_EX],
+    });
+    expect(workoutRepositoryMocks.createVariation).not.toHaveBeenCalled();
+  });
+
+  // A variation of a variation would be unreachable from EVERY listing surface:
+  // hidden from the library by `parent_workout_id IS NULL`, and absent from
+  // listVariations(root) because its parent is the variation, not the root.
+  it("400s when the parent is itself a variation, naming the root", async () => {
+    const ROOT_ID = "66666666-6666-4666-8666-666666666666";
+    workoutRepositoryMocks.findReadableWorkout.mockResolvedValue({
+      ...readableRootParent,
+      parentWorkoutId: ROOT_ID,
+    });
+
+    const { workoutVariationsCreateHandler } =
+      await import("../workoutVariationsCreateHandler");
+    const res = await workoutVariationsCreateHandler.handle(
+      req(`/workouts/${PARENT_ID}/variations`, {
+        method: "POST",
+        body: validPlan,
+      }),
+    );
+
+    expect(res.status).toBe(400);
+    expect((await res.json()) as any).toMatchObject({
+      code: "PARENT_IS_A_VARIATION",
+      rootWorkoutId: ROOT_ID,
+    });
+    // Refused before spending an entitlement read or a write.
+    expect(assertEntitlementMock).not.toHaveBeenCalled();
+    expect(workoutRepositoryMocks.createVariation).not.toHaveBeenCalled();
+  });
+
+  // The frozen kit snapshot gets the same validation the saved-gym kit gets:
+  // Phase 2 renders it as the kit summary and Phase 4 reads it back as the
+  // equipment context, so a bogus id becomes a nameless chip.
+  it("400s on an unknown id in sourceEquipmentTypeIds", async () => {
+    savedGymRepositoryMocks.findUnknownEquipmentTypeIds.mockResolvedValue([
+      EQ_1,
+    ]);
+
+    const { workoutVariationsCreateHandler } =
+      await import("../workoutVariationsCreateHandler");
+    const res = await workoutVariationsCreateHandler.handle(
+      req(`/workouts/${PARENT_ID}/variations`, {
+        method: "POST",
+        body: validPlan,
+      }),
+    );
+
+    expect(res.status).toBe(400);
+    expect((await res.json()) as any).toMatchObject({
+      code: "UNKNOWN_EQUIPMENT_TYPE",
+      unknownEquipmentTypeIds: [EQ_1],
+    });
+    expect(workoutRepositoryMocks.createVariation).not.toHaveBeenCalled();
+  });
+
+  it("dedupes the kit snapshot before storing it", async () => {
+    const { workoutVariationsCreateHandler } =
+      await import("../workoutVariationsCreateHandler");
+    await workoutVariationsCreateHandler.handle(
+      req(`/workouts/${PARENT_ID}/variations`, {
+        method: "POST",
+        body: { ...validPlan, sourceEquipmentTypeIds: [EQ_1, EQ_1] },
+      }),
+    );
+
+    const input = workoutRepositoryMocks.createVariation.mock.calls[0][2];
+    expect(input.sourceEquipmentTypeIds).toEqual([EQ_1]);
   });
 
   // Not cosmetic: listVariations LEFT JOINs saved_gyms to return sourceGymName,
@@ -475,7 +617,7 @@ describe("POST /workouts/:id/variations", () => {
     );
 
     expect(res.status).toBe(400);
-    expect(workoutRepositoryMocks.canReadWorkout).not.toHaveBeenCalled();
+    expect(workoutRepositoryMocks.findReadableWorkout).not.toHaveBeenCalled();
   });
 
   it("400s on a whitespace-only name", async () => {

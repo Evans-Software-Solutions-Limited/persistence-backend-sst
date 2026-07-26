@@ -56,6 +56,21 @@ const mockExercisesWithWorkoutId = mockExercises.map((e) => ({
   workoutId: "wo-1",
 }));
 
+// Loadout provenance keys, as `fetchExercisesForWorkouts` projects them for a
+// row that IS a swap. Used to prove the reason survives into every read path —
+// AC-3.3 needs it legible two weeks later, not merely stored.
+const swappedRowWithProvenance = {
+  ...mockExercises[0],
+  workoutId: "wo-1",
+  substitutedFromExerciseId: "ex-original",
+  substitutionReason: {
+    code: "equipment_unavailable",
+    missingEquipment: ["eq-9"],
+    matchedOn: ["chest"],
+  },
+  isUserOverride: false,
+};
+
 function makeSelectChain(resolvedValue: any) {
   return {
     from: vi.fn().mockReturnValue({
@@ -1034,7 +1049,7 @@ describe("WorkoutRepository", () => {
   });
 
   // ─── Loadout variations (spec-21 Phase 0) ─────────────────────────────
-  describe("canReadWorkout", () => {
+  describe("findReadableWorkout", () => {
     it("returns true for the owner without any extra grant lookup", async () => {
       const mockDb = {
         select: vi.fn().mockReturnValue(makeSelectChain([baseWorkout])),
@@ -1042,7 +1057,9 @@ describe("WorkoutRepository", () => {
       (getDb as any).mockReturnValue(mockDb);
 
       const repo = new WorkoutRepository();
-      expect(await repo.canReadWorkout("wo-1", "user-1")).toBe(true);
+      expect(await repo.findReadableWorkout("wo-1", "user-1")).toEqual(
+        baseWorkout,
+      );
       // Owner fast path — only the workout row is read, no friendship or
       // assignment query.
       expect(mockDb.select).toHaveBeenCalledTimes(1);
@@ -1065,7 +1082,9 @@ describe("WorkoutRepository", () => {
       (getDb as any).mockReturnValue(mockDb);
 
       const repo = new WorkoutRepository();
-      expect(await repo.canReadWorkout("wo-1", "user-1")).toBe(true);
+      expect(await repo.findReadableWorkout("wo-1", "user-1")).toEqual(
+        publicWorkout,
+      );
     });
 
     it("returns false for another user's PRIVATE workout with no assignment", async () => {
@@ -1080,7 +1099,7 @@ describe("WorkoutRepository", () => {
       (getDb as any).mockReturnValue(mockDb);
 
       const repo = new WorkoutRepository();
-      expect(await repo.canReadWorkout("wo-1", "user-1")).toBe(false);
+      expect(await repo.findReadableWorkout("wo-1", "user-1")).toBeNull();
     });
 
     it("returns false for a nonexistent workout (indistinguishable from forbidden)", async () => {
@@ -1088,7 +1107,147 @@ describe("WorkoutRepository", () => {
       (getDb as any).mockReturnValue(mockDb);
 
       const repo = new WorkoutRepository();
-      expect(await repo.canReadWorkout("nope", "user-1")).toBe(false);
+      expect(await repo.findReadableWorkout("nope", "user-1")).toBeNull();
+    });
+
+    // Returns the ROW, not a boolean, specifically so the create path can read
+    // `parentWorkoutId` off it and refuse a variation of a variation without a
+    // second query.
+    it("surfaces parentWorkoutId so the caller can refuse a variation parent", async () => {
+      const variation = { ...baseWorkout, parentWorkoutId: "root-1" };
+      (getDb as any).mockReturnValue({
+        select: vi.fn().mockReturnValue(makeSelectChain([variation])),
+      });
+
+      const repo = new WorkoutRepository();
+      const row = await repo.findReadableWorkout("wo-1", "user-1");
+      expect(row?.parentWorkoutId).toBe("root-1");
+    });
+  });
+
+  // AC-3.3: a stored-but-unreadable reason satisfies the storage half of the
+  // requirement and none of the point. `fetchExercisesForWorkouts` is the ONE
+  // projection behind GET /workouts/:id, the list response AND createVariation's
+  // own 201 body, so this is where write-only would have shown up.
+  describe("provenance round-trip", () => {
+    // ⚠ THE ASSERTION THAT MATTERS IS ON THE PROJECTION, NOT THE ROWS.
+    // `makeExercisesByWorkoutChain` returns whatever rows the test hands it
+    // regardless of what `select()` asked for, so an assertion on the returned
+    // row cannot fail when a column is dropped from the projection — the
+    // mocked-getDb blind spot. Capturing the argument to `select()` is what
+    // actually pins the SELECT list.
+    it("projects the three provenance columns in the shared exercise read", async () => {
+      let projection: Record<string, unknown> | undefined;
+      const selectSpy = vi.fn((arg?: Record<string, unknown>) => {
+        if (arg && "exerciseId" in arg) projection = arg;
+        return arg && "exerciseId" in arg
+          ? makeExercisesByWorkoutChain([swappedRowWithProvenance])
+          : makeSelectChain([baseWorkout]);
+      });
+      (getDb as any).mockReturnValue({ select: selectSpy });
+
+      const repo = new WorkoutRepository();
+      const result = await repo.getById("wo-1", "user-1");
+
+      expect(projection).toBeDefined();
+      expect(Object.keys(projection!)).toEqual(
+        expect.arrayContaining([
+          "substitutedFromExerciseId",
+          "substitutionReason",
+          "isUserOverride",
+        ]),
+      );
+      // …and the values do reach the caller.
+      expect(result?.exercises[0]).toMatchObject({
+        substitutedFromExerciseId: "ex-original",
+        substitutionReason: {
+          code: "equipment_unavailable",
+          missingEquipment: ["eq-9"],
+          matchedOn: ["chest"],
+        },
+        isUserOverride: false,
+      });
+    });
+
+    it("returns provenance on createVariation's own 201 body", async () => {
+      const created = { ...baseWorkout, id: "wo-var-1" };
+      const values = vi.fn().mockReturnValue({
+        returning: vi.fn().mockResolvedValue([created]),
+      });
+      let first = true;
+      const tx = {
+        insert: vi.fn().mockImplementation(() => {
+          if (first) {
+            first = false;
+            return { values };
+          }
+          return { values: vi.fn().mockResolvedValue(undefined) };
+        }),
+        select: vi
+          .fn()
+          .mockReturnValue(
+            makeExercisesByWorkoutChain([
+              { ...swappedRowWithProvenance, workoutId: "wo-var-1" },
+            ]),
+          ),
+      };
+      (getDb as any).mockReturnValue({
+        transaction: vi.fn().mockImplementation(async (fn: any) => fn(tx)),
+      });
+
+      const repo = new WorkoutRepository();
+      const result = await repo.createVariation("user-1", "parent-1", {
+        name: "Adapted",
+        sourceEquipmentTypeIds: ["eq-1"],
+        exercises: [{ exerciseId: "ex-swap", sortOrder: 0 }],
+      });
+
+      expect(result.exercises[0].substitutedFromExerciseId).toBe("ex-original");
+    });
+  });
+
+  describe("listExerciseIdsForWorkout", () => {
+    function makeDistinctChain(rows: any, capture: { where?: unknown } = {}) {
+      const chain: any = {};
+      chain.from = vi.fn().mockReturnValue(chain);
+      chain.where = vi.fn((w: unknown) => {
+        capture.where = w;
+        return Promise.resolve(rows);
+      });
+      return chain;
+    }
+
+    it("returns the workout's exercise ids", async () => {
+      (getDb as any).mockReturnValue({
+        selectDistinct: vi
+          .fn()
+          .mockReturnValue(
+            makeDistinctChain([{ exerciseId: "ex-1" }, { exerciseId: "ex-2" }]),
+          ),
+      });
+
+      const repo = new WorkoutRepository();
+      expect(await repo.listExerciseIdsForWorkout("wo-1")).toEqual([
+        "ex-1",
+        "ex-2",
+      ]);
+    });
+
+    // Scoped to the one workout: the create path uses this to exempt CARRIED-OVER
+    // rows from the catalogue predicate, so a predicate that leaked other
+    // workouts' ids would widen the exemption into a real read grant.
+    it("filters on workout_id only", async () => {
+      const capture: { where?: unknown } = {};
+      (getDb as any).mockReturnValue({
+        selectDistinct: vi.fn().mockReturnValue(makeDistinctChain([], capture)),
+      });
+
+      const repo = new WorkoutRepository();
+      await repo.listExerciseIdsForWorkout("wo-1");
+
+      const rendered = new PgDialect().sqlToQuery(capture.where as never).sql;
+      expect(rendered).toContain('"workout_id"');
+      expect(rendered).not.toContain("created_by");
     });
   });
 
@@ -1314,10 +1473,23 @@ describe("WorkoutRepository", () => {
       });
     });
 
-    it("never writes to the parent — one insert only when the plan is empty", async () => {
+    it("never writes to the parent — insert only, no UPDATE or DELETE", async () => {
       const { tx } = makeVariationTx(createdVariation);
+      // Spies are actually INSTALLED on the tx, so a stray `tx.update(...)` /
+      // `tx.delete(...)` inside createVariation would be recorded rather than
+      // throwing — asserting on the fixture's own missing keys (as an earlier
+      // version of this test did) could not fail whatever the implementation did.
+      const update = vi.fn(() => {
+        throw new Error("createVariation must not UPDATE");
+      });
+      const del = vi.fn(() => {
+        throw new Error("createVariation must not DELETE");
+      });
+      const txWithSpies = { ...tx, update, delete: del };
       const mockDb = {
-        transaction: vi.fn().mockImplementation(async (fn: any) => fn(tx)),
+        transaction: vi
+          .fn()
+          .mockImplementation(async (fn: any) => fn(txWithSpies)),
       };
       (getDb as any).mockReturnValue(mockDb);
 
@@ -1328,11 +1500,12 @@ describe("WorkoutRepository", () => {
         exercises: [],
       });
 
-      // AC-1.3: no UPDATE and no DELETE anywhere in the transaction, so the
-      // parent row and its workout_exercises are byte-for-byte unchanged.
-      expect(tx).not.toHaveProperty("update");
+      // AC-1.3: the parent row and its workout_exercises are byte-for-byte
+      // unchanged, because nothing in the transaction mutates anything.
+      expect(update).not.toHaveBeenCalled();
+      expect(del).not.toHaveBeenCalled();
       expect(mockDb.transaction).toHaveBeenCalledTimes(1);
-      expect(tx.insert).toHaveBeenCalledTimes(1);
+      expect(txWithSpies.insert).toHaveBeenCalledTimes(1);
     });
   });
 

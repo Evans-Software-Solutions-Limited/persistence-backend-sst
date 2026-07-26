@@ -44,7 +44,7 @@ const VARIATIONS_MARKER = [{ id: "MARKER-VARIATIONS" }];
 const DETAIL_MARKER = { id: "MARKER-DETAIL", exercises: [] };
 
 const workoutRepositoryMocks = {
-  canReadWorkout: vi.fn(async () => true),
+  findReadableWorkout: vi.fn(async () => true),
   listVariations: vi.fn(async () => VARIATIONS_MARKER),
   createVariation: vi.fn(async () => DETAIL_MARKER),
   getById: vi.fn(async () => DETAIL_MARKER),
@@ -105,7 +105,7 @@ function authed(path: string, method = "GET", body?: unknown) {
 describe("loadoutRoutes mounting", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    workoutRepositoryMocks.canReadWorkout.mockResolvedValue(true);
+    workoutRepositoryMocks.findReadableWorkout.mockResolvedValue(true);
     workoutRepositoryMocks.listVariations.mockResolvedValue(VARIATIONS_MARKER);
   });
 

@@ -50,6 +50,14 @@ export interface WorkoutExerciseRow {
   targetDurationSeconds: number | null;
   restSeconds: number | null;
   notes: string | null;
+  // ─── Loadout provenance (spec-21 § 2.3, AC-3.3) ─────────────────────────
+  // Null / false on every non-Loadout row, which is every row that predates the
+  // feature. Projected here rather than only stored so a saved variation can
+  // EXPLAIN itself — AC-3.3 requires the reason to survive into the variation,
+  // and a write-only column satisfies the storage half but not the requirement.
+  substitutedFromExerciseId: string | null;
+  substitutionReason: unknown;
+  isUserOverride: boolean;
   exercise: {
     id: string;
     name: string;
@@ -478,26 +486,55 @@ export class WorkoutRepository {
   // ─── Loadout variations (spec-21 § 2.2 / § 3) ────────────────────────
 
   /**
-   * Can the caller READ this workout? Own / public / friends / assigned — the
-   * same grant set `getById` applies, exposed without the exercise fetch so the
-   * variation endpoints can gate on the PARENT cheaply.
+   * The workout row IF the caller may READ it, else null. Own / public /
+   * friends / assigned — the same grant set `getById` applies, but without the
+   * exercise fetch, so the variation endpoints can gate on the PARENT cheaply.
    *
-   * `false` covers both "doesn't exist" and "not allowed", which the handlers
+   * `null` covers both "doesn't exist" and "not allowed", which the handlers
    * surface as one 404 — no 403/404 distinction, so a caller cannot probe for
    * the existence of workouts they can't see.
    *
    * Read, not own (AC-1.2): Loadout applies to a coach-assigned workout or a
    * public template, not just the caller's own.
+   *
+   * Returns the ROW rather than a boolean because the create path also needs
+   * `parentWorkoutId` off it (to refuse a variation of a variation) — one read,
+   * two decisions.
    */
-  async canReadWorkout(id: string, userId: string): Promise<boolean> {
+  async findReadableWorkout(
+    id: string,
+    userId: string,
+  ): Promise<Workout | null> {
     const db = getDb();
     const [workout] = await db
       .select()
       .from(workouts)
       .where(eq(workouts.id, id))
       .limit(1);
-    if (!workout) return false;
-    return this.canRead(db, workout, userId);
+    if (!workout) return null;
+    return (await this.canRead(db, workout, userId)) ? workout : null;
+  }
+
+  /**
+   * The exercise ids a workout's rows point at. Used by the create-variation
+   * path to exempt rows CARRIED OVER from the parent from the catalogue
+   * read-visibility check (see `findUnreadableExerciseIds`' call site).
+   *
+   * Why the exemption is safe: the caller has already passed `findReadableWorkout` on
+   * the parent, and `fetchExercisesForWorkouts` embeds exercise fields WITHOUT
+   * the catalogue visibility predicate — so these exercises are already visible
+   * to this caller on the workout-detail screen. Exempting them grants no read
+   * the caller did not already have; withholding the exemption would reject
+   * exactly the case AC-1.2 mandates (adapting a public template or a
+   * friend's workout that uses the owner's custom exercises).
+   */
+  async listExerciseIdsForWorkout(workoutId: string): Promise<string[]> {
+    const db = getDb();
+    const rows = await db
+      .selectDistinct({ exerciseId: workoutExercises.exerciseId })
+      .from(workoutExercises)
+      .where(eq(workoutExercises.workoutId, workoutId));
+    return rows.map((r) => r.exerciseId);
   }
 
   /**
@@ -811,6 +848,12 @@ export class WorkoutRepository {
         targetDurationSeconds: workoutExercises.targetDurationSeconds,
         restSeconds: workoutExercises.restSeconds,
         notes: workoutExercises.notes,
+        // Loadout provenance (spec-21 AC-3.3). This is the ONE projection behind
+        // GET /workouts/:id, the list response and createVariation's own 201
+        // body, so omitting these would make the reason write-only.
+        substitutedFromExerciseId: workoutExercises.substitutedFromExerciseId,
+        substitutionReason: workoutExercises.substitutionReason,
+        isUserOverride: workoutExercises.isUserOverride,
         exercise: {
           id: exercises.id,
           name: exercises.name,
