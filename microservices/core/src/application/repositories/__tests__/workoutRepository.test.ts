@@ -903,6 +903,11 @@ describe("WorkoutRepository", () => {
       const rendered = new PgDialect().sqlToQuery(capture.where as never).sql;
       expect(rendered).toContain('"created_by"');
       expect(rendered).toContain('"show_in_owner_library"');
+      // spec-21 § 4 / AC-6.4: the ownerLibraryOnly branch must ALSO exclude
+      // Loadout variations. Patching only the other branch would leave
+      // trainers — the only callers who pass ownerLibraryOnly: true — seeing
+      // every variation, which is the exact crowding this filter exists to stop.
+      expect(rendered).toContain('"parent_workout_id" is null');
     });
 
     it("keeps the mine filter as created_by only when ownerLibraryOnly is false/absent", async () => {
@@ -926,6 +931,9 @@ describe("WorkoutRepository", () => {
       const rendered = new PgDialect().sqlToQuery(capture.where as never).sql;
       expect(rendered).toContain('"created_by"');
       expect(rendered).not.toContain("show_in_owner_library");
+      // …and the plain `mine` branch excludes variations too (spec-21 AC-6.4):
+      // a user with one workout and four adapted versions sees ONE card.
+      expect(rendered).toContain('"parent_workout_id" is null');
     });
 
     it("still counts ALL created workouts for quota regardless of the filter", async () => {
@@ -1022,6 +1030,309 @@ describe("WorkoutRepository", () => {
       setSpy.mockClear();
       await repo.update("wo-1", "user-1", { name: "Renamed" });
       expect("showInOwnerLibrary" in setSpy.mock.calls[0][0]).toBe(false);
+    });
+  });
+
+  // ─── Loadout variations (spec-21 Phase 0) ─────────────────────────────
+  describe("canReadWorkout", () => {
+    it("returns true for the owner without any extra grant lookup", async () => {
+      const mockDb = {
+        select: vi.fn().mockReturnValue(makeSelectChain([baseWorkout])),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const repo = new WorkoutRepository();
+      expect(await repo.canReadWorkout("wo-1", "user-1")).toBe(true);
+      // Owner fast path — only the workout row is read, no friendship or
+      // assignment query.
+      expect(mockDb.select).toHaveBeenCalledTimes(1);
+    });
+
+    it("returns true for a PUBLIC workout owned by someone else (AC-1.2: read, not own)", async () => {
+      const publicWorkout = {
+        ...baseWorkout,
+        createdBy: "other-user",
+        visibility: "public" as const,
+      };
+      const mockDb = {
+        select: vi
+          .fn()
+          // 1. the workout row
+          .mockReturnValueOnce(makeSelectChain([publicWorkout]))
+          // 2. isOwnerSoftDeleted — owner is live
+          .mockReturnValueOnce(makeSelectChain([{ deletedAt: null }])),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const repo = new WorkoutRepository();
+      expect(await repo.canReadWorkout("wo-1", "user-1")).toBe(true);
+    });
+
+    it("returns false for another user's PRIVATE workout with no assignment", async () => {
+      const privateWorkout = { ...baseWorkout, createdBy: "other-user" };
+      const mockDb = {
+        select: vi
+          .fn()
+          .mockReturnValueOnce(makeSelectChain([privateWorkout]))
+          // assignment grant lookup — none
+          .mockReturnValueOnce(makeSelectChain([])),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const repo = new WorkoutRepository();
+      expect(await repo.canReadWorkout("wo-1", "user-1")).toBe(false);
+    });
+
+    it("returns false for a nonexistent workout (indistinguishable from forbidden)", async () => {
+      const mockDb = { select: vi.fn().mockReturnValue(makeSelectChain([])) };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const repo = new WorkoutRepository();
+      expect(await repo.canReadWorkout("nope", "user-1")).toBe(false);
+    });
+  });
+
+  describe("listVariations", () => {
+    function makeVariationsChain(rows: any, capture: { where?: unknown }) {
+      const chain: any = {};
+      chain.from = vi.fn().mockReturnValue(chain);
+      chain.leftJoin = vi.fn().mockReturnValue(chain);
+      chain.where = vi.fn((w: unknown) => {
+        capture.where = w;
+        return chain;
+      });
+      chain.orderBy = vi.fn().mockResolvedValue(rows);
+      return chain;
+    }
+
+    // The mocked-getDb blind spot means a wrong WHERE ships green, so the
+    // predicate is rendered and asserted (memory/reference_drizzle_groupby_
+    // param_bug). BOTH columns must appear: parent_workout_id alone would let
+    // any reader of a shared parent enumerate every other user's setups.
+    it("filters on BOTH parent_workout_id and created_by (AC-6.2 isolation)", async () => {
+      const capture: { where?: unknown } = {};
+      const mockDb = {
+        select: vi.fn().mockReturnValue(makeVariationsChain([], capture)),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const repo = new WorkoutRepository();
+      await repo.listVariations("parent-1", "user-1");
+
+      const rendered = new PgDialect().sqlToQuery(capture.where as never).sql;
+      expect(rendered).toContain('"parent_workout_id"');
+      expect(rendered).toContain('"created_by"');
+    });
+
+    it("returns the summary rows, including a derived swapCount", async () => {
+      const rows = [
+        {
+          id: "wo-var-1",
+          name: "Full Body · Hotel gym",
+          description: null,
+          parentWorkoutId: "parent-1",
+          variationKind: "loadout",
+          sourceGymId: "gym-1",
+          sourceGymName: "Hotel gym",
+          sourceEquipmentTypeIds: ["eq-1", "eq-2"],
+          estimatedDurationMinutes: 45,
+          swapCount: 3,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ];
+      const mockDb = {
+        select: vi.fn().mockReturnValue(makeVariationsChain(rows, {})),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const repo = new WorkoutRepository();
+      const result = await repo.listVariations("parent-1", "user-1");
+
+      expect(result).toHaveLength(1);
+      expect(result[0].swapCount).toBe(3);
+      expect(result[0].sourceGymName).toBe("Hotel gym");
+    });
+
+    it("keeps the frozen kit snapshot when the saved gym is gone (AC-7.3)", async () => {
+      // Gym deleted ⇒ FK SET NULL ⇒ no join row ⇒ null name. The
+      // source_equipment_type_ids snapshot still describes the kit.
+      const rows = [
+        {
+          id: "wo-var-1",
+          name: "Full Body · adapted",
+          description: null,
+          parentWorkoutId: "parent-1",
+          variationKind: "loadout",
+          sourceGymId: null,
+          sourceGymName: null,
+          sourceEquipmentTypeIds: ["eq-1", "eq-2"],
+          estimatedDurationMinutes: 45,
+          swapCount: 1,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ];
+      const mockDb = {
+        select: vi.fn().mockReturnValue(makeVariationsChain(rows, {})),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const repo = new WorkoutRepository();
+      const result = await repo.listVariations("parent-1", "user-1");
+
+      expect(result[0].sourceGymName).toBeNull();
+      expect(result[0].sourceEquipmentTypeIds).toEqual(["eq-1", "eq-2"]);
+    });
+  });
+
+  describe("createVariation", () => {
+    function makeVariationTx(created: any) {
+      const workoutValues = vi.fn().mockReturnValue({
+        returning: vi.fn().mockResolvedValue([created]),
+      });
+      const exerciseValues = vi.fn().mockResolvedValue(undefined);
+      const insert = vi.fn().mockImplementation(() => {
+        if (workoutValues.mock.calls.length === 0) {
+          return { values: workoutValues };
+        }
+        return { values: exerciseValues };
+      });
+      const tx = {
+        insert,
+        select: vi.fn().mockReturnValue(makeExercisesByWorkoutChain([])),
+      };
+      return { tx, workoutValues, exerciseValues };
+    }
+
+    const createdVariation = {
+      ...baseWorkout,
+      id: "wo-var-1",
+      parentWorkoutId: "parent-1",
+      variationKind: "loadout",
+    };
+
+    // The single most important assertion in this file. § 4 only patches the
+    // `mine` list branch; the `default` branch is `visibility = 'public' AND
+    // (created_by IS NULL OR created_by != userId)`, so a variation that
+    // inherited a PUBLIC parent's visibility would land in every OTHER user's
+    // browse — carrying this user's gym kit with it (design § 2.2).
+    it("always creates the variation private, never inheriting the parent's visibility", async () => {
+      const { tx, workoutValues } = makeVariationTx(createdVariation);
+      (getDb as any).mockReturnValue({
+        transaction: vi.fn().mockImplementation(async (fn: any) => fn(tx)),
+      });
+
+      const repo = new WorkoutRepository();
+      await repo.createVariation("user-1", "parent-1", {
+        name: "Full Body · Hotel gym",
+        sourceEquipmentTypeIds: ["eq-1"],
+        exercises: [],
+      });
+
+      expect(workoutValues).toHaveBeenCalledWith(
+        expect.objectContaining({ visibility: "private" }),
+      );
+    });
+
+    it("sets parent linkage, kind, owner and the frozen kit snapshot (AC-5.1/5.2)", async () => {
+      const { tx, workoutValues } = makeVariationTx(createdVariation);
+      (getDb as any).mockReturnValue({
+        transaction: vi.fn().mockImplementation(async (fn: any) => fn(tx)),
+      });
+
+      const repo = new WorkoutRepository();
+      await repo.createVariation("user-1", "parent-1", {
+        name: "Full Body · Hotel gym",
+        sourceGymId: "gym-1",
+        sourceEquipmentTypeIds: ["eq-1", "eq-2"],
+        exercises: [],
+      });
+
+      expect(workoutValues).toHaveBeenCalledWith(
+        expect.objectContaining({
+          // The variation is owned by the CALLER, never by the parent's owner
+          // (AC-1.2) — that is what makes adapting a coach's workout safe.
+          createdBy: "user-1",
+          parentWorkoutId: "parent-1",
+          variationKind: "loadout",
+          sourceGymId: "gym-1",
+          sourceEquipmentTypeIds: ["eq-1", "eq-2"],
+        }),
+      );
+    });
+
+    it("persists per-row provenance so the variation can explain itself later (AC-3.3)", async () => {
+      const { tx, exerciseValues } = makeVariationTx(createdVariation);
+      (getDb as any).mockReturnValue({
+        transaction: vi.fn().mockImplementation(async (fn: any) => fn(tx)),
+      });
+
+      const reason = {
+        code: "equipment_unavailable",
+        missingEquipment: ["eq-9"],
+        matchedOn: ["chest"],
+      };
+
+      const repo = new WorkoutRepository();
+      await repo.createVariation("user-1", "parent-1", {
+        name: "Adapted",
+        sourceEquipmentTypeIds: ["eq-1"],
+        exercises: [
+          {
+            exerciseId: "ex-swap",
+            sortOrder: 0,
+            targetSets: 3,
+            targetRepsMin: 8,
+            targetRepsMax: 10,
+            substitutedFromExerciseId: "ex-original",
+            substitutionReason: reason,
+            isUserOverride: true,
+          },
+          // A KEPT row carries no provenance.
+          { exerciseId: "ex-kept", sortOrder: 1 },
+        ],
+      });
+
+      const inserted = exerciseValues.mock.calls[0][0];
+      expect(inserted[0]).toMatchObject({
+        exerciseId: "ex-swap",
+        substitutedFromExerciseId: "ex-original",
+        substitutionReason: reason,
+        isUserOverride: true,
+        // Training targets are copied through untouched — they are a database
+        // property, never a model property (design § 1).
+        targetSets: 3,
+        targetRepsMin: 8,
+        targetRepsMax: 10,
+      });
+      expect(inserted[1]).toMatchObject({
+        exerciseId: "ex-kept",
+        substitutedFromExerciseId: null,
+        substitutionReason: null,
+        isUserOverride: false,
+      });
+    });
+
+    it("never writes to the parent — one insert only when the plan is empty", async () => {
+      const { tx } = makeVariationTx(createdVariation);
+      const mockDb = {
+        transaction: vi.fn().mockImplementation(async (fn: any) => fn(tx)),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const repo = new WorkoutRepository();
+      await repo.createVariation("user-1", "parent-1", {
+        name: "Adapted",
+        sourceEquipmentTypeIds: ["eq-1"],
+        exercises: [],
+      });
+
+      // AC-1.3: no UPDATE and no DELETE anywhere in the transaction, so the
+      // parent row and its workout_exercises are byte-for-byte unchanged.
+      expect(tx).not.toHaveProperty("update");
+      expect(mockDb.transaction).toHaveBeenCalledTimes(1);
+      expect(tx.insert).toHaveBeenCalledTimes(1);
     });
   });
 

@@ -86,7 +86,7 @@ describe("AcceptInvitePresenter", () => {
     expect(getByTestId("accept-invite-code-input").props.editable).toBe(false);
   });
 
-  // 26-coach-data-sharing-consent
+  // 28-coach-data-sharing-consent
   describe("data-sharing consent sheet", () => {
     it("does not render the consent sheet's confirm control until it's opened", () => {
       const { queryByTestId } = renderWithTheme(

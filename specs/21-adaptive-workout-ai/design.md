@@ -211,11 +211,35 @@ ALTER TABLE equipment_types
   ADD COLUMN IF NOT EXISTS category text;
 ```
 
-Backfill the 28 seeded rows into the five design groups (free weights /
-machines / cables / bodyweight / cardio) with an explicit idempotent
-`UPDATE … WHERE category IS NULL`, and extend
+Backfill the 28 seeded rows with an explicit idempotent
+`UPDATE … WHERE category IS NULL` (two-way idempotent: a re-run is a no-op AND
+a hand-recategorised row is never stomped), and extend
 `GET /exercises/equipment` to project it (nullable — an uncategorised row
 renders under "Other" rather than disappearing).
+
+**SIX groups, not five** (Brad, 2026-07-26 — this supersedes the original
+"free weights / machines / cables / bodyweight / cardio"):
+
+| Category       | Seeded rows                                                              |
+| -------------- | ------------------------------------------------------------------------ |
+| `free_weights` | Barbell, Dumbbells, Kettlebell, EZ Bar, Medicine Ball, Bench, Squat Rack |
+| `machines`     | Smith Machine, Leg Press / Leg Curl / Leg Extension Machine              |
+| `cables`       | Cable Machine, Lat Pulldown Machine                                      |
+| `bodyweight`   | Bodyweight, Pull-up Bar, Dip Station, TRX / Suspension Trainer, Ab Wheel |
+| `cardio`       | Rowing Machine, Treadmill, Exercise Bike, Elliptical                     |
+| `accessories`  | Resistance Bands, Foam Roller, Yoga Mat, Box / Step, Battle Ropes, Sled  |
+
+The five original groups leave six rows homeless, **including Resistance
+Bands** — and "bands only" is one of the four canonical equipment contexts the
+Phase-E2 bake-off measures against (`requirements.md` § Eval spike), so bands
+falling into "Other" would be a visible hole in the picker rather than a tidy-up
+detail. `accessories` is the sixth group. The bench and the squat rack sit with
+the free weights because that is the kit you use them _with_ — the picker is
+grouped the way a gym-goer reads it, not the way a taxonomist would.
+
+Each name is claimed by **exactly one** group. Claiming a name twice would make
+the grouping depend on statement order, because the second `UPDATE`'s
+`category IS NULL` guard would silently skip it — asserted by test.
 
 **This lands in Phase 0, not Phase 2.** It is only consumed by the mobile
 picker, but deferring it would force an out-of-phase migration after the Phase-0

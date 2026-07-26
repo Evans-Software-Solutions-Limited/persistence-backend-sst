@@ -105,6 +105,9 @@ import { trainersClientWorkoutAssignmentsSwapHandler } from "./application/train
 // AND the Client Detail read aggregate, grouped into one sub-app to keep the
 // root `.use()` chain under TS's type-depth ceiling (TS2589).
 import { trainersOnBehalfRoutes } from "./application/trainersOnBehalfRoutes";
+// Loadout (spec-21 Phase 0) — saved-gym CRUD + workout variations, grouped into
+// one sub-app for the same TS2589 reason as the two above.
+import { loadoutRoutes } from "./application/loadoutRoutes";
 
 // Initialise Sentry at module load, before any request is handled. No-op when
 // `SENTRY_DSN` is unset (fail-safe — DSN-less stages run unchanged). Errors are
@@ -237,7 +240,11 @@ const app = new Elysia()
   // M9 — nutrition (Fuel) Tier A. Grouped into one sub-app (see
   // ./application/nutritionRoutes) — keeps the Eden Treaty type in
   // packages/web under TS's instantiation-depth ceiling.
-  .use(nutritionRoutes);
+  .use(nutritionRoutes)
+  // Loadout (spec-21 Phase 0) — saved gyms + workout variations, likewise
+  // grouped into ONE sub-app (see ./application/loadoutRoutes for why the root
+  // chain can't take six more `.use()` calls).
+  .use(loadoutRoutes);
 
 export type CoreApi = typeof app;
 

@@ -6,7 +6,7 @@ import {
 } from "../DataSharingConsentSheet";
 
 /**
- * 26-coach-data-sharing-consent — the shared UK GDPR Art 9(2)(a) explicit-
+ * 28-coach-data-sharing-consent — the shared UK GDPR Art 9(2)(a) explicit-
  * consent sheet reused by both `<RequestsPresenter>` (accept) and
  * `<AcceptInvitePresenter>` (redeem). Exercised directly here so both call
  * sites' own tests can stay focused on wiring (props in, callback out)

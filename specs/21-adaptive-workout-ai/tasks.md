@@ -68,6 +68,15 @@ Acceptance criteria: `requirements.md` US-11.
       `default` offering. Note the ordering constraint: the catalog row must be
       on **production** before the first purchase, or the webhook FK-fails into
       an RC retry loop.
+      **⚠ AMENDED (Brad, 2026-07-26): CREATE the products, but leave them
+      UNSUBMITTED and UNATTACHED to any build until the Loadout LAUNCH build.**
+      The tier ships `is_active = false`, so an App Store reviewer cannot reach
+      a Premium+ purchase surface at all — and an IAP product submitted with a
+      build that offers no way to buy it is its own rejection reason. Creating
+      them early is still right (RC needs the product ids to exist to configure
+      the entitlement, and promotional entitlements can then be granted
+      pre-launch); submitting them early is not. Attach + submit in the same
+      release that flips `is_active = true`.
 - [ ] **T-P0.11 [B]** Tests: catalog row present and priced; `coerceTierName`
       round-trips `premium_plus`; `TIER_RANK` precedence beats `premium` in
       `pickDesiredSubscription`; a `premium_plus` RC entitlement syncs to the
@@ -75,54 +84,75 @@ Acceptance criteria: `requirements.md` US-11.
 
 ## Phase 0 — Data model + saved gyms + variations (backend)
 
-- [ ] **T-0.1 [B]** Migration: `saved_gyms` table + named unique index on
+- [x] **T-0.1 [B]** Migration: `saved_gyms` table + named unique index on
       `(user_id, lower(btrim(name)))` + `(user_id, created_at DESC)` index +
       RLS-on-zero-policies (design § 2.1; template
       `20260708130000_client_ai_summaries.sql`).
-- [ ] **T-0.2 [B]** Migration: `workouts.parent_workout_id` (FK → workouts,
+- [x] **T-0.2 [B]** Migration: `workouts.parent_workout_id` (FK → workouts,
       **ON DELETE SET NULL**), `variation_kind` (+ idempotent CHECK),
       `source_gym_id` (FK → saved_gyms, SET NULL), `source_equipment_type_ids`;
       partial index on `parent_workout_id` (design § 2.2).
-- [ ] **T-0.3 [B]** Migration: `workout_exercises.substituted_from_exercise_id`,
+- [x] **T-0.3 [B]** Migration: `workout_exercises.substituted_from_exercise_id`,
       `substitution_reason` (**jsonb**, not text — § 7.2) and
       `is_user_override`. **Add no new index** — `001_initial_schema.sql:699-702`
       already creates two `workout_id` indexes plus a composite, and
       `CREATE INDEX IF NOT EXISTS` matches on name, so a differently-named one
       would silently become a third duplicate (design § 2.3). Mirror the
       existing indexes into `schema.ts` instead.
-- [ ] **T-0.3b [B]** Migration: `equipment_types.category` + idempotent backfill
-      of the 28 seeded rows into the five design groups; project it from
-      `GET /exercises/equipment` (design § 2.3b). Phase 0, not Phase 2 —
-      deferring forces an out-of-phase migration (AC-2.2).
-- [ ] **T-0.4 [B]** `schema.ts` mirror for T-0.1…T-0.3 + `SavedGym` /
+- [x] **T-0.3b [B]** Migration: `equipment_types.category` + idempotent backfill
+      of the 28 seeded rows into the **six** design groups (amended from five —
+      design § 2.3b); project it from `GET /exercises/equipment`
+      (design § 2.3b). Phase 0, not Phase 2 — deferring forces an out-of-phase
+      migration (AC-2.2).
+- [x] **T-0.4 [B]** `schema.ts` mirror for T-0.1…T-0.3 + `SavedGym` /
       `NewSavedGym` exports. Explicit projections only (the
       `equipment_types.description` live-DB drift, design § 2.5).
-- [ ] **T-0.5 [B]** `SavedGymRepository` + `SavedGymService` decorator
+- [x] **T-0.5 [B]** `SavedGymRepository` + `SavedGymService` decorator
       (mirroring `workoutService.ts`). Ownership folded into the mutating
       `WHERE`; zero rows → 404. Validate every `equipment_type_id` against
       `equipment_types` → 400.
-- [ ] **T-0.6 [B]** Saved-gym handlers: `GET`/`POST /saved-gyms`,
+- [x] **T-0.6 [B]** Saved-gym handlers: `GET`/`POST /saved-gyms`,
       `PATCH`/`DELETE /saved-gyms/:id`. 409 on duplicate name (AC-7.4).
-- [ ] **T-0.7 [B]** `GET /workouts/:id/variations` (caller-owned only) and
+- [x] **T-0.7 [B]** `GET /workouts/:id/variations` (caller-owned only) and
       `POST /workouts/:id/variations` (persist a reviewed plan in one
       transaction, with provenance), the latter behind the `loadout`
       entitlement **and `canRead` on the parent** (AC-1.2 — the guard ships in
       this phase, not Phase 1, or the endpoint spends a phase able to persist a
       variation of a workout the caller may not read).
-- [ ] **T-0.8 [B]** `EntitlementFeature` gains `"loadout"`; add `assertLoadout`
+- [x] **T-0.8 [B]** `EntitlementFeature` gains `"loadout"`; add `assertLoadout`
       reading `subscription_tiers.loadout_access`; **route it explicitly** —
       `assertEntitlement.ts:249` allows any unrouted feature (design § 5.1).
-- [ ] **T-0.9 [B]** Add `isNull(workouts.parentWorkoutId)` to **both** `mine`
+- [x] **T-0.9 [B]** Add `isNull(workouts.parentWorkoutId)` to **both** `mine`
       paths in `buildListWhereClause` — the `ownerLibraryOnly` branch too, or
       trainers still see every variation (design § 4). Variations are created
       `visibility = 'private'` (design § 2.2).
-- [ ] **T-0.10 [B]** New `loadoutRoutes.ts` sub-app; mount it in `api.ts` —
+- [x] **T-0.10 [B]** New `loadoutRoutes.ts` sub-app; mount it in `api.ts` —
       **not** a root `.use()` chain extension (TS2589 ceiling, design § 3).
       `GET /exercises/substitutes` is the one route that does NOT go in it
       (T-1.7).
-- [ ] **T-0.11 [B]** Tests — `PgDialect` renders (mine-branch `parent IS NULL`,
+- [x] **T-0.11 [B]** Tests — `PgDialect` renders (mine-branch `parent IS NULL`,
       saved-gym `user_id`, variations `parent_workout_id` + `created_by`),
       two-user isolation, 402 on the guarded create, 409/400/404 paths.
+
+### Landed in Phase 0 beyond the checklist
+
+Two guards were pulled forward. Both are on `POST /workouts/:id/variations` and
+both close a cross-user read that would otherwise have stayed open for a whole
+phase — worth recording so Phase 1 doesn't rebuild them:
+
+- **Exercise read-visibility on every submitted row.** Design § 7.1 sequences
+  this with T-1.6, but the create path exists NOW, and `workout_exercises` reads
+  embed exercise fields WITHOUT the visibility predicate
+  (`exerciseRepository.ts` documents that as intentional for assigned workouts),
+  so an unchecked create would let a caller plant an arbitrary exercise id and
+  read its name/category/thumbnail back off workout detail. New public
+  `ExerciseRepository.findUnreadableExerciseIds(userId, ids)` reusing
+  `buildVisibilityCondition`. T-1.6 keeps the **containment** half (the
+  asymmetric, override-aware check) — only the visibility half is done.
+- **Saved-gym ownership when `sourceGymId` is supplied.** Not cosmetic:
+  `listVariations` LEFT JOINs `saved_gyms` for `sourceGymName`, so an
+  unvalidated gym id would echo another user's gym NAME back to the caller. The
+  FK only proves the row exists, not whose it is.
 
 ## Phase E — Eval spike (NO product code)
 

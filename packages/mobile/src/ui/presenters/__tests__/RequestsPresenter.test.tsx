@@ -105,7 +105,7 @@ describe("RequestsPresenter", () => {
     expect(props.onBack).toHaveBeenCalled();
   });
 
-  // 26-coach-data-sharing-consent
+  // 28-coach-data-sharing-consent
   describe("data-sharing consent sheet", () => {
     it("does not render the consent sheet's confirm control until onAccept opens it", () => {
       const { queryByTestId } = render({ consentVisible: false });

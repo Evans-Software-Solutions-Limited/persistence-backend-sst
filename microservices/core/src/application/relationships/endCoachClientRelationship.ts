@@ -56,7 +56,7 @@ function todayISODate(): string {
  * assignment only *references* a session (`completed_session_id`), so deleting
  * the assignment row never removes the session.
  *
- * 26-coach-data-sharing-consent: this is ALSO the withdrawal mechanism —
+ * 28-coach-data-sharing-consent: this is ALSO the withdrawal mechanism —
  * "withdraw as easily as granted" is made literally true by reusing this one
  * teardown for both Leave Coach and Remove Client. Step 1's soft-end clears
  * `consent_given_at`/`consent_version` to NULL on the SAME update (no extra
@@ -99,7 +99,7 @@ export async function endCoachClientRelationship({
         status: "terminated",
         endDate: todayISODate(),
         updatedAt: new Date(),
-        // 26-coach-data-sharing-consent: withdrawal clears the current-consent
+        // 28-coach-data-sharing-consent: withdrawal clears the current-consent
         // stamp on the SAME update — no extra query.
         consentGivenAt: null,
         consentVersion: null,
@@ -155,7 +155,7 @@ export async function endCoachClientRelationship({
       tx,
     });
 
-    // 26-coach-data-sharing-consent: append-only withdrawal record, same tx
+    // 28-coach-data-sharing-consent: append-only withdrawal record, same tx
     // as the consent-stamp clear above. Source mirrors the direction: the
     // client's own Leave Coach button IS the withdrawal action; a trainer-
     // initiated removal also ends sharing, recorded distinctly.

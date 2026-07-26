@@ -116,3 +116,106 @@ describe("ExerciseRepository visibility SQL shape (assignment-scoped)", () => {
     expect(sql).not.toContain("pt_client_relationships");
   });
 });
+
+/**
+ * Loadout (spec-21 § 7.1) — `findUnreadableExerciseIds` is the SECURITY control
+ * on `POST /workouts/:id/variations`: every submitted row is re-verified for
+ * read-visibility so an adaptation can't be used to smuggle another coach's
+ * private exercise into a workout the caller owns.
+ *
+ * It reuses `buildVisibilityCondition` rather than re-deriving the grant set, so
+ * the rendered SQL is asserted here for the same reason the list query is —
+ * a predicate that quietly dropped the visibility half would ship green.
+ */
+describe("ExerciseRepository.findUnreadableExerciseIds", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  /** `select().from().where()` — no orderBy/limit on this query. */
+  function makeIdLookupDb(rows: { id: string }[]) {
+    const capture: { where: unknown } = { where: undefined };
+    const chain: any = {};
+    chain.from = vi.fn(() => chain);
+    chain.where = vi.fn((w: unknown) => {
+      capture.where = w;
+      return Promise.resolve(rows);
+    });
+    const db = { select: vi.fn(() => chain) };
+    return { db, capture };
+  }
+
+  it("applies the FULL visibility predicate, not just an id filter", async () => {
+    const { db, capture } = makeIdLookupDb([]);
+    (getDb as any).mockReturnValue(db);
+
+    await new ExerciseRepository().findUnreadableExerciseIds("user-1", [
+      "ex-1",
+      "ex-2",
+    ]);
+
+    const sql = renderWhere(capture.where);
+    const params = renderParams(capture.where);
+
+    // The id filter…
+    expect(sql).toContain('"id" in');
+    expect(params).toContain("ex-1");
+    expect(params).toContain("ex-2");
+    // …AND the visibility grant set. Without these branches the function would
+    // report every existing exercise as readable, silently disabling the gate.
+    expect(params).toContain(SYSTEM_USER_ID);
+    expect(params).toContain("user-1");
+    expect(sql).toContain('"program_assignments"');
+    expect(sql).toContain('"workout_assignments"');
+  });
+
+  it("returns the ids the visibility predicate did not return", async () => {
+    // Only ex-1 came back from the visibility-filtered query.
+    const { db } = makeIdLookupDb([{ id: "ex-1" }]);
+    (getDb as any).mockReturnValue(db);
+
+    const result = await new ExerciseRepository().findUnreadableExerciseIds(
+      "user-1",
+      ["ex-1", "ex-private"],
+    );
+
+    expect(result).toEqual(["ex-private"]);
+  });
+
+  it("returns [] when every id is readable", async () => {
+    const { db } = makeIdLookupDb([{ id: "ex-1" }, { id: "ex-2" }]);
+    (getDb as any).mockReturnValue(db);
+
+    expect(
+      await new ExerciseRepository().findUnreadableExerciseIds("user-1", [
+        "ex-1",
+        "ex-2",
+      ]),
+    ).toEqual([]);
+  });
+
+  it("dedupes before querying and reports each unreadable id once", async () => {
+    const { db, capture } = makeIdLookupDb([]);
+    (getDb as any).mockReturnValue(db);
+
+    const result = await new ExerciseRepository().findUnreadableExerciseIds(
+      "user-1",
+      ["ex-1", "ex-1", "ex-2"],
+    );
+
+    expect(result).toEqual(["ex-1", "ex-2"]);
+    // A plan can legitimately repeat an exercise; the lookup shouldn't.
+    const params = renderParams(capture.where);
+    expect(params.filter((p) => p === "ex-1")).toHaveLength(1);
+  });
+
+  it("short-circuits an empty list without querying", async () => {
+    const { db } = makeIdLookupDb([]);
+    (getDb as any).mockReturnValue(db);
+
+    expect(
+      await new ExerciseRepository().findUnreadableExerciseIds("user-1", []),
+    ).toEqual([]);
+    expect(db.select).not.toHaveBeenCalled();
+  });
+});

@@ -21,6 +21,7 @@ import {
   sessionExercises,
   exerciseSets,
   profiles,
+  savedGyms,
   type Workout,
 } from "@persistence/db";
 import { getDb, type Db } from "@persistence/db/client";
@@ -104,6 +105,54 @@ export interface UpdateWorkoutInput {
   estimatedDurationMinutes?: number;
   showInOwnerLibrary?: boolean;
   exercises?: CreateWorkoutExerciseInput[];
+}
+
+// ─── Loadout variations (spec-21) ─────────────────────────────────────────
+
+/**
+ * One adapted version of a parent workout, as the parent's "Saved setups" list
+ * needs it (AC-6.1): which gym, what kit, how many swaps, how old.
+ */
+export interface WorkoutVariationSummary {
+  id: string;
+  name: string;
+  description: string | null;
+  parentWorkoutId: string | null;
+  variationKind: string | null;
+  sourceGymId: string | null;
+  /** Null once the saved gym is deleted — the kit snapshot survives (AC-7.3). */
+  sourceGymName: string | null;
+  sourceEquipmentTypeIds: string[] | null;
+  estimatedDurationMinutes: number;
+  /** Derived, never stored — see `listVariations`. */
+  swapCount: number;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+}
+
+export interface CreateVariationExerciseInput extends CreateWorkoutExerciseInput {
+  /** The exercise this row replaced; absent/null on a KEPT row. */
+  substitutedFromExerciseId?: string | null;
+  /**
+   * Structured reason code `{ code, missingEquipment, matchedOn }` (design
+   * § 7.2), stored as jsonb. Typed `unknown` here because the backend never
+   * reads it back — the mobile layer renders copy from the code. Phase 1 owns
+   * generating it server-side.
+   */
+  substitutionReason?: unknown;
+  /** The user deliberately chose this row (AC-4.3). A quality signal only. */
+  isUserOverride?: boolean;
+}
+
+export interface CreateVariationInput {
+  name: string;
+  description?: string | null;
+  estimatedDurationMinutes?: number;
+  /** Null for an ad-hoc equipment context (no saved gym involved). */
+  sourceGymId?: string | null;
+  /** Frozen snapshot of the kit this was adapted for (AC-5.2). */
+  sourceEquipmentTypeIds: string[];
+  exercises: CreateVariationExerciseInput[];
 }
 
 export interface WorkoutHistory {
@@ -426,6 +475,139 @@ export class WorkoutRepository {
     });
   }
 
+  // ─── Loadout variations (spec-21 § 2.2 / § 3) ────────────────────────
+
+  /**
+   * Can the caller READ this workout? Own / public / friends / assigned — the
+   * same grant set `getById` applies, exposed without the exercise fetch so the
+   * variation endpoints can gate on the PARENT cheaply.
+   *
+   * `false` covers both "doesn't exist" and "not allowed", which the handlers
+   * surface as one 404 — no 403/404 distinction, so a caller cannot probe for
+   * the existence of workouts they can't see.
+   *
+   * Read, not own (AC-1.2): Loadout applies to a coach-assigned workout or a
+   * public template, not just the caller's own.
+   */
+  async canReadWorkout(id: string, userId: string): Promise<boolean> {
+    const db = getDb();
+    const [workout] = await db
+      .select()
+      .from(workouts)
+      .where(eq(workouts.id, id))
+      .limit(1);
+    if (!workout) return false;
+    return this.canRead(db, workout, userId);
+  }
+
+  /**
+   * The CALLER's variations of `parentId`, newest first (AC-6.1 / AC-6.2).
+   *
+   * Scoped by `created_by = userId` as well as `parent_workout_id`: a variation
+   * is owned by whoever ran the adaptation, so two athletes adapting the same
+   * coach-assigned parent must never see each other's setups. That ownership
+   * filter is the data-isolation control here, not a convenience.
+   *
+   * `swapCount` is a correlated subquery rather than a stored column, so it can
+   * never drift from the rows it counts (design § 2.3). Written as a subquery
+   * rather than a GROUP BY aggregate deliberately — a parameterised expression
+   * reused across SELECT and GROUP BY lands in different bind slots and throws
+   * Postgres 42803 (see memory/reference_drizzle_groupby_param_bug).
+   *
+   * `sourceGymName` is LEFT JOINed and is null once the gym is deleted; the
+   * frozen `sourceEquipmentTypeIds` snapshot still describes the kit (AC-7.3).
+   */
+  async listVariations(
+    parentId: string,
+    userId: string,
+  ): Promise<WorkoutVariationSummary[]> {
+    const db = getDb();
+    return db
+      .select({
+        id: workouts.id,
+        name: workouts.name,
+        description: workouts.description,
+        parentWorkoutId: workouts.parentWorkoutId,
+        variationKind: workouts.variationKind,
+        sourceGymId: workouts.sourceGymId,
+        sourceGymName: savedGyms.name,
+        sourceEquipmentTypeIds: workouts.sourceEquipmentTypeIds,
+        estimatedDurationMinutes: workouts.estimatedDurationMinutes,
+        swapCount: sql<number>`(
+          select count(*) from ${workoutExercises}
+          where ${workoutExercises.workoutId} = ${workouts.id}
+            and ${workoutExercises.substitutedFromExerciseId} is not null
+        )`.mapWith(Number),
+        createdAt: workouts.createdAt,
+        updatedAt: workouts.updatedAt,
+      })
+      .from(workouts)
+      .leftJoin(savedGyms, eq(workouts.sourceGymId, savedGyms.id))
+      .where(
+        and(
+          eq(workouts.parentWorkoutId, parentId),
+          eq(workouts.createdBy, userId),
+        ),
+      )
+      .orderBy(desc(workouts.createdAt));
+  }
+
+  /**
+   * Persist a reviewed adaptation as a variation under `parentId`, in ONE
+   * transaction (AC-5.1). The parent's own row and `workout_exercises` are never
+   * touched — a variation is additive by construction, not by discipline
+   * (AC-1.3).
+   *
+   * ⚠ `visibility` is hardcoded `'private'` and must stay that way. It does NOT
+   * inherit the parent's. `buildListWhereClause`'s `default` branch is
+   * `visibility = 'public' AND (created_by IS NULL OR created_by != userId)`, so
+   * a variation of a PUBLIC parent that inherited `public` would land in every
+   * other user's browse — carrying this user's gym kit with it (design § 2.2).
+   *
+   * `showInOwnerLibrary` is left at its default `true` on purpose: the variation
+   * is hidden from the library by the `parent_workout_id IS NULL` predicate, so
+   * when a parent is deleted (FK `SET NULL`) the row is promoted back into the
+   * owner's library rather than being invisible forever.
+   */
+  async createVariation(
+    userId: string,
+    parentId: string,
+    input: CreateVariationInput,
+  ): Promise<WorkoutWithExercises> {
+    const db = getDb();
+
+    return db.transaction(async (tx) => {
+      const [variation] = await tx
+        .insert(workouts)
+        .values({
+          name: input.name,
+          description: input.description ?? null,
+          // NEVER inherited from the parent — see the doc comment above.
+          visibility: "private",
+          estimatedDurationMinutes: input.estimatedDurationMinutes ?? 30,
+          createdBy: userId,
+          parentWorkoutId: parentId,
+          variationKind: "loadout",
+          sourceGymId: input.sourceGymId ?? null,
+          sourceEquipmentTypeIds: input.sourceEquipmentTypeIds,
+        })
+        .returning();
+
+      if (input.exercises.length > 0) {
+        await tx.insert(workoutExercises).values(
+          input.exercises.map((ex) => ({
+            ...this.toWorkoutExerciseInsert(variation.id, ex),
+            substitutedFromExerciseId: ex.substitutedFromExerciseId ?? null,
+            substitutionReason: ex.substitutionReason ?? null,
+            isUserOverride: ex.isUserOverride ?? false,
+          })),
+        );
+      }
+
+      return this.fetchWorkoutWithExercises(tx, variation);
+    });
+  }
+
   async delete(id: string, userId: string): Promise<boolean> {
     const db = getDb();
 
@@ -455,12 +637,30 @@ export class WorkoutRepository {
       // for trainers only; regular athletes never set it, so `mine` stays
       // "everything I created" for them (unchanged). Only meaningful for
       // type="mine" — assigned/default ignore it.
+      //
+      // Loadout (spec-21 § 4, AC-6.4): `parent_workout_id IS NULL` excludes
+      // variations from the top-level library — they belong under their parent
+      // ("Saved setups"), so a user with one workout and four adapted versions
+      // of it sees ONE card, not five.
+      //
+      // ⚠ It must be on BOTH branches. Patching only the second would leave
+      // trainers — the callers who pass `ownerLibraryOnly: true` — still seeing
+      // every variation, which is the exact crowding this de-crowds.
+      //
+      // Deliberately NOT implemented as `show_in_owner_library = false` on
+      // variations: that column has a specific documented meaning
+      // (coach-authoring de-crowding, migration 20260712120000), and overloading
+      // it would ALSO leave orphaned variations invisible forever after a parent
+      // delete. `parent IS NULL` composes correctly with the FK's
+      // `ON DELETE SET NULL` — a deleted parent promotes its variations back
+      // into the library instead of hiding them (AC-5.4).
       return ownerLibraryOnly
         ? and(
             eq(workouts.createdBy, userId),
             eq(workouts.showInOwnerLibrary, true),
+            isNull(workouts.parentWorkoutId),
           )
-        : eq(workouts.createdBy, userId);
+        : and(eq(workouts.createdBy, userId), isNull(workouts.parentWorkoutId));
     }
     if (type === "assigned") {
       // `show_in_library` is the coach's per-assignment "clutter the

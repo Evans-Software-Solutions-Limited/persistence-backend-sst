@@ -124,7 +124,7 @@ describe("RequestsContainer", () => {
     expect(mockRespond).toHaveBeenCalledWith("rel-2", "decline");
   });
 
-  // 26-coach-data-sharing-consent: accepting is no longer a direct call to
+  // 28-coach-data-sharing-consent: accepting is no longer a direct call to
   // `respond` — it opens the consent sheet, and only confirming the sheet
   // calls `respond` with `consent:true` + the version.
   describe("data-sharing consent gate on accept", () => {

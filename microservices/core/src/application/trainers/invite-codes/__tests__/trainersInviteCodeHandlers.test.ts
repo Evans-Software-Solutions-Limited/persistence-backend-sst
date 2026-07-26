@@ -55,7 +55,7 @@ vi.mock("../../seats/trainerSeats", () => ({
     notifyLimitReached(...(args as [])),
 }));
 
-// 26-coach-data-sharing-consent: recordDataSharingConsent is unit-tested on
+// 28-coach-data-sharing-consent: recordDataSharingConsent is unit-tested on
 // its own (recordDataSharingConsent.test.ts) — mocked here so the accept-tx
 // queue assertions stay focused on the relationship write, not the insert
 // plumbing (mirrors trainersRelationshipsHandlers.test.ts).
@@ -465,7 +465,7 @@ describe("trainersAcceptInviteCodeHandler", () => {
     expect(body.data.success).toBe(true);
     expect(body.data.relationshipId).toBe("rel-new");
     expect(body.data.trainerName).toBe("Coach Carter");
-    // 26-coach-data-sharing-consent: grant recorded in the same tx as redemption.
+    // 28-coach-data-sharing-consent: grant recorded in the same tx as redemption.
     expect(recordConsent).toHaveBeenCalledWith(
       expect.objectContaining({
         trainerId: "trainer-1",
@@ -531,7 +531,7 @@ describe("trainersAcceptInviteCodeHandler", () => {
         clientId: "user-id",
         status: "pending",
         initiatedBy: "client",
-        // 26-coach-data-sharing-consent: the stamp rides the same insert.
+        // 28-coach-data-sharing-consent: the stamp rides the same insert.
         consentGivenAt: expect.any(Date),
         consentVersion: "v1-2026-07",
       }),
@@ -604,7 +604,7 @@ describe("trainersAcceptInviteCodeHandler", () => {
     expect(res.status).toBe(201);
     const body = (await res.json()) as any;
     expect(body.data.relationshipId).toBe("rel-old");
-    // 26-coach-data-sharing-consent: grant recorded on the revive path too.
+    // 28-coach-data-sharing-consent: grant recorded on the revive path too.
     expect(recordConsent).toHaveBeenCalledWith(
       expect.objectContaining({
         trainerId: "trainer-1",

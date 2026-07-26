@@ -1,4 +1,5 @@
 import {
+  type AnyPgColumn,
   boolean,
   check,
   date,
@@ -301,12 +302,60 @@ export const muscleGroupCategories = pgTable(
   (t) => [primaryKey({ columns: [t.muscleGroupId, t.categoryId] })],
 );
 
+// ⚠ `description` is declared here but does NOT exist in the live Supabase
+// database (see memory/project_supabase_db_as_is). A bare `select()` over this
+// table therefore 500s on Postgres's "column description does not exist" —
+// every query must project explicitly. `exerciseRepository.getEquipmentTypes`
+// carries the same warning at its call site.
 export const equipmentTypes = pgTable("equipment_types", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: text("name").notNull().unique(),
   description: text("description"),
+  // Loadout (spec-21 § 2.3b): picker grouping — free_weights | machines |
+  // cables | bodyweight | cardio | accessories. Nullable; an uncategorised row
+  // renders under "Other" rather than disappearing (AC-2.2).
+  category: text("category"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 });
+
+// Loadout (spec-21 § 2.1) — a user's named equipment sets ("Hotel gym",
+// "Garage"), used as the equipment context for an adaptation. Supersedes
+// `profiles.available_equipment`, which is write-only and unvalidated and stays
+// unread. Backend-only: RLS on with zero policies (see the migration).
+//
+// `equipmentTypeIds` cannot carry a FK — Postgres has no array-element FKs — so
+// `SavedGymRepository` validates every id against `equipment_types` and 400s
+// otherwise. Same posture as `exercises.equipmentRequired`.
+export const savedGyms = pgTable(
+  "saved_gyms",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    equipmentTypeIds: uuid("equipment_type_ids").array().notNull().default([]),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    // Per-user name uniqueness (AC-7.4) is CASE- AND WHITESPACE-INSENSITIVE in
+    // the database: the real index is on `(user_id, lower(btrim(name)))`.
+    // Drizzle's `.on()` takes columns, not expressions, so this mirror
+    // deliberately declares the bare-column form — it exists to record the
+    // index's NAME and rough shape, not to reproduce its predicate. The
+    // authoritative definition is `saved_gyms_user_name_key` in
+    // `20260726120000_saved_gyms.sql`; the repository does its own
+    // case-insensitive pre-check and maps a unique violation to 409, so nothing
+    // depends on this mirror being expression-accurate.
+    uniqueIndex("saved_gyms_user_name_key").on(t.userId, t.name),
+    index("saved_gyms_user_created_idx").on(t.userId, t.createdAt.desc()),
+  ],
+);
 
 export const accessibilityTags = pgTable("accessibility_tags", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -632,28 +681,83 @@ export const workouts = pgTable("workouts", {
   // sharing). Default true — pre-existing + athlete-authored workouts are
   // personal; coach-authored workouts are created with false by the app.
   showInOwnerLibrary: boolean("show_in_owner_library").notNull().default(true),
+  // ─── Loadout (spec-21 § 2.2) — parent ↔ variation linkage ───────────────
+  // The workout this row is a variation OF. NULL for ordinary workouts (which
+  // is every row that predates Loadout). ON DELETE SET NULL: deleting a parent
+  // PROMOTES its variations to standalone workouts rather than destroying them
+  // (AC-5.4) — which is also what makes the `parentWorkoutId IS NULL` library
+  // predicate compose correctly.
+  parentWorkoutId: uuid("parent_workout_id").references(
+    (): AnyPgColumn => workouts.id,
+    { onDelete: "set null" },
+  ),
+  // Constrained in the database to NULL | 'loadout'
+  // (workouts_variation_kind_check) so a future kind is a reviewed migration.
+  variationKind: text("variation_kind"),
+  // The saved gym this was adapted for; NULL for an ad-hoc equipment context.
+  sourceGymId: uuid("source_gym_id").references(() => savedGyms.id, {
+    onDelete: "set null",
+  }),
+  // FROZEN SNAPSHOT of the equipment context, deliberately not derived from
+  // sourceGymId — a gym can be renamed, re-kitted or deleted and the variation
+  // must still describe what it was built for (AC-5.2 / AC-7.3).
+  sourceEquipmentTypeIds: uuid("source_equipment_type_ids").array(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 });
 
-export const workoutExercises = pgTable("workout_exercises", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  workoutId: uuid("workout_id")
-    .notNull()
-    .references(() => workouts.id, { onDelete: "cascade" }),
-  exerciseId: uuid("exercise_id")
-    .notNull()
-    .references(() => exercises.id, { onDelete: "cascade" }),
-  sortOrder: integer("sort_order").notNull(),
-  supersetGroup: integer("superset_group"),
-  targetSets: integer("target_sets"),
-  targetRepsMin: integer("target_reps_min").notNull().default(1),
-  targetRepsMax: integer("target_reps_max").notNull().default(1),
-  targetDurationSeconds: integer("target_duration_seconds"),
-  restSeconds: integer("rest_seconds").default(90),
-  notes: text("notes"),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
-});
+export const workoutExercises = pgTable(
+  "workout_exercises",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workoutId: uuid("workout_id")
+      .notNull()
+      .references(() => workouts.id, { onDelete: "cascade" }),
+    exerciseId: uuid("exercise_id")
+      .notNull()
+      .references(() => exercises.id, { onDelete: "cascade" }),
+    sortOrder: integer("sort_order").notNull(),
+    supersetGroup: integer("superset_group"),
+    targetSets: integer("target_sets"),
+    targetRepsMin: integer("target_reps_min").notNull().default(1),
+    targetRepsMax: integer("target_reps_max").notNull().default(1),
+    targetDurationSeconds: integer("target_duration_seconds"),
+    restSeconds: integer("rest_seconds").default(90),
+    notes: text("notes"),
+    // ─── Loadout (spec-21 § 2.3) — per-row swap provenance ───────────────
+    // The exercise this row replaced; NULL = not a swap. Swap COUNT is derived
+    // from this column (`count(substituted_from_exercise_id)`), never stored,
+    // so it cannot drift from the rows it describes.
+    substitutedFromExerciseId: uuid("substituted_from_exercise_id").references(
+      () => exercises.id,
+      { onDelete: "set null" },
+    ),
+    // jsonb, not text: a structured, localisable reason code
+    // `{ code, missingEquipment, matchedOn }` (design § 7.2). The mobile layer
+    // renders copy from the code, so no UI strings live in the backend.
+    substitutionReason: jsonb("substitution_reason"),
+    // The user deliberately chose this exercise (AC-4.3), which lets the save
+    // path skip containment re-verification for THIS row only. ⚠ Client-supplied
+    // on create — a quality signal, never a security fact (design § 7.1).
+    isUserOverride: boolean("is_user_override").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  },
+  // Mirrors the indexes `001_initial_schema.sql:699-702` already creates. Two of
+  // them are redundant with each other (same single column, different names) —
+  // that is pre-existing and tidying it is out of scope; they are recorded here
+  // so nobody "adds the missing workout_id index" and silently creates a THIRD
+  // duplicate on a hot write path (CREATE INDEX IF NOT EXISTS matches on NAME,
+  // not definition).
+  (t) => [
+    index("idx_workout_exercises_workout").on(t.workoutId),
+    // Redundant with the line above — same column, different name. Pre-existing.
+    index("idx_workout_exercises_workout_id").on(t.workoutId),
+    index("idx_workout_exercises_exercise").on(t.exerciseId),
+    index("idx_workout_exercises_superset")
+      .on(t.workoutId, t.supersetGroup)
+      .where(sql`${t.supersetGroup} is not null`),
+  ],
+);
 
 // ─── Workout Sessions ──────────────────────────────────────────────────────────
 
@@ -868,7 +972,7 @@ export const ptClientRelationships = pgTable(
     startDate: text("start_date"),
     endDate: text("end_date"),
     notes: text("notes"),
-    // Current-consent stamp (26-coach-data-sharing-consent). Set on grant
+    // Current-consent stamp (28-coach-data-sharing-consent). Set on grant
     // (email-invite accept / invite-code redeem), cleared to NULL on
     // withdraw/termination (Leave Coach / Remove Client) — a cheap "is
     // consent currently in force" read. The full grant/withdraw HISTORY
@@ -888,7 +992,7 @@ export const ptClientRelationships = pgTable(
   ],
 );
 
-// ─── Data-Sharing Consents (26-coach-data-sharing-consent) ─────────────────────
+// ─── Data-Sharing Consents (28-coach-data-sharing-consent) ─────────────────────
 // Append-only accountability log (UK GDPR Art 5(2)/Art 9(2)(a)) of every
 // coach data-sharing consent grant/withdraw event. One row per event, so the
 // full history survives a re-invite cycle (the relationship row is revived,
@@ -1686,6 +1790,9 @@ export type NewMuscleCategory = typeof muscleCategories.$inferInsert;
 
 export type EquipmentType = typeof equipmentTypes.$inferSelect;
 export type NewEquipmentType = typeof equipmentTypes.$inferInsert;
+
+export type SavedGym = typeof savedGyms.$inferSelect;
+export type NewSavedGym = typeof savedGyms.$inferInsert;
 
 export type AccessibilityTag = typeof accessibilityTags.$inferSelect;
 export type NewAccessibilityTag = typeof accessibilityTags.$inferInsert;

@@ -97,6 +97,12 @@ export type MuscleGroupRow = {
 export type EquipmentTypeRow = {
   id: string;
   name: string;
+  /**
+   * Picker grouping (spec-21 § 2.3b): free_weights | machines | cables |
+   * bodyweight | cardio | accessories. Nullable — a row with no category
+   * renders under "Other" rather than disappearing from the picker (AC-2.2).
+   */
+  category: string | null;
 };
 
 /**
@@ -603,10 +609,15 @@ export class ExerciseRepository {
 
   /**
    * Explicit projection: `equipment_types` in Supabase has only
-   * `id, name, created_at`. The Drizzle schema also lists a
-   * `description` column that does not exist in the live DB;
-   * projecting `select()` would 500 on Postgres's "column
-   * description does not exist". See memory/project_supabase_db_as_is.
+   * `id, name, created_at` (+ `category`, added by spec-21 Phase 0).
+   * The Drizzle schema also lists a `description` column that does not
+   * exist in the live DB; projecting `select()` would 500 on Postgres's
+   * "column description does not exist". See
+   * memory/project_supabase_db_as_is.
+   *
+   * `category` (spec-21 § 2.3b) groups the Loadout equipment picker from the
+   * API rather than a hardcoded client list (AC-2.2). Nullable — an
+   * uncategorised row renders under "Other" rather than disappearing.
    */
   async getEquipmentTypes(): Promise<EquipmentTypeRow[]> {
     const db = getDb();
@@ -614,9 +625,46 @@ export class ExerciseRepository {
       .select({
         id: equipmentTypes.id,
         name: equipmentTypes.name,
+        category: equipmentTypes.category,
       })
       .from(equipmentTypes)
       .orderBy(equipmentTypes.name);
+  }
+
+  /**
+   * Which of `ids` may the caller NOT read? Empty array = all readable.
+   *
+   * Loadout (spec-21 § 7.1): read-visibility is the SECURITY control on the
+   * create-variation path and is re-verified on EVERY submitted row, so an
+   * adaptation cannot be used to smuggle another coach's private exercise into
+   * a workout the caller owns. Equipment containment, by contrast, is a quality
+   * check the user may deliberately override (AC-4.2 / AC-4.3) — the asymmetry
+   * is the point.
+   *
+   * Reuses `buildVisibilityCondition` rather than re-deriving the grant set, so
+   * the predicate lives in exactly one place and a future grant (or revocation)
+   * applies here automatically.
+   */
+  async findUnreadableExerciseIds(
+    userId: string,
+    ids: string[],
+  ): Promise<string[]> {
+    const unique = Array.from(new Set(ids));
+    if (unique.length === 0) return [];
+
+    const db = getDb();
+    const rows = await db
+      .select({ id: exercises.id })
+      .from(exercises)
+      .where(
+        and(
+          inArray(exercises.id, unique),
+          this.buildVisibilityCondition(userId),
+        ),
+      );
+
+    const readable = new Set(rows.map((r) => r.id));
+    return unique.filter((id) => !readable.has(id));
   }
 
   async getCategories(): Promise<string[]> {

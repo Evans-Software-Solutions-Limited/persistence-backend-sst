@@ -20,7 +20,7 @@ export type ClientRelationshipsState = {
    * local list optimistically (it has left the queried set). Returns the
    * Result so the caller can surface errors.
    *
-   * 26-coach-data-sharing-consent: `consent`/`consentVersion` are REQUIRED
+   * 28-coach-data-sharing-consent: `consent`/`consentVersion` are REQUIRED
    * when `action === "accept"` (the backend 400s `consent_required`
    * otherwise) — the caller must route accept through
    * `<DataSharingConsentSheet>`'s affirmative checkbox first.

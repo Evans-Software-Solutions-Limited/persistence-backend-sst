@@ -29,7 +29,7 @@ export type AcceptInvitePresenterProps = {
   /** Opens the consent sheet — does NOT redeem the code itself (see `onConsentConfirm`). */
   onSubmit: () => void;
   onBack: () => void;
-  /** 26-coach-data-sharing-consent: drives <DataSharingConsentSheet>, opened by `onSubmit`. */
+  /** 28-coach-data-sharing-consent: drives <DataSharingConsentSheet>, opened by `onSubmit`. */
   consentVisible: boolean;
   onConsentClose: () => void;
   /** Only this actually redeems the code — see `AcceptInviteContainer`. */

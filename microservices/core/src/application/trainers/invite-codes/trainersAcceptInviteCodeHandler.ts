@@ -37,7 +37,7 @@ import { recordDataSharingConsent } from "../../relationships/recordDataSharingC
  * `pt_request` / `physio_request` notification to the trainer here, AFTER the
  * transaction commits, so a rollback never leaves an orphan notification.
  *
- * 26-coach-data-sharing-consent: the CLIENT is the actor here, and the
+ * 28-coach-data-sharing-consent: the CLIENT is the actor here, and the
  * relationship only goes `active` LATER when the coach accepts — so consent
  * must be captured at REDEMPTION, not at the coach's accept. `consent:true` +
  * a non-empty `consentVersion` are REQUIRED — missing either 400s with
@@ -90,7 +90,7 @@ export const trainersAcceptInviteCodeHandler = new Elysia()
       };
       const normalizedCode = code.toUpperCase().trim();
 
-      // 26-coach-data-sharing-consent: redemption is the client's consent
+      // 28-coach-data-sharing-consent: redemption is the client's consent
       // capture point. Reject BEFORE any DB work (no transaction started, the
       // code stays unconsumed) if the client hasn't affirmatively consented.
       if (!consent || !consentVersion) {
@@ -272,7 +272,7 @@ export const trainersAcceptInviteCodeHandler = new Elysia()
             relationshipId = inserted[0].id;
           }
 
-          // Append-only accountability log (spec 26) — same tx as the stamp.
+          // Append-only accountability log (spec 28) — same tx as the stamp.
           await recordDataSharingConsent({
             trainerId,
             clientId: userId,
@@ -360,7 +360,7 @@ export const trainersAcceptInviteCodeHandler = new Elysia()
       body: t.Object({
         code: t.String({ minLength: 1, maxLength: 10 }),
         // Required (checked at runtime, not schema-level) — see
-        // 26-coach-data-sharing-consent above. Optional here so a
+        // 28-coach-data-sharing-consent above. Optional here so a
         // missing/absent value 400s as `consent_required` rather than a
         // generic 422 schema-validation error.
         consent: t.Optional(t.Boolean()),

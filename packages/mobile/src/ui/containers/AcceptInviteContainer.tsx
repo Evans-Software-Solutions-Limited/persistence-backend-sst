@@ -20,7 +20,7 @@ import { AcceptInvitePresenter } from "@/ui/presenters/AcceptInvitePresenter";
  * (NOT a paywall/upsell — `coach_client_limit_reached` is a plain client-
  * facing message, mirroring the backend's own framing).
  *
- * 26-coach-data-sharing-consent: redemption is the client's own action AND
+ * 28-coach-data-sharing-consent: redemption is the client's own action AND
  * the point their data starts flowing to the coach (once accepted) — so it's
  * the UK GDPR Art 9(2)(a) explicit-consent moment for this whole flow (the
  * later coach accept needs no consent of its own). Tapping "Join" no longer

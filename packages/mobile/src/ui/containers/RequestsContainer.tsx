@@ -17,7 +17,7 @@ import { RequestsPresenter } from "@/ui/presenters/RequestsPresenter";
  * as "acceptable" here — only TRAINER-initiated pendings (email invite /
  * unredeemed code) are the athlete's to review.
  *
- * 26-coach-data-sharing-consent: accepting is the client's UK GDPR Art 9(2)(a)
+ * 28-coach-data-sharing-consent: accepting is the client's UK GDPR Art 9(2)(a)
  * explicit-consent moment. Tapping "Accept" no longer calls `respond`
  * directly — it opens `<DataSharingConsentSheet>` (via `consentTarget`); only
  * confirming the sheet's affirmative, never-pre-ticked checkbox calls

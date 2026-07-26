@@ -52,7 +52,7 @@ export function useCreateInviteCode(): {
  * consent_required) so the redeem screen can map it to copy without
  * string-matching.
  *
- * 26-coach-data-sharing-consent: `consent`/`consentVersion` are REQUIRED —
+ * 28-coach-data-sharing-consent: `consent`/`consentVersion` are REQUIRED —
  * the caller (`AcceptInviteContainer`) must route through
  * `<DataSharingConsentSheet>`'s affirmative checkbox before calling
  * `mutate`.

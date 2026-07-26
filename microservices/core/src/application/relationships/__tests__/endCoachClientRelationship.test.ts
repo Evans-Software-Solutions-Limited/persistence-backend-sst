@@ -17,7 +17,7 @@ vi.mock("../auditTrainerAction", () => ({
     auditTrainerAction(...(args as [])),
 }));
 
-// 26-coach-data-sharing-consent: recordDataSharingConsent is unit-tested on
+// 28-coach-data-sharing-consent: recordDataSharingConsent is unit-tested on
 // its own (recordDataSharingConsent.test.ts) — mocked here so the teardown-tx
 // queue assertions stay focused on the relationship/assignment writes.
 const recordConsent = vi.fn(async () => {});
@@ -136,7 +136,7 @@ describe("endCoachClientRelationship", () => {
     expect(setArgs.updatedAt).toBeInstanceOf(Date);
     expect(ex.where).toHaveBeenCalledTimes(4); // consent-version select + update + 2 deletes
 
-    // 26-coach-data-sharing-consent: withdrawal clears the current-consent
+    // 28-coach-data-sharing-consent: withdrawal clears the current-consent
     // stamp on the SAME update, and appends a `withdraw` row — source
     // `coach_removed` for a trainer-initiated end.
     expect(setArgs.consentGivenAt).toBeNull();
@@ -196,7 +196,7 @@ describe("endCoachClientRelationship", () => {
         payload: expect.objectContaining({ initiatedBy: "client" }),
       }),
     );
-    // 26-coach-data-sharing-consent: client-initiated end (Leave Coach) records
+    // 28-coach-data-sharing-consent: client-initiated end (Leave Coach) records
     // source `leave_coach`, distinct from the trainer-initiated case above.
     expect(recordConsent).toHaveBeenCalledWith(
       expect.objectContaining({

@@ -1,7 +1,7 @@
 # 27 — Coach Health-Data Read-Audit (GO-LIVE BLOCKER)
 
 **Status:** Brief for implementer · **Author:** Claude (Opus) · **Date:** 2026-07-20
-**Related:** spec 25 (offboarding), spec 26 (consent). Independent of both — can ship in parallel.
+**Related:** spec 25 (offboarding), spec 28 (consent). Independent of both — can ship in parallel.
 
 > **Implementer:** self-contained brief; expand to a Kiro triplet first if you
 > prefer. Ground every change in the cited files before editing.

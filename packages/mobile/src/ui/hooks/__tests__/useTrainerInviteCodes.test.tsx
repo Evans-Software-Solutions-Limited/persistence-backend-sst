@@ -111,7 +111,7 @@ describe("useAcceptInviteCode", () => {
     });
     expect(res?.ok).toBe(true);
     expect(api.acceptInviteCodeCalls).toEqual(["AB23CD"]);
-    // 26-coach-data-sharing-consent: consent/consentVersion are threaded
+    // 28-coach-data-sharing-consent: consent/consentVersion are threaded
     // through to the adapter call.
     expect(api.acceptInviteCodeConsentCalls).toEqual([
       { consent: true, consentVersion: "v1-2026-07" },

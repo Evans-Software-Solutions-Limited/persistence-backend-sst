@@ -8,7 +8,7 @@ import { PRIVACY_POLICY_URL } from "@/domain/models/consent";
 
 /**
  * <DataSharingConsentSheet> — the shared UK GDPR Art 9(2)(a) explicit-consent
- * step (26-coach-data-sharing-consent), reused verbatim by both places a
+ * step (28-coach-data-sharing-consent), reused verbatim by both places a
  * client can start sharing data with a coach:
  *
  *   - <RequestsPresenter> — accepting a trainer-initiated pending request.
