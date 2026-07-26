@@ -1,5 +1,5 @@
 /**
- * 26-coach-data-sharing-consent — shared constants for the coach data-sharing
+ * 28-coach-data-sharing-consent — shared constants for the coach data-sharing
  * consent mechanism (UK GDPR Art 9(2)(a) explicit consent), mobile side.
  *
  * Backend source of truth:

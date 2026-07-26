@@ -20,7 +20,7 @@ export interface RecordDataSharingConsentArgs {
 /**
  * Write one `data_sharing_consents` row inside the caller's transaction —
  * the append-only accountability log for UK GDPR Art 9(2)(a) explicit
- * consent (spec 26). Mirrors `auditTrainerAction`'s "write in the same tx as
+ * consent (spec 28). Mirrors `auditTrainerAction`'s "write in the same tx as
  * the target row" convention: call this AFTER the `pt_client_relationships`
  * stamp write, before the transaction commits.
  */

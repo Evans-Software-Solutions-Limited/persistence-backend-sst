@@ -58,7 +58,7 @@ type RespondAcceptTxResult =
  * WHERE closes the race where two taps (or a concurrent trainer action) both
  * try to move the row — only the first update matches `status = 'pending'`.
  *
- * 26-coach-data-sharing-consent: `accept` is the point the CLIENT agrees to
+ * 28-coach-data-sharing-consent: `accept` is the point the CLIENT agrees to
  * share their health data with this coach (UK GDPR Art 9(2)(a) explicit
  * consent). `consent:true` + a non-empty `consentVersion` are REQUIRED on
  * accept — missing either 400s with `consent_required` and activates
@@ -84,7 +84,7 @@ export const trainersRespondToRequestHandler = new Elysia()
         consentVersion?: string;
       };
 
-      // 26-coach-data-sharing-consent: accept is a consent-capture point.
+      // 28-coach-data-sharing-consent: accept is a consent-capture point.
       // Reject BEFORE any DB work (no transaction started, nothing
       // activated) if the client hasn't affirmatively consented.
       if (action === "accept" && (!consent || !consentVersion)) {
@@ -229,7 +229,7 @@ export const trainersRespondToRequestHandler = new Elysia()
             };
           }
 
-          // Append-only accountability log (spec 26) — same tx as the stamp.
+          // Append-only accountability log (spec 28) — same tx as the stamp.
           await recordDataSharingConsent({
             trainerId: row.trainerId,
             clientId: userId,
@@ -264,7 +264,7 @@ export const trainersRespondToRequestHandler = new Elysia()
       body: t.Object({
         action: t.Union([t.Literal("accept"), t.Literal("decline")]),
         // Required (checked at runtime, not schema-level) when action ===
-        // "accept" — see 26-coach-data-sharing-consent above. Optional here
+        // "accept" — see 28-coach-data-sharing-consent above. Optional here
         // so a missing/absent value 400s as `consent_required` rather than a
         // generic 422 schema-validation error.
         consent: t.Optional(t.Boolean()),

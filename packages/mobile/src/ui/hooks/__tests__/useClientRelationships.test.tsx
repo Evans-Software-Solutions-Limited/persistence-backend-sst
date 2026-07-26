@@ -87,7 +87,7 @@ describe("useClientRelationships", () => {
     expect(result.current.pendingIds.has("rel-1")).toBe(false);
   });
 
-  it("threads consent/consentVersion through to the adapter on accept (26-coach-data-sharing-consent)", async () => {
+  it("threads consent/consentVersion through to the adapter on accept (28-coach-data-sharing-consent)", async () => {
     const api: StubApi = {
       getClientRelationships: jest.fn(async () => ok([rel()])),
       respondToRelationship: jest.fn(async () => ok({})),

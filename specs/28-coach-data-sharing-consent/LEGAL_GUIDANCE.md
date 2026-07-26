@@ -2,7 +2,7 @@
 
 **For:** Brad (solo engineer / sole data controller)
 **Date:** 2026-07-20
-**Covers:** the open legal/DPO decisions flagged in `specs/26.../BRIEF.md` and
+**Covers:** the open legal/DPO decisions flagged in `specs/28.../BRIEF.md` and
 `specs/27.../BRIEF.md`.
 
 > ⚠️ **I am not a lawyer and this is not legal advice.** This is practical

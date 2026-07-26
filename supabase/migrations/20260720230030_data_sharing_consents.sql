@@ -1,4 +1,4 @@
--- 26-coach-data-sharing-consent (GO-LIVE BLOCKER) — explicit, recorded, UK
+-- 28-coach-data-sharing-consent (GO-LIVE BLOCKER) — explicit, recorded, UK
 -- GDPR Art 9(2)(a) consent for a coach reading a client's special-category
 -- health data (weight, body-fat, measurements, sessions, PRs, nutrition,
 -- goals, habits).

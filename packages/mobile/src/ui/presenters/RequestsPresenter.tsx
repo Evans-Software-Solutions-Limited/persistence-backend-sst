@@ -33,7 +33,7 @@ export type RequestsPresenterProps = {
   onBack: () => void;
   onAccept: (relationshipId: string) => void;
   onDecline: (relationshipId: string) => void;
-  /** 26-coach-data-sharing-consent: drives <DataSharingConsentSheet>, opened by `onAccept`. */
+  /** 28-coach-data-sharing-consent: drives <DataSharingConsentSheet>, opened by `onAccept`. */
   consentVisible: boolean;
   onConsentClose: () => void;
   onConsentConfirm: () => void;

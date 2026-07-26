@@ -198,10 +198,12 @@ As a user mid-flow, I can tell Loadout what kit is available in three ways.
 - **AC-2.1 (saved gym)** I can pick one of my saved gyms; its
   `equipment_type_ids` become the equipment context.
 - **AC-2.2 (manual)** I can select equipment from a checklist grouped by
-  category (free weights / machines / cables / bodyweight / cardio), driven by
-  `equipment_types` — no hardcoded client-side list. **`equipment_types` has no
-  `category` column today**; adding and backfilling it is Phase-0 work, not
-  Phase-2 (`design.md` § 2.3b). An uncategorised row renders under "Other".
+  category (free weights / machines / cables / bodyweight / cardio /
+  **accessories** — six groups; `design.md` § 2.3b records why bands, ropes and
+  the sled needed a sixth), driven by `equipment_types` — no hardcoded
+  client-side list. **`equipment_types` has no `category` column today**; adding
+  and backfilling it is Phase-0 work, not Phase-2 (`design.md` § 2.3b). An
+  uncategorised row renders under "Other".
 - **AC-2.3 (scan)** I can photograph the gym; detected equipment is returned as
   a **draft** I confirm or edit before it is used. Detection never writes
   anything on its own.

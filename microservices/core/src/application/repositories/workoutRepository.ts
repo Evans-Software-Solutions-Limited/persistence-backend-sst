@@ -21,6 +21,7 @@ import {
   sessionExercises,
   exerciseSets,
   profiles,
+  savedGyms,
   type Workout,
 } from "@persistence/db";
 import { getDb, type Db } from "@persistence/db/client";
@@ -49,6 +50,14 @@ export interface WorkoutExerciseRow {
   targetDurationSeconds: number | null;
   restSeconds: number | null;
   notes: string | null;
+  // ─── Loadout provenance (spec-21 § 2.3, AC-3.3) ─────────────────────────
+  // Null / false on every non-Loadout row, which is every row that predates the
+  // feature. Projected here rather than only stored so a saved variation can
+  // EXPLAIN itself — AC-3.3 requires the reason to survive into the variation,
+  // and a write-only column satisfies the storage half but not the requirement.
+  substitutedFromExerciseId: string | null;
+  substitutionReason: unknown;
+  isUserOverride: boolean;
   exercise: {
     id: string;
     name: string;
@@ -106,6 +115,54 @@ export interface UpdateWorkoutInput {
   exercises?: CreateWorkoutExerciseInput[];
 }
 
+// ─── Loadout variations (spec-21) ─────────────────────────────────────────
+
+/**
+ * One adapted version of a parent workout, as the parent's "Saved setups" list
+ * needs it (AC-6.1): which gym, what kit, how many swaps, how old.
+ */
+export interface WorkoutVariationSummary {
+  id: string;
+  name: string;
+  description: string | null;
+  parentWorkoutId: string | null;
+  variationKind: string | null;
+  sourceGymId: string | null;
+  /** Null once the saved gym is deleted — the kit snapshot survives (AC-7.3). */
+  sourceGymName: string | null;
+  sourceEquipmentTypeIds: string[] | null;
+  estimatedDurationMinutes: number;
+  /** Derived, never stored — see `listVariations`. */
+  swapCount: number;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+}
+
+export interface CreateVariationExerciseInput extends CreateWorkoutExerciseInput {
+  /** The exercise this row replaced; absent/null on a KEPT row. */
+  substitutedFromExerciseId?: string | null;
+  /**
+   * Structured reason code `{ code, missingEquipment, matchedOn }` (design
+   * § 7.2), stored as jsonb. Typed `unknown` here because the backend never
+   * reads it back — the mobile layer renders copy from the code. Phase 1 owns
+   * generating it server-side.
+   */
+  substitutionReason?: unknown;
+  /** The user deliberately chose this row (AC-4.3). A quality signal only. */
+  isUserOverride?: boolean;
+}
+
+export interface CreateVariationInput {
+  name: string;
+  description?: string | null;
+  estimatedDurationMinutes?: number;
+  /** Null for an ad-hoc equipment context (no saved gym involved). */
+  sourceGymId?: string | null;
+  /** Frozen snapshot of the kit this was adapted for (AC-5.2). */
+  sourceEquipmentTypeIds: string[];
+  exercises: CreateVariationExerciseInput[];
+}
+
 export interface WorkoutHistory {
   // Number of times the calling user has COMPLETED this workout. 0 = never done.
   completedCount: number;
@@ -126,6 +183,13 @@ export interface WorkoutHistory {
 // the singleton or a transaction handle. Using a structural alias keeps the
 // helper free of Drizzle's deep generic types.
 type DbOrTx = Db | Parameters<Parameters<Db["transaction"]>[0]>[0];
+
+/** The three Loadout provenance columns, as carried across an exercise replace. */
+interface ProvenanceFields {
+  substitutedFromExerciseId: string | null;
+  substitutionReason: unknown;
+  isUserOverride: boolean;
+}
 
 export class WorkoutRepository {
   static readonly key = "WorkoutRepository";
@@ -408,21 +472,201 @@ export class WorkoutRepository {
       if (!updated) return null;
 
       if (data.exercises !== undefined) {
+        // Loadout (spec-21 AC-3.3): capture swap provenance BEFORE the wipe.
+        //
+        // This is a full delete-and-reinsert, and `toWorkoutExerciseInsert`
+        // projects only the ten pre-Loadout fields — so without this, ANY edit
+        // through the generic workout editor (bumping one exercise's target sets
+        // on a saved variation, say) would silently reset every row's
+        // `substituted_from_exercise_id` / `substitution_reason` /
+        // `is_user_override` to their defaults. `listVariations`' derived
+        // swapCount would drop to 0 and the "why was this swapped" data would be
+        // gone for good — a permanent, invisible data loss on a normal edit.
+        //
+        // Matched on `exercise_id`, queued so a workout that legitimately
+        // contains the same exercise twice keeps both rows' provenance in order.
+        // A row whose exercise CHANGED gets no provenance, which is correct: it
+        // is a different exercise now, so the old reason no longer describes it.
+        const provenanceByExercise = await this.captureProvenance(tx, id);
+
         // Full-replacement: wipe junction rows + insert new array.
         await tx
           .delete(workoutExercises)
           .where(eq(workoutExercises.workoutId, id));
 
         if (data.exercises.length > 0) {
-          await tx
-            .insert(workoutExercises)
-            .values(
-              data.exercises.map((ex) => this.toWorkoutExerciseInsert(id, ex)),
-            );
+          await tx.insert(workoutExercises).values(
+            data.exercises.map((ex) => ({
+              ...this.toWorkoutExerciseInsert(id, ex),
+              ...(provenanceByExercise.get(ex.exerciseId)?.shift() ?? {}),
+            })),
+          );
         }
       }
 
       return this.fetchWorkoutWithExercises(tx, updated);
+    });
+  }
+
+  // ─── Loadout variations (spec-21 § 2.2 / § 3) ────────────────────────
+
+  /**
+   * The workout row IF the caller may READ it, else null. Own / public /
+   * friends / assigned — the same grant set `getById` applies, but without the
+   * exercise fetch, so the variation endpoints can gate on the PARENT cheaply.
+   *
+   * `null` covers both "doesn't exist" and "not allowed", which the handlers
+   * surface as one 404 — no 403/404 distinction, so a caller cannot probe for
+   * the existence of workouts they can't see.
+   *
+   * Read, not own (AC-1.2): Loadout applies to a coach-assigned workout or a
+   * public template, not just the caller's own.
+   *
+   * Returns the ROW rather than a boolean because the create path also needs
+   * `parentWorkoutId` off it (to refuse a variation of a variation) — one read,
+   * two decisions.
+   */
+  async findReadableWorkout(
+    id: string,
+    userId: string,
+  ): Promise<Workout | null> {
+    const db = getDb();
+    const [workout] = await db
+      .select()
+      .from(workouts)
+      .where(eq(workouts.id, id))
+      .limit(1);
+    if (!workout) return null;
+    return (await this.canRead(db, workout, userId)) ? workout : null;
+  }
+
+  /**
+   * The exercise ids a workout's rows point at. Used by the create-variation
+   * path to exempt rows CARRIED OVER from the parent from the catalogue
+   * read-visibility check (see `findUnreadableExerciseIds`' call site).
+   *
+   * Why the exemption is safe: the caller has already passed `findReadableWorkout` on
+   * the parent, and `fetchExercisesForWorkouts` embeds exercise fields WITHOUT
+   * the catalogue visibility predicate — so these exercises are already visible
+   * to this caller on the workout-detail screen. Exempting them grants no read
+   * the caller did not already have; withholding the exemption would reject
+   * exactly the case AC-1.2 mandates (adapting a public template or a
+   * friend's workout that uses the owner's custom exercises).
+   */
+  async listExerciseIdsForWorkout(workoutId: string): Promise<string[]> {
+    const db = getDb();
+    const rows = await db
+      .selectDistinct({ exerciseId: workoutExercises.exerciseId })
+      .from(workoutExercises)
+      .where(eq(workoutExercises.workoutId, workoutId));
+    return rows.map((r) => r.exerciseId);
+  }
+
+  /**
+   * The CALLER's variations of `parentId`, newest first (AC-6.1 / AC-6.2).
+   *
+   * Scoped by `created_by = userId` as well as `parent_workout_id`: a variation
+   * is owned by whoever ran the adaptation, so two athletes adapting the same
+   * coach-assigned parent must never see each other's setups. That ownership
+   * filter is the data-isolation control here, not a convenience.
+   *
+   * `swapCount` is a correlated subquery rather than a stored column, so it can
+   * never drift from the rows it counts (design § 2.3). Written as a subquery
+   * rather than a GROUP BY aggregate deliberately — a parameterised expression
+   * reused across SELECT and GROUP BY lands in different bind slots and throws
+   * Postgres 42803 (see memory/reference_drizzle_groupby_param_bug).
+   *
+   * `sourceGymName` is LEFT JOINed and is null once the gym is deleted; the
+   * frozen `sourceEquipmentTypeIds` snapshot still describes the kit (AC-7.3).
+   */
+  async listVariations(
+    parentId: string,
+    userId: string,
+  ): Promise<WorkoutVariationSummary[]> {
+    const db = getDb();
+    return db
+      .select({
+        id: workouts.id,
+        name: workouts.name,
+        description: workouts.description,
+        parentWorkoutId: workouts.parentWorkoutId,
+        variationKind: workouts.variationKind,
+        sourceGymId: workouts.sourceGymId,
+        sourceGymName: savedGyms.name,
+        sourceEquipmentTypeIds: workouts.sourceEquipmentTypeIds,
+        estimatedDurationMinutes: workouts.estimatedDurationMinutes,
+        swapCount: sql<number>`(
+          select count(*) from ${workoutExercises}
+          where ${workoutExercises.workoutId} = ${workouts.id}
+            and ${workoutExercises.substitutedFromExerciseId} is not null
+        )`.mapWith(Number),
+        createdAt: workouts.createdAt,
+        updatedAt: workouts.updatedAt,
+      })
+      .from(workouts)
+      .leftJoin(savedGyms, eq(workouts.sourceGymId, savedGyms.id))
+      .where(
+        and(
+          eq(workouts.parentWorkoutId, parentId),
+          eq(workouts.createdBy, userId),
+        ),
+      )
+      .orderBy(desc(workouts.createdAt));
+  }
+
+  /**
+   * Persist a reviewed adaptation as a variation under `parentId`, in ONE
+   * transaction (AC-5.1). The parent's own row and `workout_exercises` are never
+   * touched — a variation is additive by construction, not by discipline
+   * (AC-1.3).
+   *
+   * ⚠ `visibility` is hardcoded `'private'` and must stay that way. It does NOT
+   * inherit the parent's. `buildListWhereClause`'s `default` branch is
+   * `visibility = 'public' AND (created_by IS NULL OR created_by != userId)`, so
+   * a variation of a PUBLIC parent that inherited `public` would land in every
+   * other user's browse — carrying this user's gym kit with it (design § 2.2).
+   *
+   * `showInOwnerLibrary` is left at its default `true` on purpose: the variation
+   * is hidden from the library by the `parent_workout_id IS NULL` predicate, so
+   * when a parent is deleted (FK `SET NULL`) the row is promoted back into the
+   * owner's library rather than being invisible forever.
+   */
+  async createVariation(
+    userId: string,
+    parentId: string,
+    input: CreateVariationInput,
+  ): Promise<WorkoutWithExercises> {
+    const db = getDb();
+
+    return db.transaction(async (tx) => {
+      const [variation] = await tx
+        .insert(workouts)
+        .values({
+          name: input.name,
+          description: input.description ?? null,
+          // NEVER inherited from the parent — see the doc comment above.
+          visibility: "private",
+          estimatedDurationMinutes: input.estimatedDurationMinutes ?? 30,
+          createdBy: userId,
+          parentWorkoutId: parentId,
+          variationKind: "loadout",
+          sourceGymId: input.sourceGymId ?? null,
+          sourceEquipmentTypeIds: input.sourceEquipmentTypeIds,
+        })
+        .returning();
+
+      if (input.exercises.length > 0) {
+        await tx.insert(workoutExercises).values(
+          input.exercises.map((ex) => ({
+            ...this.toWorkoutExerciseInsert(variation.id, ex),
+            substitutedFromExerciseId: ex.substitutedFromExerciseId ?? null,
+            substitutionReason: ex.substitutionReason ?? null,
+            isUserOverride: ex.isUserOverride ?? false,
+          })),
+        );
+      }
+
+      return this.fetchWorkoutWithExercises(tx, variation);
     });
   }
 
@@ -455,12 +699,30 @@ export class WorkoutRepository {
       // for trainers only; regular athletes never set it, so `mine` stays
       // "everything I created" for them (unchanged). Only meaningful for
       // type="mine" — assigned/default ignore it.
+      //
+      // Loadout (spec-21 § 4, AC-6.4): `parent_workout_id IS NULL` excludes
+      // variations from the top-level library — they belong under their parent
+      // ("Saved setups"), so a user with one workout and four adapted versions
+      // of it sees ONE card, not five.
+      //
+      // ⚠ It must be on BOTH branches. Patching only the second would leave
+      // trainers — the callers who pass `ownerLibraryOnly: true` — still seeing
+      // every variation, which is the exact crowding this de-crowds.
+      //
+      // Deliberately NOT implemented as `show_in_owner_library = false` on
+      // variations: that column has a specific documented meaning
+      // (coach-authoring de-crowding, migration 20260712120000), and overloading
+      // it would ALSO leave orphaned variations invisible forever after a parent
+      // delete. `parent IS NULL` composes correctly with the FK's
+      // `ON DELETE SET NULL` — a deleted parent promotes its variations back
+      // into the library instead of hiding them (AC-5.4).
       return ownerLibraryOnly
         ? and(
             eq(workouts.createdBy, userId),
             eq(workouts.showInOwnerLibrary, true),
+            isNull(workouts.parentWorkoutId),
           )
-        : eq(workouts.createdBy, userId);
+        : and(eq(workouts.createdBy, userId), isNull(workouts.parentWorkoutId));
     }
     if (type === "assigned") {
       // `show_in_library` is the coach's per-assignment "clutter the
@@ -611,6 +873,12 @@ export class WorkoutRepository {
         targetDurationSeconds: workoutExercises.targetDurationSeconds,
         restSeconds: workoutExercises.restSeconds,
         notes: workoutExercises.notes,
+        // Loadout provenance (spec-21 AC-3.3). This is the ONE projection behind
+        // GET /workouts/:id, the list response and createVariation's own 201
+        // body, so omitting these would make the reason write-only.
+        substitutedFromExerciseId: workoutExercises.substitutedFromExerciseId,
+        substitutionReason: workoutExercises.substitutionReason,
+        isUserOverride: workoutExercises.isUserOverride,
         exercise: {
           id: exercises.id,
           name: exercises.name,
@@ -634,6 +902,48 @@ export class WorkoutRepository {
       grouped.set(workoutId, list);
     }
 
+    return grouped;
+  }
+
+  /**
+   * Existing Loadout provenance for a workout's rows, grouped by `exercise_id`
+   * and kept in `sort_order` so a repeated exercise's entries are consumed in
+   * the order they appeared. Feeds `update`'s delete-and-reinsert.
+   *
+   * Returns an EMPTY map for an ordinary workout — every row that predates
+   * Loadout has null provenance, so the spread is a no-op and the pre-existing
+   * update behaviour is unchanged.
+   */
+  private async captureProvenance(
+    db: DbOrTx,
+    workoutId: string,
+  ): Promise<Map<string, ProvenanceFields[]>> {
+    const rows = await db
+      .select({
+        exerciseId: workoutExercises.exerciseId,
+        sortOrder: workoutExercises.sortOrder,
+        substitutedFromExerciseId: workoutExercises.substitutedFromExerciseId,
+        substitutionReason: workoutExercises.substitutionReason,
+        isUserOverride: workoutExercises.isUserOverride,
+      })
+      .from(workoutExercises)
+      .where(eq(workoutExercises.workoutId, workoutId))
+      .orderBy(workoutExercises.sortOrder);
+
+    const grouped = new Map<string, ProvenanceFields[]>();
+    for (const row of rows) {
+      // Nothing to carry for a row that was never a swap and never overridden.
+      if (row.substitutedFromExerciseId === null && !row.isUserOverride) {
+        continue;
+      }
+      const list = grouped.get(row.exerciseId) ?? [];
+      list.push({
+        substitutedFromExerciseId: row.substitutedFromExerciseId,
+        substitutionReason: row.substitutionReason,
+        isUserOverride: row.isUserOverride,
+      });
+      grouped.set(row.exerciseId, list);
+    }
     return grouped;
   }
 

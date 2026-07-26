@@ -389,6 +389,254 @@ describe("assertEntitlement — ai_access", () => {
   });
 });
 
+// ─── loadout (spec-21 § 5.1) ──────────────────────────────────────────────
+const FREE_TIER_NO_LOADOUT = [{ loadoutAccess: false }];
+const PREMIUM_PLUS_TIER = [
+  {
+    tierName: "premium_plus",
+    workoutLimit: null,
+    aiAccess: true,
+    priceMonthly: "29.99",
+  },
+];
+const PREMIUM_PLUS_SUB_ACTIVE = [
+  {
+    tierName: "premium_plus",
+    paymentStatus: "active",
+    expiresAt: null,
+    loadoutAccess: true,
+  },
+];
+const PREMIUM_SUB_ACTIVE_NO_LOADOUT = [
+  {
+    tierName: "premium",
+    paymentStatus: "active",
+    expiresAt: null,
+    loadoutAccess: false,
+  },
+];
+const TRAINER_SUB_ACTIVE_LOADOUT = [
+  {
+    tierName: "individual_trainer",
+    paymentStatus: "active",
+    expiresAt: null,
+    loadoutAccess: true,
+  },
+];
+const PREMIUM_PLUS_SUB_CANCELLED_EXPIRED = [
+  {
+    tierName: "premium_plus",
+    paymentStatus: "cancelled",
+    expiresAt: new Date(Date.now() - 86_400_000), // -1 day
+    loadoutAccess: true,
+  },
+];
+const PREMIUM_PLUS_SUB_PAST_DUE = [
+  {
+    tierName: "premium_plus",
+    paymentStatus: "past_due",
+    expiresAt: null,
+    loadoutAccess: true,
+  },
+];
+
+describe("assertEntitlement — loadout", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  // ⚠ THE MOST IMPORTANT TEST IN THIS BLOCK. `assertEntitlement` has a catch-all
+  // `if (feature !== "create_workout") return { allowed: true }`, so a feature
+  // added to the union WITHOUT an explicit routing line silently allows
+  // everyone — a paid gate becomes a no-op with no type error to catch it. This
+  // test fails (by returning allowed:true for a free user) if the routing line
+  // is ever removed.
+  it("is ROUTED — a free user is denied, not caught by the accept-all stub branch", async () => {
+    (getDb as any).mockReturnValue(
+      makeQueueDb([
+        PROFILE_USER,
+        [], // no user_subscriptions row
+        FREE_TIER_NO_LOADOUT, // free-tier flag lookup
+        PREMIUM_PLUS_TIER, // buildDenyVerdict's upgrade-tier lookup
+      ]),
+    );
+
+    const verdict = await assertEntitlement("user-1", "loadout");
+    expect(verdict).toEqual({
+      allowed: false,
+      reason: "tier",
+      currentTier: "free",
+      // AC-9.4: the price comes from the catalog row, never a literal.
+      upgradeTo: "premium_plus",
+      upgradePriceMonthly: 29.99,
+    });
+  });
+
+  it("allows an active premium_plus subscriber", async () => {
+    (getDb as any).mockReturnValue(
+      makeQueueDb([PROFILE_USER, PREMIUM_PLUS_SUB_ACTIVE]),
+    );
+    expect(await assertEntitlement("user-1", "loadout")).toEqual({
+      allowed: true,
+    });
+  });
+
+  // AC-9.2: trainer tiers carry loadout_access.
+  it("allows an active trainer subscriber", async () => {
+    (getDb as any).mockReturnValue(
+      makeQueueDb([PROFILE_TRAINER, TRAINER_SUB_ACTIVE_LOADOUT]),
+    );
+    expect(await assertEntitlement("user-1", "loadout")).toEqual({
+      allowed: true,
+    });
+  });
+
+  // The whole point of the tier: PREMIUM does not include Loadout. A paying
+  // Premium subscriber must be denied and upsold Premium+, not told they
+  // already have it.
+  it("DENIES an active premium subscriber and upsells premium_plus", async () => {
+    (getDb as any).mockReturnValue(
+      makeQueueDb([
+        PROFILE_USER,
+        PREMIUM_SUB_ACTIVE_NO_LOADOUT,
+        PREMIUM_PLUS_TIER, // upgrade-tier lookup
+      ]),
+    );
+
+    const verdict = await assertEntitlement("user-1", "loadout");
+    expect(verdict).toEqual({
+      allowed: false,
+      reason: "tier",
+      currentTier: "premium",
+      upgradeTo: "premium_plus",
+      upgradePriceMonthly: 29.99,
+    });
+  });
+
+  it("denies a trainer-role free user with individual_trainer, not premium_plus", async () => {
+    (getDb as any).mockReturnValue(
+      makeQueueDb([
+        PROFILE_TRAINER,
+        [],
+        FREE_TIER_NO_LOADOUT,
+        TRAINER_TIER_WITH_AI, // upgrade-tier lookup
+      ]),
+    );
+
+    const verdict = await assertEntitlement("user-1", "loadout");
+    expect(verdict).toMatchObject({
+      allowed: false,
+      upgradeTo: "individual_trainer",
+      upgradePriceMonthly: 14.99,
+    });
+  });
+
+  // Revert-to-free: a lapsed Premium+ sub falls back to the FREE tier's flag,
+  // and the reason becomes 'cancelled' so mobile shows reinstate rather than
+  // "upgrade" (the user already picked the right plan).
+  it("denies with reason='cancelled' once the grace period has passed", async () => {
+    (getDb as any).mockReturnValue(
+      makeQueueDb([
+        PROFILE_USER,
+        PREMIUM_PLUS_SUB_CANCELLED_EXPIRED,
+        FREE_TIER_NO_LOADOUT,
+      ]),
+    );
+
+    expect(await assertEntitlement("user-1", "loadout")).toEqual({
+      allowed: false,
+      reason: "cancelled",
+      currentTier: "premium_plus",
+      upgradeTo: null,
+      upgradePriceMonthly: null,
+    });
+  });
+
+  it("stays allowed for a cancelled sub still inside its paid period", async () => {
+    (getDb as any).mockReturnValue(
+      makeQueueDb([
+        PROFILE_USER,
+        [
+          {
+            tierName: "premium_plus",
+            paymentStatus: "cancelled",
+            expiresAt: new Date(Date.now() + 86_400_000),
+            loadoutAccess: true,
+          },
+        ],
+      ]),
+    );
+    expect(await assertEntitlement("user-1", "loadout")).toEqual({
+      allowed: true,
+    });
+  });
+
+  it("denies with reason='expired' for a past_due sub", async () => {
+    (getDb as any).mockReturnValue(
+      makeQueueDb([
+        PROFILE_USER,
+        PREMIUM_PLUS_SUB_PAST_DUE,
+        FREE_TIER_NO_LOADOUT,
+      ]),
+    );
+
+    expect(await assertEntitlement("user-1", "loadout")).toEqual({
+      allowed: false,
+      reason: "expired",
+      currentTier: "premium_plus",
+      upgradeTo: null,
+      upgradePriceMonthly: null,
+    });
+  });
+
+  // An out-of-band tier_name (catalog row deleted) leaves the joined flag NULL.
+  // It must read as "no access", not as "unknown ⇒ allow".
+  it("denies when the joined tier row is missing (null flag)", async () => {
+    (getDb as any).mockReturnValue(
+      makeQueueDb([
+        PROFILE_USER,
+        [
+          {
+            tierName: "some_deleted_tier",
+            paymentStatus: "active",
+            expiresAt: null,
+            loadoutAccess: null,
+          },
+        ],
+        PREMIUM_PLUS_TIER,
+      ]),
+    );
+
+    expect(await assertEntitlement("user-1", "loadout")).toMatchObject({
+      allowed: false,
+      // coerceTierName collapses the unknown name so the wire stays stable.
+      currentTier: "free",
+    });
+  });
+
+  it("throws when the free tier row is missing from the catalog", async () => {
+    (getDb as any).mockReturnValue(
+      makeQueueDb([
+        PROFILE_USER,
+        [],
+        [], // free tier row missing
+      ]),
+    );
+
+    await expect(assertEntitlement("user-1", "loadout")).rejects.toThrow(
+      /free.*missing/,
+    );
+  });
+
+  it("throws when the caller has no profiles row (schema corruption)", async () => {
+    (getDb as any).mockReturnValue(makeQueueDb([[]]));
+
+    await expect(assertEntitlement("user-1", "loadout")).rejects.toThrow(
+      /no profiles row/,
+    );
+  });
+});
+
 describe("assertEntitlement — create_workout, no sub row (free defaults)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -1023,17 +1271,49 @@ describe("pure helpers", () => {
   });
 
   describe("pickUpgradeTier", () => {
-    it("returns basic for user-role", () => {
-      expect(pickUpgradeTier("user")).toBe("premium");
+    it("returns premium for user-role", () => {
+      expect(pickUpgradeTier("user", "create_workout")).toBe("premium");
     });
-    it("returns basic for physiotherapist", () => {
-      expect(pickUpgradeTier("physiotherapist")).toBe("premium");
+    it("returns premium for physiotherapist", () => {
+      expect(pickUpgradeTier("physiotherapist", "create_workout")).toBe(
+        "premium",
+      );
     });
     it("returns individual_trainer for personal_trainer", () => {
-      expect(pickUpgradeTier("personal_trainer")).toBe("individual_trainer");
+      expect(pickUpgradeTier("personal_trainer", "create_workout")).toBe(
+        "individual_trainer",
+      );
     });
     it("returns null for admin", () => {
-      expect(pickUpgradeTier("admin")).toBeNull();
+      expect(pickUpgradeTier("admin", "create_workout")).toBeNull();
+    });
+
+    // Feature-aware branch (spec-21 design § 9.2 item 4). Upselling Premium on a
+    // `loadout` deny would take the athlete's money and leave the feature
+    // locked — Premium has loadout_access = false.
+    it("returns premium_plus for a loadout deny on the user track", () => {
+      expect(pickUpgradeTier("user", "loadout")).toBe("premium_plus");
+      expect(pickUpgradeTier("physiotherapist", "loadout")).toBe(
+        "premium_plus",
+      );
+    });
+
+    it("keeps non-Premium+ features on premium for the user track", () => {
+      expect(pickUpgradeTier("user", "ai_access")).toBe("premium");
+      expect(pickUpgradeTier("user", "trainer_clients")).toBe("premium");
+    });
+
+    // Role beats feature for coaches: all three trainer tiers already carry
+    // loadout_access, so the CHEAPEST trainer tier stays the right upsell — a
+    // coach must never be pushed onto a consumer tier.
+    it("still returns individual_trainer for a trainer denied loadout", () => {
+      expect(pickUpgradeTier("personal_trainer", "loadout")).toBe(
+        "individual_trainer",
+      );
+    });
+
+    it("returns null for an admin denied loadout", () => {
+      expect(pickUpgradeTier("admin", "loadout")).toBeNull();
     });
   });
 

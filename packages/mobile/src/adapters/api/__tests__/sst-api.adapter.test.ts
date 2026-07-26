@@ -2038,7 +2038,7 @@ describe("SSTApiAdapter Trainer invite-code / QR (Coach Mode Phase 8)", () => {
         "/trainers/accept-invite-code",
       );
       const body = JSON.parse(fetchMock.mock.calls[0][1]?.body as string);
-      // 26-coach-data-sharing-consent: consent/consentVersion ride on the
+      // 28-coach-data-sharing-consent: consent/consentVersion ride on the
       // same POST body.
       expect(body).toEqual({
         code: "AB23CD",
@@ -2097,7 +2097,7 @@ describe("SSTApiAdapter Trainer invite-code / QR (Coach Mode Phase 8)", () => {
   });
 
   describe("respondToRelationship", () => {
-    it("sends consent + consentVersion on the POST body when accepting (26-coach-data-sharing-consent)", async () => {
+    it("sends consent + consentVersion on the POST body when accepting (28-coach-data-sharing-consent)", async () => {
       const fetchMock = installFetchMock(async () => {
         return new Response(
           JSON.stringify({

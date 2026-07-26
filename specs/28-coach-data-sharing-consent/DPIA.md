@@ -40,7 +40,7 @@ UK GDPR Art 35 and the ICO's criteria, that clears the threshold. So: yes, do on
 **Scope:** UK/EU consumers; solo B2C plus optional coach↔client relationships.
 
 **Coach sharing (the sensitive flow):** when a user connects a coach, they give
-**explicit, recorded, versioned consent** (spec 26) before any data is shared. The
+**explicit, recorded, versioned consent** (spec 28) before any data is shared. The
 coach can then see: body measurements (incl. weight/body fat), sessions & PRs,
 nutrition totals, goals, habits. **Raw Apple Health data (sleep, heart rate, steps)
 is never shared.** Consent is withdrawable one-tap by removing the coach (immediately
@@ -71,7 +71,7 @@ ends sharing). Coach reads of health data are logged (spec 27) for accountabilit
 
 | #   | Risk                                                   | Likelihood | Severity | Mitigation                                                                                                                | Residual    |
 | --- | ------------------------------------------------------ | ---------- | -------- | ------------------------------------------------------------------------------------------------------------------------- | ----------- |
-| 1   | Coach sees health data without valid consent           | Low        | High     | Explicit, recorded, versioned consent gates activation; no backfill; append-only consent log (spec 26)                    | Low         |
+| 1   | Coach sees health data without valid consent           | Low        | High     | Explicit, recorded, versioned consent gates activation; no backfill; append-only consent log (spec 28)                    | Low         |
 | 2   | Can't evidence who accessed a client's data (DSAR)     | Low        | Med      | Append-only `client_data_access_log` on every coach read (spec 27)                                                        | Low         |
 | 3   | Consent hard to withdraw                               | Low        | Med      | One-tap Leave-coach ends sharing immediately + logs withdrawal                                                            | Low         |
 | 4   | Health data leaks between users (isolation failure)    | Low        | High     | Every query scoped by user id / explicit ownership guard; two-user isolation tests; PT reads gated by active relationship | Low         |

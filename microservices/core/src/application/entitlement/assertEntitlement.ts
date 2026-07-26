@@ -75,7 +75,24 @@ export type EntitlementFeature =
   | "ai_workout"
   | "gym_buddy"
   | "unlimited_exercise_library"
-  | "trainer_clients";
+  | "trainer_clients"
+  | "loadout";
+
+/**
+ * Features that only a PREMIUM+ (or trainer) tier unlocks, as opposed to the
+ * features any paid tier unlocks. Drives `pickUpgradeTier`: a `loadout` deny
+ * must upsell Premium+, not Premium — upselling Premium would take the user's
+ * money and still leave the feature locked.
+ *
+ * Trainer tiers are not listed here because they are selected by ROLE, not by
+ * feature: all three already carry `loadout_access`, so the cheapest trainer
+ * tier remains the right upsell for a coach.
+ *
+ * Spec-26 Mealprint's feature joins this set when it ships.
+ */
+const PREMIUM_PLUS_FEATURES: ReadonlySet<EntitlementFeature> = new Set([
+  "loadout",
+]);
 
 /**
  * Spec-narrow tier-name union. Reflects the simplified tier catalog
@@ -249,6 +266,17 @@ export async function assertEntitlement(
     return assertTrainerClients(userId);
   }
 
+  // Loadout (spec-21 § 5.1) — reads `subscription_tiers.loadout_access`.
+  //
+  // ⚠ THIS ROUTING LINE IS MANDATORY, not tidiness. The catch-all immediately
+  // below returns `{ allowed: true }` for ANY feature that isn't explicitly
+  // routed — so a new feature name added to the union without a line here
+  // SILENTLY ALLOWS EVERYONE, turning a paid gate into a no-op with no test
+  // failure and no type error to catch it.
+  if (feature === "loadout") {
+    return assertLoadout(userId);
+  }
+
   // Remaining stub features (`ai_workout`, `gym_buddy`,
   // `unlimited_exercise_library`) are accept-all today (AC 9.5). The contract
   // is in place so consumers can call `assertEntitlement(uid, 'ai_workout')`
@@ -408,6 +436,7 @@ export async function assertEntitlement(
       reason: denyReason,
       currentTier: effectiveTierName,
       role,
+      feature: "create_workout",
     });
   }
 
@@ -520,6 +549,103 @@ async function assertAiAccess(userId: string): Promise<EntitlementVerdict> {
     reason: denyReason,
     currentTier: effectiveTierName,
     role,
+    feature: "ai_access",
+  });
+}
+
+/**
+ * `loadout` verdict — Loadout (spec-21 § 5.1), gating the adaptive-workout
+ * suite. A near-clone of `assertAiAccess` with `subscription_tiers.ai_access`
+ * swapped for `subscription_tiers.loadout_access`: profile read → latest
+ * `user_subscriptions` LEFT JOIN `subscription_tiers` → revert-to-free on a
+ * cancelled/expired sub → allow on `true` → deny otherwise.
+ *
+ * The flag lives in the CATALOG rather than in a hardcoded
+ * `tierName === "premium_plus"` check so the catalog stays the single source of
+ * truth — a future B2B seat tier (M21) becomes a data change, not a code change.
+ * `loadout_access` is true for `premium_plus` and all three trainer tiers
+ * (AC-9.2), granted by `20260725194527_premium_plus_tier.sql`.
+ *
+ * A deny is a 402 whose `upgrade_to` is `premium_plus` for athletes (see
+ * `pickUpgradeTier`) and whose price comes from the catalog row — so AC-9.4's
+ * "never a hardcoded price" holds for free.
+ */
+async function assertLoadout(userId: string): Promise<EntitlementVerdict> {
+  const db = getDb();
+
+  // 1. Profile slice — same schema-corruption guard as the other paths.
+  const profileRows = await db
+    .select({ role: profiles.role })
+    .from(profiles)
+    .where(eq(profiles.id, userId))
+    .limit(1);
+
+  const profile = profileRows[0];
+  if (!profile) {
+    throw new Error(
+      `assertEntitlement: no profiles row for user ${userId} — schema corruption (JWT-bound user without profile)`,
+    );
+  }
+  const role = normaliseRole(profile.role);
+
+  // 2. Latest subscription joined with the tier, for the loadout_access flag.
+  const subRows = await db
+    .select({
+      tierName: userSubscriptions.tierName,
+      paymentStatus: userSubscriptions.paymentStatus,
+      expiresAt: userSubscriptions.expiresAt,
+      loadoutAccess: subscriptionTiers.loadoutAccess,
+    })
+    .from(userSubscriptions)
+    .leftJoin(
+      subscriptionTiers,
+      eq(userSubscriptions.tierName, subscriptionTiers.tierName),
+    )
+    .where(eq(userSubscriptions.userId, userId))
+    .orderBy(desc(userSubscriptions.createdAt))
+    .limit(1);
+
+  const subRow = subRows[0] ?? null;
+
+  // Same three cases as ai_access: no sub row → free-tier flag; known tier →
+  // joined flag; unknown/deleted tier → coerced to 'free' with a null flag,
+  // treated as false below.
+  let effectiveTierName: SubscriptionTierName;
+  let loadoutAccessFlag: boolean | null;
+
+  if (subRow === null) {
+    effectiveTierName = "free";
+    loadoutAccessFlag = await loadFreeTierLoadoutAccess(db);
+  } else {
+    effectiveTierName = coerceTierName(subRow.tierName);
+    loadoutAccessFlag = subRow.loadoutAccess ?? null;
+  }
+
+  // 3. Status check BEFORE the flag check — a cancelled/expired sub reverts to
+  //    free-tier rules (free has loadout_access = false), and the deny reason
+  //    becomes 'cancelled' / 'expired' so mobile shows the reinstate /
+  //    fix-payment CTA rather than a plain upgrade prompt.
+  let denyReason: EntitlementDenyReason = "tier";
+  if (subRow !== null) {
+    const statusDeny = classifySubscriptionStatus(
+      subRow.paymentStatus,
+      subRow.expiresAt,
+    );
+    if (statusDeny !== null) {
+      loadoutAccessFlag = await loadFreeTierLoadoutAccess(db);
+      denyReason = statusDeny;
+    }
+  }
+
+  if (loadoutAccessFlag === true) {
+    return { allowed: true };
+  }
+
+  return buildDenyVerdict({
+    reason: denyReason,
+    currentTier: effectiveTierName,
+    role,
+    feature: "loadout",
   });
 }
 
@@ -631,30 +757,36 @@ export function normaliseRole(
 }
 
 /**
- * Pick the upgrade target for a `create_workout` deny. Post tier-
- * simplification the picks are:
- *   - `user` (and `physiotherapist`, treated as user-role today)
- *     → `'premium'` (£12.99 / month — cheapest paid user tier).
- *   - `personal_trainer` → `'individual_trainer'` (£14.99 / month —
- *     smallest trainer tier).
- *   - `admin` → no upgrade target (admins shouldn't be denied; if they
- *     somehow are, the gate prompt has nothing useful to suggest).
+ * Pick the upgrade target for a deny, from the caller's ROLE and the FEATURE
+ * they were denied. Post tier-simplification the picks are:
+ *   - `personal_trainer` → `'individual_trainer'` (£14.99 / month — smallest
+ *     trainer tier). Role wins over feature: all three trainer tiers already
+ *     carry `loadout_access`, so the cheapest one is always the right upsell.
+ *   - `admin` → no upgrade target (admins shouldn't be denied; if they somehow
+ *     are, the gate prompt has nothing useful to suggest).
+ *   - `user` / `physiotherapist` → `'premium_plus'` (£29.99 / month) for a
+ *     Premium+-only feature, otherwise `'premium'` (£12.99 / month, the
+ *     cheapest paid user tier).
  *
- * NOTE (M19-P0): this will need to become feature-dependent — a `loadout`
- * deny must upsell to `premium_plus`, not `premium`. That is deliberately
- * NOT built here: `loadout` does not exist as an `EntitlementFeature`
- * until spec-21 Phase 0, so the branch would be unreachable and untestable
- * today. It lands with `loadout` itself (spec-21 design § 9.2 item 4).
+ * The `feature` parameter is REQUIRED rather than defaulting to
+ * `create_workout`: a default would let a future Premium+-only feature be added
+ * to `PREMIUM_PLUS_FEATURES` while some deny path silently kept upselling
+ * Premium — which is the failure mode that actually costs money, because the
+ * user pays and stays locked out. Making it required turns that into a compile
+ * error. (Spec-21 design § 9.2 item 4: this seam deliberately waited for
+ * `loadout` to exist so the Premium+ branch would be reachable and testable.)
  *
- * Returns `null` to signal "no sensible upgrade", which mobile renders
- * as a generic "contact support" CTA.
+ * Returns `null` to signal "no sensible upgrade", which mobile renders as a
+ * generic "contact support" CTA.
  */
 export function pickUpgradeTier(
   role: "user" | "personal_trainer" | "physiotherapist" | "admin",
+  feature: EntitlementFeature,
 ): SubscriptionTierName | null {
   if (role === "personal_trainer") return "individual_trainer";
   if (role === "admin") return null;
   // user + physiotherapist fall through to user-tier upgrade.
+  if (PREMIUM_PLUS_FEATURES.has(feature)) return "premium_plus";
   return "premium";
 }
 
@@ -711,6 +843,42 @@ async function loadTier(
 }
 
 /**
+ * The free tier's `loadout_access` flag (false as seeded, and the value the
+ * revert-to-free path falls back to).
+ *
+ * DELIBERATELY NOT folded into `loadTier`. `loadout_access` is a young column
+ * whose PRODUCTION apply is manual (`20260725194527_premium_plus_tier.sql`), and
+ * `loadTier` is on the hot path of `create_workout` AND `ai_access`. Projecting
+ * the column there would mean a Lambda deployed ahead of the hand-applied
+ * migration throws Postgres 42703 (`column loadout_access does not exist`) on
+ * every workout-creation and AI deny — i.e. the new column would break features
+ * that predate it. Keeping the read here confines that blast radius to Loadout
+ * itself, which is unreachable until the tier goes active anyway.
+ *
+ * Throws when the free row is missing, matching the catalog-misconfiguration
+ * guard the other paths use — a missing free tier means revert-to-free has no
+ * rules to enforce, and silently allowing or denying on incomplete data is worse
+ * than a 500.
+ */
+async function loadFreeTierLoadoutAccess(
+  db: Pick<Db, "select">,
+): Promise<boolean> {
+  const rows = await db
+    .select({ loadoutAccess: subscriptionTiers.loadoutAccess })
+    .from(subscriptionTiers)
+    .where(eq(subscriptionTiers.tierName, "free"))
+    .limit(1);
+
+  const row = rows[0];
+  if (!row) {
+    throw new Error(
+      "assertEntitlement: subscription_tiers row for tier_name='free' is missing — catalog misconfiguration",
+    );
+  }
+  return row.loadoutAccess ?? false;
+}
+
+/**
  * Drizzle returns `decimal` columns as strings to preserve precision
  * (`'7.99'`). We coerce to `number` for the wire payload — JS numbers
  * have enough precision for sub-£10k pricing and matching the mobile
@@ -735,8 +903,11 @@ async function buildDenyVerdict(input: {
   reason: EntitlementDenyReason;
   currentTier: SubscriptionTierName;
   role: "user" | "personal_trainer" | "physiotherapist" | "admin";
+  /** Threaded through to `pickUpgradeTier` — a Premium+-only feature upsells
+   *  Premium+, everything else upsells Premium. */
+  feature: EntitlementFeature;
 }): Promise<Extract<EntitlementVerdict, { allowed: false }>> {
-  const { reason, currentTier, role } = input;
+  const { reason, currentTier, role, feature } = input;
 
   // For cancelled / expired we don't suggest an upgrade — the user
   // needs to fix payment or reinstate, not pick a higher tier. Mobile
@@ -751,7 +922,7 @@ async function buildDenyVerdict(input: {
     };
   }
 
-  const upgradeTierName = pickUpgradeTier(role);
+  const upgradeTierName = pickUpgradeTier(role, feature);
   if (upgradeTierName === null) {
     return {
       allowed: false,

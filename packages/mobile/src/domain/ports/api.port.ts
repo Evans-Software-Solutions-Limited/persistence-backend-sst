@@ -918,7 +918,7 @@ export interface ApiPort {
    * code_already_used (409) | coach_client_limit_reached (409) |
    * consent_required (400).
    *
-   * 26-coach-data-sharing-consent: `consent`/`consentVersion` are REQUIRED —
+   * 28-coach-data-sharing-consent: `consent`/`consentVersion` are REQUIRED —
    * the redeem is the client's own action, so this is the consent-capture
    * point for the whole client-initiated handshake (the later coach accept,
    * `respondToClientRelationship`, needs no consent of its own). Callers
@@ -1118,7 +1118,7 @@ export interface ApiPort {
    * trainer); decline terminates it. 404 when no pending row matches (not
    * owned / already actioned).
    *
-   * 26-coach-data-sharing-consent: `consent`/`consentVersion` are REQUIRED
+   * 28-coach-data-sharing-consent: `consent`/`consentVersion` are REQUIRED
    * when `action === "accept"` — the backend 400s `consent_required`
    * otherwise (nothing activated). Omitted for `decline` (nothing is being
    * shared). Callers MUST route accept through

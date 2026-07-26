@@ -39,7 +39,7 @@ vi.mock("../../seats/trainerSeats", () => ({
     notifyLimitReached(...(args as [])),
 }));
 
-// 26-coach-data-sharing-consent: recordDataSharingConsent is unit-tested on
+// 28-coach-data-sharing-consent: recordDataSharingConsent is unit-tested on
 // its own (recordDataSharingConsent.test.ts) — mocked here so the accept-tx
 // queue assertions stay focused on the relationship write, not the insert
 // plumbing (mirrors auditTrainerAction being mocked in
@@ -149,7 +149,7 @@ describe("trainersRespondToRequestHandler", () => {
     expect(body.data.status).toBe("active");
     expect(body.data.trainerId).toBe("trainer-1");
     expect(notifyLimitReached).not.toHaveBeenCalled();
-    // 26-coach-data-sharing-consent: grant recorded in the same tx.
+    // 28-coach-data-sharing-consent: grant recorded in the same tx.
     expect(recordConsent).toHaveBeenCalledWith(
       expect.objectContaining({
         trainerId: "trainer-1",

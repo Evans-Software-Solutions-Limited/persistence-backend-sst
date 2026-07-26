@@ -98,6 +98,80 @@ elysia-route-change.md`, `D .claude/skills/sst-resource-change.md`); my
 
 ## Last session
 
+**2026-07-26 (LOADOUT Phase 0 — backend data model). PR [#317](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/317) OPEN off `main` `15ccf4a`, branch `claude/loadout-phase-0`, HEAD `6652a29`. Awaiting Brad's merge.**
+
+- **Scope:** spec-21 Phase 0 = T-0.1…T-0.11, backend only. 4 migrations
+  (`saved_gyms`; `workouts` parent linkage; `workout_exercises` provenance;
+  `equipment_types.category`), `schema.ts` mirror, `SavedGymRepository` +
+  service + 4 CRUD handlers, `GET`/`POST /workouts/:id/variations`, the
+  `loadout` EntitlementFeature + `assertLoadout`, feature-aware
+  `pickUpgradeTier`, `isNull(parentWorkoutId)` on BOTH `mine` paths, new
+  `loadoutRoutes.ts` sub-app.
+- **⚠ MANUAL PROD MIGRATION ×4 + DEPLOY ORDER.** Migrations must land BEFORE
+  the Lambda: `workoutRepository`'s four full-row `select().from(workouts)`
+  reads now emit the new columns and `GET /exercises/equipment` projects
+  `category`, so a Lambda ahead of the migrations 42703s **every workout read
+  and the shipped mobile equipment picker** — features older than Loadout.
+  Accepted, not fixed (explicit projections would restate ~13 columns 4×).
+  **`20260725194527_premium_plus_tier.sql` is STILL PENDING on prod and must
+  land first** — `assertLoadout` reads `loadout_access`.
+- **`loadout_access` is deliberately NOT in the shared `loadTier` projection** —
+  it's on the hot path of `create_workout` + `ai_access`, so a young
+  hand-applied column would break features older than itself.
+  `loadFreeTierLoadoutAccess` confines the blast radius to Loadout.
+- **A root `.use(loadoutRoutes)` HELD** — no TS2589, including packages/web's
+  Eden treaty. The nutritionRoutes comment's "any new leaf route MUST join an
+  existing sub-app" is over-cautious for ONE grouped sub-app. Verified with a
+  full-workspace `TURBO_FORCE=true typecheck`.
+- **SIX equipment categories, not design § 2.3b's five** (Brad's steer). The
+  five left bands/ropes/sled/foam roller/yoga mat/box homeless, and "bands only"
+  is one of E2's four canonical contexts. `accessories` is the sixth; bench +
+  squat rack sit with free weights. design § 2.3b + AC-2.2 updated to match.
+- **Two Phase-1 guards PULLED FORWARD** (recorded in tasks.md § "Landed in
+  Phase 0 beyond the checklist"): exercise read-visibility on every submitted
+  row (new `ExerciseRepository.findUnreadableExerciseIds`), and saved-gym
+  ownership when `sourceGymId` is claimed. T-1.6 keeps only the containment half.
+- **`GET /workouts/:id/variations` has NO parent read gate, deliberately.** It
+  was redundant (response only contains `created_by = caller`) and harmful:
+  parent read access is REVOCABLE, so a spec-25 offboarding would have made the
+  athlete's own variations unreachable from every surface at once (hidden by
+  `parent_workout_id IS NULL` + 404 here).
+- **Housekeeping:** `specs/26-coach-data-sharing-consent` → **`specs/28-`**
+  (26 was used twice; 45 inbound refs fixed). The applied `20260720230030`
+  migration's `COMMENT` still says "(spec 26)" — deliberately unedited.
+  **tasks.md T-P0.10 amended**: create the Premium+ ASC products but leave them
+  UNSUBMITTED/UNATTACHED until the Loadout launch build.
+- **Gates:** prettier · typecheck 8/8 · lint 0-err · build 13/13 · test:unit
+  19/19 (core 270 files / **2791 tests**, mobile 449 suites / 5046). Every
+  changed file ≥90% (new handlers + savedGymService 100%).
+- **⚠ OPEN Brad checkpoints, NOT decided:** equipment-scan ceiling (proposed
+  10/day) and programme cap (proposed 120 workouts) are still Claude proposals.
+  **Phase E blocked on ~30 real gym photos from Brad** (E1's dataset).
+- **IB: clean @ `6652a29`** — 2 sweeps (7 findings, then 5) + 1 closed
+  verification pass. CI action NOT fired. The sweep-2 🟠 was a genuine
+  production bug: **`isSavedGymNameConflict` read `code` off the thrown error,
+  but Drizzle puts the SQLSTATE on `.cause`** — so every duplicate gym name
+  500'd instead of 409'ing, and the test fixture used a flat error shape the
+  driver never produces. `stripe/pgErrors.ts` already documented the cause-chain
+  walk. **LESSON: when catching a Postgres error by SQLSTATE, walk `.cause` —
+  and model the fixture on what the driver actually throws, or the test proves
+  nothing.**
+- **LESSON — three tests I wrote could not fail.** One asserted a property of
+  its own mock fixture (`expect(tx).not.toHaveProperty("update")`); one asserted
+  the mock's return value instead of the SQL projection (so dropping a column
+  from a `select()` stayed green — the mocked-getDb blind spot in a new
+  disguise); one used the wrong driver-error shape. All found by mutation
+  testing, all now sensitive. **Mutation-test every new guard — it is the only
+  thing that catches a test that cannot fail.**
+- **LESSON re-confirmed — `git add -A` swept in Brad's pre-existing untracked
+  `docs/app-store/` + `marketing/*.md`.** Caught before committing (the #159
+  lesson). Stage with explicit pathspecs and inspect `git diff --cached
+  --name-only` first.
+- **LESSON re-confirmed — the shell cwd drifts.** Running vitest from the repo
+  root instead of `microservices/core` produced 20/20 phantom failures (wrong
+  config resolution) that vanished from the package dir. Always `cd` with an
+  absolute path before a test run.
+
 **2026-07-25/26 (LOADOUT kickoff + App Store 3.1.2 rejection fix). THREE PRs ALL MERGED to `main` at Brad's instruction: #312 spec triplet (`e7d9556`), #314 marketing copy (`2ae43ad`), #313 M19-P0 + paywall truth pass + Apple compliance (`fe28bd8`). `origin/main` HEAD = `fe28bd8`.**
 
 - **A — spec-21 triplet authored** (`requirements.md` / `design.md` / `tasks.md`), superseding `BRIEF.md`. Loadout = ADAPT an existing workout/programme to available kit, saved as a variation under the parent; original never mutated. Phased P0 → 0 (data model) → 1 (ranker + adaptation) → 2 (mobile) → 3 (scan) → 4 (coach programmes), one phase per PR. Twinned with spec-26 Mealprint § 1 (design § 1 is the canonical statement of the candidate-constrained contract).
