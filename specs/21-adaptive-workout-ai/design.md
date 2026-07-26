@@ -388,6 +388,54 @@ spec's to edit).
 
 ## 6. The substitute ranker (Phase 1, net-new)
 
+### 6.0 E2 verdict — the ranker is the SHORTLISTER, not the chooser (2026-07-26)
+
+**D7 is decided by the Phase E2 bake-off. Phase 1 builds the HYBRID:
+deterministic shortlist → model selection → model reasons.** Full evidence:
+`scratchpad/loadout-phase-e/VERDICT-E2.md`; raw dataset in that directory's
+`results/`.
+
+20 workouts × 4 contexts = 80 fixtures (171 rows needing a swap), identical
+candidate sets, blind scoring by a model that was not one of the arms.
+
+|                                   | Arm A — ranker only       | Arm B — model, full pool | **Arm C — hybrid**  |
+| --------------------------------- | ------------------------- | ------------------------ | ------------------- |
+| Equipment-legal plans (hard gate) | 80/80                     | 80/80                    | **80/80**           |
+| Mean primary-muscle fidelity      | 0.977                     | 0.871                    | 0.949               |
+| Pattern fidelity (blind, 1–5)     | 3.07 / 2.98               | 4.43                     | **4.07 / 4.28**     |
+| Whole-plan coherence (blind)      | 3.21 / 3.16               | 4.10                     | **3.93 / 4.07**     |
+| Reason quality (blind)            | 2.62 / 2.69               | 4.02                     | **3.81 / 4.07**     |
+| Head-to-head preference           | lost 5–52 to B, 4–50 to C | 25–25 vs C               | ties B, beats A     |
+| Cost per adaptation               | $0                        | $0.0193                  | **$0.0056**         |
+| p50 / max latency                 | 0.1 ms                    | 2.84 s / 4.07 s          | **2.55 s / 3.79 s** |
+
+Three consequences for the sections below:
+
+1. **§ 6.2's scoring stays, as the shortlister.** T-1.2 is still Phase-1 work —
+   the top 25 ranked candidates per row are what the model chooses from. Ranking
+   303 candidates down to 56 is where 71 % of arm B's cost went, at no measured
+   quality cost (25–25, ±0.1 on two of three axes).
+2. **§ 6.2's `movement_type` signal has no data behind it.** `movement_type` is
+   **NULL for all 2281 seeded rows** — only `exercisesCreateHandler` /
+   `exercisesUpdateHandler` ever write it, for user-created exercises — so the
+   10-point signal degrades to `category`, which is `strength` for 1976/2281
+   rows. This is _why_ arm A was pattern-blind, producing equipment-legal but
+   unshippable swaps (Barbell Deadlift → **Atlas Stones** in a bands-only
+   context; Machine Bicep Curl → **Floor Rope Climb**). A deterministic-only
+   engine would first need `movement_type` backfilled across the catalogue — a
+   separate data workstream, not a Phase-1 task.
+3. **A model is now on the re-map path**, so § 7.3's sizing and `AC-10.2` change
+   — see § 7.3's 2026-07-26 note and `requirements.md` US-10.
+
+⚠ **Live data bug found by the eval, unrelated to either arm.** `Leg Press` and
+`Leg Curl` resolve to `equipment_required = '{}'` because their seeded equipment
+names have no `equipment_types` row (`Leg Press Machine` / `Leg Curl Machine`) and
+`seedExercises.ts`'s `resolve()` drops unmapped names silently. Since `x @> '{}'`
+is always true (§ 6.1), a bands-only athlete **keeps the leg press** — in the
+seeded "Lower Body" and "Full Body Starter" workouts, i.e. the first workouts a
+new account owns. Fix is a data migration plus a seeder guard that fails loudly;
+not an engine change.
+
 ### 6.1 Equipment containment
 
 New filter axis on `ListExercisesFilters`:
@@ -417,16 +465,16 @@ dumbbell.
 Reconciling the orphaned `get_alternative_exercises`
 (`002_functions_and_triggers.sql:432`) with GTM § 3 P3:
 
-| Signal                            | Weight           | Source                                            |
-| --------------------------------- | ---------------- | ------------------------------------------------- |
-| primary-muscle overlap            | hard filter + 50 | orphaned fn (which also hard-filters it)          |
-| secondary-muscle overlap          | 20               | orphaned fn (NULL-safe via `COALESCE`)            |
-| same `difficulty_level`           | 15               | orphaned fn                                       |
-| adjacent `difficulty_level`       | 7                | new — avoids cliff-edge ranking                   |
-| same `movement_type` / `category` | 10               | new — a press should prefer a press               |
-| caller has logged it before       | 8                | GTM § 3 P3 tiebreak                               |
-| equipment                         | **hard filter**  | _diverges from the orphaned fn's +15/−30 scoring_ |
-| tiebreak                          | `name ASC`       | FTS precedent (`exerciseRepository.ts:491-566`)   |
+| Signal                            | Weight           | Source                                                                                                             |
+| --------------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------ |
+| primary-muscle overlap            | hard filter + 50 | orphaned fn (which also hard-filters it)                                                                           |
+| secondary-muscle overlap          | 20               | orphaned fn (NULL-safe via `COALESCE`)                                                                             |
+| same `difficulty_level`           | 15               | orphaned fn                                                                                                        |
+| adjacent `difficulty_level`       | 7                | new — avoids cliff-edge ranking                                                                                    |
+| same `movement_type` / `category` | 10               | new — a press should prefer a press (⚠ § 6.0: `movement_type` is NULL library-wide, so this reduces to `category`) |
+| caller has logged it before       | 8                | GTM § 3 P3 tiebreak                                                                                                |
+| equipment                         | **hard filter**  | _diverges from the orphaned fn's +15/−30 scoring_                                                                  |
+| tiebreak                          | `name ASC`       | FTS precedent (`exerciseRepository.ts:491-566`)                                                                    |
 
 **The equipment divergence is the important one.** The orphaned function
 _demotes_ incompatible exercises (−30) but still returns them. For an
@@ -535,6 +583,22 @@ code. This keeps copy localisable and the backend free of UI strings.
 
 ### 7.3 Sizing
 
+> **⚠ REVISED 2026-07-26 by the E2 verdict (§ 6.0).** The premise below — "no
+> model call" — no longer holds: stage 2 is model-backed. Measured on 60
+> swap-bearing fixtures, a **single-workout** adaptation is p50 2.55 s / max
+> 3.79 s, so it stays comfortably inside both the 30 s API Gateway ceiling and
+> `createWithRetry`'s 12 s × 2 budget — the paragraph below still reads correctly
+> for the single-workout case, just for a different reason.
+>
+> **Programme-level (Phase 4) must now go async.** At 2.55 s per workout the
+> 120-workout cap is ~5 minutes of model time, and even a 12-week × 4-session
+> programme (~48 workouts) is ~2 minutes. **The sentence further down saying the
+> 30 s ceiling "does not bind here" is now wrong for the programme case.** The
+> async-job model is required, and it is the **same infrastructure spec-26
+> Mealprint needs** for week plans and programme import — whichever spec reaches
+> it first builds it; it must not be built twice. Cost at the cap is ~$0.67 per
+> programme adaptation.
+
 An adaptation is **pure SQL plus in-memory scoring** — no model call, no
 network hop per exercise — so a single workout is comfortably inside the
 request budget.
@@ -560,6 +624,35 @@ linear in `workout_exercises` rows, not in round trips. Even so:
 ---
 
 ## 8. Equipment scan (Phase 3)
+
+### 8.0 E1 status — BLOCKED, no verdict yet (2026-07-26)
+
+**There is no E1 accuracy figure, because E1 has not run.** T-E1.1 needs ~30 real
+gym photos (commercial floor, hotel gym, home garage, bands-only) and those are
+Brad's to supply. Stock images were **deliberately not substituted** — E1 exists
+to measure real-world accuracy on phone photos, so a number derived from clean
+product shots would be worse than no number: it would read as evidence.
+
+Consequently the two decisions E1 was sequenced to make are still open:
+
+- **Whether scan is the primary collect path**, an accelerator alongside the
+  picklist, or not shipped. `requirements.md` § Eval spike sets the exit
+  criteria; **AC-2.3 and the Phase-2 collect-step design must not be built
+  around scan-as-primary until E1 returns a figure.**
+- **The daily ceiling** (§ 8's proposed default of 10) — still a Claude proposal,
+  not a Brad decision.
+
+Phase 2 can proceed on the saved-gym and manual-picklist paths meanwhile; those
+are unblocked and are the paths that must work regardless of E1's outcome.
+
+What E2 did establish that transfers: the candidate-constrained contract holds in
+practice. Across 160 model-backed runs, **zero non-member ids** were returned —
+so § 1's "a hallucinated uuid is a 422" is a guard against a rare event, not a
+common one, and the same membership-validation shape is right for the scan
+(T-3.3). Haiku-class was sufficient for selection, supporting the
+Haiku-class-first choice below.
+
+### 8.1 Endpoint
 
 `POST /ai/equipment-scan` — near-clone of `nutritionAiEstimateHandler.ts`,
 including its guard order, which is the cost-safety contract:

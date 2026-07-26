@@ -1,0 +1,1069 @@
+{
+  "summary": {
+    "judged": 58,
+    "failed": 0,
+    "identicalPlansSkipped": 22,
+    "left": "armC-haiku",
+    "right": "armB-haiku",
+    "judgeModel": "eu.anthropic.claude-opus-4-6-v1",
+    "armC-haiku": {
+      "patternFidelity": 4.07,
+      "coherence": 3.93,
+      "reasonQuality": 3.81
+    },
+    "armB-haiku": {
+      "patternFidelity": 4.17,
+      "coherence": 3.9,
+      "reasonQuality": 3.74
+    },
+    "preferredLeft": 25,
+    "preferredRight": 25,
+    "ties": 8
+  },
+  "verdicts": [
+    {
+      "key": "w01-seeded-upper::dumbbells_bench",
+      "armAFirst": true,
+      "armAScore": {
+        "patternFidelity": 3,
+        "coherence": 4,
+        "reasonQuality": 4,
+        "note": "The front raise swap for lateral raise is a pattern mismatch (sagittal vs. frontal plane shoulder abduction), costing fidelity; otherwise solid session with good reasoning text."
+      },
+      "armBScore": {
+        "patternFidelity": 5,
+        "coherence": 5,
+        "reasonQuality": 3,
+        "note": "Every swap nails the movement pattern perfectly; session reads like a proper upper-body day, but the reasoning text is somewhat generic and repetitive across exercises."
+      },
+      "preferred": "armB",
+      "rationale": "Plan Two preserves every movement pattern faithfully (lateral raise stays a lateral raise, skullcrusher matches elbow extension), while Plan One introduces a front raise for a lateral raise—a different plane of motion—which is a clear pattern error that outweighs its slightly better explanatory text."
+    },
+    {
+      "key": "w01-seeded-upper::bands_only",
+      "armAFirst": true,
+      "armAScore": {
+        "patternFidelity": 4,
+        "coherence": 5,
+        "reasonQuality": 4,
+        "note": "Solid session with correct pattern matching throughout; 'Band Push-Up' naming is slightly ambiguous (is it a banded push-up or a band press?) but the description clarifies horizontal press intent. Reasons are accurate and specific but somewhat formulaic."
+      },
+      "armBScore": {
+        "patternFidelity": 3,
+        "coherence": 4,
+        "reasonQuality": 3,
+        "note": "Band Chest Fly is a fly pattern, not a press—this breaks horizontal press fidelity for the chest slot. Reasons are generic and repetitive ('targets X as primary using resistance bands to replicate…') without explaining why the swap works biomechanically."
+      },
+      "preferred": "armA",
+      "rationale": "Plan One preserves the horizontal press pattern for the chest exercise and provides slightly more informative reasoning, whereas Plan Two substitutes a fly for a press (different movement pattern) and uses more boilerplate language in its descriptions."
+    },
+    {
+      "key": "w02-seeded-lower::dumbbells_bench",
+      "armAFirst": true,
+      "armAScore": {
+        "patternFidelity": 3,
+        "coherence": 2,
+        "reasonQuality": 3,
+        "note": "The squat-to-bench swap is reasonable for quads but turns an isolation into a compound; keeping Leg Curl and Leg Press as 'needs no equipment' is factually wrong since both require machines."
+      },
+      "armBScore": {
+        "patternFidelity": 3,
+        "coherence": 2,
+        "reasonQuality": 4,
+        "note": "Goblet squat is a solid quad-dominant swap but still trades isolation for a compound; the reason text is more precise about intent, though it shares the same critical error of keeping machine-dependent exercises."
+      },
+      "preferred": "armB",
+      "rationale": "Both plans make the same fundamental mistake of keeping Leg Curl and Leg Press (which require machines not in the equipment list) while only swapping Leg Extension, but Plan Two's substitute reasoning is slightly more informative and the goblet squat is a marginally better pattern match for quad-dominant work than a box squat variation."
+    },
+    {
+      "key": "w02-seeded-lower::bands_only",
+      "armAFirst": true,
+      "armAScore": {
+        "patternFidelity": 3,
+        "coherence": 2,
+        "reasonQuality": 3,
+        "note": "The swap from Leg Extension to Band Front Squat changes an open-chain knee-extension isolation into a compound squat pattern, losing the original isolation intent. Keeping Leg Curl and Leg Press as 'needs no equipment' is incorrect—both require machines—making the session incoherent as written."
+      },
+      "armBScore": {
+        "patternFidelity": 3,
+        "coherence": 2,
+        "reasonQuality": 3,
+        "note": "Identical exercise choices and identical structural problems: Leg Curl and Leg Press are kept despite requiring machines, and the Front Squat swap changes the movement pattern from isolation to compound. The reasoning text is marginally cleaner but still mis-labels a compound lift as 'similar quad-focused strength work.'"
+      },
+      "preferred": "tie",
+      "rationale": "Both plans are functionally identical—same swaps, same erroneous keeps, same pattern-fidelity issue with replacing an isolation knee extension with a compound squat. Neither is meaningfully better than the other."
+    },
+    {
+      "key": "w02-seeded-lower::hotel_gym",
+      "armAFirst": false,
+      "armAScore": {
+        "patternFidelity": 3,
+        "coherence": 2,
+        "reasonQuality": 3,
+        "note": "Dumbbell squat to a bench is still a compound squat rather than true quad isolation, but the bench depth control and reasoning about 'isolated quadriceps work' at least signals intent to approximate the extension pattern; same problematic 'kept' logic for Leg Curl and Leg Press which clearly need machines."
+      },
+      "armBScore": {
+        "patternFidelity": 2,
+        "coherence": 2,
+        "reasonQuality": 3,
+        "note": "Goblet squat is a compound movement, not an isolation quad exercise like leg extension; also, Leg Curl and Leg Press both require machines not in the available equipment list yet are marked 'kept — needs no equipment,' which is incorrect."
+      },
+      "preferred": "armA",
+      "rationale": "Plan Two's swap (dumbbell squat to a bench) more closely approximates the knee-dominant, shortened-ROM quad focus of a leg extension than a full goblet squat, though neither plan addresses the elephant in the room: Leg Curl and Leg Press both require machines not listed in available equipment and are incorrectly marked as needing none."
+    },
+    {
+      "key": "w03-seeded-fullbody::dumbbells_bench",
+      "armAFirst": false,
+      "armAScore": {
+        "patternFidelity": 4,
+        "coherence": 3,
+        "reasonQuality": 3,
+        "note": "Same swap choices as Plan One—vertical pull replaced by horizontal pull—but the reasoning text repeatedly and incorrectly references 'Cable Machine unavailable' (the original uses a lat machine/plate-loaded machine, not necessarily a cable) and is more templated/repetitive across entries."
+      },
+      "armBScore": {
+        "patternFidelity": 4,
+        "coherence": 3,
+        "reasonQuality": 4,
+        "note": "Swaps are solid but the lat pulldown (vertical pull) was replaced by a bent-over row (horizontal pull), losing the vertical pulling pattern entirely; reasoning text is clear and specific though it incorrectly labels the pulldown swap as matching a 'horizontal pulling pattern.'"
+      },
+      "preferred": "armB",
+      "rationale": "Both plans make identical exercise selections and share the same pattern-fidelity issue (vertical pull → horizontal pull), but Plan One's reasoning text is slightly more natural, exercise-specific, and avoids the inaccurate repeated 'Cable Machine unavailable' framing of Plan Two."
+    },
+    {
+      "key": "w03-seeded-fullbody::bands_only",
+      "armAFirst": false,
+      "armAScore": {
+        "patternFidelity": 4,
+        "coherence": 3,
+        "reasonQuality": 3,
+        "note": "Push-up is a true horizontal press swap for chest press, and the other swaps match Plan One. Leg Press is still erroneously kept. The reason text is accurate but more generic and template-like ('targets the same primary muscles') compared to Plan One's pattern-focused language."
+      },
+      "armBScore": {
+        "patternFidelity": 3,
+        "coherence": 3,
+        "reasonQuality": 4,
+        "note": "Leg Press is incorrectly kept as 'needs no equipment' (it's a machine exercise), and Band Chest Fly replaces a press with a fly—different movement pattern. Band Straight-Arm Pull-Down is a reasonable lat substitute but shifts from an elbow-flexion pull to a straight-arm pattern. Reasons are well-written and specific but the fly/press mismatch is not acknowledged."
+      },
+      "preferred": "armA",
+      "rationale": "Plan Two's push-up swap preserves the horizontal pressing pattern far better than Plan One's fly, which changes the movement from a compound press to an isolation adduction. Both plans share the same flaw of keeping Leg Press without equipment and the same lat pull-down swap, but the superior chest pattern match in Plan Two edges it ahead despite its weaker reason text."
+    },
+    {
+      "key": "w04-push-hypertrophy::dumbbells_bench",
+      "armAFirst": false,
+      "armAScore": {
+        "patternFidelity": 4,
+        "coherence": 3,
+        "reasonQuality": 4,
+        "note": "Pattern fidelity is strong—Dumbbell Skullcrusher is an excellent triceps isolation swap—but choosing Incline Dumbbell Fly when Incline Dumbbell Bench Press is already in slot 2 creates near-identical setups and redundant angle coverage, hurting session coherence."
+      },
+      "armBScore": {
+        "patternFidelity": 4,
+        "coherence": 4,
+        "reasonQuality": 4,
+        "note": "Solid pattern-faithful swaps throughout; Bench Dip is a reasonable triceps substitute though it's a compound bodyweight movement rather than a true isolation like the pushdown. Session flows well with no redundancy issues."
+      },
+      "preferred": "armB",
+      "rationale": "Both plans nail pattern fidelity equally well, but Plan One avoids the redundancy problem: Plan Two programs an incline fly immediately after an incline press, which a coach would flag as duplicative stimulus at the same angle. Plan One's flat dumbbell fly complements the flat and incline presses, giving the session better variety and a more logical progression of angles."
+    },
+    {
+      "key": "w04-push-hypertrophy::bands_only",
+      "armAFirst": false,
+      "armAScore": {
+        "patternFidelity": 3,
+        "coherence": 3,
+        "reasonQuality": 3,
+        "note": "Close-grip push-up shifts emphasis toward triceps rather than replicating the incline chest hypertrophy intent, weakening pattern fidelity for slot 2. However session variety is comparable to Plan One. Reasons are clear but similarly templated and don't explain why close push-up matches an incline press."
+      },
+      "armBScore": {
+        "patternFidelity": 4,
+        "coherence": 3,
+        "reasonQuality": 3,
+        "note": "The band-assisted one-arm push-up is a creative incline substitute that preserves horizontal pressing, but the session now has three horizontal push variations (band push-up, one-arm push-up, band fly) that feel redundant; the incline angle/upper-chest emphasis is lost. Reasons are functional but repetitive in phrasing."
+      },
+      "preferred": "armB",
+      "rationale": "Plan One edges ahead because its slot-2 swap (band-assisted one-arm push-up) at least attempts to preserve a progressive horizontal chest stimulus distinct from the standard push-up, whereas Plan Two's close-grip push-up is more of a triceps-biased movement that poorly replicates incline dumbbell press intent. Neither plan is outstanding for coherence or reason quality."
+    },
+    {
+      "key": "w04-push-hypertrophy::hotel_gym",
+      "armAFirst": true,
+      "armAScore": {
+        "patternFidelity": 5,
+        "coherence": 5,
+        "reasonQuality": 4,
+        "note": "The single swap (barbell bench → dumbbell bench) perfectly preserves the horizontal press pattern; the session as a whole is identical to the original minus the barbell. Reasoning is accurate but brief—it could mention rep-range or loading implications."
+      },
+      "armBScore": {
+        "patternFidelity": 5,
+        "coherence": 5,
+        "reasonQuality": 4,
+        "note": "Identical swap and kept exercises as Plan One; reasoning is slightly more explicit about 'unavailable without squat rack' but functionally equivalent in quality and detail."
+      },
+      "preferred": "tie",
+      "rationale": "Both plans make the same single correct swap with the same reasoning phrased marginally differently; there is no meaningful difference in pattern fidelity, session coherence, or explanation quality."
+    },
+    {
+      "key": "w05-pull-hypertrophy::dumbbells_bench",
+      "armAFirst": false,
+      "armAScore": {
+        "patternFidelity": 3,
+        "coherence": 2,
+        "reasonQuality": 3,
+        "note": "Chest-supported row and incline dumbbell row are essentially the same exercise listed twice, and dumbbell shrug is a poor pattern match for face pulls (isolation shrug vs. external rotation/rear delt fly), losing the rear delt/rotator cuff work entirely."
+      },
+      "armBScore": {
+        "patternFidelity": 3,
+        "coherence": 2,
+        "reasonQuality": 4,
+        "note": "The incline dumbbell row swap for lat pull-down doesn't preserve the vertical pull pattern (it's another horizontal row), resulting in three very similar rowing movements in a row, which hurts session coherence significantly."
+      },
+      "preferred": "armB",
+      "rationale": "Both plans collapse into three near-identical rowing variations and lose the vertical pull, but Plan One at least preserves rear delt work with the bent-over rear delt raise (a closer pattern match to face pulls) and its reasoning text is more specific and less formulaic than Plan Two's template-style explanations."
+    },
+    {
+      "key": "w05-pull-hypertrophy::bands_only",
+      "armAFirst": false,
+      "armAScore": {
+        "patternFidelity": 4,
+        "coherence": 3,
+        "reasonQuality": 4,
+        "note": "Same exercise selections as Plan One with identical pattern-fidelity concerns (exercise 5 doesn't clearly preserve hammer curl mechanics). However, the reasoning text is notably better—each line states what equipment is missing and why the substitute preserves the movement intent, giving the athlete genuinely useful context."
+      },
+      "armBScore": {
+        "patternFidelity": 4,
+        "coherence": 3,
+        "reasonQuality": 3,
+        "note": "Swaps are pattern-appropriate individually, but exercise 5 (Banded Biceps Curl in Squat Position) doesn't clearly replicate the neutral-grip/hammer pattern of the original, and the session has two very similar band curl variations in the superset. Reasons are functional but repetitive and don't explain why specific variations were chosen."
+      },
+      "preferred": "armA",
+      "rationale": "The two plans are functionally identical in exercise selection and share the same minor weaknesses (two near-identical band curls, questionable hammer-curl pattern preservation). Plan Two edges ahead solely on reason quality: each explanation names the unavailable equipment and articulates the mechanical rationale, which is more informative for the athlete than Plan One's vaguer descriptions."
+    },
+    {
+      "key": "w05-pull-hypertrophy::hotel_gym",
+      "armAFirst": true,
+      "armAScore": {
+        "patternFidelity": 5,
+        "coherence": 5,
+        "reasonQuality": 4,
+        "note": "All swaps perfectly preserve movement patterns; reasoning is accurate and specific but slightly formulaic in structure."
+      },
+      "armBScore": {
+        "patternFidelity": 5,
+        "coherence": 5,
+        "reasonQuality": 4,
+        "note": "Identical exercise selections with equally valid pattern preservation; reasoning is slightly more informative (mentions superset context) but similarly templated."
+      },
+      "preferred": "tie",
+      "rationale": "Both plans make identical swap decisions (DB row for barbell row, cable curl for barbell curl) with correct pattern fidelity and produce the same coherent session; the only difference is minor phrasing in the explanations, which is not enough to separate them."
+    },
+    {
+      "key": "w06-legs-hypertrophy::dumbbells_bench",
+      "armAFirst": true,
+      "armAScore": {
+        "patternFidelity": 5,
+        "coherence": 2,
+        "reasonQuality": 3,
+        "note": "Swaps are pattern-faithful (squat→squat, hinge→hinge), but keeping Leg Press and Leg Curl as 'needs no equipment' is a serious coherence error—those machines aren't available, leaving the session with two real exercises and three phantom ones."
+      },
+      "armBScore": {
+        "patternFidelity": 5,
+        "coherence": 2,
+        "reasonQuality": 4,
+        "note": "Both swaps are excellent pattern matches; however the same critical flaw exists—Leg Press and Leg Curl are kept as bodyweight exercises when they clearly require machines, making the session incomplete. Reason text is slightly more precise (naming the squat rack requirement, distinguishing stiff-legged from Romanian)."
+      },
+      "preferred": "armB",
+      "rationale": "Both plans share the same fatal coherence issue of retaining machine-based exercises (Leg Press, Leg Curl) as if they need no equipment. Plan Two edges ahead on reason quality—its explanations are more specific (mentions squat rack, correctly labels the stiff-legged variant)—and the Goblet Squat is arguably a slightly better dumbbell squat substitution for the stated rep range than a Sumo Squat, but the margin is slim."
+    },
+    {
+      "key": "w06-legs-hypertrophy::bands_only",
+      "armAFirst": true,
+      "armAScore": {
+        "patternFidelity": 4,
+        "coherence": 2,
+        "reasonQuality": 3,
+        "note": "Swaps are solid pattern matches, but keeping Leg Press, Leg Curl, and Standing Calf Raise as 'needs no equipment' is incorrect—these all require machines—making the session unperformable and incoherent as written. Reasons are adequate but don't mention why the original was unavailable."
+      },
+      "armBScore": {
+        "patternFidelity": 4,
+        "coherence": 2,
+        "reasonQuality": 4,
+        "note": "Same swap choices and same erroneous keeps, so coherence suffers equally. However, the reasoning text explicitly states what equipment is missing and why the substitute works, which is more informative for the athlete."
+      },
+      "preferred": "armB",
+      "rationale": "Both plans are functionally identical in exercise selection and share the same critical flaw of keeping machine-dependent exercises (Leg Press, Leg Curl, Standing Calf Raise) without adaptation. Plan Two edges ahead solely because its reasoning text is more specific and athlete-useful, explicitly naming the missing equipment before justifying the swap."
+    },
+    {
+      "key": "w06-legs-hypertrophy::hotel_gym",
+      "armAFirst": false,
+      "armAScore": {
+        "patternFidelity": 4,
+        "coherence": 2,
+        "reasonQuality": 4,
+        "note": "Dumbbell front squat is a reasonable quad-dominant squat swap and the stiff-legged deadlift preserves the hinge well, but the same problem of keeping Leg Press and Leg Curl (machines not available) undermines the session as a whole."
+      },
+      "armBScore": {
+        "patternFidelity": 4,
+        "coherence": 2,
+        "reasonQuality": 3,
+        "note": "Swaps are solid pattern matches, but keeping Leg Press and Leg Curl as 'needs no equipment' is a critical error—both require machines not in the equipment list, making the session undeliverable as written."
+      },
+      "preferred": "armA",
+      "rationale": "Both plans share the same fatal flaw of retaining Leg Press and Leg Curl marked as 'needs no equipment,' but Plan Two edges ahead with a slightly more informative reason for its squat swap and a cleaner exercise name (no errant '30 Legs' prefix), making it marginally more presentable to an athlete."
+    },
+    {
+      "key": "w07-strength-5x5-a::dumbbells_bench",
+      "armAFirst": false,
+      "armAScore": {
+        "patternFidelity": 4,
+        "coherence": 5,
+        "reasonQuality": 4,
+        "note": "Dumbbell front squat shifts load anteriorly, changing the pattern slightly from a back squat (more quad-dominant, less posterior chain), but it's still a legitimate squat variation. Reasoning is clear and accurate but similarly templated."
+      },
+      "armBScore": {
+        "patternFidelity": 5,
+        "coherence": 5,
+        "reasonQuality": 4,
+        "note": "All three swaps are textbook dumbbell equivalents preserving squat, horizontal press, and horizontal row patterns perfectly. Reasoning is accurate but slightly formulaic/repetitive in structure."
+      },
+      "preferred": "armB",
+      "rationale": "Plan One's goblet squat is a closer analogue to the barbell back squat in loading position and posterior chain emphasis than Plan Two's front squat, which shifts the demand more anteriorly; otherwise the plans are nearly identical."
+    },
+    {
+      "key": "w07-strength-5x5-a::bands_only",
+      "armAFirst": false,
+      "armAScore": {
+        "patternFidelity": 4,
+        "coherence": 4,
+        "reasonQuality": 4,
+        "note": "Same strong pattern fidelity; the 'Heavy Band' qualifier on the row adds intensity intent, and the push-up reasoning mentions dynamic movement and intensity maintenance, giving the athlete slightly more actionable context."
+      },
+      "armBScore": {
+        "patternFidelity": 4,
+        "coherence": 4,
+        "reasonQuality": 3,
+        "note": "Solid pattern matching across all three swaps; reasoning is accurate but somewhat generic and repetitive in structure—each explanation follows the same template without adding unique coaching insight."
+      },
+      "preferred": "armA",
+      "rationale": "Both plans are nearly identical in structure and pattern fidelity, but Plan Two edges ahead on reason quality: naming the row as 'Heavy Band' signals load intent, and the push-up explanation references intensity maintenance rather than simply restating the movement category, making the athlete-facing text marginally more useful."
+    },
+    {
+      "key": "w07-strength-5x5-a::hotel_gym",
+      "armAFirst": true,
+      "armAScore": {
+        "patternFidelity": 5,
+        "coherence": 5,
+        "reasonQuality": 5,
+        "note": "Dumbbell front squat is an excellent pattern-faithful swap for back squat, preserving the bilateral squat pattern under anterior load; all three swaps are textbook dumbbell equivalents that maintain the session's squat/press/pull structure."
+      },
+      "armBScore": {
+        "patternFidelity": 4,
+        "coherence": 5,
+        "reasonQuality": 4,
+        "note": "Goblet squat preserves the squat pattern but is harder to load heavily for 5×5 and is typically a lighter/accessory variation; the reasoning claims it preserves 'heavy loading,' which is slightly misleading given goblet squat's practical load ceiling."
+      },
+      "preferred": "armA",
+      "rationale": "Both plans are nearly identical and highly competent, but Plan One's choice of dumbbell front squat better preserves the heavy 5×5 loading intent (two dumbbells allow more total load than a single goblet-held dumbbell), and its reasoning is marginally more precise and honest about the swap's characteristics."
+    },
+    {
+      "key": "w08-strength-5x5-b::dumbbells_bench",
+      "armAFirst": false,
+      "armAScore": {
+        "patternFidelity": 5,
+        "coherence": 5,
+        "reasonQuality": 4,
+        "note": "Dumbbell front squat is an excellent pattern match for a barbell back squat in a 5×5 context since it allows heavier loading than a goblet squat; session balance and reasoning are on par with Plan One."
+      },
+      "armBScore": {
+        "patternFidelity": 4,
+        "coherence": 5,
+        "reasonQuality": 4,
+        "note": "Goblet squat is a solid squat-pattern substitute though it shifts loading anteriorly (more like a front squat); all three movement patterns (squat, vertical press, hinge) are preserved cleanly."
+      },
+      "preferred": "armA",
+      "rationale": "Both plans are nearly identical and well-constructed, but the dumbbell front squat in Plan Two allows bilateral loading closer to back-squat intensities needed for a 5×5 strength scheme, giving it a slight edge in pattern fidelity for heavy strength work."
+    },
+    {
+      "key": "w08-strength-5x5-b::bands_only",
+      "armAFirst": false,
+      "armAScore": {
+        "patternFidelity": 5,
+        "coherence": 5,
+        "reasonQuality": 4,
+        "note": "Band Good Morning is a valid hinge substitute and all patterns are preserved. The reasoning is slightly more informative—each note states what piece of equipment is missing—though the claim that a shoulder press 'requires a bench' is inaccurate."
+      },
+      "armBScore": {
+        "patternFidelity": 5,
+        "coherence": 5,
+        "reasonQuality": 3,
+        "note": "All three swaps perfectly preserve the squat, overhead press, and hinge patterns. Reasoning is functional but somewhat generic and repetitive in phrasing—it never explains *why* the barbell isn't available."
+      },
+      "preferred": "armA",
+      "rationale": "Both plans are nearly identical in exercise selection and pattern fidelity; the tiebreaker is that Plan Two's reasoning text is more athlete-useful by naming the missing equipment, despite a minor inaccuracy about the shoulder press requiring a bench."
+    },
+    {
+      "key": "w08-strength-5x5-b::hotel_gym",
+      "armAFirst": true,
+      "armAScore": {
+        "patternFidelity": 5,
+        "coherence": 5,
+        "reasonQuality": 4,
+        "note": "All three swaps perfectly preserve movement patterns (squat→squat, vertical press→vertical press, hinge→hinge) and the session reads as a coherent whole. Reasons are accurate but slightly formulaic in structure."
+      },
+      "armBScore": {
+        "patternFidelity": 5,
+        "coherence": 5,
+        "reasonQuality": 5,
+        "note": "Identical pattern fidelity and session coherence. Reasons are slightly more descriptive—calling out 'bilateral lower-body pressing pattern' and 'full-body pull'—giving the athlete better context for each swap."
+      },
+      "preferred": "armB",
+      "rationale": "Both plans are functionally equivalent in exercise selection and session structure, but Plan Two's reasoning text is marginally more informative (e.g., naming the movement pattern explicitly and noting 'heavy bilateral' intent), which edges it ahead on athlete-facing communication."
+    },
+    {
+      "key": "w09-upper-strength::dumbbells_bench",
+      "armAFirst": false,
+      "armAScore": {
+        "patternFidelity": 4,
+        "coherence": 4,
+        "reasonQuality": 4,
+        "note": "Replacing the pull-up with a bent-over dumbbell row shifts vertical pull to horizontal pull (slight pattern mismatch), but it preserves the session's back volume and push-pull balance, making this a programmable session as-is."
+      },
+      "armBScore": {
+        "patternFidelity": 4,
+        "coherence": 2,
+        "reasonQuality": 4,
+        "note": "Swaps are well-chosen and pattern-faithful, but leaving the pull-up unresolved when a dumbbell row or dumbbell pullover could fill the slot leaves the session with no vertical/horizontal pull except the one-arm row, destroying push-pull balance."
+      },
+      "preferred": "armA",
+      "rationale": "Plan Two delivers a complete, coachable session by filling the pull-up slot with a viable back exercise, maintaining push-pull balance, whereas Plan One's unresolved slot leaves the athlete with almost no pulling volume and an incoherent session structure."
+    },
+    {
+      "key": "w09-upper-strength::bands_only",
+      "armAFirst": false,
+      "armAScore": {
+        "patternFidelity": 4,
+        "coherence": 4,
+        "reasonQuality": 4,
+        "note": "Band Push-Up correctly preserves the compound horizontal press pattern. The only minor fidelity note is that a bent-over row replaces a vertical pull (pull-up), but given equipment constraints this is a sensible trade. The session reads like a real program a coach would hand out."
+      },
+      "armBScore": {
+        "patternFidelity": 3,
+        "coherence": 3,
+        "reasonQuality": 4,
+        "note": "Band Chest Fly is an isolation/fly pattern, not a press—this is the key fidelity miss. The rest of the swaps are well-matched, and the session holds together reasonably but now has two very similar rowing movements back-to-back and has lost its compound pressing opener."
+      },
+      "preferred": "armA",
+      "rationale": "Plan Two's opening swap (Band Push-Up) preserves the compound horizontal pressing pattern far better than Plan One's Band Chest Fly, which turns a heavy compound press into a light isolation fly. This single difference cascades into better session coherence, giving Plan Two a meaningful edge overall."
+    },
+    {
+      "key": "w09-upper-strength::hotel_gym",
+      "armAFirst": true,
+      "armAScore": {
+        "patternFidelity": 5,
+        "coherence": 5,
+        "reasonQuality": 5,
+        "note": "Every swap precisely preserves the original movement pattern (horizontal press, vertical pull, overhead press, triceps extension), and the Arnold Press adds a rotational element while still being a legitimate overhead press variant. Reasons are specific, naming the missing equipment and explaining the pattern match."
+      },
+      "armBScore": {
+        "patternFidelity": 5,
+        "coherence": 5,
+        "reasonQuality": 4,
+        "note": "Swaps are equally pattern-faithful and the session reads well as a whole. Reasons are accurate but slightly more formulaic—they follow a rigid 'X replaces Y with the same Z' template and feel more repetitive, offering marginally less coaching insight to the athlete."
+      },
+      "preferred": "armA",
+      "rationale": "Both plans are nearly identical in exercise selection and pattern fidelity. The tiebreaker is reason quality: Plan One's explanations feel more natural and coach-like (e.g., naming the Arnold Press's shoulder focus, saying 'your kit has…'), whereas Plan Two's read like templated fill-in-the-blank statements. The difference is small but consistent across every row."
+    },
+    {
+      "key": "w10-lower-strength::dumbbells_bench",
+      "armAFirst": true,
+      "armAScore": {
+        "patternFidelity": 4,
+        "coherence": 4,
+        "reasonQuality": 4,
+        "note": "Solid pattern preservation throughout; the 'HM Good Morning' is a reasonable bodyweight hinge substitute and the session flows well as a whole. Reason text is concise and informative, though 'HM Good Morning' is not a universally recognized name which may confuse athletes."
+      },
+      "armBScore": {
+        "patternFidelity": 4,
+        "coherence": 3,
+        "reasonQuality": 4,
+        "note": "Patterns are well-matched, but replacing a good morning with a dumbbell stiff-legged deadlift creates near-redundancy with the dumbbell deadlift in slot 0—two very similar hip-hinge pulling movements with dumbbells. The '30 Legs' prefix is unexplained and confusing. Reason text is clear and accurate otherwise."
+      },
+      "preferred": "armA",
+      "rationale": "Plan One edges ahead on session coherence: it avoids the dumbbell-hinge redundancy that Plan Two introduces by swapping the good morning with another dumbbell deadlift variant, and its bodyweight good morning alternative better differentiates the stimulus across the workout."
+    },
+    {
+      "key": "w10-lower-strength::bands_only",
+      "armAFirst": true,
+      "armAScore": {
+        "patternFidelity": 4,
+        "coherence": 3,
+        "reasonQuality": 4,
+        "note": "Swaps are pattern-faithful individually, but placing Band Good Morning at slot 0 (as the heavy compound) and a bodyweight Good Morning at slot 3 gives the session two very similar hinge exercises while under-loading the primary lift slot."
+      },
+      "armBScore": {
+        "patternFidelity": 5,
+        "coherence": 4,
+        "reasonQuality": 4,
+        "note": "Band Deadlift in slot 0 keeps a true deadlift pattern as the heavy opener, and Band Good Morning in slot 3 mirrors the original structure cleanly; the session reads like a real lower-strength day with distinct movements."
+      },
+      "preferred": "armB",
+      "rationale": "Plan Two maintains stronger session coherence by keeping a deadlift-patterned movement as the primary lift and reserving the good morning for its original lighter-accessory slot, avoiding the near-duplicate hinge issue that Plan One introduces with two good morning variants."
+    },
+    {
+      "key": "w10-lower-strength::hotel_gym",
+      "armAFirst": false,
+      "armAScore": {
+        "patternFidelity": 4,
+        "coherence": 3,
+        "reasonQuality": 4,
+        "note": "Captain's Chair Knee Raise is flagged as equipment-legal, but it's an odd choice given no captain's chair is listed—pattern-wise it's fine but raises a mental question. Reasons are more specific (naming the missing equipment and target muscles), though the session is otherwise identical to Plan One."
+      },
+      "armBScore": {
+        "patternFidelity": 5,
+        "coherence": 4,
+        "reasonQuality": 3,
+        "note": "All swaps preserve the correct movement patterns; the session flows well but the DB deadlift and DB front squat back-to-back with modest loading potential slightly compresses intensity. Reasons are functional but somewhat generic and repetitive in phrasing."
+      },
+      "preferred": "armB",
+      "rationale": "Plan One edges ahead because Cable Reverse Crunch clearly uses listed equipment (cable machine) and is a strong pattern match for Hanging Leg Raise, while Plan Two's Captain's Chair selection feels less intuitive given the available kit despite being declared legal. Plan One's session coheres slightly better as a result, even though Plan Two's reasoning text is marginally more informative."
+    },
+    {
+      "key": "w11-fullbody-dumbbell::dumbbells_bench",
+      "armAFirst": false,
+      "armAScore": {
+        "patternFidelity": 4,
+        "coherence": 5,
+        "reasonQuality": 4,
+        "note": "Dumbbell front squat is a legitimate quad-dominant bilateral squat pattern, preserving intent well, though the holding position differs somewhat from a goblet squat. The reasoning correctly identifies the pattern match but shares the same slightly inaccurate premise that a goblet squat strictly requires a kettlebell."
+      },
+      "armBScore": {
+        "patternFidelity": 5,
+        "coherence": 5,
+        "reasonQuality": 4,
+        "note": "The swap is essentially a rename — a dumbbell goblet squat IS a goblet squat performed with a dumbbell, so pattern fidelity is perfect. The reasoning is slightly misleading in claiming a goblet squat 'requires' a kettlebell when it can be done with either implement."
+      },
+      "preferred": "armB",
+      "rationale": "Plan One's swap is effectively the same exercise renamed (a goblet squat can be performed with a dumbbell), making it a near-perfect 1:1 substitution, whereas Plan Two's dumbbell front squat, while valid, introduces a slightly different holding mechanic and is a marginally less faithful pattern match."
+    },
+    {
+      "key": "w11-fullbody-dumbbell::bands_only",
+      "armAFirst": false,
+      "armAScore": {
+        "patternFidelity": 5,
+        "coherence": 4,
+        "reasonQuality": 4,
+        "note": "Same strong pattern fidelity as Plan One. The reason text is slightly more informative—explicitly naming the movement pattern category (e.g., 'horizontal pressing pattern') helps the athlete understand why the swap was made, though 'Holman Dynamo Push-Up' is an unusual exercise name that may confuse some users."
+      },
+      "armBScore": {
+        "patternFidelity": 5,
+        "coherence": 4,
+        "reasonQuality": 3,
+        "note": "All movement patterns are faithfully preserved (squat, horizontal press, horizontal pull, lunge, curl). The 'Band Push-Up' name is slightly ambiguous but the description clarifies intent; reason text is functional but formulaic and repetitive in structure."
+      },
+      "preferred": "armA",
+      "rationale": "Both plans are nearly identical in exercise selection and pattern fidelity, but Plan Two's explanations are marginally better—they consistently name the movement pattern being preserved and distinguish the role of the equipment more clearly, giving the athlete slightly more useful context."
+    },
+    {
+      "key": "w11-fullbody-dumbbell::hotel_gym",
+      "armAFirst": true,
+      "armAScore": {
+        "patternFidelity": 4,
+        "coherence": 5,
+        "reasonQuality": 4,
+        "note": "The swap is reasonable but slightly unnecessary—a goblet squat can be performed with a dumbbell, so calling it a 'Dumbbell Front Squat' changes the movement pattern slightly (elbows forward, two DBs at shoulders vs. one held goblet-style). Reasoning is clear and accurate."
+      },
+      "armBScore": {
+        "patternFidelity": 5,
+        "coherence": 5,
+        "reasonQuality": 5,
+        "note": "Recognizes that a goblet squat is perfectly doable with a dumbbell and simply relabels it accordingly, preserving the exact movement pattern. The reasoning is concise, accurate, and informative for the athlete."
+      },
+      "preferred": "armB",
+      "rationale": "Plan Two correctly identifies that a goblet squat can be performed with a dumbbell (it's the same movement), preserving the exact pattern and grip position, whereas Plan One unnecessarily shifts to a front squat variation that subtly changes the holding position and load distribution."
+    },
+    {
+      "key": "w12-glutes::dumbbells_bench",
+      "armAFirst": false,
+      "armAScore": {
+        "patternFidelity": 5,
+        "coherence": 5,
+        "reasonQuality": 5,
+        "note": "Dumbbell RDL is a near-perfect 1:1 swap, single-leg bridge differentiates nicely from the hip thrust at exercise 0, and the reasons are concise, specific, and accurately describe what's missing and why the substitute works."
+      },
+      "armBScore": {
+        "patternFidelity": 4,
+        "coherence": 4,
+        "reasonQuality": 4,
+        "note": "Solid swaps that preserve patterns well; the stiff-legged deadlift is close but slightly different from an RDL, and Leg Curl being 'kept as bodyweight' is questionable but assumed legal. The single-leg hip thrust at exercise 4 risks redundancy with exercise 0."
+      },
+      "preferred": "armA",
+      "rationale": "Plan Two uses a more precise RDL substitute (dumbbell RDL vs. stiff-legged deadlift), avoids session-level redundancy by choosing a single-leg bridge rather than a second hip thrust variation, and provides cleaner reasoning that correctly identifies the missing equipment and justifies each swap."
+    },
+    {
+      "key": "w12-glutes::bands_only",
+      "armAFirst": false,
+      "armAScore": {
+        "patternFidelity": 4,
+        "coherence": 4,
+        "reasonQuality": 4,
+        "note": "Same strong pattern preservation on swaps 0-1, and the Unilateral Glute Bridge is a smart progression that reduces redundancy with the hip thrust in slot 0. The reasoning for swap 4 correctly identifies the duplication problem and explains why a unilateral variation adds value. 'Leg Curl — Kept' still has the same machine-exercise concern."
+      },
+      "armBScore": {
+        "patternFidelity": 4,
+        "coherence": 3,
+        "reasonQuality": 3,
+        "note": "Patterns are well-preserved (hinge→hinge, hip thrust→hip thrust), but 'Leg Curl — Kept · needs no equipment' is questionable since a standard leg curl requires a machine, and 'Hip Lift with Band' is essentially the same glute bridge pattern as exercise 0, creating redundancy. Reasons are adequate but somewhat generic and repetitive."
+      },
+      "preferred": "armA",
+      "rationale": "Plan Two edges ahead because it recognizes and addresses the near-duplication between exercises 0 and 4, offering a unilateral glute bridge that adds training variety and a distinct stimulus, and its reasoning text is more specific and informative for the athlete."
+    },
+    {
+      "key": "w12-glutes::hotel_gym",
+      "armAFirst": true,
+      "armAScore": {
+        "patternFidelity": 4,
+        "coherence": 4,
+        "reasonQuality": 3,
+        "note": "Good pattern preservation overall; the final swap from glute bridge (a bridge pattern) to cable pull-through (a hinge) is a minor mismatch since the session already has two hinges (RDL and the pull-through), but the cable pull-through still targets glutes effectively. The reason for exercise 3 claiming 'needs no equipment' is incorrect since a leg curl typically requires a machine, and the note for exercise 4 oddly mentions 'Barbell unavailable' when the original glute bridge is bodyweight."
+      },
+      "armBScore": {
+        "patternFidelity": 5,
+        "coherence": 5,
+        "reasonQuality": 4,
+        "note": "Excellent pattern fidelity—stiff-legged deadlift keeps the hinge, glute bridge step-out keeps the bridge pattern. The session reads as a well-rounded glute/ham workout with distinct movement patterns (bridge, hinge, lunge, curl, bridge variation). Reasons are clear and accurate, though slightly generic."
+      },
+      "preferred": "armB",
+      "rationale": "Plan Two better preserves the original session's pattern variety by keeping a bridge as the finisher rather than doubling up on hinges, and its reasoning is more accurate (Plan One incorrectly states Leg Curl needs no equipment and gives a confusing rationale for the glute bridge swap)."
+    },
+    {
+      "key": "w13-arms::dumbbells_bench",
+      "armAFirst": false,
+      "armAScore": {
+        "patternFidelity": 3,
+        "coherence": 3,
+        "reasonQuality": 3,
+        "note": "Swapping the pushdown for an overhead extension and then the overhead extension for a skullcrusher gives two very similar overhead/long-head-biased triceps movements, reducing session variety; the reasoning also misdescribes the pushdown as a 'pressing' movement."
+      },
+      "armBScore": {
+        "patternFidelity": 4,
+        "coherence": 5,
+        "reasonQuality": 3,
+        "note": "All swaps are sensible and the session reads well as a whole; however, calling a biceps curl a 'horizontal pulling pattern' is inaccurate and the reasoning texts are somewhat generic."
+      },
+      "preferred": "armB",
+      "rationale": "Plan One provides better exercise variety (a pressing triceps movement plus an overhead extension) mirroring the original's two distinct triceps patterns, whereas Plan Two doubles up on overhead triceps work and loses the short-head/lateral-head emphasis the pushdown originally provided."
+    },
+    {
+      "key": "w13-arms::bands_only",
+      "armAFirst": false,
+      "armAScore": {
+        "patternFidelity": 3,
+        "coherence": 3,
+        "reasonQuality": 3,
+        "note": "Exercise 2 still doesn't capture the neutral-grip hammer curl pattern, but exercise 3 (Band Skullcrusher) differentiates from exercise 1 and better mirrors the original session's variety between a pushdown and an overhead extension."
+      },
+      "armBScore": {
+        "patternFidelity": 3,
+        "coherence": 2,
+        "reasonQuality": 3,
+        "note": "Exercise 2 (Banded Biceps Curl in Squat Position) doesn't replicate the neutral-grip pattern of a hammer curl, and exercises 1 and 3 are nearly identical overhead triceps extensions, making the session redundant."
+      },
+      "preferred": "armA",
+      "rationale": "Plan Two avoids the duplicate overhead triceps extension problem by using a band skullcrusher for exercise 3, which gives the session two distinct triceps angles (overhead vs. lying/elbow-extension) matching the original's intent; Plan One effectively programs the same movement twice for triceps, which no coach would prescribe."
+    },
+    {
+      "key": "w13-arms::hotel_gym",
+      "armAFirst": true,
+      "armAScore": {
+        "patternFidelity": 5,
+        "coherence": 5,
+        "reasonQuality": 4,
+        "note": "Cable straight-bar curl is arguably the closest analogue to a barbell curl—bilateral, fixed grip width, similar strength curve—making this an excellent pattern-faithful swap with a coherent overall session."
+      },
+      "armBScore": {
+        "patternFidelity": 4,
+        "coherence": 4,
+        "reasonQuality": 4,
+        "note": "Dumbbell biceps curl is a solid swap but shifts from bilateral to unilateral and now overlaps more with the existing hammer curl in exercise #2, slightly reducing session variety."
+      },
+      "preferred": "armA",
+      "rationale": "Plan One's cable straight-bar curl better preserves the bilateral, fixed-path nature of a barbell curl and creates more exercise variety across the session, whereas Plan Two's dumbbell curl introduces redundancy with the dumbbell hammer curl already programmed in superset B."
+    },
+    {
+      "key": "w14-core::dumbbells_bench",
+      "armAFirst": true,
+      "armAScore": {
+        "patternFidelity": 5,
+        "coherence": 5,
+        "reasonQuality": 3,
+        "note": "The swap is pattern-appropriate (lying leg raise preserves the hip-flexion/lower-ab pattern), and the session is coherent. The reasoning is accurate but brief and somewhat generic—'targets abs similarly' doesn't explain the shared leg-raising mechanic."
+      },
+      "armBScore": {
+        "patternFidelity": 5,
+        "coherence": 5,
+        "reasonQuality": 4,
+        "note": "Identical swap and session structure. The reasoning is noticeably better: it names the missing equipment, identifies the shared 'leg-raising pattern,' and notes the primary muscle focus, giving the athlete more useful context."
+      },
+      "preferred": "armB",
+      "rationale": "Both plans are functionally identical in exercise selection and session coherence; the only differentiator is that Plan Two's swap explanation is more specific and informative, explicitly calling out the shared movement pattern rather than just saying 'targets abs similarly.'"
+    },
+    {
+      "key": "w14-core::bands_only",
+      "armAFirst": true,
+      "armAScore": {
+        "patternFidelity": 5,
+        "coherence": 5,
+        "reasonQuality": 4,
+        "note": "The single swap is pattern-perfect (supine leg raise for hanging leg raise), and the session reads as a complete, well-ordered core block. The reason text is accurate but slightly generic—it could mention the yoga mat or cueing differences."
+      },
+      "armBScore": {
+        "patternFidelity": 5,
+        "coherence": 5,
+        "reasonQuality": 4,
+        "note": "Identical swap choice preserves the pattern perfectly, and the full session is coherent. The reason text is concise and mentions the yoga mat, but could be slightly more specific about why this substitute matches the original's stimulus."
+      },
+      "preferred": "tie",
+      "rationale": "Both plans make the same correct swap with the same sets/reps and keep all other exercises; the reason text differs only cosmetically, with neither clearly superior in specificity or accuracy."
+    },
+    {
+      "key": "w14-core::hotel_gym",
+      "armAFirst": false,
+      "armAScore": {
+        "patternFidelity": 4,
+        "coherence": 5,
+        "reasonQuality": 3,
+        "note": "Identical swap and session structure; however the reasoning phrase 'anti-gravity leg raise movement' is misleading—lying leg raises work WITH gravity, not against it—which could confuse an athlete reading the explanation."
+      },
+      "armBScore": {
+        "patternFidelity": 4,
+        "coherence": 5,
+        "reasonQuality": 4,
+        "note": "Good swap preserving the lower-abs/hip-flexor pattern; reasoning correctly identifies the missing pull-up bar and names the movement pattern, though 'vertical abs/hip flexor pattern' is slightly imprecise since the replacement is horizontal."
+      },
+      "preferred": "armB",
+      "rationale": "Both plans are functionally identical in exercise selection and session coherence, but Plan One's reasoning is more accurate and informative for the athlete, whereas Plan Two's 'anti-gravity' descriptor is biomechanically incorrect and slightly misleading."
+    },
+    {
+      "key": "w15-conditioning::dumbbells_bench",
+      "armAFirst": false,
+      "armAScore": {
+        "patternFidelity": 4,
+        "coherence": 5,
+        "reasonQuality": 4,
+        "note": "Dumbbell deadlift preserves the hinge pattern but loses the ballistic/conditioning element of a swing, making it slightly less faithful to the original intent. Knee tuck jump is a solid box jump alternative. Session still reads coherently."
+      },
+      "armBScore": {
+        "patternFidelity": 5,
+        "coherence": 5,
+        "reasonQuality": 4,
+        "note": "Dumbbell swing is a direct pattern match for KB swing (ballistic hinge), and a jump squat is the closest bodyweight plyometric to a box jump. Session flows well as a conditioning circuit."
+      },
+      "preferred": "armB",
+      "rationale": "Plan One's dumbbell swing retains the explosive, ballistic nature of the kettlebell swing—critical in a conditioning circuit—whereas Plan Two's dumbbell deadlift converts it into a slower, grind-style lift, reducing the metabolic stimulus the original prescribed."
+    },
+    {
+      "key": "w15-conditioning::bands_only",
+      "armAFirst": false,
+      "armAScore": {
+        "patternFidelity": 5,
+        "coherence": 4,
+        "reasonQuality": 4,
+        "note": "Identical exercise selections with equally correct pattern matching; reasoning text is marginally more descriptive about the original exercise's demand but otherwise equivalent."
+      },
+      "armBScore": {
+        "patternFidelity": 5,
+        "coherence": 4,
+        "reasonQuality": 4,
+        "note": "Swaps are pattern-accurate (hinge→hinge, plyometric→plyometric) and the session flows well; reasoning is clear and specific, though slightly formulaic in structure."
+      },
+      "preferred": "tie",
+      "rationale": "Both plans make the same two swaps with the same sets/reps and nearly identical justifications; neither offers a meaningful coaching advantage over the other."
+    },
+    {
+      "key": "w15-conditioning::hotel_gym",
+      "armAFirst": true,
+      "armAScore": {
+        "patternFidelity": 3,
+        "coherence": 4,
+        "reasonQuality": 4,
+        "note": "Dumbbell Deadlift is a hinge but lacks the explosive/ballistic component of a KB swing; Jump Squat is a solid plyometric swap. Reasoning is clear and accurate."
+      },
+      "armBScore": {
+        "patternFidelity": 5,
+        "coherence": 4,
+        "reasonQuality": 4,
+        "note": "Dumbbell Swing preserves both the hinge pattern and the ballistic intent; 90-Degree Jump Squat adds a rotational element but keeps the plyometric stimulus. Reasoning is specific and helpful."
+      },
+      "preferred": "armB",
+      "rationale": "Plan Two's first swap (Dumbbell Swing) retains the explosive, ballistic hip-hinge character of the kettlebell swing, whereas Plan One's Dumbbell Deadlift is a grind-pattern hinge that drops the conditioning/power element central to the original circuit's intent."
+    },
+    {
+      "key": "w16-chest-back-superset::dumbbells_bench",
+      "armAFirst": true,
+      "armAScore": {
+        "patternFidelity": 4,
+        "coherence": 3,
+        "reasonQuality": 4,
+        "note": "Swaps are sensible, but calling an incline dumbbell row a 'vertical pulling element' is a stretch—it's still a horizontal row variant, and the session now has three rowing movements versus one press pattern in superset B, losing the vertical-pull coverage the original had."
+      },
+      "armBScore": {
+        "patternFidelity": 4,
+        "coherence": 3,
+        "reasonQuality": 4,
+        "note": "Identical exercise selections to Plan One; the reasoning text is slightly more precise about why each original exercise was unavailable but still mislabels the incline dumbbell row as a 'vertical pulling pattern,' which is inaccurate."
+      },
+      "preferred": "tie",
+      "rationale": "Both plans make the same substitutions and share the same strengths and weaknesses: good dumbbell-for-barbell swaps, but the lat pull-down replacement is a horizontal row mislabeled as vertical pull, creating redundancy with exercise 1 and leaving the session without a true vertical-pull movement. The reasoning text differs only cosmetically."
+    },
+    {
+      "key": "w16-chest-back-superset::bands_only",
+      "armAFirst": true,
+      "armAScore": {
+        "patternFidelity": 3,
+        "coherence": 3,
+        "reasonQuality": 4,
+        "note": "Swap 0 replaces a horizontal press with a fly (isolation, not press pattern), and swap 4 replaces a chest fly with a back exercise, which breaks pattern logic; however the session still covers push and pull reasonably well despite some pattern mismatches."
+      },
+      "armBScore": {
+        "patternFidelity": 3,
+        "coherence": 3,
+        "reasonQuality": 3,
+        "note": "Swap 0 (Band Push-Up) nails the press pattern, but swap 2 uses Band Chest Fly as an incline press replacement (fly ≠ press), and the session now has no true incline/upper-chest emphasis; reason for swap 2 openly admits it's isolation rather than pressing, which is honest but highlights the pattern mismatch."
+      },
+      "preferred": "armA",
+      "rationale": "Plan One edges ahead because it preserves an upper-chest pressing pattern (Holman Push-Up for incline press) and offers more exercise variety across movement types, whereas Plan Two loses the incline press pattern entirely and its reasoning is slightly more generic despite being accurate."
+    },
+    {
+      "key": "w16-chest-back-superset::hotel_gym",
+      "armAFirst": false,
+      "armAScore": {
+        "patternFidelity": 5,
+        "coherence": 5,
+        "reasonQuality": 4,
+        "note": "Identical exercise selections with equally correct pattern preservation; reasoning is clear and accurate but similarly templated in tone."
+      },
+      "armBScore": {
+        "patternFidelity": 5,
+        "coherence": 5,
+        "reasonQuality": 4,
+        "note": "All swaps perfectly preserve movement patterns and the session reads as a well-balanced chest & back superset workout; reasoning is accurate and specific but slightly formulaic."
+      },
+      "preferred": "tie",
+      "rationale": "Both plans make the same two correct swaps (barbell bench → dumbbell bench, barbell row → dumbbell row), keep the same three exercises, and maintain full session coherence; their reasoning texts differ only in phrasing style with no meaningful quality gap."
+    },
+    {
+      "key": "w17-shoulders::dumbbells_bench",
+      "armAFirst": false,
+      "armAScore": {
+        "patternFidelity": 4,
+        "coherence": 4,
+        "reasonQuality": 5,
+        "note": "Essentially the same exercise selections as Plan One; the key differentiator is the reasoning text, which explicitly names the missing equipment, identifies the target muscles, and explains why the substitute preserves the rear-focused horizontal pull pattern."
+      },
+      "armBScore": {
+        "patternFidelity": 4,
+        "coherence": 4,
+        "reasonQuality": 3,
+        "note": "Solid swaps that preserve pressing and rear-delt work; reasoning is accurate but somewhat generic—'similar pulling/fly mechanics' conflates two distinct patterns and doesn't clearly explain what equipment was missing."
+      },
+      "preferred": "armA",
+      "rationale": "Both plans produce nearly identical sessions with equivalent pattern fidelity and coherence, but Plan Two's explanations are notably more informative and precise—calling out the missing cable machine and articulating the 'rear-focused horizontal pull pattern'—making it more useful as athlete-facing text."
+    },
+    {
+      "key": "w17-shoulders::bands_only",
+      "armAFirst": false,
+      "armAScore": {
+        "patternFidelity": 5,
+        "coherence": 5,
+        "reasonQuality": 3,
+        "note": "Identical exercise selections yield the same strong pattern fidelity and session coherence. However, the reasoning text is more generic—it describes what the band replaces but offers less specificity about movement patterns and training intent compared to Plan One."
+      },
+      "armBScore": {
+        "patternFidelity": 5,
+        "coherence": 5,
+        "reasonQuality": 4,
+        "note": "All swaps correctly preserve their movement patterns (vertical press, lateral raise, horizontal pull, shrug). Reasoning is accurate and mentions the pattern preserved, though the phrasing is somewhat formulaic across all four entries."
+      },
+      "preferred": "armB",
+      "rationale": "Both plans chose identical substitutions and are equally valid sessions, so pattern fidelity and coherence are tied. Plan One edges ahead because its reasoning text more consistently names the movement pattern being preserved (e.g., \"vertical pressing pattern,\" \"horizontal pulling pattern,\" \"shrugging movement pattern\"), giving the athlete slightly more useful context than Plan Two's blander descriptions."
+    },
+    {
+      "key": "w17-shoulders::hotel_gym",
+      "armAFirst": true,
+      "armAScore": {
+        "patternFidelity": 5,
+        "coherence": 5,
+        "reasonQuality": 5,
+        "note": "Dumbbell Military Press is the most direct barbell shoulder press substitute possible—same bilateral vertical press, same seated setup on the bench, same rep range. The session reads exactly as the original intended."
+      },
+      "armBScore": {
+        "patternFidelity": 4,
+        "coherence": 5,
+        "reasonQuality": 4,
+        "note": "Alternating standing dumbbell press is still a vertical press but introduces a unilateral/anti-lateral-flexion element and removes the bench; loading will be lighter per rep, slightly shifting the stimulus away from the original's heavy bilateral strength intent."
+      },
+      "preferred": "armA",
+      "rationale": "Both plans are solid, but Plan One's seated bilateral dumbbell press is a closer pattern and loading match to a barbell shoulder press, and its reasoning is more specific (mentions the bench and explains the direct substitution logic), whereas Plan Two's alternating standing variant subtly changes the stability demand and doesn't acknowledge the trade-off."
+    },
+    {
+      "key": "w18-beginner-fullbody::dumbbells_bench",
+      "armAFirst": false,
+      "armAScore": {
+        "patternFidelity": 4,
+        "coherence": 5,
+        "reasonQuality": 3,
+        "note": "Swaps are solid and the session reads well as a whole program. However, the reasoning contains inaccuracies—goblet squats do not require a kettlebell (they work fine with dumbbells) and glute bridges do not require a barbell—which undermines athlete trust despite the actual exercise choices being appropriate."
+      },
+      "armBScore": {
+        "patternFidelity": 5,
+        "coherence": 5,
+        "reasonQuality": 4,
+        "note": "All swaps preserve the original movement patterns perfectly; the goblet squat swap is essentially the same exercise, the incline row is a smart horizontal pull substitute, and the hip thrust is a valid glute bridge progression. Reasons are accurate and informative, though the '30 Legs Hip Thrust' naming is slightly confusing."
+      },
+      "preferred": "armB",
+      "rationale": "Plan One edges ahead because its reasoning is more accurate (correctly identifying that the goblet squat pattern is preserved rather than mischaracterizing the original's equipment needs), and the 30° incline dumbbell row is a slightly more beginner-friendly and pattern-faithful cable row substitute than an unsupported bent-over row."
+    },
+    {
+      "key": "w18-beginner-fullbody::bands_only",
+      "armAFirst": false,
+      "armAScore": {
+        "patternFidelity": 3,
+        "coherence": 4,
+        "reasonQuality": 3,
+        "note": "The 'Banded Squat Toe Tap' introduces a balance/cardio element that drifts from the loaded bilateral squat pattern, and the single-leg bridge is a valid progression but may be too advanced for a beginner session; reasoning mentions 'barbell and dumbbells unavailable' which is irrelevant given the original exercise was bodyweight."
+      },
+      "armBScore": {
+        "patternFidelity": 5,
+        "coherence": 5,
+        "reasonQuality": 4,
+        "note": "All swaps faithfully preserve movement patterns (squat, horizontal pull, hip extension) and the session reads as a balanced beginner full-body workout. Reasoning is accurate but slightly formulaic across entries."
+      },
+      "preferred": "armB",
+      "rationale": "Plan One keeps every movement pattern intact with straightforward band-loaded equivalents appropriate for beginners, while Plan Two introduces a less standard squat variation and a unilateral bridge that shifts difficulty and pattern fidelity away from the original intent."
+    },
+    {
+      "key": "w18-beginner-fullbody::hotel_gym",
+      "armAFirst": true,
+      "armAScore": {
+        "patternFidelity": 4,
+        "coherence": 4,
+        "reasonQuality": 3,
+        "note": "Dumbbell Front Squat is a reasonable squat-pattern swap though it shifts emphasis slightly more anterior; '30 Legs Hip Thrust' is an odd naming convention and the glute bridge→hip thrust swap escalates difficulty for a beginner session but preserves the hip-extension pattern."
+      },
+      "armBScore": {
+        "patternFidelity": 5,
+        "coherence": 4,
+        "reasonQuality": 4,
+        "note": "Dumbbell Goblet Squat is essentially the same exercise with a different implement, making it a near-perfect pattern match; hip thrust swap is identical to Plan One but the reasoning text is slightly more informative about loading options."
+      },
+      "preferred": "armB",
+      "rationale": "Plan Two's first swap (Dumbbell Goblet Squat) is functionally identical to the original exercise rather than a related-but-different movement, giving it a perfect pattern fidelity score; its reasoning text is also marginally more useful to the athlete by noting that dumbbells are optional on the hip thrust, helping a beginner scale appropriately."
+    },
+    {
+      "key": "w19-athletic-power::dumbbells_bench",
+      "armAFirst": true,
+      "armAScore": {
+        "patternFidelity": 4,
+        "coherence": 4,
+        "reasonQuality": 4,
+        "note": "The med-ball slam swap to 'Dumbbell Sprawl' is creative and preserves explosive full-body power better than a pure core isolation, though it's an unusual exercise name that may confuse athletes; all other swaps are strong pattern matches."
+      },
+      "armBScore": {
+        "patternFidelity": 3,
+        "coherence": 3,
+        "reasonQuality": 4,
+        "note": "The Ab Bicycle swap for Medicine Ball Slam is a significant pattern miss—it replaces an explosive, hip-dominant power movement with a slow-tempo core isolation, removing the full-body ballistic element from the session and leaving a gap in power-endurance work."
+      },
+      "preferred": "armA",
+      "rationale": "Plan One better preserves the session's athletic-power intent by keeping a dynamic, explosive substitute for the med-ball slam, whereas Plan Two downgrades that slot to a slow core isolation (Ab Bicycle), losing the ballistic training stimulus that defines the original workout's character."
+    },
+    {
+      "key": "w19-athletic-power::bands_only",
+      "armAFirst": true,
+      "armAScore": {
+        "patternFidelity": 3,
+        "coherence": 3,
+        "reasonQuality": 4,
+        "note": "Hinge and squat swaps are solid, but Medicine Ball Slam → Holman Crab Kick loses the explosive hip-extension/triple-extension power pattern, and Crab Walk is not a loaded carry equivalent—it's a stability crawl that misses the grip/trap/postural endurance intent of a farmer's walk."
+      },
+      "armBScore": {
+        "patternFidelity": 3,
+        "coherence": 3,
+        "reasonQuality": 3,
+        "note": "Band Deadlift and Band Front Squat are strong pattern matches, and 90-Degree Jump Squat preserves plyometric intent well; however, Ab Bicycle is a slow core isolation that completely loses the explosive full-body slam pattern, and Carioca Quick Step is agility-focused rather than a loaded carry—plus the reasoning text is more generic and less informative than Plan One's."
+      },
+      "preferred": "armA",
+      "rationale": "Both plans stumble on the same two slots (slam and carry), but Plan One's reasoning text is noticeably more specific and educational for the athlete, and its first swap (Band Good Morning) is a legitimate hinge while Plan Two's Band Deadlift, though named better, is functionally equivalent—giving Plan One a slight edge overall on communication quality without meaningful pattern or coherence differences."
+    },
+    {
+      "key": "w19-athletic-power::hotel_gym",
+      "armAFirst": false,
+      "armAScore": {
+        "patternFidelity": 3,
+        "coherence": 4,
+        "reasonQuality": 4,
+        "note": "The Alternating Sit-Through with Crunch is dynamic but still doesn't replicate the ballistic hip-extension-to-flexion slam pattern; other swaps are solid and the session holds together as a power day."
+      },
+      "armBScore": {
+        "patternFidelity": 3,
+        "coherence": 4,
+        "reasonQuality": 4,
+        "note": "The Cable Rope Crunch swap loses the explosive, full-body slam pattern (replacing it with a slow isolation flexion movement), but all other swaps faithfully preserve their patterns and the session still reads well overall."
+      },
+      "preferred": "tie",
+      "rationale": "Both plans make nearly identical choices for exercises 0, 2, and 4, and both struggle equally with the medicine ball slam replacement—Plan One picks a cable crunch (loaded but non-explosive), Plan Two picks a bodyweight sit-through (dynamic but low-force). Neither clearly outperforms the other on any axis."
+    },
+    {
+      "key": "w20-cardio-strength::dumbbells_bench",
+      "armAFirst": true,
+      "armAScore": {
+        "patternFidelity": 4,
+        "coherence": 4,
+        "reasonQuality": 5,
+        "note": "Carioca Quick Step is a creative cardio swap that keeps heart rate up while being bodyweight-only; Dumbbell Front Squat and Incline Dumbbell Row are strong pattern-matched substitutions. Minor ding: Carioca is more lateral agility than sustained forward-locomotion cardio, slightly shifting the intent."
+      },
+      "armBScore": {
+        "patternFidelity": 3,
+        "coherence": 3,
+        "reasonQuality": 4,
+        "note": "Walking Lunges are a solid leg exercise but are a strength-dominant movement rather than sustained cardio, making the 1×600-600 duration scheme awkward. Combined with Goblet Squats at exercise 1, the session front-loads two very similar quad/glute-dominant movements, reducing session variety and overall coherence."
+      },
+      "preferred": "armA",
+      "rationale": "Plan One better preserves the cardio intent of the treadmill swap (Carioca keeps continuous movement and elevated HR) and avoids the redundancy problem Plan Two creates by pairing Walking Lunges with Goblet Squats back-to-back, which makes the session feel lower-body-heavy and repetitive in pattern."
+    },
+    {
+      "key": "w20-cardio-strength::bands_only",
+      "armAFirst": true,
+      "armAScore": {
+        "patternFidelity": 4,
+        "coherence": 4,
+        "reasonQuality": 4,
+        "note": "Strong pattern preservation throughout; the Holman Jump to Push-Up is a creative swap that keeps horizontal pressing but adds a plyometric element that shifts intensity away from pure pressing strength, slightly deviating from the original bench press intent."
+      },
+      "armBScore": {
+        "patternFidelity": 4,
+        "coherence": 5,
+        "reasonQuality": 4,
+        "note": "Clean, balanced session that mirrors the original's structure well; Band Chest Fly preserves the horizontal chest pattern but is an isolation (fly) rather than a compound press, which slightly reduces pattern fidelity for that slot."
+      },
+      "preferred": "armB",
+      "rationale": "Plan Two reads as a more conventional, coachable session with consistent intensity and no unexpected plyometric spikes; Plan One's jump-heavy choices (banded jump squats + Holman jump to push-up) create cumulative impact stress and shift the session toward power/plyometrics more than the original intended, slightly hurting coherence as a balanced cardio + strength mix."
+    },
+    {
+      "key": "w20-cardio-strength::hotel_gym",
+      "armAFirst": false,
+      "armAScore": {
+        "patternFidelity": 4,
+        "coherence": 5,
+        "reasonQuality": 5,
+        "note": "Bulgarian split squat preserves the squat pattern with heavier loading potential per leg; the reasoning text is more specific about why the barbell version fails and what muscles carry over."
+      },
+      "armBScore": {
+        "patternFidelity": 4,
+        "coherence": 5,
+        "reasonQuality": 4,
+        "note": "Goblet squat is a solid pattern-match for a back squat (bilateral, quad/glute dominant, squat pattern) though it caps loading significantly; the session reads well as a balanced cardio+strength mix."
+      },
+      "preferred": "armA",
+      "rationale": "Both plans are nearly equivalent in structure and coherence, but Plan Two's Bulgarian split squat allows greater progressive overload with dumbbells (closer to the intensity intent of a barbell back squat) and its explanation is slightly more informative for the athlete, giving it a marginal edge."
+    }
+  ]
+}
