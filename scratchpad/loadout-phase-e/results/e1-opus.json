@@ -1,0 +1,165 @@
+{
+  "summary": {
+    "modelId": "eu.anthropic.claude-opus-4-6-v1",
+    "photos": 7,
+    "recall": 0.966,
+    "totalHits": 28,
+    "totalPresent": 29,
+    "totalMisses": 1,
+    "totalFalsePositives": 3,
+    "trapsTripped": ["Cable Machine", "Rowing Machine"],
+    "totalAmbiguousDetected": 7,
+    "invalidIdsReturned": 0,
+    "nullLabelledItems": 23,
+    "realPhonePhotoRecall": 1,
+    "meanLatencyMs": 10113,
+    "meanInputTokens": 3000
+  },
+  "scores": [
+    {
+      "file": "photo01.jpg",
+      "provenance": "real-phone-photo",
+      "hits": [
+        "Barbell",
+        "Bench",
+        "Box / Step",
+        "Dumbbells",
+        "Pull-up Bar",
+        "Squat Rack"
+      ],
+      "misses": [],
+      "falsePositives": [],
+      "trapsTripped": [],
+      "ambiguousDetected": ["Cable Machine"],
+      "forcedOntoCatalogue": [],
+      "nullLabelled": [
+        "Exercise / Stability Ball",
+        "Interlocking rubber floor tiles",
+        "Weight plates (on barbell and likely stored)"
+      ],
+      "invalidIds": [],
+      "latencyMs": 10299,
+      "inputTokens": 3016,
+      "outputTokens": 513
+    },
+    {
+      "file": "photo02.jpg",
+      "provenance": "stock",
+      "hits": [
+        "Barbell",
+        "Bench",
+        "Dumbbells",
+        "Kettlebell",
+        "Squat Rack",
+        "Yoga Mat"
+      ],
+      "misses": [],
+      "falsePositives": ["Bodyweight"],
+      "trapsTripped": [],
+      "ambiguousDetected": ["Medicine Ball"],
+      "forcedOntoCatalogue": ["Bodyweight"],
+      "nullLabelled": [
+        "Stability/Exercise Ball (large blue)",
+        "Interlocking Rubber Floor Tiles",
+        "Dumbbell Storage Rack (left side, shelved)",
+        "Dumbbell/Weight Storage Rack (right side, integrated with squat rack)",
+        "Weight Plates (on squat rack and storage pegs)",
+        "Digital Wall Clock",
+        "Gym Bag (on floor, left side)"
+      ],
+      "invalidIds": [],
+      "latencyMs": 12266,
+      "inputTokens": 3024,
+      "outputTokens": 698
+    },
+    {
+      "file": "photo03.jpg",
+      "provenance": "stock",
+      "hits": ["Bench", "Dumbbells", "Lat Pulldown Machine", "Medicine Ball"],
+      "misses": ["Cable Machine"],
+      "falsePositives": [],
+      "trapsTripped": [],
+      "ambiguousDetected": ["Resistance Bands"],
+      "forcedOntoCatalogue": [],
+      "nullLabelled": [
+        "Freestanding punching bag (heavy bag on base)",
+        "Interlocking rubber floor tiles",
+        "Wall-mounted shelf with weight plates/accessories",
+        "Cable attachment handles (V-bar, stirrup handles on floor)",
+        "Red balance/wobble disc on bench"
+      ],
+      "invalidIds": [],
+      "latencyMs": 11415,
+      "inputTokens": 2977,
+      "outputTokens": 533
+    },
+    {
+      "file": "photo04.jpg",
+      "provenance": "stock",
+      "hits": ["Barbell", "Bench", "Squat Rack"],
+      "misses": [],
+      "falsePositives": [],
+      "trapsTripped": [],
+      "ambiguousDetected": ["Cable Machine"],
+      "forcedOntoCatalogue": [],
+      "nullLabelled": [
+        "Bumper plates (color-coded: green, blue, yellow - RitFit branded)",
+        "Rubber gym flooring",
+        "Cable attachments (handles/grips) hanging on rack"
+      ],
+      "invalidIds": [],
+      "latencyMs": 9125,
+      "inputTokens": 2977,
+      "outputTokens": 424
+    },
+    {
+      "file": "photo05.jpg",
+      "provenance": "stock",
+      "hits": ["Bench", "Dumbbells", "Kettlebell", "Squat Rack"],
+      "misses": [],
+      "falsePositives": ["Cable Machine"],
+      "trapsTripped": ["Cable Machine"],
+      "ambiguousDetected": ["Barbell", "Pull-up Bar"],
+      "forcedOntoCatalogue": ["Cable Machine"],
+      "nullLabelled": [
+        "Bumper plates (colorful stack visible on right side)",
+        "EZ curl bar or specialty bar (hanging on wall, right side)",
+        "Rubber gym flooring tiles"
+      ],
+      "invalidIds": [],
+      "latencyMs": 12188,
+      "inputTokens": 2977,
+      "outputTokens": 559
+    },
+    {
+      "file": "photo06.jpg",
+      "provenance": "stock",
+      "hits": ["Bench", "Dumbbells"],
+      "misses": [],
+      "falsePositives": [],
+      "trapsTripped": [],
+      "ambiguousDetected": ["Leg Press Machine"],
+      "forcedOntoCatalogue": [],
+      "nullLabelled": [],
+      "invalidIds": [],
+      "latencyMs": 7639,
+      "inputTokens": 3016,
+      "outputTokens": 325
+    },
+    {
+      "file": "photo07.jpg",
+      "provenance": "stock",
+      "hits": ["Dumbbells", "Elliptical", "Treadmill"],
+      "misses": [],
+      "falsePositives": ["Rowing Machine"],
+      "trapsTripped": ["Rowing Machine"],
+      "ambiguousDetected": [],
+      "forcedOntoCatalogue": ["Rowing Machine"],
+      "nullLabelled": ["Wall-mounted flat screen TV", "Wall-mounted mirror"],
+      "invalidIds": [],
+      "latencyMs": 7858,
+      "inputTokens": 3016,
+      "outputTokens": 360
+    }
+  ]
+}

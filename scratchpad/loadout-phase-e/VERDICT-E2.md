@@ -192,6 +192,67 @@ scored well but reads formulaically ("X replaces the Y with a…"). Phase 1 shou
 return the structured code **and** the model's sentence, and Phase 2 owns the
 copy treatment.
 
+## The gap the rubric did not score: intensity, not exercise choice
+
+Raised by Brad after reading this verdict — "it's not just about still working the
+biceps but in the same manner" — and it survives contact with the data, so it is
+recorded here rather than argued with.
+
+**It splits into two claims, and they resolve differently.**
+
+**"Equipment types plus muscles is not enough" — correct, and this eval is the
+proof.** That is exactly arm A, and it lost 4–50. No further argument needed.
+
+**"A swap can't do this" — correct for 5.8 % of swaps, and for those, no ranking
+or model improvement helps.** Measured on the winning arm: **10 of 171 swaps put a
+strength-range row (reps ≤ 6) onto equipment that cannot load it.** They cluster
+in `bands_only` and in the strength templates:
+
+| Parent row             | Arm C picked        | Target kept |
+| ---------------------- | ------------------- | ----------- |
+| Barbell Deadlift       | Band Good Morning   | 4×4-6       |
+| Barbell Back Squat     | Band Front Squat    | 5×5         |
+| Barbell Bench Press    | Band Push-Up        | 4×4-6       |
+| Barbell Shoulder Press | Band Shoulder Press | 5×5         |
+
+**Look at what went wrong there: the exercise choice is good.** Hinge → hinge,
+horizontal press → horizontal press. Arm C did precisely its job, scored well for
+it, and still produced an unusable prescription — because **4-6 reps of a band good
+morning is not a heavy hinge.** Bands cannot express that intensity, so the row is
+nonsense at the parent's target no matter which exercise is chosen.
+
+The cause is not the selector. It is `design.md` § 1's rule 2 — "sets, reps, rest
+and order are copied from the parent; no model output is ever trusted for them" —
+which is right for trust and predictability, and wrong for this 5.8 %.
+
+**This is a limitation of my rubric, not just of the engine.** The blind judge was
+asked about pattern fidelity, coherence and reason quality. It was never asked
+"is this a viable prescription at the stated intensity", so a plan could score 4/5
+on every axis while telling an athlete to do 4×4-6 band good mornings. Second time
+in this eval that the instrument was the weak point.
+
+### Three ways to close it, cheapest first
+
+1. **Flag it (recommended for Phase 1).** The detection is a **deterministic
+   3-line check** — parent row is strength-range AND the replacement lost every
+   loadable equipment type — so it needs no model, adds no cost and no ceiling. Mint
+   an `intensity_mismatch` reason code and surface it in the review step, reusing
+   the AC-3.4 unresolved/flag machinery that already exists. The user sees "your
+   bands can't load a 4-6 rep deadlift — treat this as accessory volume, or swap
+   it yourself".
+2. **Bounded target transform.** Allow a _whitelisted_ rep-scheme change on
+   exactly those rows (e.g. barbell→band on a hinge: 4×4-6 → 3×12-15), never
+   free-form, never touching sets/rest/superset grouping. This is the real fix and
+   it needs § 1 rule 2 relaxed with an explicit table — **a spec decision, not an
+   implementation detail**, because it widens what the engine may change.
+3. **Say it at session level.** "Bands only cannot replace a heavy strength day —
+   here is a hypertrophy-range version of it." Honest, but a much bigger product
+   change than a per-row swap.
+
+**Recommendation: ship (1) in Phase 1** — cheap, deterministic, honest, and it
+uses machinery the spec already has — **then decide (2) with Brad as its own
+slice.** Do not attempt (2) implicitly inside the ranker.
+
 ## Findings that are not about either arm
 
 1. **`Leg Press` and `Leg Curl` pass every equipment context — a live data bug.**

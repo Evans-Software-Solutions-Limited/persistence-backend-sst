@@ -132,10 +132,20 @@ after the mobile flow is built around it is the expensive way to find out. So:
 - **E2 — COMPLETE.** The hybrid won; D7 above is now decided on evidence.
   Verdict: `scratchpad/loadout-phase-e/VERDICT-E2.md`; summary in `design.md`
   § 6.0; consequences in AC-10.2 / AC-10.3 and `design.md` § 7.3.
-- **E1 — BLOCKED on ~30 real gym photos (Brad).** Not started, and stock images
-  were deliberately not substituted — see `design.md` § 8.0. **Phase 2's collect
-  step must not be designed around scan-as-primary until E1 returns a figure**;
-  the saved-gym and manual-picklist paths are unblocked and can proceed.
+- **E1 — RAN, verdict PROVISIONAL.** Brad supplied 7 photos (6 stock, 1 real
+  phone photo) rather than the ~30 real ones T-E1.1 asks for, with "this can do
+  for now". Result: **0.966 recall at Opus-class, 1.000 on the single real photo,
+  3 false positives, zero hallucinated ids** — but stock photography is easy mode,
+  so **that is a ceiling, not a real-world rate**. Verdict:
+  `scratchpad/loadout-phase-e/VERDICT-E1.md`; summary in `design.md` § 8.0.
+  - **Provisional go for scan as a confirmed draft (AC-2.3); NOT yet established
+    as the only collect path.** Phase 2 may design for scan; it must not ship it
+    as the sole route on 7 photos. The real ~30-photo set is still wanted.
+  - **⚠ Two design corrections fell out of it:** the scan model must be
+    **Opus-class, not Haiku-class** (Haiku scored half the recall, missed
+    `Squat Rack` in 3 of 7 photos, and invented 2 ids), and `createWithRetry` is
+    **not** usable as-is (measured max 12.3 s against its own 12 s per-attempt
+    timeout).
 
 ### Phase E has two parts
 
@@ -216,7 +226,12 @@ As a user mid-flow, I can tell Loadout what kit is available in three ways.
   uncategorised row renders under "Other".
 - **AC-2.3 (scan)** I can photograph the gym; detected equipment is returned as
   a **draft** I confirm or edit before it is used. Detection never writes
-  anything on its own.
+  anything on its own. **E1 makes this load-bearing rather than defensive:** at
+  Opus-class the scan produced 3 false positives across 7 photos (including
+  calling a wall of rubber floor tiles nothing, but a pulley rack a cable
+  machine), so the confirm step is what stands between a misread and a wrong
+  adaptation. The scan must also **never return `Bodyweight`** — it is true of
+  every gym and is injected server-side (`design.md` § 8.0).
 - **AC-2.4** Any collect route can optionally **save the selection as a named
   gym** in the same step (name + save toggle), which creates a `saved_gyms` row.
 - **AC-2.5** The equipment context for a run is the confirmed set of
@@ -240,6 +255,20 @@ As a user mid-flow, I can tell Loadout what kit is available in three ways.
   **unresolved** with an explicit reason — never silently dropped, never
   substituted with something that does not fit the kit. The user can leave it,
   remove it, or pick manually.
+- **AC-3.5b (intensity mismatch — added 2026-07-26)** If a row's parent target is
+  a **strength range (reps ≤ 6)** and the chosen alternative has lost every
+  **loadable** equipment type (barbell, dumbbells, kettlebell, EZ bar, machines,
+  cables, sled, medicine ball), the row is returned flagged `intensity_mismatch`
+  even though the exercise itself is a valid pattern match. E2 measured this on
+  **10 of 171 swaps** — `Barbell Deadlift 4×4-6 → Band Good Morning 4×4-6` — where
+  the selection is correct and the prescription is still unusable, because bands
+  cannot express that intensity. The check is deterministic: no model, no cost, no
+  ceiling. The user can accept it as accessory volume, swap manually, or drop the
+  row.
+  **Out of scope for v1, and deliberately so:** changing the target to suit the
+  kit (4×4-6 → 3×12-15). That would relax `design.md` § 1's rule 2 — targets are a
+  database property, never model-authored — and is a **Brad decision with its own
+  slice**, not something the ranker may do implicitly (`design.md` § 7.1b).
 - **AC-3.5** The adaptation is computed as a **preview**; nothing is persisted
   until the user saves. Abandoning the flow writes nothing.
 - **AC-3.6** Candidate exercises are drawn only from exercises the caller is

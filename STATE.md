@@ -123,11 +123,49 @@ PR not yet raised. NO product code — script + dataset + verdict + spec updates
   Atlas Stones** in a bands-only context, **Machine Bicep Curl → Floor Rope
   Climb**, rear-delt fly for a lateral raise. A deterministic-only engine would
   need `movement_type` backfilled across the catalogue FIRST (T-E.11).
-- **⚠ E1 NOT STARTED — still blocked on ~30 real gym photos from Brad.** Stock
-  images deliberately not substituted; a figure from clean product shots would
-  read as evidence while measuring nothing. **Phase 2's collect step must not be
-  designed around scan-as-primary until E1 returns a number** (design § 8.0);
-  saved-gym + manual-picklist paths are unblocked.
+- **E1 RAN (Brad supplied 7 photos, 6 stock + 1 real phone photo, "this can do
+  for now"). VERDICT: PROVISIONAL GO — and it overturned two design choices.**
+  Opus 4.6: **recall 0.966** (28/29), 3 FPs, **0 hallucinated ids**, 23 items
+  correctly returned `null`+label; **1.000 on the one real phone photo** (n=1).
+  Haiku 4.5: 0.759 recall, 7 FPs, **2 hallucinated ids**, only 3 null-labelled,
+  **0.500 on the real photo**, and it missed **`Squat Rack` in 3 of 7 photos**.
+  - **⚠ Stock photos are EASY MODE, so 0.966 is a CEILING, not a real-world rate.**
+    Scan is a provisional go **as a confirmed draft (AC-2.3)**, NOT established as
+    the only collect path. The real ~30-photo set is still wanted (phone, in the
+    room, not stepped back, commercial floor with equipment behind equipment).
+  - **⚠ design § 8's "Haiku-class first (the task is far simpler than food
+    estimation)" is WRONG — it's HARDER. Use the Opus-class id.** Haiku fell for
+    both planted look-alikes in the real photo (road bike → `Exercise Bike`, rubber
+    floor tiles → `Yoga Mat`) and barely used the `null` escape hatch, i.e. it
+    **forces real kit onto the nearest catalogue row** — worse than a miss.
+  - **⚠ `createWithRetry` is NOT usable as-is for the scan.** Measured Opus **mean
+    10.1 s / max 12.3 s**, and the max already exceeds its own 12 s per-attempt
+    timeout → realistic worst case is timeout-then-retry ≈22 s + overhead against a
+    hard 30 s. Needs ONE attempt at ~20 s (what GTM § 3 P2 asked for) or a smaller
+    image — E1 ran 1568 px/~3000 tokens where prod food photos run 640 px.
+  - Scan costs **$0.0272** — ~5× the re-map. At 10/day that's $8.16/user/month
+    worst case, which is material against £29.99; first real argument that the scan
+    ceiling needs to be low. Also: **exclude `Bodyweight` from scan output** (true
+    of every gym; inject server-side).
+- **⚠ BRAD'S CRITIQUE WAS RIGHT, AND IT'S A GAP NEITHER ARM CLOSES.** He said
+  equipment+muscle matching misses whether the muscle is worked "in the same
+  manner", and that a swap may not be able to do it. Measured on the winning arm:
+  **10 of 171 swaps put a strength-range row (reps ≤ 6) onto kit that cannot load
+  it** — `Barbell Deadlift 4×4-6 → Band Good Morning 4×4-6`, `Barbell Back Squat
+  5×5 → Band Front Squat 5×5`, clustered in `bands_only` + strength templates.
+  **The exercise choice in those rows is CORRECT (hinge→hinge) and the prescription
+  is still unusable** — so no ranker or model improvement fixes it. Cause is § 1
+  rule 2 (targets copied from the parent, never model-authored).
+  - **My E2 rubric never scored this** — the judge was asked about pattern
+    fidelity/coherence/reason quality, never "is this viable at the stated
+    intensity". Second time in this eval the instrument was the weak point.
+  - **Phase 1 ships DETECTION only** (new **AC-3.5b** + **T-1.11**, design § 7.1b):
+    a deterministic check (strength-range parent AND replacement lost every
+    loadable equipment type) → `intensity_mismatch` flag through the existing
+    AC-3.4 machinery. No model, no cost, no ceiling.
+  - **Changing the target to suit the kit (4×4-6 → 3×12-15) is a BRAD DECISION
+    with its own slice** — it relaxes § 1 rule 2. Explicitly NOT for the ranker to
+    do implicitly.
 - **⚠ SPEC CONSEQUENCES ALREADY FOLDED IN — a model is now on the re-map path.**
   `AC-10.2`'s old text ("the deterministic re-map has no ceiling and writes no
   usage rows — it costs nothing to run") is **VOID** and rewritten; new

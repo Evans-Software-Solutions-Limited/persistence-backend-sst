@@ -160,25 +160,56 @@ Runs straight after Phase 0. Ships a script, a dataset and a written verdict —
 **no endpoints, no migrations, no UI.** Two independent questions; both gate
 Phase 1/2 design. Rationale: `requirements.md` § Eval spike.
 
-### E1 — can a vision model read a gym? · **BLOCKED on T-E1.1**
+### E1 — can a vision model read a gym? · **RAN, verdict PROVISIONAL**
 
-> Not started, deliberately. Stock images were **not** substituted for real gym
-> photos — E1 exists to measure real-world accuracy, so a figure from clean
-> product shots would be worse than no figure. `design.md` § 8.0 records the
-> status and what stays undecided because of it.
+> **Verdict: `scratchpad/loadout-phase-e/VERDICT-E1.md`**, summary in `design.md`
+> § 8.0. Provisional go for scan-as-confirmed-draft; **not** established as the
+> only collect path, because the dataset was 7 photos (6 stock) rather than the
+> ~30 real ones this section asks for.
 
-- [ ] **T-E1.1 ⛔ BLOCKED (Brad)** Assemble ~30 real gym photos across contexts
-      (commercial floor, hotel gym, home garage, bands-only). Brad supplies or
-      approves the set. Keep them out of the repo; reference a local path.
-- [ ] **T-E1.2** Throwaway script: photo + the seeded `equipment_types`
-      catalogue as the candidate list → forced-tool response, ids validated for
-      membership. Reuse `aiBedrockClient`; do NOT add a route.
-- [ ] **T-E1.3** Score per photo: hits, misses, false positives, by equipment
-      category. Note which categories fail (expect plate-loaded and cable
-      stacks to be hardest, background equipment to cause false positives).
-- [ ] **T-E1.4** Verdict: is scan viable as the PRIMARY collect path, an
-      accelerator alongside the picklist, or not worth shipping? Record the
-      accuracy figure — Phase 2's collect-step design depends on it.
+- [x] **T-E1.1 ⚠ PARTIAL** Assemble ~30 real gym photos across contexts
+      (commercial floor, hotel gym, home garage, bands-only). **Brad supplied 7 on
+      2026-07-26 — 6 stock/web images plus 1 genuine phone photo — with "this can
+      do for now".** Kept out of the repo; ground truth committed in
+      `src/e1Fixtures.ts` (labelled by Claude before any model ran, not
+      Brad-confirmed). **Stock photography is easy mode, so every E1 figure is a
+      ceiling.** Still wanted: ~30 photos taken the way users will take them —
+      phone, in the room, not stepped back, including a busy commercial floor with
+      equipment behind equipment.
+- [x] **T-E1.2** Throwaway script: photo + the seeded `equipment_types` catalogue
+      as the candidate list → forced-tool response, ids validated for membership.
+      Reuse `aiBedrockClient`; do NOT add a route. **Landed:** `src/e1Scan.ts`.
+- [x] **T-E1.3** Score per photo: hits, misses, false positives, by equipment
+      category. **Landed** with a three-bucket ground truth (`present` /
+      `ambiguous` / `traps` / `notInCatalogue`) so a judgement call the labeller
+      could not make is scored as neither hit nor false positive, and planted
+      look-alikes (a road bike, rubber floor tiles) are scored as the interesting
+      kind of false positive. The prediction that "plate-loaded and cable stacks
+      are hardest" is **untested** — those landed in `ambiguous` because they were
+      unlabellable from stock photos, which is itself a sign the dataset is too
+      easy.
+- [x] **T-E1.4** Verdict: **provisional go as a confirmed draft.** 0.966 recall /
+      3 FPs / 0 hallucinated ids at Opus-class; 1.000 on the one real photo (n=1).
+      **Two design corrections fell out:** the model must be Opus-class not
+      Haiku-class (T-3.3), and `createWithRetry` is not usable as-is (T-3.1).
+
+### Found by E1, to fold into Phase 3
+
+- [ ] **T-E1.5 [B]** `AI_EQUIPMENT_SCAN_MODEL_ID` = the **Opus-class** id
+      (`eu.anthropic.claude-opus-4-6-v1`), not Haiku-class. Haiku 4.5 scored 0.759
+      recall vs 0.966, missed `Squat Rack` in 3 of 7 photos, tripped both planted
+      look-alikes, returned 2 non-member ids, and almost never used the `null` +
+      label escape hatch — so it forces real equipment onto the nearest catalogue
+      row. Amend design § 8.1 (done) and `infra/api.ts` when T-3.2 lands.
+- [ ] **T-E1.6 [B]** The scan needs **one attempt at a raised (~20 s) budget**, not
+      `createWithRetry`'s 12 s × 2 — measured max is 12.3 s, already past the
+      per-attempt timeout, so the real worst case is ~22 s + overhead against a
+      hard 30 s. Same no-retry harness variant as T-1.9; build once. Alternatively
+      measure 640 px vs 1568 px input on the real photo set first — it would cut
+      latency and the $0.0272/scan cost, at unmeasured accuracy cost.
+- [ ] **T-E1.7 [B]** Exclude `Bodyweight` from what the scan may return — it is
+      true of every gym, so inject it server-side rather than treating it as
+      detectable (Opus returned it as a detection).
 
 ### E2 — deterministic ranker vs AI composition (bake-off) · **COMPLETE**
 
@@ -290,6 +321,14 @@ Phase 1/2 design. Rationale: `requirements.md` § Eval spike.
       **Verify the model id is granted in the PRODUCTION Bedrock account before
       shipping** — grants are per-account (STATE.md 2026-07-26); Haiku 4.5 is
       currently granted in both.
+- [ ] **T-1.11 [B]** `intensity_mismatch` flag (AC-3.5b, design § 7.1b): a
+      deterministic check — parent target is a strength range (reps ≤ 6) AND the
+      chosen alternative lost every loadable equipment type — surfaced via the
+      AC-3.4 flag machinery. No model, no cost, no ceiling. E2 measured this on
+      **10 of 171 swaps**, where the exercise choice was correct and the
+      prescription was still unusable (`Barbell Deadlift 4×4-6 → Band Good Morning
+4×4-6`). **Do NOT change the target to suit the kit** — that relaxes § 1's
+      rule 2 and is a Brad decision with its own slice.
 - [ ] **T-1.10 [B]** Return the structured reason code **and** the model's
       sentence per row. Design § 7.2's codes alone are no longer sufficient now
       the model writes the copy; Phase 2 owns the copy treatment (E2's reason

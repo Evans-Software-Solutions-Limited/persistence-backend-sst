@@ -589,6 +589,43 @@ visibility, which is the security control, is re-verified on every row
 regardless. Do not later reuse `is_user_override` as a server-attested fact for
 a gate where it would matter.
 
+### 7.1b Intensity mismatch — the gap a swap cannot close (2026-07-26)
+
+Raised by Brad, then measured on the E2 dataset: **10 of 171 swaps in the winning
+arm put a strength-range row (reps ≤ 6) onto equipment that cannot load it** —
+`Barbell Deadlift 4×4-6 → Band Good Morning 4×4-6`, `Barbell Back Squat 5×5 → Band
+Front Squat 5×5`. Concentrated in `bands_only` and in strength templates.
+
+**The exercise choice in those rows is correct** — hinge → hinge, press → press —
+and the prescription is still unusable, because bands cannot express that
+intensity. So this is **not** fixable by a better ranker or a better model: the
+cause is § 1's rule 2 (targets are copied from the parent, never model-authored),
+which is right for trust and wrong for this 5.8 %.
+
+**Phase 1 ships the detection, not a fix.** The check is deterministic — parent row
+is strength-range AND the replacement lost every loadable equipment type — so it
+needs no model, adds no cost and no ceiling:
+
+```ts
+const LOADABLE = new Set([...]); // barbell, dumbbells, kettlebell, EZ bar,
+                                 // machines, cables, sled, medicine ball
+const mismatch =
+  row.repsMax <= 6 &&
+  hasAny(source.equipmentRequired, LOADABLE) &&
+  !hasAny(chosen.equipmentRequired, LOADABLE);
+```
+
+Mint an `intensity_mismatch` reason code (§ 7.2) and surface it in the review step
+via the AC-3.4 flag machinery. The user is told their bands cannot load a 4-6 rep
+deadlift and can accept it as accessory volume, swap manually, or drop the row.
+
+**A bounded target transform is the real fix and is deliberately NOT in Phase 1.**
+Allowing a whitelisted rep-scheme change on exactly those rows (barbell→band on a
+hinge: 4×4-6 → 3×12-15, never free-form, never touching sets/rest/superset
+grouping) requires relaxing § 1 rule 2 with an explicit table. That widens what the
+engine may change and is a spec decision for Brad, not an implementation detail —
+**do not attempt it implicitly inside the ranker.**
+
 ### 7.2 Reasons
 
 **Server-generated and structured**, not free prose:
@@ -644,33 +681,47 @@ workout**, so the work is linear in WORKOUTS, not just in
 
 ## 8. Equipment scan (Phase 3)
 
-### 8.0 E1 status — BLOCKED, no verdict yet (2026-07-26)
+### 8.0 E1 verdict — PROVISIONAL go, and the model choice below is wrong (2026-07-26)
 
-**There is no E1 accuracy figure, because E1 has not run.** T-E1.1 needs ~30 real
-gym photos (commercial floor, hotel gym, home garage, bands-only) and those are
-Brad's to supply. Stock images were **deliberately not substituted** — E1 exists
-to measure real-world accuracy on phone photos, so a number derived from clean
-product shots would be worse than no number: it would read as evidence.
+Full verdict: `scratchpad/loadout-phase-e/VERDICT-E1.md`; raw results in that
+directory's `results/e1-*.json`.
 
-Consequently the two decisions E1 was sequenced to make are still open:
+⚠ **Measured on 7 photos, 6 of them stock, not the ~30 real ones T-E1.1 asks
+for.** Stock gym photography is easy mode — staged, wide, evenly lit, nothing
+occluded. **Every figure here is a CEILING, not a real-world rate.** One photo was a
+genuine phone photo of a cluttered garage; it is reported separately and is the
+only number with real-world standing (n=1).
 
-- **Whether scan is the primary collect path**, an accelerator alongside the
-  picklist, or not shipped. `requirements.md` § Eval spike sets the exit
-  criteria; **AC-2.3 and the Phase-2 collect-step design must not be built
-  around scan-as-primary until E1 returns a figure.**
-- **The daily ceiling** (§ 8's proposed default of 10) — still a Claude proposal,
-  not a Brad decision.
+|                                   | **Opus 4.6**        | Haiku 4.5     |
+| --------------------------------- | ------------------- | ------------- |
+| Recall (29 ground-truth items)    | **0.966**           | 0.759         |
+| Recall, the one real phone photo  | **1.000**           | 0.500         |
+| False positives across 7 photos   | **3**               | 7             |
+| Non-member ids returned           | **0**               | **2**         |
+| Correctly returned `null` + label | 23                  | 3             |
+| Latency mean / max                | 10.1 s / **12.3 s** | 4.3 s / 4.7 s |
+| Cost per scan                     | $0.0272             | $0.0051       |
 
-Phase 2 can proceed on the saved-gym and manual-picklist paths meanwhile; those
-are unblocked and are the paths that must work regardless of E1's outcome.
+Three consequences, two of which contradict § 8.1 as written:
 
-What E2 did establish that transfers: the candidate-constrained contract holds in
-practice. Across **116 model runs that selected 341 ids**, **zero non-member ids**
-were returned —
-so § 1's "a hallucinated uuid is a 422" is a guard against a rare event, not a
-common one, and the same membership-validation shape is right for the scan
-(T-3.3). Haiku-class was sufficient for selection, supporting the
-Haiku-class-first choice below.
+1. **Scan is viable as a draft the user confirms** (AC-2.3), which is what the
+   design already specifies. It is **not** yet established as the only collect
+   path — Phase 2 may design _for_ scan but must not ship it as the sole route on
+   this evidence.
+2. **⚠ "Haiku-class first" below is WRONG — use the Opus-class id.** The task is
+   harder than food estimation, not simpler. Haiku missed `Squat Rack` in 3 of 7
+   photos (miss the rack and every barbell lift gets needlessly swapped), fell for
+   both planted look-alikes in the real photo (a road bike → `Exercise Bike`,
+   rubber floor tiles → `Yoga Mat`), returned 2 hallucinated ids, and almost never
+   used the `null` + label escape hatch — meaning it **forces real equipment onto
+   the nearest catalogue row**, the exact failure § 1 warns against and worse than
+   a miss.
+3. **⚠ `createWithRetry` is NOT usable as-is here** — see § 8.1's revised note.
+
+Also for T-3.3: **exclude `Bodyweight` from what the scan may return.** Opus
+returned it as a detection, which is technically always true and useless; it is a
+property of every gym, so inject it server-side instead of treating it as
+detectable.
 
 ### 8.1 Endpoint
 
@@ -689,8 +740,11 @@ magic-byte check → model → parse → validate → 200.**
 - Register the default in `infra/api.ts`'s environment block alongside the five
   existing `AI_*_DAILY_LIMIT` values. **No IAM change** — the existing
   `bedrock:InvokeModel` wildcards already cover any `eu.anthropic.*` id.
-- `AI_EQUIPMENT_SCAN_MODEL_ID`, vision-capable, Haiku-class first (the task is
-  far simpler than food estimation).
+- `AI_EQUIPMENT_SCAN_MODEL_ID`, vision-capable. ~~Haiku-class first (the task is
+  far simpler than food estimation).~~ **Corrected by E1 (§ 8.0): Opus-class —
+  `eu.anthropic.claude-opus-4-6-v1`, already the prod Snap AI photo model.** Haiku
+  4.5 scored half the recall, twice the false positives, and invented ids. This is
+  the reverse of the food split, where text estimation runs on Haiku.
 - Forced tool use returns
   `{ detected: [{ equipmentTypeId | null, label, confidence }], notes }`. The
   full `equipment_types` catalogue (id + name, ~30 rows) goes in the prompt and
@@ -699,8 +753,16 @@ magic-byte check → model → parse → validate → 200.**
   re-validated in TypeScript** (§ 1) — a hallucinated uuid is a 422.
 - Output is a **draft** (AC-2.3): the user confirms before it becomes context,
   and confirming never implicitly saves a gym.
-- `createWithRetry` is usable as-is here (12s × 2 fits the 30s API Gateway
-  ceiling). **The model-assisted re-map is no longer hypothetical — it ships
+- ~~`createWithRetry` is usable as-is here (12s × 2 fits the 30s API Gateway
+  ceiling).~~ **E1 measured Opus at mean 10.1 s / max 12.3 s — the max already
+  exceeds the 12 s per-attempt timeout**, so the real worst case is
+  timeout-then-retry ≈ 22 s plus auth/entitlement/ceiling/usage-log overhead
+  against a hard 30 s. That is a coin flip, not headroom. **The scan needs a single
+  attempt at a raised (~20 s) budget** — exactly what GTM § 3 P2 asked for — **or a
+  smaller image.** E1 ran at 1568 px long edge (~3000 input tokens) where prod food
+  photos run at 640 px; downscaling would cut latency and cost at unmeasured
+  accuracy cost, and that trade should be measured on the real photo set (§ 8.0)
+  rather than guessed. **The model-assisted re-map is no longer hypothetical — it ships
   (§ 6.0) — so resolve the no-retry question in Phase 1, not later:** GTM § 3 P2
   asks for ONE attempt at a ~20s budget because a retry on a large generation
   doubles cost and leaves no headroom inside 30s. E2 measured the happy path at
