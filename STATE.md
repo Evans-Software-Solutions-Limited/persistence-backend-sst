@@ -102,13 +102,26 @@ elysia-route-change.md`, `D .claude/skills/sst-resource-change.md`); my
 `origin/main` HEAD = `86a03a7` (squash of PR #317). Next up: spec-21 Phase E.**
 
 - **PR #317 MERGED** (squash `86a03a7`) — all 5 CI checks green, IB clean @
-  `6652a29`. Branch deleted. **⚠ THE FOUR MIGRATIONS AUTO-APPLIED TO STAGING ON
-  MERGE; PRODUCTION APPLY IS MANUAL AND STILL PENDING**, along with
-  `20260725194527_premium_plus_tier.sql`. **Apply migrations BEFORE deploying the
-  Lambda** — `workoutRepository`'s four full-row `select().from(workouts)` reads
-  now emit the new columns and `GET /exercises/equipment` projects `category`, so
-  a Lambda ahead of them 42703s **every workout read and the mobile equipment
-  picker**. Order: `premium_plus` → the four Loadout migrations → deploy.
+  `6652a29`. Branch deleted. The four migrations auto-applied to STAGING on merge.
+- **⚠ CORRECTION TO A LONG-STANDING LEDGER CLAIM: "PROD MIGRATION APPLY IS
+  MANUAL" IS WRONG.** Repeated across many earlier entries in this file, and it is
+  stale. `production-deploy.yml` runs `supabase db push --linked` (with a
+  `--dry-run` first) as part of the **Deploy Production** job, which fires on
+  `release: published` — i.e. when the release-please chore PR is merged and its
+  release is published. That workflow has run successfully 8+ times, most recently
+  `persistence: v1.8.0` on 2026-07-26. **Production migrations are automatic on
+  the release deploy. Do not hand-apply them** (Brad confirmed 2026-07-26).
+  - **And the ordering is already correct**: the workflow migrates BEFORE
+    `sst deploy`, so the database is always ahead of the code. That is the safe
+    direction for the additive Loadout columns — `workoutRepository`'s full-row
+    `select().from(workouts)` reads and `GET /exercises/equipment`'s `category`
+    projection would 42703 only on the reverse order (new Lambda, old schema),
+    which this workflow cannot produce. **The deploy-order hazard flagged on #317
+    is handled by CI; no manual sequencing needed.**
+  - Residual caveat for a FUTURE change: migrate-then-deploy is only safe for
+    ADDITIVE migrations. A destructive one (drop/rename) leaves the old Lambda
+    running against the new schema for the length of the deploy — that needs
+    expand/contract across two releases, not a workflow change.
 - **⚠ PRODUCTION AI OUTAGE — ROOT-CAUSED AND FIXED (by Brad, in the AWS console).
   Claude Haiku 4.5 was never granted in the PRODUCTION Bedrock account**
   (`465891279888`), though it was granted in Development (`111315405717`).
