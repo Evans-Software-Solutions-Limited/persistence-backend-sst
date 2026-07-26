@@ -53,7 +53,7 @@ Supports multiple user roles: regular users, personal trainers, physiotherapists
 
 - **Frontend:** React app (packages/web)
 - **Backend:** Elysia routes with auth middleware (microservices/core)
-- **Database:** Neon (serverless Postgres) + Drizzle ORM (packages/db)
+- **Database:** Supabase Postgres + Drizzle ORM over `postgres.js`/TCP (packages/db)
 - **Infra:** SST v3, Lambda-based
 - **Auth:** Supabase JWT validation in middleware, then explicit role/ownership checks
 
@@ -77,7 +77,7 @@ Core data model:
 | `microservices/core/src/application/goals/`        | Goal CRUD, progress tracking           |
 | `microservices/core/src/application/repositories/` | Data access layer, services            |
 | `packages/db/src/schema.ts`                        | Drizzle table definitions, enums       |
-| `packages/db/migrations/`                          | SQL migrations (Neon)                  |
+| `packages/db/migrations/`                          | SQL migrations (Supabase Postgres)     |
 | `infra/`                                           | SST resources (API, DB, storage)       |
 
 ## Standards
@@ -120,9 +120,12 @@ Core data model:
 
 ### Database & Migrations
 
-- Neon serverless Postgres, HTTP transport (Lambda-friendly)
+- **Supabase Postgres**, reached with `postgres.js` over TCP (NOT Neon, NOT `neon-http`)
+- **Use the Transaction-mode pooler (port 6543)**, not the direct connection
+  (5432) — Lambda scale-out exhausts the connection limit otherwise
+- `prepare: false` is required for pgbouncer in Transaction mode
 - Drizzle ORM with schema.ts as source of truth
-- Migrations in SQL (Neon format), must be idempotent
+- Migrations in SQL, must be idempotent
 - No raw SQL; use Drizzle query builder
 
 ## Commands Before Claiming Done
@@ -171,12 +174,20 @@ bun run test:unit      # Vitest (90% coverage required)
   - When fetching: apply visibility filter before returning
   - Test: create private workout, verify friend can't see it without sharing
 
-### Neon/Serverless DB Patterns
+### Supabase/Serverless DB Patterns
 
 - **Files:** `packages/db/src/client.ts`, migration scripts
-- **Risk:** Cold-start latency, connection pooling assumptions, transaction issues
+- **Risk:** Connection exhaustion under Lambda scale-out, cold-start latency,
+  transaction issues
 - **Rules:**
-  - Neon HTTP transport: stateless, no persistent pool (good for Lambda)
+  - **Never reintroduce Drizzle's `neon-http` driver.** It speaks Neon's
+    proprietary HTTP protocol, does not work against Supabase, and produced
+    opaque 500s on every query. This repo used it once; the fix was
+    `postgres.js` over TCP. See the comment in `client.ts`.
+  - Connect via the **Transaction-mode pooler on port 6543**
+    (`postgresql://postgres.<ref>:<pw>@aws-0-<region>.pooler.supabase.com:6543/postgres`),
+    not the direct 5432 connection
+  - `prepare: false` — mandatory for pgbouncer in Transaction mode
   - Avoid long-lived transactions (timeout risk)
   - Idempotent migrations: can be run multiple times safely
   - Test migrations: apply forward and backward without data loss
