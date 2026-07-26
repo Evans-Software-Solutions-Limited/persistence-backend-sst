@@ -403,7 +403,13 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
             />
           </TouchableOpacity>
           <Text style={styles.billingToggleLabel}>
-            Yearly <Text style={styles.billingToggleSavings}>(Save 20%)</Text>
+            Yearly{" "}
+            {/* Was "(Save 20%)" — overstated. Every seeded annual price is
+                  10x monthly (£12.99 -> £129.99, £29.99 -> £299.99,
+                  £14.99 -> £149.99, £75 -> £750, £300 -> £3000), i.e. 16.7%
+                  off, not 20%. "2 months free" is exact for every tier and
+                  matches the marketing site. Brad, 2026-07-25. */}
+            <Text style={styles.billingToggleSavings}>(2 months free)</Text>
           </Text>
         </View>
 

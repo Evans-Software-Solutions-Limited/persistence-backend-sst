@@ -185,6 +185,14 @@ describe("IOSPurchaseFlowPresenter", () => {
     expect(screen.queryByText(/free trial/i)).toBeNull();
   });
 
+  it("states the annual saving as 2 months free, not an overstated percentage", () => {
+    // Every seeded annual price is exactly 10x monthly => 16.7% off. The
+    // old "(Save 20%)" overstated it on an App Store review surface.
+    render(<IOSPurchaseFlowPresenter {...defaultProps()} />);
+    expect(screen.getByText(/2 months free/i)).toBeTruthy();
+    expect(screen.queryByText(/save 20%/i)).toBeNull();
+  });
+
   it("suppresses trainer-card trial banners in the same state", () => {
     // The trainer loop resolves fixed tier names out of the catalog and has
     // the identical hole — a held-but-unlisted tier marks no card current,
