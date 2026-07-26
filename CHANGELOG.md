@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.8.0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.7.6...persistence-v1.8.0) (2026-07-26)
+
+
+### Features
+
+* **subscriptions:** premium_plus tier (M19-P0) + stop advertising unbuilt features ([#313](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/313)) ([fe28bd8](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/fe28bd81c2a74ae79958fb78e5f4f6759ea1f664))
+
+
+### Bug Fixes
+
+* **web:** drop marketing claims for features that don't exist ([#314](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/314)) ([2ae43ad](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/2ae43adaf604fd219d3ffd00654853f28f35f952))
+
 ## [1.7.6](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.7.5...persistence-v1.7.6) (2026-07-23)
 
 
