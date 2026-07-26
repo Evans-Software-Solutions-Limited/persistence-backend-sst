@@ -1,6 +1,7 @@
 import React from "react";
 import {
   Linking,
+  Platform,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -23,13 +24,16 @@ import { color } from "@/ui/theme/tokens";
  *   - `IOSPurchaseFlowPresenter` (Apple IAP via RevenueCat) — `rail="apple"`
  *   - `SubscriptionSelectionPresenter` (Stripe rail) — `rail="card"`
  *
- * The disclosure text is rail-aware because the billing relationship differs:
- * the Apple rail charges an Apple Account and is managed in Apple Account
- * settings, the card rail charges a card and is managed in-app. Apple only
- * ever sees the `apple` variant (the Stripe rail is unreachable on iOS —
- * `SubscriptionSelectionContainer` dispatches to the IAP flow), but shipping
- * "charged to your Apple Account" on a card-billed Android surface would be
- * plainly untrue, so the wording follows the rail rather than the guideline.
+ * The disclosure text is rail-aware because the billing relationship differs
+ * per store, and naming the wrong one is both untrue and a review risk:
+ *
+ *   - `rail="store"` (default) — platform IAP. Resolves to **Apple Account**
+ *     on iOS and **Google Play account** on Android, so the same component
+ *     serves a future Play submission without a call-site change. Google Play
+ *     policy requires the equivalent disclosure, and naming Apple on Android
+ *     would fail it.
+ *   - `rail="card"` — the Stripe rail, which charges a payment method and is
+ *     managed in-app.
  *
  * Links open in the system browser. A `Linking` rejection is swallowed — a
  * dead browser handoff must never wedge the purchase flow — matching the
@@ -38,25 +42,42 @@ import { color } from "@/ui/theme/tokens";
  * @see https://developer.apple.com/app-store/review/guidelines/#3.1.2
  */
 export type SubscriptionLegalFooterProps = {
-  /** Which billing rail this surface uses. Defaults to Apple IAP. */
-  rail?: "apple" | "card";
+  /** Which billing rail this surface uses. Defaults to platform IAP. */
+  rail?: "store" | "card";
 };
 
-const DISCLOSURE: Record<"apple" | "card", string> = {
-  apple:
-    "Payment is charged to your Apple Account at confirmation of purchase. " +
-    "Subscriptions renew automatically for the same period and price unless " +
-    "auto-renew is turned off at least 24 hours before the end of the current " +
-    "period. Manage or cancel your subscription in your Apple Account settings.",
-  card:
-    "Payment is charged to your payment method at confirmation of purchase. " +
-    "Subscriptions renew automatically for the same period and price unless " +
-    "auto-renew is turned off at least 24 hours before the end of the current " +
-    "period. Manage or cancel your subscription from this screen at any time.",
-};
+/**
+ * The renewal mechanics are identical across rails and are what Apple 3.1.2
+ * and Google Play's subscription policy both require; only the account being
+ * charged and the place you manage it differ.
+ */
+const RENEWAL_TERMS =
+  "Subscriptions renew automatically for the same period and price unless " +
+  "auto-renew is turned off at least 24 hours before the end of the current " +
+  "period.";
+
+function disclosureFor(rail: "store" | "card"): string {
+  if (rail === "card") {
+    return (
+      `Payment is charged to your payment method at confirmation of purchase. ` +
+      `${RENEWAL_TERMS} Manage or cancel your subscription from this screen at ` +
+      `any time.`
+    );
+  }
+  const account = Platform.OS === "android" ? "Google Play" : "Apple";
+  const settings =
+    Platform.OS === "android"
+      ? "Google Play subscription settings"
+      : "Apple Account settings";
+  return (
+    `Payment is charged to your ${account} account at confirmation of ` +
+    `purchase. ${RENEWAL_TERMS} Manage or cancel your subscription in your ` +
+    `${settings}.`
+  );
+}
 
 export function SubscriptionLegalFooter({
-  rail = "apple",
+  rail = "store",
 }: SubscriptionLegalFooterProps = {}) {
   const open = (url: string) => {
     Linking.openURL(url).catch(() => {});
@@ -65,7 +86,7 @@ export function SubscriptionLegalFooter({
   return (
     <View style={styles.container} testID="subscription-legal-footer">
       <Text style={styles.disclosure} testID="subscription-legal-disclosure">
-        {DISCLOSURE[rail]}
+        {disclosureFor(rail)}
       </Text>
 
       <View style={styles.linkRow}>

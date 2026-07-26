@@ -53,8 +53,7 @@ function defaultProps(): IOSPurchaseFlowPresenterProps {
     isTierTrialEligible: () => true,
     tierTrialDays: () => 14,
     hasTrialEligibilityData: true,
-    contactSalesTiers: new Set(["small_business", "medium_enterprise"]),
-    onContactSales: jest.fn(),
+    monthlyOnlyTiers: new Set(["small_business", "medium_enterprise"]),
     subscriptionEndsAt: null,
     isCancelledButActive: false,
     currentTierDisplayName: "Free",
@@ -284,30 +283,36 @@ describe("IOSPurchaseFlowPresenter", () => {
     ).toBeTruthy();
   });
 
-  it("shows Contact Sales (not Subscribe) for a contact-sales tier on the yearly cycle", () => {
+  it("hides a monthly-only tier on the yearly cycle — no external purchase path", () => {
+    // These plans used to render a "Contact Sales" mailto here, selling a
+    // subscription outside IAP from the paywall (Apple 3.1.1).
     const MEDIUM_ENTERPRISE: SubscriptionTier = {
       ...PREMIUM,
       tierName: "medium_enterprise",
       displayName: "Medium Enterprise",
       isTrainerTier: true,
-      priceYearly: null,
     };
-    const props = defaultProps();
     render(
       <IOSPurchaseFlowPresenter
-        {...props}
+        {...defaultProps()}
         subscriptionTiers={[PREMIUM, INDIVIDUAL_TRAINER, MEDIUM_ENTERPRISE]}
         selectedRole="trainer"
         billingCycle="yearly"
       />,
     );
-    fireEvent.press(screen.getByTestId("trainer-card-medium_enterprise-pro"));
-    expect(props.onContactSales).toHaveBeenCalledWith("medium_enterprise");
-    // Individual Trainer keeps a normal purchase (has a yearly product).
-    expect(screen.getByText("Contact Sales")).toBeTruthy();
+    expect(
+      screen.queryByTestId("trainer-card-medium_enterprise-pro"),
+    ).toBeNull();
+    expect(screen.queryByText(/contact sales/i)).toBeNull();
+    // Individual Trainer has a yearly product and still renders.
+    expect(
+      screen.getByTestId("trainer-card-individual_trainer-pro"),
+    ).toBeTruthy();
+    // And the coach is told why, rather than the tile silently vanishing.
+    expect(screen.getByTestId("ios-purchase-monthly-only-note")).toBeTruthy();
   });
 
-  it("does NOT show Contact Sales for a contact-sales tier on the monthly cycle", () => {
+  it("shows a monthly-only tier normally on the monthly cycle", () => {
     const MEDIUM_ENTERPRISE: SubscriptionTier = {
       ...PREMIUM,
       tierName: "medium_enterprise",
@@ -324,7 +329,6 @@ describe("IOSPurchaseFlowPresenter", () => {
       />,
     );
     fireEvent.press(screen.getByTestId("trainer-card-medium_enterprise-pro"));
-    expect(props.onContactSales).not.toHaveBeenCalled();
     expect(props.onTierSelect).toHaveBeenCalledWith("medium_enterprise");
   });
 

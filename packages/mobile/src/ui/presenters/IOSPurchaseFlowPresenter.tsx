@@ -68,10 +68,10 @@ export interface IOSPurchaseFlowPresenterProps {
   tierTrialDays: (tier: SubscriptionTierName) => number | null;
   hasTrialEligibilityData: boolean;
 
-  /** Tiers whose ANNUAL plan shows "Contact Sales" instead of an IAP button
+  /** Tiers with no annual IAP product — hidden on the yearly cycle.
    * (too large for IAP — handled B2B). Only applies on the yearly cycle. */
-  contactSalesTiers: ReadonlySet<SubscriptionTierName>;
-  onContactSales: (tier: SubscriptionTierName) => void;
+  /** Tiers with no annual IAP product — hidden on the yearly cycle. */
+  monthlyOnlyTiers: ReadonlySet<SubscriptionTierName>;
 
   subscriptionEndsAt: string | null;
   isCancelledButActive: boolean;
@@ -102,8 +102,7 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
     isTierTrialEligible,
     tierTrialDays,
     hasTrialEligibilityData,
-    contactSalesTiers,
-    onContactSales,
+    monthlyOnlyTiers,
     subscriptionEndsAt,
     isCancelledButActive,
     currentTierDisplayName,
@@ -208,19 +207,30 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
     const cards: React.ReactElement[] = [];
     for (const baseName of baseNames) {
       const tier = subscriptionTiers.find((t) => t.tierName === baseName);
-      if (tier) {
+      // MONTHLY-ONLY TIERS ARE HIDDEN ON THE YEARLY CYCLE (Brad, 2026-07-26).
+      //
+      // These plans previously rendered a "Contact Sales" mailto on the
+      // annual cycle. That sold a subscription unlocking in-app coach
+      // functionality outside IAP, straight from the paywall — Apple
+      // Guideline 3.1.1 (anti-steering), and a likely second rejection on
+      // top of the 3.1.2 one. Annual IAP products are not an option for
+      // both either: £3,000/yr sits above Apple's standard price points.
+      //
+      // So on the yearly cycle these tiers simply do not render, and the
+      // note below tells the coach they are monthly plans. Monthly IAP
+      // products exist for both, so nothing is lost — the plans are still
+      // fully purchasable, just on the cycle Apple can actually price.
+      if (
+        tier &&
+        !(billingCycle === "yearly" && monthlyOnlyTiers.has(baseName))
+      ) {
         const isCurrent = currentTier === tier.tierName;
-        // This tier's annual plan is sold via sales, not IAP → show a
-        // "Contact Sales" CTA instead of a purchase button (and no trial).
-        const isContactSales =
-          billingCycle === "yearly" && contactSalesTiers.has(baseName);
         const trainerTrialDays = tierTrialDays(baseName);
         const showTrialBanner =
           hasTrialEligibilityData &&
           trainerTrialDays !== null &&
           isTierTrialEligible(baseName) &&
           !isCurrent &&
-          !isContactSales &&
           !holdsUnlistedPaidTier;
         cards.push(
           <TrainerSubscriptionCard
@@ -236,8 +246,6 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
                 ? `${trainerTrialDays}-day free trial`
                 : undefined
             }
-            contactSalesMode={isContactSales}
-            onContactSales={() => onContactSales(baseName)}
             onStandardPress={() => {}}
             onProPress={() => onTierSelect(tier.tierName)}
             disabled={isProcessing || isRestoring}
@@ -254,8 +262,7 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
     hasTrialEligibilityData,
     isTierTrialEligible,
     tierTrialDays,
-    contactSalesTiers,
-    onContactSales,
+    monthlyOnlyTiers,
     isProcessing,
     isRestoring,
     onTierSelect,
@@ -470,6 +477,15 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
               Some plans aren&apos;t available for in-app purchase yet.
             </Text>
           )}
+
+        {/* Without this the two larger coach plans would simply vanish when a
+            coach flips to Yearly, which reads as a bug. */}
+        {selectedRole === "trainer" && billingCycle === "yearly" && (
+          <Text style={styles.footnote} testID="ios-purchase-monthly-only-note">
+            Small Business and Medium / Enterprise are monthly plans. Switch to
+            Monthly to see them.
+          </Text>
+        )}
 
         {/* Apple §3.1.2: auto-renew disclosure + functional Terms of Use
             (EULA) and Privacy Policy links must be present in the binary at
