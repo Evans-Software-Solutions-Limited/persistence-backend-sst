@@ -76,6 +76,50 @@ AC-10.3, § 7.3).
 
 ---
 
+## 1b. Two AI surfaces, not one (Brad, 2026-07-26)
+
+Loadout contains **two different AI problems**, and Phase E measured them
+separately enough to prove they are not variants of each other:
+
+|                         | **Perception** — equipment scan (§ 8)            | **Composition** — re-map (§ 6, § 7)               |
+| ----------------------- | ------------------------------------------------ | ------------------------------------------------- |
+| Question                | "what kit is in this photo?"                     | "what should this row become?"                    |
+| Input                   | one image + the 28-row catalogue                 | a plan + a ranked candidate shortlist             |
+| Model tier **required** | **Opus-class** (Haiku 0.759 recall, invents ids) | **Haiku-class suffices** (it won the judged axes) |
+| Latency                 | 10.1 s mean, 12.3 s max                          | 2.6 s mean, 3.8 s max                             |
+| Cost                    | $0.0272                                          | $0.0057                                           |
+| Retry policy            | needs ONE ~20 s attempt                          | `createWithRetry` fits                            |
+| Fails by                | false positive / misread kit                     | pattern drift, intensity mismatch                 |
+| Guard                   | user confirms a draft (AC-2.3)                   | equipment containment + review step               |
+
+**They share exactly one thing: § 1's candidate-constrained contract.** A
+server-built list, the model picks ids from it, membership re-validated in
+TypeScript. That is the whole of the reuse, and it is enough — it is also what
+spec-26 mirrors.
+
+**Consequences worth stating, because the obvious refactor is wrong.** Do not
+build a shared "Loadout AI service" that owns both. They need:
+
+- **Two model ids** (`AI_EQUIPMENT_SCAN_MODEL_ID` Opus-class,
+  `AI_LOADOUT_REMAP_MODEL_ID` Haiku-class) — the tiers are opposite, and a single
+  id would either overpay 5× for the re-map or cripple the scan.
+- **Two ceilings**, counted separately (AC-10.1, AC-10.2). One pooled ceiling
+  would let a user burn their re-maps on scans.
+- **Two kill switches.** E1 is provisional and E2 is solid, so the realistic
+  failure mode is "scan disappoints on real photos while the re-map is fine". It
+  must be possible to turn the scan off and keep Loadout working.
+- **A collect path that needs no AI at all.** AC-2.1 (saved gym) and AC-2.2
+  (manual picklist) already provide this. **They are not fallbacks, they are the
+  floor** — the feature has to be complete without the scan, or the scan's
+  unmeasured real-world accuracy becomes a launch risk for all of Loadout.
+
+The sequencing question this opens (ship the re-map first and add the scan when a
+real photo set validates it, versus keeping them in one Phase 2 slice for the
+"hero moment") is a **Brad decision** — recorded in `requirements.md` § Phased
+delivery rather than settled here.
+
+---
+
 ## 2. Data model
 
 Migrations live in **`supabase/migrations/`** (`CLAUDE.md`'s

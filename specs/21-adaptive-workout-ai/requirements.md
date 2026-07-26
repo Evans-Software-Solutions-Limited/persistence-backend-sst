@@ -102,6 +102,28 @@ its own brief and its own PR.
 | 3     | Coach programme-level Loadout + assign                                                    | 2               |
 | 4     | Second-engine follow-up (**E2 resolved this — see `tasks.md` Phase 5**)                   | 2 device-verify |
 
+### ⚠ Open sequencing decision (Brad, 2026-07-26) — does the scan still ship inside Phase 2?
+
+The phase table above puts the equipment scan **inside the Phase 2 slice**, decided
+2026-07-26 so "the first user-visible Loadout has its hero moment rather than a
+checklist". Phase E's split results reopen it, because the two AI surfaces landed
+in different places (`design.md` § 1b):
+
+- **The re-map is solid** — D7 decided on evidence, the hybrid measured, costed and
+  bounded.
+- **The scan is provisional** — 0.966 recall but on 7 photos, 6 of them stock. Its
+  real-world rate is unmeasured.
+
+So there is a real choice:
+
+| Option                                                           | For                                                                               | Against                                                                                           |
+| ---------------------------------------------------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| **Keep them together** (as written)                              | The hero moment; one mobile slice, one review                                     | Ships an unvalidated accuracy story on the marquee interaction of a £29.99 tier                   |
+| **Split: re-map + saved-gym/manual collect first, scan follows** | Loadout ships on measured ground; scan lands when the real photo set validates it | First release is a checklist, which is the thing the 2026-07-26 re-sequencing was trying to avoid |
+
+**Not decided.** Either way, AC-2.1/AC-2.2 are the floor, not fallbacks, and the
+scan needs its own kill switch (`design.md` § 1b).
+
 ### Eval spike (Phase E) — why it exists
 
 **The scan is the highest-value and the highest-risk part of Loadout, and it
