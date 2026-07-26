@@ -166,7 +166,12 @@ export async function createWithRetry(
 }
 
 /**
- * Log a Bedrock failure to CloudWatch. ⚠ THIS IS THE ONLY PLACE IT GETS LOGGED.
+ * Log a Bedrock failure to CloudWatch.
+ *
+ * ⚠ EVERY path that invokes Bedrock must call this. `createWithRetry` below does,
+ * and so does `trainers/services/clientSummaryAi.ts`, which keeps its own retry
+ * wrapper (different error type, same shape) — a Bedrock failure that skips this
+ * is a failure nothing records.
  *
  * Every AI handler CATCHES `AiUnavailableError` and RETURNS a 503 body, so the
  * throw never reaches `coreErrorHandler` — which only logs uncaught errors. The

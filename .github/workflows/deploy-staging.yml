@@ -62,6 +62,43 @@ jobs:
       - name: Unit tests
         run: bun run test:unit
 
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN_STAGING }}
+          aws-region: ${{ vars.AWS_REGION || 'eu-west-2' }}
+
+      # ⚠ ORDER IS LOAD-BEARING: the preflight runs BEFORE `supabase db push`.
+      # It can `exit 1`, and a migration that had already been applied would
+      # then leave production Postgres on the NEW schema while the Lambda still
+      # runs the PREVIOUS release — an outage caused by the safety gate itself.
+      # AWS credentials move up with it because the preflight needs them.
+      # Bedrock model access is per-AWS-account AND per-model, so staging passing
+      # says nothing about production (and vice versa) — see the same step in
+      # production-deploy.yml and infra/aiModels.ts for the incident this exists
+      # to prevent. Running it here too catches a newly-added model id at PR-merge
+      # time, in the account that is cheapest to fix, rather than at the
+      # production gate.
+      #
+      # 1 = a model is genuinely unreachable (block); 2 = the check could not run
+      # (warn — don't block a deploy on a preflight permissions gap).
+      - name: Bedrock model preflight
+        env:
+          AI_MODEL_PREFLIGHT: ${{ vars.AI_MODEL_PREFLIGHT }}
+          AWS_REGION: ${{ vars.AWS_REGION || 'eu-west-2' }}
+        run: |
+          set +e
+          bun run --cwd scripts check-bedrock-access
+          code=$?
+          set -e
+          if [ "$code" -eq 1 ]; then
+            echo "::error title=Bedrock model unavailable::A configured model is not accessible from the staging account — the dependent AI features would 503 for every user. Grant model access in Bedrock (staging account, eu-west-2) or set AI_MODEL_PREFLIGHT=warn to override."
+            exit 1
+          fi
+          if [ "$code" -eq 2 ]; then
+            echo "::warning title=Bedrock preflight could not run::Model access was not verified (credentials or a missing bedrock:InvokeModel permission on the deploy role). Deploy continues."
+          fi
+
       - name: Install Supabase CLI
         uses: supabase/setup-cli@v1
         with:
@@ -88,12 +125,6 @@ jobs:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
         run: supabase db push --linked --password "$SUPABASE_DB_PASSWORD"
-
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN_STAGING }}
-          aws-region: ${{ vars.AWS_REGION || 'eu-west-2' }}
 
       - name: Unlock SST (clear stale lock from previous runs)
         run: bunx sst unlock --stage staging || true
@@ -170,32 +201,6 @@ jobs:
           bunx sst secret set ExpoAccessToken "$EXPO_ACCESS_TOKEN" --stage staging
           # Optional — safe to set empty; initSentry() no-ops on an empty DSN.
           bunx sst secret set SentryDsn "$SENTRY_DSN" --stage staging
-
-      # Bedrock model access is per-AWS-account AND per-model, so staging passing
-      # says nothing about production (and vice versa) — see the same step in
-      # production-deploy.yml and infra/aiModels.ts for the incident this exists
-      # to prevent. Running it here too catches a newly-added model id at PR-merge
-      # time, in the account that is cheapest to fix, rather than at the
-      # production gate.
-      #
-      # 1 = a model is genuinely unreachable (block); 2 = the check could not run
-      # (warn — don't block a deploy on a preflight permissions gap).
-      - name: Bedrock model preflight
-        env:
-          AI_MODEL_PREFLIGHT: ${{ vars.AI_MODEL_PREFLIGHT }}
-          AWS_REGION: ${{ vars.AWS_REGION || 'eu-west-2' }}
-        run: |
-          set +e
-          bun run --cwd scripts check-bedrock-access
-          code=$?
-          set -e
-          if [ "$code" -eq 1 ]; then
-            echo "::error title=Bedrock model unavailable::A configured model is not accessible from the staging account — the dependent AI features would 503 for every user. Grant model access in Bedrock (staging account, eu-west-2) or set AI_MODEL_PREFLIGHT=warn to override."
-            exit 1
-          fi
-          if [ "$code" -eq 2 ]; then
-            echo "::warning title=Bedrock preflight could not run::Model access was not verified (credentials or a missing bedrock:InvokeModel permission on the deploy role). Deploy continues."
-          fi
 
       - name: Deploy
         run: bunx sst deploy --stage staging

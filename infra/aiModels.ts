@@ -55,9 +55,13 @@ export const AI_MODEL_IDS = {
   /** Snap AI photo estimation (`POST /nutrition/ai/estimate`). */
   AI_PHOTO_MODEL_ID: "eu.anthropic.claude-opus-4-6-v1",
   /**
-   * Free-text meal estimation (`POST /nutrition/ai/estimate-text`) AND AI
-   * ingredient resolution (`POST /nutrition/ai/resolve-ingredient`) — one id
-   * powers both, so a missing grant breaks two features at once.
+   * THREE endpoints run on this one id, so a missing grant breaks all three:
+   *   - `POST /nutrition/ai/estimate-text`     (free-text meal estimation)
+   *   - `POST /nutrition/ai/resolve-ingredient`(recipeExtraction FOOD_MACROS_MODEL_ID)
+   *   - `POST /nutrition/ai/estimate-recipe`   (same FOOD_MACROS_MODEL_ID)
+   * …and `AI_COACH_SUMMARY_MODEL_ID` below resolves to the same model, making it
+   * four endpoints in practice. That fan-out is why the preflight names every
+   * env var referencing an id rather than just the first.
    */
   AI_TEXT_MODEL_ID: "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
   /** Recipe photo extraction (`POST /nutrition/ai/extract-recipe`). */

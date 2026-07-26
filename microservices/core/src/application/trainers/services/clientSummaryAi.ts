@@ -204,6 +204,13 @@ async function createWithRetry(
     });
   } catch (firstError) {
     if (!isRetryable(firstError)) {
+      // Same invisible-outage trap the nutrition path had: the handler CATCHES
+      // ClientSummaryUnavailableError and RETURNS 503, so `coreErrorHandler`
+      // never logs it. Without this call a Bedrock AccessDenied on
+      // AI_COACH_SUMMARY_MODEL_ID produces zero log lines anywhere — which is
+      // precisely how this model's missing production grant went unnoticed for
+      // 30 days.
+      logProviderFailure(params.model, firstError, false);
       throw new ClientSummaryUnavailableError(
         `ai_summary_failed: ${describeError(firstError)}`,
       );
@@ -213,11 +220,44 @@ async function createWithRetry(
         timeout: CLIENT_TIMEOUT_MS,
       });
     } catch (secondError) {
+      logProviderFailure(params.model, secondError, true);
       throw new ClientSummaryUnavailableError(
         `ai_summary_failed_after_retry: ${describeError(secondError)}`,
       );
     }
   }
+}
+
+/**
+ * Log a Bedrock failure to CloudWatch.
+ *
+ * ⚠ Without this, a Bedrock failure on the coach summary is recorded NOWHERE:
+ * `trainersMeGenerateClientAiSummaryHandler` catches
+ * `ClientSummaryUnavailableError` and RETURNS a 503 body, so `coreErrorHandler`
+ * — which only logs uncaught throws — never sees it. That is exactly how this
+ * model's missing production grant stayed invisible for 30 days (8 of 9
+ * production requests 503'd, with no log line anywhere).
+ *
+ * Deliberately duplicated from `nutrition/services/aiBedrockClient.ts` rather
+ * than imported, for the same reason `isRetryable` / `describeError` /
+ * `extractStatus` below are: this module is self-contained by design so
+ * `trainers/` does not depend on `nutrition/` (see the file docblock). Ten lines
+ * is the cheaper price.
+ */
+function logProviderFailure(
+  modelId: string,
+  error: unknown,
+  afterRetry: boolean,
+): void {
+  const status = extractStatus(error);
+  const name =
+    typeof error === "object" && error !== null && "name" in error
+      ? String((error as { name?: unknown }).name)
+      : "unknown";
+  console.error(
+    `[ai-coach-summary] invoke failed${afterRetry ? " after retry" : ""} model=${modelId} ` +
+      `status=${status ?? "none"} name=${name}: ${describeError(error)}`,
+  );
 }
 
 function isRetryable(error: unknown): boolean {
