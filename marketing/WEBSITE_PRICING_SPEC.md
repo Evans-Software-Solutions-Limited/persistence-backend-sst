@@ -92,9 +92,17 @@ buddy for client insights and trainer analytics.
 > **Two flags before these go on a page:**
 > 1. The bracket is **2 / 30 / 500**, not the "10 / 30 / unlimited" sketch. If we
 >    want different public numbers, the catalog descriptions need updating too.
-> 2. The client-limit cap is currently **unenforced in the app**
+> 2. ~~The client-limit cap is currently **unenforced in the app**
 >    (`trainersAcceptInviteCodeHandler.ts` never checks it) — a known revenue
->    leak. Worth fixing before we advertise the brackets as hard limits.
+>    leak.~~ **STALE — corrected 2026-07-25.** The cap **is enforced**:
+>    `microservices/core/src/application/trainers/seats/trainerSeats.ts` gates
+>    seat allocation against `subscription_tiers.trainer_client_limit` and
+>    dispatches a `trainer_client_limit_reached` notification with an upgrade
+>    pointer; `entitlement/assertEntitlement.ts` computes the effective limit
+>    including the cancelled/expired revert to the free tier. Confirmed by
+>    `STATE.md` line 164 and by the tests in
+>    `trainers/seats/__tests__/trainerSeats.test.ts`. The brackets are safe to
+>    advertise as hard limits.
 
 ---
 
