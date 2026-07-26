@@ -98,7 +98,7 @@ elysia-route-change.md`, `D .claude/skills/sst-resource-change.md`); my
 
 ## Last session
 
-**2026-07-25 (LOADOUT kickoff — spec-21 triplet authored + M19-P0 premium_plus built). Two PRs: [#312](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/312) docs (spec triplet) and the P0 tier restructure on `claude/m19-p0-premium-plus`. Both IB-swept twice. Nothing merged by me — Brad's call.**
+**2026-07-25/26 (LOADOUT kickoff + App Store 3.1.2 rejection fix). THREE PRs ALL MERGED to `main` at Brad's instruction: #312 spec triplet (`e7d9556`), #314 marketing copy (`2ae43ad`), #313 M19-P0 + paywall truth pass + Apple compliance (`fe28bd8`). `origin/main` HEAD = `fe28bd8`.**
 
 - **A — spec-21 triplet authored** (`requirements.md` / `design.md` / `tasks.md`), superseding `BRIEF.md`. Loadout = ADAPT an existing workout/programme to available kit, saved as a variation under the parent; original never mutated. Phased P0 → 0 (data model) → 1 (ranker + adaptation) → 2 (mobile) → 3 (scan) → 4 (coach programmes), one phase per PR. Twinned with spec-26 Mealprint § 1 (design § 1 is the canonical statement of the candidate-constrained contract).
 - **⚠ TWO PREMISE CORRECTIONS — do not re-inherit the old ones.** (1) **There is NO deterministic substitute ranker to reuse.** `BRIEF.md` § Reuse and the GTM brief both say there is; what exists is the orphaned Postgres fn `get_alternative_exercises` (`002_functions_and_triggers.sql:432`, 50/20/15/±15 weights, **zero TS callers, no route, no tests**) plus `SwapExercisePopover`'s unranked muscle filter. The ranker is net-new Phase-1 work; formula inherited, implementation not. (2) **`equipmentAny` is array OVERLAP (`&&`); Loadout needs CONTAINMENT (`@>`)** — new `equipmentSubsetOf` axis, and `COALESCE(equipment_required,'{}')` is load-bearing (legacy NULL rows). Also `profiles.available_equipment` is write-only/unvalidated — `saved_gyms` supersedes it.
@@ -120,6 +120,65 @@ elysia-route-change.md`, `D .claude/skills/sst-resource-change.md`); my
 - **LESSON — the shell cwd silently reverted from the worktree to the main checkout mid-session** and a fix landed on the wrong branch; a later `git checkout --` (cleaning up after mutation testing) then reverted an uncommitted edit in the worktree. **Prefix EVERY tool path with the worktree path, and never `git checkout --` a file with uncommitted work in it.**
 - **Mutation-test every new guard.** Three tests I wrote could not fail (one asserted `toBeLessThanOrEqual(1)` where both branches gave ≤1; two asserted substrings that the migration's own comment prose satisfied). All found by IB, all now verified by breaking the implementation and watching them fail.
 - Restored the 2026-07-23 BRIEF-7 ledger entry, which was written but never committed (it was sitting uncommitted in the working tree and #311 landed a 07-24 entry on top of it).
+
+### 2026-07-26 additions (same workstream)
+
+- **⚠ APP STORE REJECTION (2026-07-26), Guideline 3.1.2** — no functional Terms
+  of Use (EULA) link in metadata. Decision: **Apple's STANDARD EULA**, no custom
+  agreement uploaded. Runbook is Brad's `docs/app-store/`. Code side landed in
+  #313: `domain/models/legal.ts` (single source of truth for
+  `TERMS_OF_USE_URL` / `PRIVACY_POLICY_URL` / `SERVICE_TERMS_URL`; `consent.ts`
+  re-exports), `SubscriptionLegalFooter` rendered on BOTH paywall rails.
+- **⚠ 3.1.1 FIXED, and it was the bigger risk.** The annual Small Business /
+  Medium-Enterprise tiles rendered a **"Contact Sales" mailto** — selling a
+  subscription that unlocks in-app coach functionality OUTSIDE IAP, from the
+  paywall. Annual IAP isn't possible for both anyway (**£3,000/yr is above
+  Apple's standard price points**). Those tiers are now hidden on the yearly
+  cycle (`MONTHLY_ONLY_TIERS`) + an explanatory note; `handleContactSales`,
+  `SALES_CONTACT_EMAIL` and `contactSalesMode` all deleted. **Do not
+  reintroduce a sales mailto on a purchase surface.**
+- **⚠ `NSHealthUpdateUsageDescription` was FALSE** — claimed "We do not write or
+  modify your health data" while `writeSleep`/`writeBodyWeight` are live and
+  write scopes are requested. Rewritten. Purpose strings must match behaviour.
+- **Disclosure copy is STORE-AWARE** — `rail="store"` resolves Apple vs Google
+  Play by `Platform.OS`, so a future Play submission needs no call-site change.
+  `rail="card"` for the Stripe rail.
+- **PAYWALL TRUTH PASS (Brad, 2026-07-25): only unshipped features we advertise
+  are Loadout and Mealprint.** Analytics, data export, **Gym Buddy** and
+  **"N AI-generated workouts per month"** were all sold and NONE exist
+  (`gym_buddy` = entitlement stub, no workout-generation path anywhere).
+  Stripped from `getFeaturesList`, `TrainerSubscriptionCard`,
+  `SubscriptionSuccessContainer`, the tier `description` column (migration step
+  4 — the Profile Drawer renders it verbatim, TypeScript can't reach it) and
+  the marketing site (#314). Replaced on the consumer card with the row
+  `ai_access` really unlocks: **AI nutrition logging** (Snap AI, shipped).
+  "AI supported reporting" on the coach card KEPT — the AI weekly client
+  summary is real.
+- **"(Save 20%)" → "(2 months free)"** — every annual price is exactly 10x
+  monthly, i.e. 16.7%, so the old copy overstated on a review surface.
+- **⚠ SPEC RE-SEQUENCED (Brad, 2026-07-26): new Phase E eval spike.** The scan
+  was sequenced LAST despite being the highest-value AND highest-risk piece.
+  **E1** measures whether a vision model can actually read a gym (needs ~30
+  real gym photos — **Brad's input, currently blocking**); the scan endpoint
+  then ships INSIDE the Phase 2 slice. **E2 is a bake-off**: deterministic
+  ranker vs candidate-constrained AI composition, scored blind — **D7 is now
+  decided by evidence, not asserted.** Hallucination is NOT a reason to prefer
+  deterministic: under D6 the model picks ids from a server-built list.
+- **⚠ DO NOT submit the `premium_plus` ASC products with the next build** —
+  the tier ships `is_active = false`, so a reviewer can't reach it and an
+  unreachable IAP product is its own rejection. Create, leave unsubmitted,
+  attach at the Loadout launch build.
+- **Design handoff stays at `~/Downloads/Any Gym/project/`** — Brad confirmed
+  2026-07-26 it's a stable path and won't move, so it is deliberately NOT
+  committed. The old readiness-brief action to commit it is CLOSED.
+- **LESSON (cost):** five Inspector Brad sweeps on one PR, each with an
+  open-ended "find anything new" prompt, burned a large share of the context
+  window. Cap at two sweeps + one CLOSED verification pass ("confirm these N
+  items, findings only"), and ask recon agents for conclusions with file:line
+  pointers rather than quoted code.
+- **LESSON (worktrees, again):** the shell cwd silently reverted from the
+  worktree to the main checkout mid-session and an edit landed on the wrong
+  branch. **Always pass absolute paths inside a worktree; re-check `pwd`.**
 
 **2026-07-24 (AnyGym readiness sense-check + spec-26 AnyMeal authored — scoping session, docs-only PR off `main` `4cb7a38`, branch `claude/anygym-nutrition-scoping-g4n54n`).**
 
