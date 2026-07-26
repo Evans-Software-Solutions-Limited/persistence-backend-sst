@@ -419,9 +419,7 @@
         "categoryFidelity": 1,
         "duplicatePicks": 0,
         "nearDuplicatePairs": 1,
-        "musclesDropped": [
-          "Lower Back"
-        ]
+        "musclesDropped": ["Lower Back"]
       },
       "meta": {
         "latencyMs": 1,
@@ -444,9 +442,7 @@
         "categoryFidelity": 1,
         "duplicatePicks": 0,
         "nearDuplicatePairs": 1,
-        "musclesDropped": [
-          "Lower Back"
-        ]
+        "musclesDropped": ["Lower Back"]
       },
       "meta": {
         "latencyMs": 0,
@@ -469,9 +465,7 @@
         "categoryFidelity": 1,
         "duplicatePicks": 0,
         "nearDuplicatePairs": 0,
-        "musclesDropped": [
-          "Lower Back"
-        ]
+        "musclesDropped": ["Lower Back"]
       },
       "meta": {
         "latencyMs": 0,
@@ -609,9 +603,7 @@
         "categoryFidelity": 1,
         "duplicatePicks": 0,
         "nearDuplicatePairs": 0,
-        "musclesDropped": [
-          "Lower Back"
-        ]
+        "musclesDropped": ["Lower Back"]
       },
       "meta": {
         "latencyMs": 0,
@@ -634,9 +626,7 @@
         "categoryFidelity": 1,
         "duplicatePicks": 0,
         "nearDuplicatePairs": 0,
-        "musclesDropped": [
-          "Lower Back"
-        ]
+        "musclesDropped": ["Lower Back"]
       },
       "meta": {
         "latencyMs": 0,
@@ -659,9 +649,7 @@
         "categoryFidelity": 1,
         "duplicatePicks": 0,
         "nearDuplicatePairs": 0,
-        "musclesDropped": [
-          "Lower Back"
-        ]
+        "musclesDropped": ["Lower Back"]
       },
       "meta": {
         "latencyMs": 0,
@@ -707,9 +695,7 @@
         "categoryFidelity": 1,
         "duplicatePicks": 0,
         "nearDuplicatePairs": 0,
-        "musclesDropped": [
-          "Lower Back"
-        ]
+        "musclesDropped": ["Lower Back"]
       },
       "meta": {
         "latencyMs": 0,
@@ -732,9 +718,7 @@
         "categoryFidelity": 1,
         "duplicatePicks": 0,
         "nearDuplicatePairs": 0,
-        "musclesDropped": [
-          "Full Body"
-        ]
+        "musclesDropped": ["Full Body"]
       },
       "meta": {
         "latencyMs": 0,
@@ -757,9 +741,7 @@
         "categoryFidelity": 1,
         "duplicatePicks": 0,
         "nearDuplicatePairs": 0,
-        "musclesDropped": [
-          "Lower Back"
-        ]
+        "musclesDropped": ["Lower Back"]
       },
       "meta": {
         "latencyMs": 1,
@@ -920,9 +902,7 @@
         "categoryFidelity": 1,
         "duplicatePicks": 0,
         "nearDuplicatePairs": 0,
-        "musclesDropped": [
-          "Full Body"
-        ]
+        "musclesDropped": ["Full Body"]
       },
       "meta": {
         "latencyMs": 1,
@@ -1451,9 +1431,7 @@
         "categoryFidelity": 1,
         "duplicatePicks": 0,
         "nearDuplicatePairs": 0,
-        "musclesDropped": [
-          "Lower Back"
-        ]
+        "musclesDropped": ["Lower Back"]
       },
       "meta": {
         "latencyMs": 0,
@@ -1476,9 +1454,7 @@
         "categoryFidelity": 1,
         "duplicatePicks": 0,
         "nearDuplicatePairs": 0,
-        "musclesDropped": [
-          "Lower Back"
-        ]
+        "musclesDropped": ["Lower Back"]
       },
       "meta": {
         "latencyMs": 0,
@@ -1501,9 +1477,7 @@
         "categoryFidelity": 1,
         "duplicatePicks": 0,
         "nearDuplicatePairs": 0,
-        "musclesDropped": [
-          "Lower Back"
-        ]
+        "musclesDropped": ["Lower Back"]
       },
       "meta": {
         "latencyMs": 0,
@@ -1733,10 +1707,7 @@
         "categoryFidelity": 1,
         "duplicatePicks": 0,
         "nearDuplicatePairs": 0,
-        "musclesDropped": [
-          "Calves",
-          "Lower Back"
-        ]
+        "musclesDropped": ["Calves", "Lower Back"]
       },
       "meta": {
         "latencyMs": 0,
@@ -1759,10 +1730,7 @@
         "categoryFidelity": 1,
         "duplicatePicks": 0,
         "nearDuplicatePairs": 0,
-        "musclesDropped": [
-          "Calves",
-          "Forearms"
-        ]
+        "musclesDropped": ["Calves", "Forearms"]
       },
       "meta": {
         "latencyMs": 0,
@@ -1785,10 +1753,7 @@
         "categoryFidelity": 1,
         "duplicatePicks": 0,
         "nearDuplicatePairs": 0,
-        "musclesDropped": [
-          "Calves",
-          "Lower Back"
-        ]
+        "musclesDropped": ["Calves", "Lower Back"]
       },
       "meta": {
         "latencyMs": 0,

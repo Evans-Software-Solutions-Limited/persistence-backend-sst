@@ -98,6 +98,87 @@ elysia-route-change.md`, `D .claude/skills/sst-resource-change.md`); my
 
 ## Last session
 
+**2026-07-26 (cont. 3) — LOADOUT Phase E eval spike. D7 DECIDED BY EVIDENCE:
+the HYBRID wins. Branch `claude/loadout-phase-e` (HEAD `d4139d4`, 2 commits),
+PR not yet raised. NO product code — script + dataset + verdict + spec updates.**
+
+- **E2 bake-off ran: 3 arms × 80 fixtures (20 workouts × 4 equipment contexts,
+  58 of them swap-bearing, 171 swap rows), identical candidate sets, blind
+  judge (Opus 4.6) on plans anonymised in hash-determined order.**
+  | | legal | muscle fid | pattern/coherence/reason (blind 1–5) | cost/adaptation |
+  |---|---|---|---|---|
+  | A ranker only | 80/80 | 0.968 | 3.07 / 3.21 / 2.62 | $0 |
+  | B model, full pool | 80/80 | 0.822 | 4.43 / 4.10 / 4.02 | $0.0199 |
+  | **C hybrid (SHIPS)** | 80/80 | 0.930 | 4.07 / 3.93 / 3.81 | **$0.0057** |
+  Head-to-head: **B beat A 52–5, C beat A 50–4, C vs B 25–25 with 8 ties.** So
+  the hybrid is judged-equivalent to the full-pool model arm at **28.7 % of its
+  cost**, and the § 6.2 ranker survives **as the shortlister** (top 25/row) —
+  T-1.2 stays in Phase 1's scope.
+- **⚠ ARM A DID NOT LOSE NARROWLY, AND THE REASON IS STRUCTURAL.** § 6.2's
+  scoring is dominated by primary-muscle overlap and its `movement_type` signal
+  has **no data** — NULL for all 2281 seeded rows (only
+  `exercisesCreateHandler`/`exercisesUpdateHandler` ever write it, for
+  user-created exercises), so it degrades to `category`, which is `strength` for
+  1976/2281. Result: equipment-legal but unshippable swaps — **Barbell Deadlift →
+  Atlas Stones** in a bands-only context, **Machine Bicep Curl → Floor Rope
+  Climb**, rear-delt fly for a lateral raise. A deterministic-only engine would
+  need `movement_type` backfilled across the catalogue FIRST (T-E.11).
+- **⚠ E1 NOT STARTED — still blocked on ~30 real gym photos from Brad.** Stock
+  images deliberately not substituted; a figure from clean product shots would
+  read as evidence while measuring nothing. **Phase 2's collect step must not be
+  designed around scan-as-primary until E1 returns a number** (design § 8.0);
+  saved-gym + manual-picklist paths are unblocked.
+- **⚠ SPEC CONSEQUENCES ALREADY FOLDED IN — a model is now on the re-map path.**
+  `AC-10.2`'s old text ("the deterministic re-map has no ceiling and writes no
+  usage rows — it costs nothing to run") is **VOID** and rewritten; new
+  **AC-10.3**: programme-level MUST be an async job (120 workouts = 120 model
+  calls ≈ 5 min ≈ $0.69, far past the 30 s API Gateway ceiling that § 7.3
+  previously said "does not bind"). **That job infrastructure is shared with
+  spec-26 Mealprint — build it once.** design § 1 (the canonical section spec-26
+  mirrors) also updated; it had still described stage 2 as an open bake-off.
+- **⚠ LIVE DATA BUG FOUND (T-E.10, not an engine bug):** `Leg Press` and
+  `Leg Curl` resolve to `equipment_required = '{}'` because their seeded
+  equipment names have no `equipment_types` row (`Leg Press Machine` /
+  `Leg Curl Machine`) and `seedExercises.ts`'s `resolve()` **drops unmapped names
+  silently**. `x @> '{}'` is always true, so **a bands-only athlete keeps the leg
+  press** — in the seeded "Lower Body" and "Full Body Starter" workouts, i.e. the
+  first two a new account owns. Needs a data migration + a seeder guard that
+  fails loudly. The blind judge flagged it unprompted on both arms.
+- **⚠ OPEN BRAD CHECKPOINTS (all still undecided):** the **re-map** daily ceiling
+  (deliberately NO number proposed — hitting a cap mid-gym is the bad failure),
+  the equipment-scan ceiling (10/day) and the programme cap (120 workouts, whose
+  rationale changed even though the number survives).
+- **Bedrock:** Haiku 4.5 and Opus 4.6 both re-verified callable in `ess-dev`
+  eu-west-2 before the run. Haiku 4.5 is granted in **both** accounts so the
+  re-map has no prod grant blocker — but re-verify per account before shipping
+  (the 2026-07-26 outage lesson). `assertDevEnvironment()` now refuses to run the
+  harness unless `AWS_PROFILE=ess-dev` and the model id starts `eu.`.
+- **LESSON — two eval metrics COULD NOT FAIL, and both changed published
+  numbers.** `muscleFidelity` returned a fiat `1` on the 22 zero-swap fixtures
+  and was averaged over all 80, compressing every arm's gap (real figures are
+  0.968/0.822/0.930, not 0.977/0.871/0.949); `nearDuplicatePairs` used an
+  asymmetric `i ⊆ j` subset test so detection depended on which row a pick landed
+  on (arm B was 13, not 11). Same class as PR #317's three tests that couldn't
+  fail. **A default that stands in for "not applicable" is a value that cannot
+  fail — use `null`.**
+- **LESSON — hand-derived numbers in a document drift from the data.** The first
+  verdict's cost/latency/token table was arithmetic in prose on a divisor of 60
+  when only 58 fixtures bear a swap. Fixed by making the figures a command
+  (`src/resummarise.ts`, free and offline, recomputes from the committed dataset)
+  rather than re-spending ~$1.50 on Bedrock. **If a doc quotes a measurement,
+  ship the command that regenerates it.**
+- **LESSON — deciding a spec question means sweeping every doc that assumed the
+  old answer.** Flipping D7 left five surviving contradictions, the worst being
+  design § 1 — explicitly "the canonical statement… spec-26 mirrors it" — still
+  offering three arms as live options. IB found all five; grep for the old
+  premise, don't just add the new section.
+- **IB: 1 sweep (18 findings: 2 🟠, 6 🟡, 7 🟢, 3 🔵) + 1 closed verification
+  pass.** Both 🟠 were the metric/arithmetic defects above. CI action NOT fired.
+- **Gates:** prettier · typecheck 8/8 · lint 0-err · build 13/13 · test:unit
+  19/19 (`TURBO_FORCE` on typecheck + test:unit). No coverage claim — the eval
+  harness is throwaway scratchpad code and deliberately untested; nothing under
+  any package `src/` changed.
+
 **2026-07-26 (cont. 2) — LOADOUT Phase 0 MERGED + production AI outage diagnosed.
 `origin/main` HEAD = `86a03a7` (squash of PR #317). Next up: spec-21 Phase E.**
 
