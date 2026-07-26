@@ -23,6 +23,7 @@ Structured feature specifications for the Persistence V2 build (mobile + backend
 | 12   | [Production readiness](./12-production-readiness/)       | Icons/splash only                                                | M11                 |
 | 13   | [Nutrition tracking](./13-nutrition-tracking/)           | Stub — requirements pass pending                                 | M9                  |
 | 18   | [Habit setup](./18-habit-setup/)                         | Spec reconciled 2026-06-23 to hi-fi prototype; awaiting sign-off | TBD (post-M4)       |
+| 21   | [Loadout (adaptive workouts)](./21-adaptive-workout-ai/) | Triplet authored 2026-07-25; P0 + Phase 0 in build               | post-launch (M19)   |
 | 26   | [Mealprint meal planning](./26-mealprint-meal-planning/) | Triplet authored 2026-07-24; all checkpoints closed same day     | post-launch (GTM)   |
 
 ## How to use these specs
