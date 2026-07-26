@@ -42,16 +42,18 @@ export const APP_STORE_SUBSCRIPTIONS_URL =
   "https://apps.apple.com/account/subscriptions";
 
 /**
- * Business tiers whose ANNUAL plan is handled by sales, not in-app purchase:
- * the annual fee exceeds Apple's IAP price ceiling / economics, so the yearly
- * tile shows a "Contact Sales" CTA (a B2B mailto — no external purchase, Apple
- * §3.1.1-safe) instead of an IAP button. Monthly for these tiers stays IAP.
+ * Coach tiers with NO annual IAP product, hidden on the yearly cycle.
+ *
+ * These previously rendered a "Contact Sales" mailto on annual. That sold a
+ * subscription unlocking in-app functionality outside IAP directly from the
+ * paywall — Apple Guideline 3.1.1. Annual IAP isn't available for both
+ * either: £3,000/yr is above Apple's standard price points. Monthly IAP
+ * products exist for both, so the plans stay fully purchasable.
  */
-export const CONTACT_SALES_ANNUAL_TIERS: ReadonlySet<SubscriptionTierName> =
-  new Set(["small_business", "medium_enterprise"]);
-
-/** Sales enquiry address for the Contact Sales CTA (matches the support address). */
-export const SALES_CONTACT_EMAIL = "admin@evans-software-solutions.com";
+export const MONTHLY_ONLY_TIERS: ReadonlySet<SubscriptionTierName> = new Set([
+  "small_business",
+  "medium_enterprise",
+]);
 
 type Role = "user" | "trainer";
 
@@ -307,17 +309,6 @@ export function IOSPurchaseFlowContainer() {
     void Linking.openURL(APP_STORE_SUBSCRIPTIONS_URL);
   }, []);
 
-  const handleContactSales = useCallback(
-    (tier: SubscriptionTierName) => {
-      const label = tierDisplayNames[tier] ?? tier;
-      const subject = `Persistence — Annual plan enquiry (${label})`;
-      void Linking.openURL(
-        `mailto:${SALES_CONTACT_EMAIL}?subject=${encodeURIComponent(subject)}`,
-      );
-    },
-    [tierDisplayNames],
-  );
-
   return (
     <IOSPurchaseFlowPresenter
       subscriptionTiers={tiersQuery.data ?? []}
@@ -333,8 +324,7 @@ export function IOSPurchaseFlowContainer() {
       isTierTrialEligible={isTierTrialEligible}
       tierTrialDays={tierTrialDays}
       hasTrialEligibilityData={hasTrialEligibilityData}
-      contactSalesTiers={CONTACT_SALES_ANNUAL_TIERS}
-      onContactSales={handleContactSales}
+      monthlyOnlyTiers={MONTHLY_ONLY_TIERS}
       subscriptionEndsAt={subscriptionData?.expiresAt ?? null}
       isCancelledButActive={isCancelledButActive}
       currentTierDisplayName={displayInfo.currentTierDisplayName}

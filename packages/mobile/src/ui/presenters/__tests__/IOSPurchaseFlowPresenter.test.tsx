@@ -31,6 +31,14 @@ const INDIVIDUAL_TRAINER: SubscriptionTier = {
   isTrainerTier: true,
   trainerClientLimit: 2,
 };
+const PREMIUM_PLUS: SubscriptionTier = {
+  ...PREMIUM,
+  tierName: "premium_plus",
+  displayName: "Premium+",
+  priceMonthly: 29.99,
+  priceYearly: 299.99,
+  aiWorkoutLimit: 30,
+};
 
 function defaultProps(): IOSPurchaseFlowPresenterProps {
   return {
@@ -45,8 +53,7 @@ function defaultProps(): IOSPurchaseFlowPresenterProps {
     isTierTrialEligible: () => true,
     tierTrialDays: () => 14,
     hasTrialEligibilityData: true,
-    contactSalesTiers: new Set(["small_business", "medium_enterprise"]),
-    onContactSales: jest.fn(),
+    monthlyOnlyTiers: new Set(["small_business", "medium_enterprise"]),
     subscriptionEndsAt: null,
     isCancelledButActive: false,
     currentTierDisplayName: "Free",
@@ -81,6 +88,124 @@ describe("IOSPurchaseFlowPresenter", () => {
     expect(screen.getByTestId("subscription-card-premium")).toBeTruthy();
     fireEvent.press(screen.getByTestId("subscription-card-premium-subscribe"));
     expect(props.onTierSelect).toHaveBeenCalledWith("premium");
+  });
+
+  it("renders exactly one consumer card when the catalog has no premium_plus row (M19-P0 — pre-existing catalog shape unaffected)", () => {
+    render(<IOSPurchaseFlowPresenter {...defaultProps()} />);
+    expect(screen.getByTestId("subscription-card-premium")).toBeTruthy();
+    expect(screen.queryByTestId("subscription-card-premium_plus")).toBeNull();
+  });
+
+  it("renders a second consumer card, cheapest-first, when the catalog includes premium_plus (M19-P0)", () => {
+    const props = defaultProps();
+    render(
+      <IOSPurchaseFlowPresenter
+        {...props}
+        subscriptionTiers={[PREMIUM_PLUS, PREMIUM, INDIVIDUAL_TRAINER]}
+        purchasableTiers={
+          new Set(["premium", "premium_plus", "individual_trainer"])
+        }
+      />,
+    );
+    expect(screen.getByTestId("subscription-card-premium")).toBeTruthy();
+    expect(screen.getByTestId("subscription-card-premium_plus")).toBeTruthy();
+    const allCardTestIds = screen
+      .getAllByTestId(/^subscription-card-/)
+      .map((el) => el.props.testID);
+    expect(allCardTestIds.indexOf("subscription-card-premium")).toBeLessThan(
+      allCardTestIds.indexOf("subscription-card-premium_plus"),
+    );
+    fireEvent.press(
+      screen.getByTestId("subscription-card-premium_plus-subscribe"),
+    );
+    expect(props.onTierSelect).toHaveBeenCalledWith("premium_plus");
+  });
+
+  it("never renders a trainer-named tier as a consumer card, even if is_trainer_tier is falsy", () => {
+    // mapTierRowToWire coerces a NULL is_trainer_tier to false, so a
+    // trainer row with the flag unset would fall into the consumer filter
+    // and render a coach plan in the User tab. (The two sections are
+    // mutually exclusive via the role toggle, so it is a wrong-tab bug,
+    // not a double render.) The allow-list exclusion prevents it.
+    const misflaggedTrainer: SubscriptionTier = {
+      ...INDIVIDUAL_TRAINER,
+      isTrainerTier: false,
+    };
+    render(
+      <IOSPurchaseFlowPresenter
+        {...defaultProps()}
+        subscriptionTiers={[PREMIUM, misflaggedTrainer]}
+        purchasableTiers={new Set(["premium", "individual_trainer"])}
+      />,
+    );
+    const consumerCards = screen
+      .getAllByTestId(/^subscription-card-/)
+      .map((el) => el.props.testID);
+    expect(consumerCards).not.toContain("subscription-card-individual_trainer");
+    expect(consumerCards).toContain("subscription-card-premium");
+  });
+
+  it("orders two same-priced consumer tiers deterministically by tierName", () => {
+    // listActive orders by price_monthly with no secondary key, so equal
+    // prices come back in arbitrary Postgres order. Without the
+    // localeCompare tiebreak this assertion is a coin flip.
+    const samePrice: SubscriptionTier = {
+      ...PREMIUM_PLUS,
+      priceMonthly: PREMIUM.priceMonthly,
+    };
+    render(
+      <IOSPurchaseFlowPresenter
+        {...defaultProps()}
+        subscriptionTiers={[samePrice, PREMIUM]}
+        purchasableTiers={new Set(["premium", "premium_plus"])}
+      />,
+    );
+    const ids = screen
+      .getAllByTestId(/^subscription-card-/)
+      .map((el) => el.props.testID);
+    expect(ids.indexOf("subscription-card-premium")).toBeLessThan(
+      ids.indexOf("subscription-card-premium_plus"),
+    );
+  });
+
+  it("suppresses trial banners when the user holds a paid tier missing from the catalog", () => {
+    // A promotional premium_plus grant while the tier is still seeded
+    // is_active=false: it never reaches the catalog, so no card is marked
+    // current. Without the guard, Premium renders as a buyable free trial
+    // and tapping it downgrades a comped user.
+    render(
+      <IOSPurchaseFlowPresenter
+        {...defaultProps()}
+        subscriptionTiers={[PREMIUM, INDIVIDUAL_TRAINER]}
+        currentTier="premium_plus"
+        purchasableTiers={new Set(["premium", "individual_trainer"])}
+      />,
+    );
+    expect(screen.queryByText(/free trial/i)).toBeNull();
+  });
+
+  it("states the annual saving as 2 months free, not an overstated percentage", () => {
+    // Every seeded annual price is exactly 10x monthly => 16.7% off. The
+    // old "(Save 20%)" overstated it on an App Store review surface.
+    render(<IOSPurchaseFlowPresenter {...defaultProps()} />);
+    expect(screen.getByText(/2 months free/i)).toBeTruthy();
+    expect(screen.queryByText(/save 20%/i)).toBeNull();
+  });
+
+  it("suppresses trainer-card trial banners in the same state", () => {
+    // The trainer loop resolves fixed tier names out of the catalog and has
+    // the identical hole — a held-but-unlisted tier marks no card current,
+    // so every trainer card would offer a trial.
+    render(
+      <IOSPurchaseFlowPresenter
+        {...defaultProps()}
+        selectedRole="trainer"
+        subscriptionTiers={[PREMIUM, INDIVIDUAL_TRAINER]}
+        currentTier="premium_plus"
+        purchasableTiers={new Set(["premium", "individual_trainer"])}
+      />,
+    );
+    expect(screen.queryByText(/free trial/i)).toBeNull();
   });
 
   it("advertises EACH tier's own trial length (per-tier, not one global number)", () => {
@@ -158,30 +283,36 @@ describe("IOSPurchaseFlowPresenter", () => {
     ).toBeTruthy();
   });
 
-  it("shows Contact Sales (not Subscribe) for a contact-sales tier on the yearly cycle", () => {
+  it("hides a monthly-only tier on the yearly cycle — no external purchase path", () => {
+    // These plans used to render a "Contact Sales" mailto here, selling a
+    // subscription outside IAP from the paywall (Apple 3.1.1).
     const MEDIUM_ENTERPRISE: SubscriptionTier = {
       ...PREMIUM,
       tierName: "medium_enterprise",
       displayName: "Medium Enterprise",
       isTrainerTier: true,
-      priceYearly: null,
     };
-    const props = defaultProps();
     render(
       <IOSPurchaseFlowPresenter
-        {...props}
+        {...defaultProps()}
         subscriptionTiers={[PREMIUM, INDIVIDUAL_TRAINER, MEDIUM_ENTERPRISE]}
         selectedRole="trainer"
         billingCycle="yearly"
       />,
     );
-    fireEvent.press(screen.getByTestId("trainer-card-medium_enterprise-pro"));
-    expect(props.onContactSales).toHaveBeenCalledWith("medium_enterprise");
-    // Individual Trainer keeps a normal purchase (has a yearly product).
-    expect(screen.getByText("Contact Sales")).toBeTruthy();
+    expect(
+      screen.queryByTestId("trainer-card-medium_enterprise-pro"),
+    ).toBeNull();
+    expect(screen.queryByText(/contact sales/i)).toBeNull();
+    // Individual Trainer has a yearly product and still renders.
+    expect(
+      screen.getByTestId("trainer-card-individual_trainer-pro"),
+    ).toBeTruthy();
+    // And the coach is told why, rather than the tile silently vanishing.
+    expect(screen.getByTestId("ios-purchase-monthly-only-note")).toBeTruthy();
   });
 
-  it("does NOT show Contact Sales for a contact-sales tier on the monthly cycle", () => {
+  it("shows a monthly-only tier normally on the monthly cycle", () => {
     const MEDIUM_ENTERPRISE: SubscriptionTier = {
       ...PREMIUM,
       tierName: "medium_enterprise",
@@ -198,7 +329,6 @@ describe("IOSPurchaseFlowPresenter", () => {
       />,
     );
     fireEvent.press(screen.getByTestId("trainer-card-medium_enterprise-pro"));
-    expect(props.onContactSales).not.toHaveBeenCalled();
     expect(props.onTierSelect).toHaveBeenCalledWith("medium_enterprise");
   });
 

@@ -79,16 +79,19 @@ export type EntitlementFeature =
 
 /**
  * Spec-narrow tier-name union. Reflects the simplified tier catalog
- * (post `20260526120000_simplify_tier_model.sql`): Free + Premium for
- * users, and three trainer tiers by business size (all carrying the
- * former `_pro` entitlements — AI buddy etc.). The `_standard` and
- * `basic` variants were dropped. Unknown tier strings collapse to
- * `'free'` via `coerceTierName` so the wire payload never carries an
- * arbitrary string.
+ * (post `20260526120000_simplify_tier_model.sql`): Free + Premium +
+ * Premium+ for users, and three trainer tiers by business size (all
+ * carrying the former `_pro` entitlements — AI buddy etc.). The
+ * `_standard` and `basic` variants were dropped. `premium_plus` was
+ * added in M19-P0 (spec-21 § 9.1) — a consumer tier above `premium`
+ * gating the adaptive-workout suite (Loadout + Mealprint). Unknown tier
+ * strings collapse to `'free'` via `coerceTierName` so the wire payload
+ * never carries an arbitrary string.
  */
 export type SubscriptionTierName =
   | "free"
   | "premium"
+  | "premium_plus"
   | "individual_trainer"
   | "small_business"
   | "medium_enterprise";
@@ -599,6 +602,7 @@ export function coerceTierName(
   switch (tierName) {
     case "free":
     case "premium":
+    case "premium_plus":
     case "individual_trainer":
     case "small_business":
     case "medium_enterprise":
@@ -630,11 +634,17 @@ export function normaliseRole(
  * Pick the upgrade target for a `create_workout` deny. Post tier-
  * simplification the picks are:
  *   - `user` (and `physiotherapist`, treated as user-role today)
- *     → `'premium'` (£12.99 / month — only paid user tier).
+ *     → `'premium'` (£12.99 / month — cheapest paid user tier).
  *   - `personal_trainer` → `'individual_trainer'` (£14.99 / month —
  *     smallest trainer tier).
  *   - `admin` → no upgrade target (admins shouldn't be denied; if they
  *     somehow are, the gate prompt has nothing useful to suggest).
+ *
+ * NOTE (M19-P0): this will need to become feature-dependent — a `loadout`
+ * deny must upsell to `premium_plus`, not `premium`. That is deliberately
+ * NOT built here: `loadout` does not exist as an `EntitlementFeature`
+ * until spec-21 Phase 0, so the branch would be unreachable and untestable
+ * today. It lands with `loadout` itself (spec-21 design § 9.2 item 4).
  *
  * Returns `null` to signal "no sensible upgrade", which mobile renders
  * as a generic "contact support" CTA.
@@ -909,6 +919,11 @@ export function nextTrainerTierUp(
       return null;
     case "free":
     case "premium":
+    case "premium_plus":
+      // `premium_plus` is a consumer tier, not a trainer tier — it has no
+      // "next trainer tier up" of its own, so (like `free` and `premium`
+      // before it) a `trainer_clients` deny points it at the cheapest
+      // trainer tier rather than returning null.
       return "individual_trainer";
   }
 }

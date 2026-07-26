@@ -152,6 +152,10 @@ describe("nextTrainerTierUp", () => {
     expect(nextTrainerTierUp("small_business")).toBe("medium_enterprise");
     expect(nextTrainerTierUp("medium_enterprise")).toBeNull();
   });
+
+  it("maps premium_plus to the cheapest trainer tier, same as premium (M19-P0)", () => {
+    expect(nextTrainerTierUp("premium_plus")).toBe("individual_trainer");
+  });
 });
 
 describe("computeClientSeatVerdict (pure — mirrors the backend cap)", () => {

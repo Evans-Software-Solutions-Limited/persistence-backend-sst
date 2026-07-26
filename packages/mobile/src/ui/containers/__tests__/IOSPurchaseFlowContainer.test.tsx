@@ -207,7 +207,7 @@ describe("IOSPurchaseFlowContainer", () => {
     );
   });
 
-  it("contact sales: Medium Enterprise on yearly opens a sales mailto instead of purchasing", async () => {
+  it("monthly-only tier is hidden on yearly — no mailto, no external purchase path (Apple 3.1.1)", async () => {
     const { adapters, purchases } = makeAdapters();
     const ME: SubscriptionTier = {
       ...PREMIUM,
@@ -235,11 +235,17 @@ describe("IOSPurchaseFlowContainer", () => {
     fireEvent.press(screen.getByTestId("role-toggle-trainer"));
     fireEvent.press(screen.getByTestId("billing-cycle-toggle")); // → yearly
 
-    await waitFor(() => expect(screen.getByText("Contact Sales")).toBeTruthy());
-    fireEvent.press(screen.getByTestId("trainer-card-medium_enterprise-pro"));
-
-    expect(openURLSpy).toHaveBeenCalledWith(
-      expect.stringContaining("mailto:admin@evans-software-solutions.com"),
+    await waitFor(() =>
+      expect(screen.getByTestId("ios-purchase-monthly-only-note")).toBeTruthy(),
+    );
+    // The tile is gone on yearly, so there is no way to reach the old
+    // "Contact Sales" mailto that sold this plan outside IAP.
+    expect(
+      screen.queryByTestId("trainer-card-medium_enterprise-pro"),
+    ).toBeNull();
+    expect(screen.queryByText("Contact Sales")).toBeNull();
+    expect(openURLSpy).not.toHaveBeenCalledWith(
+      expect.stringContaining("mailto:"),
     );
     expect(purchases.purchaseCalls).toHaveLength(0);
   });

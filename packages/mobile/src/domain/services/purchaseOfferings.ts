@@ -18,8 +18,9 @@ import type { PurchaseProduct } from "@/domain/ports/purchases.port";
  * it MUST match the ids configured in App Store Connect + attached in the
  * RevenueCat dashboard.
  *
- * Known product ids (6 packages, all in the `default` offering):
+ * Known product ids (8 packages, all in the `default` offering):
  *   - `app.persistence.premium.{monthly,annual}`
+ *   - `app.persistence.premium_plus.{monthly,annual}` (M19-P0)
  *   - `app.persistence.trainer.individual.{monthly,annual}`
  *   - `app.persistence.small_business.monthly`      (monthly-only for launch)
  *   - `app.persistence.medium_enterprise.monthly`   (monthly-only for launch)
@@ -44,6 +45,11 @@ export function billingCycleFromProductId(productId: string): BillingCycle {
  * id we don't model. Most-specific keywords are checked first so the business
  * tiers (which may live under a `trainer.*` namespace) don't get swallowed by
  * the broader `individual` / `trainer` match.
+ *
+ * `premium_plus` MUST be checked before the plain `premium` substring test —
+ * a product id like `app.persistence.premium_plus.monthly` also contains
+ * "premium", so testing `premium` first would misclassify every Premium+
+ * purchase as a Premium one and grant the wrong entitlement (M19-P0).
  */
 export function tierFromProductId(
   productId: string,
@@ -54,6 +60,9 @@ export function tierFromProductId(
   }
   if (lower.includes("small_business") || lower.includes("business")) {
     return "small_business";
+  }
+  if (lower.includes("premium_plus")) {
+    return "premium_plus";
   }
   if (lower.includes("premium")) {
     return "premium";

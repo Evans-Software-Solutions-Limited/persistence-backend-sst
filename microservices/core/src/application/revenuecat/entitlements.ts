@@ -15,6 +15,7 @@ import type { SubscriptionTierName } from "../entitlement/assertEntitlement";
  */
 export const RC_ENTITLEMENT_IDS = [
   "premium",
+  "premium_plus",
   "individual_trainer",
   "small_business",
   "medium_enterprise",
@@ -30,6 +31,7 @@ export function rcEntitlementToTier(
 ): SubscriptionTierName | null {
   switch (entitlementId) {
     case "premium":
+    case "premium_plus":
     case "individual_trainer":
     case "small_business":
     case "medium_enterprise":
@@ -42,14 +44,17 @@ export function rcEntitlementToTier(
 /**
  * Tier precedence for the (rare) case where a customer has more than one
  * active entitlement — we resolve to the highest-ranked one so the user is
- * never under-served. Free is the floor.
+ * never under-served. Free is the floor. `premium_plus` (M19-P0) ranks above
+ * `premium` and below the trainer tiers so `pickDesiredSubscription` prefers
+ * it over a concurrently-active `premium` entitlement for the same customer.
  */
 export const TIER_RANK: Record<SubscriptionTierName, number> = {
   free: 0,
   premium: 1,
-  individual_trainer: 2,
-  small_business: 3,
-  medium_enterprise: 4,
+  premium_plus: 2,
+  individual_trainer: 3,
+  small_business: 4,
+  medium_enterprise: 5,
 };
 
 /**

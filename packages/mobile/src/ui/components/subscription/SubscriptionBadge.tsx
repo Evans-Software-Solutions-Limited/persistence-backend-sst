@@ -44,6 +44,7 @@ type Variant = "free" | "premium" | "trainer";
 const TIER_DISPLAY_NAMES: Record<SubscriptionTierName, string> = {
   free: "Free",
   premium: "Premium",
+  premium_plus: "Premium+",
   individual_trainer: "Trainer",
   small_business: "Business Trainer",
   medium_enterprise: "Enterprise Trainer",
@@ -54,6 +55,9 @@ function variantFor(tier: SubscriptionTierName): Variant {
     case "free":
       return "free";
     case "premium":
+    case "premium_plus":
+      // premium_plus (M19-P0) shares the premium palette — it's a
+      // consumer tier, not a trainer one.
       return "premium";
     default:
       // Every other tierName is a trainer / business / enterprise tier.

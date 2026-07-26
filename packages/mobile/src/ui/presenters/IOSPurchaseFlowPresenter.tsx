@@ -17,7 +17,9 @@ import type {
 import { CurrentSubscriptionStatusCard } from "@/ui/components/subscription/CurrentSubscriptionStatusCard";
 import { PLogoDrawLoader } from "@/ui/components/PLogoDrawLoader";
 import { SubscriptionCard } from "@/ui/components/subscription/SubscriptionCard";
+import { SubscriptionLegalFooter } from "@/ui/components/subscription/SubscriptionLegalFooter";
 import { TrainerSubscriptionCard } from "@/ui/components/subscription/TrainerSubscriptionCard";
+import { TRAINER_TIER_NAMES } from "@/domain/services/subscriptionService";
 import { getFeaturesList } from "@/ui/presenters/SubscriptionSelectionPresenter";
 import { color } from "@/ui/theme/tokens";
 
@@ -66,10 +68,10 @@ export interface IOSPurchaseFlowPresenterProps {
   tierTrialDays: (tier: SubscriptionTierName) => number | null;
   hasTrialEligibilityData: boolean;
 
-  /** Tiers whose ANNUAL plan shows "Contact Sales" instead of an IAP button
+  /** Tiers with no annual IAP product — hidden on the yearly cycle.
    * (too large for IAP — handled B2B). Only applies on the yearly cycle. */
-  contactSalesTiers: ReadonlySet<SubscriptionTierName>;
-  onContactSales: (tier: SubscriptionTierName) => void;
+  /** Tiers with no annual IAP product — hidden on the yearly cycle. */
+  monthlyOnlyTiers: ReadonlySet<SubscriptionTierName>;
 
   subscriptionEndsAt: string | null;
   isCancelledButActive: boolean;
@@ -100,8 +102,7 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
     isTierTrialEligible,
     tierTrialDays,
     hasTrialEligibilityData,
-    contactSalesTiers,
-    onContactSales,
+    monthlyOnlyTiers,
     subscriptionEndsAt,
     isCancelledButActive,
     currentTierDisplayName,
@@ -116,30 +117,67 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
     onManageInAppStore,
   } = props;
 
+  // A user can hold a tier that isn't in the rendered catalog — e.g. a
+  // RevenueCat promotional grant of a tier still seeded is_active=false
+  // pre-launch. No card is then marked current, so without this guard the
+  // remaining cards render as buyable "free trial"s and a comped user can
+  // be nudged onto a WORSE tier than the one they were given. Suppress
+  // trial banners in that state; they are not genuinely trial-eligible.
+  //
+  // Hoisted above BOTH memos: the trainer loop resolves three fixed tier
+  // names out of the catalog and has exactly the same hole if a trainer
+  // tier is ever held while inactive — which is now a supported state.
+  const holdsUnlistedPaidTier =
+    currentTier !== "free" &&
+    !subscriptionTiers.some((t) => t.tierName === currentTier);
+
   const userTierCards = useMemo(() => {
-    const premium = subscriptionTiers.find((t) => t.tierName === "premium");
+    // Catalog-driven, not a hardcoded "premium" lookup — M19-P0 added a
+    // second consumer tier (`premium_plus`) above Premium, and any future
+    // one lands here automatically. Non-trainer, non-free rows, cheapest
+    // first (ascending `priceMonthly` — the catalog's own ordering signal,
+    // so no separate mobile-side tier-rank map to keep in sync).
+    const consumerTiers = subscriptionTiers
+      .filter(
+        (t) =>
+          !t.isTrainerTier &&
+          t.tierName !== "free" &&
+          // Belt-and-braces: `mapTierRowToWire` coerces a NULL
+          // `is_trainer_tier` to false, so a trainer row with the flag
+          // unset would fall into this consumer filter AND still be
+          // picked up by the trainer section's explicit allow-list —
+          // rendering the same tier twice. Exclude the allow-list here.
+          !TRAINER_TIER_NAMES.has(t.tierName),
+      )
+      // Cheapest first. Secondary sort on tierName so two same-priced
+      // tiers have a stable order — `listActive` orders by price_monthly
+      // with no tiebreak, so Postgres row order is otherwise arbitrary.
+      .sort(
+        (a, b) =>
+          a.priceMonthly - b.priceMonthly ||
+          a.tierName.localeCompare(b.tierName),
+      );
     const cards: React.ReactElement[] = [];
-    if (premium) {
-      const isPremiumCurrent = currentTier === "premium";
-      const premiumTrialDays = tierTrialDays("premium");
-      const showPremiumTrial =
+    for (const tier of consumerTiers) {
+      const isTierCurrent = currentTier === tier.tierName;
+      const trialDays = tierTrialDays(tier.tierName);
+      const showTrial =
         hasTrialEligibilityData &&
-        premiumTrialDays !== null &&
-        isTierTrialEligible("premium") &&
-        !isPremiumCurrent;
+        trialDays !== null &&
+        isTierTrialEligible(tier.tierName) &&
+        !isTierCurrent &&
+        !holdsUnlistedPaidTier;
       cards.push(
         <SubscriptionCard
-          key={premium.tierName}
-          tier={premium}
+          key={tier.tierName}
+          tier={tier}
           billingCycle={billingCycle}
-          isCurrent={isPremiumCurrent}
-          showTrialBanner={showPremiumTrial}
+          isCurrent={isTierCurrent}
+          showTrialBanner={showTrial}
           trialBannerText={
-            premiumTrialDays !== null
-              ? `${premiumTrialDays}-day free trial`
-              : undefined
+            trialDays !== null ? `${trialDays}-day free trial` : undefined
           }
-          onPress={() => onTierSelect("premium")}
+          onPress={() => onTierSelect(tier.tierName)}
           disabled={isProcessing || isRestoring}
           getFeaturesList={getFeaturesList}
           isTrainer={false}
@@ -148,6 +186,7 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
     }
     return cards;
   }, [
+    holdsUnlistedPaidTier,
     subscriptionTiers,
     billingCycle,
     currentTier,
@@ -168,19 +207,31 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
     const cards: React.ReactElement[] = [];
     for (const baseName of baseNames) {
       const tier = subscriptionTiers.find((t) => t.tierName === baseName);
-      if (tier) {
+      // MONTHLY-ONLY TIERS ARE HIDDEN ON THE YEARLY CYCLE (Brad, 2026-07-26).
+      //
+      // These plans previously rendered a "Contact Sales" mailto on the
+      // annual cycle. That sold a subscription unlocking in-app coach
+      // functionality outside IAP, straight from the paywall — Apple
+      // Guideline 3.1.1 (anti-steering), and a likely second rejection on
+      // top of the 3.1.2 one. Annual IAP products are not an option for
+      // both either: £3,000/yr sits above Apple's standard price points.
+      //
+      // So on the yearly cycle these tiers simply do not render, and the
+      // note below tells the coach they are monthly plans. Monthly IAP
+      // products exist for both, so nothing is lost — the plans are still
+      // fully purchasable, just on the cycle Apple can actually price.
+      if (
+        tier &&
+        !(billingCycle === "yearly" && monthlyOnlyTiers.has(baseName))
+      ) {
         const isCurrent = currentTier === tier.tierName;
-        // This tier's annual plan is sold via sales, not IAP → show a
-        // "Contact Sales" CTA instead of a purchase button (and no trial).
-        const isContactSales =
-          billingCycle === "yearly" && contactSalesTiers.has(baseName);
         const trainerTrialDays = tierTrialDays(baseName);
         const showTrialBanner =
           hasTrialEligibilityData &&
           trainerTrialDays !== null &&
           isTierTrialEligible(baseName) &&
           !isCurrent &&
-          !isContactSales;
+          !holdsUnlistedPaidTier;
         cards.push(
           <TrainerSubscriptionCard
             key={baseName}
@@ -195,8 +246,6 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
                 ? `${trainerTrialDays}-day free trial`
                 : undefined
             }
-            contactSalesMode={isContactSales}
-            onContactSales={() => onContactSales(baseName)}
             onStandardPress={() => {}}
             onProPress={() => onTierSelect(tier.tierName)}
             disabled={isProcessing || isRestoring}
@@ -206,14 +255,14 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
     }
     return cards;
   }, [
+    holdsUnlistedPaidTier,
     subscriptionTiers,
     billingCycle,
     currentTier,
     hasTrialEligibilityData,
     isTierTrialEligible,
     tierTrialDays,
-    contactSalesTiers,
-    onContactSales,
+    monthlyOnlyTiers,
     isProcessing,
     isRestoring,
     onTierSelect,
@@ -362,7 +411,13 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
             />
           </TouchableOpacity>
           <Text style={styles.billingToggleLabel}>
-            Yearly <Text style={styles.billingToggleSavings}>(Save 20%)</Text>
+            Yearly{" "}
+            {/* Was "(Save 20%)" — overstated. Every seeded annual price is
+                  10x monthly (£12.99 -> £129.99, £29.99 -> £299.99,
+                  £14.99 -> £149.99, £75 -> £750, £300 -> £3000), i.e. 16.7%
+                  off, not 20%. "2 months free" is exact for every tier and
+                  matches the marketing site. Brad, 2026-07-25. */}
+            <Text style={styles.billingToggleSavings}>(2 months free)</Text>
           </Text>
         </View>
 
@@ -422,6 +477,20 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
               Some plans aren&apos;t available for in-app purchase yet.
             </Text>
           )}
+
+        {/* Without this the two larger coach plans would simply vanish when a
+            coach flips to Yearly, which reads as a bug. */}
+        {selectedRole === "trainer" && billingCycle === "yearly" && (
+          <Text style={styles.footnote} testID="ios-purchase-monthly-only-note">
+            Small Business and Medium / Enterprise are monthly plans. Switch to
+            Monthly to see them.
+          </Text>
+        )}
+
+        {/* Apple §3.1.2: auto-renew disclosure + functional Terms of Use
+            (EULA) and Privacy Policy links must be present in the binary at
+            the point of purchase, not only in App Store Connect metadata. */}
+        <SubscriptionLegalFooter />
       </ScrollView>
     </SafeAreaView>
   );

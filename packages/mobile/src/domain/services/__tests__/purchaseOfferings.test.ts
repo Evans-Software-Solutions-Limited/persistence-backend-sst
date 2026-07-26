@@ -45,6 +45,8 @@ describe("tierFromProductId", () => {
     ["app.persistence.trainer.small_business.annual", "small_business"],
     ["app.persistence.medium_enterprise.annual", "medium_enterprise"],
     ["app.persistence.enterprise.monthly", "medium_enterprise"],
+    ["app.persistence.premium_plus.monthly", "premium_plus"],
+    ["app.persistence.premium_plus.annual", "premium_plus"],
   ])("maps %s → %s", (productId, expected) => {
     expect(tierFromProductId(productId)).toBe(expected);
   });
@@ -58,6 +60,22 @@ describe("tierFromProductId", () => {
     expect(tierFromProductId("app.persistence.trainer.small_business")).toBe(
       "small_business",
     );
+  });
+
+  it("classifies premium_plus BEFORE the plain premium substring match (M19-P0 regression)", () => {
+    // `app.persistence.premium_plus.monthly` also contains the substring
+    // "premium" — if that branch were checked first, every Premium+
+    // purchase would misclassify as Premium and grant the wrong
+    // entitlement. Both cycles covered since the real product ids ship
+    // as separate monthly/annual SKUs.
+    expect(tierFromProductId("app.persistence.premium_plus.monthly")).toBe(
+      "premium_plus",
+    );
+    expect(tierFromProductId("app.persistence.premium_plus.annual")).toBe(
+      "premium_plus",
+    );
+    // Plain premium is unaffected by the reordering.
+    expect(tierFromProductId("app.persistence.premium.annual")).toBe("premium");
   });
 });
 

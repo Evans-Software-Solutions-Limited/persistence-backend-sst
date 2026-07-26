@@ -23,7 +23,9 @@ import { CurrentSubscriptionStatusCard } from "@/ui/components/subscription/Curr
 import { OfflineBanner } from "@/ui/components/subscription/OfflineBanner";
 import { PaymentMethodForm } from "@/ui/components/subscription/PaymentMethodForm";
 import { PLogoDrawLoader } from "@/ui/components/PLogoDrawLoader";
+import { TRAINER_TIER_NAMES } from "@/domain/services/subscriptionService";
 import { SubscriptionCard } from "@/ui/components/subscription/SubscriptionCard";
+import { SubscriptionLegalFooter } from "@/ui/components/subscription/SubscriptionLegalFooter";
 import { TrainerSubscriptionCard } from "@/ui/components/subscription/TrainerSubscriptionCard";
 import { color } from "@/ui/theme/tokens";
 
@@ -135,26 +137,66 @@ export function SubscriptionSelectionPresenter(
     onPaymentMethodError,
   } = props;
 
-  // User-tier cards: premium only (Basic was dropped in the tier
+  // User-tier cards: catalog-driven, not a hardcoded "premium" lookup —
+  // M19-P0 added a second consumer tier (`premium_plus`) above Premium.
+  // Non-trainer, non-free rows, cheapest first (ascending `priceMonthly`
+  // — the catalog's own ordering signal, so no separate mobile-side
+  // tier-rank map to keep in sync). Basic was dropped in the earlier tier
   // simplification — see migration 20260526120000_simplify_tier_model
-  // and CLAUDE.md "Migration intent").
+  // and CLAUDE.md "Migration intent".
+  // A user can hold a tier that isn't in the rendered catalog — e.g. a
+  // RevenueCat promotional grant of a tier still seeded is_active=false
+  // pre-launch. No card is then marked current, so without this guard the
+  // remaining cards render as buyable "free trial"s and a comped user can
+  // be nudged onto a WORSE tier than the one they were given. Suppress
+  // trial banners in that state; they are not genuinely trial-eligible.
+  //
+  // Hoisted above BOTH memos: the trainer loop resolves three fixed tier
+  // names out of the catalog and has exactly the same hole if a trainer
+  // tier is ever held while inactive — which is now a supported state.
+  const holdsUnlistedPaidTier =
+    currentTier !== "free" &&
+    !subscriptionTiers.some((t) => t.tierName === currentTier);
+
   const userTierCards = useMemo(() => {
-    const premium = subscriptionTiers.find((t) => t.tierName === "premium");
+    const consumerTiers = subscriptionTiers
+      .filter(
+        (t) =>
+          !t.isTrainerTier &&
+          t.tierName !== "free" &&
+          // Belt-and-braces: `mapTierRowToWire` coerces a NULL
+          // `is_trainer_tier` to false, so a trainer row with the flag
+          // unset would fall into this consumer filter AND still be
+          // picked up by the trainer section's explicit allow-list —
+          // rendering the same tier twice. Exclude the allow-list here.
+          !TRAINER_TIER_NAMES.has(t.tierName),
+      )
+      // Cheapest first. Secondary sort on tierName so two same-priced
+      // tiers have a stable order — `listActive` orders by price_monthly
+      // with no tiebreak, so Postgres row order is otherwise arbitrary.
+      .sort(
+        (a, b) =>
+          a.priceMonthly - b.priceMonthly ||
+          a.tierName.localeCompare(b.tierName),
+      );
     const cards: React.ReactElement[] = [];
 
-    if (premium) {
-      const isPremiumCurrent = currentTier === "premium";
-      const showPremiumTrial =
-        hasTrialEligibilityData && isTrialEligibleUser && !isPremiumCurrent;
+    for (const tier of consumerTiers) {
+      const isTierCurrent = currentTier === tier.tierName;
+      const showTrial =
+        hasTrialEligibilityData &&
+        isTrialEligibleUser &&
+        !isTierCurrent &&
+        !holdsUnlistedPaidTier;
       cards.push(
         <SubscriptionCard
-          key={premium.tierName}
-          tier={premium}
+          key={tier.tierName}
+          tier={tier}
           billingCycle={billingCycle}
-          isCurrent={isPremiumCurrent}
-          showTrialBanner={showPremiumTrial}
+          isCurrent={isTierCurrent}
+          showTrialBanner={showTrial}
           trialBannerText={`${DEFAULT_TRIAL_DAYS}-day free trial`}
-          onPress={() => onTierSelect("premium")}
+          onPress={() => onTierSelect(tier.tierName)}
           disabled={!!selectedTierForPayment || isProcessingSubscription}
           getFeaturesList={getFeaturesList}
           isTrainer={false}
@@ -164,6 +206,7 @@ export function SubscriptionSelectionPresenter(
 
     return cards;
   }, [
+    holdsUnlistedPaidTier,
     subscriptionTiers,
     billingCycle,
     currentTier,
@@ -194,7 +237,10 @@ export function SubscriptionSelectionPresenter(
       if (tier) {
         const isCurrent = currentTier === tier.tierName;
         const showTrialBanner =
-          hasTrialEligibilityData && isTrialEligibleTrainer && !isCurrent;
+          hasTrialEligibilityData &&
+          isTrialEligibleTrainer &&
+          !isCurrent &&
+          !holdsUnlistedPaidTier;
 
         cards.push(
           <TrainerSubscriptionCard
@@ -216,6 +262,7 @@ export function SubscriptionSelectionPresenter(
 
     return cards;
   }, [
+    holdsUnlistedPaidTier,
     subscriptionTiers,
     billingCycle,
     currentTier,
@@ -390,7 +437,13 @@ export function SubscriptionSelectionPresenter(
               />
             </TouchableOpacity>
             <Text style={styles.billingToggleLabel}>
-              Yearly <Text style={styles.billingToggleSavings}>(Save 20%)</Text>
+              Yearly{" "}
+              {/* Was "(Save 20%)" — overstated. Every seeded annual price is
+                  10x monthly (£12.99 -> £129.99, £29.99 -> £299.99,
+                  £14.99 -> £149.99, £75 -> £750, £300 -> £3000), i.e. 16.7%
+                  off, not 20%. "2 months free" is exact for every tier and
+                  matches the marketing site. Brad, 2026-07-25. */}
+              <Text style={styles.billingToggleSavings}>(2 months free)</Text>
             </Text>
           </View>
 
@@ -456,6 +509,10 @@ export function SubscriptionSelectionPresenter(
               payments={payments}
             />
           )}
+
+          {/* Apple §3.1.2 parity with the IAP rail — same disclosure block, so
+              the two purchase surfaces can't drift out of compliance. */}
+          <SubscriptionLegalFooter rail="card" />
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -478,12 +535,17 @@ export function getFeaturesList(
     if (tier.trainerClientLimit) {
       features.push(`${tier.trainerClientLimit} client slots`);
     }
-    if (tier.analyticsAccess) {
-      features.push("Analytics & Reporting");
-    }
-    if (tier.exportAccess) {
-      features.push("Data Export");
-    }
+    // "Analytics & Reporting" and "Data Export" used to be pushed here off
+    // tier.analyticsAccess / tier.exportAccess. Removed 2026-07-25 (Brad):
+    // neither feature is built, and nothing in the app or backend gates an
+    // analytics screen or an export path on those flags.
+    //
+    // NOTE: this `isTrainer` branch is currently UNREACHABLE at runtime —
+    // both presenters render trainer tiers via TrainerSubscriptionCard,
+    // which does not take getFeaturesList, and pass isTrainer={false} to
+    // SubscriptionCard. The user-visible coach claim lived in
+    // TrainerSubscriptionCard and was removed there too. Kept in sync so
+    // this branch doesn't reintroduce the claim if it is ever wired up.
     if (tier.features.ai_buddy || tier.tierName.endsWith("_pro")) {
       features.push("AI Buddy Included");
     }
@@ -501,20 +563,30 @@ export function getFeaturesList(
 
   if (tier.features.progress) features.push("Progress tracking");
 
+  // Brad, 2026-07-25: the only unshipped features we advertise are Loadout
+  // and Mealprint. The old rows here were "N AI workouts per month" and
+  // "Reps Gym Buddy…" — there is NO workout-generation path anywhere in
+  // application/workouts, and `gym_buddy` is an explicit entitlement stub
+  // (assertEntitlement returns { allowed: true } with no backend surface
+  // and no UI). Both are gone.
+  //
+  // What ai_access actually unlocks TODAY is Snap AI: nutrition logging
+  // from a photo or free text (M9.5, shipped). That is the honest Premium
+  // differentiator, so it takes their place.
   if (tier.features.ai || tier.aiAccess) {
-    // Post tier-simplification: Premium gets a quota (6/mo); trainer
-    // tiers get "AI workout generation" + the AI Buddy. Basic dropped.
-    if (tier.tierName === "premium") {
-      features.push("6 AI workouts per month");
-    } else {
-      features.push("AI workout generation");
-    }
+    features.push("AI nutrition logging from a photo or free text");
   }
 
-  if (tier.features.gym_buddy || tier.tierName === "premium") {
-    features.push(
-      "Reps Gym Buddy - there to buddy you on your fitness journey",
-    );
+  // The adaptive suite — Premium+'s entire reason to exist (M19-P0).
+  // Catalog-driven off the `features` JSONB rather than a tier-name check,
+  // so the copy follows whatever the catalog says a tier includes. Without
+  // these two rows the £29.99 card renders bullets identical to the £12.99
+  // one, i.e. it sells nothing.
+  if (tier.features.loadout) {
+    features.push("Loadout - adapt any workout to the equipment you have");
+  }
+  if (tier.features.mealprint) {
+    features.push("Mealprint - AI meal planning around your targets");
   }
 
   return features;
@@ -570,7 +642,10 @@ export function deriveTrialEligibility(args: {
     };
   }
 
-  if (tierName === "premium") {
+  if (tierName === "premium" || tierName === "premium_plus") {
+    // premium_plus (M19-P0) is trial-eligible on the SAME user track as
+    // premium — one trial per user across the consumer track, not one
+    // per tier (mirrors `resolveTrial` in subscriptionsCreateHandler.ts).
     return {
       isTrialEligible: isTrialEligibleUser,
       trialDuration: isTrialEligibleUser ? DEFAULT_TRIAL_DAYS : null,

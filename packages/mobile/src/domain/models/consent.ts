@@ -25,6 +25,10 @@ export const CONSENT_VERSION = "v1-2026-07";
  * the app's existing `Linking.openURL` mechanism (react-native core, not
  * `expo-linking`'s `createURL` — this is an external https URL, not an
  * in-app deep link).
+ *
+ * Re-exported from `@/domain/models/legal`, which is the single source of
+ * truth for legal-document URLs across the app (consent sheet, paywalls,
+ * App Store Connect metadata). Kept exported here so existing consent-flow
+ * imports keep working.
  */
-export const PRIVACY_POLICY_URL =
-  "https://persistence.evans-software-solutions.com/privacy";
+export { PRIVACY_POLICY_URL } from "@/domain/models/legal";

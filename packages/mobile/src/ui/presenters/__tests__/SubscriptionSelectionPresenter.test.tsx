@@ -30,6 +30,16 @@ const PREMIUM: SubscriptionTier = {
   stripePriceIdMonthly: "price_premium_m",
   stripePriceIdYearly: "price_premium_y",
 };
+const PREMIUM_PLUS: SubscriptionTier = {
+  ...PREMIUM,
+  tierName: "premium_plus",
+  displayName: "Premium+",
+  priceMonthly: 29.99,
+  priceYearly: 299.99,
+  aiWorkoutLimit: 30,
+  stripePriceIdMonthly: null,
+  stripePriceIdYearly: null,
+};
 const INDIVIDUAL_TRAINER: SubscriptionTier = {
   ...PREMIUM,
   tierName: "individual_trainer",
@@ -135,6 +145,42 @@ describe("SubscriptionSelectionPresenter — render states", () => {
     // Free and the dropped basic tier are never rendered.
     expect(screen.queryByTestId("subscription-card-free")).toBeNull();
     expect(screen.queryByTestId("subscription-card-basic")).toBeNull();
+  });
+
+  it("renders exactly one consumer card when the catalog has no premium_plus row (M19-P0 — pre-existing catalog shape is unaffected)", () => {
+    render(<SubscriptionSelectionPresenter {...defaultProps()} />);
+    expect(screen.getByTestId("subscription-card-premium")).toBeTruthy();
+    expect(screen.queryByTestId("subscription-card-premium_plus")).toBeNull();
+  });
+
+  it("renders a second consumer card, cheapest-first, when the catalog includes premium_plus (M19-P0)", () => {
+    render(
+      <SubscriptionSelectionPresenter
+        {...defaultProps()}
+        subscriptionTiers={[
+          PREMIUM_PLUS,
+          PREMIUM,
+          INDIVIDUAL_TRAINER,
+          SMALL_BUSINESS,
+        ]}
+      />,
+    );
+    expect(screen.getByTestId("subscription-card-premium")).toBeTruthy();
+    expect(screen.getByTestId("subscription-card-premium_plus")).toBeTruthy();
+    // Cheapest-first ordering (ascending priceMonthly) — premium (£12.99)
+    // renders before premium_plus (£29.99) regardless of catalog order.
+    const premiumCard = screen.getByTestId("subscription-card-premium");
+    const premiumPlusCard = screen.getByTestId(
+      "subscription-card-premium_plus",
+    );
+    const allCardTestIds = screen
+      .getAllByTestId(/^subscription-card-/)
+      .map((el) => el.props.testID);
+    expect(allCardTestIds.indexOf("subscription-card-premium")).toBeLessThan(
+      allCardTestIds.indexOf("subscription-card-premium_plus"),
+    );
+    expect(premiumCard).toBeTruthy();
+    expect(premiumPlusCard).toBeTruthy();
   });
 
   it("renders trainer cards when selectedRole is 'trainer'", () => {
@@ -259,34 +305,101 @@ describe("SubscriptionSelectionPresenter — interactions", () => {
   });
 });
 
+describe("SubscriptionSelectionPresenter — comped tier not in catalog", () => {
+  it("suppresses trial banners when the user holds a paid tier missing from the catalog", () => {
+    // Mirrors the iOS-rail guard. A promotional premium_plus grant while
+    // the tier is still seeded is_active=false never reaches the catalog,
+    // so no card is marked current — without the guard every cheaper card
+    // renders as a buyable free trial and can nudge a comped user onto a
+    // worse tier than the one they were given.
+    render(
+      <SubscriptionSelectionPresenter
+        {...defaultProps()}
+        currentTier="premium_plus"
+      />,
+    );
+    expect(screen.queryByText(/free trial/i)).toBeNull();
+  });
+
+  it("suppresses trainer-card trial banners in the same state", () => {
+    // The trainer loop resolves fixed tier names out of the catalog and has
+    // the identical hole — a held-but-unlisted tier marks no card current,
+    // so every trainer card would offer a trial.
+    render(
+      <SubscriptionSelectionPresenter
+        {...defaultProps()}
+        selectedRole="trainer"
+        currentTier="premium_plus"
+      />,
+    );
+    expect(screen.queryByText(/free trial/i)).toBeNull();
+  });
+});
+
 describe("getFeaturesList", () => {
-  it("derives trainer features (client slots, analytics, AI Buddy — post tier-simplification, all trainer tiers carry the former Pro entitlements)", () => {
+  it("derives trainer features (client slots + AI Buddy — no analytics/export, neither is built)", () => {
     const features = getFeaturesList(INDIVIDUAL_TRAINER, true);
     expect(features).toContain("2 client slots");
     expect(features).toContain("AI Buddy Included");
   });
 
-  it("includes analytics when analyticsAccess flag is set", () => {
+  // Brad, 2026-07-25: neither analytics nor export is a built feature —
+  // nothing gates an analytics screen or an export path on these flags, so
+  // the paywall must not sell them. Inverted from the old tests, which
+  // asserted the bullets WERE rendered.
+  it("never advertises analytics or export, even when the catalog flags are set", () => {
     const features = getFeaturesList(
-      { ...INDIVIDUAL_TRAINER, analyticsAccess: true },
+      { ...INDIVIDUAL_TRAINER, analyticsAccess: true, exportAccess: true },
       true,
     );
-    expect(features).toContain("Analytics & Reporting");
+    expect(features).not.toContain("Analytics & Reporting");
+    expect(features).not.toContain("Data Export");
+    // The rows that ARE real still render.
+    expect(features).toContain("2 client slots");
+    expect(features).toContain("AI Buddy Included");
   });
 
-  it("includes data export when exportAccess flag is set", () => {
-    const features = getFeaturesList(
-      { ...INDIVIDUAL_TRAINER, exportAccess: true },
-      true,
-    );
-    expect(features).toContain("Data Export");
-  });
-
-  it("derives user-tier features for premium (unlimited workouts + 6 AI + gym buddy)", () => {
+  it("derives user-tier features for premium — AI nutrition logging, no unbuilt claims", () => {
     const features = getFeaturesList(PREMIUM, false);
     expect(features).toContain("Unlimited workouts");
-    expect(features).toContain("6 AI workouts per month");
-    expect(features.some((f) => f.includes("Reps Gym Buddy"))).toBe(true);
+    expect(features).toContain(
+      "AI nutrition logging from a photo or free text",
+    );
+    // Neither exists (Brad, 2026-07-25): no workout-generation path, and
+    // gym_buddy is an entitlement stub with no backend surface or UI.
+    expect(features.some((f) => f.includes("AI workouts per month"))).toBe(
+      false,
+    );
+    expect(features.some((f) => f.includes("Gym Buddy"))).toBe(false);
+  });
+
+  // M19-P0: Premium+ costs 2.3x Premium, and without these two rows its
+  // card renders bullets byte-identical to Premium's apart from the AI
+  // count — i.e. the flagship's entire value proposition is missing at the
+  // point of sale. Driven off the catalog `features` JSONB, not tier name.
+  it("renders the adaptive-suite rows for a tier whose catalog features include them", () => {
+    const premiumPlus = {
+      ...PREMIUM,
+      tierName: "premium_plus" as const,
+      aiWorkoutLimit: 30,
+      features: {
+        workouts: "unlimited",
+        progress: true,
+        loadout: true,
+        mealprint: true,
+      },
+    };
+    const features = getFeaturesList(premiumPlus, false);
+    expect(features.some((f) => f.startsWith("Loadout"))).toBe(true);
+    expect(features.some((f) => f.startsWith("Mealprint"))).toBe(true);
+    // ...and it is genuinely differentiated from the tier below it.
+    expect(features).not.toEqual(getFeaturesList(PREMIUM, false));
+  });
+
+  it("omits the adaptive-suite rows for a tier whose catalog features lack them", () => {
+    const features = getFeaturesList(PREMIUM, false);
+    expect(features.some((f) => f.startsWith("Loadout"))).toBe(false);
+    expect(features.some((f) => f.startsWith("Mealprint"))).toBe(false);
   });
 
   it("uses features.workouts === 'unlimited' as the unlimited signal", () => {
@@ -305,7 +418,7 @@ describe("getFeaturesList", () => {
     expect(features).toContain("25 workouts per month");
   });
 
-  it("falls back to workoutLimit when features.workouts is absent — generic AI label for non-premium", () => {
+  it("falls back to workoutLimit when features.workouts is absent", () => {
     const tier = {
       ...PREMIUM,
       tierName: "free" as const,
@@ -315,7 +428,9 @@ describe("getFeaturesList", () => {
     };
     const features = getFeaturesList(tier, false);
     expect(features).toContain("5 workouts per month");
-    expect(features).toContain("AI workout generation");
+    expect(features).toContain(
+      "AI nutrition logging from a photo or free text",
+    );
   });
 
   it("adds Progress tracking when features.progress is true", () => {
@@ -374,6 +489,30 @@ describe("deriveTrialEligibility", () => {
         subscription: null,
         isTrialEligibleUser: false,
         isTrialEligibleTrainer: false,
+      }),
+    ).toEqual({ isTrialEligible: false, trialDuration: null });
+  });
+
+  it("treats 'premium_plus' as trial-eligible on the SAME user-track flag as 'premium' (M19-P0 — one trial per user, not per tier)", () => {
+    expect(
+      deriveTrialEligibility({
+        tierName: "premium_plus",
+        isReinstatingCurrentTier: false,
+        subscription: null,
+        isTrialEligibleUser: true,
+        isTrialEligibleTrainer: false,
+      }),
+    ).toEqual({ isTrialEligible: true, trialDuration: 7 });
+  });
+
+  it("returns null trial for 'premium_plus' when the user-track flag is ineligible", () => {
+    expect(
+      deriveTrialEligibility({
+        tierName: "premium_plus",
+        isReinstatingCurrentTier: false,
+        subscription: null,
+        isTrialEligibleUser: false,
+        isTrialEligibleTrainer: true,
       }),
     ).toEqual({ isTrialEligible: false, trialDuration: null });
   });

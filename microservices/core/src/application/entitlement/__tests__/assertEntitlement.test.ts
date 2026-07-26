@@ -979,6 +979,7 @@ describe("pure helpers", () => {
       "free",
       "premium",
       "premium",
+      "premium_plus",
       "individual_trainer",
       "individual_trainer",
       "small_business",

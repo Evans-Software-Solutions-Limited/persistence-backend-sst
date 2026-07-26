@@ -28,13 +28,13 @@ export interface TrainerSubscriptionCardProps {
   isProCurrent: boolean;
   showProTrialBanner?: boolean;
   trialBannerText?: string;
-  /**
-   * When true, the Pro column advertises "Contact Sales" instead of a price +
-   * Subscribe button (used for business tiers whose annual plan is sold B2B,
-   * not via IAP). Its press fires `onContactSales` instead of `onProPress`.
+  /*
+   * `contactSalesMode` / `onContactSales` removed 2026-07-26 (Brad). They
+   * rendered a "Contact Sales" mailto for annual business plans — selling a
+   * subscription that unlocks in-app functionality outside IAP, from the
+   * paywall itself (Apple Guideline 3.1.1). Those tiers are now hidden on the
+   * yearly cycle instead; see MONTHLY_ONLY_TIERS in IOSPurchaseFlowContainer.
    */
-  contactSalesMode?: boolean;
-  onContactSales?: () => void;
   onStandardPress: () => void;
   onProPress: () => void;
   disabled?: boolean;
@@ -48,8 +48,6 @@ export function TrainerSubscriptionCard({
   isProCurrent,
   showProTrialBanner = false,
   trialBannerText,
-  contactSalesMode = false,
-  onContactSales,
   onStandardPress,
   onProPress,
   disabled = false,
@@ -110,10 +108,15 @@ export function TrainerSubscriptionCard({
             <Ionicons name="checkmark" size={18} color={color.$primary} />
             <Text style={styles.featureText}>{clientSlots} client slots</Text>
           </View>
-          <View style={styles.feature}>
-            <Ionicons name="checkmark" size={18} color={color.$primary} />
-            <Text style={styles.featureText}>Analytics & reporting</Text>
-          </View>
+          {/*
+            "Analytics & reporting" was hardcoded here (legacy parity with
+            components/subscription/TrainerSubscriptionCard.tsx:75). Removed
+            2026-07-25 on Brad's instruction: there is no analytics feature.
+            Nothing in the app or backend gates an analytics screen, and the
+            subscription_tiers.analytics_access flag it nominally described
+            gates nothing either. A paywall must not sell what doesn't exist.
+            Restore when the feature actually ships.
+          */}
         </View>
 
         <View>
@@ -125,12 +128,15 @@ export function TrainerSubscriptionCard({
               <Ionicons name="checkmark" size={18} color={color.$primary} />
               <Text style={styles.proFeatureText}>AI supported reporting</Text>
             </View>
-            <View style={styles.proFeature}>
-              <Ionicons name="checkmark" size={18} color={color.$primary} />
-              <Text style={styles.proFeatureText}>
-                Client access to Reps buddy
-              </Text>
-            </View>
+            {/*
+              "Client access to Reps buddy" removed 2026-07-25 (Brad):
+              gym_buddy is an entitlement stub — assertEntitlement returns
+              { allowed: true } with no backend surface and no UI. The
+              "AI supported reporting" row above it STAYS: the AI weekly
+              client summary is real (POST
+              /trainers/me/clients/:clientId/ai-summary, rendered in the
+              coach Client Detail screen).
+            */}
           </View>
         </View>
       </View>
@@ -187,35 +193,27 @@ export function TrainerSubscriptionCard({
                 styles.pricingColumn,
                 styles.pricingColumnTouchable,
                 isProCurrent && styles.pricingColumnCurrent,
-                !contactSalesMode &&
-                  proYearlyUnavailable &&
-                  styles.pricingColumnDisabled,
+                proYearlyUnavailable && styles.pricingColumnDisabled,
               ]}
-              onPress={contactSalesMode ? onContactSales : onProPress}
+              onPress={onProPress}
               disabled={disabled}
               activeOpacity={0.7}
               testID={`trainer-card-${baseName}-pro`}
             >
-              {showProTrialBanner &&
-                !proYearlyUnavailable &&
-                !contactSalesMode && (
-                  <View style={styles.trialBannerColumn}>
-                    <Text style={styles.trialBannerColumnText}>
-                      {trialBannerText ?? "Free trial"}
-                    </Text>
-                  </View>
-                )}
+              {showProTrialBanner && !proYearlyUnavailable && (
+                <View style={styles.trialBannerColumn}>
+                  <Text style={styles.trialBannerColumnText}>
+                    {trialBannerText ?? "Free trial"}
+                  </Text>
+                </View>
+              )}
 
               <View style={styles.pricingContentCompact}>
                 <View style={styles.pricingColumnLabelContainer}>
                   <Text style={styles.pricingColumnLabel}>Pro</Text>
                 </View>
                 <View style={styles.pricingContent}>
-                  {contactSalesMode ? (
-                    <Text style={styles.priceUnavailable}>
-                      Annual plans handled by our team
-                    </Text>
-                  ) : proYearlyUnavailable ? (
+                  {proYearlyUnavailable ? (
                     <Text style={styles.priceUnavailable}>
                       Yearly not available
                     </Text>
@@ -232,11 +230,9 @@ export function TrainerSubscriptionCard({
                 </View>
                 <View style={styles.subscribeButton}>
                   <Text style={styles.subscribeButtonText}>
-                    {contactSalesMode
-                      ? "Contact Sales"
-                      : proYearlyUnavailable
-                        ? "Yearly not available"
-                        : "Subscribe"}
+                    {proYearlyUnavailable
+                      ? "Yearly not available"
+                      : "Subscribe"}
                   </Text>
                 </View>
               </View>

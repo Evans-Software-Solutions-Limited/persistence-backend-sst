@@ -425,6 +425,11 @@ export const subscriptionTiers = pgTable("subscription_tiers", {
   isTrainerTier: boolean("is_trainer_tier").default(false),
   analyticsAccess: boolean("analytics_access").default(false),
   exportAccess: boolean("export_access").default(false),
+  // Gates the adaptive-workout suite (Loadout + Mealprint). Added by
+  // supabase/migrations/20260725194527_premium_plus_tier.sql — M19-P0,
+  // spec-21 § 9.1. The `loadout` EntitlementFeature gate itself is a
+  // later Phase-0 slice; this column just carries the flag.
+  loadoutAccess: boolean("loadout_access").notNull().default(false),
   isActive: boolean("is_active").default(true),
   stripePriceIdMonthly: text("stripe_price_id_monthly"),
   stripePriceIdYearly: text("stripe_price_id_yearly"),

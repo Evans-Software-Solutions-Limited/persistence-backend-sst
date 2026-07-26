@@ -241,6 +241,17 @@ describe("shouldShowTrialBanner", () => {
   it("returns false for the free tier (no trial offering)", () => {
     expect(shouldShowTrialBanner(eligible, "free")).toBe(false);
   });
+
+  it("uses the SAME user-trial flag for 'premium_plus' as 'premium' (M19-P0 — one trial per user, not per tier)", () => {
+    expect(shouldShowTrialBanner(eligible, "premium_plus")).toBe(true);
+    expect(shouldShowTrialBanner(ineligible, "premium_plus")).toBe(false);
+    expect(
+      shouldShowTrialBanner(
+        { isEligibleForUserTrial: true, isEligibleForTrainerTrial: false },
+        "premium_plus",
+      ),
+    ).toBe(true);
+  });
 });
 
 describe("getSubscriptionDisplayInfo", () => {
@@ -375,6 +386,24 @@ describe("tierSatisfies (M10.6)", () => {
     expect(tierSatisfies("free", "premium")).toBe(false);
     expect(tierSatisfies("free", "individual_trainer")).toBe(false);
     expect(tierSatisfies("free", "individual_trainer")).toBe(false);
+  });
+
+  // -- premium_plus (M19-P0) --
+
+  it("premium_plus satisfies a premium requirement (higher user-track rank)", () => {
+    expect(tierSatisfies("premium_plus", "premium")).toBe(true);
+  });
+
+  it("premium does NOT satisfy a premium_plus requirement (lower user-track rank)", () => {
+    expect(tierSatisfies("premium", "premium_plus")).toBe(false);
+  });
+
+  it("premium_plus satisfies itself", () => {
+    expect(tierSatisfies("premium_plus", "premium_plus")).toBe(true);
+  });
+
+  it("premium_plus does NOT satisfy a trainer-track requirement (track independence)", () => {
+    expect(tierSatisfies("premium_plus", "individual_trainer")).toBe(false);
   });
 
   it("required tier of 'free' is treated defensively as 'never satisfies' (no real-world callsite)", () => {

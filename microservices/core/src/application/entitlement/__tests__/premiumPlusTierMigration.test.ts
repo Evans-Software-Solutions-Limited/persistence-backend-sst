@@ -1,0 +1,165 @@
+import { describe, it, expect } from "vitest";
+import { readFileSync, existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, resolve } from "node:path";
+
+// M19-P0 (spec-21 § 9.1) seeds the `premium_plus` catalog row. CI never
+// executes SQL, so nothing else in this repo would catch a transposed price,
+// a wrong flag, or an accidentally-active row — every other check in that
+// change is TypeScript-side. This locks the values that carry money or
+// user-visible behaviour, mirroring the `subscriptionTierSeed.test.ts`
+// precedent of asserting against the migration text itself.
+//
+// Two of these are load-bearing beyond "is the number right":
+//   * is_active MUST be false. `SubscriptionTiersRepository.listActive()`
+//     filters on it and both paywalls now render every active non-trainer
+//     row, so flipping it true publishes a buyable £29.99/mo card selling a
+//     tier whose differentiator (Loadout + Mealprint) does not exist yet.
+//     Launch flips it in its own migration.
+//   * ai_workout_limit is rendered directly into paywall copy
+//     ("N AI workouts per month"), so it is display data, not just config.
+
+const MIGRATION = "20260725194527_premium_plus_tier.sql";
+
+function findMigration(): string {
+  const here = dirname(fileURLToPath(import.meta.url));
+  let dir = here;
+  for (let i = 0; i < 10; i++) {
+    const candidate = resolve(dir, "supabase/migrations", MIGRATION);
+    if (existsSync(candidate)) return candidate;
+    dir = resolve(dir, "..");
+  }
+  throw new Error(`Could not locate ${MIGRATION}`);
+}
+
+/**
+ * The VALUES tuple, stripped of the SQL comment block above it so comment
+ * prose (which mentions £29.99, "is_active", etc.) can never satisfy an
+ * assertion about the actual row.
+ */
+function valuesTuple(sql: string): string {
+  const start = sql.indexOf(") VALUES (");
+  const end = sql.indexOf("ON CONFLICT", start);
+  expect(start).toBeGreaterThan(-1);
+  expect(end).toBeGreaterThan(start);
+  return sql
+    .slice(start, end)
+    .split("\n")
+    .filter((l) => !l.trim().startsWith("--"))
+    .join("\n");
+}
+
+/** The migration with every `--` comment line removed. */
+function stripComments(sql: string): string {
+  return sql
+    .split("\n")
+    .filter((l) => !l.trim().startsWith("--"))
+    .join("\n");
+}
+
+describe("premium_plus tier migration", () => {
+  const raw = readFileSync(findMigration(), "utf8");
+  const sql = stripComments(raw);
+  const tuple = valuesTuple(raw);
+
+  it("inserts the premium_plus row idempotently", () => {
+    // Asserted against the COMMENT-STRIPPED sql: the migration's own
+    // rationale block quotes "ON CONFLICT (tier_name) DO NOTHING", so
+    // against the raw file this would pass on prose even if the real
+    // clause were deleted.
+    expect(sql).toContain("INSERT INTO subscription_tiers");
+    expect(sql).toContain("ON CONFLICT (tier_name) DO NOTHING");
+    expect(tuple).toContain("'premium_plus'");
+    expect(tuple).toContain("'Premium+'");
+  });
+
+  it("is priced at £29.99 / £299.99 GBP", () => {
+    expect(tuple).toMatch(/\n\s*29\.99,\s*299\.99,\s*'GBP',/);
+  });
+
+  it("is seeded INACTIVE so it is not purchasable before Loadout ships", () => {
+    // Trailing tuple fields are analytics_access, export_access, is_active.
+    // is_active MUST be the false one; assert the whole trio so a careless
+    // edit to either neighbour can't shift the position silently.
+    expect(tuple).toMatch(/false,\s*false,\s*false\s*\n?\)/);
+    expect(tuple).not.toMatch(/,\s*true\s*\n?\)/);
+  });
+
+  it("does not claim analytics or export — neither feature is built", () => {
+    // Nothing gates a real analytics screen or export path on these flags,
+    // and the paywall claims they nominally described were removed, so a
+    // new billing row must not set them true. Flip only when the features
+    // actually ship. (Distinct from the is_active assertion above: this one
+    // fails if either neighbour is flipped true while is_active stays
+    // false.)
+    expect(tuple).not.toMatch(/true,\s*false,\s*false\s*\n?\)/);
+    expect(tuple).not.toMatch(/false,\s*true,\s*false\s*\n?\)/);
+    expect(tuple).not.toMatch(/true,\s*true,\s*false\s*\n?\)/);
+  });
+
+  it("is a consumer tier with unlimited workouts and 30 AI workouts", () => {
+    // `NULL, true, 30, …` = workout_limit, ai_access, ai_workout_limit.
+    expect(tuple).toMatch(/\n\s*NULL,\s*true,\s*30,/);
+    // `NULL, false,` = trainer_client_limit, is_trainer_tier.
+    expect(tuple).toMatch(/\n\s*NULL,\s*false,/);
+  });
+
+  it("advertises the adaptive suite in the features JSONB, and nothing unbuilt", () => {
+    // The paywall renders these two keys as the tier's selling points.
+    expect(tuple).toContain('"loadout": true');
+    expect(tuple).toContain('"mealprint": true');
+    // Gym Buddy is an entitlement stub and there is no workout-generation
+    // path — the JSONB must not carry either (Brad, 2026-07-25).
+    expect(tuple).not.toContain("gym_buddy");
+    expect(tuple).not.toContain("ai_workouts");
+  });
+
+  it("does not promise the adaptive suite to a comped pre-launch user", () => {
+    // The row is reachable before launch via a RevenueCat promotional
+    // entitlement, and `description` is rendered verbatim in the Profile
+    // Drawer — so it must describe what the user HAS today, not what the
+    // tier will include once Loadout and Mealprint ship.
+    expect(tuple).toContain("when it ships");
+    expect(tuple).not.toMatch(/plus the adaptive suite:/);
+  });
+
+  it("strips the trainer-analytics claim from the trainer tier descriptions", () => {
+    // Rendered in the Profile Drawer for every paying coach, so the claim
+    // survives in the product unless the migration fixes the data.
+    const s0 = sql.indexOf("SET description = regexp_replace");
+    const strip = sql.slice(s0, sql.indexOf(";", s0));
+    // Assert the ANCHORED PATTERN ITSELF, not just the LIKE guard below it
+    // — a pattern that can never match would silently no-op while every
+    // looser assertion still passed.
+    expect(strip).toContain("' and trainer analytics\\.$'");
+    for (const tier of [
+      "individual_trainer",
+      "small_business",
+      "medium_enterprise",
+    ]) {
+      expect(strip).toContain(`'${tier}'`);
+    }
+  });
+
+  it("adds loadout_access and grants it to Premium+ and every trainer tier", () => {
+    expect(sql).toContain(
+      "ADD COLUMN IF NOT EXISTS loadout_access boolean NOT NULL DEFAULT false",
+    );
+    // Bound the slice to this statement. Step 4 was appended after this
+    // test was written and its own tier-name list would otherwise satisfy
+    // three of the four assertions below regardless of what step 3 says.
+    const g0 = sql.indexOf("SET loadout_access = true");
+    const grant = sql.slice(g0, sql.indexOf(";", g0));
+    for (const tier of [
+      "premium_plus",
+      "individual_trainer",
+      "small_business",
+      "medium_enterprise",
+    ]) {
+      expect(grant).toContain(`'${tier}'`);
+    }
+    // Free and Premium must NOT be granted the adaptive suite.
+    expect(grant).not.toContain("'free'");
+    expect(grant).not.toMatch(/'premium'/);
+  });
+});

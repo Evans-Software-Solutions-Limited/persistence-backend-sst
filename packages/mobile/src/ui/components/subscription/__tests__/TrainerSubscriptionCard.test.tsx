@@ -47,6 +47,26 @@ describe("TrainerSubscriptionCard", () => {
     expect(toJSON()).toBeNull();
   });
 
+  it("never advertises analytics — the feature does not exist", () => {
+    // The live coach paywall bullet. Nothing in the app or backend gates an
+    // analytics screen, and this card is what a coach actually sees — the
+    // getFeaturesList isTrainer branch that also carried the claim is
+    // unreachable, so THIS is the regression guard that matters.
+    render(
+      <TrainerSubscriptionCard
+        standardTier={STD}
+        proTier={PRO}
+        billingCycle="monthly"
+        isStandardCurrent={false}
+        isProCurrent={false}
+        onStandardPress={jest.fn()}
+        onProPress={jest.fn()}
+      />,
+    );
+    expect(screen.queryByText(/analytics/i)).toBeNull();
+    expect(screen.queryByText(/reporting & analytics/i)).toBeNull();
+  });
+
   it("derives display name from tier name family — small_business", () => {
     render(
       <TrainerSubscriptionCard
@@ -305,30 +325,5 @@ describe("TrainerSubscriptionCard", () => {
     expect(screen.getByText("£1188/year")).toBeTruthy(); // 99 * 12
     expect(screen.getByText("£490/year")).toBeTruthy();
     expect(screen.getByText("£990/year")).toBeTruthy();
-  });
-
-  it("contactSalesMode: shows Contact Sales (no price) and fires onContactSales instead of onProPress", () => {
-    const onContactSales = jest.fn();
-    const onProPress = jest.fn();
-    render(
-      <TrainerSubscriptionCard
-        standardTier={null}
-        proTier={PRO}
-        billingCycle="yearly"
-        isStandardCurrent={false}
-        isProCurrent={false}
-        showProTrialBanner
-        contactSalesMode
-        onContactSales={onContactSales}
-        onStandardPress={jest.fn()}
-        onProPress={onProPress}
-      />,
-    );
-    expect(screen.getByText("Contact Sales")).toBeTruthy();
-    // No trial banner in contact-sales mode.
-    expect(screen.queryByText(/free trial/i)).toBeNull();
-    fireEvent.press(screen.getByTestId("trainer-card-small_business-pro"));
-    expect(onContactSales).toHaveBeenCalledTimes(1);
-    expect(onProPress).not.toHaveBeenCalled();
   });
 });

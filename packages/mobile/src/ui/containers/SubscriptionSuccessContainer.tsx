@@ -44,11 +44,13 @@ export function getSubscriptionBenefits(
   // Post tier-simplification: all surviving trainer tiers carry the
   // former Pro entitlements (AI Buddy etc.). Was `_pro` suffix-checked.
   if (isTrainerTierName(tier)) {
+    // Analytics and Gym Buddy both dropped from this copy 2026-07-25
+    // (Brad): neither exists. The AI weekly client summary does, so that
+    // is what this benefit now describes.
     benefits.push({
       icon: "sparkles",
-      title: "AI Analytics & Gym Buddy",
-      description:
-        "AI supported analytics & Reps Gym Buddy support for personal use & clients",
+      title: "AI client insights",
+      description: "AI weekly summaries of each client's training and habits",
     });
   }
 
@@ -72,6 +74,7 @@ function isTrainerTierName(tier: SubscriptionTierName): boolean {
 const KNOWN_TIER_NAMES: Record<SubscriptionTierName, true> = {
   free: true,
   premium: true,
+  premium_plus: true,
   individual_trainer: true,
   small_business: true,
   medium_enterprise: true,
@@ -91,7 +94,7 @@ export function getSuccessMessage(tier: SubscriptionTierName): string {
   if (isTrainerTierName(tier)) {
     return "Your trainer subscription is now active! You can start managing clients and building your fitness business.";
   }
-  if (tier === "premium") {
+  if (tier === "premium" || tier === "premium_plus") {
     return "Your premium subscription is now active! Enjoy advanced features and personalized workout recommendations.";
   }
   return "Your subscription is now active! Enjoy all the premium features available to you.";
