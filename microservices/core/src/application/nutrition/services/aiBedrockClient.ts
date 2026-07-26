@@ -147,6 +147,7 @@ export async function createWithRetry(
     });
   } catch (firstError) {
     if (!isRetryable(firstError)) {
+      logProviderFailure(params.model, firstError, false);
       throw new AiUnavailableError(
         `ai_estimation_failed: ${describeError(firstError)}`,
       );
@@ -156,11 +157,50 @@ export async function createWithRetry(
         timeout: CLIENT_TIMEOUT_MS,
       });
     } catch (secondError) {
+      logProviderFailure(params.model, secondError, true);
       throw new AiUnavailableError(
         `ai_estimation_failed_after_retry: ${describeError(secondError)}`,
       );
     }
   }
+}
+
+/**
+ * Log a Bedrock failure to CloudWatch. ⚠ THIS IS THE ONLY PLACE IT GETS LOGGED.
+ *
+ * Every AI handler CATCHES `AiUnavailableError` and RETURNS a 503 body, so the
+ * throw never reaches `coreErrorHandler` — which only logs uncaught errors. The
+ * consequence, discovered 2026-07-26: Haiku 4.5 was ungranted in the production
+ * Bedrock account, every free-text estimation and coach AI summary 503'd for 30
+ * days, and **not one log line existed anywhere**. The reason (`AccessDeniedException`
+ * with an explicit "AWS Marketplace subscription ... cannot be completed"
+ * message) was captured into an error string and then discarded, while the mobile
+ * client relabelled the 503 as "try rephrasing" — advice that could never work.
+ *
+ * The model id is included deliberately: with four configured models and two of
+ * them sharing an id, "which model" is the first question, and answering it from
+ * the endpoint alone requires reading the env config.
+ *
+ * `console.error` rather than a Sentry capture: this is an upstream-provider
+ * condition, not a code defect, and it is already surfaced to the user as a 503.
+ * CloudWatch is the right destination — and it is what the deploy-time preflight
+ * (`scripts/check-bedrock-access.ts`) exists to make unnecessary in the first
+ * place, by catching an unreachable model before it ever serves a request.
+ */
+function logProviderFailure(
+  modelId: string,
+  error: unknown,
+  afterRetry: boolean,
+): void {
+  const status = extractStatus(error);
+  const name =
+    typeof error === "object" && error !== null && "name" in error
+      ? String((error as { name?: unknown }).name)
+      : "unknown";
+  console.error(
+    `[ai-bedrock] invoke failed${afterRetry ? " after retry" : ""} model=${modelId} ` +
+      `status=${status ?? "none"} name=${name}: ${describeError(error)}`,
+  );
 }
 
 /**

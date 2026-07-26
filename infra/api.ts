@@ -10,6 +10,7 @@ import {
   supabaseServiceRoleKey,
 } from "./secrets";
 import { coreApiDomain, hostedZoneId, supabaseUrl } from "./domains";
+import { AI_MODEL_IDS } from "./aiModels";
 import { avatarsBucket } from "./storage";
 
 // Custom domain only on stable named stages (production / staging). Personal
@@ -101,21 +102,15 @@ coreAPI.route("$default", {
     SENTRY_DSN: sentryDsn.value,
     // AI Tier B model ids (M9.5). Plain deploy-time config, not secrets —
     // Bedrock auth is IAM (see `permissions` above), so there's nothing
-    // sensitive here. Defaults match `nutrition/services/aiEstimation.ts`;
-    // override per-stage if AWS ever grants direct (non-cross-region)
-    // Opus 4.8 access and a cheaper/faster model id becomes preferable.
-    AI_PHOTO_MODEL_ID: "eu.anthropic.claude-opus-4-6-v1",
-    AI_TEXT_MODEL_ID: "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
-    // Recipes AI (recipe-photo extraction). Same IAM permissions cover it —
-    // the `inference-profile/eu.anthropic.*` + `foundation-model/anthropic.*`
-    // wildcards above already authorize this model id, no IAM change needed.
-    AI_RECIPE_MODEL_ID: "eu.anthropic.claude-opus-4-6-v1",
-    // Coach AI Client Summary (Coach Mode Phase 6 — specs/10-trainer-features
-    // design.md § Module g). Same Bedrock IAM auth as above; the summary is a
-    // short synthesis over Client Detail modules a–f, so it defaults to the
-    // cheap/fast EU Haiku id (override per-stage to a stronger model if the
-    // coach summaries want more depth).
-    AI_COACH_SUMMARY_MODEL_ID: "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+    // sensitive here.
+    //
+    // The ids themselves live in `./aiModels` as the single source of truth,
+    // because `scripts/check-bedrock-access.ts` imports the SAME object to
+    // preflight model access before a deploy. Inline literals here would let the
+    // preflight drift from what actually ships — which is precisely how Haiku
+    // 4.5 reached production ungranted and 503'd free-text estimation and the
+    // coach AI summary for 30 days (see `./aiModels` for the full write-up).
+    ...AI_MODEL_IDS,
     // Daily per-user inference ceilings (cross-cuts § 4.3 Revised
     // 2026-07-05) — a cost backstop with a profit buffer, not a product
     // quota. Worst-case abuser ≈ £7.30/mo vs the £12.99 premium sub.

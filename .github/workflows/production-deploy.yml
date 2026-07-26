@@ -171,5 +171,39 @@ jobs:
           # Optional — safe to set empty; initSentry() no-ops on an empty DSN.
           bunx sst secret set SentryDsn "$SENTRY_DSN" --stage production
 
+      # Bedrock model access is granted PER AWS ACCOUNT and PER MODEL, so a model
+      # that works in staging can be entirely unavailable in production. That is
+      # not hypothetical: Haiku 4.5 was never granted in the production account,
+      # so free-text meal estimation and the coach AI summary returned 503 to
+      # every production user for 30 days while passing every test and working in
+      # staging. Nothing could catch it — unit tests inject a fake Bedrock client
+      # (CI has no AWS credentials by design), and the code was correct; the
+      # ACCOUNT was wrong. See infra/aiModels.ts for the full write-up.
+      #
+      # Runs BEFORE deploy so a config that cannot work never reaches users.
+      # Exit codes are deliberately distinct: 1 = a model is genuinely
+      # unreachable (block), 2 = the check itself could not run, e.g. the OIDC
+      # role lacks bedrock:InvokeModel (warn only — failing here would block
+      # deploys for a reason unrelated to the models).
+      #
+      # Escape hatch: set the repo variable AI_MODEL_PREFLIGHT=warn to ship an
+      # unrelated hotfix while a model grant is still pending.
+      - name: Bedrock model preflight
+        env:
+          AI_MODEL_PREFLIGHT: ${{ vars.AI_MODEL_PREFLIGHT }}
+          AWS_REGION: ${{ vars.AWS_REGION || 'eu-west-2' }}
+        run: |
+          set +e
+          bun run --cwd scripts check-bedrock-access
+          code=$?
+          set -e
+          if [ "$code" -eq 1 ]; then
+            echo "::error title=Bedrock model unavailable::A configured model is not accessible from the production account — the dependent AI features would 503 for every user. Grant model access in Bedrock (production account, eu-west-2) or set AI_MODEL_PREFLIGHT=warn to override."
+            exit 1
+          fi
+          if [ "$code" -eq 2 ]; then
+            echo "::warning title=Bedrock preflight could not run::Model access was not verified (credentials or a missing bedrock:InvokeModel permission on the deploy role). Deploy continues."
+          fi
+
       - name: Deploy
         run: bunx sst deploy --stage production

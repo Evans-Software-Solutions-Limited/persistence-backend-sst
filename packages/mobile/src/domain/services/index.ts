@@ -88,3 +88,10 @@ export {
   type RecipeDraftIngredientRow,
   computeRecipeDraftMacros,
 } from "./nutrition.service";
+
+// AI-estimation failure copy, chosen by HTTP status (2026-07-26 incident — see
+// the module docblock). Shared by both AI surfaces so they cannot drift.
+export {
+  aiEstimateErrorMessage,
+  type AiEstimateSurface,
+} from "./aiErrorMessage";

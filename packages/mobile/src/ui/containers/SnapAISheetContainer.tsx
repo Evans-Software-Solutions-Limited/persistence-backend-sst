@@ -10,6 +10,7 @@ import {
   useAiDraftItems,
 } from "@/ui/hooks/useAiDraftItems";
 import type { MealSlot } from "@/domain/models/nutrition";
+import { aiEstimateErrorMessage } from "@/domain/services";
 import {
   SnapAISheetPresenter,
   type SnapStage,
@@ -90,17 +91,13 @@ export function SnapAISheetContainer() {
         mealType: slot,
       });
       if (!result.ok) {
-        // 402 entitlement_denied shouldn't normally arrive here (the caller
-        // gates opening this sheet on aiGate.allowed), but handle it
-        // defensively with the same generic error copy — the gate is the
-        // primary defence, not this fallback. 429 = the daily AI ceiling
-        // (cross-cuts § 4.3 Revised 2026-07-05) — name it, since "try
-        // again" would be wrong advice for the rest of the day.
-        setErrorMessage(
-          result.error.status === 429
-            ? "Daily AI limit reached — it resets tomorrow. Log with Quick Add instead."
-            : "Couldn't read this photo — try Quick Add instead.",
-        );
+        // Status-aware (see `aiEstimateErrorMessage`), shared with the free-text
+        // path so the two AI surfaces cannot drift. Previously every non-429
+        // failure said "couldn't read this photo", which blamed the image for
+        // outages, entitlement denials and expired sessions alike. 402 still
+        // shouldn't normally arrive here — the caller gates on `aiGate.allowed`
+        // — but if it does, the copy now says so instead of hiding it.
+        setErrorMessage(aiEstimateErrorMessage(result.error, "photo"));
         setStage("error");
         return;
       }

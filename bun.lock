@@ -233,6 +233,7 @@
       "name": "@persistence/scripts",
       "version": "0.0.0",
       "dependencies": {
+        "@aws-sdk/client-bedrock-runtime": "^3.1079.0",
         "@persistence/db": "workspace:*",
         "drizzle-orm": "^0.44.2",
         "stripe": "^22.1.1",

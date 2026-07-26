@@ -21,6 +21,7 @@ import {
 } from "@/shared/utils";
 import {
   MEAL_SLOTS,
+  aiEstimateErrorMessage,
   entryDisplayLabel,
   perServingDivisor,
   type EntryNameLookups,
@@ -261,11 +262,11 @@ export function QuickAddSheetContainer() {
     const result = await api.estimateFromText({ description });
     setIsEstimatingText(false);
     if (!result.ok) {
-      setDescribeError(
-        result.error.status === 429
-          ? "Daily AI limit reached — it resets tomorrow. Log with Quick Add instead."
-          : "Couldn't estimate that — try rephrasing or use Quick Add instead.",
-      );
+      // Status-aware (see `aiEstimateErrorMessage`). This used to collapse every
+      // non-429 failure into "try rephrasing", which told users to reword their
+      // input during a 30-day production outage caused by an ungranted Bedrock
+      // model — advice that could never have worked.
+      setDescribeError(aiEstimateErrorMessage(result.error, "text"));
       return;
     }
     setDescribeItems(draftItemsFromEstimate(result.value));
