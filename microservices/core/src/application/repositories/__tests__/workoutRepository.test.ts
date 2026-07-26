@@ -115,6 +115,21 @@ function makeExercisesByWorkoutChain(resolvedValue: any) {
   };
 }
 
+/**
+ * `select().from().where().orderBy()` — `captureProvenance`'s shape (no
+ * leftJoin), read inside `update` before the exercise rows are replaced so
+ * Loadout swap provenance survives an ordinary edit.
+ */
+function makeProvenanceCaptureChain(rows: any = []) {
+  return {
+    from: vi.fn().mockReturnValue({
+      where: vi.fn().mockReturnValue({
+        orderBy: vi.fn().mockResolvedValue(rows),
+      }),
+    }),
+  };
+}
+
 function makeQuotaUsedChain(value: number) {
   return {
     from: vi.fn().mockReturnValue({
@@ -680,6 +695,8 @@ describe("WorkoutRepository", () => {
         }),
         select: vi
           .fn()
+          // 1: captureProvenance (pre-wipe), 2: the post-update re-fetch.
+          .mockReturnValueOnce(makeProvenanceCaptureChain())
           .mockReturnValue(
             makeExercisesByWorkoutChain(mockExercisesWithWorkoutId),
           ),
@@ -720,7 +737,10 @@ describe("WorkoutRepository", () => {
           where: vi.fn().mockResolvedValue(undefined),
         }),
         insert: vi.fn(),
-        select: vi.fn().mockReturnValue(makeExercisesByWorkoutChain([])),
+        select: vi
+          .fn()
+          .mockReturnValueOnce(makeProvenanceCaptureChain())
+          .mockReturnValue(makeExercisesByWorkoutChain([])),
       };
       const mockDb = {
         transaction: vi.fn().mockImplementation(async (fn: any) => fn(tx)),
@@ -822,7 +842,10 @@ describe("WorkoutRepository", () => {
           where: vi.fn().mockResolvedValue(undefined),
         }),
         insert: insertSpy,
-        select: vi.fn().mockReturnValue(makeExercisesByWorkoutChain([])),
+        select: vi
+          .fn()
+          .mockReturnValueOnce(makeProvenanceCaptureChain())
+          .mockReturnValue(makeExercisesByWorkoutChain([])),
       };
       const mockDb = {
         transaction: vi.fn().mockImplementation(async (fn: any) => fn(tx)),
@@ -1203,6 +1226,164 @@ describe("WorkoutRepository", () => {
       });
 
       expect(result.exercises[0].substitutedFromExerciseId).toBe("ex-original");
+    });
+  });
+
+  // `update` is a full delete-and-reinsert, and toWorkoutExerciseInsert projects
+  // only the ten pre-Loadout fields — so without the pre-wipe capture, bumping
+  // one exercise's target sets on a saved variation through the generic workout
+  // editor would silently reset every row's provenance and drop the derived
+  // swapCount to 0. Permanent, invisible data loss on a normal edit.
+  describe("update — Loadout provenance survives the exercise replace", () => {
+    function makeUpdateTx(existingProvenanceRows: any[]) {
+      const insertSpy = vi.fn().mockReturnValue({
+        values: vi.fn().mockResolvedValue(undefined),
+      });
+      return {
+        insertSpy,
+        tx: {
+          update: vi.fn().mockReturnValue({
+            set: vi.fn().mockReturnValue({
+              where: vi.fn().mockReturnValue({
+                returning: vi.fn().mockResolvedValue([baseWorkout]),
+              }),
+            }),
+          }),
+          delete: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue(undefined),
+          }),
+          insert: insertSpy,
+          select: vi
+            .fn()
+            .mockReturnValueOnce(
+              makeProvenanceCaptureChain(existingProvenanceRows),
+            )
+            .mockReturnValue(makeExercisesByWorkoutChain([])),
+        },
+      };
+    }
+
+    const reason = {
+      code: "equipment_unavailable",
+      missingEquipment: ["eq-9"],
+    };
+
+    it("carries provenance onto the row with the same exercise_id", async () => {
+      const { tx, insertSpy } = makeUpdateTx([
+        {
+          exerciseId: "ex-swap",
+          sortOrder: 0,
+          substitutedFromExerciseId: "ex-original",
+          substitutionReason: reason,
+          isUserOverride: true,
+        },
+      ]);
+      (getDb as any).mockReturnValue({
+        transaction: vi.fn().mockImplementation(async (fn: any) => fn(tx)),
+      });
+
+      const repo = new WorkoutRepository();
+      // A plain target-sets edit — the kind of edit that used to wipe the reason.
+      await repo.update("wo-var-1", "user-1", {
+        exercises: [{ exerciseId: "ex-swap", sortOrder: 0, targetSets: 4 }],
+      });
+
+      const values = insertSpy.mock.results[0].value.values.mock.calls[0][0];
+      expect(values[0]).toMatchObject({
+        exerciseId: "ex-swap",
+        targetSets: 4,
+        substitutedFromExerciseId: "ex-original",
+        substitutionReason: reason,
+        isUserOverride: true,
+      });
+    });
+
+    it("does NOT carry provenance onto a row whose exercise changed", async () => {
+      const { tx, insertSpy } = makeUpdateTx([
+        {
+          exerciseId: "ex-swap",
+          sortOrder: 0,
+          substitutedFromExerciseId: "ex-original",
+          substitutionReason: reason,
+          isUserOverride: true,
+        },
+      ]);
+      (getDb as any).mockReturnValue({
+        transaction: vi.fn().mockImplementation(async (fn: any) => fn(tx)),
+      });
+
+      const repo = new WorkoutRepository();
+      await repo.update("wo-var-1", "user-1", {
+        exercises: [{ exerciseId: "ex-totally-different", sortOrder: 0 }],
+      });
+
+      const values = insertSpy.mock.results[0].value.values.mock.calls[0][0];
+      // Correct: it's a different exercise now, so the old reason no longer
+      // describes it. Carrying it over would be a lie about the row.
+      //
+      // The keys are ABSENT rather than explicitly null — no provenance matched,
+      // so nothing was spread in and the column defaults apply (NULL / false).
+      expect(values[0]).not.toHaveProperty("substitutedFromExerciseId");
+      expect(values[0]).not.toHaveProperty("isUserOverride");
+    });
+
+    it("queues per exercise_id so a repeated exercise keeps both rows' provenance", async () => {
+      const { tx, insertSpy } = makeUpdateTx([
+        {
+          exerciseId: "ex-dup",
+          sortOrder: 0,
+          substitutedFromExerciseId: "ex-a",
+          substitutionReason: null,
+          isUserOverride: false,
+        },
+        {
+          exerciseId: "ex-dup",
+          sortOrder: 1,
+          substitutedFromExerciseId: "ex-b",
+          substitutionReason: null,
+          isUserOverride: false,
+        },
+      ]);
+      (getDb as any).mockReturnValue({
+        transaction: vi.fn().mockImplementation(async (fn: any) => fn(tx)),
+      });
+
+      const repo = new WorkoutRepository();
+      await repo.update("wo-var-1", "user-1", {
+        exercises: [
+          { exerciseId: "ex-dup", sortOrder: 0 },
+          { exerciseId: "ex-dup", sortOrder: 1 },
+        ],
+      });
+
+      const values = insertSpy.mock.results[0].value.values.mock.calls[0][0];
+      expect(values[0].substitutedFromExerciseId).toBe("ex-a");
+      expect(values[1].substitutedFromExerciseId).toBe("ex-b");
+    });
+
+    it("is a no-op for an ordinary workout with no provenance to carry", async () => {
+      const { tx, insertSpy } = makeUpdateTx([
+        {
+          exerciseId: "ex-1",
+          sortOrder: 0,
+          substitutedFromExerciseId: null,
+          substitutionReason: null,
+          isUserOverride: false,
+        },
+      ]);
+      (getDb as any).mockReturnValue({
+        transaction: vi.fn().mockImplementation(async (fn: any) => fn(tx)),
+      });
+
+      const repo = new WorkoutRepository();
+      await repo.update("wo-1", "user-1", {
+        exercises: [{ exerciseId: "ex-1", sortOrder: 0 }],
+      });
+
+      const values = insertSpy.mock.results[0].value.values.mock.calls[0][0];
+      // Falls through to toWorkoutExerciseInsert's shape — the pre-Loadout
+      // behaviour is unchanged for every workout that isn't a variation.
+      expect(values[0].substitutedFromExerciseId).toBeUndefined();
     });
   });
 

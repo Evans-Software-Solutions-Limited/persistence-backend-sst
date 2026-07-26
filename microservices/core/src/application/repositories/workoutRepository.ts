@@ -184,6 +184,13 @@ export interface WorkoutHistory {
 // helper free of Drizzle's deep generic types.
 type DbOrTx = Db | Parameters<Parameters<Db["transaction"]>[0]>[0];
 
+/** The three Loadout provenance columns, as carried across an exercise replace. */
+interface ProvenanceFields {
+  substitutedFromExerciseId: string | null;
+  substitutionReason: unknown;
+  isUserOverride: boolean;
+}
+
 export class WorkoutRepository {
   static readonly key = "WorkoutRepository";
 
@@ -465,17 +472,35 @@ export class WorkoutRepository {
       if (!updated) return null;
 
       if (data.exercises !== undefined) {
+        // Loadout (spec-21 AC-3.3): capture swap provenance BEFORE the wipe.
+        //
+        // This is a full delete-and-reinsert, and `toWorkoutExerciseInsert`
+        // projects only the ten pre-Loadout fields — so without this, ANY edit
+        // through the generic workout editor (bumping one exercise's target sets
+        // on a saved variation, say) would silently reset every row's
+        // `substituted_from_exercise_id` / `substitution_reason` /
+        // `is_user_override` to their defaults. `listVariations`' derived
+        // swapCount would drop to 0 and the "why was this swapped" data would be
+        // gone for good — a permanent, invisible data loss on a normal edit.
+        //
+        // Matched on `exercise_id`, queued so a workout that legitimately
+        // contains the same exercise twice keeps both rows' provenance in order.
+        // A row whose exercise CHANGED gets no provenance, which is correct: it
+        // is a different exercise now, so the old reason no longer describes it.
+        const provenanceByExercise = await this.captureProvenance(tx, id);
+
         // Full-replacement: wipe junction rows + insert new array.
         await tx
           .delete(workoutExercises)
           .where(eq(workoutExercises.workoutId, id));
 
         if (data.exercises.length > 0) {
-          await tx
-            .insert(workoutExercises)
-            .values(
-              data.exercises.map((ex) => this.toWorkoutExerciseInsert(id, ex)),
-            );
+          await tx.insert(workoutExercises).values(
+            data.exercises.map((ex) => ({
+              ...this.toWorkoutExerciseInsert(id, ex),
+              ...(provenanceByExercise.get(ex.exerciseId)?.shift() ?? {}),
+            })),
+          );
         }
       }
 
@@ -877,6 +902,48 @@ export class WorkoutRepository {
       grouped.set(workoutId, list);
     }
 
+    return grouped;
+  }
+
+  /**
+   * Existing Loadout provenance for a workout's rows, grouped by `exercise_id`
+   * and kept in `sort_order` so a repeated exercise's entries are consumed in
+   * the order they appeared. Feeds `update`'s delete-and-reinsert.
+   *
+   * Returns an EMPTY map for an ordinary workout — every row that predates
+   * Loadout has null provenance, so the spread is a no-op and the pre-existing
+   * update behaviour is unchanged.
+   */
+  private async captureProvenance(
+    db: DbOrTx,
+    workoutId: string,
+  ): Promise<Map<string, ProvenanceFields[]>> {
+    const rows = await db
+      .select({
+        exerciseId: workoutExercises.exerciseId,
+        sortOrder: workoutExercises.sortOrder,
+        substitutedFromExerciseId: workoutExercises.substitutedFromExerciseId,
+        substitutionReason: workoutExercises.substitutionReason,
+        isUserOverride: workoutExercises.isUserOverride,
+      })
+      .from(workoutExercises)
+      .where(eq(workoutExercises.workoutId, workoutId))
+      .orderBy(workoutExercises.sortOrder);
+
+    const grouped = new Map<string, ProvenanceFields[]>();
+    for (const row of rows) {
+      // Nothing to carry for a row that was never a swap and never overridden.
+      if (row.substitutedFromExerciseId === null && !row.isUserOverride) {
+        continue;
+      }
+      const list = grouped.get(row.exerciseId) ?? [];
+      list.push({
+        substitutedFromExerciseId: row.substitutedFromExerciseId,
+        substitutionReason: row.substitutionReason,
+        isUserOverride: row.isUserOverride,
+      });
+      grouped.set(row.exerciseId, list);
+    }
     return grouped;
   }
 

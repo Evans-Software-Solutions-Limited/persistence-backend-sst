@@ -88,6 +88,7 @@ const PARENT_ID = "11111111-1111-4111-8111-111111111111";
 const GYM_ID = "22222222-2222-4222-8222-222222222222";
 const EQ_1 = "33333333-3333-4333-8333-333333333333";
 const EX_1 = "44444444-4444-4444-8444-444444444444";
+const EX_ORIGINAL = "77777777-7777-4777-8777-777777777777";
 
 function req(
   path: string,
@@ -164,18 +165,47 @@ describe("GET /workouts/:id/variations", () => {
     );
   });
 
-  it("404s when the caller cannot read the parent, and lists nothing", async () => {
+  // ⚠ NO parent read gate here, deliberately. Read access to a parent is
+  // REVOCABLE — when a coach ends the relationship (spec-25 deletes the
+  // workout_assignments row), the athlete's OWN variations of that workout would
+  // otherwise become unreachable from every surface at once: hidden from the
+  // library by `parent_workout_id IS NULL`, and 404 here. Gating added nothing,
+  // because the response only ever contains rows `created_by = caller`.
+  it("still returns the caller's own variations when the parent is no longer readable", async () => {
     workoutRepositoryMocks.findReadableWorkout.mockResolvedValue(null);
+    workoutRepositoryMocks.listVariations.mockResolvedValue([
+      { id: "var-1", name: "Adapted", swapCount: 1 },
+    ]);
+    const { workoutVariationsListHandler } =
+      await import("../workoutVariationsListHandler");
+    const res = await workoutVariationsListHandler.handle(
+      req(`/workouts/${PARENT_ID}/variations`),
+    );
+
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as any).data).toHaveLength(1);
+    // No parent lookup at all — one fewer query, and no revocable dependency.
+    expect(workoutRepositoryMocks.findReadableWorkout).not.toHaveBeenCalled();
+  });
+
+  // The ownership filter is the whole isolation story: another user's parent
+  // yields an empty list rather than their setups, and an unknown id is
+  // indistinguishable from an unreadable one (both 200 []), which discloses less
+  // than the old 404-vs-200 split did.
+  it("returns an empty list — not another user's setups — for someone else's parent", async () => {
+    workoutRepositoryMocks.listVariations.mockResolvedValue([]);
     const { workoutVariationsListHandler } =
       await import("../workoutVariationsListHandler");
     const res = await workoutVariationsListHandler.handle(
       req(`/workouts/${PARENT_ID}/variations`, { as: "user-b" }),
     );
 
-    expect(res.status).toBe(404);
-    // The parent gate runs BEFORE the list, so an unauthorised caller can't
-    // enumerate variations under a workout they can't see.
-    expect(workoutRepositoryMocks.listVariations).not.toHaveBeenCalled();
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as any).data).toEqual([]);
+    expect(workoutRepositoryMocks.listVariations).toHaveBeenCalledWith(
+      PARENT_ID,
+      "user-b",
+    );
   });
 
   // AC-6.2 / § Data-isolation acceptance: two athletes adapting the SAME
@@ -640,6 +670,12 @@ describe("POST /workouts/:id/variations", () => {
       missingEquipment: [EQ_1],
       matchedOn: ["chest"],
     };
+    // The swapped-OUT exercise must be one the parent actually contained — that
+    // is what "substituted from" means, and it is what the handler validates.
+    workoutRepositoryMocks.listExerciseIdsForWorkout.mockResolvedValue([
+      EX_ORIGINAL,
+    ]);
+
     const { workoutVariationsCreateHandler } =
       await import("../workoutVariationsCreateHandler");
     await workoutVariationsCreateHandler.handle(
@@ -650,7 +686,7 @@ describe("POST /workouts/:id/variations", () => {
           exercises: [
             {
               ...validPlan.exercises[0],
-              substitutedFromExerciseId: PARENT_ID,
+              substitutedFromExerciseId: EX_ORIGINAL,
               substitutionReason: reason,
               isUserOverride: true,
             },
@@ -661,10 +697,54 @@ describe("POST /workouts/:id/variations", () => {
 
     const input = workoutRepositoryMocks.createVariation.mock.calls[0][2];
     expect(input.exercises[0]).toMatchObject({
-      substitutedFromExerciseId: PARENT_ID,
+      substitutedFromExerciseId: EX_ORIGINAL,
       substitutionReason: reason,
       isUserOverride: true,
     });
+  });
+
+  // The only id on this request with a FK behind it and no validation before the
+  // fix. A client that sends a workout id (or a workout_exercises row id) by
+  // mistake would hit Postgres 23503, abort the whole createVariation
+  // transaction, and get an opaque 500 — coreErrorHandler maps only 22P02 to 400
+  // — losing the user's reviewed adaptation with nothing actionable to show.
+  it("400s when substitutedFromExerciseId is not an exercise the parent contained", async () => {
+    workoutRepositoryMocks.listExerciseIdsForWorkout.mockResolvedValue([EX_1]);
+
+    const { workoutVariationsCreateHandler } =
+      await import("../workoutVariationsCreateHandler");
+    const res = await workoutVariationsCreateHandler.handle(
+      req(`/workouts/${PARENT_ID}/variations`, {
+        method: "POST",
+        body: {
+          ...validPlan,
+          exercises: [
+            // PARENT_ID is a WORKOUT id — exactly the confusion this catches.
+            { ...validPlan.exercises[0], substitutedFromExerciseId: PARENT_ID },
+          ],
+        },
+      }),
+    );
+
+    expect(res.status).toBe(400);
+    expect((await res.json()) as any).toMatchObject({
+      code: "UNKNOWN_SUBSTITUTED_FROM_EXERCISE",
+      substitutedFromExerciseIds: [PARENT_ID],
+    });
+    expect(workoutRepositoryMocks.createVariation).not.toHaveBeenCalled();
+  });
+
+  it("accepts a KEPT row that carries no substitutedFromExerciseId at all", async () => {
+    const { workoutVariationsCreateHandler } =
+      await import("../workoutVariationsCreateHandler");
+    const res = await workoutVariationsCreateHandler.handle(
+      req(`/workouts/${PARENT_ID}/variations`, {
+        method: "POST",
+        body: validPlan,
+      }),
+    );
+
+    expect(res.status).toBe(201);
   });
 
   it("accepts an empty plan (every row unresolved) without inventing rows", async () => {

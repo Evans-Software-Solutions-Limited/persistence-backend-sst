@@ -109,8 +109,29 @@ function makeDeleteChain(rows: any, capture: { where?: unknown } = {}) {
   };
 }
 
-/** A postgres.js unique_violation on the per-user gym-name index. */
+/**
+ * A unique_violation AS DRIZZLE ACTUALLY SURFACES IT: the postgres.js error
+ * (which carries `code` / `constraint_name`) wrapped in a DrizzleQueryError, so
+ * the SQLSTATE lives on `.cause` and NOT on the thrown object.
+ *
+ * ⚠ An earlier version of this fixture put `code` on the top-level error. That
+ * shape never occurs in production, so the tests passed while every real
+ * duplicate 500'd — the mocked-driver equivalent of a fake test. If you are
+ * tempted to "simplify" this back to a flat Error, don't: that is the bug.
+ */
 function uniqueViolation(constraint = "saved_gyms_user_name_key") {
+  const driverError = Object.assign(new Error("duplicate key value"), {
+    code: "23505",
+    constraint_name: constraint,
+  });
+  return Object.assign(new Error("Failed query: insert into saved_gyms"), {
+    cause: driverError,
+  });
+}
+
+/** The same violation with the SQLSTATE on the OUTER error (postgres.js direct,
+ *  no Drizzle wrapper) — both shapes must resolve to a 409. */
+function flatUniqueViolation(constraint = "saved_gyms_user_name_key") {
   return Object.assign(new Error("duplicate key value"), {
     code: "23505",
     constraint_name: constraint,
@@ -305,7 +326,10 @@ describe("SavedGymRepository", () => {
     // drizzle's onConflictDoNothing can't infer a target for — so the duplicate
     // is caught from the violation. That is also the race-free option: a
     // pre-flight SELECT has a window between read and insert.
-    it("maps a unique violation on the name index to duplicate_name (409)", async () => {
+    // The 409 path, with the SQLSTATE on `.cause` where Drizzle actually puts
+    // it. This is the COMMON case — the repository has no pre-flight SELECT, so
+    // every duplicate name arrives as a caught violation.
+    it("maps a Drizzle-wrapped unique violation to duplicate_name (409)", async () => {
       (getDb as any).mockReturnValue({
         select: vi.fn().mockReturnValue(makeEquipmentChain([])),
         ...makeInsertChain(uniqueViolation()),
@@ -319,6 +343,44 @@ describe("SavedGymRepository", () => {
       expect(result).toEqual({ status: "duplicate_name" });
     });
 
+    it("also handles the unwrapped (SQLSTATE on the outer error) shape", async () => {
+      (getDb as any).mockReturnValue({
+        select: vi.fn().mockReturnValue(makeEquipmentChain([])),
+        ...makeInsertChain(flatUniqueViolation()),
+      });
+
+      expect(
+        await new SavedGymRepository().create("user-1", {
+          name: "Hotel gym",
+          equipmentTypeIds: [],
+        }),
+      ).toEqual({ status: "duplicate_name" });
+    });
+
+    it("gives up past a bounded cause depth rather than walking forever", async () => {
+      // A cyclic / very deep chain must not hang the request.
+      const deep: any = new Error("l0");
+      let node = deep;
+      for (let i = 1; i <= 6; i++) {
+        node.cause = Object.assign(new Error(`l${i}`), {});
+        node = node.cause;
+      }
+      node.code = "23505";
+      node.constraint_name = "saved_gyms_user_name_key";
+
+      (getDb as any).mockReturnValue({
+        select: vi.fn().mockReturnValue(makeEquipmentChain([])),
+        ...makeInsertChain(deep),
+      });
+
+      await expect(
+        new SavedGymRepository().create("user-1", {
+          name: "Hotel gym",
+          equipmentTypeIds: [],
+        }),
+      ).rejects.toThrow("l0");
+    });
+
     it("rethrows a unique violation from an UNRELATED constraint", async () => {
       // A future unique index on this table must not be misreported to the user
       // as "that name is taken".
@@ -327,12 +389,13 @@ describe("SavedGymRepository", () => {
         ...makeInsertChain(uniqueViolation("saved_gyms_some_other_key")),
       });
 
+      // Rethrown as-is — the Drizzle wrapper, not the inner driver error.
       await expect(
         new SavedGymRepository().create("user-1", {
           name: "Hotel gym",
           equipmentTypeIds: [],
         }),
-      ).rejects.toThrow("duplicate key value");
+      ).rejects.toThrow("Failed query");
     });
 
     // postgres.js populates `constraint_name`; a driver upgrade that stopped

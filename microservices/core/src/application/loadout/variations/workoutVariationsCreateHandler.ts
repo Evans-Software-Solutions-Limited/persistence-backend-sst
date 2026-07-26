@@ -25,14 +25,22 @@ import {
  *
  * ## Guard order (deliberate)
  *
- *   input validation → parent `canRead` → `loadout` entitlement → exercise
- *   read-visibility → insert
+ *   1. input validation (name, rep ranges)
+ *   2. parent readable            → 404
+ *   3. parent is not itself a variation → 400
+ *   4. `loadout` entitlement      → 402
+ *   5. exercise read-visibility   → 400
+ *   6. substituted-from ids       → 400
+ *   7. saved-gym ownership        → 400
+ *   8. kit snapshot validity      → 400
+ *   9. insert
  *
  * Validation first so a malformed payload gets the more informative 400 rather
- * than a 402. `canRead` before the entitlement check so a caller poking at a
- * workout they can't see gets 404 and learns nothing about it — a 402 would
- * confirm the workout exists. Entitlement before the write so no variation is
- * ever inserted for a caller who isn't entitled.
+ * than a 402. The parent read check before the entitlement check so a caller
+ * poking at a workout they can't see gets 404 and learns nothing about it — a
+ * 402 would confirm the workout exists. Entitlement before every remaining check
+ * and before the write, so an unentitled caller neither writes anything nor gets
+ * free validation of their payload.
  *
  * ## What is NOT trusted from the client
  *
@@ -154,6 +162,27 @@ export const workoutVariationsCreateHandler = new Elysia()
         };
       }
 
+      // `substitutedFromExerciseId` must name a row the PARENT actually
+      // contained — that is what "substituted FROM" means, and it is the only
+      // client-supplied id on this request that has a FK behind it. Unvalidated,
+      // a client that sends the workout_exercises row id (or the workout id) by
+      // mistake gets Postgres 23503, which aborts the whole createVariation
+      // transaction and surfaces as an opaque 500 — `coreErrorHandler` maps only
+      // 22P02 to 400 — losing the user's reviewed adaptation with no actionable
+      // error. `parentExerciseIds` is already in hand, so the check is free.
+      const badSubstitutions = exercises
+        .map((ex) => ex.substitutedFromExerciseId)
+        .filter((id): id is string => id != null && !parentExerciseIds.has(id));
+      if (badSubstitutions.length > 0) {
+        ctx.set.status = 400;
+        return {
+          code: "UNKNOWN_SUBSTITUTED_FROM_EXERCISE",
+          message:
+            "substitutedFromExerciseId must be an exercise the parent workout contained",
+          substitutedFromExerciseIds: badSubstitutions,
+        };
+      }
+
       // Gym OWNERSHIP, when a gym is claimed. Not cosmetic: `listVariations`
       // LEFT JOINs `saved_gyms` to return `sourceGymName`, so accepting an
       // arbitrary gym id would echo ANOTHER USER'S gym name back to this caller.
@@ -210,10 +239,11 @@ export const workoutVariationsCreateHandler = new Elysia()
         name: t.String({ minLength: 1, maxLength: 200 }),
         description: t.Optional(t.Union([t.String(), t.Null()])),
         estimatedDurationMinutes: t.Optional(t.Number()),
-        // The saved gym this was adapted for, when one was used. Not validated
-        // for ownership here — the FK is `ON DELETE SET NULL` and the column is
-        // descriptive, so a bad id is at worst a wrong label on the caller's own
-        // row. Phase 1 resolves the gym itself when computing the preview.
+        // The saved gym this was adapted for, when one was used. Ownership IS
+        // checked in the handler (step 7) — `listVariations` LEFT JOINs
+        // `saved_gyms` for `sourceGymName`, so an unowned id would echo another
+        // user's gym name back to the caller. Do not remove that check on the
+        // strength of the FK: the FK only proves the row exists.
         sourceGymId: t.Optional(
           t.Union([t.String({ format: "uuid" }), t.Null()]),
         ),

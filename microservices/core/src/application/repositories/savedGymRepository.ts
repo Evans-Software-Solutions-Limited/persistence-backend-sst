@@ -69,20 +69,48 @@ export type SavedGymUpdateResult =
  */
 const PG_UNIQUE_VIOLATION = "23505";
 const SAVED_GYM_NAME_INDEX = "saved_gyms_user_name_key";
+/** Matches `stripe/pgErrors.isUniqueViolation`'s bound. */
+const CAUSE_CHAIN_DEPTH = 4;
 
+/**
+ * ⚠ The SQLSTATE is NOT on the thrown error. Drizzle wraps the driver error in a
+ * `DrizzleQueryError` and the postgres.js error — the one carrying `code` and
+ * `constraint_name` — hangs off `.cause`. Checking only the top level makes this
+ * return false for every real duplicate, so the violation rethrows and the
+ * COMMON case (two gyms called "Garage") becomes an opaque 500 instead of a 409.
+ *
+ * The repo documents this in two places already: `stripe/pgErrors.ts` ("Drizzle
+ * wraps with a `cause` chain, so we walk it up to a bounded depth") and
+ * `shared/errorHandler.ts`. Walk the chain.
+ *
+ * `stripe/pgErrors.isUniqueViolation` is deliberately NOT reused: it also
+ * literal-matches `user_subscriptions_active_unique` in the message as a
+ * belt-and-braces fallback, so it would answer true for a violation on a
+ * different table, and it cannot check WHICH constraint fired. Here the
+ * constraint identity is the whole point.
+ */
 function isSavedGymNameConflict(err: unknown): boolean {
-  if (typeof err !== "object" || err === null) return false;
-  const e = err as { code?: unknown; constraint_name?: unknown };
-  if (e.code !== PG_UNIQUE_VIOLATION) return false;
-  // Guard on the constraint name so an unrelated future unique index on this
-  // table doesn't get silently reported to the user as a duplicate NAME.
-  // postgres.js exposes it as `constraint_name`; if a driver upgrade stops
-  // populating it, fall back to treating any unique violation on this
-  // single-unique-index table as the name conflict it can only be today.
-  return (
-    e.constraint_name === SAVED_GYM_NAME_INDEX ||
-    e.constraint_name === undefined
-  );
+  let cursor: unknown = err;
+  for (
+    let depth = 0;
+    depth < CAUSE_CHAIN_DEPTH && cursor !== undefined && cursor !== null;
+    depth += 1
+  ) {
+    const e = cursor as { code?: unknown; constraint_name?: unknown };
+    if (e.code === PG_UNIQUE_VIOLATION) {
+      // Guard on the constraint name so an unrelated future unique index on
+      // this table doesn't get silently reported as a duplicate NAME. If a
+      // driver upgrade stops populating it, fall back to treating a unique
+      // violation on this single-unique-index table as the name conflict it can
+      // only be today.
+      return (
+        e.constraint_name === SAVED_GYM_NAME_INDEX ||
+        e.constraint_name === undefined
+      );
+    }
+    cursor = (cursor as { cause?: unknown }).cause;
+  }
+  return false;
 }
 
 export class SavedGymRepository {

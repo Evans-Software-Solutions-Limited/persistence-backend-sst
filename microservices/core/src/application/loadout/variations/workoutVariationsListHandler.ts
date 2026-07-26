@@ -12,19 +12,26 @@ import {
  * Loadout (spec-21) AC-6.1 / AC-6.2. Backs the parent detail's "Saved setups"
  * list: gym name, kit snapshot, swap count and age per variation.
  *
- * TWO gates, both necessary:
- *   1. `findReadableWorkout` on the PARENT — you can only list setups for a workout
- *      you're allowed to open (own / public / friends / assigned). Read, not
- *      own, per AC-1.2.
- *   2. `created_by = caller` inside `listVariations` — two athletes adapting the
- *      same coach-assigned parent must never see each other's setups, and a
- *      coach must never see a client's variation of a workout the coach wrote.
+ * ONE gate, and it is sufficient: `created_by = caller` inside `listVariations`.
+ * Two athletes adapting the same coach-assigned parent must never see each
+ * other's setups, and a coach must never see a client's variation of a workout
+ * the coach wrote — the ownership filter is what enforces that.
  *
- * Gate 1 alone would leak; gate 2 alone would let a caller enumerate variations
- * under a parent they cannot see. Neither is redundant.
+ * ⚠ There is deliberately NO read gate on the parent, and that is a change of
+ * mind worth recording. Gating on the parent looked like defence in depth but was
+ * (a) redundant — the response contains only rows `created_by = caller`, so an
+ * unreadable parent yields `[]` and leaks nothing — and (b) actively harmful,
+ * because read access to a parent is REVOCABLE. When a coach ends the
+ * relationship (spec-25 deletes the `workout_assignments` row), the athlete's own
+ * variations of that workout would have become unreachable from every surface at
+ * once: hidden from the library by the `parent_workout_id IS NULL` predicate, and
+ * 404 here. The athlete would own training data that no endpoint returns.
  *
- * This endpoint is NOT entitlement-gated. Reading setups you already own must
- * keep working if a subscription lapses — losing access to your own saved
+ * A missing workout and an unreadable one now both return `200 []`, which also
+ * discloses strictly less than the 404/200 split did.
+ *
+ * This endpoint is NOT entitlement-gated either. Reading setups you already own
+ * must keep working if a subscription lapses — losing access to your own saved
  * training data on a failed payment is the kind of thing that generates refunds.
  * CREATING a variation is what costs money, and that is gated.
  */
@@ -39,17 +46,6 @@ export const workoutVariationsListHandler = new Elysia()
     async (ctx) => {
       const { sub: userId } = getUser(ctx);
       const parentId = ctx.params.id;
-
-      const parent = await ctx.WorkoutRepository.findReadableWorkout(
-        parentId,
-        userId,
-      );
-      if (!parent) {
-        // One 404 for "missing" and "not allowed" alike — no 403/404
-        // distinction, so a caller can't probe for workouts they can't see.
-        ctx.set.status = 404;
-        return { code: "not_found", message: "Workout not found" };
-      }
 
       const variations = await ctx.WorkoutRepository.listVariations(
         parentId,
