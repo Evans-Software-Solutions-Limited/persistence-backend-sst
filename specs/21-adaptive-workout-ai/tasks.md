@@ -124,7 +124,57 @@ Acceptance criteria: `requirements.md` US-11.
       saved-gym `user_id`, variations `parent_workout_id` + `created_by`),
       two-user isolation, 402 on the guarded create, 409/400/404 paths.
 
-## Phase 1 — Ranker + adaptation preview (backend)
+## Phase E — Eval spike (NO product code)
+
+Runs straight after Phase 0. Ships a script, a dataset and a written verdict —
+**no endpoints, no migrations, no UI.** Two independent questions; both gate
+Phase 1/2 design. Rationale: `requirements.md` § Eval spike.
+
+### E1 — can a vision model read a gym?
+
+- [ ] **T-E1.1** Assemble ~30 real gym photos across contexts (commercial
+      floor, hotel gym, home garage, bands-only). Brad supplies or approves the
+      set. Keep them out of the repo; reference a local path.
+- [ ] **T-E1.2** Throwaway script: photo + the seeded `equipment_types`
+      catalogue as the candidate list → forced-tool response, ids validated for
+      membership. Reuse `aiBedrockClient`; do NOT add a route.
+- [ ] **T-E1.3** Score per photo: hits, misses, false positives, by equipment
+      category. Note which categories fail (expect plate-loaded and cable
+      stacks to be hardest, background equipment to cause false positives).
+- [ ] **T-E1.4** Verdict: is scan viable as the PRIMARY collect path, an
+      accelerator alongside the picklist, or not worth shipping? Record the
+      accuracy figure — Phase 2's collect-step design depends on it.
+
+### E2 — deterministic ranker vs AI composition (bake-off)
+
+- [ ] **T-E2.1** Fixture set: ~20 real workouts × 4 equipment contexts (full
+      gym, dumbbells+bench, bands only, hotel gym). Same candidate sets fed to
+      both arms — stage 1 is shared and deterministic (design § 1).
+- [ ] **T-E2.2** Arm A: prototype the ranker's scoring (design § 6.2) as a pure
+      function. Throwaway quality — Phase 1 builds the real one.
+- [ ] **T-E2.3** Arm B: candidate-constrained model composition — forced tool
+      selecting `exerciseId`s from the candidate list, whole plan in one call.
+- [ ] **T-E2.4** Blind scoring rubric per adapted plan: equipment-legal
+      (hard pass/fail — any illegal row fails the plan), muscle/pattern
+      fidelity, whole-plan coherence (no five-dumbbell-press plans, no dropped
+      movement pattern), reason quality. Record arm B's latency and per-run
+      cost.
+- [ ] **T-E2.5** Verdict → **sets D7**: which arm is Phase 1's engine, or
+      whether the hybrid (deterministic filter + model selection + model
+      reasons) beats both. If arm B wins, Phase 1 inherits a ceiling, a cost
+      line and the async-job question for programme-level (design § 7.3) —
+      state that explicitly in the verdict.
+
+- [ ] **T-E.9** Write both verdicts into `design.md` (§ 6 and § 8) and update
+      D7 in `requirements.md`. Commit the eval script under `scratchpad/` or
+      delete it — it is not production code and must not land in `src/`.
+
+## Phase 1 — Adaptation engine + preview (backend)
+
+> **Build the arm E2 selected.** If that is the ranker, T-1.2/1.3 below are
+> the work. If it is model composition or the hybrid, swap them for the
+> adapter + ceiling + usage-log tasks patterned on T-3.1–T-3.3, keeping stages
+> 1, 3 and 4 deterministic (design § 1).
 
 - [ ] **T-1.1 [B]** Add `equipmentSubsetOf` to `ListExercisesFilters` +
       `buildNonSearchFilterConditions`, rendering
@@ -176,7 +226,13 @@ Acceptance criteria: `requirements.md` US-11.
 - [ ] **T-2.9 [M]** Saved-gym management list in Settings/Profile (AC-7.2).
 - [ ] **T-2.10 [M]** Tests + a device-verify checklist in the PR body.
 
-## Phase 3 — Equipment scan
+## Phase 3 — Equipment scan (ships INSIDE the Phase 2 slice)
+
+> Kept as its own task block for reviewability, but it lands in the **same PR
+> as the mobile flow** so the first user-visible Loadout has the scan rather
+> than a checklist. It depends only on Phase 0's `equipment_types` work, not on
+> the ranker. Gated on E1's verdict — if scan is not viable as the primary
+> path, the picklist leads and this becomes an accelerator.
 
 - [ ] **T-3.1 [B]** `POST /ai/equipment-scan` cloning
       `nutritionAiEstimateHandler`'s guard order exactly; `reachedModel` +
@@ -209,9 +265,9 @@ Acceptance criteria: `requirements.md` US-11.
 - [ ] **T-4.5** Tests incl. an ex-coach (terminated relationship, spec-25)
       getting 403.
 
-## Phase 5 — Model-assisted re-map (optional)
+## Phase 5 — Second-engine follow-up (optional)
 
-Only if the deterministic ranker underwhelms on device. Requires a no-retry
+Only if E2 was close and the losing arm is worth revisiting after device use. Requires a no-retry
 variant of `createWithRetry` (ONE attempt, ~20s) to stay under the 30s API
 Gateway ceiling, and keeps every § 1 rule.
 

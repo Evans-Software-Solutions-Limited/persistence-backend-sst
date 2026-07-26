@@ -30,10 +30,12 @@ This is the canonical statement of the pattern; `specs/26-mealprint-meal-plannin
     - hard-filter the exercise library to what is actually performable:
       equipment containment + muscle relevance + the caller's visibility
       predicate. Cap ~400 rows.
-[2] SELECTION
-    - v1: DETERMINISTIC ranker (§ 6). No model, no ceiling, no cost.
-    - later (optional): model composition, forced tool use, choosing
-      `exerciseId` values FROM the candidate list only.
+[2] SELECTION  ← the ONLY pluggable stage; which arm ships is decided by
+    the Phase E2 bake-off, not asserted (requirements § Eval spike)
+    - arm A: DETERMINISTIC ranker (§ 6). No model, no ceiling, no cost.
+    - arm B: model composition, forced tool use, choosing `exerciseId`
+      values FROM the candidate list only — cannot invent an exercise.
+    - hybrid: deterministic filtering + model selection + model reasons.
 [3] VERIFICATION (deterministic, server)
     - re-resolve every chosen id against the candidate set; re-assert
       equipment containment and read-visibility; carry the parent row's
@@ -52,6 +54,12 @@ Two rules inherited from the M9.5 eval lesson and `aiBedrockClient.ts:221-230`
 - **Programme structure is a database property, not a model property.** Sets,
   reps, rest, order and superset grouping are copied from the parent; no model
   output is ever trusted for them.
+
+**Stages 1, 3 and 4 are deterministic whichever arm wins.** Equipment
+containment, read-visibility and the parent's training targets never move to
+the model — so choosing arm B changes _which exercise is picked_, never
+_whether the pick is legal_. That is what makes the bake-off a quality
+question rather than a safety one.
 
 ---
 

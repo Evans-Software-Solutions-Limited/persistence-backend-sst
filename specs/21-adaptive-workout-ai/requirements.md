@@ -49,15 +49,15 @@ this one. It is also not program import (a separate workstream).
 
 ## Decisions (locked — do not reopen)
 
-| #   | Decision             | Choice                                                                                                                                                                                                                                                                                                                                    |
-| --- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| D1  | Mental model         | **Adapt an existing workout/programme.** Generate-from-scratch is a separate flow.                                                                                                                                                                                                                                                        |
-| D2  | Parent ↔ variation   | Nullable self-referential `parent_workout_id` + `variation_kind` + `source_gym_id` on `workouts`, and the programme equivalent. Original never mutated.                                                                                                                                                                                   |
-| D3  | Saved gyms           | New `saved_gyms` table (`user_id`, `name`, `equipment_type_ids uuid[]`); a variation FKs to the gym it was adapted for.                                                                                                                                                                                                                   |
-| D4  | Tier                 | **premium_plus** — £29.99/mo, £299.99/yr. **Hard gate, no free taster.** RevenueCat promotional entitlements are the only comp/promo mechanism.                                                                                                                                                                                           |
-| D5  | Reuse, don't rebuild | `equipment_types`; the M9.5 Bedrock adapter (`aiBedrockClient.ts` + `aiEstimation.ts`); the #156 entitlement + `ai_usage_log` ceiling pattern; `exerciseRepository`'s visibility predicate and filter assembly. **Correction — see § Premise correction: the "deterministic substitute ranker" is _not_ shipped and must be built here.** |
-| D6  | No fuzzy matching    | Any model call selects **ids from a candidate list supplied in the prompt**, validated for membership in TypeScript after parsing. Free-text name → id resolution is never used. Architecturally twinned with `specs/26-mealprint-meal-planning/design.md` § 1 — see `design.md` § Twinning.                                              |
-| D7  | Re-map engine (v1)   | **Deterministic** — the substitute ranker over an equipment-filtered candidate set. No model call, no ceiling, no per-adaptation cost. Model-assisted re-mapping is a later, optional slice (§ Phased delivery).                                                                                                                          |
+| #   | Decision             | Choice                                                                                                                                                                                                                                                                                                                                                                        |
+| --- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D1  | Mental model         | **Adapt an existing workout/programme.** Generate-from-scratch is a separate flow.                                                                                                                                                                                                                                                                                            |
+| D2  | Parent ↔ variation   | Nullable self-referential `parent_workout_id` + `variation_kind` + `source_gym_id` on `workouts`, and the programme equivalent. Original never mutated.                                                                                                                                                                                                                       |
+| D3  | Saved gyms           | New `saved_gyms` table (`user_id`, `name`, `equipment_type_ids uuid[]`); a variation FKs to the gym it was adapted for.                                                                                                                                                                                                                                                       |
+| D4  | Tier                 | **premium_plus** — £29.99/mo, £299.99/yr. **Hard gate, no free taster.** RevenueCat promotional entitlements are the only comp/promo mechanism.                                                                                                                                                                                                                               |
+| D5  | Reuse, don't rebuild | `equipment_types`; the M9.5 Bedrock adapter (`aiBedrockClient.ts` + `aiEstimation.ts`); the #156 entitlement + `ai_usage_log` ceiling pattern; `exerciseRepository`'s visibility predicate and filter assembly. **Correction — see § Premise correction: the "deterministic substitute ranker" is _not_ shipped and must be built here.**                                     |
+| D6  | No fuzzy matching    | Any model call selects **ids from a candidate list supplied in the prompt**, validated for membership in TypeScript after parsing. Free-text name → id resolution is never used. Architecturally twinned with `specs/26-mealprint-meal-planning/design.md` § 1 — see `design.md` § Twinning.                                                                                  |
+| D7  | Re-map engine (v1)   | **Decided by the Phase E eval, not asserted** (Brad, 2026-07-25). Both candidates — the deterministic ranker and candidate-constrained AI composition — are measured head-to-head on the same inputs before either ships. Whichever wins is v1. What does **not** move to the model either way: equipment containment, read-visibility and the parent's sets/reps/rest/order. |
 
 ## Premise correction (2026-07-25)
 
@@ -92,15 +92,85 @@ building on it.
 This triplet covers the whole feature; `tasks.md` sequences it. Each phase is
 its own brief and its own PR.
 
-| Phase | Scope                                                                           | Gated on        |
-| ----- | ------------------------------------------------------------------------------- | --------------- |
-| P0    | `premium_plus` tier restructure (shared prerequisite — build once, here)        | —               |
-| 0     | Data model + saved-gym CRUD + variation endpoints + entitlement guard (backend) | P0              |
-| 1     | Substitute ranker (net-new) + adaptation engine + preview endpoint (backend)    | 0               |
-| 2     | Mobile Loadout flow (athlete) — entry, collect, review, save                    | 1 + design      |
-| 3     | Equipment scan (`POST /ai/equipment-scan`, vision, candidate-constrained)       | 1               |
-| 4     | Coach programme-level Loadout + assign                                          | 2               |
-| 5     | Model-assisted re-map / reason copy (optional, only if D7 underwhelms)          | 2 device-verify |
+| Phase | Scope                                                                                     | Gated on        |
+| ----- | ----------------------------------------------------------------------------------------- | --------------- |
+| P0    | `premium_plus` tier restructure (shared prerequisite — build once, here)                  | —               |
+| 0     | Data model + saved-gym CRUD + variation endpoints + entitlement guard (backend)           | P0              |
+| **E** | **Eval spike, no product code: E1 scan accuracy · E2 re-map engine bake-off**             | 0               |
+| 1     | Adaptation engine — **the arm E2 selects** — + preview endpoint (backend)                 | 0 + E           |
+| 2     | Mobile Loadout flow (athlete) **incl. the equipment scan** — entry, collect, review, save | 1 + E + design  |
+| 3     | Coach programme-level Loadout + assign                                                    | 2               |
+| 4     | Second-engine follow-up (only if E2 was close and the loser is worth revisiting)          | 2 device-verify |
+
+### Eval spike (Phase E) — why it exists
+
+**The scan is the highest-value and the highest-risk part of Loadout, and it
+was originally sequenced last.** It is the only genuinely AI-dependent
+component (there is no deterministic way to turn a photo of a gym into an
+equipment list), it is what `/pricing` sells at £29.99 — "Scan your gym" — and
+**nobody has yet verified that a vision model can identify gym equipment
+reliably** from a phone photo: cable stacks, plate-loaded machines,
+half-occluded racks, equipment in the background of another machine.
+
+If accuracy is poor, that changes the whole collect step's design. Learning it
+after the mobile flow is built around it is the expensive way to find out. So:
+
+- **Phase E runs straight after Phase 0** and ships **no product code** — a
+  script, a set of ~30 real gym photos, the seeded `equipment_types` catalogue
+  as the candidate list, and a measured hit/miss/false-positive rate per
+  equipment category.
+- **Exit criteria:** a documented accuracy figure and a go/no-go on
+  scan-as-primary. If it underperforms, the manual picklist becomes the
+  primary collect path and the scan ships as an accelerator (or not at all)
+  — a design decision made on evidence, before Phase 2 commits to it.
+- The scan endpoint then ships **inside Phase 2**, so the first user-visible
+  Loadout has its hero moment rather than a checklist. It depends only on
+  Phase 0's `equipment_types` work, not on the ranker.
+
+### Phase E has two parts
+
+**E1 — scan accuracy** (above): can a vision model read a gym?
+
+**E2 — re-map quality: deterministic ranker vs AI composition.** Added at
+Brad's steer, 2026-07-25. The original D7 picked deterministic on reasoning
+alone; that is exactly the kind of call that should be measured, and the
+architecture already has the seam for it (`design.md` § 1 stage 2 — SELECTION
+is pluggable; stages 1 and 3 are deterministic either way).
+
+The case for AI being **better**, which the eval must test rather than assume:
+
+- **Whole-plan coherence.** The ranker scores each row independently, so it can
+  produce five dumbbell presses in a row, or drop every horizontal pull. A
+  model sees the whole plan at once.
+- **Movement-pattern intent.** A hinge should stay a hinge. Muscle-group
+  overlap alone doesn't encode that; a deadlift and a leg extension share
+  quads.
+- **Graceful degradation.** When no same-muscle candidate exists, the ranker
+  returns "unresolved"; a model can restructure the block.
+- **Reason copy** people actually read.
+
+The case against, which the eval must price:
+
+- **Latency and cost per adaptation**, and a daily ceiling on a core
+  interaction (hitting a cap mid-gym is a bad failure).
+- **Programme-level fan-out** — ~48 workouts busts the 30s API Gateway
+  ceiling and forces the async-job model (`design.md` § 7.3).
+
+**Hallucination is _not_ a reason to prefer deterministic here.** Under the
+candidate-constrained contract (D6) the model selects `exerciseId`s from a
+server-built list and any non-member id is a parse failure — it cannot invent
+an exercise. That removes the usual objection and is why this is genuinely
+worth measuring.
+
+**Method:** a fixed set of ~20 real workouts × 4 equipment contexts (full gym,
+dumbbells+bench, bands only, hotel gym). Run both engines over identical
+candidate sets. Score blind on a rubric: equipment-legal (hard pass/fail),
+muscle/pattern fidelity, plan coherence, reason quality. Record latency and
+per-run cost for the AI arm.
+
+**Exit:** a scored comparison and a decision on the v1 engine, plus a
+recommendation on the hybrid (deterministic filtering + AI selection + AI
+reasons) if it beats both. Phase 1 then builds the winner.
 
 ## User stories
 
