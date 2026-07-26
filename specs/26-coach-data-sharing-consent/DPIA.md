@@ -13,6 +13,7 @@
 > the ICO unless they ask, or unless a high risk can't be mitigated (see step 7).
 
 ## Why a DPIA (screening)
+
 A DPIA is required/strongly advised because Persistence processes **special-category
 health data** (Art 9) **at scale on a consumer app**, including **combining** health,
 nutrition and body metrics, and **sharing** them with a third party (a coach). Under
@@ -21,6 +22,7 @@ UK GDPR Art 35 and the ICO's criteria, that clears the threshold. So: yes, do on
 ## Step 1 — Describe the processing
 
 **What data:**
+
 - Account: email; Apple Sign-In identifier.
 - Health & body metrics (special category): body weight, body fat, body measurements.
 - Training: workouts, sessions, sets/reps, personal records.
@@ -29,6 +31,7 @@ UK GDPR Art 35 and the ICO's criteria, that clears the threshold. So: yes, do on
 - Optionally, data read from Apple Health (with the user's OS-level permission).
 
 **How / where:**
+
 - Stored in Supabase (Postgres, EU/UK region _[confirm region]_).
 - Backend: SST v3 / AWS Lambda with explicit per-user authorisation.
 - Sub-processors: Supabase (auth + DB), RevenueCat (subscriptions), Stripe (payments),
@@ -44,6 +47,7 @@ is never shared.** Consent is withdrawable one-tap by removing the coach (immedi
 ends sharing). Coach reads of health data are logged (spec 27) for accountability.
 
 ## Step 2 — Necessity & proportionality
+
 - **Lawful basis (general personal data):** Art 6(1)(b) — performance of the contract
   (providing the app the user signed up for).
 - **Condition for special-category data:** Art 9(2)(a) — **explicit consent**, obtained
@@ -59,38 +63,43 @@ ends sharing). Coach reads of health data are logged (spec 27) for accountabilit
   answerable from the `client_data_access_log`.
 
 ## Step 3 — Consultation
+
 - Users informed via the privacy policy + the in-app consent step.
 - _[confirm]_ whether to consult a privacy professional before launch (recommended once).
 
 ## Step 4 — Risks and mitigations
 
-| # | Risk | Likelihood | Severity | Mitigation | Residual |
-|---|------|-----------|----------|-----------|----------|
-| 1 | Coach sees health data without valid consent | Low | High | Explicit, recorded, versioned consent gates activation; no backfill; append-only consent log (spec 26) | Low |
-| 2 | Can't evidence who accessed a client's data (DSAR) | Low | Med | Append-only `client_data_access_log` on every coach read (spec 27) | Low |
-| 3 | Consent hard to withdraw | Low | Med | One-tap Leave-coach ends sharing immediately + logs withdrawal | Low |
-| 4 | Health data leaks between users (isolation failure) | Low | High | Every query scoped by user id / explicit ownership guard; two-user isolation tests; PT reads gated by active relationship | Low |
-| 5 | Excessive/indefinite retention | Low | Med | 30-day deletion pipeline; 12-mo audit-log prune; retention documented | Low |
-| 6 | Sub-processor mishandling | Low | Med | Reputable processors, data-processing terms in place _[confirm DPAs signed]_; EU/UK data residency _[confirm]_ | Low |
-| 7 | Meal photos (special category by inference) sent to AI | Low | Med | Sent only on explicit user action; processed for the stated purpose; disclosed in privacy policy | Low |
-| 8 | Children's data | Low | High | Age rating / _[confirm 16+ or parental-consent stance]_ | _[confirm]_ |
+| #   | Risk                                                   | Likelihood | Severity | Mitigation                                                                                                                | Residual    |
+| --- | ------------------------------------------------------ | ---------- | -------- | ------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| 1   | Coach sees health data without valid consent           | Low        | High     | Explicit, recorded, versioned consent gates activation; no backfill; append-only consent log (spec 26)                    | Low         |
+| 2   | Can't evidence who accessed a client's data (DSAR)     | Low        | Med      | Append-only `client_data_access_log` on every coach read (spec 27)                                                        | Low         |
+| 3   | Consent hard to withdraw                               | Low        | Med      | One-tap Leave-coach ends sharing immediately + logs withdrawal                                                            | Low         |
+| 4   | Health data leaks between users (isolation failure)    | Low        | High     | Every query scoped by user id / explicit ownership guard; two-user isolation tests; PT reads gated by active relationship | Low         |
+| 5   | Excessive/indefinite retention                         | Low        | Med      | 30-day deletion pipeline; 12-mo audit-log prune; retention documented                                                     | Low         |
+| 6   | Sub-processor mishandling                              | Low        | Med      | Reputable processors, data-processing terms in place _[confirm DPAs signed]_; EU/UK data residency _[confirm]_            | Low         |
+| 7   | Meal photos (special category by inference) sent to AI | Low        | Med      | Sent only on explicit user action; processed for the stated purpose; disclosed in privacy policy                          | Low         |
+| 8   | Children's data                                        | Low        | High     | Age rating / _[confirm 16+ or parental-consent stance]_                                                                   | _[confirm]_ |
 
 ## Step 5 — Measures to reduce risk (summary)
+
 Explicit consent + versioning; data minimisation (no raw HealthKit sharing); one-tap
 withdrawal; read-audit logging; per-user authorisation + isolation tests; retention
 limits + deletion pipeline; reputable sub-processors with DPAs; transparent privacy
 policy.
 
 ## Step 6 — Sign-off
+
 - Residual risk after mitigations: **Low** _[confirm]_.
 - Approved to proceed: **[Brad Evans]**, date _[fill in]_.
 - DPO: not appointed (not mandatory for an organisation of this size/nature) —
   _[confirm you're comfortable with that assessment]_.
 
 ## Step 7 — When you'd need to consult the ICO first
+
 Only if a **high residual risk remains that you cannot mitigate**. On the analysis
 above, all risks reduce to Low, so **no prior consultation is required** — you keep this
 DPIA on file as your accountability evidence.
 
 ---
-*Kept in-repo as the source draft; move a signed copy into your business records.*
+
+_Kept in-repo as the source draft; move a signed copy into your business records._

@@ -58,7 +58,7 @@ the completion computation isn't honouring on the read path.
 
 - **QA-9 🔴 The profile drawer shows "Loading…" indefinitely after logout → login.** (Screenshot: teal avatar + "Loading…".)
 
-**Root cause (high confidence):** the drawer (`ProfileDrawerContainer`) reads the **same `useProfilePage` hook** the Profile tab does. #296 fixed the *tab's* silent-dead-end by surfacing an error/retry in `ProfileContainer`, but the **drawer** has no equivalent — `ProfileDrawerPresenter` renders "Loading…" whenever `profile` is null, forever. The underlying fragility is the one-shot auto-fetch latch in `useProfilePage` (`autoRefreshedForUserRef`, latches before the fetch, never retries on failure) — flagged as the follow-up in #296.
+**Root cause (high confidence):** the drawer (`ProfileDrawerContainer`) reads the **same `useProfilePage` hook** the Profile tab does. #296 fixed the _tab's_ silent-dead-end by surfacing an error/retry in `ProfileContainer`, but the **drawer** has no equivalent — `ProfileDrawerPresenter` renders "Loading…" whenever `profile` is null, forever. The underlying fragility is the one-shot auto-fetch latch in `useProfilePage` (`autoRefreshedForUserRef`, latches before the fetch, never retries on failure) — flagged as the follow-up in #296.
 
 **Fix approach:** implement the deferred **bounded auto-retry in `useProfilePage`** (self-heals the cold-start/first-fetch failure for BOTH the tab and the drawer), and give `ProfileDrawerPresenter` an error/retry state instead of an infinite "Loading…". Verify the logout→login path re-arms the fetch for the re-authenticated user.
 

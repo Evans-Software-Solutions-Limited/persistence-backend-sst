@@ -42,6 +42,7 @@ Android/web target — which is exactly why we hold rather than delete.
 ## Section A — Dead code (safe to delete once strategy is confirmed)
 
 ### Mobile (PR 1 candidate)
+
 - `src/adapters/payments/stripe.adapter.ts` (+ test) — `StripeApplePayAdapter`, `classifyStripeError`.
 - `src/ui/components/subscription/PaymentMethodForm.tsx` (+ test) — also exports `USER_CANCELLED_ERROR` used by the dead container.
 - `src/ui/hooks/useCreateSubscription.ts` (+ test), `src/ui/hooks/useCancelSubscription.ts` (+ test) — only importer is the dead `StripeSubscriptionSelectionContainer`.
@@ -49,6 +50,7 @@ Android/web target — which is exactly why we hold rather than delete.
 - `StripeSubscriptionSelectionContainer` + the `SubscriptionSelectionPresenter` **component**.
 
 ### Backend (PR 2/3 candidates — Stripe now externally retired)
+
 - `application/stripe/**` — `stripeWebhookHandler`, all `eventHandlers/*`, `alerts.ts`, `subscriptionState.ts`, `stripeIdempotency.ts`, `pgErrors.ts`, `stripeClient`, `reconcile/reconcileDetect.ts`.
 - `application/repositories/subscriptionStatusTransitionsRepository.ts` (+ test) — only written by Stripe `subscriptionUpdated`.
 - `application/repositories/stripeWebhookEventsRepository.ts` — only used by `/stripe/webhook`.
@@ -59,12 +61,14 @@ Android/web target — which is exactly why we hold rather than delete.
 ## Section B — Shared / MUST NOT DELETE (live rail depends on these)
 
 ### Mobile
+
 - **`DEFAULT_TRIAL_DAYS`** (`domain/models/subscription.ts`) — imported by the live iOS `IOSPurchaseFlowContainer` and `ProfileDrawerPresenter`. Keep. (Note: PR #292 makes the iOS trial nullable; the container's `offeringTrialDays(packages, DEFAULT_TRIAL_DAYS)` fallback is being removed there, but `ProfileDrawerPresenter` still uses it.)
 - **`getFeaturesList`** — defined in `SubscriptionSelectionPresenter.tsx`, imported by the live `IOSPurchaseFlowPresenter`. **Extract to a neutral module before deleting the presenter file.**
 - **`PaymentsPort`** — required field of the shared `Adapters` type; removal touches `shared/types/adapters.ts`, `providers.tsx`, and ~50 test harnesses that build `MockPaymentsAdapter`. Wiring change, not a clean delete.
 - **`StripeProvider`** (`@stripe/stripe-react-native`) — mounted at the live root `app/_layout.tsx`. Removable but a live-file edit + drop the dep + `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY`.
 
 ### Backend
+
 - **`SubscriptionRepository`** — used by `revenueCatSync`, `subscriptions/me`, `subscriptions/sync`, `assertEntitlement`, `trainerRepository`. Core shared. Keep.
 - **`assertEntitlement.ts`** (+ `SubscriptionTierName`) — ~18 live consumers. Keep.
 - **`subscriptions/tiers` + `me` + `sync` handlers** — live iOS rail. Keep. Unwire the dead create/cancel selectively inside `subscriptionsRoutes.ts`; don't delete the sub-app.

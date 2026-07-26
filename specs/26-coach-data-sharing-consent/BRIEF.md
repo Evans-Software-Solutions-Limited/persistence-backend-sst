@@ -13,8 +13,8 @@ Coaches can read a client's **health data** — weight, body-fat, body
 measurements, workout sessions, PRs, nutrition totals, goals, habits. Under **UK
 GDPR** this is **special-category data (Art 9)**, whose only realistic lawful
 condition for a consumer fitness app is **explicit consent (Art 9(2)(a))** —
-which must be *specific, informed, affirmative, recorded, and withdrawable as
-easily as given*. Today consent is only *implicit* in accepting a coach
+which must be _specific, informed, affirmative, recorded, and withdrawable as
+easily as given_. Today consent is only _implicit_ in accepting a coach
 relationship: no distinct consent step, no stored record, no versioning. Apple
 Review Guidelines 5.1.1/5.1.3 also expect clear consent + a privacy policy for
 health/fitness data. **This must ship before go-live.**
@@ -34,6 +34,7 @@ artifact.
 ### Data model
 
 New append-only table `data_sharing_consents` (accountability record — Art 5(2)):
+
 ```
 id            uuid pk default gen_random_uuid()
 trainer_id    uuid not null references profiles(id) on delete cascade
@@ -44,6 +45,7 @@ source        text not null             -- 'invite_accept' | 'invite_code_redeem
 created_at    timestamptz not null default now()
 index (client_id, trainer_id, created_at desc)
 ```
+
 Plus a fast "current state" stamp on `pt_client_relationships` (migration adds
 columns, both nullable): `consent_given_at timestamptz`, `consent_version text`.
 Set on grant, cleared (NULL) on withdraw/termination.
@@ -92,6 +94,7 @@ Optionally add a defensive assertion in `assertTrainerCanActForClient` that an
 
 Relationships already `active` at deploy have no `consent_given_at`. Two options —
 **Brad/legal must choose before this ships:**
+
 - **(A) Re-consent on next interaction (safest):** treat missing consent as
   not-consented; the client is prompted to confirm sharing next time they open
   the coach surface; coach reads are blocked until they do. Higher friction,
@@ -100,8 +103,8 @@ Relationships already `active` at deploy have no `consent_given_at`. Two options
   notify affected clients that coaching includes data sharing (with an easy
   opt-out = Leave coach). Lower friction, relies on prior acceptance counting as
   consent — legally weaker.
-Implement the mechanism to support whichever legal picks; default to (A) behind a
-config flag if unsure. **Do not silently grandfather without a decision.**
+  Implement the mechanism to support whichever legal picks; default to (A) behind a
+  config flag if unsure. **Do not silently grandfather without a decision.**
 
 ### Mobile
 
@@ -128,26 +131,27 @@ leave a `PRIVACY_POLICY_URL`/section reference for Brad to fill.
 ## Tasks (DoD)
 
 - [ ] **Migration + schema:** `data_sharing_consents` table + `consent_given_at`/
-  `consent_version` columns on `pt_client_relationships` (idempotent). Drizzle
-  schema.ts updated. DoD: typecheck + migration idempotent.
+      `consent_version` columns on `pt_client_relationships` (idempotent). Drizzle
+      schema.ts updated. DoD: typecheck + migration idempotent.
 - [ ] **Consent capture (accept-invite):** body validator + `consent_required`
-  400 + in-tx stamp + `grant` row in `trainersRespondToRequestHandler`. Tests:
-  accept without consent → 400 no activation; with consent → active + grant row +
-  stamp.
+      400 + in-tx stamp + `grant` row in `trainersRespondToRequestHandler`. Tests:
+      accept without consent → 400 no activation; with consent → active + grant row +
+      stamp.
 - [ ] **Consent capture (invite-code redeem):** same in
-  `trainersAcceptInviteCodeHandler`. Tests mirror.
+      `trainersAcceptInviteCodeHandler`. Tests mirror.
 - [ ] **Withdrawal:** extend `endCoachClientRelationship` to clear the stamp +
-  write a `withdraw` row (source per direction). Tests: leave/remove writes
-  withdraw + clears stamp.
+      write a `withdraw` row (source per direction). Tests: leave/remove writes
+      withdraw + clears stamp.
 - [ ] **Backfill mechanism** per the chosen option (config-flagged). Tests for
-  the chosen path (blocked-until-reconsent OR backfilled-with-notice).
+      the chosen path (blocked-until-reconsent OR backfilled-with-notice).
 - [ ] **Mobile consent gate** on both screens + port/adapter `consent` param.
-  Presenter/container tests: can't proceed without ticking; param threaded.
+      Presenter/container tests: can't proceed without ticking; param threaded.
 - [ ] **Privacy-policy link wired** (URL/section left for Brad).
 - [ ] Gates green (prettier/typecheck/lint/build/test ≥90%), local inspector-brad
-  clean, note in PR. Two enum/migration items → MANUAL prod apply.
+      clean, note in PR. Two enum/migration items → MANUAL prod apply.
 
 ## Hand to legal
+
 Confirm: (1) the consent copy wording + categories list; (2) the privacy-policy
 text; (3) the Backfill option (A or B) for existing relationships; (4) the
 `consent_version` string + when it must bump.
