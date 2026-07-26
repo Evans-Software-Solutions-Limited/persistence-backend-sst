@@ -310,8 +310,13 @@ PR not yet raised. NO product code — script + dataset + verdict + spec updates
   `category`, so a Lambda ahead of the migrations 42703s **every workout read
   and the shipped mobile equipment picker** — features older than Loadout.
   Accepted, not fixed (explicit projections would restate ~13 columns 4×).
-  **`20260725194527_premium_plus_tier.sql` is STILL PENDING on prod and must
-  land first** — `assertLoadout` reads `loadout_access`.
+  ~~**`20260725194527_premium_plus_tier.sql` is STILL PENDING on prod and must
+  land first**~~ — **STALE, corrected 2026-07-26 (cont. 3): verified present at
+  tag `persistence-v1.8.0`** (`git cat-file -e persistence-v1.8.0:supabase/...`),
+  and that release deployed, so `loadout_access` IS on prod. What is NOT yet on
+  prod is Phase 0's four migrations + the spec-28 consent migration — they sit on
+  `main` behind **open release PR #319 (v1.9.0)**; merging it publishes the release
+  and the prod deploy applies them.
 - **`loadout_access` is deliberately NOT in the shared `loadTier` projection** —
   it's on the hot path of `create_workout` + `ai_access`, so a young
   hand-applied column would break features older than itself.
