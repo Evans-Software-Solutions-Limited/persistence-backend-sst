@@ -181,6 +181,27 @@ function parseComposedRows(input: unknown): ComposedRow[] {
   });
 }
 
+/**
+ * `getDefaultClient()` builds `AnthropicBedrock` with no explicit region or
+ * profile, so the harness silently inherits whatever the shell exports. A stray
+ * `ess-prod` in the environment would fire 160 Bedrock calls at the production
+ * account. Convention in a comment is not a control — assert before the first
+ * call (IB sweep 1, and the 2026-07-26 per-account-grant lesson).
+ */
+export function assertDevEnvironment(modelId: string): void {
+  const profile = process.env.AWS_PROFILE;
+  if (profile !== "ess-dev") {
+    throw new Error(
+      `refusing to run: AWS_PROFILE must be "ess-dev", got ${profile ?? "(unset)"}`,
+    );
+  }
+  if (!modelId.startsWith("eu.")) {
+    throw new Error(
+      `refusing to run: model id must be an eu.* inference profile (EU data residency), got ${modelId}`,
+    );
+  }
+}
+
 export async function adaptWithModel(
   plan: PlanRow[],
   pool: CandidatePool,
@@ -188,6 +209,7 @@ export async function adaptWithModel(
   workoutName: string,
   options: { modelId: string; client?: MinimalBedrockClient },
 ): Promise<AdaptedPlan> {
+  if (!options.client) assertDevEnvironment(options.modelId);
   const client = options.client ?? getDefaultClient();
   const prompt = buildPrompt(plan, pool, context, workoutName);
 
@@ -217,7 +239,10 @@ export async function adaptWithModel(
   ).usage;
   const inputTokens = usage?.input_tokens ?? 0;
   const outputTokens = usage?.output_tokens ?? 0;
-  const price = PRICE_PER_MTOK[options.modelId] ?? { input: 0, output: 0 };
+  // Throw rather than default to zero: an unpriced model id silently costing $0
+  // would make a model arm look as free as the deterministic one (IB sweep 1).
+  const price = PRICE_PER_MTOK[options.modelId];
+  if (!price) throw new Error(`unpriced model id: ${options.modelId}`);
   const costUsd =
     (inputTokens / 1_000_000) * price.input +
     (outputTokens / 1_000_000) * price.output;

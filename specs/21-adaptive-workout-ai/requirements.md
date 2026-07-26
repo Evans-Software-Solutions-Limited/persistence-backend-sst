@@ -100,7 +100,7 @@ its own brief and its own PR.
 | 1     | Adaptation engine — **the arm E2 selects** — + preview endpoint (backend)                 | 0 + E           |
 | 2     | Mobile Loadout flow (athlete) **incl. the equipment scan** — entry, collect, review, save | 1 + E + design  |
 | 3     | Coach programme-level Loadout + assign                                                    | 2               |
-| 4     | Second-engine follow-up (only if E2 was close and the loser is worth revisiting)          | 2 device-verify |
+| 4     | Second-engine follow-up (**E2 resolved this — see `tasks.md` Phase 5**)                   | 2 device-verify |
 
 ### Eval spike (Phase E) — why it exists
 
@@ -341,13 +341,13 @@ As a user mid-flow, I can tell Loadout what kit is available in three ways.
   the hybrid, so the re-map is model-backed and this AC's premise is gone.** The
   re-map enforces a per-day ceiling on the same #156 pattern as AC-10.1
   (`429 ai_daily_limit`, usage rows for actual inferences only, fail-safe env
-  parse). Measured cost is $0.0056 per adaptation — ~$0.50/user/month at three a
+  parse). Measured cost is $0.0057 per adaptation — ~$0.51/user/month at three a
   day — so the ceiling is an abuse control, not a unit-economics control.
   ⚠ **Brad checkpoint: the number is undecided and deliberately not proposed
   here.** Hitting a cap mid-gym is a bad failure (§ Eval spike), so this wants a
   deliberate call rather than a default copied from Mealprint.
 - **AC-10.3** Programme-level adaptation (US-8) runs as an **async job**, not a
-  synchronous request — at 2.55 s per workout the 120-workout cap is ~5 minutes,
+  synchronous request — at 2.60 s per workout the 120-workout cap is ~5 minutes,
   far past the 30 s API Gateway ceiling (`design.md` § 7.3, revised 2026-07-26).
   The job infrastructure is shared with spec-26 Mealprint and must not be built
   twice.

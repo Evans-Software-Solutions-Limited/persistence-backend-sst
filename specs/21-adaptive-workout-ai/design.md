@@ -30,12 +30,17 @@ This is the canonical statement of the pattern; `specs/26-mealprint-meal-plannin
     - hard-filter the exercise library to what is actually performable:
       equipment containment + muscle relevance + the caller's visibility
       predicate. Cap ~400 rows.
-[2] SELECTION  ← the ONLY pluggable stage; which arm ships is decided by
-    the Phase E2 bake-off, not asserted (requirements § Eval spike)
-    - arm A: DETERMINISTIC ranker (§ 6). No model, no ceiling, no cost.
-    - arm B: model composition, forced tool use, choosing `exerciseId`
-      values FROM the candidate list only — cannot invent an exercise.
-    - hybrid: deterministic filtering + model selection + model reasons.
+[2] SELECTION  ← the ONLY pluggable stage. DECIDED 2026-07-26 by the
+    Phase E2 bake-off (§ 6.0): the HYBRID ships.
+    - SHIPPING: deterministic § 6.2 ranking narrows the pool to the top 25
+      candidates per row, then model composition (forced tool use, one call
+      for the whole plan) chooses `exerciseId` values FROM that shortlist
+      only, and writes the per-row reason. Carries a ceiling and a cost
+      (~$0.0057/adaptation) — see requirements AC-10.2.
+    - REJECTED, deterministic ranker alone: pattern-blind on the data the
+      library actually has (§ 6.0). Lost 4-50 on blind preference.
+    - REJECTED, model over the full pool: judged-equivalent to the hybrid
+      (25-25) at 3.4x the cost.
 [3] VERIFICATION (deterministic, server)
     - re-resolve every chosen id against the candidate set; re-assert
       equipment containment and read-visibility; carry the parent row's
@@ -55,11 +60,19 @@ Two rules inherited from the M9.5 eval lesson and `aiBedrockClient.ts:221-230`
   reps, rest, order and superset grouping are copied from the parent; no model
   output is ever trusted for them.
 
-**Stages 1, 3 and 4 are deterministic whichever arm wins.** Equipment
-containment, read-visibility and the parent's training targets never move to
-the model — so choosing arm B changes _which exercise is picked_, never
-_whether the pick is legal_. That is what makes the bake-off a quality
-question rather than a safety one.
+**Stages 1, 3 and 4 stayed deterministic when the hybrid won.** Equipment
+containment, read-visibility and the parent's training targets never moved to
+the model — the model changes _which exercise is picked_, never _whether the
+pick is legal_. That is what made the bake-off a quality question rather than a
+safety one, and it is the property spec-26 must preserve when it mirrors this
+section.
+
+⚠ **A consequence for anyone mirroring this section: stage 2 is now
+model-backed, so the pipeline is no longer free.** E2 measured **zero non-member
+ids across 116 model runs and 341 selected ids**, so the parse-failure rule above
+guards a rare event rather than a common one — but the ceiling, the usage log and
+the async-job requirement for fan-out are all real (requirements AC-10.2 /
+AC-10.3, § 7.3).
 
 ---
 
@@ -395,19 +408,22 @@ deterministic shortlist → model selection → model reasons.** Full evidence:
 `scratchpad/loadout-phase-e/VERDICT-E2.md`; raw dataset in that directory's
 `results/`.
 
-20 workouts × 4 contexts = 80 fixtures (171 rows needing a swap), identical
-candidate sets, blind scoring by a model that was not one of the arms.
+20 workouts × 4 contexts = 80 fixtures, **58 of which bear a swap** (171 rows),
+identical candidate sets, blind scoring by a model that was not one of the arms.
+Fidelity, cost and latency are over the swap-bearing fixtures; the verdict's
+§ Results carries the caveats, including that the equipment-legal row is
+structurally guaranteed by stages 1 and 3 rather than a gate an arm could fail.
 
-|                                   | Arm A — ranker only       | Arm B — model, full pool | **Arm C — hybrid**  |
-| --------------------------------- | ------------------------- | ------------------------ | ------------------- |
-| Equipment-legal plans (hard gate) | 80/80                     | 80/80                    | **80/80**           |
-| Mean primary-muscle fidelity      | 0.977                     | 0.871                    | 0.949               |
-| Pattern fidelity (blind, 1–5)     | 3.07 / 2.98               | 4.43                     | **4.07 / 4.28**     |
-| Whole-plan coherence (blind)      | 3.21 / 3.16               | 4.10                     | **3.93 / 4.07**     |
-| Reason quality (blind)            | 2.62 / 2.69               | 4.02                     | **3.81 / 4.07**     |
-| Head-to-head preference           | lost 5–52 to B, 4–50 to C | 25–25 vs C               | ties B, beats A     |
-| Cost per adaptation               | $0                        | $0.0193                  | **$0.0056**         |
-| p50 / max latency                 | 0.1 ms                    | 2.84 s / 4.07 s          | **2.55 s / 3.79 s** |
+|                                    | Arm A — ranker only       | Arm B — model, full pool | **Arm C — hybrid**  |
+| ---------------------------------- | ------------------------- | ------------------------ | ------------------- |
+| Equipment-legal plans (see caveat) | 80/80                     | 80/80                    | 80/80               |
+| Mean primary-muscle fidelity       | 0.968                     | 0.822                    | 0.930               |
+| Pattern fidelity (blind, 1–5)      | 3.07 / 2.98               | 4.43                     | **4.07 / 4.28**     |
+| Whole-plan coherence (blind)       | 3.21 / 3.16               | 4.10                     | **3.93 / 4.07**     |
+| Reason quality (blind)             | 2.62 / 2.69               | 4.02                     | **3.81 / 4.07**     |
+| Head-to-head preference            | lost 5–52 to B, 4–50 to C | 25–25 vs C               | ties B, beats A     |
+| Cost per adaptation                | $0                        | $0.0199                  | **$0.0057**         |
+| p50 / max latency                  | 0.1 ms                    | 2.85 s / 4.07 s          | **2.60 s / 3.79 s** |
 
 Three consequences for the sections below:
 
@@ -584,13 +600,13 @@ code. This keeps copy localisable and the backend free of UI strings.
 ### 7.3 Sizing
 
 > **⚠ REVISED 2026-07-26 by the E2 verdict (§ 6.0).** The premise below — "no
-> model call" — no longer holds: stage 2 is model-backed. Measured on 60
-> swap-bearing fixtures, a **single-workout** adaptation is p50 2.55 s / max
+> model call" — no longer holds: stage 2 is model-backed. Measured on 58
+> swap-bearing fixtures, a **single-workout** adaptation is p50 2.60 s / max
 > 3.79 s, so it stays comfortably inside both the 30 s API Gateway ceiling and
 > `createWithRetry`'s 12 s × 2 budget — the paragraph below still reads correctly
 > for the single-workout case, just for a different reason.
 >
-> **Programme-level (Phase 4) must now go async.** At 2.55 s per workout the
+> **Programme-level (Phase 4) must now go async.** At 2.60 s per workout the
 > 120-workout cap is ~5 minutes of model time, and even a 12-week × 4-session
 > programme (~48 workouts) is ~2 minutes. **The sentence further down saying the
 > 30 s ceiling "does not bind here" is now wrong for the programme case.** The
@@ -604,22 +620,25 @@ network hop per exercise — so a single workout is comfortably inside the
 request budget.
 
 **Programme-level (Phase 4) is where this needs a bound.** A 12-week ×
-4-sessions programme is ~48 workouts. The cost is still two queries plus
-scoring — the candidate pool is assembled once for the union of _all_ muscles
-across the programme and reused for every workout — so the work is roughly
-linear in `workout_exercises` rows, not in round trips. Even so:
+4-sessions programme is ~48 workouts. The candidate pool is still assembled
+**once** for the union of _all_ muscles across the programme and reused for every
+workout, so stage 1 stays cheap — **but stage 2 is now one model call per
+workout**, so the work is linear in WORKOUTS, not just in
+`workout_exercises` rows. Revised bound:
 
 - Cap a single programme adaptation at **120 workouts**; beyond that return 413
   with a message to adapt the programme in parts. No silent truncation.
-  ⚠ **Brad checkpoint:** confirm 120. A tighter bound (e.g. 50) would trip on
-  ordinary blocks — 12 weeks × 5 sessions is 60, a 13-week cycle is 52 — and
-  the cost analysis above does not justify one, since the candidate pool is
-  assembled once for the whole programme.
-- The 30s API Gateway ceiling that constrains § 8 does **not** bind here,
-  because nothing calls Bedrock. If Phase 5 ever puts a model in this path, the
-  programme case must move to the async-job model first — that is the point at
-  which Loadout would need the same job infrastructure Mealprint's week plans
-  and programme import need, and it must not be built twice.
+  ⚠ **Brad checkpoint:** confirm 120 — and note the case for it changed. It is
+  no longer "the cost analysis does not justify a tighter bound": 120 workouts is
+  **120 model calls, ~5 minutes of model time and ~$0.69** (E2 measured, § 6.0).
+  A tighter bound would still trip on ordinary blocks (12 weeks × 5 sessions is
+  60, a 13-week cycle is 52), so the argument for 120 survives — but it now rests
+  on user-facing coverage, not on the work being nearly free.
+- ~~The 30s API Gateway ceiling that constrains § 8 does **not** bind here,
+  because nothing calls Bedrock.~~ **It binds now.** Stage 2 calls Bedrock, so
+  the programme case **must** use the async-job model — this is the point at which
+  Loadout needs the same job infrastructure Mealprint's week plans and programme
+  import need, and **it must not be built twice** (requirements AC-10.3).
 
 ---
 
@@ -646,7 +665,8 @@ Phase 2 can proceed on the saved-gym and manual-picklist paths meanwhile; those
 are unblocked and are the paths that must work regardless of E1's outcome.
 
 What E2 did establish that transfers: the candidate-constrained contract holds in
-practice. Across 160 model-backed runs, **zero non-member ids** were returned —
+practice. Across **116 model runs that selected 341 ids**, **zero non-member ids**
+were returned —
 so § 1's "a hallucinated uuid is a 422" is a guard against a rare event, not a
 common one, and the same membership-validation shape is right for the scan
 (T-3.3). Haiku-class was sufficient for selection, supporting the
@@ -680,8 +700,14 @@ magic-byte check → model → parse → validate → 200.**
 - Output is a **draft** (AC-2.3): the user confirms before it becomes context,
   and confirming never implicitly saves a gym.
 - `createWithRetry` is usable as-is here (12s × 2 fits the 30s API Gateway
-  ceiling). Note for a future model-assisted re-map: GTM § 3 P2 requires ONE
-  attempt at a ~20s budget, which needs a no-retry variant of the harness.
+  ceiling). **The model-assisted re-map is no longer hypothetical — it ships
+  (§ 6.0) — so resolve the no-retry question in Phase 1, not later:** GTM § 3 P2
+  asks for ONE attempt at a ~20s budget because a retry on a large generation
+  doubles cost and leaves no headroom inside 30s. E2 measured the happy path at
+  2.60s p50 / 3.79s max, so `createWithRetry` as-is is fine **when the first
+  attempt succeeds**; the open question is only the retry path, where 12s × 2 plus
+  auth, SQL and usage-log overhead is uncomfortably close to the ceiling. Decide
+  in T-1.9 whether the re-map takes the retry or a single ~20s attempt.
 
 ---
 

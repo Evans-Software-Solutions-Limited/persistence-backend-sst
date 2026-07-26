@@ -188,15 +188,16 @@ Phase 1/2 design. Rationale: `requirements.md` § Eval spike.
 - [x] **T-E2.1** Fixture set: ~20 real workouts × 4 equipment contexts (full
       gym, dumbbells+bench, bands only, hotel gym). Same candidate sets fed to
       both arms — stage 1 is shared and deterministic (design § 1).
-      **Landed:** 80 fixtures, 171 rows needing a swap; the 3 seeded workouts
-      verbatim + 17 authored from catalogue-resolved names, hard-failing on an
-      unknown name. `full_gym` turned out to produce **zero** swaps — a pure
-      control, and 22 fixtures were byte-identical across arms as a result.
+      **Landed:** 80 fixtures, of which **58 bear a swap** (171 rows); the 3
+      seeded workouts verbatim + 17 authored from catalogue-resolved names,
+      hard-failing on an unknown name. `full_gym` produced **zero** swaps across
+      all 20 of its fixtures — a pure control; those 20 plus two `hotel_gym`
+      fixtures were byte-identical across arms and excluded from judging.
 - [x] **T-E2.2** Arm A: prototype the ranker's scoring (design § 6.2) as a pure
       function. Throwaway quality — Phase 1 builds the real one.
 - [x] **T-E2.3** Arm B: candidate-constrained model composition — forced tool
       selecting `exerciseId`s from the candidate list, whole plan in one call.
-      **Zero non-member ids across 160 model-backed runs.**
+      **Zero non-member ids across 116 model runs and 341 selected ids.**
 - [x] **T-E2.4** Blind scoring rubric per adapted plan: equipment-legal
       (hard pass/fail — any illegal row fails the plan), muscle/pattern
       fidelity, whole-plan coherence (no five-dumbbell-press plans, no dropped
@@ -208,16 +209,18 @@ Phase 1/2 design. Rationale: `requirements.md` § Eval spike.
       cost, and beat the deterministic ranker 50–4. Phase 1's inherited items
       are stated in the verdict and folded into the spec: a ceiling
       (**AC-10.2, rewritten — its old premise is void**), a cost line
-      ($0.0056/adaptation), and programme-level async (**AC-10.3**, sharing
+      ($0.0057/adaptation), and programme-level async (**AC-10.3**, sharing
       spec-26's job infrastructure — build once).
 
 - [x] **T-E.9** Write both verdicts into `design.md` (§ 6 and § 8) and update
       D7 in `requirements.md`. Commit the eval script under `scratchpad/` or
       delete it — it is not production code and must not land in `src/`.
-      **Landed:** `design.md` § 6.0 (E2 verdict), § 6.2 note, § 7.3 revision,
-      § 8.0 (E1 blocked — no verdict to write yet, and why); `requirements.md`
-      D7, § Phase E status, AC-10.2/AC-10.3, and the now-void non-goal. Script
-      committed under `scratchpad/loadout-phase-e/`, nothing in `src/`.
+      **Landed:** `design.md` § 1 (stage 2 resolved — the canonical section
+      spec-26 mirrors), § 6.0 (E2 verdict), § 6.2 note, § 7.3 revision, § 8's
+      no-retry question, § 8.0 (E1 blocked — no verdict to write yet, and why);
+      `requirements.md` D7, § Phase E status, the phase table, AC-10.2/AC-10.3,
+      and the now-void non-goal. Script committed under
+      `scratchpad/loadout-phase-e/`, nothing in `src/`.
 
 ### Found by the eval, not in either arm's scope
 
@@ -353,15 +356,23 @@ Phase 1/2 design. Rationale: `requirements.md` § Eval spike.
 
 ## Phase 5 — Second-engine follow-up (optional) · **unlikely, on E2's evidence**
 
-E2 was **not** close: the deterministic-only arm lost 4–50 on blind preference and
-produced unshippable swaps (design § 6.0). Revisiting it is only worth it if
-`movement_type` gets backfilled across the catalogue first (T-E.11) — without
-that, the ranker has no pattern signal to rank on.
+Two different questions, and E2 answered them differently:
 
-`createWithRetry` as it stands (12 s × 2) fits the single-workout case measured in
-E2 (max 3.79 s), so the no-retry variant this section anticipated is **not**
-needed for Phase 1. It would only matter if a future change pushed a single
-adaptation near the 30 s ceiling. Every § 1 rule still holds.
+- **The deterministic ranker — not close, do not revisit as-is.** It lost 4–50 on
+  blind preference and produced unshippable swaps (design § 6.0). Worth revisiting
+  only if `movement_type` is backfilled across the catalogue first (T-E.11);
+  without that it has no pattern signal to rank on.
+- **The full-pool model arm — genuinely close, and rejected on cost alone**
+  (25–25 with 8 ties, within ±0.1 on two of three axes). This phase's original
+  gate ("only if E2 was close") therefore _is_ satisfied for that arm. Still not
+  recommended: 3.4× the hybrid's cost for no measured quality gain. Revisit only
+  if device use shows the shortlist excluding a pick users wanted — and then the
+  cheaper fix is raising `perRow`, not removing the shortlist.
+
+**The no-retry question is NOT closed by E2** and moves to T-1.9 (design § 8). E2
+measured only the happy path (2.60 s p50 / 3.79 s max); 12 s × 2 on the retry path
+plus auth/SQL/usage-log overhead is exactly what GTM § 3 P2 was worried about.
+Every § 1 rule holds.
 
 ## Gates (every phase)
 

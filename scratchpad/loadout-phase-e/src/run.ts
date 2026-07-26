@@ -135,12 +135,34 @@ function summarise(results: ArmResult[]): Record<string, number> {
       : Number(
           (ok.reduce((sum, row) => sum + pick(row), 0) / ok.length).toFixed(3),
         );
+  // Fidelity is null on a plan with no swapped rows — average over the plans
+  // that actually made a choice, never over a fiat 1.0 (IB sweep 1).
+  const swapBearing = ok.filter((row) => row.metrics.swapped > 0);
+  const meanOverSwapBearing = (
+    pick: (row: ArmResult) => number | null,
+  ): number =>
+    swapBearing.length === 0
+      ? 0
+      : Number(
+          (
+            swapBearing.reduce((sum, row) => sum + (pick(row) ?? 0), 0) /
+            swapBearing.length
+          ).toFixed(3),
+        );
+
   return {
     plans: results.length,
     errors: results.length - ok.length,
-    equipmentLegalPlans: ok.filter((row) => row.metrics.equipmentLegal).length,
-    meanMuscleFidelity: mean((row) => row.metrics.muscleFidelity),
-    meanCategoryFidelity: mean((row) => row.metrics.categoryFidelity),
+    // Counted over ALL results: a fixture that threw is not legal by default.
+    equipmentLegalPlans: results.filter((row) => row.metrics.equipmentLegal)
+      .length,
+    swapBearingPlans: swapBearing.length,
+    meanMuscleFidelity: meanOverSwapBearing(
+      (row) => row.metrics.muscleFidelity,
+    ),
+    meanCategoryFidelity: meanOverSwapBearing(
+      (row) => row.metrics.categoryFidelity,
+    ),
     totalUnresolved: ok.reduce((sum, row) => sum + row.metrics.unresolved, 0),
     totalDuplicatePicks: ok.reduce(
       (sum, row) => sum + row.metrics.duplicatePicks,
@@ -282,8 +304,8 @@ async function main(): Promise<void> {
               kept: 0,
               swapped: 0,
               unresolved: 0,
-              muscleFidelity: 0,
-              categoryFidelity: 0,
+              muscleFidelity: null,
+              categoryFidelity: null,
               duplicatePicks: 0,
               nearDuplicatePairs: 0,
               musclesDropped: [],

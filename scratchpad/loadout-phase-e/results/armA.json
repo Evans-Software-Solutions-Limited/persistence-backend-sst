@@ -3,7 +3,8 @@
     "plans": 80,
     "errors": 0,
     "equipmentLegalPlans": 80,
-    "meanMuscleFidelity": 0.977,
+    "swapBearingPlans": 58,
+    "meanMuscleFidelity": 0.968,
     "meanCategoryFidelity": 1,
     "totalUnresolved": 0,
     "totalDuplicatePicks": 0,
@@ -23,8 +24,8 @@
         "kept": 5,
         "swapped": 0,
         "unresolved": 0,
-        "muscleFidelity": 1,
-        "categoryFidelity": 1,
+        "muscleFidelity": null,
+        "categoryFidelity": null,
         "duplicatePicks": 0,
         "nearDuplicatePairs": 0,
         "musclesDropped": []
@@ -53,7 +54,7 @@
         "musclesDropped": []
       },
       "meta": {
-        "latencyMs": 1,
+        "latencyMs": 3,
         "costUsd": 0,
         "pool": "400 candidates (+48 truncated by the LIMIT 400 cap)"
       },
@@ -92,8 +93,8 @@
         "kept": 5,
         "swapped": 0,
         "unresolved": 0,
-        "muscleFidelity": 1,
-        "categoryFidelity": 1,
+        "muscleFidelity": null,
+        "categoryFidelity": null,
         "duplicatePicks": 0,
         "nearDuplicatePairs": 0,
         "musclesDropped": []
@@ -115,8 +116,8 @@
         "kept": 4,
         "swapped": 0,
         "unresolved": 0,
-        "muscleFidelity": 1,
-        "categoryFidelity": 1,
+        "muscleFidelity": null,
+        "categoryFidelity": null,
         "duplicatePicks": 0,
         "nearDuplicatePairs": 0,
         "musclesDropped": []
@@ -207,8 +208,8 @@
         "kept": 7,
         "swapped": 0,
         "unresolved": 0,
-        "muscleFidelity": 1,
-        "categoryFidelity": 1,
+        "muscleFidelity": null,
+        "categoryFidelity": null,
         "duplicatePicks": 0,
         "nearDuplicatePairs": 0,
         "musclesDropped": []
@@ -237,7 +238,7 @@
         "musclesDropped": []
       },
       "meta": {
-        "latencyMs": 1,
+        "latencyMs": 0,
         "costUsd": 0,
         "pool": "331 candidates"
       },
@@ -276,8 +277,8 @@
         "kept": 7,
         "swapped": 0,
         "unresolved": 0,
-        "muscleFidelity": 1,
-        "categoryFidelity": 1,
+        "muscleFidelity": null,
+        "categoryFidelity": null,
         "duplicatePicks": 0,
         "nearDuplicatePairs": 0,
         "musclesDropped": []
@@ -299,8 +300,8 @@
         "kept": 6,
         "swapped": 0,
         "unresolved": 0,
-        "muscleFidelity": 1,
-        "categoryFidelity": 1,
+        "muscleFidelity": null,
+        "categoryFidelity": null,
         "duplicatePicks": 0,
         "nearDuplicatePairs": 0,
         "musclesDropped": []
@@ -391,8 +392,8 @@
         "kept": 6,
         "swapped": 0,
         "unresolved": 0,
-        "muscleFidelity": 1,
-        "categoryFidelity": 1,
+        "muscleFidelity": null,
+        "categoryFidelity": null,
         "duplicatePicks": 0,
         "nearDuplicatePairs": 0,
         "musclesDropped": []
@@ -418,10 +419,12 @@
         "categoryFidelity": 1,
         "duplicatePicks": 0,
         "nearDuplicatePairs": 1,
-        "musclesDropped": ["Lower Back"]
+        "musclesDropped": [
+          "Lower Back"
+        ]
       },
       "meta": {
-        "latencyMs": 0,
+        "latencyMs": 1,
         "costUsd": 0,
         "pool": "349 candidates"
       },
@@ -441,7 +444,9 @@
         "categoryFidelity": 1,
         "duplicatePicks": 0,
         "nearDuplicatePairs": 1,
-        "musclesDropped": ["Lower Back"]
+        "musclesDropped": [
+          "Lower Back"
+        ]
       },
       "meta": {
         "latencyMs": 0,
@@ -464,7 +469,9 @@
         "categoryFidelity": 1,
         "duplicatePicks": 0,
         "nearDuplicatePairs": 0,
-        "musclesDropped": ["Lower Back"]
+        "musclesDropped": [
+          "Lower Back"
+        ]
       },
       "meta": {
         "latencyMs": 0,
@@ -483,8 +490,8 @@
         "kept": 5,
         "swapped": 0,
         "unresolved": 0,
-        "muscleFidelity": 1,
-        "categoryFidelity": 1,
+        "muscleFidelity": null,
+        "categoryFidelity": null,
         "duplicatePicks": 0,
         "nearDuplicatePairs": 0,
         "musclesDropped": []
@@ -513,7 +520,7 @@
         "musclesDropped": []
       },
       "meta": {
-        "latencyMs": 0,
+        "latencyMs": 1,
         "costUsd": 0,
         "pool": "400 candidates (+104 truncated by the LIMIT 400 cap)"
       },
@@ -536,7 +543,7 @@
         "musclesDropped": []
       },
       "meta": {
-        "latencyMs": 0,
+        "latencyMs": 1,
         "costUsd": 0,
         "pool": "399 candidates"
       },
@@ -559,7 +566,7 @@
         "musclesDropped": []
       },
       "meta": {
-        "latencyMs": 0,
+        "latencyMs": 1,
         "costUsd": 0,
         "pool": "400 candidates (+124 truncated by the LIMIT 400 cap)"
       },
@@ -575,8 +582,8 @@
         "kept": 3,
         "swapped": 0,
         "unresolved": 0,
-        "muscleFidelity": 1,
-        "categoryFidelity": 1,
+        "muscleFidelity": null,
+        "categoryFidelity": null,
         "duplicatePicks": 0,
         "nearDuplicatePairs": 0,
         "musclesDropped": []
@@ -602,7 +609,9 @@
         "categoryFidelity": 1,
         "duplicatePicks": 0,
         "nearDuplicatePairs": 0,
-        "musclesDropped": ["Lower Back"]
+        "musclesDropped": [
+          "Lower Back"
+        ]
       },
       "meta": {
         "latencyMs": 0,
@@ -625,10 +634,12 @@
         "categoryFidelity": 1,
         "duplicatePicks": 0,
         "nearDuplicatePairs": 0,
-        "musclesDropped": ["Lower Back"]
+        "musclesDropped": [
+          "Lower Back"
+        ]
       },
       "meta": {
-        "latencyMs": 1,
+        "latencyMs": 0,
         "costUsd": 0,
         "pool": "400 candidates (+91 truncated by the LIMIT 400 cap)"
       },
@@ -648,7 +659,9 @@
         "categoryFidelity": 1,
         "duplicatePicks": 0,
         "nearDuplicatePairs": 0,
-        "musclesDropped": ["Lower Back"]
+        "musclesDropped": [
+          "Lower Back"
+        ]
       },
       "meta": {
         "latencyMs": 0,
@@ -667,8 +680,8 @@
         "kept": 3,
         "swapped": 0,
         "unresolved": 0,
-        "muscleFidelity": 1,
-        "categoryFidelity": 1,
+        "muscleFidelity": null,
+        "categoryFidelity": null,
         "duplicatePicks": 0,
         "nearDuplicatePairs": 0,
         "musclesDropped": []
@@ -694,7 +707,9 @@
         "categoryFidelity": 1,
         "duplicatePicks": 0,
         "nearDuplicatePairs": 0,
-        "musclesDropped": ["Lower Back"]
+        "musclesDropped": [
+          "Lower Back"
+        ]
       },
       "meta": {
         "latencyMs": 0,
@@ -717,10 +732,12 @@
         "categoryFidelity": 1,
         "duplicatePicks": 0,
         "nearDuplicatePairs": 0,
-        "musclesDropped": ["Full Body"]
+        "musclesDropped": [
+          "Full Body"
+        ]
       },
       "meta": {
-        "latencyMs": 1,
+        "latencyMs": 0,
         "costUsd": 0,
         "pool": "400 candidates (+113 truncated by the LIMIT 400 cap)"
       },
@@ -740,10 +757,12 @@
         "categoryFidelity": 1,
         "duplicatePicks": 0,
         "nearDuplicatePairs": 0,
-        "musclesDropped": ["Lower Back"]
+        "musclesDropped": [
+          "Lower Back"
+        ]
       },
       "meta": {
-        "latencyMs": 0,
+        "latencyMs": 1,
         "costUsd": 0,
         "pool": "400 candidates (+376 truncated by the LIMIT 400 cap)"
       },
@@ -759,8 +778,8 @@
         "kept": 5,
         "swapped": 0,
         "unresolved": 0,
-        "muscleFidelity": 1,
-        "categoryFidelity": 1,
+        "muscleFidelity": null,
+        "categoryFidelity": null,
         "duplicatePicks": 0,
         "nearDuplicatePairs": 0,
         "musclesDropped": []
@@ -789,7 +808,7 @@
         "musclesDropped": []
       },
       "meta": {
-        "latencyMs": 1,
+        "latencyMs": 0,
         "costUsd": 0,
         "pool": "381 candidates"
       },
@@ -851,8 +870,8 @@
         "kept": 5,
         "swapped": 0,
         "unresolved": 0,
-        "muscleFidelity": 1,
-        "categoryFidelity": 1,
+        "muscleFidelity": null,
+        "categoryFidelity": null,
         "duplicatePicks": 0,
         "nearDuplicatePairs": 0,
         "musclesDropped": []
@@ -901,7 +920,9 @@
         "categoryFidelity": 1,
         "duplicatePicks": 0,
         "nearDuplicatePairs": 0,
-        "musclesDropped": ["Full Body"]
+        "musclesDropped": [
+          "Full Body"
+        ]
       },
       "meta": {
         "latencyMs": 1,
@@ -927,7 +948,7 @@
         "musclesDropped": []
       },
       "meta": {
-        "latencyMs": 1,
+        "latencyMs": 0,
         "costUsd": 0,
         "pool": "400 candidates (+552 truncated by the LIMIT 400 cap)"
       },
@@ -943,8 +964,8 @@
         "kept": 5,
         "swapped": 0,
         "unresolved": 0,
-        "muscleFidelity": 1,
-        "categoryFidelity": 1,
+        "muscleFidelity": null,
+        "categoryFidelity": null,
         "duplicatePicks": 0,
         "nearDuplicatePairs": 0,
         "musclesDropped": []
@@ -996,7 +1017,7 @@
         "musclesDropped": []
       },
       "meta": {
-        "latencyMs": 1,
+        "latencyMs": 0,
         "costUsd": 0,
         "pool": "400 candidates (+74 truncated by the LIMIT 400 cap)"
       },
@@ -1035,8 +1056,8 @@
         "kept": 5,
         "swapped": 0,
         "unresolved": 0,
-        "muscleFidelity": 1,
-        "categoryFidelity": 1,
+        "muscleFidelity": null,
+        "categoryFidelity": null,
         "duplicatePicks": 0,
         "nearDuplicatePairs": 0,
         "musclesDropped": []
@@ -1127,8 +1148,8 @@
         "kept": 4,
         "swapped": 0,
         "unresolved": 0,
-        "muscleFidelity": 1,
-        "categoryFidelity": 1,
+        "muscleFidelity": null,
+        "categoryFidelity": null,
         "duplicatePicks": 0,
         "nearDuplicatePairs": 0,
         "musclesDropped": []
@@ -1219,8 +1240,8 @@
         "kept": 5,
         "swapped": 0,
         "unresolved": 0,
-        "muscleFidelity": 1,
-        "categoryFidelity": 1,
+        "muscleFidelity": null,
+        "categoryFidelity": null,
         "duplicatePicks": 0,
         "nearDuplicatePairs": 0,
         "musclesDropped": []
@@ -1311,8 +1332,8 @@
         "kept": 4,
         "swapped": 0,
         "unresolved": 0,
-        "muscleFidelity": 1,
-        "categoryFidelity": 1,
+        "muscleFidelity": null,
+        "categoryFidelity": null,
         "duplicatePicks": 0,
         "nearDuplicatePairs": 0,
         "musclesDropped": []
@@ -1403,8 +1424,8 @@
         "kept": 5,
         "swapped": 0,
         "unresolved": 0,
-        "muscleFidelity": 1,
-        "categoryFidelity": 1,
+        "muscleFidelity": null,
+        "categoryFidelity": null,
         "duplicatePicks": 0,
         "nearDuplicatePairs": 0,
         "musclesDropped": []
@@ -1430,7 +1451,9 @@
         "categoryFidelity": 1,
         "duplicatePicks": 0,
         "nearDuplicatePairs": 0,
-        "musclesDropped": ["Lower Back"]
+        "musclesDropped": [
+          "Lower Back"
+        ]
       },
       "meta": {
         "latencyMs": 0,
@@ -1453,7 +1476,9 @@
         "categoryFidelity": 1,
         "duplicatePicks": 0,
         "nearDuplicatePairs": 0,
-        "musclesDropped": ["Lower Back"]
+        "musclesDropped": [
+          "Lower Back"
+        ]
       },
       "meta": {
         "latencyMs": 0,
@@ -1476,10 +1501,12 @@
         "categoryFidelity": 1,
         "duplicatePicks": 0,
         "nearDuplicatePairs": 0,
-        "musclesDropped": ["Lower Back"]
+        "musclesDropped": [
+          "Lower Back"
+        ]
       },
       "meta": {
-        "latencyMs": 1,
+        "latencyMs": 0,
         "costUsd": 0,
         "pool": "301 candidates"
       },
@@ -1495,8 +1522,8 @@
         "kept": 4,
         "swapped": 0,
         "unresolved": 0,
-        "muscleFidelity": 1,
-        "categoryFidelity": 1,
+        "muscleFidelity": null,
+        "categoryFidelity": null,
         "duplicatePicks": 0,
         "nearDuplicatePairs": 0,
         "musclesDropped": []
@@ -1548,7 +1575,7 @@
         "musclesDropped": []
       },
       "meta": {
-        "latencyMs": 0,
+        "latencyMs": 1,
         "costUsd": 0,
         "pool": "77 candidates"
       },
@@ -1571,7 +1598,7 @@
         "musclesDropped": []
       },
       "meta": {
-        "latencyMs": 1,
+        "latencyMs": 0,
         "costUsd": 0,
         "pool": "201 candidates"
       },
@@ -1587,8 +1614,8 @@
         "kept": 5,
         "swapped": 0,
         "unresolved": 0,
-        "muscleFidelity": 1,
-        "categoryFidelity": 1,
+        "muscleFidelity": null,
+        "categoryFidelity": null,
         "duplicatePicks": 0,
         "nearDuplicatePairs": 0,
         "musclesDropped": []
@@ -1679,8 +1706,8 @@
         "kept": 5,
         "swapped": 0,
         "unresolved": 0,
-        "muscleFidelity": 1,
-        "categoryFidelity": 1,
+        "muscleFidelity": null,
+        "categoryFidelity": null,
         "duplicatePicks": 0,
         "nearDuplicatePairs": 0,
         "musclesDropped": []
@@ -1706,7 +1733,10 @@
         "categoryFidelity": 1,
         "duplicatePicks": 0,
         "nearDuplicatePairs": 0,
-        "musclesDropped": ["Calves", "Lower Back"]
+        "musclesDropped": [
+          "Calves",
+          "Lower Back"
+        ]
       },
       "meta": {
         "latencyMs": 0,
@@ -1729,7 +1759,10 @@
         "categoryFidelity": 1,
         "duplicatePicks": 0,
         "nearDuplicatePairs": 0,
-        "musclesDropped": ["Calves", "Forearms"]
+        "musclesDropped": [
+          "Calves",
+          "Forearms"
+        ]
       },
       "meta": {
         "latencyMs": 0,
@@ -1752,7 +1785,10 @@
         "categoryFidelity": 1,
         "duplicatePicks": 0,
         "nearDuplicatePairs": 0,
-        "musclesDropped": ["Calves", "Lower Back"]
+        "musclesDropped": [
+          "Calves",
+          "Lower Back"
+        ]
       },
       "meta": {
         "latencyMs": 0,
@@ -1771,8 +1807,8 @@
         "kept": 5,
         "swapped": 0,
         "unresolved": 0,
-        "muscleFidelity": 1,
-        "categoryFidelity": 1,
+        "muscleFidelity": null,
+        "categoryFidelity": null,
         "duplicatePicks": 0,
         "nearDuplicatePairs": 0,
         "musclesDropped": []

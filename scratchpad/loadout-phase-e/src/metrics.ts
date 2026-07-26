@@ -54,10 +54,16 @@ export type PlanMetrics = {
   kept: number;
   swapped: number;
   unresolved: number;
-  /** Mean over swapped rows of |∩ primary| / |source primary| (0–1). */
-  muscleFidelity: number;
-  /** Fraction of swapped rows whose `category` matches the source's (0–1). */
-  categoryFidelity: number;
+  /**
+   * Mean over swapped rows of |∩ primary| / |source primary| (0–1), or **null**
+   * when the plan has no swapped rows. Deliberately not `1`: 22 of the 80
+   * fixtures need no swap at all, and a fiat 1.0 there is a value that cannot
+   * fail — averaging it in compressed every arm's gap toward zero and misstated
+   * three published figures (IB sweep 1, 2026-07-26).
+   */
+  muscleFidelity: number | null;
+  /** Fraction of swapped rows whose `category` matches the source's; null when none. */
+  categoryFidelity: number | null;
   /** Exercise ids appearing more than once in the adapted plan. */
   duplicatePicks: number;
   /**
@@ -132,11 +138,18 @@ export function scorePlan(
         nameTokens(picks[i].name),
         nameTokens(picks[j].name),
       );
+      // Symmetric on purpose: either primary set being a subset of the other
+      // counts. An i ⊆ j test alone made detection depend on which row each pick
+      // landed on, undercounting arm B by 2 (IB sweep 1, 2026-07-26).
       const samePrimary =
-        picks[i].primaryMuscles.length > 0 &&
-        picks[i].primaryMuscles.every((m) =>
-          picks[j].primaryMuscles.includes(m),
-        );
+        (picks[i].primaryMuscles.length > 0 &&
+          picks[i].primaryMuscles.every((m) =>
+            picks[j].primaryMuscles.includes(m),
+          )) ||
+        (picks[j].primaryMuscles.length > 0 &&
+          picks[j].primaryMuscles.every((m) =>
+            picks[i].primaryMuscles.includes(m),
+          ));
       if (shared >= 2 && samePrimary) nearDuplicatePairs += 1;
     }
   }
@@ -160,8 +173,8 @@ export function scorePlan(
     kept,
     swapped,
     unresolved,
-    muscleFidelity: swapped > 0 ? muscleSum / swapped : 1,
-    categoryFidelity: swapped > 0 ? categoryHits / swapped : 1,
+    muscleFidelity: swapped > 0 ? muscleSum / swapped : null,
+    categoryFidelity: swapped > 0 ? categoryHits / swapped : null,
     duplicatePicks: [...idCounts.values()].filter((count) => count > 1).length,
     nearDuplicatePairs,
     musclesDropped,

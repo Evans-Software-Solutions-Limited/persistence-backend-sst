@@ -44,17 +44,48 @@ model from the arms under test.
 
 ## Results
 
-### Objective (programmatic, all 80 fixtures)
+Every figure below is reproducible offline and free:
+`bun scratchpad/loadout-phase-e/src/resummarise.ts`. It recomputes from the
+committed `results/` dataset rather than being arithmetic in a document — this
+verdict's first draft hand-derived the cost table and averaged fidelity over all
+80 fixtures including the 22 that need no swap, and both were wrong.
 
-| Metric                                | Arm A     | Arm B     | Arm C     |
-| ------------------------------------- | --------- | --------- | --------- |
-| **Equipment-legal plans (hard gate)** | **80/80** | **80/80** | **80/80** |
-| Hallucinated / non-member ids         | 0         | 0         | 0         |
-| Mean primary-muscle fidelity          | **0.977** | 0.871     | 0.949     |
-| Unresolved rows                       | 0         | 1         | 0         |
-| Duplicate picks within a plan         | 0         | 0         | 0         |
-| Near-duplicate pairs                  | **5**     | 11        | 8         |
-| Plans dropping a parent muscle        | **16**    | 28        | 23        |
+### Objective (programmatic)
+
+**58 of the 80 fixtures bear a swap** (171 rows). The other 22 need none, so they
+have no fidelity to report and are excluded from the means rather than
+contributing a fiat 1.0.
+
+| Metric                                      | Arm A     | Arm B | Arm C |
+| ------------------------------------------- | --------- | ----- | ----- |
+| Equipment-legal plans (caveat below)        | 80/80     | 80/80 | 80/80 |
+| Non-member ids returned (116 runs, 341 ids) | n/a       | **0** | **0** |
+| Mean primary-muscle fidelity                | **0.968** | 0.822 | 0.930 |
+| Mean category fidelity                      | 1.000     | 0.982 | 0.983 |
+| Unresolved rows                             | 0         | 1     | 0     |
+| Duplicate picks within a plan               | 0         | 0     | 0     |
+| Near-duplicate pairs (symmetric test)       | **5**     | 13    | 8     |
+| Plans dropping a parent muscle              | **16**    | 28    | 23    |
+
+⚠ **"Equipment-legal 80/80" is a weaker result than it looks, and no arm could
+have failed it.** Stage 1 only ever emits legal candidates, and stage 3 copies the
+parent's targets rather than trusting model output, so five of `verify()`'s six
+violation kinds are structurally unreachable in this harness. What the row
+attests is the D6 contract — the model copied ids from the list — which is what
+the row beneath it already says. It is evidence that candidate-constrained
+generation works, **not** evidence that the arms were compared on safety.
+
+Two further caveats, disclosed rather than corrected:
+
+- **Arm C's fidelity advantage is partly an artefact of its own construction.**
+  The shortlister hard-filters candidates sharing no primary muscle, so the metric
+  is not independent of the arm. The effect is partial, not total: zero-overlap
+  picks are 2 for both B and C, and the gap lives in partial-overlap picks
+  (B 50/170 vs C 36/171). The same disclosure applies to arm A, which maximises
+  exactly the metric it wins on.
+- **Unresolved rows leave the fidelity denominator**, so an arm could in principle
+  raise its score by giving up on a hard row. One row across 240 plans, so no
+  material effect — but the incentive points the wrong way.
 
 ### Judged (blind, 58 fixtures — 22 skipped as byte-identical)
 
@@ -71,13 +102,14 @@ Arm A scored 3.07/3.21/2.62 and 2.98/3.16/2.69 in two independent judge runs, an
 arm C 4.07–4.28 / 3.93–4.07 / 3.81–4.07. That agreement across separate runs is
 the reliability evidence for the scale.
 
-### Latency and cost (60 swap-bearing fixtures; `ess-dev`, eu-west-2)
+### Latency and cost (58 swap-bearing fixtures; `ess-dev`, eu-west-2)
 
 |                         | Arm A  | Arm B                    | Arm C                    |
 | ----------------------- | ------ | ------------------------ | ------------------------ |
-| p50 / p90 / max latency | 0.1 ms | 2.84 s / 3.69 s / 4.07 s | 2.55 s / 3.66 s / 3.79 s |
-| Mean input tokens       | —      | 18,140                   | **4,436**                |
-| **Cost per adaptation** | **$0** | $0.0193                  | **$0.0056**              |
+| p50 / p90 / max latency | 0.1 ms | 2.85 s / 3.69 s / 4.07 s | 2.60 s / 3.66 s / 3.79 s |
+| Mean input tokens       | —      | 18,720                   | **4,543**                |
+| Mean candidates offered | 314    | 314                      | **58**                   |
+| **Cost per adaptation** | **$0** | $0.0199                  | **$0.0057**              |
 | Worst observed run      | $0     | $0.0265                  | $0.0092                  |
 
 Cost uses Anthropic list rates for Haiku 4.5 ($1/$5 per MTok). **Bedrock is
@@ -115,8 +147,8 @@ library actually has, and that is the decision-relevant fact.
 ## Why the hybrid beats the pure model arm
 
 Against arm B the hybrid is a dead heat on judgment (25–25 with 8 ties, and
-within ±0.1 on two of three axes) while being **71 % cheaper** and **+0.078
-better on muscle fidelity**. Narrowing 303 candidates to 56 removes the long tail
+within ±0.1 on two of three axes) while being **71 % cheaper** (28.7 % of arm B's
+cost per adaptation) and **+0.108 better on muscle fidelity**. Narrowing 303 candidates to 56 removes the long tail
 of exotic library rows the model can wander into without removing the pattern
 sense that is the model's actual contribution. It also keeps the § 6.2 ranker in
 Phase 1's scope (**T-1.2 stays**) — as a shortlister, which is what it is good
@@ -136,12 +168,12 @@ not of the eval.
    mid-gym is the bad failure requirements § Eval spike already flags, and the
    cost line below suggests the cap exists for abuse control rather than unit
    economics.
-2. **A cost line.** $0.0056 per adaptation. Three adaptations a day is
-   **~$0.50/user/month** against £29.99 — negligible. Even a 20/day ceiling
-   fully consumed is ~$3.36/month.
-3. **Programme-level fan-out must go async.** At 2.55 s p50 per workout, the
-   120-workout cap is ~5 minutes of model time; even a 12-week × 4-session
-   programme (~48 workouts) is ~2 minutes. **The 30 s API Gateway ceiling that
+2. **A cost line.** $0.0057 per adaptation. Three adaptations a day is
+   **~$0.51/user/month** against £29.99 — negligible. Even a 20/day ceiling
+   fully consumed is ~$3.43/month.
+3. **Programme-level fan-out must go async.** At 2.60 s p50 per workout, the
+   120-workout cap is ~5 minutes of model time and ~$0.69; even a 12-week ×
+   4-session programme (~48 workouts) is ~2 minutes. **The 30 s API Gateway ceiling that
    `design.md` § 7.3 says "does not bind here" now binds** — Phase 4 needs the
    async-job model. Single-workout Loadout is unaffected (max observed 4.07 s,
    comfortably inside the ceiling, and inside `createWithRetry`'s 12 s × 2).
@@ -174,8 +206,9 @@ copy treatment.
    pure control — it proves the KEPT/needs-swap partition works and that neither
    arm churns a plan it was told to leave alone (arm B answered for a fixed row
    once in 80 runs; stage 3 discarded it). It contributes nothing to the quality
-   comparison, which is why 22 fixtures were byte-identical and excluded from
-   judging.
+   comparison. **22 fixtures were byte-identical and excluded from judging: all
+   20 `full_gym`, plus `w01-seeded-upper::hotel_gym` and
+   `w03-seeded-fullbody::hotel_gym`, which also happen to need no swap.**
 3. **The `LIMIT 400` cap truncated 28 of 80 candidate pools.** Real behaviour at
    Loadout's scale, not a fixture artefact — `design.md` § 6.3's "log on
    truncation" is load-bearing, and the hybrid's shortlist makes the cap far less
@@ -203,4 +236,18 @@ copy treatment.
   self-preference in the primary comparison, but a second judge would harden the
   1–5 scales. The hard metrics and the worked examples above do not depend on the
   judge.
+- **The judge reads each arm's own reason text while scoring pattern fidelity and
+  coherence**, because `renderPlan` puts the reason on the same line. The model
+  arms' prose asserts _why_ a swap preserves the pattern, so their advocacy can
+  move axes it should not. This confounds **A vs B and A vs C**; it does **not**
+  confound **C vs B** (both reasons are model-written), which is the comparison
+  that actually chose between them, and arm A's rejection stands independently on
+  the worked examples and the `movement_type` argument. A stricter design would
+  strip reasons for the two non-reason axes.
+- **Arm C's ids were verified against the full pool, not the shortlist it was
+  offered.** Correct for legality — the full pool is entirely legal, so it grants
+  arm C no advantage — but it makes the non-member test laxer for C than for B.
+  Independently rechecked by recomputing all 58 shortlists deterministically:
+  **zero off-shortlist picks across all 171 of arm C's selections**, and the
+  recomputed shortlist sizes match the recorded `candidateCount` exactly.
 - **Cost is list-rate arithmetic**, not a measured AWS bill.

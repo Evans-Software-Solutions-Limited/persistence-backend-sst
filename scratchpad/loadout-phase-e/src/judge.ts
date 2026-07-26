@@ -21,7 +21,7 @@ import {
   type MessagesCreateParams,
   type MinimalBedrockClient,
 } from "../../../microservices/core/src/application/nutrition/services/aiBedrockClient.ts";
-import { MODELS } from "./armB.ts";
+import { assertDevEnvironment, MODELS } from "./armB.ts";
 
 export const JUDGE_MODEL = MODELS.opus;
 
@@ -142,9 +142,11 @@ export async function judgePlans(
   },
   options: { client?: MinimalBedrockClient; modelId?: string } = {},
 ): Promise<JudgeVerdict & { latencyMs: number }> {
+  const modelId = options.modelId ?? JUDGE_MODEL;
+  if (!options.client) assertDevEnvironment(modelId);
   const client = options.client ?? getDefaultClient();
   const params: MessagesCreateParams = {
-    model: options.modelId ?? JUDGE_MODEL,
+    model: modelId,
     max_tokens: 2048,
     messages: [
       {
