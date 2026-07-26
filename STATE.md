@@ -98,7 +98,85 @@ elysia-route-change.md`, `D .claude/skills/sst-resource-change.md`); my
 
 ## Last session
 
-**2026-07-26 (LOADOUT Phase 0 — backend data model). PR [#317](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/317) OPEN off `main` `15ccf4a`, branch `claude/loadout-phase-0`, HEAD `6652a29`. Awaiting Brad's merge.**
+**2026-07-26 (cont. 2) — LOADOUT Phase 0 MERGED + production AI outage diagnosed.
+`origin/main` HEAD = `86a03a7` (squash of PR #317). Next up: spec-21 Phase E.**
+
+- **PR #317 MERGED** (squash `86a03a7`) — all 5 CI checks green, IB clean @
+  `6652a29`. Branch deleted. The four migrations auto-applied to STAGING on merge.
+- **⚠ CORRECTION TO A LONG-STANDING LEDGER CLAIM: "PROD MIGRATION APPLY IS
+  MANUAL" IS WRONG.** Repeated across many earlier entries in this file, and it is
+  stale. `production-deploy.yml` runs `supabase db push --linked` (with a
+  `--dry-run` first) as part of the **Deploy Production** job, which fires on
+  `release: published` — i.e. when the release-please chore PR is merged and its
+  release is published. That workflow has run successfully 8+ times, most recently
+  `persistence: v1.8.0` on 2026-07-26. **Production migrations are automatic on
+  the release deploy. Do not hand-apply them** (Brad confirmed 2026-07-26).
+  - **And the ordering is already correct**: the workflow migrates BEFORE
+    `sst deploy`, so the database is always ahead of the code. That is the safe
+    direction for the additive Loadout columns — `workoutRepository`'s full-row
+    `select().from(workouts)` reads and `GET /exercises/equipment`'s `category`
+    projection would 42703 only on the reverse order (new Lambda, old schema),
+    which this workflow cannot produce. **The deploy-order hazard flagged on #317
+    is handled by CI; no manual sequencing needed.**
+  - Residual caveat for a FUTURE change: migrate-then-deploy is only safe for
+    ADDITIVE migrations. A destructive one (drop/rename) leaves the old Lambda
+    running against the new schema for the length of the deploy — that needs
+    expand/contract across two releases, not a workflow change.
+- **⚠ PRODUCTION AI OUTAGE — ROOT-CAUSED AND FIXED (by Brad, in the AWS console).
+  Claude Haiku 4.5 was never granted in the PRODUCTION Bedrock account**
+  (`465891279888`), though it was granted in Development (`111315405717`).
+  `POST /nutrition/ai/estimate-text` (5/5 requests) and
+  `POST /trainers/me/clients/:id/ai-summary` (8/9; the one 200 was a
+  `client_ai_summaries` cache hit) **returned 503 to every production user for 30
+  days** while passing every test and working perfectly in staging. Photo
+  estimation was fine — different model (`eu.anthropic.claude-opus-4-6-v1`).
+  Brad granted Haiku 4.5; production now verifies OK on both ids.
+  - **LESSON — BEDROCK MODEL ACCESS IS PER-ACCOUNT AND PER-MODEL.** Staging green
+    says NOTHING about production. `eu.` ids are cross-region inference profiles;
+    `eu.anthropic.claude-opus-4-6-v1` looks malformed (no `:0`) but is valid —
+    don't chase that. `eu.anthropic.claude-opus-5` is still UNGRANTED in prod.
+  - **LESSON — the failure was invisible by construction, and this is unfixed.**
+    Bedrock's `AccessDeniedException` is a 403 → `isRetryable` declines a 4xx →
+    `AiUnavailableError` → the handler **RETURNS** a 503 body → `coreErrorHandler`
+    only logs uncaught throws → **not one log line existed for any failure**. The
+    provider's explicit "AWS Marketplace subscription cannot be completed" text
+    was captured into an error string and discarded. Mobile then relabelled the
+    503 as "try rephrasing", advice that could never work.
+  - **How to diagnose this class of bug fast:** the API Gateway access log
+    (`/aws/vendedlogs/apis/persistence-api-production-apicore-rmbczern`) has
+    per-route status + latency. A ~380ms 503 means the provider rejected us
+    outright (a 4xx isn't retried); a ~24s 503 means timeouts. Then
+    `aws bedrock-runtime invoke-model --model-id <id>` per account for the exact
+    exception. AWS profiles: `ess-dev` (dev/staging), `ess-prod` (production —
+    Brad added it this session), both via the `ess-dev` SSO session.
+- **⚠ PR #318 (deploy-time Bedrock model preflight + failure logging + mobile
+  status-aware error copy) was CLOSED UNMERGED at Brad's instruction** — the grant
+  is fixed so he doesn't want the gate. **Branch `claude/ai-model-preflight`
+  (HEAD `844fd01`) is left in place, NOT deleted.** It contains a working
+  `scripts/check-bedrock-access.ts`, `infra/aiModels.ts` (model ids as a single
+  source of truth), the `createWithRetry` logging and a shared
+  `aiEstimateErrorMessage`. **Do NOT rebuild it from scratch** — cherry-pick if
+  the class of failure recurs. Brad's call; don't re-litigate unless asked.
+- **STILL TRUE AND UNFIXED (deliberately, per Brad):** a Bedrock failure is
+  logged nowhere, and both AI surfaces collapse every non-429 error into
+  "Couldn't estimate that — try rephrasing" (`QuickAddSheetContainer.tsx:267`,
+  `SnapAISheetContainer.tsx:100`). If AI ever "mysteriously stops working" again,
+  that is why, and the fix is on the closed branch.
+- **Security audit (Brad asked): server-side entitlement enforcement is REAL, not
+  frontend-only.** All six AI endpoints assert `ai_access` before the model call;
+  `create_workout` on `POST /workouts` + the fresh-workout branch of
+  `POST /sessions/record`; `trainer_clients` on the roster; `loadout` on the new
+  variation create. Guard order correct everywhere (entitlement before the model,
+  ceilings count actual inferences only, so a 402 never burns quota). The one
+  systemic risk: `assertEntitlement`'s catch-all
+  `if (feature !== "create_workout") return { allowed: true }` — any new feature
+  name added without an explicit routing line **silently allows everyone**, with
+  no type error. The three current stubs are deliberately open and nothing on the
+  paywall sells them, so there's no live leak.
+- Incidental: the prod access log is full of bots probing `/.env`,
+  `/.aws/credentials`, `/.git/config` — **all 404, nothing exposed.** Noise.
+
+**2026-07-26 (LOADOUT Phase 0 — backend data model). PR [#317](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/317) MERGED (squash `86a03a7`); was branch `claude/loadout-phase-0`, HEAD `6652a29`.**
 
 - **Scope:** spec-21 Phase 0 = T-0.1…T-0.11, backend only. 4 migrations
   (`saved_gyms`; `workouts` parent linkage; `workout_exercises` provenance;
