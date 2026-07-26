@@ -10,9 +10,10 @@
 > turn the briefs' open questions into concrete choices. Before you submit to the
 > App Store, get the two things below signed off by someone qualified (a solicitor
 > or a fixed-fee privacy consultant — you do **not** need a full-time DPO):
+>
 > 1. the **privacy-policy wording** (see § 4), and
 > 2. that **explicit consent** is your chosen Art 9 lawful basis and the copy is adequate (§ 2).
-> Everything here is written so that review is a 1-hour sanity check, not a rebuild.
+>    Everything here is written so that review is a 1-hour sanity check, not a rebuild.
 
 ---
 
@@ -24,14 +25,14 @@ picture. Special-category data has a higher bar than ordinary personal data. For
 consumer fitness app sharing that data with a human coach, the only realistic
 lawful basis is **explicit consent** (Art 9(2)(a)). Explicit consent must be:
 
-- **Specific** — to *this* processing (sharing with your coach), not bundled into T&Cs.
-- **Informed** — the user is told *what* is shared and *with whom*.
+- **Specific** — to _this_ processing (sharing with your coach), not bundled into T&Cs.
+- **Informed** — the user is told _what_ is shared and _with whom_.
 - **Affirmative** — a deliberate opt-in action (a ticked box the user ticks, not a pre-ticked one).
 - **Recorded** — you can later prove they consented, and to which version of the terms.
 - **Withdrawable** — as easily as it was given.
 
 Spec 26 implements exactly this mechanism. Spec 27 implements the **accountability**
-side (Art 5(2) / Art 32): being able to show *who read* a client's health data,
+side (Art 5(2) / Art 32): being able to show _who read_ a client's health data,
 which is also what lets you answer a "right of access" request.
 
 You are, as a solo trader, still a **data controller**. Two housekeeping items that
@@ -42,6 +43,7 @@ sit outside the code and only you can do — see § 6.
 ## 2. Brief 26 decisions — my recommendations
 
 ### Decision 1 — Backfill of existing active relationships → **RESOLVED (no action)**
+
 You confirmed there is **no production data**. So there are no already-active
 coach↔client relationships to migrate. The implementation takes the clean path:
 consent is required going forward at the two capture points, and every relationship
@@ -51,11 +53,13 @@ somehow onboard coaches before this ships), tell me and we add the re-consent pa
 — but as of today this decision is closed.
 
 ### Decision 2 — Consent copy + data categories → **draft below; you/legal own final wording**
+
 The mechanism is wired with the draft copy below. It is deliberately plain-English
 and names the categories. Get it eyeballed, tweak the words, and it drops straight
 in (it's a small set of string constants + the privacy page).
 
 **Categories a coach can see (this is the factual list — keep it accurate):**
+
 - Body measurements — including body weight and body fat
 - Workout sessions and personal records (PRs)
 - Nutrition totals (calories / macros)
@@ -65,6 +69,7 @@ in (it's a small set of string constants + the privacy page).
 per the spec-25 audit):** raw Apple Health data — sleep, heart rate, steps.
 
 **Draft consent copy (as wired):**
+
 > **Share your data with your coach**
 > To coach you, your coach will be able to see the fitness and health data you
 > record in Persistence: your body measurements (like weight and body fat), your
@@ -82,11 +87,13 @@ informed (says what's shared and what isn't), affirmative (unticked box, button
 disabled until ticked), and it points at the withdrawal path.
 
 ### Decision 3 — `consent_version` string + when to bump → **use `v1-2026-07`; bump rules below**
-Set to `v1-2026-07`. The point of versioning is: if you later change *what* is
-shared or *materially* change the wording, you can tell who agreed to which terms
+
+Set to `v1-2026-07`. The point of versioning is: if you later change _what_ is
+shared or _materially_ change the wording, you can tell who agreed to which terms
 and re-prompt only the people on the old version.
 
 **Bump the version (and re-prompt existing consenters) when:**
+
 - You **add a new data category** a coach can see (e.g. you later share sleep/HR).
 - You **change the recipient** (e.g. coaches can now share onward with a third party).
 - You **materially change the meaning** of the consent (not typo fixes).
@@ -100,6 +107,7 @@ Format is `vN-YYYY-MM` so it's human-readable in the audit log. It's one constan
 ## 3. Brief 27 decisions — my recommendations
 
 ### Decision 1 — Data categories to log → **the 9 in the brief; confirm the list**
+
 The read-audit logs a category per coach read: `measurements`, `body_trend`,
 `sessions`, `goals`, `habits`, `nutrition`, `client_detail_aggregate`,
 `ai_summary`, `active_programme`. That's the current surface of coach reads. No
@@ -107,6 +115,7 @@ change recommended unless you add new coach read surfaces later (then add a
 category).
 
 ### Decision 2 — Retention period + de-dupe window → **12 months retention, 15-min de-dupe (defaults, tune to taste)**
+
 - **Retention: 12 months.** Long enough to answer a "who saw my data over the last
   year" access request; short enough that you're not hoarding an ever-growing
   access log. GDPR says keep it no longer than necessary — 12 months is a sensible,
@@ -120,6 +129,7 @@ category).
   Tunable via a single constant.
 
 ### Decision 3 — Client-facing "who's viewed my data" screen → **fast-follow, NOT a launch blocker**
+
 For launch, the **ops query** documented in the brief is enough to satisfy a
 right-of-access request (you run one SQL query and hand the client the answer).
 Right-of-access requests must be answerable within a month; a manual query easily
@@ -137,6 +147,7 @@ with"). For explicit-consent-based special-category sharing you should say more.
 sign-off then paste in — I can wire it whenever you say):
 
 > ### Sharing data with your coach
+>
 > If you connect with a coach or trainer inside the app, you will be asked to give
 > explicit consent before any of your data is shared. With your consent, your coach
 > can see: your body measurements (including weight and body fat), your workout
@@ -167,7 +178,8 @@ That's already wired.
 - [ ] (Recommended, not strictly blocking) a lightweight DPIA on file (see § 6).
 
 Apple Review (Guidelines 5.1.1 / 5.1.3) wants: a clear consent step for health data
-+ a reachable privacy policy. Both are satisfied by 26 + the existing privacy page.
+
+- a reachable privacy policy. Both are satisfied by 26 + the existing privacy page.
 
 ## 6. The two things only you can do (outside the code)
 
@@ -185,7 +197,7 @@ Apple Review (Guidelines 5.1.1 / 5.1.3) wants: a clear consent step for health d
    blocker, but cheap insurance — an afternoon's work.
 
 Neither of these is something I can do for you (they're registrations/attestations
-in your name), and neither blocks the *code* shipping — but item 1 should be done
+in your name), and neither blocks the _code_ shipping — but item 1 should be done
 before you're live to real users.
 
 ---
