@@ -74,8 +74,7 @@ alone on purpose.
 
 ## Corrections after the Inspector Brad sweep
 
-Two metric defects were found **after** the model stages had run, so the committed
-`results/*.json` were produced by the pre-fix revision of `metrics.ts`:
+Two metric defects were found **after** the model stages had run:
 
 1. `muscleFidelity` returned a fiat `1` on the 22 zero-swap fixtures and was
    averaged over all 80 — a value that cannot fail, compressing every arm's gap.
@@ -84,13 +83,27 @@ Two metric defects were found **after** the model stages had run, so the committ
    depended on which row a pick landed on. Now symmetric (this moved arm B from
    11 to 13).
 
-Rather than re-spend ~$1.50 of Bedrock to regenerate the dataset,
-`resummarise.ts` recomputes the affected figures from what is committed — the
-per-fixture data it needs is all there, and near-duplicates are re-derived from
-the picks parsed back out of each rendered plan. **The verdict quotes
-`resummarise.ts`'s output, not the `summary` blocks inside the arm files**, which
-still carry the pre-fix aggregates. A future re-run of `--stage=a/b/c` will emit
-corrected summaries directly.
+**`armA.json` was regenerated under the corrected metrics** (arm A is free to
+re-run, and its rendered plans came out byte-identical, so the committed judge
+results stay valid). **`armB-haiku.json` and `armC-haiku.json` are pre-fix** — the
+model stages cost ~$1.50 to regenerate and would not reproduce byte-for-byte, so
+`resummarise.ts` recomputes the affected figures from what is committed instead:
+the per-fixture data it needs is all there, and near-duplicates are re-derived
+from the picks parsed back out of each rendered plan.
+
+Two consequences worth knowing before reading the raw files:
+
+- **The verdict quotes `resummarise.ts`, not the `summary` blocks inside the arm
+  files.** Arm A's summary is correct; arm B's and arm C's still carry the pre-fix
+  aggregates. Re-running `--stage=b/c` would emit corrected summaries directly.
+- The three arm files therefore disagree on metric _definition_: arm A's
+  per-fixture `nearDuplicatePairs` is symmetric, arm B's and arm C's are not.
+  Harmless only because `resummarise.ts` recomputes that metric for all three from
+  the picks rather than reading it.
+
+Note also that `write()` emits `JSON.stringify(…, null, 2)`, which root
+`prettier --check .` rejects — **run `prettier --write` on any results file you
+regenerate**, or the gate fails.
 
 Also note `results/judge-armA-vs-armB-haiku.json` predates the generalised
 `--left`/`--right` judge stage: its summary uses `preferredArmA`/`preferredArmB`

@@ -97,7 +97,7 @@ its own brief and its own PR.
 | P0    | `premium_plus` tier restructure (shared prerequisite — build once, here)                  | —               |
 | 0     | Data model + saved-gym CRUD + variation endpoints + entitlement guard (backend)           | P0              |
 | **E** | **Eval spike, no product code: E1 scan accuracy · E2 re-map engine bake-off**             | 0               |
-| 1     | Adaptation engine — **the arm E2 selects** — + preview endpoint (backend)                 | 0 + E           |
+| 1     | Adaptation engine — **the hybrid, per E2** — + preview endpoint (backend)                 | 0 + E           |
 | 2     | Mobile Loadout flow (athlete) **incl. the equipment scan** — entry, collect, review, save | 1 + E + design  |
 | 3     | Coach programme-level Loadout + assign                                                    | 2               |
 | 4     | Second-engine follow-up (**E2 resolved this — see `tasks.md` Phase 5**)                   | 2 device-verify |

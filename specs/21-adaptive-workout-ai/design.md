@@ -412,7 +412,7 @@ deterministic shortlist → model selection → model reasons.** Full evidence:
 identical candidate sets, blind scoring by a model that was not one of the arms.
 Fidelity, cost and latency are over the swap-bearing fixtures; the verdict's
 § Results carries the caveats, including that the equipment-legal row is
-structurally guaranteed by stages 1 and 3 rather than a gate an arm could fail.
+structurally guaranteed by stages 1 and 2 rather than a gate an arm could fail.
 
 |                                    | Arm A — ranker only       | Arm B — model, full pool | **Arm C — hybrid**  |
 | ---------------------------------- | ------------------------- | ------------------------ | ------------------- |
@@ -429,7 +429,7 @@ Three consequences for the sections below:
 
 1. **§ 6.2's scoring stays, as the shortlister.** T-1.2 is still Phase-1 work —
    the top 25 ranked candidates per row are what the model chooses from. Ranking
-   303 candidates down to 56 is where 71 % of arm B's cost went, at no measured
+   314 candidates down to 58 is where 71 % of arm B's cost went, at no measured
    quality cost (25–25, ±0.1 on two of three axes).
 2. **§ 6.2's `movement_type` signal has no data behind it.** `movement_type` is
    **NULL for all 2281 seeded rows** — only `exercisesCreateHandler` /

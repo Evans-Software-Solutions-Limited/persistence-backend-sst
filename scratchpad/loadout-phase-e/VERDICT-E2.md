@@ -32,8 +32,8 @@ the full pool**.
 | Arm | Stage 2 (SELECTION)                                                                   | Model     |
 | --- | ------------------------------------------------------------------------------------- | --------- |
 | A   | `design.md` § 6.2 scoring as a pure function, greedy no-duplicate pick                | none      |
-| B   | forced tool use, whole plan in one call, ids from the full pool (mean 303 candidates) | Haiku 4.5 |
-| C   | same call, ids from a § 6.2-ranked top-25-per-row shortlist (mean 56 candidates)      | Haiku 4.5 |
+| B   | forced tool use, whole plan in one call, ids from the full pool (mean 314 candidates) | Haiku 4.5 |
+| C   | same call, ids from a § 6.2-ranked top-25-per-row shortlist (mean 58 candidates)      | Haiku 4.5 |
 
 Blind scoring: the two plans are anonymised as "Plan One"/"Plan Two" with
 presentation order set by an FNV-1a hash of the fixture key — stable across
@@ -44,8 +44,10 @@ model from the arms under test.
 
 ## Results
 
-Every figure below is reproducible offline and free:
-`bun scratchpad/loadout-phase-e/src/resummarise.ts`. It recomputes from the
+Every figure below is reproducible offline and free —
+`bun scratchpad/loadout-phase-e/src/resummarise.ts` — with one exception: arm A's
+"mean candidates offered" is carried across from arm B (they share the full pool;
+arm A records no `candidateCount` of its own). It recomputes from the
 committed `results/` dataset rather than being arithmetic in a document — this
 verdict's first draft hand-derived the cost table and averaged fidelity over all
 80 fixtures including the 22 that need no swap, and both were wrong.
@@ -68,9 +70,12 @@ contributing a fiat 1.0.
 | Plans dropping a parent muscle              | **16**    | 28    | 23    |
 
 ⚠ **"Equipment-legal 80/80" is a weaker result than it looks, and no arm could
-have failed it.** Stage 1 only ever emits legal candidates, and stage 3 copies the
-parent's targets rather than trusting model output, so five of `verify()`'s six
-violation kinds are structurally unreachable in this harness. What the row
+have failed it.** Stage 1 only ever emits legal candidates, and **stage 2's row
+assembly** builds each adapted row by mapping over the parent plan and spreading
+its targets — so model output never reaches the sets/reps/rest/order fields at
+all, and five of `verify()`'s six violation kinds are structurally unreachable in
+this harness (stage 3 checks those fields; it is stage 2 that makes the check
+un-failable). What the row
 attests is the D6 contract — the model copied ids from the list — which is what
 the row beneath it already says. It is evidence that candidate-constrained
 generation works, **not** evidence that the arms were compared on safety.
@@ -148,7 +153,7 @@ library actually has, and that is the decision-relevant fact.
 
 Against arm B the hybrid is a dead heat on judgment (25–25 with 8 ties, and
 within ±0.1 on two of three axes) while being **71 % cheaper** (28.7 % of arm B's
-cost per adaptation) and **+0.108 better on muscle fidelity**. Narrowing 303 candidates to 56 removes the long tail
+cost per adaptation) and **+0.108 better on muscle fidelity**. Narrowing 314 candidates to 58 removes the long tail
 of exotic library rows the model can wander into without removing the pattern
 sense that is the model's actual contribution. It also keeps the § 6.2 ranker in
 Phase 1's scope (**T-1.2 stays**) — as a shortlister, which is what it is good
