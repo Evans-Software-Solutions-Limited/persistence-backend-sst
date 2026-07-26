@@ -17,6 +17,7 @@ import type {
 import { CurrentSubscriptionStatusCard } from "@/ui/components/subscription/CurrentSubscriptionStatusCard";
 import { PLogoDrawLoader } from "@/ui/components/PLogoDrawLoader";
 import { SubscriptionCard } from "@/ui/components/subscription/SubscriptionCard";
+import { SubscriptionLegalFooter } from "@/ui/components/subscription/SubscriptionLegalFooter";
 import { TrainerSubscriptionCard } from "@/ui/components/subscription/TrainerSubscriptionCard";
 import { TRAINER_TIER_NAMES } from "@/domain/services/subscriptionService";
 import { getFeaturesList } from "@/ui/presenters/SubscriptionSelectionPresenter";
@@ -469,6 +470,11 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
               Some plans aren&apos;t available for in-app purchase yet.
             </Text>
           )}
+
+        {/* Apple §3.1.2: auto-renew disclosure + functional Terms of Use
+            (EULA) and Privacy Policy links must be present in the binary at
+            the point of purchase, not only in App Store Connect metadata. */}
+        <SubscriptionLegalFooter />
       </ScrollView>
     </SafeAreaView>
   );

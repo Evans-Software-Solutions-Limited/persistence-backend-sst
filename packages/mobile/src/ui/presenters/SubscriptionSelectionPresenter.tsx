@@ -25,6 +25,7 @@ import { PaymentMethodForm } from "@/ui/components/subscription/PaymentMethodFor
 import { PLogoDrawLoader } from "@/ui/components/PLogoDrawLoader";
 import { TRAINER_TIER_NAMES } from "@/domain/services/subscriptionService";
 import { SubscriptionCard } from "@/ui/components/subscription/SubscriptionCard";
+import { SubscriptionLegalFooter } from "@/ui/components/subscription/SubscriptionLegalFooter";
 import { TrainerSubscriptionCard } from "@/ui/components/subscription/TrainerSubscriptionCard";
 import { color } from "@/ui/theme/tokens";
 
@@ -508,6 +509,10 @@ export function SubscriptionSelectionPresenter(
               payments={payments}
             />
           )}
+
+          {/* Apple §3.1.2 parity with the IAP rail — same disclosure block, so
+              the two purchase surfaces can't drift out of compliance. */}
+          <SubscriptionLegalFooter rail="card" />
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
