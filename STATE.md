@@ -216,6 +216,9 @@ T-1.9 — no doc still describes these as open.
 
 ### Ops / launch
 
+- **⚠ Triage the ~7 open Dependabot alerts (3 CRITICAL).** Needs Brad's browser
+  session or a `gh` re-auth with `security_events` — the CLI cannot enumerate them
+  (see § Dependabot above). Before the App Store submission; the repo is PUBLIC.
 - **Verify Haiku 4.5 in the PRODUCTION Bedrock account before the Loadout launch
   build.** STATE.md records it as granted in both accounts (Brad granted it
   2026-07-26 and prod verified OK then), and Phase 1 could NOT re-verify — both
@@ -253,22 +256,36 @@ T-1.9 — no doc still describes these as open.
   marketing-site Premium+ copy, allergen vocabulary + disclaimer sign-off, P3
   timing.
 
-### Dependabot — one alert, dismissed as not-exploitable (2026-07-27)
+### Dependabot — ⚠ ~7 alerts OPEN incl. 3 CRITICAL, and the CLI cannot see them
 
-⚠ **The push banner's "8 vulnerabilities (3 critical, 5 high)" is WRONG — or at
-least does not match the APIs.** Both the REST alerts endpoint and the GraphQL
-`vulnerabilityAlerts` query returned exactly **one** alert of any state. Don't
-treat that banner as a count; query the API.
+**⚠ DO NOT trust `gh api .../dependabot/alerts` in this repo — it silently returns
+an INCOMPLETE list.** The push banner (server-side, full visibility) reported
+**8 vulnerabilities: 3 critical, 5 high**, while both the REST alerts endpoint and
+the GraphQL `vulnerabilityAlerts` query returned exactly **one** alert of any
+state, and an explicit `?severity=critical` filter returned **zero**.
 
-The one alert was **`react-router` 7.13.0 in `packages/web`** (high — "RSC Mode
-CSRF Bypass"), patched only in **8.3.0, a major bump**. **Dismissed as
-`not_used`** on Brad's call: the advisory needs React Router's RSC mode with
-server actions, and `packages/web` imports react-router purely for client-side
-routing (`BrowserRouter` / `Routes` / `Route` / `Link` / `useLocation` — no
+**Cause: the `gh` token lacks the `security_events` scope**
+(`X-Oauth-Scopes: admin:org, admin:public_key, gist, repo, workflow`), which is
+what GitHub requires for Dependabot alert visibility. The banner is the reliable
+number — proven live, not cached: dismissing the one visible HIGH moved it from
+"3 critical, 5 high" to **"3 critical, 4 high"** on the very next push.
+
+**So ~7 alerts remain open, 3 of them CRITICAL, and their identity is UNKNOWN
+from the CLI.** Brad must open
+`https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/security/dependabot`
+— or re-auth `gh` with `security_events` — before any agent can triage them.
+**Worth doing before the App Store submission**, and note the repo is PUBLIC.
+
+The one alert that WAS visible: **`react-router` 7.13.0 in `packages/web`** (high
+— "RSC Mode CSRF Bypass"), patched only in **8.3.0, a major bump**. **Dismissed as
+`not_used`** on Brad's call, and that analysis is independent of the count
+problem: the advisory needs React Router's RSC mode with server actions, and
+`packages/web` imports react-router purely for client-side routing
+(`BrowserRouter` / `Routes` / `Route` / `Link` / `useLocation` — no
 `react-router/rsc`, `routeRSCServerRequest` or `createCallServer` anywhere) and
 ships as an SST `StaticSite`, so there is no server to execute an action on. The
 vulnerable path is unreachable. **Revisit if `packages/web` ever adopts RSC mode
-or a server runtime.** Open alerts are now 0.
+or a server runtime.**
 
 ### Closed by Brad 2026-07-27 — do not re-raise
 
