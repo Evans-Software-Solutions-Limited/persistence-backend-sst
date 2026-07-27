@@ -1,0 +1,405 @@
+import Elysia, { t } from "elysia";
+import { WorkoutService } from "../../repositories/workoutService";
+import { ExerciseService } from "../../repositories/exerciseService";
+import { SavedGymService } from "../../repositories/savedGymService";
+import { AiUsageLogService } from "../../repositories/aiUsageLogService";
+import {
+  getAuthUser,
+  requireAuth,
+  getUser,
+} from "@persistence/api-utils/auth/supabaseAuth";
+import {
+  assertEntitlement,
+  EntitlementError,
+} from "../../entitlement/assertEntitlement";
+import {
+  AiUnavailableError,
+  AiUnreadableError,
+} from "../../nutrition/services/aiBedrockClient";
+import {
+  assembleAdaptedPlan,
+  partitionPlan,
+  shortlistPerRow,
+  unionShortlist,
+} from "../engine/adaptWorkout";
+import { LOADABLE_EQUIPMENT_NAMES } from "../engine/intensityMismatch";
+import { selectSubstitutes } from "../engine/remapModel";
+import type { RemapSelection } from "../engine/remapModel";
+import type { AdaptedPlan } from "../engine/types";
+
+const ENDPOINT = "/workouts/:id/loadout/preview";
+
+/**
+ * Daily per-user ceiling on model-backed re-maps (AC-10.2, T-1.9).
+ *
+ * ⚠⚠ **THE NUMBER BELOW IS A PLACEHOLDER, NOT A DECISION.** AC-10.2 deliberately
+ * proposes no value and it is an OPEN Brad checkpoint. The mechanism is what this
+ * phase ships; the value needs a deliberate call because the failure mode is bad
+ * in a specific way — hitting a cap mid-gym, mid-session, with a paid feature.
+ *
+ * The economics, so the call can be made on numbers: E2 measured **$0.0057 per
+ * adaptation**. Three a day is ~$0.51/user/month against £29.99; even 20/day fully
+ * consumed is ~$3.43/month. This is abuse control, not unit economics — which
+ * argues for a generous number. 30 matches the precedent for the other
+ * Haiku-class endpoint (`AI_TEXT_DAILY_LIMIT`) and is set here so the guard is
+ * never absent, not because 30 was chosen.
+ *
+ * Fail-safe parse: a mis-set env var must not silently disable the guard, so
+ * anything non-finite or non-positive falls back to the default (#156 pattern).
+ */
+const parsedRemapLimit = Number(process.env.AI_LOADOUT_REMAP_DAILY_LIMIT);
+const AI_LOADOUT_REMAP_DAILY_LIMIT =
+  Number.isFinite(parsedRemapLimit) && parsedRemapLimit > 0
+    ? parsedRemapLimit
+    : 30;
+
+/**
+ * POST /workouts/:id/loadout/preview — adapt a workout to the equipment the
+ * caller has today, and PERSIST NOTHING (spec-21 § 7, AC-3.5).
+ *
+ * The engine is the hybrid D7 selected by measurement (design § 6.0): a
+ * deterministic § 6.2 shortlist (top 25/row) narrows the pool, a model chooses
+ * from that shortlist and writes the per-row reason, and every deterministic
+ * guard is re-applied afterwards. `engine/adaptWorkout.ts` documents the stages;
+ * this handler owns auth, the entitlement, the ceiling, the usage log and the
+ * status codes.
+ *
+ * ## Guard order (deliberate)
+ *
+ *   1. input validation (exactly one equipment source) → 400
+ *   2. parent readable                                 → 404
+ *   3. parent is not itself a variation                → 400
+ *   4. `loadout` entitlement                           → 402
+ *   5. equipment context resolves (gym ownership, known ids, non-empty) → 400
+ *   6. partition the plan
+ *   7. **daily ceiling, only if a model call is actually needed** → 429
+ *   8. candidate assembly → shortlist → model → verify
+ *
+ * Parent-read before entitlement so a caller poking at a workout they cannot see
+ * gets 404 and learns nothing — a 402 would confirm the workout exists. Matches
+ * `POST /workouts/:id/variations` exactly.
+ *
+ * ⚠ **The ceiling sits AFTER the partition, and that ordering is the point.** A
+ * plan whose kit covers every row needs no model call, costs nothing, and writes
+ * no usage row — E2's `full_gym` context produced zero swaps across all 20 of its
+ * fixtures, so this is the common case in a well-equipped gym, not an edge one.
+ * Charging it against a daily cap would deny a free operation and make the cap
+ * bite for no reason.
+ *
+ * ## No deterministic fallback when Bedrock is down
+ *
+ * A model failure is a 503, not a silent downgrade to the § 6.2 ranker. Shipping
+ * ranker output under a Premium+ badge is precisely what the bake-off rejected: it
+ * lost 4-50 on blind preference and produced equipment-legal but unshippable
+ * swaps (Barbell Deadlift → Atlas Stones in a bands-only context). A visible
+ * outage is a better product than a quietly worse plan. Raised for Brad in the PR
+ * body rather than treated as settled.
+ */
+export const workoutLoadoutPreviewHandler = new Elysia()
+  .derive(async ({ headers }) => ({
+    user: await getAuthUser(headers.authorization),
+  }))
+  .onBeforeHandle(requireAuth)
+  .use(WorkoutService)
+  .use(ExerciseService)
+  .use(SavedGymService)
+  .use(AiUsageLogService)
+  .post(
+    "/workouts/:id/loadout/preview",
+    async (ctx) => {
+      const { sub: userId } = getUser(ctx);
+      const workoutId = ctx.params.id;
+      const { savedGymId, equipmentTypeIds } = ctx.body;
+
+      const startedAt = Date.now();
+      const requestSizeBytes = Buffer.byteLength(JSON.stringify(ctx.body));
+      let responseSizeBytes: number | null = null;
+      // Usage rows record ACTUAL inferences (success, 422, 503) — never
+      // pre-model rejections (400/402/404/429), which cost nothing and must not
+      // consume the ceiling.
+      let reachedModel = false;
+
+      try {
+        // 1. Exactly one equipment source. Accepting both would mean silently
+        //    preferring one, and the two collect paths (AC-2.1 saved gym vs
+        //    AC-2.2/AC-2.3 manual or scanned ids) never produce both.
+        const hasGym = savedGymId != null;
+        const hasIds = equipmentTypeIds != null;
+        if (hasGym === hasIds) {
+          ctx.set.status = 400;
+          return {
+            code: "EQUIPMENT_CONTEXT_REQUIRED",
+            message: "Provide exactly one of savedGymId or equipmentTypeIds",
+          };
+        }
+
+        // 2. Parent readable — own, public, friends, or assigned (AC-1.2). Not
+        //    owner-only: Loadout applies to a coach-assigned workout too.
+        const parent = await ctx.WorkoutRepository.findReadableWorkout(
+          workoutId,
+          userId,
+        );
+        if (!parent) {
+          ctx.set.status = 404;
+          return { code: "not_found", message: "Workout not found" };
+        }
+
+        // 3. Adapting a variation would produce a variation-of-a-variation on
+        //    save, which `POST /workouts/:id/variations` refuses and which no
+        //    listing surface can reach. Refuse here too rather than letting the
+        //    user build a plan they cannot keep.
+        if (parent.parentWorkoutId != null) {
+          ctx.set.status = 400;
+          return {
+            code: "PARENT_IS_A_VARIATION",
+            message: "Adapt the original workout, not one of its saved setups",
+            rootWorkoutId: parent.parentWorkoutId,
+          };
+        }
+
+        // 4. Entitlement before any further validation or work, so an unentitled
+        //    caller gets neither the feature nor free validation of their payload.
+        const verdict = await assertEntitlement(userId, "loadout");
+        if (!verdict.allowed) {
+          throw new EntitlementError(verdict, "loadout");
+        }
+
+        // 5. Resolve the equipment context.
+        let context: string[];
+        if (hasGym) {
+          const gym = await ctx.SavedGymRepository.getById(
+            savedGymId as string,
+            userId,
+          );
+          if (!gym) {
+            // 400, not 404: the workout exists and is readable — it is the
+            // supplied gym id that is unusable. Ownership is checked (not just
+            // existence) because another user's gym would otherwise leak its kit
+            // into this caller's adaptation.
+            ctx.set.status = 400;
+            return {
+              code: "UNKNOWN_SAVED_GYM",
+              message: "Saved gym not found",
+            };
+          }
+          context = gym.equipmentTypeIds;
+        } else {
+          const ids = equipmentTypeIds as string[];
+          const unknown =
+            await ctx.SavedGymRepository.findUnknownEquipmentTypeIds(ids);
+          if (unknown.length > 0) {
+            ctx.set.status = 400;
+            return {
+              code: "UNKNOWN_EQUIPMENT_TYPE",
+              message: "One or more equipment types do not exist",
+              unknownEquipmentTypeIds: unknown,
+            };
+          }
+          context = Array.from(new Set(ids));
+        }
+
+        if (context.length === 0) {
+          // An empty context is rejected rather than treated as "bodyweight
+          // only": every exercise needing equipment would be swapped or
+          // unresolved, which is a plan nobody asked for. A saved gym saved with
+          // no kit lands here too, which is the right answer for it.
+          ctx.set.status = 400;
+          return {
+            code: "EMPTY_EQUIPMENT_CONTEXT",
+            message: "The equipment context is empty",
+          };
+        }
+
+        // 6. Partition. `listAdaptationRows` carries the ranking fields the wire
+        //    shape does not.
+        const parentRows =
+          await ctx.WorkoutRepository.listAdaptationRows(workoutId);
+        const plan = partitionPlan(parentRows, context);
+        const needsSwap = plan.filter((row) => row.needsSwap);
+
+        const respond = (adapted: AdaptedPlan) => {
+          const body = {
+            data: {
+              workoutId,
+              parentName: parent.name,
+              savedGymId: savedGymId ?? null,
+              equipmentTypeIds: context,
+              rows: adapted.rows,
+              meta: adapted.meta,
+            },
+          };
+          responseSizeBytes = Buffer.byteLength(JSON.stringify(body));
+          return body;
+        };
+
+        const emptySelections = new Map<number, RemapSelection>();
+
+        // Nothing to swap → no model call, no usage row, no ceiling consumed.
+        if (needsSwap.length === 0) {
+          return respond(
+            assembleAdaptedPlan({
+              plan,
+              shortlistByRow: new Map(),
+              selections: emptySelections,
+              rankContext: { loggedExerciseIds: new Set() },
+              equipmentTypeIds: context,
+              loadableEquipmentTypeIds: new Set(),
+              candidateCount: 0,
+              candidatePoolTruncated: false,
+              modelId: null,
+            }),
+          );
+        }
+
+        // 7. Daily ceiling. Best-effort under concurrency (counted rows are
+        //    committed post-inference), which is fine for a cost backstop.
+        const usedToday = await ctx.AiUsageLogRepository.countForUserToday(
+          userId,
+          ENDPOINT,
+        );
+        if (usedToday >= AI_LOADOUT_REMAP_DAILY_LIMIT) {
+          ctx.set.status = 429;
+          return { error: "ai_daily_limit" };
+        }
+
+        // 8. Stage 1 — one candidate query for the whole adaptation (§ 6.3).
+        const muscleIds = Array.from(
+          new Set(needsSwap.flatMap((row) => row.source.primaryMuscles)),
+        );
+        const { candidates, truncated } =
+          await ctx.ExerciseRepository.listAdaptationCandidates(userId, {
+            muscleIds,
+            equipmentTypeIds: context,
+            // Never offer an exercise the plan already contains.
+            excludeExerciseIds: plan.map((row) => row.source.id),
+          });
+
+        if (truncated) {
+          // Never silent (§ 6.3). Real behaviour at the catalogue's size — 28 of
+          // E2's 80 pools hit the cap — and the shortlist makes it far less
+          // consequential, but a pool that silently loses its tail is exactly the
+          // kind of thing that gets diagnosed as "the model got worse".
+          console.warn(
+            `[loadout] candidate pool truncated at the cap for workout ${workoutId} (${muscleIds.length} muscles, ${context.length} equipment types)`,
+          );
+        }
+
+        // The +8 "logged before" signal, intersected with the candidates rather
+        // than fetched as the caller's whole history. Sequential rather than
+        // concurrent with the query above (which § 6.3 notes it could be),
+        // because the intersection needs the candidate ids and a bounded scan is
+        // worth more than one saved round trip inside a request that already
+        // makes a ~2.6 s model call.
+        const [loggedIds, loadableIds] = await Promise.all([
+          ctx.ExerciseRepository.listPreviouslyLoggedExerciseIds(
+            userId,
+            candidates.map((candidate) => candidate.id),
+          ),
+          ctx.ExerciseRepository.findEquipmentTypeIdsByName([
+            ...LOADABLE_EQUIPMENT_NAMES,
+          ]),
+        ]);
+
+        if (loadableIds.length === 0) {
+          // A check that cannot fire is worse than no check, because it reads as
+          // a pass. Only reachable if the catalogue renamed or dropped every
+          // loadable row (design § 7.1b's name list).
+          console.warn(
+            "[loadout] no loadable equipment types resolved — intensity-mismatch detection (AC-3.5b) is inert",
+          );
+        }
+
+        const rankContext = { loggedExerciseIds: new Set(loggedIds) };
+        const shortlistByRow = shortlistPerRow(plan, candidates, rankContext);
+        const offered = unionShortlist(shortlistByRow);
+
+        let selections = emptySelections as ReadonlyMap<number, RemapSelection>;
+        let modelId: string | null = null;
+
+        // Every row needing a swap came up empty in the ranker — there is nothing
+        // to offer the model, so calling it would spend money to be told so.
+        if (offered.length > 0) {
+          reachedModel = true;
+          const result = await selectSubstitutes({
+            workoutName: parent.name,
+            plan,
+            candidates: offered,
+            equipmentTypeIds: context,
+            lookups: {
+              muscleNames: new Map(
+                (await ctx.ExerciseRepository.getMuscleGroups()).map((m) => [
+                  m.id,
+                  m.displayName ?? m.name,
+                ]),
+              ),
+              equipmentNames: new Map(
+                (await ctx.ExerciseRepository.getEquipmentTypes()).map((e) => [
+                  e.id,
+                  e.name,
+                ]),
+              ),
+            },
+          });
+          selections = result.selections;
+          modelId = result.usage.modelId;
+        }
+
+        return respond(
+          assembleAdaptedPlan({
+            plan,
+            shortlistByRow,
+            selections,
+            rankContext,
+            equipmentTypeIds: context,
+            loadableEquipmentTypeIds: new Set(loadableIds),
+            candidateCount: candidates.length,
+            candidatePoolTruncated: truncated,
+            modelId,
+          }),
+        );
+      } catch (error) {
+        // A non-member exercise id, a refusal or a malformed tool payload — all
+        // parse failures (§ 1 rule 1), never a fabricated row.
+        if (error instanceof AiUnreadableError) {
+          ctx.set.status = 422;
+          const body = { error: "ai_unreadable" };
+          responseSizeBytes = Buffer.byteLength(JSON.stringify(body));
+          return body;
+        }
+        if (error instanceof AiUnavailableError) {
+          ctx.set.status = 503;
+          const body = { error: "ai_unavailable" };
+          responseSizeBytes = Buffer.byteLength(JSON.stringify(body));
+          return body;
+        }
+        throw error;
+      } finally {
+        try {
+          if (reachedModel) {
+            await ctx.AiUsageLogRepository.record({
+              userId,
+              endpoint: ENDPOINT,
+              requestSizeBytes,
+              responseSizeBytes,
+              ms: Date.now() - startedAt,
+            });
+          }
+        } catch (logError) {
+          console.error(
+            `[ai-usage-log] failed to record ${ENDPOINT}: ${
+              logError instanceof Error ? logError.message : String(logError)
+            }`,
+          );
+        }
+      }
+    },
+    {
+      params: t.Object({ id: t.String({ format: "uuid" }) }),
+      body: t.Object({
+        savedGymId: t.Optional(
+          t.Union([t.String({ format: "uuid" }), t.Null()]),
+        ),
+        equipmentTypeIds: t.Optional(t.Array(t.String({ format: "uuid" }))),
+      }),
+    },
+  );

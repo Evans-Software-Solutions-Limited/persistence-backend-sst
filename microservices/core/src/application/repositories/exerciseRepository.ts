@@ -21,6 +21,8 @@ import {
   workoutAssignments,
   programWorkouts,
   programAssignments,
+  sessionExercises,
+  workoutSessions,
 } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
 import { LIVE_ASSIGNMENT_STATUSES } from "./programRepository";
@@ -106,6 +108,66 @@ export type EquipmentTypeRow = {
 };
 
 /**
+ * The exercise fields the Loadout ranker (spec-21 § 6.2) and the model prompt
+ * both need. A narrower projection than `Exercise` on purpose: a candidate pool
+ * is up to 400 rows and the ranking signals are all this shape carries, plus the
+ * two display fields the review step renders.
+ *
+ * Array columns are normalised to `[]` — they are nullable on rows that predate
+ * the `.default([])`, and a null would make every ranking signal on that row
+ * behave as a silent zero rather than an empty set.
+ */
+export interface AdaptationCandidate {
+  id: string;
+  name: string;
+  category: string | null;
+  difficultyLevel: string | null;
+  movementType: string | null;
+  primaryMuscles: string[];
+  secondaryMuscles: string[];
+  equipmentRequired: string[];
+  thumbnailUrl: string | null;
+}
+
+/**
+ * `LIMIT 400` per adaptation (spec-21 § 6.3). Truncation is reported to the
+ * caller and logged — E2 hit this cap on 28 of 80 fixture pools, so it is
+ * ordinary behaviour at the catalogue's real size.
+ */
+export const ADAPTATION_CANDIDATE_CAP = 400;
+
+const ADAPTATION_CANDIDATE_PROJECTION = {
+  id: exercises.id,
+  name: exercises.name,
+  category: exercises.category,
+  difficultyLevel: exercises.difficultyLevel,
+  movementType: exercises.movementType,
+  primaryMuscles: exercises.primaryMuscles,
+  secondaryMuscles: exercises.secondaryMuscles,
+  equipmentRequired: exercises.equipmentRequired,
+  thumbnailUrl: exercises.thumbnailUrl,
+};
+
+function toAdaptationCandidate(row: {
+  id: string;
+  name: string;
+  category: string | null;
+  difficultyLevel: string | null;
+  movementType: string | null;
+  primaryMuscles: string[] | null;
+  secondaryMuscles: string[] | null;
+  equipmentRequired: string[] | null;
+  thumbnailUrl: string | null;
+}): AdaptationCandidate {
+  return {
+    ...row,
+    primaryMuscles: row.primaryMuscles ?? [],
+    secondaryMuscles: row.secondaryMuscles ?? [],
+    equipmentRequired: row.equipmentRequired ?? [],
+  };
+}
+
+/**
  * Filter shape for `list()`. Arrays OR-match within an axis; different axes
  * AND together.
  *
@@ -131,6 +193,25 @@ export interface ListExercisesFilters {
   targetedMusclesAny?: string[];
   /** Multi-value equipment UUIDs — OR-matched within axis. */
   equipmentAny?: string[];
+  /**
+   * Loadout containment (spec-21 § 6.1, T-1.1): "everything this exercise
+   * needs, I have". Renders `<available>::uuid[] @> COALESCE(equipment_required,
+   * '{}')`.
+   *
+   * ⚠ This is NOT `equipmentAny`. That axis is array OVERLAP (`&&`) — "needs at
+   * least one thing I have" — which would hand a barbell back squat to someone
+   * holding a single dumbbell. An adaptation needs the asymmetric direction, so
+   * the two axes coexist rather than one being widened.
+   *
+   * ⚠ `COALESCE` is load-bearing: `equipment_required` is nullable on rows that
+   * predate the `.default([])`, and `@>` against NULL yields NULL — which would
+   * silently drop every legacy row from every adaptation. Same class of bug this
+   * repository already documents for `||` on `targetedMusclesAny`.
+   *
+   * Note `x @> '{}'` is always true, so bodyweight rows pass every context.
+   * That is correct behaviour (design § 6.1).
+   */
+  equipmentSubsetOf?: string[];
   /** Category enum values — OR-matched within axis. */
   category?: string[];
   /** Difficulty enum values — OR-matched within axis. */
@@ -410,6 +491,18 @@ export class ExerciseRepository {
       );
     }
 
+    // Loadout containment (spec-21 § 6.1). See the field's docstring for why
+    // this is a separate axis from `equipmentAny` and why COALESCE is required.
+    // An EMPTY array is a meaningful context ("I have nothing"), not "no
+    // filter" — but the preview handler rejects an empty context with 400
+    // before reaching here, so the length guard only affects callers that
+    // omitted the axis entirely.
+    if (filters.equipmentSubsetOf && filters.equipmentSubsetOf.length > 0) {
+      conditions.push(
+        sql`${filters.equipmentSubsetOf}::uuid[] @> COALESCE(${exercises.equipmentRequired}, '{}'::uuid[])`,
+      );
+    }
+
     return conditions;
   }
 
@@ -665,6 +758,184 @@ export class ExerciseRepository {
 
     const readable = new Set(rows.map((r) => r.id));
     return unique.filter((id) => !readable.has(id));
+  }
+
+  /**
+   * Stage 1 of the adaptation pipeline (spec-21 § 6.3, T-1.3) — ONE query per
+   * adaptation, never one per exercise.
+   *
+   * Returns every exercise that is (a) performable with `equipmentTypeIds`
+   * (containment, not overlap), (b) a primary mover for at least one muscle in
+   * `muscleIds` (the union across every row needing a swap), and (c) readable by
+   * the caller (`buildVisibilityCondition` — AC-3.6, so an adaptation can never
+   * surface another coach's private exercise).
+   *
+   * Deliberately not `list()`: this path needs an explicit projection (the
+   * ranking fields, which `Exercise` carries but the wire shape does not),
+   * `name ASC` ordering so the cap truncates DETERMINISTICALLY rather than by
+   * insertion date, and truncation visibility. `LIMIT cap + 1` detects the
+   * overflow in the same round trip instead of paying for a `count(*)`.
+   *
+   * Truncation is REPORTED, never silent (§ 6.3). The caller logs it — 28 of
+   * E2's 80 fixture pools hit the cap, so this is ordinary behaviour at the
+   * catalogue's real size, not a fixture artefact.
+   */
+  async listAdaptationCandidates(
+    userId: string,
+    params: {
+      muscleIds: string[];
+      equipmentTypeIds: string[];
+      excludeExerciseIds?: string[];
+      cap?: number;
+    },
+  ): Promise<{ candidates: AdaptationCandidate[]; truncated: boolean }> {
+    if (params.muscleIds.length === 0) {
+      return { candidates: [], truncated: false };
+    }
+
+    const db = getDb();
+    const cap = params.cap ?? ADAPTATION_CANDIDATE_CAP;
+
+    const conditions = this.buildNonSearchFilterConditions(
+      {
+        targetedMusclesAny: params.muscleIds,
+        equipmentSubsetOf: params.equipmentTypeIds,
+      },
+      userId,
+    );
+
+    const exclude = Array.from(new Set(params.excludeExerciseIds ?? []));
+    if (exclude.length > 0) {
+      conditions.push(sql`${exercises.id} <> ALL(${exclude}::uuid[])`);
+    }
+
+    const rows = await db
+      .select(ADAPTATION_CANDIDATE_PROJECTION)
+      .from(exercises)
+      .where(and(...conditions))
+      .orderBy(sql`${exercises.name} ASC`)
+      .limit(cap + 1);
+
+    return {
+      candidates: rows.slice(0, cap).map(toAdaptationCandidate),
+      truncated: rows.length > cap,
+    };
+  }
+
+  /**
+   * The ranking fields for a specific set of exercise ids, in `name ASC` order.
+   *
+   * Used by `GET /exercises/substitutes` for the "others" list (the same muscle
+   * filter WITHOUT containment, rendered dimmed — design § 6.4) and by the
+   * preview's own source rows. Applies the visibility predicate: this feeds a
+   * picker, so AC-3.6 binds exactly as it does for the candidate query.
+   */
+  async listRankableExercises(
+    userId: string,
+    params: {
+      muscleIds: string[];
+      excludeExerciseIds?: string[];
+      cap?: number;
+    },
+  ): Promise<{ candidates: AdaptationCandidate[]; truncated: boolean }> {
+    return this.listAdaptationCandidates(userId, {
+      muscleIds: params.muscleIds,
+      // Omitting the containment axis entirely — an empty array would be
+      // dropped by the length guard anyway, but passing none states the intent.
+      equipmentTypeIds: [],
+      excludeExerciseIds: params.excludeExerciseIds,
+      cap: params.cap,
+    });
+  }
+
+  /**
+   * `equipment_required` for each of `ids`, keyed by exercise id. A missing row
+   * (deleted between preview and save) is simply absent from the map — the
+   * caller decides whether that is an error.
+   *
+   * NO visibility predicate, deliberately: the one caller
+   * (`POST /workouts/:id/variations`, T-1.6) has already run
+   * `findUnreadableExerciseIds` over the same ids, and that is the security
+   * control. Re-applying the predicate here would silently turn a caller's
+   * parent-carried row — exempt from the catalogue predicate by design — into a
+   * containment failure instead of a pass.
+   */
+  async findEquipmentRequirements(
+    ids: string[],
+  ): Promise<Map<string, string[]>> {
+    const unique = Array.from(new Set(ids));
+    if (unique.length === 0) return new Map();
+
+    const db = getDb();
+    const rows = await db
+      .select({
+        id: exercises.id,
+        equipmentRequired: exercises.equipmentRequired,
+      })
+      .from(exercises)
+      .where(inArray(exercises.id, unique));
+
+    return new Map(rows.map((r) => [r.id, r.equipmentRequired ?? []]));
+  }
+
+  /**
+   * Which of `candidateIds` has the caller actually trained before? Backs the
+   * §6.2 ranker's +8 "logged before" signal, which has no other data source.
+   *
+   * Intersected with the candidate ids rather than fetching the caller's whole
+   * training history: the ranker only ever asks about candidates, and an
+   * unbounded `DISTINCT exercise_id` over every session a long-standing user has
+   * logged is a much larger scan for the same answer.
+   *
+   * Scoped by `workout_sessions.user_id` — a session logged by a coach ON BEHALF
+   * of the caller still counts, because the caller performed it.
+   */
+  async listPreviouslyLoggedExerciseIds(
+    userId: string,
+    candidateIds: string[],
+  ): Promise<string[]> {
+    const unique = Array.from(new Set(candidateIds));
+    if (unique.length === 0) return [];
+
+    const db = getDb();
+    const rows = await db
+      .selectDistinct({ exerciseId: sessionExercises.exerciseId })
+      .from(sessionExercises)
+      .innerJoin(
+        workoutSessions,
+        eq(workoutSessions.id, sessionExercises.sessionId),
+      )
+      .where(
+        and(
+          eq(workoutSessions.userId, userId),
+          inArray(sessionExercises.exerciseId, unique),
+        ),
+      );
+
+    return rows.map((r) => r.exerciseId);
+  }
+
+  /**
+   * Resolve equipment-type NAMES to ids. Backs the intensity-mismatch check
+   * (spec-21 § 7.1b, T-1.11), whose "loadable" set is defined by name because it
+   * cuts ACROSS `equipment_types.category` — `free_weights` holds Kettlebell,
+   * Medicine Ball, Bench and Squat Rack, none of which can load a 4-6 rep
+   * strength row.
+   *
+   * Explicit `id`-only projection: `equipment_types.description` is in
+   * `schema.ts` but not in the live database, so a bare `select()` 500s.
+   */
+  async findEquipmentTypeIdsByName(names: string[]): Promise<string[]> {
+    const unique = Array.from(new Set(names));
+    if (unique.length === 0) return [];
+
+    const db = getDb();
+    const rows = await db
+      .select({ id: equipmentTypes.id })
+      .from(equipmentTypes)
+      .where(inArray(equipmentTypes.name, unique));
+
+    return rows.map((r) => r.id);
   }
 
   async getCategories(): Promise<string[]> {

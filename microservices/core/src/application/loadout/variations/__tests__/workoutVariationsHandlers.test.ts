@@ -16,6 +16,7 @@ const workoutRepositoryMocks = {
 
 const exerciseRepositoryMocks = {
   findUnreadableExerciseIds: vi.fn(),
+  findEquipmentRequirements: vi.fn(),
 };
 
 const savedGymRepositoryMocks = {
@@ -272,6 +273,11 @@ describe("POST /workouts/:id/variations", () => {
     // submitted id must pass the catalogue predicate on its own merits.
     workoutRepositoryMocks.listExerciseIdsForWorkout.mockResolvedValue([]);
     exerciseRepositoryMocks.findUnreadableExerciseIds.mockResolvedValue([]);
+    // Default: every submitted row needs exactly the kit the plan claims, so
+    // containment passes and the existing assertions are unaffected.
+    exerciseRepositoryMocks.findEquipmentRequirements.mockResolvedValue(
+      new Map([[EX_1, [EQ_1]]]),
+    );
     savedGymRepositoryMocks.findUnknownEquipmentTypeIds.mockResolvedValue([]);
     savedGymRepositoryMocks.getById.mockResolvedValue({
       id: GYM_ID,
@@ -773,5 +779,191 @@ describe("POST /workouts/:id/variations", () => {
 
     const input = workoutRepositoryMocks.createVariation.mock.calls[0][2];
     expect(input.sourceEquipmentTypeIds).toEqual([]);
+  });
+});
+
+// ─── T-1.6 · equipment containment on the save path ───────────────────────────
+//
+// design § 7.1's asymmetry, which is the point rather than an oversight:
+//
+//   read-visibility  → EVERY row, no exemption, no override (security)
+//   containment      → only rows NOT flagged `isUserOverride`  (quality)
+//
+// AC-4.2/AC-4.3 let the athlete deliberately keep an incompatible exercise after
+// an explicit "doesn't fit your kit" acknowledgement, so verifying containment
+// everywhere would reject exactly the case the ACs mandate.
+
+describe("POST /workouts/:id/variations — equipment containment (T-1.6)", () => {
+  const EQ_MISSING = "88888888-8888-4888-8888-888888888888";
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    assertEntitlementMock.mockResolvedValue({ allowed: true });
+    workoutRepositoryMocks.findReadableWorkout.mockResolvedValue(
+      readableRootParent,
+    );
+    workoutRepositoryMocks.listExerciseIdsForWorkout.mockResolvedValue([]);
+    exerciseRepositoryMocks.findUnreadableExerciseIds.mockResolvedValue([]);
+    savedGymRepositoryMocks.findUnknownEquipmentTypeIds.mockResolvedValue([]);
+    savedGymRepositoryMocks.getById.mockResolvedValue({
+      id: GYM_ID,
+      name: "Hotel gym",
+      equipmentTypeIds: [EQ_1],
+    });
+    workoutRepositoryMocks.createVariation.mockResolvedValue({ id: "var-1" });
+  });
+
+  async function post(body: unknown) {
+    const { workoutVariationsCreateHandler } =
+      await import("../workoutVariationsCreateHandler");
+    return workoutVariationsCreateHandler.handle(
+      req(`/workouts/${PARENT_ID}/variations`, { method: "POST", body }),
+    );
+  }
+
+  it("400s a non-override row needing kit the setup does not have", async () => {
+    exerciseRepositoryMocks.findEquipmentRequirements.mockResolvedValue(
+      new Map([[EX_1, [EQ_MISSING]]]),
+    );
+
+    const res = await post(validPlan);
+    const body = (await res.json()) as any;
+
+    expect(res.status).toBe(400);
+    expect(body.code).toBe("EQUIPMENT_NOT_AVAILABLE");
+    expect(body.incompatibleExerciseIds).toEqual([EX_1]);
+    expect(workoutRepositoryMocks.createVariation).not.toHaveBeenCalled();
+  });
+
+  it("ACCEPTS the same row when the user flagged it as a deliberate override", async () => {
+    // AC-4.3. Without this the review step's "keep it anyway" affordance is
+    // unusable.
+    exerciseRepositoryMocks.findEquipmentRequirements.mockResolvedValue(
+      new Map([[EX_1, [EQ_MISSING]]]),
+    );
+
+    const res = await post({
+      ...validPlan,
+      exercises: [{ ...validPlan.exercises[0], isUserOverride: true }],
+    });
+
+    expect(res.status).toBe(201);
+    expect(workoutRepositoryMocks.createVariation).toHaveBeenCalled();
+  });
+
+  it("only looks up the rows it intends to check", async () => {
+    exerciseRepositoryMocks.findEquipmentRequirements.mockResolvedValue(
+      new Map(),
+    );
+
+    await post({
+      ...validPlan,
+      exercises: [
+        { ...validPlan.exercises[0], exerciseId: EX_1 },
+        {
+          ...validPlan.exercises[0],
+          exerciseId: EX_ORIGINAL,
+          sortOrder: 1,
+          isUserOverride: true,
+        },
+      ],
+    });
+
+    expect(
+      exerciseRepositoryMocks.findEquipmentRequirements,
+    ).toHaveBeenCalledWith([EX_1]);
+  });
+
+  it("checks against the frozen snapshot in preference to the gym's kit", async () => {
+    // The snapshot is what AC-5.2 freezes and what Phase 2 renders, so it is the
+    // more specific claim about what this variation was built for.
+    savedGymRepositoryMocks.getById.mockResolvedValue({
+      id: GYM_ID,
+      name: "Hotel gym",
+      equipmentTypeIds: [EQ_MISSING],
+    });
+    exerciseRepositoryMocks.findEquipmentRequirements.mockResolvedValue(
+      new Map([[EX_1, [EQ_MISSING]]]),
+    );
+
+    // Snapshot says [EQ_1], which does NOT contain EQ_MISSING → rejected, even
+    // though the gym's kit would have allowed it.
+    const res = await post({ ...validPlan, sourceEquipmentTypeIds: [EQ_1] });
+
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as any).code).toBe("EQUIPMENT_NOT_AVAILABLE");
+  });
+
+  it("falls back to the gym's kit when no snapshot was sent", async () => {
+    savedGymRepositoryMocks.getById.mockResolvedValue({
+      id: GYM_ID,
+      name: "Hotel gym",
+      equipmentTypeIds: [EQ_1],
+    });
+    exerciseRepositoryMocks.findEquipmentRequirements.mockResolvedValue(
+      new Map([[EX_1, [EQ_MISSING]]]),
+    );
+
+    const body: Record<string, unknown> = { ...validPlan };
+    delete body.sourceEquipmentTypeIds;
+
+    const res = await post(body);
+
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as any).code).toBe("EQUIPMENT_NOT_AVAILABLE");
+  });
+
+  it("skips containment entirely when there is no context to check against", async () => {
+    // No gym and no snapshot: nothing to compare with, so the check is skipped
+    // rather than failing every row that needs any equipment.
+    exerciseRepositoryMocks.findEquipmentRequirements.mockResolvedValue(
+      new Map([[EX_1, [EQ_MISSING]]]),
+    );
+
+    const res = await post({
+      name: validPlan.name,
+      exercises: validPlan.exercises,
+    });
+
+    expect(res.status).toBe(201);
+    expect(
+      exerciseRepositoryMocks.findEquipmentRequirements,
+    ).not.toHaveBeenCalled();
+  });
+
+  it("passes a bodyweight row in every context", async () => {
+    exerciseRepositoryMocks.findEquipmentRequirements.mockResolvedValue(
+      new Map([[EX_1, []]]),
+    );
+
+    expect((await post(validPlan)).status).toBe(201);
+  });
+
+  it("treats a row that lost its exercise as requiring nothing", async () => {
+    // Absent from the map means the exercise vanished between preview and save.
+    // Reporting that as a containment failure would misdescribe the cause; the FK
+    // is the honest error.
+    exerciseRepositoryMocks.findEquipmentRequirements.mockResolvedValue(
+      new Map(),
+    );
+
+    expect((await post(validPlan)).status).toBe(201);
+  });
+
+  it("runs AFTER visibility, so a hidden exercise cannot be laundered by an override", async () => {
+    // The override flag is a client-supplied claim. It may skip the QUALITY
+    // check; it must never skip the SECURITY one.
+    exerciseRepositoryMocks.findUnreadableExerciseIds.mockResolvedValue([EX_1]);
+    exerciseRepositoryMocks.findEquipmentRequirements.mockResolvedValue(
+      new Map([[EX_1, []]]),
+    );
+
+    const res = await post({
+      ...validPlan,
+      exercises: [{ ...validPlan.exercises[0], isUserOverride: true }],
+    });
+
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as any).code).toBe("EXERCISE_NOT_VISIBLE");
   });
 });

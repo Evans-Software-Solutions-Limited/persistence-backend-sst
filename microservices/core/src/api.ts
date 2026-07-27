@@ -8,6 +8,10 @@ import { coreErrorHandler } from "./shared/errorHandler";
 import { exercisesListHandler } from "./application/exercises/list/exercisesListHandler";
 import { exercisesSearchHandler } from "./application/exercises/search/exercisesSearchHandler";
 import { exercisesGetHandler } from "./application/exercises/get/exercisesGetHandler";
+// Loadout (spec-21 Phase 1) — the ranked swap-picker feed. Deliberately NOT in
+// `loadoutRoutes`: it must be registered before `exercisesGetHandler` (see below),
+// and a late-mounting sub-app cannot satisfy that ordering.
+import { exercisesSubstitutesHandler } from "./application/exercises/substitutes/exercisesSubstitutesHandler";
 import { exercisesCreateHandler } from "./application/exercises/create/exercisesCreateHandler";
 import { exercisesUpdateHandler } from "./application/exercises/update/exercisesUpdateHandler";
 import { exercisesDeleteHandler } from "./application/exercises/delete/exercisesDeleteHandler";
@@ -120,8 +124,11 @@ const app = new Elysia()
   .get("/health", () => ({ status: "ok" }))
   .use(exercisesListHandler)
   // Search MUST be registered before exercisesGetHandler — otherwise the
-  // `/exercises/:id` matcher captures "search" as a literal id.
+  // `/exercises/:id` matcher captures "search" as a literal id. The same applies
+  // to `/exercises/substitutes` (spec-21 § 6.4). Regression test:
+  // application/__tests__/exercisesRouteOrdering.test.ts
   .use(exercisesSearchHandler)
+  .use(exercisesSubstitutesHandler)
   .use(exercisesGetHandler)
   .use(exercisesCreateHandler)
   .use(exercisesUpdateHandler)
