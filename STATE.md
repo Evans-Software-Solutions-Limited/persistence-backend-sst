@@ -480,14 +480,33 @@ screens** — nothing is user-visible or device-verified.**
     POINT via a new `shared/utils/text.ts` (twin of the backend's `modelProse` —
     mobile shares no package with core), and `describeLoadoutRow` gained a `default`
     branch because `substitution_reason` is untyped jsonb read back for AC-3.3.
-  - **CI action NOT fired** — local sweep only, per the standing rule.
+  - **Then 1 CLOSED verification pass, which found 5 more (1 🟠 / 4 🟢) — including a
+    real bug in my own fix.** The `loadoutCode` union named
+    `duplicate_name`/`unknown_equipment`, which are `SavedGymCreateResult` **repository
+    statuses** the handlers translate and never serialise; the wire codes are
+    `SAVED_GYM_NAME_TAKEN` / `UNKNOWN_EQUIPMENT_TYPE`, and
+    `UNKNOWN_SUBSTITUTED_FROM_EXERCISE` was missing entirely. **And the test I wrote
+    asserted a hand-invented body the server never sends, so it passed while the
+    contract was wrong** — the same "test that cannot fail" class this file already
+    has a lesson about. Now a `const LOADOUT_ERROR_CODES` array transcribed from the
+    handlers, with the regenerating grep in its docstring
+    (`grep -rn 'code: "' microservices/core/src/application/loadout`), a real runtime
+    membership check replacing an `as` cast that let `ENTITLEMENT_DENIED` in, and the
+    three dead per-endpoint code unions DELETED rather than corrected.
+  - **LESSON — a union transcribed from a repository result type is not a wire
+    contract.** Read the handler, not the repository, and grep for `code: "` rather
+    than inferring. Two of ten members were wrong and two were missing.
+  - **CI action NOT fired** — 1 sweep + 1 closed pass locally, per the standing rule
+    and the two-sweep cap. The last round of fixes was verified by grepping the
+    handlers directly (the authoritative source for a wire contract) plus mutation
+    tests, rather than by spending a third pass.
 - **Gates:** prettier (whole tree) · typecheck 8/8 · lint 0-err · build 13/13 ·
-  test:unit 19/19 (core 285 files / **3123 tests**; mobile 452 suites / **5166
+  test:unit 19/19 (core 285 files / **3123 tests**; mobile 452 suites / **5193
   tests**; scripts 3 files / 112). Changed files ≥ 90 % on all four axes — the three
   new mobile files are **100 %** across the board; scan handler 100/98/100/100, scan
   model 100/95.34/100/100, `modelProse` 100 %. **38 mutations applied across the new
-  guards, all 38 caught** — including the exact inverted-containment regression IB
-  found.
+  guards, all 43 caught** — including the exact inverted-containment regression IB
+  found and the wrong saved-gym wire code the closed pass caught.
 
 
 
