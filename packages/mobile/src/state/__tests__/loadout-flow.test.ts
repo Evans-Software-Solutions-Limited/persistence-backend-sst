@@ -147,6 +147,37 @@ describe("useLoadoutFlow — the equipment context is exactly one source", () =>
     ).toEqual(["eq-1"]);
   });
 
+  it("CLEARS the previous adaptation when a new kit is chosen mid-flow", () => {
+    // `open()` does not fire on the re-collect path (review → back to collect →
+    // pick a different gym), so without clearing here the old picks survive and
+    // `buildVariationExercises` applies them BY sortOrder to the new plan — a pick
+    // compatible with kit A may not be with kit B, and it carries
+    // `isUserOverride: false`, so the save 400s.
+    get().open("w-1", "Upper Body");
+    get().useGym({ id: "gym-1", name: "Hotel gym" });
+    get().previewResolved(preview);
+    get().applyManualPick(0, { exerciseId: "ex-9", isUserOverride: false });
+
+    get().useGym({ id: "gym-2", name: "Home garage" });
+
+    expect(get().preview).toBeNull();
+    expect(get().manualPicks.size).toBe(0);
+    expect(get().swapTarget).toBeNull();
+    expect(get().step).toBe("adapting");
+  });
+
+  it("CLEARS the previous adaptation on the manual-ids path too", () => {
+    get().open("w-1", "Upper Body");
+    get().useGym({ id: "gym-1", name: "Hotel gym" });
+    get().previewResolved(preview);
+    get().applyManualPick(0, { exerciseId: "ex-9", isUserOverride: true });
+
+    get().useEquipmentIds(["eq-1"], "Custom", false);
+
+    expect(get().preview).toBeNull();
+    expect(get().manualPicks.size).toBe(0);
+  });
+
   it("REPLACES a gym context when manual ids are chosen instead", () => {
     // Never both: the preview 400s EQUIPMENT_CONTEXT_REQUIRED if two sources
     // arrive, and the union makes that structurally impossible from here.
@@ -190,6 +221,32 @@ describe("useLoadoutFlow — the scan draft", () => {
     get().setScanDraft({ ...draft, modelId: "m2" });
 
     expect(get().scanDeselectedIds.size).toBe(0);
+  });
+
+  it("REFUSES to deselect a server-INJECTED detection", () => {
+    // `Bodyweight` is withheld from the model and injected precisely so the user is
+    // not offered the chance to untick it (T-E1.7) — it is true of every room, and
+    // unticking it would make every bodyweight exercise get swapped or dropped.
+    const withInjected = {
+      ...draft,
+      detected: [
+        {
+          equipmentTypeId: "eq-bw",
+          name: "Bodyweight",
+          confidence: 1,
+          source: "injected" as const,
+        },
+        ...draft.detected,
+      ],
+    };
+    get().setScanDraft(withInjected);
+
+    get().toggleScanDetection("eq-bw");
+    expect(get().scanDeselectedIds.has("eq-bw")).toBe(false);
+
+    // A model detection in the same draft is still deselectable.
+    get().toggleScanDetection("eq-1");
+    expect(get().scanDeselectedIds.has("eq-1")).toBe(true);
   });
 
   it("clears the draft on a null", () => {

@@ -166,8 +166,24 @@ export const aiEquipmentScanHandler = new Elysia()
           throw new EntitlementError(verdict, "loadout");
         }
 
-        // Best-effort under concurrency (counted rows are committed
-        // post-inference), which is fine for a cost backstop.
+        // ⚠ **BEST-EFFORT, AND AT THIS UNIT COST THAT IS A REAL GAP.** The count
+        // is read BEFORE the inference and the row is written after it, so N
+        // requests fired inside that window all see the same count and all
+        // proceed: ~100 parallel POSTs at count 0 yield ~100 inferences ≈ $2.72 in
+        // one burst, well past the $4.90/month the 6/day ceiling is supposed to
+        // bound.
+        //
+        // Kept as-is here DELIBERATELY, not overlooked. This is the #156 pattern
+        // that all seven AI endpoints share, and making one of them
+        // transactional (reserve-then-reconcile, or a conditional insert) would
+        // leave the scan enforcing a different contract from its six siblings —
+        // a worse outcome than a known, recorded gap. It also cannot be fixed
+        // properly per-endpoint: the fix belongs in `AiUsageLogRepository` for
+        // all of them at once.
+        //
+        // Recorded in STATE.md § Open items. The exposure is bounded in practice
+        // by needing a deliberate parallel burst from an authenticated,
+        // entitled, paying account.
         const usedToday = await ctx.AiUsageLogRepository.countForUserToday(
           userId,
           ENDPOINT,
@@ -283,7 +299,14 @@ export const aiEquipmentScanHandler = new Elysia()
             // landmine attachment but cannot offer it" is honest, and stops a
             // correctly-nulled item reading as a miss. E1 had 6 such items.
             unmatched: deduped
-              .filter((detection) => detection.equipmentTypeId === null)
+              .filter(
+                (detection) =>
+                  detection.equipmentTypeId === null &&
+                  // A blank label carries no information — the row's entire job is
+                  // naming something the catalogue could not match. Dropped rather
+                  // than rendered as an empty line with a confidence score.
+                  detection.label.length > 0,
+              )
               .map((detection) => ({
                 label: detection.label,
                 confidence: detection.confidence,

@@ -76,7 +76,7 @@ describe("SSTApiAdapter — saved gyms", () => {
     });
   });
 
-  it("keeps a 409 duplicate name distinguishable by status", async () => {
+  it("keeps a 409 duplicate name distinguishable by status AND code", async () => {
     // The picker offers "rename" on a 409 and "retry" on a 500, so collapsing the
     // two into one server error would strand the user on the wrong affordance.
     jsonOnce({ code: "duplicate_name", message: "exists" }, 409);
@@ -87,6 +87,9 @@ describe("SSTApiAdapter — saved gyms", () => {
 
     expect(result.ok).toBe(false);
     expect(!result.ok && result.error.status).toBe(409);
+    expect(!result.ok && result.error.loadoutCode).toBe("duplicate_name");
+    // The handler's own message, not RN's empty statusText.
+    expect(!result.ok && result.error.message).toBe("exists");
   });
 
   it("PATCHes an update to the id-scoped path", async () => {
@@ -205,6 +208,122 @@ describe("SSTApiAdapter.previewLoadout", () => {
     expect(result.ok).toBe(false);
     expect(!result.ok && result.error.code).toBe("entitlement_denied");
     // The paywall reads the price from here rather than a literal.
+    expect(!result.ok && result.error.entitlement?.upgradeTo).toBe(
+      "premium_plus",
+    );
+  });
+});
+
+describe("SSTApiAdapter — Loadout domain error codes survive the wire", () => {
+  // Before `requestLoadout`, every one of these collapsed to an indistinguishable
+  // `{ code: "server", status: 400 }` with an EMPTY message, because
+  // `mapHttpErrorToApiError` reads `body.error` and the Loadout handlers answer
+  // `{ code, message }`. Each of these codes has a different remedy in the flow, so
+  // losing them left the container with nothing to act on.
+  const cases: readonly [string, number, () => Promise<unknown>][] = [
+    [
+      "EQUIPMENT_CONTEXT_REQUIRED",
+      400,
+      () => new SSTApiAdapter().previewLoadout("w-1", {}),
+    ],
+    [
+      "PARENT_IS_A_VARIATION",
+      400,
+      () => new SSTApiAdapter().previewLoadout("w-1", { savedGymId: "g-1" }),
+    ],
+    [
+      "UNKNOWN_SAVED_GYM",
+      400,
+      () => new SSTApiAdapter().previewLoadout("w-1", { savedGymId: "g-1" }),
+    ],
+    [
+      "EMPTY_EQUIPMENT_CONTEXT",
+      400,
+      () => new SSTApiAdapter().previewLoadout("w-1", { equipmentTypeIds: [] }),
+    ],
+  ];
+
+  for (const [code, status, call] of cases) {
+    it(`preserves ${code}`, async () => {
+      jsonOnce({ code, message: `${code} happened` }, status);
+      const result = (await call()) as
+        | { ok: true }
+        | { ok: false; error: { loadoutCode?: string; message: string } };
+
+      expect(result.ok).toBe(false);
+      expect(!result.ok && result.error.loadoutCode).toBe(code);
+      expect(!result.ok && result.error.message).toBe(`${code} happened`);
+    });
+  }
+
+  it("preserves EQUIPMENT_NOT_AVAILABLE on the save path", async () => {
+    // THE one the port docstring warns about: a deliberate pick missing
+    // `isUserOverride`. Without the code the container cannot tell the user to flag
+    // the row, and the whole reviewed adaptation is lost to an unexplained error.
+    jsonOnce(
+      {
+        code: "EQUIPMENT_NOT_AVAILABLE",
+        message:
+          "One or more exercises need equipment this setup does not have.",
+        incompatibleExerciseIds: ["ex-9"],
+      },
+      400,
+    );
+    const result = await new SSTApiAdapter().createWorkoutVariation("w-1", {
+      name: "v",
+      exercises: [],
+    });
+
+    expect(result.ok).toBe(false);
+    expect(!result.ok && result.error.loadoutCode).toBe(
+      "EQUIPMENT_NOT_AVAILABLE",
+    );
+    expect(!result.ok && result.error.message).toMatch(/need equipment/);
+  });
+
+  it("preserves EXERCISE_NOT_VISIBLE on the save path", async () => {
+    jsonOnce({ code: "EXERCISE_NOT_VISIBLE", message: "hidden" }, 400);
+    const result = await new SSTApiAdapter().createWorkoutVariation("w-1", {
+      name: "v",
+      exercises: [],
+    });
+    expect(!result.ok && result.error.loadoutCode).toBe("EXERCISE_NOT_VISIBLE");
+  });
+
+  it("leaves loadoutCode UNSET when the body carries no code", async () => {
+    // The AI endpoints answer `{ error: "ai_daily_limit" }`, not `{ code }` — the
+    // status is the signal there, and inventing a code would be worse than none.
+    jsonOnce({ error: "ai_daily_limit" }, 429);
+    const result = await new SSTApiAdapter().scanEquipment({
+      imageBase64: "abc",
+      mediaType: "image/jpeg",
+    });
+
+    expect(!result.ok && result.error.loadoutCode).toBeUndefined();
+    expect(!result.ok && result.error.status).toBe(429);
+    // The `{ error }` shape still yields a usable message.
+    expect(!result.ok && result.error.message).toBe("ai_daily_limit");
+  });
+
+  it("still maps 402 to entitlement_denied through the raw path", async () => {
+    // `requestLoadout` delegates to `mapHttpErrorToApiError`, so the structured
+    // paywall payload must survive the switch away from `requestEnvelope`.
+    jsonOnce(
+      {
+        code: "ENTITLEMENT_DENIED",
+        error: "Premium+ required",
+        feature: "loadout",
+        current_tier: "premium",
+        upgrade_to: "premium_plus",
+        upgrade_price_monthly: 29.99,
+      },
+      402,
+    );
+    const result = await new SSTApiAdapter().previewLoadout("w-1", {
+      savedGymId: "g-1",
+    });
+
+    expect(!result.ok && result.error.code).toBe("entitlement_denied");
     expect(!result.ok && result.error.entitlement?.upgradeTo).toBe(
       "premium_plus",
     );

@@ -182,6 +182,41 @@ T-1.9 — no doc still describes these as open.
   floor, not fallbacks), whereas the re-map has no alternative path. Revisit if
   § 8.1's 640 px downscale is ever measured.
 
+### ⚠ The Lambda timeout was 20s, not 30s — FIXED, and it had bitten Snap AI already
+
+**`coreAPI.route("$default", …)` set no `timeout`, and SST defaults a function to 20
+seconds** (`.sst/platform/src/components/aws/function.ts` — `timeout ?? "20 seconds"`).
+Every AI adapter comment in the repo was budgeting against the **30 s API Gateway
+integration ceiling**, which was never the binding constraint. Found by Inspector
+Brad on the Loadout Phase 2/3 sweep; `infra/api.ts` now sets
+`timeout: "29 seconds"` explicitly.
+
+Two consequences, and the second is the one that costs money:
+
+- **`createWithRetry` is 2 × 12 s = 24 s, so on the Snap AI photo path the RETRY
+  could never finish** — the function was killed ~8 s into the second attempt. That
+  is a **pre-existing latent bug on `main`**, not something Loadout introduced.
+- **A Lambda hard-kill does not run the handlers' `finally` blocks**, so **no
+  `ai_usage_log` row was written for an inference Bedrock had already performed and
+  billed.** The request escaped the per-user daily ceiling entirely. At $0.0272 a
+  scan that is the most expensive failure mode in the feature.
+
+⚠ **Do not lower that route timeout without re-deriving `CLIENT_TIMEOUT_MS` and
+`EQUIPMENT_SCAN_TIMEOUT_MS`** — both docstrings now say so.
+
+### ⚠ Daily AI ceilings are not concurrency-safe — recorded, deliberately unfixed
+
+`countForUserToday` reads BEFORE the inference and the usage row is written after,
+so N requests inside that window all see the same count and all proceed: ~100
+parallel POSTs at count 0 yield ~100 inferences. On the scan that is ≈$2.72 in one
+burst against a ceiling meant to bound $4.90/month.
+
+**Left as-is on purpose.** This is the #156 pattern that **all seven** AI endpoints
+share, and making one transactional would leave it enforcing a different contract
+from its six siblings. The real fix belongs in `AiUsageLogRepository` for all of them
+at once — a reserve-then-reconcile row, or a conditional insert. Exposure needs a
+deliberate parallel burst from an authenticated, entitled, paying account.
+
 ### ⚠ Pricing vs AI cost — three tiers are theoretically underwater (2026-07-27)
 
 **Run `bun run scripts/ai-cost-model.ts` for the live table. Do not quote figures
@@ -424,12 +459,35 @@ screens** — nothing is user-visible or device-verified.**
   things in the design handoff are stale and the spec wins:** it says "AnyGym" (now
   **Loadout**), it hardcodes **£19.99** (now £29.99 AND catalog-driven), and its D1
   taster meter **must not be built** (design § 5.2 = hard gate, no taster).
-- **Gates:** prettier (whole tree) · typecheck 8/8 · lint 0-err · build 13/13 · core
-  285 files / 3121 tests · mobile 30 + 14 suites green on the touched areas. Changed
-  files ≥ 90 % on all four axes (`modelProse` 100 %, scan handler 100/97.95/100/100,
-  scan model 100/95.34/100/100). **28 mutations applied across the new guards, all 28
-  caught.** IB NOT yet run — the slice is incomplete, so a sweep now would review a
-  foundation without its consumers.
+- **IB: 1 local sweep, 10 findings (3 🟠 / 4 🟡 / 3 🟢), ALL 10 addressed.** The three
+  🟠 were the 20 s Lambda timeout (§ above), **every Loadout domain 400 code being
+  discarded** by `mapHttpErrorToApiError` (it reads `body.error`; the Loadout handlers
+  answer `{ code, message }`, so `EQUIPMENT_NOT_AVAILABLE` and five siblings arrived
+  as an empty-message generic 400 — three shipped error-code types had no producer),
+  and **the in-memory double's containment check being inverted** (it compared
+  `missingEquipment`, the SOURCE row's gap, where the real handler checks the
+  SUBSTITUTE's own requirements — so it rejected legal swaps and waved through the
+  exact mistake it exists to catch). Fixed with a new `requestLoadout` path +
+  `LoadoutApiError.loadoutCode`, and an `exerciseEquipment` map on the double.
+  - The 🟡s: `useGym`/`useEquipmentIds` now clear the previous adaptation (a
+    re-collect mid-flow reapplied stale picks by `sortOrder`); `intensity_mismatch` is
+    DROPPED on a manual pick (it describes the substitute being replaced, so keeping
+    it persisted misinformation into the provenance jsonb); `rowsNeedingAttention`
+    now takes `manualPicks` (else a flagged row could never be resolved and a
+    Save gate would deadlock); a server-INJECTED `Bodyweight` detection can no longer
+    be deselected. The concurrency finding is recorded above rather than fixed.
+  - The 🟢s: blank unmatched labels dropped, `deriveVariationName` cuts on a code
+    POINT via a new `shared/utils/text.ts` (twin of the backend's `modelProse` —
+    mobile shares no package with core), and `describeLoadoutRow` gained a `default`
+    branch because `substitution_reason` is untyped jsonb read back for AC-3.3.
+  - **CI action NOT fired** — local sweep only, per the standing rule.
+- **Gates:** prettier (whole tree) · typecheck 8/8 · lint 0-err · build 13/13 ·
+  test:unit 19/19 (core 285 files / **3123 tests**; mobile 452 suites / **5166
+  tests**; scripts 3 files / 112). Changed files ≥ 90 % on all four axes — the three
+  new mobile files are **100 %** across the board; scan handler 100/98/100/100, scan
+  model 100/95.34/100/100, `modelProse` 100 %. **38 mutations applied across the new
+  guards, all 38 caught** — including the exact inverted-containment regression IB
+  found.
 
 
 

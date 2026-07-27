@@ -2788,6 +2788,13 @@ export class InMemoryApiAdapter implements ApiPort {
    * is not enforced; set it to make `EQUIPMENT_NOT_AVAILABLE` reachable.
    */
   public saveContextEquipmentIds: string[] | null = null;
+  /**
+   * `exerciseId` → the equipment ids that exercise REQUIRES. Mirrors
+   * `ExerciseRepository.findEquipmentRequirements`, which is what the real save
+   * path consults. Tests populate this alongside `saveContextEquipmentIds` to make
+   * `EQUIPMENT_NOT_AVAILABLE` reachable.
+   */
+  public exerciseEquipment: Map<string, string[]> = new Map();
   public createVariationCalls: {
     parentWorkoutId: string;
     input: CreateLoadoutVariationInput;
@@ -2956,22 +2963,35 @@ export class InMemoryApiAdapter implements ApiPort {
     // Containment on rows NOT flagged as a deliberate override — the asymmetry the
     // real save path enforces (AC-4.2). This is what makes a container that forgets
     // `isUserOverride: true` fail in tests instead of on a device.
+    //
+    // ⚠ Checks the SUBSTITUTE's own equipment requirements, mirroring
+    // `workoutVariationsCreateHandler`'s `findEquipmentRequirements` lookup. An
+    // earlier version checked `substitutionReason.missingEquipment`, which is the
+    // SOURCE row's gap — by construction the ids the kit lacks — and that got the
+    // check backwards in both directions: every faithfully round-tripped
+    // `equipment_unavailable` row failed even though its substitute was compatible
+    // (inviting a container author to "fix" it by stamping `isUserOverride` on
+    // everything, disabling the server's real check), while a manual override on a
+    // KEPT row — `missingEquipment: []` — sailed through and then 400'd on device,
+    // which is the exact scenario this exists to catch.
     if (this.saveContextEquipmentIds) {
       const available = new Set(this.saveContextEquipmentIds);
-      const offending = input.exercises.find(
-        (row) =>
-          row.isUserOverride !== true &&
-          (row.substitutionReason?.missingEquipment ?? []).some(
-            (id) => !available.has(id),
-          ),
-      );
+      const offending = input.exercises.find((row) => {
+        if (row.isUserOverride === true) return false;
+        // Absent from the map = requires nothing, matching the real handler's
+        // treatment of a row whose exercise vanished between preview and save.
+        const required = this.exerciseEquipment.get(row.exerciseId) ?? [];
+        return required.some((id) => !available.has(id));
+      });
       if (offending) {
         return fail<ApiError>({
           kind: "api",
           code: "server",
-          message: "EQUIPMENT_NOT_AVAILABLE",
+          message:
+            "One or more exercises need equipment this setup does not have. Flag the row as a user override to keep it anyway.",
           status: 400,
-        });
+          loadoutCode: "EQUIPMENT_NOT_AVAILABLE",
+        } as ApiError);
       }
     }
 

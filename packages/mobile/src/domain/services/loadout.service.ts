@@ -28,6 +28,7 @@ import type {
   SubstitutionReason,
 } from "@/domain/models/loadout";
 import type { ReferenceEntry } from "@/domain/models/reference-list";
+import { capText } from "@/shared/utils";
 
 // ─── Review-step copy (§ 7.2 — rendered FROM the code) ───────────────────────
 
@@ -174,18 +175,46 @@ export function describeLoadoutRow(
         modelNote,
         intensityMismatch,
       };
+
+    default:
+      // ⚠ Unreachable against today's union, and NOT redundant. `reason` is read
+      // back out of `workout_exercises.substitution_reason`, which is untyped
+      // jsonb, and `user_override` is already a code the CLIENT writes — so a
+      // variation saved by a newer app version can hand an older one a code this
+      // switch has never seen. Without this branch the function returns
+      // `undefined` while typed `LoadoutRowCopy`, and the first `.badge` read
+      // crashes the review screen on a provenance display (AC-3.3). A neutral copy
+      // makes the round trip version-tolerant.
+      return {
+        badge: "CHANGED",
+        tone: "swapped",
+        explanation: "This row was adapted.",
+        modelNote,
+        intensityMismatch,
+      };
   }
 }
 
-/** Rows the user must act on before the plan is worth saving (AC-3.4 / AC-3.5b). */
+/**
+ * Rows the user must act on before the plan is worth saving (AC-3.4 / AC-3.5b).
+ *
+ * ⚠ **Takes `manualPicks`, and must.** Both conditions are things the user resolves
+ * BY picking a replacement, so reading `preview.rows` alone would leave a row in the
+ * "needs attention" set no matter what they did — and any container gating Save on
+ * this being empty would deadlock the flow with no way forward. A row with a
+ * manual pick is resolved by definition: the user has seen it and chosen.
+ */
 export function rowsNeedingAttention(
   preview: LoadoutPreview,
+  manualPicks: ReadonlyMap<number, ManualPick> = new Map(),
 ): readonly LoadoutPreviewRow[] {
-  return preview.rows.filter(
-    (row) =>
+  return preview.rows.filter((row) => {
+    if (manualPicks.has(row.sortOrder)) return false;
+    return (
       row.status === "unresolved" ||
-      row.reason.flags.includes("intensity_mismatch"),
-  );
+      row.reason.flags.includes("intensity_mismatch")
+    );
+  });
 }
 
 // ─── Saving the reviewed plan (§ 7.1) ────────────────────────────────────────
@@ -243,7 +272,14 @@ export function buildVariationExercises(
           // ranker's `matchedOn` does not, because the ranker did not choose this.
           missingEquipment: row.reason.missingEquipment,
           matchedOn: [],
-          flags: row.reason.flags,
+          // ⚠ `flags` is DROPPED, not carried. `intensity_mismatch` is not a fact
+          // about the row — `adaptWorkout` computes it against the SUBSTITUTE it
+          // chose (`hasIntensityMismatch(row, row.source, chosen)`). Once the user
+          // picks something else, the flag describes an exercise no longer in the
+          // plan, and carrying it would persist that into `substitution_reason`
+          // jsonb as durable misinformation the AC-3.3 provenance read would
+          // later show back to them.
+          flags: [],
           note: null,
           selectedBy: null,
         }
@@ -282,12 +318,21 @@ export function buildVariationExercises(
  * Capped at the endpoint's 200-char limit so a long parent name cannot make the
  * save fail validation on a field the user never typed in.
  */
+/** `POST /workouts/:id/variations` caps `name` at 200 chars. */
+export const MAX_VARIATION_NAME_LENGTH = 200;
+
 export function deriveVariationName(
   parentName: string,
   gymName: string | null,
 ): string {
   const base = gymName ? `${parentName} · ${gymName}` : parentName;
-  return base.length <= 200 ? base : base.slice(0, 200);
+  // Cut on a whole CODE POINT, not a code unit. `parentName` is
+  // attacker-influenceable — AC-1.2 makes a stranger's PUBLIC workout adaptable and
+  // `workouts.name` is unbounded at its create handler — so a 199-char name followed
+  // by an emoji would otherwise leave a lone high surrogate, which the driver
+  // replaces with U+FFFD in the saved variation's name. `capModelProse` exists for
+  // exactly this hazard; reusing it keeps one implementation of the rule.
+  return capText(base, MAX_VARIATION_NAME_LENGTH);
 }
 
 // ─── Equipment picker (AC-2.2 — grouped from the API) ────────────────────────

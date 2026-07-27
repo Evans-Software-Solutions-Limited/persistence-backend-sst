@@ -157,10 +157,21 @@ export const useLoadoutFlow = create<LoadoutFlowState>((set) => ({
 
   goToStep: (step) => set({ step }),
 
+  // ⚠ Both of these clear the PREVIOUS adaptation, not just `context`. A user can
+  // re-collect inside one run — review → back to collect → pick a different gym —
+  // and `open()`'s reset does not fire on that path. Without clearing here, the old
+  // `manualPicks` survive and `buildVariationExercises` applies them BY `sortOrder`
+  // to the new plan: a pick that was compatible with kit A may not be with kit B,
+  // and it carries `isUserOverride: false`, so the save 400s
+  // `EQUIPMENT_NOT_AVAILABLE`. A stale `preview` is the same class of bug — a failed
+  // second request would leave gym A's rows renderable on the review step.
   useGym: (gym) =>
     set({
       context: { kind: "gym", gymId: gym.id, gymName: gym.name },
       step: "adapting",
+      preview: null,
+      manualPicks: EMPTY_PICKS,
+      swapTarget: null,
     }),
 
   useEquipmentIds: (equipmentTypeIds, label, saveAsGym) =>
@@ -175,6 +186,9 @@ export const useLoadoutFlow = create<LoadoutFlowState>((set) => ({
         saveAsGym,
       },
       step: "adapting",
+      preview: null,
+      manualPicks: EMPTY_PICKS,
+      swapTarget: null,
     }),
 
   setScanDraft: (draft) =>
@@ -184,6 +198,19 @@ export const useLoadoutFlow = create<LoadoutFlowState>((set) => ({
 
   toggleScanDetection: (equipmentTypeId) =>
     set((state) => {
+      // ⚠ A server-INJECTED detection cannot be deselected. `Bodyweight` is
+      // withheld from the model and injected precisely so the user is not offered
+      // the chance to untick it (T-E1.7) — it is true of every room, and unticking
+      // it would make every bodyweight exercise unavailable and get swapped or
+      // dropped for no reason. Enforced here rather than only in the presenter, so
+      // no future caller can route around it.
+      const injected = state.scanDraft?.detected.some(
+        (detection) =>
+          detection.equipmentTypeId === equipmentTypeId &&
+          detection.source === "injected",
+      );
+      if (injected) return {};
+
       const next = new Set(state.scanDeselectedIds);
       if (next.has(equipmentTypeId)) next.delete(equipmentTypeId);
       else next.add(equipmentTypeId);

@@ -44,6 +44,28 @@ export const otherServiceAPI = new sst.aws.ApiGatewayV2("api-other-service");
 coreAPI.route("$default", {
   handler: "microservices/core/src/api.handler",
   link: [avatarsBucket],
+  // ⚠ EXPLICIT, and load-bearing for every AI endpoint. SST defaults a Lambda to
+  // **20 seconds** (`.sst/platform/src/components/aws/function.ts` —
+  // `timeout ?? "20 seconds"`), NOT the 30 s API Gateway integration ceiling that
+  // the AI adapters' comments were all budgeting against. The Lambda is the
+  // binding constraint, and at 20 s it silently truncated two model paths:
+  //
+  //   - the equipment scan's single ~20 s attempt (spec-21 T-E1.6) could never
+  //     reach its own SDK timeout, so `AiUnavailableError` → 503 was unreachable;
+  //   - `createWithRetry`'s 2 × 12 s (`aiBedrockClient.ts`) needs 24 s, so on the
+  //     Snap AI photo path the RETRY could never finish — a pre-existing latent
+  //     bug, not something this change introduced.
+  //
+  // Worse than the wrong status code: a Lambda hard-kill does not run the
+  // handlers' `finally` blocks, so **no `ai_usage_log` row is written for an
+  // inference Bedrock already performed and billed** — the request escapes the
+  // per-user daily ceiling entirely. At $0.0272 a scan that is the most expensive
+  // failure mode in the feature.
+  //
+  // 29 s keeps us inside API Gateway's 30 s ceiling while leaving the scan's 20 s
+  // model budget ~9 s of headroom for auth, the entitlement read, the ceiling
+  // count, the catalogue read and the usage-log write.
+  timeout: "29 seconds",
   // Bedrock IAM auth for Tier B AI nutrition estimation (M9.5 —
   // specs/13-nutrition-tracking/design.md § Revised 2026-07-03). No
   // API-key secret: SigV4 auth from the Lambda execution role. Both

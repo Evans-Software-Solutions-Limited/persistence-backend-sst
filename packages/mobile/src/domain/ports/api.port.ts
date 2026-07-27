@@ -1300,7 +1300,7 @@ export interface ApiPort {
   // `code: "server"` distinguished by `status`, matching `estimateFromPhoto`.
 
   /** The caller's saved gyms (`GET /saved-gyms`), newest name order. */
-  getSavedGyms(): Promise<Result<SavedGym[], ApiError>>;
+  getSavedGyms(): Promise<Result<SavedGym[], LoadoutApiError>>;
 
   /**
    * `POST /saved-gyms`. **409 on a duplicate name** (per user, compared on
@@ -1308,13 +1308,15 @@ export interface ApiPort {
    * ids — both recoverable in the picker, so both are distinguishable via
    * `status`.
    */
-  createSavedGym(input: SavedGymInput): Promise<Result<SavedGym, ApiError>>;
+  createSavedGym(
+    input: SavedGymInput,
+  ): Promise<Result<SavedGym, LoadoutApiError>>;
 
   /** `PATCH /saved-gyms/:id`. Same 409/400 semantics as the create. */
   updateSavedGym(
     id: string,
     input: Partial<SavedGymInput>,
-  ): Promise<Result<SavedGym, ApiError>>;
+  ): Promise<Result<SavedGym, LoadoutApiError>>;
 
   /**
    * `DELETE /saved-gyms/:id`. **Variations survive a gym delete** — their
@@ -1322,7 +1324,7 @@ export interface ApiPort {
    * setup remains usable. Say so at the confirmation, or this reads as
    * destructive when it is not.
    */
-  deleteSavedGym(id: string): Promise<Result<void, ApiError>>;
+  deleteSavedGym(id: string): Promise<Result<void, LoadoutApiError>>;
 
   /**
    * `POST /workouts/:id/loadout/preview` — adapt the workout and PERSIST NOTHING
@@ -1334,7 +1336,7 @@ export interface ApiPort {
   previewLoadout(
     workoutId: string,
     input: LoadoutPreviewInput,
-  ): Promise<Result<LoadoutPreview, ApiError>>;
+  ): Promise<Result<LoadoutPreview, LoadoutApiError>>;
 
   /**
    * `POST /workouts/:id/variations` — persist the reviewed plan under the parent.
@@ -1346,7 +1348,7 @@ export interface ApiPort {
   createWorkoutVariation(
     parentWorkoutId: string,
     input: CreateLoadoutVariationInput,
-  ): Promise<Result<WorkoutVariationSummary, ApiError>>;
+  ): Promise<Result<WorkoutVariationSummary, LoadoutApiError>>;
 
   /**
    * `GET /workouts/:id/variations` — the parent's "Saved setups" list. Scoped to
@@ -1354,7 +1356,7 @@ export interface ApiPort {
    */
   getWorkoutVariations(
     parentWorkoutId: string,
-  ): Promise<Result<WorkoutVariationSummary[], ApiError>>;
+  ): Promise<Result<WorkoutVariationSummary[], LoadoutApiError>>;
 
   /**
    * `GET /exercises/substitutes` — the ranked feed behind the equipment-aware
@@ -1367,7 +1369,7 @@ export interface ApiPort {
    */
   getExerciseSubstitutes(
     query: SubstitutesQuery,
-  ): Promise<Result<SubstitutesResult, ApiError>>;
+  ): Promise<Result<SubstitutesResult, LoadoutApiError>>;
 
   /**
    * `POST /ai/equipment-scan` — a gym photo → a DRAFT equipment list the user
@@ -1381,8 +1383,36 @@ export interface ApiPort {
    */
   scanEquipment(
     input: EquipmentScanInput,
-  ): Promise<Result<EquipmentScanDraft, ApiError>>;
+  ): Promise<Result<EquipmentScanDraft, LoadoutApiError>>;
 }
+
+/**
+ * `ApiError` plus the Loadout endpoints' flat domain `code`.
+ *
+ * The Loadout handlers answer `{ code, message }` on their recoverable 400s, and
+ * each code has a DIFFERENT remedy in the flow — rename the gym (409
+ * duplicate_name), re-pick the kit (`UNKNOWN_EQUIPMENT_TYPE`), acknowledge the
+ * override (`EQUIPMENT_NOT_AVAILABLE`), go to the parent (`PARENT_IS_A_VARIATION`).
+ * Collapsing them into one generic server error leaves the container with nothing
+ * to branch on, which is exactly how a reviewed adaptation gets lost to an
+ * unexplained failure.
+ *
+ * Union kept deliberately narrow and explicit rather than `string`: a code the
+ * backend adds later shows up as a type error at the branch that should handle it.
+ */
+export type LoadoutApiError = ApiError & {
+  loadoutCode?:
+    | "EQUIPMENT_CONTEXT_REQUIRED"
+    | "PARENT_IS_A_VARIATION"
+    | "UNKNOWN_SAVED_GYM"
+    | "UNKNOWN_EQUIPMENT_TYPE"
+    | "EMPTY_EQUIPMENT_CONTEXT"
+    | "EXERCISE_NOT_VISIBLE"
+    | "EQUIPMENT_NOT_AVAILABLE"
+    | "duplicate_name"
+    | "unknown_equipment"
+    | "not_found";
+};
 
 /** Body for `PATCH …/workout-assignments/:id` (M18 Swap). */
 export type SwapWorkoutInput = {

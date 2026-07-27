@@ -326,6 +326,27 @@ describe("POST /ai/equipment-scan", () => {
     expect(body.data.notes).toBe("the far wall is out of frame");
   });
 
+  it("DROPS an unmatched row whose label is blank", async () => {
+    // An unmatched row exists only to name something the catalogue could not match,
+    // so a blank entry with a confidence score is worse than no entry at all.
+    scanMock.mockResolvedValue({
+      detections: [
+        { equipmentTypeId: null, label: "", confidence: 0.6 },
+        { equipmentTypeId: null, label: "landmine rig", confidence: 0.5 },
+      ],
+      notes: null,
+      modelId: "test-model",
+      latencyMs: 1,
+      inputTokens: 0,
+      outputTokens: 0,
+    });
+
+    const body = (await (await call(validBody)).json()) as any;
+    expect(body.data.unmatched).toEqual([
+      { label: "landmine rig", confidence: 0.5 },
+    ]);
+  });
+
   it("returns 402 for a caller without the loadout entitlement, before any model call", async () => {
     // The EntitlementError → 402 mapping lives in `coreErrorHandler`, mounted on
     // the root app rather than the route, so the route is composed with it here

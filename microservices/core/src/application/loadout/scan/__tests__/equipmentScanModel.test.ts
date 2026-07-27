@@ -192,6 +192,17 @@ describe("parseScanResponse", () => {
     ).toThrow(/confidence is not a finite number/);
   });
 
+  it("trims a label, leaving a whitespace-only one blank for the handler to drop", () => {
+    const result = parseScanResponse({
+      detected: [
+        { equipmentTypeId: null, label: "  sled  ", confidence: 0.5 },
+        { equipmentTypeId: null, label: "   ", confidence: 0.5 },
+      ],
+    });
+    expect(result.detections[0].label).toBe("sled");
+    expect(result.detections[1].label).toBe("");
+  });
+
   it("caps an over-long label", () => {
     const result = parseScanResponse({
       detected: [

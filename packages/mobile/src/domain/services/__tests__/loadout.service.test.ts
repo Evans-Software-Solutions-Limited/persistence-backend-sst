@@ -306,6 +306,21 @@ describe("describeLoadoutRow", () => {
     ).toBe("fits your kit");
   });
 
+  it("returns neutral copy for an UNKNOWN code rather than crashing", () => {
+    // `substitution_reason` is untyped jsonb and `user_override` is already
+    // client-written, so a newer app version can hand an older one a fifth code.
+    // Without a default the function returns undefined while typed
+    // `LoadoutRowCopy`, and the first `.badge` read crashes the review screen.
+    const copy = describeLoadoutRow(
+      row({ reason: reason({ code: "some_future_code" as never }) }),
+      EQUIPMENT_NAMES,
+    );
+
+    expect(copy.badge).toBe("CHANGED");
+    expect(copy.explanation).toBe("This row was adapted.");
+    expect(copy.tone).toBe("swapped");
+  });
+
   it("works with no equipment-name map at all", () => {
     const copy = describeLoadoutRow(
       row({
@@ -343,6 +358,36 @@ describe("rowsNeedingAttention", () => {
 
   it("returns nothing for a fully clean plan", () => {
     expect(rowsNeedingAttention(preview([row()]))).toHaveLength(0);
+  });
+
+  it("treats a row with a MANUAL PICK as resolved", () => {
+    // Both conditions are things the user resolves BY picking. Reading
+    // `preview.rows` alone would leave the row flagged forever, and a container
+    // gating Save on this being empty would deadlock with no way forward.
+    const rows = [
+      row({ sortOrder: 0, status: "unresolved", exerciseId: null }),
+      row({ sortOrder: 1, reason: reason({ flags: ["intensity_mismatch"] }) }),
+    ];
+    const picks = new Map<number, ManualPick>([
+      [0, { exerciseId: "ex-9", isUserOverride: true }],
+      [1, { exerciseId: "ex-8", isUserOverride: false }],
+    ]);
+
+    expect(rowsNeedingAttention(preview(rows), picks)).toHaveLength(0);
+  });
+
+  it("still flags rows the user has NOT picked for", () => {
+    const rows = [
+      row({ sortOrder: 0, status: "unresolved", exerciseId: null }),
+      row({ sortOrder: 1, status: "unresolved", exerciseId: null }),
+    ];
+    const picks = new Map<number, ManualPick>([
+      [0, { exerciseId: "ex-9", isUserOverride: true }],
+    ]);
+
+    expect(
+      rowsNeedingAttention(preview(rows), picks).map((r) => r.sortOrder),
+    ).toEqual([1]);
   });
 });
 
@@ -552,7 +597,11 @@ describe("buildVariationExercises", () => {
     expect(rows[1].exerciseId).toBe("ex-9");
   });
 
-  it("preserves an intensity_mismatch flag through a manual pick", () => {
+  it("DROPS an intensity_mismatch flag on a manual pick", () => {
+    // The flag is computed against the SUBSTITUTE the engine chose, not the row.
+    // Once the user picks something else it describes an exercise no longer in the
+    // plan, and carrying it would persist durable misinformation into the
+    // `substitution_reason` jsonb that AC-3.3 reads back to them later.
     const picks = new Map<number, ManualPick>([
       [0, { exerciseId: "ex-9", isUserOverride: true }],
     ]);
@@ -566,6 +615,20 @@ describe("buildVariationExercises", () => {
         }),
       ]),
       picks,
+    );
+    expect(rows[0].substitutionReason?.flags).toEqual([]);
+  });
+
+  it("KEEPS the flag on a row the user did not touch", () => {
+    const rows = buildVariationExercises(
+      preview([
+        row({
+          reason: reason({
+            code: "equipment_unavailable",
+            flags: ["intensity_mismatch"],
+          }),
+        }),
+      ]),
     );
     expect(rows[0].substitutionReason?.flags).toEqual(["intensity_mismatch"]);
   });
@@ -594,6 +657,21 @@ describe("deriveVariationName", () => {
     // A long parent name must not fail validation on a field the user never typed.
     const name = deriveVariationName("x".repeat(250), "Hotel gym");
     expect(name).toHaveLength(200);
+  });
+
+  it("does not cut a surrogate pair in half", () => {
+    // `parentName` is attacker-influenceable (AC-1.2 + unbounded `workouts.name`),
+    // and a lone high surrogate becomes U+FFFD in the saved name.
+    const name = deriveVariationName("y".repeat(199) + "\uD83D\uDE00", null);
+
+    expect(name).toHaveLength(199);
+    expect(JSON.stringify(name)).not.toMatch(/\\ud[89ab][0-9a-f]{2}/i);
+  });
+
+  it("keeps a pair intact when it fits", () => {
+    const name = deriveVariationName("y".repeat(198) + "\uD83D\uDE00", null);
+    expect(name).toHaveLength(200);
+    expect(name.endsWith("\uD83D\uDE00")).toBe(true);
   });
 });
 

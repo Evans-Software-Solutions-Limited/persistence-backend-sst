@@ -61,10 +61,18 @@ const TOOL_NAME = "report_gym_equipment";
  *
  * E1 measured Opus at mean 10.1 s / max 12.27 s end-to-end — the max already past
  * `CLIENT_TIMEOUT_MS`, on the easiest possible photos. `createWithRetry` would turn
- * that expected tail into a timeout-then-retry ≈ 22 s plus overhead against a hard
- * 30 s API Gateway ceiling, i.e. a failed request at double the cost. 20 s leaves
- * ~10 s for auth, the entitlement read, the ceiling count, catalogue load and the
- * usage-log write, and still gives the model ~1.6× its measured worst case.
+ * that expected tail into a timeout-then-retry ≈ 22 s plus overhead, i.e. a failed
+ * request at double the cost. 20 s gives the model ~1.6× its measured worst case.
+ *
+ * ⚠ **The budget this has to fit inside is the LAMBDA's, not API Gateway's 30 s.**
+ * SST defaults a function to 20 seconds, so with the default this timeout could
+ * never fire: the Lambda died first, the 503 path was unreachable, and — because a
+ * hard-kill skips the handler's `finally` — **no usage row was written for an
+ * inference Bedrock had already billed**, letting the request escape the 6/day
+ * ceiling. `infra/api.ts` now sets an explicit `timeout: "29 seconds"` on the route,
+ * which leaves ~9 s here for auth, the entitlement read, the ceiling count, the
+ * catalogue read and the usage-log write. **If that route timeout is ever lowered,
+ * lower this with it.**
  */
 export const EQUIPMENT_SCAN_TIMEOUT_MS = 20_000;
 
@@ -258,9 +266,13 @@ export function parseScanResponse(input: unknown): {
 
     return {
       equipmentTypeId,
+      // Trimmed, and a blank stays blank so the handler can drop it. An unmatched
+      // row exists ONLY to tell the user what was seen but not matched, so a blank
+      // entry carrying a confidence number is worse than no entry — same treatment
+      // `notes` gets below.
       label:
         typeof record.label === "string"
-          ? capModelProse(record.label, MAX_SCAN_LABEL_LENGTH)
+          ? capModelProse(record.label.trim(), MAX_SCAN_LABEL_LENGTH)
           : "",
       confidence: clamp01(rawConfidence),
     };

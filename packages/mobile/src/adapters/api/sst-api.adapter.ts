@@ -36,6 +36,7 @@ import type {
 import type {
   ApiPort,
   InviteApiError,
+  LoadoutApiError,
   ApiNotification,
   ApiNotificationListResponse,
   GetNotificationsParams,
@@ -2026,14 +2027,14 @@ export class SSTApiAdapter implements ApiPort {
   // (402 → `entitlement_denied` with the structured payload; the rest → `server`,
   // distinguished by `status`), matching `estimateFromPhoto`'s pattern.
 
-  async getSavedGyms(): Promise<Result<SavedGym[], ApiError>> {
-    return this.requestEnvelope<SavedGym[]>("/saved-gyms");
+  async getSavedGyms(): Promise<Result<SavedGym[], LoadoutApiError>> {
+    return this.requestLoadout<SavedGym[]>("/saved-gyms");
   }
 
   async createSavedGym(
     input: SavedGymInput,
-  ): Promise<Result<SavedGym, ApiError>> {
-    return this.requestEnvelope<SavedGym>("/saved-gyms", {
+  ): Promise<Result<SavedGym, LoadoutApiError>> {
+    return this.requestLoadout<SavedGym>("/saved-gyms", {
       method: "POST",
       body: input,
     });
@@ -2042,15 +2043,15 @@ export class SSTApiAdapter implements ApiPort {
   async updateSavedGym(
     id: string,
     input: Partial<SavedGymInput>,
-  ): Promise<Result<SavedGym, ApiError>> {
-    return this.requestEnvelope<SavedGym>(`/saved-gyms/${id}`, {
+  ): Promise<Result<SavedGym, LoadoutApiError>> {
+    return this.requestLoadout<SavedGym>(`/saved-gyms/${id}`, {
       method: "PATCH",
       body: input,
     });
   }
 
-  async deleteSavedGym(id: string): Promise<Result<void, ApiError>> {
-    const result = await this.requestEnvelope<unknown>(`/saved-gyms/${id}`, {
+  async deleteSavedGym(id: string): Promise<Result<void, LoadoutApiError>> {
+    const result = await this.requestLoadout<unknown>(`/saved-gyms/${id}`, {
       method: "DELETE",
     });
     if (!result.ok) return result;
@@ -2060,18 +2061,18 @@ export class SSTApiAdapter implements ApiPort {
   async previewLoadout(
     workoutId: string,
     input: LoadoutPreviewInput,
-  ): Promise<Result<LoadoutPreview, ApiError>> {
-    return this.requestEnvelope<LoadoutPreview>(
+  ): Promise<Result<LoadoutPreview, LoadoutApiError>> {
+    return this.requestLoadout<LoadoutPreview>(
       `/workouts/${workoutId}/loadout/preview`,
       {
         method: "POST",
         body: input,
-        // The preview makes a Bedrock call (E2: 2.6 s p50, 3.8 s max) inside the
-        // API Gateway 30 s ceiling, and `createWithRetry` can spend 24 s of that
-        // on the retry path. A shorter client timeout would abandon a request the
-        // server is still paying for — and the usage row is written for every
-        // inference that reached the provider, so the user would lose one of their
-        // daily adaptations to a client-side give-up.
+        // The preview makes a Bedrock call (E2: 2.6 s p50, 3.8 s max) and
+        // `createWithRetry` can spend 24 s of the route's 29 s budget on the retry
+        // path. A shorter client timeout would abandon a request the server is
+        // still paying for — and the usage row is written for every inference that
+        // reached the provider, so the user would lose one of their daily
+        // adaptations to a client-side give-up.
         timeoutMs: 30_000,
       },
     );
@@ -2080,8 +2081,8 @@ export class SSTApiAdapter implements ApiPort {
   async createWorkoutVariation(
     parentWorkoutId: string,
     input: CreateLoadoutVariationInput,
-  ): Promise<Result<WorkoutVariationSummary, ApiError>> {
-    return this.requestEnvelope<WorkoutVariationSummary>(
+  ): Promise<Result<WorkoutVariationSummary, LoadoutApiError>> {
+    return this.requestLoadout<WorkoutVariationSummary>(
       `/workouts/${parentWorkoutId}/variations`,
       { method: "POST", body: input },
     );
@@ -2089,15 +2090,15 @@ export class SSTApiAdapter implements ApiPort {
 
   async getWorkoutVariations(
     parentWorkoutId: string,
-  ): Promise<Result<WorkoutVariationSummary[], ApiError>> {
-    return this.requestEnvelope<WorkoutVariationSummary[]>(
+  ): Promise<Result<WorkoutVariationSummary[], LoadoutApiError>> {
+    return this.requestLoadout<WorkoutVariationSummary[]>(
       `/workouts/${parentWorkoutId}/variations`,
     );
   }
 
   async getExerciseSubstitutes(
     query: SubstitutesQuery,
-  ): Promise<Result<SubstitutesResult, ApiError>> {
+  ): Promise<Result<SubstitutesResult, LoadoutApiError>> {
     const params: Record<string, string | number | string[]> = {
       forExerciseId: query.forExerciseId,
     };
@@ -2111,20 +2112,20 @@ export class SSTApiAdapter implements ApiPort {
     }
     if (query.limit != null) params.limit = query.limit;
 
-    return this.requestEnvelope<SubstitutesResult>("/exercises/substitutes", {
+    return this.requestLoadout<SubstitutesResult>("/exercises/substitutes", {
       params,
     });
   }
 
   async scanEquipment(
     input: EquipmentScanInput,
-  ): Promise<Result<EquipmentScanDraft, ApiError>> {
-    return this.requestEnvelope<EquipmentScanDraft>("/ai/equipment-scan", {
+  ): Promise<Result<EquipmentScanDraft, LoadoutApiError>> {
+    return this.requestLoadout<EquipmentScanDraft>("/ai/equipment-scan", {
       method: "POST",
       body: input,
       // The scan is the slowest call in the app: E1 measured Opus at mean 10.1 s /
       // max 12.27 s on easy photos, and the server gives it ONE ~20 s attempt
-      // (T-E1.6) inside the 30 s gateway ceiling. Anything shorter here would
+      // (T-E1.6) inside the route's 29 s budget. Anything shorter here would
       // abandon scans the server is about to answer — and at $0.0272 a scan, on a
       // 6/day ceiling, an abandoned request is the most expensive kind of failure
       // in the feature.
@@ -2179,7 +2180,7 @@ export class SSTApiAdapter implements ApiPort {
     path: string,
     options: RequestOptions = {},
   ): Promise<Result<{ status: number; json: T | null }, ApiError>> {
-    const { method = "GET", body, params } = options;
+    const { method = "GET", body, params, timeoutMs } = options;
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
     };
@@ -2187,21 +2188,88 @@ export class SSTApiAdapter implements ApiPort {
       const token = await this.tokenProvider();
       if (token) headers["Authorization"] = `Bearer ${token}`;
     }
+    // Per-request abort wiring, mirroring `request()`. Added for the Loadout
+    // model-backed calls, which need the full API Gateway window AND the domain
+    // `code` off the body — before this, `timeoutMs` was silently dropped here, so
+    // routing those calls through the raw path to keep their error codes would have
+    // quietly cost them their timeouts. Only allocated when a caller opts in, so
+    // every existing `requestRaw` consumer is unaffected.
+    const controller = timeoutMs != null ? new AbortController() : null;
+    const timeoutHandle =
+      controller != null
+        ? setTimeout(() => controller.abort(), timeoutMs)
+        : null;
     try {
       const response = await fetch(this.buildUrl(path, params), {
         method,
         headers,
         body: body ? JSON.stringify(body) : undefined,
+        ...(controller ? { signal: controller.signal } : {}),
       });
       const json = (await response.json().catch(() => null)) as T | null;
       return ok({ status: response.status, json });
     } catch (err) {
+      const aborted = err instanceof Error && err.name === "AbortError";
       return fail({
         kind: "api",
-        code: "network",
+        code: aborted ? "timeout" : "network",
         message: err instanceof Error ? err.message : "Network error",
       });
+    } finally {
+      if (timeoutHandle != null) clearTimeout(timeoutHandle);
     }
+  }
+
+  /**
+   * Shared read/write path for the Loadout endpoints, which answer a flat
+   * `{ code, message }` body on their domain 400s rather than the usual
+   * `{ error }`.
+   *
+   * ⚠ **Without this they were unusable.** `requestEnvelope` →
+   * `mapHttpErrorToApiError` keeps only `status` and reads the message from
+   * `body.error`, so every Loadout 400 collapsed to an indistinguishable
+   * `{ code: "server", status: 400 }` with an EMPTY message (RN's `statusText` is
+   * `""`). That made `LoadoutPreviewErrorCode`, `CreateVariationErrorCode` and
+   * `SavedGymErrorCode` dead types with no producer — and, concretely, the one
+   * failure the port docstring warns about most (400 `EQUIPMENT_NOT_AVAILABLE` when
+   * a deliberate pick is missing `isUserOverride`) arrived with nothing the
+   * container could branch on, losing the user's whole reviewed adaptation to an
+   * error it could not explain.
+   *
+   * Same shape as `requestProgramWrite` below; kept separate because the code union
+   * is different and merging them would widen both.
+   */
+  private async requestLoadout<T>(
+    path: string,
+    options: RequestOptions = {},
+  ): Promise<Result<T, LoadoutApiError>> {
+    const result = await this.requestRaw<
+      { data: T } | { code: string; message: string }
+    >(path, options);
+    if (!result.ok) return fail<LoadoutApiError>(result.error);
+
+    const { status, json } = result.value;
+    if (status >= 200 && status < 300 && json !== null && "data" in json) {
+      return ok(json.data);
+    }
+
+    const loadoutCode =
+      json !== null && "code" in json && typeof json.code === "string"
+        ? (json.code as LoadoutApiError["loadoutCode"])
+        : undefined;
+    // Prefer the handler's own `message`; `mapHttpErrorToApiError` would otherwise
+    // fall back to `statusText`, which RN leaves empty.
+    const message =
+      json !== null && "message" in json && typeof json.message === "string"
+        ? json.message
+        : json !== null && "error" in json && typeof json.error === "string"
+          ? json.error
+          : "Request failed";
+
+    const base = mapHttpErrorToApiError(status, message, json);
+    return fail<LoadoutApiError>(
+      loadoutCode !== undefined ? { ...base, loadoutCode } : base,
+    );
   }
 }
 

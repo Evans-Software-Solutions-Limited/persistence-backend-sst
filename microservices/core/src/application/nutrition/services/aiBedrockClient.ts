@@ -30,6 +30,17 @@ import { AnthropicBedrock } from "@anthropic-ai/bedrock-sdk";
 // 2 × 12s + overhead < 30s. Eval (2026-07-03) measured opus-4-6 median
 // 6.1s / worst ~9s on 640px photos, so 12s clears the real p99 while
 // keeping the retry affordable.
+//
+// ⚠ CORRECTION (2026-07-27): the binding constraint was never the 30s
+// gateway ceiling — it is the LAMBDA's own timeout, and SST defaults
+// that to **20 seconds**. So `2 × 12s = 24s` did not fit: on the retry
+// path the function was killed ~8s into the second attempt, meaning the
+// retry could never complete AND the hard-kill skipped the handlers'
+// `finally` blocks, so no `ai_usage_log` row was written for an
+// inference the provider had already billed. `infra/api.ts` now sets an
+// explicit `timeout: "29 seconds"` on the route, under which the
+// arithmetic above finally holds. **Do not lower that route timeout
+// without re-deriving this constant.**
 export const CLIENT_TIMEOUT_MS = 12_000;
 
 // ─── Minimal client seam ────────────────────────────────────────────────
