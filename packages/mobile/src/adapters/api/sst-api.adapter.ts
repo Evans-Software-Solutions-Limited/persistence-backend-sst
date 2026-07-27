@@ -2364,6 +2364,8 @@ type RawReferenceEntry = {
   id: string;
   name: string;
   display_name: string | null;
+  /** Loadout grouping (spec-21 § 2.3b) — equipment rows only. */
+  category?: string | null;
 };
 
 function mapRawReferenceEntry(raw: RawReferenceEntry): ReferenceEntry {
@@ -2371,6 +2373,12 @@ function mapRawReferenceEntry(raw: RawReferenceEntry): ReferenceEntry {
     id: raw.id,
     name: raw.name,
     displayName: raw.display_name,
+    // `?? null` so the KEY IS ALWAYS PRESENT once a response has been mapped.
+    // That is what lets `isEquipmentGroupingStale` distinguish "the server says
+    // uncategorised" (null) from "this row came from a pre-Loadout cache"
+    // (absent) — without it, a returning user's cached list would render every
+    // chip under "Other" for up to 24h with nothing able to detect why.
+    category: raw.category ?? null,
   };
 }
 

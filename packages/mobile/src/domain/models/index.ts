@@ -22,6 +22,7 @@ export {
   type ReferenceListKind,
   REFERENCE_LIST_STALE_AFTER_MS,
   isReferenceListStale,
+  isEquipmentGroupingStale,
 } from "./reference-list";
 
 export { type PersonalRecord, type RecordType, RECORD_TYPES } from "./record";
