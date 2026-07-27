@@ -148,21 +148,28 @@ say so and fix this file.
 
 ## Open items
 
-### Brad's decisions — Loadout (spec-21), all still open
+### DECIDED by Brad 2026-07-27 — Loadout Phase 1. Do not re-raise.
 
-- **Re-map daily ceiling** — deliberately no number proposed. At
-  $0.0057/adaptation (~$0.51/user/month at three a day) it is abuse control, not
-  unit economics, and hitting a cap mid-gym is a bad failure. **Phase 1 ships the
-  MECHANISM with `AI_LOADOUT_REMAP_DAILY_LIMIT = 30` as a labelled PLACEHOLDER**
-  (matching the other Haiku-class endpoint) so the guard is never absent — the
-  number still needs Brad's call.
-- **Re-map retry policy** — `createWithRetry` (12 s × 2) vs ONE ~20 s attempt.
-  Phase 1 ships `createWithRetry`, which is what design § 1b specifies and what
-  E2 measured through (p50 2.60 s / max 3.79 s, ~3× headroom on one attempt).
-  The retry PATH is unmeasured and 12 s × 2 plus overhead sits close to the hard
-  30 s API Gateway ceiling, so a first-attempt timeout converts a slow request
-  into a failed one. Brad's call; the scan needs the no-retry variant anyway
-  (T-E1.6), so whichever lands builds it once.
+Swept through code, `infra/api.ts`, `requirements.md` AC-10.2 and `tasks.md`
+T-1.9 — no doc still describes these as open.
+
+- **Re-map daily ceiling = 30/day.** `AI_LOADOUT_REMAP_DAILY_LIMIT` is no longer a
+  placeholder. At $0.0057/adaptation that is ~$0.51/user/month at realistic use and
+  ~$5.13 if an abuser consumes the lot, against £29.99 — abuse control, not unit
+  economics, and deliberately generous because the bad failure is a real athlete
+  hitting it mid-session.
+- **Re-map retry = keep `createWithRetry`** (12 s × 2). The retry path is only
+  reached after an actual first failure, where a ~24 s worst case beats failing
+  outright. ⚠ **NOT abandoned:** the single ~20 s attempt still has to be built for
+  the scan (T-E1.6), and this decision can be revisited once that harness exists
+  and is measured.
+- **A Bedrock failure stays a 503** — no silent fallback to the § 6.2 ranker.
+  Ranker-only output is what the bake-off rejected 4-50 (`Barbell Deadlift → Atlas
+  Stones` in a bands-only context), so a visible outage beats a quietly worse plan
+  under a Premium+ badge.
+
+### Brad's decisions — Loadout (spec-21), still open
+
 - **Equipment-scan ceiling** — 10/day proposed. At **$0.0272/scan** that is
   ~$8.16/user/month worst case against £29.99 — the one ceiling with real money
   behind it.
@@ -246,6 +253,23 @@ say so and fix this file.
   marketing-site Premium+ copy, allergen vocabulary + disclaimer sign-off, P3
   timing.
 
+### Dependabot — one alert, dismissed as not-exploitable (2026-07-27)
+
+⚠ **The push banner's "8 vulnerabilities (3 critical, 5 high)" is WRONG — or at
+least does not match the APIs.** Both the REST alerts endpoint and the GraphQL
+`vulnerabilityAlerts` query returned exactly **one** alert of any state. Don't
+treat that banner as a count; query the API.
+
+The one alert was **`react-router` 7.13.0 in `packages/web`** (high — "RSC Mode
+CSRF Bypass"), patched only in **8.3.0, a major bump**. **Dismissed as
+`not_used`** on Brad's call: the advisory needs React Router's RSC mode with
+server actions, and `packages/web` imports react-router purely for client-side
+routing (`BrowserRouter` / `Routes` / `Route` / `Link` / `useLocation` — no
+`react-router/rsc`, `routeRSCServerRequest` or `createCallServer` anywhere) and
+ships as an SST `StaticSite`, so there is no server to execute an action on. The
+vulnerable path is unreachable. **Revisit if `packages/web` ever adopts RSC mode
+or a server runtime.** Open alerts are now 0.
+
 ### Closed by Brad 2026-07-27 — do not re-raise
 
 BRIEF-7 device-QA batch (all ~20 bugs, signed off) · the one-time
@@ -311,9 +335,10 @@ migration, no mobile, no scan endpoint. All of T-1.1…T-1.11 ticked in
   `PlanRow.rowKey` (position in the ordered plan). The tool field the model sees is
   still named `sortOrder`, deliberately, so the prompt stays byte-identical to the
   arm E2 measured.
-- **Brad checkpoints raised, NOT decided** (both in § Open items): the re-map daily
-  ceiling ships as a **labelled placeholder** `AI_LOADOUT_REMAP_DAILY_LIMIT = 30`
-  at $0.0057/adaptation, and `createWithRetry` vs one ~20 s attempt.
+- **Brad's three Phase-1 checkpoints were DECIDED later the same day** — ceiling
+  30/day, keep `createWithRetry`, keep the 503 (see § Open items → § DECIDED).
+  They shipped as flagged placeholders/recommendations and were promoted to
+  decisions in a follow-up, with every doc that assumed "open" swept.
 - **Bedrock grant NOT re-verified this session** — both SSO tokens were expired and
   refreshing needs an interactive login. The ledger's evidence stands (Brad granted
   Haiku 4.5 in prod 2026-07-26); the check is queued in § Open items rather than

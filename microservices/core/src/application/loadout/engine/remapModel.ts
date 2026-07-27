@@ -325,8 +325,11 @@ export function parseRemapSelections(input: unknown): RemapSelection[] {
  * 30 s API Gateway integration ceiling, so a first-attempt timeout converts a
  * slow request into a failed one. The alternative — a single ~20 s attempt, which
  * is what the scan needs (T-E1.6) — trades the retry for more per-attempt budget.
- * Flagged for Brad rather than silently chosen; the measured evidence supports
- * the retry, the unmeasured tail is the argument against it.
+ * **Brad chose the retry, 2026-07-27**, on the measured evidence: the retry path
+ * is only reached after an actual first failure, where a ~24 s worst case still
+ * beats failing the request outright. The single-long-attempt variant is NOT
+ * abandoned — Phase 3's scan requires it (T-E1.6), so it gets built there and this
+ * decision can be revisited once that harness exists and is measured.
  */
 export async function selectSubstitutes(
   input: {

@@ -136,13 +136,12 @@ coreAPI.route("$default", {
     // "Per-coach daily backstop"). Net worst case min(2 × opened-clients,
     // this). Sized for a full coaching roster; a cost backstop, not a quota.
     AI_COACH_SUMMARY_DAILY_LIMIT: "40",
-    // ⚠ PLACEHOLDER, NOT A DECISION — spec-21 AC-10.2 is an OPEN Brad checkpoint
-    // and deliberately proposes no number. The measured cost is $0.0057 per
-    // adaptation (~$0.51/user/month at three a day, ~$3.43 at 20/day fully
-    // consumed) against £29.99, so this cap is abuse control rather than unit
-    // economics — and the bad failure mode is hitting it mid-gym. 30 mirrors the
-    // other Haiku-class endpoint so the guard is never absent; it is not a chosen
-    // value. See the handler's constant for the full note.
+    // 30/day — DECIDED by Brad 2026-07-27 (spec-21 AC-10.2, previously open).
+    // Measured cost is $0.0057 per adaptation: ~$0.51/user/month at three a day
+    // and ~$5.13 if an abuser consumes all 30, against £29.99. So the cap is abuse
+    // control rather than unit economics, which is why it is generous — the bad
+    // failure mode is a real athlete hitting it mid-session. Mirrors
+    // AI_TEXT_DAILY_LIMIT, the other Haiku-class endpoint.
     AI_LOADOUT_REMAP_DAILY_LIMIT: "30",
   },
 });

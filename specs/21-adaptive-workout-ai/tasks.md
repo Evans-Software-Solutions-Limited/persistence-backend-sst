@@ -281,7 +281,7 @@ Phase 1/2 design. Rationale: `requirements.md` § Eval spike.
 > shortlister, top 25 per row), **plus** a model-selection stage with the
 > adapter + ceiling + usage-log tasks patterned on T-3.1–T-3.3. Stages 1, 3 and 4
 > stay deterministic (design § 1). Two additions the verdict forces:
-> **T-1.9** the re-map ceiling (AC-10.2 — ⚠ number is a Brad checkpoint) and
+> **T-1.9** the re-map ceiling (AC-10.2 — **30/day, decided 2026-07-27**) and
 > **T-1.10** returning the structured reason code _and_ the model's sentence
 > (design § 7.2 alone is not sufficient once the model writes the copy).
 
@@ -322,7 +322,7 @@ Phase 1/2 design. Rationale: `requirements.md` § Eval spike.
       plus the re-map daily ceiling on the #156 pattern (`429 ai_daily_limit`,
       usage rows for actual inferences only, fail-safe env parse) and
       `AI_LOADOUT_REMAP_MODEL_ID` (Haiku-class — sufficient in E2) registered in
-      `infra/api.ts`. ⚠ **Ceiling number is a Brad checkpoint (AC-10.2)**.
+      `infra/api.ts`. **Ceiling = 30/day (AC-10.2, decided by Brad 2026-07-27).**
       **Verify the model id is granted in the PRODUCTION Bedrock account before
       shipping** — grants are per-account (STATE.md 2026-07-26); Haiku 4.5 is
       currently granted in both.
