@@ -11,8 +11,14 @@ say so and fix this file.
 
 ## Current state (2026-07-27)
 
-- `origin/main` = **`1a7b956`** (PR #322, Loadout **Phase 1**, merged
-  2026-07-27 14:13 UTC, branch deleted). Released to production: **v1.8.0**.
+- **Last CODE change on `origin/main` = `1a7b956`** (PR #322, Loadout **Phase 1**,
+  merged 2026-07-27 14:13 UTC, branch deleted). Released to production:
+  **v1.8.0**.
+  - Stated as the last code change rather than the literal `HEAD`, because a
+    ledger update is itself a commit — quoting the head sha here guarantees this
+    line is one commit stale the moment it lands. `git log --oneline -20` is the
+    authority for the head; this line tells you what the last SUBSTANTIVE change
+    was, which is the thing worth knowing.
 - **⚠ Production is one release behind `main`, and the gap is now much bigger
   than migrations.** Open release PR
   **[#319](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/319)
