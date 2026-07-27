@@ -155,6 +155,18 @@ import type {
   AcceptInviteCodeResult,
   TrainerInviteCode,
 } from "@/domain/models/trainerInviteCode";
+import type {
+  CreateLoadoutVariationInput,
+  EquipmentScanDraft,
+  EquipmentScanInput,
+  LoadoutPreview,
+  LoadoutPreviewInput,
+  SavedGym,
+  SavedGymInput,
+  SubstitutesQuery,
+  SubstitutesResult,
+  WorkoutVariationSummary,
+} from "@/domain/models/loadout";
 import { ok, fail, type Result, type ApiError } from "@/shared/errors";
 import type { PaginatedResult, PaginationParams } from "@/shared/types";
 
@@ -2751,5 +2763,280 @@ export class InMemoryApiAdapter implements ApiPort {
       createdAt: now,
       updatedAt: now,
     });
+  }
+
+  // ─── Loadout (spec-21) ─────────────────────────────────────────────────────
+  //
+  // Real in-memory behaviour rather than fixed stubs, because the two rules the
+  // containers have to get right are both stateful: the duplicate-name 409 and the
+  // `isUserOverride` requirement on the save path. A stub that always succeeds
+  // would let a container that never sets `isUserOverride` pass its tests and then
+  // 400 on a device.
+
+  public savedGyms: SavedGym[] = [];
+  /** Set by tests to script the preview; otherwise every row comes back kept. */
+  public loadoutPreview: LoadoutPreview | null = null;
+  public workoutVariations: Map<string, WorkoutVariationSummary[]> = new Map();
+  public substitutes: SubstitutesResult = {
+    best: [],
+    others: [],
+    meta: { truncated: false },
+  };
+  public equipmentScanDraft: EquipmentScanDraft | null = null;
+  /**
+   * Equipment ids the save path will treat as available. Left null = containment
+   * is not enforced; set it to make `EQUIPMENT_NOT_AVAILABLE` reachable.
+   */
+  public saveContextEquipmentIds: string[] | null = null;
+  public createVariationCalls: {
+    parentWorkoutId: string;
+    input: CreateLoadoutVariationInput;
+  }[] = [];
+  public previewLoadoutCalls: {
+    workoutId: string;
+    input: LoadoutPreviewInput;
+  }[] = [];
+  public scanEquipmentCalls: EquipmentScanInput[] = [];
+
+  private static normaliseGymName(name: string): string {
+    // Mirrors the backend's `lower(btrim(name))` expression index, so a test that
+    // passes here is a test that would pass against Postgres.
+    return name.trim().toLowerCase();
+  }
+
+  async getSavedGyms(): Promise<Result<SavedGym[], ApiError>> {
+    return this.mayFail([...this.savedGyms]);
+  }
+
+  async createSavedGym(
+    input: SavedGymInput,
+  ): Promise<Result<SavedGym, ApiError>> {
+    if (this.shouldFail) return fail<ApiError>(this.failError);
+    const key = InMemoryApiAdapter.normaliseGymName(input.name);
+    if (
+      this.savedGyms.some(
+        (gym) => InMemoryApiAdapter.normaliseGymName(gym.name) === key,
+      )
+    ) {
+      return fail<ApiError>({
+        kind: "api",
+        code: "server",
+        message: "A gym with that name already exists",
+        status: 409,
+      });
+    }
+    const now = new Date().toISOString();
+    const gym: SavedGym = {
+      id: `gym-${this.savedGyms.length + 1}`,
+      name: input.name,
+      equipmentTypeIds: [...input.equipmentTypeIds],
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.savedGyms.push(gym);
+    return ok(gym);
+  }
+
+  async updateSavedGym(
+    id: string,
+    input: Partial<SavedGymInput>,
+  ): Promise<Result<SavedGym, ApiError>> {
+    if (this.shouldFail) return fail<ApiError>(this.failError);
+    const index = this.savedGyms.findIndex((gym) => gym.id === id);
+    if (index === -1) {
+      return fail<ApiError>({
+        kind: "api",
+        code: "not_found",
+        message: "Saved gym not found",
+        status: 404,
+      });
+    }
+    if (input.name != null) {
+      const key = InMemoryApiAdapter.normaliseGymName(input.name);
+      if (
+        this.savedGyms.some(
+          (gym, i) =>
+            i !== index &&
+            InMemoryApiAdapter.normaliseGymName(gym.name) === key,
+        )
+      ) {
+        return fail<ApiError>({
+          kind: "api",
+          code: "server",
+          message: "A gym with that name already exists",
+          status: 409,
+        });
+      }
+    }
+    const existing = this.savedGyms[index] as SavedGym;
+    const updated: SavedGym = {
+      ...existing,
+      ...(input.name != null ? { name: input.name } : {}),
+      ...(input.equipmentTypeIds != null
+        ? { equipmentTypeIds: [...input.equipmentTypeIds] }
+        : {}),
+      updatedAt: new Date().toISOString(),
+    };
+    this.savedGyms[index] = updated;
+    return ok(updated);
+  }
+
+  async deleteSavedGym(id: string): Promise<Result<void, ApiError>> {
+    if (this.shouldFail) return fail<ApiError>(this.failError);
+    const index = this.savedGyms.findIndex((gym) => gym.id === id);
+    if (index === -1) {
+      return fail<ApiError>({
+        kind: "api",
+        code: "not_found",
+        message: "Saved gym not found",
+        status: 404,
+      });
+    }
+    this.savedGyms.splice(index, 1);
+    // Variations deliberately survive: the backend nulls `source_gym_id` rather
+    // than cascading, so a test asserting the saved setup disappears here would be
+    // asserting the opposite of the real behaviour.
+    return ok(undefined);
+  }
+
+  async previewLoadout(
+    workoutId: string,
+    input: LoadoutPreviewInput,
+  ): Promise<Result<LoadoutPreview, ApiError>> {
+    this.previewLoadoutCalls.push({ workoutId, input });
+    if (this.shouldFail) return fail<ApiError>(this.failError);
+
+    const hasGym = input.savedGymId != null;
+    const hasIds = input.equipmentTypeIds != null;
+    if (hasGym === hasIds) {
+      // The real 400. Modelled because "exactly one source" is the single easiest
+      // thing for a container to get wrong when it threads both through one state
+      // object.
+      return fail<ApiError>({
+        kind: "api",
+        code: "server",
+        message: "Provide exactly one of savedGymId or equipmentTypeIds",
+        status: 400,
+      });
+    }
+    if (this.loadoutPreview) return ok(this.loadoutPreview);
+
+    const equipmentTypeIds = hasGym
+      ? [
+          ...(this.savedGyms.find((gym) => gym.id === input.savedGymId)
+            ?.equipmentTypeIds ?? []),
+        ]
+      : [...(input.equipmentTypeIds ?? [])];
+
+    return ok({
+      workoutId,
+      parentName: "Test workout",
+      savedGymId: input.savedGymId ?? null,
+      equipmentTypeIds,
+      rows: [],
+      meta: {
+        keptCount: 0,
+        swappedCount: 0,
+        unresolvedCount: 0,
+        intensityMismatchCount: 0,
+        candidateCount: 0,
+        candidatePoolTruncated: false,
+        modelId: null,
+      },
+    });
+  }
+
+  async createWorkoutVariation(
+    parentWorkoutId: string,
+    input: CreateLoadoutVariationInput,
+  ): Promise<Result<WorkoutVariationSummary, ApiError>> {
+    this.createVariationCalls.push({ parentWorkoutId, input });
+    if (this.shouldFail) return fail<ApiError>(this.failError);
+
+    // Containment on rows NOT flagged as a deliberate override — the asymmetry the
+    // real save path enforces (AC-4.2). This is what makes a container that forgets
+    // `isUserOverride: true` fail in tests instead of on a device.
+    if (this.saveContextEquipmentIds) {
+      const available = new Set(this.saveContextEquipmentIds);
+      const offending = input.exercises.find(
+        (row) =>
+          row.isUserOverride !== true &&
+          (row.substitutionReason?.missingEquipment ?? []).some(
+            (id) => !available.has(id),
+          ),
+      );
+      if (offending) {
+        return fail<ApiError>({
+          kind: "api",
+          code: "server",
+          message: "EQUIPMENT_NOT_AVAILABLE",
+          status: 400,
+        });
+      }
+    }
+
+    const now = new Date().toISOString();
+    const variation: WorkoutVariationSummary = {
+      id: `variation-${this.createVariationCalls.length}`,
+      name: input.name,
+      description: input.description ?? null,
+      parentWorkoutId,
+      variationKind: "loadout",
+      sourceGymId: input.sourceGymId ?? null,
+      sourceGymName:
+        this.savedGyms.find((gym) => gym.id === input.sourceGymId)?.name ??
+        null,
+      sourceEquipmentTypeIds: input.sourceEquipmentTypeIds
+        ? [...input.sourceEquipmentTypeIds]
+        : null,
+      estimatedDurationMinutes: input.estimatedDurationMinutes ?? null,
+      swapCount: input.exercises.filter(
+        (row) => row.substitutedFromExerciseId != null,
+      ).length,
+      createdAt: now,
+      updatedAt: now,
+    };
+    const existing = this.workoutVariations.get(parentWorkoutId) ?? [];
+    this.workoutVariations.set(parentWorkoutId, [variation, ...existing]);
+    return ok(variation);
+  }
+
+  async getWorkoutVariations(
+    parentWorkoutId: string,
+  ): Promise<Result<WorkoutVariationSummary[], ApiError>> {
+    return this.mayFail([
+      ...(this.workoutVariations.get(parentWorkoutId) ?? []),
+    ]);
+  }
+
+  async getExerciseSubstitutes(
+    query: SubstitutesQuery,
+  ): Promise<Result<SubstitutesResult, ApiError>> {
+    if (this.shouldFail) return fail<ApiError>(this.failError);
+    // With no kit, `best` is empty by design and everything is in `others` — the
+    // standalone in-session swap's case (AC-4.4).
+    if (!query.equipment || query.equipment.length === 0) {
+      return ok({
+        best: [],
+        others: [...this.substitutes.best, ...this.substitutes.others],
+        meta: this.substitutes.meta,
+      });
+    }
+    return ok(this.substitutes);
+  }
+
+  async scanEquipment(
+    input: EquipmentScanInput,
+  ): Promise<Result<EquipmentScanDraft, ApiError>> {
+    this.scanEquipmentCalls.push(input);
+    if (this.shouldFail) return fail<ApiError>(this.failError);
+    return ok(
+      this.equipmentScanDraft ?? {
+        detected: [],
+        unmatched: [],
+        notes: null,
+        modelId: "test-model",
+      },
+    );
   }
 }

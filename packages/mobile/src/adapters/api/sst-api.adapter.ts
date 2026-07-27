@@ -18,6 +18,18 @@ import type {
 import type { NotificationPreferences } from "@/domain/models/notification-preferences";
 import { normalizePreferences } from "@/domain/models/notification-preferences";
 import type {
+  CreateLoadoutVariationInput,
+  EquipmentScanDraft,
+  EquipmentScanInput,
+  LoadoutPreview,
+  LoadoutPreviewInput,
+  SavedGym,
+  SavedGymInput,
+  SubstitutesQuery,
+  SubstitutesResult,
+  WorkoutVariationSummary,
+} from "@/domain/models/loadout";
+import type {
   ReferenceEntry,
   ReferenceListKind,
 } from "@/domain/models/reference-list";
@@ -1996,6 +2008,128 @@ export class SSTApiAdapter implements ApiPort {
       `/trainers/me/clients/${clientId}/workout-assignments/${assignmentId}`,
       { method: "PATCH", body: input },
     );
+  }
+
+  // ─── Loadout (spec-21) ───────────────────────────────────────────────────
+  //
+  // Single `{ data }` envelopes, camelCase on the wire == the domain shape, so
+  // every one of these is a passthrough with no mapper. That is deliberate on the
+  // backend's side (the Loadout handlers were written camelCase-out precisely so
+  // the review step could round-trip a preview row back into the save call
+  // byte-for-byte) — do NOT add a snake_case mapper here on the assumption that
+  // the rest of the API's convention applies.
+  //
+  // ALL ONLINE-DIRECT, never the sync queue. See the ApiPort docstring for why
+  // the model-backed calls and the cheap writes both qualify.
+  //
+  // 402/422/429/503 surface through `requestEnvelope` → `mapHttpErrorToApiError`
+  // (402 → `entitlement_denied` with the structured payload; the rest → `server`,
+  // distinguished by `status`), matching `estimateFromPhoto`'s pattern.
+
+  async getSavedGyms(): Promise<Result<SavedGym[], ApiError>> {
+    return this.requestEnvelope<SavedGym[]>("/saved-gyms");
+  }
+
+  async createSavedGym(
+    input: SavedGymInput,
+  ): Promise<Result<SavedGym, ApiError>> {
+    return this.requestEnvelope<SavedGym>("/saved-gyms", {
+      method: "POST",
+      body: input,
+    });
+  }
+
+  async updateSavedGym(
+    id: string,
+    input: Partial<SavedGymInput>,
+  ): Promise<Result<SavedGym, ApiError>> {
+    return this.requestEnvelope<SavedGym>(`/saved-gyms/${id}`, {
+      method: "PATCH",
+      body: input,
+    });
+  }
+
+  async deleteSavedGym(id: string): Promise<Result<void, ApiError>> {
+    const result = await this.requestEnvelope<unknown>(`/saved-gyms/${id}`, {
+      method: "DELETE",
+    });
+    if (!result.ok) return result;
+    return ok(undefined);
+  }
+
+  async previewLoadout(
+    workoutId: string,
+    input: LoadoutPreviewInput,
+  ): Promise<Result<LoadoutPreview, ApiError>> {
+    return this.requestEnvelope<LoadoutPreview>(
+      `/workouts/${workoutId}/loadout/preview`,
+      {
+        method: "POST",
+        body: input,
+        // The preview makes a Bedrock call (E2: 2.6 s p50, 3.8 s max) inside the
+        // API Gateway 30 s ceiling, and `createWithRetry` can spend 24 s of that
+        // on the retry path. A shorter client timeout would abandon a request the
+        // server is still paying for — and the usage row is written for every
+        // inference that reached the provider, so the user would lose one of their
+        // daily adaptations to a client-side give-up.
+        timeoutMs: 30_000,
+      },
+    );
+  }
+
+  async createWorkoutVariation(
+    parentWorkoutId: string,
+    input: CreateLoadoutVariationInput,
+  ): Promise<Result<WorkoutVariationSummary, ApiError>> {
+    return this.requestEnvelope<WorkoutVariationSummary>(
+      `/workouts/${parentWorkoutId}/variations`,
+      { method: "POST", body: input },
+    );
+  }
+
+  async getWorkoutVariations(
+    parentWorkoutId: string,
+  ): Promise<Result<WorkoutVariationSummary[], ApiError>> {
+    return this.requestEnvelope<WorkoutVariationSummary[]>(
+      `/workouts/${parentWorkoutId}/variations`,
+    );
+  }
+
+  async getExerciseSubstitutes(
+    query: SubstitutesQuery,
+  ): Promise<Result<SubstitutesResult, ApiError>> {
+    const params: Record<string, string | number | string[]> = {
+      forExerciseId: query.forExerciseId,
+    };
+    // OMITTED, not sent empty. The endpoint treats an absent `equipment` as "no
+    // kit known" (empty `best`, everything in `others`), which is the standalone
+    // in-session swap's case. Sending `equipment: []` instead would be a request
+    // for containment against nothing — the same outcome by accident rather than
+    // by contract, and it would break if the backend ever validated non-empty.
+    if (query.equipment && query.equipment.length > 0) {
+      params.equipment = [...query.equipment];
+    }
+    if (query.limit != null) params.limit = query.limit;
+
+    return this.requestEnvelope<SubstitutesResult>("/exercises/substitutes", {
+      params,
+    });
+  }
+
+  async scanEquipment(
+    input: EquipmentScanInput,
+  ): Promise<Result<EquipmentScanDraft, ApiError>> {
+    return this.requestEnvelope<EquipmentScanDraft>("/ai/equipment-scan", {
+      method: "POST",
+      body: input,
+      // The scan is the slowest call in the app: E1 measured Opus at mean 10.1 s /
+      // max 12.27 s on easy photos, and the server gives it ONE ~20 s attempt
+      // (T-E1.6) inside the 30 s gateway ceiling. Anything shorter here would
+      // abandon scans the server is about to answer — and at $0.0272 a scan, on a
+      // 6/day ceiling, an abandoned request is the most expensive kind of failure
+      // in the feature.
+      timeoutMs: 30_000,
+    });
   }
 
   /**
