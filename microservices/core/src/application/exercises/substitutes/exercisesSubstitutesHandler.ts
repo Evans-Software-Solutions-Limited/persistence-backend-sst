@@ -176,19 +176,30 @@ export const exercisesSubstitutesHandler = new Elysia()
         matchedOn: ranked.matchedOn,
       });
 
-      const best = rankSubstitutes(
+      const bestRanked = rankSubstitutes(
         sourceCandidate,
         compatible.candidates,
         rankContext,
-      ).slice(0, limit);
-      const bestIds = new Set(best.map((ranked) => ranked.candidate.id));
+      );
+      const best = bestRanked.slice(0, limit);
+
+      // Excluded from `others`: EVERY compatible candidate, not just the ones
+      // that survived `limit`. `others` is the same muscle filter WITHOUT
+      // containment, so it is a superset of the compatible pool — filtering on
+      // the sliced `best` would push compatible-but-rank-26 exercises into the
+      // list the client renders as "doesn't fit your kit". The user would be
+      // asked to acknowledge a false claim, and accepting it would store the row
+      // as `isUserOverride`, corrupting the provenance the save path reads.
+      const compatibleIds = new Set(
+        bestRanked.map((ranked) => ranked.candidate.id),
+      );
 
       const others = rankSubstitutes(
         sourceCandidate,
         unconstrained.candidates,
         rankContext,
       )
-        .filter((ranked) => !bestIds.has(ranked.candidate.id))
+        .filter((ranked) => !compatibleIds.has(ranked.candidate.id))
         .slice(0, limit);
 
       return {

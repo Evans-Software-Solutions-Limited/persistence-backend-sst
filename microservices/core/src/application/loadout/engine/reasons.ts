@@ -70,7 +70,22 @@ export interface SubstitutionReason {
   /** Empty unless a replacement was chosen. */
   matchedOn: RankSignal[];
   flags: SubstitutionFlag[];
-  /** The model's one-sentence rationale, or null when no model wrote this row. */
+  /**
+   * The model's one-sentence rationale, or null when no model wrote this row.
+   *
+   * ⚠ **UNTRUSTED TEXT. Phase 2 must render it as plain text — never as markup,
+   * a link, or anything actionable.** The prompt that produced it necessarily
+   * contains strings the caller does not control: AC-1.2 makes a STRANGER'S
+   * public workout adaptable, `listAdaptationRows` applies no catalogue
+   * visibility predicate, and neither `workouts.name` nor `exercises.name` is
+   * length-bounded at its create handler. So an attacker can publish a workout
+   * whose exercise name instructs the model what to write here, and this is the
+   * one field that reaches the user as the app's own explanation.
+   *
+   * The plan itself stays safe regardless — `exerciseId` is validated for
+   * membership in a server-built list — and the string is hard-capped at
+   * `MAX_REASON_LENGTH`. The rendering boundary is the remaining control.
+   */
   note: string | null;
   selectedBy: RowSelectedBy | null;
 }

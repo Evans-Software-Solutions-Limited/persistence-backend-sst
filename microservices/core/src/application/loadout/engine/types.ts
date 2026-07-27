@@ -26,6 +26,24 @@ export interface PlanTargets {
 
 /** One parent row, partitioned into KEPT / needs-swap by stage 1. */
 export interface PlanRow extends PlanTargets {
+  /**
+   * The row's identity WITHIN this adaptation: its 0-based position in the
+   * ordered plan. Every internal map — shortlists, model selections, stage 3's
+   * lookups — is keyed on this.
+   *
+   * ⚠ Deliberately NOT `sortOrder`. `workout_exercises.sort_order` has no unique
+   * constraint (`001_initial_schema.sql:699-702` indexes only workout_id /
+   * exercise_id / superset_group) and `toWorkoutExerciseInsert` writes the
+   * client's value verbatim, so two rows can share one. Keying on it collapsed
+   * the shortlist map: the second row's list overwrote the first's, the union
+   * offered to the model lost the first row's candidates, and the model's
+   * legitimate pick then failed membership and was "repaired" into a
+   * cross-muscle substitution (a squat for a bench press) with an empty
+   * `matchedOn`. Reachable through a stranger's public workout, which AC-1.2
+   * makes adaptable.
+   */
+  rowKey: number;
+  /** The parent's own `sort_order`, carried through to the response unchanged. */
   sortOrder: number;
   source: AdaptationCandidate;
   needsSwap: boolean;

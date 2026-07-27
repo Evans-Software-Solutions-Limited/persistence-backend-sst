@@ -217,7 +217,7 @@ describe("assembleAdaptedPlan — kept rows", () => {
     const source = ex({ id: "a", name: "Push-Up" });
     const plan = partitionPlan([row(0, source)], [DUMBBELL]);
     const selections = new Map<number, RemapSelection>([
-      [0, { sortOrder: 0, exerciseId: "hijack", reason: "let me change this" }],
+      [0, { rowKey: 0, exerciseId: "hijack", reason: "let me change this" }],
     ]);
 
     const adapted = assemble({
@@ -254,7 +254,7 @@ describe("assembleAdaptedPlan — kept rows", () => {
       plan,
       shortlistByRow: shortlistPerRow(plan, [pick], noLogs),
       selections: new Map([
-        [1, { sortOrder: 1, exerciseId: "pick", reason: "MODEL PROSE" }],
+        [1, { rowKey: 1, exerciseId: "pick", reason: "MODEL PROSE" }],
       ]),
       equipmentTypeIds: [DUMBBELL],
     });
@@ -317,10 +317,7 @@ describe("assembleAdaptedPlan — swapped rows", () => {
   it("takes the model's pick, keeps the parent's targets, and records provenance", () => {
     const adapted = swapCase(
       new Map([
-        [
-          0,
-          { sortOrder: 0, exerciseId: "pick", reason: "Dumbbells work here" },
-        ],
+        [0, { rowKey: 0, exerciseId: "pick", reason: "Dumbbells work here" }],
       ]),
     );
 
@@ -350,7 +347,7 @@ describe("assembleAdaptedPlan — swapped rows", () => {
     // protocol failure — it must NOT be overridden by the ranker.
     const adapted = swapCase(
       new Map([
-        [0, { sortOrder: 0, exerciseId: null, reason: "Nothing suitable" }],
+        [0, { rowKey: 0, exerciseId: null, reason: "Nothing suitable" }],
       ]),
     );
 
@@ -384,7 +381,7 @@ describe("assembleAdaptedPlan — swapped rows", () => {
     // was not in the offered union — never accepted on trust.
     const adapted = swapCase(
       new Map([
-        [0, { sortOrder: 0, exerciseId: "invented", reason: "made this up" }],
+        [0, { rowKey: 0, exerciseId: "invented", reason: "made this up" }],
       ]),
     );
 
@@ -416,10 +413,7 @@ describe("assembleAdaptedPlan — swapped rows", () => {
       plan,
       shortlistByRow,
       selections: new Map([
-        [
-          0,
-          { sortOrder: 0, exerciseId: "illegal", reason: "cables are great" },
-        ],
+        [0, { rowKey: 0, exerciseId: "illegal", reason: "cables are great" }],
       ]),
       equipmentTypeIds: [DUMBBELL],
     });
@@ -436,7 +430,7 @@ describe("assembleAdaptedPlan — swapped rows", () => {
         [
           0,
           {
-            sortOrder: 0,
+            rowKey: 0,
             exerciseId: "invented",
             reason: "about something else",
           },
@@ -449,7 +443,7 @@ describe("assembleAdaptedPlan — swapped rows", () => {
 
   it("treats a blank model sentence as absent rather than empty prose", () => {
     const adapted = swapCase(
-      new Map([[0, { sortOrder: 0, exerciseId: "pick", reason: "   " }]]),
+      new Map([[0, { rowKey: 0, exerciseId: "pick", reason: "   " }]]),
     );
 
     expect(adapted.rows[0].reason.note).toBeNull();
@@ -481,8 +475,8 @@ describe("assembleAdaptedPlan — swapped rows", () => {
       plan,
       shortlistByRow,
       selections: new Map([
-        [0, { sortOrder: 0, exerciseId: "leg", reason: "cross-row" }],
-        [1, { sortOrder: 1, exerciseId: "pick", reason: "cross-row" }],
+        [0, { rowKey: 0, exerciseId: "leg", reason: "cross-row" }],
+        [1, { rowKey: 1, exerciseId: "pick", reason: "cross-row" }],
       ]),
       equipmentTypeIds: [DUMBBELL],
     });
@@ -525,8 +519,8 @@ describe("assembleAdaptedPlan — duplicate picks (T-1.4)", () => {
       plan,
       shortlistByRow,
       selections: new Map([
-        [0, { sortOrder: 0, exerciseId: "first", reason: "one" }],
-        [1, { sortOrder: 1, exerciseId: "first", reason: "also one" }],
+        [0, { rowKey: 0, exerciseId: "first", reason: "one" }],
+        [1, { rowKey: 1, exerciseId: "first", reason: "also one" }],
       ]),
       equipmentTypeIds: [DUMBBELL],
     });
@@ -568,7 +562,7 @@ describe("assembleAdaptedPlan — duplicate picks (T-1.4)", () => {
       plan,
       shortlistByRow,
       selections: new Map([
-        [1, { sortOrder: 1, exerciseId: "keeper", reason: "reuse it" }],
+        [1, { rowKey: 1, exerciseId: "keeper", reason: "reuse it" }],
       ]),
       equipmentTypeIds: [DUMBBELL],
     });
@@ -592,7 +586,7 @@ describe("assembleAdaptedPlan — duplicate picks (T-1.4)", () => {
       plan,
       shortlistByRow,
       selections: new Map([
-        [0, { sortOrder: 0, exerciseId: "only", reason: "one" }],
+        [0, { rowKey: 0, exerciseId: "only", reason: "one" }],
       ]),
       equipmentTypeIds: [DUMBBELL],
     });
@@ -628,7 +622,7 @@ describe("assembleAdaptedPlan — intensity mismatch (AC-3.5b)", () => {
       plan,
       shortlistByRow,
       selections: new Map([
-        [0, { sortOrder: 0, exerciseId: "band", reason: "hinge for hinge" }],
+        [0, { rowKey: 0, exerciseId: "band", reason: "hinge for hinge" }],
       ]),
       equipmentTypeIds: [BANDS],
       loadableEquipmentTypeIds: LOADABLE,
@@ -661,7 +655,7 @@ describe("assembleAdaptedPlan — intensity mismatch (AC-3.5b)", () => {
       plan,
       shortlistByRow,
       selections: new Map([
-        [0, { sortOrder: 0, exerciseId: "band", reason: "row for row" }],
+        [0, { rowKey: 0, exerciseId: "band", reason: "row for row" }],
       ]),
       equipmentTypeIds: [BANDS],
       loadableEquipmentTypeIds: LOADABLE,
@@ -715,5 +709,142 @@ describe("assembleAdaptedPlan — meta", () => {
     const adapted = assemble({ plan, equipmentTypeIds: [DUMBBELL] });
 
     expect(adapted.rows.map((r) => r.sortOrder)).toEqual([0, 1, 2]);
+  });
+});
+
+describe("assembleAdaptedPlan — duplicate sort_order in the parent", () => {
+  // `workout_exercises.sort_order` has NO unique constraint and is written
+  // verbatim from the client, so two rows can share one — including via a
+  // stranger's public workout, which AC-1.2 makes adaptable. Keying the internal
+  // maps on it collapsed one row's shortlist into the other's and produced a
+  // cross-muscle substitution through the guards rather than around them.
+  const chestSource = ex({
+    id: "chest-src",
+    name: "Barbell Bench Press",
+    primaryMuscles: [CHEST],
+    equipmentRequired: [BARBELL],
+  });
+  const legSource = ex({
+    id: "leg-src",
+    name: "Barbell Squat",
+    primaryMuscles: [LEGS],
+    equipmentRequired: [BARBELL],
+  });
+  const chestAlt = ex({
+    id: "chest-alt",
+    name: "Dumbbell Bench Press",
+    primaryMuscles: [CHEST],
+    equipmentRequired: [DUMBBELL],
+  });
+  const legAlt = ex({
+    id: "leg-alt",
+    name: "Dumbbell Squat",
+    primaryMuscles: [LEGS],
+    equipmentRequired: [DUMBBELL],
+  });
+
+  it("gives colliding rows distinct row keys", () => {
+    const plan = partitionPlan(
+      [row(0, chestSource), row(0, legSource)],
+      [DUMBBELL],
+    );
+
+    expect(plan.map((r) => r.rowKey)).toEqual([0, 1]);
+    // …while the parent's own sort_order is carried through untouched.
+    expect(plan.map((r) => r.sortOrder)).toEqual([0, 0]);
+  });
+
+  it("shortlists BOTH rows rather than overwriting one", () => {
+    const plan = partitionPlan(
+      [row(0, chestSource), row(0, legSource)],
+      [DUMBBELL],
+    );
+    const byRow = shortlistPerRow(plan, [chestAlt, legAlt], noLogs);
+
+    expect(byRow.size).toBe(2);
+    expect(byRow.get(0)?.map((e) => e.candidate.id)).toEqual(["chest-alt"]);
+    expect(byRow.get(1)?.map((e) => e.candidate.id)).toEqual(["leg-alt"]);
+    // The union offered to the model therefore keeps both candidates.
+    expect(unionShortlist(byRow).map((c) => c.id)).toEqual([
+      "chest-alt",
+      "leg-alt",
+    ]);
+  });
+
+  it("resolves each row to its OWN muscle group", () => {
+    const plan = partitionPlan(
+      [row(0, chestSource), row(0, legSource)],
+      [DUMBBELL],
+    );
+    const shortlistByRow = shortlistPerRow(plan, [chestAlt, legAlt], noLogs);
+
+    const adapted = assemble({
+      plan,
+      shortlistByRow,
+      selections: new Map([
+        [0, { rowKey: 0, exerciseId: "chest-alt", reason: "press for press" }],
+        [1, { rowKey: 1, exerciseId: "leg-alt", reason: "squat for squat" }],
+      ]),
+      equipmentTypeIds: [DUMBBELL],
+    });
+
+    expect(adapted.rows.map((r) => r.exerciseId)).toEqual([
+      "chest-alt",
+      "leg-alt",
+    ]);
+    expect(adapted.rows.every((r) => r.reason.selectedBy === "model")).toBe(
+      true,
+    );
+    expect(adapted.meta.unresolvedCount).toBe(0);
+  });
+});
+
+describe("assembleAdaptedPlan — note provenance on unresolved rows", () => {
+  it("does NOT attribute the model's sentence to a repair-exhausted row", () => {
+    // The model named one exercise for two rows. Row 0 takes it; row 1 hits the
+    // duplicate guard, finds nothing left, and ships unresolved. Carrying the
+    // note there would put a rationale for an exercise that is not in the plan
+    // onto a row that has no exercise at all.
+    const srcA = ex({ id: "srcA", name: "A", equipmentRequired: [BARBELL] });
+    const srcB = ex({ id: "srcB", name: "B", equipmentRequired: [BARBELL] });
+    const only = ex({
+      id: "only",
+      name: "Only",
+      equipmentRequired: [DUMBBELL],
+    });
+
+    const plan = partitionPlan([row(0, srcA), row(1, srcB)], [DUMBBELL]);
+    const shortlistByRow = shortlistPerRow(plan, [only], noLogs);
+
+    const adapted = assemble({
+      plan,
+      shortlistByRow,
+      selections: new Map([
+        [0, { rowKey: 0, exerciseId: "only", reason: "Only also fits row B" }],
+        [1, { rowKey: 1, exerciseId: "only", reason: "Only also fits row B" }],
+      ]),
+      equipmentTypeIds: [DUMBBELL],
+    });
+
+    expect(adapted.rows[1].status).toBe("unresolved");
+    expect(adapted.rows[1].reason.note).toBeNull();
+  });
+
+  it("DOES carry the sentence when the model explicitly declined the row", () => {
+    // Here the prose is about this row's impossibility, which is the one case
+    // worth showing (AC-3.4).
+    const source = ex({ id: "src", name: "A", equipmentRequired: [BARBELL] });
+    const plan = partitionPlan([row(0, source)], [DUMBBELL]);
+
+    const adapted = assemble({
+      plan,
+      shortlistByRow: shortlistPerRow(plan, [], noLogs),
+      selections: new Map([
+        [0, { rowKey: 0, exerciseId: null, reason: "Bands can't hinge heavy" }],
+      ]),
+      equipmentTypeIds: [DUMBBELL],
+    });
+
+    expect(adapted.rows[0].reason.note).toBe("Bands can't hinge heavy");
   });
 });

@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
   buildRemapPrompt,
   DEFAULT_REMAP_MODEL_ID,
+  MAX_REASON_LENGTH,
   parseRemapSelections,
   remapModelId,
   selectSubstitutes,
@@ -36,6 +37,7 @@ function planRow(
   needsSwap: boolean,
 ): PlanRow {
   return {
+    rowKey: sortOrder,
     sortOrder,
     source,
     needsSwap,
@@ -174,7 +176,7 @@ describe("parseRemapSelections", () => {
       parseRemapSelections({
         rows: [{ sortOrder: 1, exerciseId: "cand-1", reason: "fits" }],
       }),
-    ).toEqual([{ sortOrder: 1, exerciseId: "cand-1", reason: "fits" }]);
+    ).toEqual([{ rowKey: 1, exerciseId: "cand-1", reason: "fits" }]);
   });
 
   it("accepts an explicit null selection", () => {
@@ -243,7 +245,7 @@ describe("selectSubstitutes", () => {
     });
     expect(capture.params.model).toBe("eu.anthropic.test");
     expect(result.selections.get(1)).toEqual({
-      sortOrder: 1,
+      rowKey: 1,
       exerciseId: "cand-1",
       reason: "fits",
     });
@@ -376,5 +378,84 @@ describe("selectSubstitutes", () => {
 
     expect(result.usage.inputTokens).toBe(0);
     expect(result.usage.outputTokens).toBe(0);
+  });
+});
+
+describe("selectSubstitutes — truncation and untrusted prose", () => {
+  it("rejects a TRUNCATED response instead of letting it parse", async () => {
+    // A `max_tokens` stop leaves well-formed surviving rows, so the payload parses
+    // and the dropped rows look like rows the model chose to skip — which stage 3
+    // then "repairs" from the ranker. That is the silent deterministic fallback the
+    // design forbids, under a Premium+ badge. `findToolUse` only rejects a refusal.
+    const client = fakeClient({
+      stop_reason: "max_tokens",
+      content: [
+        {
+          type: "tool_use",
+          name: "compose_adapted_plan",
+          input: {
+            rows: [{ sortOrder: 1, exerciseId: "cand-1", reason: "x" }],
+          },
+        },
+      ],
+    });
+
+    await expect(
+      selectSubstitutes(
+        {
+          workoutName: "Upper Body",
+          plan: PLAN,
+          candidates: [candidate],
+          equipmentTypeIds: [DUMBBELL],
+          lookups,
+        },
+        { client },
+      ),
+    ).rejects.toThrow(/truncated/);
+  });
+
+  it("caps the model's sentence — it is a channel an injected name can steer", async () => {
+    // AC-1.2 makes a stranger's PUBLIC workout adaptable and neither workout nor
+    // exercise names have a length bound, so the prompt contains text this caller
+    // does not control and `reason` is passed through to the user.
+    const client = fakeClient(
+      toolResponse([
+        { sortOrder: 1, exerciseId: "cand-1", reason: "x".repeat(5000) },
+      ]),
+    );
+
+    const result = await selectSubstitutes(
+      {
+        workoutName: "Upper Body",
+        plan: PLAN,
+        candidates: [candidate],
+        equipmentTypeIds: [DUMBBELL],
+        lookups,
+      },
+      { client },
+    );
+
+    expect(result.selections.get(1)?.reason).toHaveLength(MAX_REASON_LENGTH);
+  });
+
+  it("identifies rows by rowKey, so duplicate sort_order values cannot collide", async () => {
+    // Two plan rows sharing `sort_order` (legal — no unique constraint) get
+    // distinct row keys, and the prompt numbers them distinctly.
+    const collidingPlan = [
+      { ...planRow(0, swapSource, true), rowKey: 0, sortOrder: 0 },
+      { ...planRow(0, keptSource, true), rowKey: 1, sortOrder: 0 },
+    ];
+
+    const prompt = buildRemapPrompt({
+      workoutName: "Upper Body",
+      plan: collidingPlan,
+      candidates: [candidate],
+      equipmentTypeIds: [DUMBBELL],
+      lookups,
+    });
+
+    expect(prompt).toContain("sortOrder: 0, 1");
+    expect(prompt).toContain("0. [NEEDS_SWAP]");
+    expect(prompt).toContain("1. [NEEDS_SWAP]");
   });
 });

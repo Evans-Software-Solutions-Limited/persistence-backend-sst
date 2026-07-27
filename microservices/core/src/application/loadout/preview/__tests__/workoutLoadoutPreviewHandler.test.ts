@@ -4,6 +4,7 @@ import {
   AiUnavailableError,
   AiUnreadableError,
 } from "../../../nutrition/services/aiBedrockClient";
+import { LOADABLE_EQUIPMENT_NAMES } from "../../engine/intensityMismatch";
 
 const WORKOUT_ID = "11111111-1111-4111-8111-111111111111";
 const GYM_ID = "22222222-2222-4222-8222-222222222222";
@@ -64,10 +65,20 @@ const usageLogCountMock = vi.hoisted(() => vi.fn(async () => 0));
 const workoutRepo = vi.hoisted(() => ({
   findReadableWorkout: vi.fn(),
   listAdaptationRows: vi.fn(),
+  // The WRITE surface, stubbed so "persists nothing" (AC-3.5) is a claim the test
+  // can actually falsify. Asserting the mock's own key set instead — as an earlier
+  // version of this file did — is invariant under every possible change to the
+  // handler and proves only that nobody edited the fixture.
+  createVariation: vi.fn(),
+  createWithExercises: vi.fn(),
+  update: vi.fn(),
+  delete: vi.fn(),
 }));
 const savedGymRepo = vi.hoisted(() => ({
   getById: vi.fn(),
   findUnknownEquipmentTypeIds: vi.fn(async () => [] as string[]),
+  create: vi.fn(),
+  update: vi.fn(),
 }));
 const exerciseRepo = vi.hoisted(() => ({
   listAdaptationCandidates: vi.fn(),
@@ -171,7 +182,9 @@ describe("POST /workouts/:id/loadout/preview", () => {
       truncated: false,
     });
     exerciseRepo.listPreviouslyLoggedExerciseIds.mockResolvedValue([]);
-    exerciseRepo.findEquipmentTypeIdsByName.mockResolvedValue(["loadable-1"]);
+    exerciseRepo.findEquipmentTypeIdsByName.mockResolvedValue(
+      LOADABLE_EQUIPMENT_NAMES.map((_, i) => `loadable-${i}`),
+    );
     selectSubstitutesMock.mockResolvedValue({
       selections: new Map([
         [0, { sortOrder: 0, exerciseId: "ex-alt", reason: "Dumbbells work" }],
@@ -390,15 +403,15 @@ describe("POST /workouts/:id/loadout/preview", () => {
       expect(body.data.meta.modelId).toBe("eu.anthropic.test");
     });
 
-    it("persists nothing (AC-3.5) — there is no write path on this handler", async () => {
+    it("persists nothing (AC-3.5) — no write reaches any repository", async () => {
       await call({ savedGymId: GYM_ID });
 
-      // The repositories exposed to this handler have no create/update methods
-      // wired at all; assert the read-only set was all that was touched.
-      expect(Object.keys(workoutRepo)).toEqual([
-        "findReadableWorkout",
-        "listAdaptationRows",
-      ]);
+      expect(workoutRepo.createVariation).not.toHaveBeenCalled();
+      expect(workoutRepo.createWithExercises).not.toHaveBeenCalled();
+      expect(workoutRepo.update).not.toHaveBeenCalled();
+      expect(workoutRepo.delete).not.toHaveBeenCalled();
+      expect(savedGymRepo.create).not.toHaveBeenCalled();
+      expect(savedGymRepo.update).not.toHaveBeenCalled();
     });
 
     it("excludes the plan's own exercises from the candidate query", async () => {
@@ -498,6 +511,55 @@ describe("POST /workouts/:id/loadout/preview", () => {
         expect.stringContaining("intensity-mismatch detection"),
       );
       warn.mockRestore();
+    });
+
+    it("warns on a PARTIAL resolve too — a half-firing check reads as a pass", async () => {
+      // One renamed equipment row would otherwise silently reclassify every row
+      // loaded by it, inventing false flags and dropping real ones.
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      exerciseRepo.findEquipmentTypeIdsByName.mockResolvedValue(
+        LOADABLE_EQUIPMENT_NAMES.slice(1).map((_, i) => `loadable-${i}`),
+      );
+
+      await call({ savedGymId: GYM_ID });
+
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining("loadable equipment types"),
+      );
+      warn.mockRestore();
+    });
+
+    it("does NOT warn when every loadable name resolves", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      exerciseRepo.findEquipmentTypeIdsByName.mockResolvedValue(
+        LOADABLE_EQUIPMENT_NAMES.map((_, i) => `loadable-${i}`),
+      );
+
+      await call({ savedGymId: GYM_ID });
+
+      expect(warn).not.toHaveBeenCalled();
+      warn.mockRestore();
+    });
+
+    it("accepts both keys when the unused one is explicitly null", async () => {
+      // The natural client shape given the "exactly one source" rule. Without
+      // `t.Null()` on the array axis this 422s on body validation instead of
+      // reaching the handler at all.
+      const res = await call({
+        savedGymId: GYM_ID,
+        equipmentTypeIds: null,
+      });
+
+      expect(res.status).toBe(200);
+    });
+
+    it("400s — not 422 — when both keys are explicitly null", async () => {
+      const res = await call({ savedGymId: null, equipmentTypeIds: null });
+
+      expect(res.status).toBe(400);
+      expect(((await res.json()) as any).code).toBe(
+        "EQUIPMENT_CONTEXT_REQUIRED",
+      );
     });
   });
 

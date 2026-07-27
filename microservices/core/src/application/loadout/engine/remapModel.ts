@@ -49,6 +49,13 @@ import type { PlanRow } from "./types";
 const TOOL_NAME = "compose_adapted_plan";
 
 /**
+ * Hard cap on the model's per-row sentence. Generous for one sentence, and it
+ * bounds a channel an attacker-supplied exercise name can steer (see
+ * `parseRemapSelections`).
+ */
+export const MAX_REASON_LENGTH = 300;
+
+/**
  * Haiku-class by evidence, not by thrift: arm B/C ran on Haiku 4.5 and it won
  * every judged axis against the deterministic ranker. design § 1b records the
  * opposite finding for the scan, which needs Opus-class — hence two env vars.
@@ -75,7 +82,18 @@ export function remapModelId(): string {
  * than repaired.
  */
 export interface RemapSelection {
-  sortOrder: number;
+  /**
+   * The plan row this answers for — `PlanRow.rowKey`, i.e. the row's 0-based
+   * position in the ordered plan.
+   *
+   * The TOOL FIELD is still named `sortOrder`, deliberately: the prompt and tool
+   * schema are byte-identical to the arm the E2 bake-off measured, and renaming a
+   * field the model sees is a prompt change that would invalidate that
+   * measurement. Only the value differs, and only for plans whose `sort_order`
+   * values are not already 0..n-1 — which are exactly the plans where keying on
+   * `sort_order` was unsafe (see `PlanRow.rowKey`).
+   */
+  rowKey: number;
   exerciseId: string | null;
   reason: string;
 }
@@ -88,7 +106,7 @@ export interface RemapUsage {
 }
 
 export interface RemapResult {
-  /** Keyed by `sortOrder`. Rows the model omitted are simply absent. */
+  /** Keyed by `PlanRow.rowKey`. Rows the model omitted are simply absent. */
   selections: Map<number, RemapSelection>;
   usage: RemapUsage;
 }
@@ -146,7 +164,7 @@ export function buildRemapPrompt(input: {
     const superset =
       row.supersetGroup !== null ? ` | superset ${row.supersetGroup}` : "";
     const sets = row.targetSets ?? 1;
-    return `${row.sortOrder}. [${state}] ${row.source.name} | primary: ${describeIds(
+    return `${row.rowKey}. [${state}] ${row.source.name} | primary: ${describeIds(
       row.source.primaryMuscles,
       lookups.muscleNames,
     )} | equipment: ${describeIds(
@@ -157,7 +175,7 @@ export function buildRemapPrompt(input: {
 
   const swapOrders = input.plan
     .filter((row) => row.needsSwap)
-    .map((row) => row.sortOrder);
+    .map((row) => row.rowKey);
 
   return [
     "You are adapting a strength-training workout to the equipment a user has available today.",
@@ -249,9 +267,23 @@ export function parseRemapSelections(input: unknown): RemapSelection[] {
       );
     }
     return {
-      sortOrder: record.sortOrder as number,
+      rowKey: record.sortOrder as number,
       exerciseId,
-      reason: typeof record.reason === "string" ? record.reason : "",
+      // Capped, and treated as untrusted text.
+      //
+      // ⚠ The prompt necessarily contains strings this caller does not control:
+      // AC-1.2 makes a STRANGER'S PUBLIC workout adaptable, `listAdaptationRows`
+      // applies no catalogue visibility predicate, and neither `workouts.name`
+      // nor `exercises.name` has a length bound at its create handler. So an
+      // attacker can publish a workout whose exercise name instructs the model
+      // what to write here, and this field is passed through to the user as the
+      // app's own explanation (`SubstitutionReason.note`). Membership validation
+      // keeps the PLAN legal regardless — the prose is the only steerable channel
+      // — but it must not be unbounded, and Phase 2 must render it as plain text.
+      reason:
+        typeof record.reason === "string"
+          ? record.reason.slice(0, MAX_REASON_LENGTH)
+          : "",
     };
   });
 }
@@ -305,6 +337,17 @@ export async function selectSubstitutes(
   const response = await createWithRetry(client, params);
   const latencyMs = Date.now() - startedAt;
 
+  // A truncated tool payload PARSES — the surviving rows are well-formed and the
+  // dropped ones simply look like rows the model skipped, which stage 3 then
+  // "repairs" from the ranker. That is the silent deterministic fallback this
+  // design forbids, arriving under a Premium+ badge. `findToolUse` only rejects a
+  // refusal, so the truncation case is caught here.
+  if (response.stop_reason === "max_tokens") {
+    throw new AiUnreadableError(
+      "ai_response_truncated: model hit max_tokens before completing the plan",
+    );
+  }
+
   const selections = parseRemapSelections(findToolUse(response, TOOL_NAME));
 
   // MEMBERSHIP VALIDATION (§ 1 rule 1). The candidate list handed to the model is
@@ -330,7 +373,7 @@ export async function selectSubstitutes(
 
   return {
     selections: new Map(
-      selections.map((selection) => [selection.sortOrder, selection]),
+      selections.map((selection) => [selection.rowKey, selection]),
     ),
     usage: {
       modelId,

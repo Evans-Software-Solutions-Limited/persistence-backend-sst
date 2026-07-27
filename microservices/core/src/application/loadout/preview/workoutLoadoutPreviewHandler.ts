@@ -290,22 +290,32 @@ export const workoutLoadoutPreviewHandler = new Elysia()
         // because the intersection needs the candidate ids and a bounded scan is
         // worth more than one saved round trip inside a request that already
         // makes a ~2.6 s model call.
-        const [loggedIds, loadableIds] = await Promise.all([
-          ctx.ExerciseRepository.listPreviouslyLoggedExerciseIds(
-            userId,
-            candidates.map((candidate) => candidate.id),
-          ),
-          ctx.ExerciseRepository.findEquipmentTypeIdsByName([
-            ...LOADABLE_EQUIPMENT_NAMES,
-          ]),
-        ]);
+        // All four reads are independent of each other. The two reference-table
+        // reads join the batch rather than sitting on the critical path between
+        // the shortlist and the model call: they are static data, and this request
+        // already spends ~2.6 s in Bedrock inside a hard 30 s budget.
+        const [loggedIds, loadableIds, muscleGroups, equipmentTypes] =
+          await Promise.all([
+            ctx.ExerciseRepository.listPreviouslyLoggedExerciseIds(
+              userId,
+              candidates.map((candidate) => candidate.id),
+            ),
+            ctx.ExerciseRepository.findEquipmentTypeIdsByName([
+              ...LOADABLE_EQUIPMENT_NAMES,
+            ]),
+            ctx.ExerciseRepository.getMuscleGroups(),
+            ctx.ExerciseRepository.getEquipmentTypes(),
+          ]);
 
-        if (loadableIds.length === 0) {
-          // A check that cannot fire is worse than no check, because it reads as
-          // a pass. Only reachable if the catalogue renamed or dropped every
-          // loadable row (design § 7.1b's name list).
+        if (loadableIds.length !== LOADABLE_EQUIPMENT_NAMES.length) {
+          // A check that cannot fire is worse than no check, because it reads as a
+          // pass — and the same is true of one that HALF fires. A single rename
+          // (`Cable Machine` → `Cables`) would leave nine ids resolving, silently
+          // reclassify every cable-loaded row as unloadable, and both invent
+          // false `intensity_mismatch` flags and drop real ones. So the warning is
+          // on the count, not on emptiness.
           console.warn(
-            "[loadout] no loadable equipment types resolved — intensity-mismatch detection (AC-3.5b) is inert",
+            `[loadout] resolved ${loadableIds.length} of ${LOADABLE_EQUIPMENT_NAMES.length} loadable equipment types — intensity-mismatch detection (AC-3.5b) is degraded; check equipment_types names against LOADABLE_EQUIPMENT_NAMES`,
           );
         }
 
@@ -319,26 +329,25 @@ export const workoutLoadoutPreviewHandler = new Elysia()
         // Every row needing a swap came up empty in the ranker — there is nothing
         // to offer the model, so calling it would spend money to be told so.
         if (offered.length > 0) {
+          const lookups = {
+            muscleNames: new Map(
+              muscleGroups.map((m) => [m.id, m.displayName ?? m.name]),
+            ),
+            equipmentNames: new Map(equipmentTypes.map((e) => [e.id, e.name])),
+          };
+
+          // Set LAST, immediately before the provider call. Anything that can
+          // still fail before Bedrock is reached — a transient error on either
+          // reference read, for instance — must not write a usage row, or a DB
+          // blip silently burns one of the user's daily adaptations for an
+          // inference that never happened.
           reachedModel = true;
           const result = await selectSubstitutes({
             workoutName: parent.name,
             plan,
             candidates: offered,
             equipmentTypeIds: context,
-            lookups: {
-              muscleNames: new Map(
-                (await ctx.ExerciseRepository.getMuscleGroups()).map((m) => [
-                  m.id,
-                  m.displayName ?? m.name,
-                ]),
-              ),
-              equipmentNames: new Map(
-                (await ctx.ExerciseRepository.getEquipmentTypes()).map((e) => [
-                  e.id,
-                  e.name,
-                ]),
-              ),
-            },
+            lookups,
           });
           selections = result.selections;
           modelId = result.usage.modelId;
@@ -399,7 +408,13 @@ export const workoutLoadoutPreviewHandler = new Elysia()
         savedGymId: t.Optional(
           t.Union([t.String({ format: "uuid" }), t.Null()]),
         ),
-        equipmentTypeIds: t.Optional(t.Array(t.String({ format: "uuid" }))),
+        // `t.Null()` for symmetry with `savedGymId`: sending both keys with the
+        // unused one nulled is the natural client shape given the "exactly one
+        // source" rule, and without it that request fails body validation with a
+        // 422 dump instead of the documented `EQUIPMENT_CONTEXT_REQUIRED` 400.
+        equipmentTypeIds: t.Optional(
+          t.Union([t.Array(t.String({ format: "uuid" })), t.Null()]),
+        ),
       }),
     },
   );

@@ -232,3 +232,45 @@ describe("GET /exercises/substitutes", () => {
     );
   });
 });
+
+describe("GET /exercises/substitutes — the best/others boundary", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    exerciseRepo.getById.mockResolvedValue(
+      ex({ id: SOURCE_ID, name: "Barbell Bench Press" }),
+    );
+    exerciseRepo.listPreviouslyLoggedExerciseIds.mockResolvedValue([]);
+    savedGymRepo.findUnknownEquipmentTypeIds.mockResolvedValue([]);
+  });
+
+  it("never demotes a COMPATIBLE candidate into others just because it missed the limit", () => {
+    // `others` is rendered as "doesn't fit your kit" and is selectable only behind
+    // an explicit acknowledgement (AC-4.2), which also stores the row as
+    // `isUserOverride` — so a performable exercise landing there asks the user to
+    // acknowledge a false claim AND corrupts the provenance the save path reads.
+    // The exclusion set must therefore be every compatible id, not the sliced page.
+    const compatible = [
+      ex({ id: "c1", name: "A Press" }),
+      ex({ id: "c2", name: "B Press" }),
+      ex({ id: "c3", name: "C Press" }),
+    ];
+    exerciseRepo.listAdaptationCandidates.mockResolvedValue({
+      candidates: compatible,
+      truncated: false,
+    });
+    exerciseRepo.listRankableExercises.mockResolvedValue({
+      candidates: [...compatible, ex({ id: "incompatible", name: "Z Fly" })],
+      truncated: false,
+    });
+
+    return call(
+      `forExerciseId=${SOURCE_ID}&equipment=${DUMBBELL}&limit=2`,
+    ).then(async (res) => {
+      const body = (await res.json()) as any;
+
+      expect(body.data.best.map((e: any) => e.id)).toEqual(["c1", "c2"]);
+      // c3 is compatible but did not fit the page — it must NOT appear in others.
+      expect(body.data.others.map((e: any) => e.id)).toEqual(["incompatible"]);
+    });
+  });
+});

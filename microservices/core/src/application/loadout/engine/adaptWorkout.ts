@@ -64,11 +64,15 @@ export function partitionPlan(
 ): PlanRow[] {
   const available = new Set(equipmentTypeIds);
 
-  return rows.map((row) => {
+  return rows.map((row, index) => {
     const missingEquipment = row.source.equipmentRequired.filter(
       (id) => !available.has(id),
     );
     return {
+      // Position in the ordered plan, NOT `sort_order` — see `PlanRow.rowKey`
+      // for why keying on a client-supplied, non-unique column corrupted the
+      // shortlist map.
+      rowKey: index,
       sortOrder: row.sortOrder,
       source: row.source,
       needsSwap: missingEquipment.length > 0,
@@ -86,7 +90,7 @@ export function partitionPlan(
 
 /**
  * Stage 1b — the § 6.2 ranker used as the SHORTLISTER: the top `perRow`
- * candidates for each row needing a swap, keyed by `sortOrder`.
+ * candidates for each row needing a swap, keyed by `rowKey`.
  *
  * The per-row lists are also what stage 3 repairs from, so they are returned
  * rather than immediately unioned.
@@ -101,7 +105,7 @@ export function shortlistPerRow(
   for (const row of plan) {
     if (!row.needsSwap) continue;
     byRow.set(
-      row.sortOrder,
+      row.rowKey,
       rankSubstitutes(row.source, candidates, context).slice(0, perRow),
     );
   }
@@ -250,11 +254,17 @@ export function assembleAdaptedPlan(input: {
       continue;
     }
 
-    const rowShortlist = input.shortlistByRow.get(row.sortOrder) ?? [];
-    const selection = input.selections.get(row.sortOrder);
+    const rowShortlist = input.shortlistByRow.get(row.rowKey) ?? [];
+    const selection = input.selections.get(row.rowKey);
     const note = selection?.reason.trim() ? selection.reason.trim() : null;
 
-    const unresolved = (): void => {
+    // `carryNote` is true ONLY when the model explicitly declined the row, i.e.
+    // the sentence is about THIS row's impossibility. On the repair-exhausted
+    // path the model's prose describes an exercise it named for some other row —
+    // attributing it here would put a rationale for a missing exercise onto a row
+    // that has no exercise at all. Same reasoning as the swapped path's
+    // `selectedBy === "model"` gate.
+    const unresolved = (carryNote: boolean): void => {
       rows.push({
         sortOrder: row.sortOrder,
         ...targets,
@@ -263,7 +273,7 @@ export function assembleAdaptedPlan(input: {
         substitutedFromExerciseId: row.source.id,
         reason: unresolvedReason({
           missingEquipment: row.missingEquipment,
-          note,
+          note: carryNote ? note : null,
         }),
         exercise: null,
       });
@@ -271,7 +281,7 @@ export function assembleAdaptedPlan(input: {
 
     // The model explicitly declined this row (AC-3.4). Honoured as-is.
     if (selection && selection.exerciseId === null) {
-      unresolved();
+      unresolved(true);
       continue;
     }
 
@@ -294,7 +304,7 @@ export function assembleAdaptedPlan(input: {
     }
 
     if (!chosen) {
-      unresolved();
+      unresolved(false);
       continue;
     }
 
