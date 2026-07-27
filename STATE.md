@@ -11,9 +11,9 @@ say so and fix this file.
 
 ## Current state (2026-07-27)
 
-- **Last CODE change on `origin/main` = `1a7b956`** (PR #322, Loadout **Phase 1**,
-  merged 2026-07-27 14:13 UTC, branch deleted). Released to production:
-  **v1.8.0**.
+- **Last CODE change on `origin/main` = `f0e8929`** (PR #326, Loadout **Phase 3
+  equipment scan + Phase 2 foundation**, merged 2026-07-27, branch deleted). Released
+  to production: **v1.8.0**.
   - Stated as the last code change rather than the literal `HEAD`, because a
     ledger update is itself a commit — quoting the head sha here guarantees this
     line is one commit stale the moment it lands. `git log --oneline -20` is the
@@ -36,9 +36,9 @@ say so and fix this file.
     user-reachable — no mobile surface calls either endpoint yet, and `loadout`
     is gated on `premium_plus`, which is seeded `is_active = false` — but the
     Lambda will be serving them.
-  - **⚠ Phase 1's model path needs Haiku 4.5 in the PRODUCTION Bedrock account.**
-    It is recorded as granted (Brad, 2026-07-26) but was NOT re-verified when
-    Phase 1 shipped — see § Ops / launch.
+  - ~~**⚠ Phase 1's model path needs Haiku 4.5 in the PRODUCTION Bedrock
+    account.**~~ **RESOLVED — Brad confirmed both model ids granted and complete in
+    prod, 2026-07-27** (§ Ops / launch).
 - `premium_plus` / `loadout_access` **are** already on prod (verified present at
   tag `persistence-v1.8.0`). The tier row is deliberately `is_active = false`.
 - Feature state: coach mode complete; spec-19 Programs shipped; nutrition (incl.
@@ -50,9 +50,11 @@ say so and fix this file.
 - **Loadout is BACKEND-COMPLETE for the single-workout athlete flow, INCLUDING the
   equipment scan, and still has ZERO user-facing surface.** Phase 2's foundation
   (ports/adapters, the pure review-copy + save-path logic, the step machine) is
-  committed on `claude/loadout-phase-2`, but **no screen exists**, so nothing in
+  **MERGED to `main`** (#326), but **no screen exists**, so nothing in
   `packages/mobile` yet calls the preview, the substitutes feed or the scan. The
-  screens (T-2.2…T-2.9, T-3.4) are what make the feature exist for a user.
+  screens (T-2.2…T-2.9, T-3.4) are what make the feature exist for a user, and they
+  are the NEXT slice — to be reviewed in a local dev build against the staging
+  backend (Brad, 2026-07-27).
 
 ## Verified facts
 
@@ -230,8 +232,13 @@ At every reachable ceiling, every day, for 30 days — against net revenue (Appl
 
 - **`individual_trainer` (£14.99) is the MOST exposed tier at ~212 % of net.** Cause:
   `20260725194527_premium_plus_tier` granted `loadout_access` to all three trainer
-  tiers, so **a coach gets Loadout at £14.99 while an athlete pays £29.99 for it.**
-  That is a pricing inconsistency, not a cost problem — ⚠ **Brad's call.**
+  tiers, so a coach gets Loadout at £14.99 while an athlete pays £29.99 for it.
+  **DECIDED by Brad 2026-07-27: LIVE WITH IT for now.** Loadout is a **Premium+**
+  feature by intent; the trainer-tier grant is an accepted constraint, not the
+  design. Coaches will eventually need *some* route to it (Phase 4 adapts a client's
+  programme, which cannot work without one) but that is its own slice, and coaches
+  are not expected to use the athlete flow normally. **Do not "fix" the migration**,
+  and do not re-raise this as a cost finding — it is a known, accepted gap.
 - **`premium` (£12.99) is ~167 %**, and **Loadout is not why** — it cannot reach
   either Loadout endpoint. **~55 % of its exposure is ONE endpoint: Recipes AI photo
   extraction** at 12/day × ~$0.0355, the most expensive call in the app. Nobody
@@ -318,12 +325,14 @@ Actions, in order of value:
 - **⚠ Triage the ~7 open Dependabot alerts (3 CRITICAL).** Needs Brad's browser
   session or a `gh` re-auth with `security_events` — the CLI cannot enumerate them
   (see § Dependabot above). Before the App Store submission; the repo is PUBLIC.
-- **Verify Haiku 4.5 in the PRODUCTION Bedrock account before the Loadout launch
-  build.** STATE.md records it as granted in both accounts (Brad granted it
-  2026-07-26 and prod verified OK then), and Phase 1 could NOT re-verify — both
-  `ess-dev` and `ess-prod` SSO tokens were expired, which needs an interactive
-  `aws sso login`. The check is
-  `AWS_PROFILE=ess-prod aws bedrock-runtime invoke-model --model-id eu.anthropic.claude-haiku-4-5-20251001-v1:0 …`.
+- ~~**Verify Haiku 4.5 + the Opus-class scan model in the PRODUCTION Bedrock
+  account.**~~ **DONE — Brad confirmed 2026-07-27: both model ids are granted and
+  complete in production.** That covers `AI_LOADOUT_REMAP_MODEL_ID`
+  (`eu.anthropic.claude-haiku-4-5-20251001-v1:0`) and `AI_EQUIPMENT_SCAN_MODEL_ID`
+  (`eu.anthropic.claude-opus-4-6-v1`), so Loadout has **no prod Bedrock grant
+  blocker**. ⚠ The per-account lesson still stands for any FUTURE model id —
+  `eu.anthropic.claude-opus-5` remains UNGRANTED in prod, and assuming otherwise is
+  what caused the 30-day silent outage.
 - **Merge release PR #319** — see Current state. It now ships Loadout Phase 0's
   four migrations **AND** Phase 1's engine + two endpoints, not just the
   migrations. Verify the prod Haiku 4.5 grant first (item above): after this
@@ -396,8 +405,9 @@ consent copy, privacy section and governing law · the OFF re-seed backfilling
 
 ## Last session
 
-**2026-07-27 (cont.) — LOADOUT Phase 3 backend + Phase 2 FOUNDATION. Branch
-`claude/loadout-phase-2`, 4 commits, NOT yet a PR. The scan endpoint is complete;
+**2026-07-27 (cont.) — LOADOUT Phase 3 backend + Phase 2 FOUNDATION. MERGED as
+PR [#326](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/326)
+(squash `f0e8929`), branch deleted; all 5 CI checks green. The scan endpoint is complete;
 the mobile flow has its contract, its pure logic and its step machine, and **ZERO
 screens** — nothing is user-visible or device-verified.**
 
@@ -455,10 +465,12 @@ screens** — nothing is user-visible or device-verified.**
   it a returning user's 24h-cached list renders every chip under "Other" and nothing
   can detect why.
 - **NEXT: the screens.** T-2.2…T-2.9 + T-3.4 are unstarted; see `tasks.md`
-  § "Phase 2 — still to build". Everything they need is built and tested. ⚠ **Three
-  things in the design handoff are stale and the spec wins:** it says "AnyGym" (now
-  **Loadout**), it hardcodes **£19.99** (now £29.99 AND catalog-driven), and its D1
-  taster meter **must not be built** (design § 5.2 = hard gate, no taster).
+  § "Phase 2 — still to build". Everything they need is built and tested.
+  ⚠ **One hard constraint from the handoff still stands: its D1 taster meter must NOT
+  be built** — design § 5.2 is a hard gate with no taster (RC promos only), so the 402
+  is entitlement-denied and is a conversion surface, not a dead end. (Its "AnyGym"
+  naming and its £19.99 literal are retired notes — the feature is **Loadout** and the
+  paywall price comes from the catalog, full stop.)
 - **IB: 1 local sweep, 10 findings (3 🟠 / 4 🟡 / 3 🟢), ALL 10 addressed.** The three
   🟠 were the 20 s Lambda timeout (§ above), **every Loadout domain 400 code being
   discarded** by `mapHttpErrorToApiError` (it reads `body.error`; the Loadout handlers
@@ -570,7 +582,8 @@ migration, no mobile, no scan endpoint. All of T-1.1…T-1.11 ticked in
   30/day, keep `createWithRetry`, keep the 503 (see § Open items → § DECIDED).
   They shipped as flagged placeholders/recommendations and were promoted to
   decisions in a follow-up, with every doc that assumed "open" swept.
-- **Bedrock grant NOT re-verified this session** — both SSO tokens were expired and
+- ~~**Bedrock grant NOT re-verified this session**~~ (**since RESOLVED — Brad
+  confirmed both ids in prod, 2026-07-27**) — both SSO tokens were expired and
   refreshing needs an interactive login. The ledger's evidence stands (Brad granted
   Haiku 4.5 in prod 2026-07-26); the check is queued in § Open items rather than
   claimed as done.

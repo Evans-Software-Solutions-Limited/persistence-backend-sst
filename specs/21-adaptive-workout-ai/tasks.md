@@ -323,8 +323,8 @@ Phase 1/2 design. Rationale: `requirements.md` § Eval spike.
       usage rows for actual inferences only, fail-safe env parse) and
       `AI_LOADOUT_REMAP_MODEL_ID` (Haiku-class — sufficient in E2) registered in
       `infra/api.ts`. **Ceiling = 30/day (AC-10.2, decided by Brad 2026-07-27).**
-      **Verify the model id is granted in the PRODUCTION Bedrock account before
-      shipping** — grants are per-account (STATE.md 2026-07-26); Haiku 4.5 is
+      ~~**Verify the model id is granted in the PRODUCTION Bedrock account before
+      shipping**~~ — **DONE, Brad confirmed 2026-07-27** — grants are per-account (STATE.md 2026-07-26); Haiku 4.5 is
       currently granted in both.
 - [x] **T-1.11 [B]** `intensity_mismatch` flag (AC-3.5b, design § 7.1b): a
       deterministic check — parent target is a strength range (reps ≤ 6) AND the
@@ -434,13 +434,11 @@ tested, so they are presentational + container work against a settled spine:
   `gtm-d1-scan.jsx` (the scan sheet) and `gtm-d6-swap.jsx` (the picker), with
   `README.md` § Part 2 as the written spec. **Recreate in the app's primitives and
   tokens — do not lift the prototype JSX** (its own README says so).
-- ⚠ **Three places the handoff is out of date, and the spec wins:**
-  1. It calls the feature **AnyGym**; the repo renamed it **Loadout** (#311).
-  2. It hardcodes **£19.99**; Premium+ is £29.99 AND the price must come from the
-     catalog, never a literal (design § 10).
-  3. D1's `TasterMeterChip` / "taster exhausted" 402 framing **must not be built** —
-     design § 5.2 is a HARD GATE with no taster (RC promos only). The 402 is
-     entitlement-denied, and it is a conversion surface, not a dead end.
+- ⚠ **The handoff's D1 `TasterMeterChip` / "taster exhausted" 402 framing MUST NOT
+  be built** — design § 5.2 is a HARD GATE with no taster (RC promos only). The 402
+  is entitlement-denied, and it is a conversion surface, not a dead end.
+- The feature is **Loadout** (the handoff's "AnyGym" is retired), and the Premium+
+  price comes from the **catalog** — never a literal (design § 10).
 - T-2.7's shared `EquipmentAwareSwapSheet` replaces the ad-hoc muscle filter at
   `SwapExercisePopover.tsx:131-142` (the `muscleGroupFilteredExercises` memo) with
   `GET /exercises/substitutes`. That component currently reads the local exercise
