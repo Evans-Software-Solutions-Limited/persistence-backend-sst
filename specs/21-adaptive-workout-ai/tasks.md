@@ -197,19 +197,24 @@ Phase 1/2 design. Rationale: `requirements.md` § Eval spike.
 
 - [ ] **T-E1.5 [B]** `AI_EQUIPMENT_SCAN_MODEL_ID` = the **Opus-class** id
       (`eu.anthropic.claude-opus-4-6-v1`), not Haiku-class. Haiku 4.5 scored 0.759
-      recall vs 0.966, missed `Squat Rack` in 3 of 7 photos, tripped both planted
-      look-alikes, returned 2 non-member ids, and almost never used the `null` +
-      label escape hatch — so it forces real equipment onto the nearest catalogue
-      row. Amend design § 8.1 (done) and `infra/api.ts` when T-3.2 lands.
+      recall vs 0.966, missed `Squat Rack` in 3 of 7 photos, tripped the road-bike
+      look-alike in the real photo, returned 2 non-member ids, and identified only 1
+      of the 6 non-catalogue items where Opus identified 5 — so it does not use the
+      `null` + label escape hatch. Amend design § 8.1 (done) and `infra/api.ts` when T-3.2 lands.
 - [ ] **T-E1.6 [B]** The scan needs **one attempt at a raised (~20 s) budget**, not
-      `createWithRetry`'s 12 s × 2 — measured max is 12.3 s, already past the
-      per-attempt timeout, so the real worst case is ~22 s + overhead against a
-      hard 30 s. Same no-retry harness variant as T-1.9; build once. Alternatively
+      `createWithRetry`'s 12 s × 2 — measured max is 12.27 s end-to-end against a
+      12 s per-attempt budget, i.e. ~0 % margin on 7 easy photos. (Precisely: no
+      attempt breached it — all 7 returned — but a harder photo or a cold Lambda
+      tips it into a ~22 s retry against a hard 30 s.) Same no-retry harness variant as T-1.9; build once. Alternatively
       measure 640 px vs 1568 px input on the real photo set first — it would cut
       latency and the $0.0272/scan cost, at unmeasured accuracy cost.
 - [ ] **T-E1.7 [B]** Exclude `Bodyweight` from what the scan may return — it is
       true of every gym, so inject it server-side rather than treating it as
-      detectable (Opus returned it as a detection).
+      detectable (Opus returned it as a detection). Two sibling prompt fixes from
+      the same run: push harder on "if it IS in the list, use the id" (both models
+      sometimes describe a catalogue row in prose as `null` + label, costing the user
+      real kit), and do not surface non-equipment null entries as suggestions — Opus
+      returned 15 (wall clock, mirror, gym bag, plants).
 
 ### E2 — deterministic ranker vs AI composition (bake-off) · **COMPLETE**
 

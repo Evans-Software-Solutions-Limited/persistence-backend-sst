@@ -638,7 +638,9 @@ a gate where it would matter.
 Raised by Brad, then measured on the E2 dataset: **10 of 171 swaps in the winning
 arm put a strength-range row (reps ≤ 6) onto equipment that cannot load it** —
 `Barbell Deadlift 4×4-6 → Band Good Morning 4×4-6`, `Barbell Back Squat 5×5 → Band
-Front Squat 5×5`. Concentrated in `bands_only` and in strength templates.
+Front Squat 5×5`. **All 10 are in the `bands_only` context** (9 land on bands, 1 on
+bodyweight), so the failure is concentrated entirely in the hardest context rather
+than spread across them.
 
 **The exercise choice in those rows is correct** — hinge → hinge, press → press —
 and the prescription is still unusable, because bands cannot express that
@@ -650,9 +652,16 @@ which is right for trust and wrong for this 5.8 %.
 is strength-range AND the replacement lost every loadable equipment type — so it
 needs no model, adds no cost and no ceiling:
 
+⚠ **Narrow the loadable list when T-1.11 is implemented.** The sketch below
+includes `Medicine Ball` and `Kettlebell`, neither of which can load a 4-6 rep
+strength row either — a barbell hinge swapped onto a 5 kg med ball would pass the
+check. Sensitivity-tested on the E2 dataset: removing both leaves the count at
+**10/171 unchanged**, so the published figure is unaffected, but ship the narrower
+list rather than this sketch.
+
 ```ts
-const LOADABLE = new Set([...]); // barbell, dumbbells, kettlebell, EZ bar,
-                                 // machines, cables, sled, medicine ball
+const LOADABLE = new Set([...]); // barbell, dumbbells, EZ bar, machines, cables,
+                                 // sled — see the narrowing note above
 const mismatch =
   row.repsMax <= 6 &&
   hasAny(source.equipmentRequired, LOADABLE) &&
@@ -736,15 +745,15 @@ occluded. **Every figure here is a CEILING, not a real-world rate.** One photo w
 genuine phone photo of a cluttered garage; it is reported separately and is the
 only number with real-world standing (n=1).
 
-|                                   | **Opus 4.6**        | Haiku 4.5     |
-| --------------------------------- | ------------------- | ------------- |
-| Recall (29 ground-truth items)    | **0.966**           | 0.759         |
-| Recall, the one real phone photo  | **1.000**           | 0.500         |
-| False positives across 7 photos   | **3**               | 7             |
-| Non-member ids returned           | **0**               | **2**         |
-| Correctly returned `null` + label | 23                  | 3             |
-| Latency mean / max                | 10.1 s / **12.3 s** | 4.3 s / 4.7 s |
-| Cost per scan                     | $0.0272             | $0.0051       |
+|                                                 | **Opus 4.6**        | Haiku 4.5     |
+| ----------------------------------------------- | ------------------- | ------------- |
+| Recall (29 ground-truth items)                  | **0.966**           | 0.759         |
+| Recall, the one real phone photo                | **1.000**           | 0.500         |
+| False positives across 7 photos                 | **3**               | 7             |
+| Non-member ids returned                         | **0**               | **2**         |
+| Non-catalogue items correctly identified (of 6) | **5**               | 1             |
+| Latency mean / max                              | 10.1 s / **12.3 s** | 4.3 s / 4.7 s |
+| Cost per scan                                   | $0.0272             | $0.0051       |
 
 Three consequences, two of which contradict § 8.1 as written:
 
@@ -755,12 +764,16 @@ Three consequences, two of which contradict § 8.1 as written:
 2. **⚠ "Haiku-class first" below is WRONG — use the Opus-class id.** The task is
    harder than food estimation, not simpler. Haiku missed `Squat Rack` in 3 of 7
    photos (miss the rack and every barbell lift gets needlessly swapped), fell for
-   both planted look-alikes in the real photo (a road bike → `Exercise Bike`,
-   rubber floor tiles → `Yoga Mat`), returned 2 hallucinated ids, and almost never
-   used the `null` + label escape hatch — meaning it **forces real equipment onto
-   the nearest catalogue row**, the exact failure § 1 warns against and worse than
-   a miss.
-3. **⚠ `createWithRetry` is NOT usable as-is here** — see § 8.1's revised note.
+   the planted road-bike look-alike in the real photo (→ `Exercise Bike`) and for
+   rubber floor tiles as a `Yoga Mat` on a stock shot, returned 2 hallucinated ids,
+   and identified only **1 of the 6 genuinely non-catalogue items** where Opus
+   identified 5 — i.e. it does not use the `null` + label escape hatch § 1
+   provides.
+3. **⚠ `createWithRetry` has effectively no margin here** — see § 8.1's revised
+   note. Also fold into T-3.3's prompt: **both** models sometimes describe a
+   catalogue row in prose as `null` + label instead of selecting its id (Haiku
+   "Cable machine or functional trainer", Opus "Dumbbell Storage Rack") — the
+   mirror of forcing a match, and it costs the user real kit.
 
 Also for T-3.3: **exclude `Bodyweight` from what the scan may return.** Opus
 returned it as a detection, which is technically always true and useless; it is a
@@ -798,10 +811,13 @@ magic-byte check → model → parse → validate → 200.**
 - Output is a **draft** (AC-2.3): the user confirms before it becomes context,
   and confirming never implicitly saves a gym.
 - ~~`createWithRetry` is usable as-is here (12s × 2 fits the 30s API Gateway
-  ceiling).~~ **E1 measured Opus at mean 10.1 s / max 12.3 s — the max already
-  exceeds the 12 s per-attempt timeout**, so the real worst case is
-  timeout-then-retry ≈ 22 s plus auth/entitlement/ceiling/usage-log overhead
-  against a hard 30 s. That is a coin flip, not headroom. **The scan needs a single
+  ceiling).~~ **E1 measured Opus at mean 10.1 s / max 12.27 s end-to-end against a
+  12 s per-attempt budget — ~0 % margin, on 7 easy photos.** Note precisely: no
+  attempt actually breached the timeout (all 7 returned; the 266 ms overshoot is
+  serialisation/SigV4 outside the SDK's timed window). But a harder photo, a colder
+  Lambda or a slower region tips it over, and the cost of tipping over is a full
+  retry ≈ 22 s plus auth/entitlement/ceiling/usage-log overhead against a hard
+  30 s. **The scan needs a single
   attempt at a raised (~20 s) budget** — exactly what GTM § 3 P2 asked for — **or a
   smaller image.** E1 ran at 1568 px long edge (~3000 input tokens) where prod food
   photos run at 640 px; downscaling would cut latency and cost at unmeasured

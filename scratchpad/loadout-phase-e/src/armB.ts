@@ -48,10 +48,11 @@ export const MODELS = {
  * so the verdict's cost line is an ORDER-OF-MAGNITUDE figure to be confirmed
  * against the AWS bill before it becomes a pricing commitment.
  */
-const PRICE_PER_MTOK: Record<string, { input: number; output: number }> = {
-  [MODELS.haiku]: { input: 1, output: 5 },
-  [MODELS.opus]: { input: 5, output: 25 },
-};
+export const PRICE_PER_MTOK: Record<string, { input: number; output: number }> =
+  {
+    [MODELS.haiku]: { input: 1, output: 5 },
+    [MODELS.opus]: { input: 5, output: 25 },
+  };
 
 const TOOL_NAME = "compose_adapted_plan";
 

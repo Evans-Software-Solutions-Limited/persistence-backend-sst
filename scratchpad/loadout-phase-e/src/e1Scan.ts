@@ -23,7 +23,7 @@ import {
   type MessagesCreateParams,
 } from "../../../microservices/core/src/application/nutrition/services/aiBedrockClient.ts";
 import { loadLibrary } from "./library.ts";
-import { assertDevEnvironment, MODELS } from "./armB.ts";
+import { assertDevEnvironment, MODELS, PRICE_PER_MTOK } from "./armB.ts";
 import { E1_PHOTOS, type E1Photo } from "./e1Fixtures.ts";
 
 const TOOL_NAME = "report_detected_equipment";
@@ -97,8 +97,12 @@ type PhotoScore = {
   falsePositives: string[];
   trapsTripped: string[];
   ambiguousDetected: string[];
-  forcedOntoCatalogue: string[];
-  nullLabelled: string[];
+  /** Null-id detections whose label plausibly matches a `notInCatalogue` item — the escape hatch used CORRECTLY. */
+  nullIdOnGroundTruth: string[];
+  /** Null-id detections naming something that IS a catalogue row — a FAILURE to use the catalogue, not a success. */
+  nullIdDespiteCatalogueRow: string[];
+  /** Everything else returned with a null id: furniture, decor, junk. Unscoreable either way. */
+  nullIdUnscoreable: string[];
   invalidIds: string[];
   latencyMs: number;
   inputTokens: number;
@@ -112,11 +116,11 @@ function score(
 ): Omit<PhotoScore, "latencyMs" | "inputTokens" | "outputTokens"> {
   const invalidIds: string[] = [];
   const detectedNames = new Set<string>();
-  const nullLabelled: string[] = [];
+  const nullIds: string[] = [];
 
   for (const detection of detections) {
     if (detection.equipmentTypeId === null) {
-      nullLabelled.push(detection.label);
+      nullIds.push(detection.label);
       continue;
     }
     const name = nameById.get(detection.equipmentTypeId);
@@ -143,6 +147,29 @@ function score(
     .sort();
   const trapsTripped = falsePositives.filter((n) => traps.has(n));
 
+  // A null-id detection is only *correct* if it names something that genuinely has
+  // no catalogue row. Splitting three ways rather than counting them all as
+  // successes — the raw count rewards volume and hides the opposite failure, a
+  // model describing a catalogue row in prose instead of selecting its id.
+  // (IB sweep 3, 2026-07-27: 2 of Haiku's 3 "correct" nulls were catalogue rows.)
+  // Only the text before the first parenthesis: models put location notes there
+  // ("Weight plates (on barbell...)"), and matching the whole string mistook those
+  // for the model describing a catalogue row in prose.
+  const words = (text: string) => text.split("(")[0].toLowerCase();
+  const namesACatalogueRow = (label: string) =>
+    [...nameById.values()].some((name) => {
+      const head = name.split(" / ")[0].toLowerCase().replace(/s$/, "");
+      return head.length > 3 && words(label).includes(head);
+    });
+  const matchesGroundTruth = (label: string) =>
+    photo.notInCatalogue.some((item) =>
+      item
+        .toLowerCase()
+        .split(/[^a-z]+/)
+        .filter((t) => t.length > 3)
+        .some((token) => words(label).includes(token)),
+    );
+
   return {
     file: photo.file,
     provenance: photo.provenance,
@@ -151,9 +178,13 @@ function score(
     falsePositives,
     trapsTripped,
     ambiguousDetected,
-    // Real equipment with no catalogue row that got forced onto one anyway.
-    forcedOntoCatalogue: photo.notInCatalogue.length > 0 ? falsePositives : [],
-    nullLabelled,
+    nullIdOnGroundTruth: nullIds.filter(matchesGroundTruth),
+    nullIdDespiteCatalogueRow: nullIds.filter(
+      (l) => !matchesGroundTruth(l) && namesACatalogueRow(l),
+    ),
+    nullIdUnscoreable: nullIds.filter(
+      (l) => !matchesGroundTruth(l) && !namesACatalogueRow(l),
+    ),
     invalidIds,
   };
 }
@@ -181,6 +212,8 @@ async function main(): Promise<void> {
   const nameById = new Map(catalogue.map((row) => [row.id, row.name]));
   const prompt = buildPrompt(catalogue);
   const client = getDefaultClient();
+  const price = PRICE_PER_MTOK[modelId];
+  if (!price) throw new Error(`unpriced model id: ${modelId}`);
 
   const scores: PhotoScore[] = [];
   for (const photo of E1_PHOTOS) {
@@ -278,6 +311,22 @@ async function main(): Promise<void> {
     ),
     meanInputTokens: Math.round(
       scores.reduce((sum, s) => sum + s.inputTokens, 0) / scores.length,
+    ),
+    meanOutputTokens: Math.round(
+      scores.reduce((sum, s) => sum + s.outputTokens, 0) / scores.length,
+    ),
+    // Emitted rather than hand-derived — STATE.md § Lessons: if a doc quotes a
+    // measurement, ship the command that regenerates it.
+    costPerScanUsd: Number(
+      (
+        scores.reduce(
+          (sum, s) =>
+            sum +
+            (s.inputTokens / 1_000_000) * price.input +
+            (s.outputTokens / 1_000_000) * price.output,
+          0,
+        ) / scores.length
+      ).toFixed(5),
     ),
   };
 

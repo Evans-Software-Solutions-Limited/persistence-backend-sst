@@ -165,9 +165,11 @@ after the mobile flow is built around it is the expensive way to find out. So:
     as the sole route on 7 photos. The real ~30-photo set is still wanted.
   - **⚠ Two design corrections fell out of it:** the scan model must be
     **Opus-class, not Haiku-class** (Haiku scored half the recall, missed
-    `Squat Rack` in 3 of 7 photos, and invented 2 ids), and `createWithRetry` is
-    **not** usable as-is (measured max 12.3 s against its own 12 s per-attempt
-    timeout).
+    `Squat Rack` in 3 of 7 photos, invented 2 ids, and identified only 1 of the 6
+    non-catalogue items where Opus identified 5), and `createWithRetry` has
+    **effectively no margin** — max 12.27 s end-to-end against its own 12 s
+    per-attempt budget. No attempt actually breached it on these 7 easy photos; a
+    harder one tips it into a ~22 s retry against a hard 30 s ceiling.
 
 ### Phase E has two parts
 
@@ -249,10 +251,12 @@ As a user mid-flow, I can tell Loadout what kit is available in three ways.
 - **AC-2.3 (scan)** I can photograph the gym; detected equipment is returned as
   a **draft** I confirm or edit before it is used. Detection never writes
   anything on its own. **E1 makes this load-bearing rather than defensive:** at
-  Opus-class the scan produced 3 false positives across 7 photos (including
-  calling a wall of rubber floor tiles nothing, but a pulley rack a cable
-  machine), so the confirm step is what stands between a misread and a wrong
-  adaptation. The scan must also **never return `Bodyweight`** — it is true of
+  Opus-class the scan produced 3 false positives across 7 photos — a pulley-rack
+  wall read as a `Cable Machine`, a cross-trainer room read as having a
+  `Rowing Machine`, and `Bodyweight` (always true, hence the exclusion below) — so
+  the confirm step is what stands between a misread and a wrong adaptation. It also
+  sometimes describes a catalogue row in prose rather than selecting its id, so the
+  review step must surface null-labelled items prominently enough to add by hand. The scan must also **never return `Bodyweight`** — it is true of
   every gym and is injected server-side (`design.md` § 8.0).
 - **AC-2.4** Any collect route can optionally **save the selection as a named
   gym** in the same step (name + save toggle), which creates a `saved_gyms` row.
@@ -279,8 +283,10 @@ As a user mid-flow, I can tell Loadout what kit is available in three ways.
   remove it, or pick manually.
 - **AC-3.5b (intensity mismatch — added 2026-07-26)** If a row's parent target is
   a **strength range (reps ≤ 6)** and the chosen alternative has lost every
-  **loadable** equipment type (barbell, dumbbells, kettlebell, EZ bar, machines,
-  cables, sled, medicine ball), the row is returned flagged `intensity_mismatch`
+  **loadable** equipment type (barbell, dumbbells, EZ bar, machines, cables, sled
+  — ⚠ narrower than the first sketch, which wrongly counted `Kettlebell` and
+  `Medicine Ball`; design § 7.1b records the sensitivity test showing the count is
+  unchanged either way), the row is returned flagged `intensity_mismatch`
   even though the exercise itself is a valid pattern match. E2 measured this on
   **10 of 171 swaps** — `Barbell Deadlift 4×4-6 → Band Good Morning 4×4-6` — where
   the selection is correct and the prescription is still unusable, because bands

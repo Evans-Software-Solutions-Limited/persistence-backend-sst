@@ -14,9 +14,12 @@ say so and fix this file.
 - `origin/main` = **`d8b68fa`**. Released to production: **v1.8.0**.
 - **⚠ Production is one release behind `main`.** Open release PR
   **[#319](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/319)
-  (v1.9.0)** is the only thing that ships Loadout Phase 0's four migrations +
-  `20260720230030_data_sharing_consents.sql` to prod. Merging it publishes the
-  release; the prod deploy then migrates and deploys.
+  (v1.9.0)** is the only thing that ships them. Merging it publishes the release;
+  the prod deploy then migrates and deploys. **The pending set is exactly Loadout
+  Phase 0's four migrations** — `20260720230030_data_sharing_consents.sql` also
+  shows in the diff but is ALREADY applied (present at tag `persistence-v1.8.0`);
+  only its comment header changed in #317, and `supabase db push` keys on version,
+  not content, so it will not re-run.
 - `premium_plus` / `loadout_access` **are** already on prod (verified present at
   tag `persistence-v1.8.0`). The tier row is deliberately `is_active = false`.
 - Feature state: coach mode complete; spec-19 Programs shipped; nutrition (incl.
@@ -143,6 +146,16 @@ say so and fix this file.
 
 - **Merge release PR #319** — see Current state; it is what puts Loadout Phase 0
   on prod.
+- **PR #321** (`claude/loadout-phase-e`) — Loadout Phase E: the E2 bake-off, the E1
+  scan eval, and this ledger trim. Open; IB-swept.
+- **Carried forward from the archived log, still open** (they lived in session
+  entries rather than the head sections, so the trim would otherwise have buried
+  them — all three also persist in `memory/MEMORY.md`): `POST /sessions/record` is
+  **not idempotent** (duplicate sessions on retry) and stuck-`failed` sync mutations
+  are silent (`project_sync_architecture_audit`); **`supportsTablet: true` with no
+  tablet layout** plus a fixed 170 px carousel that clips
+  (`project_responsive_layout_audit`); and invite-QR / expo-clipboard were never
+  device-verified — they need a **fresh EAS dev build**.
 - **`premium_plus` launch flip** — `UPDATE subscription_tiers SET is_active = true
   WHERE tier_name='premium_plus';` in its own migration, **plus** attaching and
   submitting the two ASC products, **only** at the Loadout launch build. The

@@ -205,8 +205,9 @@ proof.** That is exactly arm A, and it lost 4–50. No further argument needed.
 
 **"A swap can't do this" — correct for 5.8 % of swaps, and for those, no ranking
 or model improvement helps.** Measured on the winning arm: **10 of 171 swaps put a
-strength-range row (reps ≤ 6) onto equipment that cannot load it.** They cluster
-in `bands_only` and in the strength templates:
+strength-range row (reps ≤ 6) onto equipment that cannot load it.** **All 10 are in
+the `bands_only` context** — 9 land on bands, 1 on bodyweight — so the failure is
+concentrated entirely in the hardest context rather than spread across them:
 
 | Parent row             | Arm C picked        | Target kept |
 | ---------------------- | ------------------- | ----------- |
