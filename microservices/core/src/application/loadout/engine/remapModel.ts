@@ -56,6 +56,27 @@ const TOOL_NAME = "compose_adapted_plan";
 export const MAX_REASON_LENGTH = 300;
 
 /**
+ * Trim to `MAX_REASON_LENGTH` on a whole CODE POINT, not a code unit.
+ *
+ * A bare `slice()` can cut between the halves of a surrogate pair, leaving a lone
+ * surrogate. `JSON.stringify` happily escapes that as `\udXXX`, so the preview
+ * responds 200 — but the client round-trips the string back into
+ * `POST /workouts/:id/variations` as `substitutionReason`, and **Postgres rejects
+ * an unpaired surrogate escape in jsonb input**, aborting the whole
+ * `createVariation` transaction as an opaque 500 and losing the user's reviewed
+ * adaptation. Same failure class the sibling `badSubstitutions` check exists to
+ * prevent. Reachable because the prompt carries attacker-influenced strings, so
+ * the prose (and therefore where the cut lands) is steerable.
+ */
+export function capReason(reason: string): string {
+  if (reason.length <= MAX_REASON_LENGTH) return reason;
+  const cut = reason.slice(0, MAX_REASON_LENGTH);
+  const last = cut.charCodeAt(cut.length - 1);
+  const isHighSurrogate = last >= 0xd800 && last <= 0xdbff;
+  return isHighSurrogate ? cut.slice(0, -1) : cut;
+}
+
+/**
  * Haiku-class by evidence, not by thrift: arm B/C ran on Haiku 4.5 and it won
  * every judged axis against the deterministic ranker. design § 1b records the
  * opposite finding for the scan, which needs Opus-class — hence two env vars.
@@ -280,10 +301,7 @@ export function parseRemapSelections(input: unknown): RemapSelection[] {
       // app's own explanation (`SubstitutionReason.note`). Membership validation
       // keeps the PLAN legal regardless — the prose is the only steerable channel
       // — but it must not be unbounded, and Phase 2 must render it as plain text.
-      reason:
-        typeof record.reason === "string"
-          ? record.reason.slice(0, MAX_REASON_LENGTH)
-          : "",
+      reason: typeof record.reason === "string" ? capReason(record.reason) : "",
     };
   });
 }
@@ -315,9 +333,21 @@ export async function selectSubstitutes(
   const client = deps.client ?? getDefaultClient();
   const modelId = deps.modelId ?? remapModelId();
 
+  const swapRowCount = input.plan.filter((row) => row.needsSwap).length;
+
   const params: MessagesCreateParams = {
     model: modelId,
-    max_tokens: 4096,
+    // Scaled to the work asked for, not fixed.
+    //
+    // Nothing bounds how many exercises a workout may contain, so the number of
+    // rows needing a swap is unbounded while a fixed 4096 is not. A bands-only
+    // context on a long plan cannot fit one entry plus a sentence per row, and the
+    // truncation guard below then converts that into a permanent 422: the workout
+    // is un-adaptable, and because the usage row is written for every inference
+    // that reached the provider, each retry costs the user one of their daily
+    // adaptations. ~80 output tokens per row is comfortable for an id plus one
+    // sentence (E2 measured 120 output tokens across a 3-swap plan).
+    max_tokens: Math.min(8192, 1024 + 80 * swapRowCount),
     messages: [
       {
         role: "user",

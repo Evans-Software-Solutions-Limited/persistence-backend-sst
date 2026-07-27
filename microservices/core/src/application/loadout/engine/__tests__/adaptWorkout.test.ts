@@ -848,3 +848,119 @@ describe("assembleAdaptedPlan — note provenance on unresolved rows", () => {
     expect(adapted.rows[0].reason.note).toBe("Bands can't hinge heavy");
   });
 });
+
+describe("assembleAdaptedPlan — a repair must not steal a later row's valid pick", () => {
+  // Rows are processed in order, so without reserving the model's honoured picks
+  // up front, ONE protocol failure cascades into TWO ranker rows and the model's
+  // only valid answer is discarded.
+  const srcA = ex({ id: "srcA", name: "A", equipmentRequired: [BARBELL] });
+  const srcB = ex({ id: "srcB", name: "B", equipmentRequired: [BARBELL] });
+  const first = ex({ id: "x", name: "AAA X", equipmentRequired: [DUMBBELL] });
+  const second = ex({ id: "y", name: "BBB Y", equipmentRequired: [DUMBBELL] });
+
+  function run(selections: Map<number, RemapSelection>) {
+    const plan = partitionPlan([row(0, srcA), row(1, srcB)], [DUMBBELL]);
+    return assemble({
+      plan,
+      shortlistByRow: shortlistPerRow(plan, [first, second], noLogs),
+      selections,
+      equipmentTypeIds: [DUMBBELL],
+    });
+  }
+
+  it("honours the model's downstream pick and repairs the earlier row around it", () => {
+    // Model omits row 0 and validly answers row 1 with `x` — which is also the
+    // top-ranked entry in row 0's shortlist.
+    const adapted = run(
+      new Map([[1, { rowKey: 1, exerciseId: "x", reason: "x fits row B" }]]),
+    );
+
+    expect(adapted.rows[1].exerciseId).toBe("x");
+    expect(adapted.rows[1].reason.selectedBy).toBe("model");
+    expect(adapted.rows[0].exerciseId).toBe("y");
+    expect(adapted.rows[0].reason.selectedBy).toBe("ranker");
+  });
+
+  it("leaves the earlier row unresolved rather than taking the reserved pick", () => {
+    // Only one candidate exists and the model claimed it for row 1.
+    const plan = partitionPlan([row(0, srcA), row(1, srcB)], [DUMBBELL]);
+    const adapted = assemble({
+      plan,
+      shortlistByRow: shortlistPerRow(plan, [first], noLogs),
+      selections: new Map([
+        [1, { rowKey: 1, exerciseId: "x", reason: "x fits row B" }],
+      ]),
+      equipmentTypeIds: [DUMBBELL],
+    });
+
+    expect(adapted.rows[0].status).toBe("unresolved");
+    expect(adapted.rows[1].exerciseId).toBe("x");
+    expect(adapted.rows[1].reason.selectedBy).toBe("model");
+  });
+
+  it("does not reserve a pick that would be rejected anyway", () => {
+    // An illegal downstream pick must not block the earlier row's repair.
+    const illegal = ex({
+      id: "illegal",
+      name: "Cable Fly",
+      equipmentRequired: ["eq-cable"],
+    });
+    const plan = partitionPlan([row(0, srcA), row(1, srcB)], [DUMBBELL]);
+    const adapted = assemble({
+      plan,
+      shortlistByRow: new Map([
+        [0, [{ candidate: first, score: 9, matchedOn: [] as never[] }]],
+        [
+          1,
+          [
+            { candidate: illegal, score: 9, matchedOn: [] as never[] },
+            { candidate: second, score: 1, matchedOn: [] as never[] },
+          ],
+        ],
+      ]),
+      selections: new Map([
+        [1, { rowKey: 1, exerciseId: "illegal", reason: "cables" }],
+      ]),
+      equipmentTypeIds: [DUMBBELL],
+    });
+
+    expect(adapted.rows[0].exerciseId).toBe("x");
+    expect(adapted.rows[1].exerciseId).toBe("y");
+  });
+});
+
+describe("assembleAdaptedPlan — a KEPT row's selection reserves nothing", () => {
+  it("lets a swap row take an exercise the model wrongly named for a kept row", () => {
+    // A selection for a row that did not need a swap is ignored outright (rule 2),
+    // so it must not reserve the id either — otherwise the model answering for a
+    // fixed row (E2 saw this once in 80 runs) would deny a real swap its best
+    // candidate for no reason.
+    const keptEx = ex({ id: "kept", name: "Push-Up", equipmentRequired: [] });
+    const swapSrc = ex({
+      id: "src",
+      name: "Barbell Press",
+      equipmentRequired: [BARBELL],
+    });
+    const wanted = ex({
+      id: "wanted",
+      name: "Dumbbell Press",
+      equipmentRequired: [DUMBBELL],
+    });
+
+    const plan = partitionPlan([row(0, keptEx), row(1, swapSrc)], [DUMBBELL]);
+    const adapted = assemble({
+      plan,
+      shortlistByRow: shortlistPerRow(plan, [wanted], noLogs),
+      selections: new Map([
+        // The model answered for the KEPT row, naming the exercise the swap row
+        // needs, and said nothing about the swap row.
+        [0, { rowKey: 0, exerciseId: "wanted", reason: "let me change this" }],
+      ]),
+      equipmentTypeIds: [DUMBBELL],
+    });
+
+    expect(adapted.rows[0].exerciseId).toBe("kept");
+    expect(adapted.rows[1].exerciseId).toBe("wanted");
+    expect(adapted.rows[1].reason.selectedBy).toBe("ranker");
+  });
+});

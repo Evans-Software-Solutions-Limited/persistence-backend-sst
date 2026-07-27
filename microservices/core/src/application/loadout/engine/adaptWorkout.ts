@@ -235,6 +235,31 @@ export function assembleAdaptedPlan(input: {
   const isLegal = (candidate: AdaptationCandidate): boolean =>
     candidate.equipmentRequired.every((id) => available.has(id));
 
+  // Every model pick that WILL be honoured, reserved before the loop starts.
+  //
+  // Rows are processed in plan order and the repair takes the top shortlist entry
+  // not already `used` — but `used` can only contain picks assigned UPSTREAM. So
+  // without this, one protocol failure cascades into two ranker rows: the model
+  // omits row 0 and validly answers row 1 with X; row 0's repair takes X because
+  // nothing has reserved it; row 1's own valid pick then fails the duplicate
+  // guard and is repaired too. The model's only good answer gets discarded, and
+  // the `selectedBy: "ranker"` rate — which `reasons.ts` says is worth watching —
+  // doubles for a single failure.
+  // Unconditional beyond "the model named something".
+  //
+  // Screening these ids for legality, membership or prior use would be logic no
+  // behaviour depends on: `claimed` is only ever consulted against shortlist
+  // entries, which are members of `offered` by construction, and the repair
+  // applies `used` and `isLegal` itself. Mutation testing confirms the stricter
+  // forms are equivalent mutants — so the redundant conditions are left out
+  // rather than kept as code no test can pin.
+  const claimed = new Set<string>();
+  for (const row of input.plan) {
+    if (!row.needsSwap) continue;
+    const id = input.selections.get(row.rowKey)?.exerciseId;
+    if (id) claimed.add(id);
+  }
+
   const rows: AdaptedRow[] = [];
   let intensityMismatchCount = 0;
 
@@ -297,8 +322,16 @@ export function assembleAdaptedPlan(input: {
     }
 
     if (!chosen) {
+      // Skips `claimed` as well as `used`: a repair for THIS row must not take an
+      // id a later row was validly given. A row that reaches this branch never has
+      // its own pick in `claimed` — a claim requires the pick to be legal and
+      // unused, which is exactly the case that takes the model path above — so no
+      // self-exclusion is needed.
       chosen = rowShortlist.find(
-        (entry) => !used.has(entry.candidate.id) && isLegal(entry.candidate),
+        (entry) =>
+          !used.has(entry.candidate.id) &&
+          !claimed.has(entry.candidate.id) &&
+          isLegal(entry.candidate),
       )?.candidate;
       selectedBy = "ranker";
     }

@@ -2,6 +2,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
   buildRemapPrompt,
+  capReason,
   DEFAULT_REMAP_MODEL_ID,
   MAX_REASON_LENGTH,
   parseRemapSelections,
@@ -457,5 +458,95 @@ describe("selectSubstitutes — truncation and untrusted prose", () => {
     expect(prompt).toContain("sortOrder: 0, 1");
     expect(prompt).toContain("0. [NEEDS_SWAP]");
     expect(prompt).toContain("1. [NEEDS_SWAP]");
+  });
+});
+
+describe("capReason", () => {
+  it("leaves a short reason untouched", () => {
+    expect(capReason("short")).toBe("short");
+  });
+
+  it("caps at MAX_REASON_LENGTH", () => {
+    expect(capReason("x".repeat(1000))).toHaveLength(MAX_REASON_LENGTH);
+  });
+
+  it("never leaves a LONE SURROGATE at the cut", () => {
+    // A bare `slice()` splits a surrogate pair here. `JSON.stringify` escapes the
+    // orphan happily, so the preview 200s — and then Postgres rejects the unpaired
+    // escape when the client saves the plan into the `substitution_reason` jsonb
+    // column, aborting `createVariation` as an opaque 500 and losing the user's
+    // reviewed adaptation.
+    const reason = "x".repeat(MAX_REASON_LENGTH - 1) + "😀" + "y".repeat(20);
+    const capped = capReason(reason);
+
+    expect(capped).toHaveLength(MAX_REASON_LENGTH - 1);
+    // A lone surrogate survives a JSON round trip as an escape but is not a valid
+    // scalar; the check is that the string is fully paired.
+    expect(capped).toBe(JSON.parse(JSON.stringify(capped)));
+    expect(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(capped)).toBe(false);
+  });
+
+  it("keeps a complete pair that ends exactly on the boundary", () => {
+    const reason = "x".repeat(MAX_REASON_LENGTH - 2) + "😀" + "y".repeat(20);
+    expect(capReason(reason)).toHaveLength(MAX_REASON_LENGTH);
+    expect(capReason(reason).endsWith("😀")).toBe(true);
+  });
+});
+
+describe("selectSubstitutes — output budget", () => {
+  it("scales max_tokens with the number of rows the model must answer for", async () => {
+    // A fixed budget against an unbounded row count makes a long plan permanently
+    // un-adaptable AND burns a daily adaptation on every retry, because the
+    // truncation guard fires after the provider call.
+    const small: { params?: any } = {};
+    await selectSubstitutes(
+      {
+        workoutName: "W",
+        plan: PLAN,
+        candidates: [candidate],
+        equipmentTypeIds: [DUMBBELL],
+        lookups,
+      },
+      { client: fakeClient(toolResponse([]), small) },
+    );
+
+    const bigPlan = Array.from({ length: 40 }, (_, i) => ({
+      ...planRow(i, swapSource, true),
+      rowKey: i,
+    }));
+    const big: { params?: any } = {};
+    await selectSubstitutes(
+      {
+        workoutName: "W",
+        plan: bigPlan,
+        candidates: [candidate],
+        equipmentTypeIds: [DUMBBELL],
+        lookups,
+      },
+      { client: fakeClient(toolResponse([]), big) },
+    );
+
+    expect(big.params.max_tokens).toBeGreaterThan(small.params.max_tokens);
+    expect(big.params.max_tokens).toBeLessThanOrEqual(8192);
+  });
+
+  it("stays bounded for an absurd plan", async () => {
+    const hugePlan = Array.from({ length: 500 }, (_, i) => ({
+      ...planRow(i, swapSource, true),
+      rowKey: i,
+    }));
+    const capture: { params?: any } = {};
+    await selectSubstitutes(
+      {
+        workoutName: "W",
+        plan: hugePlan,
+        candidates: [candidate],
+        equipmentTypeIds: [DUMBBELL],
+        lookups,
+      },
+      { client: fakeClient(toolResponse([]), capture) },
+    );
+
+    expect(capture.params.max_tokens).toBe(8192);
   });
 });
