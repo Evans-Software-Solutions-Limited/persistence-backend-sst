@@ -134,6 +134,43 @@ export class InMemoryStorageAdapter implements StoragePort {
     return this._backendChanged;
   }
 
+  /**
+   * Change-bus double. The real adapter observes SQLite's update hook; this one
+   * cannot, so tests drive delivery explicitly via `emitChange`. Honours the
+   * port's subscribe/unsubscribe contract and its table filter so a test can
+   * prove a subscriber is (or is not) woken by a given table.
+   *
+   * Delivery here is SYNCHRONOUS, unlike production's debounced async flush —
+   * a test asserting "the list re-read after the write" should not need timers.
+   * Tests that care about coalescing target the SQLite adapter directly.
+   */
+  private changeSubscribers = new Set<{
+    tables: ReadonlySet<string>;
+    onChange: (changed: ReadonlySet<string>) => void;
+  }>();
+
+  subscribe(
+    tables: readonly string[],
+    onChange: (changed: ReadonlySet<string>) => void,
+  ): () => void {
+    if (tables.length === 0) return () => {};
+    const sub = { tables: new Set(tables), onChange };
+    this.changeSubscribers.add(sub);
+    return () => {
+      this.changeSubscribers.delete(sub);
+    };
+  }
+
+  /** Test-only: pretend these tables were written. */
+  emitChange(...tables: string[]): void {
+    const changed: ReadonlySet<string> = new Set(tables);
+    for (const sub of [...this.changeSubscribers]) {
+      if (!this.changeSubscribers.has(sub)) continue;
+      if (![...changed].some((t) => sub.tables.has(t))) continue;
+      sub.onChange(changed);
+    }
+  }
+
   enqueueMutation(entry: EnqueueMutationInput): void {
     this.queue.push({
       id: this.nextId++,

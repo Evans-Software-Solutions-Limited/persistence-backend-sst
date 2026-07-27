@@ -104,6 +104,45 @@ export interface StoragePort {
    */
   backendChanged(): boolean;
 
+  /**
+   * Subscribe to local-write notifications for a set of tables.
+   *
+   * This is the reactivity primitive the offline-first read path was missing.
+   * Every cached read in the app is a one-shot synchronous snapshot captured in
+   * a `useMemo`; before this existed, a local write was invisible to any
+   * already-mounted consumer unless that consumer happened to have a
+   * hand-placed `rereadCache()` / revision bump wired to it. That is why an
+   * offline-created workout, exercise or recipe did not appear until the user
+   * pulled to refresh — the read ran, it just ran against a snapshot taken
+   * before the write, and nothing told it to run again.
+   *
+   * Backed by SQLite's own `sqlite3_update_hook` via expo-sqlite's
+   * `addDatabaseChangeListener`, so it fires for EVERY write to the database
+   * regardless of which code path made it — including the `swapLocal*Id`
+   * reconciliation the sync drain performs, which previously re-keyed cached
+   * rows with no way to tell the UI.
+   *
+   * Contract:
+   * - `tables` is matched exactly (SQLite reports the bare table name). An
+   *   empty array subscribes to nothing and is a no-op.
+   * - The callback receives the set of tables that changed since the last
+   *   delivery. It is invoked at most once per debounce window per subscriber,
+   *   NOT once per changed row: the update hook fires per rowId, so a
+   *   2000-row `cacheExercises` transaction would otherwise deliver 2000
+   *   notifications. Callers get one.
+   * - Delivery is asynchronous (always a later tick), so a subscriber can
+   *   safely call back into storage without re-entering an in-progress write.
+   * - Returns an unsubscribe function. Calling it twice is safe.
+   *
+   * Implementations that cannot observe writes (the in-memory test double
+   * drives this explicitly) must still honour the subscribe/unsubscribe
+   * contract.
+   */
+  subscribe(
+    tables: readonly string[],
+    onChange: (changed: ReadonlySet<string>) => void,
+  ): () => void;
+
   // -- Sync Queue --
   enqueueMutation(entry: EnqueueMutationInput): void;
   getPendingMutations(): SyncQueueEntry[];

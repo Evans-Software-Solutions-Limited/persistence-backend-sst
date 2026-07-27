@@ -237,6 +237,26 @@ export function captureBoundaryError(
 }
 
 /**
+ * Report a failure to initialise the local SQLite database.
+ *
+ * This used to be a bare `console.error` in `AppProviders`, which made it
+ * invisible: if `initialize()` throws, the tables don't exist, and every
+ * subsequent cached read throws `no such table` from inside a render-phase
+ * `useMemo` — so what Sentry actually received was an ErrorBoundary report
+ * pointing at a random screen, with the real cause nowhere in the event. This
+ * reports the root cause directly, tagged so it groups on its own.
+ *
+ * No-op when disabled.
+ */
+export function captureStorageInitFailure(error: unknown): void {
+  if (!enabled) return;
+  Sentry.captureException(
+    error instanceof Error ? error : new Error(String(error)),
+    { level: "fatal", tags: { subsystem: "storage_init" } },
+  );
+}
+
+/**
  * Report a sync-queue mutation that has exhausted its retry budget. Such an
  * entry is dropped from the drain forever (`getPendingMutations` gates on
  * `retry_count < max_retries`) with no user recovery path — a silently-stuck

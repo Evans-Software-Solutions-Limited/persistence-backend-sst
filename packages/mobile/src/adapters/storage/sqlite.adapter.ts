@@ -77,6 +77,29 @@ import type {
 const DB_NAME = "persistence.db";
 
 /**
+ * Coalescing window for change-bus delivery, in ms.
+ *
+ * SQLite's update hook fires once per changed ROW, so a bulk write emits a
+ * burst: `cacheExercises` upserts the whole ~2.3k-row library in one
+ * transaction, and `refreshAllWorkouts` writes three list slices back to back.
+ * Delivering per row would re-render every subscribed list thousands of times.
+ * One frame's worth of coalescing turns a burst into a single notification
+ * while still feeling instant to the user.
+ *
+ * A non-zero window matters because bursts are not always synchronous: a
+ * command writes its optimistic row and enqueues its mutation as separate
+ * statements, and the sync drain's `swapLocal*Id` touches several tables across
+ * `await` boundaries. 16ms absorbs those without deferring the re-read into a
+ * visible delay.
+ */
+const CHANGE_BUS_DEBOUNCE_MS = 16;
+
+type ChangeSubscriber = {
+  tables: ReadonlySet<string>;
+  onChange: (changed: ReadonlySet<string>) => void;
+};
+
+/**
  * SQLite storage adapter implementing StoragePort.
  *
  * Manages the local database for offline-first support:
@@ -88,13 +111,111 @@ export class SQLiteStorageAdapter implements StoragePort {
   private db: SQLite.SQLiteDatabase | null = null;
   private _backendChanged = false;
 
+  // -- Change bus (see StoragePort.subscribe) --
+  private subscribers = new Set<ChangeSubscriber>();
+  /** Tables written since the last delivery; drained on flush. */
+  private pendingChangedTables = new Set<string>();
+  private changeFlushTimer: ReturnType<typeof setTimeout> | null = null;
+  private changeListener: { remove: () => void } | null = null;
+
   private getDb(): SQLite.SQLiteDatabase {
     if (!this.db) {
-      this.db = SQLite.openDatabaseSync(DB_NAME);
+      // `enableChangeListener` registers SQLite's `sqlite3_update_hook` on the
+      // connection so local writes can be observed (see
+      // `StoragePort.subscribe`). It is a NATIVE option, but the native code
+      // that implements it — `Events("onDatabaseChange")` + `addUpdateHook` in
+      // expo-sqlite's SQLiteModule — is already compiled into the shipped
+      // binary, so turning it on is a JS-only change that ships over-the-air.
+      this.db = SQLite.openDatabaseSync(DB_NAME, {
+        enableChangeListener: true,
+      });
       this.db.execSync("PRAGMA journal_mode = WAL;");
       this.db.execSync("PRAGMA foreign_keys = ON;");
+      this.attachChangeListener();
     }
     return this.db;
+  }
+
+  /**
+   * Bridge expo-sqlite's per-row `onDatabaseChange` events onto the coalescing
+   * bus. Attached once, on first `getDb()`, and never removed for the process
+   * lifetime — the adapter is a singleton created in `AppProviders`.
+   *
+   * Wrapped defensively: if the native event is unavailable for any reason
+   * (an older binary that predates `enableChangeListener`, a platform without
+   * the update hook), the app must keep working with the pre-existing
+   * hand-placed invalidation rather than fail to open its database. Reactivity
+   * degrades; nothing breaks.
+   */
+  private attachChangeListener(): void {
+    if (this.changeListener) return;
+    try {
+      this.changeListener = SQLite.addDatabaseChangeListener((event) => {
+        // Only our own database. A second expo-sqlite consumer (expo's
+        // kv-store, for instance) must not tick our subscribers.
+        if (event.databaseFilePath && !event.databaseFilePath.includes(DB_NAME))
+          return;
+        if (!event.tableName) return;
+        this.pendingChangedTables.add(event.tableName);
+        this.scheduleChangeFlush();
+      });
+    } catch (err) {
+      console.warn(
+        "[storage] database change listener unavailable; falling back to explicit cache invalidation:",
+        err,
+      );
+    }
+  }
+
+  private scheduleChangeFlush(): void {
+    if (this.changeFlushTimer !== null) return;
+    this.changeFlushTimer = setTimeout(() => {
+      this.changeFlushTimer = null;
+      this.flushChanges();
+    }, CHANGE_BUS_DEBOUNCE_MS);
+  }
+
+  private flushChanges(): void {
+    if (this.pendingChangedTables.size === 0) return;
+    const changed: ReadonlySet<string> = new Set(this.pendingChangedTables);
+    this.pendingChangedTables.clear();
+    // Snapshot the subscriber list: a callback may unsubscribe (an unmounting
+    // component) or subscribe mid-delivery, and mutating the live Set while
+    // iterating it is exactly the class of bug that makes a listener fire
+    // after unmount.
+    for (const sub of [...this.subscribers]) {
+      if (!this.subscribers.has(sub)) continue;
+      let relevant = false;
+      for (const table of changed) {
+        if (sub.tables.has(table)) {
+          relevant = true;
+          break;
+        }
+      }
+      if (!relevant) continue;
+      try {
+        sub.onChange(changed);
+      } catch (err) {
+        // One bad subscriber must not stop the others, and must never
+        // propagate into whatever wrote to the database.
+        console.error("[storage] change subscriber threw:", err);
+      }
+    }
+  }
+
+  subscribe(
+    tables: readonly string[],
+    onChange: (changed: ReadonlySet<string>) => void,
+  ): () => void {
+    if (tables.length === 0) return () => {};
+    // Ensure the connection (and therefore the listener) exists even if this
+    // subscriber runs before any read.
+    this.getDb();
+    const sub: ChangeSubscriber = { tables: new Set(tables), onChange };
+    this.subscribers.add(sub);
+    return () => {
+      this.subscribers.delete(sub);
+    };
   }
 
   async initialize(backendFingerprint?: string): Promise<void> {
