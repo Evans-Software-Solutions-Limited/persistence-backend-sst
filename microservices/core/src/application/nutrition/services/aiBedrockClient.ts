@@ -30,6 +30,17 @@ import { AnthropicBedrock } from "@anthropic-ai/bedrock-sdk";
 // 2 × 12s + overhead < 30s. Eval (2026-07-03) measured opus-4-6 median
 // 6.1s / worst ~9s on 640px photos, so 12s clears the real p99 while
 // keeping the retry affordable.
+//
+// ⚠ CORRECTION (2026-07-27): the binding constraint was never the 30s
+// gateway ceiling — it is the LAMBDA's own timeout, and SST defaults
+// that to **20 seconds**. So `2 × 12s = 24s` did not fit: on the retry
+// path the function was killed ~8s into the second attempt, meaning the
+// retry could never complete AND the hard-kill skipped the handlers'
+// `finally` blocks, so no `ai_usage_log` row was written for an
+// inference the provider had already billed. `infra/api.ts` now sets an
+// explicit `timeout: "29 seconds"` on the route, under which the
+// arithmetic above finally holds. **Do not lower that route timeout
+// without re-deriving this constant.**
 export const CLIENT_TIMEOUT_MS = 12_000;
 
 // ─── Minimal client seam ────────────────────────────────────────────────
@@ -160,6 +171,50 @@ export async function createWithRetry(
         `ai_estimation_failed_after_retry: ${describeError(secondError)}`,
       );
     }
+  }
+}
+
+/**
+ * ONE attempt at a raised timeout, instead of two short ones.
+ *
+ * Built for spec-21's equipment scan (T-E1.6) and deliberately general, because
+ * the re-map may want it later: Brad kept `createWithRetry` there on 2026-07-27
+ * with the explicit note that this variant gets built here and the decision can
+ * be revisited once it exists.
+ *
+ * ## Why the retry is wrong for a slow vision call
+ *
+ * `createWithRetry`'s budget is `2 × CLIENT_TIMEOUT_MS` = 24 s plus
+ * auth/entitlement/ceiling/usage-log overhead, against a hard **30 s** API Gateway
+ * HTTP-API integration ceiling. That works when the call is fast: the re-map is
+ * 2.6 s p50 / 3.8 s max, so a first-attempt timeout is a real anomaly and paying
+ * for a second attempt is a good trade.
+ *
+ * E1 measured the equipment scan at **mean 10.1 s / max 12.27 s** — the max
+ * already over its own 12 s per-attempt budget, on 7 stock photos, which are easy
+ * mode. There, a timeout is not an anomaly but the expected tail, and retrying it
+ * converts a slow request into a failed one *and* doubles the $0.0272 unit cost.
+ * A single long attempt spends the same wall-clock on actually finishing.
+ *
+ * ## Failure mapping
+ *
+ * Any failure is `AiUnavailableError` → 503. There is no retryable/non-retryable
+ * split to make: with no second attempt, the distinction changes nothing about
+ * what the caller can do.
+ */
+export async function createSingleAttempt(
+  client: MinimalBedrockClient,
+  params: MessagesCreateParams,
+  timeoutMs: number,
+): Promise<MessagesCreateResponse> {
+  try {
+    // Passed per-request rather than relying on the client default, which
+    // `getDefaultClient()` fixes at CLIENT_TIMEOUT_MS for the retrying callers.
+    return await client.messages.create(params, { timeout: timeoutMs });
+  } catch (error) {
+    throw new AiUnavailableError(
+      `ai_single_attempt_failed: ${describeError(error)}`,
+    );
   }
 }
 

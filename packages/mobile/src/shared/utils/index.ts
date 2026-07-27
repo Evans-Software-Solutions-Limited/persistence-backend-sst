@@ -37,3 +37,5 @@ export {
   cmToFeetInches,
   formatHeight,
 } from "./units";
+
+export { stripUnpairedSurrogates, capText } from "./text";

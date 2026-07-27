@@ -88,3 +88,18 @@ export {
   type RecipeDraftIngredientRow,
   computeRecipeDraftMacros,
 } from "./nutrition.service";
+
+export {
+  type LoadoutRowTone,
+  type LoadoutRowCopy,
+  type ManualPick,
+  type EquipmentPickerGroup,
+  EQUIPMENT_OTHER_CATEGORY,
+  describeMatchSignals,
+  describeLoadoutRow,
+  rowsNeedingAttention,
+  buildVariationExercises,
+  deriveVariationName,
+  groupEquipmentForPicker,
+  scanDraftToEquipmentIds,
+} from "./loadout.service";

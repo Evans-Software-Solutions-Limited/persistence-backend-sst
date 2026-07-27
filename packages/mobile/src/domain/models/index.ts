@@ -22,6 +22,7 @@ export {
   type ReferenceListKind,
   REFERENCE_LIST_STALE_AFTER_MS,
   isReferenceListStale,
+  isEquipmentGroupingStale,
 } from "./reference-list";
 
 export { type PersonalRecord, type RecordType, RECORD_TYPES } from "./record";
@@ -160,3 +161,29 @@ export {
   type EstimateRecipeInput,
   type EstimatedRecipeMacros,
 } from "./nutrition";
+
+export {
+  type SavedGym,
+  type SavedGymInput,
+  type SubstitutionReasonCode,
+  type SubstitutionFlag,
+  type RankSignal,
+  type RowSelectedBy,
+  type SubstitutionReason,
+  type LoadoutRowStatus,
+  type LoadoutExerciseDisplay,
+  type LoadoutPreviewRow,
+  type LoadoutPreviewMeta,
+  type LoadoutPreview,
+  type LoadoutPreviewInput,
+  type LoadoutVariationExerciseInput,
+  type CreateLoadoutVariationInput,
+  type WorkoutVariationSummary,
+  type SubstituteCandidate,
+  type SubstitutesResult,
+  type SubstitutesQuery,
+  type EquipmentScanDetection,
+  type EquipmentScanUnmatched,
+  type EquipmentScanDraft,
+  type EquipmentScanInput,
+} from "./loadout";

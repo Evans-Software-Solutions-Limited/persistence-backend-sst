@@ -44,6 +44,28 @@ export const otherServiceAPI = new sst.aws.ApiGatewayV2("api-other-service");
 coreAPI.route("$default", {
   handler: "microservices/core/src/api.handler",
   link: [avatarsBucket],
+  // ⚠ EXPLICIT, and load-bearing for every AI endpoint. SST defaults a Lambda to
+  // **20 seconds** (`.sst/platform/src/components/aws/function.ts` —
+  // `timeout ?? "20 seconds"`), NOT the 30 s API Gateway integration ceiling that
+  // the AI adapters' comments were all budgeting against. The Lambda is the
+  // binding constraint, and at 20 s it silently truncated two model paths:
+  //
+  //   - the equipment scan's single ~20 s attempt (spec-21 T-E1.6) could never
+  //     reach its own SDK timeout, so `AiUnavailableError` → 503 was unreachable;
+  //   - `createWithRetry`'s 2 × 12 s (`aiBedrockClient.ts`) needs 24 s, so on the
+  //     Snap AI photo path the RETRY could never finish — a pre-existing latent
+  //     bug, not something this change introduced.
+  //
+  // Worse than the wrong status code: a Lambda hard-kill does not run the
+  // handlers' `finally` blocks, so **no `ai_usage_log` row is written for an
+  // inference Bedrock already performed and billed** — the request escapes the
+  // per-user daily ceiling entirely. At $0.0272 a scan that is the most expensive
+  // failure mode in the feature.
+  //
+  // 29 s keeps us inside API Gateway's 30 s ceiling while leaving the scan's 20 s
+  // model budget ~9 s of headroom for auth, the entitlement read, the ceiling
+  // count, the catalogue read and the usage-log write.
+  timeout: "29 seconds",
   // Bedrock IAM auth for Tier B AI nutrition estimation (M9.5 —
   // specs/13-nutrition-tracking/design.md § Revised 2026-07-03). No
   // API-key secret: SigV4 auth from the Lambda execution role. Both
@@ -124,6 +146,32 @@ coreAPI.route("$default", {
     // separate variables rather than one shared "Loadout AI" id.
     // Same Bedrock IAM wildcards as above cover it; no IAM change needed.
     AI_LOADOUT_REMAP_MODEL_ID: "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+    // Loadout equipment scan (spec-21 Phase 3 — the PERCEPTION surface, § 1b).
+    // Opus-class BY EVIDENCE and this is the reverse of the food split: design
+    // § 8.1 originally said "Haiku-class first (the task is far simpler than food
+    // estimation)" and the Phase E1 eval proved that BACKWARDS. Haiku 4.5 scored
+    // 0.759 recall against Opus 4.6's 0.966 (0.500 vs 1.000 on the one real phone
+    // photo), returned 2 hallucinated ids to Opus's 0, and missed `Squat Rack` in
+    // 3 of 7 photos — miss the rack and every barbell lift gets needlessly
+    // swapped. Same Bedrock IAM wildcards cover it; no IAM change needed.
+    //
+    // ⚠ This id is ALREADY the production Snap AI photo model
+    // (`AI_PHOTO_MODEL_ID`), so it is known-granted in both accounts. Do NOT move
+    // it to an Opus-5 id without checking: `eu.anthropic.claude-opus-5` is
+    // UNGRANTED in production, and assuming otherwise caused a 30-day silent
+    // production outage (STATE.md 2026-07-26).
+    AI_EQUIPMENT_SCAN_MODEL_ID: "eu.anthropic.claude-opus-4-6-v1",
+    // 6/day — recommended by Claude, accepted by Brad 2026-07-27 (design § 8.1
+    // had proposed 10). At the measured $0.0272/scan that is ~$4.90/user/month
+    // worst case, i.e. cost PARITY with the re-map's $5.13, putting both Premium+
+    // AI surfaces together at ~$10/mo against £29.99 gross (~£25.49 net of
+    // Apple's 15 %). 10/day would have been $8.16 for this endpoint alone.
+    // A scan is a once-per-GYM action — `saved_gyms` persists it — so 6 covers
+    // setting up two or three gyms with retries, and unlike the re-map, hitting
+    // this cap blocks no workout: the saved-gym and manual-picklist collect paths
+    // are "the floor, not fallbacks" (§ 1b). Revisit if § 8.1's 640 px downscale
+    // is ever measured — a cheaper scan buys a higher ceiling.
+    AI_EQUIPMENT_SCAN_DAILY_LIMIT: "6",
     // Daily per-user inference ceilings (cross-cuts § 4.3 Revised
     // 2026-07-05) — a cost backstop with a profit buffer, not a product
     // quota. Worst-case abuser ≈ £7.30/mo vs the £12.99 premium sub.

@@ -9,6 +9,18 @@ import type {
   NotificationsPage,
 } from "@/domain/models/notification";
 import type { NotificationPreferences } from "@/domain/models/notification-preferences";
+import type {
+  CreateLoadoutVariationInput,
+  EquipmentScanDraft,
+  EquipmentScanInput,
+  LoadoutPreview,
+  LoadoutPreviewInput,
+  SavedGym,
+  SavedGymInput,
+  SubstitutesQuery,
+  SubstitutesResult,
+  WorkoutVariationSummary,
+} from "@/domain/models/loadout";
 import type { ProfilePageData } from "@/domain/models/profilePage";
 import type {
   ReferenceEntry,
@@ -1268,7 +1280,174 @@ export interface ApiPort {
     assignmentId: string,
     input: SwapWorkoutInput,
   ): Promise<Result<WorkoutAssignmentRow, ProgramApiError>>;
+
+  // ─── Loadout (spec-21) ─────────────────────────────────────────────────────
+  //
+  // All ONLINE-DIRECT — never routed through the sync queue. Two reasons, and
+  // they are not the same reason:
+  //
+  //  • The preview and the scan are model-backed. Replaying a queued inference
+  //    after a reconnect would spend a daily allowance on a request the user has
+  //    long since abandoned, and both carry per-user ceilings that make a silent
+  //    retry expensive rather than merely wasteful.
+  //  • The saved-gym and variation writes are cheap, but they are inputs the user
+  //    is actively reviewing. A queued create that surfaces its 409 duplicate
+  //    name or 400 `EQUIPMENT_NOT_AVAILABLE` minutes later has no UI left to
+  //    show it in.
+  //
+  // 402 arrives as `code: "entitlement_denied"` with the structured payload
+  // (`upgradeTo: "premium_plus"`, `upgradePriceMonthly`); 422/429/503 arrive as
+  // `code: "server"` distinguished by `status`, matching `estimateFromPhoto`.
+
+  /** The caller's saved gyms (`GET /saved-gyms`), newest name order. */
+  getSavedGyms(): Promise<Result<SavedGym[], LoadoutApiError>>;
+
+  /**
+   * `POST /saved-gyms`. **409 on a duplicate name** (per user, compared on
+   * `lower(btrim(name))`) and 400 `UNKNOWN_EQUIPMENT_TYPE` naming the offending
+   * ids — both recoverable in the picker, so both are distinguishable via
+   * `status`.
+   */
+  createSavedGym(
+    input: SavedGymInput,
+  ): Promise<Result<SavedGym, LoadoutApiError>>;
+
+  /** `PATCH /saved-gyms/:id`. Same 409/400 semantics as the create. */
+  updateSavedGym(
+    id: string,
+    input: Partial<SavedGymInput>,
+  ): Promise<Result<SavedGym, LoadoutApiError>>;
+
+  /**
+   * `DELETE /saved-gyms/:id`. **Variations survive a gym delete** — their
+   * `source_gym_id` FK nulls out and `sourceGymName` reads null, so the saved
+   * setup remains usable. Say so at the confirmation, or this reads as
+   * destructive when it is not.
+   */
+  deleteSavedGym(id: string): Promise<Result<void, LoadoutApiError>>;
+
+  /**
+   * `POST /workouts/:id/loadout/preview` — adapt the workout and PERSIST NOTHING
+   * (AC-3.5). Takes exactly one equipment source; see `LoadoutPreviewInput`.
+   *
+   * The model call is ~2.6 s typical, so bind the `adapting` step to this
+   * request rather than to a timer.
+   */
+  previewLoadout(
+    workoutId: string,
+    input: LoadoutPreviewInput,
+  ): Promise<Result<LoadoutPreview, LoadoutApiError>>;
+
+  /**
+   * `POST /workouts/:id/variations` — persist the reviewed plan under the parent.
+   *
+   * ⚠ Round-trip the preview's rows faithfully, `substitutionReason` included,
+   * and set `isUserOverride: true` on any row the user picked from the picker's
+   * incompatible list — otherwise the save 400s `EQUIPMENT_NOT_AVAILABLE`.
+   */
+  createWorkoutVariation(
+    parentWorkoutId: string,
+    input: CreateLoadoutVariationInput,
+  ): Promise<Result<WorkoutVariationSummary, LoadoutApiError>>;
+
+  /**
+   * `GET /workouts/:id/variations` — the parent's "Saved setups" list. Scoped to
+   * variations the CALLER created, so a coach never sees an athlete's.
+   */
+  getWorkoutVariations(
+    parentWorkoutId: string,
+  ): Promise<Result<WorkoutVariationSummary[], LoadoutApiError>>;
+
+  /**
+   * `GET /exercises/substitutes` — the ranked feed behind the equipment-aware
+   * swap picker, serving BOTH the Loadout review row and the standalone
+   * in-session swap (AC-4.4).
+   *
+   * ⚠ `best` (compatible, ranked) and `others` (INCOMPATIBLE) are two different
+   * claims — see `SubstitutesResult`. Do not merge or co-sort them. Omitting
+   * `equipment` is legitimate and yields an empty `best`.
+   */
+  getExerciseSubstitutes(
+    query: SubstitutesQuery,
+  ): Promise<Result<SubstitutesResult, LoadoutApiError>>;
+
+  /**
+   * `POST /ai/equipment-scan` — a gym photo → a DRAFT equipment list the user
+   * confirms (AC-2.3). Persists nothing; confirming never saves a gym.
+   *
+   * Ceiling is 6/day (429 `ai_daily_limit`). 503 `ai_unavailable` means Bedrock
+   * is down and there is **no cheaper fallback** — say the scan is unavailable
+   * and point at the manual picker. Do NOT say "try rephrasing": there is no
+   * prompt to rephrase, and that copy is the existing mistake at
+   * `QuickAddSheetContainer.tsx:267` / `SnapAISheetContainer.tsx:100`.
+   */
+  scanEquipment(
+    input: EquipmentScanInput,
+  ): Promise<Result<EquipmentScanDraft, LoadoutApiError>>;
 }
+
+/**
+ * Every `code` the Loadout handlers actually put on the wire.
+ *
+ * ⚠ **Transcribed from the handlers, NOT from the repository's result unions.** An
+ * earlier version of this list said `duplicate_name` / `unknown_equipment`, which
+ * are `SavedGymCreateResult` *statuses* — internal to
+ * `savedGymRepository.ts` and never serialised. The handlers translate them to
+ * `SAVED_GYM_NAME_TAKEN` / `UNKNOWN_EQUIPMENT_TYPE`, so the container branch this
+ * type exists to enable (rename on a 409) could never have fired. Regenerate with:
+ *
+ *   grep -rn 'code: "' microservices/core/src/application/loadout
+ *
+ * A `const` array rather than a bare union so the adapter can check membership at
+ * runtime — the cast it used instead made the "unknown codes surface as a type
+ * error" promise below untrue, including letting `ENTITLEMENT_DENIED` land here off
+ * the 402 path.
+ */
+export const LOADOUT_ERROR_CODES = [
+  // preview
+  "EQUIPMENT_CONTEXT_REQUIRED",
+  "EMPTY_EQUIPMENT_CONTEXT",
+  // preview + create-variation
+  "PARENT_IS_A_VARIATION",
+  "UNKNOWN_SAVED_GYM",
+  "UNKNOWN_EQUIPMENT_TYPE",
+  // create-variation
+  "EXERCISE_NOT_VISIBLE",
+  "UNKNOWN_SUBSTITUTED_FROM_EXERCISE",
+  "EQUIPMENT_NOT_AVAILABLE",
+  // saved gyms
+  "SAVED_GYM_NAME_TAKEN",
+  // shared
+  "not_found",
+] as const;
+
+export type LoadoutErrorCode = (typeof LOADOUT_ERROR_CODES)[number];
+
+export function isLoadoutErrorCode(value: unknown): value is LoadoutErrorCode {
+  return (
+    typeof value === "string" &&
+    (LOADOUT_ERROR_CODES as readonly string[]).includes(value)
+  );
+}
+
+/**
+ * `ApiError` plus the Loadout endpoints' flat domain `code`.
+ *
+ * The Loadout handlers answer `{ code, message }` on their recoverable 400s, and
+ * each code has a DIFFERENT remedy in the flow — rename the gym
+ * (`SAVED_GYM_NAME_TAKEN`), re-pick the kit (`UNKNOWN_EQUIPMENT_TYPE`), acknowledge
+ * the override (`EQUIPMENT_NOT_AVAILABLE`), go to the parent
+ * (`PARENT_IS_A_VARIATION`). Collapsing them into one generic server error leaves
+ * the container with nothing to branch on, which is exactly how a reviewed
+ * adaptation gets lost to an unexplained failure.
+ *
+ * Absent when the body carried no recognised code — the AI endpoints answer
+ * `{ error: "ai_daily_limit" }` and signal through `status`, and 402 carries its own
+ * structured entitlement payload.
+ */
+export type LoadoutApiError = ApiError & {
+  loadoutCode?: LoadoutErrorCode;
+};
 
 /** Body for `PATCH …/workout-assignments/:id` (M18 Swap). */
 export type SwapWorkoutInput = {

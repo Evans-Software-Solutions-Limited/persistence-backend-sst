@@ -791,10 +791,26 @@ magic-byte check → model → parse → validate → 200.**
 - `reachedModel` flag + `finally`-block best-effort `AiUsageLogRepository.record()`
   so 402/400/413/429 never consume the ceiling.
 - `AI_EQUIPMENT_SCAN_DAILY_LIMIT`, fail-safe parse
-  (`Number.isFinite(x) && x > 0`), **default 10/day** — sized against
-  Mealprint's checkpoint-3 ceilings (20 suggest / 5 day-plan / 10 swap).
-  ⚠ **Brad checkpoint:** confirm 10.
-- Register the default in `infra/api.ts`'s environment block alongside the five
+  (`Number.isFinite(x) && x > 0`), ~~**default 10/day** — sized against
+  Mealprint's checkpoint-3 ceilings (20 suggest / 5 day-plan / 10 swap)~~.
+  **DECIDED 2026-07-27: 6/day** (Claude's recommendation, accepted by Brad).
+  - **The 10 was analogised from the wrong thing.** Mealprint's suggest/day-plan/
+    swap surfaces are daily-use; a scan is a **once-per-GYM** action, because
+    `saved_gyms` persists the result. The legitimate heavy day is setting up two
+    or three gyms at two or three photos each — 6 covers that with retries.
+  - **Cost parity with the re-map.** At the measured $0.0272/scan, 6/day is
+    ~$4.90/user/month worst case against the re-map's $5.13, so the two Premium+
+    AI surfaces together are ~$10/mo against £29.99 gross (~£25.49 net of Apple's
+    15 % Small Business rate, ≈ $32). 10/day would have been **$8.16 for this
+    endpoint alone** — a quarter of net revenue.
+  - **The asymmetry with the re-map's 30 is deliberate, not inconsistent.**
+    Hitting this cap blocks no workout: AC-2.1 and AC-2.2 are "the floor, not
+    fallbacks" (§ 1b). The re-map has no alternative path, so its bad failure is
+    an athlete stuck mid-session — which is why generous was right there and
+    tight is right here.
+  - Revisit if the 640 px downscale below is ever measured: a cheaper unit cost
+    buys a higher ceiling on the same budget.
+- Register the default in `infra/api.ts`'s environment block alongside the six
   existing `AI_*_DAILY_LIMIT` values. **No IAM change** — the existing
   `bedrock:InvokeModel` wildcards already cover any `eu.anthropic.*` id.
 - `AI_EQUIPMENT_SCAN_MODEL_ID`, vision-capable. ~~Haiku-class first (the task is

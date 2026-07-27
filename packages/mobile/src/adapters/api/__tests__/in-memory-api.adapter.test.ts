@@ -909,4 +909,334 @@ describe("InMemoryApiAdapter", () => {
       expect(result.ok).toBe(false);
     });
   });
+  describe("Loadout (spec-21)", () => {
+    const DUMBBELL = "eq-dumbbell";
+    const BARBELL = "eq-barbell";
+
+    function reason(missingEquipment: string[] = []) {
+      return {
+        code: "equipment_unavailable" as const,
+        missingEquipment,
+        matchedOn: [],
+        flags: [],
+        note: null,
+        selectedBy: "model" as const,
+      };
+    }
+
+    describe("saved gyms", () => {
+      it("rejects a duplicate name with a 409, ignoring case and whitespace", async () => {
+        // Mirrors the backend's `lower(btrim(name))` expression index, so a test
+        // that passes here is one that would pass against Postgres.
+        await api.createSavedGym({ name: "Hotel gym", equipmentTypeIds: [] });
+        const dup = await api.createSavedGym({
+          name: "  HOTEL GYM  ",
+          equipmentTypeIds: [],
+        });
+
+        expect(dup.ok).toBe(false);
+        expect(!dup.ok && dup.error.status).toBe(409);
+      });
+
+      it("allows a genuinely different name", async () => {
+        await api.createSavedGym({ name: "Hotel gym", equipmentTypeIds: [] });
+        const second = await api.createSavedGym({
+          name: "Home garage",
+          equipmentTypeIds: [],
+        });
+        expect(second.ok).toBe(true);
+      });
+
+      it("409s a rename onto another gym's name but allows a self-rename", async () => {
+        const first = await api.createSavedGym({
+          name: "Hotel gym",
+          equipmentTypeIds: [],
+        });
+        await api.createSavedGym({ name: "Home garage", equipmentTypeIds: [] });
+        const id = first.ok ? first.value.id : "";
+
+        const clash = await api.updateSavedGym(id, { name: "Home garage" });
+        expect(!clash.ok && clash.error.status).toBe(409);
+
+        const same = await api.updateSavedGym(id, { name: "Hotel Gym" });
+        expect(same.ok).toBe(true);
+      });
+
+      it("404s an update or delete of an unknown gym", async () => {
+        const updated = await api.updateSavedGym("nope", { name: "x" });
+        const deleted = await api.deleteSavedGym("nope");
+        expect(!updated.ok && updated.error.status).toBe(404);
+        expect(!deleted.ok && deleted.error.status).toBe(404);
+      });
+
+      it("LEAVES variations in place when a gym is deleted", async () => {
+        // The backend nulls `source_gym_id` rather than cascading, so a test
+        // asserting the saved setup disappears would assert the opposite of
+        // reality.
+        const gym = await api.createSavedGym({
+          name: "Hotel gym",
+          equipmentTypeIds: [DUMBBELL],
+        });
+        const gymId = gym.ok ? gym.value.id : "";
+        await api.createWorkoutVariation("w-1", {
+          name: "v",
+          sourceGymId: gymId,
+          exercises: [],
+        });
+
+        await api.deleteSavedGym(gymId);
+
+        const list = await api.getWorkoutVariations("w-1");
+        expect(list.ok && list.value).toHaveLength(1);
+      });
+    });
+
+    describe("previewLoadout — exactly one equipment source", () => {
+      it("400s when NEITHER source is supplied", async () => {
+        const result = await api.previewLoadout("w-1", {});
+        expect(!result.ok && result.error.status).toBe(400);
+      });
+
+      it("400s when BOTH sources are supplied", async () => {
+        const result = await api.previewLoadout("w-1", {
+          savedGymId: "gym-1",
+          equipmentTypeIds: [DUMBBELL],
+        });
+        expect(!result.ok && result.error.status).toBe(400);
+      });
+
+      it("accepts a gym id alone and resolves its kit", async () => {
+        const gym = await api.createSavedGym({
+          name: "Hotel gym",
+          equipmentTypeIds: [DUMBBELL],
+        });
+        const result = await api.previewLoadout("w-1", {
+          savedGymId: gym.ok ? gym.value.id : "",
+        });
+
+        expect(result.ok).toBe(true);
+        expect(result.ok && result.value.equipmentTypeIds).toEqual([DUMBBELL]);
+      });
+
+      it("accepts ids alone", async () => {
+        const result = await api.previewLoadout("w-1", {
+          equipmentTypeIds: [DUMBBELL],
+          savedGymId: null,
+        });
+        expect(result.ok).toBe(true);
+      });
+
+      it("records the calls it received", async () => {
+        await api.previewLoadout("w-1", { equipmentTypeIds: [DUMBBELL] });
+        expect(api.previewLoadoutCalls).toHaveLength(1);
+        expect(api.previewLoadoutCalls[0].workoutId).toBe("w-1");
+      });
+    });
+
+    describe("createWorkoutVariation — containment mirrors the real save path", () => {
+      beforeEach(() => {
+        api.saveContextEquipmentIds = [DUMBBELL];
+        // The SUBSTITUTE's own requirements — what the real handler looks up via
+        // `findEquipmentRequirements`.
+        api.exerciseEquipment = new Map([
+          ["ex-dumbbell", [DUMBBELL]],
+          ["ex-barbell", [BARBELL]],
+        ]);
+      });
+
+      it("ACCEPTS a faithfully round-tripped swap whose substitute fits the kit", async () => {
+        // The regression that matters: an earlier version checked
+        // `missingEquipment` (the SOURCE row's gap) and rejected this, which would
+        // push a container author into stamping `isUserOverride` on every row and
+        // disabling the server's real check wholesale.
+        const result = await api.createWorkoutVariation("w-1", {
+          name: "v",
+          exercises: [
+            {
+              exerciseId: "ex-dumbbell",
+              sortOrder: 0,
+              substitutionReason: reason([BARBELL]),
+            },
+          ],
+        });
+
+        expect(result.ok).toBe(true);
+      });
+
+      it("REJECTS an incompatible substitute that is not flagged as an override", async () => {
+        const result = await api.createWorkoutVariation("w-1", {
+          name: "v",
+          exercises: [{ exerciseId: "ex-barbell", sortOrder: 0 }],
+        });
+
+        expect(result.ok).toBe(false);
+        expect(!result.ok && result.error.status).toBe(400);
+      });
+
+      it("REJECTS an incompatible override on a KEPT row that forgot the flag", async () => {
+        // `keptReason()` has `missingEquipment: []`, so the old check waved this
+        // through and it 400'd on device instead — the exact scenario the double
+        // exists to catch.
+        const result = await api.createWorkoutVariation("w-1", {
+          name: "v",
+          exercises: [
+            {
+              exerciseId: "ex-barbell",
+              sortOrder: 0,
+              substitutionReason: reason([]),
+            },
+          ],
+        });
+
+        expect(result.ok).toBe(false);
+      });
+
+      it("ACCEPTS the same row once isUserOverride is set", async () => {
+        const result = await api.createWorkoutVariation("w-1", {
+          name: "v",
+          exercises: [
+            { exerciseId: "ex-barbell", sortOrder: 0, isUserOverride: true },
+          ],
+        });
+
+        expect(result.ok).toBe(true);
+      });
+
+      it("treats an exercise absent from the map as requiring nothing", async () => {
+        // Matches the real handler, which prefers the FK error over a containment
+        // error that would misdescribe the cause.
+        const result = await api.createWorkoutVariation("w-1", {
+          name: "v",
+          exercises: [{ exerciseId: "ex-unknown", sortOrder: 0 }],
+        });
+        expect(result.ok).toBe(true);
+      });
+
+      it("skips containment for an EMPTY context, like the real handler", async () => {
+        // `[]` is truthy, so a naive check would reject every non-override row.
+        api.saveContextEquipmentIds = [];
+        const result = await api.createWorkoutVariation("w-1", {
+          name: "v",
+          exercises: [{ exerciseId: "ex-barbell", sortOrder: 0 }],
+        });
+        expect(result.ok).toBe(true);
+      });
+
+      it("skips containment entirely when no context is set", async () => {
+        api.saveContextEquipmentIds = null;
+        const result = await api.createWorkoutVariation("w-1", {
+          name: "v",
+          exercises: [{ exerciseId: "ex-barbell", sortOrder: 0 }],
+        });
+        expect(result.ok).toBe(true);
+      });
+
+      it("counts swaps from substitutedFromExerciseId", async () => {
+        api.saveContextEquipmentIds = null;
+        const result = await api.createWorkoutVariation("w-1", {
+          name: "v",
+          exercises: [
+            {
+              exerciseId: "ex-dumbbell",
+              sortOrder: 0,
+              substitutedFromExerciseId: "ex-barbell",
+            },
+            { exerciseId: "ex-other", sortOrder: 1 },
+          ],
+        });
+
+        expect(result.ok && result.value.swapCount).toBe(1);
+      });
+    });
+
+    describe("getExerciseSubstitutes", () => {
+      beforeEach(() => {
+        api.substitutes = {
+          best: [
+            {
+              id: "ex-1",
+              name: "Compatible",
+              category: null,
+              difficultyLevel: null,
+              thumbnailUrl: null,
+              equipmentRequired: [DUMBBELL],
+              matchedOn: ["primary_muscles"],
+            },
+          ],
+          others: [
+            {
+              id: "ex-2",
+              name: "Incompatible",
+              category: null,
+              difficultyLevel: null,
+              thumbnailUrl: null,
+              equipmentRequired: [BARBELL],
+              matchedOn: [],
+            },
+          ],
+          meta: { truncated: false },
+        };
+      });
+
+      it("returns both lists when a kit is supplied", async () => {
+        const result = await api.getExerciseSubstitutes({
+          forExerciseId: "ex-src",
+          equipment: [DUMBBELL],
+        });
+        expect(result.ok && result.value.best).toHaveLength(1);
+        expect(result.ok && result.value.others).toHaveLength(1);
+      });
+
+      it("empties `best` and pools everything into `others` with NO kit", async () => {
+        // The standalone in-session swap's case (AC-4.4) — not an error.
+        const result = await api.getExerciseSubstitutes({
+          forExerciseId: "ex-src",
+        });
+        expect(result.ok && result.value.best).toEqual([]);
+        expect(result.ok && result.value.others).toHaveLength(2);
+      });
+    });
+
+    describe("scanEquipment", () => {
+      it("returns an empty draft by default and records the call", async () => {
+        const result = await api.scanEquipment({
+          imageBase64: "abc",
+          mediaType: "image/jpeg",
+        });
+
+        expect(result.ok && result.value.detected).toEqual([]);
+        expect(api.scanEquipmentCalls).toHaveLength(1);
+      });
+
+      it("returns a scripted draft when one is set", async () => {
+        api.equipmentScanDraft = {
+          detected: [
+            {
+              equipmentTypeId: DUMBBELL,
+              name: "Dumbbells",
+              confidence: 0.9,
+              source: "model",
+            },
+          ],
+          unmatched: [],
+          notes: null,
+          modelId: "m",
+        };
+        const result = await api.scanEquipment({
+          imageBase64: "abc",
+          mediaType: "image/jpeg",
+        });
+        expect(result.ok && result.value.detected).toHaveLength(1);
+      });
+
+      it("surfaces failure when shouldFail flips", async () => {
+        api.shouldFail = true;
+        const result = await api.scanEquipment({
+          imageBase64: "abc",
+          mediaType: "image/jpeg",
+        });
+        expect(result.ok).toBe(false);
+      });
+    });
+  });
 });

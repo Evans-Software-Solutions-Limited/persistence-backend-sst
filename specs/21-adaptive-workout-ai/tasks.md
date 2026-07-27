@@ -378,8 +378,9 @@ Phase 1/2 design. Rationale: `requirements.md` § Eval spike.
 
 ## Phase 2 — Mobile athlete flow (needs the design handoff)
 
-- [ ] **T-2.1 [M]** Ports + adapter for saved gyms, preview, create-variation,
-      substitutes.
+- [x] **T-2.1 [M]** Ports + adapter for saved gyms, preview, create-variation,
+      substitutes (+ the scan). `domain/models/loadout.ts`,
+      `ApiPort` × 9 methods, `SSTApiAdapter`, `InMemoryApiAdapter`.
 - [ ] **T-2.2 [M]** Loadout entry card on workout detail + locked/upsell state
       (price from the catalog, never a literal).
 - [ ] **T-2.3 [M]** `collect` (saved gym / manual / scan), equipment groups
@@ -396,6 +397,56 @@ Phase 1/2 design. Rationale: `requirements.md` § Eval spike.
 - [ ] **T-2.9 [M]** Saved-gym management list in Settings/Profile (AC-7.2).
 - [ ] **T-2.10 [M]** Tests + a device-verify checklist in the PR body.
 
+### Landed in Phase 2 so far — the FOUNDATION, not the screens
+
+Committed and gated on `claude/loadout-phase-2`; **no screen exists yet**, so
+nothing is user-visible and nothing is device-verified.
+
+- **T-2.1 complete** — the full client contract, camelCase passthrough (no mapper:
+  the backend was written camelCase-out so a preview row round-trips into the save
+  call byte-for-byte). All nine calls are ONLINE-DIRECT.
+- **`domain/services/loadout.service.ts` — the pure logic the screens consume.**
+  `describeLoadoutRow` (review copy derived from `reason.code`, with the model's
+  sentence kept in its OWN field so `explanation` is never contaminated),
+  `buildVariationExercises` (the faithful round-trip, incl. the `isUserOverride`
+  rule), `groupEquipmentForPicker`, `deriveVariationName`,
+  `scanDraftToEquipmentIds`, `rowsNeedingAttention`.
+- **`ReferenceEntry.category` now survives the adapter.** `mapRawReferenceEntry`
+  was silently dropping it, so AC-2.2's "grouped from the API" was true in name
+  only. `isEquipmentGroupingStale` distinguishes `null` (server: uncategorised)
+  from an ABSENT key (pre-Loadout cache) — without it a returning user's 24h cache
+  renders every chip under "Other" with nothing able to detect why.
+- **`state/loadout-flow.ts` — the step machine.** `adapting` is bound to the
+  REQUEST, never the prototype's 1700 ms timer; the equipment context is a
+  discriminated union so "exactly one source" cannot be violated from the client;
+  `open()` clears a prior run (else workout B inherits A's picks by `sortOrder`);
+  `rev` survives `reset()` because it signals a different screen.
+- **113 new mobile tests; 17 mutations applied across the service and the store,
+  all 17 caught.**
+
+### Phase 2 — still to build (the screens)
+
+T-2.2 … T-2.9 and T-3.4 are UNSTARTED. Everything they need now exists and is
+tested, so they are presentational + container work against a settled spine:
+
+- The design source of truth is `~/Downloads/Any Gym/project/`, specifically
+  `design_handoff_site_and_anygym/src/screens/gtm-d7-anygym.jsx` (the flow),
+  `gtm-d1-scan.jsx` (the scan sheet) and `gtm-d6-swap.jsx` (the picker), with
+  `README.md` § Part 2 as the written spec. **Recreate in the app's primitives and
+  tokens — do not lift the prototype JSX** (its own README says so).
+- ⚠ **Three places the handoff is out of date, and the spec wins:**
+  1. It calls the feature **AnyGym**; the repo renamed it **Loadout** (#311).
+  2. It hardcodes **£19.99**; Premium+ is £29.99 AND the price must come from the
+     catalog, never a literal (design § 10).
+  3. D1's `TasterMeterChip` / "taster exhausted" 402 framing **must not be built** —
+     design § 5.2 is a HARD GATE with no taster (RC promos only). The 402 is
+     entitlement-denied, and it is a conversion surface, not a dead end.
+- T-2.7's shared `EquipmentAwareSwapSheet` replaces the ad-hoc muscle filter at
+  `SwapExercisePopover.tsx:131-142` (the `muscleGroupFilteredExercises` memo) with
+  `GET /exercises/substitutes`. That component currently reads the local exercise
+  cache, so this is a real refactor of a shipped surface, not a new file.
+  Persistence stays `substitute-exercise.command.ts`.
+
 ## Phase 3 — Equipment scan (ships INSIDE the Phase 2 slice)
 
 > Kept as its own task block for reviewability, but it lands in the **same PR
@@ -404,20 +455,55 @@ Phase 1/2 design. Rationale: `requirements.md` § Eval spike.
 > the ranker. Gated on E1's verdict — if scan is not viable as the primary
 > path, the picklist leads and this becomes an accelerator.
 
-- [ ] **T-3.1 [B]** `POST /ai/equipment-scan` cloning
+- [x] **T-3.1 [B]** `POST /ai/equipment-scan` cloning
       `nutritionAiEstimateHandler`'s guard order exactly; `reachedModel` +
       `finally` usage log; `AI_EQUIPMENT_SCAN_DAILY_LIMIT` fail-safe parse
-      (default 10 — **Brad checkpoint**).
-- [ ] **T-3.2 [B]** Register `AI_EQUIPMENT_SCAN_DAILY_LIMIT` and
+      (~~default 10 — **Brad checkpoint**~~ **6/day, decided 2026-07-27** —
+      rationale in design § 8.1).
+- [x] **T-3.2 [B]** Register `AI_EQUIPMENT_SCAN_DAILY_LIMIT` and
       `AI_EQUIPMENT_SCAN_MODEL_ID` in `infra/api.ts`. No IAM change needed.
-- [ ] **T-3.3 [B]** Forced-tool adapter; full `equipment_types` catalogue in
+- [x] **T-3.3 [B]** Forced-tool adapter; full `equipment_types` catalogue in
       the prompt; **TypeScript membership validation** of returned ids → 422 on
       a hallucinated uuid (design § 1).
 - [ ] **T-3.4 [M]** Scan sheet (design D1) reusing the `SnapAISheetContainer`
       transport; draft-confirm; 402/422/429 states are conversion/retry
       surfaces, not dead ends.
 - [ ] **T-3.5 [B/M]** Tests — fake Bedrock client, ceiling behaviour, no usage
-      row on pre-model rejections.
+      row on pre-model rejections. **Backend half DONE** (91 tests across
+      `modelProse` / `equipmentScanModel` / `aiEquipmentScanHandler` /
+      `aiBedrockClient`, 11 mutations applied to the new guards and all caught);
+      the mobile half waits on T-3.4.
+
+### Landed in Phase 3's backend beyond the checklist
+
+- **`createSingleAttempt` lives in `aiBedrockClient`, not in the scan module.**
+  T-E1.6 needed it and STATE.md asked for it to be built once, because the
+  re-map's retry decision is explicitly revisitable against it. Any failure is a
+  503 — with no second attempt there is no retryable/non-retryable split worth
+  making.
+- **A `stop_reason: "max_tokens"` truncation guard**, which T-3.1 did not ask for.
+  Same reasoning as the re-map's: a truncated tool payload PARSES, and the
+  dropped detections look exactly like kit that was not in the room. Every lost
+  item then causes a needless swap, and the user cannot tell the draft is short.
+- **`modelProse.ts` — the untrusted-prose rule extracted and shared.** The scan's
+  `notes`/`label` have the same exposure as the re-map's per-row note, and the
+  scan's channel is arguably worse: **the input is a photograph the caller chose,
+  so a photographed whiteboard is an injection vector.** `remapModel.capReason`
+  now delegates to it. This is NOT the shared "Loadout AI service" § 1b forbids —
+  it is a string sanitiser with no model, prompt, client or ceiling in it.
+- **The response splits `detected` from `unmatched`** rather than returning
+  § 8.1's single nullable-id list. `detected` is selectable and renders the
+  **catalogue's** name; `unmatched` is informational and carries the model's own
+  label. That means nothing untrusted reaches the selectable path at all, and a
+  correctly-nulled item (E1 had 6) reads as "seen but unavailable" instead of as a
+  miss.
+- **`Bodyweight` carries `source: "injected"`** so the client can avoid implying
+  the camera saw it, and a missing catalogue row **warns loudly** — T-E.10 shipped
+  precisely because a silent name-resolution miss went unnoticed.
+- **Detections are deduplicated by id, keeping the most confident reading**, and
+  ties break on name so two scans of the same room produce the same draft order.
+  Unmatched rows are deliberately NOT deduplicated: their labels are free text,
+  not a key.
 
 ## Phase 4 — Coach programme adaptation
 
