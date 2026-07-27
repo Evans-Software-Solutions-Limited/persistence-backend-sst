@@ -34,5 +34,7 @@ export function deleteWorkoutCommand(
   // drop its cache so home doesn't keep showing the deleted row
   // until the dashboard TTL elapses.
   deps.storage.invalidateDashboard(deps.userId);
+  // Same for `cached_home`, the slice Home reads today. See create-workout.
+  deps.storage.invalidateHome(deps.userId);
   return ok(undefined);
 }

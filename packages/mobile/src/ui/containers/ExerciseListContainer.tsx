@@ -46,6 +46,7 @@ export function ExerciseListContainer() {
   // create so this list re-reads the local cache and the new custom exercise
   // surfaces under "Mine" without an app reload (STORY-006 AC 6.5).
   const libraryRevision = useExerciseLibrary((s) => s.revision);
+  const markChanged = useExerciseLibrary((s) => s.markChanged);
 
   const filters = useMemo(() => {
     const trimmed = debouncedSearch.trim();
@@ -247,6 +248,11 @@ export function ExerciseListContainer() {
                   // the freshly-invalidated cache. Matches the
                   // pattern used by triggerRefresh.
                   setCacheVersion((v) => v + 1);
+                  // ...and signal the shared library revision, or the two
+                  // add-exercise popovers (which are permanently mounted and
+                  // hold their own snapshots) keep offering a deleted exercise.
+                  // The create/edit paths already bump this; delete did not.
+                  markChanged();
                 }
               } finally {
                 isDeletePendingRef.current = false;

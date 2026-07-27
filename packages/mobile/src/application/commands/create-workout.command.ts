@@ -120,6 +120,20 @@ export function createWorkoutCommand(
       [workout, ...(existingMine?.workouts ?? [])],
       existingMine?.quota ?? null,
     );
+  } else {
+    // ...but it has to land SOMEWHERE. Skipping the `mine` slice was correct;
+    // writing nothing at all was not. A coach-authored workout
+    // (`?ctx=coach` → showInOwnerLibrary false) was excluded from `mine` by
+    // this branch AND never written to the coach library slice, whose only
+    // writer is the network path — so offline it was invisible in both lists
+    // and looked like the save had failed. Prepend it to the coach library.
+    const existingLibrary = deps.storage.getCachedCoachWorkoutLibrary(
+      deps.userId,
+    );
+    deps.storage.cacheCoachWorkoutLibrary(deps.userId, [
+      workout,
+      ...(existingLibrary ?? []),
+    ]);
   }
 
   deps.storage.enqueueMutation({
@@ -136,6 +150,11 @@ export function createWorkoutCommand(
   // and picks up the new row instead of showing the pre-create
   // snapshot until the dashboard's own 5-minute TTL elapses.
   deps.storage.invalidateDashboard(deps.userId);
+  // ...and `cached_home`, which is the slice Home actually reads today
+  // (`useGetHome`). Invalidating only the dashboard left Home serving a
+  // pre-create snapshot until its own TTL elapsed — the two slices are
+  // separate rows and `invalidateDashboard` never touched this one.
+  deps.storage.invalidateHome(deps.userId);
 
   return ok(workout);
 }

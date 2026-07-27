@@ -161,6 +161,16 @@ export class InMemoryStorageAdapter implements StoragePort {
     };
   }
 
+  /**
+   * Test-only: how many live subscriptions exist. Asserting on this is the only
+   * way to prove the unsubscribe path actually runs — checking that a
+   * post-unmount `emitChange` "doesn't update the component" passes whether or
+   * not cleanup happened, because React discards the update either way.
+   */
+  changeSubscriberCount(): number {
+    return this.changeSubscribers.size;
+  }
+
   /** Test-only: pretend these tables were written. */
   emitChange(...tables: string[]): void {
     const changed: ReadonlySet<string> = new Set(tables);

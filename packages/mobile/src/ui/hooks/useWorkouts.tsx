@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getApiBaseUrl } from "@/adapters/api";
+import { WORKOUT_TABLES } from "@/adapters/storage";
 import { processSyncQueue } from "@/application/commands/sync.command";
 import {
   getWorkoutsQuery,
@@ -10,6 +11,8 @@ import type { ApiError } from "@/shared/errors";
 import { useUserMode } from "@/state/user-mode";
 import { useAdapters } from "./useAdapters";
 import { useAuth } from "./useAuth";
+import { useCacheRevision } from "./useCacheRevision";
+import { useWorkoutLibrary } from "./useWorkoutLibrary";
 
 /**
  * React hook exposing the three workouts list slices (mine / assigned /
@@ -54,12 +57,22 @@ export function useWorkouts(): WorkoutsState {
   const isTrainerEligible = useUserMode((s) => s.isTrainerEligible);
 
   const [cacheVersion, setCacheVersion] = useState(0);
+  // Local-write reactivity. `storageRevision` ticks on any write to the workout
+  // tables from any code path (including the sync drain's `swapLocalWorkoutId`,
+  // which re-keys cached rows and previously left every mounted list rendering
+  // the stale `local-…` id). `libraryRevision` is the explicit cross-consumer
+  // signal — this hook has two independent instances (Home + Train) that cannot
+  // see each other's `cacheVersion`. See useWorkoutLibrary for why both exist.
+  const storageRevision = useCacheRevision(WORKOUT_TABLES);
+  const libraryRevision = useWorkoutLibrary((s) => s.revision);
 
   const initial = useMemo<WorkoutsQueryResult>(() => {
     void cacheVersion;
+    void storageRevision;
+    void libraryRevision;
     if (!userId) return EMPTY_QUERY_RESULT;
     return getWorkoutsQuery(storage, userId);
-  }, [storage, userId, cacheVersion]);
+  }, [storage, userId, cacheVersion, storageRevision, libraryRevision]);
 
   const [snapshot, setSnapshot] = useState<WorkoutsQueryResult>(initial);
   const [isRefreshing, setIsRefreshing] = useState(false);

@@ -4,7 +4,10 @@ import { getApiBaseUrl } from "@/adapters/api";
 import { processSyncQueue } from "@/application/commands/sync.command";
 import type { Workout } from "@/domain/models/workout";
 import { useUserMode } from "@/state/user-mode";
+import { WORKOUT_TABLES } from "@/adapters/storage";
 import { useAdapters } from "@/ui/hooks/useAdapters";
+import { useCacheRevision } from "@/ui/hooks/useCacheRevision";
+import { useWorkoutLibrary } from "@/ui/hooks/useWorkoutLibrary";
 import { useAuth } from "@/ui/hooks/useAuth";
 import { CoachWorkoutLibraryPresenter } from "@/ui/presenters/coach/CoachWorkoutLibraryPresenter";
 
@@ -39,10 +42,17 @@ export function CoachWorkoutLibraryContainer({
   // (userId) resolves. `useAuth` seeds userId via an effect, so this lands on
   // the render after mount — matching the `useWorkout` cache pattern.
   const [cacheVersion, setCacheVersion] = useState(0);
+  // React to local writes: `createWorkoutCommand` now prepends a coach-authored
+  // workout to this slice offline, and the focus handler is network-first, so
+  // without this the new row waited for a successful GET.
+  const storageRevision = useCacheRevision(WORKOUT_TABLES);
+  const libraryRevision = useWorkoutLibrary((s) => s.revision);
   const cached = useMemo(() => {
     void cacheVersion;
+    void storageRevision;
+    void libraryRevision;
     return userId ? storage.getCachedCoachWorkoutLibrary(userId) : null;
-  }, [storage, userId, cacheVersion]);
+  }, [storage, userId, cacheVersion, storageRevision, libraryRevision]);
 
   const [workouts, setWorkouts] = useState<Workout[]>(cached ?? []);
   const [isLoading, setIsLoading] = useState(true);
