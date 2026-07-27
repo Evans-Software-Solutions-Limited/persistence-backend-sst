@@ -1,5 +1,6 @@
 import Elysia, { t } from "elysia";
 import { ExerciseService } from "../../repositories/exerciseService";
+import { findInvalidReferenceId } from "../shared/referenceIds";
 import {
   getAuthUser,
   requireAuth,
@@ -38,6 +39,20 @@ export const exercisesCreateHandler = new Elysia()
       if (name.length > 100) {
         ctx.set.status = 400;
         return { error: "Exercise name must be 100 characters or fewer" };
+      }
+
+      // Catalogue references must be UUIDs. Validated here rather than via
+      // `format: "uuid"` in the schema so the rejection names the offending
+      // value — see shared/referenceIds.ts for why that matters.
+      const badReference = findInvalidReferenceId({
+        primary_muscles: body.primary_muscles,
+        secondary_muscles: body.secondary_muscles,
+        equipment_required: body.equipment_required,
+        accessibility_requirements: body.accessibility_requirements,
+      });
+      if (badReference !== null) {
+        ctx.set.status = 400;
+        return { error: badReference };
       }
 
       const exercise = await ctx.ExerciseRepository.create(userId, {
@@ -91,12 +106,10 @@ export const exercisesCreateHandler = new Elysia()
         ),
         region_type: t.Optional(t.String()),
         movement_type: t.Optional(t.String()),
-        primary_muscles: t.Optional(t.Array(t.String({ format: "uuid" }))),
-        secondary_muscles: t.Optional(t.Array(t.String({ format: "uuid" }))),
-        equipment_required: t.Optional(t.Array(t.String({ format: "uuid" }))),
-        accessibility_requirements: t.Optional(
-          t.Array(t.String({ format: "uuid" })),
-        ),
+        primary_muscles: t.Optional(t.Array(t.String())),
+        secondary_muscles: t.Optional(t.Array(t.String())),
+        equipment_required: t.Optional(t.Array(t.String())),
+        accessibility_requirements: t.Optional(t.Array(t.String())),
         accessibility_modifications: t.Optional(t.String()),
         is_public: t.Optional(t.Boolean()),
       }),

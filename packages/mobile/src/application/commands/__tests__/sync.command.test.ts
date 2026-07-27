@@ -1509,4 +1509,141 @@ describe("processSyncQueue", () => {
     // targets the client's data, which the coach device never caches.
     expect(storage.getHabitConfigs("client-9")).toHaveLength(0);
   });
+
+  // -- Exercise catalogue reference resolution --------------------------------
+  //
+  // The shipped 422: `POST /exercises` bodies carried muscle-group and equipment
+  // ENUM MEMBERS where the API validates catalogue UUIDs. The drain now
+  // translates them immediately before the send.
+
+  const CHEST_ID = "3f2504e0-4f89-41d3-9a0c-0305e82c3311";
+  const BARBELL_ID = "3f2504e0-4f89-41d3-9a0c-0305e82c3312";
+
+  function seedCatalogue(): void {
+    storage.cacheReferenceList("muscle_groups", [
+      { id: CHEST_ID, name: "Chest", displayName: null },
+    ]);
+    storage.cacheReferenceList("equipment", [
+      { id: BARBELL_ID, name: "Barbell", displayName: null },
+    ]);
+  }
+
+  function enqueueExerciseCreate(): void {
+    storage.enqueueMutation({
+      entityType: "exercise",
+      entityId: "local-1",
+      operation: "create",
+      payload: {
+        name: "My Lift",
+        primary_muscles: ["chest"],
+        equipment_required: ["barbell"],
+      },
+      endpoint: "/exercises",
+      method: "POST",
+    });
+  }
+
+  it("resolves enum members to catalogue uuids in the sent body", async () => {
+    seedCatalogue();
+    enqueueExerciseCreate();
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ data: { id: "server-ex-1" } }),
+    });
+
+    const result = await processSyncQueue(storage, auth, "https://api.test");
+
+    expect(result.succeeded).toBe(1);
+    const sent = JSON.parse(mockFetch.mock.calls[0][1].body as string);
+    expect(sent.primary_muscles).toEqual([CHEST_ID]);
+    expect(sent.equipment_required).toEqual([BARBELL_ID]);
+  });
+
+  it("DEFERS (retryable) rather than sending when the catalogue is not cached", async () => {
+    // No seedCatalogue(). Sending the enum-shaped body would 422, and a 422 is
+    // classified permanent — which is exactly how the user's exercise got
+    // stranded. It must stay retryable instead.
+    enqueueExerciseCreate();
+
+    const result = await processSyncQueue(storage, auth, "https://api.test");
+
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(result.failed).toBe(1);
+    const pending = storage.getPendingMutations();
+    expect(pending).toHaveLength(1);
+    expect(pending[0].status).toBe("failed");
+    expect(pending[0].errorMessage).toContain("muscle_groups");
+  });
+
+  it("sends successfully on the next drain once the catalogue arrives", async () => {
+    enqueueExerciseCreate();
+    await processSyncQueue(storage, auth, "https://api.test");
+    expect(mockFetch).not.toHaveBeenCalled();
+
+    seedCatalogue();
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ data: { id: "server-ex-1" } }),
+    });
+    const result = await processSyncQueue(storage, auth, "https://api.test");
+
+    expect(result.succeeded).toBe(1);
+    const sent = JSON.parse(mockFetch.mock.calls[0][1].body as string);
+    expect(sent.primary_muscles).toEqual([CHEST_ID]);
+  });
+
+  it("defers an unmappable member instead of sending a shortened array", async () => {
+    storage.cacheReferenceList("muscle_groups", [
+      { id: CHEST_ID, name: "Chest", displayName: null },
+    ]);
+    // Catalogue present but missing the equipment row.
+    storage.cacheReferenceList("equipment", [
+      { id: BARBELL_ID, name: "Something Else", displayName: null },
+    ]);
+    enqueueExerciseCreate();
+
+    const result = await processSyncQueue(storage, auth, "https://api.test");
+
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(result.failed).toBe(1);
+    expect(storage.getPendingMutations()[0].errorMessage).toContain("barbell");
+  });
+
+  it("leaves a non-exercise payload byte-identical", async () => {
+    // The verbatim-flush rule still holds for every other entity type.
+    const payload = { name: "Leg Day", exercises: [] };
+    storage.enqueueMutation({
+      entityType: "workout",
+      entityId: "local-w1",
+      operation: "create",
+      payload,
+      endpoint: "/workouts",
+      method: "POST",
+    });
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ data: { id: "server-w1" } }),
+    });
+
+    await processSyncQueue(storage, auth, "https://api.test");
+
+    expect(mockFetch.mock.calls[0][1].body).toBe(JSON.stringify(payload));
+  });
+
+  it("passes a malformed stored payload through untouched", async () => {
+    // Not our job to validate history; the server's rejection is the right
+    // place for that to surface. Must not crash the drain.
+    storage.enqueueMutation({
+      entityType: "exercise",
+      entityId: "local-bad",
+      operation: "create",
+      payload: "not json at all",
+      endpoint: "/exercises",
+      method: "POST",
+    });
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+
+    const result = await processSyncQueue(storage, auth, "https://api.test");
+    expect(result.succeeded).toBe(1);
+  });
 });

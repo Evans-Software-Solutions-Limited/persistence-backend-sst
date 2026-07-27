@@ -10,6 +10,7 @@ import { habitConfigFromEntry } from "@/domain/models/habit-config";
 import { normalizePreferences } from "@/domain/models/notification-preferences";
 import { pendingPreferenceOverrides } from "@/application/notifications/queries/preferences.query";
 import { parseEntitlementDeniedResponseText } from "@/shared/errors/parseEntitlement";
+import { resolveExercisePayloadReferences } from "@/application/commands/resolveExerciseReferences";
 import { captureSyncFailure } from "@/lib/sentry";
 
 /** A non-OK HTTP response from a sync POST/PUT/DELETE, carrying the status so
@@ -73,6 +74,54 @@ function referencesUnsyncedLocalId(payload: string): boolean {
     const v = body[k];
     return typeof v === "string" && v.startsWith("local-");
   });
+}
+
+/**
+ * Translate an `/exercises` payload's domain enum references into catalogue
+ * UUIDs. Returns the serialized body to send, or a reason to defer.
+ *
+ * A malformed stored payload (not JSON, or not an object) is passed through
+ * untouched: the drain's job is not to validate history, and the server's own
+ * rejection is the right place for that to surface.
+ */
+function prepareExercisePayload(
+  storage: StoragePort,
+  payload: string,
+): { body: string; deferReason: null } | { body: null; deferReason: string } {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(payload);
+  } catch {
+    return { body: payload, deferReason: null };
+  }
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return { body: payload, deferReason: null };
+  }
+
+  const resolution = resolveExercisePayloadReferences(
+    storage,
+    parsed as Record<string, unknown>,
+  );
+  switch (resolution.status) {
+    case "unchanged":
+      return { body: payload, deferReason: null };
+    case "resolved":
+      return { body: JSON.stringify(resolution.payload), deferReason: null };
+    case "catalogue_unavailable":
+      return {
+        body: null,
+        deferReason: `Waiting for the ${resolution.kinds.join(" + ")} reference list before sending; will retry.`,
+      };
+    case "unresolvable":
+      // Loud, and it names the offending members so the mapping table can be
+      // fixed. Deferring (rather than sending a silently-shortened array) is
+      // deliberate: a partial send would create the exercise with its muscles
+      // or equipment quietly missing.
+      return {
+        body: null,
+        deferReason: `No catalogue entry for: ${resolution.unresolved.join(", ")}. Exercise not sent.`,
+      };
+  }
 }
 
 export type SyncResult = {
@@ -163,10 +212,37 @@ export async function processSyncQueue(
         headers["Authorization"] = `Bearer ${token}`;
       }
 
+      // Per-entity payload preparation, immediately before the send.
+      //
+      // The drain's default is to flush the stored payload VERBATIM, and that
+      // stays the rule — this is the one narrow, explicit exception. An
+      // `/exercises` body carries muscle-group and equipment references as
+      // domain enum members (`"chest"`, `"barbell"`), because that is what the
+      // form produces and what the local cache stores, while the API validates
+      // them as catalogue UUIDs. Translating here rather than at enqueue time
+      // lets the payload wait for the reference catalogue (fetched lazily by
+      // whichever screen needs it) instead of being frozen wrong.
+      let body = entry.payload;
+      if (entry.entityType === "exercise" && entry.method !== "DELETE") {
+        const prepared = prepareExercisePayload(storage, entry.payload);
+        if (prepared.deferReason !== null) {
+          // Not a server rejection — we never sent anything. Count it as a
+          // failure so the retry budget applies, but keep the entry retryable
+          // so the next drain (by which point the catalogue has almost
+          // certainly loaded) succeeds. Sending the unresolved payload instead
+          // would 422, and a 422 is classified PERMANENT, which would strand
+          // the user's exercise for good.
+          storage.markMutationFailed(entry.id, prepared.deferReason);
+          failed++;
+          continue;
+        }
+        body = prepared.body;
+      }
+
       const response = await fetch(`${apiBaseUrl}${entry.endpoint}`, {
         method: entry.method,
         headers,
-        body: entry.method !== "DELETE" ? entry.payload : undefined,
+        body: entry.method !== "DELETE" ? body : undefined,
       });
 
       if (!response.ok) {

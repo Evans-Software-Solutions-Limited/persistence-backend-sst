@@ -50,6 +50,19 @@ export const MUSCLE_GROUPS = [
 
 export type MuscleGroup = (typeof MUSCLE_GROUPS)[number];
 
+/**
+ * Equipment the create/edit form can attach to a custom exercise.
+ *
+ * Every member must have a catalogue row it maps to — see
+ * `EQUIPMENT_CATALOGUE_NAME` in `domain/services/exerciseCatalogue.ts`, which is
+ * a total `Record` over this union so adding a member without deciding its
+ * catalogue name is a compile error.
+ *
+ * `other` was removed (2026-07-27): it had no catalogue row and
+ * `EQUIPMENT_OPTIONS` never offered it, so it was unreachable from the UI and
+ * unmappable on the wire — a dead branch in the one code path where an unmapped
+ * value causes a silent drop.
+ */
 export const EQUIPMENT_TYPES = [
   "barbell",
   "dumbbell",
@@ -60,7 +73,6 @@ export const EQUIPMENT_TYPES = [
   "resistance_band",
   "smith_machine",
   "ez_bar",
-  "other",
 ] as const;
 
 export type EquipmentType = (typeof EQUIPMENT_TYPES)[number];
@@ -96,7 +108,6 @@ export const EQUIPMENT_LABELS: Record<EquipmentType, string> = {
   resistance_band: "Resistance Band",
   smith_machine: "Smith Machine",
   ez_bar: "EZ Bar",
-  other: "Other",
 };
 
 export const CATEGORY_LABELS: Record<ExerciseCategory, string> = {
