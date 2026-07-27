@@ -1,4 +1,5 @@
 import { fireEvent, waitFor } from "@testing-library/react-native";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import React from "react";
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
@@ -7,6 +8,7 @@ import type { Workout } from "@/domain/models/workout";
 import { fail, ok } from "@/shared/errors";
 import type { Adapters } from "@/shared/types";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
+import { useLoadoutFlow } from "@/state/loadout-flow";
 import { WorkoutDetailContainer } from "@/ui/containers/WorkoutDetailContainer";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 
@@ -85,8 +87,20 @@ function makeAdapters(
   };
 }
 
+/**
+ * The container reads `useLoadoutGate` (spec-21 T-2.2), which is React Query
+ * backed, so every render needs a client. Retries are off so a deliberately
+ * failing adapter call resolves once instead of stalling the test.
+ */
 function withAdapters(adapters: Adapters, ui: React.ReactElement) {
-  return <AdapterProvider adapters={adapters}>{ui}</AdapterProvider>;
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  return (
+    <QueryClientProvider client={queryClient}>
+      <AdapterProvider adapters={adapters}>{ui}</AdapterProvider>
+    </QueryClientProvider>
+  );
 }
 
 const mockRouterBack = jest.fn();
@@ -213,5 +227,175 @@ describe("WorkoutDetailContainer", () => {
       withAdapters(makeAdapters(api, storage), <WorkoutDetailContainer />),
     );
     expect(await findByTestId("workout-detail-error")).toBeTruthy();
+  });
+
+  describe("Loadout (spec-21 T-2.2 / T-2.8)", () => {
+    beforeEach(() => {
+      useLoadoutFlow.getState().reset();
+      useLoadoutFlow.setState({ rev: 0 });
+    });
+
+    function seedOwnedWorkout(
+      api: InMemoryApiAdapter,
+      storage: InMemoryStorageAdapter,
+    ) {
+      const workout = buildWorkout();
+      storage.cacheWorkoutDetail("user-1", workout);
+      jest.spyOn(api, "getWorkout").mockResolvedValue(ok(workout));
+      return workout;
+    }
+
+    it("renders the locked entry card for a user without Premium+", async () => {
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      seedOwnedWorkout(api, storage);
+      const { findByTestId, getByText } = renderWithTheme(
+        withAdapters(makeAdapters(api, storage), <WorkoutDetailContainer />),
+      );
+
+      await findByTestId("loadout-entry-card");
+      getByText("Unlock to re-map this workout to whatever kit you have");
+    });
+
+    it("opens the UPSELL — not the flow — when the user isn't entitled", async () => {
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      seedOwnedWorkout(api, storage);
+      const { findByTestId } = renderWithTheme(
+        withAdapters(makeAdapters(api, storage), <WorkoutDetailContainer />),
+      );
+
+      fireEvent.press(await findByTestId("loadout-entry-card"));
+
+      // design § 5.2 makes this a conversion surface with no taster behind it,
+      // so a dead tap throws away the only pitch the feature gets.
+      expect(useLoadoutFlow.getState().upsellOpen).toBe(true);
+      expect(useLoadoutFlow.getState().step).toBeNull();
+    });
+
+    it("opens the FLOW, seeded with the workout, for an entitled user", async () => {
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      const workout = seedOwnedWorkout(api, storage);
+      api.mySubscription = {
+        subscriptionId: "sub-1",
+        tierName: "premium_plus",
+        paymentStatus: "active",
+        billingCycle: "monthly",
+        startsAt: "2026-07-01T00:00:00Z",
+        expiresAt: null,
+        cancelledAt: null,
+        trialEndsAt: null,
+        externalSubscriptionId: null,
+        tierDisplayName: "Premium+",
+        tierDescription: null,
+        workoutLimit: null,
+        aiAccess: true,
+        aiWorkoutLimit: 0,
+        gymBuddyAccess: false,
+        trainerClientLimit: null,
+        isTrainerTier: false,
+        role: "user",
+        hasUsedUserTrial: false,
+        hasUsedTrainerTrial: false,
+        isEligibleForUserTrial: true,
+        isEligibleForTrainerTrial: true,
+        scheduledChange: null,
+      };
+      const { findByTestId, getByText } = renderWithTheme(
+        withAdapters(makeAdapters(api, storage), <WorkoutDetailContainer />),
+      );
+
+      await waitFor(() =>
+        getByText("Re-map this workout to whatever kit you have today"),
+      );
+      fireEvent.press(await findByTestId("loadout-entry-card"));
+
+      expect(useLoadoutFlow.getState().step).toBe("collect");
+      expect(useLoadoutFlow.getState().workoutId).toBe(workout.id);
+      expect(useLoadoutFlow.getState().workoutName).toBe(workout.name);
+      expect(useLoadoutFlow.getState().upsellOpen).toBe(false);
+    });
+
+    it("lists saved setups and opens one as its own workout", async () => {
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      seedOwnedWorkout(api, storage);
+      await api.createWorkoutVariation("w-1", {
+        name: "Push Day · Hotel gym",
+        exercises: [{ exerciseId: "ex-bench", sortOrder: 1 }],
+      });
+      const { findByTestId } = renderWithTheme(
+        withAdapters(makeAdapters(api, storage), <WorkoutDetailContainer />),
+      );
+
+      fireEvent.press(await findByTestId("loadout-variation-variation-1"));
+      // A variation IS a workout, so it opens on this same screen.
+      expect(mockRouterPush).toHaveBeenCalledWith(
+        "/(app)/workouts/variation-1",
+      );
+    });
+
+    it("derives the hero's muscle pills and equipment eyebrow from the cached library", async () => {
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      seedOwnedWorkout(api, storage);
+      // The workout DTO carries neither, so both come off the exercise cache.
+      storage.cacheExercises([
+        {
+          id: "ex-bench",
+          name: "Bench Press",
+          description: null,
+          instructions: null,
+          category: "strength",
+          difficulty: "intermediate",
+          primaryMuscleGroups: ["chest"],
+          secondaryMuscleGroups: [],
+          equipment: ["barbell"],
+          primaryMuscleGroupLabels: ["Chest"],
+          secondaryMuscleGroupLabels: [],
+          equipmentLabels: ["Barbell"],
+          videoUrl: null,
+          thumbnailUrl: null,
+          isCustom: false,
+          createdBy: null,
+        },
+      ]);
+      const { findByText } = renderWithTheme(
+        withAdapters(makeAdapters(api, storage), <WorkoutDetailContainer />),
+      );
+
+      expect(await findByText("Chest")).toBeTruthy();
+      expect(await findByText("BARBELL · WORKOUT")).toBeTruthy();
+    });
+
+    it("routes the owner's edit button to the editor", async () => {
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      seedOwnedWorkout(api, storage);
+      const { findByTestId } = renderWithTheme(
+        withAdapters(makeAdapters(api, storage), <WorkoutDetailContainer />),
+      );
+
+      fireEvent.press(await findByTestId("workout-detail-edit"));
+      expect(mockRouterPush).toHaveBeenCalledWith("/(app)/workouts/w-1/edit");
+    });
+
+    it("hides the whole Loadout block on someone else's workout", async () => {
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      const workout = buildWorkout({ createdBy: "someone-else" });
+      storage.cacheWorkoutDetail("user-1", workout);
+      jest.spyOn(api, "getWorkout").mockResolvedValue(ok(workout));
+      const variations = jest.spyOn(api, "getWorkoutVariations");
+      const { findByTestId, queryByTestId } = renderWithTheme(
+        withAdapters(makeAdapters(api, storage), <WorkoutDetailContainer />),
+      );
+
+      await findByTestId("workout-detail-start");
+      expect(queryByTestId("loadout-entry-card")).toBeNull();
+      // Variations are caller-scoped server-side, so this would always be empty.
+      expect(variations).not.toHaveBeenCalled();
+    });
   });
 });

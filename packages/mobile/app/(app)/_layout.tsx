@@ -2,6 +2,7 @@ import { Stack } from "expo-router";
 import { ActiveWorkoutOverlay } from "../../src/ui/containers/ActiveWorkoutOverlay";
 import { AddClientSheetContainer } from "../../src/ui/containers/AddClientSheetContainer";
 import { AddRecipeMenuContainer } from "../../src/ui/containers/AddRecipeMenuContainer";
+import { LoadoutFlowContainer } from "../../src/ui/containers/LoadoutFlowContainer";
 import { AssignGoalSheet } from "../../src/ui/presenters/coach/AssignGoalSheet";
 import { CoachNoteSheet } from "../../src/ui/presenters/coach/CoachNoteSheet";
 import { SendBriefSheet } from "../../src/ui/presenters/coach/SendBriefSheet";
@@ -108,6 +109,15 @@ export default function AppLayout() {
         <Stack.Screen name="profile/help" options={{ headerShown: false }} />
         <Stack.Screen name="profile/contact" options={{ headerShown: false }} />
         <Stack.Screen name="profile/terms" options={{ headerShown: false }} />
+        {/*
+          Loadout saved-gym management (spec-21 T-2.9, AC-7.2). Owns its own
+          <HeaderBar>, so the native header stays off like every other
+          custom-chrome screen.
+        */}
+        <Stack.Screen
+          name="profile/saved-gyms"
+          options={{ headerShown: false }}
+        />
         <Stack.Screen
           name="exercises/[id]/index"
           options={{ headerShown: false }}
@@ -363,6 +373,20 @@ export default function AppLayout() {
         reads useAddRecipeMenu().open. Opened from <RecipesLibraryContainer>.
       */}
       <AddRecipeMenuContainer />
+      {/*
+        LoadoutFlowContainer — the whole Premium+ "adapt this workout to your
+        gym" flow (spec-21 Phase 2/3). Root-mounted sibling of the Stack: the
+        zustand step machine IS the navigation, a full-screen sibling covers the
+        tab bar without a modal, and — the deciding reason — its swap and scan
+        sheets are rendered INSIDE it so they layer above the step rather than
+        behind it. Renders nothing at all until `useLoadoutFlow.step` is set,
+        except the upsell sheet, which is reachable from a LOCKED entry point
+        where there is no flow to be in.
+
+        Spec: specs/21-adaptive-workout-ai/design.md § 10
+              memory/feedback_sheets_mount_at_root
+      */}
+      <LoadoutFlowContainer />
     </ExerciseFiltersProvider>
   );
 }

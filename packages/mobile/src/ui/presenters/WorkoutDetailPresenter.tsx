@@ -5,6 +5,7 @@ import type {
   WorkoutExercise,
   WorkoutHistory,
 } from "@/domain/models/workout";
+import type { WorkoutVariationSummary } from "@/domain/models/loadout";
 import type { ApiError } from "@/shared/errors";
 import type { WeightUnit } from "@/shared/utils";
 import {
@@ -24,6 +25,8 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { LoadoutEntryCard } from "@/ui/presenters/loadout/LoadoutEntryCard";
+import { SavedSetupsSection } from "@/ui/presenters/loadout/SavedSetupsSection";
 
 /**
  * Pure presenter for the workout-detail SCREEN, ported 1:1 from the v3
@@ -63,6 +66,22 @@ interface WorkoutDetailPresenterProps {
   readonly onEdit: () => void;
   readonly onStartWorkout: (workoutId: string) => void;
   readonly onExercisePress: (exerciseId: string) => void;
+
+  // ── Loadout (spec-21 T-2.2 / T-2.8) ────────────────────────────────────────
+  //
+  // Rendered only for the OWNER. AC-1.2 makes a stranger's public workout
+  // adaptable, but the variation is saved under the parent as a new workout the
+  // ADAPTER owns, and offering that from someone else's detail screen with no
+  // surface to find the result on afterwards is a flow with no ending. The
+  // owner's screen is where "Saved setups" lives, so it is where the entry
+  // point belongs.
+  /** Hides the whole Loadout block — e.g. on a workout the viewer doesn't own. */
+  readonly showLoadout?: boolean;
+  /** From `useLoadoutGate`. Locked still renders — the paywall is the pitch. */
+  readonly loadoutLocked?: boolean;
+  readonly loadoutVariations?: readonly WorkoutVariationSummary[];
+  readonly onOpenLoadout?: () => void;
+  readonly onOpenVariation?: (variationId: string) => void;
 }
 
 const SUPERSET_LETTERS = ["A", "B", "C", "D", "E", "F", "G", "H"] as const;
@@ -143,6 +162,11 @@ export function WorkoutDetailPresenter({
   onEdit,
   onStartWorkout,
   onExercisePress,
+  showLoadout = false,
+  loadoutLocked = false,
+  loadoutVariations = [],
+  onOpenLoadout,
+  onOpenVariation,
 }: WorkoutDetailPresenterProps) {
   return (
     <SafeAreaView style={styles.safeArea} edges={["top"]}>
@@ -208,6 +232,20 @@ export function WorkoutDetailPresenter({
               isLoading={isHistoryLoading}
               weightUnit={weightUnit}
             />
+
+            {showLoadout && onOpenLoadout ? (
+              <LoadoutEntryCard
+                locked={loadoutLocked}
+                onPress={onOpenLoadout}
+              />
+            ) : null}
+
+            {showLoadout && onOpenVariation ? (
+              <SavedSetupsSection
+                variations={loadoutVariations}
+                onOpenVariation={onOpenVariation}
+              />
+            ) : null}
 
             <PlanSection
               exercises={workout.exercises}

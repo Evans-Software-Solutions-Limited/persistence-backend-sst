@@ -55,8 +55,7 @@ import { SwapExercisePopover } from "@/ui/components/workouts/SwapExercisePopove
 import {
   applyPickerSelection,
   resolvePickerExercise,
-  resolveSubstituteMuscleFilter,
-  resolveSubstituteMuscleLabels,
+  resolveSubstituteSourceRef,
   type ActiveSessionPickerMode,
   type PickerExerciseRow,
 } from "@/ui/containers/active-session-picker";
@@ -360,31 +359,14 @@ export function ActiveSessionContainer() {
     });
   }, []);
 
-  // The source exercise's primary muscle groups drive the substitute
-  // picker's filter (Story-004 AC). Logic lives in
-  // `active-session-picker.ts` so the substitute / no-source / no-
-  // cache fallbacks are unit-testable without rendering.
-  const substituteMuscleFilter = useMemo<readonly string[] | undefined>(
+  // The row being substituted, which is all the ranked-substitutes endpoint
+  // needs (spec-21 T-2.7 — it derives the muscles and five further signals
+  // itself, server-side and visibility-scoped). Logic lives in
+  // `active-session-picker.ts` so the substitute / no-source / no-cache
+  // branches stay unit-testable without rendering.
+  const substituteSource = useMemo(
     () =>
-      resolveSubstituteMuscleFilter(
-        pickerMode,
-        session?.exercises ?? [],
-        storage,
-      ),
-    [pickerMode, session, storage],
-  );
-
-  // Display labels for the muscle filter — surfaced as a chip in the
-  // SwapExercisePopover chrome so the user sees WHY the list is
-  // narrowed. Resolved separately from the UUID filter so the chip
-  // can render even when the UUID set is non-empty but unlabeled.
-  const substituteMuscleLabels = useMemo<readonly string[] | undefined>(
-    () =>
-      resolveSubstituteMuscleLabels(
-        pickerMode,
-        session?.exercises ?? [],
-        storage,
-      ),
+      resolveSubstituteSourceRef(pickerMode, session?.exercises ?? [], storage),
     [pickerMode, session, storage],
   );
 
@@ -686,8 +668,10 @@ export function ActiveSessionContainer() {
         onClose={onClosePicker}
         onSwap={onPickerAddExercises}
         existingExerciseIds={existingExerciseIds}
-        filterByPrimaryMuscleGroups={substituteMuscleFilter}
-        filterMuscleGroupLabels={substituteMuscleLabels}
+        forExerciseId={substituteSource?.id ?? null}
+        {...(substituteSource?.name
+          ? { exerciseName: substituteSource.name }
+          : {})}
       />
 
       <ExerciseNotesPopover

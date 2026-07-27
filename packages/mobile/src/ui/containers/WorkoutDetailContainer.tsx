@@ -4,8 +4,11 @@ import {
   deriveDominantEquipment,
   deriveWorkoutMuscles,
 } from "@/domain/services/workoutMeta";
+import { useLoadoutFlow } from "@/state/loadout-flow";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useAuth } from "@/ui/hooks/useAuth";
+import { useLoadoutGate } from "@/ui/hooks/useLoadoutGate";
+import { useWorkoutVariations } from "@/ui/hooks/useWorkoutVariations";
 import { useProfilePage } from "@/ui/hooks/useProfilePage";
 import { useWorkout } from "@/ui/hooks/useWorkout";
 import { useWorkoutHistory } from "@/ui/hooks/useWorkoutHistory";
@@ -22,8 +25,14 @@ import { WorkoutDetailPresenter } from "@/ui/presenters/WorkoutDetailPresenter";
  *     cached exercise library (the same join the Train > Workouts list uses).
  *     No workout DTO change — equipment omitted when nothing resolves.
  *
+ * Loadout (spec-21 T-2.2 / T-2.8) adds two owner-only surfaces: the "Adapt to
+ * your gym" entry card and the "Saved setups" variation list. Both hang off
+ * `useLoadoutFlow` — the flow itself is a root-mounted overlay
+ * (`<LoadoutFlowContainer>`), so opening it is a store call, not a navigation.
+ *
  * Spec: specs/milestones/WORKOUT-AUTHORING-V2/design.md § 10
  *       (legacy STORY-007 ACs 7.1, 7.2, 7.4 preserved)
+ *       specs/21-adaptive-workout-ai/design.md § 10 · tasks.md T-2.2, T-2.8
  */
 export function WorkoutDetailContainer() {
   const params = useLocalSearchParams<{ id?: string }>();
@@ -35,10 +44,18 @@ export function WorkoutDetailContainer() {
 
   const detail = useWorkout(workoutId);
   const history = useWorkoutHistory(workoutId);
+  const loadoutGate = useLoadoutGate();
+  const openLoadout = useLoadoutFlow((state) => state.open);
+  const openLoadoutUpsell = useLoadoutFlow((state) => state.openUpsell);
 
   const workout = detail.workout;
   const isOwner =
     workout != null && userId != null && workout.createdBy === userId;
+
+  // Only fetched for the owner: the variation list is scoped to the CALLER's own
+  // variations server-side, so on someone else's workout it is always empty and
+  // the request is pure waste.
+  const variations = useWorkoutVariations(isOwner ? workoutId : null);
 
   // Derive muscle pills + the dominant equipment label from the cached
   // exercise library (workout refs carry neither). Recomputes only when the
@@ -82,6 +99,23 @@ export function WorkoutDetailContainer() {
     router.push(`/(app)/exercises/${exerciseId}` as never);
   }, []);
 
+  // Locked still opens something — the upsell sheet. design § 5.2 makes the
+  // paywall a conversion surface with no taster behind it, so a dead tap would
+  // throw away the only pitch the feature gets.
+  const onOpenLoadout = useCallback(() => {
+    if (!workout) return;
+    if (!loadoutGate.allowed) {
+      openLoadoutUpsell();
+      return;
+    }
+    openLoadout(workout.id, workout.name);
+  }, [workout, loadoutGate.allowed, openLoadout, openLoadoutUpsell]);
+
+  // A variation IS a workout, so it opens on this same screen.
+  const onOpenVariation = useCallback((variationId: string) => {
+    router.push(`/(app)/workouts/${variationId}` as never);
+  }, []);
+
   return (
     <WorkoutDetailPresenter
       workout={workout}
@@ -97,6 +131,11 @@ export function WorkoutDetailContainer() {
       onEdit={onEdit}
       onStartWorkout={onStartWorkout}
       onExercisePress={onExercisePress}
+      showLoadout={isOwner}
+      loadoutLocked={!loadoutGate.allowed}
+      loadoutVariations={variations.variations}
+      onOpenLoadout={onOpenLoadout}
+      onOpenVariation={onOpenVariation}
     />
   );
 }

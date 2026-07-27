@@ -2830,7 +2830,14 @@ export class InMemoryApiAdapter implements ApiPort {
         code: "server",
         message: "A gym with that name already exists",
         status: 409,
-      });
+        // ⚠ The WIRE code, transcribed from `savedGymsCreateHandler.ts:50` —
+        // not the repository's `duplicate_name` status, which the handler
+        // translates and never serialises. Without it, `LoadoutApiError.loadoutCode`
+        // is always undefined here, so a container branching on a duplicate name
+        // (rename prompt vs generic failure) cannot be tested at all, and a
+        // container branching on the WRONG code passes.
+        loadoutCode: "SAVED_GYM_NAME_TAKEN",
+      } as ApiError);
     }
     const now = new Date().toISOString();
     const gym: SavedGym = {
@@ -2872,7 +2879,9 @@ export class InMemoryApiAdapter implements ApiPort {
           code: "server",
           message: "A gym with that name already exists",
           status: 409,
-        });
+          // Wire code from `savedGymsUpdateHandler.ts:57`. See the create path.
+          loadoutCode: "SAVED_GYM_NAME_TAKEN",
+        } as ApiError);
       }
     }
     const existing = this.savedGyms[index] as SavedGym;

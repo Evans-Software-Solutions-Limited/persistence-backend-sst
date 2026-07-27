@@ -614,31 +614,36 @@ describe("ActiveSessionContainer", () => {
     expect(mockRouterPush).toHaveBeenCalledWith("/(app)/exercises/ex-bench");
   });
 
-  it("substitute opens the SwapExercisePopover (not the multi-select picker) and end-to-end fires substituteExerciseCommand", async () => {
+  it("substitute opens the shared equipment-aware sheet and end-to-end fires substituteExerciseCommand", async () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
-    // Source exercise carries primaryMuscleGroups so the picker's
-    // muscle-group filter narrows the library down to overlapping
-    // entries (Story-004 AC). "ex-incline" overlaps; "ex-row" does
-    // not and should be filtered out of the visible list.
+    // ⚠ REWRITTEN for spec-21 T-2.7. The picker no longer muscle-filters the
+    // local cache client-side — it asks `GET /exercises/substitutes`, which ranks
+    // server-side and (unlike the cache) is visibility-scoped. So the candidates
+    // now come from the API double, and the cache's only remaining job is
+    // resolving the PICK into a full `Exercise` for `substituteExerciseCommand`.
     storage.cacheExercises([
-      buildExercise({
-        id: "ex-bench",
-        name: "Bench Press",
-        primaryMuscleGroups: ["chest"],
-        primaryMuscleGroupLabels: ["Chest"],
-      }),
-      buildExercise({
-        id: "ex-incline",
-        name: "Incline Press",
-        primaryMuscleGroups: ["chest", "shoulders"],
-      }),
-      buildExercise({
-        id: "ex-row",
-        name: "Row",
-        primaryMuscleGroups: ["back"],
-      }),
+      buildExercise({ id: "ex-bench", name: "Bench Press" }),
+      buildExercise({ id: "ex-incline", name: "Incline Press" }),
     ]);
+    // No kit context in an in-session swap, so the double returns everything in
+    // `others` — and `others` must NOT be treated as incompatible in that case:
+    // one tap selects, with no override acknowledgement.
+    api.substitutes = {
+      best: [],
+      others: [
+        {
+          id: "ex-incline",
+          name: "Incline Press",
+          category: "strength",
+          difficultyLevel: "intermediate",
+          thumbnailUrl: null,
+          equipmentRequired: [],
+          matchedOn: ["primary_muscles"],
+        },
+      ],
+      meta: { truncated: false },
+    };
     storage.cacheActiveSession("user-1", {
       id: "local-1",
       userId: "user-1",
@@ -667,40 +672,94 @@ describe("ActiveSessionContainer", () => {
       .spyOn(api, "enrichExerciseLabels")
       .mockImplementation((ex: Exercise) => ex);
 
-    const { findByTestId, queryByTestId } = renderWithTheme(
+    const { findByTestId } = renderWithTheme(
       withAdapters(makeAdapters(api, storage), <ActiveSessionContainer />),
     );
 
     fireEvent.press(await findByTestId("session-exercise-substitute"));
-    // SwapExercisePopover is the substitute-mode picker (legacy
-    // SwapExercisePopover parity); the multi-select AddExercisePopover
-    // is suppressed for this mode.
-    expect(await findByTestId("swap-picker-modal")).toBeTruthy();
-    // Muscle-filter chip is visible — labels resolved from the source
-    // exercise's primaryMuscleGroupLabels via resolveSubstituteMuscleLabels.
-    expect(await findByTestId("swap-picker-muscle-filter")).toBeTruthy();
-    // back-only row is filtered out by the muscle-group narrow.
-    expect(queryByTestId("exercise-row-ex-row")).toBeNull();
-    // Source row stays in the list but is disabled — pressing it is
-    // a no-op (Brad's no-duplicates rule: source IS in
-    // existingExerciseIds, covered alongside every other in-session
-    // row).
-    expect(await findByTestId("exercise-row-ex-bench")).toBeTruthy();
+    expect(await findByTestId("swap-picker-sheet")).toBeTruthy();
 
-    // Pick a valid replacement and fire Swap → substituteExerciseCommand
-    // mutates the source row in place: same id + sortOrder, new
-    // exerciseId, sets cleared, originalExerciseId stamped. No new
-    // row inserted.
-    fireEvent.press(await findByTestId("exercise-row-ex-incline"));
-    fireEvent.press(await findByTestId("swap-picker-swap"));
+    // One tap, no override confirmation — nothing is incompatible without a kit.
+    fireEvent.press(await findByTestId("swap-others-ex-incline"));
 
-    const cached = storage.getActiveSession("user-1");
-    expect(cached?.exercises).toHaveLength(1);
-    const swapped = cached?.exercises[0];
-    expect(swapped?.id).toBe("se-1");
-    expect(swapped?.exerciseId).toBe("ex-incline");
-    expect(swapped?.isSubstituted).toBe(false);
-    expect(swapped?.originalExerciseId).toBe("ex-bench");
+    await waitFor(() => {
+      const cached = storage.getActiveSession("user-1");
+      // Mutated in place: same row id + sortOrder, new exerciseId, sets cleared,
+      // originalExerciseId stamped. No new row inserted.
+      expect(cached?.exercises).toHaveLength(1);
+      expect(cached?.exercises[0]?.id).toBe("se-1");
+      expect(cached?.exercises[0]?.exerciseId).toBe("ex-incline");
+      expect(cached?.exercises[0]?.originalExerciseId).toBe("ex-bench");
+    });
+  });
+
+  it("surfaces an in-sheet message when the picked substitute isn't in the local cache", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    // Only the SOURCE is cached. The endpoint is visibility-scoped server-side and
+    // can legitimately return an exercise a 24h-stale cache has never seen — and
+    // `applyPickerSelection` resolves the pick THROUGH the cache and returns
+    // silently on a miss. Without the refresh-and-retry guard the tap would close
+    // nothing and do nothing, mid-session, with no error.
+    storage.cacheExercises([
+      buildExercise({ id: "ex-bench", name: "Bench Press" }),
+    ]);
+    api.substitutes = {
+      best: [],
+      others: [
+        {
+          id: "ex-unknown",
+          name: "Machine Chest Press",
+          category: "strength",
+          difficultyLevel: "intermediate",
+          thumbnailUrl: null,
+          equipmentRequired: [],
+          matchedOn: ["primary_muscles"],
+        },
+      ],
+      meta: { truncated: false },
+    };
+    // The refresh brings back nothing new, so the retry misses too.
+    jest
+      .spyOn(api, "getExercises")
+      .mockResolvedValue(ok({ data: [], hasMore: false, cursor: null }));
+    storage.cacheActiveSession("user-1", {
+      id: "local-1",
+      userId: "user-1",
+      workoutId: null,
+      name: "Quick Workout",
+      status: "in_progress",
+      startedAt: "2026-05-05T10:00:00.000Z",
+      completedAt: null,
+      notes: null,
+      exercises: [
+        {
+          id: "se-1",
+          sessionId: "local-1",
+          exerciseId: "ex-bench",
+          exerciseName: "Bench Press",
+          sortOrder: 0,
+          supersetGroup: null,
+          isSubstituted: false,
+          originalExerciseId: null,
+          notes: null,
+          sets: [],
+        },
+      ],
+    });
+
+    const { findByTestId } = renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <ActiveSessionContainer />),
+    );
+
+    fireEvent.press(await findByTestId("session-exercise-substitute"));
+    fireEvent.press(await findByTestId("swap-others-ex-unknown"));
+
+    expect(await findByTestId("swap-sheet-unavailable")).toBeTruthy();
+    // And the session is untouched — a failed resolve must not half-apply a swap.
+    expect(storage.getActiveSession("user-1")?.exercises[0]?.exerciseId).toBe(
+      "ex-bench",
+    );
   });
 
   // The Mark-Complete UI was removed in 1A.1 (legacy port: no per-set
