@@ -245,8 +245,13 @@ no mobile, no scan endpoint. All of T-1.1…T-1.11.**
   Shipping ranker output under a Premium+ badge is exactly what the bake-off
   rejected (it lost 4-50 and produced Atlas Stones in a hotel room). Raised for
   Brad rather than treated as settled.
-- **IB: 2 sweeps (9 findings, then 3) + 1 closed verification pass (which REFUTED
-  one of my own fixes).** 12 defects fixed across 3 commits. The refutation is
+- **IB: 2 local sweeps (9 findings, then 3) + 1 closed verification pass (which
+  REFUTED one of my own fixes).** 12 defects fixed across 3 commits.
+  **The `@inspector-brad` CI action WAS fired this time — at Brad's explicit
+  request, not pre-emptively — and came back CLEAN @ `e2ebbbb` with zero
+  findings** (`claude-opus-4-7` / `high`). The standing rule still holds by
+  default: it bills Brad's subscription and is his to trigger. Worth knowing the
+  two gates agreed. The refutation is
   worth remembering: reserving the model's picks to stop a repair cascade
   **traded a filled row for a hole** and then reported `no_candidate` for a row
   that had a candidate. A closed pass asked to verify "(c) no row can now be
