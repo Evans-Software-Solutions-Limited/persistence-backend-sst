@@ -50,13 +50,20 @@ describe("useLoadoutFlow — opening and closing", () => {
     expect(get().step).toBe("collect");
     expect(get().workoutId).toBe("w-1");
     expect(get().workoutName).toBe("Upper Body");
+    expect(get().replacementVariationId).toBeNull();
+  });
+
+  it("opens a re-adaptation against the root while retaining the variation to replace", () => {
+    get().open("w-root", "Upper Body · Hotel gym", "v-1");
+    expect(get().workoutId).toBe("w-root");
+    expect(get().replacementVariationId).toBe("v-1");
   });
 
   it("clears a previous run's context, preview and manual picks on open", () => {
     // The bug this prevents is quiet and bad: adapting workout B while holding A's
     // picks would apply them BY sortOrder to a different plan.
     get().open("w-1", "Upper Body");
-    get().useGym({ id: "gym-1", name: "Hotel gym" });
+    get().selectGym({ id: "gym-1", name: "Hotel gym" });
     get().previewResolved(preview);
     get().applyManualPick(0, { exerciseId: "ex-9", isUserOverride: true });
     get().setScanDraft(draft);
@@ -76,6 +83,7 @@ describe("useLoadoutFlow — opening and closing", () => {
     get().reset();
     expect(get().step).toBeNull();
     expect(get().workoutId).toBeNull();
+    expect(get().replacementVariationId).toBeNull();
   });
 });
 
@@ -101,7 +109,7 @@ describe("useLoadoutFlow — the upsell is a sheet, not a step", () => {
 describe("useLoadoutFlow — the equipment context is exactly one source", () => {
   it("a saved gym sets the gym context and advances to adapting", () => {
     get().open("w-1", "Upper Body");
-    get().useGym({ id: "gym-1", name: "Hotel gym" });
+    get().selectGym({ id: "gym-1", name: "Hotel gym" });
 
     expect(get().context).toEqual({
       kind: "gym",
@@ -113,7 +121,7 @@ describe("useLoadoutFlow — the equipment context is exactly one source", () =>
 
   it("manual ids set the ids context and advance to adapting", () => {
     get().open("w-1", "Upper Body");
-    get().useEquipmentIds(["eq-1", "eq-2"], "Hotel gym", true);
+    get().selectEquipmentIds(["eq-1", "eq-2"], "Hotel gym", true);
 
     expect(get().context).toEqual({
       kind: "ids",
@@ -127,7 +135,7 @@ describe("useLoadoutFlow — the equipment context is exactly one source", () =>
     // The server reports the context size back from `equipmentTypeIds.length`, so a
     // duplicate would make "6 items available" wrong on the review banner.
     get().open("w-1", "Upper Body");
-    get().useEquipmentIds(["eq-1", "eq-1", "eq-2"], "Custom", false);
+    get().selectEquipmentIds(["eq-1", "eq-1", "eq-2"], "Custom", false);
 
     expect(
       (get().context as { equipmentTypeIds: readonly string[] })
@@ -138,7 +146,7 @@ describe("useLoadoutFlow — the equipment context is exactly one source", () =>
   it("copies the caller's array rather than aliasing it", () => {
     get().open("w-1", "Upper Body");
     const ids = ["eq-1"];
-    get().useEquipmentIds(ids, "Custom", false);
+    get().selectEquipmentIds(ids, "Custom", false);
     ids.push("eq-mutated");
 
     expect(
@@ -154,11 +162,11 @@ describe("useLoadoutFlow — the equipment context is exactly one source", () =>
     // compatible with kit A may not be with kit B, and it carries
     // `isUserOverride: false`, so the save 400s.
     get().open("w-1", "Upper Body");
-    get().useGym({ id: "gym-1", name: "Hotel gym" });
+    get().selectGym({ id: "gym-1", name: "Hotel gym" });
     get().previewResolved(preview);
     get().applyManualPick(0, { exerciseId: "ex-9", isUserOverride: false });
 
-    get().useGym({ id: "gym-2", name: "Home garage" });
+    get().selectGym({ id: "gym-2", name: "Home garage" });
 
     expect(get().preview).toBeNull();
     expect(get().manualPicks.size).toBe(0);
@@ -168,11 +176,11 @@ describe("useLoadoutFlow — the equipment context is exactly one source", () =>
 
   it("CLEARS the previous adaptation on the manual-ids path too", () => {
     get().open("w-1", "Upper Body");
-    get().useGym({ id: "gym-1", name: "Hotel gym" });
+    get().selectGym({ id: "gym-1", name: "Hotel gym" });
     get().previewResolved(preview);
     get().applyManualPick(0, { exerciseId: "ex-9", isUserOverride: true });
 
-    get().useEquipmentIds(["eq-1"], "Custom", false);
+    get().selectEquipmentIds(["eq-1"], "Custom", false);
 
     expect(get().preview).toBeNull();
     expect(get().manualPicks.size).toBe(0);
@@ -182,16 +190,16 @@ describe("useLoadoutFlow — the equipment context is exactly one source", () =>
     // Never both: the preview 400s EQUIPMENT_CONTEXT_REQUIRED if two sources
     // arrive, and the union makes that structurally impossible from here.
     get().open("w-1", "Upper Body");
-    get().useGym({ id: "gym-1", name: "Hotel gym" });
-    get().useEquipmentIds(["eq-1"], "Custom", false);
+    get().selectGym({ id: "gym-1", name: "Hotel gym" });
+    get().selectEquipmentIds(["eq-1"], "Custom", false);
 
     expect(get().context?.kind).toBe("ids");
   });
 
   it("REPLACES an ids context when a gym is chosen instead", () => {
     get().open("w-1", "Upper Body");
-    get().useEquipmentIds(["eq-1"], "Custom", false);
-    get().useGym({ id: "gym-1", name: "Hotel gym" });
+    get().selectEquipmentIds(["eq-1"], "Custom", false);
+    get().selectGym({ id: "gym-1", name: "Hotel gym" });
 
     expect(get().context?.kind).toBe("gym");
   });
@@ -262,7 +270,7 @@ describe("useLoadoutFlow — adapting is bound to the request", () => {
     // ship: the preview is a Bedrock call at 2.6s p50 with a retry path up to 24s,
     // so a timer would show a review screen with no data.
     get().open("w-1", "Upper Body");
-    get().useGym({ id: "gym-1", name: "Hotel gym" });
+    get().selectGym({ id: "gym-1", name: "Hotel gym" });
 
     expect(get().step).toBe("adapting");
     expect(get().preview).toBeNull();
@@ -274,7 +282,7 @@ describe("useLoadoutFlow — adapting is bound to the request", () => {
 
   it("lets a caller send the user back to collect after a failure", () => {
     get().open("w-1", "Upper Body");
-    get().useGym({ id: "gym-1", name: "Hotel gym" });
+    get().selectGym({ id: "gym-1", name: "Hotel gym" });
     get().goToStep("collect");
 
     expect(get().step).toBe("collect");

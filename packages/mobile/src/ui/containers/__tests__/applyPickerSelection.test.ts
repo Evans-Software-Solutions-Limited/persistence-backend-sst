@@ -7,8 +7,7 @@
 import {
   applyPickerSelection,
   resolvePickerExercise,
-  resolveSubstituteMuscleFilter,
-  resolveSubstituteMuscleLabels,
+  resolveSubstituteSourceRef,
 } from "@/ui/containers/active-session-picker";
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
@@ -379,130 +378,64 @@ describe("resolvePickerExercise", () => {
   });
 });
 
-describe("resolveSubstituteMuscleFilter", () => {
-  it("returns undefined when mode is null (no picker open)", () => {
+describe("resolveSubstituteSourceRef", () => {
+  it("returns null when mode is null (no picker open)", () => {
     const storage = new InMemoryStorageAdapter();
-    expect(resolveSubstituteMuscleFilter(null, [], storage)).toBeUndefined();
+    expect(resolveSubstituteSourceRef(null, [], storage)).toBeNull();
   });
 
-  it("returns undefined for the add mode (no muscle filter on add)", () => {
+  it("returns null for every non-substitute mode", () => {
     const storage = new InMemoryStorageAdapter();
+    expect(resolveSubstituteSourceRef({ kind: "add" }, [], storage)).toBeNull();
     expect(
-      resolveSubstituteMuscleFilter({ kind: "add" }, [], storage),
-    ).toBeUndefined();
-  });
-
-  it("returns undefined for the add-to-superset mode (no muscle filter)", () => {
-    const storage = new InMemoryStorageAdapter();
-    expect(
-      resolveSubstituteMuscleFilter(
-        { kind: "add-to-superset", supersetGroup: 1 },
-        [],
-        storage,
-      ),
-    ).toBeUndefined();
-  });
-
-  it("returns undefined when the source row isn't in the session", () => {
-    const storage = new InMemoryStorageAdapter();
-    expect(
-      resolveSubstituteMuscleFilter(
-        { kind: "substitute", oldSessionExerciseId: "missing" },
-        [{ id: "se-1", exerciseId: "ex-bench" }],
-        storage,
-      ),
-    ).toBeUndefined();
-  });
-
-  it("returns undefined when the source exercise isn't in the cached library", () => {
-    const storage = new InMemoryStorageAdapter();
-    // No cacheExercises call → cache miss.
-    expect(
-      resolveSubstituteMuscleFilter(
-        { kind: "substitute", oldSessionExerciseId: "se-1" },
-        [{ id: "se-1", exerciseId: "ex-bench" }],
-        storage,
-      ),
-    ).toBeUndefined();
-  });
-
-  it("returns the source exercise's primaryMuscleGroups when cached", () => {
-    const storage = new InMemoryStorageAdapter();
-    storage.cacheExercises([
-      buildExercise({
-        id: "ex-bench",
-        primaryMuscleGroups: ["chest", "shoulders"],
-      }),
-    ]);
-    expect(
-      resolveSubstituteMuscleFilter(
-        { kind: "substitute", oldSessionExerciseId: "se-1" },
-        [{ id: "se-1", exerciseId: "ex-bench" }],
-        storage,
-      ),
-    ).toEqual(["chest", "shoulders"]);
-  });
-});
-
-describe("resolveSubstituteMuscleLabels", () => {
-  it("returns undefined when mode is null (no chip)", () => {
-    const storage = new InMemoryStorageAdapter();
-    expect(resolveSubstituteMuscleLabels(null, [], storage)).toBeUndefined();
-  });
-
-  it("returns undefined for non-substitute modes", () => {
-    const storage = new InMemoryStorageAdapter();
-    expect(
-      resolveSubstituteMuscleLabels({ kind: "add" }, [], storage),
-    ).toBeUndefined();
-    expect(
-      resolveSubstituteMuscleLabels(
+      resolveSubstituteSourceRef(
         { kind: "add-to-superset", supersetGroup: 2 },
         [],
         storage,
       ),
-    ).toBeUndefined();
+    ).toBeNull();
     expect(
-      resolveSubstituteMuscleLabels({ kind: "create-superset" }, [], storage),
-    ).toBeUndefined();
+      resolveSubstituteSourceRef({ kind: "create-superset" }, [], storage),
+    ).toBeNull();
   });
 
-  it("returns undefined when the source row isn't in the session", () => {
+  it("returns null when the source row has fallen out of the session", () => {
     const storage = new InMemoryStorageAdapter();
     expect(
-      resolveSubstituteMuscleLabels(
+      resolveSubstituteSourceRef(
         { kind: "substitute", oldSessionExerciseId: "missing" },
         [{ id: "se-1", exerciseId: "ex-bench" }],
         storage,
       ),
-    ).toBeUndefined();
+    ).toBeNull();
   });
 
-  it("returns undefined on cache miss (chip simply doesn't render)", () => {
+  // The id is what the ranking endpoint needs, and it comes off the SESSION row,
+  // not the cache. A cache miss must therefore still yield a usable ref — this is
+  // the case the deleted `resolveSubstituteMuscleFilter` returned undefined for,
+  // which under the new picker would have meant no ranking at all.
+  it("still resolves the id on a cache miss, with a null display name", () => {
     const storage = new InMemoryStorageAdapter();
     expect(
-      resolveSubstituteMuscleLabels(
+      resolveSubstituteSourceRef(
         { kind: "substitute", oldSessionExerciseId: "se-1" },
         [{ id: "se-1", exerciseId: "ex-bench" }],
         storage,
       ),
-    ).toBeUndefined();
+    ).toEqual({ id: "ex-bench", name: null });
   });
 
-  it("returns the source exercise's primaryMuscleGroupLabels when cached", () => {
+  it("resolves the display name from the cache when present", () => {
     const storage = new InMemoryStorageAdapter();
     storage.cacheExercises([
-      buildExercise({
-        id: "ex-bench",
-        primaryMuscleGroupLabels: ["Chest", "Triceps"],
-      }),
+      buildExercise({ id: "ex-bench", name: "Barbell Bench Press" }),
     ]);
     expect(
-      resolveSubstituteMuscleLabels(
+      resolveSubstituteSourceRef(
         { kind: "substitute", oldSessionExerciseId: "se-1" },
         [{ id: "se-1", exerciseId: "ex-bench" }],
         storage,
       ),
-    ).toEqual(["Chest", "Triceps"]);
+    ).toEqual({ id: "ex-bench", name: "Barbell Bench Press" });
   });
 });

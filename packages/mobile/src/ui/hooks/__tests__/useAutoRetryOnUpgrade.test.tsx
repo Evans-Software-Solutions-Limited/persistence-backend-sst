@@ -187,9 +187,21 @@ describe("useAutoRetryOnUpgrade", () => {
     );
     rerender(undefined);
 
-    await waitFor(() => {
-      expect(storage.getBlockedEntries()).toHaveLength(0);
-    });
+    // ⚠ Explicit timeout. This suite is fast in isolation (~1 s for 7 cases) and
+    // is untouched by the Loadout Phase 2 slice — but that slice added six heavy
+    // container suites to the run, and the extra parallel load pushed this
+    // `waitFor` past Testing Library's 1000 ms DEFAULT on CI. The chain it waits
+    // on is long for that budget: the effect fires, unblocks the entry, and then
+    // `processSyncQueue` performs a fetch before the entry clears.
+    //
+    // `jest.setTimeout` would NOT fix this — RTL's `waitFor` has its own timeout
+    // independent of jest's per-test one.
+    await waitFor(
+      () => {
+        expect(storage.getBlockedEntries()).toHaveLength(0);
+      },
+      { timeout: 5_000 },
+    );
     expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 

@@ -381,21 +381,25 @@ Phase 1/2 design. Rationale: `requirements.md` § Eval spike.
 - [x] **T-2.1 [M]** Ports + adapter for saved gyms, preview, create-variation,
       substitutes (+ the scan). `domain/models/loadout.ts`,
       `ApiPort` × 9 methods, `SSTApiAdapter`, `InMemoryApiAdapter`.
-- [ ] **T-2.2 [M]** Loadout entry card on workout detail + locked/upsell state
+- [x] **T-2.2 [M]** Loadout entry card on workout detail + locked/upsell state
       (price from the catalog, never a literal).
-- [ ] **T-2.3 [M]** `collect` (saved gym / manual / scan), equipment groups
+- [x] **T-2.3 [M]** `collect` (saved gym / manual / scan), equipment groups
       from the API.
-- [ ] **T-2.4 [M]** `manual` picker + name field + save-as-gym toggle.
-- [ ] **T-2.5 [M]** `adapting` skeleton bound to the real request.
-- [ ] **T-2.6 [M]** `review` — KEPT/SWAPPED pills, reason lines, per-row swap.
-- [ ] **T-2.7 [M]** Shared `EquipmentAwareSwapSheet` replacing the ad-hoc
+- [x] **T-2.4 [M]** `manual` picker + name field + save-as-gym toggle.
+- [x] **T-2.5 [M]** `adapting` skeleton bound to the real request.
+- [x] **T-2.6 [M]** `review` — KEPT/SWAPPED pills, reason lines, per-row swap.
+- [x] **T-2.7 [M]** Shared `EquipmentAwareSwapSheet` replacing the ad-hoc
       filter in `SwapExercisePopover.tsx:131-142`; used by both surfaces
       (AC-4.4). Persistence stays `substitute-exercise.command.ts`.
-- [ ] **T-2.8 [M]** "Saved setups" list on the parent + `saved` success screen.
-- [ ] **T-2.8b [M]** "Save & start" — persist the variation and start a session
+- [x] **T-2.8 [M]** "Saved setups" list on the parent + `saved` success screen.
+- [x] **T-2.8b [M]** "Save & start" — persist the variation and start a session
       against it in one action (AC-5.3), reusing the existing start-session path.
-- [ ] **T-2.9 [M]** Saved-gym management list in Settings/Profile (AC-7.2).
-- [ ] **T-2.10 [M]** Tests + a device-verify checklist in the PR body.
+- [x] **T-2.9 [M]** Saved-gym management list in Settings/Profile (AC-7.2).
+- [x] **T-2.10 [M]** Tests + a device-verify checklist in the PR body.
+- [x] **T-2.11 [B+M]** Re-adapt an existing saved setup in place; preserve its
+      id/history, freeze the newly resolved kit, and surface linked-gym changes.
+- [x] **T-2.12 [M]** Exercise detail drill-in from review and normal pushed-page
+      presentation for workout detail.
 
 ### Landed in Phase 2 so far — the FOUNDATION, not the screens
 
@@ -424,26 +428,62 @@ nothing is user-visible and nothing is device-verified.
 - **113 new mobile tests; 17 mutations applied across the service and the store,
   all 17 caught.**
 
-### Phase 2 — still to build (the screens)
+### Landed in Phase 2's screens beyond the checklist
 
-T-2.2 … T-2.9 and T-3.4 are UNSTARTED. Everything they need now exists and is
-tested, so they are presentational + container work against a settled spine:
+T-2.2 … T-2.9 and T-3.4 are **DONE** (branch `claude/loadout-phase-2-screens`).
+Recreated in the app's primitives and tokens from the handoff at
+`~/Downloads/Any Gym/project/` — no lifted prototype JSX. Not yet
+device-verified: that needs an EAS dev build against staging, and it is the
+review Brad explicitly asked for.
 
-- The design source of truth is `~/Downloads/Any Gym/project/`, specifically
-  `design_handoff_site_and_anygym/src/screens/gtm-d7-anygym.jsx` (the flow),
-  `gtm-d1-scan.jsx` (the scan sheet) and `gtm-d6-swap.jsx` (the picker), with
-  `README.md` § Part 2 as the written spec. **Recreate in the app's primitives and
-  tokens — do not lift the prototype JSX** (its own README says so).
-- ⚠ **The handoff's D1 `TasterMeterChip` / "taster exhausted" 402 framing MUST NOT
-  be built** — design § 5.2 is a HARD GATE with no taster (RC promos only). The 402
-  is entitlement-denied, and it is a conversion surface, not a dead end.
-- The feature is **Loadout** (the handoff's "AnyGym" is retired), and the Premium+
-  price comes from the **catalog** — never a literal (design § 10).
-- T-2.7's shared `EquipmentAwareSwapSheet` replaces the ad-hoc muscle filter at
-  `SwapExercisePopover.tsx:131-142` (the `muscleGroupFilteredExercises` memo) with
-  `GET /exercises/substitutes`. That component currently reads the local exercise
-  cache, so this is a real refactor of a shipped surface, not a new file.
-  Persistence stays `substitute-exercise.command.ts`.
+**Architecture decisions worth not re-deriving:**
+
+- **The flow is one `fullScreenModal` route, not five routes.**
+  `useLoadoutFlow` remains the single source of truth for the internal step,
+  while the navigator owns presentation. Swap and scan sheets stay beside the
+  step inside that route. Workout and exercise detail are ordinary pushed pages.
+- **`adapting` is bound to the request.** The prototype's 1700 ms auto-advance
+  is not implemented and must not be.
+- **`others` only MEANS "incompatible" when a kit context was supplied.** With
+  none, the server skips containment entirely, so the sheet dims nothing and
+  demands no acknowledgement. An EMPTY array is treated as no context, matching
+  `exercisesSubstitutesHandler`.
+- **The swap sheet's containment context is `preview.equipmentTypeIds`**, not the
+  client's saved-gym row. A gym context sends only `savedGymId`; the server
+  resolves the kit and echoes it, so the preview's copy is authoritative and the
+  cross-device-edit race disappears rather than narrowing.
+- **The scan's confirmed draft never saves a gym** (AC-2.3). "Use these" adapts
+  with `saveAsGym: false`; "Edit the full equipment list" routes to the manual
+  step with the detections pre-selected, which is where naming and saving live.
+- **`useLoadoutGate` mirrors `subscription_tiers.loadout_access` client-side**,
+  because `/subscriptions/me` does not project that column and this slice is
+  mobile-only. The 402 is the real gate. ⚠ **When `loadoutAccess` is added to
+  that endpoint, delete `TIER_GRANTS_LOADOUT` and read the flag** — it is a
+  four-line backend change and the right follow-up.
+- **The entry card has THREE states, not two.** The verdict denies an unresolved
+  subscription by design, so a `pending` state was needed or every paying
+  Premium+ user met a padlock on cold start.
+
+**Fixed in passing, each found by building against it:**
+
+- `SnapAISheetContainer` resized **width-only** under a comment promising a long
+  edge, so every portrait photo shipped ~1/3 over the token budget and anything
+  under 1080 px wide was upscaled. Now `shared/utils/image.ts`'s
+  `resizeToLongEdge`, shared with the scan.
+- `SwapExercisePopover` listed the **local exercise cache**, which is not
+  visibility-aware, so it could not enforce AC-3.6. Now `/exercises/substitutes`.
+  ⚠ Its caller `applyPickerSelection` resolves the pick through that cache and
+  returns SILENTLY on a miss, so the rewrite needed a refresh-and-retry guard.
+- The in-memory adapter's saved-gym 409 carried **no `loadoutCode`**, so the
+  rename-vs-fail branch it exists to enable was untestable.
+- `useGym` / `useEquipmentIds` on the store trip `react-hooks/rules-of-hooks` at
+  every call site; renamed `selectGym` / `selectEquipmentIds`.
+
+**⚠ A literal U+0000 in a source file passes every gate and breaks git.** One
+crept into `EquipmentAwareSwapSheet`'s array separator. Prettier, ESLint and
+Babel all accepted it while git's binary heuristic rendered the whole
+file — the one that derives `isUserOverride` — as "Binary file not shown", with
+no 3-way merge. Use a comma; UUIDs contain none.
 
 ## Phase 3 — Equipment scan (ships INSIDE the Phase 2 slice)
 
@@ -463,10 +503,10 @@ tested, so they are presentational + container work against a settled spine:
 - [x] **T-3.3 [B]** Forced-tool adapter; full `equipment_types` catalogue in
       the prompt; **TypeScript membership validation** of returned ids → 422 on
       a hallucinated uuid (design § 1).
-- [ ] **T-3.4 [M]** Scan sheet (design D1) reusing the `SnapAISheetContainer`
+- [x] **T-3.4 [M]** Scan sheet (design D1) reusing the `SnapAISheetContainer`
       transport; draft-confirm; 402/422/429 states are conversion/retry
       surfaces, not dead ends.
-- [ ] **T-3.5 [B/M]** Tests — fake Bedrock client, ceiling behaviour, no usage
+- [x] **T-3.5 [B/M]** Tests — fake Bedrock client, ceiling behaviour, no usage
       row on pre-model rejections. **Backend half DONE** (91 tests across
       `modelProse` / `equipmentScanModel` / `aiEquipmentScanHandler` /
       `aiBedrockClient`, 11 mutations applied to the new guards and all caught);

@@ -431,6 +431,24 @@ describe("SSTApiAdapter — variations", () => {
       "http://test.local/workouts/w-1/variations",
     );
   });
+
+  it("PUTs a re-adaptation to the existing variation resource", async () => {
+    const fetchMock = jsonOnce({ data: { id: "v-1" } });
+    await new SSTApiAdapter().replaceWorkoutVariation("w-1", "v-1", {
+      name: "Upper Body · Hotel gym",
+      sourceGymId: "gym-1",
+      sourceEquipmentTypeIds: ["eq-1", "eq-2"],
+      exercises: [{ exerciseId: "ex-2", sortOrder: 0 }],
+    });
+
+    const { url, init } = lastCall(fetchMock);
+    expect(url).toBe("http://test.local/workouts/w-1/variations/v-1");
+    expect(init.method).toBe("PUT");
+    expect(JSON.parse(init.body)).toMatchObject({
+      sourceGymId: "gym-1",
+      sourceEquipmentTypeIds: ["eq-1", "eq-2"],
+    });
+  });
 });
 
 describe("SSTApiAdapter.getExerciseSubstitutes", () => {
