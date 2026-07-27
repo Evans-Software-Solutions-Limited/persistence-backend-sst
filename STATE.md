@@ -11,7 +11,8 @@ say so and fix this file.
 
 ## Current state (2026-07-27)
 
-- `origin/main` = **`d8b68fa`**. Released to production: **v1.8.0**.
+- `origin/main` = **`e2bc595`** (PR #321, Loadout Phase E, merged). Released to
+  production: **v1.8.0**.
 - **⚠ Production is one release behind `main`.** Open release PR
   **[#319](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/319)
   (v1.9.0)** is the only thing that ships them. Merging it publishes the release;
@@ -25,7 +26,8 @@ say so and fix this file.
 - Feature state: coach mode complete; spec-19 Programs shipped; nutrition (incl.
   Snap AI) shipped; consent (spec-28) + read-audit shipped; coach↔client
   offboarding shipped; **Loadout Phase 0 (data model) merged, Phase E (eval)
-  decided — Phase 1 is next**.
+  decided, Phase 1 (adaptation engine) on branch `claude/loadout-phase-1` —
+  Phase 2 (mobile) is next**.
 
 ## Verified facts
 
@@ -128,7 +130,17 @@ say so and fix this file.
 
 - **Re-map daily ceiling** — deliberately no number proposed. At
   $0.0057/adaptation (~$0.51/user/month at three a day) it is abuse control, not
-  unit economics, and hitting a cap mid-gym is a bad failure.
+  unit economics, and hitting a cap mid-gym is a bad failure. **Phase 1 ships the
+  MECHANISM with `AI_LOADOUT_REMAP_DAILY_LIMIT = 30` as a labelled PLACEHOLDER**
+  (matching the other Haiku-class endpoint) so the guard is never absent — the
+  number still needs Brad's call.
+- **Re-map retry policy** — `createWithRetry` (12 s × 2) vs ONE ~20 s attempt.
+  Phase 1 ships `createWithRetry`, which is what design § 1b specifies and what
+  E2 measured through (p50 2.60 s / max 3.79 s, ~3× headroom on one attempt).
+  The retry PATH is unmeasured and 12 s × 2 plus overhead sits close to the hard
+  30 s API Gateway ceiling, so a first-attempt timeout converts a slow request
+  into a failed one. Brad's call; the scan needs the no-retry variant anyway
+  (T-E1.6), so whichever lands builds it once.
 - **Equipment-scan ceiling** — 10/day proposed. At **$0.0272/scan** that is
   ~$8.16/user/month worst case against £29.99 — the one ceiling with real money
   behind it.
@@ -144,6 +156,12 @@ say so and fix this file.
 
 ### Ops / launch
 
+- **Verify Haiku 4.5 in the PRODUCTION Bedrock account before the Loadout launch
+  build.** STATE.md records it as granted in both accounts (Brad granted it
+  2026-07-26 and prod verified OK then), and Phase 1 could NOT re-verify — both
+  `ess-dev` and `ess-prod` SSO tokens were expired, which needs an interactive
+  `aws sso login`. The check is
+  `AWS_PROFILE=ess-prod aws bedrock-runtime invoke-model --model-id eu.anthropic.claude-haiku-4-5-20251001-v1:0 …`.
 - **Merge release PR #319** — see Current state; it is what puts Loadout Phase 0
   on prod.
 - **PR #321** (`claude/loadout-phase-e`) — Loadout Phase E: the E2 bake-off, the E1
@@ -182,6 +200,74 @@ consent copy, privacy section and governing law · the OFF re-seed backfilling
 `serving_quantity` across the ~143k seeded rows.
 
 ## Last session
+
+**2026-07-27 — LOADOUT Phase 1 (adaptation engine + preview). Branch
+`claude/loadout-phase-1`, HEAD `af4c021` (4 commits). Backend only: no migration,
+no mobile, no scan endpoint. All of T-1.1…T-1.11.**
+
+- **The engine is the HYBRID D7 selected by measurement** (design § 6.0):
+  deterministic § 6.2 shortlist (top 25/row) → model selection over that
+  shortlist → model reasons. Stages 1, 3 and 4 stayed deterministic, so the model
+  changes *which* exercise is picked, never *whether* the pick is legal.
+  New `application/loadout/engine/` — `rankSubstitutes` (pure § 6.2 weights),
+  `adaptWorkout` (partition / shortlist / stage-3 assembly), `remapModel` (the
+  forced-tool Bedrock adapter), `reasons`, `intensityMismatch`, `types`. Plus
+  `POST /workouts/:id/loadout/preview` and `GET /exercises/substitutes`.
+- **⚠ `GET /exercises/substitutes` tipped `packages/web`'s Eden treaty into
+  TS2589, and it CANNOT be nested out of trouble.** It must precede the
+  `/exercises/:id` matcher, so a late-mounting sub-app cannot hold it. TWO nesting
+  variants were measured — pairing it with `exercisesSearchHandler`, and
+  collapsing all ten exercise routes into one sub-app — and **both moved the same
+  error into `microservices/core`'s own `api.ts`**, i.e. from an unused client into
+  the build everything depends on. Annotating the handler's response type
+  explicitly did not help either: the cost is the extra ROUTE, not its shape. So
+  `packages/web/src/lib/eden.ts`'s `@ts-expect-error TS2589` is back — which is the
+  remedy that file itself prescribes for this case, and the client has 0
+  call-sites. **Don't re-attempt the nesting; it is measured and worse.**
+- **⚠ `sort_order` IS NOT A ROW IDENTITY.** No unique constraint
+  (`001_initial_schema.sql:699-702` indexes only workout_id / exercise_id /
+  superset_group) and `toWorkoutExerciseInsert` writes the client's value verbatim,
+  so two rows can share one. Keying the shortlist map on it collapsed one row's
+  candidates into another's and produced a **cross-muscle substitution (a squat for
+  a bench press) through the guards rather than around them** — reachable via a
+  stranger's PUBLIC workout, which AC-1.2 makes adaptable. Fixed with
+  `PlanRow.rowKey` (position in the ordered plan). The tool field the model sees is
+  still named `sortOrder`, deliberately, so the prompt stays byte-identical to the
+  arm E2 measured.
+- **Brad checkpoints raised, NOT decided** (both in § Open items): the re-map daily
+  ceiling ships as a **labelled placeholder** `AI_LOADOUT_REMAP_DAILY_LIMIT = 30`
+  at $0.0057/adaptation, and `createWithRetry` vs one ~20 s attempt.
+- **Bedrock grant NOT re-verified this session** — both SSO tokens were expired and
+  refreshing needs an interactive login. The ledger's evidence stands (Brad granted
+  Haiku 4.5 in prod 2026-07-26); the check is queued in § Open items rather than
+  claimed as done.
+- **A model failure is a 503, never a silent downgrade to the § 6.2 ranker.**
+  Shipping ranker output under a Premium+ badge is exactly what the bake-off
+  rejected (it lost 4-50 and produced Atlas Stones in a hotel room). Raised for
+  Brad rather than treated as settled.
+- **IB: 2 sweeps (9 findings, then 3) + 1 closed verification pass (which REFUTED
+  one of my own fixes).** 12 defects fixed across 3 commits. The refutation is
+  worth remembering: reserving the model's picks to stop a repair cascade
+  **traded a filled row for a hole** and then reported `no_candidate` for a row
+  that had a candidate. A closed pass asked to verify "(c) no row can now be
+  starved" is what caught it — the question was worth asking explicitly.
+- **LESSON — a mutation that survives is not always a test gap.** Three surviving
+  mutants were EQUIVALENT: the reservation loop's legality / membership /
+  prior-use screens change no behaviour, because the repair re-filters all three
+  itself. The right response was deleting the dead conditions, not writing tests
+  that pretend to pin them. A fourth survivor was a real gap (a KEPT row's
+  selection must reserve nothing) and got a test.
+- **LESSON re-confirmed — `bun run test:unit` is NOT a typecheck.** `res.json()`
+  returns `unknown`; the whole new handler-test suite was green while `tsc` had 19
+  errors.
+- **LESSON re-confirmed — the shell cwd drifts.** Three commands failed on
+  relative paths after an earlier `cd` into `microservices/core` persisted. Prefix
+  every path with the repo root.
+- **Gates:** prettier · typecheck 8/8 · lint 0-err · build 13/13 · test:unit 19/19
+  (core 281 files / **3027 tests** / 98.37 % overall). Every changed file ≥ 90 % on
+  lines, branches AND functions; the engine is 100 % lines / ≥ 97 % branches.
+  **35 + 8 + 5 mutations applied to the new guards, all caught.**
+
 
 **2026-07-26 (cont. 3) — LOADOUT Phase E eval spike. D7 DECIDED BY EVIDENCE:
 the HYBRID wins. Branch `claude/loadout-phase-e` (HEAD `d4139d4`, 2 commits),

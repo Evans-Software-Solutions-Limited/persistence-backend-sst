@@ -285,38 +285,38 @@ Phase 1/2 design. Rationale: `requirements.md` § Eval spike.
 > **T-1.10** returning the structured reason code _and_ the model's sentence
 > (design § 7.2 alone is not sufficient once the model writes the copy).
 
-- [ ] **T-1.1 [B]** Add `equipmentSubsetOf` to `ListExercisesFilters` +
+- [x] **T-1.1 [B]** Add `equipmentSubsetOf` to `ListExercisesFilters` +
       `buildNonSearchFilterConditions`, rendering
       `@> COALESCE(equipment_required, '{}')`. Do not touch `equipmentAny`
       (design § 6.1).
-- [ ] **T-1.2 [B]** Pure `rankSubstitutes(source, candidates, context)` with
+- [x] **T-1.2 [B]** Pure `rankSubstitutes(source, candidates, context)` with
       the § 6.2 weights and the `name ASC` tiebreak. The orphaned
       `get_alternative_exercises` SQL function is **not** called.
-- [ ] **T-1.3 [B]** Candidate assembly: one query, muscle union + containment +
+- [x] **T-1.3 [B]** Candidate assembly: one query, muscle union + containment +
       `buildVisibilityCondition`, `LIMIT 400`, log on truncation (design § 6.3).
-- [ ] **T-1.4 [B]** `POST /workouts/:id/loadout/preview` — `canRead` on the
+- [x] **T-1.4 [B]** `POST /workouts/:id/loadout/preview` — `canRead` on the
       parent (not owner-only, AC-1.2), empty context → 400, no duplicate picks
       within a plan, unresolved rows returned flagged (AC-3.4), nothing
       persisted.
-- [ ] **T-1.5 [B]** Structured reason codes (design § 7) — no UI copy in the
+- [x] **T-1.5 [B]** Structured reason codes (design § 7) — no UI copy in the
       backend.
-- [ ] **T-1.6 [B]** `POST /workouts/:id/variations` re-verifies **visibility on
+- [x] **T-1.6 [B]** `POST /workouts/:id/variations` re-verifies **visibility on
       every** submitted row but **containment only on rows not flagged
       `is_user_override`** — AC-4.2/4.3 permit a deliberate incompatible pick,
       and verifying containment everywhere would reject exactly that case
       (design § 7.1). Also `canRead` on the parent.
-- [ ] **T-1.7 [B]** `GET /exercises/substitutes` → `{ best, others }`, shipped
+- [x] **T-1.7 [B]** `GET /exercises/substitutes` → `{ best, others }`, shipped
       as its own handler next to `exercisesSearchHandler` and registered
       **before** `exercisesGetHandler` (`api.ts:122`) — a late-mounting sub-app
       cannot satisfy that ordering (design § 3, § 6.4). Add it to a
       route-ordering test.
-- [ ] **T-1.8 [B]** Tests — ranker unit cases incl. NULL `secondary_muscles` /
+- [x] **T-1.8 [B]** Tests — ranker unit cases incl. NULL `secondary_muscles` /
       NULL `equipment_required`; a `PgDialect` test that fails against an
       `&&` implementation; targets preserved byte-for-byte; parent untouched
       (AC-1.3). Add the AC-3.6 visibility render the eval could **not** cover:
       every seeded row is public, so `buildVisibilityCondition` was a no-op
       across the eval corpus (VERDICT-E2 § Limitations).
-- [ ] **T-1.9 [B]** Model-selection stage: forced-tool adapter over
+- [x] **T-1.9 [B]** Model-selection stage: forced-tool adapter over
       `aiBedrockClient`, ids validated for membership in TypeScript → 422 on a
       non-member (design § 1), shortlist of **top 25 ranked candidates per row**,
       plus the re-map daily ceiling on the #156 pattern (`429 ai_daily_limit`,
@@ -326,7 +326,7 @@ Phase 1/2 design. Rationale: `requirements.md` § Eval spike.
       **Verify the model id is granted in the PRODUCTION Bedrock account before
       shipping** — grants are per-account (STATE.md 2026-07-26); Haiku 4.5 is
       currently granted in both.
-- [ ] **T-1.11 [B]** `intensity_mismatch` flag (AC-3.5b, design § 7.1b): a
+- [x] **T-1.11 [B]** `intensity_mismatch` flag (AC-3.5b, design § 7.1b): a
       deterministic check — parent target is a strength range (reps ≤ 6) AND the
       chosen alternative lost every loadable equipment type — surfaced via the
       AC-3.4 flag machinery. No model, no cost, no ceiling. E2 measured this on
@@ -334,10 +334,47 @@ Phase 1/2 design. Rationale: `requirements.md` § Eval spike.
       prescription was still unusable (`Barbell Deadlift 4×4-6 → Band Good Morning
 4×4-6`). **Do NOT change the target to suit the kit** — that relaxes § 1's
       rule 2 and is a Brad decision with its own slice.
-- [ ] **T-1.10 [B]** Return the structured reason code **and** the model's
+- [x] **T-1.10 [B]** Return the structured reason code **and** the model's
       sentence per row. Design § 7.2's codes alone are no longer sufficient now
       the model writes the copy; Phase 2 owns the copy treatment (E2's reason
       text scored well but reads formulaically).
+
+### Landed in Phase 1 beyond the checklist
+
+- **`PlanRow.rowKey`, not `sort_order`, keys every internal map.**
+  `workout_exercises.sort_order` has no unique constraint and is written verbatim
+  from the client, so two rows can share one — and keying the shortlist map on it
+  collapsed one row's candidates into another's, producing a cross-muscle
+  substitution (a squat for a bench press) _through_ the guards. Reachable via a
+  stranger's public workout, which AC-1.2 makes adaptable.
+- **Stage 3 reserves the model's honoured picks before assembling**, then falls
+  back to a claimed id rather than emitting an unresolved row. Without the
+  reservation one omitted row cascaded into two ranker rows; without the fallback
+  the reservation traded a filled row for a hole and reported `no_candidate` for a
+  row that had one.
+- **`stop_reason: "max_tokens"` is a 422.** A truncated tool payload parses
+  cleanly, so the dropped rows would have silently degraded to ranker picks —
+  the fallback design § 1 forbids. `max_tokens` also scales with the swap-row
+  count (floored at the 4096 it replaced, capped at 16384), because nothing bounds
+  how many rows a workout may have and a permanent truncation 422 burns a daily
+  adaptation per retry.
+- **The model's sentence is capped at 300 chars and unpaired surrogates are
+  stripped.** `note` is the one field that reaches the user as prose, and the
+  prompt necessarily carries strings the caller does not control (a public
+  workout's name, its owner's custom exercise names, neither length-bounded). An
+  unpaired surrogate would also fail the `substitution_reason` jsonb insert on
+  save, losing the reviewed adaptation to an opaque 500. **Phase 2 must render
+  `note` as plain text** — never markup, a link, or anything actionable.
+- **`GET /exercises/substitutes` excludes every compatible id from `others`**, not
+  just the ones that fit `best`'s page. Otherwise a performable exercise ranked
+  past the limit renders as "doesn't fit your kit", and accepting it stores the row
+  as `isUserOverride` — corrupting the provenance the save path reads.
+- **`packages/web`'s Eden treaty needed its `@ts-expect-error TS2589` back.**
+  `GET /exercises/substitutes` is the route that tipped it, and it cannot be nested
+  to buy the depth back (it must precede the `/exercises/:id` matcher). Two nesting
+  variants were measured and both moved the SAME error into `microservices/core`'s
+  own `api.ts`. That file prescribes the suppression for exactly this case and the
+  client has 0 call-sites.
 
 ## Phase 2 — Mobile athlete flow (needs the design handoff)
 
