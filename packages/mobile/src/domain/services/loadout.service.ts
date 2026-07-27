@@ -176,7 +176,14 @@ export function describeLoadoutRow(
         intensityMismatch,
       };
 
-    default:
+    default: {
+      // Keeps BOTH guarantees: adding a fifth `SubstitutionReasonCode` is now a
+      // compile error here (so the new case gets deliberate copy), while a code
+      // arriving from persisted jsonb at RUNTIME still gets neutral copy instead of
+      // crashing. Without the assignment the fallback would silently absorb a new
+      // union member.
+      const _exhaustive: never = reason.code;
+      void _exhaustive;
       // ⚠ Unreachable against today's union, and NOT redundant. `reason` is read
       // back out of `workout_exercises.substitution_reason`, which is untyped
       // jsonb, and `user_override` is already a code the CLIENT writes — so a
@@ -192,6 +199,7 @@ export function describeLoadoutRow(
         modelNote,
         intensityMismatch,
       };
+    }
   }
 }
 
@@ -206,7 +214,11 @@ export function describeLoadoutRow(
  */
 export function rowsNeedingAttention(
   preview: LoadoutPreview,
-  manualPicks: ReadonlyMap<number, ManualPick> = new Map(),
+  // REQUIRED, not defaulted. An optional parameter would let a future container
+  // call `rowsNeedingAttention(preview)`, silently get the pre-fix behaviour and
+  // deadlock its Save gate with no type error — which is the exact bug this
+  // parameter was added to close. Pass an empty Map when there are no picks.
+  manualPicks: ReadonlyMap<number, ManualPick>,
 ): readonly LoadoutPreviewRow[] {
   return preview.rows.filter((row) => {
     if (manualPicks.has(row.sortOrder)) return false;
@@ -414,6 +426,15 @@ export function scanDraftToEquipmentIds(
   deselectedIds: ReadonlySet<string> = new Set(),
 ): string[] {
   return draft.detected
-    .map((detection) => detection.equipmentTypeId)
-    .filter((id) => !deselectedIds.has(id));
+    .filter(
+      (detection) =>
+        // ⚠ A server-INJECTED detection is never dropped, whatever the caller's
+        // deselection set says. `useLoadoutFlow.toggleScanDetection` refuses to add
+        // one, but enforcing it ONLY there would leave the guarantee dependent on
+        // which store a caller happens to use — and unticking `Bodyweight` makes
+        // every bodyweight exercise get swapped or dropped for no reason (T-E1.7).
+        detection.source === "injected" ||
+        !deselectedIds.has(detection.equipmentTypeId),
+    )
+    .map((detection) => detection.equipmentTypeId);
 }

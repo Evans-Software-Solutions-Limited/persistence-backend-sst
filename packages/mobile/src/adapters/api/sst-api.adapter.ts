@@ -33,10 +33,12 @@ import type {
   ReferenceEntry,
   ReferenceListKind,
 } from "@/domain/models/reference-list";
+import { isLoadoutErrorCode } from "@/domain/ports/api.port";
 import type {
   ApiPort,
   InviteApiError,
   LoadoutApiError,
+  LoadoutErrorCode,
   ApiNotification,
   ApiNotificationListResponse,
   GetNotificationsParams,
@@ -2253,10 +2255,15 @@ export class SSTApiAdapter implements ApiPort {
       return ok(json.data);
     }
 
-    const loadoutCode =
-      json !== null && "code" in json && typeof json.code === "string"
-        ? (json.code as LoadoutApiError["loadoutCode"])
-        : undefined;
+    // MEMBERSHIP-CHECKED, not cast. An unchecked `as` made `LoadoutErrorCode`'s
+    // stated guarantee untrue — it would happily hold any string the backend sent,
+    // including `ENTITLEMENT_DENIED` off the 402 path, so a `switch` over the union
+    // would have looked exhaustive while silently falling through.
+    const loadoutCode = isLoadoutErrorCode(
+      json !== null && "code" in json ? json.code : undefined,
+    )
+      ? (json as { code: LoadoutErrorCode }).code
+      : undefined;
     // Prefer the handler's own `message`; `mapHttpErrorToApiError` would otherwise
     // fall back to `statusText`, which RN leaves empty.
     const message =

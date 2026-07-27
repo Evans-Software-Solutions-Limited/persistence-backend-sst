@@ -351,13 +351,13 @@ describe("rowsNeedingAttention", () => {
       }),
     ];
 
-    expect(rowsNeedingAttention(preview(rows)).map((r) => r.sortOrder)).toEqual(
-      [1, 2],
-    );
+    expect(
+      rowsNeedingAttention(preview(rows), new Map()).map((r) => r.sortOrder),
+    ).toEqual([1, 2]);
   });
 
   it("returns nothing for a fully clean plan", () => {
-    expect(rowsNeedingAttention(preview([row()]))).toHaveLength(0);
+    expect(rowsNeedingAttention(preview([row()]), new Map())).toHaveLength(0);
   });
 
   it("treats a row with a MANUAL PICK as resolved", () => {
@@ -839,10 +839,19 @@ describe("scanDraftToEquipmentIds", () => {
     ]);
   });
 
-  it("allows everything to be deselected", () => {
+  it("IGNORES a deselection of a server-injected detection", () => {
+    // Enforced here as well as in the store: relying on `toggleScanDetection` alone
+    // would make the guarantee depend on which store a caller uses, and unticking
+    // `Bodyweight` makes every bodyweight exercise get swapped or dropped (T-E1.7).
     expect(
       scanDraftToEquipmentIds(draft, new Set(["eq-bw", DUMBBELL])),
-    ).toEqual([]);
+    ).toEqual(["eq-bw"]);
+  });
+
+  it("allows every MODEL detection to be deselected", () => {
+    expect(scanDraftToEquipmentIds(draft, new Set([DUMBBELL]))).toEqual([
+      "eq-bw",
+    ]);
   });
 
   it("returns nothing for an empty draft", () => {

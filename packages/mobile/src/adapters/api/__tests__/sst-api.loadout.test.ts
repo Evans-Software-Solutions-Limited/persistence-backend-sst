@@ -79,7 +79,13 @@ describe("SSTApiAdapter — saved gyms", () => {
   it("keeps a 409 duplicate name distinguishable by status AND code", async () => {
     // The picker offers "rename" on a 409 and "retry" on a 500, so collapsing the
     // two into one server error would strand the user on the wrong affordance.
-    jsonOnce({ code: "duplicate_name", message: "exists" }, 409);
+    //
+    // ⚠ The body is `SAVED_GYM_NAME_TAKEN` — the code the HANDLER emits. An earlier
+    // version of this test invented `{ code: "duplicate_name" }`, which is a
+    // `SavedGymCreateResult` status the handler translates and never serialises. It
+    // passed while the union it was checking was wrong, i.e. it could not fail in
+    // the way that mattered.
+    jsonOnce({ code: "SAVED_GYM_NAME_TAKEN", message: "exists" }, 409);
     const result = await new SSTApiAdapter().createSavedGym({
       name: "Hotel gym",
       equipmentTypeIds: [],
@@ -87,7 +93,7 @@ describe("SSTApiAdapter — saved gyms", () => {
 
     expect(result.ok).toBe(false);
     expect(!result.ok && result.error.status).toBe(409);
-    expect(!result.ok && result.error.loadoutCode).toBe("duplicate_name");
+    expect(!result.ok && result.error.loadoutCode).toBe("SAVED_GYM_NAME_TAKEN");
     // The handler's own message, not RN's empty statusText.
     expect(!result.ok && result.error.message).toBe("exists");
   });
@@ -288,6 +294,54 @@ describe("SSTApiAdapter — Loadout domain error codes survive the wire", () => 
       exercises: [],
     });
     expect(!result.ok && result.error.loadoutCode).toBe("EXERCISE_NOT_VISIBLE");
+  });
+
+  it("preserves UNKNOWN_SUBSTITUTED_FROM_EXERCISE on the save path", async () => {
+    jsonOnce(
+      { code: "UNKNOWN_SUBSTITUTED_FROM_EXERCISE", message: "gone" },
+      400,
+    );
+    const result = await new SSTApiAdapter().createWorkoutVariation("w-1", {
+      name: "v",
+      exercises: [],
+    });
+    expect(!result.ok && result.error.loadoutCode).toBe(
+      "UNKNOWN_SUBSTITUTED_FROM_EXERCISE",
+    );
+  });
+
+  it("REFUSES a code that is not a known Loadout code", async () => {
+    // The membership check is what makes the union's guarantee real. Without it a
+    // `switch` over `loadoutCode` would look exhaustive while silently falling
+    // through on anything the backend added later.
+    jsonOnce({ code: "SOMETHING_NEW", message: "?" }, 400);
+    const result = await new SSTApiAdapter().previewLoadout("w-1", {
+      savedGymId: "g-1",
+    });
+
+    expect(!result.ok && result.error.loadoutCode).toBeUndefined();
+    // The message still survives, so the container has something to show.
+    expect(!result.ok && result.error.message).toBe("?");
+  });
+
+  it("does NOT let ENTITLEMENT_DENIED leak into loadoutCode on the 402 path", async () => {
+    jsonOnce(
+      {
+        code: "ENTITLEMENT_DENIED",
+        error: "Premium+ required",
+        feature: "loadout",
+        current_tier: "premium",
+        upgrade_to: "premium_plus",
+        upgrade_price_monthly: 29.99,
+      },
+      402,
+    );
+    const result = await new SSTApiAdapter().previewLoadout("w-1", {
+      savedGymId: "g-1",
+    });
+
+    expect(!result.ok && result.error.code).toBe("entitlement_denied");
+    expect(!result.ok && result.error.loadoutCode).toBeUndefined();
   });
 
   it("leaves loadoutCode UNSET when the body carries no code", async () => {

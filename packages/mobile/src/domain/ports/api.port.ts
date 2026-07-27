@@ -1387,31 +1387,66 @@ export interface ApiPort {
 }
 
 /**
+ * Every `code` the Loadout handlers actually put on the wire.
+ *
+ * ⚠ **Transcribed from the handlers, NOT from the repository's result unions.** An
+ * earlier version of this list said `duplicate_name` / `unknown_equipment`, which
+ * are `SavedGymCreateResult` *statuses* — internal to
+ * `savedGymRepository.ts` and never serialised. The handlers translate them to
+ * `SAVED_GYM_NAME_TAKEN` / `UNKNOWN_EQUIPMENT_TYPE`, so the container branch this
+ * type exists to enable (rename on a 409) could never have fired. Regenerate with:
+ *
+ *   grep -rn 'code: "' microservices/core/src/application/loadout
+ *
+ * A `const` array rather than a bare union so the adapter can check membership at
+ * runtime — the cast it used instead made the "unknown codes surface as a type
+ * error" promise below untrue, including letting `ENTITLEMENT_DENIED` land here off
+ * the 402 path.
+ */
+export const LOADOUT_ERROR_CODES = [
+  // preview
+  "EQUIPMENT_CONTEXT_REQUIRED",
+  "EMPTY_EQUIPMENT_CONTEXT",
+  // preview + create-variation
+  "PARENT_IS_A_VARIATION",
+  "UNKNOWN_SAVED_GYM",
+  "UNKNOWN_EQUIPMENT_TYPE",
+  // create-variation
+  "EXERCISE_NOT_VISIBLE",
+  "UNKNOWN_SUBSTITUTED_FROM_EXERCISE",
+  "EQUIPMENT_NOT_AVAILABLE",
+  // saved gyms
+  "SAVED_GYM_NAME_TAKEN",
+  // shared
+  "not_found",
+] as const;
+
+export type LoadoutErrorCode = (typeof LOADOUT_ERROR_CODES)[number];
+
+export function isLoadoutErrorCode(value: unknown): value is LoadoutErrorCode {
+  return (
+    typeof value === "string" &&
+    (LOADOUT_ERROR_CODES as readonly string[]).includes(value)
+  );
+}
+
+/**
  * `ApiError` plus the Loadout endpoints' flat domain `code`.
  *
  * The Loadout handlers answer `{ code, message }` on their recoverable 400s, and
- * each code has a DIFFERENT remedy in the flow — rename the gym (409
- * duplicate_name), re-pick the kit (`UNKNOWN_EQUIPMENT_TYPE`), acknowledge the
- * override (`EQUIPMENT_NOT_AVAILABLE`), go to the parent (`PARENT_IS_A_VARIATION`).
- * Collapsing them into one generic server error leaves the container with nothing
- * to branch on, which is exactly how a reviewed adaptation gets lost to an
- * unexplained failure.
+ * each code has a DIFFERENT remedy in the flow — rename the gym
+ * (`SAVED_GYM_NAME_TAKEN`), re-pick the kit (`UNKNOWN_EQUIPMENT_TYPE`), acknowledge
+ * the override (`EQUIPMENT_NOT_AVAILABLE`), go to the parent
+ * (`PARENT_IS_A_VARIATION`). Collapsing them into one generic server error leaves
+ * the container with nothing to branch on, which is exactly how a reviewed
+ * adaptation gets lost to an unexplained failure.
  *
- * Union kept deliberately narrow and explicit rather than `string`: a code the
- * backend adds later shows up as a type error at the branch that should handle it.
+ * Absent when the body carried no recognised code — the AI endpoints answer
+ * `{ error: "ai_daily_limit" }` and signal through `status`, and 402 carries its own
+ * structured entitlement payload.
  */
 export type LoadoutApiError = ApiError & {
-  loadoutCode?:
-    | "EQUIPMENT_CONTEXT_REQUIRED"
-    | "PARENT_IS_A_VARIATION"
-    | "UNKNOWN_SAVED_GYM"
-    | "UNKNOWN_EQUIPMENT_TYPE"
-    | "EMPTY_EQUIPMENT_CONTEXT"
-    | "EXERCISE_NOT_VISIBLE"
-    | "EQUIPMENT_NOT_AVAILABLE"
-    | "duplicate_name"
-    | "unknown_equipment"
-    | "not_found";
+  loadoutCode?: LoadoutErrorCode;
 };
 
 /** Body for `PATCH …/workout-assignments/:id` (M18 Swap). */

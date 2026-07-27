@@ -2974,7 +2974,11 @@ export class InMemoryApiAdapter implements ApiPort {
     // everything, disabling the server's real check), while a manual override on a
     // KEPT row — `missingEquipment: []` — sailed through and then 400'd on device,
     // which is the exact scenario this exists to catch.
-    if (this.saveContextEquipmentIds) {
+    // `?.length` not truthiness: `[]` is truthy, and the real handler SKIPS
+    // containment entirely for an empty context
+    // (`workoutVariationsCreateHandler.ts:243`). Without this a test setting an
+    // empty kit would see the double reject every non-override row.
+    if (this.saveContextEquipmentIds?.length) {
       const available = new Set(this.saveContextEquipmentIds);
       const offending = input.exercises.find((row) => {
         if (row.isUserOverride === true) return false;

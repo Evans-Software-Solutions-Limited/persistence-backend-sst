@@ -1112,6 +1112,16 @@ describe("InMemoryApiAdapter", () => {
         expect(result.ok).toBe(true);
       });
 
+      it("skips containment for an EMPTY context, like the real handler", async () => {
+        // `[]` is truthy, so a naive check would reject every non-override row.
+        api.saveContextEquipmentIds = [];
+        const result = await api.createWorkoutVariation("w-1", {
+          name: "v",
+          exercises: [{ exerciseId: "ex-barbell", sortOrder: 0 }],
+        });
+        expect(result.ok).toBe(true);
+      });
+
       it("skips containment entirely when no context is set", async () => {
         api.saveContextEquipmentIds = null;
         const result = await api.createWorkoutVariation("w-1", {

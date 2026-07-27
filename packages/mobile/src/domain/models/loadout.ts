@@ -41,15 +41,18 @@ export type SavedGymInput = {
 };
 
 /**
- * `POST`/`PATCH /saved-gyms` answer **409** on a duplicate name (per user,
- * case- and whitespace-insensitive) and **400 UNKNOWN_EQUIPMENT_TYPE** naming the
- * offending ids. Both are recoverable in the picker, so they are modelled rather
- * than collapsed into a generic server error.
+ * `POST`/`PATCH /saved-gyms` answer **409 `SAVED_GYM_NAME_TAKEN`** on a duplicate
+ * name (per user, compared on `lower(btrim(name))`) and **400
+ * `UNKNOWN_EQUIPMENT_TYPE`** naming the offending ids. Both are recoverable in the
+ * picker, so both are branchable — via `LoadoutApiError.loadoutCode`, whose
+ * `LOADOUT_ERROR_CODES` list in `domain/ports/api.port.ts` is the SINGLE source of
+ * truth for every Loadout wire code.
+ *
+ * ⚠ There is deliberately no per-endpoint code union here any more. Three of them
+ * existed, none was the type of anything the adapter produced, and two carried
+ * repository result statuses (`duplicate_name`) that the handlers never serialise —
+ * so they read as a contract while documenting a fiction.
  */
-export type SavedGymErrorCode =
-  | "duplicate_name"
-  | "unknown_equipment"
-  | "not_found";
 
 // ─── Reasons (§ 7.2) ─────────────────────────────────────────────────────────
 
@@ -171,14 +174,6 @@ export type LoadoutPreviewInput = {
   readonly equipmentTypeIds?: readonly string[] | null;
 };
 
-/** Recoverable 400s from the preview, each with its own remedy in the flow. */
-export type LoadoutPreviewErrorCode =
-  | "EQUIPMENT_CONTEXT_REQUIRED"
-  | "PARENT_IS_A_VARIATION"
-  | "UNKNOWN_SAVED_GYM"
-  | "UNKNOWN_EQUIPMENT_TYPE"
-  | "EMPTY_EQUIPMENT_CONTEXT";
-
 // ─── Saving the reviewed plan (§ 7.1, AC-5.1) ────────────────────────────────
 
 /**
@@ -233,12 +228,6 @@ export type WorkoutVariationSummary = {
   readonly createdAt: string | null;
   readonly updatedAt: string | null;
 };
-
-export type CreateVariationErrorCode =
-  | "EXERCISE_NOT_VISIBLE"
-  | "EQUIPMENT_NOT_AVAILABLE"
-  | "PARENT_IS_A_VARIATION"
-  | "UNKNOWN_SAVED_GYM";
 
 // ─── Equipment-aware swap picker (§ 6.4, AC-4.2 / AC-4.4) ────────────────────
 
