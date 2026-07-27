@@ -11,23 +11,39 @@ say so and fix this file.
 
 ## Current state (2026-07-27)
 
-- `origin/main` = **`e2bc595`** (PR #321, Loadout Phase E, merged). Released to
-  production: **v1.8.0**.
-- **⚠ Production is one release behind `main`.** Open release PR
+- `origin/main` = **`1a7b956`** (PR #322, Loadout **Phase 1**, merged
+  2026-07-27 14:13 UTC, branch deleted). Released to production: **v1.8.0**.
+- **⚠ Production is one release behind `main`, and the gap is now much bigger
+  than migrations.** Open release PR
   **[#319](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/319)
-  (v1.9.0)** is the only thing that ships them. Merging it publishes the release;
-  the prod deploy then migrates and deploys. **The pending set is exactly Loadout
-  Phase 0's four migrations** — `20260720230030_data_sharing_consents.sql` also
-  shows in the diff but is ALREADY applied (present at tag `persistence-v1.8.0`);
-  only its comment header changed in #317, and `supabase db push` keys on version,
-  not content, so it will not re-run.
+  (v1.9.0)** is the only thing that ships it. Merging it publishes the release;
+  the prod deploy then migrates and deploys.
+  - **Migrations pending on prod: exactly Loadout Phase 0's four.**
+    `20260720230030_data_sharing_consents.sql` also shows in the diff but is
+    ALREADY applied (present at tag `persistence-v1.8.0`); only its comment header
+    changed in #317, and `supabase db push` keys on version, not content, so it
+    will not re-run. **Phase 1 added NO migration.**
+  - **⚠ #319 now also carries Loadout Phase 1's engine and its two new
+    endpoints** (`POST /workouts/:id/loadout/preview`,
+    `GET /exercises/substitutes`), plus Phase E's eval scripts. It stopped being
+    "the Phase 0 migration carrier" the moment #322 merged. Nothing on it is
+    user-reachable — no mobile surface calls either endpoint yet, and `loadout`
+    is gated on `premium_plus`, which is seeded `is_active = false` — but the
+    Lambda will be serving them.
+  - **⚠ Phase 1's model path needs Haiku 4.5 in the PRODUCTION Bedrock account.**
+    It is recorded as granted (Brad, 2026-07-26) but was NOT re-verified when
+    Phase 1 shipped — see § Ops / launch.
 - `premium_plus` / `loadout_access` **are** already on prod (verified present at
   tag `persistence-v1.8.0`). The tier row is deliberately `is_active = false`.
 - Feature state: coach mode complete; spec-19 Programs shipped; nutrition (incl.
   Snap AI) shipped; consent (spec-28) + read-audit shipped; coach↔client
-  offboarding shipped; **Loadout Phase 0 (data model) merged, Phase E (eval)
-  decided, Phase 1 (adaptation engine) on branch `claude/loadout-phase-1` —
-  Phase 2 (mobile) is next**.
+  offboarding shipped; **Loadout Phase 0 (data model), Phase E (eval) and
+  Phase 1 (adaptation engine) are ALL MERGED to `main`. Phase 2 (mobile athlete
+  flow, with the Phase 3 scan inside it) is next** — it needs the design handoff
+  at `~/Downloads/Any Gym/project/`.
+- **Loadout is BACKEND-COMPLETE for the single-workout athlete flow and has ZERO
+  user-facing surface.** Nothing in `packages/mobile` calls the preview or the
+  substitutes endpoint yet. Phase 2 is what makes the feature exist for a user.
 
 ## Verified facts
 
@@ -154,6 +170,37 @@ say so and fix this file.
 - **~30 real gym photos** — to turn E1's provisional go into a real one; ideally
   with Brad-confirmed ground-truth labels rather than Claude's.
 
+### Next slice — Loadout Phase 2 (mobile athlete flow)
+
+- **`tasks.md` T-2.1…T-2.10, with Phase 3 (the equipment scan, T-3.1…T-3.5)
+  landing in the SAME PR** so the first user-visible Loadout has the scan rather
+  than a checklist — unless Brad splits it (see his open sequencing decision).
+- **Needs the design handoff at `~/Downloads/Any Gym/project/`** (a stable,
+  deliberately uncommitted path — Brad confirmed 2026-07-26).
+- Phase 1's § "Landed in Phase 1 beyond the checklist" in `tasks.md` is where the
+  backend's real contract is recorded, including the untrusted-`note` render rule
+  and the `isUserOverride` requirement on the save path.
+- **Phase 3 corrections already known from E1** (do not re-derive):
+  `AI_EQUIPMENT_SCAN_MODEL_ID` must be **Opus-class**, not Haiku (T-E1.5);
+  `createWithRetry` is unusable for the scan and it needs ONE ~20 s attempt
+  (T-E1.6 — **the same variant the re-map's open checkpoint would need, so build
+  it once**); exclude `Bodyweight` from scan output and inject it server-side
+  (T-E1.7).
+
+### Data bugs — open, not blocking Phase 2's critical path
+
+- **T-E.10: `Leg Press` and `Leg Curl` carry `equipment_required = '{}'`** because
+  their seeded equipment names have no `equipment_types` row (`Leg Press Machine` /
+  `Leg Curl Machine`) and `seedExercises.ts`'s `resolve()` drops unmapped names
+  **silently**. Since `x @> '{}'` is always true, **a bands-only athlete keeps the
+  leg press** — in the seeded "Lower Body" and "Full Body Starter" workouts, i.e.
+  the first two a new account owns. Needs a data migration **and** a seeder guard
+  that fails loudly. It is not an engine bug, and it makes Loadout look broken on
+  the default workouts, so it wants doing before Phase 2 is device-demoed.
+- **T-E.11: `movement_type` is NULL for all 2281 seeded rows.** Only worth a
+  backfill if a deterministic-only engine is ever revisited (Phase 5); recorded so
+  the absence is not rediscovered.
+
 ### Ops / launch
 
 - **Verify Haiku 4.5 in the PRODUCTION Bedrock account before the Loadout launch
@@ -162,10 +209,12 @@ say so and fix this file.
   `ess-dev` and `ess-prod` SSO tokens were expired, which needs an interactive
   `aws sso login`. The check is
   `AWS_PROFILE=ess-prod aws bedrock-runtime invoke-model --model-id eu.anthropic.claude-haiku-4-5-20251001-v1:0 …`.
-- **Merge release PR #319** — see Current state; it is what puts Loadout Phase 0
-  on prod.
-- **PR #321** (`claude/loadout-phase-e`) — Loadout Phase E: the E2 bake-off, the E1
-  scan eval, and this ledger trim. Open; IB-swept.
+- **Merge release PR #319** — see Current state. It now ships Loadout Phase 0's
+  four migrations **AND** Phase 1's engine + two endpoints, not just the
+  migrations. Verify the prod Haiku 4.5 grant first (item above): after this
+  release the Lambda serves a model-backed route.
+- ~~**PR #321** (`claude/loadout-phase-e`)~~ — **MERGED** as `e2bc595`.
+- ~~**PR #322** (`claude/loadout-phase-1`)~~ — **MERGED** as `1a7b956`.
 - **Carried forward from the archived log, still open** (they lived in session
   entries rather than the head sections, so the trim would otherwise have buried
   them — all three also persist in `memory/MEMORY.md`): `POST /sessions/record` is
@@ -201,18 +250,40 @@ consent copy, privacy section and governing law · the OFF re-seed backfilling
 
 ## Last session
 
-**2026-07-27 — LOADOUT Phase 1 (adaptation engine + preview). Branch
-`claude/loadout-phase-1`, HEAD `af4c021` (4 commits). Backend only: no migration,
-no mobile, no scan endpoint. All of T-1.1…T-1.11.**
+**2026-07-27 — LOADOUT Phase 1 (adaptation engine + preview) — MERGED.
+PR [#322](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/322)
+squashed to `1a7b956`; branch `claude/loadout-phase-1` deleted. Backend only: no
+migration, no mobile, no scan endpoint. All of T-1.1…T-1.11 ticked in
+`tasks.md`.**
 
 - **The engine is the HYBRID D7 selected by measurement** (design § 6.0):
   deterministic § 6.2 shortlist (top 25/row) → model selection over that
   shortlist → model reasons. Stages 1, 3 and 4 stayed deterministic, so the model
   changes *which* exercise is picked, never *whether* the pick is legal.
-  New `application/loadout/engine/` — `rankSubstitutes` (pure § 6.2 weights),
-  `adaptWorkout` (partition / shortlist / stage-3 assembly), `remapModel` (the
-  forced-tool Bedrock adapter), `reasons`, `intensityMismatch`, `types`. Plus
-  `POST /workouts/:id/loadout/preview` and `GET /exercises/substitutes`.
+  New `microservices/core/src/application/loadout/engine/` —
+  `rankSubstitutes.ts` (pure § 6.2 weights), `adaptWorkout.ts` (partition /
+  shortlist / stage-3 assembly), `remapModel.ts` (the forced-tool Bedrock
+  adapter), `reasons.ts`, `intensityMismatch.ts`, `types.ts`. Plus
+  `loadout/preview/workoutLoadoutPreviewHandler.ts` and
+  `exercises/substitutes/exercisesSubstitutesHandler.ts`. New env in
+  `infra/api.ts`: `AI_LOADOUT_REMAP_MODEL_ID` (Haiku-class) and
+  `AI_LOADOUT_REMAP_DAILY_LIMIT` (**placeholder 30**). No IAM change needed —
+  the existing Bedrock wildcards cover the model id.
+
+  **The contract Phase 2 consumes** (so it need not be re-derived from code):
+  `POST /workouts/:id/loadout/preview` takes EXACTLY ONE of `savedGymId` or
+  `equipmentTypeIds` (both, or neither → 400 `EQUIPMENT_CONTEXT_REQUIRED`; both
+  keys with the unused one `null` is fine). It returns rows carrying
+  `status: kept|swapped|unresolved`, the parent's targets UNCHANGED, an
+  `exercise` display block, and `reason = { code, missingEquipment, matchedOn,
+  flags, note, selectedBy }`. **`code` drives the copy — the backend emits no UI
+  strings.** ⚠ **`reason.note` is UNTRUSTED model prose** (capped at 300 chars,
+  unpaired surrogates stripped): a stranger's PUBLIC workout is adaptable
+  (AC-1.2) and neither `workouts.name` nor `exercises.name` is length-bounded, so
+  **Phase 2 must render it as plain text — never markup, a link, or anything
+  actionable.** On the save path, the "doesn't fit your kit" acknowledgement MUST
+  set `isUserOverride: true` or the deliberate pick is rejected 400
+  `EQUIPMENT_NOT_AVAILABLE`.
 - **⚠ `GET /exercises/substitutes` tipped `packages/web`'s Eden treaty into
   TS2589, and it CANNOT be nested out of trouble.** It must precede the
   `/exercises/:id` matcher, so a late-mounting sub-app cannot hold it. TWO nesting
@@ -271,7 +342,9 @@ no mobile, no scan endpoint. All of T-1.1…T-1.11.**
 - **Gates:** prettier · typecheck 8/8 · lint 0-err · build 13/13 · test:unit 19/19
   (core 281 files / **3027 tests** / 98.37 % overall). Every changed file ≥ 90 % on
   lines, branches AND functions; the engine is 100 % lines / ≥ 97 % branches.
-  **35 + 8 + 5 mutations applied to the new guards, all caught.**
+  **48 mutations applied to the new guards, all caught.** All 5 CI checks green on
+  #322 before merge; the staging deploy fired on merge (Lambda-only — Phase 1 has
+  no migration).
 
 
 **2026-07-26 (cont. 3) — LOADOUT Phase E eval spike. D7 DECIDED BY EVIDENCE:
