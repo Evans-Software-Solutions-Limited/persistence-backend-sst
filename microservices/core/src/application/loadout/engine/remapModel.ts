@@ -69,8 +69,16 @@ export const MAX_REASON_LENGTH = 300;
  * the prose (and therefore where the cut lands) is steerable.
  */
 export function capReason(reason: string): string {
-  if (reason.length <= MAX_REASON_LENGTH) return reason;
-  const cut = reason.slice(0, MAX_REASON_LENGTH);
+  // Strip surrogates that were ALREADY unpaired in the model's own string, not
+  // just ones the cut would create. Bedrock can return a `"\udXXX"` escape in the
+  // tool payload, and such a string fails the same jsonb insert — so trimming
+  // only the split case would leave the docstring's guarantee untrue.
+  const paired = reason.replace(
+    /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g,
+    "",
+  );
+  if (paired.length <= MAX_REASON_LENGTH) return paired;
+  const cut = paired.slice(0, MAX_REASON_LENGTH);
   const last = cut.charCodeAt(cut.length - 1);
   const isHighSurrogate = last >= 0xd800 && last <= 0xdbff;
   return isHighSurrogate ? cut.slice(0, -1) : cut;
@@ -345,9 +353,16 @@ export async function selectSubstitutes(
     // truncation guard below then converts that into a permanent 422: the workout
     // is un-adaptable, and because the usage row is written for every inference
     // that reached the provider, each retry costs the user one of their daily
-    // adaptations. ~80 output tokens per row is comfortable for an id plus one
-    // sentence (E2 measured 120 output tokens across a 3-swap plan).
-    max_tokens: Math.min(8192, 1024 + 80 * swapRowCount),
+    // adaptations.
+    //
+    // Sized off the WORST case per row and floored at the budget it replaces: a
+    // max-length `reason` is 300 chars (~75 tokens) plus a 36-char uuid and JSON
+    // scaffolding, so ~120 tokens/row. E2 measured ~40, so this is generous —
+    // which costs nothing, because output tokens are billed on use, not on the
+    // ceiling. The base matters as much as the slope: a per-row-only formula would
+    // have given every realistic plan LESS headroom than the fixed 4096 it
+    // replaced, narrowing the tail while making the common case worse.
+    max_tokens: Math.min(16_384, 4096 + 120 * swapRowCount),
     messages: [
       {
         role: "user",

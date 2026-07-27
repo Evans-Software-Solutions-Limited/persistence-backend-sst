@@ -881,8 +881,13 @@ describe("assembleAdaptedPlan — a repair must not steal a later row's valid pi
     expect(adapted.rows[0].reason.selectedBy).toBe("ranker");
   });
 
-  it("leaves the earlier row unresolved rather than taking the reserved pick", () => {
-    // Only one candidate exists and the model claimed it for row 1.
+  it("resolves a genuine two-rows-one-candidate tie in plan order", () => {
+    // Only one candidate exists and the model claimed it for row 1, so SOMETHING
+    // must go unresolved — the reservation cannot conjure a second exercise. The
+    // last-resort pass gives it to the earlier row, which is a deliberate
+    // tie-break rather than a preference: the filled-row count is identical either
+    // way, and the alternative (holding the pick for row 1) is what produced the
+    // "reports no_candidate when a candidate existed" defect in the general case.
     const plan = partitionPlan([row(0, srcA), row(1, srcB)], [DUMBBELL]);
     const adapted = assemble({
       plan,
@@ -893,9 +898,11 @@ describe("assembleAdaptedPlan — a repair must not steal a later row's valid pi
       equipmentTypeIds: [DUMBBELL],
     });
 
-    expect(adapted.rows[0].status).toBe("unresolved");
-    expect(adapted.rows[1].exerciseId).toBe("x");
-    expect(adapted.rows[1].reason.selectedBy).toBe("model");
+    expect(adapted.rows[0].exerciseId).toBe("x");
+    expect(adapted.rows[0].reason.selectedBy).toBe("ranker");
+    expect(adapted.rows[1].status).toBe("unresolved");
+    // Exactly one hole either way — the reservation never invents capacity.
+    expect(adapted.meta.unresolvedCount).toBe(1);
   });
 
   it("does not reserve a pick that would be rejected anyway", () => {
@@ -962,5 +969,99 @@ describe("assembleAdaptedPlan — a KEPT row's selection reserves nothing", () =
     expect(adapted.rows[0].exerciseId).toBe("kept");
     expect(adapted.rows[1].exerciseId).toBe("wanted");
     expect(adapted.rows[1].reason.selectedBy).toBe("ranker");
+  });
+});
+
+describe("assembleAdaptedPlan — a reservation must not create a hole", () => {
+  it("takes a CLAIMED candidate as a last resort rather than going unresolved", () => {
+    // The reservation's failure mode, found by the closed verification pass: when
+    // an earlier row's whole shortlist is claimed by later rows, reserving without
+    // a fallback trades a filled row for a hole — and reports `no_candidate` for a
+    // row that demonstrably had a legal candidate. Easy to reach, because the
+    // ranker hard-filters on primary-muscle overlap so rows get different
+    // shortlist SETS.
+    const chestSrc = ex({
+      id: "chest-src",
+      name: "Barbell Bench",
+      primaryMuscles: [CHEST],
+      equipmentRequired: [BARBELL],
+    });
+    const legSrc = ex({
+      id: "leg-src",
+      name: "Barbell Squat",
+      primaryMuscles: [LEGS],
+      equipmentRequired: [BARBELL],
+    });
+    // `both` is the ONLY candidate for the chest row, and also a candidate for the
+    // leg row — which the model claimed.
+    const both = ex({
+      id: "both",
+      name: "AAA Hybrid",
+      primaryMuscles: [CHEST, LEGS],
+      equipmentRequired: [DUMBBELL],
+    });
+    const legOnly = ex({
+      id: "leg-only",
+      name: "BBB Dumbbell Squat",
+      primaryMuscles: [LEGS],
+      equipmentRequired: [DUMBBELL],
+    });
+
+    const plan = partitionPlan([row(0, chestSrc), row(1, legSrc)], [DUMBBELL]);
+    const adapted = assemble({
+      plan,
+      shortlistByRow: shortlistPerRow(plan, [both, legOnly], noLogs),
+      selections: new Map([
+        [1, { rowKey: 1, exerciseId: "both", reason: "hybrid fits legs" }],
+      ]),
+      equipmentTypeIds: [DUMBBELL],
+    });
+
+    // Both rows filled: the chest row takes the claimed candidate as a last
+    // resort, and the leg row repairs to its own alternative.
+    expect(adapted.rows[0].status).toBe("swapped");
+    expect(adapted.rows[0].exerciseId).toBe("both");
+    expect(adapted.rows[1].status).toBe("swapped");
+    expect(adapted.rows[1].exerciseId).toBe("leg-only");
+    expect(adapted.meta.unresolvedCount).toBe(0);
+  });
+
+  it("still prefers an UNCLAIMED candidate when one exists", () => {
+    // The first pass must keep working, or this reopens the cascade sweep 2 found.
+    const srcA = ex({ id: "srcA", name: "A", equipmentRequired: [BARBELL] });
+    const srcB = ex({ id: "srcB", name: "B", equipmentRequired: [BARBELL] });
+    const claimedPick = ex({
+      id: "x",
+      name: "AAA X",
+      equipmentRequired: [DUMBBELL],
+    });
+    const spare = ex({ id: "y", name: "BBB Y", equipmentRequired: [DUMBBELL] });
+
+    const plan = partitionPlan([row(0, srcA), row(1, srcB)], [DUMBBELL]);
+    const adapted = assemble({
+      plan,
+      shortlistByRow: shortlistPerRow(plan, [claimedPick, spare], noLogs),
+      selections: new Map([
+        [1, { rowKey: 1, exerciseId: "x", reason: "x fits row B" }],
+      ]),
+      equipmentTypeIds: [DUMBBELL],
+    });
+
+    expect(adapted.rows[0].exerciseId).toBe("y");
+    expect(adapted.rows[1].exerciseId).toBe("x");
+    expect(adapted.rows[1].reason.selectedBy).toBe("model");
+  });
+
+  it("only reports no_candidate when the shortlist really is exhausted", () => {
+    const srcA = ex({ id: "srcA", name: "A", equipmentRequired: [BARBELL] });
+    const plan = partitionPlan([row(0, srcA)], [DUMBBELL]);
+
+    const adapted = assemble({
+      plan,
+      shortlistByRow: shortlistPerRow(plan, [], noLogs),
+      equipmentTypeIds: [DUMBBELL],
+    });
+
+    expect(adapted.rows[0].reason.code).toBe("no_candidate");
   });
 });

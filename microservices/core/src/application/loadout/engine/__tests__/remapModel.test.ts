@@ -470,6 +470,25 @@ describe("capReason", () => {
     expect(capReason("x".repeat(1000))).toHaveLength(MAX_REASON_LENGTH);
   });
 
+  it("strips a lone surrogate the model itself sent, not just one the cut creates", () => {
+    // Bedrock can return a `"\udXXX"` escape in the tool payload. Such a string
+    // fails the same jsonb insert, so capping only the split case would leave this
+    // function's stated guarantee untrue.
+    const withOrphan = "hi \uD83D there";
+    const capped = capReason(withOrphan);
+
+    expect(capped).toBe("hi  there");
+    expect(capped).toBe(JSON.parse(JSON.stringify(capped)));
+  });
+
+  it("strips a lone LOW surrogate too", () => {
+    expect(capReason("a\uDC00b")).toBe("ab");
+  });
+
+  it("keeps well-formed astral characters intact", () => {
+    expect(capReason("lift 😀 heavy")).toBe("lift 😀 heavy");
+  });
+
   it("never leaves a LONE SURROGATE at the cut", () => {
     // A bare `slice()` splits a surrogate pair here. `JSON.stringify` escapes the
     // orphan happily, so the preview 200s — and then Postgres rejects the unpaired
@@ -527,7 +546,10 @@ describe("selectSubstitutes — output budget", () => {
     );
 
     expect(big.params.max_tokens).toBeGreaterThan(small.params.max_tokens);
-    expect(big.params.max_tokens).toBeLessThanOrEqual(8192);
+    expect(big.params.max_tokens).toBeLessThanOrEqual(16_384);
+    // …and never LESS headroom than the fixed 4096 this replaced, or the fix would
+    // have narrowed the unbounded tail by making every realistic plan worse.
+    expect(small.params.max_tokens).toBeGreaterThanOrEqual(4096);
   });
 
   it("stays bounded for an absurd plan", async () => {
@@ -547,6 +569,6 @@ describe("selectSubstitutes — output budget", () => {
       { client: fakeClient(toolResponse([]), capture) },
     );
 
-    expect(capture.params.max_tokens).toBe(8192);
+    expect(capture.params.max_tokens).toBe(16_384);
   });
 });

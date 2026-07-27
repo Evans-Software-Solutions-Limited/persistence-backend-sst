@@ -322,17 +322,32 @@ export function assembleAdaptedPlan(input: {
     }
 
     if (!chosen) {
-      // Skips `claimed` as well as `used`: a repair for THIS row must not take an
-      // id a later row was validly given. A row that reaches this branch never has
-      // its own pick in `claimed` — a claim requires the pick to be legal and
-      // unused, which is exactly the case that takes the model path above — so no
-      // self-exclusion is needed.
-      chosen = rowShortlist.find(
-        (entry) =>
-          !used.has(entry.candidate.id) &&
-          !claimed.has(entry.candidate.id) &&
-          isLegal(entry.candidate),
-      )?.candidate;
+      const usable = (entry: RankedCandidate): boolean =>
+        !used.has(entry.candidate.id) && isLegal(entry.candidate);
+
+      // Two passes, and the order is the whole point.
+      //
+      // FIRST, prefer an id no later row was validly given — that is what stops a
+      // repair for this row from cascading into a second repair downstream.
+      //
+      // THEN, if this row has no unclaimed option at all, take a claimed one
+      // rather than emitting a hole. Without the second pass the reservation
+      // trades a filled row for an unresolved one whenever an earlier row's whole
+      // shortlist is claimed by later rows — easy to hit, because the ranker
+      // hard-filters on primary-muscle overlap so rows get different shortlist
+      // SETS, not just different orderings. Worse, the row would then be reported
+      // `no_candidate` when a legal candidate demonstrably existed.
+      //
+      // This strictly dominates both alternatives: never fewer filled rows than
+      // skipping the reservation entirely, and never fewer than reserving without
+      // a fallback. The later row simply repairs in turn.
+      //
+      // (Doing better than greedy in-order assignment needs real bipartite
+      // matching over rows × shortlists. Not warranted for a case this narrow.)
+      chosen =
+        rowShortlist.find(
+          (entry) => usable(entry) && !claimed.has(entry.candidate.id),
+        )?.candidate ?? rowShortlist.find(usable)?.candidate;
       selectedBy = "ranker";
     }
 
