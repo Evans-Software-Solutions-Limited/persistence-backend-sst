@@ -2,7 +2,10 @@
 
 **Canonical state ledger: [`./STATE.md`](./STATE.md) — read at session
 start, update before ending any session.** Milestone status, open
-failures, and parked tasks live there, not here.
+failures, and parked tasks live there, not here. Sessions older than the
+four most recent are in [`./STATE-ARCHIVE.md`](./STATE-ARCHIVE.md) — read
+that only when you need the history behind a specific decision, and treat
+`STATE.md` as authoritative where they disagree.
 
 ## Current execution model
 
