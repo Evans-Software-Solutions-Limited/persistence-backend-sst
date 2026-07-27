@@ -32,17 +32,16 @@ const ENDPOINT = "/workouts/:id/loadout/preview";
 /**
  * Daily per-user ceiling on model-backed re-maps (AC-10.2, T-1.9).
  *
- * ⚠⚠ **THE NUMBER BELOW IS A PLACEHOLDER, NOT A DECISION.** AC-10.2 deliberately
- * proposes no value and it is an OPEN Brad checkpoint. The mechanism is what this
- * phase ships; the value needs a deliberate call because the failure mode is bad
- * in a specific way — hitting a cap mid-gym, mid-session, with a paid feature.
+ * **30/day, DECIDED by Brad 2026-07-27.** It was a placeholder while AC-10.2 was
+ * open; it is now the agreed value, so do not treat it as provisional.
  *
- * The economics, so the call can be made on numbers: E2 measured **$0.0057 per
- * adaptation**. Three a day is ~$0.51/user/month against £29.99; even 20/day fully
- * consumed is ~$3.43/month. This is abuse control, not unit economics — which
- * argues for a generous number. 30 matches the precedent for the other
- * Haiku-class endpoint (`AI_TEXT_DAILY_LIMIT`) and is set here so the guard is
- * never absent, not because 30 was chosen.
+ * The economics behind the call: E2 measured **$0.0057 per adaptation**. Three a
+ * day is ~$0.51/user/month against £29.99, and 30/day fully consumed by an abuser
+ * is ~$5.13/month — comfortable. So this is abuse control, not unit economics,
+ * which is what argued for a generous number: the bad failure mode is a real
+ * athlete hitting the cap mid-session, and 30 adaptations in one day is far beyond
+ * plausible human use. It also matches `AI_TEXT_DAILY_LIMIT`, the other
+ * Haiku-class endpoint.
  *
  * Fail-safe parse: a mis-set env var must not silently disable the guard, so
  * anything non-finite or non-positive falls back to the default (#156 pattern).
@@ -92,8 +91,8 @@ const AI_LOADOUT_REMAP_DAILY_LIMIT =
  * ranker output under a Premium+ badge is precisely what the bake-off rejected: it
  * lost 4-50 on blind preference and produced equipment-legal but unshippable
  * swaps (Barbell Deadlift → Atlas Stones in a bands-only context). A visible
- * outage is a better product than a quietly worse plan. Raised for Brad in the PR
- * body rather than treated as settled.
+ * outage is a better product than a quietly worse plan. **Confirmed by Brad
+ * 2026-07-27** — this is the agreed behaviour, not an open question.
  */
 export const workoutLoadoutPreviewHandler = new Elysia()
   .derive(async ({ headers }) => ({

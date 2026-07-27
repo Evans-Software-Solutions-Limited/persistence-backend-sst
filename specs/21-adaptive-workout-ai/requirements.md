@@ -400,9 +400,13 @@ As a user mid-flow, I can tell Loadout what kit is available in three ways.
   (`429 ai_daily_limit`, usage rows for actual inferences only, fail-safe env
   parse). Measured cost is $0.0057 per adaptation — ~$0.51/user/month at three a
   day — so the ceiling is an abuse control, not a unit-economics control.
-  ⚠ **Brad checkpoint: the number is undecided and deliberately not proposed
-  here.** Hitting a cap mid-gym is a bad failure (§ Eval spike), so this wants a
-  deliberate call rather than a default copied from Mealprint.
+  **DECIDED 2026-07-27 (Brad): 30/day.** At $0.0057 per adaptation that is
+  ~$5.13/user/month if an abuser consumes the whole allowance, against £29.99 — so
+  the cap is abuse control, not unit economics, and it is deliberately generous
+  because the bad failure is a real athlete hitting it mid-session. 30 adaptations
+  in one day is far beyond plausible human use, and it matches
+  `AI_TEXT_DAILY_LIMIT`, the other Haiku-class endpoint. Shipped in
+  `AI_LOADOUT_REMAP_DAILY_LIMIT`.
 - **AC-10.3** Programme-level adaptation (US-8) runs as an **async job**, not a
   synchronous request — at 2.60 s per workout the 120-workout cap is ~5 minutes,
   far past the 30 s API Gateway ceiling (`design.md` § 7.3, revised 2026-07-26).
