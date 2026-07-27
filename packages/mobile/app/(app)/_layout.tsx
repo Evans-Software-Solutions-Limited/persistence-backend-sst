@@ -111,6 +111,34 @@ export default function AppLayout() {
         <Stack.Screen name="profile/help" options={{ headerShown: false }} />
         <Stack.Screen name="profile/contact" options={{ headerShown: false }} />
         <Stack.Screen name="profile/terms" options={{ headerShown: false }} />
+        {/*
+          Loadout saved-gym management (spec-21 T-2.9, AC-7.2). Owns its own
+          <HeaderBar>, so the native header stays off like every other
+          custom-chrome screen.
+        */}
+        <Stack.Screen
+          name="profile/saved-gyms"
+          options={{ headerShown: false }}
+        />
+        {/*
+          Loadout's athlete flow (spec-21 Phase 2/3).
+
+          `fullScreenModal` keeps this focused, multi-step task isolated while
+          workout details remain ordinary pushed pages. Earlier root-mounted
+          overlay and RN Modal shapes both failed on device; keeping the flow as
+          a route gives it its own react-native-screens view controller and
+          preserves the workout beneath it in stack history.
+
+          Owns its own <HeaderBar> per step, so the native header stays off.
+        */}
+        <Stack.Screen
+          name="loadout"
+          options={{
+            presentation: "fullScreenModal",
+            headerShown: false,
+            gestureEnabled: false,
+          }}
+        />
         <Stack.Screen
           name="exercises/[id]/index"
           options={{ headerShown: false }}
@@ -149,7 +177,6 @@ export default function AppLayout() {
           name="workouts/[id]/index"
           options={{
             title: "Workout",
-            presentation: "modal",
             headerShown: false,
           }}
         />

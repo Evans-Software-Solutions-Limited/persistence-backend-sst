@@ -48,6 +48,8 @@ const workoutRepositoryMocks = {
   listAdaptationRows: vi.fn(async () => []),
   listVariations: vi.fn(async () => VARIATIONS_MARKER),
   createVariation: vi.fn(async () => DETAIL_MARKER),
+  replaceVariation: vi.fn(async () => DETAIL_MARKER),
+  listExerciseIdsForWorkout: vi.fn(async () => []),
   getById: vi.fn(async () => DETAIL_MARKER),
   getHistory: vi.fn(async () => null),
   list: vi.fn(),
@@ -139,6 +141,7 @@ describe("loadoutRoutes mounting", () => {
     ["DELETE", `/saved-gyms/${WO_ID}`],
     ["GET", `/workouts/${WO_ID}/variations`],
     ["POST", `/workouts/${WO_ID}/variations`],
+    ["PUT", `/workouts/${WO_ID}/variations/${WO_ID}`],
     // Phase 1.
     ["POST", `/workouts/${WO_ID}/loadout/preview`],
   ])("registers %s %s", async (method, path) => {
@@ -150,9 +153,11 @@ describe("loadoutRoutes mounting", () => {
           ? { savedGymId: WO_ID }
           : method === "POST"
             ? { name: "Variation", exercises: [] }
-            : method === "PATCH"
-              ? { name: "Renamed" }
-              : undefined;
+            : method === "PUT"
+              ? { name: "Variation", exercises: [] }
+              : method === "PATCH"
+                ? { name: "Renamed" }
+                : undefined;
 
     const res = await loadoutRoutes.handle(authed(path, method, body));
     expect(res.status).not.toBe(404);

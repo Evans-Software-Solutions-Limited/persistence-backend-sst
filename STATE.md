@@ -22,6 +22,37 @@ say so and fix this file.
   or mobile rebuild is required. Verified with a sensitive repository
   regression test, 71 focused tests, prettier, forced typecheck, lint, build,
   and forced full unit suite (19/19 tasks).
+- **⚠ Loadout Phase 2's SCREENS are built but NOT merged.** PR
+  **[#328](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/328)**,
+  branch `claude/loadout-phase-2-screens` (6 commits off `dfeed666`, head
+  `a3e9248`). **All 5 CI checks green**; 2 Inspector Brad passes clean;
+  **NOT device-verified** — that is the review Brad asked for and it needs an EAS
+  dev build against staging. The PR body carries a ~40-item checklist. This is the
+  first user-reachable Loadout surface.
+  - ⚠ An entitled test account needs a RevenueCat **promotional entitlement** —
+    `premium_plus` is still `is_active = false`, so there is no purchasable card.
+- **2026-07-30 follow-ups are implemented in the branch working tree, not yet
+  committed or pushed.** Saved setup detail now offers **Re-adapt** against the
+  ROOT workout; `PUT /workouts/:parentId/variations/:variationId` atomically
+  replaces the owned variation's metadata + exercise rows while preserving its
+  id, `created_at` and session history. Every save freezes the server-resolved
+  equipment snapshot. Variation summaries include the linked gym's current kit,
+  so exact set comparison can flag equipment additions/removals (order and
+  duplicates ignored). Review exercise names push the normal exercise-detail
+  page without losing flow state. Workout detail itself is now a normal pushed
+  page; temporary filters, create/edit and active-session steps remain
+  intentionally modal.
+  - **Gates:** typecheck 8/8, build 13/13, full test 19/19 (mobile 467 suites /
+    5,561 tests), focused backend 128 tests and focused mobile 256 tests. New
+    replacement handler: 100% lines/statements/functions, 97.77% branches.
+    Changed-file Prettier + ESLint are clean. Whole-tree Prettier/lint are
+    blocked only by unrelated untracked `.agents/skills/sst-resource-change/SKILL.md`
+    and `microservices/core/probe-steps.ts` (four `no-explicit-any` errors).
+  - **Visual pass:** current staging simulator workout detail remains correctly
+    laid out as a pushed page. Re-adapt, gym-change and review drill-in states
+    are covered by presenter/container render tests; the OS custom-scheme
+    confirmation prevented non-interactive navigation into the saved variation
+    for an additional device screenshot.
 - **Last CODE change on `origin/main` = `f0e8929`** (PR #326, Loadout **Phase 3
   equipment scan + Phase 2 foundation**, merged 2026-07-27, branch deleted). Released
   to production: **v1.8.0**.
@@ -58,8 +89,12 @@ say so and fix this file.
   Phase 1 (adaptation engine) are ALL MERGED to `main`. Phase 2 (mobile athlete
   flow, with the Phase 3 scan inside it) is next** — it needs the design handoff
   at `~/Downloads/Any Gym/project/`.
-- **Loadout is BACKEND-COMPLETE for the single-workout athlete flow, INCLUDING the
-  equipment scan, and still has ZERO user-facing surface.** Phase 2's foundation
+- **Loadout's athlete flow is now COMPLETE end to end on the branch above** —
+  entry card, collect, scan, manual picker, adapting, review with per-row swap,
+  save / save-and-start, success, and saved-gym management in Profile. What
+  remains before it is real: merge, and a device pass.
+- **On `main`, Loadout is BACKEND-COMPLETE for the single-workout athlete flow,
+  INCLUDING the equipment scan, and still has ZERO user-facing surface.** Phase 2's foundation
   (ports/adapters, the pure review-copy + save-path logic, the step machine) is
   **MERGED to `main`** (#326), but **no screen exists**, so nothing in
   `packages/mobile` yet calls the preview, the substitutes feed or the scan. The
@@ -103,6 +138,19 @@ say so and fix this file.
 - **The staging deploy runs `prettier --check .` over the whole tree**; the PR
   prettier job is change-scoped only. A green PR does not mean a green deploy.
 - **`bun run test:unit` is NOT a typecheck.** Run `tsc` separately, always.
+- **Never interpolate a JS array before a `::uuid[]` cast in a Drizzle `sql`
+  template.** ``sql`${ids}::uuid[]` `` renders `($1, $2)` — a Postgres ROW
+  constructor — and dies at execution: `cannot cast type record to uuid[]` with
+  2+ ids, `malformed array literal` with one. Use the `uuidArray()` helper in
+  `exerciseRepository.ts` (`ARRAY[$1, $2]::uuid[]`, still one placeholder per
+  id). This 500'd Loadout's preview on device 2026-07-28, and two of the four
+  call sites had carried the bug since 2026-04-20 without anyone noticing —
+  the mobile exercise library filters locally from its SQLite cache and never
+  sends `targeted_muscles_any`/`equipment_any`, so nothing had executed them.
+  **A green render test is not proof:** `exerciseRepositoryLoadout.test.ts` had
+  rendered the SQL via `PgDialect` and asserted the *broken* shape, pinning it.
+  `exerciseRepositoryArrayPredicates.test.ts` now bans the paren form
+  mechanically and exercises both arities.
 - **`equipment_types.description` is in `schema.ts` but NOT in the live DB.** A
   bare `select()` 500s. Project columns explicitly. Same class of drift:
   `listActive()` on `subscription_tiers` must omit young columns.
@@ -126,6 +174,29 @@ say so and fix this file.
   different bind slots → Postgres 42803. Group by ordinal.
 - **The mocked-`getDb` blind spot**: unit tests mock the DB, so SQL bugs ship
   green. Render the real `WHERE`/projection via `PgDialect` in a test.
+- **⚠ A literal U+0000 in a `.tsx` file passes EVERY gate and breaks git.**
+  Prettier, ESLint, Babel and `tsc` all accept it; git's binary heuristic then
+  reports the file as `Bin 0 -> N bytes`, GitHub renders it as "Binary file not
+  shown", and it cannot be 3-way merged or rebased. One reached a commit on the
+  Phase 2 branch (an array-separator string) and only Inspector Brad caught it.
+  Check with `file <path>` — "data" instead of "text" is the tell.
+- **⚠ A NEW heavy container test suite needs `jest.setTimeout(15_000)`/`(20_000)`,
+  and CI is where you find out.** Nine existing suites already set it
+  (`ProfileContainer`, `ExerciseListContainer`, `SubscriptionSelectionContainer`…)
+  because a case that mounts the real Tamagui provider + a React Query client +
+  gorhom sheets costs ~200 ms locally and ~7× that on a runner sharing itself with
+  459 other suites — past jest's 5 s DEFAULT. **The tell is the SUITE's duration,
+  not "it passes in isolation"**: Loadout Phase 2's flow suite was 7.6 s locally
+  and 50.76 s on CI. Two red runs were spent chasing individual tests before
+  reading that number.
+- **⚠ Testing Library's `fireEvent.press` honours `accessibilityState.disabled`,
+  the device honours the `disabled` prop.** So a component carrying both — which
+  it should — will always report one of them as a SURVIVING mutant, because each
+  covers for the other in exactly one environment. Annotate rather than chase, and
+  do not "simplify" by deleting one.
+- **A store action named `use*` trips `react-hooks/rules-of-hooks` at every call
+  site** ("cannot be called inside a callback"). `loadout-flow`'s were renamed
+  `selectGym` / `selectEquipmentIds` for this. Don't name zustand actions `useX`.
 - **Worktree cwd drifts mid-session** and edits land on the wrong branch. Prefix
   every tool path with the worktree path; re-check `pwd`. Never `git checkout --`
   a file with uncommitted work.
@@ -160,6 +231,18 @@ say so and fix this file.
 - **Cap Inspector Brad at two sweeps + one CLOSED verification pass** ("confirm
   these N items, findings only"). Five open-ended sweeps on one PR burned a large
   share of a context window.
+- **"Passes in isolation" diagnoses nothing on its own.** It is true of a
+  load-sensitive assertion, a suite over its time budget, AND a genuine race —
+  so it cannot distinguish them, and treating it as an all-clear cost two red CI
+  runs on the Phase 2 PR. Both real causes were only visible in numbers next to
+  it: a two-round-trip chain racing `waitFor`'s 1 s default (which was hiding a
+  real UX wart — a deleted row reappearing until the server answered), and a
+  suite at 50 s on CI versus 7.6 s locally.
+- **A mutation surviving has three possible causes, and only one is a test gap.**
+  Either the test is missing (write it), or the branch is genuinely dead (delete
+  it), or two layers legitimately guard different channels (annotate it). The
+  Phase 2 sweep hit all three; guessing wrong in either direction costs real
+  quality — a test that cannot fail, or a deleted safety net.
 - **Ask recon agents for conclusions with `file:line` pointers**, not quoted code.
 
 ## Open items
@@ -299,23 +382,88 @@ Actions, in order of value:
   lands on measured ground first? (`requirements.md` § Open sequencing decision.)
 - **~30 real gym photos** — to turn E1's provisional go into a real one; ideally
   with Brad-confirmed ground-truth labels rather than Claude's.
+- **A "Gym" tab inside Train, alongside Workouts and Exercises** — Brad's idea
+  from the 2026-07-28 device run, so setups can be created and curated up front
+  rather than only mid-flow. **Explicitly NOT folded into the Phase 2 branch**
+  ("I don't need it folded in here, but it's worth keeping an eye on"). It
+  widens AC-7.2, which puts gym management under Settings/Profile, so it needs
+  its own slice and a call on whether it replaces or complements that list.
 
-### Next slice — Loadout Phase 2 (mobile athlete flow)
+### Loadout Phase 2's screens — BUILT, on a branch, awaiting merge + device pass
 
-- **`tasks.md` T-2.1…T-2.10, with Phase 3 (the equipment scan, T-3.1…T-3.5)
-  landing in the SAME PR** so the first user-visible Loadout has the scan rather
-  than a checklist — unless Brad splits it (see his open sequencing decision).
-- **Needs the design handoff at `~/Downloads/Any Gym/project/`** (a stable,
-  deliberately uncommitted path — Brad confirmed 2026-07-26).
-- Phase 1's § "Landed in Phase 1 beyond the checklist" in `tasks.md` is where the
-  backend's real contract is recorded, including the untrusted-`note` render rule
-  and the `isUserOverride` requirement on the save path.
-- **Phase 3 corrections already known from E1** (do not re-derive):
-  `AI_EQUIPMENT_SCAN_MODEL_ID` must be **Opus-class**, not Haiku (T-E1.5);
-  `createWithRetry` is unusable for the scan and it needs ONE ~20 s attempt
-  (T-E1.6 — **the same variant the re-map's open checkpoint would need, so build
-  it once**); exclude `Bodyweight` from scan output and inject it server-side
-  (T-E1.7).
+Branch `claude/loadout-phase-2-screens`, 3 commits off `dfeed666`. T-2.2…T-2.9,
+T-3.4 and T-3.5's mobile half are all ticked in `tasks.md`, whose
+§ "Landed in Phase 2's screens beyond the checklist" holds the architecture
+decisions. Do not re-derive them; the short version:
+
+- The flow is the **`/(app)/loadout` route** (`fullScreenModal`); the store is
+  the STEP machine, not the navigation. The swap/scan sheets are siblings of the
+  step inside that route so they layer above it. ⚠ Two earlier shapes were tried
+  ON DEVICE and both broke — an absolute View sibling of the Stack rendered
+  *behind* the workout detail (which is itself `presentation: "modal"`), and
+  wrapping it in an RN `<Modal>` was worse: it froze the screen with an
+  invisible presented modal eating touches. Do not "simplify" it back.
+- `adapting` is bound to the request; the prototype's 1700 ms timer is absent.
+- `others` is the incompatible list **only when a kit context was supplied**.
+- The swap sheet's containment context is **`preview.equipmentTypeIds`** (the
+  server-resolved kit), not the client's saved-gym row.
+- **No taster meter** and **no price literal** — the upsell reads the catalog and
+  renders correctly with no price, which is the state until `premium_plus` goes
+  active.
+
+**⚠ The one recorded follow-up: `/subscriptions/me` does not project
+`loadout_access`,** so `useLoadoutGate` mirrors the migration's tier set
+client-side (the 402 remains the real gate). Adding the column to
+`subscriptionRepository.findForUser` + `MySubscription` + the mobile mirror is a
+~4-line change and retires `TIER_GRANTS_LOADOUT`. Left out only because that
+slice was mobile-only.
+
+**⚠ BLOCKED ON PR #332, which is a separate branch.** Brad's device run hit a
+500 behind "Couldn't adapt this workout": the `${array}::uuid[]` bug above, in
+`ExerciseRepository.listAdaptationCandidates`. The fix was split out to
+`claude/fix-uuid-array-predicates` (PR #332) at Brad's request so it can land
+without waiting on this review — **this branch stays mobile-only.** Loadout
+cannot work on device until #332 is merged AND staging is redeployed
+(`deploy-staging.yml` accepts a `workflow_dispatch`).
+
+**Also changed off the back of that run:** the "Save this gym for next time"
+toggle now creates the gym when the user COMMITS the kit, not when the variation
+saves. It used to be contingent on the adaptation succeeding, so a 503 / 429 /
+dropped connection lost the named kit and every ticked chip. `save()` awaits the
+in-flight create rather than racing it into a 409.
+
+**Still to do on this branch:** device-verify on an EAS dev build against
+staging using the PR checklist, then merge. Gates green
+(prettier / typecheck 8/8 / lint 0-err / build 13/13 / test:unit 19/19),
+2 IB passes clean — but the IB sweeps predate the backend fix and the
+route conversion, so **one more sweep is owed before the PR**.
+
+**⚠ The safe-area bug and the trap inside it — FIXED, and worth reading before
+touching any inset in this app.** Brad's second screenshot showed the collect
+step's header flush against the status bar, its title overlapping the clock — on
+the same `LoadoutScaffold` that had rendered correctly inset one run earlier.
+
+**`SafeAreaView` from `react-native-safe-area-context` is a purely NATIVE view
+and never reads `SafeAreaInsetsContext`.** It measures its own window. That is
+why every other screen in this app works despite there being **no
+`SafeAreaProvider` mounted anywhere** — and why this route did not: it is a
+`fullScreenModal`, which react-native-screens presents as its own view
+controller, and the native measurement there came back zero. Intermittently,
+which is the signature of a measurement race.
+
+So adding a provider alone would have fixed NOTHING. The fix is both halves:
+a `SafeAreaProvider initialMetrics={initialWindowMetrics}` on the route, and
+`LoadoutScaffold` / `LoadoutSavedStep` switched to `useSafeAreaInsets()`, which
+is the API that actually reads it. `SavedGymsPresenter` deliberately keeps
+`SafeAreaView` — it is an ordinary Stack screen, outside that provider, where the
+native path works.
+
+**Still open, app-wide:** with no root provider, every `SafeAreaInsetsContext`
+consumer OUTSIDE the Loadout route still reads zero — including `BottomSheet`
+(`BottomSheet.tsx:96` documents the `?? 0` fallback), so sheet CTAs get no
+home-indicator padding anywhere else in the app. One `SafeAreaProvider` at the
+app root fixes it and changes the bottom inset of every sheet — a real
+improvement, and not one to make inside a feature branch without a device pass.
 
 ### Data bugs — open, not blocking Phase 2's critical path
 
@@ -415,6 +563,134 @@ consent copy, privacy section and governing law · the OFF re-seed backfilling
 `serving_quantity` across the ~143k seeded rows.
 
 ## Last session
+
+**2026-07-28 — LOADOUT Phase 2's SCREENS + Phase 3's scan sheet. Branch
+`claude/loadout-phase-2-screens` (3 commits off `dfeed666`), NOT merged, NOT
+device-verified. The first user-reachable Loadout surface: before this, every
+Loadout phase was contract, engine and step machine with nothing attached.**
+
+- **Shipped T-2.2…T-2.9, T-3.4 and T-3.5's mobile half.** Entry card + locked
+  upsell, collect (scan / picker / saved gym), manual checklist with name +
+  save toggle, adapting skeleton, review with per-row reasons and swap, saved
+  setups on the parent, save and save-and-start, success, and saved-gym
+  management under Profile · Account. Recreated in the app's primitives and
+  tokens from `~/Downloads/Any Gym/project/` — no lifted prototype JSX.
+- **The load-bearing decisions are in `tasks.md`
+  § "Landed in Phase 2's screens beyond the checklist"** and § Open items above.
+  The two most likely to be undone by a well-meaning refactor: the flow is a
+  **root-mounted overlay** because its sheets must layer above the step (a
+  gorhom sheet renders inline in the tree, so one mounted at the layout root
+  sits behind it), and the swap sheet's containment context is
+  **`preview.equipmentTypeIds`** — the kit the SERVER resolved — never the
+  client's saved-gym row.
+- **Fixed in passing, each found by building against it:** `SnapAISheetContainer`
+  resized **width-only** under a comment promising a long edge, so every portrait
+  photo shipped ~1/3 over the token budget and small ones were UPSCALED (now a
+  shared `resizeToLongEdge`, used by the scan too, which matters more there —
+  Opus-class at $0.0272 an inference); `SwapExercisePopover` listed the **local,
+  not-visibility-aware** exercise cache and so could not enforce AC-3.6 (now
+  `/exercises/substitutes`, with a refresh-and-retry guard because
+  `applyPickerSelection` resolves the pick through that cache and returns
+  **silently** on a miss); the in-memory adapter's saved-gym 409 carried no
+  `loadoutCode`, making the rename-vs-fail branch untestable.
+- **⚠ A REAL bug the mutation sweep surfaced, not the tests:** "Choose one" on an
+  `unresolved` row opened an EMPTY picker. An unresolved row has
+  `exerciseId: null` by definition, so ranking against it sent
+  `forExerciseId: null` — on the one row that most needs replacing.
+  `adaptWorkout` sets `substitutedFromExerciseId` to the source precisely so the
+  original stays reachable; the container now falls back to it.
+- **⚠ A literal U+0000 reached a commit and passed EVERY gate.** It was the array
+  separator in `EquipmentAwareSwapSheet`. Prettier, ESLint, Babel and `tsc` all
+  accepted it while git treated the file as BINARY — so the one component that
+  derives `isUserOverride` rendered as "Binary file not shown" and could not be
+  3-way merged. Only Inspector Brad caught it. `file <path>` saying "data" is the
+  tell; § Active gotchas now records it.
+- **IB: 1 sweep (10 findings: 1 🔴 / 2 🟠 / 5 🟡 / 2 🟢, all addressed) + 1 CLOSED
+  verification pass (7 of 8 confirmed closed, 4 residuals + 1 🔵, all addressed).**
+  The 🔴 was a permanent hang: the preview request's dedup key was never cleared,
+  so re-adapting the same (workout, gym) pair after a close issued no request and
+  left the skeleton forever — with no retry affordance, because that only renders
+  on an error. The closed pass then found the SAME hang by a second route (a fresh
+  `context` object with identical contents cancelled the in-flight request and
+  declined to replace it). Two 🟠: the flow's saved-gym list was fetched once per
+  app *session*, feeding a stale kit to the swap sheet's containment context; and a
+  throw in the scan's image pipeline stranded the sheet on a spinner with no exit.
+  **CI action NOT fired** — 1 sweep + 1 closed pass, per the two-sweep cap.
+- **LESSON — a surviving mutant has three causes and only one is a test gap.**
+  Missing test (write it), dead branch (delete it), or two layers guarding
+  different channels (annotate it). This slice hit all three: a real gap in the
+  drop filter, a genuinely unreachable un-drop-on-pick branch that was deleted,
+  and the touch-vs-a11y `disabled` pair that must stay. Guessing wrong either way
+  costs quality — a test that cannot fail, or a deleted safety net.
+- **Gates:** prettier (whole tree) · typecheck 8/8 · lint 0-err · build 13/13 ·
+  test:unit 19/19 (mobile **460 suites / 5409 tests**; core 285 files / 3123;
+  scripts 3 / 112). Mobile coverage 96.55 / 91.01 / 96.63 / 98.01; every new
+  Loadout presenter at or near **100 %**. ~60 mutations applied across the new
+  guards; all caught bar three annotated redundant-by-design pairs.
+- **PR #328 raised; TWO red CI runs before green, both my own doing, and the
+  pattern is the lesson.** Run 1 failed on the saved-gym delete test — which I had
+  already seen fail locally once and dismissed as the known parallel-load flake.
+  It was not: confirming a delete cleared `pendingDeleteId`, which swapped the
+  confirm card back for the ROW, and `remove()` takes TWO sequential round trips
+  before the list re-reads — so the row the user just deleted **reappeared** for
+  that whole window, reading as "the delete didn't work". Fixed with an optimistic
+  hide (restored on failure; both directions mutation-verified), and the assertion
+  now waits for the cause before the effect. Run 2 failed on a different test with
+  a 5000 ms **per-test timeout** in a suite CI took **50.76 s** to run: the six new
+  suites were missing the `jest.setTimeout` every other heavy container suite here
+  already sets. Green on run 3.
+- **⚠ NEXT: device-verify on an EAS dev build against staging (the checklist is in
+  the PR body), then merge.** Nothing else is outstanding on the branch.
+
+**2026-07-28 (cont.) — Brad's device run, and the three things it found. All on
+the same branch; the flow is STILL not verified working end-to-end by me.**
+
+- **The screens were unreachable, twice, for two different presentation
+  reasons.** Attempt 1 mounted the flow as an absolute-fill sibling of the Stack;
+  the entry point is `workouts/[id]/index`, which is `presentation: "modal"`, so
+  the whole flow rendered *behind* the workout sheet and tapping the card did
+  nothing. Attempt 2 wrapped that in an RN `<Modal>` and was **worse** — a
+  root-mounted modal cannot present over an already-presented route, so it froze
+  the screen with an invisible modal swallowing touches. Brad's detail
+  ("if i swipe away the workout, the rest of the screen freezes") is what
+  identified it. Now the `/(app)/loadout` route. **The lesson is that I reached
+  for fix 2 without re-examining fix 1's premise.**
+- **⚠ A BACKEND 500 was the real blocker behind "Couldn't adapt this workout",
+  now SPLIT OUT to PR #332 at Brad's request — I could not have found it from
+  the mobile side** — the client only sees a
+  generic error. Brad pasted the stack trace and it was immediate:
+  ``sql`${array}::uuid[]` `` renders a ROW constructor. Four predicates in
+  `exerciseRepository`; two of them three months old and never executed, because
+  the exercise library filters locally from its SQLite cache. See § Active
+  gotchas. **#332 must merge AND staging must be redeployed
+  (`deploy-staging.yml` takes a `workflow_dispatch`) before the flow can work on
+  device.**
+- **⚠ A render test that PINNED the bug.** `exerciseRepositoryLoadout.test.ts`
+  already rendered the predicate through `PgDialect` — exactly the guard the
+  previous SQL incident prescribed — and asserted `($1)::uuid[]`, the invalid
+  shape, as correct. Rendering closes the mocked-`getDb` gap only for defects the
+  author knows to look for; it says nothing about whether Postgres can execute
+  the result. The replacement bans the bad form mechanically and runs both
+  arities, because one id and several fail with *different* errors.
+- **"Save this gym for next time" was contingent on the adaptation succeeding.**
+  The gym was created inside `save()`, so Brad's 500 lost the named kit and every
+  ticked chip — the toggle's label promises something about the KIT, not about
+  the variation. It now fires when the user commits the kit, alongside the
+  preview rather than before it (that request already spends 2.6 s p50 in
+  Bedrock), and `save()` awaits the in-flight create instead of racing it into a
+  duplicate-name 409.
+- **⚠ The safe-area bug was NOT what it looked like.** `SafeAreaView` from
+  `react-native-safe-area-context` is a purely native view that never reads
+  `SafeAreaInsetsContext` — so the missing root `SafeAreaProvider` I had flagged
+  was a real finding but the WRONG fix, and adding one alone would have changed
+  nothing. Inside the `fullScreenModal` route the native measurement returned
+  zero, intermittently. Fixed with both halves: a route-scoped provider seeded
+  from `initialWindowMetrics`, and the two Loadout presenters moved to
+  `useSafeAreaInsets()`. The tests assert the actual numbers (44 / 34), because
+  a truthy check passes on `paddingTop: 0` — which is the bug.
+- **NOT done, deliberately:** the Gym-tab-in-Train idea (Brad: "worth keeping an
+  eye on") — logged under § Open items. And the app-wide root `SafeAreaProvider`,
+  which would give every other sheet in the app its home-indicator padding back.
 
 **2026-07-28 — HOME TRAIN RING + WORKOUT DURATION bug fixes. PR
 [#334](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/334)

@@ -1619,6 +1619,22 @@ describe("WorkoutRepository", () => {
       expect(result[0].sourceGymName).toBe("Hotel gym");
     });
 
+    it("projects the linked gym's current kit and update time for stale detection", async () => {
+      let projection: Record<string, unknown> | undefined;
+      const mockDb = {
+        select: vi.fn((arg: Record<string, unknown>) => {
+          projection = arg;
+          return makeVariationsChain([], {});
+        }),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      await new WorkoutRepository().listVariations("parent-1", "user-1");
+
+      expect(projection).toHaveProperty("currentSourceGymEquipmentTypeIds");
+      expect(projection).toHaveProperty("currentSourceGymUpdatedAt");
+    });
+
     it("keeps the frozen kit snapshot when the saved gym is gone (AC-7.3)", async () => {
       // Gym deleted ⇒ FK SET NULL ⇒ no join row ⇒ null name. The
       // source_equipment_type_ids snapshot still describes the kit.
@@ -1812,6 +1828,162 @@ describe("WorkoutRepository", () => {
       expect(del).not.toHaveBeenCalled();
       expect(mockDb.transaction).toHaveBeenCalledTimes(1);
       expect(txWithSpies.insert).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("replaceVariation", () => {
+    function makeReplaceTx(updatedRows: any[]) {
+      const updateValues = vi.fn();
+      const updateWhere = vi.fn().mockReturnValue({
+        returning: vi.fn().mockResolvedValue(updatedRows),
+      });
+      const updateSet = vi.fn().mockReturnValue({ where: updateWhere });
+      const deleteWhere = vi.fn().mockResolvedValue(undefined);
+      const exerciseValues = vi.fn().mockResolvedValue(undefined);
+      const summary = {
+        id: "wo-var-1",
+        name: "Adapted again",
+        description: null,
+        parentWorkoutId: "parent-1",
+        variationKind: "loadout",
+        sourceGymId: "gym-1",
+        sourceGymName: "Hotel gym",
+        sourceEquipmentTypeIds: ["eq-1"],
+        currentSourceGymEquipmentTypeIds: ["eq-1", "eq-2"],
+        currentSourceGymUpdatedAt: new Date(),
+        estimatedDurationMinutes: 30,
+        swapCount: 1,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      const summaryChain: any = {};
+      summaryChain.from = vi.fn().mockReturnValue(summaryChain);
+      summaryChain.leftJoin = vi.fn().mockReturnValue(summaryChain);
+      summaryChain.where = vi.fn().mockReturnValue(summaryChain);
+      summaryChain.limit = vi.fn().mockResolvedValue([summary]);
+      const tx = {
+        update: vi.fn().mockReturnValue({
+          set: updateSet.mockImplementation((value) => {
+            updateValues(value);
+            return { where: updateWhere };
+          }),
+        }),
+        delete: vi.fn().mockReturnValue({ where: deleteWhere }),
+        insert: vi.fn().mockReturnValue({ values: exerciseValues }),
+        select: vi.fn().mockReturnValue(summaryChain),
+      };
+      return {
+        tx,
+        updateValues,
+        updateWhere,
+        deleteWhere,
+        exerciseValues,
+        summary,
+      };
+    }
+
+    it("updates metadata and replaces exercise rows in one transaction while preserving the id", async () => {
+      const fixture = makeReplaceTx([
+        { ...baseWorkout, id: "wo-var-1", parentWorkoutId: "parent-1" },
+      ]);
+      const transaction = vi
+        .fn()
+        .mockImplementation(async (fn: any) => fn(fixture.tx));
+      (getDb as any).mockReturnValue({ transaction });
+
+      const repo = new WorkoutRepository();
+      const result = await repo.replaceVariation(
+        "user-1",
+        "parent-1",
+        "wo-var-1",
+        {
+          name: "Adapted again",
+          sourceGymId: "gym-1",
+          sourceEquipmentTypeIds: ["eq-1"],
+          exercises: [
+            {
+              exerciseId: "ex-swap",
+              sortOrder: 0,
+              substitutedFromExerciseId: "ex-original",
+            },
+          ],
+        },
+      );
+
+      expect(transaction).toHaveBeenCalledTimes(1);
+      expect(fixture.updateValues).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: "Adapted again",
+          sourceGymId: "gym-1",
+          sourceEquipmentTypeIds: ["eq-1"],
+          visibility: "private",
+        }),
+      );
+      expect(fixture.deleteWhere).toHaveBeenCalled();
+      expect(fixture.exerciseValues).toHaveBeenCalledWith([
+        expect.objectContaining({
+          workoutId: "wo-var-1",
+          exerciseId: "ex-swap",
+          substitutedFromExerciseId: "ex-original",
+        }),
+      ]);
+      expect(result).toEqual(fixture.summary);
+      expect(result?.id).toBe("wo-var-1");
+    });
+
+    it("scopes the mutation by variation id, owner, root parent and Loadout kind", async () => {
+      const fixture = makeReplaceTx([
+        { ...baseWorkout, id: "wo-var-1", parentWorkoutId: "parent-1" },
+      ]);
+      (getDb as any).mockReturnValue({
+        transaction: vi
+          .fn()
+          .mockImplementation(async (fn: any) => fn(fixture.tx)),
+      });
+
+      await new WorkoutRepository().replaceVariation(
+        "user-1",
+        "parent-1",
+        "wo-var-1",
+        {
+          name: "Adapted",
+          sourceEquipmentTypeIds: [],
+          exercises: [],
+        },
+      );
+
+      const rendered = new PgDialect().sqlToQuery(
+        fixture.updateWhere.mock.calls[0][0] as never,
+      ).sql;
+      expect(rendered).toContain('"id"');
+      expect(rendered).toContain('"created_by"');
+      expect(rendered).toContain('"parent_workout_id"');
+      expect(rendered).toContain('"variation_kind"');
+    });
+
+    it("does not delete exercise rows when ownership or relationship does not match", async () => {
+      const fixture = makeReplaceTx([]);
+      (getDb as any).mockReturnValue({
+        transaction: vi
+          .fn()
+          .mockImplementation(async (fn: any) => fn(fixture.tx)),
+      });
+
+      const result = await new WorkoutRepository().replaceVariation(
+        "user-2",
+        "parent-1",
+        "wo-var-1",
+        {
+          name: "Adapted",
+          sourceEquipmentTypeIds: [],
+          exercises: [],
+        },
+      );
+
+      expect(result).toBeNull();
+      expect(fixture.tx.delete).not.toHaveBeenCalled();
+      expect(fixture.tx.insert).not.toHaveBeenCalled();
+      expect(fixture.tx.select).not.toHaveBeenCalled();
     });
   });
 

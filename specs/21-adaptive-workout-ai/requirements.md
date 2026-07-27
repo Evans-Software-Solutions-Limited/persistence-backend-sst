@@ -316,6 +316,8 @@ As a user mid-flow, I can tell Loadout what kit is available in three ways.
 - **AC-4.4** One shared equipment-aware swap component serves both the Loadout
   review step and the standalone in-session swap action (design D6) — not two
   implementations.
+- **AC-4.5** Once the adapted rows exist, tapping an exercise in review opens
+  its normal exercise-detail page without discarding the in-progress review.
 
 ### US-5 — Save as a variation under the parent
 
@@ -347,6 +349,13 @@ As a user mid-flow, I can tell Loadout what kit is available in three ways.
   workout. (`workoutRepository.buildListWhereClause`'s `mine` branch is
   `created_by = userId` with no exclusion today; see `design.md` § Library
   pollution.)
+- **AC-6.5** A saved Loadout variation offers **Re-adapt**, not "Adapt to your
+  gym". Saving that flow replaces its exercises and Loadout metadata atomically
+  while preserving the variation id, `created_at`, and all session history.
+- **AC-6.6** When the linked saved gym's current equipment set differs from the
+  frozen set used for the variation, Saved setups and variation detail call out
+  that the gym changed and offer Re-adapt. Equipment ordering and duplicates do
+  not count as changes; a deleted gym falls back to choosing a new context.
 
 ### US-7 — Saved gyms are reusable and manageable
 

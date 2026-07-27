@@ -2090,6 +2090,17 @@ export class SSTApiAdapter implements ApiPort {
     );
   }
 
+  async replaceWorkoutVariation(
+    parentWorkoutId: string,
+    variationId: string,
+    input: CreateLoadoutVariationInput,
+  ): Promise<Result<WorkoutVariationSummary, LoadoutApiError>> {
+    return this.requestLoadout<WorkoutVariationSummary>(
+      `/workouts/${parentWorkoutId}/variations/${variationId}`,
+      { method: "PUT", body: input },
+    );
+  }
+
   async getWorkoutVariations(
     parentWorkoutId: string,
   ): Promise<Result<WorkoutVariationSummary[], LoadoutApiError>> {

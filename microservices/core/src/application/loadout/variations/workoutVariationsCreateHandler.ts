@@ -16,6 +16,26 @@ import {
   EntitlementError,
 } from "../../entitlement/assertEntitlement";
 
+export const workoutVariationBodySchema = t.Object({
+  name: t.String({ minLength: 1, maxLength: 200 }),
+  description: t.Optional(t.Union([t.String(), t.Null()])),
+  estimatedDurationMinutes: t.Optional(t.Number()),
+  sourceGymId: t.Optional(t.Union([t.String({ format: "uuid" }), t.Null()])),
+  sourceEquipmentTypeIds: t.Optional(t.Array(t.String({ format: "uuid" }))),
+  exercises: t.Array(
+    t.Composite([
+      workoutExerciseInputSchema,
+      t.Object({
+        substitutedFromExerciseId: t.Optional(
+          t.Union([t.String({ format: "uuid" }), t.Null()]),
+        ),
+        substitutionReason: t.Optional(t.Unknown()),
+        isUserOverride: t.Optional(t.Boolean()),
+      }),
+    ]),
+  ),
+});
+
 /**
  * POST /workouts/:id/variations — persist a reviewed adaptation as a variation
  * under the parent.
@@ -203,7 +223,12 @@ export const workoutVariationsCreateHandler = new Elysia()
       // It is not decorative: Phase 2 renders it as the variation's kit summary
       // and Phase 4 reads it back as the equipment context, so a bogus id becomes
       // a chip with no name and a duplicate becomes the same chip twice.
-      const kit = sourceEquipmentTypeIds ?? [];
+      // An explicit snapshot is authoritative, including an explicit empty
+      // array (a bodyweight-only gym). When the client omits it for a saved-gym
+      // path, freeze the resolved owned gym kit rather than persisting `[]`;
+      // otherwise provenance is lost and a later gym re-kit cannot be detected.
+      const hasExplicitSnapshot = sourceEquipmentTypeIds !== undefined;
+      const kit = sourceEquipmentTypeIds ?? gymKit ?? [];
       const unknownKit =
         await ctx.SavedGymRepository.findUnknownEquipmentTypeIds(kit);
       if (unknownKit.length > 0) {
@@ -239,7 +264,7 @@ export const workoutVariationsCreateHandler = new Elysia()
       // The snapshot is the more specific claim — it is what AC-5.2 freezes and
       // what Phase 2 renders — and when both are absent there is nothing to check
       // against, so containment is skipped rather than failing every row.
-      const containmentContext = kit.length > 0 ? kit : gymKit;
+      const containmentContext = hasExplicitSnapshot ? kit : gymKit;
       if (containmentContext !== null && containmentContext.length > 0) {
         const available = new Set(containmentContext);
         const checkable = exercises.filter((ex) => ex.isUserOverride !== true);
@@ -291,36 +316,6 @@ export const workoutVariationsCreateHandler = new Elysia()
     },
     {
       params: t.Object({ id: t.String({ format: "uuid" }) }),
-      body: t.Object({
-        name: t.String({ minLength: 1, maxLength: 200 }),
-        description: t.Optional(t.Union([t.String(), t.Null()])),
-        estimatedDurationMinutes: t.Optional(t.Number()),
-        // The saved gym this was adapted for, when one was used. Ownership IS
-        // checked in the handler (step 7) — `listVariations` LEFT JOINs
-        // `saved_gyms` for `sourceGymName`, so an unowned id would echo another
-        // user's gym name back to the caller. Do not remove that check on the
-        // strength of the FK: the FK only proves the row exists.
-        sourceGymId: t.Optional(
-          t.Union([t.String({ format: "uuid" }), t.Null()]),
-        ),
-        sourceEquipmentTypeIds: t.Optional(
-          t.Array(t.String({ format: "uuid" })),
-        ),
-        exercises: t.Array(
-          t.Composite([
-            workoutExerciseInputSchema,
-            t.Object({
-              substitutedFromExerciseId: t.Optional(
-                t.Union([t.String({ format: "uuid" }), t.Null()]),
-              ),
-              // Structured reason code (design § 7.2), stored as jsonb. Phase 1
-              // generates it server-side; Phase 0 stores whatever the reviewed
-              // plan carries so provenance survives the round trip (AC-3.3).
-              substitutionReason: t.Optional(t.Unknown()),
-              isUserOverride: t.Optional(t.Boolean()),
-            }),
-          ]),
-        ),
-      }),
+      body: workoutVariationBodySchema,
     },
   );
