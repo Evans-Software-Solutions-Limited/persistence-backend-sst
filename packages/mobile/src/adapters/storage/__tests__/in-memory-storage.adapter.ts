@@ -295,6 +295,19 @@ export class InMemoryStorageAdapter implements StoragePort {
     this.queue = this.queue.filter((e) => !idSet.has(e.id));
   }
 
+  getQueuedEntriesForEntity(
+    entityType: string,
+    entityId: string,
+  ): SyncQueueEntry[] {
+    // Mirrors the SQLite adapter: every non-completed status, oldest first.
+    return this.queue.filter(
+      (e) =>
+        e.entityType === entityType &&
+        e.entityId === entityId &&
+        e.status !== "completed",
+    );
+  }
+
   getFailedExhaustedEntries(): SyncQueueEntry[] {
     // Parity with SQLite: FIFO order (insertion-ordered already, we
     // just push to the end).

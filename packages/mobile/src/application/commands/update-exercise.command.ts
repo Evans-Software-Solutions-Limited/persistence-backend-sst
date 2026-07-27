@@ -101,13 +101,43 @@ export function updateExerciseCommand(
   // exists, regardless of whether it's the original create or a prior edit's
   // PATCH — rewriting the payload keeps a single in-order entry and avoids a
   // PATCH against an id the server hasn't assigned yet.
-  const pending = deps.storage
-    .getPendingMutations()
-    .find((e) => e.entityType === "exercise" && e.entityId === existing.id);
+  //
+  // Uses `getQueuedEntriesForEntity`, NOT `getPendingMutations()`: the latter
+  // filters to pending/failed under the retry budget, so it could not see a
+  // create sitting in `permanently_failed` (which is exactly where the enum→uuid
+  // 422 put every custom exercise). The coalesce therefore missed, and each edit
+  // enqueued a fresh `PATCH /exercises/local-…` against an id the server had
+  // never issued — one more dead entry per edit.
+  const queued = deps.storage.getQueuedEntriesForEntity(
+    "exercise",
+    existing.id,
+  );
+  // `updateMutationPayload` is status-conditional (pending/failed only), so
+  // "which entry can I safely rewrite" is a narrower question than "which
+  // entries exist". An `in_flight` entry may already be mid-send, and a
+  // `blocked_entitlement` one is waiting on a user decision — rewriting either
+  // would be a lost update.
+  const rewritable = queued.find(
+    (e) =>
+      e.status === "pending" ||
+      e.status === "failed" ||
+      e.status === "permanently_failed",
+  );
 
-  if (pending) {
-    deps.storage.updateMutationPayload(pending.id, payload);
+  if (rewritable) {
+    if (rewritable.status === "permanently_failed") {
+      // Reset FIRST: `updateMutationPayload` would no-op on a terminal row, so
+      // rewriting before resetting would silently discard the user's edit. The
+      // reset is also correct on its own terms — the edited payload is a new
+      // attempt, and may be the very thing that fixes the original rejection.
+      deps.storage.resetFailedEntries([rewritable.id]);
+    }
+    deps.storage.updateMutationPayload(rewritable.id, payload);
   } else {
+    // Nothing rewritable. If a create is in flight, the PATCH we enqueue here
+    // addresses the local id, and `swapLocalExerciseId` rewrites this entry's
+    // endpoint when that create's reply lands — so it still reaches the real
+    // resource.
     deps.storage.enqueueMutation({
       entityType: "exercise",
       entityId: existing.id,

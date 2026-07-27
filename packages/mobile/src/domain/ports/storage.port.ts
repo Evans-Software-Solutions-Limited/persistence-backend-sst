@@ -195,6 +195,30 @@ export interface StoragePort {
    */
   updateMutationPayload(id: number, payload: unknown): void;
   /**
+   * Every not-yet-`completed` queue entry for one entity, oldest first.
+   *
+   * Distinct from `getPendingMutations()`, which filters to
+   * `pending`/`failed` under the retry budget — and therefore CANNOT answer the
+   * two questions that matter when a user acts on a row that hasn't synced:
+   *
+   *   1. "Is this row still only local?" A create sitting in `permanently_failed`
+   *      or `in_flight` is invisible to `getPendingMutations`, so a delete would
+   *      conclude the row exists server-side and issue
+   *      `DELETE /exercises/local-…` → 400 "Invalid identifier format".
+   *   2. "Is there an entry I should fold this edit into?" The coalescing path in
+   *      `update-exercise.command` used `getPendingMutations()` and so missed a
+   *      `permanently_failed` create, enqueueing `PATCH /exercises/local-…`
+   *      instead — one more dead entry per edit.
+   *
+   * Includes `blocked_entitlement` and `permanently_failed` deliberately: both
+   * mean "the server has not accepted this yet", which is exactly what a caller
+   * asking this question needs to know.
+   */
+  getQueuedEntriesForEntity(
+    entityType: string,
+    entityId: string,
+  ): SyncQueueEntry[];
+  /**
    * M10.6: flip a queue entry to `blocked_entitlement` and persist the
    * server's verdict on the row. The sync worker calls this in response
    * to HTTP 402 + `code: "ENTITLEMENT_DENIED"` and CONTINUES processing

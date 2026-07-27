@@ -64,16 +64,65 @@ function isPermanentClientError(status: number): boolean {
  * become `permanently_failed` (which would strand it before the retry).
  */
 function referencesUnsyncedLocalId(payload: string): boolean {
-  let body: Record<string, unknown>;
+  let body: unknown;
   try {
-    body = JSON.parse(payload) as Record<string, unknown>;
+    body = JSON.parse(payload) as unknown;
   } catch {
     return false;
   }
-  return (["recipeId", "mealId", "foodId", "workoutId"] as const).some((k) => {
-    const v = body[k];
-    return typeof v === "string" && v.startsWith("local-");
-  });
+  return containsLocalId(body, 0);
+}
+
+/**
+ * Maximum object depth walked by `containsLocalId`.
+ *
+ * The deepest real payload is a workout create — `{ exercises: [ { … } ] }`, i.e.
+ * depth 3 — so 6 is generous while still bounding a pathological or hostile
+ * structure. Sync payloads are locally authored, but a payload can carry
+ * server-echoed content and this runs on every failed entry.
+ */
+const LOCAL_ID_SCAN_MAX_DEPTH = 6;
+
+/**
+ * Does any string ANYWHERE in this payload look like an unsynced local id?
+ *
+ * Deliberately a full recursive walk rather than a list of known keys. The
+ * previous version checked four TOP-LEVEL scalar keys
+ * (`recipeId`/`mealId`/`foodId`/`workoutId`) and so never looked at
+ * `exercises[].exerciseId` — which is precisely where a `local-…` id lives when a
+ * user adds a just-created custom exercise to a workout. The resulting 400 was
+ * therefore classified PERMANENT on the first attempt and the workout was lost,
+ * even though the reference would have resolved once the exercise create flushed.
+ *
+ * Any new nested reference is covered automatically; a key allowlist would have
+ * to be remembered, and forgetting it is silent.
+ */
+function containsLocalId(value: unknown, depth: number): boolean {
+  if (depth > LOCAL_ID_SCAN_MAX_DEPTH) return false;
+  if (typeof value === "string") return value.startsWith("local-");
+  if (Array.isArray(value)) {
+    return value.some((item) => containsLocalId(item, depth + 1));
+  }
+  if (value !== null && typeof value === "object") {
+    return Object.values(value as Record<string, unknown>).some((item) =>
+      containsLocalId(item, depth + 1),
+    );
+  }
+  return false;
+}
+
+/**
+ * Does the ENDPOINT still address an unsynced local id?
+ *
+ * `update-workout` and `delete-workout` interpolate the id into the path
+ * (`/workouts/local-…`), and a DELETE carries no payload at all, so the
+ * payload-only check above could never see it. Such a request 400s with
+ * "Invalid identifier format" (Postgres 22P02 on the uuid column) and — being a
+ * 4xx — was marked permanent, stranding the edit or delete forever. It resolves
+ * as soon as the create flushes and `swapLocalWorkoutId` rewrites the endpoint.
+ */
+function endpointReferencesUnsyncedLocalId(endpoint: string): boolean {
+  return endpoint.split(/[/?&=]/).some((part) => part.startsWith("local-"));
 }
 
 /**
@@ -547,8 +596,10 @@ export async function processSyncQueue(
         isPermanentClientError(err.status) &&
         // A 4xx on a mutation still pointing at an unsynced dependency's
         // `local-…` id is deferred, not permanent — it resolves on the next
-        // drain once the dependency create's swapLocal*Id lands.
-        !referencesUnsyncedLocalId(entry.payload);
+        // drain once the dependency create's swapLocal*Id lands. Both the body
+        // (nested references included) and the endpoint path can carry one.
+        !referencesUnsyncedLocalId(entry.payload) &&
+        !endpointReferencesUnsyncedLocalId(entry.endpoint);
 
       // Terminal failure: this attempt exhausts the retry budget, so the drain
       // will never pick this entry up again (`getPendingMutations` gates on

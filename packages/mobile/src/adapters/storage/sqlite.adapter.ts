@@ -100,6 +100,69 @@ type ChangeSubscriber = {
 };
 
 /**
+ * Depth cap for the exercise-id rewrite walk. A workout payload nests
+ * `{ exercises: [ { exerciseId } ] }` (depth 3) and a session record a little
+ * deeper; 8 covers both with room to spare while bounding a pathological blob.
+ */
+const EXERCISE_ID_REWRITE_MAX_DEPTH = 8;
+
+/**
+ * Rewrite every `exerciseId` / `exercise_id` / `originalExerciseId` value equal
+ * to `localId` anywhere inside a parsed JSON structure.
+ *
+ * Keyed on the FIELD NAME rather than replacing any matching string, so a
+ * workout whose *own* id happens to collide with an exercise id (or a free-text
+ * note that quotes one) is left alone. Returns a new structure plus whether
+ * anything changed, so the caller can skip a pointless write — which also keeps
+ * the change bus from firing for a no-op.
+ */
+function replaceExerciseIdDeep(
+  value: unknown,
+  localId: string,
+  serverId: string,
+  depth = 0,
+): { value: unknown; changed: boolean } {
+  if (depth > EXERCISE_ID_REWRITE_MAX_DEPTH) return { value, changed: false };
+
+  if (Array.isArray(value)) {
+    let changed = false;
+    const next = value.map((item) => {
+      const r = replaceExerciseIdDeep(item, localId, serverId, depth + 1);
+      if (r.changed) changed = true;
+      return r.value;
+    });
+    return { value: changed ? next : value, changed };
+  }
+
+  if (value !== null && typeof value === "object") {
+    const source = value as Record<string, unknown>;
+    let changed = false;
+    const next: Record<string, unknown> = { ...source };
+    for (const [key, item] of Object.entries(source)) {
+      if (
+        (key === "exerciseId" ||
+          key === "exercise_id" ||
+          key === "originalExerciseId" ||
+          key === "original_exercise_id") &&
+        item === localId
+      ) {
+        next[key] = serverId;
+        changed = true;
+        continue;
+      }
+      const r = replaceExerciseIdDeep(item, localId, serverId, depth + 1);
+      if (r.changed) {
+        next[key] = r.value;
+        changed = true;
+      }
+    }
+    return { value: changed ? next : value, changed };
+  }
+
+  return { value, changed: false };
+}
+
+/**
  * SQLite storage adapter implementing StoragePort.
  *
  * Manages the local database for offline-first support:
@@ -981,6 +1044,20 @@ export class SQLiteStorageAdapter implements StoragePort {
     });
   }
 
+  getQueuedEntriesForEntity(
+    entityType: string,
+    entityId: string,
+  ): SyncQueueEntry[] {
+    const db = this.getDb();
+    const rows = db.getAllSync(
+      `SELECT * FROM sync_queue
+       WHERE entity_type = ? AND entity_id = ? AND status != 'completed'
+       ORDER BY created_at ASC, id ASC`,
+      [entityType, entityId],
+    ) as Record<string, unknown>[];
+    return rows.map(mapRow);
+  }
+
   discardEntries(ids: readonly number[]): void {
     if (ids.length === 0) return;
     const db = this.getDb();
@@ -1175,6 +1252,81 @@ export class SQLiteStorageAdapter implements StoragePort {
          WHERE entity_type = 'exercise' AND entity_id = ?`,
         [serverId, localId],
       );
+
+      // ⚠ The reference that actually broke workouts: an exercise id is
+      // EMBEDDED in other entities' payloads and cached rows, not just addressed
+      // by the endpoint. A user who creates a custom exercise and adds it to a
+      // workout before the create flushes enqueues
+      // `POST /workouts` with `exercises[].exerciseId = "local-…"`; the same
+      // happens for `POST /sessions/record`. Both bodies are frozen at enqueue
+      // time, so rewriting the cached exercise row alone does NOT reach them —
+      // they hit the uuid `exercise_id` column and 400 with
+      // "Invalid identifier format" forever.
+      //
+      // This mirrors `swapLocalWorkoutId`'s payload-reference rewrite, whose
+      // absence here was an asymmetry rather than a decision. Scoped to
+      // non-completed entries: a completed row is history and rewriting it would
+      // only obscure what was actually sent.
+      const queued = db.getAllSync(
+        `SELECT id, payload FROM sync_queue
+         WHERE entity_type IN ('workout', 'session') AND status != 'completed'`,
+      ) as { id: number; payload: string }[];
+      for (const q of queued) {
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(q.payload);
+        } catch {
+          continue; // malformed row — leave untouched, never crash the swap
+        }
+        const rewritten = replaceExerciseIdDeep(parsed, localId, serverId);
+        if (!rewritten.changed) continue;
+        db.runSync(
+          `UPDATE sync_queue SET payload = ?, updated_at = datetime('now')
+           WHERE id = ?`,
+          [JSON.stringify(rewritten.value), q.id],
+        );
+      }
+
+      // The live session's own rows, plus the cached workout blobs the UI reads.
+      // Without these, a session started against the local exercise keeps
+      // rendering (and re-submitting) the stale id.
+      db.runSync(
+        `UPDATE session_exercises SET exercise_id = ? WHERE exercise_id = ?`,
+        [serverId, localId],
+      );
+      db.runSync(
+        `UPDATE session_exercises SET original_exercise_id = ?
+         WHERE original_exercise_id = ?`,
+        [serverId, localId],
+      );
+      db.runSync(
+        `UPDATE recent_sets SET exercise_id = ? WHERE exercise_id = ?`,
+        [serverId, localId],
+      );
+
+      for (const table of [
+        "cached_workout_detail",
+        "cached_workouts",
+      ] as const) {
+        const blobs = db.getAllSync(
+          `SELECT rowid, payload FROM ${table} WHERE payload LIKE ?`,
+          [`%${localId}%`],
+        ) as { rowid: number; payload: string }[];
+        for (const b of blobs) {
+          let parsed: unknown;
+          try {
+            parsed = JSON.parse(b.payload);
+          } catch {
+            continue;
+          }
+          const rewritten = replaceExerciseIdDeep(parsed, localId, serverId);
+          if (!rewritten.changed) continue;
+          db.runSync(`UPDATE ${table} SET payload = ? WHERE rowid = ?`, [
+            JSON.stringify(rewritten.value),
+            b.rowid,
+          ]);
+        }
+      }
     });
   }
 
