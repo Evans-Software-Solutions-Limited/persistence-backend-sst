@@ -1185,6 +1185,77 @@ describe("LoadoutFlowContainer", () => {
       expect(queryByTestId("loadout-collect-scan")).toBeNull();
     });
 
+    it("RE-ADAPTS the same workout against the same gym after a close", async () => {
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      seedEquipment(storage);
+      api.loadoutPreview = preview([row()]);
+      api.savedGyms = [
+        {
+          id: "gym-1",
+          name: "Hotel gym",
+          equipmentTypeIds: ["eq-dumbbell"],
+          createdAt: null,
+          updatedAt: null,
+        },
+      ];
+      const { findByTestId } = renderFlow(api, storage);
+
+      openFlow();
+      fireEvent.press(await findByTestId("loadout-collect-gym-gym-1"));
+      await findByTestId("loadout-review");
+      act(() => useLoadoutFlow.getState().reset());
+
+      // ⚠ Identical (workout, context), so a request-dedup key that is never
+      // cleared matches and returns early — no request, no `previewResolved`,
+      // and the skeleton renders forever with no retry affordance (that only
+      // appears on an error). The pair would be dead for the whole app session.
+      openFlow();
+      fireEvent.press(await findByTestId("loadout-collect-gym-gym-1"));
+
+      expect(await findByTestId("loadout-review")).toBeTruthy();
+      expect(api.previewLoadoutCalls).toHaveLength(2);
+    });
+
+    it("does not duplicate an exercise already in the plan", async () => {
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      seedEquipment(storage);
+      api.loadoutPreview = preview([
+        row({ sortOrder: 1, exerciseId: "ex-1" }),
+        row({ sortOrder: 2, exerciseId: "ex-2" }),
+      ]);
+      api.substitutes = {
+        best: [
+          {
+            id: "ex-1",
+            name: "Dumbbell Bench Press",
+            category: "strength",
+            difficultyLevel: "intermediate",
+            thumbnailUrl: null,
+            equipmentRequired: [],
+            matchedOn: [],
+          },
+        ],
+        others: [],
+        meta: { truncated: false },
+      };
+      const { findByTestId } = renderFlow(api, storage);
+      openFlow();
+      fireEvent.press(await findByTestId("loadout-collect-manual"));
+      fireEvent.press(await findByTestId("loadout-equip-eq-dumbbell"));
+      fireEvent.press(await findByTestId("loadout-manual-adapt"));
+      await findByTestId("loadout-review");
+
+      fireEvent.press(await findByTestId("loadout-row-2-swap"));
+
+      // `workoutVariationsCreateHandler` does not reject duplicate exerciseIds,
+      // so nothing downstream would catch this: the variation would prescribe
+      // the same exercise twice, with two different reason blocks.
+      const row1 = await findByTestId("swap-best-ex-1");
+      expect(row1.props.accessibilityState.disabled).toBe(true);
+    });
+
     it("closes from the success screen", async () => {
       const api = new InMemoryApiAdapter();
       const storage = new InMemoryStorageAdapter();

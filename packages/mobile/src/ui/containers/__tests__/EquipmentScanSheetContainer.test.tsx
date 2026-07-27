@@ -413,6 +413,65 @@ describe("EquipmentScanSheetContainer", () => {
     expect(scan).not.toHaveBeenCalled();
   });
 
+  it("shows an error instead of hanging on the spinner when the image pipeline throws", async () => {
+    const api = new InMemoryApiAdapter();
+    // Throws on a corrupt/undecodable asset, and on OOM for a large photo.
+    (ImageManipulator.manipulateAsync as jest.Mock).mockRejectedValue(
+      new Error("decode failed"),
+    );
+    capture(1000, 1000);
+    const { findByTestId } = renderScan(api);
+    openScan();
+
+    fireEvent.press(await findByTestId("loadout-scan-capture-photo"));
+
+    // ⚠ The stage is set to `scanning` BEFORE the await, so an escaped rejection
+    // leaves an ActivityIndicator with no error branch, no retry, and no way out
+    // but dismissing the sheet.
+    expect(await findByTestId("loadout-scan-error")).toBeTruthy();
+    expect(await findByTestId("loadout-scan-error-manual")).toBeTruthy();
+  });
+
+  it("shows an error when the camera itself is unavailable", async () => {
+    const api = new InMemoryApiAdapter();
+    (ImagePicker.launchCameraAsync as jest.Mock).mockRejectedValue(
+      new Error("camera unavailable"),
+    );
+    const { findByTestId } = renderScan(api);
+    openScan();
+
+    fireEvent.press(await findByTestId("loadout-scan-capture-photo"));
+    expect(await findByTestId("loadout-scan-error")).toBeTruthy();
+  });
+
+  it("discards a scan that settles after the sheet was reopened", async () => {
+    const api = new InMemoryApiAdapter();
+    let settle: ((value: unknown) => void) | null = null;
+    jest
+      .spyOn(api, "scanEquipment")
+      .mockReturnValue(new Promise((resolve) => (settle = resolve)) as never);
+    capture(1000, 1000);
+    const { findByTestId } = renderScan(api);
+    openScan();
+
+    fireEvent.press(await findByTestId("loadout-scan-capture-photo"));
+    await findByTestId("loadout-scan-scanning");
+
+    act(() => useLoadoutFlow.getState().goToStep("collect"));
+    act(() => useLoadoutFlow.getState().goToStep("scan"));
+    await findByTestId("loadout-scan-capture");
+
+    await act(async () => {
+      settle?.(ok(draft()));
+    });
+
+    // ⚠ The previous ROOM's detections, painted over a sheet the user just
+    // reopened for a different one — after which the adaptation runs against
+    // equipment that was never here.
+    expect(await findByTestId("loadout-scan-capture")).toBeTruthy();
+    expect(useLoadoutFlow.getState().scanDraft).toBeNull();
+  });
+
   it("does nothing when the camera is cancelled", async () => {
     const api = new InMemoryApiAdapter();
     const scan = jest.spyOn(api, "scanEquipment");

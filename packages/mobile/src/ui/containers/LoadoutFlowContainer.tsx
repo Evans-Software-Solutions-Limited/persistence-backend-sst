@@ -178,6 +178,8 @@ export function LoadoutFlowContainer() {
   );
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  /** A gym this run already created, so a save retry does not 409 on itself. */
+  const createdGymIdRef = useRef<string | null>(null);
 
   // Every run starts clean. `open()` already resets the STORE; this clears the
   // decisions that live here, which would otherwise be applied by `sortOrder` to
@@ -195,6 +197,7 @@ export function LoadoutFlowContainer() {
     setAcceptedRows(new Set());
     setPickedNames(new Map());
     setSaveError(null);
+    createdGymIdRef.current = null;
   }, [runKey]);
 
   // ── Equipment catalogue ───────────────────────────────────────────────────
@@ -244,6 +247,24 @@ export function LoadoutFlowContainer() {
         : `ids:${[...context.equipmentTypeIds].join(",")}`;
   const requestKey = `${workoutId ?? ""}|${contextKey}|${attempt}`;
   const firedRef = useRef<string | null>(null);
+
+  // ⚠ THE GUARD MUST BE CLEARED, and forgetting to was a permanent hang.
+  //
+  // `firedRef` exists to stop the effect double-firing on an unrelated re-render.
+  // Keyed on (workout, context, attempt) alone it is also a permanent record:
+  // adapt workout W against gym G, close the flow, reopen W and pick G again —
+  // `selectGym` produces an identical `requestKey`, the effect returns early, no
+  // request is made, and nothing ever calls `previewResolved`. The user sits on
+  // the skeleton forever, and the "Try again" button that would bump `attempt`
+  // only renders on an error, so there is no way out. That pair is then dead for
+  // the rest of the app session.
+  //
+  // Clearing it whenever the step LEAVES `adapting` keeps the double-fire
+  // protection (which only has to hold within one adapting step) while making
+  // every fresh entry into the step a fresh request.
+  useEffect(() => {
+    if (step !== "adapting") firedRef.current = null;
+  }, [step]);
 
   useEffect(() => {
     if (step !== "adapting" || workoutId === null || context === null) return;
@@ -330,6 +351,25 @@ export function LoadoutFlowContainer() {
 
   const attentionCount = rowViews.filter((view) => view.needsAttention).length;
 
+  // Exercises the saved plan will contain, EXCLUDING the row being swapped —
+  // that one is about to be replaced, so listing it would disable the user's
+  // ability to pick it back.
+  const planExerciseIds = useMemo(
+    () =>
+      rowViews
+        .filter(
+          (view) =>
+            !view.isDropped && view.row.sortOrder !== swapTarget?.sortOrder,
+        )
+        .map(
+          (view) =>
+            manualPicks.get(view.row.sortOrder)?.exerciseId ??
+            view.row.exerciseId,
+        )
+        .filter((id): id is string => id !== null),
+    [rowViews, manualPicks, swapTarget],
+  );
+
   // ── Actions ───────────────────────────────────────────────────────────────
   const onClose = useCallback(() => reset(), [reset]);
 
@@ -408,11 +448,23 @@ export function LoadoutFlowContainer() {
       let sourceGymId: string | null =
         context.kind === "gym" ? context.gymId : null;
       if (context.kind === "ids" && context.saveAsGym) {
-        const result = await api.createSavedGym({
-          name: context.label,
-          equipmentTypeIds: context.equipmentTypeIds,
-        });
-        if (result.ok) sourceGymId = result.value.id;
+        // ⚠ Remembered across retries. Without the ref, a save that created the
+        // gym and then failed on the VARIATION (a dropped connection) would, on
+        // the user's second tap, 409 on its own gym name and save the variation
+        // unlinked — permanently showing the variation's name instead of the
+        // gym's in "Saved setups".
+        if (createdGymIdRef.current !== null) {
+          sourceGymId = createdGymIdRef.current;
+        } else {
+          const result = await api.createSavedGym({
+            name: context.label,
+            equipmentTypeIds: context.equipmentTypeIds,
+          });
+          if (result.ok) {
+            sourceGymId = result.value.id;
+            createdGymIdRef.current = result.value.id;
+          }
+        }
       }
 
       const kept: LoadoutPreview = {
@@ -581,6 +633,12 @@ export function LoadoutFlowContainer() {
             equipmentTypeIds={contextEquipmentIds(context, gymEquipment)}
             equipmentContextLabel={contextLabel(context)}
             equipmentNameById={equipmentNameById}
+            // Everything already in the plan, so a swap cannot duplicate a row.
+            // `workoutVariationsCreateHandler` does not reject duplicate
+            // `exerciseId`s, so nothing downstream would catch it: the variation
+            // would simply prescribe the same exercise twice, with two different
+            // reason blocks explaining it.
+            existingExerciseIds={planExerciseIds}
             onSelect={onSwapSelect}
             testID="loadout-swap-sheet"
           />

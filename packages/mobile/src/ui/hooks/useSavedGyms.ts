@@ -70,13 +70,28 @@ export function useSavedGyms(enabled = true): SavedGymsState {
     setHasResolved(true);
   }, [api]);
 
-  // One fetch per mount while enabled. `enabled` exists so the Settings screen
-  // and the in-flow collect step can both use this hook without the flow firing
-  // a request every time it is mounted-but-closed at the layout root.
-  const startedRef = useRef(false);
+  // ⚠ One fetch per ENABLE, not per mount — and the difference is the whole
+  // point of the hook being uncached.
+  //
+  // `LoadoutFlowContainer` is mounted at the authenticated layout root for the
+  // entire session, so a per-mount latch would fetch once, the first time the
+  // flow ever opened, and never again. A gym created or edited on
+  // Profile → Saved Gyms would never appear in the collect step, and — the
+  // damaging half — `contextEquipmentIds` feeds that frozen snapshot to the swap
+  // sheet as its containment context. Rank `best`/`others` against a stale kit
+  // and a now-incompatible exercise lands in `best`, gets picked with
+  // `isUserOverride: false`, and the save 400s `EQUIPMENT_NOT_AVAILABLE` against
+  // the gym's CURRENT server-side rows — an error whose remedy ("confirm you
+  // want it anyway") the sheet will not offer, because it does not think that
+  // row is incompatible.
+  const wasEnabledRef = useRef(false);
   useEffect(() => {
-    if (!enabled || startedRef.current) return;
-    startedRef.current = true;
+    if (!enabled) {
+      wasEnabledRef.current = false;
+      return;
+    }
+    if (wasEnabledRef.current) return;
+    wasEnabledRef.current = true;
     void refresh();
   }, [enabled, refresh]);
 

@@ -104,12 +104,25 @@ export function WorkoutDetailContainer() {
   // throw away the only pitch the feature gets.
   const onOpenLoadout = useCallback(() => {
     if (!workout) return;
+    // ⚠ Do NOTHING until the subscription has resolved. `computeLoadoutVerdict`
+    // denies a null subscription (deliberately — the alternative is flashing the
+    // entry point as unlocked and then 402-ing), so during the cold-start
+    // `/subscriptions/me` round trip a paying Premium+ user is indistinguishable
+    // from a free one. Opening the upsell there sells the feature to the person
+    // who already bought it.
+    if (!loadoutGate.isResolved) return;
     if (!loadoutGate.allowed) {
       openLoadoutUpsell();
       return;
     }
     openLoadout(workout.id, workout.name);
-  }, [workout, loadoutGate.allowed, openLoadout, openLoadoutUpsell]);
+  }, [
+    workout,
+    loadoutGate.isResolved,
+    loadoutGate.allowed,
+    openLoadout,
+    openLoadoutUpsell,
+  ]);
 
   // A variation IS a workout, so it opens on this same screen.
   const onOpenVariation = useCallback((variationId: string) => {
@@ -132,7 +145,10 @@ export function WorkoutDetailContainer() {
       onStartWorkout={onStartWorkout}
       onExercisePress={onExercisePress}
       showLoadout={isOwner}
-      loadoutLocked={!loadoutGate.allowed}
+      // Only claim "locked" once we actually know. Until then the card renders
+      // its neutral pending copy rather than a padlock.
+      loadoutLocked={loadoutGate.isResolved && !loadoutGate.allowed}
+      loadoutPending={!loadoutGate.isResolved}
       loadoutVariations={variations.variations}
       onOpenLoadout={onOpenLoadout}
       onOpenVariation={onOpenVariation}

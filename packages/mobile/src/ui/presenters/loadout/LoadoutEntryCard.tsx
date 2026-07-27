@@ -19,18 +19,33 @@ import { color, radius, space } from "@/ui/theme/tokens";
  */
 
 export type LoadoutEntryCardProps = {
-  /** From `useLoadoutGate`. */
+  /** From `useLoadoutGate`. Only meaningful once `pending` is false. */
   readonly locked: boolean;
+  /**
+   * The subscription hasn't resolved yet.
+   *
+   * ⚠ A third state, not a synonym for `locked`. The verdict denies a null
+   * subscription on purpose, so during the cold-start `/subscriptions/me` round
+   * trip a paying Premium+ user looks exactly like a free one — and showing them
+   * a padlock for a feature they bought is worse than showing them nothing.
+   */
+  readonly pending?: boolean;
   readonly onPress: () => void;
 };
 
-export function LoadoutEntryCard({ locked, onPress }: LoadoutEntryCardProps) {
+export function LoadoutEntryCard({
+  locked,
+  pending = false,
+  onPress,
+}: LoadoutEntryCardProps) {
   return (
     <TouchableOpacity
-      style={styles.card}
+      style={[styles.card, pending && styles.cardPending]}
       onPress={onPress}
+      disabled={pending}
       testID="loadout-entry-card"
       accessibilityRole="button"
+      accessibilityState={{ disabled: pending }}
       accessibilityLabel={
         locked
           ? "Adapt to your gym. Premium Plus feature, locked."
@@ -39,7 +54,7 @@ export function LoadoutEntryCard({ locked, onPress }: LoadoutEntryCardProps) {
     >
       <View style={styles.icon}>
         <Ionicons
-          name={locked ? "lock-closed" : "sparkles"}
+          name={pending ? "sparkles" : locked ? "lock-closed" : "sparkles"}
           size={19}
           color={color.$primary}
         />
@@ -52,9 +67,11 @@ export function LoadoutEntryCard({ locked, onPress }: LoadoutEntryCardProps) {
           </Pill>
         </View>
         <Text style={styles.subtitle}>
-          {locked
-            ? "Unlock to re-map this workout to whatever kit you have"
-            : "Re-map this workout to whatever kit you have today"}
+          {pending
+            ? "Re-map this workout to whatever kit you have today"
+            : locked
+              ? "Unlock to re-map this workout to whatever kit you have"
+              : "Re-map this workout to whatever kit you have today"}
         </Text>
       </View>
       <Ionicons name="chevron-forward" size={16} color={color.$primary} />
@@ -73,6 +90,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: color.$primaryDim,
   },
+  cardPending: { opacity: 0.6 },
   icon: {
     width: 42,
     height: 42,

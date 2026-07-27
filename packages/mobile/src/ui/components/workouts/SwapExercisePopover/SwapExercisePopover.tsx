@@ -47,7 +47,7 @@
  *       specs/05-active-session/requirements.md STORY-004 (the surface it serves)
  */
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "expo-router";
 import { refreshExerciseCache } from "@/application/queries/exercises.query";
 import type { SubstituteCandidate } from "@/domain/models/loadout";
@@ -103,6 +103,16 @@ export function SwapExercisePopover({
   const router = useRouter();
   const { api, storage } = useAdapters();
   const [resolveFailed, setResolveFailed] = useState(false);
+  const [isResolving, setIsResolving] = useState(false);
+
+  // ⚠ Cleared on every open. This component never unmounts — `ActiveSessionContainer`
+  // renders it unconditionally and drives it by prop — so without this, a failed
+  // resolve on row A leaves "That exercise isn't available on this device yet"
+  // sitting above a perfectly good list the next time the user swaps row B, for
+  // an exercise they never touched.
+  useEffect(() => {
+    if (visible) setResolveFailed(false);
+  }, [visible]);
 
   const onCreateExercise = useCallback(() => {
     // Close first so the full-screen creator isn't stacked behind an open sheet.
@@ -118,11 +128,24 @@ export function SwapExercisePopover({
       // that concept belongs to the Loadout save path.
       let cached = storage.getCachedExercise(candidate.id);
       if (!cached) {
-        // One refresh, then one retry. See the cache-resolution note in the file
-        // header: a server-visible exercise missing from a stale local cache is a
-        // real case, and the alternative is a swap that silently does nothing.
-        await refreshExerciseCache(api, storage);
-        cached = storage.getCachedExercise(candidate.id);
+        // ⚠ Re-entrancy guard, not politeness. `refreshExerciseCache` walks up
+        // to REFRESH_MAX_PAGES sequential `getExercises` calls, so on a large
+        // library the sheet is inert for seconds while the user is standing at a
+        // rack — and every impatient re-tap would start ANOTHER full-library walk
+        // against the same storage. The busy flag also gives the sheet something
+        // to show, instead of looking like the tap did nothing.
+        if (isResolving) return;
+        setIsResolving(true);
+        try {
+          // One refresh, then one retry. See the cache-resolution note in the
+          // file header: a server-visible exercise missing from a stale local
+          // cache is a real case, and the alternative is a swap that silently
+          // does nothing.
+          await refreshExerciseCache(api, storage);
+          cached = storage.getCachedExercise(candidate.id);
+        } finally {
+          setIsResolving(false);
+        }
       }
       if (!cached) {
         setResolveFailed(true);
@@ -131,7 +154,7 @@ export function SwapExercisePopover({
       setResolveFailed(false);
       onSwap([toPickerExerciseRow(api.enrichExerciseLabels(cached))]);
     },
-    [api, storage, onSwap],
+    [api, storage, onSwap, isResolving],
   );
 
   return (
@@ -144,9 +167,11 @@ export function SwapExercisePopover({
       onSelect={(candidate) => void onSelect(candidate)}
       onCreateExercise={onCreateExercise}
       unavailableMessage={
-        resolveFailed
-          ? "That exercise isn't available on this device yet. Pull to refresh your library and try again."
-          : null
+        isResolving
+          ? "Fetching that exercise…"
+          : resolveFailed
+            ? "That exercise isn't available on this device yet. Pull to refresh your library and try again."
+            : null
       }
       testID="swap-picker-sheet"
     />

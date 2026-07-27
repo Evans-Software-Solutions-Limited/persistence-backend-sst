@@ -79,6 +79,8 @@ interface WorkoutDetailPresenterProps {
   readonly showLoadout?: boolean;
   /** From `useLoadoutGate`. Locked still renders — the paywall is the pitch. */
   readonly loadoutLocked?: boolean;
+  /** Subscription still resolving — render neither padlock nor a live entry. */
+  readonly loadoutPending?: boolean;
   readonly loadoutVariations?: readonly WorkoutVariationSummary[];
   readonly onOpenLoadout?: () => void;
   readonly onOpenVariation?: (variationId: string) => void;
@@ -164,6 +166,7 @@ export function WorkoutDetailPresenter({
   onExercisePress,
   showLoadout = false,
   loadoutLocked = false,
+  loadoutPending = false,
   loadoutVariations = [],
   onOpenLoadout,
   onOpenVariation,
@@ -236,6 +239,7 @@ export function WorkoutDetailPresenter({
             {showLoadout && onOpenLoadout ? (
               <LoadoutEntryCard
                 locked={loadoutLocked}
+                pending={loadoutPending}
                 onPress={onOpenLoadout}
               />
             ) : null}

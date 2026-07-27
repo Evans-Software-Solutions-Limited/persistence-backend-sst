@@ -294,6 +294,63 @@ describe("SwapExercisePopover (T-2.7 adapter)", () => {
     expect(mockRouterPush).toHaveBeenCalledWith("/(app)/exercises/create");
   });
 
+  it("clears a previous row's resolve error when the sheet reopens", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    api.substitutes = {
+      best: [],
+      others: [buildCandidate()],
+      meta: { truncated: false },
+    };
+    jest
+      .spyOn(api, "getExercises")
+      .mockResolvedValue(ok({ data: [], hasMore: false, cursor: null }));
+
+    const onSwap = jest.fn();
+    const { findByTestId, queryByTestId, rerender } = renderWithTheme(
+      <AdapterProvider adapters={makeAdapters(storage, api)}>
+        <SwapExercisePopover
+          visible
+          onClose={jest.fn()}
+          onSwap={onSwap}
+          forExerciseId="ex-bench"
+        />
+      </AdapterProvider>,
+    );
+    fireEvent.press(await findByTestId("swap-others-ex-incline"));
+    await findByTestId("swap-sheet-unavailable");
+
+    // ⚠ This component NEVER unmounts — the active-session screen renders it
+    // unconditionally and drives it by prop — so a sticky error would sit above
+    // a perfectly good list on the next swap, naming an exercise the user never
+    // touched.
+    const close = (
+      <AdapterProvider adapters={makeAdapters(storage, api)}>
+        <SwapExercisePopover
+          visible={false}
+          onClose={jest.fn()}
+          onSwap={onSwap}
+          forExerciseId="ex-bench"
+        />
+      </AdapterProvider>
+    );
+    rerender(close);
+    rerender(
+      <AdapterProvider adapters={makeAdapters(storage, api)}>
+        <SwapExercisePopover
+          visible
+          onClose={jest.fn()}
+          onSwap={onSwap}
+          forExerciseId="ex-other"
+        />
+      </AdapterProvider>,
+    );
+
+    await waitFor(() =>
+      expect(queryByTestId("swap-sheet-unavailable")).toBeNull(),
+    );
+  });
+
   it("renders with only its required props (defaults applied)", async () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();

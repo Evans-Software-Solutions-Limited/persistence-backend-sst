@@ -1,7 +1,7 @@
 import * as ImageManipulator from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
 import { useCameraPermissions } from "expo-camera";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { EquipmentPickerGroup } from "@/domain/services/loadout.service";
 import { scanDraftToEquipmentIds } from "@/domain/services/loadout.service";
 import type { LoadoutApiError } from "@/domain/ports/api.port";
@@ -91,12 +91,24 @@ export function EquipmentScanSheetContainer({
   const visible = step === "scan";
   const [stage, setStage] = useState<ScanStage>("capture");
   const [errorKind, setErrorKind] = useState<ScanErrorKind | null>(null);
+  /**
+   * Bumped on every open and every capture, so a settled request can tell
+   * whether it still owns the sheet.
+   *
+   * ⚠ Needed because the scan is the SLOWEST call in the app (E1: ~10 s mean)
+   * and the sheet is dismissable throughout. Without it: start a scan, dismiss,
+   * reopen for a different room, and the first response paints the previous
+   * photo's detections over the fresh sheet — after which `scanDraftToEquipmentIds`
+   * adapts the workout against equipment from another gym.
+   */
+  const runIdRef = useRef(0);
 
   // Reset on every open. A draft left from a previous photo would otherwise be
   // the first thing the user sees, and every chip in it would look like a
   // detection from the room they are standing in now.
   useEffect(() => {
     if (!visible) return;
+    runIdRef.current += 1;
     setStage("capture");
     setErrorKind(null);
     setScanDraft(null);
@@ -104,33 +116,51 @@ export function EquipmentScanSheetContainer({
 
   const runScan = useCallback(
     async (uri: string, width: number, height: number) => {
+      runIdRef.current += 1;
+      const runId = runIdRef.current;
+      const isCurrent = () => runIdRef.current === runId;
+
       setStage("scanning");
       setErrorKind(null);
-      const manipulated = await ImageManipulator.manipulateAsync(
-        uri,
-        resizeToLongEdge(width, height, MAX_DIMENSION),
-        {
-          compress: JPEG_QUALITY,
-          format: ImageManipulator.SaveFormat.JPEG,
-          base64: true,
-        },
-      );
-      if (!manipulated.base64) {
+      // ⚠ The whole body is guarded, and the `scanning` stage is why.
+      // `manipulateAsync` THROWS on a corrupt or undecodable asset and on OOM
+      // for a large image — and the stage has already been set, so an escaped
+      // rejection leaves the sheet on a spinner with no error branch, no retry
+      // and no way out but dismissing it. (`SnapAISheetContainer` avoids this
+      // only by accident: it manipulates before entering its scanning stage.)
+      try {
+        const manipulated = await ImageManipulator.manipulateAsync(
+          uri,
+          resizeToLongEdge(width, height, MAX_DIMENSION),
+          {
+            compress: JPEG_QUALITY,
+            format: ImageManipulator.SaveFormat.JPEG,
+            base64: true,
+          },
+        );
+        if (!isCurrent()) return;
+        if (!manipulated.base64) {
+          setErrorKind("generic");
+          setStage("error");
+          return;
+        }
+        const result = await api.scanEquipment({
+          imageBase64: manipulated.base64,
+          mediaType: "image/jpeg",
+        });
+        if (!isCurrent()) return;
+        if (!result.ok) {
+          setErrorKind(classifyScanError(result.error));
+          setStage("error");
+          return;
+        }
+        setScanDraft(result.value);
+        setStage("draft");
+      } catch {
+        if (!isCurrent()) return;
         setErrorKind("generic");
         setStage("error");
-        return;
       }
-      const result = await api.scanEquipment({
-        imageBase64: manipulated.base64,
-        mediaType: "image/jpeg",
-      });
-      if (!result.ok) {
-        setErrorKind(classifyScanError(result.error));
-        setStage("error");
-        return;
-      }
-      setScanDraft(result.value);
-      setStage("draft");
     },
     [api, setScanDraft],
   );
@@ -140,10 +170,20 @@ export function EquipmentScanSheetContainer({
     // ~88% of the screen with a scrolling body, which is the wrong frame for
     // composing the wide room shot the model needs (E1: framing is the single
     // biggest driver of recall on real photos).
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ["images"],
-      quality: 1,
-    });
+    let result: ImagePicker.ImagePickerResult;
+    try {
+      // Throws outright when the camera is unavailable (simulator, in use by
+      // another app). Unhandled, that is a rejection with no visible effect —
+      // the user taps and nothing happens at all.
+      result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ["images"],
+        quality: 1,
+      });
+    } catch {
+      setErrorKind("generic");
+      setStage("error");
+      return;
+    }
     if (result.canceled) return;
     const asset = result.assets?.[0];
     if (!asset?.uri) return;
@@ -151,13 +191,20 @@ export function EquipmentScanSheetContainer({
   }, [runScan]);
 
   const onPickFromLibrary = useCallback(async () => {
-    const permissionResult =
-      await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permissionResult.granted) return;
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images"],
-      quality: 1,
-    });
+    let result: ImagePicker.ImagePickerResult;
+    try {
+      const permissionResult =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permissionResult.granted) return;
+      result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        quality: 1,
+      });
+    } catch {
+      setErrorKind("generic");
+      setStage("error");
+      return;
+    }
     if (result.canceled) return;
     const asset = result.assets?.[0];
     if (!asset?.uri) return;

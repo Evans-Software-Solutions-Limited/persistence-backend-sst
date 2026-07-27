@@ -235,13 +235,46 @@ describe("WorkoutDetailContainer", () => {
       useLoadoutFlow.setState({ rev: 0 });
     });
 
+    function subscription(tierName: "free" | "premium_plus") {
+      return {
+        subscriptionId: "sub-1",
+        tierName,
+        paymentStatus: "active",
+        billingCycle: "monthly",
+        startsAt: "2026-07-01T00:00:00Z",
+        expiresAt: null,
+        cancelledAt: null,
+        trialEndsAt: null,
+        externalSubscriptionId: null,
+        tierDisplayName: tierName,
+        tierDescription: null,
+        workoutLimit: null,
+        aiAccess: true,
+        aiWorkoutLimit: 0,
+        gymBuddyAccess: false,
+        trainerClientLimit: null,
+        isTrainerTier: false,
+        role: "user" as const,
+        hasUsedUserTrial: false,
+        hasUsedTrainerTrial: false,
+        isEligibleForUserTrial: true,
+        isEligibleForTrainerTrial: true,
+        scheduledChange: null,
+      };
+    }
+
     function seedOwnedWorkout(
       api: InMemoryApiAdapter,
       storage: InMemoryStorageAdapter,
+      tierName: "free" | "premium_plus" = "free",
     ) {
       const workout = buildWorkout();
       storage.cacheWorkoutDetail("user-1", workout);
       jest.spyOn(api, "getWorkout").mockResolvedValue(ok(workout));
+      // ⚠ Always seeded. With no subscription the gate never RESOLVES, and the
+      // card correctly renders neither locked nor unlocked — so a test that
+      // omits this is asserting against the pending state by accident.
+      api.mySubscription = subscription(tierName) as never;
       return workout;
     }
 
@@ -249,12 +282,44 @@ describe("WorkoutDetailContainer", () => {
       const api = new InMemoryApiAdapter();
       const storage = new InMemoryStorageAdapter();
       seedOwnedWorkout(api, storage);
-      const { findByTestId, getByText } = renderWithTheme(
+      const { findByText } = renderWithTheme(
         withAdapters(makeAdapters(api, storage), <WorkoutDetailContainer />),
       );
 
-      await findByTestId("loadout-entry-card");
-      getByText("Unlock to re-map this workout to whatever kit you have");
+      expect(
+        await findByText(
+          "Unlock to re-map this workout to whatever kit you have",
+        ),
+      ).toBeTruthy();
+    });
+
+    it("shows NEITHER state, and does nothing on tap, until the subscription resolves", async () => {
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      const workout = buildWorkout();
+      storage.cacheWorkoutDetail("user-1", workout);
+      jest.spyOn(api, "getWorkout").mockResolvedValue(ok(workout));
+      // Never resolves — the cold-start window.
+      jest
+        .spyOn(api, "getMySubscription")
+        .mockReturnValue(new Promise(() => {}));
+
+      const { findByTestId, queryByText } = renderWithTheme(
+        withAdapters(makeAdapters(api, storage), <WorkoutDetailContainer />),
+      );
+
+      const card = await findByTestId("loadout-entry-card");
+      // ⚠ A padlock here is shown to PAYING Premium+ users on every cold start,
+      // because the verdict denies an unresolved subscription by design.
+      expect(
+        queryByText("Unlock to re-map this workout to whatever kit you have"),
+      ).toBeNull();
+      expect(card.props.accessibilityState.disabled).toBe(true);
+
+      fireEvent.press(card);
+      // And tapping must not sell the feature to someone who may already own it.
+      expect(useLoadoutFlow.getState().upsellOpen).toBe(false);
+      expect(useLoadoutFlow.getState().step).toBeNull();
     });
 
     it("opens the UPSELL — not the flow — when the user isn't entitled", async () => {
@@ -276,32 +341,7 @@ describe("WorkoutDetailContainer", () => {
     it("opens the FLOW, seeded with the workout, for an entitled user", async () => {
       const api = new InMemoryApiAdapter();
       const storage = new InMemoryStorageAdapter();
-      const workout = seedOwnedWorkout(api, storage);
-      api.mySubscription = {
-        subscriptionId: "sub-1",
-        tierName: "premium_plus",
-        paymentStatus: "active",
-        billingCycle: "monthly",
-        startsAt: "2026-07-01T00:00:00Z",
-        expiresAt: null,
-        cancelledAt: null,
-        trialEndsAt: null,
-        externalSubscriptionId: null,
-        tierDisplayName: "Premium+",
-        tierDescription: null,
-        workoutLimit: null,
-        aiAccess: true,
-        aiWorkoutLimit: 0,
-        gymBuddyAccess: false,
-        trainerClientLimit: null,
-        isTrainerTier: false,
-        role: "user",
-        hasUsedUserTrial: false,
-        hasUsedTrainerTrial: false,
-        isEligibleForUserTrial: true,
-        isEligibleForTrainerTrial: true,
-        scheduledChange: null,
-      };
+      const workout = seedOwnedWorkout(api, storage, "premium_plus");
       const { findByTestId, getByText } = renderWithTheme(
         withAdapters(makeAdapters(api, storage), <WorkoutDetailContainer />),
       );
