@@ -1,6 +1,7 @@
 import Elysia, { t } from "elysia";
 import { ExerciseService } from "../../repositories/exerciseService";
 import { findInvalidReferenceId } from "../shared/referenceIds";
+import { readIdempotencyKey } from "../../shared/idempotencyKey";
 import {
   getAuthUser,
   requireAuth,
@@ -55,25 +56,34 @@ export const exercisesCreateHandler = new Elysia()
         return { error: badReference };
       }
 
-      const exercise = await ctx.ExerciseRepository.create(userId, {
-        name,
-        description: body.description ?? null,
-        instructions: body.instructions ?? null,
-        videoUrl: body.video_url ?? null,
-        thumbnailUrl: body.thumbnail_url ?? null,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        category: (body.category ?? "strength") as any,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        difficultyLevel: (body.difficulty_level ?? "beginner") as any,
-        regionType: body.region_type ?? null,
-        movementType: body.movement_type ?? null,
-        primaryMuscles: body.primary_muscles ?? [],
-        secondaryMuscles: body.secondary_muscles ?? [],
-        equipmentRequired: body.equipment_required ?? [],
-        accessibilityRequirements: body.accessibility_requirements ?? [],
-        accessibilityModifications: body.accessibility_modifications ?? null,
-        isPublic: body.is_public ?? false,
-      });
+      // Client-supplied idempotency key (mobile sync queue). Absent for legacy
+      // clients and direct-API callers, in which case the create behaves exactly
+      // as before.
+      const clientRequestId = readIdempotencyKey(ctx.headers);
+
+      const exercise = await ctx.ExerciseRepository.create(
+        userId,
+        {
+          name,
+          description: body.description ?? null,
+          instructions: body.instructions ?? null,
+          videoUrl: body.video_url ?? null,
+          thumbnailUrl: body.thumbnail_url ?? null,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          category: (body.category ?? "strength") as any,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          difficultyLevel: (body.difficulty_level ?? "beginner") as any,
+          regionType: body.region_type ?? null,
+          movementType: body.movement_type ?? null,
+          primaryMuscles: body.primary_muscles ?? [],
+          secondaryMuscles: body.secondary_muscles ?? [],
+          equipmentRequired: body.equipment_required ?? [],
+          accessibilityRequirements: body.accessibility_requirements ?? [],
+          accessibilityModifications: body.accessibility_modifications ?? null,
+          isPublic: body.is_public ?? false,
+        },
+        clientRequestId,
+      );
 
       ctx.set.status = 201;
       return { data: exercise };

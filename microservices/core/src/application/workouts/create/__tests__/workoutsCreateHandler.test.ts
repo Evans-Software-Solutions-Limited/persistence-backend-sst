@@ -281,6 +281,10 @@ describe("WorkoutsCreateHandler", () => {
             }),
           ]),
         }),
+        // The idempotency key, threaded from the Idempotency-Key header. `null`
+        // here because this request sends none — asserting it explicitly proves
+        // absence reaches the repository as `null` rather than `undefined`.
+        null,
       );
     });
 
@@ -389,6 +393,7 @@ describe("WorkoutsCreateHandler", () => {
       expect(workoutRepositoryMocks.createWithExercises).toHaveBeenCalledWith(
         "test-user-id",
         expect.objectContaining({ exercises: [] }),
+        null, // no Idempotency-Key header on this request
       );
     });
 
@@ -409,6 +414,7 @@ describe("WorkoutsCreateHandler", () => {
       expect(workoutRepositoryMocks.createWithExercises).toHaveBeenCalledWith(
         "test-user-id",
         expect.objectContaining({ showInOwnerLibrary: true }),
+        null, // no Idempotency-Key header on this request
       );
     });
 
@@ -432,6 +438,7 @@ describe("WorkoutsCreateHandler", () => {
       expect(workoutRepositoryMocks.createWithExercises).toHaveBeenCalledWith(
         "test-user-id",
         expect.objectContaining({ showInOwnerLibrary: false }),
+        null, // no Idempotency-Key header on this request
       );
     });
   });

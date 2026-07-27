@@ -276,17 +276,13 @@ describe("unsynced local-id handling", () => {
       );
       storage.markMutationPermanentlyFailed(created.id, "422");
 
-      const result = updateExerciseCommand(
-        { storage, generateId: () => "x" },
-        existing,
-        {
-          name: "New name",
-          category: "strength",
-          difficulty: "intermediate",
-          primaryMuscleGroups: ["chest"],
-          equipment: ["barbell"],
-        },
-      );
+      const result = updateExerciseCommand({ storage }, existing, {
+        name: "New name",
+        category: "strength",
+        difficulty: "intermediate",
+        primaryMuscleGroups: ["chest"],
+        equipment: ["barbell"],
+      });
 
       expect(result.ok).toBe(true);
       const queued = storage.getQueuedEntriesForEntity(

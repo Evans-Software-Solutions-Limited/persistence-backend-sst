@@ -32,6 +32,17 @@ const customExercise = (id: string, name = "My Lift"): Exercise => ({
 const mockFetch = jest.fn();
 (globalThis as Record<string, unknown>).fetch = mockFetch;
 
+/**
+ * A clock far enough ahead that a failed entry's backoff window has opened.
+ *
+ * `markMutationFailed` now stamps `next_attempt_at` (base 5s, growing with the
+ * attempt number), so a second drain in the same tick correctly declines to
+ * re-send. Tests that mean "retried on a LATER drain" pass this rather than
+ * sleeping. Using the real clock instead would silently assert the old
+ * no-backoff behaviour.
+ */
+const AFTER_BACKOFF = { now: () => Date.now() + 10 * 60_000 };
+
 describe("processSyncQueue", () => {
   let storage: InMemoryStorageAdapter;
   let auth: InMemoryAuthAdapter;
@@ -98,15 +109,17 @@ describe("processSyncQueue", () => {
       text: async () => "boom",
     });
 
-    // Attempts 1 and 2 fail but stay retryable — no capture yet.
+    // Attempts 1 and 2 fail but stay retryable — no capture yet. Each later
+    // drain passes AFTER_BACKOFF because a failure now stamps a retry window;
+    // draining again in the same tick would (correctly) skip the entry.
     await processSyncQueue(storage, auth, "https://api.test");
     expect(captureSyncFailure).not.toHaveBeenCalled();
-    await processSyncQueue(storage, auth, "https://api.test");
+    await processSyncQueue(storage, auth, "https://api.test", AFTER_BACKOFF);
     expect(captureSyncFailure).not.toHaveBeenCalled();
 
     // Attempt 3 exhausts max_retries (default 3) → the entry is now silently
     // stuck, so it's reported exactly once.
-    await processSyncQueue(storage, auth, "https://api.test");
+    await processSyncQueue(storage, auth, "https://api.test", AFTER_BACKOFF);
     expect(captureSyncFailure).toHaveBeenCalledTimes(1);
     expect(captureSyncFailure).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -117,7 +130,7 @@ describe("processSyncQueue", () => {
     );
 
     // Once terminal it drops out of the drain — no repeat captures.
-    await processSyncQueue(storage, auth, "https://api.test");
+    await processSyncQueue(storage, auth, "https://api.test", AFTER_BACKOFF);
     expect(captureSyncFailure).toHaveBeenCalledTimes(1);
   });
 
@@ -1103,7 +1116,12 @@ describe("processSyncQueue", () => {
     });
 
     // Entry is now `failed` — second drain must pick it up again.
-    const second = await processSyncQueue(storage, auth, "https://api.test");
+    const second = await processSyncQueue(
+      storage,
+      auth,
+      "https://api.test",
+      AFTER_BACKOFF,
+    );
     expect(second).toEqual({
       processed: 1,
       succeeded: 1,
@@ -1257,7 +1275,12 @@ describe("processSyncQueue", () => {
     // Second drain — must not see the blocked entry. fetch is not
     // called again.
     mockFetch.mockReset();
-    const second = await processSyncQueue(storage, auth, "https://api.test");
+    const second = await processSyncQueue(
+      storage,
+      auth,
+      "https://api.test",
+      AFTER_BACKOFF,
+    );
     expect(mockFetch).not.toHaveBeenCalled();
     expect(second).toEqual({
       processed: 0,
@@ -1585,7 +1608,13 @@ describe("processSyncQueue", () => {
       ok: true,
       json: async () => ({ data: { id: "server-ex-1" } }),
     });
-    const result = await processSyncQueue(storage, auth, "https://api.test");
+    // The deferral counted as a failure, so the entry carries a retry window.
+    const result = await processSyncQueue(
+      storage,
+      auth,
+      "https://api.test",
+      AFTER_BACKOFF,
+    );
 
     expect(result.succeeded).toBe(1);
     const sent = JSON.parse(mockFetch.mock.calls[0][1].body as string);

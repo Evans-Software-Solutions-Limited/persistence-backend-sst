@@ -3,6 +3,7 @@ import type {
   RecordResponseSummary,
   RecordResponseSummaryPR,
   StoragePort,
+  SyncQueueEntry,
 } from "@/domain/ports/storage.port";
 import type { EntitlementVerdict } from "@/domain/ports/sync.types";
 import type { HabitConfigEntry } from "@/domain/ports/api.port";
@@ -173,6 +174,37 @@ function prepareExercisePayload(
   }
 }
 
+/**
+ * Is this entry eligible to be sent right now?
+ *
+ * `getPendingMutations` returns everything still RETRYABLE — the question the
+ * status UI and the coalescing paths ask. Backoff is a different question ("not
+ * yet"), so it is applied here, at the point of sending, rather than by hiding
+ * rows from the queue read.
+ *
+ * A malformed or unparseable `nextAttemptAt` is treated as DUE. Refusing to send
+ * because a timestamp could not be parsed would strand the mutation, which is a
+ * far worse outcome than one early retry.
+ *
+ * Exported so the worker's loop can use the same predicate it drains by — if the
+ * two disagreed, the loop would spin on an entry the drain always skips.
+ */
+export function isMutationDue(
+  entry: Pick<SyncQueueEntry, "nextAttemptAt">,
+  now: number = Date.now(),
+): boolean {
+  if (entry.nextAttemptAt === null) return true;
+  // SQLite's `datetime('now')` yields "YYYY-MM-DD HH:MM:SS" in UTC with no zone
+  // marker, which `Date.parse` reads as LOCAL time — hours out in either
+  // direction. Normalise to ISO-with-Z before parsing.
+  const normalized = entry.nextAttemptAt.includes("T")
+    ? entry.nextAttemptAt
+    : `${entry.nextAttemptAt.replace(" ", "T")}Z`;
+  const dueAt = Date.parse(normalized);
+  if (Number.isNaN(dueAt)) return true;
+  return dueAt <= now;
+}
+
 export type SyncResult = {
   processed: number;
   succeeded: number;
@@ -231,13 +263,26 @@ export async function processSyncQueue(
   storage: StoragePort,
   auth: AuthPort,
   apiBaseUrl: string,
+  /**
+   * Clock seam for the backoff check. Injected only by tests, which need to
+   * assert "this entry is retried once its window opens" without sleeping.
+   * Production always uses the real clock.
+   */
+  opts?: { now?: () => number },
 ): Promise<SyncResult> {
+  const now = opts?.now ?? Date.now;
   const entries = storage.getPendingMutations();
   let succeeded = 0;
   let failed = 0;
   let blocked = 0;
 
   for (const entry of entries) {
+    // Backoff: skip an entry whose retry window hasn't opened. Checked BEFORE
+    // the claim so a not-yet-due entry stays `failed` (visible to the status UI
+    // and to the coalescing paths) rather than being flipped to `in_flight` and
+    // released again.
+    if (!isMutationDue(entry, now())) continue;
+
     // Atomic claim — `markMutationInFlight` is row-conditional at the
     // storage layer (only flips status when currently
     // pending/failed). Returns false when another concurrent drain
@@ -259,6 +304,19 @@ export async function processSyncQueue(
       };
       if (token) {
         headers["Authorization"] = `Bearer ${token}`;
+      }
+      // Safe retries. An ambiguous failure — a timeout or connection reset that
+      // happened AFTER the server committed — used to duplicate the row on the
+      // next attempt, because only `POST /sessions/record` had an idempotency
+      // key (`clientSessionId`); workout, exercise and nutrition creates had
+      // none. The key is stamped once at enqueue, so every attempt at the same
+      // logical mutation presents the same value.
+      //
+      // Omitted for rows enqueued before the column existed, which preserves
+      // exactly the previous behaviour for them rather than inventing a key that
+      // would differ per attempt (and so guarantee a duplicate).
+      if (entry.idempotencyKey !== null) {
+        headers["Idempotency-Key"] = entry.idempotencyKey;
       }
 
       // Per-entity payload preparation, immediately before the send.

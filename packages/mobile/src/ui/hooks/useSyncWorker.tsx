@@ -1,7 +1,12 @@
 import { useEffect, useRef } from "react";
 import { AppState, type AppStateStatus } from "react-native";
-import { processSyncQueue } from "@/application/commands/sync.command";
+import {
+  isMutationDue,
+  processSyncQueue,
+} from "@/application/commands/sync.command";
 import { getApiBaseUrl } from "@/adapters/api";
+import { SYNC_QUEUE_TABLES } from "@/adapters/storage";
+import type { StoragePort } from "@/domain/ports/storage.port";
 import { useAdapters } from "./useAdapters";
 import { useAuth } from "./useAuth";
 
@@ -15,6 +20,23 @@ import { useAuth } from "./useAuth";
  * Exported so tests can assert against the exact cadence.
  */
 export const SYNC_RECONNECT_DEBOUNCE_MS = 1_000;
+
+/**
+ * Is there at least one queue entry eligible to be sent right now?
+ *
+ * Used as the drain loop's continue-condition. Wrapped so a storage failure
+ * reads as "nothing due" rather than spinning the loop on a throw.
+ */
+function hasWorkDue(storage: StoragePort): boolean {
+  try {
+    // The SAME predicate the drain skips by. If these disagreed, the loop would
+    // spin forever on an entry `processSyncQueue` always passes over.
+    return storage.getPendingMutations().some((e) => isMutationDue(e));
+  } catch (err) {
+    console.error("[useSyncWorker] could not read the queue:", err);
+    return false;
+  }
+}
 
 /**
  * Drain the sync queue at app launch, on every foreground transition, and
@@ -109,8 +131,16 @@ export function useSyncWorker(): void {
             // keep going — next foreground attempt may succeed.
             console.error("[useSyncWorker] flush failed:", err);
           }
-          // Loop again only if a flush was requested during this pass.
-        } while (reflushRef.current);
+          // Loop again if a flush was explicitly requested during this pass, OR
+          // if the queue still holds work that is DUE — which covers a mutation
+          // enqueued mid-flush (whose bus event this pass deliberately ignored).
+          //
+          // Terminates because the due-set strictly shrinks: a success moves the
+          // entry to `completed`, a failure stamps `next_attempt_at` so it is no
+          // longer due, and a claim lost to a concurrent drain belongs to that
+          // drain. `getPendingMutations` throwing (a broken cache) must not spin,
+          // so treat an error as "nothing due".
+        } while (reflushRef.current || hasWorkDue(storage));
       } finally {
         flushingRef.current = false;
       }
@@ -143,7 +173,44 @@ export function useSyncWorker(): void {
       await flush();
     };
 
+    // Recover mutations stranded `in_flight` by a previous process death before
+    // the first drain. Nothing else ever returned them to the pool — they were
+    // invisible to every drain AND to /sync-failed, while `getSyncStats().inFlight`
+    // kept counting them, so the UI could sit on "Syncing…" forever. Safe here
+    // because no drain can be running in a process that has only just started,
+    // and the re-POST is now covered by the entry's idempotency key.
+    try {
+      const recovered = storage.recoverInFlightMutations();
+      if (recovered > 0) {
+        console.warn(
+          `[useSyncWorker] recovered ${recovered} mutation(s) stranded in_flight by a previous session`,
+        );
+      }
+    } catch (err) {
+      console.error("[useSyncWorker] in-flight recovery failed:", err);
+    }
+
     void flush();
+
+    // Drive the drain from local writes, not just from app lifecycle. Previously
+    // a mutation enqueued while ONLINE sat until the next foreground transition,
+    // reconnect, or a screen that happened to drain before fetching — which is
+    // why a pull-to-refresh was the thing that made a saved workout appear: it
+    // was the only workouts surface that also PUSHED. Subscribing to the queue
+    // table means an enqueue schedules its own flush.
+    //
+    // ⚠ The drain WRITES to `sync_queue` itself (claim, complete, fail, prune),
+    // so every pass produces bus events. Calling `flush()` from here
+    // unconditionally would therefore feed itself. Two things break the cycle:
+    // events arriving mid-flush are ignored (the running pass re-checks the queue
+    // before finishing, so nothing is missed), and the loop's continue-condition
+    // is "is there still work DUE" — which strictly shrinks each pass, because a
+    // success completes the entry and a failure stamps a backoff that makes it
+    // not-yet-due.
+    const queueUnsub = storage.subscribe(SYNC_QUEUE_TABLES, () => {
+      if (flushingRef.current) return;
+      void flush();
+    });
 
     const appStateSub = AppState.addEventListener(
       "change",
@@ -196,6 +263,7 @@ export function useSyncWorker(): void {
 
     return () => {
       mounted = false;
+      queueUnsub();
       appStateSub.remove();
       netInfoUnsub();
       if (reconnectTimerRef.current) {

@@ -952,13 +952,73 @@ export class ExerciseRepository {
    *
    * Spec: design.md § POST /exercises · AC 7.3
    */
-  async create(userId: string, data: CreateExerciseInput): Promise<Exercise> {
+  /**
+   * Create a custom exercise.
+   *
+   * `clientRequestId` makes the create REPLAY-SAFE. The mobile sync queue cannot
+   * distinguish "the request never arrived" from "it arrived, committed, and the
+   * response was lost", so its retry used to insert a second exercise. With a key
+   * present, a replay resolves to the row the first attempt created and returns
+   * it unchanged — indistinguishable from the original success.
+   *
+   * Mirrors `SessionRepository.record`'s `clientSessionId` handling, which has
+   * been the pattern for this since M13. Omitting the key preserves the previous
+   * behaviour exactly (a plain insert), so legacy clients and direct-API callers
+   * are unaffected.
+   */
+  async create(
+    userId: string,
+    data: CreateExerciseInput,
+    clientRequestId?: string | null,
+  ): Promise<Exercise> {
     const db = getDb();
-    const result = await db
+    const key = clientRequestId ?? null;
+
+    if (key === null) {
+      const result = await db
+        .insert(exercises)
+        .values({ ...data, createdBy: userId } as NewExercise)
+        .returning();
+      return result[0];
+    }
+
+    // ON CONFLICT DO NOTHING against the partial unique index, then read back on
+    // an empty return. Doing it in this order (rather than SELECT-then-INSERT)
+    // closes the window where two concurrent replays both see "no row yet" — the
+    // index arbitrates, and the loser simply reads the winner's row.
+    const inserted = await db
+      .insert(exercises)
+      .values({
+        ...data,
+        createdBy: userId,
+        clientRequestId: key,
+      } as NewExercise)
+      .onConflictDoNothing({
+        target: [exercises.createdBy, exercises.clientRequestId],
+      })
+      .returning();
+    if (inserted[0]) return inserted[0];
+
+    const existing = await db
+      .select()
+      .from(exercises)
+      .where(
+        and(
+          eq(exercises.createdBy, userId),
+          eq(exercises.clientRequestId, key),
+        ),
+      )
+      .limit(1);
+    // A conflict with nothing to read back would mean the index matched a row we
+    // cannot see, which should be impossible while the index is scoped to
+    // created_by. Fall back to a plain insert rather than returning undefined and
+    // letting the handler serialise `data: undefined`.
+    if (existing[0]) return existing[0];
+    const fallback = await db
       .insert(exercises)
       .values({ ...data, createdBy: userId } as NewExercise)
       .returning();
-    return result[0];
+    return fallback[0];
   }
 
   /**

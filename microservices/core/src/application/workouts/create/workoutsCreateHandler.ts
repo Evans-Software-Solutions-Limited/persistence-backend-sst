@@ -4,6 +4,7 @@ import {
   findInvalidRepRangeIndex,
   workoutExerciseInputSchema,
 } from "../shared/schemas";
+import { readIdempotencyKey } from "../../shared/idempotencyKey";
 import {
   getAuthUser,
   requireAuth,
@@ -67,16 +68,23 @@ export const workoutsCreateHandler = new Elysia()
         throw new EntitlementError(verdict, "create_workout");
       }
 
-      const workout = await ctx.WorkoutRepository.createWithExercises(userId, {
-        name,
-        description: description ?? null,
-        visibility: visibility ?? "private",
-        estimatedDurationMinutes: estimatedDurationMinutes ?? 30,
-        // Absent => true (personal). The coach-authoring flow sends false so
-        // client-authored workouts don't crowd the coach's own My Workouts.
-        showInOwnerLibrary: showInOwnerLibrary ?? true,
-        exercises: exercises ?? [],
-      });
+      // Client-supplied idempotency key (mobile sync queue). See the repository.
+      const clientRequestId = readIdempotencyKey(ctx.headers);
+
+      const workout = await ctx.WorkoutRepository.createWithExercises(
+        userId,
+        {
+          name,
+          description: description ?? null,
+          visibility: visibility ?? "private",
+          estimatedDurationMinutes: estimatedDurationMinutes ?? 30,
+          // Absent => true (personal). The coach-authoring flow sends false so
+          // client-authored workouts don't crowd the coach's own My Workouts.
+          showInOwnerLibrary: showInOwnerLibrary ?? true,
+          exercises: exercises ?? [],
+        },
+        clientRequestId,
+      );
 
       ctx.set.status = 201;
       return { data: workout };

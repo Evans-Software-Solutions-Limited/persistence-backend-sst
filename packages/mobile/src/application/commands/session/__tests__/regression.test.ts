@@ -207,10 +207,14 @@ describe("M3 regression: complete offline → queue holds flush → reconnect �
     // sqlite.adapter.ts. The next worker tick replays the same
     // intent without manual re-enqueue.
     nextFails = false;
+    // The failed attempt stamps a retry window (backoff), so "the NEXT worker
+    // tick" has to be a later one — draining again in the same tick correctly
+    // skips the entry. The clock seam expresses that without sleeping.
     const drain = await processSyncQueue(
       storage,
       fakeAuth(),
       "https://api.example.com",
+      { now: () => Date.now() + 10 * 60_000 },
     );
     expect(drain.succeeded).toBe(1);
     expect(drain.failed).toBe(0);

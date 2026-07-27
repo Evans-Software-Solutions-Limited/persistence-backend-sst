@@ -640,6 +640,11 @@ export const subscriptionStatusTransitions = pgTable(
 
 export const exercises = pgTable("exercises", {
   id: uuid("id").primaryKey().defaultRandom(),
+  // Client-supplied idempotency key (see
+  // 20260727120100_client_request_id_idempotency.sql). Nullable — legacy rows and
+  // direct-API callers have none, and NULLs never conflict in the partial unique
+  // index on (created_by, client_request_id).
+  clientRequestId: text("client_request_id"),
   name: text("name").notNull(),
   description: text("description"),
   instructions: text("instructions"),
@@ -669,6 +674,8 @@ export const exercises = pgTable("exercises", {
 
 export const workouts = pgTable("workouts", {
   id: uuid("id").primaryKey().defaultRandom(),
+  // Client-supplied idempotency key — see the `exercises` twin above.
+  clientRequestId: text("client_request_id"),
   name: text("name").notNull(),
   description: text("description"),
   createdBy: uuid("created_by").references(() => profiles.id, {

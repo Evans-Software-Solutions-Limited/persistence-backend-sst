@@ -94,6 +94,34 @@ const DB_NAME = "persistence.db";
  */
 const CHANGE_BUS_DEBOUNCE_MS = 16;
 
+/**
+ * Backoff schedule for a failed queue entry: `base * attempt²`, capped.
+ *
+ * 5s then 20s across the default 3-attempt budget. Small on purpose — these are
+ * user-visible writes, and the common transient failure (a cold Lambda, a wifi
+ * handoff) clears in seconds. The cap exists so a long-lived entry can't schedule
+ * itself hours out and appear stuck.
+ */
+const SYNC_BACKOFF_BASE_SECONDS = 5;
+const SYNC_BACKOFF_MAX_SECONDS = 300;
+
+/**
+ * Mint the idempotency key stamped on a queue entry at enqueue time.
+ *
+ * Not a UUID because there is no crypto-random primitive in this layer, and it
+ * does not need to be unguessable — only unique per logical mutation on one
+ * device. `entityId` is the strongest component: it is the caller's own
+ * `local-…` id, already unique per created row, so a retry of the same create
+ * always presents the same key while two distinct creates never collide. The
+ * timestamp + random suffix cover entries with no `entityId` (a preferences PUT,
+ * say) and make same-millisecond collisions negligible.
+ */
+function newIdempotencyKey(entry: EnqueueMutationInput): string {
+  const scope = entry.entityId ?? `${entry.entityType}:${entry.operation}`;
+  const suffix = Math.random().toString(36).slice(2, 10);
+  return `${scope}-${Date.now()}-${suffix}`;
+}
+
 type ChangeSubscriber = {
   tables: ReadonlySet<string>;
   onChange: (changed: ReadonlySet<string>) => void;
@@ -326,6 +354,18 @@ export class SQLiteStorageAdapter implements StoragePort {
         -- (not a sibling table) keeps the migration trivial and the read
         -- path single-query — verdict cardinality is 1:1 with the entry.
         entitlement_verdict TEXT,
+        -- Client-generated idempotency key, stamped once at enqueue and never
+        -- rewritten. Sent as the Idempotency-Key header so an ambiguous failure
+        -- (a timeout or reset AFTER the server committed) can be retried without
+        -- creating a second row. Only POST /sessions/record had an equivalent
+        -- (clientSessionId); workout / exercise / nutrition creates had none, so
+        -- an ordinary retry duplicated them.
+        idempotency_key TEXT,
+        -- Earliest time this entry may be attempted again, or NULL for "now".
+        -- Backs exponential backoff: before this, retry cadence WAS drain
+        -- cadence, so three foreground toggles during a server blip burnt the
+        -- whole 3-attempt budget in seconds and stranded the entry.
+        next_attempt_at TEXT,
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
@@ -784,6 +824,12 @@ export class SQLiteStorageAdapter implements StoragePort {
             max_retries INTEGER NOT NULL DEFAULT 3,
             error_message TEXT,
             entitlement_verdict TEXT,
+            -- Lockstep with the CREATE TABLE above, per the note there. These
+            -- are NOT copied from the source (a pre-M10.6 table cannot have
+            -- them) and are re-added by the PRAGMA-guarded ALTER that now runs
+            -- AFTER this rebuild.
+            idempotency_key TEXT,
+            next_attempt_at TEXT,
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             updated_at TEXT NOT NULL DEFAULT (datetime('now'))
           );
@@ -826,6 +872,33 @@ export class SQLiteStorageAdapter implements StoragePort {
           `CREATE INDEX IF NOT EXISTS idx_sync_queue_status ON sync_queue(status, created_at)`,
         );
       });
+    }
+
+    // Additive `sync_queue` columns for installs created before them:
+    // `idempotency_key` (safe retries) and `next_attempt_at` (backoff).
+    //
+    // ⚠ Ordering: this MUST run after the M10.6 rebuild above. That rebuild
+    // copies an explicit column list into a fresh table and drops the old one,
+    // so adding these columns before it would silently discard them for any
+    // install taking that branch.
+    //
+    // Deliberately NOT routed through `runSqliteMigrations`, despite that being
+    // the intended home for new schema changes. Its baseline rule stamps an
+    // install with NO `schema_version` row as "already at the latest shape" and
+    // runs nothing — correct for a fresh install (the CREATE TABLE carries the
+    // columns) but wrong for any install predating the runner itself, which would
+    // end up with neither the columns nor the migration. A missing column here is
+    // not cosmetic: every queue read names them, so the entire sync layer would
+    // throw `no such column`. The PRAGMA guard is correct for all three
+    // populations.
+    const syncQueueColumns = db.getAllSync(`PRAGMA table_info(sync_queue)`) as {
+      name: string;
+    }[];
+    const syncQueueNames = new Set(syncQueueColumns.map((c) => c.name));
+    for (const col of ["idempotency_key", "next_attempt_at"]) {
+      if (!syncQueueNames.has(col)) {
+        db.execSync(`ALTER TABLE sync_queue ADD COLUMN ${col} TEXT`);
+      }
     }
 
     // M13 sync-hardening (Task 4): versioned migration mechanism. Runs
@@ -896,8 +969,8 @@ export class SQLiteStorageAdapter implements StoragePort {
   enqueueMutation(entry: EnqueueMutationInput): void {
     const db = this.getDb();
     db.runSync(
-      `INSERT INTO sync_queue (entity_type, entity_id, operation, payload, endpoint, method)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO sync_queue (entity_type, entity_id, operation, payload, endpoint, method, idempotency_key)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [
         entry.entityType,
         entry.entityId ?? null,
@@ -905,6 +978,10 @@ export class SQLiteStorageAdapter implements StoragePort {
         JSON.stringify(entry.payload),
         entry.endpoint,
         entry.method,
+        // Stamped ONCE, here, and never rewritten — that is the whole property.
+        // A key regenerated per attempt would make every retry look like a new
+        // request, which is exactly the duplicate this prevents.
+        newIdempotencyKey(entry),
       ],
     );
   }
@@ -917,13 +994,54 @@ export class SQLiteStorageAdapter implements StoragePort {
     // (explicit user action OR `useAutoRetryOnUpgrade`) or get deleted
     // via `discardEntries`. Treating them as pending would spin the
     // drain forever on a 402 the user already saw.
+    //
+    // ⚠ `id ASC` is a load-bearing tiebreak, not tidiness. `created_at` defaults
+    // to `datetime('now')`, which SQLite renders at WHOLE-SECOND resolution, so
+    // every mutation enqueued within the same second sorts equal and its relative
+    // order is unspecified. A create-then-delete or create-then-edit of the same
+    // row inside one second could flush out of order — the delete arriving before
+    // the create, so the create wins and the row comes back. `id` is a
+    // monotonically increasing rowid, i.e. true enqueue order. (The same tiebreak
+    // is already used by `getCachedNotifications`.)
     const rows = db.getAllSync(
       `SELECT * FROM sync_queue WHERE status IN ('pending', 'failed')
        AND retry_count < max_retries
-       ORDER BY created_at ASC`,
+       ORDER BY created_at ASC, id ASC`,
     ) as Record<string, unknown>[];
 
     return rows.map(mapRow);
+  }
+
+  /**
+   * Return `in_flight` entries to `pending` on startup.
+   *
+   * `in_flight` was a one-way door: no query moved it back —
+   * `getPendingMutations` and `getFailedExhaustedEntries` both exclude it,
+   * `resetFailedEntries` is gated to failed/permanently_failed, `unblockEntries`
+   * to blocked_entitlement, and nothing swept it at launch. So an app killed,
+   * OOM'd or force-quit mid-POST left the row stranded FOREVER: invisible to
+   * every future drain AND to the /sync-failed review UI, while
+   * `getSyncStats().inFlight` kept counting it, which is why the UI could sit on
+   * "Syncing…" permanently. A force-quit during `POST /sessions/record` silently
+   * lost the workout.
+   *
+   * Safe to run at startup specifically because it runs at startup: no drain can
+   * be in flight in a process that has only just begun. The ambiguity it can
+   * create — the request may actually have reached the server — is handled by the
+   * idempotency key carried on creates, which is why that landed in the same
+   * change.
+   *
+   * Returns how many rows were recovered so the caller can log it; a non-zero
+   * count means the app previously died mid-sync.
+   */
+  recoverInFlightMutations(): number {
+    const db = this.getDb();
+    const result = db.runSync(
+      `UPDATE sync_queue
+       SET status = 'pending', updated_at = datetime('now')
+       WHERE status = 'in_flight'`,
+    );
+    return result.changes;
   }
 
   markMutationInFlight(id: number): boolean {
@@ -956,9 +1074,31 @@ export class SQLiteStorageAdapter implements StoragePort {
 
   markMutationFailed(id: number, errorMessage: string): void {
     const db = this.getDb();
+    // Exponential backoff via `next_attempt_at`, which `getPendingMutations`
+    // honours. Without it, retry cadence WAS drain cadence — and drains fire on
+    // mount, on every foreground transition, on reconnect, and from a dozen
+    // inline call sites — so three quick app-switches during a server blip burnt
+    // the entire 3-attempt budget in seconds and left the entry stranded until
+    // the user found the /sync-failed screen.
+    //
+    // The delay is computed from the POST-increment retry_count in SQL so it
+    // can't drift from the value the drain reads: 1st failure → 5s, 2nd → 25s.
+    // Capped so a long-lived queue can't schedule itself days out.
+    // `retry_count` on the right-hand side is the pre-update value (SQL
+    // semantics), so `retry_count + 1` is this attempt's number: 1st failure →
+    // 5s, 2nd → 20s, capped.
     db.runSync(
-      `UPDATE sync_queue SET status = 'failed', error_message = ?, retry_count = retry_count + 1, updated_at = datetime('now') WHERE id = ?`,
-      [errorMessage, id],
+      `UPDATE sync_queue
+       SET status = 'failed',
+           error_message = ?,
+           retry_count = retry_count + 1,
+           next_attempt_at = datetime(
+             'now',
+             '+' || MIN(?, ? * (retry_count + 1) * (retry_count + 1)) || ' seconds'
+           ),
+           updated_at = datetime('now')
+       WHERE id = ?`,
+      [errorMessage, SYNC_BACKOFF_MAX_SECONDS, SYNC_BACKOFF_BASE_SECONDS, id],
     );
   }
 
@@ -1097,6 +1237,10 @@ export class SQLiteStorageAdapter implements StoragePort {
          SET status = 'pending',
              retry_count = 0,
              error_message = NULL,
+             -- An explicit Retry (or a reconnect resurrect) must fire on the
+             -- NEXT drain, not whenever the old backoff window happened to
+             -- expire — otherwise tapping Retry appears to do nothing.
+             next_attempt_at = NULL,
              updated_at = datetime('now')
          WHERE id IN (${placeholders})
            AND status IN ('failed', 'permanently_failed')`,
@@ -3230,6 +3374,11 @@ function mapRow(row: Record<string, unknown>): SyncQueueEntry {
     errorMessage: row.error_message as string | null,
     createdAt: row.created_at as string,
     entitlementVerdict: parseEntitlementVerdict(row.entitlement_verdict),
+    // `?? null` rather than a cast: a row written before these columns existed
+    // reads back `undefined`, and the drain branches on `!= null` to decide
+    // whether to send the header.
+    idempotencyKey: (row.idempotency_key as string | null) ?? null,
+    nextAttemptAt: (row.next_attempt_at as string | null) ?? null,
   };
 }
 

@@ -219,6 +219,25 @@ export interface StoragePort {
     entityId: string,
   ): SyncQueueEntry[];
   /**
+   * Return `in_flight` entries to `pending`. Call ONCE at app start, before the
+   * first drain.
+   *
+   * `in_flight` was a one-way door: no query moved it back, and nothing swept it
+   * at launch — so an app killed, OOM'd or force-quit mid-POST stranded that
+   * mutation forever. It was invisible to every future drain AND to the
+   * `/sync-failed` review UI, while `getSyncStats().inFlight` kept counting it,
+   * which is how the UI could sit on "Syncing…" permanently. A force-quit during
+   * `POST /sessions/record` silently lost the workout.
+   *
+   * Safe at startup precisely because it runs at startup: no drain can hold a
+   * claim in a process that has only just begun. The ambiguity it creates — the
+   * request may have reached the server — is what `idempotencyKey` covers.
+   *
+   * Returns the number of rows recovered, so a non-zero count can be logged as
+   * evidence the app previously died mid-sync.
+   */
+  recoverInFlightMutations(): number;
+  /**
    * M10.6: flip a queue entry to `blocked_entitlement` and persist the
    * server's verdict on the row. The sync worker calls this in response
    * to HTTP 402 + `code: "ENTITLEMENT_DENIED"` and CONTINUES processing
@@ -1038,6 +1057,29 @@ export type SyncQueueEntry = {
    * the camelCase object.
    */
   entitlementVerdict: EntitlementVerdict | null;
+  /**
+   * Client-generated key identifying this logical mutation, stamped once at
+   * enqueue and never rewritten. Sent as the `Idempotency-Key` header so a
+   * retry after an AMBIGUOUS failure (a timeout or connection reset that
+   * happened after the server committed) is recognised as the same request
+   * rather than creating a second row.
+   *
+   * `null` only for rows enqueued before the column existed; the drain omits
+   * the header in that case, preserving exactly the old behaviour.
+   */
+  idempotencyKey: string | null;
+  /**
+   * Earliest time this entry may be attempted again (SQLite `datetime` string),
+   * or `null` for "now". Set by `markMutationFailed` to implement backoff.
+   * Cleared by `resetFailedEntries` so an explicit user Retry is immediate.
+   *
+   * ⚠ Deliberately NOT filtered out by `getPendingMutations`. That method answers
+   * "which entries are still RETRYABLE" — which is what the sync-status UI and
+   * the coalescing paths need — whereas backoff is about "not YET". Conflating
+   * the two would make a just-failed entry look like it had left the queue.
+   * The drain applies dueness itself (see `isMutationDue` in sync.command).
+   */
+  nextAttemptAt: string | null;
 };
 
 export type SyncStats = {

@@ -106,6 +106,15 @@ jest.mock("../../src/ui/hooks/usePurchasesIdentity", () => ({
   usePurchasesIdentity: () => mockUsePurchasesIdentity(),
 }));
 
+// Mock useReferenceListBootstrap — same rationale again: it calls
+// useAdapters/useAuth and throws without the provider plumbing (this suite mocks
+// `src/providers` away). Its own behaviour is covered in
+// src/ui/hooks/__tests__/useReferenceListBootstrap.test.tsx.
+const mockUseReferenceListBootstrap = jest.fn<void, []>();
+jest.mock("../../src/ui/hooks/useReferenceListBootstrap", () => ({
+  useReferenceListBootstrap: () => mockUseReferenceListBootstrap(),
+}));
+
 // eslint-disable-next-line import/first
 import { render, waitFor } from "@testing-library/react-native";
 // eslint-disable-next-line import/first

@@ -196,6 +196,9 @@ export class InMemoryStorageAdapter implements StoragePort {
       errorMessage: null,
       createdAt: new Date().toISOString(),
       entitlementVerdict: null,
+      // Mirrors the SQLite adapter: stamped once at enqueue, never rewritten.
+      idempotencyKey: `${entry.entityId ?? `${entry.entityType}:${entry.operation}`}-${this.nextId}`,
+      nextAttemptAt: null,
     });
   }
 
@@ -233,6 +236,12 @@ export class InMemoryStorageAdapter implements StoragePort {
       entry.status = "failed";
       entry.errorMessage = errorMessage;
       entry.retryCount++;
+      // Backoff parity with SQLite (base * attempt^2, capped). Kept so a test
+      // that drains twice in a row observes the same "not yet due" behaviour the
+      // real adapter has — otherwise the double would silently make retries look
+      // immediate.
+      const seconds = Math.min(300, 5 * entry.retryCount * entry.retryCount);
+      entry.nextAttemptAt = new Date(Date.now() + seconds * 1000).toISOString();
     }
   }
 
@@ -295,6 +304,18 @@ export class InMemoryStorageAdapter implements StoragePort {
     this.queue = this.queue.filter((e) => !idSet.has(e.id));
   }
 
+  recoverInFlightMutations(): number {
+    // Parity with SQLite: return stranded in_flight rows to the pool at startup.
+    let recovered = 0;
+    for (const e of this.queue) {
+      if (e.status === "in_flight") {
+        e.status = "pending";
+        recovered++;
+      }
+    }
+    return recovered;
+  }
+
   getQueuedEntriesForEntity(
     entityType: string,
     entityId: string,
@@ -327,6 +348,7 @@ export class InMemoryStorageAdapter implements StoragePort {
         continue;
       entry.status = "pending";
       entry.retryCount = 0;
+      entry.nextAttemptAt = null;
       entry.errorMessage = null;
     }
   }

@@ -68,6 +68,30 @@ export function getWorkoutsQuery(
 }
 
 /**
+ * Cached rows in this slice that the server has not accepted yet, and which a
+ * write-through would therefore destroy.
+ *
+ * "Not accepted yet" is decided by the QUEUE, not by the id's shape: a row whose
+ * create has COMPLETED is server-truth (its id may simply not have been swapped
+ * yet) and must NOT be preserved, or a workout the user deleted server-side would
+ * keep reappearing. A row with an outstanding create is the opposite case.
+ */
+function unsyncedWorkoutsInSlice(
+  storage: StoragePort,
+  userId: string,
+  type: WorkoutListType,
+): Workout[] {
+  const cached = storage.getCachedWorkoutsList(userId, type);
+  if (!cached || cached.workouts.length === 0) return [];
+  return cached.workouts.filter((w) => {
+    if (!w.id.startsWith("local-")) return false;
+    return storage
+      .getQueuedEntriesForEntity("workout", w.id)
+      .some((entry) => entry.operation === "create");
+  });
+}
+
+/**
  * Fetch a single section slice from the backend and write it through to
  * cache. On success the cached row's `syncedAt` is bumped to now.
  *
@@ -89,10 +113,24 @@ export async function refreshWorkouts(
     ownerLibraryOnly: type === "mine" ? ownerLibraryOnly : undefined,
   });
   if (!result.ok) return result;
+  // ⚠ Preserve rows the server cannot know about yet.
+  //
+  // `cacheWorkoutsList` REPLACES the whole slice, so writing the server's list
+  // straight through deleted any optimistic `local-…` workout whose create had
+  // not landed — silently, and permanently, since every later refresh did it
+  // again. That is why a saved workout could vanish and the list read
+  // "MY WORKOUTS · 0 SAVED": the row had been destroyed, not merely hidden.
+  // `useWorkouts.refresh` drains before fetching to avoid exactly this, but the
+  // drain cannot help when the create is failing (or is terminal, and so not even
+  // returned by `getPendingMutations`).
+  //
+  // Merged at the front — a just-created workout belongs at the top of the list,
+  // which is also where the optimistic write put it.
+  const unsynced = unsyncedWorkoutsInSlice(storage, userId, type);
   storage.cacheWorkoutsList(
     userId,
     type,
-    result.value.workouts,
+    [...unsynced, ...result.value.workouts],
     result.value.quota,
   );
   // Splatter detail rows from the list payload — every list response

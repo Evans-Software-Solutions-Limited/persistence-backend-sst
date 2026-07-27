@@ -17,6 +17,8 @@ function makeEntry(overrides: Partial<SyncQueueEntry> = {}): SyncQueueEntry {
     errorMessage: "HTTP 500: boom",
     createdAt: "2026-05-23T10:00:00.000Z",
     entitlementVerdict: null,
+    idempotencyKey: null,
+    nextAttemptAt: null,
     ...overrides,
   };
 }

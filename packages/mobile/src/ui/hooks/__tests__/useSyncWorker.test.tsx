@@ -736,12 +736,24 @@ describe("useSyncWorker", () => {
       // Two more ordinary foreground drains burn the rest of the retry
       // budget — the resurrect logic never re-fires on its own (no second
       // reconnect transition occurred), so this proves it doesn't loop.
+      //
+      // The clock is advanced past each failure's backoff window first. Without
+      // that the drain would (correctly) decline to re-send, which is the whole
+      // point of the backoff — a burst of foreground transitions must no longer
+      // burn the retry budget in seconds. Fake timers move `Date.now()` too, so
+      // advancing here is what makes these "later" drains.
+      act(() => {
+        jest.advanceTimersByTime(60_000);
+      });
       await act(async () => {
         activeListener!("active");
         await Promise.resolve();
       });
       await waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(2));
 
+      act(() => {
+        jest.advanceTimersByTime(60_000);
+      });
       await act(async () => {
         activeListener!("active");
         await Promise.resolve();
