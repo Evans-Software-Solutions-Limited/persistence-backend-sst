@@ -378,8 +378,9 @@ Phase 1/2 design. Rationale: `requirements.md` § Eval spike.
 
 ## Phase 2 — Mobile athlete flow (needs the design handoff)
 
-- [ ] **T-2.1 [M]** Ports + adapter for saved gyms, preview, create-variation,
-      substitutes.
+- [x] **T-2.1 [M]** Ports + adapter for saved gyms, preview, create-variation,
+      substitutes (+ the scan). `domain/models/loadout.ts`,
+      `ApiPort` × 9 methods, `SSTApiAdapter`, `InMemoryApiAdapter`.
 - [ ] **T-2.2 [M]** Loadout entry card on workout detail + locked/upsell state
       (price from the catalog, never a literal).
 - [ ] **T-2.3 [M]** `collect` (saved gym / manual / scan), equipment groups
@@ -395,6 +396,56 @@ Phase 1/2 design. Rationale: `requirements.md` § Eval spike.
       against it in one action (AC-5.3), reusing the existing start-session path.
 - [ ] **T-2.9 [M]** Saved-gym management list in Settings/Profile (AC-7.2).
 - [ ] **T-2.10 [M]** Tests + a device-verify checklist in the PR body.
+
+### Landed in Phase 2 so far — the FOUNDATION, not the screens
+
+Committed and gated on `claude/loadout-phase-2`; **no screen exists yet**, so
+nothing is user-visible and nothing is device-verified.
+
+- **T-2.1 complete** — the full client contract, camelCase passthrough (no mapper:
+  the backend was written camelCase-out so a preview row round-trips into the save
+  call byte-for-byte). All nine calls are ONLINE-DIRECT.
+- **`domain/services/loadout.service.ts` — the pure logic the screens consume.**
+  `describeLoadoutRow` (review copy derived from `reason.code`, with the model's
+  sentence kept in its OWN field so `explanation` is never contaminated),
+  `buildVariationExercises` (the faithful round-trip, incl. the `isUserOverride`
+  rule), `groupEquipmentForPicker`, `deriveVariationName`,
+  `scanDraftToEquipmentIds`, `rowsNeedingAttention`.
+- **`ReferenceEntry.category` now survives the adapter.** `mapRawReferenceEntry`
+  was silently dropping it, so AC-2.2's "grouped from the API" was true in name
+  only. `isEquipmentGroupingStale` distinguishes `null` (server: uncategorised)
+  from an ABSENT key (pre-Loadout cache) — without it a returning user's 24h cache
+  renders every chip under "Other" with nothing able to detect why.
+- **`state/loadout-flow.ts` — the step machine.** `adapting` is bound to the
+  REQUEST, never the prototype's 1700 ms timer; the equipment context is a
+  discriminated union so "exactly one source" cannot be violated from the client;
+  `open()` clears a prior run (else workout B inherits A's picks by `sortOrder`);
+  `rev` survives `reset()` because it signals a different screen.
+- **113 new mobile tests; 17 mutations applied across the service and the store,
+  all 17 caught.**
+
+### Phase 2 — still to build (the screens)
+
+T-2.2 … T-2.9 and T-3.4 are UNSTARTED. Everything they need now exists and is
+tested, so they are presentational + container work against a settled spine:
+
+- The design source of truth is `~/Downloads/Any Gym/project/`, specifically
+  `design_handoff_site_and_anygym/src/screens/gtm-d7-anygym.jsx` (the flow),
+  `gtm-d1-scan.jsx` (the scan sheet) and `gtm-d6-swap.jsx` (the picker), with
+  `README.md` § Part 2 as the written spec. **Recreate in the app's primitives and
+  tokens — do not lift the prototype JSX** (its own README says so).
+- ⚠ **Three places the handoff is out of date, and the spec wins:**
+  1. It calls the feature **AnyGym**; the repo renamed it **Loadout** (#311).
+  2. It hardcodes **£19.99**; Premium+ is £29.99 AND the price must come from the
+     catalog, never a literal (design § 10).
+  3. D1's `TasterMeterChip` / "taster exhausted" 402 framing **must not be built** —
+     design § 5.2 is a HARD GATE with no taster (RC promos only). The 402 is
+     entitlement-denied, and it is a conversion surface, not a dead end.
+- T-2.7's shared `EquipmentAwareSwapSheet` replaces the ad-hoc muscle filter at
+  `SwapExercisePopover.tsx:131-142` (the `muscleGroupFilteredExercises` memo) with
+  `GET /exercises/substitutes`. That component currently reads the local exercise
+  cache, so this is a real refactor of a shipped surface, not a new file.
+  Persistence stays `substitute-exercise.command.ts`.
 
 ## Phase 3 — Equipment scan (ships INSIDE the Phase 2 slice)
 
