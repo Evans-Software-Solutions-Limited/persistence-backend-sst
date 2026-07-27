@@ -404,20 +404,55 @@ Phase 1/2 design. Rationale: `requirements.md` § Eval spike.
 > the ranker. Gated on E1's verdict — if scan is not viable as the primary
 > path, the picklist leads and this becomes an accelerator.
 
-- [ ] **T-3.1 [B]** `POST /ai/equipment-scan` cloning
+- [x] **T-3.1 [B]** `POST /ai/equipment-scan` cloning
       `nutritionAiEstimateHandler`'s guard order exactly; `reachedModel` +
       `finally` usage log; `AI_EQUIPMENT_SCAN_DAILY_LIMIT` fail-safe parse
-      (default 10 — **Brad checkpoint**).
-- [ ] **T-3.2 [B]** Register `AI_EQUIPMENT_SCAN_DAILY_LIMIT` and
+      (~~default 10 — **Brad checkpoint**~~ **6/day, decided 2026-07-27** —
+      rationale in design § 8.1).
+- [x] **T-3.2 [B]** Register `AI_EQUIPMENT_SCAN_DAILY_LIMIT` and
       `AI_EQUIPMENT_SCAN_MODEL_ID` in `infra/api.ts`. No IAM change needed.
-- [ ] **T-3.3 [B]** Forced-tool adapter; full `equipment_types` catalogue in
+- [x] **T-3.3 [B]** Forced-tool adapter; full `equipment_types` catalogue in
       the prompt; **TypeScript membership validation** of returned ids → 422 on
       a hallucinated uuid (design § 1).
 - [ ] **T-3.4 [M]** Scan sheet (design D1) reusing the `SnapAISheetContainer`
       transport; draft-confirm; 402/422/429 states are conversion/retry
       surfaces, not dead ends.
 - [ ] **T-3.5 [B/M]** Tests — fake Bedrock client, ceiling behaviour, no usage
-      row on pre-model rejections.
+      row on pre-model rejections. **Backend half DONE** (91 tests across
+      `modelProse` / `equipmentScanModel` / `aiEquipmentScanHandler` /
+      `aiBedrockClient`, 11 mutations applied to the new guards and all caught);
+      the mobile half waits on T-3.4.
+
+### Landed in Phase 3's backend beyond the checklist
+
+- **`createSingleAttempt` lives in `aiBedrockClient`, not in the scan module.**
+  T-E1.6 needed it and STATE.md asked for it to be built once, because the
+  re-map's retry decision is explicitly revisitable against it. Any failure is a
+  503 — with no second attempt there is no retryable/non-retryable split worth
+  making.
+- **A `stop_reason: "max_tokens"` truncation guard**, which T-3.1 did not ask for.
+  Same reasoning as the re-map's: a truncated tool payload PARSES, and the
+  dropped detections look exactly like kit that was not in the room. Every lost
+  item then causes a needless swap, and the user cannot tell the draft is short.
+- **`modelProse.ts` — the untrusted-prose rule extracted and shared.** The scan's
+  `notes`/`label` have the same exposure as the re-map's per-row note, and the
+  scan's channel is arguably worse: **the input is a photograph the caller chose,
+  so a photographed whiteboard is an injection vector.** `remapModel.capReason`
+  now delegates to it. This is NOT the shared "Loadout AI service" § 1b forbids —
+  it is a string sanitiser with no model, prompt, client or ceiling in it.
+- **The response splits `detected` from `unmatched`** rather than returning
+  § 8.1's single nullable-id list. `detected` is selectable and renders the
+  **catalogue's** name; `unmatched` is informational and carries the model's own
+  label. That means nothing untrusted reaches the selectable path at all, and a
+  correctly-nulled item (E1 had 6) reads as "seen but unavailable" instead of as a
+  miss.
+- **`Bodyweight` carries `source: "injected"`** so the client can avoid implying
+  the camera saw it, and a missing catalogue row **warns loudly** — T-E.10 shipped
+  precisely because a silent name-resolution miss went unnoticed.
+- **Detections are deduplicated by id, keeping the most confident reading**, and
+  ties break on name so two scans of the same room produce the same draft order.
+  Unmatched rows are deliberately NOT deduplicated: their labels are free text,
+  not a key.
 
 ## Phase 4 — Coach programme adaptation
 

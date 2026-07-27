@@ -167,12 +167,20 @@ T-1.9 — no doc still describes these as open.
   Ranker-only output is what the bake-off rejected 4-50 (`Barbell Deadlift → Atlas
   Stones` in a bands-only context), so a visible outage beats a quietly worse plan
   under a Premium+ badge.
+- **Equipment-scan ceiling = 6/day** (Claude recommended, Brad accepted
+  2026-07-27 — "go with your recommendation, calculated against all costs from one
+  user vs their subscription"). NOT design § 8.1's proposed 10, and the 10's
+  reasoning was the flaw: it was analogised from Mealprint's daily-use surfaces,
+  but **a scan is a once-per-GYM action** because `saved_gyms` persists it. At
+  $0.0272/scan, 6/day is ~$4.90/user/mo worst case — parity with the re-map's
+  $5.13, so both Premium+ AI surfaces together are ~$10/mo against ~$32 net.
+  10/day would have been $8.16 for one endpoint. The asymmetry with the re-map's
+  30 is deliberate: hitting this cap blocks no workout (AC-2.1/AC-2.2 are the
+  floor, not fallbacks), whereas the re-map has no alternative path. Revisit if
+  § 8.1's 640 px downscale is ever measured.
 
 ### Brad's decisions — Loadout (spec-21), still open
 
-- **Equipment-scan ceiling** — 10/day proposed. At **$0.0272/scan** that is
-  ~$8.16/user/month worst case against £29.99 — the one ceiling with real money
-  behind it.
 - **Programme cap** — 120 workouts stands, but its rationale changed (it is now
   120 model calls, ~5 min, ~$0.69, not "nearly free").
 - **Target transform** (`4×4-6 → 3×12-15` when the kit cannot load a strength
@@ -314,8 +322,9 @@ migration, no mobile, no scan endpoint. All of T-1.1…T-1.11 ticked in
   `loadout/preview/workoutLoadoutPreviewHandler.ts` and
   `exercises/substitutes/exercisesSubstitutesHandler.ts`. New env in
   `infra/api.ts`: `AI_LOADOUT_REMAP_MODEL_ID` (Haiku-class) and
-  `AI_LOADOUT_REMAP_DAILY_LIMIT` (**placeholder 30**). No IAM change needed —
-  the existing Bedrock wildcards cover the model id.
+  `AI_LOADOUT_REMAP_DAILY_LIMIT` (shipped as a placeholder 30, **promoted to a
+  decision later the same day** — see § Open items → § DECIDED). No IAM change
+  needed — the existing Bedrock wildcards cover the model id.
 
   **The contract Phase 2 consumes** (so it need not be re-derived from code):
   `POST /workouts/:id/loadout/preview` takes EXACTLY ONE of `savedGymId` or
@@ -643,8 +652,10 @@ PR not yet raised. NO product code — script + dataset + verdict + spec updates
 - **Gates:** prettier · typecheck 8/8 · lint 0-err · build 13/13 · test:unit
   19/19 (core 270 files / **2791 tests**, mobile 449 suites / 5046). Every
   changed file ≥90% (new handlers + savedGymService 100%).
-- **⚠ OPEN Brad checkpoints, NOT decided:** equipment-scan ceiling (proposed
-  10/day) and programme cap (proposed 120 workouts) are still Claude proposals.
+- ~~**⚠ OPEN Brad checkpoints, NOT decided:** equipment-scan ceiling (proposed
+  10/day) and programme cap (proposed 120 workouts) are still Claude proposals.~~
+  **The scan ceiling was DECIDED 2026-07-27 at 6/day, not 10** (§ Open items →
+  § DECIDED). The programme cap is still open. § Open items is the live list.
   **Phase E blocked on ~30 real gym photos from Brad** (E1's dataset).
 - **IB: clean @ `6652a29`** — 2 sweeps (7 findings, then 5) + 1 closed
   verification pass. CI action NOT fired. The sweep-2 🟠 was a genuine

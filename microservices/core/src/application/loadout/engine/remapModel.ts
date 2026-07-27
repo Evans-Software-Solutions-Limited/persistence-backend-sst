@@ -44,6 +44,7 @@ import {
   type MinimalBedrockClient,
 } from "../../nutrition/services/aiBedrockClient";
 import type { AdaptationCandidate } from "../../repositories/exerciseRepository";
+import { capModelProse } from "../modelProse";
 import type { PlanRow } from "./types";
 
 const TOOL_NAME = "compose_adapted_plan";
@@ -56,32 +57,17 @@ const TOOL_NAME = "compose_adapted_plan";
 export const MAX_REASON_LENGTH = 300;
 
 /**
- * Trim to `MAX_REASON_LENGTH` on a whole CODE POINT, not a code unit.
+ * Trim to `MAX_REASON_LENGTH` on a whole CODE POINT, not a code unit, and strip
+ * unpaired surrogates.
  *
- * A bare `slice()` can cut between the halves of a surrogate pair, leaving a lone
- * surrogate. `JSON.stringify` happily escapes that as `\udXXX`, so the preview
- * responds 200 — but the client round-trips the string back into
- * `POST /workouts/:id/variations` as `substitutionReason`, and **Postgres rejects
- * an unpaired surrogate escape in jsonb input**, aborting the whole
- * `createVariation` transaction as an opaque 500 and losing the user's reviewed
- * adaptation. Same failure class the sibling `badSubstitutions` check exists to
- * prevent. Reachable because the prompt carries attacker-influenced strings, so
- * the prose (and therefore where the cut lands) is steerable.
+ * The rule (and the jsonb-insert hazard that motivates it) now lives in
+ * `../modelProse`, because Phase 3's scan has the same field with the same
+ * exposure and a second copy of a security-relevant sanitiser is how the two
+ * drift apart. This wrapper stays so the surface both callers and tests use is
+ * unchanged.
  */
 export function capReason(reason: string): string {
-  // Strip surrogates that were ALREADY unpaired in the model's own string, not
-  // just ones the cut would create. Bedrock can return a `"\udXXX"` escape in the
-  // tool payload, and such a string fails the same jsonb insert — so trimming
-  // only the split case would leave the docstring's guarantee untrue.
-  const paired = reason.replace(
-    /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g,
-    "",
-  );
-  if (paired.length <= MAX_REASON_LENGTH) return paired;
-  const cut = paired.slice(0, MAX_REASON_LENGTH);
-  const last = cut.charCodeAt(cut.length - 1);
-  const isHighSurrogate = last >= 0xd800 && last <= 0xdbff;
-  return isHighSurrogate ? cut.slice(0, -1) : cut;
+  return capModelProse(reason, MAX_REASON_LENGTH);
 }
 
 /**

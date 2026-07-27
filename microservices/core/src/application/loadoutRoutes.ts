@@ -26,6 +26,7 @@ import { savedGymsDeleteHandler } from "./loadout/savedGyms/savedGymsDeleteHandl
 import { workoutVariationsListHandler } from "./loadout/variations/workoutVariationsListHandler";
 import { workoutVariationsCreateHandler } from "./loadout/variations/workoutVariationsCreateHandler";
 import { workoutLoadoutPreviewHandler } from "./loadout/preview/workoutLoadoutPreviewHandler";
+import { aiEquipmentScanHandler } from "./loadout/scan/aiEquipmentScanHandler";
 
 export const loadoutRoutes = new Elysia()
   // saved gyms — literal /saved-gyms (GET/POST) and parameterised
@@ -40,4 +41,9 @@ export const loadoutRoutes = new Elysia()
   // Phase 1 — the adaptation itself. One segment deeper than
   // `/workouts/:id/variations`, so the same "no collision with /workouts/:id"
   // argument covers it.
-  .use(workoutLoadoutPreviewHandler);
+  .use(workoutLoadoutPreviewHandler)
+  // Phase 3 — the equipment scan. `/ai/equipment-scan` is a fully literal path
+  // under a prefix no other route uses (the nutrition AI endpoints all sit under
+  // `/nutrition/ai/...`), so no parameterised matcher can capture it and the
+  // late-mount argument above applies unchanged.
+  .use(aiEquipmentScanHandler);
