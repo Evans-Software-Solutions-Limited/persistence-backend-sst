@@ -15,7 +15,7 @@ export default defineConfig({
     globals: true,
     coverage: {
       provider: "v8",
-      include: ["reconcile-stripe.ts", "codemod-tokens.ts"],
+      include: ["reconcile-stripe.ts", "codemod-tokens.ts", "ai-cost-model.ts"],
       exclude: ["node_modules", "**/*.test.ts", "**/vitest.config.ts"],
       thresholds: {
         lines: 80,

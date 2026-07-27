@@ -182,6 +182,59 @@ T-1.9 — no doc still describes these as open.
   floor, not fallbacks), whereas the re-map has no alternative path. Revisit if
   § 8.1's 640 px downscale is ever measured.
 
+### ⚠ Pricing vs AI cost — three tiers are theoretically underwater (2026-07-27)
+
+**Run `bun run scripts/ai-cost-model.ts` for the live table. Do not quote figures
+from here — quote the command.** The last time this was answered in prose
+(2026-07-05, "~£7.30/mo worst case vs £12.99") it went stale twice without anyone
+noticing, which is why it is now a tested script (`scripts/ai-cost-model.ts`, 34
+tests) with the assumptions declared at the top.
+
+At every reachable ceiling, every day, for 30 days — against net revenue (Apple
+15 % Small Business + RevenueCat 1 %, £1 = $1.27):
+
+- **`individual_trainer` (£14.99) is the MOST exposed tier at ~212 % of net.** Cause:
+  `20260725194527_premium_plus_tier` granted `loadout_access` to all three trainer
+  tiers, so **a coach gets Loadout at £14.99 while an athlete pays £29.99 for it.**
+  That is a pricing inconsistency, not a cost problem — ⚠ **Brad's call.**
+- **`premium` (£12.99) is ~167 %**, and **Loadout is not why** — it cannot reach
+  either Loadout endpoint. **~55 % of its exposure is ONE endpoint: Recipes AI photo
+  extraction** at 12/day × ~$0.0355, the most expensive call in the app. Nobody
+  extracts 12 recipes from photos a day; that ceiling is the loosest thing we ship
+  relative to its unit cost. Cutting it to ~4/day would halve the tier's worst case
+  and cost no real user anything.
+- **`premium_plus` (£29.99) is ~104 %** — i.e. the tier that adds the most AI is the
+  *least* over-exposed of the three, because the price rises 2.3× while the added
+  cost is ~$10. **The two Loadout surfaces total ~$10.03 and are the only MEASURED
+  figures in the table.**
+- `small_business` (50 %) and `medium_enterprise` (13 %) are comfortable.
+- **TYPICAL use is 5–11 % of net on every paid tier (~$1.40–1.83/mo).** So none of
+  this is a live margin problem — it needs a determined abuser hitting six or seven
+  endpoints daily for a month while paying. It is a tail-risk and pricing-coherence
+  finding, not an incident.
+- **Infrastructure is negligible**: ~$185/mo fixed (Supabase/AWS/Expo/Sentry) plus
+  ~$0.02/user marginal → **$1.87/user at 100 subscribers, $0.20 at 1,000, $0.04 at
+  10,000.** Serving requests is not what this platform costs; AI inference is.
+
+**⚠ SIX OF THE EIGHT UNIT COSTS ARE ESTIMATES.** Only the re-map ($0.0057) and the
+scan ($0.0272) were measured against real Bedrock calls (Phase E). The nutrition and
+Recipes AI figures are derived from declared token profiles, and **those surfaces are
+the larger half of every exposed tier's total** — so the two headline percentages
+above rest mostly on guesses. Also: the prices used are **Anthropic list, not
+Bedrock partner prices**, which the eval itself flagged as unchecked.
+
+Actions, in order of value:
+
+1. **Measure the nutrition + Recipes AI unit costs** — from `ai_usage_log` (it
+   already records per-inference byte sizes and duration; token counts would need
+   adding) or off the AWS bill. Until then no tier's number is quotable.
+2. **Decide the `individual_trainer` × `loadout_access` question** (Brad).
+3. **Consider `AI_RECIPE_DAILY_LIMIT` 12 → ~4.**
+4. **Register `AI_RECIPE_ESTIMATE_DAILY_LIMIT` in `infra/api.ts`** — it is currently
+   unset and silently uses its code default of 30, so it is invisible to a cost
+   audit of the env block where every other ceiling lives.
+5. **Check Bedrock's actual prices** against the Anthropic list prices assumed.
+
 ### Brad's decisions — Loadout (spec-21), still open
 
 - **Programme cap** — 120 workouts stands, but its rationale changed (it is now
