@@ -33,7 +33,8 @@ import {
  *   6. substituted-from ids       → 400
  *   7. saved-gym ownership        → 400
  *   8. kit snapshot validity      → 400
- *   9. insert
+ *   9. equipment containment on non-override rows → 400
+ *  10. insert
  *
  * Validation first so a malformed payload gets the more informative 400 rather
  * than a 402. The parent read check before the entitlement check so a caller
@@ -57,11 +58,9 @@ import {
  *     caller's gym kit into every other user's browse.
  *   - `variationKind` and `parentWorkoutId` are set server-side.
  *
- * EQUIPMENT CONTAINMENT is deliberately NOT verified here. It is a quality
- * check the user may override on purpose after an explicit "doesn't fit your
- * kit" acknowledgement (AC-4.2 / AC-4.3), and Phase 1 owns the asymmetric
- * re-verification (containment only on rows not flagged `isUserOverride`).
- * Phase 0 has no candidate/ranking machinery to check against.
+ * EQUIPMENT CONTAINMENT is verified as of Phase 1 (T-1.6), but only on rows NOT
+ * flagged `isUserOverride` — see the check itself for why that asymmetry against
+ * the visibility check is required rather than an oversight.
  */
 export const workoutVariationsCreateHandler = new Elysia()
   .derive(async ({ headers }) => ({
@@ -187,6 +186,7 @@ export const workoutVariationsCreateHandler = new Elysia()
       // LEFT JOINs `saved_gyms` to return `sourceGymName`, so accepting an
       // arbitrary gym id would echo ANOTHER USER'S gym name back to this caller.
       // The FK alone doesn't help — it only proves the row exists.
+      let gymKit: string[] | null = null;
       if (sourceGymId != null) {
         const gym = await ctx.SavedGymRepository.getById(sourceGymId, userId);
         if (!gym) {
@@ -196,6 +196,7 @@ export const workoutVariationsCreateHandler = new Elysia()
             message: "Saved gym not found",
           };
         }
+        gymKit = gym.equipmentTypeIds;
       }
 
       // The frozen kit snapshot gets the SAME validation the saved-gym kit gets.
@@ -212,6 +213,58 @@ export const workoutVariationsCreateHandler = new Elysia()
           message: "One or more equipment types do not exist",
           unknownEquipmentTypeIds: unknownKit,
         };
+      }
+
+      // EQUIPMENT CONTAINMENT (spec-21 T-1.6, design § 7.1) — the asymmetric half.
+      //
+      // Checked on rows NOT flagged `isUserOverride`, and deliberately not on the
+      // ones that are: AC-4.2/AC-4.3 let the athlete pick an incompatible exercise
+      // from the full library after an explicit "doesn't fit your kit"
+      // acknowledgement, and verifying containment everywhere would reject exactly
+      // the case the ACs mandate.
+      //
+      // ⚠ The asymmetry against the visibility check above is the point.
+      // Visibility is the SECURITY control: every row, no exemptions, no override.
+      // Containment is a QUALITY control, so on this path the flag is a
+      // client-supplied claim — a client could set it on every row and skip the
+      // check wholesale. That is acceptable *because* visibility is unconditional.
+      // Do not later reuse `isUserOverride` as a server-attested fact anywhere it
+      // would matter.
+      //
+      // Note there is no parent-carried exemption here (unlike visibility): a row
+      // the user KEPT that does not fit the kit is precisely an override, and
+      // should be flagged as one.
+      //
+      // Context: the explicit kit snapshot when one is supplied, else the gym's.
+      // The snapshot is the more specific claim — it is what AC-5.2 freezes and
+      // what Phase 2 renders — and when both are absent there is nothing to check
+      // against, so containment is skipped rather than failing every row.
+      const containmentContext = kit.length > 0 ? kit : gymKit;
+      if (containmentContext !== null && containmentContext.length > 0) {
+        const available = new Set(containmentContext);
+        const checkable = exercises.filter((ex) => ex.isUserOverride !== true);
+        const requirements =
+          await ctx.ExerciseRepository.findEquipmentRequirements(
+            checkable.map((ex) => ex.exerciseId),
+          );
+        // A row absent from the map lost its exercise between preview and save;
+        // treated as requiring nothing rather than as a containment failure, so
+        // the error the user sees comes from the FK rather than from a check that
+        // would misdescribe the cause.
+        const incompatible = checkable.filter((ex) =>
+          (requirements.get(ex.exerciseId) ?? []).some(
+            (id) => !available.has(id),
+          ),
+        );
+        if (incompatible.length > 0) {
+          ctx.set.status = 400;
+          return {
+            code: "EQUIPMENT_NOT_AVAILABLE",
+            message:
+              "One or more exercises need equipment this setup does not have. Flag the row as a user override to keep it anyway.",
+            incompatibleExerciseIds: incompatible.map((ex) => ex.exerciseId),
+          };
+        }
       }
 
       const variation = await ctx.WorkoutRepository.createVariation(

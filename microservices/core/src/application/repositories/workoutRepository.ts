@@ -25,6 +25,7 @@ import {
   type Workout,
 } from "@persistence/db";
 import { getDb, type Db } from "@persistence/db/client";
+import type { AdaptationCandidate } from "./exerciseRepository";
 
 export type WorkoutListType = "mine" | "assigned" | "default";
 
@@ -136,6 +137,24 @@ export interface WorkoutVariationSummary {
   swapCount: number;
   createdAt: Date | null;
   updatedAt: Date | null;
+}
+
+/**
+ * One row of a parent plan, as the Loadout adaptation engine consumes it: the
+ * targets that must be carried across unchanged (§ 1 rule 2) plus the source
+ * exercise's ranking fields.
+ */
+export interface WorkoutAdaptationRow {
+  workoutExerciseId: string;
+  sortOrder: number;
+  supersetGroup: number | null;
+  targetSets: number | null;
+  targetRepsMin: number;
+  targetRepsMax: number;
+  targetDurationSeconds: number | null;
+  restSeconds: number | null;
+  notes: string | null;
+  source: AdaptationCandidate;
 }
 
 export interface CreateVariationExerciseInput extends CreateWorkoutExerciseInput {
@@ -560,6 +579,81 @@ export class WorkoutRepository {
       .from(workoutExercises)
       .where(eq(workoutExercises.workoutId, workoutId));
     return rows.map((r) => r.exerciseId);
+  }
+
+  /**
+   * The parent plan as the adaptation engine needs it (spec-21 § 7 step 1/3):
+   * every row's targets, plus the RANKING fields of the exercise it points at
+   * (muscles, equipment, difficulty, movement type). In `sort_order` order.
+   *
+   * `fetchExercisesForWorkouts` cannot serve this — its embedded exercise block
+   * is the wire shape (name / category / difficulty / media) and carries none of
+   * the ranking signals. Duplicating the join here rather than widening that
+   * projection keeps ~400-row-per-adaptation columns off every workout read.
+   *
+   * NO catalogue visibility predicate, matching `fetchExercisesForWorkouts`
+   * (documented as intentional in `exerciseRepository.ts`): the caller has
+   * already passed `findReadableWorkout` on this workout, so these rows are
+   * exactly what they are looking at on screen. Applying the predicate would
+   * make an adaptation of a public template fail on the author's own custom
+   * exercises — the case AC-1.2 mandates.
+   *
+   * `innerJoin`, not `leftJoin`: `workout_exercises.exercise_id` is NOT NULL with
+   * an FK, so a row can't lose its exercise. A `leftJoin` here would introduce a
+   * nullable source the ranker would have to carry a dead branch for.
+   */
+  async listAdaptationRows(workoutId: string): Promise<WorkoutAdaptationRow[]> {
+    const db = getDb();
+    const rows = await db
+      .select({
+        workoutExerciseId: workoutExercises.id,
+        sortOrder: workoutExercises.sortOrder,
+        supersetGroup: workoutExercises.supersetGroup,
+        targetSets: workoutExercises.targetSets,
+        targetRepsMin: workoutExercises.targetRepsMin,
+        targetRepsMax: workoutExercises.targetRepsMax,
+        targetDurationSeconds: workoutExercises.targetDurationSeconds,
+        restSeconds: workoutExercises.restSeconds,
+        notes: workoutExercises.notes,
+        exerciseId: exercises.id,
+        name: exercises.name,
+        category: exercises.category,
+        difficultyLevel: exercises.difficultyLevel,
+        movementType: exercises.movementType,
+        primaryMuscles: exercises.primaryMuscles,
+        secondaryMuscles: exercises.secondaryMuscles,
+        equipmentRequired: exercises.equipmentRequired,
+        thumbnailUrl: exercises.thumbnailUrl,
+      })
+      .from(workoutExercises)
+      .innerJoin(exercises, eq(workoutExercises.exerciseId, exercises.id))
+      .where(eq(workoutExercises.workoutId, workoutId))
+      .orderBy(workoutExercises.sortOrder);
+
+    return rows.map((row) => ({
+      workoutExerciseId: row.workoutExerciseId,
+      sortOrder: row.sortOrder,
+      supersetGroup: row.supersetGroup,
+      targetSets: row.targetSets,
+      targetRepsMin: row.targetRepsMin,
+      targetRepsMax: row.targetRepsMax,
+      targetDurationSeconds: row.targetDurationSeconds,
+      restSeconds: row.restSeconds,
+      notes: row.notes,
+      source: {
+        id: row.exerciseId,
+        name: row.name,
+        category: row.category,
+        difficultyLevel: row.difficultyLevel,
+        movementType: row.movementType,
+        // Nullable on rows predating the `.default([])`; normalised so every
+        // ranking signal sees an empty set rather than a silent null.
+        primaryMuscles: row.primaryMuscles ?? [],
+        secondaryMuscles: row.secondaryMuscles ?? [],
+        equipmentRequired: row.equipmentRequired ?? [],
+        thumbnailUrl: row.thumbnailUrl,
+      },
+    }));
   }
 
   /**

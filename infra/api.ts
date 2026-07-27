@@ -116,6 +116,14 @@ coreAPI.route("$default", {
     // cheap/fast EU Haiku id (override per-stage to a stronger model if the
     // coach summaries want more depth).
     AI_COACH_SUMMARY_MODEL_ID: "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+    // Loadout re-map (spec-21 Phase 1 — the model-selection stage of the hybrid
+    // engine D7 settled by the Phase E2 bake-off). Haiku-class BY EVIDENCE, not
+    // to save money: arms B and C both ran on Haiku 4.5 and it won every judged
+    // axis against the deterministic ranker. design § 1b records the opposite
+    // finding for the equipment scan, which needs an Opus-class id — hence two
+    // separate variables rather than one shared "Loadout AI" id.
+    // Same Bedrock IAM wildcards as above cover it; no IAM change needed.
+    AI_LOADOUT_REMAP_MODEL_ID: "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
     // Daily per-user inference ceilings (cross-cuts § 4.3 Revised
     // 2026-07-05) — a cost backstop with a profit buffer, not a product
     // quota. Worst-case abuser ≈ £7.30/mo vs the £12.99 premium sub.
@@ -128,6 +136,14 @@ coreAPI.route("$default", {
     // "Per-coach daily backstop"). Net worst case min(2 × opened-clients,
     // this). Sized for a full coaching roster; a cost backstop, not a quota.
     AI_COACH_SUMMARY_DAILY_LIMIT: "40",
+    // ⚠ PLACEHOLDER, NOT A DECISION — spec-21 AC-10.2 is an OPEN Brad checkpoint
+    // and deliberately proposes no number. The measured cost is $0.0057 per
+    // adaptation (~$0.51/user/month at three a day, ~$3.43 at 20/day fully
+    // consumed) against £29.99, so this cap is abuse control rather than unit
+    // economics — and the bad failure mode is hitting it mid-gym. 30 mirrors the
+    // other Haiku-class endpoint so the guard is never absent; it is not a chosen
+    // value. See the handler's constant for the full note.
+    AI_LOADOUT_REMAP_DAILY_LIMIT: "30",
   },
 });
 

@@ -45,6 +45,7 @@ const DETAIL_MARKER = { id: "MARKER-DETAIL", exercises: [] };
 
 const workoutRepositoryMocks = {
   findReadableWorkout: vi.fn(async () => true),
+  listAdaptationRows: vi.fn(async () => []),
   listVariations: vi.fn(async () => VARIATIONS_MARKER),
   createVariation: vi.fn(async () => DETAIL_MARKER),
   getById: vi.fn(async () => DETAIL_MARKER),
@@ -62,7 +63,11 @@ vi.mock("../repositories/workoutRepository", () => ({
 
 const savedGymRepositoryMocks = {
   list: vi.fn(async () => []),
-  getById: vi.fn(async () => null),
+  getById: vi.fn(async () => ({
+    id: "gym-1",
+    name: "Gym",
+    equipmentTypeIds: ["eq-1"],
+  })),
   create: vi.fn(async () => ({ status: "ok", gym: { id: "gym-1" } })),
   update: vi.fn(async () => ({ status: "ok", gym: { id: "gym-1" } })),
   delete: vi.fn(async () => true),
@@ -76,6 +81,22 @@ vi.mock("../repositories/savedGymRepository", () => ({
 vi.mock("../repositories/exerciseRepository", () => ({
   ExerciseRepository: vi.fn().mockImplementation(() => ({
     findUnreadableExerciseIds: vi.fn(async () => []),
+    findEquipmentRequirements: vi.fn(async () => new Map()),
+    listAdaptationCandidates: vi.fn(async () => ({
+      candidates: [],
+      truncated: false,
+    })),
+    listPreviouslyLoggedExerciseIds: vi.fn(async () => []),
+    findEquipmentTypeIdsByName: vi.fn(async () => []),
+    getMuscleGroups: vi.fn(async () => []),
+    getEquipmentTypes: vi.fn(async () => []),
+  })),
+}));
+
+vi.mock("../repositories/aiUsageLogRepository", () => ({
+  AiUsageLogRepository: vi.fn().mockImplementation(() => ({
+    record: vi.fn(async () => undefined),
+    countForUserToday: vi.fn(async () => 0),
   })),
 }));
 
@@ -118,16 +139,20 @@ describe("loadoutRoutes mounting", () => {
     ["DELETE", `/saved-gyms/${WO_ID}`],
     ["GET", `/workouts/${WO_ID}/variations`],
     ["POST", `/workouts/${WO_ID}/variations`],
+    // Phase 1.
+    ["POST", `/workouts/${WO_ID}/loadout/preview`],
   ])("registers %s %s", async (method, path) => {
     const { loadoutRoutes } = await import("../loadoutRoutes");
     const body =
       method === "POST" && path === "/saved-gyms"
         ? { name: "Gym" }
-        : method === "POST"
-          ? { name: "Variation", exercises: [] }
-          : method === "PATCH"
-            ? { name: "Renamed" }
-            : undefined;
+        : method === "POST" && path.endsWith("/loadout/preview")
+          ? { savedGymId: WO_ID }
+          : method === "POST"
+            ? { name: "Variation", exercises: [] }
+            : method === "PATCH"
+              ? { name: "Renamed" }
+              : undefined;
 
     const res = await loadoutRoutes.handle(authed(path, method, body));
     expect(res.status).not.toBe(404);
