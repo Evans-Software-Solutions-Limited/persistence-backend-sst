@@ -1,0 +1,2258 @@
+{
+  "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+  "summary": {
+    "plans": 80,
+    "errors": 0,
+    "equipmentLegalPlans": 80,
+    "meanMuscleFidelity": 0.871,
+    "meanCategoryFidelity": 0.987,
+    "totalUnresolved": 1,
+    "totalDuplicatePicks": 0,
+    "totalNearDuplicatePairs": 11,
+    "plansWithDroppedMuscles": 28,
+    "meanLatencyMs": 2480.213,
+    "totalCostUsd": 1.1871
+  },
+  "results": [
+    {
+      "key": "w01-seeded-upper::full_gym",
+      "workout": "Upper Body",
+      "context": "full_gym",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 5,
+        "swapped": 0,
+        "unresolved": 0,
+        "muscleFidelity": 1,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": []
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 1684,
+        "inputTokens": 1374,
+        "outputTokens": 33,
+        "costUsd": 0.001539,
+        "candidateCount": 0,
+        "returnedForKeptRows": 0,
+        "pool": "0 candidates"
+      },
+      "rendered": "0. KEPT      Machine Chest Press — 3×8-10 — Kept · your kit has cable machine\n1. KEPT      Machine Lateral Raise — 3×8-10 — Kept · your kit has cable machine\n2. KEPT      Machine Seated Row — 3×8-10 — Kept · your kit has cable machine\n3. KEPT      Machine Bicep Curl — 3×10-12 — Kept · your kit has cable machine\n4. KEPT      Machine Triceps Extension — 3×10-12 — Kept · your kit has cable machine"
+    },
+    {
+      "key": "w01-seeded-upper::dumbbells_bench",
+      "workout": "Upper Body",
+      "context": "dumbbells_bench",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 0,
+        "swapped": 5,
+        "unresolved": 0,
+        "muscleFidelity": 1,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": []
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 3678,
+        "inputTokens": 22505,
+        "outputTokens": 338,
+        "costUsd": 0.024195,
+        "candidateCount": 400,
+        "returnedForKeptRows": 0,
+        "pool": "400 candidates (+48 truncated by the LIMIT 400 cap)"
+      },
+      "rendered": "0. SWAPPED   Machine Chest Press → Dumbbell Bench Press — 3×8-10 — Horizontal chest press with dumbbells replaces the cable machine chest press and uses available equipment.\n1. SWAPPED   Machine Lateral Raise → Dumbbell Lateral Raise — 3×8-10 — Dumbbell lateral raise targets shoulders with dumbbells, replacing the cable machine lateral raise.\n2. SWAPPED   Machine Seated Row → Bent-Over Dumbbell Row — 3×8-10 — Bent-over dumbbell row targets back/lats with dumbbells, replacing the cable machine seated row.\n3. SWAPPED   Machine Bicep Curl → Dumbbell Biceps Curl — 3×10-12 — Dumbbell biceps curl targets biceps with dumbbells, replacing the cable machine bicep curl.\n4. SWAPPED   Machine Triceps Extension → Dumbbell Skullcrusher — 3×10-12 — Dumbbell skullcrusher targets triceps with dumbbells, replacing the cable machine triceps extension."
+    },
+    {
+      "key": "w01-seeded-upper::bands_only",
+      "workout": "Upper Body",
+      "context": "bands_only",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 0,
+        "swapped": 5,
+        "unresolved": 0,
+        "muscleFidelity": 1,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": []
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 3689,
+        "inputTokens": 9691,
+        "outputTokens": 313,
+        "costUsd": 0.011256,
+        "candidateCount": 177,
+        "returnedForKeptRows": 0,
+        "pool": "177 candidates"
+      },
+      "rendered": "0. SWAPPED   Machine Chest Press → Band Chest Fly — 3×8-10 — Targets chest as primary with available resistance bands for horizontal pressing stimulus similar to machine chest press.\n1. SWAPPED   Machine Lateral Raise → Band Lateral Raise — 3×8-10 — Isolates shoulders as primary using resistance bands to replicate machine lateral raise movement pattern.\n2. SWAPPED   Machine Seated Row → Band Seated Row — 3×8-10 — Targets back/lats as primary with resistance bands using horizontal pull pattern equivalent to machine seated row.\n3. SWAPPED   Machine Bicep Curl → Standing Band Biceps Curl — 3×10-12 — Isolates biceps as primary using resistance bands to replace machine bicep curl with available equipment.\n4. SWAPPED   Machine Triceps Extension → Band Overhead Triceps Extension — 3×10-12 — Targets triceps as primary using resistance bands to replicate machine triceps extension movement pattern."
+    },
+    {
+      "key": "w01-seeded-upper::hotel_gym",
+      "workout": "Upper Body",
+      "context": "hotel_gym",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 5,
+        "swapped": 0,
+        "unresolved": 0,
+        "muscleFidelity": 1,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": []
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 1781,
+        "inputTokens": 1271,
+        "outputTokens": 33,
+        "costUsd": 0.001436,
+        "candidateCount": 0,
+        "returnedForKeptRows": 0,
+        "pool": "0 candidates"
+      },
+      "rendered": "0. KEPT      Machine Chest Press — 3×8-10 — Kept · your kit has cable machine\n1. KEPT      Machine Lateral Raise — 3×8-10 — Kept · your kit has cable machine\n2. KEPT      Machine Seated Row — 3×8-10 — Kept · your kit has cable machine\n3. KEPT      Machine Bicep Curl — 3×10-12 — Kept · your kit has cable machine\n4. KEPT      Machine Triceps Extension — 3×10-12 — Kept · your kit has cable machine"
+    },
+    {
+      "key": "w02-seeded-lower::full_gym",
+      "workout": "Lower Body",
+      "context": "full_gym",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 4,
+        "swapped": 0,
+        "unresolved": 0,
+        "muscleFidelity": 1,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": []
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 1184,
+        "inputTokens": 1343,
+        "outputTokens": 35,
+        "costUsd": 0.001518,
+        "candidateCount": 0,
+        "returnedForKeptRows": 0,
+        "pool": "0 candidates"
+      },
+      "rendered": "0. KEPT      Leg Extension — 3×8-10 — Kept · your kit has leg extension machine\n1. KEPT      Leg Curl — 3×8-10 — Kept · needs no equipment\n2. KEPT      Standing Calf Raise — 3×8-10 — Kept · needs no equipment\n3. KEPT      Leg Press — 3×8-10 — Kept · needs no equipment"
+    },
+    {
+      "key": "w02-seeded-lower::dumbbells_bench",
+      "workout": "Lower Body",
+      "context": "dumbbells_bench",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 3,
+        "swapped": 1,
+        "unresolved": 0,
+        "muscleFidelity": 1,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": []
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 2205,
+        "inputTokens": 21467,
+        "outputTokens": 102,
+        "costUsd": 0.021977,
+        "candidateCount": 335,
+        "returnedForKeptRows": 0,
+        "pool": "335 candidates"
+      },
+      "rendered": "0. SWAPPED   Leg Extension → Dumbbell Goblet Squat — 3×8-10 — Leg Extension Machine unavailable; Dumbbell Goblet Squat targets Quadriceps with available equipment and maintains the same rep range intent (8-10 reps).\n1. KEPT      Leg Curl — 3×8-10 — Kept · needs no equipment\n2. KEPT      Standing Calf Raise — 3×8-10 — Kept · needs no equipment\n3. KEPT      Leg Press — 3×8-10 — Kept · needs no equipment"
+    },
+    {
+      "key": "w02-seeded-lower::bands_only",
+      "workout": "Lower Body",
+      "context": "bands_only",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 3,
+        "swapped": 1,
+        "unresolved": 0,
+        "muscleFidelity": 1,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": []
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 1931,
+        "inputTokens": 15701,
+        "outputTokens": 97,
+        "costUsd": 0.016186,
+        "candidateCount": 255,
+        "returnedForKeptRows": 0,
+        "pool": "255 candidates"
+      },
+      "rendered": "0. SWAPPED   Leg Extension → Band Front Squat — 3×8-10 — Leg Extension Machine requires dedicated equipment, so Band Front Squat provides similar quad-focused strength work with available resistance bands.\n1. KEPT      Leg Curl — 3×8-10 — Kept · needs no equipment\n2. KEPT      Standing Calf Raise — 3×8-10 — Kept · needs no equipment\n3. KEPT      Leg Press — 3×8-10 — Kept · needs no equipment"
+    },
+    {
+      "key": "w02-seeded-lower::hotel_gym",
+      "workout": "Lower Body",
+      "context": "hotel_gym",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 3,
+        "swapped": 1,
+        "unresolved": 0,
+        "muscleFidelity": 1,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": []
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 2201,
+        "inputTokens": 21990,
+        "outputTokens": 102,
+        "costUsd": 0.0225,
+        "candidateCount": 346,
+        "returnedForKeptRows": 0,
+        "pool": "346 candidates"
+      },
+      "rendered": "0. SWAPPED   Leg Extension → Dumbbell Goblet Squat — 3×8-10 — Leg Extension Machine unavailable; Dumbbell Goblet Squat targets the same quadriceps focus with available equipment.\n1. KEPT      Leg Curl — 3×8-10 — Kept · needs no equipment\n2. KEPT      Standing Calf Raise — 3×8-10 — Kept · needs no equipment\n3. KEPT      Leg Press — 3×8-10 — Kept · needs no equipment"
+    },
+    {
+      "key": "w03-seeded-fullbody::full_gym",
+      "workout": "Full Body Starter Workout",
+      "context": "full_gym",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 7,
+        "swapped": 0,
+        "unresolved": 0,
+        "muscleFidelity": 1,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": []
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 1432,
+        "inputTokens": 1459,
+        "outputTokens": 33,
+        "costUsd": 0.001624,
+        "candidateCount": 0,
+        "returnedForKeptRows": 0,
+        "pool": "0 candidates"
+      },
+      "rendered": "0. KEPT      Leg Press — 3×8-10 — Kept · needs no equipment\n1. KEPT      Machine Chest Press — 3×8-10 — Kept · your kit has cable machine\n2. KEPT      Walking Lunges — 3×20-20 — Kept · needs no equipment\n3. KEPT      Machine Seated Shoulder Press — 3×8-10 — Kept · your kit has cable machine\n4. KEPT      Lat Machine Wide Grip Pulldown — 3×10-12 — Kept · your kit has cable machine\n5. KEPT      Ab Crunch — 2×15-20 — Kept · needs no equipment\n6. KEPT      Plank — 2×30-30 — Kept · needs no equipment"
+    },
+    {
+      "key": "w03-seeded-fullbody::dumbbells_bench",
+      "workout": "Full Body Starter Workout",
+      "context": "dumbbells_bench",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 4,
+        "swapped": 3,
+        "unresolved": 0,
+        "muscleFidelity": 1,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": []
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 2836,
+        "inputTokens": 18830,
+        "outputTokens": 232,
+        "costUsd": 0.01999,
+        "candidateCount": 331,
+        "returnedForKeptRows": 0,
+        "pool": "331 candidates"
+      },
+      "rendered": "0. KEPT      Leg Press — 3×8-10 — Kept · needs no equipment\n1. SWAPPED   Machine Chest Press → Dumbbell Bench Press — 3×8-10 — Dumbbell Bench Press replaces the cable machine chest press with the same horizontal pressing pattern and primary chest focus.\n2. KEPT      Walking Lunges — 3×20-20 — Kept · needs no equipment\n3. SWAPPED   Machine Seated Shoulder Press → Seated Dumbbell Shoulder Press — 3×8-10 — Seated Dumbbell Shoulder Press replaces the machine shoulder press with dumbbells for vertical pressing of the shoulders.\n4. SWAPPED   Lat Machine Wide Grip Pulldown → Bent-Over Dumbbell Row — 3×10-12 — Bent-Over Dumbbell Row replaces the lat pulldown with a horizontal pulling pattern targeting the back and lats using dumbbells.\n5. KEPT      Ab Crunch — 2×15-20 — Kept · needs no equipment\n6. KEPT      Plank — 2×30-30 — Kept · needs no equipment"
+    },
+    {
+      "key": "w03-seeded-fullbody::bands_only",
+      "workout": "Full Body Starter Workout",
+      "context": "bands_only",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 4,
+        "swapped": 3,
+        "unresolved": 0,
+        "muscleFidelity": 0.8333333333333334,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": ["Back"]
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 2759,
+        "inputTokens": 8680,
+        "outputTokens": 198,
+        "costUsd": 0.00967,
+        "candidateCount": 152,
+        "returnedForKeptRows": 0,
+        "pool": "152 candidates"
+      },
+      "rendered": "0. KEPT      Leg Press — 3×8-10 — Kept · needs no equipment\n1. SWAPPED   Machine Chest Press → Band Chest Fly — 3×8-10 — Chest primary exercise using resistance bands; maintains horizontal adduction movement pattern for chest development.\n2. KEPT      Walking Lunges — 3×20-20 — Kept · needs no equipment\n3. SWAPPED   Machine Seated Shoulder Press → Band Shoulder Press — 3×8-10 — Shoulder primary exercise using resistance bands; preserves overhead pressing movement pattern for shoulder strength.\n4. SWAPPED   Lat Machine Wide Grip Pulldown → Band Straight-Arm Pull-Down — 3×10-12 — Lats primary exercise using resistance bands; maintains vertical pulling movement pattern for back development.\n5. KEPT      Ab Crunch — 2×15-20 — Kept · needs no equipment\n6. KEPT      Plank — 2×30-30 — Kept · needs no equipment"
+    },
+    {
+      "key": "w03-seeded-fullbody::hotel_gym",
+      "workout": "Full Body Starter Workout",
+      "context": "hotel_gym",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 7,
+        "swapped": 0,
+        "unresolved": 0,
+        "muscleFidelity": 1,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": []
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 1179,
+        "inputTokens": 1356,
+        "outputTokens": 33,
+        "costUsd": 0.001521,
+        "candidateCount": 0,
+        "returnedForKeptRows": 0,
+        "pool": "0 candidates"
+      },
+      "rendered": "0. KEPT      Leg Press — 3×8-10 — Kept · needs no equipment\n1. KEPT      Machine Chest Press — 3×8-10 — Kept · your kit has cable machine\n2. KEPT      Walking Lunges — 3×20-20 — Kept · needs no equipment\n3. KEPT      Machine Seated Shoulder Press — 3×8-10 — Kept · your kit has cable machine\n4. KEPT      Lat Machine Wide Grip Pulldown — 3×10-12 — Kept · your kit has cable machine\n5. KEPT      Ab Crunch — 2×15-20 — Kept · needs no equipment\n6. KEPT      Plank — 2×30-30 — Kept · needs no equipment"
+    },
+    {
+      "key": "w04-push-hypertrophy::full_gym",
+      "workout": "Push (Hypertrophy)",
+      "context": "full_gym",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 6,
+        "swapped": 0,
+        "unresolved": 0,
+        "muscleFidelity": 1,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": []
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 1280,
+        "inputTokens": 1459,
+        "outputTokens": 33,
+        "costUsd": 0.001624,
+        "candidateCount": 0,
+        "returnedForKeptRows": 0,
+        "pool": "0 candidates"
+      },
+      "rendered": "0. KEPT      Barbell Bench Press — 4×6-8 — Kept · your kit has barbell + bench + squat rack\n1. KEPT      Seated Dumbbell Shoulder Press — 3×8-10 — Kept · your kit has dumbbells + bench\n2. KEPT      Incline Dumbbell Bench Press — 3×10-12 — Kept · your kit has dumbbells + bench\n3. KEPT      Cable Pec Fly — 3×12-15 — Kept · your kit has cable machine\n4. KEPT      Triceps Pushdown — 3×12-15 [superset A] — Kept · your kit has cable machine\n5. KEPT      Dumbbell Lateral Raise — 3×12-15 [superset A] — Kept · your kit has dumbbells"
+    },
+    {
+      "key": "w04-push-hypertrophy::dumbbells_bench",
+      "workout": "Push (Hypertrophy)",
+      "context": "dumbbells_bench",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 3,
+        "swapped": 3,
+        "unresolved": 0,
+        "muscleFidelity": 1,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": []
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 2815,
+        "inputTokens": 11163,
+        "outputTokens": 260,
+        "costUsd": 0.012462999999999998,
+        "candidateCount": 183,
+        "returnedForKeptRows": 0,
+        "pool": "183 candidates"
+      },
+      "rendered": "0. SWAPPED   Barbell Bench Press → Dumbbell Bench Press — 4×6-8 — Barbell Bench Press requires a squat rack and barbell, unavailable; Dumbbell Bench Press is the closest horizontal press substitute with available equipment.\n1. KEPT      Seated Dumbbell Shoulder Press — 3×8-10 — Kept · your kit has dumbbells + bench\n2. KEPT      Incline Dumbbell Bench Press — 3×10-12 — Kept · your kit has dumbbells + bench\n3. SWAPPED   Cable Pec Fly → Dumbbell Chest Fly — 3×12-15 — Cable Pec Fly requires a cable machine, unavailable; Dumbbell Chest Fly provides the same isolation and chest stretch in the 12-15 rep hypertrophy range.\n4. SWAPPED   Triceps Pushdown → Bench Dip — 3×12-15 [superset A] — Triceps Pushdown requires a cable machine, unavailable; Bench Dip is a solid triceps isolation exercise using only the bench and bodyweight that fits the superset.\n5. KEPT      Dumbbell Lateral Raise — 3×12-15 [superset A] — Kept · your kit has dumbbells"
+    },
+    {
+      "key": "w04-push-hypertrophy::bands_only",
+      "workout": "Push (Hypertrophy)",
+      "context": "bands_only",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 0,
+        "swapped": 6,
+        "unresolved": 0,
+        "muscleFidelity": 1,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": []
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 3889,
+        "inputTokens": 8592,
+        "outputTokens": 403,
+        "costUsd": 0.010607,
+        "candidateCount": 151,
+        "returnedForKeptRows": 0,
+        "pool": "151 candidates"
+      },
+      "rendered": "0. SWAPPED   Barbell Bench Press → Band Push-Up — 4×6-8 — Barbell bench press (horizontal chest press) replaced with band-assisted push-up to maintain heavy horizontal pressing stimulus with available equipment.\n1. SWAPPED   Seated Dumbbell Shoulder Press → Band Shoulder Press — 3×8-10 — Seated dumbbell shoulder press replaced with band shoulder press to maintain vertical pressing for shoulders using available resistance bands.\n2. SWAPPED   Incline Dumbbell Bench Press → Taylor Band-Assisted One-Arm Push-Up — 3×10-12 — Incline dumbbell bench press replaced with band-assisted one-arm push-up to provide progressive horizontal chest stimulus and unilateral demand.\n3. SWAPPED   Cable Pec Fly → Band Chest Fly — 3×12-15 — Cable pec fly replaced with band chest fly to maintain the horizontal adduction/fly movement pattern for chest isolation.\n4. SWAPPED   Triceps Pushdown → Band Overhead Triceps Extension — 3×12-15 [superset A] — Triceps pushdown replaced with band overhead triceps extension to maintain triceps isolation with available equipment.\n5. SWAPPED   Dumbbell Lateral Raise → Band Lateral Raise — 3×12-15 [superset A] — Dumbbell lateral raise replaced with band lateral raise to maintain lateral shoulder abduction for shoulder development."
+    },
+    {
+      "key": "w04-push-hypertrophy::hotel_gym",
+      "workout": "Push (Hypertrophy)",
+      "context": "hotel_gym",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 5,
+        "swapped": 1,
+        "unresolved": 0,
+        "muscleFidelity": 1,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": []
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 1884,
+        "inputTokens": 9148,
+        "outputTokens": 106,
+        "costUsd": 0.009677999999999999,
+        "candidateCount": 151,
+        "returnedForKeptRows": 0,
+        "pool": "151 candidates"
+      },
+      "rendered": "0. SWAPPED   Barbell Bench Press → Dumbbell Bench Press — 4×6-8 — Barbell Bench Press unavailable without squat rack; Dumbbell Bench Press preserves the primary horizontal pressing pattern and chest focus with available equipment.\n1. KEPT      Seated Dumbbell Shoulder Press — 3×8-10 — Kept · your kit has dumbbells + bench\n2. KEPT      Incline Dumbbell Bench Press — 3×10-12 — Kept · your kit has dumbbells + bench\n3. KEPT      Cable Pec Fly — 3×12-15 — Kept · your kit has cable machine\n4. KEPT      Triceps Pushdown — 3×12-15 [superset A] — Kept · your kit has cable machine\n5. KEPT      Dumbbell Lateral Raise — 3×12-15 [superset A] — Kept · your kit has dumbbells"
+    },
+    {
+      "key": "w05-pull-hypertrophy::full_gym",
+      "workout": "Pull (Hypertrophy)",
+      "context": "full_gym",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 6,
+        "swapped": 0,
+        "unresolved": 0,
+        "muscleFidelity": 1,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": []
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 1362,
+        "inputTokens": 1455,
+        "outputTokens": 33,
+        "costUsd": 0.00162,
+        "candidateCount": 0,
+        "returnedForKeptRows": 0,
+        "pool": "0 candidates"
+      },
+      "rendered": "0. KEPT      Barbell Bent-Over Row — 4×6-8 — Kept · your kit has barbell\n1. KEPT      Lat Pull-Down — 3×8-10 — Kept · your kit has cable machine + bench\n2. KEPT      Seated Cable Rows — 3×10-12 — Kept · your kit has cable machine + bench\n3. KEPT      Seated Face Pull — 3×15-15 — Kept · your kit has cable machine + bench\n4. KEPT      Barbell Curl — 3×10-12 [superset A] — Kept · your kit has barbell\n5. KEPT      Hammer Curl — 3×12-15 [superset A] — Kept · your kit has dumbbells"
+    },
+    {
+      "key": "w05-pull-hypertrophy::dumbbells_bench",
+      "workout": "Pull (Hypertrophy)",
+      "context": "dumbbells_bench",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 1,
+        "swapped": 5,
+        "unresolved": 0,
+        "muscleFidelity": 0.8333333333333333,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 3,
+        "musclesDropped": ["Lower Back", "Traps"]
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 3504,
+        "inputTokens": 19587,
+        "outputTokens": 323,
+        "costUsd": 0.021202,
+        "candidateCount": 349,
+        "returnedForKeptRows": 0,
+        "pool": "349 candidates"
+      },
+      "rendered": "0. SWAPPED   Barbell Bent-Over Row → Bent-Over Dumbbell Row — 4×6-8 — Replaces barbell row with dumbbell equivalent to maintain heavy horizontal pull with available equipment.\n1. SWAPPED   Lat Pull-Down → Incline Dumbbell Row — 3×8-10 — Chest-supported row pattern mimics lat pulldown mechanics for vertical pulling without cable machine.\n2. SWAPPED   Seated Cable Rows → Single-Arm Dumbbell Row — 3×10-12 — Single-arm rowing maintains row mechanics and mid-back focus without cable machine.\n3. SWAPPED   Seated Face Pull → Bent-over rear delt raise — 3×15-15 — Rear delt raise targets shoulders and traps with dumbbells instead of cable machine.\n4. SWAPPED   Barbell Curl → Dumbbell Biceps Curl — 3×10-12 [superset A] — Standard dumbbell curl replaces barbell curl as primary biceps builder in superset A.\n5. KEPT      Hammer Curl — 3×12-15 [superset A] — Kept · your kit has dumbbells"
+    },
+    {
+      "key": "w05-pull-hypertrophy::bands_only",
+      "workout": "Pull (Hypertrophy)",
+      "context": "bands_only",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 0,
+        "swapped": 6,
+        "unresolved": 0,
+        "muscleFidelity": 0.861111111111111,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 2,
+        "musclesDropped": ["Forearms", "Lower Back"]
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 3739,
+        "inputTokens": 7929,
+        "outputTokens": 372,
+        "costUsd": 0.009789,
+        "candidateCount": 142,
+        "returnedForKeptRows": 0,
+        "pool": "142 candidates"
+      },
+      "rendered": "0. SWAPPED   Barbell Bent-Over Row → Band Bent-Over Row — 4×6-8 — Primary back/lat engagement with resistance bands replacing the barbell bent-over row's pulling pattern.\n1. SWAPPED   Lat Pull-Down → Band Straight-Arm Pull-Down — 3×8-10 — Isolated lat targeting movement replacing the lat pull-down without cable machine.\n2. SWAPPED   Seated Cable Rows → Band Seated Row — 3×10-12 — Seated rowing pattern for back/lats using resistance bands instead of cable machine.\n3. SWAPPED   Seated Face Pull → Rusin Banded Face Pull — 3×15-15 — Face pull targeting shoulders and traps with resistance bands replacing the cable machine version.\n4. SWAPPED   Barbell Curl → Standing Band Biceps Curl — 3×10-12 [superset A] — Biceps curl with resistance bands replacing the barbell curl for the superset.\n5. SWAPPED   Hammer Curl → Banded Biceps Curl in Squat Position — 3×12-15 [superset A] — Biceps-focused curl variation with bands replacing dumbbells for the second superset exercise."
+    },
+    {
+      "key": "w05-pull-hypertrophy::hotel_gym",
+      "workout": "Pull (Hypertrophy)",
+      "context": "hotel_gym",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 4,
+        "swapped": 2,
+        "unresolved": 0,
+        "muscleFidelity": 0.8333333333333333,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": ["Lower Back"]
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 2451,
+        "inputTokens": 14587,
+        "outputTokens": 185,
+        "costUsd": 0.015512,
+        "candidateCount": 256,
+        "returnedForKeptRows": 0,
+        "pool": "256 candidates"
+      },
+      "rendered": "0. SWAPPED   Barbell Bent-Over Row → Bent-Over Dumbbell Row — 4×6-8 — No barbell available; dumbbell bent-over row replicates the hinge pattern and targets back/lats/lower back with similar hypertrophy rep range.\n1. KEPT      Lat Pull-Down — 3×8-10 — Kept · your kit has cable machine + bench\n2. KEPT      Seated Cable Rows — 3×10-12 — Kept · your kit has cable machine + bench\n3. KEPT      Seated Face Pull — 3×15-15 — Kept · your kit has cable machine + bench\n4. SWAPPED   Barbell Curl → Cable Straight-Bar Biceps Curl — 3×10-12 [superset A] — No barbell available; cable straight-bar biceps curl maintains the superset pairing with hammer curls and targets biceps in the hypertrophy range.\n5. KEPT      Hammer Curl — 3×12-15 [superset A] — Kept · your kit has dumbbells"
+    },
+    {
+      "key": "w06-legs-hypertrophy::full_gym",
+      "workout": "Legs (Hypertrophy)",
+      "context": "full_gym",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 5,
+        "swapped": 0,
+        "unresolved": 0,
+        "muscleFidelity": 1,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": []
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 1115,
+        "inputTokens": 1413,
+        "outputTokens": 33,
+        "costUsd": 0.001578,
+        "candidateCount": 0,
+        "returnedForKeptRows": 0,
+        "pool": "0 candidates"
+      },
+      "rendered": "0. KEPT      Barbell Back Squat — 4×6-8 — Kept · your kit has barbell + squat rack\n1. KEPT      Romanian Deadlift — 3×8-10 — Kept · your kit has barbell\n2. KEPT      Leg Press — 3×10-12 — Kept · needs no equipment\n3. KEPT      Leg Curl — 3×12-15 — Kept · needs no equipment\n4. KEPT      Standing Calf Raise — 4×12-15 — Kept · needs no equipment"
+    },
+    {
+      "key": "w06-legs-hypertrophy::dumbbells_bench",
+      "workout": "Legs (Hypertrophy)",
+      "context": "dumbbells_bench",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 3,
+        "swapped": 2,
+        "unresolved": 0,
+        "muscleFidelity": 0.6666666666666666,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": []
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 2646,
+        "inputTokens": 24878,
+        "outputTokens": 216,
+        "costUsd": 0.025958000000000002,
+        "candidateCount": 400,
+        "returnedForKeptRows": 0,
+        "pool": "400 candidates (+104 truncated by the LIMIT 400 cap)"
+      },
+      "rendered": "0. SWAPPED   Barbell Back Squat → Dumbbell Goblet Squat — 4×6-8 — Barbell Back Squat requires a squat rack; Dumbbell Goblet Squat replaces it with the same primary muscles (Quadriceps/Glutes/Hamstrings) using available equipment.\n1. SWAPPED   Romanian Deadlift → Dumbbell Stiff-Legged Deadlift — 3×8-10 — Romanian Deadlift requires a barbell; Dumbbell Stiff-Legged Deadlift preserves the hinge pattern with identical primary targets (Hamstrings/Glutes/Lower Back).\n2. KEPT      Leg Press — 3×10-12 — Kept · needs no equipment\n3. KEPT      Leg Curl — 3×12-15 — Kept · needs no equipment\n4. KEPT      Standing Calf Raise — 4×12-15 — Kept · needs no equipment"
+    },
+    {
+      "key": "w06-legs-hypertrophy::bands_only",
+      "workout": "Legs (Hypertrophy)",
+      "context": "bands_only",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 3,
+        "swapped": 2,
+        "unresolved": 0,
+        "muscleFidelity": 1,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": []
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 2682,
+        "inputTokens": 22986,
+        "outputTokens": 192,
+        "costUsd": 0.023946,
+        "candidateCount": 399,
+        "returnedForKeptRows": 0,
+        "pool": "399 candidates"
+      },
+      "rendered": "0. SWAPPED   Barbell Back Squat → Band Front Squat — 4×6-8 — Barbell back squat requires rack/barbell unavailable; Band Front Squat targets the same primary muscles (Quadriceps/Glutes/Hamstrings) with heavy resistance using available equipment.\n1. SWAPPED   Romanian Deadlift → Band Good Morning — 3×8-10 — Romanian Deadlift requires barbell unavailable; Band Good Morning replicates the hip-hinge pattern and targets Hamstrings/Glutes/Lower Back with resistance bands.\n2. KEPT      Leg Press — 3×10-12 — Kept · needs no equipment\n3. KEPT      Leg Curl — 3×12-15 — Kept · needs no equipment\n4. KEPT      Standing Calf Raise — 4×12-15 — Kept · needs no equipment"
+    },
+    {
+      "key": "w06-legs-hypertrophy::hotel_gym",
+      "workout": "Legs (Hypertrophy)",
+      "context": "hotel_gym",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 3,
+        "swapped": 2,
+        "unresolved": 0,
+        "muscleFidelity": 0.3333333333333333,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": ["Lower Back"]
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 2445,
+        "inputTokens": 24797,
+        "outputTokens": 206,
+        "costUsd": 0.025827,
+        "candidateCount": 400,
+        "returnedForKeptRows": 0,
+        "pool": "400 candidates (+124 truncated by the LIMIT 400 cap)"
+      },
+      "rendered": "0. SWAPPED   Barbell Back Squat → Dumbbell Goblet Squat — 4×6-8 — Barbell back squat replaced with dumbbell goblet squat—same primary muscles (quads/glutes/hamstrings) and leg-dominant compound pattern; available with dumbbells.\n1. SWAPPED   Romanian Deadlift → 30 Legs Dumbbell Stiff-Legged Deadlift — 3×8-10 — Romanian deadlift replaced with dumbbell stiff-legged deadlift—same hinge pattern and primary targets (hamstrings/glutes/lower back); executed with dumbbells.\n2. KEPT      Leg Press — 3×10-12 — Kept · needs no equipment\n3. KEPT      Leg Curl — 3×12-15 — Kept · needs no equipment\n4. KEPT      Standing Calf Raise — 4×12-15 — Kept · needs no equipment"
+    },
+    {
+      "key": "w07-strength-5x5-a::full_gym",
+      "workout": "Strength 5×5 — A",
+      "context": "full_gym",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 3,
+        "swapped": 0,
+        "unresolved": 0,
+        "muscleFidelity": 1,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": []
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 1081,
+        "inputTokens": 1348,
+        "outputTokens": 33,
+        "costUsd": 0.001513,
+        "candidateCount": 0,
+        "returnedForKeptRows": 0,
+        "pool": "0 candidates"
+      },
+      "rendered": "0. KEPT      Barbell Back Squat — 5×5-5 — Kept · your kit has barbell + squat rack\n1. KEPT      Barbell Bench Press — 5×5-5 — Kept · your kit has barbell + bench + squat rack\n2. KEPT      Barbell Bent-Over Row — 5×5-5 — Kept · your kit has barbell"
+    },
+    {
+      "key": "w07-strength-5x5-a::dumbbells_bench",
+      "workout": "Strength 5×5 — A",
+      "context": "dumbbells_bench",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 0,
+        "swapped": 3,
+        "unresolved": 0,
+        "muscleFidelity": 0.6666666666666666,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": ["Glutes", "Hamstrings", "Lower Back"]
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 3019,
+        "inputTokens": 24924,
+        "outputTokens": 250,
+        "costUsd": 0.026174000000000003,
+        "candidateCount": 400,
+        "returnedForKeptRows": 0,
+        "pool": "400 candidates (+272 truncated by the LIMIT 400 cap)"
+      },
+      "rendered": "0. SWAPPED   Barbell Back Squat → Dumbbell Goblet Squat — 5×5-5 — Barbell back squat replaced with dumbbell goblet squat—same lower-body compound pattern targeting quads, glutes, and hamstrings with available equipment.\n1. SWAPPED   Barbell Bench Press → Dumbbell Bench Press — 5×5-5 — Barbell bench press replaced with dumbbell bench press—maintains horizontal chest press movement and primary chest engagement with available dumbbells and bench.\n2. SWAPPED   Barbell Bent-Over Row → Dumbbell Bent-Over Row — 5×5-5 — Barbell bent-over row replaced with dumbbell bent-over row—preserves horizontal pulling pattern targeting back and lats with available dumbbells."
+    },
+    {
+      "key": "w07-strength-5x5-a::bands_only",
+      "workout": "Strength 5×5 — A",
+      "context": "bands_only",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 0,
+        "swapped": 3,
+        "unresolved": 0,
+        "muscleFidelity": 0.8888888888888888,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": ["Lower Back"]
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 2758,
+        "inputTokens": 22743,
+        "outputTokens": 218,
+        "costUsd": 0.023833,
+        "candidateCount": 400,
+        "returnedForKeptRows": 0,
+        "pool": "400 candidates (+91 truncated by the LIMIT 400 cap)"
+      },
+      "rendered": "0. SWAPPED   Barbell Back Squat → Band Front Squat — 5×5-5 — Band Front Squat replicates the vertical leg press pattern and targets Quadriceps/Glutes/Hamstrings with available equipment.\n1. SWAPPED   Barbell Bench Press → Band Push-Up — 5×5-5 — Band Push-Up provides horizontal chest press with resistance bands to replace the barbell bench press.\n2. SWAPPED   Barbell Bent-Over Row → Band Bent-Over Row — 5×5-5 — Band Bent-Over Row replicates the horizontal pulling pattern and back/lat development of the barbell row."
+    },
+    {
+      "key": "w07-strength-5x5-a::hotel_gym",
+      "workout": "Strength 5×5 — A",
+      "context": "hotel_gym",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 0,
+        "swapped": 3,
+        "unresolved": 0,
+        "muscleFidelity": 0.6666666666666666,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": ["Glutes", "Hamstrings", "Lower Back"]
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 3316,
+        "inputTokens": 24611,
+        "outputTokens": 240,
+        "costUsd": 0.025811,
+        "candidateCount": 400,
+        "returnedForKeptRows": 0,
+        "pool": "400 candidates (+359 truncated by the LIMIT 400 cap)"
+      },
+      "rendered": "0. SWAPPED   Barbell Back Squat → Dumbbell Goblet Squat — 5×5-5 — Barbell squat unavailable; goblet squat preserves the quad/glute/hamstring primary pattern and heavy loading with available dumbbells.\n1. SWAPPED   Barbell Bench Press → Dumbbell Bench Press — 5×5-5 — Barbell bench press unavailable; dumbbell bench press maintains horizontal chest press pattern with primary chest engagement using available equipment.\n2. SWAPPED   Barbell Bent-Over Row → Dumbbell Bent-Over Row — 5×5-5 — Barbell bent-over row unavailable; dumbbell bent-over row preserves the horizontal back/lat pull pattern with primary back engagement."
+    },
+    {
+      "key": "w08-strength-5x5-b::full_gym",
+      "workout": "Strength 5×5 — B",
+      "context": "full_gym",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 3,
+        "swapped": 0,
+        "unresolved": 0,
+        "muscleFidelity": 1,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": []
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 1283,
+        "inputTokens": 1347,
+        "outputTokens": 33,
+        "costUsd": 0.001512,
+        "candidateCount": 0,
+        "returnedForKeptRows": 0,
+        "pool": "0 candidates"
+      },
+      "rendered": "0. KEPT      Barbell Back Squat — 5×5-5 — Kept · your kit has barbell + squat rack\n1. KEPT      Barbell Shoulder Press — 5×5-5 — Kept · your kit has barbell + bench\n2. KEPT      Barbell Deadlift — 1×5-5 — Kept · your kit has barbell"
+    },
+    {
+      "key": "w08-strength-5x5-b::dumbbells_bench",
+      "workout": "Strength 5×5 — B",
+      "context": "dumbbells_bench",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 0,
+        "swapped": 3,
+        "unresolved": 0,
+        "muscleFidelity": 0.6944444444444443,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": ["Full Body"]
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 2764,
+        "inputTokens": 25106,
+        "outputTokens": 256,
+        "costUsd": 0.026386,
+        "candidateCount": 400,
+        "returnedForKeptRows": 0,
+        "pool": "400 candidates (+322 truncated by the LIMIT 400 cap)"
+      },
+      "rendered": "0. SWAPPED   Barbell Back Squat → Dumbbell Goblet Squat — 5×5-5 — Replaces barbell squat with a dumbbell compound that targets the same primary muscles (Quadriceps/Glutes/Hamstrings) while working within available equipment.\n1. SWAPPED   Barbell Shoulder Press → Dumbbell Military Press — 5×5-5 — Replaces barbell shoulder press with a dumbbell shoulder press that maintains the primary shoulder focus and overhead pressing pattern.\n2. SWAPPED   Barbell Deadlift → Dumbbell Deadlift — 1×5-5 — Replaces barbell deadlift with a dumbbell deadlift that maintains the hip hinge pattern and targets the same primary muscles (Hamstrings/Glutes/Lower Back)."
+    },
+    {
+      "key": "w08-strength-5x5-b::bands_only",
+      "workout": "Strength 5×5 — B",
+      "context": "bands_only",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 0,
+        "swapped": 3,
+        "unresolved": 0,
+        "muscleFidelity": 0.75,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": ["Full Body", "Lower Back"]
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 2741,
+        "inputTokens": 22947,
+        "outputTokens": 228,
+        "costUsd": 0.024086999999999997,
+        "candidateCount": 400,
+        "returnedForKeptRows": 0,
+        "pool": "400 candidates (+113 truncated by the LIMIT 400 cap)"
+      },
+      "rendered": "0. SWAPPED   Barbell Back Squat → Band Front Squat — 5×5-5 — Barbell squat replaces with banded front squat; maintains primary quad/glute/hamstring focus with available resistance.\n1. SWAPPED   Barbell Shoulder Press → Band Shoulder Press — 5×5-5 — Barbell shoulder press replaces with banded shoulder press; maintains primary shoulder overpress pattern with resistance bands.\n2. SWAPPED   Barbell Deadlift → Band Deadlift — 1×5-5 — Barbell deadlift replaces with banded deadlift; maintains hip-hinge movement pattern hitting hamstrings/glutes/lower back with available equipment."
+    },
+    {
+      "key": "w08-strength-5x5-b::hotel_gym",
+      "workout": "Strength 5×5 — B",
+      "context": "hotel_gym",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 0,
+        "swapped": 3,
+        "unresolved": 0,
+        "muscleFidelity": 0.6944444444444443,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": ["Full Body"]
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 3252,
+        "inputTokens": 24524,
+        "outputTokens": 256,
+        "costUsd": 0.025804,
+        "candidateCount": 400,
+        "returnedForKeptRows": 0,
+        "pool": "400 candidates (+376 truncated by the LIMIT 400 cap)"
+      },
+      "rendered": "0. SWAPPED   Barbell Back Squat → Dumbbell Goblet Squat — 5×5-5 — Barbell squat rack unavailable; goblet squat provides heavy bilateral lower-body pressing pattern with quadriceps/glutes/hamstrings focus using only dumbbells.\n1. SWAPPED   Barbell Shoulder Press → Dumbbell Military Press — 5×5-5 — Barbell and squat rack unavailable; dumbbell military press maintains vertical pressing pattern for shoulders with dumbbells and bench.\n2. SWAPPED   Barbell Deadlift → Dumbbell Deadlift — 1×5-5 — Barbell unavailable; dumbbell deadlift preserves the hinge pattern and full-body pull with primary work in hamstrings/glutes/lower back using dumbbells."
+    },
+    {
+      "key": "w09-upper-strength::full_gym",
+      "workout": "Upper (Strength)",
+      "context": "full_gym",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 5,
+        "swapped": 0,
+        "unresolved": 0,
+        "muscleFidelity": 1,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": []
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 1087,
+        "inputTokens": 1418,
+        "outputTokens": 33,
+        "costUsd": 0.001583,
+        "candidateCount": 0,
+        "returnedForKeptRows": 0,
+        "pool": "0 candidates"
+      },
+      "rendered": "0. KEPT      Barbell Bench Press — 4×4-6 — Kept · your kit has barbell + bench + squat rack\n1. KEPT      Pull-up — 4×6-8 — Kept · your kit has pull-up bar\n2. KEPT      Barbell Shoulder Press — 3×6-8 — Kept · your kit has barbell + bench\n3. KEPT      One-Arm Dumbbell Row — 3×8-10 — Kept · your kit has dumbbells + bench\n4. KEPT      EZ-Bar Skullcrusher — 3×10-12 — Kept · your kit has ez bar + bench"
+    },
+    {
+      "key": "w09-upper-strength::dumbbells_bench",
+      "workout": "Upper (Strength)",
+      "context": "dumbbells_bench",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 1,
+        "swapped": 3,
+        "unresolved": 1,
+        "muscleFidelity": 1,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": []
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 3109,
+        "inputTokens": 21416,
+        "outputTokens": 312,
+        "costUsd": 0.022976,
+        "candidateCount": 381,
+        "returnedForKeptRows": 0,
+        "pool": "381 candidates"
+      },
+      "rendered": "0. SWAPPED   Barbell Bench Press → Dumbbell Bench Press — 4×4-6 — Barbell Bench Press requires a squat rack; Dumbbell Bench Press is a direct chest-focused alternative using available equipment.\n1. UNRESOLVED (was Pull-up) — 4×6-8 — Pull-ups require a pull-up bar which is unavailable; no candidate exercise provides the same primary pulling pattern with available equipment.\n2. SWAPPED   Barbell Shoulder Press → Alternating Standing Shoulder Press — 3×6-8 — Barbell Shoulder Press requires a barbell and rack; Alternating Standing Shoulder Press uses dumbbells and provides the same overhead pressing movement pattern.\n3. KEPT      One-Arm Dumbbell Row — 3×8-10 — Kept · your kit has dumbbells + bench\n4. SWAPPED   EZ-Bar Skullcrusher → Dumbbell Skullcrusher — 3×10-12 — EZ-Bar Skullcrusher requires an EZ bar; Dumbbell Skullcrusher preserves the triceps-focused overhead extension pattern with dumbbells and bench."
+    },
+    {
+      "key": "w09-upper-strength::bands_only",
+      "workout": "Upper (Strength)",
+      "context": "bands_only",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 0,
+        "swapped": 5,
+        "unresolved": 0,
+        "muscleFidelity": 1,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 1,
+        "musclesDropped": []
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 3842,
+        "inputTokens": 9431,
+        "outputTokens": 346,
+        "costUsd": 0.011161,
+        "candidateCount": 170,
+        "returnedForKeptRows": 0,
+        "pool": "170 candidates"
+      },
+      "rendered": "0. SWAPPED   Barbell Bench Press → Band Chest Fly — 4×4-6 — Barbell Bench Press unavailable; Band Chest Fly maintains horizontal pressing/chest focus with available equipment.\n1. SWAPPED   Pull-up → Band Bent-Over Row — 4×6-8 — Pull-up bar unavailable; Band Bent-Over Row targets lats/back with same horizontal pulling pattern using available equipment.\n2. SWAPPED   Barbell Shoulder Press → Band Shoulder Press — 3×6-8 — Barbell Shoulder Press unavailable; Band Shoulder Press maintains vertical pressing pattern for shoulders with resistance bands.\n3. SWAPPED   One-Arm Dumbbell Row → Single-Arm Band Low Row — 3×8-10 — Dumbbells unavailable; Single-Arm Band Low Row maintains unilateral back/lat focus with bands.\n4. SWAPPED   EZ-Bar Skullcrusher → Band Skullcrusher — 3×10-12 — EZ-Bar Skullcrusher unavailable; Band Skullcrusher maintains triceps isolation pattern with resistance bands."
+    },
+    {
+      "key": "w09-upper-strength::hotel_gym",
+      "workout": "Upper (Strength)",
+      "context": "hotel_gym",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 1,
+        "swapped": 4,
+        "unresolved": 0,
+        "muscleFidelity": 1,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": []
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 3345,
+        "inputTokens": 21697,
+        "outputTokens": 325,
+        "costUsd": 0.023322000000000002,
+        "candidateCount": 400,
+        "returnedForKeptRows": 0,
+        "pool": "400 candidates (+115 truncated by the LIMIT 400 cap)"
+      },
+      "rendered": "0. SWAPPED   Barbell Bench Press → Dumbbell Bench Press — 4×4-6 — Dumbbell Bench Press replaces Barbell Bench Press with the same horizontal pressing pattern and primary chest focus using available dumbbells and bench.\n1. SWAPPED   Pull-up → AM Wide-Grip Pull-Down — 4×6-8 — Wide-Grip Pull-Down replaces Pull-up, maintaining the vertical pulling and lat/back focus using the cable machine instead of a pull-up bar.\n2. SWAPPED   Barbell Shoulder Press → Dumbbell Military Press — 3×6-8 — Dumbbell Military Press replaces Barbell Shoulder Press with the same vertical pressing movement and primary shoulder engagement using dumbbells and bench.\n3. KEPT      One-Arm Dumbbell Row — 3×8-10 — Kept · your kit has dumbbells + bench\n4. SWAPPED   EZ-Bar Skullcrusher → Dumbbell Skullcrusher — 3×10-12 — Dumbbell Skullcrusher replaces EZ-Bar Skullcrusher, maintaining the triceps isolation and overhead extension pattern using available dumbbells and bench."
+    },
+    {
+      "key": "w10-lower-strength::full_gym",
+      "workout": "Lower (Strength)",
+      "context": "full_gym",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 5,
+        "swapped": 0,
+        "unresolved": 0,
+        "muscleFidelity": 1,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": []
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 1103,
+        "inputTokens": 1444,
+        "outputTokens": 33,
+        "costUsd": 0.001609,
+        "candidateCount": 0,
+        "returnedForKeptRows": 0,
+        "pool": "0 candidates"
+      },
+      "rendered": "0. KEPT      Barbell Deadlift — 4×4-6 — Kept · your kit has barbell\n1. KEPT      Barbell Front Squat — 3×6-8 — Kept · your kit has barbell + squat rack\n2. KEPT      Dumbbell Bulgarian Split Squat — 3×8-10 — Kept · your kit has dumbbells + bench\n3. KEPT      Barbell Good Morning — 3×10-12 — Kept · your kit has barbell\n4. KEPT      Hanging Leg Raise — 3×10-12 — Kept · your kit has pull-up bar"
+    },
+    {
+      "key": "w10-lower-strength::dumbbells_bench",
+      "workout": "Lower (Strength)",
+      "context": "dumbbells_bench",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 1,
+        "swapped": 4,
+        "unresolved": 0,
+        "muscleFidelity": 0.7708333333333334,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": ["Full Body"]
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 3326,
+        "inputTokens": 24246,
+        "outputTokens": 331,
+        "costUsd": 0.025901,
+        "candidateCount": 400,
+        "returnedForKeptRows": 0,
+        "pool": "400 candidates (+507 truncated by the LIMIT 400 cap)"
+      },
+      "rendered": "0. SWAPPED   Barbell Deadlift → Dumbbell Deadlift — 4×4-6 — Barbell deadlift replaced with dumbbell deadlift, preserving the hip-hinge pattern and primary targets (hamstrings/glutes/lower back).\n1. SWAPPED   Barbell Front Squat → Dumbbell Front Squat — 3×6-8 — Barbell front squat replaced with dumbbell front squat, preserving the quad-dominant squat pattern and primary targets (quadriceps/glutes).\n2. KEPT      Dumbbell Bulgarian Split Squat — 3×8-10 — Kept · your kit has dumbbells + bench\n3. SWAPPED   Barbell Good Morning → 30 Legs Dumbbell Stiff-Legged Deadlift — 3×10-12 — Barbell good morning replaced with dumbbell stiff-legged deadlift, maintaining the posterior-chain hinge pattern and hamstring/glute focus.\n4. SWAPPED   Hanging Leg Raise → Alternating Lying Leg Raise — 3×10-12 — Hanging leg raise replaced with alternating lying leg raise, preserving core-focused abs work without requiring a pull-up bar."
+    },
+    {
+      "key": "w10-lower-strength::bands_only",
+      "workout": "Lower (Strength)",
+      "context": "bands_only",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 0,
+        "swapped": 5,
+        "unresolved": 0,
+        "muscleFidelity": 0.85,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 1,
+        "musclesDropped": ["Full Body"]
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 3957,
+        "inputTokens": 23702,
+        "outputTokens": 394,
+        "costUsd": 0.025672,
+        "candidateCount": 400,
+        "returnedForKeptRows": 0,
+        "pool": "400 candidates (+311 truncated by the LIMIT 400 cap)"
+      },
+      "rendered": "0. SWAPPED   Barbell Deadlift → Band Deadlift — 4×4-6 — Barbell unavailable; Band Deadlift targets Hamstrings/Glutes/Lower Back with resistance bands and maintains the primary hinge pattern.\n1. SWAPPED   Barbell Front Squat → Band Front Squat — 3×6-8 — Barbell and rack unavailable; Band Front Squat targets Quadriceps/Glutes with resistance bands and preserves the quad-dominant squat movement.\n2. SWAPPED   Dumbbell Bulgarian Split Squat → Band Split Squat — 3×8-10 — Dumbbells and bench unavailable; Band Split Squat targets Quadriceps/Glutes/Hamstrings with bodyweight and resistance bands for single-leg strength.\n3. SWAPPED   Barbell Good Morning → Band Good Morning — 3×10-12 — Barbell unavailable; Band Good Morning targets Hamstrings/Glutes/Lower Back with resistance bands, matching the posterior chain focus of the original.\n4. SWAPPED   Hanging Leg Raise → Alternating Lying Leg Raise — 3×10-12 — Pull-up bar unavailable; Alternating Lying Leg Raise targets Abs with bodyweight and yoga mat, preserving core strengthening with available equipment."
+    },
+    {
+      "key": "w10-lower-strength::hotel_gym",
+      "workout": "Lower (Strength)",
+      "context": "hotel_gym",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 1,
+        "swapped": 4,
+        "unresolved": 0,
+        "muscleFidelity": 0.9375,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": ["Full Body"]
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 3338,
+        "inputTokens": 23811,
+        "outputTokens": 307,
+        "costUsd": 0.025346,
+        "candidateCount": 400,
+        "returnedForKeptRows": 0,
+        "pool": "400 candidates (+552 truncated by the LIMIT 400 cap)"
+      },
+      "rendered": "0. SWAPPED   Barbell Deadlift → Dumbbell Deadlift — 4×4-6 — Dumbbell Deadlift replaces Barbell Deadlift with the same hinge pattern and full-body lower-body focus using available dumbbells.\n1. SWAPPED   Barbell Front Squat → Dumbbell Front Squat — 3×6-8 — Dumbbell Front Squat replaces Barbell Front Squat as the primary quad and glute builder using available dumbbells.\n2. KEPT      Dumbbell Bulgarian Split Squat — 3×8-10 — Kept · your kit has dumbbells + bench\n3. SWAPPED   Barbell Good Morning → HM Good Morning — 3×10-12 — HM Good Morning replaces Barbell Good Morning with the same hinge and posterior chain focus using bodyweight.\n4. SWAPPED   Hanging Leg Raise → Cable Reverse Crunch — 3×10-12 — Cable Reverse Crunch replaces Hanging Leg Raise as an ab-focused movement using the available cable machine instead of a pull-up bar."
+    },
+    {
+      "key": "w11-fullbody-dumbbell::full_gym",
+      "workout": "Full Body (Dumbbell)",
+      "context": "full_gym",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 5,
+        "swapped": 0,
+        "unresolved": 0,
+        "muscleFidelity": 1,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": []
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 1177,
+        "inputTokens": 1439,
+        "outputTokens": 33,
+        "costUsd": 0.001604,
+        "candidateCount": 0,
+        "returnedForKeptRows": 0,
+        "pool": "0 candidates"
+      },
+      "rendered": "0. KEPT      Goblet Squat — 3×10-12 — Kept · your kit has kettlebell + dumbbells\n1. KEPT      Dumbbell Bench Press — 3×10-12 — Kept · your kit has dumbbells + bench\n2. KEPT      One-Arm Dumbbell Row — 3×10-12 — Kept · your kit has dumbbells + bench\n3. KEPT      Dumbbell Lunges — 3×12-12 — Kept · your kit has dumbbells\n4. KEPT      Dumbbell Bicep Curl — 3×12-15 — Kept · your kit has dumbbells"
+    },
+    {
+      "key": "w11-fullbody-dumbbell::dumbbells_bench",
+      "workout": "Full Body (Dumbbell)",
+      "context": "dumbbells_bench",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 4,
+        "swapped": 1,
+        "unresolved": 0,
+        "muscleFidelity": 0.5,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": []
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 2957,
+        "inputTokens": 25217,
+        "outputTokens": 106,
+        "costUsd": 0.025747,
+        "candidateCount": 400,
+        "returnedForKeptRows": 0,
+        "pool": "400 candidates (+29 truncated by the LIMIT 400 cap)"
+      },
+      "rendered": "0. SWAPPED   Goblet Squat → Dumbbell Goblet Squat — 3×10-12 — Goblet Squat requires kettlebell but Dumbbell Goblet Squat targets the same primary muscles (Quadriceps) with available dumbbells and maintains lower-body emphasis.\n1. KEPT      Dumbbell Bench Press — 3×10-12 — Kept · your kit has dumbbells + bench\n2. KEPT      One-Arm Dumbbell Row — 3×10-12 — Kept · your kit has dumbbells + bench\n3. KEPT      Dumbbell Lunges — 3×12-12 — Kept · your kit has dumbbells\n4. KEPT      Dumbbell Bicep Curl — 3×12-15 — Kept · your kit has dumbbells"
+    },
+    {
+      "key": "w11-fullbody-dumbbell::bands_only",
+      "workout": "Full Body (Dumbbell)",
+      "context": "bands_only",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 0,
+        "swapped": 5,
+        "unresolved": 0,
+        "muscleFidelity": 1,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": []
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 3315,
+        "inputTokens": 22931,
+        "outputTokens": 339,
+        "costUsd": 0.024626,
+        "candidateCount": 400,
+        "returnedForKeptRows": 0,
+        "pool": "400 candidates (+74 truncated by the LIMIT 400 cap)"
+      },
+      "rendered": "0. SWAPPED   Goblet Squat → Band Front Squat — 3×10-12 — Targets Quadriceps/Glutes with resistance band; closest alternative to goblet squat within available equipment.\n1. SWAPPED   Dumbbell Bench Press → Band Push-Up — 3×10-12 — Provides horizontal chest press pattern with band assistance; replaces dumbbell bench press.\n2. SWAPPED   One-Arm Dumbbell Row → Band Bent-Over Row — 3×10-12 — Targets Back/Lats with resistance bands; replaces one-arm dumbbell row maintaining the pulling pattern.\n3. SWAPPED   Dumbbell Lunges → 30 Legs Walking Lunge — 3×12-12 — Targets Quadriceps/Glutes/Hamstrings with bodyweight; replaces dumbbell lunges maintaining the lunge pattern.\n4. SWAPPED   Dumbbell Bicep Curl → Band Standing Concentration Curl — 3×12-15 — Targets Biceps with resistance band; replaces dumbbell bicep curl with available equipment."
+    },
+    {
+      "key": "w11-fullbody-dumbbell::hotel_gym",
+      "workout": "Full Body (Dumbbell)",
+      "context": "hotel_gym",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 4,
+        "swapped": 1,
+        "unresolved": 0,
+        "muscleFidelity": 0.5,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": []
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 2143,
+        "inputTokens": 25138,
+        "outputTokens": 108,
+        "costUsd": 0.025678,
+        "candidateCount": 400,
+        "returnedForKeptRows": 0,
+        "pool": "400 candidates (+44 truncated by the LIMIT 400 cap)"
+      },
+      "rendered": "0. SWAPPED   Goblet Squat → Dumbbell Goblet Squat — 3×10-12 — Goblet Squat with dumbbell replaces kettlebell-based version; same quad/glute focus and rep range (10–12).\n1. KEPT      Dumbbell Bench Press — 3×10-12 — Kept · your kit has dumbbells + bench\n2. KEPT      One-Arm Dumbbell Row — 3×10-12 — Kept · your kit has dumbbells + bench\n3. KEPT      Dumbbell Lunges — 3×12-12 — Kept · your kit has dumbbells\n4. KEPT      Dumbbell Bicep Curl — 3×12-15 — Kept · your kit has dumbbells"
+    },
+    {
+      "key": "w12-glutes::full_gym",
+      "workout": "Glutes & Hamstrings",
+      "context": "full_gym",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 5,
+        "swapped": 0,
+        "unresolved": 0,
+        "muscleFidelity": 1,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": []
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 1702,
+        "inputTokens": 1419,
+        "outputTokens": 76,
+        "costUsd": 0.0017989999999999998,
+        "candidateCount": 0,
+        "returnedForKeptRows": 1,
+        "pool": "0 candidates"
+      },
+      "rendered": "0. KEPT      Barbell Hip Thrust — 4×8-10 — Kept · your kit has barbell + bench\n1. KEPT      Romanian Deadlift — 3×8-10 — Kept · your kit has barbell\n2. KEPT      Reverse Lunge — 3×10-12 — Kept · needs no equipment\n3. KEPT      Leg Curl — 3×12-15 — Kept · needs no equipment\n4. KEPT      Glute Bridge — 3×15-20 — Kept · your kit has barbell + dumbbells + resistance bands"
+    },
+    {
+      "key": "w12-glutes::dumbbells_bench",
+      "workout": "Glutes & Hamstrings",
+      "context": "dumbbells_bench",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 2,
+        "swapped": 3,
+        "unresolved": 0,
+        "muscleFidelity": 0.7777777777777777,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 1,
+        "musclesDropped": ["Lower Back"]
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 2949,
+        "inputTokens": 16780,
+        "outputTokens": 250,
+        "costUsd": 0.01803,
+        "candidateCount": 275,
+        "returnedForKeptRows": 0,
+        "pool": "275 candidates"
+      },
+      "rendered": "0. SWAPPED   Barbell Hip Thrust → 30 Legs Hip Thrust — 4×8-10 — Hip thrust with bodyweight and bench replicates the barbell movement pattern for glute-focused horizontal loading.\n1. SWAPPED   Romanian Deadlift → 30 Legs Dumbbell Stiff-Legged Deadlift — 3×8-10 — Dumbbell stiff-legged deadlift maintains the hinge pattern and targets hamstrings, glutes, and lower back as the original barbell RDL.\n2. KEPT      Reverse Lunge — 3×10-12 — Kept · needs no equipment\n3. KEPT      Leg Curl — 3×12-15 — Kept · needs no equipment\n4. SWAPPED   Glute Bridge → Dumbbell Single-Leg Hip Thrust — 3×15-20 — Single-leg hip thrust with dumbbells intensifies glute activation using available equipment while maintaining the bridge/thrust pattern at higher reps."
+    },
+    {
+      "key": "w12-glutes::bands_only",
+      "workout": "Glutes & Hamstrings",
+      "context": "bands_only",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 2,
+        "swapped": 3,
+        "unresolved": 0,
+        "muscleFidelity": 1,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": []
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 2768,
+        "inputTokens": 13043,
+        "outputTokens": 217,
+        "costUsd": 0.014128000000000002,
+        "candidateCount": 220,
+        "returnedForKeptRows": 0,
+        "pool": "220 candidates"
+      },
+      "rendered": "0. SWAPPED   Barbell Hip Thrust → Exercise Ball Hip Thrust — 4×8-10 — Hip thrust pattern with glutes as primary; stability ball and resistance bands allow for loaded glute activation without barbell.\n1. SWAPPED   Romanian Deadlift → Band Good Morning — 3×8-10 — Hip hinge pattern targeting hamstrings, glutes, and lower back; resistance band provides load similar to barbell Romanian deadlift.\n2. KEPT      Reverse Lunge — 3×10-12 — Kept · needs no equipment\n3. KEPT      Leg Curl — 3×12-15 — Kept · needs no equipment\n4. SWAPPED   Glute Bridge → Hip Lift with Band — 3×15-20 — Glute bridge alternative using resistance bands for resistance; targets glutes as primary with minimal equipment."
+    },
+    {
+      "key": "w12-glutes::hotel_gym",
+      "workout": "Glutes & Hamstrings",
+      "context": "hotel_gym",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 2,
+        "swapped": 3,
+        "unresolved": 0,
+        "muscleFidelity": 0.7777777777777777,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": ["Lower Back"]
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 3128,
+        "inputTokens": 17402,
+        "outputTokens": 255,
+        "costUsd": 0.018677,
+        "candidateCount": 288,
+        "returnedForKeptRows": 0,
+        "pool": "288 candidates"
+      },
+      "rendered": "0. SWAPPED   Barbell Hip Thrust → 30 Legs Hip Thrust — 4×8-10 — Hip Thrust using available Bench and Bodyweight targets glutes with similar rep range and intensity as the barbell version.\n1. SWAPPED   Romanian Deadlift → 30 Legs Dumbbell Stiff-Legged Deadlift — 3×8-10 — Dumbbell Stiff-Legged Deadlift replicates the hinge pattern and hamstring/glute focus of Romanian Deadlift using available dumbbells.\n2. KEPT      Reverse Lunge — 3×10-12 — Kept · needs no equipment\n3. KEPT      Leg Curl — 3×12-15 — Kept · needs no equipment\n4. SWAPPED   Glute Bridge → Glute Bridge Step-Out — 3×15-20 — Glute Bridge Step-Out maintains the glute-focused bridge movement with higher reps and uses only available Bodyweight and Yoga Mat."
+    },
+    {
+      "key": "w13-arms::full_gym",
+      "workout": "Arms",
+      "context": "full_gym",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 4,
+        "swapped": 0,
+        "unresolved": 0,
+        "muscleFidelity": 1,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": []
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 1029,
+        "inputTokens": 1370,
+        "outputTokens": 33,
+        "costUsd": 0.001535,
+        "candidateCount": 0,
+        "returnedForKeptRows": 0,
+        "pool": "0 candidates"
+      },
+      "rendered": "0. KEPT      Barbell Curl — 4×8-10 [superset A] — Kept · your kit has barbell\n1. KEPT      Triceps Pushdown — 4×10-12 [superset A] — Kept · your kit has cable machine\n2. KEPT      Hammer Curl — 3×12-15 [superset B] — Kept · your kit has dumbbells\n3. KEPT      Cable Overhead Triceps Extension — 3×12-15 [superset B] — Kept · your kit has cable machine + bench"
+    },
+    {
+      "key": "w13-arms::dumbbells_bench",
+      "workout": "Arms",
+      "context": "dumbbells_bench",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 1,
+        "swapped": 3,
+        "unresolved": 0,
+        "muscleFidelity": 1,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": []
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 2439,
+        "inputTokens": 9002,
+        "outputTokens": 240,
+        "costUsd": 0.010202,
+        "candidateCount": 145,
+        "returnedForKeptRows": 0,
+        "pool": "145 candidates"
+      },
+      "rendered": "0. SWAPPED   Barbell Curl → Dumbbell Biceps Curl — 4×8-10 [superset A] — Barbell curl replaced with dumbbell bicep curl — same horizontal pulling pattern for biceps, using available dumbbells.\n1. SWAPPED   Triceps Pushdown → Close-Grip Dumbbell Bench Press — 4×10-12 [superset A] — Cable machine triceps pushdown replaced with close-grip dumbbell bench press — pressing pattern for triceps using available dumbbells and bench.\n2. KEPT      Hammer Curl — 3×12-15 [superset B] — Kept · your kit has dumbbells\n3. SWAPPED   Cable Overhead Triceps Extension → Arms Overhead Dumbbell Triceps Extension — 3×12-15 [superset B] — Cable overhead triceps extension replaced with overhead dumbbell triceps extension — same isolated overhead triceps extension pattern with dumbbells."
+    },
+    {
+      "key": "w13-arms::bands_only",
+      "workout": "Arms",
+      "context": "bands_only",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 0,
+        "swapped": 4,
+        "unresolved": 0,
+        "muscleFidelity": 0.875,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 2,
+        "musclesDropped": ["Forearms"]
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 3204,
+        "inputTokens": 3225,
+        "outputTokens": 300,
+        "costUsd": 0.004725,
+        "candidateCount": 44,
+        "returnedForKeptRows": 0,
+        "pool": "44 candidates"
+      },
+      "rendered": "0. SWAPPED   Barbell Curl → Standing Band Biceps Curl — 4×8-10 [superset A] — Barbell curl requires a barbell; standing band biceps curl replicates the vertical pull strength movement for biceps with available resistance bands.\n1. SWAPPED   Triceps Pushdown → Band Overhead Triceps Extension — 4×10-12 [superset A] — Cable machine not available; band overhead triceps extension matches the isolation pattern and primary triceps focus with resistance bands.\n2. SWAPPED   Hammer Curl → Banded Biceps Curl in Squat Position — 3×12-15 [superset B] — Dumbbells unavailable; this band-based variation maintains the biceps/forearms focus and horizontal pulling pattern of a hammer curl.\n3. SWAPPED   Cable Overhead Triceps Extension → Band Overhead Triceps Press — 3×12-15 [superset B] — Cable machine unavailable; band overhead triceps press replicates the overhead triceps extension movement pattern with available resistance bands."
+    },
+    {
+      "key": "w13-arms::hotel_gym",
+      "workout": "Arms",
+      "context": "hotel_gym",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 3,
+        "swapped": 1,
+        "unresolved": 0,
+        "muscleFidelity": 1,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": []
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 2273,
+        "inputTokens": 6381,
+        "outputTokens": 94,
+        "costUsd": 0.006851,
+        "candidateCount": 102,
+        "returnedForKeptRows": 0,
+        "pool": "102 candidates"
+      },
+      "rendered": "0. SWAPPED   Barbell Curl → Dumbbell Biceps Curl — 4×8-10 [superset A] — Barbell curl unavailable; dumbbell biceps curl matches the primary biceps movement and 4×8-10 rep range with available equipment.\n1. KEPT      Triceps Pushdown — 4×10-12 [superset A] — Kept · your kit has cable machine\n2. KEPT      Hammer Curl — 3×12-15 [superset B] — Kept · your kit has dumbbells\n3. KEPT      Cable Overhead Triceps Extension — 3×12-15 [superset B] — Kept · your kit has cable machine + bench"
+    },
+    {
+      "key": "w14-core::full_gym",
+      "workout": "Core",
+      "context": "full_gym",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 5,
+        "swapped": 0,
+        "unresolved": 0,
+        "muscleFidelity": 1,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": []
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 1935,
+        "inputTokens": 1391,
+        "outputTokens": 33,
+        "costUsd": 0.001556,
+        "candidateCount": 0,
+        "returnedForKeptRows": 0,
+        "pool": "0 candidates"
+      },
+      "rendered": "0. KEPT      Hanging Leg Raise — 3×10-12 — Kept · your kit has pull-up bar\n1. KEPT      Russian Twist — 3×20-20 — Kept · your kit has yoga mat\n2. KEPT      Plank — 3×45-60 — Kept · needs no equipment\n3. KEPT      Side Plank — 3×30-45 — Kept · your kit has yoga mat\n4. KEPT      Dead Bug Reach — 3×10-12 — Kept · your kit has yoga mat"
+    },
+    {
+      "key": "w14-core::dumbbells_bench",
+      "workout": "Core",
+      "context": "dumbbells_bench",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 4,
+        "swapped": 1,
+        "unresolved": 0,
+        "muscleFidelity": 1,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": []
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 2579,
+        "inputTokens": 22057,
+        "outputTokens": 103,
+        "costUsd": 0.022572000000000002,
+        "candidateCount": 378,
+        "returnedForKeptRows": 0,
+        "pool": "378 candidates"
+      },
+      "rendered": "0. SWAPPED   Hanging Leg Raise → Alternating Lying Leg Raise — 3×10-12 — Replaces pull-up bar leg raise with similar abs movement using bodyweight and yoga mat; maintains primary abs focus with leg-raising pattern.\n1. KEPT      Russian Twist — 3×20-20 — Kept · your kit has yoga mat\n2. KEPT      Plank — 3×45-60 — Kept · needs no equipment\n3. KEPT      Side Plank — 3×30-45 — Kept · your kit has yoga mat\n4. KEPT      Dead Bug Reach — 3×10-12 — Kept · your kit has yoga mat"
+    },
+    {
+      "key": "w14-core::bands_only",
+      "workout": "Core",
+      "context": "bands_only",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 4,
+        "swapped": 1,
+        "unresolved": 0,
+        "muscleFidelity": 1,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": []
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 1835,
+        "inputTokens": 17159,
+        "outputTokens": 84,
+        "costUsd": 0.017579,
+        "candidateCount": 298,
+        "returnedForKeptRows": 0,
+        "pool": "298 candidates"
+      },
+      "rendered": "0. SWAPPED   Hanging Leg Raise → Alternating Lying Leg Raise — 3×10-12 — Leg raise that targets abs and hip flexors without requiring a pull-up bar; performed on yoga mat.\n1. KEPT      Russian Twist — 3×20-20 — Kept · your kit has yoga mat\n2. KEPT      Plank — 3×45-60 — Kept · needs no equipment\n3. KEPT      Side Plank — 3×30-45 — Kept · your kit has yoga mat\n4. KEPT      Dead Bug Reach — 3×10-12 — Kept · your kit has yoga mat"
+    },
+    {
+      "key": "w14-core::hotel_gym",
+      "workout": "Core",
+      "context": "hotel_gym",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 4,
+        "swapped": 1,
+        "unresolved": 0,
+        "muscleFidelity": 1,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": []
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 2473,
+        "inputTokens": 23016,
+        "outputTokens": 105,
+        "costUsd": 0.023541,
+        "candidateCount": 400,
+        "returnedForKeptRows": 0,
+        "pool": "400 candidates (+3 truncated by the LIMIT 400 cap)"
+      },
+      "rendered": "0. SWAPPED   Hanging Leg Raise → Alternating Lying Leg Raise — 3×10-12 — Replaces Hanging Leg Raise's vertical abs/hip flexor pattern; available with bodyweight and yoga mat instead of pull-up bar.\n1. KEPT      Russian Twist — 3×20-20 — Kept · your kit has yoga mat\n2. KEPT      Plank — 3×45-60 — Kept · needs no equipment\n3. KEPT      Side Plank — 3×30-45 — Kept · your kit has yoga mat\n4. KEPT      Dead Bug Reach — 3×10-12 — Kept · your kit has yoga mat"
+    },
+    {
+      "key": "w15-conditioning::full_gym",
+      "workout": "Conditioning Circuit",
+      "context": "full_gym",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 4,
+        "swapped": 0,
+        "unresolved": 0,
+        "muscleFidelity": 1,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": []
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 1345,
+        "inputTokens": 1369,
+        "outputTokens": 33,
+        "costUsd": 0.001534,
+        "candidateCount": 0,
+        "returnedForKeptRows": 0,
+        "pool": "0 candidates"
+      },
+      "rendered": "0. KEPT      Kettlebell Swing — 4×15-20 — Kept · your kit has kettlebell\n1. KEPT      Box Jump — 4×8-10 — Kept · your kit has box / step\n2. KEPT      Burpee — 4×10-12 — Kept · needs no equipment\n3. KEPT      Mountain Climber — 4×20-30 — Kept · your kit has yoga mat"
+    },
+    {
+      "key": "w15-conditioning::dumbbells_bench",
+      "workout": "Conditioning Circuit",
+      "context": "dumbbells_bench",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 2,
+        "swapped": 2,
+        "unresolved": 0,
+        "muscleFidelity": 0.29166666666666663,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": ["Calves", "Glutes", "Lower Back"]
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 2814,
+        "inputTokens": 24744,
+        "outputTokens": 176,
+        "costUsd": 0.025623999999999997,
+        "candidateCount": 400,
+        "returnedForKeptRows": 0,
+        "pool": "400 candidates (+128 truncated by the LIMIT 400 cap)"
+      },
+      "rendered": "0. SWAPPED   Kettlebell Swing → Dumbbell Fix Dumbbell Swing — 4×15-20 — Kettlebell unavailable; dumbbell swing targets the same hamstrings/glutes/lower back hinge pattern with similar conditioning stimulus.\n1. SWAPPED   Box Jump → 90-Degree Jump Squat — 4×8-10 — Box unavailable; bodyweight jump squat targets quadriceps/glutes/hamstrings explosively without needing a box or step platform.\n2. KEPT      Burpee — 4×10-12 — Kept · needs no equipment\n3. KEPT      Mountain Climber — 4×20-30 — Kept · your kit has yoga mat"
+    },
+    {
+      "key": "w15-conditioning::bands_only",
+      "workout": "Conditioning Circuit",
+      "context": "bands_only",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 2,
+        "swapped": 2,
+        "unresolved": 0,
+        "muscleFidelity": 0.875,
+        "categoryFidelity": 0.5,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": ["Calves"]
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 2625,
+        "inputTokens": 22847,
+        "outputTokens": 184,
+        "costUsd": 0.023767,
+        "candidateCount": 400,
+        "returnedForKeptRows": 0,
+        "pool": "400 candidates (+19 truncated by the LIMIT 400 cap)"
+      },
+      "rendered": "0. SWAPPED   Kettlebell Swing → Band Good Morning — 4×15-20 — Kettlebell Swing unavailable; Band Good Morning targets the same primary muscles (Hamstrings/Glutes/Lower Back) with resistance bands.\n1. SWAPPED   Box Jump → Banded Jump Squat — 4×8-10 — Box Jump unavailable; Banded Jump Squat maintains the explosive lower-body power component and targets Quadriceps/Glutes/Hamstrings/Calves with available equipment.\n2. KEPT      Burpee — 4×10-12 — Kept · needs no equipment\n3. KEPT      Mountain Climber — 4×20-30 — Kept · your kit has yoga mat"
+    },
+    {
+      "key": "w15-conditioning::hotel_gym",
+      "workout": "Conditioning Circuit",
+      "context": "hotel_gym",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 2,
+        "swapped": 2,
+        "unresolved": 0,
+        "muscleFidelity": 0.29166666666666663,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": ["Calves", "Glutes", "Lower Back"]
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 2851,
+        "inputTokens": 24692,
+        "outputTokens": 185,
+        "costUsd": 0.025616999999999997,
+        "candidateCount": 400,
+        "returnedForKeptRows": 0,
+        "pool": "400 candidates (+148 truncated by the LIMIT 400 cap)"
+      },
+      "rendered": "0. SWAPPED   Kettlebell Swing → Dumbbell Fix Dumbbell Swing — 4×15-20 — Kettlebell swings require kettlebells; Dumbbell Swing provides the same explosive hamstrings/glutes/lower-back hinge pattern with available dumbbells.\n1. SWAPPED   Box Jump → 90-Degree Jump Squat — 4×8-10 — Box jumps require a box; 90-Degree Jump Squat replicates the plyometric lower-body stimulus without equipment limitations.\n2. KEPT      Burpee — 4×10-12 — Kept · needs no equipment\n3. KEPT      Mountain Climber — 4×20-30 — Kept · your kit has yoga mat"
+    },
+    {
+      "key": "w16-chest-back-superset::full_gym",
+      "workout": "Chest & Back (Supersets)",
+      "context": "full_gym",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 5,
+        "swapped": 0,
+        "unresolved": 0,
+        "muscleFidelity": 1,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": []
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 1034,
+        "inputTokens": 1439,
+        "outputTokens": 33,
+        "costUsd": 0.001604,
+        "candidateCount": 0,
+        "returnedForKeptRows": 0,
+        "pool": "0 candidates"
+      },
+      "rendered": "0. KEPT      Barbell Bench Press — 4×8-10 [superset A] — Kept · your kit has barbell + bench + squat rack\n1. KEPT      Barbell Bent-Over Row — 4×8-10 [superset A] — Kept · your kit has barbell\n2. KEPT      Incline Dumbbell Bench Press — 3×10-12 [superset B] — Kept · your kit has dumbbells + bench\n3. KEPT      Lat Pull-Down — 3×10-12 [superset B] — Kept · your kit has cable machine + bench\n4. KEPT      Dumbbell Flyes — 3×12-15 — Kept · your kit has dumbbells + bench"
+    },
+    {
+      "key": "w16-chest-back-superset::dumbbells_bench",
+      "workout": "Chest & Back (Supersets)",
+      "context": "dumbbells_bench",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 2,
+        "swapped": 3,
+        "unresolved": 0,
+        "muscleFidelity": 0.8888888888888888,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 1,
+        "musclesDropped": ["Lower Back"]
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 3532,
+        "inputTokens": 13941,
+        "outputTokens": 231,
+        "costUsd": 0.015096,
+        "candidateCount": 234,
+        "returnedForKeptRows": 0,
+        "pool": "234 candidates"
+      },
+      "rendered": "0. SWAPPED   Barbell Bench Press → Dumbbell Bench Press — 4×8-10 [superset A] — Barbell bench press requires a squat rack; dumbbell bench press replicates the horizontal chest press with available equipment.\n1. SWAPPED   Barbell Bent-Over Row → Bent-Over Dumbbell Row — 4×8-10 [superset A] — Barbell bent-over row requires a barbell; this dumbbell variation maintains the horizontal back row pattern with available equipment.\n2. KEPT      Incline Dumbbell Bench Press — 3×10-12 [superset B] — Kept · your kit has dumbbells + bench\n3. SWAPPED   Lat Pull-Down → Incline Dumbbell Row — 3×10-12 [superset B] — Lat pull-down requires a cable machine; incline dumbbell row provides a vertical pulling pattern for lats with available equipment.\n4. KEPT      Dumbbell Flyes — 3×12-15 — Kept · your kit has dumbbells + bench"
+    },
+    {
+      "key": "w16-chest-back-superset::bands_only",
+      "workout": "Chest & Back (Supersets)",
+      "context": "bands_only",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 0,
+        "swapped": 5,
+        "unresolved": 0,
+        "muscleFidelity": 0.7333333333333333,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": ["Lower Back"]
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 3670,
+        "inputTokens": 7745,
+        "outputTokens": 370,
+        "costUsd": 0.009595,
+        "candidateCount": 130,
+        "returnedForKeptRows": 0,
+        "pool": "130 candidates"
+      },
+      "rendered": "0. SWAPPED   Barbell Bench Press → Band Push-Up — 4×8-10 [superset A] — Resistance bands provide horizontal pressing stimulus for chest with available equipment, matching the Barbell Bench Press intent.\n1. SWAPPED   Barbell Bent-Over Row → Band Bent-Over Row — 4×8-10 [superset A] — Band Bent-Over Row replicates the horizontal pulling pattern and back/lats focus of Barbell Bent-Over Row using available resistance bands.\n2. SWAPPED   Incline Dumbbell Bench Press → Band Chest Fly — 3×10-12 [superset B] — Band Chest Fly provides isolation chest work with resistance bands, replacing the Incline Dumbbell pressing movement in superset B.\n3. SWAPPED   Lat Pull-Down → Band Straight-Arm Pull-Down — 3×10-12 [superset B] — Band Straight-Arm Pull-Down targets the lats with resistance bands, replicating the Lat Pull-Down movement pattern and primary muscle focus.\n4. SWAPPED   Dumbbell Flyes → HM Superman Lat Pull — 3×12-15 — HM Superman Lat Pull provides a chest/lats engagement pattern with bodyweight and yoga mat, completing the workout without repeating earlier chest-only movements."
+    },
+    {
+      "key": "w16-chest-back-superset::hotel_gym",
+      "workout": "Chest & Back (Supersets)",
+      "context": "hotel_gym",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 3,
+        "swapped": 2,
+        "unresolved": 0,
+        "muscleFidelity": 0.8333333333333333,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": ["Lower Back"]
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 2769,
+        "inputTokens": 17024,
+        "outputTokens": 176,
+        "costUsd": 0.017904,
+        "candidateCount": 301,
+        "returnedForKeptRows": 0,
+        "pool": "301 candidates"
+      },
+      "rendered": "0. SWAPPED   Barbell Bench Press → Dumbbell Bench Press — 4×8-10 [superset A] — Dumbbell Bench Press matches the horizontal chest press pattern and intensity (4×8-10) without requiring a barbell or squat rack.\n1. SWAPPED   Barbell Bent-Over Row → Bent-Over Dumbbell Row — 4×8-10 [superset A] — Bent-Over Dumbbell Row replaces the barbell row, maintaining the horizontal back/lats pull pattern and rep range with dumbbells.\n2. KEPT      Incline Dumbbell Bench Press — 3×10-12 [superset B] — Kept · your kit has dumbbells + bench\n3. KEPT      Lat Pull-Down — 3×10-12 [superset B] — Kept · your kit has cable machine + bench\n4. KEPT      Dumbbell Flyes — 3×12-15 — Kept · your kit has dumbbells + bench"
+    },
+    {
+      "key": "w17-shoulders::full_gym",
+      "workout": "Shoulders & Traps",
+      "context": "full_gym",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 4,
+        "swapped": 0,
+        "unresolved": 0,
+        "muscleFidelity": 1,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": []
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 1267,
+        "inputTokens": 1367,
+        "outputTokens": 33,
+        "costUsd": 0.001532,
+        "candidateCount": 0,
+        "returnedForKeptRows": 0,
+        "pool": "0 candidates"
+      },
+      "rendered": "0. KEPT      Barbell Shoulder Press — 4×6-8 — Kept · your kit has barbell + bench\n1. KEPT      Dumbbell Lateral Raise — 4×12-15 — Kept · your kit has dumbbells\n2. KEPT      Seated Face Pull — 3×15-20 — Kept · your kit has cable machine + bench\n3. KEPT      Dumbbell Shrug — 3×12-15 — Kept · your kit has dumbbells"
+    },
+    {
+      "key": "w17-shoulders::dumbbells_bench",
+      "workout": "Shoulders & Traps",
+      "context": "dumbbells_bench",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 2,
+        "swapped": 2,
+        "unresolved": 0,
+        "muscleFidelity": 0.75,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": []
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 2622,
+        "inputTokens": 10172,
+        "outputTokens": 189,
+        "costUsd": 0.011117,
+        "candidateCount": 174,
+        "returnedForKeptRows": 0,
+        "pool": "174 candidates"
+      },
+      "rendered": "0. SWAPPED   Barbell Shoulder Press → Seated Dumbbell Shoulder Press — 4×6-8 — Barbell Shoulder Press replaced with Seated Dumbbell Shoulder Press — maintains primary shoulder press pattern with available equipment (dumbbells + bench).\n1. KEPT      Dumbbell Lateral Raise — 4×12-15 — Kept · your kit has dumbbells\n2. SWAPPED   Seated Face Pull → Bent-over Dumbbell Rear Delt Fly — 3×15-20 — Seated Face Pull replaced with Bent-over Dumbbell Rear Delt Fly — targets shoulders and traps with similar pulling/fly mechanics using available equipment.\n3. KEPT      Dumbbell Shrug — 3×12-15 — Kept · your kit has dumbbells"
+    },
+    {
+      "key": "w17-shoulders::bands_only",
+      "workout": "Shoulders & Traps",
+      "context": "bands_only",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 0,
+        "swapped": 4,
+        "unresolved": 0,
+        "muscleFidelity": 0.875,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": []
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 3100,
+        "inputTokens": 4865,
+        "outputTokens": 277,
+        "costUsd": 0.00625,
+        "candidateCount": 77,
+        "returnedForKeptRows": 0,
+        "pool": "77 candidates"
+      },
+      "rendered": "0. SWAPPED   Barbell Shoulder Press → Band Shoulder Press — 4×6-8 — Barbell shoulder press replaced with resistance band shoulder press to match vertical pressing pattern and primary shoulder focus with available equipment.\n1. SWAPPED   Dumbbell Lateral Raise → Band Lateral Raise — 4×12-15 — Dumbbell lateral raise replaced with resistance band lateral raise to maintain isolated shoulder abduction and primary shoulder target.\n2. SWAPPED   Seated Face Pull → Rusin Banded Face Pull — 3×15-20 — Seated face pull replaced with resistance band face pull to preserve the horizontal pulling pattern and shoulders/traps primary focus.\n3. SWAPPED   Dumbbell Shrug → Leverage Shrug — 3×12-15 — Dumbbell shrug replaced with leverage shrug (bodyweight shrug) to maintain trap emphasis and shrugging movement pattern."
+    },
+    {
+      "key": "w17-shoulders::hotel_gym",
+      "workout": "Shoulders & Traps",
+      "context": "hotel_gym",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 3,
+        "swapped": 1,
+        "unresolved": 0,
+        "muscleFidelity": 1,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": []
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 1978,
+        "inputTokens": 11317,
+        "outputTokens": 92,
+        "costUsd": 0.011777000000000001,
+        "candidateCount": 201,
+        "returnedForKeptRows": 0,
+        "pool": "201 candidates"
+      },
+      "rendered": "0. SWAPPED   Barbell Shoulder Press → Alternating Standing Shoulder Press — 4×6-8 — Barbell Shoulder Press requires a barbell; Alternating Standing Shoulder Press delivers the same heavy compound shoulder pressing pattern with dumbbells.\n1. KEPT      Dumbbell Lateral Raise — 4×12-15 — Kept · your kit has dumbbells\n2. KEPT      Seated Face Pull — 3×15-20 — Kept · your kit has cable machine + bench\n3. KEPT      Dumbbell Shrug — 3×12-15 — Kept · your kit has dumbbells"
+    },
+    {
+      "key": "w18-beginner-fullbody::full_gym",
+      "workout": "Beginner Full Body",
+      "context": "full_gym",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 5,
+        "swapped": 0,
+        "unresolved": 0,
+        "muscleFidelity": 1,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": []
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 1065,
+        "inputTokens": 1410,
+        "outputTokens": 33,
+        "costUsd": 0.001575,
+        "candidateCount": 0,
+        "returnedForKeptRows": 0,
+        "pool": "0 candidates"
+      },
+      "rendered": "0. KEPT      Goblet Squat — 3×10-12 — Kept · your kit has kettlebell + dumbbells\n1. KEPT      Push-up — 3×8-12 — Kept · needs no equipment\n2. KEPT      Seated Cable Rows — 3×10-12 — Kept · your kit has cable machine + bench\n3. KEPT      Glute Bridge — 3×12-15 — Kept · your kit has barbell + dumbbells + resistance bands\n4. KEPT      Plank — 3×30-45 — Kept · needs no equipment"
+    },
+    {
+      "key": "w18-beginner-fullbody::dumbbells_bench",
+      "workout": "Beginner Full Body",
+      "context": "dumbbells_bench",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 2,
+        "swapped": 3,
+        "unresolved": 0,
+        "muscleFidelity": 0.8333333333333334,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": []
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 2804,
+        "inputTokens": 25314,
+        "outputTokens": 221,
+        "costUsd": 0.026418999999999998,
+        "candidateCount": 400,
+        "returnedForKeptRows": 0,
+        "pool": "400 candidates (+85 truncated by the LIMIT 400 cap)"
+      },
+      "rendered": "0. SWAPPED   Goblet Squat → Dumbbell Goblet Squat — 3×10-12 — Goblet squat pattern preserved with dumbbells; primary muscles (quadriceps/glutes) match.\n1. KEPT      Push-up — 3×8-12 — Kept · needs no equipment\n2. SWAPPED   Seated Cable Rows → 30° Incline Dumbbell Row — 3×10-12 — Incline row replaces cable row; same horizontal pull pattern and back/lats focus without cable machine.\n3. SWAPPED   Glute Bridge → 30 Legs Hip Thrust — 3×12-15 — Hip thrust substitutes for glute bridge with bench; same primary glutes and horizontal hip extension with available equipment.\n4. KEPT      Plank — 3×30-45 — Kept · needs no equipment"
+    },
+    {
+      "key": "w18-beginner-fullbody::bands_only",
+      "workout": "Beginner Full Body",
+      "context": "bands_only",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 2,
+        "swapped": 3,
+        "unresolved": 0,
+        "muscleFidelity": 1,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": []
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 2657,
+        "inputTokens": 20670,
+        "outputTokens": 223,
+        "costUsd": 0.021785000000000002,
+        "candidateCount": 352,
+        "returnedForKeptRows": 0,
+        "pool": "352 candidates"
+      },
+      "rendered": "0. SWAPPED   Goblet Squat → Band Front Squat — 3×10-12 — Targets Quadriceps/Glutes like Goblet Squat; uses Resistance Bands for loaded lower-body strength.\n1. KEPT      Push-up — 3×8-12 — Kept · needs no equipment\n2. SWAPPED   Seated Cable Rows → Band Bent-Over Row — 3×10-12 — Targets Back/Lats like Seated Cable Rows; uses Resistance Bands for horizontal pulling pattern.\n3. SWAPPED   Glute Bridge → Hip Extension with Bands — 3×12-15 — Targets Glutes with Resistance Bands, maintaining the hip-extension movement pattern of Glute Bridge.\n4. KEPT      Plank — 3×30-45 — Kept · needs no equipment"
+    },
+    {
+      "key": "w18-beginner-fullbody::hotel_gym",
+      "workout": "Beginner Full Body",
+      "context": "hotel_gym",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 3,
+        "swapped": 2,
+        "unresolved": 0,
+        "muscleFidelity": 0.75,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": []
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 2836,
+        "inputTokens": 25128,
+        "outputTokens": 172,
+        "costUsd": 0.025988,
+        "candidateCount": 400,
+        "returnedForKeptRows": 0,
+        "pool": "400 candidates (+45 truncated by the LIMIT 400 cap)"
+      },
+      "rendered": "0. SWAPPED   Goblet Squat → Dumbbell Goblet Squat — 3×10-12 — Kettlebell unavailable; dumbbell goblet squat matches the quad/glute primary focus and triple-set rep range.\n1. KEPT      Push-up — 3×8-12 — Kept · needs no equipment\n2. KEPT      Seated Cable Rows — 3×10-12 — Kept · your kit has cable machine + bench\n3. SWAPPED   Glute Bridge → 30 Legs Hip Thrust — 3×12-15 — Barbell and resistance bands unavailable; hip thrust with bench targets glutes as primary with dumbbells optional, preserving the posterior-chain emphasis.\n4. KEPT      Plank — 3×30-45 — Kept · needs no equipment"
+    },
+    {
+      "key": "w19-athletic-power::full_gym",
+      "workout": "Athletic Power",
+      "context": "full_gym",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 5,
+        "swapped": 0,
+        "unresolved": 0,
+        "muscleFidelity": 1,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": []
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 1460,
+        "inputTokens": 1429,
+        "outputTokens": 33,
+        "costUsd": 0.001594,
+        "candidateCount": 0,
+        "returnedForKeptRows": 0,
+        "pool": "0 candidates"
+      },
+      "rendered": "0. KEPT      Barbell Deadlift — 4×3-5 — Kept · your kit has barbell\n1. KEPT      Box Jump — 4×5-5 — Kept · your kit has box / step\n2. KEPT      Barbell Front Squat — 3×5-5 — Kept · your kit has barbell + squat rack\n3. KEPT      Medicine Ball Slam — 3×10-12 — Kept · your kit has medicine ball\n4. KEPT      Dumbbell Farmer's Walk — 3×30-40 — Kept · your kit has dumbbells"
+    },
+    {
+      "key": "w19-athletic-power::dumbbells_bench",
+      "workout": "Athletic Power",
+      "context": "dumbbells_bench",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 1,
+        "swapped": 4,
+        "unresolved": 0,
+        "muscleFidelity": 0.75,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": ["Calves"]
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 3077,
+        "inputTokens": 23971,
+        "outputTokens": 291,
+        "costUsd": 0.025426,
+        "candidateCount": 400,
+        "returnedForKeptRows": 0,
+        "pool": "400 candidates (+529 truncated by the LIMIT 400 cap)"
+      },
+      "rendered": "0. SWAPPED   Barbell Deadlift → Dumbbell Deadlift — 4×3-5 — Replaces barbell deadlift with a compound hip-hinge that targets hamstrings/glutes/lower back using dumbbells.\n1. SWAPPED   Box Jump → 90-Degree Jump Squat — 4×5-5 — Replaces box jump with a plyometric lower-body power exercise using only bodyweight that targets quadriceps/glutes/hamstrings.\n2. SWAPPED   Barbell Front Squat → Dumbbell Front Squat — 3×5-5 — Replaces barbell front squat with a dumbbell-based bilateral squat targeting quadriceps and glutes.\n3. SWAPPED   Medicine Ball Slam → Ab Bicycle — 3×10-12 — Replaces medicine ball slam with a core exercise targeting abs/obliques using bodyweight and mat.\n4. KEPT      Dumbbell Farmer's Walk — 3×30-40 — Kept · your kit has dumbbells"
+    },
+    {
+      "key": "w19-athletic-power::bands_only",
+      "workout": "Athletic Power",
+      "context": "bands_only",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 0,
+        "swapped": 5,
+        "unresolved": 0,
+        "muscleFidelity": 0.5,
+        "categoryFidelity": 0.8,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": ["Calves", "Forearms", "Full Body", "Lower Back"]
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 3020,
+        "inputTokens": 23577,
+        "outputTokens": 316,
+        "costUsd": 0.025157,
+        "candidateCount": 400,
+        "returnedForKeptRows": 0,
+        "pool": "400 candidates (+336 truncated by the LIMIT 400 cap)"
+      },
+      "rendered": "0. SWAPPED   Barbell Deadlift → Band Deadlift — 4×3-5 — Replaces barbell deadlift with resistance band equivalent targeting hamstrings, glutes, and lower back.\n1. SWAPPED   Box Jump → 90-Degree Jump Squat — 4×5-5 — Replaces box jump with bodyweight plyometric squat jump for explosive lower body power.\n2. SWAPPED   Barbell Front Squat → Band Front Squat — 3×5-5 — Replaces barbell front squat with resistance band squat for quadriceps and glutes emphasis.\n3. SWAPPED   Medicine Ball Slam → Ab Bicycle — 3×10-12 — Replaces medicine ball slam with abs-focused exercise using available equipment.\n4. SWAPPED   Dumbbell Farmer's Walk → Carioca Quick Step — 3×30-40 — Replaces dumbbell farmer's walk with full-body dynamic movement building core and leg stability."
+    },
+    {
+      "key": "w19-athletic-power::hotel_gym",
+      "workout": "Athletic Power",
+      "context": "hotel_gym",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 1,
+        "swapped": 4,
+        "unresolved": 0,
+        "muscleFidelity": 0.75,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": ["Calves"]
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 4067,
+        "inputTokens": 23661,
+        "outputTokens": 314,
+        "costUsd": 0.025231,
+        "candidateCount": 400,
+        "returnedForKeptRows": 0,
+        "pool": "400 candidates (+574 truncated by the LIMIT 400 cap)"
+      },
+      "rendered": "0. SWAPPED   Barbell Deadlift → Dumbbell Deadlift — 4×3-5 — Dumbbell Deadlift replicates the barbell deadlift's hinge pattern and targets the same primary muscles (Hamstrings/Glutes/Lower Back) with available equipment.\n1. SWAPPED   Box Jump → 90-Degree Jump Squat — 4×5-5 — 90-Degree Jump Squat maintains the explosive power and quad/glute emphasis of Box Jump using only bodyweight.\n2. SWAPPED   Barbell Front Squat → Dumbbell Front Squat — 3×5-5 — Dumbbell Front Squat replaces the barbell movement, targeting Quadriceps and Glutes with dumbbells held in rack position.\n3. SWAPPED   Medicine Ball Slam → Cable Rope Crunch — 3×10-12 — Cable Rope Crunch replaces Medicine Ball Slam's explosive core work with available cable machine for ab-focused power training.\n4. KEPT      Dumbbell Farmer's Walk — 3×30-40 — Kept · your kit has dumbbells"
+    },
+    {
+      "key": "w20-cardio-strength::full_gym",
+      "workout": "Cardio + Strength Mix",
+      "context": "full_gym",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 5,
+        "swapped": 0,
+        "unresolved": 0,
+        "muscleFidelity": 1,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": []
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 1138,
+        "inputTokens": 1432,
+        "outputTokens": 33,
+        "costUsd": 0.001597,
+        "candidateCount": 0,
+        "returnedForKeptRows": 0,
+        "pool": "0 candidates"
+      },
+      "rendered": "0. KEPT      Treadmill Running — 1×600-600 — Kept · your kit has treadmill\n1. KEPT      Barbell Back Squat — 3×8-10 — Kept · your kit has barbell + squat rack\n2. KEPT      Dumbbell Bench Press — 3×10-12 — Kept · your kit has dumbbells + bench\n3. KEPT      Seated Cable Rows — 3×10-12 — Kept · your kit has cable machine + bench\n4. KEPT      Russian Twist — 3×20-20 — Kept · your kit has yoga mat"
+    },
+    {
+      "key": "w20-cardio-strength::dumbbells_bench",
+      "workout": "Cardio + Strength Mix",
+      "context": "dumbbells_bench",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 2,
+        "swapped": 3,
+        "unresolved": 0,
+        "muscleFidelity": 0.6944444444444443,
+        "categoryFidelity": 0.6666666666666666,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": ["Calves"]
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 2975,
+        "inputTokens": 25294,
+        "outputTokens": 244,
+        "costUsd": 0.026514,
+        "candidateCount": 400,
+        "returnedForKeptRows": 0,
+        "pool": "400 candidates (+149 truncated by the LIMIT 400 cap)"
+      },
+      "rendered": "0. SWAPPED   Treadmill Running → 30 Legs Walking Lunge — 1×600-600 — Cardio alternative targeting the same leg muscles (Quads/Hamstrings/Glutes/Calves) with available equipment and elevated heart rate.\n1. SWAPPED   Barbell Back Squat → Dumbbell Goblet Squat — 3×8-10 — Dumbbell-based squat pattern matching the primary muscles (Quadriceps/Glutes/Hamstrings) without barbell/rack.\n2. KEPT      Dumbbell Bench Press — 3×10-12 — Kept · your kit has dumbbells + bench\n3. SWAPPED   Seated Cable Rows → 30° Incline Dumbbell Row — 3×10-12 — Row pattern targeting Back/Lats with dumbbells and bench, maintaining horizontal pull coverage in the plan.\n4. KEPT      Russian Twist — 3×20-20 — Kept · your kit has yoga mat"
+    },
+    {
+      "key": "w20-cardio-strength::bands_only",
+      "workout": "Cardio + Strength Mix",
+      "context": "bands_only",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 1,
+        "swapped": 4,
+        "unresolved": 0,
+        "muscleFidelity": 0.8125,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": ["Calves"]
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 3132,
+        "inputTokens": 22854,
+        "outputTokens": 275,
+        "costUsd": 0.024229,
+        "candidateCount": 400,
+        "returnedForKeptRows": 0,
+        "pool": "400 candidates (+85 truncated by the LIMIT 400 cap)"
+      },
+      "rendered": "0. SWAPPED   Treadmill Running → High Knees — 1×600-600 — Replaces treadmill running with a bodyweight cardio movement targeting same lower body muscle groups (Quadriceps/Hamstrings/Glutes/Calves).\n1. SWAPPED   Barbell Back Squat → Band Front Squat — 3×8-10 — Resistance-band squat variant matching the original's quad/glute/hamstring focus with available equipment.\n2. SWAPPED   Dumbbell Bench Press → Band Chest Fly — 3×10-12 — Horizontal chest press pattern using resistance bands to replace dumbbell bench press.\n3. SWAPPED   Seated Cable Rows → Band Bent-Over Row — 3×10-12 — Bent-over row pattern with resistance bands replacing cable rows for back/lats development.\n4. KEPT      Russian Twist — 3×20-20 — Kept · your kit has yoga mat"
+    },
+    {
+      "key": "w20-cardio-strength::hotel_gym",
+      "workout": "Cardio + Strength Mix",
+      "context": "hotel_gym",
+      "metrics": {
+        "equipmentLegal": true,
+        "violations": [],
+        "kept": 4,
+        "swapped": 1,
+        "unresolved": 0,
+        "muscleFidelity": 0.3333333333333333,
+        "categoryFidelity": 1,
+        "duplicatePicks": 0,
+        "nearDuplicatePairs": 0,
+        "musclesDropped": []
+      },
+      "meta": {
+        "modelId": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "latencyMs": 2981,
+        "inputTokens": 24906,
+        "outputTokens": 109,
+        "costUsd": 0.025451,
+        "candidateCount": 400,
+        "returnedForKeptRows": 0,
+        "pool": "400 candidates (+90 truncated by the LIMIT 400 cap)"
+      },
+      "rendered": "0. KEPT      Treadmill Running — 1×600-600 — Kept · your kit has treadmill\n1. SWAPPED   Barbell Back Squat → Dumbbell Goblet Squat — 3×8-10 — Barbell Back Squat requires a rack; Dumbbell Goblet Squat maintains the lower-body quad/glute emphasis with available equipment.\n2. KEPT      Dumbbell Bench Press — 3×10-12 — Kept · your kit has dumbbells + bench\n3. KEPT      Seated Cable Rows — 3×10-12 — Kept · your kit has cable machine + bench\n4. KEPT      Russian Twist — 3×20-20 — Kept · your kit has yoga mat"
+    }
+  ]
+}

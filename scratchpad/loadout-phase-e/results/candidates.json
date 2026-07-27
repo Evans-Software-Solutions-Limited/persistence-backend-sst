@@ -1,0 +1,662 @@
+{
+  "libraryRows": 2281,
+  "rowsWithUnmappedEquipment": [
+    {
+      "name": "Wall Shoulder Tap",
+      "dropped": ["Wall"],
+      "resolvedEquipment": ["Bodyweight"]
+    },
+    {
+      "name": "Leg Press",
+      "dropped": ["Leg Press"],
+      "resolvedEquipment": []
+    },
+    {
+      "name": "Leg Curl",
+      "dropped": ["Leg Curl"],
+      "resolvedEquipment": []
+    }
+  ],
+  "fixtures": [
+    {
+      "key": "w01-seeded-upper::full_gym",
+      "rows": 5,
+      "needsSwap": 0,
+      "candidates": 0,
+      "truncated": 0,
+      "muscleUnion": 0
+    },
+    {
+      "key": "w01-seeded-upper::dumbbells_bench",
+      "rows": 5,
+      "needsSwap": 5,
+      "candidates": 400,
+      "truncated": 48,
+      "muscleUnion": 6
+    },
+    {
+      "key": "w01-seeded-upper::bands_only",
+      "rows": 5,
+      "needsSwap": 5,
+      "candidates": 177,
+      "truncated": 0,
+      "muscleUnion": 6
+    },
+    {
+      "key": "w01-seeded-upper::hotel_gym",
+      "rows": 5,
+      "needsSwap": 0,
+      "candidates": 0,
+      "truncated": 0,
+      "muscleUnion": 0
+    },
+    {
+      "key": "w02-seeded-lower::full_gym",
+      "rows": 4,
+      "needsSwap": 0,
+      "candidates": 0,
+      "truncated": 0,
+      "muscleUnion": 0
+    },
+    {
+      "key": "w02-seeded-lower::dumbbells_bench",
+      "rows": 4,
+      "needsSwap": 1,
+      "candidates": 335,
+      "truncated": 0,
+      "muscleUnion": 1
+    },
+    {
+      "key": "w02-seeded-lower::bands_only",
+      "rows": 4,
+      "needsSwap": 1,
+      "candidates": 255,
+      "truncated": 0,
+      "muscleUnion": 1
+    },
+    {
+      "key": "w02-seeded-lower::hotel_gym",
+      "rows": 4,
+      "needsSwap": 1,
+      "candidates": 346,
+      "truncated": 0,
+      "muscleUnion": 1
+    },
+    {
+      "key": "w03-seeded-fullbody::full_gym",
+      "rows": 7,
+      "needsSwap": 0,
+      "candidates": 0,
+      "truncated": 0,
+      "muscleUnion": 0
+    },
+    {
+      "key": "w03-seeded-fullbody::dumbbells_bench",
+      "rows": 7,
+      "needsSwap": 3,
+      "candidates": 331,
+      "truncated": 0,
+      "muscleUnion": 4
+    },
+    {
+      "key": "w03-seeded-fullbody::bands_only",
+      "rows": 7,
+      "needsSwap": 3,
+      "candidates": 152,
+      "truncated": 0,
+      "muscleUnion": 4
+    },
+    {
+      "key": "w03-seeded-fullbody::hotel_gym",
+      "rows": 7,
+      "needsSwap": 0,
+      "candidates": 0,
+      "truncated": 0,
+      "muscleUnion": 0
+    },
+    {
+      "key": "w04-push-hypertrophy::full_gym",
+      "rows": 6,
+      "needsSwap": 0,
+      "candidates": 0,
+      "truncated": 0,
+      "muscleUnion": 0
+    },
+    {
+      "key": "w04-push-hypertrophy::dumbbells_bench",
+      "rows": 6,
+      "needsSwap": 3,
+      "candidates": 183,
+      "truncated": 0,
+      "muscleUnion": 2
+    },
+    {
+      "key": "w04-push-hypertrophy::bands_only",
+      "rows": 6,
+      "needsSwap": 6,
+      "candidates": 151,
+      "truncated": 0,
+      "muscleUnion": 3
+    },
+    {
+      "key": "w04-push-hypertrophy::hotel_gym",
+      "rows": 6,
+      "needsSwap": 1,
+      "candidates": 151,
+      "truncated": 0,
+      "muscleUnion": 1
+    },
+    {
+      "key": "w05-pull-hypertrophy::full_gym",
+      "rows": 6,
+      "needsSwap": 0,
+      "candidates": 0,
+      "truncated": 0,
+      "muscleUnion": 0
+    },
+    {
+      "key": "w05-pull-hypertrophy::dumbbells_bench",
+      "rows": 6,
+      "needsSwap": 5,
+      "candidates": 349,
+      "truncated": 0,
+      "muscleUnion": 6
+    },
+    {
+      "key": "w05-pull-hypertrophy::bands_only",
+      "rows": 6,
+      "needsSwap": 6,
+      "candidates": 142,
+      "truncated": 0,
+      "muscleUnion": 7
+    },
+    {
+      "key": "w05-pull-hypertrophy::hotel_gym",
+      "rows": 6,
+      "needsSwap": 2,
+      "candidates": 256,
+      "truncated": 0,
+      "muscleUnion": 4
+    },
+    {
+      "key": "w06-legs-hypertrophy::full_gym",
+      "rows": 5,
+      "needsSwap": 0,
+      "candidates": 0,
+      "truncated": 0,
+      "muscleUnion": 0
+    },
+    {
+      "key": "w06-legs-hypertrophy::dumbbells_bench",
+      "rows": 5,
+      "needsSwap": 2,
+      "candidates": 400,
+      "truncated": 104,
+      "muscleUnion": 4
+    },
+    {
+      "key": "w06-legs-hypertrophy::bands_only",
+      "rows": 5,
+      "needsSwap": 2,
+      "candidates": 399,
+      "truncated": 0,
+      "muscleUnion": 4
+    },
+    {
+      "key": "w06-legs-hypertrophy::hotel_gym",
+      "rows": 5,
+      "needsSwap": 2,
+      "candidates": 400,
+      "truncated": 124,
+      "muscleUnion": 4
+    },
+    {
+      "key": "w07-strength-5x5-a::full_gym",
+      "rows": 3,
+      "needsSwap": 0,
+      "candidates": 0,
+      "truncated": 0,
+      "muscleUnion": 0
+    },
+    {
+      "key": "w07-strength-5x5-a::dumbbells_bench",
+      "rows": 3,
+      "needsSwap": 3,
+      "candidates": 400,
+      "truncated": 272,
+      "muscleUnion": 7
+    },
+    {
+      "key": "w07-strength-5x5-a::bands_only",
+      "rows": 3,
+      "needsSwap": 3,
+      "candidates": 400,
+      "truncated": 91,
+      "muscleUnion": 7
+    },
+    {
+      "key": "w07-strength-5x5-a::hotel_gym",
+      "rows": 3,
+      "needsSwap": 3,
+      "candidates": 400,
+      "truncated": 359,
+      "muscleUnion": 7
+    },
+    {
+      "key": "w08-strength-5x5-b::full_gym",
+      "rows": 3,
+      "needsSwap": 0,
+      "candidates": 0,
+      "truncated": 0,
+      "muscleUnion": 0
+    },
+    {
+      "key": "w08-strength-5x5-b::dumbbells_bench",
+      "rows": 3,
+      "needsSwap": 3,
+      "candidates": 400,
+      "truncated": 322,
+      "muscleUnion": 6
+    },
+    {
+      "key": "w08-strength-5x5-b::bands_only",
+      "rows": 3,
+      "needsSwap": 3,
+      "candidates": 400,
+      "truncated": 113,
+      "muscleUnion": 6
+    },
+    {
+      "key": "w08-strength-5x5-b::hotel_gym",
+      "rows": 3,
+      "needsSwap": 3,
+      "candidates": 400,
+      "truncated": 376,
+      "muscleUnion": 6
+    },
+    {
+      "key": "w09-upper-strength::full_gym",
+      "rows": 5,
+      "needsSwap": 0,
+      "candidates": 0,
+      "truncated": 0,
+      "muscleUnion": 0
+    },
+    {
+      "key": "w09-upper-strength::dumbbells_bench",
+      "rows": 5,
+      "needsSwap": 4,
+      "candidates": 381,
+      "truncated": 0,
+      "muscleUnion": 5
+    },
+    {
+      "key": "w09-upper-strength::bands_only",
+      "rows": 5,
+      "needsSwap": 5,
+      "candidates": 170,
+      "truncated": 0,
+      "muscleUnion": 5
+    },
+    {
+      "key": "w09-upper-strength::hotel_gym",
+      "rows": 5,
+      "needsSwap": 4,
+      "candidates": 400,
+      "truncated": 115,
+      "muscleUnion": 5
+    },
+    {
+      "key": "w10-lower-strength::full_gym",
+      "rows": 5,
+      "needsSwap": 0,
+      "candidates": 0,
+      "truncated": 0,
+      "muscleUnion": 0
+    },
+    {
+      "key": "w10-lower-strength::dumbbells_bench",
+      "rows": 5,
+      "needsSwap": 4,
+      "candidates": 400,
+      "truncated": 507,
+      "muscleUnion": 6
+    },
+    {
+      "key": "w10-lower-strength::bands_only",
+      "rows": 5,
+      "needsSwap": 5,
+      "candidates": 400,
+      "truncated": 311,
+      "muscleUnion": 6
+    },
+    {
+      "key": "w10-lower-strength::hotel_gym",
+      "rows": 5,
+      "needsSwap": 4,
+      "candidates": 400,
+      "truncated": 552,
+      "muscleUnion": 6
+    },
+    {
+      "key": "w11-fullbody-dumbbell::full_gym",
+      "rows": 5,
+      "needsSwap": 0,
+      "candidates": 0,
+      "truncated": 0,
+      "muscleUnion": 0
+    },
+    {
+      "key": "w11-fullbody-dumbbell::dumbbells_bench",
+      "rows": 5,
+      "needsSwap": 1,
+      "candidates": 400,
+      "truncated": 29,
+      "muscleUnion": 2
+    },
+    {
+      "key": "w11-fullbody-dumbbell::bands_only",
+      "rows": 5,
+      "needsSwap": 5,
+      "candidates": 400,
+      "truncated": 74,
+      "muscleUnion": 7
+    },
+    {
+      "key": "w11-fullbody-dumbbell::hotel_gym",
+      "rows": 5,
+      "needsSwap": 1,
+      "candidates": 400,
+      "truncated": 44,
+      "muscleUnion": 2
+    },
+    {
+      "key": "w12-glutes::full_gym",
+      "rows": 5,
+      "needsSwap": 0,
+      "candidates": 0,
+      "truncated": 0,
+      "muscleUnion": 0
+    },
+    {
+      "key": "w12-glutes::dumbbells_bench",
+      "rows": 5,
+      "needsSwap": 3,
+      "candidates": 275,
+      "truncated": 0,
+      "muscleUnion": 3
+    },
+    {
+      "key": "w12-glutes::bands_only",
+      "rows": 5,
+      "needsSwap": 3,
+      "candidates": 220,
+      "truncated": 0,
+      "muscleUnion": 3
+    },
+    {
+      "key": "w12-glutes::hotel_gym",
+      "rows": 5,
+      "needsSwap": 3,
+      "candidates": 288,
+      "truncated": 0,
+      "muscleUnion": 3
+    },
+    {
+      "key": "w13-arms::full_gym",
+      "rows": 4,
+      "needsSwap": 0,
+      "candidates": 0,
+      "truncated": 0,
+      "muscleUnion": 0
+    },
+    {
+      "key": "w13-arms::dumbbells_bench",
+      "rows": 4,
+      "needsSwap": 3,
+      "candidates": 145,
+      "truncated": 0,
+      "muscleUnion": 2
+    },
+    {
+      "key": "w13-arms::bands_only",
+      "rows": 4,
+      "needsSwap": 4,
+      "candidates": 44,
+      "truncated": 0,
+      "muscleUnion": 3
+    },
+    {
+      "key": "w13-arms::hotel_gym",
+      "rows": 4,
+      "needsSwap": 1,
+      "candidates": 102,
+      "truncated": 0,
+      "muscleUnion": 1
+    },
+    {
+      "key": "w14-core::full_gym",
+      "rows": 5,
+      "needsSwap": 0,
+      "candidates": 0,
+      "truncated": 0,
+      "muscleUnion": 0
+    },
+    {
+      "key": "w14-core::dumbbells_bench",
+      "rows": 5,
+      "needsSwap": 1,
+      "candidates": 378,
+      "truncated": 0,
+      "muscleUnion": 1
+    },
+    {
+      "key": "w14-core::bands_only",
+      "rows": 5,
+      "needsSwap": 1,
+      "candidates": 298,
+      "truncated": 0,
+      "muscleUnion": 1
+    },
+    {
+      "key": "w14-core::hotel_gym",
+      "rows": 5,
+      "needsSwap": 1,
+      "candidates": 400,
+      "truncated": 3,
+      "muscleUnion": 1
+    },
+    {
+      "key": "w15-conditioning::full_gym",
+      "rows": 4,
+      "needsSwap": 0,
+      "candidates": 0,
+      "truncated": 0,
+      "muscleUnion": 0
+    },
+    {
+      "key": "w15-conditioning::dumbbells_bench",
+      "rows": 4,
+      "needsSwap": 2,
+      "candidates": 400,
+      "truncated": 128,
+      "muscleUnion": 5
+    },
+    {
+      "key": "w15-conditioning::bands_only",
+      "rows": 4,
+      "needsSwap": 2,
+      "candidates": 400,
+      "truncated": 19,
+      "muscleUnion": 5
+    },
+    {
+      "key": "w15-conditioning::hotel_gym",
+      "rows": 4,
+      "needsSwap": 2,
+      "candidates": 400,
+      "truncated": 148,
+      "muscleUnion": 5
+    },
+    {
+      "key": "w16-chest-back-superset::full_gym",
+      "rows": 5,
+      "needsSwap": 0,
+      "candidates": 0,
+      "truncated": 0,
+      "muscleUnion": 0
+    },
+    {
+      "key": "w16-chest-back-superset::dumbbells_bench",
+      "rows": 5,
+      "needsSwap": 3,
+      "candidates": 234,
+      "truncated": 0,
+      "muscleUnion": 4
+    },
+    {
+      "key": "w16-chest-back-superset::bands_only",
+      "rows": 5,
+      "needsSwap": 5,
+      "candidates": 130,
+      "truncated": 0,
+      "muscleUnion": 4
+    },
+    {
+      "key": "w16-chest-back-superset::hotel_gym",
+      "rows": 5,
+      "needsSwap": 2,
+      "candidates": 301,
+      "truncated": 0,
+      "muscleUnion": 4
+    },
+    {
+      "key": "w17-shoulders::full_gym",
+      "rows": 4,
+      "needsSwap": 0,
+      "candidates": 0,
+      "truncated": 0,
+      "muscleUnion": 0
+    },
+    {
+      "key": "w17-shoulders::dumbbells_bench",
+      "rows": 4,
+      "needsSwap": 2,
+      "candidates": 174,
+      "truncated": 0,
+      "muscleUnion": 2
+    },
+    {
+      "key": "w17-shoulders::bands_only",
+      "rows": 4,
+      "needsSwap": 4,
+      "candidates": 77,
+      "truncated": 0,
+      "muscleUnion": 2
+    },
+    {
+      "key": "w17-shoulders::hotel_gym",
+      "rows": 4,
+      "needsSwap": 1,
+      "candidates": 201,
+      "truncated": 0,
+      "muscleUnion": 1
+    },
+    {
+      "key": "w18-beginner-fullbody::full_gym",
+      "rows": 5,
+      "needsSwap": 0,
+      "candidates": 0,
+      "truncated": 0,
+      "muscleUnion": 0
+    },
+    {
+      "key": "w18-beginner-fullbody::dumbbells_bench",
+      "rows": 5,
+      "needsSwap": 3,
+      "candidates": 400,
+      "truncated": 85,
+      "muscleUnion": 4
+    },
+    {
+      "key": "w18-beginner-fullbody::bands_only",
+      "rows": 5,
+      "needsSwap": 3,
+      "candidates": 352,
+      "truncated": 0,
+      "muscleUnion": 4
+    },
+    {
+      "key": "w18-beginner-fullbody::hotel_gym",
+      "rows": 5,
+      "needsSwap": 2,
+      "candidates": 400,
+      "truncated": 45,
+      "muscleUnion": 2
+    },
+    {
+      "key": "w19-athletic-power::full_gym",
+      "rows": 5,
+      "needsSwap": 0,
+      "candidates": 0,
+      "truncated": 0,
+      "muscleUnion": 0
+    },
+    {
+      "key": "w19-athletic-power::dumbbells_bench",
+      "rows": 5,
+      "needsSwap": 4,
+      "candidates": 400,
+      "truncated": 529,
+      "muscleUnion": 7
+    },
+    {
+      "key": "w19-athletic-power::bands_only",
+      "rows": 5,
+      "needsSwap": 5,
+      "candidates": 400,
+      "truncated": 336,
+      "muscleUnion": 8
+    },
+    {
+      "key": "w19-athletic-power::hotel_gym",
+      "rows": 5,
+      "needsSwap": 4,
+      "candidates": 400,
+      "truncated": 574,
+      "muscleUnion": 7
+    },
+    {
+      "key": "w20-cardio-strength::full_gym",
+      "rows": 5,
+      "needsSwap": 0,
+      "candidates": 0,
+      "truncated": 0,
+      "muscleUnion": 0
+    },
+    {
+      "key": "w20-cardio-strength::dumbbells_bench",
+      "rows": 5,
+      "needsSwap": 3,
+      "candidates": 400,
+      "truncated": 149,
+      "muscleUnion": 6
+    },
+    {
+      "key": "w20-cardio-strength::bands_only",
+      "rows": 5,
+      "needsSwap": 4,
+      "candidates": 400,
+      "truncated": 85,
+      "muscleUnion": 7
+    },
+    {
+      "key": "w20-cardio-strength::hotel_gym",
+      "rows": 5,
+      "needsSwap": 1,
+      "candidates": 400,
+      "truncated": 90,
+      "muscleUnion": 3
+    }
+  ]
+}

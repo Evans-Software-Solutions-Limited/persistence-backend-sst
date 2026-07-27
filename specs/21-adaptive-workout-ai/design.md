@@ -30,12 +30,17 @@ This is the canonical statement of the pattern; `specs/26-mealprint-meal-plannin
     - hard-filter the exercise library to what is actually performable:
       equipment containment + muscle relevance + the caller's visibility
       predicate. Cap ~400 rows.
-[2] SELECTION  ← the ONLY pluggable stage; which arm ships is decided by
-    the Phase E2 bake-off, not asserted (requirements § Eval spike)
-    - arm A: DETERMINISTIC ranker (§ 6). No model, no ceiling, no cost.
-    - arm B: model composition, forced tool use, choosing `exerciseId`
-      values FROM the candidate list only — cannot invent an exercise.
-    - hybrid: deterministic filtering + model selection + model reasons.
+[2] SELECTION  ← the ONLY pluggable stage. DECIDED 2026-07-26 by the
+    Phase E2 bake-off (§ 6.0): the HYBRID ships.
+    - SHIPPING: deterministic § 6.2 ranking narrows the pool to the top 25
+      candidates per row, then model composition (forced tool use, one call
+      for the whole plan) chooses `exerciseId` values FROM that shortlist
+      only, and writes the per-row reason. Carries a ceiling and a cost
+      (~$0.0057/adaptation) — see requirements AC-10.2.
+    - REJECTED, deterministic ranker alone: pattern-blind on the data the
+      library actually has (§ 6.0). Lost 4-50 on blind preference.
+    - REJECTED, model over the full pool: judged-equivalent to the hybrid
+      (25-25) at 3.4x the cost.
 [3] VERIFICATION (deterministic, server)
     - re-resolve every chosen id against the candidate set; re-assert
       equipment containment and read-visibility; carry the parent row's
@@ -55,11 +60,63 @@ Two rules inherited from the M9.5 eval lesson and `aiBedrockClient.ts:221-230`
   reps, rest, order and superset grouping are copied from the parent; no model
   output is ever trusted for them.
 
-**Stages 1, 3 and 4 are deterministic whichever arm wins.** Equipment
-containment, read-visibility and the parent's training targets never move to
-the model — so choosing arm B changes _which exercise is picked_, never
-_whether the pick is legal_. That is what makes the bake-off a quality
-question rather than a safety one.
+**Stages 1, 3 and 4 stayed deterministic when the hybrid won.** Equipment
+containment, read-visibility and the parent's training targets never moved to
+the model — the model changes _which exercise is picked_, never _whether the
+pick is legal_. That is what made the bake-off a quality question rather than a
+safety one, and it is the property spec-26 must preserve when it mirrors this
+section.
+
+⚠ **A consequence for anyone mirroring this section: stage 2 is now
+model-backed, so the pipeline is no longer free.** E2 measured **zero non-member
+ids across 116 model runs and 341 selected ids**, so the parse-failure rule above
+guards a rare event rather than a common one — but the ceiling, the usage log and
+the async-job requirement for fan-out are all real (requirements AC-10.2 /
+AC-10.3, § 7.3).
+
+---
+
+## 1b. Two AI surfaces, not one (Brad, 2026-07-26)
+
+Loadout contains **two different AI problems**, and Phase E measured them
+separately enough to prove they are not variants of each other:
+
+|                         | **Perception** — equipment scan (§ 8)            | **Composition** — re-map (§ 6, § 7)               |
+| ----------------------- | ------------------------------------------------ | ------------------------------------------------- |
+| Question                | "what kit is in this photo?"                     | "what should this row become?"                    |
+| Input                   | one image + the 28-row catalogue                 | a plan + a ranked candidate shortlist             |
+| Model tier **required** | **Opus-class** (Haiku 0.759 recall, invents ids) | **Haiku-class suffices** (it won the judged axes) |
+| Latency                 | 10.1 s mean, 12.3 s max                          | 2.6 s mean, 3.8 s max                             |
+| Cost                    | $0.0272                                          | $0.0057                                           |
+| Retry policy            | needs ONE ~20 s attempt                          | `createWithRetry` fits                            |
+| Fails by                | false positive / misread kit                     | pattern drift, intensity mismatch                 |
+| Guard                   | user confirms a draft (AC-2.3)                   | equipment containment + review step               |
+
+**They share exactly one thing: § 1's candidate-constrained contract.** A
+server-built list, the model picks ids from it, membership re-validated in
+TypeScript. That is the whole of the reuse, and it is enough — it is also what
+spec-26 mirrors.
+
+**Consequences worth stating, because the obvious refactor is wrong.** Do not
+build a shared "Loadout AI service" that owns both. They need:
+
+- **Two model ids** (`AI_EQUIPMENT_SCAN_MODEL_ID` Opus-class,
+  `AI_LOADOUT_REMAP_MODEL_ID` Haiku-class) — the tiers are opposite, and a single
+  id would either overpay 5× for the re-map or cripple the scan.
+- **Two ceilings**, counted separately (AC-10.1, AC-10.2). One pooled ceiling
+  would let a user burn their re-maps on scans.
+- **Two kill switches.** E1 is provisional and E2 is solid, so the realistic
+  failure mode is "scan disappoints on real photos while the re-map is fine". It
+  must be possible to turn the scan off and keep Loadout working.
+- **A collect path that needs no AI at all.** AC-2.1 (saved gym) and AC-2.2
+  (manual picklist) already provide this. **They are not fallbacks, they are the
+  floor** — the feature has to be complete without the scan, or the scan's
+  unmeasured real-world accuracy becomes a launch risk for all of Loadout.
+
+The sequencing question this opens (ship the re-map first and add the scan when a
+real photo set validates it, versus keeping them in one Phase 2 slice for the
+"hero moment") is a **Brad decision** — recorded in `requirements.md` § Phased
+delivery rather than settled here.
 
 ---
 
@@ -388,6 +445,57 @@ spec's to edit).
 
 ## 6. The substitute ranker (Phase 1, net-new)
 
+### 6.0 E2 verdict — the ranker is the SHORTLISTER, not the chooser (2026-07-26)
+
+**D7 is decided by the Phase E2 bake-off. Phase 1 builds the HYBRID:
+deterministic shortlist → model selection → model reasons.** Full evidence:
+`scratchpad/loadout-phase-e/VERDICT-E2.md`; raw dataset in that directory's
+`results/`.
+
+20 workouts × 4 contexts = 80 fixtures, **58 of which bear a swap** (171 rows),
+identical candidate sets, blind scoring by a model that was not one of the arms.
+Fidelity, cost and latency are over the swap-bearing fixtures; the verdict's
+§ Results carries the caveats, including that the equipment-legal row is
+structurally guaranteed by stages 1 and 2 rather than a gate an arm could fail.
+
+|                                    | Arm A — ranker only       | Arm B — model, full pool | **Arm C — hybrid**  |
+| ---------------------------------- | ------------------------- | ------------------------ | ------------------- |
+| Equipment-legal plans (see caveat) | 80/80                     | 80/80                    | 80/80               |
+| Mean primary-muscle fidelity       | 0.968                     | 0.822                    | 0.930               |
+| Pattern fidelity (blind, 1–5)      | 3.07 / 2.98               | 4.43                     | **4.07 / 4.28**     |
+| Whole-plan coherence (blind)       | 3.21 / 3.16               | 4.10                     | **3.93 / 4.07**     |
+| Reason quality (blind)             | 2.62 / 2.69               | 4.02                     | **3.81 / 4.07**     |
+| Head-to-head preference            | lost 5–52 to B, 4–50 to C | 25–25 vs C               | ties B, beats A     |
+| Cost per adaptation                | $0                        | $0.0199                  | **$0.0057**         |
+| p50 / max latency                  | 0.1 ms                    | 2.85 s / 4.07 s          | **2.60 s / 3.79 s** |
+
+Three consequences for the sections below:
+
+1. **§ 6.2's scoring stays, as the shortlister.** T-1.2 is still Phase-1 work —
+   the top 25 ranked candidates per row are what the model chooses from. Ranking
+   314 candidates down to 58 is where 71 % of arm B's cost went, at no measured
+   quality cost (25–25, ±0.1 on two of three axes).
+2. **§ 6.2's `movement_type` signal has no data behind it.** `movement_type` is
+   **NULL for all 2281 seeded rows** — only `exercisesCreateHandler` /
+   `exercisesUpdateHandler` ever write it, for user-created exercises — so the
+   10-point signal degrades to `category`, which is `strength` for 1976/2281
+   rows. This is _why_ arm A was pattern-blind, producing equipment-legal but
+   unshippable swaps (Barbell Deadlift → **Atlas Stones** in a bands-only
+   context; Machine Bicep Curl → **Floor Rope Climb**). A deterministic-only
+   engine would first need `movement_type` backfilled across the catalogue — a
+   separate data workstream, not a Phase-1 task.
+3. **A model is now on the re-map path**, so § 7.3's sizing and `AC-10.2` change
+   — see § 7.3's 2026-07-26 note and `requirements.md` US-10.
+
+⚠ **Live data bug found by the eval, unrelated to either arm.** `Leg Press` and
+`Leg Curl` resolve to `equipment_required = '{}'` because their seeded equipment
+names have no `equipment_types` row (`Leg Press Machine` / `Leg Curl Machine`) and
+`seedExercises.ts`'s `resolve()` drops unmapped names silently. Since `x @> '{}'`
+is always true (§ 6.1), a bands-only athlete **keeps the leg press** — in the
+seeded "Lower Body" and "Full Body Starter" workouts, i.e. the first workouts a
+new account owns. Fix is a data migration plus a seeder guard that fails loudly;
+not an engine change.
+
 ### 6.1 Equipment containment
 
 New filter axis on `ListExercisesFilters`:
@@ -417,16 +525,16 @@ dumbbell.
 Reconciling the orphaned `get_alternative_exercises`
 (`002_functions_and_triggers.sql:432`) with GTM § 3 P3:
 
-| Signal                            | Weight           | Source                                            |
-| --------------------------------- | ---------------- | ------------------------------------------------- |
-| primary-muscle overlap            | hard filter + 50 | orphaned fn (which also hard-filters it)          |
-| secondary-muscle overlap          | 20               | orphaned fn (NULL-safe via `COALESCE`)            |
-| same `difficulty_level`           | 15               | orphaned fn                                       |
-| adjacent `difficulty_level`       | 7                | new — avoids cliff-edge ranking                   |
-| same `movement_type` / `category` | 10               | new — a press should prefer a press               |
-| caller has logged it before       | 8                | GTM § 3 P3 tiebreak                               |
-| equipment                         | **hard filter**  | _diverges from the orphaned fn's +15/−30 scoring_ |
-| tiebreak                          | `name ASC`       | FTS precedent (`exerciseRepository.ts:491-566`)   |
+| Signal                            | Weight           | Source                                                                                                             |
+| --------------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------ |
+| primary-muscle overlap            | hard filter + 50 | orphaned fn (which also hard-filters it)                                                                           |
+| secondary-muscle overlap          | 20               | orphaned fn (NULL-safe via `COALESCE`)                                                                             |
+| same `difficulty_level`           | 15               | orphaned fn                                                                                                        |
+| adjacent `difficulty_level`       | 7                | new — avoids cliff-edge ranking                                                                                    |
+| same `movement_type` / `category` | 10               | new — a press should prefer a press (⚠ § 6.0: `movement_type` is NULL library-wide, so this reduces to `category`) |
+| caller has logged it before       | 8                | GTM § 3 P3 tiebreak                                                                                                |
+| equipment                         | **hard filter**  | _diverges from the orphaned fn's +15/−30 scoring_                                                                  |
+| tiebreak                          | `name ASC`       | FTS precedent (`exerciseRepository.ts:491-566`)                                                                    |
 
 **The equipment divergence is the important one.** The orphaned function
 _demotes_ incompatible exercises (−30) but still returns them. For an
@@ -525,6 +633,52 @@ visibility, which is the security control, is re-verified on every row
 regardless. Do not later reuse `is_user_override` as a server-attested fact for
 a gate where it would matter.
 
+### 7.1b Intensity mismatch — the gap a swap cannot close (2026-07-26)
+
+Raised by Brad, then measured on the E2 dataset: **10 of 171 swaps in the winning
+arm put a strength-range row (reps ≤ 6) onto equipment that cannot load it** —
+`Barbell Deadlift 4×4-6 → Band Good Morning 4×4-6`, `Barbell Back Squat 5×5 → Band
+Front Squat 5×5`. **All 10 are in the `bands_only` context** (9 land on bands, 1 on
+bodyweight), so the failure is concentrated entirely in the hardest context rather
+than spread across them.
+
+**The exercise choice in those rows is correct** — hinge → hinge, press → press —
+and the prescription is still unusable, because bands cannot express that
+intensity. So this is **not** fixable by a better ranker or a better model: the
+cause is § 1's rule 2 (targets are copied from the parent, never model-authored),
+which is right for trust and wrong for this 5.8 %.
+
+**Phase 1 ships the detection, not a fix.** The check is deterministic — parent row
+is strength-range AND the replacement lost every loadable equipment type — so it
+needs no model, adds no cost and no ceiling:
+
+⚠ **Narrow the loadable list when T-1.11 is implemented.** The sketch below
+includes `Medicine Ball` and `Kettlebell`, neither of which can load a 4-6 rep
+strength row either — a barbell hinge swapped onto a 5 kg med ball would pass the
+check. Sensitivity-tested on the E2 dataset: removing both leaves the count at
+**10/171 unchanged**, so the published figure is unaffected, but ship the narrower
+list rather than this sketch.
+
+```ts
+const LOADABLE = new Set([...]); // barbell, dumbbells, EZ bar, machines, cables,
+                                 // sled — see the narrowing note above
+const mismatch =
+  row.repsMax <= 6 &&
+  hasAny(source.equipmentRequired, LOADABLE) &&
+  !hasAny(chosen.equipmentRequired, LOADABLE);
+```
+
+Mint an `intensity_mismatch` reason code (§ 7.2) and surface it in the review step
+via the AC-3.4 flag machinery. The user is told their bands cannot load a 4-6 rep
+deadlift and can accept it as accessory volume, swap manually, or drop the row.
+
+**A bounded target transform is the real fix and is deliberately NOT in Phase 1.**
+Allowing a whitelisted rep-scheme change on exactly those rows (barbell→band on a
+hinge: 4×4-6 → 3×12-15, never free-form, never touching sets/rest/superset
+grouping) requires relaxing § 1 rule 2 with an explicit table. That widens what the
+engine may change and is a spec decision for Brad, not an implementation detail —
+**do not attempt it implicitly inside the ranker.**
+
 ### 7.2 Reasons
 
 **Server-generated and structured**, not free prose:
@@ -535,31 +689,98 @@ code. This keeps copy localisable and the backend free of UI strings.
 
 ### 7.3 Sizing
 
+> **⚠ REVISED 2026-07-26 by the E2 verdict (§ 6.0).** The premise below — "no
+> model call" — no longer holds: stage 2 is model-backed. Measured on 58
+> swap-bearing fixtures, a **single-workout** adaptation is p50 2.60 s / max
+> 3.79 s, so it stays comfortably inside both the 30 s API Gateway ceiling and
+> `createWithRetry`'s 12 s × 2 budget — the paragraph below still reads correctly
+> for the single-workout case, just for a different reason.
+>
+> **Programme-level (Phase 4) must now go async.** At 2.60 s per workout the
+> 120-workout cap is ~5 minutes of model time, and even a 12-week × 4-session
+> programme (~48 workouts) is ~2 minutes. **The sentence further down saying the
+> 30 s ceiling "does not bind here" is now wrong for the programme case.** The
+> async-job model is required, and it is the **same infrastructure spec-26
+> Mealprint needs** for week plans and programme import — whichever spec reaches
+> it first builds it; it must not be built twice. Cost at the cap is ~$0.67 per
+> programme adaptation.
+
 An adaptation is **pure SQL plus in-memory scoring** — no model call, no
 network hop per exercise — so a single workout is comfortably inside the
 request budget.
 
 **Programme-level (Phase 4) is where this needs a bound.** A 12-week ×
-4-sessions programme is ~48 workouts. The cost is still two queries plus
-scoring — the candidate pool is assembled once for the union of _all_ muscles
-across the programme and reused for every workout — so the work is roughly
-linear in `workout_exercises` rows, not in round trips. Even so:
+4-sessions programme is ~48 workouts. The candidate pool is still assembled
+**once** for the union of _all_ muscles across the programme and reused for every
+workout, so stage 1 stays cheap — **but stage 2 is now one model call per
+workout**, so the work is linear in WORKOUTS, not just in
+`workout_exercises` rows. Revised bound:
 
 - Cap a single programme adaptation at **120 workouts**; beyond that return 413
   with a message to adapt the programme in parts. No silent truncation.
-  ⚠ **Brad checkpoint:** confirm 120. A tighter bound (e.g. 50) would trip on
-  ordinary blocks — 12 weeks × 5 sessions is 60, a 13-week cycle is 52 — and
-  the cost analysis above does not justify one, since the candidate pool is
-  assembled once for the whole programme.
-- The 30s API Gateway ceiling that constrains § 8 does **not** bind here,
-  because nothing calls Bedrock. If Phase 5 ever puts a model in this path, the
-  programme case must move to the async-job model first — that is the point at
-  which Loadout would need the same job infrastructure Mealprint's week plans
-  and programme import need, and it must not be built twice.
+  ⚠ **Brad checkpoint:** confirm 120 — and note the case for it changed. It is
+  no longer "the cost analysis does not justify a tighter bound": 120 workouts is
+  **120 model calls, ~5 minutes of model time and ~$0.69** (E2 measured, § 6.0).
+  A tighter bound would still trip on ordinary blocks (12 weeks × 5 sessions is
+  60, a 13-week cycle is 52), so the argument for 120 survives — but it now rests
+  on user-facing coverage, not on the work being nearly free.
+- ~~The 30s API Gateway ceiling that constrains § 8 does **not** bind here,
+  because nothing calls Bedrock.~~ **It binds now.** Stage 2 calls Bedrock, so
+  the programme case **must** use the async-job model — this is the point at which
+  Loadout needs the same job infrastructure Mealprint's week plans and programme
+  import need, and **it must not be built twice** (requirements AC-10.3).
 
 ---
 
 ## 8. Equipment scan (Phase 3)
+
+### 8.0 E1 verdict — PROVISIONAL go, and the model choice below is wrong (2026-07-26)
+
+Full verdict: `scratchpad/loadout-phase-e/VERDICT-E1.md`; raw results in that
+directory's `results/e1-*.json`.
+
+⚠ **Measured on 7 photos, 6 of them stock, not the ~30 real ones T-E1.1 asks
+for.** Stock gym photography is easy mode — staged, wide, evenly lit, nothing
+occluded. **Every figure here is a CEILING, not a real-world rate.** One photo was a
+genuine phone photo of a cluttered garage; it is reported separately and is the
+only number with real-world standing (n=1).
+
+|                                                 | **Opus 4.6**        | Haiku 4.5     |
+| ----------------------------------------------- | ------------------- | ------------- |
+| Recall (29 ground-truth items)                  | **0.966**           | 0.759         |
+| Recall, the one real phone photo                | **1.000**           | 0.500         |
+| False positives across 7 photos                 | **3**               | 7             |
+| Non-member ids returned                         | **0**               | **2**         |
+| Non-catalogue items correctly identified (of 6) | **5**               | 1             |
+| Latency mean / max                              | 10.1 s / **12.3 s** | 4.3 s / 4.7 s |
+| Cost per scan                                   | $0.0272             | $0.0051       |
+
+Three consequences, two of which contradict § 8.1 as written:
+
+1. **Scan is viable as a draft the user confirms** (AC-2.3), which is what the
+   design already specifies. It is **not** yet established as the only collect
+   path — Phase 2 may design _for_ scan but must not ship it as the sole route on
+   this evidence.
+2. **⚠ "Haiku-class first" below is WRONG — use the Opus-class id.** The task is
+   harder than food estimation, not simpler. Haiku missed `Squat Rack` in 3 of 7
+   photos (miss the rack and every barbell lift gets needlessly swapped), fell for
+   the planted road-bike look-alike in the real photo (→ `Exercise Bike`) and for
+   rubber floor tiles as a `Yoga Mat` on a stock shot, returned 2 hallucinated ids,
+   and identified only **1 of the 6 genuinely non-catalogue items** where Opus
+   identified 5 — i.e. it does not use the `null` + label escape hatch § 1
+   provides.
+3. **⚠ `createWithRetry` has effectively no margin here** — see § 8.1's revised
+   note. Also fold into T-3.3's prompt: **both** models sometimes describe a
+   catalogue row in prose as `null` + label instead of selecting its id (Haiku
+   "Cable machine or functional trainer", Opus "Dumbbell Storage Rack") — the
+   mirror of forcing a match, and it costs the user real kit.
+
+Also for T-3.3: **exclude `Bodyweight` from what the scan may return.** Opus
+returned it as a detection, which is technically always true and useless; it is a
+property of every gym, so inject it server-side instead of treating it as
+detectable.
+
+### 8.1 Endpoint
 
 `POST /ai/equipment-scan` — near-clone of `nutritionAiEstimateHandler.ts`,
 including its guard order, which is the cost-safety contract:
@@ -576,8 +797,11 @@ magic-byte check → model → parse → validate → 200.**
 - Register the default in `infra/api.ts`'s environment block alongside the five
   existing `AI_*_DAILY_LIMIT` values. **No IAM change** — the existing
   `bedrock:InvokeModel` wildcards already cover any `eu.anthropic.*` id.
-- `AI_EQUIPMENT_SCAN_MODEL_ID`, vision-capable, Haiku-class first (the task is
-  far simpler than food estimation).
+- `AI_EQUIPMENT_SCAN_MODEL_ID`, vision-capable. ~~Haiku-class first (the task is
+  far simpler than food estimation).~~ **Corrected by E1 (§ 8.0): Opus-class —
+  `eu.anthropic.claude-opus-4-6-v1`, already the prod Snap AI photo model.** Haiku
+  4.5 scored half the recall, twice the false positives, and invented ids. This is
+  the reverse of the food split, where text estimation runs on Haiku.
 - Forced tool use returns
   `{ detected: [{ equipmentTypeId | null, label, confidence }], notes }`. The
   full `equipment_types` catalogue (id + name, ~30 rows) goes in the prompt and
@@ -586,9 +810,26 @@ magic-byte check → model → parse → validate → 200.**
   re-validated in TypeScript** (§ 1) — a hallucinated uuid is a 422.
 - Output is a **draft** (AC-2.3): the user confirms before it becomes context,
   and confirming never implicitly saves a gym.
-- `createWithRetry` is usable as-is here (12s × 2 fits the 30s API Gateway
-  ceiling). Note for a future model-assisted re-map: GTM § 3 P2 requires ONE
-  attempt at a ~20s budget, which needs a no-retry variant of the harness.
+- ~~`createWithRetry` is usable as-is here (12s × 2 fits the 30s API Gateway
+  ceiling).~~ **E1 measured Opus at mean 10.1 s / max 12.27 s end-to-end against a
+  12 s per-attempt budget — ~0 % margin, on 7 easy photos.** Note precisely: no
+  attempt actually breached the timeout (all 7 returned; the 266 ms overshoot is
+  serialisation/SigV4 outside the SDK's timed window). But a harder photo, a colder
+  Lambda or a slower region tips it over, and the cost of tipping over is a full
+  retry ≈ 22 s plus auth/entitlement/ceiling/usage-log overhead against a hard
+  30 s. **The scan needs a single
+  attempt at a raised (~20 s) budget** — exactly what GTM § 3 P2 asked for — **or a
+  smaller image.** E1 ran at 1568 px long edge (~3000 input tokens) where prod food
+  photos run at 640 px; downscaling would cut latency and cost at unmeasured
+  accuracy cost, and that trade should be measured on the real photo set (§ 8.0)
+  rather than guessed. **The model-assisted re-map is no longer hypothetical — it ships
+  (§ 6.0) — so resolve the no-retry question in Phase 1, not later:** GTM § 3 P2
+  asks for ONE attempt at a ~20s budget because a retry on a large generation
+  doubles cost and leaves no headroom inside 30s. E2 measured the happy path at
+  2.60s p50 / 3.79s max, so `createWithRetry` as-is is fine **when the first
+  attempt succeeds**; the open question is only the retry path, where 12s × 2 plus
+  auth, SQL and usage-log overhead is uncomfortably close to the ceiling. Decide
+  in T-1.9 whether the re-map takes the retry or a single ~20s attempt.
 
 ---
 

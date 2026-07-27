@@ -36,5 +36,6 @@ packages/seed/data/off-uk.jsonl.gz
 # would just re-break the whole-tree `prettier --check .` (the staging deploy
 # runs it over the full checkout) on the next manual edit. Not code.
 STATE.md
+STATE-ARCHIVE.md
 app-store-tracker.html
 marketing/

@@ -49,15 +49,15 @@ this one. It is also not program import (a separate workstream).
 
 ## Decisions (locked — do not reopen)
 
-| #   | Decision             | Choice                                                                                                                                                                                                                                                                                                                                                                        |
-| --- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| D1  | Mental model         | **Adapt an existing workout/programme.** Generate-from-scratch is a separate flow.                                                                                                                                                                                                                                                                                            |
-| D2  | Parent ↔ variation   | Nullable self-referential `parent_workout_id` + `variation_kind` + `source_gym_id` on `workouts`, and the programme equivalent. Original never mutated.                                                                                                                                                                                                                       |
-| D3  | Saved gyms           | New `saved_gyms` table (`user_id`, `name`, `equipment_type_ids uuid[]`); a variation FKs to the gym it was adapted for.                                                                                                                                                                                                                                                       |
-| D4  | Tier                 | **premium_plus** — £29.99/mo, £299.99/yr. **Hard gate, no free taster.** RevenueCat promotional entitlements are the only comp/promo mechanism.                                                                                                                                                                                                                               |
-| D5  | Reuse, don't rebuild | `equipment_types`; the M9.5 Bedrock adapter (`aiBedrockClient.ts` + `aiEstimation.ts`); the #156 entitlement + `ai_usage_log` ceiling pattern; `exerciseRepository`'s visibility predicate and filter assembly. **Correction — see § Premise correction: the "deterministic substitute ranker" is _not_ shipped and must be built here.**                                     |
-| D6  | No fuzzy matching    | Any model call selects **ids from a candidate list supplied in the prompt**, validated for membership in TypeScript after parsing. Free-text name → id resolution is never used. Architecturally twinned with `specs/26-mealprint-meal-planning/design.md` § 1 — see `design.md` § Twinning.                                                                                  |
-| D7  | Re-map engine (v1)   | **Decided by the Phase E eval, not asserted** (Brad, 2026-07-25). Both candidates — the deterministic ranker and candidate-constrained AI composition — are measured head-to-head on the same inputs before either ships. Whichever wins is v1. What does **not** move to the model either way: equipment containment, read-visibility and the parent's sets/reps/rest/order. |
+| #   | Decision             | Choice                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| --- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D1  | Mental model         | **Adapt an existing workout/programme.** Generate-from-scratch is a separate flow.                                                                                                                                                                                                                                                                                                                                                              |
+| D2  | Parent ↔ variation   | Nullable self-referential `parent_workout_id` + `variation_kind` + `source_gym_id` on `workouts`, and the programme equivalent. Original never mutated.                                                                                                                                                                                                                                                                                         |
+| D3  | Saved gyms           | New `saved_gyms` table (`user_id`, `name`, `equipment_type_ids uuid[]`); a variation FKs to the gym it was adapted for.                                                                                                                                                                                                                                                                                                                         |
+| D4  | Tier                 | **premium_plus** — £29.99/mo, £299.99/yr. **Hard gate, no free taster.** RevenueCat promotional entitlements are the only comp/promo mechanism.                                                                                                                                                                                                                                                                                                 |
+| D5  | Reuse, don't rebuild | `equipment_types`; the M9.5 Bedrock adapter (`aiBedrockClient.ts` + `aiEstimation.ts`); the #156 entitlement + `ai_usage_log` ceiling pattern; `exerciseRepository`'s visibility predicate and filter assembly. **Correction — see § Premise correction: the "deterministic substitute ranker" is _not_ shipped and must be built here.**                                                                                                       |
+| D6  | No fuzzy matching    | Any model call selects **ids from a candidate list supplied in the prompt**, validated for membership in TypeScript after parsing. Free-text name → id resolution is never used. Architecturally twinned with `specs/26-mealprint-meal-planning/design.md` § 1 — see `design.md` § Twinning.                                                                                                                                                    |
+| D7  | Re-map engine (v1)   | **DECIDED 2026-07-26 by the E2 bake-off: the HYBRID** — deterministic § 6.2 shortlist (top 25/row) → model selection → model reasons, Haiku-class. Beat the ranker 50–4 on blind preference; tied the full-pool model arm 25–25 at 29 % of its cost. Evidence: `scratchpad/loadout-phase-e/VERDICT-E2.md`, `design.md` § 6.0. What did **not** move to the model: equipment containment, read-visibility and the parent's sets/reps/rest/order. |
 
 ## Premise correction (2026-07-25)
 
@@ -97,10 +97,32 @@ its own brief and its own PR.
 | P0    | `premium_plus` tier restructure (shared prerequisite — build once, here)                  | —               |
 | 0     | Data model + saved-gym CRUD + variation endpoints + entitlement guard (backend)           | P0              |
 | **E** | **Eval spike, no product code: E1 scan accuracy · E2 re-map engine bake-off**             | 0               |
-| 1     | Adaptation engine — **the arm E2 selects** — + preview endpoint (backend)                 | 0 + E           |
+| 1     | Adaptation engine — **the hybrid, per E2** — + preview endpoint (backend)                 | 0 + E           |
 | 2     | Mobile Loadout flow (athlete) **incl. the equipment scan** — entry, collect, review, save | 1 + E + design  |
 | 3     | Coach programme-level Loadout + assign                                                    | 2               |
-| 4     | Second-engine follow-up (only if E2 was close and the loser is worth revisiting)          | 2 device-verify |
+| 4     | Second-engine follow-up (**E2 resolved this — see `tasks.md` Phase 5**)                   | 2 device-verify |
+
+### ⚠ Open sequencing decision (Brad, 2026-07-26) — does the scan still ship inside Phase 2?
+
+The phase table above puts the equipment scan **inside the Phase 2 slice**, decided
+2026-07-26 so "the first user-visible Loadout has its hero moment rather than a
+checklist". Phase E's split results reopen it, because the two AI surfaces landed
+in different places (`design.md` § 1b):
+
+- **The re-map is solid** — D7 decided on evidence, the hybrid measured, costed and
+  bounded.
+- **The scan is provisional** — 0.966 recall but on 7 photos, 6 of them stock. Its
+  real-world rate is unmeasured.
+
+So there is a real choice:
+
+| Option                                                           | For                                                                               | Against                                                                                           |
+| ---------------------------------------------------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| **Keep them together** (as written)                              | The hero moment; one mobile slice, one review                                     | Ships an unvalidated accuracy story on the marquee interaction of a £29.99 tier                   |
+| **Split: re-map + saved-gym/manual collect first, scan follows** | Loadout ships on measured ground; scan lands when the real photo set validates it | First release is a checklist, which is the thing the 2026-07-26 re-sequencing was trying to avoid |
+
+**Not decided.** Either way, AC-2.1/AC-2.2 are the floor, not fallbacks, and the
+scan needs its own kill switch (`design.md` § 1b).
 
 ### Eval spike (Phase E) — why it exists
 
@@ -126,6 +148,28 @@ after the mobile flow is built around it is the expensive way to find out. So:
 - The scan endpoint then ships **inside Phase 2**, so the first user-visible
   Loadout has its hero moment rather than a checklist. It depends only on
   Phase 0's `equipment_types` work, not on the ranker.
+
+### Phase E status (2026-07-26)
+
+- **E2 — COMPLETE.** The hybrid won; D7 above is now decided on evidence.
+  Verdict: `scratchpad/loadout-phase-e/VERDICT-E2.md`; summary in `design.md`
+  § 6.0; consequences in AC-10.2 / AC-10.3 and `design.md` § 7.3.
+- **E1 — RAN, verdict PROVISIONAL.** Brad supplied 7 photos (6 stock, 1 real
+  phone photo) rather than the ~30 real ones T-E1.1 asks for, with "this can do
+  for now". Result: **0.966 recall at Opus-class, 1.000 on the single real photo,
+  3 false positives, zero hallucinated ids** — but stock photography is easy mode,
+  so **that is a ceiling, not a real-world rate**. Verdict:
+  `scratchpad/loadout-phase-e/VERDICT-E1.md`; summary in `design.md` § 8.0.
+  - **Provisional go for scan as a confirmed draft (AC-2.3); NOT yet established
+    as the only collect path.** Phase 2 may design for scan; it must not ship it
+    as the sole route on 7 photos. The real ~30-photo set is still wanted.
+  - **⚠ Two design corrections fell out of it:** the scan model must be
+    **Opus-class, not Haiku-class** (Haiku scored half the recall, missed
+    `Squat Rack` in 3 of 7 photos, invented 2 ids, and identified only 1 of the 6
+    non-catalogue items where Opus identified 5), and `createWithRetry` has
+    **effectively no margin** — max 12.27 s end-to-end against its own 12 s
+    per-attempt budget. No attempt actually breached it on these 7 easy photos; a
+    harder one tips it into a ~22 s retry against a hard 30 s ceiling.
 
 ### Phase E has two parts
 
@@ -206,7 +250,14 @@ As a user mid-flow, I can tell Loadout what kit is available in three ways.
   uncategorised row renders under "Other".
 - **AC-2.3 (scan)** I can photograph the gym; detected equipment is returned as
   a **draft** I confirm or edit before it is used. Detection never writes
-  anything on its own.
+  anything on its own. **E1 makes this load-bearing rather than defensive:** at
+  Opus-class the scan produced 3 false positives across 7 photos — a pulley-rack
+  wall read as a `Cable Machine`, a cross-trainer room read as having a
+  `Rowing Machine`, and `Bodyweight` (always true, hence the exclusion below) — so
+  the confirm step is what stands between a misread and a wrong adaptation. It also
+  sometimes describes a catalogue row in prose rather than selecting its id, so the
+  review step must surface null-labelled items prominently enough to add by hand. The scan must also **never return `Bodyweight`** — it is true of
+  every gym and is injected server-side (`design.md` § 8.0).
 - **AC-2.4** Any collect route can optionally **save the selection as a named
   gym** in the same step (name + save toggle), which creates a `saved_gyms` row.
 - **AC-2.5** The equipment context for a run is the confirmed set of
@@ -230,6 +281,22 @@ As a user mid-flow, I can tell Loadout what kit is available in three ways.
   **unresolved** with an explicit reason — never silently dropped, never
   substituted with something that does not fit the kit. The user can leave it,
   remove it, or pick manually.
+- **AC-3.5b (intensity mismatch — added 2026-07-26)** If a row's parent target is
+  a **strength range (reps ≤ 6)** and the chosen alternative has lost every
+  **loadable** equipment type (barbell, dumbbells, EZ bar, machines, cables, sled
+  — ⚠ narrower than the first sketch, which wrongly counted `Kettlebell` and
+  `Medicine Ball`; design § 7.1b records the sensitivity test showing the count is
+  unchanged either way), the row is returned flagged `intensity_mismatch`
+  even though the exercise itself is a valid pattern match. E2 measured this on
+  **10 of 171 swaps** — `Barbell Deadlift 4×4-6 → Band Good Morning 4×4-6` — where
+  the selection is correct and the prescription is still unusable, because bands
+  cannot express that intensity. The check is deterministic: no model, no cost, no
+  ceiling. The user can accept it as accessory volume, swap manually, or drop the
+  row.
+  **Out of scope for v1, and deliberately so:** changing the target to suit the
+  kit (4×4-6 → 3×12-15). That would relax `design.md` § 1's rule 2 — targets are a
+  database property, never model-authored — and is a **Brad decision with its own
+  slice**, not something the ranker may do implicitly (`design.md` § 7.1b).
 - **AC-3.5** The adaptation is computed as a **preview**; nothing is persisted
   until the user saves. Abandoning the flow writes nothing.
 - **AC-3.6** Candidate exercises are drawn only from exercises the caller is
@@ -326,8 +393,21 @@ As a user mid-flow, I can tell Loadout what kit is available in three ways.
 - **AC-10.1** The equipment-scan endpoint enforces a per-day ceiling following
   the #156 pattern: `429` with `ai_daily_limit`, usage rows written only for
   **actual inferences**, fail-safe env parsing.
-- **AC-10.2** The deterministic re-map (D7) has **no** ceiling and writes no
-  usage rows — it costs nothing to run.
+- **AC-10.2** ~~The deterministic re-map (D7) has **no** ceiling and writes no
+  usage rows — it costs nothing to run.~~ **REVISED 2026-07-26 — D7 resolved to
+  the hybrid, so the re-map is model-backed and this AC's premise is gone.** The
+  re-map enforces a per-day ceiling on the same #156 pattern as AC-10.1
+  (`429 ai_daily_limit`, usage rows for actual inferences only, fail-safe env
+  parse). Measured cost is $0.0057 per adaptation — ~$0.51/user/month at three a
+  day — so the ceiling is an abuse control, not a unit-economics control.
+  ⚠ **Brad checkpoint: the number is undecided and deliberately not proposed
+  here.** Hitting a cap mid-gym is a bad failure (§ Eval spike), so this wants a
+  deliberate call rather than a default copied from Mealprint.
+- **AC-10.3** Programme-level adaptation (US-8) runs as an **async job**, not a
+  synchronous request — at 2.60 s per workout the 120-workout cap is ~5 minutes,
+  far past the 30 s API Gateway ceiling (`design.md` § 7.3, revised 2026-07-26).
+  The job infrastructure is shared with spec-26 Mealprint and must not be built
+  twice.
 
 ### US-11 — Premium+ exists as a real, purchasable tier (P0)
 
@@ -382,7 +462,11 @@ US-9.
 - Sharing saved gyms between users, or a coach reading a client's saved gyms.
 - Auto-re-adaptation when a saved gym's equipment changes (variations are
   point-in-time snapshots).
-- Model-ranked swaps as the v1 engine (D7) and any async job infrastructure.
+- ~~Model-ranked swaps as the v1 engine (D7) and any async job infrastructure.~~
+  **No longer a non-goal (2026-07-26): E2 selected the hybrid, so model selection
+  IS the v1 engine and programme-level needs the async job (AC-10.3).** Still a
+  non-goal: letting the model choose anything outside the server-built candidate
+  list, or touching sets/reps/rest/order.
 - Marketing-site copy — the Loadout rename and the £29.99/£299.99 reprice
   already shipped to `packages/web` in PR #311.
 - Reviving `profiles.available_equipment` (superseded by `saved_gyms`; left in
