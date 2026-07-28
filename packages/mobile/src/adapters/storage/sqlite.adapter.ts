@@ -369,6 +369,20 @@ export class SQLiteStorageAdapter implements StoragePort {
         -- answers "still retryable". Dueness is applied by the drain, via
         -- isMutationDue in sync.command.
         next_attempt_at TEXT,
+        -- How many times this entry has been POSTPONED without an attempt being
+        -- charged (offline/transport failure, or an unresolvable reference
+        -- catalogue). Distinct from retry_count, which counts attempts the server
+        -- actually answered.
+        --
+        -- Its purpose is a CEILING. Deferral is deliberately free — an offline
+        -- device has made no statement about a request's validity — but "free
+        -- forever" meant a mutation against a permanently unreachable endpoint
+        -- retried indefinitely while being invisible to every sync surface:
+        -- getFailedExhaustedEntries gates on retry_count >= max_retries, and that
+        -- query is the sole source for both the sync-failed banner and the review
+        -- screen. Past MAX_TRANSPORT_DEFERRALS the drain charges the budget again,
+        -- so the entry exhausts, surfaces, and becomes user-retryable.
+        defer_count INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
@@ -833,6 +847,7 @@ export class SQLiteStorageAdapter implements StoragePort {
             -- AFTER this rebuild.
             idempotency_key TEXT,
             next_attempt_at TEXT,
+            defer_count INTEGER NOT NULL DEFAULT 0,
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             updated_at TEXT NOT NULL DEFAULT (datetime('now'))
           );
@@ -878,7 +893,8 @@ export class SQLiteStorageAdapter implements StoragePort {
     }
 
     // Additive `sync_queue` columns for installs created before them:
-    // `idempotency_key` (safe retries) and `next_attempt_at` (backoff).
+    // `idempotency_key` (safe retries), `next_attempt_at` (backoff) and
+    // `defer_count` (the ceiling on budget-free postponements).
     //
     // ⚠ Ordering: this MUST run after the M10.6 rebuild above. That rebuild
     // copies an explicit column list into a fresh table and drops the old one,
@@ -898,9 +914,17 @@ export class SQLiteStorageAdapter implements StoragePort {
       name: string;
     }[];
     const syncQueueNames = new Set(syncQueueColumns.map((c) => c.name));
-    for (const col of ["idempotency_key", "next_attempt_at"]) {
+    // `NOT NULL DEFAULT 0` is legal in an SQLite `ADD COLUMN` precisely because
+    // the default is non-null, so existing rows backfill to 0 — i.e. "never
+    // deferred", which is the correct starting point for a pre-existing entry.
+    const additiveSyncQueueColumns: [string, string][] = [
+      ["idempotency_key", "TEXT"],
+      ["next_attempt_at", "TEXT"],
+      ["defer_count", "INTEGER NOT NULL DEFAULT 0"],
+    ];
+    for (const [col, type] of additiveSyncQueueColumns) {
       if (!syncQueueNames.has(col)) {
-        db.execSync(`ALTER TABLE sync_queue ADD COLUMN ${col} TEXT`);
+        db.execSync(`ALTER TABLE sync_queue ADD COLUMN ${col} ${type}`);
       }
     }
 
@@ -1077,8 +1101,11 @@ export class SQLiteStorageAdapter implements StoragePort {
 
   markMutationFailed(id: number, errorMessage: string): void {
     const db = this.getDb();
-    // Exponential backoff via `next_attempt_at`, which `getPendingMutations`
-    // honours. Without it, retry cadence WAS drain cadence — and drains fire on
+    // Exponential backoff via `next_attempt_at`, which the DRAIN honours (through
+    // `isMutationDue`) — `getPendingMutations` deliberately does not filter on it,
+    // because it answers "still retryable", which is what the status UI and the
+    // coalescing paths need. Without the backoff, retry cadence WAS drain cadence
+    // — and drains fire on
     // mount, on every foreground transition, on reconnect, and from a dozen
     // inline call sites — so three quick app-switches during a server blip burnt
     // the entire 3-attempt budget in seconds and left the entry stranded until
@@ -1112,13 +1139,20 @@ export class SQLiteStorageAdapter implements StoragePort {
   ): void {
     const db = this.getDb();
     // `retry_count` deliberately NOT incremented — see the port docstring. The row
-    // stays `failed` so it remains visible to the sync UI, and carries a window so
-    // a hot trigger loop doesn't spin on it.
+    // stays `failed` and carries a window so a hot trigger loop doesn't spin on it.
+    //
+    // `defer_count` IS incremented, and is what stops "free" from meaning
+    // "forever": the drain reads it and falls back to `markMutationFailed` past
+    // MAX_TRANSPORT_DEFERRALS, so an entry that can never succeed still exhausts
+    // and still reaches the user. Note a deferred row is NOT visible in the sync UI
+    // on its own — `getFailedExhaustedEntries` gates on `retry_count >=
+    // max_retries` — which is precisely why the ceiling has to exist.
     db.runSync(
       `UPDATE sync_queue
        SET status = 'failed',
            error_message = ?,
            next_attempt_at = datetime('now', '+' || ? || ' seconds'),
+           defer_count = defer_count + 1,
            updated_at = datetime('now')
        WHERE id = ?`,
       [reason, Math.max(1, Math.trunc(retryAfterSeconds)), id],
@@ -1264,6 +1298,12 @@ export class SQLiteStorageAdapter implements StoragePort {
              -- NEXT drain, not whenever the old backoff window happened to
              -- expire — otherwise tapping Retry appears to do nothing.
              next_attempt_at = NULL,
+             -- Also a clean slate for the deferral ceiling. An explicit Retry (or
+             -- a reconnect resurrect) is new information — usually the very
+             -- connectivity whose absence caused the deferrals — so the entry
+             -- should get its full run of budget-free postponements again rather
+             -- than charging the retry budget on its first transport failure.
+             defer_count = 0,
              updated_at = datetime('now')
          WHERE id IN (${placeholders})
            AND status IN ('failed', 'permanently_failed')`,
@@ -3437,6 +3477,7 @@ function mapRow(row: Record<string, unknown>): SyncQueueEntry {
     // whether to send the header.
     idempotencyKey: (row.idempotency_key as string | null) ?? null,
     nextAttemptAt: (row.next_attempt_at as string | null) ?? null,
+    deferCount: (row.defer_count as number | null) ?? 0,
   };
 }
 

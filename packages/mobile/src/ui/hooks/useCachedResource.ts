@@ -67,6 +67,12 @@ export type CachedResourceConfig<T> = {
    * below) so an optimistic offline mutation surfaces without the caller having
    * to remember a `reload()`. Omit to keep the previous behaviour.
    *
+   * ⚠ List ONLY tables `read` actually consults. A table here whose row is deleted
+   * is interpreted as an invalidation and triggers a silent NETWORK refresh (see
+   * the effect below), so an over-broad list converts unrelated local
+   * invalidations into round trips — `HOME_TABLES` carried `cached_dashboard` this
+   * way and made a per-set `invalidateDashboard()` fetch Home mid-workout.
+   *
    * Pass a module-level constant (e.g. `RECIPE_TABLES`) rather than building the
    * array inline per render.
    */

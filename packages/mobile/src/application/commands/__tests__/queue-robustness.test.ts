@@ -1,4 +1,8 @@
-import { isMutationDue, processSyncQueue } from "../sync.command";
+import {
+  isMutationDue,
+  processSyncQueue,
+  MAX_TRANSPORT_DEFERRALS,
+} from "../sync.command";
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
 import { InMemoryAuthAdapter } from "@/adapters/auth/__tests__/in-memory-auth.adapter";
 import { refreshWorkouts } from "@/application/queries/workouts.query";
@@ -339,7 +343,7 @@ describe("deferral does not consume the retry budget", () => {
     expect(entry.nextAttemptAt).not.toBeNull();
   });
 
-  it("stays retryable across many offline drains — it can never exhaust", async () => {
+  it("survives an offline stretch far longer than the old 3-attempt budget", async () => {
     enqueueWorkoutCreate();
     mockFetch.mockRejectedValue(new TypeError("Network request failed"));
 
@@ -349,6 +353,66 @@ describe("deferral does not consume the retry budget", () => {
 
     expect(storage.getPendingMutations()).toHaveLength(1);
     expect(storage.getFailedExhaustedEntries()).toHaveLength(0);
+  });
+
+  it("but the free run is BOUNDED — it escalates and becomes visible", async () => {
+    // Budget-free must not mean consequence-free. A deferred entry appears on NO
+    // sync surface: getFailedExhaustedEntries gates on retryCount >= maxRetries,
+    // and it is the sole source for both the sync-failed banner
+    // (SyncFailedBannerMount) and the review screen (SyncFailedContainer). So an
+    // endpoint that can never be reached — or a throw from our own request-building
+    // code, which lands on the same branch — would otherwise retry silently for the
+    // life of the install, with no banner and no way to discard it.
+    enqueueWorkoutCreate();
+    mockFetch.mockRejectedValue(new TypeError("Network request failed"));
+
+    // Past the ceiling, then enough charged attempts to exhaust the budget.
+    for (let i = 0; i < MAX_TRANSPORT_DEFERRALS + 5; i++) {
+      await processSyncQueue(storage, auth, "https://api.test", AFTER_BACKOFF);
+    }
+
+    const exhausted = storage.getFailedExhaustedEntries();
+    expect(exhausted).toHaveLength(1);
+    expect(exhausted[0].entityId).toBe("local-w1");
+  });
+
+  it("charges nothing right up to the ceiling, then charges", async () => {
+    enqueueWorkoutCreate();
+    mockFetch.mockRejectedValue(new TypeError("Network request failed"));
+
+    for (let i = 0; i < MAX_TRANSPORT_DEFERRALS; i++) {
+      await processSyncQueue(storage, auth, "https://api.test", AFTER_BACKOFF);
+    }
+    // Exactly at the ceiling: every drain so far was free.
+    expect(storage.getPendingMutations()[0].retryCount).toBe(0);
+    expect(storage.getPendingMutations()[0].deferCount).toBe(
+      MAX_TRANSPORT_DEFERRALS,
+    );
+
+    await processSyncQueue(storage, auth, "https://api.test", AFTER_BACKOFF);
+    expect(storage.getPendingMutations()[0].retryCount).toBe(1);
+  });
+
+  it("an explicit Retry restores the full free run", async () => {
+    // A Retry (or a reconnect resurrect) is new information — usually the very
+    // connectivity whose absence caused the deferrals — so the entry must not be
+    // left one transport failure away from exhausting again.
+    enqueueWorkoutCreate();
+    mockFetch.mockRejectedValue(new TypeError("Network request failed"));
+
+    for (let i = 0; i < MAX_TRANSPORT_DEFERRALS + 5; i++) {
+      await processSyncQueue(storage, auth, "https://api.test", AFTER_BACKOFF);
+    }
+    const [stranded] = storage.getFailedExhaustedEntries();
+    storage.resetFailedEntries([stranded.id]);
+
+    const [reset] = storage.getPendingMutations();
+    expect(reset.retryCount).toBe(0);
+    expect(reset.deferCount).toBe(0);
+
+    await processSyncQueue(storage, auth, "https://api.test", AFTER_BACKOFF);
+    // Still free, not charged.
+    expect(storage.getPendingMutations()[0].retryCount).toBe(0);
   });
 
   it("a real server rejection DOES still burn the budget", async () => {

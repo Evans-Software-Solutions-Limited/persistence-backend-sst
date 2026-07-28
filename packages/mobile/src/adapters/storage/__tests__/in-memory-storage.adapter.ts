@@ -199,6 +199,7 @@ export class InMemoryStorageAdapter implements StoragePort {
       // Mirrors the SQLite adapter: stamped once at enqueue, never rewritten.
       idempotencyKey: `${entry.entityId ?? `${entry.entityType}:${entry.operation}`}-${this.nextId}`,
       nextAttemptAt: null,
+      deferCount: 0,
     });
   }
 
@@ -250,11 +251,15 @@ export class InMemoryStorageAdapter implements StoragePort {
     reason: string,
     retryAfterSeconds = 5,
   ): void {
-    // Parity with SQLite: postpone WITHOUT consuming the retry budget.
+    // Parity with SQLite: postpone WITHOUT consuming the retry budget, but DO
+    // advance `deferCount` — that counter is the ceiling the drain enforces, so a
+    // double that left it at 0 would make an unreachable endpoint look infinitely
+    // (and invisibly) retryable in tests while the real adapter escalated.
     const entry = this.queue.find((e) => e.id === id);
     if (entry) {
       entry.status = "failed";
       entry.errorMessage = reason;
+      entry.deferCount++;
       entry.nextAttemptAt = new Date(
         Date.now() + Math.max(1, Math.trunc(retryAfterSeconds)) * 1000,
       ).toISOString();
@@ -365,6 +370,9 @@ export class InMemoryStorageAdapter implements StoragePort {
       entry.status = "pending";
       entry.retryCount = 0;
       entry.nextAttemptAt = null;
+      // Parity with SQLite: a Retry is new information, so the deferral ceiling
+      // resets too and the entry gets its full run of budget-free postponements.
+      entry.deferCount = 0;
       entry.errorMessage = null;
     }
   }
@@ -446,6 +454,18 @@ export class InMemoryStorageAdapter implements StoragePort {
         syncedAt: entry.syncedAt,
       });
     }
+    // Nested `exerciseId` references inside cached workout structures. Mirrors the
+    // three SQLite tables `swapLocalExerciseId` rewrites via
+    // `replaceExerciseIdDeep` — including `cached_coach_workout_library`, which
+    // this branch made a first-class holder of `local-` ids (a coach authoring
+    // offline against a just-created custom exercise puts one there). A double
+    // that skipped these would encode the pre-fix behaviour — a workout whose
+    // exercise reference stays local and 400s on open — as correct.
+    for (const workout of this.allCachedWorkouts()) {
+      for (const we of workout.exercises ?? []) {
+        if (we.exerciseId === localId) we.exerciseId = serverId;
+      }
+    }
     for (const e of this.queue) {
       if (e.entityType === "exercise" && e.entityId === localId) {
         e.entityId = serverId;
@@ -454,6 +474,19 @@ export class InMemoryStorageAdapter implements StoragePort {
         }
       }
     }
+  }
+
+  /**
+   * Every cached `Workout` object, across the detail cache, the list slices and
+   * the coach library — the in-memory equivalents of `cached_workout_detail`,
+   * `cached_workouts` and `cached_coach_workout_library`. Yielded by reference so
+   * callers can mutate in place.
+   */
+  private *allCachedWorkouts(): Generator<Workout> {
+    for (const detail of this.workoutDetailCache.values()) yield detail.workout;
+    for (const slice of this.workoutsListCache.values()) yield* slice.workouts;
+    for (const slice of this.coachWorkoutLibraryCache.values())
+      yield* slice.workouts;
   }
 
   swapLocalNutritionEntryId(localId: string, serverId: string): void {
@@ -501,6 +534,16 @@ export class InMemoryStorageAdapter implements StoragePort {
     }
     // Rewrite the matching top-level id in every cached list slice.
     for (const slice of this.workoutsListCache.values()) {
+      for (const w of slice.workouts) {
+        if (w.id === localId) w.id = serverId;
+      }
+    }
+    // …and in the coach library, which this branch made a first-class holder of
+    // `local-` ids (a coach-authored workout lands there before it flushes). The
+    // SQLite adapter rewrites it; without the same step here the double would
+    // encode the pre-fix behaviour — a stale local id that 400s when the row is
+    // opened — as correct, and the fix would be untested.
+    for (const slice of this.coachWorkoutLibraryCache.values()) {
       for (const w of slice.workouts) {
         if (w.id === localId) w.id = serverId;
       }

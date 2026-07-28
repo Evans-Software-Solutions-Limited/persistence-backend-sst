@@ -175,6 +175,52 @@ function prepareExercisePayload(
 }
 
 /**
+ * How many times an entry may be POSTPONED without consuming its retry budget
+ * before the drain starts charging the budget again.
+ *
+ * Deferral exists because a transport failure or a missing reference catalogue is
+ * not the server rejecting the request — no attempt was made in the sense the
+ * budget measures — and charging it meant ~25 seconds offline could exhaust an
+ * entry and strand real user data.
+ *
+ * But budget-free must not mean consequence-free. A deferred entry is invisible to
+ * every sync surface: `getFailedExhaustedEntries` gates on
+ * `retryCount >= maxRetries`, and that query is the sole source for both the
+ * sync-failed banner and the review screen. Deferring forever therefore means a
+ * mutation that can NEVER succeed — a permanently unreachable host, a catalogue
+ * entry that will never exist, a bug in the request builder — retries silently for
+ * the life of the install with no banner, no review row, and no way for the user to
+ * discard it. That is a worse failure than the one deferral fixed.
+ *
+ * Past this ceiling the drain falls back to `markMutationFailed`, so the entry
+ * exhausts, surfaces in /sync-failed, and becomes user-retryable (a Retry resets
+ * the counter, giving it the full free run again). At a ≥5s window per deferral the
+ * ceiling is at least a minute of continuous failure, and in practice many app
+ * foregrounds — far beyond the blip this protects against.
+ */
+export const MAX_TRANSPORT_DEFERRALS = 12;
+
+/**
+ * Postpone this entry without charging its retry budget — unless it has already
+ * used up its free postponements, in which case charge the budget so it can
+ * eventually exhaust and become visible. See `MAX_TRANSPORT_DEFERRALS`.
+ *
+ * `deferCount` is read from the caller's snapshot, i.e. the pre-update value, so
+ * the Nth call is the one that escalates.
+ */
+function deferOrCharge(
+  storage: StoragePort,
+  entry: SyncQueueEntry,
+  reason: string,
+): void {
+  if (entry.deferCount >= MAX_TRANSPORT_DEFERRALS) {
+    storage.markMutationFailed(entry.id, reason);
+    return;
+  }
+  storage.markMutationDeferred(entry.id, reason);
+}
+
+/**
  * Is this entry eligible to be sent right now?
  *
  * `getPendingMutations` returns everything still RETRYABLE — the question the
@@ -339,7 +385,13 @@ export async function processSyncQueue(
           // after ~25s of drains and stranded the user's exercise where only
           // `/sessions/record` gets auto-resurrected. `markMutationDeferred`
           // postpones with a backoff window and leaves `retry_count` alone.
-          storage.markMutationDeferred(entry.id, prepared.deferReason);
+          //
+          // Bounded, though — see `MAX_TRANSPORT_DEFERRALS`. An `unresolvable`
+          // reference in particular may never become resolvable (a catalogue entry
+          // that simply doesn't exist), and deferring that forever would keep the
+          // exercise invisible in the queue instead of surfacing it where the user
+          // can see the named members and discard or retry it.
+          deferOrCharge(storage, entry, prepared.deferReason);
           failed++;
           continue;
         }
@@ -656,12 +708,18 @@ export async function processSyncQueue(
       // to every future drain, and `resurrectAndFlush` only rescues
       // `/sessions/record`. A workout created on the tube was simply gone.
       //
-      // Deferring instead keeps it retryable indefinitely, which is correct: an
-      // offline device has made no statement about the request's validity. A
-      // genuine server rejection still arrives as a `SyncHttpError` and still
-      // burns the budget below.
+      // Deferring instead keeps it retryable, which is correct: an offline device
+      // has made no statement about the request's validity. A genuine server
+      // rejection still arrives as a `SyncHttpError` and still burns the budget
+      // below.
+      //
+      // "Retryable" and not "retryable indefinitely": past
+      // `MAX_TRANSPORT_DEFERRALS` this charges the budget after all, so an endpoint
+      // that is permanently unreachable — or a throw from our own request-building
+      // code, which lands here too and would otherwise loop invisibly forever —
+      // still exhausts and still reaches the user.
       if (!(err instanceof SyncHttpError)) {
-        storage.markMutationDeferred(entry.id, message);
+        deferOrCharge(storage, entry, message);
         failed++;
         continue;
       }

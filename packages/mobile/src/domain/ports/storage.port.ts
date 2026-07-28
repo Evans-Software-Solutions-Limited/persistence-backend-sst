@@ -1108,6 +1108,23 @@ export type SyncQueueEntry = {
    * The drain applies dueness itself (see `isMutationDue` in sync.command).
    */
   nextAttemptAt: string | null;
+  /**
+   * How many times this entry has been POSTPONED without an attempt being charged
+   * — see `markMutationDeferred`. Distinct from `retryCount`, which counts
+   * attempts the server actually answered.
+   *
+   * The drain reads it to enforce a CEILING on budget-free postponement
+   * (`MAX_TRANSPORT_DEFERRALS`). Without one, an entry addressing a permanently
+   * unreachable endpoint retried forever while being invisible to every sync
+   * surface: `getFailedExhaustedEntries` — the sole source for both the
+   * sync-failed banner and the review screen — gates on
+   * `retryCount >= maxRetries`, which deferral never advances. Past the ceiling
+   * the drain charges the budget again so the entry exhausts, surfaces, and
+   * becomes user-retryable. Reset to 0 by `resetFailedEntries`.
+   *
+   * `0` for rows enqueued before the column existed.
+   */
+  deferCount: number;
 };
 
 export type SyncStats = {

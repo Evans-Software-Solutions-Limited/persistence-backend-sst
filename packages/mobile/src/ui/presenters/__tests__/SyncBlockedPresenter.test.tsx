@@ -28,6 +28,7 @@ function makeEntry(overrides: Partial<SyncQueueEntry> = {}): SyncQueueEntry {
     },
     idempotencyKey: null,
     nextAttemptAt: null,
+    deferCount: 0,
     ...overrides,
   };
 }

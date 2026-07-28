@@ -303,6 +303,94 @@ describe("unsynced local-id handling", () => {
       ).toEqual([]);
     });
 
+    it("discards an IN-FLIGHT sibling PATCH, which the create-in-flight rule must not shield", async () => {
+      // The reachable hole in the fix above. Preserving an in-flight entry is
+      // ONLY about a create that may already have committed a server row. An
+      // in-flight PATCH addresses `/exercises/local-…`, which Postgres rejects
+      // with 22P02 before it can change anything, so there is no server state to
+      // protect — and excluding it left it stranded against a discarded local id
+      // that no swap would ever rewrite: three wasted retries, then
+      // "Invalid identifier format" in /sync-failed for an exercise the user
+      // deleted, the precise symptom this command exists to remove.
+      //
+      // How it happens in the field: the create gets deferred behind a backoff
+      // window (offline blip) while the edit's PATCH goes in flight ahead of it —
+      // the drain skips not-yet-due rows and takes the next entry.
+      storage.saveCustomExercise(localExercise("local-ex-6"));
+      storage.enqueueMutation({
+        entityType: "exercise",
+        entityId: "local-ex-6",
+        operation: "create",
+        payload: { name: "My Lift" },
+        endpoint: "/exercises",
+        method: "POST",
+      });
+      storage.enqueueMutation({
+        entityType: "exercise",
+        entityId: "local-ex-6",
+        operation: "update",
+        payload: { name: "Renamed" },
+        endpoint: "/exercises/local-ex-6",
+        method: "PATCH",
+      });
+      const patch = storage
+        .getQueuedEntriesForEntity("exercise", "local-ex-6")
+        .find((e) => e.operation === "update")!;
+      storage.markMutationInFlight(patch.id);
+      // The create is NOT in flight — that is what makes this branch 2.
+      expect(
+        storage
+          .getQueuedEntriesForEntity("exercise", "local-ex-6")
+          .find((e) => e.operation === "create")?.status,
+      ).not.toBe("in_flight");
+
+      const api = apiThatMustNotBeCalled();
+      await deleteExerciseCommand({ api, storage }, "local-ex-6");
+
+      expect(
+        storage.getQueuedEntriesForEntity("exercise", "local-ex-6"),
+      ).toEqual([]);
+    });
+
+    it("drops sibling edits when it queues a delete behind an in-flight create", async () => {
+      // The create must survive (it may have committed), but its sibling edits
+      // cannot have — their create hasn't returned yet — so applying them
+      // server-side is pure waste against a row the very next entry deletes.
+      storage.saveCustomExercise(localExercise("local-ex-7"));
+      storage.enqueueMutation({
+        entityType: "exercise",
+        entityId: "local-ex-7",
+        operation: "create",
+        payload: { name: "My Lift" },
+        endpoint: "/exercises",
+        method: "POST",
+      });
+      storage.enqueueMutation({
+        entityType: "exercise",
+        entityId: "local-ex-7",
+        operation: "update",
+        payload: { name: "Renamed" },
+        endpoint: "/exercises/local-ex-7",
+        method: "PATCH",
+      });
+      const create = storage
+        .getQueuedEntriesForEntity("exercise", "local-ex-7")
+        .find((e) => e.operation === "create")!;
+      storage.markMutationInFlight(create.id);
+
+      const api = apiThatMustNotBeCalled();
+      await deleteExerciseCommand({ api, storage }, "local-ex-7");
+
+      const queued = storage.getQueuedEntriesForEntity(
+        "exercise",
+        "local-ex-7",
+      );
+      expect(queued.map((e) => e.operation).sort()).toEqual([
+        "create",
+        "delete",
+      ]);
+    });
+
     it("goes through the API when the create has already COMPLETED", async () => {
       // A completed create means the server has the row; the local id may simply
       // not have been swapped yet. Deleting locally only would orphan it.

@@ -835,6 +835,50 @@ describe("InMemoryStorageAdapter", () => {
         expect(pending.endpoint).toBe("/exercises/server-9");
       });
 
+      it("rewrites nested exerciseId refs across detail, list and coach library", () => {
+        // Mirrors the three tables the SQLite adapter walks with
+        // `replaceExerciseIdDeep`. A workout authored against a just-created (and
+        // still unsynced) custom exercise holds its `local-` id in every slice it
+        // appears in; missing any of them sends a local id to the API.
+        const withRef = (id: string) =>
+          buildWorkout({
+            id,
+            exercises: [
+              {
+                id: `we-${id}`,
+                exerciseId: "local-1",
+                sortOrder: 0,
+                supersetGroup: null,
+                targetSets: 3,
+                targetRepsMin: 8,
+                targetRepsMax: 10,
+                targetDurationSeconds: null,
+                restSeconds: 60,
+                notes: null,
+                exercise: null,
+              },
+            ],
+          });
+        storage.cacheWorkoutDetail("user-1", withRef("wk-detail"));
+        storage.cacheWorkoutsList("user-1", "mine", [withRef("wk-list")], null);
+        storage.cacheCoachWorkoutLibrary("user-1", [withRef("wk-coach")]);
+
+        storage.swapLocalExerciseId("local-1", "server-9");
+
+        expect(
+          storage.getCachedWorkoutDetail("user-1", "wk-detail")?.workout
+            .exercises[0].exerciseId,
+        ).toBe("server-9");
+        expect(
+          storage.getCachedWorkoutsList("user-1", "mine")?.workouts[0]
+            .exercises[0].exerciseId,
+        ).toBe("server-9");
+        expect(
+          storage.getCachedCoachWorkoutLibrary("user-1")?.[0].exercises[0]
+            .exerciseId,
+        ).toBe("server-9");
+      });
+
       it("is a no-op when the ids are equal", () => {
         storage.saveCustomExercise(buildExercise({ id: "ex-1" }));
         storage.swapLocalExerciseId("ex-1", "ex-1");
@@ -918,6 +962,23 @@ describe("InMemoryStorageAdapter", () => {
         const workoutEntry = pending.find((e) => e.entityType === "workout");
         expect(workoutEntry!.entityId).toBe(serverWorkoutId);
         expect(workoutEntry!.endpoint).toBe(`/workouts/${serverWorkoutId}`);
+      });
+
+      it("re-points the COACH LIBRARY slice too", () => {
+        // The coach library became a first-class holder of `local-` ids when
+        // coach-authored workouts started being written there offline. Without
+        // this the row keeps its local id after the create flushes, and opening it
+        // 400s until the next focus refresh — and the SQLite adapter rewrites it,
+        // so a double that didn't would leave that fix unguarded.
+        storage.cacheCoachWorkoutLibrary("user-1", [
+          buildWorkout({ id: localWorkoutId, name: "Client Push" }),
+        ]);
+
+        storage.swapLocalWorkoutId(localWorkoutId, serverWorkoutId);
+
+        expect(storage.getCachedCoachWorkoutLibrary("user-1")?.[0].id).toBe(
+          serverWorkoutId,
+        );
       });
 
       it("is a no-op when the ids are equal", () => {

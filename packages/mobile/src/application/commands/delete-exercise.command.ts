@@ -57,6 +57,16 @@ export async function deleteExerciseCommand(
     // immediate API call would 400. `swapLocalExerciseId` rewrites this endpoint
     // when the in-flight create's reply lands, so the DELETE then reaches the real
     // resource. Evict locally so the UI reflects the user's intent immediately.
+    //
+    // Sibling edits are dropped: they can't have committed (their create hasn't
+    // returned yet), so applying them server-side is pure waste against a row the
+    // very next queue entry deletes. The in-flight create itself is deliberately
+    // left alone — see above.
+    deps.storage.discardEntries(
+      queued
+        .filter((entry) => entry.id !== inFlightCreate.id)
+        .map((entry) => entry.id),
+    );
     deps.storage.enqueueMutation({
       entityType: "exercise",
       entityId: id,
@@ -72,20 +82,28 @@ export async function deleteExerciseCommand(
   if (creates.length > 0) {
     // Never sent (or terminally failed) — purely local. Discard EVERY queued
     // entry for this exercise, not just the creates: an edit made while the create
-    // was blocked/in-flight enqueues its own `PATCH /exercises/local-…`, and
-    // leaving that behind would have it address a discarded id forever, burn its
-    // budget, and surface in /sync-failed as an unexplainable error for an
-    // exercise the user deleted.
+    // was blocked enqueues its own `PATCH /exercises/local-…`, and leaving that
+    // behind would have it address a discarded id forever, burn its budget, and
+    // surface in /sync-failed as an unexplainable error for an exercise the user
+    // deleted.
     //
-    // `in_flight` siblings are still excluded, for the same
-    // may-already-have-committed reason as above. (A PATCH cannot meaningfully be
-    // in flight when its create has not been sent, so this is defence rather than
-    // a reachable case.)
-    deps.storage.discardEntries(
-      queued
-        .filter((entry) => entry.status !== "in_flight")
-        .map((entry) => entry.id),
-    );
+    // ⚠ `in_flight` siblings are discarded here TOO, which looks like it
+    // contradicts the branch above but doesn't. What must be preserved is an
+    // in-flight CREATE, because it may already have committed a row we'd then
+    // orphan — and branch 1 has already claimed every such case. Everything that
+    // can still be in flight at this point addresses `/exercises/local-…`, which
+    // Postgres rejects with 22P02 before it can change anything, so there is no
+    // server state to protect and nothing to reconcile: dropping the row while the
+    // doomed request is airborne just means the drain's completion/failure update
+    // no-ops, which is exactly right.
+    //
+    // Reachable, and it was: a create deferred behind a backoff window while an
+    // edit's PATCH went in flight ahead of it (the drain skips not-yet-due rows and
+    // takes the next entry). Excluding in-flight entries here stranded that PATCH
+    // against a discarded local id, where no id swap would ever rewrite it — it
+    // burnt all three retries and landed in /sync-failed as
+    // "Invalid identifier format", the precise symptom this command exists to stop.
+    deps.storage.discardEntries(queued.map((entry) => entry.id));
     deps.storage.removeCachedExercise(id);
     return ok(undefined);
   }

@@ -25,8 +25,20 @@ export const EXERCISE_TABLES = ["cached_exercises"] as const;
 /** Nutrition library surfaces. */
 export const RECIPE_TABLES = ["cached_recipes", "cached_meals"] as const;
 
-/** Home aggregate payload. `cached_dashboard` is the older Home slice. */
-export const HOME_TABLES = ["cached_home", "cached_dashboard"] as const;
+/**
+ * Home aggregate payload.
+ *
+ * ⚠ `cached_dashboard` is deliberately NOT here, despite being the older Home
+ * slice of the same shape. These constants name the tables a resource READS, and
+ * that contract is load-bearing: `useCachedResource` treats a subscribed table
+ * whose row has vanished as an invalidation and kicks a silent network refresh.
+ * Listing a table the resource doesn't read turns every unrelated invalidation of
+ * it into a wasted round trip — `useGetHome` reads `cached_home` only, so
+ * including `cached_dashboard` made `ActiveSessionContainer`'s per-set
+ * `invalidateDashboard()` cost a fetch mid-workout where it had been a local
+ * re-read. Whichever hook actually reads `cached_dashboard` should declare it.
+ */
+export const HOME_TABLES = ["cached_home"] as const;
 
 /**
  * The outbound mutation queue. Subscribing to this is how a surface learns that
