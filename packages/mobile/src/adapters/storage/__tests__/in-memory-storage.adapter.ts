@@ -200,6 +200,7 @@ export class InMemoryStorageAdapter implements StoragePort {
       idempotencyKey: `${entry.entityId ?? `${entry.entityType}:${entry.operation}`}-${this.nextId}`,
       nextAttemptAt: null,
       deferCount: 0,
+      dispatchCount: 0,
     });
   }
 
@@ -212,6 +213,13 @@ export class InMemoryStorageAdapter implements StoragePort {
         (e.status === "pending" || e.status === "failed") &&
         e.retryCount < e.maxRetries,
     );
+  }
+
+  markMutationDispatched(id: number): void {
+    // Parity with SQLite: monotonic, never reset. A double that left it at 0 would
+    // make an already-sent create look coalescable and hide the key-replay bug.
+    const entry = this.queue.find((e) => e.id === id);
+    if (entry) entry.dispatchCount++;
   }
 
   markMutationInFlight(id: number): boolean {

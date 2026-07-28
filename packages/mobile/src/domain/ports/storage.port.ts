@@ -238,6 +238,14 @@ export interface StoragePort {
    */
   recoverInFlightMutations(): number;
   /**
+   * Record that a request for this entry is about to be sent. Increments
+   * `dispatchCount` and nothing else. Called by the drain immediately before
+   * `fetch` — not at claim time, because a claimed entry can still be deferred
+   * without being sent, and treating that as "dispatched" would needlessly
+   * disable coalescing while the reference catalogue loads.
+   */
+  markMutationDispatched(id: number): void;
+  /**
    * Postpone an entry WITHOUT consuming its retry budget.
    *
    * The distinction that matters: `markMutationFailed` means "the server rejected
@@ -1125,6 +1133,28 @@ export type SyncQueueEntry = {
    * `0` for rows enqueued before the column existed.
    */
   deferCount: number;
+  /**
+   * How many times a request for this entry has actually been DISPATCHED
+   * (incremented immediately before `fetch`). Never reset by any path — which is
+   * exactly what distinguishes it from `retryCount` and `deferCount`, both of
+   * which `resetFailedEntries` deliberately zeroes.
+   *
+   * It answers one question: could the server already have seen this mutation?
+   * `> 0` means yes-or-unknown; `0` means it has provably never left the device.
+   * That fact must survive a user Retry, because a Retry does not un-send what
+   * was already sent.
+   *
+   * The coalescing paths depend on it. Folding an edit into a queued create
+   * REUSES the create's `idempotencyKey` with a different body, so if the first
+   * POST committed and only its response was lost, the replay hits
+   * `ON CONFLICT DO NOTHING`, the server returns the ORIGINAL row, and the user's
+   * edit is discarded with no error anywhere.
+   *
+   * `0` for rows enqueued before the column existed. That is the permissive
+   * value, but those rows predate the idempotency key too (`idempotencyKey` is
+   * null), so no key can be replayed for them and the hazard doesn't apply.
+   */
+  dispatchCount: number;
 };
 
 export type SyncStats = {

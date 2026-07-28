@@ -572,40 +572,47 @@ describe("useSyncWorker", () => {
       expect(storage.getFailedExhaustedEntries()).toHaveLength(0);
     });
 
-    it("does NOT resurrect an exhausted NON-session entry on reconnect — resetFailedEntries only touches the session id", async () => {
+    it("resurrects only the entries the SERVER can dedup, not every exhausted one", async () => {
+      // The rule is "a replay must be recognisable as the same logical request",
+      // and the set that satisfies it GREW: `/sessions/record` has had
+      // `client_session_id` since M13, and workout + exercise creates now carry
+      // `client_request_id` with the same (created_by, key) unique-index
+      // treatment. A nutrition create still has no server-side key column, so
+      // auto-re-POSTing it could duplicate a row that actually committed — it
+      // stays for an explicit, user-acknowledged Retry on /sync-failed.
       const storage = new InMemoryStorageAdapter();
       storage.initialize();
 
-      // An exhausted session-record entry (idempotent — should resurrect)…
-      storage.enqueueMutation({
-        entityType: "session",
-        entityId: "s1",
-        operation: "create",
-        payload: { name: "Push Day" },
-        endpoint: "/sessions/record",
-        method: "POST",
-      });
-      const sessionEntryId = storage.getPendingMutations().slice(-1)[0].id;
-      storage.markMutationFailed(sessionEntryId, "e1");
-      storage.markMutationFailed(sessionEntryId, "e2");
-      storage.markMutationFailed(sessionEntryId, "e3");
+      const exhaust = (id: number) => {
+        storage.markMutationFailed(id, "e1");
+        storage.markMutationFailed(id, "e2");
+        storage.markMutationFailed(id, "e3");
+      };
+      const enqueueAndExhaust = (
+        entityType: string,
+        endpoint: string,
+      ): number => {
+        storage.enqueueMutation({
+          entityType,
+          entityId: `${entityType}-1`,
+          operation: "create",
+          payload: { name: "Push Day" },
+          endpoint,
+          method: "POST",
+        });
+        const id = storage.getPendingMutations().slice(-1)[0].id;
+        exhaust(id);
+        return id;
+      };
 
-      // …alongside an exhausted NON-session create (no idempotency key —
-      // must NOT be auto-resurrected; duplicate-POST risk).
-      storage.enqueueMutation({
-        entityType: "workout",
-        entityId: "w1",
-        operation: "create",
-        payload: { name: "Push Day" },
-        endpoint: "/workouts",
-        method: "POST",
-      });
-      const workoutEntryId = storage.getPendingMutations().slice(-1)[0].id;
-      storage.markMutationFailed(workoutEntryId, "e1");
-      storage.markMutationFailed(workoutEntryId, "e2");
-      storage.markMutationFailed(workoutEntryId, "e3");
+      const sessionEntryId = enqueueAndExhaust("session", "/sessions/record");
+      const workoutEntryId = enqueueAndExhaust("workout", "/workouts");
+      const nutritionEntryId = enqueueAndExhaust(
+        "nutrition_entry",
+        "/nutrition/entries",
+      );
 
-      expect(storage.getFailedExhaustedEntries()).toHaveLength(2);
+      expect(storage.getFailedExhaustedEntries()).toHaveLength(3);
 
       const resetSpy = jest.spyOn(storage, "resetFailedEntries");
       mockFetch.mockResolvedValue({ ok: true, json: async () => ({}) });
@@ -623,22 +630,62 @@ describe("useSyncWorker", () => {
         jest.advanceTimersByTime(SYNC_RECONNECT_DEBOUNCE_MS);
       });
 
-      // Only the session-record id was reset — the workout id was never
-      // passed to resetFailedEntries.
       await waitFor(() =>
-        expect(resetSpy).toHaveBeenCalledWith([sessionEntryId]),
+        expect(resetSpy).toHaveBeenCalledWith([sessionEntryId, workoutEntryId]),
       );
-      // Only the resurrected session mutation was ever sent.
-      expect(mockFetch).toHaveBeenCalledTimes(1);
-      expect(mockFetch).toHaveBeenCalledWith(
-        "https://api.test/sessions/record",
-        expect.objectContaining({ method: "POST" }),
-      );
-      // The workout entry is untouched — still failed-exhausted, ready
-      // for an explicit Retry on /sync-failed.
+      // Both replay-safe entries went out; the nutrition one did not.
+      const sentUrls = mockFetch.mock.calls.map((c) => c[0]);
+      expect(sentUrls).toContain("https://api.test/sessions/record");
+      expect(sentUrls).toContain("https://api.test/workouts");
+      expect(sentUrls).not.toContain("https://api.test/nutrition/entries");
       const stillExhausted = storage.getFailedExhaustedEntries();
       expect(stillExhausted).toHaveLength(1);
-      expect(stillExhausted[0].id).toBe(workoutEntryId);
+      expect(stillExhausted[0].id).toBe(nutritionEntryId);
+    });
+
+    it("restores the budget-free run of still-queued deferred entries on reconnect", async () => {
+      // Without this, an offline stretch of only ~90–120s (12 free deferrals at a
+      // 5s window, then 3 charged attempts) exhausted an offline-created row
+      // during ordinary use — a commute, a basement gym — leaving the user a
+      // sync-failure banner to clear by hand. A reconnect is precisely the new
+      // information whose absence caused those deferrals. It also clears
+      // `nextAttemptAt`, so the flush that follows actually sends now rather than
+      // waiting out a window set while there was no network.
+      const storage = new InMemoryStorageAdapter();
+      storage.initialize();
+      storage.enqueueMutation({
+        entityType: "workout",
+        entityId: "w-deferred",
+        operation: "create",
+        payload: { name: "Push Day" },
+        endpoint: "/workouts",
+        method: "POST",
+      });
+      const id = storage.getPendingMutations().slice(-1)[0].id;
+      storage.markMutationDeferred(id, "Network request failed");
+      storage.markMutationDeferred(id, "Network request failed");
+      expect(storage.getPendingMutations()[0].deferCount).toBe(2);
+
+      mockFetch.mockResolvedValue({ ok: true, json: async () => ({}) });
+      const auth = new InMemoryAuthAdapter();
+      const netInfo = new InMemoryNetInfoAdapter(true);
+      const adapters = makeAdapters(storage, auth, session, netInfo);
+
+      renderHook(() => useSyncWorker(), { wrapper: wrap(adapters) });
+      await settleMount();
+
+      act(() => netInfo.setConnected(false));
+      act(() => netInfo.setConnected(true));
+      act(() => {
+        jest.advanceTimersByTime(SYNC_RECONNECT_DEBOUNCE_MS);
+      });
+
+      await waitFor(() =>
+        expect(mockFetch).toHaveBeenCalledWith(
+          "https://api.test/workouts",
+          expect.objectContaining({ method: "POST" }),
+        ),
+      );
     });
 
     it("debounces rapid toggles — only flushes once for a burst of transitions", async () => {

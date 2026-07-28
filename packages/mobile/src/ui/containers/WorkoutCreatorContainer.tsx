@@ -120,7 +120,20 @@ export function WorkoutCreatorContainer() {
           // its next successful network GET. Cache the server row (it already
           // carries a real id) and signal the library, so it appears the moment
           // the coach lands back on the list.
+          //
+          // Both writes are needed. The detail row warms `useWorkout(id)`, but
+          // `CoachWorkoutLibraryContainer` reads `cached_coach_workout_library`
+          // and `getWorkoutsQuery` reads the `cached_workouts` slices — so
+          // caching detail alone left `markWorkoutsChanged()` re-reading a slice
+          // nobody had written, and the workout still waited on the network GET
+          // that this write exists to pre-empt.
           storage.cacheWorkoutDetail(userId, created.value);
+          storage.cacheCoachWorkoutLibrary(userId, [
+            created.value,
+            ...(storage.getCachedCoachWorkoutLibrary(userId) ?? []).filter(
+              (w) => w.id !== created.value.id,
+            ),
+          ]);
           markWorkoutsChanged();
           const assigned = await api.assignWorkout(assignClientId, {
             workoutId: created.value.id,

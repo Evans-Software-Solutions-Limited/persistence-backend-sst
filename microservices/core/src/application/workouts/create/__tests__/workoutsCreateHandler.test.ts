@@ -397,6 +397,33 @@ describe("WorkoutsCreateHandler", () => {
       );
     });
 
+    it("threads a PRESENT Idempotency-Key header through to the repository", async () => {
+      // Every other assertion in this file sends no header and asserts `null`,
+      // which passes just as well if `readIdempotencyKey` returned null
+      // unconditionally — a header-name change, a refactor of `ctx.headers`, or an
+      // Elysia upgrade would turn the whole replay-safety mechanism into a silent
+      // no-op with every test still green. This is the only test that would fail.
+      const { workoutsCreateHandler } =
+        await import("../workoutsCreateHandler");
+      await workoutsCreateHandler.handle(
+        new Request("http://localhost/workouts", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            authorization: "Bearer test-token",
+            "Idempotency-Key": "wk-key-123",
+          },
+          body: JSON.stringify({ name: "Keyed" }),
+        }),
+      );
+
+      expect(workoutRepositoryMocks.createWithExercises).toHaveBeenCalledWith(
+        "test-user-id",
+        expect.objectContaining({ name: "Keyed" }),
+        "wk-key-123",
+      );
+    });
+
     it("defaults show_in_owner_library to true when omitted (athlete path)", async () => {
       const { workoutsCreateHandler } =
         await import("../workoutsCreateHandler");

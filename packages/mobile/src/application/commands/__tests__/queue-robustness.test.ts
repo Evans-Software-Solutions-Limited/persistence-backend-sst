@@ -393,6 +393,63 @@ describe("deferral does not consume the retry budget", () => {
     expect(storage.getPendingMutations()[0].retryCount).toBe(1);
   });
 
+  it("reports the ceiling escalation to Sentry once it exhausts", async () => {
+    // The two cases the ceiling exists to surface — a throw from our own
+    // request-building code, and an `unresolvable` catalogue member — reach this
+    // function, NOT the SyncHttpError branch that carries the Sentry call. Without
+    // an explicit report they'd reach the user's banner and never the team.
+    const { captureSyncFailure } = jest.requireMock("@/lib/sentry") as {
+      captureSyncFailure: jest.Mock;
+    };
+    captureSyncFailure.mockClear();
+    enqueueWorkoutCreate();
+    mockFetch.mockRejectedValue(new TypeError("Network request failed"));
+
+    for (let i = 0; i < MAX_TRANSPORT_DEFERRALS + 5; i++) {
+      await processSyncQueue(storage, auth, "https://api.test", AFTER_BACKOFF);
+    }
+
+    expect(captureSyncFailure).toHaveBeenCalledWith(
+      expect.objectContaining({ endpoint: "/workouts", operation: "create" }),
+    );
+  });
+
+  it("discards a sibling stranded on the local id when a create dies terminally", async () => {
+    // A queued `DELETE /exercises/local-…` parked behind an in-flight create (the
+    // path delete-exercise deliberately takes) can only ever be rewritten by the
+    // id swap that runs when the create SUCCEEDS. Once the create is permanently
+    // rejected, that sibling is aimed forever at a path Postgres rejects with
+    // 22P02 — it burns its budget and surfaces as "Invalid identifier format" for
+    // a row the user was told was deleted.
+    storage.enqueueMutation({
+      entityType: "exercise",
+      entityId: "local-e9",
+      operation: "create",
+      payload: { name: "Lift" },
+      endpoint: "/exercises",
+      method: "POST",
+    });
+    storage.enqueueMutation({
+      entityType: "exercise",
+      entityId: "local-e9",
+      operation: "delete",
+      payload: {},
+      endpoint: "/exercises/local-e9",
+      method: "DELETE",
+    });
+    // 400 on the create with no local reference in its own body/endpoint → permanent.
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 400,
+      text: async () => "bad request",
+    });
+
+    await processSyncQueue(storage, auth, "https://api.test");
+
+    const remaining = storage.getQueuedEntriesForEntity("exercise", "local-e9");
+    expect(remaining.map((e) => e.operation)).toEqual(["create"]);
+  });
+
   it("an explicit Retry restores the full free run", async () => {
     // A Retry (or a reconnect resurrect) is new information — usually the very
     // connectivity whose absence caused the deferrals — so the entry must not be

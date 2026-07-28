@@ -22,8 +22,15 @@ export const WORKOUT_TABLES = [
 /** The exercise library (system rows and locally-created customs alike). */
 export const EXERCISE_TABLES = ["cached_exercises"] as const;
 
-/** Nutrition library surfaces. */
-export const RECIPE_TABLES = ["cached_recipes", "cached_meals"] as const;
+/**
+ * Nutrition library surfaces, split per resource for the same reason
+ * `HOME_TABLES` is narrow — see the note there. `useGetRecipes` reads only
+ * `cached_recipes` and `useGetMeals` only `cached_meals`; both previously
+ * subscribed to both, so each was woken (and, once a read could return null,
+ * would refetch over the network) for the other's local writes.
+ */
+export const RECIPE_TABLES = ["cached_recipes"] as const;
+export const MEAL_TABLES = ["cached_meals"] as const;
 
 /**
  * Home aggregate payload.

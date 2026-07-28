@@ -76,19 +76,28 @@ export function getWorkoutsQuery(
  * yet) and must NOT be preserved, or a workout the user deleted server-side would
  * keep reappearing. A row with an outstanding create is the opposite case.
  */
-function unsyncedWorkoutsInSlice(
+export function unsyncedWorkoutsIn(
   storage: StoragePort,
-  userId: string,
-  type: WorkoutListType,
+  cached: readonly Workout[] | null | undefined,
 ): Workout[] {
-  const cached = storage.getCachedWorkoutsList(userId, type);
-  if (!cached || cached.workouts.length === 0) return [];
-  return cached.workouts.filter((w) => {
+  if (!cached || cached.length === 0) return [];
+  return cached.filter((w) => {
     if (!w.id.startsWith("local-")) return false;
     return storage
       .getQueuedEntriesForEntity("workout", w.id)
       .some((entry) => entry.operation === "create");
   });
+}
+
+function unsyncedWorkoutsInSlice(
+  storage: StoragePort,
+  userId: string,
+  type: WorkoutListType,
+): Workout[] {
+  return unsyncedWorkoutsIn(
+    storage,
+    storage.getCachedWorkoutsList(userId, type)?.workouts,
+  );
 }
 
 /**

@@ -642,8 +642,21 @@ export const exercises = pgTable("exercises", {
   id: uuid("id").primaryKey().defaultRandom(),
   // Client-supplied idempotency key (see
   // 20260727120100_client_request_id_idempotency.sql). Nullable — legacy rows and
-  // direct-API callers have none, and NULLs never conflict in the partial unique
-  // index on (created_by, client_request_id).
+  // direct-API callers have none, and NULLs are DISTINCT in a Postgres unique
+  // index, so they never conflict with each other.
+  //
+  // ⚠ The unique index on (created_by, client_request_id) must stay FULL, not
+  // partial. `onConflictDoNothing({ target })` emits no index predicate, and
+  // Postgres cannot infer a partial index without a matching one — it raises 42P10
+  // on every keyed insert instead. Do not "tidy" this into a partial index to match
+  // the nullability; the migration and
+  // core/…/repositories/__tests__/clientRequestIdIdempotency.test.ts both spell out
+  // why.
+  //
+  // ⚠ Declaring the column here puts it in Drizzle's explicit SELECT list, so
+  // MIGRATE BEFORE DEPLOY is mandatory: a Lambda carrying this schema against a
+  // database without the column fails every READ of this table with 42703, not just
+  // the keyed creates.
   clientRequestId: text("client_request_id"),
   name: text("name").notNull(),
   description: text("description"),

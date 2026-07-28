@@ -21,7 +21,19 @@
 --     success from the client's point of view.
 --
 -- Purely additive: safe under migrate-then-deploy (the previous Lambda simply
--- never writes the column). Re-runnable: the columns use IF NOT EXISTS, and the
+-- never writes the column).
+--
+-- ⚠ THE REVERSE ORDER IS NOT SAFE, and it is worse than it looks. Declaring
+-- `client_request_id` in packages/db/src/schema.ts puts it in Drizzle's EXPLICIT
+-- select column list — every generated query reads
+-- `select "id", "client_request_id", "name", … from "exercises"`. So a deploy that
+-- lands before this migration is applied fails every READ of `workouts` and
+-- `exercises` with 42703 (column does not exist): the exercise library, all workout
+-- lists, workout detail, the coach library, starting a session. Not merely the
+-- keyed creates. These migrations are applied by hand against staging and prod, so
+-- this ordering is an explicit release gate, not a formality.
+--
+-- Re-runnable: the columns use IF NOT EXISTS, and the
 -- indexes are dropped-then-created so a re-run converges on the intended SHAPE
 -- rather than keeping whatever already carried the name (see below).
 

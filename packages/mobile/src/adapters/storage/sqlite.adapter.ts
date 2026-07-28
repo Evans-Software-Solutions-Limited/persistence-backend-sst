@@ -106,6 +106,70 @@ const SYNC_BACKOFF_BASE_SECONDS = 5;
 const SYNC_BACKOFF_MAX_SECONDS = 300;
 
 /**
+ * `sync_queue` columns added after the table's original shape — the SINGLE source
+ * of truth for all three places an install can arrive at that shape:
+ *
+ *   1. `CREATE TABLE IF NOT EXISTS sync_queue` — a FRESH install;
+ *   2. the M10.6 `sync_queue_new` rebuild — an install predating the 6-value status
+ *      CHECK, which copies an explicit column list into a new table and drops the
+ *      old one;
+ *   3. the PRAGMA-guarded `ALTER TABLE … ADD COLUMN` loop — an install already on
+ *      the 6-value CHECK but predating a column. It MUST run after (2), which
+ *      would otherwise drop whatever it added.
+ *
+ * All three interpolate or iterate this array, because they used to be three
+ * hand-maintained copies and nothing could catch a divergence: reads are
+ * `SELECT *` with `mapRow` defaulting each field, so only WRITES naming the column
+ * (`enqueueMutation`'s explicit insert list, `markMutationDeferred`,
+ * `markMutationDispatched`, `resetFailedEntries`) throw `no such column` — and only
+ * on the install population whose branch was missed. This file is excluded from
+ * `collectCoverageFrom` and the in-memory double has no schema, so no test executes
+ * any of the three. Deriving them removes the failure mode rather than testing for
+ * it.
+ *
+ * Column meanings:
+ * - `idempotency_key` — client-generated, stamped once at enqueue and never
+ *   rewritten. Sent as the `Idempotency-Key` header so an AMBIGUOUS failure (a
+ *   timeout or reset after the server committed) can be retried without creating a
+ *   second row. Only `POST /sessions/record` had an equivalent (`clientSessionId`);
+ *   workout/exercise creates had none, so an ordinary retry duplicated them.
+ * - `next_attempt_at` — earliest time this entry may be attempted again, NULL for
+ *   "now". Backs exponential backoff; before it, retry cadence WAS drain cadence,
+ *   so three foreground toggles during a server blip burnt the whole budget in
+ *   seconds. NOTE: `getPendingMutations` deliberately does NOT filter on it — it
+ *   answers "still retryable"; dueness is applied by the drain via `isMutationDue`.
+ * - `defer_count` — postponements that did NOT charge the retry budget (offline, or
+ *   an unresolvable reference catalogue). A CEILING, because deferral is free but
+ *   must not be free forever: `getFailedExhaustedEntries` gates on
+ *   `retry_count >= max_retries`, and it is the only source for the sync-failed
+ *   banner and review screen, so an endlessly-deferred entry is invisible. Past
+ *   `MAX_TRANSPORT_DEFERRALS` the drain charges the budget again.
+ * - `dispatch_count` — requests actually SENT for this entry, incremented just
+ *   before `fetch` and never reset by any path. It answers "could the server have
+ *   seen this?", which must survive a user Retry, and is what stops edit-coalescing
+ *   from replaying a create's idempotency key with a different body (the server
+ *   returns the original row and the edit is silently lost).
+ */
+export const ADDITIVE_SYNC_QUEUE_COLUMNS: readonly [string, string][] = [
+  ["idempotency_key", "TEXT"],
+  ["next_attempt_at", "TEXT"],
+  ["defer_count", "INTEGER NOT NULL DEFAULT 0"],
+  ["dispatch_count", "INTEGER NOT NULL DEFAULT 0"],
+];
+
+/**
+ * The additive columns as DDL fragment lines, indented to sit inside a
+ * `CREATE TABLE` body. Trailing comma included — every call site has more columns
+ * after it.
+ */
+export function indentSyncQueueDdl(spaces: number): string {
+  const pad = " ".repeat(spaces);
+  return ADDITIVE_SYNC_QUEUE_COLUMNS.map(
+    ([column, type]) => `${pad}${column} ${type},`,
+  ).join("\n");
+}
+
+/**
  * Mint the idempotency key stamped on a queue entry at enqueue time.
  *
  * Not a UUID because there is no crypto-random primitive in this layer, and it
@@ -354,35 +418,7 @@ export class SQLiteStorageAdapter implements StoragePort {
         -- (not a sibling table) keeps the migration trivial and the read
         -- path single-query — verdict cardinality is 1:1 with the entry.
         entitlement_verdict TEXT,
-        -- Client-generated idempotency key, stamped once at enqueue and never
-        -- rewritten. Sent as the Idempotency-Key header so an ambiguous failure
-        -- (a timeout or reset AFTER the server committed) can be retried without
-        -- creating a second row. Only POST /sessions/record had an equivalent
-        -- (clientSessionId); workout / exercise / nutrition creates had none, so
-        -- an ordinary retry duplicated them.
-        idempotency_key TEXT,
-        -- Earliest time this entry may be attempted again, or NULL for "now".
-        -- Backs exponential backoff: before this, retry cadence WAS drain
-        -- cadence, so three foreground toggles during a server blip burnt the
-        -- whole 3-attempt budget in seconds and stranded the entry.
-        -- NOTE: getPendingMutations deliberately does NOT filter on this — it
-        -- answers "still retryable". Dueness is applied by the drain, via
-        -- isMutationDue in sync.command.
-        next_attempt_at TEXT,
-        -- How many times this entry has been POSTPONED without an attempt being
-        -- charged (offline/transport failure, or an unresolvable reference
-        -- catalogue). Distinct from retry_count, which counts attempts the server
-        -- actually answered.
-        --
-        -- Its purpose is a CEILING. Deferral is deliberately free — an offline
-        -- device has made no statement about a request's validity — but "free
-        -- forever" meant a mutation against a permanently unreachable endpoint
-        -- retried indefinitely while being invisible to every sync surface:
-        -- getFailedExhaustedEntries gates on retry_count >= max_retries, and that
-        -- query is the sole source for both the sync-failed banner and the review
-        -- screen. Past MAX_TRANSPORT_DEFERRALS the drain charges the budget again,
-        -- so the entry exhausts, surfaces, and becomes user-retryable.
-        defer_count INTEGER NOT NULL DEFAULT 0,
+${indentSyncQueueDdl(8)}
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
@@ -841,13 +877,11 @@ export class SQLiteStorageAdapter implements StoragePort {
             max_retries INTEGER NOT NULL DEFAULT 3,
             error_message TEXT,
             entitlement_verdict TEXT,
-            -- Lockstep with the CREATE TABLE above, per the note there. These
-            -- are NOT copied from the source (a pre-M10.6 table cannot have
-            -- them) and are re-added by the PRAGMA-guarded ALTER that now runs
-            -- AFTER this rebuild.
-            idempotency_key TEXT,
-            next_attempt_at TEXT,
-            defer_count INTEGER NOT NULL DEFAULT 0,
+            -- Lockstep with the CREATE TABLE above, from the SAME constant, so
+            -- the two shapes CANNOT drift. These are not copied from the source
+            -- (a pre-M10.6 table cannot have them); the PRAGMA-guarded ALTER that
+            -- runs AFTER this rebuild covers installs that already had them.
+${indentSyncQueueDdl(12)}
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             updated_at TEXT NOT NULL DEFAULT (datetime('now'))
           );
@@ -914,15 +948,11 @@ export class SQLiteStorageAdapter implements StoragePort {
       name: string;
     }[];
     const syncQueueNames = new Set(syncQueueColumns.map((c) => c.name));
-    // `NOT NULL DEFAULT 0` is legal in an SQLite `ADD COLUMN` precisely because
-    // the default is non-null, so existing rows backfill to 0 — i.e. "never
-    // deferred", which is the correct starting point for a pre-existing entry.
-    const additiveSyncQueueColumns: [string, string][] = [
-      ["idempotency_key", "TEXT"],
-      ["next_attempt_at", "TEXT"],
-      ["defer_count", "INTEGER NOT NULL DEFAULT 0"],
-    ];
-    for (const [col, type] of additiveSyncQueueColumns) {
+    // Same constant again — the third and last site. `NOT NULL DEFAULT 0` is legal
+    // in an SQLite `ADD COLUMN` precisely because the default is non-null, so
+    // existing rows backfill to 0 — "never deferred", "never dispatched", which is
+    // the correct reading for an entry that predates the column.
+    for (const [col, type] of ADDITIVE_SYNC_QUEUE_COLUMNS) {
       if (!syncQueueNames.has(col)) {
         db.execSync(`ALTER TABLE sync_queue ADD COLUMN ${col} ${type}`);
       }
@@ -1069,6 +1099,16 @@ export class SQLiteStorageAdapter implements StoragePort {
        WHERE status = 'in_flight'`,
     );
     return result.changes;
+  }
+
+  markMutationDispatched(id: number): void {
+    const db = this.getDb();
+    // Unconditional on status: the drain calls this at the moment of sending, so
+    // the send is a fact regardless of what the row's status happens to be.
+    db.runSync(
+      `UPDATE sync_queue SET dispatch_count = dispatch_count + 1 WHERE id = ?`,
+      [id],
+    );
   }
 
   markMutationInFlight(id: number): boolean {
@@ -3478,6 +3518,7 @@ function mapRow(row: Record<string, unknown>): SyncQueueEntry {
     idempotencyKey: (row.idempotency_key as string | null) ?? null,
     nextAttemptAt: (row.next_attempt_at as string | null) ?? null,
     deferCount: (row.defer_count as number | null) ?? 0,
+    dispatchCount: (row.dispatch_count as number | null) ?? 0,
   };
 }
 

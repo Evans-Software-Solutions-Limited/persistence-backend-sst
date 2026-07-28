@@ -458,5 +458,86 @@ describe("unsynced local-id handling", () => {
       expect(queued[0].status).toBe("pending");
       expect(JSON.parse(queued[0].payload).name).toBe("New name");
     });
+
+    it("refuses to fold an edit into a create that has already been SENT", async () => {
+      // Coalescing reuses the create's idempotency key with a different body. If
+      // that POST already committed and only its response was lost — the ambiguous
+      // failure the key exists for — the replay hits ON CONFLICT DO NOTHING and the
+      // server returns the ORIGINAL row. The drain sees a 2xx, completes the entry
+      // and swaps the id, so the cache shows "New name" while the server holds
+      // "Old name", and the next refresh silently discards the user's edit. Before
+      // idempotency keys the same sequence produced a visible duplicate; silent loss
+      // is worse.
+      const existing = localExercise("local-ex-10");
+      storage.saveCustomExercise(existing);
+      storage.enqueueMutation({
+        entityType: "exercise",
+        entityId: "local-ex-10",
+        operation: "create",
+        payload: { name: "Old name" },
+        endpoint: "/exercises",
+        method: "POST",
+      });
+      const [created] = storage.getQueuedEntriesForEntity(
+        "exercise",
+        "local-ex-10",
+      );
+      // The request left the device, then the transport failed — so whether the
+      // server committed is unknowable.
+      storage.markMutationDispatched(created.id);
+      storage.markMutationDeferred(created.id, "Network request failed");
+
+      const result = updateExerciseCommand({ storage }, existing, {
+        name: "New name",
+        category: "strength",
+        difficulty: "intermediate",
+        primaryMuscleGroups: ["chest"],
+        equipment: ["barbell"],
+      });
+
+      expect(result.ok).toBe(true);
+      const queued = storage.getQueuedEntriesForEntity(
+        "exercise",
+        "local-ex-10",
+      );
+      // A SEPARATE patch, and the create's body untouched. swapLocalExerciseId
+      // re-points the patch when the create's reply lands, so the edit still
+      // applies — one extra round trip, correct result.
+      expect(queued).toHaveLength(2);
+      const create = queued.find((e) => e.operation === "create")!;
+      const patch = queued.find((e) => e.operation === "update")!;
+      expect(JSON.parse(create.payload).name).toBe("Old name");
+      expect(patch.endpoint).toBe("/exercises/local-ex-10");
+    });
+
+    it("still folds into a create that has provably never been sent", async () => {
+      // The common offline case must keep coalescing — otherwise every edit before
+      // the first flush costs an extra round trip for no reason.
+      const existing = localExercise("local-ex-11");
+      storage.saveCustomExercise(existing);
+      storage.enqueueMutation({
+        entityType: "exercise",
+        entityId: "local-ex-11",
+        operation: "create",
+        payload: { name: "Old name" },
+        endpoint: "/exercises",
+        method: "POST",
+      });
+
+      updateExerciseCommand({ storage }, existing, {
+        name: "New name",
+        category: "strength",
+        difficulty: "intermediate",
+        primaryMuscleGroups: ["chest"],
+        equipment: ["barbell"],
+      });
+
+      const queued = storage.getQueuedEntriesForEntity(
+        "exercise",
+        "local-ex-11",
+      );
+      expect(queued).toHaveLength(1);
+      expect(JSON.parse(queued[0].payload).name).toBe("New name");
+    });
   });
 });

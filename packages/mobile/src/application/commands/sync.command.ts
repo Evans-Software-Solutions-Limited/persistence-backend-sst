@@ -215,9 +215,75 @@ function deferOrCharge(
 ): void {
   if (entry.deferCount >= MAX_TRANSPORT_DEFERRALS) {
     storage.markMutationFailed(entry.id, reason);
+    // Escalation past the ceiling can be the attempt that exhausts the budget, and
+    // it reaches this function instead of the SyncHttpError branch below — so
+    // without this the two cases the ceiling exists to surface (a throw from our own
+    // request-building code, and an `unresolvable` catalogue member whose own
+    // docstring promises to be "loud") would reach the USER's banner but never the
+    // team's telemetry.
+    if (entry.retryCount + 1 >= entry.maxRetries) {
+      reportTerminalFailure(entry, reason);
+      discardStrandedLocalIdSiblings(storage, entry);
+    }
     return;
   }
   storage.markMutationDeferred(entry.id, reason);
+}
+
+/**
+ * Report a mutation the drain will never pick up again. Best-effort by contract:
+ * telemetry is not allowed to change a sync outcome.
+ */
+function reportTerminalFailure(entry: SyncQueueEntry, message: string): void {
+  try {
+    captureSyncFailure({
+      endpoint: entry.endpoint,
+      entityType: entry.entityType,
+      operation: entry.operation,
+      message,
+    });
+  } catch {
+    // swallow — telemetry is not allowed to affect sync outcomes
+  }
+}
+
+/**
+ * When a CREATE dies terminally, discard any sibling entry still addressing the
+ * dead row's `local-…` id.
+ *
+ * Such a sibling can never become valid. The id swap that would rewrite it only
+ * runs when the create SUCCEEDS, so once the create is permanently rejected or
+ * exhausted, the sibling is aimed forever at a path Postgres rejects with 22P02.
+ * `endpointReferencesUnsyncedLocalId` (correctly) classifies that 400 as retryable
+ * rather than permanent, so it burns its full budget and then surfaces in
+ * /sync-failed as "Invalid identifier format" — for a row the user was told was
+ * created, or deleted. That is the exact symptom `delete-exercise` was fixed to
+ * stop producing, arriving by a different route: a queued
+ * `DELETE /exercises/local-…` parked behind an in-flight create that then dies.
+ *
+ * Only local-id-addressed siblings go. Anything pointing at a real resource is
+ * unrelated to this create's failure and stays.
+ */
+function discardStrandedLocalIdSiblings(
+  storage: StoragePort,
+  entry: SyncQueueEntry,
+): void {
+  if (entry.operation !== "create" || entry.entityId === null) return;
+  try {
+    const stranded = storage
+      .getQueuedEntriesForEntity(entry.entityType, entry.entityId)
+      .filter(
+        (sibling) =>
+          sibling.id !== entry.id &&
+          endpointReferencesUnsyncedLocalId(sibling.endpoint),
+      );
+    if (stranded.length > 0) {
+      storage.discardEntries(stranded.map((s) => s.id));
+    }
+  } catch (err) {
+    // Cleanup is opportunistic — never let it break the drain's own accounting.
+    console.error("[sync] stranded-sibling cleanup failed:", err);
+  }
 }
 
 /**
@@ -397,6 +463,14 @@ export async function processSyncQueue(
         }
         body = prepared.body;
       }
+
+      // Record that this mutation is about to leave the device, BEFORE it does.
+      // From here on "the server may already have seen it" is permanently true for
+      // this entry, and that fact has to outlive every reset path — see
+      // `dispatchCount` on the port. Deliberately placed after the deferral
+      // branches above (a deferred entry was never dispatched, so coalescing into
+      // it stays safe) and after the claim, which may legitimately lose a race.
+      storage.markMutationDispatched(entry.id);
 
       const response = await fetch(`${apiBaseUrl}${entry.endpoint}`, {
         method: entry.method,
@@ -755,19 +829,11 @@ export async function processSyncQueue(
       }
       failed++;
       // Report the terminal failure to Sentry so it isn't invisible (the
-      // local-workout-id 500 went unseen for exactly this reason). Best-effort:
-      // a telemetry failure must never break the drain.
+      // local-workout-id 500 went unseen for exactly this reason), and drop any
+      // sibling now aimed forever at this dead row's local id.
       if (isTerminalFailure) {
-        try {
-          captureSyncFailure({
-            endpoint: entry.endpoint,
-            entityType: entry.entityType,
-            operation: entry.operation,
-            message,
-          });
-        } catch {
-          // swallow — telemetry is not allowed to affect sync outcomes
-        }
+        reportTerminalFailure(entry, message);
+        discardStrandedLocalIdSiblings(storage, entry);
       }
     }
   }

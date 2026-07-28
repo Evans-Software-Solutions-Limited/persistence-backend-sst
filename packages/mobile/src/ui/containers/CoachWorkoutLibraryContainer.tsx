@@ -2,6 +2,7 @@ import { router, useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getApiBaseUrl } from "@/adapters/api";
 import { processSyncQueue } from "@/application/commands/sync.command";
+import { unsyncedWorkoutsIn } from "@/application/queries/workouts.query";
 import type { Workout } from "@/domain/models/workout";
 import { useUserMode } from "@/state/user-mode";
 import { WORKOUT_TABLES } from "@/adapters/storage";
@@ -93,8 +94,26 @@ export function CoachWorkoutLibraryContainer({
         }
         const result = await api.getWorkouts({ type: "mine" });
         if (result.ok) {
-          storage.cacheCoachWorkoutLibrary(userId, result.value.workouts);
-          setWorkouts(result.value.workouts);
+          // ⚠ Preserve rows the server cannot know about yet — the same guard
+          // `refreshWorkouts` applies to `cached_workouts`, and needed here for
+          // the same reason: `cacheCoachWorkoutLibrary` REPLACES the whole slice.
+          //
+          // This slice is where a coach-authored workout (`showInOwnerLibrary:
+          // false`) lands when created offline, and it is the ONLY place it
+          // lands. The drain above cannot save us: the enqueue already kicked
+          // `useSyncWorker`'s flush, so `markMutationInFlight` returns false and
+          // this pass skips the create by design (the PR #62 race guard). The GET
+          // then returns the pre-create list and the optimistic row is deleted —
+          // reappearing on a later focus if the create eventually lands, but gone
+          // from the UI *permanently* if it ends `permanently_failed`, blocked or
+          // exhausted, while the payload sits unexplained in /sync-failed.
+          const unsynced = unsyncedWorkoutsIn(
+            storage,
+            storage.getCachedCoachWorkoutLibrary(userId),
+          );
+          const merged = [...unsynced, ...result.value.workouts];
+          storage.cacheCoachWorkoutLibrary(userId, merged);
+          setWorkouts(merged);
           setCacheVersion((v) => v + 1);
           setError(null);
         } else {

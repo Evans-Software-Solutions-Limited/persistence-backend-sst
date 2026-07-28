@@ -298,6 +298,48 @@ describe("ExercisesCreateHandler", () => {
       expect(userIdArg).toBe("user-1");
     });
 
+    it("threads the Idempotency-Key header through to the repository", async () => {
+      // Nothing else in this file asserts the third argument at all, so
+      // `readIdempotencyKey` could return null unconditionally — a header-name
+      // change, a refactor of `ctx.headers`, an Elysia upgrade — and the entire
+      // replay-safety mechanism would become a silent no-op with every test green.
+      const { exercisesCreateHandler } =
+        await import("../exercisesCreateHandler");
+      await exercisesCreateHandler.handle(
+        new Request("http://localhost/exercises", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            authorization: "Bearer token",
+            "Idempotency-Key": "ex-key-123",
+          },
+          body: JSON.stringify({ name: "Keyed Lift" }),
+        }),
+      );
+      const [, , keyArg] = exerciseRepositoryMocks.create.mock.calls[0];
+      expect(keyArg).toBe("ex-key-123");
+    });
+
+    it("passes null when no Idempotency-Key header is sent", async () => {
+      const { exercisesCreateHandler } =
+        await import("../exercisesCreateHandler");
+      await exercisesCreateHandler.handle(
+        new Request("http://localhost/exercises", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            authorization: "Bearer token",
+          },
+          body: JSON.stringify({ name: "Unkeyed Lift" }),
+        }),
+      );
+      // Explicitly `null`, not `undefined` — the repository branches on
+      // `clientRequestId ?? null` and a keyless create must take the plain-insert
+      // path with no ON CONFLICT clause.
+      const [, , keyArg] = exerciseRepositoryMocks.create.mock.calls[0];
+      expect(keyArg).toBeNull();
+    });
+
     it("persists full legacy payload shape (snake_case → domain)", async () => {
       const { exercisesCreateHandler } =
         await import("../exercisesCreateHandler");

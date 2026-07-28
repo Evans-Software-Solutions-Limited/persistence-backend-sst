@@ -6,6 +6,7 @@ import type {
 } from "@/domain/models/exercise";
 import type { StoragePort } from "@/domain/ports/storage.port";
 import { validateExerciseInput } from "@/domain/services/exercise.service";
+import { canRewriteWithoutReplayingKey } from "./queueCoalescing";
 import { ok, type Result, type ValidationError } from "@/shared/errors";
 
 /**
@@ -116,12 +117,14 @@ export function updateExerciseCommand(
   // "which entry can I safely rewrite" is a narrower question than "which
   // entries exist". An `in_flight` entry may already be mid-send, and a
   // `blocked_entitlement` one is waiting on a user decision — rewriting either
-  // would be a lost update.
+  // would be a lost update. `canRewriteWithoutReplayingKey` narrows it once more,
+  // for the idempotency key.
   const rewritable = queued.find(
     (e) =>
-      e.status === "pending" ||
-      e.status === "failed" ||
-      e.status === "permanently_failed",
+      (e.status === "pending" ||
+        e.status === "failed" ||
+        e.status === "permanently_failed") &&
+      canRewriteWithoutReplayingKey(e),
   );
 
   if (rewritable) {

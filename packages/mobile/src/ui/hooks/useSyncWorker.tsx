@@ -151,21 +151,43 @@ export function useSyncWorker(): void {
     // bug never blocks the ordinary drain.
     const resurrectAndFlush = async () => {
       try {
+        // Give still-queued entries their budget-free run back. A reconnect is
+        // exactly the new information whose absence caused the deferrals, and
+        // without this an offline stretch of ~90–120s (12 free deferrals at a 5s
+        // window, then 3 charged attempts) exhausted an offline-created workout
+        // during ordinary use — a commute, a basement gym — leaving the user a
+        // sync-failure banner to resolve by hand. This also clears
+        // `nextAttemptAt`, so the flush below actually sends them now rather than
+        // waiting out a window set while there was no network.
+        const deferred = storage
+          .getPendingMutations()
+          .filter((e) => e.deferCount > 0);
+        if (deferred.length > 0) {
+          storage.resetFailedEntries(deferred.map((e) => e.id));
+        }
+
+        // Auto-resurrect exhausted entries the SERVER can safely dedup on replay.
+        // A re-POST is only safe where the server recognises the retry as the same
+        // logical request; otherwise it could duplicate a row that did commit, and
+        // those stay in /sync-failed for explicit, user-acknowledged retry.
+        //
+        // This list used to be `/sessions/record` alone, and its comment said the
+        // other creates "have NO idempotency key". That is no longer true — this
+        // branch added `client_request_id` to workout and exercise creates with the
+        // same (created_by, key) unique-index treatment `client_session_id` has had
+        // since M13 — so they now qualify on identical reasoning. Nutrition creates
+        // still do not: no server-side key column, so they are deliberately absent.
         const exhausted = storage.getFailedExhaustedEntries();
-        // Only auto-resurrect the idempotent session-record mutations:
-        // they carry `clientSessionId`, so the server dedups a replay via
-        // the (user_id, client_session_id) unique index — a re-POST after
-        // an ambiguous success is safe. Other exhausted creates
-        // (workout/exercise/nutrition) have NO idempotency key, so
-        // auto-re-POSTing could duplicate a row that actually committed;
-        // those stay in the /sync-failed review UI for explicit,
-        // user-acknowledged retry. Both self (`/sessions/record`) and
-        // on-behalf (`.../clients/:id/sessions/record`) endpoints match.
-        const idempotent = exhausted.filter((e) =>
-          e.endpoint.endsWith("/sessions/record"),
+        const replaySafe = exhausted.filter(
+          (e) =>
+            // Both self and on-behalf (`.../clients/:id/sessions/record`) forms.
+            e.endpoint.endsWith("/sessions/record") ||
+            (e.operation === "create" &&
+              e.idempotencyKey !== null &&
+              (e.endpoint === "/workouts" || e.endpoint === "/exercises")),
         );
-        if (idempotent.length > 0) {
-          storage.resetFailedEntries(idempotent.map((e) => e.id));
+        if (replaySafe.length > 0) {
+          storage.resetFailedEntries(replaySafe.map((e) => e.id));
         }
       } catch (err) {
         console.error("[useSyncWorker] reconnect resurrect failed:", err);
