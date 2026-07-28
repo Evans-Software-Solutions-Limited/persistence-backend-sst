@@ -6,10 +6,15 @@ import {
   DEFAULT_REMAP_MODEL_ID,
   MAX_REASON_LENGTH,
   parseRemapSelections,
+  remapMaxTokens,
   remapModelId,
+  REMAP_TIMEOUT_MS,
   selectSubstitutes,
 } from "../remapModel";
-import { AiUnreadableError } from "../../../nutrition/services/aiBedrockClient";
+import {
+  AiUnreadableError,
+  maxTokensForBudget,
+} from "../../../nutrition/services/aiBedrockClient";
 import type { AdaptationCandidate } from "../../../repositories/exerciseRepository";
 import type { PlanRow } from "../types";
 
@@ -75,11 +80,15 @@ const candidate = ex({
 
 const PLAN = [planRow(0, keptSource, false), planRow(1, swapSource, true)];
 
-function fakeClient(response: unknown, capture: { params?: any } = {}) {
+function fakeClient(
+  response: unknown,
+  capture: { params?: any; options?: any } = {},
+) {
   return {
     messages: {
-      create: vi.fn(async (params: any) => {
+      create: vi.fn(async (params: any, options?: any) => {
         capture.params = params;
+        capture.options = options;
         return response as any;
       }),
     },
@@ -513,10 +522,73 @@ describe("capReason", () => {
 });
 
 describe("selectSubstitutes — output budget", () => {
-  it("scales max_tokens with the number of rows the model must answer for", async () => {
-    // A fixed budget against an unbounded row count makes a long plan permanently
-    // un-adaptable AND burns a daily adaptation on every retry, because the
-    // truncation guard fires after the provider call.
+  // ⚠ These replace tests that PINNED THE BUG. The originals asserted
+  // `max_tokens >= 4096` and `<= 16_384` and passed happily, because they only
+  // ever checked the ceiling against itself. Nothing tied `max_tokens` to the
+  // attempt timeout, so nothing could notice that the ceiling described ~134 s
+  // of generation inside a 12 s attempt inside a 29 s Lambda.
+  //
+  // The invariant worth testing is the RELATIONSHIP, not either number alone.
+
+  it("never asks for more output than the attempt can physically receive", async () => {
+    // The whole defect in one assertion. Generation is serial at a bounded rate,
+    // so `max_tokens` is a wall-clock commitment: ask for more than the timeout
+    // can receive and a perfectly healthy request still times out.
+    const hugePlan = Array.from({ length: 500 }, (_, i) => ({
+      ...planRow(i, swapSource, true),
+      rowKey: i,
+    }));
+    const capture: { params?: any; options?: any } = {};
+    await selectSubstitutes(
+      {
+        workoutName: "W",
+        plan: hugePlan,
+        candidates: [candidate],
+        equipmentTypeIds: [DUMBBELL],
+        lookups,
+      },
+      { client: fakeClient(toolResponse([]), capture) },
+    );
+
+    expect(capture.params.max_tokens).toBeLessThanOrEqual(
+      maxTokensForBudget(REMAP_TIMEOUT_MS),
+    );
+  });
+
+  it("sends ONE attempt at the raised timeout, not two short ones", async () => {
+    // `createWithRetry` at 12 s could not fit this surface's output, so a second
+    // identical attempt only spent the budget that would have let the first one
+    // finish.
+    const capture: { params?: any; options?: any } = {};
+    const client = fakeClient(toolResponse([]), capture);
+    await selectSubstitutes(
+      {
+        workoutName: "W",
+        plan: PLAN,
+        candidates: [candidate],
+        equipmentTypeIds: [DUMBBELL],
+        lookups,
+      },
+      { client },
+    );
+
+    expect(client.messages.create).toHaveBeenCalledTimes(1);
+    expect(capture.options?.timeout).toBe(REMAP_TIMEOUT_MS);
+  });
+
+  it("keeps the whole attempt inside the 29 s route timeout", () => {
+    // The arithmetic that was wrong before: 2 × 12 s through an SDK defaulting
+    // to 2 internal retries is ~72 s worst case. Leave room for auth, the
+    // candidate query and the usage-log write.
+    const OVERHEAD_ALLOWANCE_MS = 3_000;
+    const ROUTE_TIMEOUT_MS = 29_000;
+    expect(REMAP_TIMEOUT_MS + OVERHEAD_ALLOWANCE_MS).toBeLessThan(
+      ROUTE_TIMEOUT_MS,
+    );
+  });
+
+  it("still scales with the number of rows the model must answer for", async () => {
+    // The slope was never the problem — the base and the ceiling were.
     const small: { params?: any } = {};
     await selectSubstitutes(
       {
@@ -529,7 +601,7 @@ describe("selectSubstitutes — output budget", () => {
       { client: fakeClient(toolResponse([]), small) },
     );
 
-    const bigPlan = Array.from({ length: 40 }, (_, i) => ({
+    const bigPlan = Array.from({ length: 8 }, (_, i) => ({
       ...planRow(i, swapSource, true),
       rowKey: i,
     }));
@@ -546,29 +618,27 @@ describe("selectSubstitutes — output budget", () => {
     );
 
     expect(big.params.max_tokens).toBeGreaterThan(small.params.max_tokens);
-    expect(big.params.max_tokens).toBeLessThanOrEqual(16_384);
-    // …and never LESS headroom than the fixed 4096 this replaced, or the fix would
-    // have narrowed the unbounded tail by making every realistic plan worse.
-    expect(small.params.max_tokens).toBeGreaterThanOrEqual(4096);
+  });
+});
+
+describe("remapMaxTokens", () => {
+  it("leaves real plans well inside the budget, so truncation stays rare", () => {
+    // ~120 tokens/row is the worst case (a 300-char reason plus a uuid and JSON
+    // scaffolding); E2 measured ~40. A 10-exercise workout must not be anywhere
+    // near the ceiling, or the 422 stops being an edge case.
+    expect(remapMaxTokens(10)).toBeLessThan(
+      maxTokensForBudget(REMAP_TIMEOUT_MS),
+    );
+    expect(remapMaxTokens(10)).toBeGreaterThanOrEqual(512 + 120 * 10);
   });
 
-  it("stays bounded for an absurd plan", async () => {
-    const hugePlan = Array.from({ length: 500 }, (_, i) => ({
-      ...planRow(i, swapSource, true),
-      rowKey: i,
-    }));
-    const capture: { params?: any } = {};
-    await selectSubstitutes(
-      {
-        workoutName: "W",
-        plan: hugePlan,
-        candidates: [candidate],
-        equipmentTypeIds: [DUMBBELL],
-        lookups,
-      },
-      { client: fakeClient(toolResponse([]), capture) },
-    );
+  it("caps rather than growing without bound", () => {
+    expect(remapMaxTokens(500)).toBe(maxTokensForBudget(REMAP_TIMEOUT_MS));
+  });
 
-    expect(capture.params.max_tokens).toBe(16_384);
+  it("gives a swap-free plan a floor, not zero", () => {
+    // `selectSubstitutes` is not called with zero swap rows today, but a formula
+    // returning ~0 for one would turn a future caller into an instant 422.
+    expect(remapMaxTokens(0)).toBeGreaterThan(0);
   });
 });

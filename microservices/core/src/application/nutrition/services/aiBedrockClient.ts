@@ -43,6 +43,72 @@ import { AnthropicBedrock } from "@anthropic-ai/bedrock-sdk";
 // without re-deriving this constant.**
 export const CLIENT_TIMEOUT_MS = 12_000;
 
+/**
+ * Measured output throughput for Haiku-class Claude on Bedrock (eu-west-2).
+ *
+ * **122 tok/s** over a 5,056-token generation, 2026-07-28. Rounded DOWN to 100
+ * for headroom — this number sizes timeouts, so erring slow is the safe
+ * direction, and Opus-class surfaces are slower still.
+ *
+ * ⚠ This exists because a timeout that cannot physically receive `max_tokens`
+ * of output is a timeout that fires on success. See `maxTokensForBudget`.
+ */
+export const OUTPUT_TOKENS_PER_SECOND = 100;
+
+/**
+ * Everything before the first output token: request transfer, input prefill,
+ * queueing. 3 s covers a ~25 k-token prompt with room to spare (measured ~1.5 s
+ * for 23 k input tokens).
+ */
+export const PREFILL_ALLOWANCE_MS = 3_000;
+
+/**
+ * The largest `max_tokens` an attempt of `timeoutMs` can actually receive.
+ *
+ * ## ⚠ Why this function exists
+ *
+ * `max_tokens` and the attempt timeout are two halves of one budget, and
+ * nothing connected them. Output tokens are generated serially at a bounded
+ * rate, so asking for N tokens commits the caller to at least
+ * `N / OUTPUT_TOKENS_PER_SECOND` seconds of wall clock. If the timeout is
+ * shorter than that, a request that is *working perfectly* still fails — and it
+ * fails as a timeout, which reads as a provider problem rather than a
+ * misconfiguration.
+ *
+ * That is exactly what took down Loadout's re-map on 2026-07-28: `max_tokens`
+ * up to 16,384 (≈ 134 s of generation) against a 12 s attempt. Every attempt
+ * died at 12 s, the SDK silently retried (see `getDefaultClient`), and the
+ * Lambda was killed at 29 s before any error could be thrown — no exception, no
+ * 503, no log line.
+ *
+ * **Set `max_tokens` at or below this value.** Then hitting the ceiling raises a
+ * clean `ai_response_truncated` (422, actionable) instead of a timeout, which is
+ * strictly the better failure: it costs less wall clock and it names its cause.
+ *
+ * ⚠ `tokensPerSecond` defaults to the HAIKU-class measurement. Opus-class
+ * surfaces (the equipment scan, Snap AI photo, recipe extraction) generate
+ * slower, so taking the default there would hand out a ceiling the attempt
+ * cannot receive — reintroducing this exact bug while looking measured. Pass a
+ * measured rate for those, or do not use this function for them.
+ */
+export function maxTokensForBudget(
+  timeoutMs: number,
+  tokensPerSecond: number = OUTPUT_TOKENS_PER_SECOND,
+): number {
+  const generationMs = timeoutMs - PREFILL_ALLOWANCE_MS;
+  if (generationMs <= 0) return 0;
+  return Math.floor((generationMs / 1000) * tokensPerSecond);
+}
+
+/**
+ * The route timeout every AI handler on the coreAPI shares (`infra/api.ts`).
+ *
+ * Exported so the budget arithmetic is asserted against a value rather than a
+ * literal repeated in a comment. ⚠ It is a MIRROR, not the source — SST owns the
+ * real setting. `aiBudget.test.ts` fails if the two drift.
+ */
+export const ROUTE_TIMEOUT_MS = 29_000;
+
 // ─── Minimal client seam ────────────────────────────────────────────────
 //
 // We depend on only the slice of the Anthropic Messages API surface we
@@ -130,14 +196,38 @@ let cachedClient: MinimalBedrockClient | null = null;
  * calls within a warm Lambda so we don't rebuild the credential-provider
  * chain on every invocation. Never constructed in tests — they always
  * pass `deps.client`.
+ *
+ * ## ⚠ `maxRetries: 0` is load-bearing. Do not remove it.
+ *
+ * The Anthropic SDK retries internally, and its default is **2** — verified by
+ * construction, not assumed. Left unset, every timeout budget in this file is
+ * silently wrong by 3×: one `createWithRetry` call becomes
+ * `3 attempts × 12 s = 36 s` plus backoff, and `createWithRetry` then retries
+ * *that*, for a ~72 s worst case against a 29 s Lambda.
+ *
+ * The failure mode is worse than slowness. The Lambda is killed mid-attempt, so
+ * the code never reaches its own `throw`: no `AiUnavailableError`, no 503, no
+ * Sentry exception, no log line — just an execution that stops. That is exactly
+ * how Loadout's re-map failed on 2026-07-28, and it is why it took a CloudWatch
+ * dig rather than an error report to find.
+ *
+ * Retries belong to `createWithRetry`, which is visible, bounded and tested.
+ * Two retry layers stacked without either knowing about the other is not
+ * resilience — it is an unbounded budget.
  */
 export function getDefaultClient(): MinimalBedrockClient {
   if (!cachedClient) {
     cachedClient = new AnthropicBedrock({
       timeout: CLIENT_TIMEOUT_MS,
+      maxRetries: 0,
     }) as unknown as MinimalBedrockClient;
   }
   return cachedClient;
+}
+
+/** Test seam: drop the cached client so construction can be re-asserted. */
+export function resetDefaultClientForTests(): void {
+  cachedClient = null;
 }
 
 /**
@@ -219,16 +309,32 @@ export async function createSingleAttempt(
 }
 
 /**
- * Retryable = 5xx status from the provider, or a timeout/network-shaped
- * error. Anthropic SDK errors carry a numeric `.status` on 4xx/5xx;
- * AbortError / network errors don't carry `.status` at all, and we treat
- * the absence of a definitive 4xx client error as retryable too — a
- * malformed-request 4xx wouldn't normally reach here since we control
- * the request shape.
+ * Retryable = the provider might succeed if asked again: a 5xx, a throttle, a
+ * timeout, or a network-shaped error. Anthropic SDK errors carry a numeric
+ * `.status` on 4xx/5xx; AbortError / network errors don't carry `.status` at
+ * all, and we treat the absence of a definitive client error as retryable too —
+ * a malformed-request 4xx wouldn't normally reach here since we control the
+ * request shape.
+ *
+ * ## ⚠ 408/409/429 are here because `maxRetries: 0` removed the SDK's own retry
+ *
+ * The Anthropic SDK's internal `shouldRetry` covered **408, 409, 429 and ≥500**
+ * and honoured `retry-after`. This predicate only covered `>= 500`, so while the
+ * SDK was quietly retrying underneath it the gap did not show. Turning the SDK's
+ * retries off (see `getDefaultClient` — they were tripling every timeout budget)
+ * would have exposed it: **429 is < 500**, so a Bedrock `ThrottlingException` —
+ * routine on a cross-region on-demand inference profile under load — would have
+ * gone from "retried with backoff, usually fine" to "fails on the first
+ * attempt". Removing a hidden retry layer must not silently remove the retry
+ * BEHAVIOUR with it; this is the visible layer inheriting the responsibility.
+ *
+ * 409 is included for parity with the SDK rather than because Bedrock is known
+ * to emit it.
  */
 export function isRetryable(error: unknown): boolean {
   const status = extractStatus(error);
   if (status === undefined) return true; // network/timeout/unknown
+  if (status === 408 || status === 409 || status === 429) return true;
   return status >= 500;
 }
 

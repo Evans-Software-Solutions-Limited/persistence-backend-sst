@@ -36,9 +36,11 @@
  */
 
 import {
-  createWithRetry,
+  createSingleAttempt,
   findToolUse,
   getDefaultClient,
+  maxTokensForBudget,
+  PREFILL_ALLOWANCE_MS,
   AiUnreadableError,
   type MessagesCreateParams,
   type MinimalBedrockClient,
@@ -68,6 +70,88 @@ export const MAX_REASON_LENGTH = 300;
  */
 export function capReason(reason: string): string {
   return capModelProse(reason, MAX_REASON_LENGTH);
+}
+
+/**
+ * ONE attempt at 24 s, replacing `createWithRetry`'s two at 12 s.
+ *
+ * ## ⚠ This reverses the 2026-07-27 decision, on the measurement it asked for
+ *
+ * `createSingleAttempt`'s docstring records that Brad kept the retry here and
+ * that the choice "can be revisited once that harness exists and is measured."
+ * It now exists, and the measurement is in: Haiku-class Claude on Bedrock
+ * generates at **~122 tok/s**, so a 12 s attempt can receive roughly 1,200
+ * output tokens after prefill. This surface was asking for up to 16,384.
+ *
+ * Every attempt therefore timed out *while working correctly*, and because the
+ * SDK's own `maxRetries` was left at 2 (now 0 — see `getDefaultClient`), the
+ * Lambda was killed at 29 s before any error surfaced. Observed on staging
+ * 2026-07-28: 29,014 ms, `Status: timeout`, zero application output, zero
+ * Bedrock invocations recorded.
+ *
+ * The retry was chosen on the premise that a first-attempt timeout is "a real
+ * anomaly" at 2.6 s p50. That premise held for LATENCY and not for the OUTPUT
+ * budget, which is what actually binds here. A retry is worth having when
+ * failures are transient; when the first attempt fails deterministically
+ * because it cannot fit the work, a second identical attempt only spends the
+ * budget that would have let the first one finish.
+ *
+ * 24 s + ~3 s of auth/DB/usage-log overhead sits under the 29 s route timeout,
+ * where the old 2 × 12 s (really 6 × 12 s through the SDK) never did.
+ */
+export const REMAP_TIMEOUT_MS = 24_000;
+
+/**
+ * Output ceiling for one re-map, sized so the TRUNCATION guard fires before the
+ * TIMEOUT does.
+ *
+ * Per row the model emits a uuid, a sort key and a `reason` capped at
+ * {@link MAX_REASON_LENGTH} chars (~75 tokens) — ~120 tokens with JSON
+ * scaffolding, which is the same per-row figure the previous formula used and
+ * is generous against E2's measured ~40.
+ *
+ * ⚠ What changed is the BASE and the CEILING, not the slope. The old formula was
+ * `4096 + 120 × rows`, capped at 16,384. That base was inherited as a floor from
+ * a fixed budget rather than derived from anything, and it alone was ~41 s of
+ * generation — more than the whole route budget, before a single row was
+ * counted. A ceiling is free in money (output tokens bill on use) but not in
+ * TIME, and that is the distinction the old comment missed.
+ *
+ * The ceiling is now derived from the attempt timeout, so the two cannot drift
+ * apart again. A plan long enough to exceed it raises `ai_response_truncated`
+ * (422, names its cause) rather than burning 29 s and dying silently.
+ *
+ * ## ⚠ Where the worst-case slope stops being honoured, precisely
+ *
+ * `maxTokensForBudget(24_000)` is 2,100. The clamp therefore engages at
+ * `(2100 − 512) / 120 ≈ 13` swap rows, and past ~17 rows the allocation is below
+ * even `120 × rows` with no base at all. **This does not preserve the worst case
+ * for long plans, and saying otherwise would be the same overclaim the old
+ * comment made.**
+ *
+ * It is a tail risk rather than a common path: E2 measured ~40 tokens/row, at
+ * which 2,100 covers ~52 rows, and 120/row is a deliberately pessimistic figure
+ * built from a max-length reason. But a 30-exercise full-body workout adapted to
+ * a bands-only context is a real input, and if the model is verbose it will
+ * truncate and 422.
+ *
+ * That is accepted for now because the alternative is worse in every direction:
+ * the ceiling cannot be raised without raising the attempt timeout, the attempt
+ * timeout cannot be raised without exceeding the route's 29 s, and the route's
+ * 29 s is an API Gateway limit. A synchronous request simply cannot generate
+ * more than ~2,100 tokens here. The real fixes are to shorten what the model
+ * must emit per row (`MAX_REASON_LENGTH` dominates) or to make long adaptations
+ * asynchronous — both larger than this change.
+ *
+ * ⚠ The truncation path is LOGGED at the handler for exactly this reason. If
+ * `[loadout-remap] unreadable` starts appearing with high `swapRows`, this is
+ * why, and the numbers to act on are in the line.
+ */
+export function remapMaxTokens(
+  swapRowCount: number,
+  timeoutMs: number = REMAP_TIMEOUT_MS,
+): number {
+  return Math.min(maxTokensForBudget(timeoutMs), 512 + 120 * swapRowCount);
 }
 
 /**
@@ -304,18 +388,12 @@ export function parseRemapSelections(input: unknown): RemapSelection[] {
  * ONE call for the whole plan (§ 1 stage 2), forced tool use, ids validated for
  * membership in TypeScript before anything downstream sees them.
  *
- * `createWithRetry` — 12 s per attempt, one retry — is what design § 1b specifies
- * for this surface and what E2 measured through (p50 2.60 s, max 3.79 s over 58
- * swap-bearing fixtures, i.e. ~3× headroom on a single attempt). ⚠ The retry PATH
- * is unmeasured: 12 s × 2 plus auth/SQL/usage-log overhead sits close to the hard
- * 30 s API Gateway integration ceiling, so a first-attempt timeout converts a
- * slow request into a failed one. The alternative — a single ~20 s attempt, which
- * is what the scan needs (T-E1.6) — trades the retry for more per-attempt budget.
- * **Brad chose the retry, 2026-07-27**, on the measured evidence: the retry path
- * is only reached after an actual first failure, where a ~24 s worst case still
- * beats failing the request outright. The single-long-attempt variant is NOT
- * abandoned — Phase 3's scan requires it (T-E1.6), so it gets built there and this
- * decision can be revisited once that harness exists and is measured.
+ * ⚠ **This used `createWithRetry` (12 s × 2) until 2026-07-28 and it never
+ * worked in production.** The retry was chosen on latency evidence — E2's p50
+ * 2.60 s / max 3.79 s over 58 fixtures — but latency was not the binding
+ * constraint. OUTPUT BUDGET was: at ~122 tok/s a 12 s attempt receives ~1,200
+ * tokens, and this surface asked for up to 16,384. See {@link REMAP_TIMEOUT_MS}
+ * and {@link remapMaxTokens} for the full account and the numbers.
  */
 export async function selectSubstitutes(
   input: {
@@ -325,33 +403,47 @@ export async function selectSubstitutes(
     equipmentTypeIds: readonly string[];
     lookups: RemapNameLookups;
   },
-  deps: { client?: MinimalBedrockClient; modelId?: string } = {},
+  deps: {
+    client?: MinimalBedrockClient;
+    modelId?: string;
+    /**
+     * Caps the attempt at what is LEFT of the route budget, rather than assuming
+     * the full {@link REMAP_TIMEOUT_MS} is still available.
+     *
+     * ⚠ Without this the 24 s is asserted, never enforced. The handler makes
+     * ~seven sequential round trips before reaching here (auth, workout read,
+     * entitlement, gym/equipment read, plan rows, ceiling count, candidate
+     * query, then four reference reads); on a cold start with a fresh pooler
+     * connection that is comfortably over the 3 s allowance the arithmetic
+     * assumes. 4 s of preamble plus a full 24 s attempt plus the usage-log
+     * INSERT exceeds 29 s — and a Lambda killed there produces no 503, no usage
+     * row and no log line, which is a narrower version of the exact bug this
+     * change exists to fix.
+     */
+    timeoutMs?: number;
+  } = {},
 ): Promise<RemapResult> {
   const client = deps.client ?? getDefaultClient();
   const modelId = deps.modelId ?? remapModelId();
+  // Never longer than the surface's own budget, and never so short that the
+  // request is hopeless — below the prefill allowance there is no point sending
+  // it at all, so floor it and let the attempt fail honestly.
+  const timeoutMs = Math.max(
+    PREFILL_ALLOWANCE_MS,
+    Math.min(REMAP_TIMEOUT_MS, deps.timeoutMs ?? REMAP_TIMEOUT_MS),
+  );
 
   const swapRowCount = input.plan.filter((row) => row.needsSwap).length;
 
   const params: MessagesCreateParams = {
     model: modelId,
-    // Scaled to the work asked for, not fixed.
-    //
-    // Nothing bounds how many exercises a workout may contain, so the number of
-    // rows needing a swap is unbounded while a fixed 4096 is not. A bands-only
-    // context on a long plan cannot fit one entry plus a sentence per row, and the
-    // truncation guard below then converts that into a permanent 422: the workout
-    // is un-adaptable, and because the usage row is written for every inference
-    // that reached the provider, each retry costs the user one of their daily
-    // adaptations.
-    //
-    // Sized off the WORST case per row and floored at the budget it replaces: a
-    // max-length `reason` is 300 chars (~75 tokens) plus a 36-char uuid and JSON
-    // scaffolding, so ~120 tokens/row. E2 measured ~40, so this is generous —
-    // which costs nothing, because output tokens are billed on use, not on the
-    // ceiling. The base matters as much as the slope: a per-row-only formula would
-    // have given every realistic plan LESS headroom than the fixed 4096 it
-    // replaced, narrowing the tail while making the common case worse.
-    max_tokens: Math.min(16_384, 4096 + 120 * swapRowCount),
+    // Scaled to the work asked for AND to what the attempt can receive — see
+    // `remapMaxTokens`, which derives the ceiling from `REMAP_TIMEOUT_MS`.
+    // Follows the ACTUAL attempt budget, not the nominal one — a shortened
+    // deadline must shorten the ceiling with it, or the pairing this whole
+    // change is about comes apart again on exactly the slow requests that need
+    // it most.
+    max_tokens: remapMaxTokens(swapRowCount, timeoutMs),
     messages: [
       {
         role: "user",
@@ -368,7 +460,7 @@ export async function selectSubstitutes(
   };
 
   const startedAt = Date.now();
-  const response = await createWithRetry(client, params);
+  const response = await createSingleAttempt(client, params, timeoutMs);
   const latencyMs = Date.now() - startedAt;
 
   // A truncated tool payload PARSES — the surviving rows are well-formed and the

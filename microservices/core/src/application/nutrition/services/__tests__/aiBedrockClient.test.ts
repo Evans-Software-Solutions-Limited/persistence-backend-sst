@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   createSingleAttempt,
   createWithRetry,
@@ -6,6 +6,11 @@ import {
   extractStatus,
   AiUnavailableError,
   CLIENT_TIMEOUT_MS,
+  getDefaultClient,
+  maxTokensForBudget,
+  OUTPUT_TOKENS_PER_SECOND,
+  PREFILL_ALLOWANCE_MS,
+  resetDefaultClientForTests,
   type MessagesCreateParams,
   type MessagesCreateResponse,
   type MinimalBedrockClient,
@@ -149,10 +154,27 @@ describe("isRetryable / extractStatus", () => {
     expect(extractStatus(new Error("aborted"))).toBeUndefined();
   });
 
-  it("treats 5xx as retryable and 4xx as not", () => {
+  it("retries 5xx, throttles and the SDK's other transient statuses", () => {
+    // ⚠ This assertion used to read `isRetryable(429) === false`, and it was
+    // wrong the whole time — it was just invisible, because the SDK was
+    // retrying 429 underneath this layer with `maxRetries: 2`. Turning those off
+    // (they were tripling every timeout budget) would have converted a routine
+    // Bedrock `ThrottlingException` into a first-attempt failure across every AI
+    // surface. Removing a hidden retry must not remove the retry BEHAVIOUR.
     expect(isRetryable(statusError(500))).toBe(true);
-    expect(isRetryable(statusError(429))).toBe(false);
+    expect(isRetryable(statusError(503))).toBe(true);
+    expect(isRetryable(statusError(429))).toBe(true);
+    expect(isRetryable(statusError(408))).toBe(true);
+    expect(isRetryable(statusError(409))).toBe(true);
+  });
+
+  it("does NOT retry a genuine client error", () => {
+    // The other half: a 400/403 fails identically however many times it is sent,
+    // and retrying it just spends the route budget twice.
+    expect(isRetryable(statusError(400))).toBe(false);
     expect(isRetryable(statusError(403))).toBe(false);
+    expect(isRetryable(statusError(404))).toBe(false);
+    expect(isRetryable(statusError(422))).toBe(false);
   });
 
   it("ignores a non-numeric status", () => {
@@ -163,5 +185,61 @@ describe("isRetryable / extractStatus", () => {
   it("handles a null/primitive throw", () => {
     expect(extractStatus(null)).toBeUndefined();
     expect(extractStatus("boom")).toBeUndefined();
+  });
+});
+
+describe("getDefaultClient — the SDK's own retries", () => {
+  beforeEach(() => resetDefaultClientForTests());
+  afterEach(() => resetDefaultClientForTests());
+
+  it("disables them, because two stacked retry layers is an unbounded budget", () => {
+    // ⚠ THE BUG THIS FILE NOW GUARDS. The Anthropic SDK defaults `maxRetries` to
+    // 2 — verified against the installed package, not assumed. Left unset, one
+    // `createWithRetry` call is 3 attempts x 12 s = 36 s, and `createWithRetry`
+    // retries THAT: ~72 s worst case against a 29 s Lambda.
+    //
+    // The damage is not the slowness. The Lambda is killed mid-attempt, so the
+    // code never reaches its own `throw` — no AiUnavailableError, no 503, no
+    // Sentry exception, no log line. Loadout's re-map failed exactly this way on
+    // staging 2026-07-28 and presented as a silent 29 s timeout.
+    const client = getDefaultClient() as unknown as {
+      maxRetries: number;
+      timeout: number;
+    };
+
+    expect(client.maxRetries).toBe(0);
+    expect(client.timeout).toBe(CLIENT_TIMEOUT_MS);
+  });
+
+  it("caches, so a warm Lambda does not rebuild the credential chain", () => {
+    expect(getDefaultClient()).toBe(getDefaultClient());
+  });
+});
+
+describe("maxTokensForBudget", () => {
+  it("converts an attempt timeout into the output it can actually receive", () => {
+    // Generation is serial at a bounded rate, so a timeout IS a token budget.
+    expect(maxTokensForBudget(24_000)).toBe(
+      Math.floor(
+        ((24_000 - PREFILL_ALLOWANCE_MS) / 1000) * OUTPUT_TOKENS_PER_SECOND,
+      ),
+    );
+  });
+
+  it("shows why the old 12 s / 16,384-token pairing could never work", () => {
+    // ~1,200 tokens against a ceiling of 16,384 — every attempt timed out while
+    // the request was working correctly.
+    expect(maxTokensForBudget(12_000)).toBeLessThan(2_000);
+  });
+
+  it("returns 0 rather than a negative budget when the timeout cannot even prefill", () => {
+    // A negative ceiling would flow into `Math.min` and produce a nonsense
+    // `max_tokens` the provider would reject with a confusing 400.
+    expect(maxTokensForBudget(PREFILL_ALLOWANCE_MS)).toBe(0);
+    expect(maxTokensForBudget(500)).toBe(0);
+  });
+
+  it("is rounded DOWN, so the budget is never optimistic", () => {
+    expect(maxTokensForBudget(3_015)).toBe(1);
   });
 });
