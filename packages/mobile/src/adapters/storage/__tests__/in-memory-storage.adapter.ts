@@ -245,6 +245,22 @@ export class InMemoryStorageAdapter implements StoragePort {
     }
   }
 
+  markMutationDeferred(
+    id: number,
+    reason: string,
+    retryAfterSeconds = 5,
+  ): void {
+    // Parity with SQLite: postpone WITHOUT consuming the retry budget.
+    const entry = this.queue.find((e) => e.id === id);
+    if (entry) {
+      entry.status = "failed";
+      entry.errorMessage = reason;
+      entry.nextAttemptAt = new Date(
+        Date.now() + Math.max(1, Math.trunc(retryAfterSeconds)) * 1000,
+      ).toISOString();
+    }
+  }
+
   markMutationPermanentlyFailed(id: number, errorMessage: string): void {
     // Parity with SQLite: terminal 4xx state, `retryCount` untouched.
     const entry = this.queue.find((e) => e.id === id);

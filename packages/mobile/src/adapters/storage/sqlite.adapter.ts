@@ -365,6 +365,9 @@ export class SQLiteStorageAdapter implements StoragePort {
         -- Backs exponential backoff: before this, retry cadence WAS drain
         -- cadence, so three foreground toggles during a server blip burnt the
         -- whole 3-attempt budget in seconds and stranded the entry.
+        -- NOTE: getPendingMutations deliberately does NOT filter on this — it
+        -- answers "still retryable". Dueness is applied by the drain, via
+        -- isMutationDue in sync.command.
         next_attempt_at TEXT,
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -1082,7 +1085,7 @@ export class SQLiteStorageAdapter implements StoragePort {
     // the user found the /sync-failed screen.
     //
     // The delay is computed from the POST-increment retry_count in SQL so it
-    // can't drift from the value the drain reads: 1st failure → 5s, 2nd → 25s.
+    // can't drift from the value the drain reads: 1st failure → 5s, 2nd → 20s.
     // Capped so a long-lived queue can't schedule itself days out.
     // `retry_count` on the right-hand side is the pre-update value (SQL
     // semantics), so `retry_count + 1` is this attempt's number: 1st failure →
@@ -1099,6 +1102,26 @@ export class SQLiteStorageAdapter implements StoragePort {
            updated_at = datetime('now')
        WHERE id = ?`,
       [errorMessage, SYNC_BACKOFF_MAX_SECONDS, SYNC_BACKOFF_BASE_SECONDS, id],
+    );
+  }
+
+  markMutationDeferred(
+    id: number,
+    reason: string,
+    retryAfterSeconds: number = SYNC_BACKOFF_BASE_SECONDS,
+  ): void {
+    const db = this.getDb();
+    // `retry_count` deliberately NOT incremented — see the port docstring. The row
+    // stays `failed` so it remains visible to the sync UI, and carries a window so
+    // a hot trigger loop doesn't spin on it.
+    db.runSync(
+      `UPDATE sync_queue
+       SET status = 'failed',
+           error_message = ?,
+           next_attempt_at = datetime('now', '+' || ? || ' seconds'),
+           updated_at = datetime('now')
+       WHERE id = ?`,
+      [reason, Math.max(1, Math.trunc(retryAfterSeconds)), id],
     );
   }
 
@@ -1451,6 +1474,9 @@ export class SQLiteStorageAdapter implements StoragePort {
       for (const table of [
         "cached_workout_detail",
         "cached_workouts",
+        // `createWorkoutCommand` now writes coach-authored workouts here
+        // offline, so this slice holds `local-…` ids too.
+        "cached_coach_workout_library",
       ] as const) {
         const blobs = db.getAllSync(
           `SELECT rowid, payload FROM ${table} WHERE payload LIKE ?`,
@@ -1574,6 +1600,38 @@ export class SQLiteStorageAdapter implements StoragePort {
           db.runSync(
             `UPDATE cached_workouts SET payload = ? WHERE user_id = ? AND type = ?`,
             [JSON.stringify(workouts), r.user_id, r.type],
+          );
+        }
+      }
+
+      // 3b. cached_coach_workout_library — the same array-of-workouts shape, and
+      // a first-class holder of `local-…` ids since `createWorkoutCommand` began
+      // writing coach-authored workouts here offline. Without this, the library
+      // row kept the local id after the create flushed, and opening it pushed
+      // `/workouts/local-…/edit` → 400 "Invalid identifier format" (self-healing
+      // only on the next focus, when `load()` replaces the slice).
+      const coachRows = db.getAllSync(
+        `SELECT user_id, payload FROM cached_coach_workout_library WHERE payload LIKE ?`,
+        [`%${localId}%`],
+      ) as { user_id: string; payload: string }[];
+      for (const r of coachRows) {
+        let library: Workout[];
+        try {
+          library = JSON.parse(r.payload) as Workout[];
+        } catch {
+          continue; // malformed row — never crash the swap
+        }
+        let touched = false;
+        for (const w of library) {
+          if (w.id === localId) {
+            w.id = serverId;
+            touched = true;
+          }
+        }
+        if (touched) {
+          db.runSync(
+            `UPDATE cached_coach_workout_library SET payload = ? WHERE user_id = ?`,
+            [JSON.stringify(library), r.user_id],
           );
         }
       }

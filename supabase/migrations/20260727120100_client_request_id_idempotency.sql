@@ -29,13 +29,22 @@ ALTER TABLE workouts
 ALTER TABLE exercises
   ADD COLUMN IF NOT EXISTS client_request_id text;
 
--- Partial indexes: only rows that actually carry a key are constrained, which
--- keeps the index small and leaves the pre-existing rows (all NULL) out of it
--- entirely.
+-- ⚠ FULL indexes, deliberately NOT partial (`WHERE client_request_id IS NOT NULL`).
+--
+-- A partial index cannot be inferred by `ON CONFLICT (cols) DO NOTHING` unless the
+-- statement repeats the index predicate, and Drizzle's
+-- `onConflictDoNothing({ target })` emits no predicate — see
+-- `drizzle-orm/pg-core/query-builders/insert.js`, which only appends `where` when
+-- you pass one explicitly. Postgres then raises 42P10 ("no unique or exclusion
+-- constraint matching the ON CONFLICT specification") on EVERY keyed insert, which
+-- the drain classifies as transient and retries until the entry is stranded.
+--
+-- The predicate also bought nothing: NULLs are DISTINCT in a Postgres unique
+-- index, so the pre-existing all-NULL rows never conflict with each other under a
+-- full index either. This is also why the M13 precedent works —
+-- `workout_sessions_user_client_session_idx` (20260710120000) is a full index.
 CREATE UNIQUE INDEX IF NOT EXISTS workouts_created_by_client_request_idx
-  ON workouts (created_by, client_request_id)
-  WHERE client_request_id IS NOT NULL;
+  ON workouts (created_by, client_request_id);
 
 CREATE UNIQUE INDEX IF NOT EXISTS exercises_created_by_client_request_idx
-  ON exercises (created_by, client_request_id)
-  WHERE client_request_id IS NOT NULL;
+  ON exercises (created_by, client_request_id);

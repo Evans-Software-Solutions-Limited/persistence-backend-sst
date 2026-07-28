@@ -229,6 +229,80 @@ describe("unsynced local-id handling", () => {
       expect(storage.getCachedExercise("server-ex-1")).toBeNull();
     });
 
+    it("QUEUES the delete when the create is IN FLIGHT, instead of discarding it", async () => {
+      // `discardEntries` is an unconditional DELETE (unlike the status-conditional
+      // `updateMutationPayload`), so discarding an in-flight create would drop the
+      // queue row while the POST still commits — the drain's
+      // markMutationCompleted/swapLocalExerciseId would then no-op against a row
+      // that no longer exists, orphaning a server-side exercise the user believes
+      // is deleted. The window is seconds wide now an enqueue triggers a drain.
+      storage.saveCustomExercise(localExercise("local-ex-4"));
+      storage.enqueueMutation({
+        entityType: "exercise",
+        entityId: "local-ex-4",
+        operation: "create",
+        payload: { name: "My Lift" },
+        endpoint: "/exercises",
+        method: "POST",
+      });
+      const [create] = storage.getQueuedEntriesForEntity(
+        "exercise",
+        "local-ex-4",
+      );
+      storage.markMutationInFlight(create.id);
+
+      const api = apiThatMustNotBeCalled();
+      const result = await deleteExerciseCommand(
+        { api, storage },
+        "local-ex-4",
+      );
+
+      expect(result.ok).toBe(true);
+      expect(api.deleteExercise).not.toHaveBeenCalled();
+      // The create SURVIVES...
+      const queued = storage.getQueuedEntriesForEntity(
+        "exercise",
+        "local-ex-4",
+      );
+      expect(queued.some((e) => e.operation === "create")).toBe(true);
+      // ...and a DELETE is queued behind it. swapLocalExerciseId rewrites this
+      // endpoint when the create's reply lands.
+      const del = queued.find((e) => e.operation === "delete");
+      expect(del).toBeDefined();
+      expect(del?.endpoint).toBe("/exercises/local-ex-4");
+      // The row is gone locally either way, so the UI reflects the user's intent.
+      expect(storage.getCachedExercise("local-ex-4")).toBeNull();
+    });
+
+    it("discards a sibling PATCH too, not just the create", async () => {
+      // Otherwise the PATCH addresses a discarded local id forever, burns its
+      // budget, and surfaces in /sync-failed for an exercise the user deleted.
+      storage.saveCustomExercise(localExercise("local-ex-5"));
+      storage.enqueueMutation({
+        entityType: "exercise",
+        entityId: "local-ex-5",
+        operation: "create",
+        payload: { name: "My Lift" },
+        endpoint: "/exercises",
+        method: "POST",
+      });
+      storage.enqueueMutation({
+        entityType: "exercise",
+        entityId: "local-ex-5",
+        operation: "update",
+        payload: { name: "Renamed" },
+        endpoint: "/exercises/local-ex-5",
+        method: "PATCH",
+      });
+
+      const api = apiThatMustNotBeCalled();
+      await deleteExerciseCommand({ api, storage }, "local-ex-5");
+
+      expect(
+        storage.getQueuedEntriesForEntity("exercise", "local-ex-5"),
+      ).toEqual([]);
+    });
+
     it("goes through the API when the create has already COMPLETED", async () => {
       // A completed create means the server has the row; the local id may simply
       // not have been swapped yet. Deleting locally only would orphan it.

@@ -39,12 +39,53 @@ export async function deleteExerciseCommand(
   // the id, leaving a stale cache row), and conversely an id without the prefix
   // can't have an outstanding create. Asking for outstanding creates answers the
   // real question: has anything been accepted for this row?
-  const outstandingCreates = deps.storage
-    .getQueuedEntriesForEntity("exercise", id)
-    .filter((entry) => entry.operation === "create");
+  const queued = deps.storage.getQueuedEntriesForEntity("exercise", id);
+  const creates = queued.filter((entry) => entry.operation === "create");
 
-  if (outstandingCreates.length > 0) {
-    deps.storage.discardEntries(outstandingCreates.map((entry) => entry.id));
+  // ⚠ An `in_flight` create is a request that may ALREADY have committed. It must
+  // not take the purely-local path: `discardEntries` is an unconditional DELETE
+  // (unlike the status-conditional `updateMutationPayload`), so discarding it
+  // would drop the queue row while the POST still lands server-side — the drain's
+  // `markMutationCompleted`/`swapLocalExerciseId` would then no-op against a row
+  // that no longer exists, leaving an orphaned exercise that reappears on the next
+  // library refresh while the user believes it was deleted. The window is real and
+  // seconds wide now that an enqueue triggers an immediate drain.
+  const inFlightCreate = creates.find((entry) => entry.status === "in_flight");
+
+  if (inFlightCreate) {
+    // Queue the delete instead of sending it: the id is still local, so an
+    // immediate API call would 400. `swapLocalExerciseId` rewrites this endpoint
+    // when the in-flight create's reply lands, so the DELETE then reaches the real
+    // resource. Evict locally so the UI reflects the user's intent immediately.
+    deps.storage.enqueueMutation({
+      entityType: "exercise",
+      entityId: id,
+      operation: "delete",
+      payload: {},
+      endpoint: `/exercises/${id}`,
+      method: "DELETE",
+    });
+    deps.storage.removeCachedExercise(id);
+    return ok(undefined);
+  }
+
+  if (creates.length > 0) {
+    // Never sent (or terminally failed) — purely local. Discard EVERY queued
+    // entry for this exercise, not just the creates: an edit made while the create
+    // was blocked/in-flight enqueues its own `PATCH /exercises/local-…`, and
+    // leaving that behind would have it address a discarded id forever, burn its
+    // budget, and surface in /sync-failed as an unexplainable error for an
+    // exercise the user deleted.
+    //
+    // `in_flight` siblings are still excluded, for the same
+    // may-already-have-committed reason as above. (A PATCH cannot meaningfully be
+    // in flight when its create has not been sent, so this is defence rather than
+    // a reachable case.)
+    deps.storage.discardEntries(
+      queued
+        .filter((entry) => entry.status !== "in_flight")
+        .map((entry) => entry.id),
+    );
     deps.storage.removeCachedExercise(id);
     return ok(undefined);
   }

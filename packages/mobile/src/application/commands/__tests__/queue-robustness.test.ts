@@ -299,3 +299,90 @@ describe("refreshWorkouts write-through", () => {
     ).toEqual(["local-w1"]);
   });
 });
+
+describe("deferral does not consume the retry budget", () => {
+  let storage: InMemoryStorageAdapter;
+  let auth: InMemoryAuthAdapter;
+
+  beforeEach(() => {
+    storage = new InMemoryStorageAdapter();
+    storage.initialize();
+    auth = new InMemoryAuthAdapter();
+    mockFetch.mockReset();
+  });
+
+  function enqueueWorkoutCreate(): void {
+    storage.enqueueMutation({
+      entityType: "workout",
+      entityId: "local-w1",
+      operation: "create",
+      payload: { name: "Push" },
+      endpoint: "/workouts",
+      method: "POST",
+    });
+  }
+
+  it("an OFFLINE (transport) failure leaves retryCount at zero", async () => {
+    // The reported loss: the drain never consults connectivity and fires on
+    // mount, foreground, reconnect, a dozen inline call sites and now on enqueue.
+    // At 5s→20s backoff, ~25s offline used to exhaust the entry, after which only
+    // /sessions/record is ever auto-resurrected — so a workout created offline
+    // was simply gone.
+    enqueueWorkoutCreate();
+    mockFetch.mockRejectedValue(new TypeError("Network request failed"));
+
+    await processSyncQueue(storage, auth, "https://api.test");
+
+    const [entry] = storage.getPendingMutations();
+    expect(entry.status).toBe("failed");
+    expect(entry.retryCount).toBe(0);
+    expect(entry.nextAttemptAt).not.toBeNull();
+  });
+
+  it("stays retryable across many offline drains — it can never exhaust", async () => {
+    enqueueWorkoutCreate();
+    mockFetch.mockRejectedValue(new TypeError("Network request failed"));
+
+    for (let i = 0; i < 6; i++) {
+      await processSyncQueue(storage, auth, "https://api.test", AFTER_BACKOFF);
+    }
+
+    expect(storage.getPendingMutations()).toHaveLength(1);
+    expect(storage.getFailedExhaustedEntries()).toHaveLength(0);
+  });
+
+  it("a real server rejection DOES still burn the budget", async () => {
+    // The counter-case: a 5xx is an answer, so it must remain chargeable —
+    // otherwise nothing would ever reach the review UI.
+    enqueueWorkoutCreate();
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 500,
+      text: async () => "boom",
+    });
+
+    await processSyncQueue(storage, auth, "https://api.test");
+
+    expect(storage.getPendingMutations()[0].retryCount).toBe(1);
+  });
+
+  it("a catalogue deferral leaves retryCount at zero", async () => {
+    // `unresolvable`/`catalogue_unavailable` are explicitly NOT transient, so
+    // they must not spend a transient budget.
+    storage.enqueueMutation({
+      entityType: "exercise",
+      entityId: "local-e1",
+      operation: "create",
+      payload: { name: "Lift", primary_muscles: ["chest"] },
+      endpoint: "/exercises",
+      method: "POST",
+    });
+
+    await processSyncQueue(storage, auth, "https://api.test");
+
+    expect(mockFetch).not.toHaveBeenCalled();
+    const [entry] = storage.getPendingMutations();
+    expect(entry.retryCount).toBe(0);
+    expect(entry.status).toBe("failed");
+  });
+});

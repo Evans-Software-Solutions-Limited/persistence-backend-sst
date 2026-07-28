@@ -238,6 +238,34 @@ export interface StoragePort {
    */
   recoverInFlightMutations(): number;
   /**
+   * Postpone an entry WITHOUT consuming its retry budget.
+   *
+   * The distinction that matters: `markMutationFailed` means "the server rejected
+   * this attempt", and burning a retry is right. This means "we did not get an
+   * answer, or we knowingly declined to send" — no attempt was made, so charging
+   * the budget is wrong.
+   *
+   * Two cases need it, and both previously stranded real user data:
+   * - **Offline / transport failure.** The drain fires on mount, on every
+   *   foreground transition, on reconnect, from a dozen inline call sites and now
+   *   on enqueue — none of which consult connectivity. With a 5s→20s backoff, an
+   *   offline stretch of ~25 seconds while the user carries on using the app is
+   *   enough to exhaust an entry, after which it is invisible to every future
+   *   drain and only `/sessions/record` entries are auto-resurrected on reconnect.
+   * - **A missing reference catalogue.** The drain declines to send an exercise
+   *   whose muscle/equipment enums cannot be resolved yet; the resolution's own
+   *   docstring calls that "not a transient condition", so it must not consume a
+   *   transient budget.
+   *
+   * Sets `failed` + `error_message` + `next_attempt_at` (so it still backs off and
+   * still shows in the sync UI) and leaves `retry_count` untouched.
+   */
+  markMutationDeferred(
+    id: number,
+    reason: string,
+    retryAfterSeconds?: number,
+  ): void;
+  /**
    * M10.6: flip a queue entry to `blocked_entitlement` and persist the
    * server's verdict on the row. The sync worker calls this in response
    * to HTTP 402 + `code: "ENTITLEMENT_DENIED"` and CONTINUES processing

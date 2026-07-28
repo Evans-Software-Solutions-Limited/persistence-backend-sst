@@ -333,13 +333,13 @@ export async function processSyncQueue(
       if (entry.entityType === "exercise" && entry.method !== "DELETE") {
         const prepared = prepareExercisePayload(storage, entry.payload);
         if (prepared.deferReason !== null) {
-          // Not a server rejection — we never sent anything. Count it as a
-          // failure so the retry budget applies, but keep the entry retryable
-          // so the next drain (by which point the catalogue has almost
-          // certainly loaded) succeeds. Sending the unresolved payload instead
-          // would 422, and a 422 is classified PERMANENT, which would strand
-          // the user's exercise for good.
-          storage.markMutationFailed(entry.id, prepared.deferReason);
+          // Nothing was sent, so this must NOT consume the retry budget — the
+          // resolution's own docstring calls a missing catalogue "not a transient
+          // condition", and charging a transient budget for it exhausted the entry
+          // after ~25s of drains and stranded the user's exercise where only
+          // `/sessions/record` gets auto-resurrected. `markMutationDeferred`
+          // postpones with a backoff window and leaves `retry_count` alone.
+          storage.markMutationDeferred(entry.id, prepared.deferReason);
           failed++;
           continue;
         }
@@ -643,6 +643,28 @@ export async function processSyncQueue(
       succeeded++;
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";
+
+      // ⚠ TRANSPORT failure — `fetch` itself rejected, so we never received an
+      // answer and cannot know whether the server saw the request. No attempt was
+      // made in the sense the retry budget measures, so charging it is wrong.
+      //
+      // This is the offline case, and it mattered because the drain does not
+      // consult connectivity: it fires on mount, on every foreground transition,
+      // on reconnect, from a dozen inline call sites, and (new on this branch) on
+      // enqueue. With a 5s→20s backoff, ~25 seconds offline while the user keeps
+      // using the app was enough to exhaust an entry — after which it is invisible
+      // to every future drain, and `resurrectAndFlush` only rescues
+      // `/sessions/record`. A workout created on the tube was simply gone.
+      //
+      // Deferring instead keeps it retryable indefinitely, which is correct: an
+      // offline device has made no statement about the request's validity. A
+      // genuine server rejection still arrives as a `SyncHttpError` and still
+      // burns the budget below.
+      if (!(err instanceof SyncHttpError)) {
+        storage.markMutationDeferred(entry.id, message);
+        failed++;
+        continue;
+      }
 
       // A permanent client error (4xx except 402/408/429) can never succeed on
       // a re-send, so mark it terminally `permanently_failed` NOW — no retry
