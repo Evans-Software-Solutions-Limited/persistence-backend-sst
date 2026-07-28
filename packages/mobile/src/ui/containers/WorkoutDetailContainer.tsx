@@ -9,6 +9,7 @@ import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useAuth } from "@/ui/hooks/useAuth";
 import { useLoadoutGate } from "@/ui/hooks/useLoadoutGate";
 import { useWorkoutVariations } from "@/ui/hooks/useWorkoutVariations";
+import { LoadoutUpsellSheet } from "@/ui/presenters/loadout/LoadoutUpsellSheet";
 import { useProfilePage } from "@/ui/hooks/useProfilePage";
 import { useWorkout } from "@/ui/hooks/useWorkout";
 import { useWorkoutHistory } from "@/ui/hooks/useWorkoutHistory";
@@ -47,6 +48,8 @@ export function WorkoutDetailContainer() {
   const loadoutGate = useLoadoutGate();
   const openLoadout = useLoadoutFlow((state) => state.open);
   const openLoadoutUpsell = useLoadoutFlow((state) => state.openUpsell);
+  const loadoutUpsellOpen = useLoadoutFlow((state) => state.upsellOpen);
+  const closeLoadoutUpsell = useLoadoutFlow((state) => state.closeUpsell);
 
   const workout = detail.workout;
   const isOwner =
@@ -120,7 +123,14 @@ export function WorkoutDetailContainer() {
       openLoadoutUpsell();
       return;
     }
+    // Seed the store, then navigate. Both are synchronous in one tick and the
+    // route only reads the store when it MOUNTS, so the order is not actually
+    // load-bearing today — a mutation swapping them survives, correctly. Written
+    // this way because it states the dependency: `/(app)/loadout` redirects out
+    // on a null `workoutId`, and that redirect is the thing keeping a direct deep
+    // link from rendering an empty shell.
     openLoadout(workout.id, workout.name);
+    router.push("/(app)/loadout" as never);
   }, [
     workout,
     loadoutGate.isResolved,
@@ -135,30 +145,49 @@ export function WorkoutDetailContainer() {
   }, []);
 
   return (
-    <WorkoutDetailPresenter
-      workout={workout}
-      history={history.history}
-      isHistoryLoading={history.isLoading}
-      muscles={muscles}
-      equipmentLabel={equipmentLabel}
-      isOwner={isOwner}
-      isLoading={detail.isLoading}
-      error={detail.error}
-      weightUnit={weightUnit}
-      onClose={onClose}
-      onEdit={onEdit}
-      onStartWorkout={onStartWorkout}
-      onExercisePress={onExercisePress}
-      showLoadout={isOwner}
-      // `pending` takes precedence over `locked` INSIDE the card, so this passes
-      // the raw verdict rather than pre-masking it with `isResolved`. An earlier
-      // version did both; the extra conjunct could not change any rendered
-      // output, which a mutation sweep showed by surviving its removal.
-      loadoutLocked={!loadoutGate.allowed}
-      loadoutPending={!loadoutGate.isResolved}
-      loadoutVariations={variations.variations}
-      onOpenLoadout={onOpenLoadout}
-      onOpenVariation={onOpenVariation}
-    />
+    <>
+      <WorkoutDetailPresenter
+        workout={workout}
+        history={history.history}
+        isHistoryLoading={history.isLoading}
+        muscles={muscles}
+        equipmentLabel={equipmentLabel}
+        isOwner={isOwner}
+        isLoading={detail.isLoading}
+        error={detail.error}
+        weightUnit={weightUnit}
+        onClose={onClose}
+        onEdit={onEdit}
+        onStartWorkout={onStartWorkout}
+        onExercisePress={onExercisePress}
+        showLoadout={isOwner}
+        // `pending` takes precedence over `locked` INSIDE the card, so this passes
+        // the raw verdict rather than pre-masking it with `isResolved`. An earlier
+        // version did both; the extra conjunct could not change any rendered
+        // output, which a mutation sweep showed by surviving its removal.
+        loadoutLocked={!loadoutGate.allowed}
+        loadoutPending={!loadoutGate.isResolved}
+        loadoutVariations={variations.variations}
+        onOpenLoadout={onOpenLoadout}
+        onOpenVariation={onOpenVariation}
+      />
+      {/*
+        ⚠ Mounted HERE, not at the layout root, and that is the whole point.
+        This screen is `presentation: "modal"`, so a sheet mounted as a sibling of
+        the Stack renders behind it and the locked card appears to do nothing —
+        which is the FREE user's only path into the feature.
+        `memory/feedback_sheets_mount_at_root` is about clearing the TAB BAR; a
+        presented route is a different problem with the opposite answer.
+      */}
+      <LoadoutUpsellSheet
+        visible={loadoutUpsellOpen}
+        onClose={closeLoadoutUpsell}
+        priceMonthly={loadoutGate.upgradePriceMonthly}
+        onUpgrade={() => {
+          closeLoadoutUpsell();
+          loadoutGate.onUpgrade();
+        }}
+      />
+    </>
   );
 }

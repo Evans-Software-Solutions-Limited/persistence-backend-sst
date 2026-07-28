@@ -39,13 +39,20 @@ import { renderWithTheme } from "../../../../__tests__/test-utils";
 jest.setTimeout(20_000);
 
 const mockRouterPush = jest.fn();
+const mockRouterBack = jest.fn();
+const mockRouterReplace = jest.fn();
 jest.mock("expo-router", () => ({
   __esModule: true,
   router: {
     push: (...args: unknown[]) => mockRouterPush(...args),
-    back: jest.fn(),
+    back: (...args: unknown[]) => mockRouterBack(...args),
+    replace: (...args: unknown[]) => mockRouterReplace(...args),
   },
-  useRouter: () => ({ push: mockRouterPush, back: jest.fn() }),
+  useRouter: () => ({
+    push: mockRouterPush,
+    back: mockRouterBack,
+    replace: mockRouterReplace,
+  }),
 }));
 
 jest.mock("expo-camera", () => ({
@@ -209,66 +216,65 @@ describe("LoadoutFlowContainer", () => {
    * `GestureHandlerRootView` (the app root's does not extend into a separately
    * presented modal, and without it the sheets inside receive no touches).
    */
-  describe("presentation shape (guards a device-only failure)", () => {
-    it("renders the flow inside an RN Modal, not a bare absolute View", () => {
+  /**
+   * ⚠ SHAPE assertions, and they exist because behaviour tests CANNOT see the
+   * bug they guard.
+   *
+   * Two earlier shapes both passed this entire suite and both broke on device.
+   * The entry point lives on `workouts/[id]/index`, a `presentation: "modal"`
+   * route, and jest renders this container with no Stack and no route above it —
+   * so nothing here could tell the difference.
+   *
+   *  - An `absoluteFillObject` View mounted as a sibling of the Stack rendered
+   *    UNDERNEATH the presented workout sheet. Tapping the card mounted the whole
+   *    flow invisibly; nothing appeared to happen.
+   *  - Wrapping that in a root-mounted RN `<Modal>` was worse: a modal cannot
+   *    reliably present over an already-presented route, so it went behind the
+   *    workout — and dismissing the workout left an invisible presented modal
+   *    swallowing every touch. The screen froze.
+   *
+   * The fix is that this is a ROUTE (`app/(app)/loadout.tsx`,
+   * `presentation: "fullScreenModal"`). These pin the two things that keep it
+   * one: no RN Modal in the tree, and closing dismisses the route.
+   */
+  describe("presentation shape (guards two device-only failures)", () => {
+    it("renders NO RN Modal — presentation is the navigator's job", () => {
       const api = new InMemoryApiAdapter();
       const storage = new InMemoryStorageAdapter();
       seedEquipment(storage);
       const { UNSAFE_root } = renderFlow(api, storage);
       act(() => openFlow());
 
-      const modals = UNSAFE_root.findAllByType(Modal);
-      const flowModal = modals.find((m) => m.props.visible === true);
-      expect(flowModal).toBeDefined();
-      expect(flowModal?.props.presentationStyle).toBe("fullScreen");
-      // Android's hardware back must dismiss the flow, or the user is trapped.
-      expect(typeof flowModal?.props.onRequestClose).toBe("function");
+      expect(UNSAFE_root.findAllByType(Modal)).toHaveLength(0);
     });
 
-    it("gives that modal its own GestureHandlerRootView so the sheets get touches", () => {
+    it("closing DISMISSES the route as well as clearing the store", async () => {
       const api = new InMemoryApiAdapter();
       const storage = new InMemoryStorageAdapter();
       seedEquipment(storage);
-      const { UNSAFE_root } = renderFlow(api, storage);
+      const { findByTestId } = renderFlow(api, storage);
       act(() => openFlow());
 
-      // By TYPE, not testID: RNGH's jest mock renders as a plain View and drops
-      // the testID, so a testID query here would pass whatever the component was.
-      // Exactly ONE — the flow's. The upsell's modal is not visible, so RN does
-      // not mount its children, which is also why this cannot be asserted as a
-      // blanket count.
-      expect(UNSAFE_root.findAllByType(GestureHandlerRootView)).toHaveLength(1);
-    });
+      fireEvent.press(await findByTestId("loadout-collect-back"));
 
-    it("presents the upsell over the route it was opened from, not opaquely", () => {
-      const api = new InMemoryApiAdapter();
-      const storage = new InMemoryStorageAdapter();
-      const { UNSAFE_root } = renderFlow(api, storage);
-      act(() => useLoadoutFlow.getState().openUpsell());
-
-      const modals = UNSAFE_root.findAllByType(Modal);
-      const upsell = modals.find((m) => m.props.visible === true);
-      // A bottom sheet — the workout underneath has to stay visible through its
-      // own backdrop, so an opaque fullScreen modal would be wrong.
-      expect(upsell?.props.transparent).toBe(true);
-      expect(upsell?.props.presentationStyle).toBe("overFullScreen");
+      // Both, always. Clearing without dismissing strands the user on a step
+      // machine with no step; dismissing without clearing leaves the next run
+      // inheriting this one's equipment context.
+      expect(mockRouterBack).toHaveBeenCalled();
+      expect(useLoadoutFlow.getState().step).toBeNull();
     });
   });
 
-  it("renders nothing at all until the flow is opened", () => {
+  it("renders no step screen when the store has not been seeded", () => {
+    // Reachable only by mounting the container without `open()` — which the
+    // route itself prevents by redirecting on a null `workoutId`. Pinned here so
+    // the container degrades to an empty shell rather than throwing.
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
-    const { UNSAFE_root, queryByTestId } = renderFlow(api, storage);
-
-    // ⚠ Asserted on the MODAL's visibility, not on `queryByTestId("loadout-flow")`.
-    // That testID sits on a `GestureHandlerRootView`, whose jest mock drops it —
-    // so the testID version of this test could not fail once the flow moved into a
-    // modal, and would have passed with every step on screen.
-    expect(
-      UNSAFE_root.findAllByType(Modal).every((m) => m.props.visible === false),
-    ).toBe(true);
+    const { queryByTestId } = renderFlow(api, storage);
     expect(queryByTestId("loadout-collect")).toBeNull();
     expect(queryByTestId("loadout-review")).toBeNull();
+    expect(queryByTestId("loadout-saved")).toBeNull();
   });
 
   describe("collect", () => {
@@ -1075,13 +1081,15 @@ describe("LoadoutFlowContainer", () => {
 
       fireEvent.press(await findByTestId("loadout-review-save-start"));
 
+      // ⚠ REPLACE, not push. This route must not stay in the history behind the
+      // session, or backing out of the session lands the user on a reset step
+      // machine rendering nothing.
       await waitFor(() =>
-        expect(mockRouterPush).toHaveBeenCalledWith(
+        expect(mockRouterReplace).toHaveBeenCalledWith(
           "/(app)/session?workoutId=variation-1",
         ),
       );
-      // The overlay closes first — otherwise a full-screen success screen sits
-      // over the session that just started.
+      expect(mockRouterPush).not.toHaveBeenCalled();
       expect(useLoadoutFlow.getState().step).toBeNull();
     });
 
@@ -1506,31 +1514,9 @@ describe("LoadoutFlowContainer", () => {
     });
   });
 
-  describe("the upsell sheet", () => {
-    it("is reachable with NO flow open — a locked entry point has no flow to be in", async () => {
-      const api = new InMemoryApiAdapter();
-      const storage = new InMemoryStorageAdapter();
-      const { findByTestId } = renderFlow(api, storage);
-
-      useLoadoutFlow.getState().openUpsell();
-
-      expect(await findByTestId("loadout-upsell-sheet")).toBeTruthy();
-      expect(useLoadoutFlow.getState().step).toBeNull();
-    });
-
-    it("shows no price at all when the catalog has none (premium_plus is inactive pre-launch)", async () => {
-      const api = new InMemoryApiAdapter();
-      const storage = new InMemoryStorageAdapter();
-      const { findByTestId, queryByTestId } = renderFlow(api, storage);
-
-      useLoadoutFlow.getState().openUpsell();
-      await findByTestId("loadout-upsell-sheet");
-
-      // Never a literal. The prototype's £19.99 is retired and the real figure is
-      // £29.99 in the catalog — a hardcoded fallback is exactly that drift.
-      expect(queryByTestId("loadout-upsell-price")).toBeNull();
-    });
-  });
+  // The upsell sheet's tests live in `WorkoutDetailContainer.test.tsx` now: it is
+  // mounted in that screen's tree, because it is a bottom sheet over a PRESENTED
+  // route and a root-mounted sheet would sit behind it.
 });
 
 describe("classifyAdaptingError", () => {

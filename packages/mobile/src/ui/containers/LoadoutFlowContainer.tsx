@@ -1,7 +1,6 @@
 import { router } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Modal, StyleSheet } from "react-native";
-import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { StyleSheet, View } from "react-native";
 import type {
   LoadoutPreview,
   LoadoutPreviewRow,
@@ -34,40 +33,44 @@ import {
   type LoadoutRowView,
 } from "@/ui/presenters/loadout/LoadoutReviewStep";
 import { LoadoutSavedStep } from "@/ui/presenters/loadout/LoadoutSavedStep";
-import { LoadoutUpsellSheet } from "@/ui/presenters/loadout/LoadoutUpsellSheet";
 import { color } from "@/ui/theme/tokens";
 
 /**
  * <LoadoutFlowContainer> — the whole athlete flow (T-2.3 … T-2.8b, T-3.4).
  *
- * ## Why this is root-mounted rather than a route
+ * ## ⚠ This is a ROUTE, and two wrong answers came before it
  *
- * Mounted in `app/(app)/_layout.tsx` as a sibling of the Stack, like
- * `ActiveWorkoutOverlay` and every sheet in the app
- * (`memory/feedback_sheets_mount_at_root`). Three reasons, and the third is the
- * one that decides it:
+ * It renders as the `/(app)/loadout` screen, pushed onto the same Stack as the
+ * workout detail that opens it. The store remains the STEP machine — which step,
+ * which equipment context, which rows were hand-picked — but presentation is the
+ * navigator's job, not a `visible` flag's.
  *
- *  1. The store IS the navigation — `useLoadoutFlow` is a step machine, and
- *     mirroring it into five routes would give two sources of truth for "which
- *     step am I on", which is exactly the desync the store was written to avoid.
- *  2. **The swap sheet and the scan sheet have to layer ABOVE the step.** A
- *     gorhom sheet renders inline in the React tree, so both are siblings of the
- *     step, inside this container, rather than at the layout root.
+ * Attempt 1 was `StyleSheet.absoluteFillObject` mounted as a sibling of the
+ * Stack. **The entry point lives on `workouts/[id]/index`, which is
+ * `presentation: "modal"`** — a natively presented view controller on top of the
+ * Stack's container — so a sibling of the Stack renders UNDERNEATH it. Tapping
+ * "Adapt to your gym" mounted the entire flow behind the workout sheet and
+ * nothing appeared to happen.
  *
- * ## ⚠ It renders inside an RN `<Modal>`, and an absolute View is NOT enough
+ * Attempt 2 wrapped that overlay in an RN `<Modal>`. Worse: a root-mounted modal
+ * cannot reliably present over a route that is itself presented, so iOS put it
+ * behind the workout sheet — and dismissing the workout then left an invisible
+ * presented modal swallowing every touch. The screen froze.
  *
- * The first version was `StyleSheet.absoluteFillObject` — and it was invisible
- * in the one place that matters. **The entry point lives on
- * `workouts/[id]/index`, which is `presentation: "modal"`**: a natively
- * presented view controller sitting on top of the Stack's container. A View that
- * is a SIBLING of the Stack therefore renders underneath it, so tapping "Adapt
- * to your gym" set `step` and mounted the whole flow behind the workout sheet —
- * nothing appeared to happen at all.
+ * A route has none of those problems: react-native-screens presents it as its own
+ * view controller above the workout's, the app root's `GestureHandlerRootView`
+ * covers it because it is inside the Stack, and back/swipe-dismiss are native.
  *
- * An RN `<Modal>` presents above every route, modal ones included. It needs its
- * OWN `GestureHandlerRootView`: the app's root one (`app/_layout.tsx`) does not
- * extend into a separately-presented modal, and without it the gorhom sheets
- * inside get no touches — which is the same class of bug one layer down.
+ * ⚠ **Do not "simplify" this back to a root-mounted overlay or an RN Modal.**
+ * Both were tried on device and both broke, the second one worse than the first.
+ *
+ * ## ⚠ The upsell sheet is NOT here — it belongs to the screen that opens it
+ *
+ * It lives in the workout-detail tree (`WorkoutDetailContainer`). It is a bottom
+ * sheet over that screen, and that screen is a presented modal, so a
+ * root-mounted sheet would sit behind it for exactly the reason above.
+ * `memory/feedback_sheets_mount_at_root` is about clearing the TAB BAR, which is
+ * a different problem from clearing a presented route.
  *
  * ## ⚠ `adapting` is bound to the request, never a timer
  *
@@ -408,7 +411,13 @@ export function LoadoutFlowContainer() {
   );
 
   // ── Actions ───────────────────────────────────────────────────────────────
-  const onClose = useCallback(() => reset(), [reset]);
+  // Clears the store AND dismisses the route. Both, always: leaving the route up
+  // with a reset store would render a blank screen, and clearing without
+  // dismissing would leave the user on a step machine with no step.
+  const onClose = useCallback(() => {
+    reset();
+    router.back();
+  }, [reset]);
 
   const onManualAdapt = useCallback(() => {
     const label = gymName.trim().length > 0 ? gymName.trim() : "Custom gym";
@@ -545,10 +554,11 @@ export function LoadoutFlowContainer() {
 
       if (thenStart) {
         // AC-5.3 — the variation IS a workout, so the existing start path takes
-        // it unchanged. Close the overlay first: leaving it mounted would put a
-        // full-screen success screen over the session that just started.
+        // it unchanged. `replace`, not push-after-back: this route must not stay
+        // in the history behind the session, or backing out of the session lands
+        // the user on a reset step machine rendering nothing.
         reset();
-        router.push(`/(app)/session?workoutId=${variationId}` as never);
+        router.replace(`/(app)/session?workoutId=${variationId}` as never);
       }
     },
     [
@@ -569,173 +579,121 @@ export function LoadoutFlowContainer() {
 
   // ── Render ────────────────────────────────────────────────────────────────
   //
-  // The sheets stay mounted whether or not a step is open: the upsell is reached
-  // from a LOCKED entry point, where there is no flow to be in.
+  // No `visible` flag and no wrapper: being mounted IS being open, because this
+  // is a route. `step` still selects which screen shows, and the two sheets are
+  // siblings of it so they layer above the step rather than behind it.
   return (
-    <>
-      {/*
-        `visible` rather than a conditional mount, and `animationType="slide"` to
-        match how the app's other full-screen flows arrive. `onRequestClose` is
-        Android's hardware back — without it that button dismisses nothing and the
-        user is trapped in the flow.
-      */}
-      <Modal
-        visible={isOpen}
-        animationType="slide"
-        presentationStyle="fullScreen"
-        onRequestClose={onClose}
-      >
-        <GestureHandlerRootView style={styles.overlay} testID="loadout-flow">
-          {(step === "collect" || step === "scan") && (
-            <LoadoutCollectStep
-              workoutName={workoutName}
-              // AC-2.1/2.2 are the floor: offline, the scan cannot run at all,
-              // and the picker can — so the scan is hidden rather than offered
-              // and then failed.
-              scanAvailable={online}
-              savedGyms={gyms.gyms}
-              isLoadingGyms={gyms.isLoading}
-              onBack={onClose}
-              onScan={() => goToStep("scan")}
-              onManual={() => goToStep("manual")}
-              onUseGym={(gym) => selectGym(gym)}
-            />
-          )}
+    <View style={styles.screen} testID="loadout-flow">
+      {(step === "collect" || step === "scan") && (
+        <LoadoutCollectStep
+          workoutName={workoutName}
+          // AC-2.1/2.2 are the floor: offline, the scan cannot run at all and the
+          // picker can — so the scan is hidden rather than offered and failed.
+          scanAvailable={online}
+          savedGyms={gyms.gyms}
+          isLoadingGyms={gyms.isLoading}
+          onBack={onClose}
+          onScan={() => goToStep("scan")}
+          onManual={() => goToStep("manual")}
+          onUseGym={(gym) => selectGym(gym)}
+        />
+      )}
 
-          {step === "manual" && (
-            <LoadoutManualStep
-              groups={equipmentGroups}
-              selectedIds={selectedEquipment}
-              onToggle={(id) =>
-                setSelectedEquipment((previous) => {
-                  const next = new Set(previous);
-                  if (next.has(id)) next.delete(id);
-                  else next.add(id);
-                  return next;
-                })
-              }
-              name={gymName}
-              onNameChange={setGymName}
-              saveAsGym={saveAsGym}
-              onToggleSave={() => setSaveAsGym((value) => !value)}
-              isLoading={reference.isLoading}
-              onBack={() => goToStep("collect")}
-              onAdapt={onManualAdapt}
-            />
-          )}
+      {step === "manual" && (
+        <LoadoutManualStep
+          groups={equipmentGroups}
+          selectedIds={selectedEquipment}
+          onToggle={(id) =>
+            setSelectedEquipment((previous) => {
+              const next = new Set(previous);
+              if (next.has(id)) next.delete(id);
+              else next.add(id);
+              return next;
+            })
+          }
+          name={gymName}
+          onNameChange={setGymName}
+          saveAsGym={saveAsGym}
+          onToggleSave={() => setSaveAsGym((value) => !value)}
+          isLoading={reference.isLoading}
+          onBack={() => goToStep("collect")}
+          onAdapt={onManualAdapt}
+        />
+      )}
 
-          {step === "adapting" && (
-            <LoadoutAdaptingStep
-              workoutName={workoutName}
-              gymLabel={contextLabel(context)}
-              error={adaptError}
-              onBack={() => goToStep("collect")}
-              onRetry={onRetryAdapt}
-              onPickManually={() => goToStep("manual")}
-              onUpgrade={gate.onUpgrade}
-            />
-          )}
+      {step === "adapting" && (
+        <LoadoutAdaptingStep
+          workoutName={workoutName}
+          gymLabel={contextLabel(context)}
+          error={adaptError}
+          onBack={() => goToStep("collect")}
+          onRetry={onRetryAdapt}
+          onPickManually={() => goToStep("manual")}
+          onUpgrade={gate.onUpgrade}
+        />
+      )}
 
-          {step === "review" && preview !== null && (
-            <LoadoutReviewStep
-              workoutName={workoutName}
-              gymLabel={contextLabel(context)}
-              preview={preview}
-              rows={rowViews}
-              attentionCount={attentionCount}
-              isSaving={isSaving}
-              saveError={saveError}
-              onBack={() => goToStep("collect")}
-              onSwapRow={onSwapRow}
-              onAcceptMismatch={onAcceptMismatch}
-              onDropRow={onDropRow}
-              onRestoreRow={onRestoreRow}
-              onSave={onSave}
-              onSaveAndStart={onSaveAndStart}
-            />
-          )}
+      {step === "review" && preview !== null && (
+        <LoadoutReviewStep
+          workoutName={workoutName}
+          gymLabel={contextLabel(context)}
+          preview={preview}
+          rows={rowViews}
+          attentionCount={attentionCount}
+          isSaving={isSaving}
+          saveError={saveError}
+          onBack={() => goToStep("collect")}
+          onSwapRow={onSwapRow}
+          onAcceptMismatch={onAcceptMismatch}
+          onDropRow={onDropRow}
+          onRestoreRow={onRestoreRow}
+          onSave={onSave}
+          onSaveAndStart={onSaveAndStart}
+        />
+      )}
 
-          {step === "saved" && (
-            <LoadoutSavedStep
-              workoutName={workoutName}
-              gymLabel={contextLabel(context)}
-              onDone={onClose}
-            />
-          )}
+      {step === "saved" && (
+        <LoadoutSavedStep
+          workoutName={workoutName}
+          gymLabel={contextLabel(context)}
+          onDone={onClose}
+        />
+      )}
 
-          <EquipmentScanSheetContainer
-            equipmentGroups={equipmentGroups}
-            // Carry the confirmed detections into the checklist rather than
-            // dropping them: "edit the list" after a scan means "start from what
-            // you found", and re-ticking six chips by hand is the fastest way to
-            // make the scan feel pointless.
-            onPickManually={(ids) => setSelectedEquipment(new Set(ids))}
-            onUpgrade={gate.onUpgrade}
-          />
+      <EquipmentScanSheetContainer
+        equipmentGroups={equipmentGroups}
+        // Carry the confirmed detections into the checklist rather than dropping
+        // them: "edit the list" after a scan means "start from what you found",
+        // and re-ticking six chips by hand is the fastest way to make the scan
+        // feel pointless.
+        onPickManually={(ids) => setSelectedEquipment(new Set(ids))}
+        onUpgrade={gate.onUpgrade}
+      />
 
-          <EquipmentAwareSwapSheet
-            visible={swapTarget !== null}
-            onClose={closeSwap}
-            forExerciseId={swapTarget?.exerciseId ?? null}
-            exerciseName={swapTarget?.exerciseName ?? ""}
-            equipmentTypeIds={contextEquipmentIds(preview)}
-            equipmentContextLabel={contextLabel(context)}
-            equipmentNameById={equipmentNameById}
-            // Everything already in the plan, so a swap cannot duplicate a row.
-            // `workoutVariationsCreateHandler` does not reject duplicate
-            // `exerciseId`s, so nothing downstream would catch it: the variation
-            // would simply prescribe the same exercise twice, with two different
-            // reason blocks explaining it.
-            existingExerciseIds={planExerciseIds}
-            onSelect={onSwapSelect}
-            testID="loadout-swap-sheet"
-          />
-        </GestureHandlerRootView>
-      </Modal>
-
-      {/*
-        ⚠ The upsell needs its OWN modal, for the same reason the flow does — and
-        this is the path a FREE user takes, so getting it wrong means the locked
-        card is the one that does nothing. It is reached from the entry card on
-        `workouts/[id]/index`, a `presentation: "modal"` route, so a sheet mounted
-        as a sibling of the Stack renders behind that route.
-
-        `transparent` + `overFullScreen`, unlike the flow's opaque fullScreen: this
-        is a bottom sheet and the workout underneath must stay visible through its
-        own backdrop. `animationType="none"` because the sheet animates itself —
-        sliding the modal too would double the motion.
-
-        Kept OUTSIDE the flow's modal deliberately: an unentitled user has no flow
-        to be in, and `useLoadoutFlow.openUpsell` does not set `step`.
-      */}
-      <Modal
-        visible={upsellOpen}
-        transparent
-        presentationStyle="overFullScreen"
-        animationType="none"
-        onRequestClose={closeUpsell}
-      >
-        <GestureHandlerRootView style={styles.sheetHost}>
-          <LoadoutUpsellSheet
-            visible={upsellOpen}
-            onClose={closeUpsell}
-            priceMonthly={gate.upgradePriceMonthly}
-            onUpgrade={() => {
-              closeUpsell();
-              gate.onUpgrade();
-            }}
-          />
-        </GestureHandlerRootView>
-      </Modal>
-    </>
+      <EquipmentAwareSwapSheet
+        visible={swapTarget !== null}
+        onClose={closeSwap}
+        forExerciseId={swapTarget?.exerciseId ?? null}
+        exerciseName={swapTarget?.exerciseName ?? ""}
+        equipmentTypeIds={contextEquipmentIds(preview)}
+        equipmentContextLabel={contextLabel(context)}
+        equipmentNameById={equipmentNameById}
+        // Everything already in the plan, so a swap cannot duplicate a row.
+        // `workoutVariationsCreateHandler` does not reject duplicate
+        // `exerciseId`s, so nothing downstream would catch it: the variation
+        // would simply prescribe the same exercise twice, with two different
+        // reason blocks explaining it.
+        existingExerciseIds={planExerciseIds}
+        onSelect={onSwapSelect}
+        testID="loadout-swap-sheet"
+      />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: {
+  screen: {
     flex: 1,
     backgroundColor: color.$bg,
   },
-  /** Transparent host for a sheet presented over another route. */
-  sheetHost: { flex: 1 },
 });

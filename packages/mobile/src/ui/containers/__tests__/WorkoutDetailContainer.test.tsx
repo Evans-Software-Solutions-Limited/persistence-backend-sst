@@ -336,6 +336,42 @@ describe("WorkoutDetailContainer", () => {
       // so a dead tap throws away the only pitch the feature gets.
       expect(useLoadoutFlow.getState().upsellOpen).toBe(true);
       expect(useLoadoutFlow.getState().step).toBeNull();
+      expect(mockRouterPush).not.toHaveBeenCalledWith("/(app)/loadout");
+    });
+
+    /**
+     * ⚠ The sheet is mounted in THIS screen's tree, not at the layout root, and
+     * these tests live here for the same reason. This screen is
+     * `presentation: "modal"`; a root-mounted sheet renders behind it, which
+     * would make the locked card — the FREE user's only path into the feature —
+     * appear to do nothing.
+     */
+    it("renders the upsell sheet inside this screen, so it clears the presented route", async () => {
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      seedOwnedWorkout(api, storage);
+      const { findByTestId } = renderWithTheme(
+        withAdapters(makeAdapters(api, storage), <WorkoutDetailContainer />),
+      );
+
+      fireEvent.press(await findByTestId("loadout-entry-card"));
+      expect(await findByTestId("loadout-upsell-sheet")).toBeTruthy();
+    });
+
+    it("shows no price at all when the catalog has none (premium_plus is inactive pre-launch)", async () => {
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      seedOwnedWorkout(api, storage);
+      const { findByTestId, queryByTestId } = renderWithTheme(
+        withAdapters(makeAdapters(api, storage), <WorkoutDetailContainer />),
+      );
+
+      fireEvent.press(await findByTestId("loadout-entry-card"));
+      await findByTestId("loadout-upsell-sheet");
+
+      // Never a literal. The prototype's £19.99 is retired and the real figure is
+      // £29.99 in the catalog — a hardcoded fallback is exactly that drift.
+      expect(queryByTestId("loadout-upsell-price")).toBeNull();
     });
 
     it("opens the FLOW, seeded with the workout, for an entitled user", async () => {
@@ -355,6 +391,10 @@ describe("WorkoutDetailContainer", () => {
       expect(useLoadoutFlow.getState().workoutId).toBe(workout.id);
       expect(useLoadoutFlow.getState().workoutName).toBe(workout.name);
       expect(useLoadoutFlow.getState().upsellOpen).toBe(false);
+      // Both happen: the store carries the workout, the router opens the flow.
+      // (Their ORDER is not asserted — both are synchronous in one tick and the
+      // route reads the store on mount, so it cannot matter.)
+      expect(mockRouterPush).toHaveBeenCalledWith("/(app)/loadout");
     });
 
     it("lists saved setups and opens one as its own workout", async () => {
