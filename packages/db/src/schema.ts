@@ -194,6 +194,13 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   // client left), best-effort post-commit. Companion enum migration:
   // 20260720120100_coaching_relationship_ended_notification_type.sql.
   "coaching_relationship_ended",
+  // Subscription-transfer notice — sent to the app account that LOST a
+  // subscription when RevenueCat transferred it to another account (Apple binds
+  // the sub to the APPLE ID, and Restore Purchases re-attaches it to whichever
+  // app account is signed in). The move is reversible in one tap, so the point of
+  // the notice is to make a silent disappearance actionable. Companion enum
+  // migration: 20260728120000_subscription_transferred_notification_type.sql.
+  "subscription_transferred",
 ]);
 
 // M4 (06-progress-goals) — streak engine period types. cross-cuts § 3.1.

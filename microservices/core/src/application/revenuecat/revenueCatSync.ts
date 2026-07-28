@@ -1,7 +1,4 @@
-import {
-  LIVE_SUBSCRIPTION_STATUSES,
-  SubscriptionRepository,
-} from "../repositories/subscriptionRepository";
+import { SubscriptionRepository } from "../repositories/subscriptionRepository";
 import { fetchCustomerSubscriptions } from "./revenueCatClient";
 import { pickDesiredSubscription } from "./entitlements";
 
@@ -17,18 +14,33 @@ import { pickDesiredSubscription } from "./entitlements";
  * Never trusts a caller-supplied entitlement; always re-fetches from REST.
  */
 
-const LIVE: readonly string[] = LIVE_SUBSCRIPTION_STATUSES;
+/**
+ * What a sync actually did, so a caller can react to the outcome.
+ *
+ * Only `revoked` is currently consumed — the webhook handler uses it to notify a
+ * user whose subscription was transferred AWAY, and it needs to distinguish
+ * "this user just lost a live subscription" from "this user never had one". The
+ * `skipped` cases matter for the same reason: an anonymous App User ID or a
+ * foreign-environment id must not be treated as a revocation.
+ */
+export type RevenueCatSyncOutcome =
+  | "activated"
+  | "revoked"
+  | "already_inactive"
+  | "skipped";
 
 export function isRevenueCatAnonymousId(appUserId: string): boolean {
   return appUserId.startsWith("$RCAnonymousID:");
 }
 
-export async function syncRevenueCatCustomer(appUserId: string): Promise<void> {
+export async function syncRevenueCatCustomer(
+  appUserId: string,
+): Promise<RevenueCatSyncOutcome> {
   if (isRevenueCatAnonymousId(appUserId)) {
     console.warn(
       `[revenuecat:sync] skipping anonymous app_user_id (no identity bind yet): ${appUserId}`,
     );
-    return;
+    return "skipped";
   }
 
   const repo = new SubscriptionRepository();
@@ -43,7 +55,7 @@ export async function syncRevenueCatCustomer(appUserId: string): Promise<void> {
     console.warn(
       `[revenuecat:sync] skipping app_user_id with no matching profile (likely a different environment on a shared RevenueCat project): ${appUserId}`,
     );
-    return;
+    return "skipped";
   }
 
   const subscriptions = await fetchCustomerSubscriptions(appUserId);
@@ -96,14 +108,22 @@ export async function syncRevenueCatCustomer(appUserId: string): Promise<void> {
       startsAt: new Date(),
       ...values,
     });
-    return;
+    return "activated";
   }
 
   // No active entitlement → revert to free by cancelling the live mirror. This
   // branch still needs the row lookup (nothing to cancel if there's no mirror,
   // or the mirror is already terminal).
-  const existing = await repo.findByExternalId(rcExternalId);
-  if (existing !== null && LIVE.includes(existing.paymentStatus ?? "")) {
-    await repo.updateById(existing.id, { paymentStatus: "cancelled" });
-  }
+  // ONE atomic write decides both the revocation and the outcome. A
+  // read-then-write here would make `revoked` a TOCTOU guess: two concurrent
+  // events for the same losing customer (separate `event.id`s, so both pass the
+  // webhook's claim) would both see `active` and both report a revocation,
+  // double-notifying. `cancelLiveByExternalId` returns true to exactly one caller.
+  //
+  // The caller distinguishes this from `already_inactive` because only an actual
+  // loss is worth telling the user about — a no-op sync on someone who was already
+  // free must stay silent.
+  return (await repo.cancelLiveByExternalId(rcExternalId))
+    ? "revoked"
+    : "already_inactive";
 }

@@ -439,6 +439,36 @@ export class SubscriptionRepository {
    * superseded by the RevenueCat-derived state. No-op when the user has no
    * live rows. Returns the number of rows cancelled.
    */
+  /**
+   * Atomically cancel the LIVE row for one external subscription id, returning
+   * whether this call was the one that did it.
+   *
+   * Replaces a read-then-write (`findByExternalId` → check status → `updateById`)
+   * that made "was this a revocation?" a TOCTOU guess. Two concurrent RevenueCat
+   * events for the same losing customer — separate `event.id`s, so both pass the
+   * webhook's claim — could both read `active` and both report a revocation,
+   * double-notifying the user. Folding the status check into the UPDATE's WHERE
+   * makes exactly one caller see a row come back. Same shape, and the same
+   * reasoning, as the concurrency fix documented on the insert path in
+   * `revenueCatSync`.
+   */
+  async cancelLiveByExternalId(externalId: string): Promise<boolean> {
+    const db = getDb();
+    const rows = await db
+      .update(userSubscriptions)
+      .set({ paymentStatus: "cancelled", updatedAt: new Date() })
+      .where(
+        and(
+          eq(userSubscriptions.externalSubscriptionId, externalId),
+          inArray(userSubscriptions.paymentStatus, [
+            ...LIVE_SUBSCRIPTION_STATUSES,
+          ]),
+        ),
+      )
+      .returning({ id: userSubscriptions.id });
+    return rows.length > 0;
+  }
+
   async cancelLiveSubscriptions(userId: string): Promise<number> {
     const db = getDb();
     const rows = await db

@@ -58,7 +58,23 @@ export type NotificationType =
   // client left). DB enum extended in
   // 20260720120100_coaching_relationship_ended_notification_type.sql. Default
   // opt-in "on" per cross-cuts § 5.
-  | "coaching_relationship_ended";
+  | "coaching_relationship_ended"
+  // Subscription-transfer notice — sent to the account that LOST a subscription
+  // when RevenueCat transferred it elsewhere. DB enum extended in
+  // 20260728120000_subscription_transferred_notification_type.sql. Deliberately
+  // NOT added to the mobile `NOTIFICATION_TYPES` union: that would need an app
+  // build, and the renderer is forward-compatible (`WireNotificationType` +
+  // `notificationTypeLabel` humanise an unknown value to "Subscription
+  // transferred"). Leaving it off the preferences list also means it has no
+  // mute toggle, which is right for a transactional account notice.
+  //
+  // ⚠ ORDERING TRAP for whoever registers this type in a future app build:
+  // `preferencesSetHandler` hard-400s the WHOLE request on any key absent from
+  // `NOTIFICATION_TYPES` below, and the mobile preferences screen builds its POST
+  // body from mobile's own list. So adding it to mobile FIRST breaks every
+  // preferences save until the backend array is extended — extend the array here
+  // in the same release or earlier, never later.
+  | "subscription_transferred";
 
 export const NOTIFICATION_TYPES: readonly NotificationType[] = [
   "workout_assigned",
