@@ -7,6 +7,7 @@ import {
   DEFAULT_EQUIPMENT_SCAN_MODEL_ID,
   EQUIPMENT_SCAN_TIMEOUT_MS,
   MAX_SCAN_LABEL_LENGTH,
+  REALISTIC_SCAN_OUTPUT_TOKENS,
   MAX_SCAN_NOTES_LENGTH,
   SCAN_EXCLUDED_EQUIPMENT_NAME,
   type ScanCatalogueEntry,
@@ -14,6 +15,8 @@ import {
 import {
   AiUnavailableError,
   AiUnreadableError,
+  maxTokensForBudget,
+  OPUS_OUTPUT_TOKENS_PER_SECOND,
   type MessagesCreateResponse,
   type MinimalBedrockClient,
 } from "../../../nutrition/services/aiBedrockClient";
@@ -315,22 +318,26 @@ describe("scanEquipmentFromPhoto", () => {
     expect(EQUIPMENT_SCAN_TIMEOUT_MS).toBeGreaterThan(12_000);
   });
 
-  it("cannot resend a throttle — because its OWN ceiling exceeds its budget", async () => {
-    // ⚠ Read this one carefully; it is a consequence, not a preference.
+  it("resends a throttle, judged against its REAL output not its ceiling", async () => {
+    // ⚠ Third version of this test, and the churn is the lesson. It has said
+    // "does not retry" (correct only while the SDK retried underneath), then
+    // "resends", then "cannot resend — its ceiling exceeds its budget", and now
+    // this. The third was wrong because I had invented the number it rested on:
+    // I estimated a scan at ~1,100 output tokens from the schema, which at
+    // ~40 tok/s is 27.5 s and made the scan look unable to finish its own 20 s
+    // attempt. E1 had already MEASURED this surface at mean 10.1 s / max
+    // 12.27 s — about 400 tokens. The measurement was in the repo the whole time
+    // and I reasoned past it.
     //
-    // `createSingleAttempt` resends a fast transient failure, but only when the
-    // time left can still carry the original `max_tokens`. This surface asks for
-    // EQUIPMENT_SCAN_MAX_TOKENS (4096) against a 20 s attempt, and at the
-    // measured Opus rate (~45 tok/s, three samples 2026-07-28) 20 s receives
-    // roughly 765 tokens. The ceiling does not fit even the FULL budget, so no
-    // shortened one can carry it either, and the resend is correctly refused.
-    //
-    // So the scan's known-over-budget ceiling is not merely untidy: it costs the
-    // surface its throttle resilience. Fix the ceiling — smaller per-detection
-    // payload, or an async scan — and this behaviour changes on its own. Until
-    // then this test states the real contract rather than the one we would like.
+    // With the real figure the scan is comfortably inside its budget and its
+    // throttle retry works. `EQUIPMENT_SCAN_MAX_TOKENS` (4096) remains
+    // unreachable headroom — a truncation guard that never binds — which is a
+    // tidiness point, not the hazard I reported it as.
     const { client, create } = fakeClient(() => {
-      throw Object.assign(new Error("throttled"), { status: 429 });
+      throw Object.assign(new Error("throttled"), {
+        status: 429,
+        headers: { "retry-after-ms": "1" },
+      });
     });
 
     await expect(
@@ -339,7 +346,19 @@ describe("scanEquipmentFromPhoto", () => {
         { client, modelId: "test-model" },
       ),
     ).rejects.toBeInstanceOf(AiUnavailableError);
-    expect(create).toHaveBeenCalledTimes(1);
+    expect(create).toHaveBeenCalledTimes(2);
+  });
+
+  it("judges that resend at the OPUS rate, not the Haiku default", async () => {
+    // The guard would be optimistic by ~2.5x on the default. At 40 tok/s the
+    // realistic 500-token scan needs ~12.5 s of the ~20 s left, which fits; a
+    // ceiling-sized estimate would not, and neither would a slower surface.
+    expect(REALISTIC_SCAN_OUTPUT_TOKENS).toBeLessThanOrEqual(
+      maxTokensForBudget(
+        EQUIPMENT_SCAN_TIMEOUT_MS,
+        OPUS_OUTPUT_TOKENS_PER_SECOND,
+      ),
+    );
   });
 
   it("does NOT resend a genuine client error", async () => {

@@ -28,6 +28,7 @@ import {
 import { LOADABLE_EQUIPMENT_NAMES } from "../engine/intensityMismatch";
 import {
   MIN_USEFUL_GENERATION_MS,
+  minUsefulRemapTokens,
   REMAP_TIMEOUT_MS,
   remapMaxTokens,
   selectSubstitutes,
@@ -382,7 +383,7 @@ export const workoutLoadoutPreviewHandler = new Elysia()
           // rather than the pessimistic 120 the ceiling is sized with, so this
           // rejects only plans that genuinely cannot fit.
           const ceiling = maxTokensForBudget(attemptMs);
-          const minimumUseful = 512 + 40 * needsSwap.length;
+          const minimumUseful = minUsefulRemapTokens(needsSwap.length);
           if (
             attemptMs < PREFILL_ALLOWANCE_MS + MIN_USEFUL_GENERATION_MS ||
             ceiling < minimumUseful

@@ -356,6 +356,18 @@ export async function createSingleAttempt(
   params: MessagesCreateParams,
   timeoutMs: number,
   deps: {
+    /**
+     * Output the work REALISTICALLY needs, as opposed to `params.max_tokens`,
+     * which is a pessimistic truncation guard. Only the caller knows this.
+     *
+     * ⚠ REQUIRED, deliberately. It defaulted to `params.max_tokens` for one
+     * commit, and that default is the exact defect this guard was rewritten to
+     * fix: a ceiling sized to its budget can never be carried by a shorter one,
+     * so the resend silently never happens and nothing fails. A third caller
+     * added later would have inherited that with no test failure. The type
+     * checker forecloses it instead.
+     */
+    minUsefulTokens: number;
     now?: () => number;
     sleep?: (ms: number) => Promise<void>;
     /**
@@ -365,16 +377,7 @@ export async function createSingleAttempt(
      * `maxTokensForBudget`'s docstring warns about.
      */
     tokensPerSecond?: number;
-    /**
-     * Output the work REALISTICALLY needs, as opposed to `params.max_tokens`,
-     * which is a pessimistic truncation guard. Only the caller knows this.
-     *
-     * ⚠ Defaults to `params.max_tokens`, which is the strict, never-degrade
-     * reading — safe, and vacuous for any caller whose ceiling equals its budget
-     * capacity. Pass the real figure or the resend silently never happens.
-     */
-    minUsefulTokens?: number;
-  } = {},
+  },
 ): Promise<MessagesCreateResponse> {
   const now = deps.now ?? Date.now;
   const sleep =
@@ -394,7 +397,7 @@ export async function createSingleAttempt(
     if (!isRetryable(error) || elapsed >= PREFILL_ALLOWANCE_MS) throw giveUp();
 
     const tokensPerSecond = deps.tokensPerSecond ?? OUTPUT_TOKENS_PER_SECOND;
-    const minUsefulTokens = deps.minUsefulTokens ?? params.max_tokens;
+    const { minUsefulTokens } = deps;
     if (minUsefulTokens <= 0) throw giveUp();
 
     // What the resend itself will need: prefill, plus generating the work.

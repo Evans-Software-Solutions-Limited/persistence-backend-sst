@@ -96,12 +96,25 @@ export const EQUIPMENT_SCAN_TIMEOUT_MS = 20_000;
 export const EQUIPMENT_SCAN_MAX_TOKENS = 4096;
 
 /**
- * What a busy commercial gym actually produces: ~28 catalogue rows plus the
- * model's note. Used as the resend guard's estimate of the work — see
- * `createSingleAttempt`'s `minUsefulTokens`, which needs the realistic figure
- * rather than the ceiling.
+ * What a scan actually produces, DERIVED FROM E1's measurement rather than
+ * estimated from the schema.
+ *
+ * E1 measured this surface end-to-end at **mean 10.1 s / max 12.27 s** (7 photos).
+ * At the measured Opus rate of ~40 tok/s that is ~400 tokens mean, ~490 at the
+ * max; 500 covers the measured worst case.
+ *
+ * ⚠ The first version of this constant said 1,100, reasoned from "~28 catalogue
+ * rows plus a note". That was a guess dressed as a figure, it was ~3× high, and
+ * it contradicted E1 sitting in the same repo — 1,100 tokens at 40 tok/s is
+ * 27.5 s, which would mean the scan could not finish its own 20 s attempt even
+ * on the happy path. The scan is NOT in that state: its measured output fits its
+ * budget comfortably (20 s receives ~680 tokens).
+ *
+ * What remains true is narrower: {@link EQUIPMENT_SCAN_MAX_TOKENS} (4096) is
+ * unreachable headroom, not a live hazard. A ceiling is a truncation guard, and
+ * this one simply never binds.
  */
-export const REALISTIC_SCAN_OUTPUT_TOKENS = 1_100;
+export const REALISTIC_SCAN_OUTPUT_TOKENS = 500;
 
 /**
  * The model's free-text aside, capped and treated as untrusted.
@@ -369,13 +382,10 @@ export async function scanEquipmentFromPhoto(
     {
       // Opus-class, and 2.5x slower than the default this would otherwise assume.
       tokensPerSecond: OPUS_OUTPUT_TOKENS_PER_SECOND,
-      // ⚠ What a REAL scan emits, not the 4096 ceiling. A busy commercial gym
-      // produces ~28 detections plus a note — call it 1,100 tokens — which at
-      // ~40 tok/s needs ~27 s and does not fit this surface's 20 s attempt even
-      // before a retry. So this surface still cannot resend, and that is an
-      // honest consequence of {@link EQUIPMENT_SCAN_MAX_TOKENS} being over
-      // budget rather than a property of the retry logic: fix the ceiling (or
-      // the attempt) and the resend starts working on its own.
+      // ⚠ What a real scan EMITS (E1-derived), not the 4096 ceiling. Passing the
+      // ceiling would make the resend guard unsatisfiable — the ceiling does not
+      // fit even the full budget — and this surface would silently lose its
+      // throttle retry, which is the same defect the re-map was found with.
       minUsefulTokens: REALISTIC_SCAN_OUTPUT_TOKENS,
     },
   );

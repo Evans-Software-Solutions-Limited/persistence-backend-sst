@@ -156,6 +156,23 @@ export const MIN_USEFUL_GENERATION_MS = 5_000;
  * `[loadout-remap] unreadable` starts appearing with high `swapRows`, this is
  * why, and the numbers to act on are in the line.
  */
+/**
+ * What one re-map REALISTICALLY emits — E2 measured ~40 tokens/row.
+ *
+ * ⚠ Deliberately a different per-row figure from {@link remapMaxTokens}'s 120,
+ * because they answer opposite questions. 120 is a pessimistic worst case sizing
+ * a TRUNCATION CEILING, where erring high is free. 40 is the measured mean
+ * sizing a FEASIBILITY FLOOR, where erring high is what cost this surface its
+ * throttle retry above 13 swap rows. One number for both would be wrong in one
+ * direction by construction.
+ *
+ * Shared by the resend guard and the handler's fail-fast check, which were two
+ * copies of this expression held in step by a comment.
+ */
+export function minUsefulRemapTokens(swapRowCount: number): number {
+  return 512 + 40 * swapRowCount;
+}
+
 export function remapMaxTokens(
   swapRowCount: number,
   timeoutMs: number = REMAP_TIMEOUT_MS,
@@ -489,13 +506,7 @@ export async function selectSubstitutes(
 
   const startedAt = Date.now();
   const response = await createSingleAttempt(client, params, timeoutMs, {
-    // ⚠ The MEASURED per-row output (~40, E2), not the pessimistic 120 the
-    // ceiling is sized with. Passing the ceiling instead makes the resend guard
-    // unsatisfiable — `remaining` is always less than the budget the ceiling was
-    // derived from — and this surface silently loses its throttle retry from 14
-    // swap rows up, which is where `remapMaxTokens` starts clamping to the cap.
-    // Same figure as the handler's work-aware fail-fast floor; keep them in step.
-    minUsefulTokens: 512 + 40 * swapRowCount,
+    minUsefulTokens: minUsefulRemapTokens(swapRowCount),
   });
   const latencyMs = Date.now() - startedAt;
 
