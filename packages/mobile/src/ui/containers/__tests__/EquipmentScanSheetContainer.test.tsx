@@ -17,6 +17,16 @@ import {
 } from "@/ui/containers/EquipmentScanSheetContainer";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 
+/**
+ * Same convention as every other heavy container suite here (ProfileContainer,
+ * ExerciseListContainer, SubscriptionSelectionContainer…): these mount the real
+ * Tamagui provider, a React Query client and gorhom sheet machinery per case,
+ * and run alongside 459 other suites on a contended CI runner, where jest's 5 s
+ * default is the wrong budget for this shape. See
+ * `LoadoutFlowContainer.test.tsx` for the measurement that prompted it.
+ */
+jest.setTimeout(20_000);
+
 jest.mock("expo-router", () => ({
   __esModule: true,
   router: { push: jest.fn(), back: jest.fn() },

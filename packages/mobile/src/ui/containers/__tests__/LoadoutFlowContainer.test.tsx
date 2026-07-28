@@ -22,6 +22,20 @@ import {
 } from "@/ui/containers/LoadoutFlowContainer";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 
+/**
+ * Same convention as every other heavy container suite here (ProfileContainer,
+ * ExerciseListContainer, SubscriptionSelectionContainer…).
+ *
+ * ⚠ Not padding for a flaky test — these mount the real Tamagui provider, a
+ * React Query client and gorhom sheet machinery per case, and run alongside 459
+ * other suites on a contended CI runner. Locally this file is ~7.6 s for 56
+ * tests with a 298 ms worst case; on CI the same file took 50 s and one case
+ * crossed jest's 5 s DEFAULT. The assertions are deterministic — verified by
+ * repeated isolated runs — so the default is the wrong budget for this shape,
+ * not the tests.
+ */
+jest.setTimeout(20_000);
+
 const mockRouterPush = jest.fn();
 jest.mock("expo-router", () => ({
   __esModule: true,
