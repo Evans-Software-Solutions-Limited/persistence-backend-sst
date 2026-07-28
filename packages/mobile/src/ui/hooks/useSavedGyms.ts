@@ -73,12 +73,17 @@ export function useSavedGyms(enabled = true): SavedGymsState {
   // ⚠ One fetch per ENABLE, not per mount — and the difference is the whole
   // point of the hook being uncached.
   //
-  // `LoadoutFlowContainer` is mounted at the authenticated layout root for the
-  // entire session, so a per-mount latch would fetch once, the first time the
-  // flow ever opened, and never again. A gym created or edited on
-  // Profile → Saved Gyms would never appear in the collect step, and — the
-  // damaging half — `contextEquipmentIds` feeds that frozen snapshot to the swap
-  // sheet as its containment context. Rank `best`/`others` against a stale kit
+  // A per-mount latch would fetch once and never again for as long as the
+  // consumer stays mounted. That was acute when `LoadoutFlowContainer` was
+  // mounted at the authenticated layout root for the whole session; it is now a
+  // `fullScreenModal` route that unmounts on close, so a mount latch would
+  // mostly work — which is exactly what makes it the wrong thing to rely on. The
+  // enable latch is what actually states the requirement, and it still binds for
+  // `SavedGymsContainer`, whose screen can outlive several edits.
+  //
+  // A gym created or edited on Profile → Saved Gyms must appear in the collect
+  // step, and — the damaging half — `contextEquipmentIds` feeds that snapshot to
+  // the swap sheet as its containment context. Rank `best`/`others` against a stale kit
   // and a now-incompatible exercise lands in `best`, gets picked with
   // `isUserOverride: false`, and the save 400s `EQUIPMENT_NOT_AVAILABLE` against
   // the gym's CURRENT server-side rows — an error whose remedy ("confirm you

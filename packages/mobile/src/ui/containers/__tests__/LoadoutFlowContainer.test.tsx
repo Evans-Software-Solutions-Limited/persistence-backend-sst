@@ -1453,6 +1453,87 @@ describe("LoadoutFlowContainer", () => {
       expect(useLoadoutFlow.getState().step).toBeNull();
     });
 
+    it("saves the gym when the kit is COMMITTED, not when the variation saves", async () => {
+      // Brad hit this on device behind a 500: he named a gym, ticked the
+      // toggle, the adaptation failed, and the gym was gone. The toggle's label
+      // ("Save this gym for next time") promises something about the KIT, and
+      // making it contingent on a Bedrock call succeeding breaks that promise
+      // precisely when re-ticking every chip is most annoying.
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      seedEquipment(storage);
+      jest
+        .spyOn(api, "previewLoadout")
+        .mockResolvedValue(
+          fail({ kind: "api", code: "server", message: "", status: 503 }),
+        );
+      const create = jest.spyOn(api, "createSavedGym");
+      const { findByTestId } = renderFlow(api, storage);
+      openFlow();
+
+      fireEvent.press(await findByTestId("loadout-collect-manual"));
+      fireEvent.press(await findByTestId("loadout-equip-eq-dumbbell"));
+      fireEvent.press(await findByTestId("loadout-manual-adapt"));
+      await findByTestId("loadout-adapting-error");
+
+      await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+      expect(create.mock.calls[0][0]).toEqual({
+        name: "Custom gym",
+        equipmentTypeIds: ["eq-dumbbell"],
+      });
+    });
+
+    it("does not create the gym twice across an explicit retry", async () => {
+      // `attempt` bumps the request key but leaves the kit alone, so a retry
+      // must not 409 on the gym this run already created.
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      seedEquipment(storage);
+      jest
+        .spyOn(api, "previewLoadout")
+        .mockResolvedValueOnce(
+          fail({ kind: "api", code: "server", message: "", status: 503 }),
+        )
+        .mockResolvedValueOnce(ok(preview([row()])));
+      const create = jest.spyOn(api, "createSavedGym");
+      const { findByTestId } = renderFlow(api, storage);
+      openFlow();
+
+      fireEvent.press(await findByTestId("loadout-collect-manual"));
+      fireEvent.press(await findByTestId("loadout-equip-eq-dumbbell"));
+      fireEvent.press(await findByTestId("loadout-manual-adapt"));
+      await findByTestId("loadout-adapting-error");
+      await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+
+      fireEvent.press(await findByTestId("loadout-adapting-retry"));
+      await findByTestId("loadout-review");
+      fireEvent.press(await findByTestId("loadout-review-save"));
+      await findByTestId("loadout-saved");
+
+      expect(create).toHaveBeenCalledTimes(1);
+    });
+
+    it("links the variation to the gym created at commit time", async () => {
+      // The whole reason `save()` kept a fallback create: `sourceGymId` has to
+      // reach the variation, or "Saved setups" labels the row with the
+      // variation's own name forever.
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      seedEquipment(storage);
+      api.loadoutPreview = preview([row()]);
+      const variation = jest.spyOn(api, "createWorkoutVariation");
+      const { findByTestId } = renderFlow(api, storage);
+      openFlow();
+
+      fireEvent.press(await findByTestId("loadout-collect-manual"));
+      fireEvent.press(await findByTestId("loadout-equip-eq-dumbbell"));
+      fireEvent.press(await findByTestId("loadout-manual-adapt"));
+      fireEvent.press(await findByTestId("loadout-review-save"));
+      await findByTestId("loadout-saved");
+
+      expect(variation.mock.calls[0][1].sourceGymId).not.toBeNull();
+    });
+
     it("does NOT save a gym when the toggle is off", async () => {
       const api = new InMemoryApiAdapter();
       const storage = new InMemoryStorageAdapter();

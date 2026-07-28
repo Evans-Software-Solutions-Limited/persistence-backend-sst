@@ -18,10 +18,18 @@ import { color, radius, space } from "@/ui/theme/tokens";
  * and the footer's safe-area padding is the kind of thing that gets fixed on one
  * step and forgotten on the other four.
  *
- * ⚠ `edges` deliberately includes `bottom`. The flow renders as a root-mounted
- * overlay ON TOP of the tab bar rather than as a route inside it, so nothing
- * below it is reserving home-indicator space — without the bottom edge the
- * primary CTA sits under the indicator on every notchless-bottom iPhone.
+ * ⚠ `edges` deliberately includes `bottom`. The flow is a `fullScreenModal`
+ * route that covers the tab bar, so nothing below it is reserving
+ * home-indicator space — without the bottom edge the primary CTA sits under the
+ * indicator on every notchless-bottom iPhone.
+ *
+ * ⚠ This is `SafeAreaView` from `react-native-safe-area-context`, not the RN
+ * core one, and the distinction matters here: the app mounts NO
+ * `SafeAreaProvider`, so anything reading `SafeAreaInsetsContext` gets zeros
+ * (see the fallback `BottomSheet.tsx` documents). The context version's
+ * `SafeAreaView` is a native view that measures the window itself, so it is
+ * correct without a provider — swapping it for a `useSafeAreaInsets()` +
+ * `paddingTop` idiom would silently give every Loadout step a zero inset.
  */
 
 export type LoadoutScaffoldProps = {

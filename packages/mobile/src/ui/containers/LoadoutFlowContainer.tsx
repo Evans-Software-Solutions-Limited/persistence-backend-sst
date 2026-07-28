@@ -272,10 +272,57 @@ export function LoadoutFlowContainer() {
   // go back and build "Garage" from kit2, and the second save would silently
   // reuse "Home"'s id, never create "Garage", and label a kit2 variation "Home"
   // in Saved setups forever.
+  const firedRef = useRef<string | null>(null);
+  const gymCreateFiredRef = useRef<string | null>(null);
+  /** In flight, so `save()` can await it instead of racing it into a 409. */
+  const gymCreatePromiseRef = useRef<Promise<void> | null>(null);
   useEffect(() => {
     createdGymIdRef.current = null;
+    gymCreateFiredRef.current = null;
+    gymCreatePromiseRef.current = null;
   }, [contextKey]);
-  const firedRef = useRef<string | null>(null);
+
+  // ── "Save this gym for next time" ─────────────────────────────────────────
+  //
+  // ⚠ Fired when the user COMMITS the kit, not when the variation saves — and
+  // the difference is a bug Brad hit on device. The toggle's label promises
+  // something about the KIT ("save this gym for next time"), unconditionally.
+  // Creating the row inside `save()` instead made that promise contingent on the
+  // adaptation succeeding AND the user going on to save the variation: a 503 from
+  // Bedrock, a 429, or a dropped connection left them back at the collect step
+  // with no saved gym and every chip to re-tick. The kit is the cheap, durable
+  // half of the flow; it should not be lost with the expensive, fragile half.
+  //
+  // Runs alongside the preview rather than before it — a saved-gym INSERT must
+  // not add latency to a request that already spends 2.6 s p50 in Bedrock.
+  //
+  // `save()` keeps its own create as the fallback for when this one failed
+  // (most likely a 409 on a name already used), so the variation can still pick
+  // up `sourceGymId` on a later attempt.
+  const refreshGyms = gyms.refresh;
+  useEffect(() => {
+    if (step !== "adapting") return;
+    const current = useLoadoutFlow.getState().context;
+    if (current === null || current.kind !== "ids" || !current.saveAsGym)
+      return;
+    if (createdGymIdRef.current !== null) return;
+    // Keyed on the context, so an explicit retry (which bumps `attempt` but
+    // leaves the kit alone) does not create the gym a second time.
+    if (gymCreateFiredRef.current === contextKey) return;
+    gymCreateFiredRef.current = contextKey;
+
+    gymCreatePromiseRef.current = api
+      .createSavedGym({
+        name: current.label,
+        equipmentTypeIds: current.equipmentTypeIds,
+      })
+      .then((result) => {
+        if (result.ok) createdGymIdRef.current = result.value.id;
+        // Refreshed even on failure: a 409 means the gym is already there under
+        // that name, and the collect step should show it either way.
+        void refreshGyms();
+      });
+  }, [step, contextKey, api, refreshGyms]);
 
   // ⚠ THE GUARD MUST BE CLEARED, and forgetting to was a permanent hang.
   //
@@ -494,6 +541,15 @@ export function LoadoutFlowContainer() {
       let sourceGymId: string | null =
         context.kind === "gym" ? context.gymId : null;
       if (context.kind === "ids" && context.saveAsGym) {
+        // ⚠ Await the commit-time create before deciding anything. It is fired
+        // when the user leaves the picker and the preview normally takes 2.6 s
+        // p50, so it has almost always landed by now — but "almost always" is
+        // not a guarantee, and losing that race means creating a SECOND gym
+        // with the same name, taking a 409, and saving the variation unlinked.
+        // The one outcome worse than a slow save is a silently unlinked one.
+        if (gymCreatePromiseRef.current !== null) {
+          await gymCreatePromiseRef.current;
+        }
         // ⚠ Remembered across retries. Without the ref, a save that created the
         // gym and then failed on the VARIATION (a dropped connection) would, on
         // the user's second tap, 409 on its own gym name and save the variation

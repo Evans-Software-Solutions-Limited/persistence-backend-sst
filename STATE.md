@@ -105,6 +105,19 @@ say so and fix this file.
 - **The staging deploy runs `prettier --check .` over the whole tree**; the PR
   prettier job is change-scoped only. A green PR does not mean a green deploy.
 - **`bun run test:unit` is NOT a typecheck.** Run `tsc` separately, always.
+- **Never interpolate a JS array before a `::uuid[]` cast in a Drizzle `sql`
+  template.** ``sql`${ids}::uuid[]` `` renders `($1, $2)` — a Postgres ROW
+  constructor — and dies at execution: `cannot cast type record to uuid[]` with
+  2+ ids, `malformed array literal` with one. Use the `uuidArray()` helper in
+  `exerciseRepository.ts` (`ARRAY[$1, $2]::uuid[]`, still one placeholder per
+  id). This 500'd Loadout's preview on device 2026-07-28, and two of the four
+  call sites had carried the bug since 2026-04-20 without anyone noticing —
+  the mobile exercise library filters locally from its SQLite cache and never
+  sends `targeted_muscles_any`/`equipment_any`, so nothing had executed them.
+  **A green render test is not proof:** `exerciseRepositoryLoadout.test.ts` had
+  rendered the SQL via `PgDialect` and asserted the *broken* shape, pinning it.
+  `exerciseRepositoryArrayPredicates.test.ts` now bans the paren form
+  mechanically and exercises both arities.
 - **`equipment_types.description` is in `schema.ts` but NOT in the live DB.** A
   bare `select()` 500s. Project columns explicitly. Same class of drift:
   `listActive()` on `subscription_tiers` must omit young columns.
@@ -336,6 +349,12 @@ Actions, in order of value:
   lands on measured ground first? (`requirements.md` § Open sequencing decision.)
 - **~30 real gym photos** — to turn E1's provisional go into a real one; ideally
   with Brad-confirmed ground-truth labels rather than Claude's.
+- **A "Gym" tab inside Train, alongside Workouts and Exercises** — Brad's idea
+  from the 2026-07-28 device run, so setups can be created and curated up front
+  rather than only mid-flow. **Explicitly NOT folded into the Phase 2 branch**
+  ("I don't need it folded in here, but it's worth keeping an eye on"). It
+  widens AC-7.2, which puts gym management under Settings/Profile, so it needs
+  its own slice and a call on whether it replaces or complements that list.
 
 ### Loadout Phase 2's screens — BUILT, on a branch, awaiting merge + device pass
 
@@ -344,9 +363,13 @@ T-3.4 and T-3.5's mobile half are all ticked in `tasks.md`, whose
 § "Landed in Phase 2's screens beyond the checklist" holds the architecture
 decisions. Do not re-derive them; the short version:
 
-- The flow is a **root-mounted overlay**, not routes — the store is the
-  navigation, and the swap/scan sheets must be siblings of the step to layer
-  above it.
+- The flow is the **`/(app)/loadout` route** (`fullScreenModal`); the store is
+  the STEP machine, not the navigation. The swap/scan sheets are siblings of the
+  step inside that route so they layer above it. ⚠ Two earlier shapes were tried
+  ON DEVICE and both broke — an absolute View sibling of the Stack rendered
+  *behind* the workout detail (which is itself `presentation: "modal"`), and
+  wrapping it in an RN `<Modal>` was worse: it froze the screen with an
+  invisible presented modal eating touches. Do not "simplify" it back.
 - `adapting` is bound to the request; the prototype's 1700 ms timer is absent.
 - `others` is the incompatible list **only when a kit context was supplied**.
 - The swap sheet's containment context is **`preview.equipmentTypeIds`** (the
@@ -362,10 +385,34 @@ client-side (the 402 remains the real gate). Adding the column to
 ~4-line change and retires `TIER_GRANTS_LOADOUT`. Left out only because that
 slice was mobile-only.
 
+**⚠ The branch now carries a BACKEND fix, so it is no longer mobile-only.**
+Brad's device run hit a 500 behind "Couldn't adapt this workout": the
+`${array}::uuid[]` bug above, in `ExerciseRepository.listAdaptationCandidates`.
+Four predicates fixed + a render-guard test. **Staging must be redeployed for
+the flow to work** — `deploy-staging.yml` accepts `workflow_dispatch`, so it can
+be fired on this branch without merging.
+
+**Also changed off the back of that run:** the "Save this gym for next time"
+toggle now creates the gym when the user COMMITS the kit, not when the variation
+saves. It used to be contingent on the adaptation succeeding, so a 503 / 429 /
+dropped connection lost the named kit and every ticked chip. `save()` awaits the
+in-flight create rather than racing it into a 409.
+
 **Still to do on this branch:** device-verify on an EAS dev build against
-staging using the PR checklist, then merge. Nothing else is outstanding —
-prettier / typecheck 8/8 / lint 0-err / build 13/13 / test:unit 19/19 all green,
-2 IB passes clean.
+staging using the PR checklist, then merge. Gates green
+(prettier / typecheck 8/8 / lint 0-err / build 13/13 / test:unit 19/19),
+2 IB passes clean — but the IB sweeps predate the backend fix and the
+route conversion, so **one more sweep is owed before the PR**.
+
+**Open question from the device run, unanswered:** Brad reported "the safe area
+view is not there" on the collect step. `LoadoutScaffold` does apply
+`edges={["top","bottom"]}`, and the screenshot he sent (the adapting-error step,
+same scaffold) shows the top inset applied — so which edge is wrong is not yet
+established. One real adjacent finding: **the app mounts no `SafeAreaProvider`
+anywhere**, so every `SafeAreaInsetsContext` consumer reads zero — including
+`BottomSheet`, which documents the fallback at `BottomSheet.tsx:96`. Sheet CTAs
+therefore get no home-indicator padding, app-wide. Adding the provider at the
+root is a one-line change with app-wide blast radius; not done here.
 
 ### Data bugs — open, not blocking Phase 2's critical path
 
@@ -543,6 +590,46 @@ Loadout phase was contract, engine and step machine with nothing attached.**
   already sets. Green on run 3.
 - **⚠ NEXT: device-verify on an EAS dev build against staging (the checklist is in
   the PR body), then merge.** Nothing else is outstanding on the branch.
+
+**2026-07-28 (cont.) — Brad's device run, and the three things it found. All on
+the same branch; the flow is STILL not verified working end-to-end by me.**
+
+- **The screens were unreachable, twice, for two different presentation
+  reasons.** Attempt 1 mounted the flow as an absolute-fill sibling of the Stack;
+  the entry point is `workouts/[id]/index`, which is `presentation: "modal"`, so
+  the whole flow rendered *behind* the workout sheet and tapping the card did
+  nothing. Attempt 2 wrapped that in an RN `<Modal>` and was **worse** — a
+  root-mounted modal cannot present over an already-presented route, so it froze
+  the screen with an invisible modal swallowing touches. Brad's detail
+  ("if i swipe away the workout, the rest of the screen freezes") is what
+  identified it. Now the `/(app)/loadout` route. **The lesson is that I reached
+  for fix 2 without re-examining fix 1's premise.**
+- **⚠ A BACKEND 500 was the real blocker behind "Couldn't adapt this workout",
+  and I could not have found it from the mobile side** — the client only sees a
+  generic error. Brad pasted the stack trace and it was immediate:
+  ``sql`${array}::uuid[]` `` renders a ROW constructor. Four predicates in
+  `exerciseRepository`; two of them three months old and never executed, because
+  the exercise library filters locally from its SQLite cache. See § Active
+  gotchas. **Staging needs redeploying (`deploy-staging.yml` takes a
+  `workflow_dispatch` on this branch) before the flow can work on device.**
+- **⚠ A render test that PINNED the bug.** `exerciseRepositoryLoadout.test.ts`
+  already rendered the predicate through `PgDialect` — exactly the guard the
+  previous SQL incident prescribed — and asserted `($1)::uuid[]`, the invalid
+  shape, as correct. Rendering closes the mocked-`getDb` gap only for defects the
+  author knows to look for; it says nothing about whether Postgres can execute
+  the result. The replacement bans the bad form mechanically and runs both
+  arities, because one id and several fail with *different* errors.
+- **"Save this gym for next time" was contingent on the adaptation succeeding.**
+  The gym was created inside `save()`, so Brad's 500 lost the named kit and every
+  ticked chip — the toggle's label promises something about the KIT, not about
+  the variation. It now fires when the user commits the kit, alongside the
+  preview rather than before it (that request already spends 2.6 s p50 in
+  Bedrock), and `save()` awaits the in-flight create instead of racing it into a
+  duplicate-name 409.
+- **NOT done, deliberately:** the Gym-tab-in-Train idea (Brad: "worth keeping an
+  eye on") — logged under § Open items. And the collect step's safe-area report
+  is unresolved; see the branch section above for what was and was not
+  established.
 
 
 
