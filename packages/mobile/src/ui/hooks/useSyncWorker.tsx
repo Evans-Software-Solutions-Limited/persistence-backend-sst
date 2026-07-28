@@ -167,9 +167,20 @@ export function useSyncWorker(): void {
         // sync-failure banner to resolve by hand. This also clears
         // `nextAttemptAt`, so the flush below actually sends them now rather than
         // waiting out a window set while there was no network.
+        //
+        // ⚠ TRANSPORT deferrals only. A `resolution` deferral (a reference
+        // catalogue that couldn't be resolved) is not informed by connectivity, and
+        // re-arming it re-created the very hole `MAX_TRANSPORT_DEFERRALS` was
+        // invented to close: an exercise naming a catalogue entry that does not yet
+        // exist had its counters zeroed on every reconnect, so it could never reach
+        // the ceiling — no banner, no review row, never sent, lost on reinstall.
+        // That has a real trigger population: the `machine` → "Machine" mapping
+        // depends on 20260727120000_equipment_types_generic_machine.sql being
+        // applied by hand to production, so every exercise saved with the Machine
+        // option before that lands is exactly this case.
         const deferred = storage
           .getPendingMutations()
-          .filter((e) => e.deferCount > 0);
+          .filter((e) => e.deferCount > 0 && e.deferKind === "transport");
         if (deferred.length > 0) {
           storage.resetFailedEntries(deferred.map((e) => e.id));
         }

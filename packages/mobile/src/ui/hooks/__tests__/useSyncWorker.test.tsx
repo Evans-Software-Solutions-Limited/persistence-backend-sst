@@ -694,6 +694,58 @@ describe("useSyncWorker", () => {
       expect(terminal[0].status).toBe("permanently_failed");
     });
 
+    it("does NOT re-arm a RESOLUTION deferral, which connectivity says nothing about", async () => {
+      // Resetting every deferred entry re-created the hole MAX_TRANSPORT_DEFERRALS
+      // was invented to close. An exercise naming a catalogue entry that does not
+      // yet exist defers with kind 'resolution'; zeroing its counters on every
+      // reconnect meant it could never reach the ceiling — no banner, no review row,
+      // never sent, and lost on reinstall. Real trigger population: the
+      // `machine` → "Machine" mapping needs a migration applied by hand to prod, so
+      // every exercise saved with the Machine option before that lands is this case.
+      const storage = new InMemoryStorageAdapter();
+      storage.initialize();
+      storage.enqueueMutation({
+        entityType: "exercise",
+        entityId: "local-ex-unresolvable",
+        operation: "create",
+        payload: { name: "Machine Press" },
+        endpoint: "/exercises",
+        method: "POST",
+      });
+      const id = storage.getPendingMutations().slice(-1)[0].id;
+      storage.markMutationDeferred(
+        id,
+        "No catalogue entry for: x",
+        "resolution",
+      );
+      storage.markMutationDeferred(
+        id,
+        "No catalogue entry for: x",
+        "resolution",
+      );
+
+      mockFetch.mockResolvedValue({ ok: true, json: async () => ({}) });
+      const auth = new InMemoryAuthAdapter();
+      const netInfo = new InMemoryNetInfoAdapter(true);
+      const adapters = makeAdapters(storage, auth, session, netInfo);
+
+      renderHook(() => useSyncWorker(), { wrapper: wrap(adapters) });
+      await settleMount();
+
+      act(() => netInfo.setConnected(false));
+      act(() => netInfo.setConnected(true));
+      act(() => {
+        jest.advanceTimersByTime(SYNC_RECONNECT_DEBOUNCE_MS);
+      });
+      await settleMount();
+
+      // Counter preserved, so it still converges on the ceiling and still becomes
+      // visible to the user instead of being postponed forever.
+      const [entry] = storage.getPendingMutations();
+      expect(entry.deferCount).toBe(2);
+      expect(entry.deferKind).toBe("resolution");
+    });
+
     it("restores the budget-free run of still-queued deferred entries on reconnect", async () => {
       // Without this, an offline stretch of only ~90–120s (12 free deferrals at a
       // 5s window, then 3 charged attempts) exhausted an offline-created row
@@ -713,8 +765,8 @@ describe("useSyncWorker", () => {
         method: "POST",
       });
       const id = storage.getPendingMutations().slice(-1)[0].id;
-      storage.markMutationDeferred(id, "Network request failed");
-      storage.markMutationDeferred(id, "Network request failed");
+      storage.markMutationDeferred(id, "Network request failed", "transport");
+      storage.markMutationDeferred(id, "Network request failed", "transport");
       expect(storage.getPendingMutations()[0].deferCount).toBe(2);
 
       mockFetch.mockResolvedValue({ ok: true, json: async () => ({}) });

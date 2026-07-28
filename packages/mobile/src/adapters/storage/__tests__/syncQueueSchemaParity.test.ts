@@ -83,12 +83,17 @@ describe("sync_queue additive columns", () => {
     // on the port breaks the build here rather than silently at runtime.
     const probe: Pick<
       SyncQueueEntry,
-      "idempotencyKey" | "nextAttemptAt" | "deferCount" | "dispatchCount"
+      | "idempotencyKey"
+      | "nextAttemptAt"
+      | "deferCount"
+      | "dispatchCount"
+      | "deferKind"
     > = {
       idempotencyKey: null,
       nextAttemptAt: null,
       deferCount: 0,
       dispatchCount: 0,
+      deferKind: null,
     };
     expect(Object.keys(probe).sort()).toEqual([...camel].sort());
   });

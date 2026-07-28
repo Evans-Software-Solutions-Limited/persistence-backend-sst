@@ -414,13 +414,17 @@ describe("deferral does not consume the retry budget", () => {
     );
   });
 
-  it("discards a sibling stranded on the local id when a create dies terminally", async () => {
+  it("clears BOTH entries when a permanently-rejected create has a stranded delete", async () => {
     // A queued `DELETE /exercises/local-…` parked behind an in-flight create (the
     // path delete-exercise deliberately takes) can only ever be rewritten by the
     // id swap that runs when the create SUCCEEDS. Once the create is permanently
     // rejected, that sibling is aimed forever at a path Postgres rejects with
     // 22P02 — it burns its budget and surfaces as "Invalid identifier format" for
     // a row the user was told was deleted.
+    //
+    // The create goes too: a stranded delete is terminal intent for the whole
+    // entity. Leaving it behind was how a deleted row came back (see the
+    // transient-exhaustion sibling of this test — that is the resurrectable case).
     storage.enqueueMutation({
       entityType: "exercise",
       entityId: "local-e9",
@@ -446,8 +450,9 @@ describe("deferral does not consume the retry budget", () => {
 
     await processSyncQueue(storage, auth, "https://api.test");
 
-    const remaining = storage.getQueuedEntriesForEntity("exercise", "local-e9");
-    expect(remaining.map((e) => e.operation)).toEqual(["create"]);
+    expect(storage.getQueuedEntriesForEntity("exercise", "local-e9")).toEqual(
+      [],
+    );
   });
 
   it("folds a stranded EDIT onto the dying create instead of dropping the user's change", async () => {
@@ -528,6 +533,91 @@ describe("deferral does not consume the retry budget", () => {
     expect(exhausted[0].operation).toBe("create");
     // Still terminal (not silently re-opened) AND carrying the edit.
     expect(JSON.parse(exhausted[0].payload).name).toBe("Renamed by user");
+  });
+
+  it("discards the CREATE too when a stranded DELETE is collapsed", async () => {
+    // Data resurrection, verified end-to-end. Delete a never-synced workout offline
+    // (delete-workout evicts the cache and enqueues DELETE /workouts/local-w1, with
+    // no create-cancellation of its own), stay offline until the create exhausts:
+    // the collapse folded nothing (the sibling is a delete, not an update) and
+    // discarded it, leaving a create that satisfies EVERY clause of useSyncWorker's
+    // replaySafe filter — status 'failed', operation 'create', a non-null
+    // idempotencyKey, endpoint '/workouts'. The next reconnect resurrected it, the
+    // POST landed, and no DELETE remained to undo it: the workout the user deleted
+    // reappeared on the next refresh and consumed a slot against their quota.
+    storage.enqueueMutation({
+      entityType: "workout",
+      entityId: "local-w1",
+      operation: "create",
+      payload: { name: "Push" },
+      endpoint: "/workouts",
+      method: "POST",
+    });
+    storage.enqueueMutation({
+      entityType: "workout",
+      entityId: "local-w1",
+      operation: "delete",
+      payload: {},
+      endpoint: "/workouts/local-w1",
+      method: "DELETE",
+    });
+    // 5xx → transient, so the create EXHAUSTS rather than going permanently_failed.
+    // That distinction is the whole point: only `failed` is resurrectable, so the
+    // existing permanent-400 test could never have caught this.
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 500,
+      text: async () => "boom",
+    });
+
+    for (let i = 0; i < 4; i++) {
+      await processSyncQueue(storage, auth, "https://api.test", AFTER_BACKOFF);
+    }
+
+    // Nothing left to resurrect — the user's last intent for this row was "gone",
+    // and the server never saw it.
+    expect(storage.getQueuedEntriesForEntity("workout", "local-w1")).toEqual(
+      [],
+    );
+    expect(storage.getFailedExhaustedEntries()).toEqual([]);
+  });
+
+  it("MERGES the folded edit onto the create rather than replacing the body", async () => {
+    // A PATCH is allowed to be partial. An athlete-context workout edit omits
+    // `showInOwnerLibrary` entirely (WorkoutEditorContainer sets it only for a
+    // coach, and JSON.stringify drops undefined), so replacing the body made the
+    // handler apply its `?? true` default — and a workout the coach authored FOR A
+    // CLIENT surfaced in the coach's own My Workouts.
+    storage.enqueueMutation({
+      entityType: "workout",
+      entityId: "local-w2",
+      operation: "create",
+      payload: { name: "Client Push", showInOwnerLibrary: false },
+      endpoint: "/workouts",
+      method: "POST",
+    });
+    storage.enqueueMutation({
+      entityType: "workout",
+      entityId: "local-w2",
+      operation: "update",
+      payload: { name: "Client Push v2" },
+      endpoint: "/workouts/local-w2",
+      method: "PATCH",
+    });
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 500,
+      text: async () => "boom",
+    });
+
+    for (let i = 0; i < 4; i++) {
+      await processSyncQueue(storage, auth, "https://api.test", AFTER_BACKOFF);
+    }
+
+    const [survivor] = storage.getFailedExhaustedEntries();
+    const body = JSON.parse(survivor.payload);
+    expect(body.name).toBe("Client Push v2"); // the edit applied…
+    expect(body.showInOwnerLibrary).toBe(false); // …without dropping the rest
   });
 
   it("an explicit Retry restores the full free run", async () => {

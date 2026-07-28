@@ -21,6 +21,7 @@ function makeEntry(overrides: Partial<SyncQueueEntry> = {}): SyncQueueEntry {
     nextAttemptAt: null,
     deferCount: 0,
     dispatchCount: 0,
+    deferKind: null,
     ...overrides,
   };
 }

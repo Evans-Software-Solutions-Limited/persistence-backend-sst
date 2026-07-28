@@ -1,5 +1,6 @@
 import type { AuthPort } from "@/domain/ports/auth.port";
 import type {
+  DeferKind,
   RecordResponseSummary,
   RecordResponseSummaryPR,
   StoragePort,
@@ -212,6 +213,7 @@ function deferOrCharge(
   storage: StoragePort,
   entry: SyncQueueEntry,
   reason: string,
+  kind: DeferKind,
 ): void {
   if (entry.deferCount >= MAX_TRANSPORT_DEFERRALS) {
     storage.markMutationFailed(entry.id, reason);
@@ -227,7 +229,7 @@ function deferOrCharge(
     }
     return;
   }
-  storage.markMutationDeferred(entry.id, reason);
+  storage.markMutationDeferred(entry.id, reason, kind);
 }
 
 /**
@@ -280,6 +282,26 @@ function reportTerminalFailure(entry: SyncQueueEntry, message: string): void {
  * Only local-id-addressed siblings are touched; anything pointing at a real resource
  * is unrelated to this create's failure and stays.
  */
+/**
+ * Parse a stored payload into a plain object, or null if it isn't one. Arrays and
+ * scalars are rejected because the only use here is spreading two bodies together.
+ */
+function parseObject(payload: string): Record<string, unknown> | null {
+  try {
+    const parsed: unknown = JSON.parse(payload);
+    if (
+      parsed === null ||
+      typeof parsed !== "object" ||
+      Array.isArray(parsed)
+    ) {
+      return null;
+    }
+    return parsed as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
 function collapseStrandedLocalIdSiblings(
   storage: StoragePort,
   entry: SyncQueueEntry,
@@ -295,19 +317,44 @@ function collapseStrandedLocalIdSiblings(
       );
     if (stranded.length === 0) return;
 
+    // ⚠ A stranded DELETE is terminal intent for the whole ENTITY, so the create
+    // goes with it. Keeping the create was a live data-resurrection bug: delete a
+    // never-synced workout offline (`delete-workout` evicts the cache and enqueues
+    // `DELETE /workouts/local-w1`), stay offline until the create exhausts, and the
+    // collapse discarded the DELETE — leaving a create that satisfies every clause
+    // of `useSyncWorker`'s `replaySafe` filter. The next reconnect resurrected it,
+    // the POST landed, and nothing remained to undo it: the workout the user deleted
+    // reappeared on the next refresh and consumed a slot against their quota. With
+    // an edit also queued it came back carrying the edit.
+    //
+    // Discarding both is the right end state either way — the user's last expressed
+    // intent for this row is "gone", and the server never saw it.
+    if (stranded.some((sibling) => sibling.operation === "delete")) {
+      storage.discardEntries([entry.id, ...stranded.map((s) => s.id)]);
+      return;
+    }
+
     // Newest edit wins — later edits supersede earlier ones, and the enqueue order
-    // `getQueuedEntriesForEntity` returns is the order they were made in.
+    // `getQueuedEntriesForEntity` returns is the order they were made in
+    // (`created_at ASC, id ASC`, and `id` is the rowid).
     const newestEdit = stranded
       .filter((sibling) => sibling.operation === "update")
       .at(-1);
     if (newestEdit) {
-      let body: unknown;
-      try {
-        body = JSON.parse(newestEdit.payload);
-      } catch {
-        body = null;
-      }
-      if (body !== null) {
+      const editBody = parseObject(newestEdit.payload);
+      if (editBody !== null) {
+        // MERGE onto the create's body rather than replacing it. A PATCH is allowed
+        // to be partial, and a replace silently drops whatever it omits: an
+        // athlete-context workout edit leaves `showInOwnerLibrary` out entirely
+        // (`WorkoutEditorContainer` sets it only for a coach), so a replace made the
+        // handler apply its `?? true` default and a workout the coach authored FOR A
+        // CLIENT surfaced in the coach's own My Workouts. Merging also removes the
+        // assumption that create and update payloads are shape-identical — true
+        // today, but only by coincidence of what the editors happen to send.
+        const createBody = parseObject(entry.payload);
+        const merged =
+          createBody === null ? editBody : { ...createBody, ...editBody };
+
         // `updateMutationPayload` no-ops on a terminal row, so a permanently_failed
         // create has to be re-opened first — same order, and same reason, as
         // `update-exercise`'s own coalescing path. An exhausted (`failed`) create
@@ -316,7 +363,7 @@ function collapseStrandedLocalIdSiblings(
         if (entry.status === "permanently_failed") {
           storage.resetFailedEntries([entry.id]);
         }
-        storage.updateMutationPayload(entry.id, body);
+        storage.updateMutationPayload(entry.id, merged);
       }
     }
 
@@ -498,7 +545,7 @@ export async function processSyncQueue(
           // that simply doesn't exist), and deferring that forever would keep the
           // exercise invisible in the queue instead of surfacing it where the user
           // can see the named members and discard or retry it.
-          deferOrCharge(storage, entry, prepared.deferReason);
+          deferOrCharge(storage, entry, prepared.deferReason, "resolution");
           failed++;
           continue;
         }
@@ -834,7 +881,7 @@ export async function processSyncQueue(
       // code, which lands here too and would otherwise loop invisibly forever —
       // still exhausts and still reaches the user.
       if (!(err instanceof SyncHttpError)) {
-        deferOrCharge(storage, entry, message);
+        deferOrCharge(storage, entry, message, "transport");
         failed++;
         continue;
       }

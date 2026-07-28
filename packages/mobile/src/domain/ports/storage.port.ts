@@ -271,6 +271,7 @@ export interface StoragePort {
   markMutationDeferred(
     id: number,
     reason: string,
+    kind: DeferKind,
     retryAfterSeconds?: number,
   ): void;
   /**
@@ -1155,7 +1156,29 @@ export type SyncQueueEntry = {
    * null), so no key can be replayed for them and the hazard doesn't apply.
    */
   dispatchCount: number;
+  /**
+   * WHY the last deferral happened, or `null` if this entry has never been
+   * deferred. See `DeferKind` — only `"transport"` deferrals are informed by
+   * regaining connectivity, which is what the reconnect self-heal keys off.
+   */
+  deferKind: DeferKind | null;
 };
+
+/**
+ * Why a queue entry was postponed without charging its retry budget.
+ *
+ * - `"transport"` — no answer was received (offline, a dropped connection). A
+ *   reconnect IS new information about this, so the reconnect self-heal re-arms the
+ *   entry's budget-free run.
+ * - `"resolution"` — we declined to send, because a reference catalogue could not be
+ *   resolved. Connectivity has no bearing on it, so a reconnect must NOT re-arm it:
+ *   doing so pinned `deferCount` at zero on every reconnect, so an exercise naming a
+ *   catalogue entry that does not yet exist could never reach
+ *   `MAX_TRANSPORT_DEFERRALS`, never surfaced in /sync-failed, was never sent, and
+ *   was lost on reinstall. There is a real population for that: the `machine` →
+ *   "Machine" mapping depends on a migration applied by hand to production.
+ */
+export type DeferKind = "transport" | "resolution";
 
 export type SyncStats = {
   pending: number;

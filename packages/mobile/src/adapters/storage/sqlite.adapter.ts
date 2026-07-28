@@ -66,6 +66,7 @@ import type {
   RecordResponseSummary,
   RestTimerState,
   SyncQueueEntry,
+  DeferKind,
   SyncStats,
 } from "@/domain/ports/storage.port";
 import type {
@@ -149,12 +150,20 @@ const SYNC_BACKOFF_MAX_SECONDS = 300;
  *   seen this?", which must survive a user Retry, and is what stops edit-coalescing
  *   from replaying a create's idempotency key with a different body (the server
  *   returns the original row and the edit is silently lost).
+ * - `defer_kind` — WHY the last deferral happened: `'transport'` (no answer
+ *   received) or `'resolution'` (we declined to send, because a reference catalogue
+ *   could not be resolved). Only the transport kind is informed by regaining
+ *   connectivity, so it is the only kind whose ceiling a reconnect may re-arm.
+ *   Without the distinction, an exercise naming a catalogue entry that does not yet
+ *   exist had its counters zeroed on every reconnect and so could never reach the
+ *   ceiling — invisible in every sync surface, forever. NULL when never deferred.
  */
 export const ADDITIVE_SYNC_QUEUE_COLUMNS: readonly [string, string][] = [
   ["idempotency_key", "TEXT"],
   ["next_attempt_at", "TEXT"],
   ["defer_count", "INTEGER NOT NULL DEFAULT 0"],
   ["dispatch_count", "INTEGER NOT NULL DEFAULT 0"],
+  ["defer_kind", "TEXT"],
 ];
 
 /**
@@ -1175,6 +1184,7 @@ ${indentSyncQueueDdl(12)}
   markMutationDeferred(
     id: number,
     reason: string,
+    kind: DeferKind,
     retryAfterSeconds: number = SYNC_BACKOFF_BASE_SECONDS,
   ): void {
     const db = this.getDb();
@@ -1193,9 +1203,10 @@ ${indentSyncQueueDdl(12)}
            error_message = ?,
            next_attempt_at = datetime('now', '+' || ? || ' seconds'),
            defer_count = defer_count + 1,
+           defer_kind = ?,
            updated_at = datetime('now')
        WHERE id = ?`,
-      [reason, Math.max(1, Math.trunc(retryAfterSeconds)), id],
+      [reason, Math.max(1, Math.trunc(retryAfterSeconds)), kind, id],
     );
   }
 
@@ -1344,6 +1355,7 @@ ${indentSyncQueueDdl(12)}
              -- should get its full run of budget-free postponements again rather
              -- than charging the retry budget on its first transport failure.
              defer_count = 0,
+             defer_kind = NULL,
              updated_at = datetime('now')
          WHERE id IN (${placeholders})
            AND status IN ('failed', 'permanently_failed')`,
@@ -3519,6 +3531,7 @@ function mapRow(row: Record<string, unknown>): SyncQueueEntry {
     nextAttemptAt: (row.next_attempt_at as string | null) ?? null,
     deferCount: (row.defer_count as number | null) ?? 0,
     dispatchCount: (row.dispatch_count as number | null) ?? 0,
+    deferKind: (row.defer_kind as DeferKind | null) ?? null,
   };
 }
 

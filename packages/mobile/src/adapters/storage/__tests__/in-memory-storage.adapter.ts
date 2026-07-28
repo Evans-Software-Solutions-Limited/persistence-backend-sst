@@ -37,6 +37,7 @@ import { filterExercises } from "@/domain/services/exercise.service";
 import type {
   StoragePort,
   SyncQueueEntry,
+  DeferKind,
   SyncStats,
   EnqueueMutationInput,
   RecentSetEntry,
@@ -201,6 +202,7 @@ export class InMemoryStorageAdapter implements StoragePort {
       nextAttemptAt: null,
       deferCount: 0,
       dispatchCount: 0,
+      deferKind: null,
     });
   }
 
@@ -257,6 +259,7 @@ export class InMemoryStorageAdapter implements StoragePort {
   markMutationDeferred(
     id: number,
     reason: string,
+    kind: DeferKind,
     retryAfterSeconds = 5,
   ): void {
     // Parity with SQLite: postpone WITHOUT consuming the retry budget, but DO
@@ -268,6 +271,7 @@ export class InMemoryStorageAdapter implements StoragePort {
       entry.status = "failed";
       entry.errorMessage = reason;
       entry.deferCount++;
+      entry.deferKind = kind;
       entry.nextAttemptAt = new Date(
         Date.now() + Math.max(1, Math.trunc(retryAfterSeconds)) * 1000,
       ).toISOString();
@@ -381,6 +385,7 @@ export class InMemoryStorageAdapter implements StoragePort {
       // Parity with SQLite: a Retry is new information, so the deferral ceiling
       // resets too and the entry gets its full run of budget-free postponements.
       entry.deferCount = 0;
+      entry.deferKind = null;
       entry.errorMessage = null;
     }
   }

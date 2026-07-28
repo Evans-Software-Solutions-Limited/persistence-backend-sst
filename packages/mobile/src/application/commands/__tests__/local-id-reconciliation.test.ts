@@ -485,7 +485,11 @@ describe("unsynced local-id handling", () => {
       // The request left the device, then the transport failed — so whether the
       // server committed is unknowable.
       storage.markMutationDispatched(created.id);
-      storage.markMutationDeferred(created.id, "Network request failed");
+      storage.markMutationDeferred(
+        created.id,
+        "Network request failed",
+        "transport",
+      );
 
       const result = updateExerciseCommand({ storage }, existing, {
         name: "New name",
