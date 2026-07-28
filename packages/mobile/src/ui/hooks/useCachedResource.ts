@@ -276,7 +276,6 @@ export function useCachedResource<T>(
       cancelled = true;
     };
     // attemptFetch is stable per (api/auth/storage/userId); initial* gate entry.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, initialIsStale, initialHasNoCache, attemptFetch]);
 
   return { data, isStale, isRefreshing, error, refresh, reload };

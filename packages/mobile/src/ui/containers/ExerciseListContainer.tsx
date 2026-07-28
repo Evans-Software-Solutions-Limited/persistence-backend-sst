@@ -275,7 +275,9 @@ export function ExerciseListContainer() {
     // queryResult.exercises intentionally NOT a dep — we read it via
     // exercisesRef so the callback identity stays stable across
     // cache changes. See the ref docstring above.
-    [api, storage],
+    // `markChanged` is a zustand action with a stable identity for the store's
+    // lifetime, but listing it costs nothing and keeps the lint rule honest.
+    [api, storage, markChanged],
   );
 
   const hasCachedExercises = queryResult.exercises.length > 0;
