@@ -111,9 +111,14 @@ export function updateWorkoutCommand(
     // workout until the next refetch. An edit that doesn't touch `exercises`
     // (input.exercises undefined => `exercises` is the cached list) still lands
     // on the same value, so this is a no-op for metadata-only edits.
+    // `length > 0` mirrors WorkoutRepository.update exactly: a PATCH that
+    // EMPTIES the plan wipes the rows but leaves the stored duration alone.
+    // Without the guard the cache would drop to the empty-plan default (30)
+    // while the server kept the real value — the post-sync jump this whole
+    // change exists to remove.
     estimatedDurationMinutes:
       input.estimatedDurationMinutes ??
-      (input.exercises !== undefined
+      (input.exercises !== undefined && input.exercises.length > 0
         ? calculateEstimatedDuration(exercises)
         : cached.workout.estimatedDurationMinutes),
     showInOwnerLibrary:

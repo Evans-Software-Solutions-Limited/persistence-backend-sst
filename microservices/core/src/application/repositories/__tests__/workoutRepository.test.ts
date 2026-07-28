@@ -790,14 +790,13 @@ describe("WorkoutRepository", () => {
     });
 
     it("should skip exercises insert when full-replacement array is empty", async () => {
-      const tx = {
-        update: vi.fn().mockReturnValue({
-          set: vi.fn().mockReturnValue({
-            where: vi.fn().mockReturnValue({
-              returning: vi.fn().mockResolvedValue([baseWorkout]),
-            }),
-          }),
+      const setSpy = vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          returning: vi.fn().mockResolvedValue([baseWorkout]),
         }),
+      });
+      const tx = {
+        update: vi.fn().mockReturnValue({ set: setSpy }),
         delete: vi.fn().mockReturnValue({
           where: vi.fn().mockResolvedValue(undefined),
         }),
@@ -818,6 +817,10 @@ describe("WorkoutRepository", () => {
       expect(result?.exercises).toEqual([]);
       expect(tx.delete).toHaveBeenCalledTimes(1);
       expect(tx.insert).not.toHaveBeenCalled();
+      // Emptying the plan must NOT rewrite the duration to 0 — there is
+      // nothing left to estimate from. Without the `length > 0` guard in
+      // update() this assertion fails with 0.
+      expect(setSpy.mock.calls[0][0].estimatedDurationMinutes).toBeUndefined();
     });
 
     it("should return null when the (id, createdBy) UPDATE matches no rows (not found / not owner)", async () => {

@@ -216,6 +216,40 @@ describe("HomeContainer (V2)", () => {
     expect(mockProbe.last?.home?.rings.train.current).toBe(0);
   });
 
+  it("refuses to overlay a ring whose cached unit predates the change", async () => {
+    // `cached_home` is an unversioned blob and Train changed meaning (weekly
+    // `kg`/20000 → daily `kcal`/500). An install opening on a pre-change cache
+    // must not have a live kcal figure written into the kg ring — that renders
+    // "410 · kg" at 2%. Leave the stale ring intact until /home replaces it.
+    const { adapters, api } = makeAdapters({
+      isAvailable: async () => true,
+      getPermissionStatus: async () => ({
+        steps: "granted",
+        calories: "granted",
+        bodyWeight: "granted",
+        heartRate: "granted",
+        sleep: "granted",
+      }),
+      getActiveCaloriesToday: async () => ok(410),
+    });
+    api.nextRings = {
+      ...api.nextRings,
+      train: { current: 8400, target: 20000, pct: 0.42, unit: "kg" },
+    };
+    render(
+      <Wrapper adapters={adapters}>
+        <HomeContainer />
+      </Wrapper>,
+    );
+    await waitFor(() => expect(mockProbe.last?.home).toBeTruthy());
+    expect(mockProbe.last?.home?.rings.train).toEqual({
+      current: 8400,
+      target: 20000,
+      pct: 0.42,
+      unit: "kg",
+    });
+  });
+
   it("clears the workouts loading state once the fetch resolves (no stuck skeleton)", async () => {
     const { adapters } = makeAdapters();
     render(

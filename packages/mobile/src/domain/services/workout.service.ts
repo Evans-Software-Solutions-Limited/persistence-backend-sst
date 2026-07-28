@@ -112,11 +112,17 @@ export const EMPTY_PLAN_DURATION_MINUTES = 30;
 /**
  * Estimate workout duration from the exercise plan.
  *
- * ⚠ This MUST stay byte-identical to the server's
+ * ⚠ This MUST stay in step with the server's
  * `microservices/core/src/application/workouts/estimateDuration.ts`, which is
  * the authority — this copy exists only so the OPTIMISTIC row written before
  * the create/update round-trips shows the same number the server will store.
  * Divergence shows up as the duration visibly changing after a sync.
+ *
+ * Specifically it mirrors the server's `resolveEstimatedDurationMinutes`, not
+ * its bare `estimateWorkoutDurationMinutes`: an EMPTY plan returns the column
+ * default (30), not the estimator's 0. The update path must therefore not call
+ * this for an empty plan — the server leaves the stored value untouched there,
+ * and `update-workout.command.ts` guards on `length > 0` to match.
  *
  * It previously claimed to mirror the legacy heuristic and did not: 35s of work
  * per set instead of 75, rest charged on every set instead of `sets − 1`, no

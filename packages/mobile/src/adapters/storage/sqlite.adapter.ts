@@ -971,8 +971,15 @@ ${indentSyncQueueDdl(12)}
     // LAST — every ad-hoc CREATE-IF-NOT-EXISTS / ALTER block above has
     // already brought this install to the latest known shape by this
     // point, so a fresh or pre-M13 install baselines here with nothing to
-    // run. `SQLITE_MIGRATIONS` is empty today; future schema changes land
-    // as a new entry there instead of another bespoke inline block.
+    // run. Future schema changes land as a new `SQLITE_MIGRATIONS` entry
+    // instead of another bespoke inline block.
+    //
+    // ⚠ Baselining means a migration only reaches installs that already had
+    // the runner when it was added. An install updating from a PRE-runner
+    // build straight to a build carrying a new migration baselines past it.
+    // Migration 1 (clearing the stale `cached_home` blob) is therefore
+    // belt-and-braces only — HomeContainer independently refuses to overlay a
+    // ring whose cached unit doesn't match, which covers that install too.
     runSqliteMigrations(db);
 
     // Backend-fingerprint cache/session auto-wipe: stamp the cache with the

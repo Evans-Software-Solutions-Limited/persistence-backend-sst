@@ -100,22 +100,39 @@ export function HomeContainer() {
     if (!data) return data;
     if (healthSteps == null && healthActiveKcal == null) return data;
 
-    const overlay = (datum: RingDatum, current: number): RingDatum => ({
-      ...datum,
-      current,
-      pct:
-        datum.target > 0 ? Math.min(1, Math.max(0, current / datum.target)) : 0,
-    });
+    // The overlay replaces `current`/`pct` but inherits `target` and `unit`
+    // from the payload, so it is only meaningful when the payload's ring is
+    // the shape we're writing into. `cached_home` is an unversioned JSON blob
+    // and Train changed meaning (weekly `kg`/20000 → daily `kcal`/500), so an
+    // install opening on a pre-change cache would otherwise render a live kcal
+    // figure against the old kg scale — "410 · kg" at 2%. Mismatched unit ⇒
+    // leave the cached ring alone; it's stale but internally consistent, and
+    // the first successful /users/me/home replaces it.
+    const overlay = (
+      datum: RingDatum,
+      current: number,
+      expectedUnit: string,
+    ): RingDatum =>
+      datum.unit !== expectedUnit
+        ? datum
+        : {
+            ...datum,
+            current,
+            pct:
+              datum.target > 0
+                ? Math.min(1, Math.max(0, current / datum.target))
+                : 0,
+          };
 
     return {
       ...data,
       rings: {
         ...data.rings,
         ...(healthSteps != null
-          ? { move: overlay(data.rings.move, healthSteps) }
+          ? { move: overlay(data.rings.move, healthSteps, "steps") }
           : {}),
         ...(healthActiveKcal != null
-          ? { train: overlay(data.rings.train, healthActiveKcal) }
+          ? { train: overlay(data.rings.train, healthActiveKcal, "kcal") }
           : {}),
       },
     };
