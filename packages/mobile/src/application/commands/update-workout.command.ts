@@ -149,8 +149,8 @@ export function updateWorkoutCommand(
   // next home-tab focus refetches with the edited row instead of
   // serving the pre-edit snapshot until the dashboard TTL elapses.
   deps.storage.invalidateDashboard(deps.userId);
-  // Same for `cached_home`, the slice Home reads today. See create-workout.
-  deps.storage.invalidateHome(deps.userId);
+  // No `invalidateHome` — see create-workout for why it would destroy the offline
+  // fallback without refreshing anything Home actually shows.
 
   return ok(updated);
 }

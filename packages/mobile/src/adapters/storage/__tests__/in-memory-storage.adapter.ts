@@ -67,6 +67,35 @@ import type {
  * In-memory storage adapter for testing.
  * No SQLite dependency — stores everything in arrays/maps.
  */
+/**
+ * Rewrite `localId` → `serverId` in a cached workout list, folding onto any row that
+ * already carries the server id. Mirrors `foldWorkoutIdInList` in the SQLite adapter —
+ * see its docstring for why the fold matters.
+ */
+function foldWorkoutIdInList(
+  workouts: Workout[],
+  localId: string,
+  serverId: string,
+): Workout[] {
+  // The server row WINS, and keeps its position. If the slice already carries
+  // `serverId`, that row came from the server's own list — truth — while the local
+  // row is an optimistic snapshot that may predate an edit the server already has.
+  // So drop the local row rather than renaming it over the top.
+  const alreadyHasServerRow = workouts.some(
+    (w) => w.id === serverId && w.id !== localId,
+  );
+  const out: Workout[] = [];
+  for (const w of workouts) {
+    if (w.id !== localId) {
+      out.push(w);
+      continue;
+    }
+    if (alreadyHasServerRow) continue;
+    out.push({ ...w, id: serverId });
+  }
+  return out;
+}
+
 export class InMemoryStorageAdapter implements StoragePort {
   private queue: SyncQueueEntry[] = [];
   private metadata: Map<string, string> = new Map();
@@ -583,11 +612,12 @@ export class InMemoryStorageAdapter implements StoragePort {
         { ...history, workoutId: serverId },
       );
     }
-    // Rewrite the matching top-level id in every cached list slice.
+    // Rewrite the matching top-level id in every cached list slice, FOLDING onto any
+    // row already carrying the server id — a slice can legitimately hold both while a
+    // dispatched create sits in its backoff window, and a bare rewrite would leave two
+    // rows with the same id (duplicate React keys). Parity with the SQLite adapter.
     for (const slice of this.workoutsListCache.values()) {
-      for (const w of slice.workouts) {
-        if (w.id === localId) w.id = serverId;
-      }
+      slice.workouts = foldWorkoutIdInList(slice.workouts, localId, serverId);
     }
     // …and in the coach library, which this branch made a first-class holder of
     // `local-` ids (a coach-authored workout lands there before it flushes). The
@@ -595,9 +625,7 @@ export class InMemoryStorageAdapter implements StoragePort {
     // encode the pre-fix behaviour — a stale local id that 400s when the row is
     // opened — as correct, and the fix would be untested.
     for (const slice of this.coachWorkoutLibraryCache.values()) {
-      for (const w of slice.workouts) {
-        if (w.id === localId) w.id = serverId;
-      }
+      slice.workouts = foldWorkoutIdInList(slice.workouts, localId, serverId);
     }
     // Re-point the workout_id of any local-first session that captured it.
     for (const [userId, session] of this.activeSessions) {

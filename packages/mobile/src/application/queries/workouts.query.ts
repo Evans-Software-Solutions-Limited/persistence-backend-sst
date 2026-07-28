@@ -89,15 +89,36 @@ export function unsyncedWorkoutsIn(
   });
 }
 
-function unsyncedWorkoutsInSlice(
+/**
+ * Merge a server list with the optimistic rows it cannot know about yet, keeping ONE
+ * row per id.
+ *
+ * The dedupe is not cosmetic. `swapLocalWorkoutId` rewrites the matching id inside
+ * each cached list slice in place, WITHOUT folding — unlike its `cached_workout_detail`
+ * step, which upserts. So on the ambiguous failure this branch exists for (the POST
+ * commits, the connection drops before the response, the create stays `failed` with
+ * `dispatchCount 1`), a refresh inside the backoff window legitimately holds both the
+ * committed `w1` and the preserved `local-w1`; when the create is later replayed, the
+ * swap turns the second into a SECOND row with `id === "w1"`, and the list renders
+ * duplicate React keys.
+ *
+ * Server rows win: they are truth, and they come first in the incoming list. The
+ * transient "same workout listed twice under two different ids" that precedes the swap
+ * is deliberately left alone — the only way to remove it is to drop the optimistic row,
+ * which is the silent permanent data destruction `unsyncedWorkoutsIn` exists to stop.
+ */
+export function mergePreservingUnsynced(
   storage: StoragePort,
-  userId: string,
-  type: WorkoutListType,
+  cached: readonly Workout[] | null | undefined,
+  incoming: readonly Workout[],
 ): Workout[] {
-  return unsyncedWorkoutsIn(
-    storage,
-    storage.getCachedWorkoutsList(userId, type)?.workouts,
-  );
+  const merged = [...unsyncedWorkoutsIn(storage, cached), ...incoming];
+  const seen = new Set<string>();
+  return merged.filter((w) => {
+    if (seen.has(w.id)) return false;
+    seen.add(w.id);
+    return true;
+  });
 }
 
 /**
@@ -135,11 +156,14 @@ export async function refreshWorkouts(
   //
   // Merged at the front — a just-created workout belongs at the top of the list,
   // which is also where the optimistic write put it.
-  const unsynced = unsyncedWorkoutsInSlice(storage, userId, type);
   storage.cacheWorkoutsList(
     userId,
     type,
-    [...unsynced, ...result.value.workouts],
+    mergePreservingUnsynced(
+      storage,
+      storage.getCachedWorkoutsList(userId, type)?.workouts,
+      result.value.workouts,
+    ),
     result.value.quota,
   );
   // Splatter detail rows from the list payload — every list response

@@ -1688,18 +1688,17 @@ ${indentSyncQueueDdl(12)}
         `SELECT user_id, type, payload FROM cached_workouts`,
       ) as { user_id: string; type: string; payload: string }[];
       for (const r of listRows) {
-        const workouts = JSON.parse(r.payload) as Workout[];
-        let touched = false;
-        for (const w of workouts) {
-          if (w.id === localId) {
-            w.id = serverId;
-            touched = true;
-          }
+        let workouts: Workout[];
+        try {
+          workouts = JSON.parse(r.payload) as Workout[];
+        } catch {
+          continue; // malformed row — never crash the swap
         }
-        if (touched) {
+        const folded = foldWorkoutIdInList(workouts, localId, serverId);
+        if (folded !== null) {
           db.runSync(
             `UPDATE cached_workouts SET payload = ? WHERE user_id = ? AND type = ?`,
-            [JSON.stringify(workouts), r.user_id, r.type],
+            [JSON.stringify(folded), r.user_id, r.type],
           );
         }
       }
@@ -1721,17 +1720,11 @@ ${indentSyncQueueDdl(12)}
         } catch {
           continue; // malformed row — never crash the swap
         }
-        let touched = false;
-        for (const w of library) {
-          if (w.id === localId) {
-            w.id = serverId;
-            touched = true;
-          }
-        }
-        if (touched) {
+        const folded = foldWorkoutIdInList(library, localId, serverId);
+        if (folded !== null) {
           db.runSync(
             `UPDATE cached_coach_workout_library SET payload = ? WHERE user_id = ?`,
-            [JSON.stringify(library), r.user_id],
+            [JSON.stringify(folded), r.user_id],
           );
         }
       }
@@ -3515,6 +3508,47 @@ function toPersonalRecord(row: PersonalRecordRow): PersonalRecord {
     setId: row.set_id,
     achievedAt: row.achieved_at,
   };
+}
+
+/**
+ * Rewrite `localId` → `serverId` across a cached list of workouts, FOLDING onto any
+ * row that already carries the server id.
+ *
+ * The fold is the point. `cached_workouts` and `cached_coach_workout_library` are
+ * JSON arrays rewritten in place, and on the ambiguous failure this branch exists for
+ * a slice can legitimately hold BOTH ids at once: the create's POST commits, the
+ * connection drops before the response, the entry stays `failed`, so a refresh inside
+ * the backoff window writes the committed `w1` through while `unsyncedWorkoutsIn`
+ * correctly preserves the optimistic `local-w1`. When the create is then replayed, a
+ * bare in-place rewrite turns that into two entries with `id === "w1"` — duplicate
+ * React keys in the list until the next refresh. The server-id row wins, mirroring
+ * what `cached_workout_detail` gets for free from its `ON CONFLICT … DO UPDATE`.
+ *
+ * Returns null when nothing changed, so the caller can skip the write.
+ */
+function foldWorkoutIdInList(
+  workouts: Workout[],
+  localId: string,
+  serverId: string,
+): Workout[] | null {
+  if (!workouts.some((w) => w.id === localId)) return null;
+  // The server row WINS, and keeps its position. If the slice already carries
+  // `serverId`, that row came from the server's own list — truth — while the local
+  // row is an optimistic snapshot that may predate an edit the server already has.
+  // So drop the local row rather than renaming it over the top.
+  const alreadyHasServerRow = workouts.some(
+    (w) => w.id === serverId && w.id !== localId,
+  );
+  const out: Workout[] = [];
+  for (const w of workouts) {
+    if (w.id !== localId) {
+      out.push(w);
+      continue;
+    }
+    if (alreadyHasServerRow) continue;
+    out.push({ ...w, id: serverId });
+  }
+  return out;
 }
 
 function mapRow(row: Record<string, unknown>): SyncQueueEntry {

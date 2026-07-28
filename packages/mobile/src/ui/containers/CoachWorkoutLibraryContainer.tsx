@@ -2,7 +2,7 @@ import { router, useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getApiBaseUrl } from "@/adapters/api";
 import { processSyncQueue } from "@/application/commands/sync.command";
-import { unsyncedWorkoutsIn } from "@/application/queries/workouts.query";
+import { mergePreservingUnsynced } from "@/application/queries/workouts.query";
 import type { Workout } from "@/domain/models/workout";
 import { useUserMode } from "@/state/user-mode";
 import { WORKOUT_TABLES } from "@/adapters/storage";
@@ -107,11 +107,11 @@ export function CoachWorkoutLibraryContainer({
           // reappearing on a later focus if the create eventually lands, but gone
           // from the UI *permanently* if it ends `permanently_failed`, blocked or
           // exhausted, while the payload sits unexplained in /sync-failed.
-          const unsynced = unsyncedWorkoutsIn(
+          const merged = mergePreservingUnsynced(
             storage,
             storage.getCachedCoachWorkoutLibrary(userId),
+            result.value.workouts,
           );
-          const merged = [...unsynced, ...result.value.workouts];
           storage.cacheCoachWorkoutLibrary(userId, merged);
           setWorkouts(merged);
           setCacheVersion((v) => v + 1);

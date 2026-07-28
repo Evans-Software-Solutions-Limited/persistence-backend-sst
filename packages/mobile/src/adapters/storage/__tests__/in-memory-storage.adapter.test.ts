@@ -964,6 +964,33 @@ describe("InMemoryStorageAdapter", () => {
         expect(workoutEntry!.endpoint).toBe(`/workouts/${serverWorkoutId}`);
       });
 
+      it("FOLDS onto a row already carrying the server id, rather than duplicating it", () => {
+        // Reachable on the branch's headline path: the create's POST commits, the
+        // connection drops before the response, the entry stays `failed`, so a
+        // refresh inside its backoff window writes the committed `w1` through while
+        // `unsyncedWorkoutsIn` correctly preserves the optimistic `local-…` row. The
+        // slice then holds both — and a bare in-place rewrite turns that into two
+        // entries with the same id, i.e. duplicate React keys in the list.
+        storage.cacheWorkoutsList(
+          "user-1",
+          "mine",
+          [
+            buildWorkout({ id: localWorkoutId, name: "Optimistic" }),
+            buildWorkout({ id: serverWorkoutId, name: "Committed" }),
+          ],
+          null,
+        );
+
+        storage.swapLocalWorkoutId(localWorkoutId, serverWorkoutId);
+
+        const rows =
+          storage.getCachedWorkoutsList("user-1", "mine")?.workouts ?? [];
+        expect(rows).toHaveLength(1);
+        expect(rows[0].id).toBe(serverWorkoutId);
+        // The server row wins — it is truth.
+        expect(rows[0].name).toBe("Committed");
+      });
+
       it("re-points the COACH LIBRARY slice too", () => {
         // The coach library became a first-class holder of `local-` ids when
         // coach-authored workouts started being written there offline. Without
