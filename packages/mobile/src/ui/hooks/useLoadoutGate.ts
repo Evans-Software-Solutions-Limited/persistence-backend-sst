@@ -107,7 +107,16 @@ export function computeLoadoutVerdict(
 export type LoadoutGate = {
   /** True when the entry point should open the flow rather than the upsell. */
   readonly allowed: boolean;
-  /** False while `/subscriptions/me` is still in flight — render neither state loudly. */
+  /**
+   * False only while `/subscriptions/me` is still IN FLIGHT.
+   *
+   * ⚠ An ERRORED query counts as resolved, and deliberately. `isResolved` began
+   * as `subscription !== null`, which cannot tell "still loading" from "the
+   * query failed" — so opening a workout offline left the entry card disabled at
+   * 60 % opacity with unlocked copy and no explanation, doing nothing on tap.
+   * Treating a failure as resolved falls through to the locked/upsell branch,
+   * which both says something and is the safer commercial default.
+   */
   readonly isResolved: boolean;
   /**
    * Premium+ monthly price from the CATALOG, or null.
@@ -129,6 +138,7 @@ export function useLoadoutGate(): LoadoutGate {
   const tiersQuery = useSubscriptionTiers();
 
   const subscription = subQuery.data ?? null;
+  const isResolved = subscription !== null || subQuery.isError;
   const billingCycle: BillingCycle = subscription?.billingCycle ?? "monthly";
 
   // The `router` SINGLETON, not `useRouter()`. Every navigating consumer of this
@@ -147,9 +157,9 @@ export function useLoadoutGate(): LoadoutGate {
     );
     return {
       allowed: computeLoadoutVerdict(subscription),
-      isResolved: subscription !== null,
+      isResolved,
       upgradePriceMonthly: upgradeTier?.priceMonthly ?? null,
       onUpgrade,
     };
-  }, [subscription, tiersQuery.data, onUpgrade]);
+  }, [subscription, isResolved, tiersQuery.data, onUpgrade]);
 }

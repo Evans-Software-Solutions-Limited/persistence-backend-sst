@@ -858,6 +858,52 @@ describe("LoadoutFlowContainer", () => {
       ]);
     });
 
+    it("creates the NEW gym after a re-collect, not the one a failed save already made", async () => {
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      seedEquipment(storage);
+      api.loadoutPreview = preview([row()]);
+      // The variation save fails once, after the gym has already been created.
+      jest
+        .spyOn(api, "createWorkoutVariation")
+        .mockResolvedValueOnce(
+          fail({ kind: "api", code: "network", message: "" }),
+        );
+
+      const { findByTestId } = renderFlow(api, storage);
+      openFlow();
+      fireEvent.press(await findByTestId("loadout-collect-manual"));
+      fireEvent.press(await findByTestId("loadout-equip-eq-dumbbell"));
+      fireEvent.changeText(await findByTestId("loadout-manual-name"), "Home");
+      fireEvent.press(await findByTestId("loadout-manual-adapt"));
+      await findByTestId("loadout-review");
+      fireEvent.press(await findByTestId("loadout-review-save"));
+      await findByTestId("loadout-review-save-error");
+
+      // Back out, build a DIFFERENT kit under a different name, and save again.
+      fireEvent.press(await findByTestId("loadout-review-back"));
+      fireEvent.press(await findByTestId("loadout-collect-manual"));
+      fireEvent.press(await findByTestId("loadout-equip-eq-cable"));
+      fireEvent.changeText(await findByTestId("loadout-manual-name"), "Garage");
+      fireEvent.press(await findByTestId("loadout-manual-adapt"));
+      await findByTestId("loadout-review");
+      fireEvent.press(await findByTestId("loadout-review-save"));
+      await findByTestId("loadout-saved");
+
+      // ⚠ Scoped to the workout rather than the context, the remembered id would
+      // short-circuit here: no "Garage" gym would ever exist, and Saved setups
+      // would label a kit2 variation "Home" forever.
+      expect(api.savedGyms.map((gym) => gym.name).sort()).toEqual([
+        "Garage",
+        "Home",
+      ]);
+      const last =
+        api.createVariationCalls[api.createVariationCalls.length - 1];
+      expect(last.input.sourceGymId).toBe(
+        api.savedGyms.find((gym) => gym.name === "Garage")?.id,
+      );
+    });
+
     it("excludes a RESOLVED row the user left out", async () => {
       const api = new InMemoryApiAdapter();
       const storage = new InMemoryStorageAdapter();
@@ -1215,6 +1261,44 @@ describe("LoadoutFlowContainer", () => {
 
       expect(await findByTestId("loadout-review")).toBeTruthy();
       expect(api.previewLoadoutCalls).toHaveLength(2);
+    });
+
+    it("ranks the swap sheet against the PREVIEW's kit, not the client's gym row", async () => {
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      seedEquipment(storage);
+      // The listed gym row and the kit the SERVER actually resolved disagree —
+      // exactly what a gym edited on another device looks like.
+      api.savedGyms = [
+        {
+          id: "gym-1",
+          name: "Hotel gym",
+          equipmentTypeIds: ["eq-dumbbell", "eq-barbell"],
+          createdAt: null,
+          updatedAt: null,
+        },
+      ];
+      api.loadoutPreview = {
+        ...preview([row()]),
+        equipmentTypeIds: ["eq-dumbbell"],
+      };
+      api.substitutes = { best: [], others: [], meta: { truncated: false } };
+      const spy = jest.spyOn(api, "getExerciseSubstitutes");
+      const { findByTestId } = renderFlow(api, storage);
+      openFlow();
+
+      fireEvent.press(await findByTestId("loadout-collect-gym-gym-1"));
+      await findByTestId("loadout-review");
+      fireEvent.press(await findByTestId("loadout-row-1-swap"));
+
+      // Ranking against the stale local row would put a now-incompatible
+      // exercise in `best`, where it is picked with `isUserOverride: false` and
+      // the save 400s against the gym's CURRENT kit.
+      await waitFor(() =>
+        expect(spy).toHaveBeenCalledWith(
+          expect.objectContaining({ equipment: ["eq-dumbbell"] }),
+        ),
+      );
     });
 
     it("does not duplicate an exercise already in the plan", async () => {

@@ -115,17 +115,26 @@ function contextLabel(context: LoadoutContext | null): string {
   return context.kind === "gym" ? context.gymName : context.label;
 }
 
+/**
+ * The kit the swap sheet ranks `best` / `others` against.
+ *
+ * ⚠ **From the PREVIEW, not from the client's saved-gym list.** A gym context
+ * sends only `savedGymId`; the server resolves the kit and echoes it back as
+ * `preview.equipmentTypeIds`, so this is by definition the exact set the
+ * adaptation used. Deriving it from the locally-listed gym row instead — which
+ * an earlier version did — meant a gym edited on another device (or in Settings)
+ * ranked a now-incompatible exercise into `best`, where it was picked with
+ * `isUserOverride: false` and lost the whole reviewed adaptation to a
+ * 400 `EQUIPMENT_NOT_AVAILABLE` the sheet would not offer to override, because
+ * it did not think that row was incompatible.
+ *
+ * Null preview → undefined, but that is unreachable: the swap button only exists
+ * on the review step, which only renders with a preview.
+ */
 function contextEquipmentIds(
-  context: LoadoutContext | null,
-  gymEquipment: ReadonlyMap<string, readonly string[]>,
+  preview: LoadoutPreview | null,
 ): readonly string[] | undefined {
-  if (context === null) return undefined;
-  if (context.kind === "ids") return context.equipmentTypeIds;
-  // A saved gym's kit is not in the request the client made — only its id was
-  // sent — so the swap sheet's containment context has to come from the gym row
-  // we listed. Missing (deleted between list and use) → undefined, i.e. the
-  // sheet claims nothing is incompatible rather than claiming everything is.
-  return gymEquipment.get(context.gymId);
+  return preview?.equipmentTypeIds;
 }
 
 export function LoadoutFlowContainer() {
@@ -197,7 +206,6 @@ export function LoadoutFlowContainer() {
     setAcceptedRows(new Set());
     setPickedNames(new Map());
     setSaveError(null);
-    createdGymIdRef.current = null;
   }, [runKey]);
 
   // ── Equipment catalogue ───────────────────────────────────────────────────
@@ -228,12 +236,6 @@ export function LoadoutFlowContainer() {
     return map;
   }, [equipmentEntries]);
 
-  const gymEquipment = useMemo(() => {
-    const map = new Map<string, readonly string[]>();
-    for (const gym of gyms.gyms) map.set(gym.id, gym.equipmentTypeIds);
-    return map;
-  }, [gyms.gyms]);
-
   // ── The preview request ───────────────────────────────────────────────────
   //
   // Keyed on (workout, context, attempt) so it fires exactly once per distinct
@@ -246,6 +248,16 @@ export function LoadoutFlowContainer() {
         ? `gym:${context.gymId}`
         : `ids:${[...context.equipmentTypeIds].join(",")}`;
   const requestKey = `${workoutId ?? ""}|${contextKey}|${attempt}`;
+
+  // ⚠ Cleared on any CONTEXT change, not just a new workout. The id exists so a
+  // save retry does not 409 on its own gym name — but scoped to the workout it
+  // also survives a re-collect: create "Home" from kit1, fail on the variation,
+  // go back and build "Garage" from kit2, and the second save would silently
+  // reuse "Home"'s id, never create "Garage", and label a kit2 variation "Home"
+  // in Saved setups forever.
+  useEffect(() => {
+    createdGymIdRef.current = null;
+  }, [contextKey]);
   const firedRef = useRef<string | null>(null);
 
   // ⚠ THE GUARD MUST BE CLEARED, and forgetting to was a permanent hang.
@@ -267,8 +279,19 @@ export function LoadoutFlowContainer() {
   }, [step]);
 
   useEffect(() => {
-    if (step !== "adapting" || workoutId === null || context === null) return;
+    if (step !== "adapting" || workoutId === null) return;
     if (firedRef.current === requestKey) return;
+    // ⚠ `context` is READ FROM THE STORE rather than taken as a dependency, and
+    // that is load-bearing. `selectGym` / `selectEquipmentIds` mint a fresh
+    // object even when the contents are identical, so a double-tap on the same
+    // saved-gym card re-runs this effect with an unchanged `requestKey`: the
+    // previous run's cleanup sets `cancelled = true`, then the guard above
+    // returns early — cancelling the in-flight request and issuing no
+    // replacement, which is the permanent-skeleton hang all over again.
+    // `requestKey` already encodes the context's CONTENTS, so its identity is
+    // not information this effect needs.
+    const current = useLoadoutFlow.getState().context;
+    if (current === null) return;
     firedRef.current = requestKey;
     setAdaptError(null);
 
@@ -276,9 +299,9 @@ export function LoadoutFlowContainer() {
     void api
       .previewLoadout(
         workoutId,
-        context.kind === "gym"
-          ? { savedGymId: context.gymId }
-          : { equipmentTypeIds: context.equipmentTypeIds },
+        current.kind === "gym"
+          ? { savedGymId: current.gymId }
+          : { equipmentTypeIds: current.equipmentTypeIds },
       )
       .then((result) => {
         if (cancelled) return;
@@ -292,7 +315,7 @@ export function LoadoutFlowContainer() {
     return () => {
       cancelled = true;
     };
-  }, [step, workoutId, context, requestKey, api, previewResolved]);
+  }, [step, workoutId, requestKey, api, previewResolved]);
 
   // ── Review view models ────────────────────────────────────────────────────
   const rowViews = useMemo<readonly LoadoutRowView[]>(() => {
@@ -630,7 +653,7 @@ export function LoadoutFlowContainer() {
             onClose={closeSwap}
             forExerciseId={swapTarget?.exerciseId ?? null}
             exerciseName={swapTarget?.exerciseName ?? ""}
-            equipmentTypeIds={contextEquipmentIds(context, gymEquipment)}
+            equipmentTypeIds={contextEquipmentIds(preview)}
             equipmentContextLabel={contextLabel(context)}
             equipmentNameById={equipmentNameById}
             // Everything already in the plan, so a swap cannot duplicate a row.

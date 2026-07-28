@@ -143,6 +143,13 @@ export function SwapExercisePopover({
           // does nothing.
           await refreshExerciseCache(api, storage);
           cached = storage.getCachedExercise(candidate.id);
+        } catch {
+          // ⚠ `refreshExerciseCache` returns a Result for API failure, but its
+          // `storage.cacheExercises` write can THROW (SQLite locked, disk).
+          // Uncaught, the rejection escapes through `void onSelect(...)` and
+          // `setResolveFailed` below never runs — reproducing exactly the silent
+          // no-op this whole path exists to prevent.
+          cached = null;
         } finally {
           setIsResolving(false);
         }

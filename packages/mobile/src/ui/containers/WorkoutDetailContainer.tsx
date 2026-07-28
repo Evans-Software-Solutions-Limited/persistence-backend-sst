@@ -110,6 +110,11 @@ export function WorkoutDetailContainer() {
     // `/subscriptions/me` round trip a paying Premium+ user is indistinguishable
     // from a free one. Opening the upsell there sells the feature to the person
     // who already bought it.
+    //
+    // A mutation sweep reports removing this as surviving, and that is expected:
+    // the card is `disabled` while pending, so Testing Library's press never
+    // reaches here. The two layers block different channels — the prop blocks the
+    // touch, this blocks any other caller — and neither is redundant.
     if (!loadoutGate.isResolved) return;
     if (!loadoutGate.allowed) {
       openLoadoutUpsell();
@@ -145,9 +150,11 @@ export function WorkoutDetailContainer() {
       onStartWorkout={onStartWorkout}
       onExercisePress={onExercisePress}
       showLoadout={isOwner}
-      // Only claim "locked" once we actually know. Until then the card renders
-      // its neutral pending copy rather than a padlock.
-      loadoutLocked={loadoutGate.isResolved && !loadoutGate.allowed}
+      // `pending` takes precedence over `locked` INSIDE the card, so this passes
+      // the raw verdict rather than pre-masking it with `isResolved`. An earlier
+      // version did both; the extra conjunct could not change any rendered
+      // output, which a mutation sweep showed by surviving its removal.
+      loadoutLocked={!loadoutGate.allowed}
       loadoutPending={!loadoutGate.isResolved}
       loadoutVariations={variations.variations}
       onOpenLoadout={onOpenLoadout}

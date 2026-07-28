@@ -144,6 +144,20 @@ describe("useLoadoutGate", () => {
     expect(latest().upgradePriceMonthly).toBeNull();
   });
 
+  it("counts an ERRORED subscription query as resolved, not as pending", async () => {
+    const api = new InMemoryApiAdapter();
+    jest
+      .spyOn(api, "getMySubscription")
+      .mockResolvedValue(fail({ kind: "api", code: "network", message: "" }));
+    const { latest } = harness(api, useLoadoutGate);
+
+    // ⚠ Otherwise `isResolved` cannot tell "in flight" from "failed", and the
+    // entry card sits disabled with unlocked copy and no explanation — doing
+    // nothing on tap — for anyone who opens a workout offline.
+    await waitFor(() => expect(latest().isResolved).toBe(true));
+    expect(latest().allowed).toBe(false);
+  });
+
   it("routes to the paywall with Premium+ pre-selected", async () => {
     const api = new InMemoryApiAdapter();
     api.mySubscription = subscription("free");
@@ -165,6 +179,37 @@ describe("useSavedGyms", () => {
     const { latest } = harness(api, () => useSavedGyms(false));
     await waitFor(() => expect(latest().isLoading).toBe(false));
     expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("REFETCHES each time it is re-enabled, not once per mount", async () => {
+    const api = new InMemoryApiAdapter();
+    const spy = jest.spyOn(api, "getSavedGyms");
+
+    function Probe({ enabled }: { readonly enabled: boolean }) {
+      useSavedGyms(enabled);
+      return <Text>probe</Text>;
+    }
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const wrap = (enabled: boolean) => (
+      <QueryClientProvider client={queryClient}>
+        <AdapterProvider adapters={makeAdapters(api)}>
+          <Probe enabled={enabled} />
+        </AdapterProvider>
+      </QueryClientProvider>
+    );
+
+    const { rerender } = render(wrap(true));
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+
+    // ⚠ `LoadoutFlowContainer` is mounted at the layout root for the whole
+    // session, so a per-MOUNT latch would fetch once, the first time the flow
+    // ever opened, and never again — freezing the list that also feeds the swap
+    // sheet's containment context.
+    rerender(wrap(false));
+    rerender(wrap(true));
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(2));
   });
 
   it("loads once and reports the list", async () => {
