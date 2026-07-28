@@ -2,6 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { RevenueCatWebhookEventsRepository } from "../repositories/revenuecatWebhookEventsRepository";
 import { getRevenueCatWebhookSecret } from "./revenueCatClient";
 import { syncRevenueCatCustomer } from "./revenueCatSync";
+import { notifySubscriptionTransferred } from "./notifySubscriptionTransferred";
 
 // The customer-reconcile logic now lives in `revenueCatSync` (shared with
 // `POST /subscriptions/sync`). Re-exported so existing importers/tests that
@@ -62,6 +63,27 @@ export function secretsMatch(provided: string, expected: string): boolean {
  * `transferred_from` arrays (entitlements moved between users) — both sides
  * need re-syncing. De-duplicated; non-string entries dropped.
  */
+/**
+ * The `transferred_from` App User IDs on a TRANSFER event — the accounts that LOST
+ * the subscription. Separate from `resolveAppUserIds` (which unions both sides,
+ * because both need re-syncing) because only this side gets notified.
+ */
+export function transferredFromIds(event: RevenueCatEvent): string[] {
+  const value = event.transferred_from;
+  if (!Array.isArray(value)) return [];
+  // De-duplicated, matching `resolveAppUserIds`. Without it a repeated entry
+  // (`["A","A"]`) syncs once but notifies twice — the sync collapses via its own
+  // Set while this loop would iterate both.
+  return [
+    ...new Set(
+      value.filter(
+        (entry): entry is string =>
+          typeof entry === "string" && entry.length > 0,
+      ),
+    ),
+  ];
+}
+
 export function resolveAppUserIds(event: RevenueCatEvent): string[] {
   const ids = new Set<string>();
   if (typeof event.app_user_id === "string" && event.app_user_id.length > 0) {
@@ -121,8 +143,55 @@ export async function handleRevenueCatWebhook(req: Request): Promise<Response> {
   // 4. Re-fetch + upsert for every implicated user.
   try {
     const appUserIds = resolveAppUserIds(event);
+
+    // Who is eligible for the "your subscription moved" notice. Scoped tightly:
+    //
+    //  - TRANSFER events only. The revocation branch in `syncRevenueCatCustomer`
+    //    also fires for ordinary expiry and cancellation, and "moved to another
+    //    account" would be wrong and alarming for someone whose sub just lapsed.
+    //  - `transferred_from` only — `transferred_to` GAINED it.
+    //  - outcome `revoked` only, so a user who was already free stays silent. That
+    //    also filters anonymous and foreign-environment ids, which sync reports as
+    //    `skipped`.
+    const notifyEligible =
+      eventType === "TRANSFER"
+        ? new Set(transferredFromIds(event))
+        : new Set<string>();
+
+    // ⚠ Per-user isolation, and notify INSIDE the loop.
+    //
+    // Two reasons, both about not losing an earned notification:
+    //
+    // 1. `revoked` is an EDGE, not a state — a re-run returns `already_inactive`,
+    //    so the signal exists exactly once. Notifying after the loop meant any
+    //    later failure discarded it permanently: the loser's revocation had
+    //    already committed, the retry sees `already_inactive`, the event goes
+    //    `done`, and they are never told. Precisely the silent loss this exists
+    //    to remove.
+    // 2. One user's failure must not skip the others. A TRANSFER syncs
+    //    `transferred_to` BEFORE `transferred_from` (see `resolveAppUserIds`), so
+    //    an RC 503 on the winner used to abort before the loser was reached at
+    //    all — the in-loop notify alone would not have saved it. Isolating each
+    //    user removes the order dependency instead of relying on it.
+    //
+    // Failures are collected and rethrown after the loop so the event still marks
+    // `failed` and RevenueCat still retries. That retry is safe: every user that
+    // succeeded is now `already_inactive`/`activated`, so no notice repeats.
+    const syncErrors: string[] = [];
     for (const appUserId of appUserIds) {
-      await syncRevenueCatCustomer(appUserId);
+      try {
+        const outcome = await syncRevenueCatCustomer(appUserId);
+        if (outcome === "revoked" && notifyEligible.has(appUserId)) {
+          await notifySubscriptionTransferred(appUserId);
+        }
+      } catch (err) {
+        syncErrors.push(
+          `${appUserId}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+    if (syncErrors.length > 0) {
+      throw new Error(`sync failed for ${syncErrors.join("; ")}`);
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
