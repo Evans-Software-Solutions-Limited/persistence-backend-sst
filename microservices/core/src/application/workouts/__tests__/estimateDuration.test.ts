@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   estimateWorkoutDurationMinutes,
   resolveEstimatedDurationMinutes,
+  EMPTY_PLAN_DURATION_MINUTES,
   WORK_PER_SET_SECONDS,
   REST_BETWEEN_GROUPS_SECONDS,
   FALLBACK_SETS,
@@ -123,7 +124,16 @@ describe("resolveEstimatedDurationMinutes", () => {
     expect(resolveEstimatedDurationMinutes(undefined, [ex(0)])).toBe(10);
   });
 
-  it("treats an absent plan as an empty one", () => {
-    expect(resolveEstimatedDurationMinutes(undefined, undefined)).toBe(0);
+  it("stores the column default when there is no plan to estimate from", () => {
+    // NOT the estimator's 0 — `POST /workouts` accepts a workout with no
+    // exercises, and "0m" in the card is a worse lie than the old flat 30 when
+    // we genuinely have nothing to measure.
+    expect(resolveEstimatedDurationMinutes(undefined, undefined)).toBe(
+      EMPTY_PLAN_DURATION_MINUTES,
+    );
+    expect(resolveEstimatedDurationMinutes(undefined, [])).toBe(
+      EMPTY_PLAN_DURATION_MINUTES,
+    );
+    expect(EMPTY_PLAN_DURATION_MINUTES).toBe(30);
   });
 });

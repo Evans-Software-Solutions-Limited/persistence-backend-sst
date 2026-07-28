@@ -37,6 +37,52 @@ describe("HomeReadRepository", () => {
     ).toBe(0);
   });
 
+  it("getTodayActiveKcal sums today's active energy, 0 when none", async () => {
+    (getDb as any).mockReturnValue({ select: () => chain([{ c: 371 }]) });
+    expect(
+      await new HomeReadRepository().getTodayActiveKcal("u1", "2026-06-10"),
+    ).toBe(371);
+    (getDb as any).mockReturnValue({ select: () => chain([]) });
+    expect(
+      await new HomeReadRepository().getTodayActiveKcal("u1", "2026-06-10"),
+    ).toBe(0);
+  });
+
+  // Same SQL-render guard as getTodaysTraining below: the canned chain returns
+  // rows whatever the predicate is, so scoping to the right USER and the right
+  // DAY has to be asserted on the emitted SQL, not on the return value.
+  it("getTodayActiveKcal scopes to the user and the given local date", async () => {
+    const capture: { where?: unknown; select?: unknown } = {};
+    const recording: any = {};
+    for (const k of ["from", "innerJoin", "leftJoin", "orderBy", "limit"]) {
+      recording[k] = () => recording;
+    }
+    recording.where = (cond: unknown) => {
+      capture.where = cond;
+      return Promise.resolve([]);
+    };
+    (getDb as any).mockReturnValue({
+      select: (cols: unknown) => {
+        capture.select = cols;
+        return recording;
+      },
+    });
+
+    await new HomeReadRepository().getTodayActiveKcal("u1", "2026-06-10");
+
+    const dialect = new PgDialect();
+    const where = dialect.sqlToQuery(capture.where as never).sql;
+    expect(where).toContain('"daily_activity_data"."user_id"');
+    expect(where).toContain('"daily_activity_data"."activity_date"');
+    // Sums the ENERGY column, not steps — a copy-paste of getTodaySteps would
+    // return a step count in kcal and peg the Train ring.
+    const selected = dialect.sqlToQuery(
+      (capture.select as { c: unknown }).c as never,
+    ).sql;
+    expect(selected).toContain('"daily_activity_data"."calories_burned"');
+    expect(selected).not.toContain("steps");
+  });
+
   it("getActiveWorkoutStreakCount returns the count or 0", async () => {
     (getDb as any).mockReturnValue({ select: () => chain([{ c: 23 }]) });
     expect(

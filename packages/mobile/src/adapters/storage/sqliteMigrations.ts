@@ -59,12 +59,30 @@ export type SqliteMigration = {
 };
 
 /**
- * Ordered migration steps to apply AFTER an install's baseline. Empty
- * today — see the module doc comment for why existing schema history is
- * deliberately NOT backfilled here. Add new steps here, in ascending
- * `id` order, for the next schema change.
+ * Ordered migration steps to apply AFTER an install's baseline. Existing
+ * schema history is deliberately NOT backfilled here — see the module doc
+ * comment. Add new steps in ascending `id` order.
  */
-export const SQLITE_MIGRATIONS: readonly SqliteMigration[] = [];
+export const SQLITE_MIGRATIONS: readonly SqliteMigration[] = [
+  {
+    // Drop the cached Home payload so the Train ring can't render a stale
+    // SHAPE. `cached_home` is an unversioned JSON blob, and the ring changed
+    // meaning: `train` used to be weekly volume `{ target: 20000, unit: "kg" }`
+    // and is now daily active energy `{ target: 500, unit: "kcal" }`. The
+    // HealthKit overlay in HomeContainer replaces only `current`/`pct`, so an
+    // upgraded install that opens offline would read a live kcal figure against
+    // the old kg scale — "410 · kg", ring at 2%. Deleting the blob makes Home
+    // fall back to its loading/empty state until the first `/users/me/home`
+    // lands, which is correct rather than confidently wrong.
+    //
+    // Cheap and safe: the row is a pure server-derived read cache with no
+    // unsynced local state, and `getCachedHome` already tolerates its absence.
+    id: 1,
+    run: (db) => {
+      db.execSync(`DELETE FROM cached_home;`);
+    },
+  },
+];
 
 /**
  * Run pending versioned migrations against `db`.

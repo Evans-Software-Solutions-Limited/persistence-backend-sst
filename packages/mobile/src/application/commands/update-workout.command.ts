@@ -14,6 +14,7 @@ import type {
   WorkoutExercise,
 } from "@/domain/models/workout";
 import type { StoragePort } from "@/domain/ports/storage.port";
+import { calculateEstimatedDuration } from "@/domain/services/workout.service";
 import { fail, ok, type Result, type ValidationError } from "@/shared/errors";
 
 export type UpdateWorkoutCommandDeps = {
@@ -105,8 +106,16 @@ export function updateWorkoutCommand(
     name: sanitizedName,
     description: sanitizedDescription,
     visibility: input.visibility ?? cached.workout.visibility,
+    // An edit that replaces the plan re-derives, matching the server. Keeping
+    // the pre-edit number would show a 3-exercise duration on a 7-exercise
+    // workout until the next refetch. An edit that doesn't touch `exercises`
+    // (input.exercises undefined => `exercises` is the cached list) still lands
+    // on the same value, so this is a no-op for metadata-only edits.
     estimatedDurationMinutes:
-      input.estimatedDurationMinutes ?? cached.workout.estimatedDurationMinutes,
+      input.estimatedDurationMinutes ??
+      (input.exercises !== undefined
+        ? calculateEstimatedDuration(exercises)
+        : cached.workout.estimatedDurationMinutes),
     showInOwnerLibrary:
       input.showInOwnerLibrary ?? cached.workout.showInOwnerLibrary,
     exercises,

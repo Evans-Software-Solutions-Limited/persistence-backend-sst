@@ -18,6 +18,7 @@
  */
 
 import {
+  calculateEstimatedDuration,
   sanitizeCreateWorkoutInput,
   validateWorkoutInput,
 } from "@/domain/services/workout.service";
@@ -91,7 +92,14 @@ export function createWorkoutCommand(
     description: sanitized.description ?? null,
     createdBy: deps.userId,
     visibility: sanitized.visibility ?? "private",
-    estimatedDurationMinutes: sanitized.estimatedDurationMinutes ?? 30,
+    // Derived locally with the SAME heuristic the server applies, so the
+    // optimistic row matches what the create will store. A flat 30 here made
+    // the detail screen read "30 min" for a workout the server saved as 80,
+    // and offline it never self-corrected (the sync drain swaps the local id
+    // but does not rewrite the cached body).
+    estimatedDurationMinutes:
+      sanitized.estimatedDurationMinutes ??
+      calculateEstimatedDuration(exercises),
     // Absent => true (personal). The coach-authoring flow passes false.
     showInOwnerLibrary: sanitized.showInOwnerLibrary ?? true,
     exercises,

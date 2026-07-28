@@ -82,14 +82,24 @@ export function estimateWorkoutDurationMinutes(
 }
 
 /**
+ * What an EMPTY plan stores. The column default, NOT the estimator's 0.
+ *
+ * `POST /workouts` accepts a workout with no exercises (legacy's create rejected
+ * one outright), and storing 0 there would render "0m" in the card — a worse
+ * lie than the old flat 30, since we simply have nothing to estimate from.
+ */
+export const EMPTY_PLAN_DURATION_MINUTES = 30;
+
+/**
  * The value to STORE on a create: an explicit caller-supplied duration always
  * wins (a coach may know better than the heuristic); otherwise derive it from
- * the plan. An absent plan is an empty one, and estimates to 0 — as legacy.
+ * the plan, falling back to the column default when there is no plan to read.
  */
 export function resolveEstimatedDurationMinutes(
   explicit: number | undefined,
   exercises: readonly DurationEstimateExercise[] | undefined,
 ): number {
   if (explicit !== undefined) return explicit;
-  return estimateWorkoutDurationMinutes(exercises ?? []);
+  if (!exercises || exercises.length === 0) return EMPTY_PLAN_DURATION_MINUTES;
+  return estimateWorkoutDurationMinutes(exercises);
 }

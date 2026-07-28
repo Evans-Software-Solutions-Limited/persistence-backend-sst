@@ -572,9 +572,13 @@ export class WorkoutRepository {
       // Editing the PLAN re-derives the estimate, so a workout that grows from
       // 3 exercises to 7 stops claiming its original duration. An explicit
       // duration in the same PATCH still wins (the branch above). An edit that
-      // doesn't touch `exercises` leaves the stored value alone. Mirrors legacy
-      // `updateWorkout` (workoutMutations.ts:357).
-      else if (data.exercises !== undefined)
+      // doesn't touch `exercises` leaves the stored value alone.
+      //
+      // `length > 0` mirrors legacy `updateWorkout` (workoutMutations.ts:357):
+      // a PATCH that empties the plan wipes the junction rows but must NOT
+      // rewrite the duration to 0 — there is nothing left to estimate from, so
+      // the last meaningful value is better than a fabricated zero.
+      else if (data.exercises !== undefined && data.exercises.length > 0)
         metadata.estimatedDurationMinutes = estimateWorkoutDurationMinutes(
           data.exercises,
         );

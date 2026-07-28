@@ -1,5 +1,6 @@
 import {
   runSqliteMigrations,
+  SQLITE_MIGRATIONS,
   type SqliteMigration,
   type SqliteMigrationDb,
 } from "@/adapters/storage/sqliteMigrations";
@@ -155,9 +156,25 @@ describe("runSqliteMigrations", () => {
     expect(txSpy).toHaveBeenCalledTimes(2);
   });
 
-  it("defaults to SQLITE_MIGRATIONS (empty) when no migrations arg is passed", () => {
+  it("defaults to SQLITE_MIGRATIONS and baselines a fresh install at its head", () => {
     const db = makeFakeDb();
     expect(() => runSqliteMigrations(db)).not.toThrow();
-    expect(db.versionRow).toEqual({ version: 0 });
+    const head = SQLITE_MIGRATIONS.reduce((max, m) => Math.max(max, m.id), 0);
+    expect(db.versionRow).toEqual({ version: head });
+  });
+
+  it("migration 1 clears the stale Home cache for an already-baselined install", () => {
+    // Every shipped install baselined at version 0 while SQLITE_MIGRATIONS was
+    // empty, so a newly added id=1 DOES run for them — which is the whole point
+    // here: the cached `train` ring is weekly kg and the new overlay writes
+    // kcal into it.
+    const db = makeFakeDb();
+    db.runSync(`INSERT INTO schema_version (id, version) VALUES (1, ?)`, [0]);
+    runSqliteMigrations(db);
+
+    expect(
+      db.execCalls.some((sql) => /DELETE FROM cached_home/i.test(sql)),
+    ).toBe(true);
+    expect(db.versionRow).toEqual({ version: 1 });
   });
 });

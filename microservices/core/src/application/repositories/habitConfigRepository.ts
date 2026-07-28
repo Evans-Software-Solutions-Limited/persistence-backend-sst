@@ -139,10 +139,18 @@ export class HabitConfigRepository {
    * purpose (one row, one number) rather than reusing `listForUser`, because it
    * sits on the cold-start Home fan-out.
    *
-   * Reads the LIVE `target_value`, deliberately ignoring `pending_config`: a
-   * queued edit doesn't take effect until the weekly rollover (the anti-gaming
-   * rule in this class's doc comment), and the ring must show the bar the user
-   * is being measured against this week, not next week's.
+   * Two deliberate divergences from how the STREAK engine reads this row, both
+   * because a ring is a display goal rather than a scored bar:
+   *
+   *   • `pending_config` is ignored — a queued edit doesn't take effect until
+   *     the weekly rollover (the anti-gaming rule in this class's doc comment),
+   *     so the ring shows the target the user is on this week, not next week's.
+   *   • `effective_from` is ignored — a habit first enabled on a Wednesday is
+   *     dated `effective_from = next Monday` so it doesn't join the collection
+   *     streak mid-week, but the user who just set a 15,000-step goal expects
+   *     their ring to scale to it immediately. Scoring waits; the dial doesn't.
+   *
+   * These are chosen, not overlooked. Do not "fix" one without the other.
    */
   async getActiveDailyTarget(
     userId: string,
