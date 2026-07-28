@@ -26,6 +26,8 @@ export function SavedGymsContainer() {
 
   const [editing, setEditing] = useState<SavedGymEditState | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  /** A delete that is in flight — its row is hidden until the list re-reads. */
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   // Same pre-Loadout-cache problem as the flow's picker: an equipment list cached
   // before `category` existed groups everything under "Other", for up to 24 h,
@@ -51,6 +53,11 @@ export function SavedGymsContainer() {
     }
     return map;
   }, [equipmentEntries]);
+
+  const visibleGyms = useMemo(
+    () => gyms.gyms.filter((gym) => gym.id !== deletingId),
+    [gyms.gyms, deletingId],
+  );
 
   const onStartEdit = useCallback((gym: SavedGym) => {
     setPendingDeleteId(null);
@@ -109,17 +116,36 @@ export function SavedGymsContainer() {
     );
   }, [editing, gyms]);
 
+  /**
+   * ⚠ The row is hidden the moment delete is confirmed, not when the server
+   * answers.
+   *
+   * Clearing `pendingDeleteId` alone swaps the confirm card back for the ROW,
+   * and `remove()` then takes two sequential round trips before the list
+   * re-reads (delete, then refresh — the hook re-reads rather than splicing
+   * because the server owns `updated_at`). So the row the user just deleted
+   * reappears for the whole of that window: it reads as "the delete didn't
+   * work", and on a slow connection they can tap its delete a second time.
+   */
   const onConfirmDelete = useCallback(
     async (gymId: string) => {
       setPendingDeleteId(null);
-      await gyms.remove(gymId);
+      setDeletingId(gymId);
+      try {
+        await gyms.remove(gymId);
+      } finally {
+        // Cleared either way. On a FAILED delete the row must come back —
+        // hiding it permanently would show the user a gym they still have as
+        // gone, and the next refresh would resurrect it anyway.
+        setDeletingId(null);
+      }
     },
     [gyms],
   );
 
   return (
     <SavedGymsPresenter
-      gyms={gyms.gyms}
+      gyms={visibleGyms}
       isLoading={gyms.isLoading}
       loadError={
         gyms.error === null

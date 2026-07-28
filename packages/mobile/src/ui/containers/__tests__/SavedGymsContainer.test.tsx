@@ -302,7 +302,40 @@ describe("SavedGymsContainer", () => {
     expect(remove).not.toHaveBeenCalled();
   });
 
-  it("deletes on confirmation and drops the row", async () => {
+  it("drops the row the instant delete is confirmed, before the server answers", async () => {
+    const api = new InMemoryApiAdapter();
+    seedGym(api);
+    // Never settles, so nothing but the optimistic hide can remove the row.
+    jest.spyOn(api, "deleteSavedGym").mockReturnValue(new Promise(() => {}));
+    const { findByTestId, queryByTestId } = renderScreen(api);
+
+    fireEvent.press(await findByTestId("saved-gym-gym-1-delete"));
+    fireEvent.press(await findByTestId("saved-gym-gym-1-delete-confirm"));
+
+    // ⚠ Clearing `pendingDeleteId` alone swaps the confirm card back for the
+    // ROW, and `remove()` needs two sequential round trips before the list
+    // re-reads — so without the optimistic hide the row the user just deleted
+    // reappears for that whole window, reading as "the delete didn't work".
+    expect(queryByTestId("saved-gym-gym-1")).toBeNull();
+  });
+
+  it("puts the row BACK when the delete fails", async () => {
+    const api = new InMemoryApiAdapter();
+    seedGym(api);
+    jest
+      .spyOn(api, "deleteSavedGym")
+      .mockResolvedValue(fail({ kind: "api", code: "network", message: "" }));
+    const { findByTestId } = renderScreen(api);
+
+    fireEvent.press(await findByTestId("saved-gym-gym-1-delete"));
+    fireEvent.press(await findByTestId("saved-gym-gym-1-delete-confirm"));
+
+    // Hiding it permanently would show a gym they still have as gone — and the
+    // next refresh would resurrect it anyway.
+    expect(await findByTestId("saved-gym-gym-1")).toBeTruthy();
+  });
+
+  it("deletes on confirmation and the list re-reads", async () => {
     const api = new InMemoryApiAdapter();
     seedGym(api);
     const { findByTestId, queryByTestId } = renderScreen(api);
@@ -310,8 +343,11 @@ describe("SavedGymsContainer", () => {
     fireEvent.press(await findByTestId("saved-gym-gym-1-delete"));
     fireEvent.press(await findByTestId("saved-gym-gym-1-delete-confirm"));
 
+    // ⚠ The CAUSE first, then the effect. Asserting only that the row vanished
+    // raced a two-round-trip chain (delete, then refresh) against `waitFor`'s
+    // 1 s default, which held locally and failed on a loaded CI runner.
+    await waitFor(() => expect(api.savedGyms).toHaveLength(0));
     await waitFor(() => expect(queryByTestId("saved-gym-gym-1")).toBeNull());
-    expect(api.savedGyms).toHaveLength(0);
   });
 
   it("refreshes the equipment list when the cached one predates `category`", async () => {
