@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.9.0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.8.0...persistence-v1.9.0) (2026-07-28)
+
+
+### Features
+
+* **loadout:** Phase 0 — data model, saved gyms, variations, entitlement (spec-21) ([#317](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/317)) ([86a03a7](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/86a03a79f5e2e4953f357831d498b3334b5434f0))
+* **loadout:** Phase 1 — adaptation engine + preview (spec-21) ([#322](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/322)) ([1a7b956](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/1a7b9562efacdc097d05d298fa5568210fb4f5fe))
+* **loadout:** Phase 3 equipment scan + Phase 2 foundation (spec-21) ([#326](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/326)) ([f0e8929](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/f0e89297e761b2e3e9e3b55ce0fcf38ac7a5fc1c))
+* **loadout:** Phase E — E2 engine bake-off, D7 decided by evidence (spec-21) ([#321](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/321)) ([e2bc595](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/e2bc595ec55c50dcb51323c48128d090ee852cc1))
+
+
+### Bug Fixes
+
+* **sync:** harden the offline queue — 422/400 sync failures, vanishing workouts, and cache reactivity ([#329](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/329)) ([32b8d01](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/32b8d01fbd44195c93baaf93d60e96132500035d))
+
 ## [1.8.0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.7.6...persistence-v1.8.0) (2026-07-26)
 
 
