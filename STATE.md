@@ -11,11 +11,15 @@ say so and fix this file.
 
 ## Current state (2026-07-28)
 
-- **⚠ Loadout Phase 2's SCREENS are built but NOT merged.** Branch
-  `claude/loadout-phase-2-screens` (3 commits off `dfeed666`), all gates green,
-  2 Inspector Brad passes clean, **not device-verified** — that is the review Brad
-  asked for and it needs an EAS dev build against staging. PR body carries the
-  checklist. This is the first user-reachable Loadout surface.
+- **⚠ Loadout Phase 2's SCREENS are built but NOT merged.** PR
+  **[#328](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/328)**,
+  branch `claude/loadout-phase-2-screens` (6 commits off `dfeed666`, head
+  `a3e9248`). **All 5 CI checks green**; 2 Inspector Brad passes clean;
+  **NOT device-verified** — that is the review Brad asked for and it needs an EAS
+  dev build against staging. The PR body carries a ~40-item checklist. This is the
+  first user-reachable Loadout surface.
+  - ⚠ An entitled test account needs a RevenueCat **promotional entitlement** —
+    `premium_plus` is still `is_active = false`, so there is no purchasable card.
 - **Last CODE change on `origin/main` = `f0e8929`** (PR #326, Loadout **Phase 3
   equipment scan + Phase 2 foundation**, merged 2026-07-27, branch deleted). Released
   to production: **v1.8.0**.
@@ -130,6 +134,15 @@ say so and fix this file.
   shown", and it cannot be 3-way merged or rebased. One reached a commit on the
   Phase 2 branch (an array-separator string) and only Inspector Brad caught it.
   Check with `file <path>` — "data" instead of "text" is the tell.
+- **⚠ A NEW heavy container test suite needs `jest.setTimeout(15_000)`/`(20_000)`,
+  and CI is where you find out.** Nine existing suites already set it
+  (`ProfileContainer`, `ExerciseListContainer`, `SubscriptionSelectionContainer`…)
+  because a case that mounts the real Tamagui provider + a React Query client +
+  gorhom sheets costs ~200 ms locally and ~7× that on a runner sharing itself with
+  459 other suites — past jest's 5 s DEFAULT. **The tell is the SUITE's duration,
+  not "it passes in isolation"**: Loadout Phase 2's flow suite was 7.6 s locally
+  and 50.76 s on CI. Two red runs were spent chasing individual tests before
+  reading that number.
 - **⚠ Testing Library's `fireEvent.press` honours `accessibilityState.disabled`,
   the device honours the `disabled` prop.** So a component carrying both — which
   it should — will always report one of them as a SURVIVING mutant, because each
@@ -172,6 +185,13 @@ say so and fix this file.
 - **Cap Inspector Brad at two sweeps + one CLOSED verification pass** ("confirm
   these N items, findings only"). Five open-ended sweeps on one PR burned a large
   share of a context window.
+- **"Passes in isolation" diagnoses nothing on its own.** It is true of a
+  load-sensitive assertion, a suite over its time budget, AND a genuine race —
+  so it cannot distinguish them, and treating it as an all-clear cost two red CI
+  runs on the Phase 2 PR. Both real causes were only visible in numbers next to
+  it: a two-round-trip chain racing `waitFor`'s 1 s default (which was hiding a
+  real UX wart — a deleted row reappearing until the server answered), and a
+  suite at 50 s on CI versus 7.6 s locally.
 - **A mutation surviving has three possible causes, and only one is a test gap.**
   Either the test is missing (write it), or the branch is genuinely dead (delete
   it), or two layers legitimately guard different channels (annotate it). The
@@ -509,6 +529,18 @@ Loadout phase was contract, engine and step machine with nothing attached.**
   scripts 3 / 112). Mobile coverage 96.55 / 91.01 / 96.63 / 98.01; every new
   Loadout presenter at or near **100 %**. ~60 mutations applied across the new
   guards; all caught bar three annotated redundant-by-design pairs.
+- **PR #328 raised; TWO red CI runs before green, both my own doing, and the
+  pattern is the lesson.** Run 1 failed on the saved-gym delete test — which I had
+  already seen fail locally once and dismissed as the known parallel-load flake.
+  It was not: confirming a delete cleared `pendingDeleteId`, which swapped the
+  confirm card back for the ROW, and `remove()` takes TWO sequential round trips
+  before the list re-reads — so the row the user just deleted **reappeared** for
+  that whole window, reading as "the delete didn't work". Fixed with an optimistic
+  hide (restored on failure; both directions mutation-verified), and the assertion
+  now waits for the cause before the effect. Run 2 failed on a different test with
+  a 5000 ms **per-test timeout** in a suite CI took **50.76 s** to run: the six new
+  suites were missing the `jest.setTimeout` every other heavy container suite here
+  already sets. Green on run 3.
 - **⚠ NEXT: device-verify on an EAS dev build against staging (the checklist is in
   the PR body), then merge.** Nothing else is outstanding on the branch.
 
