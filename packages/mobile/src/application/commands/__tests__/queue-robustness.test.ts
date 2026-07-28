@@ -450,6 +450,86 @@ describe("deferral does not consume the retry budget", () => {
     expect(remaining.map((e) => e.operation)).toEqual(["create"]);
   });
 
+  it("folds a stranded EDIT onto the dying create instead of dropping the user's change", async () => {
+    // The two fixes that landed together in ae3d384e cancelled each other out:
+    // `canRewriteWithoutReplayingKey` deliberately declines to coalesce into a
+    // dispatched create and enqueues a separate PATCH /exercises/local-… — and the
+    // sibling cleanup then deleted exactly that entry, leaving the create carrying
+    // the PRE-edit body. A Retry re-sent the original name, the id swap ran, the
+    // next write-through replaced the cached row with server truth, and the edit
+    // vanished with no error: precisely the silent loss the guard exists to prevent.
+    storage.enqueueMutation({
+      entityType: "exercise",
+      entityId: "local-e8",
+      operation: "create",
+      payload: { name: "Original" },
+      endpoint: "/exercises",
+      method: "POST",
+    });
+    storage.enqueueMutation({
+      entityType: "exercise",
+      entityId: "local-e8",
+      operation: "update",
+      payload: { name: "Renamed by user" },
+      endpoint: "/exercises/local-e8",
+      method: "PATCH",
+    });
+    // A 400 on the create with no local reference of its own → permanent.
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 400,
+      text: async () => "bad request",
+    });
+
+    await processSyncQueue(storage, auth, "https://api.test");
+
+    const remaining = storage.getQueuedEntriesForEntity("exercise", "local-e8");
+    // One entry, the create — and it now carries the user's latest body, so
+    // whichever route re-opens it (Retry, a further edit, reconnect) sends that.
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0].operation).toBe("create");
+    expect(JSON.parse(remaining[0].payload).name).toBe("Renamed by user");
+  });
+
+  it("does not silently resurrect an EXHAUSTED create while folding into it", async () => {
+    // A permanently_failed create must be re-opened before the rewrite (the
+    // status-conditional updateMutationPayload no-ops otherwise), but an exhausted
+    // one is already rewritable — re-opening it would resurrect a create the user
+    // never asked to retry.
+    storage.enqueueMutation({
+      entityType: "exercise",
+      entityId: "local-e7",
+      operation: "create",
+      payload: { name: "Original" },
+      endpoint: "/exercises",
+      method: "POST",
+    });
+    storage.enqueueMutation({
+      entityType: "exercise",
+      entityId: "local-e7",
+      operation: "update",
+      payload: { name: "Renamed by user" },
+      endpoint: "/exercises/local-e7",
+      method: "PATCH",
+    });
+    // 5xx → transient, so the create exhausts its budget rather than going permanent.
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 500,
+      text: async () => "boom",
+    });
+
+    for (let i = 0; i < 4; i++) {
+      await processSyncQueue(storage, auth, "https://api.test", AFTER_BACKOFF);
+    }
+
+    const exhausted = storage.getFailedExhaustedEntries();
+    expect(exhausted).toHaveLength(1);
+    expect(exhausted[0].operation).toBe("create");
+    // Still terminal (not silently re-opened) AND carrying the edit.
+    expect(JSON.parse(exhausted[0].payload).name).toBe("Renamed by user");
+  });
+
   it("an explicit Retry restores the full free run", async () => {
     // A Retry (or a reconnect resurrect) is new information — usually the very
     // connectivity whose absence caused the deferrals — so the entry must not be

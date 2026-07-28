@@ -223,7 +223,7 @@ function deferOrCharge(
     // team's telemetry.
     if (entry.retryCount + 1 >= entry.maxRetries) {
       reportTerminalFailure(entry, reason);
-      discardStrandedLocalIdSiblings(storage, entry);
+      collapseStrandedLocalIdSiblings(storage, entry);
     }
     return;
   }
@@ -248,23 +248,39 @@ function reportTerminalFailure(entry: SyncQueueEntry, message: string): void {
 }
 
 /**
- * When a CREATE dies terminally, discard any sibling entry still addressing the
- * dead row's `local-…` id.
+ * When a CREATE dies terminally, collapse the siblings still addressing its
+ * `local-…` id onto it: fold the newest queued EDIT into the create's body, then
+ * discard them.
  *
- * Such a sibling can never become valid. The id swap that would rewrite it only
- * runs when the create SUCCEEDS, so once the create is permanently rejected or
- * exhausted, the sibling is aimed forever at a path Postgres rejects with 22P02.
- * `endpointReferencesUnsyncedLocalId` (correctly) classifies that 400 as retryable
- * rather than permanent, so it burns its full budget and then surfaces in
- * /sync-failed as "Invalid identifier format" — for a row the user was told was
- * created, or deleted. That is the exact symptom `delete-exercise` was fixed to
- * stop producing, arriving by a different route: a queued
- * `DELETE /exercises/local-…` parked behind an in-flight create that then dies.
+ * Why they need collapsing. Such a sibling only becomes sendable via the id swap
+ * that runs when the create SUCCEEDS, so while the create sits terminal the sibling
+ * addresses a path Postgres rejects with 22P02. `endpointReferencesUnsyncedLocalId`
+ * (correctly) classifies that 400 as retryable rather than permanent, so it burns
+ * its whole budget and surfaces in /sync-failed as "Invalid identifier format" for a
+ * row the user was told was created, or deleted — the exact symptom
+ * `delete-exercise` exists to stop producing, arriving by another route: a queued
+ * `DELETE /exercises/local-…` parked behind a create that then dies.
  *
- * Only local-id-addressed siblings go. Anything pointing at a real resource is
- * unrelated to this create's failure and stays.
+ * ⚠ Why the FOLD is not optional, and why discarding alone was a data-loss bug.
+ * `canRewriteWithoutReplayingKey` deliberately refuses to coalesce an edit into a
+ * dispatched create and enqueues a separate `PATCH /exercises/local-…` instead — so
+ * the sibling this function finds is very often the user's edit, and the create
+ * still carries the PRE-edit body. Discarding it left the edit nowhere: a Retry
+ * re-sent the original name, `swapLocalExerciseId` ran, the next write-through
+ * replaced the cached row with server truth, and the edit vanished with no error —
+ * precisely the silent loss the coalescing guard was written to prevent. The two
+ * fixes landed in the same commit and cancelled each other out.
+ *
+ * A terminal create is also not as dead as that reasoning assumed: exhausted entries
+ * are user-retryable via `resetFailedEntries`, `permanently_failed` ones re-open when
+ * an edit coalesces into them, and reconnect now auto-resurrects replay-safe creates.
+ * Folding is what keeps the edit alive across every one of those routes — the create
+ * is the entry that survives, so the latest body has to live on it.
+ *
+ * Only local-id-addressed siblings are touched; anything pointing at a real resource
+ * is unrelated to this create's failure and stays.
  */
-function discardStrandedLocalIdSiblings(
+function collapseStrandedLocalIdSiblings(
   storage: StoragePort,
   entry: SyncQueueEntry,
 ): void {
@@ -277,12 +293,37 @@ function discardStrandedLocalIdSiblings(
           sibling.id !== entry.id &&
           endpointReferencesUnsyncedLocalId(sibling.endpoint),
       );
-    if (stranded.length > 0) {
-      storage.discardEntries(stranded.map((s) => s.id));
+    if (stranded.length === 0) return;
+
+    // Newest edit wins — later edits supersede earlier ones, and the enqueue order
+    // `getQueuedEntriesForEntity` returns is the order they were made in.
+    const newestEdit = stranded
+      .filter((sibling) => sibling.operation === "update")
+      .at(-1);
+    if (newestEdit) {
+      let body: unknown;
+      try {
+        body = JSON.parse(newestEdit.payload);
+      } catch {
+        body = null;
+      }
+      if (body !== null) {
+        // `updateMutationPayload` no-ops on a terminal row, so a permanently_failed
+        // create has to be re-opened first — same order, and same reason, as
+        // `update-exercise`'s own coalescing path. An exhausted (`failed`) create
+        // needs no reset: it is already rewritable, and re-opening it would silently
+        // resurrect a create the user has not asked to retry.
+        if (entry.status === "permanently_failed") {
+          storage.resetFailedEntries([entry.id]);
+        }
+        storage.updateMutationPayload(entry.id, body);
+      }
     }
+
+    storage.discardEntries(stranded.map((s) => s.id));
   } catch (err) {
     // Cleanup is opportunistic — never let it break the drain's own accounting.
-    console.error("[sync] stranded-sibling cleanup failed:", err);
+    console.error("[sync] stranded-sibling collapse failed:", err);
   }
 }
 
@@ -833,7 +874,7 @@ export async function processSyncQueue(
       // sibling now aimed forever at this dead row's local id.
       if (isTerminalFailure) {
         reportTerminalFailure(entry, message);
-        discardStrandedLocalIdSiblings(storage, entry);
+        collapseStrandedLocalIdSiblings(storage, entry);
       }
     }
   }

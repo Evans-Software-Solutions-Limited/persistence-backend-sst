@@ -8,6 +8,7 @@ const workoutRepositoryMocks = {
   update: vi.fn(),
   delete: vi.fn(),
   getQuota: vi.fn(),
+  findByClientRequestId: vi.fn(async () => null),
 };
 
 // Hoisted so the vi.mock factory below can reference it (factories run
@@ -80,6 +81,9 @@ describe("WorkoutsCreateHandler", () => {
     // but the helper's signature contract is "always return a verdict"
     // — without a default impl the handler would receive undefined).
     assertEntitlementMock.mockResolvedValue({ allowed: true });
+    // Same reason as above: clearAllMocks blanks the impl, and "no prior create
+    // under this key" is the default this handler must see.
+    workoutRepositoryMocks.findByClientRequestId.mockResolvedValue(null);
     workoutRepositoryMocks.createWithExercises.mockImplementation(
       async (userId: string, data: any) => ({
         id: "workout-1",
@@ -493,6 +497,104 @@ describe("WorkoutsCreateHandler", () => {
         await import("../workoutsCreateHandler");
       return new Elysia().use(coreErrorHandler).use(workoutsCreateHandler);
     }
+
+    it("returns the committed workout on a REPLAY, without re-checking entitlement", async () => {
+      // The first attempt's insert fires the workout-count trigger, so a user who
+      // was one workout below their limit is AT it when the replay arrives. With
+      // the gate ahead of the short-circuit, the replay 402'd: the user saw an
+      // upgrade paywall for a workout that already existed, and because the queue
+      // entry never reached `completed`, the optimistic `local-…` row was preserved
+      // on every refresh alongside the committed server row — listed twice, and the
+      // local copy 400ing when opened.
+      workoutRepositoryMocks.findByClientRequestId.mockResolvedValue({
+        id: "workout-1",
+        createdBy: "test-user-id",
+        name: "Already Committed",
+        exercises: [],
+      } as never);
+      // Deny hard, to prove the gate is not consulted at all on a replay.
+      assertEntitlementMock.mockResolvedValue({
+        allowed: false,
+        reason: "limit",
+        currentTier: "free",
+        upgradeTo: "premium",
+        upgradePriceMonthly: 999,
+      });
+
+      const app = await buildAppWithErrorHandler();
+      const response = await app.handle(
+        new Request("http://localhost/workouts", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            authorization: "Bearer test-token",
+            "Idempotency-Key": "replayed-key",
+          },
+          body: JSON.stringify({ name: "Already Committed" }),
+        }),
+      );
+
+      expect(response.status).toBe(201);
+      const body = (await response.json()) as any;
+      expect(body.data.name).toBe("Already Committed");
+      expect(workoutRepositoryMocks.findByClientRequestId).toHaveBeenCalledWith(
+        "test-user-id",
+        "replayed-key",
+      );
+      // No second row, and no paywall.
+      expect(workoutRepositoryMocks.createWithExercises).not.toHaveBeenCalled();
+      expect(assertEntitlementMock).not.toHaveBeenCalled();
+    });
+
+    it("still enforces the entitlement gate on a FIRST keyed attempt", async () => {
+      // The short-circuit must not become a way around the quota: with no prior row
+      // under the key, the gate still runs and still denies.
+      workoutRepositoryMocks.findByClientRequestId.mockResolvedValue(null);
+      assertEntitlementMock.mockResolvedValue({
+        allowed: false,
+        reason: "limit",
+        currentTier: "free",
+        upgradeTo: "premium",
+        upgradePriceMonthly: 999,
+      });
+
+      const app = await buildAppWithErrorHandler();
+      const response = await app.handle(
+        new Request("http://localhost/workouts", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            authorization: "Bearer test-token",
+            "Idempotency-Key": "fresh-key",
+          },
+          body: JSON.stringify({ name: "Over Limit" }),
+        }),
+      );
+
+      expect(response.status).toBe(402);
+      expect(workoutRepositoryMocks.createWithExercises).not.toHaveBeenCalled();
+    });
+
+    it("skips the replay lookup entirely when no key is sent", async () => {
+      // Legacy and direct-API callers must keep the exact previous behaviour — one
+      // gate, one insert, no extra round trip.
+      const app = await buildAppWithErrorHandler();
+      await app.handle(
+        new Request("http://localhost/workouts", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            authorization: "Bearer test-token",
+          },
+          body: JSON.stringify({ name: "Unkeyed" }),
+        }),
+      );
+
+      expect(
+        workoutRepositoryMocks.findByClientRequestId,
+      ).not.toHaveBeenCalled();
+      expect(assertEntitlementMock).toHaveBeenCalled();
+    });
 
     it("calls assertEntitlement with the authenticated userId + create_workout", async () => {
       const { workoutsCreateHandler } =

@@ -65,13 +65,21 @@ function hasWorkDue(storage: StoragePort): boolean {
  *   view (coach adherence, workout-detail PR state, the You-page volume
  *   stat) read empty forever even after connectivity came back. On a
  *   real false→true transition we now `resetFailedEntries` ONCE for the
- *   exhausted SESSION-RECORD entries only (they carry `clientSessionId`,
- *   so a re-POST is server-idempotent — self-heal for a failure that was
- *   plausibly connectivity, not a genuine rejection) and then flush.
- *   Non-idempotent creates are deliberately NOT auto-resurrected here;
- *   they surface in the `/sync-failed` review UI for explicit retry. A
- *   session the server genuinely rejects will simply re-exhaust and
- *   surface there too, instead of looping silently.
+ *   entries whose replay the SERVER can recognise — session records via
+ *   `clientSessionId`, and (since the offline-sync-hardening branch)
+ *   workout + exercise creates via `clientRequestId` — then flush. That
+ *   is a self-heal for a failure that was plausibly connectivity rather
+ *   than a genuine rejection.
+ *
+ *   Two exclusions, both deliberate: an endpoint with NO server-side key
+ *   (nutrition creates) is never auto-resurrected, because a re-POST
+ *   could duplicate a row that did commit; and `permanently_failed`
+ *   entries are never resurrected whatever their endpoint, because that
+ *   state means a re-send of the identical request cannot succeed. Both
+ *   surface in the `/sync-failed` review UI for explicit retry instead.
+ *   The same transition also restores the budget-free deferral run of
+ *   still-queued entries, since a reconnect is exactly the information
+ *   whose absence caused them.
  *
  * Not in scope here (deferred to a follow-up):
  * - Debounced flush after enqueue
@@ -180,11 +188,20 @@ export function useSyncWorker(): void {
         const exhausted = storage.getFailedExhaustedEntries();
         const replaySafe = exhausted.filter(
           (e) =>
+            // ⚠ `getFailedExhaustedEntries` returns `permanently_failed` entries
+            // too, and those must NOT be resurrected: that state exists precisely
+            // to mean "a re-send of the identical request can never turn into a
+            // 2xx". Sweeping them up re-POSTed a rejected body on every single
+            // reconnect for the life of the install, each time briefly removing the
+            // row from /sync-failed (it leaves `getFailedExhaustedEntries` between
+            // the reset and the re-failure) so the banner flickered. Only
+            // TRANSIENT exhaustion — plausibly connectivity — is self-healed here.
+            e.status === "failed" &&
             // Both self and on-behalf (`.../clients/:id/sessions/record`) forms.
-            e.endpoint.endsWith("/sessions/record") ||
-            (e.operation === "create" &&
-              e.idempotencyKey !== null &&
-              (e.endpoint === "/workouts" || e.endpoint === "/exercises")),
+            (e.endpoint.endsWith("/sessions/record") ||
+              (e.operation === "create" &&
+                e.idempotencyKey !== null &&
+                (e.endpoint === "/workouts" || e.endpoint === "/exercises"))),
         );
         if (replaySafe.length > 0) {
           storage.resetFailedEntries(replaySafe.map((e) => e.id));

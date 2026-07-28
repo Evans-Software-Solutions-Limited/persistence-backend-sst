@@ -643,6 +643,57 @@ describe("useSyncWorker", () => {
       expect(stillExhausted[0].id).toBe(nutritionEntryId);
     });
 
+    it("never resurrects a PERMANENTLY_FAILED create, however replay-safe its endpoint", async () => {
+      // `getFailedExhaustedEntries` returns permanently_failed entries alongside
+      // budget-exhausted ones, so widening the replay-safe filter by endpoint alone
+      // swept them up. That state exists precisely to mean "a re-send of the
+      // identical request can never turn into a 2xx" — a 400 for
+      // targetRepsMin > targetRepsMax, or an exercise naming a catalogue member that
+      // will never exist. Resurrecting it re-POSTs the identical body on every
+      // reconnect for the life of the install, and the row leaves
+      // getFailedExhaustedEntries between the reset and the re-failure, so the
+      // /sync-failed banner flickers each time.
+      const storage = new InMemoryStorageAdapter();
+      storage.initialize();
+      storage.enqueueMutation({
+        entityType: "workout",
+        entityId: "w-rejected",
+        operation: "create",
+        payload: { name: "Rejected" },
+        endpoint: "/workouts",
+        method: "POST",
+      });
+      const id = storage.getPendingMutations().slice(-1)[0].id;
+      storage.markMutationPermanentlyFailed(id, "HTTP 400: bad reps range");
+
+      const resetSpy = jest.spyOn(storage, "resetFailedEntries");
+      mockFetch.mockResolvedValue({ ok: true, json: async () => ({}) });
+      const auth = new InMemoryAuthAdapter();
+      const netInfo = new InMemoryNetInfoAdapter(true);
+      const adapters = makeAdapters(storage, auth, session, netInfo);
+
+      renderHook(() => useSyncWorker(), { wrapper: wrap(adapters) });
+      await settleMount();
+      mockFetch.mockClear();
+      resetSpy.mockClear();
+
+      act(() => netInfo.setConnected(false));
+      act(() => netInfo.setConnected(true));
+      act(() => {
+        jest.advanceTimersByTime(SYNC_RECONNECT_DEBOUNCE_MS);
+      });
+      // Let the resurrect+flush run to completion — the assertions below are all
+      // negative, so there is no positive signal to wait on.
+      await settleMount();
+
+      // Never reset, never re-sent, still terminal and still reviewable.
+      expect(resetSpy).not.toHaveBeenCalledWith([id]);
+      expect(mockFetch).not.toHaveBeenCalled();
+      const terminal = storage.getFailedExhaustedEntries();
+      expect(terminal).toHaveLength(1);
+      expect(terminal[0].status).toBe("permanently_failed");
+    });
+
     it("restores the budget-free run of still-queued deferred entries on reconnect", async () => {
       // Without this, an offline stretch of only ~90–120s (12 free deferrals at a
       // 5s window, then 3 charged attempts) exhausted an offline-created row

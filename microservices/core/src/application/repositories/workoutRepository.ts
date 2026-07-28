@@ -434,6 +434,44 @@ export class WorkoutRepository {
    * `workout_exercises` rows against the first attempt's workout either, which is
    * why the short-circuit returns before the child insert.
    */
+  /**
+   * Resolve a create that has ALREADY been committed under this idempotency key,
+   * or null if there is none.
+   *
+   * Exists so the handler can recognise a replay BEFORE it runs any gate whose
+   * answer would differ on the second attempt. The entitlement check is exactly
+   * such a gate: the first attempt's insert advances the workout-count trigger, so
+   * a user who was one workout below their limit is AT the limit by the time the
+   * replay arrives, and `assertEntitlement` denies it with a 402. The mobile drain
+   * turns that into `blocked_entitlement`, the user is shown an upgrade paywall for
+   * a workout that already exists, and — because the queue entry never reaches
+   * `completed` — `unsyncedWorkoutsIn` keeps preserving the optimistic `local-…` row
+   * alongside the committed server row on every refresh, so the workout is listed
+   * twice and the local copy 400s when opened.
+   *
+   * The key's whole promise is that "a replay is indistinguishable from the original
+   * success" (see 20260727120100_client_request_id_idempotency.sql). A gate in front
+   * of the short-circuit breaks that promise.
+   */
+  async findByClientRequestId(
+    userId: string,
+    clientRequestId: string,
+  ): Promise<WorkoutWithExercises | null> {
+    const db = getDb();
+    const [existing] = await db
+      .select()
+      .from(workouts)
+      .where(
+        and(
+          eq(workouts.createdBy, userId),
+          eq(workouts.clientRequestId, clientRequestId),
+        ),
+      )
+      .limit(1);
+    if (!existing) return null;
+    return this.fetchWorkoutWithExercises(db, existing);
+  }
+
   async createWithExercises(
     userId: string,
     input: CreateWorkoutInput,
