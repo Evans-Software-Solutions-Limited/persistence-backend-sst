@@ -41,6 +41,7 @@ import {
   getDefaultClient,
   maxTokensForBudget,
   PREFILL_ALLOWANCE_MS,
+  AiUnavailableError,
   AiUnreadableError,
   type MessagesCreateParams,
   type MinimalBedrockClient,
@@ -100,6 +101,14 @@ export function capReason(reason: string): string {
  * where the old 2 × 12 s (really 6 × 12 s through the SDK) never did.
  */
 export const REMAP_TIMEOUT_MS = 24_000;
+
+/**
+ * Below this much GENERATION time (on top of {@link PREFILL_ALLOWANCE_MS}) the
+ * request is not worth sending: 1 s buys ~100 tokens, which cannot describe even
+ * one swapped row, so the only possible outcomes are a truncation 422 or a
+ * provider 400. Both cost a daily adaptation and neither helps the user.
+ */
+export const MIN_USEFUL_GENERATION_MS = 5_000;
 
 /**
  * Output ceiling for one re-map, sized so the TRUNCATION guard fires before the
@@ -425,13 +434,32 @@ export async function selectSubstitutes(
 ): Promise<RemapResult> {
   const client = deps.client ?? getDefaultClient();
   const modelId = deps.modelId ?? remapModelId();
-  // Never longer than the surface's own budget, and never so short that the
-  // request is hopeless — below the prefill allowance there is no point sending
-  // it at all, so floor it and let the attempt fail honestly.
-  const timeoutMs = Math.max(
-    PREFILL_ALLOWANCE_MS,
-    Math.min(REMAP_TIMEOUT_MS, deps.timeoutMs ?? REMAP_TIMEOUT_MS),
-  );
+  // ⚠ FAIL FAST rather than send a doomed request. The previous version floored
+  // the timeout at `PREFILL_ALLOWANCE_MS` and called that "failing honestly" — it
+  // is not. `maxTokensForBudget(PREFILL_ALLOWANCE_MS)` is exactly 0, so the floor
+  // sent `max_tokens: 0`, which the provider rejects as a 400. The band just
+  // above is worse: 3.0–5.5 s of remaining budget buys 0–250 tokens, the model
+  // hits the ceiling, and the caller gets a 422 `ai_unreadable` — a
+  // TERMINAL-looking error for a transient cause, so the client will not retry
+  // something that would have worked a second later.
+  //
+  // `MIN_USEFUL_GENERATION_MS` is the floor below which there is no point paying
+  // for an inference at all.
+  //
+  // ⚠ DEFENCE IN DEPTH, not the primary guard. The handler runs the same check
+  // before it marks the request as billable, because the quota decision belongs
+  // to the layer that owns the usage log — an earlier version delegated it here
+  // via a callback, which made "did we bill?" depend on a collaborator
+  // remembering to invoke it, and silently stopped writing usage rows in every
+  // test that mocked this function. This copy stays so a direct caller cannot
+  // send a doomed request.
+  const requested = deps.timeoutMs ?? REMAP_TIMEOUT_MS;
+  if (requested < PREFILL_ALLOWANCE_MS + MIN_USEFUL_GENERATION_MS) {
+    throw new AiUnavailableError(
+      `ai_budget_exhausted: ${Math.max(0, requested)}ms left is not enough to adapt this workout`,
+    );
+  }
+  const timeoutMs = Math.min(REMAP_TIMEOUT_MS, requested);
 
   const swapRowCount = input.plan.filter((row) => row.needsSwap).length;
 

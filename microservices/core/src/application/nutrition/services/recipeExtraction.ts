@@ -36,7 +36,7 @@ const FOOD_MACROS_MODEL_ID =
 // Recipes can carry many ingredients + multi-step instructions — a wider
 // budget than the 1500-token nutrition estimate (which returns at most a
 // handful of food items).
-const RECIPE_MAX_TOKENS = 2500;
+export const RECIPE_MAX_TOKENS = 2500;
 // A single food-macros lookup returns six scalar fields — comfortably
 // fits in a small budget.
 const FOOD_MACROS_MAX_TOKENS = 400;

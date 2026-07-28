@@ -61,16 +61,22 @@ describe("createSingleAttempt (spec-21 T-E1.6)", () => {
     });
   });
 
-  it("makes exactly ONE attempt — it must not retry", async () => {
+  it("makes exactly ONE GENERATION attempt — a slow failure is not resent", async () => {
+    // ⚠ This assertion used to be `toHaveBeenCalledTimes(1)` for ANY failure,
+    // which was right only while the SDK retried underneath. What must not be
+    // repeated is a full-length generation: a failure that consumed most of the
+    // budget means the model was working, and resending it blows the deadline.
+    // A failure that came back instantly is a different thing entirely — see the
+    // "bounded resend" block below.
     const create = vi.fn(async () => {
       throw statusError(503);
     });
+    let reads = 0;
+    const slow = () => (reads++ === 0 ? 0 : 19_000);
 
     await expect(
-      createSingleAttempt(client(create), PARAMS, 20_000),
+      createSingleAttempt(client(create), PARAMS, 20_000, slow),
     ).rejects.toBeInstanceOf(AiUnavailableError);
-    // A 503 is exactly the shape `createWithRetry` DOES retry, so this pins the
-    // difference between the two rather than just "it throws".
     expect(create).toHaveBeenCalledTimes(1);
   });
 
@@ -78,9 +84,11 @@ describe("createSingleAttempt (spec-21 T-E1.6)", () => {
     const create = vi.fn(async () => {
       throw new Error("socket hang up");
     });
+    let reads = 0;
+    const slow = () => (reads++ === 0 ? 0 : 19_000);
 
     await expect(
-      createSingleAttempt(client(create), PARAMS, 20_000),
+      createSingleAttempt(client(create), PARAMS, 20_000, slow),
     ).rejects.toThrow(/ai_single_attempt_failed: socket hang up/);
   });
 
@@ -96,12 +104,14 @@ describe("createSingleAttempt (spec-21 T-E1.6)", () => {
   });
 
   it("describes a non-Error throw rather than losing it", async () => {
+    let reads = 0;
+    const slow = () => (reads++ === 0 ? 0 : 19_000);
     const create = vi.fn(async () => {
       throw "plain string";
     });
 
     await expect(
-      createSingleAttempt(client(create), PARAMS, 20_000),
+      createSingleAttempt(client(create), PARAMS, 20_000, slow),
     ).rejects.toThrow(/ai_single_attempt_failed: plain string/);
   });
 
@@ -241,5 +251,90 @@ describe("maxTokensForBudget", () => {
 
   it("is rounded DOWN, so the budget is never optimistic", () => {
     expect(maxTokensForBudget(3_015)).toBe(1);
+  });
+});
+
+describe("createSingleAttempt — the bounded resend", () => {
+  // ⚠ `createSingleAttempt` never consulted `isRetryable`, so when
+  // `getDefaultClient` turned the SDK's own retries off, the two surfaces using
+  // it (the loadout re-map and the equipment scan) lost throttle resilience
+  // entirely — a net regression on exactly the surfaces the change was fixing.
+  // These pin the refined contract: resend a FAST transient failure, never a
+  // slow one, and never exceed the caller's deadline.
+
+  function client(behaviour: Array<() => unknown>) {
+    let call = 0;
+    // Typed two-arg signature so `create.mock.calls[n][1]` carries the
+    // per-request options — asserting the resend inherits only the REMAINING
+    // budget is the point of this fake.
+    const create = vi.fn(
+      async (params: MessagesCreateParams, options?: { timeout?: number }) => {
+        void params;
+        void options;
+        const step = behaviour[Math.min(call, behaviour.length - 1)];
+        call += 1;
+        return step() as MessagesCreateResponse;
+      },
+    );
+    return { create, client: { messages: { create } } as MinimalBedrockClient };
+  }
+
+  const boom = (status?: number) => () => {
+    throw status === undefined
+      ? new Error("socket hang up")
+      : Object.assign(new Error(`http ${status}`), { status });
+  };
+  const ok = () => ({ content: [], stop_reason: "end_turn" });
+
+  it("resends a throttle that failed instantly", async () => {
+    const { client: c, create } = client([boom(429), ok]);
+    let t = 0;
+    await createSingleAttempt(c, PARAMS, 20_000, () => (t += 10));
+
+    expect(create).toHaveBeenCalledTimes(2);
+  });
+
+  it("does NOT resend a failure that consumed most of the budget", async () => {
+    // A slow failure means generation was actually happening. Resending it is
+    // how a single long attempt turns into two timeouts and blows the deadline —
+    // the precise thing `createSingleAttempt` exists to avoid.
+    const { client: c, create } = client([boom(503), ok]);
+    let t = 0;
+    // 0 ms, then 15 s elapsed against a 20 s budget: past the halfway bound.
+    const clock = () => (t === 0 ? ((t = 15_000), 0) : 15_000);
+    await expect(
+      createSingleAttempt(c, PARAMS, 20_000, clock),
+    ).rejects.toBeInstanceOf(AiUnavailableError);
+
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  it("gives the resend only the time that is LEFT", async () => {
+    // Not a fresh full budget — the caller's deadline is absolute.
+    const { client: c, create } = client([boom(429), ok]);
+    let reads = 0;
+    const clock = () => (reads++ === 0 ? 0 : 4_000);
+    await createSingleAttempt(c, PARAMS, 20_000, clock);
+
+    expect(create.mock.calls[0][1]).toEqual({ timeout: 20_000 });
+    expect(create.mock.calls[1][1]).toEqual({ timeout: 16_000 });
+  });
+
+  it("does not resend a client error", async () => {
+    const { client: c, create } = client([boom(400), ok]);
+    let t = 0;
+    await expect(
+      createSingleAttempt(c, PARAMS, 20_000, () => (t += 10)),
+    ).rejects.toBeInstanceOf(AiUnavailableError);
+
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  it("surfaces the SECOND failure when the resend also fails", async () => {
+    const { client: c } = client([boom(429), boom(503)]);
+    let t = 0;
+    await expect(
+      createSingleAttempt(c, PARAMS, 20_000, () => (t += 10)),
+    ).rejects.toThrow(/after_retry/);
   });
 });

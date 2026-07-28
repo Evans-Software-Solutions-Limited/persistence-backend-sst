@@ -15,6 +15,7 @@ import {
 import {
   AiUnavailableError,
   AiUnreadableError,
+  PREFILL_ALLOWANCE_MS,
   ROUTE_TIMEOUT_MS,
 } from "../../nutrition/services/aiBedrockClient";
 import {
@@ -25,6 +26,7 @@ import {
 } from "../engine/adaptWorkout";
 import { LOADABLE_EQUIPMENT_NAMES } from "../engine/intensityMismatch";
 import {
+  MIN_USEFUL_GENERATION_MS,
   REMAP_TIMEOUT_MS,
   remapMaxTokens,
   selectSubstitutes,
@@ -345,35 +347,53 @@ export const workoutLoadoutPreviewHandler = new Elysia()
             equipmentNames: new Map(equipmentTypes.map((e) => [e.id, e.name])),
           };
 
-          // Set LAST, immediately before the provider call. Anything that can
-          // still fail before Bedrock is reached — a transient error on either
-          // reference read, for instance — must not write a usage row, or a DB
-          // blip silently burns one of the user's daily adaptations for an
-          // inference that never happened.
-          reachedModel = true;
-          // ⚠ Logged EITHER SIDE of the call, and the "before" line is the one
-          // that matters. When this surface failed on staging 2026-07-28 the
-          // Lambda was killed mid-inference, so nothing after the call ever ran
-          // — CloudWatch held a START and a REPORT with 29 s between them and
-          // not one application line, and the Sentry trace id appeared nowhere.
-          // Diagnosing it needed API Gateway access logs and Bedrock metrics.
-          // A line here would have said "we were in the model call" outright.
-          //
-          // Counts and ids only. The prompt carries the user's workout.
           // ⚠ What is LEFT of the route budget, not the nominal 24 s. The seven
           // round trips above are assumed to cost ~3 s; on a cold start with a
           // fresh pooler connection they cost more, and a full-length attempt on
           // top of that overruns the 29 s Lambda — which produces no 503, no
           // usage row and no log line, i.e. this bug again in miniature.
-          // `POST_MODEL_RESERVE_MS` keeps room for the usage-log INSERT in the
-          // `finally`, which runs after the attempt returns.
-          const POST_MODEL_RESERVE_MS = 2_000;
+          //
+          // ⚠ `POST_MODEL_RESERVE_MS` covers MORE than the usage-log INSERT.
+          // `startedAt` is set inside this handler, which is AFTER Elysia's
+          // `.derive` has run `getAuthUser` — and on a cold instance that does a
+          // `createRemoteJWKSet` fetch to Supabase plus a TLS handshake, ~0.5–1.5 s
+          // that this clock never sees but the Lambda's 29 s does. The reserve
+          // therefore absorbs the unmeasured auth leg AND the `finally`'s INSERT
+          // on a fresh pooler connection, and both costs are correlated because
+          // both are cold. 2 s did not cover that pair; 3.5 s does.
+          const POST_MODEL_RESERVE_MS = 3_500;
           const remainingMs =
             ROUTE_TIMEOUT_MS - (Date.now() - startedAt) - POST_MODEL_RESERVE_MS;
           const attemptMs = Math.min(REMAP_TIMEOUT_MS, remainingMs);
+
+          // ⚠ Logged BEFORE the call, and that ordering is the point. When this
+          // surface failed on staging 2026-07-28 the Lambda was killed
+          // mid-inference, so nothing after the call ever ran — CloudWatch held a
+          // START and a REPORT 29 s apart and not one application line, and the
+          // Sentry trace id appeared nowhere. Diagnosis needed API Gateway access
+          // logs plus Bedrock metrics. This line says "we were in the model call"
+          // outright. Counts and ids only; the prompt carries the user's workout.
           console.info(
             `[loadout-remap] start workout=${workoutId} swapRows=${needsSwap.length} candidates=${offered.length} attemptMs=${attemptMs} maxTokens=${remapMaxTokens(needsSwap.length, attemptMs)}`,
           );
+
+          // ⚠ Fail BEFORE marking the request billable. A usage row means "an
+          // inference reached the provider"; a preamble that ate the budget means
+          // no request is sent at all, and charging a daily adaptation for that
+          // punishes the user for our own slowness. This is the last pre-model
+          // exit — every other one (400/402/404/429) already sits above
+          // `reachedModel`.
+          if (attemptMs < PREFILL_ALLOWANCE_MS + MIN_USEFUL_GENERATION_MS) {
+            throw new AiUnavailableError(
+              `ai_budget_exhausted: ${Math.max(0, attemptMs)}ms left after the preamble`,
+            );
+          }
+
+          // Set LAST, immediately before the provider call. Anything that can
+          // still fail before Bedrock is reached must not write a usage row, or a
+          // DB blip silently burns one of the user's daily adaptations for an
+          // inference that never happened.
+          reachedModel = true;
           const result = await selectSubstitutes(
             {
               workoutName: parent.name,
@@ -429,7 +449,9 @@ export const workoutLoadoutPreviewHandler = new Elysia()
           // Named, not swallowed. This is the branch that SHOULD have fired on
           // 2026-07-28 and could not, because the SDK's hidden retries pushed
           // the call past the Lambda timeout before it could throw.
-          console.error(`[loadout-remap] unavailable: ${error.message}`);
+          console.error(
+            `[loadout-remap] unavailable workout=${workoutId} swapRows=${swapRowCount}: ${error.message}`,
+          );
           ctx.set.status = 503;
           const body = { error: "ai_unavailable" };
           responseSizeBytes = Buffer.byteLength(JSON.stringify(body));

@@ -77,6 +77,24 @@ const TOOL_NAME = "report_gym_equipment";
 export const EQUIPMENT_SCAN_TIMEOUT_MS = 20_000;
 
 /**
+ * ⚠ Knowingly larger than {@link EQUIPMENT_SCAN_TIMEOUT_MS} can receive, and
+ * exported so `aiBudget.test.ts` binds to this value rather than a literal copy
+ * of it.
+ *
+ * Measured 2026-07-28: Opus 4.6 on Bedrock generates at **~45 tok/s** (three
+ * samples: 49, 41, 45), so a 20 s attempt receives roughly 765 tokens after
+ * prefill — while a busy commercial gym legitimately produces ~1,100 tokens of
+ * detections. **This surface does not currently fit its budget**, and raising
+ * the attempt to the full 29 s route ceiling only buys ~1,170 tokens, so there
+ * is no constant that fixes it. The real options are a smaller per-detection
+ * payload (the prose note dominates) or an asynchronous scan.
+ *
+ * Left as-is deliberately: the scan is Phase 3 and not user-reachable yet, so
+ * this is a design decision to take rather than a live regression to patch.
+ */
+export const EQUIPMENT_SCAN_MAX_TOKENS = 4096;
+
+/**
  * The model's free-text aside, capped and treated as untrusted.
  *
  * ⚠ **The input is a photograph the caller chose**, so this field is steerable by
@@ -308,7 +326,7 @@ export async function scanEquipmentFromPhoto(
     // unmatched labels, so this is generous by design — output tokens bill on use,
     // not on the ceiling, and the truncation guard below makes a too-small budget
     // a hard 422 rather than a quiet under-detection.
-    max_tokens: 4096,
+    max_tokens: EQUIPMENT_SCAN_MAX_TOKENS,
     messages: [
       {
         role: "user",

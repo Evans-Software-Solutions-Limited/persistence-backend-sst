@@ -315,9 +315,36 @@ describe("scanEquipmentFromPhoto", () => {
     expect(EQUIPMENT_SCAN_TIMEOUT_MS).toBeGreaterThan(12_000);
   });
 
-  it("does not retry a provider failure", async () => {
+  it("RESENDS a fast transient failure once, inside the same deadline", async () => {
+    // ⚠ This assertion used to read `toHaveBeenCalledTimes(1)` under the name
+    // "does not retry a provider failure", and it was pinning a contract that
+    // only made sense while the SDK was retrying underneath with
+    // `maxRetries: 2`. With those off, refusing to resend turned a routine
+    // Bedrock throttle into an immediate 503 that also burns one of the caller's
+    // 6 daily scans.
+    //
+    // "Single attempt" is about not paying for a second full-length GENERATION,
+    // not about refusing to resend a request the provider never started. A 503
+    // or 429 comes back in milliseconds and costs nothing — the inference did
+    // not run. The next test pins the case that still must not be resent.
     const { client, create } = fakeClient(() => {
       throw Object.assign(new Error("http 503"), { status: 503 });
+    });
+
+    await expect(
+      scanEquipmentFromPhoto(
+        { ...IMAGE, catalogue: CATALOGUE },
+        { client, modelId: "test-model" },
+      ),
+    ).rejects.toBeInstanceOf(AiUnavailableError);
+    expect(create).toHaveBeenCalledTimes(2);
+  });
+
+  it("does NOT resend a genuine client error", async () => {
+    // A 400 fails identically however many times it is sent, and at $0.0272 a
+    // scan the resend is not free to get wrong.
+    const { client, create } = fakeClient(() => {
+      throw Object.assign(new Error("http 400"), { status: 400 });
     });
 
     await expect(

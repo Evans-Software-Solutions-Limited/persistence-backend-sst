@@ -5,6 +5,8 @@ import {
   AiUnreadableError,
 } from "../../../nutrition/services/aiBedrockClient";
 import { LOADABLE_EQUIPMENT_NAMES } from "../../engine/intensityMismatch";
+import { REMAP_TIMEOUT_MS } from "../../engine/remapModel";
+import { ROUTE_TIMEOUT_MS } from "../../../nutrition/services/aiBedrockClient";
 
 const WORKOUT_ID = "11111111-1111-4111-8111-111111111111";
 const GYM_ID = "22222222-2222-4222-8222-222222222222";
@@ -604,5 +606,97 @@ describe("POST /workouts/:id/loadout/preview", () => {
       );
       error.mockRestore();
     });
+  });
+});
+
+describe("POST /workouts/:id/loadout/preview — the model call's deadline", () => {
+  // ⚠ Added because the deadline shipped untested: nothing in this file read
+  // `selectSubstitutesMock.mock.calls[0][1]`, so the handler could have stopped
+  // passing a budget entirely and every test would still have passed.
+  beforeEach(() => {
+    vi.clearAllMocks();
+    assertEntitlementMock.mockResolvedValue({ allowed: true } as any);
+    usageLogCountMock.mockResolvedValue(0);
+    workoutRepo.findReadableWorkout.mockResolvedValue(parentWorkout);
+    workoutRepo.listAdaptationRows.mockResolvedValue([adaptationRow()]);
+    savedGymRepo.findUnknownEquipmentTypeIds.mockResolvedValue([]);
+    exerciseRepo.listAdaptationCandidates.mockResolvedValue({
+      candidates: [CANDIDATE],
+      truncated: false,
+    });
+    exerciseRepo.listPreviouslyLoggedExerciseIds.mockResolvedValue([]);
+    exerciseRepo.findEquipmentTypeIdsByName.mockResolvedValue([
+      ...LOADABLE_EQUIPMENT_NAMES.map((_, i) => `loadable-${i}`),
+    ]);
+    exerciseRepo.getMuscleGroups.mockResolvedValue([]);
+    exerciseRepo.getEquipmentTypes.mockResolvedValue([]);
+    selectSubstitutesMock.mockResolvedValue({
+      selections: new Map(),
+      usage: {
+        modelId: "eu.anthropic.test",
+        latencyMs: 10,
+        inputTokens: 1,
+        outputTokens: 1,
+      },
+    });
+  });
+
+  it("passes a deadline bounded by the surface's own budget", async () => {
+    const res = await call({ equipmentTypeIds: [DUMBBELL] });
+    expect(res.status).toBe(200);
+
+    const deps = selectSubstitutesMock.mock.calls[0][1];
+    expect(deps.timeoutMs).toBeLessThanOrEqual(REMAP_TIMEOUT_MS);
+    // Derived from the route budget, so it can never BE the route budget.
+    expect(deps.timeoutMs).toBeLessThan(ROUTE_TIMEOUT_MS);
+  });
+
+  it("SHRINKS the deadline when the preamble has eaten the budget", async () => {
+    // The failure this guards: a cold start with a fresh pooler connection makes
+    // the preamble cost far more than the 3 s the arithmetic assumes, and a
+    // full-length attempt on top of that overruns the 29 s Lambda — a silent
+    // kill with no 503, no usage row and no log line.
+    //
+    // First `Date.now()` in the handler is `startedAt`; the deadline is computed
+    // from a later read. Advancing 10 s between them simulates a slow preamble
+    // without making the test slow — and stays above the fail-fast floor, which
+    // the next test covers separately.
+    const realNow = Date.now;
+    let reads = 0;
+    Date.now = () => {
+      reads += 1;
+      return reads === 1 ? 1_000_000 : 1_000_000 + 10_000;
+    };
+    try {
+      await call({ equipmentTypeIds: [DUMBBELL] });
+    } finally {
+      Date.now = realNow;
+    }
+
+    const deps = selectSubstitutesMock.mock.calls[0][1];
+    expect(deps.timeoutMs).toBeLessThan(REMAP_TIMEOUT_MS);
+  });
+
+  it("503s WITHOUT billing a daily adaptation when the preamble ate the budget", async () => {
+    // The quota half of the guard. A request that is never sent must not consume
+    // one of the user's 30 daily adaptations — they would be paying for our slow
+    // preamble. Every other pre-model exit already sits above `reachedModel`;
+    // this is the one that could reach the model call and still not send it.
+    const realNow = Date.now;
+    let reads = 0;
+    Date.now = () => {
+      reads += 1;
+      return reads === 1 ? 1_000_000 : 1_000_000 + 28_000;
+    };
+    let res: Response;
+    try {
+      res = await call({ equipmentTypeIds: [DUMBBELL] });
+    } finally {
+      Date.now = realNow;
+    }
+
+    expect(res.status).toBe(503);
+    expect(selectSubstitutesMock).not.toHaveBeenCalled();
+    expect(usageLogRecordMock).not.toHaveBeenCalled();
   });
 });

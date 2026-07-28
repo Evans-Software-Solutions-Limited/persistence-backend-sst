@@ -286,22 +286,53 @@ export async function createWithRetry(
  * converts a slow request into a failed one *and* doubles the $0.0272 unit cost.
  * A single long attempt spends the same wall-clock on actually finishing.
  *
+ * ## ⚠ It DOES retry a throttle, inside the same deadline
+ *
+ * "Single attempt" is about not paying for a second full-length GENERATION, not
+ * about refusing to resend a request the provider never started.
+ *
+ * This distinction was missing and it mattered: `getDefaultClient` now sets
+ * `maxRetries: 0` (the SDK's hidden retries were tripling every timeout budget),
+ * and the SDK's retry policy covered 408/409/429. `createWithRetry` inherited
+ * that via `isRetryable`; this function did not, because it never consulted it.
+ * The result would have been a NET REGRESSION on exactly the two surfaces the
+ * change was meant to fix — a routine Bedrock `ThrottlingException` on a
+ * cross-region on-demand profile going from "retried with backoff, usually fine"
+ * to an immediate 503 that also burns one of the caller's daily allowances.
+ *
+ * A throttle fails in milliseconds, so the resend costs nothing measurable. It
+ * is bounded three ways: only for retryable statuses, only if the first failure
+ * came back inside HALF the budget (a slow failure means generation was actually
+ * happening, and resending would blow the deadline), and the retry inherits only
+ * the time that is LEFT. The caller's deadline is never exceeded.
+ *
  * ## Failure mapping
  *
- * Any failure is `AiUnavailableError` → 503. There is no retryable/non-retryable
- * split to make: with no second attempt, the distinction changes nothing about
- * what the caller can do.
+ * Any surviving failure is `AiUnavailableError` → 503.
  */
 export async function createSingleAttempt(
   client: MinimalBedrockClient,
   params: MessagesCreateParams,
   timeoutMs: number,
+  now: () => number = Date.now,
 ): Promise<MessagesCreateResponse> {
+  const startedAt = now();
   try {
     // Passed per-request rather than relying on the client default, which
     // `getDefaultClient()` fixes at CLIENT_TIMEOUT_MS for the retrying callers.
     return await client.messages.create(params, { timeout: timeoutMs });
   } catch (error) {
+    const elapsed = now() - startedAt;
+    const remaining = timeoutMs - elapsed;
+    if (isRetryable(error) && elapsed < timeoutMs / 2 && remaining > 0) {
+      try {
+        return await client.messages.create(params, { timeout: remaining });
+      } catch (retryError) {
+        throw new AiUnavailableError(
+          `ai_single_attempt_failed_after_retry: ${describeError(retryError)}`,
+        );
+      }
+    }
     throw new AiUnavailableError(
       `ai_single_attempt_failed: ${describeError(error)}`,
     );

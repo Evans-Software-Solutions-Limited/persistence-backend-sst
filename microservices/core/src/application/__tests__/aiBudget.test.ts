@@ -7,7 +7,13 @@ import {
   ROUTE_TIMEOUT_MS,
 } from "../nutrition/services/aiBedrockClient";
 import { REMAP_TIMEOUT_MS, remapMaxTokens } from "../loadout/engine/remapModel";
-import { EQUIPMENT_SCAN_TIMEOUT_MS } from "../loadout/scan/equipmentScanModel";
+import {
+  EQUIPMENT_SCAN_MAX_TOKENS,
+  EQUIPMENT_SCAN_TIMEOUT_MS,
+} from "../loadout/scan/equipmentScanModel";
+import { RECIPE_MAX_TOKENS } from "../nutrition/services/recipeExtraction";
+import { MAX_TOKENS as ESTIMATE_MAX_TOKENS } from "../nutrition/services/aiEstimation";
+import { COACH_SUMMARY_MAX_TOKENS } from "../trainers/services/clientSummaryAi";
 
 /**
  * The cross-cutting budget invariants for every model-backed route.
@@ -38,8 +44,16 @@ describe("AI budgets — the route timeout", () => {
       join(__dirname, "../../../../../infra/api.ts"),
       "utf8",
     );
-    const seconds = Math.round(ROUTE_TIMEOUT_MS / 1000);
-    expect(infra).toContain(`timeout: "${seconds} seconds"`);
+    // ⚠ Anchored to the coreAPI block and CAPTURING the number, not a bare
+    // `toContain`. The first version searched the whole file for
+    // `timeout: "29 seconds"`, which also contains three `"120 seconds"` and two
+    // `"300 seconds"` entries — so raising the mirror to 120_000 PASSED, and
+    // every budget assertion below it went vacuous at the same moment. A guard
+    // that only fails in one direction is half a guard.
+    const coreApi = infra.slice(0, infra.indexOf("Bedrock IAM auth"));
+    const match = /timeout: "(\d+) seconds"/.exec(coreApi);
+    expect(match).not.toBeNull();
+    expect(Number(match?.[1]) * 1000).toBe(ROUTE_TIMEOUT_MS);
   });
 });
 
@@ -73,28 +87,51 @@ describe("AI budgets — max_tokens is a wall-clock commitment", () => {
   });
 
   it("documents the surfaces still over budget rather than pretending otherwise", () => {
-    // ⚠ NOT a pass. These two are knowingly left mismatched, and the assertion
-    // is written so that FIXING one fails this test and forces the number below
-    // to be updated — the opposite of a TODO nobody revisits.
+    // ⚠ NOT a pass — an inventory. Each entry binds to the REAL exported
+    // constant, so fixing any one of them fails this test and forces the list to
+    // be updated.
     //
-    // - equipment scan: 4096 tokens @ 20 s. Output is catalogue-bounded (~28
-    //   rows ≈ 1,100 tokens) so the ceiling is unreachable headroom rather than
-    //   a live hazard — but it runs OPUS, whose rate is unmeasured, and at a
-    //   plausible ~50 tok/s a 20 s attempt receives less than a busy
-    //   commercial-gym photo legitimately produces. Measure before Phase 3.
-    // - recipe extraction: 2500 tokens @ 12 s (~900 receivable).
+    // The first version hardcoded `{ maxTokens: 4096, attemptMs: 20_000 }` as
+    // literals while its comment claimed exactly this property. Changing the
+    // scan's real ceiling to 1500 left it green. That is the TODO nobody
+    // revisits, wearing a comment that says it isn't — worse than no test, since
+    // the next reader trusts it.
     //
-    // Both are strictly better after this change than before it: at
-    // `maxRetries: 2` they were 6 × 12 s = 72 s and a silent Lambda kill; they
-    // now fail cleanly inside the route budget.
+    // Rates: Haiku ~122 tok/s, Opus ~45 tok/s, both measured 2026-07-28.
+    // `maxTokensForBudget` defaults to the (conservative) Haiku figure, so for
+    // the Opus surfaces the real receivable count is well below what it returns.
     const KNOWN_OVER_BUDGET = [
-      { surface: "equipment scan", maxTokens: 4096, attemptMs: 20_000 },
-      { surface: "recipe extraction", maxTokens: 2500, attemptMs: 12_000 },
+      {
+        surface: "equipment scan (Opus)",
+        maxTokens: EQUIPMENT_SCAN_MAX_TOKENS,
+        attemptMs: EQUIPMENT_SCAN_TIMEOUT_MS,
+      },
+      {
+        surface: "recipe extraction (Opus)",
+        maxTokens: RECIPE_MAX_TOKENS,
+        attemptMs: CLIENT_TIMEOUT_MS,
+      },
+      {
+        // ⚠ Was missing from the first version of this list, which claimed to
+        // document "the surfaces still over budget". An inventory that asserts
+        // completeness and isn't is how the next one gets missed.
+        surface: "nutrition estimate (Opus)",
+        maxTokens: ESTIMATE_MAX_TOKENS,
+        attemptMs: CLIENT_TIMEOUT_MS,
+      },
     ];
     for (const entry of KNOWN_OVER_BUDGET) {
       expect(entry.maxTokens).toBeGreaterThan(
         maxTokensForBudget(entry.attemptMs),
       );
     }
+  });
+
+  it("keeps the ONLY surface that fits actually fitting", () => {
+    // The counterweight to the inventory above: without a positive case, the
+    // list could grow to cover everything and still look like discipline.
+    expect(COACH_SUMMARY_MAX_TOKENS).toBeLessThanOrEqual(
+      maxTokensForBudget(CLIENT_TIMEOUT_MS),
+    );
   });
 });

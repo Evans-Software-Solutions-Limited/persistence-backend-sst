@@ -25,6 +25,12 @@ const SUMMARY_MODEL_ID =
 // fit under it with headroom: 2 × 12s + overhead < 30s (mirrors aiEstimation).
 const CLIENT_TIMEOUT_MS = 12_000;
 const MAX_TOKENS = 700;
+/**
+ * Re-exported under an unambiguous name so `aiBudget.test.ts` can assert this
+ * surface FITS its attempt — the positive case that stops the over-budget
+ * inventory from quietly growing to cover everything.
+ */
+export const COACH_SUMMARY_MAX_TOKENS = MAX_TOKENS;
 const TOOL_NAME = "report_summary";
 
 /** Structured inputs = Client Detail modules a–f + this-week rollup. */

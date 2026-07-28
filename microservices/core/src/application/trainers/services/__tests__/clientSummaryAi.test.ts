@@ -165,3 +165,39 @@ describe("getDefaultClient — the SDK's own retries", () => {
     expect(client.maxRetries).toBe(0);
   });
 });
+
+describe("clientSummaryAi — retry policy", () => {
+  it("RETRIES a Bedrock throttle", async () => {
+    // ⚠ This module keeps its own copy of `isRetryable`, and the 408/409/429
+    // line added alongside `maxRetries: 0` had no test — deleting it left all
+    // 11 tests green. Given the docstring explicitly warns that the two copies
+    // drift apart, the untested one is the one that will.
+    //
+    // 429 is `< 500`, so before that line a routine Bedrock ThrottlingException
+    // failed on the first attempt with the SDK's own retries switched off.
+    const create = vi
+      .fn()
+      .mockRejectedValueOnce(
+        Object.assign(new Error("throttled"), { status: 429 }),
+      )
+      .mockResolvedValueOnce(toolResponse("ok"));
+
+    const out = await generateClientSummary(INPUT, {
+      client: fakeClient(create as any),
+    });
+
+    expect(out).toBe("ok");
+    expect(create).toHaveBeenCalledTimes(2);
+  });
+
+  it("does NOT retry a client error", async () => {
+    const create = vi
+      .fn()
+      .mockRejectedValue(Object.assign(new Error("bad"), { status: 400 }));
+
+    await expect(
+      generateClientSummary(INPUT, { client: fakeClient(create as any) }),
+    ).rejects.toBeInstanceOf(ClientSummaryUnavailableError);
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+});

@@ -6,6 +6,7 @@ import {
   DEFAULT_REMAP_MODEL_ID,
   MAX_REASON_LENGTH,
   parseRemapSelections,
+  MIN_USEFUL_GENERATION_MS,
   remapMaxTokens,
   remapModelId,
   REMAP_TIMEOUT_MS,
@@ -14,6 +15,7 @@ import {
 import {
   AiUnreadableError,
   maxTokensForBudget,
+  PREFILL_ALLOWANCE_MS,
 } from "../../../nutrition/services/aiBedrockClient";
 import type { AdaptationCandidate } from "../../../repositories/exerciseRepository";
 import type { PlanRow } from "../types";
@@ -640,5 +642,114 @@ describe("remapMaxTokens", () => {
     // `selectSubstitutes` is not called with zero swap rows today, but a formula
     // returning ~0 for one would turn a future caller into an instant 422.
     expect(remapMaxTokens(0)).toBeGreaterThan(0);
+  });
+});
+
+describe("selectSubstitutes — the remaining-budget deadline", () => {
+  // ⚠ This whole mechanism shipped with ZERO coverage in the first version of
+  // this change. Inspector Brad made `deps.timeoutMs` a no-op — reverting
+  // `createSingleAttempt(client, params, timeoutMs)` to pass the constant — and
+  // all 40 tests stayed green. The one test that read `options.timeout` never
+  // passed a `timeoutMs`, so it only ever exercised the default.
+
+  it("honours a SHORTENED deadline in both the timeout and the ceiling", async () => {
+    // Both halves matter. A shortened deadline that leaves `max_tokens` at the
+    // full-budget figure re-creates the exact mismatch this change exists to fix,
+    // on precisely the slow requests that can least afford it.
+    const capture: { params?: any; options?: any } = {};
+    await selectSubstitutes(
+      {
+        workoutName: "W",
+        plan: PLAN,
+        candidates: [candidate],
+        equipmentTypeIds: [DUMBBELL],
+        lookups,
+      },
+      { client: fakeClient(toolResponse([]), capture), timeoutMs: 9_000 },
+    );
+
+    expect(capture.options?.timeout).toBe(9_000);
+    expect(capture.params.max_tokens).toBe(remapMaxTokens(1, 9_000));
+    expect(capture.params.max_tokens).toBeLessThan(remapMaxTokens(1));
+  });
+
+  it("never lets a caller ask for MORE than the surface's own budget", async () => {
+    const capture: { params?: any; options?: any } = {};
+    await selectSubstitutes(
+      {
+        workoutName: "W",
+        plan: PLAN,
+        candidates: [candidate],
+        equipmentTypeIds: [DUMBBELL],
+        lookups,
+      },
+      { client: fakeClient(toolResponse([]), capture), timeoutMs: 120_000 },
+    );
+
+    expect(capture.options?.timeout).toBe(REMAP_TIMEOUT_MS);
+  });
+
+  it("FAILS FAST rather than sending a request that cannot succeed", async () => {
+    // The bug in the first version: the deadline was floored at
+    // `PREFILL_ALLOWANCE_MS`, and `maxTokensForBudget(PREFILL_ALLOWANCE_MS)` is
+    // exactly 0 — so it sent `max_tokens: 0`, which the provider rejects as a
+    // 400. The band just above sent 0–250 tokens and got back a truncation 422,
+    // a terminal-looking error for a transient cause.
+    const client = fakeClient(toolResponse([]));
+    await expect(
+      selectSubstitutes(
+        {
+          workoutName: "W",
+          plan: PLAN,
+          candidates: [candidate],
+          equipmentTypeIds: [DUMBBELL],
+          lookups,
+        },
+        // Exactly the old floor, which is also exactly where
+        // `maxTokensForBudget` returns 0.
+        { client, timeoutMs: PREFILL_ALLOWANCE_MS },
+      ),
+    ).rejects.toThrow(/ai_budget_exhausted/);
+
+    expect(client.messages.create).not.toHaveBeenCalled();
+  });
+
+  it("sends anything at or above the useful-generation floor", async () => {
+    // The other side of the boundary — without this the guard could reject
+    // everything and still look correct.
+    const capture: { params?: any; options?: any } = {};
+    const client = fakeClient(toolResponse([]), capture);
+    await selectSubstitutes(
+      {
+        workoutName: "W",
+        plan: PLAN,
+        candidates: [candidate],
+        equipmentTypeIds: [DUMBBELL],
+        lookups,
+      },
+      { client, timeoutMs: PREFILL_ALLOWANCE_MS + MIN_USEFUL_GENERATION_MS },
+    );
+
+    expect(client.messages.create).toHaveBeenCalledTimes(1);
+    expect(capture.params.max_tokens).toBeGreaterThan(0);
+  });
+
+  it("fails fast on a NEGATIVE budget too", async () => {
+    // Reachable whenever the preamble overruns: the handler subtracts elapsed
+    // time from the route budget and does not clamp.
+    const client = fakeClient(toolResponse([]));
+    await expect(
+      selectSubstitutes(
+        {
+          workoutName: "W",
+          plan: PLAN,
+          candidates: [candidate],
+          equipmentTypeIds: [DUMBBELL],
+          lookups,
+        },
+        { client, timeoutMs: -4_000 },
+      ),
+    ).rejects.toThrow(/ai_budget_exhausted/);
+    expect(client.messages.create).not.toHaveBeenCalled();
   });
 });
