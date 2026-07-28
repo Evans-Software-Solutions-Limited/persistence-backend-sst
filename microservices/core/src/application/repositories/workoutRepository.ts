@@ -425,37 +425,123 @@ export class WorkoutRepository {
 
   // ─── Write ───────────────────────────────────────────────────────────
 
+  /**
+   * Create a workout and its exercise rows in one transaction.
+   *
+   * `clientRequestId` makes the create REPLAY-SAFE — see the twin on
+   * `ExerciseRepository.create` for the reasoning. Critically, the idempotency
+   * check is INSIDE the transaction: a replay must not insert a second set of
+   * `workout_exercises` rows against the first attempt's workout either, which is
+   * why the short-circuit returns before the child insert.
+   */
+  /**
+   * Resolve a create that has ALREADY been committed under this idempotency key,
+   * or null if there is none.
+   *
+   * Exists so the handler can recognise a replay BEFORE it runs any gate whose
+   * answer would differ on the second attempt. The entitlement check is exactly
+   * such a gate: the first attempt's insert advances the workout-count trigger, so
+   * a user who was one workout below their limit is AT the limit by the time the
+   * replay arrives, and `assertEntitlement` denies it with a 402. The mobile drain
+   * turns that into `blocked_entitlement`, the user is shown an upgrade paywall for
+   * a workout that already exists, and — because the queue entry never reaches
+   * `completed` — `unsyncedWorkoutsIn` keeps preserving the optimistic `local-…` row
+   * alongside the committed server row on every refresh, so the workout is listed
+   * twice and the local copy 400s when opened.
+   *
+   * The key's whole promise is that "a replay is indistinguishable from the original
+   * success" (see 20260727120100_client_request_id_idempotency.sql). A gate in front
+   * of the short-circuit breaks that promise.
+   */
+  async findByClientRequestId(
+    userId: string,
+    clientRequestId: string,
+  ): Promise<WorkoutWithExercises | null> {
+    const db = getDb();
+    const [existing] = await db
+      .select()
+      .from(workouts)
+      .where(
+        and(
+          eq(workouts.createdBy, userId),
+          eq(workouts.clientRequestId, clientRequestId),
+        ),
+      )
+      .limit(1);
+    if (!existing) return null;
+    return this.fetchWorkoutWithExercises(db, existing);
+  }
+
   async createWithExercises(
     userId: string,
     input: CreateWorkoutInput,
+    clientRequestId?: string | null,
   ): Promise<WorkoutWithExercises> {
     const db = getDb();
+    const key = clientRequestId ?? null;
 
     return db.transaction(async (tx) => {
-      const [workout] = await tx
-        .insert(workouts)
-        .values({
-          name: input.name,
-          description: input.description ?? null,
-          visibility: input.visibility ?? "private",
-          estimatedDurationMinutes: input.estimatedDurationMinutes ?? 30,
-          // Absent => true (personal). Coach-authoring flow sends false.
-          showInOwnerLibrary: input.showInOwnerLibrary ?? true,
-          createdBy: userId,
-        })
-        .returning();
+      const values = {
+        name: input.name,
+        description: input.description ?? null,
+        visibility: input.visibility ?? "private",
+        estimatedDurationMinutes: input.estimatedDurationMinutes ?? 30,
+        // Absent => true (personal). Coach-authoring flow sends false.
+        showInOwnerLibrary: input.showInOwnerLibrary ?? true,
+        createdBy: userId,
+        ...(key !== null ? { clientRequestId: key } : {}),
+      };
+
+      let workout: typeof workouts.$inferSelect | undefined;
+      if (key === null) {
+        [workout] = await tx.insert(workouts).values(values).returning();
+      } else {
+        const inserted = await tx
+          .insert(workouts)
+          .values(values)
+          .onConflictDoNothing({
+            target: [workouts.createdBy, workouts.clientRequestId],
+          })
+          .returning();
+        if (inserted[0]) {
+          workout = inserted[0];
+        } else {
+          // Replay: the first attempt already committed this workout AND its
+          // exercise rows. Return it as-is — re-inserting children here is the
+          // duplicate this whole mechanism exists to prevent.
+          const existing = await tx
+            .select()
+            .from(workouts)
+            .where(
+              and(
+                eq(workouts.createdBy, userId),
+                eq(workouts.clientRequestId, key),
+              ),
+            )
+            .limit(1);
+          if (existing[0]) {
+            return this.fetchWorkoutWithExercises(tx, existing[0]);
+          }
+          // Should be unreachable while the index is scoped to created_by; fall
+          // back to a keyless insert rather than returning undefined.
+          [workout] = await tx
+            .insert(workouts)
+            .values({ ...values, clientRequestId: null })
+            .returning();
+        }
+      }
 
       if (input.exercises && input.exercises.length > 0) {
         await tx
           .insert(workoutExercises)
           .values(
             input.exercises.map((ex) =>
-              this.toWorkoutExerciseInsert(workout.id, ex),
+              this.toWorkoutExerciseInsert(workout!.id, ex),
             ),
           );
       }
 
-      return this.fetchWorkoutWithExercises(tx, workout);
+      return this.fetchWorkoutWithExercises(tx, workout!);
     });
   }
 

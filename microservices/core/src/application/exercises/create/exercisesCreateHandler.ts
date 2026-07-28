@@ -1,5 +1,7 @@
 import Elysia, { t } from "elysia";
 import { ExerciseService } from "../../repositories/exerciseService";
+import { findInvalidReferenceId } from "../shared/referenceIds";
+import { readIdempotencyKey } from "../../shared/idempotencyKey";
 import {
   getAuthUser,
   requireAuth,
@@ -40,25 +42,48 @@ export const exercisesCreateHandler = new Elysia()
         return { error: "Exercise name must be 100 characters or fewer" };
       }
 
-      const exercise = await ctx.ExerciseRepository.create(userId, {
-        name,
-        description: body.description ?? null,
-        instructions: body.instructions ?? null,
-        videoUrl: body.video_url ?? null,
-        thumbnailUrl: body.thumbnail_url ?? null,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        category: (body.category ?? "strength") as any,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        difficultyLevel: (body.difficulty_level ?? "beginner") as any,
-        regionType: body.region_type ?? null,
-        movementType: body.movement_type ?? null,
-        primaryMuscles: body.primary_muscles ?? [],
-        secondaryMuscles: body.secondary_muscles ?? [],
-        equipmentRequired: body.equipment_required ?? [],
-        accessibilityRequirements: body.accessibility_requirements ?? [],
-        accessibilityModifications: body.accessibility_modifications ?? null,
-        isPublic: body.is_public ?? false,
+      // Catalogue references must be UUIDs. Validated here rather than via
+      // `format: "uuid"` in the schema so the rejection names the offending
+      // value — see shared/referenceIds.ts for why that matters.
+      const badReference = findInvalidReferenceId({
+        primary_muscles: body.primary_muscles,
+        secondary_muscles: body.secondary_muscles,
+        equipment_required: body.equipment_required,
+        accessibility_requirements: body.accessibility_requirements,
       });
+      if (badReference !== null) {
+        ctx.set.status = 400;
+        return { error: badReference };
+      }
+
+      // Client-supplied idempotency key (mobile sync queue). Absent for legacy
+      // clients and direct-API callers, in which case the create behaves exactly
+      // as before.
+      const clientRequestId = readIdempotencyKey(ctx.headers);
+
+      const exercise = await ctx.ExerciseRepository.create(
+        userId,
+        {
+          name,
+          description: body.description ?? null,
+          instructions: body.instructions ?? null,
+          videoUrl: body.video_url ?? null,
+          thumbnailUrl: body.thumbnail_url ?? null,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          category: (body.category ?? "strength") as any,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          difficultyLevel: (body.difficulty_level ?? "beginner") as any,
+          regionType: body.region_type ?? null,
+          movementType: body.movement_type ?? null,
+          primaryMuscles: body.primary_muscles ?? [],
+          secondaryMuscles: body.secondary_muscles ?? [],
+          equipmentRequired: body.equipment_required ?? [],
+          accessibilityRequirements: body.accessibility_requirements ?? [],
+          accessibilityModifications: body.accessibility_modifications ?? null,
+          isPublic: body.is_public ?? false,
+        },
+        clientRequestId,
+      );
 
       ctx.set.status = 201;
       return { data: exercise };
@@ -91,12 +116,10 @@ export const exercisesCreateHandler = new Elysia()
         ),
         region_type: t.Optional(t.String()),
         movement_type: t.Optional(t.String()),
-        primary_muscles: t.Optional(t.Array(t.String({ format: "uuid" }))),
-        secondary_muscles: t.Optional(t.Array(t.String({ format: "uuid" }))),
-        equipment_required: t.Optional(t.Array(t.String({ format: "uuid" }))),
-        accessibility_requirements: t.Optional(
-          t.Array(t.String({ format: "uuid" })),
-        ),
+        primary_muscles: t.Optional(t.Array(t.String())),
+        secondary_muscles: t.Optional(t.Array(t.String())),
+        equipment_required: t.Optional(t.Array(t.String())),
+        accessibility_requirements: t.Optional(t.Array(t.String())),
         accessibility_modifications: t.Optional(t.String()),
         is_public: t.Optional(t.Boolean()),
       }),

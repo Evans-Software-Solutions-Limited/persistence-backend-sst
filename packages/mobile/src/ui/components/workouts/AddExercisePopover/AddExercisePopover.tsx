@@ -1,5 +1,8 @@
 import { color } from "@/ui/theme/tokens";
+import { EXERCISE_TABLES } from "@/adapters/storage";
 import { useAdapters } from "@/ui/hooks/useAdapters";
+import { useCacheRevision } from "@/ui/hooks/useCacheRevision";
+import { useExerciseLibrary } from "@/ui/hooks/useExerciseLibrary";
 import {
   getExercisesQuery,
   refreshExerciseCache,
@@ -60,10 +63,21 @@ function AddExercisePopoverContainer({
   // Cache-first read of M0's exercise library. Filtering is local to
   // the picker — cheap substring match — to keep the popover responsive
   // without a refetch per keystroke.
+  //
+  // `storageRevision` / `libraryRevision` are what make a newly-created custom
+  // exercise show up here. This popover is rendered unconditionally by
+  // WorkoutFormBody (visibility is a prop, not a conditional mount), so it stays
+  // mounted between opens and this memo would otherwise be captured once per
+  // form mount — and the popover pushes `/exercises/create` itself, so the most
+  // direct path to creating an exercise was also the one place it never appeared.
+  const storageRevision = useCacheRevision(EXERCISE_TABLES);
+  const libraryRevision = useExerciseLibrary((s) => s.revision);
   const cacheRead = useMemo(() => {
     void cacheVersion;
+    void storageRevision;
+    void libraryRevision;
     return getExercisesQuery(storage);
-  }, [storage, cacheVersion]);
+  }, [storage, cacheVersion, storageRevision, libraryRevision]);
 
   const enrichedExercises = useMemo(
     () => cacheRead.exercises.map((ex) => api.enrichExerciseLabels(ex)),

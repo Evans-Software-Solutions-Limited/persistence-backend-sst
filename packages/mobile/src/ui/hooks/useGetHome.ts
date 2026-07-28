@@ -1,4 +1,5 @@
 import { isHomeStale, type HomePayload } from "@/domain/models/progress";
+import { HOME_TABLES } from "@/adapters/storage";
 import {
   useCachedResource,
   type CachedResourceState,
@@ -17,5 +18,6 @@ export function useGetHome(): CachedResourceState<HomePayload> {
     }),
     fetcher: (api) => api.getHome(),
     write: (storage, userId, value) => storage.cacheHome(userId, value),
+    tables: HOME_TABLES,
   });
 }

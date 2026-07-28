@@ -61,6 +61,22 @@ export type CachedResourceConfig<T> = {
   ) => { value: T | null; isStale: boolean };
   fetcher: (api: ApiPort) => Promise<Result<T, ApiError>>;
   write: (storage: StoragePort, userId: string, value: T) => void;
+  /**
+   * Local tables this resource reads from. When supplied, a write to any of them
+   * triggers an automatic cache re-read (see the `storage.subscribe` effect
+   * below) so an optimistic offline mutation surfaces without the caller having
+   * to remember a `reload()`. Omit to keep the previous behaviour.
+   *
+   * ⚠ List ONLY tables `read` actually consults. A table here whose row is deleted
+   * is interpreted as an invalidation and triggers a silent NETWORK refresh (see
+   * the effect below), so an over-broad list converts unrelated local
+   * invalidations into round trips — `HOME_TABLES` carried `cached_dashboard` this
+   * way and made a per-set `invalidateDashboard()` fetch Home mid-workout.
+   *
+   * Pass a module-level constant (e.g. `RECIPE_TABLES`) rather than building the
+   * array inline per render.
+   */
+  tables?: readonly string[];
 };
 
 export type CachedResourceState<T> = {
@@ -183,6 +199,52 @@ export function useCachedResource<T>(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storage, userId]);
 
+  // Local-write reactivity. When the caller declares which tables back this
+  // resource, a write to any of them re-reads the cache automatically — the same
+  // thing `reload()` does, minus the requirement that every writer remember to
+  // call it. That requirement is what made offline-created rows invisible: a
+  // recipe written by `useCreateRecipe` landed in `cached_recipes`, but
+  // `RecipesLibraryContainer` had no focus re-read and no `reload()`, and this
+  // hook's mount auto-refresh is one-shot per userId — so the row stayed hidden
+  // until a manual pull-to-refresh.
+  //
+  // `tables` is captured on mount (a resource's backing tables are fixed), so a
+  // caller may pass an inline literal without resubscribing every render.
+  //
+  // ⚠ This does NOT simply call `reload()`. Several of these tables are
+  // invalidated by DELETING the row (`invalidateHome`, `invalidateDashboard`,
+  // `invalidateGoals`), which is a write, so the bus fires and a plain `reload()`
+  // would read `null` and push it into state. On Home that means
+  // `data === null` → `isLoading` true → the whole screen becomes a spinner, with
+  // nothing to clear it (the mount auto-refresh is one-shot per userId). Tapping
+  // "Weigh in" would blank Home until the user left the tab; offline it would
+  // never recover.
+  //
+  // An invalidation means "this is stale, go and refetch" — NOT "there is no
+  // data". So: adopt a real value, but treat a vanished row as staleness over the
+  // data already on screen and kick a silent refresh to actually replace it.
+  // `reload()` itself keeps its existing null-adopting semantics for its explicit
+  // callers, which pass through this path deliberately unchanged.
+  const tablesRef = useRef(config.tables);
+  useEffect(() => {
+    const tables = tablesRef.current;
+    if (!tables || tables.length === 0) return;
+    if (!userId) return;
+    return storage.subscribe(tables, () => {
+      const r = read(storage, userId);
+      if (r.value !== null) {
+        setData(r.value);
+        setIsStale(r.isStale);
+        return;
+      }
+      // Row gone. Keep what is rendered, mark it stale, and refetch.
+      setIsStale(true);
+      void refresh({ silent: true });
+    });
+    // `read` is a stable caller closure (same convention as `refresh`/`reload`).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storage, userId, refresh]);
+
   const autoRefreshedRef = useRef<string | null>(null);
   const initialIsStale = initial.isStale;
   const initialHasNoCache = initial.value == null;
@@ -245,7 +307,6 @@ export function useCachedResource<T>(
       cancelled = true;
     };
     // attemptFetch is stable per (api/auth/storage/userId); initial* gate entry.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, initialIsStale, initialHasNoCache, attemptFetch]);
 
   return { data, isStale, isRefreshing, error, refresh, reload };

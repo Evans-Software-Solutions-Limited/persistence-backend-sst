@@ -19,6 +19,7 @@ import { useProfilePage } from "../src/ui/hooks/useProfilePage";
 import { usePendingInvite } from "../src/state/pending-invite";
 import { usePasswordRecovery } from "../src/state/password-recovery";
 import { useNotificationPermissions } from "../src/ui/hooks/useNotificationPermissions";
+import { useReferenceListBootstrap } from "@/ui/hooks/useReferenceListBootstrap";
 import { usePurchasesIdentity } from "../src/ui/hooks/usePurchasesIdentity";
 import { usePushNotifications } from "../src/ui/hooks/usePushNotifications";
 import { useUserModeEligibility } from "../src/ui/hooks/useUserModeEligibility";
@@ -132,6 +133,16 @@ function ActiveWorkoutBootstrap() {
  */
 function PurchasesIdentityBootstrap() {
   usePurchasesIdentity();
+  return null;
+}
+
+/**
+ * Warms the muscle-group + equipment reference catalogue once per session, so the
+ * exercise write path no longer depends on a read screen having been visited
+ * first. Sibling to the other bootstraps; self-gates on a resolved userId.
+ */
+function ReferenceListBootstrap() {
+  useReferenceListBootstrap();
   return null;
 }
 
@@ -305,6 +316,7 @@ function RootLayout() {
             <UserModeBootstrap />
             <ActiveWorkoutBootstrap />
             <PurchasesIdentityBootstrap />
+            <ReferenceListBootstrap />
             <AuthGate />
           </AppProviders>
         </StripeProvider>

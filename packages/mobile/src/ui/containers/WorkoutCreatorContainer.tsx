@@ -5,6 +5,7 @@ import { createWorkoutCommand } from "@/application/commands/create-workout.comm
 import type { CreateWorkoutInput } from "@/domain/models/workout";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useAuth } from "@/ui/hooks/useAuth";
+import { useWorkoutLibrary } from "@/ui/hooks/useWorkoutLibrary";
 import {
   EMPTY_FORM_STATE,
   useWorkoutForm,
@@ -35,6 +36,9 @@ import { WorkoutCreatorPresenter } from "@/ui/presenters/WorkoutCreatorPresenter
 export function WorkoutCreatorContainer() {
   const { api, storage } = useAdapters();
   const { session } = useAuth();
+  // Signal every mounted workout consumer (Home carousel + Train list hold
+  // independent snapshots) that the library changed. See useWorkoutLibrary.
+  const markWorkoutsChanged = useWorkoutLibrary((s) => s.markChanged);
   const userId = session?.userId ?? null;
 
   const params = useLocalSearchParams<{
@@ -111,6 +115,26 @@ export function WorkoutCreatorContainer() {
             setSubmitError(created.error.message ?? "Failed to create workout");
             return;
           }
+          // This path is online-only and writes NOTHING to the local cache, so
+          // the coach's own library had no way to learn about the workout until
+          // its next successful network GET. Cache the server row (it already
+          // carries a real id) and signal the library, so it appears the moment
+          // the coach lands back on the list.
+          //
+          // Both writes are needed. The detail row warms `useWorkout(id)`, but
+          // `CoachWorkoutLibraryContainer` reads `cached_coach_workout_library`
+          // and `getWorkoutsQuery` reads the `cached_workouts` slices — so
+          // caching detail alone left `markWorkoutsChanged()` re-reading a slice
+          // nobody had written, and the workout still waited on the network GET
+          // that this write exists to pre-empt.
+          storage.cacheWorkoutDetail(userId, created.value);
+          storage.cacheCoachWorkoutLibrary(userId, [
+            created.value,
+            ...(storage.getCachedCoachWorkoutLibrary(userId) ?? []).filter(
+              (w) => w.id !== created.value.id,
+            ),
+          ]);
+          markWorkoutsChanged();
           const assigned = await api.assignWorkout(assignClientId, {
             workoutId: created.value.id,
           });
@@ -146,11 +170,20 @@ export function WorkoutCreatorContainer() {
         setSubmitError(firstFieldMessage);
         return;
       }
+      markWorkoutsChanged();
       router.back();
     } finally {
       setIsSubmitting(false);
     }
-  }, [api, storage, userId, generateId, assignClientId, form.state]);
+  }, [
+    api,
+    storage,
+    userId,
+    generateId,
+    assignClientId,
+    form.state,
+    markWorkoutsChanged,
+  ]);
 
   const onCancel = useCallback(() => {
     if (!form.isDirty) {

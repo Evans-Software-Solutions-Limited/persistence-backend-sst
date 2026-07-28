@@ -1,4 +1,5 @@
 import type { Meal } from "@/domain/models/nutrition";
+import { MEAL_TABLES } from "@/adapters/storage";
 import {
   useCachedResource,
   type CachedResourceState,
@@ -13,5 +14,6 @@ export function useGetMeals(): CachedResourceState<Meal[]> {
     }),
     fetcher: (api) => api.getMeals(),
     write: (storage, userId, value) => storage.cacheMeals(userId, value),
+    tables: MEAL_TABLES,
   });
 }

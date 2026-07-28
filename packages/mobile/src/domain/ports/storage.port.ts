@@ -104,6 +104,45 @@ export interface StoragePort {
    */
   backendChanged(): boolean;
 
+  /**
+   * Subscribe to local-write notifications for a set of tables.
+   *
+   * This is the reactivity primitive the offline-first read path was missing.
+   * Every cached read in the app is a one-shot synchronous snapshot captured in
+   * a `useMemo`; before this existed, a local write was invisible to any
+   * already-mounted consumer unless that consumer happened to have a
+   * hand-placed `rereadCache()` / revision bump wired to it. That is why an
+   * offline-created workout, exercise or recipe did not appear until the user
+   * pulled to refresh — the read ran, it just ran against a snapshot taken
+   * before the write, and nothing told it to run again.
+   *
+   * Backed by SQLite's own `sqlite3_update_hook` via expo-sqlite's
+   * `addDatabaseChangeListener`, so it fires for EVERY write to the database
+   * regardless of which code path made it — including the `swapLocal*Id`
+   * reconciliation the sync drain performs, which previously re-keyed cached
+   * rows with no way to tell the UI.
+   *
+   * Contract:
+   * - `tables` is matched exactly (SQLite reports the bare table name). An
+   *   empty array subscribes to nothing and is a no-op.
+   * - The callback receives the set of tables that changed since the last
+   *   delivery. It is invoked at most once per debounce window per subscriber,
+   *   NOT once per changed row: the update hook fires per rowId, so a
+   *   2000-row `cacheExercises` transaction would otherwise deliver 2000
+   *   notifications. Callers get one.
+   * - Delivery is asynchronous (always a later tick), so a subscriber can
+   *   safely call back into storage without re-entering an in-progress write.
+   * - Returns an unsubscribe function. Calling it twice is safe.
+   *
+   * Implementations that cannot observe writes (the in-memory test double
+   * drives this explicitly) must still honour the subscribe/unsubscribe
+   * contract.
+   */
+  subscribe(
+    tables: readonly string[],
+    onChange: (changed: ReadonlySet<string>) => void,
+  ): () => void;
+
   // -- Sync Queue --
   enqueueMutation(entry: EnqueueMutationInput): void;
   getPendingMutations(): SyncQueueEntry[];
@@ -155,6 +194,98 @@ export interface StoragePort {
    * stored wire-format stays consistent.
    */
   updateMutationPayload(id: number, payload: unknown): void;
+  /**
+   * Every not-yet-`completed` queue entry for one entity, oldest first.
+   *
+   * Distinct from `getPendingMutations()`, which filters to
+   * `pending`/`failed` under the retry budget — and therefore CANNOT answer the
+   * two questions that matter when a user acts on a row that hasn't synced:
+   *
+   *   1. "Is this row still only local?" A create sitting in `permanently_failed`
+   *      or `in_flight` is invisible to `getPendingMutations`, so a delete would
+   *      conclude the row exists server-side and issue
+   *      `DELETE /exercises/local-…` → 400 "Invalid identifier format".
+   *   2. "Is there an entry I should fold this edit into?" The coalescing path in
+   *      `update-exercise.command` used `getPendingMutations()` and so missed a
+   *      `permanently_failed` create, enqueueing `PATCH /exercises/local-…`
+   *      instead — one more dead entry per edit.
+   *
+   * Includes `blocked_entitlement` and `permanently_failed` deliberately: both
+   * mean "the server has not accepted this yet", which is exactly what a caller
+   * asking this question needs to know.
+   */
+  getQueuedEntriesForEntity(
+    entityType: string,
+    entityId: string,
+  ): SyncQueueEntry[];
+  /**
+   * Return `in_flight` entries to `pending`. Call ONCE at app start, before the
+   * first drain.
+   *
+   * `in_flight` was a one-way door: no query moved it back, and nothing swept it
+   * at launch — so an app killed, OOM'd or force-quit mid-POST stranded that
+   * mutation forever. It was invisible to every future drain AND to the
+   * `/sync-failed` review UI, while `getSyncStats().inFlight` kept counting it,
+   * which is how the UI could sit on "Syncing…" permanently. A force-quit during
+   * `POST /sessions/record` silently lost the workout.
+   *
+   * Safe at startup precisely because it runs at startup: no drain can hold a
+   * claim in a process that has only just begun. The ambiguity it creates — the
+   * request may have reached the server — is what `idempotencyKey` covers.
+   *
+   * Returns the number of rows recovered, so a non-zero count can be logged as
+   * evidence the app previously died mid-sync.
+   */
+  recoverInFlightMutations(): number;
+  /**
+   * Record that a request for this entry is about to be sent. Increments
+   * `dispatchCount` and nothing else. Called by the drain immediately before
+   * `fetch` — not at claim time, because a claimed entry can still be deferred
+   * without being sent, and treating that as "dispatched" would needlessly
+   * disable coalescing while the reference catalogue loads.
+   */
+  markMutationDispatched(id: number): void;
+  /**
+   * Re-read one queue row by id, or `null` if it no longer exists.
+   *
+   * The drain snapshots its work list once (`getPendingMutations`), so an entry's
+   * stored payload can be REWRITTEN after that snapshot and before the entry is
+   * sent — which is exactly what `swapLocal*Id` does when an earlier entry in the
+   * same batch flushes and reconciles a dependency's `local-…` id. Sending the
+   * snapshot would put a local id on the wire and earn a guaranteed 4xx, resolved
+   * only on a later drain. Re-reading immediately before dispatch closes that
+   * window, so a batch of create + dependent-write converges in ONE pass.
+   */
+  getMutationById(id: number): SyncQueueEntry | null;
+  /**
+   * Postpone an entry WITHOUT consuming its retry budget.
+   *
+   * The distinction that matters: `markMutationFailed` means "the server rejected
+   * this attempt", and burning a retry is right. This means "we did not get an
+   * answer, or we knowingly declined to send" — no attempt was made, so charging
+   * the budget is wrong.
+   *
+   * Two cases need it, and both previously stranded real user data:
+   * - **Offline / transport failure.** The drain fires on mount, on every
+   *   foreground transition, on reconnect, from a dozen inline call sites and now
+   *   on enqueue — none of which consult connectivity. With a 5s→20s backoff, an
+   *   offline stretch of ~25 seconds while the user carries on using the app is
+   *   enough to exhaust an entry, after which it is invisible to every future
+   *   drain and only `/sessions/record` entries are auto-resurrected on reconnect.
+   * - **A missing reference catalogue.** The drain declines to send an exercise
+   *   whose muscle/equipment enums cannot be resolved yet; the resolution's own
+   *   docstring calls that "not a transient condition", so it must not consume a
+   *   transient budget.
+   *
+   * Sets `failed` + `error_message` + `next_attempt_at` (so it still backs off and
+   * still shows in the sync UI) and leaves `retry_count` untouched.
+   */
+  markMutationDeferred(
+    id: number,
+    reason: string,
+    kind: DeferKind,
+    retryAfterSeconds?: number,
+  ): void;
   /**
    * M10.6: flip a queue entry to `blocked_entitlement` and persist the
    * server's verdict on the row. The sync worker calls this in response
@@ -975,7 +1106,96 @@ export type SyncQueueEntry = {
    * the camelCase object.
    */
   entitlementVerdict: EntitlementVerdict | null;
+  /**
+   * Client-generated key identifying this logical mutation, stamped once at
+   * enqueue and never rewritten. Sent as the `Idempotency-Key` header so a
+   * retry after an AMBIGUOUS failure (a timeout or connection reset that
+   * happened after the server committed) is recognised as the same request
+   * rather than creating a second row.
+   *
+   * `null` only for rows enqueued before the column existed; the drain omits
+   * the header in that case, preserving exactly the old behaviour.
+   */
+  idempotencyKey: string | null;
+  /**
+   * Earliest time this entry may be attempted again (SQLite `datetime` string),
+   * or `null` for "now". Set by `markMutationFailed` to implement backoff.
+   * Cleared by `resetFailedEntries` so an explicit user Retry is immediate.
+   *
+   * ⚠ Deliberately NOT filtered out by `getPendingMutations`. That method answers
+   * "which entries are still RETRYABLE" — which is what the sync-status UI and
+   * the coalescing paths need — whereas backoff is about "not YET". Conflating
+   * the two would make a just-failed entry look like it had left the queue.
+   * The drain applies dueness itself (see `isMutationDue` in sync.command).
+   */
+  nextAttemptAt: string | null;
+  /**
+   * How many times this entry has been POSTPONED without an attempt being charged
+   * — see `markMutationDeferred`. Distinct from `retryCount`, which counts
+   * attempts the server actually answered.
+   *
+   * The drain reads it to enforce a CEILING on budget-free postponement
+   * (`MAX_TRANSPORT_DEFERRALS`). Without one, an entry addressing a permanently
+   * unreachable endpoint retried forever while being invisible to every sync
+   * surface: `getFailedExhaustedEntries` — the sole source for both the
+   * sync-failed banner and the review screen — gates on
+   * `retryCount >= maxRetries`, which deferral never advances. Past the ceiling
+   * the drain charges the budget again so the entry exhausts, surfaces, and
+   * becomes user-retryable. Reset to 0 by `resetFailedEntries`.
+   *
+   * `0` for rows enqueued before the column existed.
+   */
+  deferCount: number;
+  /**
+   * How many times a request for this entry has actually been DISPATCHED
+   * (incremented immediately before `fetch`). Never reset by any path — which is
+   * exactly what distinguishes it from `retryCount` and `deferCount`, both of
+   * which `resetFailedEntries` deliberately zeroes.
+   *
+   * It answers one question: could the server already have seen this mutation?
+   * `> 0` means yes-or-unknown; `0` means it has provably never left the device.
+   * That fact must survive a user Retry, because a Retry does not un-send what
+   * was already sent.
+   *
+   * The coalescing paths depend on it. Folding an edit into a queued create
+   * REUSES the create's `idempotencyKey` with a different body, so if the first
+   * POST committed and only its response was lost, the replay hits
+   * `ON CONFLICT DO NOTHING`, the server returns the ORIGINAL row, and the user's
+   * edit is discarded with no error anywhere.
+   *
+   * `0` for rows enqueued before the column existed. That is the permissive
+   * value, but those rows predate the idempotency key too (`idempotencyKey` is
+   * null), so no key can be replayed for them and the hazard doesn't apply.
+   */
+  dispatchCount: number;
+  /**
+   * WHY the last deferral happened, or `null` if this entry has never been
+   * deferred. See `DeferKind` — only `"transport"` deferrals are informed by
+   * regaining connectivity, which is what the reconnect self-heal keys off.
+   */
+  deferKind: DeferKind | null;
 };
+
+/**
+ * Why a queue entry was postponed without charging its retry budget.
+ *
+ * - `"transport"` — no answer was received (offline, a dropped connection). A
+ *   reconnect IS new information about this, so the reconnect self-heal re-arms the
+ *   entry's budget-free run.
+ * - `"resolution"` — we declined to send because a value in the payload has no
+ *   catalogue entry AT ALL (`unresolvable`). Note a MISSING catalogue
+ *   (`catalogue_unavailable`) is filed as `"transport"` instead: that list arrives
+ *   over the network, so connectivity does change its verdict. Only a member absent
+ *   from a catalogue we already hold belongs here.
+ *
+ *   Connectivity has no bearing on it, so a reconnect must NOT re-arm it:
+ *   doing so pinned `deferCount` at zero on every reconnect, so an exercise naming a
+ *   catalogue entry that does not yet exist could never reach
+ *   `MAX_TRANSPORT_DEFERRALS`, never surfaced in /sync-failed, was never sent, and
+ *   was lost on reinstall. There is a real population for that: the `machine` →
+ *   "Machine" mapping depends on a migration applied by hand to production.
+ */
+export type DeferKind = "transport" | "resolution";
 
 export type SyncStats = {
   pending: number;

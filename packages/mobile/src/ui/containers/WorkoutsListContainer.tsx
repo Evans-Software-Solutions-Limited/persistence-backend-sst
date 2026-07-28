@@ -12,6 +12,7 @@ import {
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useAuth } from "@/ui/hooks/useAuth";
 import { useWorkouts } from "@/ui/hooks/useWorkouts";
+import { useWorkoutLibrary } from "@/ui/hooks/useWorkoutLibrary";
 import { WorkoutsListPresenter } from "@/ui/presenters/WorkoutsListPresenter";
 
 /**
@@ -29,6 +30,7 @@ export function WorkoutsListContainer() {
   const userId = session?.userId ?? null;
 
   const workouts = useWorkouts();
+  const markWorkoutsChanged = useWorkoutLibrary((s) => s.markChanged);
 
   const scrollRef = useRef<ScrollView>(null);
   useScrollToTopOnTabPress(scrollRef);
@@ -128,13 +130,14 @@ export function WorkoutsListContainer() {
                 { storage, userId: userId as string },
                 workout.id,
               );
+              markWorkoutsChanged();
               rereadCache();
             },
           },
         ],
       );
     },
-    [storage, userId, rereadCache],
+    [storage, userId, rereadCache, markWorkoutsChanged],
   );
 
   // Owner long-press → Edit / Delete context menu (AC 1.6). The presenter

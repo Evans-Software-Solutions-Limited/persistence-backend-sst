@@ -120,6 +120,20 @@ export function createWorkoutCommand(
       [workout, ...(existingMine?.workouts ?? [])],
       existingMine?.quota ?? null,
     );
+  } else {
+    // ...but it has to land SOMEWHERE. Skipping the `mine` slice was correct;
+    // writing nothing at all was not. A coach-authored workout
+    // (`?ctx=coach` → showInOwnerLibrary false) was excluded from `mine` by
+    // this branch AND never written to the coach library slice, whose only
+    // writer is the network path — so offline it was invisible in both lists
+    // and looked like the save had failed. Prepend it to the coach library.
+    const existingLibrary = deps.storage.getCachedCoachWorkoutLibrary(
+      deps.userId,
+    );
+    deps.storage.cacheCoachWorkoutLibrary(deps.userId, [
+      workout,
+      ...(existingLibrary ?? []),
+    ]);
   }
 
   deps.storage.enqueueMutation({
@@ -136,6 +150,15 @@ export function createWorkoutCommand(
   // and picks up the new row instead of showing the pre-create
   // snapshot until the dashboard's own 5-minute TTL elapses.
   deps.storage.invalidateDashboard(deps.userId);
+  // ⚠ Deliberately NOT `invalidateHome`. This branch briefly added it here, on the
+  // reasoning that Home reads `cached_home` rather than `cached_dashboard` — but no
+  // `HomePayload` field reflects a user-authored workout (rings, micro pills, weekly
+  // volume, recent PRs, habits, today's workout, programme), and Home's carousel
+  // comes from `useWorkouts()`/`cached_workouts`, not from this payload. So the call
+  // bought nothing and cost real behaviour: `invalidateHome` DELETES the row, and
+  // after a cold start still offline there is no cached Home to fall back on — no
+  // rings, no PRs, no today's training, where a snapshot had been. Reachable by
+  // create-a-workout-offline → app killed → reopen offline.
 
   return ok(workout);
 }

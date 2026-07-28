@@ -19,7 +19,10 @@
  */
 
 import { color } from "@/ui/theme/tokens";
+import { EXERCISE_TABLES } from "@/adapters/storage";
 import { useAdapters } from "@/ui/hooks/useAdapters";
+import { useCacheRevision } from "@/ui/hooks/useCacheRevision";
+import { useExerciseLibrary } from "@/ui/hooks/useExerciseLibrary";
 import {
   getExercisesQuery,
   refreshExerciseCache,
@@ -78,11 +81,18 @@ function AddExerciseToSupersetPopoverContainer({
   const [selectedExercise, setSelectedExercise] = useState<any>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [cacheVersion, setCacheVersion] = useState(0);
+  // See AddExercisePopover: this popover is permanently mounted (visibility is a
+  // prop), so without a write-driven signal its cache read is captured once and
+  // never re-runs — an exercise created or deleted elsewhere stays wrong here.
+  const storageRevision = useCacheRevision(EXERCISE_TABLES);
+  const libraryRevision = useExerciseLibrary((s) => s.revision);
 
   const cacheRead = useMemo(() => {
     void cacheVersion;
+    void storageRevision;
+    void libraryRevision;
     return getExercisesQuery(storage);
-  }, [storage, cacheVersion]);
+  }, [storage, cacheVersion, storageRevision, libraryRevision]);
 
   const enrichedExercises = useMemo(
     () => cacheRead.exercises.map((ex) => api.enrichExerciseLabels(ex)),

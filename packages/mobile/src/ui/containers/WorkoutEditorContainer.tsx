@@ -9,6 +9,7 @@ import type {
 } from "@/domain/models/workout";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useAuth } from "@/ui/hooks/useAuth";
+import { useWorkoutLibrary } from "@/ui/hooks/useWorkoutLibrary";
 import { useWorkout } from "@/ui/hooks/useWorkout";
 import {
   EMPTY_FORM_STATE,
@@ -41,6 +42,7 @@ export function WorkoutEditorContainer() {
 
   const { storage } = useAdapters();
   const { session } = useAuth();
+  const markWorkoutsChanged = useWorkoutLibrary((s) => s.markChanged);
   const userId = session?.userId ?? null;
 
   const detail = useWorkout(workoutId);
@@ -122,11 +124,20 @@ export function WorkoutEditorContainer() {
         setSubmitError(firstFieldMessage);
         return;
       }
+      markWorkoutsChanged();
       router.back();
     } finally {
       setIsSubmitting(false);
     }
-  }, [storage, userId, workoutId, generateId, isCoachContext, form.state]);
+  }, [
+    storage,
+    userId,
+    workoutId,
+    generateId,
+    isCoachContext,
+    form.state,
+    markWorkoutsChanged,
+  ]);
 
   const onCancel = useCallback(() => {
     if (!form.isDirty) {

@@ -1,0 +1,61 @@
+import { describe, expect, it } from "vitest";
+import { readIdempotencyKey } from "../idempotencyKey";
+
+describe("readIdempotencyKey", () => {
+  it("reads the lowercased header Elysia produces", () => {
+    expect(readIdempotencyKey({ "idempotency-key": "local-w1-123-abc" })).toBe(
+      "local-w1-123-abc",
+    );
+  });
+
+  it("also reads the canonical-cased header a direct caller may send", () => {
+    expect(readIdempotencyKey({ "Idempotency-Key": "abc" })).toBe("abc");
+  });
+
+  it("returns null when absent, so the create behaves exactly as before", () => {
+    expect(readIdempotencyKey({})).toBeNull();
+  });
+
+  it("trims surrounding whitespace", () => {
+    expect(readIdempotencyKey({ "idempotency-key": "  abc  " })).toBe("abc");
+  });
+
+  it("returns null for a blank or whitespace-only value", () => {
+    expect(readIdempotencyKey({ "idempotency-key": "" })).toBeNull();
+    expect(readIdempotencyKey({ "idempotency-key": "   " })).toBeNull();
+  });
+
+  it("rejects an over-long key rather than persisting and indexing it", () => {
+    expect(
+      readIdempotencyKey({ "idempotency-key": "a".repeat(201) }),
+    ).toBeNull();
+    expect(readIdempotencyKey({ "idempotency-key": "a".repeat(200) })).toBe(
+      "a".repeat(200),
+    );
+  });
+
+  it("rejects characters outside the id charset", () => {
+    // Keeps a hostile header out of a unique index without having to reason
+    // about collation or unicode normalisation.
+    for (const bad of ["a b", "a/b", "a%b", "a'b", "a\nb", "a\u0000b", "😀"]) {
+      expect(readIdempotencyKey({ "idempotency-key": bad })).toBeNull();
+    }
+  });
+
+  it("accepts the shape the mobile queue actually mints", () => {
+    // `${entityId}-${Date.now()}-${suffix}` — hyphens, digits, alphanumerics.
+    expect(
+      readIdempotencyKey({
+        "idempotency-key": "local-1753699200000-a1b2-1753699200123-xyz789ab",
+      }),
+    ).toBe("local-1753699200000-a1b2-1753699200123-xyz789ab");
+  });
+
+  it("returns null for a non-string value instead of throwing", () => {
+    expect(
+      readIdempotencyKey({
+        "idempotency-key": undefined,
+      }),
+    ).toBeNull();
+  });
+});

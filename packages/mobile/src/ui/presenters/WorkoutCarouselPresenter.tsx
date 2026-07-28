@@ -62,12 +62,23 @@ export function WorkoutCarouselPresenter({
     );
   }
 
+  // Cached rows exist and a refresh is in flight. The rows stay fully rendered
+  // and interactive — replacing them with a skeleton would hide usable offline
+  // data, which is the whole point of the local cache — so the only signal is a
+  // subtle dimming of the strip.
+  const isRefreshingOverCache = isLoading && workouts.length > 0;
+
   return (
     <ScrollView
       horizontal
       showsHorizontalScrollIndicator={false}
       contentContainerStyle={{ gap: 12, paddingRight: 4 }}
+      style={isRefreshingOverCache ? { opacity: 0.72 } : undefined}
+      // testID stays stable whether or not a refresh is in flight — callers and
+      // tests address the carousel by this id, and making it stateful would mean
+      // "find the carousel" silently depending on network timing.
       testID={testID}
+      accessibilityState={{ busy: isRefreshingOverCache }}
     >
       {workouts.map((w, i) => (
         <WorkoutCarouselCard
