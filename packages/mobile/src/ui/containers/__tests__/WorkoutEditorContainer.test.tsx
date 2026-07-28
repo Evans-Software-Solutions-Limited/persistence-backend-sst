@@ -250,6 +250,73 @@ describe("WorkoutEditorContainer", () => {
     expect(pending[0].endpoint).toBe("/workouts/w-1");
   });
 
+  it("omits `exercises` from a rename-only PATCH so the duration isn't re-derived", async () => {
+    // The server re-derives the duration whenever a PATCH carries the plan.
+    // Sending it on a rename would rewrite durations authored by the still-live
+    // legacy app (whose formula differs), and the next legacy edit would write
+    // its value back — a number that flips between clients. The backfill
+    // migration deliberately leaves legacy values alone; the edit path must
+    // too.
+    const api = new InMemoryApiAdapter();
+    const cached = buildWorkout({ name: "Push Day" });
+    jest.spyOn(api, "getWorkout").mockResolvedValue(ok(cached));
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheWorkoutDetail("user-1", cached);
+
+    const { getByTestId, findByText } = renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <WorkoutEditorContainer />),
+    );
+    expect(await findByText("Edit Workout")).toBeTruthy();
+    await waitFor(() =>
+      expect(getByTestId("workout-name-input").props.value).toBe("Push Day"),
+    );
+
+    fireEvent.changeText(getByTestId("workout-name-input"), "Push Day v2");
+    fireEvent.press(getByTestId("save-workout-button"));
+    await waitFor(() => expect(mockRouterBack).toHaveBeenCalledTimes(1));
+
+    const payload = JSON.parse(
+      storage.getPendingMutations()[0].payload,
+    ) as Record<string, unknown>;
+    expect(payload.name).toBe("Push Day v2");
+    expect(payload.exercises).toBeUndefined();
+    expect(payload.estimatedDurationMinutes).toBeUndefined();
+  });
+
+  it("sends `exercises` once the plan actually changes", async () => {
+    const api = new InMemoryApiAdapter();
+    const cached = buildWorkout({ name: "Push Day" });
+    jest.spyOn(api, "getWorkout").mockResolvedValue(ok(cached));
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheWorkoutDetail("user-1", cached);
+
+    const {
+      getByTestId,
+      findByText,
+      getAllByTestId: getAllById,
+    } = renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <WorkoutEditorContainer />),
+    );
+    expect(await findByText("Edit Workout")).toBeTruthy();
+    await waitFor(() =>
+      expect(getByTestId("workout-name-input").props.value).toBe("Push Day"),
+    );
+
+    // Change the first exercise's sets — a real plan edit. The stepper commits
+    // on blur (see ExerciseConfigCard), so type-then-blur is the real gesture.
+    fireEvent.changeText(getAllById("sets-input")[0], "5");
+    fireEvent(getAllById("sets-input")[0], "blur");
+    fireEvent.press(getByTestId("save-workout-button"));
+    await waitFor(() => expect(mockRouterBack).toHaveBeenCalledTimes(1));
+
+    const payload = JSON.parse(
+      storage.getPendingMutations()[0].payload,
+    ) as Record<string, unknown>;
+    expect(Array.isArray(payload.exercises)).toBe(true);
+    // Still omitted — the server derives it from the plan it just received.
+    expect(payload.estimatedDurationMinutes).toBeUndefined();
+  });
+
   it("in coach context: shows the owner-visibility toggle and PATCHes the flipped value", async () => {
     mockUseLocalSearchParams.mockReturnValue({ id: "w-1", ctx: "coach" });
     const api = new InMemoryApiAdapter();

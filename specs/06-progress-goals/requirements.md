@@ -49,6 +49,16 @@ Authoritative references:
 
 - 1.1 [ ] Home renders `<TodayHero>` per `home.jsx:83–120` — `<MultiRing size={120} stroke={9}>` with three rings + centred TODAY eyebrow + mono percent + 4-up `<MicroPill>` strip (streak / water / strain / sleep).
 - 1.2 [ ] Ring percentages: Move = `dailySteps/goalSteps` (HealthKit hooks preserved; `goalSteps` = the user's active Steps habit target, else 10,000). Train = `dailyActiveKcal/goalActiveKcal` (HealthKit active energy; goal is a 500 kcal constant until ring goals get a per-user store — see the note below). Fuel = `dailyKcal/targetKcal` (M9 hook; until M9 ships, ring fades to 0% + shows `--`).
+- 1.2b [ ] ⚠ **OPEN — Move and Train both read HealthKit, so a user who declines
+  Health permissions now sees the hero dial at 0% permanently.** Nothing writes
+  `daily_activity_data`, so the device reading is the only source for either
+  ring; with Fuel gated, `todayPct` averages two hard zeros even straight after
+  a logged workout. Before the Train change, Train came from server-side logged
+  volume and still moved without any device permission. Options: gate Move and
+  Train the way Fuel is gated (they'd drop out of the `todayPct` average and
+  render `--` + a connect prompt, rather than reading as "you did nothing"), or
+  accept it and lean on the existing Connect-Health prompt. Needs a product
+  call — not decided in the change that introduced it.
 - 1.2a [ ] ⚠ Ring goals are only half user-owned. Move reads the Steps habit target; Train has no equivalent, because the `calories` habit category is nutrition INTAKE (`within_tolerance`), not energy burned. A per-user active-energy goal needs either a new habit category or a general ring-goal store, and should cover Move and Train together.
 - 1.3 [ ] Tap on `<RingLegend>` navigates to corresponding tab/screen.
 - 1.4 [ ] Centre TODAY% = average of rings, mono with `tnum`+`zero`.

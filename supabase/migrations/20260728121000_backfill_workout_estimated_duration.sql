@@ -10,8 +10,11 @@
 --
 -- This applies the SAME heuristic in SQL, as a one-off:
 --   • group by superset_group; a standalone exercise is its own group
---     (keyed on sort_order, which is NOT NULL and unique within a workout; the
---     's:'/'g:' prefixes keep the two key spaces from colliding)
+--     (keyed on sort_order, which is NOT NULL; the 's:'/'g:' prefixes keep the
+--     two key spaces from colliding. Note `(workout_id, sort_order)` is NOT
+--     unique-constrained — duplicates would collapse into one pseudo-group,
+--     but identically here, in estimateDuration.ts and in legacy, so all three
+--     still agree)
 --   • per exercise: sets × 75s work + (sets − 1) × rest_seconds
 --   • plus 120s between groups, not after the last
 --   • round UP to the nearest 5 minutes

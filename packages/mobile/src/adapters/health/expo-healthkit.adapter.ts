@@ -158,19 +158,19 @@ const IDENTIFIER = {
 } as const;
 
 /**
- * `CategoryValueSleepAnalysis` raw enum values (stable HealthKit constants).
- * `asleepUnspecified` and `asleep` share the same raw value (1) across
- * library versions — both are "asleep" for our summing purposes, along with
- * the stage-specific core/deep/REM values. `inBed` (0) and `awake` (2) are
- * explicitly excluded — time in bed but not asleep isn't sleep duration.
- */
-/**
  * HKUnit string for every energy read. The app states calories throughout
  * (Fuel targets, nutrition entries, the Train ring), so energy must be
  * requested in kcal explicitly rather than in the device's preferred unit.
  */
 const ENERGY_UNIT = "kcal";
 
+/**
+ * `CategoryValueSleepAnalysis` raw enum values (stable HealthKit constants).
+ * `asleepUnspecified` and `asleep` share the same raw value (1) across
+ * library versions — both are "asleep" for our summing purposes, along with
+ * the stage-specific core/deep/REM values. `inBed` (0) and `awake` (2) are
+ * explicitly excluded — time in bed but not asleep isn't sleep duration.
+ */
 const SLEEP_ASLEEP_VALUES: ReadonlySet<number> = new Set([1, 3, 4, 5]);
 /** Value written for a manual mirror — "asleep, stage unspecified". */
 const SLEEP_VALUE_ASLEEP_UNSPECIFIED = 1;
