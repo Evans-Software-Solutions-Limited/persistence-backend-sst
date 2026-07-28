@@ -488,7 +488,15 @@ export async function selectSubstitutes(
   };
 
   const startedAt = Date.now();
-  const response = await createSingleAttempt(client, params, timeoutMs);
+  const response = await createSingleAttempt(client, params, timeoutMs, {
+    // ⚠ The MEASURED per-row output (~40, E2), not the pessimistic 120 the
+    // ceiling is sized with. Passing the ceiling instead makes the resend guard
+    // unsatisfiable — `remaining` is always less than the budget the ceiling was
+    // derived from — and this surface silently loses its throttle retry from 14
+    // swap rows up, which is where `remapMaxTokens` starts clamping to the cap.
+    // Same figure as the handler's work-aware fail-fast floor; keep them in step.
+    minUsefulTokens: 512 + 40 * swapRowCount,
+  });
   const latencyMs = Date.now() - startedAt;
 
   // A truncated tool payload PARSES — the surviving rows are well-formed and the

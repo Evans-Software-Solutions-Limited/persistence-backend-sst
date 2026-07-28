@@ -96,6 +96,14 @@ export const EQUIPMENT_SCAN_TIMEOUT_MS = 20_000;
 export const EQUIPMENT_SCAN_MAX_TOKENS = 4096;
 
 /**
+ * What a busy commercial gym actually produces: ~28 catalogue rows plus the
+ * model's note. Used as the resend guard's estimate of the work — see
+ * `createSingleAttempt`'s `minUsefulTokens`, which needs the realistic figure
+ * rather than the ceiling.
+ */
+export const REALISTIC_SCAN_OUTPUT_TOKENS = 1_100;
+
+/**
  * The model's free-text aside, capped and treated as untrusted.
  *
  * ⚠ **The input is a photograph the caller chose**, so this field is steerable by
@@ -358,8 +366,18 @@ export async function scanEquipmentFromPhoto(
     client,
     params,
     EQUIPMENT_SCAN_TIMEOUT_MS,
-    // Opus-class, and 2.5x slower than the default this would otherwise assume.
-    { tokensPerSecond: OPUS_OUTPUT_TOKENS_PER_SECOND },
+    {
+      // Opus-class, and 2.5x slower than the default this would otherwise assume.
+      tokensPerSecond: OPUS_OUTPUT_TOKENS_PER_SECOND,
+      // ⚠ What a REAL scan emits, not the 4096 ceiling. A busy commercial gym
+      // produces ~28 detections plus a note — call it 1,100 tokens — which at
+      // ~40 tok/s needs ~27 s and does not fit this surface's 20 s attempt even
+      // before a retry. So this surface still cannot resend, and that is an
+      // honest consequence of {@link EQUIPMENT_SCAN_MAX_TOKENS} being over
+      // budget rather than a property of the retry logic: fix the ceiling (or
+      // the attempt) and the resend starts working on its own.
+      minUsefulTokens: REALISTIC_SCAN_OUTPUT_TOKENS,
+    },
   );
   const latencyMs = Date.now() - startedAt;
 

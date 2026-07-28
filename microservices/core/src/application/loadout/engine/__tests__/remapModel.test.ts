@@ -753,3 +753,49 @@ describe("selectSubstitutes — the remaining-budget deadline", () => {
     expect(client.messages.create).not.toHaveBeenCalled();
   });
 });
+
+describe("selectSubstitutes — throttle resilience on a LARGE plan", () => {
+  it("still resends a throttle when max_tokens has clamped to the budget cap", async () => {
+    // ⚠ The regression this pins is invisible from inside `createSingleAttempt`.
+    // Its resend guard needs an estimate of the WORK; left to default it uses
+    // `params.max_tokens`, and `remapMaxTokens` clamps that to exactly
+    // `maxTokensForBudget(REMAP_TIMEOUT_MS)` from ~14 swap rows up. Since the
+    // remaining budget is always smaller than the full one, the guard could then
+    // never pass — so the biggest adaptations, the ones a user is least willing
+    // to lose, silently stopped retrying a routine Bedrock throttle.
+    //
+    // Deleting `minUsefulTokens` from the call site leaves every other test in
+    // this file green, which is how it got past me the first time.
+    const bigPlan = Array.from({ length: 20 }, (_, i) => ({
+      ...planRow(i, swapSource, true),
+      rowKey: i,
+    }));
+    expect(remapMaxTokens(20)).toBe(maxTokensForBudget(REMAP_TIMEOUT_MS));
+
+    let calls = 0;
+    const create = vi.fn(async () => {
+      calls += 1;
+      if (calls === 1) {
+        throw Object.assign(new Error("throttled"), {
+          status: 429,
+          // Keep the real backoff short — this test does not stub the clock.
+          headers: { "retry-after-ms": "1" },
+        });
+      }
+      return toolResponse([]) as never;
+    });
+
+    await selectSubstitutes(
+      {
+        workoutName: "W",
+        plan: bigPlan,
+        candidates: [candidate],
+        equipmentTypeIds: [DUMBBELL],
+        lookups,
+      },
+      { client: { messages: { create } } as never },
+    );
+
+    expect(create).toHaveBeenCalledTimes(2);
+  });
+});

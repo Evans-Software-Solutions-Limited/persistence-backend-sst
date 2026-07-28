@@ -358,21 +358,6 @@ describe("createSingleAttempt — the bounded resend", () => {
     expect(create.mock.calls[1][0]).toEqual(PARAMS);
   });
 
-  it("does NOT resend when the time left cannot carry the original ceiling", async () => {
-    // A resend that cannot do the whole job is not a retry, it is a different
-    // and worse request. A ceiling sized for the full budget cannot fit a
-    // shortened one, so the honest answer is to fail.
-    const big = { ...PARAMS, max_tokens: maxTokensForBudget(20_000) };
-    const { client: c, create } = client([boom(429), ok]);
-    let reads = 0;
-    const clock = () => (reads++ === 0 ? 0 : 1_000);
-
-    await expect(
-      createSingleAttempt(c, big, 20_000, { now: clock, sleep: noSleep }),
-    ).rejects.toBeInstanceOf(AiUnavailableError);
-    expect(create).toHaveBeenCalledTimes(1);
-  });
-
   it("uses the CALLER's generation rate for that guard, not the Haiku default", async () => {
     // Opus is ~2.5x slower, so the default would grant a resend the deadline
     // cannot actually deliver — `maxTokensForBudget`'s docstring calls this out
@@ -465,6 +450,124 @@ describe("createSingleAttempt — the bounded resend", () => {
     ).rejects.toBeInstanceOf(AiUnavailableError);
 
     expect(slept).toEqual([]);
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  it("does NOT resend a failure that arrived after prefill but before halfway", async () => {
+    // ⚠ RESTORED. I deleted this and its partner in the previous commit for a
+    // bound that commit did not touch, and the `elapsed < timeoutMs / 2`
+    // mutation went straight back to surviving the entire 3222-test suite. My
+    // own mutation sweep missed it because the sweep was scoped to NEW code and
+    // this was old code whose guard had been removed. Deletions need auditing
+    // exactly as much as rewrites — more, because they leave nothing to read.
+    //
+    // The discrimination: at 5 s into a 20 s budget the old bound still resends,
+    // but by then the prompt (or the images, at $0.0272 a scan) has been
+    // accepted and BILLED, so the resend genuinely doubles the unit cost.
+    const { client: c, create } = client([boom(429), ok]);
+    let reads = 0;
+    const clock = () => (reads++ === 0 ? 0 : 5_000);
+
+    await expect(
+      createSingleAttempt(c, PARAMS, 20_000, { now: clock, sleep: noSleep }),
+    ).rejects.toBeInstanceOf(AiUnavailableError);
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  it("DOES resend a failure that arrived inside prefill", async () => {
+    const { client: c, create } = client([boom(429), ok]);
+    let reads = 0;
+    const clock = () => (reads++ === 0 ? 0 : PREFILL_ALLOWANCE_MS - 1);
+
+    await createSingleAttempt(c, PARAMS, 20_000, {
+      now: clock,
+      sleep: noSleep,
+    });
+    expect(create).toHaveBeenCalledTimes(2);
+  });
+
+  it("resends for a caller whose ceiling EQUALS its budget capacity", async () => {
+    // ⚠ The regression that made me rewrite this guard twice. Comparing the
+    // remaining budget against `params.max_tokens` is unsatisfiable in
+    // principle — `remaining` is always less than `timeoutMs` — so any caller
+    // that sizes its ceiling to its budget (which is what this module tells
+    // callers to do) could never resend. `remapMaxTokens` does exactly that from
+    // 14 swap rows up, so the re-map lost its throttle retry precisely on the
+    // biggest adaptations. The comparand has to be the WORK, not the ceiling.
+    const atCap = { ...PARAMS, max_tokens: maxTokensForBudget(20_000) };
+    const { client: c, create } = client([boom(429), ok]);
+    let reads = 0;
+    const clock = () => (reads++ === 0 ? 0 : 500);
+
+    await createSingleAttempt(c, atCap, 20_000, {
+      now: clock,
+      sleep: noSleep,
+      minUsefulTokens: 400,
+    });
+
+    expect(create).toHaveBeenCalledTimes(2);
+    // Unchanged — degrading it is how a transient failure becomes a 422.
+    expect(create.mock.calls[1][0]).toEqual(atCap);
+  });
+
+  it("refuses when the time left cannot deliver the WORK", async () => {
+    const { client: c, create } = client([boom(429), ok]);
+    let reads = 0;
+    const clock = () => (reads++ === 0 ? 0 : 500);
+
+    await expect(
+      createSingleAttempt(c, PARAMS, 20_000, {
+        now: clock,
+        sleep: noSleep,
+        minUsefulTokens: maxTokensForBudget(20_000) + 1,
+      }),
+    ).rejects.toBeInstanceOf(AiUnavailableError);
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not pay for a backoff it has already decided it cannot afford", async () => {
+    // ⚠ Reserving only PREFILL let this sleep 15 s to reach a 503 that was
+    // arithmetically certain before the nap started — 15 s of Lambda wall clock
+    // and user-visible latency for nothing.
+    const slept: number[] = [];
+    const { client: c, create } = client([
+      () => {
+        throw Object.assign(new Error("throttled"), {
+          status: 429,
+          headers: { "retry-after": "15" },
+        });
+      },
+      ok,
+    ]);
+    let reads = 0;
+    const clock = () => (reads++ === 0 ? 0 : 200);
+
+    await expect(
+      createSingleAttempt(c, PARAMS, 20_000, {
+        now: clock,
+        sleep: async (ms) => {
+          slept.push(ms);
+        },
+        minUsefulTokens: 1_500,
+      }),
+    ).rejects.toBeInstanceOf(AiUnavailableError);
+
+    expect(slept).toEqual([]);
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses a zero or negative work estimate rather than sending a negative timeout", async () => {
+    const { client: c, create } = client([boom(429), ok]);
+    let reads = 0;
+    const clock = () => (reads++ === 0 ? 0 : 500);
+
+    await expect(
+      createSingleAttempt(c, PARAMS, 20_000, {
+        now: clock,
+        sleep: noSleep,
+        minUsefulTokens: 0,
+      }),
+    ).rejects.toBeInstanceOf(AiUnavailableError);
     expect(create).toHaveBeenCalledTimes(1);
   });
 

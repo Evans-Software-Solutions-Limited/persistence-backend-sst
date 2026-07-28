@@ -321,11 +321,26 @@ export async function createWithRetry(
  *      the doubling this function's own rationale says it exists to avoid.
  *      Prefill is the honest proxy for "the provider never started".
  *   3. The resend inherits only the time that is LEFT, minus the backoff.
- *   4. `max_tokens` is re-clamped to what that remaining time can receive.
- *      ⚠ Reusing `params` verbatim reintroduced, inside the resend, the exact
- *      ceiling-versus-deadline mismatch this whole module exists to prevent: a
- *      request carrying a ceiling sized for the FULL budget, running against a
- *      shorter one, which times out on success. Clamping only ever lowers it.
+ *   4. It is refused unless the time left can still deliver
+ *      `deps.minUsefulTokens` — what the WORK needs, which is not the same as
+ *      `max_tokens`.
+ *
+ * ⚠ Point 4 took three attempts and the distinction is the whole of it.
+ * Comparing against `params.max_tokens` is the obvious move and is
+ * **unsatisfiable in principle**: `remaining < timeoutMs` always, so a caller
+ * that sizes its ceiling to its budget — which is exactly what this module
+ * tells callers to do — can never qualify. It gave a perverse result, where the
+ * better a surface was tuned the more certainly it lost its retry, and it cost
+ * the re-map its throttle resilience from 14 swap rows up.
+ *
+ * Clamping `max_tokens` down to fit instead is worse: a smaller ceiling on the
+ * same work is a truncation 422, terminal-looking, for a transient cause, with
+ * the daily allowance already spent.
+ *
+ * So the request goes out UNCHANGED, and the question asked of the deadline is
+ * "can this still do the job?" — measured against real output, not the
+ * pessimistic ceiling. `max_tokens` is a truncation guard; `minUsefulTokens` is
+ * the estimate of the work.
  *
  * The backoff matters as much as the bound. The SDK retry being replaced honoured
  * `retry-after`; a zero-delay resend into a live `ThrottlingException` is the
@@ -350,6 +365,15 @@ export async function createSingleAttempt(
      * `maxTokensForBudget`'s docstring warns about.
      */
     tokensPerSecond?: number;
+    /**
+     * Output the work REALISTICALLY needs, as opposed to `params.max_tokens`,
+     * which is a pessimistic truncation guard. Only the caller knows this.
+     *
+     * ⚠ Defaults to `params.max_tokens`, which is the strict, never-degrade
+     * reading — safe, and vacuous for any caller whose ceiling equals its budget
+     * capacity. Pass the real figure or the resend silently never happens.
+     */
+    minUsefulTokens?: number;
   } = {},
 ): Promise<MessagesCreateResponse> {
   const now = deps.now ?? Date.now;
@@ -369,33 +393,39 @@ export async function createSingleAttempt(
     const elapsed = now() - startedAt;
     if (!isRetryable(error) || elapsed >= PREFILL_ALLOWANCE_MS) throw giveUp();
 
-    // ⚠ The backoff is BOUNDED by what the deadline can spare, because
-    // `retry-after` is provider-controlled. An unbounded sleep was worse than no
-    // backoff at all: `retry-after: 30` against a 12 s budget slept straight
-    // through the 29 s Lambda, and a hard kill skips the handler's `finally`, so
-    // no usage row is written for an inference the provider already billed. That
-    // is the quota-escape this module's own constants were written to close.
+    const tokensPerSecond = deps.tokensPerSecond ?? OUTPUT_TOKENS_PER_SECOND;
+    const minUsefulTokens = deps.minUsefulTokens ?? params.max_tokens;
+    if (minUsefulTokens <= 0) throw giveUp();
+
+    // What the resend itself will need: prefill, plus generating the work.
+    const needed =
+      PREFILL_ALLOWANCE_MS +
+      Math.ceil((minUsefulTokens / tokensPerSecond) * 1000);
+
+    // ⚠ The backoff is BOUNDED by what the deadline can spare AFTER that.
+    // `retry-after` is provider-controlled, and an unbounded sleep was worse
+    // than no backoff at all: `retry-after: 30` against a 12 s budget slept
+    // straight through the 29 s Lambda, and a hard kill skips the handler's
+    // `finally`, so no usage row is written for an inference the provider
+    // already billed.
+    //
+    // ⚠ Reserving only PREFILL here was the subtler bug: it let us sleep 15 s to
+    // arrive at a refusal that was already arithmetically certain before the nap
+    // began. Reserving what the RESEND needs makes the two one decision, taken
+    // before any wall clock is spent on it.
     const wanted = retryAfterMs(error) ?? DEFAULT_RETRY_BACKOFF_MS;
-    const affordable = timeoutMs - elapsed - PREFILL_ALLOWANCE_MS;
-    if (wanted > affordable) throw giveUp();
+    if (wanted > timeoutMs - elapsed - needed) throw giveUp();
     await sleep(wanted);
 
-    // ⚠ Resend ONLY if the time left can carry the ORIGINAL ceiling. Clamping
-    // `max_tokens` down to fit looked reasonable and quietly re-opened the same
-    // defect one layer lower: a smaller ceiling on the same work is a truncation
-    // 422 — a terminal-looking error for a transient cause, with the daily
-    // allowance already spent — and at the boundary the clamp reached 0, which
-    // the provider rejects outright. A resend that cannot do the whole job is
-    // not a retry, it is a different, worse request. So `params` goes out
-    // unchanged or not at all.
+    // Re-read the clock: the sleep may have overshot.
     const remaining = timeoutMs - (now() - startedAt);
-    if (
-      maxTokensForBudget(remaining, deps.tokensPerSecond) < params.max_tokens
-    ) {
+    if (maxTokensForBudget(remaining, tokensPerSecond) < minUsefulTokens) {
       throw giveUp();
     }
 
     try {
+      // `params` UNCHANGED — see bound #4. Degrading the request is how a
+      // transient failure becomes a permanent-looking one.
       return await client.messages.create(params, { timeout: remaining });
     } catch (retryError) {
       throw new AiUnavailableError(
