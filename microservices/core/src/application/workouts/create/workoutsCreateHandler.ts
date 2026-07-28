@@ -102,7 +102,10 @@ export const workoutsCreateHandler = new Elysia()
           name,
           description: description ?? null,
           visibility: visibility ?? "private",
-          estimatedDurationMinutes: estimatedDurationMinutes ?? 30,
+          // Passed through as-is: absent means "derive it from the plan", which
+          // the repository does. A `?? 30` here would defeat that by making the
+          // duration always explicit — the bug this replaces.
+          estimatedDurationMinutes,
           // Absent => true (personal). The coach-authoring flow sends false so
           // client-authored workouts don't crowd the coach's own My Workouts.
           showInOwnerLibrary: showInOwnerLibrary ?? true,

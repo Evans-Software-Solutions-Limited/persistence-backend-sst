@@ -195,7 +195,6 @@ function toFormState(workout: Workout): WorkoutFormState {
   return {
     name: workout.name,
     description: workout.description ?? "",
-    estimatedDurationMinutes: workout.estimatedDurationMinutes,
     visibility: workout.visibility,
     showInOwnerLibrary: workout.showInOwnerLibrary,
     exercises: workout.exercises.map(toFormExercise),
@@ -225,7 +224,8 @@ function toUpdateWorkoutInput(
     description:
       state.description.trim().length === 0 ? null : state.description.trim(),
     visibility: state.visibility,
-    estimatedDurationMinutes: state.estimatedDurationMinutes,
+    // Omitted so the server re-derives from the edited plan — an edit that adds
+    // three exercises must not keep the old estimate.
     // Only coaches can flip owner-visibility; athlete edits leave it untouched
     // (undefined => backend PATCH doesn't clobber the flag).
     ...(isCoachContext ? { showInOwnerLibrary: state.showInOwnerLibrary } : {}),

@@ -26,6 +26,10 @@ import {
 } from "@persistence/db";
 import { getDb, type Db } from "@persistence/db/client";
 import type { AdaptationCandidate } from "./exerciseRepository";
+import {
+  estimateWorkoutDurationMinutes,
+  resolveEstimatedDurationMinutes,
+} from "../workouts/estimateDuration";
 
 export type WorkoutListType = "mine" | "assigned" | "default";
 
@@ -485,7 +489,12 @@ export class WorkoutRepository {
         name: input.name,
         description: input.description ?? null,
         visibility: input.visibility ?? "private",
-        estimatedDurationMinutes: input.estimatedDurationMinutes ?? 30,
+        // Derived from the plan when the caller doesn't state one — see
+        // estimateDuration.ts. The old `?? 30` stored every workout as 30 min.
+        estimatedDurationMinutes: resolveEstimatedDurationMinutes(
+          input.estimatedDurationMinutes,
+          input.exercises,
+        ),
         // Absent => true (personal). Coach-authoring flow sends false.
         showInOwnerLibrary: input.showInOwnerLibrary ?? true,
         createdBy: userId,
@@ -560,6 +569,15 @@ export class WorkoutRepository {
       if (data.visibility !== undefined) metadata.visibility = data.visibility;
       if (data.estimatedDurationMinutes !== undefined)
         metadata.estimatedDurationMinutes = data.estimatedDurationMinutes;
+      // Editing the PLAN re-derives the estimate, so a workout that grows from
+      // 3 exercises to 7 stops claiming its original duration. An explicit
+      // duration in the same PATCH still wins (the branch above). An edit that
+      // doesn't touch `exercises` leaves the stored value alone. Mirrors legacy
+      // `updateWorkout` (workoutMutations.ts:357).
+      else if (data.exercises !== undefined)
+        metadata.estimatedDurationMinutes = estimateWorkoutDurationMinutes(
+          data.exercises,
+        );
       // Present-only: a partial PATCH that omits the flag leaves it untouched.
       if (data.showInOwnerLibrary !== undefined)
         metadata.showInOwnerLibrary = data.showInOwnerLibrary;
@@ -826,7 +844,10 @@ export class WorkoutRepository {
           description: input.description ?? null,
           // NEVER inherited from the parent — see the doc comment above.
           visibility: "private",
-          estimatedDurationMinutes: input.estimatedDurationMinutes ?? 30,
+          estimatedDurationMinutes: resolveEstimatedDurationMinutes(
+            input.estimatedDurationMinutes,
+            input.exercises,
+          ),
           createdBy: userId,
           parentWorkoutId: parentId,
           variationKind: "loadout",

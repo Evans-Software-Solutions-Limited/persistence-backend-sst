@@ -44,7 +44,7 @@ the on-device manual e2e (06.11.4) is the reviewer's step.
 1. **`profiles.timezone`** didn't exist though tasks.md/cross-cuts assumed it — added (nullable-safe default `Europe/London`).
 2. **`notification_type` +3** (`streak_milestone`/`streak_at_risk`/`freeze_token_applied`) — enum owned by 09-notifications; M4 sequenced the `ADD VALUE`. **@M7: converge on the `NotificationRepository.create` writer added here.**
 3. **PR detection** kept inline (no SQS) per your call; streak engine emits notifications via the new writer.
-4. **Train ring** = weekly volume per spec decision #2 (prototype labels it "min") — reconcile the RingLegend label on device.
+4. ~~**Train ring** = weekly volume per spec decision #2~~ — RESOLVED 2026-07-28: Train is daily HealthKit active energy (kcal). The RingLegend is unit-agnostic (it renders `rings.train.unit`), so no label reconciliation is outstanding.
 5. **HabitsGrid** uses `<HabitTile>` (design.md) vs the prototype's denser 18px grid — verify cell density on device.
 6. **Sheets-at-root** (`feedback_sheets_mount_at_root`): WeighInSheet mounts in HomeContainer per design.md T-06.9.3 — verify it overlays the tab bar; else move to a root-mounted zustand store.
 7. **`streak_at_risk`** emission deferred (needs an end-of-day trigger); enum value in place.

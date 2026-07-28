@@ -130,6 +130,44 @@ export class HabitConfigRepository {
     };
   }
 
+  /**
+   * The user's live DAILY target for one habit category, or null when they have
+   * no active habit of that category.
+   *
+   * Exists so the Home rings can use a goal the user actually set instead of a
+   * hardcoded constant — the Move ring reads the Steps habit's target. Narrow on
+   * purpose (one row, one number) rather than reusing `listForUser`, because it
+   * sits on the cold-start Home fan-out.
+   *
+   * Reads the LIVE `target_value`, deliberately ignoring `pending_config`: a
+   * queued edit doesn't take effect until the weekly rollover (the anti-gaming
+   * rule in this class's doc comment), and the ring must show the bar the user
+   * is being measured against this week, not next week's.
+   */
+  async getActiveDailyTarget(
+    userId: string,
+    category: HabitCategory,
+  ): Promise<number | null> {
+    const db = getDb();
+    const rows = await db
+      .select({ targetValue: habitConfigs.targetValue })
+      .from(habitConfigs)
+      .innerJoin(userGoals, eq(habitConfigs.goalId, userGoals.id))
+      .where(
+        and(
+          eq(habitConfigs.userId, userId),
+          eq(habitConfigs.category, category),
+          eq(habitConfigs.period, "daily"),
+          eq(userGoals.isActive, true),
+        ),
+      )
+      .limit(1);
+    const raw = rows[0]?.targetValue;
+    if (raw == null) return null;
+    const value = Number(raw);
+    return Number.isFinite(value) ? value : null;
+  }
+
   /** Every configured habit for the user (joined to its goal for active state). */
   async listForUser(userId: string): Promise<HabitConfigView[]> {
     const db = getDb();

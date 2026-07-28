@@ -1,6 +1,7 @@
 import Elysia from "elysia";
 import { VolumeService } from "../repositories/volumeService";
 import { HomeReadService } from "../repositories/homeReadService";
+import { HabitConfigService } from "../repositories/habitConfigService";
 import { HabitService } from "../repositories/habitService";
 import { StreakReadService } from "../repositories/streakReadService";
 import { NutritionEntryService } from "../repositories/nutritionEntryService";
@@ -12,7 +13,7 @@ import {
   getUser,
 } from "@persistence/api-utils/auth/supabaseAuth";
 import { buildRings } from "./rings";
-import { DEFAULT_GOAL_STEPS, DEFAULT_TARGET_KG } from "./loadRings";
+import { DEFAULT_GOAL_ACTIVE_KCAL, DEFAULT_GOAL_STEPS } from "./loadRings";
 import { weekStartISO, DEFAULT_WORKOUTS_PER_WEEK } from "./window";
 import { addDaysISO, localDateISO } from "../streaks/period";
 import { fillWeekDays, computeDeltaPct } from "./volumeView";
@@ -38,6 +39,7 @@ export const getHomeHandler = new Elysia()
   .onBeforeHandle(requireAuth)
   .use(VolumeService)
   .use(HomeReadService)
+  .use(HabitConfigService)
   .use(HabitService)
   .use(StreakReadService)
   .use(NutritionEntryService)
@@ -72,15 +74,17 @@ export const getHomeHandler = new Elysia()
     // from the completion-based rows' window (BRIEF-7 QA-1..QA-4).
     const habitsWindow = habitsGridWindow(now, tz);
 
-    // One fully-parallel fan-out. `thisKg` (the current Mon–Sun total) powers
-    // BOTH the volume ring and the weekly-volume card, and `steps` feeds the
-    // ring — computed once here and shared, not re-queried inside an awaited
-    // loadRings(). Previously /users/me/home issued the identical Mon–Sun
-    // totalVolume query twice AND serialised it behind `await loadRings` on the
-    // cold-start path (Inspector finding, PR #116). loadRings stays for the
-    // standalone GET /users/me/today-rings.
+    // One fully-parallel fan-out, rather than awaiting loadRings() inside this
+    // handler: /users/me/home used to issue the identical Mon–Sun totalVolume
+    // query twice AND serialise it behind `await loadRings` on the cold-start
+    // path (Inspector finding, PR #116). `thisKg` still powers the weekly-volume
+    // card — it stopped feeding a ring when Train became daily active energy.
+    // loadRings stays for the standalone GET /users/me/today-rings; the two must
+    // be kept in step, and `homeEndpoints.test.ts` asserts they agree.
     const [
       steps,
+      activeKcal,
+      stepsGoal,
       daily,
       thisKg,
       lastKg,
@@ -96,6 +100,10 @@ export const getHomeHandler = new Elysia()
       sleepRecord,
     ] = await Promise.all([
       ctx.HomeReadRepository.getTodaySteps(userId, today),
+      // Train ring: DAILY active energy, not weekly volume (see rings.ts).
+      ctx.HomeReadRepository.getTodayActiveKcal(userId, today),
+      // Move ring goal: the user's own Steps habit target where they have one.
+      ctx.HabitConfigRepository.getActiveDailyTarget(userId, "steps"),
       ctx.VolumeRepository.dailyVolume(userId, tz, thisWeekStart, thisWeekEnd),
       ctx.VolumeRepository.totalVolume(userId, tz, thisWeekStart, thisWeekEnd),
       ctx.VolumeRepository.totalVolume(userId, tz, lastWeekStart, lastWeekEnd),
@@ -123,13 +131,14 @@ export const getHomeHandler = new Elysia()
       ctx.SleepRepository.getForDate(userId, today),
     ]);
 
-    const rings = buildRings(
+    const rings = buildRings({
       steps,
-      DEFAULT_GOAL_STEPS,
-      thisKg,
-      DEFAULT_TARGET_KG,
-      kcalTarget !== null ? { consumed: kcal, target: kcalTarget } : null,
-    );
+      goalSteps:
+        stepsGoal != null && stepsGoal > 0 ? stepsGoal : DEFAULT_GOAL_STEPS,
+      activeKcal,
+      goalActiveKcal: DEFAULT_GOAL_ACTIVE_KCAL,
+      fuel: kcalTarget !== null ? { consumed: kcal, target: kcalTarget } : null,
+    });
 
     return {
       data: {

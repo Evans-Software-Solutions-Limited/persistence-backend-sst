@@ -615,6 +615,71 @@ describe("WorkoutRepository", () => {
       expect(tx.insert).toHaveBeenCalledTimes(2);
     });
 
+    it("stores a duration DERIVED from the plan, not a flat 30", async () => {
+      // The reported bug: a 7-exercise workout was stored as "30 min" because
+      // the mobile form seeded 30 and every layer defaulted to 30.
+      const created = { ...baseWorkout, id: "wo-new" };
+      const valuesSpy = vi.fn().mockReturnValue({
+        returning: vi.fn().mockResolvedValue([created]),
+      });
+      const tx = {
+        insert: vi.fn().mockReturnValue({
+          values: valuesSpy,
+          // second insert (exercises) resolves through the same shape
+        }),
+        select: vi.fn().mockReturnValue(makeExercisesByWorkoutChain([])),
+      };
+      valuesSpy.mockReturnValueOnce({
+        returning: vi.fn().mockResolvedValue([created]),
+      });
+      const mockDb = {
+        transaction: vi.fn().mockImplementation(async (fn: any) => fn(tx)),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const repo = new WorkoutRepository();
+      await repo.createWithExercises("user-1", {
+        name: "Big session",
+        exercises: Array.from({ length: 7 }, (_, i) => ({
+          exerciseId: `ex-${i}`,
+          sortOrder: i,
+          targetSets: 4,
+          targetRepsMin: 8,
+          targetRepsMax: 10,
+          restSeconds: 90,
+        })),
+      });
+
+      // 7 × (4×75 + 3×90) + 6×120 = 4710s = 78.5min → 80
+      expect(valuesSpy.mock.calls[0][0].estimatedDurationMinutes).toBe(80);
+    });
+
+    it("still honours an explicitly supplied duration", async () => {
+      const created = { ...baseWorkout, id: "wo-new" };
+      const valuesSpy = vi.fn().mockReturnValue({
+        returning: vi.fn().mockResolvedValue([created]),
+      });
+      const tx = {
+        insert: vi.fn().mockReturnValue({ values: valuesSpy }),
+        select: vi.fn().mockReturnValue(makeExercisesByWorkoutChain([])),
+      };
+      const mockDb = {
+        transaction: vi.fn().mockImplementation(async (fn: any) => fn(tx)),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const repo = new WorkoutRepository();
+      await repo.createWithExercises("user-1", {
+        name: "Coach-timed",
+        estimatedDurationMinutes: 45,
+        exercises: [
+          { exerciseId: "ex-1", sortOrder: 0, targetSets: 3, restSeconds: 60 },
+        ],
+      });
+
+      expect(valuesSpy.mock.calls[0][0].estimatedDurationMinutes).toBe(45);
+    });
+
     it("should insert only the workout when exercises array is empty", async () => {
       const created = { ...baseWorkout, id: "wo-new", name: "New" };
       const insertWorkouts = vi.fn().mockReturnValue({
@@ -824,6 +889,63 @@ describe("WorkoutRepository", () => {
       expect(setArg.description).toBe("new desc");
       expect(setArg.visibility).toBe("friends");
       expect(setArg.estimatedDurationMinutes).toBe(75);
+    });
+
+    it("re-derives the duration when an edit replaces the exercise plan", async () => {
+      // An edit that grows a workout must not keep the old estimate.
+      const setSpy = vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          returning: vi.fn().mockResolvedValue([baseWorkout]),
+        }),
+      });
+      const tx = {
+        update: vi.fn().mockReturnValue({ set: setSpy }),
+        select: vi
+          .fn()
+          .mockReturnValueOnce(makeProvenanceCaptureChain())
+          .mockReturnValue(makeExercisesByWorkoutChain([])),
+        delete: vi.fn().mockReturnValue({ where: vi.fn() }),
+        insert: vi.fn().mockReturnValue({ values: vi.fn() }),
+      };
+      const mockDb = {
+        transaction: vi.fn().mockImplementation(async (fn: any) => fn(tx)),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const repo = new WorkoutRepository();
+      await repo.update("wo-1", "user-1", {
+        exercises: Array.from({ length: 7 }, (_, i) => ({
+          exerciseId: `ex-${i}`,
+          sortOrder: i,
+          targetSets: 4,
+          restSeconds: 90,
+        })),
+      });
+
+      expect(setSpy.mock.calls[0][0].estimatedDurationMinutes).toBe(80);
+    });
+
+    it("leaves the stored duration alone on an edit that doesn't touch the plan", async () => {
+      const setSpy = vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          returning: vi.fn().mockResolvedValue([baseWorkout]),
+        }),
+      });
+      const tx = {
+        update: vi.fn().mockReturnValue({ set: setSpy }),
+        select: vi.fn().mockReturnValue(makeExercisesByWorkoutChain([])),
+        delete: vi.fn(),
+        insert: vi.fn(),
+      };
+      const mockDb = {
+        transaction: vi.fn().mockImplementation(async (fn: any) => fn(tx)),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const repo = new WorkoutRepository();
+      await repo.update("wo-1", "user-1", { name: "Renamed" });
+
+      expect(setSpy.mock.calls[0][0].estimatedDurationMinutes).toBeUndefined();
     });
 
     it("should default targetRepsMin/Max to 1 when omitted in nested exercises", async () => {

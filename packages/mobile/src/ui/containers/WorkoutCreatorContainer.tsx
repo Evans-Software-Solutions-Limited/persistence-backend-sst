@@ -234,7 +234,8 @@ function toCreateWorkoutInput(state: WorkoutFormState): CreateWorkoutInput {
     description:
       state.description.trim().length === 0 ? null : state.description.trim(),
     visibility: state.visibility,
-    estimatedDurationMinutes: state.estimatedDurationMinutes,
+    // Deliberately omitted — the server derives it from the exercise plan.
+    // Sending a value here is what pinned every workout to "30 min".
     showInOwnerLibrary: state.showInOwnerLibrary,
     exercises: state.exercises.map((ex) => ({
       exerciseId: ex.exercise_id,
