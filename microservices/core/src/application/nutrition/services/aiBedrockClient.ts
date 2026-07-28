@@ -56,14 +56,36 @@ export const CLIENT_TIMEOUT_MS = 12_000;
 export const OUTPUT_TOKENS_PER_SECOND = 100;
 
 /**
- * The same measurement for Opus-class Claude: **~45 tok/s** on Bedrock
- * (eu-west-2, 2026-07-28; three samples 49/41/45). Rounded DOWN to 40.
+ * The same figure for Opus-class Claude: **55 tok/s**, from E1's in-region data.
  *
- * Two and a half times slower than Haiku, which is why passing this matters
- * rather than taking the default — the equipment scan, Snap AI photo and recipe
- * extraction all run Opus.
+ * ⚠ This was 40, taken from three CLI samples I ran from a laptop in the UK
+ * (49/41/45 tok/s). That number is not wrong so much as it measures the wrong
+ * thing: end-to-end from outside AWS, so it folds in transatlantic round-trip
+ * and time-to-first-token, while this constant is consumed by
+ * `maxTokensForBudget`, which accounts for those separately via
+ * {@link PREFILL_ALLOWANCE_MS}. Double-counting them made Opus look 40 % slower
+ * than it is.
+ *
+ * E1 ran the equipment scan in-region and recorded `outputTokens` AND latency
+ * per photo (`scratchpad/loadout-phase-e/results/e1-opus.json`). Subtracting the
+ * 3 s prefill allowance from each:
+ *
+ *     tokens  total    generating
+ *      513   10.30 s     70.3 tok/s
+ *      698   12.27 s     75.3 tok/s
+ *      533   11.41 s     63.3 tok/s
+ *      424    9.12 s     69.2 tok/s
+ *      559   12.19 s     60.8 tok/s
+ *      325    7.64 s     70.1 tok/s
+ *      360    7.86 s     74.1 tok/s
+ *                        min 60.8, mean 69.0
+ *
+ * 55 floors the slowest observed run with headroom. The consequence is not
+ * cosmetic: at 40 the scan's own measured worst case priced out at 20.4 s
+ * against a 20 s attempt, which said the scan could never resend — a conclusion
+ * produced entirely by the wrong constant.
  */
-export const OPUS_OUTPUT_TOKENS_PER_SECOND = 40;
+export const OPUS_OUTPUT_TOKENS_PER_SECOND = 55;
 
 /**
  * Everything before the first output token: request transfer, input prefill,

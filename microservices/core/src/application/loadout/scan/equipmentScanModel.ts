@@ -78,43 +78,51 @@ const TOOL_NAME = "report_gym_equipment";
 export const EQUIPMENT_SCAN_TIMEOUT_MS = 20_000;
 
 /**
- * ⚠ Knowingly larger than {@link EQUIPMENT_SCAN_TIMEOUT_MS} can receive, and
- * exported so `aiBudget.test.ts` binds to this value rather than a literal copy
- * of it.
+ * ⚠ Larger than {@link EQUIPMENT_SCAN_TIMEOUT_MS} can receive, and exported so
+ * `aiBudget.test.ts` binds to this value rather than a literal copy of it.
  *
- * Measured 2026-07-28: Opus 4.6 on Bedrock generates at **~45 tok/s** (three
- * samples: 49, 41, 45), so a 20 s attempt receives roughly 765 tokens after
- * prefill — while a busy commercial gym legitimately produces ~1,100 tokens of
- * detections. **This surface does not currently fit its budget**, and raising
- * the attempt to the full 29 s route ceiling only buys ~1,170 tokens, so there
- * is no constant that fixes it. The real options are a smaller per-detection
- * payload (the prose note dominates) or an asynchronous scan.
+ * At {@link OPUS_OUTPUT_TOKENS_PER_SECOND} a 20 s attempt receives ~935 tokens,
+ * so 4096 is unreachable — but it is a TRUNCATION GUARD, and a guard that never
+ * binds costs nothing. Measured output tops out at
+ * {@link REALISTIC_SCAN_OUTPUT_TOKENS} (698), which fits.
  *
- * Left as-is deliberately: the scan is Phase 3 and not user-reachable yet, so
- * this is a design decision to take rather than a live regression to patch.
+ * ⚠ An earlier version of this docstring claimed the surface "does not currently
+ * fit its budget" and recommended an async redesign. That rested on an invented
+ * 1,100-token figure and is withdrawn — see
+ * {@link REALISTIC_SCAN_OUTPUT_TOKENS}. Lowering this constant to the measured
+ * figure would be tidier and changes no behaviour; it is left alone only because
+ * this PR is about the timeout budget, not the scan.
+ *
+ * ⚠ And the endpoint IS live: `aiEquipmentScanHandler` is mounted in
+ * `loadoutRoutes`, behind auth, the `loadout` entitlement and a 6/day cap. An
+ * earlier note here called it "not user-reachable yet" and used that to justify
+ * leaving things alone. It was wrong, and it is the kind of wrong that makes a
+ * real problem look deferrable.
  */
 export const EQUIPMENT_SCAN_MAX_TOKENS = 4096;
 
 /**
- * What a scan actually produces, DERIVED FROM E1's measurement rather than
- * estimated from the schema.
+ * What a scan actually emits: **698 tokens**, E1's measured maximum across its
+ * seven photos (513, 698, 533, 424, 559, 325, 360 — mean 487).
+ * `scratchpad/loadout-phase-e/results/e1-opus.json`.
  *
- * E1 measured this surface end-to-end at **mean 10.1 s / max 12.27 s** (7 photos).
- * At the measured Opus rate of ~40 tok/s that is ~400 tokens mean, ~490 at the
- * max; 500 covers the measured worst case.
+ * ## ⚠ Two wrong values preceded this one, by the same mistake
  *
- * ⚠ The first version of this constant said 1,100, reasoned from "~28 catalogue
- * rows plus a note". That was a guess dressed as a figure, it was ~3× high, and
- * it contradicted E1 sitting in the same repo — 1,100 tokens at 40 tok/s is
- * 27.5 s, which would mean the scan could not finish its own 20 s attempt even
- * on the happy path. The scan is NOT in that state: its measured output fits its
- * budget comfortably (20 s receives ~680 tokens).
+ * First 1,100, reasoned from "~28 catalogue rows plus a note" — a guess
+ * formatted as a measurement, ~2× high, and the basis of a reported finding that
+ * this surface could not fit its budget.
  *
- * What remains true is narrower: {@link EQUIPMENT_SCAN_MAX_TOKENS} (4096) is
- * unreachable headroom, not a live hazard. A ceiling is a truncation guard, and
- * this one simply never binds.
+ * Then 500, from E1's mean LATENCY × an assumed token rate. Also an inference —
+ * and E1's own verdict says that latency includes base64 serialisation and SigV4
+ * signing over a ~1.5 MB image, so it was never a proxy for generation. It
+ * landed 28 % under the measured worst case, and four of the seven photos
+ * exceeded it.
+ *
+ * Both times the direct measurement was sitting in the same JSON object, one key
+ * away from the latency I did use. **Prefer the recorded quantity over one you
+ * can derive from it.**
  */
-export const REALISTIC_SCAN_OUTPUT_TOKENS = 500;
+export const REALISTIC_SCAN_OUTPUT_TOKENS = 698;
 
 /**
  * The model's free-text aside, capped and treated as untrusted.

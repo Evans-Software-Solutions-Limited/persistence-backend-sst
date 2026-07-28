@@ -349,10 +349,38 @@ describe("scanEquipmentFromPhoto", () => {
     expect(create).toHaveBeenCalledTimes(2);
   });
 
-  it("judges that resend at the OPUS rate, not the Haiku default", async () => {
-    // The guard would be optimistic by ~2.5x on the default. At 40 tok/s the
-    // realistic 500-token scan needs ~12.5 s of the ~20 s left, which fits; a
-    // ceiling-sized estimate would not, and neither would a slower surface.
+  it("judges that resend at the OPUS rate — behaviourally, not by comparing constants", async () => {
+    // ⚠ The first version of this test asserted a relation between three
+    // constants and never called `scanEquipmentFromPhoto`. Deleting
+    // `tokensPerSecond` from the call site left all 357 tests in this area green
+    // — under a test named for exactly that. Same defect as the mis-named test
+    // two blocks up, added by the same commit.
+    //
+    // The discriminating input: a `retry-after` of 6 s. At the Opus rate the
+    // resend needs 3 s prefill + 698/55 s = 15.7 s, leaving ~4.3 s of the 20 s
+    // attempt to spare — so 6 s of backoff does not fit and it is refused. At
+    // the Haiku default the same work prices at ~10 s, leaving ~10 s spare, and
+    // the backoff would be accepted. Dropping `tokensPerSecond` from the call
+    // site flips this test (and makes it sleep for 6 real seconds).
+    const { client, create } = fakeClient(() => {
+      throw Object.assign(new Error("throttled"), {
+        status: 429,
+        headers: { "retry-after": "6" },
+      });
+    });
+
+    await expect(
+      scanEquipmentFromPhoto(
+        { ...IMAGE, catalogue: CATALOGUE },
+        { client, modelId: "test-model" },
+      ),
+    ).rejects.toBeInstanceOf(AiUnavailableError);
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  it("still fits its own budget at the measured worst case", () => {
+    // The positive half: 698 tokens is what E1 actually recorded, and it has to
+    // fit the FIRST attempt or the surface is broken regardless of retries.
     expect(REALISTIC_SCAN_OUTPUT_TOKENS).toBeLessThanOrEqual(
       maxTokensForBudget(
         EQUIPMENT_SCAN_TIMEOUT_MS,

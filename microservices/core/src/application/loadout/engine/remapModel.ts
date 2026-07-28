@@ -156,6 +156,13 @@ export const MIN_USEFUL_GENERATION_MS = 5_000;
  * `[loadout-remap] unreadable` starts appearing with high `swapRows`, this is
  * why, and the numbers to act on are in the line.
  */
+export function remapMaxTokens(
+  swapRowCount: number,
+  timeoutMs: number = REMAP_TIMEOUT_MS,
+): number {
+  return Math.min(maxTokensForBudget(timeoutMs), 512 + 120 * swapRowCount);
+}
+
 /**
  * What one re-map REALISTICALLY emits — E2 measured ~40 tokens/row.
  *
@@ -171,13 +178,6 @@ export const MIN_USEFUL_GENERATION_MS = 5_000;
  */
 export function minUsefulRemapTokens(swapRowCount: number): number {
   return 512 + 40 * swapRowCount;
-}
-
-export function remapMaxTokens(
-  swapRowCount: number,
-  timeoutMs: number = REMAP_TIMEOUT_MS,
-): number {
-  return Math.min(maxTokensForBudget(timeoutMs), 512 + 120 * swapRowCount);
 }
 
 /**
