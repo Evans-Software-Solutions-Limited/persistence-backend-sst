@@ -138,15 +138,17 @@ function endpointReferencesUnsyncedLocalId(endpoint: string): boolean {
 function prepareExercisePayload(
   storage: StoragePort,
   payload: string,
-): { body: string; deferReason: null } | { body: null; deferReason: string } {
+):
+  | { body: string; deferReason: null; deferKind: null }
+  | { body: null; deferReason: string; deferKind: DeferKind } {
   let parsed: unknown;
   try {
     parsed = JSON.parse(payload);
   } catch {
-    return { body: payload, deferReason: null };
+    return { body: payload, deferReason: null, deferKind: null };
   }
   if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-    return { body: payload, deferReason: null };
+    return { body: payload, deferReason: null, deferKind: null };
   }
 
   const resolution = resolveExercisePayloadReferences(
@@ -155,22 +157,41 @@ function prepareExercisePayload(
   );
   switch (resolution.status) {
     case "unchanged":
-      return { body: payload, deferReason: null };
+      return { body: payload, deferReason: null, deferKind: null };
     case "resolved":
-      return { body: JSON.stringify(resolution.payload), deferReason: null };
+      return {
+        body: JSON.stringify(resolution.payload),
+        deferReason: null,
+        deferKind: null,
+      };
     case "catalogue_unavailable":
+      // ⚠ `transport`, NOT `resolution`. The catalogue is fetched over the network,
+      // so regaining connectivity IS new information here — its own reason string
+      // says "waiting for the reference list". Filing it as `resolution` meant the
+      // reconnect self-heal skipped it, so an exercise queued while the catalogue
+      // was cold exhausted without a single request leaving the device and then sat
+      // in /sync-failed needing a manual Retry (an exercise EDIT never even
+      // qualifies for the resurrect, which requires `operation === "create"`).
+      // Reachable: `useReferenceListBootstrap` swallows a failed fetch and does not
+      // retry within the session, so one offline sign-in leaves the catalogue cold
+      // for the whole app run.
       return {
         body: null,
         deferReason: `Waiting for the ${resolution.kinds.join(" + ")} reference list before sending; will retry.`,
+        deferKind: "transport",
       };
     case "unresolvable":
       // Loud, and it names the offending members so the mapping table can be
       // fixed. Deferring (rather than sending a silently-shortened array) is
       // deliberate: a partial send would create the exercise with its muscles
       // or equipment quietly missing.
+      //
+      // `resolution`: this member is absent from a catalogue we HAVE, so no amount
+      // of connectivity changes the verdict. It must reach the ceiling and surface.
       return {
         body: null,
         deferReason: `No catalogue entry for: ${resolution.unresolved.join(", ")}. Exercise not sent.`,
+        deferKind: "resolution",
       };
   }
 }
@@ -216,6 +237,17 @@ function deferOrCharge(
   kind: DeferKind,
 ): void {
   if (entry.deferCount >= MAX_TRANSPORT_DEFERRALS) {
+    // Computed BEFORE the mark. `entry` is a snapshot for the SQLite adapter, so
+    // `retryCount + 1` is this attempt's number — but the in-memory double returns
+    // LIVE references, so reading it AFTER the mark saw the already-incremented
+    // value and the `+ 1` became unobservable: weakening the test to
+    // `>= maxRetries` left all 113 sync tests green while, in production, silently
+    // disabling BOTH the Sentry report and the sibling collapse for this entire
+    // path — and the ceiling is the only route to the collapse for an
+    // offline-deferred row, since a deferral never raises a SyncHttpError. (The
+    // SyncHttpError branch below already computes its equivalent before its own
+    // mark, for exactly this reason.)
+    const willExhaust = entry.retryCount + 1 >= entry.maxRetries;
     storage.markMutationFailed(entry.id, reason);
     // Escalation past the ceiling can be the attempt that exhausts the budget, and
     // it reaches this function instead of the SyncHttpError branch below — so
@@ -223,13 +255,33 @@ function deferOrCharge(
     // request-building code, and an `unresolvable` catalogue member whose own
     // docstring promises to be "loud") would reach the USER's banner but never the
     // team's telemetry.
-    if (entry.retryCount + 1 >= entry.maxRetries) {
+    if (willExhaust) {
       reportTerminalFailure(entry, reason);
       collapseStrandedLocalIdSiblings(storage, entry);
     }
     return;
   }
   storage.markMutationDeferred(entry.id, reason, kind);
+}
+
+/**
+ * Parse a stored payload into a plain object, or null if it isn't one. Arrays and
+ * scalars are rejected because the only use here is spreading two bodies together.
+ */
+function parseObject(payload: string): Record<string, unknown> | null {
+  try {
+    const parsed: unknown = JSON.parse(payload);
+    if (
+      parsed === null ||
+      typeof parsed !== "object" ||
+      Array.isArray(parsed)
+    ) {
+      return null;
+    }
+    return parsed as Record<string, unknown>;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -282,26 +334,6 @@ function reportTerminalFailure(entry: SyncQueueEntry, message: string): void {
  * Only local-id-addressed siblings are touched; anything pointing at a real resource
  * is unrelated to this create's failure and stays.
  */
-/**
- * Parse a stored payload into a plain object, or null if it isn't one. Arrays and
- * scalars are rejected because the only use here is spreading two bodies together.
- */
-function parseObject(payload: string): Record<string, unknown> | null {
-  try {
-    const parsed: unknown = JSON.parse(payload);
-    if (
-      parsed === null ||
-      typeof parsed !== "object" ||
-      Array.isArray(parsed)
-    ) {
-      return null;
-    }
-    return parsed as Record<string, unknown>;
-  } catch {
-    return null;
-  }
-}
-
 function collapseStrandedLocalIdSiblings(
   storage: StoragePort,
   entry: SyncQueueEntry,
@@ -318,19 +350,36 @@ function collapseStrandedLocalIdSiblings(
     if (stranded.length === 0) return;
 
     // ⚠ A stranded DELETE is terminal intent for the whole ENTITY, so the create
-    // goes with it. Keeping the create was a live data-resurrection bug: delete a
-    // never-synced workout offline (`delete-workout` evicts the cache and enqueues
-    // `DELETE /workouts/local-w1`), stay offline until the create exhausts, and the
-    // collapse discarded the DELETE — leaving a create that satisfies every clause
-    // of `useSyncWorker`'s `replaySafe` filter. The next reconnect resurrected it,
-    // the POST landed, and nothing remained to undo it: the workout the user deleted
-    // reappeared on the next refresh and consumed a slot against their quota. With
-    // an edit also queued it came back carrying the edit.
+    // must not be left behind alone. Doing that was a live data-resurrection bug:
+    // delete a never-synced workout offline (`delete-workout` evicts the cache and
+    // enqueues `DELETE /workouts/local-w1`), stay offline until the create exhausts,
+    // and the collapse discarded the DELETE — leaving a create that satisfies every
+    // clause of `useSyncWorker`'s `replaySafe` filter. The next reconnect resurrected
+    // it, the POST landed, and nothing remained to undo it: the workout the user
+    // deleted reappeared on the next refresh and consumed a slot against their quota.
     //
-    // Discarding both is the right end state either way — the user's last expressed
-    // intent for this row is "gone", and the server never saw it.
+    // But discarding BOTH is only right when nothing can have committed, and for the
+    // ambiguous failure this branch exists for that is precisely unknown: the POST is
+    // dispatched, the server commits, the connection drops before the response,
+    // `fetch` rejects. Dropping both rows there leaves the workout on the SERVER and
+    // gone locally — so the next refresh re-materialises the row the user deleted,
+    // the same harm by the opposite route. `dispatchCount` answers this, and it is
+    // already maxed out by the time the collapse runs.
+    //
+    // So: discard both only where the server provably never accepted it — an explicit
+    // rejection (`permanently_failed`), or a request that never left the device
+    // (`dispatchCount === 0`). Otherwise keep BOTH and let the pair resolve itself:
+    // the create carries an idempotency key, so replaying it (via the reconnect
+    // resurrect, or the user's Retry) returns the row the first attempt made,
+    // `swapLocal*Id` rewrites the DELETE's endpoint onto the real id, and the delete
+    // lands. Deliberately NOT reset here — resetting on the very failure that
+    // triggered the collapse would spin: pending → drain → fail → collapse → reset.
     if (stranded.some((sibling) => sibling.operation === "delete")) {
-      storage.discardEntries([entry.id, ...stranded.map((s) => s.id)]);
+      const nothingCommitted =
+        entry.status === "permanently_failed" || entry.dispatchCount === 0;
+      if (nothingCommitted) {
+        storage.discardEntries([entry.id, ...stranded.map((s) => s.id)]);
+      }
       return;
     }
 
@@ -545,7 +594,12 @@ export async function processSyncQueue(
           // that simply doesn't exist), and deferring that forever would keep the
           // exercise invisible in the queue instead of surfacing it where the user
           // can see the named members and discard or retry it.
-          deferOrCharge(storage, entry, prepared.deferReason, "resolution");
+          deferOrCharge(
+            storage,
+            entry,
+            prepared.deferReason,
+            prepared.deferKind,
+          );
           failed++;
           continue;
         }

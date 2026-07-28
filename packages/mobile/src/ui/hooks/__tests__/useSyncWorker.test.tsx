@@ -746,6 +746,55 @@ describe("useSyncWorker", () => {
       expect(entry.deferKind).toBe("resolution");
     });
 
+    it("leaves an EXHAUSTED resolution-deferred create in /sync-failed on reconnect", async () => {
+      // The `deferred` filter excludes `resolution`, but the `replaySafe` filter
+      // silently undid it: `resetFailedEntries` zeroes retry_count, defer_count AND
+      // defer_kind, so an entry that had just climbed the full 12-deferral +
+      // 3-retry ladder into /sync-failed was dropped back to `pending` on the next
+      // connectivity blip — visible only in the window between exhausting and the
+      // next transition, which on a phone that moves is potentially never.
+      const storage = new InMemoryStorageAdapter();
+      storage.initialize();
+      storage.enqueueMutation({
+        entityType: "exercise",
+        entityId: "local-ex-unresolvable",
+        operation: "create",
+        payload: { name: "Machine Press" },
+        endpoint: "/exercises",
+        method: "POST",
+      });
+      const id = storage.getPendingMutations().slice(-1)[0].id;
+      // Climb the ladder: free deferrals, then the charged attempts that exhaust it.
+      for (let i = 0; i < 12; i++) {
+        storage.markMutationDeferred(id, "No catalogue entry", "resolution");
+      }
+      storage.markMutationFailed(id, "No catalogue entry");
+      storage.markMutationFailed(id, "No catalogue entry");
+      storage.markMutationFailed(id, "No catalogue entry");
+      expect(storage.getFailedExhaustedEntries()).toHaveLength(1);
+
+      mockFetch.mockResolvedValue({ ok: true, json: async () => ({}) });
+      const auth = new InMemoryAuthAdapter();
+      const netInfo = new InMemoryNetInfoAdapter(true);
+      const adapters = makeAdapters(storage, auth, session, netInfo);
+
+      renderHook(() => useSyncWorker(), { wrapper: wrap(adapters) });
+      await settleMount();
+      mockFetch.mockClear();
+
+      act(() => netInfo.setConnected(false));
+      act(() => netInfo.setConnected(true));
+      act(() => {
+        jest.advanceTimersByTime(SYNC_RECONNECT_DEBOUNCE_MS);
+      });
+      await settleMount();
+
+      // Still reviewable, still not re-sent. `defer_kind` survives
+      // markMutationFailed untouched, which is what makes it readable here.
+      expect(storage.getFailedExhaustedEntries()).toHaveLength(1);
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
     it("restores the budget-free run of still-queued deferred entries on reconnect", async () => {
       // Without this, an offline stretch of only ~90–120s (12 free deferrals at a
       // 5s window, then 3 charged attempts) exhausted an offline-created row

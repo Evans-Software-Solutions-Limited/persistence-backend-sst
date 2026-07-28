@@ -208,6 +208,16 @@ export function useSyncWorker(): void {
             // the reset and the re-failure) so the banner flickered. Only
             // TRANSIENT exhaustion — plausibly connectivity — is self-healed here.
             e.status === "failed" &&
+            // ⚠ And not a `resolution` deferral, for the same reason the filter
+            // above excludes them — otherwise this clause silently undid that one.
+            // `resetFailedEntries` zeroes retry_count, defer_count AND defer_kind,
+            // so an entry that had just climbed the full 12-deferral + 3-retry
+            // ladder into /sync-failed was dropped straight back to `pending` on the
+            // next connectivity blip: visible only in the window between exhausting
+            // and the next transition, which on a phone that moves is potentially
+            // never. `defer_kind` survives `markMutationFailed` untouched, so it is
+            // still readable on the exhausted row.
+            e.deferKind !== "resolution" &&
             // Both self and on-behalf (`.../clients/:id/sessions/record`) forms.
             (e.endpoint.endsWith("/sessions/record") ||
               (e.operation === "create" &&

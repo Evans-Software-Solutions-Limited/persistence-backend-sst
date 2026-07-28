@@ -1170,8 +1170,13 @@ export type SyncQueueEntry = {
  * - `"transport"` — no answer was received (offline, a dropped connection). A
  *   reconnect IS new information about this, so the reconnect self-heal re-arms the
  *   entry's budget-free run.
- * - `"resolution"` — we declined to send, because a reference catalogue could not be
- *   resolved. Connectivity has no bearing on it, so a reconnect must NOT re-arm it:
+ * - `"resolution"` — we declined to send because a value in the payload has no
+ *   catalogue entry AT ALL (`unresolvable`). Note a MISSING catalogue
+ *   (`catalogue_unavailable`) is filed as `"transport"` instead: that list arrives
+ *   over the network, so connectivity does change its verdict. Only a member absent
+ *   from a catalogue we already hold belongs here.
+ *
+ *   Connectivity has no bearing on it, so a reconnect must NOT re-arm it:
  *   doing so pinned `deferCount` at zero on every reconnect, so an exercise naming a
  *   catalogue entry that does not yet exist could never reach
  *   `MAX_TRANSPORT_DEFERRALS`, never surfaced in /sync-failed, was never sent, and

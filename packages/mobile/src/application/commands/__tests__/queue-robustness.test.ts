@@ -574,12 +574,17 @@ describe("deferral does not consume the retry budget", () => {
       await processSyncQueue(storage, auth, "https://api.test", AFTER_BACKOFF);
     }
 
-    // Nothing left to resurrect — the user's last intent for this row was "gone",
-    // and the server never saw it.
-    expect(storage.getQueuedEntriesForEntity("workout", "local-w1")).toEqual(
-      [],
-    );
-    expect(storage.getFailedExhaustedEntries()).toEqual([]);
+    // THE invariant: a create is never left resurrectable ON ITS OWN. Either both
+    // rows go (only when nothing can have committed), or both stay so the delete
+    // still follows the create through the id swap. A lone create IS the
+    // resurrection bug — it satisfies every clause of `replaySafe` with nothing
+    // left to undo it.
+    const ops = storage
+      .getQueuedEntriesForEntity("workout", "local-w1")
+      .map((e) => e.operation)
+      .sort();
+    expect(ops).not.toEqual(["create"]);
+    if (ops.length > 0) expect(ops).toEqual(["create", "delete"]);
   });
 
   it("MERGES the folded edit onto the create rather than replacing the body", async () => {
@@ -618,6 +623,152 @@ describe("deferral does not consume the retry budget", () => {
     const body = JSON.parse(survivor.payload);
     expect(body.name).toBe("Client Push v2"); // the edit applied…
     expect(body.showInOwnerLibrary).toBe(false); // …without dropping the rest
+  });
+
+  it("collapses siblings on the FINAL charged attempt, not one attempt early", async () => {
+    // The ceiling path computed its exhaustion test AFTER markMutationFailed. That is
+    // correct against the SQLite adapter (the drain holds a snapshot) but the
+    // in-memory double returns LIVE references, so the already-incremented value made
+    // the `+ 1` unobservable: weakening the condition to `>= maxRetries` left all 113
+    // sync tests green, while in production it disabled both the Sentry report and the
+    // sibling collapse for this entire path — and the ceiling is the ONLY route to the
+    // collapse for an offline-deferred row, since a deferral never raises a
+    // SyncHttpError. This drives an entry to death purely through transport failures
+    // and asserts the collapse fires exactly once it is spent.
+    storage.enqueueMutation({
+      entityType: "exercise",
+      entityId: "local-e5",
+      operation: "create",
+      payload: { name: "Lift" },
+      endpoint: "/exercises",
+      method: "POST",
+    });
+    storage.enqueueMutation({
+      entityType: "exercise",
+      entityId: "local-e5",
+      operation: "update",
+      payload: { name: "Renamed" },
+      endpoint: "/exercises/local-e5",
+      method: "PATCH",
+    });
+    mockFetch.mockRejectedValue(new TypeError("Network request failed"));
+
+    // Free deferrals first: nothing charged, so nothing collapsed yet.
+    for (let i = 0; i < MAX_TRANSPORT_DEFERRALS; i++) {
+      await processSyncQueue(storage, auth, "https://api.test", AFTER_BACKOFF);
+    }
+    expect(
+      storage.getQueuedEntriesForEntity("exercise", "local-e5"),
+    ).toHaveLength(2);
+
+    // Charged attempts. maxRetries is 3, so the third is the one that exhausts.
+    await processSyncQueue(storage, auth, "https://api.test", AFTER_BACKOFF);
+    await processSyncQueue(storage, auth, "https://api.test", AFTER_BACKOFF);
+    expect(
+      storage.getQueuedEntriesForEntity("exercise", "local-e5"),
+    ).toHaveLength(2);
+
+    await processSyncQueue(storage, auth, "https://api.test", AFTER_BACKOFF);
+
+    // Now spent: the edit has been folded onto the create and the sibling dropped.
+    const remaining = storage.getQueuedEntriesForEntity("exercise", "local-e5");
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0].operation).toBe("create");
+    expect(JSON.parse(remaining[0].payload).name).toBe("Renamed");
+  });
+
+  it("keeps a dispatched create + its delete rather than losing a committed row", async () => {
+    // The ambiguous failure this whole branch exists for: the POST is dispatched, the
+    // server commits, the connection drops before the response, `fetch` rejects.
+    // Discarding both rows there leaves the workout ON THE SERVER and gone locally,
+    // so the next refresh re-materialises the row the user deleted — the same harm
+    // the delete-guard was added to prevent, by the opposite route. Both entries
+    // survive so the create can replay idempotently, the id swap can rewrite the
+    // DELETE's endpoint, and the delete can land on the real resource.
+    storage.enqueueMutation({
+      entityType: "workout",
+      entityId: "local-w3",
+      operation: "create",
+      payload: { name: "Push" },
+      endpoint: "/workouts",
+      method: "POST",
+    });
+    storage.enqueueMutation({
+      entityType: "workout",
+      entityId: "local-w3",
+      operation: "delete",
+      payload: {},
+      endpoint: "/workouts/local-w3",
+      method: "DELETE",
+    });
+    // Transport failure only — every attempt leaves the device, so the server may
+    // have seen any of them.
+    mockFetch.mockRejectedValue(new TypeError("Network request failed"));
+
+    for (let i = 0; i < MAX_TRANSPORT_DEFERRALS + 5; i++) {
+      await processSyncQueue(storage, auth, "https://api.test", AFTER_BACKOFF);
+    }
+
+    const create = storage
+      .getQueuedEntriesForEntity("workout", "local-w3")
+      .find((e) => e.operation === "create");
+    expect(create).toBeDefined();
+    expect(create!.dispatchCount).toBeGreaterThan(0);
+    expect(
+      storage
+        .getQueuedEntriesForEntity("workout", "local-w3")
+        .some((e) => e.operation === "delete"),
+    ).toBe(true);
+  });
+
+  it("classifies a MISSING catalogue as transport, so a reconnect can heal it", async () => {
+    // `catalogue_unavailable` says "waiting for the reference list", and that list
+    // arrives over the network — so connectivity does change its verdict. Filing it
+    // as `resolution` meant the reconnect self-heal skipped it and an exercise queued
+    // while the catalogue was cold exhausted without a single request leaving the
+    // device. Reachable: `useReferenceListBootstrap` swallows a failed fetch and does
+    // not retry within the session.
+    storage.enqueueMutation({
+      entityType: "exercise",
+      entityId: "local-e6",
+      operation: "create",
+      payload: { name: "Lift", primary_muscles: ["chest"] },
+      endpoint: "/exercises",
+      method: "POST",
+    });
+
+    await processSyncQueue(storage, auth, "https://api.test");
+
+    expect(mockFetch).not.toHaveBeenCalled();
+    const [entry] = storage.getPendingMutations();
+    expect(entry.deferKind).toBe("transport");
+  });
+
+  it("classifies an UNRESOLVABLE member as resolution, so it still reaches the user", async () => {
+    // The counter-case, so the test above can fail: a member absent from a catalogue
+    // we already HOLD will never resolve, whatever the network does. It must converge
+    // on the ceiling and surface rather than being postponed forever.
+    storage.cacheReferenceList("muscle_groups", [
+      {
+        id: "11111111-1111-4111-8111-111111111111",
+        name: "Chest",
+        displayName: "Chest",
+      },
+    ]);
+    storage.enqueueMutation({
+      entityType: "exercise",
+      entityId: "local-e6b",
+      operation: "create",
+      payload: { name: "Lift", primary_muscles: ["not_a_muscle"] },
+      endpoint: "/exercises",
+      method: "POST",
+    });
+
+    await processSyncQueue(storage, auth, "https://api.test");
+
+    expect(mockFetch).not.toHaveBeenCalled();
+    const [entry] = storage.getPendingMutations();
+    expect(entry.deferKind).toBe("resolution");
   });
 
   it("an explicit Retry restores the full free run", async () => {
