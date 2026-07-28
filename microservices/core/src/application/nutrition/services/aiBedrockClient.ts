@@ -301,10 +301,26 @@ export async function createWithRetry(
  * to an immediate 503 that also burns one of the caller's daily allowances.
  *
  * A throttle fails in milliseconds, so the resend costs nothing measurable. It
- * is bounded three ways: only for retryable statuses, only if the first failure
- * came back inside HALF the budget (a slow failure means generation was actually
- * happening, and resending would blow the deadline), and the retry inherits only
- * the time that is LEFT. The caller's deadline is never exceeded.
+ * is bounded four ways:
+ *
+ *   1. Only a retryable status.
+ *   2. Only if the first failure returned inside {@link PREFILL_ALLOWANCE_MS} —
+ *      i.e. before generation could have begun. ⚠ This was "half the budget"
+ *      and that was too loose: at 50 % elapsed the images or prompt have already
+ *      been accepted and BILLED, so the resend doubles the unit cost, which is
+ *      the doubling this function's own rationale says it exists to avoid.
+ *      Prefill is the honest proxy for "the provider never started".
+ *   3. The resend inherits only the time that is LEFT, minus the backoff.
+ *   4. `max_tokens` is re-clamped to what that remaining time can receive.
+ *      ⚠ Reusing `params` verbatim reintroduced, inside the resend, the exact
+ *      ceiling-versus-deadline mismatch this whole module exists to prevent: a
+ *      request carrying a ceiling sized for the FULL budget, running against a
+ *      shorter one, which times out on success. Clamping only ever lowers it.
+ *
+ * The backoff matters as much as the bound. The SDK retry being replaced honoured
+ * `retry-after`; a zero-delay resend into a live `ThrottlingException` is the
+ * single least likely request to succeed, so "we kept the retry" would have been
+ * true on paper and false in effect.
  *
  * ## Failure mapping
  *
@@ -314,29 +330,81 @@ export async function createSingleAttempt(
   client: MinimalBedrockClient,
   params: MessagesCreateParams,
   timeoutMs: number,
-  now: () => number = Date.now,
+  deps: {
+    now?: () => number;
+    sleep?: (ms: number) => Promise<void>;
+  } = {},
 ): Promise<MessagesCreateResponse> {
+  const now = deps.now ?? Date.now;
+  const sleep =
+    deps.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
   const startedAt = now();
   try {
     // Passed per-request rather than relying on the client default, which
     // `getDefaultClient()` fixes at CLIENT_TIMEOUT_MS for the retrying callers.
     return await client.messages.create(params, { timeout: timeoutMs });
   } catch (error) {
-    const elapsed = now() - startedAt;
-    const remaining = timeoutMs - elapsed;
-    if (isRetryable(error) && elapsed < timeoutMs / 2 && remaining > 0) {
-      try {
-        return await client.messages.create(params, { timeout: remaining });
-      } catch (retryError) {
-        throw new AiUnavailableError(
-          `ai_single_attempt_failed_after_retry: ${describeError(retryError)}`,
-        );
-      }
+    if (!isRetryable(error) || now() - startedAt >= PREFILL_ALLOWANCE_MS) {
+      throw new AiUnavailableError(
+        `ai_single_attempt_failed: ${describeError(error)}`,
+      );
     }
-    throw new AiUnavailableError(
-      `ai_single_attempt_failed: ${describeError(error)}`,
-    );
+
+    await sleep(retryAfterMs(error) ?? DEFAULT_RETRY_BACKOFF_MS);
+
+    const remaining = timeoutMs - (now() - startedAt);
+    if (remaining <= PREFILL_ALLOWANCE_MS) {
+      throw new AiUnavailableError(
+        `ai_single_attempt_failed: ${describeError(error)}`,
+      );
+    }
+
+    try {
+      return await client.messages.create(
+        {
+          ...params,
+          max_tokens: Math.min(
+            params.max_tokens,
+            maxTokensForBudget(remaining),
+          ),
+        },
+        { timeout: remaining },
+      );
+    } catch (retryError) {
+      throw new AiUnavailableError(
+        `ai_single_attempt_failed_after_retry: ${describeError(retryError)}`,
+      );
+    }
   }
+}
+
+/** Pause before a resend when the provider did not tell us how long to wait. */
+export const DEFAULT_RETRY_BACKOFF_MS = 400;
+
+/**
+ * `retry-after-ms` / `retry-after` from a provider error, when present.
+ *
+ * A throttle carries a cooldown and the SDK retry being replaced honoured it.
+ * Ignoring it turns "we kept the retry" into a claim that is true in structure
+ * and false in effect.
+ */
+export function retryAfterMs(error: unknown): number | undefined {
+  if (typeof error !== "object" || error === null) return undefined;
+  const headers = (error as { headers?: unknown }).headers;
+  if (typeof headers !== "object" || headers === null) return undefined;
+  const read = (key: string): string | undefined => {
+    const bag = headers as Record<string, unknown> & {
+      get?: (k: string) => string | null;
+    };
+    const viaGet = typeof bag.get === "function" ? bag.get(key) : undefined;
+    const raw = viaGet ?? bag[key];
+    return typeof raw === "string" ? raw : undefined;
+  };
+  const ms = Number(read("retry-after-ms"));
+  if (Number.isFinite(ms) && ms >= 0) return ms;
+  const seconds = Number(read("retry-after"));
+  if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1000;
+  return undefined;
 }
 
 /**

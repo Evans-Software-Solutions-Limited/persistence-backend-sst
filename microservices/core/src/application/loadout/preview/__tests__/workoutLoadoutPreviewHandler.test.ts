@@ -673,8 +673,45 @@ describe("POST /workouts/:id/loadout/preview — the model call's deadline", () 
       Date.now = realNow;
     }
 
+    // ⚠ EXACT, not `toBeLessThan`. The loose version passed for any reserve at
+    // all — changing `POST_MODEL_RESERVE_MS` from 3_500 to 200 left all 3148
+    // tests green. In a change whose thesis is "guards that were not guarding",
+    // the number added in response to a review finding was itself unguarded.
+    const POST_MODEL_RESERVE_MS = 3_500;
     const deps = selectSubstitutesMock.mock.calls[0][1];
-    expect(deps.timeoutMs).toBeLessThan(REMAP_TIMEOUT_MS);
+    expect(deps.timeoutMs).toBe(
+      ROUTE_TIMEOUT_MS - 10_000 - POST_MODEL_RESERVE_MS,
+    );
+  });
+
+  it("refuses a plan the SHORTENED budget cannot answer for, on row count", async () => {
+    // ⚠ The floor is not just a clock. A 10-row plan on a 12 s budget clears the
+    // time check comfortably, then gets a ~900-token ceiling against ~912 needed
+    // at the measured ~40 tokens/row — near-certain truncation, a 422, and a
+    // burned daily adaptation. That is the same failure as an exhausted clock,
+    // reached by row count instead, and a time-only guard cannot see it.
+    workoutRepo.listAdaptationRows.mockResolvedValue(
+      Array.from({ length: 10 }, (_, i) =>
+        adaptationRow({ workoutExerciseId: `we-${i}`, sortOrder: i }),
+      ),
+    );
+    const realNow = Date.now;
+    let reads = 0;
+    // 13.5 s of preamble -> attemptMs = 29000 - 13500 - 3500 = 12000.
+    Date.now = () => {
+      reads += 1;
+      return reads === 1 ? 1_000_000 : 1_000_000 + 13_500;
+    };
+    let res: Response;
+    try {
+      res = await call({ equipmentTypeIds: [DUMBBELL] });
+    } finally {
+      Date.now = realNow;
+    }
+
+    expect(res.status).toBe(503);
+    expect(selectSubstitutesMock).not.toHaveBeenCalled();
+    expect(usageLogRecordMock).not.toHaveBeenCalled();
   });
 
   it("503s WITHOUT billing a daily adaptation when the preamble ate the budget", async () => {

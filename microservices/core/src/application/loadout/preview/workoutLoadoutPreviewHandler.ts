@@ -15,6 +15,7 @@ import {
 import {
   AiUnavailableError,
   AiUnreadableError,
+  maxTokensForBudget,
   PREFILL_ALLOWANCE_MS,
   ROUTE_TIMEOUT_MS,
 } from "../../nutrition/services/aiBedrockClient";
@@ -366,28 +367,48 @@ export const workoutLoadoutPreviewHandler = new Elysia()
             ROUTE_TIMEOUT_MS - (Date.now() - startedAt) - POST_MODEL_RESERVE_MS;
           const attemptMs = Math.min(REMAP_TIMEOUT_MS, remainingMs);
 
-          // ⚠ Logged BEFORE the call, and that ordering is the point. When this
-          // surface failed on staging 2026-07-28 the Lambda was killed
-          // mid-inference, so nothing after the call ever ran — CloudWatch held a
-          // START and a REPORT 29 s apart and not one application line, and the
-          // Sentry trace id appeared nowhere. Diagnosis needed API Gateway access
-          // logs plus Bedrock metrics. This line says "we were in the model call"
-          // outright. Counts and ids only; the prompt carries the user's workout.
-          console.info(
-            `[loadout-remap] start workout=${workoutId} swapRows=${needsSwap.length} candidates=${offered.length} attemptMs=${attemptMs} maxTokens=${remapMaxTokens(needsSwap.length, attemptMs)}`,
-          );
-
           // ⚠ Fail BEFORE marking the request billable. A usage row means "an
           // inference reached the provider"; a preamble that ate the budget means
           // no request is sent at all, and charging a daily adaptation for that
           // punishes the user for our own slowness. This is the last pre-model
           // exit — every other one (400/402/404/429) already sits above
           // `reachedModel`.
-          if (attemptMs < PREFILL_ALLOWANCE_MS + MIN_USEFUL_GENERATION_MS) {
+          //
+          // ⚠ The floor is WORK-AWARE, not just a clock. A time-only floor let a
+          // 10-row plan through on a 12 s budget, where the ceiling is ~900
+          // tokens against ~912 wanted — near-certain truncation, a 422, and a
+          // burned adaptation. That is the same failure as an exhausted clock,
+          // reached by row count instead. Gated on the MEASURED ~40 tokens/row
+          // rather than the pessimistic 120 the ceiling is sized with, so this
+          // rejects only plans that genuinely cannot fit.
+          const ceiling = maxTokensForBudget(attemptMs);
+          const minimumUseful = 512 + 40 * needsSwap.length;
+          if (
+            attemptMs < PREFILL_ALLOWANCE_MS + MIN_USEFUL_GENERATION_MS ||
+            ceiling < minimumUseful
+          ) {
+            console.warn(
+              `[loadout-remap] skipped workout=${workoutId} swapRows=${needsSwap.length} attemptMs=${attemptMs} ceiling=${ceiling} needed=${minimumUseful}`,
+            );
             throw new AiUnavailableError(
               `ai_budget_exhausted: ${Math.max(0, attemptMs)}ms left after the preamble`,
             );
           }
+
+          // ⚠ Logged AFTER the guard, so a `start` line means a request really
+          // was sent. It fired before the guard at first, printing
+          // `attemptMs=-2500 maxTokens=0` for calls that never happened — a
+          // phantom for anyone reconciling these against Bedrock invocations,
+          // in a change whose entire point is trustworthy observability.
+          //
+          // When this surface failed on staging 2026-07-28 the Lambda was killed
+          // mid-inference, so nothing after the call ever ran — CloudWatch held a
+          // START and a REPORT 29 s apart and not one application line. This line
+          // says "we were in the model call" outright. Counts and ids only; the
+          // prompt carries the user's workout.
+          console.info(
+            `[loadout-remap] start workout=${workoutId} swapRows=${needsSwap.length} candidates=${offered.length} attemptMs=${attemptMs} maxTokens=${remapMaxTokens(needsSwap.length, attemptMs)}`,
+          );
 
           // Set LAST, immediately before the provider call. Anything that can
           // still fail before Bedrock is reached must not write a usage row, or a

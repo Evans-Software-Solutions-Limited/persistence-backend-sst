@@ -6,6 +6,7 @@ import {
   extractStatus,
   AiUnavailableError,
   CLIENT_TIMEOUT_MS,
+  DEFAULT_RETRY_BACKOFF_MS,
   getDefaultClient,
   maxTokensForBudget,
   OUTPUT_TOKENS_PER_SECOND,
@@ -38,6 +39,9 @@ function client(
 function statusError(status: number): Error & { status: number } {
   return Object.assign(new Error(`http ${status}`), { status });
 }
+
+/** Backoff is real time; tests must not spend it. */
+const noSleep = async () => {};
 
 describe("createSingleAttempt (spec-21 T-E1.6)", () => {
   it("returns the response on success", async () => {
@@ -75,7 +79,10 @@ describe("createSingleAttempt (spec-21 T-E1.6)", () => {
     const slow = () => (reads++ === 0 ? 0 : 19_000);
 
     await expect(
-      createSingleAttempt(client(create), PARAMS, 20_000, slow),
+      createSingleAttempt(client(create), PARAMS, 20_000, {
+        now: slow,
+        sleep: noSleep,
+      }),
     ).rejects.toBeInstanceOf(AiUnavailableError);
     expect(create).toHaveBeenCalledTimes(1);
   });
@@ -88,7 +95,10 @@ describe("createSingleAttempt (spec-21 T-E1.6)", () => {
     const slow = () => (reads++ === 0 ? 0 : 19_000);
 
     await expect(
-      createSingleAttempt(client(create), PARAMS, 20_000, slow),
+      createSingleAttempt(client(create), PARAMS, 20_000, {
+        now: slow,
+        sleep: noSleep,
+      }),
     ).rejects.toThrow(/ai_single_attempt_failed: socket hang up/);
   });
 
@@ -111,7 +121,10 @@ describe("createSingleAttempt (spec-21 T-E1.6)", () => {
     });
 
     await expect(
-      createSingleAttempt(client(create), PARAMS, 20_000, slow),
+      createSingleAttempt(client(create), PARAMS, 20_000, {
+        now: slow,
+        sleep: noSleep,
+      }),
     ).rejects.toThrow(/ai_single_attempt_failed: plain string/);
   });
 
@@ -289,7 +302,10 @@ describe("createSingleAttempt — the bounded resend", () => {
   it("resends a throttle that failed instantly", async () => {
     const { client: c, create } = client([boom(429), ok]);
     let t = 0;
-    await createSingleAttempt(c, PARAMS, 20_000, () => (t += 10));
+    await createSingleAttempt(c, PARAMS, 20_000, {
+      now: () => (t += 10),
+      sleep: noSleep,
+    });
 
     expect(create).toHaveBeenCalledTimes(2);
   });
@@ -303,7 +319,7 @@ describe("createSingleAttempt — the bounded resend", () => {
     // 0 ms, then 15 s elapsed against a 20 s budget: past the halfway bound.
     const clock = () => (t === 0 ? ((t = 15_000), 0) : 15_000);
     await expect(
-      createSingleAttempt(c, PARAMS, 20_000, clock),
+      createSingleAttempt(c, PARAMS, 20_000, { now: clock, sleep: noSleep }),
     ).rejects.toBeInstanceOf(AiUnavailableError);
 
     expect(create).toHaveBeenCalledTimes(1);
@@ -313,18 +329,131 @@ describe("createSingleAttempt — the bounded resend", () => {
     // Not a fresh full budget — the caller's deadline is absolute.
     const { client: c, create } = client([boom(429), ok]);
     let reads = 0;
-    const clock = () => (reads++ === 0 ? 0 : 4_000);
-    await createSingleAttempt(c, PARAMS, 20_000, clock);
+    const clock = () => (reads++ === 0 ? 0 : 1_000);
+    await createSingleAttempt(c, PARAMS, 20_000, {
+      now: clock,
+      sleep: noSleep,
+    });
 
     expect(create.mock.calls[0][1]).toEqual({ timeout: 20_000 });
-    expect(create.mock.calls[1][1]).toEqual({ timeout: 16_000 });
+    expect(create.mock.calls[1][1]).toEqual({ timeout: 19_000 });
+  });
+
+  it("re-clamps max_tokens to what the SHORTENED deadline can receive", async () => {
+    // ⚠ The resend used to reuse `params` verbatim, so it carried a ceiling
+    // sized for the FULL budget into a shorter one — a request that cannot
+    // physically receive its own ceiling, i.e. this module's entire thesis
+    // violated inside the function written to enforce it.
+    const { client: c, create } = client([boom(429), ok]);
+    let reads = 0;
+    const clock = () => (reads++ === 0 ? 0 : 1_000);
+    const big = { ...PARAMS, max_tokens: 5_000 };
+    await createSingleAttempt(c, big, 20_000, { now: clock, sleep: noSleep });
+
+    expect(create.mock.calls[0][0].max_tokens).toBe(5_000);
+    expect(create.mock.calls[1][0].max_tokens).toBe(maxTokensForBudget(19_000));
+    expect(create.mock.calls[1][0].max_tokens).toBeLessThan(5_000);
+  });
+
+  it("never RAISES max_tokens on the resend", async () => {
+    const { client: c, create } = client([boom(429), ok]);
+    let reads = 0;
+    const clock = () => (reads++ === 0 ? 0 : 1_000);
+    await createSingleAttempt(c, PARAMS, 20_000, {
+      now: clock,
+      sleep: noSleep,
+    });
+
+    expect(create.mock.calls[1][0].max_tokens).toBe(PARAMS.max_tokens);
+  });
+
+  it("waits before resending, honouring retry-after when the provider sends one", async () => {
+    // A zero-delay resend into a live ThrottlingException is the single least
+    // likely request to succeed — "we kept the retry" would be true in structure
+    // and false in effect.
+    const slept: number[] = [];
+    const sleep = async (ms: number) => {
+      slept.push(ms);
+    };
+    let reads = 0;
+    const clock = () => (reads++ === 0 ? 0 : 1_000);
+
+    const throttled = client([
+      () => {
+        throw Object.assign(new Error("throttled"), {
+          status: 429,
+          headers: { "retry-after-ms": "750" },
+        });
+      },
+      ok,
+    ]);
+    await createSingleAttempt(throttled.client, PARAMS, 20_000, {
+      now: clock,
+      sleep,
+    });
+    expect(slept).toEqual([750]);
+
+    slept.length = 0;
+    reads = 0;
+    const bare = client([boom(429), ok]);
+    await createSingleAttempt(bare.client, PARAMS, 20_000, {
+      now: clock,
+      sleep,
+    });
+    expect(slept).toEqual([DEFAULT_RETRY_BACKOFF_MS]);
+  });
+
+  it("abandons the resend if the backoff consumed the budget", async () => {
+    const { client: c, create } = client([boom(429), ok]);
+    let reads = 0;
+    const clock = () => [0, 1_000, 19_900][Math.min(reads++, 2)];
+    await expect(
+      createSingleAttempt(c, PARAMS, 20_000, { now: clock, sleep: noSleep }),
+    ).rejects.toBeInstanceOf(AiUnavailableError);
+
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  it("does NOT resend a failure that arrived after prefill but before halfway", async () => {
+    // ⚠ The bound that discriminates. At 5 s into a 20 s budget the old
+    // `elapsed < timeoutMs / 2` bound still resent — but by then the prompt (or
+    // the images, at $0.0272 a scan) has been accepted and BILLED, so the resend
+    // genuinely doubles the unit cost. That is the doubling `createSingleAttempt`
+    // exists to avoid. `PREFILL_ALLOWANCE_MS` is the honest proxy for "the
+    // provider never started"; half the budget is not.
+    //
+    // Without this test, reverting the bound to `timeoutMs / 2` passes.
+    const { client: c, create } = client([boom(429), ok]);
+    let reads = 0;
+    const clock = () => (reads++ === 0 ? 0 : 5_000);
+
+    await expect(
+      createSingleAttempt(c, PARAMS, 20_000, { now: clock, sleep: noSleep }),
+    ).rejects.toBeInstanceOf(AiUnavailableError);
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  it("DOES resend a failure that arrived inside prefill", async () => {
+    // The other side of the same boundary.
+    const { client: c, create } = client([boom(429), ok]);
+    let reads = 0;
+    const clock = () => (reads++ === 0 ? 0 : PREFILL_ALLOWANCE_MS - 1);
+
+    await createSingleAttempt(c, PARAMS, 20_000, {
+      now: clock,
+      sleep: noSleep,
+    });
+    expect(create).toHaveBeenCalledTimes(2);
   });
 
   it("does not resend a client error", async () => {
     const { client: c, create } = client([boom(400), ok]);
     let t = 0;
     await expect(
-      createSingleAttempt(c, PARAMS, 20_000, () => (t += 10)),
+      createSingleAttempt(c, PARAMS, 20_000, {
+        now: () => (t += 10),
+        sleep: noSleep,
+      }),
     ).rejects.toBeInstanceOf(AiUnavailableError);
 
     expect(create).toHaveBeenCalledTimes(1);
@@ -334,7 +463,10 @@ describe("createSingleAttempt — the bounded resend", () => {
     const { client: c } = client([boom(429), boom(503)]);
     let t = 0;
     await expect(
-      createSingleAttempt(c, PARAMS, 20_000, () => (t += 10)),
+      createSingleAttempt(c, PARAMS, 20_000, {
+        now: () => (t += 10),
+        sleep: noSleep,
+      }),
     ).rejects.toThrow(/after_retry/);
   });
 });

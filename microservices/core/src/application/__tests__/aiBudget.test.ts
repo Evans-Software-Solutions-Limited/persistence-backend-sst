@@ -50,6 +50,10 @@ describe("AI budgets — the route timeout", () => {
     // `"300 seconds"` entries — so raising the mirror to 120_000 PASSED, and
     // every budget assertion below it went vacuous at the same moment. A guard
     // that only fails in one direction is half a guard.
+    // ⚠ Assert the anchor before using it. `indexOf` returns -1 on a miss and
+    // `slice(0, -1)` is then the whole file minus a character — the guard would
+    // silently start checking whichever timeout appears first.
+    expect(infra).toContain("Bedrock IAM auth");
     const coreApi = infra.slice(0, infra.indexOf("Bedrock IAM auth"));
     const match = /timeout: "(\d+) seconds"/.exec(coreApi);
     expect(match).not.toBeNull();
@@ -127,9 +131,13 @@ describe("AI budgets — max_tokens is a wall-clock commitment", () => {
     }
   });
 
-  it("keeps the ONLY surface that fits actually fitting", () => {
+  it("keeps a surface that DOES fit actually fitting", () => {
     // The counterweight to the inventory above: without a positive case, the
     // list could grow to cover everything and still look like discipline.
+    //
+    // (Named "a surface", not "the ONLY surface" — `FOOD_MACROS_MAX_TOKENS` at
+    // 400 also fits, it is simply not exported. In a file whose whole point is
+    // that comments overstate what tests check, that distinction matters.)
     expect(COACH_SUMMARY_MAX_TOKENS).toBeLessThanOrEqual(
       maxTokensForBudget(CLIENT_TIMEOUT_MS),
     );
