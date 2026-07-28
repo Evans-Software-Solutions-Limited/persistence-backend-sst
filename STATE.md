@@ -9,8 +9,13 @@ items, and the four most recent sessions. Trimmed 2026-07-27 from 1554 lines.
 If anything here contradicts `git log --oneline -30`, the git history wins —
 say so and fix this file.
 
-## Current state (2026-07-27)
+## Current state (2026-07-28)
 
+- **⚠ Loadout Phase 2's SCREENS are built but NOT merged.** Branch
+  `claude/loadout-phase-2-screens` (3 commits off `dfeed666`), all gates green,
+  2 Inspector Brad passes clean, **not device-verified** — that is the review Brad
+  asked for and it needs an EAS dev build against staging. PR body carries the
+  checklist. This is the first user-reachable Loadout surface.
 - **Last CODE change on `origin/main` = `f0e8929`** (PR #326, Loadout **Phase 3
   equipment scan + Phase 2 foundation**, merged 2026-07-27, branch deleted). Released
   to production: **v1.8.0**.
@@ -47,8 +52,12 @@ say so and fix this file.
   Phase 1 (adaptation engine) are ALL MERGED to `main`. Phase 2 (mobile athlete
   flow, with the Phase 3 scan inside it) is next** — it needs the design handoff
   at `~/Downloads/Any Gym/project/`.
-- **Loadout is BACKEND-COMPLETE for the single-workout athlete flow, INCLUDING the
-  equipment scan, and still has ZERO user-facing surface.** Phase 2's foundation
+- **Loadout's athlete flow is now COMPLETE end to end on the branch above** —
+  entry card, collect, scan, manual picker, adapting, review with per-row swap,
+  save / save-and-start, success, and saved-gym management in Profile. What
+  remains before it is real: merge, and a device pass.
+- **On `main`, Loadout is BACKEND-COMPLETE for the single-workout athlete flow,
+  INCLUDING the equipment scan, and still has ZERO user-facing surface.** Phase 2's foundation
   (ports/adapters, the pure review-copy + save-path logic, the step machine) is
   **MERGED to `main`** (#326), but **no screen exists**, so nothing in
   `packages/mobile` yet calls the preview, the substitutes feed or the scan. The
@@ -115,6 +124,20 @@ say so and fix this file.
   different bind slots → Postgres 42803. Group by ordinal.
 - **The mocked-`getDb` blind spot**: unit tests mock the DB, so SQL bugs ship
   green. Render the real `WHERE`/projection via `PgDialect` in a test.
+- **⚠ A literal U+0000 in a `.tsx` file passes EVERY gate and breaks git.**
+  Prettier, ESLint, Babel and `tsc` all accept it; git's binary heuristic then
+  reports the file as `Bin 0 -> N bytes`, GitHub renders it as "Binary file not
+  shown", and it cannot be 3-way merged or rebased. One reached a commit on the
+  Phase 2 branch (an array-separator string) and only Inspector Brad caught it.
+  Check with `file <path>` — "data" instead of "text" is the tell.
+- **⚠ Testing Library's `fireEvent.press` honours `accessibilityState.disabled`,
+  the device honours the `disabled` prop.** So a component carrying both — which
+  it should — will always report one of them as a SURVIVING mutant, because each
+  covers for the other in exactly one environment. Annotate rather than chase, and
+  do not "simplify" by deleting one.
+- **A store action named `use*` trips `react-hooks/rules-of-hooks` at every call
+  site** ("cannot be called inside a callback"). `loadout-flow`'s were renamed
+  `selectGym` / `selectEquipmentIds` for this. Don't name zustand actions `useX`.
 - **Worktree cwd drifts mid-session** and edits land on the wrong branch. Prefix
   every tool path with the worktree path; re-check `pwd`. Never `git checkout --`
   a file with uncommitted work.
@@ -149,6 +172,11 @@ say so and fix this file.
 - **Cap Inspector Brad at two sweeps + one CLOSED verification pass** ("confirm
   these N items, findings only"). Five open-ended sweeps on one PR burned a large
   share of a context window.
+- **A mutation surviving has three possible causes, and only one is a test gap.**
+  Either the test is missing (write it), or the branch is genuinely dead (delete
+  it), or two layers legitimately guard different channels (annotate it). The
+  Phase 2 sweep hit all three; guessing wrong in either direction costs real
+  quality — a test that cannot fail, or a deleted safety net.
 - **Ask recon agents for conclusions with `file:line` pointers**, not quoted code.
 
 ## Open items
@@ -289,22 +317,35 @@ Actions, in order of value:
 - **~30 real gym photos** — to turn E1's provisional go into a real one; ideally
   with Brad-confirmed ground-truth labels rather than Claude's.
 
-### Next slice — Loadout Phase 2 (mobile athlete flow)
+### Loadout Phase 2's screens — BUILT, on a branch, awaiting merge + device pass
 
-- **`tasks.md` T-2.1…T-2.10, with Phase 3 (the equipment scan, T-3.1…T-3.5)
-  landing in the SAME PR** so the first user-visible Loadout has the scan rather
-  than a checklist — unless Brad splits it (see his open sequencing decision).
-- **Needs the design handoff at `~/Downloads/Any Gym/project/`** (a stable,
-  deliberately uncommitted path — Brad confirmed 2026-07-26).
-- Phase 1's § "Landed in Phase 1 beyond the checklist" in `tasks.md` is where the
-  backend's real contract is recorded, including the untrusted-`note` render rule
-  and the `isUserOverride` requirement on the save path.
-- **Phase 3 corrections already known from E1** (do not re-derive):
-  `AI_EQUIPMENT_SCAN_MODEL_ID` must be **Opus-class**, not Haiku (T-E1.5);
-  `createWithRetry` is unusable for the scan and it needs ONE ~20 s attempt
-  (T-E1.6 — **the same variant the re-map's open checkpoint would need, so build
-  it once**); exclude `Bodyweight` from scan output and inject it server-side
-  (T-E1.7).
+Branch `claude/loadout-phase-2-screens`, 3 commits off `dfeed666`. T-2.2…T-2.9,
+T-3.4 and T-3.5's mobile half are all ticked in `tasks.md`, whose
+§ "Landed in Phase 2's screens beyond the checklist" holds the architecture
+decisions. Do not re-derive them; the short version:
+
+- The flow is a **root-mounted overlay**, not routes — the store is the
+  navigation, and the swap/scan sheets must be siblings of the step to layer
+  above it.
+- `adapting` is bound to the request; the prototype's 1700 ms timer is absent.
+- `others` is the incompatible list **only when a kit context was supplied**.
+- The swap sheet's containment context is **`preview.equipmentTypeIds`** (the
+  server-resolved kit), not the client's saved-gym row.
+- **No taster meter** and **no price literal** — the upsell reads the catalog and
+  renders correctly with no price, which is the state until `premium_plus` goes
+  active.
+
+**⚠ The one recorded follow-up: `/subscriptions/me` does not project
+`loadout_access`,** so `useLoadoutGate` mirrors the migration's tier set
+client-side (the 402 remains the real gate). Adding the column to
+`subscriptionRepository.findForUser` + `MySubscription` + the mobile mirror is a
+~4-line change and retires `TIER_GRANTS_LOADOUT`. Left out only because that
+slice was mobile-only.
+
+**Still to do on this branch:** device-verify on an EAS dev build against
+staging using the PR checklist, then merge. Nothing else is outstanding —
+prettier / typecheck 8/8 / lint 0-err / build 13/13 / test:unit 19/19 all green,
+2 IB passes clean.
 
 ### Data bugs — open, not blocking Phase 2's critical path
 
@@ -404,6 +445,74 @@ consent copy, privacy section and governing law · the OFF re-seed backfilling
 `serving_quantity` across the ~143k seeded rows.
 
 ## Last session
+
+**2026-07-28 — LOADOUT Phase 2's SCREENS + Phase 3's scan sheet. Branch
+`claude/loadout-phase-2-screens` (3 commits off `dfeed666`), NOT merged, NOT
+device-verified. The first user-reachable Loadout surface: before this, every
+Loadout phase was contract, engine and step machine with nothing attached.**
+
+- **Shipped T-2.2…T-2.9, T-3.4 and T-3.5's mobile half.** Entry card + locked
+  upsell, collect (scan / picker / saved gym), manual checklist with name +
+  save toggle, adapting skeleton, review with per-row reasons and swap, saved
+  setups on the parent, save and save-and-start, success, and saved-gym
+  management under Profile · Account. Recreated in the app's primitives and
+  tokens from `~/Downloads/Any Gym/project/` — no lifted prototype JSX.
+- **The load-bearing decisions are in `tasks.md`
+  § "Landed in Phase 2's screens beyond the checklist"** and § Open items above.
+  The two most likely to be undone by a well-meaning refactor: the flow is a
+  **root-mounted overlay** because its sheets must layer above the step (a
+  gorhom sheet renders inline in the tree, so one mounted at the layout root
+  sits behind it), and the swap sheet's containment context is
+  **`preview.equipmentTypeIds`** — the kit the SERVER resolved — never the
+  client's saved-gym row.
+- **Fixed in passing, each found by building against it:** `SnapAISheetContainer`
+  resized **width-only** under a comment promising a long edge, so every portrait
+  photo shipped ~1/3 over the token budget and small ones were UPSCALED (now a
+  shared `resizeToLongEdge`, used by the scan too, which matters more there —
+  Opus-class at $0.0272 an inference); `SwapExercisePopover` listed the **local,
+  not-visibility-aware** exercise cache and so could not enforce AC-3.6 (now
+  `/exercises/substitutes`, with a refresh-and-retry guard because
+  `applyPickerSelection` resolves the pick through that cache and returns
+  **silently** on a miss); the in-memory adapter's saved-gym 409 carried no
+  `loadoutCode`, making the rename-vs-fail branch untestable.
+- **⚠ A REAL bug the mutation sweep surfaced, not the tests:** "Choose one" on an
+  `unresolved` row opened an EMPTY picker. An unresolved row has
+  `exerciseId: null` by definition, so ranking against it sent
+  `forExerciseId: null` — on the one row that most needs replacing.
+  `adaptWorkout` sets `substitutedFromExerciseId` to the source precisely so the
+  original stays reachable; the container now falls back to it.
+- **⚠ A literal U+0000 reached a commit and passed EVERY gate.** It was the array
+  separator in `EquipmentAwareSwapSheet`. Prettier, ESLint, Babel and `tsc` all
+  accepted it while git treated the file as BINARY — so the one component that
+  derives `isUserOverride` rendered as "Binary file not shown" and could not be
+  3-way merged. Only Inspector Brad caught it. `file <path>` saying "data" is the
+  tell; § Active gotchas now records it.
+- **IB: 1 sweep (10 findings: 1 🔴 / 2 🟠 / 5 🟡 / 2 🟢, all addressed) + 1 CLOSED
+  verification pass (7 of 8 confirmed closed, 4 residuals + 1 🔵, all addressed).**
+  The 🔴 was a permanent hang: the preview request's dedup key was never cleared,
+  so re-adapting the same (workout, gym) pair after a close issued no request and
+  left the skeleton forever — with no retry affordance, because that only renders
+  on an error. The closed pass then found the SAME hang by a second route (a fresh
+  `context` object with identical contents cancelled the in-flight request and
+  declined to replace it). Two 🟠: the flow's saved-gym list was fetched once per
+  app *session*, feeding a stale kit to the swap sheet's containment context; and a
+  throw in the scan's image pipeline stranded the sheet on a spinner with no exit.
+  **CI action NOT fired** — 1 sweep + 1 closed pass, per the two-sweep cap.
+- **LESSON — a surviving mutant has three causes and only one is a test gap.**
+  Missing test (write it), dead branch (delete it), or two layers guarding
+  different channels (annotate it). This slice hit all three: a real gap in the
+  drop filter, a genuinely unreachable un-drop-on-pick branch that was deleted,
+  and the touch-vs-a11y `disabled` pair that must stay. Guessing wrong either way
+  costs quality — a test that cannot fail, or a deleted safety net.
+- **Gates:** prettier (whole tree) · typecheck 8/8 · lint 0-err · build 13/13 ·
+  test:unit 19/19 (mobile **460 suites / 5409 tests**; core 285 files / 3123;
+  scripts 3 / 112). Mobile coverage 96.55 / 91.01 / 96.63 / 98.01; every new
+  Loadout presenter at or near **100 %**. ~60 mutations applied across the new
+  guards; all caught bar three annotated redundant-by-design pairs.
+- **⚠ NEXT: device-verify on an EAS dev build against staging (the checklist is in
+  the PR body), then merge.** Nothing else is outstanding on the branch.
+
+
 
 **2026-07-27 (cont.) — LOADOUT Phase 3 backend + Phase 2 FOUNDATION. MERGED as
 PR [#326](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/326)
