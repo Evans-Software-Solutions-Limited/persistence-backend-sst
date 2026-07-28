@@ -1,6 +1,7 @@
 import { router } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { StyleSheet, View } from "react-native";
+import { Modal, StyleSheet } from "react-native";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import type {
   LoadoutPreview,
   LoadoutPreviewRow,
@@ -49,11 +50,24 @@ import { color } from "@/ui/theme/tokens";
  *  1. The store IS the navigation — `useLoadoutFlow` is a step machine, and
  *     mirroring it into five routes would give two sources of truth for "which
  *     step am I on", which is exactly the desync the store was written to avoid.
- *  2. A full-screen sibling of the Stack covers the tab bar without a modal.
- *  3. **The swap sheet and the scan sheet have to layer ABOVE the flow.** A
- *     gorhom sheet renders inline in the React tree, so a sheet mounted at the
- *     layout root would sit BEHIND a flow rendered inside an RN `<Modal>`. Both
- *     sheets are therefore siblings of the step, inside this container.
+ *  2. **The swap sheet and the scan sheet have to layer ABOVE the step.** A
+ *     gorhom sheet renders inline in the React tree, so both are siblings of the
+ *     step, inside this container, rather than at the layout root.
+ *
+ * ## ⚠ It renders inside an RN `<Modal>`, and an absolute View is NOT enough
+ *
+ * The first version was `StyleSheet.absoluteFillObject` — and it was invisible
+ * in the one place that matters. **The entry point lives on
+ * `workouts/[id]/index`, which is `presentation: "modal"`**: a natively
+ * presented view controller sitting on top of the Stack's container. A View that
+ * is a SIBLING of the Stack therefore renders underneath it, so tapping "Adapt
+ * to your gym" set `step` and mounted the whole flow behind the workout sheet —
+ * nothing appeared to happen at all.
+ *
+ * An RN `<Modal>` presents above every route, modal ones included. It needs its
+ * OWN `GestureHandlerRootView`: the app's root one (`app/_layout.tsx`) does not
+ * extend into a separately-presented modal, and without it the gorhom sheets
+ * inside get no touches — which is the same class of bug one layer down.
  *
  * ## ⚠ `adapting` is bound to the request, never a timer
  *
@@ -559,8 +573,19 @@ export function LoadoutFlowContainer() {
   // from a LOCKED entry point, where there is no flow to be in.
   return (
     <>
-      {isOpen ? (
-        <View style={styles.overlay} testID="loadout-flow">
+      {/*
+        `visible` rather than a conditional mount, and `animationType="slide"` to
+        match how the app's other full-screen flows arrive. `onRequestClose` is
+        Android's hardware back — without it that button dismisses nothing and the
+        user is trapped in the flow.
+      */}
+      <Modal
+        visible={isOpen}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={onClose}
+      >
+        <GestureHandlerRootView style={styles.overlay} testID="loadout-flow">
           {(step === "collect" || step === "scan") && (
             <LoadoutCollectStep
               workoutName={workoutName}
@@ -665,25 +690,52 @@ export function LoadoutFlowContainer() {
             onSelect={onSwapSelect}
             testID="loadout-swap-sheet"
           />
-        </View>
-      ) : null}
+        </GestureHandlerRootView>
+      </Modal>
 
-      <LoadoutUpsellSheet
+      {/*
+        ⚠ The upsell needs its OWN modal, for the same reason the flow does — and
+        this is the path a FREE user takes, so getting it wrong means the locked
+        card is the one that does nothing. It is reached from the entry card on
+        `workouts/[id]/index`, a `presentation: "modal"` route, so a sheet mounted
+        as a sibling of the Stack renders behind that route.
+
+        `transparent` + `overFullScreen`, unlike the flow's opaque fullScreen: this
+        is a bottom sheet and the workout underneath must stay visible through its
+        own backdrop. `animationType="none"` because the sheet animates itself —
+        sliding the modal too would double the motion.
+
+        Kept OUTSIDE the flow's modal deliberately: an unentitled user has no flow
+        to be in, and `useLoadoutFlow.openUpsell` does not set `step`.
+      */}
+      <Modal
         visible={upsellOpen}
-        onClose={closeUpsell}
-        priceMonthly={gate.upgradePriceMonthly}
-        onUpgrade={() => {
-          closeUpsell();
-          gate.onUpgrade();
-        }}
-      />
+        transparent
+        presentationStyle="overFullScreen"
+        animationType="none"
+        onRequestClose={closeUpsell}
+      >
+        <GestureHandlerRootView style={styles.sheetHost}>
+          <LoadoutUpsellSheet
+            visible={upsellOpen}
+            onClose={closeUpsell}
+            priceMonthly={gate.upgradePriceMonthly}
+            onUpgrade={() => {
+              closeUpsell();
+              gate.onUpgrade();
+            }}
+          />
+        </GestureHandlerRootView>
+      </Modal>
     </>
   );
 }
 
 const styles = StyleSheet.create({
   overlay: {
-    ...StyleSheet.absoluteFillObject,
+    flex: 1,
     backgroundColor: color.$bg,
   },
+  /** Transparent host for a sheet presented over another route. */
+  sheetHost: { flex: 1 },
 });

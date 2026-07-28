@@ -1,5 +1,7 @@
 import { act, fireEvent, waitFor } from "@testing-library/react-native";
 import React from "react";
+import { Modal } from "react-native";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
 import { InMemoryNetInfoAdapter } from "@/adapters/netInfo/__tests__/InMemoryNetInfoAdapter";
@@ -190,11 +192,83 @@ describe("LoadoutFlowContainer", () => {
     useLoadoutFlow.getState().reset();
   });
 
+  /**
+   * ⚠ SHAPE assertions, not behaviour — and they exist because behaviour tests
+   * CANNOT catch the bug they guard.
+   *
+   * The first version of this flow was an absolutely-positioned View mounted as a
+   * sibling of the Stack. Every test here passed, because jest renders this
+   * container with no Stack and no route above it. On device it was invisible:
+   * the entry point lives on `workouts/[id]/index`, a `presentation: "modal"`
+   * route, and a sibling of the Stack renders UNDERNEATH a natively presented
+   * modal. Tapping "Adapt to your gym" mounted the entire flow behind the workout
+   * sheet, so nothing appeared to happen.
+   *
+   * So these pin the two structural facts that fix it, since nothing else in the
+   * suite can: the flow is inside an RN `<Modal>`, and that modal carries its own
+   * `GestureHandlerRootView` (the app root's does not extend into a separately
+   * presented modal, and without it the sheets inside receive no touches).
+   */
+  describe("presentation shape (guards a device-only failure)", () => {
+    it("renders the flow inside an RN Modal, not a bare absolute View", () => {
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      seedEquipment(storage);
+      const { UNSAFE_root } = renderFlow(api, storage);
+      act(() => openFlow());
+
+      const modals = UNSAFE_root.findAllByType(Modal);
+      const flowModal = modals.find((m) => m.props.visible === true);
+      expect(flowModal).toBeDefined();
+      expect(flowModal?.props.presentationStyle).toBe("fullScreen");
+      // Android's hardware back must dismiss the flow, or the user is trapped.
+      expect(typeof flowModal?.props.onRequestClose).toBe("function");
+    });
+
+    it("gives that modal its own GestureHandlerRootView so the sheets get touches", () => {
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      seedEquipment(storage);
+      const { UNSAFE_root } = renderFlow(api, storage);
+      act(() => openFlow());
+
+      // By TYPE, not testID: RNGH's jest mock renders as a plain View and drops
+      // the testID, so a testID query here would pass whatever the component was.
+      // Exactly ONE — the flow's. The upsell's modal is not visible, so RN does
+      // not mount its children, which is also why this cannot be asserted as a
+      // blanket count.
+      expect(UNSAFE_root.findAllByType(GestureHandlerRootView)).toHaveLength(1);
+    });
+
+    it("presents the upsell over the route it was opened from, not opaquely", () => {
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      const { UNSAFE_root } = renderFlow(api, storage);
+      act(() => useLoadoutFlow.getState().openUpsell());
+
+      const modals = UNSAFE_root.findAllByType(Modal);
+      const upsell = modals.find((m) => m.props.visible === true);
+      // A bottom sheet — the workout underneath has to stay visible through its
+      // own backdrop, so an opaque fullScreen modal would be wrong.
+      expect(upsell?.props.transparent).toBe(true);
+      expect(upsell?.props.presentationStyle).toBe("overFullScreen");
+    });
+  });
+
   it("renders nothing at all until the flow is opened", () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
-    const { queryByTestId } = renderFlow(api, storage);
-    expect(queryByTestId("loadout-flow")).toBeNull();
+    const { UNSAFE_root, queryByTestId } = renderFlow(api, storage);
+
+    // ⚠ Asserted on the MODAL's visibility, not on `queryByTestId("loadout-flow")`.
+    // That testID sits on a `GestureHandlerRootView`, whose jest mock drops it —
+    // so the testID version of this test could not fail once the flow moved into a
+    // modal, and would have passed with every step on screen.
+    expect(
+      UNSAFE_root.findAllByType(Modal).every((m) => m.props.visible === false),
+    ).toBe(true);
+    expect(queryByTestId("loadout-collect")).toBeNull();
+    expect(queryByTestId("loadout-review")).toBeNull();
   });
 
   describe("collect", () => {
