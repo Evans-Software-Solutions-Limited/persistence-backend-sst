@@ -795,6 +795,63 @@ describe("useSyncWorker", () => {
       expect(mockFetch).not.toHaveBeenCalled();
     });
 
+    it("resurrects a create's exhausted DELETE sibling with it, not the create alone", async () => {
+      // A create and a follow-up delete against its local id climb the ladder in
+      // lockstep and exhaust on the same pass. `replaySafe` matches only the create
+      // (`operation === "create"`), so resetting it alone re-POSTed the create with
+      // nothing left to undo it — a workout the user created and then deleted offline
+      // was CREATED on the server by the reconnect, absent locally, and reappeared on
+      // the next list refresh consuming a quota slot. Strictly worse than doing
+      // nothing.
+      const storage = new InMemoryStorageAdapter();
+      storage.initialize();
+      const exhaust = (id: number) => {
+        storage.markMutationFailed(id, "e1");
+        storage.markMutationFailed(id, "e2");
+        storage.markMutationFailed(id, "e3");
+      };
+      storage.enqueueMutation({
+        entityType: "workout",
+        entityId: "local-w9",
+        operation: "create",
+        payload: { name: "Push" },
+        endpoint: "/workouts",
+        method: "POST",
+      });
+      const createId = storage.getPendingMutations().slice(-1)[0].id;
+      storage.enqueueMutation({
+        entityType: "workout",
+        entityId: "local-w9",
+        operation: "delete",
+        payload: {},
+        endpoint: "/workouts/local-w9",
+        method: "DELETE",
+      });
+      const deleteId = storage.getPendingMutations().slice(-1)[0].id;
+      exhaust(createId);
+      exhaust(deleteId);
+      expect(storage.getFailedExhaustedEntries()).toHaveLength(2);
+
+      const resetSpy = jest.spyOn(storage, "resetFailedEntries");
+      mockFetch.mockResolvedValue({ ok: true, json: async () => ({}) });
+      const auth = new InMemoryAuthAdapter();
+      const netInfo = new InMemoryNetInfoAdapter(true);
+      const adapters = makeAdapters(storage, auth, session, netInfo);
+
+      renderHook(() => useSyncWorker(), { wrapper: wrap(adapters) });
+      await settleMount();
+
+      act(() => netInfo.setConnected(false));
+      act(() => netInfo.setConnected(true));
+      act(() => {
+        jest.advanceTimersByTime(SYNC_RECONNECT_DEBOUNCE_MS);
+      });
+
+      await waitFor(() => expect(resetSpy).toHaveBeenCalled());
+      const resetIds = resetSpy.mock.calls[0][0] as readonly number[];
+      expect([...resetIds].sort()).toEqual([createId, deleteId].sort());
+    });
+
     it("restores the budget-free run of still-queued deferred entries on reconnect", async () => {
       // Without this, an offline stretch of only ~90–120s (12 free deferrals at a
       // 5s window, then 3 charged attempts) exhausted an offline-created row

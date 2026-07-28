@@ -1120,6 +1120,14 @@ ${indentSyncQueueDdl(12)}
     );
   }
 
+  getMutationById(id: number): SyncQueueEntry | null {
+    const db = this.getDb();
+    const row = db.getFirstSync(`SELECT * FROM sync_queue WHERE id = ?`, [
+      id,
+    ]) as Record<string, unknown> | null;
+    return row === null ? null : mapRow(row);
+  }
+
   markMutationInFlight(id: number): boolean {
     const db = this.getDb();
     // Row-conditional claim: only flip to in_flight when the entry

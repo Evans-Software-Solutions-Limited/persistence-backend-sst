@@ -224,8 +224,34 @@ export function useSyncWorker(): void {
                 e.idempotencyKey !== null &&
                 (e.endpoint === "/workouts" || e.endpoint === "/exercises"))),
         );
-        if (replaySafe.length > 0) {
-          storage.resetFailedEntries(replaySafe.map((e) => e.id));
+        // ⚠ Resurrect the PAIR, not just the create. A create and a follow-up
+        // delete/edit against its `local-…` id climb the ladder in lockstep and
+        // exhaust on the same pass, and the filter above only matches the create
+        // (`operation === "create"`). Resetting it alone re-POSTed the create with
+        // nothing left to undo it — so a workout the user created and then deleted
+        // offline was CREATED on the server by the reconnect, absent locally, and
+        // reappeared on the next list refresh consuming a quota slot. Strictly worse
+        // than the behaviour it replaced.
+        //
+        // Safe to include the siblings: `swapLocal*Id` rewrites their endpoint
+        // unconditionally of status when the create lands, a DELETE replay is
+        // idempotent, and an UPDATE simply follows the id swap. Only `failed`
+        // siblings are taken — a `permanently_failed` one was explicitly rejected,
+        // and `resetFailedEntries` would otherwise re-open it (it accepts both).
+        const idsToReset = new Set(replaySafe.map((e) => e.id));
+        for (const create of replaySafe) {
+          if (create.entityId === null) continue;
+          for (const sibling of storage.getQueuedEntriesForEntity(
+            create.entityType,
+            create.entityId,
+          )) {
+            if (sibling.id !== create.id && sibling.status === "failed") {
+              idsToReset.add(sibling.id);
+            }
+          }
+        }
+        if (idsToReset.size > 0) {
+          storage.resetFailedEntries([...idsToReset]);
         }
       } catch (err) {
         console.error("[useSyncWorker] reconnect resurrect failed:", err);

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 import {
   getReferenceListQuery,
@@ -27,28 +27,29 @@ const BOOTSTRAP_KINDS: readonly ReferenceListKind[] = [
  * latency fix, not a correctness one — but "the first custom exercise of a fresh
  * install syncs on the next drain instead of this one" is worth removing.
  *
- * Cheap and idempotent: cache-first with a 24h staleness window, one attempt per
- * mount per user, and failures are swallowed (the catalogue is not required for
- * anything to render — the drain simply waits).
+ * Cheap and idempotent: cache-first with a 24h staleness window, and failures are
+ * swallowed (the catalogue is not required for anything to render — the drain simply
+ * waits).
+ *
+ * ALSO retried on an offline→online reconnect, which is what makes the sync layer's
+ * `catalogue_unavailable` deferral honest. That deferral is classified `"transport"`,
+ * i.e. "a reconnect is new information about this" — but if nothing re-fetched the
+ * catalogue on reconnect, the promise had no mechanism behind it: after one offline
+ * sign-in the entry would oscillate (exhaust → resurrect on the next blip → exhaust
+ * again having sent nothing), its /sync-failed row vanishing on each cycle. One
+ * attempt per mount was never enough on its own, because the failure it needs to
+ * recover from is precisely the one that happens at mount.
  */
 export function useReferenceListBootstrap(): void {
-  const { api, storage } = useAdapters();
+  const { api, storage, netInfo } = useAdapters();
   const { session } = useAuth();
   const userId = session?.userId ?? null;
   const bootstrappedForUserRef = useRef<string | null>(null);
 
-  useEffect(() => {
-    if (!userId) {
-      bootstrappedForUserRef.current = null;
-      return;
-    }
-    if (bootstrappedForUserRef.current === userId) return;
-    bootstrappedForUserRef.current = userId;
-
-    let cancelled = false;
-    void (async () => {
+  const warm = useCallback(
+    async (isCancelled: () => boolean) => {
       for (const kind of BOOTSTRAP_KINDS) {
-        if (cancelled) return;
+        if (isCancelled()) return;
         // Cache-first: a warm cache inside the staleness window costs nothing.
         if (!getReferenceListQuery(storage, kind).isStale) continue;
         try {
@@ -58,10 +59,38 @@ export function useReferenceListBootstrap(): void {
           // on this, and the drain defers any exercise that needs it.
         }
       }
-    })();
+    },
+    [api, storage],
+  );
+
+  useEffect(() => {
+    if (!userId) {
+      bootstrappedForUserRef.current = null;
+      return;
+    }
+
+    let cancelled = false;
+    const isCancelled = () => cancelled;
+
+    if (bootstrappedForUserRef.current !== userId) {
+      bootstrappedForUserRef.current = userId;
+      void warm(isCancelled);
+    }
+
+    // Retry on a real offline→online transition. The first observation only SEEDS
+    // the ref — it is not a transition — mirroring `useSyncWorker`, so a cold start
+    // on an already-online device doesn't fire a redundant second fetch.
+    let prevConnected: boolean | null = null;
+    const unsubscribe = netInfo.subscribe((connected) => {
+      const wasConnected = prevConnected;
+      prevConnected = connected;
+      if (wasConnected === null || wasConnected || !connected) return;
+      void warm(isCancelled);
+    });
 
     return () => {
       cancelled = true;
+      unsubscribe();
     };
-  }, [api, storage, userId]);
+  }, [netInfo, userId, warm]);
 }

@@ -172,6 +172,20 @@ export class InMemoryStorageAdapter implements StoragePort {
     return this.changeSubscribers.size;
   }
 
+  /**
+   * Test-only: overwrite fields on a stored queue row.
+   *
+   * Needed because the reads are snapshots (see `getPendingMutations`), so a test
+   * can no longer set up state by mutating a returned entry — which is the point:
+   * that only ever worked here and never in production. Use this to construct a
+   * state the port has no method for, e.g. a row enqueued before
+   * `idempotency_key` existed.
+   */
+  patchQueueEntryForTest(id: number, patch: Partial<SyncQueueEntry>): void {
+    const entry = this.queue.find((e) => e.id === id);
+    if (entry) Object.assign(entry, patch);
+  }
+
   /** Test-only: pretend these tables were written. */
   emitChange(...tables: string[]): void {
     const changed: ReadonlySet<string> = new Set(tables);
@@ -210,11 +224,29 @@ export class InMemoryStorageAdapter implements StoragePort {
     // M10.6: parity with SQLite — `blocked_entitlement` is excluded.
     // Those entries only re-enter the pool via `unblockEntries` (tier
     // upgrade or explicit user retry) or get deleted via `discardEntries`.
-    return this.queue.filter(
-      (e) =>
-        (e.status === "pending" || e.status === "failed") &&
-        e.retryCount < e.maxRetries,
-    );
+    //
+    // ⚠ Returns SNAPSHOTS, not live rows. The SQLite adapter maps each result row
+    // into a fresh object, so the drain holds a value frozen at read time — and any
+    // condition it evaluates AFTER a `markMutation*` call therefore sees the OLD
+    // value in production. Returning live references here made that divergence
+    // invisible: a test could pass while the production code read a different value
+    // on the same line. It hid two real bugs on this branch (an exhaustion test that
+    // was one attempt early, and a `status` read that could never match, silently
+    // deleting a user's edit) and no test could fail on either. Copying makes the
+    // double tell the truth.
+    return this.queue
+      .filter(
+        (e) =>
+          (e.status === "pending" || e.status === "failed") &&
+          e.retryCount < e.maxRetries,
+      )
+      .map((e) => ({ ...e }));
+  }
+
+  getMutationById(id: number): SyncQueueEntry | null {
+    // A snapshot, matching `getPendingMutations` and the real adapter.
+    const entry = this.queue.find((e) => e.id === id);
+    return entry ? { ...entry } : null;
   }
 
   markMutationDispatched(id: number): void {

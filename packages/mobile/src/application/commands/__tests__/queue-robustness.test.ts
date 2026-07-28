@@ -155,7 +155,9 @@ describe("idempotency key", () => {
       method: "POST",
     });
     const [entry] = storage.getPendingMutations();
-    (entry as { idempotencyKey: string | null }).idempotencyKey = null;
+    // Via the double's explicit test mutator: queue reads are snapshots, matching
+    // the real adapter, so assigning to the returned entry would change nothing.
+    storage.patchQueueEntryForTest(entry.id, { idempotencyKey: null });
     mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
 
     await processSyncQueue(storage, auth, "https://api.test");

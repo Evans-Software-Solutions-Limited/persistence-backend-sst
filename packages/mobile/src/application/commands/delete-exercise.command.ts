@@ -42,29 +42,43 @@ export async function deleteExerciseCommand(
   const queued = deps.storage.getQueuedEntriesForEntity("exercise", id);
   const creates = queued.filter((entry) => entry.operation === "create");
 
-  // ⚠ An `in_flight` create is a request that may ALREADY have committed. It must
-  // not take the purely-local path: `discardEntries` is an unconditional DELETE
-  // (unlike the status-conditional `updateMutationPayload`), so discarding it
-  // would drop the queue row while the POST still lands server-side — the drain's
-  // `markMutationCompleted`/`swapLocalExerciseId` would then no-op against a row
-  // that no longer exists, leaving an orphaned exercise that reappears on the next
-  // library refresh while the user believes it was deleted. The window is real and
-  // seconds wide now that an enqueue triggers an immediate drain.
-  const inFlightCreate = creates.find((entry) => entry.status === "in_flight");
+  // ⚠ A create that may ALREADY have committed must not take the purely-local path:
+  // `discardEntries` is an unconditional DELETE (unlike the status-conditional
+  // `updateMutationPayload`), so discarding it drops the queue row while the POST
+  // still lands server-side — the drain's
+  // `markMutationCompleted`/`swapLocalExerciseId` then no-op against a row that no
+  // longer exists, leaving an orphaned exercise that reappears on the next library
+  // refresh while the user believes it was deleted.
+  //
+  // `in_flight` alone is not that question. It catches only a request airborne at
+  // THIS instant, and the ambiguous failure this branch exists for leaves the entry
+  // `failed`, not `in_flight`: the POST is dispatched, the server commits, the
+  // connection drops before the response, `fetch` rejects, and `deferOrCharge` marks
+  // it failed with `dispatchCount >= 1`. Deleting then discarded the create with NO
+  // delete queued at all — the exercise lives on the server forever, is gone
+  // locally, and comes back on the next refresh.
+  //
+  // `dispatchCount` is the signal that actually answers "could the server have seen
+  // this?", which is why it exists. It over-counts (it is stamped just before
+  // `fetch`, so an offline attempt that never left the device still counts), and that
+  // is the safe direction: the cost is one queued DELETE that the id swap resolves,
+  // versus an orphaned row that no longer has any delete to undo it.
+  const unsafeToDiscard = creates.find(
+    (entry) => entry.status === "in_flight" || entry.dispatchCount > 0,
+  );
 
-  if (inFlightCreate) {
+  if (unsafeToDiscard) {
     // Queue the delete instead of sending it: the id is still local, so an
     // immediate API call would 400. `swapLocalExerciseId` rewrites this endpoint
     // when the in-flight create's reply lands, so the DELETE then reaches the real
     // resource. Evict locally so the UI reflects the user's intent immediately.
     //
-    // Sibling edits are dropped: they can't have committed (their create hasn't
-    // returned yet), so applying them server-side is pure waste against a row the
-    // very next queue entry deletes. The in-flight create itself is deliberately
-    // left alone — see above.
+    // Sibling edits are dropped: even if one reached the server it applied to a row
+    // this delete is about to remove, so replaying it is pure waste. The create
+    // itself is deliberately left alone — see above.
     deps.storage.discardEntries(
       queued
-        .filter((entry) => entry.id !== inFlightCreate.id)
+        .filter((entry) => entry.id !== unsafeToDiscard.id)
         .map((entry) => entry.id),
     );
     deps.storage.enqueueMutation({
@@ -88,9 +102,10 @@ export async function deleteExerciseCommand(
     // deleted.
     //
     // ⚠ `in_flight` siblings are discarded here TOO, which looks like it
-    // contradicts the branch above but doesn't. What must be preserved is an
-    // in-flight CREATE, because it may already have committed a row we'd then
-    // orphan — and branch 1 has already claimed every such case. Everything that
+    // contradicts the branch above but doesn't. What must be preserved is a CREATE
+    // that may already have committed a row we'd then orphan — and branch 1 has
+    // already claimed every such case (`in_flight` OR ever-dispatched), so every
+    // create reaching here provably never left the device. Everything that
     // can still be in flight at this point addresses `/exercises/local-…`, which
     // Postgres rejects with 22P02 before it can change anything, so there is no
     // server state to protect and nothing to reconcile: dropping the row while the

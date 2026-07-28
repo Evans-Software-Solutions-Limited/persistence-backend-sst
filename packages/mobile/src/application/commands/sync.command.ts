@@ -257,7 +257,9 @@ function deferOrCharge(
     // team's telemetry.
     if (willExhaust) {
       reportTerminalFailure(entry, reason);
-      collapseStrandedLocalIdSiblings(storage, entry);
+      // The ceiling path only ever calls `markMutationFailed`, never
+      // `markMutationPermanentlyFailed`.
+      collapseStrandedLocalIdSiblings(storage, entry, false);
     }
     return;
   }
@@ -337,6 +339,19 @@ function reportTerminalFailure(entry: SyncQueueEntry, message: string): void {
 function collapseStrandedLocalIdSiblings(
   storage: StoragePort,
   entry: SyncQueueEntry,
+  /**
+   * Whether the caller just marked this entry `permanently_failed`.
+   *
+   * Passed in rather than read off `entry.status`, because `entry` is a SNAPSHOT:
+   * `getPendingMutations` selects `WHERE status IN ('pending','failed')`, so its
+   * rows can never carry `"permanently_failed"` however the drain has since marked
+   * them. Reading the snapshot therefore skipped the re-open, `updateMutationPayload`
+   * (status-conditional on pending/failed) matched zero rows, and the discard below
+   * deleted the user's edit anyway — the exact loss this function's docstring says
+   * the fold exists to prevent. The in-memory double returned LIVE rows, so the test
+   * written for that bug could not fail.
+   */
+  wasPermanentlyFailed: boolean,
 ): void {
   if (entry.operation !== "create" || entry.entityId === null) return;
   try {
@@ -376,7 +391,7 @@ function collapseStrandedLocalIdSiblings(
     // triggered the collapse would spin: pending → drain → fail → collapse → reset.
     if (stranded.some((sibling) => sibling.operation === "delete")) {
       const nothingCommitted =
-        entry.status === "permanently_failed" || entry.dispatchCount === 0;
+        wasPermanentlyFailed || entry.dispatchCount === 0;
       if (nothingCommitted) {
         storage.discardEntries([entry.id, ...stranded.map((s) => s.id)]);
       }
@@ -409,7 +424,7 @@ function collapseStrandedLocalIdSiblings(
         // `update-exercise`'s own coalescing path. An exhausted (`failed`) create
         // needs no reset: it is already rewritable, and re-opening it would silently
         // resurrect a create the user has not asked to retry.
-        if (entry.status === "permanently_failed") {
+        if (wasPermanentlyFailed) {
           storage.resetFailedEntries([entry.id]);
         }
         storage.updateMutationPayload(entry.id, merged);
@@ -525,7 +540,7 @@ export async function processSyncQueue(
   let failed = 0;
   let blocked = 0;
 
-  for (const entry of entries) {
+  for (let entry of entries) {
     // Backoff: skip an entry whose retry window hasn't opened. Checked BEFORE
     // the claim so a not-yet-due entry stays `failed` (visible to the status UI
     // and to the coalescing paths) rather than being flipped to `in_flight` and
@@ -543,6 +558,24 @@ export async function processSyncQueue(
     // Brad PR #62 race fix.
     const claimed = storage.markMutationInFlight(entry.id);
     if (!claimed) continue;
+
+    // ⚠ Re-read AFTER claiming. The work list above is a snapshot taken once, and a
+    // row's stored payload or endpoint can legitimately change between that snapshot
+    // and this send: an earlier entry in the SAME batch flushing its create runs
+    // `swapLocal*Id`, which rewrites every later entry still holding the dependency's
+    // `local-…` id. Sending the snapshot put that local id on the wire and earned a
+    // guaranteed 4xx — recoverable (the failure is classified deferred, and the next
+    // drain re-reads the swapped row) but a wasted round trip and a spurious server
+    // error for every dependent write in an offline batch, which is precisely the
+    // noise this branch exists to remove. `getPendingMutations` deliberately keeps
+    // returning snapshots; freshness is needed here, at the point of dispatch, and
+    // nowhere else.
+    //
+    // The claim precedes it so a lost race still skips without a wasted read, and a
+    // null means the row was discarded concurrently — nothing left to send.
+    const fresh = storage.getMutationById(entry.id);
+    if (fresh === null) continue;
+    entry = fresh;
 
     try {
       // Fetch token per-entry to handle expiry mid-queue
@@ -975,7 +1008,7 @@ export async function processSyncQueue(
       // sibling now aimed forever at this dead row's local id.
       if (isTerminalFailure) {
         reportTerminalFailure(entry, message);
-        collapseStrandedLocalIdSiblings(storage, entry);
+        collapseStrandedLocalIdSiblings(storage, entry, isPermanent);
       }
     }
   }

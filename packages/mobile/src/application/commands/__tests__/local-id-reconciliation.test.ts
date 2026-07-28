@@ -391,6 +391,74 @@ describe("unsynced local-id handling", () => {
       ]);
     });
 
+    it("QUEUES the delete when the create was merely DISPATCHED, not just in-flight", async () => {
+      // `in_flight` catches only a request airborne at this instant. The ambiguous
+      // failure this branch exists for leaves the entry `failed` with
+      // dispatchCount >= 1: the POST went out, the server committed, the connection
+      // dropped before the response. Taking the purely-local path there discarded the
+      // create with NO delete queued at all — the exercise lives on the server
+      // forever, is gone locally, and comes back on the next library refresh.
+      storage.saveCustomExercise(localExercise("local-ex-12"));
+      storage.enqueueMutation({
+        entityType: "exercise",
+        entityId: "local-ex-12",
+        operation: "create",
+        payload: { name: "My Lift" },
+        endpoint: "/exercises",
+        method: "POST",
+      });
+      const [create] = storage.getQueuedEntriesForEntity(
+        "exercise",
+        "local-ex-12",
+      );
+      storage.markMutationDispatched(create.id);
+      storage.markMutationDeferred(
+        create.id,
+        "Network request failed",
+        "transport",
+      );
+      // Explicitly NOT in flight — that is what makes this the uncovered case.
+      expect(
+        storage.getQueuedEntriesForEntity("exercise", "local-ex-12")[0].status,
+      ).not.toBe("in_flight");
+
+      const api = apiThatMustNotBeCalled();
+      await deleteExerciseCommand({ api, storage }, "local-ex-12");
+
+      const queued = storage.getQueuedEntriesForEntity(
+        "exercise",
+        "local-ex-12",
+      );
+      // The create survives (it may have committed) and a DELETE is queued behind
+      // it, for swapLocalExerciseId to re-point once the create's reply lands.
+      expect(queued.map((e) => e.operation).sort()).toEqual([
+        "create",
+        "delete",
+      ]);
+    });
+
+    it("still discards purely-locally when the create never left the device", async () => {
+      // The counter-case, so the test above can fail: dispatchCount 0 means no
+      // request was ever made, so there is nothing server-side to reconcile and the
+      // delete stays entirely local — no wasted round trip.
+      storage.saveCustomExercise(localExercise("local-ex-13"));
+      storage.enqueueMutation({
+        entityType: "exercise",
+        entityId: "local-ex-13",
+        operation: "create",
+        payload: { name: "My Lift" },
+        endpoint: "/exercises",
+        method: "POST",
+      });
+
+      const api = apiThatMustNotBeCalled();
+      await deleteExerciseCommand({ api, storage }, "local-ex-13");
+
+      expect(
+        storage.getQueuedEntriesForEntity("exercise", "local-ex-13"),
+      ).toEqual([]);
+    });
+
     it("goes through the API when the create has already COMPLETED", async () => {
       // A completed create means the server has the row; the local id may simply
       // not have been swapped yet. Deleting locally only would orphan it.

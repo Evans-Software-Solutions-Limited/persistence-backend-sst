@@ -246,6 +246,18 @@ export interface StoragePort {
    */
   markMutationDispatched(id: number): void;
   /**
+   * Re-read one queue row by id, or `null` if it no longer exists.
+   *
+   * The drain snapshots its work list once (`getPendingMutations`), so an entry's
+   * stored payload can be REWRITTEN after that snapshot and before the entry is
+   * sent — which is exactly what `swapLocal*Id` does when an earlier entry in the
+   * same batch flushes and reconciles a dependency's `local-…` id. Sending the
+   * snapshot would put a local id on the wire and earn a guaranteed 4xx, resolved
+   * only on a later drain. Re-reading immediately before dispatch closes that
+   * window, so a batch of create + dependent-write converges in ONE pass.
+   */
+  getMutationById(id: number): SyncQueueEntry | null;
+  /**
    * Postpone an entry WITHOUT consuming its retry budget.
    *
    * The distinction that matters: `markMutationFailed` means "the server rejected
