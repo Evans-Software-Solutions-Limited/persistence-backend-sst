@@ -8,6 +8,8 @@ import {
   CLIENT_TIMEOUT_MS,
   DEFAULT_RETRY_BACKOFF_MS,
   getDefaultClient,
+  OPUS_OUTPUT_TOKENS_PER_SECOND,
+  retryAfterMs,
   maxTokensForBudget,
   OUTPUT_TOKENS_PER_SECOND,
   PREFILL_ALLOWANCE_MS,
@@ -339,23 +341,12 @@ describe("createSingleAttempt — the bounded resend", () => {
     expect(create.mock.calls[1][1]).toEqual({ timeout: 19_000 });
   });
 
-  it("re-clamps max_tokens to what the SHORTENED deadline can receive", async () => {
-    // ⚠ The resend used to reuse `params` verbatim, so it carried a ceiling
-    // sized for the FULL budget into a shorter one — a request that cannot
-    // physically receive its own ceiling, i.e. this module's entire thesis
-    // violated inside the function written to enforce it.
-    const { client: c, create } = client([boom(429), ok]);
-    let reads = 0;
-    const clock = () => (reads++ === 0 ? 0 : 1_000);
-    const big = { ...PARAMS, max_tokens: 5_000 };
-    await createSingleAttempt(c, big, 20_000, { now: clock, sleep: noSleep });
-
-    expect(create.mock.calls[0][0].max_tokens).toBe(5_000);
-    expect(create.mock.calls[1][0].max_tokens).toBe(maxTokensForBudget(19_000));
-    expect(create.mock.calls[1][0].max_tokens).toBeLessThan(5_000);
-  });
-
-  it("never RAISES max_tokens on the resend", async () => {
+  it("resends the ORIGINAL params — never a degraded request", async () => {
+    // ⚠ The first version clamped `max_tokens` down to fit the shorter deadline.
+    // That looked careful and re-opened the same defect one layer lower: a
+    // smaller ceiling on the same work is a truncation 422 — terminal-looking,
+    // for a transient cause, with the daily allowance already spent — and at the
+    // boundary the clamp reached 0, which the provider rejects outright.
     const { client: c, create } = client([boom(429), ok]);
     let reads = 0;
     const clock = () => (reads++ === 0 ? 0 : 1_000);
@@ -364,7 +355,49 @@ describe("createSingleAttempt — the bounded resend", () => {
       sleep: noSleep,
     });
 
-    expect(create.mock.calls[1][0].max_tokens).toBe(PARAMS.max_tokens);
+    expect(create.mock.calls[1][0]).toEqual(PARAMS);
+  });
+
+  it("does NOT resend when the time left cannot carry the original ceiling", async () => {
+    // A resend that cannot do the whole job is not a retry, it is a different
+    // and worse request. A ceiling sized for the full budget cannot fit a
+    // shortened one, so the honest answer is to fail.
+    const big = { ...PARAMS, max_tokens: maxTokensForBudget(20_000) };
+    const { client: c, create } = client([boom(429), ok]);
+    let reads = 0;
+    const clock = () => (reads++ === 0 ? 0 : 1_000);
+
+    await expect(
+      createSingleAttempt(c, big, 20_000, { now: clock, sleep: noSleep }),
+    ).rejects.toBeInstanceOf(AiUnavailableError);
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses the CALLER's generation rate for that guard, not the Haiku default", async () => {
+    // Opus is ~2.5x slower, so the default would grant a resend the deadline
+    // cannot actually deliver — `maxTokensForBudget`'s docstring calls this out
+    // explicitly, and `createSingleAttempt` has an Opus caller (the scan).
+    const params = { ...PARAMS, max_tokens: 1_200 };
+    let reads = 0;
+    const clock = () => (reads++ === 0 ? 0 : 1_000);
+
+    const haiku = client([boom(429), ok]);
+    await createSingleAttempt(haiku.client, params, 20_000, {
+      now: clock,
+      sleep: noSleep,
+    });
+    expect(haiku.create).toHaveBeenCalledTimes(2);
+
+    reads = 0;
+    const opus = client([boom(429), ok]);
+    await expect(
+      createSingleAttempt(opus.client, params, 20_000, {
+        now: clock,
+        sleep: noSleep,
+        tokensPerSecond: OPUS_OUTPUT_TOKENS_PER_SECOND,
+      }),
+    ).rejects.toBeInstanceOf(AiUnavailableError);
+    expect(opus.create).toHaveBeenCalledTimes(1);
   });
 
   it("waits before resending, honouring retry-after when the provider sends one", async () => {
@@ -403,47 +436,36 @@ describe("createSingleAttempt — the bounded resend", () => {
     expect(slept).toEqual([DEFAULT_RETRY_BACKOFF_MS]);
   });
 
-  it("abandons the resend if the backoff consumed the budget", async () => {
-    const { client: c, create } = client([boom(429), ok]);
+  it("REFUSES a retry-after longer than the deadline can spare", async () => {
+    // ⚠ The sleep was unbounded and provider-controlled. `retry-after: 30`
+    // against a 12 s budget slept straight through the 29 s Lambda — and a hard
+    // kill skips the handler's `finally`, so no usage row is written for an
+    // inference Bedrock already billed. Sleeping past your own deadline is worse
+    // than not backing off at all.
+    const slept: number[] = [];
+    const { client: c, create } = client([
+      () => {
+        throw Object.assign(new Error("throttled"), {
+          status: 429,
+          headers: { "retry-after": "30" },
+        });
+      },
+      ok,
+    ]);
     let reads = 0;
-    const clock = () => [0, 1_000, 19_900][Math.min(reads++, 2)];
-    await expect(
-      createSingleAttempt(c, PARAMS, 20_000, { now: clock, sleep: noSleep }),
-    ).rejects.toBeInstanceOf(AiUnavailableError);
-
-    expect(create).toHaveBeenCalledTimes(1);
-  });
-
-  it("does NOT resend a failure that arrived after prefill but before halfway", async () => {
-    // ⚠ The bound that discriminates. At 5 s into a 20 s budget the old
-    // `elapsed < timeoutMs / 2` bound still resent — but by then the prompt (or
-    // the images, at $0.0272 a scan) has been accepted and BILLED, so the resend
-    // genuinely doubles the unit cost. That is the doubling `createSingleAttempt`
-    // exists to avoid. `PREFILL_ALLOWANCE_MS` is the honest proxy for "the
-    // provider never started"; half the budget is not.
-    //
-    // Without this test, reverting the bound to `timeoutMs / 2` passes.
-    const { client: c, create } = client([boom(429), ok]);
-    let reads = 0;
-    const clock = () => (reads++ === 0 ? 0 : 5_000);
+    const clock = () => (reads++ === 0 ? 0 : 1_000);
 
     await expect(
-      createSingleAttempt(c, PARAMS, 20_000, { now: clock, sleep: noSleep }),
+      createSingleAttempt(c, PARAMS, 12_000, {
+        now: clock,
+        sleep: async (ms) => {
+          slept.push(ms);
+        },
+      }),
     ).rejects.toBeInstanceOf(AiUnavailableError);
+
+    expect(slept).toEqual([]);
     expect(create).toHaveBeenCalledTimes(1);
-  });
-
-  it("DOES resend a failure that arrived inside prefill", async () => {
-    // The other side of the same boundary.
-    const { client: c, create } = client([boom(429), ok]);
-    let reads = 0;
-    const clock = () => (reads++ === 0 ? 0 : PREFILL_ALLOWANCE_MS - 1);
-
-    await createSingleAttempt(c, PARAMS, 20_000, {
-      now: clock,
-      sleep: noSleep,
-    });
-    expect(create).toHaveBeenCalledTimes(2);
   });
 
   it("does not resend a client error", async () => {
@@ -468,5 +490,53 @@ describe("createSingleAttempt — the bounded resend", () => {
         sleep: noSleep,
       }),
     ).rejects.toThrow(/after_retry/);
+  });
+});
+
+describe("retryAfterMs", () => {
+  // ⚠ Both production-shaped branches were mutation survivors: deleting the
+  // `Headers`-like `.get()` path, or changing the seconds conversion to `* 1`,
+  // left every test green — while `Headers` is exactly what the real Anthropic
+  // SDK attaches to an APIError. The mutation set had not reached this function.
+  it("reads a Headers-like bag, which is what the SDK actually attaches", () => {
+    const headers = {
+      get: (k: string) => (k === "retry-after-ms" ? "900" : null),
+    };
+    expect(retryAfterMs({ headers })).toBe(900);
+  });
+
+  it("converts a retry-after in SECONDS to milliseconds", () => {
+    expect(retryAfterMs({ headers: { "retry-after": "2" } })).toBe(2_000);
+  });
+
+  it("prefers the millisecond header when both are present", () => {
+    expect(
+      retryAfterMs({
+        headers: { "retry-after-ms": "250", "retry-after": "9" },
+      }),
+    ).toBe(250);
+  });
+
+  it.each([
+    ["empty", ""],
+    ["whitespace", "   "],
+    ["an HTTP-date", "Wed, 21 Oct 2026 07:28:00 GMT"],
+    ["garbage", "soon"],
+    ["negative", "-5"],
+  ])(
+    "falls through on %s so the caller uses its own default",
+    (_label, value) => {
+      // `Number("")` is 0 — finite and non-negative — so an empty header would
+      // otherwise return a 0 ms backoff and restore the zero-delay resend.
+      expect(
+        retryAfterMs({ headers: { "retry-after-ms": value } }),
+      ).toBeUndefined();
+    },
+  );
+
+  it("tolerates an error with no headers at all", () => {
+    expect(retryAfterMs(new Error("boom"))).toBeUndefined();
+    expect(retryAfterMs(null)).toBeUndefined();
+    expect(retryAfterMs({ headers: "nope" })).toBeUndefined();
   });
 });

@@ -46,6 +46,7 @@
 import {
   clamp01,
   createSingleAttempt,
+  OPUS_OUTPUT_TOKENS_PER_SECOND,
   findToolUse,
   getDefaultClient,
   AiUnreadableError,
@@ -357,6 +358,8 @@ export async function scanEquipmentFromPhoto(
     client,
     params,
     EQUIPMENT_SCAN_TIMEOUT_MS,
+    // Opus-class, and 2.5x slower than the default this would otherwise assume.
+    { tokensPerSecond: OPUS_OUTPUT_TOKENS_PER_SECOND },
   );
   const latencyMs = Date.now() - startedAt;
 

@@ -56,6 +56,16 @@ export const CLIENT_TIMEOUT_MS = 12_000;
 export const OUTPUT_TOKENS_PER_SECOND = 100;
 
 /**
+ * The same measurement for Opus-class Claude: **~45 tok/s** on Bedrock
+ * (eu-west-2, 2026-07-28; three samples 49/41/45). Rounded DOWN to 40.
+ *
+ * Two and a half times slower than Haiku, which is why passing this matters
+ * rather than taking the default — the equipment scan, Snap AI photo and recipe
+ * extraction all run Opus.
+ */
+export const OPUS_OUTPUT_TOKENS_PER_SECOND = 40;
+
+/**
  * Everything before the first output token: request transfer, input prefill,
  * queueing. 3 s covers a ~25 k-token prompt with room to spare (measured ~1.5 s
  * for 23 k input tokens).
@@ -333,6 +343,13 @@ export async function createSingleAttempt(
   deps: {
     now?: () => number;
     sleep?: (ms: number) => Promise<void>;
+    /**
+     * Generation rate for THIS surface's model. Defaults to the Haiku figure via
+     * `maxTokensForBudget`; Opus-class callers must pass their own, or the
+     * resend guard is optimistic by ~2.5× — the precise trap
+     * `maxTokensForBudget`'s docstring warns about.
+     */
+    tokensPerSecond?: number;
   } = {},
 ): Promise<MessagesCreateResponse> {
   const now = deps.now ?? Date.now;
@@ -344,32 +361,42 @@ export async function createSingleAttempt(
     // `getDefaultClient()` fixes at CLIENT_TIMEOUT_MS for the retrying callers.
     return await client.messages.create(params, { timeout: timeoutMs });
   } catch (error) {
-    if (!isRetryable(error) || now() - startedAt >= PREFILL_ALLOWANCE_MS) {
-      throw new AiUnavailableError(
+    const giveUp = () =>
+      new AiUnavailableError(
         `ai_single_attempt_failed: ${describeError(error)}`,
       );
-    }
 
-    await sleep(retryAfterMs(error) ?? DEFAULT_RETRY_BACKOFF_MS);
+    const elapsed = now() - startedAt;
+    if (!isRetryable(error) || elapsed >= PREFILL_ALLOWANCE_MS) throw giveUp();
 
+    // ⚠ The backoff is BOUNDED by what the deadline can spare, because
+    // `retry-after` is provider-controlled. An unbounded sleep was worse than no
+    // backoff at all: `retry-after: 30` against a 12 s budget slept straight
+    // through the 29 s Lambda, and a hard kill skips the handler's `finally`, so
+    // no usage row is written for an inference the provider already billed. That
+    // is the quota-escape this module's own constants were written to close.
+    const wanted = retryAfterMs(error) ?? DEFAULT_RETRY_BACKOFF_MS;
+    const affordable = timeoutMs - elapsed - PREFILL_ALLOWANCE_MS;
+    if (wanted > affordable) throw giveUp();
+    await sleep(wanted);
+
+    // ⚠ Resend ONLY if the time left can carry the ORIGINAL ceiling. Clamping
+    // `max_tokens` down to fit looked reasonable and quietly re-opened the same
+    // defect one layer lower: a smaller ceiling on the same work is a truncation
+    // 422 — a terminal-looking error for a transient cause, with the daily
+    // allowance already spent — and at the boundary the clamp reached 0, which
+    // the provider rejects outright. A resend that cannot do the whole job is
+    // not a retry, it is a different, worse request. So `params` goes out
+    // unchanged or not at all.
     const remaining = timeoutMs - (now() - startedAt);
-    if (remaining <= PREFILL_ALLOWANCE_MS) {
-      throw new AiUnavailableError(
-        `ai_single_attempt_failed: ${describeError(error)}`,
-      );
+    if (
+      maxTokensForBudget(remaining, deps.tokensPerSecond) < params.max_tokens
+    ) {
+      throw giveUp();
     }
 
     try {
-      return await client.messages.create(
-        {
-          ...params,
-          max_tokens: Math.min(
-            params.max_tokens,
-            maxTokensForBudget(remaining),
-          ),
-        },
-        { timeout: remaining },
-      );
+      return await client.messages.create(params, { timeout: remaining });
     } catch (retryError) {
       throw new AiUnavailableError(
         `ai_single_attempt_failed_after_retry: ${describeError(retryError)}`,
@@ -398,7 +425,11 @@ export function retryAfterMs(error: unknown): number | undefined {
     };
     const viaGet = typeof bag.get === "function" ? bag.get(key) : undefined;
     const raw = viaGet ?? bag[key];
-    return typeof raw === "string" ? raw : undefined;
+    // ⚠ `Number("")` is 0 — finite and non-negative — so an empty or
+    // whitespace-only header would return a 0 ms backoff and restore the
+    // zero-delay resend this function exists to prevent. Proxies emit that
+    // header shape routinely.
+    return typeof raw === "string" && raw.trim() !== "" ? raw : undefined;
   };
   const ms = Number(read("retry-after-ms"));
   if (Number.isFinite(ms) && ms >= 0) return ms;
