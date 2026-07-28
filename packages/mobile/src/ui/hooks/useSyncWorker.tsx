@@ -245,7 +245,18 @@ export function useSyncWorker(): void {
             create.entityType,
             create.entityId,
           )) {
-            if (sibling.id !== create.id && sibling.status === "failed") {
+            // Same `resolution` exclusion as the two filters above — without it this
+            // union silently reopened the hole they exist to close, dropping a
+            // sibling that had just climbed the full ladder into /sync-failed back to
+            // `pending` on the next blip. Reachable: a create exhausted by transport
+            // deferrals (so it qualifies here) with a follow-up PATCH naming an
+            // unresolvable catalogue member, which cannot coalesce into the dispatched
+            // create and is therefore a separate sibling.
+            if (
+              sibling.id !== create.id &&
+              sibling.status === "failed" &&
+              sibling.deferKind !== "resolution"
+            ) {
               idsToReset.add(sibling.id);
             }
           }

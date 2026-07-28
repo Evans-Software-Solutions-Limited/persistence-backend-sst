@@ -63,8 +63,27 @@ export async function deleteExerciseCommand(
   // `fetch`, so an offline attempt that never left the device still counts), and that
   // is the safe direction: the cost is one queued DELETE that the id swap resolves,
   // versus an orphaned row that no longer has any delete to undo it.
+  //
+  // ⚠ EXCEPT where the server has given a definitive NO. A `permanently_failed` create
+  // always has `dispatchCount >= 1` — a 4xx can only come back from a request that
+  // left the device — so keying on the count alone swept in the one status where
+  // nothing was committed, and the result was two junk rows: the rejected create kept
+  // its /sync-failed entry for an exercise the user had deleted, and the newly queued
+  // `DELETE /exercises/local-…` 400'd with "Invalid identifier format", burnt its
+  // budget and landed there too. That string is verbatim the symptom this command
+  // exists to stop producing. `blocked_entitlement` is the same class (a definitive
+  // server verdict) and costs nothing to exclude, though no entitlement gate exists on
+  // `/exercises` today.
+  //
+  // `queueCoalescing.canRewriteWithoutReplayingKey` and
+  // `collapseStrandedLocalIdSiblings` both already encode this rule; this is the third
+  // site and it must agree with them.
   const unsafeToDiscard = creates.find(
-    (entry) => entry.status === "in_flight" || entry.dispatchCount > 0,
+    (entry) =>
+      entry.status === "in_flight" ||
+      (entry.dispatchCount > 0 &&
+        entry.status !== "permanently_failed" &&
+        entry.status !== "blocked_entitlement"),
   );
 
   if (unsafeToDiscard) {

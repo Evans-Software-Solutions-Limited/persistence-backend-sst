@@ -200,6 +200,12 @@ describe("unsynced local-id handling", () => {
         "exercise",
         "local-ex-2",
       );
+      // The dispatch is not optional set-up: a 4xx can only come back from a request
+      // that LEFT the device, so `permanently_failed` always carries
+      // `dispatchCount >= 1`. Omitting it built a state production cannot reach, and
+      // the test passed while the real path kept the create and queued a doomed
+      // `DELETE /exercises/local-…`.
+      storage.markMutationDispatched(entry.id);
       storage.markMutationPermanentlyFailed(entry.id, "422");
 
       const api = apiThatMustNotBeCalled();
@@ -435,6 +441,42 @@ describe("unsynced local-id handling", () => {
         "create",
         "delete",
       ]);
+    });
+
+    it("discards purely-locally when the create was REJECTED, despite having been sent", async () => {
+      // The regression the dispatchCount gate introduced. A `permanently_failed`
+      // create always has dispatchCount >= 1 (a 4xx can only come back from a request
+      // that left the device), so keying on the count alone swept in the one status
+      // where the server definitively did NOT commit — leaving the rejected create in
+      // /sync-failed for an exercise the user deleted, plus a queued
+      // `DELETE /exercises/local-…` that 400s, burns its budget and lands there as a
+      // second junk row reading "Invalid identifier format": the exact string this
+      // command exists to stop producing. This is the 422 enum→uuid case the branch
+      // was written to fix, so it is the common path, not a corner.
+      storage.saveCustomExercise(localExercise("local-ex-14"));
+      storage.enqueueMutation({
+        entityType: "exercise",
+        entityId: "local-ex-14",
+        operation: "create",
+        payload: { name: "My Lift" },
+        endpoint: "/exercises",
+        method: "POST",
+      });
+      const [create] = storage.getQueuedEntriesForEntity(
+        "exercise",
+        "local-ex-14",
+      );
+      storage.markMutationDispatched(create.id);
+      storage.markMutationPermanentlyFailed(create.id, "HTTP 422: validation");
+
+      const api = apiThatMustNotBeCalled();
+      await deleteExerciseCommand({ api, storage }, "local-ex-14");
+
+      // Nothing left: no orphan to reconcile, so no DELETE to queue either.
+      expect(
+        storage.getQueuedEntriesForEntity("exercise", "local-ex-14"),
+      ).toEqual([]);
+      expect(storage.getFailedExhaustedEntries()).toEqual([]);
     });
 
     it("still discards purely-locally when the create never left the device", async () => {

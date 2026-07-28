@@ -852,6 +852,66 @@ describe("useSyncWorker", () => {
       expect([...resetIds].sort()).toEqual([createId, deleteId].sort());
     });
 
+    it("does not re-arm a RESOLUTION-deferred sibling when resurrecting a create", async () => {
+      // The sibling union took any `failed` sibling, with no deferKind check, while
+      // the two filters above it both exclude `resolution` — so it silently reopened
+      // the hole they exist to close. Reachable: a create exhausted by transport
+      // deferrals (so it qualifies for replaySafe) with a follow-up PATCH naming an
+      // unresolvable catalogue member, which `canRewriteWithoutReplayingKey` refuses
+      // to coalesce into the dispatched create and which is therefore a sibling.
+      const storage = new InMemoryStorageAdapter();
+      storage.initialize();
+      const exhaust = (id: number) => {
+        storage.markMutationFailed(id, "e1");
+        storage.markMutationFailed(id, "e2");
+        storage.markMutationFailed(id, "e3");
+      };
+      storage.enqueueMutation({
+        entityType: "exercise",
+        entityId: "local-ex-7",
+        operation: "create",
+        payload: { name: "Lift" },
+        endpoint: "/exercises",
+        method: "POST",
+      });
+      const createId = storage.getPendingMutations().slice(-1)[0].id;
+      storage.markMutationDeferred(createId, "offline", "transport");
+      exhaust(createId);
+
+      storage.enqueueMutation({
+        entityType: "exercise",
+        entityId: "local-ex-7",
+        operation: "update",
+        payload: { name: "Renamed" },
+        endpoint: "/exercises/local-ex-7",
+        method: "PATCH",
+      });
+      const patchId = storage.getPendingMutations().slice(-1)[0].id;
+      storage.markMutationDeferred(patchId, "No catalogue entry", "resolution");
+      exhaust(patchId);
+
+      const resetSpy = jest.spyOn(storage, "resetFailedEntries");
+      mockFetch.mockResolvedValue({ ok: true, json: async () => ({}) });
+      const auth = new InMemoryAuthAdapter();
+      const netInfo = new InMemoryNetInfoAdapter(true);
+      const adapters = makeAdapters(storage, auth, session, netInfo);
+
+      renderHook(() => useSyncWorker(), { wrapper: wrap(adapters) });
+      await settleMount();
+
+      act(() => netInfo.setConnected(false));
+      act(() => netInfo.setConnected(true));
+      act(() => {
+        jest.advanceTimersByTime(SYNC_RECONNECT_DEBOUNCE_MS);
+      });
+
+      await waitFor(() => expect(resetSpy).toHaveBeenCalled());
+      const resetIds = resetSpy.mock.calls[0][0] as readonly number[];
+      // The create is resurrected; the resolution-deferred PATCH stays reviewable.
+      expect(resetIds).toContain(createId);
+      expect(resetIds).not.toContain(patchId);
+    });
+
     it("restores the budget-free run of still-queued deferred entries on reconnect", async () => {
       // Without this, an offline stretch of only ~90–120s (12 free deferrals at a
       // 5s window, then 3 charged attempts) exhausted an offline-created row

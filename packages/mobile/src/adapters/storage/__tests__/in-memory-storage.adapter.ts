@@ -385,23 +385,29 @@ export class InMemoryStorageAdapter implements StoragePort {
     entityType: string,
     entityId: string,
   ): SyncQueueEntry[] {
-    // Mirrors the SQLite adapter: every non-completed status, oldest first.
-    return this.queue.filter(
-      (e) =>
-        e.entityType === entityType &&
-        e.entityId === entityId &&
-        e.status !== "completed",
-    );
+    // Mirrors the SQLite adapter: every non-completed status, oldest first, as
+    // SNAPSHOTS — see `getPendingMutations`.
+    return this.queue
+      .filter(
+        (e) =>
+          e.entityType === entityType &&
+          e.entityId === entityId &&
+          e.status !== "completed",
+      )
+      .map((e) => ({ ...e }));
   }
 
   getFailedExhaustedEntries(): SyncQueueEntry[] {
     // Parity with SQLite: FIFO order (insertion-ordered already, we
-    // just push to the end).
-    return this.queue.filter(
-      (e) =>
-        (e.status === "failed" && e.retryCount >= e.maxRetries) ||
-        e.status === "permanently_failed",
-    );
+    // just push to the end), and SNAPSHOTS — see `getPendingMutations` for why
+    // handing out live rows is the divergence that hid two production bugs here.
+    return this.queue
+      .filter(
+        (e) =>
+          (e.status === "failed" && e.retryCount >= e.maxRetries) ||
+          e.status === "permanently_failed",
+      )
+      .map((e) => ({ ...e }));
   }
 
   resetFailedEntries(ids: readonly number[]): void {
