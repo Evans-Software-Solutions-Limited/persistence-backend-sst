@@ -23,9 +23,10 @@ import { WorkoutEditorPresenter } from "@/ui/presenters/WorkoutEditorPresenter";
  * Editor container — async-loads the workout via `useWorkout(id)`,
  * resets the form once on first hydrate, then drives the same form
  * reducer the creator uses. Submit maps the snake_case form state
- * onto the V2 camelCase `UpdateWorkoutInput` (full-replacement on
- * `exercises` per backend PATCH semantics) and dispatches via
- * `updateWorkoutCommand`. The optimistic cache update inside the
+ * onto the V2 camelCase `UpdateWorkoutInput` and dispatches via
+ * `updateWorkoutCommand`. `exercises` is full-replacement per backend PATCH
+ * semantics, but is sent ONLY when the plan actually changed — see
+ * `toUpdateWorkoutInput` for why a rename must not carry it. The optimistic cache update inside the
  * command propagates the change to the list + popover before the
  * sync queue flushes the PATCH.
  *

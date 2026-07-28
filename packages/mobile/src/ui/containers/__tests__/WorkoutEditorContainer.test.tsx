@@ -219,7 +219,7 @@ describe("WorkoutEditorContainer", () => {
     expect(queryByTestId("editor-error")).toBeNull();
   });
 
-  it("submits a full-replacement PATCH and navigates back", async () => {
+  it("submits a PATCH and navigates back", async () => {
     const api = new InMemoryApiAdapter();
     const cached = buildWorkout({ name: "Push Day" });
     jest.spyOn(api, "getWorkout").mockResolvedValue(ok(cached));
