@@ -982,8 +982,17 @@ export class ExerciseRepository {
       return result[0];
     }
 
-    // ON CONFLICT DO NOTHING against the partial unique index, then read back on
-    // an empty return. Doing it in this order (rather than SELECT-then-INSERT)
+    // ON CONFLICT DO NOTHING against the FULL unique index on
+    // (created_by, client_request_id), then read back on an empty return.
+    //
+    // The index must be full, not partial: `onConflictDoNothing({ target })`
+    // emits no index predicate, and Postgres cannot infer a partial index
+    // without one — it raises 42P10 instead. See the migration
+    // (20260727120100) for the full reasoning, and
+    // __tests__/clientRequestIdIdempotency.test.ts, which asserts the SQL this
+    // call emits and the shape the migration creates actually agree.
+    //
+    // Doing it in this order (rather than SELECT-then-INSERT)
     // closes the window where two concurrent replays both see "no row yet" — the
     // index arbitrates, and the loser simply reads the winner's row.
     const inserted = await db

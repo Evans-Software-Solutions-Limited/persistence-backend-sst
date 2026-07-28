@@ -21,7 +21,9 @@
 --     success from the client's point of view.
 --
 -- Purely additive: safe under migrate-then-deploy (the previous Lambda simply
--- never writes the column). Idempotent: IF NOT EXISTS on both statements.
+-- never writes the column). Re-runnable: the columns use IF NOT EXISTS, and the
+-- indexes are dropped-then-created so a re-run converges on the intended SHAPE
+-- rather than keeping whatever already carried the name (see below).
 
 ALTER TABLE workouts
   ADD COLUMN IF NOT EXISTS client_request_id text;
@@ -43,6 +45,19 @@ ALTER TABLE exercises
 -- index, so the pre-existing all-NULL rows never conflict with each other under a
 -- full index either. This is also why the M13 precedent works —
 -- `workout_sessions_user_client_session_idx` (20260710120000) is a full index.
+--
+-- The DROPs make this re-runnable by SHAPE, not merely by NAME. `CREATE UNIQUE
+-- INDEX IF NOT EXISTS` skips on a name match and does NOT reconcile the
+-- definition, so a database where an earlier revision of this file created the
+-- PARTIAL version would keep the partial index, silently skip the CREATE, and go
+-- on raising 42P10 on every keyed insert — with the migration reporting success.
+-- Migrations here are applied by hand against staging and prod, so "I already ran
+-- something called that" is a real state to defend against. Dropping first is
+-- cheap: the column is brand new, so the index is empty or near-empty, and the
+-- window is inside the same transaction as the CREATE.
+DROP INDEX IF EXISTS workouts_created_by_client_request_idx;
+DROP INDEX IF EXISTS exercises_created_by_client_request_idx;
+
 CREATE UNIQUE INDEX IF NOT EXISTS workouts_created_by_client_request_idx
   ON workouts (created_by, client_request_id);
 
