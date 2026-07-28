@@ -7,7 +7,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { color, radius, space } from "@/ui/theme/tokens";
 
 /**
@@ -18,18 +18,34 @@ import { color, radius, space } from "@/ui/theme/tokens";
  * and the footer's safe-area padding is the kind of thing that gets fixed on one
  * step and forgotten on the other four.
  *
- * ⚠ `edges` deliberately includes `bottom`. The flow is a `fullScreenModal`
- * route that covers the tab bar, so nothing below it is reserving
- * home-indicator space — without the bottom edge the primary CTA sits under the
- * indicator on every notchless-bottom iPhone.
+ * ## ⚠ Insets come from `useSafeAreaInsets()`, NOT from `<SafeAreaView>`
  *
- * ⚠ This is `SafeAreaView` from `react-native-safe-area-context`, not the RN
- * core one, and the distinction matters here: the app mounts NO
- * `SafeAreaProvider`, so anything reading `SafeAreaInsetsContext` gets zeros
- * (see the fallback `BottomSheet.tsx` documents). The context version's
- * `SafeAreaView` is a native view that measures the window itself, so it is
- * correct without a provider — swapping it for a `useSafeAreaInsets()` +
- * `paddingTop` idiom would silently give every Loadout step a zero inset.
+ * This looks like a step backwards and is the fix for a device bug. Brad's run
+ * showed the header rendered flush against the status bar, its title overlapping
+ * the clock — on the same component that had been correctly inset a run earlier.
+ *
+ * `SafeAreaView` from `react-native-safe-area-context` is a purely NATIVE view
+ * (`specs/NativeSafeAreaView`). It measures its own window and **never reads
+ * `SafeAreaInsetsContext`** — so a `SafeAreaProvider` cannot correct it. That is
+ * fine on an ordinary screen, and wrong here: this flow is a
+ * `presentation: "fullScreenModal"` route, which react-native-screens presents
+ * as its own view controller, and the native measurement inside it came back
+ * zero. Intermittently, which is the signature of a measurement race rather than
+ * a missing inset.
+ *
+ * `useSafeAreaInsets()` reads the context instead, and the route seeds a
+ * `SafeAreaProvider` with `initialWindowMetrics` — so the values are the
+ * window's, correct on the first frame, with nothing to measure and nothing to
+ * race. See `app/(app)/loadout.tsx` for why that provider is scoped to the route
+ * rather than added at the app root.
+ *
+ * ⚠ It therefore THROWS if this scaffold is ever rendered outside that provider,
+ * and that is deliberate — a silent `?? 0` fallback is precisely the failure
+ * being fixed. `renderWithTheme` supplies one for tests.
+ *
+ * ⚠ The bottom inset is not optional. The route covers the tab bar, so nothing
+ * below is reserving home-indicator space — without it the primary CTA sits
+ * under the indicator on every notchless-bottom iPhone.
  */
 
 export type LoadoutScaffoldProps = {
@@ -57,8 +73,16 @@ export function LoadoutScaffold({
   children,
   testID,
 }: LoadoutScaffoldProps) {
+  const insets = useSafeAreaInsets();
+
   return (
-    <SafeAreaView style={styles.root} edges={["top", "bottom"]} testID={testID}>
+    <View
+      style={[
+        styles.root,
+        { paddingTop: insets.top, paddingBottom: insets.bottom },
+      ]}
+      testID={testID}
+    >
       <View style={styles.header}>
         {onBack ? (
           <TouchableOpacity
@@ -97,7 +121,7 @@ export function LoadoutScaffold({
       </ScrollView>
 
       {footer ? <View style={styles.footer}>{footer}</View> : null}
-    </SafeAreaView>
+    </View>
   );
 }
 

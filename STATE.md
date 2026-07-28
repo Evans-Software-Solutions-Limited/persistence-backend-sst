@@ -385,12 +385,13 @@ client-side (the 402 remains the real gate). Adding the column to
 ~4-line change and retires `TIER_GRANTS_LOADOUT`. Left out only because that
 slice was mobile-only.
 
-**⚠ The branch now carries a BACKEND fix, so it is no longer mobile-only.**
-Brad's device run hit a 500 behind "Couldn't adapt this workout": the
-`${array}::uuid[]` bug above, in `ExerciseRepository.listAdaptationCandidates`.
-Four predicates fixed + a render-guard test. **Staging must be redeployed for
-the flow to work** — `deploy-staging.yml` accepts `workflow_dispatch`, so it can
-be fired on this branch without merging.
+**⚠ BLOCKED ON PR #332, which is a separate branch.** Brad's device run hit a
+500 behind "Couldn't adapt this workout": the `${array}::uuid[]` bug above, in
+`ExerciseRepository.listAdaptationCandidates`. The fix was split out to
+`claude/fix-uuid-array-predicates` (PR #332) at Brad's request so it can land
+without waiting on this review — **this branch stays mobile-only.** Loadout
+cannot work on device until #332 is merged AND staging is redeployed
+(`deploy-staging.yml` accepts a `workflow_dispatch`).
 
 **Also changed off the back of that run:** the "Save this gym for next time"
 toggle now creates the gym when the user COMMITS the kit, not when the variation
@@ -404,15 +405,32 @@ staging using the PR checklist, then merge. Gates green
 2 IB passes clean — but the IB sweeps predate the backend fix and the
 route conversion, so **one more sweep is owed before the PR**.
 
-**Open question from the device run, unanswered:** Brad reported "the safe area
-view is not there" on the collect step. `LoadoutScaffold` does apply
-`edges={["top","bottom"]}`, and the screenshot he sent (the adapting-error step,
-same scaffold) shows the top inset applied — so which edge is wrong is not yet
-established. One real adjacent finding: **the app mounts no `SafeAreaProvider`
-anywhere**, so every `SafeAreaInsetsContext` consumer reads zero — including
-`BottomSheet`, which documents the fallback at `BottomSheet.tsx:96`. Sheet CTAs
-therefore get no home-indicator padding, app-wide. Adding the provider at the
-root is a one-line change with app-wide blast radius; not done here.
+**⚠ The safe-area bug and the trap inside it — FIXED, and worth reading before
+touching any inset in this app.** Brad's second screenshot showed the collect
+step's header flush against the status bar, its title overlapping the clock — on
+the same `LoadoutScaffold` that had rendered correctly inset one run earlier.
+
+**`SafeAreaView` from `react-native-safe-area-context` is a purely NATIVE view
+and never reads `SafeAreaInsetsContext`.** It measures its own window. That is
+why every other screen in this app works despite there being **no
+`SafeAreaProvider` mounted anywhere** — and why this route did not: it is a
+`fullScreenModal`, which react-native-screens presents as its own view
+controller, and the native measurement there came back zero. Intermittently,
+which is the signature of a measurement race.
+
+So adding a provider alone would have fixed NOTHING. The fix is both halves:
+a `SafeAreaProvider initialMetrics={initialWindowMetrics}` on the route, and
+`LoadoutScaffold` / `LoadoutSavedStep` switched to `useSafeAreaInsets()`, which
+is the API that actually reads it. `SavedGymsPresenter` deliberately keeps
+`SafeAreaView` — it is an ordinary Stack screen, outside that provider, where the
+native path works.
+
+**Still open, app-wide:** with no root provider, every `SafeAreaInsetsContext`
+consumer OUTSIDE the Loadout route still reads zero — including `BottomSheet`
+(`BottomSheet.tsx:96` documents the `?? 0` fallback), so sheet CTAs get no
+home-indicator padding anywhere else in the app. One `SafeAreaProvider` at the
+app root fixes it and changes the bottom inset of every sheet — a real
+improvement, and not one to make inside a feature branch without a device pass.
 
 ### Data bugs — open, not blocking Phase 2's critical path
 
@@ -605,13 +623,15 @@ the same branch; the flow is STILL not verified working end-to-end by me.**
   identified it. Now the `/(app)/loadout` route. **The lesson is that I reached
   for fix 2 without re-examining fix 1's premise.**
 - **⚠ A BACKEND 500 was the real blocker behind "Couldn't adapt this workout",
-  and I could not have found it from the mobile side** — the client only sees a
+  now SPLIT OUT to PR #332 at Brad's request — I could not have found it from
+  the mobile side** — the client only sees a
   generic error. Brad pasted the stack trace and it was immediate:
   ``sql`${array}::uuid[]` `` renders a ROW constructor. Four predicates in
   `exerciseRepository`; two of them three months old and never executed, because
   the exercise library filters locally from its SQLite cache. See § Active
-  gotchas. **Staging needs redeploying (`deploy-staging.yml` takes a
-  `workflow_dispatch` on this branch) before the flow can work on device.**
+  gotchas. **#332 must merge AND staging must be redeployed
+  (`deploy-staging.yml` takes a `workflow_dispatch`) before the flow can work on
+  device.**
 - **⚠ A render test that PINNED the bug.** `exerciseRepositoryLoadout.test.ts`
   already rendered the predicate through `PgDialect` — exactly the guard the
   previous SQL incident prescribed — and asserted `($1)::uuid[]`, the invalid
@@ -626,10 +646,18 @@ the same branch; the flow is STILL not verified working end-to-end by me.**
   preview rather than before it (that request already spends 2.6 s p50 in
   Bedrock), and `save()` awaits the in-flight create instead of racing it into a
   duplicate-name 409.
+- **⚠ The safe-area bug was NOT what it looked like.** `SafeAreaView` from
+  `react-native-safe-area-context` is a purely native view that never reads
+  `SafeAreaInsetsContext` — so the missing root `SafeAreaProvider` I had flagged
+  was a real finding but the WRONG fix, and adding one alone would have changed
+  nothing. Inside the `fullScreenModal` route the native measurement returned
+  zero, intermittently. Fixed with both halves: a route-scoped provider seeded
+  from `initialWindowMetrics`, and the two Loadout presenters moved to
+  `useSafeAreaInsets()`. The tests assert the actual numbers (44 / 34), because
+  a truthy check passes on `paddingTop: 0` — which is the bug.
 - **NOT done, deliberately:** the Gym-tab-in-Train idea (Brad: "worth keeping an
-  eye on") — logged under § Open items. And the collect step's safe-area report
-  is unresolved; see the branch section above for what was and was not
-  established.
+  eye on") — logged under § Open items. And the app-wide root `SafeAreaProvider`,
+  which would give every other sheet in the app its home-indicator padding back.
 
 
 

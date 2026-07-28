@@ -28,36 +28,6 @@ import { getDb } from "@persistence/db/client";
 import { LIVE_ASSIGNMENT_STATUSES } from "./programRepository";
 
 /**
- * A parameterised `ARRAY[$1, $2, …]::uuid[]` literal.
- *
- * ⚠ **Never interpolate a JS array directly before a `::uuid[]` cast.** Drizzle
- * renders a bare array as a comma-separated placeholder list wrapped in
- * PARENTHESES — the shape `IN (…)` wants — so `sql`${ids}::uuid[]`` compiles to
- * `($1, $2, $3)::uuid[]`. Postgres reads that as a ROW constructor and the query
- * dies at execution time, with a different error per arity:
- *
- *   - 2+ ids → `cannot cast type record to uuid[]`
- *   - 1 id   → `malformed array literal` (a lone `($1)` is just a scalar, so the
- *              cast tries to parse a UUID string as an array literal)
- *
- * Both are runtime-only. The unit suite mocks `getDb`, so a broken predicate
- * passes every gate and ships green — this is the second time that blind spot
- * has cost a production 500 (see memory/reference_drizzle_groupby_param_bug for
- * the first, a GROUP BY that blanked Home's weekly volume). The four call sites
- * are therefore covered by `PgDialect` render assertions in
- * `exerciseRepositoryArrayPredicates.test.ts`, which fail on the paren form.
- *
- * `ARRAY[]::uuid[]` is valid Postgres, so the empty case needs no special
- * handling — though every current caller guards on length anyway.
- */
-function uuidArray(ids: readonly string[]): SQL {
-  return sql`ARRAY[${sql.join(
-    ids.map((id) => sql`${id}`),
-    sql`, `,
-  )}]::uuid[]`;
-}
-
-/**
  * Sentinel UUID used by the legacy Supabase DB to mark system-authored
  * exercises. The backend is still connected to the live Supabase
  * schema (not Neon), so this convention is load-bearing — rows with
@@ -507,7 +477,7 @@ export class ExerciseRepository {
       // with `secondary_muscles IS NULL` — a regression on legacy
       // rows that pre-date the `default([])` column default.
       conditions.push(
-        sql`${exercises.primaryMuscles} && ${uuidArray(filters.targetedMusclesAny)}`,
+        sql`${exercises.primaryMuscles} && ${filters.targetedMusclesAny}::uuid[]`,
       );
     } else if (filters.muscleGroup) {
       conditions.push(
@@ -517,7 +487,7 @@ export class ExerciseRepository {
 
     if (filters.equipmentAny && filters.equipmentAny.length > 0) {
       conditions.push(
-        sql`${exercises.equipmentRequired} && ${uuidArray(filters.equipmentAny)}`,
+        sql`${exercises.equipmentRequired} && ${filters.equipmentAny}::uuid[]`,
       );
     }
 
@@ -529,7 +499,7 @@ export class ExerciseRepository {
     // omitted the axis entirely.
     if (filters.equipmentSubsetOf && filters.equipmentSubsetOf.length > 0) {
       conditions.push(
-        sql`${uuidArray(filters.equipmentSubsetOf)} @> COALESCE(${exercises.equipmentRequired}, '{}'::uuid[])`,
+        sql`${filters.equipmentSubsetOf}::uuid[] @> COALESCE(${exercises.equipmentRequired}, '{}'::uuid[])`,
       );
     }
 
@@ -836,7 +806,7 @@ export class ExerciseRepository {
 
     const exclude = Array.from(new Set(params.excludeExerciseIds ?? []));
     if (exclude.length > 0) {
-      conditions.push(sql`${exercises.id} <> ALL(${uuidArray(exclude)})`);
+      conditions.push(sql`${exercises.id} <> ALL(${exclude}::uuid[])`);
     }
 
     const rows = await db

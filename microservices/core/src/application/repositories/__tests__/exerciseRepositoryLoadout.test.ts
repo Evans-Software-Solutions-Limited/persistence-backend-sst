@@ -98,14 +98,7 @@ describe("equipmentSubsetOf (T-1.1)", () => {
     expect(sql).toContain("@>");
     // The containment operand order matters as much as the operator: reversing it
     // asks "does this exercise's kit contain everything I own".
-    //
-    // ⚠ This assertion USED TO READ `/\(\$\d+\)::uuid\[\]\s*@>/` — it pinned the
-    // paren form, which is a Postgres row constructor and fails at execution
-    // (`cannot cast type record to uuid[]`). Rendering the SQL was the right
-    // instinct, but a render test only catches what its author knows to be
-    // invalid, and this one froze the bug in place as the expectation. See
-    // `exerciseRepositoryArrayPredicates.test.ts` for the executable-shape guard.
-    expect(sql).toMatch(/ARRAY\[\$\d+\]::uuid\[\]\s*@>\s*COALESCE/);
+    expect(sql).toMatch(/\(\$\d+\)::uuid\[\]\s*@>\s*COALESCE/);
   });
 
   it("wraps the column in COALESCE so legacy NULL rows are not silently dropped", async () => {

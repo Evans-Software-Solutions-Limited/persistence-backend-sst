@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { color, radius, space } from "@/ui/theme/tokens";
 
 /**
@@ -13,8 +13,14 @@ import { color, radius, space } from "@/ui/theme/tokens";
  * navigate back and check.
  *
  * No back affordance: the flow is finished and there is nothing behind it worth
- * returning to. The single CTA closes the overlay onto the workout detail, whose
+ * returning to. The single CTA dismisses the route onto the workout detail, whose
  * "Saved setups" list has already re-read via the store's `rev` bump.
+ *
+ * ⚠ Insets via `useSafeAreaInsets()` rather than `<SafeAreaView>`, for the reason
+ * `LoadoutScaffold` documents at length: that component is native-only, never
+ * reads the context, and measured ZERO inside this `fullScreenModal` route. This
+ * step does not use the scaffold (no header, no scroll), so it has to repeat the
+ * idiom rather than inherit it.
  */
 
 export type LoadoutSavedStepProps = {
@@ -28,10 +34,14 @@ export function LoadoutSavedStep({
   gymLabel,
   onDone,
 }: LoadoutSavedStepProps) {
+  const insets = useSafeAreaInsets();
+
   return (
-    <SafeAreaView
-      style={styles.root}
-      edges={["top", "bottom"]}
+    <View
+      style={[
+        styles.root,
+        { paddingTop: insets.top, paddingBottom: insets.bottom },
+      ]}
       testID="loadout-saved"
     >
       <View style={styles.body}>
@@ -54,7 +64,7 @@ export function LoadoutSavedStep({
           <Text style={styles.ctaText}>View saved setups</Text>
         </TouchableOpacity>
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 

@@ -13,12 +13,21 @@ import {
 } from "../EquipmentScanSheetPresenter";
 import { LoadoutManualStep } from "../LoadoutManualStep";
 import { LoadoutScaffold } from "../LoadoutScaffold";
+import { LoadoutSavedStep } from "../LoadoutSavedStep";
 
 jest.mock("expo-router", () => ({
   __esModule: true,
   router: { push: jest.fn(), back: jest.fn() },
   useRouter: () => ({ push: jest.fn(), back: jest.fn() }),
 }));
+
+/** RN style props arrive as an array once an inline style is merged in. */
+function flattenStyle(node: { props: { style?: unknown } }) {
+  const style = node.props.style;
+  return Array.isArray(style)
+    ? Object.assign({}, ...style.flat(Infinity))
+    : style;
+}
 
 const row = (
   overrides: Partial<LoadoutPreviewRow> = {},
@@ -360,6 +369,45 @@ describe("LoadoutScaffold", () => {
     );
     getByText("LOADOUT");
     getByText("Pick equipment");
+  });
+
+  it("pads for the status bar and the home indicator", () => {
+    // The device bug this replaced: `<SafeAreaView>` from
+    // react-native-safe-area-context is native-only and never reads
+    // `SafeAreaInsetsContext`, so inside the `fullScreenModal` route it measured
+    // ZERO and the header rendered over the clock. Asserting the ACTUAL numbers
+    // from `renderWithTheme`'s provider (top 44 / bottom 34) is what makes this
+    // fail if the insets are dropped again — a truthy-style check would pass on
+    // `paddingTop: 0`, which is the whole bug.
+    const { getByTestId } = renderWithTheme(
+      <LoadoutScaffold title="Set up Loadout" testID="scaffold">
+        {null}
+      </LoadoutScaffold>,
+    );
+
+    expect(flattenStyle(getByTestId("scaffold"))).toMatchObject({
+      paddingTop: 44,
+      paddingBottom: 34,
+    });
+  });
+});
+
+describe("LoadoutSavedStep", () => {
+  it("pads for the status bar and the home indicator", () => {
+    // Repeated rather than inherited: this step does not use the scaffold, so
+    // dropping its insets is a separate regression with the same symptom.
+    const { getByTestId } = renderWithTheme(
+      <LoadoutSavedStep
+        workoutName="Upper"
+        gymLabel="Hotel gym"
+        onDone={jest.fn()}
+      />,
+    );
+
+    expect(flattenStyle(getByTestId("loadout-saved"))).toMatchObject({
+      paddingTop: 44,
+      paddingBottom: 34,
+    });
   });
 });
 
