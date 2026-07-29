@@ -10,6 +10,13 @@ import { MockPaymentsAdapter } from "@/adapters/payments/__tests__/mock.adapter"
 import { InMemoryNetInfoAdapter } from "@/adapters/netInfo/__tests__/InMemoryNetInfoAdapter";
 import type { Adapters } from "@/shared/types";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
+
+// ⚠ UNRELATED to this PR's change (which touches only `packages/db` and one core
+// test) — this suite has always relied on jest's 5 s default and tips over it
+// under full-suite parallel load. 11 other suites in this package already set an
+// explicit budget for exactly this reason; this one was missed. Fixed here only
+// so it does not red-flag an unrelated CI run.
+jest.setTimeout(20_000);
 import type { ClientDetailProps } from "@/ui/presenters/coach/ClientDetailPresenter";
 import type { ClientDetail } from "@/domain/models/clientDetail";
 import type { ActiveProgramme } from "@/domain/models/progress";
