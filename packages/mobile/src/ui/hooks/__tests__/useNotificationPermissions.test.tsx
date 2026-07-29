@@ -79,7 +79,6 @@ function makeWrapper(notifications: NotificationsPort) {
     storage: {},
     notifications,
     health: {},
-    payments: {},
   } as unknown as Adapters;
   return function Wrapper({ children }: { children: React.ReactNode }) {
     return <AdapterProvider adapters={adapters}>{children}</AdapterProvider>;

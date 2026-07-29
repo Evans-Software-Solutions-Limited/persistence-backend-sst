@@ -99,7 +99,6 @@ function makeAdapters(
     storage,
     notifications,
     health: {} as Adapters["health"],
-    payments: {} as Adapters["payments"],
     netInfo: {} as Adapters["netInfo"],
   } as Adapters;
 }

@@ -110,7 +110,6 @@ function makeAdapters(healthOverride: Partial<HealthPort> = {}): {
         addNotificationReceivedListener: jest.fn(() => () => {}),
         setBadgeCount: jest.fn(async () => {}),
       } as unknown as Adapters["notifications"],
-      payments: {} as Adapters["payments"],
       netInfo: {} as Adapters["netInfo"],
     },
   };

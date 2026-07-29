@@ -23,8 +23,6 @@ import { StubHealthAdapter } from "@/adapters/health";
 // eslint-disable-next-line import/first
 import { StubNotificationsAdapter } from "@/adapters/notifications";
 // eslint-disable-next-line import/first
-import { MockPaymentsAdapter } from "@/adapters/payments/__tests__/mock.adapter";
-// eslint-disable-next-line import/first
 import { InMemoryNetInfoAdapter } from "@/adapters/netInfo/__tests__/InMemoryNetInfoAdapter";
 // eslint-disable-next-line import/first
 import type { WorkoutSession } from "@/domain/models/session";
@@ -58,7 +56,6 @@ function makeAdapters() {
     storage,
     health: new StubHealthAdapter(),
     notifications: new StubNotificationsAdapter(),
-    payments: new MockPaymentsAdapter(),
     netInfo: new InMemoryNetInfoAdapter(),
   };
   return { adapters, storage, auth };

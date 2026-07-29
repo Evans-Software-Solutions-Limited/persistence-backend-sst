@@ -13,7 +13,6 @@ import { InMemoryAuthAdapter } from "@/adapters/auth/__tests__/in-memory-auth.ad
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
 import { StubHealthAdapter } from "@/adapters/health";
 import { StubNotificationsAdapter } from "@/adapters/notifications";
-import { MockPaymentsAdapter } from "@/adapters/payments/__tests__/mock.adapter";
 import { InMemoryNetInfoAdapter } from "@/adapters/netInfo/__tests__/InMemoryNetInfoAdapter";
 import { usePendingInvite } from "@/state/pending-invite";
 import type {
@@ -56,7 +55,6 @@ function makeAdapters(sub: MySubscription | null): {
     storage: new InMemoryStorageAdapter(),
     health: new StubHealthAdapter(),
     notifications: new StubNotificationsAdapter(),
-    payments: new MockPaymentsAdapter(),
     netInfo: new InMemoryNetInfoAdapter(),
   };
   return { adapters, api };

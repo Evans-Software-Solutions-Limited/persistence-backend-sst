@@ -5,6 +5,7 @@ import { useDrawer } from "@/state/drawer";
 import { useHealthSync } from "@/state/health-sync";
 import { useUserMode } from "@/state/user-mode";
 import { useAuth } from "@/ui/hooks/useAuth";
+import { useDeleteAccountFlow } from "@/ui/hooks/useDeleteAccountFlow";
 import { useGetAchievements } from "@/ui/hooks/useGetAchievements";
 import { useHealthData } from "@/ui/hooks/useHealthData";
 import { useModeSwitch } from "@/ui/hooks/useModeSwitch";
@@ -53,6 +54,8 @@ export function ProfileDrawerContainer() {
     useMySubscription();
   const health = useHealthData();
   const { signOut } = useAuth();
+  // App Store Guideline 5.1.1(v) — same flow the Privacy screen runs.
+  const onDeleteAccount = useDeleteAccountFlow();
   // Cache-first count for the drawer row's Pill — same source the
   // Achievements screen itself reads (go-live: was hardcoded `undefined`,
   // which suppressed the count Pill entirely).
@@ -166,6 +169,7 @@ export function ProfileDrawerContainer() {
       onOpenSubscription={() => pushFrom("/(auth)/subscription-selection")}
       onOpenNotifications={() => pushFrom("/(app)/profile/notifications")}
       onOpenSettings={() => pushFrom("/(app)/profile/privacy-settings")}
+      onDeleteAccount={onDeleteAccount}
       onSignOut={onSignOut}
     />
   );

@@ -108,7 +108,6 @@ function makeAdapters() {
         writeBodyWeight: jest.fn(async () => ok(undefined)),
       } as unknown as Adapters["health"],
       notifications: {} as Adapters["notifications"],
-      payments: {} as Adapters["payments"],
       netInfo: {} as Adapters["netInfo"],
     } as Adapters,
   };

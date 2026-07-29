@@ -94,7 +94,6 @@ function makeAdapters(): {
       storage,
       health: new StubHealthAdapter(),
       notifications: {} as Adapters["notifications"],
-      payments: {} as Adapters["payments"],
       netInfo: {} as Adapters["netInfo"],
     },
   };

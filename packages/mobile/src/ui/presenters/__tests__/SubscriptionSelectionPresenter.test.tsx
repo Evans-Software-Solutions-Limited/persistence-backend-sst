@@ -1,5 +1,4 @@
 import { fireEvent, render, screen } from "@testing-library/react-native";
-import { MockPaymentsAdapter } from "@/adapters/payments/__tests__/mock.adapter";
 import type {
   MySubscription,
   SubscriptionTier,
@@ -79,18 +78,12 @@ function defaultProps(): SubscriptionSelectionPresenterProps {
     currentTierDisplayName: "Free",
     isOffline: false,
     isSlowLoading: false,
-    selectedTierForPayment: null,
-    isProcessingSubscription: false,
-    paymentFormProps: null,
-    payments: new MockPaymentsAdapter(),
     onBillingCycleChange: jest.fn(),
     onTierSelect: jest.fn(),
     onRoleChange: jest.fn(),
     onBack: jest.fn(),
     onRetry: jest.fn(),
     onCancelSubscription: jest.fn(),
-    onPaymentMethodReady: jest.fn(),
-    onPaymentMethodError: jest.fn(),
   };
 }
 
@@ -217,18 +210,6 @@ describe("SubscriptionSelectionPresenter — render states", () => {
       />,
     );
     expect(screen.getByTestId("current-subscription-status-card")).toBeTruthy();
-  });
-
-  it("renders the processing overlay during isProcessingSubscription", () => {
-    render(
-      <SubscriptionSelectionPresenter
-        {...defaultProps()}
-        isProcessingSubscription
-      />,
-    );
-    expect(
-      screen.getByTestId("subscription-selection-processing"),
-    ).toBeTruthy();
   });
 });
 

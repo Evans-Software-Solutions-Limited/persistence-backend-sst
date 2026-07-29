@@ -48,7 +48,6 @@ function makeAdapters(): { adapters: Adapters; api: InMemoryApiAdapter } {
       storage: new InMemoryStorageAdapter(),
       health: {} as Adapters["health"],
       notifications: {} as Adapters["notifications"],
-      payments: {} as Adapters["payments"],
       netInfo: {} as Adapters["netInfo"],
     },
   };

@@ -46,6 +46,28 @@ export type BottomSheetProps = {
   accent?: BottomSheetAccent;
   /** peek=60%, default=78%, tall=88%, or an explicit percentage number (0-100). */
   height?: BottomSheetHeight;
+  /**
+   * Whether dragging the sheet BODY (not the handle) moves the sheet.
+   *
+   * Defaults to `true` — gorhom's own default, so every existing sheet keeps its
+   * current feel. Pass `false` on sheets whose body is a long scrolling list, to
+   * guarantee the content scrolls.
+   *
+   * Why this exists: gorhom keeps the inner scrollable LOCKED unless the sheet
+   * is in its `EXTENDED` state, and `EXTENDED` is an exact float comparison of
+   * `animatedPosition` against `containerHeight - sheetHeight`
+   * (`hooks/useScrollable.ts` + `BottomSheet.tsx` `animatedSheetState`). A
+   * percentage snap point that lands on a fractional pixel can settle a hair off
+   * that value, leaving the sheet visually open but its content unscrollable —
+   * so anything below the fold becomes unreachable. `useScrollable`'s FIRST
+   * branch short-circuits to `UNLOCKED` when content panning is off, which side-
+   * steps the comparison entirely.
+   *
+   * Turning it off costs only drag-the-body-to-dismiss. The handle pan gesture
+   * (`enableHandlePanningGesture`, still on) and the backdrop tap both still
+   * dismiss the sheet.
+   */
+  enableContentPanning?: boolean;
   children: ReactNode;
   testID?: string;
 };
@@ -77,6 +99,7 @@ export function BottomSheet({
   eyebrow,
   accent,
   height = "default",
+  enableContentPanning = true,
   children,
   testID,
 }: BottomSheetProps) {
@@ -156,6 +179,9 @@ export function BottomSheet({
       // intended 88%/78%/60%. This component always has an explicit snap point, so
       // dynamic sizing is never wanted — disable it to honour `height` exactly.
       enableDynamicSizing={false}
+      // See the `enableContentPanning` prop docs: `false` is what guarantees the
+      // inner scrollable is UNLOCKED, at the cost of body-drag-to-dismiss.
+      enableContentPanningGesture={enableContentPanning}
       enablePanDownToClose
       // Keyboard handling (device-QA #5): without these, gorhom's default
       // keyboard behaviour fights the inner BottomSheetScrollView on

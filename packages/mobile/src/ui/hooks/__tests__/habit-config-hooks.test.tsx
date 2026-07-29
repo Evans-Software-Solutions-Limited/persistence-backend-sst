@@ -54,7 +54,6 @@ function makeAdapters(
     storage,
     health: {} as Adapters["health"],
     notifications: {} as Adapters["notifications"],
-    payments: {} as Adapters["payments"],
     netInfo: {} as Adapters["netInfo"],
   };
 }
@@ -232,7 +231,6 @@ describe("habit hooks with no signed-in user", () => {
       storage,
       health: {} as Adapters["health"],
       notifications: {} as Adapters["notifications"],
-      payments: {} as Adapters["payments"],
       netInfo: {} as Adapters["netInfo"],
     };
     return { storage, wrapper: wrap(adapters) };

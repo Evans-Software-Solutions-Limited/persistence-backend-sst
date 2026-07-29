@@ -51,7 +51,6 @@ function makeAdapters(
     netInfo,
     health: {} as Adapters["health"],
     notifications: {} as Adapters["notifications"],
-    payments: {} as Adapters["payments"],
   };
 }
 

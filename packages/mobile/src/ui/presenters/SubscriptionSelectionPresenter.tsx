@@ -18,10 +18,8 @@ import type {
   SubscriptionTier,
   SubscriptionTierName,
 } from "@/domain/models/subscription";
-import type { PaymentsPort } from "@/domain/ports/payments.port";
 import { CurrentSubscriptionStatusCard } from "@/ui/components/subscription/CurrentSubscriptionStatusCard";
 import { OfflineBanner } from "@/ui/components/subscription/OfflineBanner";
-import { PaymentMethodForm } from "@/ui/components/subscription/PaymentMethodForm";
 import { PLogoDrawLoader } from "@/ui/components/PLogoDrawLoader";
 import { TRAINER_TIER_NAMES } from "@/domain/services/subscriptionService";
 import { SubscriptionCard } from "@/ui/components/subscription/SubscriptionCard";
@@ -79,19 +77,6 @@ export interface SubscriptionSelectionPresenterProps {
   isOffline: boolean;
   isSlowLoading: boolean;
 
-  // Payment-form state
-  selectedTierForPayment: SubscriptionTierName | null;
-  isProcessingSubscription: boolean;
-  /** Pence — drives the Apple Pay sheet amount + recurringAmount. */
-  paymentFormProps: {
-    amount: number;
-    currency: string;
-    trialDuration: number | null;
-    isTrialEligible: boolean;
-    recurringAmount: number;
-  } | null;
-  payments: PaymentsPort;
-
   // Callbacks (container)
   onBillingCycleChange: (cycle: BillingCycle) => void;
   onTierSelect: (tier: SubscriptionTierName) => void;
@@ -99,8 +84,6 @@ export interface SubscriptionSelectionPresenterProps {
   onBack: () => void;
   onRetry: () => void;
   onCancelSubscription: () => void;
-  onPaymentMethodReady: (paymentMethodId: string) => void;
-  onPaymentMethodError: (error: string) => void;
 }
 
 export function SubscriptionSelectionPresenter(
@@ -123,18 +106,12 @@ export function SubscriptionSelectionPresenter(
     currentTierDisplayName,
     isOffline,
     isSlowLoading,
-    selectedTierForPayment,
-    isProcessingSubscription,
-    paymentFormProps,
-    payments,
     onBillingCycleChange,
     onTierSelect,
     onRoleChange,
     onBack,
     onRetry,
     onCancelSubscription,
-    onPaymentMethodReady,
-    onPaymentMethodError,
   } = props;
 
   // User-tier cards: catalog-driven, not a hardcoded "premium" lookup —
@@ -197,7 +174,6 @@ export function SubscriptionSelectionPresenter(
           showTrialBanner={showTrial}
           trialBannerText={`${DEFAULT_TRIAL_DAYS}-day free trial`}
           onPress={() => onTierSelect(tier.tierName)}
-          disabled={!!selectedTierForPayment || isProcessingSubscription}
           getFeaturesList={getFeaturesList}
           isTrainer={false}
         />,
@@ -212,8 +188,6 @@ export function SubscriptionSelectionPresenter(
     currentTier,
     hasTrialEligibilityData,
     isTrialEligibleUser,
-    selectedTierForPayment,
-    isProcessingSubscription,
     onTierSelect,
   ]);
 
@@ -254,7 +228,6 @@ export function SubscriptionSelectionPresenter(
             trialBannerText={`${DEFAULT_TRIAL_DAYS}-day free trial`}
             onStandardPress={() => {}}
             onProPress={() => onTierSelect(tier.tierName)}
-            disabled={!!selectedTierForPayment || isProcessingSubscription}
           />,
         );
       }
@@ -268,8 +241,6 @@ export function SubscriptionSelectionPresenter(
     currentTier,
     hasTrialEligibilityData,
     isTrialEligibleTrainer,
-    selectedTierForPayment,
-    isProcessingSubscription,
     onTierSelect,
   ]);
 
@@ -329,7 +300,6 @@ export function SubscriptionSelectionPresenter(
         <TouchableOpacity
           style={styles.backButton}
           onPress={onBack}
-          disabled={!!selectedTierForPayment || isProcessingSubscription}
           testID="subscription-selection-back"
           accessibilityRole="button"
           accessibilityLabel="Go back"
@@ -341,21 +311,6 @@ export function SubscriptionSelectionPresenter(
       </View>
 
       {isOffline && <OfflineBanner />}
-
-      {isProcessingSubscription && (
-        <View
-          style={styles.processingOverlay}
-          testID="subscription-selection-processing"
-        >
-          <View style={styles.processingContainer}>
-            <PLogoDrawLoader />
-            <Text style={styles.processingText}>
-              Processing subscription...
-            </Text>
-            <Text style={styles.processingSubtext}>Please wait</Text>
-          </View>
-        </View>
-      )}
 
       <KeyboardAvoidingView
         style={styles.container}
@@ -485,29 +440,12 @@ export function SubscriptionSelectionPresenter(
                   isOffline && styles.disabledOpacity,
                 ]}
                 onPress={onCancelSubscription}
-                disabled={!!selectedTierForPayment || isProcessingSubscription}
                 testID="cancel-subscription-button"
               >
                 <Ionicons name="close-circle" size={16} color={color.$error} />
                 <Text style={styles.cancelButtonText}>Cancel Subscription</Text>
               </TouchableOpacity>
             </View>
-          )}
-
-          {selectedTierForPayment && paymentFormProps && (
-            <PaymentMethodForm
-              amount={paymentFormProps.amount}
-              currency={paymentFormProps.currency}
-              billingCycle={billingCycle}
-              onPaymentMethodReady={onPaymentMethodReady}
-              onError={onPaymentMethodError}
-              trialDuration={paymentFormProps.trialDuration}
-              isTrialEligible={paymentFormProps.isTrialEligible}
-              recurringAmount={paymentFormProps.recurringAmount}
-              isProcessing={isProcessingSubscription}
-              shouldTrigger
-              payments={payments}
-            />
           )}
 
           {/* Apple §3.1.2 parity with the IAP rail — same disclosure block, so
