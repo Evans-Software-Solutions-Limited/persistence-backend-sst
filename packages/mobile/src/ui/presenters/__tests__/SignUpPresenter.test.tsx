@@ -113,10 +113,14 @@ describe("SignUpPresenter", () => {
     const msg = getByTestId("confirmation-message");
     expect(msg).toBeTruthy();
     const text = JSON.stringify(msg.props.children);
-    expect(text).toMatch(/already exists/i);
+    expect(text).toMatch(/already have an account/i);
     expect(text).toMatch(/sign in/i);
     expect(text).toMatch(/30 days/);
-    expect(text).not.toMatch(/Check your email/i);
+    // Deliberately NOT asserting the absence of "check your email": the copy is
+    // hedged so it stays true if the already-exists hint misfires (Inspector
+    // Brad). What must be gone is the UNCONDITIONAL promise that an email is on
+    // its way — it now only applies "if you've just registered".
+    expect(text).toMatch(/if you've just registered/i);
     // The route out is the existing CTA.
     expect(getByTestId("back-to-sign-in")).toBeTruthy();
   });
@@ -129,7 +133,7 @@ describe("SignUpPresenter", () => {
       getByTestId("confirmation-message").props.children,
     );
     expect(text).toMatch(/Check your email/i);
-    expect(text).not.toMatch(/already exists/i);
+    expect(text).not.toMatch(/already have an account/i);
   });
 
   it("shows confirmation message when confirmationSent is true", () => {

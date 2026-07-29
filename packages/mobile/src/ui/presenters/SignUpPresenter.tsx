@@ -155,10 +155,17 @@ export function SignUpPresenter({
                     testID="confirmation-message"
                   >
                     {mayAlreadyExist
-                      ? "An account already exists for this email, so no " +
-                        "confirmation email has been sent. Sign in instead — if " +
-                        "you deleted this account within the last 30 days, " +
-                        "signing in restores it."
+                      ? // Hedged deliberately. The signal behind this branch is a
+                        // HINT (an empty `identities` array — see the adapter) and
+                        // was never verified against a live project, so the copy
+                        // must not assert as FACT that no email was sent. If the
+                        // hint misfires, a genuine new registrant told to stop
+                        // looking for their confirmation email is a worse dead end
+                        // than the bug this fixes. Both readings stay true here.
+                        "If you already have an account for this email, sign in " +
+                        "instead — and if you deleted it within the last 30 days, " +
+                        "signing in restores it. If you've just registered, check " +
+                        "your email to confirm."
                       : "Check your email to confirm your account, then sign in."}
                   </Text>
                   <View width="100%" marginTop="$base">
