@@ -1,9 +1,10 @@
 import { formatPurgeAfter } from "@/ui/hooks/useDeleteAccountFlow";
 
 /**
- * The double-confirm flow itself is driven end-to-end through both of its entry
- * points — `PrivacySettingsContainer.test.tsx` (Privacy screen) and
- * `ProfileDrawerPresenter.test.tsx` (drawer row). What those can't reach is the
+ * The double-confirm flow itself is driven end-to-end by
+ * `PrivacySettingsContainer.test.tsx`; `ProfileDrawerContainer.test.tsx` asserts
+ * that the drawer really invokes this hook rather than a stub. What neither
+ * reaches is the
  * unparseable-timestamp fallback, which only fires if the backend hands back a
  * `purgeAfter` we can't read. It matters because the string lands in the
  * post-deletion confirmation alert: without the guard the user would be told

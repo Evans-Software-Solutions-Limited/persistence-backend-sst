@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, Platform } from "react-native";
-import { useLocalSearchParams, useRouter, type Href } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import type {
   BillingCycle,
   SubscriptionTierName,
@@ -10,7 +10,6 @@ import {
   getSubscriptionDisplayInfo,
   isCancelledButActive as isCancelledButActiveCheck,
 } from "@/domain/services/subscriptionService";
-import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useCancelSubscription } from "@/ui/hooks/useCancelSubscription";
 import { useMySubscription } from "@/ui/hooks/useMySubscription";
 import { useOnlineStatus } from "@/ui/hooks/useOnlineStatus";
@@ -201,16 +200,21 @@ function SubscriptionCatalogueContainer() {
   );
 
   // No purchase rail on this platform. The tap stays wired so the cards remain
-  // interactive and the user gets a reason rather than dead pixels. Every card
-  // the presenter renders is a paid tier (it filters `free` out), so there is
-  // no tier here for which this alert would be the wrong answer.
-  const handleTierSelect = useCallback(() => {
-    Alert.alert(
-      "Not available on this device",
-      "Subscriptions are purchased through the App Store in the iOS app. " +
-        "Open Persistence on your iPhone or iPad to subscribe.",
-    );
-  }, []);
+  // interactive and the user gets a reason rather than dead pixels. The current
+  // tier is excluded: `SubscriptionCard` renders a pressable CTA even when
+  // `isCurrent` (it only restyles it), so without this guard a subscriber
+  // tapping their own "Current Plan" would be told to go and buy it.
+  const handleTierSelect = useCallback(
+    (tier: SubscriptionTierName) => {
+      if (tier === currentTier) return;
+      Alert.alert(
+        "Not available on this device",
+        "Subscriptions are purchased through the App Store in the iOS app. " +
+          "Open Persistence on your iPhone or iPad to subscribe.",
+      );
+    },
+    [currentTier],
+  );
 
   const handleConfirmCancel = useCallback(async () => {
     // M10.5 — offline pre-flight on the cancel mutation. AC 11.4.

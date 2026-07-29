@@ -1,4 +1,5 @@
 import { act } from "@testing-library/react-native";
+import { Alert } from "react-native";
 
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 
@@ -41,8 +42,14 @@ jest.mock("@/ui/hooks/useModeSwitch", () => ({
 }));
 
 const mockSignOut = jest.fn().mockResolvedValue(undefined);
+const mockDeleteAccount = jest.fn().mockResolvedValue({
+  purgeAfter: "2026-08-28T00:00:00.000Z",
+});
 jest.mock("@/ui/hooks/useAuth", () => ({
-  useAuth: () => ({ signOut: mockSignOut }),
+  useAuth: () => ({
+    signOut: mockSignOut,
+    deleteAccount: mockDeleteAccount,
+  }),
 }));
 
 let mockProfilePayload: unknown = {
@@ -115,6 +122,7 @@ beforeEach(() => {
   mockPush.mockClear();
   mockSwitchMode.mockClear();
   mockSignOut.mockClear();
+  mockDeleteAccount.mockClear();
   mockRefresh.mockClear();
   mockRefetchSubscription.mockClear();
   mockRefreshAchievements.mockClear();
@@ -398,6 +406,44 @@ describe("ProfileDrawerContainer", () => {
     renderWithTheme(<ProfileDrawerContainer />);
     expect(mockRefetchSubscription).not.toHaveBeenCalled();
     expect(mockRefreshAchievements).not.toHaveBeenCalled();
+  });
+
+  // App Store Guideline 5.1.1(v). Without these the drawer half of the
+  // compliance fix would pass unchanged if the container handed the presenter a
+  // `() => {}` instead of the real `useDeleteAccountFlow`.
+  it("onDeleteAccount runs the real delete flow, not a stub", () => {
+    const alertSpy = jest
+      .spyOn(Alert, "alert")
+      .mockImplementation(() => undefined);
+    try {
+      renderWithTheme(<ProfileDrawerContainer />);
+      act(() => {
+        (lastProps?.onDeleteAccount as () => void)();
+      });
+      // First of the two confirmations — proves the hook is wired through.
+      expect(alertSpy).toHaveBeenCalledTimes(1);
+      expect(alertSpy.mock.calls[0][0]).toBe("Delete Account?");
+    } finally {
+      alertSpy.mockRestore();
+    }
+  });
+
+  it("onDeleteAccount closes the drawer before confirming", () => {
+    const alertSpy = jest
+      .spyOn(Alert, "alert")
+      .mockImplementation(() => undefined);
+    try {
+      useDrawer.setState({ open: true });
+      renderWithTheme(<ProfileDrawerContainer />);
+      act(() => {
+        (lastProps?.onDeleteAccount as () => void)();
+      });
+      // Must not survive the session teardown — an open drawer would render
+      // over (app)/restore-account when the user signs back in to recover.
+      expect(useDrawer.getState().open).toBe(false);
+    } finally {
+      alertSpy.mockRestore();
+    }
   });
 
   it("onSignOut swallows a sign-out failure without throwing", async () => {

@@ -21,8 +21,8 @@ import { color } from "@/ui/theme/tokens";
  * per period; this block supplies the remaining two requirements.
  *
  * Rendered by both purchase rails so the two stay in lockstep:
- *   - `IOSPurchaseFlowPresenter` (Apple IAP via RevenueCat) — `rail="apple"`
- *   - `SubscriptionSelectionPresenter` (Stripe rail) — `rail="card"`
+ *   - `IOSPurchaseFlowPresenter` (Apple IAP via RevenueCat) — `rail="store"`
+ *   - `SubscriptionSelectionPresenter` (non-iOS catalogue) — `rail="store"`
  *
  * The disclosure text is rail-aware because the billing relationship differs
  * per store, and naming the wrong one is both untrue and a review risk:
@@ -32,8 +32,10 @@ import { color } from "@/ui/theme/tokens";
  *     serves a future Play submission without a call-site change. Google Play
  *     policy requires the equivalent disclosure, and naming Apple on Android
  *     would fail it.
- *   - `rail="card"` — the Stripe rail, which charges a payment method and is
- *     managed in-app.
+ *   - `rail="card"` — a rail that charges a payment method directly and is
+ *     managed in-app. **No surface uses this today**: the Stripe Apple Pay rail
+ *     was removed under App Review Guideline 2.1. Kept for a future non-store
+ *     rail (Android/web); do not point an iOS surface at it (§3.1.1).
  *
  * Links open in the system browser. A `Linking` rejection is swallowed — a
  * dead browser handoff must never wedge the purchase flow — matching the

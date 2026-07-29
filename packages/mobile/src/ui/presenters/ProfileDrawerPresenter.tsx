@@ -154,7 +154,7 @@ function profileDetailsSub(p: ProfileDrawerProfile): string {
  */
 function DeleteAccountSection({ onPress }: { onPress: () => void }) {
   return (
-    <DrawerSection title="Account">
+    <DrawerSection title="Account deletion">
       <DrawerRow
         icon={
           <IconTrash

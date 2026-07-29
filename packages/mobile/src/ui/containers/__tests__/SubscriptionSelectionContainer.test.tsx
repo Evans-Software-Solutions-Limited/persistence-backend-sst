@@ -211,6 +211,28 @@ describe("SubscriptionSelectionContainer", () => {
     expect(createSpy).not.toHaveBeenCalled();
   });
 
+  it("tapping the tier you already hold says nothing (Inspector Brad)", async () => {
+    const { adapters, api } = makeAdapters();
+    api.mySubscription = freeSub({
+      subscriptionId: "us_1",
+      tierName: "premium",
+      paymentStatus: "active",
+      billingCycle: "monthly",
+    });
+    render(
+      <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
+        <SubscriptionSelectionContainer />
+      </Wrapper>,
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("subscription-card-premium")).toBeTruthy(),
+    );
+    // SubscriptionCard stays pressable when `isCurrent` — without the guard a
+    // subscriber tapping their own "Current Plan" is told to go and buy it.
+    fireEvent.press(screen.getByTestId("subscription-card-premium"));
+    expect(alertSpy).not.toHaveBeenCalled();
+  });
+
   // (Downgrade-scheduled test removed during tier simplification — the
   // direct same-screen downgrade flow only exists on the trainer track
   // now, and the SubscriptionManagementContainer tests cover the
