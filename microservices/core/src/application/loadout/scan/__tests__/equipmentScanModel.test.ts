@@ -7,6 +7,7 @@ import {
   DEFAULT_EQUIPMENT_SCAN_MODEL_ID,
   EQUIPMENT_SCAN_TIMEOUT_MS,
   MAX_SCAN_LABEL_LENGTH,
+  REALISTIC_SCAN_OUTPUT_TOKENS,
   MAX_SCAN_NOTES_LENGTH,
   SCAN_EXCLUDED_EQUIPMENT_NAME,
   type ScanCatalogueEntry,
@@ -14,6 +15,8 @@ import {
 import {
   AiUnavailableError,
   AiUnreadableError,
+  maxTokensForBudget,
+  OPUS_OUTPUT_TOKENS_PER_SECOND,
   type MessagesCreateResponse,
   type MinimalBedrockClient,
 } from "../../../nutrition/services/aiBedrockClient";
@@ -315,9 +318,82 @@ describe("scanEquipmentFromPhoto", () => {
     expect(EQUIPMENT_SCAN_TIMEOUT_MS).toBeGreaterThan(12_000);
   });
 
-  it("does not retry a provider failure", async () => {
+  it("resends a throttle, judged against its REAL output not its ceiling", async () => {
+    // ⚠ Third version of this test, and the churn is the lesson. It has said
+    // "does not retry" (correct only while the SDK retried underneath), then
+    // "resends", then "cannot resend — its ceiling exceeds its budget", and now
+    // this. The third was wrong because I had invented the number it rested on:
+    // I estimated a scan at ~1,100 output tokens from the schema, which at
+    // ~40 tok/s is 27.5 s and made the scan look unable to finish its own 20 s
+    // attempt. E1 had already MEASURED this surface at mean 10.1 s / max
+    // 12.27 s — about 400 tokens. The measurement was in the repo the whole time
+    // and I reasoned past it.
+    //
+    // With the real figure the scan is comfortably inside its budget and its
+    // throttle retry works. `EQUIPMENT_SCAN_MAX_TOKENS` (4096) remains
+    // unreachable headroom — a truncation guard that never binds — which is a
+    // tidiness point, not the hazard I reported it as.
     const { client, create } = fakeClient(() => {
-      throw Object.assign(new Error("http 503"), { status: 503 });
+      throw Object.assign(new Error("throttled"), {
+        status: 429,
+        headers: { "retry-after-ms": "1" },
+      });
+    });
+
+    await expect(
+      scanEquipmentFromPhoto(
+        { ...IMAGE, catalogue: CATALOGUE },
+        { client, modelId: "test-model" },
+      ),
+    ).rejects.toBeInstanceOf(AiUnavailableError);
+    expect(create).toHaveBeenCalledTimes(2);
+  });
+
+  it("judges that resend at the OPUS rate — behaviourally, not by comparing constants", async () => {
+    // ⚠ The first version of this test asserted a relation between three
+    // constants and never called `scanEquipmentFromPhoto`. Deleting
+    // `tokensPerSecond` from the call site left all 357 tests in this area green
+    // — under a test named for exactly that. Same defect as the mis-named test
+    // two blocks up, added by the same commit.
+    //
+    // The discriminating input: a `retry-after` of 6 s. At the Opus rate the
+    // resend needs 3 s prefill + 698/55 s = 15.7 s, leaving ~4.3 s of the 20 s
+    // attempt to spare — so 6 s of backoff does not fit and it is refused. At
+    // the Haiku default the same work prices at ~10 s, leaving ~10 s spare, and
+    // the backoff would be accepted. Dropping `tokensPerSecond` from the call
+    // site flips this test (and makes it sleep for 6 real seconds).
+    const { client, create } = fakeClient(() => {
+      throw Object.assign(new Error("throttled"), {
+        status: 429,
+        headers: { "retry-after": "6" },
+      });
+    });
+
+    await expect(
+      scanEquipmentFromPhoto(
+        { ...IMAGE, catalogue: CATALOGUE },
+        { client, modelId: "test-model" },
+      ),
+    ).rejects.toBeInstanceOf(AiUnavailableError);
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  it("still fits its own budget at the measured worst case", () => {
+    // The positive half: 698 tokens is what E1 actually recorded, and it has to
+    // fit the FIRST attempt or the surface is broken regardless of retries.
+    expect(REALISTIC_SCAN_OUTPUT_TOKENS).toBeLessThanOrEqual(
+      maxTokensForBudget(
+        EQUIPMENT_SCAN_TIMEOUT_MS,
+        OPUS_OUTPUT_TOKENS_PER_SECOND,
+      ),
+    );
+  });
+
+  it("does NOT resend a genuine client error", async () => {
+    // A 400 fails identically however many times it is sent, and at $0.0272 a
+    // scan the resend is not free to get wrong.
+    const { client, create } = fakeClient(() => {
+      throw Object.assign(new Error("http 400"), { status: 400 });
     });
 
     await expect(

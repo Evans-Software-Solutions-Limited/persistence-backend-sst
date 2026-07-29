@@ -1,11 +1,13 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   generateClientSummary,
   resolveSummaryModelId,
   ClientSummaryUnavailableError,
   type ClientSummaryInput,
   type MinimalBedrockClient,
+  getDefaultClient,
+  resetDefaultClientForTests,
 } from "../clientSummaryAi";
 
 const INPUT: ClientSummaryInput = {
@@ -143,5 +145,59 @@ describe("generateClientSummary", () => {
 
   it("resolveSummaryModelId returns a non-empty EU Bedrock id", () => {
     expect(resolveSummaryModelId().length).toBeGreaterThan(0);
+  });
+});
+
+describe("getDefaultClient — the SDK's own retries", () => {
+  afterEach(() => resetDefaultClientForTests());
+
+  it("disables them here too, because this module keeps its OWN client", () => {
+    // ⚠ This file deliberately does not import the nutrition module, so a fix
+    // there does not reach here — and this is the same bug. The Anthropic SDK
+    // defaults `maxRetries` to 2, which makes the private `createWithRetry`
+    // below 3 x 12 s per attempt and ~72 s across both, against a 29 s Lambda.
+    // The function is killed mid-attempt: no ClientSummaryUnavailableError, no
+    // 503, no log line, and the `finally` that writes the usage row never runs
+    // for an inference Bedrock has already billed.
+    resetDefaultClientForTests();
+    const client = getDefaultClient() as unknown as { maxRetries: number };
+
+    expect(client.maxRetries).toBe(0);
+  });
+});
+
+describe("clientSummaryAi — retry policy", () => {
+  it("RETRIES a Bedrock throttle", async () => {
+    // ⚠ This module keeps its own copy of `isRetryable`, and the 408/409/429
+    // line added alongside `maxRetries: 0` had no test — deleting it left all
+    // 11 tests green. Given the docstring explicitly warns that the two copies
+    // drift apart, the untested one is the one that will.
+    //
+    // 429 is `< 500`, so before that line a routine Bedrock ThrottlingException
+    // failed on the first attempt with the SDK's own retries switched off.
+    const create = vi
+      .fn()
+      .mockRejectedValueOnce(
+        Object.assign(new Error("throttled"), { status: 429 }),
+      )
+      .mockResolvedValueOnce(toolResponse("ok"));
+
+    const out = await generateClientSummary(INPUT, {
+      client: fakeClient(create as any),
+    });
+
+    expect(out).toBe("ok");
+    expect(create).toHaveBeenCalledTimes(2);
+  });
+
+  it("does NOT retry a client error", async () => {
+    const create = vi
+      .fn()
+      .mockRejectedValue(Object.assign(new Error("bad"), { status: 400 }));
+
+    await expect(
+      generateClientSummary(INPUT, { client: fakeClient(create as any) }),
+    ).rejects.toBeInstanceOf(ClientSummaryUnavailableError);
+    expect(create).toHaveBeenCalledTimes(1);
   });
 });

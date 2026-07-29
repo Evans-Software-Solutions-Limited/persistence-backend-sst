@@ -43,6 +43,104 @@ import { AnthropicBedrock } from "@anthropic-ai/bedrock-sdk";
 // without re-deriving this constant.**
 export const CLIENT_TIMEOUT_MS = 12_000;
 
+/**
+ * Measured output throughput for Haiku-class Claude on Bedrock (eu-west-2).
+ *
+ * **122 tok/s** over a 5,056-token generation, 2026-07-28. Rounded DOWN to 100
+ * for headroom — this number sizes timeouts, so erring slow is the safe
+ * direction, and Opus-class surfaces are slower still.
+ *
+ * ⚠ This exists because a timeout that cannot physically receive `max_tokens`
+ * of output is a timeout that fires on success. See `maxTokensForBudget`.
+ */
+export const OUTPUT_TOKENS_PER_SECOND = 100;
+
+/**
+ * The same figure for Opus-class Claude: **55 tok/s**, from E1's in-region data.
+ *
+ * ⚠ This was 40, taken from three CLI samples I ran from a laptop in the UK
+ * (49/41/45 tok/s). That number is not wrong so much as it measures the wrong
+ * thing: end-to-end from outside AWS, so it folds in transatlantic round-trip
+ * and time-to-first-token, while this constant is consumed by
+ * `maxTokensForBudget`, which accounts for those separately via
+ * {@link PREFILL_ALLOWANCE_MS}. Double-counting them made Opus look 40 % slower
+ * than it is.
+ *
+ * E1 ran the equipment scan in-region and recorded `outputTokens` AND latency
+ * per photo (`scratchpad/loadout-phase-e/results/e1-opus.json`). Subtracting the
+ * 3 s prefill allowance from each:
+ *
+ *     tokens  total    generating
+ *      513   10.30 s     70.3 tok/s
+ *      698   12.27 s     75.3 tok/s
+ *      533   11.41 s     63.3 tok/s
+ *      424    9.12 s     69.2 tok/s
+ *      559   12.19 s     60.8 tok/s
+ *      325    7.64 s     70.1 tok/s
+ *      360    7.86 s     74.1 tok/s
+ *                        min 60.8, mean 69.0
+ *
+ * 55 floors the slowest observed run with headroom. The consequence is not
+ * cosmetic: at 40 the scan's own measured worst case priced out at 20.4 s
+ * against a 20 s attempt, which said the scan could never resend — a conclusion
+ * produced entirely by the wrong constant.
+ */
+export const OPUS_OUTPUT_TOKENS_PER_SECOND = 55;
+
+/**
+ * Everything before the first output token: request transfer, input prefill,
+ * queueing. 3 s covers a ~25 k-token prompt with room to spare (measured ~1.5 s
+ * for 23 k input tokens).
+ */
+export const PREFILL_ALLOWANCE_MS = 3_000;
+
+/**
+ * The largest `max_tokens` an attempt of `timeoutMs` can actually receive.
+ *
+ * ## ⚠ Why this function exists
+ *
+ * `max_tokens` and the attempt timeout are two halves of one budget, and
+ * nothing connected them. Output tokens are generated serially at a bounded
+ * rate, so asking for N tokens commits the caller to at least
+ * `N / OUTPUT_TOKENS_PER_SECOND` seconds of wall clock. If the timeout is
+ * shorter than that, a request that is *working perfectly* still fails — and it
+ * fails as a timeout, which reads as a provider problem rather than a
+ * misconfiguration.
+ *
+ * That is exactly what took down Loadout's re-map on 2026-07-28: `max_tokens`
+ * up to 16,384 (≈ 134 s of generation) against a 12 s attempt. Every attempt
+ * died at 12 s, the SDK silently retried (see `getDefaultClient`), and the
+ * Lambda was killed at 29 s before any error could be thrown — no exception, no
+ * 503, no log line.
+ *
+ * **Set `max_tokens` at or below this value.** Then hitting the ceiling raises a
+ * clean `ai_response_truncated` (422, actionable) instead of a timeout, which is
+ * strictly the better failure: it costs less wall clock and it names its cause.
+ *
+ * ⚠ `tokensPerSecond` defaults to the HAIKU-class measurement. Opus-class
+ * surfaces (the equipment scan, Snap AI photo, recipe extraction) generate
+ * slower, so taking the default there would hand out a ceiling the attempt
+ * cannot receive — reintroducing this exact bug while looking measured. Pass a
+ * measured rate for those, or do not use this function for them.
+ */
+export function maxTokensForBudget(
+  timeoutMs: number,
+  tokensPerSecond: number = OUTPUT_TOKENS_PER_SECOND,
+): number {
+  const generationMs = timeoutMs - PREFILL_ALLOWANCE_MS;
+  if (generationMs <= 0) return 0;
+  return Math.floor((generationMs / 1000) * tokensPerSecond);
+}
+
+/**
+ * The route timeout every AI handler on the coreAPI shares (`infra/api.ts`).
+ *
+ * Exported so the budget arithmetic is asserted against a value rather than a
+ * literal repeated in a comment. ⚠ It is a MIRROR, not the source — SST owns the
+ * real setting. `aiBudget.test.ts` fails if the two drift.
+ */
+export const ROUTE_TIMEOUT_MS = 29_000;
+
 // ─── Minimal client seam ────────────────────────────────────────────────
 //
 // We depend on only the slice of the Anthropic Messages API surface we
@@ -130,14 +228,38 @@ let cachedClient: MinimalBedrockClient | null = null;
  * calls within a warm Lambda so we don't rebuild the credential-provider
  * chain on every invocation. Never constructed in tests — they always
  * pass `deps.client`.
+ *
+ * ## ⚠ `maxRetries: 0` is load-bearing. Do not remove it.
+ *
+ * The Anthropic SDK retries internally, and its default is **2** — verified by
+ * construction, not assumed. Left unset, every timeout budget in this file is
+ * silently wrong by 3×: one `createWithRetry` call becomes
+ * `3 attempts × 12 s = 36 s` plus backoff, and `createWithRetry` then retries
+ * *that*, for a ~72 s worst case against a 29 s Lambda.
+ *
+ * The failure mode is worse than slowness. The Lambda is killed mid-attempt, so
+ * the code never reaches its own `throw`: no `AiUnavailableError`, no 503, no
+ * Sentry exception, no log line — just an execution that stops. That is exactly
+ * how Loadout's re-map failed on 2026-07-28, and it is why it took a CloudWatch
+ * dig rather than an error report to find.
+ *
+ * Retries belong to `createWithRetry`, which is visible, bounded and tested.
+ * Two retry layers stacked without either knowing about the other is not
+ * resilience — it is an unbounded budget.
  */
 export function getDefaultClient(): MinimalBedrockClient {
   if (!cachedClient) {
     cachedClient = new AnthropicBedrock({
       timeout: CLIENT_TIMEOUT_MS,
+      maxRetries: 0,
     }) as unknown as MinimalBedrockClient;
   }
   return cachedClient;
+}
+
+/** Test seam: drop the cached client so construction can be re-asserted. */
+export function resetDefaultClientForTests(): void {
+  cachedClient = null;
 }
 
 /**
@@ -196,39 +318,208 @@ export async function createWithRetry(
  * converts a slow request into a failed one *and* doubles the $0.0272 unit cost.
  * A single long attempt spends the same wall-clock on actually finishing.
  *
+ * ## ⚠ It DOES retry a throttle, inside the same deadline
+ *
+ * "Single attempt" is about not paying for a second full-length GENERATION, not
+ * about refusing to resend a request the provider never started.
+ *
+ * This distinction was missing and it mattered: `getDefaultClient` now sets
+ * `maxRetries: 0` (the SDK's hidden retries were tripling every timeout budget),
+ * and the SDK's retry policy covered 408/409/429. `createWithRetry` inherited
+ * that via `isRetryable`; this function did not, because it never consulted it.
+ * The result would have been a NET REGRESSION on exactly the two surfaces the
+ * change was meant to fix — a routine Bedrock `ThrottlingException` on a
+ * cross-region on-demand profile going from "retried with backoff, usually fine"
+ * to an immediate 503 that also burns one of the caller's daily allowances.
+ *
+ * A throttle fails in milliseconds, so the resend costs nothing measurable. It
+ * is bounded four ways:
+ *
+ *   1. Only a retryable status.
+ *   2. Only if the first failure returned inside {@link PREFILL_ALLOWANCE_MS} —
+ *      i.e. before generation could have begun. ⚠ This was "half the budget"
+ *      and that was too loose: at 50 % elapsed the images or prompt have already
+ *      been accepted and BILLED, so the resend doubles the unit cost, which is
+ *      the doubling this function's own rationale says it exists to avoid.
+ *      Prefill is the honest proxy for "the provider never started".
+ *   3. The resend inherits only the time that is LEFT, minus the backoff.
+ *   4. It is refused unless the time left can still deliver
+ *      `deps.minUsefulTokens` — what the WORK needs, which is not the same as
+ *      `max_tokens`.
+ *
+ * ⚠ Point 4 took three attempts and the distinction is the whole of it.
+ * Comparing against `params.max_tokens` is the obvious move and is
+ * **unsatisfiable in principle**: `remaining < timeoutMs` always, so a caller
+ * that sizes its ceiling to its budget — which is exactly what this module
+ * tells callers to do — can never qualify. It gave a perverse result, where the
+ * better a surface was tuned the more certainly it lost its retry, and it cost
+ * the re-map its throttle resilience from 14 swap rows up.
+ *
+ * Clamping `max_tokens` down to fit instead is worse: a smaller ceiling on the
+ * same work is a truncation 422, terminal-looking, for a transient cause, with
+ * the daily allowance already spent.
+ *
+ * So the request goes out UNCHANGED, and the question asked of the deadline is
+ * "can this still do the job?" — measured against real output, not the
+ * pessimistic ceiling. `max_tokens` is a truncation guard; `minUsefulTokens` is
+ * the estimate of the work.
+ *
+ * The backoff matters as much as the bound. The SDK retry being replaced honoured
+ * `retry-after`; a zero-delay resend into a live `ThrottlingException` is the
+ * single least likely request to succeed, so "we kept the retry" would have been
+ * true on paper and false in effect.
+ *
  * ## Failure mapping
  *
- * Any failure is `AiUnavailableError` → 503. There is no retryable/non-retryable
- * split to make: with no second attempt, the distinction changes nothing about
- * what the caller can do.
+ * Any surviving failure is `AiUnavailableError` → 503.
  */
 export async function createSingleAttempt(
   client: MinimalBedrockClient,
   params: MessagesCreateParams,
   timeoutMs: number,
+  deps: {
+    /**
+     * Output the work REALISTICALLY needs, as opposed to `params.max_tokens`,
+     * which is a pessimistic truncation guard. Only the caller knows this.
+     *
+     * ⚠ REQUIRED, deliberately. It defaulted to `params.max_tokens` for one
+     * commit, and that default is the exact defect this guard was rewritten to
+     * fix: a ceiling sized to its budget can never be carried by a shorter one,
+     * so the resend silently never happens and nothing fails. A third caller
+     * added later would have inherited that with no test failure. The type
+     * checker forecloses it instead.
+     */
+    minUsefulTokens: number;
+    now?: () => number;
+    sleep?: (ms: number) => Promise<void>;
+    /**
+     * Generation rate for THIS surface's model. Defaults to the Haiku figure via
+     * `maxTokensForBudget`; Opus-class callers must pass their own, or the
+     * resend guard is optimistic by ~2.5× — the precise trap
+     * `maxTokensForBudget`'s docstring warns about.
+     */
+    tokensPerSecond?: number;
+  },
 ): Promise<MessagesCreateResponse> {
+  const now = deps.now ?? Date.now;
+  const sleep =
+    deps.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
+  const startedAt = now();
   try {
     // Passed per-request rather than relying on the client default, which
     // `getDefaultClient()` fixes at CLIENT_TIMEOUT_MS for the retrying callers.
     return await client.messages.create(params, { timeout: timeoutMs });
   } catch (error) {
-    throw new AiUnavailableError(
-      `ai_single_attempt_failed: ${describeError(error)}`,
-    );
+    const giveUp = () =>
+      new AiUnavailableError(
+        `ai_single_attempt_failed: ${describeError(error)}`,
+      );
+
+    const elapsed = now() - startedAt;
+    if (!isRetryable(error) || elapsed >= PREFILL_ALLOWANCE_MS) throw giveUp();
+
+    const tokensPerSecond = deps.tokensPerSecond ?? OUTPUT_TOKENS_PER_SECOND;
+    const { minUsefulTokens } = deps;
+    if (minUsefulTokens <= 0) throw giveUp();
+
+    // What the resend itself will need: prefill, plus generating the work.
+    const needed =
+      PREFILL_ALLOWANCE_MS +
+      Math.ceil((minUsefulTokens / tokensPerSecond) * 1000);
+
+    // ⚠ The backoff is BOUNDED by what the deadline can spare AFTER that.
+    // `retry-after` is provider-controlled, and an unbounded sleep was worse
+    // than no backoff at all: `retry-after: 30` against a 12 s budget slept
+    // straight through the 29 s Lambda, and a hard kill skips the handler's
+    // `finally`, so no usage row is written for an inference the provider
+    // already billed.
+    //
+    // ⚠ Reserving only PREFILL here was the subtler bug: it let us sleep 15 s to
+    // arrive at a refusal that was already arithmetically certain before the nap
+    // began. Reserving what the RESEND needs makes the two one decision, taken
+    // before any wall clock is spent on it.
+    const wanted = retryAfterMs(error) ?? DEFAULT_RETRY_BACKOFF_MS;
+    if (wanted > timeoutMs - elapsed - needed) throw giveUp();
+    await sleep(wanted);
+
+    // Re-read the clock: the sleep may have overshot.
+    const remaining = timeoutMs - (now() - startedAt);
+    if (maxTokensForBudget(remaining, tokensPerSecond) < minUsefulTokens) {
+      throw giveUp();
+    }
+
+    try {
+      // `params` UNCHANGED — see bound #4. Degrading the request is how a
+      // transient failure becomes a permanent-looking one.
+      return await client.messages.create(params, { timeout: remaining });
+    } catch (retryError) {
+      throw new AiUnavailableError(
+        `ai_single_attempt_failed_after_retry: ${describeError(retryError)}`,
+      );
+    }
   }
 }
 
+/** Pause before a resend when the provider did not tell us how long to wait. */
+export const DEFAULT_RETRY_BACKOFF_MS = 400;
+
 /**
- * Retryable = 5xx status from the provider, or a timeout/network-shaped
- * error. Anthropic SDK errors carry a numeric `.status` on 4xx/5xx;
- * AbortError / network errors don't carry `.status` at all, and we treat
- * the absence of a definitive 4xx client error as retryable too — a
- * malformed-request 4xx wouldn't normally reach here since we control
- * the request shape.
+ * `retry-after-ms` / `retry-after` from a provider error, when present.
+ *
+ * A throttle carries a cooldown and the SDK retry being replaced honoured it.
+ * Ignoring it turns "we kept the retry" into a claim that is true in structure
+ * and false in effect.
+ */
+export function retryAfterMs(error: unknown): number | undefined {
+  if (typeof error !== "object" || error === null) return undefined;
+  const headers = (error as { headers?: unknown }).headers;
+  if (typeof headers !== "object" || headers === null) return undefined;
+  const read = (key: string): string | undefined => {
+    const bag = headers as Record<string, unknown> & {
+      get?: (k: string) => string | null;
+    };
+    const viaGet = typeof bag.get === "function" ? bag.get(key) : undefined;
+    const raw = viaGet ?? bag[key];
+    // ⚠ `Number("")` is 0 — finite and non-negative — so an empty or
+    // whitespace-only header would return a 0 ms backoff and restore the
+    // zero-delay resend this function exists to prevent. Proxies emit that
+    // header shape routinely.
+    return typeof raw === "string" && raw.trim() !== "" ? raw : undefined;
+  };
+  const ms = Number(read("retry-after-ms"));
+  if (Number.isFinite(ms) && ms >= 0) return ms;
+  const seconds = Number(read("retry-after"));
+  if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1000;
+  return undefined;
+}
+
+/**
+ * Retryable = the provider might succeed if asked again: a 5xx, a throttle, a
+ * timeout, or a network-shaped error. Anthropic SDK errors carry a numeric
+ * `.status` on 4xx/5xx; AbortError / network errors don't carry `.status` at
+ * all, and we treat the absence of a definitive client error as retryable too —
+ * a malformed-request 4xx wouldn't normally reach here since we control the
+ * request shape.
+ *
+ * ## ⚠ 408/409/429 are here because `maxRetries: 0` removed the SDK's own retry
+ *
+ * The Anthropic SDK's internal `shouldRetry` covered **408, 409, 429 and ≥500**
+ * and honoured `retry-after`. This predicate only covered `>= 500`, so while the
+ * SDK was quietly retrying underneath it the gap did not show. Turning the SDK's
+ * retries off (see `getDefaultClient` — they were tripling every timeout budget)
+ * would have exposed it: **429 is < 500**, so a Bedrock `ThrottlingException` —
+ * routine on a cross-region on-demand inference profile under load — would have
+ * gone from "retried with backoff, usually fine" to "fails on the first
+ * attempt". Removing a hidden retry layer must not silently remove the retry
+ * BEHAVIOUR with it; this is the visible layer inheriting the responsibility.
+ *
+ * 409 is included for parity with the SDK rather than because Bedrock is known
+ * to emit it.
  */
 export function isRetryable(error: unknown): boolean {
   const status = extractStatus(error);
   if (status === undefined) return true; // network/timeout/unknown
+  if (status === 408 || status === 409 || status === 429) return true;
   return status >= 500;
 }
 
