@@ -23,9 +23,10 @@ import { WorkoutEditorPresenter } from "@/ui/presenters/WorkoutEditorPresenter";
  * Editor container — async-loads the workout via `useWorkout(id)`,
  * resets the form once on first hydrate, then drives the same form
  * reducer the creator uses. Submit maps the snake_case form state
- * onto the V2 camelCase `UpdateWorkoutInput` (full-replacement on
- * `exercises` per backend PATCH semantics) and dispatches via
- * `updateWorkoutCommand`. The optimistic cache update inside the
+ * onto the V2 camelCase `UpdateWorkoutInput` and dispatches via
+ * `updateWorkoutCommand`. `exercises` is full-replacement per backend PATCH
+ * semantics, but is sent ONLY when the plan actually changed — see
+ * `toUpdateWorkoutInput` for why a rename must not carry it. The optimistic cache update inside the
  * command propagates the change to the list + popover before the
  * sync queue flushes the PATCH.
  *
@@ -65,12 +66,16 @@ export function WorkoutEditorContainer() {
   // would clobber in-flight edits, so guard with a ref keyed on
   // `(userId, workoutId)`.
   const hydratedForRef = useRef<string | null>(null);
+  // The plan as LOADED, so submit can tell a real plan edit from a rename.
+  const hydratedExercisesRef = useRef<WorkoutFormExercise[]>([]);
   useEffect(() => {
     if (!detail.workout || !userId || !workoutId) return;
     const key = `${userId}::${workoutId}`;
     if (hydratedForRef.current === key) return;
     hydratedForRef.current = key;
-    form.reset(toFormState(detail.workout));
+    const hydrated = toFormState(detail.workout);
+    hydratedExercisesRef.current = hydrated.exercises;
+    form.reset(hydrated);
     // Depend on form.reset directly — `form` itself rebuilds every
     // render but its method refs are stable.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -112,7 +117,11 @@ export function WorkoutEditorContainer() {
 
     setIsSubmitting(true);
     try {
-      const input = toUpdateWorkoutInput(form.state, isCoachContext);
+      const input = toUpdateWorkoutInput(
+        form.state,
+        isCoachContext,
+        planChanged(hydratedExercisesRef.current, form.state.exercises),
+      );
       const result = updateWorkoutCommand(
         { storage, userId, generateId },
         workoutId,
@@ -195,7 +204,6 @@ function toFormState(workout: Workout): WorkoutFormState {
   return {
     name: workout.name,
     description: workout.description ?? "",
-    estimatedDurationMinutes: workout.estimatedDurationMinutes,
     visibility: workout.visibility,
     showInOwnerLibrary: workout.showInOwnerLibrary,
     exercises: workout.exercises.map(toFormExercise),
@@ -216,27 +224,64 @@ function toFormExercise(ex: WorkoutExercise): WorkoutFormExercise {
   };
 }
 
+/**
+ * Did the exercise plan actually change? Compares only the fields the PATCH
+ * carries — a re-render or a rename must read as unchanged.
+ */
+function planChanged(
+  before: readonly WorkoutFormExercise[],
+  after: readonly WorkoutFormExercise[],
+): boolean {
+  if (before.length !== after.length) return true;
+  return after.some((ex, i) => {
+    const prev = before[i];
+    return (
+      ex.exercise_id !== prev.exercise_id ||
+      ex.sort_order !== prev.sort_order ||
+      (ex.superset_group ?? null) !== (prev.superset_group ?? null) ||
+      ex.target_sets !== prev.target_sets ||
+      ex.target_reps_min !== prev.target_reps_min ||
+      ex.target_reps_max !== prev.target_reps_max ||
+      ex.rest_seconds !== prev.rest_seconds
+    );
+  });
+}
+
 function toUpdateWorkoutInput(
   state: WorkoutFormState,
   isCoachContext: boolean,
+  includeExercises: boolean,
 ): UpdateWorkoutInput {
   return {
     name: state.name.trim(),
     description:
       state.description.trim().length === 0 ? null : state.description.trim(),
     visibility: state.visibility,
-    estimatedDurationMinutes: state.estimatedDurationMinutes,
     // Only coaches can flip owner-visibility; athlete edits leave it untouched
     // (undefined => backend PATCH doesn't clobber the flag).
     ...(isCoachContext ? { showInOwnerLibrary: state.showInOwnerLibrary } : {}),
-    exercises: state.exercises.map((ex) => ({
-      exerciseId: ex.exercise_id,
-      sortOrder: ex.sort_order,
-      supersetGroup: ex.superset_group ?? null,
-      targetSets: ex.target_sets,
-      targetRepsMin: ex.target_reps_min,
-      targetRepsMax: ex.target_reps_max,
-      restSeconds: ex.rest_seconds,
-    })),
+    // `exercises` is sent ONLY when the plan actually changed, and the duration
+    // is always omitted so the server re-derives from whatever it receives.
+    //
+    // Sending the plan unconditionally would make every save — a rename
+    // included — re-derive the duration. That matters because the V2 heuristic
+    // and the still-live legacy app's (`max(15, 2n + totalSets)`) disagree, so
+    // a rename in V2 would rewrite a legacy-authored duration and the next
+    // legacy edit would write it back: a value that flips between clients. The
+    // backfill migration takes care to leave legacy values alone, and this
+    // keeps the edit path honouring the same rule.
+    ...(includeExercises
+      ? {
+          exercises: state.exercises.map((ex) => ({
+            exerciseId: ex.exercise_id,
+            sortOrder: ex.sort_order,
+            supersetGroup: ex.superset_group ?? null,
+            targetSets: ex.target_sets,
+            targetRepsMin: ex.target_reps_min,
+            targetRepsMax: ex.target_reps_max,
+            restSeconds: ex.rest_seconds,
+          })),
+        }
+      : {}),
   };
 }

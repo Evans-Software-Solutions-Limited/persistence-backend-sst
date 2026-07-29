@@ -176,6 +176,80 @@ describe("HomeContainer (V2)", () => {
     expect(mockProbe.last?.home?.rings.move.pct).toBeCloseTo(0.8421, 4);
   });
 
+  it("overlays HealthKit active calories onto the TRAIN ring", async () => {
+    // Train is a DAILY active-energy ring (it used to be weekly lifted volume
+    // against a flat 20 t target, which read ~45% for a heavy session and never
+    // closed). Same overlay path as MOVE: the backend serves 0 because nothing
+    // writes daily_activity_data, so the device reading is the live source.
+    const { adapters } = makeAdapters({
+      isAvailable: async () => true,
+      getPermissionStatus: async () => ({
+        steps: "granted",
+        calories: "granted",
+        bodyWeight: "granted",
+        heartRate: "granted",
+        sleep: "granted",
+      }),
+      getActiveCaloriesToday: async () => ok(410),
+    });
+    render(
+      <Wrapper adapters={adapters}>
+        <HomeContainer />
+      </Wrapper>,
+    );
+    await waitFor(() =>
+      expect(mockProbe.last?.home?.rings.train.current).toBe(410),
+    );
+    expect(mockProbe.last?.home?.rings.train.pct).toBeCloseTo(0.82, 4);
+    expect(mockProbe.last?.home?.rings.train.unit).toBe("kcal");
+  });
+
+  it("leaves both rings on the backend values when health is unavailable", async () => {
+    const { adapters } = makeAdapters(); // default: isAvailable false
+    render(
+      <Wrapper adapters={adapters}>
+        <HomeContainer />
+      </Wrapper>,
+    );
+    await waitFor(() => expect(mockProbe.last?.home).toBeTruthy());
+    expect(mockProbe.last?.home?.rings.move.current).toBe(0);
+    expect(mockProbe.last?.home?.rings.train.current).toBe(0);
+  });
+
+  it("refuses to overlay a ring whose cached unit predates the change", async () => {
+    // `cached_home` is an unversioned blob and Train changed meaning (weekly
+    // `kg`/20000 → daily `kcal`/500). An install opening on a pre-change cache
+    // must not have a live kcal figure written into the kg ring — that renders
+    // "410 · kg" at 2%. Leave the stale ring intact until /home replaces it.
+    const { adapters, api } = makeAdapters({
+      isAvailable: async () => true,
+      getPermissionStatus: async () => ({
+        steps: "granted",
+        calories: "granted",
+        bodyWeight: "granted",
+        heartRate: "granted",
+        sleep: "granted",
+      }),
+      getActiveCaloriesToday: async () => ok(410),
+    });
+    api.nextRings = {
+      ...api.nextRings,
+      train: { current: 8400, target: 20000, pct: 0.42, unit: "kg" },
+    };
+    render(
+      <Wrapper adapters={adapters}>
+        <HomeContainer />
+      </Wrapper>,
+    );
+    await waitFor(() => expect(mockProbe.last?.home).toBeTruthy());
+    expect(mockProbe.last?.home?.rings.train).toEqual({
+      current: 8400,
+      target: 20000,
+      pct: 0.42,
+      unit: "kg",
+    });
+  });
+
   it("clears the workouts loading state once the fetch resolves (no stuck skeleton)", async () => {
     const { adapters } = makeAdapters();
     render(

@@ -273,7 +273,10 @@ export const workoutVariationsCreateHandler = new Elysia()
         {
           name,
           description: description ?? null,
-          estimatedDurationMinutes: estimatedDurationMinutes ?? 30,
+          // Absent => derived from the adapted plan by the repository. A swap
+          // can change the set/rest shape, so the variation's estimate should
+          // follow its OWN rows rather than inherit the parent's number.
+          estimatedDurationMinutes,
           sourceGymId: sourceGymId ?? null,
           // Deduped for the same reason SavedGymRepository dedupes: two picker
           // paths can select the same chip, and storing it twice changes nothing

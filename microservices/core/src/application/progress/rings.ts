@@ -1,14 +1,21 @@
 /**
  * TodayHero ring composition (06-progress-goals, Phase 06.5; STORY-001).
- * Pure — no DB. Per locked decision #2:
- *   Move  = daily steps / goal steps          (HealthKit, daily_activity_data)
- *   Train = weekly volume kg / target kg       (useGetWeeklyVolume; AC 1.2)
- *   Fuel  = daily kcal / target kcal           (M9 — live once a target is set;
- *                                               "gated" until the user has one)
+ * Pure — no DB. All three rings are DAILY and reset at the user's local
+ * midnight:
+ *   Move  = daily steps / goal steps            (HealthKit, daily_activity_data)
+ *   Train = daily active kcal / goal active kcal (HealthKit active energy)
+ *   Fuel  = daily kcal eaten / target kcal      (M9 — live once a target is set;
+ *                                                "gated" until the user has one)
  *
- * NB: the May-2026 prototype renders TRAIN as "38 min"; the SPEC (decision #2 +
- * AC 1.2) defines Train as weekly volume. Spec wins — flagged for the frontend
- * phase to reconcile the RingLegend label/sub.
+ * ⚠ Train changed 2026-07-28, superseding decision #2 (which defined it as
+ * WEEKLY lifted volume / 20 t). Two problems with that:
+ *   • It was the only non-daily ring, so it never reset with the other two —
+ *     a "today" hero showing a Monday-to-Sunday accumulator.
+ *   • Against a flat 20 t target a single heavy session reads ~45%, so the
+ *     ring was effectively uncloseable and stopped meaning anything.
+ * Weekly volume is NOT lost — it is still the Home weekly-volume card and the
+ * You-tab VolumeStats (monthly total + by-muscle), which is where a
+ * multi-day accumulator belongs.
  */
 
 export interface RingDatum {
@@ -40,19 +47,36 @@ export function ratio(current: number, target: number): number {
   return Math.min(1, Math.max(0, current / target));
 }
 
-export function buildRings(
-  steps: number,
-  goalSteps: number,
-  weekKg: number,
-  targetKg: number,
+/**
+ * Ring inputs. An OBJECT rather than positional args on purpose: Move and Train
+ * are both `(current, goal)` number pairs, so a positional signature let the
+ * Train pair silently change meaning (weekly kg → daily kcal) with every call
+ * site still type-checking. Named fields make that a compile error instead.
+ */
+export interface BuildRingsInput {
+  /** Steps today (user-local day). */
+  steps: number;
+  /** Daily step goal — the user's Steps habit target where they have one. */
+  goalSteps: number;
+  /** Active energy burned today, kcal (user-local day). */
+  activeKcal: number;
+  /** Daily active-energy goal, kcal. */
+  goalActiveKcal: number;
   /**
    * Nutrition for the Fuel ring. `null` (or a non-positive target) keeps the
    * ring "gated" — the user hasn't set a daily kcal target yet, so there's
    * nothing to ratio against and the Home ring prompts them via the "--" state.
-   * Defaulted so existing callers/tests stay valid.
    */
-  fuelInput: FuelInput | null = null,
-): Rings {
+  fuel?: FuelInput | null;
+}
+
+export function buildRings({
+  steps,
+  goalSteps,
+  activeKcal,
+  goalActiveKcal,
+  fuel: fuelInput = null,
+}: BuildRingsInput): Rings {
   const move: RingDatum = {
     current: steps,
     target: goalSteps,
@@ -60,10 +84,10 @@ export function buildRings(
     unit: "steps",
   };
   const train: RingDatum = {
-    current: weekKg,
-    target: targetKg,
-    pct: ratio(weekKg, targetKg),
-    unit: "kg",
+    current: activeKcal,
+    target: goalActiveKcal,
+    pct: ratio(activeKcal, goalActiveKcal),
+    unit: "kcal",
   };
   // Fuel is live once the user has a daily kcal target; otherwise gated.
   const fuel: RingDatum | "gated" =

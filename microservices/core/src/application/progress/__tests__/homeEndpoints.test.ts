@@ -10,6 +10,8 @@ const volMock = vi.hoisted(() => ({
 const homeMock = vi.hoisted(() => ({
   getUserTimezone: vi.fn(async () => "Europe/London"),
   getTodaySteps: vi.fn(async () => 7420),
+  // Train ring numerator — DAILY active energy (rings.ts).
+  getTodayActiveKcal: vi.fn(async () => 371),
   getActiveWorkoutStreakCount: vi.fn(async () => 23),
   getRecentPRs: vi.fn(async () => [{ id: "pr1" }] as any[]),
   getBodyTrend: vi.fn(async () => [{ date: "2026-06-01" }] as any[]),
@@ -36,6 +38,10 @@ const homeMock = vi.hoisted(() => ({
   ]),
 }));
 const habitMock = vi.hoisted(() => ({ list: vi.fn(async () => [] as any[]) }));
+// Move-ring goal source. Default: no Steps habit → DEFAULT_GOAL_STEPS.
+const habitConfigMock = vi.hoisted(() => ({
+  getActiveDailyTarget: vi.fn(async () => null as number | null),
+}));
 const nutEntryMock = vi.hoisted(() => ({
   sumKcalForDay: vi.fn(async () => 1200),
 }));
@@ -69,6 +75,9 @@ vi.mock("../../repositories/homeReadRepository", () => ({
 }));
 vi.mock("../../repositories/habitRepository", () => ({
   HabitRepository: vi.fn().mockImplementation(() => habitMock),
+}));
+vi.mock("../../repositories/habitConfigRepository", () => ({
+  HabitConfigRepository: vi.fn().mockImplementation(() => habitConfigMock),
 }));
 vi.mock("../../repositories/streakRepository", () => ({
   StreakRepository: vi.fn().mockImplementation(() => streakMock),
@@ -140,10 +149,9 @@ describe("Home/You endpoints", () => {
   });
 
   it("GET /users/me/home aggregates rings + micro + volume + PRs + habits", async () => {
-    // Distinct per-window values prove the ring's train.current AND the card's
-    // totalKg both read the SAME this-week total (8400), and the call-count
-    // assertion proves it's queried ONCE — not duplicated across loadRings +
-    // the card as it used to be (Inspector finding, PR #116).
+    // Distinct per-window values + the call-count assertion prove the weekly
+    // card queries this-week ONCE — not duplicated across loadRings and the
+    // card as it used to be (Inspector finding, PR #116).
     volMock.totalVolume
       .mockResolvedValueOnce(8400) // this week
       .mockResolvedValueOnce(7000); // last week
@@ -152,7 +160,14 @@ describe("Home/You endpoints", () => {
     );
     expect(res.status).toBe(200);
     const { data } = (await res.json()) as any;
-    expect(data.rings.train.current).toBe(8400);
+    // Train is DAILY active energy now — deliberately NOT the weekly tonnage,
+    // which stays the weekly-volume card's number and nothing else.
+    expect(data.rings.train).toEqual({
+      current: 371,
+      target: 500,
+      pct: 0.742,
+      unit: "kcal",
+    });
     expect(data.weeklyVolume.totalKg).toBe(8400);
     // Exactly two totalVolume round-trips: this week + last week. (Was three —
     // loadRings re-issued the this-week query.)
@@ -243,6 +258,39 @@ describe("Home/You endpoints", () => {
     );
     const { data } = (await res.json()) as any;
     expect(data.micro.sleep).toBeNull();
+  });
+
+  // getHomeHandler composes the rings INLINE rather than calling loadRings (see
+  // the fan-out comment there), so the goal-resolution rules need proving on
+  // this path too — they are the ones that can silently drift apart.
+  it("GET /users/me/home uses the Steps habit target as the Move goal", async () => {
+    habitConfigMock.getActiveDailyTarget.mockResolvedValueOnce(8000);
+    const res = await getHomeHandler.handle(
+      new Request("http://localhost/users/me/home", { headers: AUTH }),
+    );
+    const { data } = (await res.json()) as any;
+    expect(habitConfigMock.getActiveDailyTarget).toHaveBeenCalledWith(
+      "u1",
+      "steps",
+    );
+    expect(data.rings.move.target).toBe(8000);
+  });
+
+  it("GET /users/me/home falls back to the default step goal with no habit", async () => {
+    const res = await getHomeHandler.handle(
+      new Request("http://localhost/users/me/home", { headers: AUTH }),
+    );
+    const { data } = (await res.json()) as any;
+    expect(data.rings.move.target).toBe(10000);
+  });
+
+  it("GET /users/me/home ignores a non-positive habit target", async () => {
+    habitConfigMock.getActiveDailyTarget.mockResolvedValueOnce(0);
+    const res = await getHomeHandler.handle(
+      new Request("http://localhost/users/me/home", { headers: AUTH }),
+    );
+    const { data } = (await res.json()) as any;
+    expect(data.rings.move.target).toBe(10000);
   });
 
   it("GET /users/me/home survives a programme top-up failure", async () => {

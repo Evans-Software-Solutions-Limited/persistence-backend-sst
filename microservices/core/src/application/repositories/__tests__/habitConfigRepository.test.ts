@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { PgDialect } from "drizzle-orm/pg-core";
 
 vi.mock("@persistence/db/client", () => ({ getDb: vi.fn() }));
 
@@ -287,6 +288,78 @@ describe("HabitConfigRepository.upsert", () => {
     ).toBe(3);
     expect(view!.pending).not.toBeNull();
     expect(view!.pending!.from).toBe(NEXT_MONDAY);
+  });
+
+  describe("getActiveDailyTarget", () => {
+    it("returns the numeric target for an active daily habit", async () => {
+      const { db } = makeDb({
+        selects: [[{ targetValue: "8000" }]],
+      });
+      (getDb as never as ReturnType<typeof vi.fn>).mockReturnValue(db);
+
+      expect(
+        await new HabitConfigRepository().getActiveDailyTarget("u1", "steps"),
+      ).toBe(8000);
+    });
+
+    it("returns null when the user has no matching active habit", async () => {
+      const { db } = makeDb({ selects: [[]] });
+      (getDb as never as ReturnType<typeof vi.fn>).mockReturnValue(db);
+
+      expect(
+        await new HabitConfigRepository().getActiveDailyTarget("u1", "steps"),
+      ).toBeNull();
+    });
+
+    it("returns null rather than NaN for an unparseable target", async () => {
+      // `target_value` is a Postgres numeric, surfaced by the driver as a
+      // string. A NaN would flow straight into the ring ratio and render the
+      // dial blank, so it must degrade to "no goal" and let the caller's
+      // default apply.
+      const { db } = makeDb({ selects: [[{ targetValue: "not-a-number" }]] });
+      (getDb as never as ReturnType<typeof vi.fn>).mockReturnValue(db);
+
+      expect(
+        await new HabitConfigRepository().getActiveDailyTarget("u1", "steps"),
+      ).toBeNull();
+    });
+
+    // The chained mock above resolves whatever is queued regardless of the
+    // real predicate, so the user scoping — the data-isolation control here —
+    // has to be asserted on the emitted SQL (the mocked-DB blind spot in
+    // reference_drizzle_groupby_param_bug).
+    it("scopes to the caller, the category, an ACTIVE goal and a daily period", async () => {
+      const capture: { where?: unknown } = {};
+      const recording: Record<string, unknown> = {};
+      for (const k of ["from", "innerJoin"]) {
+        recording[k] = () => recording;
+      }
+      recording.where = (cond: unknown) => {
+        capture.where = cond;
+        return recording;
+      };
+      recording.limit = () => Promise.resolve([]);
+      (getDb as never as ReturnType<typeof vi.fn>).mockReturnValue({
+        select: () => recording,
+      });
+
+      await new HabitConfigRepository().getActiveDailyTarget("u1", "steps");
+
+      const where = new PgDialect().sqlToQuery(capture.where as never).sql;
+      expect(where).toContain('"habit_configs"."user_id"');
+      expect(where).toContain('"habit_configs"."category"');
+      expect(where).toContain('"habit_configs"."period"');
+      expect(where).toContain('"user_goals"."is_active"');
+    });
+
+    it("returns null when the row carries a null target", async () => {
+      const { db } = makeDb({ selects: [[{ targetValue: null }]] });
+      (getDb as never as ReturnType<typeof vi.fn>).mockReturnValue(db);
+
+      expect(
+        await new HabitConfigRepository().getActiveDailyTarget("u1", "steps"),
+      ).toBeNull();
+    });
   });
 
   it("returns null for an unknown / unseeded category", async () => {

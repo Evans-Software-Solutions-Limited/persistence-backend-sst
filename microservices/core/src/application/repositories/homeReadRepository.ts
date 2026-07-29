@@ -191,6 +191,37 @@ export class HomeReadRepository {
     return Number(rows[0]?.s) || 0;
   }
 
+  /**
+   * Sum of today's (user-local) ACTIVE energy burned in kcal — the Train ring
+   * numerator.
+   *
+   * `daily_activity_data.calories_burned` is treated as ACTIVE energy, not
+   * total: the Train ring is an activity ring, and counting basal energy would
+   * make it close itself overnight without the user moving. Nothing writes this
+   * column today (exactly as with `steps`), so this returns 0 in practice and
+   * the mobile client overlays the live HealthKit reading on top — see the Move
+   * overlay in HomeContainer. The query exists so the ring has a server-side
+   * source the moment a health-sync writer lands.
+   */
+  async getTodayActiveKcal(
+    userId: string,
+    todayLocalISO: string,
+  ): Promise<number> {
+    const db = getDb();
+    const rows = await db
+      .select({
+        c: sql<number>`COALESCE(SUM(${dailyActivityData.caloriesBurned}), 0)::int`,
+      })
+      .from(dailyActivityData)
+      .where(
+        and(
+          eq(dailyActivityData.userId, userId),
+          eq(dailyActivityData.activityDate, todayLocalISO),
+        ),
+      );
+    return Number(rows[0]?.c) || 0;
+  }
+
   /** Current active workout-streak count (the 🔥 micro-pill); 0 if none. */
   async getActiveWorkoutStreakCount(userId: string): Promise<number> {
     const db = getDb();

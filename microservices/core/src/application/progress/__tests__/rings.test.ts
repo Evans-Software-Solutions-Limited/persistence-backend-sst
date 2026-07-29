@@ -12,7 +12,12 @@ describe("ratio", () => {
 
 describe("buildRings", () => {
   it("composes move + train, gates fuel, averages todayPct", () => {
-    const rings = buildRings(7420, 10000, 8400, 20000);
+    const rings = buildRings({
+      steps: 7420,
+      goalSteps: 10000,
+      activeKcal: 371,
+      goalActiveKcal: 500,
+    });
     expect(rings.move).toEqual({
       current: 7420,
       target: 10000,
@@ -20,27 +25,63 @@ describe("buildRings", () => {
       unit: "steps",
     });
     expect(rings.train).toEqual({
-      current: 8400,
-      target: 20000,
-      pct: 0.42,
-      unit: "kg",
+      current: 371,
+      target: 500,
+      pct: 0.742,
+      unit: "kcal",
     });
     expect(rings.fuel).toBe("gated");
-    // average of move(0.742) + train(0.42) = 0.581 → 58
-    expect(rings.todayPct).toBe(58);
+    // average of move(0.742) + train(0.742) = 0.742 → 74
+    expect(rings.todayPct).toBe(74);
   });
 
-  it("gates fuel when the target is null or non-positive", () => {
-    expect(buildRings(0, 10000, 0, 20000, null).fuel).toBe("gated");
+  it("measures Train in DAILY active kcal, not weekly volume", () => {
+    // The regression this replaces: 8960 kg lifted against a hardcoded 20 t
+    // weekly target rendered 45% on a ring labelled "today". Train now reads
+    // active energy, so a 560 kcal day against a 500 kcal goal CLOSES.
+    const rings = buildRings({
+      steps: 0,
+      goalSteps: 10000,
+      activeKcal: 560,
+      goalActiveKcal: 500,
+    });
+    expect(rings.train.unit).toBe("kcal");
+    expect(rings.train.current).toBe(560);
+    expect(rings.train.pct).toBe(1);
+  });
+
+  it("honours a per-user step goal over the caller's default", () => {
+    const rings = buildRings({
+      steps: 4000,
+      goalSteps: 8000,
+      activeKcal: 0,
+      goalActiveKcal: 500,
+    });
+    expect(rings.move.target).toBe(8000);
+    expect(rings.move.pct).toBe(0.5);
+  });
+
+  it("gates fuel when the target is null, absent or non-positive", () => {
+    const base = {
+      steps: 0,
+      goalSteps: 10000,
+      activeKcal: 0,
+      goalActiveKcal: 500,
+    };
+    expect(buildRings(base).fuel).toBe("gated");
+    expect(buildRings({ ...base, fuel: null }).fuel).toBe("gated");
     expect(
-      buildRings(0, 10000, 0, 20000, { consumed: 500, target: 0 }).fuel,
+      buildRings({ ...base, fuel: { consumed: 500, target: 0 } }).fuel,
     ).toBe("gated");
   });
 
   it("makes fuel live with a target and folds it into todayPct", () => {
-    const rings = buildRings(7420, 10000, 8400, 20000, {
-      consumed: 1500,
-      target: 2000,
+    const rings = buildRings({
+      steps: 7420,
+      goalSteps: 10000,
+      activeKcal: 210,
+      goalActiveKcal: 500,
+      fuel: { consumed: 1500, target: 2000 },
     });
     expect(rings.fuel).toEqual({
       current: 1500,

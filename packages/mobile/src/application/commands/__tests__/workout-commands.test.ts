@@ -41,7 +41,10 @@ describe("createWorkoutCommand", () => {
     expect(result.value.name).toBe("Push Day");
     expect(result.value.createdBy).toBe("user-1");
     expect(result.value.visibility).toBe("private");
-    expect(result.value.estimatedDurationMinutes).toBe(30);
+    // Derived, not a flat 30: one exercise with no declared sets/rest costs
+    // 1 × 75s → 5 min. Matches what the server will store for the same payload
+    // (both fall back to 1 set), so the value doesn't jump after the sync.
+    expect(result.value.estimatedDurationMinutes).toBe(5);
     // Detail cache
     expect(
       storage.getCachedWorkoutDetail("user-1", result.value.id)?.workout.id,
