@@ -17,8 +17,6 @@ import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import config from "../../../../tamagui.config";
 import { EditProfileContainer } from "../EditProfileContainer";
 
-jest.setTimeout(15_000);
-
 jest.mock("@/ui/presenters/EditProfilePresenter");
 const MockPresenter = jest.mocked(EditProfilePresenter);
 

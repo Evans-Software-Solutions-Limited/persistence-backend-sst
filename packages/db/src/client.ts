@@ -34,15 +34,30 @@ function getDatabaseUrl(): string {
  * ## What was measured (2026-07-29, against staging)
  *
  * At `max: 1`, the four reads `POST /workouts/:id/loadout/preview` fires under
- * `Promise.all` deadlock. Reproduced with the real repository methods and the
- * real client, fresh process each time:
+ * `Promise.all` deadlock. Two of those four return 17 and 29 rows.
  *
- *     max: 4   ->  4/4 resolved (487, 148, 134, 146 ms)
- *     max: 1   ->  first run resolved, then 3/3 HUNG
+ * ⚠ There are TWO measurements and they are easy to mistake for a contradiction,
+ * so both denominators are spelled out. Each `4/4` below counts RUNS of the
+ * whole four-query fan-out, never the four queries.
  *
- * Two of those four reads return 17 and 29 rows. Synthetic runs put the boundary
- * between 3 and 4 concurrent multi-row queries, and `max: 2` was already enough
- * to clear it.
+ * (a) Real repository methods, ONE shared `getDb()` singleton, four runs:
+ *
+ *         max: 4   ->  4/4 runs resolved (487, 148, 134, 146 ms)
+ *         max: 1   ->  run 1 resolved, runs 2-4 HUNG
+ *
+ *     Run 1 surviving is the informative part: a virgin connection completes one
+ *     fan-out and is then poisoned for the life of the container. That is why
+ *     real requests failed 100 % — the container had always served something
+ *     first.
+ *
+ * (b) Synthetic, FRESH client and awaited `end()` per run, four runs:
+ *
+ *         max: 1   ->  4/4 runs hung
+ *         max: 2   ->  0/4
+ *
+ *     No run survives here because no connection is ever reused. This is the
+ *     table in `reference_postgresjs_max1_concurrency_deadlock.md`, and it is
+ *     what puts the boundary between 3 and 4 concurrent multi-row queries.
  *
  * What it cost: that endpoint had **never once succeeded** — 7 calls over 30
  * days, 0 x 200, every one a 29 s Lambda timeout with no application logs, no

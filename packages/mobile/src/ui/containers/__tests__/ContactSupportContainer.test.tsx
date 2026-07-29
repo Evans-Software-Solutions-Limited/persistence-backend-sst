@@ -19,8 +19,6 @@ import {
   SUPPORT_EMAIL,
 } from "../ContactSupportContainer";
 
-jest.setTimeout(15_000);
-
 jest.mock("@/ui/presenters/ContactSupportPresenter");
 const MockPresenter = jest.mocked(ContactSupportPresenter);
 

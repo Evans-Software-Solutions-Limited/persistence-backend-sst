@@ -20,8 +20,6 @@ import { ExerciseFiltersProvider } from "@/ui/hooks/useExerciseFilters";
 import config from "../../../../tamagui.config";
 import { ExerciseListContainer } from "../ExerciseListContainer";
 
-jest.setTimeout(15_000);
-
 jest.mock("@/ui/presenters/ExerciseListPresenter");
 const MockPresenter = jest.mocked(ExerciseListPresenter);
 

@@ -9,11 +9,14 @@ import { DB_CLIENT_OPTIONS, DB_POOL_MAX } from "@persistence/db/client";
  * `packages/db/src/client.ts` shipped `max: 1` for two years on a rationale that
  * was true and beside the point: "a Lambda container handles one request at a
  * time, so there's no upside to a per-container pool." Concurrency INSIDE a
- * single request — `Promise.all`, of which this codebase has 24 — was never
+ * single request — `Promise.all`, of which this service has 22 — was never
  * considered.
  *
  * At `max: 1` the four reads `POST /workouts/:id/loadout/preview` fires under
- * `Promise.all` deadlock (measured: 4/4 hung; `max: 2` 0/4). That endpoint never
+ * `Promise.all` deadlock — 4 of 4 RUNS of the fan-out hung on a fresh client per
+ * run, and `max: 2` 0 of 4. (With a REUSED connection the first run survives and
+ * every later one hangs; `DB_POOL_MAX`'s docstring gives both denominators, which
+ * previously disagreed between these two files.) That endpoint never
  * once succeeded — 7 calls, 0 x 200, every one a 29 s Lambda timeout with no
  * logs, no error, and nothing in `pg_stat_statements` because the queries never
  * reach Postgres.

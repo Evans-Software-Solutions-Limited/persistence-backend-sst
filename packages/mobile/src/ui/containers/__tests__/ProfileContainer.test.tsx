@@ -24,8 +24,6 @@ import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import config from "../../../../tamagui.config";
 import { ProfileContainer } from "../ProfileContainer";
 
-jest.setTimeout(15_000);
-
 // Native modules pulled in by useAvatarUpload — Jest can't load the real
 // expo-modules-core glue, so stub the surface that the hook touches.
 jest.mock("expo-image-picker", () => ({
