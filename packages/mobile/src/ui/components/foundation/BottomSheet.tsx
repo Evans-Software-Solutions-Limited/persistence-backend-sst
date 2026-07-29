@@ -221,6 +221,15 @@ export function BottomSheet({
         // from, so it resolves to zero). This is the shape that was verified
         // scrolling on an iPhone 17 Pro simulator.
         height={sheetBodyHeight}
+        // NOTE — an unresolved risk, deliberately NOT patched blind. With
+        // `keyboardBehavior="interactive"` gorhom shrinks its own content box
+        // while the keyboard is up (`animatedContentHeightMax`), and this rigid
+        // child will not follow it down, so a form sheet may clip its bottom
+        // behind the keyboard. `flexShrink: 1` is the obvious candidate and is
+        // very likely correct, but it is UNVERIFIED on device and this is a
+        // primitive shared by ~27 sheets — the shape above is the one actually
+        // observed working. Check a form sheet (Fuel Targets / Create Exercise)
+        // with the keyboard up before changing it.
         testID={testID}
         // Plain in-flow flex container — NOT gorhom's <BottomSheetView>, whose
         // base style is position:absolute (top/left/right, no height) and thus
