@@ -15,6 +15,9 @@ export function SignUpContainer() {
   const [oauthLoading, setOauthLoading] = useState<OAuthProvider | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirmationSent, setConfirmationSent] = useState(false);
+  // Hint only — see useAuth().signUp. Swaps the confirmation copy for
+  // "sign in instead" guidance; never blocks the flow.
+  const [mayAlreadyExist, setMayAlreadyExist] = useState(false);
 
   const handleSubmit = useCallback(async () => {
     setError(null);
@@ -36,8 +39,12 @@ export function SignUpContainer() {
 
     setIsLoading(true);
     try {
-      const { confirmationRequired } = await signUp(email, password);
+      const { confirmationRequired, mayAlreadyExist: exists } = await signUp(
+        email,
+        password,
+      );
       if (confirmationRequired) {
+        setMayAlreadyExist(exists);
         setConfirmationSent(true);
       } else {
         // M10: post-sign-up routes through Subscription Selection so
@@ -95,6 +102,7 @@ export function SignUpContainer() {
       oauthLoading={oauthLoading}
       error={error}
       confirmationSent={confirmationSent}
+      mayAlreadyExist={mayAlreadyExist}
     />
   );
 }

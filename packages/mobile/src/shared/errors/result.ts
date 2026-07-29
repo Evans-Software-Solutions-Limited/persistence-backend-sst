@@ -80,6 +80,14 @@ export type AuthError = {
     | "invalid_credentials"
     | "email_taken"
     | "email_confirmation_required"
+    /**
+     * Sign-up hit an email that Supabase believes is already registered. NOT a
+     * hard failure: Supabase deliberately obfuscates this case (see
+     * `signUpWithEmail`), so it is a strong hint rather than a fact, and callers
+     * must treat it as informational copy — never as a reason to block
+     * registration.
+     */
+    | "email_may_already_exist"
     | "token_expired"
     | "network_error"
     // User dismissed a native/OAuth sign-in sheet. Not a real failure —

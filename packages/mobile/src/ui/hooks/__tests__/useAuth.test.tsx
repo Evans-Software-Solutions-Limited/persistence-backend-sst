@@ -10,7 +10,6 @@ import { InMemoryAuthAdapter } from "@/adapters/auth/__tests__/in-memory-auth.ad
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
 import { StubHealthAdapter } from "@/adapters/health";
 import { StubNotificationsAdapter } from "@/adapters/notifications";
-import { MockPaymentsAdapter } from "@/adapters/payments/__tests__/mock.adapter";
 import { InMemoryNetInfoAdapter } from "@/adapters/netInfo/__tests__/InMemoryNetInfoAdapter";
 import type { Adapters } from "@/shared/types";
 
@@ -27,7 +26,6 @@ function createTestAdapters(): {
     storage,
     health: new StubHealthAdapter(),
     notifications: new StubNotificationsAdapter(),
-    payments: new MockPaymentsAdapter(),
     netInfo: new InMemoryNetInfoAdapter(),
   };
   return { adapters, auth, storage };
@@ -366,6 +364,44 @@ describe("useAuth", () => {
     expect(result.current.isAuthenticated).toBe(true);
     expect(result.current.error).toBeNull();
   });
+
+  // `email_may_already_exist` is a HINT, not a failure: it must resolve (so it
+  // can never gate registration) while telling the screen to show "sign in
+  // instead" copy rather than "check your email", which would be a dead end.
+  it.each([
+    ["email_confirmation_required", false],
+    ["email_may_already_exist", true],
+  ] as const)(
+    "signUp resolves for %s with mayAlreadyExist=%s",
+    async (code, expected) => {
+      const { adapters, auth } = createTestAdapters();
+      jest.spyOn(auth, "signUpWithEmail").mockResolvedValue({
+        ok: false,
+        error: { kind: "auth", code, message: "nope" },
+      });
+
+      const wrapper = ({ children }: { children: ReactNode }) => (
+        <AdapterProvider adapters={adapters}>{children}</AdapterProvider>
+      );
+      const { result } = renderHook(() => useAuth(), { wrapper });
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+      let outcome: {
+        confirmationRequired: boolean;
+        mayAlreadyExist: boolean;
+      } | null = null;
+      await act(async () => {
+        outcome = await result.current.signUp("x@example.com", "password");
+      });
+
+      expect(outcome).toEqual({
+        confirmationRequired: true,
+        mayAlreadyExist: expected,
+      });
+      // Neither is surfaced as a red error banner.
+      expect(result.current.error).toBeNull();
+    },
+  );
 
   it("throws and sets error when sign-up fails", async () => {
     const { adapters, auth } = createTestAdapters();

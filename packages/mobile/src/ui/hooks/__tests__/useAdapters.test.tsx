@@ -11,7 +11,6 @@ const mockAdapters = {
   storage: {},
   health: {},
   notifications: {},
-  payments: {},
   netInfo: {},
 } as unknown as Adapters;
 

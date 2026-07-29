@@ -17,7 +17,7 @@ export type AuthState = {
   signUp: (
     email: string,
     password: string,
-  ) => Promise<{ confirmationRequired: boolean }>;
+  ) => Promise<{ confirmationRequired: boolean; mayAlreadyExist: boolean }>;
   signInWithOAuth: (provider: OAuthProvider) => Promise<void>;
   signInWithApple: () => Promise<void>;
   signOut: () => Promise<void>;
@@ -135,19 +135,27 @@ export function useAuth(): AuthState {
     async (
       email: string,
       password: string,
-    ): Promise<{ confirmationRequired: boolean }> => {
+    ): Promise<{ confirmationRequired: boolean; mayAlreadyExist: boolean }> => {
       setError(null);
       const result = await auth.signUpWithEmail(email, password);
       if (!result.ok) {
-        // email_confirmation_required is a success — user registered,
-        // just needs to verify email. Don't treat it as an error.
+        // Neither of these is an error. `email_confirmation_required` means the
+        // user registered and needs to verify. `email_may_already_exist` means
+        // Supabase silently did nothing because the address is already taken —
+        // also not a failure to surface as a red banner, but the user must be
+        // told to sign in rather than wait for an email that will never come.
+        // It is a HINT ONLY (see the adapter): it must never gate registration,
+        // which is why it resolves rather than throws.
         if (result.error.code === "email_confirmation_required") {
-          return { confirmationRequired: true };
+          return { confirmationRequired: true, mayAlreadyExist: false };
+        }
+        if (result.error.code === "email_may_already_exist") {
+          return { confirmationRequired: true, mayAlreadyExist: true };
         }
         setError(result.error);
         throw new Error(result.error.message);
       }
-      return { confirmationRequired: false };
+      return { confirmationRequired: false, mayAlreadyExist: false };
     },
     [auth],
   );

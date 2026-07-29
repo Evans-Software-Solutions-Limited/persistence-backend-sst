@@ -7,6 +7,7 @@ import {
 } from "@/ui/presenters/PrivacySettingsPresenter";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useAuth } from "@/ui/hooks/useAuth";
+import { useDeleteAccountFlow } from "@/ui/hooks/useDeleteAccountFlow";
 import { useProfilePage } from "@/ui/hooks/useProfilePage";
 
 /**
@@ -23,28 +24,10 @@ import { useProfilePage } from "@/ui/hooks/useProfilePage";
  * the full gap note.
  */
 
-/** Formats the backend's `purgeAfter` ISO timestamp for the post-delete
- *  confirmation alert. Mirrors the `formatEndDate` pattern used across the
- *  subscription screens (e.g. `CancelSubscriptionModal.tsx`). */
-function formatPurgeAfter(purgeAfter: string): string {
-  const date = new Date(purgeAfter);
-  if (Number.isNaN(date.getTime())) return "in 30 days";
-  // Pinned to UTC (rather than the device's local zone) so the displayed
-  // calendar date is stable regardless of timezone — purgeAfter is many
-  // days out, so this trades a few hours of local precision for never
-  // showing an off-by-one day near midnight.
-  return date.toLocaleDateString("en-GB", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-    timeZone: "UTC",
-  });
-}
-
 export function PrivacySettingsContainer() {
   const router = useRouter();
   const { api, storage } = useAdapters();
-  const { session, deleteAccount } = useAuth();
+  const { session } = useAuth();
   const profilePage = useProfilePage();
 
   const cachedIsPublic = profilePage.payload?.profile.isProfilePublic ?? null;
@@ -101,64 +84,10 @@ export function PrivacySettingsContainer() {
     router.push("/(app)/profile/terms" as never);
   }, [router]);
 
-  // App Store Guideline 5.1.1(v): in-app account deletion. Double-confirm —
-  // Cluster 2b revised this from an immediate irreversible purge to a
-  // 30-day soft-delete grace period: the account is deactivated now and
-  // permanently removed after 30 days, but signing back in during that
-  // window routes through the restore-account gate (AuthGate,
-  // app/_layout.tsx) instead of losing the account. On success,
-  // `deleteAccount` tears down the session and AuthGate routes to sign-in
-  // (same as sign-out); on failure the user stays signed in and can retry
-  // (the backend endpoint is idempotent).
-  const onDeleteAccount = useCallback(() => {
-    Alert.alert(
-      "Delete Account?",
-      "Your account will be scheduled for deletion. All your data — " +
-        "profile, workouts, sessions, nutrition, measurements, and goals — " +
-        "will be permanently removed after 30 days. You can restore your " +
-        "account by signing in again within that window.\n\nIf you have an " +
-        "active Apple subscription, cancel it separately in Settings → " +
-        "Subscriptions.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete Account",
-          style: "destructive",
-          onPress: () => {
-            Alert.alert(
-              "Schedule deletion?",
-              "Last chance — your account will be deactivated now and " +
-                "permanently deleted in 30 days unless you sign back in " +
-                "before then.",
-              [
-                { text: "Cancel", style: "cancel" },
-                {
-                  text: "Delete",
-                  style: "destructive",
-                  onPress: async () => {
-                    try {
-                      const { purgeAfter } = await deleteAccount();
-                      Alert.alert(
-                        "Account scheduled for deletion",
-                        "You've been signed out. Your account is " +
-                          `permanently deleted on ${formatPurgeAfter(purgeAfter)} ` +
-                          "unless you sign back in before then to restore it.",
-                      );
-                    } catch {
-                      Alert.alert(
-                        "Couldn't delete your account",
-                        "Something went wrong. Please try again.",
-                      );
-                    }
-                  },
-                },
-              ],
-            );
-          },
-        },
-      ],
-    );
-  }, [deleteAccount]);
+  // App Store Guideline 5.1.1(v): in-app account deletion. The flow itself
+  // lives in `useDeleteAccountFlow` because the Profile drawer offers the same
+  // action — one implementation, two entry points.
+  const onDeleteAccount = useDeleteAccountFlow();
 
   return (
     <PrivacySettingsPresenter

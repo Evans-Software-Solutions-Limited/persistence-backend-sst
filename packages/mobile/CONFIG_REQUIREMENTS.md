@@ -26,12 +26,11 @@ existing `persistence-mobile` app.
 
 ## Environment Variables (required in `.env`)
 
-| Variable                             | Purpose                          | Status                                                    |
-| ------------------------------------ | -------------------------------- | --------------------------------------------------------- |
-| `EXPO_PUBLIC_SUPABASE_URL`           | Supabase project URL (auth only) | **Bradley to provide**                                    |
-| `EXPO_PUBLIC_SUPABASE_ANON_KEY`      | Supabase anon key (auth only)    | **Bradley to provide**                                    |
-| `EXPO_PUBLIC_API_URL`                | SST API base URL                 | **Bradley to provide** (from `sst dev` or deployed stage) |
-| `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Stripe publishable key           | **Bradley to provide** (when payments are wired)          |
+| Variable                        | Purpose                          | Status                                                    |
+| ------------------------------- | -------------------------------- | --------------------------------------------------------- |
+| `EXPO_PUBLIC_SUPABASE_URL`      | Supabase project URL (auth only) | **Bradley to provide**                                    |
+| `EXPO_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key (auth only)    | **Bradley to provide**                                    |
+| `EXPO_PUBLIC_API_URL`           | SST API base URL                 | **Bradley to provide** (from `sst dev` or deployed stage) |
 
 ---
 
@@ -45,11 +44,22 @@ existing `persistence-mobile` app.
   the health feature is built on the new foundation
 - Dependencies needed: `@kingstinct/react-native-healthkit`, `react-native-health-connect`, `expo-health-connect`
 
-### Stripe / Apple Pay
+### Stripe / Apple Pay — REMOVED, do not reinstate on iOS
 
-- Apple Pay merchant ID preserved: `merchant.com.bradleyevans96.persistence`
-- Stripe plugin config is **not yet added** to app.json plugins (add when payments feature is built)
-- Dependencies needed: `@stripe/stripe-react-native`
+- Removed in full 2026-07-29 after App Review rejected build 38 under
+  **Guideline 2.1**: `@stripe/stripe-react-native` links the `StripeApplePay`
+  pod (and therefore PassKit) into the binary, and `app.json` declared the
+  `com.apple.developer.in-app-payments` entitlement — while no Apple Pay flow
+  was reachable, because iOS purchases route to RevenueCat / Apple IAP.
+- Gone: the dependency, the entitlement, the merchant ID, the root
+  `StripeProvider`, `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY`, the payments port and
+  adapter, and `PaymentMethodForm`.
+- **Do not re-add any of these for an iOS purchase path** — charging a payment
+  method for digital goods on iOS is a Guideline 3.1.1 violation. iOS purchasing
+  is RevenueCat only.
+- A future Android / web rail should go through RevenueCat (Play billing) rather
+  than re-linking the Stripe SDK. `useCreateSubscription` survives as the typed
+  client for `POST /subscriptions` if a non-Apple card rail is ever needed.
 
 ### Push Notifications
 

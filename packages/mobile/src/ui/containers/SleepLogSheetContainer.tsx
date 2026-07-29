@@ -6,6 +6,7 @@ import {
   SleepLogSheetPresenter,
   type SleepSaveInput,
 } from "@/ui/presenters/SleepLogSheetPresenter";
+import { useHomeSheets } from "@/state/home-sheets";
 
 /** Sleep is logged against a fixed local wake-hour anchor (Decision D1/D2). */
 const WAKE_HOUR_LOCAL = 7;
@@ -19,13 +20,11 @@ const WAKE_HOUR_LOCAL = 7;
  * (best-effort — a HealthKit failure never fails the already-accepted save).
  * Mirrors <WeighInSheetContainer> 1:1.
  */
-export function SleepLogSheetContainer({
-  visible,
-  onClose,
-}: {
-  visible: boolean;
-  onClose: () => void;
-}) {
+export function SleepLogSheetContainer() {
+  // Root-mounted (sibling of the tab Stack), so open-state comes from the
+  // shared store rather than props — same as the Fuel sheets and the drawer.
+  const visible = useHomeSheets((s) => s.sheet === "sleep");
+  const onClose = useHomeSheets((s) => s.close);
   const { health } = useAdapters();
   const log = useLogSleep();
   const [saving, setSaving] = useState(false);

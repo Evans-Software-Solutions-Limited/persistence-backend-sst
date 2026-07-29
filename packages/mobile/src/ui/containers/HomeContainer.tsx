@@ -1,11 +1,12 @@
 import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { ScrollView } from "react-native";
 import { useScrollToTopOnTabPress } from "@/ui/hooks/useScrollToTopOnTabPress";
 import { useAuth } from "@/ui/hooks/useAuth";
 import { useGetHome } from "@/ui/hooks/useGetHome";
 import { useHealthData } from "@/ui/hooks/useHealthData";
 import { useReflectStepsHabit } from "@/ui/hooks/useReflectStepsHabit";
+import { useHomeSheets } from "@/state/home-sheets";
 import { useUnreadNotificationCount } from "@/ui/hooks/useUnreadNotificationCount";
 import { useHealthSync } from "@/state/health-sync";
 import { useGetHabits } from "@/ui/hooks/useGetHabits";
@@ -20,9 +21,6 @@ import type { RingDatum } from "@/domain/models/progress";
 import { useProfilePage } from "@/ui/hooks/useProfilePage";
 import { useFuelSheets } from "@/state/fuel-sheets";
 import { HomePresenter } from "@/ui/presenters/HomePresenter";
-import { WeighInSheetContainer } from "@/ui/containers/WeighInSheetContainer";
-import { WaterLogSheetContainer } from "@/ui/containers/WaterLogSheetContainer";
-import { SleepLogSheetContainer } from "@/ui/containers/SleepLogSheetContainer";
 
 /**
  * V2 Home container (06-progress-goals, STORY-001/002). Wires the cache-first
@@ -48,9 +46,6 @@ export function HomeContainer() {
   const habitsState = useGetHabits();
   const workoutsState = useWorkouts();
   const profile = useProfilePage();
-  const [weighInOpen, setWeighInOpen] = useState(false);
-  const [waterOpen, setWaterOpen] = useState(false);
-  const [sleepOpen, setSleepOpen] = useState(false);
   const openQuickAdd = useFuelSheets((s) => s.openQuickAdd);
   const setFuelActiveDate = useFuelSheets((s) => s.setDate);
 
@@ -295,8 +290,12 @@ export function HomeContainer() {
   }, [router]);
 
   const noop = useCallback(() => {}, []);
-  const openWeighIn = useCallback(() => setWeighInOpen(true), []);
-  const closeWeighIn = useCallback(() => setWeighInOpen(false), []);
+  // The three quick-log sheets are root-mounted (siblings of the tab Stack) so
+  // they overlay the tab bar and gorhom measures the window rather than the
+  // shorter tab scene. Home only opens them; the sheets close themselves.
+  const openWeighIn = useHomeSheets((s) => s.openWeighIn);
+  const openWater = useHomeSheets((s) => s.openWater);
+  const openSleep = useHomeSheets((s) => s.openSleep);
 
   // Quick-log: "Log meal" jumps to the Fuel tab and opens the add-food sheet;
   // "Water" opens the water-log sheet (logs to the M9 water log). Home has no
@@ -310,19 +309,19 @@ export function HomeContainer() {
     setFuelActiveDate(localDayISO());
     openQuickAdd("breakfast");
   }, [router, openQuickAdd, setFuelActiveDate]);
-  const openWater = useCallback(() => setWaterOpen(true), []);
   // Logging water/sleep reflects into the habit completion cache synchronously
-  // (reflectWaterHabit / reflectSleepHabit). Re-point the read-only grid at
-  // that cache on close so the tick shows immediately — no pull-to-refresh.
-  const closeWater = useCallback(() => {
-    setWaterOpen(false);
+  // (reflectWaterHabit / reflectSleepHabit). Re-point the read-only grid at that
+  // cache once the sheet closes so the tick shows immediately — no
+  // pull-to-refresh. The sheets are no longer our children, so this arrives as a
+  // monotonic bump on the shared store (bumped for water/sleep only, matching
+  // the previous close handlers); same bridge the drawer uses for health grants.
+  const habitsRev = useHomeSheets((s) => s.habitsRev);
+  const seenHabitsRev = useRef(habitsRev);
+  useEffect(() => {
+    if (seenHabitsRev.current === habitsRev) return;
+    seenHabitsRev.current = habitsRev;
     reloadHabits();
-  }, [reloadHabits]);
-  const openSleep = useCallback(() => setSleepOpen(true), []);
-  const closeSleep = useCallback(() => {
-    setSleepOpen(false);
-    reloadHabits();
-  }, [reloadHabits]);
+  }, [habitsRev, reloadHabits]);
 
   return (
     <>
@@ -363,9 +362,6 @@ export function HomeContainer() {
         onOpenProgramme={onOpenProgramme}
         onOpenCoach={noop}
       />
-      <WeighInSheetContainer visible={weighInOpen} onClose={closeWeighIn} />
-      <WaterLogSheetContainer visible={waterOpen} onClose={closeWater} />
-      <SleepLogSheetContainer visible={sleepOpen} onClose={closeSleep} />
     </>
   );
 }

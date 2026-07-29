@@ -185,6 +185,42 @@ describe("SupabaseAuthAdapter", () => {
       }
     });
 
+    it("keeps email_confirmation_required when identities is present (real new user)", async () => {
+      mockSignUp.mockResolvedValue({
+        data: {
+          session: null,
+          user: { id: "pending-user", identities: [{ id: "i-1" }] },
+        },
+        error: null,
+      });
+
+      const result = await adapter.signUpWithEmail("new@user.com", "pass123");
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.code).toBe("email_confirmation_required");
+      }
+    });
+
+    // Supabase's anti-enumeration response for an address that already has a
+    // confirmed user: no session, no email sent, and an EMPTY identities array.
+    // Reporting "check your email" here is a dead end — nothing ever arrives.
+    it("flags email_may_already_exist when identities is an empty array", async () => {
+      mockSignUp.mockResolvedValue({
+        data: { session: null, user: { id: "obfuscated", identities: [] } },
+        error: null,
+      });
+
+      const result = await adapter.signUpWithEmail("taken@user.com", "pass123");
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.code).toBe("email_may_already_exist");
+        expect(result.error.message).toMatch(/sign in/i);
+        expect(result.error.message).toMatch(/30 days/);
+      }
+    });
+
     it("returns email_taken when user already registered", async () => {
       mockSignUp.mockResolvedValue({
         data: {},

@@ -17,13 +17,5 @@ export type {
   NotificationError,
   LocalNotification,
 } from "./notifications.port";
-export type {
-  PaymentsPort,
-  PaymentError,
-  PaymentErrorKind,
-  ApplePayCartItem,
-  CollectApplePayPaymentMethodInput,
-  CollectApplePayPaymentMethodResult,
-} from "./payments.port";
 export type { NetInfoPort } from "./netInfo.port";
 export type { SyncOperation, SyncStatus } from "./sync.types";

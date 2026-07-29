@@ -132,6 +132,46 @@ export class SupabaseAuthAdapter implements AuthPort {
       return fail({ kind: "auth", code, message: error.message });
     }
     if (!data.session) {
+      // Supabase returns NO session for two very different outcomes, and used to
+      // be collapsed into one message here:
+      //
+      //   a) a genuinely new sign-up awaiting email confirmation — an email IS
+      //      sent; and
+      //   b) an email that already has a CONFIRMED user. Supabase sends NOTHING
+      //      and returns an obfuscated user with an EMPTY `identities` array, to
+      //      avoid confirming to an attacker that the address is registered.
+      //
+      // Telling (b) to "check your email" is a dead end: no email ever arrives.
+      // It bites any returning user who taps Sign up instead of Sign in, and it
+      // is especially easy to hit after account deletion — a soft-deleted
+      // account keeps its `auth.users` row until the 30-day purge, so it still
+      // reads as registered while the app's own row is gone.
+      //
+      // ⚠ The empty-`identities` signal depends on the project's
+      // email-enumeration-protection setting, and has NOT been verified against
+      // a live Supabase project. It is therefore treated as a HINT that only
+      // changes the copy — `email_may_already_exist` is non-fatal and still
+      // reports confirmation-pending upstream, so a false positive shows
+      // slightly-wrong wording and a false negative restores today's behaviour.
+      // Neither can block a real registration.
+      // Only an EXPLICITLY EMPTY array counts. A missing `identities` is not
+      // evidence of anything — older/other response shapes simply omit it — and
+      // treating absence as "already registered" would misread a genuinely new
+      // sign-up. `Array.isArray` keeps the hint conservative in the one direction
+      // that matters.
+      const looksAlreadyRegistered =
+        data.user != null &&
+        Array.isArray(data.user.identities) &&
+        data.user.identities.length === 0;
+      if (looksAlreadyRegistered) {
+        return fail({
+          kind: "auth",
+          code: "email_may_already_exist",
+          message:
+            "An account already exists for this email. Sign in instead — if " +
+            "you deleted it within the last 30 days, signing in restores it.",
+        });
+      }
       // Email confirmation required — distinct code so callers can show
       // a "check your email" message rather than a generic error banner
       return fail({

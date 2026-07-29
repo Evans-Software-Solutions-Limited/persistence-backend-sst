@@ -7,7 +7,6 @@ import { SupabaseAuthAdapter } from "@/adapters/auth";
 import { createHealthAdapter } from "@/adapters/health";
 import { RNNetInfoAdapter } from "@/adapters/netInfo";
 import { ExpoNotificationsAdapter } from "@/adapters/notifications";
-import { StripeApplePayAdapter } from "@/adapters/payments";
 import { RevenueCatPurchasesAdapter } from "@/adapters/purchases";
 import { SQLiteStorageAdapter } from "@/adapters/storage";
 import type { PurchasesPort } from "@/domain/ports/purchases.port";
@@ -17,9 +16,10 @@ import { AdapterProvider, type StorageStatus } from "@/ui/hooks/useAdapters";
 import { ThemeProvider } from "@/ui/theme";
 
 /**
- * Build the RevenueCat purchases adapter — iOS only (M12). On web / Android
- * the Stripe `payments` rail handles subscriptions and this stays `undefined`.
- * Configured eagerly with the **public** iOS SDK key (client-safe); an absent
+ * Build the RevenueCat purchases adapter — iOS only (M12), and the app's ONLY
+ * purchase rail. On Android this stays `undefined` until Play billing is wired
+ * through RevenueCat, so the paywall degrades to its inline "unavailable"
+ * state. Configured eagerly with the **public** iOS SDK key (client-safe); an absent
  * key leaves the adapter unconfigured so the iOS paywall degrades to its
  * inline "unavailable" state rather than throwing on the first SDK call.
  */
@@ -41,8 +41,8 @@ function createPurchasesAdapter(): PurchasesPort | undefined {
  * 3. Storage (SQLite, offline-first)
  * 4. Health (HealthKit / Health Connect)
  * 5. Notifications (Expo)
- * 6. Payments (Stripe Apple Pay — M10)
- * 7. NetInfo (RN community netinfo — M10.5)
+ * 6. NetInfo (RN community netinfo — M10.5)
+ * 7. Purchases (RevenueCat native IAP — M12, iOS only)
  *
  * Also mounts a Tanstack Query client at the root for the M10
  * subscription hooks (useSubscriptionTiers / useMySubscription /
@@ -68,7 +68,6 @@ export function AppProviders({ children }: { children: ReactNode }) {
       storage,
       health: createHealthAdapter(),
       notifications: new ExpoNotificationsAdapter(),
-      payments: new StripeApplePayAdapter(),
       netInfo: new RNNetInfoAdapter(),
       purchases: createPurchasesAdapter(),
     };

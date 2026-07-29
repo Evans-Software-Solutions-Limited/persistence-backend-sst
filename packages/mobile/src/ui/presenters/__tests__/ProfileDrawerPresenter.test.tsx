@@ -42,6 +42,7 @@ const baseProps: ProfileDrawerPresenterProps = {
   onOpenSubscription: jest.fn(),
   onOpenNotifications: jest.fn(),
   onOpenSettings: jest.fn(),
+  onDeleteAccount: jest.fn(),
   onSignOut: jest.fn(),
 };
 
@@ -297,6 +298,49 @@ describe("ProfileDrawerPresenter", () => {
     fireEvent.press(getByTestId("sign-out-confirm-cancel"));
     expect(queryByTestId("sign-out-confirm")).toBeNull();
     expect(onSignOut).not.toHaveBeenCalled();
+  });
+
+  // App Store Guideline 5.1.1(v) — App Review rejected build 38 for having no
+  // findable account-deletion option. These three tests pin the fix: the row is
+  // present and named, it fires, and — critically — it survives the drawer's
+  // profile-didn't-load state, which previously early-returned past every row.
+  it("account deletion: the drawer offers a named Delete account row", () => {
+    const { getByTestId, getByText } = renderDrawer({});
+    expect(getByTestId("row-delete-account")).toBeTruthy();
+    expect(getByText("Delete account")).toBeTruthy();
+  });
+
+  it("account deletion: the row fires onDeleteAccount", () => {
+    const onDeleteAccount = jest.fn();
+    const { getByTestId } = renderDrawer({ onDeleteAccount });
+
+    fireEvent.press(getByTestId("row-delete-account"));
+    expect(onDeleteAccount).toHaveBeenCalledTimes(1);
+  });
+
+  it("account deletion: stays reachable when the profile fetch fails", () => {
+    const onDeleteAccount = jest.fn();
+    const { getByTestId } = renderDrawer({
+      profile: undefined,
+      profileErrored: true,
+      onDeleteAccount,
+    });
+
+    // The errored body renders — and deletion is still on it.
+    expect(getByTestId("profile-drawer-error")).toBeTruthy();
+    fireEvent.press(getByTestId("row-delete-account"));
+    expect(onDeleteAccount).toHaveBeenCalledTimes(1);
+  });
+
+  it("account deletion: stays reachable while the profile is still loading", () => {
+    const onDeleteAccount = jest.fn();
+    const { getByTestId } = renderDrawer({
+      profile: undefined,
+      onDeleteAccount,
+    });
+
+    fireEvent.press(getByTestId("row-delete-account"));
+    expect(onDeleteAccount).toHaveBeenCalledTimes(1);
   });
 
   it("fires onClose from the header close button", () => {

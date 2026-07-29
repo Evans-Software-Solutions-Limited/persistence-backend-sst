@@ -45,7 +45,6 @@ function makeAdapters(
     storage,
     auth: {} as Adapters["auth"],
     health: {} as Adapters["health"],
-    payments: {} as Adapters["payments"],
     notifications: notifications as unknown as Adapters["notifications"],
     netInfo: {} as Adapters["netInfo"],
   } as Adapters;

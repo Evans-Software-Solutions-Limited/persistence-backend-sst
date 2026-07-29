@@ -14,14 +14,11 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { DEFAULT_TRIAL_DAYS } from "@/domain/models/subscription";
 import type {
   BillingCycle,
-  MySubscription,
   SubscriptionTier,
   SubscriptionTierName,
 } from "@/domain/models/subscription";
-import type { PaymentsPort } from "@/domain/ports/payments.port";
 import { CurrentSubscriptionStatusCard } from "@/ui/components/subscription/CurrentSubscriptionStatusCard";
 import { OfflineBanner } from "@/ui/components/subscription/OfflineBanner";
-import { PaymentMethodForm } from "@/ui/components/subscription/PaymentMethodForm";
 import { PLogoDrawLoader } from "@/ui/components/PLogoDrawLoader";
 import { TRAINER_TIER_NAMES } from "@/domain/services/subscriptionService";
 import { SubscriptionCard } from "@/ui/components/subscription/SubscriptionCard";
@@ -79,19 +76,6 @@ export interface SubscriptionSelectionPresenterProps {
   isOffline: boolean;
   isSlowLoading: boolean;
 
-  // Payment-form state
-  selectedTierForPayment: SubscriptionTierName | null;
-  isProcessingSubscription: boolean;
-  /** Pence — drives the Apple Pay sheet amount + recurringAmount. */
-  paymentFormProps: {
-    amount: number;
-    currency: string;
-    trialDuration: number | null;
-    isTrialEligible: boolean;
-    recurringAmount: number;
-  } | null;
-  payments: PaymentsPort;
-
   // Callbacks (container)
   onBillingCycleChange: (cycle: BillingCycle) => void;
   onTierSelect: (tier: SubscriptionTierName) => void;
@@ -99,8 +83,6 @@ export interface SubscriptionSelectionPresenterProps {
   onBack: () => void;
   onRetry: () => void;
   onCancelSubscription: () => void;
-  onPaymentMethodReady: (paymentMethodId: string) => void;
-  onPaymentMethodError: (error: string) => void;
 }
 
 export function SubscriptionSelectionPresenter(
@@ -123,18 +105,12 @@ export function SubscriptionSelectionPresenter(
     currentTierDisplayName,
     isOffline,
     isSlowLoading,
-    selectedTierForPayment,
-    isProcessingSubscription,
-    paymentFormProps,
-    payments,
     onBillingCycleChange,
     onTierSelect,
     onRoleChange,
     onBack,
     onRetry,
     onCancelSubscription,
-    onPaymentMethodReady,
-    onPaymentMethodError,
   } = props;
 
   // User-tier cards: catalog-driven, not a hardcoded "premium" lookup —
@@ -197,7 +173,6 @@ export function SubscriptionSelectionPresenter(
           showTrialBanner={showTrial}
           trialBannerText={`${DEFAULT_TRIAL_DAYS}-day free trial`}
           onPress={() => onTierSelect(tier.tierName)}
-          disabled={!!selectedTierForPayment || isProcessingSubscription}
           getFeaturesList={getFeaturesList}
           isTrainer={false}
         />,
@@ -212,8 +187,6 @@ export function SubscriptionSelectionPresenter(
     currentTier,
     hasTrialEligibilityData,
     isTrialEligibleUser,
-    selectedTierForPayment,
-    isProcessingSubscription,
     onTierSelect,
   ]);
 
@@ -254,7 +227,6 @@ export function SubscriptionSelectionPresenter(
             trialBannerText={`${DEFAULT_TRIAL_DAYS}-day free trial`}
             onStandardPress={() => {}}
             onProPress={() => onTierSelect(tier.tierName)}
-            disabled={!!selectedTierForPayment || isProcessingSubscription}
           />,
         );
       }
@@ -268,8 +240,6 @@ export function SubscriptionSelectionPresenter(
     currentTier,
     hasTrialEligibilityData,
     isTrialEligibleTrainer,
-    selectedTierForPayment,
-    isProcessingSubscription,
     onTierSelect,
   ]);
 
@@ -329,7 +299,6 @@ export function SubscriptionSelectionPresenter(
         <TouchableOpacity
           style={styles.backButton}
           onPress={onBack}
-          disabled={!!selectedTierForPayment || isProcessingSubscription}
           testID="subscription-selection-back"
           accessibilityRole="button"
           accessibilityLabel="Go back"
@@ -341,21 +310,6 @@ export function SubscriptionSelectionPresenter(
       </View>
 
       {isOffline && <OfflineBanner />}
-
-      {isProcessingSubscription && (
-        <View
-          style={styles.processingOverlay}
-          testID="subscription-selection-processing"
-        >
-          <View style={styles.processingContainer}>
-            <PLogoDrawLoader />
-            <Text style={styles.processingText}>
-              Processing subscription...
-            </Text>
-            <Text style={styles.processingSubtext}>Please wait</Text>
-          </View>
-        </View>
-      )}
 
       <KeyboardAvoidingView
         style={styles.container}
@@ -485,7 +439,6 @@ export function SubscriptionSelectionPresenter(
                   isOffline && styles.disabledOpacity,
                 ]}
                 onPress={onCancelSubscription}
-                disabled={!!selectedTierForPayment || isProcessingSubscription}
                 testID="cancel-subscription-button"
               >
                 <Ionicons name="close-circle" size={16} color={color.$error} />
@@ -494,25 +447,11 @@ export function SubscriptionSelectionPresenter(
             </View>
           )}
 
-          {selectedTierForPayment && paymentFormProps && (
-            <PaymentMethodForm
-              amount={paymentFormProps.amount}
-              currency={paymentFormProps.currency}
-              billingCycle={billingCycle}
-              onPaymentMethodReady={onPaymentMethodReady}
-              onError={onPaymentMethodError}
-              trialDuration={paymentFormProps.trialDuration}
-              isTrialEligible={paymentFormProps.isTrialEligible}
-              recurringAmount={paymentFormProps.recurringAmount}
-              isProcessing={isProcessingSubscription}
-              shouldTrigger
-              payments={payments}
-            />
-          )}
-
-          {/* Apple §3.1.2 parity with the IAP rail — same disclosure block, so
-              the two purchase surfaces can't drift out of compliance. */}
-          <SubscriptionLegalFooter rail="card" />
+          {/* Apple §3.1.2 / Play parity. `rail="store"` (not "card"): the card
+              rail is gone, so nothing here charges a payment method, and any
+              subscription the user holds was bought through platform IAP and is
+              managed in store settings. Naming the card rail would be untrue. */}
+          <SubscriptionLegalFooter rail="store" />
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -592,82 +531,6 @@ export function getFeaturesList(
   return features;
 }
 
-/**
- * Trial-eligibility + duration derivation for a tier selection.
- *
- * Mirrors legacy lines 499–537 + 754–796 (shared by the presenter's
- * PaymentMethodForm prop builder and the container's
- * createSubscription dispatch). Exported pure for unit-tests.
- *
- * Reinstating a cancelled-but-still-in-trial subscription preserves
- * the remaining trial days; everything else falls back to the
- * tier-specific eligibility flags from `MySubscription`.
- */
-export function deriveTrialEligibility(args: {
-  tierName: SubscriptionTierName;
-  isReinstatingCurrentTier: boolean;
-  subscription: Pick<MySubscription, "trialEndsAt" | "paymentStatus"> | null;
-  isTrialEligibleUser: boolean;
-  isTrialEligibleTrainer: boolean;
-}): { isTrialEligible: boolean; trialDuration: number | null } {
-  const {
-    tierName,
-    isReinstatingCurrentTier,
-    subscription,
-    isTrialEligibleUser,
-    isTrialEligibleTrainer,
-  } = args;
-
-  const hasTrialEndDate = !!subscription?.trialEndsAt;
-  const isPaymentStatusTrialing = subscription?.paymentStatus === "trialing";
-  const isInTrialPeriod =
-    hasTrialEndDate &&
-    new Date(subscription!.trialEndsAt!) > new Date() &&
-    isPaymentStatusTrialing;
-
-  if (
-    isReinstatingCurrentTier &&
-    isInTrialPeriod &&
-    subscription?.trialEndsAt
-  ) {
-    const trialEndDate = new Date(subscription.trialEndsAt);
-    const now = new Date();
-    const remainingDays = Math.ceil(
-      (trialEndDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
-    );
-    const remainingPositive = remainingDays > 0;
-    return {
-      isTrialEligible: remainingPositive,
-      trialDuration: remainingPositive ? remainingDays : null,
-    };
-  }
-
-  if (tierName === "premium" || tierName === "premium_plus") {
-    // premium_plus (M19-P0) is trial-eligible on the SAME user track as
-    // premium — one trial per user across the consumer track, not one
-    // per tier (mirrors `resolveTrial` in subscriptionsCreateHandler.ts).
-    return {
-      isTrialEligible: isTrialEligibleUser,
-      trialDuration: isTrialEligibleUser ? DEFAULT_TRIAL_DAYS : null,
-    };
-  }
-  // Post tier-simplification: any trainer tier gets the same free trial
-  // (was `_pro` suffix-checked when Standard trainer tiers existed). All
-  // tiers share one duration now — see DEFAULT_TRIAL_DAYS.
-  const trainerTiers: ReadonlySet<SubscriptionTierName> = new Set([
-    "individual_trainer",
-    "small_business",
-    "medium_enterprise",
-  ]);
-  if (trainerTiers.has(tierName)) {
-    return {
-      isTrialEligible: isTrialEligibleTrainer,
-      trialDuration: isTrialEligibleTrainer ? DEFAULT_TRIAL_DAYS : null,
-    };
-  }
-  return { isTrialEligible: false, trialDuration: null };
-}
-
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
@@ -683,41 +546,6 @@ const styles = StyleSheet.create({
     color: color.$text,
     fontSize: 16,
     marginTop: 16,
-  },
-  processingOverlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: color.$bg + "E6",
-    zIndex: 1000,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  processingContainer: {
-    backgroundColor: color.$surface,
-    borderRadius: 16,
-    padding: 32,
-    alignItems: "center",
-    shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.2,
-    shadowRadius: 16,
-    elevation: 8,
-    minWidth: 200,
-  },
-  processingText: {
-    color: color.$text,
-    fontSize: 16,
-    fontWeight: "600",
-    marginTop: 16,
-    textAlign: "center",
-  },
-  processingSubtext: {
-    color: color.$text2,
-    fontSize: 14,
-    marginTop: 4,
   },
   errorContainer: {
     flex: 1,
