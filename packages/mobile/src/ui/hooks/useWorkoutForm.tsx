@@ -27,10 +27,18 @@ export type WorkoutFormExercise = {
   superset_group: number | null;
 };
 
+/**
+ * NB: there is deliberately no `estimatedDurationMinutes` here. The creator and
+ * editor expose no duration control (legacy didn't either), so the field only
+ * ever held a seeded 30 that the container then sent on every create — which is
+ * why every V2 workout was stored as "30 min" regardless of its contents. The
+ * server now derives the estimate from the exercise plan
+ * (`application/workouts/estimateDuration.ts`, a port of the legacy heuristic).
+ * If a duration control is ever added, it comes back with a real UI behind it.
+ */
 export type WorkoutFormState = {
   name: string;
   description: string;
-  estimatedDurationMinutes: number;
   visibility: "private" | "friends" | "public";
   /**
    * Does this workout show in its AUTHOR's personal "My Workouts"? Athlete
@@ -44,7 +52,6 @@ export type WorkoutFormState = {
 export const EMPTY_FORM_STATE: WorkoutFormState = {
   name: "",
   description: "",
-  estimatedDurationMinutes: 30,
   visibility: "private",
   showInOwnerLibrary: true,
   exercises: [],
@@ -53,7 +60,6 @@ export const EMPTY_FORM_STATE: WorkoutFormState = {
 type Action =
   | { type: "setName"; value: string }
   | { type: "setDescription"; value: string }
-  | { type: "setEstimatedDuration"; value: number }
   | { type: "setVisibility"; value: WorkoutFormState["visibility"] }
   | { type: "setShowInOwnerLibrary"; value: boolean }
   | {
@@ -78,8 +84,6 @@ function reducer(state: WorkoutFormState, action: Action): WorkoutFormState {
       return { ...state, name: action.value };
     case "setDescription":
       return { ...state, description: action.value };
-    case "setEstimatedDuration":
-      return { ...state, estimatedDurationMinutes: action.value };
     case "setVisibility":
       return { ...state, visibility: action.value };
     case "setShowInOwnerLibrary":
@@ -157,7 +161,6 @@ export type WorkoutFormHandle = {
   isDirty: boolean;
   setName: (value: string) => void;
   setDescription: (value: string) => void;
-  setEstimatedDuration: (value: number) => void;
   setVisibility: (value: WorkoutFormState["visibility"]) => void;
   setShowInOwnerLibrary: (value: boolean) => void;
 
@@ -189,10 +192,6 @@ export function useWorkoutForm(
   );
   const setDescription = useCallback(
     (value: string) => dispatch({ type: "setDescription", value }),
-    [],
-  );
-  const setEstimatedDuration = useCallback(
-    (value: number) => dispatch({ type: "setEstimatedDuration", value }),
     [],
   );
   const setVisibility = useCallback(
@@ -243,7 +242,6 @@ export function useWorkoutForm(
     isDirty,
     setName,
     setDescription,
-    setEstimatedDuration,
     setVisibility,
     setShowInOwnerLibrary,
     addExercises,
@@ -258,7 +256,6 @@ function shallowEqualForm(a: WorkoutFormState, b: WorkoutFormState): boolean {
   if (a === b) return true;
   if (a.name !== b.name) return false;
   if (a.description !== b.description) return false;
-  if (a.estimatedDurationMinutes !== b.estimatedDurationMinutes) return false;
   if (a.visibility !== b.visibility) return false;
   if (a.showInOwnerLibrary !== b.showInOwnerLibrary) return false;
   if (a.exercises.length !== b.exercises.length) return false;

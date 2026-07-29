@@ -25,6 +25,12 @@ const SUMMARY_MODEL_ID =
 // fit under it with headroom: 2 × 12s + overhead < 30s (mirrors aiEstimation).
 const CLIENT_TIMEOUT_MS = 12_000;
 const MAX_TOKENS = 700;
+/**
+ * Re-exported under an unambiguous name so `aiBudget.test.ts` can assert this
+ * surface FITS its attempt — the positive case that stops the over-budget
+ * inventory from quietly growing to cover everything.
+ */
+export const COACH_SUMMARY_MAX_TOKENS = MAX_TOKENS;
 const TOOL_NAME = "report_summary";
 
 /** Structured inputs = Client Detail modules a–f + this-week rollup. */
@@ -112,14 +118,40 @@ let cachedClient: MinimalBedrockClient | null = null;
 /**
  * Lazily construct the real client, cached across warm-Lambda calls. Never
  * constructed in tests — they always pass `deps.client`.
+ *
+ * ## ⚠ `maxRetries: 0` — same reason as `nutrition/services/aiBedrockClient`
+ *
+ * This module keeps its own copy of the client seam on purpose (see the header:
+ * `trainers/` stays independent of the nutrition module). That independence has
+ * a cost — a bug fixed over there is NOT fixed here — and this is the bug.
+ *
+ * The Anthropic SDK defaults `maxRetries` to **2**. Left unset, one
+ * `createWithRetry` call below is 3 attempts × 12 s = 36 s, and it then retries
+ * that: ~72 s against a 29 s Lambda. The function is killed mid-attempt, so
+ * `ClientSummaryUnavailableError` is never thrown — no 503, no log line — and
+ * because `didInfer` is set before the call in
+ * `trainersMeGenerateClientAiSummaryHandler`, the hard kill also skips the
+ * `finally` that writes the usage row for an inference Bedrock has billed.
+ *
+ * Loadout's re-map failed exactly this way on staging 2026-07-28. This surface
+ * had not yet been unlucky enough to hit it.
+ *
+ * ⚠ If you change the retry policy here, change it in
+ * `nutrition/services/aiBedrockClient.ts` too, and vice versa.
  */
-function getDefaultClient(): MinimalBedrockClient {
+export function getDefaultClient(): MinimalBedrockClient {
   if (!cachedClient) {
     cachedClient = new AnthropicBedrock({
       timeout: CLIENT_TIMEOUT_MS,
+      maxRetries: 0,
     }) as unknown as MinimalBedrockClient;
   }
   return cachedClient;
+}
+
+/** Test seam: drop the cached client so construction can be re-asserted. */
+export function resetDefaultClientForTests(): void {
+  cachedClient = null;
 }
 
 // ─── Forced tool ─────────────────────────────────────────────────────────────
@@ -220,9 +252,17 @@ async function createWithRetry(
   }
 }
 
+/**
+ * ⚠ 408/409/429 are here because `maxRetries: 0` above removed the SDK's own
+ * retry, which covered them. 429 is a Bedrock throttle and is `< 500`, so
+ * without this line turning the hidden retries off would have turned a routine
+ * throttle into a first-attempt failure. Mirrors
+ * `nutrition/services/aiBedrockClient.isRetryable` — keep them in step.
+ */
 function isRetryable(error: unknown): boolean {
   const status = extractStatus(error);
   if (status === undefined) return true; // network/timeout/unknown
+  if (status === 408 || status === 409 || status === 429) return true;
   return status >= 500;
 }
 

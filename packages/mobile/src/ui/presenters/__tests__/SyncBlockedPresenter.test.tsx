@@ -26,6 +26,11 @@ function makeEntry(overrides: Partial<SyncQueueEntry> = {}): SyncQueueEntry {
       upgradePriceMonthly: 12.99,
       blockedAt: "2026-05-24T10:00:00.000Z",
     },
+    idempotencyKey: null,
+    nextAttemptAt: null,
+    deferCount: 0,
+    dispatchCount: 0,
+    deferKind: null,
     ...overrides,
   };
 }

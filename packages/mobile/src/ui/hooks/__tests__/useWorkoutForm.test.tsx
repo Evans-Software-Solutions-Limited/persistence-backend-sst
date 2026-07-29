@@ -18,16 +18,21 @@ describe("useWorkoutForm", () => {
     expect(result.current.isDirty).toBe(true);
   });
 
-  it("tracks description + estimated duration + visibility", () => {
+  it("tracks description + visibility", () => {
     const { result } = renderHook(() =>
       useWorkoutForm(EMPTY_FORM_STATE, generateId()),
     );
     act(() => result.current.setDescription("warm up first"));
-    act(() => result.current.setEstimatedDuration(45));
     act(() => result.current.setVisibility("friends"));
     expect(result.current.state.description).toBe("warm up first");
-    expect(result.current.state.estimatedDurationMinutes).toBe(45);
     expect(result.current.state.visibility).toBe("friends");
+  });
+
+  it("holds no duration field — the server derives it from the plan", () => {
+    // Regression guard: the form used to seed `estimatedDurationMinutes: 30`
+    // with no UI to change it, and the container sent that 30 on every create,
+    // pinning every workout to "30 min".
+    expect(EMPTY_FORM_STATE).not.toHaveProperty("estimatedDurationMinutes");
   });
 
   it("addExercises stamps incremental sort_order + null superset_group", () => {
@@ -146,7 +151,6 @@ describe("useWorkoutForm", () => {
       result.current.reset({
         name: "hello",
         description: "",
-        estimatedDurationMinutes: 30,
         visibility: "private",
         showInOwnerLibrary: true,
         exercises: [],

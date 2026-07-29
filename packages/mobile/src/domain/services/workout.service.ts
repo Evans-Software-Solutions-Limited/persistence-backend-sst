@@ -97,25 +97,67 @@ function sanitizeExerciseInput(ex: WorkoutExerciseInput): WorkoutExerciseInput {
   return { ...ex, notes };
 }
 
+/** ~1.25 min of work per set. Legacy `DEFAULT_WORK_PER_SET_SECONDS`. */
+const WORK_PER_SET_SECONDS = 75;
+/** 2 min between groups/standalone blocks. Legacy `DEFAULT_REST_BETWEEN_GROUPS_SECONDS`. */
+const REST_BETWEEN_GROUPS_SECONDS = 120;
+const FALLBACK_SETS = 1;
+const FALLBACK_REST_SECONDS = 90;
 /**
- * Estimate workout duration from exercises. Mirrors the legacy
- * heuristic: `targetSets * (avg work seconds + restSeconds)` summed
- * across exercises, bumped to the nearest minute.
+ * What an EMPTY plan estimates to. Matches the `workouts` column default, so a
+ * workout with no exercises keeps reading "30 min" rather than "0m".
+ */
+export const EMPTY_PLAN_DURATION_MINUTES = 30;
+
+/**
+ * Estimate workout duration from the exercise plan.
  *
- * Used as a fallback when the user hasn't entered an explicit
- * `estimatedDurationMinutes` on the form.
+ * ⚠ This MUST stay in step with the server's
+ * `microservices/core/src/application/workouts/estimateDuration.ts`, which is
+ * the authority — this copy exists only so the OPTIMISTIC row written before
+ * the create/update round-trips shows the same number the server will store.
+ * Divergence shows up as the duration visibly changing after a sync.
+ *
+ * Specifically it mirrors the server's `resolveEstimatedDurationMinutes`, not
+ * its bare `estimateWorkoutDurationMinutes`: an EMPTY plan returns the column
+ * default (30), not the estimator's 0. The update path must therefore not call
+ * this for an empty plan — the server leaves the stored value untouched there,
+ * and `update-workout.command.ts` guards on `length > 0` to match.
+ *
+ * It previously claimed to mirror the legacy heuristic and did not: 35s of work
+ * per set instead of 75, rest charged on every set instead of `sets − 1`, no
+ * superset grouping, no inter-group rest, and rounding to the nearest minute
+ * rather than up to 5. It also had no callers. This is the real port — group by
+ * superset (standalone exercises are their own group), `sets × 75s` work plus
+ * `(sets − 1) × rest` inside each group, `120s` between groups but not after
+ * the last, rounded up to the nearest 5 minutes.
  */
 export function calculateEstimatedDuration(
   exercises: readonly WorkoutExercise[],
 ): number {
-  const WORK_SECONDS_PER_SET = 35; // legacy heuristic
-  let total = 0;
+  if (exercises.length === 0) return EMPTY_PLAN_DURATION_MINUTES;
+
+  const groups = new Map<string, WorkoutExercise[]>();
   for (const ex of exercises) {
-    const sets = ex.targetSets ?? 3;
-    const rest = ex.restSeconds ?? 90;
-    total += sets * (WORK_SECONDS_PER_SET + rest);
+    const key =
+      ex.supersetGroup != null ? `g:${ex.supersetGroup}` : `s:${ex.sortOrder}`;
+    const existing = groups.get(key);
+    if (existing) existing.push(ex);
+    else groups.set(key, [ex]);
   }
-  return Math.max(1, Math.round(total / 60));
+
+  let totalSeconds = 0;
+  for (const members of groups.values()) {
+    for (const ex of members) {
+      const sets = ex.targetSets ?? FALLBACK_SETS;
+      const rest = ex.restSeconds ?? FALLBACK_REST_SECONDS;
+      totalSeconds += sets * WORK_PER_SET_SECONDS;
+      totalSeconds += Math.max(0, sets - 1) * rest;
+    }
+  }
+  totalSeconds += Math.max(0, groups.size - 1) * REST_BETWEEN_GROUPS_SECONDS;
+
+  return Math.ceil(Math.ceil(totalSeconds / 60) / 5) * 5;
 }
 
 /**

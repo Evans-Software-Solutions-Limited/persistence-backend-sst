@@ -1,0 +1,39 @@
+-- Subscription-transfer notice — extend notification_type enum for the
+-- best-effort notification sent to the account that LOST a subscription when
+-- RevenueCat transferred it to another app account.
+--
+--   subscription_transferred — sent to the losing user (a `transferred_from`
+--     App User ID on a RevenueCat TRANSFER event) once their live mirror has
+--     actually been revoked. Best-effort, post-sync (a delivery failure must
+--     never fail the webhook, or RevenueCat retries the whole sync forever).
+--
+-- Why this exists: Apple binds a subscription to the APPLE ID, not to our app
+-- account, and "Restore Purchases" re-attaches it to whichever app account is
+-- signed in. That is Apple's designed behaviour and cannot be gated on our own
+-- account's email (StoreKit never exposes the Apple ID's address). RevenueCat is
+-- configured to TRANSFER rather than share, so exactly one app account holds a
+-- given transaction at a time — verified in prod data: original_transaction_id
+-- 2000001207527451 moved 8073c419 → 6f487b7a and the loser was cancelled 0.5s
+-- after the TRANSFER event processed.
+--
+-- The gap that remains is that the loss is SILENT. The move is reversible in one
+-- tap (the legitimate Apple ID holder restores it straight back), so telling the
+-- losing account is the whole mitigation: it converts a confusing disappearance
+-- into something the user can immediately undo. Matters most for the realistic
+-- cases — a shared family device, or an Apple ID used by someone else.
+--
+-- Per specs/_shared/cross-cuts.md § 5 the notification_type enum is *owned* by
+-- 09-notifications-social; each producing slice sequences its own ADD VALUE
+-- before it emits. Without this migration the first INSERT INTO notifications
+-- with type 'subscription_transferred' fails at runtime with
+-- `invalid input value for enum notification_type`.
+--
+-- Why a standalone file: Postgres forbids *using* a newly added enum value in
+-- the same transaction that adds it. Keeping the ADD VALUE statement in its own
+-- migration (no usage here) sidesteps that entirely — mirrors the precedent in
+-- 20260720120100_coaching_relationship_ended_notification_type.sql.
+--
+-- Idempotent: ADD VALUE IF NOT EXISTS is a no-op on re-run. Append-only —
+-- forward/back safe (a rollback leaves one unused enum value, harmless).
+
+ALTER TYPE notification_type ADD VALUE IF NOT EXISTS 'subscription_transferred';

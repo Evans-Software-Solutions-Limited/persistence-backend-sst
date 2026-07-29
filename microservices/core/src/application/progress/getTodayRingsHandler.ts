@@ -1,6 +1,7 @@
 import Elysia from "elysia";
 import { VolumeService } from "../repositories/volumeService";
 import { HomeReadService } from "../repositories/homeReadService";
+import { HabitConfigService } from "../repositories/habitConfigService";
 import { NutritionEntryService } from "../repositories/nutritionEntryService";
 import { NutritionTargetService } from "../repositories/nutritionTargetService";
 import {
@@ -12,8 +13,8 @@ import { loadRings } from "./loadRings";
 
 /**
  * GET /users/me/today-rings — the standalone Move/Train/Fuel ring data
- * (STORY-001). Fuel is live once the user has a daily kcal target (M9);
- * otherwise gated. See loadRings for the composition.
+ * (STORY-001). All three are daily. Fuel is live once the user has a daily kcal
+ * target (M9); otherwise gated. See loadRings for the composition.
  */
 export const getTodayRingsHandler = new Elysia()
   .derive(async ({ headers }) => ({
@@ -22,6 +23,7 @@ export const getTodayRingsHandler = new Elysia()
   .onBeforeHandle(requireAuth)
   .use(VolumeService)
   .use(HomeReadService)
+  .use(HabitConfigService)
   .use(NutritionEntryService)
   .use(NutritionTargetService)
   .get("/users/me/today-rings", async (ctx) => {
@@ -29,9 +31,11 @@ export const getTodayRingsHandler = new Elysia()
     const rings = await loadRings(
       {
         getUserTimezone: (u) => ctx.VolumeRepository.getUserTimezone(u),
-        totalVolume: (u, tz, s, e) =>
-          ctx.VolumeRepository.totalVolume(u, tz, s, e),
         getTodaySteps: (u, d) => ctx.HomeReadRepository.getTodaySteps(u, d),
+        getTodayActiveKcal: (u, d) =>
+          ctx.HomeReadRepository.getTodayActiveKcal(u, d),
+        getDailyStepsGoal: (u) =>
+          ctx.HabitConfigRepository.getActiveDailyTarget(u, "steps"),
         sumKcalForDay: (u, d) =>
           ctx.NutritionEntryRepository.sumKcalForDay(u, d),
         getDailyKcalTarget: async (u) =>

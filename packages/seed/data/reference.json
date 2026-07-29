@@ -99,6 +99,10 @@
       "description": "Cable crossover or functional trainer"
     },
     {
+      "name": "Machine",
+      "description": "A resistance machine not covered by a more specific entry."
+    },
+    {
       "name": "Smith Machine",
       "description": "Guided barbell machine"
     },

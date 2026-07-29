@@ -186,7 +186,11 @@ describe("ExercisesCreateHandler", () => {
       expect(response.status).toBe(422);
     });
 
-    it("rejects non-UUID primary_muscles entries with 422", async () => {
+    it("rejects a non-UUID primary_muscles entry with an actionable 400", async () => {
+      // Previously a bare 422 from `format: "uuid"` in the schema. The value in
+      // this test — `"chest"` — is exactly what the mobile app shipped for
+      // months, and the opaque 422 is why nobody could tell what was wrong from
+      // a sync-failure record. The rejection now names the offending value.
       const { exercisesCreateHandler } =
         await import("../exercisesCreateHandler");
       const response = await exercisesCreateHandler.handle(
@@ -202,7 +206,53 @@ describe("ExercisesCreateHandler", () => {
           }),
         }),
       );
-      expect(response.status).toBe(422);
+      expect(response.status).toBe(400);
+      const body = (await response.json()) as { error: string };
+      expect(body.error).toContain("primary_muscles");
+      expect(body.error).toContain("chest");
+    });
+
+    it("rejects a non-UUID equipment_required entry", async () => {
+      const { exercisesCreateHandler } =
+        await import("../exercisesCreateHandler");
+      const response = await exercisesCreateHandler.handle(
+        new Request("http://localhost/exercises", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            authorization: "Bearer token",
+          },
+          body: JSON.stringify({
+            name: "Squat",
+            equipment_required: ["barbell"],
+          }),
+        }),
+      );
+      expect(response.status).toBe(400);
+      const body = (await response.json()) as { error: string };
+      expect(body.error).toContain("equipment_required");
+    });
+
+    it("accepts well-formed catalogue UUIDs", async () => {
+      // Guards the relaxed schema: loosening `format: "uuid"` to `t.String()`
+      // must not accidentally reject the valid shape.
+      const { exercisesCreateHandler } =
+        await import("../exercisesCreateHandler");
+      const response = await exercisesCreateHandler.handle(
+        new Request("http://localhost/exercises", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            authorization: "Bearer token",
+          },
+          body: JSON.stringify({
+            name: "Squat",
+            primary_muscles: ["3f2504e0-4f89-41d3-9a0c-0305e82c3301"],
+            equipment_required: ["3f2504e0-4f89-41d3-9a0c-0305e82c3302"],
+          }),
+        }),
+      );
+      expect(response.status).toBe(201);
     });
   });
 
@@ -246,6 +296,48 @@ describe("ExercisesCreateHandler", () => {
       );
       const [userIdArg] = exerciseRepositoryMocks.create.mock.calls[0];
       expect(userIdArg).toBe("user-1");
+    });
+
+    it("threads the Idempotency-Key header through to the repository", async () => {
+      // Nothing else in this file asserts the third argument at all, so
+      // `readIdempotencyKey` could return null unconditionally — a header-name
+      // change, a refactor of `ctx.headers`, an Elysia upgrade — and the entire
+      // replay-safety mechanism would become a silent no-op with every test green.
+      const { exercisesCreateHandler } =
+        await import("../exercisesCreateHandler");
+      await exercisesCreateHandler.handle(
+        new Request("http://localhost/exercises", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            authorization: "Bearer token",
+            "Idempotency-Key": "ex-key-123",
+          },
+          body: JSON.stringify({ name: "Keyed Lift" }),
+        }),
+      );
+      const [, , keyArg] = exerciseRepositoryMocks.create.mock.calls[0];
+      expect(keyArg).toBe("ex-key-123");
+    });
+
+    it("passes null when no Idempotency-Key header is sent", async () => {
+      const { exercisesCreateHandler } =
+        await import("../exercisesCreateHandler");
+      await exercisesCreateHandler.handle(
+        new Request("http://localhost/exercises", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            authorization: "Bearer token",
+          },
+          body: JSON.stringify({ name: "Unkeyed Lift" }),
+        }),
+      );
+      // Explicitly `null`, not `undefined` — the repository branches on
+      // `clientRequestId ?? null` and a keyless create must take the plain-insert
+      // path with no ON CONFLICT clause.
+      const [, , keyArg] = exerciseRepositoryMocks.create.mock.calls[0];
+      expect(keyArg).toBeNull();
     });
 
     it("persists full legacy payload shape (snake_case → domain)", async () => {

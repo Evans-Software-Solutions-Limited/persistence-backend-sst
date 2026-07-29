@@ -155,24 +155,54 @@ describe("sanitizeCreateWorkoutInput", () => {
   });
 });
 
+// These MUST agree with the server's estimateDuration.ts — the mobile copy
+// exists only so the optimistic row matches what the create will store, so a
+// divergence shows up as the duration changing after a sync. The expected
+// values below are the same ones asserted in
+// microservices/core/src/application/workouts/__tests__/estimateDuration.test.ts.
 describe("calculateEstimatedDuration", () => {
-  it("returns at least 1 minute for empty exercise list", () => {
-    expect(calculateEstimatedDuration([])).toBe(1);
+  it("falls back to the column default for an empty exercise list", () => {
+    expect(calculateEstimatedDuration([])).toBe(30);
   });
 
-  it("uses defaults when sets / rest unset", () => {
+  it("uses fallbacks when sets / rest are unset", () => {
     const ex = makeExercise({ targetSets: null, restSeconds: null });
-    // 3 sets * (35 + 90) = 375 sec = 6.25 min -> rounded to 6
-    expect(calculateEstimatedDuration([ex])).toBe(6);
+    // 1 set × 75s, no intra-set gaps → 75s → 2min → 5
+    expect(calculateEstimatedDuration([ex])).toBe(5);
   });
 
-  it("sums across exercises", () => {
+  it("sums across exercises with rest between groups", () => {
     const exA = makeExercise({ id: "we-A", targetSets: 4, restSeconds: 60 });
-    const exB = makeExercise({ id: "we-B", targetSets: 3, restSeconds: 120 });
-    // A: 4 * (35 + 60) = 380
-    // B: 3 * (35 + 120) = 465
-    // total 845 / 60 = 14.08 -> 14
-    expect(calculateEstimatedDuration([exA, exB])).toBe(14);
+    const exB = makeExercise({
+      id: "we-B",
+      sortOrder: 1,
+      targetSets: 3,
+      restSeconds: 120,
+    });
+    // A: 4×75 + 3×60 = 480; B: 3×75 + 2×120 = 465; + one 120s inter-group gap
+    // = 1065s = 17.75min → 20
+    expect(calculateEstimatedDuration([exA, exB])).toBe(20);
+  });
+
+  it("charges no inter-group rest inside a superset", () => {
+    const a = makeExercise({ id: "we-A", supersetGroup: 1 });
+    const b = makeExercise({ id: "we-B", sortOrder: 1, supersetGroup: 1 });
+    const standaloneB = makeExercise({ id: "we-B", sortOrder: 1 });
+    expect(calculateEstimatedDuration([a, b])).toBeLessThan(
+      calculateEstimatedDuration([a, standaloneB]),
+    );
+  });
+
+  it("matches the server on the reported 7-exercise case", () => {
+    const plan = Array.from({ length: 7 }, (_, i) =>
+      makeExercise({
+        id: `we-${i}`,
+        sortOrder: i,
+        targetSets: 4,
+        restSeconds: 90,
+      }),
+    );
+    expect(calculateEstimatedDuration(plan)).toBe(80);
   });
 });
 

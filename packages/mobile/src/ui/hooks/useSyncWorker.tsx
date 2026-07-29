@@ -1,7 +1,12 @@
 import { useEffect, useRef } from "react";
 import { AppState, type AppStateStatus } from "react-native";
-import { processSyncQueue } from "@/application/commands/sync.command";
+import {
+  isMutationDue,
+  processSyncQueue,
+} from "@/application/commands/sync.command";
 import { getApiBaseUrl } from "@/adapters/api";
+import { SYNC_QUEUE_TABLES } from "@/adapters/storage";
+import type { StoragePort } from "@/domain/ports/storage.port";
 import { useAdapters } from "./useAdapters";
 import { useAuth } from "./useAuth";
 
@@ -15,6 +20,23 @@ import { useAuth } from "./useAuth";
  * Exported so tests can assert against the exact cadence.
  */
 export const SYNC_RECONNECT_DEBOUNCE_MS = 1_000;
+
+/**
+ * Is there at least one queue entry eligible to be sent right now?
+ *
+ * Used as the drain loop's continue-condition. Wrapped so a storage failure
+ * reads as "nothing due" rather than spinning the loop on a throw.
+ */
+function hasWorkDue(storage: StoragePort): boolean {
+  try {
+    // The SAME predicate the drain skips by. If these disagreed, the loop would
+    // spin forever on an entry `processSyncQueue` always passes over.
+    return storage.getPendingMutations().some((e) => isMutationDue(e));
+  } catch (err) {
+    console.error("[useSyncWorker] could not read the queue:", err);
+    return false;
+  }
+}
 
 /**
  * Drain the sync queue at app launch, on every foreground transition, and
@@ -43,13 +65,21 @@ export const SYNC_RECONNECT_DEBOUNCE_MS = 1_000;
  *   view (coach adherence, workout-detail PR state, the You-page volume
  *   stat) read empty forever even after connectivity came back. On a
  *   real false→true transition we now `resetFailedEntries` ONCE for the
- *   exhausted SESSION-RECORD entries only (they carry `clientSessionId`,
- *   so a re-POST is server-idempotent — self-heal for a failure that was
- *   plausibly connectivity, not a genuine rejection) and then flush.
- *   Non-idempotent creates are deliberately NOT auto-resurrected here;
- *   they surface in the `/sync-failed` review UI for explicit retry. A
- *   session the server genuinely rejects will simply re-exhaust and
- *   surface there too, instead of looping silently.
+ *   entries whose replay the SERVER can recognise — session records via
+ *   `clientSessionId`, and (since the offline-sync-hardening branch)
+ *   workout + exercise creates via `clientRequestId` — then flush. That
+ *   is a self-heal for a failure that was plausibly connectivity rather
+ *   than a genuine rejection.
+ *
+ *   Two exclusions, both deliberate: an endpoint with NO server-side key
+ *   (nutrition creates) is never auto-resurrected, because a re-POST
+ *   could duplicate a row that did commit; and `permanently_failed`
+ *   entries are never resurrected whatever their endpoint, because that
+ *   state means a re-send of the identical request cannot succeed. Both
+ *   surface in the `/sync-failed` review UI for explicit retry instead.
+ *   The same transition also restores the budget-free deferral run of
+ *   still-queued entries, since a reconnect is exactly the information
+ *   whose absence caused them.
  *
  * Not in scope here (deferred to a follow-up):
  * - Debounced flush after enqueue
@@ -109,8 +139,16 @@ export function useSyncWorker(): void {
             // keep going — next foreground attempt may succeed.
             console.error("[useSyncWorker] flush failed:", err);
           }
-          // Loop again only if a flush was requested during this pass.
-        } while (reflushRef.current);
+          // Loop again if a flush was explicitly requested during this pass, OR
+          // if the queue still holds work that is DUE — which covers a mutation
+          // enqueued mid-flush (whose bus event this pass deliberately ignored).
+          //
+          // Terminates because the due-set strictly shrinks: a success moves the
+          // entry to `completed`, a failure stamps `next_attempt_at` so it is no
+          // longer due, and a claim lost to a concurrent drain belongs to that
+          // drain. `getPendingMutations` throwing (a broken cache) must not spin,
+          // so treat an error as "nothing due".
+        } while (reflushRef.current || hasWorkDue(storage));
       } finally {
         flushingRef.current = false;
       }
@@ -121,21 +159,110 @@ export function useSyncWorker(): void {
     // bug never blocks the ordinary drain.
     const resurrectAndFlush = async () => {
       try {
+        // Give still-queued entries their budget-free run back. A reconnect is
+        // exactly the new information whose absence caused the deferrals, and
+        // without this an offline stretch of ~90–120s (12 free deferrals at a 5s
+        // window, then 3 charged attempts) exhausted an offline-created workout
+        // during ordinary use — a commute, a basement gym — leaving the user a
+        // sync-failure banner to resolve by hand. This also clears
+        // `nextAttemptAt`, so the flush below actually sends them now rather than
+        // waiting out a window set while there was no network.
+        //
+        // ⚠ TRANSPORT deferrals only. A `resolution` deferral (a reference
+        // catalogue that couldn't be resolved) is not informed by connectivity, and
+        // re-arming it re-created the very hole `MAX_TRANSPORT_DEFERRALS` was
+        // invented to close: an exercise naming a catalogue entry that does not yet
+        // exist had its counters zeroed on every reconnect, so it could never reach
+        // the ceiling — no banner, no review row, never sent, lost on reinstall.
+        // That has a real trigger population: the `machine` → "Machine" mapping
+        // depends on 20260727120000_equipment_types_generic_machine.sql being
+        // applied by hand to production, so every exercise saved with the Machine
+        // option before that lands is exactly this case.
+        const deferred = storage
+          .getPendingMutations()
+          .filter((e) => e.deferCount > 0 && e.deferKind === "transport");
+        if (deferred.length > 0) {
+          storage.resetFailedEntries(deferred.map((e) => e.id));
+        }
+
+        // Auto-resurrect exhausted entries the SERVER can safely dedup on replay.
+        // A re-POST is only safe where the server recognises the retry as the same
+        // logical request; otherwise it could duplicate a row that did commit, and
+        // those stay in /sync-failed for explicit, user-acknowledged retry.
+        //
+        // This list used to be `/sessions/record` alone, and its comment said the
+        // other creates "have NO idempotency key". That is no longer true — this
+        // branch added `client_request_id` to workout and exercise creates with the
+        // same (created_by, key) unique-index treatment `client_session_id` has had
+        // since M13 — so they now qualify on identical reasoning. Nutrition creates
+        // still do not: no server-side key column, so they are deliberately absent.
         const exhausted = storage.getFailedExhaustedEntries();
-        // Only auto-resurrect the idempotent session-record mutations:
-        // they carry `clientSessionId`, so the server dedups a replay via
-        // the (user_id, client_session_id) unique index — a re-POST after
-        // an ambiguous success is safe. Other exhausted creates
-        // (workout/exercise/nutrition) have NO idempotency key, so
-        // auto-re-POSTing could duplicate a row that actually committed;
-        // those stay in the /sync-failed review UI for explicit,
-        // user-acknowledged retry. Both self (`/sessions/record`) and
-        // on-behalf (`.../clients/:id/sessions/record`) endpoints match.
-        const idempotent = exhausted.filter((e) =>
-          e.endpoint.endsWith("/sessions/record"),
+        const replaySafe = exhausted.filter(
+          (e) =>
+            // ⚠ `getFailedExhaustedEntries` returns `permanently_failed` entries
+            // too, and those must NOT be resurrected: that state exists precisely
+            // to mean "a re-send of the identical request can never turn into a
+            // 2xx". Sweeping them up re-POSTed a rejected body on every single
+            // reconnect for the life of the install, each time briefly removing the
+            // row from /sync-failed (it leaves `getFailedExhaustedEntries` between
+            // the reset and the re-failure) so the banner flickered. Only
+            // TRANSIENT exhaustion — plausibly connectivity — is self-healed here.
+            e.status === "failed" &&
+            // ⚠ And not a `resolution` deferral, for the same reason the filter
+            // above excludes them — otherwise this clause silently undid that one.
+            // `resetFailedEntries` zeroes retry_count, defer_count AND defer_kind,
+            // so an entry that had just climbed the full 12-deferral + 3-retry
+            // ladder into /sync-failed was dropped straight back to `pending` on the
+            // next connectivity blip: visible only in the window between exhausting
+            // and the next transition, which on a phone that moves is potentially
+            // never. `defer_kind` survives `markMutationFailed` untouched, so it is
+            // still readable on the exhausted row.
+            e.deferKind !== "resolution" &&
+            // Both self and on-behalf (`.../clients/:id/sessions/record`) forms.
+            (e.endpoint.endsWith("/sessions/record") ||
+              (e.operation === "create" &&
+                e.idempotencyKey !== null &&
+                (e.endpoint === "/workouts" || e.endpoint === "/exercises"))),
         );
-        if (idempotent.length > 0) {
-          storage.resetFailedEntries(idempotent.map((e) => e.id));
+        // ⚠ Resurrect the PAIR, not just the create. A create and a follow-up
+        // delete/edit against its `local-…` id climb the ladder in lockstep and
+        // exhaust on the same pass, and the filter above only matches the create
+        // (`operation === "create"`). Resetting it alone re-POSTed the create with
+        // nothing left to undo it — so a workout the user created and then deleted
+        // offline was CREATED on the server by the reconnect, absent locally, and
+        // reappeared on the next list refresh consuming a quota slot. Strictly worse
+        // than the behaviour it replaced.
+        //
+        // Safe to include the siblings: `swapLocal*Id` rewrites their endpoint
+        // unconditionally of status when the create lands, a DELETE replay is
+        // idempotent, and an UPDATE simply follows the id swap. Only `failed`
+        // siblings are taken — a `permanently_failed` one was explicitly rejected,
+        // and `resetFailedEntries` would otherwise re-open it (it accepts both).
+        const idsToReset = new Set(replaySafe.map((e) => e.id));
+        for (const create of replaySafe) {
+          if (create.entityId === null) continue;
+          for (const sibling of storage.getQueuedEntriesForEntity(
+            create.entityType,
+            create.entityId,
+          )) {
+            // Same `resolution` exclusion as the two filters above — without it this
+            // union silently reopened the hole they exist to close, dropping a
+            // sibling that had just climbed the full ladder into /sync-failed back to
+            // `pending` on the next blip. Reachable: a create exhausted by transport
+            // deferrals (so it qualifies here) with a follow-up PATCH naming an
+            // unresolvable catalogue member, which cannot coalesce into the dispatched
+            // create and is therefore a separate sibling.
+            if (
+              sibling.id !== create.id &&
+              sibling.status === "failed" &&
+              sibling.deferKind !== "resolution"
+            ) {
+              idsToReset.add(sibling.id);
+            }
+          }
+        }
+        if (idsToReset.size > 0) {
+          storage.resetFailedEntries([...idsToReset]);
         }
       } catch (err) {
         console.error("[useSyncWorker] reconnect resurrect failed:", err);
@@ -143,7 +270,44 @@ export function useSyncWorker(): void {
       await flush();
     };
 
+    // Recover mutations stranded `in_flight` by a previous process death before
+    // the first drain. Nothing else ever returned them to the pool — they were
+    // invisible to every drain AND to /sync-failed, while `getSyncStats().inFlight`
+    // kept counting them, so the UI could sit on "Syncing…" forever. Safe here
+    // because no drain can be running in a process that has only just started,
+    // and the re-POST is now covered by the entry's idempotency key.
+    try {
+      const recovered = storage.recoverInFlightMutations();
+      if (recovered > 0) {
+        console.warn(
+          `[useSyncWorker] recovered ${recovered} mutation(s) stranded in_flight by a previous session`,
+        );
+      }
+    } catch (err) {
+      console.error("[useSyncWorker] in-flight recovery failed:", err);
+    }
+
     void flush();
+
+    // Drive the drain from local writes, not just from app lifecycle. Previously
+    // a mutation enqueued while ONLINE sat until the next foreground transition,
+    // reconnect, or a screen that happened to drain before fetching — which is
+    // why a pull-to-refresh was the thing that made a saved workout appear: it
+    // was the only workouts surface that also PUSHED. Subscribing to the queue
+    // table means an enqueue schedules its own flush.
+    //
+    // ⚠ The drain WRITES to `sync_queue` itself (claim, complete, fail, prune),
+    // so every pass produces bus events. Calling `flush()` from here
+    // unconditionally would therefore feed itself. Two things break the cycle:
+    // events arriving mid-flush are ignored (the running pass re-checks the queue
+    // before finishing, so nothing is missed), and the loop's continue-condition
+    // is "is there still work DUE" — which strictly shrinks each pass, because a
+    // success completes the entry and a failure stamps a backoff that makes it
+    // not-yet-due.
+    const queueUnsub = storage.subscribe(SYNC_QUEUE_TABLES, () => {
+      if (flushingRef.current) return;
+      void flush();
+    });
 
     const appStateSub = AppState.addEventListener(
       "change",
@@ -196,6 +360,7 @@ export function useSyncWorker(): void {
 
     return () => {
       mounted = false;
+      queueUnsub();
       appStateSub.remove();
       netInfoUnsub();
       if (reconnectTimerRef.current) {

@@ -46,6 +46,7 @@
 import {
   clamp01,
   createSingleAttempt,
+  OPUS_OUTPUT_TOKENS_PER_SECOND,
   findToolUse,
   getDefaultClient,
   AiUnreadableError,
@@ -75,6 +76,53 @@ const TOOL_NAME = "report_gym_equipment";
  * lower this with it.**
  */
 export const EQUIPMENT_SCAN_TIMEOUT_MS = 20_000;
+
+/**
+ * ⚠ Larger than {@link EQUIPMENT_SCAN_TIMEOUT_MS} can receive, and exported so
+ * `aiBudget.test.ts` binds to this value rather than a literal copy of it.
+ *
+ * At {@link OPUS_OUTPUT_TOKENS_PER_SECOND} a 20 s attempt receives ~935 tokens,
+ * so 4096 is unreachable — but it is a TRUNCATION GUARD, and a guard that never
+ * binds costs nothing. Measured output tops out at
+ * {@link REALISTIC_SCAN_OUTPUT_TOKENS} (698), which fits.
+ *
+ * ⚠ An earlier version of this docstring claimed the surface "does not currently
+ * fit its budget" and recommended an async redesign. That rested on an invented
+ * 1,100-token figure and is withdrawn — see
+ * {@link REALISTIC_SCAN_OUTPUT_TOKENS}. Lowering this constant to the measured
+ * figure would be tidier and changes no behaviour; it is left alone only because
+ * this PR is about the timeout budget, not the scan.
+ *
+ * ⚠ And the endpoint IS live: `aiEquipmentScanHandler` is mounted in
+ * `loadoutRoutes`, behind auth, the `loadout` entitlement and a 6/day cap. An
+ * earlier note here called it "not user-reachable yet" and used that to justify
+ * leaving things alone. It was wrong, and it is the kind of wrong that makes a
+ * real problem look deferrable.
+ */
+export const EQUIPMENT_SCAN_MAX_TOKENS = 4096;
+
+/**
+ * What a scan actually emits: **698 tokens**, E1's measured maximum across its
+ * seven photos (513, 698, 533, 424, 559, 325, 360 — mean 487).
+ * `scratchpad/loadout-phase-e/results/e1-opus.json`.
+ *
+ * ## ⚠ Two wrong values preceded this one, by the same mistake
+ *
+ * First 1,100, reasoned from "~28 catalogue rows plus a note" — a guess
+ * formatted as a measurement, ~2× high, and the basis of a reported finding that
+ * this surface could not fit its budget.
+ *
+ * Then 500, from E1's mean LATENCY × an assumed token rate. Also an inference —
+ * and E1's own verdict says that latency includes base64 serialisation and SigV4
+ * signing over a ~1.5 MB image, so it was never a proxy for generation. It
+ * landed 28 % under the measured worst case, and four of the seven photos
+ * exceeded it.
+ *
+ * Both times the direct measurement was sitting in the same JSON object, one key
+ * away from the latency I did use. **Prefer the recorded quantity over one you
+ * can derive from it.**
+ */
+export const REALISTIC_SCAN_OUTPUT_TOKENS = 698;
 
 /**
  * The model's free-text aside, capped and treated as untrusted.
@@ -308,7 +356,7 @@ export async function scanEquipmentFromPhoto(
     // unmatched labels, so this is generous by design — output tokens bill on use,
     // not on the ceiling, and the truncation guard below makes a too-small budget
     // a hard 422 rather than a quiet under-detection.
-    max_tokens: 4096,
+    max_tokens: EQUIPMENT_SCAN_MAX_TOKENS,
     messages: [
       {
         role: "user",
@@ -339,6 +387,15 @@ export async function scanEquipmentFromPhoto(
     client,
     params,
     EQUIPMENT_SCAN_TIMEOUT_MS,
+    {
+      // Opus-class, and 2.5x slower than the default this would otherwise assume.
+      tokensPerSecond: OPUS_OUTPUT_TOKENS_PER_SECOND,
+      // ⚠ What a real scan EMITS (E1-derived), not the 4096 ceiling. Passing the
+      // ceiling would make the resend guard unsatisfiable — the ceiling does not
+      // fit even the full budget — and this surface would silently lose its
+      // throttle retry, which is the same defect the re-map was found with.
+      minUsefulTokens: REALISTIC_SCAN_OUTPUT_TOKENS,
+    },
   );
   const latencyMs = Date.now() - startedAt;
 

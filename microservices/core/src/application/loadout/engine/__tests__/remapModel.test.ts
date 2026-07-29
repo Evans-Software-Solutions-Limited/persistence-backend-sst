@@ -6,10 +6,17 @@ import {
   DEFAULT_REMAP_MODEL_ID,
   MAX_REASON_LENGTH,
   parseRemapSelections,
+  MIN_USEFUL_GENERATION_MS,
+  remapMaxTokens,
   remapModelId,
+  REMAP_TIMEOUT_MS,
   selectSubstitutes,
 } from "../remapModel";
-import { AiUnreadableError } from "../../../nutrition/services/aiBedrockClient";
+import {
+  AiUnreadableError,
+  maxTokensForBudget,
+  PREFILL_ALLOWANCE_MS,
+} from "../../../nutrition/services/aiBedrockClient";
 import type { AdaptationCandidate } from "../../../repositories/exerciseRepository";
 import type { PlanRow } from "../types";
 
@@ -75,11 +82,15 @@ const candidate = ex({
 
 const PLAN = [planRow(0, keptSource, false), planRow(1, swapSource, true)];
 
-function fakeClient(response: unknown, capture: { params?: any } = {}) {
+function fakeClient(
+  response: unknown,
+  capture: { params?: any; options?: any } = {},
+) {
   return {
     messages: {
-      create: vi.fn(async (params: any) => {
+      create: vi.fn(async (params: any, options?: any) => {
         capture.params = params;
+        capture.options = options;
         return response as any;
       }),
     },
@@ -513,10 +524,73 @@ describe("capReason", () => {
 });
 
 describe("selectSubstitutes — output budget", () => {
-  it("scales max_tokens with the number of rows the model must answer for", async () => {
-    // A fixed budget against an unbounded row count makes a long plan permanently
-    // un-adaptable AND burns a daily adaptation on every retry, because the
-    // truncation guard fires after the provider call.
+  // ⚠ These replace tests that PINNED THE BUG. The originals asserted
+  // `max_tokens >= 4096` and `<= 16_384` and passed happily, because they only
+  // ever checked the ceiling against itself. Nothing tied `max_tokens` to the
+  // attempt timeout, so nothing could notice that the ceiling described ~134 s
+  // of generation inside a 12 s attempt inside a 29 s Lambda.
+  //
+  // The invariant worth testing is the RELATIONSHIP, not either number alone.
+
+  it("never asks for more output than the attempt can physically receive", async () => {
+    // The whole defect in one assertion. Generation is serial at a bounded rate,
+    // so `max_tokens` is a wall-clock commitment: ask for more than the timeout
+    // can receive and a perfectly healthy request still times out.
+    const hugePlan = Array.from({ length: 500 }, (_, i) => ({
+      ...planRow(i, swapSource, true),
+      rowKey: i,
+    }));
+    const capture: { params?: any; options?: any } = {};
+    await selectSubstitutes(
+      {
+        workoutName: "W",
+        plan: hugePlan,
+        candidates: [candidate],
+        equipmentTypeIds: [DUMBBELL],
+        lookups,
+      },
+      { client: fakeClient(toolResponse([]), capture) },
+    );
+
+    expect(capture.params.max_tokens).toBeLessThanOrEqual(
+      maxTokensForBudget(REMAP_TIMEOUT_MS),
+    );
+  });
+
+  it("sends ONE attempt at the raised timeout, not two short ones", async () => {
+    // `createWithRetry` at 12 s could not fit this surface's output, so a second
+    // identical attempt only spent the budget that would have let the first one
+    // finish.
+    const capture: { params?: any; options?: any } = {};
+    const client = fakeClient(toolResponse([]), capture);
+    await selectSubstitutes(
+      {
+        workoutName: "W",
+        plan: PLAN,
+        candidates: [candidate],
+        equipmentTypeIds: [DUMBBELL],
+        lookups,
+      },
+      { client },
+    );
+
+    expect(client.messages.create).toHaveBeenCalledTimes(1);
+    expect(capture.options?.timeout).toBe(REMAP_TIMEOUT_MS);
+  });
+
+  it("keeps the whole attempt inside the 29 s route timeout", () => {
+    // The arithmetic that was wrong before: 2 × 12 s through an SDK defaulting
+    // to 2 internal retries is ~72 s worst case. Leave room for auth, the
+    // candidate query and the usage-log write.
+    const OVERHEAD_ALLOWANCE_MS = 3_000;
+    const ROUTE_TIMEOUT_MS = 29_000;
+    expect(REMAP_TIMEOUT_MS + OVERHEAD_ALLOWANCE_MS).toBeLessThan(
+      ROUTE_TIMEOUT_MS,
+    );
+  });
+
+  it("still scales with the number of rows the model must answer for", async () => {
+    // The slope was never the problem — the base and the ceiling were.
     const small: { params?: any } = {};
     await selectSubstitutes(
       {
@@ -529,7 +603,7 @@ describe("selectSubstitutes — output budget", () => {
       { client: fakeClient(toolResponse([]), small) },
     );
 
-    const bigPlan = Array.from({ length: 40 }, (_, i) => ({
+    const bigPlan = Array.from({ length: 8 }, (_, i) => ({
       ...planRow(i, swapSource, true),
       rowKey: i,
     }));
@@ -546,29 +620,182 @@ describe("selectSubstitutes — output budget", () => {
     );
 
     expect(big.params.max_tokens).toBeGreaterThan(small.params.max_tokens);
-    expect(big.params.max_tokens).toBeLessThanOrEqual(16_384);
-    // …and never LESS headroom than the fixed 4096 this replaced, or the fix would
-    // have narrowed the unbounded tail by making every realistic plan worse.
-    expect(small.params.max_tokens).toBeGreaterThanOrEqual(4096);
+  });
+});
+
+describe("remapMaxTokens", () => {
+  it("leaves real plans well inside the budget, so truncation stays rare", () => {
+    // ~120 tokens/row is the worst case (a 300-char reason plus a uuid and JSON
+    // scaffolding); E2 measured ~40. A 10-exercise workout must not be anywhere
+    // near the ceiling, or the 422 stops being an edge case.
+    expect(remapMaxTokens(10)).toBeLessThan(
+      maxTokensForBudget(REMAP_TIMEOUT_MS),
+    );
+    expect(remapMaxTokens(10)).toBeGreaterThanOrEqual(512 + 120 * 10);
   });
 
-  it("stays bounded for an absurd plan", async () => {
-    const hugePlan = Array.from({ length: 500 }, (_, i) => ({
-      ...planRow(i, swapSource, true),
-      rowKey: i,
-    }));
-    const capture: { params?: any } = {};
+  it("caps rather than growing without bound", () => {
+    expect(remapMaxTokens(500)).toBe(maxTokensForBudget(REMAP_TIMEOUT_MS));
+  });
+
+  it("gives a swap-free plan a floor, not zero", () => {
+    // `selectSubstitutes` is not called with zero swap rows today, but a formula
+    // returning ~0 for one would turn a future caller into an instant 422.
+    expect(remapMaxTokens(0)).toBeGreaterThan(0);
+  });
+});
+
+describe("selectSubstitutes — the remaining-budget deadline", () => {
+  // ⚠ This whole mechanism shipped with ZERO coverage in the first version of
+  // this change. Inspector Brad made `deps.timeoutMs` a no-op — reverting
+  // `createSingleAttempt(client, params, timeoutMs)` to pass the constant — and
+  // all 40 tests stayed green. The one test that read `options.timeout` never
+  // passed a `timeoutMs`, so it only ever exercised the default.
+
+  it("honours a SHORTENED deadline in both the timeout and the ceiling", async () => {
+    // Both halves matter. A shortened deadline that leaves `max_tokens` at the
+    // full-budget figure re-creates the exact mismatch this change exists to fix,
+    // on precisely the slow requests that can least afford it.
+    const capture: { params?: any; options?: any } = {};
     await selectSubstitutes(
       {
         workoutName: "W",
-        plan: hugePlan,
+        plan: PLAN,
         candidates: [candidate],
         equipmentTypeIds: [DUMBBELL],
         lookups,
       },
-      { client: fakeClient(toolResponse([]), capture) },
+      { client: fakeClient(toolResponse([]), capture), timeoutMs: 9_000 },
     );
 
-    expect(capture.params.max_tokens).toBe(16_384);
+    expect(capture.options?.timeout).toBe(9_000);
+    expect(capture.params.max_tokens).toBe(remapMaxTokens(1, 9_000));
+    expect(capture.params.max_tokens).toBeLessThan(remapMaxTokens(1));
+  });
+
+  it("never lets a caller ask for MORE than the surface's own budget", async () => {
+    const capture: { params?: any; options?: any } = {};
+    await selectSubstitutes(
+      {
+        workoutName: "W",
+        plan: PLAN,
+        candidates: [candidate],
+        equipmentTypeIds: [DUMBBELL],
+        lookups,
+      },
+      { client: fakeClient(toolResponse([]), capture), timeoutMs: 120_000 },
+    );
+
+    expect(capture.options?.timeout).toBe(REMAP_TIMEOUT_MS);
+  });
+
+  it("FAILS FAST rather than sending a request that cannot succeed", async () => {
+    // The bug in the first version: the deadline was floored at
+    // `PREFILL_ALLOWANCE_MS`, and `maxTokensForBudget(PREFILL_ALLOWANCE_MS)` is
+    // exactly 0 — so it sent `max_tokens: 0`, which the provider rejects as a
+    // 400. The band just above sent 0–250 tokens and got back a truncation 422,
+    // a terminal-looking error for a transient cause.
+    const client = fakeClient(toolResponse([]));
+    await expect(
+      selectSubstitutes(
+        {
+          workoutName: "W",
+          plan: PLAN,
+          candidates: [candidate],
+          equipmentTypeIds: [DUMBBELL],
+          lookups,
+        },
+        // Exactly the old floor, which is also exactly where
+        // `maxTokensForBudget` returns 0.
+        { client, timeoutMs: PREFILL_ALLOWANCE_MS },
+      ),
+    ).rejects.toThrow(/ai_budget_exhausted/);
+
+    expect(client.messages.create).not.toHaveBeenCalled();
+  });
+
+  it("sends anything at or above the useful-generation floor", async () => {
+    // The other side of the boundary — without this the guard could reject
+    // everything and still look correct.
+    const capture: { params?: any; options?: any } = {};
+    const client = fakeClient(toolResponse([]), capture);
+    await selectSubstitutes(
+      {
+        workoutName: "W",
+        plan: PLAN,
+        candidates: [candidate],
+        equipmentTypeIds: [DUMBBELL],
+        lookups,
+      },
+      { client, timeoutMs: PREFILL_ALLOWANCE_MS + MIN_USEFUL_GENERATION_MS },
+    );
+
+    expect(client.messages.create).toHaveBeenCalledTimes(1);
+    expect(capture.params.max_tokens).toBeGreaterThan(0);
+  });
+
+  it("fails fast on a NEGATIVE budget too", async () => {
+    // Reachable whenever the preamble overruns: the handler subtracts elapsed
+    // time from the route budget and does not clamp.
+    const client = fakeClient(toolResponse([]));
+    await expect(
+      selectSubstitutes(
+        {
+          workoutName: "W",
+          plan: PLAN,
+          candidates: [candidate],
+          equipmentTypeIds: [DUMBBELL],
+          lookups,
+        },
+        { client, timeoutMs: -4_000 },
+      ),
+    ).rejects.toThrow(/ai_budget_exhausted/);
+    expect(client.messages.create).not.toHaveBeenCalled();
+  });
+});
+
+describe("selectSubstitutes — throttle resilience on a LARGE plan", () => {
+  it("still resends a throttle when max_tokens has clamped to the budget cap", async () => {
+    // ⚠ The regression this pins is invisible from inside `createSingleAttempt`.
+    // Its resend guard needs an estimate of the WORK; left to default it uses
+    // `params.max_tokens`, and `remapMaxTokens` clamps that to exactly
+    // `maxTokensForBudget(REMAP_TIMEOUT_MS)` from ~14 swap rows up. Since the
+    // remaining budget is always smaller than the full one, the guard could then
+    // never pass — so the biggest adaptations, the ones a user is least willing
+    // to lose, silently stopped retrying a routine Bedrock throttle.
+    //
+    // Deleting `minUsefulTokens` from the call site leaves every other test in
+    // this file green, which is how it got past me the first time.
+    const bigPlan = Array.from({ length: 20 }, (_, i) => ({
+      ...planRow(i, swapSource, true),
+      rowKey: i,
+    }));
+    expect(remapMaxTokens(20)).toBe(maxTokensForBudget(REMAP_TIMEOUT_MS));
+
+    let calls = 0;
+    const create = vi.fn(async () => {
+      calls += 1;
+      if (calls === 1) {
+        throw Object.assign(new Error("throttled"), {
+          status: 429,
+          // Keep the real backoff short — this test does not stub the clock.
+          headers: { "retry-after-ms": "1" },
+        });
+      }
+      return toolResponse([]) as never;
+    });
+
+    await selectSubstitutes(
+      {
+        workoutName: "W",
+        plan: bigPlan,
+        candidates: [candidate],
+        equipmentTypeIds: [DUMBBELL],
+        lookups,
+      },
+      { client: { messages: { create } } as never },
+    );
+
+    expect(create).toHaveBeenCalledTimes(2);
   });
 });

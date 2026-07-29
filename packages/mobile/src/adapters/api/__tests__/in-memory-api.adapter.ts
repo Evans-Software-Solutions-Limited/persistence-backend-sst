@@ -1122,7 +1122,7 @@ export class InMemoryApiAdapter implements ApiPort {
   public bodyTrend: BodyTrendPoint[] = [];
   public nextRings: Rings = {
     move: { current: 0, target: 10000, pct: 0, unit: "steps" },
-    train: { current: 0, target: 20000, pct: 0, unit: "kg" },
+    train: { current: 0, target: 500, pct: 0, unit: "kcal" },
     fuel: "gated",
     todayPct: 0,
   };

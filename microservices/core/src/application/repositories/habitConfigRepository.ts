@@ -130,6 +130,52 @@ export class HabitConfigRepository {
     };
   }
 
+  /**
+   * The user's live DAILY target for one habit category, or null when they have
+   * no active habit of that category.
+   *
+   * Exists so the Home rings can use a goal the user actually set instead of a
+   * hardcoded constant — the Move ring reads the Steps habit's target. Narrow on
+   * purpose (one row, one number) rather than reusing `listForUser`, because it
+   * sits on the cold-start Home fan-out.
+   *
+   * Two deliberate divergences from how the STREAK engine reads this row, both
+   * because a ring is a display goal rather than a scored bar:
+   *
+   *   • `pending_config` is ignored — a queued edit doesn't take effect until
+   *     the weekly rollover (the anti-gaming rule in this class's doc comment),
+   *     so the ring shows the target the user is on this week, not next week's.
+   *   • `effective_from` is ignored — a habit first enabled on a Wednesday is
+   *     dated `effective_from = next Monday` so it doesn't join the collection
+   *     streak mid-week, but the user who just set a 15,000-step goal expects
+   *     their ring to scale to it immediately. Scoring waits; the dial doesn't.
+   *
+   * These are chosen, not overlooked. Do not "fix" one without the other.
+   */
+  async getActiveDailyTarget(
+    userId: string,
+    category: HabitCategory,
+  ): Promise<number | null> {
+    const db = getDb();
+    const rows = await db
+      .select({ targetValue: habitConfigs.targetValue })
+      .from(habitConfigs)
+      .innerJoin(userGoals, eq(habitConfigs.goalId, userGoals.id))
+      .where(
+        and(
+          eq(habitConfigs.userId, userId),
+          eq(habitConfigs.category, category),
+          eq(habitConfigs.period, "daily"),
+          eq(userGoals.isActive, true),
+        ),
+      )
+      .limit(1);
+    const raw = rows[0]?.targetValue;
+    if (raw == null) return null;
+    const value = Number(raw);
+    return Number.isFinite(value) ? value : null;
+  }
+
   /** Every configured habit for the user (joined to its goal for active state). */
   async listForUser(userId: string): Promise<HabitConfigView[]> {
     const db = getDb();

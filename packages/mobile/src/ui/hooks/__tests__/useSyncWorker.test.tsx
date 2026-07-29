@@ -572,40 +572,47 @@ describe("useSyncWorker", () => {
       expect(storage.getFailedExhaustedEntries()).toHaveLength(0);
     });
 
-    it("does NOT resurrect an exhausted NON-session entry on reconnect — resetFailedEntries only touches the session id", async () => {
+    it("resurrects only the entries the SERVER can dedup, not every exhausted one", async () => {
+      // The rule is "a replay must be recognisable as the same logical request",
+      // and the set that satisfies it GREW: `/sessions/record` has had
+      // `client_session_id` since M13, and workout + exercise creates now carry
+      // `client_request_id` with the same (created_by, key) unique-index
+      // treatment. A nutrition create still has no server-side key column, so
+      // auto-re-POSTing it could duplicate a row that actually committed — it
+      // stays for an explicit, user-acknowledged Retry on /sync-failed.
       const storage = new InMemoryStorageAdapter();
       storage.initialize();
 
-      // An exhausted session-record entry (idempotent — should resurrect)…
-      storage.enqueueMutation({
-        entityType: "session",
-        entityId: "s1",
-        operation: "create",
-        payload: { name: "Push Day" },
-        endpoint: "/sessions/record",
-        method: "POST",
-      });
-      const sessionEntryId = storage.getPendingMutations().slice(-1)[0].id;
-      storage.markMutationFailed(sessionEntryId, "e1");
-      storage.markMutationFailed(sessionEntryId, "e2");
-      storage.markMutationFailed(sessionEntryId, "e3");
+      const exhaust = (id: number) => {
+        storage.markMutationFailed(id, "e1");
+        storage.markMutationFailed(id, "e2");
+        storage.markMutationFailed(id, "e3");
+      };
+      const enqueueAndExhaust = (
+        entityType: string,
+        endpoint: string,
+      ): number => {
+        storage.enqueueMutation({
+          entityType,
+          entityId: `${entityType}-1`,
+          operation: "create",
+          payload: { name: "Push Day" },
+          endpoint,
+          method: "POST",
+        });
+        const id = storage.getPendingMutations().slice(-1)[0].id;
+        exhaust(id);
+        return id;
+      };
 
-      // …alongside an exhausted NON-session create (no idempotency key —
-      // must NOT be auto-resurrected; duplicate-POST risk).
-      storage.enqueueMutation({
-        entityType: "workout",
-        entityId: "w1",
-        operation: "create",
-        payload: { name: "Push Day" },
-        endpoint: "/workouts",
-        method: "POST",
-      });
-      const workoutEntryId = storage.getPendingMutations().slice(-1)[0].id;
-      storage.markMutationFailed(workoutEntryId, "e1");
-      storage.markMutationFailed(workoutEntryId, "e2");
-      storage.markMutationFailed(workoutEntryId, "e3");
+      const sessionEntryId = enqueueAndExhaust("session", "/sessions/record");
+      const workoutEntryId = enqueueAndExhaust("workout", "/workouts");
+      const nutritionEntryId = enqueueAndExhaust(
+        "nutrition_entry",
+        "/nutrition/entries",
+      );
 
-      expect(storage.getFailedExhaustedEntries()).toHaveLength(2);
+      expect(storage.getFailedExhaustedEntries()).toHaveLength(3);
 
       const resetSpy = jest.spyOn(storage, "resetFailedEntries");
       mockFetch.mockResolvedValue({ ok: true, json: async () => ({}) });
@@ -623,22 +630,331 @@ describe("useSyncWorker", () => {
         jest.advanceTimersByTime(SYNC_RECONNECT_DEBOUNCE_MS);
       });
 
-      // Only the session-record id was reset — the workout id was never
-      // passed to resetFailedEntries.
       await waitFor(() =>
-        expect(resetSpy).toHaveBeenCalledWith([sessionEntryId]),
+        expect(resetSpy).toHaveBeenCalledWith([sessionEntryId, workoutEntryId]),
       );
-      // Only the resurrected session mutation was ever sent.
-      expect(mockFetch).toHaveBeenCalledTimes(1);
-      expect(mockFetch).toHaveBeenCalledWith(
-        "https://api.test/sessions/record",
-        expect.objectContaining({ method: "POST" }),
-      );
-      // The workout entry is untouched — still failed-exhausted, ready
-      // for an explicit Retry on /sync-failed.
+      // Both replay-safe entries went out; the nutrition one did not.
+      const sentUrls = mockFetch.mock.calls.map((c) => c[0]);
+      expect(sentUrls).toContain("https://api.test/sessions/record");
+      expect(sentUrls).toContain("https://api.test/workouts");
+      expect(sentUrls).not.toContain("https://api.test/nutrition/entries");
       const stillExhausted = storage.getFailedExhaustedEntries();
       expect(stillExhausted).toHaveLength(1);
-      expect(stillExhausted[0].id).toBe(workoutEntryId);
+      expect(stillExhausted[0].id).toBe(nutritionEntryId);
+    });
+
+    it("never resurrects a PERMANENTLY_FAILED create, however replay-safe its endpoint", async () => {
+      // `getFailedExhaustedEntries` returns permanently_failed entries alongside
+      // budget-exhausted ones, so widening the replay-safe filter by endpoint alone
+      // swept them up. That state exists precisely to mean "a re-send of the
+      // identical request can never turn into a 2xx" — a 400 for
+      // targetRepsMin > targetRepsMax, or an exercise naming a catalogue member that
+      // will never exist. Resurrecting it re-POSTs the identical body on every
+      // reconnect for the life of the install, and the row leaves
+      // getFailedExhaustedEntries between the reset and the re-failure, so the
+      // /sync-failed banner flickers each time.
+      const storage = new InMemoryStorageAdapter();
+      storage.initialize();
+      storage.enqueueMutation({
+        entityType: "workout",
+        entityId: "w-rejected",
+        operation: "create",
+        payload: { name: "Rejected" },
+        endpoint: "/workouts",
+        method: "POST",
+      });
+      const id = storage.getPendingMutations().slice(-1)[0].id;
+      storage.markMutationPermanentlyFailed(id, "HTTP 400: bad reps range");
+
+      const resetSpy = jest.spyOn(storage, "resetFailedEntries");
+      mockFetch.mockResolvedValue({ ok: true, json: async () => ({}) });
+      const auth = new InMemoryAuthAdapter();
+      const netInfo = new InMemoryNetInfoAdapter(true);
+      const adapters = makeAdapters(storage, auth, session, netInfo);
+
+      renderHook(() => useSyncWorker(), { wrapper: wrap(adapters) });
+      await settleMount();
+      mockFetch.mockClear();
+      resetSpy.mockClear();
+
+      act(() => netInfo.setConnected(false));
+      act(() => netInfo.setConnected(true));
+      act(() => {
+        jest.advanceTimersByTime(SYNC_RECONNECT_DEBOUNCE_MS);
+      });
+      // Let the resurrect+flush run to completion — the assertions below are all
+      // negative, so there is no positive signal to wait on.
+      await settleMount();
+
+      // Never reset, never re-sent, still terminal and still reviewable.
+      expect(resetSpy).not.toHaveBeenCalledWith([id]);
+      expect(mockFetch).not.toHaveBeenCalled();
+      const terminal = storage.getFailedExhaustedEntries();
+      expect(terminal).toHaveLength(1);
+      expect(terminal[0].status).toBe("permanently_failed");
+    });
+
+    it("does NOT re-arm a RESOLUTION deferral, which connectivity says nothing about", async () => {
+      // Resetting every deferred entry re-created the hole MAX_TRANSPORT_DEFERRALS
+      // was invented to close. An exercise naming a catalogue entry that does not
+      // yet exist defers with kind 'resolution'; zeroing its counters on every
+      // reconnect meant it could never reach the ceiling — no banner, no review row,
+      // never sent, and lost on reinstall. Real trigger population: the
+      // `machine` → "Machine" mapping needs a migration applied by hand to prod, so
+      // every exercise saved with the Machine option before that lands is this case.
+      const storage = new InMemoryStorageAdapter();
+      storage.initialize();
+      storage.enqueueMutation({
+        entityType: "exercise",
+        entityId: "local-ex-unresolvable",
+        operation: "create",
+        payload: { name: "Machine Press" },
+        endpoint: "/exercises",
+        method: "POST",
+      });
+      const id = storage.getPendingMutations().slice(-1)[0].id;
+      storage.markMutationDeferred(
+        id,
+        "No catalogue entry for: x",
+        "resolution",
+      );
+      storage.markMutationDeferred(
+        id,
+        "No catalogue entry for: x",
+        "resolution",
+      );
+
+      mockFetch.mockResolvedValue({ ok: true, json: async () => ({}) });
+      const auth = new InMemoryAuthAdapter();
+      const netInfo = new InMemoryNetInfoAdapter(true);
+      const adapters = makeAdapters(storage, auth, session, netInfo);
+
+      renderHook(() => useSyncWorker(), { wrapper: wrap(adapters) });
+      await settleMount();
+
+      act(() => netInfo.setConnected(false));
+      act(() => netInfo.setConnected(true));
+      act(() => {
+        jest.advanceTimersByTime(SYNC_RECONNECT_DEBOUNCE_MS);
+      });
+      await settleMount();
+
+      // Counter preserved, so it still converges on the ceiling and still becomes
+      // visible to the user instead of being postponed forever.
+      const [entry] = storage.getPendingMutations();
+      expect(entry.deferCount).toBe(2);
+      expect(entry.deferKind).toBe("resolution");
+    });
+
+    it("leaves an EXHAUSTED resolution-deferred create in /sync-failed on reconnect", async () => {
+      // The `deferred` filter excludes `resolution`, but the `replaySafe` filter
+      // silently undid it: `resetFailedEntries` zeroes retry_count, defer_count AND
+      // defer_kind, so an entry that had just climbed the full 12-deferral +
+      // 3-retry ladder into /sync-failed was dropped back to `pending` on the next
+      // connectivity blip — visible only in the window between exhausting and the
+      // next transition, which on a phone that moves is potentially never.
+      const storage = new InMemoryStorageAdapter();
+      storage.initialize();
+      storage.enqueueMutation({
+        entityType: "exercise",
+        entityId: "local-ex-unresolvable",
+        operation: "create",
+        payload: { name: "Machine Press" },
+        endpoint: "/exercises",
+        method: "POST",
+      });
+      const id = storage.getPendingMutations().slice(-1)[0].id;
+      // Climb the ladder: free deferrals, then the charged attempts that exhaust it.
+      for (let i = 0; i < 12; i++) {
+        storage.markMutationDeferred(id, "No catalogue entry", "resolution");
+      }
+      storage.markMutationFailed(id, "No catalogue entry");
+      storage.markMutationFailed(id, "No catalogue entry");
+      storage.markMutationFailed(id, "No catalogue entry");
+      expect(storage.getFailedExhaustedEntries()).toHaveLength(1);
+
+      mockFetch.mockResolvedValue({ ok: true, json: async () => ({}) });
+      const auth = new InMemoryAuthAdapter();
+      const netInfo = new InMemoryNetInfoAdapter(true);
+      const adapters = makeAdapters(storage, auth, session, netInfo);
+
+      renderHook(() => useSyncWorker(), { wrapper: wrap(adapters) });
+      await settleMount();
+      mockFetch.mockClear();
+
+      act(() => netInfo.setConnected(false));
+      act(() => netInfo.setConnected(true));
+      act(() => {
+        jest.advanceTimersByTime(SYNC_RECONNECT_DEBOUNCE_MS);
+      });
+      await settleMount();
+
+      // Still reviewable, still not re-sent. `defer_kind` survives
+      // markMutationFailed untouched, which is what makes it readable here.
+      expect(storage.getFailedExhaustedEntries()).toHaveLength(1);
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it("resurrects a create's exhausted DELETE sibling with it, not the create alone", async () => {
+      // A create and a follow-up delete against its local id climb the ladder in
+      // lockstep and exhaust on the same pass. `replaySafe` matches only the create
+      // (`operation === "create"`), so resetting it alone re-POSTed the create with
+      // nothing left to undo it — a workout the user created and then deleted offline
+      // was CREATED on the server by the reconnect, absent locally, and reappeared on
+      // the next list refresh consuming a quota slot. Strictly worse than doing
+      // nothing.
+      const storage = new InMemoryStorageAdapter();
+      storage.initialize();
+      const exhaust = (id: number) => {
+        storage.markMutationFailed(id, "e1");
+        storage.markMutationFailed(id, "e2");
+        storage.markMutationFailed(id, "e3");
+      };
+      storage.enqueueMutation({
+        entityType: "workout",
+        entityId: "local-w9",
+        operation: "create",
+        payload: { name: "Push" },
+        endpoint: "/workouts",
+        method: "POST",
+      });
+      const createId = storage.getPendingMutations().slice(-1)[0].id;
+      storage.enqueueMutation({
+        entityType: "workout",
+        entityId: "local-w9",
+        operation: "delete",
+        payload: {},
+        endpoint: "/workouts/local-w9",
+        method: "DELETE",
+      });
+      const deleteId = storage.getPendingMutations().slice(-1)[0].id;
+      exhaust(createId);
+      exhaust(deleteId);
+      expect(storage.getFailedExhaustedEntries()).toHaveLength(2);
+
+      const resetSpy = jest.spyOn(storage, "resetFailedEntries");
+      mockFetch.mockResolvedValue({ ok: true, json: async () => ({}) });
+      const auth = new InMemoryAuthAdapter();
+      const netInfo = new InMemoryNetInfoAdapter(true);
+      const adapters = makeAdapters(storage, auth, session, netInfo);
+
+      renderHook(() => useSyncWorker(), { wrapper: wrap(adapters) });
+      await settleMount();
+
+      act(() => netInfo.setConnected(false));
+      act(() => netInfo.setConnected(true));
+      act(() => {
+        jest.advanceTimersByTime(SYNC_RECONNECT_DEBOUNCE_MS);
+      });
+
+      await waitFor(() => expect(resetSpy).toHaveBeenCalled());
+      const resetIds = resetSpy.mock.calls[0][0] as readonly number[];
+      expect([...resetIds].sort()).toEqual([createId, deleteId].sort());
+    });
+
+    it("does not re-arm a RESOLUTION-deferred sibling when resurrecting a create", async () => {
+      // The sibling union took any `failed` sibling, with no deferKind check, while
+      // the two filters above it both exclude `resolution` — so it silently reopened
+      // the hole they exist to close. Reachable: a create exhausted by transport
+      // deferrals (so it qualifies for replaySafe) with a follow-up PATCH naming an
+      // unresolvable catalogue member, which `canRewriteWithoutReplayingKey` refuses
+      // to coalesce into the dispatched create and which is therefore a sibling.
+      const storage = new InMemoryStorageAdapter();
+      storage.initialize();
+      const exhaust = (id: number) => {
+        storage.markMutationFailed(id, "e1");
+        storage.markMutationFailed(id, "e2");
+        storage.markMutationFailed(id, "e3");
+      };
+      storage.enqueueMutation({
+        entityType: "exercise",
+        entityId: "local-ex-7",
+        operation: "create",
+        payload: { name: "Lift" },
+        endpoint: "/exercises",
+        method: "POST",
+      });
+      const createId = storage.getPendingMutations().slice(-1)[0].id;
+      storage.markMutationDeferred(createId, "offline", "transport");
+      exhaust(createId);
+
+      storage.enqueueMutation({
+        entityType: "exercise",
+        entityId: "local-ex-7",
+        operation: "update",
+        payload: { name: "Renamed" },
+        endpoint: "/exercises/local-ex-7",
+        method: "PATCH",
+      });
+      const patchId = storage.getPendingMutations().slice(-1)[0].id;
+      storage.markMutationDeferred(patchId, "No catalogue entry", "resolution");
+      exhaust(patchId);
+
+      const resetSpy = jest.spyOn(storage, "resetFailedEntries");
+      mockFetch.mockResolvedValue({ ok: true, json: async () => ({}) });
+      const auth = new InMemoryAuthAdapter();
+      const netInfo = new InMemoryNetInfoAdapter(true);
+      const adapters = makeAdapters(storage, auth, session, netInfo);
+
+      renderHook(() => useSyncWorker(), { wrapper: wrap(adapters) });
+      await settleMount();
+
+      act(() => netInfo.setConnected(false));
+      act(() => netInfo.setConnected(true));
+      act(() => {
+        jest.advanceTimersByTime(SYNC_RECONNECT_DEBOUNCE_MS);
+      });
+
+      await waitFor(() => expect(resetSpy).toHaveBeenCalled());
+      const resetIds = resetSpy.mock.calls[0][0] as readonly number[];
+      // The create is resurrected; the resolution-deferred PATCH stays reviewable.
+      expect(resetIds).toContain(createId);
+      expect(resetIds).not.toContain(patchId);
+    });
+
+    it("restores the budget-free run of still-queued deferred entries on reconnect", async () => {
+      // Without this, an offline stretch of only ~90–120s (12 free deferrals at a
+      // 5s window, then 3 charged attempts) exhausted an offline-created row
+      // during ordinary use — a commute, a basement gym — leaving the user a
+      // sync-failure banner to clear by hand. A reconnect is precisely the new
+      // information whose absence caused those deferrals. It also clears
+      // `nextAttemptAt`, so the flush that follows actually sends now rather than
+      // waiting out a window set while there was no network.
+      const storage = new InMemoryStorageAdapter();
+      storage.initialize();
+      storage.enqueueMutation({
+        entityType: "workout",
+        entityId: "w-deferred",
+        operation: "create",
+        payload: { name: "Push Day" },
+        endpoint: "/workouts",
+        method: "POST",
+      });
+      const id = storage.getPendingMutations().slice(-1)[0].id;
+      storage.markMutationDeferred(id, "Network request failed", "transport");
+      storage.markMutationDeferred(id, "Network request failed", "transport");
+      expect(storage.getPendingMutations()[0].deferCount).toBe(2);
+
+      mockFetch.mockResolvedValue({ ok: true, json: async () => ({}) });
+      const auth = new InMemoryAuthAdapter();
+      const netInfo = new InMemoryNetInfoAdapter(true);
+      const adapters = makeAdapters(storage, auth, session, netInfo);
+
+      renderHook(() => useSyncWorker(), { wrapper: wrap(adapters) });
+      await settleMount();
+
+      act(() => netInfo.setConnected(false));
+      act(() => netInfo.setConnected(true));
+      act(() => {
+        jest.advanceTimersByTime(SYNC_RECONNECT_DEBOUNCE_MS);
+      });
+
+      await waitFor(() =>
+        expect(mockFetch).toHaveBeenCalledWith(
+          "https://api.test/workouts",
+          expect.objectContaining({ method: "POST" }),
+        ),
+      );
     });
 
     it("debounces rapid toggles — only flushes once for a burst of transitions", async () => {
@@ -736,12 +1052,24 @@ describe("useSyncWorker", () => {
       // Two more ordinary foreground drains burn the rest of the retry
       // budget — the resurrect logic never re-fires on its own (no second
       // reconnect transition occurred), so this proves it doesn't loop.
+      //
+      // The clock is advanced past each failure's backoff window first. Without
+      // that the drain would (correctly) decline to re-send, which is the whole
+      // point of the backoff — a burst of foreground transitions must no longer
+      // burn the retry budget in seconds. Fake timers move `Date.now()` too, so
+      // advancing here is what makes these "later" drains.
+      act(() => {
+        jest.advanceTimersByTime(60_000);
+      });
       await act(async () => {
         activeListener!("active");
         await Promise.resolve();
       });
       await waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(2));
 
+      act(() => {
+        jest.advanceTimersByTime(60_000);
+      });
       await act(async () => {
         activeListener!("active");
         await Promise.resolve();

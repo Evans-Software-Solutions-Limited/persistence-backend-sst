@@ -2,9 +2,13 @@ import { router, useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getApiBaseUrl } from "@/adapters/api";
 import { processSyncQueue } from "@/application/commands/sync.command";
+import { mergePreservingUnsynced } from "@/application/queries/workouts.query";
 import type { Workout } from "@/domain/models/workout";
 import { useUserMode } from "@/state/user-mode";
+import { WORKOUT_TABLES } from "@/adapters/storage";
 import { useAdapters } from "@/ui/hooks/useAdapters";
+import { useCacheRevision } from "@/ui/hooks/useCacheRevision";
+import { useWorkoutLibrary } from "@/ui/hooks/useWorkoutLibrary";
 import { useAuth } from "@/ui/hooks/useAuth";
 import { CoachWorkoutLibraryPresenter } from "@/ui/presenters/coach/CoachWorkoutLibraryPresenter";
 
@@ -39,10 +43,17 @@ export function CoachWorkoutLibraryContainer({
   // (userId) resolves. `useAuth` seeds userId via an effect, so this lands on
   // the render after mount — matching the `useWorkout` cache pattern.
   const [cacheVersion, setCacheVersion] = useState(0);
+  // React to local writes: `createWorkoutCommand` now prepends a coach-authored
+  // workout to this slice offline, and the focus handler is network-first, so
+  // without this the new row waited for a successful GET.
+  const storageRevision = useCacheRevision(WORKOUT_TABLES);
+  const libraryRevision = useWorkoutLibrary((s) => s.revision);
   const cached = useMemo(() => {
     void cacheVersion;
+    void storageRevision;
+    void libraryRevision;
     return userId ? storage.getCachedCoachWorkoutLibrary(userId) : null;
-  }, [storage, userId, cacheVersion]);
+  }, [storage, userId, cacheVersion, storageRevision, libraryRevision]);
 
   const [workouts, setWorkouts] = useState<Workout[]>(cached ?? []);
   const [isLoading, setIsLoading] = useState(true);
@@ -83,8 +94,26 @@ export function CoachWorkoutLibraryContainer({
         }
         const result = await api.getWorkouts({ type: "mine" });
         if (result.ok) {
-          storage.cacheCoachWorkoutLibrary(userId, result.value.workouts);
-          setWorkouts(result.value.workouts);
+          // ⚠ Preserve rows the server cannot know about yet — the same guard
+          // `refreshWorkouts` applies to `cached_workouts`, and needed here for
+          // the same reason: `cacheCoachWorkoutLibrary` REPLACES the whole slice.
+          //
+          // This slice is where a coach-authored workout (`showInOwnerLibrary:
+          // false`) lands when created offline, and it is the ONLY place it
+          // lands. The drain above cannot save us: the enqueue already kicked
+          // `useSyncWorker`'s flush, so `markMutationInFlight` returns false and
+          // this pass skips the create by design (the PR #62 race guard). The GET
+          // then returns the pre-create list and the optimistic row is deleted —
+          // reappearing on a later focus if the create eventually lands, but gone
+          // from the UI *permanently* if it ends `permanently_failed`, blocked or
+          // exhausted, while the payload sits unexplained in /sync-failed.
+          const merged = mergePreservingUnsynced(
+            storage,
+            storage.getCachedCoachWorkoutLibrary(userId),
+            result.value.workouts,
+          );
+          storage.cacheCoachWorkoutLibrary(userId, merged);
+          setWorkouts(merged);
           setCacheVersion((v) => v + 1);
           setError(null);
         } else {

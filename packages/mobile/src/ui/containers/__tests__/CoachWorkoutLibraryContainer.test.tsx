@@ -272,6 +272,81 @@ describe("CoachWorkoutLibraryContainer", () => {
     expect(getByText("Cached Workout")).toBeTruthy();
   });
 
+  it("does NOT destroy an optimistic local- workout on a successful refresh", async () => {
+    // `cacheCoachWorkoutLibrary` REPLACES the whole slice, and this slice is the
+    // only place a coach-authored (showInOwnerLibrary: false) workout lands when
+    // created offline. The drain above can't save it either: the enqueue already
+    // kicked useSyncWorker's flush, so markMutationInFlight returns false and this
+    // pass skips the create by design. Writing the server list straight through
+    // deleted the optimistic row — which came back on a later focus if the create
+    // eventually landed, but was gone from the UI *permanently* if it ended
+    // permanently_failed, blocked or exhausted, while the payload sat unexplained
+    // in /sync-failed. Same defect, and same fix, as refreshWorkouts.
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheCoachWorkoutLibrary("user-1", [
+      buildWorkout({ id: "local-w-99", name: "Just Created" }),
+    ]);
+    storage.enqueueMutation({
+      entityType: "workout",
+      entityId: "local-w-99",
+      operation: "create",
+      payload: { name: "Just Created" },
+      endpoint: "/workouts",
+      method: "POST",
+    });
+    const api = new InMemoryApiAdapter();
+    jest.spyOn(api, "getWorkouts").mockResolvedValue(
+      // Server has not seen the create yet.
+      ok({
+        workouts: [buildWorkout({ id: "w-1", name: "Server Workout" })],
+        total: 1,
+        quota: null,
+      }),
+    );
+
+    const { findByText, getByText } = renderWithTheme(
+      withAdapters(
+        makeAdapters(api, storage),
+        <CoachWorkoutLibraryContainer />,
+      ),
+    );
+
+    expect(await findByText("Server Workout")).toBeTruthy();
+    // Still on screen, and still in the cache the next mount reads from.
+    expect(getByText("Just Created")).toBeTruthy();
+    expect(
+      storage.getCachedCoachWorkoutLibrary("user-1")?.map((w) => w.id),
+    ).toEqual(["local-w-99", "w-1"]);
+  });
+
+  it("DOES drop a local- row whose create has already completed", async () => {
+    // The queue is the authority, not the id's shape. A completed create means the
+    // server has the row (its id may just not have been swapped yet), so preserving
+    // it would make a workout the coach deleted server-side reappear forever.
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheCoachWorkoutLibrary("user-1", [
+      buildWorkout({ id: "local-w-98", name: "Already Synced" }),
+    ]);
+    const api = new InMemoryApiAdapter();
+    jest.spyOn(api, "getWorkouts").mockResolvedValue(
+      ok({
+        workouts: [buildWorkout({ id: "w-1", name: "Server Workout" })],
+        total: 1,
+        quota: null,
+      }),
+    );
+
+    const { findByText, queryByText } = renderWithTheme(
+      withAdapters(
+        makeAdapters(api, storage),
+        <CoachWorkoutLibraryContainer />,
+      ),
+    );
+
+    expect(await findByText("Server Workout")).toBeTruthy();
+    await waitFor(() => expect(queryByText("Already Synced")).toBeNull());
+  });
+
   it("shows the error state (default copy) and retries on tap", async () => {
     const api = new InMemoryApiAdapter();
     const spy = jest

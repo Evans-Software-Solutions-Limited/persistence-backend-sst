@@ -37,6 +37,7 @@ import { filterExercises } from "@/domain/services/exercise.service";
 import type {
   StoragePort,
   SyncQueueEntry,
+  DeferKind,
   SyncStats,
   EnqueueMutationInput,
   RecentSetEntry,
@@ -66,6 +67,35 @@ import type {
  * In-memory storage adapter for testing.
  * No SQLite dependency — stores everything in arrays/maps.
  */
+/**
+ * Rewrite `localId` → `serverId` in a cached workout list, folding onto any row that
+ * already carries the server id. Mirrors `foldWorkoutIdInList` in the SQLite adapter —
+ * see its docstring for why the fold matters.
+ */
+function foldWorkoutIdInList(
+  workouts: Workout[],
+  localId: string,
+  serverId: string,
+): Workout[] {
+  // The server row WINS, and keeps its position. If the slice already carries
+  // `serverId`, that row came from the server's own list — truth — while the local
+  // row is an optimistic snapshot that may predate an edit the server already has.
+  // So drop the local row rather than renaming it over the top.
+  const alreadyHasServerRow = workouts.some(
+    (w) => w.id === serverId && w.id !== localId,
+  );
+  const out: Workout[] = [];
+  for (const w of workouts) {
+    if (w.id !== localId) {
+      out.push(w);
+      continue;
+    }
+    if (alreadyHasServerRow) continue;
+    out.push({ ...w, id: serverId });
+  }
+  return out;
+}
+
 export class InMemoryStorageAdapter implements StoragePort {
   private queue: SyncQueueEntry[] = [];
   private metadata: Map<string, string> = new Map();
@@ -134,6 +164,67 @@ export class InMemoryStorageAdapter implements StoragePort {
     return this._backendChanged;
   }
 
+  /**
+   * Change-bus double. The real adapter observes SQLite's update hook; this one
+   * cannot, so tests drive delivery explicitly via `emitChange`. Honours the
+   * port's subscribe/unsubscribe contract and its table filter so a test can
+   * prove a subscriber is (or is not) woken by a given table.
+   *
+   * Delivery here is SYNCHRONOUS, unlike production's debounced async flush —
+   * a test asserting "the list re-read after the write" should not need timers.
+   * Tests that care about coalescing target the SQLite adapter directly.
+   */
+  private changeSubscribers = new Set<{
+    tables: ReadonlySet<string>;
+    onChange: (changed: ReadonlySet<string>) => void;
+  }>();
+
+  subscribe(
+    tables: readonly string[],
+    onChange: (changed: ReadonlySet<string>) => void,
+  ): () => void {
+    if (tables.length === 0) return () => {};
+    const sub = { tables: new Set(tables), onChange };
+    this.changeSubscribers.add(sub);
+    return () => {
+      this.changeSubscribers.delete(sub);
+    };
+  }
+
+  /**
+   * Test-only: how many live subscriptions exist. Asserting on this is the only
+   * way to prove the unsubscribe path actually runs — checking that a
+   * post-unmount `emitChange` "doesn't update the component" passes whether or
+   * not cleanup happened, because React discards the update either way.
+   */
+  changeSubscriberCount(): number {
+    return this.changeSubscribers.size;
+  }
+
+  /**
+   * Test-only: overwrite fields on a stored queue row.
+   *
+   * Needed because the reads are snapshots (see `getPendingMutations`), so a test
+   * can no longer set up state by mutating a returned entry — which is the point:
+   * that only ever worked here and never in production. Use this to construct a
+   * state the port has no method for, e.g. a row enqueued before
+   * `idempotency_key` existed.
+   */
+  patchQueueEntryForTest(id: number, patch: Partial<SyncQueueEntry>): void {
+    const entry = this.queue.find((e) => e.id === id);
+    if (entry) Object.assign(entry, patch);
+  }
+
+  /** Test-only: pretend these tables were written. */
+  emitChange(...tables: string[]): void {
+    const changed: ReadonlySet<string> = new Set(tables);
+    for (const sub of [...this.changeSubscribers]) {
+      if (!this.changeSubscribers.has(sub)) continue;
+      if (![...changed].some((t) => sub.tables.has(t))) continue;
+      sub.onChange(changed);
+    }
+  }
+
   enqueueMutation(entry: EnqueueMutationInput): void {
     this.queue.push({
       id: this.nextId++,
@@ -149,6 +240,12 @@ export class InMemoryStorageAdapter implements StoragePort {
       errorMessage: null,
       createdAt: new Date().toISOString(),
       entitlementVerdict: null,
+      // Mirrors the SQLite adapter: stamped once at enqueue, never rewritten.
+      idempotencyKey: `${entry.entityId ?? `${entry.entityType}:${entry.operation}`}-${this.nextId}`,
+      nextAttemptAt: null,
+      deferCount: 0,
+      dispatchCount: 0,
+      deferKind: null,
     });
   }
 
@@ -156,11 +253,36 @@ export class InMemoryStorageAdapter implements StoragePort {
     // M10.6: parity with SQLite — `blocked_entitlement` is excluded.
     // Those entries only re-enter the pool via `unblockEntries` (tier
     // upgrade or explicit user retry) or get deleted via `discardEntries`.
-    return this.queue.filter(
-      (e) =>
-        (e.status === "pending" || e.status === "failed") &&
-        e.retryCount < e.maxRetries,
-    );
+    //
+    // ⚠ Returns SNAPSHOTS, not live rows. The SQLite adapter maps each result row
+    // into a fresh object, so the drain holds a value frozen at read time — and any
+    // condition it evaluates AFTER a `markMutation*` call therefore sees the OLD
+    // value in production. Returning live references here made that divergence
+    // invisible: a test could pass while the production code read a different value
+    // on the same line. It hid two real bugs on this branch (an exhaustion test that
+    // was one attempt early, and a `status` read that could never match, silently
+    // deleting a user's edit) and no test could fail on either. Copying makes the
+    // double tell the truth.
+    return this.queue
+      .filter(
+        (e) =>
+          (e.status === "pending" || e.status === "failed") &&
+          e.retryCount < e.maxRetries,
+      )
+      .map((e) => ({ ...e }));
+  }
+
+  getMutationById(id: number): SyncQueueEntry | null {
+    // A snapshot, matching `getPendingMutations` and the real adapter.
+    const entry = this.queue.find((e) => e.id === id);
+    return entry ? { ...entry } : null;
+  }
+
+  markMutationDispatched(id: number): void {
+    // Parity with SQLite: monotonic, never reset. A double that left it at 0 would
+    // make an already-sent create look coalescable and hide the key-replay bug.
+    const entry = this.queue.find((e) => e.id === id);
+    if (entry) entry.dispatchCount++;
   }
 
   markMutationInFlight(id: number): boolean {
@@ -186,6 +308,34 @@ export class InMemoryStorageAdapter implements StoragePort {
       entry.status = "failed";
       entry.errorMessage = errorMessage;
       entry.retryCount++;
+      // Backoff parity with SQLite (base * attempt^2, capped). Kept so a test
+      // that drains twice in a row observes the same "not yet due" behaviour the
+      // real adapter has — otherwise the double would silently make retries look
+      // immediate.
+      const seconds = Math.min(300, 5 * entry.retryCount * entry.retryCount);
+      entry.nextAttemptAt = new Date(Date.now() + seconds * 1000).toISOString();
+    }
+  }
+
+  markMutationDeferred(
+    id: number,
+    reason: string,
+    kind: DeferKind,
+    retryAfterSeconds = 5,
+  ): void {
+    // Parity with SQLite: postpone WITHOUT consuming the retry budget, but DO
+    // advance `deferCount` — that counter is the ceiling the drain enforces, so a
+    // double that left it at 0 would make an unreachable endpoint look infinitely
+    // (and invisibly) retryable in tests while the real adapter escalated.
+    const entry = this.queue.find((e) => e.id === id);
+    if (entry) {
+      entry.status = "failed";
+      entry.errorMessage = reason;
+      entry.deferCount++;
+      entry.deferKind = kind;
+      entry.nextAttemptAt = new Date(
+        Date.now() + Math.max(1, Math.trunc(retryAfterSeconds)) * 1000,
+      ).toISOString();
     }
   }
 
@@ -248,14 +398,45 @@ export class InMemoryStorageAdapter implements StoragePort {
     this.queue = this.queue.filter((e) => !idSet.has(e.id));
   }
 
+  recoverInFlightMutations(): number {
+    // Parity with SQLite: return stranded in_flight rows to the pool at startup.
+    let recovered = 0;
+    for (const e of this.queue) {
+      if (e.status === "in_flight") {
+        e.status = "pending";
+        recovered++;
+      }
+    }
+    return recovered;
+  }
+
+  getQueuedEntriesForEntity(
+    entityType: string,
+    entityId: string,
+  ): SyncQueueEntry[] {
+    // Mirrors the SQLite adapter: every non-completed status, oldest first, as
+    // SNAPSHOTS — see `getPendingMutations`.
+    return this.queue
+      .filter(
+        (e) =>
+          e.entityType === entityType &&
+          e.entityId === entityId &&
+          e.status !== "completed",
+      )
+      .map((e) => ({ ...e }));
+  }
+
   getFailedExhaustedEntries(): SyncQueueEntry[] {
     // Parity with SQLite: FIFO order (insertion-ordered already, we
-    // just push to the end).
-    return this.queue.filter(
-      (e) =>
-        (e.status === "failed" && e.retryCount >= e.maxRetries) ||
-        e.status === "permanently_failed",
-    );
+    // just push to the end), and SNAPSHOTS — see `getPendingMutations` for why
+    // handing out live rows is the divergence that hid two production bugs here.
+    return this.queue
+      .filter(
+        (e) =>
+          (e.status === "failed" && e.retryCount >= e.maxRetries) ||
+          e.status === "permanently_failed",
+      )
+      .map((e) => ({ ...e }));
   }
 
   resetFailedEntries(ids: readonly number[]): void {
@@ -267,6 +448,11 @@ export class InMemoryStorageAdapter implements StoragePort {
         continue;
       entry.status = "pending";
       entry.retryCount = 0;
+      entry.nextAttemptAt = null;
+      // Parity with SQLite: a Retry is new information, so the deferral ceiling
+      // resets too and the entry gets its full run of budget-free postponements.
+      entry.deferCount = 0;
+      entry.deferKind = null;
       entry.errorMessage = null;
     }
   }
@@ -348,6 +534,18 @@ export class InMemoryStorageAdapter implements StoragePort {
         syncedAt: entry.syncedAt,
       });
     }
+    // Nested `exerciseId` references inside cached workout structures. Mirrors the
+    // three SQLite tables `swapLocalExerciseId` rewrites via
+    // `replaceExerciseIdDeep` — including `cached_coach_workout_library`, which
+    // this branch made a first-class holder of `local-` ids (a coach authoring
+    // offline against a just-created custom exercise puts one there). A double
+    // that skipped these would encode the pre-fix behaviour — a workout whose
+    // exercise reference stays local and 400s on open — as correct.
+    for (const workout of this.allCachedWorkouts()) {
+      for (const we of workout.exercises ?? []) {
+        if (we.exerciseId === localId) we.exerciseId = serverId;
+      }
+    }
     for (const e of this.queue) {
       if (e.entityType === "exercise" && e.entityId === localId) {
         e.entityId = serverId;
@@ -356,6 +554,19 @@ export class InMemoryStorageAdapter implements StoragePort {
         }
       }
     }
+  }
+
+  /**
+   * Every cached `Workout` object, across the detail cache, the list slices and
+   * the coach library — the in-memory equivalents of `cached_workout_detail`,
+   * `cached_workouts` and `cached_coach_workout_library`. Yielded by reference so
+   * callers can mutate in place.
+   */
+  private *allCachedWorkouts(): Generator<Workout> {
+    for (const detail of this.workoutDetailCache.values()) yield detail.workout;
+    for (const slice of this.workoutsListCache.values()) yield* slice.workouts;
+    for (const slice of this.coachWorkoutLibraryCache.values())
+      yield* slice.workouts;
   }
 
   swapLocalNutritionEntryId(localId: string, serverId: string): void {
@@ -401,11 +612,20 @@ export class InMemoryStorageAdapter implements StoragePort {
         { ...history, workoutId: serverId },
       );
     }
-    // Rewrite the matching top-level id in every cached list slice.
+    // Rewrite the matching top-level id in every cached list slice, FOLDING onto any
+    // row already carrying the server id — a slice can legitimately hold both while a
+    // dispatched create sits in its backoff window, and a bare rewrite would leave two
+    // rows with the same id (duplicate React keys). Parity with the SQLite adapter.
     for (const slice of this.workoutsListCache.values()) {
-      for (const w of slice.workouts) {
-        if (w.id === localId) w.id = serverId;
-      }
+      slice.workouts = foldWorkoutIdInList(slice.workouts, localId, serverId);
+    }
+    // …and in the coach library, which this branch made a first-class holder of
+    // `local-` ids (a coach-authored workout lands there before it flushes). The
+    // SQLite adapter rewrites it; without the same step here the double would
+    // encode the pre-fix behaviour — a stale local id that 400s when the row is
+    // opened — as correct, and the fix would be untested.
+    for (const slice of this.coachWorkoutLibraryCache.values()) {
+      slice.workouts = foldWorkoutIdInList(slice.workouts, localId, serverId);
     }
     // Re-point the workout_id of any local-first session that captured it.
     for (const [userId, session] of this.activeSessions) {

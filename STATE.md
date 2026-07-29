@@ -531,6 +531,46 @@ consent copy, privacy section and governing law · the OFF re-seed backfilling
 
 ## Last session
 
+**2026-07-28 — HOME TRAIN RING + WORKOUT DURATION bug fixes. PR
+[#334](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/334)
+OPEN off `main`, branch `claude/fix-train-ring-and-duration` (5 commits, head
+`25189f22`). All gates green; 4 Inspector-Brad passes (8 + 6 + 4 findings fixed,
+final pass clean). NOT device-verified — and that matters more than usual here,
+see below.**
+
+- **Both reported bugs were hardcoded constants, not broken maths.**
+  - Workout duration was always 30: V2 dropped legacy's `calculateWorkoutDuration`
+    at port time and kept only its fallback constant, the form seeded 30, and the
+    backend's `?? 30` therefore never fired. Ported the heuristic to
+    `application/workouts/estimateDuration.ts` and made it SERVER-side so all three
+    authoring paths share it.
+  - Train ring read 45% for a heavy session: it was weekly volume ÷ a hardcoded
+    20,000 kg (8,960 ÷ 20,000 = 44.8%). Now daily HealthKit active energy. Weekly
+    volume was already on the Home card + You VolumeStats, so nothing was lost.
+- **Move's goal now reads the user's Steps habit target** (`habit_configs`), falling
+  back to 10k. Active energy has no habit equivalent — `calories` there is nutrition
+  INTAKE (`within_tolerance`, feeds Fuel) — so its goal is a **500 kcal stopgap**.
+- **⚠ OPEN PRODUCT QUESTION for Brad, recorded as spec 06 AC 1.2b.** Move and Train
+  now BOTH read HealthKit, so a user who declines Health permissions sees the hero
+  dial at a permanent 0%, even right after logging a workout. Before this, Train came
+  from server-side volume and moved without device permission. Options: gate
+  Move/Train like Fuel, or rely on the connect prompt. Recommended gating; not decided.
+- **⚠ TWO migrations need manual prod apply**: the duration backfill
+  (`20260728121000_backfill_workout_estimated_duration.sql`) and SQLite migration 1
+  (ships with the app, clears `cached_home`).
+- **Latent bug this surfaced: HealthKit energy reads had no explicit unit.**
+  `preferredUnits(for:)` returns kJ on AU/NZ devices and for anyone with the Health
+  app set to kJ — 4.184× high. Both energy reads now pass `unit: "kcal"`. Pre-existing;
+  the new ring is what would have made it visible.
+- **The backfill nearly destroyed real data — twice.** First scoping assumed a stored
+  30 could only be the V2 default; the still-live LEGACY app sends
+  `max(15, 2n + totalSets)` EXPLICITLY, which is exactly 30 for 5 exercises × 4 sets.
+  Then the same flip-flop reappeared via the edit path (the editor sent the full plan
+  on every PATCH, so a rename re-derived). Both closed. **Backfill validated against
+  STAGING read-only** — SELECT + EXPLAIN + case-by-case discriminator check.
+- Unrelated pre-existing flake noted: `useAutoRetryOnUpgrade › flip-flop mid-flush`
+  fails intermittently under full-suite parallelism, passes 7/7 in isolation.
+
 **2026-07-28 — LOADOUT Phase 2's SCREENS + Phase 3's scan sheet. Branch
 `claude/loadout-phase-2-screens` (3 commits off `dfeed666`), NOT merged, NOT
 device-verified. The first user-reachable Loadout surface: before this, every
@@ -544,10 +584,10 @@ Loadout phase was contract, engine and step machine with nothing attached.**
   tokens from `~/Downloads/Any Gym/project/` — no lifted prototype JSX.
 - **The load-bearing decisions are in `tasks.md`
   § "Landed in Phase 2's screens beyond the checklist"** and § Open items above.
-  The two most likely to be undone by a well-meaning refactor: the flow is a
-  **root-mounted overlay** because its sheets must layer above the step (a
-  gorhom sheet renders inline in the tree, so one mounted at the layout root
-  sits behind it), and the swap sheet's containment context is
+  The two most likely to be undone by a well-meaning refactor: the flow is the
+  **`/(app)/loadout` route** (`fullScreenModal`) — NOT a root-mounted overlay,
+  which was tried twice and broke on device both times (see § Loadout Phase 2's
+  screens) — and the swap sheet's containment context is
   **`preview.equipmentTypeIds`** — the kit the SERVER resolved — never the
   client's saved-gym row.
 - **Fixed in passing, each found by building against it:** `SnapAISheetContainer`
@@ -658,7 +698,6 @@ the same branch; the flow is STILL not verified working end-to-end by me.**
 - **NOT done, deliberately:** the Gym-tab-in-Train idea (Brad: "worth keeping an
   eye on") — logged under § Open items. And the app-wide root `SafeAreaProvider`,
   which would give every other sheet in the app its home-indicator padding back.
-
 
 
 **2026-07-27 (cont.) — LOADOUT Phase 3 backend + Phase 2 FOUNDATION. MERGED as

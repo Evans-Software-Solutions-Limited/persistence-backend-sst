@@ -34,5 +34,6 @@ export function deleteWorkoutCommand(
   // drop its cache so home doesn't keep showing the deleted row
   // until the dashboard TTL elapses.
   deps.storage.invalidateDashboard(deps.userId);
+  // No `invalidateHome` — see create-workout.
   return ok(undefined);
 }

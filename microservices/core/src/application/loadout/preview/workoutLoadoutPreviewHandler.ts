@@ -15,6 +15,9 @@ import {
 import {
   AiUnavailableError,
   AiUnreadableError,
+  maxTokensForBudget,
+  PREFILL_ALLOWANCE_MS,
+  ROUTE_TIMEOUT_MS,
 } from "../../nutrition/services/aiBedrockClient";
 import {
   assembleAdaptedPlan,
@@ -23,7 +26,13 @@ import {
   unionShortlist,
 } from "../engine/adaptWorkout";
 import { LOADABLE_EQUIPMENT_NAMES } from "../engine/intensityMismatch";
-import { selectSubstitutes } from "../engine/remapModel";
+import {
+  MIN_USEFUL_GENERATION_MS,
+  minUsefulRemapTokens,
+  REMAP_TIMEOUT_MS,
+  remapMaxTokens,
+  selectSubstitutes,
+} from "../engine/remapModel";
 import type { RemapSelection } from "../engine/remapModel";
 import type { AdaptedPlan } from "../engine/types";
 
@@ -117,6 +126,10 @@ export const workoutLoadoutPreviewHandler = new Elysia()
       // pre-model rejections (400/402/404/429), which cost nothing and must not
       // consume the ceiling.
       let reachedModel = false;
+      // Hoisted so the catch below can report it. `plan` is scoped to the try,
+      // and the failure that most needs this number — a truncation 422 — is
+      // thrown from inside `selectSubstitutes`, i.e. only ever seen out here.
+      let swapRowCount = 0;
 
       try {
         // 1. Exactly one equipment source. Accepting both would mean silently
@@ -215,6 +228,7 @@ export const workoutLoadoutPreviewHandler = new Elysia()
           await ctx.WorkoutRepository.listAdaptationRows(workoutId);
         const plan = partitionPlan(parentRows, context);
         const needsSwap = plan.filter((row) => row.needsSwap);
+        swapRowCount = needsSwap.length;
 
         const respond = (adapted: AdaptedPlan) => {
           const body = {
@@ -335,21 +349,90 @@ export const workoutLoadoutPreviewHandler = new Elysia()
             equipmentNames: new Map(equipmentTypes.map((e) => [e.id, e.name])),
           };
 
+          // ⚠ What is LEFT of the route budget, not the nominal 24 s. The seven
+          // round trips above are assumed to cost ~3 s; on a cold start with a
+          // fresh pooler connection they cost more, and a full-length attempt on
+          // top of that overruns the 29 s Lambda — which produces no 503, no
+          // usage row and no log line, i.e. this bug again in miniature.
+          //
+          // ⚠ `POST_MODEL_RESERVE_MS` covers MORE than the usage-log INSERT.
+          // `startedAt` is set inside this handler, which is AFTER Elysia's
+          // `.derive` has run `getAuthUser` — and on a cold instance that does a
+          // `createRemoteJWKSet` fetch to Supabase plus a TLS handshake, ~0.5–1.5 s
+          // that this clock never sees but the Lambda's 29 s does. The reserve
+          // therefore absorbs the unmeasured auth leg AND the `finally`'s INSERT
+          // on a fresh pooler connection, and both costs are correlated because
+          // both are cold. 2 s did not cover that pair; 3.5 s does.
+          const POST_MODEL_RESERVE_MS = 3_500;
+          const remainingMs =
+            ROUTE_TIMEOUT_MS - (Date.now() - startedAt) - POST_MODEL_RESERVE_MS;
+          const attemptMs = Math.min(REMAP_TIMEOUT_MS, remainingMs);
+
+          // ⚠ Fail BEFORE marking the request billable. A usage row means "an
+          // inference reached the provider"; a preamble that ate the budget means
+          // no request is sent at all, and charging a daily adaptation for that
+          // punishes the user for our own slowness. This is the last pre-model
+          // exit — every other one (400/402/404/429) already sits above
+          // `reachedModel`.
+          //
+          // ⚠ The floor is WORK-AWARE, not just a clock. A time-only floor let a
+          // 10-row plan through on a 12 s budget, where the ceiling is ~900
+          // tokens against ~912 wanted — near-certain truncation, a 422, and a
+          // burned adaptation. That is the same failure as an exhausted clock,
+          // reached by row count instead. Gated on the MEASURED ~40 tokens/row
+          // rather than the pessimistic 120 the ceiling is sized with, so this
+          // rejects only plans that genuinely cannot fit.
+          const ceiling = maxTokensForBudget(attemptMs);
+          const minimumUseful = minUsefulRemapTokens(needsSwap.length);
+          if (
+            attemptMs < PREFILL_ALLOWANCE_MS + MIN_USEFUL_GENERATION_MS ||
+            ceiling < minimumUseful
+          ) {
+            console.warn(
+              `[loadout-remap] skipped workout=${workoutId} swapRows=${needsSwap.length} attemptMs=${attemptMs} ceiling=${ceiling} needed=${minimumUseful}`,
+            );
+            throw new AiUnavailableError(
+              `ai_budget_exhausted: ${Math.max(0, attemptMs)}ms left after the preamble`,
+            );
+          }
+
+          // ⚠ Logged AFTER the guard, so a `start` line means a request really
+          // was sent. It fired before the guard at first, printing
+          // `attemptMs=-2500 maxTokens=0` for calls that never happened — a
+          // phantom for anyone reconciling these against Bedrock invocations,
+          // in a change whose entire point is trustworthy observability.
+          //
+          // When this surface failed on staging 2026-07-28 the Lambda was killed
+          // mid-inference, so nothing after the call ever ran — CloudWatch held a
+          // START and a REPORT 29 s apart and not one application line. This line
+          // says "we were in the model call" outright. Counts and ids only; the
+          // prompt carries the user's workout.
+          console.info(
+            `[loadout-remap] start workout=${workoutId} swapRows=${needsSwap.length} candidates=${offered.length} attemptMs=${attemptMs} maxTokens=${remapMaxTokens(needsSwap.length, attemptMs)}`,
+          );
+
           // Set LAST, immediately before the provider call. Anything that can
-          // still fail before Bedrock is reached — a transient error on either
-          // reference read, for instance — must not write a usage row, or a DB
-          // blip silently burns one of the user's daily adaptations for an
+          // still fail before Bedrock is reached must not write a usage row, or a
+          // DB blip silently burns one of the user's daily adaptations for an
           // inference that never happened.
           reachedModel = true;
-          const result = await selectSubstitutes({
-            workoutName: parent.name,
-            plan,
-            candidates: offered,
-            equipmentTypeIds: context,
-            lookups,
-          });
+          const result = await selectSubstitutes(
+            {
+              workoutName: parent.name,
+              plan,
+              candidates: offered,
+              equipmentTypeIds: context,
+              lookups,
+            },
+            { timeoutMs: attemptMs },
+          );
           selections = result.selections;
           modelId = result.usage.modelId;
+          // `outputTokens` against the ceiling is the number that predicts the
+          // next timeout: generation is serial, so tokens ARE wall clock.
+          console.info(
+            `[loadout-remap] done workout=${workoutId} model=${result.usage.modelId} latencyMs=${result.usage.latencyMs} inputTokens=${result.usage.inputTokens} outputTokens=${result.usage.outputTokens} maxTokens=${remapMaxTokens(needsSwap.length, attemptMs)}`,
+          );
         }
 
         return respond(
@@ -369,12 +452,28 @@ export const workoutLoadoutPreviewHandler = new Elysia()
         // A non-member exercise id, a refusal or a malformed tool payload — all
         // parse failures (§ 1 rule 1), never a fabricated row.
         if (error instanceof AiUnreadableError) {
+          // ⚠ Logged for the same reason as the 503 below, and arguably more
+          // urgently: `selectSubstitutes` throws the truncation error BEFORE
+          // returning, so the `[loadout-remap] done` line never fires and
+          // nothing would record the row count or the ceiling that was hit.
+          // After this change truncation is the expected failure for very long
+          // plans (see `remapMaxTokens`), so it is the one that must arrive with
+          // its numbers attached.
+          console.error(
+            `[loadout-remap] unreadable workout=${workoutId} swapRows=${swapRowCount}: ${error.message}`,
+          );
           ctx.set.status = 422;
           const body = { error: "ai_unreadable" };
           responseSizeBytes = Buffer.byteLength(JSON.stringify(body));
           return body;
         }
         if (error instanceof AiUnavailableError) {
+          // Named, not swallowed. This is the branch that SHOULD have fired on
+          // 2026-07-28 and could not, because the SDK's hidden retries pushed
+          // the call past the Lambda timeout before it could throw.
+          console.error(
+            `[loadout-remap] unavailable workout=${workoutId} swapRows=${swapRowCount}: ${error.message}`,
+          );
           ctx.set.status = 503;
           const body = { error: "ai_unavailable" };
           responseSizeBytes = Buffer.byteLength(JSON.stringify(body));

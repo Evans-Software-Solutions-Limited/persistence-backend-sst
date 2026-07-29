@@ -66,6 +66,7 @@ import type {
   RecordResponseSummary,
   RestTimerState,
   SyncQueueEntry,
+  DeferKind,
   SyncStats,
 } from "@/domain/ports/storage.port";
 import type {
@@ -75,6 +76,192 @@ import type {
 } from "@/domain/ports/sync.types";
 
 const DB_NAME = "persistence.db";
+
+/**
+ * Coalescing window for change-bus delivery, in ms.
+ *
+ * SQLite's update hook fires once per changed ROW, so a bulk write emits a
+ * burst: `cacheExercises` upserts the whole ~2.3k-row library in one
+ * transaction, and `refreshAllWorkouts` writes three list slices back to back.
+ * Delivering per row would re-render every subscribed list thousands of times.
+ * One frame's worth of coalescing turns a burst into a single notification
+ * while still feeling instant to the user.
+ *
+ * A non-zero window matters because bursts are not always synchronous: a
+ * command writes its optimistic row and enqueues its mutation as separate
+ * statements, and the sync drain's `swapLocal*Id` touches several tables across
+ * `await` boundaries. 16ms absorbs those without deferring the re-read into a
+ * visible delay.
+ */
+const CHANGE_BUS_DEBOUNCE_MS = 16;
+
+/**
+ * Backoff schedule for a failed queue entry: `base * attempt²`, capped.
+ *
+ * 5s then 20s across the default 3-attempt budget. Small on purpose — these are
+ * user-visible writes, and the common transient failure (a cold Lambda, a wifi
+ * handoff) clears in seconds. The cap exists so a long-lived entry can't schedule
+ * itself hours out and appear stuck.
+ */
+const SYNC_BACKOFF_BASE_SECONDS = 5;
+const SYNC_BACKOFF_MAX_SECONDS = 300;
+
+/**
+ * `sync_queue` columns added after the table's original shape — the SINGLE source
+ * of truth for all three places an install can arrive at that shape:
+ *
+ *   1. `CREATE TABLE IF NOT EXISTS sync_queue` — a FRESH install;
+ *   2. the M10.6 `sync_queue_new` rebuild — an install predating the 6-value status
+ *      CHECK, which copies an explicit column list into a new table and drops the
+ *      old one;
+ *   3. the PRAGMA-guarded `ALTER TABLE … ADD COLUMN` loop — an install already on
+ *      the 6-value CHECK but predating a column. It MUST run after (2), which
+ *      would otherwise drop whatever it added.
+ *
+ * All three interpolate or iterate this array, because they used to be three
+ * hand-maintained copies and nothing could catch a divergence: reads are
+ * `SELECT *` with `mapRow` defaulting each field, so only WRITES naming the column
+ * (`enqueueMutation`'s explicit insert list, `markMutationDeferred`,
+ * `markMutationDispatched`, `resetFailedEntries`) throw `no such column` — and only
+ * on the install population whose branch was missed. This file is excluded from
+ * `collectCoverageFrom` and the in-memory double has no schema, so no test executes
+ * any of the three. Deriving them removes the failure mode rather than testing for
+ * it.
+ *
+ * Column meanings:
+ * - `idempotency_key` — client-generated, stamped once at enqueue and never
+ *   rewritten. Sent as the `Idempotency-Key` header so an AMBIGUOUS failure (a
+ *   timeout or reset after the server committed) can be retried without creating a
+ *   second row. Only `POST /sessions/record` had an equivalent (`clientSessionId`);
+ *   workout/exercise creates had none, so an ordinary retry duplicated them.
+ * - `next_attempt_at` — earliest time this entry may be attempted again, NULL for
+ *   "now". Backs exponential backoff; before it, retry cadence WAS drain cadence,
+ *   so three foreground toggles during a server blip burnt the whole budget in
+ *   seconds. NOTE: `getPendingMutations` deliberately does NOT filter on it — it
+ *   answers "still retryable"; dueness is applied by the drain via `isMutationDue`.
+ * - `defer_count` — postponements that did NOT charge the retry budget (offline, or
+ *   an unresolvable reference catalogue). A CEILING, because deferral is free but
+ *   must not be free forever: `getFailedExhaustedEntries` gates on
+ *   `retry_count >= max_retries`, and it is the only source for the sync-failed
+ *   banner and review screen, so an endlessly-deferred entry is invisible. Past
+ *   `MAX_TRANSPORT_DEFERRALS` the drain charges the budget again.
+ * - `dispatch_count` — requests actually SENT for this entry, incremented just
+ *   before `fetch` and never reset by any path. It answers "could the server have
+ *   seen this?", which must survive a user Retry, and is what stops edit-coalescing
+ *   from replaying a create's idempotency key with a different body (the server
+ *   returns the original row and the edit is silently lost).
+ * - `defer_kind` — WHY the last deferral happened: `'transport'` (no answer
+ *   received) or `'resolution'` (we declined to send, because a reference catalogue
+ *   could not be resolved). Only the transport kind is informed by regaining
+ *   connectivity, so it is the only kind whose ceiling a reconnect may re-arm.
+ *   Without the distinction, an exercise naming a catalogue entry that does not yet
+ *   exist had its counters zeroed on every reconnect and so could never reach the
+ *   ceiling — invisible in every sync surface, forever. NULL when never deferred.
+ */
+export const ADDITIVE_SYNC_QUEUE_COLUMNS: readonly [string, string][] = [
+  ["idempotency_key", "TEXT"],
+  ["next_attempt_at", "TEXT"],
+  ["defer_count", "INTEGER NOT NULL DEFAULT 0"],
+  ["dispatch_count", "INTEGER NOT NULL DEFAULT 0"],
+  ["defer_kind", "TEXT"],
+];
+
+/**
+ * The additive columns as DDL fragment lines, indented to sit inside a
+ * `CREATE TABLE` body. Trailing comma included — every call site has more columns
+ * after it.
+ */
+export function indentSyncQueueDdl(spaces: number): string {
+  const pad = " ".repeat(spaces);
+  return ADDITIVE_SYNC_QUEUE_COLUMNS.map(
+    ([column, type]) => `${pad}${column} ${type},`,
+  ).join("\n");
+}
+
+/**
+ * Mint the idempotency key stamped on a queue entry at enqueue time.
+ *
+ * Not a UUID because there is no crypto-random primitive in this layer, and it
+ * does not need to be unguessable — only unique per logical mutation on one
+ * device. `entityId` is the strongest component: it is the caller's own
+ * `local-…` id, already unique per created row, so a retry of the same create
+ * always presents the same key while two distinct creates never collide. The
+ * timestamp + random suffix cover entries with no `entityId` (a preferences PUT,
+ * say) and make same-millisecond collisions negligible.
+ */
+function newIdempotencyKey(entry: EnqueueMutationInput): string {
+  const scope = entry.entityId ?? `${entry.entityType}:${entry.operation}`;
+  const suffix = Math.random().toString(36).slice(2, 10);
+  return `${scope}-${Date.now()}-${suffix}`;
+}
+
+type ChangeSubscriber = {
+  tables: ReadonlySet<string>;
+  onChange: (changed: ReadonlySet<string>) => void;
+};
+
+/**
+ * Depth cap for the exercise-id rewrite walk. A workout payload nests
+ * `{ exercises: [ { exerciseId } ] }` (depth 3) and a session record a little
+ * deeper; 8 covers both with room to spare while bounding a pathological blob.
+ */
+const EXERCISE_ID_REWRITE_MAX_DEPTH = 8;
+
+/**
+ * Rewrite every `exerciseId` / `exercise_id` / `originalExerciseId` value equal
+ * to `localId` anywhere inside a parsed JSON structure.
+ *
+ * Keyed on the FIELD NAME rather than replacing any matching string, so a
+ * workout whose *own* id happens to collide with an exercise id (or a free-text
+ * note that quotes one) is left alone. Returns a new structure plus whether
+ * anything changed, so the caller can skip a pointless write — which also keeps
+ * the change bus from firing for a no-op.
+ */
+function replaceExerciseIdDeep(
+  value: unknown,
+  localId: string,
+  serverId: string,
+  depth = 0,
+): { value: unknown; changed: boolean } {
+  if (depth > EXERCISE_ID_REWRITE_MAX_DEPTH) return { value, changed: false };
+
+  if (Array.isArray(value)) {
+    let changed = false;
+    const next = value.map((item) => {
+      const r = replaceExerciseIdDeep(item, localId, serverId, depth + 1);
+      if (r.changed) changed = true;
+      return r.value;
+    });
+    return { value: changed ? next : value, changed };
+  }
+
+  if (value !== null && typeof value === "object") {
+    const source = value as Record<string, unknown>;
+    let changed = false;
+    const next: Record<string, unknown> = { ...source };
+    for (const [key, item] of Object.entries(source)) {
+      if (
+        (key === "exerciseId" ||
+          key === "exercise_id" ||
+          key === "originalExerciseId" ||
+          key === "original_exercise_id") &&
+        item === localId
+      ) {
+        next[key] = serverId;
+        changed = true;
+        continue;
+      }
+      const r = replaceExerciseIdDeep(item, localId, serverId, depth + 1);
+      if (r.changed) {
+        next[key] = r.value;
+        changed = true;
+      }
+    }
+    return { value: changed ? next : value, changed };
+  }
+
+  return { value, changed: false };
+}
 
 /**
  * SQLite storage adapter implementing StoragePort.
@@ -88,13 +275,111 @@ export class SQLiteStorageAdapter implements StoragePort {
   private db: SQLite.SQLiteDatabase | null = null;
   private _backendChanged = false;
 
+  // -- Change bus (see StoragePort.subscribe) --
+  private subscribers = new Set<ChangeSubscriber>();
+  /** Tables written since the last delivery; drained on flush. */
+  private pendingChangedTables = new Set<string>();
+  private changeFlushTimer: ReturnType<typeof setTimeout> | null = null;
+  private changeListener: { remove: () => void } | null = null;
+
   private getDb(): SQLite.SQLiteDatabase {
     if (!this.db) {
-      this.db = SQLite.openDatabaseSync(DB_NAME);
+      // `enableChangeListener` registers SQLite's `sqlite3_update_hook` on the
+      // connection so local writes can be observed (see
+      // `StoragePort.subscribe`). It is a NATIVE option, but the native code
+      // that implements it — `Events("onDatabaseChange")` + `addUpdateHook` in
+      // expo-sqlite's SQLiteModule — is already compiled into the shipped
+      // binary, so turning it on is a JS-only change that ships over-the-air.
+      this.db = SQLite.openDatabaseSync(DB_NAME, {
+        enableChangeListener: true,
+      });
       this.db.execSync("PRAGMA journal_mode = WAL;");
       this.db.execSync("PRAGMA foreign_keys = ON;");
+      this.attachChangeListener();
     }
     return this.db;
+  }
+
+  /**
+   * Bridge expo-sqlite's per-row `onDatabaseChange` events onto the coalescing
+   * bus. Attached once, on first `getDb()`, and never removed for the process
+   * lifetime — the adapter is a singleton created in `AppProviders`.
+   *
+   * Wrapped defensively: if the native event is unavailable for any reason
+   * (an older binary that predates `enableChangeListener`, a platform without
+   * the update hook), the app must keep working with the pre-existing
+   * hand-placed invalidation rather than fail to open its database. Reactivity
+   * degrades; nothing breaks.
+   */
+  private attachChangeListener(): void {
+    if (this.changeListener) return;
+    try {
+      this.changeListener = SQLite.addDatabaseChangeListener((event) => {
+        // Only our own database. A second expo-sqlite consumer (expo's
+        // kv-store, for instance) must not tick our subscribers.
+        if (event.databaseFilePath && !event.databaseFilePath.includes(DB_NAME))
+          return;
+        if (!event.tableName) return;
+        this.pendingChangedTables.add(event.tableName);
+        this.scheduleChangeFlush();
+      });
+    } catch (err) {
+      console.warn(
+        "[storage] database change listener unavailable; falling back to explicit cache invalidation:",
+        err,
+      );
+    }
+  }
+
+  private scheduleChangeFlush(): void {
+    if (this.changeFlushTimer !== null) return;
+    this.changeFlushTimer = setTimeout(() => {
+      this.changeFlushTimer = null;
+      this.flushChanges();
+    }, CHANGE_BUS_DEBOUNCE_MS);
+  }
+
+  private flushChanges(): void {
+    if (this.pendingChangedTables.size === 0) return;
+    const changed: ReadonlySet<string> = new Set(this.pendingChangedTables);
+    this.pendingChangedTables.clear();
+    // Snapshot the subscriber list: a callback may unsubscribe (an unmounting
+    // component) or subscribe mid-delivery, and mutating the live Set while
+    // iterating it is exactly the class of bug that makes a listener fire
+    // after unmount.
+    for (const sub of [...this.subscribers]) {
+      if (!this.subscribers.has(sub)) continue;
+      let relevant = false;
+      for (const table of changed) {
+        if (sub.tables.has(table)) {
+          relevant = true;
+          break;
+        }
+      }
+      if (!relevant) continue;
+      try {
+        sub.onChange(changed);
+      } catch (err) {
+        // One bad subscriber must not stop the others, and must never
+        // propagate into whatever wrote to the database.
+        console.error("[storage] change subscriber threw:", err);
+      }
+    }
+  }
+
+  subscribe(
+    tables: readonly string[],
+    onChange: (changed: ReadonlySet<string>) => void,
+  ): () => void {
+    if (tables.length === 0) return () => {};
+    // Ensure the connection (and therefore the listener) exists even if this
+    // subscriber runs before any read.
+    this.getDb();
+    const sub: ChangeSubscriber = { tables: new Set(tables), onChange };
+    this.subscribers.add(sub);
+    return () => {
+      this.subscribers.delete(sub);
+    };
   }
 
   async initialize(backendFingerprint?: string): Promise<void> {
@@ -142,6 +427,7 @@ export class SQLiteStorageAdapter implements StoragePort {
         -- (not a sibling table) keeps the migration trivial and the read
         -- path single-query — verdict cardinality is 1:1 with the entry.
         entitlement_verdict TEXT,
+${indentSyncQueueDdl(8)}
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
@@ -600,6 +886,11 @@ export class SQLiteStorageAdapter implements StoragePort {
             max_retries INTEGER NOT NULL DEFAULT 3,
             error_message TEXT,
             entitlement_verdict TEXT,
+            -- Lockstep with the CREATE TABLE above, from the SAME constant, so
+            -- the two shapes CANNOT drift. These are not copied from the source
+            -- (a pre-M10.6 table cannot have them); the PRAGMA-guarded ALTER that
+            -- runs AFTER this rebuild covers installs that already had them.
+${indentSyncQueueDdl(12)}
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             updated_at TEXT NOT NULL DEFAULT (datetime('now'))
           );
@@ -644,12 +935,51 @@ export class SQLiteStorageAdapter implements StoragePort {
       });
     }
 
+    // Additive `sync_queue` columns for installs created before them:
+    // `idempotency_key` (safe retries), `next_attempt_at` (backoff) and
+    // `defer_count` (the ceiling on budget-free postponements).
+    //
+    // ⚠ Ordering: this MUST run after the M10.6 rebuild above. That rebuild
+    // copies an explicit column list into a fresh table and drops the old one,
+    // so adding these columns before it would silently discard them for any
+    // install taking that branch.
+    //
+    // Deliberately NOT routed through `runSqliteMigrations`, despite that being
+    // the intended home for new schema changes. Its baseline rule stamps an
+    // install with NO `schema_version` row as "already at the latest shape" and
+    // runs nothing — correct for a fresh install (the CREATE TABLE carries the
+    // columns) but wrong for any install predating the runner itself, which would
+    // end up with neither the columns nor the migration. A missing column here is
+    // not cosmetic: every queue read names them, so the entire sync layer would
+    // throw `no such column`. The PRAGMA guard is correct for all three
+    // populations.
+    const syncQueueColumns = db.getAllSync(`PRAGMA table_info(sync_queue)`) as {
+      name: string;
+    }[];
+    const syncQueueNames = new Set(syncQueueColumns.map((c) => c.name));
+    // Same constant again — the third and last site. `NOT NULL DEFAULT 0` is legal
+    // in an SQLite `ADD COLUMN` precisely because the default is non-null, so
+    // existing rows backfill to 0 — "never deferred", "never dispatched", which is
+    // the correct reading for an entry that predates the column.
+    for (const [col, type] of ADDITIVE_SYNC_QUEUE_COLUMNS) {
+      if (!syncQueueNames.has(col)) {
+        db.execSync(`ALTER TABLE sync_queue ADD COLUMN ${col} ${type}`);
+      }
+    }
+
     // M13 sync-hardening (Task 4): versioned migration mechanism. Runs
     // LAST — every ad-hoc CREATE-IF-NOT-EXISTS / ALTER block above has
     // already brought this install to the latest known shape by this
     // point, so a fresh or pre-M13 install baselines here with nothing to
-    // run. `SQLITE_MIGRATIONS` is empty today; future schema changes land
-    // as a new entry there instead of another bespoke inline block.
+    // run. Future schema changes land as a new `SQLITE_MIGRATIONS` entry
+    // instead of another bespoke inline block.
+    //
+    // ⚠ Baselining means a migration only reaches installs that already had
+    // the runner when it was added. An install updating from a PRE-runner
+    // build straight to a build carrying a new migration baselines past it.
+    // Migration 1 (clearing the stale `cached_home` blob) is therefore
+    // belt-and-braces only — HomeContainer independently refuses to overlay a
+    // ring whose cached unit doesn't match, which covers that install too.
     runSqliteMigrations(db);
 
     // Backend-fingerprint cache/session auto-wipe: stamp the cache with the
@@ -712,8 +1042,8 @@ export class SQLiteStorageAdapter implements StoragePort {
   enqueueMutation(entry: EnqueueMutationInput): void {
     const db = this.getDb();
     db.runSync(
-      `INSERT INTO sync_queue (entity_type, entity_id, operation, payload, endpoint, method)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO sync_queue (entity_type, entity_id, operation, payload, endpoint, method, idempotency_key)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [
         entry.entityType,
         entry.entityId ?? null,
@@ -721,6 +1051,10 @@ export class SQLiteStorageAdapter implements StoragePort {
         JSON.stringify(entry.payload),
         entry.endpoint,
         entry.method,
+        // Stamped ONCE, here, and never rewritten — that is the whole property.
+        // A key regenerated per attempt would make every retry look like a new
+        // request, which is exactly the duplicate this prevents.
+        newIdempotencyKey(entry),
       ],
     );
   }
@@ -733,13 +1067,72 @@ export class SQLiteStorageAdapter implements StoragePort {
     // (explicit user action OR `useAutoRetryOnUpgrade`) or get deleted
     // via `discardEntries`. Treating them as pending would spin the
     // drain forever on a 402 the user already saw.
+    //
+    // ⚠ `id ASC` is a load-bearing tiebreak, not tidiness. `created_at` defaults
+    // to `datetime('now')`, which SQLite renders at WHOLE-SECOND resolution, so
+    // every mutation enqueued within the same second sorts equal and its relative
+    // order is unspecified. A create-then-delete or create-then-edit of the same
+    // row inside one second could flush out of order — the delete arriving before
+    // the create, so the create wins and the row comes back. `id` is a
+    // monotonically increasing rowid, i.e. true enqueue order. (The same tiebreak
+    // is already used by `getCachedNotifications`.)
     const rows = db.getAllSync(
       `SELECT * FROM sync_queue WHERE status IN ('pending', 'failed')
        AND retry_count < max_retries
-       ORDER BY created_at ASC`,
+       ORDER BY created_at ASC, id ASC`,
     ) as Record<string, unknown>[];
 
     return rows.map(mapRow);
+  }
+
+  /**
+   * Return `in_flight` entries to `pending` on startup.
+   *
+   * `in_flight` was a one-way door: no query moved it back —
+   * `getPendingMutations` and `getFailedExhaustedEntries` both exclude it,
+   * `resetFailedEntries` is gated to failed/permanently_failed, `unblockEntries`
+   * to blocked_entitlement, and nothing swept it at launch. So an app killed,
+   * OOM'd or force-quit mid-POST left the row stranded FOREVER: invisible to
+   * every future drain AND to the /sync-failed review UI, while
+   * `getSyncStats().inFlight` kept counting it, which is why the UI could sit on
+   * "Syncing…" permanently. A force-quit during `POST /sessions/record` silently
+   * lost the workout.
+   *
+   * Safe to run at startup specifically because it runs at startup: no drain can
+   * be in flight in a process that has only just begun. The ambiguity it can
+   * create — the request may actually have reached the server — is handled by the
+   * idempotency key carried on creates, which is why that landed in the same
+   * change.
+   *
+   * Returns how many rows were recovered so the caller can log it; a non-zero
+   * count means the app previously died mid-sync.
+   */
+  recoverInFlightMutations(): number {
+    const db = this.getDb();
+    const result = db.runSync(
+      `UPDATE sync_queue
+       SET status = 'pending', updated_at = datetime('now')
+       WHERE status = 'in_flight'`,
+    );
+    return result.changes;
+  }
+
+  markMutationDispatched(id: number): void {
+    const db = this.getDb();
+    // Unconditional on status: the drain calls this at the moment of sending, so
+    // the send is a fact regardless of what the row's status happens to be.
+    db.runSync(
+      `UPDATE sync_queue SET dispatch_count = dispatch_count + 1 WHERE id = ?`,
+      [id],
+    );
+  }
+
+  getMutationById(id: number): SyncQueueEntry | null {
+    const db = this.getDb();
+    const row = db.getFirstSync(`SELECT * FROM sync_queue WHERE id = ?`, [
+      id,
+    ]) as Record<string, unknown> | null;
+    return row === null ? null : mapRow(row);
   }
 
   markMutationInFlight(id: number): boolean {
@@ -772,9 +1165,63 @@ export class SQLiteStorageAdapter implements StoragePort {
 
   markMutationFailed(id: number, errorMessage: string): void {
     const db = this.getDb();
+    // Exponential backoff via `next_attempt_at`, which the DRAIN honours (through
+    // `isMutationDue`) — `getPendingMutations` deliberately does not filter on it,
+    // because it answers "still retryable", which is what the status UI and the
+    // coalescing paths need. Without the backoff, retry cadence WAS drain cadence
+    // — and drains fire on
+    // mount, on every foreground transition, on reconnect, and from a dozen
+    // inline call sites — so three quick app-switches during a server blip burnt
+    // the entire 3-attempt budget in seconds and left the entry stranded until
+    // the user found the /sync-failed screen.
+    //
+    // The delay is computed from the POST-increment retry_count in SQL so it
+    // can't drift from the value the drain reads: 1st failure → 5s, 2nd → 20s.
+    // Capped so a long-lived queue can't schedule itself days out.
+    // `retry_count` on the right-hand side is the pre-update value (SQL
+    // semantics), so `retry_count + 1` is this attempt's number: 1st failure →
+    // 5s, 2nd → 20s, capped.
     db.runSync(
-      `UPDATE sync_queue SET status = 'failed', error_message = ?, retry_count = retry_count + 1, updated_at = datetime('now') WHERE id = ?`,
-      [errorMessage, id],
+      `UPDATE sync_queue
+       SET status = 'failed',
+           error_message = ?,
+           retry_count = retry_count + 1,
+           next_attempt_at = datetime(
+             'now',
+             '+' || MIN(?, ? * (retry_count + 1) * (retry_count + 1)) || ' seconds'
+           ),
+           updated_at = datetime('now')
+       WHERE id = ?`,
+      [errorMessage, SYNC_BACKOFF_MAX_SECONDS, SYNC_BACKOFF_BASE_SECONDS, id],
+    );
+  }
+
+  markMutationDeferred(
+    id: number,
+    reason: string,
+    kind: DeferKind,
+    retryAfterSeconds: number = SYNC_BACKOFF_BASE_SECONDS,
+  ): void {
+    const db = this.getDb();
+    // `retry_count` deliberately NOT incremented — see the port docstring. The row
+    // stays `failed` and carries a window so a hot trigger loop doesn't spin on it.
+    //
+    // `defer_count` IS incremented, and is what stops "free" from meaning
+    // "forever": the drain reads it and falls back to `markMutationFailed` past
+    // MAX_TRANSPORT_DEFERRALS, so an entry that can never succeed still exhausts
+    // and still reaches the user. Note a deferred row is NOT visible in the sync UI
+    // on its own — `getFailedExhaustedEntries` gates on `retry_count >=
+    // max_retries` — which is precisely why the ceiling has to exist.
+    db.runSync(
+      `UPDATE sync_queue
+       SET status = 'failed',
+           error_message = ?,
+           next_attempt_at = datetime('now', '+' || ? || ' seconds'),
+           defer_count = defer_count + 1,
+           defer_kind = ?,
+           updated_at = datetime('now')
+       WHERE id = ?`,
+      [reason, Math.max(1, Math.trunc(retryAfterSeconds)), kind, id],
     );
   }
 
@@ -860,6 +1307,20 @@ export class SQLiteStorageAdapter implements StoragePort {
     });
   }
 
+  getQueuedEntriesForEntity(
+    entityType: string,
+    entityId: string,
+  ): SyncQueueEntry[] {
+    const db = this.getDb();
+    const rows = db.getAllSync(
+      `SELECT * FROM sync_queue
+       WHERE entity_type = ? AND entity_id = ? AND status != 'completed'
+       ORDER BY created_at ASC, id ASC`,
+      [entityType, entityId],
+    ) as Record<string, unknown>[];
+    return rows.map(mapRow);
+  }
+
   discardEntries(ids: readonly number[]): void {
     if (ids.length === 0) return;
     const db = this.getDb();
@@ -899,6 +1360,17 @@ export class SQLiteStorageAdapter implements StoragePort {
          SET status = 'pending',
              retry_count = 0,
              error_message = NULL,
+             -- An explicit Retry (or a reconnect resurrect) must fire on the
+             -- NEXT drain, not whenever the old backoff window happened to
+             -- expire — otherwise tapping Retry appears to do nothing.
+             next_attempt_at = NULL,
+             -- Also a clean slate for the deferral ceiling. An explicit Retry (or
+             -- a reconnect resurrect) is new information — usually the very
+             -- connectivity whose absence caused the deferrals — so the entry
+             -- should get its full run of budget-free postponements again rather
+             -- than charging the retry budget on its first transport failure.
+             defer_count = 0,
+             defer_kind = NULL,
              updated_at = datetime('now')
          WHERE id IN (${placeholders})
            AND status IN ('failed', 'permanently_failed')`,
@@ -1054,6 +1526,84 @@ export class SQLiteStorageAdapter implements StoragePort {
          WHERE entity_type = 'exercise' AND entity_id = ?`,
         [serverId, localId],
       );
+
+      // ⚠ The reference that actually broke workouts: an exercise id is
+      // EMBEDDED in other entities' payloads and cached rows, not just addressed
+      // by the endpoint. A user who creates a custom exercise and adds it to a
+      // workout before the create flushes enqueues
+      // `POST /workouts` with `exercises[].exerciseId = "local-…"`; the same
+      // happens for `POST /sessions/record`. Both bodies are frozen at enqueue
+      // time, so rewriting the cached exercise row alone does NOT reach them —
+      // they hit the uuid `exercise_id` column and 400 with
+      // "Invalid identifier format" forever.
+      //
+      // This mirrors `swapLocalWorkoutId`'s payload-reference rewrite, whose
+      // absence here was an asymmetry rather than a decision. Scoped to
+      // non-completed entries: a completed row is history and rewriting it would
+      // only obscure what was actually sent.
+      const queued = db.getAllSync(
+        `SELECT id, payload FROM sync_queue
+         WHERE entity_type IN ('workout', 'session') AND status != 'completed'`,
+      ) as { id: number; payload: string }[];
+      for (const q of queued) {
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(q.payload);
+        } catch {
+          continue; // malformed row — leave untouched, never crash the swap
+        }
+        const rewritten = replaceExerciseIdDeep(parsed, localId, serverId);
+        if (!rewritten.changed) continue;
+        db.runSync(
+          `UPDATE sync_queue SET payload = ?, updated_at = datetime('now')
+           WHERE id = ?`,
+          [JSON.stringify(rewritten.value), q.id],
+        );
+      }
+
+      // The live session's own rows, plus the cached workout blobs the UI reads.
+      // Without these, a session started against the local exercise keeps
+      // rendering (and re-submitting) the stale id.
+      db.runSync(
+        `UPDATE session_exercises SET exercise_id = ? WHERE exercise_id = ?`,
+        [serverId, localId],
+      );
+      db.runSync(
+        `UPDATE session_exercises SET original_exercise_id = ?
+         WHERE original_exercise_id = ?`,
+        [serverId, localId],
+      );
+      db.runSync(
+        `UPDATE recent_sets SET exercise_id = ? WHERE exercise_id = ?`,
+        [serverId, localId],
+      );
+
+      for (const table of [
+        "cached_workout_detail",
+        "cached_workouts",
+        // `createWorkoutCommand` now writes coach-authored workouts here
+        // offline, so this slice holds `local-…` ids too.
+        "cached_coach_workout_library",
+      ] as const) {
+        const blobs = db.getAllSync(
+          `SELECT rowid, payload FROM ${table} WHERE payload LIKE ?`,
+          [`%${localId}%`],
+        ) as { rowid: number; payload: string }[];
+        for (const b of blobs) {
+          let parsed: unknown;
+          try {
+            parsed = JSON.parse(b.payload);
+          } catch {
+            continue;
+          }
+          const rewritten = replaceExerciseIdDeep(parsed, localId, serverId);
+          if (!rewritten.changed) continue;
+          db.runSync(`UPDATE ${table} SET payload = ? WHERE rowid = ?`, [
+            JSON.stringify(rewritten.value),
+            b.rowid,
+          ]);
+        }
+      }
     });
   }
 
@@ -1145,18 +1695,43 @@ export class SQLiteStorageAdapter implements StoragePort {
         `SELECT user_id, type, payload FROM cached_workouts`,
       ) as { user_id: string; type: string; payload: string }[];
       for (const r of listRows) {
-        const workouts = JSON.parse(r.payload) as Workout[];
-        let touched = false;
-        for (const w of workouts) {
-          if (w.id === localId) {
-            w.id = serverId;
-            touched = true;
-          }
+        let workouts: Workout[];
+        try {
+          workouts = JSON.parse(r.payload) as Workout[];
+        } catch {
+          continue; // malformed row — never crash the swap
         }
-        if (touched) {
+        const folded = foldWorkoutIdInList(workouts, localId, serverId);
+        if (folded !== null) {
           db.runSync(
             `UPDATE cached_workouts SET payload = ? WHERE user_id = ? AND type = ?`,
-            [JSON.stringify(workouts), r.user_id, r.type],
+            [JSON.stringify(folded), r.user_id, r.type],
+          );
+        }
+      }
+
+      // 3b. cached_coach_workout_library — the same array-of-workouts shape, and
+      // a first-class holder of `local-…` ids since `createWorkoutCommand` began
+      // writing coach-authored workouts here offline. Without this, the library
+      // row kept the local id after the create flushed, and opening it pushed
+      // `/workouts/local-…/edit` → 400 "Invalid identifier format" (self-healing
+      // only on the next focus, when `load()` replaces the slice).
+      const coachRows = db.getAllSync(
+        `SELECT user_id, payload FROM cached_coach_workout_library WHERE payload LIKE ?`,
+        [`%${localId}%`],
+      ) as { user_id: string; payload: string }[];
+      for (const r of coachRows) {
+        let library: Workout[];
+        try {
+          library = JSON.parse(r.payload) as Workout[];
+        } catch {
+          continue; // malformed row — never crash the swap
+        }
+        const folded = foldWorkoutIdInList(library, localId, serverId);
+        if (folded !== null) {
+          db.runSync(
+            `UPDATE cached_coach_workout_library SET payload = ? WHERE user_id = ?`,
+            [JSON.stringify(folded), r.user_id],
           );
         }
       }
@@ -2942,6 +3517,47 @@ function toPersonalRecord(row: PersonalRecordRow): PersonalRecord {
   };
 }
 
+/**
+ * Rewrite `localId` → `serverId` across a cached list of workouts, FOLDING onto any
+ * row that already carries the server id.
+ *
+ * The fold is the point. `cached_workouts` and `cached_coach_workout_library` are
+ * JSON arrays rewritten in place, and on the ambiguous failure this branch exists for
+ * a slice can legitimately hold BOTH ids at once: the create's POST commits, the
+ * connection drops before the response, the entry stays `failed`, so a refresh inside
+ * the backoff window writes the committed `w1` through while `unsyncedWorkoutsIn`
+ * correctly preserves the optimistic `local-w1`. When the create is then replayed, a
+ * bare in-place rewrite turns that into two entries with `id === "w1"` — duplicate
+ * React keys in the list until the next refresh. The server-id row wins, mirroring
+ * what `cached_workout_detail` gets for free from its `ON CONFLICT … DO UPDATE`.
+ *
+ * Returns null when nothing changed, so the caller can skip the write.
+ */
+function foldWorkoutIdInList(
+  workouts: Workout[],
+  localId: string,
+  serverId: string,
+): Workout[] | null {
+  if (!workouts.some((w) => w.id === localId)) return null;
+  // The server row WINS, and keeps its position. If the slice already carries
+  // `serverId`, that row came from the server's own list — truth — while the local
+  // row is an optimistic snapshot that may predate an edit the server already has.
+  // So drop the local row rather than renaming it over the top.
+  const alreadyHasServerRow = workouts.some(
+    (w) => w.id === serverId && w.id !== localId,
+  );
+  const out: Workout[] = [];
+  for (const w of workouts) {
+    if (w.id !== localId) {
+      out.push(w);
+      continue;
+    }
+    if (alreadyHasServerRow) continue;
+    out.push({ ...w, id: serverId });
+  }
+  return out;
+}
+
 function mapRow(row: Record<string, unknown>): SyncQueueEntry {
   return {
     id: row.id as number,
@@ -2957,6 +3573,14 @@ function mapRow(row: Record<string, unknown>): SyncQueueEntry {
     errorMessage: row.error_message as string | null,
     createdAt: row.created_at as string,
     entitlementVerdict: parseEntitlementVerdict(row.entitlement_verdict),
+    // `?? null` rather than a cast: a row written before these columns existed
+    // reads back `undefined`, and the drain branches on `!= null` to decide
+    // whether to send the header.
+    idempotencyKey: (row.idempotency_key as string | null) ?? null,
+    nextAttemptAt: (row.next_attempt_at as string | null) ?? null,
+    deferCount: (row.defer_count as number | null) ?? 0,
+    dispatchCount: (row.dispatch_count as number | null) ?? 0,
+    deferKind: (row.defer_kind as DeferKind | null) ?? null,
   };
 }
 

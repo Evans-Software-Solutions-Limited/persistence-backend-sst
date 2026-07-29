@@ -473,3 +473,122 @@ describe("useCachedResource — cold-start retry", () => {
     expect(result.current.data).toBe(5); // stale cache still shown
   });
 });
+
+describe("useCachedResource — bus-driven reload must not blank the screen", () => {
+  /**
+   * Same scalar slot, but declaring `tables` so the change bus drives re-reads.
+   * `cached_habit_completions` stands in for `cached_home`: what matters is that
+   * the slot can be DELETED, which is how `invalidateHome`/`invalidateDashboard`/
+   * `invalidateGoals` all work.
+   */
+  function subscribedConfig(): CachedResourceConfig<number> {
+    return { ...scalarConfig(async () => ok(99)), tables: ["cell_table"] };
+  }
+
+  it("adopts a real value written by someone else", () => {
+    const storage = new InMemoryStorageAdapter();
+    storage.initialize();
+    writeCache(storage, 1);
+    const adapters = makeAdapters(new InMemoryApiAdapter(), storage);
+
+    const { result } = renderHook(() => useCachedResource(subscribedConfig()), {
+      wrapper: wrap(adapters),
+    });
+    expect(result.current.data).toBe(1);
+
+    writeCache(storage, 7);
+    act(() => storage.emitChange("cell_table"));
+
+    expect(result.current.data).toBe(7);
+  });
+
+  it("keeps on-screen data when an INVALIDATION empties the row and the refetch FAILS", async () => {
+    // The critical case. `invalidateHome()` DELETES `cached_home`, which is a
+    // write, so the bus fires. A plain `reload()` would read null and push it into
+    // state — and HomeContainer derives `isLoading` from `data === null`, so the
+    // whole Home screen became a spinner with nothing to clear it (the mount
+    // auto-refresh is one-shot per userId). Tapping "Weigh in" was enough, and
+    // offline it never recovered.
+    //
+    // The fetcher FAILS here deliberately, to isolate "the invalidation itself
+    // must not blank the screen" from "a successful refetch replaces the data".
+    const storage = new InMemoryStorageAdapter();
+    storage.initialize();
+    writeCache(storage, 5);
+    const adapters = makeAdapters(new InMemoryApiAdapter(), storage);
+
+    const { result } = renderHook(
+      () =>
+        useCachedResource({
+          ...scalarConfig(async () =>
+            fail({ kind: "api", code: "server", message: "offline" }),
+          ),
+          tables: ["cell_table"],
+        }),
+      { wrapper: wrap(adapters) },
+    );
+    expect(result.current.data).toBe(5);
+
+    storage.cacheHabitCompletions(USER, []); // the row is now empty
+    await act(async () => {
+      storage.emitChange("cell_table");
+    });
+
+    // Data survives the invalidation, and is marked stale so it will be replaced.
+    expect(result.current.data).toBe(5);
+    expect(result.current.isStale).toBe(true);
+  });
+
+  it("replaces the data once the invalidation-triggered refetch succeeds", async () => {
+    // The other half: an invalidation must actually cause a REFETCH, not just
+    // preserve stale data — otherwise `invalidateHome()` would stop working.
+    const storage = new InMemoryStorageAdapter();
+    storage.initialize();
+    writeCache(storage, 5);
+    const adapters = makeAdapters(new InMemoryApiAdapter(), storage);
+
+    const { result } = renderHook(
+      () =>
+        useCachedResource({
+          ...scalarConfig(async () => ok(99)),
+          tables: ["cell_table"],
+        }),
+      { wrapper: wrap(adapters) },
+    );
+
+    storage.cacheHabitCompletions(USER, []);
+    await act(async () => {
+      storage.emitChange("cell_table");
+    });
+
+    await waitFor(() => expect(result.current.data).toBe(99));
+  });
+
+  it("ignores writes to tables it did not declare", () => {
+    const storage = new InMemoryStorageAdapter();
+    storage.initialize();
+    writeCache(storage, 1);
+    const adapters = makeAdapters(new InMemoryApiAdapter(), storage);
+
+    const { result } = renderHook(() => useCachedResource(subscribedConfig()), {
+      wrapper: wrap(adapters),
+    });
+
+    writeCache(storage, 7);
+    act(() => storage.emitChange("some_other_table"));
+
+    expect(result.current.data).toBe(1);
+  });
+
+  it("registers no subscription when `tables` is omitted", () => {
+    const storage = new InMemoryStorageAdapter();
+    storage.initialize();
+    const adapters = makeAdapters(new InMemoryApiAdapter(), storage);
+
+    renderHook(() => useCachedResource(scalarConfig(async () => ok(1))), {
+      wrapper: wrap(adapters),
+    });
+
+    expect(storage.changeSubscriberCount()).toBe(0);
+  });
+});

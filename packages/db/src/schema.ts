@@ -194,6 +194,13 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   // client left), best-effort post-commit. Companion enum migration:
   // 20260720120100_coaching_relationship_ended_notification_type.sql.
   "coaching_relationship_ended",
+  // Subscription-transfer notice — sent to the app account that LOST a
+  // subscription when RevenueCat transferred it to another account (Apple binds
+  // the sub to the APPLE ID, and Restore Purchases re-attaches it to whichever
+  // app account is signed in). The move is reversible in one tap, so the point of
+  // the notice is to make a silent disappearance actionable. Companion enum
+  // migration: 20260728120000_subscription_transferred_notification_type.sql.
+  "subscription_transferred",
 ]);
 
 // M4 (06-progress-goals) — streak engine period types. cross-cuts § 3.1.
@@ -640,6 +647,24 @@ export const subscriptionStatusTransitions = pgTable(
 
 export const exercises = pgTable("exercises", {
   id: uuid("id").primaryKey().defaultRandom(),
+  // Client-supplied idempotency key (see
+  // 20260727120100_client_request_id_idempotency.sql). Nullable — legacy rows and
+  // direct-API callers have none, and NULLs are DISTINCT in a Postgres unique
+  // index, so they never conflict with each other.
+  //
+  // ⚠ The unique index on (created_by, client_request_id) must stay FULL, not
+  // partial. `onConflictDoNothing({ target })` emits no index predicate, and
+  // Postgres cannot infer a partial index without a matching one — it raises 42P10
+  // on every keyed insert instead. Do not "tidy" this into a partial index to match
+  // the nullability; the migration and
+  // core/…/repositories/__tests__/clientRequestIdIdempotency.test.ts both spell out
+  // why.
+  //
+  // ⚠ Declaring the column here puts it in Drizzle's explicit SELECT list, so
+  // MIGRATE BEFORE DEPLOY is mandatory: a Lambda carrying this schema against a
+  // database without the column fails every READ of this table with 42703, not just
+  // the keyed creates.
+  clientRequestId: text("client_request_id"),
   name: text("name").notNull(),
   description: text("description"),
   instructions: text("instructions"),
@@ -669,6 +694,8 @@ export const exercises = pgTable("exercises", {
 
 export const workouts = pgTable("workouts", {
   id: uuid("id").primaryKey().defaultRandom(),
+  // Client-supplied idempotency key — see the `exercises` twin above.
+  clientRequestId: text("client_request_id"),
   name: text("name").notNull(),
   description: text("description"),
   createdBy: uuid("created_by").references(() => profiles.id, {

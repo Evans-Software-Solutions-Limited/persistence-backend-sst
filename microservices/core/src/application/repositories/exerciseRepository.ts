@@ -28,6 +28,36 @@ import { getDb } from "@persistence/db/client";
 import { LIVE_ASSIGNMENT_STATUSES } from "./programRepository";
 
 /**
+ * A parameterised `ARRAY[$1, $2, …]::uuid[]` literal.
+ *
+ * ⚠ **Never interpolate a JS array directly before a `::uuid[]` cast.** Drizzle
+ * renders a bare array as a comma-separated placeholder list wrapped in
+ * PARENTHESES — the shape `IN (…)` wants — so `sql`${ids}::uuid[]`` compiles to
+ * `($1, $2, $3)::uuid[]`. Postgres reads that as a ROW constructor and the query
+ * dies at execution time, with a different error per arity:
+ *
+ *   - 2+ ids → `cannot cast type record to uuid[]`
+ *   - 1 id   → `malformed array literal` (a lone `($1)` is just a scalar, so the
+ *              cast tries to parse a UUID string as an array literal)
+ *
+ * Both are runtime-only. The unit suite mocks `getDb`, so a broken predicate
+ * passes every gate and ships green — this is the second time that blind spot
+ * has cost a production 500 (see memory/reference_drizzle_groupby_param_bug for
+ * the first, a GROUP BY that blanked Home's weekly volume). The four call sites
+ * are therefore covered by `PgDialect` render assertions in
+ * `exerciseRepositoryArrayPredicates.test.ts`, which fail on the paren form.
+ *
+ * `ARRAY[]::uuid[]` is valid Postgres, so the empty case needs no special
+ * handling — though every current caller guards on length anyway.
+ */
+function uuidArray(ids: readonly string[]): SQL {
+  return sql`ARRAY[${sql.join(
+    ids.map((id) => sql`${id}`),
+    sql`, `,
+  )}]::uuid[]`;
+}
+
+/**
  * Sentinel UUID used by the legacy Supabase DB to mark system-authored
  * exercises. The backend is still connected to the live Supabase
  * schema (not Neon), so this convention is load-bearing — rows with
@@ -477,7 +507,7 @@ export class ExerciseRepository {
       // with `secondary_muscles IS NULL` — a regression on legacy
       // rows that pre-date the `default([])` column default.
       conditions.push(
-        sql`${exercises.primaryMuscles} && ${filters.targetedMusclesAny}::uuid[]`,
+        sql`${exercises.primaryMuscles} && ${uuidArray(filters.targetedMusclesAny)}`,
       );
     } else if (filters.muscleGroup) {
       conditions.push(
@@ -487,7 +517,7 @@ export class ExerciseRepository {
 
     if (filters.equipmentAny && filters.equipmentAny.length > 0) {
       conditions.push(
-        sql`${exercises.equipmentRequired} && ${filters.equipmentAny}::uuid[]`,
+        sql`${exercises.equipmentRequired} && ${uuidArray(filters.equipmentAny)}`,
       );
     }
 
@@ -499,7 +529,7 @@ export class ExerciseRepository {
     // omitted the axis entirely.
     if (filters.equipmentSubsetOf && filters.equipmentSubsetOf.length > 0) {
       conditions.push(
-        sql`${filters.equipmentSubsetOf}::uuid[] @> COALESCE(${exercises.equipmentRequired}, '{}'::uuid[])`,
+        sql`${uuidArray(filters.equipmentSubsetOf)} @> COALESCE(${exercises.equipmentRequired}, '{}'::uuid[])`,
       );
     }
 
@@ -806,7 +836,7 @@ export class ExerciseRepository {
 
     const exclude = Array.from(new Set(params.excludeExerciseIds ?? []));
     if (exclude.length > 0) {
-      conditions.push(sql`${exercises.id} <> ALL(${exclude}::uuid[])`);
+      conditions.push(sql`${exercises.id} <> ALL(${uuidArray(exclude)})`);
     }
 
     const rows = await db
@@ -952,13 +982,82 @@ export class ExerciseRepository {
    *
    * Spec: design.md § POST /exercises · AC 7.3
    */
-  async create(userId: string, data: CreateExerciseInput): Promise<Exercise> {
+  /**
+   * Create a custom exercise.
+   *
+   * `clientRequestId` makes the create REPLAY-SAFE. The mobile sync queue cannot
+   * distinguish "the request never arrived" from "it arrived, committed, and the
+   * response was lost", so its retry used to insert a second exercise. With a key
+   * present, a replay resolves to the row the first attempt created and returns
+   * it unchanged — indistinguishable from the original success.
+   *
+   * Mirrors `SessionRepository.record`'s `clientSessionId` handling, which has
+   * been the pattern for this since M13. Omitting the key preserves the previous
+   * behaviour exactly (a plain insert), so legacy clients and direct-API callers
+   * are unaffected.
+   */
+  async create(
+    userId: string,
+    data: CreateExerciseInput,
+    clientRequestId?: string | null,
+  ): Promise<Exercise> {
     const db = getDb();
-    const result = await db
+    const key = clientRequestId ?? null;
+
+    if (key === null) {
+      const result = await db
+        .insert(exercises)
+        .values({ ...data, createdBy: userId } as NewExercise)
+        .returning();
+      return result[0];
+    }
+
+    // ON CONFLICT DO NOTHING against the FULL unique index on
+    // (created_by, client_request_id), then read back on an empty return.
+    //
+    // The index must be full, not partial: `onConflictDoNothing({ target })`
+    // emits no index predicate, and Postgres cannot infer a partial index
+    // without one — it raises 42P10 instead. See the migration
+    // (20260727120100) for the full reasoning, and
+    // __tests__/clientRequestIdIdempotency.test.ts, which asserts the SQL this
+    // call emits and the shape the migration creates actually agree.
+    //
+    // Doing it in this order (rather than SELECT-then-INSERT)
+    // closes the window where two concurrent replays both see "no row yet" — the
+    // index arbitrates, and the loser simply reads the winner's row.
+    const inserted = await db
+      .insert(exercises)
+      .values({
+        ...data,
+        createdBy: userId,
+        clientRequestId: key,
+      } as NewExercise)
+      .onConflictDoNothing({
+        target: [exercises.createdBy, exercises.clientRequestId],
+      })
+      .returning();
+    if (inserted[0]) return inserted[0];
+
+    const existing = await db
+      .select()
+      .from(exercises)
+      .where(
+        and(
+          eq(exercises.createdBy, userId),
+          eq(exercises.clientRequestId, key),
+        ),
+      )
+      .limit(1);
+    // A conflict with nothing to read back would mean the index matched a row we
+    // cannot see, which should be impossible while the index is scoped to
+    // created_by. Fall back to a plain insert rather than returning undefined and
+    // letting the handler serialise `data: undefined`.
+    if (existing[0]) return existing[0];
+    const fallback = await db
       .insert(exercises)
       .values({ ...data, createdBy: userId } as NewExercise)
       .returning();
-    return result[0];
+    return fallback[0];
   }
 
   /**

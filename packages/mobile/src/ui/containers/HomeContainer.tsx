@@ -16,6 +16,7 @@ import { useStaggeredEntry } from "@/ui/hooks/useStaggeredEntry";
 import { useUserMode } from "@/state/user-mode";
 import { useDrawer } from "@/state/drawer";
 import { initialsOf, localDayISO, timeGreeting } from "@/shared/utils";
+import type { RingDatum } from "@/domain/models/progress";
 import { useProfilePage } from "@/ui/hooks/useProfilePage";
 import { useFuelSheets } from "@/state/fuel-sheets";
 import { HomePresenter } from "@/ui/presenters/HomePresenter";
@@ -76,12 +77,12 @@ export function HomeContainer() {
     workoutsState.isRefreshing ||
     (workoutsState.mine.isStale && workoutsState.error === null);
 
-  // Overlay HealthKit steps onto the MOVE ring. The backend derives `move`
-  // from `daily_activity_data` (empty unless something writes steps), so the
-  // device's HealthKit reading is the live source. When health steps aren't
-  // available (not granted / simulator / Android stub) we keep the backend
-  // value untouched. Recompute pct here; TodayHero recomputes the centre %
-  // from the ring pcts, so the dial follows automatically.
+  // Overlay the HealthKit readings onto the MOVE and TRAIN rings. The backend
+  // derives both from `daily_activity_data` (empty unless something writes to
+  // it), so the device's HealthKit reading is the live source for each. When a
+  // reading isn't available (not granted / simulator / Android stub) we keep
+  // the backend value untouched. Recompute pct here; TodayHero recomputes the
+  // centre % from the ring pcts, so the dial follows automatically.
   // Spec: 07-health-integration/design.md § "Values merge into the presenter
   // view-model beside the backend payload".
   const healthSteps = health.stepsToday;
@@ -93,17 +94,49 @@ export function HomeContainer() {
   // way a real completion would. Best-effort + idempotent — a no-op when no
   // steps habit is configured, or once the day is already ticked/un-ticked.
   useReflectStepsHabit(healthSteps);
+  const healthActiveKcal = health.activeCaloriesToday;
   const homeData = useMemo(() => {
     const data = home.data;
-    if (!data || healthSteps == null) return data;
-    const move = data.rings.move;
-    const target = move.target > 0 ? move.target : 10000;
-    const pct = Math.min(1, Math.max(0, healthSteps / target));
+    if (!data) return data;
+    if (healthSteps == null && healthActiveKcal == null) return data;
+
+    // The overlay replaces `current`/`pct` but inherits `target` and `unit`
+    // from the payload, so it is only meaningful when the payload's ring is
+    // the shape we're writing into. `cached_home` is an unversioned JSON blob
+    // and Train changed meaning (weekly `kg`/20000 → daily `kcal`/500), so an
+    // install opening on a pre-change cache would otherwise render a live kcal
+    // figure against the old kg scale — "410 · kg" at 2%. Mismatched unit ⇒
+    // leave the cached ring alone; it's stale but internally consistent, and
+    // the first successful /users/me/home replaces it.
+    const overlay = (
+      datum: RingDatum,
+      current: number,
+      expectedUnit: string,
+    ): RingDatum =>
+      datum.unit !== expectedUnit
+        ? datum
+        : {
+            ...datum,
+            current,
+            pct:
+              datum.target > 0
+                ? Math.min(1, Math.max(0, current / datum.target))
+                : 0,
+          };
+
     return {
       ...data,
-      rings: { ...data.rings, move: { ...move, current: healthSteps, pct } },
+      rings: {
+        ...data.rings,
+        ...(healthSteps != null
+          ? { move: overlay(data.rings.move, healthSteps, "steps") }
+          : {}),
+        ...(healthActiveKcal != null
+          ? { train: overlay(data.rings.train, healthActiveKcal, "kcal") }
+          : {}),
+      },
     };
-  }, [home.data, healthSteps]);
+  }, [home.data, healthSteps, healthActiveKcal]);
 
   // Re-read HealthKit on focus so the rings stay current. Two guards keep this
   // from defeating the hook's 5-min rate limit (AC 7.6):

@@ -1,8 +1,10 @@
 import type { AuthPort } from "@/domain/ports/auth.port";
 import type {
+  DeferKind,
   RecordResponseSummary,
   RecordResponseSummaryPR,
   StoragePort,
+  SyncQueueEntry,
 } from "@/domain/ports/storage.port";
 import type { EntitlementVerdict } from "@/domain/ports/sync.types";
 import type { HabitConfigEntry } from "@/domain/ports/api.port";
@@ -10,6 +12,7 @@ import { habitConfigFromEntry } from "@/domain/models/habit-config";
 import { normalizePreferences } from "@/domain/models/notification-preferences";
 import { pendingPreferenceOverrides } from "@/application/notifications/queries/preferences.query";
 import { parseEntitlementDeniedResponseText } from "@/shared/errors/parseEntitlement";
+import { resolveExercisePayloadReferences } from "@/application/commands/resolveExerciseReferences";
 import { captureSyncFailure } from "@/lib/sentry";
 
 /** A non-OK HTTP response from a sync POST/PUT/DELETE, carrying the status so
@@ -63,16 +66,407 @@ function isPermanentClientError(status: number): boolean {
  * become `permanently_failed` (which would strand it before the retry).
  */
 function referencesUnsyncedLocalId(payload: string): boolean {
-  let body: Record<string, unknown>;
+  let body: unknown;
   try {
-    body = JSON.parse(payload) as Record<string, unknown>;
+    body = JSON.parse(payload) as unknown;
   } catch {
     return false;
   }
-  return (["recipeId", "mealId", "foodId", "workoutId"] as const).some((k) => {
-    const v = body[k];
-    return typeof v === "string" && v.startsWith("local-");
-  });
+  return containsLocalId(body, 0);
+}
+
+/**
+ * Maximum object depth walked by `containsLocalId`.
+ *
+ * The deepest real payload is a workout create — `{ exercises: [ { … } ] }`, i.e.
+ * depth 3 — so 6 is generous while still bounding a pathological or hostile
+ * structure. Sync payloads are locally authored, but a payload can carry
+ * server-echoed content and this runs on every failed entry.
+ */
+const LOCAL_ID_SCAN_MAX_DEPTH = 6;
+
+/**
+ * Does any string ANYWHERE in this payload look like an unsynced local id?
+ *
+ * Deliberately a full recursive walk rather than a list of known keys. The
+ * previous version checked four TOP-LEVEL scalar keys
+ * (`recipeId`/`mealId`/`foodId`/`workoutId`) and so never looked at
+ * `exercises[].exerciseId` — which is precisely where a `local-…` id lives when a
+ * user adds a just-created custom exercise to a workout. The resulting 400 was
+ * therefore classified PERMANENT on the first attempt and the workout was lost,
+ * even though the reference would have resolved once the exercise create flushed.
+ *
+ * Any new nested reference is covered automatically; a key allowlist would have
+ * to be remembered, and forgetting it is silent.
+ */
+function containsLocalId(value: unknown, depth: number): boolean {
+  if (depth > LOCAL_ID_SCAN_MAX_DEPTH) return false;
+  if (typeof value === "string") return value.startsWith("local-");
+  if (Array.isArray(value)) {
+    return value.some((item) => containsLocalId(item, depth + 1));
+  }
+  if (value !== null && typeof value === "object") {
+    return Object.values(value as Record<string, unknown>).some((item) =>
+      containsLocalId(item, depth + 1),
+    );
+  }
+  return false;
+}
+
+/**
+ * Does the ENDPOINT still address an unsynced local id?
+ *
+ * `update-workout` and `delete-workout` interpolate the id into the path
+ * (`/workouts/local-…`), and a DELETE carries no payload at all, so the
+ * payload-only check above could never see it. Such a request 400s with
+ * "Invalid identifier format" (Postgres 22P02 on the uuid column) and — being a
+ * 4xx — was marked permanent, stranding the edit or delete forever. It resolves
+ * as soon as the create flushes and `swapLocalWorkoutId` rewrites the endpoint.
+ */
+function endpointReferencesUnsyncedLocalId(endpoint: string): boolean {
+  return endpoint.split(/[/?&=]/).some((part) => part.startsWith("local-"));
+}
+
+/**
+ * Translate an `/exercises` payload's domain enum references into catalogue
+ * UUIDs. Returns the serialized body to send, or a reason to defer.
+ *
+ * A malformed stored payload (not JSON, or not an object) is passed through
+ * untouched: the drain's job is not to validate history, and the server's own
+ * rejection is the right place for that to surface.
+ */
+function prepareExercisePayload(
+  storage: StoragePort,
+  payload: string,
+):
+  | { body: string; deferReason: null; deferKind: null }
+  | { body: null; deferReason: string; deferKind: DeferKind } {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(payload);
+  } catch {
+    return { body: payload, deferReason: null, deferKind: null };
+  }
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return { body: payload, deferReason: null, deferKind: null };
+  }
+
+  const resolution = resolveExercisePayloadReferences(
+    storage,
+    parsed as Record<string, unknown>,
+  );
+  switch (resolution.status) {
+    case "unchanged":
+      return { body: payload, deferReason: null, deferKind: null };
+    case "resolved":
+      return {
+        body: JSON.stringify(resolution.payload),
+        deferReason: null,
+        deferKind: null,
+      };
+    case "catalogue_unavailable":
+      // ⚠ `transport`, NOT `resolution`. The catalogue is fetched over the network,
+      // so regaining connectivity IS new information here — its own reason string
+      // says "waiting for the reference list". Filing it as `resolution` meant the
+      // reconnect self-heal skipped it, so an exercise queued while the catalogue
+      // was cold exhausted without a single request leaving the device and then sat
+      // in /sync-failed needing a manual Retry (an exercise EDIT never even
+      // qualifies for the resurrect, which requires `operation === "create"`).
+      // Reachable: `useReferenceListBootstrap` swallows a failed fetch and does not
+      // retry within the session, so one offline sign-in leaves the catalogue cold
+      // for the whole app run.
+      return {
+        body: null,
+        deferReason: `Waiting for the ${resolution.kinds.join(" + ")} reference list before sending; will retry.`,
+        deferKind: "transport",
+      };
+    case "unresolvable":
+      // Loud, and it names the offending members so the mapping table can be
+      // fixed. Deferring (rather than sending a silently-shortened array) is
+      // deliberate: a partial send would create the exercise with its muscles
+      // or equipment quietly missing.
+      //
+      // `resolution`: this member is absent from a catalogue we HAVE, so no amount
+      // of connectivity changes the verdict. It must reach the ceiling and surface.
+      return {
+        body: null,
+        deferReason: `No catalogue entry for: ${resolution.unresolved.join(", ")}. Exercise not sent.`,
+        deferKind: "resolution",
+      };
+  }
+}
+
+/**
+ * How many times an entry may be POSTPONED without consuming its retry budget
+ * before the drain starts charging the budget again.
+ *
+ * Deferral exists because a transport failure or a missing reference catalogue is
+ * not the server rejecting the request — no attempt was made in the sense the
+ * budget measures — and charging it meant ~25 seconds offline could exhaust an
+ * entry and strand real user data.
+ *
+ * But budget-free must not mean consequence-free. A deferred entry is invisible to
+ * every sync surface: `getFailedExhaustedEntries` gates on
+ * `retryCount >= maxRetries`, and that query is the sole source for both the
+ * sync-failed banner and the review screen. Deferring forever therefore means a
+ * mutation that can NEVER succeed — a permanently unreachable host, a catalogue
+ * entry that will never exist, a bug in the request builder — retries silently for
+ * the life of the install with no banner, no review row, and no way for the user to
+ * discard it. That is a worse failure than the one deferral fixed.
+ *
+ * Past this ceiling the drain falls back to `markMutationFailed`, so the entry
+ * exhausts, surfaces in /sync-failed, and becomes user-retryable (a Retry resets
+ * the counter, giving it the full free run again). At a ≥5s window per deferral the
+ * ceiling is at least a minute of continuous failure, and in practice many app
+ * foregrounds — far beyond the blip this protects against.
+ */
+export const MAX_TRANSPORT_DEFERRALS = 12;
+
+/**
+ * Postpone this entry without charging its retry budget — unless it has already
+ * used up its free postponements, in which case charge the budget so it can
+ * eventually exhaust and become visible. See `MAX_TRANSPORT_DEFERRALS`.
+ *
+ * `deferCount` is read from the caller's snapshot, i.e. the pre-update value, so
+ * the Nth call is the one that escalates.
+ */
+function deferOrCharge(
+  storage: StoragePort,
+  entry: SyncQueueEntry,
+  reason: string,
+  kind: DeferKind,
+): void {
+  if (entry.deferCount >= MAX_TRANSPORT_DEFERRALS) {
+    // Computed BEFORE the mark. `entry` is a snapshot for the SQLite adapter, so
+    // `retryCount + 1` is this attempt's number — but the in-memory double returns
+    // LIVE references, so reading it AFTER the mark saw the already-incremented
+    // value and the `+ 1` became unobservable: weakening the test to
+    // `>= maxRetries` left all 113 sync tests green while, in production, silently
+    // disabling BOTH the Sentry report and the sibling collapse for this entire
+    // path — and the ceiling is the only route to the collapse for an
+    // offline-deferred row, since a deferral never raises a SyncHttpError. (The
+    // SyncHttpError branch below already computes its equivalent before its own
+    // mark, for exactly this reason.)
+    const willExhaust = entry.retryCount + 1 >= entry.maxRetries;
+    storage.markMutationFailed(entry.id, reason);
+    // Escalation past the ceiling can be the attempt that exhausts the budget, and
+    // it reaches this function instead of the SyncHttpError branch below — so
+    // without this the two cases the ceiling exists to surface (a throw from our own
+    // request-building code, and an `unresolvable` catalogue member whose own
+    // docstring promises to be "loud") would reach the USER's banner but never the
+    // team's telemetry.
+    if (willExhaust) {
+      reportTerminalFailure(entry, reason);
+      // The ceiling path only ever calls `markMutationFailed`, never
+      // `markMutationPermanentlyFailed`.
+      collapseStrandedLocalIdSiblings(storage, entry, false);
+    }
+    return;
+  }
+  storage.markMutationDeferred(entry.id, reason, kind);
+}
+
+/**
+ * Parse a stored payload into a plain object, or null if it isn't one. Arrays and
+ * scalars are rejected because the only use here is spreading two bodies together.
+ */
+function parseObject(payload: string): Record<string, unknown> | null {
+  try {
+    const parsed: unknown = JSON.parse(payload);
+    if (
+      parsed === null ||
+      typeof parsed !== "object" ||
+      Array.isArray(parsed)
+    ) {
+      return null;
+    }
+    return parsed as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Report a mutation the drain will never pick up again. Best-effort by contract:
+ * telemetry is not allowed to change a sync outcome.
+ */
+function reportTerminalFailure(entry: SyncQueueEntry, message: string): void {
+  try {
+    captureSyncFailure({
+      endpoint: entry.endpoint,
+      entityType: entry.entityType,
+      operation: entry.operation,
+      message,
+    });
+  } catch {
+    // swallow — telemetry is not allowed to affect sync outcomes
+  }
+}
+
+/**
+ * When a CREATE dies terminally, collapse the siblings still addressing its
+ * `local-…` id onto it: fold the newest queued EDIT into the create's body, then
+ * discard them.
+ *
+ * Why they need collapsing. Such a sibling only becomes sendable via the id swap
+ * that runs when the create SUCCEEDS, so while the create sits terminal the sibling
+ * addresses a path Postgres rejects with 22P02. `endpointReferencesUnsyncedLocalId`
+ * (correctly) classifies that 400 as retryable rather than permanent, so it burns
+ * its whole budget and surfaces in /sync-failed as "Invalid identifier format" for a
+ * row the user was told was created, or deleted — the exact symptom
+ * `delete-exercise` exists to stop producing, arriving by another route: a queued
+ * `DELETE /exercises/local-…` parked behind a create that then dies.
+ *
+ * ⚠ Why the FOLD is not optional, and why discarding alone was a data-loss bug.
+ * `canRewriteWithoutReplayingKey` deliberately refuses to coalesce an edit into a
+ * dispatched create and enqueues a separate `PATCH /exercises/local-…` instead — so
+ * the sibling this function finds is very often the user's edit, and the create
+ * still carries the PRE-edit body. Discarding it left the edit nowhere: a Retry
+ * re-sent the original name, `swapLocalExerciseId` ran, the next write-through
+ * replaced the cached row with server truth, and the edit vanished with no error —
+ * precisely the silent loss the coalescing guard was written to prevent. The two
+ * fixes landed in the same commit and cancelled each other out.
+ *
+ * A terminal create is also not as dead as that reasoning assumed: exhausted entries
+ * are user-retryable via `resetFailedEntries`, `permanently_failed` ones re-open when
+ * an edit coalesces into them, and reconnect now auto-resurrects replay-safe creates.
+ * Folding is what keeps the edit alive across every one of those routes — the create
+ * is the entry that survives, so the latest body has to live on it.
+ *
+ * Only local-id-addressed siblings are touched; anything pointing at a real resource
+ * is unrelated to this create's failure and stays.
+ */
+function collapseStrandedLocalIdSiblings(
+  storage: StoragePort,
+  entry: SyncQueueEntry,
+  /**
+   * Whether the caller just marked this entry `permanently_failed`.
+   *
+   * Passed in rather than read off `entry.status`, because `entry` is a SNAPSHOT:
+   * `getPendingMutations` selects `WHERE status IN ('pending','failed')`, so its
+   * rows can never carry `"permanently_failed"` however the drain has since marked
+   * them. Reading the snapshot therefore skipped the re-open, `updateMutationPayload`
+   * (status-conditional on pending/failed) matched zero rows, and the discard below
+   * deleted the user's edit anyway — the exact loss this function's docstring says
+   * the fold exists to prevent. The in-memory double returned LIVE rows, so the test
+   * written for that bug could not fail.
+   */
+  wasPermanentlyFailed: boolean,
+): void {
+  if (entry.operation !== "create" || entry.entityId === null) return;
+  try {
+    const stranded = storage
+      .getQueuedEntriesForEntity(entry.entityType, entry.entityId)
+      .filter(
+        (sibling) =>
+          sibling.id !== entry.id &&
+          endpointReferencesUnsyncedLocalId(sibling.endpoint),
+      );
+    if (stranded.length === 0) return;
+
+    // ⚠ A stranded DELETE is terminal intent for the whole ENTITY, so the create
+    // must not be left behind alone. Doing that was a live data-resurrection bug:
+    // delete a never-synced workout offline (`delete-workout` evicts the cache and
+    // enqueues `DELETE /workouts/local-w1`), stay offline until the create exhausts,
+    // and the collapse discarded the DELETE — leaving a create that satisfies every
+    // clause of `useSyncWorker`'s `replaySafe` filter. The next reconnect resurrected
+    // it, the POST landed, and nothing remained to undo it: the workout the user
+    // deleted reappeared on the next refresh and consumed a slot against their quota.
+    //
+    // But discarding BOTH is only right when nothing can have committed, and for the
+    // ambiguous failure this branch exists for that is precisely unknown: the POST is
+    // dispatched, the server commits, the connection drops before the response,
+    // `fetch` rejects. Dropping both rows there leaves the workout on the SERVER and
+    // gone locally — so the next refresh re-materialises the row the user deleted,
+    // the same harm by the opposite route. `dispatchCount` answers this, and it is
+    // already maxed out by the time the collapse runs.
+    //
+    // So: discard both only where the server provably never accepted it — an explicit
+    // rejection (`permanently_failed`), or a request that never left the device
+    // (`dispatchCount === 0`). Otherwise keep BOTH and let the pair resolve itself:
+    // the create carries an idempotency key, so replaying it (via the reconnect
+    // resurrect, or the user's Retry) returns the row the first attempt made,
+    // `swapLocal*Id` rewrites the DELETE's endpoint onto the real id, and the delete
+    // lands. Deliberately NOT reset here — resetting on the very failure that
+    // triggered the collapse would spin: pending → drain → fail → collapse → reset.
+    if (stranded.some((sibling) => sibling.operation === "delete")) {
+      const nothingCommitted =
+        wasPermanentlyFailed || entry.dispatchCount === 0;
+      if (nothingCommitted) {
+        storage.discardEntries([entry.id, ...stranded.map((s) => s.id)]);
+      }
+      return;
+    }
+
+    // Newest edit wins — later edits supersede earlier ones, and the enqueue order
+    // `getQueuedEntriesForEntity` returns is the order they were made in
+    // (`created_at ASC, id ASC`, and `id` is the rowid).
+    const newestEdit = stranded
+      .filter((sibling) => sibling.operation === "update")
+      .at(-1);
+    if (newestEdit) {
+      const editBody = parseObject(newestEdit.payload);
+      if (editBody !== null) {
+        // MERGE onto the create's body rather than replacing it. A PATCH is allowed
+        // to be partial, and a replace silently drops whatever it omits: an
+        // athlete-context workout edit leaves `showInOwnerLibrary` out entirely
+        // (`WorkoutEditorContainer` sets it only for a coach), so a replace made the
+        // handler apply its `?? true` default and a workout the coach authored FOR A
+        // CLIENT surfaced in the coach's own My Workouts. Merging also removes the
+        // assumption that create and update payloads are shape-identical — true
+        // today, but only by coincidence of what the editors happen to send.
+        const createBody = parseObject(entry.payload);
+        const merged =
+          createBody === null ? editBody : { ...createBody, ...editBody };
+
+        // `updateMutationPayload` no-ops on a terminal row, so a permanently_failed
+        // create has to be re-opened first — same order, and same reason, as
+        // `update-exercise`'s own coalescing path. An exhausted (`failed`) create
+        // needs no reset: it is already rewritable, and re-opening it would silently
+        // resurrect a create the user has not asked to retry.
+        if (wasPermanentlyFailed) {
+          storage.resetFailedEntries([entry.id]);
+        }
+        storage.updateMutationPayload(entry.id, merged);
+      }
+    }
+
+    storage.discardEntries(stranded.map((s) => s.id));
+  } catch (err) {
+    // Cleanup is opportunistic — never let it break the drain's own accounting.
+    console.error("[sync] stranded-sibling collapse failed:", err);
+  }
+}
+
+/**
+ * Is this entry eligible to be sent right now?
+ *
+ * `getPendingMutations` returns everything still RETRYABLE — the question the
+ * status UI and the coalescing paths ask. Backoff is a different question ("not
+ * yet"), so it is applied here, at the point of sending, rather than by hiding
+ * rows from the queue read.
+ *
+ * A malformed or unparseable `nextAttemptAt` is treated as DUE. Refusing to send
+ * because a timestamp could not be parsed would strand the mutation, which is a
+ * far worse outcome than one early retry.
+ *
+ * Exported so the worker's loop can use the same predicate it drains by — if the
+ * two disagreed, the loop would spin on an entry the drain always skips.
+ */
+export function isMutationDue(
+  entry: Pick<SyncQueueEntry, "nextAttemptAt">,
+  now: number = Date.now(),
+): boolean {
+  if (entry.nextAttemptAt === null) return true;
+  // SQLite's `datetime('now')` yields "YYYY-MM-DD HH:MM:SS" in UTC with no zone
+  // marker, which `Date.parse` reads as LOCAL time — hours out in either
+  // direction. Normalise to ISO-with-Z before parsing.
+  const normalized = entry.nextAttemptAt.includes("T")
+    ? entry.nextAttemptAt
+    : `${entry.nextAttemptAt.replace(" ", "T")}Z`;
+  const dueAt = Date.parse(normalized);
+  if (Number.isNaN(dueAt)) return true;
+  return dueAt <= now;
 }
 
 export type SyncResult = {
@@ -133,13 +527,26 @@ export async function processSyncQueue(
   storage: StoragePort,
   auth: AuthPort,
   apiBaseUrl: string,
+  /**
+   * Clock seam for the backoff check. Injected only by tests, which need to
+   * assert "this entry is retried once its window opens" without sleeping.
+   * Production always uses the real clock.
+   */
+  opts?: { now?: () => number },
 ): Promise<SyncResult> {
+  const now = opts?.now ?? Date.now;
   const entries = storage.getPendingMutations();
   let succeeded = 0;
   let failed = 0;
   let blocked = 0;
 
-  for (const entry of entries) {
+  for (let entry of entries) {
+    // Backoff: skip an entry whose retry window hasn't opened. Checked BEFORE
+    // the claim so a not-yet-due entry stays `failed` (visible to the status UI
+    // and to the coalescing paths) rather than being flipped to `in_flight` and
+    // released again.
+    if (!isMutationDue(entry, now())) continue;
+
     // Atomic claim — `markMutationInFlight` is row-conditional at the
     // storage layer (only flips status when currently
     // pending/failed). Returns false when another concurrent drain
@@ -152,6 +559,24 @@ export async function processSyncQueue(
     const claimed = storage.markMutationInFlight(entry.id);
     if (!claimed) continue;
 
+    // ⚠ Re-read AFTER claiming. The work list above is a snapshot taken once, and a
+    // row's stored payload or endpoint can legitimately change between that snapshot
+    // and this send: an earlier entry in the SAME batch flushing its create runs
+    // `swapLocal*Id`, which rewrites every later entry still holding the dependency's
+    // `local-…` id. Sending the snapshot put that local id on the wire and earned a
+    // guaranteed 4xx — recoverable (the failure is classified deferred, and the next
+    // drain re-reads the swapped row) but a wasted round trip and a spurious server
+    // error for every dependent write in an offline batch, which is precisely the
+    // noise this branch exists to remove. `getPendingMutations` deliberately keeps
+    // returning snapshots; freshness is needed here, at the point of dispatch, and
+    // nowhere else.
+    //
+    // The claim precedes it so a lost race still skips without a wasted read, and a
+    // null means the row was discarded concurrently — nothing left to send.
+    const fresh = storage.getMutationById(entry.id);
+    if (fresh === null) continue;
+    entry = fresh;
+
     try {
       // Fetch token per-entry to handle expiry mid-queue
       const token = await auth.getAccessToken();
@@ -162,11 +587,70 @@ export async function processSyncQueue(
       if (token) {
         headers["Authorization"] = `Bearer ${token}`;
       }
+      // Safe retries. An ambiguous failure — a timeout or connection reset that
+      // happened AFTER the server committed — used to duplicate the row on the
+      // next attempt, because only `POST /sessions/record` had an idempotency
+      // key (`clientSessionId`); workout, exercise and nutrition creates had
+      // none. The key is stamped once at enqueue, so every attempt at the same
+      // logical mutation presents the same value.
+      //
+      // Omitted for rows enqueued before the column existed, which preserves
+      // exactly the previous behaviour for them rather than inventing a key that
+      // would differ per attempt (and so guarantee a duplicate).
+      if (entry.idempotencyKey !== null) {
+        headers["Idempotency-Key"] = entry.idempotencyKey;
+      }
+
+      // Per-entity payload preparation, immediately before the send.
+      //
+      // The drain's default is to flush the stored payload VERBATIM, and that
+      // stays the rule — this is the one narrow, explicit exception. An
+      // `/exercises` body carries muscle-group and equipment references as
+      // domain enum members (`"chest"`, `"barbell"`), because that is what the
+      // form produces and what the local cache stores, while the API validates
+      // them as catalogue UUIDs. Translating here rather than at enqueue time
+      // lets the payload wait for the reference catalogue (fetched lazily by
+      // whichever screen needs it) instead of being frozen wrong.
+      let body = entry.payload;
+      if (entry.entityType === "exercise" && entry.method !== "DELETE") {
+        const prepared = prepareExercisePayload(storage, entry.payload);
+        if (prepared.deferReason !== null) {
+          // Nothing was sent, so this must NOT consume the retry budget — the
+          // resolution's own docstring calls a missing catalogue "not a transient
+          // condition", and charging a transient budget for it exhausted the entry
+          // after ~25s of drains and stranded the user's exercise where only
+          // `/sessions/record` gets auto-resurrected. `markMutationDeferred`
+          // postpones with a backoff window and leaves `retry_count` alone.
+          //
+          // Bounded, though — see `MAX_TRANSPORT_DEFERRALS`. An `unresolvable`
+          // reference in particular may never become resolvable (a catalogue entry
+          // that simply doesn't exist), and deferring that forever would keep the
+          // exercise invisible in the queue instead of surfacing it where the user
+          // can see the named members and discard or retry it.
+          deferOrCharge(
+            storage,
+            entry,
+            prepared.deferReason,
+            prepared.deferKind,
+          );
+          failed++;
+          continue;
+        }
+        body = prepared.body;
+      }
+
+      // Record that this mutation is about to leave the device, BEFORE it does.
+      // From here on "the server may already have seen it" is permanently true for
+      // this entry, and that fact has to outlive every reset path — see
+      // `dispatchCount` on the port. Deliberately placed after the deferral
+      // branches above (a deferred entry was never dispatched, so coalescing into
+      // it stays safe) and after the claim, which may legitimately lose a race.
+      storage.markMutationDispatched(entry.id);
 
       const response = await fetch(`${apiBaseUrl}${entry.endpoint}`, {
         method: entry.method,
         headers,
-        body: entry.method !== "DELETE" ? entry.payload : undefined,
+        body: entry.method !== "DELETE" ? body : undefined,
       });
 
       if (!response.ok) {
@@ -461,6 +945,34 @@ export async function processSyncQueue(
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";
 
+      // ⚠ TRANSPORT failure — `fetch` itself rejected, so we never received an
+      // answer and cannot know whether the server saw the request. No attempt was
+      // made in the sense the retry budget measures, so charging it is wrong.
+      //
+      // This is the offline case, and it mattered because the drain does not
+      // consult connectivity: it fires on mount, on every foreground transition,
+      // on reconnect, from a dozen inline call sites, and (new on this branch) on
+      // enqueue. With a 5s→20s backoff, ~25 seconds offline while the user keeps
+      // using the app was enough to exhaust an entry — after which it is invisible
+      // to every future drain, and `resurrectAndFlush` only rescues
+      // `/sessions/record`. A workout created on the tube was simply gone.
+      //
+      // Deferring instead keeps it retryable, which is correct: an offline device
+      // has made no statement about the request's validity. A genuine server
+      // rejection still arrives as a `SyncHttpError` and still burns the budget
+      // below.
+      //
+      // "Retryable" and not "retryable indefinitely": past
+      // `MAX_TRANSPORT_DEFERRALS` this charges the budget after all, so an endpoint
+      // that is permanently unreachable — or a throw from our own request-building
+      // code, which lands here too and would otherwise loop invisibly forever —
+      // still exhausts and still reaches the user.
+      if (!(err instanceof SyncHttpError)) {
+        deferOrCharge(storage, entry, message, "transport");
+        failed++;
+        continue;
+      }
+
       // A permanent client error (4xx except 402/408/429) can never succeed on
       // a re-send, so mark it terminally `permanently_failed` NOW — no retry
       // budget burned, no "exhausted retries" masquerade. It still surfaces via
@@ -471,8 +983,10 @@ export async function processSyncQueue(
         isPermanentClientError(err.status) &&
         // A 4xx on a mutation still pointing at an unsynced dependency's
         // `local-…` id is deferred, not permanent — it resolves on the next
-        // drain once the dependency create's swapLocal*Id lands.
-        !referencesUnsyncedLocalId(entry.payload);
+        // drain once the dependency create's swapLocal*Id lands. Both the body
+        // (nested references included) and the endpoint path can carry one.
+        !referencesUnsyncedLocalId(entry.payload) &&
+        !endpointReferencesUnsyncedLocalId(entry.endpoint);
 
       // Terminal failure: this attempt exhausts the retry budget, so the drain
       // will never pick this entry up again (`getPendingMutations` gates on
@@ -490,19 +1004,11 @@ export async function processSyncQueue(
       }
       failed++;
       // Report the terminal failure to Sentry so it isn't invisible (the
-      // local-workout-id 500 went unseen for exactly this reason). Best-effort:
-      // a telemetry failure must never break the drain.
+      // local-workout-id 500 went unseen for exactly this reason), and drop any
+      // sibling now aimed forever at this dead row's local id.
       if (isTerminalFailure) {
-        try {
-          captureSyncFailure({
-            endpoint: entry.endpoint,
-            entityType: entry.entityType,
-            operation: entry.operation,
-            message,
-          });
-        } catch {
-          // swallow — telemetry is not allowed to affect sync outcomes
-        }
+        reportTerminalFailure(entry, message);
+        collapseStrandedLocalIdSiblings(storage, entry, isPermanent);
       }
     }
   }

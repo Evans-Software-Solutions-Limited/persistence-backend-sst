@@ -31,7 +31,7 @@ const PHOTO_MODEL_ID =
 const TEXT_MODEL_ID =
   process.env.AI_TEXT_MODEL_ID ?? "eu.anthropic.claude-haiku-4-5-20251001-v1:0";
 
-const MAX_TOKENS = 1500;
+export const MAX_TOKENS = 1500;
 const TOOL_NAME = "report_estimate";
 
 export type AiFoodItem = {

@@ -1,4 +1,5 @@
 import type { Recipe } from "@/domain/models/nutrition";
+import { RECIPE_TABLES } from "@/adapters/storage";
 import {
   useCachedResource,
   type CachedResourceState,
@@ -16,5 +17,6 @@ export function useGetRecipes(): CachedResourceState<Recipe[]> {
     }),
     fetcher: (api) => api.getRecipes(),
     write: (storage, userId, value) => storage.cacheRecipes(userId, value),
+    tables: RECIPE_TABLES,
   });
 }

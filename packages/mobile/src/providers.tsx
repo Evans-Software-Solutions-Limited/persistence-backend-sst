@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useMemo } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { Platform } from "react-native";
 import Constants from "expo-constants";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -12,7 +12,8 @@ import { RevenueCatPurchasesAdapter } from "@/adapters/purchases";
 import { SQLiteStorageAdapter } from "@/adapters/storage";
 import type { PurchasesPort } from "@/domain/ports/purchases.port";
 import type { Adapters } from "@/shared/types";
-import { AdapterProvider } from "@/ui/hooks/useAdapters";
+import { captureStorageInitFailure } from "@/lib/sentry";
+import { AdapterProvider, type StorageStatus } from "@/ui/hooks/useAdapters";
 import { ThemeProvider } from "@/ui/theme";
 
 /**
@@ -101,6 +102,14 @@ export function AppProviders({ children }: { children: ReactNode }) {
     [],
   );
 
+  // Storage readiness. `settled: false` withholds the tree until
+  // `initialize()` resolves — see AdapterProvider's docstring for why that
+  // ordering has to be structural rather than incidental.
+  const [storageStatus, setStorageStatus] = useState<StorageStatus>({
+    settled: false,
+    error: null,
+  });
+
   useEffect(() => {
     // Initialize offline database on mount (async to avoid blocking JS thread).
     // `supabaseFingerprint` identifies which backend this build talks to (the
@@ -114,6 +123,7 @@ export function AppProviders({ children }: { children: ReactNode }) {
       Constants.expoConfig?.extra?.supabaseUrl ??
       process.env.EXPO_PUBLIC_SUPABASE_URL ??
       "";
+    let cancelled = false;
     adapters.storage
       .initialize(supabaseFingerprint)
       .then(() => {
@@ -121,18 +131,36 @@ export function AppProviders({ children }: { children: ReactNode }) {
           return adapters._auth.clearLocalSession();
         }
       })
+      .then(() => {
+        if (!cancelled) setStorageStatus({ settled: true, error: null });
+      })
       .catch((err) => {
+        // A storage-init failure means the local tables may not exist, so every
+        // cached read will throw `no such table` from inside a render — which
+        // surfaces as an ErrorBoundary report against an arbitrary screen with
+        // no trace of the real cause. Report the root cause explicitly, and
+        // still settle so the tree renders (withholding it forever would give a
+        // permanently blank app; the ErrorBoundary is the better failure mode,
+        // and now Sentry has the actual reason).
         console.error("[AppProviders] Storage init failed:", err);
+        captureStorageInitFailure(err);
+        if (!cancelled) {
+          setStorageStatus({
+            settled: true,
+            error: err instanceof Error ? err : new Error(String(err)),
+          });
+        }
       });
 
     // Cleanup AppState listener when provider unmounts (hot reload, strict mode)
     return () => {
+      cancelled = true;
       adapters._auth.destroy();
     };
   }, [adapters]);
 
   return (
-    <AdapterProvider adapters={adapters}>
+    <AdapterProvider adapters={adapters} storageStatus={storageStatus}>
       <QueryClientProvider client={queryClient}>
         <ThemeProvider>{children}</ThemeProvider>
       </QueryClientProvider>

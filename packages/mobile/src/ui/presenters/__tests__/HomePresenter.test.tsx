@@ -7,7 +7,7 @@ function makeHome(overrides: Partial<HomePayload> = {}): HomePayload {
   return {
     rings: {
       move: { current: 7420, target: 10000, pct: 0.74, unit: "steps" },
-      train: { current: 8400, target: 20000, pct: 0.42, unit: "kg" },
+      train: { current: 371, target: 500, pct: 0.742, unit: "kcal" },
       fuel: "gated",
       todayPct: 58,
     },

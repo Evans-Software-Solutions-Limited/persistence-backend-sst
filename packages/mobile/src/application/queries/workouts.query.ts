@@ -68,6 +68,60 @@ export function getWorkoutsQuery(
 }
 
 /**
+ * Cached rows in this slice that the server has not accepted yet, and which a
+ * write-through would therefore destroy.
+ *
+ * "Not accepted yet" is decided by the QUEUE, not by the id's shape: a row whose
+ * create has COMPLETED is server-truth (its id may simply not have been swapped
+ * yet) and must NOT be preserved, or a workout the user deleted server-side would
+ * keep reappearing. A row with an outstanding create is the opposite case.
+ */
+export function unsyncedWorkoutsIn(
+  storage: StoragePort,
+  cached: readonly Workout[] | null | undefined,
+): Workout[] {
+  if (!cached || cached.length === 0) return [];
+  return cached.filter((w) => {
+    if (!w.id.startsWith("local-")) return false;
+    return storage
+      .getQueuedEntriesForEntity("workout", w.id)
+      .some((entry) => entry.operation === "create");
+  });
+}
+
+/**
+ * Merge a server list with the optimistic rows it cannot know about yet, keeping ONE
+ * row per id.
+ *
+ * The dedupe is not cosmetic. `swapLocalWorkoutId` rewrites the matching id inside
+ * each cached list slice in place, WITHOUT folding — unlike its `cached_workout_detail`
+ * step, which upserts. So on the ambiguous failure this branch exists for (the POST
+ * commits, the connection drops before the response, the create stays `failed` with
+ * `dispatchCount 1`), a refresh inside the backoff window legitimately holds both the
+ * committed `w1` and the preserved `local-w1`; when the create is later replayed, the
+ * swap turns the second into a SECOND row with `id === "w1"`, and the list renders
+ * duplicate React keys.
+ *
+ * Server rows win: they are truth, and they come first in the incoming list. The
+ * transient "same workout listed twice under two different ids" that precedes the swap
+ * is deliberately left alone — the only way to remove it is to drop the optimistic row,
+ * which is the silent permanent data destruction `unsyncedWorkoutsIn` exists to stop.
+ */
+export function mergePreservingUnsynced(
+  storage: StoragePort,
+  cached: readonly Workout[] | null | undefined,
+  incoming: readonly Workout[],
+): Workout[] {
+  const merged = [...unsyncedWorkoutsIn(storage, cached), ...incoming];
+  const seen = new Set<string>();
+  return merged.filter((w) => {
+    if (seen.has(w.id)) return false;
+    seen.add(w.id);
+    return true;
+  });
+}
+
+/**
  * Fetch a single section slice from the backend and write it through to
  * cache. On success the cached row's `syncedAt` is bumped to now.
  *
@@ -89,10 +143,27 @@ export async function refreshWorkouts(
     ownerLibraryOnly: type === "mine" ? ownerLibraryOnly : undefined,
   });
   if (!result.ok) return result;
+  // ⚠ Preserve rows the server cannot know about yet.
+  //
+  // `cacheWorkoutsList` REPLACES the whole slice, so writing the server's list
+  // straight through deleted any optimistic `local-…` workout whose create had
+  // not landed — silently, and permanently, since every later refresh did it
+  // again. That is why a saved workout could vanish and the list read
+  // "MY WORKOUTS · 0 SAVED": the row had been destroyed, not merely hidden.
+  // `useWorkouts.refresh` drains before fetching to avoid exactly this, but the
+  // drain cannot help when the create is failing (or is terminal, and so not even
+  // returned by `getPendingMutations`).
+  //
+  // Merged at the front — a just-created workout belongs at the top of the list,
+  // which is also where the optimistic write put it.
   storage.cacheWorkoutsList(
     userId,
     type,
-    result.value.workouts,
+    mergePreservingUnsynced(
+      storage,
+      storage.getCachedWorkoutsList(userId, type)?.workouts,
+      result.value.workouts,
+    ),
     result.value.quota,
   );
   // Splatter detail rows from the list payload — every list response
