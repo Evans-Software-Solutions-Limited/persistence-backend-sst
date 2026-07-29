@@ -11,6 +11,7 @@ import type { FuelToday } from "@/domain/models/nutrition";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import type { WaterLogSheetProps } from "@/ui/presenters/WaterLogSheetPresenter";
 import { WaterLogSheetContainer } from "../WaterLogSheetContainer";
+import { useHomeSheets } from "@/state/home-sheets";
 
 const mockProbe: { last: WaterLogSheetProps | null } = { last: null };
 
@@ -100,6 +101,10 @@ function Wrapper({
 }
 
 describe("WaterLogSheetContainer", () => {
+  // Root-mounted now: open-state comes from the store, not props.
+  beforeEach(() => {
+    useHomeSheets.setState({ sheet: "water", habitsRev: 0 });
+  });
   beforeEach(() => {
     mockProbe.last = null;
     jest.clearAllMocks();
@@ -110,7 +115,7 @@ describe("WaterLogSheetContainer", () => {
     storage.cacheFuelToday(USER, localDayISO(), makeFuel(4));
     render(
       <Wrapper adapters={adapters}>
-        <WaterLogSheetContainer visible onClose={jest.fn()} />
+        <WaterLogSheetContainer />
       </Wrapper>,
     );
     await waitFor(() => expect(mockProbe.last?.cups).toBe(4));

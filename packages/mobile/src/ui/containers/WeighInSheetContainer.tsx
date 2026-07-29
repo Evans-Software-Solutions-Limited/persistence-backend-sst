@@ -9,6 +9,7 @@ import {
   type WeighInSaveInput,
   type WeighInUnit,
 } from "@/ui/presenters/WeighInSheetPresenter";
+import { useHomeSheets } from "@/state/home-sheets";
 
 /**
  * Wires the weigh-in sheet to the offline-first measurement log
@@ -21,13 +22,11 @@ import {
  * independent of `heightUnit` (Edit Profile), since users routinely mix
  * units (e.g. kg for weight, ft/in for height).
  */
-export function WeighInSheetContainer({
-  visible,
-  onClose,
-}: {
-  visible: boolean;
-  onClose: () => void;
-}) {
+export function WeighInSheetContainer() {
+  // Root-mounted (sibling of the tab Stack), so open-state comes from the
+  // shared store rather than props — same as the Fuel sheets and the drawer.
+  const visible = useHomeSheets((s) => s.sheet === "weighIn");
+  const onClose = useHomeSheets((s) => s.close);
   const { health } = useAdapters();
   const log = useLogMeasurement();
   const body = useGetBodyMeasurements(30);

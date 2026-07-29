@@ -8,6 +8,7 @@ import { StubHealthAdapter } from "@/adapters/health";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 import { SleepLogSheetContainer } from "../SleepLogSheetContainer";
+import { useHomeSheets } from "@/state/home-sheets";
 
 jest.mock("@/adapters/api", () => ({
   ...jest.requireActual("@/adapters/api"),
@@ -59,6 +60,10 @@ function makeAdapters(): {
 }
 
 describe("SleepLogSheetContainer", () => {
+  // Root-mounted now: open-state comes from the store, not props.
+  beforeEach(() => {
+    useHomeSheets.setState({ sheet: "sleep", habitsRev: 0 });
+  });
   beforeEach(() => mockFetch.mockClear());
 
   it("logs the sleep entry and closes on save", async () => {
@@ -67,14 +72,13 @@ describe("SleepLogSheetContainer", () => {
     // against the POST the worker actually sent, not the (by-then-empty)
     // pending queue.
     const { adapters } = makeAdapters();
-    const onClose = jest.fn();
     const { getByText } = renderWithTheme(
       <AdapterProvider adapters={adapters}>
-        <SleepLogSheetContainer visible onClose={onClose} />
+        <SleepLogSheetContainer />
       </AdapterProvider>,
     );
     fireEvent.press(getByText(/Log 8h 0m/));
-    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    await waitFor(() => expect(useHomeSheets.getState().sheet).toBeNull());
     await waitFor(() => expect(mockFetch).toHaveBeenCalled());
     const [url, init] = mockFetch.mock.calls[0] as unknown as [
       string,
@@ -90,14 +94,13 @@ describe("SleepLogSheetContainer", () => {
 
   it("synthesises sleepStart/sleepEnd anchored at 07:00 local wake (Decision D1)", async () => {
     const { adapters } = makeAdapters();
-    const onClose = jest.fn();
     const { getByText } = renderWithTheme(
       <AdapterProvider adapters={adapters}>
-        <SleepLogSheetContainer visible onClose={onClose} />
+        <SleepLogSheetContainer />
       </AdapterProvider>,
     );
     fireEvent.press(getByText(/Log 8h 0m/));
-    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    await waitFor(() => expect(useHomeSheets.getState().sheet).toBeNull());
     await waitFor(() => expect(mockFetch).toHaveBeenCalled());
 
     const [, init] = mockFetch.mock.calls[0] as unknown as [
@@ -126,10 +129,9 @@ describe("SleepLogSheetContainer", () => {
           end: new Date("2026-07-16T06:00:00Z"),
         }),
     });
-    const onClose = jest.fn();
     const { getByTestId } = renderWithTheme(
       <AdapterProvider adapters={adapters}>
-        <SleepLogSheetContainer visible onClose={onClose} />
+        <SleepLogSheetContainer />
       </AdapterProvider>,
     );
     await waitFor(() =>
@@ -142,14 +144,13 @@ describe("SleepLogSheetContainer", () => {
     const { adapters } = makeAdapters();
     const writeSleep = jest.fn(async () => ok(undefined));
     Object.assign(adapters.health, { writeSleep });
-    const onClose = jest.fn();
     const { getByText } = renderWithTheme(
       <AdapterProvider adapters={adapters}>
-        <SleepLogSheetContainer visible onClose={onClose} />
+        <SleepLogSheetContainer />
       </AdapterProvider>,
     );
     fireEvent.press(getByText(/Log 8h 0m/));
-    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    await waitFor(() => expect(useHomeSheets.getState().sheet).toBeNull());
     expect(writeSleep).toHaveBeenCalledTimes(1);
     const [start, end] = writeSleep.mock.calls[0] as unknown as [Date, Date];
     expect(end.getTime() - start.getTime()).toBe(480 * 60_000);
@@ -161,16 +162,15 @@ describe("SleepLogSheetContainer", () => {
       throw new Error("healthkit boom");
     });
     Object.assign(adapters.health, { writeSleep });
-    const onClose = jest.fn();
     const { getByText } = renderWithTheme(
       <AdapterProvider adapters={adapters}>
-        <SleepLogSheetContainer visible onClose={onClose} />
+        <SleepLogSheetContainer />
       </AdapterProvider>,
     );
     fireEvent.press(getByText(/Log 8h 0m/));
     // The durable save + close still happen even though the fire-and-forget
     // mirror call rejects.
-    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    await waitFor(() => expect(useHomeSheets.getState().sheet).toBeNull());
   });
 
   it("the presenter disables Save at a zero duration, so no write ever fires", async () => {
@@ -180,10 +180,9 @@ describe("SleepLogSheetContainer", () => {
     const { adapters } = makeAdapters();
     const writeSleep = jest.fn(async () => ok(undefined));
     Object.assign(adapters.health, { writeSleep });
-    const onClose = jest.fn();
     const { getByLabelText, getByText } = renderWithTheme(
       <AdapterProvider adapters={adapters}>
-        <SleepLogSheetContainer visible onClose={onClose} />
+        <SleepLogSheetContainer />
       </AdapterProvider>,
     );
     for (let i = 0; i < 8; i++) {
@@ -194,6 +193,6 @@ describe("SleepLogSheetContainer", () => {
       await new Promise((r) => setTimeout(r, 0));
     });
     expect(writeSleep).not.toHaveBeenCalled();
-    expect(onClose).not.toHaveBeenCalled();
+    expect(useHomeSheets.getState().sheet).toBe("sleep");
   });
 });

@@ -10,6 +10,7 @@ import type { Adapters } from "@/shared/types";
 import type { HomePresenterProps } from "@/ui/presenters/HomePresenter";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import { useFuelSheets } from "@/state/fuel-sheets";
+import { useHomeSheets } from "@/state/home-sheets";
 import { HomeContainer } from "../HomeContainer";
 
 // jest hoists jest.mock factories above imports — captured refs must be
@@ -426,6 +427,89 @@ describe("HomeContainer (V2)", () => {
         mockProbe.last?.habits.find((h) => h.id === "g-steps")?.days[dayIndex],
       ).toBe(true),
     );
+  });
+
+  // The three quick-log sheets are root-mounted now, so Home no longer owns their
+  // open state and no longer sees their close directly. These two pin the seam:
+  // the tiles must drive the store, and a water/sleep close must still re-point
+  // the habit grid at the cache (it used to be a direct reloadHabits() call in
+  // HomeContainer's close handler).
+  it("quick-log tiles open the root-mounted sheets via the store", async () => {
+    const { adapters } = makeAdapters();
+    useHomeSheets.setState({ sheet: null, habitsRev: 0 });
+    render(
+      <Wrapper adapters={adapters}>
+        <HomeContainer />
+      </Wrapper>,
+    );
+    await waitFor(() => expect(mockProbe.last).not.toBeNull());
+
+    mockProbe.last?.onOpenWeighIn();
+    expect(useHomeSheets.getState().sheet).toBe("weighIn");
+    mockProbe.last?.onLogWater();
+    expect(useHomeSheets.getState().sheet).toBe("water");
+    mockProbe.last?.onOpenSleep();
+    expect(useHomeSheets.getState().sheet).toBe("sleep");
+  });
+
+  it("re-reads the habit cache when a water/sleep sheet closes", async () => {
+    const { adapters, api, storage } = makeAdapters();
+    const waterConfig = {
+      category: "water" as const,
+      enabled: true,
+      goalId: "g-water",
+      assignedByCoach: false,
+      assignedByName: null,
+      locked: false,
+      targetValue: 8,
+      unit: "cups",
+      period: "daily" as const,
+      completionRule: "value_gte" as const,
+      daysPerWeek: 7,
+      tolerancePct: null,
+      pending: null,
+    };
+    api.habitConfigs = [waterConfig];
+    storage.cacheHabitConfigs(USER, [waterConfig]);
+    useHomeSheets.setState({ sheet: null, habitsRev: 0 });
+
+    // `reloadHabits` is `useCachedResource.reload()`, which is CACHE-backed —
+    // it re-reads local storage rather than refetching (see useGetHabits.ts's
+    // note on reload). So the storage read is the probe that proves the bridge.
+    const readSpy = jest.spyOn(storage, "getCachedHabitCompletions");
+    render(
+      <Wrapper adapters={adapters}>
+        <HomeContainer />
+      </Wrapper>,
+    );
+    await waitFor(() =>
+      expect(
+        mockProbe.last?.habits.find((h) => h.id === "g-water"),
+      ).toBeTruthy(),
+    );
+    await waitFor(() => expect(readSpy).toHaveBeenCalled());
+    const readsBeforeClose = readSpy.mock.calls.length;
+
+    // Water logging reflects into the completion cache inside the sheet; Home
+    // learns about it ONLY from the store bump on close, because the sheet is
+    // no longer its child. Without the bridge this count never moves and the
+    // tick would need a pull-to-refresh.
+    await act(async () => {
+      useHomeSheets.getState().openWater();
+      useHomeSheets.getState().close();
+    });
+    await waitFor(() =>
+      expect(readSpy.mock.calls.length).toBeGreaterThan(readsBeforeClose),
+    );
+
+    // And closing Weigh-in must NOT re-read — it reflects no habit.
+    const readsAfterWater = readSpy.mock.calls.length;
+    await act(async () => {
+      useHomeSheets.getState().openWeighIn();
+      useHomeSheets.getState().close();
+    });
+    expect(readSpy.mock.calls.length).toBe(readsAfterWater);
+    readSpy.mockRestore();
   });
 
   it("opening the 'Your programme' card routes to the athlete programme view", async () => {
