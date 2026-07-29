@@ -216,29 +216,47 @@ export function BottomSheet({
       }}
     >
       <View
-        // An explicit `height`, not `maxHeight`: `maxHeight` was tried on device
-        // and collapsed the body to nothing (the column has no basis to shrink
-        // from, so it resolves to zero). This is the shape that was verified
-        // scrolling on an iPhone 17 Pro simulator.
+        // `height` + `flexShrink`, and BOTH halves are load-bearing.
+        //
+        // `height` supplies a DEFINITE flex basis. That is the whole fix: gorhom
+        // applies its content height through an animated style that returns `{}`
+        // until the container is measured, so in those frames the parent column
+        // has no definite height. A `flex: 1` child (basis `0%`) collapses to its
+        // content there, which makes the inner scroll view's viewport equal its
+        // content — nothing overflows, so nothing scrolls, and the body just
+        // overflows the sheet and is clipped by `overflow: "hidden"` above.
+        // `maxHeight` fails for the same reason: no basis to resolve against, so
+        // it collapsed the body to nothing on device. Don't retry either.
+        //
+        // `flexShrink` lets the body give that height BACK, clamping to the box
+        // gorhom actually computed (`animatedContentHeightMax`) whenever that is
+        // smaller than our estimate. Two real cases need it, both found by
+        // Inspector Brad:
+        //   1. `windowHeight` is the wrong ruler for a sheet that is NOT mounted
+        //      at the root. gorhom measures its PARENT, so the three Home
+        //      quick-log sheets (Weigh-in, Water, Sleep — mounted inside
+        //      HomeContainer, i.e. inside the tab scene) sit in a container
+        //      ~102pt shorter than the window. Without shrink the body overshoots
+        //      by ~90pt (`tall`) / ~61pt (`peek`) and that band is unreachable —
+        //      on Weigh-in it contains the Save button.
+        //   2. `keyboardBehavior="interactive"` shrinks that box further while
+        //      the keyboard is up.
+        // RN's default `flexShrink` is 0, which is exactly why neither case
+        // worked before. Shrink keeps the basis, so it cannot reintroduce the
+        // collapse — it only adds a ceiling, and demotes HANDLE_HEIGHT to a
+        // fallback rather than a load-bearing constant.
         height={sheetBodyHeight}
-        // NOTE — an unresolved risk, deliberately NOT patched blind. With
-        // `keyboardBehavior="interactive"` gorhom shrinks its own content box
-        // while the keyboard is up (`animatedContentHeightMax`), and this rigid
-        // child will not follow it down, so a form sheet may clip its bottom
-        // behind the keyboard. `flexShrink: 1` is the obvious candidate and is
-        // very likely correct, but it is UNVERIFIED on device and this is a
-        // primitive shared by ~27 sheets — the shape above is the one actually
-        // observed working. Check a form sheet (Fuel Targets / Create Exercise)
-        // with the keyboard up before changing it.
+        flexShrink={1}
         testID={testID}
         // Plain in-flow flex container — NOT gorhom's <BottomSheetView>, whose
         // base style is position:absolute (top/left/right, no height) and thus
         // overrides flex:1, sizing the node to its content. That left the inner
         // BottomSheetScrollView with no bounded viewport, so it never scrolled
         // and tall bodies (e.g. the coach ProfileDrawer) were clipped — the
-        // Sign-out button unreachable. As a direct child of gorhom's
-        // fixed-height content wrapper, a flex:1 View fills the box so the fixed
-        // header + scroll view split it correctly.
+        // Sign-out button unreachable. NOTE: an earlier version of this comment
+        // concluded that "a flex:1 View fills the box" — it does NOT, and that
+        // claim is what produced two failed fixes at the gesture layer. See the
+        // basis/shrink note above; the height must be explicit.
         // a11y: mark the open sheet as a modal so VoiceOver/TalkBack traps focus
         // INSIDE it and ignores the screen behind the backdrop.
         accessibilityViewIsModal

@@ -210,11 +210,11 @@ jest.mock("@gorhom/bottom-sheet", () => {
         View,
         {
           testID: "gorhom-bottom-sheet",
-          // Surface the two props our <BottomSheet> relies on for scrollability
-          // so a regression is assertable. The mock renders plain Views, so no
-          // test can prove the content actually SCROLLS on device — these only
-          // pin that we still ask gorhom for the configuration that unlocks it.
-          enableContentPanningGesture: props.enableContentPanningGesture,
+          // Surface `enableDynamicSizing` so a regression is assertable: with
+          // dynamic sizing ON, gorhom sizes the sheet to its content and ignores
+          // the snap point, which breaks the body's height contract. The mock
+          // renders plain Views, so no test can prove the content actually
+          // SCROLLS on device — this only pins the configuration.
           enableDynamicSizing: props.enableDynamicSizing,
         },
         backdrop,
