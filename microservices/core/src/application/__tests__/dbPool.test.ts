@@ -9,7 +9,7 @@ import { DB_CLIENT_OPTIONS, DB_POOL_MAX } from "@persistence/db/client";
  * `packages/db/src/client.ts` shipped `max: 1` for two years on a rationale that
  * was true and beside the point: "a Lambda container handles one request at a
  * time, so there's no upside to a per-container pool." Concurrency INSIDE a
- * single request — `Promise.all`, of which this codebase has ~20 — was never
+ * single request — `Promise.all`, of which this codebase has 24 — was never
  * considered.
  *
  * At `max: 1` the four reads `POST /workouts/:id/loadout/preview` fires under
@@ -18,13 +18,24 @@ import { DB_CLIENT_OPTIONS, DB_POOL_MAX } from "@persistence/db/client";
  * logs, no error, and nothing in `pg_stat_statements` because the queries never
  * reach Postgres.
  *
+ * ⚠ **The precise trigger is NOT established, and this file must not imply it
+ * is.** `getHomeHandler` fans out SIXTEEN concurrent reads, several multi-row,
+ * and worked fine at `max: 1` — so "4+ concurrent multi-row reads deadlock" is
+ * refuted by a live endpoint in this repo. `DB_POOL_MAX`'s own docstring in
+ * `packages/db/src/client.ts` carries the full account. What is solid is only
+ * the two-sided bound these tests assert.
+ *
+ * This caveat is here because the first version of this file stated the refuted
+ * model as settled fact — and a failing test is the only place most readers will
+ * ever encounter any of it.
+ *
  * ⚠ A unit test cannot reproduce a driver-level deadlock. What it can do is stop
  * the one-character edit that reintroduces it — and `max: 1` reads like
  * connection hygiene, which is exactly why prose was not enough.
  */
 
 describe("DB_POOL_MAX", () => {
-  it("is at least 2, or concurrent multi-row reads deadlock", () => {
+  it("is at least 2 — max:1 reproducibly deadlocks a real endpoint", () => {
     // The floor. At 1 the failure is SILENT — nothing thrown, nothing logged, no
     // slow query recorded — which is how it survived two misdiagnoses.
     expect(DB_POOL_MAX).toBeGreaterThanOrEqual(2);
@@ -38,8 +49,10 @@ describe("DB_POOL_MAX", () => {
     // guard.
     //
     // `idle_timeout` defaults to null, so a warm container holds every socket it
-    // opens until `max_lifetime` (30-60 min). 10 is postgres.js's own default
-    // and also the current Lambda account concurrency limit.
+    // opens until `max_lifetime` (30-60 min). 10 is postgres.js's own default,
+    // and also — measured, not assumed — this AWS account's Lambda concurrency
+    // limit (`aws lambda get-account-settings`, ess-dev/eu-west-2, 2026-07-29).
+    // The AWS default is 1000, so re-check before leaning on that coincidence.
     expect(DB_POOL_MAX).toBeLessThanOrEqual(10);
   });
 });

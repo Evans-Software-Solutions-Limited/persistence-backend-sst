@@ -83,6 +83,7 @@
   },
   "jest": {
     "preset": "jest-expo",
+    "testTimeout": 20000,
     "testMatch": [
       "**/__tests__/**/*.test.{ts,tsx}",
       "**/*.test.{ts,tsx}",
