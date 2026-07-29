@@ -203,18 +203,7 @@ export function ProfileDrawerPresenter({
   // pull-to-refresh, so a permanent loader was a dead end after logout→login).
   if (!profile) {
     return (
-      <BottomSheet
-        visible={visible}
-        onClose={onClose}
-        height="tall"
-        // The drawer body is a long list — Account, Subscription, Preferences,
-        // Sign out, Delete account. Body-panning left gorhom's scrollable
-        // LOCKED, so everything below the fold was unreachable on device
-        // (reported 2026-07-29: neither Sign out nor Delete account could be
-        // reached). See the prop's docs on <BottomSheet>. Dismissal still works
-        // via the drag handle and the backdrop.
-        enableContentPanning={false}
-      >
+      <BottomSheet visible={visible} onClose={onClose} height="tall">
         <View
           flexDirection="row"
           alignItems="center"
@@ -274,18 +263,7 @@ export function ProfileDrawerPresenter({
   }
 
   return (
-    <BottomSheet
-      visible={visible}
-      onClose={onClose}
-      height="tall"
-      // The drawer body is a long list — Account, Subscription, Preferences,
-      // Sign out, Delete account. Body-panning left gorhom's scrollable
-      // LOCKED, so everything below the fold was unreachable on device
-      // (reported 2026-07-29: neither Sign out nor Delete account could be
-      // reached). See the prop's docs on <BottomSheet>. Dismissal still works
-      // via the drag handle and the backdrop.
-      enableContentPanning={false}
-    >
+    <BottomSheet visible={visible} onClose={onClose} height="tall">
       {/* Identity block — extra.jsx:30–41 */}
       <View flexDirection="row" alignItems="center" gap={14} marginBottom={16}>
         <Avatar

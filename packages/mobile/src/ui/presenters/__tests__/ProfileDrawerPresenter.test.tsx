@@ -300,27 +300,6 @@ describe("ProfileDrawerPresenter", () => {
     expect(onSignOut).not.toHaveBeenCalled();
   });
 
-  // Reported on device 2026-07-29: the drawer would not scroll, so neither Sign
-  // out nor Delete account could be reached. gorhom keeps its scrollable LOCKED
-  // unless the sheet is exactly EXTENDED; disabling body panning short-circuits
-  // that to UNLOCKED. Jest renders gorhom as plain Views, so this asserts the
-  // configuration only — the actual scroll is device-verified.
-  it("drawer disables body panning so its content can scroll", () => {
-    const { getByTestId } = renderDrawer({});
-    const sheet = getByTestId("gorhom-bottom-sheet");
-    expect(sheet.props.enableContentPanningGesture).toBe(false);
-    // Dynamic sizing must stay off too, or the snap point is ignored and the
-    // scroll view loses its bounded viewport.
-    expect(sheet.props.enableDynamicSizing).toBe(false);
-  });
-
-  it("keeps body panning disabled in the profile-didn't-load state", () => {
-    const { getByTestId } = renderDrawer({ profile: undefined });
-    expect(
-      getByTestId("gorhom-bottom-sheet").props.enableContentPanningGesture,
-    ).toBe(false);
-  });
-
   // App Store Guideline 5.1.1(v) — App Review rejected build 38 for having no
   // findable account-deletion option. These three tests pin the fix: the row is
   // present and named, it fires, and — critically — it survives the drawer's

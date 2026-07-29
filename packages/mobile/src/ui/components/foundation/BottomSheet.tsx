@@ -13,6 +13,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useWindowDimensions } from "react-native";
 
 import { SafeAreaInsetsContext } from "react-native-safe-area-context";
 
@@ -46,37 +47,28 @@ export type BottomSheetProps = {
   accent?: BottomSheetAccent;
   /** peek=60%, default=78%, tall=88%, or an explicit percentage number (0-100). */
   height?: BottomSheetHeight;
-  /**
-   * Whether dragging the sheet BODY (not the handle) moves the sheet.
-   *
-   * Defaults to `true` — gorhom's own default, so every existing sheet keeps its
-   * current feel. Pass `false` on sheets whose body is a long scrolling list, to
-   * guarantee the content scrolls.
-   *
-   * Why this exists: gorhom keeps the inner scrollable LOCKED unless the sheet
-   * is in its `EXTENDED` state, and `EXTENDED` is an exact float comparison of
-   * `animatedPosition` against `containerHeight - sheetHeight`
-   * (`hooks/useScrollable.ts` + `BottomSheet.tsx` `animatedSheetState`). A
-   * percentage snap point that lands on a fractional pixel can settle a hair off
-   * that value, leaving the sheet visually open but its content unscrollable —
-   * so anything below the fold becomes unreachable. `useScrollable`'s FIRST
-   * branch short-circuits to `UNLOCKED` when content panning is off, which side-
-   * steps the comparison entirely.
-   *
-   * Turning it off costs only drag-the-body-to-dismiss. The handle pan gesture
-   * (`enableHandlePanningGesture`, still on) and the backdrop tap both still
-   * dismiss the sheet.
-   */
-  enableContentPanning?: boolean;
   children: ReactNode;
   testID?: string;
 };
 
+/**
+ * gorhom's drag handle: `padding: 10` top and bottom around a 4pt indicator
+ * (`bottomSheetHandle/styles.ts`, and our `handleIndicatorStyle` keeps that 4).
+ * The handle is laid out ABOVE the content inside the sheet, so the body gets
+ * the snap height minus this.
+ */
+const HANDLE_HEIGHT = 24;
+
+/** Snap height as a 0-1 fraction of the container. */
+function resolveFraction(height: BottomSheetHeight): number {
+  if (height === "peek") return 0.6;
+  if (height === "default") return 0.78;
+  if (height === "tall") return 0.88;
+  return Math.min(100, Math.max(10, height)) / 100;
+}
+
 function resolveSnap(height: BottomSheetHeight): string {
-  if (height === "peek") return "60%";
-  if (height === "default") return "78%";
-  if (height === "tall") return "88%";
-  return `${Math.min(100, Math.max(10, height))}%`;
+  return `${resolveFraction(height) * 100}%`;
 }
 
 /** Accent as a Tamagui token — for the eyebrow <Text> (resolves the theme). */
@@ -99,7 +91,6 @@ export function BottomSheet({
   eyebrow,
   accent,
   height = "default",
-  enableContentPanning = true,
   children,
   testID,
 }: BottomSheetProps) {
@@ -118,6 +109,25 @@ export function BottomSheet({
   // throws without a provider) so the sheet still renders in tests / any tree
   // mounted outside a SafeAreaProvider — falls back to 0.
   const bottomInset = useContext(SafeAreaInsetsContext)?.bottom ?? 0;
+
+  // The sheet body needs an EXPLICIT height. `flex: 1` here does not work:
+  // gorhom's content view (`BottomSheetContent`) applies its height through an
+  // animated style that returns `{}` until the container has been measured, so
+  // there are frames — and, for this drawer, the steady state — where this
+  // column has no definite height to divide up. A `flex: 1` child of an
+  // unsized column sizes to its CONTENT, which means the inner
+  // BottomSheetScrollView's viewport equals its content: nothing overflows, so
+  // nothing scrolls. The body then simply overflowed the sheet and got clipped
+  // by `overflow: "hidden"` below, which LOOKS exactly like a scroll boundary —
+  // which is why this kept being misread as a gesture/lock bug and "fixed" at
+  // the gesture layer. Verified on an iPhone 17 Pro simulator: with `flex: 1`
+  // the drawer will not scroll even with a plain RN ScrollView and no gorhom
+  // gesture wiring at all; with the explicit height it scrolls to Sign out and
+  // Delete account. Derived from the same fraction that builds the snap point,
+  // so the two cannot drift.
+  const windowHeight = useWindowDimensions().height;
+  const sheetBodyHeight =
+    windowHeight * resolveFraction(height) - HANDLE_HEIGHT;
 
   // Render the sheet once it has been opened at least once, then keep it
   // mounted so a parent-driven close (`setVisible(false)`) animates DOWN via
@@ -179,9 +189,6 @@ export function BottomSheet({
       // intended 88%/78%/60%. This component always has an explicit snap point, so
       // dynamic sizing is never wanted — disable it to honour `height` exactly.
       enableDynamicSizing={false}
-      // See the `enableContentPanning` prop docs: `false` is what guarantees the
-      // inner scrollable is UNLOCKED, at the cost of body-drag-to-dismiss.
-      enableContentPanningGesture={enableContentPanning}
       enablePanDownToClose
       // Keyboard handling (device-QA #5): without these, gorhom's default
       // keyboard behaviour fights the inner BottomSheetScrollView on
@@ -209,7 +216,11 @@ export function BottomSheet({
       }}
     >
       <View
-        flex={1}
+        // An explicit `height`, not `maxHeight`: `maxHeight` was tried on device
+        // and collapsed the body to nothing (the column has no basis to shrink
+        // from, so it resolves to zero). This is the shape that was verified
+        // scrolling on an iPhone 17 Pro simulator.
+        height={sheetBodyHeight}
         testID={testID}
         // Plain in-flow flex container — NOT gorhom's <BottomSheetView>, whose
         // base style is position:absolute (top/left/right, no height) and thus
