@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.10.0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.9.0...persistence-v1.10.0) (2026-07-29)
+
+
+### Features
+
+* **subscriptions:** tell the account that LOST a transferred subscription ([#330](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/330)) ([2dcd488](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/2dcd48865381f0b1596f976f84dc3168afb571d9))
+
+
+### Bug Fixes
+
+* **ai:** max_tokens is wall clock, and the SDK was retrying behind our backs ([#333](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/333)) ([121e028](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/121e028c76966976c47863385fa3b3cb671ff7fb))
+* **appstore:** clear both App Review findings — PassKit removal, findable account deletion, and the drawer-scroll root cause ([#336](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/336)) ([8faaf0e](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/8faaf0e076bff61c12357bc6d27cde7c63c9b2b0))
+* **db:** max:1 deadlocks concurrent multi-row reads — the real loadout bug ([#335](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/335)) ([3119a85](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/3119a857400ec22fab3d36b6865eb0ccc0cbe72b))
+* **exercises:** ${array}::uuid[] renders a Postgres ROW, not an array ([#332](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/332)) ([3424b11](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/3424b1197371a46e210c7aa6da9c7af483c68541))
+* **rings,workouts:** Train ring = daily active calories; derive real workout durations ([#334](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/334)) ([e31a6ef](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/e31a6efcfb10b84cfcab14f8f49352311fc3a663))
+
 ## [1.9.0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.8.0...persistence-v1.9.0) (2026-07-28)
 
 
