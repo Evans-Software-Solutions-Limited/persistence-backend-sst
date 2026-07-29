@@ -104,6 +104,34 @@ describe("SignUpPresenter", () => {
     expect(getByTestId("sign-up-spinner")).toBeTruthy();
   });
 
+  // The dead-end fix: when Supabase silently sends nothing because the address is
+  // already taken, this screen must NOT say "check your email".
+  it("swaps the copy to sign-in guidance when the email may already exist", () => {
+    const { getByTestId } = renderWithTheme(
+      <SignUpPresenter {...defaultProps} confirmationSent mayAlreadyExist />,
+    );
+    const msg = getByTestId("confirmation-message");
+    expect(msg).toBeTruthy();
+    const text = JSON.stringify(msg.props.children);
+    expect(text).toMatch(/already exists/i);
+    expect(text).toMatch(/sign in/i);
+    expect(text).toMatch(/30 days/);
+    expect(text).not.toMatch(/Check your email/i);
+    // The route out is the existing CTA.
+    expect(getByTestId("back-to-sign-in")).toBeTruthy();
+  });
+
+  it("keeps the check-your-email copy for a genuine new sign-up", () => {
+    const { getByTestId } = renderWithTheme(
+      <SignUpPresenter {...defaultProps} confirmationSent />,
+    );
+    const text = JSON.stringify(
+      getByTestId("confirmation-message").props.children,
+    );
+    expect(text).toMatch(/Check your email/i);
+    expect(text).not.toMatch(/already exists/i);
+  });
+
   it("shows confirmation message when confirmationSent is true", () => {
     const { getByTestId, queryByTestId } = renderWithTheme(
       <SignUpPresenter {...defaultProps} confirmationSent />,
