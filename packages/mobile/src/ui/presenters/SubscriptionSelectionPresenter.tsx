@@ -14,7 +14,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { DEFAULT_TRIAL_DAYS } from "@/domain/models/subscription";
 import type {
   BillingCycle,
-  MySubscription,
   SubscriptionTier,
   SubscriptionTierName,
 } from "@/domain/models/subscription";

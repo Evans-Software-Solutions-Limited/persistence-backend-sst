@@ -1,8 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react-native";
-import type {
-  MySubscription,
-  SubscriptionTier,
-} from "@/domain/models/subscription";
+import type { SubscriptionTier } from "@/domain/models/subscription";
 import {
   getFeaturesList,
   SubscriptionSelectionPresenter,

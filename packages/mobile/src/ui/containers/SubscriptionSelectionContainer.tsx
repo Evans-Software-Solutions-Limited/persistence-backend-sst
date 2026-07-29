@@ -200,20 +200,30 @@ function SubscriptionCatalogueContainer() {
   );
 
   // No purchase rail on this platform. The tap stays wired so the cards remain
-  // interactive and the user gets a reason rather than dead pixels. The current
-  // tier is excluded: `SubscriptionCard` renders a pressable CTA even when
-  // `isCurrent` (it only restyles it), so without this guard a subscriber
-  // tapping their own "Current Plan" would be told to go and buy it.
+  // interactive and the user gets a reason rather than dead pixels. The guard
+  // mirrors the three-part one this container had before the rail removal:
+  // `SubscriptionCard` renders a pressable CTA even when `isCurrent` (it only
+  // restyles it), so a plain `tier === currentTier` bail-out would silently
+  // swallow the two taps that ARE asking for a change — switching the held tier
+  // to a different billing cycle, and reinstating a cancelled-but-active
+  // subscription. Those want the alert; only a genuine no-op is ignored.
   const handleTierSelect = useCallback(
     (tier: SubscriptionTierName) => {
-      if (tier === currentTier) return;
+      const effectiveCurrentCycle = currentBillingCycle ?? "monthly";
+      if (
+        tier === currentTier &&
+        !isCancelledButActive &&
+        billingCycle === effectiveCurrentCycle
+      ) {
+        return;
+      }
       Alert.alert(
         "Not available on this device",
         "Subscriptions are purchased through the App Store in the iOS app. " +
           "Open Persistence on your iPhone or iPad to subscribe.",
       );
     },
-    [currentTier],
+    [currentTier, isCancelledButActive, billingCycle, currentBillingCycle],
   );
 
   const handleConfirmCancel = useCallback(async () => {

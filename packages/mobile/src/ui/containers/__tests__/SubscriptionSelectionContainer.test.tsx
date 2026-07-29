@@ -233,6 +233,56 @@ describe("SubscriptionSelectionContainer", () => {
     expect(alertSpy).not.toHaveBeenCalled();
   });
 
+  // Inspector Brad re-sweep: a plain `tier === currentTier` bail-out swallowed the
+  // two taps that ARE asking for a change. Both must still reach the alert.
+  it("tapping the held tier after switching cycle still explains where to buy", async () => {
+    const { adapters, api } = makeAdapters();
+    api.mySubscription = freeSub({
+      subscriptionId: "us_1",
+      tierName: "premium",
+      paymentStatus: "active",
+      billingCycle: "monthly",
+    });
+    render(
+      <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
+        <SubscriptionSelectionContainer />
+      </Wrapper>,
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("billing-cycle-toggle")).toBeTruthy(),
+    );
+    // monthly -> yearly: the user is asking to switch billing cycle.
+    fireEvent.press(screen.getByTestId("billing-cycle-toggle"));
+    fireEvent.press(screen.getByTestId("subscription-card-premium"));
+
+    await waitFor(() => expect(alertSpy).toHaveBeenCalled());
+    expect(alertSpy.mock.calls[0][0]).toBe("Not available on this device");
+  });
+
+  it("tapping the held tier to reinstate a cancelled sub still explains where to buy", async () => {
+    const { adapters, api } = makeAdapters();
+    api.mySubscription = freeSub({
+      subscriptionId: "us_1",
+      tierName: "premium",
+      paymentStatus: "active",
+      billingCycle: "monthly",
+      cancelledAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+    });
+    render(
+      <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
+        <SubscriptionSelectionContainer />
+      </Wrapper>,
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("subscription-card-premium")).toBeTruthy(),
+    );
+    fireEvent.press(screen.getByTestId("subscription-card-premium"));
+
+    await waitFor(() => expect(alertSpy).toHaveBeenCalled());
+    expect(alertSpy.mock.calls[0][0]).toBe("Not available on this device");
+  });
+
   // (Downgrade-scheduled test removed during tier simplification — the
   // direct same-screen downgrade flow only exists on the trainer track
   // now, and the SubscriptionManagementContainer tests cover the
