@@ -83,6 +83,8 @@
   },
   "jest": {
     "preset": "jest-expo",
+    "_testTimeout_note": "20s package default. Heavy container suites tip over jest's 5s default under parallel load; this was patched per-file three times in one day before being set here. The 8 sub-default `jest.setTimeout(15_000)` overrides were removed with it — a file-level call WINS over this, so leaving them would have capped the heaviest suites below the new floor. Two 20s and one 30s override remain (equal or deliberately higher). NOTE: this does NOT govern RTL waitFor, which has its own 1s asyncUtilTimeout.",
+    "testTimeout": 20000,
     "testMatch": [
       "**/__tests__/**/*.test.{ts,tsx}",
       "**/*.test.{ts,tsx}",
