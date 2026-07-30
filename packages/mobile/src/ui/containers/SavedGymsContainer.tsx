@@ -28,6 +28,7 @@ export function SavedGymsContainer() {
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   /** A delete that is in flight — its row is hidden until the list re-reads. */
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [mutationError, setMutationError] = useState<string | null>(null);
 
   // Same pre-Loadout-cache problem as the flow's picker: an equipment list cached
   // before `category` existed groups everything under "Other", for up to 24 h,
@@ -131,8 +132,14 @@ export function SavedGymsContainer() {
     async (gymId: string) => {
       setPendingDeleteId(null);
       setDeletingId(gymId);
+      setMutationError(null);
       try {
-        await gyms.remove(gymId);
+        const error = await gyms.remove(gymId);
+        if (error !== null) {
+          setMutationError(
+            "Couldn't delete that gym. Check your connection and try again.",
+          );
+        }
       } finally {
         // Cleared either way. On a FAILED delete the row must come back —
         // hiding it permanently would show the user a gym they still have as
@@ -148,9 +155,10 @@ export function SavedGymsContainer() {
       gyms={visibleGyms}
       isLoading={gyms.isLoading}
       loadError={
-        gyms.error === null
+        mutationError ??
+        (gyms.error === null
           ? null
-          : "Couldn't load your saved gyms. Check your connection and try again."
+          : "Couldn't load your saved gyms. Check your connection and try again.")
       }
       groups={groups}
       equipmentNameById={equipmentNameById}
@@ -164,6 +172,7 @@ export function SavedGymsContainer() {
       onSaveEdit={() => void onSaveEdit()}
       onRequestDelete={(gymId) => {
         setEditing(null);
+        setMutationError(null);
         setPendingDeleteId(gymId);
       }}
       onCancelDelete={() => setPendingDeleteId(null)}

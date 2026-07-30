@@ -202,6 +202,17 @@ describe("listAdaptationCandidates (T-1.3)", () => {
     expect(render(capture.where)).toContain(`"exercises"."primary_muscles" &&`);
   });
 
+  it("AND-matches every search token against the exercise name before the cap", async () => {
+    await new ExerciseRepository().listAdaptationCandidates("user-a", {
+      muscleIds: [CHEST],
+      equipmentTypeIds: [DUMBBELL],
+      search: "press-bench",
+    });
+
+    const sql = render(capture.where);
+    expect(sql.match(/"exercises"\."name" ilike/g)).toHaveLength(2);
+  });
+
   it("excludes the plan's own exercises", async () => {
     await new ExerciseRepository().listAdaptationCandidates("user-a", {
       muscleIds: [CHEST],

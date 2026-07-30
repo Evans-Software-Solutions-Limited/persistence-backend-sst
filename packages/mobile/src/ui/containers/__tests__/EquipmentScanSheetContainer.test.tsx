@@ -95,7 +95,6 @@ function makeAdapters(api: InMemoryApiAdapter, online = true): Adapters {
     storage: new InMemoryStorageAdapter(),
     health: {} as Adapters["health"],
     notifications: {} as Adapters["notifications"],
-    payments: {} as Adapters["payments"],
     netInfo: new InMemoryNetInfoAdapter(online),
   };
 }

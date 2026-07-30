@@ -119,6 +119,21 @@ describe("GET /exercises/substitutes", () => {
     expect(body.data.others.map((e: any) => e.id)).toEqual(["incompatible"]);
   });
 
+  it("applies name search before both visibility-scoped candidate caps", async () => {
+    await call(
+      `forExerciseId=${SOURCE_ID}&equipment=${DUMBBELL}&search=bench%20press`,
+    );
+
+    expect(exerciseRepo.listAdaptationCandidates).toHaveBeenCalledWith(
+      "user-a",
+      expect.objectContaining({ search: "bench press" }),
+    );
+    expect(exerciseRepo.listRankableExercises).toHaveBeenCalledWith(
+      "user-a",
+      expect.objectContaining({ search: "bench press" }),
+    );
+  });
+
   it("returns why each entry matched, so the client need not re-derive it", async () => {
     const res = await call(`forExerciseId=${SOURCE_ID}&equipment=${DUMBBELL}`);
     const body = (await res.json()) as any;
@@ -271,6 +286,7 @@ describe("GET /exercises/substitutes — the best/others boundary", () => {
       expect(body.data.best.map((e: any) => e.id)).toEqual(["c1", "c2"]);
       // c3 is compatible but did not fit the page — it must NOT appear in others.
       expect(body.data.others.map((e: any) => e.id)).toEqual(["incompatible"]);
+      expect(body.data.meta.truncated).toBe(true);
     });
   });
 });
