@@ -175,9 +175,19 @@ export const sessionsRecordHandler = new Elysia()
         status: t.Union([t.Literal("completed"), t.Literal("cancelled")]),
         totalDurationSeconds: t.Optional(t.Union([t.Number(), t.Null()])),
         userNotes: t.Optional(t.Union([t.String(), t.Null()])),
-        sessionRating: t.Optional(t.Union([t.Number(), t.Null()])),
-        overallRpe: t.Optional(t.Union([t.Number(), t.Null()])),
-        difficultyRanking: t.Optional(t.Union([t.Number(), t.Null()])),
+        // Deprecated compatibility alias: older app builds duplicated their
+        // 1-10 difficulty answer into this field. The repository maps it to
+        // difficultyRanking and never writes the legacy 1-5 session_rating
+        // column.
+        sessionRating: t.Optional(
+          t.Union([t.Integer({ minimum: 1, maximum: 10 }), t.Null()]),
+        ),
+        overallRpe: t.Optional(
+          t.Union([t.Integer({ minimum: 1, maximum: 10 }), t.Null()]),
+        ),
+        difficultyRanking: t.Optional(
+          t.Union([t.Integer({ minimum: 1, maximum: 10 }), t.Null()]),
+        ),
         // At least one exercise is required — mirrors legacy
         // recordWorkout's validation. Empty sessions (user opens
         // workout, taps Cancel without logging) take the discard

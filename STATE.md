@@ -9,8 +9,19 @@ items, and the four most recent sessions. Trimmed 2026-07-27 from 1554 lines.
 If anything here contradicts `git log --oneline -30`, the git history wins —
 say so and fix this file.
 
-## Current state (2026-07-27)
+## Current state (2026-07-30)
 
+- **Sentry production hotfix implemented on
+  `codex/sentry-production-error-review-2026-07-30` (PR #337).** The shipped
+  mobile app asks only for a 1–10 difficulty rating but serializes it into both
+  `sessionRating` and `difficultyRanking`; production's legacy
+  `session_rating` column has a 1–5 check, causing SQLSTATE 23514 for answers
+  6–10. All backend session record paths now persist only
+  `difficulty_ranking`; `sessionRating` remains a deprecated 1–10 wire alias
+  for installed clients. The PATCH path normalizes the alias too. No migration
+  or mobile rebuild is required. Verified with a sensitive repository
+  regression test, 71 focused tests, prettier, forced typecheck, lint, build,
+  and forced full unit suite (19/19 tasks).
 - **Last CODE change on `origin/main` = `f0e8929`** (PR #326, Loadout **Phase 3
   equipment scan + Phase 2 foundation**, merged 2026-07-27, branch deleted). Released
   to production: **v1.8.0**.

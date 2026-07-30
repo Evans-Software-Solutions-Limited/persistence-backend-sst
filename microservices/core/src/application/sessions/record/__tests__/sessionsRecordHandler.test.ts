@@ -195,6 +195,54 @@ describe("sessionsRecordHandler", () => {
     expect(body.data.id).toBe("server-session-1");
   });
 
+  it("accepts the installed app's duplicated 1-10 difficulty payload", async () => {
+    const { sessionsRecordHandler } = await import("../sessionsRecordHandler");
+    const response = await sessionsRecordHandler.handle(
+      new Request("http://localhost/sessions/record", {
+        method: "POST",
+        headers: {
+          authorization: "Bearer token",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          ...validBody,
+          sessionRating: 10,
+          difficultyRanking: 10,
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(201);
+    expect(sessionMocks.recordSession).toHaveBeenCalledWith(
+      "test-user-id",
+      expect.objectContaining({
+        sessionRating: 10,
+        difficultyRanking: 10,
+      }),
+      expect.any(Function),
+      expect.any(Function),
+      undefined,
+      expect.any(Function),
+    );
+  });
+
+  it("rejects an out-of-range difficulty before opening the repository", async () => {
+    const { sessionsRecordHandler } = await import("../sessionsRecordHandler");
+    const response = await sessionsRecordHandler.handle(
+      new Request("http://localhost/sessions/record", {
+        method: "POST",
+        headers: {
+          authorization: "Bearer token",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ ...validBody, difficultyRanking: 11 }),
+      }),
+    );
+
+    expect(response.status).toBe(422);
+    expect(sessionMocks.recordSession).not.toHaveBeenCalled();
+  });
+
   it("forwards the userId from JWT (never the body) to recordSession", async () => {
     const { sessionsRecordHandler } = await import("../sessionsRecordHandler");
     await sessionsRecordHandler.handle(

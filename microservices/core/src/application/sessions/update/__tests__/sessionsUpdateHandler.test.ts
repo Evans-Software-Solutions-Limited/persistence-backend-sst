@@ -193,6 +193,68 @@ describe("SessionsUpdateHandler", () => {
     expect(sessionMocks.getById).not.toHaveBeenCalled();
     // update still ran exactly once.
     expect(sessionMocks.update).toHaveBeenCalledTimes(1);
+    expect(sessionMocks.update).toHaveBeenCalledWith("s1", "test-user-id", {
+      userNotes: "good session",
+      difficultyRanking: 4,
+    });
+  });
+
+  it("treats legacy sessionRating as a 1-10 difficulty alias", async () => {
+    const { sessionsUpdateHandler } = await import("../sessionsUpdateHandler");
+    const response = await sessionsUpdateHandler.handle(
+      new Request("http://localhost/sessions/s1", {
+        method: "PATCH",
+        body: JSON.stringify({ sessionRating: 10 }),
+        headers: {
+          authorization: "Bearer token",
+          "Content-Type": "application/json",
+        },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(sessionMocks.update).toHaveBeenCalledWith("s1", "test-user-id", {
+      difficultyRanking: 10,
+    });
+  });
+
+  it("prefers difficultyRanking when both rating fields are sent", async () => {
+    const { sessionsUpdateHandler } = await import("../sessionsUpdateHandler");
+    const response = await sessionsUpdateHandler.handle(
+      new Request("http://localhost/sessions/s1", {
+        method: "PATCH",
+        body: JSON.stringify({
+          sessionRating: 4,
+          difficultyRanking: 8,
+        }),
+        headers: {
+          authorization: "Bearer token",
+          "Content-Type": "application/json",
+        },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(sessionMocks.update).toHaveBeenCalledWith("s1", "test-user-id", {
+      difficultyRanking: 8,
+    });
+  });
+
+  it("rejects difficulty values outside the supported 1-10 range", async () => {
+    const { sessionsUpdateHandler } = await import("../sessionsUpdateHandler");
+    const response = await sessionsUpdateHandler.handle(
+      new Request("http://localhost/sessions/s1", {
+        method: "PATCH",
+        body: JSON.stringify({ sessionRating: 11 }),
+        headers: {
+          authorization: "Bearer token",
+          "Content-Type": "application/json",
+        },
+      }),
+    );
+
+    expect(response.status).toBe(422);
+    expect(sessionMocks.update).not.toHaveBeenCalled();
   });
 
   it("skips the getById pre-fetch on PATCHes that set status to a non-completed value", async () => {
