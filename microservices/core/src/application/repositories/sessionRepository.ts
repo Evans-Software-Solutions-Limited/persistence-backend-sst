@@ -56,6 +56,13 @@ export interface RecordSessionInput {
   status: "completed" | "cancelled";
   totalDurationSeconds?: number | null;
   userNotes?: string | null;
+  /**
+   * Deprecated compatibility alias for older mobile builds. The active workout
+   * flow has only ever collected a 1-10 difficulty score, but legacy clients
+   * serialized that value into both `sessionRating` and `difficultyRanking`.
+   * Bulk record treats this as a fallback for `difficultyRanking` and never
+   * persists it to the distinct 1-5 `session_rating` column.
+   */
   sessionRating?: number | null;
   overallRpe?: number | null;
   difficultyRanking?: number | null;
@@ -406,6 +413,18 @@ export class SessionRepository {
           ? (completedAtFromPayload ?? new Date())
           : completedAtFromPayload;
 
+      // The current app asks one question: workout difficulty on a 1-10 scale.
+      // Its original M3 payload duplicated that answer into `sessionRating`,
+      // even though the database's legacy `session_rating` column represents a
+      // different 1-5 "workout quality" concept. Ratings 6-10 therefore failed
+      // the whole atomic session insert with SQLSTATE 23514.
+      //
+      // Keep accepting `sessionRating` as a wire-level fallback for installed
+      // older clients, but persist only the canonical difficulty field. Prefer
+      // an explicitly supplied `difficultyRanking` when both are present.
+      const difficultyRanking =
+        payload.difficultyRanking ?? payload.sessionRating ?? null;
+
       const insertedSessions = await tx
         .insert(workoutSessions)
         .values({
@@ -423,9 +442,9 @@ export class SessionRepository {
           completedAt,
           totalDurationSeconds: payload.totalDurationSeconds ?? null,
           userNotes: payload.userNotes ?? null,
-          sessionRating: payload.sessionRating ?? null,
+          sessionRating: null,
           overallRpe: payload.overallRpe ?? null,
-          difficultyRanking: payload.difficultyRanking ?? null,
+          difficultyRanking,
           updatedAt: new Date(),
         } as NewWorkoutSession)
         // M13 concurrent-submit backstop: two racing retries can both pass the

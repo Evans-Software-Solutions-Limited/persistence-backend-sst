@@ -65,9 +65,18 @@ export const trainersMeRecordClientSessionHandler = new Elysia()
         status: t.Union([t.Literal("completed"), t.Literal("cancelled")]),
         totalDurationSeconds: t.Optional(t.Union([t.Number(), t.Null()])),
         userNotes: t.Optional(t.Union([t.String(), t.Null()])),
-        sessionRating: t.Optional(t.Union([t.Number(), t.Null()])),
-        overallRpe: t.Optional(t.Union([t.Number(), t.Null()])),
-        difficultyRanking: t.Optional(t.Union([t.Number(), t.Null()])),
+        // Deprecated compatibility alias: older app builds duplicated their
+        // 1-10 difficulty answer into this field. SessionRepository maps it to
+        // difficultyRanking and leaves the legacy session_rating column null.
+        sessionRating: t.Optional(
+          t.Union([t.Integer({ minimum: 1, maximum: 10 }), t.Null()]),
+        ),
+        overallRpe: t.Optional(
+          t.Union([t.Integer({ minimum: 1, maximum: 10 }), t.Null()]),
+        ),
+        difficultyRanking: t.Optional(
+          t.Union([t.Integer({ minimum: 1, maximum: 10 }), t.Null()]),
+        ),
         exercises: t.Array(
           t.Object({
             exerciseId: t.String(),

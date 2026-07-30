@@ -723,6 +723,12 @@ describe("SessionRepository", () => {
       options: {
         workoutsThisMonth?: number;
         /**
+         * Captures the root workout_sessions insert values. Used for contract
+         * assertions that must prove the repository writes the correct column,
+         * rather than merely asserting its mocked return value.
+         */
+        captureSessionValues?: (values: unknown) => void;
+        /**
          * Captures the COUNT(*) chain's `.where(...)` argument so a
          * caller can introspect the filter (e.g. that a
          * `date_trunc('month', now())` SQL fragment is present).
@@ -733,9 +739,12 @@ describe("SessionRepository", () => {
       } = {},
     ) {
       const tx = {
-        insert: vi.fn().mockImplementation(() => {
+        insert: vi.fn().mockImplementation((table: unknown) => {
           const chain: any = {
-            values: vi.fn().mockImplementation(() => {
+            values: vi.fn().mockImplementation((values: unknown) => {
+              if (table === workoutSessions) {
+                options.captureSessionValues?.(values);
+              }
               // Three insert shapes inside recordSession:
               //   - workoutSessions  (M13: .onConflictDoNothing().returning() → [session])
               //   - sessionExercises (returning({ id }) → [{ id }])
@@ -829,7 +838,7 @@ describe("SessionRepository", () => {
       ],
     };
 
-    it("returns the post-PR-detection isPersonalRecord flag (re-fetches inside tx)", async () => {
+    it("returns the post-PR-detection isPersonalRecord flag and persists the app's rating only as difficulty", async () => {
       const refreshed = {
         session: {
           id: "s1",
@@ -873,8 +882,12 @@ describe("SessionRepository", () => {
         ],
       };
 
+      let insertedSession: Record<string, unknown> | undefined;
       const tx = makeRecordSessionTx(refreshed, {
         workoutsThisMonth: 7,
+        captureSessionValues: (values) => {
+          insertedSession = values as Record<string, unknown>;
+        },
       });
       const mockDb = {
         transaction: vi
@@ -900,9 +913,25 @@ describe("SessionRepository", () => {
 
       const { SessionRepository } = await import("../sessionRepository");
       const repo = new SessionRepository();
-      const result = await repo.recordSession("u1", payload, runPRDetection);
+      const result = await repo.recordSession(
+        "u1",
+        {
+          ...payload,
+          // Production mobile builds historically duplicated their single
+          // 1-10 difficulty answer into both fields. A value of 7 used to hit
+          // the database's unrelated session_rating <= 5 constraint and roll
+          // back the entire completed session.
+          sessionRating: 7,
+          difficultyRanking: 7,
+        },
+        runPRDetection,
+      );
 
       expect(runPRDetection).toHaveBeenCalledWith("u1", "s1", tx);
+      expect(insertedSession).toMatchObject({
+        sessionRating: null,
+        difficultyRanking: 7,
+      });
       expect(result.exercises[0]?.sets[0]?.isPersonalRecord).toBe(true);
       // The response should also reflect any other state the canonical
       // table holds — id, weight, etc. — pulled via the re-fetch, not

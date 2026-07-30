@@ -110,4 +110,37 @@ describe("trainersMeRecordClientSessionHandler", () => {
       payload: expect.objectContaining({ status: "completed" }),
     });
   });
+
+  it("accepts the installed app's duplicated 1-10 difficulty payload", async () => {
+    const { trainersMeRecordClientSessionHandler } =
+      await import("../trainersMeRecordClientSessionHandler");
+    const res = await trainersMeRecordClientSessionHandler.handle(
+      post("client-1", {
+        ...validBody,
+        sessionRating: 10,
+        difficultyRanking: 10,
+      }),
+    );
+
+    expect(res.status).toBe(201);
+    expect(recordClientSessionOnBehalf).toHaveBeenCalledWith({
+      trainerId: "trainer-id",
+      clientId: "client-1",
+      payload: expect.objectContaining({
+        sessionRating: 10,
+        difficultyRanking: 10,
+      }),
+    });
+  });
+
+  it("422s an out-of-range difficulty before delegating", async () => {
+    const { trainersMeRecordClientSessionHandler } =
+      await import("../trainersMeRecordClientSessionHandler");
+    const res = await trainersMeRecordClientSessionHandler.handle(
+      post("client-1", { ...validBody, difficultyRanking: 11 }),
+    );
+
+    expect(res.status).toBe(422);
+    expect(recordClientSessionOnBehalf).not.toHaveBeenCalled();
+  });
 });

@@ -31,7 +31,6 @@ export const sessionsUpdateHandler = new Elysia()
         "totalDurationSeconds",
         "userNotes",
         "trainerFeedback",
-        "sessionRating",
         "overallRpe",
         "difficultyRanking",
       ];
@@ -41,6 +40,14 @@ export const sessionsUpdateHandler = new Elysia()
         if (field in body) {
           updateData[field] = body[field];
         }
+      }
+
+      // `sessionRating` is a deprecated wire-level alias retained for
+      // installed clients. The product only captures a 1-10 difficulty answer,
+      // so never write that value to the legacy 1-5 session_rating column.
+      // Prefer the canonical field if a client sends both.
+      if (!("difficultyRanking" in body) && "sessionRating" in body) {
+        updateData.difficultyRanking = body.sessionRating;
       }
 
       if (Object.keys(updateData).length === 0) {
@@ -126,9 +133,10 @@ export const sessionsUpdateHandler = new Elysia()
         totalDurationSeconds: t.Optional(t.Number()),
         userNotes: t.Optional(t.String()),
         trainerFeedback: t.Optional(t.String()),
-        sessionRating: t.Optional(t.Number()),
-        overallRpe: t.Optional(t.Number()),
-        difficultyRanking: t.Optional(t.Number()),
+        // Deprecated compatibility alias for difficultyRanking.
+        sessionRating: t.Optional(t.Integer({ minimum: 1, maximum: 10 })),
+        overallRpe: t.Optional(t.Integer({ minimum: 1, maximum: 10 })),
+        difficultyRanking: t.Optional(t.Integer({ minimum: 1, maximum: 10 })),
       }),
     },
   );
