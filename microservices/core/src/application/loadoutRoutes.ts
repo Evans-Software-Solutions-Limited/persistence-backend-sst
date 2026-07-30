@@ -25,6 +25,7 @@ import { savedGymsUpdateHandler } from "./loadout/savedGyms/savedGymsUpdateHandl
 import { savedGymsDeleteHandler } from "./loadout/savedGyms/savedGymsDeleteHandler";
 import { workoutVariationsListHandler } from "./loadout/variations/workoutVariationsListHandler";
 import { workoutVariationsCreateHandler } from "./loadout/variations/workoutVariationsCreateHandler";
+import { workoutVariationsReplaceHandler } from "./loadout/variations/workoutVariationsReplaceHandler";
 import { workoutLoadoutPreviewHandler } from "./loadout/preview/workoutLoadoutPreviewHandler";
 import { aiEquipmentScanHandler } from "./loadout/scan/aiEquipmentScanHandler";
 
@@ -38,6 +39,7 @@ export const loadoutRoutes = new Elysia()
   // variations under a parent workout.
   .use(workoutVariationsListHandler)
   .use(workoutVariationsCreateHandler)
+  .use(workoutVariationsReplaceHandler)
   // Phase 1 — the adaptation itself. One segment deeper than
   // `/workouts/:id/variations`, so the same "no collision with /workouts/:id"
   // argument covers it.

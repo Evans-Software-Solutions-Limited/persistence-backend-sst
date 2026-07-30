@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams } from "expo-router";
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import {
   deriveDominantEquipment,
   deriveWorkoutMuscles,
@@ -8,16 +8,18 @@ import { useLoadoutFlow } from "@/state/loadout-flow";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useAuth } from "@/ui/hooks/useAuth";
 import { useLoadoutGate } from "@/ui/hooks/useLoadoutGate";
+import { useSavedGyms } from "@/ui/hooks/useSavedGyms";
 import { useWorkoutVariations } from "@/ui/hooks/useWorkoutVariations";
 import { LoadoutUpsellSheet } from "@/ui/presenters/loadout/LoadoutUpsellSheet";
 import { useProfilePage } from "@/ui/hooks/useProfilePage";
 import { useWorkout } from "@/ui/hooks/useWorkout";
 import { useWorkoutHistory } from "@/ui/hooks/useWorkoutHistory";
 import { WorkoutDetailPresenter } from "@/ui/presenters/WorkoutDetailPresenter";
+import { hasGymEquipmentChanged } from "@/domain/services/loadout.service";
 
 /**
  * Workout-detail screen container. Routed at `/(app)/workouts/[id]` so the
- * detail surface is deep-linkable, presented as a stack-modal.
+ * detail surface is deep-linkable and participates in ordinary stack history.
  *
  * v3 additions (Workout Authoring v2):
  *   - `useWorkoutHistory(id)` feeds the hero's completed-session stats block
@@ -28,8 +30,8 @@ import { WorkoutDetailPresenter } from "@/ui/presenters/WorkoutDetailPresenter";
  *
  * Loadout (spec-21 T-2.2 / T-2.8) adds two owner-only surfaces: the "Adapt to
  * your gym" entry card and the "Saved setups" variation list. Both hang off
- * `useLoadoutFlow` — the flow itself is a root-mounted overlay
- * (`<LoadoutFlowContainer>`), so opening it is a store call, not a navigation.
+ * `useLoadoutFlow`; the state is seeded before navigating to the dedicated
+ * `/(app)/loadout` route.
  *
  * Spec: specs/milestones/WORKOUT-AUTHORING-V2/design.md § 10
  *       (legacy STORY-007 ACs 7.1, 7.2, 7.4 preserved)
@@ -47,18 +49,49 @@ export function WorkoutDetailContainer() {
   const history = useWorkoutHistory(workoutId);
   const loadoutGate = useLoadoutGate();
   const openLoadout = useLoadoutFlow((state) => state.open);
+  const selectLoadoutGym = useLoadoutFlow((state) => state.selectGym);
   const openLoadoutUpsell = useLoadoutFlow((state) => state.openUpsell);
   const loadoutUpsellOpen = useLoadoutFlow((state) => state.upsellOpen);
   const closeLoadoutUpsell = useLoadoutFlow((state) => state.closeUpsell);
+  const loadoutRev = useLoadoutFlow((state) => state.rev);
 
   const workout = detail.workout;
   const isOwner =
     workout != null && userId != null && workout.createdBy === userId;
+  const isVariation = workout?.parentWorkoutId != null;
 
   // Only fetched for the owner: the variation list is scoped to the CALLER's own
   // variations server-side, so on someone else's workout it is always empty and
   // the request is pure waste.
-  const variations = useWorkoutVariations(isOwner ? workoutId : null);
+  const variations = useWorkoutVariations(
+    isOwner && !isVariation ? workoutId : null,
+  );
+  const savedGyms = useSavedGyms(
+    isOwner && isVariation && workout?.sourceGymId != null,
+  );
+  const sourceGym =
+    workout?.sourceGymId == null
+      ? null
+      : (savedGyms.gyms.find((gym) => gym.id === workout.sourceGymId) ?? null);
+  const sourceGymUpdated =
+    workout != null &&
+    hasGymEquipmentChanged({
+      sourceGymId: workout.sourceGymId ?? null,
+      sourceEquipmentTypeIds: workout.sourceEquipmentTypeIds ?? null,
+      currentSourceGymEquipmentTypeIds: sourceGym?.equipmentTypeIds ?? null,
+    });
+  const loadoutContextPending =
+    isVariation === true && workout?.sourceGymId != null && savedGyms.isLoading;
+
+  // Replacing a variation happens while this detail screen sits underneath the
+  // Loadout route. Refresh it as soon as the save lands so dismissing the flow
+  // reveals the new plan, not the cached pre-adaptation exercises.
+  const previousLoadoutRevRef = useRef(loadoutRev);
+  useEffect(() => {
+    if (previousLoadoutRevRef.current === loadoutRev) return;
+    previousLoadoutRevRef.current = loadoutRev;
+    if (isVariation) void detail.refresh();
+  }, [detail, isVariation, loadoutRev]);
 
   // Derive muscle pills + the dominant equipment label from the cached
   // exercise library (workout refs carry neither). Recomputes only when the
@@ -118,7 +151,7 @@ export function WorkoutDetailContainer() {
     // the card is `disabled` while pending, so Testing Library's press never
     // reaches here. The two layers block different channels — the prop blocks the
     // touch, this blocks any other caller — and neither is redundant.
-    if (!loadoutGate.isResolved) return;
+    if (!loadoutGate.isResolved || loadoutContextPending) return;
     if (!loadoutGate.allowed) {
       openLoadoutUpsell();
       return;
@@ -129,13 +162,23 @@ export function WorkoutDetailContainer() {
     // this way because it states the dependency: `/(app)/loadout` redirects out
     // on a null `workoutId`, and that redirect is the thing keeping a direct deep
     // link from rendering an empty shell.
-    openLoadout(workout.id, workout.name);
+    const rootWorkoutId = workout.parentWorkoutId ?? workout.id;
+    openLoadout(rootWorkoutId, workout.name, isVariation ? workout.id : null);
+    // A linked setup re-adapts against that gym immediately. If the gym was
+    // deleted, fall back to collect so the user can choose a new context.
+    if (isVariation && sourceGym !== null) {
+      selectLoadoutGym(sourceGym);
+    }
     router.push("/(app)/loadout" as never);
   }, [
     workout,
+    isVariation,
+    sourceGym,
+    loadoutContextPending,
     loadoutGate.isResolved,
     loadoutGate.allowed,
     openLoadout,
+    selectLoadoutGym,
     openLoadoutUpsell,
   ]);
 
@@ -166,19 +209,15 @@ export function WorkoutDetailContainer() {
         // version did both; the extra conjunct could not change any rendered
         // output, which a mutation sweep showed by surviving its removal.
         loadoutLocked={!loadoutGate.allowed}
-        loadoutPending={!loadoutGate.isResolved}
+        loadoutPending={!loadoutGate.isResolved || loadoutContextPending}
+        loadoutMode={isVariation ? "readapt" : "adapt"}
+        loadoutLinkedGymAvailable={!isVariation || sourceGym !== null}
+        loadoutGymUpdated={sourceGymUpdated}
         loadoutVariations={variations.variations}
         onOpenLoadout={onOpenLoadout}
-        onOpenVariation={onOpenVariation}
+        onOpenVariation={isVariation ? undefined : onOpenVariation}
       />
-      {/*
-        ⚠ Mounted HERE, not at the layout root, and that is the whole point.
-        This screen is `presentation: "modal"`, so a sheet mounted as a sibling of
-        the Stack renders behind it and the locked card appears to do nothing —
-        which is the FREE user's only path into the feature.
-        `memory/feedback_sheets_mount_at_root` is about clearing the TAB BAR; a
-        presented route is a different problem with the opposite answer.
-      */}
+      {/* The upsell belongs to, and is layered within, its owning screen. */}
       <LoadoutUpsellSheet
         visible={loadoutUpsellOpen}
         onClose={closeLoadoutUpsell}

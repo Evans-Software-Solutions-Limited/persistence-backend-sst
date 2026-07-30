@@ -342,11 +342,11 @@ describe("WorkoutDetailContainer", () => {
     /**
      * ⚠ The sheet is mounted in THIS screen's tree, not at the layout root, and
      * these tests live here for the same reason. This screen is
-     * `presentation: "modal"`; a root-mounted sheet renders behind it, which
+     * the workout-detail tree; a sibling mounted elsewhere can render behind it,
      * would make the locked card — the FREE user's only path into the feature —
      * appear to do nothing.
      */
-    it("renders the upsell sheet inside this screen, so it clears the presented route", async () => {
+    it("renders the upsell sheet inside its owning workout screen", async () => {
       const api = new InMemoryApiAdapter();
       const storage = new InMemoryStorageAdapter();
       seedOwnedWorkout(api, storage);
@@ -414,6 +414,56 @@ describe("WorkoutDetailContainer", () => {
       expect(mockRouterPush).toHaveBeenCalledWith(
         "/(app)/workouts/variation-1",
       );
+    });
+
+    it("re-adapts a saved setup from its ROOT against the linked gym", async () => {
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      const variation = buildWorkout({
+        id: "v-1",
+        name: "Push Day · Hotel gym",
+        parentWorkoutId: "w-root",
+        variationKind: "loadout",
+        sourceGymId: "gym-1",
+        sourceEquipmentTypeIds: ["eq-dumbbell"],
+      });
+      api.savedGyms = [
+        {
+          id: "gym-1",
+          name: "Hotel gym",
+          equipmentTypeIds: ["eq-dumbbell", "eq-cable"],
+          createdAt: null,
+          updatedAt: "2026-07-30T10:00:00Z",
+        },
+      ];
+      api.mySubscription = subscription("premium_plus") as never;
+      storage.cacheWorkoutDetail("user-1", variation);
+      jest.spyOn(api, "getWorkout").mockResolvedValue(ok(variation));
+      mockUseLocalSearchParams.mockReturnValue({ id: "v-1" });
+
+      const { findByTestId, findByText, queryByTestId } = renderWithTheme(
+        withAdapters(makeAdapters(api, storage), <WorkoutDetailContainer />),
+      );
+
+      await findByText("Re-adapt this setup");
+      await findByText(
+        "Your gym equipment has changed since this setup was made",
+      );
+      expect(queryByTestId("loadout-saved-setups")).toBeNull();
+
+      fireEvent.press(await findByTestId("loadout-entry-card"));
+
+      expect(useLoadoutFlow.getState()).toMatchObject({
+        workoutId: "w-root",
+        replacementVariationId: "v-1",
+        step: "adapting",
+        context: {
+          kind: "gym",
+          gymId: "gym-1",
+          gymName: "Hotel gym",
+        },
+      });
+      expect(mockRouterPush).toHaveBeenCalledWith("/(app)/loadout");
     });
 
     it("derives the hero's muscle pills and equipment eyebrow from the cached library", async () => {

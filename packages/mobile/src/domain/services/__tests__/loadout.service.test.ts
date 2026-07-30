@@ -5,6 +5,7 @@ import {
   describeMatchSignals,
   EQUIPMENT_OTHER_CATEGORY,
   groupEquipmentForPicker,
+  hasGymEquipmentChanged,
   rowsNeedingAttention,
   scanDraftToEquipmentIds,
   type ManualPick,
@@ -132,6 +133,57 @@ describe("describeMatchSignals", () => {
       "brand_new_signal" as never,
     ]);
     expect(phrase).toBe("same primary muscles");
+  });
+});
+
+describe("hasGymEquipmentChanged", () => {
+  const variation = {
+    sourceGymId: "gym-1",
+    sourceEquipmentTypeIds: ["eq-dumbbell", "eq-cable"],
+    currentSourceGymEquipmentTypeIds: ["eq-cable", "eq-dumbbell"],
+  };
+
+  it("compares equipment as a set, ignoring order and duplicates", () => {
+    expect(hasGymEquipmentChanged(variation)).toBe(false);
+    expect(
+      hasGymEquipmentChanged({
+        ...variation,
+        currentSourceGymEquipmentTypeIds: [
+          "eq-cable",
+          "eq-dumbbell",
+          "eq-dumbbell",
+        ],
+      }),
+    ).toBe(false);
+  });
+
+  it("detects equipment additions and removals", () => {
+    expect(
+      hasGymEquipmentChanged({
+        ...variation,
+        currentSourceGymEquipmentTypeIds: [
+          "eq-cable",
+          "eq-dumbbell",
+          "eq-rack",
+        ],
+      }),
+    ).toBe(true);
+    expect(
+      hasGymEquipmentChanged({
+        ...variation,
+        currentSourceGymEquipmentTypeIds: ["eq-dumbbell"],
+      }),
+    ).toBe(true);
+  });
+
+  it("does not claim a change after the source gym was deleted", () => {
+    expect(
+      hasGymEquipmentChanged({
+        ...variation,
+        sourceGymId: null,
+        currentSourceGymEquipmentTypeIds: null,
+      }),
+    ).toBe(false);
   });
 });
 

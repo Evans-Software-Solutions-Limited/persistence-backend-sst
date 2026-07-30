@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import type { WorkoutVariationSummary } from "@/domain/models/loadout";
+import { hasGymEquipmentChanged } from "@/domain/services/loadout.service";
 import { Pill } from "@/ui/components/foundation";
 import { color, radius, space } from "@/ui/theme/tokens";
 
@@ -56,39 +57,56 @@ export function SavedSetupsSection({
         </Pill>
       </View>
 
-      {variations.map((variation) => (
-        <TouchableOpacity
-          key={variation.id}
-          style={styles.variationRow}
-          onPress={() => onOpenVariation(variation.id)}
-          testID={`loadout-variation-${variation.id}`}
-          accessibilityRole="button"
-          accessibilityLabel={variation.name}
-        >
-          <View style={styles.variationIcon}>
-            <Ionicons
-              name="location-outline"
-              size={16}
-              color={color.$primary}
-            />
-          </View>
-          <View style={styles.rowBody}>
-            <Text style={styles.rowTitle} numberOfLines={1}>
-              {/*
-                The gym name is the useful label, but it is LEFT JOINed and goes
-                null when the gym is deleted — and a variation outlives the gym it
-                was made for. Falling back to the variation's own name keeps the
-                row identifiable instead of blank.
-              */}
-              {variation.sourceGymName ?? variation.name}
-            </Text>
-            <Text style={styles.rowSub} numberOfLines={1}>
-              {swapLabel(variation.swapCount)}
-            </Text>
-          </View>
-          <Ionicons name="chevron-forward" size={15} color={color.$text4} />
-        </TouchableOpacity>
-      ))}
+      {variations.map((variation) => {
+        const gymUpdated = hasGymEquipmentChanged(variation);
+        return (
+          <TouchableOpacity
+            key={variation.id}
+            style={styles.variationRow}
+            onPress={() => onOpenVariation(variation.id)}
+            testID={`loadout-variation-${variation.id}`}
+            accessibilityRole="button"
+            accessibilityLabel={
+              gymUpdated
+                ? `${variation.name}. Gym equipment updated. Re-adapt available.`
+                : variation.name
+            }
+          >
+            <View style={styles.variationIcon}>
+              <Ionicons
+                name={gymUpdated ? "refresh-outline" : "location-outline"}
+                size={16}
+                color={color.$primary}
+              />
+            </View>
+            <View style={styles.rowBody}>
+              <Text style={styles.rowTitle} numberOfLines={1}>
+                {/*
+                  The gym name is the useful label, but it is LEFT JOINed and goes
+                  null when the gym is deleted — and a variation outlives the gym it
+                  was made for. Falling back to the variation's own name keeps the
+                  row identifiable instead of blank.
+                */}
+                {variation.sourceGymName ?? variation.name}
+              </Text>
+              <Text
+                style={[styles.rowSub, gymUpdated && styles.rowSubUpdated]}
+                numberOfLines={1}
+                testID={
+                  gymUpdated
+                    ? `loadout-variation-${variation.id}-gym-updated`
+                    : undefined
+                }
+              >
+                {gymUpdated
+                  ? "Gym equipment updated · Re-adapt"
+                  : swapLabel(variation.swapCount)}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={15} color={color.$text4} />
+          </TouchableOpacity>
+        );
+      })}
     </View>
   );
 }
@@ -151,4 +169,5 @@ const styles = StyleSheet.create({
   rowBody: { flex: 1, gap: 2 },
   rowTitle: { fontSize: 13.5, fontWeight: "700", color: color.$text },
   rowSub: { fontSize: 11, color: color.$text3 },
+  rowSubUpdated: { color: color.$warning, fontWeight: "600" },
 });

@@ -30,14 +30,38 @@ export type LoadoutEntryCardProps = {
    * a padlock for a feature they bought is worse than showing them nothing.
    */
   readonly pending?: boolean;
+  /** A saved setup re-runs its root workout and replaces this variation. */
+  readonly mode?: "adapt" | "readapt";
+  /** False for ad-hoc setups and setups whose saved gym was deleted. */
+  readonly linkedGymAvailable?: boolean;
+  readonly gymUpdated?: boolean;
   readonly onPress: () => void;
 };
 
 export function LoadoutEntryCard({
   locked,
   pending = false,
+  mode = "adapt",
+  linkedGymAvailable = true,
+  gymUpdated = false,
   onPress,
 }: LoadoutEntryCardProps) {
+  const isReadapt = mode === "readapt";
+  const title = isReadapt ? "Re-adapt this setup" : "Adapt to your gym";
+  const subtitle = pending
+    ? isReadapt
+      ? "Preparing your saved setup"
+      : "Re-map this workout to whatever kit you have today"
+    : gymUpdated
+      ? "Your gym equipment has changed since this setup was made"
+      : isReadapt
+        ? linkedGymAvailable
+          ? "Re-run the original workout against your gym's current equipment"
+          : "Choose equipment and re-run the original workout"
+        : locked
+          ? "Unlock to re-map this workout to whatever kit you have"
+          : "Re-map this workout to whatever kit you have today";
+
   return (
     <TouchableOpacity
       style={[styles.card, pending && styles.cardPending]}
@@ -47,9 +71,7 @@ export function LoadoutEntryCard({
       accessibilityRole="button"
       accessibilityState={{ disabled: pending }}
       accessibilityLabel={
-        locked
-          ? "Adapt to your gym. Premium Plus feature, locked."
-          : "Adapt to your gym"
+        locked ? `${title}. Premium Plus feature, locked.` : title
       }
     >
       <View style={styles.icon}>
@@ -61,18 +83,12 @@ export function LoadoutEntryCard({
       </View>
       <View style={styles.body}>
         <View style={styles.titleRow}>
-          <Text style={styles.title}>Adapt to your gym</Text>
+          <Text style={styles.title}>{title}</Text>
           <Pill tone="primary" size="xs">
             PREMIUM+
           </Pill>
         </View>
-        <Text style={styles.subtitle}>
-          {pending
-            ? "Re-map this workout to whatever kit you have today"
-            : locked
-              ? "Unlock to re-map this workout to whatever kit you have"
-              : "Re-map this workout to whatever kit you have today"}
-        </Text>
+        <Text style={styles.subtitle}>{subtitle}</Text>
       </View>
       <Ionicons name="chevron-forward" size={16} color={color.$primary} />
     </TouchableOpacity>

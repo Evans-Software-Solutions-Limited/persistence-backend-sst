@@ -2799,6 +2799,11 @@ export class InMemoryApiAdapter implements ApiPort {
     parentWorkoutId: string;
     input: CreateLoadoutVariationInput;
   }[] = [];
+  public replaceVariationCalls: {
+    parentWorkoutId: string;
+    variationId: string;
+    input: CreateLoadoutVariationInput;
+  }[] = [];
   public previewLoadoutCalls: {
     workoutId: string;
     input: LoadoutPreviewInput;
@@ -3009,6 +3014,13 @@ export class InMemoryApiAdapter implements ApiPort {
     }
 
     const now = new Date().toISOString();
+    const sourceGym =
+      this.savedGyms.find((gym) => gym.id === input.sourceGymId) ?? null;
+    const frozenEquipment = input.sourceEquipmentTypeIds
+      ? [...input.sourceEquipmentTypeIds]
+      : sourceGym
+        ? [...sourceGym.equipmentTypeIds]
+        : [];
     const variation: WorkoutVariationSummary = {
       id: `variation-${this.createVariationCalls.length}`,
       name: input.name,
@@ -3016,12 +3028,12 @@ export class InMemoryApiAdapter implements ApiPort {
       parentWorkoutId,
       variationKind: "loadout",
       sourceGymId: input.sourceGymId ?? null,
-      sourceGymName:
-        this.savedGyms.find((gym) => gym.id === input.sourceGymId)?.name ??
-        null,
-      sourceEquipmentTypeIds: input.sourceEquipmentTypeIds
-        ? [...input.sourceEquipmentTypeIds]
+      sourceGymName: sourceGym?.name ?? null,
+      sourceEquipmentTypeIds: frozenEquipment,
+      currentSourceGymEquipmentTypeIds: sourceGym
+        ? [...sourceGym.equipmentTypeIds]
         : null,
+      currentSourceGymUpdatedAt: sourceGym?.updatedAt ?? null,
       estimatedDurationMinutes: input.estimatedDurationMinutes ?? null,
       swapCount: input.exercises.filter(
         (row) => row.substitutedFromExerciseId != null,
@@ -3032,6 +3044,79 @@ export class InMemoryApiAdapter implements ApiPort {
     const existing = this.workoutVariations.get(parentWorkoutId) ?? [];
     this.workoutVariations.set(parentWorkoutId, [variation, ...existing]);
     return ok(variation);
+  }
+
+  async replaceWorkoutVariation(
+    parentWorkoutId: string,
+    variationId: string,
+    input: CreateLoadoutVariationInput,
+  ): Promise<Result<WorkoutVariationSummary, ApiError>> {
+    this.replaceVariationCalls.push({
+      parentWorkoutId,
+      variationId,
+      input,
+    });
+    if (this.shouldFail) return fail<ApiError>(this.failError);
+
+    const variations = this.workoutVariations.get(parentWorkoutId) ?? [];
+    const index = variations.findIndex((item) => item.id === variationId);
+    if (index === -1) {
+      return fail<ApiError>({
+        kind: "api",
+        code: "not_found",
+        message: "Saved setup not found",
+        status: 404,
+      });
+    }
+
+    if (this.saveContextEquipmentIds?.length) {
+      const available = new Set(this.saveContextEquipmentIds);
+      const offending = input.exercises.find((row) => {
+        if (row.isUserOverride === true) return false;
+        const required = this.exerciseEquipment.get(row.exerciseId) ?? [];
+        return required.some((id) => !available.has(id));
+      });
+      if (offending) {
+        return fail<ApiError>({
+          kind: "api",
+          code: "server",
+          message:
+            "One or more exercises need equipment this setup does not have. Flag the row as a user override to keep it anyway.",
+          status: 400,
+          loadoutCode: "EQUIPMENT_NOT_AVAILABLE",
+        } as ApiError);
+      }
+    }
+
+    const previous = variations[index] as WorkoutVariationSummary;
+    const sourceGym =
+      this.savedGyms.find((gym) => gym.id === input.sourceGymId) ?? null;
+    const frozenEquipment = input.sourceEquipmentTypeIds
+      ? [...input.sourceEquipmentTypeIds]
+      : sourceGym
+        ? [...sourceGym.equipmentTypeIds]
+        : [];
+    const replacement: WorkoutVariationSummary = {
+      ...previous,
+      name: input.name,
+      description: input.description ?? null,
+      sourceGymId: input.sourceGymId ?? null,
+      sourceGymName: sourceGym?.name ?? null,
+      sourceEquipmentTypeIds: frozenEquipment,
+      currentSourceGymEquipmentTypeIds: sourceGym
+        ? [...sourceGym.equipmentTypeIds]
+        : null,
+      currentSourceGymUpdatedAt: sourceGym?.updatedAt ?? null,
+      estimatedDurationMinutes: input.estimatedDurationMinutes ?? null,
+      swapCount: input.exercises.filter(
+        (row) => row.substitutedFromExerciseId != null,
+      ).length,
+      updatedAt: new Date().toISOString(),
+    };
+    const next = [...variations];
+    next[index] = replacement;
+    this.workoutVariations.set(parentWorkoutId, next);
+    return ok(replacement);
   }
 
   async getWorkoutVariations(

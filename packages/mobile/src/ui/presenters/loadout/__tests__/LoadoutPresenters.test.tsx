@@ -82,6 +82,31 @@ describe("LoadoutEntryCard", () => {
     fireEvent.press(getByTestId("loadout-entry-card"));
     expect(onPress).toHaveBeenCalled();
   });
+
+  it("distinguishes re-adaptation and explains when the linked gym changed", () => {
+    const { getByText } = renderWithTheme(
+      <LoadoutEntryCard
+        locked={false}
+        mode="readapt"
+        gymUpdated
+        onPress={jest.fn()}
+      />,
+    );
+    getByText("Re-adapt this setup");
+    getByText("Your gym equipment has changed since this setup was made");
+  });
+
+  it("asks for new equipment when a setup no longer has a linked gym", () => {
+    const { getByText } = renderWithTheme(
+      <LoadoutEntryCard
+        locked={false}
+        mode="readapt"
+        linkedGymAvailable={false}
+        onPress={jest.fn()}
+      />,
+    );
+    getByText("Choose equipment and re-run the original workout");
+  });
 });
 
 describe("LoadoutUpsellSheet", () => {
@@ -223,6 +248,24 @@ describe("SavedSetupsSection", () => {
         onOpenVariation={onOpen}
       />,
     );
+    fireEvent.press(getByTestId("loadout-variation-v-1"));
+    expect(onOpen).toHaveBeenCalledWith("v-1");
+  });
+
+  it("signals an equipment-set change without replacing the row action", () => {
+    const onOpen = jest.fn();
+    const { getByTestId, getByText } = renderWithTheme(
+      <SavedSetupsSection
+        variations={[
+          variation({
+            sourceEquipmentTypeIds: ["eq-dumbbell"],
+            currentSourceGymEquipmentTypeIds: ["eq-dumbbell", "eq-cable"],
+          }),
+        ]}
+        onOpenVariation={onOpen}
+      />,
+    );
+    getByText("Gym equipment updated · Re-adapt");
     fireEvent.press(getByTestId("loadout-variation-v-1"));
     expect(onOpen).toHaveBeenCalledWith("v-1");
   });
@@ -408,6 +451,19 @@ describe("LoadoutSavedStep", () => {
       paddingTop: 44,
       paddingBottom: 34,
     });
+  });
+
+  it("uses update copy after an in-place re-adaptation", () => {
+    const { getByText } = renderWithTheme(
+      <LoadoutSavedStep
+        workoutName="Upper"
+        gymLabel="Hotel gym"
+        replaced
+        onDone={jest.fn()}
+      />,
+    );
+    getByText("Setup re-adapted");
+    getByText("View updated setup");
   });
 });
 

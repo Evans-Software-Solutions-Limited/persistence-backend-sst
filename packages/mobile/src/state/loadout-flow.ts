@@ -80,6 +80,8 @@ export interface LoadoutFlowState {
   /** The parent workout being adapted. */
   workoutId: string | null;
   workoutName: string;
+  /** Existing sibling variation replaced in place by a re-adaptation. */
+  replacementVariationId: string | null;
   context: LoadoutContext | null;
   /** The in-flight adaptation. Null until `adapting` resolves. */
   preview: LoadoutPreview | null;
@@ -98,7 +100,11 @@ export interface LoadoutFlowState {
    */
   rev: number;
 
-  open: (workoutId: string, workoutName: string) => void;
+  open: (
+    workoutId: string,
+    workoutName: string,
+    replacementVariationId?: string | null,
+  ) => void;
   openUpsell: () => void;
   closeUpsell: () => void;
   goToStep: (step: LoadoutStep) => void;
@@ -136,6 +142,7 @@ const CLOSED = {
   step: null,
   workoutId: null,
   workoutName: "",
+  replacementVariationId: null,
   context: null,
   preview: null,
   scanDraft: null,
@@ -153,8 +160,14 @@ export const useLoadoutFlow = create<LoadoutFlowState>((set) => ({
   // never inherit the first's equipment context, preview or hand-picks. The bug
   // this prevents is quiet and bad: adapting workout B while still holding A's
   // manual picks would apply them by `sortOrder` to a different plan.
-  open: (workoutId, workoutName) =>
-    set({ ...CLOSED, step: "collect", workoutId, workoutName }),
+  open: (workoutId, workoutName, replacementVariationId = null) =>
+    set({
+      ...CLOSED,
+      step: "collect",
+      workoutId,
+      workoutName,
+      replacementVariationId,
+    }),
 
   // The upsell is NOT a step: it is a sheet over whatever is behind it, and an
   // unentitled user has no flow to be in. Modelling it as a step would put the

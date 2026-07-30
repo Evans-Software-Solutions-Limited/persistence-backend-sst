@@ -120,14 +120,11 @@ export default function AppLayout() {
         {/*
           Loadout's athlete flow (spec-21 Phase 2/3).
 
-          ⚠ `fullScreenModal`, and it has to cover a route that is ALREADY a
-          presented modal — the entry point is on `workouts/[id]/index`. Two
-          earlier shapes failed on device for exactly that reason: a root-mounted
-          absolute View rendered BEHIND the workout sheet, and a root-mounted RN
-          <Modal> could not present over an already-presented route, leaving an
-          invisible modal that froze every touch once the workout was dismissed.
-          A route gets its own view controller from react-native-screens and
-          presents correctly above the workout.
+          `fullScreenModal` keeps this focused, multi-step task isolated while
+          workout details remain ordinary pushed pages. Earlier root-mounted
+          overlay and RN Modal shapes both failed on device; keeping the flow as
+          a route gives it its own react-native-screens view controller and
+          preserves the workout beneath it in stack history.
 
           Owns its own <HeaderBar> per step, so the native header stays off.
         */}
@@ -177,7 +174,6 @@ export default function AppLayout() {
           name="workouts/[id]/index"
           options={{
             title: "Workout",
-            presentation: "modal",
             headerShown: false,
           }}
         />

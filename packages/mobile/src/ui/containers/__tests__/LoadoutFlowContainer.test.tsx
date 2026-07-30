@@ -1,7 +1,6 @@
 import { act, fireEvent, waitFor } from "@testing-library/react-native";
 import React from "react";
 import { Modal } from "react-native";
-import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
 import { InMemoryNetInfoAdapter } from "@/adapters/netInfo/__tests__/InMemoryNetInfoAdapter";
@@ -200,38 +199,18 @@ describe("LoadoutFlowContainer", () => {
   });
 
   /**
-   * ⚠ SHAPE assertions, not behaviour — and they exist because behaviour tests
-   * CANNOT catch the bug they guard.
-   *
-   * The first version of this flow was an absolutely-positioned View mounted as a
-   * sibling of the Stack. Every test here passed, because jest renders this
-   * container with no Stack and no route above it. On device it was invisible:
-   * the entry point lives on `workouts/[id]/index`, a `presentation: "modal"`
-   * route, and a sibling of the Stack renders UNDERNEATH a natively presented
-   * modal. Tapping "Adapt to your gym" mounted the entire flow behind the workout
-   * sheet, so nothing appeared to happen.
-   *
-   * So these pin the two structural facts that fix it, since nothing else in the
-   * suite can: the flow is inside an RN `<Modal>`, and that modal carries its own
-   * `GestureHandlerRootView` (the app root's does not extend into a separately
-   * presented modal, and without it the sheets inside receive no touches).
-   */
-  /**
    * ⚠ SHAPE assertions, and they exist because behaviour tests CANNOT see the
    * bug they guard.
    *
    * Two earlier shapes both passed this entire suite and both broke on device.
-   * The entry point lives on `workouts/[id]/index`, a `presentation: "modal"`
-   * route, and jest renders this container with no Stack and no route above it —
-   * so nothing here could tell the difference.
+   * Jest renders this container with no Stack and no route above it, so nothing
+   * here could tell the difference.
    *
    *  - An `absoluteFillObject` View mounted as a sibling of the Stack rendered
-   *    UNDERNEATH the presented workout sheet. Tapping the card mounted the whole
+   *    UNDERNEATH the active workout screen. Tapping the card mounted the whole
    *    flow invisibly; nothing appeared to happen.
-   *  - Wrapping that in a root-mounted RN `<Modal>` was worse: a modal cannot
-   *    reliably present over an already-presented route, so it went behind the
-   *    workout — and dismissing the workout left an invisible presented modal
-   *    swallowing every touch. The screen froze.
+   *  - Wrapping that in a root-mounted RN `<Modal>` was worse: it left an
+   *    invisible presented modal swallowing every touch. The screen froze.
    *
    * The fix is that this is a ROUTE (`app/(app)/loadout.tsx`,
    * `presentation: "fullScreenModal"`). These pin the two things that keep it
@@ -683,6 +662,17 @@ describe("LoadoutFlowContainer", () => {
       getByText("3 sets × 4–6 reps");
     });
 
+    it("opens exercise detail from the adapted plan and keeps the flow underneath", async () => {
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      const { findByTestId } = await reachReview(api, storage, [row()]);
+
+      fireEvent.press(await findByTestId("loadout-row-1-exercise"));
+
+      expect(mockRouterPush).toHaveBeenCalledWith("/(app)/exercises/ex-1");
+      expect(useLoadoutFlow.getState().step).toBe("review");
+    });
+
     it("routes the mismatch row's 'Swap it' and the unresolved row's 'Choose one' to the picker", async () => {
       const api = new InMemoryApiAdapter();
       const storage = new InMemoryStorageAdapter();
@@ -912,6 +902,82 @@ describe("LoadoutFlowContainer", () => {
       expect(api.createVariationCalls[0].input.sourceGymId).toBe(
         api.savedGyms[0].id,
       );
+    });
+
+    it("freezes the server-resolved equipment snapshot when a saved gym is used", async () => {
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      seedEquipment(storage);
+      api.savedGyms = [
+        {
+          id: "gym-1",
+          name: "Hotel gym",
+          equipmentTypeIds: ["eq-dumbbell", "eq-cable"],
+          createdAt: null,
+          updatedAt: null,
+        },
+      ];
+      api.loadoutPreview = {
+        ...preview([row()]),
+        savedGymId: "gym-1",
+        equipmentTypeIds: ["eq-dumbbell", "eq-cable"],
+      };
+      const { findByTestId } = renderFlow(api, storage);
+      openFlow();
+
+      fireEvent.press(await findByTestId("loadout-collect-gym-gym-1"));
+      await findByTestId("loadout-review");
+      fireEvent.press(await findByTestId("loadout-review-save"));
+      await findByTestId("loadout-saved");
+
+      expect(api.createVariationCalls[0].input).toMatchObject({
+        sourceGymId: "gym-1",
+        sourceEquipmentTypeIds: ["eq-dumbbell", "eq-cable"],
+      });
+    });
+
+    it("replaces a saved setup in place instead of creating a nested variation", async () => {
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      seedEquipment(storage);
+      api.loadoutPreview = preview([row()]);
+      const created = await api.createWorkoutVariation("w-1", {
+        name: "Upper Body · Old gym",
+        sourceEquipmentTypeIds: ["eq-cable"],
+        exercises: [{ exerciseId: "ex-old", sortOrder: 1 }],
+      });
+      if (!created.ok) throw new Error("fixture variation failed");
+      api.createVariationCalls.length = 0;
+
+      const { findByTestId, findByText } = renderFlow(api, storage);
+      act(() => {
+        useLoadoutFlow
+          .getState()
+          .open("w-1", "Upper Body · Old gym", created.value.id);
+        useLoadoutFlow
+          .getState()
+          .selectEquipmentIds(["eq-dumbbell"], "Hotel gym", false);
+      });
+
+      await findByTestId("loadout-review");
+      fireEvent.press(await findByTestId("loadout-review-save"));
+      await findByTestId("loadout-saved");
+
+      expect(api.createVariationCalls).toHaveLength(0);
+      expect(api.replaceVariationCalls).toEqual([
+        {
+          parentWorkoutId: "w-1",
+          variationId: created.value.id,
+          input: expect.objectContaining({
+            name: "Upper Body · Hotel gym",
+            sourceEquipmentTypeIds: ["eq-dumbbell"],
+          }),
+        },
+      ]);
+      expect(
+        api.workoutVariations.get("w-1")?.map((variation) => variation.id),
+      ).toEqual([created.value.id]);
+      await findByText("Setup re-adapted");
     });
 
     it("still saves the variation when the gym save 409s on a duplicate name", async () => {
@@ -1597,7 +1663,7 @@ describe("LoadoutFlowContainer", () => {
 
   // The upsell sheet's tests live in `WorkoutDetailContainer.test.tsx` now: it is
   // mounted in that screen's tree, because it is a bottom sheet over a PRESENTED
-  // route and a root-mounted sheet would sit behind it.
+  // route, with its upsell owned by the workout-detail tree.
 });
 
 describe("classifyAdaptingError", () => {

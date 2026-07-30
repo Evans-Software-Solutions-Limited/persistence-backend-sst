@@ -61,6 +61,8 @@ export type LoadoutRowView = {
   readonly isSupersetMember: boolean;
   /** The exercise currently shown — the pick's name once one is made. */
   readonly displayName: string;
+  /** The exercise currently shown — null only while a row is unresolved. */
+  readonly displayExerciseId: string | null;
   /** The user replaced this row by hand. */
   readonly isManualPick: boolean;
   /** The user chose to leave this row out. */
@@ -82,6 +84,7 @@ export type LoadoutReviewStepProps = {
   /** A failed save, already turned into a sentence by the container. */
   readonly saveError: string | null;
   readonly onBack: () => void;
+  readonly onExercisePress: (exerciseId: string) => void;
   readonly onSwapRow: (row: LoadoutPreviewRow) => void;
   readonly onAcceptMismatch: (sortOrder: number) => void;
   readonly onDropRow: (sortOrder: number) => void;
@@ -117,6 +120,7 @@ export function LoadoutReviewStep({
   isSaving,
   saveError,
   onBack,
+  onExercisePress,
   onSwapRow,
   onAcceptMismatch,
   onDropRow,
@@ -204,6 +208,7 @@ export function LoadoutReviewStep({
         <ReviewRow
           key={view.row.sortOrder}
           view={view}
+          onExercisePress={onExercisePress}
           onSwapRow={onSwapRow}
           onAcceptMismatch={onAcceptMismatch}
           onDropRow={onDropRow}
@@ -223,12 +228,14 @@ export function LoadoutReviewStep({
 
 function ReviewRow({
   view,
+  onExercisePress,
   onSwapRow,
   onAcceptMismatch,
   onDropRow,
   onRestoreRow,
 }: {
   readonly view: LoadoutRowView;
+  readonly onExercisePress: (exerciseId: string) => void;
   readonly onSwapRow: (row: LoadoutPreviewRow) => void;
   readonly onAcceptMismatch: (sortOrder: number) => void;
   readonly onDropRow: (sortOrder: number) => void;
@@ -287,12 +294,24 @@ function ReviewRow({
             {view.tag}
           </Text>
         </View>
-        <View style={styles.rowBody}>
+        <TouchableOpacity
+          style={styles.rowBody}
+          onPress={() => {
+            if (view.displayExerciseId !== null) {
+              onExercisePress(view.displayExerciseId);
+            }
+          }}
+          disabled={view.displayExerciseId === null}
+          testID={`loadout-row-${sortOrder}-exercise`}
+          accessibilityRole="button"
+          accessibilityLabel={`View ${view.displayName} exercise details`}
+          accessibilityState={{ disabled: view.displayExerciseId === null }}
+        >
           <Text style={styles.rowName} numberOfLines={1}>
             {view.displayName}
           </Text>
           <Text style={styles.rowTarget}>{formatTarget(row)}</Text>
-        </View>
+        </TouchableOpacity>
         <Pill tone={TONE_PILL[copy.tone]} size="xs">
           {copy.badge}
         </Pill>

@@ -9,7 +9,7 @@ items, and the four most recent sessions. Trimmed 2026-07-27 from 1554 lines.
 If anything here contradicts `git log --oneline -30`, the git history wins —
 say so and fix this file.
 
-## Current state (2026-07-28)
+## Current state (2026-07-30)
 
 - **⚠ Loadout Phase 2's SCREENS are built but NOT merged.** PR
   **[#328](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/328)**,
@@ -20,6 +20,28 @@ say so and fix this file.
   first user-reachable Loadout surface.
   - ⚠ An entitled test account needs a RevenueCat **promotional entitlement** —
     `premium_plus` is still `is_active = false`, so there is no purchasable card.
+- **2026-07-30 follow-ups are implemented in the branch working tree, not yet
+  committed or pushed.** Saved setup detail now offers **Re-adapt** against the
+  ROOT workout; `PUT /workouts/:parentId/variations/:variationId` atomically
+  replaces the owned variation's metadata + exercise rows while preserving its
+  id, `created_at` and session history. Every save freezes the server-resolved
+  equipment snapshot. Variation summaries include the linked gym's current kit,
+  so exact set comparison can flag equipment additions/removals (order and
+  duplicates ignored). Review exercise names push the normal exercise-detail
+  page without losing flow state. Workout detail itself is now a normal pushed
+  page; temporary filters, create/edit and active-session steps remain
+  intentionally modal.
+  - **Gates:** typecheck 8/8, build 13/13, full test 19/19 (mobile 467 suites /
+    5,561 tests), focused backend 128 tests and focused mobile 256 tests. New
+    replacement handler: 100% lines/statements/functions, 97.77% branches.
+    Changed-file Prettier + ESLint are clean. Whole-tree Prettier/lint are
+    blocked only by unrelated untracked `.agents/skills/sst-resource-change/SKILL.md`
+    and `microservices/core/probe-steps.ts` (four `no-explicit-any` errors).
+  - **Visual pass:** current staging simulator workout detail remains correctly
+    laid out as a pushed page. Re-adapt, gym-change and review drill-in states
+    are covered by presenter/container render tests; the OS custom-scheme
+    confirmation prevented non-interactive navigation into the saved variation
+    for an additional device screenshot.
 - **Last CODE change on `origin/main` = `f0e8929`** (PR #326, Loadout **Phase 3
   equipment scan + Phase 2 foundation**, merged 2026-07-27, branch deleted). Released
   to production: **v1.8.0**.

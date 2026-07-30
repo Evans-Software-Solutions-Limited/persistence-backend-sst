@@ -26,12 +26,14 @@ import { color, radius, space } from "@/ui/theme/tokens";
 export type LoadoutSavedStepProps = {
   readonly workoutName: string;
   readonly gymLabel: string;
+  readonly replaced?: boolean;
   readonly onDone: () => void;
 };
 
 export function LoadoutSavedStep({
   workoutName,
   gymLabel,
+  replaced = false,
   onDone,
 }: LoadoutSavedStepProps) {
   const insets = useSafeAreaInsets();
@@ -48,12 +50,16 @@ export function LoadoutSavedStep({
         <View style={styles.badge}>
           <Ionicons name="checkmark" size={36} color={color.$primaryInk} />
         </View>
-        <Text style={styles.title}>Variation saved</Text>
+        <Text style={styles.title}>
+          {replaced ? "Setup re-adapted" : "Variation saved"}
+        </Text>
         <Text style={styles.blurb}>
           <Text style={styles.blurbStrong}>
             {workoutName} · {gymLabel}
           </Text>{" "}
-          is saved under your workout. Your original stays exactly as it was.
+          {replaced
+            ? "now matches your gym's current equipment. Your original stays exactly as it was."
+            : "is saved under your workout. Your original stays exactly as it was."}
         </Text>
         <TouchableOpacity
           style={styles.cta}
@@ -61,7 +67,9 @@ export function LoadoutSavedStep({
           testID="loadout-saved-done"
           accessibilityRole="button"
         >
-          <Text style={styles.ctaText}>View saved setups</Text>
+          <Text style={styles.ctaText}>
+            {replaced ? "View updated setup" : "View saved setups"}
+          </Text>
         </TouchableOpacity>
       </View>
     </View>

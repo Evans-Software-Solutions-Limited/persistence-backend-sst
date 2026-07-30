@@ -81,6 +81,9 @@ interface WorkoutDetailPresenterProps {
   readonly loadoutLocked?: boolean;
   /** Subscription still resolving — render neither padlock nor a live entry. */
   readonly loadoutPending?: boolean;
+  readonly loadoutMode?: "adapt" | "readapt";
+  readonly loadoutLinkedGymAvailable?: boolean;
+  readonly loadoutGymUpdated?: boolean;
   readonly loadoutVariations?: readonly WorkoutVariationSummary[];
   readonly onOpenLoadout?: () => void;
   readonly onOpenVariation?: (variationId: string) => void;
@@ -167,6 +170,9 @@ export function WorkoutDetailPresenter({
   showLoadout = false,
   loadoutLocked = false,
   loadoutPending = false,
+  loadoutMode = "adapt",
+  loadoutLinkedGymAvailable = true,
+  loadoutGymUpdated = false,
   loadoutVariations = [],
   onOpenLoadout,
   onOpenVariation,
@@ -240,6 +246,9 @@ export function WorkoutDetailPresenter({
               <LoadoutEntryCard
                 locked={loadoutLocked}
                 pending={loadoutPending}
+                mode={loadoutMode}
+                linkedGymAvailable={loadoutLinkedGymAvailable}
+                gymUpdated={loadoutGymUpdated}
                 onPress={onOpenLoadout}
               />
             ) : null}

@@ -9,9 +9,8 @@ import { useAdapters } from "./useAdapters";
  * (`GET /workouts/:id/variations`, AC-5.2).
  *
  * Re-reads whenever `useLoadoutFlow`'s `rev` counter bumps. That counter is the
- * only coupling between the flow and this list: the flow is a root-mounted
- * overlay and the list lives on the workout-detail screen underneath it, so
- * there is no parent-child relationship to pass a callback down. `rev` survives
+ * only coupling between the flow route and the workout-detail screen beneath
+ * it; there is no parent-child relationship to pass a callback down. `rev` survives
  * `reset()` for exactly this reason — clearing it on close would drop the one
  * notification the list is waiting for, and the user would return to the detail
  * screen with their new variation missing until a manual navigation.

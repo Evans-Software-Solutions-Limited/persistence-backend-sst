@@ -26,6 +26,7 @@ import type {
   LoadoutVariationExerciseInput,
   RankSignal,
   SubstitutionReason,
+  WorkoutVariationSummary,
 } from "@/domain/models/loadout";
 import type { ReferenceEntry } from "@/domain/models/reference-list";
 import { capText } from "@/shared/utils";
@@ -345,6 +346,35 @@ export function deriveVariationName(
   // replaces with U+FFFD in the saved variation's name. `capModelProse` exists for
   // exactly this hazard; reusing it keeps one implementation of the rule.
   return capText(base, MAX_VARIATION_NAME_LENGTH);
+}
+
+/**
+ * True only when a still-linked saved gym has a different equipment SET from
+ * the frozen snapshot used for this adaptation. Order and duplicates are not
+ * meaningful, and a rename-only update must not make the workout look stale.
+ */
+export function hasGymEquipmentChanged(
+  variation: Pick<
+    WorkoutVariationSummary,
+    | "sourceGymId"
+    | "sourceEquipmentTypeIds"
+    | "currentSourceGymEquipmentTypeIds"
+  >,
+): boolean {
+  if (
+    variation.sourceGymId == null ||
+    variation.sourceEquipmentTypeIds == null ||
+    variation.currentSourceGymEquipmentTypeIds == null
+  ) {
+    return false;
+  }
+  const frozen = new Set(variation.sourceEquipmentTypeIds);
+  const current = new Set(variation.currentSourceGymEquipmentTypeIds);
+  if (frozen.size !== current.size) return true;
+  for (const id of frozen) {
+    if (!current.has(id)) return true;
+  }
+  return false;
 }
 
 // ─── Equipment picker (AC-2.2 — grouped from the API) ────────────────────────

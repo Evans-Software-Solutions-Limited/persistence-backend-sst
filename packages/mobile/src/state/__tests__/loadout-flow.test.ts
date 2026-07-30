@@ -50,6 +50,13 @@ describe("useLoadoutFlow — opening and closing", () => {
     expect(get().step).toBe("collect");
     expect(get().workoutId).toBe("w-1");
     expect(get().workoutName).toBe("Upper Body");
+    expect(get().replacementVariationId).toBeNull();
+  });
+
+  it("opens a re-adaptation against the root while retaining the variation to replace", () => {
+    get().open("w-root", "Upper Body · Hotel gym", "v-1");
+    expect(get().workoutId).toBe("w-root");
+    expect(get().replacementVariationId).toBe("v-1");
   });
 
   it("clears a previous run's context, preview and manual picks on open", () => {
@@ -76,6 +83,7 @@ describe("useLoadoutFlow — opening and closing", () => {
     get().reset();
     expect(get().step).toBeNull();
     expect(get().workoutId).toBeNull();
+    expect(get().replacementVariationId).toBeNull();
   });
 });
 

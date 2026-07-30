@@ -136,6 +136,10 @@ export interface WorkoutVariationSummary {
   /** Null once the saved gym is deleted — the kit snapshot survives (AC-7.3). */
   sourceGymName: string | null;
   sourceEquipmentTypeIds: string[] | null;
+  /** Current saved-gym kit, null once the source gym is deleted. */
+  currentSourceGymEquipmentTypeIds: string[] | null;
+  /** Lets clients explain when the linked gym last changed. */
+  currentSourceGymUpdatedAt: Date | null;
   estimatedDurationMinutes: number;
   /** Derived, never stored — see `listVariations`. */
   swapCount: number;
@@ -185,6 +189,8 @@ export interface CreateVariationInput {
   sourceEquipmentTypeIds: string[];
   exercises: CreateVariationExerciseInput[];
 }
+
+export type ReplaceVariationInput = CreateVariationInput;
 
 export interface WorkoutHistory {
   // Number of times the calling user has COMPLETED this workout. 0 = never done.
@@ -796,6 +802,8 @@ export class WorkoutRepository {
         sourceGymId: workouts.sourceGymId,
         sourceGymName: savedGyms.name,
         sourceEquipmentTypeIds: workouts.sourceEquipmentTypeIds,
+        currentSourceGymEquipmentTypeIds: savedGyms.equipmentTypeIds,
+        currentSourceGymUpdatedAt: savedGyms.updatedAt,
         estimatedDurationMinutes: workouts.estimatedDurationMinutes,
         swapCount: sql<number>`(
           select count(*) from ${workoutExercises}
@@ -872,6 +880,95 @@ export class WorkoutRepository {
       }
 
       return this.fetchWorkoutWithExercises(tx, variation);
+    });
+  }
+
+  /**
+   * Replace an owned Loadout variation in place after a fresh review.
+   *
+   * The ownership, root-parent relationship and variation kind are folded into
+   * the UPDATE predicate. That makes a foreign, detached or non-Loadout workout
+   * indistinguishable from a missing variation and closes the TOCTOU window
+   * between validation and mutation. The workout id is never replaced, so
+   * sessions/history that reference it remain attached.
+   */
+  async replaceVariation(
+    userId: string,
+    parentId: string,
+    variationId: string,
+    input: ReplaceVariationInput,
+  ): Promise<WorkoutVariationSummary | null> {
+    const db = getDb();
+
+    return db.transaction(async (tx) => {
+      const [variation] = await tx
+        .update(workouts)
+        .set({
+          name: input.name,
+          description: input.description ?? null,
+          visibility: "private",
+          estimatedDurationMinutes: resolveEstimatedDurationMinutes(
+            input.estimatedDurationMinutes,
+            input.exercises,
+          ),
+          sourceGymId: input.sourceGymId ?? null,
+          sourceEquipmentTypeIds: input.sourceEquipmentTypeIds,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(workouts.id, variationId),
+            eq(workouts.createdBy, userId),
+            eq(workouts.parentWorkoutId, parentId),
+            eq(workouts.variationKind, "loadout"),
+          ),
+        )
+        .returning();
+
+      if (!variation) return null;
+
+      await tx
+        .delete(workoutExercises)
+        .where(eq(workoutExercises.workoutId, variationId));
+
+      if (input.exercises.length > 0) {
+        await tx.insert(workoutExercises).values(
+          input.exercises.map((ex) => ({
+            ...this.toWorkoutExerciseInsert(variationId, ex),
+            substitutedFromExerciseId: ex.substitutedFromExerciseId ?? null,
+            substitutionReason: ex.substitutionReason ?? null,
+            isUserOverride: ex.isUserOverride ?? false,
+          })),
+        );
+      }
+
+      const [summary] = await tx
+        .select({
+          id: workouts.id,
+          name: workouts.name,
+          description: workouts.description,
+          parentWorkoutId: workouts.parentWorkoutId,
+          variationKind: workouts.variationKind,
+          sourceGymId: workouts.sourceGymId,
+          sourceGymName: savedGyms.name,
+          sourceEquipmentTypeIds: workouts.sourceEquipmentTypeIds,
+          currentSourceGymEquipmentTypeIds: savedGyms.equipmentTypeIds,
+          currentSourceGymUpdatedAt: savedGyms.updatedAt,
+          estimatedDurationMinutes: workouts.estimatedDurationMinutes,
+          swapCount: sql<number>`(
+            select count(*) from ${workoutExercises}
+            where ${workoutExercises.workoutId} = ${workouts.id}
+              and ${workoutExercises.substitutedFromExerciseId} is not null
+          )`.mapWith(Number),
+          createdAt: workouts.createdAt,
+          updatedAt: workouts.updatedAt,
+        })
+        .from(workouts)
+        .leftJoin(savedGyms, eq(workouts.sourceGymId, savedGyms.id))
+        .where(eq(workouts.id, variationId))
+        .limit(1);
+
+      return summary ?? null;
     });
   }
 

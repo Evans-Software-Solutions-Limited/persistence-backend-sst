@@ -46,11 +46,9 @@ import { color } from "@/ui/theme/tokens";
  * navigator's job, not a `visible` flag's.
  *
  * Attempt 1 was `StyleSheet.absoluteFillObject` mounted as a sibling of the
- * Stack. **The entry point lives on `workouts/[id]/index`, which is
- * `presentation: "modal"`** — a natively presented view controller on top of the
- * Stack's container — so a sibling of the Stack renders UNDERNEATH it. Tapping
- * "Adapt to your gym" mounted the entire flow behind the workout sheet and
- * nothing appeared to happen.
+ * Stack. A sibling does not own navigator presentation and rendered underneath
+ * the active screen. Tapping "Adapt to your gym" mounted the entire flow behind
+ * workout detail and nothing appeared to happen.
  *
  * Attempt 2 wrapped that overlay in an RN `<Modal>`. Worse: a root-mounted modal
  * cannot reliably present over a route that is itself presented, so iOS put it
@@ -66,11 +64,10 @@ import { color } from "@/ui/theme/tokens";
  *
  * ## ⚠ The upsell sheet is NOT here — it belongs to the screen that opens it
  *
- * It lives in the workout-detail tree (`WorkoutDetailContainer`). It is a bottom
- * sheet over that screen, and that screen is a presented modal, so a
- * root-mounted sheet would sit behind it for exactly the reason above.
+ * It lives in the workout-detail tree (`WorkoutDetailContainer`) as a bottom
+ * sheet over its owning screen.
  * `memory/feedback_sheets_mount_at_root` is about clearing the TAB BAR, which is
- * a different problem from clearing a presented route.
+ * a different concern from owning screen-local presentation.
  *
  * ## ⚠ `adapting` is bound to the request, never a timer
  *
@@ -162,12 +159,13 @@ export function LoadoutFlowContainer() {
   const step = useLoadoutFlow((s) => s.step);
   const workoutId = useLoadoutFlow((s) => s.workoutId);
   const workoutName = useLoadoutFlow((s) => s.workoutName);
+  const replacementVariationId = useLoadoutFlow(
+    (s) => s.replacementVariationId,
+  );
   const context = useLoadoutFlow((s) => s.context);
   const preview = useLoadoutFlow((s) => s.preview);
   const manualPicks = useLoadoutFlow((s) => s.manualPicks);
   const swapTarget = useLoadoutFlow((s) => s.swapTarget);
-  const upsellOpen = useLoadoutFlow((s) => s.upsellOpen);
-  const closeUpsell = useLoadoutFlow((s) => s.closeUpsell);
   const goToStep = useLoadoutFlow((s) => s.goToStep);
   const selectGym = useLoadoutFlow((s) => s.selectGym);
   const selectEquipmentIds = useLoadoutFlow((s) => s.selectEquipmentIds);
@@ -417,6 +415,7 @@ export function LoadoutFlowContainer() {
           (pick ? pickedNames.get(row.sortOrder) : undefined) ??
           row.exercise?.name ??
           "This exercise",
+        displayExerciseId: pick?.exerciseId ?? row.exerciseId,
         isManualPick: pick !== undefined,
         isDropped,
         isAccepted,
@@ -583,13 +582,23 @@ export function LoadoutFlowContainer() {
         return;
       }
 
-      const result = await api.createWorkoutVariation(workoutId, {
-        name: deriveVariationName(workoutName, contextLabel(context)),
+      const variationInput = {
+        name: deriveVariationName(preview.parentName, contextLabel(context)),
         sourceGymId,
-        sourceEquipmentTypeIds:
-          context.kind === "ids" ? context.equipmentTypeIds : undefined,
+        // Freeze the exact kit the SERVER resolved for the preview. This is
+        // required for saved-gym contexts too: the gym may later change or be
+        // deleted, while the setup must remain explainable.
+        sourceEquipmentTypeIds: preview.equipmentTypeIds,
         exercises,
-      });
+      };
+      const result =
+        replacementVariationId === null
+          ? await api.createWorkoutVariation(workoutId, variationInput)
+          : await api.replaceWorkoutVariation(
+              workoutId,
+              replacementVariationId,
+              variationInput,
+            );
       setIsSaving(false);
 
       if (!result.ok) {
@@ -623,7 +632,7 @@ export function LoadoutFlowContainer() {
       context,
       droppedRows,
       manualPicks,
-      workoutName,
+      replacementVariationId,
       api,
       markSaved,
       reset,
@@ -632,6 +641,9 @@ export function LoadoutFlowContainer() {
 
   const onSave = useCallback(() => void save(false), [save]);
   const onSaveAndStart = useCallback(() => void save(true), [save]);
+  const onExercisePress = useCallback((exerciseId: string) => {
+    router.push(`/(app)/exercises/${exerciseId}` as never);
+  }, []);
 
   // ── Render ────────────────────────────────────────────────────────────────
   //
@@ -699,6 +711,7 @@ export function LoadoutFlowContainer() {
           isSaving={isSaving}
           saveError={saveError}
           onBack={() => goToStep("collect")}
+          onExercisePress={onExercisePress}
           onSwapRow={onSwapRow}
           onAcceptMismatch={onAcceptMismatch}
           onDropRow={onDropRow}
@@ -712,6 +725,7 @@ export function LoadoutFlowContainer() {
         <LoadoutSavedStep
           workoutName={workoutName}
           gymLabel={contextLabel(context)}
+          replaced={replacementVariationId !== null}
           onDone={onClose}
         />
       )}

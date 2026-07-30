@@ -396,6 +396,10 @@ Phase 1/2 design. Rationale: `requirements.md` § Eval spike.
       against it in one action (AC-5.3), reusing the existing start-session path.
 - [x] **T-2.9 [M]** Saved-gym management list in Settings/Profile (AC-7.2).
 - [x] **T-2.10 [M]** Tests + a device-verify checklist in the PR body.
+- [x] **T-2.11 [B+M]** Re-adapt an existing saved setup in place; preserve its
+      id/history, freeze the newly resolved kit, and surface linked-gym changes.
+- [x] **T-2.12 [M]** Exercise detail drill-in from review and normal pushed-page
+      presentation for workout detail.
 
 ### Landed in Phase 2 so far — the FOUNDATION, not the screens
 
@@ -434,12 +438,10 @@ review Brad explicitly asked for.
 
 **Architecture decisions worth not re-deriving:**
 
-- **The flow is a root-mounted overlay, not five routes.** `useLoadoutFlow` IS
-  the navigation, so mirroring it into routes would give two sources of truth
-  for "which step". The deciding reason is layering: a gorhom sheet renders
-  inline in the React tree, so the swap and scan sheets have to be siblings of
-  the STEP, inside the flow container — a sheet at the layout root would sit
-  behind it.
+- **The flow is one `fullScreenModal` route, not five routes.**
+  `useLoadoutFlow` remains the single source of truth for the internal step,
+  while the navigator owns presentation. Swap and scan sheets stay beside the
+  step inside that route. Workout and exercise detail are ordinary pushed pages.
 - **`adapting` is bound to the request.** The prototype's 1700 ms auto-advance
   is not implemented and must not be.
 - **`others` only MEANS "incompatible" when a kit context was supplied.** With

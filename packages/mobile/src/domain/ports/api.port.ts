@@ -1351,6 +1351,16 @@ export interface ApiPort {
   ): Promise<Result<WorkoutVariationSummary, LoadoutApiError>>;
 
   /**
+   * `PUT /workouts/:parentId/variations/:variationId` — replace an owned saved
+   * setup in place after re-adaptation, preserving its id and session history.
+   */
+  replaceWorkoutVariation(
+    parentWorkoutId: string,
+    variationId: string,
+    input: CreateLoadoutVariationInput,
+  ): Promise<Result<WorkoutVariationSummary, LoadoutApiError>>;
+
+  /**
    * `GET /workouts/:id/variations` — the parent's "Saved setups" list. Scoped to
    * variations the CALLER created, so a coach never sees an athlete's.
    */
