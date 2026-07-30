@@ -35,9 +35,11 @@ say so and fix this file.
   and forced full unit suite (19/19 tasks).
 - **⚠ Loadout Phase 2's SCREENS are built but NOT merged.** Now PR
   **[#339](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/339)**,
-  branch `claude/pr-339-review-ci-7f7ydu`, rebased onto `main` at `c8a0b6d`
-  (#337). It supersedes **#328** (`claude/loadout-phase-2-screens`), which
-  should be closed — the two are the same work and #328 is now the stale copy.
+  head branch `claude/loadout-phase-2-screens-rebase` (mirrored at
+  `claude/pr-339-review-ci-7f7ydu`; both at `e73a2db`), rebased onto `main` at
+  `c8a0b6d` (#337). It supersedes **#328** (`claude/loadout-phase-2-screens`),
+  which should be closed — the two are the same work and #328 is now the stale
+  copy.
   - **⚠ The first cut of #339 was rebased from a STALE snapshot of #328 and
     silently dropped `edeb93f`'s fixes** — five files' changes were missing
     entirely (`exercisesSubstitutesHandler` + its test, `exerciseRepository` +
@@ -50,6 +52,12 @@ say so and fix this file.
     `edeb93f`'s content onto `c8a0b6d` instead. **LESSON: when a PR is "a
     rebase of another PR", diff the two branches' CONTENT — a green pipeline
     says nothing about whether the rebase captured the source branch's head.**
+  - **The load-bearing loss was `EMPTY_EQUIPMENT_CONTEXT`** on the create AND
+    replace variation handlers. Without it an empty kit left
+    `containmentContext.length > 0` false, so **equipment containment was
+    SKIPPED entirely and `EQUIPMENT_NOT_AVAILABLE` could never fire** — any
+    exercise saveable against any kit, i.e. the guard the whole review step
+    exists to enforce, silently absent. It would have merged looking green.
   - The 2026-07-30 CI failure itself was a real merge-state type error: current
     `main` removed the Stripe `Adapters.payments` rail, while five Loadout-only
     test fixtures still supplied it. Those stale fixture properties are removed.
