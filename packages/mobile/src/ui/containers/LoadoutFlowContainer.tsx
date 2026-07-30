@@ -204,6 +204,8 @@ export function LoadoutFlowContainer() {
   const [saveError, setSaveError] = useState<string | null>(null);
   /** A gym this run already created, so a save retry does not 409 on itself. */
   const createdGymIdRef = useRef<string | null>(null);
+  /** Invalidates async save completions when the review flow has moved on. */
+  const saveRunRef = useRef(0);
 
   // Every run starts clean. `open()` already resets the STORE; this clears the
   // decisions that live here, which would otherwise be applied by `sortOrder` to
@@ -262,6 +264,12 @@ export function LoadoutFlowContainer() {
       : context.kind === "gym"
         ? `gym:${context.gymId}`
         : `ids:${[...context.equipmentTypeIds].join(",")}`;
+  // Preview identity is equipment-only, but saved-gym identity is not: the same
+  // kit saved as "Home" and later "Garage" must create two distinct gyms.
+  const gymCreateKey =
+    context?.kind === "ids"
+      ? `${contextKey}|${context.label.trim().toLowerCase()}|${context.saveAsGym}`
+      : contextKey;
   const requestKey = `${workoutId ?? ""}|${contextKey}|${attempt}`;
 
   // ⚠ Cleared on any CONTEXT change, not just a new workout. The id exists so a
@@ -278,7 +286,7 @@ export function LoadoutFlowContainer() {
     createdGymIdRef.current = null;
     gymCreateFiredRef.current = null;
     gymCreatePromiseRef.current = null;
-  }, [contextKey]);
+  }, [gymCreateKey]);
 
   // ── "Save this gym for next time" ─────────────────────────────────────────
   //
@@ -306,21 +314,25 @@ export function LoadoutFlowContainer() {
     if (createdGymIdRef.current !== null) return;
     // Keyed on the context, so an explicit retry (which bumps `attempt` but
     // leaves the kit alone) does not create the gym a second time.
-    if (gymCreateFiredRef.current === contextKey) return;
-    gymCreateFiredRef.current = contextKey;
+    if (gymCreateFiredRef.current === gymCreateKey) return;
+    gymCreateFiredRef.current = gymCreateKey;
 
+    const createContextKey = gymCreateKey;
     gymCreatePromiseRef.current = api
       .createSavedGym({
         name: current.label,
         equipmentTypeIds: current.equipmentTypeIds,
       })
       .then((result) => {
+        // A slow create for gym A must not become gym B's source link after the
+        // user goes back and recollects while the request is in flight.
+        if (gymCreateFiredRef.current !== createContextKey) return;
         if (result.ok) createdGymIdRef.current = result.value.id;
         // Refreshed even on failure: a 409 means the gym is already there under
         // that name, and the collect step should show it either way.
         void refreshGyms();
       });
-  }, [step, contextKey, api, refreshGyms]);
+  }, [step, gymCreateKey, api, refreshGyms]);
 
   // ⚠ THE GUARD MUST BE CLEARED, and forgetting to was a permanent hang.
   //
@@ -461,6 +473,7 @@ export function LoadoutFlowContainer() {
   // with a reset store would render a blank screen, and clearing without
   // dismissing would leave the user on a step machine with no step.
   const onClose = useCallback(() => {
+    saveRunRef.current += 1;
     reset();
     router.back();
   }, [reset]);
@@ -529,6 +542,8 @@ export function LoadoutFlowContainer() {
   const save = useCallback(
     async (thenStart: boolean) => {
       if (preview === null || workoutId === null || context === null) return;
+      const saveRun = saveRunRef.current + 1;
+      saveRunRef.current = saveRun;
       setIsSaving(true);
       setSaveError(null);
 
@@ -549,6 +564,7 @@ export function LoadoutFlowContainer() {
         if (gymCreatePromiseRef.current !== null) {
           await gymCreatePromiseRef.current;
         }
+        if (saveRunRef.current !== saveRun) return;
         // ⚠ Remembered across retries. Without the ref, a save that created the
         // gym and then failed on the VARIATION (a dropped connection) would, on
         // the user's second tap, 409 on its own gym name and save the variation
@@ -561,6 +577,7 @@ export function LoadoutFlowContainer() {
             name: context.label,
             equipmentTypeIds: context.equipmentTypeIds,
           });
+          if (saveRunRef.current !== saveRun) return;
           if (result.ok) {
             sourceGymId = result.value.id;
             createdGymIdRef.current = result.value.id;
@@ -570,7 +587,19 @@ export function LoadoutFlowContainer() {
 
       const kept: LoadoutPreview = {
         ...preview,
-        rows: preview.rows.filter((row) => !droppedRows.has(row.sortOrder)),
+        rows: preview.rows.filter((row) => {
+          if (droppedRows.has(row.sortOrder)) return false;
+          const hasIntensityMismatch =
+            row.reason.flags?.includes("intensity_mismatch") === true;
+          // The banner promises that undecided attention rows are dropped.
+          // A manual pick resolves the row; otherwise a mismatch survives only
+          // after the user explicitly accepts it as accessory volume.
+          return (
+            !hasIntensityMismatch ||
+            acceptedRows.has(row.sortOrder) ||
+            manualPicks.has(row.sortOrder)
+          );
+        }),
       };
       const exercises = buildVariationExercises(kept, manualPicks);
 
@@ -599,6 +628,7 @@ export function LoadoutFlowContainer() {
               replacementVariationId,
               variationInput,
             );
+      if (saveRunRef.current !== saveRun) return;
       setIsSaving(false);
 
       if (!result.ok) {
@@ -631,6 +661,7 @@ export function LoadoutFlowContainer() {
       workoutId,
       context,
       droppedRows,
+      acceptedRows,
       manualPicks,
       replacementVariationId,
       api,
@@ -641,6 +672,13 @@ export function LoadoutFlowContainer() {
 
   const onSave = useCallback(() => void save(false), [save]);
   const onSaveAndStart = useCallback(() => void save(true), [save]);
+  const onReviewBack = useCallback(() => {
+    // Leaving during an in-flight write is both confusing and unsafe: an older
+    // completion could otherwise advance a newly collected flow.
+    if (isSaving) return;
+    saveRunRef.current += 1;
+    goToStep("collect");
+  }, [goToStep, isSaving]);
   const onExercisePress = useCallback((exerciseId: string) => {
     router.push(`/(app)/exercises/${exerciseId}` as never);
   }, []);
@@ -710,7 +748,7 @@ export function LoadoutFlowContainer() {
           attentionCount={attentionCount}
           isSaving={isSaving}
           saveError={saveError}
-          onBack={() => goToStep("collect")}
+          onBack={onReviewBack}
           onExercisePress={onExercisePress}
           onSwapRow={onSwapRow}
           onAcceptMismatch={onAcceptMismatch}

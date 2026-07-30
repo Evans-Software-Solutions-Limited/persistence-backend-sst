@@ -1,4 +1,5 @@
 import GorhomBottomSheet from "@gorhom/bottom-sheet";
+import { Dimensions, StyleSheet } from "react-native";
 import { renderWithTheme } from "../../../../../__tests__/test-utils";
 import { Text } from "../../Text";
 import { BottomSheet, type BottomSheetAccent } from "../BottomSheet";
@@ -74,6 +75,43 @@ describe("BottomSheet", () => {
     expect(getByText("Log Water")).toBeTruthy();
     expect(getByText("Sheet body")).toBeTruthy();
   });
+
+  // Regression guard for the drawer-scroll bug (2026-07-29). The sheet body MUST
+  // carry a definite pixel height; with `flex: 1` it inherited none from
+  // gorhom's content view, so the inner scroll view's viewport equalled its
+  // content and nothing below the fold could be reached — verified on an iPhone
+  // 17 Pro simulator, where even a plain RN ScrollView would not scroll. Jest
+  // renders gorhom as plain Views so this cannot prove scrolling; it pins the
+  // one property the fix depends on, which reading the diff cannot.
+  it.each(
+    /** [height prop, expected fraction of the window] */
+    [
+      ["peek", 0.6],
+      ["default", 0.78],
+      ["tall", 0.88],
+      [50, 0.5],
+    ] as const,
+  )(
+    "gives the sheet body a definite height for height=%s",
+    (height, fraction) => {
+      const { getByTestId } = renderWithTheme(
+        <BottomSheet
+          visible
+          onClose={() => {}}
+          height={height}
+          testID="sheet-body"
+        >
+          <Text>body</Text>
+        </BottomSheet>,
+      );
+      const style = StyleSheet.flatten(getByTestId("sheet-body").props.style);
+      const windowHeight = Dimensions.get("window").height;
+      // 24 = gorhom's handle (10pt padding either side of a 4pt indicator).
+      expect(style.height).toBeCloseTo(windowHeight * fraction - 24, 1);
+      // The bug: a flex basis with no definite height.
+      expect(style.flex).toBeUndefined();
+    },
+  );
 
   it("renders the sheet container via the gorhom mock when visible", () => {
     const { getByTestId } = renderWithTheme(

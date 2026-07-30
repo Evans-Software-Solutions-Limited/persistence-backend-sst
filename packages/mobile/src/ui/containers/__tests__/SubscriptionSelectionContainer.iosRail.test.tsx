@@ -5,7 +5,6 @@ import { InMemoryAuthAdapter } from "@/adapters/auth/__tests__/in-memory-auth.ad
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
 import { StubHealthAdapter } from "@/adapters/health";
 import { StubNotificationsAdapter } from "@/adapters/notifications";
-import { MockPaymentsAdapter } from "@/adapters/payments/__tests__/mock.adapter";
 import { MockPurchasesAdapter } from "@/adapters/purchases/__tests__/mock.adapter";
 import { InMemoryNetInfoAdapter } from "@/adapters/netInfo/__tests__/InMemoryNetInfoAdapter";
 import type {
@@ -89,7 +88,6 @@ function makeAdapters(withPurchases: boolean): Adapters {
     storage: new InMemoryStorageAdapter(),
     health: new StubHealthAdapter(),
     notifications: new StubNotificationsAdapter(),
-    payments: new MockPaymentsAdapter(),
     netInfo: new InMemoryNetInfoAdapter(),
     purchases: withPurchases ? new MockPurchasesAdapter() : undefined,
   };

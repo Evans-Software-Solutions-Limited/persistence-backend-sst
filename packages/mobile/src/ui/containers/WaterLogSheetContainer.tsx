@@ -5,6 +5,7 @@ import { useGetWaterToday } from "@/ui/hooks/useGetWaterToday";
 import { useSetWater } from "@/ui/hooks/useSetWater";
 import { localDayISO, preferredVolumeUnit } from "@/shared/utils";
 import { WaterLogSheetPresenter } from "@/ui/presenters/WaterLogSheetPresenter";
+import { useHomeSheets } from "@/state/home-sheets";
 
 /**
  * <WaterLogSheetContainer> — wires the Home quick-log Water sheet to the M9
@@ -13,13 +14,11 @@ import { WaterLogSheetPresenter } from "@/ui/presenters/WaterLogSheetPresenter";
  *
  * Implements: specs/06-progress-goals/design.md § Home quick-log
  */
-export function WaterLogSheetContainer({
-  visible,
-  onClose,
-}: {
-  visible: boolean;
-  onClose: () => void;
-}) {
+export function WaterLogSheetContainer() {
+  // Root-mounted (sibling of the tab Stack), so open-state comes from the
+  // shared store rather than props — same as the Fuel sheets and the drawer.
+  const visible = useHomeSheets((s) => s.sheet === "water");
+  const onClose = useHomeSheets((s) => s.close);
   const date = localDayISO();
   const water = useGetWaterToday(date);
   const setWater = useSetWater();

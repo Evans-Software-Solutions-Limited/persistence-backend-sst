@@ -13,6 +13,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useWindowDimensions } from "react-native";
 
 import { SafeAreaInsetsContext } from "react-native-safe-area-context";
 
@@ -50,11 +51,24 @@ export type BottomSheetProps = {
   testID?: string;
 };
 
+/**
+ * gorhom's drag handle: `padding: 10` top and bottom around a 4pt indicator
+ * (`bottomSheetHandle/styles.ts`, and our `handleIndicatorStyle` keeps that 4).
+ * The handle is laid out ABOVE the content inside the sheet, so the body gets
+ * the snap height minus this.
+ */
+const HANDLE_HEIGHT = 24;
+
+/** Snap height as a 0-1 fraction of the container. */
+function resolveFraction(height: BottomSheetHeight): number {
+  if (height === "peek") return 0.6;
+  if (height === "default") return 0.78;
+  if (height === "tall") return 0.88;
+  return Math.min(100, Math.max(10, height)) / 100;
+}
+
 function resolveSnap(height: BottomSheetHeight): string {
-  if (height === "peek") return "60%";
-  if (height === "default") return "78%";
-  if (height === "tall") return "88%";
-  return `${Math.min(100, Math.max(10, height))}%`;
+  return `${resolveFraction(height) * 100}%`;
 }
 
 /** Accent as a Tamagui token — for the eyebrow <Text> (resolves the theme). */
@@ -95,6 +109,25 @@ export function BottomSheet({
   // throws without a provider) so the sheet still renders in tests / any tree
   // mounted outside a SafeAreaProvider — falls back to 0.
   const bottomInset = useContext(SafeAreaInsetsContext)?.bottom ?? 0;
+
+  // The sheet body needs an EXPLICIT height. `flex: 1` here does not work:
+  // gorhom's content view (`BottomSheetContent`) applies its height through an
+  // animated style that returns `{}` until the container has been measured, so
+  // there are frames — and, for this drawer, the steady state — where this
+  // column has no definite height to divide up. A `flex: 1` child of an
+  // unsized column sizes to its CONTENT, which means the inner
+  // BottomSheetScrollView's viewport equals its content: nothing overflows, so
+  // nothing scrolls. The body then simply overflowed the sheet and got clipped
+  // by `overflow: "hidden"` below, which LOOKS exactly like a scroll boundary —
+  // which is why this kept being misread as a gesture/lock bug and "fixed" at
+  // the gesture layer. Verified on an iPhone 17 Pro simulator: with `flex: 1`
+  // the drawer will not scroll even with a plain RN ScrollView and no gorhom
+  // gesture wiring at all; with the explicit height it scrolls to Sign out and
+  // Delete account. Derived from the same fraction that builds the snap point,
+  // so the two cannot drift.
+  const windowHeight = useWindowDimensions().height;
+  const sheetBodyHeight =
+    windowHeight * resolveFraction(height) - HANDLE_HEIGHT;
 
   // Render the sheet once it has been opened at least once, then keep it
   // mounted so a parent-driven close (`setVisible(false)`) animates DOWN via
@@ -183,16 +216,47 @@ export function BottomSheet({
       }}
     >
       <View
-        flex={1}
+        // `height` + `flexShrink`, and BOTH halves are load-bearing.
+        //
+        // `height` supplies a DEFINITE flex basis. That is the whole fix: gorhom
+        // applies its content height through an animated style that returns `{}`
+        // until the container is measured, so in those frames the parent column
+        // has no definite height. A `flex: 1` child (basis `0%`) collapses to its
+        // content there, which makes the inner scroll view's viewport equal its
+        // content — nothing overflows, so nothing scrolls, and the body just
+        // overflows the sheet and is clipped by `overflow: "hidden"` above.
+        // `maxHeight` fails for the same reason: no basis to resolve against, so
+        // it collapsed the body to nothing on device. Don't retry either.
+        //
+        // `flexShrink` lets the body give that height BACK, clamping to the box
+        // gorhom actually computed (`animatedContentHeightMax`) whenever that is
+        // smaller than our estimate. Two real cases need it, both found by
+        // Inspector Brad:
+        //   1. `windowHeight` is the wrong ruler for a sheet that is NOT mounted
+        //      at the root. gorhom measures its PARENT, so the three Home
+        //      quick-log sheets (Weigh-in, Water, Sleep — mounted inside
+        //      HomeContainer, i.e. inside the tab scene) sit in a container
+        //      ~102pt shorter than the window. Without shrink the body overshoots
+        //      by ~90pt (`tall`) / ~61pt (`peek`) and that band is unreachable —
+        //      on Weigh-in it contains the Save button.
+        //   2. `keyboardBehavior="interactive"` shrinks that box further while
+        //      the keyboard is up.
+        // RN's default `flexShrink` is 0, which is exactly why neither case
+        // worked before. Shrink keeps the basis, so it cannot reintroduce the
+        // collapse — it only adds a ceiling, and demotes HANDLE_HEIGHT to a
+        // fallback rather than a load-bearing constant.
+        height={sheetBodyHeight}
+        flexShrink={1}
         testID={testID}
         // Plain in-flow flex container — NOT gorhom's <BottomSheetView>, whose
         // base style is position:absolute (top/left/right, no height) and thus
         // overrides flex:1, sizing the node to its content. That left the inner
         // BottomSheetScrollView with no bounded viewport, so it never scrolled
         // and tall bodies (e.g. the coach ProfileDrawer) were clipped — the
-        // Sign-out button unreachable. As a direct child of gorhom's
-        // fixed-height content wrapper, a flex:1 View fills the box so the fixed
-        // header + scroll view split it correctly.
+        // Sign-out button unreachable. NOTE: an earlier version of this comment
+        // concluded that "a flex:1 View fills the box" — it does NOT, and that
+        // claim is what produced two failed fixes at the gesture layer. See the
+        // basis/shrink note above; the height must be explicit.
         // a11y: mark the open sheet as a modal so VoiceOver/TalkBack traps focus
         // INSIDE it and ignores the screen behind the backdrop.
         accessibilityViewIsModal

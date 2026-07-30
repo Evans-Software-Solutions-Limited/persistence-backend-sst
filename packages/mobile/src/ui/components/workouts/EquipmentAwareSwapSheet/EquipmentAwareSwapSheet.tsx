@@ -70,10 +70,15 @@ import { tokenizeSearch } from "@/domain/services/exercise.service";
 import type { LoadoutApiError } from "@/domain/ports/api.port";
 import { BottomSheet, Pill } from "@/ui/components/foundation";
 import { useAdapters } from "@/ui/hooks/useAdapters";
+import { useDebouncedValue } from "@/ui/hooks/useDebouncedValue";
 import { color, radius, space } from "@/ui/theme/tokens";
 
-/** Matches the endpoint's own default; stated here so the cap is visible. */
-const CANDIDATE_LIMIT = 25;
+/**
+ * Fetch a broad visibility-scoped pool. Search is immediate over the current
+ * response, then debounced to the server so names beyond the ordinary cap stay
+ * reachable.
+ */
+const CANDIDATE_LIMIT = 400;
 
 export type EquipmentAwareSwapSheetProps = {
   readonly visible: boolean;
@@ -149,6 +154,7 @@ export function EquipmentAwareSwapSheet({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<LoadoutApiError | null>(null);
   const [query, setQuery] = useState("");
+  const debouncedQuery = useDebouncedValue(query.trim(), 250);
   /** The incompatible row awaiting an explicit acknowledgement. */
   const [pendingOverride, setPendingOverride] =
     useState<SubstituteCandidate | null>(null);
@@ -171,6 +177,12 @@ export function EquipmentAwareSwapSheet({
   const hasEquipmentContext = equipmentForQuery !== undefined;
 
   useEffect(() => {
+    if (visible) return;
+    setQuery("");
+    setPendingOverride(null);
+  }, [visible]);
+
+  useEffect(() => {
     if (!visible || forExerciseId === null) return;
     let cancelled = false;
     setIsLoading(true);
@@ -179,7 +191,6 @@ export function EquipmentAwareSwapSheet({
     // new row's name for as long as the request takes, and every entry in it
     // would be a plausible-looking wrong answer.
     setResult(EMPTY_RESULT);
-    setQuery("");
     setPendingOverride(null);
     void api
       .getExerciseSubstitutes({
@@ -189,6 +200,7 @@ export function EquipmentAwareSwapSheet({
         // belt-and-braces — but it keeps the two layers stating the same contract.
         ...(equipmentForQuery ? { equipment: equipmentForQuery } : {}),
         limit: CANDIDATE_LIMIT,
+        ...(debouncedQuery ? { search: debouncedQuery } : {}),
       })
       .then((response) => {
         if (cancelled) return;
@@ -201,7 +213,7 @@ export function EquipmentAwareSwapSheet({
     return () => {
       cancelled = true;
     };
-  }, [visible, forExerciseId, equipmentForQuery, api]);
+  }, [visible, forExerciseId, equipmentForQuery, debouncedQuery, api]);
 
   const existing = useMemo(
     () => new Set(existingExerciseIds),
@@ -210,9 +222,8 @@ export function EquipmentAwareSwapSheet({
 
   // AND-match every token against the name — same rule as the other pickers, so
   // "press bench" still finds "Bench Press". Applied client-side over the ranked
-  // page rather than re-querying: the server ranks by similarity, not by name,
-  // and a search box that silently re-ordered the list by relevance would undo
-  // the ranking the reason lines are explaining.
+  // current response for immediate feedback while the debounced server request
+  // applies the same tokens before the repository's ordinary 400-row cap.
   const filter = useCallback(
     (rows: readonly SubstituteCandidate[]) => {
       const tokens = tokenizeSearch(query);
@@ -391,8 +402,8 @@ export function EquipmentAwareSwapSheet({
 
           {result.meta.truncated ? (
             <Text style={styles.truncatedNote} testID="swap-sheet-truncated">
-              Showing the closest {CANDIDATE_LIMIT} matches. Search to narrow
-              them down.
+              More matches are available. Search by name to narrow the full
+              library.
             </Text>
           ) : null}
         </ScrollView>

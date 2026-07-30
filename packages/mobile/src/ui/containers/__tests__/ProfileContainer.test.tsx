@@ -9,7 +9,6 @@ import { InMemoryAuthAdapter } from "@/adapters/auth/__tests__/in-memory-auth.ad
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
 import { StubHealthAdapter } from "@/adapters/health";
 import { StubNotificationsAdapter } from "@/adapters/notifications";
-import { MockPaymentsAdapter } from "@/adapters/payments/__tests__/mock.adapter";
 import { InMemoryNetInfoAdapter } from "@/adapters/netInfo/__tests__/InMemoryNetInfoAdapter";
 import type { ProfilePageData } from "@/domain/models/profilePage";
 import type { HomePayload } from "@/domain/models/progress";
@@ -23,8 +22,6 @@ import { ProfilePresenter } from "@/ui/presenters/ProfilePresenter";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import config from "../../../../tamagui.config";
 import { ProfileContainer } from "../ProfileContainer";
-
-jest.setTimeout(15_000);
 
 // Native modules pulled in by useAvatarUpload — Jest can't load the real
 // expo-modules-core glue, so stub the surface that the hook touches.
@@ -290,7 +287,6 @@ async function createTestAdapters(): Promise<{
     storage,
     health: new StubHealthAdapter(),
     notifications: new StubNotificationsAdapter(),
-    payments: new MockPaymentsAdapter(),
     netInfo: new InMemoryNetInfoAdapter(),
   };
   return { adapters, auth, storage, api };

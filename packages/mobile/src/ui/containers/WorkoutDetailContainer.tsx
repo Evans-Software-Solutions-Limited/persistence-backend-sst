@@ -60,12 +60,9 @@ export function WorkoutDetailContainer() {
     workout != null && userId != null && workout.createdBy === userId;
   const isVariation = workout?.parentWorkoutId != null;
 
-  // Only fetched for the owner: the variation list is scoped to the CALLER's own
-  // variations server-side, so on someone else's workout it is always empty and
-  // the request is pure waste.
-  const variations = useWorkoutVariations(
-    isOwner && !isVariation ? workoutId : null,
-  );
+  // Caller-scoped server-side, but the readable parent need not be caller-owned:
+  // AC-1.2 lets an athlete save their own setups under a coach/template workout.
+  const variations = useWorkoutVariations(!isVariation ? workoutId : null);
   const savedGyms = useSavedGyms(
     isOwner && isVariation && workout?.sourceGymId != null,
   );
@@ -203,7 +200,10 @@ export function WorkoutDetailContainer() {
         onEdit={onEdit}
         onStartWorkout={onStartWorkout}
         onExercisePress={onExercisePress}
-        showLoadout={isOwner}
+        // AC-1.2 is read-scoped, not owner-scoped: coach-assigned and template
+        // workouts can be adapted too, with the resulting setup owned by the
+        // caller. The backend enforces the same readable-parent boundary.
+        showLoadout
         // `pending` takes precedence over `locked` INSIDE the card, so this passes
         // the raw verdict rather than pre-masking it with `isResolved`. An earlier
         // version did both; the extra conjunct could not change any rendered

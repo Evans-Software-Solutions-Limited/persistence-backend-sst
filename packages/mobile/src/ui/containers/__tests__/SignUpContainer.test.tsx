@@ -9,7 +9,6 @@ import { InMemoryAuthAdapter } from "@/adapters/auth/__tests__/in-memory-auth.ad
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
 import { StubHealthAdapter } from "@/adapters/health";
 import { StubNotificationsAdapter } from "@/adapters/notifications";
-import { MockPaymentsAdapter } from "@/adapters/payments/__tests__/mock.adapter";
 import { InMemoryNetInfoAdapter } from "@/adapters/netInfo/__tests__/InMemoryNetInfoAdapter";
 import type { Adapters } from "@/shared/types";
 import { SignUpPresenter } from "@/ui/presenters/SignUpPresenter";
@@ -36,7 +35,6 @@ function createTestAdapters(): {
     storage: new InMemoryStorageAdapter(),
     health: new StubHealthAdapter(),
     notifications: new StubNotificationsAdapter(),
-    payments: new MockPaymentsAdapter(),
     netInfo: new InMemoryNetInfoAdapter(),
   };
   return { adapters, auth };
@@ -83,7 +81,6 @@ MockSignUpPresenter.mockImplementation((props) => (
 ));
 
 // CI runners can be slow on first Tamagui compilation; extend timeout
-jest.setTimeout(15_000);
 
 describe("SignUpContainer", () => {
   const mockPush = jest.fn();

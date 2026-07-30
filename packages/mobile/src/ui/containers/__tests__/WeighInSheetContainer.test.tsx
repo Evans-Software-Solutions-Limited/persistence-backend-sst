@@ -9,6 +9,7 @@ import { StubHealthAdapter } from "@/adapters/health";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 import { WeighInSheetContainer } from "../WeighInSheetContainer";
+import { useHomeSheets } from "@/state/home-sheets";
 
 function makeProfilePagePayload(
   overrides: Partial<ProfilePageData["profile"]> = {},
@@ -94,28 +95,30 @@ function makeAdapters(): {
       storage,
       health: new StubHealthAdapter(),
       notifications: {} as Adapters["notifications"],
-      payments: {} as Adapters["payments"],
       netInfo: {} as Adapters["netInfo"],
     },
   };
 }
 
 describe("WeighInSheetContainer", () => {
+  // Root-mounted now: open-state comes from the store, not props.
+  beforeEach(() => {
+    useHomeSheets.setState({ sheet: "weighIn", habitsRev: 0 });
+  });
   beforeEach(() => mockFetch.mockClear());
 
   it("logs the weigh-in and closes on save", async () => {
     const { adapters } = makeAdapters();
-    const onClose = jest.fn();
     const { getByText } = renderWithTheme(
       <AdapterProvider adapters={adapters}>
-        <WeighInSheetContainer visible onClose={onClose} />
+        <WeighInSheetContainer />
       </AdapterProvider>,
     );
     fireEvent.press(getByText(/Log/));
     // Save → useLogMeasurement (optimistic append + queue + drain) → close.
     // The optimistic body-trend write itself is unit-tested in
     // log-measurement.command.test (06.6); here we prove the container wiring.
-    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    await waitFor(() => expect(useHomeSheets.getState().sheet).toBeNull());
   });
 
   it("prefills weight (lb→kg) + body fat from Apple Health and writes both back on save", async () => {
@@ -130,10 +133,9 @@ describe("WeighInSheetContainer", () => {
       writeBodyWeight,
       writeBodyFat,
     });
-    const onClose = jest.fn();
     const { getByTestId, getByText } = renderWithTheme(
       <AdapterProvider adapters={adapters}>
-        <WeighInSheetContainer visible onClose={onClose} />
+        <WeighInSheetContainer />
       </AdapterProvider>,
     );
     // 176 lb → ~79.8 kg, displayed in kg.
@@ -143,7 +145,7 @@ describe("WeighInSheetContainer", () => {
     expect(getByTestId("weigh-in-bodyfat-input").props.value).toBe("18.5");
 
     fireEvent.press(getByText(/Log/));
-    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    await waitFor(() => expect(useHomeSheets.getState().sheet).toBeNull());
     // Weight written in kg; body fat as the 0..100 percentage (adapter converts
     // to HealthKit's fraction).
     expect(writeBodyWeight).toHaveBeenCalledWith(
@@ -159,10 +161,9 @@ describe("WeighInSheetContainer", () => {
       USER,
       makeProfilePagePayload({ weightUnit: "lb" }),
     );
-    const onClose = jest.fn();
     const { getByTestId } = renderWithTheme(
       <AdapterProvider adapters={adapters}>
-        <WeighInSheetContainer visible onClose={onClose} />
+        <WeighInSheetContainer />
       </AdapterProvider>,
     );
     // No prefill/history in this fixture, so the canonical weight is the
@@ -180,10 +181,9 @@ describe("WeighInSheetContainer", () => {
       USER,
       makeProfilePagePayload({ weightUnit: "kg" }),
     );
-    const onClose = jest.fn();
     const { getByTestId } = renderWithTheme(
       <AdapterProvider adapters={adapters}>
-        <WeighInSheetContainer visible onClose={onClose} />
+        <WeighInSheetContainer />
       </AdapterProvider>,
     );
     await waitFor(() =>
@@ -196,10 +196,9 @@ describe("WeighInSheetContainer", () => {
     const writeBodyWeight = jest.fn(async () => ok(undefined));
     const writeBodyFat = jest.fn(async () => ok(undefined));
     Object.assign(adapters.health, { writeBodyWeight, writeBodyFat });
-    const onClose = jest.fn();
     const { getByTestId, getByText } = renderWithTheme(
       <AdapterProvider adapters={adapters}>
-        <WeighInSheetContainer visible onClose={onClose} />
+        <WeighInSheetContainer />
       </AdapterProvider>,
     );
     // A negative weight is rejected by logMeasurementCommand (weightKg <= 0).
@@ -212,6 +211,6 @@ describe("WeighInSheetContainer", () => {
     // user can correct it.
     expect(writeBodyWeight).not.toHaveBeenCalled();
     expect(writeBodyFat).not.toHaveBeenCalled();
-    expect(onClose).not.toHaveBeenCalled();
+    expect(useHomeSheets.getState().sheet).toBe("weighIn");
   });
 });

@@ -27,6 +27,13 @@ type SignUpPresenterProps = {
   oauthLoading: OAuthProvider | null;
   error: string | null;
   confirmationSent: boolean;
+  /**
+   * Supabase silently did nothing because the address already has an account, so
+   * no confirmation email is coming. A HINT ONLY (see useAuth().signUp) — it
+   * swaps this screen's copy for "sign in instead" guidance and never gates the
+   * flow, so being wrong is cosmetic.
+   */
+  mayAlreadyExist?: boolean;
 };
 
 export function SignUpPresenter({
@@ -43,6 +50,7 @@ export function SignUpPresenter({
   oauthLoading,
   error,
   confirmationSent,
+  mayAlreadyExist = false,
 }: SignUpPresenterProps) {
   const isAnyLoading = isLoading || oauthLoading !== null;
 
@@ -118,14 +126,26 @@ export function SignUpPresenter({
                     width={64}
                     height={64}
                     borderRadius="$full"
-                    backgroundColor="rgba(34, 197, 94, 0.1)"
+                    backgroundColor={
+                      mayAlreadyExist
+                        ? "rgba(250, 204, 21, 0.1)"
+                        : "rgba(34, 197, 94, 0.1)"
+                    }
                     alignItems="center"
                     justifyContent="center"
                     borderWidth={1}
-                    borderColor="rgba(34, 197, 94, 0.2)"
+                    borderColor={
+                      mayAlreadyExist
+                        ? "rgba(250, 204, 21, 0.2)"
+                        : "rgba(34, 197, 94, 0.2)"
+                    }
                   >
-                    <Text variant="h2" color="$success" testID="success-icon">
-                      ✓
+                    <Text
+                      variant="h2"
+                      color={mayAlreadyExist ? "$warning" : "$success"}
+                      testID="success-icon"
+                    >
+                      {mayAlreadyExist ? "!" : "✓"}
                     </Text>
                   </View>
                   <Text
@@ -134,7 +154,19 @@ export function SignUpPresenter({
                     align="center"
                     testID="confirmation-message"
                   >
-                    Check your email to confirm your account, then sign in.
+                    {mayAlreadyExist
+                      ? // Hedged deliberately. The signal behind this branch is a
+                        // HINT (an empty `identities` array — see the adapter) and
+                        // was never verified against a live project, so the copy
+                        // must not assert as FACT that no email was sent. If the
+                        // hint misfires, a genuine new registrant told to stop
+                        // looking for their confirmation email is a worse dead end
+                        // than the bug this fixes. Both readings stay true here.
+                        "If you already have an account for this email, sign in " +
+                        "instead — and if you deleted it within the last 30 days, " +
+                        "signing in restores it. If you've just registered, check " +
+                        "your email to confirm."
+                      : "Check your email to confirm your account, then sign in."}
                   </Text>
                   <View width="100%" marginTop="$base">
                     <Button

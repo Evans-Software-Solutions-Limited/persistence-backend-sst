@@ -68,7 +68,6 @@ function makeAdapters(
     storage,
     health: {} as Adapters["health"],
     notifications: {} as Adapters["notifications"],
-    payments: {} as Adapters["payments"],
     netInfo: {} as Adapters["netInfo"],
   };
 }
@@ -335,7 +334,7 @@ describe("SavedGymsContainer", () => {
     jest
       .spyOn(api, "deleteSavedGym")
       .mockResolvedValue(fail({ kind: "api", code: "network", message: "" }));
-    const { findByTestId } = renderScreen(api);
+    const { findByTestId, findByText } = renderScreen(api);
 
     fireEvent.press(await findByTestId("saved-gym-gym-1-delete"));
     fireEvent.press(await findByTestId("saved-gym-gym-1-delete-confirm"));
@@ -343,6 +342,7 @@ describe("SavedGymsContainer", () => {
     // Hiding it permanently would show a gym they still have as gone — and the
     // next refresh would resurrect it anyway.
     expect(await findByTestId("saved-gym-gym-1")).toBeTruthy();
+    expect(await findByText(/Couldn't delete that gym/)).toBeTruthy();
   });
 
   it("deletes on confirmation and the list re-reads", async () => {

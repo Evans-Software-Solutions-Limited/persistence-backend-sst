@@ -72,7 +72,6 @@ function makeAdapters(
       disconnect: jest.fn(),
     } as unknown as Adapters["health"],
     notifications: {} as Adapters["notifications"],
-    payments: {} as Adapters["payments"],
     netInfo: {} as Adapters["netInfo"],
   };
 }
@@ -363,7 +362,6 @@ describe("useDashboard", () => {
         disconnect: jest.fn(),
       } as unknown as Adapters["health"],
       notifications: {} as Adapters["notifications"],
-      payments: {} as Adapters["payments"],
       netInfo: {} as Adapters["netInfo"],
     };
 
@@ -479,7 +477,6 @@ describe("useDashboard", () => {
         disconnect: jest.fn(),
       } as unknown as Adapters["health"],
       notifications: {} as Adapters["notifications"],
-      payments: {} as Adapters["payments"],
       netInfo: {} as Adapters["netInfo"],
     };
 
@@ -578,7 +575,6 @@ describe("useDashboard", () => {
         disconnect: jest.fn(),
       } as unknown as Adapters["health"],
       notifications: {} as Adapters["notifications"],
-      payments: {} as Adapters["payments"],
       netInfo: {} as Adapters["netInfo"],
     };
 

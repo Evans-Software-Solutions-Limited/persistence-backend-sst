@@ -19,9 +19,21 @@ import { useAdapters } from "@/ui/hooks/useAdapters";
  *   - `['profile-data']` (legacy parity)
  *
  * Containers consume the mutation via `mutate()` / `mutateAsync()`.
- * Async callers should `await` the returned promise (so 3DS branches
- * can drive `payments.confirm3DS(clientSecret)` next), and check
+ * Async callers should `await` the returned promise and check
  * `result.requiresAction` to decide the next step.
+ *
+ * ⚠ CURRENTLY UNWIRED — no container calls this. Its only consumer was the
+ * Stripe Apple Pay card rail on `SubscriptionSelectionContainer`, removed in
+ * full under App Review Guideline 2.1 (the Stripe SDK linked PassKit into the
+ * binary while the flow was unreachable on iOS). iOS purchases go through
+ * RevenueCat / Apple IAP (`usePurchasePackage`).
+ *
+ * Deliberately kept rather than deleted: `POST /subscriptions` still exists and
+ * still works server-side, and this is its typed client. It is the natural
+ * re-entry point when a non-Apple rail returns (Android via Play billing, or
+ * web). Do NOT re-wire it into an iOS surface — that would be a §3.1.1
+ * violation. Any 3DS handling it once drove is gone with the SDK; a future rail
+ * must supply its own confirmation step.
  */
 export function useCreateSubscription() {
   const { api } = useAdapters();

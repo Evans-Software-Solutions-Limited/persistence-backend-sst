@@ -208,7 +208,15 @@ jest.mock("@gorhom/bottom-sheet", () => {
           : null;
       return React.createElement(
         View,
-        { testID: "gorhom-bottom-sheet" },
+        {
+          testID: "gorhom-bottom-sheet",
+          // Surface `enableDynamicSizing` so a regression is assertable: with
+          // dynamic sizing ON, gorhom sizes the sheet to its content and ignores
+          // the snap point, which breaks the body's height contract. The mock
+          // renders plain Views, so no test can prove the content actually
+          // SCROLLS on device — this only pins the configuration.
+          enableDynamicSizing: props.enableDynamicSizing,
+        },
         backdrop,
         props.children as React.ReactNode,
       );
@@ -488,40 +496,6 @@ jest.mock("react-native-purchases", () => ({
     INTRO_ELIGIBILITY_STATUS_NO_INTRO_OFFER_EXISTS: 3,
   },
 }));
-
-// Mock @stripe/stripe-react-native — M10. The native module isn't
-// linked in Jest, so importing it for real throws on iOS-only
-// bindings. The adapter under test (`StripeApplePayAdapter`) carries
-// its own per-test mock at the top of its spec file (which takes
-// precedence over this global). This global covers the rest of the
-// suite — chiefly the root layout test which mounts `<StripeProvider>`
-// and any future container test that pulls in the providers tree.
-jest.mock("@stripe/stripe-react-native", () => {
-  const { View } = require("react-native");
-  const React = require("react");
-  return {
-    __esModule: true,
-    StripeProvider: ({ children }: { children: React.ReactNode }) =>
-      React.createElement(View, null, children),
-    isPlatformPaySupported: jest.fn(async () => false),
-    createPlatformPayPaymentMethod: jest.fn(async () => ({})),
-    handleNextAction: jest.fn(async () => ({})),
-    PlatformPay: {
-      PaymentType: {
-        Immediate: "Immediate",
-        Recurring: "Recurring",
-        Deferred: "Deferred",
-      },
-      IntervalUnit: {
-        Minute: "minute",
-        Hour: "hour",
-        Day: "day",
-        Month: "month",
-        Year: "year",
-      },
-    },
-  };
-});
 
 // Mock @sentry/react-native — the native crash-reporting SDK isn't linked in
 // Jest. The app inits Sentry at module load (app/_layout.tsx) and wraps the

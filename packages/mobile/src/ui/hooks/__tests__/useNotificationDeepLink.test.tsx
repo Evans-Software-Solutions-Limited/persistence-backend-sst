@@ -67,7 +67,6 @@ function wrapperFor(notifications: NotificationsPort) {
     storage: {},
     notifications,
     health: {},
-    payments: {},
     netInfo: {},
   } as unknown as Adapters;
   return function Wrapper({ children }: { children: ReactNode }) {

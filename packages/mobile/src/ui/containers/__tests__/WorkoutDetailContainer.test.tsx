@@ -82,7 +82,6 @@ function makeAdapters(
     storage,
     health: {} as Adapters["health"],
     notifications: {} as Adapters["notifications"],
-    payments: {} as Adapters["payments"],
     netInfo: {} as Adapters["netInfo"],
   };
 }
@@ -235,6 +234,16 @@ describe("WorkoutDetailContainer", () => {
       useLoadoutFlow.setState({ rev: 0 });
     });
 
+    async function pressReadyLoadoutCard(
+      findByTestId: ReturnType<typeof renderWithTheme>["findByTestId"],
+    ) {
+      const card = await findByTestId("loadout-entry-card");
+      await waitFor(() =>
+        expect(card.props.accessibilityState?.disabled).toBe(false),
+      );
+      fireEvent.press(card);
+    }
+
     function subscription(tierName: "free" | "premium_plus") {
       return {
         subscriptionId: "sub-1",
@@ -330,7 +339,7 @@ describe("WorkoutDetailContainer", () => {
         withAdapters(makeAdapters(api, storage), <WorkoutDetailContainer />),
       );
 
-      fireEvent.press(await findByTestId("loadout-entry-card"));
+      await pressReadyLoadoutCard(findByTestId);
 
       // design § 5.2 makes this a conversion surface with no taster behind it,
       // so a dead tap throws away the only pitch the feature gets.
@@ -354,7 +363,7 @@ describe("WorkoutDetailContainer", () => {
         withAdapters(makeAdapters(api, storage), <WorkoutDetailContainer />),
       );
 
-      fireEvent.press(await findByTestId("loadout-entry-card"));
+      await pressReadyLoadoutCard(findByTestId);
       expect(await findByTestId("loadout-upsell-sheet")).toBeTruthy();
     });
 
@@ -366,7 +375,7 @@ describe("WorkoutDetailContainer", () => {
         withAdapters(makeAdapters(api, storage), <WorkoutDetailContainer />),
       );
 
-      fireEvent.press(await findByTestId("loadout-entry-card"));
+      await pressReadyLoadoutCard(findByTestId);
       await findByTestId("loadout-upsell-sheet");
 
       // Never a literal. The prototype's £19.99 is retired and the real figure is
@@ -385,7 +394,7 @@ describe("WorkoutDetailContainer", () => {
       await waitFor(() =>
         getByText("Re-map this workout to whatever kit you have today"),
       );
-      fireEvent.press(await findByTestId("loadout-entry-card"));
+      await pressReadyLoadoutCard(findByTestId);
 
       expect(useLoadoutFlow.getState().step).toBe("collect");
       expect(useLoadoutFlow.getState().workoutId).toBe(workout.id);
@@ -451,7 +460,7 @@ describe("WorkoutDetailContainer", () => {
       );
       expect(queryByTestId("loadout-saved-setups")).toBeNull();
 
-      fireEvent.press(await findByTestId("loadout-entry-card"));
+      await pressReadyLoadoutCard(findByTestId);
 
       expect(useLoadoutFlow.getState()).toMatchObject({
         workoutId: "w-root",
@@ -511,7 +520,7 @@ describe("WorkoutDetailContainer", () => {
       expect(mockRouterPush).toHaveBeenCalledWith("/(app)/workouts/w-1/edit");
     });
 
-    it("hides the whole Loadout block on someone else's workout", async () => {
+    it("shows Loadout on any readable workout, not only an owned one", async () => {
       const api = new InMemoryApiAdapter();
       const storage = new InMemoryStorageAdapter();
       const workout = buildWorkout({ createdBy: "someone-else" });
@@ -523,9 +532,10 @@ describe("WorkoutDetailContainer", () => {
       );
 
       await findByTestId("workout-detail-start");
-      expect(queryByTestId("loadout-entry-card")).toBeNull();
-      // Variations are caller-scoped server-side, so this would always be empty.
-      expect(variations).not.toHaveBeenCalled();
+      expect(queryByTestId("loadout-entry-card")).toBeTruthy();
+      // The list remains caller-scoped server-side even when the parent belongs
+      // to a coach or template author.
+      await waitFor(() => expect(variations).toHaveBeenCalledWith(workout.id));
     });
   });
 });

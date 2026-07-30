@@ -95,7 +95,6 @@ function makeAdapters(health: HealthPort): Adapters {
     storage: {} as Adapters["storage"],
     health,
     notifications: {} as Adapters["notifications"],
-    payments: {} as Adapters["payments"],
     netInfo: {} as Adapters["netInfo"],
   };
 }

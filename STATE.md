@@ -13,15 +13,46 @@ say so and fix this file.
 
 - **⚠ Loadout Phase 2's SCREENS are built but NOT merged.** PR
   **[#328](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/328)**,
-  branch `claude/loadout-phase-2-screens` (6 commits off `dfeed666`, head
-  `a3e9248`). **All 5 CI checks green**; 2 Inspector Brad passes clean;
+  branch `claude/loadout-phase-2-screens`. The branch now includes current
+  `main` (`1ad9caaa`) so GitHub tests the same dependency and mobile-adapter
+  surface locally. The 2026-07-30 CI failure was a real merge-state type error:
+  current `main` removed the Stripe `Adapters.payments` rail, while five
+  Loadout-only test fixtures still supplied it. Those stale fixture properties
+  are removed.
+  - **Gates after merging current `main`:** forced typecheck 8/8, build 13/13,
+    forced full-workspace unit tests, full mobile test 466 suites / 5,528 tests,
+    focused affected mobile suites 5/5 (150 tests), focused backend 90 tests,
+    tracked-file Prettier/diff checks clean, and mobile/core ESLint zero errors.
+    Whole-tree Prettier/lint remain blocked only by unrelated untracked
+    `.agents/skills/sst-resource-change/SKILL.md` and
+    `microservices/core/probe-steps.ts` (four `no-explicit-any` errors).
+  - **Local Inspector Brad follow-up:** the first sweep found and this branch now
+    fixes eight edge cases: Loadout is available on every readable parent
+    (AC-1.2), undecided intensity mismatches are actually dropped, swap search
+    covers the visibility-scoped pool and reports slicing, explicit empty kit
+    snapshots 400 on create/replace, stale gym-create/save completions cannot
+    mutate a newer flow, workout-A variations never paint under workout B, and
+    failed saved-gym deletes show an actionable error. The locked-card tests now
+    wait for their async entitlement verdict before pressing, removing the one
+    full-suite timing failure exposed under parallel load. A second sweep found
+    and this branch now fixes three more boundary cases: saved-gym creation is
+    keyed by name as well as kit, substitute name search runs server-side before
+    the 400-row cap, and create/replace reject every empty equipment context
+    (including omitted snapshots and empty saved gyms). The final closed sweep
+    also aligned punctuation tokenisation across the picker and repository
+    (`bench-press` remains visible after the debounced response) and returned
+    `INSPECTOR_VERDICT: CLEAN`.
+  - The local Claude agent (`~/.claude/agents/inspector-brad.md`), Codex agent
+    (`~/.codex/agents/inspector-brad.toml`) and manual GitHub workflow
+    (`.github/workflows/claude-review.yml`) use the same impact-graph review
+    contract. The CI action remains human-triggered only; Codex did not fire it.
   **NOT device-verified** — that is the review Brad asked for and it needs an EAS
   dev build against staging. The PR body carries a ~40-item checklist. This is the
   first user-reachable Loadout surface.
   - ⚠ An entitled test account needs a RevenueCat **promotional entitlement** —
     `premium_plus` is still `is_active = false`, so there is no purchasable card.
-- **2026-07-30 follow-ups are implemented in the branch working tree, not yet
-  committed or pushed.** Saved setup detail now offers **Re-adapt** against the
+- **2026-07-30 follow-ups were committed and pushed at `b9bdeba7`.** Saved setup
+  detail now offers **Re-adapt** against the
   ROOT workout; `PUT /workouts/:parentId/variations/:variationId` atomically
   replaces the owned variation's metadata + exercise rows while preserving its
   id, `created_at` and session history. Every save freezes the server-resolved

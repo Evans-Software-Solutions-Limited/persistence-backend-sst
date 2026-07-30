@@ -1,5 +1,8 @@
 import { Stack } from "expo-router";
 import { ActiveWorkoutOverlay } from "../../src/ui/containers/ActiveWorkoutOverlay";
+import { WeighInSheetContainer } from "@/ui/containers/WeighInSheetContainer";
+import { WaterLogSheetContainer } from "@/ui/containers/WaterLogSheetContainer";
+import { SleepLogSheetContainer } from "@/ui/containers/SleepLogSheetContainer";
 import { AddClientSheetContainer } from "../../src/ui/containers/AddClientSheetContainer";
 import { AddRecipeMenuContainer } from "../../src/ui/containers/AddRecipeMenuContainer";
 import { AssignGoalSheet } from "../../src/ui/presenters/coach/AssignGoalSheet";
@@ -323,6 +326,26 @@ export default function AppLayout() {
         Spec: feedback_sheets_mount_at_root
       */}
       <AddClientSheetContainer />
+      {/*
+        Home's three quick-log sheets (Weigh in, Water, Sleep). Root-mounted
+        (siblings of the Stack) so they overlay the tab bar; each reads
+        useHomeSheets().sheet to drive its own slide animation. Home's quick-log
+        tiles open them via the store.
+
+        They used to be mounted inside <HomeContainer>, i.e. inside the tab
+        scene. That put them ABOVE the in-flow tab bar, and — because gorhom
+        measures its PARENT for `containerHeight` — gave them a container ~102pt
+        shorter than the window, while <BottomSheet> sizes its body from
+        `useWindowDimensions()`. The body overshot the real content box by ~90pt
+        (`tall`) / ~61pt (`peek`) and that band was unreachable; on Weigh in it
+        held the Save button (Inspector Brad 🟠, PR #336).
+
+        Spec: feedback_sheets_mount_at_root
+              specs/06-progress-goals/design.md § Home quick-log
+      */}
+      <WeighInSheetContainer />
+      <WaterLogSheetContainer />
+      <SleepLogSheetContainer />
       {/*
         AssignProgramSheet — the coach assign-programme-to-client bottom sheet
         (19-programs STORY-003). Root-mounted (sibling of the Stack) so it

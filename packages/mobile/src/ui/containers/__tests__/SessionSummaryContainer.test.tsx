@@ -21,7 +21,6 @@ import { renderWithTheme } from "../../../../__tests__/test-utils";
 // M2 learning #13: cascading-async container tests blow the 5s default
 // on loaded CI workers. Match the existing 15s used by HomeContainer /
 // DevExerciseCreatorContainer / ExerciseListContainer.
-jest.setTimeout(15_000);
 
 function makeAdapters(
   api: InMemoryApiAdapter,
@@ -72,7 +71,6 @@ function makeAdapters(
     storage,
     health: {} as Adapters["health"],
     notifications,
-    payments: {} as Adapters["payments"],
     netInfo: {} as Adapters["netInfo"],
   };
 }

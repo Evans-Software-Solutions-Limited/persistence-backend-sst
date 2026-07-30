@@ -8,7 +8,6 @@ import { InMemoryAuthAdapter } from "@/adapters/auth/__tests__/in-memory-auth.ad
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
 import { StubHealthAdapter } from "@/adapters/health";
 import { StubNotificationsAdapter } from "@/adapters/notifications";
-import { MockPaymentsAdapter } from "@/adapters/payments/__tests__/mock.adapter";
 import { InMemoryNetInfoAdapter } from "@/adapters/netInfo/__tests__/InMemoryNetInfoAdapter";
 import { createExerciseCommand } from "@/application/commands/create-exercise.command";
 import type { Exercise } from "@/domain/models/exercise";
@@ -19,8 +18,6 @@ import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import { ExerciseFiltersProvider } from "@/ui/hooks/useExerciseFilters";
 import config from "../../../../tamagui.config";
 import { ExerciseListContainer } from "../ExerciseListContainer";
-
-jest.setTimeout(15_000);
 
 jest.mock("@/ui/presenters/ExerciseListPresenter");
 const MockPresenter = jest.mocked(ExerciseListPresenter);
@@ -136,7 +133,6 @@ function createTestAdapters(): {
     storage,
     health: new StubHealthAdapter(),
     notifications: new StubNotificationsAdapter(),
-    payments: new MockPaymentsAdapter(),
     netInfo: new InMemoryNetInfoAdapter(),
   };
   return { adapters, api, storage };

@@ -13,7 +13,6 @@ import { InMemoryAuthAdapter } from "@/adapters/auth/__tests__/in-memory-auth.ad
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
 import { StubHealthAdapter } from "@/adapters/health";
 import { StubNotificationsAdapter } from "@/adapters/notifications";
-import { MockPaymentsAdapter } from "@/adapters/payments/__tests__/mock.adapter";
 import { InMemoryNetInfoAdapter } from "@/adapters/netInfo/__tests__/InMemoryNetInfoAdapter";
 import type {
   MySubscription,
@@ -107,12 +106,10 @@ function makeAdapters(): {
   adapters: Adapters;
   api: InMemoryApiAdapter;
   auth: InMemoryAuthAdapter;
-  payments: MockPaymentsAdapter;
   netInfo: InMemoryNetInfoAdapter;
 } {
   const api = new InMemoryApiAdapter();
   const auth = new InMemoryAuthAdapter();
-  const payments = new MockPaymentsAdapter();
   const netInfo = new InMemoryNetInfoAdapter();
   // BASIC_TIER intentionally excluded here — post tier-simplification the
   // catalog has exactly one consumer row (`premium`), and BASIC_TIER's
@@ -140,10 +137,9 @@ function makeAdapters(): {
     storage: new InMemoryStorageAdapter(),
     health: new StubHealthAdapter(),
     notifications: new StubNotificationsAdapter(),
-    payments,
     netInfo,
   };
-  return { adapters, api, auth, payments, netInfo };
+  return { adapters, api, auth, netInfo };
 }
 
 function makeQueryClient() {
@@ -192,12 +188,13 @@ describe("SubscriptionSelectionContainer", () => {
     expect(screen.getByTestId("subscription-card-premium")).toBeTruthy();
   });
 
-  it("buy flow: tap premium → mounts payment form → ready → creates sub → routes to /(auth)/success", async () => {
-    const { adapters, api, payments } = makeAdapters();
-    payments.setNextCollectResponse({
-      ok: true,
-      paymentMethodId: "pm_buy",
-    });
+  // The Stripe Apple Pay rail was removed in full (App Review Guideline 2.1 —
+  // it linked PassKit into the binary while being unreachable on iOS). This
+  // non-iOS surface is now a catalogue: tapping a paid tier explains where to
+  // buy instead of starting a purchase, and no subscription is ever created.
+  it("tapping a paid tier explains purchasing is App-Store-only and creates nothing", async () => {
+    const { adapters, api } = makeAdapters();
+    const createSpy = jest.spyOn(api, "createSubscription");
     render(
       <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
         <SubscriptionSelectionContainer />
@@ -206,34 +203,21 @@ describe("SubscriptionSelectionContainer", () => {
     await waitFor(() =>
       expect(screen.getByTestId("subscription-card-premium")).toBeTruthy(),
     );
+    fireEvent.press(screen.getByTestId("subscription-card-premium"));
 
-    await act(async () => {
-      // Simulate the user tapping the Subscribe CTA on the premium card.
-      fireEvent.press(
-        screen.getByTestId("subscription-card-premium-subscribe"),
-      );
-    });
+    await waitFor(() => expect(alertSpy).toHaveBeenCalled());
+    expect(alertSpy.mock.calls[0][0]).toBe("Not available on this device");
+    expect(alertSpy.mock.calls[0][1]).toContain("App Store");
+    expect(createSpy).not.toHaveBeenCalled();
+  });
 
-    await waitFor(() => expect(api.createSubscriptionCalls).toBe(1));
-    expect(api.lastCreateSubscriptionInput).toMatchObject({
+  it("tapping the tier you already hold says nothing (Inspector Brad)", async () => {
+    const { adapters, api } = makeAdapters();
+    api.mySubscription = freeSub({
+      subscriptionId: "us_1",
       tierName: "premium",
+      paymentStatus: "active",
       billingCycle: "monthly",
-      paymentMethodId: "pm_buy",
-      useTrial: true,
-      // One client idempotency token per Subscribe attempt (spec 17).
-      idempotencyKey: expect.stringMatching(/^sub-create-/),
-    });
-    await waitFor(() =>
-      expect(mockPush).toHaveBeenCalledWith("/(auth)/success"),
-    );
-  });
-
-  it("3DS flow: requiresAction=true triggers payments.confirm3DS", async () => {
-    const { adapters, api, payments } = makeAdapters();
-    payments.setNextCollectResponse({ ok: true, paymentMethodId: "pm_3ds" });
-    api.setNextCreateSubscriptionResponse({
-      requiresAction: true,
-      clientSecret: "pi_3ds_secret",
     });
     render(
       <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
@@ -243,28 +227,47 @@ describe("SubscriptionSelectionContainer", () => {
     await waitFor(() =>
       expect(screen.getByTestId("subscription-card-premium")).toBeTruthy(),
     );
-
-    await act(async () => {
-      fireEvent.press(
-        screen.getByTestId("subscription-card-premium-subscribe"),
-      );
-    });
-
-    await waitFor(() => expect(payments.confirm3DSCalls).toBe(1));
-    expect(payments.lastConfirm3DSSecret).toBe("pi_3ds_secret");
-    await waitFor(() => expect(mockPush).toHaveBeenCalled());
+    // SubscriptionCard stays pressable when `isCurrent` — without the guard a
+    // subscriber tapping their own "Current Plan" is told to go and buy it.
+    fireEvent.press(screen.getByTestId("subscription-card-premium"));
+    expect(alertSpy).not.toHaveBeenCalled();
   });
 
-  it("3DS failure alerts and leaves the screen mounted", async () => {
-    const { adapters, api, payments } = makeAdapters();
-    payments.setNextCollectResponse({ ok: true, paymentMethodId: "pm_x" });
-    payments.setNextConfirm3DSResponse({
-      ok: false,
-      error: { kind: "stripe_error", code: "Failed", message: "3DS denied" },
+  // Inspector Brad re-sweep: a plain `tier === currentTier` bail-out swallowed the
+  // two taps that ARE asking for a change. Both must still reach the alert.
+  it("tapping the held tier after switching cycle still explains where to buy", async () => {
+    const { adapters, api } = makeAdapters();
+    api.mySubscription = freeSub({
+      subscriptionId: "us_1",
+      tierName: "premium",
+      paymentStatus: "active",
+      billingCycle: "monthly",
     });
-    api.setNextCreateSubscriptionResponse({
-      requiresAction: true,
-      clientSecret: "pi_3ds_secret",
+    render(
+      <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
+        <SubscriptionSelectionContainer />
+      </Wrapper>,
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("billing-cycle-toggle")).toBeTruthy(),
+    );
+    // monthly -> yearly: the user is asking to switch billing cycle.
+    fireEvent.press(screen.getByTestId("billing-cycle-toggle"));
+    fireEvent.press(screen.getByTestId("subscription-card-premium"));
+
+    await waitFor(() => expect(alertSpy).toHaveBeenCalled());
+    expect(alertSpy.mock.calls[0][0]).toBe("Not available on this device");
+  });
+
+  it("tapping the held tier to reinstate a cancelled sub still explains where to buy", async () => {
+    const { adapters, api } = makeAdapters();
+    api.mySubscription = freeSub({
+      subscriptionId: "us_1",
+      tierName: "premium",
+      paymentStatus: "active",
+      billingCycle: "monthly",
+      cancelledAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
     });
     render(
       <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
@@ -274,74 +277,10 @@ describe("SubscriptionSelectionContainer", () => {
     await waitFor(() =>
       expect(screen.getByTestId("subscription-card-premium")).toBeTruthy(),
     );
-    await act(async () => {
-      fireEvent.press(
-        screen.getByTestId("subscription-card-premium-subscribe"),
-      );
-    });
-    await waitFor(() => expect(payments.confirm3DSCalls).toBe(1));
-    await waitFor(() =>
-      expect(alertSpy).toHaveBeenCalledWith(
-        "Payment Authentication Failed",
-        "3DS denied",
-        expect.any(Array),
-      ),
-    );
-    expect(mockPush).not.toHaveBeenCalled();
-  });
+    fireEvent.press(screen.getByTestId("subscription-card-premium"));
 
-  it("Apple Pay cancel silently clears in-flight selection (no alert)", async () => {
-    const { adapters, payments } = makeAdapters();
-    payments.setNextCollectResponse({
-      ok: false,
-      error: { kind: "cancelled", code: "Canceled", message: "user dismissed" },
-    });
-    render(
-      <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
-        <SubscriptionSelectionContainer />
-      </Wrapper>,
-    );
-    await waitFor(() =>
-      expect(screen.getByTestId("subscription-card-premium")).toBeTruthy(),
-    );
-    await act(async () => {
-      fireEvent.press(
-        screen.getByTestId("subscription-card-premium-subscribe"),
-      );
-    });
-    // Adapter collect was called but no Payment Method Error alert.
-    await waitFor(() => expect(payments.collectCalls).toBe(1));
-    const errorAlertCalls = alertSpy.mock.calls.filter(
-      ([title]) => title === "Payment Method Error",
-    );
-    expect(errorAlertCalls).toHaveLength(0);
-  });
-
-  it("Apple Pay non-cancel error alerts the user", async () => {
-    const { adapters, payments } = makeAdapters();
-    payments.setNextCollectResponse({
-      ok: false,
-      error: { kind: "stripe_error", code: "Failed", message: "Card declined" },
-    });
-    render(
-      <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
-        <SubscriptionSelectionContainer />
-      </Wrapper>,
-    );
-    await waitFor(() =>
-      expect(screen.getByTestId("subscription-card-premium")).toBeTruthy(),
-    );
-    await act(async () => {
-      fireEvent.press(
-        screen.getByTestId("subscription-card-premium-subscribe"),
-      );
-    });
-    await waitFor(() =>
-      expect(alertSpy).toHaveBeenCalledWith(
-        "Payment Method Error",
-        "Card declined",
-      ),
-    );
+    await waitFor(() => expect(alertSpy).toHaveBeenCalled());
+    expect(alertSpy.mock.calls[0][0]).toBe("Not available on this device");
   });
 
   // (Downgrade-scheduled test removed during tier simplification — the
@@ -450,189 +389,6 @@ describe("SubscriptionSelectionContainer", () => {
         true,
       ),
     );
-  });
-
-  it("createSubscription error path alerts the user with the SDK message", async () => {
-    const { adapters, api, payments } = makeAdapters();
-    payments.setNextCollectResponse({ ok: true, paymentMethodId: "pm_x" });
-    render(
-      <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
-        <SubscriptionSelectionContainer />
-      </Wrapper>,
-    );
-    await waitFor(() =>
-      expect(screen.getByTestId("subscription-card-premium")).toBeTruthy(),
-    );
-    // Flip shouldFail AFTER initial data loads so only the create call fails.
-    api.shouldFail = true;
-    await act(async () => {
-      fireEvent.press(
-        screen.getByTestId("subscription-card-premium-subscribe"),
-      );
-    });
-    await waitFor(() =>
-      expect(
-        alertSpy.mock.calls.some(([title]) => title === "Subscription Error"),
-      ).toBe(true),
-    );
-  });
-
-  it("tapping the same tier with no changes is a no-op (no Apple Pay fired)", async () => {
-    const { adapters, api, payments } = makeAdapters();
-    api.mySubscription = freeSub({
-      subscriptionId: "us_1",
-      tierName: "premium",
-      paymentStatus: "active",
-      billingCycle: "monthly",
-      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-    });
-    render(
-      <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
-        <SubscriptionSelectionContainer />
-      </Wrapper>,
-    );
-    await waitFor(() =>
-      expect(screen.getByTestId("subscription-card-premium")).toBeTruthy(),
-    );
-    fireEvent.press(screen.getByTestId("subscription-card-premium-subscribe"));
-    // No payment form mounted = no Apple Pay collect call.
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(payments.collectCalls).toBe(0);
-  });
-
-  it("trial-started alert fires when isTrial=true + trialEndsAt is present", async () => {
-    const { adapters, api, payments } = makeAdapters();
-    payments.setNextCollectResponse({ ok: true, paymentMethodId: "pm_t" });
-    api.setNextCreateSubscriptionResponse({
-      isTrial: true,
-      trialEndsAt: "2026-06-01T00:00:00.000Z",
-    });
-    render(
-      <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
-        <SubscriptionSelectionContainer />
-      </Wrapper>,
-    );
-    await waitFor(() =>
-      expect(screen.getByTestId("subscription-card-premium")).toBeTruthy(),
-    );
-    await act(async () => {
-      fireEvent.press(
-        screen.getByTestId("subscription-card-premium-subscribe"),
-      );
-    });
-    await waitFor(() =>
-      expect(
-        alertSpy.mock.calls.some(([title]) => title === "Trial Started!"),
-      ).toBe(true),
-    );
-  });
-
-  it("chains scheduled + trial alerts via onPress before navigating (Inspector Brad PR #71 medium-severity find — sweep #1)", async () => {
-    // Regression: previously, when a response had BOTH scheduled=true
-    // and isTrial=true (the trainer-Pro downgrade-with-trial path),
-    // Alert.alert fired twice synchronously and router.push fired
-    // immediately after — RN serialises alerts on iOS so the second
-    // queued behind the first, and the Selection container tore down
-    // before either was dismissed.
-    const { adapters, api, payments } = makeAdapters();
-    payments.setNextCollectResponse({ ok: true, paymentMethodId: "pm_x" });
-    api.setNextCreateSubscriptionResponse({
-      changeType: "downgrade",
-      scheduled: true,
-      effectiveAt: "2026-08-01T00:00:00.000Z",
-      isTrial: true,
-      trialEndsAt: "2026-06-15T00:00:00.000Z",
-    });
-    render(
-      <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
-        <SubscriptionSelectionContainer />
-      </Wrapper>,
-    );
-    await waitFor(() =>
-      expect(screen.getByTestId("subscription-card-premium")).toBeTruthy(),
-    );
-    await act(async () => {
-      fireEvent.press(
-        screen.getByTestId("subscription-card-premium-subscribe"),
-      );
-    });
-
-    // First alert (Change Scheduled) is queued; second + navigation are NOT yet.
-    await waitFor(() =>
-      expect(
-        alertSpy.mock.calls.some(([title]) => title === "Change Scheduled"),
-      ).toBe(true),
-    );
-    expect(
-      alertSpy.mock.calls.some(([title]) => title === "Trial Started!"),
-    ).toBe(false);
-    expect(mockPush).not.toHaveBeenCalled();
-
-    // Dismiss the first alert via its OK button onPress.
-    const firstAlert = alertSpy.mock.calls.find(
-      ([title]) => title === "Change Scheduled",
-    );
-    const firstOk = firstAlert?.[2]?.find((b) => b.text === "OK");
-    await act(async () => {
-      firstOk?.onPress?.();
-    });
-
-    // Second alert (Trial Started) now fires; navigation still deferred.
-    await waitFor(() =>
-      expect(
-        alertSpy.mock.calls.some(([title]) => title === "Trial Started!"),
-      ).toBe(true),
-    );
-    expect(mockPush).not.toHaveBeenCalled();
-
-    // Dismiss the second alert — navigation finally runs.
-    const secondAlert = alertSpy.mock.calls.find(
-      ([title]) => title === "Trial Started!",
-    );
-    const secondOk = secondAlert?.[2]?.find((b) => b.text === "OK");
-    await act(async () => {
-      secondOk?.onPress?.();
-    });
-
-    expect(mockPush).toHaveBeenCalledWith("/(auth)/success");
-  });
-
-  it("refuses tier tap on yearly cycle when priceYearly is null + alerts user (Inspector Brad PR #71 medium-severity find — sweep #1)", async () => {
-    // Regression: previously, tapping a tier card on the yearly cycle
-    // when the tier had no Stripe yearly price would render £0 in the
-    // Apple Pay sheet (via `priceYearly ?? 0`) and then 400 from the
-    // backend after the biometric tap. Guard the tap at the container.
-    const { adapters, api, payments } = makeAdapters();
-    payments.setNextCollectResponse({ ok: true, paymentMethodId: "pm_y" });
-    // Premium with no yearly price — single-tier catalog (BASIC_TIER
-    // dropped post tier-simplification).
-    api.subscriptionTiers = [
-      { ...PREMIUM_TIER, priceYearly: null, stripePriceIdYearly: null },
-    ];
-    render(
-      <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
-        <SubscriptionSelectionContainer />
-      </Wrapper>,
-    );
-    await waitFor(() =>
-      expect(screen.getByTestId("subscription-card-premium")).toBeTruthy(),
-    );
-
-    // Toggle to yearly via the billing-cycle control.
-    fireEvent.press(screen.getByTestId("billing-cycle-toggle"));
-
-    await act(async () => {
-      fireEvent.press(
-        screen.getByTestId("subscription-card-premium-subscribe"),
-      );
-    });
-
-    // Alert was shown; no Apple Pay collection; no create call.
-    expect(
-      alertSpy.mock.calls.some(([title]) => title === "Yearly not available"),
-    ).toBe(true);
-    expect(payments.collectCalls).toBe(0);
-    expect(api.createSubscriptionCalls).toBe(0);
   });
 
   it("retry button reloads the tiers query", async () => {
@@ -784,70 +540,6 @@ describe("SubscriptionSelectionContainer", () => {
       expect(screen.getByTestId("subscription-card-premium")).toBeTruthy();
     });
 
-    it("offline + tap tier → alert + Apple Pay does NOT mount + no createSubscription (AC 11.2 + 11.4)", async () => {
-      const { adapters, api, payments, netInfo } = makeAdapters();
-      netInfo.setConnected(false);
-      render(
-        <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
-          <SubscriptionSelectionContainer />
-        </Wrapper>,
-      );
-      await waitFor(() =>
-        expect(screen.getByTestId("subscription-card-premium")).toBeTruthy(),
-      );
-      // Confirm banner is up.
-      await waitFor(() =>
-        expect(screen.getByTestId("subscription-offline-banner")).toBeTruthy(),
-      );
-
-      await act(async () => {
-        fireEvent.press(
-          screen.getByTestId("subscription-card-premium-subscribe"),
-        );
-      });
-
-      // Alert was shown; no Apple Pay sheet; no create.
-      expect(
-        alertSpy.mock.calls.some(([title]) => title === "You're offline"),
-      ).toBe(true);
-      expect(payments.collectCalls).toBe(0);
-      expect(api.createSubscriptionCalls).toBe(0);
-    });
-
-    it("offline → online transition then tap tier → Apple Pay mounts normally", async () => {
-      const { adapters, api, payments, netInfo } = makeAdapters();
-      netInfo.setConnected(false);
-      payments.setNextCollectResponse({
-        ok: true,
-        paymentMethodId: "pm_rec",
-      });
-      render(
-        <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
-          <SubscriptionSelectionContainer />
-        </Wrapper>,
-      );
-      await waitFor(() =>
-        expect(screen.getByTestId("subscription-card-premium")).toBeTruthy(),
-      );
-      await waitFor(() =>
-        expect(screen.getByTestId("subscription-offline-banner")).toBeTruthy(),
-      );
-
-      // Reconnect.
-      await act(async () => {
-        netInfo.setConnected(true);
-      });
-
-      await act(async () => {
-        fireEvent.press(
-          screen.getByTestId("subscription-card-premium-subscribe"),
-        );
-      });
-
-      await waitFor(() => expect(api.createSubscriptionCalls).toBe(1));
-      expect(payments.collectCalls).toBeGreaterThan(0);
-    });
-
     it("offline + tap cancel → alert + no cancelSubscription (AC 11.2 + 11.4)", async () => {
       const { adapters, api, netInfo } = makeAdapters();
       api.mySubscription = freeSub({
@@ -882,47 +574,6 @@ describe("SubscriptionSelectionContainer", () => {
         alertSpy.mock.calls.some(([title]) => title === "You're offline"),
       ).toBe(true);
       expect(api.cancelSubscriptionCalls).toBe(0);
-    });
-
-    it("3DS pre-flight: offline between createSubscription + 3DS → alert + 3DS not invoked (AC 11.5)", async () => {
-      const { adapters, api, payments, netInfo } = makeAdapters();
-      payments.setNextCollectResponse({ ok: true, paymentMethodId: "pm_x" });
-      api.setNextCreateSubscriptionResponse({
-        requiresAction: true,
-        clientSecret: "pi_3ds_secret",
-      });
-      // Custom: flip offline DURING createSubscription. The mutation
-      // resolves with requiresAction=true; before we hand off to 3DS,
-      // the container re-reads online status.
-      const originalCreate = api.createSubscription.bind(api);
-      jest
-        .spyOn(api, "createSubscription")
-        .mockImplementation(async (input) => {
-          const result = await originalCreate(input);
-          netInfo.setConnected(false);
-          return result;
-        });
-
-      render(
-        <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
-          <SubscriptionSelectionContainer />
-        </Wrapper>,
-      );
-      await waitFor(() =>
-        expect(screen.getByTestId("subscription-card-premium")).toBeTruthy(),
-      );
-      await act(async () => {
-        fireEvent.press(
-          screen.getByTestId("subscription-card-premium-subscribe"),
-        );
-      });
-
-      await waitFor(() =>
-        expect(
-          alertSpy.mock.calls.some(([title]) => title === "You're offline"),
-        ).toBe(true),
-      );
-      expect(payments.confirm3DSCalls).toBe(0);
     });
 
     it("slow-network indicator appears after 8s while query is loading (AC 11.3)", async () => {
@@ -963,47 +614,6 @@ describe("SubscriptionSelectionContainer", () => {
       } finally {
         jest.useRealTimers();
       }
-    });
-
-    it("3DS mid-flight throw → connection-lost alert + state resets (AC 11.5)", async () => {
-      const { adapters, api, payments } = makeAdapters();
-      payments.setNextCollectResponse({ ok: true, paymentMethodId: "pm_y" });
-      api.setNextCreateSubscriptionResponse({
-        requiresAction: true,
-        clientSecret: "pi_3ds_secret",
-      });
-      // confirm3DS THROWS (not Result.err) — simulates the Stripe SDK
-      // throwing when the device loses connectivity during the
-      // challenge sheet.
-      jest
-        .spyOn(payments, "confirm3DS")
-        .mockRejectedValueOnce(new Error("network unreachable"));
-
-      render(
-        <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
-          <SubscriptionSelectionContainer />
-        </Wrapper>,
-      );
-      await waitFor(() =>
-        expect(screen.getByTestId("subscription-card-premium")).toBeTruthy(),
-      );
-      await act(async () => {
-        fireEvent.press(
-          screen.getByTestId("subscription-card-premium-subscribe"),
-        );
-      });
-
-      await waitFor(() =>
-        expect(
-          alertSpy.mock.calls.some(
-            ([title, message]) =>
-              title === "You're offline" &&
-              typeof message === "string" &&
-              message.includes("Connection lost"),
-          ),
-        ).toBe(true),
-      );
-      expect(mockPush).not.toHaveBeenCalled();
     });
   });
 });

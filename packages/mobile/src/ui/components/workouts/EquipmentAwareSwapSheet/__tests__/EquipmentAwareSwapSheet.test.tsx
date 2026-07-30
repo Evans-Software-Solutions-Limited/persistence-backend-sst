@@ -60,7 +60,6 @@ function makeAdapters(api: InMemoryApiAdapter): Adapters {
     storage: new InMemoryStorageAdapter(),
     health: {} as Adapters["health"],
     notifications: {} as Adapters["notifications"],
-    payments: {} as Adapters["payments"],
     netInfo: {} as Adapters["netInfo"],
   };
 }
@@ -314,7 +313,7 @@ describe("EquipmentAwareSwapSheet", () => {
     getByText("A close match");
   });
 
-  it("filters the ranked page by name, matching every token", async () => {
+  it("filters immediately and sends the tokenised name search to the server", async () => {
     const api = new InMemoryApiAdapter();
     api.substitutes = {
       best: [],
@@ -324,16 +323,22 @@ describe("EquipmentAwareSwapSheet", () => {
       ],
       meta: { truncated: false },
     };
+    const spy = jest.spyOn(api, "getExerciseSubstitutes");
     const { findByTestId, queryByTestId } = renderSheet(api);
     await findByTestId("swap-others-ex-1");
 
     fireEvent.changeText(
       await findByTestId("swap-sheet-search"),
-      "press bench",
+      "press-bench",
     );
 
     await waitFor(() => expect(queryByTestId("swap-others-ex-2")).toBeNull());
     expect(queryByTestId("swap-others-ex-1")).not.toBeNull();
+    await waitFor(() =>
+      expect(spy).toHaveBeenLastCalledWith(
+        expect.objectContaining({ search: "press-bench" }),
+      ),
+    );
   });
 
   it("says so when a search matches nothing, distinctly from an empty feed", async () => {

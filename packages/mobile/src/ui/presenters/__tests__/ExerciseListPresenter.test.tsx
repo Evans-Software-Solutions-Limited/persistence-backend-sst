@@ -3,8 +3,6 @@ import type { Exercise } from "@/domain/models/exercise";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 import { ExerciseListPresenter } from "../ExerciseListPresenter";
 
-jest.setTimeout(15_000);
-
 function makeExercise(overrides: Partial<Exercise> = {}): Exercise {
   return {
     id: "ex-1",

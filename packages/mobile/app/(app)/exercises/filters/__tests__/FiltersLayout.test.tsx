@@ -50,8 +50,6 @@ import { StubHealthAdapter } from "@/adapters/health";
 // eslint-disable-next-line import/first
 import { StubNotificationsAdapter } from "@/adapters/notifications";
 // eslint-disable-next-line import/first
-import { MockPaymentsAdapter } from "@/adapters/payments/__tests__/mock.adapter";
-// eslint-disable-next-line import/first
 import { InMemoryNetInfoAdapter } from "@/adapters/netInfo/__tests__/InMemoryNetInfoAdapter";
 // eslint-disable-next-line import/first
 import type { Adapters } from "@/shared/types";
@@ -73,7 +71,6 @@ function makeAdapters(): Adapters {
     storage: new InMemoryStorageAdapter(),
     health: new StubHealthAdapter(),
     notifications: new StubNotificationsAdapter(),
-    payments: new MockPaymentsAdapter(),
     netInfo: new InMemoryNetInfoAdapter(),
   };
 }

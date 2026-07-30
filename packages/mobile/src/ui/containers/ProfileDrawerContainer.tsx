@@ -5,6 +5,7 @@ import { useDrawer } from "@/state/drawer";
 import { useHealthSync } from "@/state/health-sync";
 import { useUserMode } from "@/state/user-mode";
 import { useAuth } from "@/ui/hooks/useAuth";
+import { useDeleteAccountFlow } from "@/ui/hooks/useDeleteAccountFlow";
 import { useGetAchievements } from "@/ui/hooks/useGetAchievements";
 import { useHealthData } from "@/ui/hooks/useHealthData";
 import { useModeSwitch } from "@/ui/hooks/useModeSwitch";
@@ -53,6 +54,8 @@ export function ProfileDrawerContainer() {
     useMySubscription();
   const health = useHealthData();
   const { signOut } = useAuth();
+  // App Store Guideline 5.1.1(v) — same flow the Privacy screen runs.
+  const deleteAccountFlow = useDeleteAccountFlow();
   // Cache-first count for the drawer row's Pill — same source the
   // Achievements screen itself reads (go-live: was hardcoded `undefined`,
   // which suppressed the count Pill entirely).
@@ -106,6 +109,18 @@ export function ProfileDrawerContainer() {
     },
     [closeDrawer],
   );
+
+  // Close the drawer BEFORE opening the confirm alerts. `useDrawer` is plain
+  // in-memory zustand with no reset on auth change, so an open drawer survives
+  // the session teardown: signing back in within the 30-day window routes to
+  // `(app)/restore-account`, where this drawer is permanently mounted, and it
+  // would render 88%-tall over the one screen the user needs to recover their
+  // account. `onSignOut` below closes for the same reason. The native alerts
+  // render above the sheet regardless, so closing first costs nothing.
+  const onDeleteAccount = useCallback(() => {
+    closeDrawer();
+    deleteAccountFlow();
+  }, [closeDrawer, deleteAccountFlow]);
 
   const onSignOut = useCallback(async () => {
     if (isSigningOut) return;
@@ -166,6 +181,7 @@ export function ProfileDrawerContainer() {
       onOpenSubscription={() => pushFrom("/(auth)/subscription-selection")}
       onOpenNotifications={() => pushFrom("/(app)/profile/notifications")}
       onOpenSettings={() => pushFrom("/(app)/profile/privacy-settings")}
+      onDeleteAccount={onDeleteAccount}
       onSignOut={onSignOut}
     />
   );

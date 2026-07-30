@@ -782,6 +782,39 @@ describe("POST /workouts/:id/variations", () => {
     const input = workoutRepositoryMocks.createVariation.mock.calls[0][2];
     expect(input.sourceEquipmentTypeIds).toEqual([EQ_1]);
   });
+
+  it("rejects an explicitly empty equipment snapshot", async () => {
+    const { workoutVariationsCreateHandler } =
+      await import("../workoutVariationsCreateHandler");
+    const res = await workoutVariationsCreateHandler.handle(
+      req(`/workouts/${PARENT_ID}/variations`, {
+        method: "POST",
+        body: { ...validPlan, sourceEquipmentTypeIds: [] },
+      }),
+    );
+
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as any).code).toBe("EMPTY_EQUIPMENT_CONTEXT");
+    expect(workoutRepositoryMocks.createVariation).not.toHaveBeenCalled();
+  });
+
+  it("rejects an empty saved gym when the snapshot is omitted", async () => {
+    savedGymRepositoryMocks.getById.mockResolvedValue({
+      id: GYM_ID,
+      name: "Empty gym",
+      equipmentTypeIds: [],
+    });
+    const body: Record<string, unknown> = { ...validPlan };
+    delete body.sourceEquipmentTypeIds;
+    const { workoutVariationsCreateHandler } =
+      await import("../workoutVariationsCreateHandler");
+    const res = await workoutVariationsCreateHandler.handle(
+      req(`/workouts/${PARENT_ID}/variations`, { method: "POST", body }),
+    );
+
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as any).code).toBe("EMPTY_EQUIPMENT_CONTEXT");
+  });
 });
 
 describe("PUT /workouts/:parentId/variations/:variationId", () => {
@@ -971,6 +1004,28 @@ describe("PUT /workouts/:parentId/variations/:variationId", () => {
     expect(((await res.json()) as any).code).toBe("UNKNOWN_EQUIPMENT_TYPE");
   });
 
+  it("rejects an explicitly empty equipment snapshot", async () => {
+    const res = await put({ ...validPlan, sourceEquipmentTypeIds: [] });
+
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as any).code).toBe("EMPTY_EQUIPMENT_CONTEXT");
+    expect(workoutRepositoryMocks.replaceVariation).not.toHaveBeenCalled();
+  });
+
+  it("rejects an empty saved gym when the snapshot is omitted", async () => {
+    savedGymRepositoryMocks.getById.mockResolvedValue({
+      id: GYM_ID,
+      name: "Empty gym",
+      equipmentTypeIds: [],
+    });
+    const body: Record<string, unknown> = { ...validPlan };
+    delete body.sourceEquipmentTypeIds;
+    const res = await put(body);
+
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as any).code).toBe("EMPTY_EQUIPMENT_CONTEXT");
+  });
+
   it("rejects non-override exercises outside the reviewed kit", async () => {
     const missingEquipment = "88888888-8888-4888-8888-888888888888";
     exerciseRepositoryMocks.findEquipmentRequirements.mockResolvedValue(
@@ -1135,9 +1190,7 @@ describe("POST /workouts/:id/variations — equipment containment (T-1.6)", () =
     expect(((await res.json()) as any).code).toBe("EQUIPMENT_NOT_AVAILABLE");
   });
 
-  it("skips containment entirely when there is no context to check against", async () => {
-    // No gym and no snapshot: nothing to compare with, so the check is skipped
-    // rather than failing every row that needs any equipment.
+  it("rejects a request with no equipment context", async () => {
     exerciseRepositoryMocks.findEquipmentRequirements.mockResolvedValue(
       new Map([[EX_1, [EQ_MISSING]]]),
     );
@@ -1147,7 +1200,8 @@ describe("POST /workouts/:id/variations — equipment containment (T-1.6)", () =
       exercises: validPlan.exercises,
     });
 
-    expect(res.status).toBe(201);
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as any).code).toBe("EMPTY_EQUIPMENT_CONTEXT");
     expect(
       exerciseRepositoryMocks.findEquipmentRequirements,
     ).not.toHaveBeenCalled();

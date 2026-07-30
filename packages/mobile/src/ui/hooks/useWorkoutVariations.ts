@@ -44,7 +44,7 @@ export function useWorkoutVariations(
     readonly WorkoutVariationSummary[]
   >([]);
   const [error, setError] = useState<LoadoutApiError | null>(null);
-  const [hasResolved, setHasResolved] = useState(false);
+  const [resolvedKey, setResolvedKey] = useState<string | null>(null);
 
   // The identity a settled response belongs to. Without this, navigating from
   // workout A to workout B while A's request is in flight paints A's variations
@@ -65,12 +65,12 @@ export function useWorkoutVariations(
     if (latestKeyRef.current !== requestKey) return;
     if (!result.ok) {
       setError(result.error);
-      setHasResolved(true);
+      setResolvedKey(requestKey);
       return;
     }
     setVariations(result.value);
     setError(null);
-    setHasResolved(true);
+    setResolvedKey(requestKey);
   }, [api, workoutId, rev]);
 
   // Re-fires on a workout change AND on a `rev` bump (a save just landed).
@@ -80,9 +80,11 @@ export function useWorkoutVariations(
   }, [key, refresh]);
 
   return {
-    variations,
-    isLoading: key !== null && !hasResolved,
-    error,
+    // Key the visible result as well as the request guard. Otherwise workout
+    // A's settled rows remain painted under workout B until B resolves.
+    variations: key !== null && resolvedKey === key ? variations : [],
+    isLoading: key !== null && resolvedKey !== key,
+    error: key !== null && resolvedKey === key ? error : null,
     refresh,
   };
 }

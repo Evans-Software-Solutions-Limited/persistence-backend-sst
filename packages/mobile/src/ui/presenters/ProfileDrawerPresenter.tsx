@@ -13,6 +13,7 @@ import {
   IconLogout,
   IconMedal,
   IconSettings,
+  IconTrash,
   IconUser,
   iconDefaults,
 } from "@/ui/components/icons";
@@ -123,6 +124,7 @@ export type ProfileDrawerPresenterProps = {
   onOpenSubscription: () => void;
   onOpenNotifications: () => void;
   onOpenSettings: () => void;
+  onDeleteAccount: () => void;
   onSignOut: () => void | Promise<void>;
 };
 
@@ -140,6 +142,34 @@ function profileDetailsSub(p: ProfileDrawerProfile): string {
   ]
     .filter(Boolean)
     .join(" · ");
+}
+
+/**
+ * Account-deletion entry point — App Store Guideline 5.1.1(v). Factored out
+ * because it renders in BOTH drawer states: the normal body AND the
+ * profile-didn't-load body. The guideline requires a route to deletion, and a
+ * failed profile fetch must not be able to take that route away — before this,
+ * `!profile` early-returned past every menu row, so a stuck fetch left the user
+ * (and App Review) with no way to delete their account at all.
+ */
+function DeleteAccountSection({ onPress }: { onPress: () => void }) {
+  return (
+    <DrawerSection title="Account deletion">
+      <DrawerRow
+        icon={
+          <IconTrash
+            {...iconDefaults({ size: 16 })}
+            color={toneHex("error").base}
+          />
+        }
+        title="Delete account"
+        sub="Permanently delete your account and data"
+        onPress={onPress}
+        testID="row-delete-account"
+        accessibilityLabel="Delete account"
+      />
+    </DrawerSection>
+  );
 }
 
 export function ProfileDrawerPresenter({
@@ -162,6 +192,7 @@ export function ProfileDrawerPresenter({
   onOpenSubscription,
   onOpenNotifications,
   onOpenSettings,
+  onDeleteAccount,
   onSignOut,
 }: ProfileDrawerPresenterProps) {
   const [confirmSignOut, setConfirmSignOut] = useState(false);
@@ -226,6 +257,7 @@ export function ProfileDrawerPresenter({
             ) : null}
           </View>
         ) : null}
+        <DeleteAccountSection onPress={onDeleteAccount} />
       </BottomSheet>
     );
   }
@@ -395,6 +427,15 @@ export function ProfileDrawerPresenter({
           testID="row-settings"
         />
       </DrawerSection>
+
+      {/* Account deletion — App Store Guideline 5.1.1(v). The action also lives
+          on the Privacy screen (Preferences → Privacy above), which is where it
+          shipped originally; App Review couldn't find it there, so it gets a
+          named row on the drawer itself. Both entry points call the same
+          `useDeleteAccountFlow`, so the confirm copy can't drift between them.
+          This row is a deliberate departure from the legacy drawer (which has
+          no such row) — required by the guideline, not a redesign. */}
+      <DeleteAccountSection onPress={onDeleteAccount} />
 
       {/* Sign out — extra.jsx:98–104 */}
       <Pressable

@@ -223,12 +223,20 @@ export const workoutVariationsCreateHandler = new Elysia()
       // It is not decorative: Phase 2 renders it as the variation's kit summary
       // and Phase 4 reads it back as the equipment context, so a bogus id becomes
       // a chip with no name and a duplicate becomes the same chip twice.
-      // An explicit snapshot is authoritative, including an explicit empty
-      // array (a bodyweight-only gym). When the client omits it for a saved-gym
+      // An explicit snapshot is authoritative. Empty is invalid (AC-2.5);
+      // bodyweight-only is represented by the Bodyweight equipment id. When the client omits it for a saved-gym
       // path, freeze the resolved owned gym kit rather than persisting `[]`;
       // otherwise provenance is lost and a later gym re-kit cannot be detected.
       const hasExplicitSnapshot = sourceEquipmentTypeIds !== undefined;
       const kit = sourceEquipmentTypeIds ?? gymKit ?? [];
+      if (kit.length === 0) {
+        ctx.set.status = 400;
+        return {
+          code: "EMPTY_EQUIPMENT_CONTEXT",
+          message:
+            "At least one equipment type is required; use the bodyweight equipment type for bodyweight-only setups",
+        };
+      }
       const unknownKit =
         await ctx.SavedGymRepository.findUnknownEquipmentTypeIds(kit);
       if (unknownKit.length > 0) {
@@ -262,8 +270,8 @@ export const workoutVariationsCreateHandler = new Elysia()
       //
       // Context: the explicit kit snapshot when one is supplied, else the gym's.
       // The snapshot is the more specific claim — it is what AC-5.2 freezes and
-      // what Phase 2 renders — and when both are absent there is nothing to check
-      // against, so containment is skipped rather than failing every row.
+      // what Phase 2 renders. The empty-context guard above means a successful
+      // request always has one authoritative kit to check against.
       const containmentContext = hasExplicitSnapshot ? kit : gymKit;
       if (containmentContext !== null && containmentContext.length > 0) {
         const available = new Set(containmentContext);

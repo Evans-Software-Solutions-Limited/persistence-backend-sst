@@ -10,8 +10,6 @@ import { WorkoutRatingContainer } from "@/ui/containers/WorkoutRatingContainer";
 import { useActiveWorkout } from "@/state/active-workout";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 
-jest.setTimeout(15_000);
-
 function makeAdapters(storage: InMemoryStorageAdapter): Adapters {
   const session: AuthSession = {
     accessToken: "t",
@@ -44,7 +42,6 @@ function makeAdapters(storage: InMemoryStorageAdapter): Adapters {
     storage,
     health: {} as Adapters["health"],
     notifications: {} as Adapters["notifications"],
-    payments: {} as Adapters["payments"],
     netInfo: {} as Adapters["netInfo"],
   };
 }
