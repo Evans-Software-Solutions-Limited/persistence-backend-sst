@@ -817,6 +817,7 @@ export class ExerciseRepository {
       equipmentTypeIds: string[];
       excludeExerciseIds?: string[];
       cap?: number;
+      search?: string;
     },
   ): Promise<{ candidates: AdaptationCandidate[]; truncated: boolean }> {
     if (params.muscleIds.length === 0) {
@@ -833,6 +834,21 @@ export class ExerciseRepository {
       },
       userId,
     );
+    // Keep this identical to the mobile picker's `tokenizeSearch`: punctuation
+    // is a separator, so `bench-press` and `bench/press` both find "Bench
+    // Press". Otherwise the immediate client result disappears when the
+    // debounced server response arrives.
+    const searchTokens =
+      params.search
+        ?.toLowerCase()
+        .replace(/[^\p{L}\p{N}\s]+/gu, " ")
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean) ?? [];
+    for (const token of searchTokens) {
+      const escaped = token.replace(/[%_\\]/g, "\\$&");
+      conditions.push(ilike(exercises.name, `%${escaped}%`));
+    }
 
     const exclude = Array.from(new Set(params.excludeExerciseIds ?? []));
     if (exclude.length > 0) {
@@ -866,6 +882,7 @@ export class ExerciseRepository {
       muscleIds: string[];
       excludeExerciseIds?: string[];
       cap?: number;
+      search?: string;
     },
   ): Promise<{ candidates: AdaptationCandidate[]; truncated: boolean }> {
     return this.listAdaptationCandidates(userId, {
@@ -875,6 +892,7 @@ export class ExerciseRepository {
       equipmentTypeIds: [],
       excludeExerciseIds: params.excludeExerciseIds,
       cap: params.cap,
+      search: params.search,
     });
   }
 

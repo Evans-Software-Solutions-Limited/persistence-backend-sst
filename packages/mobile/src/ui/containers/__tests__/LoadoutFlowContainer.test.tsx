@@ -161,7 +161,6 @@ function makeAdapters(
     storage,
     health: {} as Adapters["health"],
     notifications: {} as Adapters["notifications"],
-    payments: {} as Adapters["payments"],
     // Real double: the collect step HIDES the scan when offline (AC-2.1/2.2 are
     // the floor), so `useOnlineStatus` is load-bearing on this screen.
     netInfo: new InMemoryNetInfoAdapter(),
@@ -1040,19 +1039,17 @@ describe("LoadoutFlowContainer", () => {
       fireEvent.press(await findByTestId("loadout-review-save"));
       await findByTestId("loadout-review-save-error");
 
-      // Back out, build a DIFFERENT kit under a different name, and save again.
+      // Back out and save the SAME kit under a different name.
       fireEvent.press(await findByTestId("loadout-review-back"));
       fireEvent.press(await findByTestId("loadout-collect-manual"));
-      fireEvent.press(await findByTestId("loadout-equip-eq-cable"));
       fireEvent.changeText(await findByTestId("loadout-manual-name"), "Garage");
       fireEvent.press(await findByTestId("loadout-manual-adapt"));
       await findByTestId("loadout-review");
       fireEvent.press(await findByTestId("loadout-review-save"));
       await findByTestId("loadout-saved");
 
-      // ⚠ Scoped to the workout rather than the context, the remembered id would
-      // short-circuit here: no "Garage" gym would ever exist, and Saved setups
-      // would label a kit2 variation "Home" forever.
+      // Equipment-only identity would short-circuit here: no "Garage" gym would
+      // exist and Saved setups would label the variation "Home" forever.
       expect(api.savedGyms.map((gym) => gym.name).sort()).toEqual([
         "Garage",
         "Home",
@@ -1087,6 +1084,30 @@ describe("LoadoutFlowContainer", () => {
       ]);
 
       fireEvent.press(await findByTestId("loadout-row-2-drop"));
+      fireEvent.press(await findByTestId("loadout-review-save"));
+      await findByTestId("loadout-saved");
+
+      expect(
+        api.createVariationCalls[0].input.exercises.map((e) => e.sortOrder),
+      ).toEqual([1]);
+    });
+
+    it("drops a resolved intensity mismatch left undecided", async () => {
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      const { findByTestId } = await reachReviewViaManual(api, storage, [
+        row({ sortOrder: 1 }),
+        row({
+          sortOrder: 2,
+          status: "swapped",
+          exerciseId: "ex-2",
+          reason: reason({
+            code: "equipment_unavailable",
+            flags: ["intensity_mismatch"],
+          }),
+        }),
+      ]);
+
       fireEvent.press(await findByTestId("loadout-review-save"));
       await findByTestId("loadout-saved");
 

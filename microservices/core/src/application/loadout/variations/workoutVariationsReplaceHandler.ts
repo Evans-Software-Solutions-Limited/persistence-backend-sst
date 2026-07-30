@@ -122,6 +122,14 @@ export const workoutVariationsReplaceHandler = new Elysia()
 
       const hasExplicitSnapshot = sourceEquipmentTypeIds !== undefined;
       const kit = sourceEquipmentTypeIds ?? gymKit ?? [];
+      if (kit.length === 0) {
+        ctx.set.status = 400;
+        return {
+          code: "EMPTY_EQUIPMENT_CONTEXT",
+          message:
+            "At least one equipment type is required; use the bodyweight equipment type for bodyweight-only setups",
+        };
+      }
       const unknownKit =
         await ctx.SavedGymRepository.findUnknownEquipmentTypeIds(kit);
       if (unknownKit.length > 0) {

@@ -270,6 +270,8 @@ export type SubstitutesQuery = {
   /** Omit entirely for the no-kit case. Never send `[]` expecting "no filter". */
   readonly equipment?: readonly string[];
   readonly limit?: number;
+  /** Name tokens are AND-matched server-side before the candidate cap. */
+  readonly search?: string;
 };
 
 // ─── Equipment scan (§ 8, AC-2.3) ────────────────────────────────────────────

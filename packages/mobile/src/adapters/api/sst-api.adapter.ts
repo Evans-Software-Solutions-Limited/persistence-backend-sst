@@ -2124,6 +2124,7 @@ export class SSTApiAdapter implements ApiPort {
       params.equipment = [...query.equipment];
     }
     if (query.limit != null) params.limit = query.limit;
+    if (query.search?.trim()) params.search = query.search.trim();
 
     return this.requestLoadout<SubstitutesResult>("/exercises/substitutes", {
       params,
