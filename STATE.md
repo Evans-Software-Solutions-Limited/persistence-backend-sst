@@ -12,7 +12,7 @@ say so and fix this file.
 ## Current state (2026-07-30)
 
 - **Sentry production hotfix implemented on
-  `codex/sentry-production-error-review-2026-07-30` (uncommitted).** The shipped
+  `codex/sentry-production-error-review-2026-07-30` (PR #337).** The shipped
   mobile app asks only for a 1–10 difficulty rating but serializes it into both
   `sessionRating` and `difficultyRanking`; production's legacy
   `session_rating` column has a 1–5 check, causing SQLSTATE 23514 for answers
