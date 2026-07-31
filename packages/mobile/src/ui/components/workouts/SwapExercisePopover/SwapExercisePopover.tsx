@@ -29,7 +29,10 @@
  */
 
 import { color } from "@/ui/theme/tokens";
+import { EXERCISE_TABLES } from "@/adapters/storage";
 import { useAdapters } from "@/ui/hooks/useAdapters";
+import { useCacheRevision } from "@/ui/hooks/useCacheRevision";
+import { useExerciseLibrary } from "@/ui/hooks/useExerciseLibrary";
 import {
   getExercisesQuery,
   refreshExerciseCache,
@@ -116,10 +119,23 @@ function SwapExercisePopoverContainer({
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [cacheVersion, setCacheVersion] = useState(0);
 
+  // `storageRevision` / `libraryRevision` are what make a newly-created custom
+  // exercise show up here — the same wiring AddExercisePopover already carries.
+  // This popover stays mounted between opens (the parent flips `pickerMode`, it
+  // does not unmount), so memoising on `[storage, cacheVersion]` alone captured
+  // the library once per mount. `cacheVersion` only bumps after a *stale* 24h
+  // refresh, so creating an exercise via this popover's own Create CTA wrote it
+  // straight into `cached_exercises` and it still never appeared on return —
+  // the most direct path to creating an exercise was the one place it stayed
+  // invisible.
+  const storageRevision = useCacheRevision(EXERCISE_TABLES);
+  const libraryRevision = useExerciseLibrary((s) => s.revision);
   const cacheRead = useMemo(() => {
     void cacheVersion;
+    void storageRevision;
+    void libraryRevision;
     return getExercisesQuery(storage);
-  }, [storage, cacheVersion]);
+  }, [storage, cacheVersion, storageRevision, libraryRevision]);
 
   const enrichedExercises = useMemo(
     () => cacheRead.exercises.map((ex) => api.enrichExerciseLabels(ex)),
