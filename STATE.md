@@ -473,6 +473,27 @@ Check it on a real build, ideally on iPad (the review device was an iPad Air
   the same error** — the Sentry MCP connector was disconnected this session, so
   the issue (137728287) could not be read. If it is 23514, resubmitting the app
   alone will NOT fix it; it needs a release + deploy.
+- **⚠ OPEN, deliberately deferred off PR #340: two more `cached_exercises`
+  readers have no exercise-cache invalidation.** `WorkoutsListContainer` (memo
+  deps `[saved, templates, storage]`) and `WorkoutDetailContainer` (`[workout,
+  storage]`) both call `storage.getCachedExercises()` but are driven off
+  `useCacheRevision(WORKOUT_TABLES)`, which does not move on an exercise write.
+  Cold start renders Train before `refreshExerciseCache` lands → split badges /
+  muscle pills / equipment eyebrow compute against an empty library and never
+  recompute. Self-heals on the next focus `rereadCache`, so it is a first-paint
+  degradation, not a stuck state — that plus PR #340 being an App Store release
+  blocker is why it was left out. Fix is `useCacheRevision(EXERCISE_TABLES)`
+  folded into each memo, same one-liner as the other five surfaces, **with a
+  revert-checked regression test each** (see below).
+- **Lesson from #340, worth keeping: do NOT blanket-propagate the exercise
+  change bus.** It is correct for LIST-shaped reads (`getCachedExercises()`),
+  which re-read and find a row under its new key. It is WRONG for
+  `useExercise`, a single-id read: the sync drain rekeys `local-*` → server id
+  via DELETE+INSERT, so the bus makes `initial` recompute to null, blanks a
+  loaded row, and re-arms the one-shot fetch against the dead id → 404 (and on
+  the editor, discards in-progress form input). This was actually shipped in a
+  #340 commit and reverted after Inspector Brad demonstrated it. `useExercise`
+  now carries a regression test that fails if someone re-adds the bus.
 - **Parked, not started: "Create & Add" CTA in the create-exercise flow.** Brad
   asked, gated on difficulty. It needs pending-intent plumbing (the picker must
   close for the full-screen creator, so `pickerMode` can't just persist), a

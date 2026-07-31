@@ -2,9 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { Exercise } from "@/domain/models/exercise";
 import type { ApiError } from "@/shared/errors";
-import { EXERCISE_TABLES } from "@/adapters/storage";
 import { useAdapters } from "./useAdapters";
-import { useCacheRevision } from "./useCacheRevision";
 import { useExerciseLibrary } from "./useExerciseLibrary";
 
 /**
@@ -51,18 +49,32 @@ export function useExercise(id: string | null): ExerciseDetailState {
   // `revision` into the read makes the saved edit show the moment the editor
   // pops back. (STORY-008 — edit reflects without navigate-out-and-in.)
   const libraryRevision = useExerciseLibrary((s) => s.revision);
-  // Covers the writers `markChanged()` misses — notably the sync drain's
-  // `swapLocalExerciseId`, which rewrites a `local-*` row under its server id
-  // on reconnect without signalling. The bus fires on the write itself.
-  const storageRevision = useCacheRevision(EXERCISE_TABLES);
 
+  // DELIBERATELY NOT subscribed to the `cached_exercises` change bus, unlike
+  // every list-shaped reader of the same store (the three pickers and
+  // ExerciseListContainer). A list re-reads and finds the row under its new
+  // key; this read is keyed by a single id, so when that key DISAPPEARS it has
+  // nowhere to go.
+  //
+  // That is a live scenario, not a hypothetical: the sync drain rekeys a
+  // `local-*` row to its server id via DELETE + INSERT
+  // (`swapLocalExerciseId`, sync.command.ts). Wiring the bus in here was tried
+  // and reverted — it turned "stale but readable" into a blanked screen plus a
+  // 404, because `initial` recomputes to null, the effect below clobbers the
+  // loaded row, and `hasInitial` flipping false re-arms the one-shot fetch
+  // against the dead id. On the editor it also drops in-progress form input.
+  //
+  // The user-facing path this was meant to fix is closed at the LIST instead:
+  // ExerciseListContainer now takes the bus, so it renders the server id and
+  // there is no dead id left to tap. Making the swap followable here needs the
+  // drain to publish the old→new mapping (or the route to swap its param) —
+  // not a bus subscription. See the id-swap regression test.
   const initial = useMemo(() => {
     void cacheVersion;
     void libraryRevision;
-    void storageRevision;
     if (!id) return null;
     return storage.getCachedExercise(id);
-  }, [storage, id, cacheVersion, libraryRevision, storageRevision]);
+  }, [storage, id, cacheVersion, libraryRevision]);
 
   const [exercise, setExercise] = useState<Exercise | null>(initial);
   const [isLoading, setIsLoading] = useState(false);

@@ -202,4 +202,50 @@ describe("useExercise", () => {
     });
     expect(getSpy).toHaveBeenCalledTimes(1);
   });
+
+  /**
+   * Guards a deliberate omission: this hook must NOT subscribe to the
+   * `cached_exercises` change bus, even though every list-shaped reader of the
+   * same store does.
+   *
+   * The sync drain rekeys a `local-*` row to its server id with DELETE +
+   * INSERT (`swapLocalExerciseId`). A list re-reads and finds the row under
+   * its new key; a single-id read has nowhere to go. Adding
+   * `useCacheRevision(EXERCISE_TABLES)` here was tried and reverted because it
+   * blanked the loaded row and then fired a 404 against the dead id — worse
+   * than the stale-but-readable behaviour it replaced, and on the editor it
+   * discards in-progress form input.
+   *
+   * If someone "completes the pack" by wiring the bus in here, this fails.
+   */
+  it("keeps showing a loaded exercise when the sync drain rekeys its local id", async () => {
+    const api = new InMemoryApiAdapter();
+    const getSpy = jest.spyOn(api, "getExercise");
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheExercises([
+      buildExercise({
+        id: "local-abc",
+        name: "My Custom Curl",
+        isCustom: true,
+      }),
+    ]);
+
+    const { result } = renderHook(() => useExercise("local-abc"), {
+      wrapper: wrap(makeAdapters(api, storage)),
+    });
+    expect(result.current.exercise?.name).toBe("My Custom Curl");
+
+    // Reconnect: the drain swaps the local id for the server one and the
+    // storage bus announces the write.
+    await act(async () => {
+      storage.swapLocalExerciseId("local-abc", "server-xyz");
+      storage.emitChange("cached_exercises");
+    });
+
+    // The row moved, it did not cease to exist — the screen must not blank,
+    // and must not chase the dead id over the network.
+    expect(result.current.exercise?.name).toBe("My Custom Curl");
+    expect(result.current.error).toBeNull();
+    expect(getSpy).not.toHaveBeenCalled();
+  });
 });
