@@ -9,7 +9,15 @@ import { View, Text as TamaguiText } from "@tamagui/core";
 import { LinearGradient } from "expo-linear-gradient";
 import Animated, { FadeIn } from "react-native-reanimated";
 import type { OAuthProvider } from "@/domain/ports/auth.port";
-import { Text, Input, Button, Column, Row, OAuthButton } from "@/ui/components";
+import {
+  Text,
+  Input,
+  Button,
+  Column,
+  Row,
+  OAuthButton,
+  AppleSignInButton,
+} from "@/ui/components";
 import { useBrandTitleStyle } from "@/ui/hooks/useBrandTitleStyle";
 import { useStaggeredEntry } from "@/ui/hooks/useStaggeredEntry";
 
@@ -125,13 +133,11 @@ export function SignInPresenter({
                   testID="google-oauth"
                 />
                 {Platform.OS === "ios" && (
-                  <OAuthButton
+                  <AppleSignInButton
                     marginTop="md"
-                    label="Continue with Apple"
                     onPress={() => onOAuth("apple")}
                     isLoading={oauthLoading === "apple"}
                     isDisabled={isAnyLoading}
-                    icon={"\uF8FF"}
                     testID="apple-oauth"
                   />
                 )}
