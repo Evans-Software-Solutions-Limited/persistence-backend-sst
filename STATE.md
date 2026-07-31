@@ -11,6 +11,13 @@ say so and fix this file.
 
 ## Current state (2026-07-30)
 
+- **⚠ The App Review crash is NOT the 23514 session-rating bug. Sentry
+  `PERSISTENCE-MOBILE-3` (group `137728287`) is a
+  `WatchdogTermination`** — investigated 2026-07-31, see § App Review crash
+  (PERSISTENCE-MOBILE-3) below. The 23514 bug is real and still unpatched in
+  prod, but it hit a UK user ~8.5h BEFORE the reviewer and never touched the
+  reviewer's device. Merging #338 fixes 23514; it will NOT clear the review
+  crash.
 - **Sentry production hotfix implemented on
   `codex/sentry-production-error-review-2026-07-30` (PR #337).** The shipped
   mobile app asks only for a 1–10 difficulty rating but serializes it into both
@@ -413,6 +420,82 @@ BRIEF-7 device-QA batch (all ~20 bugs, signed off) · the one-time
 domain · App Store 3.1.2 Terms-of-Use link in ASC metadata · legal sign-off on
 consent copy, privacy section and governing law · the OFF re-seed backfilling
 `serving_quantity` across the ~143k seeded rows.
+
+### App Review crash (PERSISTENCE-MOBILE-3) — investigated 2026-07-31
+
+**Both URLs Brad supplied (plain + `alert_email` querystring) resolve to the
+same issue.** Group `137728287` = `PERSISTENCE-MOBILE-3`, project
+`4511741227761744` = `persistence-mobile`. Verified by fetching each URL.
+
+**It is a `WatchdogTermination`, not SQLSTATE 23514.** Platform `cocoa`,
+`mechanism: watchdog_termination`, `level: fatal`, no stacktrace.
+
+Reviewer attribution is unambiguous:
+
+- `device: iPad15,3` (iPad Air 11-inch M3), `user.geo: US, Cupertino`
+- `release: com.bradleyevans96.persistence@1.1.1+39`, `dist: 39` — note the
+  app version is **1.1.1**, not the "1.0" in the alert brief; the build (39) matches
+- 4 events, one user (`6535DAAF-…`), 2026-07-30 22:25:40 / 22:26:27 /
+  22:29:48 / 22:30:10 UTC — four kills in 4m30s, gaps of 47s / 3m21s / 22s
+- `in_foreground: true`, `os: iOS 26.6`
+
+**The reviewer generated NO other Sentry events.** A `user.id` search across
+the whole mobile project (7d) returns exactly those 4 watchdogs — no JS
+errors, no sync failures, no 23514. The reviewer never reached session-record.
+
+**RAM is not the cause.** "possibly because it overused RAM" is Sentry's
+boilerplate message string, not a measurement. The device reports
+`memory_size: 8.0 GB`, `usable_memory: 6.6 GB`, `device.class: high`.
+
+**The real signal is launch time.** `ota_updates.launch_duration: 16.536`
+(seconds) on the reviewer's iPad, and `21.957` on the UK user's iPhone 16 Pro
+in `PERSISTENCE-MOBILE-2`. iOS's launch watchdog (`0x8BADF00D`) fires around
+~20s. Both devices are running a downloaded OTA update
+(`is_using_embedded_assets: false`, `update_id 5b5a8b84-…`),
+`checkAutomatically: "always"`.
+
+**⚠ Caveat that must be resolved before acting: Sentry's watchdog detection is
+INFERRED, not observed.** The iOS SDK flags one when the previous run ended
+with app-in-foreground, no crash report, no clean exit, same app+OS version,
+no debugger. **A user force-quitting from the app switcher is a known false
+positive** and is indistinguishable to the SDK. A reviewer force-quitting four
+times in five minutes produces this exact signature.
+
+- **Discriminator:** Xcode Organizer / App Store Connect crash logs. A genuine
+  watchdog kill files a `0x8BADF00D` termination report; a force-quit files
+  nothing. **Check this before doing launch-perf work.**
+
+**Launch-path suspects if the watchdog reading holds** (unprofiled — do not
+treat as diagnosed):
+
+- `AppProviders` (`src/providers.tsx`) withholds the entire tree behind
+  `storageStatus.settled: false` until `storage.initialize()` resolves.
+- `SQLiteStorageAdapter.initialize()`
+  (`src/adapters/storage/sqlite.adapter.ts:385`) uses **synchronous**
+  expo-sqlite calls (`getFirstSync` / `execSync` / `withTransactionSync`; 112
+  sync calls in the adapter overall). On New Architecture (`fabric: true`,
+  `turbo_module: true`) these block the JS thread. The M10.6 `sync_queue`
+  table rebuild (CREATE + INSERT SELECT + DROP + RENAME) is the largest
+  blocking chunk on the critical path.
+- Six bootstrap hooks mount at once under `AuthGate` in `app/_layout.tsx`.
+- No `fallbackToCacheTimeout` or `checkAutomatically` is set anywhere in the
+  repo (grepped `app.json`, `app.config.ts`, `src/`, `app/`) — expo-updates
+  runs on pure defaults.
+
+**No other production issue spiked in the review window.** Both projects hold
+only 3 unresolved issues each over 30d, and nothing at all fired between
+13:57 and 22:25 UTC. `PERSISTENCE-BACKEND-1` (exercises query) and
+`PERSISTENCE-BACKEND-2` are ~2 days older than the window, and -2 is a
+**staging** Lambda (`persistence-a-staging-…`), not prod.
+
+**23514 confirmed real, and confirmed unrelated to the review.**
+`PERSISTENCE-BACKEND-3` fired 2026-07-30 13:55:18 → 13:56:46 UTC (3 events,
+prod Lambda `persistenc-production-…`, eu-west-2), paired with
+`PERSISTENCE-MOBILE-2` (`Sync mutation exhausted retries: session/create`) at
+13:56:46.777 from a GB/Nottingham user on an iPhone 17,1. The failing row
+carries `session_rating = 6, difficulty_ranking = 6` — the double-serialisation
+exactly as diagnosed. `git tag --contains c8a0b6d` is **empty**; latest tag is
+`persistence-v1.10.0`. So #337 is still unreleased and prod is still exposed.
 
 ## Last session
 
