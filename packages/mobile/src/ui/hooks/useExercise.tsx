@@ -65,10 +65,14 @@ export function useExercise(id: string | null): ExerciseDetailState {
   // against the dead id. On the editor it also drops in-progress form input.
   //
   // The user-facing path this was meant to fix is closed at the LIST instead:
-  // ExerciseListContainer now takes the bus, so it renders the server id and
-  // there is no dead id left to tap. Making the swap followable here needs the
-  // drain to publish the old→new mapping (or the route to swap its param) —
-  // not a bus subscription. See the id-swap regression test.
+  // ExerciseListContainer now takes the bus, so it renders the server id and a
+  // fresh navigation can no longer land on a dead one. NOT closed: a detail
+  // screen already open when the drain fires keeps the stale id in its route
+  // param, so its Edit/Delete still address a dead id and 404 (pre-existing;
+  // ExerciseDetailContainer.onEdit pushes `exerciseId` straight through).
+  // Closing that needs the drain to publish the old→new mapping, or the route
+  // to swap its param — still not a bus subscription. See the id-swap
+  // regression test below.
   const initial = useMemo(() => {
     void cacheVersion;
     void libraryRevision;

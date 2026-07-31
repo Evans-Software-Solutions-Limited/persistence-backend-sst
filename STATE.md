@@ -494,6 +494,12 @@ Check it on a real build, ideally on iPad (the review device was an iPad Air
   the editor, discards in-progress form input). This was actually shipped in a
   #340 commit and reverted after Inspector Brad demonstrated it. `useExercise`
   now carries a regression test that fails if someone re-adds the bus.
+  - **Still open (pre-existing, also on `main`, NOT caused by #340): a detail
+    screen already open when the drain fires keeps the dead `local-*` id in its
+    route param**, so `ExerciseDetailContainer.onEdit` → `ExerciseEditorContainer`
+    mounts on it, misses cache and 404s. Delete has the same shape. The list fix
+    only closes *fresh* navigation. Real fix is the drain publishing the old→new
+    mapping, or the route swapping its param — not a bus subscription.
 - **Parked, not started: "Create & Add" CTA in the create-exercise flow.** Brad
   asked, gated on difficulty. It needs pending-intent plumbing (the picker must
   close for the full-screen creator, so `pickerMode` can't just persist), a
