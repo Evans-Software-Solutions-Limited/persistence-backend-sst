@@ -58,6 +58,13 @@ type AppleSignInButtonProps = {
  * supports, so starting at `false` would flash an empty gap on each cold
  * start. Start optimistic instead and only collapse the row if the check
  * genuinely comes back false (or throws).
+ *
+ * The `active` flag is deliberately NOT test-pinned. React 19 dropped the
+ * "state update on an unmounted component" warning, so a late settle is a
+ * silent no-op and removing the flag changes nothing observable — any test
+ * claiming to cover it would pass with the guard deleted, i.e. be a fake test.
+ * It stays because it becomes load-bearing the moment this effect gains
+ * dependencies and can re-run, where a stale resolve could clobber a newer one.
  */
 function useAppleAuthAvailable(): boolean {
   const [isAvailable, setIsAvailable] = useState(true);

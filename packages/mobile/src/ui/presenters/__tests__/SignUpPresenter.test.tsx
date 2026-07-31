@@ -77,7 +77,12 @@ describe("SignUpPresenter", () => {
     const { getByTestId } = renderWithTheme(
       <SignUpPresenter {...defaultProps} onOAuth={onOAuth} />,
     );
-    fireEvent.press(getByTestId("apple-oauth"));
+    // NOT fireEvent.press: RNTL resolves a synthetic press by walking up to the
+    // outermost `onPress`, which here is this test's own prop on
+    // <AppleSignInButton> — so the assertion passes even if the component never
+    // wires anything to Apple's button. Invoking the prop on the button host is
+    // what ASAuthorizationAppleIDButton actually does on device.
+    getByTestId("apple-oauth").props.onPress();
     expect(onOAuth).toHaveBeenCalledWith("apple");
   });
 

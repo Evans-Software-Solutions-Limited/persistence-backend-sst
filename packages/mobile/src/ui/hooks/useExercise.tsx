@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { Exercise } from "@/domain/models/exercise";
 import type { ApiError } from "@/shared/errors";
+import { EXERCISE_TABLES } from "@/adapters/storage";
 import { useAdapters } from "./useAdapters";
+import { useCacheRevision } from "./useCacheRevision";
 import { useExerciseLibrary } from "./useExerciseLibrary";
 
 /**
@@ -49,13 +51,18 @@ export function useExercise(id: string | null): ExerciseDetailState {
   // `revision` into the read makes the saved edit show the moment the editor
   // pops back. (STORY-008 — edit reflects without navigate-out-and-in.)
   const libraryRevision = useExerciseLibrary((s) => s.revision);
+  // Covers the writers `markChanged()` misses — notably the sync drain's
+  // `swapLocalExerciseId`, which rewrites a `local-*` row under its server id
+  // on reconnect without signalling. The bus fires on the write itself.
+  const storageRevision = useCacheRevision(EXERCISE_TABLES);
 
   const initial = useMemo(() => {
     void cacheVersion;
     void libraryRevision;
+    void storageRevision;
     if (!id) return null;
     return storage.getCachedExercise(id);
-  }, [storage, id, cacheVersion, libraryRevision]);
+  }, [storage, id, cacheVersion, libraryRevision, storageRevision]);
 
   const [exercise, setExercise] = useState<Exercise | null>(initial);
   const [isLoading, setIsLoading] = useState(false);
