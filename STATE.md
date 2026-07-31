@@ -12,9 +12,10 @@ say so and fix this file.
 ## Current state (2026-07-31)
 
 - **⚠ APP STORE: build 1.0 (39) REJECTED under Guideline 4 (Design)** — the Sign
-  in with Apple button used app-drawn logo artwork. Fixed and pushed on
-  `claude/signin-apple-design-fix-78rvv9` (see § Last session). No PR opened yet;
-  needs a new build + resubmission.
+  in with Apple button used app-drawn logo artwork. Fixed on **PR
+  [#340](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/340)**
+  (`claude/signin-apple-design-fix-78rvv9`, see § Last session). Needs a new
+  build + resubmission once merged.
 - **⚠ PR #337 is MERGED but UNRELEASED — production still has the SQLSTATE 23514
   session-rating bug.** `c8a0b6d` sits above the latest tag
   `persistence-v1.10.0` (`1ad9caa`). Shipping it needs a release PR + prod
@@ -426,11 +427,15 @@ consent copy, privacy section and governing law · the OFF re-seed backfilling
 
 ## Last session
 
-**2026-07-31 — APP STORE REJECTION (Guideline 4) + swap-picker refresh bug.
-Branch `claude/signin-apple-design-fix-78rvv9` (2 commits, head `460bea7`),
-PUSHED, no PR opened yet. Full mobile suite green: 459 suites / 5304 tests,
-typecheck clean, prettier clean, lint clean (2 pre-existing `react/display-name`
-errors in `__tests__/setup.ts` are baseline, not from this branch).**
+**2026-07-31 — APP STORE REJECTION (Guideline 4) + swap-picker refresh bug. PR
+[#340](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/340)
+OPEN off `main`, branch `claude/signin-apple-design-fix-78rvv9`. Full mobile
+suite green: 459 suites / 5304 tests, typecheck clean, prettier clean, lint
+clean (2 pre-existing `react/display-name` errors in `__tests__/setup.ts` are
+baseline, not from this branch). NOT device-verified — the Apple button is a
+native view that cannot render under Jest, so no test proves how it looks.
+Check it on a real build, ideally on iPad (the review device was an iPad Air
+11-inch M3).**
 
 - **Rejection cause: we drew the Sign in with Apple button ourselves.** Both
   auth screens rendered a generic `<OAuthButton>` with `icon={""}` — the

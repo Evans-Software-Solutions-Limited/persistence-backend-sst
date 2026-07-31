@@ -121,7 +121,7 @@ describe("<AppleSignInButton>", () => {
       <AppleSignInButton {...defaultProps} />,
     );
     expect(queryByText(/Continue with Apple/i)).toBeNull();
-    expect(JSON.stringify(toJSON())).not.toContain("");
+    expect(JSON.stringify(toJSON())).not.toContain("\uF8FF");
   });
 
   it("fires onPress when Apple's button invokes it", () => {
