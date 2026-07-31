@@ -10,8 +10,10 @@ import {
   filterExercises,
   sortExercisesByName,
 } from "@/domain/services/exercise.service";
+import { EXERCISE_TABLES } from "@/adapters/storage";
 import { ExerciseListPresenter } from "@/ui/presenters/ExerciseListPresenter";
 import { useAdapters } from "@/ui/hooks/useAdapters";
+import { useCacheRevision } from "@/ui/hooks/useCacheRevision";
 import { useDebouncedValue } from "@/ui/hooks/useDebouncedValue";
 import { useExerciseFilters } from "@/ui/hooks/useExerciseFilters";
 import { useExerciseLibrary } from "@/ui/hooks/useExerciseLibrary";
@@ -47,6 +49,14 @@ export function ExerciseListContainer() {
   // surfaces under "Mine" without an app reload (STORY-006 AC 6.5).
   const libraryRevision = useExerciseLibrary((s) => s.revision);
   const markChanged = useExerciseLibrary((s) => s.markChanged);
+  // `libraryRevision` above only covers writers that remember to call
+  // `markChanged()`. The sync drain is not one of them: on reconnect it calls
+  // `storage.swapLocalExerciseId(...)` (sync.command.ts), which INSERTs the row
+  // under its server id and DELETEs the `local-*` one without signalling. This
+  // list has no focus re-read, so it would keep rendering the dead local id and
+  // a tap would land on a cache miss then a 404. The storage bus fires on the
+  // write itself, so no writer has to remember anything.
+  const storageRevision = useCacheRevision(EXERCISE_TABLES);
 
   const filters = useMemo(() => {
     const trimmed = debouncedSearch.trim();
@@ -89,8 +99,9 @@ export function ExerciseListContainer() {
   const cacheRead = useMemo(() => {
     void cacheVersion;
     void libraryRevision;
+    void storageRevision;
     return getExercisesQuery(storage);
-  }, [storage, cacheVersion, libraryRevision]);
+  }, [storage, cacheVersion, libraryRevision, storageRevision]);
 
   // -- Search ------------------------------------------------------------
   //

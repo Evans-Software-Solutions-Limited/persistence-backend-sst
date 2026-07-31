@@ -690,6 +690,48 @@ describe("ExerciseListContainer", () => {
     expect(getByTestId("stub-load-error").props.children).toBe("none");
   });
 
+  /**
+   * Pins the storage-bus subscription. `useExerciseLibrary.revision` only
+   * covers writers that remember to call `markChanged()`, and the sync drain
+   * is not one of them: on reconnect it calls `swapLocalExerciseId`, which
+   * re-INSERTs the row under its server id and DELETEs the `local-*` one
+   * silently. This list has no focus re-read, so without the bus it keeps
+   * rendering the dead local id and a tap lands on a cache miss then a 404.
+   *
+   * Strip `storageRevision` from the container's cache-read deps and this
+   * fails — which is the point: the swap picker carried the same gap for
+   * exactly as long as nothing pinned it.
+   */
+  it("re-reads when the sync drain rekeys a local exercise id", async () => {
+    const { adapters, storage } = createTestAdapters();
+    storage.cacheExercises([
+      makeExercise({ id: "local-abc", name: "My Custom Curl" }),
+    ]);
+    storage.setLastSyncedAt("exercises", new Date().toISOString());
+
+    const { getByTestId } = render(
+      <TestWrapper adapters={adapters}>
+        <ExerciseListContainer />
+      </TestWrapper>,
+    );
+
+    await waitFor(() => {
+      expect(getByTestId("stub-count").props.children).toBe(1);
+    });
+    expect(lastProps?.exercises.map((e) => e.id)).toEqual(["local-abc"]);
+
+    // Reconnect: the drain rekeys the row and the bus announces the write.
+    // No `markChanged()` is called — that is the whole point.
+    await act(async () => {
+      storage.swapLocalExerciseId("local-abc", "server-xyz");
+      storage.emitChange("cached_exercises");
+    });
+
+    await waitFor(() => {
+      expect(lastProps?.exercises.map((e) => e.id)).toEqual(["server-xyz"]);
+    });
+  });
+
   it("handles non-Error thrown during refresh with a fallback message", async () => {
     const { adapters, api } = createTestAdapters();
     api.getExercises = async () => {

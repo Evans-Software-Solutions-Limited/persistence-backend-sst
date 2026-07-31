@@ -9,10 +9,21 @@ items, and the four most recent sessions. Trimmed 2026-07-27 from 1554 lines.
 If anything here contradicts `git log --oneline -30`, the git history wins —
 say so and fix this file.
 
-## Current state (2026-07-30)
+## Current state (2026-07-31)
 
-- **Sentry production hotfix implemented on
-  `codex/sentry-production-error-review-2026-07-30` (PR #337).** The shipped
+- **⚠ APP STORE: build 1.0 (39) REJECTED under Guideline 4 (Design)** — the Sign
+  in with Apple button used app-drawn logo artwork. Fixed on **PR
+  [#340](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/340)**
+  (`claude/signin-apple-design-fix-78rvv9`, see § Last session). Needs a new
+  build + resubmission once merged.
+- **⚠ PR #337 is MERGED but UNRELEASED — production still has the SQLSTATE 23514
+  session-rating bug.** `c8a0b6d` sits above the latest tag
+  `persistence-v1.10.0` (`1ad9caa`). Shipping it needs a release PR + prod
+  deploy. An Apple reviewer tripped a production Sentry error on 2026-07-30
+  22:26 UTC while prod was unpatched; whether it is this error is UNVERIFIED
+  (Sentry connector was down — see § Last session).
+- **Sentry production hotfix — MERGED to `main` 2026-07-30 as `c8a0b6d`
+  (PR #337), NOT yet in any release tag.** The shipped
   mobile app asks only for a 1–10 difficulty rating but serializes it into both
   `sessionRating` and `difficultyRanking`; production's legacy
   `session_rating` column has a 1–5 check, causing SQLSTATE 23514 for answers
@@ -415,6 +426,86 @@ consent copy, privacy section and governing law · the OFF re-seed backfilling
 `serving_quantity` across the ~143k seeded rows.
 
 ## Last session
+
+**2026-07-31 — APP STORE REJECTION (Guideline 4) + swap-picker refresh bug. PR
+[#340](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/340)
+OPEN off `main`, branch `claude/signin-apple-design-fix-78rvv9`. Full mobile
+suite green: 459 suites / 5304 tests, typecheck clean, prettier clean, lint
+clean (2 pre-existing `react/display-name` errors in `__tests__/setup.ts` are
+baseline, not from this branch). NOT device-verified — the Apple button is a
+native view that cannot render under Jest, so no test proves how it looks.
+Check it on a real build, ideally on iPad (the review device was an iPad Air
+11-inch M3).**
+
+- **Rejection cause: we drew the Sign in with Apple button ourselves.** Both
+  auth screens rendered a generic `<OAuthButton>` with `icon={""}` — the
+  Apple logo private-use glyph in the app's own font. Apple's wording was "logo
+  artwork that is not downloaded from Apple Design Resources". The whole control
+  was app-drawn (our border, surface, typeface, copy), so it failed on every
+  axis, not just the mark.
+  - Fixed with `<AppleSignInButton>` (`src/ui/components/AppleSignInButton.tsx`),
+    a thin wrapper around `expo-apple-authentication`'s
+    `AppleAuthenticationButton`. **No assets were downloaded and none are
+    needed** — Apple's component supplies artwork, label, typeface,
+    localisation, and light/dark variants natively. The dependency and its
+    config plugin were already in `app.json` for the auth flow itself.
+  - `buttonType=CONTINUE` (copy unchanged from what shipped), `buttonStyle=WHITE`
+    (dark-only app), `cornerRadius=14`, height 52 to match the Google button so
+    SIWA is no less prominent (HIG).
+  - **Do not re-skin this.** No image, icon font, or glyph; no `backgroundColor`
+    / `borderRadius` via `style`; no overlay on the artwork. The loading state
+    dims + blocks rather than swapping in a "Connecting..." label, because
+    obscuring the button is itself a Guideline 4 failure.
+- **Swap picker didn't show exercises created mid-flow** (Brad hit this live:
+  active workout → swap → create exercise → not in list). `SwapExercisePopover`
+  memoised its cache read on `[storage, cacheVersion]`; `cacheVersion` only bumps
+  after a *stale 24h* refresh, and the popover stays mounted between opens. So a
+  freshly created exercise landed in `cached_exercises` and the list never
+  re-read. Added `useCacheRevision(EXERCISE_TABLES)` + `useExerciseLibrary`
+  revision — **the exact wiring `AddExercisePopover` already had**; the swap
+  picker was simply missed when that fix went in. 3 regression tests, verified
+  failing without the fix.
+- **⚠ #337's SQLSTATE 23514 fix is merged to `main` but in NO release tag.**
+  `c8a0b6d` sits above `persistence-v1.10.0` (`1ad9caa`, 2026-07-29). Production
+  therefore still has the session-rating bug. An Apple reviewer hit a production
+  Sentry error at **2026-07-30 22:26 UTC** on iPad Air 11-inch (M3) — after #337
+  merged (15:37 UTC) but while prod was still unpatched. **Not confirmed to be
+  the same error** — the Sentry MCP connector was disconnected this session, so
+  the issue (137728287) could not be read. If it is 23514, resubmitting the app
+  alone will NOT fix it; it needs a release + deploy.
+- **⚠ OPEN, deliberately deferred off PR #340: two more `cached_exercises`
+  readers have no exercise-cache invalidation.** `WorkoutsListContainer` (memo
+  deps `[saved, templates, storage]`) and `WorkoutDetailContainer` (`[workout,
+  storage]`) both call `storage.getCachedExercises()` but are driven off
+  `useCacheRevision(WORKOUT_TABLES)`, which does not move on an exercise write.
+  Cold start renders Train before `refreshExerciseCache` lands → split badges /
+  muscle pills / equipment eyebrow compute against an empty library and never
+  recompute. Self-heals on the next focus `rereadCache`, so it is a first-paint
+  degradation, not a stuck state — that plus PR #340 being an App Store release
+  blocker is why it was left out. Fix is `useCacheRevision(EXERCISE_TABLES)`
+  folded into each memo, same one-liner as the other five surfaces, **with a
+  revert-checked regression test each** (see below).
+- **Lesson from #340, worth keeping: do NOT blanket-propagate the exercise
+  change bus.** It is correct for LIST-shaped reads (`getCachedExercises()`),
+  which re-read and find a row under its new key. It is WRONG for
+  `useExercise`, a single-id read: the sync drain rekeys `local-*` → server id
+  via DELETE+INSERT, so the bus makes `initial` recompute to null, blanks a
+  loaded row, and re-arms the one-shot fetch against the dead id → 404 (and on
+  the editor, discards in-progress form input). This was actually shipped in a
+  #340 commit and reverted after Inspector Brad demonstrated it. `useExercise`
+  now carries a regression test that fails if someone re-adds the bus.
+  - **Still open (pre-existing, also on `main`, NOT caused by #340): a detail
+    screen already open when the drain fires keeps the dead `local-*` id in its
+    route param**, so `ExerciseDetailContainer.onEdit` → `ExerciseEditorContainer`
+    mounts on it, misses cache and 404s. Delete has the same shape. The list fix
+    only closes *fresh* navigation. Real fix is the drain publishing the old→new
+    mapping, or the route swapping its param — not a bus subscription.
+- **Parked, not started: "Create & Add" CTA in the create-exercise flow.** Brad
+  asked, gated on difficulty. It needs pending-intent plumbing (the picker must
+  close for the full-screen creator, so `pickerMode` can't just persist), a
+  route param, a presenter CTA, and a focus-time dispatch in
+  `ActiveSessionContainer` — a real slice touching the active-session state
+  machine. Deliberately kept out of a release-blocking hotfix branch.
 
 **2026-07-28 — HOME TRAIN RING + WORKOUT DURATION bug fixes. PR
 [#334](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/334)

@@ -1,5 +1,6 @@
-import { fireEvent } from "@testing-library/react-native";
+import { act, fireEvent } from "@testing-library/react-native";
 import React from "react";
+import { useExerciseLibrary } from "@/ui/hooks/useExerciseLibrary";
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
 import type { AuthSession } from "@/domain/ports/auth.port";
@@ -527,5 +528,110 @@ describe("SwapExercisePopover", () => {
     expect(await findByLabelText("Clear search")).toBeTruthy();
     fireEvent.press(await findByTestId("exercise-info-button-ex-1"));
     expect(await findByLabelText("Back to list")).toBeTruthy();
+  });
+
+  /**
+   * Regression: an exercise created while the picker is open must appear in
+   * the list without a remount.
+   *
+   * The picker's own header CTA pushes `/exercises/create`, so this was the
+   * most direct route to creating an exercise AND the one place it never
+   * showed up. The popover stays mounted between opens (the parent flips
+   * `pickerMode`, it does not unmount), and the cache read was memoised on
+   * `[storage, cacheVersion]` — `cacheVersion` only bumps after a *stale* 24h
+   * refresh, so the write landed in `cached_exercises` and the list never
+   * re-read it. Reported from a live session: create an exercise mid-swap,
+   * come back, and it isn't there.
+   *
+   * `AddExercisePopover` already carried this wiring; the swap picker was
+   * missed. Both invalidation signals are covered because they fire
+   * independently — the storage bus on any local write, `markChanged()` from
+   * `CreateExerciseContainer` explicitly.
+   */
+  it("shows an exercise cached while open, via the storage change bus, without remounting", async () => {
+    const storage = new InMemoryStorageAdapter();
+    const api = new InMemoryApiAdapter();
+    seedCache(storage, [buildExercise({ id: "ex-1", name: "Bench Press" })]);
+
+    const { findByTestId, queryByTestId } = renderWithTheme(
+      <AdapterProvider adapters={makeAdapters(storage, api)}>
+        <SwapExercisePopover
+          visible={true}
+          onClose={jest.fn()}
+          onSwap={jest.fn()}
+        />
+      </AdapterProvider>,
+    );
+    expect(await findByTestId("exercise-row-ex-1")).toBeTruthy();
+    expect(queryByTestId("exercise-row-ex-new")).toBeNull();
+
+    // What `createExerciseCommand` does: write to `cached_exercises`. In
+    // production SQLite's update hook drives the bus; the in-memory double
+    // needs the write announced explicitly.
+    act(() => {
+      storage.cacheExercises([
+        buildExercise({ id: "ex-new", name: "Cable Fly", isCustom: true }),
+      ]);
+      storage.emitChange("cached_exercises");
+    });
+
+    expect(await findByTestId("exercise-row-ex-new")).toBeTruthy();
+  });
+
+  it("shows an exercise cached while open, via the library revision signal, without remounting", async () => {
+    const storage = new InMemoryStorageAdapter();
+    const api = new InMemoryApiAdapter();
+    seedCache(storage, [buildExercise({ id: "ex-1", name: "Bench Press" })]);
+
+    const { findByTestId, queryByTestId } = renderWithTheme(
+      <AdapterProvider adapters={makeAdapters(storage, api)}>
+        <SwapExercisePopover
+          visible={true}
+          onClose={jest.fn()}
+          onSwap={jest.fn()}
+        />
+      </AdapterProvider>,
+    );
+    expect(queryByTestId("exercise-row-ex-new")).toBeNull();
+
+    act(() => {
+      storage.cacheExercises([
+        buildExercise({ id: "ex-new", name: "Cable Fly", isCustom: true }),
+      ]);
+      // The signal CreateExerciseContainer raises on a successful create.
+      useExerciseLibrary.getState().markChanged();
+    });
+
+    expect(await findByTestId("exercise-row-ex-new")).toBeTruthy();
+  });
+
+  it("can swap in an exercise that was created while the picker was open", async () => {
+    const storage = new InMemoryStorageAdapter();
+    const api = new InMemoryApiAdapter();
+    seedCache(storage, [buildExercise({ id: "ex-1", name: "Bench Press" })]);
+    const onSwap = jest.fn();
+
+    const { findByTestId } = renderWithTheme(
+      <AdapterProvider adapters={makeAdapters(storage, api)}>
+        <SwapExercisePopover
+          visible={true}
+          onClose={jest.fn()}
+          onSwap={onSwap}
+        />
+      </AdapterProvider>,
+    );
+    act(() => {
+      storage.cacheExercises([
+        buildExercise({ id: "ex-new", name: "Cable Fly", isCustom: true }),
+      ]);
+      storage.emitChange("cached_exercises");
+    });
+
+    // Appearing in the list is only half of it — the new row must also be
+    // selectable and dispatch through the normal swap path.
+    fireEvent.press(await findByTestId("exercise-row-ex-new"));
+    fireEvent.press(await findByTestId("swap-picker-swap"));
+    expect(onSwap).toHaveBeenCalledTimes(1);
+    expect(onSwap.mock.calls[0][0][0].id).toBe("ex-new");
   });
 });

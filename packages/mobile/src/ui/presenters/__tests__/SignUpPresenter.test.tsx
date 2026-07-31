@@ -77,7 +77,12 @@ describe("SignUpPresenter", () => {
     const { getByTestId } = renderWithTheme(
       <SignUpPresenter {...defaultProps} onOAuth={onOAuth} />,
     );
-    fireEvent.press(getByTestId("apple-oauth"));
+    // NOT fireEvent.press: RNTL resolves a synthetic press by walking up to the
+    // outermost `onPress`, which here is this test's own prop on
+    // <AppleSignInButton> — so the assertion passes even if the component never
+    // wires anything to Apple's button. Invoking the prop on the button host is
+    // what ASAuthorizationAppleIDButton actually does on device.
+    getByTestId("apple-oauth").props.onPress();
     expect(onOAuth).toHaveBeenCalledWith("apple");
   });
 
@@ -144,5 +149,22 @@ describe("SignUpPresenter", () => {
     expect(getByTestId("back-to-sign-in")).toBeTruthy();
     // Form should be hidden
     expect(queryByTestId("email")).toBeNull();
+  });
+
+  it("delegates the Apple row to Apple's own button — no app-drawn label or glyph", () => {
+    // App Store Guideline 4 guard. Every other Apple assertion in this suite
+    // passes whether the row is Apple's component or a hand-drawn
+    // <OAuthButton>, so nothing pinned THIS screen to the compliant one — and
+    // the screen is where the rejection actually happened. Reverting to
+    // <OAuthButton label="Continue with Apple" icon={"\uF8FF"}> would restore
+    // exactly what App Review rejected in build 1.0 (39).
+    const { queryByText, toJSON } = renderWithTheme(
+      <SignUpPresenter {...defaultProps} />,
+    );
+    expect(queryByText("Continue with Apple")).toBeNull();
+    expect(JSON.stringify(toJSON())).not.toContain("\uF8FF");
+    // The Google button beside it IS still app-drawn, which proves the two
+    // assertions above are specific to the Apple row rather than vacuous.
+    expect(queryByText("Continue with Google")).toBeTruthy();
   });
 });

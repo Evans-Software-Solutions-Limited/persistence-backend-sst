@@ -50,6 +50,29 @@ export function useExercise(id: string | null): ExerciseDetailState {
   // pops back. (STORY-008 — edit reflects without navigate-out-and-in.)
   const libraryRevision = useExerciseLibrary((s) => s.revision);
 
+  // DELIBERATELY NOT subscribed to the `cached_exercises` change bus, unlike
+  // every list-shaped reader of the same store (the three pickers and
+  // ExerciseListContainer). A list re-reads and finds the row under its new
+  // key; this read is keyed by a single id, so when that key DISAPPEARS it has
+  // nowhere to go.
+  //
+  // That is a live scenario, not a hypothetical: the sync drain rekeys a
+  // `local-*` row to its server id via DELETE + INSERT
+  // (`swapLocalExerciseId`, sync.command.ts). Wiring the bus in here was tried
+  // and reverted — it turned "stale but readable" into a blanked screen plus a
+  // 404, because `initial` recomputes to null, the effect below clobbers the
+  // loaded row, and `hasInitial` flipping false re-arms the one-shot fetch
+  // against the dead id. On the editor it also drops in-progress form input.
+  //
+  // The user-facing path this was meant to fix is closed at the LIST instead:
+  // ExerciseListContainer now takes the bus, so it renders the server id and a
+  // fresh navigation can no longer land on a dead one. NOT closed: a detail
+  // screen already open when the drain fires keeps the stale id in its route
+  // param, so its Edit/Delete still address a dead id and 404 (pre-existing;
+  // ExerciseDetailContainer.onEdit pushes `exerciseId` straight through).
+  // Closing that needs the drain to publish the old→new mapping, or the route
+  // to swap its param — still not a bus subscription. See the id-swap
+  // regression test below.
   const initial = useMemo(() => {
     void cacheVersion;
     void libraryRevision;

@@ -416,6 +416,47 @@ jest.mock("expo-web-browser", () => ({
   openAuthSessionAsync: jest.fn(),
 }));
 
+// Mock expo-apple-authentication (Sign in with Apple). Two things need it:
+// `supabase.adapter` (signInAsync + the scope enum) and `<AppleSignInButton>`,
+// which renders Apple's own `AppleAuthenticationButton` — a native
+// ASAuthorizationAppleIDButton that cannot mount under Jest.
+//
+// The button stands in as a plain View that FORWARDS its props (same approach
+// as the expo-image mock above), so render tests can press it via testID AND
+// assert the Apple-facing configuration (buttonType / buttonStyle /
+// cornerRadius). That assertion is the point: the App Store rejected build
+// 1.0 (39) for drawing this button by hand, so the props we hand Apple's
+// component are a compliance contract worth testing.
+//
+// Deliberately NOT a Pressable: Pressable consumes `onPress` into internal
+// responder handlers so it never lands on the host element, leaving nothing to
+// assert against. Forwarding onto a View keeps `onPress` readable on the host,
+// which lets tests invoke it the way the native button does on device.
+//
+// Note that `fireEvent.press` is NOT a faithful way to drive this: no mock
+// reproduces iOS hit-testing of a native ASAuthorizationAppleIDButton, and
+// RNTL resolves the press by walking UP to the outermost composite carrying an
+// `onPress` — the raw prop passed to <AppleSignInButton> — which sails straight
+// past the component's own disabled guard. Call `button.props.onPress()`
+// instead; that is precisely what Apple's button invokes.
+//
+// `isAvailableAsync` resolves true — the availability gate is a real device
+// concern; tests that need the unavailable branch override it per-file.
+jest.mock("expo-apple-authentication", () => {
+  const { View } = require("react-native");
+  const React = require("react");
+  return {
+    __esModule: true,
+    isAvailableAsync: jest.fn(async () => true),
+    signInAsync: jest.fn(),
+    AppleAuthenticationScope: { FULL_NAME: 0, EMAIL: 1 },
+    AppleAuthenticationButtonType: { SIGN_IN: 0, CONTINUE: 1, SIGN_UP: 2 },
+    AppleAuthenticationButtonStyle: { WHITE: 0, WHITE_OUTLINE: 1, BLACK: 2 },
+    AppleAuthenticationButton: (props: Record<string, unknown>) =>
+      React.createElement(View, props),
+  };
+});
+
 // Mock expo-linking (used by the OAuth redirect URL + invite-code deep links).
 // Mirrors the real createURL: prefixes the app scheme and appends any
 // `queryParams` as a query string (the real module env-switches the prefix;
