@@ -41,7 +41,24 @@ export const coreAPI = new sst.aws.ApiGatewayV2("api-core", {
 
 export const otherServiceAPI = new sst.aws.ApiGatewayV2("api-other-service");
 
-coreAPI.route("$default", {
+/**
+ * Exported so `infra/monitoring.ts` can dimension the Lambda `Throttles` alarm
+ * onto THIS function rather than the account-wide aggregate. The account also
+ * hosts `axel-saas` and `evans-software-solutions`, and an undimensioned alarm
+ * would page persistence for their throttles: measured 18 Jul - 1 Aug, 5 of
+ * the 62 throttled 5-minute buckets in this account belonged to siblings,
+ * including all 91 throttles on 2026-08-01 (100% axel-saas, zero persistence).
+ *
+ * (Nothing actually paged anyone over that window — the account had no alarms
+ * at all. The measurement is what an undimensioned alarm WOULD have done.)
+ *
+ * Knowingly uncovered by the resulting alarm: `otherServiceAPI`'s own
+ * `$default` Lambda, the only persistence function that is neither this route
+ * nor a cron. It is the SST scaffold stub, nothing routes to it, and any
+ * throttling severe enough to reach it would already have tripped the
+ * account-wide concurrency alarm.
+ */
+export const coreRoute = coreAPI.route("$default", {
   handler: "microservices/core/src/api.handler",
   link: [avatarsBucket],
   // ⚠ EXPLICIT, and load-bearing for every AI endpoint. SST defaults a Lambda to

@@ -26,9 +26,14 @@ export default $config({
     // SES email + SMTP creds. Self-guards: `email` is `undefined` on dev /
     // personal stages (no hosted zone), so nothing is provisioned there.
     const { email } = await import("./infra/email");
+    // CloudWatch alarms + the SNS topic they publish to. Self-guards on the
+    // stage name, so dev / personal stages provision nothing.
+    const { alertsTopic } = await import("./infra/monitoring");
     return {
       api: api.coreAPI.url,
       web: $dev ? "http://localhost:5173" : web.frontend.url,
+      // Subscribe an address to this once per stage — see infra/monitoring.ts.
+      ...(alertsTopic ? { alertsTopicArn: alertsTopic.arn } : {}),
       // Non-secret SMTP config for the Supabase dashboard step. The password
       // is deliberately NOT an output — read it from SSM (SecureString):
       //   aws ssm get-parameter --with-decryption --region eu-west-2 \
