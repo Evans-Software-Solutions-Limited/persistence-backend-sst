@@ -41,7 +41,15 @@ export const coreAPI = new sst.aws.ApiGatewayV2("api-core", {
 
 export const otherServiceAPI = new sst.aws.ApiGatewayV2("api-other-service");
 
-coreAPI.route("$default", {
+/**
+ * Exported so `infra/monitoring.ts` can dimension the Lambda `Throttles` alarm
+ * onto THIS function rather than the account-wide aggregate. The account also
+ * hosts `axel-saas` and `evans-software-solutions`, and their throttles were
+ * paging persistence: measured 18 Jul - 1 Aug, 5 of the 62 throttled 5-minute
+ * buckets in this account belonged to siblings, including all 91 throttles on
+ * 2026-08-01 (100% axel-saas, zero persistence).
+ */
+export const coreRoute = coreAPI.route("$default", {
   handler: "microservices/core/src/api.handler",
   link: [avatarsBucket],
   // ⚠ EXPLICIT, and load-bearing for every AI endpoint. SST defaults a Lambda to
