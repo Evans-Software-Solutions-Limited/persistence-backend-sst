@@ -428,12 +428,19 @@ export const cronHeartbeatAlarms = CRONS.map(({ name, cron }) =>
  *     and it would have been actively harmful at the old quota of 10. Point it
  *     at the cheapest possible route (`/health`) and consider a 60s interval.
  *
- * `AWS/CertificateManager` `DaysToExpiry` would cover the renewal case alone,
- * in-region and with no traffic dependency — but SST's `ApiGatewayV2` builds
- * the domain certificate internally (`createSsl()` in `apigatewayv2.ts`) and
- * does not expose it on `.nodes`, so wiring it means either reaching into SST
- * internals or looking the ARN up out-of-band. Not guessed at here, in a file
- * that has neither typecheck nor tests.
+ * `AWS/CertificateManager` `DaysToExpiry` covers the renewal case alone, and
+ * is the cheapest of these options: in-region, no traffic dependency, no extra
+ * resource. The ARN IS reachable — `coreAPI.nodes.domainName` is public and
+ * carries it:
+ *
+ *   dimensions: {
+ *     CertificateArn:
+ *       coreAPI.nodes.domainName.domainNameConfiguration.certificateArn,
+ *   }
+ *
+ * ⚠ `nodes.domainName` throws when no custom domain is configured, so it must
+ * stay behind the `isMonitoredStage` gate. Left unwired only to keep this PR
+ * to one concern; it is the first thing to add here, not the last.
  *
  * Concrete risk being accepted: build 39 is pending App Review resubmission,
  * and a silent DNS/TLS failure during a review pass would produce a rejection
