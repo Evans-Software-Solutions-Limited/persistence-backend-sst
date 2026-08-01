@@ -38,6 +38,19 @@
  * refresh-and-retry below, tapping that row would close the sheet and do nothing
  * at all, with no error — the worst possible failure for a swap mid-session.
  *
+ * ## ⚠ …and the SERVER has the mirror-image blind spot: exercises you just made
+ *
+ * `createExerciseCommand` is offline-first — it writes a `local-…` row into
+ * `cached_exercises` and enqueues `POST /exercises` for the next sync window,
+ * with no immediate flush. Until that drains, `GET /exercises/substitutes`
+ * cannot return it. This sheet's own header CTA routes to the creator, so
+ * "swap → Create → come back" is both the most direct way to create an exercise
+ * AND, on a purely server-backed list, the one place it would not appear —
+ * exactly the bug Brad reported from a live session and #340 fixed on the
+ * cache-reading picker this component replaced. `localOnlyCandidates` below
+ * feeds those rows back in, under their own heading, invalidated by the same
+ * pair of signals #340 used.
+ *
  * The props contract (`visible` / `onSwap(rows)` / `existingExerciseIds`) is
  * UNCHANGED so `ActiveSessionContainer`'s picker routing and its tests keep
  * working; `filterByPrimaryMuscleGroups` / `filterMuscleGroupLabels` are accepted
@@ -47,13 +60,23 @@
  *       specs/05-active-session/requirements.md STORY-004 (the surface it serves)
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "expo-router";
+import { EXERCISE_TABLES } from "@/adapters/storage";
 import { refreshExerciseCache } from "@/application/queries/exercises.query";
 import type { SubstituteCandidate } from "@/domain/models/loadout";
 import { useAdapters } from "@/ui/hooks/useAdapters";
+import { useCacheRevision } from "@/ui/hooks/useCacheRevision";
+import { useExerciseLibrary } from "@/ui/hooks/useExerciseLibrary";
 import { EquipmentAwareSwapSheet } from "../EquipmentAwareSwapSheet";
 import { toPickerExerciseRow } from "../AddExercisePopover/picker-row";
+
+/**
+ * The prefix `createExerciseCommand` puts on a locally-generated id. An exercise
+ * still carrying one has not been accepted by the server, so no server-side read
+ * can return it.
+ */
+const PENDING_SYNC_ID_PREFIX = "local-";
 
 export type SwapExercisePopoverProps = {
   readonly visible: boolean;
@@ -114,6 +137,50 @@ export function SwapExercisePopover({
     if (visible) setResolveFailed(false);
   }, [visible]);
 
+  // ⚠ Both invalidation signals, deliberately — the same pair `AddExercisePopover`
+  // and (since #340) the old cache-reading swap picker already carried. They fire
+  // independently: the storage change bus on any local write, `markChanged()`
+  // explicitly from `CreateExerciseContainer`. This component never unmounts
+  // (`ActiveSessionContainer` renders it unconditionally and drives it by prop),
+  // so a read memoised on `[storage]` alone would be captured once per session.
+  const storageRevision = useCacheRevision(EXERCISE_TABLES);
+  const libraryRevision = useExerciseLibrary((s) => s.revision);
+
+  /**
+   * The caller's own custom exercises that are still queued for sync.
+   *
+   * NOT muscle-filtered against the source, unlike the server's ranked lists.
+   * The only way into this list is to have just created the exercise — almost
+   * always from this sheet's own Create CTA, in order to swap it in — so hiding
+   * it behind a relevance rule it may not satisfy would reproduce the bug it
+   * exists to close. The set is small and self-draining: a row leaves it the
+   * moment the sync queue rekeys it to a server id, after which the endpoint
+   * ranks it like anything else.
+   */
+  const localOnlyCandidates = useMemo<readonly SubstituteCandidate[]>(() => {
+    if (!visible) return [];
+    void storageRevision;
+    void libraryRevision;
+    return storage
+      .getCachedExercises()
+      .filter((exercise) => exercise.id.startsWith(PENDING_SYNC_ID_PREFIX))
+      .map((exercise) => ({
+        id: exercise.id,
+        name: exercise.name,
+        category: exercise.category ?? null,
+        difficultyLevel: exercise.difficulty ?? null,
+        thumbnailUrl: exercise.thumbnailUrl ?? null,
+        // Empty, not `exercise.equipment`: that field holds the creator form's
+        // `EquipmentType` enum members, while `equipmentRequired` is catalogue
+        // UUIDs. Mapping one onto the other would put ids into the sheet that
+        // `equipmentNameById` can never resolve. Nothing reads it here anyway —
+        // the in-session swap supplies no kit context, so no row is incompatible.
+        equipmentRequired: [],
+        // Nothing ranked these, so they claim no match signals.
+        matchedOn: [],
+      }));
+  }, [visible, storage, storageRevision, libraryRevision]);
+
   const onCreateExercise = useCallback(() => {
     // Close first so the full-screen creator isn't stacked behind an open sheet.
     onClose();
@@ -171,6 +238,7 @@ export function SwapExercisePopover({
       forExerciseId={forExerciseId}
       exerciseName={exerciseName}
       existingExerciseIds={existingExerciseIds}
+      localOnlyCandidates={localOnlyCandidates}
       onSelect={(candidate) => void onSelect(candidate)}
       onCreateExercise={onCreateExercise}
       unavailableMessage={

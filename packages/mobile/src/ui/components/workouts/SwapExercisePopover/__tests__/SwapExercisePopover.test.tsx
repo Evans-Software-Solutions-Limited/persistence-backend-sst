@@ -18,8 +18,9 @@
  * `EquipmentAwareSwapSheet/__tests__`.
  */
 
-import { fireEvent, waitFor } from "@testing-library/react-native";
+import { act, fireEvent, waitFor } from "@testing-library/react-native";
 import React from "react";
+import { useExerciseLibrary } from "@/ui/hooks/useExerciseLibrary";
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
 import type { AuthSession } from "@/domain/ports/auth.port";
@@ -384,5 +385,128 @@ describe("SwapExercisePopover (T-2.7 adapter)", () => {
     const storage = new InMemoryStorageAdapter();
     const { queryByTestId } = renderPopover(api, storage, { visible: false });
     expect(queryByTestId("swap-picker-sheet")).toBeNull();
+  });
+
+  /**
+   * The not-yet-synced group (see the file header's second ⚠ block).
+   *
+   * These re-express the three regression tests PR #340 added against the
+   * cache-reading picker this component replaced. That fix and this rewrite
+   * landed in parallel and collided on this file; deleting its tests with the
+   * implementation would have quietly reopened the bug Brad reported live
+   * (active workout → swap → Create → back → not in the list), because a
+   * server-backed list cannot see a `local-…` row either.
+   *
+   * `local-` prefix, not `isCustom`: a custom exercise that HAS synced carries a
+   * server id and is ranked by the endpoint like anything else. Keying on
+   * `isCustom` would list it twice.
+   */
+  describe("exercises created on this device and not yet synced", () => {
+    const localExercise = () =>
+      buildExercise({
+        id: "local-abc",
+        name: "Cable Fly",
+        isCustom: true,
+        createdBy: "user-1",
+      });
+
+    it("lists one the endpoint cannot return yet", async () => {
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      storage.saveCustomExercise(localExercise());
+      api.substitutes = {
+        best: [],
+        others: [buildCandidate()],
+        meta: { truncated: false },
+      };
+
+      const { findByTestId } = renderPopover(api, storage);
+
+      expect(await findByTestId("swap-local-local-abc")).toBeTruthy();
+      // Under its own heading, NOT folded into the ranked list — nothing ranked
+      // it and it was never containment-checked.
+      expect(await findByTestId("swap-others-ex-incline")).toBeTruthy();
+    });
+
+    it("picks one up while the sheet is open, via the storage change bus", async () => {
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      api.substitutes = {
+        best: [],
+        others: [buildCandidate()],
+        meta: { truncated: false },
+      };
+
+      const { findByTestId, queryByTestId } = renderPopover(api, storage);
+      await findByTestId("swap-others-ex-incline");
+      expect(queryByTestId("swap-local-local-abc")).toBeNull();
+
+      // What `createExerciseCommand` does. In production SQLite's update hook
+      // drives the bus; the in-memory double needs the write announced.
+      storage.saveCustomExercise(localExercise());
+      storage.emitChange("cached_exercises");
+
+      expect(await findByTestId("swap-local-local-abc")).toBeTruthy();
+    });
+
+    it("picks one up while the sheet is open, via the library revision signal", async () => {
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      api.substitutes = {
+        best: [],
+        others: [buildCandidate()],
+        meta: { truncated: false },
+      };
+
+      const { findByTestId, queryByTestId } = renderPopover(api, storage);
+      await findByTestId("swap-others-ex-incline");
+      expect(queryByTestId("swap-local-local-abc")).toBeNull();
+
+      storage.saveCustomExercise(localExercise());
+      // The signal CreateExerciseContainer raises on a successful create. Both
+      // paths are covered because they fire independently.
+      act(() => {
+        useExerciseLibrary.getState().markChanged();
+      });
+
+      expect(await findByTestId("swap-local-local-abc")).toBeTruthy();
+    });
+
+    it("can actually swap one in — appearing in the list is only half of it", async () => {
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      storage.saveCustomExercise(localExercise());
+      api.substitutes = { best: [], others: [], meta: { truncated: false } };
+      // If the pick were resolved through the SERVER the retry would fire here
+      // and still miss; the row is resolvable straight from the cache.
+      const refresh = jest.spyOn(api, "getExercises");
+
+      const { findByTestId, onSwap } = renderPopover(api, storage);
+      fireEvent.press(await findByTestId("swap-local-local-abc"));
+
+      await waitFor(() => expect(onSwap).toHaveBeenCalledTimes(1));
+      expect(onSwap.mock.calls[0][0][0].id).toBe("local-abc");
+      expect(refresh).not.toHaveBeenCalled();
+    });
+
+    it("does NOT list a synced cached exercise — that is the endpoint's job", async () => {
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      // A server id: already synced, so the ranked lists own it. Listing it here
+      // too would duplicate every custom exercise the user has ever made.
+      storage.saveCustomExercise(
+        buildExercise({ id: "ex-synced-custom", isCustom: true }),
+      );
+      api.substitutes = {
+        best: [],
+        others: [buildCandidate()],
+        meta: { truncated: false },
+      };
+
+      const { findByTestId, queryByTestId } = renderPopover(api, storage);
+      await findByTestId("swap-others-ex-incline");
+
+      expect(queryByTestId("swap-local-ex-synced-custom")).toBeNull();
+    });
   });
 });

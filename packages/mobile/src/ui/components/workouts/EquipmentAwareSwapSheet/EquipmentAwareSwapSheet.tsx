@@ -107,6 +107,25 @@ export type EquipmentAwareSwapSheetProps = {
   /** Already in the plan/session — shown disabled so a no-op swap is impossible. */
   readonly existingExerciseIds?: readonly string[];
   /**
+   * Rows the SERVER cannot know about yet, rendered in their own group above the
+   * ranked lists. Empty/omitted for Loadout; the standalone swap supplies the
+   * caller's own custom exercises that are still queued for sync.
+   *
+   * ⚠ **This exists because the server-side read has one honest blind spot.**
+   * `createExerciseCommand` is offline-first: it writes a `local-…` row into
+   * `cached_exercises` and enqueues `POST /exercises`. Until the sync queue
+   * drains, `GET /exercises/substitutes` cannot return it — so the picker's own
+   * Create CTA led straight back to a list the new exercise was missing from.
+   * That exact flow (swap → Create → back) is a bug Brad reported from a live
+   * session and #340 fixed on the cache-reading picker this component replaced;
+   * routing the list through the server reopened it by a different door.
+   *
+   * They are NOT ranked and carry no `matchedOn` — there is nothing server-side
+   * to rank them against — and never `incompatible`: the caller owns them, and
+   * no containment check was run on them either way.
+   */
+  readonly localOnlyCandidates?: readonly SubstituteCandidate[];
+  /**
    * `isUserOverride` is true only for a row taken from the INCOMPATIBLE list with
    * the acknowledgement confirmed.
    */
@@ -143,6 +162,7 @@ export function EquipmentAwareSwapSheet({
   equipmentContextLabel,
   equipmentNameById,
   existingExerciseIds = [],
+  localOnlyCandidates,
   onSelect,
   onCreateExercise,
   unavailableMessage = null,
@@ -238,6 +258,14 @@ export function EquipmentAwareSwapSheet({
 
   const best = useMemo(() => filter(result.best), [filter, result.best]);
   const others = useMemo(() => filter(result.others), [filter, result.others]);
+  // Same client-side token filter as the ranked lists, so typing narrows all
+  // three groups consistently. The debounced SERVER search cannot see these
+  // rows at all — they do not exist server-side yet — so filtering them here is
+  // the only thing that keeps the sheet's search honest about them.
+  const localOnly = useMemo(
+    () => filter(localOnlyCandidates ?? []),
+    [filter, localOnlyCandidates],
+  );
 
   const onRowPress = useCallback(
     (candidate: SubstituteCandidate, incompatible: boolean) => {
@@ -266,7 +294,11 @@ export function EquipmentAwareSwapSheet({
   }, [pendingOverride, equipmentNameById, equipmentTypeIds]);
 
   const isEmpty =
-    !isLoading && error === null && best.length === 0 && others.length === 0;
+    !isLoading &&
+    error === null &&
+    best.length === 0 &&
+    others.length === 0 &&
+    localOnly.length === 0;
 
   return (
     <BottomSheet
@@ -369,6 +401,19 @@ export function EquipmentAwareSwapSheet({
                   : "No alternatives found for this exercise."}
               </Text>
             </View>
+          ) : null}
+
+          {localOnly.length > 0 ? (
+            <CandidateGroup
+              // First, because the only way to be in this group is to have just
+              // created the exercise — the user came back here looking for it.
+              label="CREATED ON THIS DEVICE"
+              rows={localOnly}
+              incompatible={false}
+              existing={existing}
+              onPress={onRowPress}
+              testIDPrefix="swap-local"
+            />
           ) : null}
 
           {best.length > 0 ? (
