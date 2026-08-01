@@ -27,6 +27,12 @@ import {
  * empty list for the entire account. It surfaced via an App Store rejection
  * rather than via monitoring. That is the gap this module closes.
  *
+ * The quota itself was raised to 1000 on 2026-08-01 (request
+ * `189195d4f16148d2b471c1685dc350be1QsR8ivV`, CASE_CLOSED) and throttling
+ * stopped, so the thresholds here assume zero throttles as the baseline. The
+ * blindness, not the quota, is what this file is for — the next incident will
+ * be something else.
+ *
  * ─── The governing constraint: production is pre-launch and very quiet ───
  *
  * Build 1.0 (39) is sitting on an App Store rejection (`STATE.md`), so
@@ -85,17 +91,16 @@ const environment = getEnvironment($app.stage);
 const isMonitoredStage = environment !== "dev";
 
 /**
- * Concurrency headroom warning, set against the **target** quota of 1000 (an
- * increase to that was requested 2026-08-01, request
- * `189195d4f16148d2b471c1685dc350be1QsR8ivV`). While the quota is still 10
- * this is provably unreachable and the alarm is inert — `lambdaThrottlesAlarm`
- * covers the interim, because throttling is defined relative to whatever the
- * quota currently is.
+ * Concurrency headroom warning — 80% of the account's Lambda **Concurrent
+ * executions** quota, which is 1000 as of 2026-08-01 (raised from 10 that
+ * evening; request `189195d4f16148d2b471c1685dc350be1QsR8ivV`, CASE_CLOSED).
  *
- * ⚠ Update this if the quota is ever set to something other than 1000. It is
- * one of two things in this file that must be revisited when the quota
- * request lands; the other is the throttle threshold below. Nothing enforces
- * either — they are TODOs guarded only by this comment.
+ * ⚠ Update this if the quota ever changes. Nothing enforces the relationship —
+ * it is a hardcoded 80% of a number that lives in AWS, not in this repo. Read
+ * the live value with:
+ *
+ *   aws lambda get-account-settings --profile ess-prod --region eu-west-2 \
+ *     --query AccountLimit.ConcurrentExecutions
  */
 const CONCURRENCY_ALARM_THRESHOLD = 800;
 
@@ -125,28 +130,35 @@ function alarm(name: string, args: aws.cloudwatch.MetricAlarmArgs) {
  * account, so a sibling product exhausting it throttles `persistence` and a
  * function-scoped alarm would miss the cause.
  *
- * ⚠ The window and threshold are INTERIM, and the window is the load-bearing
- * half. The steady state we want is `period: 300, threshold: 0` — one throttle
- * is worth knowing about. But at the current quota of 10, production throttles
- * 43–168 times a day **in bursts**: a single cold-launch fan-out throttles ~16
- * requests in under a second. So a short window cannot be made quiet by
- * raising the threshold — any 15-minute window containing one app launch is
- * already at ~16, and a 5-figure threshold would defeat the alarm's purpose.
- * A day-long window with a floor above the observed band is the only shape
- * that stays quiet on today's known-bad behaviour while still catching a
- * material worsening.
+ * `threshold: 0` over 5 minutes — any throttle at all, detected fast.
  *
- * **Once the quota is 1000, set `period: 300, threshold: 0`.**
+ * An earlier revision of this file carried a deliberately blunt interim
+ * shape (24h / >200) because at the old quota of **10** production throttled
+ * 43–168 times a day in bursts — a single cold-launch fan-out throttled ~16
+ * requests in under a second, so no short-window threshold could be both quiet
+ * and useful. **That is history**: the quota increase to 1000 was applied
+ * 2026-08-01 19:55 BST (request `189195d4f16148d2b471c1685dc350be1QsR8ivV`,
+ * CASE_CLOSED), throttles went to zero, and zero is now the correct baseline.
+ *
+ * ⚠ This alarm and `api5xxAlarm` are COUPLED, and it matters when tuning
+ * either. A throttled request is surfaced at the edge as a 503 with
+ * `integrationServiceStatus: 429`, so a throttle storm trips both. That is
+ * intentional redundancy — this one names the cause, the 5xx pair measures the
+ * user-visible symptom — but it means anything that makes throttling routine
+ * again (a quota reduction, a new product in this account, a launch-traffic
+ * surge) makes BOTH noisy, and raising the 5xx thresholds to compensate would
+ * blind the only fast detector of a non-throttle failure. Fix the throttling
+ * instead.
  */
 export const lambdaThrottlesAlarm = alarm("lambda-throttles", {
   alarmDescription:
-    "Lambda throttling (account-wide) materially above the known-bad baseline. Requests are being refused before they reach any handler — check the Concurrent executions quota (L-B99A9384) and per-function reserved concurrency. Window and threshold are INTERIM: tighten to 5min/>0 once the quota increase lands.",
+    "Lambda throttled at least once in 5 minutes (account-wide). Requests are being refused before they reach any handler — check the Concurrent executions quota (L-B99A9384) and per-function reserved concurrency. Expect the api-5xx alarms to trip alongside this: a throttled request is a 503 at the edge.",
   namespace: "AWS/Lambda",
   metricName: "Throttles",
   statistic: "Sum",
-  period: 86_400,
+  period: 300,
   evaluationPeriods: 1,
-  threshold: 200,
+  threshold: 0,
   comparisonOperator: "GreaterThanThreshold",
 });
 
@@ -289,31 +301,43 @@ export const cronErrorAlarms = CRONS.map(({ name, cron }) =>
  * the function silently stops running: no datapoint at all, and an
  * error-shaped alarm stays green forever.
  *
- * Only this one cron gets the treatment, deliberately. The other four failing
- * silently is an operational annoyance; this one failing silently means
- * accounts the user asked to delete are not being deleted, which is an App
- * Store 5.1.1(v) obligation with a 30-day clock. That asymmetry is worth one
- * alarm, and does not justify five.
+ * All five get it. An earlier revision covered only `account-purge-sweep`, on
+ * the grounds that a silent stop there breaks an App Store 5.1.1(v) obligation
+ * with a 30-day clock while the others are ops annoyances. The clock argument
+ * is still why this exists — but the cost framing was wrong (it is a `.map`
+ * over the array above, ~$0.10/alarm/month), and `streak-sweep` is not merely
+ * an annoyance either: if it stops being invoked, streaks silently never
+ * break, which is user-visible data drift.
  *
- * The cron is daily, so a 24h window with a floor of 1 is exact.
+ * Every cron runs at least daily (`reconcile-stripe-drift` hourly), so a 24h
+ * window with a floor of 1 is exact for all five. CloudWatch buckets an
+ * 86,400s period on epoch alignment and evaluates only COMPLETED periods, so
+ * the evaluated window always contains a scheduled invocation — a deploy at
+ * any hour cannot straddle it into a false positive. Worst-case detection of a
+ * genuinely stopped cron is ~43h, fine against a 30-day clock.
+ *
+ * ⚠ `period × evaluationPeriods` must not exceed 86,400 — `PutMetricAlarm`
+ * rejects it outright. At 86,400 × 1 these sit exactly on that ceiling, so
+ * raising `evaluationPeriods` here fails AT DEPLOY. `sst diff` will NOT catch
+ * it: a diff is a plan, not an apply, so the API-side validation never runs,
+ * and `infra/` has neither typecheck nor tests. Widen the window instead —
+ * there isn't any room.
  */
-export const accountPurgeHeartbeatAlarm = alarm(
-  "cron-heartbeat-account-purge",
-  {
-    alarmDescription:
-      "The account-purge-sweep cron has not been INVOKED in 24 hours — distinct from failing. Its EventBridge rule may be disabled or its invocations throttled. This job discharges the App Store 5.1.1(v) 30-day account-deletion obligation.",
+export const cronHeartbeatAlarms = CRONS.map(({ name, cron }) =>
+  alarm(`cron-heartbeat-${name}`, {
+    alarmDescription: `The ${name} cron has not been INVOKED in 24 hours — distinct from failing. Its EventBridge rule may be disabled or its invocations throttled (a throttle publishes Throttles, not Errors, so the error alarm stays green).`,
     namespace: "AWS/Lambda",
     metricName: "Invocations",
-    dimensions: { FunctionName: accountPurgeCron.nodes.function.name },
+    dimensions: { FunctionName: cron.nodes.function.name },
     statistic: "Sum",
     period: 86_400,
     evaluationPeriods: 1,
     threshold: 1,
     comparisonOperator: "LessThanThreshold",
-    // Here, missing data IS the failure — the whole point is to catch a function
-    // that publishes nothing at all.
+    // Here, missing data IS the failure — the whole point is to catch a
+    // function that publishes nothing at all.
     treatMissingData: "breaching",
-  },
+  }),
 );
 
 /**
@@ -326,16 +350,32 @@ export const accountPurgeHeartbeatAlarm = alarm(
  * sits green through a total outage. The fix for that is an alarm on
  * `AWS/ApiGateway` `Count < 1` with `treatMissingData: "breaching"`.
  *
- * It is not here because **it cannot work before launch**. Production serves
- * TestFlight and Review devices only, so zero-request hours are normal and
- * guaranteed overnight — the alarm would emit an ALARM/OK pair most quiet
- * hours from the first deploy, which is precisely the alert fatigue this
+ * The `Count` variant is not here because **it cannot work before launch**.
+ * Production serves TestFlight and Review devices only, so zero-request hours
+ * are normal and guaranteed overnight — it would emit an ALARM/OK pair most
+ * quiet hours from the first deploy, which is precisely the alert fatigue this
  * module exists to avoid. A synthetic pinger would manufacture the floor, but
  * that is a new Lambda on a 5-minute schedule (288 invocations/day) consuming
- * the very concurrency this work is trying to protect.
+ * the very concurrency this work is trying to protect. **Add it at launch**,
+ * tuned to observed overnight volume.
  *
- * **Add it at launch**, once real traffic establishes a defensible floor —
- * either a `Count` alarm tuned to observed overnight volume, or an external
- * uptime check (which costs no Lambda concurrency and also verifies DNS/TLS
- * from outside AWS, which a `Count` alarm cannot).
+ * ⚠ An **external uptime check has no such traffic dependency and could be
+ * added today** — that half of this deferral is a judgement call about scope,
+ * not a constraint. A Route 53 health check on the API host (~$0.50/month,
+ * zero Lambda concurrency) verifies DNS + TLS + HTTP from outside AWS at a
+ * fixed interval and covers all three failure modes above. Gotcha if you add
+ * it: `HealthCheckStatus` publishes to CloudWatch in **us-east-1 only**, so
+ * the alarm needs a second, explicitly-regioned provider — which is why it
+ * isn't a one-liner here.
+ *
+ * `AWS/CertificateManager` `DaysToExpiry` would cover the renewal case alone,
+ * in-region and with no traffic dependency — but SST's `ApiGatewayV2` builds
+ * the domain certificate internally (`createSsl()` in `apigatewayv2.ts`) and
+ * does not expose it on `.nodes`, so wiring it means either reaching into SST
+ * internals or looking the ARN up out-of-band. Not guessed at here, in a file
+ * that has neither typecheck nor tests.
+ *
+ * Concrete risk being accepted: build 39 is pending App Review resubmission,
+ * and a silent DNS/TLS failure during a review pass would produce a rejection
+ * with every alarm in this file green.
  */
