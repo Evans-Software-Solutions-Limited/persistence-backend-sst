@@ -301,8 +301,14 @@ export function useCachedResource<T>(
         // forever and the error never surfaced. Trigger was ordinary — cold
         // launch with a stale `cached_home`, then tapping a habit or logging
         // a weigh-in before the request landed (`invalidateHome()` deletes
-        // the row). Nothing needs the bump on the enabled path: `refresh()`
-        // below re-reads and writes through on its own.
+        // the row). Nothing needs the bump on the enabled path on SUCCESS:
+        // `refresh()` below re-reads and writes through on its own. That does
+        // NOT hold if the silent refresh below fails, or is swallowed by
+        // `refresh`'s own `if (inFlightRef.current) return` guard — `initial`
+        // then keeps the pre-invalidation read. No hook hits this today (it
+        // needs `tables` + `enabled` + a real-TTL `read`; both current
+        // `tables`-declaring hooks hardcode `isStale: true`), but the gap is
+        // real the moment one does.
         setCacheVersion((v) => v + 1);
         return;
       }

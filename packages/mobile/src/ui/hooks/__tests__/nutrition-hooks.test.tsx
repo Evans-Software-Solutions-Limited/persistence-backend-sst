@@ -4,7 +4,7 @@ import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapt
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
 import type { AuthSession } from "@/domain/ports/auth.port";
 import type { Food } from "@/domain/models/nutrition";
-import { ok } from "@/shared/errors";
+import { fail, ok } from "@/shared/errors";
 import type { Adapters } from "@/shared/types";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import {
@@ -256,6 +256,65 @@ describe("read hooks (cache-first + refresh)", () => {
     await api.createMeal({ name: "Combo", items: [] });
     const { result } = renderHook(() => useGetMeals(), { wrapper });
     await waitFor(() => expect(result.current.data?.length).toBe(1));
+  });
+});
+
+/**
+ * Inspector Brad finding (🟢, chipped from #341): `useGetFuelToday` picked up
+ * the `enabled` gate but not the un-arm-on-close discipline `useCachedResource`
+ * pairs it with. Closing a sheet is NOT an unmount — the component stays
+ * mounted — so without resetting `autoRefreshedRef` on the `true → false`
+ * flip, a failed mount-refresh (a 503, exactly what #341 exists to reduce)
+ * left the latch armed forever: reopening the sheet found it already set and
+ * never retried, silently stranding the caller on a stale/empty cache for the
+ * rest of the session.
+ */
+describe("useGetFuelToday — enabled un-arm on close", () => {
+  it("closed → open → failed fetch → close → reopen retries", async () => {
+    const { api, wrapper } = setup();
+    const getFuelTodaySpy = jest
+      .spyOn(api, "getFuelToday")
+      .mockResolvedValueOnce(
+        fail({ kind: "api", code: "server", message: "503" }),
+      )
+      .mockResolvedValue(
+        ok({
+          date: DATE,
+          targets: null,
+          consumed: { kcal: 0, proteinG: 0, carbsG: 0, fatG: 0, waterCups: 0 },
+          remainingKcal: 0,
+          entriesBySlot: { breakfast: [], lunch: [], snack: [], dinner: [] },
+        }),
+      );
+
+    const { result, rerender } = renderHook(
+      ({ enabled }: { enabled: boolean }) => useGetFuelToday(DATE, enabled),
+      { wrapper, initialProps: { enabled: false } },
+    );
+
+    // Closed on mount: no fetch fires despite an empty (stale) cache.
+    await new Promise((r) => setTimeout(r, 0));
+    expect(getFuelTodaySpy).toHaveBeenCalledTimes(0);
+
+    // Open — mount auto-refresh fires once, and fails.
+    rerender({ enabled: true });
+    await waitFor(() => expect(result.current.error).not.toBeNull());
+    expect(getFuelTodaySpy).toHaveBeenCalledTimes(1);
+    expect(result.current.data).toBeNull();
+
+    // Close. The component stays mounted (sheet close, not unmount) — this
+    // must un-arm the one-shot latch.
+    rerender({ enabled: false });
+
+    // Reopen: without the fix, `autoRefreshedRef` is still set to this
+    // user/date key and the effect's early-return means no second fetch ever
+    // fires — the caller is stuck on the failed state for the rest of the
+    // session. With the fix, the cache is still stale (the failed attempt
+    // never wrote through), so this is a genuine new mount auto-refresh.
+    rerender({ enabled: true });
+    await waitFor(() => expect(getFuelTodaySpy).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(result.current.data).not.toBeNull());
+    expect(result.current.error).toBeNull();
   });
 });
 

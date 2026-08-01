@@ -209,7 +209,21 @@ export function useDashboard(enabled = true): DashboardState {
     // Gated BEFORE the one-shot latch is armed, so a disabled (not-yet-open)
     // caller never marks it — a later `enabled` flip to `true` still finds
     // the latch unset and fires the auto-refresh exactly once.
-    if (!enabled) return;
+    //
+    // A `true → false` flip (sheet closed, NOT unmounted — the component
+    // stays mounted) re-runs this effect because `enabled` is a dependency,
+    // so this branch also un-arms the latch on the way out. Without it, a
+    // failed fetch leaves `autoRefreshedForUserRef` set forever: closing and
+    // reopening the sheet would find it already armed and never retry. Unlike
+    // `useCachedResource`, this hook has no separate `cancelled`/in-flight
+    // state to unwind here — `refresh()` above owns its own `inFlightRef` /
+    // `isRefreshing` / `error` lifecycle and always settles them itself when
+    // the fetch resolves, close or not — so resetting the latch is the only
+    // thing this branch needs to do.
+    if (!enabled) {
+      autoRefreshedForUserRef.current = null;
+      return;
+    }
     if (autoRefreshedForUserRef.current === userId) return;
     if (!initialIsStale) return;
     autoRefreshedForUserRef.current = userId;
