@@ -8,8 +8,12 @@ import {
 /**
  * Cache-first read of the caller's recipe library (M9). The list payload omits
  * ingredients (cards show name + totals); the detail hook fills them in.
+ *
+ * `enabled` (default `true`) gates the automatic fetch — pass a sheet/screen's
+ * own open flag to defer the request until it's actually shown (launch
+ * fan-out reduction; see `useCachedResource`'s `enabled` doc).
  */
-export function useGetRecipes(): CachedResourceState<Recipe[]> {
+export function useGetRecipes(enabled = true): CachedResourceState<Recipe[]> {
   return useCachedResource<Recipe[]>({
     read: (storage, userId) => ({
       value: storage.getCachedRecipes(userId),
@@ -18,5 +22,6 @@ export function useGetRecipes(): CachedResourceState<Recipe[]> {
     fetcher: (api) => api.getRecipes(),
     write: (storage, userId, value) => storage.cacheRecipes(userId, value),
     tables: RECIPE_TABLES,
+    enabled,
   });
 }

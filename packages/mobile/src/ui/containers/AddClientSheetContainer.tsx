@@ -2,10 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Share } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import { useAddClientSheet } from "@/state/add-client-sheet";
-import {
-  useInviteClient,
-  useGetInvitations,
-} from "@/ui/hooks/useTrainerInvitations";
+import { useInviteClient } from "@/ui/hooks/useTrainerInvitations";
 import { useCreateInviteCode } from "@/ui/hooks/useTrainerInviteCodes";
 import { useOnlineStatus } from "@/ui/hooks/useOnlineStatus";
 import type { TrainerInviteCode } from "@/domain/models/trainerInviteCode";
@@ -22,11 +19,20 @@ import {
  * regex + copy + error mapping). Root-mounted in app/(app)/_layout.tsx;
  * driven by `useAddClientSheet().open`.
  *
- * By-email: on success it refetches the pending-invitation list AND invokes
- * the opener's registered `onInvited` (CoachYouContainer refreshes the
- * overview), then closes the sheet. Domain failures are mapped from the
- * backend's invite `code` (self_invite | no_slots | exists) to the legacy
- * copy.
+ * By-email: on success it invokes the opener's registered `onInvited` — the
+ * ONLY cross-screen refresh path (CoachYouContainer/ClientsContainer/
+ * CoachHomeContainer each pass their own refresh function into `openSheet()`)
+ * — then closes the sheet. Domain failures are mapped from the backend's
+ * invite `code` (self_invite | no_slots | exists) to the legacy copy.
+ *
+ * ⚠ Deliberately does NOT call `useGetInvitations` here. It used to, with a
+ * `.refresh()` after a successful send, but nothing in this container ever
+ * read `.data`/`.isLoading`/`.error` — that hook keeps per-instance local
+ * state (no shared cache, per its own doc comment), so refreshing THIS
+ * instance's copy was invisible to every other screen. It was a fetch with no
+ * observable effect, firing on every cold launch once this sheet's root
+ * mount got `enabled`-gated (Inspector Brad finding, launch fan-out
+ * reduction pass). Removed rather than gated.
  *
  * Share-code (Phase 8, net-new): mints a reusable invite code via
  * `useCreateInviteCode`, disabled while offline (`useOnlineStatus`). The 402
@@ -57,7 +63,6 @@ export function AddClientSheetContainer() {
   const closeSheet = useAddClientSheet((s) => s.closeSheet);
 
   const invite = useInviteClient();
-  const invitations = useGetInvitations();
   const createCode = useCreateInviteCode();
   const isOnline = useOnlineStatus();
 
@@ -92,7 +97,6 @@ export function AddClientSheetContainer() {
     };
   }, []);
 
-  const refreshInvitations = invitations.refresh;
   const handleInvite = useCallback(async () => {
     setEmailError("");
 
@@ -111,7 +115,6 @@ export function AddClientSheetContainer() {
     if (result.ok) {
       const data = result.value;
       const onOk = () => {
-        void refreshInvitations();
         onInvited?.();
         closeSheet();
       };
@@ -166,7 +169,7 @@ export function AddClientSheetContainer() {
             "Failed to send invitation. Please try again.",
         );
     }
-  }, [email, reason, invite, refreshInvitations, onInvited, closeSheet]);
+  }, [email, reason, invite, onInvited, closeSheet]);
 
   const handleGenerateCode = useCallback(async () => {
     const result = await createCode.mutate();

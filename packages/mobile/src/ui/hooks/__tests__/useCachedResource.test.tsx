@@ -591,3 +591,452 @@ describe("useCachedResource — bus-driven reload must not blank the screen", ()
     expect(storage.changeSubscriberCount()).toBe(0);
   });
 });
+
+/**
+ * `enabled` (launch fan-out reduction, ships alongside the always-mounted
+ * bottom sheets — see feedback_sheets_mount_at_root). A cold app launch
+ * mounts seven bottom sheets as permanent siblings of the Stack; before this
+ * flag, each one's data hook auto-refreshed on mount regardless of whether
+ * the sheet's `open`/`visible` store flag was true, firing ~28 requests
+ * within 100ms against a 10-concurrency Lambda quota (~16 came back 503).
+ */
+describe("useCachedResource — `enabled` gate (launch fan-out reduction)", () => {
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => jest.useRealTimers());
+
+  it("disabled on mount: no network fetch, but the cached value still reads synchronously", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    // Present-but-stale cache, same shape a closed sheet would see: it must
+    // still render instantly from cache even though the network call is
+    // gated off.
+    writeCache(storage, 5);
+    const fetcher = jest.fn(async () => ok(42));
+
+    const { result } = renderHook(
+      ({ enabled }: { enabled: boolean }) =>
+        useCachedResource({ ...staleConfig(fetcher), enabled }),
+      {
+        initialProps: { enabled: false },
+        wrapper: wrap(makeAdapters(api, storage)),
+      },
+    );
+
+    // Cached snapshot renders immediately — `enabled` only gates the
+    // AUTOMATIC network fetch, never the synchronous cache read.
+    expect(result.current.data).toBe(5);
+
+    // Let any timers/microtasks that a (bugged) auto-refresh might have
+    // queued run to completion.
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(6000);
+    });
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(result.current.data).toBe(5);
+  });
+
+  it("disabled → enabled flip fetches exactly once (the sheet's first real open)", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    const fetcher = jest.fn(async () => ok(42));
+
+    const { result, rerender } = renderHook(
+      ({ enabled }: { enabled: boolean }) =>
+        useCachedResource({ ...staleConfig(fetcher), enabled }),
+      {
+        initialProps: { enabled: false },
+        wrapper: wrap(makeAdapters(api, storage)),
+      },
+    );
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(6000);
+    });
+    expect(fetcher).not.toHaveBeenCalled();
+
+    // The sheet opens — `enabled` flips true.
+    rerender({ enabled: true });
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(6000);
+    });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(result.current.data).toBe(42);
+
+    // Re-rendering with `enabled` still true must not re-fire it (one-shot
+    // latch, same as the always-enabled path).
+    rerender({ enabled: true });
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(6000);
+    });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it("refresh() still works while disabled (pull-to-refresh / an explicit caller is never gated)", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    writeCache(storage, 5);
+    const fetcher = jest.fn(async () => ok(42));
+
+    const { result } = renderHook(
+      () => useCachedResource({ ...staleConfig(fetcher), enabled: false }),
+      { wrapper: wrap(makeAdapters(api, storage)) },
+    );
+    expect(fetcher).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await result.current.refresh();
+    });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(result.current.data).toBe(42);
+  });
+
+  it("a bus-driven invalidation while disabled marks staleness but does NOT spend a request", async () => {
+    const storage = new InMemoryStorageAdapter();
+    storage.initialize();
+    writeCache(storage, 5);
+    const adapters = makeAdapters(new InMemoryApiAdapter(), storage);
+    const fetcher = jest.fn(async () => ok(99));
+
+    const { result } = renderHook(
+      () =>
+        useCachedResource({
+          ...scalarConfig(fetcher),
+          tables: ["cell_table"],
+          enabled: false,
+        }),
+      { wrapper: wrap(adapters) },
+    );
+    expect(result.current.data).toBe(5);
+
+    storage.cacheHabitCompletions(USER, []); // the row is invalidated
+    act(() => storage.emitChange("cell_table"));
+
+    // ⚠ The drain is load-bearing, not defensive. `refresh({ silent: true })`
+    // — the call this test exists to prove does NOT happen — only reaches the
+    // fetcher after `await processSyncQueue(...)`. Asserting synchronously
+    // here passed even with the `enabled` guard deleted from the hook, i.e.
+    // the test was vacuous and one of this PR's two behaviours was unguarded.
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(6000);
+    });
+
+    // Staleness still surfaces (so the eventual open's mount auto-refresh
+    // fires), but no request was spent while nobody's looking.
+    expect(result.current.isStale).toBe(true);
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  // Regression: an ENABLED resource whose row is invalidated mid-fetch.
+  //
+  // The disabled branch above bumps `cacheVersion` so `initialIsStale` stays
+  // honest. Doing that unconditionally broke Home: `cacheVersion` moves
+  // `initialHasNoCache`, a dependency of the mount auto-refresh effect, so the
+  // effect tore down while still mounted AND still enabled — which the
+  // cleanup's `enabledRef.current === false` guard deliberately excludes. The
+  // in-flight attempt then settled with `cancelled === true`, skipping both
+  // `setIsRefreshing(false)` and `setError`, so `HomePresenter`'s
+  // `RefreshControl` spun forever and the failure never surfaced.
+  //
+  // Real trigger: cold launch with a stale `cached_home`, then tapping a habit
+  // or logging a weigh-in before the request lands (`invalidateHome()` deletes
+  // the row).
+  it("an invalidation mid-fetch while ENABLED does not strand isRefreshing or swallow the error", async () => {
+    const storage = new InMemoryStorageAdapter();
+    storage.initialize();
+    writeCache(storage, 5);
+    const adapters = makeAdapters(new InMemoryApiAdapter(), storage);
+    let settle: ((r: Result<number, ApiError>) => void) | null = null;
+    const gate = new Promise<Result<number, ApiError>>((resolve) => {
+      settle = resolve;
+    });
+    const fetcher = jest
+      .fn<Promise<Result<number, ApiError>>, [ApiPort]>()
+      .mockReturnValueOnce(gate)
+      .mockResolvedValue(ok(1));
+
+    const { result } = renderHook(
+      () =>
+        useCachedResource({
+          ...staleConfig(fetcher),
+          tables: ["cell_table"],
+        }),
+      { wrapper: wrap(adapters) },
+    );
+
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(result.current.isRefreshing).toBe(true);
+
+    // The row vanishes while that first request is still in flight.
+    storage.cacheHabitCompletions(USER, []);
+    act(() => storage.emitChange("cell_table"));
+
+    // …and the request then fails.
+    await act(async () => {
+      settle?.(fail({ kind: "api", code: "timeout", message: "slow" }));
+      await jest.advanceTimersByTimeAsync(6000);
+    });
+
+    expect(result.current.isRefreshing).toBe(false);
+    expect(result.current.error).not.toBeNull();
+  });
+
+  it("a bus-driven invalidation while disabled bumps `cacheVersion` so `initialIsStale` reflects reality on reopen (not just local `isStale` state)", async () => {
+    // A hook with REAL TTL-based staleness (unlike `useGetMeals`/
+    // `useGetRecipes`, which hardcode `isStale: true`) — `read` reports
+    // stale iff the cached value is absent. This is what makes the bug in
+    // finding #4 observable: without bumping `cacheVersion` alongside
+    // `setIsStale(true)`, `initial`/`initialIsStale` (the arming effect's
+    // OWN gate) never re-reads storage and would report "not stale" even
+    // after the row was deleted.
+    const storage = new InMemoryStorageAdapter();
+    storage.initialize();
+    writeCache(storage, 5);
+    const adapters = makeAdapters(new InMemoryApiAdapter(), storage);
+    const fetcher = jest.fn(async () => ok(99));
+    const realStalenessConfig = {
+      ...scalarConfig(fetcher),
+      read: (storage: StoragePort, userId: string) => {
+        const rows = storage.getCachedHabitCompletions(userId, {
+          goalId: "cell",
+        });
+        return { value: rows[0]?.value ?? null, isStale: rows.length === 0 };
+      },
+      tables: ["cell_table"],
+      enabled: false,
+    };
+
+    const { result, rerender } = renderHook(
+      ({ enabled }: { enabled: boolean }) =>
+        useCachedResource({ ...realStalenessConfig, enabled }),
+      { initialProps: { enabled: false }, wrapper: wrap(adapters) },
+    );
+    expect(result.current.data).toBe(5);
+
+    storage.cacheHabitCompletions(USER, []); // the row is invalidated
+    act(() => storage.emitChange("cell_table"));
+    expect(fetcher).not.toHaveBeenCalled(); // still disabled — no request
+
+    // Reopen. Without the `cacheVersion` bump, `initialIsStale` would still
+    // reflect the PRE-invalidation read (not stale) and the arming effect
+    // would skip refetching entirely.
+    rerender({ enabled: true });
+    await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(result.current.data).toBe(99));
+  });
+});
+
+/**
+ * Inspector Brad finding (launch fan-out pass): a sheet CLOSE (`enabled:
+ * true → false`) re-runs the mount-effect's cleanup because `enabled` is a
+ * dependency, but the component STAYS MOUNTED — it is not an unmount. Before
+ * the fix, the cleanup only ever set `cancelled = true`; the async IIFE's own
+ * `finally` skips `setIsRefreshing(false)` once `cancelled` is true (that
+ * guard exists for the unmount/userId-change case), so closing mid-fetch left
+ * `isRefreshing` stuck forever on the success path and silently swallowed the
+ * error on the failure path — AND `autoRefreshedRef` was already armed before
+ * the async work even started, so reopening was a permanent no-op regardless
+ * of outcome.
+ */
+describe("useCachedResource — closing (enabled→false) mid-fetch — close is not unmount", () => {
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => jest.useRealTimers());
+
+  it("resets isRefreshing immediately on close (success path) instead of stranding it — the eventual response still lands", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    // Stale-but-present cache → single attempt (no cold-start retry noise).
+    writeCache(storage, 5);
+    let resolveFetch: ((r: Result<number, ApiError>) => void) | null = null;
+    const gate = new Promise<Result<number, ApiError>>((resolve) => {
+      resolveFetch = resolve;
+    });
+    const fetcher = jest.fn(() => gate);
+
+    const { result, rerender } = renderHook(
+      ({ enabled }: { enabled: boolean }) =>
+        useCachedResource({ ...staleConfig(fetcher), enabled }),
+      {
+        initialProps: { enabled: true },
+        wrapper: wrap(makeAdapters(api, storage)),
+      },
+    );
+
+    // Let the mount auto-refresh get past the sync-queue drain and into the
+    // actual (still-pending) fetch.
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(result.current.isRefreshing).toBe(true);
+
+    // The sheet closes WHILE the fetch is still in flight.
+    rerender({ enabled: false });
+    // The reset happens SYNCHRONOUSLY in the cleanup — no need to wait for
+    // the abandoned fetch to settle.
+    expect(result.current.isRefreshing).toBe(false);
+
+    // The abandoned fetch eventually resolves successfully — the response
+    // still lands (not wasted), and `isRefreshing` does not flip back on.
+    await act(async () => {
+      resolveFetch?.(ok(42));
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    expect(result.current.data).toBe(42);
+    expect(result.current.isRefreshing).toBe(false);
+  });
+
+  it("un-arms the latch on close (failure path) so the next open genuinely refetches, instead of silently swallowing the error forever", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    writeCache(storage, 5);
+    let rejectFetch: ((r: Result<number, ApiError>) => void) | null = null;
+    const gate = new Promise<Result<number, ApiError>>((resolve) => {
+      rejectFetch = resolve;
+    });
+    const fetcher = jest
+      .fn<Promise<Result<number, ApiError>>, [ApiPort]>()
+      .mockReturnValueOnce(gate)
+      .mockResolvedValue(ok(7));
+
+    const { result, rerender } = renderHook(
+      ({ enabled }: { enabled: boolean }) =>
+        useCachedResource({ ...staleConfig(fetcher), enabled }),
+      {
+        initialProps: { enabled: true },
+        wrapper: wrap(makeAdapters(api, storage)),
+      },
+    );
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+
+    // Close WHILE the fetch is still in flight.
+    rerender({ enabled: false });
+    expect(result.current.isRefreshing).toBe(false);
+
+    // The abandoned attempt fails — swallowed (not surfaced as `error`); the
+    // stale cache stays exactly as it was.
+    await act(async () => {
+      rejectFetch?.(fail({ kind: "api", code: "timeout", message: "slow" }));
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    expect(result.current.error).toBeNull();
+    expect(result.current.data).toBe(5);
+
+    // Reopen: the latch was un-armed on close, so this is a genuine new
+    // mount auto-refresh — not a silent no-op.
+    rerender({ enabled: true });
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(result.current.data).toBe(7));
+  });
+
+  // The sibling test above resolves the abandoned fetch BEFORE reopening, so
+  // `inFlightRef` is already free by then. Reopening INSIDE that window is the
+  // harder case: the cleanup un-arms the latch synchronously, but
+  // `inFlightRef` stays `true` until the abandoned promise settles, so the
+  // arming effect early-returns without arming — and on the failure path
+  // nothing else re-renders, so without the `retryTick` nudge the resource
+  // stays open with no data, no error and no spinner for the rest of the
+  // session.
+  it("reopening BEFORE the abandoned fetch settles still refetches once it does (failure path)", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    // Empty cache → the cold-start path, which is where a slow first request
+    // makes this window widest in practice.
+    let rejectFetch: ((r: Result<number, ApiError>) => void) | null = null;
+    const gate = new Promise<Result<number, ApiError>>((resolve) => {
+      rejectFetch = resolve;
+    });
+    const fetcher = jest
+      .fn<Promise<Result<number, ApiError>>, [ApiPort]>()
+      .mockReturnValueOnce(gate)
+      .mockResolvedValue(ok(9));
+
+    const { result, rerender } = renderHook(
+      ({ enabled }: { enabled: boolean }) =>
+        useCachedResource({ ...staleConfig(fetcher), enabled }),
+      {
+        initialProps: { enabled: true },
+        wrapper: wrap(makeAdapters(api, storage)),
+      },
+    );
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+
+    // Close, then REOPEN while attempt 1 is still in flight.
+    rerender({ enabled: false });
+    rerender({ enabled: true });
+    // Still only the one in-flight request — the arming effect correctly
+    // declined to start a second concurrent fetch.
+    expect(fetcher).toHaveBeenCalledTimes(1);
+
+    // Now the abandoned attempt fails. The slot frees, and the nudge re-runs
+    // the arming effect for the (re-opened) resource.
+    await act(async () => {
+      rejectFetch?.(fail({ kind: "api", code: "timeout", message: "slow" }));
+      await jest.advanceTimersByTimeAsync(0);
+    });
+
+    await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(result.current.data).toBe(9));
+    expect(result.current.error).toBeNull();
+    expect(result.current.isRefreshing).toBe(false);
+  });
+
+  // The `failed` gate on the nudge earns its place HERE specifically. With a
+  // WARM cache and an always-stale `read` — the ordinary shape for
+  // `useGetMeals`/`useGetRecipes` when a returning user opens QuickAdd —
+  // neither `initialIsStale` nor `initialHasNoCache` moves when the abandoned
+  // attempt succeeds, so the nudge would be the ONLY thing re-running the
+  // effect against the un-armed latch, spending a second request on data
+  // milliseconds old. (With an EMPTY cache the second fetch comes from
+  // `initialHasNoCache` flipping instead, which the gate cannot suppress —
+  // that case is documented in the hook, not asserted here.)
+  it("does not refetch when an abandoned fetch SUCCEEDS against a warm cache (the `failed` gate)", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    writeCache(storage, 5); // warm
+    let resolveFetch: ((r: Result<number, ApiError>) => void) | null = null;
+    const gate = new Promise<Result<number, ApiError>>((resolve) => {
+      resolveFetch = resolve;
+    });
+    const fetcher = jest
+      .fn<Promise<Result<number, ApiError>>, [ApiPort]>()
+      .mockReturnValueOnce(gate)
+      .mockResolvedValue(ok(77));
+
+    const { result, rerender } = renderHook(
+      ({ enabled }: { enabled: boolean }) =>
+        useCachedResource({ ...staleConfig(fetcher), enabled }),
+      {
+        initialProps: { enabled: true },
+        wrapper: wrap(makeAdapters(api, storage)),
+      },
+    );
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+
+    // Close, then reopen while attempt 1 is still in flight.
+    rerender({ enabled: false });
+    rerender({ enabled: true });
+
+    await act(async () => {
+      resolveFetch?.(ok(42));
+      await jest.advanceTimersByTimeAsync(0);
+    });
+
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(result.current.data).toBe(42);
+    expect(result.current.isRefreshing).toBe(false);
+  });
+});

@@ -19,6 +19,7 @@ import { InMemoryNetInfoAdapter } from "@/adapters/netInfo/__tests__/InMemoryNet
 import type { Adapters } from "@/shared/types";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import { useAssignProgramSheet } from "@/state/assign-program-sheet";
+import { useUserMode } from "@/state/user-mode";
 import {
   AssignProgramSheet,
   assignErrorCopy,
@@ -97,6 +98,11 @@ beforeEach(() => {
     programId: null,
     onAssigned: null,
   });
+  // Every existing test below exercises the sheet as a trainer would (it's a
+  // coach-only surface) — the role gate added for launch fan-out reduction
+  // (see the "role gating" describe block) means the data fetches would
+  // otherwise never fire without this.
+  useUserMode.setState({ mode: "coach", isTrainerEligible: true });
 });
 
 describe("assignErrorCopy", () => {
@@ -383,5 +389,122 @@ describe("AssignProgramSheet", () => {
     expect(
       screen.getByTestId("assign-submit").props.accessibilityState,
     ).toMatchObject({ disabled: true });
+  });
+
+  // Role gating (launch fan-out reduction): this sheet is root-mounted always
+  // (feedback_sheets_mount_at_root) and coach-only. Without the eligibility
+  // check every athlete's cold launch fired `/trainers/me/clients` +
+  // `/trainers/me/programs`, both of which can only ever 403 for a
+  // non-trainer.
+  describe("role gating (isTrainerEligible)", () => {
+    it("a non-trainer, even with the sheet open, fires no client/programme requests", async () => {
+      const { adapters, api } = makeAdapters();
+      api.trainerClients = makeTrainerClients();
+      api.programs = [PROGRAMME];
+      useUserMode.setState({ mode: "athlete", isTrainerEligible: false });
+      render(
+        <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
+          <AssignProgramSheet />
+        </Wrapper>,
+      );
+      act(() => {
+        useAssignProgramSheet.getState().openSheet("program-1");
+      });
+      await waitFor(() =>
+        expect(screen.getByTestId("assign-program-sheet")).toBeTruthy(),
+      );
+      // Give any (incorrectly) in-flight fetch a chance to land.
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 0));
+      });
+      expect(api.getTrainerClientsCalls).toBe(0);
+      expect(api.listProgramsCalls).toBe(0);
+      // No roster fixture ever arrives — the picker shows the empty state.
+      expect(screen.getByText(/no active clients yet/i)).toBeTruthy();
+    });
+
+    it("a trainer with the sheet open fires the client/programme requests", async () => {
+      const { adapters, api } = makeAdapters();
+      api.trainerClients = makeTrainerClients();
+      api.programs = [PROGRAMME];
+      useUserMode.setState({ mode: "coach", isTrainerEligible: true });
+      render(
+        <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
+          <AssignProgramSheet />
+        </Wrapper>,
+      );
+      act(() => {
+        useAssignProgramSheet.getState().openSheet("program-1");
+      });
+      await waitFor(() =>
+        expect(api.getTrainerClientsCalls).toBeGreaterThan(0),
+      );
+      expect(api.listProgramsCalls).toBeGreaterThan(0);
+    });
+
+    it("a never-opened sheet fires nothing even for an eligible trainer", async () => {
+      const { adapters, api } = makeAdapters();
+      api.trainerClients = makeTrainerClients();
+      useUserMode.setState({ mode: "coach", isTrainerEligible: true });
+      render(
+        <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
+          <AssignProgramSheet />
+        </Wrapper>,
+      );
+      // Sheet starts closed (beforeEach) — trainer-eligible alone must not fetch.
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 0));
+      });
+      expect(api.getTrainerClientsCalls).toBe(0);
+      expect(api.listProgramsCalls).toBe(0);
+    });
+
+    // The sheet is root-mounted, so CLOSING it is not an unmount — the tree
+    // stays alive with `enabled` flipped back to false. This exercises that
+    // transition rather than only the never-opened case: the pre-existing
+    // version of this test asserted a sheet that was never opened, which is
+    // structurally incapable of catching a close-transition regression
+    // (Inspector Brad).
+    it("closing an opened sheet stops further requests, and reopening does not re-spam", async () => {
+      const { adapters, api } = makeAdapters();
+      api.trainerClients = makeTrainerClients();
+      api.programs = [PROGRAMME];
+      useUserMode.setState({ mode: "coach", isTrainerEligible: true });
+      render(
+        <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
+          <AssignProgramSheet />
+        </Wrapper>,
+      );
+
+      act(() => {
+        useAssignProgramSheet.getState().openSheet("program-1");
+      });
+      await waitFor(() =>
+        expect(api.getTrainerClientsCalls).toBeGreaterThan(0),
+      );
+      const clientsAfterOpen = api.getTrainerClientsCalls;
+      const programsAfterOpen = api.listProgramsCalls;
+
+      act(() => {
+        useAssignProgramSheet.getState().closeSheet();
+      });
+      // Let any chain that failed to stop itself schedule and fire.
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 0));
+      });
+      expect(api.getTrainerClientsCalls).toBe(clientsAfterOpen);
+      expect(api.listProgramsCalls).toBe(programsAfterOpen);
+
+      // Reopening reads the now-fresh cache rather than refetching — the
+      // one-shot latch is armed for this user and the data is no longer stale.
+      act(() => {
+        useAssignProgramSheet.getState().openSheet("program-1");
+      });
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 0));
+      });
+      expect(api.getTrainerClientsCalls).toBe(clientsAfterOpen);
+      expect(api.listProgramsCalls).toBe(programsAfterOpen);
+    });
   });
 });

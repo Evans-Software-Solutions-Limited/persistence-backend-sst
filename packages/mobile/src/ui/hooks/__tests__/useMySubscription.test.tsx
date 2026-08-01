@@ -125,6 +125,51 @@ describe("useMySubscription", () => {
     expect(result.current.error?.kind).toBe("api");
   });
 
+  // Launch fan-out reduction: `enabled` (default true) is ANDed with the
+  // existing userId gate so an always-mounted, closed sheet (e.g. the
+  // ProfileDrawer) doesn't pull `/subscriptions/me` on every cold launch.
+  it("stays disabled while `enabled=false`, even with a signed-in user", () => {
+    const { adapters, api, auth } = makeAdapters();
+    api.mySubscription = SAMPLE_SUB;
+    auth.currentSession = {
+      accessToken: "tok",
+      refreshToken: "rtok",
+      userId: "u-1",
+      email: "x@y.com",
+      expiresAt: Date.now() + 3600_000,
+    };
+    const { result } = renderHook(() => useMySubscription(false), {
+      wrapper: wrapper(adapters, makeQueryClient()),
+    });
+    expect(result.current.fetchStatus).toBe("idle");
+    expect(result.current.data).toBeUndefined();
+  });
+
+  it("fetches once `enabled` flips true for a signed-in user", async () => {
+    const { adapters, api, auth } = makeAdapters();
+    api.mySubscription = SAMPLE_SUB;
+    auth.currentSession = {
+      accessToken: "tok",
+      refreshToken: "rtok",
+      userId: "u-1",
+      email: "x@y.com",
+      expiresAt: Date.now() + 3600_000,
+    };
+    const queryClient = makeQueryClient();
+    const { result, rerender } = renderHook(
+      ({ enabled }: { enabled: boolean }) => useMySubscription(enabled),
+      {
+        initialProps: { enabled: false },
+        wrapper: wrapper(adapters, queryClient),
+      },
+    );
+    expect(result.current.fetchStatus).toBe("idle");
+
+    rerender({ enabled: true });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.tierName).toBe("premium");
+  });
+
   it("uses the documented query-key prefix + 2-minute stale-time + helper builder", () => {
     expect(USER_SUBSCRIPTION_QUERY_KEY_PREFIX).toBe("user-subscription");
     expect(USER_SUBSCRIPTION_STALE_TIME_MS).toBe(2 * 60 * 1000);

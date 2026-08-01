@@ -36,7 +36,13 @@ export type DashboardState = {
   refresh: () => Promise<void>;
 };
 
-export function useDashboard(): DashboardState {
+/**
+ * `enabled` (default `true`) gates the mount auto-refresh — the always-mounted
+ * WaterLogSheet passes its own `visible` flag so its Home-data read doesn't
+ * fire on every cold launch, only once the sheet is actually opened (launch
+ * fan-out reduction). `refresh()` still works regardless.
+ */
+export function useDashboard(enabled = true): DashboardState {
   const { api, auth, storage } = useAdapters();
   const { session } = useAuth();
   const userId = session?.userId ?? null;
@@ -200,11 +206,15 @@ export function useDashboard(): DashboardState {
       autoRefreshedForUserRef.current = null;
       return;
     }
+    // Gated BEFORE the one-shot latch is armed, so a disabled (not-yet-open)
+    // caller never marks it — a later `enabled` flip to `true` still finds
+    // the latch unset and fires the auto-refresh exactly once.
+    if (!enabled) return;
     if (autoRefreshedForUserRef.current === userId) return;
     if (!initialIsStale) return;
     autoRefreshedForUserRef.current = userId;
     void refresh();
-  }, [userId, initialIsStale, refresh]);
+  }, [userId, initialIsStale, refresh, enabled]);
 
   return {
     payload,

@@ -331,9 +331,27 @@ export function computeClientSeatVerdict(
  * (defaulting to `monthly` when no current cycle exists, e.g. free
  * users) pre-applied via query params, satisfying AC 10.2's "tap
  * routes to Selection with target pre-selected".
+ *
+ * `enabled` (default `true`) gates ONLY `useMySubscription` — `useNutritionAiGate`
+ * passes it through so an always-mounted, closed nutrition sheet doesn't pull
+ * `/subscriptions/me` into the cold-launch fan-out (launch fan-out
+ * reduction). `useSubscriptionTiers` is deliberately left UNGATED here
+ * (Inspector Brad finding): it's user-invariant, TanStack-deduped, and has a
+ * 10-minute staleTime, so gating it saved at most one launch-time request
+ * while creating a visible regression — `upgradePriceMonthly` in the
+ * QuickAdd/AddRecipe upgrade prompt would render missing (or stay missing
+ * all session if offline) until the round trip that only starts once the
+ * sheet opens. Home's quick-add shortcut (`HomeContainer.tsx`) opens
+ * QuickAddSheetContainer without ever mounting a `useNutritionAiGate` of its
+ * own to pre-warm it, so there's no other caller keeping this warm. Not
+ * worth the trade — leave it firing at mount like every other consumer of
+ * `useSubscriptionTiers`.
  */
-export function useFeatureGate(feature: EntitlementFeature): FeatureGateResult {
-  const subQuery = useMySubscription();
+export function useFeatureGate(
+  feature: EntitlementFeature,
+  enabled = true,
+): FeatureGateResult {
+  const subQuery = useMySubscription(enabled);
   const tiersQuery = useSubscriptionTiers();
   const router = useRouter();
 

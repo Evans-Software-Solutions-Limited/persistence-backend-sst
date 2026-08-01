@@ -29,12 +29,16 @@ const mockAiGate: {
   allowed: boolean;
   onUpgrade: jest.Mock;
 } = { allowed: false, onUpgrade: jest.fn() };
+const mockUseNutritionAiGate = jest.fn();
 jest.mock("@/ui/hooks/useNutritionAiGate", () => ({
-  useNutritionAiGate: () => ({
-    allowed: mockAiGate.allowed,
-    reason: "tier",
-    gateProps: { onUpgrade: mockAiGate.onUpgrade },
-  }),
+  useNutritionAiGate: (...args: unknown[]) => {
+    mockUseNutritionAiGate(...args);
+    return {
+      allowed: mockAiGate.allowed,
+      reason: "tier",
+      gateProps: { onUpgrade: mockAiGate.onUpgrade },
+    };
+  },
 }));
 
 (globalThis as Record<string, unknown>).fetch = jest.fn(async () => ({
@@ -151,6 +155,21 @@ describe("QuickAddSheetContainer", () => {
     );
   });
 
+  // Launch fan-out reduction: this sheet is root-mounted always, so the AI
+  // gate's subscription fetch must wait for `visible` rather than firing on
+  // every cold launch.
+  it("gates useNutritionAiGate on `visible` (derived from the fuel-sheets store)", () => {
+    const { adapters } = makeAdapters();
+    render(
+      <Wrapper adapters={adapters}>
+        <QuickAddSheetContainer />
+      </Wrapper>,
+    );
+    expect(mockUseNutritionAiGate).toHaveBeenLastCalledWith(false);
+    act(() => useFuelSheets.getState().openQuickAdd("lunch"));
+    expect(mockUseNutritionAiGate).toHaveBeenLastCalledWith(true);
+  });
+
   it("is hidden until opened, then shows the menu for the slot", () => {
     const { adapters, storage } = makeAdapters();
     storage.cacheMeals(USER, [meal]);
@@ -165,6 +184,44 @@ describe("QuickAddSheetContainer", () => {
     expect(mockProbe.last?.mealLabel).toBe("Lunch");
     expect(mockProbe.last?.stage).toBe("menu");
     expect(mockProbe.last?.aiLocked).toBe(true);
+  });
+
+  // Launch fan-out reduction: this sheet is root-mounted always (fuel-sheets),
+  // so its meals/recipes reads must wait for `visible` rather than firing on
+  // every cold launch.
+  describe("meals/recipes fetch gating on `visible`", () => {
+    it("does not fetch meals or recipes while the sheet is closed", async () => {
+      const { adapters } = makeAdapters();
+      const api = adapters.api as InMemoryApiAdapter;
+      const getMealsSpy = jest.spyOn(api, "getMeals");
+      const getRecipesSpy = jest.spyOn(api, "getRecipes");
+      render(
+        <Wrapper adapters={adapters}>
+          <QuickAddSheetContainer />
+        </Wrapper>,
+      );
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(getMealsSpy).not.toHaveBeenCalled();
+      expect(getRecipesSpy).not.toHaveBeenCalled();
+    });
+
+    it("fetches meals and recipes once the sheet opens", async () => {
+      const { adapters } = makeAdapters();
+      const api = adapters.api as InMemoryApiAdapter;
+      const getMealsSpy = jest.spyOn(api, "getMeals");
+      const getRecipesSpy = jest.spyOn(api, "getRecipes");
+      render(
+        <Wrapper adapters={adapters}>
+          <QuickAddSheetContainer />
+        </Wrapper>,
+      );
+      expect(getMealsSpy).not.toHaveBeenCalled();
+      act(() => useFuelSheets.getState().openQuickAdd("lunch"));
+      await waitFor(() => expect(getMealsSpy).toHaveBeenCalled());
+      await waitFor(() => expect(getRecipesSpy).toHaveBeenCalled());
+    });
   });
 
   it("surfaces saved meals and logs one on tap", async () => {

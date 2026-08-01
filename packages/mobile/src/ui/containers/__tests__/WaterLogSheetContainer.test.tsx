@@ -131,4 +131,53 @@ describe("WaterLogSheetContainer", () => {
       ).toBe(6),
     );
   });
+
+  // Launch fan-out reduction: this sheet is root-mounted always (feedback_
+  // sheets_mount_at_root), so its fuel-today (via useGetWaterToday) and
+  // dashboard reads must wait for `visible` rather than firing on every cold
+  // launch.
+  describe("fetch gating on `visible`", () => {
+    it("does not fetch fuel-today or the dashboard while the sheet is closed", async () => {
+      const { adapters } = makeAdapters();
+      const api = adapters.api as InMemoryApiAdapter;
+      const getFuelSpy = jest.spyOn(api, "getFuelToday");
+      const getDashboardSpy = jest.spyOn(api, "getDashboard");
+      useHomeSheets.setState({ sheet: null, habitsRev: 0 });
+      render(
+        <Wrapper adapters={adapters}>
+          <WaterLogSheetContainer />
+        </Wrapper>,
+      );
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(getFuelSpy).not.toHaveBeenCalled();
+      expect(getDashboardSpy).not.toHaveBeenCalled();
+    });
+
+    it("fetches fuel-today and the dashboard once the sheet becomes visible", async () => {
+      const { adapters } = makeAdapters();
+      const api = adapters.api as InMemoryApiAdapter;
+      const getFuelSpy = jest.spyOn(api, "getFuelToday");
+      const getDashboardSpy = jest.spyOn(api, "getDashboard");
+      useHomeSheets.setState({ sheet: null, habitsRev: 0 });
+      const { rerender } = render(
+        <Wrapper adapters={adapters}>
+          <WaterLogSheetContainer />
+        </Wrapper>,
+      );
+      expect(getFuelSpy).not.toHaveBeenCalled();
+
+      act(() => {
+        useHomeSheets.setState({ sheet: "water", habitsRev: 0 });
+      });
+      rerender(
+        <Wrapper adapters={adapters}>
+          <WaterLogSheetContainer />
+        </Wrapper>,
+      );
+      await waitFor(() => expect(getFuelSpy).toHaveBeenCalled());
+      await waitFor(() => expect(getDashboardSpy).toHaveBeenCalled());
+    });
+  });
 });

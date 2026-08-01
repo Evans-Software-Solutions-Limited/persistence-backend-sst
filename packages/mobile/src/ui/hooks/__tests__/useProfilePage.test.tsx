@@ -4,7 +4,8 @@ import { PROFILE_PAGE_FIXTURE } from "@/adapters/api/__tests__/fixtures/profile-
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
 import type { AuthSession } from "@/domain/ports/auth.port";
-import { ok } from "@/shared/errors";
+import type { ProfilePageData } from "@/domain/models/profilePage";
+import { fail, ok, type ApiError, type Result } from "@/shared/errors";
 import type { Adapters } from "@/shared/types";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import { useProfilePage } from "@/ui/hooks/useProfilePage";
@@ -343,5 +344,126 @@ describe("useProfilePage", () => {
     });
 
     expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * Inspector Brad findings (launch fan-out pass): a sheet CLOSE (`enabled:
+   * true → false`) re-runs the arming effect because it's a dependency, but
+   * the component STAYS MOUNTED — it is not the same as the "clears a
+   * pending retry on unmount" case above. Before the fix, the effect's
+   * `if (!enabled) return` sat BEFORE resetting `autoFetchRef`, so closing
+   * left the latch armed for the userId forever; reopening then no-op'ed on
+   * `autoFetchRef.current?.userId === userId` and never re-armed —
+   * `isAutoRetrying` stayed stuck `true` forever (the #296-style permanent
+   * loader), and the in-flight retry chain kept scheduling attempts 2/3
+   * against a closed sheet regardless.
+   */
+  describe("closing (enabled→false) mid-retry — close is not unmount", () => {
+    it("re-arms a fresh bounded-retry chain on reopen instead of stranding isAutoRetrying forever", async () => {
+      jest.useFakeTimers();
+      try {
+        const api = new InMemoryApiAdapter();
+        const storage = new InMemoryStorageAdapter();
+        api.profilePage = PROFILE_PAGE_FIXTURE;
+        api.shouldFail = true; // attempt 1 fails; a 2s retry gets scheduled
+        const adapters = makeAdapters(api, storage);
+
+        const { result, rerender } = renderHook(
+          ({ enabled }: { enabled: boolean }) => useProfilePage(enabled),
+          { initialProps: { enabled: true }, wrapper: wrap(adapters) },
+        );
+
+        // Attempt 1 fires and fails; a 2s backoff retry is scheduled and
+        // `isAutoRetrying` holds true through the gap.
+        await act(async () => {});
+        expect(api.getProfilePageCalls).toBe(1);
+        expect(result.current.isAutoRetrying).toBe(true);
+
+        // Close INSIDE the 2s backoff window — before attempt 2 would fire.
+        rerender({ enabled: false });
+        // The strand this regression test targets: without the fix this
+        // stayed `true` forever.
+        expect(result.current.isAutoRetrying).toBe(false);
+
+        // Advancing time must NOT produce attempt 2 against a closed sheet.
+        await act(async () => {
+          await jest.advanceTimersByTimeAsync(10_000);
+        });
+        expect(api.getProfilePageCalls).toBe(1);
+
+        // Backend recovers, then the sheet reopens.
+        api.shouldFail = false;
+        rerender({ enabled: true });
+        // A FRESH bounded-retry chain must actually run — without the fix
+        // this was a permanent no-op (`autoFetchRef.current?.userId ===
+        // userId` was still true from before the close).
+        await act(async () => {});
+        expect(api.getProfilePageCalls).toBe(2);
+        await waitFor(() =>
+          expect(result.current.payload).toEqual(PROFILE_PAGE_FIXTURE),
+        );
+        expect(result.current.error).toBeNull();
+        expect(result.current.isAutoRetrying).toBe(false);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it("stops the retry chain even when closed while attempt 1's request is genuinely in flight (no scheduled timer to clear)", async () => {
+      jest.useFakeTimers();
+      try {
+        const api = new InMemoryApiAdapter();
+        const storage = new InMemoryStorageAdapter();
+        api.profilePage = PROFILE_PAGE_FIXTURE;
+        let resolveAttempt1:
+          | ((v: Result<ProfilePageData, ApiError>) => void)
+          | null = null;
+        const spy = jest.spyOn(api, "getProfilePage").mockImplementationOnce(
+          () =>
+            new Promise<Result<ProfilePageData, ApiError>>((resolve) => {
+              resolveAttempt1 = resolve;
+            }),
+        );
+        const adapters = makeAdapters(api, storage);
+
+        const { result, rerender } = renderHook(
+          ({ enabled }: { enabled: boolean }) => useProfilePage(enabled),
+          { initialProps: { enabled: true }, wrapper: wrap(adapters) },
+        );
+        expect(spy).toHaveBeenCalledTimes(1);
+        expect(result.current.isAutoRetrying).toBe(true);
+
+        // Close WHILE attempt 1's request is still pending — there is no
+        // scheduled retry timer yet for the arming effect's teardown to
+        // clear, unlike the mid-backoff case above.
+        rerender({ enabled: false });
+        expect(result.current.isAutoRetrying).toBe(false);
+
+        // Attempt 1 finally resolves with a transient (retryable-looking)
+        // failure.
+        await act(async () => {
+          resolveAttempt1?.(
+            fail({ kind: "api", code: "timeout", message: "slow" }),
+          );
+          await Promise.resolve();
+        });
+
+        // Drain every backoff window that would otherwise have scheduled
+        // attempts 2/3.
+        await act(async () => {
+          await jest.advanceTimersByTimeAsync(10_000);
+        });
+
+        // Exactly the one already-sent request — attempts 2/3 must never
+        // fire against a closed sheet (Inspector Brad's probe measured 2
+        // wasted requests here before this fix).
+        expect(spy).toHaveBeenCalledTimes(1);
+        expect(result.current.isAutoRetrying).toBe(false);
+        // Swallowed, not surfaced — the sheet is closed.
+        expect(result.current.error).toBeNull();
+      } finally {
+        jest.useRealTimers();
+      }
+    });
   });
 });

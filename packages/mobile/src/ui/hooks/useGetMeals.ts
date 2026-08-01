@@ -5,8 +5,14 @@ import {
   type CachedResourceState,
 } from "./useCachedResource";
 
-/** Cache-first read of the caller's saved meal presets (M9). */
-export function useGetMeals(): CachedResourceState<Meal[]> {
+/**
+ * Cache-first read of the caller's saved meal presets (M9).
+ *
+ * `enabled` (default `true`) gates the automatic fetch — pass a sheet/screen's
+ * own open flag to defer the request until it's actually shown (launch
+ * fan-out reduction; see `useCachedResource`'s `enabled` doc).
+ */
+export function useGetMeals(enabled = true): CachedResourceState<Meal[]> {
   return useCachedResource<Meal[]>({
     read: (storage, userId) => ({
       value: storage.getCachedMeals(userId),
@@ -15,5 +21,6 @@ export function useGetMeals(): CachedResourceState<Meal[]> {
     fetcher: (api) => api.getMeals(),
     write: (storage, userId, value) => storage.cacheMeals(userId, value),
     tables: MEAL_TABLES,
+    enabled,
   });
 }

@@ -7,6 +7,7 @@ import { Avatar } from "@/ui/components/foundation/Avatar";
 import { toneHex } from "@/ui/components/foundation/tones";
 import { IconCheck } from "@/ui/components/icons";
 import { useAssignProgramSheet } from "@/state/assign-program-sheet";
+import { useUserMode } from "@/state/user-mode";
 import { useGetTrainerClients } from "@/ui/hooks/useGetTrainerClients";
 import { useGetPrograms } from "@/ui/hooks/useGetPrograms";
 import { useAdapters } from "@/ui/hooks/useAdapters";
@@ -136,8 +137,16 @@ export function AssignProgramSheet() {
   const closeSheet = useAssignProgramSheet((s) => s.closeSheet);
 
   const { api } = useAdapters();
-  const clientsState = useGetTrainerClients();
-  const programsState = useGetPrograms();
+  // Root-mounted (feedback_sheets_mount_at_root) and coach-only: gate on
+  // `open` AND trainer eligibility. Without the eligibility check, EVERY
+  // athlete's cold launch fired `/trainers/me/clients` + `/trainers/me/
+  // programs`, both of which can only ever 403 for a non-trainer — pure
+  // waste against the launch-time concurrency budget (launch fan-out
+  // reduction). Same eligibility source `ProfileDrawerContainer` uses.
+  const isTrainerEligible = useUserMode((s) => s.isTrainerEligible);
+  const fetchEnabled = open && isTrainerEligible;
+  const clientsState = useGetTrainerClients(fetchEnabled);
+  const programsState = useGetPrograms(fetchEnabled);
 
   // client-anchored ⇒ pick a programme; otherwise ⇒ pick a client.
   const clientAnchored = anchoredClientId !== null;

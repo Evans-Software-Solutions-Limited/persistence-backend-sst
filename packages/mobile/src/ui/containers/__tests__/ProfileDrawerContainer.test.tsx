@@ -64,14 +64,18 @@ let mockProfileError: unknown = null;
 let mockProfileRefreshing = false;
 let mockProfileAutoRetrying = false;
 const mockProfileRefresh = jest.fn();
+const mockUseProfilePage = jest.fn();
 jest.mock("@/ui/hooks/useProfilePage", () => ({
-  useProfilePage: () => ({
-    payload: mockProfilePayload,
-    error: mockProfileError,
-    isRefreshing: mockProfileRefreshing,
-    isAutoRetrying: mockProfileAutoRetrying,
-    refresh: mockProfileRefresh,
-  }),
+  useProfilePage: (...args: unknown[]) => {
+    mockUseProfilePage(...args);
+    return {
+      payload: mockProfilePayload,
+      error: mockProfileError,
+      isRefreshing: mockProfileRefreshing,
+      isAutoRetrying: mockProfileAutoRetrying,
+      refresh: mockProfileRefresh,
+    };
+  },
 }));
 
 let mockSubscription: unknown = {
@@ -82,11 +86,15 @@ let mockSubscription: unknown = {
   tierDisplayName: "Premium",
 };
 const mockRefetchSubscription = jest.fn();
+const mockUseMySubscription = jest.fn();
 jest.mock("@/ui/hooks/useMySubscription", () => ({
-  useMySubscription: () => ({
-    data: mockSubscription,
-    refetch: mockRefetchSubscription,
-  }),
+  useMySubscription: (...args: unknown[]) => {
+    mockUseMySubscription(...args);
+    return {
+      data: mockSubscription,
+      refetch: mockRefetchSubscription,
+    };
+  },
 }));
 
 const mockRefresh = jest.fn();
@@ -101,11 +109,15 @@ jest.mock("@/ui/hooks/useHealthData", () => ({
 
 let mockAchievementsData: unknown[] | null = null;
 const mockRefreshAchievements = jest.fn();
+const mockUseGetAchievements = jest.fn();
 jest.mock("@/ui/hooks/useGetAchievements", () => ({
-  useGetAchievements: () => ({
-    data: mockAchievementsData,
-    refresh: mockRefreshAchievements,
-  }),
+  useGetAchievements: (...args: unknown[]) => {
+    mockUseGetAchievements(...args);
+    return {
+      data: mockAchievementsData,
+      refresh: mockRefreshAchievements,
+    };
+  },
 }));
 
 // eslint-disable-next-line import/first
@@ -127,6 +139,9 @@ beforeEach(() => {
   mockRefetchSubscription.mockClear();
   mockRefreshAchievements.mockClear();
   mockProfileRefresh.mockClear();
+  mockUseProfilePage.mockClear();
+  mockUseMySubscription.mockClear();
+  mockUseGetAchievements.mockClear();
   mockProfileError = null;
   mockProfileRefreshing = false;
   mockProfileAutoRetrying = false;
@@ -144,6 +159,28 @@ beforeEach(() => {
 });
 
 describe("ProfileDrawerContainer", () => {
+  // Launch fan-out reduction: the drawer is root-mounted always
+  // (feedback_sheets_mount_at_root), so its profile/subscription/achievements
+  // reads must wait for `open` rather than firing on every cold launch. The
+  // underlying hooks' own `enabled` behaviour is unit-tested in
+  // useCachedResource.test.tsx / useProfilePage's own suite / useMySubscription's
+  // own suite — this asserts the container forwards the right value.
+  it("gates useProfilePage/useMySubscription/useGetAchievements on useDrawer().open", () => {
+    useDrawer.setState({ open: false });
+    renderWithTheme(<ProfileDrawerContainer />);
+    expect(mockUseProfilePage).toHaveBeenLastCalledWith(false);
+    expect(mockUseMySubscription).toHaveBeenLastCalledWith(false);
+    expect(mockUseGetAchievements).toHaveBeenLastCalledWith(false);
+
+    act(() => {
+      useDrawer.setState({ open: true });
+    });
+    renderWithTheme(<ProfileDrawerContainer />);
+    expect(mockUseProfilePage).toHaveBeenLastCalledWith(true);
+    expect(mockUseMySubscription).toHaveBeenLastCalledWith(true);
+    expect(mockUseGetAchievements).toHaveBeenLastCalledWith(true);
+  });
+
   it("drives the presenter's visible prop from useDrawer().open", () => {
     renderWithTheme(<ProfileDrawerContainer />);
     expect(lastProps?.visible).toBe(false);
@@ -394,11 +431,24 @@ describe("ProfileDrawerContainer", () => {
     expect(mockRefresh).toHaveBeenCalledTimes(1);
   });
 
-  it("refetches subscription + achievements when the drawer opens (self-heal a slow/failed cold start)", () => {
+  it("refreshes achievements when the drawer opens (self-heal a slow/failed cold start)", () => {
     useDrawer.setState({ open: true });
     renderWithTheme(<ProfileDrawerContainer />);
-    expect(mockRefetchSubscription).toHaveBeenCalledTimes(1);
     expect(mockRefreshAchievements).toHaveBeenCalledTimes(1);
+  });
+
+  // Both reads are gated on `open` now (launch fan-out reduction), and
+  // TanStack re-validates a stale query on the `enabled` false→true
+  // transition by itself. An explicit `refetch()` on top of that fired a
+  // SECOND request — `cancelRefetch: true` cancels the observer's
+  // just-started promise and starts another, and `queryFn` ignores the abort
+  // signal, so both actually went out (Inspector Brad).
+  it("does NOT explicitly refetch the subscription on open — enabling the observer is the re-validation", () => {
+    useDrawer.setState({ open: true });
+    renderWithTheme(<ProfileDrawerContainer />);
+    expect(mockRefetchSubscription).not.toHaveBeenCalled();
+    // …and the query is enabled by the open state, which is what triggers it.
+    expect(mockUseMySubscription).toHaveBeenLastCalledWith(true);
   });
 
   it("does not refetch on open while the drawer stays closed", () => {
