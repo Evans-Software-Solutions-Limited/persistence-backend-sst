@@ -305,10 +305,18 @@ export function useCachedResource<T>(
         // `refresh()` below re-reads and writes through on its own. That does
         // NOT hold if the silent refresh below fails, or is swallowed by
         // `refresh`'s own `if (inFlightRef.current) return` guard — `initial`
-        // then keeps the pre-invalidation read. No hook hits this today (it
-        // needs `tables` + `enabled` + a real-TTL `read`; both current
-        // `tables`-declaring hooks hardcode `isStale: true`), but the gap is
-        // real the moment one does.
+        // then keeps the pre-invalidation read.
+        //
+        // ⚠ That gap is REACHABLE TODAY, via `useGetHome` — it declares
+        // `tables` and its `read` computes a real TTL
+        // (`isHomeStale(storage.getHomeAge(...))`). Note the condition is
+        // `tables` + a real-TTL `read` and nothing else: the gap lives on the
+        // ENABLED path, so a hook that never receives `enabled` is
+        // permanently on it. Consequence is benign — `HomeContainer` has both
+        // a focus refresh and pull-to-refresh, either of which recovers it —
+        // which is why this is documented rather than fixed. The other two
+        // `tables`-declaring hooks (`useGetMeals`, `useGetRecipes`) hardcode
+        // `isStale: true` and so cannot hit it.
         setCacheVersion((v) => v + 1);
         return;
       }
