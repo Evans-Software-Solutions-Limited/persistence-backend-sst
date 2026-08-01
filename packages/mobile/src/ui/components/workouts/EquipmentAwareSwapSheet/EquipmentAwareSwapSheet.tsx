@@ -216,14 +216,25 @@ export function EquipmentAwareSwapSheet({
 
   useEffect(() => {
     if (!visible || forExerciseId === null) {
-      // ⚠ Clearing this is not tidiness. `.finally` below is gated on
-      // `!cancelled`, so a request still in flight when the sheet closes never
-      // settles the flag. The next open that ALSO takes this branch — a
-      // substitute whose source row has fallen out of the session, or one whose
-      // source has not synced yet — would then render "Finding matches…"
-      // forever, and `isEmpty` is false while loading, so the empty state it is
-      // supposed to show never appears.
+      // ⚠ Every piece of the previous open's state, not just the flag. Nothing
+      // is fetched on this branch, so nothing downstream will overwrite any of
+      // it — and this branch is reached with the sheet OPEN whenever the source
+      // cannot be ranked (row gone from the session, or a `local-…` id the
+      // endpoint would 422 on). Leave any of it behind and that open renders:
+      //
+      //   - `isLoading` → "Finding matches…" forever. `.finally` is gated on
+      //     `!cancelled`, so a request still in flight when the sheet closed
+      //     never settles it, and `isEmpty` is false while loading, so the
+      //     empty state never appears.
+      //   - `result`    → the PREVIOUS row's candidates under the new row's
+      //     name — a screenful of plausible wrong answers.
+      //   - `error`     → "Couldn't load matches. Check your connection", for a
+      //     row nothing was ever asked about. That message is exactly what
+      //     nulling an unsynced source id set out to stop showing.
       setIsLoading(false);
+      setResult(EMPTY_RESULT);
+      setError(null);
+      setPendingOverride(null);
       resultKeyRef.current = null;
       return;
     }
@@ -451,6 +462,11 @@ export function EquipmentAwareSwapSheet({
               incompatible={false}
               existing={existing}
               onPress={onRowPress}
+              // ⚠ Not the ranked list's "A close match". These rows carry
+              // `matchedOn: []` precisely because nothing ranked them, and the
+              // group heading was just rewritten to stop claiming more than the
+              // server checked — the row line must not put the claim back.
+              unrankedReason="Not synced yet"
               testIDPrefix="swap-local"
             />
           ) : null}
@@ -502,6 +518,7 @@ function CandidateGroup({
   incompatible,
   existing,
   onPress,
+  unrankedReason = "A close match",
   testIDPrefix,
 }: {
   readonly label: string;
@@ -512,6 +529,13 @@ function CandidateGroup({
     candidate: SubstituteCandidate,
     incompatible: boolean,
   ) => void;
+  /**
+   * The row line for a candidate with no `matchedOn` signals. Defaults to the
+   * ranked lists' wording — a row that arrived from the ranker and simply
+   * matched on nothing still came out of a similarity query. Groups that were
+   * never ranked at all must override it rather than inherit a claim.
+   */
+  readonly unrankedReason?: string;
   readonly testIDPrefix: string;
 }) {
   return (
@@ -559,7 +583,7 @@ function CandidateGroup({
               <Text style={styles.rowReason} numberOfLines={2}>
                 {alreadyInPlan
                   ? "Already in this workout"
-                  : (signals ?? "A close match")}
+                  : (signals ?? unrankedReason)}
               </Text>
             </View>
             {alreadyInPlan ? null : (

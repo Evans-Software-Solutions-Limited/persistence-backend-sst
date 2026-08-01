@@ -563,6 +563,86 @@ describe("EquipmentAwareSwapSheet", () => {
     expect(queryByTestId("swap-sheet-loading")).toBeNull();
   });
 
+  /**
+   * The early return fetches nothing, so nothing downstream overwrites what the
+   * previous open left behind. Both of these render on an OPEN sheet.
+   */
+  describe("reopening for a source it cannot rank", () => {
+    const show = (
+      rerender: (ui: React.ReactElement) => void,
+      api: InMemoryApiAdapter,
+      visible: boolean,
+      forExerciseId: string | null,
+    ) =>
+      rerender(
+        <AdapterProvider adapters={makeAdapters(api)}>
+          <EquipmentAwareSwapSheet
+            visible={visible}
+            onClose={jest.fn()}
+            forExerciseId={forExerciseId}
+            exerciseName="Cable Fly"
+            onSelect={jest.fn()}
+          />
+        </AdapterProvider>,
+      );
+
+    it("does not leave the previous row's candidates on screen", async () => {
+      const api = new InMemoryApiAdapter();
+      api.substitutes = {
+        best: [],
+        others: [candidate({ id: "ex-bench", name: "Bench Press" })],
+        meta: { truncated: false },
+      };
+      const { findByTestId, queryByTestId, rerender } = renderSheet(api, {
+        forExerciseId: "ex-source",
+      });
+      await findByTestId("swap-others-ex-bench");
+
+      show(rerender, api, false, "ex-source");
+      show(rerender, api, true, null);
+
+      // Otherwise: a bench press's alternatives, under the eyebrow "CABLE FLY".
+      expect(await findByTestId("swap-sheet-empty")).toBeTruthy();
+      expect(queryByTestId("swap-others-ex-bench")).toBeNull();
+    });
+
+    it("does not leave a stale network error on screen", async () => {
+      const api = new InMemoryApiAdapter();
+      jest
+        .spyOn(api, "getExerciseSubstitutes")
+        .mockResolvedValue(
+          fail({ kind: "api", code: "network", message: "offline" }),
+        );
+      const { findByTestId, queryByTestId, rerender } = renderSheet(api, {
+        forExerciseId: "ex-source",
+      });
+      await findByTestId("swap-sheet-error");
+
+      show(rerender, api, false, "ex-source");
+      show(rerender, api, true, null);
+
+      // "Check your connection" for a row nothing was ever asked about is the
+      // exact message that nulling an unsynced source id exists to stop.
+      expect(await findByTestId("swap-sheet-empty")).toBeTruthy();
+      expect(queryByTestId("swap-sheet-error")).toBeNull();
+    });
+  });
+
+  it("does not claim a match signal for a row nothing ranked", async () => {
+    const api = new InMemoryApiAdapter();
+    api.substitutes = { best: [], others: [], meta: { truncated: false } };
+    const { findByTestId, getByText, queryByText } = renderSheet(api, {
+      localOnlyCandidates: [
+        candidate({ id: "local-abc", name: "Cable Fly", matchedOn: [] }),
+      ],
+    });
+    await findByTestId("swap-local-local-abc");
+
+    getByText("Not synced yet");
+    // The ranked lists' fallback would assert a similarity nothing computed.
+    expect(queryByText("A close match")).toBeNull();
+  });
+
   it("shows a caller-owned unavailable message", async () => {
     const api = new InMemoryApiAdapter();
     api.substitutes = {
