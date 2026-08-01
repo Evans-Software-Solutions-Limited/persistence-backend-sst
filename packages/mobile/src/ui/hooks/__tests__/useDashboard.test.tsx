@@ -5,7 +5,7 @@ import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapt
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
 import type { AuthSession } from "@/domain/ports/auth.port";
 import { DASHBOARD_STALE_AFTER_MS } from "@/domain/models/dashboard";
-import { ok } from "@/shared/errors";
+import { fail, ok } from "@/shared/errors";
 import type { Adapters } from "@/shared/types";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import { useDashboard } from "@/ui/hooks/useDashboard";
@@ -666,5 +666,59 @@ describe("useDashboard", () => {
     expect(callOrder.indexOf("fetch https://api.test/workouts")).toBeLessThan(
       callOrder.indexOf("getDashboard"),
     );
+  });
+});
+
+/**
+ * Inspector Brad finding (🟢, chipped from #341): `useDashboard` picked up the
+ * `enabled` gate but not the un-arm-on-close discipline `useCachedResource`
+ * pairs it with. Closing a sheet is NOT an unmount — the component stays
+ * mounted — so without resetting `autoRefreshedForUserRef` on the
+ * `true → false` flip, a failed mount-refresh left the latch armed forever:
+ * reopening the sheet found it already set for this `userId` and never
+ * retried.
+ */
+describe("useDashboard — enabled un-arm on close", () => {
+  it("closed → open → failed fetch → close → reopen retries", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    api.dashboard = DASHBOARD_FIXTURE;
+    const getDashboardSpy = jest
+      .spyOn(api, "getDashboard")
+      .mockResolvedValueOnce(
+        fail({ kind: "api", code: "server", message: "503" }),
+      )
+      .mockResolvedValue(ok(DASHBOARD_FIXTURE));
+    const adapters = makeAdapters(api, storage);
+
+    const { result, rerender } = renderHook(
+      ({ enabled }: { enabled: boolean }) => useDashboard(enabled),
+      { wrapper: wrap(adapters), initialProps: { enabled: false } },
+    );
+
+    // Closed on mount: no fetch fires despite an empty (stale) cache.
+    await new Promise((r) => setTimeout(r, 0));
+    expect(getDashboardSpy).toHaveBeenCalledTimes(0);
+
+    // Open — mount auto-refresh fires once, and fails.
+    rerender({ enabled: true });
+    await waitFor(() => expect(result.current.error).not.toBeNull());
+    expect(getDashboardSpy).toHaveBeenCalledTimes(1);
+    expect(result.current.payload).toBeNull();
+
+    // Close. The component stays mounted (sheet close, not unmount) — this
+    // must un-arm the one-shot latch.
+    rerender({ enabled: false });
+
+    // Reopen: without the fix, `autoRefreshedForUserRef` is still set to this
+    // userId and the effect's early-return means no second fetch ever fires.
+    // With the fix, the cache is still stale (the failed attempt never wrote
+    // through), so this is a genuine new mount auto-refresh.
+    rerender({ enabled: true });
+    await waitFor(() => expect(getDashboardSpy).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(result.current.payload).toEqual(DASHBOARD_FIXTURE),
+    );
+    expect(result.current.error).toBeNull();
   });
 });
