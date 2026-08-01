@@ -25,6 +25,13 @@ import { useAuth } from "@/ui/hooks/useAuth";
  * Backend synthesises a `free`-tier shape when the user has no
  * subscription row, so the UI never has to handle null specially
  * (AC 5.4).
+ *
+ * `enabled` (default `true`) is ANDed with the existing `userId !== null`
+ * gate and forwarded straight to TanStack Query's own `enabled` option — the
+ * always-mounted ProfileDrawer passes its own `open` flag so the request
+ * waits for a real open instead of firing on every cold launch (launch
+ * fan-out reduction). `refetch()` (from the returned query object) still
+ * works regardless.
  */
 export const USER_SUBSCRIPTION_QUERY_KEY_PREFIX = "user-subscription" as const;
 export const USER_SUBSCRIPTION_STALE_TIME_MS = 2 * 60 * 1000;
@@ -33,7 +40,7 @@ export function userSubscriptionQueryKey(userId: string) {
   return [USER_SUBSCRIPTION_QUERY_KEY_PREFIX, userId] as const;
 }
 
-export function useMySubscription() {
+export function useMySubscription(enabled = true) {
   const { api } = useAdapters();
   const { session } = useAuth();
   const userId = session?.userId ?? null;
@@ -42,7 +49,7 @@ export function useMySubscription() {
     queryKey: userId
       ? userSubscriptionQueryKey(userId)
       : [USER_SUBSCRIPTION_QUERY_KEY_PREFIX, "anonymous"],
-    enabled: userId !== null,
+    enabled: userId !== null && enabled,
     queryFn: async () => {
       const result = await api.getMySubscription();
       if (!result.ok) throw result.error;

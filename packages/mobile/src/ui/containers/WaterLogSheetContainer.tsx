@@ -20,12 +20,15 @@ export function WaterLogSheetContainer() {
   const visible = useHomeSheets((s) => s.sheet === "water");
   const onClose = useHomeSheets((s) => s.close);
   const date = localDayISO();
-  const water = useGetWaterToday(date);
+  // Root-mounted (feedback_sheets_mount_at_root), so gate both reads on
+  // `visible` — otherwise they fire on every cold launch regardless of
+  // whether this sheet was ever opened (launch fan-out reduction).
+  const water = useGetWaterToday(date, visible);
   const setWater = useSetWater();
   // Device-QA #5/#7 — reuses the already-cached dashboard payload (Home's own
   // data source) for the display-unit preference rather than adding a new
   // field.
-  const dashboard = useDashboard();
+  const dashboard = useDashboard(visible);
   const volumeUnit = preferredVolumeUnit(
     dashboard.payload?.profile.preferredUnits,
   );

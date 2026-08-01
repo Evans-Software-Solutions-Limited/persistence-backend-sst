@@ -213,4 +213,50 @@ describe("WeighInSheetContainer", () => {
     expect(writeBodyFat).not.toHaveBeenCalled();
     expect(useHomeSheets.getState().sheet).toBe("weighIn");
   });
+
+  // Launch fan-out reduction: this sheet is root-mounted always (feedback_
+  // sheets_mount_at_root), so its body-trend and profile-page reads must wait
+  // for `visible` rather than firing on every cold launch.
+  describe("fetch gating on `visible`", () => {
+    it("does not fetch body trend or the profile page while the sheet is closed", async () => {
+      const { adapters } = makeAdapters();
+      const api = adapters.api as InMemoryApiAdapter;
+      const getBodyTrendSpy = jest.spyOn(api, "getBodyTrend");
+      useHomeSheets.setState({ sheet: null, habitsRev: 0 });
+      renderWithTheme(
+        <AdapterProvider adapters={adapters}>
+          <WeighInSheetContainer />
+        </AdapterProvider>,
+      );
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 0));
+      });
+      expect(getBodyTrendSpy).not.toHaveBeenCalled();
+      expect(api.getProfilePageCalls).toBe(0);
+    });
+
+    it("fetches body trend and the profile page once the sheet becomes visible", async () => {
+      const { adapters } = makeAdapters();
+      const api = adapters.api as InMemoryApiAdapter;
+      const getBodyTrendSpy = jest.spyOn(api, "getBodyTrend");
+      useHomeSheets.setState({ sheet: null, habitsRev: 0 });
+      const { rerender } = renderWithTheme(
+        <AdapterProvider adapters={adapters}>
+          <WeighInSheetContainer />
+        </AdapterProvider>,
+      );
+      expect(getBodyTrendSpy).not.toHaveBeenCalled();
+
+      act(() => {
+        useHomeSheets.setState({ sheet: "weighIn", habitsRev: 0 });
+      });
+      rerender(
+        <AdapterProvider adapters={adapters}>
+          <WeighInSheetContainer />
+        </AdapterProvider>,
+      );
+      await waitFor(() => expect(getBodyTrendSpy).toHaveBeenCalled());
+      await waitFor(() => expect(api.getProfilePageCalls).toBeGreaterThan(0));
+    });
+  });
 });

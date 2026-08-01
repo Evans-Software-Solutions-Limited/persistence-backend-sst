@@ -538,6 +538,47 @@ describe("useFeatureGate hook", () => {
     expect(result.current.gateProps.featureDisplayName).toContain("workout");
   });
 
+  // Launch fan-out reduction: `enabled` (default true) gates ONLY
+  // `useMySubscription`. `useNutritionAiGate` passes a sheet's own open state
+  // through here so an always-mounted, closed nutrition sheet doesn't pull
+  // `/subscriptions/me` on every cold launch. `useSubscriptionTiers` is
+  // deliberately left ALWAYS ON (Inspector Brad finding, reverted after it
+  // regressed the QuickAdd upgrade prompt's price label) — it's cheap,
+  // user-invariant, and TanStack-deduped, so nothing gates it here.
+  it("`enabled=false` withholds `useMySubscription` but `useSubscriptionTiers` still fires immediately", async () => {
+    const { adapters, api, auth } = makeAdapters();
+    signIn(auth);
+    api.mySubscription = makeSub({
+      tierName: "premium",
+      paymentStatus: "active",
+      aiAccess: true,
+    });
+    api.subscriptionTiers = [BASIC_TIER, PREMIUM_TIER];
+    const getSubscriptionTiersSpy = jest.spyOn(api, "getSubscriptionTiers");
+    const getMySubscriptionSpy = jest.spyOn(api, "getMySubscription");
+
+    const { result, rerender } = renderHook(
+      ({ enabled }: { enabled: boolean }) =>
+        useFeatureGate("ai_workout", enabled),
+      {
+        initialProps: { enabled: false },
+        wrapper: wrapper(adapters, makeQueryClient()),
+      },
+    );
+    // Pre-cache fallback verdict — `subscription` is still null (its query
+    // is disabled), so the verdict stays "unknown".
+    expect(result.current.allowed).toBe(false);
+    expect(result.current.reason).toBe("unknown");
+    // The tiers catalog fetch is NOT gated — it fires immediately despite
+    // `enabled: false`. `getMySubscription` stays withheld.
+    await waitFor(() => expect(getSubscriptionTiersSpy).toHaveBeenCalled());
+    expect(getMySubscriptionSpy).not.toHaveBeenCalled();
+
+    rerender({ enabled: true });
+    await waitFor(() => expect(result.current.allowed).toBe(true));
+    expect(getMySubscriptionSpy).toHaveBeenCalled();
+  });
+
   it("computes allowed=true when the cached sub matches the feature requirement", async () => {
     const { adapters, api, auth } = makeAdapters();
     signIn(auth);

@@ -46,10 +46,30 @@ export type ProfilePageState = {
   refresh: () => Promise<void>;
 };
 
-export function useProfilePage(): ProfilePageState {
+/**
+ * `enabled` (default `true`) gates the automatic (mount + bounded-retry)
+ * fetch — NOT the explicit `refresh()`. `<AuthGate>` (app/_layout.tsx) relies
+ * on the default `true` to gate the whole render tree and must keep fetching
+ * unconditionally; the two always-mounted sheet callers (ProfileDrawer,
+ * WeighInSheet) pass their own `open`/`visible` flag instead, so the profile
+ * fetch waits for a real open rather than firing on every cold launch (launch
+ * fan-out reduction).
+ */
+export function useProfilePage(enabled = true): ProfilePageState {
   const { api, storage } = useAdapters();
   const { session } = useAuth();
   const userId = session?.userId ?? null;
+
+  // Mirrors `enabled`, written DURING RENDER (not inside a `useEffect`) so
+  // it's already up to date by the time an effect's CLEANUP runs in the same
+  // commit — an effect-based ref update (`useEffect(() => { ref.current =
+  // enabled }, [enabled])`) would still read the OLD value there, because
+  // React runs every changed effect's cleanup before running any new
+  // effect's body. The retry chain below (`autoAttempt`, its `setTimeout`
+  // continuation) also reads this from an async callback, where an
+  // effect-based ref would have been fine — this ref serves both.
+  const enabledRef = useRef(enabled);
+  enabledRef.current = enabled;
 
   const [cacheVersion, setCacheVersion] = useState(0);
 
@@ -160,6 +180,12 @@ export function useProfilePage(): ProfilePageState {
   // can recurse without `autoAttempt` listing itself as a dependency.
   const autoAttemptRef = useRef<() => void>(() => {});
   const autoAttempt = useCallback(() => {
+    // Explicit belt-and-suspenders gate on top of the `autoFetchRef` reset
+    // below: closing the sheet (`enabled: true → false`) is NOT an unmount —
+    // the component stays mounted, so this scheduled/in-flight chain must
+    // stop itself rather than relying solely on the arming effect having
+    // already un-armed `autoFetchRef` first.
+    if (!enabledRef.current) return;
     const state = autoFetchRef.current;
     if (!state || state.userId !== latestUserIdRef.current) return;
     if (state.attempts >= AUTO_FETCH_MAX_ATTEMPTS) return;
@@ -170,10 +196,31 @@ export function useProfilePage(): ProfilePageState {
     setIsAutoRetrying(true);
     void Promise.resolve(refresh()).then(() => {
       const s = autoFetchRef.current;
+      // The sheet closed while this attempt's `refresh()` was in flight. The
+      // request already happened (it can't be un-sent) and `refresh()` has
+      // already written any failure into `error` — but that failure belongs to
+      // an attempt the user abandoned by closing, so surfacing it would greet
+      // them with a stale error card on the NEXT open, for a request they
+      // never waited on. Clear it, and stop the chain here so no further
+      // attempt is scheduled against a closed sheet (Inspector Brad: 2 wasted
+      // requests measured 10s after close). The arming effect has already
+      // un-armed `autoFetchRef`, so reopening starts a clean chain from
+      // attempt 0 — which is what actually refreshes the data.
+      //
+      // Deliberately NOT folded into `refresh()`'s own `setError`: an explicit
+      // caller-invoked `refresh()` (pull-to-refresh) is never gated and MUST
+      // still surface its error, even while `enabled` is false.
+      if (!enabledRef.current) {
+        setError(null);
+        setIsAutoRetrying(false);
+        return;
+      }
       // Bail if the arm state changed since this attempt began — identity
       // (`s !== state`), not just value, so a re-armed same-user object (or a
       // direct A→B user switch that already reassigned the ref) is caught too.
-      if (!s || s !== state || s.userId !== latestUserIdRef.current) return;
+      if (!s || s !== state || s.userId !== latestUserIdRef.current) {
+        return;
+      }
       if (lastFetchOkRef.current) {
         setIsAutoRetrying(false); // recovered
         return;
@@ -205,6 +252,23 @@ export function useProfilePage(): ProfilePageState {
       setIsAutoRetrying(false);
       return;
     }
+    // A `true → false` flip is the sheet CLOSING, not unmounting — the
+    // component stays mounted, so this effect re-runs rather than a real
+    // teardown running. Un-arm the latch and clear `isAutoRetrying` HERE
+    // (not just skip arming) so a later reopen starts a fresh bounded-retry
+    // chain from attempt 0, instead of finding `autoFetchRef.current` still
+    // set to this userId (from before the close) and silently no-op'ing on
+    // the `autoFetchRef.current?.userId === userId` check below forever.
+    // Without this reset: close mid-retry stranded the profile on a
+    // permanent loader (the #296-style regression) — attempts 2/3 never got
+    // to run (see `autoAttempt`'s own `enabledRef` guard), `isAutoRetrying`
+    // stayed `true` (so `profileErrored` in ProfileDrawerContainer never
+    // flips true either), and no later open could re-arm.
+    if (!enabled) {
+      autoFetchRef.current = null;
+      setIsAutoRetrying(false);
+      return;
+    }
     if (autoFetchRef.current?.userId === userId) return;
     autoFetchRef.current = { userId, attempts: 0 };
     if (!initialIsStale) {
@@ -213,7 +277,7 @@ export function useProfilePage(): ProfilePageState {
       return;
     }
     autoAttempt();
-  }, [userId, initialIsStale, autoAttempt]);
+  }, [userId, initialIsStale, autoAttempt, enabled]);
 
   // Clear a pending retry on unmount so it can't fire after teardown.
   useEffect(

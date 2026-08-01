@@ -29,8 +29,11 @@ export function WeighInSheetContainer() {
   const onClose = useHomeSheets((s) => s.close);
   const { health } = useAdapters();
   const log = useLogMeasurement();
-  const body = useGetBodyMeasurements(30);
-  const profilePage = useProfilePage();
+  // Root-mounted (feedback_sheets_mount_at_root), so gate both reads on
+  // `visible` — otherwise they fire on every cold launch regardless of
+  // whether this sheet was ever opened (launch fan-out reduction).
+  const body = useGetBodyMeasurements(30, visible);
+  const profilePage = useProfilePage(visible);
   const [saving, setSaving] = useState(false);
   const [prefillWeightKg, setPrefillWeightKg] = useState<number | undefined>();
   const [prefillBodyFat, setPrefillBodyFat] = useState<number | null>(null);

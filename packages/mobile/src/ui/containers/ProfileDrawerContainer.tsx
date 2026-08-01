@@ -32,13 +32,19 @@ export function ProfileDrawerContainer() {
   const isTrainerEligible = useUserMode((s) => s.isTrainerEligible);
   const { switchMode } = useModeSwitch();
 
+  // `open` gates every hook below's AUTOMATIC fetch (not the cache read, not
+  // `refresh()`) — this drawer is root-mounted always (feedback_sheets_mount_
+  // at_root), so without this its profile/subscription/achievements reads
+  // fired on every cold launch regardless of whether the drawer was ever
+  // opened, feeding the launch-time 503 storm (7 always-mounted sheets ×
+  // their data hooks vs. a 10-concurrency Lambda quota).
   const {
     payload,
     error: profileFetchError,
     isRefreshing: isProfileRefreshing,
     isAutoRetrying: isProfileAutoRetrying,
     refresh: refreshProfile,
-  } = useProfilePage();
+  } = useProfilePage(open);
   const profileData = payload?.profile;
   // Errored empty state (QA-9): the fetch failed and there's nothing cached to
   // show. `useProfilePage` auto-retries a bounded number of times; we only
@@ -50,8 +56,7 @@ export function ProfileDrawerContainer() {
     profileFetchError !== null &&
     !isProfileRefreshing &&
     !isProfileAutoRetrying;
-  const { data: subscription, refetch: refetchSubscription } =
-    useMySubscription();
+  const { data: subscription } = useMySubscription(open);
   const health = useHealthData();
   const { signOut } = useAuth();
   // App Store Guideline 5.1.1(v) — same flow the Privacy screen runs.
@@ -60,23 +65,31 @@ export function ProfileDrawerContainer() {
   // Achievements screen itself reads (go-live: was hardcoded `undefined`,
   // which suppressed the count Pill entirely).
   const { data: achievementsData, refresh: refreshAchievements } =
-    useGetAchievements();
+    useGetAchievements(open);
 
-  // The drawer is mounted permanently (sibling of the Stack), so its
-  // subscription query + achievements read only fetch once at app launch. If
-  // that cold-start fetch was slow or failed, opening the drawer would show no
-  // subscription/coach-switch and a stale achievements count until a full app
-  // restart. Re-validate both on the open transition (false→true) so the
-  // drawer always reflects current state. `refetchSubscription` also re-settles
-  // trainer eligibility (fed from the same query via useUserModeEligibility).
+  // The drawer is mounted permanently (sibling of the Stack). Both reads are
+  // now gated on `open` (launch fan-out reduction), so neither fires until the
+  // user actually opens it — and the open transition is what re-validates.
+  //
+  // Achievements needs the explicit refresh: `useCachedResource`'s auto-refresh
+  // is one-shot per user, so a second open would otherwise show a stale count
+  // until an app restart.
+  //
+  // ⚠ The subscription deliberately does NOT get one. TanStack already
+  // re-validates on the `enabled` false→true transition when the data is
+  // stale, so an explicit `refetch()` here fired a SECOND request: `refetch`
+  // defaults to `cancelRefetch: true`, cancelling the observer's just-started
+  // promise and starting another, and `queryFn` ignores the abort signal — so
+  // both actually went out (Inspector Brad). Enabling the observer IS the
+  // re-validation, and it also re-settles trainer eligibility, which is fed
+  // from the same query via `useUserModeEligibility`.
   const wasOpen = useRef(false);
   useEffect(() => {
     if (open && !wasOpen.current) {
-      void refetchSubscription();
       void refreshAchievements();
     }
     wasOpen.current = open;
-  }, [open, refetchSubscription, refreshAchievements]);
+  }, [open, refreshAchievements]);
 
   const [isSigningOut, setIsSigningOut] = useState(false);
 

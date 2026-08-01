@@ -10,10 +10,54 @@ import { ExpoNotificationsAdapter } from "@/adapters/notifications";
 import { RevenueCatPurchasesAdapter } from "@/adapters/purchases";
 import { SQLiteStorageAdapter } from "@/adapters/storage";
 import type { PurchasesPort } from "@/domain/ports/purchases.port";
+import type { ApiError } from "@/shared/errors";
 import type { Adapters } from "@/shared/types";
 import { captureStorageInitFailure } from "@/lib/sentry";
 import { AdapterProvider, type StorageStatus } from "@/ui/hooks/useAdapters";
 import { ThemeProvider } from "@/ui/theme";
+
+/**
+ * True when `error` is a client (4xx) failure that will never self-heal on
+ * retry — an unauthorized/not-found/entitlement-denied/validation response is
+ * exactly as wrong the second time. `mapHttpErrorToApiError`
+ * (adapters/api/sst-api.adapter.ts) stamps the real HTTP `status` onto every
+ * `ApiError` it produces from an actual response, including the codes it
+ * doesn't have a dedicated name for (400/403/422/429/etc. all come through as
+ * `code: "server"` but keep their true `status`) — so `status` is the
+ * reliable signal, not `code`. A "network"/"timeout" failure never reached a
+ * server, so `mapHttpErrorToApiError` never ran and there IS no `status` —
+ * those fall through to `false` (retryable), which is the whole point of the
+ * one retry: a cold Lambda or a network blip is worth a second attempt.
+ *
+ * Deliberately defensive about the input shape: `queryFn` rejections aren't
+ * type-checked, so a thrown non-`ApiError` (a bug, a raw `TypeError`, …)
+ * must not crash the retry predicate itself — treat anything that doesn't
+ * look like our `ApiError` shape as retryable rather than throwing.
+ */
+export function isNonRetryableClientError(error: unknown): boolean {
+  if (
+    typeof error !== "object" ||
+    error === null ||
+    (error as { kind?: unknown }).kind !== "api"
+  ) {
+    return false;
+  }
+  const status = (error as ApiError).status;
+  return typeof status === "number" && status >= 400 && status < 500;
+}
+
+/**
+ * The QueryClient default `retry` predicate: at most one retry, skipped
+ * entirely for a non-retryable 4xx (see `isNonRetryableClientError`).
+ * Exported (rather than inlined below) so it's unit-testable without
+ * standing up a full QueryClient + fetch round-trip.
+ */
+export function defaultQueryRetry(
+  failureCount: number,
+  error: unknown,
+): boolean {
+  return failureCount < 1 && !isNonRetryableClientError(error);
+}
 
 /**
  * Build the RevenueCat purchases adapter — iOS only (M12), and the app's ONLY
@@ -89,9 +133,14 @@ export function AppProviders({ children }: { children: ReactNode }) {
             // mutation invalidations instead. Mirrors the legacy
             // query-client config.
             refetchOnWindowFocus: false,
-            // One automatic retry on failure; production paths surface
-            // errors to the UI rather than spinning forever.
-            retry: 1,
+            // At most one automatic retry, and ONLY for a failure that might
+            // self-heal (network blip, timeout, a cold Lambda's 5xx) — a 4xx
+            // (unauthorized, not-found, entitlement-denied, validation) is
+            // exactly as wrong on the second attempt, so retrying it only
+            // delays the correct error state reaching the UI and adds a
+            // needless request against the launch-time concurrency budget
+            // (launch fan-out reduction). See `defaultQueryRetry` above.
+            retry: defaultQueryRetry,
           },
           mutations: {
             retry: 0,

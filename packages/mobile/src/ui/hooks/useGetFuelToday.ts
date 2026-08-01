@@ -35,8 +35,13 @@ export type FuelTodayState = {
  * keys the synchronous cache read + the background refresh on `(userId, date)`,
  * drains the sync queue before fetching (so optimistic writes land first), and
  * guards a user/date flip mid-flight so a stale payload can't pollute the cache.
+ *
+ * `enabled` (default `true`) gates the mount auto-refresh — the always-mounted
+ * WaterLogSheet passes its own `visible` flag (via `useGetWaterToday`) so the
+ * request waits for a real open (launch fan-out reduction). `refresh()` still
+ * works regardless.
  */
-export function useGetFuelToday(date: string): FuelTodayState {
+export function useGetFuelToday(date: string, enabled = true): FuelTodayState {
   const { api, auth, storage } = useAdapters();
   const { session } = useAuth();
   const userId = session?.userId ?? null;
@@ -118,12 +123,16 @@ export function useGetFuelToday(date: string): FuelTodayState {
       autoRefreshedRef.current = null;
       return;
     }
+    // Gated BEFORE the one-shot latch is armed, so a disabled (not-yet-open)
+    // caller never marks it — a later `enabled` flip to `true` still finds
+    // the latch unset and fires the auto-refresh exactly once.
+    if (!enabled) return;
     const key = `${userId}:${date}`;
     if (autoRefreshedRef.current === key) return;
     if (!readCache().stale) return;
     autoRefreshedRef.current = key;
     void refresh();
-  }, [userId, date, readCache, refresh]);
+  }, [userId, date, readCache, refresh, enabled]);
 
   const reload = useCallback(() => {
     const c = readCache();

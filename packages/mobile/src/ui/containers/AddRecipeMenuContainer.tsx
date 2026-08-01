@@ -18,7 +18,11 @@ export function AddRecipeMenuContainer() {
   const open = useAddRecipeMenu((s) => s.open);
   const closeMenu = useAddRecipeMenu((s) => s.closeMenu);
   const online = useOnlineStatus();
-  const aiGate = useNutritionAiGate();
+  // Root-mounted (feedback_sheets_mount_at_root), so gate the AI gate's
+  // subscription-tier fetch on `open` — otherwise it fires on every cold
+  // launch regardless of whether this menu was ever opened (launch fan-out
+  // reduction).
+  const aiGate = useNutritionAiGate(open);
 
   // Guard convention shared with the other root sheets: only a genuine
   // dismiss of THIS sheet (still visible) clears the store.

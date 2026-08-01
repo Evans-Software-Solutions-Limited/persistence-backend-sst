@@ -22,8 +22,14 @@ export function isTrainerClientsStale(
  * `cached_trainer_clients`, refreshes from `GET /trainers/me/clients`.
  * Mirrors `useGetCoachOverview` — renders the cached snapshot instantly
  * (offline-friendly) then background-refreshes when stale.
+ *
+ * `enabled` (default `true`) gates the automatic fetch — pass a sheet/screen's
+ * own open flag to defer the request until it's actually shown (launch
+ * fan-out reduction; see `useCachedResource`'s `enabled` doc).
  */
-export function useGetTrainerClients(): CachedResourceState<TrainerClient[]> {
+export function useGetTrainerClients(
+  enabled = true,
+): CachedResourceState<TrainerClient[]> {
   return useCachedResource<TrainerClient[]>({
     read: (storage, userId) => ({
       value: storage.getCachedTrainerClients(userId),
@@ -35,5 +41,6 @@ export function useGetTrainerClients(): CachedResourceState<TrainerClient[]> {
     fetcher: (api) => api.getTrainerClients(),
     write: (storage, userId, value) =>
       storage.cacheTrainerClients(userId, value),
+    enabled,
   });
 }

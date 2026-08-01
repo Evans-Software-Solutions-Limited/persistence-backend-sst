@@ -28,12 +28,16 @@ const mockAiGate: { allowed: boolean; onUpgrade: jest.Mock } = {
   allowed: false,
   onUpgrade: jest.fn(),
 };
+const mockUseNutritionAiGate = jest.fn();
 jest.mock("@/ui/hooks/useNutritionAiGate", () => ({
-  useNutritionAiGate: () => ({
-    allowed: mockAiGate.allowed,
-    reason: "tier",
-    gateProps: { onUpgrade: mockAiGate.onUpgrade },
-  }),
+  useNutritionAiGate: (...args: unknown[]) => {
+    mockUseNutritionAiGate(...args);
+    return {
+      allowed: mockAiGate.allowed,
+      reason: "tier",
+      gateProps: { onUpgrade: mockAiGate.onUpgrade },
+    };
+  },
 }));
 
 function makeAdapters(online = true): Adapters {
@@ -86,7 +90,22 @@ describe("AddRecipeMenuContainer", () => {
     mockRouterPush.mockClear();
     mockAiGate.allowed = false;
     mockAiGate.onUpgrade.mockClear();
+    mockUseNutritionAiGate.mockClear();
     useAddRecipeMenu.getState().closeMenu();
+  });
+
+  // Launch fan-out reduction: this menu is root-mounted always
+  // (feedback_sheets_mount_at_root), so the AI gate's subscription fetch must
+  // wait for `open` rather than firing on every cold launch.
+  it("gates useNutritionAiGate on the store's `open` state", () => {
+    render(
+      <Wrapper adapters={makeAdapters()}>
+        <AddRecipeMenuContainer />
+      </Wrapper>,
+    );
+    expect(mockUseNutritionAiGate).toHaveBeenLastCalledWith(false);
+    act(() => useAddRecipeMenu.getState().openMenu());
+    expect(mockUseNutritionAiGate).toHaveBeenLastCalledWith(true);
   });
 
   it("reflects the store's open state", () => {

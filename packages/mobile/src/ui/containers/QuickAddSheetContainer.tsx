@@ -77,10 +77,14 @@ export function QuickAddSheetContainer() {
     if (visible) close();
   }, [visible, close]);
 
-  const meals = useGetMeals();
-  const recipes = useGetRecipes();
+  // Root-mounted (feedback_sheets_mount_at_root), so gate all three reads on
+  // `visible` — otherwise they (and the AI gate's subscription-tier fetch)
+  // fire on every cold launch regardless of whether this sheet was ever
+  // opened (launch fan-out reduction).
+  const meals = useGetMeals(visible);
+  const recipes = useGetRecipes(visible);
   const logEntry = useLogEntry();
-  const aiGate = useNutritionAiGate();
+  const aiGate = useNutritionAiGate(visible);
   const online = useOnlineStatus();
   const describeDraft = useAiDraftItems();
 

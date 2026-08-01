@@ -306,6 +306,33 @@ describe("AddClientSheetContainer", () => {
     );
   });
 
+  // Inspector Brad finding (launch fan-out pass): this container used to call
+  // `useGetInvitations()` and `.refresh()` it after a successful send, but
+  // nothing here ever read `.data`/`.isLoading`/`.error` — that hook has no
+  // shared cache (per its own doc comment), so the call was a fetch with no
+  // observable effect anywhere in the app. Removed entirely rather than
+  // gated on `open`. Cross-screen refresh runs ONLY through the `onInvited`
+  // callback the opener registers (CoachYouContainer et al.) — asserted
+  // above ("relationship_created → success alert, refetch, onInvited,
+  // close" exercises `onInvited`).
+  it("never calls GET /trainers/me/invitations — no consumer reads it", async () => {
+    const { adapters, api } = makeAdapters();
+    api.nextInviteResult = {
+      success: true,
+      action: "relationship_created",
+      clientName: "Jane Doe",
+      message: "ok",
+    };
+    const { getByTestId } = renderSheet(api, adapters);
+    fireEvent.changeText(getByTestId("add-client-email-input"), "jane@doe.com");
+    await act(async () => {
+      fireEvent.press(getByTestId("add-client-send"));
+    });
+    act(() => pressAlertOk(alertSpy));
+    await waitFor(() => expect(api.inviteClientCalls).toHaveLength(1));
+    expect(api.getInvitationsCalls).toBe(0);
+  });
+
   it("Cancel closes the sheet", () => {
     const { adapters, api } = makeAdapters();
     const { getByTestId } = renderSheet(api, adapters);

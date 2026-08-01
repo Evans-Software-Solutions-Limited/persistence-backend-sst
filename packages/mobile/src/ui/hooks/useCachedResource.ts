@@ -77,6 +77,25 @@ export type CachedResourceConfig<T> = {
    * array inline per render.
    */
   tables?: readonly string[];
+  /**
+   * Gate for the AUTOMATIC fetch paths (mount auto-refresh + the bus-driven
+   * silent refresh below) — NOT for the synchronous cache `read` or the
+   * explicit `refresh()`/`reload()` the caller invokes. Defaults to `true`.
+   *
+   * Exists for the always-mounted bottom sheets (feedback_sheets_mount_at_root
+   * — root-mounting is correct, it's what keeps z-order + the slide-out exit
+   * animation working): seven of them called this hook unconditionally, so
+   * their data fetches fired on every cold launch regardless of whether the
+   * sheet was ever opened. ~28 requests inside 100ms against a 10-concurrency
+   * Lambda quota meant ~16 came back 503. Callers pass their sheet's own
+   * `open`/`visible` flag here so the fetch waits for a real open.
+   *
+   * `false → true` still fires the mount auto-refresh exactly once (the
+   * one-shot latch below is only armed once `enabled` has let the effect run
+   * past the guard), so a sheet opened for the first time still refreshes on
+   * that first open — it just doesn't refresh before anyone asked.
+   */
+  enabled?: boolean;
 };
 
 export type CachedResourceState<T> = {
@@ -108,7 +127,18 @@ export function useCachedResource<T>(
   const { api, auth, storage } = useAdapters();
   const { session } = useAuth();
   const userId = session?.userId ?? null;
-  const { read, fetcher, write } = config;
+  const { read, fetcher, write, enabled = true } = config;
+
+  // Mirrors `enabled`, written DURING RENDER (not inside a `useEffect`) so
+  // it's already up to date by the time the mount-effect's CLEANUP runs in
+  // the same commit — an effect-based ref update would still read the OLD
+  // value there, because React runs every changed effect's cleanup before
+  // running any new effect's body. This is what lets that cleanup tell a
+  // `enabled: true → false` sheet CLOSE (component stays mounted — the
+  // cleanup must reset in-flight state) apart from a real unmount or an
+  // unrelated dependency change (state must NOT be reset there).
+  const enabledRef = useRef(enabled);
+  enabledRef.current = enabled;
 
   const [cacheVersion, setCacheVersion] = useState(0);
   const initial = useMemo(() => {
@@ -237,22 +267,69 @@ export function useCachedResource<T>(
         setIsStale(r.isStale);
         return;
       }
-      // Row gone. Keep what is rendered, mark it stale, and refetch.
+      // Row gone. Keep what is rendered, mark it stale, and refetch — but
+      // only the network half when `enabled`. A closed sheet still wants the
+      // synchronous re-read above (its cached snapshot must stay correct for
+      // the moment it opens), it just shouldn't spend a request while nobody
+      // is looking at it.
+      //
+      // `setIsStale(true)` alone only updates the STATE this hook returns —
+      // it does NOT make the mount auto-refresh effect below re-fire, because
+      // that effect gates on `initialIsStale`, derived from the `initial`
+      // useMemo keyed on `[storage, userId, cacheVersion]`. None of those
+      // move just because local `isStale` state changed, so `initial.isStale`
+      // would keep reporting whatever it computed the last time `cacheVersion`
+      // bumped — stale information surviving an invalidation. Bumping
+      // `cacheVersion` here forces that memo to re-run `read()` against the
+      // CURRENT (just-invalidated) cache, so `initialIsStale` reflects reality
+      // by the time this resource is next opened and the arming effect checks
+      // it. Latent today (both `tables`-declaring hooks hardcode
+      // `isStale: true` unconditionally, so `initialIsStale` was already
+      // always `true` regardless) — but load-bearing the moment any hook adds
+      // `tables` with a real TTL-based `read()`.
       setIsStale(true);
-      void refresh({ silent: true });
+      setCacheVersion((v) => v + 1);
+      if (enabled !== false) void refresh({ silent: true });
     });
     // `read` is a stable caller closure (same convention as `refresh`/`reload`).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [storage, userId, refresh]);
+  }, [storage, userId, refresh, enabled]);
 
   const autoRefreshedRef = useRef<string | null>(null);
   const initialIsStale = initial.isStale;
   const initialHasNoCache = initial.value == null;
+  /**
+   * Bumped by an ABANDONED attempt's `finally` when the resource has been
+   * re-enabled in the meantime, purely to re-run the arming effect below.
+   *
+   * The cleanup un-arms `autoRefreshedRef` synchronously, but `inFlightRef`
+   * stays `true` until the abandoned promise actually settles. Reopen inside
+   * that window (up to ~10s on a cold Lambda, and the cold-start ladder waits
+   * 5.5s of its own) and the arming effect hits `if (inFlightRef.current)
+   * return` — bailing BEFORE it arms, so nothing is latched. If that abandoned
+   * attempt then FAILS, its failure path touches no state at all (`setError`
+   * and `setIsRefreshing` are both skipped under `cancelled`, and `inFlightRef`
+   * is a ref) — so nothing re-renders, no dependency moves, and the effect
+   * never runs again. Result: an open sheet with no data, no error, no
+   * spinner, and no recovery short of an unmount or a user switch.
+   *
+   * The success path self-heals (`attemptFetch` writes `data` + bumps
+   * `cacheVersion` regardless of `cancelled`), which is why this is
+   * failure-only — and why it needs an explicit nudge rather than a dependency
+   * that happens to move.
+   */
+  const [retryTick, setRetryTick] = useState(0);
   useEffect(() => {
     if (!userId) {
       autoRefreshedRef.current = null;
       return;
     }
+    // Gate BEFORE the one-shot latch is checked/armed — not after — so a
+    // disabled resource never marks `autoRefreshedRef`. That's what lets a
+    // later `enabled` flip to `true` still find the latch unset and run the
+    // auto-refresh exactly once, instead of the gate silently eating the
+    // resource's only shot at it.
+    if (enabled === false) return;
     if (autoRefreshedRef.current === userId) return;
     if (!initialIsStale) return;
     if (inFlightRef.current) return;
@@ -268,6 +345,11 @@ export function useCachedResource<T>(
     setIsRefreshing(true);
     setError(null);
 
+    // Whether this run ultimately failed — the ONLY case the `retryTick` nudge
+    // below applies to. A run that succeeded already wrote `data` and bumped
+    // `cacheVersion` (which self-heals a reopen without any nudge), so nudging
+    // it too would fire a second fetch against data milliseconds old.
+    let failed = false;
     void (async () => {
       try {
         let lastError: ApiError | null = null;
@@ -288,26 +370,79 @@ export function useCachedResource<T>(
           if (!lastError) break; // success — attemptFetch already wrote `data`
           if (!isRetryableColdStartError(lastError)) break; // 4xx: don't retry
         }
+        if (lastError) failed = true;
         if (!cancelled && lastError && latestUserRef.current === userId) {
           setError(lastError);
         }
       } catch (err) {
+        failed = true;
         // `attemptFetch` isn't supposed to throw (it returns the ApiError
         // on failure), but a misbehaving `fetcher` rejecting instead of
         // resolving a `Result` must not escape as an unhandled rejection
         // off this void-called IIFE — log and fall through to `finally`.
         console.error("[useCachedResource] mount auto-refresh failed:", err);
       } finally {
+        // `cancelled` guards against a stale/late-resolving fetch clobbering
+        // fresher state after a genuine unmount or a userId change — NOT
+        // against a `enabled` flip, which the cleanup below handles
+        // immediately and explicitly instead of waiting for this to settle.
         if (!cancelled) setIsRefreshing(false);
         inFlightRef.current = false;
+        // Abandoned (the sheet closed mid-fetch), FAILED, and re-enabled again
+        // since — the user reopened before it settled. The arming effect
+        // already early-returned on `inFlightRef` above, and on the failure
+        // path nothing else moves a dependency, so nudge it explicitly now
+        // that the slot is free. See `retryTick`.
+        //
+        // Success is excluded because it needs no nudge — it writes `data` and
+        // moves `initialHasNoCache`/`cacheVersion` itself. ⚠ Note that for a
+        // resource whose `read` hardcodes `isStale: true` (today: the two
+        // `tables`-declaring hooks, `useGetMeals` and `useGetRecipes`) that
+        // same dependency movement re-runs this effect against an un-armed
+        // latch and so does refetch once on this interleaving. That is a
+        // property of an always-stale `read`, not of the nudge — gating the
+        // nudge on `failed` does not (and cannot) suppress it.
+        if (cancelled && failed && enabledRef.current) {
+          setRetryTick((t) => t + 1);
+        }
       }
     })();
 
     return () => {
       cancelled = true;
+      // A `enabled: true → false` flip re-runs this effect (it's a
+      // dependency) but the component STAYS MOUNTED — the sheet just closed,
+      // it did not unmount. `enabledRef.current` was already updated to the
+      // NEW value during render, before this cleanup runs in the same
+      // commit, so this reliably distinguishes that case from a real
+      // unmount or an unrelated dependency change (where `enabled` is still
+      // `true` and none of this should run).
+      //
+      // Without this: closing mid-fetch left `isRefreshing` stuck `true`
+      // forever on the success path (the `finally` above skips resetting it
+      // once `cancelled` is true) and silently swallowed the error on the
+      // failure path (`setError` above is ALSO skipped) — AND
+      // `autoRefreshedRef` was already armed for this user before the async
+      // work even started, so reopening never re-fired the fetch either way.
+      // Resetting both here — synchronously, not waiting for the in-flight
+      // promise to settle — un-arms the latch so the next open genuinely
+      // refetches (only pointless if the abandoned fetch already succeeded
+      // and bumped `cacheVersion`, in which case `initialIsStale` will
+      // correctly report fresh and the arming effect skips redundant work).
+      if (enabledRef.current === false) {
+        setIsRefreshing(false);
+        autoRefreshedRef.current = null;
+      }
     };
     // attemptFetch is stable per (api/auth/storage/userId); initial* gate entry.
-  }, [userId, initialIsStale, initialHasNoCache, attemptFetch]);
+  }, [
+    userId,
+    initialIsStale,
+    initialHasNoCache,
+    attemptFetch,
+    enabled,
+    retryTick,
+  ]);
 
   return { data, isStale, isRefreshing, error, refresh, reload };
 }

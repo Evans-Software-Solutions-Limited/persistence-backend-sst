@@ -21,8 +21,14 @@ export function isProgramsStale(syncedAt: string | null, now: number): boolean {
  * cached snapshot instantly (offline-friendly) then background-refreshes
  * when stale. Programme DETAIL is never cached here — the editor container
  * fetches it live via `api.getProgram(id)`.
+ *
+ * `enabled` (default `true`) gates the automatic fetch — pass a sheet/screen's
+ * own open flag to defer the request until it's actually shown (launch
+ * fan-out reduction; see `useCachedResource`'s `enabled` doc).
  */
-export function useGetPrograms(): CachedResourceState<ProgramSummary[]> {
+export function useGetPrograms(
+  enabled = true,
+): CachedResourceState<ProgramSummary[]> {
   return useCachedResource<ProgramSummary[]>({
     read: (storage, userId) => ({
       value: storage.getCachedPrograms(userId),
@@ -30,5 +36,6 @@ export function useGetPrograms(): CachedResourceState<ProgramSummary[]> {
     }),
     fetcher: (api) => api.listPrograms(),
     write: (storage, userId, value) => storage.cachePrograms(userId, value),
+    enabled,
   });
 }
