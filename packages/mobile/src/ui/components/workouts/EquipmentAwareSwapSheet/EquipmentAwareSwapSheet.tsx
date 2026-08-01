@@ -232,10 +232,18 @@ export function EquipmentAwareSwapSheet({
       //     row nothing was ever asked about. That message is exactly what
       //     nulling an unsynced source id set out to stop showing.
       setIsLoading(false);
-      setResult(EMPTY_RESULT);
-      setError(null);
-      setPendingOverride(null);
-      resultKeyRef.current = null;
+      // ⚠ …but only while the sheet is OPEN. This branch fires for two
+      // different reasons and `BottomSheet` keeps its children mounted through
+      // the close animation, so clearing on a dismiss makes the list the user
+      // just tapped flip to "No alternatives found for this exercise." for the
+      // length of the slide-down. Scoping it here also lets a close-and-reopen
+      // of the SAME row keep its rows painted while it refetches.
+      if (visible) {
+        setResult(EMPTY_RESULT);
+        setError(null);
+        setPendingOverride(null);
+        resultKeyRef.current = null;
+      }
       return;
     }
     let cancelled = false;

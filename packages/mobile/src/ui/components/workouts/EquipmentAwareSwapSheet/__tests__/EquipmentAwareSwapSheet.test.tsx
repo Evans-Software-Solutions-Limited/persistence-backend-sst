@@ -586,6 +586,27 @@ describe("EquipmentAwareSwapSheet", () => {
         </AdapterProvider>,
       );
 
+    it("does NOT blank the list on the close path — the sheet is still on screen", async () => {
+      const api = new InMemoryApiAdapter();
+      api.substitutes = {
+        best: [],
+        others: [candidate({ id: "ex-bench", name: "Bench Press" })],
+        meta: { truncated: false },
+      };
+      const { findByTestId, queryByTestId, rerender } = renderSheet(api, {
+        forExerciseId: "ex-source",
+      });
+      await findByTestId("swap-others-ex-bench");
+
+      // `BottomSheet` keeps its children mounted through the slide-down, so
+      // clearing here would replace the row the user just tapped with "No
+      // alternatives found for this exercise." for the length of the dismiss.
+      show(rerender, api, false, "ex-source");
+
+      expect(queryByTestId("swap-others-ex-bench")).not.toBeNull();
+      expect(queryByTestId("swap-sheet-empty")).toBeNull();
+    });
+
     it("does not leave the previous row's candidates on screen", async () => {
       const api = new InMemoryApiAdapter();
       api.substitutes = {

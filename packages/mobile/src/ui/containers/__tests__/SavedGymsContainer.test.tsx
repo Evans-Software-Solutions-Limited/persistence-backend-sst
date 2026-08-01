@@ -345,6 +345,31 @@ describe("SavedGymsContainer", () => {
     expect(await findByText(/Couldn't delete that gym/)).toBeTruthy();
   });
 
+  it("clears a failed delete's banner once a later edit succeeds", async () => {
+    const api = new InMemoryApiAdapter();
+    seedGym(api);
+    const remove = jest
+      .spyOn(api, "deleteSavedGym")
+      .mockResolvedValue(fail({ kind: "api", code: "network", message: "" }));
+    const { findByTestId, findByText, queryByText } = renderScreen(api);
+
+    fireEvent.press(await findByTestId("saved-gym-gym-1-delete"));
+    fireEvent.press(await findByTestId("saved-gym-gym-1-delete-confirm"));
+    await findByText(/Couldn't delete that gym/);
+    remove.mockRestore();
+
+    // Back online, renaming a DIFFERENT thing entirely. The delete banner
+    // outranks `loadError` and is otherwise only cleared by starting another
+    // delete, so it would hang over a screen where nothing is wrong.
+    fireEvent.press(await findByTestId("saved-gym-gym-1-edit"));
+    fireEvent.changeText(await findByTestId("saved-gym-gym-1-name"), "Garage");
+    fireEvent.press(await findByTestId("saved-gym-gym-1-save"));
+
+    await waitFor(() =>
+      expect(queryByText(/Couldn't delete that gym/)).toBeNull(),
+    );
+  });
+
   it("deletes on confirmation and the list re-reads", async () => {
     const api = new InMemoryApiAdapter();
     seedGym(api);

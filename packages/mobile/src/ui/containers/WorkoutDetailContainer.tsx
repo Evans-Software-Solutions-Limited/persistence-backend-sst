@@ -62,7 +62,17 @@ export function WorkoutDetailContainer() {
 
   // Caller-scoped server-side, but the readable parent need not be caller-owned:
   // AC-1.2 lets an athlete save their own setups under a coach/template workout.
-  const variations = useWorkoutVariations(!isVariation ? workoutId : null);
+  //
+  // ⚠ `workout != null` is load-bearing, not a null-guard. `isVariation` is
+  // derived from `workout`, which is undefined until the detail read lands — so
+  // `!isVariation` alone is TRUE on mount for every workout, and opening a saved
+  // setup fires `GET /workouts/<variationId>/variations` before `isVariation`
+  // flips and the response is thrown away. One dead request per variation-detail
+  // open, in a codebase that has just spent two PRs (#341, #343) trimming exactly
+  // this kind of fetch.
+  const variations = useWorkoutVariations(
+    workout != null && !isVariation ? workoutId : null,
+  );
   const savedGyms = useSavedGyms(
     isOwner && isVariation && workout?.sourceGymId != null,
   );

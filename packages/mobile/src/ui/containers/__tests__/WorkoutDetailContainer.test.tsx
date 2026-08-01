@@ -537,5 +537,28 @@ describe("WorkoutDetailContainer", () => {
       // to a coach or template author.
       await waitFor(() => expect(variations).toHaveBeenCalledWith(workout.id));
     });
+
+    it("does NOT list variations of a variation — not even on the first render", async () => {
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      const variation = buildWorkout({
+        id: "w-1",
+        parentWorkoutId: "w-root",
+        variationKind: "loadout",
+      });
+      storage.cacheWorkoutDetail("user-1", variation);
+      jest.spyOn(api, "getWorkout").mockResolvedValue(ok(variation));
+      const variations = jest.spyOn(api, "getWorkoutVariations");
+
+      const { findByTestId } = renderWithTheme(
+        withAdapters(makeAdapters(api, storage), <WorkoutDetailContainer />),
+      );
+      await findByTestId("workout-detail-start");
+
+      // `isVariation` is derived from `workout`, which is undefined on mount —
+      // so a gate of `!isVariation` alone is TRUE for one render and fires a
+      // request whose response is then discarded.
+      await waitFor(() => expect(variations).not.toHaveBeenCalled());
+    });
   });
 });

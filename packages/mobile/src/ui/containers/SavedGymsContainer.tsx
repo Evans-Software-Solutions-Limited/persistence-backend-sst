@@ -95,6 +95,13 @@ export function SavedGymsContainer() {
       return;
     }
     setEditing({ ...editing, isSaving: true, error: null });
+    // ⚠ A failed DELETE's banner outranks `loadError` and is otherwise only
+    // cleared by starting another delete. Without this, a delete that failed
+    // offline leaves "Couldn't delete that gym. Check your connection and try
+    // again." sitting above a list where a later rename has just succeeded
+    // online — an error about a gym that is still there, over a screen where
+    // nothing is wrong.
+    setMutationError(null);
     const error = await gyms.update(editing.gymId, {
       name: trimmed,
       equipmentTypeIds: [...editing.selectedIds],
