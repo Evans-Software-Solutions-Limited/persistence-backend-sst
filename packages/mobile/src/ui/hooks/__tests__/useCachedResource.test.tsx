@@ -710,10 +710,76 @@ describe("useCachedResource — `enabled` gate (launch fan-out reduction)", () =
     storage.cacheHabitCompletions(USER, []); // the row is invalidated
     act(() => storage.emitChange("cell_table"));
 
+    // ⚠ The drain is load-bearing, not defensive. `refresh({ silent: true })`
+    // — the call this test exists to prove does NOT happen — only reaches the
+    // fetcher after `await processSyncQueue(...)`. Asserting synchronously
+    // here passed even with the `enabled` guard deleted from the hook, i.e.
+    // the test was vacuous and one of this PR's two behaviours was unguarded.
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(6000);
+    });
+
     // Staleness still surfaces (so the eventual open's mount auto-refresh
     // fires), but no request was spent while nobody's looking.
     expect(result.current.isStale).toBe(true);
     expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  // Regression: an ENABLED resource whose row is invalidated mid-fetch.
+  //
+  // The disabled branch above bumps `cacheVersion` so `initialIsStale` stays
+  // honest. Doing that unconditionally broke Home: `cacheVersion` moves
+  // `initialHasNoCache`, a dependency of the mount auto-refresh effect, so the
+  // effect tore down while still mounted AND still enabled — which the
+  // cleanup's `enabledRef.current === false` guard deliberately excludes. The
+  // in-flight attempt then settled with `cancelled === true`, skipping both
+  // `setIsRefreshing(false)` and `setError`, so `HomePresenter`'s
+  // `RefreshControl` spun forever and the failure never surfaced.
+  //
+  // Real trigger: cold launch with a stale `cached_home`, then tapping a habit
+  // or logging a weigh-in before the request lands (`invalidateHome()` deletes
+  // the row).
+  it("an invalidation mid-fetch while ENABLED does not strand isRefreshing or swallow the error", async () => {
+    const storage = new InMemoryStorageAdapter();
+    storage.initialize();
+    writeCache(storage, 5);
+    const adapters = makeAdapters(new InMemoryApiAdapter(), storage);
+    let settle: ((r: Result<number, ApiError>) => void) | null = null;
+    const gate = new Promise<Result<number, ApiError>>((resolve) => {
+      settle = resolve;
+    });
+    const fetcher = jest
+      .fn<Promise<Result<number, ApiError>>, [ApiPort]>()
+      .mockReturnValueOnce(gate)
+      .mockResolvedValue(ok(1));
+
+    const { result } = renderHook(
+      () =>
+        useCachedResource({
+          ...staleConfig(fetcher),
+          tables: ["cell_table"],
+        }),
+      { wrapper: wrap(adapters) },
+    );
+
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(result.current.isRefreshing).toBe(true);
+
+    // The row vanishes while that first request is still in flight.
+    storage.cacheHabitCompletions(USER, []);
+    act(() => storage.emitChange("cell_table"));
+
+    // …and the request then fails.
+    await act(async () => {
+      settle?.(fail({ kind: "api", code: "timeout", message: "slow" }));
+      await jest.advanceTimersByTimeAsync(6000);
+    });
+
+    expect(result.current.isRefreshing).toBe(false);
+    expect(result.current.error).not.toBeNull();
   });
 
   it("a bus-driven invalidation while disabled bumps `cacheVersion` so `initialIsStale` reflects reality on reopen (not just local `isStale` state)", async () => {
@@ -922,6 +988,55 @@ describe("useCachedResource — closing (enabled→false) mid-fetch — close is
     await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(result.current.data).toBe(9));
     expect(result.current.error).toBeNull();
+    expect(result.current.isRefreshing).toBe(false);
+  });
+
+  // The `failed` gate on the nudge earns its place HERE specifically. With a
+  // WARM cache and an always-stale `read` — the ordinary shape for
+  // `useGetMeals`/`useGetRecipes` when a returning user opens QuickAdd —
+  // neither `initialIsStale` nor `initialHasNoCache` moves when the abandoned
+  // attempt succeeds, so the nudge would be the ONLY thing re-running the
+  // effect against the un-armed latch, spending a second request on data
+  // milliseconds old. (With an EMPTY cache the second fetch comes from
+  // `initialHasNoCache` flipping instead, which the gate cannot suppress —
+  // that case is documented in the hook, not asserted here.)
+  it("does not refetch when an abandoned fetch SUCCEEDS against a warm cache (the `failed` gate)", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    writeCache(storage, 5); // warm
+    let resolveFetch: ((r: Result<number, ApiError>) => void) | null = null;
+    const gate = new Promise<Result<number, ApiError>>((resolve) => {
+      resolveFetch = resolve;
+    });
+    const fetcher = jest
+      .fn<Promise<Result<number, ApiError>>, [ApiPort]>()
+      .mockReturnValueOnce(gate)
+      .mockResolvedValue(ok(77));
+
+    const { result, rerender } = renderHook(
+      ({ enabled }: { enabled: boolean }) =>
+        useCachedResource({ ...staleConfig(fetcher), enabled }),
+      {
+        initialProps: { enabled: true },
+        wrapper: wrap(makeAdapters(api, storage)),
+      },
+    );
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+
+    // Close, then reopen while attempt 1 is still in flight.
+    rerender({ enabled: false });
+    rerender({ enabled: true });
+
+    await act(async () => {
+      resolveFetch?.(ok(42));
+      await jest.advanceTimersByTimeAsync(0);
+    });
+
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(result.current.data).toBe(42);
     expect(result.current.isRefreshing).toBe(false);
   });
 });

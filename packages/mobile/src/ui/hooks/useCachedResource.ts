@@ -273,23 +273,40 @@ export function useCachedResource<T>(
       // the moment it opens), it just shouldn't spend a request while nobody
       // is looking at it.
       //
-      // `setIsStale(true)` alone only updates the STATE this hook returns —
-      // it does NOT make the mount auto-refresh effect below re-fire, because
-      // that effect gates on `initialIsStale`, derived from the `initial`
-      // useMemo keyed on `[storage, userId, cacheVersion]`. None of those
-      // move just because local `isStale` state changed, so `initial.isStale`
-      // would keep reporting whatever it computed the last time `cacheVersion`
-      // bumped — stale information surviving an invalidation. Bumping
-      // `cacheVersion` here forces that memo to re-run `read()` against the
-      // CURRENT (just-invalidated) cache, so `initialIsStale` reflects reality
-      // by the time this resource is next opened and the arming effect checks
-      // it. Latent today (both `tables`-declaring hooks hardcode
-      // `isStale: true` unconditionally, so `initialIsStale` was already
-      // always `true` regardless) — but load-bearing the moment any hook adds
-      // `tables` with a real TTL-based `read()`.
       setIsStale(true);
-      setCacheVersion((v) => v + 1);
-      if (enabled !== false) void refresh({ silent: true });
+      if (enabled === false) {
+        // DISABLED: no refresh is coming, so nothing else will re-read the
+        // cache. `setIsStale(true)` alone only updates the STATE this hook
+        // returns — it does NOT make the mount auto-refresh effect below
+        // re-fire, because that effect gates on `initialIsStale`, derived
+        // from the `initial` useMemo keyed on `[storage, userId,
+        // cacheVersion]`. None of those move just because local `isStale`
+        // state changed. Bumping `cacheVersion` forces that memo to re-run
+        // `read()` against the just-invalidated cache, so `initialIsStale`
+        // reflects reality by the time this resource is next opened. Latent
+        // today (both `tables`-declaring hooks hardcode `isStale: true`), but
+        // load-bearing the moment any hook adds `tables` with a real
+        // TTL-based `read()`.
+        //
+        // ⚠ Scoped to the disabled branch DELIBERATELY. Bumping
+        // unconditionally regressed Home: `cacheVersion` moves
+        // `initialHasNoCache`, which is a dependency of the mount
+        // auto-refresh effect, so an invalidation arriving mid-fetch tore
+        // that effect down while the component was still mounted AND still
+        // enabled — a case the cleanup's `enabledRef.current === false` guard
+        // deliberately excludes. The in-flight attempt then settled with
+        // `cancelled === true`, so both `setIsRefreshing(false)` and
+        // `setError` were skipped and the superseding instance early-returned
+        // on the still-armed latch: `HomePresenter`'s `RefreshControl` span
+        // forever and the error never surfaced. Trigger was ordinary — cold
+        // launch with a stale `cached_home`, then tapping a habit or logging
+        // a weigh-in before the request landed (`invalidateHome()` deletes
+        // the row). Nothing needs the bump on the enabled path: `refresh()`
+        // below re-reads and writes through on its own.
+        setCacheVersion((v) => v + 1);
+        return;
+      }
+      void refresh({ silent: true });
     });
     // `read` is a stable caller closure (same convention as `refresh`/`reload`).
     // eslint-disable-next-line react-hooks/exhaustive-deps
