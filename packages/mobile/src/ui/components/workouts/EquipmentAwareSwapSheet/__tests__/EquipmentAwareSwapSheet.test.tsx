@@ -607,6 +607,24 @@ describe("EquipmentAwareSwapSheet", () => {
       expect(queryByTestId("swap-sheet-empty")).toBeNull();
     });
 
+    it("does NOT flip to the empty state when a dismiss beats the response", async () => {
+      const api = new InMemoryApiAdapter();
+      jest
+        .spyOn(api, "getExerciseSubstitutes")
+        .mockReturnValue(new Promise(() => {}));
+      const { findByTestId, queryByTestId, rerender } = renderSheet(api, {
+        forExerciseId: "ex-source",
+      });
+      await findByTestId("swap-sheet-loading");
+
+      // Clearing `isLoading` alone reaches the same bad frame from the other
+      // side: `result` is still EMPTY_RESULT and `error` is null, so `isEmpty`
+      // goes true the moment the spinner goes — mid-slide-down.
+      show(rerender, api, false, "ex-source");
+
+      expect(queryByTestId("swap-sheet-empty")).toBeNull();
+    });
+
     it("does not leave the previous row's candidates on screen", async () => {
       const api = new InMemoryApiAdapter();
       api.substitutes = {
@@ -647,6 +665,63 @@ describe("EquipmentAwareSwapSheet", () => {
       expect(await findByTestId("swap-sheet-empty")).toBeTruthy();
       expect(queryByTestId("swap-sheet-error")).toBeNull();
     });
+  });
+
+  /**
+   * The pool is fetched at 400 (`ADAPTATION_CANDIDATE_CAP`, which
+   * `exerciseRepository` records 28 of E2's 80 fixture pools hitting), and the
+   * groups render in a plain `ScrollView` with no windowing at ~8 native views
+   * a row. Rendering both pools eagerly is ~800 rows on a sheet that opens
+   * mid-workout.
+   */
+  it("mounts at most 50 rows per group, and says the rest are there", async () => {
+    const api = new InMemoryApiAdapter();
+    const many = (prefix: string) =>
+      Array.from({ length: 120 }, (_, i) =>
+        candidate({ id: `${prefix}-${i}`, name: `${prefix} ${i}` }),
+      );
+    api.substitutes = {
+      best: many("best"),
+      others: many("other"),
+      // The SERVER did not truncate; this ceiling did. The note must still
+      // appear, or the rows it is hiding are hidden silently.
+      meta: { truncated: false },
+    };
+
+    const { findByTestId, queryByTestId } = renderSheet(api, {
+      equipmentTypeIds: ["eq-dumbbell"],
+    });
+    await findByTestId("swap-best-best-0");
+
+    expect(queryByTestId("swap-best-best-49")).not.toBeNull();
+    expect(queryByTestId("swap-best-best-50")).toBeNull();
+    expect(queryByTestId("swap-others-other-49")).not.toBeNull();
+    expect(queryByTestId("swap-others-other-50")).toBeNull();
+    expect(queryByTestId("swap-sheet-truncated")).not.toBeNull();
+  });
+
+  it("searches the whole fetched pool, not just the rows it mounted", async () => {
+    const api = new InMemoryApiAdapter();
+    api.substitutes = {
+      best: [],
+      others: [
+        ...Array.from({ length: 60 }, (_, i) =>
+          candidate({ id: `filler-${i}`, name: `Filler ${i}` }),
+        ),
+        candidate({ id: "ex-deep", name: "Zercher Squat" }),
+      ],
+      meta: { truncated: false },
+    };
+    const { findByTestId, queryByTestId } = renderSheet(api);
+    await findByTestId("swap-others-filler-0");
+    // Ranked past the render ceiling, so it is not mounted yet.
+    expect(queryByTestId("swap-others-ex-deep")).toBeNull();
+
+    fireEvent.changeText(await findByTestId("swap-sheet-search"), "zercher");
+
+    // Slicing before matching would make the search — and the note that tells
+    // the user to use it — able to find nothing past row 50.
+    expect(await findByTestId("swap-others-ex-deep")).toBeTruthy();
   });
 
   it("does not claim a match signal for a row nothing ranked", async () => {

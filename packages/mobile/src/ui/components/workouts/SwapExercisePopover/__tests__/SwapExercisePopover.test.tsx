@@ -489,6 +489,37 @@ describe("SwapExercisePopover (T-2.7 adapter)", () => {
       expect(refresh).not.toHaveBeenCalled();
     });
 
+    it("keeps the group painted while the sheet slides shut", async () => {
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      storage.saveCustomExercise(localExercise());
+      api.substitutes = { best: [], others: [], meta: { truncated: false } };
+
+      const { findByTestId, queryByTestId, rerender } = renderPopover(
+        api,
+        storage,
+      );
+      await findByTestId("swap-local-local-abc");
+
+      // `BottomSheet` keeps children mounted through the close animation. With
+      // no ranked rows — the unsynced-source case this group exists for — an
+      // empty list on dismiss turns the whole sheet into "No alternatives found
+      // for this exercise." on the way out.
+      rerender(
+        <AdapterProvider adapters={makeAdapters(storage, api)}>
+          <SwapExercisePopover
+            visible={false}
+            onClose={jest.fn()}
+            onSwap={jest.fn()}
+            forExerciseId="ex-bench"
+            exerciseName="Bench Press"
+          />
+        </AdapterProvider>,
+      );
+
+      expect(queryByTestId("swap-local-local-abc")).not.toBeNull();
+    });
+
     it("does NOT list a synced cached exercise — that is the endpoint's job", async () => {
       const api = new InMemoryApiAdapter();
       const storage = new InMemoryStorageAdapter();

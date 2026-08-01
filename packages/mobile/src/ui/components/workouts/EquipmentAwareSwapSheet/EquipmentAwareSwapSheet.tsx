@@ -86,6 +86,25 @@ import { color, radius, space } from "@/ui/theme/tokens";
  */
 const CANDIDATE_LIMIT = 400;
 
+/**
+ * How many rows of each group are actually MOUNTED.
+ *
+ * ⚠ Not the same number as `CANDIDATE_LIMIT`, and it must not be folded into it.
+ * The groups render in a plain `ScrollView` with no windowing, and each row is a
+ * `TouchableOpacity` plus two icons and two `Text` nodes — call it eight native
+ * views. `ADAPTATION_CANDIDATE_CAP` is 400 and `exerciseRepository` records that
+ * 28 of E2's 80 fixture pools hit it, so a chest/back/quads source with a kit
+ * context fills BOTH pools: ~800 rows, ~6,400 views, committed synchronously
+ * when the sheet opens mid-workout and re-rendered on the first keystroke.
+ *
+ * Fetching the broad pool is still right — it is what the debounced server-side
+ * search narrows, and what makes a name ranked #300 reachable at all. The fetch
+ * count simply is not the render count. `meta.truncated` already tells the user
+ * to search, and `slicedLocally` extends that note to a pool the server did not
+ * consider truncated but this ceiling did.
+ */
+const RENDER_LIMIT_PER_GROUP = 50;
+
 export type EquipmentAwareSwapSheetProps = {
   readonly visible: boolean;
   readonly onClose: () => void;
@@ -231,14 +250,18 @@ export function EquipmentAwareSwapSheet({
       //   - `error`     → "Couldn't load matches. Check your connection", for a
       //     row nothing was ever asked about. That message is exactly what
       //     nulling an unsynced source id set out to stop showing.
-      setIsLoading(false);
-      // ⚠ …but only while the sheet is OPEN. This branch fires for two
-      // different reasons and `BottomSheet` keeps its children mounted through
-      // the close animation, so clearing on a dismiss makes the list the user
-      // just tapped flip to "No alternatives found for this exercise." for the
-      // length of the slide-down. Scoping it here also lets a close-and-reopen
-      // of the SAME row keep its rows painted while it refetches.
+      // ⚠ Only while the sheet is OPEN — `isLoading` included. This branch fires
+      // for two different reasons and `BottomSheet` keeps its children mounted
+      // through the close animation, so clearing anything on a dismiss is
+      // visible: blanking `result` replaces the list the user just tapped with
+      // "No alternatives found for this exercise." for the length of the
+      // slide-down, and clearing `isLoading` alone does the same thing from the
+      // other side — a dismiss mid-request leaves `result` at EMPTY_RESULT and
+      // `error` null, so `isEmpty` flips true the moment the spinner goes.
+      // Scoping the lot here also lets a close-and-reopen of the SAME row keep
+      // its rows painted while it refetches.
       if (visible) {
+        setIsLoading(false);
         setResult(EMPTY_RESULT);
         setError(null);
         setPendingOverride(null);
@@ -305,17 +328,27 @@ export function EquipmentAwareSwapSheet({
   const filter = useCallback(
     (rows: readonly SubstituteCandidate[]) => {
       const tokens = tokenizeSearch(query);
-      if (tokens.length === 0) return rows;
-      return rows.filter((row) => {
-        const name = row.name.toLowerCase();
-        return tokens.every((token) => name.includes(token));
-      });
+      const matched =
+        tokens.length === 0
+          ? rows
+          : rows.filter((row) => {
+              const name = row.name.toLowerCase();
+              return tokens.every((token) => name.includes(token));
+            });
+      // Sliced AFTER matching, never before, or searching could only ever look
+      // inside the first 50 ranked rows and the note telling the user to search
+      // would be pointing at nothing.
+      return matched.slice(0, RENDER_LIMIT_PER_GROUP);
     },
     [query],
   );
 
   const best = useMemo(() => filter(result.best), [filter, result.best]);
   const others = useMemo(() => filter(result.others), [filter, result.others]);
+  /** True when this ceiling — not the server — is what is hiding rows. */
+  const slicedLocally =
+    best.length === RENDER_LIMIT_PER_GROUP ||
+    others.length === RENDER_LIMIT_PER_GROUP;
   // Same client-side token filter as the ranked lists, so typing narrows all
   // three groups consistently. The debounced SERVER search cannot see these
   // rows at all — they do not exist server-side yet — so filtering them here is
@@ -509,7 +542,7 @@ export function EquipmentAwareSwapSheet({
             />
           ) : null}
 
-          {result.meta.truncated ? (
+          {result.meta.truncated || slicedLocally ? (
             <Text style={styles.truncatedNote} testID="swap-sheet-truncated">
               More matches are available. Search by name to narrow them.
             </Text>

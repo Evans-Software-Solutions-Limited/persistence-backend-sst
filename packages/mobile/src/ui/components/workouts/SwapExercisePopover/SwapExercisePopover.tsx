@@ -158,7 +158,13 @@ export function SwapExercisePopover({
    * ranks it like anything else.
    */
   const localOnlyCandidates = useMemo<readonly SubstituteCandidate[]>(() => {
-    if (!visible) return [];
+    // ⚠ NOT short-circuited on `!visible`. `BottomSheet` keeps its children
+    // mounted through the close animation, so emptying this on dismiss makes the
+    // group disappear while it is still on screen — and in the case the group
+    // exists for (an unsynced source, where the sheet's ranked lists are empty
+    // and this group is the ONLY content) that turns the whole sheet into "No
+    // alternatives found for this exercise." on the way out. The cost of not
+    // gating is one synchronous cache read per revision bump.
     void storageRevision;
     void libraryRevision;
     return storage
@@ -179,7 +185,7 @@ export function SwapExercisePopover({
         // Nothing ranked these, so they claim no match signals.
         matchedOn: [],
       }));
-  }, [visible, storage, storageRevision, libraryRevision]);
+  }, [storage, storageRevision, libraryRevision]);
 
   const onCreateExercise = useCallback(() => {
     // Close first so the full-screen creator isn't stacked behind an open sheet.
