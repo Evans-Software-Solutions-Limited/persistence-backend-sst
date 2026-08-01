@@ -27,14 +27,34 @@ import {
  * empty list for the entire account. It surfaced via an App Store rejection
  * rather than via monitoring. That is the gap this module closes.
  *
+ * ─── The governing constraint: production is pre-launch and very quiet ───
+ *
+ * Build 1.0 (39) is sitting on an App Store rejection (`STATE.md`), so
+ * production currently serves TestFlight testers and Review devices only —
+ * entire hours pass with zero requests, and production is at times quieter
+ * than staging. Every threshold below is chosen against THAT volume, not
+ * against a launched app's. Two consequences worth knowing before editing:
+ *
+ *   - Anything shaped "N failures within a 5-minute window" is close to blind
+ *     here, because a 5-minute window often holds only a handful of requests.
+ *     Hence the deliberately patient sibling alarms.
+ *   - Anything shaped "alert when traffic stops" is unusable until launch: it
+ *     would fire every quiet night. One such alarm is deliberately NOT
+ *     provisioned — see the closing comment at the foot of this file, which
+ *     keeps the reasoning so it isn't re-litigated.
+ *
+ * **Revisit every threshold in this file once the app is launched and real
+ * volume is known.** They are tuned for pre-launch, not for steady state.
+ *
  * ─── Delivery is deliberately NOT provisioned here ───
  *
  * This creates the SNS topic and the alarms, but no subscription. An SNS email
  * subscription requires a manual confirmation click regardless, so putting the
  * address in IaC buys nothing — and it would either hard-code a personal email
  * into a PUBLIC repo or add a new required secret that an unset stage would
- * fail its deploy on. Subscribe once, per stage, after the first deploy. The
- * topic ARN is printed by `sst deploy` as the `alertsTopicArn` output, or:
+ * fail its deploy on. Subscribe once per stage after the first deploy. The
+ * topic ARN is printed by `sst deploy` as the `alertsTopicArn` output, or look
+ * it up (swap the stage prefix and profile for staging):
  *
  *   TOPIC=$(aws sns list-topics --profile ess-prod --region eu-west-2 \
  *     --query "Topics[?contains(TopicArn,'production-alerts')].TopicArn" \
@@ -68,10 +88,14 @@ const isMonitoredStage = environment !== "dev";
  * Concurrency headroom warning, set against the **target** quota of 1000 (an
  * increase to that was requested 2026-08-01, request
  * `189195d4f16148d2b471c1685dc350be1QsR8ivV`). While the quota is still 10
- * this cannot fire — `lambdaThrottlesAlarm` covers the interim, because
- * throttling is defined relative to whatever the quota currently is.
+ * this is provably unreachable and the alarm is inert — `lambdaThrottlesAlarm`
+ * covers the interim, because throttling is defined relative to whatever the
+ * quota currently is.
  *
- * ⚠ Update this if the quota is ever set to something other than 1000.
+ * ⚠ Update this if the quota is ever set to something other than 1000. It is
+ * one of two things in this file that must be revisited when the quota
+ * request lands; the other is the throttle threshold below. Nothing enforces
+ * either — they are TODOs guarded only by this comment.
  */
 const CONCURRENCY_ALARM_THRESHOLD = 800;
 
@@ -87,9 +111,9 @@ function alarm(name: string, args: aws.cloudwatch.MetricAlarmArgs) {
     okActions: [alertsTopic.arn],
     // Low-traffic periods produce metric gaps. Without this, a quiet night
     // flips every alarm to INSUFFICIENT_DATA and trains you to ignore them.
-    // Correct for every alarm below EXCEPT `apiTrafficAlarm`, which overrides
-    // it deliberately — see that alarm.
-    treatMissingData: "notBreaching",
+    // Overridable: the sparsely-invoked cron alarms need `"missing"` (retain
+    // last state across gaps) and the dead-man's switch needs `"breaching"`.
+    treatMissingData: args.treatMissingData ?? "notBreaching",
   });
 }
 
@@ -101,24 +125,28 @@ function alarm(name: string, args: aws.cloudwatch.MetricAlarmArgs) {
  * account, so a sibling product exhausting it throttles `persistence` and a
  * function-scoped alarm would miss the cause.
  *
- * ⚠ The threshold is an INTERIM value. The steady state we want is zero
- * throttles, i.e. `threshold: 0`. But at the current quota of 10 production
- * throttles 43–168 times a day, and `threshold: 0` over a 5-minute window
- * would page on every cluster — an ALARM/OK pair per day, indefinitely, until
- * the quota request lands. That is exactly the alert-fatigue this module's
- * docstring exists to avoid. So: a wider window and a small floor for now.
- * **Once the quota is 1000 and steady-state throttles are genuinely zero, set
- * `period: 300, threshold: 0`** — a single throttle is worth knowing about.
+ * ⚠ The window and threshold are INTERIM, and the window is the load-bearing
+ * half. The steady state we want is `period: 300, threshold: 0` — one throttle
+ * is worth knowing about. But at the current quota of 10, production throttles
+ * 43–168 times a day **in bursts**: a single cold-launch fan-out throttles ~16
+ * requests in under a second. So a short window cannot be made quiet by
+ * raising the threshold — any 15-minute window containing one app launch is
+ * already at ~16, and a 5-figure threshold would defeat the alarm's purpose.
+ * A day-long window with a floor above the observed band is the only shape
+ * that stays quiet on today's known-bad behaviour while still catching a
+ * material worsening.
+ *
+ * **Once the quota is 1000, set `period: 300, threshold: 0`.**
  */
 export const lambdaThrottlesAlarm = alarm("lambda-throttles", {
   alarmDescription:
-    "Lambda throttling (account-wide). Requests are being refused before they reach any handler — check the Concurrent executions quota (L-B99A9384) and per-function reserved concurrency. Threshold is interim; tighten to >0 once the quota increase lands.",
+    "Lambda throttling (account-wide) materially above the known-bad baseline. Requests are being refused before they reach any handler — check the Concurrent executions quota (L-B99A9384) and per-function reserved concurrency. Window and threshold are INTERIM: tighten to 5min/>0 once the quota increase lands.",
   namespace: "AWS/Lambda",
   metricName: "Throttles",
   statistic: "Sum",
-  period: 900,
+  period: 86_400,
   evaluationPeriods: 1,
-  threshold: 5,
+  threshold: 200,
   comparisonOperator: "GreaterThanThreshold",
 });
 
@@ -144,13 +172,15 @@ export const lambdaConcurrencyAlarm = alarm("lambda-concurrency", {
 });
 
 /**
- * Edge-observed 5xx on the core API. Catches everything the Lambda alarms
- * cannot see — throttles, authorizer rejections and integration failures all
- * surface here as a 5xx without ever producing a Lambda `Errors` datapoint.
+ * Fast 5xx alarm — catches a storm. Paired deliberately with the patient one
+ * below, because at pre-launch volume this one alone is blind to a sustained
+ * low-rate failure: a 5-minute window often holds only a handful of requests,
+ * so a webhook 500ing on every event, or `DELETE /account` broken for the one
+ * user a day who tries it, would never reach five in a window.
  */
 export const api5xxAlarm = alarm("api-5xx", {
   alarmDescription:
-    "5+ 5xx responses from the core API in 5 minutes. NOTE: a throttled request appears here as a 503 with integrationServiceStatus 429 and produces NO Lambda error metric — cross-check the throttles alarm.",
+    "5+ 5xx responses from the core API in 5 minutes — a failure storm. NOTE: a throttled request appears here as a 503 with integrationServiceStatus 429 and produces NO Lambda error metric — cross-check the throttles alarm.",
   namespace: "AWS/ApiGateway",
   // HTTP API (v2) metric name — NOT the REST API's `5XXError`.
   metricName: "5xx",
@@ -159,6 +189,20 @@ export const api5xxAlarm = alarm("api-5xx", {
   period: 300,
   evaluationPeriods: 1,
   threshold: 5,
+  comparisonOperator: "GreaterThanOrEqualToThreshold",
+});
+
+/** The patient half of the 5xx pair — a slow bleed rather than a storm. */
+export const api5xxSustainedAlarm = alarm("api-5xx-sustained", {
+  alarmDescription:
+    "3+ 5xx responses from the core API within 30 minutes. Catches a sustained low-rate failure that the 5-minute alarm cannot see at pre-launch traffic volume — e.g. one endpoint broken for every user who touches it.",
+  namespace: "AWS/ApiGateway",
+  metricName: "5xx",
+  dimensions: { ApiId: coreAPI.nodes.api.id },
+  statistic: "Sum",
+  period: 1800,
+  evaluationPeriods: 1,
+  threshold: 3,
   comparisonOperator: "GreaterThanOrEqualToThreshold",
 });
 
@@ -192,17 +236,25 @@ export const apiLatencyAlarm = alarm("api-latency", {
  *
  * ⚠ Deliberately NOT covered by an account-wide `Errors` alarm. A scheduled
  * Lambda that throws produces 1 error plus at most 2 async retries — never
- * enough to cross a `>= 5` account-wide threshold. So a nightly cron could
- * fail every single night, indefinitely, with every alarm green. That is not
+ * enough to cross a sensible account-wide threshold. So a cron could fail
+ * every single run, indefinitely, with every alarm green. That is not
  * hypothetical for `account-purge-sweep`: it discharges the App Store
  * 5.1.1(v) 30-day deletion obligation, and accounts the user asked to delete
  * would quietly stop being deleted.
  *
- * One error is the signal — these run once a day, so there is no volume to
- * threshold against. The period is an hour so a single failure can't produce
- * more than one notification.
+ * One error is the signal — these are low-frequency jobs, so there is no
+ * volume to threshold against.
+ *
+ * `treatMissingData: "missing"` rather than the helper's `"notBreaching"`
+ * default: a daily cron publishes an `Errors` datapoint only in the hour it
+ * runs, so `notBreaching` would flip the alarm back to OK an hour later and a
+ * job that has failed every night for a month would show ALARM for one hour
+ * in twenty-four. The SNS email still arrives either way, but the console
+ * should not read green. `"missing"` retains the last state across the gaps.
  */
 const CRONS = [
+  // ⚠ hourly, not daily — `rate(1 hour)` in infra/api.ts. An intermittent
+  // Stripe failure will therefore alternate ALARM/OK hour to hour on this one.
   { name: "reconcile-stripe-drift", cron: reconcileCron },
   { name: "streak-sweep", cron: streakCron },
   { name: "volume-aggregation", cron: volumeCron },
@@ -212,50 +264,78 @@ const CRONS = [
 
 export const cronErrorAlarms = CRONS.map(({ name, cron }) =>
   alarm(`cron-errors-${name}`, {
-    alarmDescription: `The ${name} scheduled job failed. These run once daily and are invisible to the account-wide error alarm (a failing cron produces at most 3 errors), so this is the only thing watching them.`,
+    alarmDescription: `The ${name} scheduled job ran and failed. Low-frequency jobs are invisible to any account-wide error alarm (a failing cron produces at most 3 errors), so this is the only thing watching them.`,
     namespace: "AWS/Lambda",
     metricName: "Errors",
-    // `nodes.function`, not the deprecated `nodes.job` — both resolve to the
-    // same `aws.lambda.Function`, but `job` carries a @deprecated tag in
-    // SST 3.19's `cron.ts`. Pulumi lifts `.name` through the Output.
+    // `nodes.function`, not the deprecated `nodes.job` — identical bodies in
+    // SST 3.19's `cron.ts`, both resolving to the same `aws.lambda.Function`.
+    // Pulumi lifts `.name` through the Output to the physical function name.
     dimensions: { FunctionName: cron.nodes.function.name },
     statistic: "Sum",
     period: 3600,
     evaluationPeriods: 1,
     threshold: 1,
     comparisonOperator: "GreaterThanOrEqualToThreshold",
+    treatMissingData: "missing",
   }),
 );
 
 /**
- * Traffic-presence check — the only alarm here that fires on the ABSENCE of
- * data, and the only one that can catch a failure upstream of the integration.
+ * Dead-man's switch for the account-purge cron — alarms when it does NOT run.
  *
- * Every other alarm in this file is downstream of a request actually reaching
- * Lambda. If the ACM certificate for the custom domain fails renewal, the
- * domain mapping is dropped, or the delegated-zone NS records regress, clients
- * fail at TLS/DNS: `Count` goes to zero, `5xx` publishes nothing, and every
- * other alarm sits green through a total outage. Hence
- * `treatMissingData: "breaching"` — here, missing data IS the outage.
+ * The `Errors` alarm above only fires for a job that runs and throws. If the
+ * EventBridge rule is disabled, its target permission is lost, or the
+ * invocation is throttled (a throttle publishes `Throttles`, not `Errors`),
+ * the function silently stops running: no datapoint at all, and an
+ * error-shaped alarm stays green forever.
  *
- * Production only. Staging legitimately goes hours without a request, so this
- * shape would be pure noise there.
+ * Only this one cron gets the treatment, deliberately. The other four failing
+ * silently is an operational annoyance; this one failing silently means
+ * accounts the user asked to delete are not being deleted, which is an App
+ * Store 5.1.1(v) obligation with a 30-day clock. That asymmetry is worth one
+ * alarm, and does not justify five.
+ *
+ * The cron is daily, so a 24h window with a floor of 1 is exact.
  */
-export const apiTrafficAlarm =
-  alertsTopic && environment === "production"
-    ? new aws.cloudwatch.MetricAlarm(`${$app.stage}-api-no-traffic`, {
-        alarmDescription:
-          "The core API served no requests for an hour. Every other alarm is downstream of a request reaching Lambda, so a DNS/TLS/domain-mapping failure would leave them all green — this is the one that catches it.",
-        namespace: "AWS/ApiGateway",
-        metricName: "Count",
-        dimensions: { ApiId: coreAPI.nodes.api.id },
-        statistic: "Sum",
-        period: 3600,
-        evaluationPeriods: 1,
-        threshold: 1,
-        comparisonOperator: "LessThanThreshold",
-        treatMissingData: "breaching",
-        alarmActions: [alertsTopic.arn],
-        okActions: [alertsTopic.arn],
-      })
-    : undefined;
+export const accountPurgeHeartbeatAlarm = alarm(
+  "cron-heartbeat-account-purge",
+  {
+    alarmDescription:
+      "The account-purge-sweep cron has not been INVOKED in 24 hours — distinct from failing. Its EventBridge rule may be disabled or its invocations throttled. This job discharges the App Store 5.1.1(v) 30-day account-deletion obligation.",
+    namespace: "AWS/Lambda",
+    metricName: "Invocations",
+    dimensions: { FunctionName: accountPurgeCron.nodes.function.name },
+    statistic: "Sum",
+    period: 86_400,
+    evaluationPeriods: 1,
+    threshold: 1,
+    comparisonOperator: "LessThanThreshold",
+    // Here, missing data IS the failure — the whole point is to catch a function
+    // that publishes nothing at all.
+    treatMissingData: "breaching",
+  },
+);
+
+/**
+ * ─── Deliberately NOT provisioned: an API traffic-presence alarm ───
+ *
+ * Every alarm above is downstream of a request reaching Lambda. A failure
+ * UPSTREAM of that — an ACM renewal failure, a dropped custom-domain mapping,
+ * a regression in the delegated-zone NS records — takes the API completely
+ * dark: `Count` goes to zero, `5xx` publishes nothing, and every alarm here
+ * sits green through a total outage. The fix for that is an alarm on
+ * `AWS/ApiGateway` `Count < 1` with `treatMissingData: "breaching"`.
+ *
+ * It is not here because **it cannot work before launch**. Production serves
+ * TestFlight and Review devices only, so zero-request hours are normal and
+ * guaranteed overnight — the alarm would emit an ALARM/OK pair most quiet
+ * hours from the first deploy, which is precisely the alert fatigue this
+ * module exists to avoid. A synthetic pinger would manufacture the floor, but
+ * that is a new Lambda on a 5-minute schedule (288 invocations/day) consuming
+ * the very concurrency this work is trying to protect.
+ *
+ * **Add it at launch**, once real traffic establishes a defensible floor —
+ * either a `Count` alarm tuned to observed overnight volume, or an external
+ * uptime check (which costs no Lambda concurrency and also verifies DNS/TLS
+ * from outside AWS, which a `Count` alarm cannot).
+ */
