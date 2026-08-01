@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.11.0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.10.0...persistence-v1.11.0) (2026-08-01)
+
+
+### Features
+
+* **infra:** add production CloudWatch alarms and alerting topic ([#342](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/342)) ([ce91176](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/ce911766328af4d932db77b8f72d77ec360b0a4b))
+
+
+### Bug Fixes
+
+* **mobile:** App Store Guideline 4 — use Apple's own Sign in with Apple button ([#340](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/340)) ([bb99f26](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/bb99f26bbb2509c485e7f9f558320a710c5992b0))
+* **mobile:** stop always-mounted sheets fetching on every cold launch ([#341](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/341)) ([7fb5605](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/7fb5605156006a13405aa470bbe0465d6209315d))
+* **mobile:** un-arm the fetch latch when a gated sheet closes ([#343](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/343)) ([2a6dad6](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/2a6dad62f3713cbcc29d5ecfb9822455a4973b68))
+* **sessions:** persist only difficulty rating ([#337](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/337)) ([c8a0b6d](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/c8a0b6d80d04ae57ec2ddb33f7765c1e8063008d))
+
 ## [1.10.0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.9.0...persistence-v1.10.0) (2026-07-29)
 
 
