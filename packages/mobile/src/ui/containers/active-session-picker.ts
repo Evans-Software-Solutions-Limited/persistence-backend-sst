@@ -85,6 +85,17 @@ export function resolvePickerExercise(
  * and shows its empty state, which is the honest answer: a full unranked library
  * dump is what the old fallback did, and it was never useful for a swap.
  *
+ * ⚠ **`id` is null for a source that has not synced yet**, and that is not the
+ * same as "no source". `forExerciseId` is validated `format: "uuid"` on the
+ * endpoint, so sending a `local-…` id — which a session row legitimately holds
+ * after `substituteExerciseCommand` writes a just-created exercise onto it — is
+ * rejected 422 before the handler runs. The sheet renders that as "Couldn't load
+ * matches. Check your connection and try again.", blaming the network for a row
+ * the server has simply never heard of. The old cache-reading picker had no such
+ * failure because it never asked the server anything. Nulling the id keeps the
+ * eyebrow and yields the empty state instead of a wrong error; the window closes
+ * on its own when the sync drain rekeys the row to a server id.
+ *
  * `name` comes from the CACHE and falls back to the sheet's default, because it
  * is only the sheet's eyebrow. A cache miss must not stop the swap — the ranking
  * itself needs no cache at all.
@@ -93,14 +104,22 @@ export function resolveSubstituteSourceRef(
   mode: ActiveSessionPickerMode,
   exercises: readonly { id: string; exerciseId: string }[],
   storage: StoragePort,
-): { readonly id: string; readonly name: string | null } | null {
+): { readonly id: string | null; readonly name: string | null } | null {
   if (mode?.kind !== "substitute") return null;
   const oldRow = exercises.find((ex) => ex.id === mode.oldSessionExerciseId);
   if (!oldRow) return null;
   return {
-    id: oldRow.exerciseId,
+    id: isPendingSyncExerciseId(oldRow.exerciseId) ? null : oldRow.exerciseId,
     name: storage.getCachedExercise(oldRow.exerciseId)?.name ?? null,
   };
+}
+
+/**
+ * True for an id `createExerciseCommand` generated locally and the sync queue
+ * has not yet exchanged for a server one. Nothing server-side can resolve it.
+ */
+function isPendingSyncExerciseId(exerciseId: string): boolean {
+  return exerciseId.startsWith("local-");
 }
 
 /**

@@ -51,7 +51,13 @@
  */
 
 import { Ionicons } from "@expo/vector-icons";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ActivityIndicator,
   ScrollView,
@@ -178,6 +184,12 @@ export function EquipmentAwareSwapSheet({
   /** The incompatible row awaiting an explicit acknowledgement. */
   const [pendingOverride, setPendingOverride] =
     useState<SubstituteCandidate | null>(null);
+  /**
+   * What `result` currently holds rows FOR — `<row>|<kit>`. Distinguishes a
+   * re-fetch that invalidates the rows on screen from one that does not; see the
+   * fetch effect.
+   */
+  const resultKeyRef = useRef<string | null>(null);
 
   // Serialised so the effect re-runs when the CONTENTS change, not when the
   // caller happens to hand over a fresh array with the same ids — the Loadout
@@ -203,15 +215,35 @@ export function EquipmentAwareSwapSheet({
   }, [visible]);
 
   useEffect(() => {
-    if (!visible || forExerciseId === null) return;
+    if (!visible || forExerciseId === null) {
+      // ⚠ Clearing this is not tidiness. `.finally` below is gated on
+      // `!cancelled`, so a request still in flight when the sheet closes never
+      // settles the flag. The next open that ALSO takes this branch — a
+      // substitute whose source row has fallen out of the session, or one whose
+      // source has not synced yet — would then render "Finding matches…"
+      // forever, and `isEmpty` is false while loading, so the empty state it is
+      // supposed to show never appears.
+      setIsLoading(false);
+      resultKeyRef.current = null;
+      return;
+    }
     let cancelled = false;
     setIsLoading(true);
     setError(null);
-    // Reset per open: a stale list from the PREVIOUS row would render under the
+    // Reset when the ROW or the KIT changed: a stale list would render under the
     // new row's name for as long as the request takes, and every entry in it
     // would be a plausible-looking wrong answer.
-    setResult(EMPTY_RESULT);
-    setPendingOverride(null);
+    //
+    // ⚠ NOT on a changed search term, though this effect re-runs for one. Those
+    // rows are still this row's, the client-side `filter` has already narrowed
+    // them, and blanking them for the round trip is the exact flicker that
+    // filtering immediately over the current response exists to avoid.
+    const resultKey = `${forExerciseId}|${equipmentKey}`;
+    if (resultKeyRef.current !== resultKey) {
+      resultKeyRef.current = resultKey;
+      setResult(EMPTY_RESULT);
+      setPendingOverride(null);
+    }
     void api
       .getExerciseSubstitutes({
         forExerciseId,
@@ -233,7 +265,14 @@ export function EquipmentAwareSwapSheet({
     return () => {
       cancelled = true;
     };
-  }, [visible, forExerciseId, equipmentForQuery, debouncedQuery, api]);
+  }, [
+    visible,
+    forExerciseId,
+    equipmentForQuery,
+    equipmentKey,
+    debouncedQuery,
+    api,
+  ]);
 
   const existing = useMemo(
     () => new Set(existingExerciseIds),
@@ -430,13 +469,14 @@ export function EquipmentAwareSwapSheet({
           {others.length > 0 ? (
             <CandidateGroup
               // The heading is the honest claim in each case. With a kit context
-              // these rows failed containment; without one, nothing was checked
-              // and calling them anything but "the library" would be a fiction.
-              label={
-                hasEquipmentContext
-                  ? "DOESN'T FIT YOUR KIT"
-                  : "FULL LIBRARY MATCHES"
-              }
+              // these rows failed containment; without one, nothing was checked.
+              //
+              // ⚠ NOT "full library". The server ANDs `search` with the source's
+              // primary-muscle filter, so swapping a bench press and typing
+              // "squat" returns nothing — under a heading that had just promised
+              // the whole library, that reads as a broken search rather than a
+              // scoped one.
+              label={hasEquipmentContext ? "DOESN'T FIT YOUR KIT" : "MATCHES"}
               rows={others}
               incompatible={hasEquipmentContext}
               existing={existing}
@@ -447,8 +487,7 @@ export function EquipmentAwareSwapSheet({
 
           {result.meta.truncated ? (
             <Text style={styles.truncatedNote} testID="swap-sheet-truncated">
-              More matches are available. Search by name to narrow the full
-              library.
+              More matches are available. Search by name to narrow them.
             </Text>
           ) : null}
         </ScrollView>

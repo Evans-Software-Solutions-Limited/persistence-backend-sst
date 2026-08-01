@@ -254,7 +254,7 @@ describe("EquipmentAwareSwapSheet", () => {
       fireEvent.press(await findByTestId("swap-others-ex-lib"));
 
       expect(spy.mock.calls[0]?.[0]).not.toHaveProperty("equipment");
-      getByText("FULL LIBRARY MATCHES");
+      getByText("MATCHES");
       // No acknowledgement: nothing was checked, so nothing may be CLAIMED
       // incompatible.
       expect(onSelect).toHaveBeenCalledWith(
@@ -279,7 +279,7 @@ describe("EquipmentAwareSwapSheet", () => {
       fireEvent.press(await findByTestId("swap-others-ex-lib"));
 
       expect(spy.mock.calls[0]?.[0]).not.toHaveProperty("equipment");
-      getByText("FULL LIBRARY MATCHES");
+      getByText("MATCHES");
       expect(onSelect).toHaveBeenCalledWith(expect.anything(), false);
     });
   });
@@ -500,6 +500,67 @@ describe("EquipmentAwareSwapSheet", () => {
       expect(queryByTestId("swap-others-ex-first")).toBeNull(),
     );
     expect(await findByTestId("swap-sheet-loading")).toBeTruthy();
+  });
+
+  it("KEEPS the current rows while a search-term refetch is in flight", async () => {
+    const api = new InMemoryApiAdapter();
+    api.substitutes = {
+      best: [],
+      others: [candidate({ id: "ex-first", name: "Bench Press" })],
+      meta: { truncated: false },
+    };
+    const { findByTestId, queryByTestId } = renderSheet(api);
+    await findByTestId("swap-others-ex-first");
+
+    // Same row, same kit — only the search term moved. Unlike the row change
+    // above, these rows are still the RIGHT row's, and the client-side filter
+    // has already narrowed them. Blanking them for the round trip is the exact
+    // flicker that filtering immediately over the current response avoids.
+    jest
+      .spyOn(api, "getExerciseSubstitutes")
+      .mockReturnValue(new Promise(() => {}));
+
+    fireEvent.changeText(await findByTestId("swap-sheet-search"), "bench");
+
+    await waitFor(() =>
+      expect(queryByTestId("swap-sheet-loading")).not.toBeNull(),
+    );
+    expect(queryByTestId("swap-others-ex-first")).not.toBeNull();
+  });
+
+  it("clears the loading flag when it closes mid-request, so a later sourceless open is not stuck", async () => {
+    const api = new InMemoryApiAdapter();
+    // Never settles: `.finally` is gated on `!cancelled`, so closing the sheet
+    // leaves nothing to turn the flag off.
+    jest
+      .spyOn(api, "getExerciseSubstitutes")
+      .mockReturnValue(new Promise(() => {}));
+    const { findByTestId, queryByTestId, rerender } = renderSheet(api, {
+      forExerciseId: "ex-a",
+    });
+    await findByTestId("swap-sheet-loading");
+
+    const show = (visible: boolean, forExerciseId: string | null) =>
+      rerender(
+        <AdapterProvider adapters={makeAdapters(api)}>
+          <EquipmentAwareSwapSheet
+            visible={visible}
+            onClose={jest.fn()}
+            forExerciseId={forExerciseId}
+            exerciseName="Machine Chest Press"
+            onSelect={jest.fn()}
+          />
+        </AdapterProvider>,
+      );
+
+    show(false, "ex-a");
+    // Reopened for a row the sheet cannot rank — the source has fallen out of
+    // the session, or it has not synced yet. This open takes the early return,
+    // so nothing else would ever clear the flag.
+    show(true, null);
+
+    expect(await findByTestId("swap-sheet-empty")).toBeTruthy();
+    expect(queryByTestId("swap-sheet-loading")).toBeNull();
   });
 
   it("shows a caller-owned unavailable message", async () => {

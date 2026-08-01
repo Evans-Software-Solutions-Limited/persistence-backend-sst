@@ -438,4 +438,27 @@ describe("resolveSubstituteSourceRef", () => {
       ),
     ).toEqual({ id: "ex-bench", name: "Barbell Bench Press" });
   });
+
+  /**
+   * `forExerciseId` is validated `format: "uuid"` on `GET /exercises/substitutes`,
+   * so a `local-…` id is rejected 422 before the handler runs and the sheet
+   * blames the network for a row the server has never heard of.
+   *
+   * Reachable, and it is the mirror of the not-yet-synced group on the picker:
+   * create an exercise offline → swap it in → `substituteExerciseCommand` writes
+   * the `local-…` id onto the session row → tap Substitute on that row.
+   */
+  it("nulls the id — but keeps the name — for a source that has not synced yet", () => {
+    const storage = new InMemoryStorageAdapter();
+    storage.saveCustomExercise(
+      buildExercise({ id: "local-abc", name: "Cable Fly", isCustom: true }),
+    );
+    expect(
+      resolveSubstituteSourceRef(
+        { kind: "substitute", oldSessionExerciseId: "se-1" },
+        [{ id: "se-1", exerciseId: "local-abc" }],
+        storage,
+      ),
+    ).toEqual({ id: null, name: "Cable Fly" });
+  });
 });
