@@ -35,11 +35,14 @@ say so and fix this file.
   and forced full unit suite (19/19 tasks).
 - **⚠ Loadout Phase 2's SCREENS are built but NOT merged.** Now PR
   **[#339](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/339)**,
-  head branch `claude/loadout-phase-2-screens-rebase` (mirrored at
-  `claude/pr-339-review-ci-7f7ydu`; both at `e73a2db`), rebased onto `main` at
-  `c8a0b6d` (#337). It supersedes **#328** (`claude/loadout-phase-2-screens`),
-  which should be closed — the two are the same work and #328 is now the stale
-  copy.
+  head branch `claude/loadout-phase-2-screens-rebase` at `f2879d5`, rebased onto
+  `main` at `c7ad458` (2026-08-02, after #338/#340/#341/#342/#343). It supersedes
+  **#328** (`claude/loadout-phase-2-screens`), which should be closed — the two
+  are the same work and #328 is now the stale copy. The mirror branch
+  `claude/pr-339-review-ci-7f7ydu` is stale too; do not push to it.
+  - **Inspector Brad: clean @ `f2879d5`** after 5 sweeps and 19 findings fixed —
+    see the 2026-08-02 session entry below. Gates green, all 5 CI checks green.
+    Still NOT device-verified.
   - **⚠ The first cut of #339 was rebased from a STALE snapshot of #328 and
     silently dropped `edeb93f`'s fixes** — five files' changes were missing
     entirely (`exercisesSubstitutesHandler` + its test, `exerciseRepository` +
@@ -454,8 +457,8 @@ Actions, in order of value:
 
 ### Loadout Phase 2's screens — BUILT, on a branch, awaiting merge + device pass
 
-Branch `claude/pr-339-review-ci-7f7ydu` (PR #339), one squashed commit off
-`c8a0b6d`; supersedes `claude/loadout-phase-2-screens` (#328). T-2.2…T-2.9,
+Branch `claude/loadout-phase-2-screens-rebase` (PR #339) at `f2879d5`, off
+`c7ad458`; supersedes `claude/loadout-phase-2-screens` (#328). T-2.2…T-2.9,
 T-3.4 and T-3.5's mobile half are all ticked in `tasks.md`, whose
 § "Landed in Phase 2's screens beyond the checklist" holds the architecture
 decisions. Do not re-derive them; the short version:
@@ -627,6 +630,68 @@ consent copy, privacy section and governing law · the OFF re-seed backfilling
 `serving_quantity` across the ~143k seeded rows.
 
 ## Last session
+
+**2026-08-02 — PR [#339](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/339)
+REBASED onto `main` @ `c7ad458`, and given the Inspector Brad sweep it had never
+had. Head `f2879d5`, MERGEABLE, gates green. Still NOT device-verified — that is
+the only thing left before merge.**
+
+- **The rebase conflicted on exactly two files, and the conflict was the
+  interesting part.** `SwapExercisePopover.tsx` + its test, against **#340** —
+  the App Store hotfix that also fixed a bug Brad hit live (active workout →
+  swap → Create exercise → back → not in the list) by re-running the picker's
+  cache read on the exercise change bus. **This branch deletes that picker**:
+  T-2.7 makes it a thin adapter over `<EquipmentAwareSwapSheet>`, whose list is
+  `GET /exercises/substitutes`. Neither side was resolvable alone — keeping
+  #340's three regression tests tests a component that no longer exists;
+  dropping them reopens the bug, because `createExerciseCommand` is offline-first
+  (`local-<uuid>` into `cached_exercises`, enqueue `POST /exercises`, no inline
+  flush) so a server-backed list cannot return a just-created exercise, and the
+  sheet's own header CTA is the route to creating one.
+  - Restored where the list now lives: `localOnlyCandidates` feeds pending-sync
+    rows into the sheet under "CREATED ON THIS DEVICE", invalidated by the same
+    two signals #340 used. Keyed on the `local-` id prefix, NOT `isCustom` — a
+    synced custom exercise has a server id and the endpoint ranks it, so
+    `isCustom` would list every one of them twice.
+  - `STATE.md` was the third conflict; both sides' session entries kept.
+- **⚠ LESSON, and it generalises past this PR: a textual conflict is a signal,
+  not the finding.** Two files conflicted; a third file (`EquipmentAwareSwapSheet`)
+  auto-merged clean and was where the actual regression lived. Git also
+  auto-merged #340's three appended tests into the branch's rewritten test file,
+  where they would have failed — the only reason the loss was visible at all.
+  When a rebase crosses a behavioural rewrite, diff the INTENT of both sides.
+- **Inspector Brad: 5 sweeps, 19 findings, clean @ `f2879d5`.** No sweep had ever
+  been recorded on this PR. The two that would have shipped real bugs:
+  - 🟠 the in-session swap **422'd on an unsynced source** — `forExerciseId` is
+    UUID-validated and a session row legitimately holds a `local-…` id after you
+    swap in an exercise you just created, so the sheet blamed the network for a
+    row the server had never heard of;
+  - 🟡 **review decisions survived a re-collect** — `droppedRows`/`acceptedRows`/
+    `pickedNames` are keyed by parent `sortOrder`, and `acceptedRows` now decides
+    whether a row is SAVED, so an accepted `intensity_mismatch` could be written
+    with no UI ever showing it. Fixed with a `collectRev` counter on the store:
+    the same-gym re-collect needs the collect EVENT, not the context value,
+    because stage 2 of the adaptation is an LLM.
+  - Also: ~800 un-virtualised rows after `CANDIDATE_LIMIT` went to 400 (capped at
+    50 rendered per group, sliced AFTER matching); a stale debounced search term
+    across a clear-and-retype; and **five separate instances of the same
+    close-animation bug** — `BottomSheet` keeps children painted through the
+    slide-down, so clearing `isLoading` / `result` / `error` / `query` /
+    `pendingOverride` on the close edge each gave the user a frame of the list
+    they just tapped turning into an empty state. Reset on the OPEN edge, in the
+    render phase.
+- **Recurring shape worth remembering: `visible` is not a lifecycle.** #341/#343
+  established that closing a sheet is not an unmount, for FETCHING. The same fact
+  governs RENDERING — and the correct gate differs per concern: fetch on
+  `visible`, reset on the open edge, and cache-read on a `hasOpened` latch (an
+  ungated read put a full `cached_exercises` scan on the active-session first
+  frame, which is the #341 shape exactly).
+- Every fix carries a test verified by MUTATION, not assertion — reverted, watched
+  fail, restored.
+- **⚠ Untracked local files break the root gates and are not on any branch:**
+  `microservices/core/probe-steps.ts` (4 × `no-explicit-any` + prettier) and
+  `.agents/skills/sst-resource-change/SKILL.md` (prettier). Don't let
+  `probe-steps.ts` get swept into a commit.
 
 **2026-07-31 — APP STORE REJECTION (Guideline 4) + swap-picker refresh bug. PR
 [#340](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/340)
