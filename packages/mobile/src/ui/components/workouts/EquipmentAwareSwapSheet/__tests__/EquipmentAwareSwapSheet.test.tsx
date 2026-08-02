@@ -607,6 +607,87 @@ describe("EquipmentAwareSwapSheet", () => {
       expect(queryByTestId("swap-sheet-empty")).toBeNull();
     });
 
+    it("does NOT wipe the search box or the override panel on the way out", async () => {
+      const api = new InMemoryApiAdapter();
+      api.substitutes = {
+        best: [],
+        others: [
+          candidate({ id: "ex-bench", name: "Bench Press" }),
+          candidate({ id: "ex-fly", name: "Cable Fly" }),
+        ],
+        meta: { truncated: false },
+      };
+      const { findByTestId, queryByTestId, rerender } = renderSheet(api, {
+        forExerciseId: "ex-source",
+      });
+      fireEvent.changeText(await findByTestId("swap-sheet-search"), "bench");
+      await waitFor(() =>
+        expect(queryByTestId("swap-others-ex-fly")).toBeNull(),
+      );
+
+      show(rerender, api, false, "ex-source");
+
+      // Clearing on the close edge visibly empties the field and re-expands the
+      // list as the sheet slides away.
+      expect(queryByTestId("swap-others-ex-fly")).toBeNull();
+    });
+
+    it("DOES reset the search when it opens again", async () => {
+      const api = new InMemoryApiAdapter();
+      api.substitutes = {
+        best: [],
+        others: [
+          candidate({ id: "ex-bench", name: "Bench Press" }),
+          candidate({ id: "ex-fly", name: "Cable Fly" }),
+        ],
+        meta: { truncated: false },
+      };
+      const { findByTestId, queryByTestId, rerender } = renderSheet(api, {
+        forExerciseId: "ex-source",
+      });
+      fireEvent.changeText(await findByTestId("swap-sheet-search"), "bench");
+      await waitFor(() =>
+        expect(queryByTestId("swap-others-ex-fly")).toBeNull(),
+      );
+
+      show(rerender, api, false, "ex-source");
+      show(rerender, api, true, "ex-source");
+
+      // The reset moved to the open edge; it must still happen.
+      expect(await findByTestId("swap-others-ex-fly")).toBeTruthy();
+    });
+
+    it("does not send the previous open's search term on reopening", async () => {
+      const api = new InMemoryApiAdapter();
+      api.substitutes = {
+        best: [],
+        others: [candidate({ id: "ex-bench", name: "Bench Press" })],
+        meta: { truncated: false },
+      };
+      const { findByTestId, rerender } = renderSheet(api, {
+        forExerciseId: "ex-source",
+      });
+      fireEvent.changeText(await findByTestId("swap-sheet-search"), "bench");
+      const spy = jest.spyOn(api, "getExerciseSubstitutes");
+      await waitFor(() =>
+        expect(spy).toHaveBeenLastCalledWith(
+          expect.objectContaining({ search: "bench" }),
+        ),
+      );
+
+      show(rerender, api, false, "ex-source");
+      show(rerender, api, true, "ex-source");
+
+      // Resetting `query` in a sibling EFFECT would let one request go out under
+      // the previous open's term before the re-render corrected it; the debounce
+      // would then hold "bench" for another 250 ms on top.
+      await waitFor(() =>
+        expect(
+          spy.mock.calls[spy.mock.calls.length - 1]?.[0],
+        ).not.toHaveProperty("search"),
+      );
+    });
+
     it("does NOT flip to the empty state when a dismiss beats the response", async () => {
       const api = new InMemoryApiAdapter();
       jest
@@ -697,6 +778,40 @@ describe("EquipmentAwareSwapSheet", () => {
     expect(queryByTestId("swap-best-best-50")).toBeNull();
     expect(queryByTestId("swap-others-other-49")).not.toBeNull();
     expect(queryByTestId("swap-others-other-50")).toBeNull();
+    expect(queryByTestId("swap-sheet-truncated")).not.toBeNull();
+  });
+
+  it("says nothing about more matches when a group lands on exactly the ceiling", async () => {
+    const api = new InMemoryApiAdapter();
+    api.substitutes = {
+      best: [],
+      others: Array.from({ length: 50 }, (_, i) =>
+        candidate({ id: `other-${i}`, name: `Other ${i}` }),
+      ),
+      meta: { truncated: false },
+    };
+    const { findByTestId, queryByTestId } = renderSheet(api);
+    await findByTestId("swap-others-other-49");
+
+    // Counting the SLICED length cannot tell "sliced from 120" from "matched
+    // exactly 50", and promises rows that searching will never surface.
+    expect(queryByTestId("swap-sheet-truncated")).toBeNull();
+  });
+
+  it("counts the local-only group toward the note — the search can't reach those rows", async () => {
+    const api = new InMemoryApiAdapter();
+    api.substitutes = { best: [], others: [], meta: { truncated: false } };
+    const { findByTestId, queryByTestId } = renderSheet(api, {
+      localOnlyCandidates: Array.from({ length: 60 }, (_, i) =>
+        candidate({ id: `local-${i}`, name: `Local ${i}`, matchedOn: [] }),
+      ),
+    });
+    await findByTestId("swap-local-local-0");
+
+    expect(queryByTestId("swap-local-local-49")).not.toBeNull();
+    expect(queryByTestId("swap-local-local-50")).toBeNull();
+    // These rows do not exist server-side, so nothing else would ever surface
+    // number 51 — dropping them silently is the worst case of the three groups.
     expect(queryByTestId("swap-sheet-truncated")).not.toBeNull();
   });
 

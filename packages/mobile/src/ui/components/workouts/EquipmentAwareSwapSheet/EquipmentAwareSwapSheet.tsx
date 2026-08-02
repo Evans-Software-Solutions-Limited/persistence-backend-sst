@@ -200,6 +200,12 @@ export function EquipmentAwareSwapSheet({
   const [error, setError] = useState<LoadoutApiError | null>(null);
   const [query, setQuery] = useState("");
   const debouncedQuery = useDebouncedValue(query.trim(), 250);
+  /**
+   * What the SERVER is asked for. An empty box takes effect at once rather than
+   * 250 ms later, so the reset above cannot let one request go out under the
+   * previous open's term while the debounce catches up.
+   */
+  const effectiveSearch = query.trim().length === 0 ? "" : debouncedQuery;
   /** The incompatible row awaiting an explicit acknowledgement. */
   const [pendingOverride, setPendingOverride] =
     useState<SubstituteCandidate | null>(null);
@@ -227,11 +233,27 @@ export function EquipmentAwareSwapSheet({
   );
   const hasEquipmentContext = equipmentForQuery !== undefined;
 
-  useEffect(() => {
-    if (visible) return;
-    setQuery("");
-    setPendingOverride(null);
-  }, [visible]);
+  /**
+   * Reset on the OPEN edge, in the render phase — React's documented
+   * adjust-state-on-prop-change pattern.
+   *
+   * ⚠ Both halves matter. **On open, not on close**, because `BottomSheet` keeps
+   * its children painted for the whole slide-down: clearing on the close edge
+   * visibly empties the search box and re-expands the list as the sheet leaves,
+   * and if the override-confirm panel is up it swaps that whole panel out for
+   * the list mid-dismiss. **In the render phase, not an effect**, because the
+   * fetch effect below reads `query` — resetting it in a sibling effect would
+   * let one request go out under the PREVIOUS open's search term before the
+   * re-render corrected it.
+   */
+  const [wasVisible, setWasVisible] = useState(visible);
+  if (visible !== wasVisible) {
+    setWasVisible(visible);
+    if (visible) {
+      setQuery("");
+      setPendingOverride(null);
+    }
+  }
 
   useEffect(() => {
     if (!visible || forExerciseId === null) {
@@ -294,7 +316,7 @@ export function EquipmentAwareSwapSheet({
         // belt-and-braces — but it keeps the two layers stating the same contract.
         ...(equipmentForQuery ? { equipment: equipmentForQuery } : {}),
         limit: CANDIDATE_LIMIT,
-        ...(debouncedQuery ? { search: debouncedQuery } : {}),
+        ...(effectiveSearch ? { search: effectiveSearch } : {}),
       })
       .then((response) => {
         if (cancelled) return;
@@ -312,7 +334,7 @@ export function EquipmentAwareSwapSheet({
     forExerciseId,
     equipmentForQuery,
     equipmentKey,
-    debouncedQuery,
+    effectiveSearch,
     api,
   ]);
 
@@ -328,35 +350,59 @@ export function EquipmentAwareSwapSheet({
   const filter = useCallback(
     (rows: readonly SubstituteCandidate[]) => {
       const tokens = tokenizeSearch(query);
-      const matched =
-        tokens.length === 0
-          ? rows
-          : rows.filter((row) => {
-              const name = row.name.toLowerCase();
-              return tokens.every((token) => name.includes(token));
-            });
-      // Sliced AFTER matching, never before, or searching could only ever look
-      // inside the first 50 ranked rows and the note telling the user to search
-      // would be pointing at nothing.
-      return matched.slice(0, RENDER_LIMIT_PER_GROUP);
+      if (tokens.length === 0) return rows;
+      return rows.filter((row) => {
+        const name = row.name.toLowerCase();
+        return tokens.every((token) => name.includes(token));
+      });
     },
     [query],
   );
 
-  const best = useMemo(() => filter(result.best), [filter, result.best]);
-  const others = useMemo(() => filter(result.others), [filter, result.others]);
-  /** True when this ceiling — not the server — is what is hiding rows. */
-  const slicedLocally =
-    best.length === RENDER_LIMIT_PER_GROUP ||
-    others.length === RENDER_LIMIT_PER_GROUP;
+  // ⚠ Matched first, sliced second, and the two counts kept apart. Slicing
+  // before matching would confine the search to the first 50 ranked rows —
+  // making the "search to narrow them" note point at rows it could never reach.
+  // And the note has to be driven by the MATCHED length: `best.length === 50`
+  // cannot tell "sliced from 120" from "matched exactly 50", so it would promise
+  // more matches on a pool that has none.
+  const matchedBest = useMemo(() => filter(result.best), [filter, result.best]);
+  const matchedOthers = useMemo(
+    () => filter(result.others),
+    [filter, result.others],
+  );
   // Same client-side token filter as the ranked lists, so typing narrows all
   // three groups consistently. The debounced SERVER search cannot see these
   // rows at all — they do not exist server-side yet — so filtering them here is
   // the only thing that keeps the sheet's search honest about them.
-  const localOnly = useMemo(
+  const matchedLocalOnly = useMemo(
     () => filter(localOnlyCandidates ?? []),
     [filter, localOnlyCandidates],
   );
+
+  const best = useMemo(
+    () => matchedBest.slice(0, RENDER_LIMIT_PER_GROUP),
+    [matchedBest],
+  );
+  const others = useMemo(
+    () => matchedOthers.slice(0, RENDER_LIMIT_PER_GROUP),
+    [matchedOthers],
+  );
+  const localOnly = useMemo(
+    () => matchedLocalOnly.slice(0, RENDER_LIMIT_PER_GROUP),
+    [matchedLocalOnly],
+  );
+
+  /**
+   * True when this ceiling — not the server — is what is hiding rows.
+   *
+   * `localOnly` counts too, and it is the group where silence would matter most:
+   * its rows are the ones the server search cannot reach at all, so nothing else
+   * would ever surface number 51.
+   */
+  const slicedLocally =
+    matchedBest.length > RENDER_LIMIT_PER_GROUP ||
+    matchedOthers.length > RENDER_LIMIT_PER_GROUP ||
+    matchedLocalOnly.length > RENDER_LIMIT_PER_GROUP;
 
   const onRowPress = useCallback(
     (candidate: SubstituteCandidate, incompatible: boolean) => {

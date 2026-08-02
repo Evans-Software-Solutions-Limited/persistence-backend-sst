@@ -137,6 +137,12 @@ export function SwapExercisePopover({
     if (visible) setResolveFailed(false);
   }, [visible]);
 
+  /** Latches on the first open and never unlatches — see `localOnlyCandidates`. */
+  const [hasOpened, setHasOpened] = useState(false);
+  useEffect(() => {
+    if (visible) setHasOpened(true);
+  }, [visible]);
+
   // ⚠ Both invalidation signals, deliberately — the same pair `AddExercisePopover`
   // and (since #340) the old cache-reading swap picker already carried. They fire
   // independently: the storage change bus on any local write, `markChanged()`
@@ -158,13 +164,23 @@ export function SwapExercisePopover({
    * ranks it like anything else.
    */
   const localOnlyCandidates = useMemo<readonly SubstituteCandidate[]>(() => {
-    // ⚠ NOT short-circuited on `!visible`. `BottomSheet` keeps its children
-    // mounted through the close animation, so emptying this on dismiss makes the
-    // group disappear while it is still on screen — and in the case the group
-    // exists for (an unsynced source, where the sheet's ranked lists are empty
-    // and this group is the ONLY content) that turns the whole sheet into "No
-    // alternatives found for this exercise." on the way out. The cost of not
-    // gating is one synchronous cache read per revision bump.
+    // ⚠ Latched on "has ever been opened", NOT on `visible`, and neither half is
+    // interchangeable with the other.
+    //
+    // Not `visible`: `BottomSheet` keeps its children mounted through the close
+    // animation, so emptying this on dismiss makes the group vanish while it is
+    // still on screen — and for an unsynced source, where the ranked lists are
+    // empty and this group is the only content, that turns the whole sheet into
+    // "No alternatives found for this exercise." on the way out.
+    //
+    // But not ungated either. `ActiveSessionContainer` renders this component
+    // unconditionally, and `getCachedExercises()` is a full table read with a
+    // `JSON.parse` per row — `ExerciseListContainer` measures it at ~2.3k rows
+    // in production. Ungated, tapping Start Workout runs that synchronously
+    // during the session screen's first render for a sheet that may never be
+    // opened, then again on every `cached_exercises` write for the life of the
+    // session. That is the shape #341 spent a whole PR removing.
+    if (!hasOpened) return [];
     void storageRevision;
     void libraryRevision;
     return storage
@@ -185,7 +201,7 @@ export function SwapExercisePopover({
         // Nothing ranked these, so they claim no match signals.
         matchedOn: [],
       }));
-  }, [storage, storageRevision, libraryRevision]);
+  }, [hasOpened, storage, storageRevision, libraryRevision]);
 
   const onCreateExercise = useCallback(() => {
     // Close first so the full-screen creator isn't stacked behind an open sheet.

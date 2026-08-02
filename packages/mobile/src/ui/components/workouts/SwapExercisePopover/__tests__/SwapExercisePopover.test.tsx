@@ -489,6 +489,21 @@ describe("SwapExercisePopover (T-2.7 adapter)", () => {
       expect(refresh).not.toHaveBeenCalled();
     });
 
+    it("does not read the exercise cache until the sheet has been opened once", async () => {
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      storage.saveCustomExercise(localExercise());
+      const read = jest.spyOn(storage, "getCachedExercises");
+
+      // `ActiveSessionContainer` renders this unconditionally, so an ungated
+      // read is a full `cached_exercises` scan with a JSON.parse per row (~2.3k
+      // in production) on the session screen's first frame — for a sheet that
+      // may never be opened. That is the shape #341 removed.
+      renderPopover(api, storage, { visible: false });
+
+      expect(read).not.toHaveBeenCalled();
+    });
+
     it("keeps the group painted while the sheet slides shut", async () => {
       const api = new InMemoryApiAdapter();
       const storage = new InMemoryStorageAdapter();
