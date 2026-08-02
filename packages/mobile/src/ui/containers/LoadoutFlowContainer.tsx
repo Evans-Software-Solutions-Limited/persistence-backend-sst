@@ -272,6 +272,30 @@ export function LoadoutFlowContainer() {
       : contextKey;
   const requestKey = `${workoutId ?? ""}|${contextKey}|${attempt}`;
 
+  // ⚠ The review decisions are keyed by `sortOrder`, which comes from the PARENT
+  // workout — so two previews of the same workout share one sortOrder space and
+  // a decision carried across them lands on a different row by construction, not
+  // by accident. The run-level reset above is keyed on the workout alone, so
+  // review → back → a different gym kept them.
+  //
+  // The store already clears `manualPicks` in `selectGym`/`selectEquipmentIds`
+  // for exactly this reason; these three were missed. It bites harder than a
+  // stale banner count now that `acceptedRows` decides whether a row is SAVED:
+  // accept an `intensity_mismatch` under Gym A, re-collect against Gym B where
+  // sortOrder 4 is a different substitution, and the row is saved with a
+  // mismatch the user was never shown — `needsAttention` is false, so the review
+  // step hides the action block entirely. `droppedRows` is at least visible, but
+  // just as wrong: a row dropped under Gym A stays out of Gym B's save even
+  // after it resolved cleanly.
+  const lastContextKeyRef = useRef(contextKey);
+  useEffect(() => {
+    if (lastContextKeyRef.current === contextKey) return;
+    lastContextKeyRef.current = contextKey;
+    setDroppedRows(new Set());
+    setAcceptedRows(new Set());
+    setPickedNames(new Map());
+  }, [contextKey]);
+
   // ⚠ Cleared on any CONTEXT change, not just a new workout. The id exists so a
   // save retry does not 409 on its own gym name — but scoped to the workout it
   // also survives a re-collect: create "Home" from kit1, fail on the variation,

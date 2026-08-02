@@ -727,6 +727,65 @@ describe("LoadoutFlowContainer", () => {
       );
     });
 
+    /**
+     * ⚠ `droppedRows` / `acceptedRows` / `pickedNames` are keyed by `sortOrder`,
+     * which comes from the PARENT workout — so two previews of the same workout
+     * share one sortOrder space and a carried-over decision lands on a different
+     * row by construction. The store already clears `manualPicks` on a
+     * re-collect for this reason; these three live in the container and were
+     * missed. It decides what is SAVED, not just what the banner counts.
+     */
+    it("forgets an accept when the user re-collects against a different gym", async () => {
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      const mismatch = [
+        row({
+          status: "swapped",
+          reason: reason({
+            code: "equipment_unavailable",
+            flags: ["intensity_mismatch"],
+          }),
+        }),
+      ];
+      seedEquipment(storage);
+      api.loadoutPreview = preview(mismatch);
+      api.savedGyms = [
+        {
+          id: "gym-1",
+          name: "Hotel gym",
+          equipmentTypeIds: ["eq-dumbbell"],
+          createdAt: null,
+          updatedAt: null,
+        },
+        {
+          id: "gym-2",
+          name: "Garage",
+          equipmentTypeIds: ["eq-barbell"],
+          createdAt: null,
+          updatedAt: null,
+        },
+      ];
+      const { findByTestId, queryByTestId } = renderFlow(api, storage);
+      openFlow();
+      fireEvent.press(await findByTestId("loadout-collect-gym-gym-1"));
+      await findByTestId("loadout-review");
+
+      fireEvent.press(await findByTestId("loadout-row-1-accept"));
+      await waitFor(() =>
+        expect(queryByTestId("loadout-review-attention")).toBeNull(),
+      );
+
+      fireEvent.press(await findByTestId("loadout-review-back"));
+      fireEvent.press(await findByTestId("loadout-collect-gym-gym-2"));
+      await findByTestId("loadout-review");
+
+      // sortOrder 1 is a DIFFERENT substitution now. Carrying the accept over
+      // hides the action block (`needsAttention` false) and saves the row with a
+      // mismatch the user was never shown — the presenter has no marker for an
+      // accepted row of its own.
+      expect(await findByTestId("loadout-review-attention")).toBeTruthy();
+    });
+
     it("drops a row on request, clearing the banner, and can put it back", async () => {
       const api = new InMemoryApiAdapter();
       const storage = new InMemoryStorageAdapter();

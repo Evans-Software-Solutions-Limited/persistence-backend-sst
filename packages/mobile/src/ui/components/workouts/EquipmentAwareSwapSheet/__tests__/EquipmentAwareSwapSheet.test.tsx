@@ -341,6 +341,41 @@ describe("EquipmentAwareSwapSheet", () => {
     );
   });
 
+  it("never sends a term the box no longer starts with", async () => {
+    const api = new InMemoryApiAdapter();
+    api.substitutes = {
+      best: [],
+      others: [candidate({ id: "ex-1", name: "Dumbbell Bench Press" })],
+      meta: { truncated: false },
+    };
+    const spy = jest.spyOn(api, "getExerciseSubstitutes");
+    const { findByTestId } = renderSheet(api);
+    const input = await findByTestId("swap-sheet-search");
+
+    fireEvent.changeText(input, "bench");
+    await waitFor(() =>
+      expect(spy).toHaveBeenLastCalledWith(
+        expect.objectContaining({ search: "bench" }),
+      ),
+    );
+
+    // Cleared, then retyped inside the debounce window. `useDebouncedValue`
+    // still holds "bench", so anything that only special-cases the empty box
+    // hands the deleted term straight back.
+    fireEvent.changeText(input, "");
+    fireEvent.changeText(input, "s");
+
+    await waitFor(() =>
+      expect(spy).toHaveBeenLastCalledWith(
+        expect.objectContaining({ search: "s" }),
+      ),
+    );
+    const sentTerms = spy.mock.calls.map((call) => call[0].search);
+    expect(sentTerms.slice(sentTerms.indexOf("bench") + 1)).not.toContain(
+      "bench",
+    );
+  });
+
   it("says so when a search matches nothing, distinctly from an empty feed", async () => {
     const api = new InMemoryApiAdapter();
     api.substitutes = {

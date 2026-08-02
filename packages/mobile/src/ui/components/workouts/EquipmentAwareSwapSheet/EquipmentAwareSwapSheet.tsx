@@ -199,13 +199,27 @@ export function EquipmentAwareSwapSheet({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<LoadoutApiError | null>(null);
   const [query, setQuery] = useState("");
-  const debouncedQuery = useDebouncedValue(query.trim(), 250);
+  const trimmedQuery = query.trim();
+  const debouncedQuery = useDebouncedValue(trimmedQuery, 250);
   /**
-   * What the SERVER is asked for. An empty box takes effect at once rather than
-   * 250 ms later, so the reset above cannot let one request go out under the
-   * previous open's term while the debounce catches up.
+   * What the SERVER is asked for.
+   *
+   * ⚠ A prefix check, not an is-empty check. `useDebouncedValue` retains the last
+   * settled term across a clear and across a reopen, so anything that only
+   * special-cases the empty box hands that term straight back the moment one
+   * character is typed: clear "bench", type "s" inside 250 ms, and the request
+   * goes out under "bench" — a term the user deleted — and if it lands first the
+   * list repaints with bench rows that the client filter on "s" then empties.
+   * The reopen case is the same window: the render-phase reset clears `query`
+   * but not the hook's retained value.
+   *
+   * A debounced value the current box no longer starts with is by definition
+   * from a different query, and the broad pool is the honest answer until the
+   * new one settles.
    */
-  const effectiveSearch = query.trim().length === 0 ? "" : debouncedQuery;
+  const effectiveSearch = trimmedQuery.startsWith(debouncedQuery)
+    ? debouncedQuery
+    : "";
   /** The incompatible row awaiting an explicit acknowledgement. */
   const [pendingOverride, setPendingOverride] =
     useState<SubstituteCandidate | null>(null);
