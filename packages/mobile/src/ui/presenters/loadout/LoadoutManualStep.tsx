@@ -109,7 +109,7 @@ export function LoadoutManualStep({
           >
             <Text style={[styles.ctaText, !canAdapt && styles.ctaTextDisabled]}>
               {canAdapt
-                ? `Adapt to ${count} items`
+                ? `Adapt to ${count} ${count === 1 ? "item" : "items"}`
                 : "Pick your kit to continue"}
             </Text>
           </TouchableOpacity>
