@@ -79,12 +79,24 @@ export function useWorkoutVariations(
     void refresh();
   }, [key, refresh]);
 
+  // ⚠ The VISIBLE result is keyed on the workout alone, while the request guard
+  // above stays keyed on `${workoutId}::${rev}`. The two want different things:
+  //
+  //   - a workout change genuinely invalidates the rows, and painting A's
+  //     settled variations under B — all of them named after their parent —
+  //     reads as real data rather than as a glitch;
+  //   - a `rev` bump does not. It only means "a save just landed, re-read".
+  //     Keying the visible result on it too blanks the list for the round trip,
+  //     and `SavedSetupsSection` renders null on an empty array — so dismissing
+  //     the flow quickly lands the user back on workout detail with no Saved
+  //     setups section at all, immediately after saving one.
+  const resolvedWorkoutId = resolvedKey?.split("::")[0] ?? null;
+  const showsCurrentWorkout = fetchable && resolvedWorkoutId === workoutId;
+
   return {
-    // Key the visible result as well as the request guard. Otherwise workout
-    // A's settled rows remain painted under workout B until B resolves.
-    variations: key !== null && resolvedKey === key ? variations : [],
+    variations: showsCurrentWorkout ? variations : [],
     isLoading: key !== null && resolvedKey !== key,
-    error: key !== null && resolvedKey === key ? error : null,
+    error: showsCurrentWorkout ? error : null,
     refresh,
   };
 }

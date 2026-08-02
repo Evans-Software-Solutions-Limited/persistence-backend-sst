@@ -99,6 +99,17 @@ export interface LoadoutFlowState {
    * "Saved setups" list re-reads without the flow holding a reference to it.
    */
   rev: number;
+  /**
+   * Monotonic counter bumped on every COLLECT, so decisions that live outside
+   * this store can be dropped alongside `manualPicks`.
+   *
+   * ⚠ An EVENT counter, not a context identity — re-collecting against the SAME
+   * gym must invalidate too. Stage 2 of the adaptation is an LLM, so a second
+   * preview of the same workout against the same kit can legitimately put a
+   * different substitute on the same `sortOrder`. Anything keyed on the context
+   * value walks straight past that case, which is why this is a counter.
+   */
+  collectRev: number;
 
   open: (
     workoutId: string,
@@ -152,9 +163,10 @@ const CLOSED = {
   upsellOpen: false,
 } as const;
 
-export const useLoadoutFlow = create<LoadoutFlowState>((set) => ({
+export const useLoadoutFlow = create<LoadoutFlowState>((set, get) => ({
   ...CLOSED,
   rev: 0,
+  collectRev: 0,
 
   // Opening always resets everything except `rev`, so a second run of the flow can
   // never inherit the first's equipment context, preview or hand-picks. The bug
@@ -192,6 +204,7 @@ export const useLoadoutFlow = create<LoadoutFlowState>((set) => ({
       preview: null,
       manualPicks: EMPTY_PICKS,
       swapTarget: null,
+      collectRev: get().collectRev + 1,
     }),
 
   selectEquipmentIds: (equipmentTypeIds, label, saveAsGym) =>
@@ -209,6 +222,7 @@ export const useLoadoutFlow = create<LoadoutFlowState>((set) => ({
       preview: null,
       manualPicks: EMPTY_PICKS,
       swapTarget: null,
+      collectRev: get().collectRev + 1,
     }),
 
   setScanDraft: (draft) =>

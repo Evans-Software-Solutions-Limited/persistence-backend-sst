@@ -786,6 +786,49 @@ describe("LoadoutFlowContainer", () => {
       expect(await findByTestId("loadout-review-attention")).toBeTruthy();
     });
 
+    it("forgets an accept when the user re-collects against the SAME gym", async () => {
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      seedEquipment(storage);
+      api.loadoutPreview = preview([
+        row({
+          status: "swapped",
+          reason: reason({
+            code: "equipment_unavailable",
+            flags: ["intensity_mismatch"],
+          }),
+        }),
+      ]);
+      api.savedGyms = [
+        {
+          id: "gym-1",
+          name: "Hotel gym",
+          equipmentTypeIds: ["eq-dumbbell"],
+          createdAt: null,
+          updatedAt: null,
+        },
+      ];
+      const { findByTestId, queryByTestId } = renderFlow(api, storage);
+      openFlow();
+      fireEvent.press(await findByTestId("loadout-collect-gym-gym-1"));
+      await findByTestId("loadout-review");
+
+      fireEvent.press(await findByTestId("loadout-row-1-accept"));
+      await waitFor(() =>
+        expect(queryByTestId("loadout-review-attention")).toBeNull(),
+      );
+
+      fireEvent.press(await findByTestId("loadout-review-back"));
+      fireEvent.press(await findByTestId("loadout-collect-gym-gym-1"));
+      await findByTestId("loadout-review");
+
+      // ⚠ SAME gym, and it still has to forget. Stage 2 of the adaptation is an
+      // LLM, so the second preview can legitimately put a different substitute
+      // on the same `sortOrder` — which is why the reset is keyed on a collect
+      // COUNTER and not on the context value.
+      expect(await findByTestId("loadout-review-attention")).toBeTruthy();
+    });
+
     it("drops a row on request, clearing the banner, and can put it back", async () => {
       const api = new InMemoryApiAdapter();
       const storage = new InMemoryStorageAdapter();

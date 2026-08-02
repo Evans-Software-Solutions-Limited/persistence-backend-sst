@@ -376,6 +376,41 @@ describe("EquipmentAwareSwapSheet", () => {
     );
   });
 
+  it("does not fire a broad refetch on every backspace", async () => {
+    const api = new InMemoryApiAdapter();
+    api.substitutes = {
+      best: [],
+      others: [candidate({ id: "ex-1", name: "Dumbbell Bench Press" })],
+      meta: { truncated: false },
+    };
+    const spy = jest.spyOn(api, "getExerciseSubstitutes");
+    const { findByTestId } = renderSheet(api);
+    const input = await findByTestId("swap-sheet-search");
+
+    fireEvent.changeText(input, "bench");
+    await waitFor(() =>
+      expect(spy).toHaveBeenLastCalledWith(
+        expect.objectContaining({ search: "bench" }),
+      ),
+    );
+    const afterSettled = spy.mock.calls.length;
+
+    // Backspacing makes the box a PREFIX of the settled term for 250 ms. Falling
+    // to "" there issues an un-debounced `limit: 400` fetch of both pools per
+    // keystroke — discarded when the new term settles, and if one lands inside
+    // the window it repaints with the broad pool, which the client filter can
+    // then empty. The settled term is a subset of what the shorter box wants, so
+    // holding it under-returns briefly and never mis-returns.
+    fireEvent.changeText(input, "benc");
+    expect(spy.mock.calls.length).toBe(afterSettled);
+
+    await waitFor(() =>
+      expect(spy).toHaveBeenLastCalledWith(
+        expect.objectContaining({ search: "benc" }),
+      ),
+    );
+  });
+
   it("says so when a search matches nothing, distinctly from an empty feed", async () => {
     const api = new InMemoryApiAdapter();
     api.substitutes = {

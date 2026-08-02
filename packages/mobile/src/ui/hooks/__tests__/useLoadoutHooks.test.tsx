@@ -357,6 +357,28 @@ describe("useWorkoutVariations", () => {
     expect(latest().error).toBeNull();
   });
 
+  it("keeps the settled rows on screen while a `rev` bump re-reads", async () => {
+    const api = new InMemoryApiAdapter();
+    await api.createWorkoutVariation("w-1", {
+      name: "Upper Body · Hotel gym",
+      exercises: [{ exerciseId: "ex-1", sortOrder: 1 }],
+    });
+    const { latest } = harness(api, () => useWorkoutVariations("w-1"));
+    await waitFor(() => expect(latest().variations).toHaveLength(1));
+
+    // A never-settling re-read holds the hook in its post-bump state. `rev` only
+    // means "a save landed, re-read" — the rows are still this workout's, and
+    // blanking them unmounts `SavedSetupsSection` entirely, so dismissing the
+    // flow quickly lands the user on workout detail with no Saved setups
+    // section at all, right after saving one.
+    jest
+      .spyOn(api, "getWorkoutVariations")
+      .mockReturnValue(new Promise(() => {}) as never);
+    act(() => useLoadoutFlow.getState().saved());
+
+    expect(latest().variations).toHaveLength(1);
+  });
+
   it("discards a response for a workout the user has navigated away from", async () => {
     const api = new InMemoryApiAdapter();
     let resolveFirst: ((value: unknown) => void) | null = null;

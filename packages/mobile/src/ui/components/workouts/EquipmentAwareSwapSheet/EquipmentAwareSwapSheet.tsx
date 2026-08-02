@@ -216,10 +216,23 @@ export function EquipmentAwareSwapSheet({
    * A debounced value the current box no longer starts with is by definition
    * from a different query, and the broad pool is the honest answer until the
    * new one settles.
+   *
+   * ⚠ The SHRINKING case has to hold the settled term rather than fall to "".
+   * Backspacing makes `trimmedQuery` a prefix of `debouncedQuery` for 250 ms,
+   * and dropping to "" there issues an un-debounced `limit: 400` fetch of both
+   * pools per backspace — discarded the moment the new term settles, and if one
+   * lands inside the window the broad ranked pool replaces `result` and the
+   * client filter can empty it, flashing "No matches with that name." for a term
+   * that has matches. The settled term is a strict subset of what the shorter
+   * box would return, so holding it under-returns briefly and never mis-returns.
    */
-  const effectiveSearch = trimmedQuery.startsWith(debouncedQuery)
-    ? debouncedQuery
-    : "";
+  const effectiveSearch =
+    trimmedQuery.length === 0
+      ? ""
+      : trimmedQuery.startsWith(debouncedQuery) ||
+          debouncedQuery.startsWith(trimmedQuery)
+        ? debouncedQuery
+        : "";
   /** The incompatible row awaiting an explicit acknowledgement. */
   const [pendingOverride, setPendingOverride] =
     useState<SubstituteCandidate | null>(null);

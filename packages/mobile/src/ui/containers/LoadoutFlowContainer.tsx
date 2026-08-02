@@ -163,6 +163,7 @@ export function LoadoutFlowContainer() {
     (s) => s.replacementVariationId,
   );
   const context = useLoadoutFlow((s) => s.context);
+  const collectRev = useLoadoutFlow((s) => s.collectRev);
   const preview = useLoadoutFlow((s) => s.preview);
   const manualPicks = useLoadoutFlow((s) => s.manualPicks);
   const swapTarget = useLoadoutFlow((s) => s.swapTarget);
@@ -276,25 +277,29 @@ export function LoadoutFlowContainer() {
   // workout — so two previews of the same workout share one sortOrder space and
   // a decision carried across them lands on a different row by construction, not
   // by accident. The run-level reset above is keyed on the workout alone, so
-  // review → back → a different gym kept them.
+  // review → back → collect again kept them.
   //
-  // The store already clears `manualPicks` in `selectGym`/`selectEquipmentIds`
-  // for exactly this reason; these three were missed. It bites harder than a
-  // stale banner count now that `acceptedRows` decides whether a row is SAVED:
-  // accept an `intensity_mismatch` under Gym A, re-collect against Gym B where
-  // sortOrder 4 is a different substitution, and the row is saved with a
-  // mismatch the user was never shown — `needsAttention` is false, so the review
-  // step hides the action block entirely. `droppedRows` is at least visible, but
-  // just as wrong: a row dropped under Gym A stays out of Gym B's save even
-  // after it resolved cleanly.
-  const lastContextKeyRef = useRef(contextKey);
+  // Keyed on `collectRev`, NOT on `contextKey`. Stage 2 of the adaptation is an
+  // LLM, so re-collecting against the SAME gym can still return a different
+  // substitute on the same `sortOrder` — a context-value key returns early on
+  // exactly that path. The counter bumps where the store already clears
+  // `manualPicks` for this same reason; these three live here and were missed.
+  //
+  // It bites harder than a stale banner count now that `acceptedRows` decides
+  // whether a row is SAVED: accept an `intensity_mismatch`, re-collect, and the
+  // row is saved with a mismatch the user was never shown — `needsAttention` is
+  // false, so the review step hides the action block entirely and the presenter
+  // has no marker for an accepted row. `droppedRows` is at least visible, but
+  // just as wrong: a row dropped against the first kit stays out of the second
+  // save even after it resolved cleanly.
+  const lastCollectRevRef = useRef(collectRev);
   useEffect(() => {
-    if (lastContextKeyRef.current === contextKey) return;
-    lastContextKeyRef.current = contextKey;
+    if (lastCollectRevRef.current === collectRev) return;
+    lastCollectRevRef.current = collectRev;
     setDroppedRows(new Set());
     setAcceptedRows(new Set());
     setPickedNames(new Map());
-  }, [contextKey]);
+  }, [collectRev]);
 
   // ⚠ Cleared on any CONTEXT change, not just a new workout. The id exists so a
   // save retry does not 409 on its own gym name — but scoped to the workout it
