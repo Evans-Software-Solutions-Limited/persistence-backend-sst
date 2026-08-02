@@ -39,4 +39,5 @@ export {
 } from "./units";
 
 export { stripUnpairedSurrogates, capText } from "./text";
+export { itemLabel } from "./copy";
 export { type ResizeAction, resizeToLongEdge } from "./image";

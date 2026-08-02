@@ -216,6 +216,13 @@ jest.mock("@gorhom/bottom-sheet", () => {
           // renders plain Views, so no test can prove the content actually
           // SCROLLS on device — this only pins the configuration.
           enableDynamicSizing: props.enableDynamicSizing,
+          // Surface `onClose` so a test can fire it. The real gorhom invokes it
+          // for a PROGRAMMATIC close too — including one caused by the app's own
+          // state change dropping `visible` — and this mock never calls it on its
+          // own. That blind spot is what let a step-clobbering `onClose` ship in
+          // Loadout's scan sheet: every exit from the sheet silently reset the
+          // flow, and the whole suite stayed green.
+          onClose: props.onClose,
         },
         backdrop,
         props.children as React.ReactNode,

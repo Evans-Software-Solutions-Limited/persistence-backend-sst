@@ -7,6 +7,7 @@ import {
   View,
 } from "react-native";
 import type { EquipmentPickerGroup } from "@/domain/services/loadout.service";
+import { itemLabel } from "@/shared/utils";
 import { Pill } from "@/ui/components/foundation";
 import { EquipmentChipGrid } from "./EquipmentChipGrid";
 import { LoadoutScaffold } from "./LoadoutScaffold";
@@ -109,7 +110,7 @@ export function LoadoutManualStep({
           >
             <Text style={[styles.ctaText, !canAdapt && styles.ctaTextDisabled]}>
               {canAdapt
-                ? `Adapt to ${count} items`
+                ? `Adapt to ${itemLabel(count)}`
                 : "Pick your kit to continue"}
             </Text>
           </TouchableOpacity>

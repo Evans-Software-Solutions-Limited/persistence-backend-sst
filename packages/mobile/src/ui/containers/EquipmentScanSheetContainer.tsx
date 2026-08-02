@@ -238,6 +238,35 @@ export function EquipmentScanSheetContainer({
     setStage("capture");
   }, []);
 
+  /**
+   * ⚠ gorhom fires `onClose` for a PROGRAMMATIC close too — including the one
+   * our own CTAs cause by flipping `step` away from `"scan"`, which drops
+   * `visible` and makes `BottomSheet` call `ref.current.close()`. Unguarded,
+   * this callback then ran a beat later and overwrote the step the CTA had
+   * just set, so BOTH exits from the sheet landed back on `collect`:
+   * "Use these N items" never reached `adapting` (the scan result was
+   * discarded and nothing was ever adapted) and "Edit the full equipment list"
+   * never reached the pre-seeded checklist. Device-verified 2026-08-02; no
+   * test could catch it because Jest mocks gorhom, so `onClose` never fires.
+   *
+   * Read the step from `getState()` rather than the subscribed `step` above:
+   * this closure is invoked from the animation callback, after the store has
+   * already moved on. A close that still finds the flow on `"scan"` is the
+   * only one that is a genuine user dismissal.
+   *
+   * `ScanBarcodeSheetContainer`, `QuickAddSheetContainer` and
+   * `SnapAISheetContainer` guard the same gorhom hazard with the render-time
+   * `if (visible)` form instead. Both are correct — `ref.current.close()` runs
+   * in an effect AFTER the render that dropped `visible`, so the closure gorhom
+   * captured is the post-CTA one either way — but this sheet's step lives in a
+   * store rather than a prop, so reading it directly is the closer statement of
+   * the rule.
+   */
+  const onSheetClose = useCallback(() => {
+    if (useLoadoutFlow.getState().step !== "scan") return;
+    goToStep("collect");
+  }, [goToStep]);
+
   const goManual = useCallback(() => {
     onPickManually(confirmedIds());
     goToStep("manual");
@@ -246,7 +275,7 @@ export function EquipmentScanSheetContainer({
   return (
     <EquipmentScanSheetPresenter
       visible={visible}
-      onClose={() => goToStep("collect")}
+      onClose={onSheetClose}
       stage={stage}
       draft={scanDraft}
       deselectedIds={deselectedIds}

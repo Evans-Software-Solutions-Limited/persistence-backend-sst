@@ -453,6 +453,80 @@ describe("EquipmentScanSheetContainer", () => {
     expect(await findByTestId("loadout-scan-error")).toBeTruthy();
   });
 
+  /**
+   * ⚠ These two pin the fix for a bug that made the ENTIRE scan path a
+   * dead end on device while the suite stayed green.
+   *
+   * gorhom fires `onClose` for a programmatic close as well as a user
+   * dismissal — including the close our own CTAs cause by moving `step` off
+   * `"scan"`, which drops `visible`. The container's `onClose` used to run an
+   * unconditional `goToStep("collect")`, so it landed a beat after each CTA and
+   * overwrote the step that CTA had just set: "Use these N items" never reached
+   * `adapting` (nothing was ever adapted) and "Edit the full equipment list"
+   * never reached the pre-seeded checklist. Both were device-verified 2026-08-02.
+   *
+   * Firing the sheet's `onClose` explicitly is what reproduces the device
+   * ordering — the gorhom mock does not call it by itself.
+   */
+  async function fireSheetClose(
+    getByTestId: (id: string) => { props: Record<string, unknown> },
+  ) {
+    const onClose = getByTestId("gorhom-bottom-sheet").props.onClose as
+      | (() => void)
+      | undefined;
+    expect(typeof onClose).toBe("function");
+    await act(async () => {
+      onClose?.();
+    });
+  }
+
+  it("keeps the adapting step when the sheet's close fires after 'use these'", async () => {
+    const api = new InMemoryApiAdapter();
+    api.equipmentScanDraft = draft();
+    capture(1000, 1000);
+    const { findByTestId, getByTestId } = renderScan(api);
+    openScan();
+
+    fireEvent.press(await findByTestId("loadout-scan-capture-photo"));
+    fireEvent.press(await findByTestId("loadout-scan-use"));
+    expect(useLoadoutFlow.getState().step).toBe("adapting");
+
+    await fireSheetClose(getByTestId);
+
+    // Was "collect": the confirmed detections were discarded and the workout
+    // was never adapted, so the scan could not reach a review.
+    expect(useLoadoutFlow.getState().step).toBe("adapting");
+  });
+
+  it("keeps the manual step when the sheet's close fires after 'edit the list'", async () => {
+    const api = new InMemoryApiAdapter();
+    api.equipmentScanDraft = draft();
+    capture(1000, 1000);
+    const { findByTestId, getByTestId } = renderScan(api);
+    openScan();
+
+    fireEvent.press(await findByTestId("loadout-scan-capture-photo"));
+    fireEvent.press(await findByTestId("loadout-scan-draft-manual"));
+    expect(useLoadoutFlow.getState().step).toBe("manual");
+
+    await fireSheetClose(getByTestId);
+
+    expect(useLoadoutFlow.getState().step).toBe("manual");
+  });
+
+  it("returns to collect when the user dismisses the sheet on the scan step", async () => {
+    const api = new InMemoryApiAdapter();
+    const { findByTestId, getByTestId } = renderScan(api);
+    openScan();
+    await findByTestId("loadout-scan-capture");
+
+    // The genuine cancel the guard must still honour: nothing else moved the
+    // step, so this close IS the user backing out.
+    await fireSheetClose(getByTestId);
+
+    expect(useLoadoutFlow.getState().step).toBe("collect");
+  });
+
   it("discards a scan that settles after the sheet was reopened", async () => {
     const api = new InMemoryApiAdapter();
     let settle: ((value: unknown) => void) | null = null;
