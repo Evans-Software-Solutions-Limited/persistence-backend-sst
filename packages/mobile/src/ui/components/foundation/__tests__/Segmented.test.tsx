@@ -122,15 +122,19 @@ describe("Segmented", () => {
 });
 
 /**
- * ⚠ This replaced a test asserting the OPPOSITE at 420pt, which pinned a
- * `width < 360` gate written before any 4-option consumer existed. The Train
- * hub's `Gyms` segment became the first one on 2026-08-02: "Training Workouts
- * Exercises Gyms" is ~320pt of content plus padding, so every phone from 360pt
- * up to the track's real width clipped instead of scrolling, with no way to
- * reach the last segment. A 375pt iPhone SE sat inside that band.
+ * ⚠ This replaced a test asserting the OPPOSITE at 420pt, which pinned the
+ * `width < 360` gate. The Train hub gained a fourth `Gyms` segment on 2026-08-02:
+ * "Training Workouts Exercises Gyms" is ~320pt of content plus padding, so every
+ * phone from 360pt up to the track's real width clipped instead of scrolling,
+ * with no way to reach the last segment. A 375pt iPhone SE sat inside that band.
  *
  * The gate is gone rather than retuned because the number it needed depends on
  * font, locale and the user's Dynamic Type setting — none of which a constant can
  * know. An unnecessary horizontal ScrollView is inert, so the safe answer is
  * always-scrollable, and the old assertion was pinning the bug.
+ *
+ * ⚠ The Train hub was NOT the first 4-option consumer — `MealPickerPresenter`
+ * already fed in the four `MEAL_SLOTS` and rendered inside three bottom sheets,
+ * taking the scrolling path below 360pt. So this widened an existing path rather
+ * than lighting up a dead one; the sheets were re-checked on device.
  */

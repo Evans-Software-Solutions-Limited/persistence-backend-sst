@@ -1,5 +1,5 @@
 import React from "react";
-import { fireEvent } from "@testing-library/react-native";
+import { act, fireEvent } from "@testing-library/react-native";
 import { GymsSegmentContainer } from "@/ui/containers/GymsSegmentContainer";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 
@@ -88,6 +88,54 @@ describe("GymsSegmentContainer", () => {
     expect(queryByTestId("saved-gyms-create")).toBeNull();
     expect(queryByTestId("saved-gyms-empty")).toBeNull();
     expect(queryByTestId("saved-gym-new-editor")).toBeNull();
+  });
+
+  /**
+   * ⚠ `isResolved` covers a REJECTED query but not a HUNG one:
+   * `getMySubscription` has no client-side timeout, and a half-open socket never
+   * rejects, so React Query's retry never fires either. Unguarded that spins this
+   * tab forever — and because the segment persists to disk, an entitled user
+   * whose last segment was Gyms lands back on the frozen spinner every relaunch.
+   */
+  it("offers a retry once the entitlement check has plainly hung", () => {
+    jest.useFakeTimers();
+    try {
+      gate({ allowed: false, isResolved: false });
+      const { getByTestId, queryByTestId } = renderWithTheme(
+        <GymsSegmentContainer />,
+      );
+
+      getByTestId("gyms-segment-pending");
+      act(() => {
+        jest.advanceTimersByTime(8000);
+      });
+
+      getByTestId("gyms-segment-stalled");
+      getByTestId("gyms-segment-retry");
+      // ⚠ NOT the upsell. Falling through to locked on a network hang would be
+      // the exact mistake the pending state exists to prevent.
+      expect(queryByTestId("gyms-locked")).toBeNull();
+      expect(mockSavedGymsMounted).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("does not stall when the check resolves inside the window", () => {
+    jest.useFakeTimers();
+    try {
+      gate({ allowed: true, isResolved: true });
+      const { getByTestId, queryByTestId } = renderWithTheme(
+        <GymsSegmentContainer />,
+      );
+      act(() => {
+        jest.advanceTimersByTime(30_000);
+      });
+      getByTestId("saved-gyms-stub");
+      expect(queryByTestId("gyms-segment-stalled")).toBeNull();
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it("routes a locked user to the paywall", () => {

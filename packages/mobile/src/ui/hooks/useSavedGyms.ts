@@ -79,9 +79,12 @@ export function useSavedGyms(enabled = true): SavedGymsState {
   // `fullScreenModal` route that unmounts on close, so a mount latch would
   // mostly work — which is exactly what makes it the wrong thing to rely on. The
   // enable latch is what actually states the requirement, and it still binds for
-  // `SavedGymsContainer`, whose screen can outlive several edits.
+  // `SavedGymsContainer`, which since 2026-08-02 is the Train hub's `Gyms`
+  // segment body rather than a pushed screen — so for THAT consumer the enable
+  // latch now coincides with a mount latch, because the segment unmounts on every
+  // switch. Coinciding is not the same as being the same rule.
   //
-  // A gym created or edited on Profile → Saved Gyms must appear in the collect
+  // A gym created or edited in Train → Gyms must appear in the collect
   // step, and — the damaging half — `contextEquipmentIds` feeds that snapshot to
   // the swap sheet as its containment context. Rank `best`/`others` against a stale kit
   // and a now-incompatible exercise lands in `best`, gets picked with

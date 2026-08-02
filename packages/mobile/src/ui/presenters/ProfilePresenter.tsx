@@ -104,7 +104,6 @@ export type ProfilePresenterProps = {
   onBecomeTrainer: () => void;
   onEditProfile: () => void;
   onHealthData: () => void;
-  /** spec-21 T-2.9 — Loadout's reusable equipment setups (AC-7.2). */
   onNotifications: () => void;
   onNotificationPreferences: () => void;
   onSignOut: () => void;

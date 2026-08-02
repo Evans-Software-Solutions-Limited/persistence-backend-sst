@@ -57,6 +57,16 @@ export type SavedGymEditState = {
 export type SavedGymsPresenterProps = {
   readonly gyms: readonly SavedGym[];
   readonly isLoading: boolean;
+  /**
+   * True while the equipment reference list is (re)fetching and we have none.
+   * ⚠ Without this the CREATE card is a silent dead end: `EquipmentChipGrid`
+   * renders nothing for empty `groups`, and the save button is disabled at zero
+   * selected — so a first run that cannot load the catalogue offers a name field,
+   * no chips, and a permanently greyed "Create gym" with nothing explaining why.
+   * Unreachable before creation existed (an existing gym always arrives with its
+   * kit pre-selected). Mirrors `LoadoutManualStep`.
+   */
+  readonly equipmentLoading: boolean;
   readonly loadError: string | null;
   readonly groups: readonly EquipmentPickerGroup[];
   /** Resolves a gym's ids to names for the collapsed row's summary. */
@@ -108,6 +118,7 @@ export function summariseKit(
 function GymEditorCard({
   editing,
   groups,
+  equipmentLoading,
   prefix,
   saveLabel,
   onEditName,
@@ -117,6 +128,7 @@ function GymEditorCard({
 }: {
   readonly editing: SavedGymEditState;
   readonly groups: readonly EquipmentPickerGroup[];
+  readonly equipmentLoading: boolean;
   readonly prefix: string;
   readonly saveLabel: string;
   readonly onEditName: (name: string) => void;
@@ -139,6 +151,19 @@ function GymEditorCard({
       {editing.error !== null ? (
         <Text style={styles.error} testID={`${prefix}-edit-error`}>
           {editing.error}
+        </Text>
+      ) : null}
+
+      {equipmentLoading && groups.length === 0 ? (
+        <Text style={styles.muted} testID={`${prefix}-equip-loading`}>
+          Loading the equipment list…
+        </Text>
+      ) : null}
+
+      {!equipmentLoading && groups.length === 0 ? (
+        <Text style={styles.muted} testID={`${prefix}-equip-empty`}>
+          We couldn&apos;t load the equipment list. Check your connection and
+          try again.
         </Text>
       ) : null}
 
@@ -182,6 +207,7 @@ export function SavedGymsPresenter({
   isLoading,
   loadError,
   groups,
+  equipmentLoading,
   equipmentNameById,
   editing,
   pendingDeleteId,
@@ -212,6 +238,7 @@ export function SavedGymsPresenter({
           <GymEditorCard
             editing={editing}
             groups={groups}
+            equipmentLoading={equipmentLoading}
             prefix="saved-gym-new"
             saveLabel="Create gym"
             onEditName={onEditName}
@@ -219,7 +246,12 @@ export function SavedGymsPresenter({
             onSaveEdit={onSaveEdit}
             onCancelEdit={onCancelEdit}
           />
-        ) : (
+        ) : editing !== null ? null : (
+          // ⚠ Hidden while ANY editor is open, not just the draft. Left visible
+          // during an existing gym's in-flight save, tapping it swapped `editing`
+          // for a fresh draft that the settling `onSaveEdit` then wrote into —
+          // either wiping what the user had typed or captioning the new card with
+          // the OTHER gym's 409.
           <TouchableOpacity
             style={styles.createButton}
             onPress={onStartCreate}
@@ -294,6 +326,7 @@ export function SavedGymsPresenter({
                 key={gym.id}
                 editing={editing}
                 groups={groups}
+                equipmentLoading={equipmentLoading}
                 prefix={`saved-gym-${gym.id}`}
                 saveLabel="Save changes"
                 onEditName={onEditName}
@@ -373,7 +406,11 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingHorizontal: space.$base,
-    paddingBottom: space.$3xl,
+    // 140 like the sibling Train hub bodies (WorkoutsListPresenter,
+    // TrainOverviewPresenter): `ActiveWorkoutOverlay` floats the minimised
+    // workout bar absolutely at `tabBarHeight + 12`, so $3xl left the last gym
+    // row — or an editor's Save button — underneath it mid-session.
+    paddingBottom: 140,
     gap: space.$md,
   },
   intro: { fontSize: 13, color: color.$text3, lineHeight: 19 },

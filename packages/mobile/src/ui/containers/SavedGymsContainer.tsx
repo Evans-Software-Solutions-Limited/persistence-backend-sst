@@ -84,6 +84,10 @@ export function SavedGymsContainer() {
 
   const onStartEdit = useCallback((gym: SavedGym) => {
     setPendingDeleteId(null);
+    // Same reason `onStartCreate` and `onRequestDelete` do it: a failed DELETE's
+    // banner outranks everything and would otherwise sit above an edit that is
+    // going fine.
+    setMutationError(null);
     setEditing({
       gymId: gym.id,
       name: gym.name,
@@ -189,6 +193,7 @@ export function SavedGymsContainer() {
     <SavedGymsPresenter
       gyms={visibleGyms}
       isLoading={gyms.isLoading}
+      equipmentLoading={reference.isLoading}
       loadError={
         mutationError ??
         (gyms.error === null

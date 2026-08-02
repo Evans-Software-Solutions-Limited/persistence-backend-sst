@@ -6,7 +6,7 @@ import { color, radius, space } from "@/ui/theme/tokens";
 /**
  * <EquipmentChipGrid> — the grouped, multi-select equipment picker (AC-2.2).
  *
- * Shared by the flow's manual step and the Settings gym editor. One component
+ * Shared by the flow's manual step and the Train → Gyms editor. One component
  * because "which chips exist and how they group" is a contract with the API
  * (`ReferenceEntry.category` → `groupEquipmentForPicker`), and two copies of it
  * would let a seeded category render in one place and not the other.

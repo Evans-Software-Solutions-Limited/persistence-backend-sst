@@ -494,6 +494,37 @@ describe("SavedGymsContainer", () => {
     expect(api.savedGyms).toHaveLength(1);
   });
 
+  /**
+   * ⚠ The create dead end. `EquipmentChipGrid` renders nothing for empty groups
+   * and the save button is disabled at zero selected, so an empty equipment
+   * catalogue gave a name field, no chips and a permanently greyed "Create gym"
+   * with nothing explaining why. Unreachable before creation existed — an
+   * existing gym always opens with its kit pre-selected — and now the primary CTA
+   * of the tab a new account lands on.
+   */
+  it("explains itself when the equipment catalogue could not be loaded", async () => {
+    const api = new InMemoryApiAdapter();
+    api.savedGyms = [];
+    const { findByTestId } = renderScreen(api, []);
+
+    fireEvent.press(await findByTestId("saved-gyms-create"));
+    await findByTestId("saved-gym-new-equip-empty");
+    const save = await findByTestId("saved-gym-new-save");
+    expect(save.props.accessibilityState.disabled).toBe(true);
+  });
+
+  it("hides the create button while an existing gym is being edited", async () => {
+    const api = new InMemoryApiAdapter();
+    seedGym(api);
+    const { findByTestId, queryByTestId } = renderScreen(api);
+
+    fireEvent.press(await findByTestId("saved-gym-gym-1-edit"));
+    // Left visible, tapping it during an in-flight save swapped `editing` for a
+    // fresh draft that the settling save then wrote into — wiping what had been
+    // typed, or captioning the new card with the OTHER gym's 409.
+    expect(queryByTestId("saved-gyms-create")).toBeNull();
+  });
+
   it("offers the create button again once the draft is cancelled", async () => {
     const api = new InMemoryApiAdapter();
     api.savedGyms = [];
