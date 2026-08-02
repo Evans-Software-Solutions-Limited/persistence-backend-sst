@@ -8,6 +8,7 @@ import {
   streakCron,
   volumeCron,
 } from "./api";
+import { aiJobDlq, aiJobWorker } from "./jobs";
 
 /**
  * Production alerting. Provisioned for named stages only (production /
@@ -390,6 +391,67 @@ export const cronHeartbeatAlarms = CRONS.map(({ name, cron }) =>
     treatMissingData: "breaching",
   }),
 );
+
+/**
+ * ─── Async-job spine (specs/_shared/async-jobs § 7, AC-5.2) ─────────────────
+ *
+ * Two alarms, watching two genuinely different failures.
+ *
+ * The DLQ one is the important one. A message reaching the dead-letter queue
+ * means a job exhausted its whole redrive policy — and because a job is up to
+ * ~120 model calls, a systematically failing kind is a cost event as well as a
+ * broken feature. `threshold: 1` because a single message is already a job a
+ * paying user lost.
+ *
+ * ⚠ These are the ONLY things watching the worker. It is neither the API route
+ * (covered by `api5xxAlarm`) nor a cron (covered by `CRONS` above), so without
+ * these two it would fail in complete silence — the same shape of gap that let
+ * the throttling in this file's header run for a week unnoticed.
+ */
+export const aiJobDlqAlarm = alarm("ai-job-dlq", {
+  alarmDescription:
+    "An async AI job exhausted its retries and landed in the dead-letter queue. The user's job row is already marked failed — this is the operator signal. Check [ai-job:summary] logs on the worker for the failing kind; a systematic failure is also a Bedrock cost event, since a single job can be ~120 model calls.",
+  namespace: "AWS/SQS",
+  metricName: "ApproximateNumberOfMessagesVisible",
+  dimensions: { QueueName: aiJobDlq.nodes.queue.name },
+  statistic: "Maximum",
+  period: 300,
+  evaluationPeriods: 1,
+  threshold: 1,
+  comparisonOperator: "GreaterThanOrEqualToThreshold",
+  // A DLQ publishes this metric continuously, so gaps here mean "no data yet"
+  // rather than "nothing wrong" — the helper's `notBreaching` default is right.
+});
+
+/**
+ * Worker crashes, before they exhaust the redrive policy.
+ *
+ * Deliberately separate from the DLQ alarm and deliberately earlier: a throw is
+ * the retry mechanism (the worker throws to make SQS redeliver), so `Errors > 0`
+ * is a normal, self-healing event in ones and twos. The threshold is set for
+ * "something is systematically wrong" rather than "a job retried once".
+ */
+export const aiJobWorkerErrorsAlarm = alarm("ai-job-worker-errors", {
+  alarmDescription:
+    "The async AI job worker is throwing repeatedly. A throw IS the retry mechanism, so a handful is normal; this threshold means a kind is failing systematically and is on its way to the DLQ.",
+  namespace: "AWS/Lambda",
+  metricName: "Errors",
+  // ⚠ An explicit `.apply`, unlike the crons above which read
+  // `cron.nodes.function.name` directly. `Queue.subscribe()` returns an
+  // `Output<QueueLambdaSubscriber>` rather than the component itself, so there
+  // is one more Output layer here and property lifting through it is not
+  // something to rely on — `infra/` has neither typecheck nor tests, so a
+  // mistake surfaces as a deploy failure or, worse, an alarm dimensioned onto
+  // nothing. `apply` flattens the nested Output for us.
+  dimensions: {
+    FunctionName: aiJobWorker.apply((sub) => sub.nodes.function.name),
+  },
+  statistic: "Sum",
+  period: 900,
+  evaluationPeriods: 1,
+  threshold: 5,
+  comparisonOperator: "GreaterThanOrEqualToThreshold",
+});
 
 /**
  * ─── Deliberately NOT provisioned: an API traffic-presence alarm ───

@@ -11,6 +11,7 @@ import {
 } from "./secrets";
 import { coreApiDomain, hostedZoneId, supabaseUrl } from "./domains";
 import { avatarsBucket } from "./storage";
+import { aiJobQueue } from "./jobs";
 
 // Custom domain only on stable named stages (production / staging). Personal
 // dev stages fall back to the auto-generated API Gateway URL — the mobile
@@ -60,7 +61,12 @@ export const otherServiceAPI = new sst.aws.ApiGatewayV2("api-other-service");
  */
 export const coreRoute = coreAPI.route("$default", {
   handler: "microservices/core/src/api.handler",
-  link: [avatarsBucket],
+  // `aiJobQueue` — the enqueue path publishes to it (specs/_shared/async-jobs).
+  // The link grants `sqs:SendMessage` and injects the queue URL as
+  // `Resource.AiJobQueue.url`, which `application/jobs/jobQueue.ts` reads. The
+  // API route never CONSUMES the queue; that is `aiJobWorker`, wired in
+  // `infra/jobs.ts`.
+  link: [avatarsBucket, aiJobQueue],
   // ⚠ EXPLICIT, and load-bearing for every AI endpoint. SST defaults a Lambda to
   // **20 seconds** (`.sst/platform/src/components/aws/function.ts` —
   // `timeout ?? "20 seconds"`), NOT the 30 s API Gateway integration ceiling that

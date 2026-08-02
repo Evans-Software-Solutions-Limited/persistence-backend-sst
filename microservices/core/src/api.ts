@@ -65,8 +65,9 @@ import { getHomeHandler } from "./application/progress/getHomeHandler";
 import { getRecentPRsHandler } from "./application/progress/getRecentPRsHandler";
 import { getBodyTrendHandler } from "./application/progress/getBodyTrendHandler";
 import { getAchievementsHandler } from "./application/progress/getAchievementsHandler";
-import { useFreezeTokenHandler } from "./application/progress/useFreezeTokenHandler";
-import { getStreaksHandler } from "./application/progress/getStreaksHandler";
+// Streaks — both `/users/me/streaks` routes grouped into one sub-app. See
+// ./application/streaksRoutes for why (TS2589 headroom on the root chain).
+import { streaksRoutes } from "./application/streaksRoutes";
 import { handleStripeWebhook } from "./application/stripe/stripeWebhookHandler";
 import { handleRevenueCatWebhook } from "./application/revenuecat/revenueCatWebhookHandler";
 import { subscriptionsRoutes } from "./application/subscriptionsRoutes";
@@ -112,6 +113,10 @@ import { trainersOnBehalfRoutes } from "./application/trainersOnBehalfRoutes";
 // Loadout (spec-21 Phase 0) — saved-gym CRUD + workout variations, grouped into
 // one sub-app for the same TS2589 reason as the two above.
 import { loadoutRoutes } from "./application/loadoutRoutes";
+// Shared async-job spine (specs/_shared/async-jobs) — the ONE generic endpoint
+// it owns. Enqueue lives on each feature's own route, because entitlement,
+// sizing and validation are all kind-specific.
+import { jobsRoutes } from "./application/jobsRoutes";
 
 // Initialise Sentry at module load, before any request is handled. No-op when
 // `SENTRY_DSN` is unset (fail-safe — DSN-less stages run unchanged). Errors are
@@ -186,9 +191,9 @@ const app = new Elysia()
   .use(getRecentPRsHandler)
   .use(getBodyTrendHandler)
   .use(getAchievementsHandler)
-  .use(getStreaksHandler)
-  .use(useFreezeTokenHandler)
+  .use(streaksRoutes)
   .use(subscriptionsRoutes)
+  .use(jobsRoutes)
   // M7 — notifications. `notificationsUpdateAllHandler` MUST be
   // registered BEFORE `notificationsUpdateHandler` so the literal
   // PATCH /notifications/all isn't captured as `:id = "all"` by the
