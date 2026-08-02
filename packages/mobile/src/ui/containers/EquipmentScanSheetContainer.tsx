@@ -253,6 +253,14 @@ export function EquipmentScanSheetContainer({
    * this closure is invoked from the animation callback, after the store has
    * already moved on. A close that still finds the flow on `"scan"` is the
    * only one that is a genuine user dismissal.
+   *
+   * `ScanBarcodeSheetContainer`, `QuickAddSheetContainer` and
+   * `SnapAISheetContainer` guard the same gorhom hazard with the render-time
+   * `if (visible)` form instead. Both are correct — `ref.current.close()` runs
+   * in an effect AFTER the render that dropped `visible`, so the closure gorhom
+   * captured is the post-CTA one either way — but this sheet's step lives in a
+   * store rather than a prop, so reading it directly is the closer statement of
+   * the rule.
    */
   const onSheetClose = useCallback(() => {
     if (useLoadoutFlow.getState().step !== "scan") return;

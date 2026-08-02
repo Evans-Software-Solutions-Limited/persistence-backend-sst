@@ -38,5 +38,5 @@ export {
   formatHeight,
 } from "./units";
 
-export { stripUnpairedSurrogates, capText } from "./text";
+export { stripUnpairedSurrogates, capText, itemLabel } from "./text";
 export { type ResizeAction, resizeToLongEdge } from "./image";

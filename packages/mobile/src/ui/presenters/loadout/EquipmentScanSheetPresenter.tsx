@@ -8,6 +8,7 @@ import {
   View,
 } from "react-native";
 import type { EquipmentScanDraft } from "@/domain/models/loadout";
+import { itemLabel } from "@/shared/utils";
 import { BottomSheet } from "@/ui/components/foundation";
 import { color, radius, space } from "@/ui/theme/tokens";
 
@@ -358,7 +359,7 @@ function DraftStage({
         <Text style={styles.primaryCtaText}>
           {selectedCount === 0
             ? "Select at least one item"
-            : `Use these ${selectedCount} items`}
+            : `Use these ${itemLabel(selectedCount)}`}
         </Text>
       </TouchableOpacity>
 

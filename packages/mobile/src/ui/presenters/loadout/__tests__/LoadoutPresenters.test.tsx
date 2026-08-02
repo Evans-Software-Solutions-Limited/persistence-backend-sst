@@ -511,6 +511,29 @@ describe("LoadoutManualStep", () => {
         .checked,
     ).toBe(true);
   });
+
+  // The CTA copy had no assertion at all until 2026-08-02, which is how it
+  // shipped reading "Adapt to 1 items" — reachable by ticking a single chip, the
+  // most likely thing a user with a bag of dumbbells does.
+  it("says '1 item' for a single pick and '2 items' for more", () => {
+    const { getByText, rerender } = renderWithTheme(
+      <LoadoutManualStep
+        {...base}
+        isLoading={false}
+        selectedIds={new Set(["eq-dumbbell"])}
+      />,
+    );
+    getByText("Adapt to 1 item");
+
+    rerender(
+      <LoadoutManualStep
+        {...base}
+        isLoading={false}
+        selectedIds={new Set(["eq-dumbbell", "eq-bench"])}
+      />,
+    );
+    getByText("Adapt to 2 items");
+  });
 });
 
 describe("EquipmentScanSheetPresenter — the injected-detection guard", () => {
@@ -585,6 +608,7 @@ describe("EquipmentScanSheetPresenter — the injected-detection guard", () => {
     // 1 of 2 — the injected one. A count that dropped it would disable "Use
     // these" on a draft that still has real equipment in it.
     getByText("DETECTED · 1 SELECTED");
-    getByText("Use these 1 items");
+    // "1 item", not "1 items" — this line pinned the wrong copy until 2026-08-02.
+    getByText("Use these 1 item");
   });
 });

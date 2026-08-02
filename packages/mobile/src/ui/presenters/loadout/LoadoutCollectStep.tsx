@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import type { SavedGym } from "@/domain/models/loadout";
+import { itemLabel } from "@/shared/utils";
 import { Pill } from "@/ui/components/foundation";
 import { LoadoutScaffold } from "./LoadoutScaffold";
 import { color, radius, space } from "@/ui/theme/tokens";
@@ -36,11 +37,6 @@ export type LoadoutCollectStepProps = {
   readonly onManual: () => void;
   readonly onUseGym: (gym: SavedGym) => void;
 };
-
-/** "5 items" / "1 item" — the only summary a gym row can honestly give without its names. */
-function itemLabel(count: number): string {
-  return count === 1 ? "1 item" : `${count} items`;
-}
 
 export function LoadoutCollectStep({
   workoutName,
