@@ -786,6 +786,44 @@ describe("LoadoutFlowContainer", () => {
       expect(await findByTestId("loadout-review-attention")).toBeTruthy();
     });
 
+    it("clears a failed save's banner when the user re-collects", async () => {
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      seedEquipment(storage);
+      api.loadoutPreview = preview([row()]);
+      api.savedGyms = [
+        {
+          id: "gym-1",
+          name: "Hotel gym",
+          equipmentTypeIds: ["eq-dumbbell"],
+          createdAt: null,
+          updatedAt: null,
+        },
+      ];
+      const create = jest
+        .spyOn(api, "createWorkoutVariation")
+        .mockResolvedValue(
+          fail({ kind: "api", code: "network", message: "offline" }),
+        );
+      const { findByTestId, queryByTestId } = renderFlow(api, storage);
+      openFlow();
+      fireEvent.press(await findByTestId("loadout-collect-gym-gym-1"));
+      await findByTestId("loadout-review");
+
+      fireEvent.press(await findByTestId("loadout-review-save"));
+      await findByTestId("loadout-review-save-error");
+      create.mockRestore();
+
+      fireEvent.press(await findByTestId("loadout-review-back"));
+      fireEvent.press(await findByTestId("loadout-collect-gym-gym-1"));
+      await findByTestId("loadout-review");
+
+      // It belonged to the previous plan, and is otherwise cleared only by
+      // tapping Save again — so it paints over a fresh review with nothing
+      // wrong.
+      expect(queryByTestId("loadout-review-save-error")).toBeNull();
+    });
+
     it("forgets an accept when the user re-collects against the SAME gym", async () => {
       const api = new InMemoryApiAdapter();
       const storage = new InMemoryStorageAdapter();

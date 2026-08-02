@@ -299,6 +299,11 @@ export function LoadoutFlowContainer() {
     setDroppedRows(new Set());
     setAcceptedRows(new Set());
     setPickedNames(new Map());
+    // The failed save belonged to the previous plan too, and it is otherwise
+    // cleared only by tapping Save again. `EQUIPMENT_NOT_AVAILABLE` is the worst
+    // of the three messages to strand: it tells the user to open a swap sheet
+    // and confirm a pick that `selectGym` has just deleted.
+    setSaveError(null);
   }, [collectRev]);
 
   // ⚠ Cleared on any CONTEXT change, not just a new workout. The id exists so a
