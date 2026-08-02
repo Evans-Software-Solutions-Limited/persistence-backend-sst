@@ -6,11 +6,13 @@ import {
   EQUIPMENT_OTHER_CATEGORY,
   groupEquipmentForPicker,
   describeVariationSaveError,
+  CODES_NOT_EMITTED_BY_VARIATION_SAVE,
   hasGymEquipmentChanged,
   rowsNeedingAttention,
   scanDraftToEquipmentIds,
   type ManualPick,
 } from "@/domain/services/loadout.service";
+import { LOADOUT_ERROR_CODES } from "@/domain/ports/api.port";
 import { isEquipmentGroupingStale } from "@/domain/models/reference-list";
 import type {
   LoadoutPreview,
@@ -232,42 +234,54 @@ describe("describeVariationSaveError", () => {
     }) as Parameters<typeof describeVariationSaveError>[0];
 
   /**
-   * The regression this function exists for. Brad hit "Couldn't save this
-   * variation. Check your connection and try again." on a device with a working
-   * connection; seven of the nine codes the handlers emit landed on that string,
-   * so neither the screen nor the transcript could say what had failed.
+   * ⚠ DERIVED from `LOADOUT_ERROR_CODES`, never a hand-copied list. A literal
+   * list cannot fail when a tenth code is added — which is the whole failure
+   * mode here: seven codes reaching one generic string is what made Brad's
+   * device report undiagnosable, and a test that has to be edited to notice an
+   * eighth is not a guard. Excluding a code is a deliberate, named act.
    */
-  it.each([
-    "EMPTY_EQUIPMENT_CONTEXT",
-    "UNKNOWN_SAVED_GYM",
-    "UNKNOWN_EQUIPMENT_TYPE",
-    "UNKNOWN_SUBSTITUTED_FROM_EXERCISE",
-    "PARENT_IS_A_VARIATION",
-    "not_found",
-    "EQUIPMENT_NOT_AVAILABLE",
-    "EXERCISE_NOT_VISIBLE",
-  ] as const)("gives %s its own copy, and never blames the network", (code) => {
-    const copy = describeVariationSaveError(apiError({ loadoutCode: code }));
-    expect(copy).not.toMatch(/connection/i);
-    expect(copy.length).toBeGreaterThan(0);
-  });
+  const SAVE_CODES = LOADOUT_ERROR_CODES.filter(
+    (code) =>
+      !(CODES_NOT_EMITTED_BY_VARIATION_SAVE as readonly string[]).includes(
+        code,
+      ),
+  );
+
+  it.each(SAVE_CODES)(
+    "gives %s its own copy, and never blames the network",
+    (code) => {
+      const copy = describeVariationSaveError(apiError({ loadoutCode: code }));
+      expect(copy).not.toMatch(/connection/i);
+      expect(copy.length).toBeGreaterThan(0);
+      // The generic fallbacks are the thing being escaped, not an allowed answer.
+      expect(copy).not.toMatch(/Try again in a moment/);
+      expect(copy).not.toContain("Couldn't save this setup — ");
+    },
+  );
 
   it("gives every code a DISTINCT message", () => {
-    const codes = [
-      "EMPTY_EQUIPMENT_CONTEXT",
-      "UNKNOWN_SAVED_GYM",
-      "UNKNOWN_EQUIPMENT_TYPE",
-      "UNKNOWN_SUBSTITUTED_FROM_EXERCISE",
-      "PARENT_IS_A_VARIATION",
-      "not_found",
-      "EQUIPMENT_NOT_AVAILABLE",
-      "EXERCISE_NOT_VISIBLE",
-    ] as const;
-    const messages = codes.map((loadoutCode) =>
+    const messages = SAVE_CODES.map((loadoutCode) =>
       describeVariationSaveError(apiError({ loadoutCode })),
     );
     // Collapsing two codes onto one string is how this drifted the first time.
-    expect(new Set(messages).size).toBe(codes.length);
+    expect(new Set(messages).size).toBe(SAVE_CODES.length);
+  });
+
+  it("does not tell a failed CREATE that its saved setup is gone", () => {
+    // Both endpoints answer 404 `not_found`, for different things. On create the
+    // only 404 is an unreadable parent — a coach deleting an assigned workout
+    // mid-review — and "save this as a new one" reissues the same failing call.
+    const create = describeVariationSaveError(
+      apiError({ loadoutCode: "not_found" }),
+      false,
+    );
+    const replace = describeVariationSaveError(
+      apiError({ loadoutCode: "not_found" }),
+      true,
+    );
+    expect(create).not.toEqual(replace);
+    expect(create).not.toMatch(/saved setup/i);
+    expect(replace).toMatch(/saved setup/i);
   });
 
   it("blames the connection ONLY for a transport failure", () => {

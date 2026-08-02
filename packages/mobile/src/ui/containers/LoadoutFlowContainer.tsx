@@ -671,7 +671,12 @@ export function LoadoutFlowContainer() {
         // two-code ternary this replaced reported seven distinct failures, a 404
         // and a 500 as "Check your connection and try again", which is how a save
         // failure on a working connection became undiagnosable from the screen.
-        setSaveError(describeVariationSaveError(result.error));
+        setSaveError(
+          describeVariationSaveError(
+            result.error,
+            replacementVariationId !== null,
+          ),
+        );
         return;
       }
 

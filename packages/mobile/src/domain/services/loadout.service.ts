@@ -510,7 +510,31 @@ export function scanDraftToEquipmentIds(
  *     guess — and a server-supplied message is preferred over a generic one,
  *     since it is the only channel left that can say anything specific.
  */
-export function describeVariationSaveError(error: LoadoutApiError): string {
+/**
+ * Codes in `LOADOUT_ERROR_CODES` that these two endpoints cannot emit. Listed
+ * rather than swept into the default so the exhaustiveness check below still
+ * bites: adding a code to the union is a compile error here until someone
+ * decides whether the save path can produce it.
+ */
+export const CODES_NOT_EMITTED_BY_VARIATION_SAVE = [
+  // preview-only
+  "EQUIPMENT_CONTEXT_REQUIRED",
+  // saved-gym endpoints only
+  "SAVED_GYM_NAME_TAKEN",
+] as const;
+
+export function describeVariationSaveError(
+  error: LoadoutApiError,
+  /**
+   * True when the call was `PUT …/variations/:id`. Both endpoints answer 404
+   * `not_found`, but for different things: on the CREATE path the only 404 is a
+   * parent workout that has become unreadable — a coach deleting an assigned
+   * workout while the athlete sits on the review step — where "that saved setup
+   * no longer exists" is both wrong and unfollowable, since re-saving reissues
+   * the same create and 404s again.
+   */
+  isReplace = false,
+): string {
   switch (error.loadoutCode) {
     case "EQUIPMENT_NOT_AVAILABLE":
       return "One of your picks doesn't fit the kit you chose. Open its swap sheet and confirm you want it anyway.";
@@ -527,9 +551,23 @@ export function describeVariationSaveError(error: LoadoutApiError): string {
     case "PARENT_IS_A_VARIATION":
       return "A setup can't be adapted again. Open the original workout and adapt that instead.";
     case "not_found":
-      return "That saved setup no longer exists. Go back and save this as a new one.";
-    default:
+      return isReplace
+        ? "That saved setup no longer exists. Go back and save this as a new one."
+        : "That workout is no longer available to you. Go back and pick another.";
+    case "EQUIPMENT_CONTEXT_REQUIRED":
+    case "SAVED_GYM_NAME_TAKEN":
+    case undefined:
+      // Not emitted here — fall through to the transport branch.
       break;
+    default: {
+      // ⚠ Adding a member to `LOADOUT_ERROR_CODES` is a COMPILE error until it
+      // is given copy or listed in `CODES_NOT_EMITTED_BY_VARIATION_SAVE`. The
+      // bug this whole function replaces was seven codes quietly reaching one
+      // generic string; a `default: break` would let the eighth do the same.
+      const _exhaustive: never = error.loadoutCode;
+      void _exhaustive;
+      break;
+    }
   }
 
   switch (error.code) {
@@ -541,9 +579,13 @@ export function describeVariationSaveError(error: LoadoutApiError): string {
     case "entitlement_denied":
       return "Your plan no longer includes Loadout, so this setup can't be saved.";
     default:
-      // The handler's own message, when there is one worth showing. It is the
-      // only remaining channel that can name the actual fault — and `requestRaw`
-      // only ever falls back to "Request failed", which says nothing at all.
+      // The handler's own message, when there is one worth showing — it is the
+      // only remaining channel that can name the actual fault. Safe to render:
+      // every string that reaches here is either a Loadout handler's own static
+      // literal or `coreErrorHandler`'s fixed `codeToLabel`; the raw driver
+      // `detail` and the dev-only stack are never read by `requestLoadout`.
+      // "Request failed" is `requestLoadout`'s own placeholder for a body with
+      // no message at all, and says nothing.
       return error.message && error.message !== "Request failed"
         ? `Couldn't save this setup — ${error.message}`
         : "Couldn't save this setup. Try again in a moment.";
