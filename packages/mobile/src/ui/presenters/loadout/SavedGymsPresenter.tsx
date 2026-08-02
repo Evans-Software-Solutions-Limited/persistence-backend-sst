@@ -67,6 +67,14 @@ export type SavedGymsPresenterProps = {
    * kit pre-selected). Mirrors `LoadoutManualStep`.
    */
   readonly equipmentLoading: boolean;
+  /**
+   * Reissue the equipment reference fetch. ⚠ Without this the failure copy said
+   * "try again" with nothing that could: `useReferenceLists` latches its
+   * auto-refresh per mount, so cancelling and reopening the editor showed the
+   * same message and issued no request, leaving "Create gym" disabled until the
+   * whole segment unmounted.
+   */
+  readonly onRetryEquipment: () => void;
   readonly loadError: string | null;
   readonly groups: readonly EquipmentPickerGroup[];
   /** Resolves a gym's ids to names for the collapsed row's summary. */
@@ -119,6 +127,7 @@ function GymEditorCard({
   editing,
   groups,
   equipmentLoading,
+  onRetryEquipment,
   prefix,
   saveLabel,
   onEditName,
@@ -129,6 +138,7 @@ function GymEditorCard({
   readonly editing: SavedGymEditState;
   readonly groups: readonly EquipmentPickerGroup[];
   readonly equipmentLoading: boolean;
+  readonly onRetryEquipment: () => void;
   readonly prefix: string;
   readonly saveLabel: string;
   readonly onEditName: (name: string) => void;
@@ -161,10 +171,20 @@ function GymEditorCard({
       ) : null}
 
       {!equipmentLoading && groups.length === 0 ? (
-        <Text style={styles.muted} testID={`${prefix}-equip-empty`}>
-          We couldn&apos;t load the equipment list. Check your connection and
-          try again.
-        </Text>
+        <>
+          <Text style={styles.muted} testID={`${prefix}-equip-empty`}>
+            We couldn&apos;t load the equipment list. Check your connection and
+            try again.
+          </Text>
+          <TouchableOpacity
+            style={styles.secondaryButton}
+            onPress={onRetryEquipment}
+            testID={`${prefix}-equip-retry`}
+            accessibilityRole="button"
+          >
+            <Text style={styles.secondaryButtonText}>Retry</Text>
+          </TouchableOpacity>
+        </>
       ) : null}
 
       <EquipmentChipGrid
@@ -208,6 +228,7 @@ export function SavedGymsPresenter({
   loadError,
   groups,
   equipmentLoading,
+  onRetryEquipment,
   equipmentNameById,
   editing,
   pendingDeleteId,
@@ -239,6 +260,7 @@ export function SavedGymsPresenter({
             editing={editing}
             groups={groups}
             equipmentLoading={equipmentLoading}
+            onRetryEquipment={onRetryEquipment}
             prefix="saved-gym-new"
             saveLabel="Create gym"
             onEditName={onEditName}
@@ -327,6 +349,7 @@ export function SavedGymsPresenter({
                 editing={editing}
                 groups={groups}
                 equipmentLoading={equipmentLoading}
+                onRetryEquipment={onRetryEquipment}
                 prefix={`saved-gym-${gym.id}`}
                 saveLabel="Save changes"
                 onEditName={onEditName}

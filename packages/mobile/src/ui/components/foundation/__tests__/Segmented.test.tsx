@@ -1,5 +1,5 @@
-import { fireEvent } from "@testing-library/react-native";
-import { useWindowDimensions } from "react-native";
+import { act, fireEvent } from "@testing-library/react-native";
+import { ScrollView, useWindowDimensions } from "react-native";
 
 import { renderWithTheme } from "../../../../../__tests__/test-utils";
 import { Segmented, type SegmentedAccent } from "../Segmented";
@@ -17,6 +17,15 @@ function setViewport(width: number) {
     height: 800,
     scale: 2,
     fontScale: 1,
+  });
+}
+
+/** Fire a segment's `onLayout` with a measured x, as the native side would. */
+function layout(node: { props: Record<string, unknown> }, x: number) {
+  act(() => {
+    (node.props.onLayout as (e: unknown) => void)({
+      nativeEvent: { layout: { x, y: 0, width: 60, height: 32 } },
+    });
   });
 }
 
@@ -102,6 +111,74 @@ describe("Segmented", () => {
       />,
     );
     expect(queryByTestId("seg-scroll")).toBeNull();
+  });
+
+  /**
+   * ⚠ These two pin the scroll-into-view, which a first attempt implemented as an
+   * effect and which therefore never fired on mount: offsets live in a ref (they
+   * must not re-render), so an effect running after the first commit reads an empty
+   * map, returns early and never re-runs. The cold-launch case — a persisted
+   * `Gyms` segment whose pill is off-screen, reading as a switcher with nothing
+   * selected — stayed broken while the docblock said it was fixed.
+   */
+  it("scrolls the ACTIVE option into view from its own first layout", () => {
+    const scrollTo = jest.spyOn(ScrollView.prototype, "scrollTo");
+    try {
+      const { getByTestId } = renderWithTheme(
+        <Segmented
+          testID="seg"
+          options={["A", "B", "C", "D"]}
+          value="D"
+          onChange={() => undefined}
+        />,
+      );
+
+      // Nothing has been measured yet, so nothing can be positioned yet.
+      expect(scrollTo).not.toHaveBeenCalled();
+
+      layout(getByTestId("seg-option-A"), 0);
+      layout(getByTestId("seg-option-D"), 275);
+
+      // Not animated: this is where the track should have STARTED.
+      expect(scrollTo).toHaveBeenCalledWith({ x: 263, animated: false });
+    } finally {
+      scrollTo.mockRestore();
+    }
+  });
+
+  it("re-measures when the option SET changes instead of trusting stale offsets", () => {
+    const scrollTo = jest.spyOn(ScrollView.prototype, "scrollTo");
+    try {
+      // The Train hub's own coach gate does exactly this: a non-Training segment
+      // renders 3 options while `useClientRelationships` loads, then a 4th appears
+      // when it resolves to coached — at which point every offset has moved.
+      const { getByTestId, rerender } = renderWithTheme(
+        <Segmented
+          testID="seg"
+          options={["B", "C", "D"]}
+          value="D"
+          onChange={() => undefined}
+        />,
+      );
+      layout(getByTestId("seg-option-D"), 185);
+      scrollTo.mockClear();
+
+      rerender(
+        <Segmented
+          testID="seg"
+          options={["A", "B", "C", "D"]}
+          value="D"
+          onChange={() => undefined}
+        />,
+      );
+      // The 3-option offset must NOT be reused — it is short by a whole segment.
+      expect(scrollTo).not.toHaveBeenCalledWith({ x: 173, animated: false });
+
+      layout(getByTestId("seg-option-D"), 275);
+      expect(scrollTo).toHaveBeenCalledWith({ x: 263, animated: false });
+    } finally {
+      scrollTo.mockRestore();
+    }
   });
 
   it.each([320, 375, 420])(

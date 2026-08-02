@@ -513,6 +513,25 @@ describe("SavedGymsContainer", () => {
     expect(save.props.accessibilityState.disabled).toBe(true);
   });
 
+  it("actually reissues the equipment fetch from the failure copy", async () => {
+    const api = new InMemoryApiAdapter();
+    api.savedGyms = [];
+    const refresh = jest.spyOn(api, "getReferenceList");
+    const { findByTestId } = renderScreen(api, []);
+
+    fireEvent.press(await findByTestId("saved-gyms-create"));
+    await findByTestId("saved-gym-new-equip-empty");
+    const before = refresh.mock.calls.length;
+
+    // ⚠ `useReferenceLists` latches its auto-refresh per mount, so before this
+    // button the copy said "try again" with nothing that could — reopening the
+    // editor showed the same message and issued no request.
+    fireEvent.press(await findByTestId("saved-gym-new-equip-retry"));
+    await waitFor(() =>
+      expect(refresh.mock.calls.length).toBeGreaterThan(before),
+    );
+  });
+
   it("hides the create button while an existing gym is being edited", async () => {
     const api = new InMemoryApiAdapter();
     seedGym(api);

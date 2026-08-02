@@ -131,6 +131,18 @@ export type LoadoutGate = {
   readonly upgradePriceMonthly: number | null;
   /** Push the paywall with Premium+ pre-selected. */
   readonly onUpgrade: () => void;
+  /**
+   * Reissue both underlying queries.
+   *
+   * ⚠ Exists because `isResolved` cannot see a HUNG request. It covers a
+   * rejection, but `getMySubscription` has no client-side timeout, so a half-open
+   * socket never settles and React Query's retry never fires — leaving any
+   * consumer that renders a spinner while unresolved stuck forever with nothing
+   * to reissue. `refetch` defaults to `cancelRefetch: true`, which aborts the
+   * in-flight attempt rather than queueing behind it; that is the half that makes
+   * a user-facing "Try again" honest.
+   */
+  readonly refetch: () => void;
 };
 
 export function useLoadoutGate(): LoadoutGate {
@@ -151,6 +163,13 @@ export function useLoadoutGate(): LoadoutGate {
     );
   }, [billingCycle]);
 
+  const refetchSub = subQuery.refetch;
+  const refetchTiers = tiersQuery.refetch;
+  const refetch = useCallback(() => {
+    void refetchSub();
+    void refetchTiers();
+  }, [refetchSub, refetchTiers]);
+
   return useMemo<LoadoutGate>(() => {
     const upgradeTier = tiersQuery.data?.find(
       (tier) => tier.tierName === LOADOUT_UPGRADE_TIER,
@@ -160,6 +179,7 @@ export function useLoadoutGate(): LoadoutGate {
       isResolved,
       upgradePriceMonthly: upgradeTier?.priceMonthly ?? null,
       onUpgrade,
+      refetch,
     };
-  }, [subscription, isResolved, tiersQuery.data, onUpgrade]);
+  }, [subscription, isResolved, tiersQuery.data, onUpgrade, refetch]);
 }

@@ -43,6 +43,22 @@ import { toneTokens } from "./tones";
  * with its body rendered and its pill off-screen — a switcher showing nothing
  * selected. That is reachable exactly where the width gate used to be wrong:
  * narrow devices, large Dynamic Type, longer locales.
+ *
+ * Two things make that work, and a first attempt at it did neither:
+ *
+ * - **The MOUNT scroll is driven from `onLayout`, not from an effect.** Offsets
+ *   live in a ref (writing them must not re-render), so an effect running after
+ *   the first commit reads an EMPTY map, returns early, and never re-runs — the
+ *   cold-launch case stayed broken. The active segment's own layout callback is
+ *   the first moment its x is known, so that is where the initial scroll belongs.
+ *   It is one-shot (`didInitialScrollRef`) so later re-layouts cannot yank a
+ *   track the user is mid-drag on.
+ * - **Offsets are dropped when the option SET changes.** Otherwise the Train hub's
+ *   own coach gate corrupts it: while `useClientRelationships` is loading a
+ *   non-Training segment renders 3 options (non-scrollable), then resolving to
+ *   coached swaps in a 4th, `scrollable` flips true, and the effect scrolls to the
+ *   3-option offset — short by a whole segment. Keying on the joined values means
+ *   a membership change re-measures instead of trusting the old track.
  */
 
 export type SegmentedOption = string | { value: string; label: string };
@@ -92,23 +108,53 @@ export function Segmented({
   /**
    * Scroll the active option into view. `onLayout` on each segment is the only
    * source of its x-offset — the labels are text, so nothing here knows a
-   * segment's width until it has been measured.
+   * segment's width until it has been measured. See the docblock for why the
+   * mount case cannot be an effect and why the map is keyed to the option set.
    */
   const scrollRef = useRef<ScrollView | null>(null);
   const offsetsRef = useRef<Map<string, number>>(new Map());
+  const didInitialScrollRef = useRef(false);
+  /** Read inside `onSegmentLayout` without making the callback re-identify. */
+  const valueRef = useRef(value);
+  valueRef.current = value;
+
+  // A little lead-in so the active pill is not flush against the edge, and never
+  // negative — `scrollTo` clamps, but a negative offset reads as a bug.
+  const scrollToOffset = (x: number, animated: boolean) => {
+    scrollRef.current?.scrollTo({ x: Math.max(0, x - 12), animated });
+  };
+
+  // Identity of the option SET, not the array — a parent re-rendering with a
+  // fresh array of the same values must not count as a change.
+  const optionsKey = options.map(optionValue).join("\u0000");
+  const lastOptionsKeyRef = useRef(optionsKey);
+  if (lastOptionsKeyRef.current !== optionsKey) {
+    lastOptionsKeyRef.current = optionsKey;
+    offsetsRef.current.clear();
+    didInitialScrollRef.current = false;
+  }
 
   const onSegmentLayout = useCallback((v: string, e: LayoutChangeEvent) => {
-    offsetsRef.current.set(v, e.nativeEvent.layout.x);
+    const { x } = e.nativeEvent.layout;
+    offsetsRef.current.set(v, x);
+    // The first measurement of the ACTIVE option is the earliest point a mount
+    // (or a post-membership-change re-measure) can be positioned. Not animated:
+    // this is where the track should have started, not a move the user made.
+    if (didInitialScrollRef.current || v !== valueRef.current) return;
+    didInitialScrollRef.current = true;
+    scrollToOffset(x, false);
   }, []);
 
+  // Subsequent changes of `value` — a tap, or a store write from elsewhere.
+  const previousValueRef = useRef(value);
   useEffect(() => {
+    if (previousValueRef.current === value) return;
+    previousValueRef.current = value;
     if (!scrollable) return;
     const x = offsetsRef.current.get(value);
     if (x === undefined) return;
-    // A little lead-in so the active pill is not flush against the edge, and
-    // never negative — `scrollTo` clamps, but a negative offset reads as a bug.
-    scrollRef.current?.scrollTo({ x: Math.max(0, x - 12), animated: true });
-  }, [scrollable, value, options.length]);
+    scrollToOffset(x, true);
+  }, [scrollable, value]);
 
   const segments = options.map((o) => {
     const v = optionValue(o);

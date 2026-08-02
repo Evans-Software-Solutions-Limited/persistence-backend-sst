@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   StyleSheet,
@@ -47,6 +47,13 @@ import { color, radius, space } from "@/ui/theme/tokens";
  * The stalled state deliberately does NOT fall through to locked: showing the
  * paywall because the network hung would be the exact mistake state 1 exists to
  * prevent. It says what happened and offers a retry.
+ *
+ * ⚠ **The retry has to do BOTH halves or it is a lie.** Clearing `stalled` alone
+ * neither reissues the request (`useLoadoutGate` owns the queries) nor re-arms the
+ * clock — the timer effect keys on `gate.isResolved`, which has not changed — so
+ * one tap returned the user to the unbounded spinner with no way back to the
+ * retry screen. Hence `gate.refetch()` (which cancels the hung attempt) plus an
+ * `attempt` counter in the effect's deps.
  */
 
 /** Long enough not to fire on a slow-but-working cold start. */
@@ -55,6 +62,8 @@ const RESOLVE_TIMEOUT_MS = 8000;
 export function GymsSegmentContainer() {
   const gate = useLoadoutGate();
   const [stalled, setStalled] = useState(false);
+  /** Bumped by the retry so the timer effect re-runs while `isResolved` is unchanged. */
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (gate.isResolved) {
@@ -63,7 +72,13 @@ export function GymsSegmentContainer() {
     }
     const timer = setTimeout(() => setStalled(true), RESOLVE_TIMEOUT_MS);
     return () => clearTimeout(timer);
-  }, [gate.isResolved]);
+  }, [gate.isResolved, attempt]);
+
+  const onRetry = useCallback(() => {
+    setStalled(false);
+    setAttempt((n) => n + 1);
+    gate.refetch();
+  }, [gate]);
 
   if (!gate.isResolved) {
     if (!stalled) {
@@ -81,7 +96,7 @@ export function GymsSegmentContainer() {
         </Text>
         <TouchableOpacity
           style={styles.retry}
-          onPress={() => setStalled(false)}
+          onPress={onRetry}
           testID="gyms-segment-retry"
           accessibilityRole="button"
         >

@@ -194,6 +194,7 @@ export function SavedGymsContainer() {
       gyms={visibleGyms}
       isLoading={gyms.isLoading}
       equipmentLoading={reference.isLoading}
+      onRetryEquipment={() => void reference.refresh()}
       loadError={
         mutationError ??
         (gyms.error === null

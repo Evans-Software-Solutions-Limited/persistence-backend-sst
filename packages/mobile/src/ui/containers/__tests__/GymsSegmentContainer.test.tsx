@@ -37,6 +37,7 @@ jest.mock("@/ui/containers/SavedGymsContainer", () => {
 });
 
 const onUpgrade = jest.fn();
+const refetch = jest.fn();
 
 function gate(overrides: { allowed?: boolean; isResolved?: boolean } = {}) {
   mockGate.mockReturnValue({
@@ -44,6 +45,7 @@ function gate(overrides: { allowed?: boolean; isResolved?: boolean } = {}) {
     isResolved: overrides.isResolved ?? true,
     upgradePriceMonthly: null,
     onUpgrade,
+    refetch,
   });
 }
 
@@ -133,6 +135,41 @@ describe("GymsSegmentContainer", () => {
       });
       getByTestId("saved-gyms-stub");
       expect(queryByTestId("gyms-segment-stalled")).toBeNull();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  /**
+   * ⚠ The half the first attempt at this got wrong, and the reason it needs a test
+   * that PRESSES the button rather than one that only asserts the screen appears.
+   *
+   * `onPress={() => setStalled(false)}` looked like a retry and was not: the timer
+   * effect keys on `gate.isResolved`, which is still false, so no new timer was
+   * armed — and the gate owns the queries, so nothing was reissued either. One tap
+   * put the user back on the unbounded spinner with no route back to this screen.
+   */
+  it("really retries: reissues the request AND re-arms the timeout", () => {
+    jest.useFakeTimers();
+    try {
+      gate({ allowed: false, isResolved: false });
+      const { getByTestId } = renderWithTheme(<GymsSegmentContainer />);
+
+      act(() => {
+        jest.advanceTimersByTime(8000);
+      });
+      fireEvent.press(getByTestId("gyms-segment-retry"));
+
+      // Half one: the hung attempt is actually reissued.
+      expect(refetch).toHaveBeenCalledTimes(1);
+      // Back to the spinner while the new attempt runs…
+      getByTestId("gyms-segment-pending");
+
+      // …and half two: the clock is running again, so a second hang is catchable.
+      act(() => {
+        jest.advanceTimersByTime(8000);
+      });
+      getByTestId("gyms-segment-stalled");
     } finally {
       jest.useRealTimers();
     }
