@@ -69,69 +69,57 @@ export function resolvePickerExercise(
 }
 
 /**
- * Resolve the cached source-exercise record for the substitute picker
- * — the single lookup that backs both the muscle-group filter (UUIDs)
- * AND the visible muscle-label chip. Returns null when the picker
- * isn't in substitute mode, the source row has fallen out of the
- * session, or the source exercise isn't in the local cache (in any
- * of these cases the callers fall back to undefined and the picker
- * shows the unfiltered library / hides the chip).
+ * The exercise the substitute picker is ranking AGAINST — the identity of the row
+ * the user tapped Substitute on.
  *
- * Private to this module — bug-prevention: keeping the source-row +
- * cache lookup in one place stops the two `resolve*` exports below
- * from drifting apart on subsequent edits.
+ * ⚠ **Replaces `resolveSubstituteMuscleFilter` / `resolveSubstituteMuscleLabels`
+ * (deleted in spec-21 T-2.7).** Those resolved the source's primary muscle groups
+ * so the picker could narrow the LOCAL exercise cache client-side, and its chip
+ * could explain the narrowing. Ranking is now `GET /exercises/substitutes`, which
+ * needs only the source's id: it derives the muscles itself, ranks on five more
+ * signals than muscle overlap, and — the part the client could not do — scopes
+ * the read to what this user is allowed to see (AC-3.6).
+ *
+ * Returns `null` when the picker isn't in substitute mode or the source row has
+ * fallen out of the session. In that case the sheet has nothing to rank against
+ * and shows its empty state, which is the honest answer: a full unranked library
+ * dump is what the old fallback did, and it was never useful for a swap.
+ *
+ * ⚠ **`id` is null for a source that has not synced yet**, and that is not the
+ * same as "no source". `forExerciseId` is validated `format: "uuid"` on the
+ * endpoint, so sending a `local-…` id — which a session row legitimately holds
+ * after `substituteExerciseCommand` writes a just-created exercise onto it — is
+ * rejected 422 before the handler runs. The sheet renders that as "Couldn't load
+ * matches. Check your connection and try again.", blaming the network for a row
+ * the server has simply never heard of. The old cache-reading picker had no such
+ * failure because it never asked the server anything. Nulling the id keeps the
+ * eyebrow and yields the empty state instead of a wrong error; the window closes
+ * on its own when the sync drain rekeys the row to a server id.
+ *
+ * `name` comes from the CACHE and falls back to the sheet's default, because it
+ * is only the sheet's eyebrow. A cache miss must not stop the swap — the ranking
+ * itself needs no cache at all.
  */
-function resolveSubstituteSource(
+export function resolveSubstituteSourceRef(
   mode: ActiveSessionPickerMode,
   exercises: readonly { id: string; exerciseId: string }[],
   storage: StoragePort,
-) {
+): { readonly id: string | null; readonly name: string | null } | null {
   if (mode?.kind !== "substitute") return null;
   const oldRow = exercises.find((ex) => ex.id === mode.oldSessionExerciseId);
   if (!oldRow) return null;
-  return storage.getCachedExercise(oldRow.exerciseId);
+  return {
+    id: isPendingSyncExerciseId(oldRow.exerciseId) ? null : oldRow.exerciseId,
+    name: storage.getCachedExercise(oldRow.exerciseId)?.name ?? null,
+  };
 }
 
 /**
- * Resolve the substitute picker's muscle-group filter. When the user
- * taps Substitute on a session row, we narrow the picker to exercises
- * that share at least one primary muscle group with the original
- * (Story-004 AC: "Opens exercise picker filtered by same muscle
- * group"). Returns undefined when there's no source exercise to
- * filter from (mode mismatch, missing row, cache miss) — the picker
- * then falls back to the unfiltered library.
- *
- * Pure helper extracted from the container so the substitute /
- * fallback / no-mode branches are unit-testable without rendering.
+ * True for an id `createExerciseCommand` generated locally and the sync queue
+ * has not yet exchanged for a server one. Nothing server-side can resolve it.
  */
-export function resolveSubstituteMuscleFilter(
-  mode: ActiveSessionPickerMode,
-  exercises: readonly { id: string; exerciseId: string }[],
-  storage: StoragePort,
-): readonly string[] | undefined {
-  return (
-    resolveSubstituteSource(mode, exercises, storage)?.primaryMuscleGroups ??
-    undefined
-  );
-}
-
-/**
- * Display labels matching `resolveSubstituteMuscleFilter` — drives the
- * SwapExercisePopover's visible muscle-filter chip ("Filtered by
- * Chest, Triceps") so the user sees WHY the list is narrowed.
- *
- * Returns undefined for non-substitute modes, missing source rows, or
- * cache misses; the chip just doesn't render in those cases.
- */
-export function resolveSubstituteMuscleLabels(
-  mode: ActiveSessionPickerMode,
-  exercises: readonly { id: string; exerciseId: string }[],
-  storage: StoragePort,
-): readonly string[] | undefined {
-  return (
-    resolveSubstituteSource(mode, exercises, storage)
-      ?.primaryMuscleGroupLabels ?? undefined
-  );
+function isPendingSyncExerciseId(exerciseId: string): boolean {
+  return exerciseId.startsWith("local-");
 }
 
 /**

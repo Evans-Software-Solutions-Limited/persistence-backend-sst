@@ -333,17 +333,18 @@ TS2589 there and had to nest. Precedent sub-apps mount late:
 `subscriptionsRoutes` (`api.ts:181`), `trainersOnBehalfRoutes` (`:236`),
 `nutritionRoutes` (`:240`).
 
-| Method   | Path                            | Phase | Guard                                 | Notes                                                |
-| -------- | ------------------------------- | ----- | ------------------------------------- | ---------------------------------------------------- |
-| `GET`    | `/saved-gyms`                   | 0     | auth                                  | caller's gyms, newest first                          |
-| `POST`   | `/saved-gyms`                   | 0     | auth                                  | 409 on duplicate name; 400 on unknown equipment id   |
-| `PATCH`  | `/saved-gyms/:id`               | 0     | auth + ownership                      | name and/or equipment                                |
-| `DELETE` | `/saved-gyms/:id`               | 0     | auth + ownership                      | variations survive (`source_gym_id` → NULL)          |
-| `GET`    | `/workouts/:id/variations`      | 0     | auth + parent read                    | caller-owned variations of that parent               |
-| `POST`   | `/workouts/:id/variations`      | 0     | auth + parent `canRead` + **loadout** | persist a reviewed adaptation; 402 when not entitled |
-| `POST`   | `/workouts/:id/loadout/preview` | 1     | auth + **loadout**                    | compute, persist nothing                             |
-| `POST`   | `/ai/equipment-scan`            | 3     | auth + **loadout**                    | + daily ceiling (§ 8)                                |
-| `GET`    | `/exercises/substitutes`        | 1     | auth                                  | ranked picker feed (§ 6.4)                           |
+| Method   | Path                                          | Phase | Guard                                             | Notes                                                 |
+| -------- | --------------------------------------------- | ----- | ------------------------------------------------- | ----------------------------------------------------- |
+| `GET`    | `/saved-gyms`                                 | 0     | auth                                              | caller's gyms, newest first                           |
+| `POST`   | `/saved-gyms`                                 | 0     | auth                                              | 409 on duplicate name; 400 on unknown equipment id    |
+| `PATCH`  | `/saved-gyms/:id`                             | 0     | auth + ownership                                  | name and/or equipment                                 |
+| `DELETE` | `/saved-gyms/:id`                             | 0     | auth + ownership                                  | variations survive (`source_gym_id` → NULL)           |
+| `GET`    | `/workouts/:id/variations`                    | 0     | auth + parent read                                | caller-owned variations of that parent                |
+| `POST`   | `/workouts/:id/variations`                    | 0     | auth + parent `canRead` + **loadout**             | persist a reviewed adaptation; 402 when not entitled  |
+| `PUT`    | `/workouts/:parentId/variations/:variationId` | 2     | auth + ownership + parent `canRead` + **loadout** | replace one saved setup in place; preserve id/history |
+| `POST`   | `/workouts/:id/loadout/preview`               | 1     | auth + **loadout**                                | compute, persist nothing                              |
+| `POST`   | `/ai/equipment-scan`                          | 3     | auth + **loadout**                                | + daily ceiling (§ 8)                                 |
+| `GET`    | `/exercises/substitutes`                      | 1     | auth                                              | ranked picker feed (§ 6.4)                            |
 
 Route-ordering: the `/saved-gyms/*`, `/workouts/:id/variations` and
 `/workouts/:id/loadout/preview` paths sit under distinct prefixes or at a
@@ -1005,15 +1006,15 @@ Screens recreate design D7 in the app's existing primitives and tokens
 prototype code, no raw hex (the `no-raw-hex-colors` lint enforces this), the
 container/presenter seam as everywhere else.
 
-| Step       | Screen                                                     | Notes                                                               |
-| ---------- | ---------------------------------------------------------- | ------------------------------------------------------------------- |
-| `detail`   | Loadout entry card on workout detail + "Saved setups" list | Locked + upsell sheet when not entitled                             |
-| `collect`  | Scan / Pick equipment / reuse a saved gym                  | Equipment groups come from the API, not a constant                  |
-| `scan`     | Camera → draft-confirm (design D1)                         | `SnapAISheetContainer` transport: resize + q0.7 + base64 (see note) |
-| `manual`   | Grouped chips + name field + save toggle                   |                                                                     |
-| `adapting` | Skeleton                                                   | Real request, not a timer                                           |
-| `review`   | Per-row KEPT/SWAPPED + reason + swap sheet                 | Shared component with D6 (AC-4.4)                                   |
-| `saved`    | Success                                                    | "your original stays exactly as it was"                             |
+| Step       | Screen                                                     | Notes                                                                      |
+| ---------- | ---------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `detail`   | Loadout entry card on workout detail + "Saved setups" list | Root workouts offer Adapt; variations offer Re-adapt and gym-change status |
+| `collect`  | Scan / Pick equipment / reuse a saved gym                  | Equipment groups come from the API, not a constant                         |
+| `scan`     | Camera → draft-confirm (design D1)                         | `SnapAISheetContainer` transport: resize + q0.7 + base64 (see note)        |
+| `manual`   | Grouped chips + name field + save toggle                   |                                                                            |
+| `adapting` | Skeleton                                                   | Real request, not a timer                                                  |
+| `review`   | Per-row KEPT/SWAPPED + reason + swap sheet                 | Exercise names push detail; flow state survives return                     |
+| `saved`    | Success                                                    | "your original stays exactly as it was"                                    |
 
 Coach mode is the same machine in the trainer tone with programme-level entry
 and an assign action (AC-8.3).

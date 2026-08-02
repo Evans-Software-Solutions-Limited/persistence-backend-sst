@@ -223,6 +223,12 @@ export type WorkoutVariationSummary = {
   /** LEFT JOINed from `saved_gyms` — null when the gym was since deleted. */
   readonly sourceGymName: string | null;
   readonly sourceEquipmentTypeIds: readonly string[] | null;
+  /**
+   * The linked gym's equipment today. Null after gym deletion; compared as a
+   * set with the frozen snapshot to signal that a setup can be re-adapted.
+   */
+  readonly currentSourceGymEquipmentTypeIds?: readonly string[] | null;
+  readonly currentSourceGymUpdatedAt?: string | null;
   readonly estimatedDurationMinutes: number | null;
   readonly swapCount: number;
   readonly createdAt: string | null;
@@ -264,6 +270,8 @@ export type SubstitutesQuery = {
   /** Omit entirely for the no-kit case. Never send `[]` expecting "no filter". */
   readonly equipment?: readonly string[];
   readonly limit?: number;
+  /** Name tokens are AND-matched server-side before the candidate cap. */
+  readonly search?: string;
 };
 
 // ─── Equipment scan (§ 8, AC-2.3) ────────────────────────────────────────────

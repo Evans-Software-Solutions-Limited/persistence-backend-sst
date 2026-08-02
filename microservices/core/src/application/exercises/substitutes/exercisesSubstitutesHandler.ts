@@ -13,7 +13,7 @@ import type { RankedCandidate } from "../../loadout/engine/rankSubstitutes";
 import type { RankSignal } from "../../loadout/engine/reasons";
 
 const DEFAULT_LIMIT = 25;
-const MAX_LIMIT = 100;
+const MAX_LIMIT = 400;
 
 /** One ranked picker row: the display slice plus why it matched. */
 export interface SubstituteEntry {
@@ -92,6 +92,7 @@ export const exercisesSubstitutesHandler = new Elysia()
       const { sub: userId } = getUser(ctx);
       const forExerciseId = ctx.query.forExerciseId;
       const equipment = toStringArray(ctx.query.equipment);
+      const search = ctx.query.search?.trim();
       const limit = Math.min(
         Math.max(1, ctx.query.limit ?? DEFAULT_LIMIT),
         MAX_LIMIT,
@@ -154,11 +155,13 @@ export const exercisesSubstitutesHandler = new Elysia()
               muscleIds: sourceCandidate.primaryMuscles,
               equipmentTypeIds: equipment,
               excludeExerciseIds: [source.id],
+              search,
             })
           : Promise.resolve({ candidates: [], truncated: false }),
         ctx.ExerciseRepository.listRankableExercises(userId, {
           muscleIds: sourceCandidate.primaryMuscles,
           excludeExerciseIds: [source.id],
+          search,
         }),
       ]);
 
@@ -194,20 +197,23 @@ export const exercisesSubstitutesHandler = new Elysia()
         bestRanked.map((ranked) => ranked.candidate.id),
       );
 
-      const others = rankSubstitutes(
+      const othersRanked = rankSubstitutes(
         sourceCandidate,
         unconstrained.candidates,
         rankContext,
-      )
-        .filter((ranked) => !compatibleIds.has(ranked.candidate.id))
-        .slice(0, limit);
+      ).filter((ranked) => !compatibleIds.has(ranked.candidate.id));
+      const others = othersRanked.slice(0, limit);
 
       return {
         data: {
           best: best.map(toEntry),
           others: others.map(toEntry),
           meta: {
-            truncated: compatible.truncated || unconstrained.truncated,
+            truncated:
+              compatible.truncated ||
+              unconstrained.truncated ||
+              bestRanked.length > limit ||
+              othersRanked.length > limit,
           },
         },
       };
@@ -222,6 +228,7 @@ export const exercisesSubstitutesHandler = new Elysia()
           ]),
         ),
         limit: t.Optional(t.Numeric()),
+        search: t.Optional(t.String()),
       }),
     },
   );

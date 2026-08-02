@@ -1,19 +1,25 @@
 import { router, useLocalSearchParams } from "expo-router";
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import {
   deriveDominantEquipment,
   deriveWorkoutMuscles,
 } from "@/domain/services/workoutMeta";
+import { useLoadoutFlow } from "@/state/loadout-flow";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useAuth } from "@/ui/hooks/useAuth";
+import { useLoadoutGate } from "@/ui/hooks/useLoadoutGate";
+import { useSavedGyms } from "@/ui/hooks/useSavedGyms";
+import { useWorkoutVariations } from "@/ui/hooks/useWorkoutVariations";
+import { LoadoutUpsellSheet } from "@/ui/presenters/loadout/LoadoutUpsellSheet";
 import { useProfilePage } from "@/ui/hooks/useProfilePage";
 import { useWorkout } from "@/ui/hooks/useWorkout";
 import { useWorkoutHistory } from "@/ui/hooks/useWorkoutHistory";
 import { WorkoutDetailPresenter } from "@/ui/presenters/WorkoutDetailPresenter";
+import { hasGymEquipmentChanged } from "@/domain/services/loadout.service";
 
 /**
  * Workout-detail screen container. Routed at `/(app)/workouts/[id]` so the
- * detail surface is deep-linkable, presented as a stack-modal.
+ * detail surface is deep-linkable and participates in ordinary stack history.
  *
  * v3 additions (Workout Authoring v2):
  *   - `useWorkoutHistory(id)` feeds the hero's completed-session stats block
@@ -22,8 +28,14 @@ import { WorkoutDetailPresenter } from "@/ui/presenters/WorkoutDetailPresenter";
  *     cached exercise library (the same join the Train > Workouts list uses).
  *     No workout DTO change — equipment omitted when nothing resolves.
  *
+ * Loadout (spec-21 T-2.2 / T-2.8) adds two owner-only surfaces: the "Adapt to
+ * your gym" entry card and the "Saved setups" variation list. Both hang off
+ * `useLoadoutFlow`; the state is seeded before navigating to the dedicated
+ * `/(app)/loadout` route.
+ *
  * Spec: specs/milestones/WORKOUT-AUTHORING-V2/design.md § 10
  *       (legacy STORY-007 ACs 7.1, 7.2, 7.4 preserved)
+ *       specs/21-adaptive-workout-ai/design.md § 10 · tasks.md T-2.2, T-2.8
  */
 export function WorkoutDetailContainer() {
   const params = useLocalSearchParams<{ id?: string }>();
@@ -35,10 +47,58 @@ export function WorkoutDetailContainer() {
 
   const detail = useWorkout(workoutId);
   const history = useWorkoutHistory(workoutId);
+  const loadoutGate = useLoadoutGate();
+  const openLoadout = useLoadoutFlow((state) => state.open);
+  const selectLoadoutGym = useLoadoutFlow((state) => state.selectGym);
+  const openLoadoutUpsell = useLoadoutFlow((state) => state.openUpsell);
+  const loadoutUpsellOpen = useLoadoutFlow((state) => state.upsellOpen);
+  const closeLoadoutUpsell = useLoadoutFlow((state) => state.closeUpsell);
+  const loadoutRev = useLoadoutFlow((state) => state.rev);
 
   const workout = detail.workout;
   const isOwner =
     workout != null && userId != null && workout.createdBy === userId;
+  const isVariation = workout?.parentWorkoutId != null;
+
+  // Caller-scoped server-side, but the readable parent need not be caller-owned:
+  // AC-1.2 lets an athlete save their own setups under a coach/template workout.
+  //
+  // ⚠ `workout != null` is load-bearing, not a null-guard. `isVariation` is
+  // derived from `workout`, which is undefined until the detail read lands — so
+  // `!isVariation` alone is TRUE on mount for every workout, and opening a saved
+  // setup fires `GET /workouts/<variationId>/variations` before `isVariation`
+  // flips and the response is thrown away. One dead request per variation-detail
+  // open, in a codebase that has just spent two PRs (#341, #343) trimming exactly
+  // this kind of fetch.
+  const variations = useWorkoutVariations(
+    workout != null && !isVariation ? workoutId : null,
+  );
+  const savedGyms = useSavedGyms(
+    isOwner && isVariation && workout?.sourceGymId != null,
+  );
+  const sourceGym =
+    workout?.sourceGymId == null
+      ? null
+      : (savedGyms.gyms.find((gym) => gym.id === workout.sourceGymId) ?? null);
+  const sourceGymUpdated =
+    workout != null &&
+    hasGymEquipmentChanged({
+      sourceGymId: workout.sourceGymId ?? null,
+      sourceEquipmentTypeIds: workout.sourceEquipmentTypeIds ?? null,
+      currentSourceGymEquipmentTypeIds: sourceGym?.equipmentTypeIds ?? null,
+    });
+  const loadoutContextPending =
+    isVariation === true && workout?.sourceGymId != null && savedGyms.isLoading;
+
+  // Replacing a variation happens while this detail screen sits underneath the
+  // Loadout route. Refresh it as soon as the save lands so dismissing the flow
+  // reveals the new plan, not the cached pre-adaptation exercises.
+  const previousLoadoutRevRef = useRef(loadoutRev);
+  useEffect(() => {
+    if (previousLoadoutRevRef.current === loadoutRev) return;
+    previousLoadoutRevRef.current = loadoutRev;
+    if (isVariation) void detail.refresh();
+  }, [detail, isVariation, loadoutRev]);
 
   // Derive muscle pills + the dominant equipment label from the cached
   // exercise library (workout refs carry neither). Recomputes only when the
@@ -82,21 +142,101 @@ export function WorkoutDetailContainer() {
     router.push(`/(app)/exercises/${exerciseId}` as never);
   }, []);
 
+  // Locked still opens something — the upsell sheet. design § 5.2 makes the
+  // paywall a conversion surface with no taster behind it, so a dead tap would
+  // throw away the only pitch the feature gets.
+  const onOpenLoadout = useCallback(() => {
+    if (!workout) return;
+    // ⚠ Do NOTHING until the subscription has resolved. `computeLoadoutVerdict`
+    // denies a null subscription (deliberately — the alternative is flashing the
+    // entry point as unlocked and then 402-ing), so during the cold-start
+    // `/subscriptions/me` round trip a paying Premium+ user is indistinguishable
+    // from a free one. Opening the upsell there sells the feature to the person
+    // who already bought it.
+    //
+    // A mutation sweep reports removing this as surviving, and that is expected:
+    // the card is `disabled` while pending, so Testing Library's press never
+    // reaches here. The two layers block different channels — the prop blocks the
+    // touch, this blocks any other caller — and neither is redundant.
+    if (!loadoutGate.isResolved || loadoutContextPending) return;
+    if (!loadoutGate.allowed) {
+      openLoadoutUpsell();
+      return;
+    }
+    // Seed the store, then navigate. Both are synchronous in one tick and the
+    // route only reads the store when it MOUNTS, so the order is not actually
+    // load-bearing today — a mutation swapping them survives, correctly. Written
+    // this way because it states the dependency: `/(app)/loadout` redirects out
+    // on a null `workoutId`, and that redirect is the thing keeping a direct deep
+    // link from rendering an empty shell.
+    const rootWorkoutId = workout.parentWorkoutId ?? workout.id;
+    openLoadout(rootWorkoutId, workout.name, isVariation ? workout.id : null);
+    // A linked setup re-adapts against that gym immediately. If the gym was
+    // deleted, fall back to collect so the user can choose a new context.
+    if (isVariation && sourceGym !== null) {
+      selectLoadoutGym(sourceGym);
+    }
+    router.push("/(app)/loadout" as never);
+  }, [
+    workout,
+    isVariation,
+    sourceGym,
+    loadoutContextPending,
+    loadoutGate.isResolved,
+    loadoutGate.allowed,
+    openLoadout,
+    selectLoadoutGym,
+    openLoadoutUpsell,
+  ]);
+
+  // A variation IS a workout, so it opens on this same screen.
+  const onOpenVariation = useCallback((variationId: string) => {
+    router.push(`/(app)/workouts/${variationId}` as never);
+  }, []);
+
   return (
-    <WorkoutDetailPresenter
-      workout={workout}
-      history={history.history}
-      isHistoryLoading={history.isLoading}
-      muscles={muscles}
-      equipmentLabel={equipmentLabel}
-      isOwner={isOwner}
-      isLoading={detail.isLoading}
-      error={detail.error}
-      weightUnit={weightUnit}
-      onClose={onClose}
-      onEdit={onEdit}
-      onStartWorkout={onStartWorkout}
-      onExercisePress={onExercisePress}
-    />
+    <>
+      <WorkoutDetailPresenter
+        workout={workout}
+        history={history.history}
+        isHistoryLoading={history.isLoading}
+        muscles={muscles}
+        equipmentLabel={equipmentLabel}
+        isOwner={isOwner}
+        isLoading={detail.isLoading}
+        error={detail.error}
+        weightUnit={weightUnit}
+        onClose={onClose}
+        onEdit={onEdit}
+        onStartWorkout={onStartWorkout}
+        onExercisePress={onExercisePress}
+        // AC-1.2 is read-scoped, not owner-scoped: coach-assigned and template
+        // workouts can be adapted too, with the resulting setup owned by the
+        // caller. The backend enforces the same readable-parent boundary.
+        showLoadout
+        // `pending` takes precedence over `locked` INSIDE the card, so this passes
+        // the raw verdict rather than pre-masking it with `isResolved`. An earlier
+        // version did both; the extra conjunct could not change any rendered
+        // output, which a mutation sweep showed by surviving its removal.
+        loadoutLocked={!loadoutGate.allowed}
+        loadoutPending={!loadoutGate.isResolved || loadoutContextPending}
+        loadoutMode={isVariation ? "readapt" : "adapt"}
+        loadoutLinkedGymAvailable={!isVariation || sourceGym !== null}
+        loadoutGymUpdated={sourceGymUpdated}
+        loadoutVariations={variations.variations}
+        onOpenLoadout={onOpenLoadout}
+        onOpenVariation={isVariation ? undefined : onOpenVariation}
+      />
+      {/* The upsell belongs to, and is layered within, its owning screen. */}
+      <LoadoutUpsellSheet
+        visible={loadoutUpsellOpen}
+        onClose={closeLoadoutUpsell}
+        priceMonthly={loadoutGate.upgradePriceMonthly}
+        onUpgrade={() => {
+          closeLoadoutUpsell();
+          loadoutGate.onUpgrade();
+        }}
+      />
+    </>
   );
 }

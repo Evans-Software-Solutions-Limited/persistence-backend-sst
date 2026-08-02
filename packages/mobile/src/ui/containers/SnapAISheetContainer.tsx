@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as ImageManipulator from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
+import { resizeToLongEdge } from "@/shared/utils";
 import { useFuelSheets } from "@/state/fuel-sheets";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useOnlineStatus } from "@/ui/hooks/useOnlineStatus";
@@ -36,7 +37,16 @@ import {
  */
 
 /** Long-edge cap + JPEG quality for the downscale before the AI call —
- * matches design.md § Revised 2026-07-03 › Image transport exactly. */
+ * matches design.md § Revised 2026-07-03 › Image transport exactly.
+ *
+ * ⚠ FIXED (spec-21 T-3.4): both call sites below passed
+ * `[{ resize: { width: MAX_DIMENSION } }]`, i.e. WIDTH only, while this comment
+ * has always said "long edge". A portrait phone photo therefore shipped at
+ * 1080 × 1440 — a third over budget on the costliest axis — and anything smaller
+ * than 1080 wide was UPSCALED, spending bytes and latency for no extra detail.
+ * `resizeToLongEdge` caps the real long edge and never upscales. Shared with the
+ * Loadout equipment scan, which has the same transport and five times the unit
+ * cost. */
 const MAX_DIMENSION = 1080;
 const JPEG_QUALITY = 0.7;
 
@@ -116,7 +126,7 @@ export function SnapAISheetContainer() {
     if (!photo?.uri) return;
     const manipulated = await ImageManipulator.manipulateAsync(
       photo.uri,
-      [{ resize: { width: MAX_DIMENSION } }],
+      resizeToLongEdge(photo.width, photo.height, MAX_DIMENSION),
       {
         compress: JPEG_QUALITY,
         format: ImageManipulator.SaveFormat.JPEG,
@@ -140,7 +150,7 @@ export function SnapAISheetContainer() {
     if (!asset?.uri) return;
     const manipulated = await ImageManipulator.manipulateAsync(
       asset.uri,
-      [{ resize: { width: MAX_DIMENSION } }],
+      resizeToLongEdge(asset.width, asset.height, MAX_DIMENSION),
       {
         compress: JPEG_QUALITY,
         format: ImageManipulator.SaveFormat.JPEG,

@@ -5,10 +5,14 @@ import {
   describeMatchSignals,
   EQUIPMENT_OTHER_CATEGORY,
   groupEquipmentForPicker,
+  describeVariationSaveError,
+  CODES_NOT_EMITTED_BY_VARIATION_SAVE,
+  hasGymEquipmentChanged,
   rowsNeedingAttention,
   scanDraftToEquipmentIds,
   type ManualPick,
 } from "@/domain/services/loadout.service";
+import { LOADOUT_ERROR_CODES } from "@/domain/ports/api.port";
 import { isEquipmentGroupingStale } from "@/domain/models/reference-list";
 import type {
   LoadoutPreview,
@@ -132,6 +136,203 @@ describe("describeMatchSignals", () => {
       "brand_new_signal" as never,
     ]);
     expect(phrase).toBe("same primary muscles");
+  });
+});
+
+describe("hasGymEquipmentChanged", () => {
+  const variation = {
+    sourceGymId: "gym-1",
+    sourceEquipmentTypeIds: ["eq-dumbbell", "eq-cable"],
+    currentSourceGymEquipmentTypeIds: ["eq-cable", "eq-dumbbell"],
+  };
+
+  it("compares equipment as a set, ignoring order and duplicates", () => {
+    expect(hasGymEquipmentChanged(variation)).toBe(false);
+    expect(
+      hasGymEquipmentChanged({
+        ...variation,
+        currentSourceGymEquipmentTypeIds: [
+          "eq-cable",
+          "eq-dumbbell",
+          "eq-dumbbell",
+        ],
+      }),
+    ).toBe(false);
+  });
+
+  it("detects equipment additions and removals", () => {
+    expect(
+      hasGymEquipmentChanged({
+        ...variation,
+        currentSourceGymEquipmentTypeIds: [
+          "eq-cable",
+          "eq-dumbbell",
+          "eq-rack",
+        ],
+      }),
+    ).toBe(true);
+    expect(
+      hasGymEquipmentChanged({
+        ...variation,
+        currentSourceGymEquipmentTypeIds: ["eq-dumbbell"],
+      }),
+    ).toBe(true);
+  });
+
+  it("does not claim a change after the source gym was deleted", () => {
+    expect(
+      hasGymEquipmentChanged({
+        ...variation,
+        sourceGymId: null,
+        currentSourceGymEquipmentTypeIds: null,
+      }),
+    ).toBe(false);
+  });
+
+  /**
+   * Real staging data, 2026-08-02: `Mock Gym` holds 3 equipment ids with
+   * `updated_at == created_at` — never modified — while its variation
+   * `Upper · Mock Gym` has `source_equipment_type_ids = '{}'`. Comparing 0
+   * against 3 told the user "Your gym equipment has changed since this setup was
+   * made" about a gym nobody had touched, permanently: no action can make the
+   * two sides agree, and there is no kit to backfill because none was recorded.
+   */
+  it("treats an EMPTY frozen snapshot as unrecorded, not as a changed kit", () => {
+    expect(
+      hasGymEquipmentChanged({
+        ...variation,
+        sourceEquipmentTypeIds: [],
+        currentSourceGymEquipmentTypeIds: [
+          "7802e4da-261f-4b77-a9b1-cafa8e70b142",
+          "bc456e03-f3d8-40bc-a4ad-41a604e8374a",
+          "d01433d3-23e6-4c6f-98c6-c94927242260",
+        ],
+      }),
+    ).toBe(false);
+  });
+
+  it("still reports a real change when the gym is emptied under a real snapshot", () => {
+    // The mirror case, so the guard cannot be widened into "never report".
+    expect(
+      hasGymEquipmentChanged({
+        ...variation,
+        currentSourceGymEquipmentTypeIds: [],
+      }),
+    ).toBe(true);
+  });
+});
+
+describe("describeVariationSaveError", () => {
+  const apiError = (
+    over: Partial<Parameters<typeof describeVariationSaveError>[0]> = {},
+  ) =>
+    ({
+      kind: "api" as const,
+      code: "unknown" as const,
+      message: "Request failed",
+      ...over,
+    }) as Parameters<typeof describeVariationSaveError>[0];
+
+  /**
+   * ⚠ DERIVED from `LOADOUT_ERROR_CODES`, never a hand-copied list. A literal
+   * list cannot fail when a tenth code is added — which is the whole failure
+   * mode here: seven codes reaching one generic string is what made Brad's
+   * device report undiagnosable, and a test that has to be edited to notice an
+   * eighth is not a guard. Excluding a code is a deliberate, named act.
+   */
+  const SAVE_CODES = LOADOUT_ERROR_CODES.filter(
+    (code) =>
+      !(CODES_NOT_EMITTED_BY_VARIATION_SAVE as readonly string[]).includes(
+        code,
+      ),
+  );
+
+  it.each(SAVE_CODES)(
+    "gives %s its own copy, and never blames the network",
+    (code) => {
+      const copy = describeVariationSaveError(apiError({ loadoutCode: code }));
+      expect(copy).not.toMatch(/connection/i);
+      expect(copy.length).toBeGreaterThan(0);
+      // The generic fallbacks are the thing being escaped, not an allowed answer.
+      expect(copy).not.toMatch(/Try again in a moment/);
+      expect(copy).not.toContain("Couldn't save this setup — ");
+    },
+  );
+
+  it("gives every code a DISTINCT message", () => {
+    const messages = SAVE_CODES.map((loadoutCode) =>
+      describeVariationSaveError(apiError({ loadoutCode })),
+    );
+    // Collapsing two codes onto one string is how this drifted the first time.
+    expect(new Set(messages).size).toBe(SAVE_CODES.length);
+  });
+
+  it("does not tell a failed CREATE that its saved setup is gone", () => {
+    // Both endpoints answer 404 `not_found`, for different things. On create the
+    // only 404 is an unreadable parent — a coach deleting an assigned workout
+    // mid-review — and "save this as a new one" reissues the same failing call.
+    const create = describeVariationSaveError(
+      apiError({ loadoutCode: "not_found" }),
+      false,
+    );
+    const replace = describeVariationSaveError(
+      apiError({ loadoutCode: "not_found" }),
+      true,
+    );
+    expect(create).not.toEqual(replace);
+    expect(create).not.toMatch(/saved setup/i);
+    expect(replace).toMatch(/saved setup/i);
+  });
+
+  it("blames the connection ONLY for a transport failure", () => {
+    expect(describeVariationSaveError(apiError({ code: "network" }))).toMatch(
+      /connection/i,
+    );
+    expect(describeVariationSaveError(apiError({ code: "timeout" }))).toMatch(
+      /connection/i,
+    );
+    expect(
+      describeVariationSaveError(apiError({ code: "server" })),
+    ).not.toMatch(/connection/i);
+  });
+
+  /**
+   * The 2026-08-02 device report. `PUT …/variations/:id` exists only on this
+   * branch and staging deploys from `main`, so Elysia's router answered: a 404
+   * with NO `loadoutCode` and `codeToLabel("NOT_FOUND")` as the body, which the
+   * passthrough rendered as "Couldn't save this setup — Not found".
+   *
+   * Distinct from the handlers' own 404, which always carries
+   * `loadoutCode: "not_found"` and DOES mean the setup is gone.
+   */
+  it("does not say the setup is gone when the ROUTE is what is missing", () => {
+    const routerMiss = describeVariationSaveError(
+      apiError({ code: "not_found", message: "Not found" }),
+    );
+    expect(routerMiss).not.toContain("Not found");
+    expect(routerMiss).not.toMatch(/no longer exists/i);
+    expect(routerMiss).not.toMatch(/connection/i);
+    // The handler's 404 still gets the "it's gone" copy — the two must not merge.
+    expect(routerMiss).not.toEqual(
+      describeVariationSaveError(apiError({ loadoutCode: "not_found" }), true),
+    );
+  });
+
+  it("surfaces the handler's own message when there is no code to map", () => {
+    expect(
+      describeVariationSaveError(
+        apiError({ code: "unknown", message: "Variation name is required" }),
+      ),
+    ).toContain("Variation name is required");
+  });
+
+  it("does not surface the transport's placeholder message", () => {
+    // `requestRaw` falls back to "Request failed", which tells the user nothing.
+    expect(
+      describeVariationSaveError(
+        apiError({ code: "unknown", message: "Request failed" }),
+      ),
+    ).not.toContain("Request failed");
   });
 });
 

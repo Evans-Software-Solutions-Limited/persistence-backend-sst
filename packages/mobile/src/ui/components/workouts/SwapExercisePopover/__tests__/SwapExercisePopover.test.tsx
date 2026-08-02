@@ -1,15 +1,46 @@
-import { act, fireEvent } from "@testing-library/react-native";
+/**
+ * `SwapExercisePopover` after spec-21 T-2.7 — a thin adapter over the shared
+ * `<EquipmentAwareSwapSheet>`.
+ *
+ * ⚠ This suite was REWRITTEN, not extended. The previous 18 tests all described
+ * the deleted implementation: a full-screen Modal listing the LOCAL exercise
+ * cache, narrowed by a client-side primary-muscle memo, with a select-then-Swap
+ * two-step, a muscle-filter chip, a details drill-in and a 100-row display
+ * ceiling. None of those exist any more — the list is `GET /exercises/substitutes`,
+ * ranked and visibility-scoped server-side. Keeping them green would have needed
+ * the old code kept alive behind the new one.
+ *
+ * What survives as behaviour worth pinning is here: the props CONTRACT with
+ * `applyPickerSelection` (a single-element array of picker rows), the
+ * no-duplicates rule, the Create route, and the cache-resolution guard — the last
+ * being genuinely new, and the one that stops a tap silently doing nothing.
+ * Everything about the list itself is tested against the shared sheet in
+ * `EquipmentAwareSwapSheet/__tests__`.
+ */
+
+import { act, fireEvent, waitFor } from "@testing-library/react-native";
 import React from "react";
 import { useExerciseLibrary } from "@/ui/hooks/useExerciseLibrary";
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
 import type { AuthSession } from "@/domain/ports/auth.port";
 import type { Exercise } from "@/domain/models/exercise";
+import type { SubstituteCandidate } from "@/domain/models/loadout";
 import { ok } from "@/shared/errors";
 import type { Adapters } from "@/shared/types";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import { SwapExercisePopover } from "../SwapExercisePopover";
 import { renderWithTheme } from "../../../../../../__tests__/test-utils";
+
+/**
+ * Same convention as every other heavy container suite here (ProfileContainer,
+ * ExerciseListContainer, SubscriptionSelectionContainer…): these mount the real
+ * Tamagui provider, a React Query client and gorhom sheet machinery per case,
+ * and run alongside 459 other suites on a contended CI runner, where jest's 5 s
+ * default is the wrong budget for this shape. See
+ * `LoadoutFlowContainer.test.tsx` for the measurement that prompted it.
+ */
+jest.setTimeout(20_000);
 
 const mockRouterPush = jest.fn();
 jest.mock("expo-router", () => ({
@@ -38,6 +69,19 @@ const buildExercise = (overrides: Partial<Exercise> = {}): Exercise => ({
   ...overrides,
 });
 
+const buildCandidate = (
+  overrides: Partial<SubstituteCandidate> = {},
+): SubstituteCandidate => ({
+  id: "ex-incline",
+  name: "Incline Press",
+  category: "strength",
+  difficultyLevel: "intermediate",
+  thumbnailUrl: null,
+  equipmentRequired: [],
+  matchedOn: ["primary_muscles"],
+  ...overrides,
+});
+
 function makeAdapters(
   storage: InMemoryStorageAdapter,
   api: InMemoryApiAdapter,
@@ -55,15 +99,8 @@ function makeAdapters(
     signInWithOAuth: jest.fn(),
     signOut: jest.fn(),
     getSession: jest.fn(async () => ok(session)),
-    // Fire the auth-state callback synchronously at registration
-    // time. The legacy mock deferred this via `setTimeout(... , 0)`
-    // to mimic Supabase's INITIAL_SESSION event, but the resulting
-    // unwrapped `setSession` setState (fired from a macrotask after
-    // render commit) raced with `findByTestId` polling under CI load
-    // and intermittently pushed the test past its 5 s outer timeout.
-    // Synchronous firing collapses the bootstrap into a single
-    // render commit — no macrotask race, no unwrapped-act warning,
-    // same observable behaviour for the consumer.
+    // Fired synchronously at registration rather than through a macrotask: a
+    // deferred setState raced RTL's polling under CI load (PR-3 flake).
     onAuthStateChange: jest.fn((cb: (s: AuthSession | null) => void) => {
       cb(session);
       return () => {};
@@ -82,556 +119,440 @@ function makeAdapters(
   };
 }
 
-function seedCache(storage: InMemoryStorageAdapter, exercises: Exercise[]) {
-  storage.cacheExercises(exercises);
-  // Stamp `lastSyncedAt` so `getExercisesQuery(...).isStale` returns
-  // false on mount and the popover's `useEffect`-driven background
-  // `refreshExerciseCache` is a no-op for these tests. Without this,
-  // every test races against an unresolved refresh promise inside
-  // React Testing Library's `act()` window — locally that races
-  // benignly, but on CI runners the test occasionally times out
-  // before the data render commits (PR-3 CI flake on the third test
-  // in this file). Tests that DO want to exercise the stale-refresh
-  // path can `storage.setLastSyncedAt("exercises", olderIso)` after
-  // seeding to override.
-  storage.setLastSyncedAt("exercises", new Date().toISOString());
+function renderPopover(
+  api: InMemoryApiAdapter,
+  storage: InMemoryStorageAdapter,
+  props: Omit<
+    Partial<React.ComponentProps<typeof SwapExercisePopover>>,
+    "onSwap" | "onClose"
+  > = {},
+) {
+  const onSwap = jest.fn();
+  const onClose = jest.fn();
+  const utils = renderWithTheme(
+    <AdapterProvider adapters={makeAdapters(storage, api)}>
+      <SwapExercisePopover
+        visible
+        onClose={onClose}
+        onSwap={onSwap}
+        forExerciseId="ex-bench"
+        exerciseName="Bench Press"
+        {...props}
+      />
+    </AdapterProvider>,
+  );
+  return { ...utils, onSwap, onClose };
 }
 
-describe("SwapExercisePopover", () => {
+describe("SwapExercisePopover (T-2.7 adapter)", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockRouterPush.mockClear();
   });
 
-  it("renders the modal with the legacy chrome — title + close + Create + Swap", async () => {
-    const storage = new InMemoryStorageAdapter();
+  it("lists candidates from GET /exercises/substitutes, not the local cache", async () => {
     const api = new InMemoryApiAdapter();
-    seedCache(storage, [buildExercise()]);
+    const storage = new InMemoryStorageAdapter();
+    // Deliberately cached but NOT returned by the endpoint. The old picker read
+    // the cache directly and would have listed this; the new one must not, or the
+    // visibility scoping the endpoint exists to enforce is bypassed.
+    storage.cacheExercises([
+      buildExercise({ id: "ex-cached-only", name: "Cached Only" }),
+    ]);
+    api.substitutes = {
+      best: [],
+      others: [buildCandidate()],
+      meta: { truncated: false },
+    };
 
-    const { findByTestId, findByText } = renderWithTheme(
-      <AdapterProvider adapters={makeAdapters(storage, api)}>
-        <SwapExercisePopover
-          visible={true}
-          onClose={jest.fn()}
-          onSwap={jest.fn()}
-        />
-      </AdapterProvider>,
-    );
-    expect(await findByTestId("swap-picker-modal")).toBeTruthy();
-    expect(await findByTestId("swap-picker-close")).toBeTruthy();
-    expect(await findByTestId("swap-picker-create")).toBeTruthy();
-    expect(await findByTestId("swap-picker-swap")).toBeTruthy();
-    expect(await findByTestId("swap-picker-search")).toBeTruthy();
-    // Title is the literal legacy SwapExercisePopover string.
-    expect(await findByText("Swap Exercise")).toBeTruthy();
+    const { findByTestId, queryByTestId } = renderPopover(api, storage);
+
+    expect(await findByTestId("swap-others-ex-incline")).toBeTruthy();
+    expect(queryByTestId("swap-others-ex-cached-only")).toBeNull();
   });
 
-  it("Swap button is disabled until exactly one row is selected (single-select semantic)", async () => {
-    const storage = new InMemoryStorageAdapter();
+  it("sends NO equipment context — an in-session swap doesn't know the room", async () => {
     const api = new InMemoryApiAdapter();
-    seedCache(storage, [
-      buildExercise({ id: "ex-1", name: "Bench Press" }),
-      buildExercise({ id: "ex-2", name: "Row" }),
-    ]);
-    const onSwap = jest.fn();
+    const storage = new InMemoryStorageAdapter();
+    const spy = jest.spyOn(api, "getExerciseSubstitutes");
+    api.substitutes = {
+      best: [],
+      others: [buildCandidate()],
+      meta: { truncated: false },
+    };
 
-    const { findByTestId } = renderWithTheme(
-      <AdapterProvider adapters={makeAdapters(storage, api)}>
-        <SwapExercisePopover
-          visible={true}
-          onClose={jest.fn()}
-          onSwap={onSwap}
-        />
-      </AdapterProvider>,
+    const { findByTestId } = renderPopover(api, storage);
+    await findByTestId("swap-others-ex-incline");
+
+    expect(spy).toHaveBeenCalledWith(
+      expect.objectContaining({ forExerciseId: "ex-bench" }),
     );
-    fireEvent.press(await findByTestId("swap-picker-swap"));
+    // Absent, not `[]`. `[]` would be a containment request against nothing —
+    // the same outcome by accident rather than by contract.
+    expect(spy.mock.calls[0]?.[0]).not.toHaveProperty("equipment");
+  });
+
+  it("fires onSwap with EXACTLY ONE picker row (the dispatcher's `rows` loop shape)", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheExercises([
+      buildExercise({ id: "ex-incline", name: "Incline Press" }),
+    ]);
+    api.substitutes = {
+      best: [],
+      others: [buildCandidate()],
+      meta: { truncated: false },
+    };
+
+    const { findByTestId, onSwap } = renderPopover(api, storage);
+    fireEvent.press(await findByTestId("swap-others-ex-incline"));
+
+    await waitFor(() => expect(onSwap).toHaveBeenCalledTimes(1));
+    const rows = onSwap.mock.calls[0][0];
+    expect(rows).toHaveLength(1);
+    // Snake-case picker-row shape, not the camelCase candidate — this is what
+    // `AddExerciseList` / `resolvePickerExercise` consume.
+    expect(rows[0]).toEqual(expect.objectContaining({ id: "ex-incline" }));
+  });
+
+  it("refreshes the exercise cache once, then retries, when the pick isn't cached", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    api.substitutes = {
+      best: [],
+      others: [buildCandidate()],
+      meta: { truncated: false },
+    };
+    // The refresh is what makes the server-visible exercise resolvable.
+    const refresh = jest
+      .spyOn(api, "getExercises")
+      .mockImplementation(async () => {
+        storage.cacheExercises([
+          buildExercise({ id: "ex-incline", name: "Incline Press" }),
+        ]);
+        return ok({
+          data: [buildExercise({ id: "ex-incline", name: "Incline Press" })],
+          hasMore: false,
+          cursor: null,
+        });
+      });
+
+    const { findByTestId, onSwap } = renderPopover(api, storage);
+    fireEvent.press(await findByTestId("swap-others-ex-incline"));
+
+    await waitFor(() => expect(onSwap).toHaveBeenCalledTimes(1));
+    expect(refresh).toHaveBeenCalled();
+  });
+
+  it("shows an in-sheet message — and does NOT fire onSwap — when the retry still misses", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    api.substitutes = {
+      best: [],
+      others: [buildCandidate()],
+      meta: { truncated: false },
+    };
+    jest
+      .spyOn(api, "getExercises")
+      .mockResolvedValue(ok({ data: [], hasMore: false, cursor: null }));
+
+    const { findByTestId, onSwap } = renderPopover(api, storage);
+    fireEvent.press(await findByTestId("swap-others-ex-incline"));
+
+    expect(await findByTestId("swap-sheet-unavailable")).toBeTruthy();
+    // The silent no-op this guard exists to prevent.
     expect(onSwap).not.toHaveBeenCalled();
   });
 
-  /**
-   * Per-test timeout bumped from the default 5 s to 15 s. This case
-   * hit a CI-only 5 s timeout consistently across PR-3's CI runs
-   * even after two unrelated flake hypotheses (`seedCache`
-   * `lastSyncedAt` stamping; auth-mock `setTimeout` removal) — both
-   * fixes stayed in because they were real concurrency improvements,
-   * but neither was the actual cause. The third test in this suite
-   * is the first to assert on a data-driven testID; under GHA-runner
-   * load (slower CPU + cold caches) the React-Native test-renderer
-   * commit + synchronous auth bootstrap + seedCache memo chain land
-   * just close enough to 5 s that `findByTestId` intermittently
-   * overshoots. Tests 4-15 do the same data-driven queries and
-   * pass — the suite must be warm by then. Locally this test runs
-   * in ~150 ms; the 15 s ceiling gives ~100× headroom while still
-   * being short enough to flag a real regression.
-   */
-  it("Swap fires onSwap with EXACTLY ONE row (single-element array — matches dispatcher's `rows` loop shape)", async () => {
-    const storage = new InMemoryStorageAdapter();
+  it("disables every exercise already in the session (no-duplicates rule)", async () => {
     const api = new InMemoryApiAdapter();
-    seedCache(storage, [
-      buildExercise({ id: "ex-1", name: "Bench Press" }),
-      buildExercise({ id: "ex-2", name: "Row" }),
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheExercises([
+      buildExercise({ id: "ex-incline", name: "Incline Press" }),
     ]);
-    const onSwap = jest.fn();
+    api.substitutes = {
+      best: [],
+      others: [buildCandidate()],
+      meta: { truncated: false },
+    };
 
-    const { findByTestId } = renderWithTheme(
-      <AdapterProvider adapters={makeAdapters(storage, api)}>
-        <SwapExercisePopover
-          visible={true}
-          onClose={jest.fn()}
-          onSwap={onSwap}
-        />
-      </AdapterProvider>,
-    );
-    fireEvent.press(await findByTestId("exercise-row-ex-1"));
-    fireEvent.press(await findByTestId("swap-picker-swap"));
-    expect(onSwap).toHaveBeenCalledTimes(1);
-    const rows = onSwap.mock.calls[0][0];
-    expect(rows).toHaveLength(1);
-    expect(rows[0].id).toBe("ex-1");
-    expect(rows[0].name).toBe("Bench Press");
-  }, 15000);
+    const { findByTestId, onSwap } = renderPopover(api, storage, {
+      existingExerciseIds: ["ex-incline"],
+    });
 
-  it("tapping a different row replaces the selection (single-select, not additive)", async () => {
-    const storage = new InMemoryStorageAdapter();
-    const api = new InMemoryApiAdapter();
-    seedCache(storage, [
-      buildExercise({ id: "ex-1", name: "Bench Press" }),
-      buildExercise({ id: "ex-2", name: "Row" }),
-    ]);
-    const onSwap = jest.fn();
-
-    const { findByTestId } = renderWithTheme(
-      <AdapterProvider adapters={makeAdapters(storage, api)}>
-        <SwapExercisePopover
-          visible={true}
-          onClose={jest.fn()}
-          onSwap={onSwap}
-        />
-      </AdapterProvider>,
-    );
-    fireEvent.press(await findByTestId("exercise-row-ex-1"));
-    fireEvent.press(await findByTestId("exercise-row-ex-2"));
-    fireEvent.press(await findByTestId("swap-picker-swap"));
-    const rows = onSwap.mock.calls[0][0];
-    expect(rows).toHaveLength(1);
-    expect(rows[0].id).toBe("ex-2");
-  });
-
-  it("tapping the currently-selected row clears the selection (deselect)", async () => {
-    const storage = new InMemoryStorageAdapter();
-    const api = new InMemoryApiAdapter();
-    seedCache(storage, [buildExercise({ id: "ex-1", name: "Bench Press" })]);
-    const onSwap = jest.fn();
-
-    const { findByTestId } = renderWithTheme(
-      <AdapterProvider adapters={makeAdapters(storage, api)}>
-        <SwapExercisePopover
-          visible={true}
-          onClose={jest.fn()}
-          onSwap={onSwap}
-        />
-      </AdapterProvider>,
-    );
-    fireEvent.press(await findByTestId("exercise-row-ex-1"));
-    fireEvent.press(await findByTestId("exercise-row-ex-1"));
-    fireEvent.press(await findByTestId("swap-picker-swap"));
+    const row = await findByTestId("swap-others-ex-incline");
+    expect(row.props.accessibilityState.disabled).toBe(true);
+    fireEvent.press(row);
     expect(onSwap).not.toHaveBeenCalled();
   });
 
-  it("resets search + selection after a successful Swap (next open starts fresh — bugbot regression)", async () => {
-    // The component stays mounted when `visible` flips to false (parent
-    // sets pickerMode=null), so without resetting on the swap-success
-    // path the user's previous search query persists into the next
-    // open and silently filters out exercises they expect to see.
-    const storage = new InMemoryStorageAdapter();
+  it("Create closes the picker first, then routes to the real creator", async () => {
     const api = new InMemoryApiAdapter();
-    seedCache(storage, [
-      buildExercise({ id: "ex-1", name: "Bench Press" }),
-      buildExercise({ id: "ex-2", name: "Row" }),
-    ]);
-    const Wrapper = ({ visible }: { visible: boolean }) => (
-      <AdapterProvider adapters={makeAdapters(storage, api)}>
-        <SwapExercisePopover
-          visible={visible}
-          onClose={jest.fn()}
-          onSwap={jest.fn()}
-        />
-      </AdapterProvider>
-    );
-    const { findByTestId, rerender } = renderWithTheme(
-      <Wrapper visible={true} />,
-    );
-    // Type a search query, pick a row, fire Swap.
-    const search = await findByTestId("swap-picker-search");
-    fireEvent.changeText(search, "bench");
-    fireEvent.press(await findByTestId("exercise-row-ex-1"));
-    fireEvent.press(await findByTestId("swap-picker-swap"));
-
-    // Parent flips visibility off, then back on (a new pickerMode).
-    rerender(<Wrapper visible={false} />);
-    rerender(<Wrapper visible={true} />);
-
-    // Search field should be empty on re-open, NOT carrying "bench".
-    const searchAfter = await findByTestId("swap-picker-search");
-    expect(searchAfter.props.value).toBe("");
-  });
-
-  it("close button calls onClose and resets internal selection", async () => {
     const storage = new InMemoryStorageAdapter();
-    const api = new InMemoryApiAdapter();
-    seedCache(storage, [buildExercise({ id: "ex-1", name: "Bench Press" })]);
-    const onClose = jest.fn();
+    api.substitutes = {
+      best: [],
+      others: [buildCandidate()],
+      meta: { truncated: false },
+    };
 
-    const { findByTestId } = renderWithTheme(
-      <AdapterProvider adapters={makeAdapters(storage, api)}>
-        <SwapExercisePopover
-          visible={true}
-          onClose={onClose}
-          onSwap={jest.fn()}
-        />
-      </AdapterProvider>,
-    );
-    fireEvent.press(await findByTestId("swap-picker-close"));
-    expect(onClose).toHaveBeenCalledTimes(1);
-  });
+    const { findByTestId, onClose } = renderPopover(api, storage);
+    fireEvent.press(await findByTestId("swap-sheet-create"));
 
-  it("renders nothing when visible=false (Modal short-circuits in test tree)", () => {
-    const storage = new InMemoryStorageAdapter();
-    const api = new InMemoryApiAdapter();
-    seedCache(storage, [buildExercise()]);
-
-    const { queryByTestId } = renderWithTheme(
-      <AdapterProvider adapters={makeAdapters(storage, api)}>
-        <SwapExercisePopover
-          visible={false}
-          onClose={jest.fn()}
-          onSwap={jest.fn()}
-        />
-      </AdapterProvider>,
-    );
-    expect(queryByTestId("swap-picker-modal")).toBeNull();
-  });
-
-  it("Create button closes the picker and routes to the real /exercises/create", async () => {
-    const storage = new InMemoryStorageAdapter();
-    const api = new InMemoryApiAdapter();
-    seedCache(storage, [buildExercise({ id: "ex-1", name: "Bench Press" })]);
-
-    const onClose = jest.fn();
-    const { findByTestId } = renderWithTheme(
-      <AdapterProvider adapters={makeAdapters(storage, api)}>
-        <SwapExercisePopover
-          visible={true}
-          onClose={onClose}
-          onSwap={jest.fn()}
-        />
-      </AdapterProvider>,
-    );
-    fireEvent.press(await findByTestId("swap-picker-create"));
+    // Order matters: routing with the sheet still open stacks a full-screen
+    // creator behind an open bottom sheet.
     expect(onClose).toHaveBeenCalled();
     expect(mockRouterPush).toHaveBeenCalledWith("/(app)/exercises/create");
   });
 
-  it("disables every exercise in `existingExerciseIds` (Brad's no-duplicates rule — covers the source row + all other in-session rows)", async () => {
-    const storage = new InMemoryStorageAdapter();
+  it("clears a previous row's resolve error when the sheet reopens", async () => {
     const api = new InMemoryApiAdapter();
-    seedCache(storage, [
-      buildExercise({ id: "ex-source", name: "Bench Press" }),
-      buildExercise({ id: "ex-already-in", name: "Row" }),
-      buildExercise({ id: "ex-free", name: "Pulldown" }),
-    ]);
-    const onSwap = jest.fn();
+    const storage = new InMemoryStorageAdapter();
+    api.substitutes = {
+      best: [],
+      others: [buildCandidate()],
+      meta: { truncated: false },
+    };
+    jest
+      .spyOn(api, "getExercises")
+      .mockResolvedValue(ok({ data: [], hasMore: false, cursor: null }));
 
-    const { findByTestId } = renderWithTheme(
+    const onSwap = jest.fn();
+    const { findByTestId, queryByTestId, rerender } = renderWithTheme(
       <AdapterProvider adapters={makeAdapters(storage, api)}>
         <SwapExercisePopover
-          visible={true}
+          visible
           onClose={jest.fn()}
           onSwap={onSwap}
-          // Container passes ALL non-substituted in-session exercise
-          // IDs (the source IS in the session, so it's covered).
-          existingExerciseIds={["ex-source", "ex-already-in"]}
+          forExerciseId="ex-bench"
         />
       </AdapterProvider>,
     );
-    // Both disabled rows are no-ops on press.
-    fireEvent.press(await findByTestId("exercise-row-ex-source"));
-    fireEvent.press(await findByTestId("exercise-row-ex-already-in"));
-    fireEvent.press(await findByTestId("swap-picker-swap"));
-    expect(onSwap).not.toHaveBeenCalled();
-    // The free row is interactive.
-    fireEvent.press(await findByTestId("exercise-row-ex-free"));
-    fireEvent.press(await findByTestId("swap-picker-swap"));
-    expect(onSwap).toHaveBeenCalledTimes(1);
-    expect(onSwap.mock.calls[0][0][0].id).toBe("ex-free");
-  });
+    fireEvent.press(await findByTestId("swap-others-ex-incline"));
+    await findByTestId("swap-sheet-unavailable");
 
-  it("renders the muscle-filter chip when filterMuscleGroupLabels is non-empty (Story-004 visible-filter chrome)", async () => {
-    const storage = new InMemoryStorageAdapter();
-    const api = new InMemoryApiAdapter();
-    seedCache(storage, [buildExercise({ id: "ex-1", name: "Bench Press" })]);
-
-    const { findByTestId, findByText } = renderWithTheme(
+    // ⚠ This component NEVER unmounts — the active-session screen renders it
+    // unconditionally and drives it by prop — so a sticky error would sit above
+    // a perfectly good list on the next swap, naming an exercise the user never
+    // touched.
+    const close = (
       <AdapterProvider adapters={makeAdapters(storage, api)}>
         <SwapExercisePopover
-          visible={true}
+          visible={false}
           onClose={jest.fn()}
-          onSwap={jest.fn()}
-          filterMuscleGroupLabels={["Chest", "Triceps"]}
+          onSwap={onSwap}
+          forExerciseId="ex-bench"
         />
-      </AdapterProvider>,
+      </AdapterProvider>
     );
-    expect(await findByTestId("swap-picker-modal")).toBeTruthy();
-    expect(await findByTestId("swap-picker-muscle-filter")).toBeTruthy();
-    // The labels are rendered as a comma-separated emphasised span
-    // inside the chip — assert via findByText so we don't have to
-    // serialise the React-Native props tree (which has circular
-    // Provider refs).
-    expect(await findByText("Chest, Triceps")).toBeTruthy();
-  });
-
-  it("hides the muscle-filter chip when filterMuscleGroupLabels is empty (no chrome unless filtered)", async () => {
-    const storage = new InMemoryStorageAdapter();
-    const api = new InMemoryApiAdapter();
-    seedCache(storage, [buildExercise({ id: "ex-1", name: "Bench Press" })]);
-
-    const { findByTestId, queryByTestId } = renderWithTheme(
+    rerender(close);
+    rerender(
       <AdapterProvider adapters={makeAdapters(storage, api)}>
         <SwapExercisePopover
-          visible={true}
+          visible
           onClose={jest.fn()}
-          onSwap={jest.fn()}
-          filterMuscleGroupLabels={[]}
+          onSwap={onSwap}
+          forExerciseId="ex-other"
         />
       </AdapterProvider>,
     );
-    await findByTestId("swap-picker-modal");
-    expect(queryByTestId("swap-picker-muscle-filter")).toBeNull();
-  });
 
-  it("filterByPrimaryMuscleGroups narrows the list to entries whose primaryMuscleGroups overlap (Story-004 AC)", async () => {
-    const storage = new InMemoryStorageAdapter();
-    const api = new InMemoryApiAdapter();
-    seedCache(storage, [
-      buildExercise({
-        id: "ex-bench",
-        name: "Bench Press",
-        primaryMuscleGroups: ["chest"],
-      }),
-      buildExercise({
-        id: "ex-row",
-        name: "Row",
-        primaryMuscleGroups: ["back"],
-      }),
-      buildExercise({
-        id: "ex-incline",
-        name: "Incline Press",
-        primaryMuscleGroups: ["chest", "shoulders"],
-      }),
-    ]);
-
-    const { findByTestId, queryByTestId } = renderWithTheme(
-      <AdapterProvider adapters={makeAdapters(storage, api)}>
-        <SwapExercisePopover
-          visible={true}
-          onClose={jest.fn()}
-          onSwap={jest.fn()}
-          filterByPrimaryMuscleGroups={["chest"]}
-        />
-      </AdapterProvider>,
+    await waitFor(() =>
+      expect(queryByTestId("swap-sheet-unavailable")).toBeNull(),
     );
-    // Chest-overlapping rows survive…
-    expect(await findByTestId("exercise-row-ex-bench")).toBeTruthy();
-    expect(await findByTestId("exercise-row-ex-incline")).toBeTruthy();
-    // …back-only row is filtered out.
-    expect(queryByTestId("exercise-row-ex-row")).toBeNull();
   });
 
-  it("info icon drills into the details view; back button returns to the list", async () => {
-    const storage = new InMemoryStorageAdapter();
+  it("renders with only its required props (defaults applied)", async () => {
     const api = new InMemoryApiAdapter();
-    seedCache(storage, [buildExercise({ id: "ex-1", name: "Bench Press" })]);
+    const storage = new InMemoryStorageAdapter();
+    api.substitutes = {
+      best: [],
+      others: [buildCandidate()],
+      meta: { truncated: false },
+    };
+    // No `forExerciseId`, `exerciseName` or `existingExerciseIds` — the call site
+    // legitimately omits them when the source row has fallen out of the session.
     const { findByTestId } = renderWithTheme(
       <AdapterProvider adapters={makeAdapters(storage, api)}>
-        <SwapExercisePopover
-          visible={true}
-          onClose={jest.fn()}
-          onSwap={jest.fn()}
-        />
+        <SwapExercisePopover visible onClose={jest.fn()} onSwap={jest.fn()} />
       </AdapterProvider>,
     );
-    fireEvent.press(await findByTestId("exercise-info-button-ex-1"));
-    const backButton = await findByTestId("swap-picker-details-back");
-    expect(backButton).toBeTruthy();
-    fireEvent.press(backButton);
-    expect(await findByTestId("swap-picker-search")).toBeTruthy();
+    // Nothing to rank against → the empty state, not a full library dump.
+    expect(await findByTestId("swap-sheet-empty")).toBeTruthy();
   });
 
-  it("clear-search button empties the query field", async () => {
-    const storage = new InMemoryStorageAdapter();
+  it("renders nothing before it has ever been opened", () => {
     const api = new InMemoryApiAdapter();
-    seedCache(storage, [buildExercise({ id: "ex-1", name: "Bench Press" })]);
-    const { findByTestId } = renderWithTheme(
-      <AdapterProvider adapters={makeAdapters(storage, api)}>
-        <SwapExercisePopover
-          visible={true}
-          onClose={jest.fn()}
-          onSwap={jest.fn()}
-        />
-      </AdapterProvider>,
-    );
-    const search = await findByTestId("swap-picker-search");
-    fireEvent.changeText(search, "bench");
-    expect(search.props.value).toBe("bench");
-    fireEvent.press(await findByTestId("swap-picker-clear-search"));
-    expect(search.props.value).toBe("");
-  });
-
-  it("respects the 100-row display ceiling when the library is larger", async () => {
     const storage = new InMemoryStorageAdapter();
-    const api = new InMemoryApiAdapter();
-    const many = Array.from({ length: 105 }, (_, i) =>
-      buildExercise({ id: `ex-${i}`, name: `Exercise ${i}` }),
-    );
-    seedCache(storage, many);
-    const { findByTestId, queryByTestId } = renderWithTheme(
-      <AdapterProvider adapters={makeAdapters(storage, api)}>
-        <SwapExercisePopover
-          visible={true}
-          onClose={jest.fn()}
-          onSwap={jest.fn()}
-        />
-      </AdapterProvider>,
-    );
-    expect(await findByTestId("exercise-row-ex-0")).toBeTruthy();
-    expect(await findByTestId("exercise-row-ex-99")).toBeTruthy();
-    expect(queryByTestId("exercise-row-ex-100")).toBeNull();
-  });
-
-  it("exposes accessible names for the icon-only close, clear-search, and back-to-list controls", async () => {
-    const storage = new InMemoryStorageAdapter();
-    const api = new InMemoryApiAdapter();
-    seedCache(storage, [buildExercise({ id: "ex-1", name: "Bench Press" })]);
-
-    const { findByLabelText, findByTestId } = renderWithTheme(
-      <AdapterProvider adapters={makeAdapters(storage, api)}>
-        <SwapExercisePopover
-          visible={true}
-          onClose={jest.fn()}
-          onSwap={jest.fn()}
-        />
-      </AdapterProvider>,
-    );
-    expect(await findByLabelText("Close")).toBeTruthy();
-    const search = await findByTestId("swap-picker-search");
-    fireEvent.changeText(search, "bench");
-    expect(await findByLabelText("Clear search")).toBeTruthy();
-    fireEvent.press(await findByTestId("exercise-info-button-ex-1"));
-    expect(await findByLabelText("Back to list")).toBeTruthy();
+    const { queryByTestId } = renderPopover(api, storage, { visible: false });
+    expect(queryByTestId("swap-picker-sheet")).toBeNull();
   });
 
   /**
-   * Regression: an exercise created while the picker is open must appear in
-   * the list without a remount.
+   * The not-yet-synced group (see the file header's second ⚠ block).
    *
-   * The picker's own header CTA pushes `/exercises/create`, so this was the
-   * most direct route to creating an exercise AND the one place it never
-   * showed up. The popover stays mounted between opens (the parent flips
-   * `pickerMode`, it does not unmount), and the cache read was memoised on
-   * `[storage, cacheVersion]` — `cacheVersion` only bumps after a *stale* 24h
-   * refresh, so the write landed in `cached_exercises` and the list never
-   * re-read it. Reported from a live session: create an exercise mid-swap,
-   * come back, and it isn't there.
+   * These re-express the three regression tests PR #340 added against the
+   * cache-reading picker this component replaced. That fix and this rewrite
+   * landed in parallel and collided on this file; deleting its tests with the
+   * implementation would have quietly reopened the bug Brad reported live
+   * (active workout → swap → Create → back → not in the list), because a
+   * server-backed list cannot see a `local-…` row either.
    *
-   * `AddExercisePopover` already carried this wiring; the swap picker was
-   * missed. Both invalidation signals are covered because they fire
-   * independently — the storage bus on any local write, `markChanged()` from
-   * `CreateExerciseContainer` explicitly.
+   * `local-` prefix, not `isCustom`: a custom exercise that HAS synced carries a
+   * server id and is ranked by the endpoint like anything else. Keying on
+   * `isCustom` would list it twice.
    */
-  it("shows an exercise cached while open, via the storage change bus, without remounting", async () => {
-    const storage = new InMemoryStorageAdapter();
-    const api = new InMemoryApiAdapter();
-    seedCache(storage, [buildExercise({ id: "ex-1", name: "Bench Press" })]);
+  describe("exercises created on this device and not yet synced", () => {
+    const localExercise = () =>
+      buildExercise({
+        id: "local-abc",
+        name: "Cable Fly",
+        isCustom: true,
+        createdBy: "user-1",
+      });
 
-    const { findByTestId, queryByTestId } = renderWithTheme(
-      <AdapterProvider adapters={makeAdapters(storage, api)}>
-        <SwapExercisePopover
-          visible={true}
-          onClose={jest.fn()}
-          onSwap={jest.fn()}
-        />
-      </AdapterProvider>,
-    );
-    expect(await findByTestId("exercise-row-ex-1")).toBeTruthy();
-    expect(queryByTestId("exercise-row-ex-new")).toBeNull();
+    it("lists one the endpoint cannot return yet", async () => {
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      storage.saveCustomExercise(localExercise());
+      api.substitutes = {
+        best: [],
+        others: [buildCandidate()],
+        meta: { truncated: false },
+      };
 
-    // What `createExerciseCommand` does: write to `cached_exercises`. In
-    // production SQLite's update hook drives the bus; the in-memory double
-    // needs the write announced explicitly.
-    act(() => {
-      storage.cacheExercises([
-        buildExercise({ id: "ex-new", name: "Cable Fly", isCustom: true }),
-      ]);
+      const { findByTestId } = renderPopover(api, storage);
+
+      expect(await findByTestId("swap-local-local-abc")).toBeTruthy();
+      // Under its own heading, NOT folded into the ranked list — nothing ranked
+      // it and it was never containment-checked.
+      expect(await findByTestId("swap-others-ex-incline")).toBeTruthy();
+    });
+
+    it("picks one up while the sheet is open, via the storage change bus", async () => {
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      api.substitutes = {
+        best: [],
+        others: [buildCandidate()],
+        meta: { truncated: false },
+      };
+
+      const { findByTestId, queryByTestId } = renderPopover(api, storage);
+      await findByTestId("swap-others-ex-incline");
+      expect(queryByTestId("swap-local-local-abc")).toBeNull();
+
+      // What `createExerciseCommand` does. In production SQLite's update hook
+      // drives the bus; the in-memory double needs the write announced.
+      storage.saveCustomExercise(localExercise());
       storage.emitChange("cached_exercises");
+
+      expect(await findByTestId("swap-local-local-abc")).toBeTruthy();
     });
 
-    expect(await findByTestId("exercise-row-ex-new")).toBeTruthy();
-  });
+    it("picks one up while the sheet is open, via the library revision signal", async () => {
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      api.substitutes = {
+        best: [],
+        others: [buildCandidate()],
+        meta: { truncated: false },
+      };
 
-  it("shows an exercise cached while open, via the library revision signal, without remounting", async () => {
-    const storage = new InMemoryStorageAdapter();
-    const api = new InMemoryApiAdapter();
-    seedCache(storage, [buildExercise({ id: "ex-1", name: "Bench Press" })]);
+      const { findByTestId, queryByTestId } = renderPopover(api, storage);
+      await findByTestId("swap-others-ex-incline");
+      expect(queryByTestId("swap-local-local-abc")).toBeNull();
 
-    const { findByTestId, queryByTestId } = renderWithTheme(
-      <AdapterProvider adapters={makeAdapters(storage, api)}>
-        <SwapExercisePopover
-          visible={true}
-          onClose={jest.fn()}
-          onSwap={jest.fn()}
-        />
-      </AdapterProvider>,
-    );
-    expect(queryByTestId("exercise-row-ex-new")).toBeNull();
+      storage.saveCustomExercise(localExercise());
+      // The signal CreateExerciseContainer raises on a successful create. Both
+      // paths are covered because they fire independently.
+      act(() => {
+        useExerciseLibrary.getState().markChanged();
+      });
 
-    act(() => {
-      storage.cacheExercises([
-        buildExercise({ id: "ex-new", name: "Cable Fly", isCustom: true }),
-      ]);
-      // The signal CreateExerciseContainer raises on a successful create.
-      useExerciseLibrary.getState().markChanged();
+      expect(await findByTestId("swap-local-local-abc")).toBeTruthy();
     });
 
-    expect(await findByTestId("exercise-row-ex-new")).toBeTruthy();
-  });
+    it("can actually swap one in — appearing in the list is only half of it", async () => {
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      storage.saveCustomExercise(localExercise());
+      api.substitutes = { best: [], others: [], meta: { truncated: false } };
+      // If the pick were resolved through the SERVER the retry would fire here
+      // and still miss; the row is resolvable straight from the cache.
+      const refresh = jest.spyOn(api, "getExercises");
 
-  it("can swap in an exercise that was created while the picker was open", async () => {
-    const storage = new InMemoryStorageAdapter();
-    const api = new InMemoryApiAdapter();
-    seedCache(storage, [buildExercise({ id: "ex-1", name: "Bench Press" })]);
-    const onSwap = jest.fn();
+      const { findByTestId, onSwap } = renderPopover(api, storage);
+      fireEvent.press(await findByTestId("swap-local-local-abc"));
 
-    const { findByTestId } = renderWithTheme(
-      <AdapterProvider adapters={makeAdapters(storage, api)}>
-        <SwapExercisePopover
-          visible={true}
-          onClose={jest.fn()}
-          onSwap={onSwap}
-        />
-      </AdapterProvider>,
-    );
-    act(() => {
-      storage.cacheExercises([
-        buildExercise({ id: "ex-new", name: "Cable Fly", isCustom: true }),
-      ]);
-      storage.emitChange("cached_exercises");
+      await waitFor(() => expect(onSwap).toHaveBeenCalledTimes(1));
+      expect(onSwap.mock.calls[0][0][0].id).toBe("local-abc");
+      expect(refresh).not.toHaveBeenCalled();
     });
 
-    // Appearing in the list is only half of it — the new row must also be
-    // selectable and dispatch through the normal swap path.
-    fireEvent.press(await findByTestId("exercise-row-ex-new"));
-    fireEvent.press(await findByTestId("swap-picker-swap"));
-    expect(onSwap).toHaveBeenCalledTimes(1);
-    expect(onSwap.mock.calls[0][0][0].id).toBe("ex-new");
+    it("does not read the exercise cache until the sheet has been opened once", async () => {
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      storage.saveCustomExercise(localExercise());
+      const read = jest.spyOn(storage, "getCachedExercises");
+
+      // `ActiveSessionContainer` renders this unconditionally, so an ungated
+      // read is a full `cached_exercises` scan with a JSON.parse per row (~2.3k
+      // in production) on the session screen's first frame — for a sheet that
+      // may never be opened. That is the shape #341 removed.
+      renderPopover(api, storage, { visible: false });
+
+      expect(read).not.toHaveBeenCalled();
+    });
+
+    it("keeps the group painted while the sheet slides shut", async () => {
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      storage.saveCustomExercise(localExercise());
+      api.substitutes = { best: [], others: [], meta: { truncated: false } };
+
+      const { findByTestId, queryByTestId, rerender } = renderPopover(
+        api,
+        storage,
+      );
+      await findByTestId("swap-local-local-abc");
+
+      // `BottomSheet` keeps children mounted through the close animation. With
+      // no ranked rows — the unsynced-source case this group exists for — an
+      // empty list on dismiss turns the whole sheet into "No alternatives found
+      // for this exercise." on the way out.
+      rerender(
+        <AdapterProvider adapters={makeAdapters(storage, api)}>
+          <SwapExercisePopover
+            visible={false}
+            onClose={jest.fn()}
+            onSwap={jest.fn()}
+            forExerciseId="ex-bench"
+            exerciseName="Bench Press"
+          />
+        </AdapterProvider>,
+      );
+
+      expect(queryByTestId("swap-local-local-abc")).not.toBeNull();
+    });
+
+    it("does NOT list a synced cached exercise — that is the endpoint's job", async () => {
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      // A server id: already synced, so the ranked lists own it. Listing it here
+      // too would duplicate every custom exercise the user has ever made.
+      storage.saveCustomExercise(
+        buildExercise({ id: "ex-synced-custom", isCustom: true }),
+      );
+      api.substitutes = {
+        best: [],
+        others: [buildCandidate()],
+        meta: { truncated: false },
+      };
+
+      const { findByTestId, queryByTestId } = renderPopover(api, storage);
+      await findByTestId("swap-others-ex-incline");
+
+      expect(queryByTestId("swap-local-ex-synced-custom")).toBeNull();
+    });
   });
 });

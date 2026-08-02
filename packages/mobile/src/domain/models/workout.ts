@@ -56,6 +56,14 @@ export type Workout = {
    * the coach's personal library; a coach-only toggle in the creator overrides.
    */
   showInOwnerLibrary: boolean;
+  /**
+   * Loadout linkage. Older cached rows can predate these additive fields, so
+   * consumers must treat `undefined` exactly like `null`.
+   */
+  parentWorkoutId?: string | null;
+  variationKind?: string | null;
+  sourceGymId?: string | null;
+  sourceEquipmentTypeIds?: readonly string[] | null;
   exercises: WorkoutExercise[];
   createdAt: string;
   updatedAt: string;

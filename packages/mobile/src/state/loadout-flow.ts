@@ -80,6 +80,8 @@ export interface LoadoutFlowState {
   /** The parent workout being adapted. */
   workoutId: string | null;
   workoutName: string;
+  /** Existing sibling variation replaced in place by a re-adaptation. */
+  replacementVariationId: string | null;
   context: LoadoutContext | null;
   /** The in-flight adaptation. Null until `adapting` resolves. */
   preview: LoadoutPreview | null;
@@ -97,14 +99,36 @@ export interface LoadoutFlowState {
    * "Saved setups" list re-reads without the flow holding a reference to it.
    */
   rev: number;
+  /**
+   * Monotonic counter bumped on every COLLECT, so decisions that live outside
+   * this store can be dropped alongside `manualPicks`.
+   *
+   * ⚠ An EVENT counter, not a context identity — re-collecting against the SAME
+   * gym must invalidate too. Stage 2 of the adaptation is an LLM, so a second
+   * preview of the same workout against the same kit can legitimately put a
+   * different substitute on the same `sortOrder`. Anything keyed on the context
+   * value walks straight past that case, which is why this is a counter.
+   */
+  collectRev: number;
 
-  open: (workoutId: string, workoutName: string) => void;
+  open: (
+    workoutId: string,
+    workoutName: string,
+    replacementVariationId?: string | null,
+  ) => void;
   openUpsell: () => void;
   closeUpsell: () => void;
   goToStep: (step: LoadoutStep) => void;
 
-  useGym: (gym: Pick<SavedGym, "id" | "name">) => void;
-  useEquipmentIds: (
+  /**
+   * ⚠ `selectGym` / `selectEquipmentIds`, NOT `useGym` / `useEquipmentIds`.
+   * A store action whose name starts with `use` trips `react-hooks/rules-of-hooks`
+   * at every call site inside a callback ("cannot be called inside a callback"),
+   * and the workaround — aliasing to a non-`use` local — has to be rediscovered by
+   * each new consumer. Renamed once at the source instead.
+   */
+  selectGym: (gym: Pick<SavedGym, "id" | "name">) => void;
+  selectEquipmentIds: (
     equipmentTypeIds: readonly string[],
     label: string,
     saveAsGym: boolean,
@@ -129,6 +153,7 @@ const CLOSED = {
   step: null,
   workoutId: null,
   workoutName: "",
+  replacementVariationId: null,
   context: null,
   preview: null,
   scanDraft: null,
@@ -138,16 +163,23 @@ const CLOSED = {
   upsellOpen: false,
 } as const;
 
-export const useLoadoutFlow = create<LoadoutFlowState>((set) => ({
+export const useLoadoutFlow = create<LoadoutFlowState>((set, get) => ({
   ...CLOSED,
   rev: 0,
+  collectRev: 0,
 
   // Opening always resets everything except `rev`, so a second run of the flow can
   // never inherit the first's equipment context, preview or hand-picks. The bug
   // this prevents is quiet and bad: adapting workout B while still holding A's
   // manual picks would apply them by `sortOrder` to a different plan.
-  open: (workoutId, workoutName) =>
-    set({ ...CLOSED, step: "collect", workoutId, workoutName }),
+  open: (workoutId, workoutName, replacementVariationId = null) =>
+    set({
+      ...CLOSED,
+      step: "collect",
+      workoutId,
+      workoutName,
+      replacementVariationId,
+    }),
 
   // The upsell is NOT a step: it is a sheet over whatever is behind it, and an
   // unentitled user has no flow to be in. Modelling it as a step would put the
@@ -165,16 +197,17 @@ export const useLoadoutFlow = create<LoadoutFlowState>((set) => ({
   // and it carries `isUserOverride: false`, so the save 400s
   // `EQUIPMENT_NOT_AVAILABLE`. A stale `preview` is the same class of bug — a failed
   // second request would leave gym A's rows renderable on the review step.
-  useGym: (gym) =>
+  selectGym: (gym) =>
     set({
       context: { kind: "gym", gymId: gym.id, gymName: gym.name },
       step: "adapting",
       preview: null,
       manualPicks: EMPTY_PICKS,
       swapTarget: null,
+      collectRev: get().collectRev + 1,
     }),
 
-  useEquipmentIds: (equipmentTypeIds, label, saveAsGym) =>
+  selectEquipmentIds: (equipmentTypeIds, label, saveAsGym) =>
     set({
       context: {
         kind: "ids",
@@ -189,6 +222,7 @@ export const useLoadoutFlow = create<LoadoutFlowState>((set) => ({
       preview: null,
       manualPicks: EMPTY_PICKS,
       swapTarget: null,
+      collectRev: get().collectRev + 1,
     }),
 
   setScanDraft: (draft) =>

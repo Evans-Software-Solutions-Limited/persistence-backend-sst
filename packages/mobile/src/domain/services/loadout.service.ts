@@ -26,7 +26,9 @@ import type {
   LoadoutVariationExerciseInput,
   RankSignal,
   SubstitutionReason,
+  WorkoutVariationSummary,
 } from "@/domain/models/loadout";
+import type { LoadoutApiError } from "@/domain/ports/api.port";
 import type { ReferenceEntry } from "@/domain/models/reference-list";
 import { capText } from "@/shared/utils";
 
@@ -347,6 +349,51 @@ export function deriveVariationName(
   return capText(base, MAX_VARIATION_NAME_LENGTH);
 }
 
+/**
+ * True only when a still-linked saved gym has a different equipment SET from
+ * the frozen snapshot used for this adaptation. Order and duplicates are not
+ * meaningful, and a rename-only update must not make the workout look stale.
+ *
+ * ⚠ **An EMPTY frozen snapshot means "not recorded", not "the kit was empty".**
+ * Treating `[]` as a real snapshot compares 0 ids against the gym's N and
+ * reports "Your gym equipment has changed since this setup was made" for a gym
+ * nobody has touched — permanently, because no user action can ever make the
+ * two sides agree. Verified on staging 2026-08-02: `Mock Gym` holds 3 ids with
+ * `updated_at == created_at` (never modified), while its variation
+ * `Upper · Mock Gym` has `source_equipment_type_ids = '{}'`.
+ *
+ * `[]` is unreachable going forward — `workoutVariationsCreateHandler` and
+ * `workoutVariationsReplaceHandler` both 400 `EMPTY_EQUIPMENT_CONTEXT` and fall
+ * back to the resolved gym kit when the client omits the field — so every empty
+ * snapshot in the data is legacy, written before those guards existed. There is
+ * no backfill that could repair one either: the kit that produced the
+ * adaptation was never recorded. Claiming nothing is the only honest option.
+ */
+export function hasGymEquipmentChanged(
+  variation: Pick<
+    WorkoutVariationSummary,
+    | "sourceGymId"
+    | "sourceEquipmentTypeIds"
+    | "currentSourceGymEquipmentTypeIds"
+  >,
+): boolean {
+  if (
+    variation.sourceGymId == null ||
+    variation.sourceEquipmentTypeIds == null ||
+    variation.sourceEquipmentTypeIds.length === 0 ||
+    variation.currentSourceGymEquipmentTypeIds == null
+  ) {
+    return false;
+  }
+  const frozen = new Set(variation.sourceEquipmentTypeIds);
+  const current = new Set(variation.currentSourceGymEquipmentTypeIds);
+  if (frozen.size !== current.size) return true;
+  for (const id of frozen) {
+    if (!current.has(id)) return true;
+  }
+  return false;
+}
+
 // ─── Equipment picker (AC-2.2 — grouped from the API) ────────────────────────
 
 export type EquipmentPickerGroup = {
@@ -437,4 +484,124 @@ export function scanDraftToEquipmentIds(
         !deselectedIds.has(detection.equipmentTypeId),
     )
     .map((detection) => detection.equipmentTypeId);
+}
+
+// ─── Save failures (§ 7.1) ───────────────────────────────────────────────────
+
+/**
+ * Copy for a failed `POST`/`PUT /workouts/:id/variations`.
+ *
+ * ⚠ **Exists because the review step used to collapse every failure into
+ * "Couldn't save this variation. Check your connection and try again."** Only
+ * two of the nine `loadoutCode`s the two handlers emit had copy; everything else
+ * — including plain 400s, a 404 on a deleted setup, and a 500 — was reported to
+ * the user as a connectivity problem. Brad hit that message on a device with a
+ * working connection on 2026-08-02, and neither the screen nor the transcript
+ * could say which failure it was, because the code had already been discarded by
+ * the time the string was chosen.
+ *
+ * Two rules, and the second is the one that was actually broken:
+ *
+ *  1. Every code the handlers can emit gets copy naming what to DO. A message
+ *     the user cannot act on is only marginally better than no message.
+ *  2. **Never blame the network for something that is not the network.** The
+ *     transport's own `code` already distinguishes `network`/`timeout` from a
+ *     server fault, so an unmapped failure falls back on that rather than on a
+ *     guess — and a server-supplied message is preferred over a generic one,
+ *     since it is the only channel left that can say anything specific.
+ */
+/**
+ * Codes in `LOADOUT_ERROR_CODES` that these two endpoints cannot emit. Listed
+ * rather than swept into the default so the exhaustiveness check below still
+ * bites: adding a code to the union is a compile error here until someone
+ * decides whether the save path can produce it.
+ */
+export const CODES_NOT_EMITTED_BY_VARIATION_SAVE = [
+  // preview-only
+  "EQUIPMENT_CONTEXT_REQUIRED",
+  // saved-gym endpoints only
+  "SAVED_GYM_NAME_TAKEN",
+] as const;
+
+export function describeVariationSaveError(
+  error: LoadoutApiError,
+  /**
+   * True when the call was `PUT …/variations/:id`. Both endpoints answer 404
+   * `not_found`, but for different things: on the CREATE path the only 404 is a
+   * parent workout that has become unreadable — a coach deleting an assigned
+   * workout while the athlete sits on the review step — where "that saved setup
+   * no longer exists" is both wrong and unfollowable, since re-saving reissues
+   * the same create and 404s again.
+   */
+  isReplace = false,
+): string {
+  switch (error.loadoutCode) {
+    case "EQUIPMENT_NOT_AVAILABLE":
+      return "One of your picks doesn't fit the kit you chose. Open its swap sheet and confirm you want it anyway.";
+    case "EXERCISE_NOT_VISIBLE":
+      return "One of these exercises is no longer available to you. Swap it and try again.";
+    case "EMPTY_EQUIPMENT_CONTEXT":
+      return "This setup has no equipment recorded. Go back and pick your kit again.";
+    case "UNKNOWN_SAVED_GYM":
+      return "That saved gym no longer exists. Go back and choose your equipment again.";
+    case "UNKNOWN_EQUIPMENT_TYPE":
+      return "Some of that equipment is no longer recognised. Go back and pick your kit again.";
+    case "UNKNOWN_SUBSTITUTED_FROM_EXERCISE":
+      return "One of the exercises this setup replaces is no longer available. Re-run the adaptation.";
+    case "PARENT_IS_A_VARIATION":
+      return "A setup can't be adapted again. Open the original workout and adapt that instead.";
+    case "not_found":
+      return isReplace
+        ? "That saved setup no longer exists. Go back and save this as a new one."
+        : "That workout is no longer available to you. Go back and pick another.";
+    case "EQUIPMENT_CONTEXT_REQUIRED":
+    case "SAVED_GYM_NAME_TAKEN":
+    case undefined:
+      // Not emitted here — fall through to the transport branch.
+      break;
+    default: {
+      // ⚠ Adding a member to `LOADOUT_ERROR_CODES` is a COMPILE error until it
+      // is given copy or listed in `CODES_NOT_EMITTED_BY_VARIATION_SAVE`. The
+      // bug this whole function replaces was seven codes quietly reaching one
+      // generic string; a `default: break` would let the eighth do the same.
+      const _exhaustive: never = error.loadoutCode;
+      void _exhaustive;
+      break;
+    }
+  }
+
+  switch (error.code) {
+    case "network":
+    case "timeout":
+      return "Couldn't reach the server. Check your connection and try again.";
+    case "unauthorized":
+      return "Your session has expired. Sign in again and retry.";
+    case "not_found":
+      // ⚠ A 404 that carried NO `loadoutCode` is not "the setup is gone" — the
+      // handlers' own 404 always carries `code: "not_found"`. This is Elysia's
+      // router answering, i.e. the deployed backend has no such route, i.e. the
+      // app is ahead of the API. Diagnosed exactly that way on 2026-08-02:
+      // `PUT /workouts/:id/variations/:id` exists only on this branch, staging
+      // deploys from `main`, and the device build rendered the framework's
+      // `codeToLabel("NOT_FOUND")` — the bare string "Not found".
+      //
+      // Worth its own copy rather than the message passthrough because mobile
+      // ships independently of the backend, so a build that is briefly ahead of
+      // the deployed API is a real production window, and "Not found" tells the
+      // user nothing they can act on. Waiting genuinely is the fix.
+      return "Saving setups isn't available right now. Try again shortly.";
+    case "entitlement_denied":
+      return "Your plan no longer includes Loadout, so this setup can't be saved.";
+    default:
+      // The handler's own message, when there is one worth showing — it is the
+      // only remaining channel that can name the actual fault. Safe to render:
+      // every string that reaches here is either a Loadout handler's own static
+      // literal or `coreErrorHandler`'s fixed `codeToLabel`; the raw driver
+      // `detail` and the dev-only stack are never read by `requestLoadout`.
+      // "Request failed" is `requestLoadout`'s own placeholder for a body with
+      // no message at all, and says nothing.
+      return error.message && error.message !== "Request failed"
+        ? `Couldn't save this setup — ${error.message}`
+        : "Couldn't save this setup. Try again in a moment.";
+  }
 }
