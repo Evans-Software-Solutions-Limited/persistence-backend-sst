@@ -237,10 +237,6 @@ export function ProfileContainer() {
     router.push("/(app)/profile/health" as never);
   }, [router]);
 
-  const onSavedGyms = useCallback(() => {
-    router.push("/(app)/profile/saved-gyms" as never);
-  }, [router]);
-
   const onNotifications = useCallback(() => {
     router.push("/(app)/profile/notifications" as never);
   }, [router]);
@@ -348,7 +344,6 @@ export function ProfileContainer() {
       onBecomeTrainer={onBecomeTrainer}
       onEditProfile={onEditProfile}
       onHealthData={onHealthData}
-      onSavedGyms={onSavedGyms}
       onNotifications={onNotifications}
       onNotificationPreferences={onNotificationPreferences}
       onSignOut={promptSignOut}

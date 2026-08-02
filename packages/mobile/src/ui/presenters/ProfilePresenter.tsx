@@ -105,7 +105,6 @@ export type ProfilePresenterProps = {
   onEditProfile: () => void;
   onHealthData: () => void;
   /** spec-21 T-2.9 — Loadout's reusable equipment setups (AC-7.2). */
-  onSavedGyms: () => void;
   onNotifications: () => void;
   onNotificationPreferences: () => void;
   onSignOut: () => void;
@@ -183,7 +182,6 @@ export function ProfilePresenter({
   onBecomeTrainer,
   onEditProfile,
   onHealthData,
-  onSavedGyms,
   onNotifications,
   onNotificationPreferences,
   onSignOut,
@@ -571,15 +569,6 @@ export function ProfilePresenter({
             testID="menu-health-data"
           >
             <Text style={styles.menuText}>Health Data</Text>
-            <Ionicons name="chevron-forward" size={20} color={color.$text2} />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.menuItem}
-            onPress={onSavedGyms}
-            testID="menu-saved-gyms"
-          >
-            <Text style={styles.menuText}>Saved Gyms</Text>
             <Ionicons name="chevron-forward" size={20} color={color.$text2} />
           </TouchableOpacity>
 

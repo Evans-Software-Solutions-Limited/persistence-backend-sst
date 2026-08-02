@@ -62,6 +62,17 @@ jest.mock("@/ui/containers/TrainOverviewContainer", () => {
   };
 });
 
+jest.mock("@/ui/containers/GymsSegmentContainer", () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { Text } = require("react-native");
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const React = require("react");
+  return {
+    GymsSegmentContainer: () =>
+      React.createElement(Text, { testID: "gyms-body" }, "Gyms body"),
+  };
+});
+
 // Athlete "has an active coach" signal — drives the Training-segment gate.
 // Default: one active coach, resolved (so the Training-tab tests below hold);
 // the gate tests flip `current`/`loading`.
@@ -226,10 +237,26 @@ describe("TrainHubContainer", () => {
       <TrainHubContainer />,
     );
 
-    // Workouts + Exercises remain; Training is gone.
+    // Workouts + Exercises + Gyms remain; Training is gone.
     expect(getByTestId("train-segment-option-Workouts")).toBeTruthy();
     expect(getByTestId("train-segment-option-Exercises")).toBeTruthy();
+    expect(getByTestId("train-segment-option-Gyms")).toBeTruthy();
     expect(queryByTestId("train-segment-option-Training")).toBeNull();
+  });
+
+  /**
+   * Gyms is shown to EVERY athlete — coached or not, entitled or not (AC-7.2b).
+   * The segment IS the advertising surface, and its own body decides between the
+   * pitch and the list; hiding it from the unentitled would leave the feature
+   * discoverable only from inside a workout.
+   */
+  it("offers Gyms regardless of the coach gate, and renders its body", () => {
+    activeCoaches.current = [];
+    const { getByTestId } = renderWithTheme(<TrainHubContainer />);
+
+    fireEvent.press(getByTestId("train-segment-option-Gyms"));
+    expect(getByTestId("gyms-body")).toBeTruthy();
+    expect(useTrainSegment.getState().segment).toBe("Gyms");
   });
 
   it("redirects a persisted/default Training segment to Workouts with no coach", () => {

@@ -1,5 +1,5 @@
 import { Text, View } from "@tamagui/core";
-import { Pressable, ScrollView, useWindowDimensions } from "react-native";
+import { Pressable, ScrollView } from "react-native";
 
 import { toneTokens } from "./tones";
 
@@ -12,8 +12,22 @@ import { toneTokens } from "./tones";
  * Content-width inline segments (each hugs its label, per the prototype's
  * `inline-flex` track — the control does NOT stretch full-width), $surface2
  * track left-aligned, active segment $surface4 fill + accent-dim shadow ring.
- * With ≥4 options on a narrow (<360pt) viewport the control auto-scrolls
- * horizontally rather than truncating labels.
+ * With ≥4 options the control auto-scrolls horizontally rather than truncating
+ * labels.
+ *
+ * ⚠ **The scroll is NOT gated on viewport width, deliberately** (changed
+ * 2026-08-02, when the Train hub's `Gyms` segment became the first real 4-option
+ * consumer — until then the ≥4 branch had never rendered anywhere). The old gate
+ * was `width < 360`, which left every phone between 360pt and the track's actual
+ * content width clipping instead of scrolling: "Training Workouts Exercises
+ * Gyms" measures ~320pt of content plus padding, so a 375pt iPhone SE was inside
+ * the risk band with no way to reach the last segment.
+ *
+ * Making it unconditional costs nothing: a horizontal `ScrollView` whose content
+ * is narrower than its viewport simply does not scroll, and the track keeps
+ * `alignSelf: flex-start`, so a fitting control looks identical. Guessing a
+ * threshold against text whose width depends on the font, the locale and the
+ * user's Dynamic Type setting is the part that cannot be got right.
  */
 
 export type SegmentedOption = string | { value: string; label: string };
@@ -38,8 +52,6 @@ const SIZE_SPEC: Record<
   md: { height: 38, padding: 4, fontSize: 13 },
 };
 
-const NARROW_VIEWPORT = 360;
-
 function optionValue(o: SegmentedOption): string {
   return typeof o === "string" ? o : o.value;
 }
@@ -57,9 +69,10 @@ export function Segmented({
 }: SegmentedProps) {
   const spec = SIZE_SPEC[size];
   const accentDim = toneTokens(accent).dim;
-  const { width } = useWindowDimensions();
-  // ≥4 options on a narrow viewport scroll horizontally (AC 3.7).
-  const scrollable = options.length >= 4 && width < NARROW_VIEWPORT;
+  // ≥4 options scroll horizontally rather than truncating (AC 3.7). No width
+  // gate — see the docblock: a ScrollView that does not need to scroll is inert,
+  // and the threshold it replaces was a guess about text metrics.
+  const scrollable = options.length >= 4;
 
   const segments = options.map((o) => {
     const v = optionValue(o);

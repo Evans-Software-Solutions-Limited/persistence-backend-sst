@@ -361,8 +361,25 @@ As a user mid-flow, I can tell Loadout what kit is available in three ways.
 
 - **AC-7.1** Full CRUD on `saved_gyms`, scoped to the caller: list, create,
   rename, change equipment, delete.
-- **AC-7.2** Saved gyms appear in the collect step and in a light list under
-  Settings/Profile.
+- **AC-7.2** Saved gyms appear in the collect step and in a **`Gyms` segment of
+  the Train hub**, alongside Training / Workouts / Exercises. This is the only
+  management surface: there is no saved-gyms row under Profile · Account.
+  _(Revised 2026-08-02 — Brad's decision, superseding "a light list under
+  Settings/Profile". The old placement made gyms discoverable only after the
+  user had already been through the adapt flow, which is backwards for a thing
+  whose purpose is to be set up before you get to the gym.)_
+- **AC-7.2a** A gym can be **created** from that segment, not only as a
+  by-product of adapting a workout. The creator is the same equipment checklist
+  the collect step uses, plus a name; a `409` duplicate name is a field error on
+  the name, exactly as rename already is (AC-7.4).
+- **AC-7.2b** The segment is **shown but locked** to an unentitled user: the
+  pitch and an upgrade CTA, and nothing else. ⚠ Locked is **not** a taster —
+  design § 5.2 forbids any free-tier code path or preview of real output, so an
+  unentitled user must not be able to list, create, edit or delete a gym, and no
+  gym data may be fetched to build the locked view. While the entitlement is
+  still resolving the segment shows a neutral pending state, never the upsell:
+  the cold-start `/subscriptions/me` round trip would otherwise sell the feature
+  to someone who already pays for it.
 - **AC-7.3** Deleting a gym does not delete variations built from it; the
   variation's `source_gym_id` becomes null and it keeps its stored kit summary.
 - **AC-7.4** Gym names are unique per user (case-insensitive, trimmed);

@@ -12,6 +12,7 @@ import {
   scanErrorCopy,
 } from "../EquipmentScanSheetPresenter";
 import { LoadoutManualStep } from "../LoadoutManualStep";
+import { GymsLockedPanel } from "../GymsLockedPanel";
 import { LoadoutScaffold } from "../LoadoutScaffold";
 import { LoadoutSavedStep } from "../LoadoutSavedStep";
 
@@ -106,6 +107,40 @@ describe("LoadoutEntryCard", () => {
       />,
     );
     getByText("Choose equipment and re-run the original workout");
+  });
+});
+
+describe("GymsLockedPanel", () => {
+  it("pitches and offers an upgrade, with NO price literal", () => {
+    const { getByTestId, getByText, queryByText } = renderWithTheme(
+      <GymsLockedPanel onUpgrade={jest.fn()} />,
+    );
+    getByTestId("gyms-locked");
+    getByText("PREMIUM+");
+    // Same rule as LoadoutEntryCard: the number lives in the sheet, from the
+    // catalog. `premium_plus` ships inactive, so there is no price yet at all.
+    expect(queryByText(/£/)).toBeNull();
+  });
+
+  it("builds no taster — design § 5.2 is a hard gate", () => {
+    const { queryByText, queryByTestId } = renderWithTheme(
+      <GymsLockedPanel onUpgrade={jest.fn()} />,
+    );
+    // No free allowance to have run out of, and nothing that previews real
+    // output: no list, no counts, no create affordance.
+    expect(queryByText(/free/i)).toBeNull();
+    expect(queryByText(/remaining/i)).toBeNull();
+    expect(queryByText(/\d+ item/)).toBeNull();
+    expect(queryByTestId("saved-gyms-create")).toBeNull();
+  });
+
+  it("routes to the paywall", () => {
+    const onUpgrade = jest.fn();
+    const { getByTestId } = renderWithTheme(
+      <GymsLockedPanel onUpgrade={onUpgrade} />,
+    );
+    fireEvent.press(getByTestId("gyms-locked-upgrade"));
+    expect(onUpgrade).toHaveBeenCalled();
   });
 });
 

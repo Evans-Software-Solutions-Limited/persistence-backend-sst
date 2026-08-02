@@ -104,29 +104,33 @@ describe("Segmented", () => {
     expect(queryByTestId("seg-scroll")).toBeNull();
   });
 
-  it("auto-scrolls with >=4 options on a narrow (<360) viewport (AC 3.7)", () => {
-    setViewport(320);
-    const { getByTestId } = renderWithTheme(
-      <Segmented
-        testID="seg"
-        options={["A", "B", "C", "D"]}
-        value="A"
-        onChange={() => undefined}
-      />,
-    );
-    expect(getByTestId("seg-scroll")).toBeTruthy();
-  });
-
-  it("does NOT auto-scroll with >=4 options on a wide viewport", () => {
-    setViewport(420);
-    const { queryByTestId } = renderWithTheme(
-      <Segmented
-        testID="seg"
-        options={["A", "B", "C", "D"]}
-        value="A"
-        onChange={() => undefined}
-      />,
-    );
-    expect(queryByTestId("seg-scroll")).toBeNull();
-  });
+  it.each([320, 375, 420])(
+    "auto-scrolls with >=4 options at %ipt — no width gate (AC 3.7)",
+    (width) => {
+      setViewport(width);
+      const { getByTestId } = renderWithTheme(
+        <Segmented
+          testID="seg"
+          options={["A", "B", "C", "D"]}
+          value="A"
+          onChange={() => undefined}
+        />,
+      );
+      expect(getByTestId("seg-scroll")).toBeTruthy();
+    },
+  );
 });
+
+/**
+ * ⚠ This replaced a test asserting the OPPOSITE at 420pt, which pinned a
+ * `width < 360` gate written before any 4-option consumer existed. The Train
+ * hub's `Gyms` segment became the first one on 2026-08-02: "Training Workouts
+ * Exercises Gyms" is ~320pt of content plus padding, so every phone from 360pt
+ * up to the track's real width clipped instead of scrolling, with no way to
+ * reach the last segment. A 375pt iPhone SE sat inside that band.
+ *
+ * The gate is gone rather than retuned because the number it needed depends on
+ * font, locale and the user's Dynamic Type setting — none of which a constant can
+ * know. An unnecessary horizontal ScrollView is inert, so the safe answer is
+ * always-scrollable, and the old assertion was pinning the bug.
+ */

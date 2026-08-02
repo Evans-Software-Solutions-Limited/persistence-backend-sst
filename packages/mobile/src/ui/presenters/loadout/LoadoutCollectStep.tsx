@@ -123,7 +123,7 @@ export function LoadoutCollectStep({
           <View style={styles.manageRow}>
             <Ionicons name="settings-outline" size={13} color={color.$text4} />
             <Text style={styles.manageText}>
-              Manage saved gyms in Profile · Account
+              Manage saved gyms in Train · Gyms
             </Text>
           </View>
         </View>

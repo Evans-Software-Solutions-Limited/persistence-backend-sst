@@ -65,7 +65,6 @@ function makeProps(
     onBecomeTrainer: jest.fn(),
     onEditProfile: jest.fn(),
     onHealthData: jest.fn(),
-    onSavedGyms: jest.fn(),
     onNotifications: jest.fn(),
     onNotificationPreferences: jest.fn(),
     onSignOut: jest.fn(),
