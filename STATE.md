@@ -35,14 +35,23 @@ say so and fix this file.
   and forced full unit suite (19/19 tasks).
 - **⚠ Loadout Phase 2's SCREENS are built but NOT merged.** Now PR
   **[#339](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/339)**,
-  head branch `claude/loadout-phase-2-screens-rebase` at `f2879d5`, rebased onto
+  head branch `claude/loadout-phase-2-screens-rebase` at `61698f8`, rebased onto
   `main` at `c7ad458` (2026-08-02, after #338/#340/#341/#342/#343). It supersedes
   **#328** (`claude/loadout-phase-2-screens`), which should be closed — the two
   are the same work and #328 is now the stale copy. The mirror branch
   `claude/pr-339-review-ci-7f7ydu` is stale too; do not push to it.
-  - **Inspector Brad: clean @ `f2879d5`** after 5 sweeps and 19 findings fixed —
-    see the 2026-08-02 session entry below. Gates green, all 5 CI checks green.
-    Still NOT device-verified.
+  - **Inspector Brad: clean @ `61698f8`, merge signed off** after 6 sweeps and 22
+    findings fixed; 1 × 🟢 chipped (replace-path parent-404 gets the saved-setup
+    copy — the mirror of a create-path nuance already fixed; the clean fix is a
+    distinct `PARENT_NOT_FOUND` backend code, which would also delete the
+    `isReplace` param). Gates green, all 5 CI checks green.
+  - **⚠ NOT device-verified, and it CANNOT be until this reaches a deployed API.**
+    `workoutVariationsReplaceHandler` is the only backend file this PR adds and
+    `deploy-staging.yml` deploys only from `main`, so `PUT /workouts/:parentId/
+    variations/:variationId` has never existed on staging. Unblock before merge
+    with `gh workflow run deploy-staging.yml --ref
+    claude/loadout-phase-2-screens-rebase` (Brad's call — it puts unmerged code
+    on shared staging).
   - **⚠ The first cut of #339 was rebased from a STALE snapshot of #328 and
     silently dropped `edeb93f`'s fixes** — five files' changes were missing
     entirely (`exercisesSubstitutesHandler` + its test, `exerciseRepository` +
@@ -632,9 +641,50 @@ consent copy, privacy section and governing law · the OFF re-seed backfilling
 ## Last session
 
 **2026-08-02 — PR [#339](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/339)
-REBASED onto `main` @ `c7ad458`, and given the Inspector Brad sweep it had never
-had. Head `f2879d5`, MERGEABLE, gates green. Still NOT device-verified — that is
-the only thing left before merge.**
+REBASED onto `main` @ `c7ad458`, given the Inspector Brad sweep it had never had,
+and Brad's two device-QA reports root-caused. Head `61698f8`, MERGEABLE, gates
+green, IB clean. The one thing left before merge is a device pass — which is
+BLOCKED on a staging deploy, see below.**
+
+- **⚠ BOTH device-QA reports were the SAME thing, and neither was a defect in the
+  branch: staging is running `main`, and this PR's backend is not deployed.**
+  `workoutVariationsReplaceHandler` is the only backend file the PR ADDS, and
+  `deploy-staging.yml` fires on `push: branches: [main]` only. So
+  `PUT /workouts/:parentId/variations/:variationId` has never existed on the
+  staging API, while the device build carried this branch's client.
+  - *"Couldn't save this setup — Not found"* was **Elysia's ROUTER**, not either
+    handler. The handlers' own 404 always carries `loadoutCode: "not_found"`; the
+    bare string `"Not found"` is `coreErrorHandler`'s `codeToLabel("NOT_FOUND")`.
+    That distinction is the whole diagnosis — worth remembering next time a
+    Loadout call 404s.
+  - The false *"your gym equipment has changed"* traces to the same gap.
+    Verified in staging SQL, not inferred: `saved_gyms` `Mock Gym` (904cfa01)
+    holds 3 ids with `updated_at == created_at` — **never modified** — while
+    `Upper · Mock Gym` (f5bd83e2) has `source_equipment_type_ids = '{}'`.
+    `main`'s create handler has ZERO occurrences of `EMPTY_EQUIPMENT_CONTEXT`,
+    so the deployed backend still persists `[]` where this branch 400s and falls
+    back to the resolved gym kit.
+  - **LESSON: when device QA fails on a feature branch, check what the API
+    actually has before reading client code.** Mobile ships through EAS
+    independently of the backend; a client ahead of the deployed API is a real
+    and recurring shape, not just a test artefact. Two reports, hours of client
+    reasoning, one `git cat-file -e origin/main:<handler>` would have said it.
+  - **⚠ That stale row is unrepairable** — the kit that produced the adaptation
+    was never recorded. The banner no longer fires on it (fix below), but delete
+    it if it gets confusing.
+- **Three fixes came out of it that stand on their own.** `hasGymEquipmentChanged`
+  treats an EMPTY frozen snapshot as *unrecorded* rather than *changed* (nothing
+  the user can do makes 0 and 3 agree). Every save-failure code gets copy naming
+  what to do — only 2 of 9 did, so seven codes plus 404/402/500 all read "Check
+  your connection", which is why the report was undiagnosable from the screen —
+  with a `never` assertion so a tenth code is a compile error, and tests derived
+  from `LOADOUT_ERROR_CODES` rather than a hand-copied list. And a 404 carrying
+  no `loadoutCode` reads "not available right now" instead of "your setup is
+  gone".
+- **⚠ `ess-dev` / `ess-prod` AWS SSO are EXPIRED** — no CloudWatch access this
+  session, which is why the 404 was diagnosed from `git` and staging SQL instead
+  of from logs. `aws sso login --profile ess-dev`. Prod Supabase via MCP also
+  returns "no permission"; staging (nxkhlrvjxotyjulodxzk) works.
 
 - **The rebase conflicted on exactly two files, and the conflict was the
   interesting part.** `SwapExercisePopover.tsx` + its test, against **#340** —
