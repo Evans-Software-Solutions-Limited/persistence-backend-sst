@@ -296,6 +296,28 @@ describe("describeVariationSaveError", () => {
     ).not.toMatch(/connection/i);
   });
 
+  /**
+   * The 2026-08-02 device report. `PUT …/variations/:id` exists only on this
+   * branch and staging deploys from `main`, so Elysia's router answered: a 404
+   * with NO `loadoutCode` and `codeToLabel("NOT_FOUND")` as the body, which the
+   * passthrough rendered as "Couldn't save this setup — Not found".
+   *
+   * Distinct from the handlers' own 404, which always carries
+   * `loadoutCode: "not_found"` and DOES mean the setup is gone.
+   */
+  it("does not say the setup is gone when the ROUTE is what is missing", () => {
+    const routerMiss = describeVariationSaveError(
+      apiError({ code: "not_found", message: "Not found" }),
+    );
+    expect(routerMiss).not.toContain("Not found");
+    expect(routerMiss).not.toMatch(/no longer exists/i);
+    expect(routerMiss).not.toMatch(/connection/i);
+    // The handler's 404 still gets the "it's gone" copy — the two must not merge.
+    expect(routerMiss).not.toEqual(
+      describeVariationSaveError(apiError({ loadoutCode: "not_found" }), true),
+    );
+  });
+
   it("surfaces the handler's own message when there is no code to map", () => {
     expect(
       describeVariationSaveError(

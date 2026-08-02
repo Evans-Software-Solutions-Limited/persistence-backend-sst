@@ -576,6 +576,20 @@ export function describeVariationSaveError(
       return "Couldn't reach the server. Check your connection and try again.";
     case "unauthorized":
       return "Your session has expired. Sign in again and retry.";
+    case "not_found":
+      // ⚠ A 404 that carried NO `loadoutCode` is not "the setup is gone" — the
+      // handlers' own 404 always carries `code: "not_found"`. This is Elysia's
+      // router answering, i.e. the deployed backend has no such route, i.e. the
+      // app is ahead of the API. Diagnosed exactly that way on 2026-08-02:
+      // `PUT /workouts/:id/variations/:id` exists only on this branch, staging
+      // deploys from `main`, and the device build rendered the framework's
+      // `codeToLabel("NOT_FOUND")` — the bare string "Not found".
+      //
+      // Worth its own copy rather than the message passthrough because mobile
+      // ships independently of the backend, so a build that is briefly ahead of
+      // the deployed API is a real production window, and "Not found" tells the
+      // user nothing they can act on. Waiting genuinely is the fix.
+      return "Saving setups isn't available right now. Try again shortly.";
     case "entitlement_denied":
       return "Your plan no longer includes Loadout, so this setup can't be saved.";
     default:
