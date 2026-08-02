@@ -28,6 +28,7 @@ import type {
   SubstitutionReason,
   WorkoutVariationSummary,
 } from "@/domain/models/loadout";
+import type { LoadoutApiError } from "@/domain/ports/api.port";
 import type { ReferenceEntry } from "@/domain/models/reference-list";
 import { capText } from "@/shared/utils";
 
@@ -352,6 +353,21 @@ export function deriveVariationName(
  * True only when a still-linked saved gym has a different equipment SET from
  * the frozen snapshot used for this adaptation. Order and duplicates are not
  * meaningful, and a rename-only update must not make the workout look stale.
+ *
+ * ⚠ **An EMPTY frozen snapshot means "not recorded", not "the kit was empty".**
+ * Treating `[]` as a real snapshot compares 0 ids against the gym's N and
+ * reports "Your gym equipment has changed since this setup was made" for a gym
+ * nobody has touched — permanently, because no user action can ever make the
+ * two sides agree. Verified on staging 2026-08-02: `Mock Gym` holds 3 ids with
+ * `updated_at == created_at` (never modified), while its variation
+ * `Upper · Mock Gym` has `source_equipment_type_ids = '{}'`.
+ *
+ * `[]` is unreachable going forward — `workoutVariationsCreateHandler` and
+ * `workoutVariationsReplaceHandler` both 400 `EMPTY_EQUIPMENT_CONTEXT` and fall
+ * back to the resolved gym kit when the client omits the field — so every empty
+ * snapshot in the data is legacy, written before those guards existed. There is
+ * no backfill that could repair one either: the kit that produced the
+ * adaptation was never recorded. Claiming nothing is the only honest option.
  */
 export function hasGymEquipmentChanged(
   variation: Pick<
@@ -364,6 +380,7 @@ export function hasGymEquipmentChanged(
   if (
     variation.sourceGymId == null ||
     variation.sourceEquipmentTypeIds == null ||
+    variation.sourceEquipmentTypeIds.length === 0 ||
     variation.currentSourceGymEquipmentTypeIds == null
   ) {
     return false;
@@ -467,4 +484,68 @@ export function scanDraftToEquipmentIds(
         !deselectedIds.has(detection.equipmentTypeId),
     )
     .map((detection) => detection.equipmentTypeId);
+}
+
+// ─── Save failures (§ 7.1) ───────────────────────────────────────────────────
+
+/**
+ * Copy for a failed `POST`/`PUT /workouts/:id/variations`.
+ *
+ * ⚠ **Exists because the review step used to collapse every failure into
+ * "Couldn't save this variation. Check your connection and try again."** Only
+ * two of the nine `loadoutCode`s the two handlers emit had copy; everything else
+ * — including plain 400s, a 404 on a deleted setup, and a 500 — was reported to
+ * the user as a connectivity problem. Brad hit that message on a device with a
+ * working connection on 2026-08-02, and neither the screen nor the transcript
+ * could say which failure it was, because the code had already been discarded by
+ * the time the string was chosen.
+ *
+ * Two rules, and the second is the one that was actually broken:
+ *
+ *  1. Every code the handlers can emit gets copy naming what to DO. A message
+ *     the user cannot act on is only marginally better than no message.
+ *  2. **Never blame the network for something that is not the network.** The
+ *     transport's own `code` already distinguishes `network`/`timeout` from a
+ *     server fault, so an unmapped failure falls back on that rather than on a
+ *     guess — and a server-supplied message is preferred over a generic one,
+ *     since it is the only channel left that can say anything specific.
+ */
+export function describeVariationSaveError(error: LoadoutApiError): string {
+  switch (error.loadoutCode) {
+    case "EQUIPMENT_NOT_AVAILABLE":
+      return "One of your picks doesn't fit the kit you chose. Open its swap sheet and confirm you want it anyway.";
+    case "EXERCISE_NOT_VISIBLE":
+      return "One of these exercises is no longer available to you. Swap it and try again.";
+    case "EMPTY_EQUIPMENT_CONTEXT":
+      return "This setup has no equipment recorded. Go back and pick your kit again.";
+    case "UNKNOWN_SAVED_GYM":
+      return "That saved gym no longer exists. Go back and choose your equipment again.";
+    case "UNKNOWN_EQUIPMENT_TYPE":
+      return "Some of that equipment is no longer recognised. Go back and pick your kit again.";
+    case "UNKNOWN_SUBSTITUTED_FROM_EXERCISE":
+      return "One of the exercises this setup replaces is no longer available. Re-run the adaptation.";
+    case "PARENT_IS_A_VARIATION":
+      return "A setup can't be adapted again. Open the original workout and adapt that instead.";
+    case "not_found":
+      return "That saved setup no longer exists. Go back and save this as a new one.";
+    default:
+      break;
+  }
+
+  switch (error.code) {
+    case "network":
+    case "timeout":
+      return "Couldn't reach the server. Check your connection and try again.";
+    case "unauthorized":
+      return "Your session has expired. Sign in again and retry.";
+    case "entitlement_denied":
+      return "Your plan no longer includes Loadout, so this setup can't be saved.";
+    default:
+      // The handler's own message, when there is one worth showing. It is the
+      // only remaining channel that can name the actual fault — and `requestRaw`
+      // only ever falls back to "Request failed", which says nothing at all.
+      return error.message && error.message !== "Request failed"
+        ? `Couldn't save this setup — ${error.message}`
+        : "Couldn't save this setup. Try again in a moment.";
+  }
 }

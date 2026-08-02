@@ -12,6 +12,7 @@ import {
   buildVariationExercises,
   deriveVariationName,
   describeLoadoutRow,
+  describeVariationSaveError,
   groupEquipmentForPicker,
 } from "@/domain/services/loadout.service";
 import { useLoadoutFlow, type LoadoutContext } from "@/state/loadout-flow";
@@ -666,13 +667,11 @@ export function LoadoutFlowContainer() {
       setIsSaving(false);
 
       if (!result.ok) {
-        setSaveError(
-          result.error.loadoutCode === "EQUIPMENT_NOT_AVAILABLE"
-            ? "One of your picks doesn't fit the kit you chose. Open its swap sheet and confirm you want it anyway."
-            : result.error.loadoutCode === "EXERCISE_NOT_VISIBLE"
-              ? "One of these exercises is no longer available to you. Swap it and try again."
-              : "Couldn't save this variation. Check your connection and try again.",
-        );
+        // ⚠ Every code gets its own copy — see `describeVariationSaveError`. The
+        // two-code ternary this replaced reported seven distinct failures, a 404
+        // and a 500 as "Check your connection and try again", which is how a save
+        // failure on a working connection became undiagnosable from the screen.
+        setSaveError(describeVariationSaveError(result.error));
         return;
       }
 

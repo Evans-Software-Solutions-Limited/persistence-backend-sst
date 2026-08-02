@@ -5,6 +5,7 @@ import {
   describeMatchSignals,
   EQUIPMENT_OTHER_CATEGORY,
   groupEquipmentForPicker,
+  describeVariationSaveError,
   hasGymEquipmentChanged,
   rowsNeedingAttention,
   scanDraftToEquipmentIds,
@@ -184,6 +185,118 @@ describe("hasGymEquipmentChanged", () => {
         currentSourceGymEquipmentTypeIds: null,
       }),
     ).toBe(false);
+  });
+
+  /**
+   * Real staging data, 2026-08-02: `Mock Gym` holds 3 equipment ids with
+   * `updated_at == created_at` — never modified — while its variation
+   * `Upper · Mock Gym` has `source_equipment_type_ids = '{}'`. Comparing 0
+   * against 3 told the user "Your gym equipment has changed since this setup was
+   * made" about a gym nobody had touched, permanently: no action can make the
+   * two sides agree, and there is no kit to backfill because none was recorded.
+   */
+  it("treats an EMPTY frozen snapshot as unrecorded, not as a changed kit", () => {
+    expect(
+      hasGymEquipmentChanged({
+        ...variation,
+        sourceEquipmentTypeIds: [],
+        currentSourceGymEquipmentTypeIds: [
+          "7802e4da-261f-4b77-a9b1-cafa8e70b142",
+          "bc456e03-f3d8-40bc-a4ad-41a604e8374a",
+          "d01433d3-23e6-4c6f-98c6-c94927242260",
+        ],
+      }),
+    ).toBe(false);
+  });
+
+  it("still reports a real change when the gym is emptied under a real snapshot", () => {
+    // The mirror case, so the guard cannot be widened into "never report".
+    expect(
+      hasGymEquipmentChanged({
+        ...variation,
+        currentSourceGymEquipmentTypeIds: [],
+      }),
+    ).toBe(true);
+  });
+});
+
+describe("describeVariationSaveError", () => {
+  const apiError = (
+    over: Partial<Parameters<typeof describeVariationSaveError>[0]> = {},
+  ) =>
+    ({
+      kind: "api" as const,
+      code: "unknown" as const,
+      message: "Request failed",
+      ...over,
+    }) as Parameters<typeof describeVariationSaveError>[0];
+
+  /**
+   * The regression this function exists for. Brad hit "Couldn't save this
+   * variation. Check your connection and try again." on a device with a working
+   * connection; seven of the nine codes the handlers emit landed on that string,
+   * so neither the screen nor the transcript could say what had failed.
+   */
+  it.each([
+    "EMPTY_EQUIPMENT_CONTEXT",
+    "UNKNOWN_SAVED_GYM",
+    "UNKNOWN_EQUIPMENT_TYPE",
+    "UNKNOWN_SUBSTITUTED_FROM_EXERCISE",
+    "PARENT_IS_A_VARIATION",
+    "not_found",
+    "EQUIPMENT_NOT_AVAILABLE",
+    "EXERCISE_NOT_VISIBLE",
+  ] as const)("gives %s its own copy, and never blames the network", (code) => {
+    const copy = describeVariationSaveError(apiError({ loadoutCode: code }));
+    expect(copy).not.toMatch(/connection/i);
+    expect(copy.length).toBeGreaterThan(0);
+  });
+
+  it("gives every code a DISTINCT message", () => {
+    const codes = [
+      "EMPTY_EQUIPMENT_CONTEXT",
+      "UNKNOWN_SAVED_GYM",
+      "UNKNOWN_EQUIPMENT_TYPE",
+      "UNKNOWN_SUBSTITUTED_FROM_EXERCISE",
+      "PARENT_IS_A_VARIATION",
+      "not_found",
+      "EQUIPMENT_NOT_AVAILABLE",
+      "EXERCISE_NOT_VISIBLE",
+    ] as const;
+    const messages = codes.map((loadoutCode) =>
+      describeVariationSaveError(apiError({ loadoutCode })),
+    );
+    // Collapsing two codes onto one string is how this drifted the first time.
+    expect(new Set(messages).size).toBe(codes.length);
+  });
+
+  it("blames the connection ONLY for a transport failure", () => {
+    expect(describeVariationSaveError(apiError({ code: "network" }))).toMatch(
+      /connection/i,
+    );
+    expect(describeVariationSaveError(apiError({ code: "timeout" }))).toMatch(
+      /connection/i,
+    );
+    expect(
+      describeVariationSaveError(apiError({ code: "server" })),
+    ).not.toMatch(/connection/i);
+  });
+
+  it("surfaces the handler's own message when there is no code to map", () => {
+    expect(
+      describeVariationSaveError(
+        apiError({ code: "unknown", message: "Variation name is required" }),
+      ),
+    ).toContain("Variation name is required");
+  });
+
+  it("does not surface the transport's placeholder message", () => {
+    // `requestRaw` falls back to "Request failed", which tells the user nothing.
+    expect(
+      describeVariationSaveError(
+        apiError({ code: "unknown", message: "Request failed" }),
+      ),
+    ).not.toContain("Request failed");
   });
 });
 
