@@ -18,8 +18,8 @@ import { toneTokens } from "./tones";
  * Content-width inline segments (each hugs its label, per the prototype's
  * `inline-flex` track — the control does NOT stretch full-width), $surface2
  * track left-aligned, active segment $surface4 fill + accent-dim shadow ring.
- * With ≥4 options the control auto-scrolls horizontally rather than truncating
- * labels.
+ * The track ALWAYS scrolls horizontally rather than truncating labels — see the
+ * warning below for why there is no option-count or viewport gate on that.
  *
  * ⚠ **The scroll is UNCONDITIONAL** (changed 2026-08-02, when the Train hub gained
  * a fourth `Gyms` segment). It used to be gated twice, and both gates were the same
