@@ -1,11 +1,15 @@
 import { useCallback, useMemo } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { router, type Href } from "expo-router";
 import type {
   BillingCycle,
   MySubscription,
   SubscriptionTierName,
 } from "@/domain/models/subscription";
-import { useMySubscription } from "@/ui/hooks/useMySubscription";
+import {
+  USER_SUBSCRIPTION_QUERY_KEY_PREFIX,
+  useMySubscription,
+} from "@/ui/hooks/useMySubscription";
 import { useSubscriptionTiers } from "@/ui/hooks/useSubscriptionTiers";
 
 /**
@@ -138,9 +142,16 @@ export type LoadoutGate = {
    * rejection, but `getMySubscription` has no client-side timeout, so a half-open
    * socket never settles and React Query's retry never fires — leaving any
    * consumer that renders a spinner while unresolved stuck forever with nothing
-   * to reissue. `refetch` defaults to `cancelRefetch: true`, which aborts the
-   * in-flight attempt rather than queueing behind it; that is the half that makes
-   * a user-facing "Try again" honest.
+   * to reissue.
+   *
+   * ⚠ **`refetch()` alone is NOT enough, and this is the trap.** TanStack gates
+   * `cancelRefetch` on `this.state.data !== undefined` (`query-core/src/query.ts`):
+   * with data present it cancels and reissues, but with data UNDEFINED it falls
+   * through to `continueRetry()` and hands back **the same hung promise**, issuing
+   * nothing at all. Undefined data is by definition the only state this is ever
+   * called from — a cold-start fetch that never settled — so a bare `refetch()` is
+   * a guaranteed no-op here. The explicit `cancelQueries` first is what actually
+   * abandons the dead socket.
    */
   readonly refetch: () => void;
 };
@@ -163,12 +174,18 @@ export function useLoadoutGate(): LoadoutGate {
     );
   }, [billingCycle]);
 
+  const queryClient = useQueryClient();
   const refetchSub = subQuery.refetch;
   const refetchTiers = tiersQuery.refetch;
   const refetch = useCallback(() => {
-    void refetchSub();
+    // Cancel BEFORE refetching — see the `refetch` docstring for why the built-in
+    // `cancelRefetch` cannot do it on a first fetch. Prefix key, not the full
+    // per-user key, so this does not need the userId.
+    void queryClient
+      .cancelQueries({ queryKey: [USER_SUBSCRIPTION_QUERY_KEY_PREFIX] })
+      .then(() => void refetchSub());
     void refetchTiers();
-  }, [refetchSub, refetchTiers]);
+  }, [queryClient, refetchSub, refetchTiers]);
 
   return useMemo<LoadoutGate>(() => {
     const upgradeTier = tiersQuery.data?.find(

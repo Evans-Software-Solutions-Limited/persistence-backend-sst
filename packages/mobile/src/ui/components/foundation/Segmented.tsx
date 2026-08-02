@@ -1,6 +1,11 @@
 import { Text, View } from "@tamagui/core";
 import { useCallback, useEffect, useRef } from "react";
-import { Pressable, ScrollView, type LayoutChangeEvent } from "react-native";
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  type LayoutChangeEvent,
+} from "react-native";
 
 import { toneTokens } from "./tones";
 
@@ -16,26 +21,28 @@ import { toneTokens } from "./tones";
  * With ≥4 options the control auto-scrolls horizontally rather than truncating
  * labels.
  *
- * ⚠ **The scroll is NOT gated on viewport width, deliberately** (changed
- * 2026-08-02, when the Train hub gained a fourth `Gyms` segment). The old gate was
- * `width < 360`, which left every phone between 360pt and the track's actual
- * content width clipping instead of scrolling: "Training Workouts Exercises Gyms"
- * measures ~320pt of content plus padding, so a 375pt iPhone SE was inside the
- * risk band with no way to reach the last segment.
+ * ⚠ **The scroll is UNCONDITIONAL** (changed 2026-08-02, when the Train hub gained
+ * a fourth `Gyms` segment). It used to be gated twice, and both gates were the same
+ * mistake: `width < 360` left every phone between 360pt and the track's real
+ * content width clipping instead of scrolling, and `options.length >= 4` left the
+ * 3-option sets clipping at large Dynamic Type — a ~256pt track at AX sizes
+ * overflows a 375pt device several times over, and the trailing segment becomes
+ * untappable with no scroll path. The Train hub's no-coach set went from 2 options
+ * to 3 in that same change, which is what made `Gyms` the segment that vanished.
  *
- * Making it unconditional costs nothing: a horizontal `ScrollView` whose content
- * is narrower than its viewport simply does not scroll, and the track keeps
- * `alignSelf: flex-start`, so a fitting control looks identical. Guessing a
- * threshold against text whose width depends on the font, the locale and the
- * user's Dynamic Type setting is the part that cannot be got right.
+ * Both were guesses about text metrics — font, locale, Dynamic Type — which is
+ * exactly what a constant cannot know. Being unconditional costs nothing: a
+ * horizontal `ScrollView` whose content is narrower than its viewport does not
+ * scroll, and `flexGrow: 0` plus the track's `alignSelf: flex-start` keep it
+ * hugging its content, so a fitting control is pixel-identical to the bare track.
  *
- * ⚠ **The Train hub is NOT the only 4-option consumer**, so this change is not
- * confined to it. `MealPickerPresenter` feeds the four `MEAL_SLOTS` straight in
- * and renders inside three bottom sheets (`QuickAddSheetPresenter`,
- * `ScanBarcodeSheetPresenter`, `AiDraftConfirmPresenter`) — those previously took
- * the scrolling path only below 360pt and now take it everywhere. Device-checked
- * on the Fuel quick-add sheet at 402pt: unchanged. Re-check them if this
- * component's layout is touched again.
+ * ⚠ **This changes the render path for EVERY consumer**, so it is not confined to
+ * the Train hub. `MealPickerPresenter` (the four `MEAL_SLOTS`, inside
+ * `QuickAddSheetPresenter` / `ScanBarcodeSheetPresenter` / `AiDraftConfirmPresenter`)
+ * was already a 4-option consumer, and the 2- and 3-option consumers now take the
+ * scrolling path too. Device-checked at 402pt: the Train hub's 3-option track and
+ * the Fuel quick-add sheet's 4-option meal picker both render and switch
+ * identically. Re-check them if this component's layout is touched again.
  *
  * ⚠ **The active option is scrolled into view on mount and on change.** Without
  * it the track always started at offset 0, so a persisted last-position segment
@@ -55,10 +62,10 @@ import { toneTokens } from "./tones";
  *   track the user is mid-drag on.
  * - **Offsets are dropped when the option SET changes.** Otherwise the Train hub's
  *   own coach gate corrupts it: while `useClientRelationships` is loading a
- *   non-Training segment renders 3 options (non-scrollable), then resolving to
- *   coached swaps in a 4th, `scrollable` flips true, and the effect scrolls to the
- *   3-option offset — short by a whole segment. Keying on the joined values means
- *   a membership change re-measures instead of trusting the old track.
+ *   non-Training segment renders 3 options, then resolving to coached swaps in a
+ *   4th — at which point every offset has moved and the effect would scroll to the
+ *   3-option one, short by a whole segment. Keying on the joined values means a
+ *   membership change re-measures instead of trusting the old track.
  */
 
 export type SegmentedOption = string | { value: string; label: string };
@@ -100,10 +107,6 @@ export function Segmented({
 }: SegmentedProps) {
   const spec = SIZE_SPEC[size];
   const accentDim = toneTokens(accent).dim;
-  // ≥4 options scroll horizontally rather than truncating (AC 3.7). No width
-  // gate — see the docblock: a ScrollView that does not need to scroll is inert,
-  // and the threshold it replaces was a guess about text metrics.
-  const scrollable = options.length >= 4;
 
   /**
    * Scroll the active option into view. `onLayout` on each segment is the only
@@ -150,11 +153,20 @@ export function Segmented({
   useEffect(() => {
     if (previousValueRef.current === value) return;
     previousValueRef.current = value;
-    if (!scrollable) return;
     const x = offsetsRef.current.get(value);
-    if (x === undefined) return;
+    if (x === undefined) {
+      // Never measured — or measured and then cleared by an option-set change.
+      // ⚠ Re-arm the one-shot rather than swallowing this: `previousValueRef` has
+      // already consumed the change, so without it neither path would ever fire
+      // again and the track would be silently stuck for good. (Not reachable via
+      // `TrainHubContainer`, which adds/removes a LEADING option so everything
+      // re-measures — but it is a trap for the next consumer that changes a
+      // trailing one.)
+      didInitialScrollRef.current = false;
+      return;
+    }
     scrollToOffset(x, true);
-  }, [scrollable, value]);
+  }, [value]);
 
   const segments = options.map((o) => {
     const v = optionValue(o);
@@ -215,18 +227,24 @@ export function Segmented({
     </View>
   );
 
-  if (scrollable) {
-    return (
-      <ScrollView
-        ref={scrollRef}
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        testID={testID ? `${testID}-scroll` : undefined}
-      >
-        {track}
-      </ScrollView>
-    );
-  }
-
-  return track;
+  return (
+    <ScrollView
+      ref={scrollRef}
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      // `flexGrow: 0` on both so the wrapper cannot claim free space in a flex
+      // parent — without it a fitting control would no longer be pixel-identical
+      // to the bare track it replaced, which is the whole premise above.
+      style={styles.scroll}
+      contentContainerStyle={styles.scrollContent}
+      testID={testID ? `${testID}-scroll` : undefined}
+    >
+      {track}
+    </ScrollView>
+  );
 }
+
+const styles = StyleSheet.create({
+  scroll: { flexGrow: 0 },
+  scrollContent: { flexGrow: 0 },
+});

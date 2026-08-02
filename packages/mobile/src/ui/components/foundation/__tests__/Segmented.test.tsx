@@ -100,18 +100,27 @@ describe("Segmented", () => {
     expect(getByText("B")).toBeTruthy();
   });
 
-  it("does NOT auto-scroll with 3 options on a narrow viewport", () => {
-    setViewport(320);
-    const { queryByTestId } = renderWithTheme(
-      <Segmented
-        testID="seg"
-        options={["A", "B", "C"]}
-        value="A"
-        onChange={() => undefined}
-      />,
-    );
-    expect(queryByTestId("seg-scroll")).toBeNull();
-  });
+  it.each([2, 3, 4, 5])(
+    "wraps a %i-option track in the scroller — no count gate either",
+    (count) => {
+      setViewport(320);
+      const options = ["A", "B", "C", "D", "E"].slice(0, count);
+      const { getByTestId } = renderWithTheme(
+        <Segmented
+          testID="seg"
+          options={options}
+          value="A"
+          onChange={() => undefined}
+        />,
+      );
+      // ⚠ Was `options.length >= 4`, which left the 3-option sets clipping at
+      // large Dynamic Type with no way to reach the trailing segment — the same
+      // species of guess about text metrics as the `width < 360` gate before it.
+      // The Train hub's no-coach set went 2 → 3 options when `Gyms` was added,
+      // which is what made `Gyms` the one that vanished.
+      expect(getByTestId("seg-scroll")).toBeTruthy();
+    },
+  );
 
   /**
    * ⚠ These two pin the scroll-into-view, which a first attempt implemented as an
@@ -182,7 +191,7 @@ describe("Segmented", () => {
   });
 
   it.each([320, 375, 420])(
-    "auto-scrolls with >=4 options at %ipt — no width gate (AC 3.7)",
+    "auto-scrolls at %ipt — no width gate either (AC 3.7)",
     (width) => {
       setViewport(width);
       const { getByTestId } = renderWithTheme(
