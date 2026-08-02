@@ -454,12 +454,12 @@ Actions, in order of value:
   with Brad-confirmed ground-truth labels rather than Claude's.
 - ~~**A "Gym" tab inside Train**~~ — **RESOLVED 2026-08-02. It REPLACES the
   Profile · Account list; it does not complement it.** Brad: "i don't want it
-  there." Built as a `Gyms` segment in the Train hub on branch
-  `feat/loadout-gyms-train-segment` (PR raised 2026-08-02, NOT merged), with
+  there." Built as a `Gyms` segment in the Train hub on **PR #346** (branch
+  `feat/loadout-gyms-train-segment`, raised 2026-08-02, **NOT merged**), with
   AC-7.2 rewritten and AC-7.2a/7.2b added plus design § 10.1. The Profile row, its handler, the `Stack.Screen` and
   the route file are deleted, so there is exactly one way in.
 
-### Loadout — the Gyms segment slice (2026-08-02)
+### Loadout — the Gyms segment slice (PR #346, 2026-08-02)
 
 Saved-gym management moved from Profile · Account into a fourth **`Gyms` segment
 in the Train hub**. Three things, not one:
