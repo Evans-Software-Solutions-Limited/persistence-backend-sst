@@ -10,6 +10,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { SavedGym } from "@/domain/models/loadout";
 import type { EquipmentPickerGroup } from "@/domain/services/loadout.service";
+import { itemLabel } from "@/shared/utils";
 import { EquipmentChipGrid } from "./EquipmentChipGrid";
 import { color, radius, space } from "@/ui/theme/tokens";
 
@@ -77,9 +78,7 @@ export function summariseKit(
   if (names.length === 0) {
     // Either an empty gym or a reference cache that has not loaded. Both read
     // better as a count than as an empty line.
-    return equipmentTypeIds.length === 1
-      ? "1 item"
-      : `${equipmentTypeIds.length} items`;
+    return itemLabel(equipmentTypeIds.length);
   }
   const shown = names.slice(0, 3).join(" · ");
   return names.length > 3 ? `${shown} +${names.length - 3} more` : shown;

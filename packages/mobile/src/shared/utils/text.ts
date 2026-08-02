@@ -36,19 +36,6 @@ export function stripUnpairedSurrogates(text: string): string {
 }
 
 /**
- * "1 item" / "5 items" — the equipment count as Loadout's CTAs and gym rows say
- * it.
- *
- * Shared rather than inlined because it had already been written three times and
- * two of those copies dropped the singular ("Adapt to 1 items", "Use these 1
- * items"), which is reachable whenever a scan yields one detection or the user
- * ticks one chip.
- */
-export function itemLabel(count: number): string {
-  return count === 1 ? "1 item" : `${count} items`;
-}
-
-/**
  * Strip unpaired surrogates, then truncate to `maxLength` on a whole code point.
  *
  * Stripping happens FIRST so units that are about to be deleted do not consume
