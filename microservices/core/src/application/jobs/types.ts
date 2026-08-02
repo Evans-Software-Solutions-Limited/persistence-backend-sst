@@ -98,6 +98,15 @@ export interface JobStepContext<TInput, TCheckpoint> {
   /** 0-based index of the step about to run. */
   index: number;
   total: number;
+  /**
+   * Refresh liveness mid-step.
+   *
+   * The spine writes a heartbeat after every step, so a kind whose steps are
+   * shorter than `CLAIM_FENCE_MS` never needs this. A kind with a single
+   * longer-running step MUST call it, or another worker is entitled to conclude
+   * this one died and take the job over.
+   */
+  heartbeat: () => Promise<void>;
 }
 
 export interface JobFinishContext<TInput, TCheckpoint> {

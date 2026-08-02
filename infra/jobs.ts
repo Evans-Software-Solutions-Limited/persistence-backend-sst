@@ -49,6 +49,23 @@ export const aiJobQueue = new sst.aws.Queue("AiJobQueue", {
 export const aiJobWorker = aiJobQueue.subscribe(
   {
     handler: "microservices/core/src/aiJobWorker.handler",
+    // ⚠ LOAD-BEARING, and its absence is silent until a job actually runs long.
+    //
+    // The worker RE-ENQUEUES itself when it hits its time budget (design § 3.3),
+    // so it is a PRODUCER on its own queue as well as a consumer. The event-source
+    // subscription does not grant that: SST's `QueueLambdaSubscriber` attaches only
+    // `sqs:ChangeMessageVisibility|DeleteMessage|GetQueueAttributes|GetQueueUrl|
+    // ReceiveMessage` (`.sst/platform/src/components/aws/queue-lambda-subscriber.ts`)
+    // — no `SendMessage` — and injects no queue URL.
+    //
+    // Without this link, `getQueueUrl()` throws, the yield's `queue.send` fails,
+    // and `runJob` marks a part-finished job terminally FAILED — discarding
+    // ~$0.63 of already-purchased inference on a 120-step job, on the one code
+    // path that exists to avoid exactly that. The link grants `sqs:*` on this
+    // queue and injects `Resource.AiJobQueue.url`.
+    //
+    // No unit test can catch this: every `runJob` test injects a fake queue.
+    link: [aiJobQueue],
     // ⚠ 15 minutes — the Lambda maximum, and EXPLICIT because SST defaults a
     // function to **20 seconds** (`.sst/platform/src/components/aws/function.ts`
     // — `timeout ?? "20 seconds"`). That default silently truncated two model

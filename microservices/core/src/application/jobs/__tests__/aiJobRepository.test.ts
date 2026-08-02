@@ -5,7 +5,14 @@ import { PgDialect } from "drizzle-orm/pg-core";
 vi.mock("@persistence/db/client", () => ({ getDb: vi.fn() }));
 
 import { getDb } from "@persistence/db/client";
-import { AiJobRepository, STALE_AFTER_MS } from "../aiJobRepository";
+import {
+  AiJobRepository,
+  CLAIM_FENCE_MS,
+  IDEMPOTENCY_INDEX,
+  INFLIGHT_INDEX,
+  QUEUED_STALE_AFTER_MS,
+  STALE_AFTER_MS,
+} from "../aiJobRepository";
 
 function renderSql(fragment: unknown): { sql: string; params: unknown[] } {
   const { sql, params } = new PgDialect().sqlToQuery(fragment as any);
@@ -34,7 +41,7 @@ describe("AiJobRepository", () => {
         total: 12,
       });
 
-      expect(result).toEqual({ job: row, created: true });
+      expect(result).toEqual({ job: row, outcome: "created" });
       expect(valuesSpy).toHaveBeenCalledWith(
         expect.objectContaining({
           userId: "u1",
@@ -70,6 +77,7 @@ describe("AiJobRepository", () => {
       const existing = { id: "j1", clientRequestId: "req-1" };
       const uniqueViolation = Object.assign(new Error("duplicate key"), {
         code: "23505",
+        constraint_name: IDEMPOTENCY_INDEX,
       });
       const whereSpy = vi.fn();
       (getDb as any).mockReturnValue({
@@ -95,7 +103,7 @@ describe("AiJobRepository", () => {
         clientRequestId: "req-1",
       });
 
-      expect(result).toEqual({ job: existing, created: false });
+      expect(result).toEqual({ job: existing, outcome: "replayed" });
       // The re-read is scoped to exactly the row that collided.
       const { sql, params } = renderSql(whereSpy.mock.calls[0][0]);
       expect(sql).toContain("user_id");
@@ -141,6 +149,57 @@ describe("AiJobRepository", () => {
             where: vi.fn().mockReturnValue({
               limit: vi.fn().mockResolvedValue([]),
             }),
+          }),
+        }),
+      });
+
+      await expect(
+        new AiJobRepository().enqueue({
+          userId: "u1",
+          kind: "k",
+          input: {},
+          total: 1,
+          clientRequestId: "req-1",
+        }),
+      ).rejects.toThrow("duplicate key");
+    });
+
+    it("an IN-FLIGHT collision is reported as such, NOT mistaken for a replay", async () => {
+      // Two unique indexes exist on this table, so a 23505 is attributed by NAME.
+      // Reporting an in-flight collision as a successful replay would hand the
+      // caller someone else's... no, worse: it would hand back a DIFFERENT job
+      // than the one requested, or nothing at all.
+      const uniqueViolation = Object.assign(new Error("duplicate key"), {
+        code: "23505",
+        constraint_name: INFLIGHT_INDEX,
+      });
+      (getDb as any).mockReturnValue({
+        insert: vi.fn().mockReturnValue({
+          values: vi.fn().mockReturnValue({
+            returning: vi.fn().mockRejectedValue(uniqueViolation),
+          }),
+        }),
+      });
+
+      expect(
+        await new AiJobRepository().enqueue({
+          userId: "u1",
+          kind: "k",
+          input: {},
+          total: 1,
+        }),
+      ).toEqual({ job: null, outcome: "in_flight" });
+    });
+
+    it("rethrows a unique violation from an UNRECOGNISED index rather than guessing", async () => {
+      const uniqueViolation = Object.assign(new Error("duplicate key"), {
+        code: "23505",
+        constraint_name: "some_other_index",
+      });
+      (getDb as any).mockReturnValue({
+        insert: vi.fn().mockReturnValue({
+          values: vi.fn().mockReturnValue({
+            returning: vi.fn().mockRejectedValue(uniqueViolation),
           }),
         }),
       });
@@ -204,7 +263,7 @@ describe("AiJobRepository", () => {
       expect(await new AiJobRepository().claim("j1")).toEqual(row);
     });
 
-    it("⚠ renders the EXECUTABLE predicate: id + status gate + attempts bound, all in ONE statement", async () => {
+    it("⚠ renders the EXECUTABLE predicate: id, FENCED status gate, and BOTH bounds, all in ONE statement", async () => {
       // Guards against the failure mode in
       // memory/reference_drizzle_groupby_param_bug: a render test that pins a
       // shape without checking it is the shape that must execute. Splitting
@@ -216,13 +275,41 @@ describe("AiJobRepository", () => {
       const lower = sql.toLowerCase();
       expect(lower).toContain('"id"');
       expect(lower).toContain("'queued'");
-      // `running` is claimable on purpose — it is how a job that yielded at its
-      // time budget gets picked back up.
+      // ⚠ `running` is claimable ONLY behind the heartbeat fence. An earlier
+      // revision allowed ANY running job, which silently permitted two workers
+      // to execute one job concurrently — the exact thing AC-3.1 exists to stop.
+      // So the predicate must mention the heartbeat, not just the status.
       expect(lower).toContain("'running'");
+      expect(lower).toContain("heartbeat_at");
+      expect(lower).toContain("is null");
+      // Both bounds, in the same statement.
       expect(lower).toContain("attempts");
       expect(lower).toContain("max_attempts");
-      expect(lower).toContain("<");
+      expect(lower).toContain("invocations");
+      expect(lower).toContain("max_invocations");
       expect(params).toContain("j1");
+      // The fence cutoff is bound as a parameter. Note it arrives as a Date:
+      // a raw `sql` template passes the JS value through, where `lt()` would
+      // have serialised it to an ISO string first.
+      expect(params.some((p) => p instanceof Date)).toBe(true);
+    });
+
+    it("the fence cutoff is CLAIM_FENCE_MS in the past — and far shorter than STALE_AFTER_MS", async () => {
+      // The ordering between the two constants is load-bearing: a hard-killed
+      // job must become re-claimable long BEFORE it is declared dead to the
+      // client, or its checkpoint is thrown away.
+      expect(CLAIM_FENCE_MS).toBeLessThan(STALE_AFTER_MS);
+
+      const before = Date.now();
+      const { whereSpy } = mockClaim([{ id: "j1" }]);
+      await new AiJobRepository().claim("j1");
+      const after = Date.now();
+
+      const { params } = renderSql(whereSpy.mock.calls[0][0]);
+      const cutoff = params.find((p) => p instanceof Date) as Date;
+      const cutoffMs = cutoff.getTime();
+      expect(cutoffMs).toBeGreaterThanOrEqual(before - CLAIM_FENCE_MS - 50);
+      expect(cutoffMs).toBeLessThanOrEqual(after - CLAIM_FENCE_MS + 50);
     });
 
     it("increments attempts and preserves the ORIGINAL started_at across a resume", async () => {
@@ -232,6 +319,9 @@ describe("AiJobRepository", () => {
       const set = setSpy.mock.calls[0][0];
       expect(set.status).toBe("running");
       expect(renderSql(set.attempts).sql.toLowerCase()).toContain("+ 1");
+      // Both counters advance on a claim; only `attempts` is later reset by a
+      // checkpoint, which is what makes `invocations` the absolute bound.
+      expect(renderSql(set.invocations).sql.toLowerCase()).toContain("+ 1");
       const startedAt = renderSql(set.startedAt).sql.toLowerCase();
       expect(startedAt).toContain("coalesce");
       expect(startedAt).toContain("started_at");
@@ -261,6 +351,10 @@ describe("AiJobRepository", () => {
       const set = setSpy.mock.calls[0][0];
       expect(set.checkpoint).toEqual({ done: ["a"] });
       expect(set.progressDone).toBe(1);
+      // ⚠ Progress RESETS the consecutive-stall counter. Without this a 120-step
+      // job needing 3+ invocations spends its whole retry allowance on yields and
+      // dies mid-progress on the first transient Bedrock throttle.
+      expect(set.attempts).toBe(0);
       expect(renderSql(set.heartbeatAt).sql.trim().toLowerCase()).toBe("now()");
     });
   });
@@ -425,11 +519,108 @@ describe("AiJobRepository", () => {
       const { sql, params } = renderSql(whereSpy.mock.calls[0][0]);
       expect(sql).toContain("status");
       expect(sql).toContain("heartbeat_at");
+      // ⚠ Must also match a NULL heartbeat: `lt()` alone evaluates to NULL for
+      // such a row, so it would never be reaped — while the read path already
+      // reports it stale, leaving the row derived-failed forever and unpurgeable.
+      expect(sql.toLowerCase()).toContain("is null");
       // Both the status and the cutoff are bound params, not inline literals.
       expect(params).toContain("running");
-      expect(params).toContainEqual(
-        new Date(now.getTime() - STALE_AFTER_MS).toISOString(),
+      expect(params).toContainEqual(new Date(now.getTime() - STALE_AFTER_MS));
+    });
+
+    it("STALE_AFTER_MS clears the queue's 16-minute visibility timeout", () => {
+      // ⚠ Sized against the VISIBILITY TIMEOUT, not the worker timeout. A
+      // retryable failure 30 s into a run leaves the heartbeat cold for the whole
+      // visibility window; declaring the job dead in that gap tells the user to
+      // re-run work that is about to succeed — double spend, and the sweep would
+      // discard the checkpoint.
+      const VISIBILITY_TIMEOUT_MS = 16 * 60 * 1000;
+      const WORKER_TIMEOUT_MS = 15 * 60 * 1000;
+      expect(STALE_AFTER_MS).toBeGreaterThan(
+        VISIBILITY_TIMEOUT_MS + WORKER_TIMEOUT_MS,
       );
+    });
+  });
+
+  describe("deleteUnpublished — AC-1.2 cleanup", () => {
+    it("deletes only a never-claimed QUEUED row, so it cannot race a worker", async () => {
+      const whereSpy = vi.fn();
+      (getDb as any).mockReturnValue({
+        delete: vi
+          .fn()
+          .mockReturnValue({ where: whereSpy.mockResolvedValue(undefined) }),
+      });
+
+      await new AiJobRepository().deleteUnpublished("j1");
+
+      const { sql, params } = renderSql(whereSpy.mock.calls[0][0]);
+      const lower = sql.toLowerCase();
+      expect(lower).toContain("heartbeat_at");
+      expect(lower).toContain("is null");
+      expect(params).toEqual(expect.arrayContaining(["j1", "queued"]));
+    });
+  });
+
+  describe("releaseForResume — the yield transition", () => {
+    it("sets the job back to QUEUED, scoped to running", async () => {
+      // This is what lets `claim`'s fence be strict about `running`: a yielded
+      // job has explicitly released itself, so it needs no takeover window.
+      const setSpy = vi.fn();
+      const whereSpy = vi.fn();
+      (getDb as any).mockReturnValue({
+        update: vi.fn().mockReturnValue({
+          set: setSpy.mockReturnValue({
+            where: whereSpy.mockResolvedValue(undefined),
+          }),
+        }),
+      });
+
+      await new AiJobRepository().releaseForResume("j1");
+
+      expect(setSpy.mock.calls[0][0].status).toBe("queued");
+      const { params } = renderSql(whereSpy.mock.calls[0][0]);
+      expect(params).toEqual(expect.arrayContaining(["j1", "running"]));
+    });
+  });
+
+  describe("markStaleQueued", () => {
+    it("reaps jobs that were never claimed at all, measured from createdAt", async () => {
+      // The failure `markStaleRunning` cannot see: a message that dies before its
+      // first receive leaves a row nothing ever transitions, so the client polls
+      // `queued 0/120` forever and the terminal purge never sees it.
+      const whereSpy = vi.fn();
+      const setSpy = vi.fn();
+      (getDb as any).mockReturnValue({
+        update: vi.fn().mockReturnValue({
+          set: setSpy.mockReturnValue({
+            where: whereSpy.mockReturnValue({
+              returning: vi.fn().mockResolvedValue([{ id: "a" }]),
+            }),
+          }),
+        }),
+      });
+
+      const now = new Date("2026-08-02T12:00:00.000Z");
+      expect(await new AiJobRepository().markStaleQueued(now)).toBe(1);
+
+      expect(setSpy.mock.calls[0][0]).toEqual(
+        expect.objectContaining({
+          status: "failed",
+          error: expect.objectContaining({ code: "stale", retryable: false }),
+        }),
+      );
+      const { sql, params } = renderSql(whereSpy.mock.calls[0][0]);
+      expect(sql).toContain("created_at");
+      expect(params).toContain("queued");
+      expect(params).toContainEqual(
+        new Date(now.getTime() - QUEUED_STALE_AFTER_MS).toISOString(),
+      );
+    });
+
+    it("QUEUED_STALE_AFTER_MS outlasts the redrive policy, so the message is genuinely gone", () => {
+      // 3 receives x a 16-minute visibility timeout is ~48 minutes to the DLQ.
+      // Reaping sooner would write off a job still waiting for its first receive.
+      expect(QUEUED_STALE_AFTER_MS).toBeGreaterThan(3 * 16 * 60 * 1000);
     });
   });
 

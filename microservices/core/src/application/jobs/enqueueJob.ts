@@ -1,6 +1,10 @@
 import type { AiJob } from "@persistence/db";
 import { AiUsageLogRepository } from "../repositories/aiUsageLogRepository";
-import { assertEntitlement } from "../entitlement/assertEntitlement";
+import {
+  assertEntitlement,
+  type EntitlementFeature,
+  type EntitlementVerdict,
+} from "../entitlement/assertEntitlement";
 import { AiJobRepository } from "./aiJobRepository";
 import { getJobKind } from "./registry";
 import { sqsJobQueue, type JobQueue } from "./jobQueue";
@@ -16,11 +20,26 @@ export type EnqueueResult =
   | { outcome: "accepted"; job: AiJob }
   | { outcome: "replayed"; job: AiJob }
   | { outcome: "unknown_kind" }
-  | { outcome: "not_entitled"; feature: string }
+  /**
+   * Carries the WHOLE deny verdict, not just the feature name. `assertEntitlement`
+   * returns `reason` and an upgrade target, and `PREMIUM_PLUS_FEATURES` /
+   * `pickUpgradeTier` exist precisely so a `loadout` deny upsells Premium+ rather
+   * than Premium — "upselling Premium would take the user's money and still leave
+   * the feature locked". Collapsing it to a feature name makes that
+   * unreconstructable by the calling route, so the 402 body the mobile gate
+   * renders would lose its upgrade target.
+   */
+  | {
+      outcome: "not_entitled";
+      feature: EntitlementFeature;
+      verdict: EntitlementVerdict;
+    }
   | { outcome: "rate_limited" }
+  /** This user already has a job of this kind in flight (design § 5.1) → 409. */
+  | { outcome: "in_flight" }
   | { outcome: "too_large"; total: number; limit: number }
   | { outcome: "input_invalid"; message: string }
-  | { outcome: "queue_unavailable"; job: AiJob };
+  | { outcome: "queue_unavailable" };
 
 /**
  * Read a kind's daily ceiling, fail-safe (#156 pattern, AC-4.3).
@@ -74,7 +93,7 @@ export async function enqueueJob(input: {
 
   const verdict = await assertEntitlement(input.userId, kind.feature);
   if (!verdict.allowed) {
-    return { outcome: "not_entitled", feature: kind.feature };
+    return { outcome: "not_entitled", feature: kind.feature, verdict };
   }
 
   // ⚠ Counted on `ceilingEndpoint` — ONE row per job — never on
@@ -115,7 +134,7 @@ export async function enqueueJob(input: {
     throw error;
   }
 
-  const { job, created } = await jobs.enqueue({
+  const { job, outcome } = await jobs.enqueue({
     userId: input.userId,
     kind: input.kind,
     input: input.input,
@@ -123,32 +142,53 @@ export async function enqueueJob(input: {
     clientRequestId: input.clientRequestId ?? null,
   });
 
+  // Serialised per user per kind by a unique index (design § 5.1) — the cost
+  // control the read-then-write daily ceiling cannot be, since one unit of work
+  // here is up to ~120 inferences.
+  if (outcome === "in_flight" || job === null) {
+    return { outcome: "in_flight" };
+  }
+
   // A replay of an already-enqueued request. Do NOT re-publish: the original
   // message is either still on the queue or has already been consumed, and a
   // second message would be a duplicate delivery. The claim makes that safe,
   // but it would still burn a worker invocation for nothing.
-  if (!created) {
+  if (outcome === "replayed") {
     return { outcome: "replayed", job };
   }
 
   try {
     await queue.send({ jobId: job.id });
   } catch (error) {
-    // ⚠ AC-1.2. The job row exists but nothing will ever pick it up, so it must
-    // be marked terminal HERE — returning 202 for unpublishable work leaves the
-    // client polling a `queued` job forever, which is the one failure mode
-    // polling cannot recover from.
-    await jobs.fail(job.id, {
-      code: "step_failed",
-      message: "The job could not be queued. Please try again.",
-      retryable: true,
-    });
+    // ⚠ AC-1.2, and the row is DELETED rather than marked failed.
+    //
+    // Marking it failed looks tidier and was the first instinct, but it sets a
+    // trap: the dead row keeps occupying both the idempotency key and the
+    // in-flight slot. A client retrying with the SAME key — exactly what an
+    // idempotency key is for, and exactly what a `retryable` error invites —
+    // would then get `200 replayed` with the same dead job, permanently. Deleting
+    // frees both, so the retry behaves like a first attempt.
+    //
+    // The delete is scoped to a never-claimed `queued` row, so it cannot race a
+    // worker; and if it somehow does not land, the queued-stale reaper is the
+    // backstop. Either way nothing returns `accepted` for work nothing will run.
+    try {
+      await jobs.deleteUnpublished(job.id);
+    } catch (cleanupError) {
+      console.error(
+        `[ai-job] failed to clean up unpublished job=${job.id}: ${
+          cleanupError instanceof Error
+            ? cleanupError.message
+            : String(cleanupError)
+        }`,
+      );
+    }
     console.error(
       `[ai-job] enqueue failed to publish job=${job.id} kind=${input.kind}: ${
         error instanceof Error ? error.message : String(error)
       }`,
     );
-    return { outcome: "queue_unavailable", job };
+    return { outcome: "queue_unavailable" };
   }
 
   // The ceiling row is written only once the job is REAL — durable and

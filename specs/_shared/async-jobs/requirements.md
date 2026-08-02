@@ -48,9 +48,12 @@ later, additive change (US-6 records the seam).
 - **AC-1.1** Enqueue returns `202 Accepted` with `{ jobId, status: "queued" }`
   in well under the request ceiling. No model call happens on the enqueue path.
 - **AC-1.2** The job is durable before the response is sent: a row exists in
-  `ai_jobs` and the queue message is published. If the queue publish fails, the
-  enqueue returns `503` and the job row is marked `failed` — it must never
-  return `202` for work nothing will ever pick up.
+  `ai_jobs` and the queue message is published. If the queue publish fails the
+  enqueue returns `503` and **the row is deleted** — it must never return `202`
+  for work nothing will ever pick up. ⚠ Deleted rather than marked `failed`: a
+  dead row keeps occupying the idempotency key and the in-flight slot, so a client
+  retrying with the same key (what the key is for) would get `200 replayed` with
+  the same dead job, permanently.
 - **AC-1.3** Job execution is not bound by the 29 s API Lambda timeout. The
   worker's budget is its own, and is at least 10 minutes of usable work time.
 
@@ -66,9 +69,16 @@ later, additive change (US-6 records the seam).
 - **AC-2.4** A terminal job returns its payload from the job row. The result is
   **not** re-derived on read and the poll endpoint makes no model call.
 - **AC-2.5** A job whose worker died without writing a terminal state (Lambda
-  hard-kill, OOM, deploy mid-run) is reported as `failed` with
-  `code: "stale"` once its heartbeat is older than the staleness threshold —
-  the client must never poll a dead job forever.
+  hard-kill, OOM, deploy mid-run) is reported as `failed` with `code: "stale"`
+  once its heartbeat is older than the staleness threshold — the client must never
+  poll a dead job forever. ⚠ That threshold is sized against the queue's
+  **visibility timeout**, not the worker timeout: a job awaiting redelivery after a
+  retryable failure has a legitimately cold heartbeat for the whole visibility
+  window, and calling it dead there makes the user re-run work that is about to
+  succeed.
+- **AC-2.6** A job whose message died **before it was ever claimed** also reaches
+  a terminal state. `running` staleness cannot see it, so without this the client
+  polls `queued` forever and the row is never purgeable.
 
 ## US-3 — An expensive job is never accidentally run twice
 
@@ -78,7 +88,9 @@ tidiness concern.
 
 - **AC-3.1** SQS is at-least-once. Duplicate delivery of the same job message
   must execute the job's work **exactly once**. The claim is a conditional
-  state transition in Postgres, not an application-level check-then-act.
+  state transition in Postgres, not an application-level check-then-act, and its
+  `running` branch is **fenced on the heartbeat** so a duplicate cannot join a
+  worker that is still running.
 - **AC-3.2** A caller that retries the same logical request (same
   `client_request_id`, same user, same kind) gets the **existing** job back with
   `200`, not a second job. Mirrors the shipped
@@ -87,12 +99,21 @@ tidiness concern.
   and **not repeated** when the job resumes. A retry after 90 of 120 workouts
   costs 30 model calls, not 120.
 - **AC-3.4** A job that exhausts its retries reaches a terminal `failed` state
-  with a structured error, and the queue message is not redelivered forever.
+  with a structured error, and the queue message is not redelivered forever. Two
+  independent counters: consecutive stalls (reset on progress) and total
+  invocations (never reset). ⚠ A single shared counter charges a time-budget yield
+  as a failure and kills a long job mid-progress.
+- **AC-3.5** A user may have at most ONE job of a given kind in flight, enforced by
+  a database constraint rather than by a read-then-write check. The daily ceiling
+  cannot bound a concurrent burst, and one unit of work here is ~120 inferences.
 
 ## US-4 — A job is gated, metered and attributable
 
 - **AC-4.1** Entitlement is asserted **at enqueue**, before the job row is
-  written. An unentitled caller gets `402` and creates no job.
+  written. An unentitled caller gets `402` and creates no job. The **whole deny
+  verdict** reaches the calling route, not just the feature name — `pickUpgradeTier`
+  exists so a `loadout` deny upsells Premium+ rather than Premium, and that is
+  unreconstructable from a feature name.
 - **AC-4.2** Every job kind declares its `EntitlementFeature` in the registry.
   ⚠ This is the structural answer to `assertEntitlement`'s catch-all
   (`assertEntitlement.ts` § routing — an unrouted feature silently returns

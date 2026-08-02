@@ -1,5 +1,10 @@
 import type { AiJob } from "@persistence/db";
-import { STALE_AFTER_MS } from "./aiJobRepository";
+import {
+  QUEUED_STALE_AFTER_MS,
+  STALE_AFTER_MS,
+  STALE_QUEUED_ERROR,
+  STALE_RUNNING_ERROR,
+} from "./aiJobRepository";
 import type { JobError, JobStatus } from "./types";
 
 export interface JobView {
@@ -14,13 +19,6 @@ export interface JobView {
   finishedAt: Date | null;
 }
 
-const STALE_ERROR: JobError = {
-  code: "stale",
-  message:
-    "The job stopped reporting progress and was ended. Nothing was saved; try again.",
-  retryable: false,
-};
-
 /**
  * Is this `running` job dead? — design § 3.4, AC-2.5.
  *
@@ -28,6 +26,12 @@ const STALE_ERROR: JobError = {
  * terminal state, because a hard-kill runs no `finally` block (the failure mode
  * `infra/api.ts` documents at length for the 20 s default timeout). A cold
  * heartbeat is the only evidence available.
+ *
+ * ⚠ The threshold has to clear the QUEUE's visibility timeout, not just the
+ * worker timeout — see `STALE_AFTER_MS`. A job awaiting redelivery after a
+ * retryable failure has a legitimately cold heartbeat for the whole visibility
+ * window, and calling it dead there tells the user to re-run work that is about
+ * to succeed.
  *
  * `heartbeatAt` is NULL only between the insert and the first claim, which is a
  * `queued` job — a `running` job with no heartbeat is a schema violation, and
@@ -40,16 +44,31 @@ export function isStaleRunning(job: AiJob, now: Date = new Date()): boolean {
 }
 
 /**
+ * Has this job sat `queued` so long that its message must be gone?
+ *
+ * The failure `isStaleRunning` cannot see: a message that dies before its first
+ * receive leaves a row nothing ever transitions. Measured from `createdAt`,
+ * because a never-claimed job has no heartbeat to measure from.
+ */
+export function isStaleQueued(job: AiJob, now: Date = new Date()): boolean {
+  if (job.status !== "queued") return false;
+  return now.getTime() - job.createdAt.getTime() > QUEUED_STALE_AFTER_MS;
+}
+
+/**
  * Project a job row for the wire, deriving staleness on READ.
  *
  * ⚠ Derived rather than depending on the nightly sweep, so a client is never
  * wedged polling a dead job even if the sweep is broken or unscheduled. And
  * this function does NOT write: a GET that mutates would put a write on every
- * tick of a 2-second poll loop. The sweep persists the same verdict separately
- * (`markStaleRunning`), which is what makes the row purgeable.
+ * tick of a 2-second poll loop. The sweep persists the same verdicts separately
+ * (`markStaleRunning` / `markStaleQueued`), which is what makes the row
+ * purgeable.
  */
 export function toJobView(job: AiJob, now: Date = new Date()): JobView {
-  const stale = isStaleRunning(job, now);
+  const staleRunning = isStaleRunning(job, now);
+  const staleQueued = isStaleQueued(job, now);
+  const stale = staleRunning || staleQueued;
   return {
     id: job.id,
     kind: job.kind,
@@ -59,7 +78,11 @@ export function toJobView(job: AiJob, now: Date = new Date()): JobView {
     // incomplete, and a caller cannot tell a truncated programme from a whole
     // one.
     result: stale ? null : (job.result ?? null),
-    error: stale ? STALE_ERROR : ((job.error as JobError | null) ?? null),
+    error: staleRunning
+      ? STALE_RUNNING_ERROR
+      : staleQueued
+        ? STALE_QUEUED_ERROR
+        : ((job.error as JobError | null) ?? null),
     createdAt: job.createdAt,
     startedAt: job.startedAt,
     finishedAt: job.finishedAt,

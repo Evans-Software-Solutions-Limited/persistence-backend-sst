@@ -27,11 +27,20 @@ function registerKind(overrides: Record<string, unknown> = {}) {
   return kind;
 }
 
-function makeDeps(opts: { usedToday?: number; created?: boolean } = {}) {
+function makeDeps(
+  opts: {
+    usedToday?: number;
+    outcome?: "created" | "replayed" | "in_flight";
+  } = {},
+) {
   const job = { id: "j1", userId: "u1", kind: "test_kind" };
   const repository = {
-    enqueue: vi.fn().mockResolvedValue({ job, created: opts.created ?? true }),
+    enqueue: vi.fn().mockResolvedValue({
+      job,
+      outcome: opts.outcome ?? "created",
+    }),
     fail: vi.fn().mockResolvedValue(undefined),
+    deleteUnpublished: vi.fn().mockResolvedValue(undefined),
   };
   const usageLog = {
     countForUserToday: vi.fn().mockResolvedValue(opts.usedToday ?? 0),
@@ -125,7 +134,14 @@ describe("enqueueJob", () => {
 
       const result = await call(deps);
 
-      expect(result).toEqual({ outcome: "not_entitled", feature: "loadout" });
+      // ⚠ The WHOLE verdict travels, not just the feature name: `pickUpgradeTier`
+      // exists so a `loadout` deny upsells Premium+ rather than Premium, and the
+      // calling route cannot reconstruct that from a feature name alone.
+      expect(result).toEqual({
+        outcome: "not_entitled",
+        feature: "loadout",
+        verdict: { allowed: false, reason: "tier" },
+      });
       expect(deps.repository.enqueue).not.toHaveBeenCalled();
       expect(deps.usageLog.record).not.toHaveBeenCalled();
       // Entitlement precedes the ceiling read, so a 402 cannot be used to probe
@@ -212,7 +228,7 @@ describe("enqueueJob", () => {
   describe("idempotency + publish failure", () => {
     it("AC-3.2: a replay returns the existing job and does NOT re-publish", async () => {
       registerKind();
-      const deps = makeDeps({ created: false });
+      const deps = makeDeps({ outcome: "replayed" });
 
       const result = await call(deps, { clientRequestId: "req-1" });
 
@@ -224,7 +240,7 @@ describe("enqueueJob", () => {
       expect(deps.usageLog.record).not.toHaveBeenCalled();
     });
 
-    it("AC-1.2: a publish failure marks the job FAILED and reports queue_unavailable — never accepted", async () => {
+    it("AC-1.2: a publish failure DELETES the row and reports queue_unavailable — never accepted", async () => {
       registerKind();
       const deps = makeDeps();
       deps.queue.send.mockRejectedValue(new Error("sqs unreachable"));
@@ -233,12 +249,43 @@ describe("enqueueJob", () => {
 
       // Returning 202 here would leave the client polling a `queued` job
       // forever — the one failure mode polling cannot recover from.
-      expect(result).toEqual({ outcome: "queue_unavailable", job: deps.job });
-      expect(deps.repository.fail).toHaveBeenCalledWith(
-        "j1",
-        expect.objectContaining({ code: "step_failed" }),
-      );
+      expect(result).toEqual({ outcome: "queue_unavailable" });
+      // ⚠ DELETED, not marked failed. Marking it failed leaves the dead row
+      // occupying the idempotency key AND the in-flight slot, so a client
+      // retrying with the same key — which is what an idempotency key is for —
+      // would get `200 replayed` with the same dead job, permanently.
+      expect(deps.repository.deleteUnpublished).toHaveBeenCalledWith("j1");
+      expect(deps.repository.fail).not.toHaveBeenCalled();
       // No quota consumed for a job that will never run.
+      expect(deps.usageLog.record).not.toHaveBeenCalled();
+    });
+
+    it("a failed cleanup after a failed publish still reports queue_unavailable", async () => {
+      // The queued-stale reaper is the backstop; what must never happen is
+      // reporting success for work nothing will run.
+      registerKind();
+      const deps = makeDeps();
+      deps.queue.send.mockRejectedValue(new Error("sqs unreachable"));
+      deps.repository.deleteUnpublished.mockRejectedValue(
+        new Error("delete failed"),
+      );
+
+      expect(await call(deps)).toEqual({ outcome: "queue_unavailable" });
+    });
+
+    it("an IN-FLIGHT collision reports in_flight and publishes nothing (design § 5.1)", async () => {
+      // The cost control the read-then-write daily ceiling cannot be: one unit of
+      // work here is up to ~120 inferences, so 50 concurrent enqueues past the
+      // ceiling race would otherwise be ~$34 of Bedrock spend.
+      registerKind();
+      const deps = makeDeps({ outcome: "in_flight" });
+      deps.repository.enqueue.mockResolvedValue({
+        job: null,
+        outcome: "in_flight",
+      });
+
+      expect(await call(deps)).toEqual({ outcome: "in_flight" });
+      expect(deps.queue.send).not.toHaveBeenCalled();
       expect(deps.usageLog.record).not.toHaveBeenCalled();
     });
 

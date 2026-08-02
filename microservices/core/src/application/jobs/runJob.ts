@@ -95,21 +95,26 @@ export async function runJob(input: {
   // duplicate.
   const claimed: AiJob | null = await jobs.claim(input.jobId);
   if (!claimed) {
-    // Two very different situations produce a refused claim, and only one of
-    // them is benign.
+    // THREE situations produce a refused claim, and they need different answers.
     //
-    // The benign one — already terminal, or cancelled — is a duplicate and
-    // needs nothing. The other is a job still `queued`/`running` that has burned
-    // its attempts: SQS can deliver more times than `max_attempts` allows
-    // executions (a visibility-timeout expiry is a redelivery), and such a job
-    // would otherwise sit `running` until the staleness sweep found it 15
-    // minutes later. AC-3.4 wants a terminal state, so give it one now.
+    //  (a) already terminal, or cancelled — a duplicate delivery. Nothing to do;
+    //      returning normally deletes the message, which is correct.
+    //  (b) still live but out of budget (`attempts` or `invocations` exhausted).
+    //      SQS can deliver more times than either bound allows executions, and
+    //      such a job would otherwise sit un-terminal until a sweep found it an
+    //      hour later. AC-3.4 wants a terminal state, so give it one now.
+    //  (c) `running` with a WARM heartbeat — another worker holds it right now.
+    //      Benign, and NOT a failure: this is the fence doing its job, so leave
+    //      the other worker alone and drop the duplicate.
     const existing = await jobs.get(input.jobId);
-    if (
+    const live =
       existing &&
-      (existing.status === "queued" || existing.status === "running") &&
-      existing.attempts >= existing.maxAttempts
-    ) {
+      (existing.status === "queued" || existing.status === "running");
+    const outOfBudget =
+      existing &&
+      (existing.attempts >= existing.maxAttempts ||
+        existing.invocations >= existing.maxInvocations);
+    if (live && outOfBudget) {
       const error: JobError = {
         code: "attempts_exhausted",
         message: "The job failed repeatedly and was given up on.",
@@ -172,16 +177,24 @@ export async function runJob(input: {
 
     if (input.remainingMs() < estimate + CHECKPOINT_RESERVE_MS) {
       // YIELD (§ 3.3). Stop before the kill and hand the rest to a fresh
-      // invocation. The job stays `running`, which is why `claim` permits
-      // re-claiming a running job, and `attempts` has already been incremented
-      // — so a job that cannot make progress still terminates at `max_attempts`
-      // rather than re-enqueuing itself forever.
+      // invocation.
+      //
+      // ⚠ RELEASE FIRST, then publish. Setting the status back to `queued` is
+      // what lets `claim`'s fence be strict about `running` — a yielded job has
+      // explicitly released itself, so it needs no takeover window and no
+      // duplicate-execution risk. Doing it in the other order would leave a
+      // window where the new message is claimable only via the fence.
+      //
+      // The ordering also fails SAFE: if the publish then fails, the job is
+      // `queued` and the queued-stale reaper is the backstop even if the
+      // explicit fail below somehow does not land.
+      await jobs.releaseForResume(claimed.id);
       try {
         await queue.send({ jobId: claimed.id });
       } catch (error) {
         // Nothing will pick the job back up. Fail it now rather than leave it
-        // `running` to be reaped as `stale` 15 minutes later — the work done so
-        // far is already checkpointed and the user gets a real error promptly.
+        // to be reaped an hour later — the work done so far is already
+        // checkpointed and the user gets a real error promptly.
         const failure = classifyError(error);
         await jobs.fail(claimed.id, failure);
         return {
@@ -211,9 +224,17 @@ export async function runJob(input: {
         checkpoint: checkpoint as never,
         index: done,
         total,
+        // For a kind whose single step outlasts `CLAIM_FENCE_MS`. Without this
+        // the method existed but was unreachable, so such a kind would be taken
+        // over mid-step by another worker.
+        heartbeat: () => jobs.heartbeat(claimed.id),
       });
     } catch (error) {
       const failure = classifyError(error);
+      // `claimed.attempts` is the POST-increment value of the consecutive-stall
+      // counter, which `checkpoint()` resets on any completed step — so a long
+      // job that is making progress always has its full retry allowance, and
+      // only a genuinely stuck one exhausts it.
       if (failure.retryable && claimed.attempts < claimed.maxAttempts) {
         // Throwing lets the SQS message become visible again and be redelivered.
         // The job stays `running` with its checkpoint intact, so the retry

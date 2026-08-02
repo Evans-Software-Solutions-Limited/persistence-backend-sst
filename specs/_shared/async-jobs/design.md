@@ -157,14 +157,39 @@ poll loop is the one a client will write first.)
 UPDATE ai_jobs
    SET status = 'running',
        attempts = attempts + 1,
+       invocations = invocations + 1,
        started_at = COALESCE(started_at, now()),
        heartbeat_at = now(),
        updated_at = now()
  WHERE id = $1
-   AND status IN ('queued', 'running')          -- 'running' allows resume (§ 3.3)
-   AND attempts < max_attempts
+   AND (
+     status = 'queued'                          -- fresh, or released by a yield
+     OR (status = 'running'                     -- takeover of a DEAD worker only
+         AND (heartbeat_at IS NULL OR heartbeat_at < $2))  -- $2 = now - CLAIM_FENCE_MS
+   )
+   AND attempts < max_attempts                  -- consecutive stalls
+   AND invocations < max_invocations            -- absolute backstop
 RETURNING *;
 ```
+
+⚠ **The `running` branch is FENCED, and an unfenced version is a real bug.** An
+earlier revision of this design allowed claiming ANY `running` job, on the grounds
+that a yield leaves the job `running`. That silently permitted the very thing this
+section exists to prevent: a duplicate delivery arriving while a worker was
+mid-run would claim the job and execute the same steps concurrently, two workers
+interleaving checkpoint writes with `progress_done` able to move backwards.
+
+The fix has two halves and both are needed:
+
+- the **yield sets the status back to `queued`** (§ 3.3), so the ordinary resume
+  path needs no takeover window at all;
+- `running` stays claimable only behind `CLAIM_FENCE_MS` (5 min), which keeps the
+  one legitimate takeover — a worker that died without writing a terminal state,
+  and a hard-kill runs no `finally`.
+
+`CLAIM_FENCE_MS` **must be far shorter than `STALE_AFTER_MS`**: a hard-killed job
+has to become re-claimable long before it is declared dead to the client, or its
+checkpoint is thrown away.
 
 **Zero rows returned means "do not run".** That single condition covers every
 duplicate-execution path at once: an SQS duplicate delivery, a Lambda retry, a
@@ -175,11 +200,27 @@ DLQ after the job already succeeded. The worker acks and returns.
 race between two concurrent workers and would let a $0.69 job run twice — which
 is the whole reason AC-3.1 exists. Do not "clarify" it into two steps.
 
-⚠ `attempts < max_attempts` is inside the same statement for the same reason. A
-job that has burned its attempts cannot be claimed at all, so the retry bound
-holds even if SQS's own `maxReceiveCount` is misconfigured. The two are
-belt-and-braces, not duplication: SQS bounds _deliveries_, this bounds
+⚠ Both bounds are inside the same statement for the same reason: a job out of
+budget cannot be claimed at all, so the limits hold even if SQS's own
+`maxReceiveCount` is misconfigured. SQS bounds _deliveries_; these bound
 _executions_.
+
+### 3.1a Two counters, and why one is not enough
+
+`attempts` counts **consecutive stalls** and is **reset to zero by every
+checkpoint**. `invocations` counts every claim and never resets.
+
+A single shared counter is wrong in a way that costs money. A yield is not a
+failure, but it consumes a claim — so with one counter at 3, a 120-step job at
+20 s/step (3+ invocations, entirely normal) reaches its last invocation with zero
+retry budget, and one transient Bedrock throttle fails it terminally at ~110/120
+steps, discarding ~$0.63 of purchased inference.
+
+Resetting on progress fixes that but cannot be the only bound, precisely because
+it resets: a job that makes one step then yields forever would re-enqueue
+indefinitely, and SQS cannot catch it either — a yield **deletes** its message and
+publishes a new one, so the receive count resets too. Hence `invocations`,
+defaulting to a deliberately loose 20.
 
 ### 3.2 Checkpointing
 
@@ -206,9 +247,15 @@ remainingMs() < (observedStepMs * SAFETY + CHECKPOINT_RESERVE)
   → checkpoint, re-enqueue the SAME jobId, return
 ```
 
-The job stays `running` (which is why the claim permits re-claiming a `running`
-job) and `attempts` increments, so a job that cannot make progress still
-terminates at `max_attempts` rather than re-enqueuing forever.
+⚠ **Release before publishing.** The yield sets the status back to `queued`
+FIRST, then sends the message. That is what lets the claim's fence be strict about
+`running` (§ 3.1) — a yielded job has explicitly given itself up, so the resume
+cannot overlap the worker that yielded. The ordering also fails safe: if the
+publish then throws, the row is `queued` and the queued-stale reaper (§ 3.4) is the
+backstop even if the explicit fail does not land.
+
+`invocations` increments on every claim, so a job that cannot make progress still
+terminates rather than re-enqueuing forever.
 
 `observedStepMs` is a rolling max of the steps actually run in this invocation,
 not a constant — a kind whose steps vary (a 3-exercise workout vs a 12-exercise
@@ -219,15 +266,41 @@ checkpoint is a _write before_ the deadline rather than cleanup after it.
 
 ### 3.4 Staleness (AC-2.5)
 
-A `running` job with `heartbeat_at` older than `STALE_AFTER_MS` (15 min — the
-900 s worker timeout plus headroom) is dead: hard-killed, OOM'd, or deployed
-over. Two things act on it:
+**Two different deaths, two thresholds.**
+
+`STALE_AFTER_MS` (**40 min**) covers a `running` job whose heartbeat has gone
+cold — hard-killed, OOM'd, or deployed over.
+
+⚠ It is sized against the queue's **visibility timeout**, not the worker timeout.
+An earlier revision used 15 min (the worker timeout plus headroom) and that is
+wrong in a way that costs money: a retryable step failure 30 s into an invocation
+leaves the message invisible for the whole 16-minute visibility window while the
+heartbeat sits at 30 s. At 15 min the poll endpoint would report `failed`/`stale`
+— _"Nothing was saved; try again"_ — during the gap before redelivery, so a client
+following the documented "stop polling on a terminal status" contract gives up,
+the user re-runs and double-spends, while the original job is quietly redelivered
+and succeeds. 40 min = 16 min visibility + 15 min worker run + margin.
+
+`QUEUED_STALE_AFTER_MS` (**60 min**) covers the death `STALE_AFTER_MS` cannot
+see: a message that dies **before it is ever claimed**, leaving a row nothing
+transitions. Not hypothetical — throttled receives count toward the redrive
+policy, so a burst against the worker's reserved concurrency can send a message to
+the DLQ having never executed. Without this reaper the client polls
+`queued 0/120` forever AND the terminal-job purge never sees the row. Measured
+from `created_at`, since a never-claimed job has no heartbeat; sized off the
+redrive policy (3 receives × 16 min ≈ 48 min to the DLQ).
+
+Two things act on both:
 
 - **`GET /jobs/:id` derives it on read** and reports `failed` /
   `code: "stale"`. Deriving rather than depending on a sweep means the client
   is never wedged on a dead job even if the sweep is broken or unscheduled.
-- **The nightly sweep persists it**, so the row stops being re-derived and
-  terminal-job purging can see it.
+- **The nightly sweep persists them** (`markStaleRunning` / `markStaleQueued`),
+  so the row stops being re-derived and terminal-job purging can see it.
+  ⚠ `markStaleRunning` must also match a NULL heartbeat: `heartbeat_at < cutoff`
+  evaluates to NULL for such a row and would never reap it, while the read path
+  already reports it stale — leaving the row derived-failed forever and never
+  purgeable.
 
 The read does **not** write. A GET that mutates would make the poll loop a write
 path and put a write on every client tick.
@@ -300,6 +373,28 @@ shipped single-workout path (`AI_LOADOUT_REMAP_DAILY_LIMIT`, 30/day) uses one
 key correctly _because_ it is one inference per request, and the obvious
 extension to the programme case is exactly the wrong one.
 
+### 5.1 One in-flight job per user per kind — the cap the ceiling cannot be
+
+⚠ The ceiling above is **read-then-write**, so N parallel enqueues all see the
+same count and all proceed. On the synchronous endpoints that is a recorded,
+bounded gap (the #156 pattern). Here one unit of work is up to ~120 inferences, so
+the same race is worth ~$0.69 each: **50 concurrent enqueues with distinct
+idempotency keys against a ceiling of 3 would accept 50 jobs and ~$34 of Bedrock
+spend**, and the worker's `reservedConcurrency` only PACES that — it never caps
+it.
+
+So the spine adds a **partial UNIQUE index** on
+`(user_id, kind) WHERE status IN ('queued','running')`. Enforced by the database
+at insert time, it closes the race outright rather than narrowing it, and the
+enqueue path reports the collision as `in_flight` (409) rather than queueing a
+second job. The repository distinguishes this 23505 from the idempotency one by
+**constraint name** — conflating them would report an in-flight collision as a
+successful replay.
+
+Note this index IS partial where the idempotency index is deliberately full
+(§ 2): here the predicate _is_ the semantics, and nothing infers it via
+`ON CONFLICT`, so the 42P10 hazard does not apply.
+
 Worked example for Loadout Phase 4 (illustrative; the kind owns the numbers):
 `loadout_programme_adapt` at, say, 3 jobs/day × 120 workouts × $0.0057 ≈
 $2.05/user/day worst case. The ceiling is a cost backstop, not a product quota
@@ -354,6 +449,16 @@ aiJobQueue.subscribe({
 }, { batch: { size: 1 } });          // § 1.2(4)
 ```
 
+⚠ **The worker needs `link: [aiJobQueue]` too**, and its absence is silent until a
+job actually runs long enough to yield. The worker is a PRODUCER on its own queue
+(§ 3.3), and the event-source subscription does not grant that: SST's
+`QueueLambdaSubscriber` attaches only
+`ChangeMessageVisibility|DeleteMessage|GetQueueAttributes|GetQueueUrl|ReceiveMessage`
+— no `SendMessage` — and injects no queue URL. Without the link every yield throws,
+and `runJob` marks a part-finished job terminally failed, discarding ~$0.63 of
+purchased inference on the one code path that exists to avoid exactly that. No
+unit test can catch it either, since every `runJob` test injects a fake queue.
+
 `coreRoute` gains `link: [aiJobQueue]` so the enqueue path can publish, and the
 worker gains the identical Bedrock `permissions` block `coreRoute` carries —
 the wildcards there (`foundation-model/anthropic.*` +
@@ -386,7 +491,19 @@ has historically missed:
 - **Time budget** — a worker near its deadline checkpoints and re-enqueues
   instead of starting a step it cannot finish.
 - **Attempts** — the `max_attempts`-th claim is refused and the job is
-  `attempts_exhausted`.
+  `attempts_exhausted`; likewise `max_invocations`.
+- **The claim fence** — the rendered predicate gates `running` on the heartbeat,
+  and `CLAIM_FENCE_MS < STALE_AFTER_MS`. ⚠ A test that hands one mock repository a
+  row and another `null` proves nothing about mutual exclusion — it asserts its
+  own fixture. Test the PREDICATE, and separately test `runJob`'s response to
+  losing a claim.
+- **Threshold relationships** — `STALE_AFTER_MS` exceeds visibility + worker
+  timeout; `QUEUED_STALE_AFTER_MS` exceeds the redrive window. These are the two
+  constants whose wrongness is invisible in any single-function test.
+- **In-flight collision** — a 23505 from the in-flight index is reported as
+  `in_flight`, never as a replay.
+- **Publish failure deletes** — the row is gone, so a retry with the same
+  idempotency key is a fresh job rather than a permanently-replayed dead one.
 - **Enqueue failure** — a queue publish that throws leaves the job `failed` and
   returns `503`, never `202` (AC-1.2).
 - **Two-key ceiling** — a job writing N inference rows does not move its own

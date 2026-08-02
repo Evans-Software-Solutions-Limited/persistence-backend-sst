@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import {
   __clearJobKindRegistry,
   getJobKind,
@@ -26,12 +26,15 @@ describe("job kind registry", () => {
   beforeEach(() => __clearJobKindRegistry());
 
   it("ships EMPTY — a kind belongs to the feature that needs it, not to the spine", async () => {
-    // Re-imported fresh so this asserts the shipped module state, not the state
-    // left by another test file. If a kind ever appears here, the spine has been
-    // coupled to a feature.
-    __clearJobKindRegistry();
-    const { registeredJobKinds: fresh } = await import("../registry");
-    expect(fresh()).toEqual([]);
+    // ⚠ `resetModules` then import, and deliberately NO `__clearJobKindRegistry()`
+    // first. An earlier revision cleared the registry and then asserted it was
+    // empty, which is a tautology: it would have passed with any number of kinds
+    // registered at module load, i.e. it could never have caught the thing it
+    // claims to guard. Resetting the module graph is what makes this an
+    // observation about the SHIPPED module state.
+    vi.resetModules();
+    const fresh = await import("../registry");
+    expect(fresh.registeredJobKinds()).toEqual([]);
   });
 
   it("registers and looks up a kind", () => {

@@ -2,7 +2,32 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { STALE_AFTER_MS } from "../aiJobRepository";
 
-const mocks = { getForUser: vi.fn() };
+// Write methods are on the mock DELIBERATELY. The point of the "no write" test
+// below is to observe that the handler leaves them alone; a fixture with only the
+// read method would make that test a tautology over its own shape (and a stray
+// write would surface as an opaque 500 rather than a clear failure).
+const mocks = {
+  getForUser: vi.fn(),
+  markStaleRunning: vi.fn(),
+  markStaleQueued: vi.fn(),
+  fail: vi.fn(),
+  checkpoint: vi.fn(),
+  succeed: vi.fn(),
+  releaseForResume: vi.fn(),
+  heartbeat: vi.fn(),
+  deleteUnpublished: vi.fn(),
+};
+
+const WRITE_METHODS = [
+  "markStaleRunning",
+  "markStaleQueued",
+  "fail",
+  "checkpoint",
+  "succeed",
+  "releaseForResume",
+  "heartbeat",
+  "deleteUnpublished",
+] as const;
 
 vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getAuthUser: vi.fn(async (authHeader: string | undefined) => {
@@ -130,8 +155,10 @@ describe("GET /jobs/:id", () => {
     expect(body.data.error).toMatchObject({ code: "stale", retryable: false });
   });
 
-  it("performs NO WRITE — a 2-second poll loop must not be a write path", async () => {
-    // Staleness is derived on read; the nightly sweep persists it separately.
+  it("performs NO WRITE, even on the stale path — a 2-second poll loop must not be a write path", async () => {
+    // Staleness is DERIVED on read; the nightly sweep persists it separately.
+    // The stale path is the one that would be tempting to "fix up" on read, so
+    // it is the case worth asserting.
     mocks.getForUser.mockResolvedValue(
       row({
         status: "running",
@@ -139,10 +166,19 @@ describe("GET /jobs/:id", () => {
       }),
     );
 
-    await get(`/jobs/${JOB_ID}`);
+    const res = await get(`/jobs/${JOB_ID}`);
 
-    // The only repository method reachable from this handler is the read.
-    expect(Object.keys(mocks)).toEqual(["getForUser"]);
+    // A real response, not a 500 from an unmocked call.
+    expect(res.status).toBe(200);
+    expect((await res.json()) as any).toMatchObject({
+      data: { status: "failed" },
+    });
     expect(mocks.getForUser).toHaveBeenCalledTimes(1);
+    for (const method of WRITE_METHODS) {
+      expect(
+        mocks[method],
+        `${method} must not be called on a poll`,
+      ).not.toHaveBeenCalled();
+    }
   });
 });

@@ -58,13 +58,27 @@ CREATE TABLE IF NOT EXISTS ai_jobs (
   progress_done integer NOT NULL DEFAULT 0,
   progress_total integer NOT NULL DEFAULT 0,
 
-  -- Execution bound, enforced INSIDE the claim statement (design § 3.1) rather
-  -- than around it. SQS's own maxReceiveCount bounds DELIVERIES; this bounds
-  -- EXECUTIONS. They are belt-and-braces, not duplication — a misconfigured
-  -- redrive policy must not be able to run a $0.69 job an unbounded number of
-  -- times.
+  -- TWO SEPARATE BOUNDS, both enforced INSIDE the claim statement (design § 3.1
+  -- / § 3.3a). Conflating them into one counter is a real bug, not a
+  -- simplification.
+  --
+  -- `attempts` counts CONSECUTIVE STALLED invocations and is RESET TO ZERO
+  -- whenever a step completes. It is a stall budget, not an invocation budget: a
+  -- yield at the time budget is not a failure and must not be charged as one. At
+  -- 20 s/step a 120-step job legitimately needs 3+ invocations, so a single
+  -- shared counter of 3 would fail it terminally at ~110/120 steps and discard
+  -- ~$0.63 of already-purchased inference.
+  --
+  -- `invocations` is the absolute backstop that `attempts` cannot be, precisely
+  -- BECAUSE `attempts` resets on progress: without it, a job that makes one step
+  -- then yields forever would re-enqueue indefinitely. SQS's own receive count
+  -- cannot bound that either — a yield DELETES its message and publishes a new
+  -- one, so the count resets. 20 covers a 120-step job at 20 s/step (~3
+  -- invocations) with a very wide margin.
   attempts integer NOT NULL DEFAULT 0,
   max_attempts integer NOT NULL DEFAULT 3,
+  invocations integer NOT NULL DEFAULT 0,
+  max_invocations integer NOT NULL DEFAULT 20,
 
   -- Caller idempotency key (AC-3.2), same convention as
   -- 20260727120100_client_request_id_idempotency.sql.
@@ -119,10 +133,44 @@ DROP INDEX IF EXISTS ai_jobs_user_kind_client_request_idx;
 CREATE UNIQUE INDEX IF NOT EXISTS ai_jobs_user_kind_client_request_idx
   ON ai_jobs (user_id, kind, client_request_id);
 
+-- ONE IN-FLIGHT JOB PER USER PER KIND — the cost control the daily ceiling
+-- cannot be (design § 5.1).
+--
+-- The ceiling is read-then-write (the #156 pattern every AI endpoint here
+-- shares), so N parallel enqueues all see the same count and all proceed. On the
+-- synchronous endpoints that is a recorded, bounded gap. HERE one unit is up to
+-- ~120 inferences, so the same race is worth ~$0.69 each: 50 concurrent
+-- enqueues with distinct idempotency keys against a ceiling of 3 would accept 50
+-- jobs and ~$34 of Bedrock spend, and the worker's reserved concurrency only
+-- PACES that, it never caps it.
+--
+-- A unique index is enforced by the database at insert time, so it closes the
+-- race outright rather than narrowing it. The repository catches 23505 and
+-- distinguishes this constraint from the idempotency one by NAME.
+--
+-- ⚠ PARTIAL here, where the idempotency index above is deliberately FULL — the
+-- difference is real, not an inconsistency. This predicate IS the semantics
+-- ("in flight"), and terminal rows must be excluded or a user could never run a
+-- second job of the same kind. The 42P10 hazard that forced the other index to
+-- be full does not apply: nothing infers this index via ON CONFLICT.
+--
+-- Dropped-then-created for the same converge-on-SHAPE reason as above.
+DROP INDEX IF EXISTS ai_jobs_one_inflight_per_kind_idx;
+CREATE UNIQUE INDEX IF NOT EXISTS ai_jobs_one_inflight_per_kind_idx
+  ON ai_jobs (user_id, kind) WHERE status IN ('queued', 'running');
+
 -- The stale-job predicate (design § 3.4) and the worker's own resume lookups.
 -- Partial: running jobs are a tiny minority of the table at any moment.
 CREATE INDEX IF NOT EXISTS ai_jobs_running_heartbeat_idx
   ON ai_jobs (heartbeat_at) WHERE status = 'running';
+
+-- Backs the queued-too-long reaper (design § 3.4). A message can die before it
+-- is ever claimed — throttled receives count toward the redrive policy, so a
+-- burst can send a message to the DLQ having never executed — leaving a row
+-- `queued` forever. Without this reaper such a row is never terminal, so the
+-- client polls it indefinitely AND the terminal-job purge never removes it.
+CREATE INDEX IF NOT EXISTS ai_jobs_queued_created_idx
+  ON ai_jobs (created_at) WHERE status = 'queued';
 
 -- Terminal-job purge (30 days, folded into accountPurgeCron rather than a fifth
 -- sst.aws.Cron). A job row holds a whole generated programme, so this is not a
@@ -133,5 +181,6 @@ CREATE INDEX IF NOT EXISTS ai_jobs_terminal_finished_idx
 COMMENT ON TABLE ai_jobs IS 'Shared async-job spine (specs/_shared/async-jobs). Work that outlives the 29 s request ceiling: Loadout programme adaptation, Mealprint week plans, program import. The row is the durable state; SQS is only the wake-up.';
 COMMENT ON COLUMN ai_jobs.kind IS 'Registry key. Deliberately unconstrained in SQL — the TypeScript kind registry is the authority, so adding a kind is not a shared-migration change.';
 COMMENT ON COLUMN ai_jobs.checkpoint IS 'Partial work, opaque to the spine. Exists so a retry does not re-buy completed inference: without it a worker dying at workout 90 of 120 re-spends ~$0.52.';
-COMMENT ON COLUMN ai_jobs.attempts IS 'Bounds EXECUTIONS, enforced inside the claim UPDATE. SQS maxReceiveCount bounds DELIVERIES. Both, deliberately.';
+COMMENT ON COLUMN ai_jobs.attempts IS 'CONSECUTIVE stalled invocations, reset to 0 on any completed step. A stall budget, not an invocation budget — a time-budget yield is not a failure and must not be charged as one.';
+COMMENT ON COLUMN ai_jobs.invocations IS 'Total claims. The absolute backstop attempts cannot be, since attempts resets on progress and a yield resets SQS receive count too.';
 COMMENT ON COLUMN ai_jobs.heartbeat_at IS 'Liveness. Cold heartbeat on a running job = the worker died without running any finally block; reported as failed/stale.';

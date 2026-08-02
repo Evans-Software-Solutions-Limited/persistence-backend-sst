@@ -25,6 +25,8 @@ function job(overrides: Record<string, unknown> = {}) {
     progressTotal: 3,
     attempts: 1,
     maxAttempts: 3,
+    invocations: 1,
+    maxInvocations: 20,
     ...overrides,
   } as any;
 }
@@ -34,6 +36,8 @@ function makeRepo(claimed: unknown, existing: unknown = null) {
     claim: vi.fn().mockResolvedValue(claimed),
     get: vi.fn().mockResolvedValue(existing),
     checkpoint: vi.fn().mockResolvedValue(undefined),
+    releaseForResume: vi.fn().mockResolvedValue(undefined),
+    heartbeat: vi.fn().mockResolvedValue(undefined),
     succeed: vi.fn().mockResolvedValue(undefined),
     fail: vi.fn().mockResolvedValue(undefined),
   } as any;
@@ -98,31 +102,30 @@ describe("runJob", () => {
       expect(repo.fail).not.toHaveBeenCalled();
     });
 
-    it("two concurrent deliveries: only the one that WINS the claim executes", async () => {
+    it("a delivery that loses the claim to a LIVE worker is skipped, not failed", async () => {
+      // The mutual exclusion itself is a property of the claim SQL and is tested
+      // in aiJobRepository.test.ts (the fenced predicate). What runJob owns is
+      // the RESPONSE to losing it: do no work, do not fail the job the other
+      // worker is running, and return normally so the duplicate message is
+      // deleted.
       const { runStep } = registerCountingKind();
-      // The database decides. One caller gets a row, the other gets null —
-      // which is exactly what the single conditional UPDATE guarantees.
-      const winner = makeRepo(job());
-      const loser = makeRepo(null, job({ status: "running", attempts: 1 }));
+      const repo = makeRepo(
+        null,
+        // Live: within budget, and its heartbeat is warm (which is why the claim
+        // was refused rather than granted).
+        job({ status: "running", attempts: 1, invocations: 1 }),
+      );
 
-      const [a, b] = await Promise.all([
-        runJob({
-          jobId: "j1",
-          remainingMs: plentyOfTime,
-          repository: winner,
-          queue: makeQueue() as any,
-        }),
-        runJob({
-          jobId: "j1",
-          remainingMs: plentyOfTime,
-          repository: loser,
-          queue: makeQueue() as any,
-        }),
-      ]);
+      const outcome = await runJob({
+        jobId: "j1",
+        remainingMs: plentyOfTime,
+        repository: repo,
+        queue: makeQueue() as any,
+      });
 
-      expect([a.status, b.status].sort()).toEqual(["skipped", "succeeded"]);
-      // Three steps for the winner, zero for the loser — not six.
-      expect(runStep).toHaveBeenCalledTimes(3);
+      expect(outcome.status).toBe("skipped");
+      expect(runStep).not.toHaveBeenCalled();
+      expect(repo.fail).not.toHaveBeenCalled();
     });
 
     it("AC-3.4: a claim refused on EXHAUSTED attempts becomes terminal, not a silent skip", async () => {
@@ -153,6 +156,36 @@ describe("runJob", () => {
           retryable: false,
         }),
       );
+    });
+
+    it("a claim refused on EXHAUSTED INVOCATIONS is terminal too — the backstop attempts cannot be", async () => {
+      // `attempts` resets on progress, so a job that makes one step then yields
+      // forever would re-enqueue indefinitely (a yield deletes its message and
+      // publishes a new one, so SQS's receive count resets too). `invocations`
+      // is the counter that never resets.
+      registerCountingKind();
+      const repo = makeRepo(
+        null,
+        job({
+          status: "queued",
+          attempts: 0,
+          maxAttempts: 3,
+          invocations: 20,
+          maxInvocations: 20,
+        }),
+      );
+
+      const outcome = await runJob({
+        jobId: "j1",
+        remainingMs: plentyOfTime,
+        repository: repo,
+        queue: makeQueue() as any,
+      });
+
+      expect(outcome).toMatchObject({
+        status: "failed",
+        code: "attempts_exhausted",
+      });
     });
 
     it("a vanished job is skipped, not failed", async () => {
@@ -196,6 +229,29 @@ describe("runJob", () => {
       ).toEqual([1, 2, 3]);
       expect(finish).toHaveBeenCalledTimes(1);
       expect(repo.succeed).toHaveBeenCalledWith("j1", { steps: [0, 1, 2] });
+    });
+
+    it("threads a working heartbeat into the step context", async () => {
+      // Previously the repository method existed but nothing could reach it, so a
+      // kind whose single step outlasts CLAIM_FENCE_MS would be taken over
+      // mid-step by another worker.
+      const runStep = vi.fn(async (ctx: any) => {
+        await ctx.heartbeat();
+        return ctx.index;
+      });
+      registerCountingKind(runStep);
+      const repo = makeRepo(job({ progressTotal: 2 }));
+
+      await runJob({
+        jobId: "j1",
+        remainingMs: plentyOfTime,
+        repository: repo,
+        queue: makeQueue() as any,
+      });
+
+      expect(typeof runStep.mock.calls[0][0].heartbeat).toBe("function");
+      expect(repo.heartbeat).toHaveBeenCalledWith("j1");
+      expect(repo.heartbeat).toHaveBeenCalledTimes(2);
     });
 
     it("AC-3.3: a job checkpointed at 90/120 runs 30 steps, NOT 120", async () => {
@@ -260,7 +316,14 @@ describe("runJob", () => {
       // A hard-kill runs no `finally`, so the re-enqueue must happen BEFORE the
       // deadline — that is the whole point of the reserve.
       expect(queue.send).toHaveBeenCalledWith({ jobId: "j1" });
-      // Still `running`, so the next claim resumes it.
+      // ⚠ RELEASED to `queued` before the publish. That is what lets the claim's
+      // fence be strict about `running`: a yielded job has explicitly given
+      // itself up, so the resume needs no takeover window and cannot overlap the
+      // worker that yielded.
+      expect(repo.releaseForResume).toHaveBeenCalledWith("j1");
+      expect(repo.releaseForResume.mock.invocationCallOrder[0]).toBeLessThan(
+        queue.send.mock.invocationCallOrder[0],
+      );
       expect(repo.fail).not.toHaveBeenCalled();
       expect(repo.succeed).not.toHaveBeenCalled();
     });

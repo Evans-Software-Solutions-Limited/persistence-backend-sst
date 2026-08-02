@@ -2205,10 +2205,14 @@ export const aiJobs = pgTable(
     error: jsonb("error"),
     progressDone: integer("progress_done").notNull().default(0),
     progressTotal: integer("progress_total").notNull().default(0),
-    // Bounds EXECUTIONS (enforced inside the claim UPDATE); SQS's
-    // maxReceiveCount bounds DELIVERIES. Both, deliberately.
+    // TWO bounds, both enforced inside the claim UPDATE. `attempts` counts
+    // CONSECUTIVE STALLS and resets to 0 on any completed step (a time-budget
+    // yield is not a failure); `invocations` is the absolute backstop that
+    // `attempts` cannot be precisely because it resets. See the migration.
     attempts: integer("attempts").notNull().default(0),
     maxAttempts: integer("max_attempts").notNull().default(3),
+    invocations: integer("invocations").notNull().default(0),
+    maxInvocations: integer("max_invocations").notNull().default(20),
     clientRequestId: text("client_request_id"),
     heartbeatAt: timestamp("heartbeat_at", { withTimezone: true }),
     startedAt: timestamp("started_at", { withTimezone: true }),
@@ -2232,8 +2236,15 @@ export const aiJobs = pgTable(
       t.kind,
       t.clientRequestId,
     ),
+    // PARTIAL unique on `(user_id, kind) WHERE status IN ('queued','running')` —
+    // one in-flight job per user per kind. This is the cost control the
+    // read-then-write daily ceiling cannot be, since one unit here is up to ~120
+    // inferences. Declared bare-column per the convention above; the predicate
+    // (which IS the semantics) lives in the migration.
+    uniqueIndex("ai_jobs_one_inflight_per_kind_idx").on(t.userId, t.kind),
     index("ai_jobs_running_heartbeat_idx").on(t.heartbeatAt),
     index("ai_jobs_terminal_finished_idx").on(t.finishedAt),
+    index("ai_jobs_queued_created_idx").on(t.createdAt),
   ],
 );
 

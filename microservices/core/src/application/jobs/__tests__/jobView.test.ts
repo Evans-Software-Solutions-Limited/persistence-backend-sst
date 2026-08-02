@@ -1,7 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect } from "vitest";
-import { STALE_AFTER_MS } from "../aiJobRepository";
-import { isStaleRunning, toJobStatusView, toJobView } from "../jobView";
+import { QUEUED_STALE_AFTER_MS, STALE_AFTER_MS } from "../aiJobRepository";
+import {
+  isStaleQueued,
+  isStaleRunning,
+  toJobStatusView,
+  toJobView,
+} from "../jobView";
 
 const NOW = new Date("2026-08-02T12:00:00.000Z");
 
@@ -65,6 +70,45 @@ describe("isStaleRunning", () => {
   });
 });
 
+describe("isStaleQueued", () => {
+  it("is false for a fresh queued job", () => {
+    expect(isStaleQueued(row({ status: "queued" }), NOW)).toBe(false);
+  });
+
+  it("is false for any non-queued status, however old", () => {
+    expect(
+      isStaleQueued(row({ status: "running", createdAt: new Date(0) }), NOW),
+    ).toBe(false);
+  });
+
+  it("is true once a queued job outlasts the threshold — measured from createdAt", async () => {
+    // The failure `isStaleRunning` cannot see: a message that dies before its
+    // first receive leaves a row nothing ever transitions, and a never-claimed
+    // job has no heartbeat to measure from.
+    expect(
+      isStaleQueued(
+        row({
+          status: "queued",
+          createdAt: new Date(NOW.getTime() - QUEUED_STALE_AFTER_MS - 1),
+        }),
+        NOW,
+      ),
+    ).toBe(true);
+  });
+
+  it("is false exactly AT the threshold — strictly older only", () => {
+    expect(
+      isStaleQueued(
+        row({
+          status: "queued",
+          createdAt: new Date(NOW.getTime() - QUEUED_STALE_AFTER_MS),
+        }),
+        NOW,
+      ),
+    ).toBe(false);
+  });
+});
+
 describe("toJobView", () => {
   it("projects a running job with its progress", () => {
     expect(toJobView(row(), NOW)).toMatchObject({
@@ -105,6 +149,27 @@ describe("toJobView", () => {
       NOW,
     );
     expect(view.result).toBeNull();
+  });
+
+  it("a never-started queued job reads as failed with the QUEUED stale message", async () => {
+    const view = toJobView(
+      row({
+        status: "queued",
+        progressDone: 0,
+        heartbeatAt: null,
+        startedAt: null,
+        createdAt: new Date(NOW.getTime() - QUEUED_STALE_AFTER_MS - 1),
+      }),
+      NOW,
+    );
+    expect(view.status).toBe("failed");
+    expect(view.error).toEqual(
+      expect.objectContaining({ code: "stale", retryable: false }),
+    );
+    // Distinct wording from the running case — "never started" vs "stopped
+    // reporting progress" — because they are genuinely different situations and
+    // the sweep persists the same two messages.
+    expect(view.error?.message).toMatch(/never started/i);
   });
 
   it("passes a structured failure through unchanged", () => {
