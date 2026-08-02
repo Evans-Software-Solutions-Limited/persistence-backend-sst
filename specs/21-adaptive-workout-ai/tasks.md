@@ -394,7 +394,7 @@ Phase 1/2 design. Rationale: `requirements.md` § Eval spike.
 - [x] **T-2.8 [M]** "Saved setups" list on the parent + `saved` success screen.
 - [x] **T-2.8b [M]** "Save & start" — persist the variation and start a session
       against it in one action (AC-5.3), reusing the existing start-session path.
-- [x] **T-2.9 [M]** Saved-gym management list in Settings/Profile (AC-7.2).
+- [x] **T-2.9 [M]** Saved-gym management list — shipped under Settings/Profile, MOVED to the Train hub's `Gyms` segment 2026-08-02 (AC-7.2).
 - [x] **T-2.10 [M]** Tests + a device-verify checklist in the PR body.
 - [x] **T-2.11 [B+M]** Re-adapt an existing saved setup in place; preserve its
       id/history, freeze the newly resolved kit, and surface linked-gym changes.

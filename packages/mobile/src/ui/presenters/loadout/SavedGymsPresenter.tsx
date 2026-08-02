@@ -7,19 +7,31 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
 import type { SavedGym } from "@/domain/models/loadout";
 import type { EquipmentPickerGroup } from "@/domain/services/loadout.service";
 import { EquipmentChipGrid } from "./EquipmentChipGrid";
 import { color, radius, space } from "@/ui/theme/tokens";
 
 /**
- * <SavedGymsPresenter> — the Profile · Account gym list (T-2.9, AC-7.1/7.2).
+ * <SavedGymsPresenter> — the Train hub's `Gyms` segment (T-2.9, AC-7.1/7.2/7.2a).
  *
- * A "light list" per AC-7.2, but with rename AND kit editing rather than just
- * delete: a gym whose equipment cannot be corrected has to be deleted and
- * rebuilt from scratch the first time the gym adds a rack, which is the opposite
- * of the reuse the whole `saved_gyms` table exists for.
+ * Rename AND kit editing rather than just delete: a gym whose equipment cannot
+ * be corrected has to be deleted and rebuilt from scratch the first time the gym
+ * adds a rack, which is the opposite of the reuse the whole `saved_gyms` table
+ * exists for.
+ *
+ * ⚠ **Hub BODY content, not a Stack screen** (AC-7.2, revised 2026-08-02). It
+ * renders no `SafeAreaView` and no back header: `TrainHubContainer` owns the
+ * chrome and has already applied `insets.top`. The `SafeAreaView` this used to
+ * carry was correct only while it was a pushed screen — outside the Loadout
+ * route there is no `SafeAreaProvider`, and a native `SafeAreaView` measuring
+ * its own window inside a hub body would double the inset.
+ *
+ * ⚠ **Creation lives here** (AC-7.2a). Until this segment existed a gym could
+ * only be born as a by-product of adapting a workout, and the empty state said
+ * so. That is a coherent instruction for a footnote under Profile and a dead end
+ * for a hub tab on a new account, so `editing.gymId === null` is the new-gym
+ * draft and reuses the identical editor card.
  *
  * ⚠ **Deleting a gym does NOT delete the variations built from it** (AC-7.3) —
  * `source_gym_id` goes null and each variation keeps the kit summary it was
@@ -33,7 +45,8 @@ import { color, radius, space } from "@/ui/theme/tokens";
  */
 
 export type SavedGymEditState = {
-  readonly gymId: string;
+  /** `null` is the NEW-gym draft; a string edits that existing gym. */
+  readonly gymId: string | null;
   readonly name: string;
   readonly selectedIds: ReadonlySet<string>;
   /** Field-level message — a duplicate name, or a failed save. */
@@ -44,6 +57,24 @@ export type SavedGymEditState = {
 export type SavedGymsPresenterProps = {
   readonly gyms: readonly SavedGym[];
   readonly isLoading: boolean;
+  /**
+   * True while the equipment reference list is (re)fetching and we have none.
+   * ⚠ Without this the CREATE card is a silent dead end: `EquipmentChipGrid`
+   * renders nothing for empty `groups`, and the save button is disabled at zero
+   * selected — so a first run that cannot load the catalogue offers a name field,
+   * no chips, and a permanently greyed "Create gym" with nothing explaining why.
+   * Unreachable before creation existed (an existing gym always arrives with its
+   * kit pre-selected). Mirrors `LoadoutManualStep`.
+   */
+  readonly equipmentLoading: boolean;
+  /**
+   * Reissue the equipment reference fetch. ⚠ Without this the failure copy said
+   * "try again" with nothing that could: `useReferenceLists` latches its
+   * auto-refresh per mount, so cancelling and reopening the editor showed the
+   * same message and issued no request, leaving "Create gym" disabled until the
+   * whole segment unmounted.
+   */
+  readonly onRetryEquipment: () => void;
   readonly loadError: string | null;
   readonly groups: readonly EquipmentPickerGroup[];
   /** Resolves a gym's ids to names for the collapsed row's summary. */
@@ -51,7 +82,7 @@ export type SavedGymsPresenterProps = {
   readonly editing: SavedGymEditState | null;
   /** The gym awaiting delete confirmation. */
   readonly pendingDeleteId: string | null;
-  readonly onBack: () => void;
+  readonly onStartCreate: () => void;
   readonly onStartEdit: (gym: SavedGym) => void;
   readonly onCancelEdit: () => void;
   readonly onEditName: (name: string) => void;
@@ -85,15 +116,123 @@ export function summariseKit(
   return names.length > 3 ? `${shown} +${names.length - 3} more` : shown;
 }
 
+/**
+ * The editor card. ONE component for both the new-gym draft and an existing
+ * gym's edit, because they differ only in their labels and testIDs — and the
+ * rule that makes the save button meaningful ("a gym with no equipment is not a
+ * gym") has to hold identically on both paths or creation opens a hole that
+ * rename already closes.
+ */
+function GymEditorCard({
+  editing,
+  groups,
+  equipmentLoading,
+  onRetryEquipment,
+  prefix,
+  saveLabel,
+  onEditName,
+  onToggleEquipment,
+  onSaveEdit,
+  onCancelEdit,
+}: {
+  readonly editing: SavedGymEditState;
+  readonly groups: readonly EquipmentPickerGroup[];
+  readonly equipmentLoading: boolean;
+  readonly onRetryEquipment: () => void;
+  readonly prefix: string;
+  readonly saveLabel: string;
+  readonly onEditName: (name: string) => void;
+  readonly onToggleEquipment: (equipmentTypeId: string) => void;
+  readonly onSaveEdit: () => void;
+  readonly onCancelEdit: () => void;
+}) {
+  const blocked = editing.isSaving || editing.selectedIds.size === 0;
+  return (
+    <View style={styles.card} testID={`${prefix}-editor`}>
+      <TextInput
+        style={styles.nameInput}
+        value={editing.name}
+        onChangeText={onEditName}
+        placeholder="Gym name"
+        placeholderTextColor={color.$text4}
+        testID={`${prefix}-name`}
+        accessibilityLabel="Gym name"
+      />
+      {editing.error !== null ? (
+        <Text style={styles.error} testID={`${prefix}-edit-error`}>
+          {editing.error}
+        </Text>
+      ) : null}
+
+      {equipmentLoading && groups.length === 0 ? (
+        <Text style={styles.muted} testID={`${prefix}-equip-loading`}>
+          Loading the equipment list…
+        </Text>
+      ) : null}
+
+      {!equipmentLoading && groups.length === 0 ? (
+        <>
+          <Text style={styles.muted} testID={`${prefix}-equip-empty`}>
+            We couldn&apos;t load the equipment list. Check your connection and
+            try again.
+          </Text>
+          <TouchableOpacity
+            style={styles.secondaryButton}
+            onPress={onRetryEquipment}
+            testID={`${prefix}-equip-retry`}
+            accessibilityRole="button"
+          >
+            <Text style={styles.secondaryButtonText}>Retry</Text>
+          </TouchableOpacity>
+        </>
+      ) : null}
+
+      <EquipmentChipGrid
+        groups={groups}
+        selectedIds={editing.selectedIds}
+        onToggle={onToggleEquipment}
+        testIDPrefix={`${prefix}-equip`}
+      />
+
+      <View style={styles.confirmRow}>
+        <TouchableOpacity
+          style={styles.secondaryButton}
+          onPress={onCancelEdit}
+          testID={`${prefix}-cancel`}
+          accessibilityRole="button"
+        >
+          <Text style={styles.secondaryButtonText}>Cancel</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.primaryButton, blocked && styles.buttonDisabled]}
+          onPress={onSaveEdit}
+          // A gym with no equipment is not a gym — it would make every loadable
+          // row unresolved on any workout adapted against it.
+          disabled={blocked}
+          testID={`${prefix}-save`}
+          accessibilityRole="button"
+          accessibilityState={{ disabled: blocked }}
+        >
+          <Text style={styles.primaryButtonText}>
+            {editing.isSaving ? "Saving…" : saveLabel}
+          </Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
 export function SavedGymsPresenter({
   gyms,
   isLoading,
   loadError,
   groups,
+  equipmentLoading,
+  onRetryEquipment,
   equipmentNameById,
   editing,
   pendingDeleteId,
-  onBack,
+  onStartCreate,
   onStartEdit,
   onCancelEdit,
   onEditName,
@@ -103,23 +242,10 @@ export function SavedGymsPresenter({
   onCancelDelete,
   onConfirmDelete,
 }: SavedGymsPresenterProps) {
+  // Narrowing, not just a boolean: the create card takes `editing` non-null.
+  const isCreating = editing !== null && editing.gymId === null;
   return (
-    <SafeAreaView style={styles.root} edges={["top"]} testID="saved-gyms">
-      <View style={styles.header}>
-        <TouchableOpacity
-          onPress={onBack}
-          style={styles.iconButton}
-          testID="saved-gyms-back"
-          accessibilityRole="button"
-          accessibilityLabel="Back"
-          hitSlop={8}
-        >
-          <Ionicons name="arrow-back" size={22} color={color.$text} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Saved gyms</Text>
-        <View style={styles.iconButton} />
-      </View>
-
+    <View style={styles.root} testID="saved-gyms">
       <ScrollView
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
@@ -128,6 +254,36 @@ export function SavedGymsPresenter({
         <Text style={styles.intro}>
           Equipment setups you can reuse whenever you adapt a workout.
         </Text>
+
+        {isCreating ? (
+          <GymEditorCard
+            editing={editing}
+            groups={groups}
+            equipmentLoading={equipmentLoading}
+            onRetryEquipment={onRetryEquipment}
+            prefix="saved-gym-new"
+            saveLabel="Create gym"
+            onEditName={onEditName}
+            onToggleEquipment={onToggleEquipment}
+            onSaveEdit={onSaveEdit}
+            onCancelEdit={onCancelEdit}
+          />
+        ) : editing !== null ? null : (
+          // ⚠ Hidden while ANY editor is open, not just the draft. Left visible
+          // during an existing gym's in-flight save, tapping it swapped `editing`
+          // for a fresh draft that the settling `onSaveEdit` then wrote into —
+          // either wiping what the user had typed or captioning the new card with
+          // the OTHER gym's 409.
+          <TouchableOpacity
+            style={styles.createButton}
+            onPress={onStartCreate}
+            testID="saved-gyms-create"
+            accessibilityRole="button"
+          >
+            <Ionicons name="add" size={17} color={color.$primaryInk} />
+            <Text style={styles.createButtonText}>New gym</Text>
+          </TouchableOpacity>
+        )}
 
         {isLoading && gyms.length === 0 ? (
           <Text style={styles.muted} testID="saved-gyms-loading">
@@ -143,8 +299,8 @@ export function SavedGymsPresenter({
 
         {!isLoading && loadError === null && gyms.length === 0 ? (
           <Text style={styles.muted} testID="saved-gyms-empty">
-            You haven&apos;t saved a gym yet. Next time you adapt a workout,
-            tick &quot;Save&quot; when you pick your equipment.
+            No gyms yet. Add the kit you have at each place you train and
+            Loadout can re-map any workout to it in one tap.
           </Text>
         ) : null}
 
@@ -188,70 +344,19 @@ export function SavedGymsPresenter({
 
           if (isEditing && editing) {
             return (
-              <View
+              <GymEditorCard
                 key={gym.id}
-                style={styles.card}
-                testID={`saved-gym-${gym.id}-editor`}
-              >
-                <TextInput
-                  style={styles.nameInput}
-                  value={editing.name}
-                  onChangeText={onEditName}
-                  placeholder="Gym name"
-                  placeholderTextColor={color.$text4}
-                  testID={`saved-gym-${gym.id}-name`}
-                  accessibilityLabel="Gym name"
-                />
-                {editing.error !== null ? (
-                  <Text
-                    style={styles.error}
-                    testID={`saved-gym-${gym.id}-edit-error`}
-                  >
-                    {editing.error}
-                  </Text>
-                ) : null}
-
-                <EquipmentChipGrid
-                  groups={groups}
-                  selectedIds={editing.selectedIds}
-                  onToggle={onToggleEquipment}
-                  testIDPrefix={`saved-gym-${gym.id}-equip`}
-                />
-
-                <View style={styles.confirmRow}>
-                  <TouchableOpacity
-                    style={styles.secondaryButton}
-                    onPress={onCancelEdit}
-                    testID={`saved-gym-${gym.id}-cancel`}
-                    accessibilityRole="button"
-                  >
-                    <Text style={styles.secondaryButtonText}>Cancel</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[
-                      styles.primaryButton,
-                      (editing.isSaving || editing.selectedIds.size === 0) &&
-                        styles.buttonDisabled,
-                    ]}
-                    onPress={onSaveEdit}
-                    // A gym with no equipment is not a gym — it would make every
-                    // loadable row unresolved on any workout adapted against it.
-                    disabled={
-                      editing.isSaving || editing.selectedIds.size === 0
-                    }
-                    testID={`saved-gym-${gym.id}-save`}
-                    accessibilityRole="button"
-                    accessibilityState={{
-                      disabled:
-                        editing.isSaving || editing.selectedIds.size === 0,
-                    }}
-                  >
-                    <Text style={styles.primaryButtonText}>
-                      {editing.isSaving ? "Saving…" : "Save changes"}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
+                editing={editing}
+                groups={groups}
+                equipmentLoading={equipmentLoading}
+                onRetryEquipment={onRetryEquipment}
+                prefix={`saved-gym-${gym.id}`}
+                saveLabel="Save changes"
+                onEditName={onEditName}
+                onToggleEquipment={onToggleEquipment}
+                onSaveEdit={onSaveEdit}
+                onCancelEdit={onCancelEdit}
+              />
             );
           }
 
@@ -302,34 +407,33 @@ export function SavedGymsPresenter({
           );
         })}
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: color.$bg },
-  header: {
+  createButton: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: space.$base,
-    paddingVertical: space.$md,
-  },
-  iconButton: {
-    width: 36,
-    height: 36,
-    alignItems: "center",
     justifyContent: "center",
+    gap: space.$xs,
+    height: 46,
+    borderRadius: radius.$lg,
+    backgroundColor: color.$primary,
   },
-  headerTitle: {
-    flex: 1,
-    fontSize: 17,
+  createButtonText: {
+    fontSize: 14.5,
     fontWeight: "700",
-    color: color.$text,
-    textAlign: "center",
+    color: color.$primaryInk,
   },
   content: {
     paddingHorizontal: space.$base,
-    paddingBottom: space.$3xl,
+    // 140 like the sibling Train hub bodies (WorkoutsListPresenter,
+    // TrainOverviewPresenter): `ActiveWorkoutOverlay` floats the minimised
+    // workout bar absolutely at `tabBarHeight + 12`, so $3xl left the last gym
+    // row — or an editor's Save button — underneath it mid-session.
+    paddingBottom: 140,
     gap: space.$md,
   },
   intro: { fontSize: 13, color: color.$text3, lineHeight: 19 },

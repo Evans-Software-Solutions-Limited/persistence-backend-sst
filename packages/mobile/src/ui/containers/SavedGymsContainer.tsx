@@ -1,4 +1,3 @@
-import { router } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SavedGym } from "@/domain/models/loadout";
 import { isEquipmentGroupingStale } from "@/domain/models/reference-list";
@@ -11,7 +10,14 @@ import {
 } from "@/ui/presenters/loadout/SavedGymsPresenter";
 
 /**
- * <SavedGymsContainer> — Profile · Account → Saved gyms (T-2.9, AC-7.1/7.2).
+ * <SavedGymsContainer> — the ENTITLED body of the Train hub's `Gyms` segment
+ * (T-2.9, AC-7.1/7.2/7.2a).
+ *
+ * ⚠ **Only mounted when the Loadout gate has resolved to allowed.**
+ * `GymsSegmentContainer` owns that decision, and mounting is the enforcement:
+ * `useSavedGyms` fetches on mount, so an unentitled device must never render
+ * this at all. Design § 5.2 forbids a preview of real output, and "we fetched
+ * the gyms and then hid them" would be exactly that.
  *
  * ⚠ **A 409 is a field error, not a screen error.** Gym names are unique per user
  * on `lower(btrim(name))`, so renaming to a name the user already has is both
@@ -60,8 +66,28 @@ export function SavedGymsContainer() {
     [gyms.gyms, deletingId],
   );
 
+  /**
+   * The new-gym draft. `gymId: null` is what tells `onSaveEdit` to create
+   * rather than update, and the presenter to label the card accordingly.
+   */
+  const onStartCreate = useCallback(() => {
+    setPendingDeleteId(null);
+    setMutationError(null);
+    setEditing({
+      gymId: null,
+      name: "",
+      selectedIds: new Set(),
+      error: null,
+      isSaving: false,
+    });
+  }, []);
+
   const onStartEdit = useCallback((gym: SavedGym) => {
     setPendingDeleteId(null);
+    // Same reason `onStartCreate` and `onRequestDelete` do it: a failed DELETE's
+    // banner outranks everything and would otherwise sit above an edit that is
+    // going fine.
+    setMutationError(null);
     setEditing({
       gymId: gym.id,
       name: gym.name,
@@ -102,10 +128,16 @@ export function SavedGymsContainer() {
     // online — an error about a gym that is still there, over a screen where
     // nothing is wrong.
     setMutationError(null);
-    const error = await gyms.update(editing.gymId, {
+    const payload = {
       name: trimmed,
       equipmentTypeIds: [...editing.selectedIds],
-    });
+    };
+    // Same 409 handling either way — a duplicate name is just as likely when
+    // creating as when renaming, and just as recoverable.
+    const error =
+      editing.gymId === null
+        ? await gyms.create(payload)
+        : await gyms.update(editing.gymId, payload);
     if (error === null) {
       setEditing(null);
       return;
@@ -161,6 +193,8 @@ export function SavedGymsContainer() {
     <SavedGymsPresenter
       gyms={visibleGyms}
       isLoading={gyms.isLoading}
+      equipmentLoading={reference.isLoading}
+      onRetryEquipment={() => void reference.refresh()}
       loadError={
         mutationError ??
         (gyms.error === null
@@ -171,7 +205,7 @@ export function SavedGymsContainer() {
       equipmentNameById={equipmentNameById}
       editing={editing}
       pendingDeleteId={pendingDeleteId}
-      onBack={() => router.back()}
+      onStartCreate={onStartCreate}
       onStartEdit={onStartEdit}
       onCancelEdit={() => setEditing(null)}
       onEditName={onEditName}

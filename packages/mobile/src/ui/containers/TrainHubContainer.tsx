@@ -10,6 +10,7 @@ import { IconPlus } from "@/ui/components/icons";
 import { ExerciseListContainer } from "@/ui/containers/ExerciseListContainer";
 import { WorkoutsListContainer } from "@/ui/containers/WorkoutsListContainer";
 import { TrainOverviewContainer } from "@/ui/containers/TrainOverviewContainer";
+import { GymsSegmentContainer } from "@/ui/containers/GymsSegmentContainer";
 
 /**
  * <TrainHubContainer> — the Train tab hub.
@@ -135,10 +136,14 @@ export function TrainHubContainer() {
 
       <View paddingHorizontal={16} paddingBottom={12}>
         <Segmented
+          // Gyms is shown to EVERYONE, entitled or not — AC-7.2b makes the
+          // segment an advertising surface, and its own body renders the pitch.
+          // Hiding it from the unentitled would remove the only place the
+          // feature is discoverable before a workout is opened.
           options={
             showTraining
-              ? ["Training", "Workouts", "Exercises"]
-              : ["Workouts", "Exercises"]
+              ? ["Training", "Workouts", "Exercises", "Gyms"]
+              : ["Workouts", "Exercises", "Gyms"]
           }
           value={effectiveSegment}
           onChange={(next) => {
@@ -147,7 +152,8 @@ export function TrainHubContainer() {
             if (
               next === "Training" ||
               next === "Workouts" ||
-              next === "Exercises"
+              next === "Exercises" ||
+              next === "Gyms"
             ) {
               setSegment(next);
             }
@@ -160,6 +166,8 @@ export function TrainHubContainer() {
           <TrainOverviewContainer />
         ) : effectiveSegment === "Workouts" ? (
           <WorkoutsListContainer />
+        ) : effectiveSegment === "Gyms" ? (
+          <GymsSegmentContainer />
         ) : (
           <ExerciseListContainer />
         )}

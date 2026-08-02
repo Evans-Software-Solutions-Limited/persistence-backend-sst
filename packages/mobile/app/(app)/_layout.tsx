@@ -112,15 +112,6 @@ export default function AppLayout() {
         <Stack.Screen name="profile/contact" options={{ headerShown: false }} />
         <Stack.Screen name="profile/terms" options={{ headerShown: false }} />
         {/*
-          Loadout saved-gym management (spec-21 T-2.9, AC-7.2). Owns its own
-          <HeaderBar>, so the native header stays off like every other
-          custom-chrome screen.
-        */}
-        <Stack.Screen
-          name="profile/saved-gyms"
-          options={{ headerShown: false }}
-        />
-        {/*
           Loadout's athlete flow (spec-21 Phase 2/3).
 
           `fullScreenModal` keeps this focused, multi-step task isolated while

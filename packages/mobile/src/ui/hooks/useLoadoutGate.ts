@@ -1,12 +1,19 @@
 import { useCallback, useMemo } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { router, type Href } from "expo-router";
 import type {
   BillingCycle,
   MySubscription,
   SubscriptionTierName,
 } from "@/domain/models/subscription";
-import { useMySubscription } from "@/ui/hooks/useMySubscription";
-import { useSubscriptionTiers } from "@/ui/hooks/useSubscriptionTiers";
+import {
+  USER_SUBSCRIPTION_QUERY_KEY_PREFIX,
+  useMySubscription,
+} from "@/ui/hooks/useMySubscription";
+import {
+  SUBSCRIPTION_TIERS_QUERY_KEY,
+  useSubscriptionTiers,
+} from "@/ui/hooks/useSubscriptionTiers";
 
 /**
  * useLoadoutGate — the client-side Premium+ verdict for the Loadout entry point
@@ -131,6 +138,34 @@ export type LoadoutGate = {
   readonly upgradePriceMonthly: number | null;
   /** Push the paywall with Premium+ pre-selected. */
   readonly onUpgrade: () => void;
+  /**
+   * Reissue both underlying queries.
+   *
+   * ⚠ Exists because `isResolved` cannot see a HUNG request. It covers a
+   * rejection, but `getMySubscription` has no client-side timeout, so a half-open
+   * socket never settles and React Query's retry never fires — leaving any
+   * consumer that renders a spinner while unresolved stuck forever with nothing
+   * to reissue.
+   *
+   * ⚠ **`refetch()` alone is NOT enough, and this is the trap.** TanStack gates
+   * `cancelRefetch` on `this.state.data !== undefined` (`query-core/src/query.ts`):
+   * with data present it cancels and reissues, but with data UNDEFINED it falls
+   * through to `continueRetry()` and hands back **the same hung promise**, issuing
+   * nothing at all. Undefined data is by definition the only state this is ever
+   * called from — a cold-start fetch that never settled — so a bare `refetch()` is
+   * a guaranteed no-op here. The explicit `cancelQueries` first is what makes the
+   * subsequent refetch issue anything at all — and it applies to BOTH queries,
+   * because the gate is only as unstuck as its slowest half.
+   *
+   * ⚠ What it abandons is React Query's retryer, NOT the socket. `Query#fetch`
+   * does `abortController.abort()` on cancel, but `useMySubscription`'s queryFn
+   * calls `api.getMySubscription()` without forwarding `signal`, so nothing is
+   * wired to that controller and the half-open connection lingers until the OS
+   * times it out. That is fine for this purpose — the point is to stop waiting on
+   * it and start a fresh request — but do not read this as transport-level
+   * cancellation.
+   */
+  readonly refetch: () => void;
 };
 
 export function useLoadoutGate(): LoadoutGate {
@@ -151,6 +186,25 @@ export function useLoadoutGate(): LoadoutGate {
     );
   }, [billingCycle]);
 
+  const queryClient = useQueryClient();
+  const refetchSub = subQuery.refetch;
+  const refetchTiers = tiersQuery.refetch;
+  const refetch = useCallback(() => {
+    // Cancel BEFORE refetching — see the `refetch` docstring for why the built-in
+    // `cancelRefetch` cannot do it on a first fetch. Prefix key, not the full
+    // per-user key, so this does not need the userId.
+    // Both halves get the same treatment. `refetchTiers()` on its own hits the
+    // identical `data === undefined` gate, so if the CATALOG is the query that
+    // hung, a bare refetch there reissues nothing and the upsell sheet renders
+    // with no price until the tree remounts.
+    void queryClient
+      .cancelQueries({ queryKey: [USER_SUBSCRIPTION_QUERY_KEY_PREFIX] })
+      .then(() => void refetchSub());
+    void queryClient
+      .cancelQueries({ queryKey: SUBSCRIPTION_TIERS_QUERY_KEY })
+      .then(() => void refetchTiers());
+  }, [queryClient, refetchSub, refetchTiers]);
+
   return useMemo<LoadoutGate>(() => {
     const upgradeTier = tiersQuery.data?.find(
       (tier) => tier.tierName === LOADOUT_UPGRADE_TIER,
@@ -160,6 +214,7 @@ export function useLoadoutGate(): LoadoutGate {
       isResolved,
       upgradePriceMonthly: upgradeTier?.priceMonthly ?? null,
       onUpgrade,
+      refetch,
     };
-  }, [subscription, isResolved, tiersQuery.data, onUpgrade]);
+  }, [subscription, isResolved, tiersQuery.data, onUpgrade, refetch]);
 }

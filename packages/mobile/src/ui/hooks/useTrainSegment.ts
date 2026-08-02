@@ -2,7 +2,8 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
 
 /**
- * useTrainSegment — Train hub segment slice (Training | Workouts | Exercises).
+ * useTrainSegment — Train hub segment slice (Training | Workouts | Exercises |
+ * Gyms).
  *
  * Spec: specs/14-navigation/design.md § <TrainHubContainer> — Segmented
  *       composition
@@ -15,7 +16,17 @@ import { create } from "zustand";
  * pattern (`useUserMode`, `useDrawer`).
  */
 
-export type TrainSegment = "Training" | "Workouts" | "Exercises";
+/**
+ * ⚠ Widening this widens `isTrainSegment`, which validates the **device-global**
+ * persisted key — a value written by a DIFFERENT account on this device still has
+ * to pass it. `reset()` (called from `useAuth.signOut`) and the deep-link map in
+ * `navigation/notificationRoute.ts` both know this union; the deep-link map only
+ * ever writes "Training", so a new member is inert there.
+ *
+ * "Gyms" added 2026-08-02 (spec-21 AC-7.2) — saved-gym management moved here from
+ * Profile · Account.
+ */
+export type TrainSegment = "Training" | "Workouts" | "Exercises" | "Gyms";
 
 export interface TrainSegmentState {
   segment: TrainSegment;
@@ -49,7 +60,12 @@ export interface TrainSegmentState {
 const KEY = "persistence.train.segment";
 
 function isTrainSegment(value: string | null): value is TrainSegment {
-  return value === "Training" || value === "Workouts" || value === "Exercises";
+  return (
+    value === "Training" ||
+    value === "Workouts" ||
+    value === "Exercises" ||
+    value === "Gyms"
+  );
 }
 
 export const useTrainSegment = create<TrainSegmentState>((set, get) => ({

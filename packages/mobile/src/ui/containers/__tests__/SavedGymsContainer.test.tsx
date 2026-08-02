@@ -116,10 +116,16 @@ describe("SavedGymsContainer", () => {
     getByText("Dumbbells · Cable");
   });
 
-  it("shows an empty state that says how gyms get created", async () => {
+  it("shows an empty state, which now pitches rather than instructs", async () => {
     const api = new InMemoryApiAdapter();
-    const { findByTestId } = renderScreen(api);
+    const { findByTestId, queryByText } = renderScreen(api);
     expect(await findByTestId("saved-gyms-empty")).toBeTruthy();
+    // It used to instruct: go adapt a workout and tick "Save" — the only route
+    // to a gym before AC-7.2a. With a create button on the same screen that
+    // sends the user the long way round. (The intro line above still mentions
+    // adapting, correctly — that is what gyms are FOR.)
+    expect(queryByText(/tick/i)).toBeNull();
+    expect(queryByText(/next time you adapt/i)).toBeNull();
   });
 
   it("surfaces a failed list read", async () => {
@@ -421,11 +427,143 @@ describe("SavedGymsContainer", () => {
     getByText("OTHER");
   });
 
-  it("goes back", async () => {
+  /**
+   * ⚠ Creation (AC-7.2a). Before the Train-hub move a gym could only be born as
+   * a by-product of adapting a workout — `createSavedGym` had exactly two call
+   * sites and both were in `LoadoutFlowContainer` — so a hub tab with no creator
+   * would have been a dead end on a new account.
+   */
+  it("creates a gym from the segment, with no workout involved", async () => {
     const api = new InMemoryApiAdapter();
+    api.savedGyms = [];
     const { findByTestId } = renderScreen(api);
-    fireEvent.press(await findByTestId("saved-gyms-back"));
-    expect(mockRouterBack).toHaveBeenCalled();
+
+    fireEvent.press(await findByTestId("saved-gyms-create"));
+    fireEvent.changeText(
+      await findByTestId("saved-gym-new-name"),
+      "  Garage  ",
+    );
+    fireEvent.press(await findByTestId("saved-gym-new-equip-eq-barbell"));
+    fireEvent.press(await findByTestId("saved-gym-new-save"));
+
+    await waitFor(() => expect(api.savedGyms).toHaveLength(1));
+    // Trimmed for the same reason a rename is: the server's uniqueness check is
+    // on `lower(btrim(name))`, so stored padding is invisible to it.
+    expect(api.savedGyms[0].name).toBe("Garage");
+    expect(api.savedGyms[0].equipmentTypeIds).toEqual(["eq-barbell"]);
+  });
+
+  it("will not create a gym with no equipment", async () => {
+    const api = new InMemoryApiAdapter();
+    api.savedGyms = [];
+    const { findByTestId } = renderScreen(api);
+
+    fireEvent.press(await findByTestId("saved-gyms-create"));
+    fireEvent.changeText(await findByTestId("saved-gym-new-name"), "Empty");
+    const save = await findByTestId("saved-gym-new-save");
+    expect(save.props.accessibilityState.disabled).toBe(true);
+
+    fireEvent.press(save);
+    // Same rule the editor already enforces: an empty gym makes every loadable
+    // row unresolved on anything adapted against it.
+    expect(api.savedGyms).toHaveLength(0);
+  });
+
+  it("keeps the CREATE card open with a field error on a duplicate name (409)", async () => {
+    const api = new InMemoryApiAdapter();
+    api.savedGyms = [
+      {
+        id: "gym-1",
+        name: "Garage",
+        equipmentTypeIds: ["eq-dumbbell"],
+        createdAt: null,
+        updatedAt: null,
+      },
+    ];
+    const { findByTestId, getByText } = renderScreen(api);
+
+    fireEvent.press(await findByTestId("saved-gyms-create"));
+    fireEvent.changeText(await findByTestId("saved-gym-new-name"), "garage");
+    fireEvent.press(await findByTestId("saved-gym-new-equip-eq-barbell"));
+    fireEvent.press(await findByTestId("saved-gym-new-save"));
+
+    // A duplicate is as likely creating as renaming, and as recoverable — the
+    // card has to stay open with the typed value so the name can be adjusted.
+    await waitFor(() => getByText("You already have a gym with that name."));
+    await findByTestId("saved-gym-new-editor");
+    expect(api.savedGyms).toHaveLength(1);
+  });
+
+  /**
+   * ⚠ The create dead end. `EquipmentChipGrid` renders nothing for empty groups
+   * and the save button is disabled at zero selected, so an empty equipment
+   * catalogue gave a name field, no chips and a permanently greyed "Create gym"
+   * with nothing explaining why. Unreachable before creation existed — an
+   * existing gym always opens with its kit pre-selected — and now the primary CTA
+   * of the tab a new account lands on.
+   */
+  it("explains itself when the equipment catalogue could not be loaded", async () => {
+    const api = new InMemoryApiAdapter();
+    api.savedGyms = [];
+    const { findByTestId } = renderScreen(api, []);
+
+    fireEvent.press(await findByTestId("saved-gyms-create"));
+    await findByTestId("saved-gym-new-equip-empty");
+    const save = await findByTestId("saved-gym-new-save");
+    expect(save.props.accessibilityState.disabled).toBe(true);
+  });
+
+  it("actually reissues the equipment fetch from the failure copy", async () => {
+    const api = new InMemoryApiAdapter();
+    api.savedGyms = [];
+    const refresh = jest.spyOn(api, "getReferenceList");
+    const { findByTestId } = renderScreen(api, []);
+
+    fireEvent.press(await findByTestId("saved-gyms-create"));
+    await findByTestId("saved-gym-new-equip-empty");
+    const before = refresh.mock.calls.length;
+
+    // ⚠ `useReferenceLists` latches its auto-refresh per mount, so before this
+    // button the copy said "try again" with nothing that could — reopening the
+    // editor showed the same message and issued no request.
+    fireEvent.press(await findByTestId("saved-gym-new-equip-retry"));
+    await waitFor(() =>
+      expect(refresh.mock.calls.length).toBeGreaterThan(before),
+    );
+  });
+
+  it("hides the create button while an existing gym is being edited", async () => {
+    const api = new InMemoryApiAdapter();
+    seedGym(api);
+    const { findByTestId, queryByTestId } = renderScreen(api);
+
+    fireEvent.press(await findByTestId("saved-gym-gym-1-edit"));
+    // Left visible, tapping it during an in-flight save swapped `editing` for a
+    // fresh draft that the settling save then wrote into — wiping what had been
+    // typed, or captioning the new card with the OTHER gym's 409.
+    expect(queryByTestId("saved-gyms-create")).toBeNull();
+  });
+
+  it("offers the create button again once the draft is cancelled", async () => {
+    const api = new InMemoryApiAdapter();
+    api.savedGyms = [];
+    const { findByTestId, queryByTestId } = renderScreen(api);
+
+    fireEvent.press(await findByTestId("saved-gyms-create"));
+    expect(queryByTestId("saved-gyms-create")).toBeNull();
+
+    fireEvent.press(await findByTestId("saved-gym-new-cancel"));
+    await findByTestId("saved-gyms-create");
+    expect(queryByTestId("saved-gym-new-editor")).toBeNull();
+  });
+
+  it("no longer renders a back button — it is hub body content, not a screen", async () => {
+    const api = new InMemoryApiAdapter();
+    const { findByTestId, queryByTestId } = renderScreen(api);
+    await findByTestId("saved-gyms");
+    // `TrainHubContainer` owns the chrome and has already applied `insets.top`.
+    expect(queryByTestId("saved-gyms-back")).toBeNull();
+    expect(mockRouterBack).not.toHaveBeenCalled();
   });
 });
 

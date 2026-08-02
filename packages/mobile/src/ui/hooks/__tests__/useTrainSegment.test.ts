@@ -60,6 +60,18 @@ describe("useTrainSegment", () => {
     expect(useTrainSegment.getState().hydrated).toBe(true);
   });
 
+  it("hydrates Gyms — the key is DEVICE-global, so a widened union must accept it", async () => {
+    // "Gyms" was added 2026-08-02 (spec-21 AC-7.2). A build that shipped before
+    // the widening and a build after it share `persistence.train.segment` on the
+    // same device, so `isTrainSegment` is the only thing standing between a
+    // persisted "Gyms" and a silent reset to Training.
+    mockGetItem.mockResolvedValue("Gyms");
+    const { useTrainSegment } = await loadFresh();
+
+    expect(useTrainSegment.getState().segment).toBe("Gyms");
+    expect(useTrainSegment.getState().hydrated).toBe(true);
+  });
+
   it("ignores an invalid persisted value, keeping the default", async () => {
     mockGetItem.mockResolvedValue("Garbage");
     const { useTrainSegment } = await loadFresh();

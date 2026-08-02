@@ -1019,6 +1019,53 @@ container/presenter seam as everywhere else.
 Coach mode is the same machine in the trainer tone with programme-level entry
 and an assign action (AC-8.3).
 
+### 10.1 Gym management lives in the Train hub (revised 2026-08-02)
+
+AC-7.2 originally put gym management "under Settings/Profile". Brad replaced
+that with a fourth **`Gyms` segment in the Train hub** — Training / Workouts /
+Exercises / Gyms — and it is the ONLY management surface; the Profile · Account
+row is deleted, not duplicated.
+
+**Why it is not a straight move.** Two things fall out of the placement:
+
+1. **Creation had to be built.** On `main`, `createSavedGym` has exactly two
+   call sites and both are in `LoadoutFlowContainer` (commit-time create, and
+   the save-time fallback). `SavedGymsContainer` was manage-only, and its empty
+   state told the user to go adapt a workout and tick "Save" — which is only a
+   sensible instruction while the list is a footnote to the flow. A hub segment
+   that cannot create is a dead tab on a new account. `useSavedGyms.create`
+   already existed with no consumer, so the plumbing was there.
+2. **The segment must be shown-but-locked, and locked is not a taster.**
+   § 5.2 is a hard gate: no free-tier code path, no preview of real output. The
+   locked segment renders a pitch and an upgrade CTA and fetches nothing. The
+   enforcement is that `GymsSegmentContainer` does not MOUNT `SavedGymsContainer`
+   at all — `useSavedGyms` fetches on mount, so not mounting is what keeps an
+   unentitled device from ever issuing `GET /saved-gyms`. That is a stricter
+   reading than "hide the list": it keeps the surface an advertisement rather
+   than a redacted product.
+
+**The entitlement-timing guard is load-bearing here too.** `WorkoutDetailContainer`
+documents why (`useLoadoutGate` denies a null subscription by design, so a
+paying user is indistinguishable from a free one during the cold-start
+`/subscriptions/me` round trip). The segment resolves that as a third body
+state — pending — rather than the two the gate's boolean suggests. Rendering
+the upsell while unresolved would show the paywall to a subscriber on every
+cold launch.
+
+**Segment mechanics.** `TrainSegment` gains `"Gyms"`, which widens
+`isTrainSegment` — the validator for the **device-global** persisted key
+`persistence.train.segment`, so a value written by another account on the same
+device still has to pass it. `reset()` on sign-out and the `notificationRoute`
+deep-link map both know the union; the deep-link map only ever writes
+`"Training"`, so widening is inert there. `useCoachLibrarySegment` is the
+precedent for a second segmented hub and needs no change.
+
+**Presenter.** `SavedGymsPresenter` stops being a Stack screen: it loses its
+`SafeAreaView` + back header and becomes hub body content, since the hub already
+applies `insets.top`. That also retires the note in STATE.md about this presenter
+deliberately keeping `SafeAreaView` — outside the Loadout route there is no
+`SafeAreaProvider`, and a hub body must not measure its own window.
+
 > **Payload-size note.** `SnapAISheetContainer.tsx:119` resizes with
 > `[{ resize: { width: MAX_DIMENSION } }]` — **width only**, despite its own doc
 > comment (L21) saying "long edge". A portrait photo therefore still exceeds
