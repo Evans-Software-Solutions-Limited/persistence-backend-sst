@@ -140,6 +140,10 @@ export async function enqueueJob(input: {
     input: input.input,
     total,
     clientRequestId: input.clientRequestId ?? null,
+    // Per-kind, so a kind with slow steps can raise its own bounds rather than
+    // dying mid-progress against a default sized on another kind's step time.
+    maxAttempts: kind.maxAttempts,
+    maxInvocations: kind.maxInvocations,
   });
 
   // Serialised per user per kind by a unique index (design § 5.1) — the cost

@@ -169,8 +169,16 @@ CREATE INDEX IF NOT EXISTS ai_jobs_running_heartbeat_idx
 -- burst can send a message to the DLQ having never executed — leaving a row
 -- `queued` forever. Without this reaper such a row is never terminal, so the
 -- client polls it indefinitely AND the terminal-job purge never removes it.
-CREATE INDEX IF NOT EXISTS ai_jobs_queued_created_idx
-  ON ai_jobs (created_at) WHERE status = 'queued';
+--
+-- ⚠ On `updated_at`, NOT `created_at`. `queued` has two meanings — never started,
+-- and released mid-flight by a time-budget yield — and measuring from creation
+-- conflates them: a legitimately long job (a 120-step run is ~45 min, and one
+-- visibility wait after a retry puts it past an hour) would be written off as
+-- "never started" while it was about to resume, losing every checkpointed step.
+-- `releaseForResume` stamps `updated_at` on each yield, so the timer restarts on
+-- every genuine hand-back; for a never-started job it still equals `created_at`.
+CREATE INDEX IF NOT EXISTS ai_jobs_queued_updated_idx
+  ON ai_jobs (updated_at) WHERE status = 'queued';
 
 -- Terminal-job purge (30 days, folded into accountPurgeCron rather than a fifth
 -- sst.aws.Cron). A job row holds a whole generated programme, so this is not a

@@ -164,19 +164,176 @@ describe("AiJobRepository", () => {
       ).rejects.toThrow("duplicate key");
     });
 
-    it("an IN-FLIGHT collision is reported as such, NOT mistaken for a replay", async () => {
-      // Two unique indexes exist on this table, so a 23505 is attributed by NAME.
-      // Reporting an in-flight collision as a successful replay would hand the
-      // caller someone else's... no, worse: it would hand back a DIFFERENT job
-      // than the one requested, or nothing at all.
+    /**
+     * The in-flight branch reads the colliding row, so these tests drive the
+     * insert + a sequence of selects.
+     */
+    function mockInflightCollision(selectResults: unknown[][]) {
       const uniqueViolation = Object.assign(new Error("duplicate key"), {
         code: "23505",
         constraint_name: INFLIGHT_INDEX,
       });
+      let insertCalls = 0;
+      let selectCalls = 0;
+      const updateSpy = vi.fn().mockReturnValue({
+        set: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue(undefined),
+        }),
+      });
       (getDb as any).mockReturnValue({
         insert: vi.fn().mockReturnValue({
           values: vi.fn().mockReturnValue({
-            returning: vi.fn().mockRejectedValue(uniqueViolation),
+            returning: vi.fn().mockImplementation(() => {
+              insertCalls += 1;
+              // First insert always collides; a reclaim retry succeeds.
+              return insertCalls === 1
+                ? Promise.reject(uniqueViolation)
+                : Promise.resolve([{ id: "j-new" }]);
+            }),
+          }),
+        }),
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi
+                .fn()
+                .mockImplementation(() =>
+                  Promise.resolve(selectResults[selectCalls++] ?? []),
+                ),
+            }),
+          }),
+        }),
+        update: updateSpy,
+      });
+      return { updateSpy, insertCalls: () => insertCalls };
+    }
+
+    it("an IN-FLIGHT collision with a genuinely live job is reported as such, NOT as a replay", async () => {
+      const live = {
+        id: "j-live",
+        status: "running",
+        heartbeatAt: new Date(),
+        updatedAt: new Date(),
+        createdAt: new Date(),
+        attempts: 1,
+        maxAttempts: 3,
+        invocations: 1,
+        maxInvocations: 20,
+      };
+      mockInflightCollision([[live]]);
+
+      expect(
+        await new AiJobRepository().enqueue({
+          userId: "u1",
+          kind: "k",
+          input: {},
+          total: 1,
+        }),
+      ).toEqual({ job: null, outcome: "in_flight" });
+    });
+
+    it("⚠ a KEYED retry that collides on the in-flight index still answers `replayed`", async () => {
+      // Both unique indexes are violated by a keyed retry of an in-flight job, and
+      // Postgres reports only whichever it checked first (index OID order — which
+      // nothing in the migration pins). Answering `409` would leave the client
+      // unable to poll a job it successfully created, i.e. exactly the failure the
+      // idempotency key exists to prevent. The answer must not depend on which
+      // index Postgres happened to name.
+      const live = {
+        id: "j-live",
+        status: "queued",
+        heartbeatAt: null,
+        updatedAt: new Date(),
+        createdAt: new Date(),
+        attempts: 0,
+        maxAttempts: 3,
+        invocations: 0,
+        maxInvocations: 20,
+      };
+      // select 1 = findLiveForKind, select 2 = findByClientRequestId
+      mockInflightCollision([[live], [live]]);
+
+      expect(
+        await new AiJobRepository().enqueue({
+          userId: "u1",
+          kind: "k",
+          input: {},
+          total: 1,
+          clientRequestId: "req-1",
+        }),
+      ).toEqual({ job: live, outcome: "replayed" });
+    });
+
+    it("⚠ a collision with a DEAD row self-heals: the row is failed and the insert retried", async () => {
+      // The in-flight index keys off the PERSISTED status, but death is DERIVED on
+      // read and only persisted by the nightly sweep. Without this, a user whose
+      // worker died is told "failed, try again" at 40 minutes and then gets 409 on
+      // every retry until 05:00 UTC — a lockout governed by a cron cadence.
+      const dead = {
+        id: "j-dead",
+        status: "running",
+        // Heartbeat far past STALE_AFTER_MS.
+        heartbeatAt: new Date(Date.now() - STALE_AFTER_MS - 60_000),
+        updatedAt: new Date(Date.now() - STALE_AFTER_MS - 60_000),
+        createdAt: new Date(Date.now() - STALE_AFTER_MS - 60_000),
+        attempts: 3,
+        maxAttempts: 3,
+        invocations: 3,
+        maxInvocations: 20,
+      };
+      const { updateSpy, insertCalls } = mockInflightCollision([[dead]]);
+
+      const result = await new AiJobRepository().enqueue({
+        userId: "u1",
+        kind: "k",
+        input: {},
+        total: 1,
+      });
+
+      expect(result).toEqual({ job: { id: "j-new" }, outcome: "created" });
+      // The dead row was finalised...
+      expect(updateSpy).toHaveBeenCalled();
+      // ...and the insert was retried exactly ONCE, never looped.
+      expect(insertCalls()).toBe(2);
+    });
+
+    it("does not loop: a second collision after the reclaim reports in_flight", async () => {
+      const dead = {
+        id: "j-dead",
+        status: "running",
+        heartbeatAt: new Date(Date.now() - STALE_AFTER_MS - 60_000),
+        updatedAt: new Date(Date.now() - STALE_AFTER_MS - 60_000),
+        createdAt: new Date(Date.now() - STALE_AFTER_MS - 60_000),
+        attempts: 3,
+        maxAttempts: 3,
+        invocations: 3,
+        maxInvocations: 20,
+      };
+      const uniqueViolation = Object.assign(new Error("duplicate key"), {
+        code: "23505",
+        constraint_name: INFLIGHT_INDEX,
+      });
+      let insertCalls = 0;
+      (getDb as any).mockReturnValue({
+        insert: vi.fn().mockReturnValue({
+          values: vi.fn().mockReturnValue({
+            // ALWAYS collides — a pathological state.
+            returning: vi.fn().mockImplementation(() => {
+              insertCalls += 1;
+              return Promise.reject(uniqueViolation);
+            }),
+          }),
+        }),
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([dead]),
+            }),
+          }),
+        }),
+        update: vi.fn().mockReturnValue({
+          set: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue(undefined),
           }),
         }),
       });
@@ -189,6 +346,7 @@ describe("AiJobRepository", () => {
           total: 1,
         }),
       ).toEqual({ job: null, outcome: "in_flight" });
+      expect(insertCalls).toBe(2);
     });
 
     it("rethrows a unique violation from an UNRECOGNISED index rather than guessing", async () => {
@@ -584,7 +742,7 @@ describe("AiJobRepository", () => {
   });
 
   describe("markStaleQueued", () => {
-    it("reaps jobs that were never claimed at all, measured from createdAt", async () => {
+    it("reaps jobs whose queue message died, measured from updated_at", async () => {
       // The failure `markStaleRunning` cannot see: a message that dies before its
       // first receive leaves a row nothing ever transitions, so the client polls
       // `queued 0/120` forever and the terminal purge never sees it.
@@ -610,7 +768,11 @@ describe("AiJobRepository", () => {
         }),
       );
       const { sql, params } = renderSql(whereSpy.mock.calls[0][0]);
-      expect(sql).toContain("created_at");
+      // ⚠ `updated_at`, not `created_at`: `releaseForResume` stamps it on every
+      // yield, so a legitimately long job in flight is not written off as "never
+      // started" — which would destroy every checkpointed step.
+      expect(sql).toContain("updated_at");
+      expect(sql).not.toContain("created_at");
       expect(params).toContain("queued");
       expect(params).toContainEqual(
         new Date(now.getTime() - QUEUED_STALE_AFTER_MS).toISOString(),

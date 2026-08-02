@@ -1,7 +1,17 @@
 import { and, eq, lt, sql } from "drizzle-orm";
 import { aiJobs, type AiJob } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
-import type { JobError, JobStatus } from "./types";
+import {
+  CLAIM_FENCE_MS,
+  isStaleQueued,
+  isStaleRunning,
+  QUEUED_STALE_AFTER_MS,
+  STALE_AFTER_MS,
+  STALE_QUEUED_ERROR,
+  STALE_RUNNING_ERROR,
+  TERMINAL_STATUSES,
+} from "./jobLifecycle";
+import type { JobError } from "./types";
 
 const PG_UNIQUE_VIOLATION = "23505";
 
@@ -9,82 +19,22 @@ const PG_UNIQUE_VIOLATION = "23505";
 export const IDEMPOTENCY_INDEX = "ai_jobs_user_kind_client_request_idx";
 export const INFLIGHT_INDEX = "ai_jobs_one_inflight_per_kind_idx";
 
-/**
- * How long a `running` job may be silent before ANOTHER worker may take it over
- * (design § 3.1).
- *
- * This is the fence that makes re-claiming a `running` job safe. Without it, a
- * duplicate delivery could claim a job that is *actively running* and execute
- * the same steps concurrently — two workers interleaving checkpoint writes, with
- * `progress_done` able to go backwards.
- *
- * 5 minutes is far longer than any step should take between heartbeats (the
- * spine writes one after every step, and a kind with a longer step must call the
- * `heartbeat()` its step context provides). It is far SHORTER than
- * `STALE_AFTER_MS`, and it has to be: a hard-killed job must become re-claimable
- * long before it is declared dead to the client, or its checkpoint is lost.
- */
-export const CLAIM_FENCE_MS = 5 * 60 * 1000;
-
-/**
- * When a job is declared dead to the CLIENT (design § 3.4).
- *
- * ⚠ THIS MUST EXCEED THE QUEUE'S VISIBILITY TIMEOUT PLUS A FULL WORKER RUN, and
- * an earlier revision sized it against the worker timeout alone (15 min) — which
- * was wrong in a way that costs money. A retryable step failure 30 s into an
- * invocation leaves the message invisible for the whole 16-minute visibility
- * timeout while the heartbeat sits at 30 s. At 15 minutes the poll endpoint would
- * report `failed`/`stale` — "Nothing was saved; try again" — during the gap
- * before redelivery, so a client following the documented "stop polling on a
- * terminal status" contract gives up and the user re-runs, double-spending, while
- * the original job is quietly redelivered and succeeds.
- *
- * 40 minutes = 16 min visibility + 15 min worker run + margin. It is a
- * deliberately loose upper bound: the cost of being too high is a client waiting
- * longer on a genuinely dead job; the cost of being too low is duplicate spend
- * and a discarded checkpoint.
- */
-export const STALE_AFTER_MS = 40 * 60 * 1000;
-
-/**
- * How long a job may sit `queued` before it is given up on (design § 3.4).
- *
- * A message can die before it is ever claimed: throttled receives count toward
- * the redrive policy, so a burst against the worker's reserved concurrency can
- * send a message to the DLQ having never executed. Nothing about `running`
- * staleness covers that — the row stays `queued` forever, so the client polls it
- * indefinitely AND the terminal-job purge never sees it.
- *
- * Sized off the redrive policy, not the worker: 3 receives × a 16-minute
- * visibility timeout is ~48 minutes to reach the DLQ, so 60 minutes guarantees
- * the message is genuinely gone before the row is written off.
- */
-export const QUEUED_STALE_AFTER_MS = 60 * 60 * 1000;
-
-/**
- * The two give-up errors, defined once and shared by the read path (which
- * DERIVES them) and the nightly sweep (which PERSISTS them), so the client never
- * sees the message change when the sweep catches up with the derivation.
- */
-export const STALE_RUNNING_ERROR: JobError = {
-  code: "stale",
-  message:
-    "The job stopped reporting progress and was ended. Nothing was saved; try again.",
-  retryable: false,
-};
-
-export const STALE_QUEUED_ERROR: JobError = {
-  code: "stale",
-  message: "The job never started and was ended. Nothing was saved; try again.",
-  retryable: false,
-};
-
-/** Terminal states — a job here will never run again. */
-export const TERMINAL_STATUSES: readonly JobStatus[] = [
-  "succeeded",
-  "failed",
-  "cancelled",
-];
+// Re-exported so callers and tests have one import site for the lifecycle rules
+// while the rules themselves stay in `jobLifecycle` (which has no DB dependency
+// and therefore no import cycle with this file).
+export {
+  CLAIM_FENCE_MS,
+  isLive,
+  isOutOfBudget,
+  isStaleQueued,
+  isStaleRunning,
+  isWarmRunning,
+  QUEUED_STALE_AFTER_MS,
+  STALE_AFTER_MS,
+  STALE_QUEUED_ERROR,
+  STALE_RUNNING_ERROR,
+  TERMINAL_STATUSES,
+} from "./jobLifecycle";
 
 /**
  * `TERMINAL_STATUSES` as a SQL literal list.
@@ -94,7 +44,7 @@ export const TERMINAL_STATUSES: readonly JobStatus[] = [
  * added to the union and silently missed by the purge.
  */
 const TERMINAL_STATUS_SQL = sql.raw(
-  TERMINAL_STATUSES.map((s) => `'${s}'`).join(", "),
+  TERMINAL_STATUSES.map((st) => `'${st}'`).join(", "),
 );
 
 function isUniqueViolation(error: unknown): boolean {
@@ -146,6 +96,7 @@ export class AiJobRepository {
     total: number;
     clientRequestId?: string | null;
     maxAttempts?: number;
+    maxInvocations?: number;
   }): Promise<{
     job: AiJob | null;
     outcome: "created" | "replayed" | "in_flight";
@@ -160,48 +111,137 @@ export class AiJobRepository {
       ...(input.maxAttempts !== undefined
         ? { maxAttempts: input.maxAttempts }
         : {}),
+      ...(input.maxInvocations !== undefined
+        ? { maxInvocations: input.maxInvocations }
+        : {}),
     };
 
-    try {
-      const [job] = await db.insert(aiJobs).values(values).returning();
-      return { job, outcome: "created" };
-    } catch (error) {
-      if (!isUniqueViolation(error)) throw error;
+    // `retrying` guards the ONE reclaim attempt below, so a pathological state
+    // cannot produce an insert loop.
+    const attemptInsert = async (
+      retrying: boolean,
+    ): Promise<{
+      job: AiJob | null;
+      outcome: "created" | "replayed" | "in_flight";
+    }> => {
+      try {
+        const [job] = await db.insert(aiJobs).values(values).returning();
+        return { job, outcome: "created" };
+      } catch (error) {
+        if (!isUniqueViolation(error)) throw error;
 
-      const constraint = violatedConstraint(error);
+        const constraint = violatedConstraint(error);
 
-      // Already running one of these. Reported rather than queued: one unit of
-      // work here is up to ~120 inferences, so serialising per user per kind is
-      // the cost control the read-then-write daily ceiling cannot be.
-      if (constraint === INFLIGHT_INDEX) {
-        return { job: null, outcome: "in_flight" };
-      }
+        if (constraint === INFLIGHT_INDEX) {
+          const colliding = await this.findLiveForKind(
+            input.userId,
+            input.kind,
+          );
 
-      // A replay. Only the idempotency index can produce this, and only when a
-      // key was supplied — anything else is a bug we must not swallow.
-      if (constraint !== IDEMPOTENCY_INDEX || input.clientRequestId == null) {
-        throw error;
+          // ⚠ ORDER-INDEPENDENT REPLAY. When a keyed request collides, BOTH
+          // unique indexes are violated and Postgres reports only whichever it
+          // checked first (relcache order, effectively index OID). Today the
+          // idempotency index happens to be created first — but nothing pins
+          // that, and a future migration recreating it would flip the order. If
+          // the caller supplied a key and a row already carries it, the honest
+          // answer is `replayed` with that row, not a `409` that leaves the
+          // client unable to poll a job it successfully created.
+          if (input.clientRequestId != null) {
+            const keyed = await this.findByClientRequestId(
+              input.userId,
+              input.kind,
+              input.clientRequestId,
+            );
+            if (keyed) return { job: keyed, outcome: "replayed" };
+          }
+
+          // ⚠ SELF-HEAL A DEAD ROW. The in-flight index keys off the PERSISTED
+          // status, but death is DERIVED on read and only persisted by the
+          // nightly sweep. Without this, a job whose worker died is reported to
+          // the client as `failed` ("try again") 40 minutes in, while every retry
+          // gets `409 in_flight` until 05:00 UTC — a lockout governed by a cron
+          // cadence rather than by any threshold the design reasons about.
+          if (
+            !retrying &&
+            colliding &&
+            (isStaleRunning(colliding) || isStaleQueued(colliding))
+          ) {
+            await this.fail(
+              colliding.id,
+              colliding.status === "queued"
+                ? STALE_QUEUED_ERROR
+                : STALE_RUNNING_ERROR,
+            );
+            return attemptInsert(true);
+          }
+
+          // Genuinely in flight. Reported rather than queued: one unit of work
+          // here is up to ~120 inferences, so serialising per user per kind is
+          // the cost control the read-then-write daily ceiling cannot be.
+          return { job: null, outcome: "in_flight" };
+        }
+
+        // A replay. Only the idempotency index can produce this, and only when a
+        // key was supplied — anything else is a bug we must not swallow.
+        if (constraint !== IDEMPOTENCY_INDEX || input.clientRequestId == null) {
+          throw error;
+        }
+        const existing = await this.findByClientRequestId(
+          input.userId,
+          input.kind,
+          input.clientRequestId,
+        );
+        if (!existing) {
+          // The row vanished between the insert and this read. Swallowing it
+          // would return a success with no job — rethrow.
+          throw error;
+        }
+        return { job: existing, outcome: "replayed" };
       }
-      // Scoped to exactly the row that collided: the index is
-      // (user_id, kind, client_request_id).
-      const [existing] = await db
-        .select()
-        .from(aiJobs)
-        .where(
-          and(
-            eq(aiJobs.userId, input.userId),
-            eq(aiJobs.kind, input.kind),
-            eq(aiJobs.clientRequestId, input.clientRequestId),
-          ),
-        )
-        .limit(1);
-      if (!existing) {
-        // The row vanished between the insert and this read. Swallowing it
-        // would return a success with no job — rethrow.
-        throw error;
-      }
-      return { job: existing, outcome: "replayed" };
-    }
+    };
+
+    return attemptInsert(false);
+  }
+
+  /** The row carrying this idempotency key, if any. */
+  async findByClientRequestId(
+    userId: string,
+    kind: string,
+    clientRequestId: string,
+  ): Promise<AiJob | null> {
+    const db = getDb();
+    const rows = await db
+      .select()
+      .from(aiJobs)
+      .where(
+        and(
+          eq(aiJobs.userId, userId),
+          eq(aiJobs.kind, kind),
+          eq(aiJobs.clientRequestId, clientRequestId),
+        ),
+      )
+      .limit(1);
+    return rows[0] ?? null;
+  }
+
+  /**
+   * The user's live job of this kind — the row the in-flight unique index
+   * collided with. At most one can exist, by that index.
+   */
+  async findLiveForKind(userId: string, kind: string): Promise<AiJob | null> {
+    const db = getDb();
+    const rows = await db
+      .select()
+      .from(aiJobs)
+      .where(
+        and(
+          eq(aiJobs.userId, userId),
+          eq(aiJobs.kind, kind),
+          sql`${aiJobs.status} IN ('queued', 'running')`,
+        ),
+      )
+      .limit(1);
+    return rows[0] ?? null;
   }
 
   /**
@@ -505,7 +545,19 @@ export class AiJobRepository {
         finishedAt: sql`now()`,
         updatedAt: sql`now()`,
       })
-      .where(and(eq(aiJobs.status, "queued"), lt(aiJobs.createdAt, cutoff)))
+      .where(
+        and(
+          eq(aiJobs.status, "queued"),
+          // ⚠ `updated_at`, NOT `created_at`. `queued` means either "never
+          // started" or "released mid-flight by a yield", and measuring from
+          // creation conflates them: a legitimately long job would be killed as
+          // "never started" while it was about to resume, losing every
+          // checkpointed step. `releaseForResume` stamps `updated_at`, so the
+          // timer restarts on each genuine hand-back; for a never-started job it
+          // still equals `created_at`. Mirrors `isStaleQueued`.
+          lt(aiJobs.updatedAt, cutoff),
+        ),
+      )
       .returning({ id: aiJobs.id });
     return rows.length;
   }

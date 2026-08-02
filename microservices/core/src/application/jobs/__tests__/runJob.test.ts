@@ -102,30 +102,121 @@ describe("runJob", () => {
       expect(repo.fail).not.toHaveBeenCalled();
     });
 
-    it("a delivery that loses the claim to a LIVE worker is skipped, not failed", async () => {
-      // The mutual exclusion itself is a property of the claim SQL and is tested
-      // in aiJobRepository.test.ts (the fenced predicate). What runJob owns is
-      // the RESPONSE to losing it: do no work, do not fail the job the other
-      // worker is running, and return normally so the duplicate message is
-      // deleted.
+    it("losing the claim to a LIVE worker THROWS — the message must survive, not be deleted", async () => {
+      // The fence's mutual exclusion is a property of the claim SQL and of
+      // `isWarmRunning` (jobLifecycle.test.ts). What runJob owns is the RESPONSE
+      // to losing it: do no work, do not fail the job the other worker is
+      // running, and do not let SQS delete the message — if the holder dies, a
+      // later redelivery has to be able to take the job over.
       const { runStep } = registerCountingKind();
       const repo = makeRepo(
         null,
-        // Live: within budget, and its heartbeat is warm (which is why the claim
-        // was refused rather than granted).
-        job({ status: "running", attempts: 1, invocations: 1 }),
+        job({
+          status: "running",
+          attempts: 1,
+          invocations: 1,
+          // Warm: heartbeat seconds old, which is why the claim was refused.
+          heartbeatAt: new Date(Date.now() - 1000),
+        }),
       );
 
-      const outcome = await runJob({
-        jobId: "j1",
-        remainingMs: plentyOfTime,
-        repository: repo,
-        queue: makeQueue() as any,
-      });
+      await expect(
+        runJob({
+          jobId: "j1",
+          remainingMs: plentyOfTime,
+          repository: repo,
+          queue: makeQueue() as any,
+        }),
+      ).rejects.toThrow(/held by a live worker/);
 
-      expect(outcome.status).toBe("skipped");
       expect(runStep).not.toHaveBeenCalled();
       expect(repo.fail).not.toHaveBeenCalled();
+    });
+
+    it("⚠ a warm holder on its LAST allowed claim is NOT failed by a duplicate", async () => {
+      // The ordering bug: with the budget checked first, a duplicate arriving
+      // during the holder's final invocation would mark the job
+      // `attempts_exhausted` while the holder was still spending Bedrock — and
+      // `succeed()` is scoped to `running`, so the finished result would be
+      // discarded and the user told the job failed repeatedly.
+      registerCountingKind();
+      const repo = makeRepo(
+        null,
+        job({
+          status: "running",
+          attempts: 3,
+          maxAttempts: 3,
+          invocations: 20,
+          maxInvocations: 20,
+          heartbeatAt: new Date(Date.now() - 1000),
+        }),
+      );
+
+      await expect(
+        runJob({
+          jobId: "j1",
+          remainingMs: plentyOfTime,
+          repository: repo,
+          queue: makeQueue() as any,
+        }),
+      ).rejects.toThrow(/held by a live worker/);
+      expect(repo.fail).not.toHaveBeenCalled();
+    });
+
+    it("⚠ a redelivery refused by the FENCE throws rather than orphaning the job", async () => {
+      // The bug this exists for: a retryable step failure late in a 15-minute
+      // invocation is redelivered ~16 min later with a heartbeat only ~2 min old —
+      // inside the 5-minute fence — so the claim refuses. Returning `skipped`
+      // there DELETED the message and left the job `running` with its checkpoint
+      // stranded until the nightly sweep: ~$0.63 of purchased inference discarded
+      // on the very path this spine exists to protect.
+      registerCountingKind();
+      const repo = makeRepo(
+        null,
+        job({
+          status: "running",
+          attempts: 1,
+          invocations: 2,
+          heartbeatAt: new Date(Date.now() - 2 * 60 * 1000),
+        }),
+      );
+
+      await expect(
+        runJob({
+          jobId: "j1",
+          remainingMs: plentyOfTime,
+          repository: repo,
+          queue: makeQueue() as any,
+        }),
+      ).rejects.toThrow(/held by a live worker/);
+      expect(repo.fail).not.toHaveBeenCalled();
+    });
+
+    it("a QUEUED row whose claim was lost in the read gap also throws, not skips", async () => {
+      // Branch (d): live, in budget, not warm — another worker claimed it between
+      // our UPDATE and this read. Nothing to do now, but the message must survive
+      // in case that worker dies.
+      registerCountingKind();
+      const repo = makeRepo(
+        null,
+        job({
+          status: "queued",
+          attempts: 0,
+          invocations: 0,
+          heartbeatAt: null,
+        }),
+      );
+
+      await expect(
+        runJob({
+          jobId: "j1",
+          remainingMs: plentyOfTime,
+          repository: repo,
+          queue: makeQueue() as any,
+        }),
+      ).rejects.toThrow(/not claimable yet/);
+      expect(repo.fail).not.toHaveBeenCalled();
+      expect(repo.succeed).not.toHaveBeenCalled();
     });
 
     it("AC-3.4: a claim refused on EXHAUSTED attempts becomes terminal, not a silent skip", async () => {
@@ -135,7 +226,13 @@ describe("runJob", () => {
       // minutes later.
       const repo = makeRepo(
         null,
-        job({ status: "running", attempts: 3, maxAttempts: 3 }),
+        // COLD heartbeat: the fence is not what refused this claim, the budget is.
+        job({
+          status: "running",
+          attempts: 3,
+          maxAttempts: 3,
+          heartbeatAt: new Date(Date.now() - 30 * 60 * 1000),
+        }),
       );
 
       const outcome = await runJob({

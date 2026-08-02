@@ -167,6 +167,19 @@ export interface JobKind<
   inferenceEndpoint: string;
 
   /**
+   * Per-kind execution bounds. Omit to take the column defaults (3 consecutive
+   * stalls, 20 total invocations).
+   *
+   * ⚠ `maxInvocations`'s default of 20 was sized on Loadout's ~20 s steps (a
+   * 120-step job needs ~3 invocations, so 20 is a wide margin). A kind with much
+   * slower steps MUST raise it: at 60 s/step the same 120 steps need ~9
+   * invocations before any retry budget, and hitting the bound fails the job
+   * mid-progress with `attempts_exhausted`, discarding paid inference.
+   */
+  maxAttempts?: number;
+  maxInvocations?: number;
+
+  /**
    * Validate the input and size the work. Throws `JobKindError('input_invalid')`
    * for a bad request and `JobTooLargeError` when over the kind's own bound.
    *

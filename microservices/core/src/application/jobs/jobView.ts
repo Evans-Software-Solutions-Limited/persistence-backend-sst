@@ -1,10 +1,10 @@
 import type { AiJob } from "@persistence/db";
 import {
-  QUEUED_STALE_AFTER_MS,
-  STALE_AFTER_MS,
+  isStaleQueued,
+  isStaleRunning,
   STALE_QUEUED_ERROR,
   STALE_RUNNING_ERROR,
-} from "./aiJobRepository";
+} from "./jobLifecycle";
 import type { JobError, JobStatus } from "./types";
 
 export interface JobView {
@@ -19,41 +19,15 @@ export interface JobView {
   finishedAt: Date | null;
 }
 
-/**
- * Is this `running` job dead? — design § 3.4, AC-2.5.
- *
- * A Lambda hard-kill, an OOM or a deploy mid-run leaves a job `running` with no
- * terminal state, because a hard-kill runs no `finally` block (the failure mode
- * `infra/api.ts` documents at length for the 20 s default timeout). A cold
- * heartbeat is the only evidence available.
- *
- * ⚠ The threshold has to clear the QUEUE's visibility timeout, not just the
- * worker timeout — see `STALE_AFTER_MS`. A job awaiting redelivery after a
- * retryable failure has a legitimately cold heartbeat for the whole visibility
- * window, and calling it dead there tells the user to re-run work that is about
- * to succeed.
- *
- * `heartbeatAt` is NULL only between the insert and the first claim, which is a
- * `queued` job — a `running` job with no heartbeat is a schema violation, and
- * treating it as stale is the safe reading.
- */
-export function isStaleRunning(job: AiJob, now: Date = new Date()): boolean {
-  if (job.status !== "running") return false;
-  if (job.heartbeatAt == null) return true;
-  return now.getTime() - job.heartbeatAt.getTime() > STALE_AFTER_MS;
-}
-
-/**
- * Has this job sat `queued` so long that its message must be gone?
- *
- * The failure `isStaleRunning` cannot see: a message that dies before its first
- * receive leaves a row nothing ever transitions. Measured from `createdAt`,
- * because a never-claimed job has no heartbeat to measure from.
- */
-export function isStaleQueued(job: AiJob, now: Date = new Date()): boolean {
-  if (job.status !== "queued") return false;
-  return now.getTime() - job.createdAt.getTime() > QUEUED_STALE_AFTER_MS;
-}
+// The lifecycle rules themselves live in `jobLifecycle` — no DB dependency, so
+// both this read path and the repository's SQL can share them without a cycle.
+export {
+  isLive,
+  isOutOfBudget,
+  isStaleQueued,
+  isStaleRunning,
+  isWarmRunning,
+} from "./jobLifecycle";
 
 /**
  * Project a job row for the wire, deriving staleness on READ.

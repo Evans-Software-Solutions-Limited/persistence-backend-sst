@@ -14,10 +14,17 @@
       (`IF NOT EXISTS` + `pg_constraint` guards). Includes the partial UNIQUE on
       `(user_id, kind, client_request_id)` and the partial running/heartbeat
       index. Design § 2.
-- [ ] **T-J1.2 [B]** `AiJobRepository` — `enqueue` (catching the unique
-      violation → existing row, AC-3.2), `claim` (the single conditional UPDATE,
-      § 3.1), `checkpoint`, `heartbeat`, `succeed`, `fail`, `getForUser`,
-      `purgeTerminalOlderThan`, `markStaleRunning`.
+- [ ] **T-J1.2 [B]** `AiJobRepository` — `enqueue` (catching the unique violation
+      → existing row, AC-3.2; attributing 23505 by index NAME; self-healing a dead
+      in-flight row), `claim` (the single FENCED conditional UPDATE, § 3.1),
+      `checkpoint` (resets `attempts`), `releaseForResume`, `heartbeat`, `succeed`,
+      `fail`, `deleteUnpublished`, `getForUser`, `purgeTerminalOlderThan`,
+      `markStaleRunning`, `markStaleQueued`.
+- [ ] **T-J1.2a [B]** `jobLifecycle.ts` — the pure lifecycle predicates and
+      thresholds (`isWarmRunning`, `isStaleRunning`, `isStaleQueued`, `isLive`,
+      `isOutOfBudget`, `CLAIM_FENCE_MS`, `STALE_AFTER_MS`,
+      `QUEUED_STALE_AFTER_MS`). Its own module so the repository's SQL and the
+      read path share one source of truth without an import cycle.
 - [ ] **T-J1.3 [B]** `JobQueue` port + SQS adapter (`sendJobMessage`). Consumers
       never import the AWS SDK (AC-6.1).
 - [ ] **T-J1.4 [B]** Kind registry + `JobKind` interface (§ 4). Ships with
@@ -37,7 +44,9 @@
 - [ ] **T-J1.10 [B]** Terminal-job purge + stale-running persistence folded into
       `accountPurgeCron` (no new cron).
 - [ ] **T-J1.11 [B]** Tests per design § 8, including the rendered-SQL assertion
-      on the claim statement. ≥ 90 % coverage on the new files.
+      on the claim statement AND direct tests of the lifecycle predicates + the
+      threshold relationships (those constants are only correct RELATIVE to
+      `infra/jobs.ts`, which has neither typecheck nor tests). ≥ 90 % coverage.
 
 ## Phase J2 — first consumer (spec-21 Loadout Phase 4, separate branch)
 

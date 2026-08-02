@@ -1,12 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect } from "vitest";
 import { QUEUED_STALE_AFTER_MS, STALE_AFTER_MS } from "../aiJobRepository";
-import {
-  isStaleQueued,
-  isStaleRunning,
-  toJobStatusView,
-  toJobView,
-} from "../jobView";
+import { toJobStatusView, toJobView } from "../jobView";
 
 const NOW = new Date("2026-08-02T12:00:00.000Z");
 
@@ -21,93 +16,12 @@ function row(overrides: Record<string, unknown> = {}) {
     error: null,
     heartbeatAt: new Date(NOW.getTime() - 1000),
     createdAt: new Date(NOW.getTime() - 60_000),
+    updatedAt: new Date(NOW.getTime() - 1000),
     startedAt: new Date(NOW.getTime() - 30_000),
     finishedAt: null,
     ...overrides,
   } as any;
 }
-
-describe("isStaleRunning", () => {
-  it("is false for a terminal job however old its heartbeat", () => {
-    expect(
-      isStaleRunning(
-        row({ status: "succeeded", heartbeatAt: new Date(0) }),
-        NOW,
-      ),
-    ).toBe(false);
-  });
-
-  it("is false for a queued job with no heartbeat yet", () => {
-    expect(
-      isStaleRunning(row({ status: "queued", heartbeatAt: null }), NOW),
-    ).toBe(false);
-  });
-
-  it("is false while the heartbeat is fresh", () => {
-    expect(isStaleRunning(row(), NOW)).toBe(false);
-  });
-
-  it("is false exactly AT the threshold — strictly older only", () => {
-    expect(
-      isStaleRunning(
-        row({ heartbeatAt: new Date(NOW.getTime() - STALE_AFTER_MS) }),
-        NOW,
-      ),
-    ).toBe(false);
-  });
-
-  it("is true once the heartbeat is past the threshold", () => {
-    expect(
-      isStaleRunning(
-        row({ heartbeatAt: new Date(NOW.getTime() - STALE_AFTER_MS - 1) }),
-        NOW,
-      ),
-    ).toBe(true);
-  });
-
-  it("treats a RUNNING job with no heartbeat as stale — that state is a schema violation", () => {
-    expect(isStaleRunning(row({ heartbeatAt: null }), NOW)).toBe(true);
-  });
-});
-
-describe("isStaleQueued", () => {
-  it("is false for a fresh queued job", () => {
-    expect(isStaleQueued(row({ status: "queued" }), NOW)).toBe(false);
-  });
-
-  it("is false for any non-queued status, however old", () => {
-    expect(
-      isStaleQueued(row({ status: "running", createdAt: new Date(0) }), NOW),
-    ).toBe(false);
-  });
-
-  it("is true once a queued job outlasts the threshold — measured from createdAt", async () => {
-    // The failure `isStaleRunning` cannot see: a message that dies before its
-    // first receive leaves a row nothing ever transitions, and a never-claimed
-    // job has no heartbeat to measure from.
-    expect(
-      isStaleQueued(
-        row({
-          status: "queued",
-          createdAt: new Date(NOW.getTime() - QUEUED_STALE_AFTER_MS - 1),
-        }),
-        NOW,
-      ),
-    ).toBe(true);
-  });
-
-  it("is false exactly AT the threshold — strictly older only", () => {
-    expect(
-      isStaleQueued(
-        row({
-          status: "queued",
-          createdAt: new Date(NOW.getTime() - QUEUED_STALE_AFTER_MS),
-        }),
-        NOW,
-      ),
-    ).toBe(false);
-  });
-});
 
 describe("toJobView", () => {
   it("projects a running job with its progress", () => {
@@ -159,6 +73,7 @@ describe("toJobView", () => {
         heartbeatAt: null,
         startedAt: null,
         createdAt: new Date(NOW.getTime() - QUEUED_STALE_AFTER_MS - 1),
+        updatedAt: new Date(NOW.getTime() - QUEUED_STALE_AFTER_MS - 1),
       }),
       NOW,
     );

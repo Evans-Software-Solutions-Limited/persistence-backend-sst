@@ -191,6 +191,25 @@ The fix has two halves and both are needed:
 has to become re-claimable long before it is declared dead to the client, or its
 checkpoint is thrown away.
 
+#### What the worker does when the claim is REFUSED
+
+⚠ Returning from the handler DELETES the SQS message; throwing keeps it for
+redelivery. So the refusal branches are ordered, and the order is load-bearing:
+
+| the row is                    | answer                                      | why                                                                                                                                                                                                                                                                              |
+| ----------------------------- | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| gone / terminal               | `skipped`, **return**                       | an ordinary duplicate; deleting is right                                                                                                                                                                                                                                         |
+| `running`, heartbeat **warm** | **throw**                                   | another worker holds it. Checked FIRST: on its last allowed claim the holder is already out of budget, so a budget-first check would fail the job under a worker still spending Bedrock — and `succeed()` is scoped to `running`, so its finished result would then be discarded |
+| live, cold, out of budget     | `failed` / `attempts_exhausted`, **return** | genuinely finished trying (AC-3.4)                                                                                                                                                                                                                                               |
+| live, cold, in budget         | **throw**                                   | the fence refused it, or another worker won the race. Nothing to do now, but the message must survive                                                                                                                                                                            |
+
+The last row is the one that bites. A retryable step failure late in a 15-minute
+invocation is redelivered ~16 minutes later with a heartbeat only ~2 minutes old —
+inside the fence — so the claim refuses. **Returning `skipped` there destroys the
+message** and leaves the job `running` with its checkpoint stranded until the
+nightly sweep: ~$0.63 of purchased inference discarded, on the very path this spine
+exists to protect. Throwing hands it back; the redrive policy bounds the loop.
+
 **Zero rows returned means "do not run".** That single condition covers every
 duplicate-execution path at once: an SQS duplicate delivery, a Lambda retry, a
 redelivery after a visibility-timeout expiry, and a message replayed from the
@@ -221,6 +240,12 @@ it resets: a job that makes one step then yields forever would re-enqueue
 indefinitely, and SQS cannot catch it either — a yield **deletes** its message and
 publishes a new one, so the receive count resets too. Hence `invocations`,
 defaulting to a deliberately loose 20.
+
+⚠ **Both bounds are per-kind overridable, and a slow kind must override.** The
+default of 20 is sized on Loadout's ~20 s steps (120 steps ≈ 3 invocations). At
+60 s/step the same job needs ~9 invocations before any retry budget, and hitting
+the bound fails it mid-progress. Mealprint week plans and program import are
+unsized — each must set its own `maxInvocations` when it registers.
 
 ### 3.2 Checkpointing
 
@@ -394,6 +419,29 @@ successful replay.
 Note this index IS partial where the idempotency index is deliberately full
 (§ 2): here the predicate _is_ the semantics, and nothing infers it via
 `ON CONFLICT`, so the 42P10 hazard does not apply.
+
+⚠ **The `schema.ts` mirror must declare this predicate**, unlike the bare-column
+mirrors elsewhere in that file. Those are cosmetic; this one decides which rows
+conflict, and without it the mirror describes a FULL unique index — one job per
+kind _forever_, terminal rows included — so `db:push` / `db:generate` would emit
+DDL that permanently locks a user out after their first job.
+
+Two further consequences the naive implementation gets wrong:
+
+- **A keyed retry violates BOTH unique indexes**, and Postgres reports only
+  whichever it checked first (index OID order, which nothing in the migration
+  pins). So on an in-flight collision the repository re-reads by
+  `(user_id, kind, client_request_id)` FIRST and answers `replayed` when a row
+  carries the key. Answering `409` there would leave the client unable to poll a
+  job it successfully created — the exact failure the idempotency key exists to
+  prevent.
+- **The index keys off the PERSISTED status, but death is DERIVED on read** and
+  only persisted by the nightly sweep. Without a self-heal, a user whose worker
+  died is told `failed` ("try again") at 40 minutes and then gets `409` on every
+  retry until 05:00 UTC — a lockout governed by a cron cadence rather than by any
+  threshold this design reasons about. So on a collision with a row that
+  `isStaleRunning`/`isStaleQueued` calls dead, the repository fails that row and
+  retries the insert **once** (guarded, so no loop).
 
 Worked example for Loadout Phase 4 (illustrative; the kind owns the numbers):
 `loadout_programme_adapt` at, say, 3 jobs/day × 120 workouts × $0.0057 ≈

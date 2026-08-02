@@ -4,6 +4,7 @@ import { getJobKind } from "./registry";
 import { sqsJobQueue, type JobQueue } from "./jobQueue";
 import { AiUnavailableError } from "../nutrition/services/aiBedrockClient";
 import { JobKindError, type JobError, type JobErrorCode } from "./types";
+import { isLive, isOutOfBudget, isWarmRunning } from "./jobLifecycle";
 
 /**
  * Wall-clock the worker keeps in hand for the final checkpoint + re-enqueue
@@ -95,26 +96,48 @@ export async function runJob(input: {
   // duplicate.
   const claimed: AiJob | null = await jobs.claim(input.jobId);
   if (!claimed) {
-    // THREE situations produce a refused claim, and they need different answers.
-    //
-    //  (a) already terminal, or cancelled — a duplicate delivery. Nothing to do;
-    //      returning normally deletes the message, which is correct.
-    //  (b) still live but out of budget (`attempts` or `invocations` exhausted).
-    //      SQS can deliver more times than either bound allows executions, and
-    //      such a job would otherwise sit un-terminal until a sweep found it an
-    //      hour later. AC-3.4 wants a terminal state, so give it one now.
-    //  (c) `running` with a WARM heartbeat — another worker holds it right now.
-    //      Benign, and NOT a failure: this is the fence doing its job, so leave
-    //      the other worker alone and drop the duplicate.
+    // Four situations produce a refused claim, and ⚠ THE ORDER OF THESE CHECKS IS
+    // LOAD-BEARING. Returning normally DELETES the SQS message; throwing keeps it
+    // for redelivery. Getting either wrong loses a job.
     const existing = await jobs.get(input.jobId);
-    const live =
-      existing &&
-      (existing.status === "queued" || existing.status === "running");
-    const outOfBudget =
-      existing &&
-      (existing.attempts >= existing.maxAttempts ||
-        existing.invocations >= existing.maxInvocations);
-    if (live && outOfBudget) {
+
+    //  (a) gone, or already terminal — an ordinary duplicate delivery. Nothing to
+    //      do, and deleting the message is exactly right.
+    if (!existing || !isLive(existing)) {
+      return {
+        jobId: input.jobId,
+        status: "skipped",
+        stepsRun: 0,
+        progress: existing?.progressDone ?? 0,
+        total: existing?.progressTotal ?? 0,
+      };
+    }
+
+    //  (b) `running` with a WARM heartbeat — another worker holds it RIGHT NOW.
+    //
+    //      ⚠ Checked BEFORE the budget test, and that ordering is the fix for a
+    //      real bug: on its last allowed claim the holder has already consumed the
+    //      whole budget, so a budget-first check would mark the job
+    //      `attempts_exhausted` while the holder is still spending Bedrock —
+    //      `succeed()` is scoped to `running`, so the finished result would then
+    //      be thrown away and the user told the job failed repeatedly.
+    //
+    //      Throw rather than return: this delivery has no work to do, but the
+    //      message must survive so that if the holder dies, a later redelivery can
+    //      take the job over once the heartbeat goes cold. Returning here is what
+    //      ORPHANS a job — see (c).
+    if (isWarmRunning(existing)) {
+      throw new JobKindError(
+        "step_failed",
+        `job ${existing.id} is held by a live worker; retrying later`,
+      );
+    }
+
+    //  (c) live, cold, and out of budget — genuinely finished trying. SQS can
+    //      deliver more times than either bound allows executions, and such a job
+    //      would otherwise sit un-terminal until a sweep found it. AC-3.4 wants a
+    //      terminal state, so give it one now.
+    if (isOutOfBudget(existing)) {
       const error: JobError = {
         code: "attempts_exhausted",
         message: "The job failed repeatedly and was given up on.",
@@ -130,13 +153,24 @@ export async function runJob(input: {
         code: error.code,
       };
     }
-    return {
-      jobId: input.jobId,
-      status: "skipped",
-      stepsRun: 0,
-      progress: existing?.progressDone ?? 0,
-      total: existing?.progressTotal ?? 0,
-    };
+
+    //  (d) live, in budget, but the claim still lost — the fence refused it (a
+    //      redelivery arriving less than CLAIM_FENCE_MS after the previous
+    //      invocation's last heartbeat), or another worker claimed it in the gap
+    //      between our UPDATE and this read.
+    //
+    //      ⚠ THROW. An earlier revision returned `skipped` here, which deleted the
+    //      message — and that orphaned jobs on a path this spine exists to
+    //      protect: a retryable step failure late in a 15-minute invocation is
+    //      redelivered ~16 minutes later with a heartbeat only ~2 minutes old, so
+    //      the fence refuses, and the message was destroyed with the job left
+    //      `running` and its checkpoint stranded until the nightly sweep. Throwing
+    //      hands it back to SQS, which redelivers once the heartbeat is cold; the
+    //      redrive policy bounds the loop.
+    throw new JobKindError(
+      "step_failed",
+      `job ${existing.id} was not claimable yet; retrying later`,
+    );
   }
 
   const kind = getJobKind(claimed.kind);

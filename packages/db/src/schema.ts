@@ -2236,15 +2236,24 @@ export const aiJobs = pgTable(
       t.kind,
       t.clientRequestId,
     ),
-    // PARTIAL unique on `(user_id, kind) WHERE status IN ('queued','running')` —
-    // one in-flight job per user per kind. This is the cost control the
-    // read-then-write daily ceiling cannot be, since one unit here is up to ~120
-    // inferences. Declared bare-column per the convention above; the predicate
-    // (which IS the semantics) lives in the migration.
-    uniqueIndex("ai_jobs_one_inflight_per_kind_idx").on(t.userId, t.kind),
+    // One in-flight job per user per kind — the cost control the read-then-write
+    // daily ceiling cannot be, since one unit here is up to ~120 inferences.
+    //
+    // ⚠ THE PREDICATE IS DECLARED, unlike the bare-column mirrors above, and that
+    // exception is deliberate. Those predicates are cosmetic (an expression
+    // rendered as a column, same rows); THIS one decides which rows conflict.
+    // Dropped, the mirror describes a FULL unique index — one job per kind
+    // FOREVER, terminal rows included — so `db:push` / `db:generate` would emit
+    // DDL that permanently locks a user out after their first job.
+    uniqueIndex("ai_jobs_one_inflight_per_kind_idx")
+      .on(t.userId, t.kind)
+      .where(sql`${t.status} IN ('queued', 'running')`),
     index("ai_jobs_running_heartbeat_idx").on(t.heartbeatAt),
     index("ai_jobs_terminal_finished_idx").on(t.finishedAt),
-    index("ai_jobs_queued_created_idx").on(t.createdAt),
+    // Backs the queued-stale reaper, which measures from `updated_at` — `queued`
+    // means either "never started" or "released by a yield", and only
+    // `updated_at` distinguishes them.
+    index("ai_jobs_queued_updated_idx").on(t.updatedAt),
   ],
 );
 
