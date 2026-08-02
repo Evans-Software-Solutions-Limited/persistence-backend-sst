@@ -100,6 +100,28 @@ describe("Segmented", () => {
     expect(getByText("B")).toBeTruthy();
   });
 
+  /**
+   * ⚠ Cannot be proven by pressing anything — `fireEvent.press` targets the
+   * Pressable directly and never touches RN's responder system, which is the
+   * whole reason the bug it guards against is invisible to this suite. Pinning
+   * the prop is the most a unit test can do; the behaviour it buys is that a
+   * segment tap works on the FIRST try while a field is focused.
+   */
+  it("lets a tap through while the keyboard is up", () => {
+    setViewport(402);
+    const { getByTestId } = renderWithTheme(
+      <Segmented
+        testID="seg"
+        options={["A", "B", "C"]}
+        value="A"
+        onChange={() => undefined}
+      />,
+    );
+    expect(getByTestId("seg-scroll").props.keyboardShouldPersistTaps).toBe(
+      "handled",
+    );
+  });
+
   it.each([2, 3, 4, 5])(
     "wraps a %i-option track in the scroller — no count gate either",
     (count) => {

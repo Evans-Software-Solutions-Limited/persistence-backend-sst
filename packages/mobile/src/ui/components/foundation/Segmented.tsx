@@ -232,6 +232,17 @@ export function Segmented({
       ref={scrollRef}
       horizontal
       showsHorizontalScrollIndicator={false}
+      // ⚠ REQUIRED now that the wrapper is unconditional. RN's
+      // `scrollResponderHandleStartShouldSetResponderCapture` captures — and
+      // eats — the touch when a soft keyboard is open, the target is not a
+      // TextInput, and this is unset or "never"; the prop does NOT inherit from
+      // an ancestor ScrollView, the innermost scroll responder in the touch path
+      // wins. Without it the FIRST tap on any segment in the app is swallowed
+      // whenever a field is focused — the gym-name editor behind the Train hub
+      // switcher, the coach search fields above Archive/Drafts, the food search
+      // above the meal picker. Invisible to the suite: `fireEvent.press` hits the
+      // Pressable directly and never goes near the responder system.
+      keyboardShouldPersistTaps="handled"
       // `flexGrow: 0` on both so the wrapper cannot claim free space in a flex
       // parent — without it a fitting control would no longer be pixel-identical
       // to the bare track it replaced, which is the whole premise above.

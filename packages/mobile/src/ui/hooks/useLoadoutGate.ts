@@ -10,7 +10,10 @@ import {
   USER_SUBSCRIPTION_QUERY_KEY_PREFIX,
   useMySubscription,
 } from "@/ui/hooks/useMySubscription";
-import { useSubscriptionTiers } from "@/ui/hooks/useSubscriptionTiers";
+import {
+  SUBSCRIPTION_TIERS_QUERY_KEY,
+  useSubscriptionTiers,
+} from "@/ui/hooks/useSubscriptionTiers";
 
 /**
  * useLoadoutGate — the client-side Premium+ verdict for the Loadout entry point
@@ -150,8 +153,17 @@ export type LoadoutGate = {
    * through to `continueRetry()` and hands back **the same hung promise**, issuing
    * nothing at all. Undefined data is by definition the only state this is ever
    * called from — a cold-start fetch that never settled — so a bare `refetch()` is
-   * a guaranteed no-op here. The explicit `cancelQueries` first is what actually
-   * abandons the dead socket.
+   * a guaranteed no-op here. The explicit `cancelQueries` first is what makes the
+   * subsequent refetch issue anything at all — and it applies to BOTH queries,
+   * because the gate is only as unstuck as its slowest half.
+   *
+   * ⚠ What it abandons is React Query's retryer, NOT the socket. `Query#fetch`
+   * does `abortController.abort()` on cancel, but `useMySubscription`'s queryFn
+   * calls `api.getMySubscription()` without forwarding `signal`, so nothing is
+   * wired to that controller and the half-open connection lingers until the OS
+   * times it out. That is fine for this purpose — the point is to stop waiting on
+   * it and start a fresh request — but do not read this as transport-level
+   * cancellation.
    */
   readonly refetch: () => void;
 };
@@ -181,10 +193,16 @@ export function useLoadoutGate(): LoadoutGate {
     // Cancel BEFORE refetching — see the `refetch` docstring for why the built-in
     // `cancelRefetch` cannot do it on a first fetch. Prefix key, not the full
     // per-user key, so this does not need the userId.
+    // Both halves get the same treatment. `refetchTiers()` on its own hits the
+    // identical `data === undefined` gate, so if the CATALOG is the query that
+    // hung, a bare refetch there reissues nothing and the upsell sheet renders
+    // with no price until the tree remounts.
     void queryClient
       .cancelQueries({ queryKey: [USER_SUBSCRIPTION_QUERY_KEY_PREFIX] })
       .then(() => void refetchSub());
-    void refetchTiers();
+    void queryClient
+      .cancelQueries({ queryKey: SUBSCRIPTION_TIERS_QUERY_KEY })
+      .then(() => void refetchTiers());
   }, [queryClient, refetchSub, refetchTiers]);
 
   return useMemo<LoadoutGate>(() => {
