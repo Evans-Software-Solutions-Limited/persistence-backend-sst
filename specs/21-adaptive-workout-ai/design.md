@@ -1037,10 +1037,12 @@ row is deleted, not duplicated.
    already existed with no consumer, so the plumbing was there.
 2. **The segment must be shown-but-locked, and locked is not a taster.**
    § 5.2 is a hard gate: no free-tier code path, no preview of real output. The
-   locked segment renders a pitch and an upgrade CTA and fetches nothing —
-   `useSavedGyms(enabled)` is passed `false`, so an unentitled user's device
-   never issues `GET /saved-gyms`. That is a stricter reading than "hide the
-   list": it keeps the surface an advertisement rather than a redacted product.
+   locked segment renders a pitch and an upgrade CTA and fetches nothing. The
+   enforcement is that `GymsSegmentContainer` does not MOUNT `SavedGymsContainer`
+   at all — `useSavedGyms` fetches on mount, so not mounting is what keeps an
+   unentitled device from ever issuing `GET /saved-gyms`. That is a stricter
+   reading than "hide the list": it keeps the surface an advertisement rather
+   than a redacted product.
 
 **The entitlement-timing guard is load-bearing here too.** `WorkoutDetailContainer`
 documents why (`useLoadoutGate` denies a null subscription by design, so a

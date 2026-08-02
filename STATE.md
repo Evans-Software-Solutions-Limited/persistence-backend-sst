@@ -452,12 +452,60 @@ Actions, in order of value:
   lands on measured ground first? (`requirements.md` § Open sequencing decision.)
 - **~30 real gym photos** — to turn E1's provisional go into a real one; ideally
   with Brad-confirmed ground-truth labels rather than Claude's.
-- **A "Gym" tab inside Train, alongside Workouts and Exercises** — Brad's idea
-  from the 2026-07-28 device run, so setups can be created and curated up front
-  rather than only mid-flow. **Explicitly NOT folded into the Phase 2 branch**
-  ("I don't need it folded in here, but it's worth keeping an eye on"). It
-  widens AC-7.2, which puts gym management under Settings/Profile, so it needs
-  its own slice and a call on whether it replaces or complements that list.
+- ~~**A "Gym" tab inside Train**~~ — **RESOLVED 2026-08-02. It REPLACES the
+  Profile · Account list; it does not complement it.** Brad: "i don't want it
+  there." Shipped as a `Gyms` segment in the Train hub on PR #346 (branch
+  `feat/loadout-gyms-train-segment`), with AC-7.2 rewritten and AC-7.2a/7.2b
+  added plus design § 10.1. The Profile row, its handler, the `Stack.Screen` and
+  the route file are deleted, so there is exactly one way in.
+
+### Loadout — the Gyms segment slice (PR #346, 2026-08-02)
+
+Saved-gym management moved from Profile · Account into a fourth **`Gyms` segment
+in the Train hub**. Three things, not one:
+
+1. **The segment**, alongside Training / Workouts / Exercises. `TrainSegment`
+   gains `"Gyms"`, which widens `isTrainSegment` — the validator for the
+   **device-global** key `persistence.train.segment`.
+2. **⚠ Gym CREATION, which did not exist at all.** On `main`, `createSavedGym`
+   had exactly two call sites and both were inside `LoadoutFlowContainer`
+   (commit-time create + the save-time fallback). `SavedGymsContainer` was
+   manage-only and its empty state told the user to go adapt a workout and tick
+   "Save" — coherent for a footnote under Profile, a dead end for a hub tab on a
+   new account. `useSavedGyms.create` already existed with no consumer.
+   `editing.gymId === null` is the new-gym draft and shares the editor card, so
+   the empty-kit block and the 409 name-taken field error hold on both paths.
+3. **Shown-but-locked when unentitled.** ⚠ Locked is **not** a taster (design
+   § 5.2): `GymsSegmentContainer` does not MOUNT `SavedGymsContainer` when the
+   gate denies, and that non-mounting IS the enforcement, because `useSavedGyms`
+   fetches on mount. There is a **third** body state — pending — because a TAB
+   has no tap to swallow the way `WorkoutDetailContainer` does, so rendering the
+   pitch during the cold-start `/subscriptions/me` round trip would show the
+   paywall to a subscriber on every launch. And a **fourth**, stalled: that
+   request has no client-side timeout, so a half-open socket never rejects and
+   `isResolved` never flips.
+
+**⚠ Two traps this slice hit, both worth carrying forward.**
+
+- **`refetch()` does not reissue a hung FIRST fetch.** TanStack gates
+  `cancelRefetch` on `state.data !== undefined`; with data undefined it returns
+  the same pending promise and issues nothing — and undefined data is the only
+  state a "Try again" is reachable from. `useLoadoutGate.refetch` has to
+  `queryClient.cancelQueries(...)` first, for BOTH queries. A retry button that
+  merely calls `refetch()` is decorative.
+- **`Segmented`'s scroll gates were guesses about text metrics, twice.** First
+  `width < 360`, then `options.length >= 4`; both left real devices clipping the
+  trailing segment with no scroll path. It now always wraps
+  (`flexGrow: 0` keeps a fitting track pixel-identical) — which put RN's
+  **keyboard tap-capture on every consumer in the app**, so
+  `keyboardShouldPersistTaps="handled"` is now load-bearing there. Note
+  `MealPickerPresenter` was already a 4-option consumer inside three sheets.
+
+Device-verified against staging: segment renders inset correctly, creating a gym
+persists and appears in the collect step (the first `POST /saved-gyms` from
+outside the adapt flow), the 3-option and 4-option tracks are unchanged. NOT
+verified: the locked/pending/stalled states (the test account is entitled) and
+the keyboard tap-through (the simulator has a hardware keyboard attached).
 
 ### Loadout (spec-21) — where the whole feature stands, 2026-08-02
 
@@ -553,9 +601,12 @@ which is the signature of a measurement race.
 So adding a provider alone would have fixed NOTHING. The fix is both halves:
 a `SafeAreaProvider initialMetrics={initialWindowMetrics}` on the route, and
 `LoadoutScaffold` / `LoadoutSavedStep` switched to `useSafeAreaInsets()`, which
-is the API that actually reads it. `SavedGymsPresenter` deliberately keeps
+is the API that actually reads it. ~~`SavedGymsPresenter` deliberately keeps
 `SafeAreaView` — it is an ordinary Stack screen, outside that provider, where the
-native path works.
+native path works.~~ **No longer true from 2026-08-02:** the saved-gyms surface
+moved into the Train hub as the `Gyms` segment, so `SavedGymsPresenter` is hub
+BODY content and renders no `SafeAreaView` at all — `TrainHubContainer` owns the
+chrome and has already applied `insets.top`.
 
 **Still open, app-wide:** with no root provider, every `SafeAreaInsetsContext`
 consumer OUTSIDE the Loadout route still reads zero — including `BottomSheet`

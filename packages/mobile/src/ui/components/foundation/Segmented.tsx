@@ -235,13 +235,21 @@ export function Segmented({
       // ⚠ REQUIRED now that the wrapper is unconditional. RN's
       // `scrollResponderHandleStartShouldSetResponderCapture` captures — and
       // eats — the touch when a soft keyboard is open, the target is not a
-      // TextInput, and this is unset or "never"; the prop does NOT inherit from
-      // an ancestor ScrollView, the innermost scroll responder in the touch path
-      // wins. Without it the FIRST tap on any segment in the app is swallowed
-      // whenever a field is focused — the gym-name editor behind the Train hub
-      // switcher, the coach search fields above Archive/Drafts, the food search
-      // above the meal picker. Invisible to the suite: `fireEvent.press` hits the
-      // Pressable directly and never goes near the responder system.
+      // TextInput, and this is unset or "never". Without it the FIRST tap on any
+      // segment in the app is swallowed whenever a field is focused: the
+      // gym-name editor behind the Train hub switcher, the coach search fields
+      // above Archive/Drafts, the food search above the meal picker.
+      //
+      // The prop does NOT inherit — each ScrollView needs its own — and capture
+      // runs ROOT-FIRST (`traverseTwoPhase` walks the path downwards and takes
+      // the first `true`), so an ancestor scroller that leaves it unset would
+      // still win over this one. Every ancestor in play today already sets it.
+      //
+      // "handled" rather than "always": both stop the capture, but only
+      // `true`/"always" also suppress the blur in `_handleResponderRelease`, so
+      // "always" would break dismissing the keyboard by tapping the strip's dead
+      // space. Invisible to the suite either way — `fireEvent.press` hits the
+      // Pressable directly and never enters the responder system.
       keyboardShouldPersistTaps="handled"
       // `flexGrow: 0` on both so the wrapper cannot claim free space in a flex
       // parent — without it a fitting control would no longer be pixel-identical

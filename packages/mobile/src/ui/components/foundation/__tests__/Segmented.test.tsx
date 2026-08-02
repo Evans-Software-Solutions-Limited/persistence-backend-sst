@@ -107,8 +107,7 @@ describe("Segmented", () => {
    * the prop is the most a unit test can do; the behaviour it buys is that a
    * segment tap works on the FIRST try while a field is focused.
    */
-  it("lets a tap through while the keyboard is up", () => {
-    setViewport(402);
+  it("declares keyboardShouldPersistTaps — the tap-through it buys is untestable", () => {
     const { getByTestId } = renderWithTheme(
       <Segmented
         testID="seg"

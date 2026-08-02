@@ -202,4 +202,41 @@ describe("useLoadoutGate.refetch against a HUNG first fetch", () => {
       hung.forEach((resolve) => resolve(null));
     }
   });
+
+  /**
+   * ⚠ The tiers half is a SEPARATE query with the same trap, and symmetry with a
+   * tested sibling is not a test. Reverting its two lines to a bare
+   * `refetchTiers()` left the whole suite green right up until this case existed.
+   */
+  it("reissues the CATALOG too when that is the half that hung", async () => {
+    const api = new InMemoryApiAdapter();
+    const auth = new InMemoryAuthAdapter();
+    await auth.signInWithEmail("u@example.com", "pw");
+
+    let calls = 0;
+    const hung: ((v: unknown) => void)[] = [];
+    jest.spyOn(api, "getSubscriptionTiers").mockImplementation(() => {
+      calls += 1;
+      return new Promise((resolve) => hung.push(resolve)) as never;
+    });
+
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const { result, unmount } = renderHook(() => useLoadoutGate(), {
+      wrapper: wrap({ ...makeAdapters(), api, auth }, client),
+    });
+
+    try {
+      await waitFor(() => expect(calls).toBe(1));
+      act(() => result.current.refetch());
+      // A hung catalog would otherwise leave the upsell sheet with no price
+      // until the tree remounts.
+      await waitFor(() => expect(calls).toBe(2));
+    } finally {
+      unmount();
+      client.clear();
+      hung.forEach((resolve) => resolve(null));
+    }
+  });
 });
