@@ -33,25 +33,20 @@ say so and fix this file.
   or mobile rebuild is required. Verified with a sensitive repository
   regression test, 71 focused tests, prettier, forced typecheck, lint, build,
   and forced full unit suite (19/19 tasks).
-- **⚠ Loadout Phase 2's SCREENS are built but NOT merged.** Now PR
-  **[#339](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/339)**,
-  head branch `claude/loadout-phase-2-screens-rebase` at `61698f8`, rebased onto
-  `main` at `c7ad458` (2026-08-02, after #338/#340/#341/#342/#343). It supersedes
-  **#328** (`claude/loadout-phase-2-screens`), which should be closed — the two
-  are the same work and #328 is now the stale copy. The mirror branch
-  `claude/pr-339-review-ci-7f7ydu` is stale too; do not push to it.
-  - **Inspector Brad: clean @ `61698f8`, merge signed off** after 6 sweeps and 22
-    findings fixed; 1 × 🟢 chipped (replace-path parent-404 gets the saved-setup
-    copy — the mirror of a create-path nuance already fixed; the clean fix is a
-    distinct `PARENT_NOT_FOUND` backend code, which would also delete the
-    `isReplace` param). Gates green, all 5 CI checks green.
-  - **⚠ NOT device-verified, and it CANNOT be until this reaches a deployed API.**
-    `workoutVariationsReplaceHandler` is the only backend file this PR adds and
-    `deploy-staging.yml` deploys only from `main`, so `PUT /workouts/:parentId/
-    variations/:variationId` has never existed on staging. Unblock before merge
-    with `gh workflow run deploy-staging.yml --ref
-    claude/loadout-phase-2-screens-rebase` (Brad's call — it puts unmerged code
-    on shared staging).
+- **Loadout Phase 2's SCREENS + Phase 3's scan — MERGED via PR
+  [#339](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/339)**
+  (2026-08-02, off `main` @ `c7ad458`). Supersedes **#328**, which should be
+  closed; the mirror branch `claude/pr-339-review-ci-7f7ydu` is stale too.
+  Inspector Brad **clean @ `61698f8`** after 6 sweeps / 22 findings, all 5 CI
+  checks green, 1 × 🟢 chipped (replace-path parent-404 gets the saved-setup
+  copy — the mirror of a create-path nuance already fixed; the clean fix is a
+  distinct `PARENT_NOT_FOUND` backend code, which also deletes the `isReplace`
+  param).
+  - **⚠ NEXT ACTION: the post-merge staging deploy is the first time the mobile
+    client and the API agree — re-run the device pass once it lands.** Until
+    #339, `PUT /workouts/:parentId/variations/:variationId` did not exist on
+    staging at all, so every device run to date tested a mismatched pair. See
+    § Loadout (spec-21) for the full feature status.
   - **⚠ The first cut of #339 was rebased from a STALE snapshot of #328 and
     silently dropped `edeb93f`'s fixes** — five files' changes were missing
     entirely (`exercisesSubstitutesHandler` + its test, `exerciseRepository` +
@@ -464,11 +459,39 @@ Actions, in order of value:
   widens AC-7.2, which puts gym management under Settings/Profile, so it needs
   its own slice and a call on whether it replaces or complements that list.
 
-### Loadout Phase 2's screens — BUILT, on a branch, awaiting merge + device pass
+### Loadout (spec-21) — where the whole feature stands, 2026-08-02
 
-Branch `claude/loadout-phase-2-screens-rebase` (PR #339) at `f2879d5`, off
-`c7ad458`; supersedes `claude/loadout-phase-2-screens` (#328). T-2.2…T-2.9,
-T-3.4 and T-3.5's mobile half are all ticked in `tasks.md`, whose
+**Merged: P0 (tier code), Phase 0, Phase E, Phase 1, Phase 2, Phase 3.** #339
+was the last of those and closed the athlete flow. Nothing in Loadout is on an
+unmerged branch any more.
+
+**NOT built:** Phase 4 (coach programme adaptation, T-4.1…T-4.5) — not started,
+zero code. Phase 5 (second engine) — judged unlikely on E2's evidence.
+
+**NOT verified:** the athlete flow has never had a clean device pass. Every run
+so far was a mobile build against a staging backend missing this PR's routes.
+**#339's merge is what fixes that** — `deploy-staging.yml` fires on push to
+`main`, so the deploy that follows the merge is the first time the client and
+the API agree. Re-run the device pass after it lands, not before.
+
+⚠ **`tasks.md` checkboxes lie in BOTH directions here.** T-P0.1…T-P0.11 and
+T-E1.5…T-E1.7 are unticked but the code is present and merged
+(`revenuecat/entitlements.ts`, `subscriptionsCreateHandler`,
+`AI_EQUIPMENT_SCAN_MODEL_ID` in `infra/api.ts`, the `premium_plus` +
+`loadout_access` migration). Verify against the tree, not the ticks.
+
+**The one thing genuinely blocking consumer launch is ops, not code:**
+`subscription_tiers.premium_plus` exists on staging at £29.99 with
+`loadout_access = true` but **`is_active = false`**, so no athlete can buy it.
+That is T-P0.10 — the ASC + RevenueCat product config, Brad's runbook, chat-only.
+
+💡 **You do NOT need a RevenueCat promotional entitlement to device-test.**
+`individual_trainer` (£14.99, active, purchasable) carries `loadout_access` and
+is in `TIER_GRANTS_LOADOUT`, so a trainer account reaches the flow today. The
+PR body's note about needing a promo entitlement applies only to testing the
+consumer *paywall*.
+
+T-2.2…T-2.9, T-3.4 and T-3.5's mobile half are all ticked, and `tasks.md`
 § "Landed in Phase 2's screens beyond the checklist" holds the architecture
 decisions. Do not re-derive them; the short version:
 
@@ -642,9 +665,9 @@ consent copy, privacy section and governing law · the OFF re-seed backfilling
 
 **2026-08-02 — PR [#339](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/339)
 REBASED onto `main` @ `c7ad458`, given the Inspector Brad sweep it had never had,
-and Brad's two device-QA reports root-caused. Head `61698f8`, MERGEABLE, gates
-green, IB clean. The one thing left before merge is a device pass — which is
-BLOCKED on a staging deploy, see below.**
+Brad's two device-QA reports root-caused, and MERGED. IB clean @ `61698f8`, all
+5 CI checks green. The device pass is deliberately AFTER the merge: the deploy
+it triggers is what first puts this branch's API behind the mobile client.**
 
 - **⚠ BOTH device-QA reports were the SAME thing, and neither was a defect in the
   branch: staging is running `main`, and this PR's backend is not deployed.**
