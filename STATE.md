@@ -45,10 +45,12 @@ bite, the separable piece is M21: Loadout Phase 4 + Mealprint alone close the
 
 ### spec-26 Mealprint — MOBILE HALF BUILT, PR NOT YET RAISED 2026-08-03
 
-**Branch `claude/mealprint-mobile-ui-9347a0`, HEAD `6283afa6`** (3 commits off
+**Branch `claude/mealprint-mobile-ui-9347a0`, HEAD `257ec1b1`** (5 commits off
 `6c77dfe3`). T-0.6 + T-1.5 are written and every gate is green: prettier,
-typecheck, lint (0 errors), build, 476 suites / 5877 tests, coverage ≥ 90 % on all
-four axes for every new file.
+typecheck, lint (0 errors), build, 476 suites / 5878 tests, coverage ≥ 90 % on all
+four axes for every new file. **THREE** Inspector Brad sweeps, the third of which
+was needed because the second's fix shipped without the test that was claimed for
+it.
 
 **⚠ NOT DEVICE-VERIFIED, and the attempt failed for an environmental reason worth
 knowing.** The simulator's installed dev build serves a STALE bundle: the Mealprint
@@ -80,7 +82,7 @@ Decisions worth not re-deriving (all in docstrings):
   on generation, and an expired subscriber must still be able to read and correct
   their allergen list.
 
-#### ⚠ Eight review findings across two Inspector Brad sweeps. One was serious.
+#### ⚠ Nine review findings across THREE Inspector Brad sweeps. One was serious.
 
 | # | Finding | Where |
 | --- | --- | --- |
@@ -90,6 +92,7 @@ Decisions worth not re-deriving (all in docstrings):
 | 🟠 | `reset()` left `inFlightRef` set with no signal → dead Generate button | `useMealSuggest` |
 | 🟠 | …and the FIX to that left `lastInputRef` nulled → dead retry (2nd sweep) | `useMealSuggest` |
 | 🟡 | `summarisePreferences` threw on an unknown `effortLevel` mid-render | `models/mealprint.ts` |
+| 🟠 | …and the FIX to *that* was committed with no test, the count unchanged (3rd sweep) | `useMealprintHooks.test.tsx` |
 | 🟢 ×2 | A test comment promising an absent assertion; a docstring describing an unreachable path | — |
 
 **The 🔴 is the one to remember.** `PUT /nutrition/preferences` is a full
@@ -108,6 +111,15 @@ Second lesson, from the pair of `useMealSuggest` findings: when a guard says "th
 in-flight request still owns the state", it owns ALL of it. Fixing the stage and
 leaving the input was half a decision, and half a decision read as a whole one is
 how the second sweep found a bug the first sweep's fix created.
+
+⚠ **Third lesson, and the cheapest one to repeat: a `cd` inside a compound command
+can fail and silently skip everything `&&`-chained after it.** The fix commit
+claimed a regression test it did not contain — the edit never ran, and jest going
+green on the UNCHANGED file read as confirmation. A third sweep caught it (suite
+count identical at both commits, which is the tell). The test now exists and was
+verified BOTH ways: passing with the guard, failing with 1 call where 2 are
+expected without it. **Verify a test by making it fail on purpose, not by watching
+it pass.**
 
 #### Backend, for reference — MERGED 2026-08-03 (PR #350, `d1c40b30`)
 
@@ -1120,14 +1132,14 @@ consent copy, privacy section and governing law · the OFF re-seed backfilling
 ## Last session
 
 **2026-08-03 — spec-26 Mealprint T-0.6 + T-1.5, the mobile half.** Branch
-`claude/mealprint-mobile-ui-9347a0` @ `6283afa6`, 3 commits, PR NOT raised. All
-five gates green (476 suites / 5877 tests, ≥ 90 % coverage on every new file); NOT
+`claude/mealprint-mobile-ui-9347a0` @ `257ec1b1`, 5 commits, PR NOT raised. All
+five gates green (476 suites / 5878 tests, ≥ 90 % coverage on every new file); NOT
 device-verified, and the simulator attempt failed on a stale bundle rather than on
 the code — details and the remaining checklist are in § "spec-26 Mealprint — MOBILE
-HALF BUILT" above. Two Inspector Brad sweeps found 8 issues including one 🔴 where
-the wizard's Skip could silently delete a user's saved allergen list; all fixed,
-and the second sweep's finding was created by the first sweep's fix, which is the
-part worth remembering.
+HALF BUILT" above. THREE Inspector Brad sweeps found 9 issues including one 🔴 where
+the wizard's Skip could silently delete a user's saved allergen list; all fixed. The
+part worth remembering: sweep 2 found a bug that sweep 1's fix created, and sweep 3
+found that sweep 2's fix had shipped with no test at all.
 
 **2026-08-02 — PR [#339](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/339)
 REBASED onto `main` @ `c7ad458`, given the Inspector Brad sweep it had never had,
