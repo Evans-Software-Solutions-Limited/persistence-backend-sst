@@ -178,6 +178,15 @@ export function useMealSuggest(): UseMealSuggest {
     // silently, forever. On the error stage that is the sheet's ONLY button, so the
     // user's sole escape was swiping it down. The two guards are one decision: the
     // in-flight request still owns this hook's state, including its input.
+    //
+    // ⚠ **This makes the hook's `lastInputRef` and the container's `shape`/`steer`
+    // diverge after a mid-generation reopen, ON PURPOSE.** The container's open
+    // effect blanks its inputs to `either`/`""` while this keeps the pre-close pair,
+    // and that is the right semantics: "Show me something else" means *re-run what
+    // produced this result*, not *run whatever the inputs now say*. It is invisible
+    // (no stage that offers a retry renders the setup body), so the only way it
+    // surfaces is someone "tidying up" the divergence by re-nulling the input here —
+    // which is the bug above. Don't.
     if (!inFlightRef.current) lastInputRef.current = null;
     setStage(inFlightRef.current ? "generating" : "idle");
     setResult(null);

@@ -862,6 +862,50 @@ describe("useMealSuggest — reset while a request is in flight (Inspector 🟠)
     await waitFor(() => expect(latest().stage).toBe("ready"));
   });
 
+  it("⚠ KEEPS the in-flight request's input, so its result stays retryable", async () => {
+    // The complement of the case above, and the one whose ABSENCE let the bug ship:
+    // `reset()` nulled `lastInputRef` unconditionally, so the result that then
+    // arrived had nothing to retry from — "Show me something else" and the error
+    // stage's "Try again" both hit `if (!last) return` and did nothing. On the error
+    // stage that is the sheet's ONLY button, so the user's sole escape was swiping
+    // it down. The fix is a one-line ref guard that a future "simplify reset()"
+    // would silently undo, which is exactly why this assertion has to exist.
+    const api = new InMemoryApiAdapter();
+    let release: (() => void) | null = null;
+    const spy = jest.spyOn(api, "suggestMeals").mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          release = () =>
+            resolve(ok({ ...api.mealSuggestResult, emptyReason: null }));
+        }),
+    );
+    const { latest } = harness(api, useMealSuggest);
+    const original = {
+      shape: "snack" as const,
+      date: "2026-08-03",
+      steer: "sweet",
+    };
+
+    await act(async () => {
+      void latest().run(original);
+      await Promise.resolve();
+    });
+    // The sheet is closed and reopened mid-generation.
+    act(() => latest().reset());
+    await act(async () => {
+      release?.();
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(latest().stage).toBe("ready"));
+
+    await act(async () => {
+      void latest().retry();
+      await Promise.resolve();
+    });
+    expect(spy).toHaveBeenCalledTimes(2);
+    expect(spy.mock.calls[1]?.[0]).toEqual(original);
+  });
+
   it("goes `idle` on a reset when nothing is in flight", async () => {
     const api = new InMemoryApiAdapter();
     const { latest } = harness(api, useMealSuggest);
