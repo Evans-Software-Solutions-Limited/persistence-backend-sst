@@ -43,85 +43,100 @@ bite, the separable piece is M21: Loadout Phase 4 + Mealprint alone close the
 § Mealprint below. Phase 4 and M21 remain zero code; Mealprint's MOBILE half
 (tasks 0.6, 1.5) is also still zero code. See § Next plan of action.
 
-### spec-26 Mealprint — BACKEND SHIPPED 2026-08-03, MOBILE NOT BUILT
+### spec-26 Mealprint — BACKEND MERGED 2026-08-03 (PR #350, `d1c40b30`)
 
-Branch **`feat/mealprint-phase-0-1`**, three commits, **NOT a PR yet and NOT
-merged**: `76596e7d` (Phase 0), `863e40d4` (Phase 1), `52b93df0` (Inspector Brad
-fixes). Off `main` @ `14b6a1eb`.
+**Phase 0 (0.1–0.5) + Phase 1 (1.1–1.4) + the `meal_ai` gate + infra config are on
+`main`.** 6 commits squashed; all 5 CI checks green. Staging deploy fired on merge,
+which auto-applies the three migrations there.
 
-**Built (T-0.1…0.5, T-1.1…1.4):** `foods.allergen_tags/category_tags/locale_tags`
-+ GIN indexes; `nutrition_preferences` + `mealprint_ingredient_feedback`;
-`subscription_tiers.mealprint_access`; `GET`/`PUT /nutrition/preferences`;
-`avoidanceFilter`; the four-stage suggestion pipeline behind
-`POST /nutrition/ai/meal-suggest`; `meal_ai` entitlement; `AI_MEAL_MODEL_ID` +
-`AI_MEAL_SUGGEST_DAILY_LIMIT: "20"` in `infra/api.ts`.
+**NOT built: 0.6 and 1.5 — the entire mobile half.** Nothing in `packages/mobile`
+calls any of it, so the feature does not exist for a user yet. That is the next
+slice.
 
-**⚠ NOT built: T-0.6 and T-1.5 — the entire MOBILE half.** No port method, no
-adapter, no screen. Nothing in `packages/mobile` calls either endpoint, so
-Mealprint is not user-reachable. That is PR 2 on this branch and it is the
-larger, riskier half: a preferences wizard + editor with the allergen chip set
-and its legally-reviewed disclaimer copy, the Fuel entry card, and the suggest
-sheet with draft-confirm. It needs a device pass. Reference: spec-26 design § 4;
-`useLoadoutGate.ts` is the gate-hook template (note `mealprint_access` is
-premium_plus ONLY, so its tier mirror differs) and `SnapAISheetContainer` is the
-root-mounted-sheet template.
+Nothing is user-reachable: `premium_plus` is `is_active = false`,
+`mealprint_access` is granted to that tier only, and no client calls the endpoints.
 
-**⚠ Three things must happen before this feature works at all:**
+**Endpoints:** `GET`/`PUT /nutrition/preferences` (404-free, returns defaults) and
+`POST /nutrition/ai/meal-suggest` (auth → `meal_ai` 402 → ceiling 429 → pipeline).
+`AI_MEAL_SUGGEST_DAILY_LIMIT` = 20/day, `AI_MEAL_MODEL_ID` Haiku-class, both
+registered in `infra/api.ts`. Mounted inside `nutritionRoutes` — the root chain in
+`api.ts` is at TS's TS2589 ceiling.
 
-1. **The `foods` tag backfill is a RE-SEED, not an UPDATE.** Tag values exist
-   only in the OFF dump. Run `seedOpenFoodFacts.ts` with the widened DuckDB
-   projection in that file's header. Until then all ~144k curated rows are
-   unknown-allergen and excluded from every allergen-filtered pool, which
-   presents as "Mealprint can't find anything I can eat".
-2. **Three migrations, and they apply AUTOMATICALLY — do not hand-apply**
-   (`20260803120000`, `20260803120100`, `20260803120200`). Staging applies on
-   merge to `main`; production applies on `release: published`, before
-   `sst deploy`. ⚠ The first drafts of two of these files' headers claimed a
-   manual apply, contradicting § Verified facts. Corrected — but it is the second
-   time this repo has confused "not applied yet" with "applied by hand", so
-   check `production-deploy.yml` rather than a comment.
-3. **Bedrock**: `AI_MEAL_MODEL_ID` reuses the Loadout re-map's Haiku 4.5 id, so
-   it is already granted in both accounts. No IAM change.
+**⚠ THE OFF RE-SEED IS OUTSTANDING AND THE FEATURE LOOKS BROKEN WITHOUT IT.** The
+tag columns are NULL on all ~144k seeded rows, and `avoidanceFilter` treats a NULL
+`allergen_tags` as unknown-and-unsafe — so every curated food is excluded from any
+allergen-filtered pool. Brad's job; recipe is in the migration header AND
+`seedOpenFoodFacts.ts`. ⚠ Release FIRST, then seed: the script writes
+`allergen_tags` and 42703s before the migration lands.
 
-**Decisions taken in this slice — do not re-litigate:**
+#### ⚠ `mealprint_access` diverges from `loadout_access` — Brad review pending
 
-- **`mealprint_access` → `premium_plus` ONLY**, deliberately unlike
-  `loadout_access`. No coach surface in v1 (coach meal plans are explicitly out
-  of scope), and `individual_trainer` is already the most cost-exposed tier at
-  ~212 % of net — repeating the known £14.99-vs-£29.99 Loadout price hole would
-  cost money for nothing.
-- **This exposed a real upsell bug.** `pickUpgradeTier`'s role branch assumed
-  every Premium+ feature is also granted to trainer tiers — true of `loadout`,
-  false of `meal_ai`. A denied coach would have been sold `individual_trainer`
-  and stayed locked out, which is the pay-and-stay-locked-out failure its own
-  docstring says the required `feature` param exists to prevent.
-  `PREMIUM_PLUS_ONLY_FEATURES` now beats the role branch.
-- **Retrieval ordering is protein density.** The catalogue cannot be fetched
-  whole, so something must pick which 600 rows the model sees. A product
-  judgement, deterministic on purpose so it can be measured rather than argued
-  about. **If suggestion quality disappoints, measure this first.**
-- **Empty states are 200s with an `emptyReason`**, not errors, and none consumes
-  the daily ceiling.
+`loadout_access` = Premium+ **and all three trainer tiers**; `mealprint_access` =
+**Premium+ only** (no coach surface in v1; `individual_trainer` is already the most
+cost-exposed tier). This is the subject of the open pricing gate above — do not
+flip `is_active` until it is settled.
 
-**⚠ Two lessons from the Inspector Brad sweeps, both worth carrying forward:**
+⚠ It also forced a fix the existing code did not anticipate: `pickUpgradeTier`
+returned `individual_trainer` for a `personal_trainer` BEFORE looking at the
+feature, so a coach denied `meal_ai` would have been upsold a £14.99 tier that
+still locks them out. Hence `PREMIUM_PLUS_ONLY_FEATURES`, checked before the role
+branch.
 
-- **An allergen tag's SILENCE is not evidence of absence.** `allergen_tags = []`
-  is true of a partially-tagged OFF row, and OFF's tagging is routinely partial.
-  A fix that let usable allergen tags suppress the CATEGORY channel served
-  `Fishermans Pie`/`["en:milk"]`/`["en:fish-pies"]` to a vegetarian, reported as
-  verified — and a test had already pinned that as intended. Independent evidence
-  channels must not gate each other.
-- **A NULL Postgres predicate EXCLUDES the row.**
-  `NOT (allergen_tags && ARRAY[…])` is NULL for an untagged row, so a
-  pattern-only user had every untagged row silently dropped in SQL while the JS
-  filter would have kept it. Any `&&`/`@>` exclusion over a nullable array needs
-  an explicit `IS NULL OR`.
+#### ⚠ `avoidanceFilter` took FOUR review passes and 23 findings. Read this before touching it.
 
-**Gates:** prettier + eslint (0 errors), full-workspace typecheck 8/8, build
-13/13, `vitest run src/application` 306 files / 3663 tests. `avoidanceFilter`
-alone is 86 tests. 🕵️ Inspector Brad local: 2 sweeps + 1 closed verification, 14
-findings, all fixed. **@inspector-brad CI NOT fired.** NOT device-verified and
-never exercised against real Bedrock.
+It is a CLAUDE.md dangerous area and the review history is the documentation:
+
+| pass | findings | commit |
+| --- | --- | --- |
+| Sweep 1 | 4 ways a restricted eater could be served an excluded food | `52b93df0` |
+| Sweep 2 | 9 | `a389968e` |
+| Verification | 4 (1 🔴) | `141e5c57` |
+| Verification, fresh inspector | 6 (2 🟠) | `501d6a86` |
+
+**Every pass found the previous fix incomplete, and passes 3 and 4 each found that
+the FIX was the new defect.** The two general lessons:
+
+1. **An allergen tag's SILENCE is not evidence about an axis it was never about.**
+   Three successive gates (`allergenTags === null`, `tagsUsable`, "did it make a
+   complete `[]` claim") all leaked, because all three asked the wrong question.
+   The pattern name channel is now **unconditional**; false positives are held off
+   by POSITIVE evidence only — `negators`, `clearedBy`, `tokenQualifiers`.
+2. **⚠ OFF's `categories_tags` is HIERARCHICAL and that cuts both ways.** It is why
+   a vegan cheese carries `en:vegan-cheeses` AND `en:cheeses` — and why
+   `en:plant-based-foods` is an ancestor of breads/pastas/sauces. Letting any
+   marker-bearing tag clear an axis served an **All Butter Croissant** to a
+   dairy-free user. A marker now only clears an axis when its tag is ABOUT that
+   axis (matches the axis' `categorySubstrings` OR its `tokens`).
+3. **Qualifier DIRECTION is a property of the entry, not the rule.** Preceding-only
+   breaks `Red Kidney Beans` (qualifier is the head noun that follows); either-side
+   breaks `Maliban Butter Coconut Biscuits` (trailing co-ingredient). Hence
+   `{ before?, after? }`, with `kidney` the lone `after`.
+
+⚠ **NO finding in any pass was allergen-grade.** The allergen chip path is
+tag-derived, fails closed, and was verified still to do so on every leaking product.
+Everything above is the PATTERN channel.
+
+⚠ **218 tests, and green gates prove nothing here.** Each pass's tests pinned the
+cases its fix was written for; the next pass's findings were all outside them.
+**Verify a change by RUNNING `assessAvoidance` against real UK product names**, not
+by reading it — that is what caught every one of the 23.
+
+#### Accepted residuals, tested and documented
+
+- `Alpro Soya Chocolate Milk Drink` excluded for `dairy_free` (qualifier 3 tokens
+  away). Both inspectors agreed; UK labelling law forbids "milk" on plant products
+  so the en-GB slice says "Oat Drink" anyway.
+- `Egg Fried Rice Noodle Box` — genuinely ambiguous, no direction rule fixes it.
+- `Shepherd's Pie` needs the possessive-"s" skip in `everyOccurrenceQualified`.
+
+#### Chipped follow-ups (not blocking, land before T-1.5 ships to a user)
+
+- `labelCheckRequired: true` is returned unconditionally BECAUSE
+  `mapOffAllergenTags` returns `[]` whenever ingredient text exists without knowing
+  OFF parsed it. **T-1.5 must render the label-check copy on that flag, NOT on
+  `containsUnverified`.**
+- Recall gaps are inherent to a name-token heuristic; they shrink as the re-seed
+  populates category tags.
 
 ## Superseded state (2026-07-31)
 
