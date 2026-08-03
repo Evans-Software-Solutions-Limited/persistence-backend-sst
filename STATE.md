@@ -286,6 +286,44 @@ never exercised against real Bedrock.
   are the NEXT slice — to be reviewed in a local dev build against the staging
   backend (Brad, 2026-07-27).
 
+### Releasing an additive migration alongside an OFF re-seed — checked 2026-08-03
+
+Brad asked, before releasing spec-26's three migrations to production, whether the
+**already-shipped mobile build** would break. It does not, and the reasoning
+generalises to any future additive migration, so it is recorded rather than
+re-derived:
+
+1. **Additive DDL is safe under migrate-then-deploy.** `production-deploy.yml`
+   migrates BEFORE `sst deploy`, so the previous release's Lambda briefly serves
+   against the new schema. `ADD COLUMN` / `CREATE TABLE` / `CREATE INDEX` are all
+   fine there. A drop or rename is NOT, and still needs expand/contract across two
+   releases.
+2. **Drizzle's bare `select()` expands from the caller's OWN `schema.ts`,** so an
+   old Lambda never names a column it does not know about. This is why the window
+   is safe in the forward direction — and why the REVERSE (new code, old database)
+   is the dangerous one.
+3. **⚠ The wire shape is what actually matters to a shipped app, and an explicit
+   DTO mapper is what protects it.** All four `foods` reads are bare `select()`, so
+   the three new tag columns would have started appearing in API responses — except
+   `toFoodDTO` maps field by field and does not include them. Every
+   `subscription_tiers` read projects explicitly too, and `listActive()` omits
+   `mealprint_access`. **When adding a column, grep for the DTO mapper, not just
+   the query.**
+4. **Denormalised macros are why a re-seed cannot rewrite history.**
+   `nutrition_entries` stores `kcal`/`protein_g`/`carbs_g`/`fat_g` at write time,
+   and `recipes`/`meals` totals are materialised on write — so refreshing ~144k
+   catalogue rows from a newer OFF dump does not retroactively change anyone's
+   logged days.
+
+⚠ **ORDER: release first, then re-seed.** The seed script writes `allergen_tags`,
+so running it before the migration lands fails with Postgres 42703 on every batch.
+Harmless but wasted.
+
+💡 A re-seed is not a novel operation — the daily OFF delta cron already upserts
+these rows through the same code path. And if the cron fires mid-backfill from the
+OLD Lambda, its `onConflictDoUpdate` set does not list the tag columns, so it
+cannot null out work in progress.
+
 ## Verified facts
 
 - SST 3.19.3 (Ion). Workspaces: `packages/` (api-utils, db, mobile, seed, web) +
