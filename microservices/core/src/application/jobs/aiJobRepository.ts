@@ -166,12 +166,26 @@ export class AiJobRepository {
             colliding &&
             (isStaleRunning(colliding) || isStaleQueued(colliding))
           ) {
-            await this.fail(
+            // ⚠ Scoped to the row AS OBSERVED. `markStaleRunning` keeps its
+            // freshness predicate inside the same UPDATE; this path reads in JS,
+            // so it needs an equivalent guard or it is a lost-update race. A
+            // redelivery may legally claim a 40-minute-stale row during our
+            // round-trip (the claim only needs the heartbeat cold by 5 minutes) —
+            // and killing it then would leave a worker burning a whole run of
+            // Bedrock whose `succeed()` silently no-ops, while the user's new job
+            // spends the same money again.
+            //
+            // `updated_at` is the token: every writer stamps it, and `claim` in
+            // particular, so if anything touched the row we no-op and fall through
+            // to `in_flight` — the honest answer when the row turns out to be alive.
+            const healed = await this.failIfUnchanged(
               colliding.id,
+              colliding.updatedAt,
               colliding.status === "queued"
                 ? STALE_QUEUED_ERROR
                 : STALE_RUNNING_ERROR,
             );
+            if (!healed) return { job: null, outcome: "in_flight" };
             return attemptInsert(true);
           }
 
@@ -467,6 +481,38 @@ export class AiJobRepository {
       .where(eq(aiJobs.id, jobId))
       .limit(1);
     return rows[0] ?? null;
+  }
+
+  /**
+   * `fail`, but only if the row has not been touched since it was observed.
+   *
+   * Optimistic concurrency on `updated_at`, which every writer stamps — `claim`
+   * included. Returns whether the update landed, so a caller that lost the race
+   * can change its answer rather than proceeding on a false premise.
+   */
+  async failIfUnchanged(
+    jobId: string,
+    expectedUpdatedAt: Date,
+    error: JobError,
+  ): Promise<boolean> {
+    const db = getDb();
+    const rows = await db
+      .update(aiJobs)
+      .set({
+        status: "failed",
+        error,
+        finishedAt: sql`now()`,
+        updatedAt: sql`now()`,
+      })
+      .where(
+        and(
+          eq(aiJobs.id, jobId),
+          eq(aiJobs.updatedAt, expectedUpdatedAt),
+          sql`${aiJobs.status} IN ('queued', 'running')`,
+        ),
+      )
+      .returning({ id: aiJobs.id });
+    return rows.length > 0;
   }
 
   /**

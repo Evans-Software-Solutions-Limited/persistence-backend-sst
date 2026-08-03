@@ -229,6 +229,14 @@ _executions_.
 `attempts` counts **consecutive stalls** and is **reset to zero by every
 checkpoint**. `invocations` counts every claim and never resets.
 
+⚠ **The worker must mirror the reset IN MEMORY.** `claimed.attempts` is read once
+at claim time and never refreshed, so testing it against `max_attempts` tests a
+counter the loop has already invalidated: a job that stalled twice and then
+completed 40 steps in its third invocation would be failed terminally by the next
+transient Bedrock 429, discarding ~$0.23 of purchased inference — the exact
+outcome the reset exists to prevent. The reset must hold _within_ an invocation,
+not only across them.
+
 A single shared counter is wrong in a way that costs money. A yield is not a
 failure, but it consumes a claim — so with one counter at 3, a 120-step job at
 20 s/step (3+ invocations, entirely normal) reaches its last invocation with zero
@@ -441,7 +449,17 @@ Two further consequences the naive implementation gets wrong:
   retry until 05:00 UTC — a lockout governed by a cron cadence rather than by any
   threshold this design reasons about. So on a collision with a row that
   `isStaleRunning`/`isStaleQueued` calls dead, the repository fails that row and
-  retries the insert **once** (guarded, so no loop).
+  retries the insert **once** (guarded, so no loop) — and that `fail` is scoped to
+  the row's observed `updated_at`, because a redelivery may legally claim a
+  40-minute-stale row during the read→write round-trip. Losing that race answers
+  `in_flight` rather than proceeding.
+
+⚠ **Client contract:** the replay check runs BEFORE the self-heal, so a client
+retrying with the SAME idempotency key gets its dead job back (derived `failed`),
+not a fresh one. That is correct idempotency — same request, same answer — but it
+means **a client that wants to start over must rotate the key**. Consumers should
+treat a terminal poll result as "this job is done" and mint a new key for a new
+attempt.
 
 Worked example for Loadout Phase 4 (illustrative; the kind owns the numbers):
 `loadout_programme_adapt` at, say, 3 jobs/day × 120 workouts × $0.0057 ≈

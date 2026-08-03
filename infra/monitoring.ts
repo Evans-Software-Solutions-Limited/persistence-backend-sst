@@ -421,6 +421,15 @@ export const aiJobDlqAlarm = alarm("ai-job-dlq", {
   comparisonOperator: "GreaterThanOrEqualToThreshold",
   // A DLQ publishes this metric continuously, so gaps here mean "no data yet"
   // rather than "nothing wrong" — the helper's `notBreaching` default is right.
+  //
+  // ⚠ THIS ALARM LATCHES, and that is worth knowing before treating a green→red
+  // transition as the only signal. `ApproximateNumberOfMessagesVisible` is a GAUGE
+  // on a queue nothing consumes, so the first message pins it in ALARM until the
+  // message ages out of SQS retention (~4 days). The OK action never fires, and
+  // every subsequent arrival inside that window is silent. Accepted deliberately:
+  // for a DLQ nobody drains, "still red" is the honest state and the first alert is
+  // the one that matters. If per-arrival paging is ever wanted, add a SECOND alarm
+  // on `NumberOfMessagesSent` (Sum) rather than changing this one.
 });
 
 /**

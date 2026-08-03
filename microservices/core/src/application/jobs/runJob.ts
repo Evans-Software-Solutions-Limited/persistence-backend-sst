@@ -154,18 +154,31 @@ export async function runJob(input: {
       };
     }
 
-    //  (d) live, in budget, but the claim still lost — the fence refused it (a
-    //      redelivery arriving less than CLAIM_FENCE_MS after the previous
-    //      invocation's last heartbeat), or another worker claimed it in the gap
-    //      between our UPDATE and this read.
+    //  (d) live, in budget, but the claim still lost. Split by status, because the
+    //      two sub-cases want opposite answers.
     //
-    //      ⚠ THROW. An earlier revision returned `skipped` here, which deleted the
-    //      message — and that orphaned jobs on a path this spine exists to
-    //      protect: a retryable step failure late in a 15-minute invocation is
-    //      redelivered ~16 minutes later with a heartbeat only ~2 minutes old, so
-    //      the fence refuses, and the message was destroyed with the job left
-    //      `running` and its checkpoint stranded until the nightly sweep. Throwing
-    //      hands it back to SQS, which redelivers once the heartbeat is cold; the
+    //      `queued` is provably the aftermath of ANOTHER worker's yield: our claim
+    //      can only have lost to a holder, and `releaseForResume` is always
+    //      followed by a `send` or by a terminal `fail`. So a replacement message
+    //      already exists, and throwing would add a SECOND one — which then
+    //      bounces off the real worker for three receives and lands in the DLQ
+    //      while the job succeeds, tripping a `threshold: 1` alarm whose text says
+    //      a paying user lost a job. Return, and let the existing message do the
+    //      work.
+    if (existing.status === "queued") {
+      return {
+        jobId: input.jobId,
+        status: "skipped",
+        stepsRun: 0,
+        progress: existing.progressDone,
+        total: existing.progressTotal,
+      };
+    }
+
+    //      `running` and cold is a genuine race (someone claimed it between our
+    //      UPDATE and this read). ⚠ THROW. An earlier revision returned `skipped`
+    //      for every refusal, which DELETED the message — and that orphaned jobs on
+    //      a path this spine exists to protect. Throwing hands it back to SQS; the
     //      redrive policy bounds the loop.
     throw new JobKindError(
       "step_failed",
@@ -202,6 +215,16 @@ export async function runJob(input: {
   let checkpoint = claimed.checkpoint ?? null;
   let stepsRun = 0;
   let slowestStepMs = 0;
+  // ⚠ MIRRORS THE DB COUNTER, and must be reset wherever `checkpoint()` resets it.
+  //
+  // `claimed.attempts` is the value read AT CLAIM TIME and never refreshed, while
+  // `jobs.checkpoint()` sets `attempts = 0` on every completed step. Testing the
+  // claim-time value would therefore test a counter the loop has already
+  // invalidated — and the consequence is a money loss, not an inelegance: a job
+  // that stalled twice and then completed 40 steps in its third invocation would
+  // be failed TERMINALLY by the next transient Bedrock 429, discarding ~$0.23 of
+  // purchased inference, exactly the outcome the reset exists to prevent.
+  let attemptsSinceProgress = claimed.attempts;
 
   while (done < total) {
     const estimate =
@@ -265,11 +288,11 @@ export async function runJob(input: {
       });
     } catch (error) {
       const failure = classifyError(error);
-      // `claimed.attempts` is the POST-increment value of the consecutive-stall
-      // counter, which `checkpoint()` resets on any completed step — so a long
-      // job that is making progress always has its full retry allowance, and
-      // only a genuinely stuck one exhausts it.
-      if (failure.retryable && claimed.attempts < claimed.maxAttempts) {
+      // The consecutive-stall counter as of RIGHT NOW — zero if this invocation
+      // has completed any step, since `checkpoint()` reset the DB counter too. So
+      // a job making progress always has its full retry allowance, WITHIN an
+      // invocation as well as across them.
+      if (failure.retryable && attemptsSinceProgress < claimed.maxAttempts) {
         // Throwing lets the SQS message become visible again and be redelivered.
         // The job stays `running` with its checkpoint intact, so the retry
         // resumes rather than restarts — the difference between re-buying 30
@@ -298,6 +321,9 @@ export async function runJob(input: {
       checkpoint,
       progressDone: done,
     });
+    // Kept in step with the reset `checkpoint()` just performed. Progress means
+    // the job is healthy, so the stall allowance starts again.
+    attemptsSinceProgress = 0;
   }
 
   try {

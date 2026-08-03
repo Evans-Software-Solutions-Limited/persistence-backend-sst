@@ -175,9 +175,13 @@ describe("AiJobRepository", () => {
       });
       let insertCalls = 0;
       let selectCalls = 0;
+      // `failIfUnchanged` RETURNS rows, so the mock has to resolve a row for the
+      // heal to count as landed.
       const updateSpy = vi.fn().mockReturnValue({
         set: vi.fn().mockReturnValue({
-          where: vi.fn().mockResolvedValue(undefined),
+          where: vi.fn().mockReturnValue({
+            returning: vi.fn().mockResolvedValue([{ id: "j-dead" }]),
+          }),
         }),
       });
       (getDb as any).mockReturnValue({
@@ -333,7 +337,9 @@ describe("AiJobRepository", () => {
         }),
         update: vi.fn().mockReturnValue({
           set: vi.fn().mockReturnValue({
-            where: vi.fn().mockResolvedValue(undefined),
+            where: vi.fn().mockReturnValue({
+              returning: vi.fn().mockResolvedValue([{ id: "j-dead" }]),
+            }),
           }),
         }),
       });
@@ -391,6 +397,113 @@ describe("AiJobRepository", () => {
           clientRequestId: "req-1",
         }),
       ).rejects.toThrow("connection reset");
+    });
+  });
+
+  describe("failIfUnchanged — optimistic concurrency on the self-heal", () => {
+    function mockFail(returned: unknown[]) {
+      const whereSpy = vi.fn();
+      (getDb as any).mockReturnValue({
+        update: vi.fn().mockReturnValue({
+          set: vi.fn().mockReturnValue({
+            where: whereSpy.mockReturnValue({
+              returning: vi.fn().mockResolvedValue(returned),
+            }),
+          }),
+        }),
+      });
+      return { whereSpy };
+    }
+
+    it("scopes the update to the observed updated_at, and reports success", async () => {
+      const observed = new Date("2026-08-02T10:00:00.000Z");
+      const { whereSpy } = mockFail([{ id: "j1" }]);
+
+      const landed = await new AiJobRepository().failIfUnchanged(
+        "j1",
+        observed,
+        { code: "stale", message: "x", retryable: false },
+      );
+
+      expect(landed).toBe(true);
+      const { sql, params } = renderSql(whereSpy.mock.calls[0][0]);
+      expect(sql).toContain("updated_at");
+      // `eq()` serialises the Date to an ISO string on the way to postgres.js.
+      expect(params).toEqual(
+        expect.arrayContaining(["j1", observed.toISOString()]),
+      );
+    });
+
+    it("reports FAILURE when the row moved — so the caller can change its answer", async () => {
+      // The race this closes: a redelivery may legally claim a 40-minute-stale row
+      // during the enqueue's read→write round-trip (the claim only needs the
+      // heartbeat cold by 5 minutes). Killing it then would leave a worker burning
+      // a whole run of Bedrock whose `succeed()` silently no-ops, while the user's
+      // new job spends the same money again.
+      mockFail([]);
+
+      expect(
+        await new AiJobRepository().failIfUnchanged("j1", new Date(), {
+          code: "stale",
+          message: "x",
+          retryable: false,
+        }),
+      ).toBe(false);
+    });
+
+    it("a self-heal that LOSES the race answers in_flight rather than proceeding", async () => {
+      const dead = {
+        id: "j-dead",
+        status: "running",
+        heartbeatAt: new Date(Date.now() - STALE_AFTER_MS - 60_000),
+        updatedAt: new Date(Date.now() - STALE_AFTER_MS - 60_000),
+        createdAt: new Date(Date.now() - STALE_AFTER_MS - 60_000),
+        attempts: 3,
+        maxAttempts: 3,
+        invocations: 3,
+        maxInvocations: 20,
+      };
+      const uniqueViolation = Object.assign(new Error("duplicate key"), {
+        code: "23505",
+        constraint_name: INFLIGHT_INDEX,
+      });
+      let insertCalls = 0;
+      (getDb as any).mockReturnValue({
+        insert: vi.fn().mockReturnValue({
+          values: vi.fn().mockReturnValue({
+            returning: vi.fn().mockImplementation(() => {
+              insertCalls += 1;
+              return Promise.reject(uniqueViolation);
+            }),
+          }),
+        }),
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([dead]),
+            }),
+          }),
+        }),
+        // The heal update matches NOTHING — someone claimed the row in the gap.
+        update: vi.fn().mockReturnValue({
+          set: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              returning: vi.fn().mockResolvedValue([]),
+            }),
+          }),
+        }),
+      });
+
+      expect(
+        await new AiJobRepository().enqueue({
+          userId: "u1",
+          kind: "k",
+          input: {},
+          total: 1,
+        }),
+      ).toEqual({ job: null, outcome: "in_flight" });
+      // No second insert: we did not proceed on a false premise.
+      expect(insertCalls).toBe(1);
     });
   });
 

@@ -177,6 +177,14 @@ CREATE INDEX IF NOT EXISTS ai_jobs_running_heartbeat_idx
 -- "never started" while it was about to resume, losing every checkpointed step.
 -- `releaseForResume` stamps `updated_at` on each yield, so the timer restarts on
 -- every genuine hand-back; for a never-started job it still equals `created_at`.
+--
+-- ⚠ The DROP of the OLD NAME is load-bearing, not tidiness. An earlier revision
+-- of this same file created `ai_jobs_queued_created_idx`; these migrations are
+-- applied BY HAND against staging and production, so that index may already
+-- exist. `CREATE INDEX IF NOT EXISTS` under a new name would leave the old one
+-- behind as an orphan that nothing queries and every `queued`-row write
+-- maintains. The header promises re-runnability by SHAPE, not merely by name.
+DROP INDEX IF EXISTS ai_jobs_queued_created_idx;
 CREATE INDEX IF NOT EXISTS ai_jobs_queued_updated_idx
   ON ai_jobs (updated_at) WHERE status = 'queued';
 

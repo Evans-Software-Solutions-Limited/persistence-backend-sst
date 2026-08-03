@@ -192,18 +192,50 @@ describe("runJob", () => {
       expect(repo.fail).not.toHaveBeenCalled();
     });
 
-    it("a QUEUED row whose claim was lost in the read gap also throws, not skips", async () => {
-      // Branch (d): live, in budget, not warm — another worker claimed it between
-      // our UPDATE and this read. Nothing to do now, but the message must survive
-      // in case that worker dies.
+    it("a QUEUED row whose claim was lost is SKIPPED — a replacement message already exists", async () => {
+      // Branch (d), queued sub-case. This is provably the aftermath of another
+      // worker's yield, and `releaseForResume` is always followed by a `send`. So
+      // a message already exists; throwing would add a SECOND one, which then
+      // bounces off the real worker for three receives and lands in the DLQ while
+      // the job succeeds — tripping a `threshold: 1` alarm whose text says a
+      // paying user lost a job.
       registerCountingKind();
       const repo = makeRepo(
         null,
         job({
           status: "queued",
           attempts: 0,
-          invocations: 0,
-          heartbeatAt: null,
+          invocations: 1,
+          heartbeatAt: new Date(Date.now() - 30 * 60 * 1000),
+        }),
+      );
+
+      const outcome = await runJob({
+        jobId: "j1",
+        remainingMs: plentyOfTime,
+        repository: repo,
+        queue: makeQueue() as any,
+      });
+
+      expect(outcome.status).toBe("skipped");
+      expect(repo.fail).not.toHaveBeenCalled();
+    });
+
+    it("a RUNNING-but-cold row whose claim was lost throws, not skips", async () => {
+      // Branch (d): live, in budget, not warm — another worker claimed it between
+      // our UPDATE and this read. Nothing to do now, but the message must survive
+      // in case that worker dies.
+      // A genuine race: someone claimed it between our UPDATE and this read.
+      // Nothing to do now, but the message must survive in case they die.
+      registerCountingKind();
+      const repo = makeRepo(
+        null,
+        job({
+          status: "running",
+          attempts: 0,
+          invocations: 1,
+          // Cold, so the warm branch does not catch it.
+          heartbeatAt: new Date(Date.now() - 10 * 60 * 1000),
         }),
       );
 
@@ -554,6 +586,66 @@ describe("runJob", () => {
         }),
       ).rejects.toThrow("bedrock 429");
       expect(repo.fail).not.toHaveBeenCalled();
+    });
+
+    it("⚠ PROGRESS WITHIN AN INVOCATION restores the retry allowance — the job is NOT failed", async () => {
+      // The bug: `claimed.attempts` is read once at claim time, but
+      // `checkpoint()` sets `attempts = 0` on every completed step. Testing the
+      // claim-time value tests a counter the loop has already invalidated — so a
+      // job that stalled twice and then completed 40 steps in its third
+      // invocation would be failed TERMINALLY by the next transient Bedrock 429,
+      // discarding ~$0.23 of purchased inference. Both earlier review passes
+      // missed this, and the comment above the guard claimed it was impossible.
+      let call = 0;
+      const runStep = vi.fn(async (ctx: any) => {
+        call += 1;
+        // Two successful steps, then a retryable failure.
+        if (call > 2) throw new AiUnavailableError("bedrock 429");
+        return ctx.index;
+      });
+      registerCountingKind(runStep);
+      // Claim-time attempts are already AT the bound: the previous two
+      // invocations stalled without progress.
+      const repo = makeRepo(
+        job({ progressTotal: 10, attempts: 3, maxAttempts: 3 }),
+      );
+
+      await expect(
+        runJob({
+          jobId: "j1",
+          remainingMs: plentyOfTime,
+          repository: repo,
+          queue: makeQueue() as any,
+        }),
+      ).rejects.toThrow("bedrock 429");
+
+      // THROWN, so SQS redelivers and the 2 completed steps are kept. Failing
+      // here would have discarded them.
+      expect(repo.fail).not.toHaveBeenCalled();
+      expect(repo.checkpoint).toHaveBeenCalledTimes(2);
+    });
+
+    it("but a stall with NO progress in this invocation is still terminal at the bound", async () => {
+      // The counterpart: the reset must not make the bound unenforceable.
+      registerCountingKind(
+        vi.fn().mockRejectedValue(new AiUnavailableError("bedrock 429")),
+      );
+      const repo = makeRepo(
+        job({ progressTotal: 10, attempts: 3, maxAttempts: 3 }),
+      );
+
+      const outcome = await runJob({
+        jobId: "j1",
+        remainingMs: plentyOfTime,
+        repository: repo,
+        queue: makeQueue() as any,
+      });
+
+      expect(outcome).toMatchObject({
+        status: "failed",
+        code: "ai_unavailable",
+      });
+      expect(repo.checkpoint).not.toHaveBeenCalled();
     });
 
     it("the SAME failure on the LAST attempt is terminal, not another throw", async () => {

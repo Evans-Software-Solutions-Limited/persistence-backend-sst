@@ -56,8 +56,19 @@ export const STALE_AFTER_MS = 40 * 60 * 1000;
  * indefinitely AND the terminal-job purge never sees it.
  *
  * Sized off the redrive policy, not the worker: 3 receives × a 16-minute
- * visibility timeout is ~48 minutes to reach the DLQ, so 60 minutes guarantees
- * the message is genuinely gone before the row is written off.
+ * visibility timeout is ~48 minutes to reach the DLQ, so 60 minutes clears the
+ * window in which a failing message could still be retried.
+ *
+ * ⚠ It does NOT prove the message is gone under BACKLOG. `reserved: 5` against a
+ * ~5-minute job caps throughput near 60 jobs/hour, and a message waiting behind a
+ * backlog is never RECEIVED — so its receive count never increments and it never
+ * reaches the DLQ. A burst of more than ~60 distinct users would have its tail
+ * reaped as "never started" while those messages are still perfectly alive; when
+ * one lands, the row is terminal, the claim is refused and the message is deleted.
+ * That degrades gracefully (no wasted spend, and the user can retry) and is
+ * unreachable at pre-launch volume — but if throughput ever becomes the binding
+ * constraint, this threshold has to grow with the backlog, not with the redrive
+ * policy.
  */
 export const QUEUED_STALE_AFTER_MS = 60 * 60 * 1000;
 
