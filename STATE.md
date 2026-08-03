@@ -43,15 +43,77 @@ bite, the separable piece is M21: Loadout Phase 4 + Mealprint alone close the
 § Mealprint below. Phase 4 and M21 remain zero code; Mealprint's MOBILE half
 (tasks 0.6, 1.5) is also still zero code. See § Next plan of action.
 
-### spec-26 Mealprint — BACKEND MERGED 2026-08-03 (PR #350, `d1c40b30`)
+### spec-26 Mealprint — MOBILE HALF BUILT, PR NOT YET RAISED 2026-08-03
+
+**Branch `claude/mealprint-mobile-ui-9347a0`, HEAD `6283afa6`** (3 commits off
+`6c77dfe3`). T-0.6 + T-1.5 are written and every gate is green: prettier,
+typecheck, lint (0 errors), build, 476 suites / 5877 tests, coverage ≥ 90 % on all
+four axes for every new file.
+
+**⚠ NOT DEVICE-VERIFIED, and the attempt failed for an environmental reason worth
+knowing.** The simulator's installed dev build serves a STALE bundle: the Mealprint
+card does not render on Fuel, the "Food preferences" row does not render on Fuel
+Targets, and a deep link to `/(app)/fuel/preferences` bounces to Home — three
+misses on modules Metro demonstrably transformed (they appear in the Tamagui
+compile log). So it is the app not picking up the worktree bundle, NOT a rendering
+bug. A fresh `expo run:ios` from this worktree is the fix. Separately, the ENTITLED
+paths cannot be reached by anyone without a **RevenueCat promotional entitlement**
+for `premium_plus` — Brad's to grant, and `individual_trainer` will not do.
+
+What shipped:
+
+| Slice | Contents |
+| --- | --- |
+| T-0.6 | `domain/models/mealprint.ts` (wire contract + vocabularies mirrored from the backend + the two pieces of contract copy), api-port/SST-adapter methods, `cached_mealprint_preferences` SQLite table, an offline-queued coalesced write command, the wizard/editor at `/(app)/fuel/preferences`, and both entry points (Fuel card, Fuel Targets row) |
+| T-1.5 | `useMealSuggest` (imperative, never queued, five-way failure taxonomy), the suggest sheet, draft-confirm, and logging by REFERENCE through the existing `POST /nutrition/entries` |
+
+Decisions worth not re-deriving (all in docstrings):
+
+- `useMealprintGate` grants **premium_plus ONLY** — mirrors `mealprint_access`, not
+  `loadout_access`. Upsell target is premium_plus even for a coach.
+- The entry card has **FOUR** states. `pending` and `stalled` exist so a paying
+  subscriber never meets a padlock during the cold-start round trip, and a hung
+  socket never renders as a paywall. `GymsSegmentContainer` is the precedent.
+- The label-check disclaimer renders on `labelCheckRequired` (always true), never
+  on `containsUnverified`. Defaults to `true` when a result omits the field.
+- Preferences are **ungated** on both endpoints and both surfaces — the paywall is
+  on generation, and an expired subscriber must still be able to read and correct
+  their allergen list.
+
+#### ⚠ Eight review findings across two Inspector Brad sweeps. One was serious.
+
+| # | Finding | Where |
+| --- | --- | --- |
+| 🔴 | A failed preferences GET turned the wizard's **Skip into a delete button** | `MealprintPreferencesContainer` |
+| 🟠 | `labelCheckRequired` defaulted false → suggestions with no disclaimer | suggest container |
+| 🟠 | The server's `partialEnforcementOnly` had no reader at all | suggest container/presenter |
+| 🟠 | `reset()` left `inFlightRef` set with no signal → dead Generate button | `useMealSuggest` |
+| 🟠 | …and the FIX to that left `lastInputRef` nulled → dead retry (2nd sweep) | `useMealSuggest` |
+| 🟡 | `summarisePreferences` threw on an unknown `effortLevel` mid-render | `models/mealprint.ts` |
+| 🟢 ×2 | A test comment promising an absent assertion; a docstring describing an unreachable path | — |
+
+**The 🔴 is the one to remember.** `PUT /nutrition/preferences` is a full
+last-write-wins replacement and the form renders empty defaults until it is
+seeded — so on a device with an empty cache (reinstall, new device, sign-out/in) a
+failed read left the whole form live with four empty arrays in it. And that is the
+DEFAULT path: an empty cache makes `useMealprintEntry` report `needsSetup`, so the
+first thing a reinstalled device does is open the wizard. Skip then queued a write
+that deleted the user's allergen list, dietary pattern and both free-text lists,
+silently. Fixed in two places deliberately (`commit()` refuses an unseeded write;
+the presenter replaces the whole form with a retry panel), because the general
+lesson is that **a seed latch protects the FORM from a late fetch and protects
+nothing at all from an unseeded write — those are two guards, not one.**
+
+Second lesson, from the pair of `useMealSuggest` findings: when a guard says "this
+in-flight request still owns the state", it owns ALL of it. Fixing the stage and
+leaving the input was half a decision, and half a decision read as a whole one is
+how the second sweep found a bug the first sweep's fix created.
+
+#### Backend, for reference — MERGED 2026-08-03 (PR #350, `d1c40b30`)
 
 **Phase 0 (0.1–0.5) + Phase 1 (1.1–1.4) + the `meal_ai` gate + infra config are on
 `main`.** 6 commits squashed; all 5 CI checks green. Staging deploy fired on merge,
 which auto-applies the three migrations there.
-
-**NOT built: 0.6 and 1.5 — the entire mobile half.** Nothing in `packages/mobile`
-calls any of it, so the feature does not exist for a user yet. That is the next
-slice.
 
 Nothing is user-reachable: `premium_plus` is `is_active = false`,
 `mealprint_access` is granted to that tier only, and no client calls the endpoints.
@@ -129,14 +191,30 @@ by reading it — that is what caught every one of the 23.
 - `Egg Fried Rice Noodle Box` — genuinely ambiguous, no direction rule fixes it.
 - `Shepherd's Pie` needs the possessive-"s" skip in `everyOccurrenceQualified`.
 
-#### Chipped follow-ups (not blocking, land before T-1.5 ships to a user)
+#### Chipped follow-ups
 
-- `labelCheckRequired: true` is returned unconditionally BECAUSE
-  `mapOffAllergenTags` returns `[]` whenever ingredient text exists without knowing
-  OFF parsed it. **T-1.5 must render the label-check copy on that flag, NOT on
-  `containsUnverified`.**
+- ✅ DONE in the mobile slice: the label-check copy renders on `labelCheckRequired`,
+  never on `containsUnverified` — and defaults to `true` when a result omits the
+  field, because `suggestMeals` is an unvalidated cast over the wire.
 - Recall gaps are inherent to a name-token heuristic; they shrink as the re-seed
   populates category tags.
+
+#### What is left before a user can reach Mealprint
+
+1. **Raise the PR** for `claude/mealprint-mobile-ui-9347a0` (not done — Brad's
+   call whether to review the three commits as-is or squash).
+2. **The OFF re-seed.** Brad's, operational. Until it runs, every allergen chip
+   empties the candidate pool and the sheet correctly answers
+   `emptyReason: "no_candidates"`. Build/QA the happy path with NO allergen chips.
+3. **A RevenueCat promotional entitlement** for `premium_plus` on a test account —
+   without it nothing past the locked card is reachable, on simulator or device.
+4. **A fresh `expo run:ios`** from the branch, then the device pass. Specifically
+   worth looking at: the draft stage now stacks items + meal picker + two caveat
+   blocks above the confirm button in an 86 % sheet, so "Log N kcal" may sit below
+   the fold. It scrolls (the body has an explicit height, not `flex: 1`), but Jest
+   mocks gorhom so nothing can prove that without a device.
+5. **The coach/Premium+ pricing decision** still gates T-P0.10 and therefore
+   `is_active`. Unchanged by this slice.
 
 ## Superseded state (2026-07-31)
 
@@ -1040,6 +1118,16 @@ consent copy, privacy section and governing law · the OFF re-seed backfilling
 `serving_quantity` across the ~143k seeded rows.
 
 ## Last session
+
+**2026-08-03 — spec-26 Mealprint T-0.6 + T-1.5, the mobile half.** Branch
+`claude/mealprint-mobile-ui-9347a0` @ `6283afa6`, 3 commits, PR NOT raised. All
+five gates green (476 suites / 5877 tests, ≥ 90 % coverage on every new file); NOT
+device-verified, and the simulator attempt failed on a stale bundle rather than on
+the code — details and the remaining checklist are in § "spec-26 Mealprint — MOBILE
+HALF BUILT" above. Two Inspector Brad sweeps found 8 issues including one 🔴 where
+the wizard's Skip could silently delete a user's saved allergen list; all fixed,
+and the second sweep's finding was created by the first sweep's fix, which is the
+part worth remembering.
 
 **2026-08-02 — PR [#339](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/339)
 REBASED onto `main` @ `c7ad458`, given the Inspector Brad sweep it had never had,
