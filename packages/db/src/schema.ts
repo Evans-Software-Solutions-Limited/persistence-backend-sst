@@ -2166,6 +2166,97 @@ export const aiUsageLog = pgTable(
   (t) => [index("ai_usage_log_user_ts").on(t.userId, t.createdAt)],
 );
 
+/**
+ * Shared async-job spine — `specs/_shared/async-jobs/design.md` § 2.
+ *
+ * Work that outlives the 29 s request ceiling: Loadout programme adaptation
+ * (spec-21 Phase 4), Mealprint week plans (spec-26 Phase 3), program import.
+ * THIS ROW is the durable state; SQS is only the wake-up, and is treated as
+ * at-least-once throughout.
+ *
+ * Authoritative DDL: `20260802120000_ai_jobs.sql`. Two things this mirror
+ * deliberately does not reproduce, both documented there:
+ *
+ *   - `kind` carries **no** CHECK constraint, unlike every other constrained
+ *     text column in this file. The TypeScript kind registry is the authority,
+ *     so adding a job kind is not a shared-migration change.
+ *   - the partial indexes (`… WHERE status = 'running'`, `… WHERE status IN
+ *     (…)`) are declared here in their bare-column form. Drizzle's `.on()`
+ *     takes columns, not expressions, so this records the index NAME and rough
+ *     shape only — same convention as `saved_gyms_user_name_key` above.
+ */
+export const aiJobs = pgTable(
+  "ai_jobs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // CASCADE, unlike aiUsageLog's bare reference: a job row holds a generated
+    // artefact (an adapted programme, a week of meals), so it is user content
+    // rather than telemetry. The cascade is also what puts this table inside
+    // the existing account-purge sweep without touching that sweep.
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(),
+    status: text("status").notNull().default("queued"),
+    // Opaque to the spine — only the registered kind interprets these.
+    input: jsonb("input").notNull(),
+    checkpoint: jsonb("checkpoint"),
+    result: jsonb("result"),
+    error: jsonb("error"),
+    progressDone: integer("progress_done").notNull().default(0),
+    progressTotal: integer("progress_total").notNull().default(0),
+    // TWO bounds, both enforced inside the claim UPDATE. `attempts` counts
+    // CONSECUTIVE STALLS and resets to 0 on any completed step (a time-budget
+    // yield is not a failure); `invocations` is the absolute backstop that
+    // `attempts` cannot be precisely because it resets. See the migration.
+    attempts: integer("attempts").notNull().default(0),
+    maxAttempts: integer("max_attempts").notNull().default(3),
+    invocations: integer("invocations").notNull().default(0),
+    maxInvocations: integer("max_invocations").notNull().default(20),
+    clientRequestId: text("client_request_id"),
+    heartbeatAt: timestamp("heartbeat_at", { withTimezone: true }),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index("ai_jobs_user_created_idx").on(t.userId, t.createdAt.desc()),
+    // FULL unique index, deliberately not partial — see the migration for the
+    // 42P10 hazard a `WHERE client_request_id IS NOT NULL` predicate creates
+    // with Drizzle's `onConflictDoNothing({ target })`. The repository detects
+    // a replay by CATCHING this violation, never by a pre-flight SELECT, which
+    // would be racy between two concurrent enqueues of the same key.
+    uniqueIndex("ai_jobs_user_kind_client_request_idx").on(
+      t.userId,
+      t.kind,
+      t.clientRequestId,
+    ),
+    // One in-flight job per user per kind — the cost control the read-then-write
+    // daily ceiling cannot be, since one unit here is up to ~120 inferences.
+    //
+    // ⚠ THE PREDICATE IS DECLARED, unlike the bare-column mirrors above, and that
+    // exception is deliberate. Those predicates are cosmetic (an expression
+    // rendered as a column, same rows); THIS one decides which rows conflict.
+    // Dropped, the mirror describes a FULL unique index — one job per kind
+    // FOREVER, terminal rows included — so `db:push` / `db:generate` would emit
+    // DDL that permanently locks a user out after their first job.
+    uniqueIndex("ai_jobs_one_inflight_per_kind_idx")
+      .on(t.userId, t.kind)
+      .where(sql`${t.status} IN ('queued', 'running')`),
+    index("ai_jobs_running_heartbeat_idx").on(t.heartbeatAt),
+    index("ai_jobs_terminal_finished_idx").on(t.finishedAt),
+    // Backs the queued-stale reaper, which measures from `updated_at` — `queued`
+    // means either "never started" or "released by a yield", and only
+    // `updated_at` distinguishes them.
+    index("ai_jobs_queued_updated_idx").on(t.updatedAt),
+  ],
+);
+
 export type Food = typeof foods.$inferSelect;
 export type NewFood = typeof foods.$inferInsert;
 export type Recipe = typeof recipes.$inferSelect;
@@ -2184,6 +2275,8 @@ export type WaterLog = typeof waterLog.$inferSelect;
 export type NewWaterLog = typeof waterLog.$inferInsert;
 export type AiUsageLog = typeof aiUsageLog.$inferSelect;
 export type NewAiUsageLog = typeof aiUsageLog.$inferInsert;
+export type AiJob = typeof aiJobs.$inferSelect;
+export type NewAiJob = typeof aiJobs.$inferInsert;
 
 // Add missing import for sql
 import { sql } from "drizzle-orm";
