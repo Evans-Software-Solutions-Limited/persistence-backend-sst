@@ -65,9 +65,10 @@ it.** Tag values exist only in the OFF dump, so the route is re-running
 header). Until then every curated food is unknown-allergen and excluded from
 allergen-filtered pools.
 
-⚠ **Three migrations need a MANUAL production apply**: `20260803120000`
-(foods tags), `20260803120100` (preferences), `20260803120200`
-(mealprint_access).
+⚠ **Three migrations, and they apply AUTOMATICALLY — do NOT hand-apply.**
+`20260803120000` (foods tags), `20260803120100` (preferences), `20260803120200`
+(mealprint_access). Staging applies on merge to `main`; production applies on
+`release: published`, before `sst deploy` (`production-deploy.yml`).
 
 ## Phase 2 — Day plans
 

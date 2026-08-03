@@ -73,8 +73,13 @@ root-mounted-sheet template.
    projection in that file's header. Until then all ~144k curated rows are
    unknown-allergen and excluded from every allergen-filtered pool, which
    presents as "Mealprint can't find anything I can eat".
-2. **Three migrations need a MANUAL production apply**: `20260803120000`,
-   `20260803120100`, `20260803120200`.
+2. **Three migrations, and they apply AUTOMATICALLY — do not hand-apply**
+   (`20260803120000`, `20260803120100`, `20260803120200`). Staging applies on
+   merge to `main`; production applies on `release: published`, before
+   `sst deploy`. ⚠ The first drafts of two of these files' headers claimed a
+   manual apply, contradicting § Verified facts. Corrected — but it is the second
+   time this repo has confused "not applied yet" with "applied by hand", so
+   check `production-deploy.yml` rather than a comment.
 3. **Bedrock**: `AI_MEAL_MODEL_ID` reuses the Loadout re-map's Haiku 4.5 id, so
    it is already granted in both accounts. No IAM change.
 
@@ -456,6 +461,51 @@ T-1.9 — no doc still describes these as open.
   30 is deliberate: hitting this cap blocks no workout (AC-2.1/AC-2.2 are the
   floor, not fallbacks), whereas the re-map has no alternative path. Revisit if
   § 8.1's 640 px downscale is ever measured.
+
+### ⚠ OPEN BRAD DECISION, GATES PRODUCTION — how coaches get Premium+ (2026-08-03)
+
+**Brad, 2026-08-03: "premium plus needs reviewing on how we give it to coaches,
+alongside the ability to train as we have a bit of a pricing dilemma here (maybe
+we sell it as a way to upgrade their membership), but before we go live in
+production with this, we need review this approach."**
+
+A **go-live gate**, not a background nicety — and it must be decided as ONE
+question rather than per-feature, because the two adaptive-suite flags currently
+answer it in opposite directions:
+
+| flag | premium_plus | trainer tiers | decided by |
+| --- | --- | --- | --- |
+| `loadout_access` | ✅ | ✅ all three | Brad 2026-07-27, "live with it for now" |
+| `mealprint_access` | ✅ | ❌ none | Claude 2026-08-03, this slice |
+
+Neither is obviously right, which is the dilemma:
+
+- **Granting trainer tiers the suite** (Loadout's answer) means a coach gets at
+  £14.99 what an athlete pays £29.99 for. `individual_trainer` is already the
+  most cost-exposed tier at ~212 % of net at saturated ceilings; adding
+  Mealprint's ~£7/mo would make the worst tier materially worse.
+- **Withholding it** (Mealprint's answer) is coherent on cost and on scope — no
+  coach surface exists in v1 — but coaches ARE athletes too, and telling a paying
+  coach to buy a second consumer subscription to plan their own eating is a bad
+  product answer. It also breaks the "role beats feature" upsell rule and needed
+  `PREMIUM_PLUS_ONLY_FEATURES` so they are not sold a tier that stays locked.
+
+**Brad's own steer is the third option: sell it as an UPGRADE to their coach
+membership** — a coach add-on rather than folding the suite into the trainer tiers
+wholesale. Nothing is built for that, and it is worth recording what it would
+need before it can be costed: a purchasable coach-facing SKU in ASC +
+RevenueCat, a catalog representation (either new tier rows like
+`individual_trainer_plus`, or a separate entitlement the webhook grants alongside
+a trainer tier), and a decision on whether Loadout Phase 4's coach programme
+adaptation rides on the base trainer tier or on the upgrade.
+
+⚠ **Do not flip `premium_plus.is_active` (T-P0.10) before this is settled.** The
+paywall's tier set and the coach upsell path both depend on the answer, and
+repricing or re-scoping after real subscribers exist is the expensive version.
+
+⚠ **Nothing shipped is hard to change** — both flags are catalog columns and the
+upsell is one set in `assertEntitlement`. Deferring the decision is cheap;
+shipping the wrong one to paying users is not.
 
 ### ⚠ The Lambda timeout was 20s, not 30s — FIXED, and it had bitten Snap AI already
 

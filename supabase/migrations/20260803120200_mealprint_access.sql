@@ -33,7 +33,12 @@
 --
 -- Additive and backfilled false, so the migrate-then-deploy order is safe and a
 -- Lambda running ahead of this file simply never reads the column.
--- ⚠ PRODUCTION APPLY IS MANUAL — flag it in the PR body.
+--
+-- ⚠ **DO NOT HAND-APPLY THIS.** Production migrations are AUTOMATIC —
+-- `production-deploy.yml` runs `supabase db push --linked` on
+-- `release: published`, before `sst deploy`. Staging auto-applies on merge to
+-- `main`. (An earlier draft of this header claimed a manual apply; that was
+-- wrong.)
 
 ALTER TABLE subscription_tiers
   ADD COLUMN IF NOT EXISTS mealprint_access boolean NOT NULL DEFAULT false;

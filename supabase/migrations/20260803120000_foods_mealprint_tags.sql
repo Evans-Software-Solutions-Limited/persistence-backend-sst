@@ -24,7 +24,8 @@
 -- is an operational step:
 --
 --     duckdb -c "COPY ( SELECT code, product_name, brands, countries_tags,
---                              allergens_tags, categories_tags, nutriments,
+--                              allergens_tags, categories_tags, ingredients_text,
+--                              nutriments,
 --                              TRY_CAST(serving_quantity AS DOUBLE) AS serving_quantity
 --                       FROM 'food.parquet'
 --                       WHERE code IS NOT NULL
@@ -32,6 +33,12 @@
 --                         AND list_contains(countries_tags, 'en:united-kingdom')
 --                     ) TO 'off-uk.jsonl' (FORMAT JSON);"
 --     DATABASE_URL=… bun run microservices/core/src/scripts/seedOpenFoodFacts.ts off-uk.jsonl
+--
+-- ⚠ `ingredients_text` is in that SELECT and is NEVER STORED. It is the only way
+-- to tell "OFF analysed the ingredient list and found no allergen" (→ `[]`, a
+-- usable claim) from "nobody ever entered ingredients" (→ NULL, unknown). Drop it
+-- from the projection and every row becomes NULL, i.e. permanently excluded from
+-- allergen-filtered pools — see `offMapper.mapOffAllergenTags`.
 --
 -- The upsert conflict-targets the partial unique index on `barcode`, so the
 -- re-seed refreshes the existing catalogue rows in place and never touches a
@@ -41,8 +48,13 @@
 --
 -- Idempotent: ADD COLUMN IF NOT EXISTS / CREATE INDEX IF NOT EXISTS. Additive
 -- only, so the migrate-then-deploy order in `production-deploy.yml` is safe.
--- ⚠ PRODUCTION APPLY IS MANUAL for this slice (STATE.md § async-job spine
--- precedent) — flag it in the PR body.
+--
+-- ⚠ **DO NOT HAND-APPLY THIS.** `production-deploy.yml` runs
+-- `supabase db push --linked` (after a `--dry-run`) on `release: published`, and
+-- it migrates BEFORE `sst deploy`; staging auto-applies on merge to `main`. An
+-- earlier draft of this header said the production apply was manual — it is not,
+-- and hand-applying would leave `supabase_migrations` out of step with the
+-- release, which is worse than either doing nothing or letting the pipeline run.
 
 ALTER TABLE foods
   ADD COLUMN IF NOT EXISTS allergen_tags text[];
