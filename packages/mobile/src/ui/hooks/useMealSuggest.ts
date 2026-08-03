@@ -170,7 +170,15 @@ export function useMealSuggest(): UseMealSuggest {
     // original request landed and rendered results for the shape and steer the
     // reset had already wiped off the screen. Keeping the spinner tells the truth:
     // a request is still out, and its answer is the one that will arrive.
-    lastInputRef.current = null;
+    //
+    // ⚠ And for the same reason the LAST INPUT has to survive too. Nulling it
+    // unconditionally left the arriving result with nothing to retry from, so after
+    // a mid-generation reopen both "Show me something else" and the error stage's
+    // "Try again" called `retry()`, hit `if (!last) return`, and did nothing —
+    // silently, forever. On the error stage that is the sheet's ONLY button, so the
+    // user's sole escape was swiping it down. The two guards are one decision: the
+    // in-flight request still owns this hook's state, including its input.
+    if (!inFlightRef.current) lastInputRef.current = null;
     setStage(inFlightRef.current ? "generating" : "idle");
     setResult(null);
     setFailure(null);

@@ -14,9 +14,18 @@ import { useAuth } from "./useAuth";
  *
  * Optimistic cache write + a QUEUED `PUT /nutrition/preferences`, then a
  * best-effort drain. Queued rather than online-direct on purpose: preferences are
- * ordinary user data, the write is a full last-write-wins replacement, and there
- * is no reason a user on the Tube should be unable to record a peanut allergy.
- * The AI surfaces are the online-only ones.
+ * ordinary user data, the write is a full last-write-wins replacement, and a user
+ * on the Tube should be able to record a peanut allergy. The AI surfaces are the
+ * online-only ones.
+ *
+ * ⚠ **That offline story has one deliberate hole: a genuine FIRST run.**
+ * `MealprintPreferencesContainer`'s `isUnseeded` guard refuses to render the form
+ * at all when the device has nothing cached AND the read failed — because the
+ * write is a full replacement and an unseeded save would delete the server's
+ * allergen list. So an offline first-time user cannot set preferences, and that is
+ * the correct trade rather than an oversight. It is also narrow: ONE successful
+ * fetch, ever, unlocks offline editing from then on. Read `isUnseeded` before
+ * deciding that guard is over-strict.
  *
  * ⚠ **Resolves as soon as the local write lands** — it does not wait for the
  * server, and callers must not treat resolution as "saved server-side". The
