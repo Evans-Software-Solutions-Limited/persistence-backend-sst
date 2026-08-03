@@ -137,6 +137,40 @@ describe("MealprintCandidateRepository.buildCuratedWhere", () => {
     expect(params).toContain("en:nuts");
   });
 
+  // ⚠ THREE-VALUED-LOGIC REGRESSION. `NULL && ARRAY[…]` is NULL, `NOT NULL` is
+  // NULL, and a NULL predicate EXCLUDES the row. Without the `IS NULL OR` guard,
+  // a user with `dietaryPatterns: ['vegan']` and no allergen chip (non-empty
+  // forbidden list, `requireKnownAllergens: false`) had every untagged row
+  // dropped in SQL even though `avoidanceFilter` would keep it — breaking this
+  // class's stated invariant, and pre-backfill emptying the pool for every
+  // pattern user.
+  it("keeps untagged rows when the forbidden list came from a PATTERN, not a chip", () => {
+    const { sql } = render(
+      repo.buildCuratedWhere({
+        locale: "en-GB",
+        maxServingKcal: 600,
+        forbiddenAllergenTags: ["en:milk", "en:fish"],
+        requireKnownAllergens: false,
+      }),
+    );
+    expect(sql).toMatch(/"allergen_tags" is null or NOT \(/i);
+  });
+
+  it("still excludes untagged rows when an allergen CHIP is set", () => {
+    // The two predicates coexist: `IS NULL OR NOT (…)` would readmit unknown rows
+    // on its own, so the fail-closed `IS NOT NULL` must still be present.
+    const { sql } = render(
+      repo.buildCuratedWhere({
+        locale: "en-GB",
+        maxServingKcal: 600,
+        forbiddenAllergenTags: ["en:peanuts"],
+        requireKnownAllergens: true,
+      }),
+    );
+    expect(sql).toContain("is not null");
+    expect(sql).toMatch(/is null or NOT \(/i);
+  });
+
   it("bounds one serving's kcal against the remaining budget", () => {
     // Macros are per-100g and `serving_quantity` is the real pack serving in
     // grams, so the serving's kcal is kcal * q / 100 — the arithmetic has to be
@@ -150,7 +184,15 @@ describe("MealprintCandidateRepository.buildCuratedWhere", () => {
       }),
     );
     expect(sql).toContain("COALESCE");
-    expect(sql).toContain("/ 100.0");
+    // ⚠ Divided by `serving_size`, NOT a hardcoded 100. The two coincide only
+    // when `serving_size = 100` — true of every OFF row, false of a user's own
+    // food — so a hardcoded 100 filtered a `serving_size = 500, kcal = 100` row
+    // as 500 kcal (excluded from a budget it fits) and a
+    // `serving_size = 30, kcal = 150` row as 45 (let into a budget it blows).
+    // It must also match `toFoodCandidate`'s `quantity / serving_size` scaling,
+    // or the pool and the returned macros disagree.
+    expect(sql).toContain('NULLIF("foods"."serving_size", 0)');
+    expect(sql).not.toContain("/ 100.0");
     expect(params).toContain(620);
   });
 });
@@ -206,9 +248,28 @@ describe("MealprintCandidateRepository queries", () => {
     });
 
     await new MealprintCandidateRepository().listOwnFoodCandidates(USER_A, 600);
-    const { params } = render(capture.where);
+    const { sql, params } = render(capture.where);
+    // ⚠ Assert the COLUMN, not just the bound value. `expect(params).not.toContain(USER_B)`
+    // was the first version and it cannot fail — USER_B is never passed to the
+    // call, so no implementation, correct or broken, could put it there. The
+    // load-bearing question is which column the caller's id is bound to: bound to
+    // the wrong one, the query would return another user's rows with USER_A still
+    // in the params.
+    expect(sql).toContain('"created_by" = $');
     expect(params).toContain(USER_A);
-    expect(params).not.toContain(USER_B);
+  });
+
+  it("does not scope own foods by anything but created_by", async () => {
+    // A second user's id must never appear, and the only user-scoped predicate
+    // must be the ownership one.
+    const capture: { where?: unknown } = {};
+    (getDb as any).mockReturnValue({
+      select: vi.fn().mockReturnValue(makeChain(capture)),
+    });
+    await new MealprintCandidateRepository().listOwnFoodCandidates(USER_B, 600);
+    const { sql, params } = render(capture.where);
+    expect(params.filter((p) => p === USER_B)).toHaveLength(1);
+    expect(sql).not.toContain('"user_id"');
   });
 
   it("scopes own recipes and meals to the caller", async () => {

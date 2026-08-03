@@ -345,7 +345,14 @@ describe("NutritionPreferenceRepository.upsert", () => {
     expect(captured.values.avoidFoods).toEqual(["olives"]);
     expect(captured.values.mealsPerDay).toBe(3);
     // The conflict target is the user_id PK — an upsert, never a second row.
+    //
+    // ⚠ Assert the rendered COLUMN. `toBeDefined()` was the first version and it
+    // passes for any non-undefined value, so it would still have passed with the
+    // target pointed at the wrong column — which is exactly what the comment
+    // above claims to be verifying. A wrong target turns the upsert into an
+    // insert that violates the PK, or worse, updates by the wrong key.
     expect(captured.conflict.target).toBeDefined();
+    expect(String(captured.conflict.target.name)).toBe("user_id");
     // `userId` must NOT be in the update set: a conflict means the row already
     // belongs to this user, and writing the key back is how a bad `set` could
     // reassign ownership.

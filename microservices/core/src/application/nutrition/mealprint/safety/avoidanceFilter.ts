@@ -47,9 +47,11 @@
 import {
   ALLERGEN_OFF_TAGS,
   DIETARY_PATTERN_RULES,
+  HARD_TO_FIND_PREFIX,
   isAllergenKey,
   isDietaryPattern,
   isTokenNegatedInName,
+  normaliseFoodText,
   tokeniseFoodName,
   type AllergenKey,
   type DietaryPattern,
@@ -135,16 +137,18 @@ const TAG_TO_ALLERGEN: ReadonlyMap<string, AllergenKey> = (() => {
  * anything else is unmatched producer free text, frequently in another language
  * (`fr:lait` is milk). So:
  *
- *   - `en:` present → OFF matched it to a NAMED allergen. Even if it is not one
- *     of our 14, we know what it is and know it is not the avoided one, because
- *     taxonomy names are distinct. Safe to leave the row in.
- *   - anything else → we do not know what it says. It could be a translation of
- *     the very allergen being avoided, so the row is excluded.
+ *   - `en:` present → OFF matched it to a NAMED taxonomy allergen.
+ *   - anything else → unmatched producer free text, so we do not know what it
+ *     says. It could be a translation of the very allergen being avoided.
  *
- * ⚠ The alternative — recognising only the ~60 tags in {@link ALLERGEN_OFF_TAGS}
- * — was rejected: it would exclude every product tagged with a real allergen we
- * happen not to enumerate (`en:corn`, `en:beef`), gutting the pool for a reason
- * that has nothing to do with the user's actual avoidance.
+ * ⚠ **This predicate answers ONLY "is the string readable", not "is the row
+ * safe".** Whether a readable-but-unclassifiable tag (`en:corn`) clears the row
+ * is a separate decision, taken in `assessAvoidance`'s `owner === undefined`
+ * branch — which FAILS CLOSED. An earlier version of this docstring argued the
+ * opposite ("safe to leave the row in, because taxonomy names are distinct");
+ * that reasoning was wrong for OFF's hierarchy and singular variants, and the
+ * branch below now contradicts it. Read the branch, not this comment, for the
+ * safety rule.
  */
 export function isInterpretableAllergenTag(tag: string): boolean {
   return tag.startsWith("en:");
@@ -159,23 +163,73 @@ export function isInterpretableAllergenTag(tag: string): boolean {
  * leaves meat firmly matched. See {@link NameAxis} for why this cannot be a
  * per-token or a name-global check.
  */
-function matchesAnyAxis(
+/**
+ * Is this axis cleared for this subject — by an explicit free-from PHRASING
+ * ("gluten free", "no beef") or by a without-this-axis MARKER ("vegan",
+ * "plant-based") in the name?
+ *
+ * The marker channel is compared against a de-punctuated name so
+ * "plant-based" / "plant based" / "plantbased" all read the same, which is how
+ * OFF and retailers actually spell it.
+ */
+function isAxisCleared(
   subjectName: string,
   subjectTokens: ReadonlySet<string>,
-  axes: readonly NameAxis[],
-): { axis: string; token: string } | null {
-  for (const axis of axes) {
-    const negated = axis.negators.some((negator) =>
-      isTokenNegatedInName(subjectName, negator),
-    );
-    if (negated) continue;
+  compactName: string,
+  axis: NameAxis,
+): boolean {
+  if (axis.negators.some((n) => isTokenNegatedInName(subjectName, n))) {
+    return true;
+  }
+  return axis.clearedBy.some(
+    (marker) => subjectTokens.has(marker) || compactName.includes(marker),
+  );
+}
 
-    for (const token of axis.tokens) {
-      // Axis token lists are authored singular already, but singularising both
-      // sides costs nothing and removes a class of authoring slip.
-      for (const candidate of tokeniseFoodName(token)) {
-        if (subjectTokens.has(candidate)) {
-          return { axis: axis.key, token: candidate };
+/** Lowercased, accent-stripped, punctuation-free — for marker containment. */
+function compactify(name: string): string {
+  return normaliseFoodText(name).replace(/[^a-z0-9]+/gu, "");
+}
+
+/**
+ * First CATEGORY-tag hit across `axes`, honouring per-axis free-from negation.
+ *
+ * ⚠ Callers run this UNCONDITIONALLY — it is NOT gated on whether the row's
+ * allergen tags are usable, and that is the correction to a regression this
+ * module briefly shipped. Folding categories into the name matcher made them
+ * conditional on `!tagsUsable`, and `tagsUsable` is true for `[]` and for any
+ * PARTIALLY-tagged row. OFF's tagging is routinely partial, so the effect was:
+ *
+ *   - `Fishermans Pie` / `["en:milk"]` / `["en:fish-pies"]` served to a vegetarian
+ *   - `Cathedral City` / `["en:gluten"]` / `["en:cheeses"]` served to a dairy-free user
+ *   - `Oriental Nibbles` / `["en:gluten"]` / `["en:crustacean-products"]` to a kosher user
+ *
+ * …all reported `unverified: false`. The mistake was treating an allergen tag's
+ * SILENCE as evidence of absence. It is not: a category tag is INDEPENDENT
+ * evidence that a missing allergen tag does not refute, which is exactly why the
+ * rule was unconditional to begin with. What the negation guard adds is that
+ * "Gluten Free Bread" still survives `en:breads` — the false positive that
+ * motivated the move — without giving up the true positives.
+ */
+function matchesAxisCategories(
+  subjectName: string,
+  subjectTokens: ReadonlySet<string>,
+  compactName: string,
+  categoryTags: readonly string[],
+  axes: readonly NameAxis[],
+): { axis: string; evidence: string } | null {
+  for (const axis of axes) {
+    if (isAxisCleared(subjectName, subjectTokens, compactName, axis)) continue;
+    for (const tag of categoryTags) {
+      // ⚠ The TAG ITSELF can carry the marker: `en:vegan-cheeses` matches the
+      // dairy axis on "cheese" and is simultaneously its own disclaimer. Checked
+      // per tag rather than per axis so `en:cheeses` on the same row still counts.
+      const compactTag = tag.replace(/[^a-z0-9]+/gu, "");
+      if (axis.clearedBy.some((marker) => compactTag.includes(marker)))
+        continue;
+      for (const needle of axis.categorySubstrings) {
+        if (tag.includes(needle)) {
+          return { axis: axis.key, evidence: tag };
         }
       }
     }
@@ -183,13 +237,23 @@ function matchesAnyAxis(
   return null;
 }
 
-function matchesTagSubstring(
-  tags: readonly string[],
-  substrings: readonly string[],
-): string | null {
-  for (const tag of tags) {
-    for (const needle of substrings) {
-      if (tag.includes(needle)) return tag;
+/** First NAME-token hit across `axes`, honouring per-axis free-from negation. */
+function matchesAxisNames(
+  subjectName: string,
+  subjectTokens: ReadonlySet<string>,
+  compactName: string,
+  axes: readonly NameAxis[],
+): { axis: string; evidence: string } | null {
+  for (const axis of axes) {
+    if (isAxisCleared(subjectName, subjectTokens, compactName, axis)) continue;
+    for (const token of axis.tokens) {
+      // Axis token lists are authored singular already, but singularising both
+      // sides costs nothing and removes a class of authoring slip.
+      for (const candidate of tokeniseFoodName(token)) {
+        if (subjectTokens.has(candidate)) {
+          return { axis: axis.key, evidence: candidate };
+        }
+      }
     }
   }
   return null;
@@ -208,8 +272,23 @@ export function assessAvoidance(
   preferences: AvoidancePreferences,
 ): AvoidanceVerdict {
   const subjectTokens = new Set(tokeniseFoodName(subject.name));
+  const compactName = compactify(subject.name);
   const allergenTags = subject.allergenTags;
   const categoryTags = subject.categoryTags ?? [];
+
+  /**
+   * ⚠ "Tags present but UNREADABLE is the same evidential state as no tags."
+   *
+   * Computed once and used by BOTH sections below, because treating the two
+   * differently was a hole. On the pattern path, `nameAxesWhenUntagged` used to
+   * be gated on `allergenTags === null` — so a row tagged `['fr:gluten']`
+   * satisfied neither channel: the tag rule missed (wrong language) and the name
+   * rule was skipped (tags "present"). A `gluten_free` user was served
+   * "Pain de Campagne" and it was not even flagged. The interpretability check
+   * further down only ever ran when an allergen CHIP was set.
+   */
+  const tagsUsable =
+    allergenTags !== null && allergenTags.every(isInterpretableAllergenTag);
 
   // ── 1. Allergens — tag-derived, fail closed ───────────────────────────────
   const avoidedAllergens = preferences.avoidAllergens.filter(isAllergenKey);
@@ -235,7 +314,39 @@ export function assessAvoidance(
         };
       }
       const owner = TAG_TO_ALLERGEN.get(tag);
-      if (owner !== undefined && avoidedAllergens.includes(owner)) {
+      if (owner === undefined) {
+        // ⚠ FAIL CLOSED ON AN UNCLASSIFIABLE ALLERGEN TAG, and this reverses an
+        // earlier, wrong call.
+        //
+        // The first cut cleared any `en:` tag on the argument that "taxonomy
+        // names are distinct, so we know it is not the avoided one". That premise
+        // does not hold for the hierarchy: OFF emits child and singular variants
+        // (`en:hazelnut` under `en:nuts`) and {@link ALLERGEN_OFF_TAGS} is a
+        // HAND-ENUMERATED list. Any variant missing from it — and the file's own
+        // hedging on `en:egg`/`en:eggs`, `en:soy`/`en:soybeans` shows the authors
+        // knew variants exist — used to return `allowed: true`. That is a false
+        // NEGATIVE on an allergen, which this module's docstring calls "the one
+        // error class this whole module exists to avoid".
+        //
+        // An `en:` tag we cannot classify means "this product DECLARES a
+        // regulated allergen and we do not know which". For someone with an
+        // allergen chip set, that is the unknown case, and the unknown case is
+        // excluded.
+        //
+        // ⚠ The cost is real and is a pool cost, not a safety cost: a product
+        // tagged with a taxonomy allergen outside our 14 (`en:corn`) is excluded
+        // from an allergen-avoiding user's pool even though it is irrelevant to
+        // them. The follow-up that relaxes it safely is to enumerate OFF's FULL
+        // allergens taxonomy and allow the classified-but-not-avoided entries;
+        // until that list exists, erring here is the correct direction.
+        return {
+          allowed: false,
+          rule: "allergen_uninterpretable",
+          cause: avoidedAllergens.join(","),
+          evidence: tag,
+        };
+      }
+      if (avoidedAllergens.includes(owner)) {
         return {
           allowed: false,
           rule: "allergen_tag",
@@ -254,8 +365,9 @@ export function assessAvoidance(
     const rule = DIETARY_PATTERN_RULES[pattern];
     if (rule.partialEnforcementOnly) partialEnforcementOnly = true;
 
-    // 2a. Tag rules, where the row has tags to test.
-    if (allergenTags !== null) {
+    // 2a. ALLERGEN-tag rules, only where the tags are actually readable. An
+    //     unreadable tag is handled by 2c, not silently skipped.
+    if (tagsUsable) {
       for (const tag of allergenTags) {
         if (rule.allergenTags.includes(tag)) {
           return {
@@ -267,29 +379,36 @@ export function assessAvoidance(
         }
       }
     }
-    const categoryHit = matchesTagSubstring(
+
+    // 2b. CATEGORY tags, over EVERY axis of the pattern, UNCONDITIONALLY.
+    //     A category tag is independent evidence and an allergen tag's silence
+    //     does not refute it — see `matchesAxisCategories` for the partial-tagging
+    //     regression this ordering exists to prevent. The per-axis negation guard
+    //     is what keeps "Gluten Free Bread" and "Vegan Cheese" in the pool.
+    const categoryHit = matchesAxisCategories(
+      subject.name,
+      subjectTokens,
+      compactName,
       categoryTags,
-      rule.categoryTagSubstrings,
+      [...rule.nameAxesAlways, ...rule.nameAxesWhenUntagged],
     );
     if (categoryHit !== null) {
       return {
         allowed: false,
         rule: "pattern_tag",
         cause: pattern,
-        evidence: categoryHit,
+        evidence: categoryHit.evidence,
       };
     }
 
-    // 2b. Name rules, split by evidence channel — see the two field docstrings
-    //      on `DietaryPatternRule`, which carry the full reasoning.
-    //
-    //      `nameTokensAlways` covers axes with NO allergen-tag representation
-    //      (meat, pork, alcohol, honey): a row can legitimately have
-    //      `allergen_tags = []` and no categories at all, so the name is the
-    //      last line of defence rather than a fallback.
-    const alwaysHit = matchesAnyAxis(
+    // 2c. NAME tokens for axes with NO allergen-tag representation (meat, pork,
+    //     alcohol, honey). Always applied: a row can legitimately have
+    //     `allergen_tags = []` and no categories at all — true of plain chicken
+    //     breast — so the name is the last line of defence, not a fallback.
+    const alwaysHit = matchesAxisNames(
       subject.name,
       subjectTokens,
+      compactName,
       rule.nameAxesAlways,
     );
     if (alwaysHit !== null) {
@@ -297,17 +416,23 @@ export function assessAvoidance(
         allowed: false,
         rule: "pattern_name",
         cause: pattern,
-        evidence: alwaysHit.token,
+        evidence: alwaysHit.evidence,
       };
     }
 
-    //      `nameAxesWhenUntagged` covers axes an allergen tag DOES represent,
-    //      so it yields to that better evidence. Applying it anyway is what
-    //      excludes "Gluten Free Bread" from a gluten-free user's pool.
-    if (allergenTags === null) {
-      const untaggedHit = matchesAnyAxis(
+    // 2d. NAME tokens for axes an allergen tag DOES represent. THIS is the
+    //     channel that yields to better evidence, because a NAME is a far weaker
+    //     signal than a category tag — applying it against a tagged row is what
+    //     excluded "Gluten Free Bread" on the token "bread".
+    //
+    //     ⚠ Gated on `tagsUsable`, NOT on `allergenTags !== null`. A row with
+    //     unreadable tags has told us nothing, so it must fall through here
+    //     rather than escaping every channel.
+    if (!tagsUsable) {
+      const untaggedHit = matchesAxisNames(
         subject.name,
         subjectTokens,
+        compactName,
         rule.nameAxesWhenUntagged,
       );
       if (untaggedHit !== null) {
@@ -315,7 +440,7 @@ export function assessAvoidance(
           allowed: false,
           rule: "pattern_name",
           cause: pattern,
-          evidence: untaggedHit.token,
+          evidence: untaggedHit.evidence,
         };
       }
     }
@@ -323,7 +448,17 @@ export function assessAvoidance(
 
   // ── 3. Dislikes — name only, no safety claim ──────────────────────────────
   for (const dislike of preferences.avoidFoods) {
-    const dislikeTokens = tokeniseFoodName(dislike);
+    // ⚠ Strip the `hardtofind:` provenance prefix before tokenising. Without
+    // this, STORY-007's "hard to find near me" affordance was a PERMANENT NO-OP:
+    // the repository deliberately preserves the prefix on `avoid_foods`, so
+    // `tokeniseFoodName` produced `["hardtofind", "mushroom"]`, the
+    // every-token-present rule looked for the literal word "hardtofind" in the
+    // food name, and no food has ever contained it. The entry stored, round-
+    // tripped through the editor, and filtered nothing.
+    const body = dislike.startsWith(HARD_TO_FIND_PREFIX)
+      ? dislike.slice(HARD_TO_FIND_PREFIX.length)
+      : dislike;
+    const dislikeTokens = tokeniseFoodName(body);
     if (dislikeTokens.length === 0) continue;
     // ALL tokens must be present, so the multi-word dislike "chicken thigh"
     // matches "Chicken Thighs" but not every chicken product. Single-word
@@ -346,7 +481,10 @@ export function assessAvoidance(
 
   return {
     allowed: true,
-    unverified: allergenTags === null,
+    // Keyed on TAGS-USABLE, not on null: a row whose tags we cannot read is just
+    // as unverified as one with no tags, and the label-check disclaimer is
+    // exactly as necessary.
+    unverified: !tagsUsable,
     partialEnforcementOnly,
   };
 }

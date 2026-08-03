@@ -173,6 +173,40 @@ export interface NameAxis {
   tokens: readonly string[];
   /** Negating any of these in the name clears this axis for this row. */
   negators: readonly string[];
+  /**
+   * OFF `categories_tags` SUBSTRINGS that indicate this axis.
+   *
+   * ⚠ These live ON THE AXIS rather than on the pattern rule so the free-from
+   * negation covers them. A bare `tag.includes(needle)` on the rule was the
+   * "Gluten Free Bread" bug reintroduced through the category channel: a
+   * genuinely gluten-free loaf carries `en:breads`, a vegan cheese carries
+   * `en:vegan-cheeses`, and an oat milk carries `en:oat-milks` — so the
+   * substring fires on exactly the products a restricted eater shops for, and
+   * it fired BEFORE the name rules, which meant the negation machinery written
+   * to prevent this never ran.
+   *
+   * Substring rather than exact because OFF categories are deep and numerous
+   * ('en:chicken-breasts', 'en:cooked-chicken', 'en:chicken-based-products')
+   * and enumerating them is not tractable.
+   */
+  categorySubstrings: readonly string[];
+  /**
+   * Words that mean "this product is the WITHOUT-this-axis version", matched as a
+   * whole name token OR as a substring of a category tag.
+   *
+   * ⚠ Distinct from {@link negators}, which needs an explicit free-from PHRASING
+   * ("gluten free", "no beef", "free from wheat"). A great many free-from products
+   * do not phrase it that way at all: "Vegan Cheddar Style Block" tagged
+   * `en:vegan-cheeses` matches the dairy axis on "cheddar"/"cheese" and negates
+   * nothing, because nowhere does it say "dairy free". Without this field the
+   * category channel excludes the entire plant-based aisle from a vegan's and a
+   * dairy-free user's pool — the exact shelf they shop from.
+   *
+   * Scoped per axis because the markers are not interchangeable: `vegan` clears
+   * dairy, egg and meat, and says NOTHING about gluten (a vegan loaf is still
+   * wheat).
+   */
+  clearedBy: readonly string[];
 }
 
 /**
@@ -344,46 +378,80 @@ export const NAME_TOKENS = {
 export const NAME_AXES: Readonly<Record<string, NameAxis>> = {
   meat: {
     key: "meat",
-    tokens: [...NAME_TOKENS.meat, "honey"],
+    tokens: [...NAME_TOKENS.meat],
     negators: ["meat"],
+    categorySubstrings: ["meat", "poultry", "charcuterie"],
+    clearedBy: ["vegan", "vegetarian", "plantbased", "substitute", "analogue"],
+  },
+  // ⚠ Honey is its OWN axis and belongs to `vegan` ALONE. It was folded into the
+  // meat axis at first "because it is only ever relevant to vegan" — but the meat
+  // axis is shared by vegetarian and pescatarian, who eat honey, so that sharing
+  // denied it to both. Adding `honey` to the meat axis' CATEGORY substrings made
+  // it worse: `en:honeys` then excluded honey from a vegetarian's pool on a row
+  // whose name never says "honey".
+  honey: {
+    key: "honey",
+    tokens: ["honey"],
+    negators: ["honey"],
+    categorySubstrings: ["honey"],
+    clearedBy: ["vegan"],
   },
   seafood: {
     key: "seafood",
     tokens: [...NAME_TOKENS.seafood],
     negators: ["fish", "seafood"],
+    categorySubstrings: ["fish", "seafood"],
+    clearedBy: ["vegan", "vegetarian", "plantbased"],
   },
   shellfish: {
     key: "shellfish",
     tokens: [...NAME_TOKENS.shellfish],
     negators: ["shellfish"],
+    categorySubstrings: ["shellfish", "crustacean", "mollusc"],
+    clearedBy: ["vegan", "vegetarian", "plantbased"],
   },
   dairy: {
     key: "dairy",
     tokens: [...NAME_TOKENS.dairy],
     // "Dairy-Free Oat Milk" — the case that forced axis-level negation.
     negators: ["dairy", "milk", "lactose"],
+    categorySubstrings: ["dairy", "cheese", "yogurt", "yoghurt", "milk"],
+    clearedBy: ["vegan", "plantbased", "nondairy", "lactosefree"],
   },
   egg: {
     key: "egg",
     tokens: [...NAME_TOKENS.egg],
     negators: ["egg"],
+    categorySubstrings: ["egg"],
+    clearedBy: ["vegan", "plantbased"],
   },
   gluten: {
     key: "gluten",
     tokens: [...NAME_TOKENS.gluten],
     // "Gluten Free Bread", "Wheat-free pasta".
     negators: ["gluten", "wheat"],
+    // ⚠ NOT `vegan` — a vegan loaf is still made of wheat.
+    // ⚠ `pastr`, not `pastry`: OFF's tag is `en:pastries`, which does not contain
+    // the string "pastry", so the rule never fired. The siblings are fine
+    // ("bread" ⊂ en:breads, "cake" ⊂ en:cakes, "biscuit" ⊂ en:biscuits,
+    // "pasta" ⊂ en:pastas).
+    categorySubstrings: ["bread", "pasta", "biscuit", "cake", "pastr"],
+    clearedBy: ["glutenfree", "freefrom"],
   },
   pork: {
     key: "pork",
     tokens: [...NAME_TOKENS.pork],
     negators: ["pork"],
+    categorySubstrings: ["pork", "ham", "bacon"],
+    clearedBy: ["vegan", "vegetarian", "plantbased", "halal", "substitute"],
   },
   alcohol: {
     key: "alcohol",
     tokens: [...NAME_TOKENS.alcohol],
     // "Alcohol Free Lager" is a halal-compatible product.
     negators: ["alcohol"],
+    categorySubstrings: ["alcoholic", "beers", "wines"],
+    clearedBy: ["alcoholfree", "nonalcoholic", "dealcoholised"],
   },
 } as const;
 
@@ -392,13 +460,6 @@ export const NAME_AXES: Readonly<Record<string, NameAxis>> = {
 export interface DietaryPatternRule {
   /** OFF `allergens_tags` values whose presence violates the pattern. */
   allergenTags: readonly string[];
-  /**
-   * OFF `categories_tags` SUBSTRINGS whose presence violates the pattern.
-   * Substring rather than exact because OFF categories are deep and numerous
-   * ('en:chicken-breasts', 'en:cooked-chicken', 'en:chicken-based-products'),
-   * and enumerating them is not tractable. Matched against the whole tag string.
-   */
-  categoryTagSubstrings: readonly string[];
   /**
    * Name axes an OFF **allergen tag can represent** — dairy, egg, gluten,
    * seafood, shellfish.
@@ -442,13 +503,6 @@ export const DIETARY_PATTERN_RULES: Readonly<
       ...ALLERGEN_OFF_TAGS.crustaceans,
       ...ALLERGEN_OFF_TAGS.molluscs,
     ],
-    categoryTagSubstrings: [
-      "meat",
-      "poultry",
-      "fish",
-      "seafood",
-      "charcuterie",
-    ],
     nameAxesWhenUntagged: [NAME_AXES.seafood, NAME_AXES.shellfish],
     nameAxesAlways: [NAME_AXES.meat],
     partialEnforcementOnly: false,
@@ -461,47 +515,25 @@ export const DIETARY_PATTERN_RULES: Readonly<
       ...ALLERGEN_OFF_TAGS.milk,
       ...ALLERGEN_OFF_TAGS.eggs,
     ],
-    categoryTagSubstrings: [
-      "meat",
-      "poultry",
-      "fish",
-      "seafood",
-      "charcuterie",
-      "dairy",
-      "cheese",
-      "yogurt",
-      "yoghurt",
-      "egg",
-      "honey",
-    ],
     nameAxesWhenUntagged: [
       NAME_AXES.seafood,
       NAME_AXES.shellfish,
       NAME_AXES.dairy,
       NAME_AXES.egg,
     ],
-    nameAxesAlways: [NAME_AXES.meat],
+    nameAxesAlways: [NAME_AXES.meat, NAME_AXES.honey],
     partialEnforcementOnly: false,
   },
   pescatarian: {
     // Fish and shellfish are permitted, so only land meat is excluded — and meat
     // has no allergen tag, so every token is in the always-applied list.
     allergenTags: [],
-    categoryTagSubstrings: ["meat", "poultry", "charcuterie"],
     nameAxesWhenUntagged: [],
     nameAxesAlways: [NAME_AXES.meat],
     partialEnforcementOnly: false,
   },
   halal: {
     allergenTags: [],
-    categoryTagSubstrings: [
-      "pork",
-      "ham",
-      "bacon",
-      "alcoholic",
-      "beers",
-      "wines",
-    ],
     nameAxesWhenUntagged: [],
     nameAxesAlways: [NAME_AXES.pork, NAME_AXES.alcohol],
     // ⚠ Certification is not in the data — see the field docstring.
@@ -511,14 +543,6 @@ export const DIETARY_PATTERN_RULES: Readonly<
     allergenTags: [
       ...ALLERGEN_OFF_TAGS.crustaceans,
       ...ALLERGEN_OFF_TAGS.molluscs,
-    ],
-    categoryTagSubstrings: [
-      "pork",
-      "ham",
-      "bacon",
-      "shellfish",
-      "crustacean",
-      "mollusc",
     ],
     // ⚠ The SHELLFISH axis only, NOT the whole seafood axis. Fin fish with
     // scales is kosher — excluding salmon and cod would be plainly wrong, and an
@@ -530,14 +554,12 @@ export const DIETARY_PATTERN_RULES: Readonly<
   },
   dairy_free: {
     allergenTags: [...ALLERGEN_OFF_TAGS.milk],
-    categoryTagSubstrings: ["dairy", "cheese", "yogurt", "yoghurt", "milk"],
     nameAxesWhenUntagged: [NAME_AXES.dairy],
     nameAxesAlways: [],
     partialEnforcementOnly: false,
   },
   gluten_free: {
     allergenTags: [...ALLERGEN_OFF_TAGS.gluten],
-    categoryTagSubstrings: ["bread", "pasta", "biscuit", "cake", "pastry"],
     nameAxesWhenUntagged: [NAME_AXES.gluten],
     nameAxesAlways: [],
     partialEnforcementOnly: false,
@@ -572,9 +594,17 @@ export function isTokenNegatedInName(name: string, token: string): boolean {
   // normaliseFoodText keeps them, so allow either separator explicitly).
   if (new RegExp(`\\b${escaped}s?[ -]free\\b`, "u").test(normalised))
     return true;
-  // "free from <token>" / "without <token>" / "no <token>", bounded gap.
+  // "free from <token>" / "without <token>" / "no <token>".
+  //
+  // ⚠ AT MOST ONE intervening word, deliberately. A 20-CHARACTER gap (the first
+  // cut) matched "No Added Sugar Milkshake" — "no" + " added sugar " + "milk" —
+  // and so cleared the whole DAIRY axis for a dairy-free user on a product that
+  // is plain cow's milk. Same for "No Added Sugar Wheat Biscuits" and the gluten
+  // axis. A negation that reaches across two unrelated words is not a negation of
+  // the token; "free from wheat" and "no beef" are adjacent, which is the shape
+  // that actually appears on packaging.
   return new RegExp(
-    `\\b(?:free from|without|no)\\b[a-z0-9 ,-]{0,20}?\\b${escaped}`,
+    `\\b(?:free from|without|no)\\b(?: [a-z0-9-]+)?[ -]${escaped}\\b`,
     "u",
   ).test(normalised);
 }

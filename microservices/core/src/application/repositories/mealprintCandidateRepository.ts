@@ -127,8 +127,15 @@ export class MealprintCandidateRepository {
       // One serving must not alone exceed the budget. `serving_quantity` is the
       // real pack serving in grams when OFF has it; macros are per-100g, so the
       // serving's kcal is kcal * q / 100.
+      // ⚠ Divided by `serving_size`, NOT a hardcoded 100 — it must agree with
+      // `toFoodCandidate`, which scales by `quantity / serving_size`. The two
+      // coincide only when `serving_size = 100`, which holds for every OFF row
+      // and NOT for a user's own food: a row with `serving_size = 500,
+      // kcal = 100` has a real per-serving figure of 100 kcal but was filtered
+      // as 500 (excluded from a budget it fits), and `serving_size = 30,
+      // kcal = 150` was filtered as 45 (let into a budget it blows).
       lte(
-        sql`${foods.kcal} * COALESCE(${foods.servingQuantity}, ${foods.servingSize}) / 100.0`,
+        sql`${foods.kcal} * COALESCE(${foods.servingQuantity}, ${foods.servingSize}) / NULLIF(${foods.servingSize}, 0)`,
         sql`${input.maxServingKcal}`,
       ),
     ];
@@ -143,8 +150,20 @@ export class MealprintCandidateRepository {
 
     if (input.forbiddenAllergenTags.length > 0) {
       // Coarse exclusion. Interpretability and pattern rules are JS's job.
+      //
+      // ⚠ THE `IS NULL OR` IS LOAD-BEARING, and its absence broke this class's
+      // own stated invariant ("SQL must never reject a row JS would keep").
+      // Postgres three-valued logic: `NULL && ARRAY[…]` is NULL, `NOT NULL` is
+      // NULL, and a NULL predicate EXCLUDES the row. The handler builds
+      // `forbiddenAllergenTags` from allergen chips UNION dietary-pattern tags,
+      // while `requireKnownAllergens` is true only for allergen chips — so a
+      // user with `dietaryPatterns: ['vegan']` and no allergen chip got a
+      // non-empty forbidden list with `requireKnownAllergens: false`, and every
+      // untagged row was silently dropped in SQL even though `avoidanceFilter`
+      // would have kept it. Pre-backfill, when ALL ~144k rows are NULL, that is
+      // an empty pool and a `no_candidates` 200 for every pattern user.
       conditions.push(
-        sql`NOT (${foods.allergenTags} && ${textArray(input.forbiddenAllergenTags)})`,
+        sql`(${foods.allergenTags} IS NULL OR NOT (${foods.allergenTags} && ${textArray(input.forbiddenAllergenTags)}))`,
       );
     }
 
@@ -231,8 +250,11 @@ export class MealprintCandidateRepository {
           // Own rows are not required to be locale-tagged (they never are) but
           // the same budget and non-zero rules apply.
           gt(foods.kcal, "0"),
+          // Same `serving_size` divisor as the curated query — and this is the
+          // path where it actually matters, because own foods are the rows whose
+          // `serving_size` is not 100.
           lte(
-            sql`${foods.kcal} * COALESCE(${foods.servingQuantity}, ${foods.servingSize}) / 100.0`,
+            sql`${foods.kcal} * COALESCE(${foods.servingQuantity}, ${foods.servingSize}) / NULLIF(${foods.servingSize}, 0)`,
             sql`${maxServingKcal}`,
           ),
           // A user CAN own a row whose source is 'user' or 'ai_recognized'; an

@@ -32,6 +32,7 @@ import {
   AVOID_ALLERGENS,
   DIETARY_PATTERNS,
   DIETARY_PATTERN_RULES,
+  HARD_TO_FIND_PREFIX,
   isTokenNegatedInName,
   normaliseFoodText,
   singularise,
@@ -136,8 +137,29 @@ describe("assessAvoidance — allergens fail closed", () => {
     expect(v.allowed).toBe(true);
   });
 
-  it("allows a row tagged with a recognised allergen OUTSIDE our vocabulary", () => {
+  it("EXCLUDES a row tagged with an allergen it cannot classify", () => {
+    // ⚠ This REVERSES an earlier, wrong expectation that asserted `allowed: true`
+    // here on the argument that "taxonomy names are distinct, so it is not the
+    // avoided one". That premise fails for OFF's hierarchy and singular variants
+    // (`en:hazelnut` under `en:nuts`), and `ALLERGEN_OFF_TAGS` is hand-enumerated
+    // — so any variant we missed used to CLEAR the row, which is a false negative
+    // on an allergen. An `en:` tag we cannot classify means "declares a regulated
+    // allergen, unknown which", and unknown fails closed.
+    //
+    // The cost is a POOL cost, not a safety one: `en:corn` is irrelevant to a
+    // peanut avoider and is nonetheless excluded. Relaxing it safely needs OFF's
+    // full allergens taxonomy enumerated.
     const v = assessAvoidance(subject({ allergenTags: ["en:corn"] }), {
+      ...NO_PREFS,
+      avoidAllergens: ["peanuts"],
+    });
+    expect(v.allowed).toBe(false);
+    if (!v.allowed) expect(v.rule).toBe("allergen_uninterpretable");
+  });
+
+  it("still allows a row tagged with a DIFFERENT allergen we DO classify", () => {
+    // The pool must not collapse: a classified, non-avoided allergen is fine.
+    const v = assessAvoidance(subject({ allergenTags: ["en:milk"] }), {
       ...NO_PREFS,
       avoidAllergens: ["peanuts"],
     });
@@ -215,7 +237,6 @@ describe("assessAvoidance — dietary patterns", () => {
     const rule = DIETARY_PATTERN_RULES[pattern];
     const hasSomething =
       rule.allergenTags.length > 0 ||
-      rule.categoryTagSubstrings.length > 0 ||
       rule.nameAxesAlways.length > 0 ||
       rule.nameAxesWhenUntagged.length > 0;
     expect(hasSomething, `${pattern} has no enforcement rule`).toBe(true);
@@ -431,6 +452,286 @@ describe("assessAvoidance — known false-positive traps", () => {
         dietaryPatterns: ["halal"],
       }).allowed,
     ).toBe(true);
+  });
+
+  // ── Inspector Brad sweep 1 regressions ──────────────────────────────────
+  //
+  // Each of these was a way for a restricted eater to be served the exact thing
+  // they excluded, or to have their pool emptied. All were found by review, not
+  // by a failing test, which is why they are pinned individually.
+
+  it("excludes a pattern violation whose tags are present but UNREADABLE", () => {
+    // The hole: tag rules match only `en:` tags, and the name fallback used to be
+    // gated on `allergenTags === null`. A row tagged `['fr:gluten']` satisfied
+    // NEITHER — wrong language for the tag rule, "tags present" for the name rule
+    // — so a gluten-free user was served it, unflagged. The interpretability check
+    // only ever ran when an allergen CHIP was set.
+    const v = assessAvoidance(
+      subject({
+        name: "Pain de Campagne",
+        allergenTags: ["fr:gluten"],
+        categoryTags: ["en:breads"],
+      }),
+      { ...NO_PREFS, dietaryPatterns: ["gluten_free"] },
+    );
+    expect(v.allowed).toBe(false);
+    if (!v.allowed) expect(v.evidence).toBe("en:breads");
+  });
+
+  it("reaches the NAME channel for a row whose tags are unreadable", () => {
+    // ⚠ THE DISCRIMINATING CASE for the `tagsUsable` fix, and the reason the
+    // `Pain de Campagne` test above is not sufficient on its own: that one is also
+    // caught by the category rule, so it passes against the broken implementation
+    // too. Here there are NO category tags, so only the name channel can fire —
+    // and before the fix it was skipped because "tags are present".
+    const v = assessAvoidance(
+      subject({
+        name: "Wheat Crackers",
+        allergenTags: ["fr:gluten"],
+        categoryTags: null,
+      }),
+      { ...NO_PREFS, dietaryPatterns: ["gluten_free"] },
+    );
+    expect(v.allowed).toBe(false);
+    if (!v.allowed) {
+      expect(v.rule).toBe("pattern_name");
+      expect(v.evidence).toBe("wheat");
+    }
+  });
+
+  it("still cannot read a foreign-language name, and says so", () => {
+    // ⚠ The honest limit of the fix. With unreadable tags AND no category tags,
+    // an English token list has nothing to match on "Pain de Campagne" — so the
+    // row is ALLOWED. What changed is that it is now correctly marked
+    // `unverified`, which drives the label-check disclaimer; before, it reported
+    // as analysed-and-clean. Closing this properly needs the category backfill or
+    // a non-English token list, not a cleverer regex.
+    const v = assessAvoidance(
+      subject({
+        name: "Pain de Campagne",
+        allergenTags: ["fr:gluten"],
+        categoryTags: null,
+      }),
+      { ...NO_PREFS, dietaryPatterns: ["gluten_free"] },
+    );
+    expect(v).toMatchObject({ allowed: true, unverified: true });
+  });
+
+  it("marks a row with unreadable tags as unverified, not as analysed", () => {
+    const v = assessAvoidance(
+      subject({ name: "Mystery Bar", allergenTags: ["fr:lait"] }),
+      NO_PREFS,
+    );
+    expect(v).toMatchObject({ allowed: true, unverified: true });
+  });
+
+  it("does NOT exclude a free-from product on a CATEGORY substring", () => {
+    // The same "Gluten Free Bread" bug, reintroduced through the category
+    // channel: the substring `bread` fires on `en:breads`, which a genuinely
+    // gluten-free loaf carries — and the category rule used to run BEFORE the
+    // name rules, so the negation machinery never got a chance.
+    expect(
+      assessAvoidance(
+        subject({
+          name: "Gluten Free Bread",
+          allergenTags: [],
+          categoryTags: ["en:breads"],
+        }),
+        { ...NO_PREFS, dietaryPatterns: ["gluten_free"] },
+      ).allowed,
+    ).toBe(true);
+
+    // The products a restricted eater actually shops for.
+    expect(
+      assessAvoidance(
+        subject({
+          name: "Vegan Cheddar Style Block",
+          allergenTags: [],
+          categoryTags: ["en:vegan-cheeses"],
+        }),
+        { ...NO_PREFS, dietaryPatterns: ["vegan"] },
+      ).allowed,
+    ).toBe(true);
+    expect(
+      assessAvoidance(
+        subject({
+          name: "Dairy Free Oat Milk",
+          allergenTags: [],
+          categoryTags: ["en:oat-milks"],
+        }),
+        { ...NO_PREFS, dietaryPatterns: ["dairy_free"] },
+      ).allowed,
+    ).toBe(true);
+  });
+
+  it("still excludes an ordinary product on its category substring", () => {
+    // The category channel must keep working — the fix scopes the negation, it
+    // does not disable the rule.
+    const v = assessAvoidance(
+      subject({
+        name: "Sourdough Loaf",
+        allergenTags: null,
+        categoryTags: ["en:breads"],
+      }),
+      { ...NO_PREFS, dietaryPatterns: ["gluten_free"] },
+    );
+    expect(v.allowed).toBe(false);
+    if (!v.allowed) {
+      expect(v.rule).toBe("pattern_tag");
+      expect(v.evidence).toBe("en:breads");
+    }
+  });
+
+  // ⚠ THIS TEST ASSERTED THE OPPOSITE AND WAS WRONG. It pinned "usable allergen
+  // tags override the category substring", on the reasoning that
+  // `allergenTags: []` means OFF analysed the ingredients and found no gluten. The
+  // premise fails: `tagsUsable` is also true for a PARTIALLY-tagged row, and OFF's
+  // tagging is routinely partial — so the rule served `Fishermans Pie`
+  // /`["en:milk"]`/`["en:fish-pies"]` to a vegetarian and `Cathedral City`
+  // /`["en:gluten"]`/`["en:cheeses"]` to a dairy-free user, both reported
+  // `unverified: false`. An allergen tag's SILENCE is not evidence of absence; a
+  // category tag is independent evidence it does not refute.
+  it("honours a category tag even when the allergen tags are usable", () => {
+    const v = assessAvoidance(
+      subject({
+        name: "Sourdough Loaf",
+        allergenTags: [],
+        categoryTags: ["en:breads"],
+      }),
+      { ...NO_PREFS, dietaryPatterns: ["gluten_free"] },
+    );
+    expect(v.allowed).toBe(false);
+    if (!v.allowed) expect(v.rule).toBe("pattern_tag");
+  });
+
+  it.each([
+    ["vegetarian", "Fishermans Pie", ["en:milk"], ["en:fish-pies"]],
+    ["dairy_free", "Cathedral City Mature", ["en:gluten"], ["en:cheeses"]],
+    ["kosher", "Oriental Nibbles", ["en:gluten"], ["en:crustacean-products"]],
+    ["vegan", "Deep Filled Quiche", ["en:gluten"], ["en:egg-based-products"]],
+  ])(
+    "excludes a partially-tagged %s violation on its category tag",
+    (pattern, name, allergenTags, categoryTags) => {
+      const v = assessAvoidance(subject({ name, allergenTags, categoryTags }), {
+        ...NO_PREFS,
+        dietaryPatterns: [pattern],
+      });
+      expect(v.allowed, `${pattern} / ${name}`).toBe(false);
+    },
+  );
+
+  it("keeps the plant-based aisle, which says 'vegan' rather than 'dairy free'", () => {
+    // `negators` needs an explicit free-from PHRASING; a great many free-from
+    // products do not use one. `clearedBy` is the marker channel.
+    for (const [pattern, name, categoryTags] of [
+      ["vegan", "Vegan Cheddar Style Block", ["en:vegan-cheeses"]],
+      ["dairy_free", "Vegan Cheddar Style Block", ["en:vegan-cheeses"]],
+      ["vegetarian", "Vegetarian Sausages", ["en:meat-substitutes"]],
+      ["halal", "Alcohol Free Lager", ["en:non-alcoholic-beers"]],
+    ] as const) {
+      expect(
+        assessAvoidance(
+          subject({ name, allergenTags: [], categoryTags: [...categoryTags] }),
+          { ...NO_PREFS, dietaryPatterns: [pattern] },
+        ).allowed,
+        `${pattern} / ${name}`,
+      ).toBe(true);
+    }
+  });
+
+  it("does NOT let 'vegan' clear the gluten axis — a vegan loaf is still wheat", () => {
+    const v = assessAvoidance(
+      subject({
+        name: "Vegan Sourdough Loaf",
+        allergenTags: null,
+        categoryTags: ["en:breads"],
+      }),
+      { ...NO_PREFS, dietaryPatterns: ["gluten_free"] },
+    );
+    expect(v.allowed).toBe(false);
+  });
+
+  it("lets vegetarians and pescatarians eat honey", () => {
+    // `honey` was folded into the MEAT axis, which vegetarian and pescatarian
+    // share — so both were denied honey, and adding it to that axis' category
+    // substrings denied `en:honeys` rows whose name never says "honey".
+    for (const pattern of ["vegetarian", "pescatarian"] as const) {
+      expect(
+        assessAvoidance(
+          subject({
+            name: "Rowse Clear Runny",
+            allergenTags: [],
+            categoryTags: ["en:honeys"],
+          }),
+          { ...NO_PREFS, dietaryPatterns: [pattern] },
+        ).allowed,
+        pattern,
+      ).toBe(true);
+    }
+    // …and still excludes it for a vegan.
+    expect(
+      assessAvoidance(
+        subject({
+          name: "Rowse Clear Runny",
+          allergenTags: [],
+          categoryTags: ["en:honeys"],
+        }),
+        { ...NO_PREFS, dietaryPatterns: ["vegan"] },
+      ).allowed,
+    ).toBe(false);
+  });
+
+  it("matches OFF's en:pastries, which the substring 'pastry' never did", () => {
+    expect(
+      assessAvoidance(
+        subject({
+          name: "All Butter Croissant",
+          allergenTags: null,
+          categoryTags: ["en:pastries"],
+        }),
+        { ...NO_PREFS, dietaryPatterns: ["gluten_free"] },
+      ).allowed,
+    ).toBe(false);
+  });
+
+  it("does not let 'no added sugar' clear an unrelated axis", () => {
+    // A 20-CHARACTER negation gap matched "no" + " added sugar " + "milk", so the
+    // whole dairy axis was cleared for a product that is plain cow's milk.
+    expect(
+      assessAvoidance(
+        subject({ name: "No Added Sugar Milk", allergenTags: null }),
+        { ...NO_PREFS, dietaryPatterns: ["dairy_free"] },
+      ).allowed,
+    ).toBe(false);
+    expect(
+      assessAvoidance(
+        subject({ name: "No Added Sugar Wheat Biscuits", allergenTags: null }),
+        { ...NO_PREFS, dietaryPatterns: ["gluten_free"] },
+      ).allowed,
+    ).toBe(false);
+  });
+
+  it("still honours a real adjacent negation after the tightening", () => {
+    expect(isTokenNegatedInName("No Beef Strips", "beef")).toBe(true);
+    expect(isTokenNegatedInName("Free from wheat pasta", "wheat")).toBe(true);
+    expect(isTokenNegatedInName("Made without milk", "milk")).toBe(true);
+    // One intervening word is still a negation.
+    expect(isTokenNegatedInName("Free from added wheat", "wheat")).toBe(true);
+    // Two is not.
+    expect(isTokenNegatedInName("No Added Sugar Milk", "milk")).toBe(false);
+  });
+
+  it("applies a hardtofind: exclusion by its food name", () => {
+    // STORY-007's affordance was a PERMANENT NO-OP: the repository preserves the
+    // prefix, so the dislike tokenised to ["hardtofind","mushroom"] and the
+    // every-token-present rule looked for the literal word "hardtofind" in the
+    // food name. The entry stored, round-tripped, and filtered nothing.
+    const v = assessAvoidance(subject({ name: "Mushroom Soup" }), {
+      ...NO_PREFS,
+      avoidFoods: [`${HARD_TO_FIND_PREFIX}mushrooms`],
+    });
+    expect(v.allowed).toBe(false);
+    if (!v.allowed) expect(v.rule).toBe("dislike_name");
   });
 
   it("a negator AFTER the token does not clear it", () => {
