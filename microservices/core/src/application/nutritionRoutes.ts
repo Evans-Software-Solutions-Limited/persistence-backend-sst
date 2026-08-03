@@ -18,6 +18,12 @@ import { nutritionAiEstimateTextHandler } from "./nutrition/ai/estimateText/nutr
 import { nutritionAiExtractRecipeHandler } from "./nutrition/ai/extractRecipe/nutritionAiExtractRecipeHandler";
 import { nutritionAiResolveIngredientHandler } from "./nutrition/ai/resolveIngredient/nutritionAiResolveIngredientHandler";
 import { nutritionAiEstimateRecipeHandler } from "./nutrition/ai/estimateRecipe/nutritionAiEstimateRecipeHandler";
+// Mealprint (spec-26) Phase 0. Joins this ALREADY-mounted sub-app rather than
+// adding a `.use()` to the root chain in api.ts — that chain is at TS's
+// instantiation ceiling and a new root mount trips TS2589 in packages/web's Eden
+// client with no web file touched (see the sleep-quicklog note below).
+import { nutritionPreferencesGetHandler } from "./nutrition/mealprint/preferences/get/nutritionPreferencesGetHandler";
+import { nutritionPreferencesSetHandler } from "./nutrition/mealprint/preferences/set/nutritionPreferencesSetHandler";
 import { foodsListHandler } from "./foods/list/foodsListHandler";
 import { foodsCreateHandler } from "./foods/create/foodsCreateHandler";
 import { recipesListHandler } from "./recipes/list/recipesListHandler";
@@ -63,6 +69,10 @@ export const nutritionRoutes = new Elysia()
   .use(nutritionAiExtractRecipeHandler)
   .use(nutritionAiResolveIngredientHandler)
   .use(nutritionAiEstimateRecipeHandler)
+  // Mealprint (spec-26) — preferences are NOT entitlement-gated (they are the
+  // user's own data; the paywall sits on generation). See the handlers.
+  .use(nutritionPreferencesGetHandler)
+  .use(nutritionPreferencesSetHandler)
   .use(foodsListHandler)
   .use(foodsCreateHandler)
   // recipes — GET /recipes (list) before GET /recipes/:id; POST /recipes/import

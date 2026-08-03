@@ -8,6 +8,7 @@ vi.mock("@persistence/db/client", () => ({
 import { getDb } from "@persistence/db/client";
 
 import {
+  __entitlementUpgradeSetsForTest,
   assertEntitlement,
   EntitlementError,
   classifySubscriptionStatus,
@@ -632,6 +633,191 @@ describe("assertEntitlement — loadout", () => {
     (getDb as any).mockReturnValue(makeQueueDb([[]]));
 
     await expect(assertEntitlement("user-1", "loadout")).rejects.toThrow(
+      /no profiles row/,
+    );
+  });
+});
+
+// ─── meal_ai — Mealprint (spec-26 § 3) ────────────────────────────────────
+const FREE_TIER_NO_MEALPRINT = [{ mealprintAccess: false }];
+const PREMIUM_PLUS_SUB_ACTIVE_MEALPRINT = [
+  {
+    tierName: "premium_plus",
+    paymentStatus: "active",
+    expiresAt: null,
+    mealprintAccess: true,
+  },
+];
+const PREMIUM_SUB_ACTIVE_NO_MEALPRINT = [
+  {
+    tierName: "premium",
+    paymentStatus: "active",
+    expiresAt: null,
+    mealprintAccess: false,
+  },
+];
+const TRAINER_SUB_ACTIVE_NO_MEALPRINT = [
+  {
+    tierName: "individual_trainer",
+    paymentStatus: "active",
+    expiresAt: null,
+    // ⚠ FALSE, unlike loadoutAccess. `20260803120200_mealprint_access.sql`
+    // grants mealprint_access to premium_plus ONLY.
+    mealprintAccess: false,
+  },
+];
+const PREMIUM_PLUS_SUB_CANCELLED_EXPIRED_MEALPRINT = [
+  {
+    tierName: "premium_plus",
+    paymentStatus: "cancelled",
+    expiresAt: new Date(Date.now() - 86_400_000),
+    mealprintAccess: true,
+  },
+];
+
+describe("assertEntitlement — meal_ai", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  // ⚠ THE MOST IMPORTANT TEST IN THIS BLOCK, for the same reason as loadout's:
+  // `assertEntitlement`'s catch-all returns `{ allowed: true }` for any feature
+  // without an explicit routing line, so deleting that line turns a £29.99/mo
+  // gate into a no-op with no type error. This test fails if it goes.
+  it("is ROUTED — a free user is denied, not caught by the accept-all stub branch", async () => {
+    (getDb as any).mockReturnValue(
+      makeQueueDb([
+        PROFILE_USER,
+        [], // no user_subscriptions row
+        FREE_TIER_NO_MEALPRINT, // free-tier flag lookup
+        PREMIUM_PLUS_TIER, // buildDenyVerdict's upgrade-tier lookup
+      ]),
+    );
+
+    expect(await assertEntitlement("user-1", "meal_ai")).toEqual({
+      allowed: false,
+      reason: "tier",
+      currentTier: "free",
+      upgradeTo: "premium_plus",
+      // From the catalog row, never a literal.
+      upgradePriceMonthly: 29.99,
+    });
+  });
+
+  it("allows an active premium_plus subscriber", async () => {
+    (getDb as any).mockReturnValue(
+      makeQueueDb([PROFILE_USER, PREMIUM_PLUS_SUB_ACTIVE_MEALPRINT]),
+    );
+    expect(await assertEntitlement("user-1", "meal_ai")).toEqual({
+      allowed: true,
+    });
+  });
+
+  it("denies an active premium subscriber — hard gate, no taster", async () => {
+    (getDb as any).mockReturnValue(
+      makeQueueDb([
+        PROFILE_USER,
+        PREMIUM_SUB_ACTIVE_NO_MEALPRINT,
+        PREMIUM_PLUS_TIER,
+      ]),
+    );
+    expect(await assertEntitlement("user-1", "meal_ai")).toEqual({
+      allowed: false,
+      reason: "tier",
+      currentTier: "premium",
+      upgradeTo: "premium_plus",
+      upgradePriceMonthly: 29.99,
+    });
+  });
+
+  // ⚠ THE DIVERGENCE FROM LOADOUT. A trainer tier grants `loadout_access` but
+  // NOT `mealprint_access`, and the upsell has to follow: pointing this coach at
+  // `individual_trainer` would charge them and leave the feature locked.
+  it("denies an active trainer subscriber and upsells premium_plus, NOT a trainer tier", async () => {
+    (getDb as any).mockReturnValue(
+      makeQueueDb([
+        PROFILE_TRAINER,
+        TRAINER_SUB_ACTIVE_NO_MEALPRINT,
+        PREMIUM_PLUS_TIER,
+      ]),
+    );
+    expect(await assertEntitlement("user-1", "meal_ai")).toEqual({
+      allowed: false,
+      reason: "tier",
+      currentTier: "individual_trainer",
+      upgradeTo: "premium_plus",
+      upgradePriceMonthly: 29.99,
+    });
+  });
+
+  it("reverts a cancelled-and-expired premium_plus sub to free rules with reason 'cancelled'", async () => {
+    (getDb as any).mockReturnValue(
+      makeQueueDb([
+        PROFILE_USER,
+        PREMIUM_PLUS_SUB_CANCELLED_EXPIRED_MEALPRINT,
+        FREE_TIER_NO_MEALPRINT,
+      ]),
+    );
+    expect(await assertEntitlement("user-1", "meal_ai")).toEqual({
+      allowed: false,
+      reason: "cancelled",
+      currentTier: "premium_plus",
+      // Reinstate / fix payment, not "pick a higher tier".
+      upgradeTo: null,
+      upgradePriceMonthly: null,
+    });
+  });
+
+  it("keeps a cancelled-but-paid-through sub fully entitled", async () => {
+    (getDb as any).mockReturnValue(
+      makeQueueDb([
+        PROFILE_USER,
+        [
+          {
+            tierName: "premium_plus",
+            paymentStatus: "cancelled",
+            expiresAt: new Date(Date.now() + 86_400_000),
+            mealprintAccess: true,
+          },
+        ],
+      ]),
+    );
+    expect(await assertEntitlement("user-1", "meal_ai")).toEqual({
+      allowed: true,
+    });
+  });
+
+  it("denies when the joined tier row is missing (null flag reads as no access)", async () => {
+    (getDb as any).mockReturnValue(
+      makeQueueDb([
+        PROFILE_USER,
+        [
+          {
+            tierName: "some_deleted_tier",
+            paymentStatus: "active",
+            expiresAt: null,
+            mealprintAccess: null,
+          },
+        ],
+        PREMIUM_PLUS_TIER,
+      ]),
+    );
+    expect(await assertEntitlement("user-1", "meal_ai")).toMatchObject({
+      allowed: false,
+      currentTier: "free",
+    });
+  });
+
+  it("throws when the free tier row is missing from the catalog", async () => {
+    (getDb as any).mockReturnValue(makeQueueDb([PROFILE_USER, [], []]));
+    await expect(assertEntitlement("user-1", "meal_ai")).rejects.toThrow(
+      /free.*missing/,
+    );
+  });
+
+  it("throws when the caller has no profiles row (schema corruption)", async () => {
+    (getDb as any).mockReturnValue(makeQueueDb([[]]));
+    await expect(assertEntitlement("user-1", "meal_ai")).rejects.toThrow(
       /no profiles row/,
     );
   });
@@ -1303,13 +1489,46 @@ describe("pure helpers", () => {
       expect(pickUpgradeTier("user", "trainer_clients")).toBe("premium");
     });
 
-    // Role beats feature for coaches: all three trainer tiers already carry
-    // loadout_access, so the CHEAPEST trainer tier stays the right upsell — a
-    // coach must never be pushed onto a consumer tier.
+    // Role beats feature for coaches WHERE THE TRAINER TIERS ACTUALLY GRANT THE
+    // FEATURE: all three carry loadout_access, so the CHEAPEST trainer tier
+    // stays the right upsell and a coach is never pushed onto a consumer tier.
     it("still returns individual_trainer for a trainer denied loadout", () => {
       expect(pickUpgradeTier("personal_trainer", "loadout")).toBe(
         "individual_trainer",
       );
+    });
+
+    // ⚠ …and feature beats role where they DON'T. `mealprint_access` is granted
+    // to premium_plus only, so the role branch would sell a coach a £14.99 tier
+    // that still locks Mealprint. This is the pay-and-stay-locked-out failure
+    // `pickUpgradeTier`'s required `feature` parameter exists to prevent, and it
+    // is reachable for the first time with spec-26.
+    it("returns premium_plus for a trainer denied meal_ai", () => {
+      expect(pickUpgradeTier("personal_trainer", "meal_ai")).toBe(
+        "premium_plus",
+      );
+    });
+
+    it("returns premium_plus for a meal_ai deny on the user track", () => {
+      expect(pickUpgradeTier("user", "meal_ai")).toBe("premium_plus");
+      expect(pickUpgradeTier("physiotherapist", "meal_ai")).toBe(
+        "premium_plus",
+      );
+    });
+
+    // Admin stays null even for a Premium+-exclusive feature — the exclusive
+    // branch must not overtake the admin short-circuit.
+    it("returns null for an admin denied meal_ai", () => {
+      expect(pickUpgradeTier("admin", "meal_ai")).toBeNull();
+    });
+
+    // A member of the exclusive set missing from the wider Premium+ set would
+    // upsell Premium to a `user`-role caller — the same bug from the other side.
+    it("keeps PREMIUM_PLUS_ONLY_FEATURES a subset of PREMIUM_PLUS_FEATURES", () => {
+      const { premiumPlus, premiumPlusOnly } = __entitlementUpgradeSetsForTest;
+      for (const feature of premiumPlusOnly) {
+        expect(premiumPlus.has(feature), feature).toBe(true);
+      }
     });
 
     it("returns null for an admin denied loadout", () => {
