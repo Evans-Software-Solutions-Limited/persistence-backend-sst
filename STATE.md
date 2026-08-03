@@ -214,7 +214,17 @@ by reading it — that is what caught every one of the 23.
 #### What is left before a user can reach Mealprint
 
 1. **Raise the PR** for `claude/mealprint-mobile-ui-9347a0` (not done — Brad's
-   call whether to review the three commits as-is or squash).
+   call whether to review the six commits as-is or squash).
+
+   ⚠ **The PR body must say, plainly and near the top, that this code passed three
+   review sweeps and has never executed.** `🕵️ Inspector Brad (local): clean @ f1e8d7c2`
+   is true and does NOT mean the feature works — static review cannot reach the two
+   things most likely to be wrong here: whether the draft stage still scrolls to its
+   confirm button now that it carries two caveat blocks in an 86 % sheet (Jest mocks
+   gorhom, so no test in the suite can prove it), and the `no_candidates` path, which
+   is the FIRST thing a real entitled user will see until the re-seed lands. Letting
+   the sweep line carry an implication it hasn't earned is how a clean-looking PR
+   ships a feature nobody has run.
 2. **The OFF re-seed.** Brad's, operational. Until it runs, every allergen chip
    empties the candidate pool and the sheet correctly answers
    `emptyReason: "no_candidates"`. Build/QA the happy path with NO allergen chips.
