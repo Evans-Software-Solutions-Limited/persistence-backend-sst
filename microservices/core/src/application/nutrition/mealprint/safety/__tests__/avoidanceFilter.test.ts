@@ -974,8 +974,31 @@ describe("assessAvoidance — a PARTIALLY-tagged row does not escape the name ch
     },
   );
 
-  it("still lets a genuine [] + free-from name through (the gate's only real job)", () => {
-    // `[]` IS a complete negative claim, and the free-from marker covers the rest.
+  it("lets an ADJACENTLY-qualified plant milk through", () => {
+    expect(
+      assessAvoidance(
+        subject({
+          name: "Alpro Soya Milk",
+          allergenTags: [],
+          categoryTags: [],
+        }),
+        { ...NO_PREFS, dietaryPatterns: ["dairy_free"] },
+      ).allowed,
+    ).toBe(true);
+  });
+
+  it("EXCLUDES a plant milk whose qualifier is not adjacent — accepted pool cost", () => {
+    // ⚠ A deliberate, documented residual, not an oversight. "Alpro Soya
+    // Chocolate Milk Drink" has "soya" three tokens away from "milk", so the
+    // adjacency rule does not qualify it and the row is excluded.
+    //
+    // The alternative — set-membership qualifiers — is what let "Rice Pudding
+    // Made With Whole Milk" and "Oat and Milk Chocolate Biscuits" through to a
+    // dairy-free user. Between a false POSITIVE (pool cost, on a preference-grade
+    // pattern) and a false NEGATIVE (a dairy product served to someone avoiding
+    // dairy), exclusion is the right way to be wrong. Note this affects the
+    // PATTERN channel only: a milk ALLERGY is tag-derived and fails closed
+    // independently of every name rule here.
     expect(
       assessAvoidance(
         subject({
@@ -985,7 +1008,7 @@ describe("assessAvoidance — a PARTIALLY-tagged row does not escape the name ch
         }),
         { ...NO_PREFS, dietaryPatterns: ["dairy_free"] },
       ).allowed,
-    ).toBe(true);
+    ).toBe(false);
   });
 });
 
@@ -1064,6 +1087,124 @@ describe("assessAvoidance — token qualifiers stop confirmed false positives", 
         ...NO_PREFS,
         dietaryPatterns: ["gluten_free"],
       }).allowed,
+    ).toBe(false);
+  });
+});
+
+// ── Closed verification pass — regressions ──────────────────────────────────
+
+describe("assessAvoidance — an OFF ANCESTOR marker tag must not clear an axis", () => {
+  // ⚠ This is the regression the sweep-2 fix INTRODUCED. Letting any
+  // marker-bearing category tag clear the axis for the name channel collided with
+  // the same hierarchy the fix relied on: `en:plant-based-foods` is an ANCESTOR of
+  // en:breads, en:pastas, en:sauces and en:nuts, and it compacts to a string
+  // containing "plantbased".
+  it.each([
+    [
+      "All Butter Croissant",
+      ["en:viennoiserie", "en:plant-based-foods-and-beverages"],
+      "dairy_free",
+    ],
+    ["Brioche Loaf", ["en:breads", "en:plant-based-foods"], "vegan"],
+    ["Green Pesto", ["en:sauces", "en:plant-based-foods"], "vegan"],
+    [
+      "Chicken and Bacon Pasta Salad",
+      ["en:meals", "en:plant-based-foods"],
+      "vegetarian",
+    ],
+  ])("excludes '%s'", (name, categoryTags, pattern) => {
+    const v = assessAvoidance(
+      subject({ name, allergenTags: [], categoryTags }),
+      {
+        ...NO_PREFS,
+        dietaryPatterns: [pattern],
+      },
+    );
+    expect(v.allowed).toBe(false);
+  });
+
+  it("a marker tag that IS about the axis still clears it", () => {
+    // The relevance rule must not break the case sweep 2 fixed: the tag has to
+    // carry the marker AND match one of the axis' own categorySubstrings.
+    expect(
+      assessAvoidance(
+        subject({
+          name: "Cheddar Style Block",
+          allergenTags: ["en:soybeans"],
+          categoryTags: ["en:vegan-cheeses", "en:cheeses"],
+        }),
+        { ...NO_PREFS, dietaryPatterns: ["vegan"] },
+      ).allowed,
+    ).toBe(true);
+  });
+});
+
+describe("assessAvoidance — token qualifiers require ADJACENCY", () => {
+  it.each([
+    ["Cream of Tomato Soup", "dairy_free"],
+    ["Rice Pudding Made With Whole Milk", "dairy_free"],
+    ["Oat and Milk Chocolate Biscuits", "dairy_free"],
+    ["Wholemeal Flour 500 Gram", "gluten_free"],
+  ])(
+    "excludes '%s' — a distant qualifier does not clear it",
+    (name, pattern) => {
+      expect(
+        assessAvoidance(subject({ name, allergenTags: null }), {
+          ...NO_PREFS,
+          dietaryPatterns: [pattern],
+        }).allowed,
+      ).toBe(false);
+    },
+  );
+
+  it.each([
+    ["Peanut Butter", "dairy_free"],
+    ["Red Kidney Beans", "vegan"],
+    ["Coconut Milk", "dairy_free"],
+    ["Rice Noodles", "gluten_free"],
+    ["Corn Tortillas", "gluten_free"],
+    ["Lentil Loaf", "gluten_free"],
+  ])("allows '%s' — qualifier adjacent on either side", (name, pattern) => {
+    expect(
+      assessAvoidance(subject({ name, allergenTags: null }), {
+        ...NO_PREFS,
+        dietaryPatterns: [pattern],
+      }).allowed,
+    ).toBe(true);
+  });
+
+  it("EVERY occurrence must be qualified, not just one", () => {
+    expect(
+      assessAvoidance(
+        subject({ name: "Soya Milk and Milk Chocolate", allergenTags: null }),
+        { ...NO_PREFS, dietaryPatterns: ["dairy_free"] },
+      ).allowed,
+    ).toBe(false);
+  });
+});
+
+describe("assessAvoidance — recall tokens that used to misfire", () => {
+  it.each([
+    ["Cottage Pie", "gluten_free"],
+    ["Lettuce Wraps", "gluten_free"],
+    ["Aubergine Caviar", "vegetarian"],
+  ])("allows '%s' — the token was removed, not qualified", (name, pattern) => {
+    expect(
+      assessAvoidance(subject({ name, allergenTags: null }), {
+        ...NO_PREFS,
+        dietaryPatterns: [pattern],
+      }).allowed,
+    ).toBe(true);
+  });
+
+  it("catches 'Battered Onion Rings' — singularise never shortens 'battered' to 'batter'", () => {
+    // The original token was "batter", which matched "Batter Mix" and MISSED the
+    // form it was added for.
+    expect(
+      assessAvoidance(
+        subject({ name: "Battered Onion Rings", allergenTags: null }),
+        { ...NO_PREFS, dietaryPatterns: ["gluten_free"] },
+      ).allowed,
     ).toBe(false);
   });
 });

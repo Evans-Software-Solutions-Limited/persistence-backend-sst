@@ -309,8 +309,8 @@ export const NAME_TOKENS = {
     "kipper",
     "whitebait",
     "surimi",
-    "caviar",
     "roe",
+    // ⚠ "caviar" was REMOVED: "Aubergine Caviar" is a vegetarian dip.
     "taramasalata",
   ],
   dairy: [
@@ -330,6 +330,19 @@ export const NAME_TOKENS = {
     "halloumi",
     "mascarpone",
     "ricotta",
+    // Butter- and cheese-enriched products whose names contain no generic dairy
+    // word. Found while closing the `en:plant-based-foods` marker regression:
+    // once the marker stopped wrongly clearing them, `Brioche Loaf` and
+    // `Green Pesto` were still allowed for a vegan because NOTHING matched. The
+    // free-from guards still cover the plant-based versions by name marker
+    // ("Vegan Pesto") or explicit phrasing.
+    "brioche",
+    "croissant",
+    "pesto",
+    "carbonara",
+    "alfredo",
+    "tiramisu",
+    "cheesecake",
   ],
   egg: [
     "egg",
@@ -377,7 +390,6 @@ export const NAME_TOKENS = {
     "pitta",
     "pita",
     "tortilla",
-    "wrap",
     "noodle",
     "macaroni",
     "spaghetti",
@@ -392,8 +404,17 @@ export const NAME_TOKENS = {
     "donut",
     "waffle",
     "pancake",
-    "batter",
-    "pie",
+    // ⚠ "battered", not "batter". `singularise` only ever SHORTENS, so
+    // "battered" never reduces to "batter" — the token caught "Batter Mix" and
+    // MISSED "Battered Onion Rings", i.e. the form it was added for. A test
+    // written around the former would have pinned a rule that does not cover the
+    // real case.
+    "battered",
+    // ⚠ "pie" and "wrap" were REMOVED, not qualified. Cottage, shepherd's and
+    // fish pie are potato-topped with no pastry, and "Lettuce Wraps" is the
+    // canonical gluten-free substitute — both are standard gluten-free food, and
+    // no adjacency list makes either token safe. `pasty` and `quiche` stay
+    // (always pastry).
     "pasty",
     "quiche",
   ],
@@ -461,9 +482,9 @@ export const NAME_AXES: Readonly<Record<string, NameAxis>> = {
       // "Red Kidney Beans" is not offal. The meat axis is always applied, so
       // without this the exclusion is unconditional and permanent.
       kidney: ["bean", "beans"],
-      // "Liver" has no plant homonym, but pâté-style qualifiers do not change the
-      // verdict, so only the vegetable sense is listed for symmetry of intent.
-      liver: ["leaf", "leaves"],
+      // ⚠ No `liver` entry. An earlier draft had `liver: ["leaf","leaves"]` "for
+      // symmetry of intent" — a rule that cannot fire, which is worse than none
+      // because it reads as coverage in a dangerous-area file.
     },
     negators: ["meat"],
     categorySubstrings: ["meat", "poultry", "charcuterie"],
@@ -522,8 +543,11 @@ export const NAME_AXES: Readonly<Record<string, NameAxis>> = {
         "shea",
         "apple",
       ],
-      // "Cream of tomato soup", "coconut cream", "cream crackers".
-      cream: ["coconut", "oat", "soya", "soy", "almond", "cracker", "tomato"],
+      // ⚠ "tomato" is deliberately ABSENT. Heinz Cream of Tomato contains milk,
+      // and "cream of tomato" is exactly the adjacency an adjacency rule honours —
+      // so no version of this qualifier is safe. It removed a true positive by
+      // construction rather than by collision.
+      cream: ["coconut", "oat", "soya", "soy", "almond"],
       // ⚠ Plant milks. This carries real weight now that the name channel is
       // unconditional: without it "Alpro Soya Chocolate Milk Drink" is excluded
       // from a dairy-free pool on "milk" — the exact shelf that user shops from.
@@ -585,6 +609,12 @@ export const NAME_AXES: Readonly<Record<string, NameAxis>> = {
       ],
       // "Rice pasta", "corn pasta", "buckwheat noodles".
       pasta: ["rice", "corn", "lentil", "chickpea", "buckwheat", "quinoa"],
+      // Rice noodles are the single biggest gluten-free staple in this list, and
+      // the `pasta` qualifiers were not extended to `noodle` at first.
+      noodle: ["rice", "corn", "buckwheat", "soba", "mung", "glass", "kelp"],
+      tortilla: ["corn", "maize"],
+      // "Lentil Loaf", "Nut Loaf" are gluten-free mains.
+      loaf: ["lentil", "nut", "chickpea"],
       // "Rice bread", "corn bread" are not wheat products.
       bread: ["rice", "corn"],
     },

@@ -190,20 +190,45 @@ function isAxisCleared(
   ) {
     return true;
   }
-  // ⚠ A marker on a CATEGORY TAG clears the axis for BOTH channels, and is
-  // evaluated across the WHOLE tag array at once.
+  // ⚠ A marker on a CATEGORY TAG clears the axis for BOTH channels — but ONLY
+  // when the tag carrying it is ABOUT this axis.
   //
-  // Two bugs lived here. OFF's `categories_tags` is HIERARCHICAL, so a vegan
-  // cheese carries `en:vegan-cheeses` AND its parent `en:cheeses` — a per-tag
-  // skip stepped past the marker-bearing child only to match the parent next
-  // iteration. And the marker used to be consulted by the category channel only,
-  // so `Cheddar Style Block` / `["en:vegan-cheeses","en:cheeses"]` cleared the
-  // category rule and was then excluded by the NAME rule on "cheddar" anyway.
-  // Evidence that a row is the without-this-axis version is evidence for every
-  // channel, wherever it appears.
+  // Three bugs lived here, and the third was introduced by the fix to the second.
+  //
+  //   1. OFF's `categories_tags` is HIERARCHICAL, so a vegan cheese carries
+  //      `en:vegan-cheeses` AND its parent `en:cheeses`. A per-tag skip stepped
+  //      past the marker-bearing child only to match the parent next iteration.
+  //   2. The marker was consulted by the category channel only, so
+  //      `Cheddar Style Block` cleared the category rule and was then excluded by
+  //      the NAME rule on "cheddar" anyway.
+  //   3. ⚠ Fixing (1) and (2) with a bare `compactTag.includes(marker)` over the
+  //      whole array made it FAR too powerful, because the same hierarchy that
+  //      causes (1) also means every row carries its ANCESTORS.
+  //      `en:plant-based-foods` and `en:plant-based-foods-and-beverages` compact
+  //      to strings containing `plantbased`, and `en:viennoiserie`, `en:breads`,
+  //      `en:pastas`, `en:sauces` and `en:nuts` all sit beneath them. So for a
+  //      vegan or dairy-free user the meat, dairy, egg and seafood axes were
+  //      cleared across most of the cereals/pastry/sauces catalogue:
+  //
+  //        `All Butter Croissant` / `["en:viennoiserie","en:plant-based-foods-and-beverages"]`
+  //          → served to a DAIRY-FREE user (a regression: before the marker
+  //            reached the name channel, "butter" fired)
+  //        `Green Pesto` / `["en:sauces","en:plant-based-foods"]` → served to a vegan
+  //        `Chicken and Bacon Pasta Salad` / `["en:meals","en:plant-based-foods"]`
+  //          → served to a VEGETARIAN
+  //
+  // The discriminator is RELEVANCE: the marker-bearing tag must also match one of
+  // this axis' own `categorySubstrings`. `en:vegan-cheeses` carries `vegan` AND
+  // `cheese`, so it still clears dairy; `en:meat-substitutes` carries `substitute`
+  // AND `meat`; `en:non-alcoholic-beers` carries `nonalcoholic` AND `beers`.
+  // `en:plant-based-foods` says nothing about dairy and no longer clears it.
   return categoryTags.some((tag) => {
     const compactTag = tag.replace(/[^a-z0-9]+/gu, "");
-    return axis.clearedBy.some((marker) => compactTag.includes(marker));
+    const carriesMarker = axis.clearedBy.some((marker) =>
+      compactTag.includes(marker),
+    );
+    if (!carriesMarker) return false;
+    return axis.categorySubstrings.some((needle) => tag.includes(needle));
   });
 }
 
@@ -257,8 +282,63 @@ function matchesAxisCategories(
 }
 
 /** First NAME-token hit across `axes`, honouring per-axis free-from negation. */
+/**
+ * Is every occurrence of `token` in `orderedTokens` immediately preceded by one
+ * of `qualifiers`?
+ *
+ * ⚠ **ADJACENCY, not set membership, and the difference is six confirmed false
+ * negatives.** The first version asked only whether a qualifier appeared ANYWHERE
+ * in the name, which disqualified the token on any unrelated co-occurrence:
+ *
+ *   `Cream of Tomato Soup`            → dairy-free  ("tomato" qualified "cream")
+ *   `Rice Pudding Made With Whole Milk` → dairy-free ("rice" qualified "milk")
+ *   `Coconut Milk Chocolate Bar`      → dairy-free
+ *   `Oat and Milk Chocolate Biscuits` → dairy-free
+ *   `Cocoa Butter Fudge`              → dairy-free
+ *   `Wholemeal Flour 500 Gram`        → gluten-free ("gram" is also a mass unit)
+ *
+ * Every INTENDED clear is an adjacent compound — *peanut* butter, *almond* flour,
+ * *soya* milk, *rice* noodles — so adjacency keeps all of those and kills all of
+ * the above.
+ *
+ * ⚠ EITHER SIDE counts, because English puts the qualifier on both:
+ * "**Peanut** Butter" and "**Almond** Flour" qualify from the left, "Kidney
+ * **Beans**" from the right. A preceding-only rule re-excluded `Red Kidney Beans`
+ * from a vegan pool — the very false positive `tokenQualifiers` was added for.
+ *
+ * Checked against all six collisions the set-membership version allowed, and
+ * either-side adjacency still rejects every one of them: in `Rice Pudding Made
+ * With Whole Milk`, `Oat and Milk Chocolate Biscuits` and `Wholemeal Flour 500
+ * Gram` the qualifier is nowhere near the token. (`Coconut Milk` and `Cocoa
+ * Butter` DO qualify adjacently, and correctly so — both are genuinely
+ * dairy-free ingredients.)
+ *
+ * "Every occurrence" rather than "any": `Soya Milk and Milk Chocolate` must stay
+ * excluded on the second, unqualified "milk".
+ */
+function everyOccurrenceQualified(
+  orderedTokens: readonly string[],
+  token: string,
+  qualifiers: readonly string[],
+): boolean {
+  const qualifierSet = new Set(qualifiers.map(singularise));
+  let sawOne = false;
+  for (let i = 0; i < orderedTokens.length; i += 1) {
+    if (orderedTokens[i] !== token) continue;
+    sawOne = true;
+    const before = i > 0 ? orderedTokens[i - 1] : null;
+    const after = i + 1 < orderedTokens.length ? orderedTokens[i + 1] : null;
+    const qualified =
+      (before !== null && qualifierSet.has(before)) ||
+      (after !== null && qualifierSet.has(after));
+    if (!qualified) return false;
+  }
+  return sawOne;
+}
+
 function matchesAxisNames(
   subjectName: string,
+  orderedTokens: readonly string[],
   subjectTokens: ReadonlySet<string>,
   compactName: string,
   categoryTags: readonly string[],
@@ -281,7 +361,7 @@ function matchesAxisNames(
         const qualifiers = axis.tokenQualifiers?.[candidate];
         if (
           qualifiers !== undefined &&
-          qualifiers.some((word) => subjectTokens.has(singularise(word)))
+          everyOccurrenceQualified(orderedTokens, candidate, qualifiers)
         ) {
           continue;
         }
@@ -304,7 +384,10 @@ export function assessAvoidance(
   subject: AvoidanceSubject,
   preferences: AvoidancePreferences,
 ): AvoidanceVerdict {
-  const subjectTokens = new Set(tokeniseFoodName(subject.name));
+  // Ordered AND set form: the set answers "is this token present", the ordered
+  // array answers "what precedes it", which `tokenQualifiers` needs for adjacency.
+  const orderedTokens = tokeniseFoodName(subject.name);
+  const subjectTokens = new Set(orderedTokens);
   const compactName = compactify(subject.name);
   const allergenTags = subject.allergenTags;
   const categoryTags = subject.categoryTags ?? [];
@@ -456,6 +539,7 @@ export function assessAvoidance(
     //      gate is unnecessary, and the merged list cannot be gated wrongly.
     const nameHit = matchesAxisNames(
       subject.name,
+      orderedTokens,
       subjectTokens,
       compactName,
       categoryTags,
