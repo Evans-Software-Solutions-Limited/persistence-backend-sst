@@ -24,6 +24,7 @@ import { nutritionAiEstimateRecipeHandler } from "./nutrition/ai/estimateRecipe/
 // client with no web file touched (see the sleep-quicklog note below).
 import { nutritionPreferencesGetHandler } from "./nutrition/mealprint/preferences/get/nutritionPreferencesGetHandler";
 import { nutritionPreferencesSetHandler } from "./nutrition/mealprint/preferences/set/nutritionPreferencesSetHandler";
+import { nutritionAiMealSuggestHandler } from "./nutrition/mealprint/ai/suggest/nutritionAiMealSuggestHandler";
 import { foodsListHandler } from "./foods/list/foodsListHandler";
 import { foodsCreateHandler } from "./foods/create/foodsCreateHandler";
 import { recipesListHandler } from "./recipes/list/recipesListHandler";
@@ -73,6 +74,9 @@ export const nutritionRoutes = new Elysia()
   // user's own data; the paywall sits on generation). See the handlers.
   .use(nutritionPreferencesGetHandler)
   .use(nutritionPreferencesSetHandler)
+  // …but the suggestion endpoint IS gated: `meal_ai` (402) → daily ceiling
+  // (429) → pipeline, inside the handler.
+  .use(nutritionAiMealSuggestHandler)
   .use(foodsListHandler)
   .use(foodsCreateHandler)
   // recipes — GET /recipes (list) before GET /recipes/:id; POST /recipes/import
