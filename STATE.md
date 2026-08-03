@@ -38,8 +38,8 @@ go), not the calendar" — and no pilot is recorded. If revenue timing starts to
 bite, the separable piece is M21: Loadout Phase 4 + Mealprint alone close the
 "paywall promises what it cannot deliver" gap, which is the launch-blocking half.
 
-**Everything in this bundle is ZERO code today** — Phase 4, Mealprint and M21
-alike. See § Next plan of action.
+**Step 0 (the shared async-job spine) is SHIPPED as of 2026-08-03.** Phase 4,
+Mealprint and M21 remain zero code. See § Next plan of action.
 
 ## Superseded state (2026-07-31)
 
@@ -493,18 +493,59 @@ Actions, in order of value:
 
 ### Next plan of action — the Premium+ launch bundle (2026-08-02)
 
-Ordered. The dependency at the top is the one that decides the shape of the
-rest, and all three workstreams below are **zero code today**.
+⚠ **ORDER CHANGED 2026-08-03 (Brad): Mealprint goes NEXT, ahead of Loadout
+Phase 4.** Phase 4 is coach-facing and gated on an open cap decision; Mealprint is
+what the live paywall already advertises, so it is the delivery risk. Phase 4
+slots in after it. Nothing about the dependency graph forces the old order — both
+consume the same spine, which is now built.
 
-**0. The shared async-job spine — BUILD THIS FIRST, ONCE.**
-Loadout Phase 4 (design § 7.3 / AC-10.3: 120 workouts × ~2.6 s ≈ 5 min, past the
-30 s API Gateway ceiling), Mealprint Phase 3 (week plans), and the parked
-program-import workstream ALL require it. All three specs say "must not be built
-twice". **Nobody has built it once.** There is no `ai_jobs` / job-status table
-anywhere in the tree. Whoever starts first owns it, and the other two consume it
-— exactly how P0's tier restructure worked between spec-21 and spec-26.
+**0. The shared async-job spine — ✅ SHIPPED 2026-08-03.**
+PRs [#348](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/348)
+(`c8624248`) + [#349](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/349)
+(`6f756b82`). Spec triplet at `specs/_shared/async-jobs/` — the ONE place the
+job-table design lives; the consuming specs defer there. `ai_jobs` table, SQS
+queue + DLQ + 15-minute worker, claim/checkpoint/resume/poll, `GET /jobs/:id`,
+nightly maintenance sweep, DLQ + worker-error alarms. Deployed to staging, green.
 
-**1. Loadout Phase 4 — coach programme adaptation.** T-4.1…T-4.5. Needs the
+Consuming it is: register a `JobKind` (`registry.ts` ships EMPTY on purpose) and
+call `enqueueJob()`. The spine owns claim, checkpoint, heartbeat, time-budget
+yield, retries, failure taxonomy and staleness — a consumer reimplementing any of
+those is a spine bug.
+
+⚠ **Three things a consumer MUST know:**
+
+- **`ai_jobs` migration `20260802120000` is NOT APPLIED** to staging or prod.
+  Manual. Nothing runs until it is.
+- **The two `ai_usage_log` endpoint keys must differ** — one row per JOB for the
+  ceiling, one per MODEL CALL for telemetry. `registerJobKind` throws if they are
+  equal, because a 120-inference job under one key trips its own ceiling on run
+  one.
+- **`maxInvocations` defaults to 20, sized on Loadout's ~20 s steps.** A kind with
+  slower steps must raise it or it dies mid-progress.
+
+⚠ **STAGING LAMBDA QUOTA IS 10, and it is now a blocker rather than trivia.** It
+broke the first deploy of the spine (`reserved: 5` cannot leave 10 unreserved), it
+makes any load test measure the quota rather than Supabase, and — critically —
+before ANY kind is registered it must be resolved, or five 15-minute workers take
+half the staging account and throttle the API into the same 503s that got build 39
+rejected. Staging is a DIFFERENT AWS account from production; the 2026-08-01 raise
+to 1000 covered prod only. Three routes, recorded in `infra/jobs.ts`: raise the
+staging quota (also unblocks load testing — preferred), cap `maximumConcurrency`
+at 2 on non-production, or give `coreRoute` a reservation.
+
+Six local Inspector Brad passes found 30 findings on the spine, so the concurrency
+semantics are subtle by nature — read `design.md` § 3.1 and § 3.4 before touching
+anything near the claim. Also worth carrying forward: the break was in `infra/`,
+which has NEITHER typecheck NOR tests, and CI gates say nothing about whether
+`infra/` will apply.
+
+**1. spec-26 Mealprint — NEXT.** Fully specced, **all six checkpoints RESOLVED by Brad
+2026-07-24** (branding, Premium+ hard gate with no taster, ceilings 20/5/10, the
+marketing-site reprice to £29.99, the UK FIC-14 allergen vocabulary, and week
+plans + shopping list IN v1). 0 of ~23 tasks built. P0 (the tier restructure) is
+already done and free to consume.
+
+**2. Loadout Phase 4 — coach programme adaptation.** T-4.1…T-4.5. Needs the
 programme-linkage migration (`parent_program_id`, `variation_kind`,
 `source_gym_id`, `source_equipment_type_ids` on `workout_programs` — design
 § 2.4; none of these columns exist), a programme-level preview/create-variant
@@ -513,12 +554,6 @@ with a 413 rather than silent truncation, assign-from-variant behind
 `assertTrainerCanActForClient`, coach UI, and an ex-coach-gets-403 test.
 ⚠ Brad checkpoint still open in design § 7.3: **confirm the 120 cap** — its
 rationale changed (it is now 120 model calls, ~5 min, ~$0.69, not "nearly free").
-
-**2. spec-26 Mealprint.** Fully specced, **all six checkpoints RESOLVED by Brad
-2026-07-24** (branding, Premium+ hard gate with no taster, ceilings 20/5/10, the
-marketing-site reprice to £29.99, the UK FIC-14 allergen vocabulary, and week
-plans + shopping list IN v1). 0 of ~23 tasks built. P0 (the tier restructure) is
-already done and free to consume.
 
 **3. M21 B2B org layer.** ⚠ **It has no spec triplet.** `specs/23-organizations/`
 and `specs/milestones/M21-b2b-orgs/` are both referenced by
@@ -534,6 +569,10 @@ ASC products. Brad's runbook, chat-only.
 
 #### ⚠ Four traps that will bite this bundle
 
+0. ⚠ **The staging Lambda quota (10) must be resolved before ANY job kind is
+   registered.** See § 0 above — it is the same limit that broke the spine's first
+   deploy, and with a kind registered it would throttle the API into 503s on the
+   staging account.
 1. **`assertEntitlement`'s catch-all silently allows everyone.**
    `assertEntitlement.ts:730-735` documents it: a feature name added to the
    `EntitlementFeature` union **without** its routing line falls through to
