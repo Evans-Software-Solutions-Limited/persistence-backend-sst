@@ -72,6 +72,11 @@ export const recipesCreateHandler = new Elysia()
     {
       body: t.Object({
         name: t.String({ minLength: 1 }),
+        // ⚠ PRIVACY POLICY DEPENDENCY — same as `mealsCreateHandler`: the
+        // published policy states the images you submit are not stored, which
+        // holds only because no client sets this field (recipe photo upload is
+        // flagged out of scope in `RecipeCreatePresenter`). Wiring it up means
+        // updating both copies of the privacy policy in the same change.
         photoUrl: t.Optional(t.String()),
         // servings must be positive (per-serving = total / servings); quantity
         // can't be negative (negative factor in materialiseTotals). PR #124.

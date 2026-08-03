@@ -1041,6 +1041,205 @@ consent copy, privacy section and governing law · the OFF re-seed backfilling
 
 ## Last session
 
+**2026-08-03 (cont.) — PR [#351](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/351)
+follow-up: Brad's 3 decisions applied, and BOTH deferred items built rather than
+parked. The policy no longer has any claim without a mechanism behind it.**
+
+- **Age floor DROPPED to 13, App Store content rating stays 9+ (Brad's call).**
+  My recommendation was to raise the store rating to 16+ instead; Brad chose 13
+  (the DPA 2018 s.9 statutory age). **⚠ CONSEQUENCE, now owed as its own
+  workstream: a 9+ content rating is evidence the service is "likely to be
+  accessed by children", so the Children's Code / Age Appropriate Design Code
+  applies** — DPIA addendum, age-appropriate privacy wording, and a decision on
+  whether an adult coach may see a 13-year-old's body-composition data. The
+  policy now carries an under-18 warning about coach visibility, which is a
+  mitigation, NOT compliance with the Code.
+- **The retention prune is now REAL** —
+  `application/retention/dataRetentionSweep.ts` + `dataRetentionRepository.ts`,
+  riding the nightly `accountPurgeCron` in its own try/catch after the
+  compliance-critical purge (same isolation pattern as `aiJobMaintenanceSweep`).
+  Deliberately implemented as **backend Drizzle deletes, NOT a call to
+  `cleanup_old_health_data()`** — that function is admin-gated on `auth.uid()`,
+  which is NULL on the pooler the cron uses, so wiring it up would have failed
+  every night while looking correct. The SQL function stays as manual tooling.
+  Policy wording tightened from "periodically" to a firm 12-month ceiling with
+  nightly deletion, because it is now true.
+  - **⚠ A real bug found by writing the test:** my first cutoff used
+    `setUTCMonth(m - 12)`, which OVERFLOWS rather than clamping — 29 Feb 2028
+    minus 12 months gave 1 Mar 2027, moving the cutoff FORWARD and deleting a day
+    of data the policy promises to keep. Silent leap-year data loss, not a crash.
+    Now clamps to the last valid day of the target month.
+- **Coach AI summaries are now DELETED at teardown**, in the same transaction as
+  the assignment deletes, scoped to `(client_id, trainer_id)` and counted in the
+  `relationship_terminated` audit payload. Reason it had to be a delete and not a
+  read gate: teardown is a soft end and reconnecting **revives the same
+  relationship row**, so summaries keyed on the pair silently came back. The read
+  guard was working as designed; the rows should not have survived.
+- **Stripe is NOT dead after all — Brad may keep it for business deals via the
+  website.** Supersedes the "historic subscriptions only" wording I shipped
+  earlier today and the removal recon in `specs/stripe-rail-removal/RECON.md`.
+  Policy now describes it as card processing for subscriptions paid directly
+  rather than through the App Store.
+- **⚠ THE STALE BASE WAS A CORRECTNESS PROBLEM, NOT HOUSEKEEPING — IB caught it.**
+  Mealprint (#350, `6c77dfe3`) merged to `main` DURING this review and carries two
+  things the policy is supposed to enumerate:
+  - **`POST /nutrition/ai/meal-suggest` is a mounted, live Bedrock endpoint**
+    (`nutritionRoutes.ts`), absent from the §5 AI list → the exact Art 13(1)(c)
+    gap this PR was raised to close, reopened by a merge.
+  - **`nutrition_preferences` holds a SECOND special-category type the policy had
+    no basis for.** `dietary_patterns` permits `'halal'` and `'kosher'`, which
+    reveal **religious belief** — a *separate* Art 9(1) category from health, so a
+    9(2)(a) basis worded only around "health and body metrics" did not reach it.
+    `avoid_allergens` is the FIC-14 list (health). Art 9(2)(a) is now rewritten to
+    cover both, and §3 has a "Food preferences" bullet.
+  - **LESSON: rebase BEFORE the final review pass on anything that enumerates the
+    system.** A policy, a route inventory or an entitlement matrix can be made
+    stale by someone else's merge, and both "discloses every AI path" tests passed
+    against the incomplete list — a hardcoded enumeration cannot detect an
+    ADDITION. Mitigated with a ⚠ pointer comment at the AI route mounts.
+- **Verified and worth keeping: the allergen/religious data never reaches
+  Bedrock.** `forbiddenAllergenTags` / `forbiddenPatternAllergenTags` filter the
+  candidate shortlist server-side; `composeSuggestions` gets only shape,
+  remaining macros, steer, candidates, likedFoods, effortLevel, locale — then
+  `verifySuggestions` re-checks. The policy says so, which is a genuinely
+  favourable and accurate claim.
+- **A firm published promise needs an alarm, not just a log line.** The retention
+  catch now calls `captureFatal` — without it the swallowed error left the
+  Lambda's `Errors` metric at zero, so `cron-errors-account-purge-sweep` never
+  fires and the dead-man's switch only sees non-INVOCATION. The sweep could have
+  been broken from night one while looking wired up.
+- **`daily_activity_data.activity_date` / `sleep_data.sleep_date` are Postgres
+  `DATE`, and the Drizzle mirror's `text(...)` is STALE**
+  (`001_initial_schema.sql:629,644`; `health/sleep/sleepDate.ts` already
+  documents it with a real 22008 symptom). My first comment reasoned about
+  lexicographic text ordering, which is not what executes. ⚠ PgDialect renders
+  byte-identically for `text` vs `date`, so the mocked-DB blind spot is NOT
+  closed by a rendered-SQL assertion — pin the PARAMS.
+- Added `20260803180000_client_data_access_log_created_at_idx.sql`: neither
+  existing index leads with `created_at`, so the prune was a seq scan on a
+  high-volume table — worst on the first run, which faces the entire
+  never-pruned backlog.
+- Gates on the rebased base: prettier, typecheck 8/8, lint 0 errors, **full core
+  suite 311 files / 3786 tests green with `application/retention` at 100%**, 27
+  web page tests, 14 presenter tests.
+
+**2026-08-03 — PRIVACY POLICY revision against Brad's legal brief. Branch
+`claude/persistence-privacy-policy-1857c8`, PR #351. Every factual claim was
+checked against the code; two of the brief's own assumptions turned out wrong.**
+
+- **The in-app policy was a DIFFERENT DOCUMENT from the hosted one, and the brief
+  didn't know it.** `PrivacyPolicyPresenter.tsx` still carried the legacy port —
+  "Last Updated: January 2025", age floor **13**, "analytics providers" we don't
+  use, no legal bases, no coach-sharing section, no transfer position. Two
+  contradicting live policies is itself an Art 5(1)(a) accuracy breach, so Brad
+  chose to replace the in-app body with the canonical copy. **Content parity beat
+  port fidelity here** — layout/styles/props/testIDs untouched. Both files now
+  carry a "change both together, or neither" header comment.
+- **The brief's `[two] years` for the consent + access log was wrong both ways.**
+  `data_sharing_consents` is `ON DELETE CASCADE` off `profiles` → deleted **with
+  the account**, never pruned otherwise. `client_data_access_log` is **12 months**,
+  not 24 (`20260721000000_client_data_access_log.sql`). The accurate position is
+  more privacy-favourable than the draft, so the policy now says both are deleted
+  with the account, access log on a 12-month rolling window.
+- **⚠ The 12-month prune is ADMIN-GATED AND MANUAL — no pg_cron is wired up.**
+  `cleanup_old_health_data()` raises unless `auth.uid()` is an admin, and nothing
+  schedules it. The policy's "up to 12 months" is therefore a claim Brad cannot
+  currently enforce. There IS already a nightly `sst.aws.Cron` (`accountPurgeCron`)
+  to hang it off. **Same gap on the 6-year transaction claim:** `stripe_webhook_events`
+  / `revenuecat_webhook_events` have no FK to `profiles` and are in NO deletion
+  plan, so they persist **indefinitely** — retention is currently longer than the
+  policy states, which is the direction that actually bites.
+- **Meal photos are genuinely never stored — verified, and worth saying loudly.**
+  `nutritionAiEstimateHandler` takes base64 in the request body, forwards to
+  Bedrock, persists nothing; the only bucket in `infra/storage.ts` is `Avatars`;
+  `ai_usage_log` stores sizes/ms only; `meals.photoUrl` exists but no code path
+  ever sets it. AI runs on `eu.anthropic.*` inference profiles from eu-west-2, so
+  the "UK and EU" claim is accurate too.
+- **Transfers → the brief's Version B** (Stripe/RevenueCat/Sentry/Expo are all
+  US-HQ). **Cookies → strictly-necessary only, verified:** zero analytics deps,
+  zero external CDN/font hosts, the only `localStorage` is the theme toggle plus
+  the Supabase auth session. No banner needed, and the policy says so.
+- **Stripe is now described as historic-only.** Only `/stripe/webhook` is mounted;
+  there is no checkout endpoint and mobile Stripe was stripped in #336. If prod
+  has zero legacy Stripe subs, drop it from the provider list entirely (recon
+  already parked at `specs/stripe-rail-removal/RECON.md`).
+- **Also disclosed, because the code says so:** the `Avatars` bucket is
+  `access: "public"`, so a profile photo is reachable by URL. The policy now says
+  that plainly rather than implying strict scoping.
+- **Left OUT deliberately, pending Brad:** the "we review our security
+  arrangements periodically" bullet (unverifiable), and Supabase MFA — Brad
+  confirmed **AWS only**, so the bullet says "our hosting console", not "all
+  systems". Age floor set to **16**; this MUST be reconciled with the App Store /
+  Play age rating, which is not in the repo.
+- **⚠ INSPECTOR BRAD FOUND THE BIGGEST GAP, and it was the opposite of
+  over-claiming: the policy disclosed AI on PHOTOS ONLY.** Five further Bedrock
+  paths are live and were undisclosed — `/nutrition/ai/estimate-text`,
+  `/resolve-ingredient`, `/estimate-recipe`, the Loadout remap, and worst,
+  `POST /trainers/me/clients/:id/ai-summary`, which sends a client's first name,
+  weight/goal weight, PRs and 28-day adherence to Bedrock **and persists the
+  generated narrative** in `client_ai_summaries`. Art 13(1)(c)/(e) gap on
+  special-category data. §5 is now "AI features and what they do with your data"
+  with all five paths, and the coach summary is called out as the one output that
+  IS stored.
+  - **Sub-finding I nearly shipped:** I first wrote that the summary is deleted
+    "when the coaching relationship ends". It isn't —
+    `relationships/endCoachClientRelationship.ts` deletes ONLY
+    `programAssignments` + `workoutAssignments`. The row survives teardown;
+    access is cut by the relationship-status gate. Wording corrected.
+- Other IB fixes: transaction retention is now "**at least** six years" with the
+  real payload described (billing email, card type/last4 — the column is the whole
+  webhook event, not just id + plan); the 12-month claims softened to periodic
+  removal since nothing schedules the prune; geography unified on "UK or EEA
+  regions"; the cookies section's sign-in clause dropped (**packages/web has no
+  auth at all** — `Login.tsx` is a placeholder, the only browser storage is the
+  theme key); "restore by signing back in" corrected to require the confirm that
+  calls `POST /account/restore`; ⚠ pointer comments added on `photoUrl` in
+  `mealsCreateHandler` / `recipesCreateHandler`, since the not-stored claim holds
+  only because no client sets them.
+- **⚠ IB's second-order trap on the obvious prune fix:** hanging
+  `cleanup_old_health_data()` off `accountPurgeCron` will FAIL — that Lambda uses
+  the RLS-bypassing pooler where `auth.uid()` is NULL, so the function's admin
+  guard raises `Authentication required` every night. Needs a separate
+  `SECURITY DEFINER` entry point or a service-role branch in the guard first.
+- **Also flagged, not fixed:** `POST /subscriptions` is still mounted and still
+  creates live Stripe subscriptions from a `payment_method_id`. No shipping client
+  calls it, so "we never see or hold your card details" stays literally true (it
+  takes a token), but the endpoint is warm — so "historic subscriptions" is a
+  statement of intent, not of what the API can do.
+- **⚠ MY OWN FIX FOR THAT INTRODUCED A NEW FALSE CLAIM, caught on the re-sweep:**
+  I wrote "Recipes from a photo **or link**" into the AI section. The link path
+  has **no AI at all** — `recipesImportHandler` is deterministic Schema.org
+  `ld+json` scraping ("no AI fallback (Conflict C3)"), and `grep -ril
+  "bedrock|anthropic" recipes/` is empty — AND `recipes.source_url` **is
+  persisted**, so the blanket "not stored" sentence was false for it too. Wrong
+  in both directions at once. Now a separate "Importing a recipe from a link"
+  subsection: no AI, our servers fetch the page so the destination site sees a
+  request from US not the user (an outbound-processing fact the policy had never
+  mentioned), and the stored link is carved out of the not-stored sentence.
+  **LESSON: broadening a disclosure is not automatically safer — a too-wide claim
+  is as inaccurate as a too-narrow one.**
+- Also from the re-sweep: coach↔client teardown is a SOFT end and re-accepting
+  **revives the same relationship row**, so every `client_ai_summaries` row from
+  the previous cycle becomes readable again (keyed `(trainer_id, client_id,
+  covers_date)`, never deleted on teardown). Policy now says so. The alternative —
+  deleting those rows in the teardown transaction, which already runs deletes —
+  is a behaviour change and deliberately NOT in this PR.
+- Added `packages/web/src/pages/__tests__/Privacy.test.tsx` — the hosted copy, the
+  higher-exposure one, had NO tests while the in-app copy had nine. Review was the
+  only parity control, and review is exactly what failed and produced the
+  divergence. Two assertions mutation-checked (reverted, watched fail, restored).
+  The suites are now symmetric — the loose-retention assertions exist on BOTH
+  sides, because tightening "at least six years" or "periodically" is precisely
+  the edit that re-creates the false claim. The heading inventory earned its keep
+  immediately: it caught a stale web assertion left behind when the recipe bullet
+  was renamed.
+- Gates: prettier, typecheck (8/8), lint (0 errors), 11 presenter + 23 web page +
+  90 meals/recipes handler tests green. Hosted page verified rendering in the
+  browser. **The in-app screen was NOT device-verified** — the worktree can't boot
+  the app (`.env` is gitignored and `EXPO_PUBLIC_SUPABASE_*` wouldn't inline even
+  after a cache-clear). Residual risk is only "does a taller ScrollView scroll",
+  with byte-identical styles on a screen that already scrolled.
+
 **2026-08-02 — PR [#339](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/339)
 REBASED onto `main` @ `c7ad458`, given the Inspector Brad sweep it had never had,
 Brad's two device-QA reports root-caused, and MERGED. IB clean @ `61698f8`, all
