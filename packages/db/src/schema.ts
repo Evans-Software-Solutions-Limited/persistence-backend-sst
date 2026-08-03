@@ -489,6 +489,15 @@ export const subscriptionTiers = pgTable("subscription_tiers", {
   // spec-21 § 9.1. The `loadout` EntitlementFeature gate itself is a
   // later Phase-0 slice; this column just carries the flag.
   loadoutAccess: boolean("loadout_access").notNull().default(false),
+  // Gates Mealprint (spec-26 § 3) via the `meal_ai` EntitlementFeature. Added
+  // by supabase/migrations/20260803120200_mealprint_access.sql.
+  //
+  // ⚠ Deliberately NOT a synonym for `loadoutAccess`: this is TRUE for
+  // `premium_plus` only, whereas `loadoutAccess` is also true for all three
+  // trainer tiers. Mealprint has no coach surface in v1, so granting it to a
+  // £14.99 trainer tier would widen the known Loadout price hole for no
+  // product benefit — the migration carries the full rationale.
+  mealprintAccess: boolean("mealprint_access").notNull().default(false),
   isActive: boolean("is_active").default(true),
   stripePriceIdMonthly: text("stripe_price_id_monthly"),
   stripePriceIdYearly: text("stripe_price_id_yearly"),
@@ -1980,6 +1989,19 @@ export const foods = pgTable(
     // a flat 100 g. Nullable: OFF often omits it, and pre-existing seeded rows
     // are null (Serving tab falls back to serving_size for those).
     servingQuantity: numeric("serving_quantity"),
+    // Mealprint (spec-26 § 2.1) — OFF tag arrays, added by
+    // supabase/migrations/20260803120000_foods_mealprint_tags.sql.
+    //
+    // ⚠ NULL MEANS UNKNOWN, AND UNKNOWN IS NEVER SAFE. `avoidanceFilter`
+    // excludes a row with NULL `allergenTags` from every allergen-filtered pool
+    // (AC 2.2) — a user food or an AI-recognised food has no OFF tags and must
+    // not be offered to someone avoiding peanuts on the strength of its name.
+    // Do NOT `.notNull().default([])` these: an empty array means "verified to
+    // contain none of the 14 allergens", which is a materially different and
+    // far stronger claim than "we don't know".
+    allergenTags: text("allergen_tags").array(),
+    categoryTags: text("category_tags").array(),
+    localeTags: text("locale_tags").array(),
     // 'user' | 'openfoodfacts' | 'ai_recognized'
     source: text("source").notNull().default("user"),
     createdBy: uuid("created_by").references(() => profiles.id),
@@ -2135,6 +2157,87 @@ export const nutritionTargets = pgTable("nutrition_targets", {
   setByUserId: uuid("set_by_user_id").references(() => profiles.id),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 });
+
+/**
+ * Mealprint (spec-26 § 2.2) — one row per user, upsert semantics like
+ * `nutritionTargets`. Read by EVERY Mealprint generation, so the live values
+ * always govern (AC 1.3); nothing snapshots them except an accepted plan.
+ *
+ * Created by supabase/migrations/20260803120100_nutrition_preferences.sql, which
+ * also carries CHECK constraints on `dietaryPatterns`, `avoidAllergens`,
+ * `mealsPerDay` and `effortLevel`. Drizzle cannot express those, so the
+ * vocabularies are ALSO validated in `mealprint/preferences/vocabulary.ts` —
+ * the handler check names the offending value in a 400, the DB constraint is the
+ * backstop that stops an unknown pattern being stored at all. An unknown pattern
+ * would be silently ignored by `avoidanceFilter`, i.e. a user who chose "vegan"
+ * gets meat.
+ */
+export const nutritionPreferences = pgTable("nutrition_preferences", {
+  userId: uuid("user_id")
+    .primaryKey()
+    .references(() => profiles.id, { onDelete: "cascade" }),
+  // NOT NULL DEFAULT '{}' on every array — a nullable exclusion list would give
+  // two encodings of "nothing avoided", and a null reaching the filter reads as
+  // "no filter", which is the unsafe direction.
+  dietaryPatterns: text("dietary_patterns")
+    .array()
+    .notNull()
+    .default(sql`'{}'`),
+  avoidAllergens: text("avoid_allergens")
+    .array()
+    .notNull()
+    .default(sql`'{}'`),
+  avoidFoods: text("avoid_foods")
+    .array()
+    .notNull()
+    .default(sql`'{}'`),
+  likedFoods: text("liked_foods")
+    .array()
+    .notNull()
+    .default(sql`'{}'`),
+  mealsPerDay: integer("meals_per_day").notNull().default(4),
+  effortLevel: text("effort_level").notNull().default("balanced"),
+  locale: text("locale").notNull().default("en-GB"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+/**
+ * Mealprint (spec-26 AC 7.2) — append-only "hard to find near me" signal. No UI
+ * reads it; the user-visible effect of that tap is the
+ * `nutritionPreferences.avoidFoods` append. This table exists for the aggregate
+ * catalogue-curation backlog, so a lost row is harmless.
+ */
+export const mealprintIngredientFeedback = pgTable(
+  "mealprint_ingredient_feedback",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    // Both nullable, with a DB CHECK requiring at least one: the affordance sits
+    // on catalogue ingredients (which have an id) and on AI-composed ones (which
+    // may only have a name).
+    foodId: uuid("food_id").references(() => foods.id, {
+      onDelete: "set null",
+    }),
+    customName: text("custom_name"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index("mealprint_ingredient_feedback_food_idx").on(t.foodId),
+    index("mealprint_ingredient_feedback_user_created_idx").on(
+      t.userId,
+      t.createdAt.desc(),
+    ),
+  ],
+);
 
 export const waterLog = pgTable(
   "water_log",

@@ -3,15 +3,22 @@ import { subscriptionTiers } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
 
 /**
- * The catalog-read shape: every `subscription_tiers` column EXCEPT
- * `loadout_access`, which `listActive` deliberately does not project (see
- * the comment there — it keeps this public endpoint readable on a
- * database that hasn't had the M19-P0 migration applied yet). Add a
- * column here only once something actually reads it.
+ * The catalog-read shape: every `subscription_tiers` column EXCEPT the
+ * entitlement flags `loadout_access` and `mealprint_access`, which `listActive`
+ * deliberately does not project (see the comment there — it keeps this public
+ * endpoint readable on a database that hasn't had the young migrations applied
+ * yet). Add a column here only once something actually reads it.
+ *
+ * ⚠ The `Omit` is what makes the guard hold. Adding a column to `schema.ts`
+ * widens `$inferSelect`, so WITHOUT the omission the compiler starts demanding
+ * the new column here and the obvious "fix" is to project it — quietly coupling
+ * an unauthenticated endpoint to the migration state. `mealprint_access` was
+ * added to this list for exactly that reason: the typecheck error it produced
+ * pointed the wrong way.
  */
 export type SubscriptionTierRow = Omit<
   typeof subscriptionTiers.$inferSelect,
-  "loadoutAccess"
+  "loadoutAccess" | "mealprintAccess"
 >;
 
 /**
@@ -50,9 +57,19 @@ export class SubscriptionTiersRepository {
     // signed in or not — "Failed to Load Subscription Options".
     //
     // Listing the columns the wire mapper actually reads makes the deploy
-    // order safe in that direction. `loadout_access` is intentionally NOT
-    // projected: nothing reads it yet (the `loadout` entitlement gate is a
-    // later slice), so the catalog must not require it to exist.
+    // order safe in that direction. `loadout_access` and `mealprint_access` are
+    // intentionally NOT projected: nothing on this public path reads either
+    // (their entitlement gates read them directly, from
+    // `assertEntitlement`'s own narrowly-scoped queries), so the catalog must
+    // not require them to exist.
+    //
+    // ⚠ The reason is the MIGRATE-THEN-DEPLOY WINDOW, not a manual apply. An
+    // earlier version of this comment said "both migrations are hand-applied in
+    // production", which contradicts STATE.md § Verified facts — production
+    // migrations run automatically from `production-deploy.yml`. The split-out
+    // read is still right: migrations run BEFORE `sst deploy`, so the risk is a
+    // Lambda from the previous release briefly serving against the new schema
+    // (and, on any rollback, the reverse).
     const rows = await db
       .select({
         id: subscriptionTiers.id,

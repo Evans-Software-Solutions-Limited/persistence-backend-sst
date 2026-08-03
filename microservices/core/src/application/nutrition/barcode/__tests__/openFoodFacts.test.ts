@@ -9,6 +9,10 @@ const product = {
   product_name: "Porridge Oats",
   brands: "Quaker, PepsiCo",
   serving_quantity: 40,
+  allergens_tags: ["en:gluten"],
+  categories_tags: ["en:breakfast-cereals"],
+  countries_tags: ["en:united-kingdom"],
+  ingredients_text: "Wholegrain rolled oats",
   nutriments: {
     "energy-kcal_100g": 379,
     proteins_100g: 11,
@@ -38,7 +42,33 @@ describe("mapOffProduct", () => {
       servingSize: 100,
       servingUnit: "g",
       servingQuantity: 40,
+      allergenTags: ["en:gluten"],
+      categoryTags: ["en:breakfast-cereals"],
+      localeTags: ["en:united-kingdom"],
     });
+  });
+
+  // Mealprint (spec-26 § 2.1). The live resolve path WRITES `foods` rows, so it
+  // has to carry tags for the same reason the bulk seed does — otherwise every
+  // barcode a user scans lands unknown and is excluded from allergen-filtered
+  // candidate pools. It reuses `offMapper`'s functions so the two paths cannot
+  // drift on the null-vs-empty encoding.
+  it("maps an un-analysed product to NULL allergen tags, not empty", () => {
+    const out = mapOffProduct("123", {
+      ...product,
+      allergens_tags: undefined,
+      ingredients_text: undefined,
+    });
+    expect(out?.allergenTags).toBeNull();
+  });
+
+  it("maps an analysed, allergen-free product to []", () => {
+    const out = mapOffProduct("123", {
+      ...product,
+      allergens_tags: [],
+      ingredients_text: "Chicken breast (100%)",
+    });
+    expect(out?.allergenTags).toEqual([]);
   });
 
   it("returns null when no energy figure is present (can't persist NOT NULL kcal)", () => {

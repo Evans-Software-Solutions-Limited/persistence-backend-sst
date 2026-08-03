@@ -200,6 +200,9 @@ describe("FoodRepository", () => {
           servingSize: 100,
           servingUnit: "g",
           servingQuantity: 220,
+          allergenTags: ["en:gluten"],
+          categoryTags: ["en:breakfast-cereals"],
+          localeTags: ["en:united-kingdom"],
           source: "openfoodfacts",
         },
       ]);
@@ -226,6 +229,91 @@ describe("FoodRepository", () => {
       expect(renderedSet.sql).toContain("serving_quantity");
     });
 
+    // ⚠ These three lines ARE the Mealprint backfill (spec-26 § 2.1). The tag
+    // columns land NULL on all ~144k already-seeded rows and the values exist
+    // only in the OFF dump, so the ONLY route to populating them is re-running
+    // the seed and having the conflict branch refresh them. Drop them from the
+    // `set` and the re-seed becomes a silent no-op, leaving every curated food
+    // permanently excluded from allergen-filtered candidate pools — a failure
+    // that presents as "Mealprint can't find anything I can eat" and points
+    // nowhere near here.
+    it("carries the Mealprint tag columns on insert AND refreshes them on conflict", async () => {
+      const onConflictDoUpdate = vi.fn().mockResolvedValue(undefined);
+      const valuesSpy = vi.fn().mockReturnValue({ onConflictDoUpdate });
+      (getDb as any).mockReturnValue({
+        insert: vi.fn().mockReturnValue({ values: valuesSpy }),
+      });
+      await new FoodRepository().upsertManyFromOff([
+        {
+          barcode: "123",
+          name: "Oats",
+          brand: "Quaker",
+          kcal: 379,
+          proteinG: 13,
+          carbsG: 67,
+          fatG: 8,
+          servingSize: 100,
+          servingUnit: "g",
+          servingQuantity: 220,
+          allergenTags: ["en:gluten"],
+          categoryTags: ["en:breakfast-cereals"],
+          localeTags: ["en:united-kingdom"],
+          source: "openfoodfacts",
+        },
+      ]);
+
+      const inserted = valuesSpy.mock.calls[0][0][0];
+      expect(inserted.allergenTags).toEqual(["en:gluten"]);
+      expect(inserted.categoryTags).toEqual(["en:breakfast-cereals"]);
+      expect(inserted.localeTags).toEqual(["en:united-kingdom"]);
+
+      const conflict = onConflictDoUpdate.mock.calls[0][0];
+      for (const [field, column] of [
+        ["allergenTags", "allergen_tags"],
+        ["categoryTags", "category_tags"],
+        ["localeTags", "locale_tags"],
+      ] as const) {
+        expect(conflict.set[field], field).toBeDefined();
+        // Rendered, not merely present: `getDb` is mocked, so a typo'd column
+        // name in the raw `excluded.…` fragment would never reach Postgres in a
+        // unit test (the mocked-getDb blind spot).
+        const rendered = new PgDialect().sqlToQuery(conflict.set[field] as any);
+        expect(rendered.sql, field).toContain(`excluded.${column}`);
+      }
+    });
+
+    it("writes a NULL allergenTags through as SQL NULL, not an empty array", async () => {
+      // The two encodings mean opposite things (`offMapper.mapOffAllergenTags`),
+      // and the repository must not normalise one into the other on its way past.
+      const onConflictDoUpdate = vi.fn().mockResolvedValue(undefined);
+      const valuesSpy = vi.fn().mockReturnValue({ onConflictDoUpdate });
+      (getDb as any).mockReturnValue({
+        insert: vi.fn().mockReturnValue({ values: valuesSpy }),
+      });
+      await new FoodRepository().upsertManyFromOff([
+        {
+          barcode: "555",
+          name: "Unanalysed Thing",
+          brand: null,
+          kcal: 100,
+          proteinG: 1,
+          carbsG: 2,
+          fatG: 3,
+          servingSize: 100,
+          servingUnit: "g",
+          servingQuantity: null,
+          allergenTags: null,
+          categoryTags: null,
+          localeTags: null,
+          source: "openfoodfacts",
+        },
+      ]);
+      const inserted = valuesSpy.mock.calls[0][0][0];
+      expect(inserted.allergenTags).toBeNull();
+      expect(inserted.categoryTags).toBeNull();
+      expect(inserted.localeTags).toBeNull();
+    });
+
     it("persists a null servingQuantity when OFF omits the serving", async () => {
       const onConflictDoUpdate = vi.fn().mockResolvedValue(undefined);
       const valuesSpy = vi.fn().mockReturnValue({ onConflictDoUpdate });
@@ -244,6 +332,9 @@ describe("FoodRepository", () => {
           servingSize: 100,
           servingUnit: "g",
           servingQuantity: null,
+          allergenTags: ["en:gluten"],
+          categoryTags: ["en:breakfast-cereals"],
+          localeTags: ["en:united-kingdom"],
           source: "openfoodfacts",
         },
       ]);

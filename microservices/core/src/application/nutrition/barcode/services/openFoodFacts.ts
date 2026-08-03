@@ -13,13 +13,24 @@
  */
 
 import { kcalFromOffNutriments } from "../../services/offEnergy";
+import { mapOffAllergenTags, normaliseOffTags } from "../../services/offMapper";
 
 const OFF_BASE = "https://world.openfoodfacts.org/api/v2/product";
 // `serving_quantity` is the real per-serving size in grams (drives the scan
 // sheet's Serving tab); `energy-kj_100g` backs the kJ→kcal fallback for
 // kcal-less products (see kcalFromOffNutriments).
+//
+// ⚠ The four Mealprint fields (spec-26 § 2.1) are requested here as well as in
+// the bulk seed, because this path also WRITES `foods` rows — a live barcode
+// resolve is a cache fill. Omitting them would mean every food a user scanned
+// landed with NULL tags, i.e. permanently excluded from allergen-filtered
+// candidate pools, which is the shelf a scanning user is most likely to want
+// back. `ingredients_text` is requested but never stored: it is the only way to
+// tell "analysed, no allergens" from "never analysed" (see
+// `offMapper.mapOffAllergenTags`).
 const OFF_FIELDS =
-  "product_name,brands,nutriments,serving_quantity,serving_size";
+  "product_name,brands,nutriments,serving_quantity,serving_size," +
+  "allergens_tags,categories_tags,countries_tags,ingredients_text";
 const TIMEOUT_MS = 8000;
 // ODbL + politeness: a descriptive UA is mandatory; a generic/missing one gets
 // throttled or blocked by OFF.
@@ -45,6 +56,15 @@ export type ResolvedFood = {
   servingUnit: string;
   /** Real pack serving (grams) from OFF `serving_quantity`; null when absent. */
   servingQuantity: number | null;
+  /**
+   * Mealprint (spec-26 § 2.1). `null` = UNKNOWN, which `avoidanceFilter` treats
+   * as unsafe; `[]` = OFF analysed an ingredient list and found none of the 14
+   * regulated allergens. Mapped by the SAME functions the bulk seed uses, so the
+   * live and bulk paths cannot drift on a safety-relevant encoding.
+   */
+  allergenTags: string[] | null;
+  categoryTags: string[] | null;
+  localeTags: string[] | null;
 };
 
 export type ResolveResult =
@@ -74,6 +94,10 @@ export function mapOffProduct(
     brands?: string;
     nutriments?: OffNutriments;
     serving_quantity?: number | string;
+    allergens_tags?: string[];
+    categories_tags?: string[];
+    countries_tags?: string[];
+    ingredients_text?: string;
   },
 ): ResolvedFood | null {
   const n = product.nutriments ?? {};
@@ -92,6 +116,9 @@ export function mapOffProduct(
     servingUnit: "g",
     // Only a positive serving is meaningful; 0 / negative / absent → null.
     servingQuantity: sq !== null && sq > 0 ? sq : null,
+    allergenTags: mapOffAllergenTags(product),
+    categoryTags: normaliseOffTags(product.categories_tags),
+    localeTags: normaliseOffTags(product.countries_tags),
   };
 }
 
@@ -130,6 +157,10 @@ export async function resolveBarcodeFromOFF(
       brands?: string;
       nutriments?: OffNutriments;
       serving_quantity?: number | string;
+      allergens_tags?: string[];
+      categories_tags?: string[];
+      countries_tags?: string[];
+      ingredients_text?: string;
     };
   };
   try {

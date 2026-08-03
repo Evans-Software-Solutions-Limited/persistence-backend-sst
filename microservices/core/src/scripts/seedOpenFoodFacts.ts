@@ -12,7 +12,9 @@
  *   1. Download the OFF Parquet dump (https://world.openfoodfacts.org/data).
  *   2. Filter to the curated slice with DuckDB, e.g.:
  *        duckdb -c "COPY (
- *          SELECT code, product_name, brands, countries_tags, nutriments,
+ *          SELECT code, product_name, brands, countries_tags,
+ *                 allergens_tags, categories_tags, ingredients_text,
+ *                 nutriments,
  *                 TRY_CAST(serving_quantity AS DOUBLE) AS serving_quantity
  *          FROM 'food.parquet'
  *          WHERE code IS NOT NULL
@@ -22,6 +24,19 @@
  *   3. DATABASE_URL=... bun run microservices/core/src/scripts/seedOpenFoodFacts.ts off-uk.jsonl
  *
  * Idempotent: re-running refreshes existing rows (upsert on barcode).
+ *
+ * ⚠ **Mealprint (spec-26) requires a RE-RUN of this seed, and the three tag
+ * columns in the projection above are why.** `allergens_tags`,
+ * `categories_tags` and `ingredients_text` were added to the SELECT for
+ * spec-26; a run using the OLD projection maps every tag column to NULL, and
+ * `avoidanceFilter` treats a NULL `allergen_tags` as unknown-and-therefore-
+ * unsafe. So an out-of-date projection does not merely skip an enrichment — it
+ * leaves ~144k curated foods excluded from every allergen-filtered candidate
+ * pool, which presents to the user as "Mealprint can't find anything I can eat".
+ *
+ * `ingredients_text` is read but never stored: it is the only way to tell
+ * "OFF analysed the ingredients and found no allergens" (→ `[]`) from "nobody
+ * ever entered ingredients" (→ NULL). See `offMapper.mapOffAllergenTags`.
  */
 
 import { createReadStream } from "node:fs";

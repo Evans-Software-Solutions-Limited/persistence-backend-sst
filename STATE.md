@@ -38,8 +38,90 @@ go), not the calendar" — and no pilot is recorded. If revenue timing starts to
 bite, the separable piece is M21: Loadout Phase 4 + Mealprint alone close the
 "paywall promises what it cannot deliver" gap, which is the launch-blocking half.
 
-**Step 0 (the shared async-job spine) is SHIPPED as of 2026-08-03.** Phase 4,
-Mealprint and M21 remain zero code. See § Next plan of action.
+**Step 0 (the shared async-job spine) is SHIPPED as of 2026-08-03**, and
+**spec-26 Mealprint's BACKEND (Phase 0 + Phase 1) shipped the same day** — see
+§ Mealprint below. Phase 4 and M21 remain zero code; Mealprint's MOBILE half
+(tasks 0.6, 1.5) is also still zero code. See § Next plan of action.
+
+### spec-26 Mealprint — BACKEND SHIPPED 2026-08-03, MOBILE NOT BUILT
+
+Branch **`feat/mealprint-phase-0-1`**, three commits, **NOT a PR yet and NOT
+merged**: `76596e7d` (Phase 0), `863e40d4` (Phase 1), `52b93df0` (Inspector Brad
+fixes). Off `main` @ `14b6a1eb`.
+
+**Built (T-0.1…0.5, T-1.1…1.4):** `foods.allergen_tags/category_tags/locale_tags`
++ GIN indexes; `nutrition_preferences` + `mealprint_ingredient_feedback`;
+`subscription_tiers.mealprint_access`; `GET`/`PUT /nutrition/preferences`;
+`avoidanceFilter`; the four-stage suggestion pipeline behind
+`POST /nutrition/ai/meal-suggest`; `meal_ai` entitlement; `AI_MEAL_MODEL_ID` +
+`AI_MEAL_SUGGEST_DAILY_LIMIT: "20"` in `infra/api.ts`.
+
+**⚠ NOT built: T-0.6 and T-1.5 — the entire MOBILE half.** No port method, no
+adapter, no screen. Nothing in `packages/mobile` calls either endpoint, so
+Mealprint is not user-reachable. That is PR 2 on this branch and it is the
+larger, riskier half: a preferences wizard + editor with the allergen chip set
+and its legally-reviewed disclaimer copy, the Fuel entry card, and the suggest
+sheet with draft-confirm. It needs a device pass. Reference: spec-26 design § 4;
+`useLoadoutGate.ts` is the gate-hook template (note `mealprint_access` is
+premium_plus ONLY, so its tier mirror differs) and `SnapAISheetContainer` is the
+root-mounted-sheet template.
+
+**⚠ Three things must happen before this feature works at all:**
+
+1. **The `foods` tag backfill is a RE-SEED, not an UPDATE.** Tag values exist
+   only in the OFF dump. Run `seedOpenFoodFacts.ts` with the widened DuckDB
+   projection in that file's header. Until then all ~144k curated rows are
+   unknown-allergen and excluded from every allergen-filtered pool, which
+   presents as "Mealprint can't find anything I can eat".
+2. **Three migrations, and they apply AUTOMATICALLY — do not hand-apply**
+   (`20260803120000`, `20260803120100`, `20260803120200`). Staging applies on
+   merge to `main`; production applies on `release: published`, before
+   `sst deploy`. ⚠ The first drafts of two of these files' headers claimed a
+   manual apply, contradicting § Verified facts. Corrected — but it is the second
+   time this repo has confused "not applied yet" with "applied by hand", so
+   check `production-deploy.yml` rather than a comment.
+3. **Bedrock**: `AI_MEAL_MODEL_ID` reuses the Loadout re-map's Haiku 4.5 id, so
+   it is already granted in both accounts. No IAM change.
+
+**Decisions taken in this slice — do not re-litigate:**
+
+- **`mealprint_access` → `premium_plus` ONLY**, deliberately unlike
+  `loadout_access`. No coach surface in v1 (coach meal plans are explicitly out
+  of scope), and `individual_trainer` is already the most cost-exposed tier at
+  ~212 % of net — repeating the known £14.99-vs-£29.99 Loadout price hole would
+  cost money for nothing.
+- **This exposed a real upsell bug.** `pickUpgradeTier`'s role branch assumed
+  every Premium+ feature is also granted to trainer tiers — true of `loadout`,
+  false of `meal_ai`. A denied coach would have been sold `individual_trainer`
+  and stayed locked out, which is the pay-and-stay-locked-out failure its own
+  docstring says the required `feature` param exists to prevent.
+  `PREMIUM_PLUS_ONLY_FEATURES` now beats the role branch.
+- **Retrieval ordering is protein density.** The catalogue cannot be fetched
+  whole, so something must pick which 600 rows the model sees. A product
+  judgement, deterministic on purpose so it can be measured rather than argued
+  about. **If suggestion quality disappoints, measure this first.**
+- **Empty states are 200s with an `emptyReason`**, not errors, and none consumes
+  the daily ceiling.
+
+**⚠ Two lessons from the Inspector Brad sweeps, both worth carrying forward:**
+
+- **An allergen tag's SILENCE is not evidence of absence.** `allergen_tags = []`
+  is true of a partially-tagged OFF row, and OFF's tagging is routinely partial.
+  A fix that let usable allergen tags suppress the CATEGORY channel served
+  `Fishermans Pie`/`["en:milk"]`/`["en:fish-pies"]` to a vegetarian, reported as
+  verified — and a test had already pinned that as intended. Independent evidence
+  channels must not gate each other.
+- **A NULL Postgres predicate EXCLUDES the row.**
+  `NOT (allergen_tags && ARRAY[…])` is NULL for an untagged row, so a
+  pattern-only user had every untagged row silently dropped in SQL while the JS
+  filter would have kept it. Any `&&`/`@>` exclusion over a nullable array needs
+  an explicit `IS NULL OR`.
+
+**Gates:** prettier + eslint (0 errors), full-workspace typecheck 8/8, build
+13/13, `vitest run src/application` 306 files / 3663 tests. `avoidanceFilter`
+alone is 86 tests. 🕵️ Inspector Brad local: 2 sweeps + 1 closed verification, 14
+findings, all fixed. **@inspector-brad CI NOT fired.** NOT device-verified and
+never exercised against real Bedrock.
 
 ## Superseded state (2026-07-31)
 
@@ -203,6 +285,44 @@ Mealprint and M21 remain zero code. See § Next plan of action.
   screens (T-2.2…T-2.9, T-3.4) are what make the feature exist for a user, and they
   are the NEXT slice — to be reviewed in a local dev build against the staging
   backend (Brad, 2026-07-27).
+
+### Releasing an additive migration alongside an OFF re-seed — checked 2026-08-03
+
+Brad asked, before releasing spec-26's three migrations to production, whether the
+**already-shipped mobile build** would break. It does not, and the reasoning
+generalises to any future additive migration, so it is recorded rather than
+re-derived:
+
+1. **Additive DDL is safe under migrate-then-deploy.** `production-deploy.yml`
+   migrates BEFORE `sst deploy`, so the previous release's Lambda briefly serves
+   against the new schema. `ADD COLUMN` / `CREATE TABLE` / `CREATE INDEX` are all
+   fine there. A drop or rename is NOT, and still needs expand/contract across two
+   releases.
+2. **Drizzle's bare `select()` expands from the caller's OWN `schema.ts`,** so an
+   old Lambda never names a column it does not know about. This is why the window
+   is safe in the forward direction — and why the REVERSE (new code, old database)
+   is the dangerous one.
+3. **⚠ The wire shape is what actually matters to a shipped app, and an explicit
+   DTO mapper is what protects it.** All four `foods` reads are bare `select()`, so
+   the three new tag columns would have started appearing in API responses — except
+   `toFoodDTO` maps field by field and does not include them. Every
+   `subscription_tiers` read projects explicitly too, and `listActive()` omits
+   `mealprint_access`. **When adding a column, grep for the DTO mapper, not just
+   the query.**
+4. **Denormalised macros are why a re-seed cannot rewrite history.**
+   `nutrition_entries` stores `kcal`/`protein_g`/`carbs_g`/`fat_g` at write time,
+   and `recipes`/`meals` totals are materialised on write — so refreshing ~144k
+   catalogue rows from a newer OFF dump does not retroactively change anyone's
+   logged days.
+
+⚠ **ORDER: release first, then re-seed.** The seed script writes `allergen_tags`,
+so running it before the migration lands fails with Postgres 42703 on every batch.
+Harmless but wasted.
+
+💡 A re-seed is not a novel operation — the daily OFF delta cron already upserts
+these rows through the same code path. And if the cron fires mid-backfill from the
+OLD Lambda, its `onConflictDoUpdate` set does not list the tag columns, so it
+cannot null out work in progress.
 
 ## Verified facts
 
@@ -380,6 +500,51 @@ T-1.9 — no doc still describes these as open.
   floor, not fallbacks), whereas the re-map has no alternative path. Revisit if
   § 8.1's 640 px downscale is ever measured.
 
+### ⚠ OPEN BRAD DECISION, GATES PRODUCTION — how coaches get Premium+ (2026-08-03)
+
+**Brad, 2026-08-03: "premium plus needs reviewing on how we give it to coaches,
+alongside the ability to train as we have a bit of a pricing dilemma here (maybe
+we sell it as a way to upgrade their membership), but before we go live in
+production with this, we need review this approach."**
+
+A **go-live gate**, not a background nicety — and it must be decided as ONE
+question rather than per-feature, because the two adaptive-suite flags currently
+answer it in opposite directions:
+
+| flag | premium_plus | trainer tiers | decided by |
+| --- | --- | --- | --- |
+| `loadout_access` | ✅ | ✅ all three | Brad 2026-07-27, "live with it for now" |
+| `mealprint_access` | ✅ | ❌ none | Claude 2026-08-03, this slice |
+
+Neither is obviously right, which is the dilemma:
+
+- **Granting trainer tiers the suite** (Loadout's answer) means a coach gets at
+  £14.99 what an athlete pays £29.99 for. `individual_trainer` is already the
+  most cost-exposed tier at ~212 % of net at saturated ceilings; adding
+  Mealprint's ~£7/mo would make the worst tier materially worse.
+- **Withholding it** (Mealprint's answer) is coherent on cost and on scope — no
+  coach surface exists in v1 — but coaches ARE athletes too, and telling a paying
+  coach to buy a second consumer subscription to plan their own eating is a bad
+  product answer. It also breaks the "role beats feature" upsell rule and needed
+  `PREMIUM_PLUS_ONLY_FEATURES` so they are not sold a tier that stays locked.
+
+**Brad's own steer is the third option: sell it as an UPGRADE to their coach
+membership** — a coach add-on rather than folding the suite into the trainer tiers
+wholesale. Nothing is built for that, and it is worth recording what it would
+need before it can be costed: a purchasable coach-facing SKU in ASC +
+RevenueCat, a catalog representation (either new tier rows like
+`individual_trainer_plus`, or a separate entitlement the webhook grants alongside
+a trainer tier), and a decision on whether Loadout Phase 4's coach programme
+adaptation rides on the base trainer tier or on the upgrade.
+
+⚠ **Do not flip `premium_plus.is_active` (T-P0.10) before this is settled.** The
+paywall's tier set and the coach upsell path both depend on the answer, and
+repricing or re-scoping after real subscribers exist is the expensive version.
+
+⚠ **Nothing shipped is hard to change** — both flags are catalog columns and the
+upsell is one set in `assertEntitlement`. Deferring the decision is cheap;
+shipping the wrong one to paying users is not.
+
 ### ⚠ The Lambda timeout was 20s, not 30s — FIXED, and it had bitten Snap AI already
 
 **`coreAPI.route("$default", …)` set no `timeout`, and SST defaults a function to 20
@@ -539,11 +704,14 @@ anything near the claim. Also worth carrying forward: the break was in `infra/`,
 which has NEITHER typecheck NOR tests, and CI gates say nothing about whether
 `infra/` will apply.
 
-**1. spec-26 Mealprint — NEXT.** Fully specced, **all six checkpoints RESOLVED by Brad
-2026-07-24** (branding, Premium+ hard gate with no taster, ceilings 20/5/10, the
-marketing-site reprice to £29.99, the UK FIC-14 allergen vocabulary, and week
-plans + shopping list IN v1). 0 of ~23 tasks built. P0 (the tier restructure) is
-already done and free to consume.
+**1. spec-26 Mealprint — BACKEND PHASES 0 + 1 SHIPPED 2026-08-03** (§ spec-26
+Mealprint above). 9 of ~23 tasks built, all backend.
+
+⚠ **The immediate next slice is Mealprint's MOBILE half (T-0.6, T-1.5)** — PR 2
+on `feat/mealprint-phase-0-1`. Without it nothing calls either endpoint and the
+feature does not exist for a user. Then Phase 2 (day plans), then Phase 3 (week
+plans, which is where the async-job spine gets consumed — and where the staging
+Lambda quota becomes a hard blocker, see § 0).
 
 **2. Loadout Phase 4 — coach programme adaptation.** T-4.1…T-4.5. Needs the
 programme-linkage migration (`parent_program_id`, `variation_kind`,

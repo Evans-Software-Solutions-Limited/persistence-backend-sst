@@ -214,6 +214,25 @@ export const coreRoute = coreAPI.route("$default", {
     // failure mode is a real athlete hitting it mid-session. Mirrors
     // AI_TEXT_DAILY_LIMIT, the other Haiku-class endpoint.
     AI_LOADOUT_REMAP_DAILY_LIMIT: "30",
+    // Mealprint (spec-26 design § Model + sizing). Text-only composition over a
+    // ~200-candidate list — the same shape as the Loadout re-map, so Haiku-class,
+    // and the SAME id, which means it is known-granted in both accounts and needs
+    // no IAM change. Do NOT move it to an Opus-5 id without checking grants:
+    // `eu.anthropic.claude-opus-5` is UNGRANTED in production.
+    AI_MEAL_MODEL_ID: "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+    // 20/day — LOCKED by Brad 2026-07-24 (spec-26 requirements checkpoint 3), not
+    // provisional. At design § Cost's ~£0.006/suggest that is ~£3.60/month if an
+    // abuser consumes every one, against £29.99 gross (~£25.49 net of Apple's
+    // 15 %). Deliberately generous for the same reason as the re-map's 30: the bad
+    // failure is a real athlete hitting the cap while deciding what to eat, and a
+    // suggestion has no alternative path.
+    //
+    // ⚠ Registered HERE rather than left to the handler's code default, so the
+    // ceiling is visible to a cost audit of this block. `AI_RECIPE_ESTIMATE_DAILY_LIMIT`
+    // is the counter-example: it is unset, silently uses its code default of 30,
+    // and is therefore invisible exactly where someone would look (STATE.md
+    // § Pricing vs AI cost, action 4).
+    AI_MEAL_SUGGEST_DAILY_LIMIT: "20",
   },
 });
 

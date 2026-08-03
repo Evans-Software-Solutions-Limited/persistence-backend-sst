@@ -199,6 +199,13 @@ export class FoodRepository {
           servingUnit: r.servingUnit,
           servingQuantity:
             r.servingQuantity != null ? String(r.servingQuantity) : null,
+          // Mealprint (spec-26 § 2.1). `null` is written as SQL NULL and means
+          // UNKNOWN — never conflated with `[]`, which means OFF analysed an
+          // ingredient list and found no taxonomy allergens. `avoidanceFilter`
+          // depends on that distinction (see `mapOffAllergenTags`).
+          allergenTags: r.allergenTags,
+          categoryTags: r.categoryTags,
+          localeTags: r.localeTags,
           source: r.source,
           createdBy: null,
         })),
@@ -221,6 +228,17 @@ export class FoodRepository {
           servingSize: sql`excluded.serving_size`,
           servingUnit: sql`excluded.serving_unit`,
           servingQuantity: sql`excluded.serving_quantity`,
+          // ⚠ These three lines ARE the Mealprint backfill. The tag columns
+          // (20260803120000) land NULL on all ~144k already-seeded rows, and the
+          // values exist only in the OFF dump — so the only route to populating
+          // them is re-running the seed and having THIS branch refresh them.
+          // Omitting them here would make the re-seed a silent no-op and leave
+          // every curated food permanently excluded from allergen-filtered
+          // pools. Same shape of trap as `serving_quantity` in
+          // 20260714120000, which needed the same re-seed.
+          allergenTags: sql`excluded.allergen_tags`,
+          categoryTags: sql`excluded.category_tags`,
+          localeTags: sql`excluded.locale_tags`,
         },
       });
     return rows.length;

@@ -19,6 +19,17 @@ export type OffProduct = {
   countries_tags?: string[];
   nutriments?: Record<string, unknown>;
   serving_quantity?: number | string;
+  // ── Mealprint (spec-26 § 2.1) ──────────────────────────────────────────────
+  /** OFF `allergens_tags` — taxonomy-canonicalised where recognised ('en:milk'). */
+  allergens_tags?: string[];
+  /** OFF `categories_tags` — shopping-list grouping + dietary-pattern rules. */
+  categories_tags?: string[];
+  /**
+   * OFF `ingredients_text`. NOT stored — read ONLY to decide whether an EMPTY
+   * `allergens_tags` means "analysed, none found" or "never analysed". See
+   * {@link mapOffAllergenTags}.
+   */
+  ingredients_text?: string;
 };
 
 export type OffFoodRow = {
@@ -33,6 +44,15 @@ export type OffFoodRow = {
   servingUnit: string;
   /** Real pack serving (grams) from OFF `serving_quantity`; null when absent. */
   servingQuantity: number | null;
+  /**
+   * Mealprint (spec-26 § 2.1). `null` = UNKNOWN, which `avoidanceFilter` treats
+   * as unsafe. `[]` = OFF analysed an ingredient list and found none of the
+   * taxonomy allergens — a real, weaker-but-usable claim. See
+   * {@link mapOffAllergenTags} for why those two cases must not be conflated.
+   */
+  allergenTags: string[] | null;
+  categoryTags: string[] | null;
+  localeTags: string[] | null;
   source: "openfoodfacts";
 };
 
@@ -52,6 +72,66 @@ function finiteNumber(v: unknown): number | null {
     if (Number.isFinite(n)) return n;
   }
   return null;
+}
+
+/**
+ * Normalise one OFF tag array: trim, lowercase, drop empties, dedupe, preserve
+ * order. Returns `null` for an absent/empty input so "no tags" round-trips as
+ * SQL NULL (= unknown) rather than as an empty array.
+ *
+ * Tags are stored RAW rather than filtered to the `en:` taxonomy prefix. That is
+ * deliberate layering: dropping a `fr:lait` here would silently destroy the only
+ * evidence that a product contains milk, and this module has no business making
+ * a safety call. `avoidanceFilter` owns that decision and refuses any row
+ * carrying a tag it cannot interpret.
+ */
+export function normaliseOffTags(
+  tags: string[] | undefined | null,
+): string[] | null {
+  if (!Array.isArray(tags)) return null;
+  const seen = new Set<string>();
+  for (const tag of tags) {
+    if (typeof tag !== "string") continue;
+    const normalised = tag.trim().toLowerCase();
+    if (normalised === "") continue;
+    seen.add(normalised);
+  }
+  return seen.size > 0 ? [...seen] : null;
+}
+
+/**
+ * Allergen tags, with the one judgement call in this file.
+ *
+ * ⚠ **An empty `allergens_tags` is ambiguous in OFF and the two readings are
+ * safety-opposite.** OFF derives `allergens_tags` from the ingredient list, so:
+ *
+ *   - ingredients present + no allergen tags → "the ingredient list was analysed
+ *     and none of the 14 regulated allergens appear in it". Weak (producer text
+ *     can be wrong, cross-contamination is invisible) but a real signal, and the
+ *     mandatory label-check disclaimer (AC 1.2) covers the residual.
+ *   - **no ingredients at all** + no allergen tags → nobody ever entered
+ *     ingredient data. This says NOTHING about the product, and the vast
+ *     majority of thin OFF rows look like this.
+ *
+ * Collapsing both to `[]` would make every un-analysed row read as
+ * "allergen-free" and would hand a peanut-avoiding user products nobody has
+ * examined — precisely the failure the JAMA-cited review found in ~78 % of free
+ * nutrition apps (requirements § Market context). So the second case maps to
+ * `null` = unknown, and `avoidanceFilter` excludes it.
+ *
+ * The cost is real and worth stating: it shrinks the allergen-filtered pool to
+ * rows with ingredient data. That is the correct direction to be wrong in, and
+ * it improves for free as OFF's coverage does.
+ */
+export function mapOffAllergenTags(product: OffProduct): string[] | null {
+  const tags = normaliseOffTags(product.allergens_tags);
+  if (tags !== null) return tags;
+
+  // No tags. Distinguish "analysed, clean" from "never analysed".
+  const hasIngredientData =
+    typeof product.ingredients_text === "string" &&
+    product.ingredients_text.trim() !== "";
+  return hasIngredientData ? [] : null;
 }
 
 /**
@@ -100,6 +180,11 @@ export function mapOffProductToFood(
     servingSize: 100,
     servingUnit: "g",
     servingQuantity: sq !== null && sq > 0 ? sq : null,
+    allergenTags: mapOffAllergenTags(product),
+    categoryTags: normaliseOffTags(product.categories_tags),
+    // Reuses the SAME array the `countriesAllow` filter above reads, so a row
+    // that passed the locale filter always carries the tag that let it through.
+    localeTags: normaliseOffTags(product.countries_tags),
     source: "openfoodfacts",
   };
 }

@@ -63,6 +63,11 @@ import { getDb } from "@persistence/db/client";
  *     clients. See `evaluateTrainerClientsActiveSeat`; the invite-creation
  *     gate in `trainers/seats/trainerSeats.ts` additionally counts
  *     outstanding invitations.
+ *   - `loadout`: ENFORCED (spec-21) on `subscription_tiers.loadout_access`.
+ *   - `meal_ai`: ENFORCED (spec-26) on `subscription_tiers.mealprint_access` —
+ *     a hard Premium+ gate with NO taster (Brad 2026-07-24). Unlike
+ *     `loadout_access` the flag is granted to `premium_plus` ONLY, which is why
+ *     `PREMIUM_PLUS_ONLY_FEATURES` exists.
  *   - everything else (`ai_workout`, `gym_buddy`,
  *     `unlimited_exercise_library`): STUB — returns `{ allowed: true }`
  *     today, wired into the read path so the helper signature stabilises
@@ -76,22 +81,42 @@ export type EntitlementFeature =
   | "gym_buddy"
   | "unlimited_exercise_library"
   | "trainer_clients"
-  | "loadout";
+  | "loadout"
+  | "meal_ai";
 
 /**
  * Features that only a PREMIUM+ (or trainer) tier unlocks, as opposed to the
  * features any paid tier unlocks. Drives `pickUpgradeTier`: a `loadout` deny
  * must upsell Premium+, not Premium — upselling Premium would take the user's
  * money and still leave the feature locked.
- *
- * Trainer tiers are not listed here because they are selected by ROLE, not by
- * feature: all three already carry `loadout_access`, so the cheapest trainer
- * tier remains the right upsell for a coach.
- *
- * Spec-26 Mealprint's feature joins this set when it ships.
  */
 const PREMIUM_PLUS_FEATURES: ReadonlySet<EntitlementFeature> = new Set([
   "loadout",
+  "meal_ai",
+]);
+
+/**
+ * The subset of {@link PREMIUM_PLUS_FEATURES} that **no trainer tier grants**.
+ *
+ * ⚠ This set exists because the ROLE branch in `pickUpgradeTier` was correct
+ * only under an invariant that Mealprint breaks. That invariant, quoted from the
+ * comment this replaces: "Trainer tiers are not listed here because they are
+ * selected by ROLE, not by feature: all three already carry `loadout_access`, so
+ * the cheapest trainer tier remains the right upsell for a coach."
+ *
+ * `mealprint_access` is granted to `premium_plus` ONLY
+ * (`20260803120200_mealprint_access.sql` — Mealprint has no coach surface in v1,
+ * and granting it to a £14.99 trainer tier would widen the known Loadout price
+ * hole). So for `meal_ai` the premise fails: pointing a denied coach at
+ * `individual_trainer` would take their money and leave the feature locked —
+ * exactly the failure mode `pickUpgradeTier`'s docstring says the required
+ * `feature` parameter exists to turn into a compile error.
+ *
+ * Membership here must imply membership of {@link PREMIUM_PLUS_FEATURES}; the
+ * test suite asserts the subset relation so the two cannot drift.
+ */
+const PREMIUM_PLUS_ONLY_FEATURES: ReadonlySet<EntitlementFeature> = new Set([
+  "meal_ai",
 ]);
 
 /**
@@ -275,6 +300,17 @@ export async function assertEntitlement(
   // failure and no type error to catch it.
   if (feature === "loadout") {
     return assertLoadout(userId);
+  }
+
+  // Mealprint (spec-26 § 3) — reads `subscription_tiers.mealprint_access`.
+  //
+  // ⚠ MANDATORY ROUTING LINE, for the same reason as `loadout` above: without
+  // it, `meal_ai` falls through the catch-all below and every Mealprint endpoint
+  // becomes free for everyone, with no type error and no failing test. This is a
+  // £29.99/mo gate on a feature whose per-user ceiling cost is ~£7/mo, so the
+  // silent-allow failure is directly expensive.
+  if (feature === "meal_ai") {
+    return assertMealprint(userId);
   }
 
   // Remaining stub features (`ai_workout`, `gym_buddy`,
@@ -649,6 +685,98 @@ async function assertLoadout(userId: string): Promise<EntitlementVerdict> {
   });
 }
 
+/**
+ * `meal_ai` verdict — Mealprint (spec-26 § 3), gating both the suggestion and
+ * the plan-generation surfaces. Structurally identical to {@link assertLoadout}
+ * with `loadout_access` swapped for `mealprint_access`.
+ *
+ * **Hard gate, no taster** (Brad 2026-07-24, spec-26 decision 2). There is no
+ * free code path and no preview of real output; comps and time-boxed promotions
+ * arrive as RevenueCat promotional entitlements through the existing webhook →
+ * `user_subscriptions` path, which this function sees as an ordinary Premium+
+ * grant and needs no code for.
+ *
+ * ⚠ Unlike `loadout_access`, `mealprint_access` is TRUE for `premium_plus` only
+ * — no trainer tier carries it. See {@link PREMIUM_PLUS_ONLY_FEATURES} for why
+ * that changes the upsell target, and
+ * `20260803120200_mealprint_access.sql` for why the grant is narrower.
+ */
+async function assertMealprint(userId: string): Promise<EntitlementVerdict> {
+  const db = getDb();
+
+  const profileRows = await db
+    .select({ role: profiles.role })
+    .from(profiles)
+    .where(eq(profiles.id, userId))
+    .limit(1);
+
+  const profile = profileRows[0];
+  if (!profile) {
+    throw new Error(
+      `assertEntitlement: no profiles row for user ${userId} — schema corruption (JWT-bound user without profile)`,
+    );
+  }
+  const role = normaliseRole(profile.role);
+
+  const subRows = await db
+    .select({
+      tierName: userSubscriptions.tierName,
+      paymentStatus: userSubscriptions.paymentStatus,
+      expiresAt: userSubscriptions.expiresAt,
+      mealprintAccess: subscriptionTiers.mealprintAccess,
+    })
+    .from(userSubscriptions)
+    .leftJoin(
+      subscriptionTiers,
+      eq(userSubscriptions.tierName, subscriptionTiers.tierName),
+    )
+    .where(eq(userSubscriptions.userId, userId))
+    .orderBy(desc(userSubscriptions.createdAt))
+    .limit(1);
+
+  const subRow = subRows[0] ?? null;
+
+  // Same three cases as the other flag gates: no sub row → free-tier flag;
+  // known tier → joined flag; unknown/deleted tier → coerced to 'free' with a
+  // null flag, treated as false below.
+  let effectiveTierName: SubscriptionTierName;
+  let mealprintAccessFlag: boolean | null;
+
+  if (subRow === null) {
+    effectiveTierName = "free";
+    mealprintAccessFlag = await loadFreeTierMealprintAccess(db);
+  } else {
+    effectiveTierName = coerceTierName(subRow.tierName);
+    mealprintAccessFlag = subRow.mealprintAccess ?? null;
+  }
+
+  // Status check BEFORE the flag check — a cancelled/expired sub reverts to
+  // free-tier rules and the deny reason becomes 'cancelled' / 'expired' so
+  // mobile shows reinstate / fix-payment rather than a plain upgrade prompt.
+  let denyReason: EntitlementDenyReason = "tier";
+  if (subRow !== null) {
+    const statusDeny = classifySubscriptionStatus(
+      subRow.paymentStatus,
+      subRow.expiresAt,
+    );
+    if (statusDeny !== null) {
+      mealprintAccessFlag = await loadFreeTierMealprintAccess(db);
+      denyReason = statusDeny;
+    }
+  }
+
+  if (mealprintAccessFlag === true) {
+    return { allowed: true };
+  }
+
+  return buildDenyVerdict({
+    reason: denyReason,
+    currentTier: effectiveTierName,
+    role,
+    feature: "meal_ai",
+  });
+}
+
 // ─── Pure helpers (exported for testing) ──────────────────────────────
 
 /**
@@ -783,12 +911,35 @@ export function pickUpgradeTier(
   role: "user" | "personal_trainer" | "physiotherapist" | "admin",
   feature: EntitlementFeature,
 ): SubscriptionTierName | null {
-  if (role === "personal_trainer") return "individual_trainer";
+  // Admins first — they should never be denied, and if they somehow are there is
+  // nothing useful to suggest. Kept ahead of everything else so this stays true
+  // regardless of which feature was denied.
   if (role === "admin") return null;
+
+  // ⚠ FEATURE BEATS ROLE for a Premium+-EXCLUSIVE feature, and the order of
+  // these two lines is the whole point. No trainer tier carries
+  // `mealprint_access`, so sending a denied coach to `individual_trainer` would
+  // charge them £14.99 and leave Mealprint locked. See
+  // PREMIUM_PLUS_ONLY_FEATURES.
+  if (PREMIUM_PLUS_ONLY_FEATURES.has(feature)) return "premium_plus";
+
+  if (role === "personal_trainer") return "individual_trainer";
   // user + physiotherapist fall through to user-tier upgrade.
   if (PREMIUM_PLUS_FEATURES.has(feature)) return "premium_plus";
   return "premium";
 }
+
+/**
+ * Exported ONLY so the test suite can assert
+ * `PREMIUM_PLUS_ONLY_FEATURES ⊆ PREMIUM_PLUS_FEATURES`. A member of the
+ * exclusive set that is missing from the wider one would upsell Premium to a
+ * `user`-role caller — the same pay-and-stay-locked-out bug, reached from the
+ * other side.
+ */
+export const __entitlementUpgradeSetsForTest = {
+  premiumPlus: PREMIUM_PLUS_FEATURES,
+  premiumPlusOnly: PREMIUM_PLUS_ONLY_FEATURES,
+} as const;
 
 // ─── Internal ─────────────────────────────────────────────────────────
 
@@ -876,6 +1027,43 @@ async function loadFreeTierLoadoutAccess(
     );
   }
   return row.loadoutAccess ?? false;
+}
+
+/**
+ * The free tier's `mealprint_access` flag (false as seeded, and the value the
+ * revert-to-free path falls back to).
+ *
+ * Split out for exactly the reason `loadFreeTierLoadoutAccess` is: folding a
+ * YOUNG column into `loadTier` would put it on the hot path of `create_workout`
+ * and `ai_access`, so a Lambda running against a database that does not yet have
+ * the column would throw Postgres 42703 on every workout creation and AI deny —
+ * the new column breaking features that predate it.
+ *
+ * ⚠ That window is the MIGRATE-THEN-DEPLOY gap, not a manual apply. An earlier
+ * version of this comment said "the hand-applied migration", contradicting
+ * STATE.md § Verified facts: `production-deploy.yml` applies migrations
+ * automatically, before `sst deploy`. The hazard is real either way — the
+ * previous release's Lambda serves briefly against the new schema, and a
+ * rollback inverts it — so the split-out read stays. Confining the read here bounds the
+ * blast radius to Mealprint, which is unreachable until `premium_plus` goes
+ * active anyway.
+ */
+async function loadFreeTierMealprintAccess(
+  db: Pick<Db, "select">,
+): Promise<boolean> {
+  const rows = await db
+    .select({ mealprintAccess: subscriptionTiers.mealprintAccess })
+    .from(subscriptionTiers)
+    .where(eq(subscriptionTiers.tierName, "free"))
+    .limit(1);
+
+  const row = rows[0];
+  if (!row) {
+    throw new Error(
+      "assertEntitlement: subscription_tiers row for tier_name='free' is missing — catalog misconfiguration",
+    );
+  }
+  return row.mealprintAccess ?? false;
 }
 
 /**
