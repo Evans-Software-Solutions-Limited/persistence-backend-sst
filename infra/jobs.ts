@@ -90,8 +90,11 @@ export const aiJobWorker = aiJobQueue.subscribe(
     // 10 that `packages/db/src/client.ts` recorded on 2026-07-29. On a quota of 10
     // you cannot reserve ANY concurrency: 10 − n < 10 for every n ≥ 1.
     //
-    // So reserved concurrency cannot express this bound portably, and a
-    // stage-conditional would leave staging unbounded while pretending otherwise.
+    // So reserved concurrency cannot express this bound portably at all, and a
+    // stage-conditional RESERVATION would leave staging with no bound whatever
+    // while reading as though it had one. (A stage-conditional *cap* is a
+    // different and legitimate thing — see the ⚠ at the `scalingConfig` below.)
+
     // ⚠ Both ARN shapes are required and this is deliberately COPIED from
     // `coreRoute` rather than shared: Bedrock denies the call if only the
     // inference profile is granted, because the profile is a routing
@@ -148,9 +151,27 @@ export const aiJobWorker = aiJobQueue.subscribe(
       //
       // What is genuinely lost versus reserved concurrency: this CAPS the worker
       // but does not RESERVE capacity for it, so a busy account can still starve
-      // it. That is not a regression — on a quota-10 account nothing can reserve
-      // capacity anyway, and the API route is the one that must win under
-      // contention.
+      // it. Not a regression — on a quota-10 account nothing can reserve capacity
+      // anyway.
+      //
+      // ⚠ BUT THE CONVERSE IS ALSO TRUE AND IS NOT HANDLED HERE. Capping does not
+      // reserve, but the invocations it creates still CONSUME from the account's
+      // unreserved pool — and neither this worker nor `coreRoute` holds a
+      // reservation. So on the staging account (quota 10) five concurrent workers
+      // each holding a slot for up to 15 minutes would take HALF the account's
+      // total concurrency, and the API route is what gets throttled into 503s —
+      // the chronic failure `infra/monitoring.ts`'s throttle alarm exists for.
+      //
+      // Dormant today: `registry.ts` ships with zero job kinds, so the worker
+      // cannot be invoked at all. Deliberately NOT fixed in this hotfix, whose job
+      // is to unbreak the staging deploy rather than add an unvalidated branch to
+      // infra that has no typecheck.
+      //
+      // ⚠ MUST be resolved before spec-21 Phase 4 registers the first kind, by one
+      // of: raising the staging account's Lambda quota, lowering this to 2 on
+      // non-production stages, or giving `coreRoute` a reservation. AWS's own
+      // guidance is that where a reservation exists it should be >= the total
+      // `maximumConcurrency`, or Lambda may throttle the queue's messages.
       eventSourceMapping: {
         scalingConfig: { maximumConcurrency: 5 },
       },

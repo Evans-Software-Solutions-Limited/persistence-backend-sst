@@ -63,8 +63,12 @@ as invariants rather than left to the infra file:
    after any reservation, staging is a different AWS account from production, and
    the 2026-08-01 raise to 1000 covered production only — so on staging's quota of
    10 you cannot reserve _any_ concurrency. `maximumConcurrency` caps SQS-driven
-   invocations without touching the account's unreserved pool, so it behaves the
-   same on both accounts. AWS floors it at 2. Each worker holds up to
+   invocations without RESERVING from the account's unreserved pool, so it behaves
+   the same on both accounts. ⚠ It does not stop those invocations CONSUMING from
+   that pool: with no reservation on either the worker or `coreRoute`, five
+   15-minute workers would take half of a quota-10 account and throttle the API
+   route. Dormant while the kind registry is empty; must be resolved before the
+   first kind ships (see the ⚠ in `infra/jobs.ts`). AWS floors it at 2. Each worker holds up to
    `DB_POOL_MAX` (4) Postgres sockets for its whole run, and a 900 s run is a
    long time to hold them. Capped at 5 concurrent workers → ≤ 20 sockets, well
    inside Supavisor's pool. It also bounds Bedrock spend under a burst.
