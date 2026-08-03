@@ -1208,3 +1208,174 @@ describe("assessAvoidance — recall tokens that used to misfire", () => {
     ).toBe(false);
   });
 });
+
+// ── Second verification pass — directional qualifiers ───────────────────────
+
+describe("assessAvoidance — marker relevance accepts a PRODUCT-named plant tag", () => {
+  // Requiring the marker tag to match the axis' short `categorySubstrings` was too
+  // tight: OFF's plant-based tags name the PRODUCT, not the category, so four real
+  // products were excluded from the pools they exist for. Now the tag may match
+  // `categorySubstrings` OR one of the axis' own tokens.
+  it.each([
+    [
+      "Cauldron Lincolnshire Sausages",
+      ["en:vegetarian-sausages"],
+      "vegetarian",
+    ],
+    [
+      "Rubies in the Rubble Aquafaba Mayonnaise",
+      ["en:vegan-mayonnaises", "en:mayonnaises"],
+      "vegan",
+    ],
+    [
+      "Booja Booja Chocolate Ice Cream",
+      ["en:vegan-ice-creams", "en:ice-creams"],
+      "dairy_free",
+    ],
+    ["This Isn't Bacon Rashers", ["en:vegan-bacon-alternatives"], "vegetarian"],
+  ])("allows '%s'", (name, categoryTags, pattern) => {
+    expect(
+      assessAvoidance(subject({ name, allergenTags: null, categoryTags }), {
+        ...NO_PREFS,
+        dietaryPatterns: [pattern],
+      }).allowed,
+    ).toBe(true);
+  });
+
+  it("does NOT reopen the ancestor hole", () => {
+    // The widened rule must still reject `en:plant-based-foods`, which contains no
+    // token of any axis it was wrongly clearing.
+    expect(
+      assessAvoidance(
+        subject({
+          name: "All Butter Croissant",
+          allergenTags: [],
+          categoryTags: [
+            "en:viennoiserie",
+            "en:plant-based-foods-and-beverages",
+          ],
+        }),
+        { ...NO_PREFS, dietaryPatterns: ["dairy_free"] },
+      ).allowed,
+    ).toBe(false);
+  });
+});
+
+describe("assessAvoidance — qualifier DIRECTION comes from the entry", () => {
+  it.each([
+    // A qualifier AFTER a material token is a co-ingredient or pack claim, not a
+    // compound — every one of these was allowed under either-side adjacency.
+    ["Maliban Butter Coconut Biscuits", "dairy_free"],
+    ["Cadbury Dairy Milk Coconut", "dairy_free"],
+    ["Butter Almond Cake", "dairy_free"],
+    ["Cream Almond Slice", "dairy_free"],
+    ["Pasta Lentil Soup", "gluten_free"],
+    ["Sliced Loaf Nut Free", "gluten_free"],
+    ["Banana Nut Loaf", "gluten_free"],
+  ])("excludes '%s'", (name, pattern) => {
+    expect(
+      assessAvoidance(subject({ name, allergenTags: null }), {
+        ...NO_PREFS,
+        dietaryPatterns: [pattern],
+      }).allowed,
+    ).toBe(false);
+  });
+
+  it("keeps the one AFTER-only entry working — 'kidney' takes its head noun", () => {
+    // `kidney` is a shape adjective, so its qualifier follows it. This is why a
+    // global preceding-only rule was wrong and the direction lives on the entry.
+    expect(
+      assessAvoidance(
+        subject({ name: "Red Kidney Beans", allergenTags: null }),
+        {
+          ...NO_PREFS,
+          dietaryPatterns: ["vegan"],
+        },
+      ).allowed,
+    ).toBe(true);
+    expect(
+      assessAvoidance(subject({ name: "Lambs Kidney", allergenTags: null }), {
+        ...NO_PREFS,
+        dietaryPatterns: ["vegan"],
+      }).allowed,
+    ).toBe(false);
+  });
+
+  it("steps over a possessive 's' when looking backwards", () => {
+    // tokeniseFoodName("Shepherd's Pie") → ["shepherd","s","pie"], so without the
+    // skip the qualifier never matches and the gluten-free meal stays excluded.
+    for (const name of ["Shepherd's Pie", "Fisherman's Pie", "Cottage Pie"]) {
+      expect(
+        assessAvoidance(subject({ name, allergenTags: null }), {
+          ...NO_PREFS,
+          dietaryPatterns: ["gluten_free"],
+        }).allowed,
+        name,
+      ).toBe(true);
+    }
+  });
+
+  it("restores pie/wrap/caviar as true positives", () => {
+    // Deleting the tokens outright served these to the restricted eater — a false
+    // negative, which is worse than the pool cost that motivated the deletion.
+    for (const [name, pattern] of [
+      ["Melton Mowbray Pork Pie", "gluten_free"],
+      ["Steak and Kidney Pie", "gluten_free"],
+      ["Bramley Apple Pie", "gluten_free"],
+      ["Chicken Caesar Wrap", "gluten_free"],
+      ["Tortilla Wrap", "gluten_free"],
+      ["Sevruga Caviar", "vegetarian"],
+    ] as const) {
+      expect(
+        assessAvoidance(subject({ name, allergenTags: null }), {
+          ...NO_PREFS,
+          dietaryPatterns: [pattern],
+        }).allowed,
+        `${name} / ${pattern}`,
+      ).toBe(false);
+    }
+  });
+
+  it("catches both 'batter' and 'battered'", () => {
+    for (const name of ["Tempura Batter Mix", "Battered Onion Rings"]) {
+      expect(
+        assessAvoidance(subject({ name, allergenTags: null }), {
+          ...NO_PREFS,
+          dietaryPatterns: ["gluten_free"],
+        }).allowed,
+        name,
+      ).toBe(false);
+    }
+  });
+
+  it("puts carbonara on the meat and pork axes, not dairy alone", () => {
+    for (const pattern of ["vegetarian", "halal", "dairy_free"]) {
+      expect(
+        assessAvoidance(
+          subject({ name: "Spaghetti Carbonara", allergenTags: null }),
+          { ...NO_PREFS, dietaryPatterns: [pattern] },
+        ).allowed,
+        pattern,
+      ).toBe(false);
+    }
+  });
+
+  it("catches fudge, which is where the dairy in 'Cocoa Butter Fudge' actually is", () => {
+    expect(
+      assessAvoidance(
+        subject({ name: "Cocoa Butter Fudge", allergenTags: null }),
+        {
+          ...NO_PREFS,
+          dietaryPatterns: ["dairy_free"],
+        },
+      ).allowed,
+    ).toBe(false);
+    // The cocoa-butter qualifier itself was correct and stays.
+    expect(
+      assessAvoidance(subject({ name: "Cocoa Butter", allergenTags: null }), {
+        ...NO_PREFS,
+        dietaryPatterns: ["dairy_free"],
+      }).allowed,
+    ).toBe(true);
+  });
+});

@@ -57,6 +57,7 @@ import {
   type AllergenKey,
   type DietaryPattern,
   type NameAxis,
+  type TokenQualifier,
 } from "../preferences/vocabulary";
 
 /**
@@ -228,7 +229,22 @@ function isAxisCleared(
       compactTag.includes(marker),
     );
     if (!carriesMarker) return false;
-    return axis.categorySubstrings.some((needle) => tag.includes(needle));
+    // ⚠ `categorySubstrings` OR `tokens`. The substring lists are short CATEGORY
+    // words ("dairy", "cheese"), but OFF's plant-based tags name the PRODUCT — so
+    // relevance-by-category-alone was too tight and newly excluded four real
+    // products from the pools they exist for: `en:vegetarian-sausages`,
+    // `en:vegan-mayonnaises`, `en:vegan-ice-creams`, `en:vegan-bacon-alternatives`.
+    // Each of those DOES contain one of its axis' own tokens.
+    //
+    // Verified not to reopen the ancestor hole: none of `en:plant-based-foods`,
+    // `en:plant-based-foods-and-beverages`, `en:viennoiserie`, `en:breads`,
+    // `en:pastas`, `en:sauces`, `en:meals`, `en:nuts` or
+    // `en:cereals-and-potatoes` contains a token of the meat, dairy, egg,
+    // seafood, shellfish or honey axes.
+    return (
+      axis.categorySubstrings.some((needle) => tag.includes(needle)) ||
+      axis.tokens.some((token) => tag.includes(token))
+    );
   });
 }
 
@@ -301,17 +317,12 @@ function matchesAxisCategories(
  * *soya* milk, *rice* noodles — so adjacency keeps all of those and kills all of
  * the above.
  *
- * ⚠ EITHER SIDE counts, because English puts the qualifier on both:
- * "**Peanut** Butter" and "**Almond** Flour" qualify from the left, "Kidney
- * **Beans**" from the right. A preceding-only rule re-excluded `Red Kidney Beans`
- * from a vegan pool — the very false positive `tokenQualifiers` was added for.
- *
- * Checked against all six collisions the set-membership version allowed, and
- * either-side adjacency still rejects every one of them: in `Rice Pudding Made
- * With Whole Milk`, `Oat and Milk Chocolate Biscuits` and `Wholemeal Flour 500
- * Gram` the qualifier is nowhere near the token. (`Coconut Milk` and `Cocoa
- * Butter` DO qualify adjacently, and correctly so — both are genuinely
- * dairy-free ingredients.)
+ * ⚠ **Direction comes from the ENTRY** ({@link TokenQualifier}), because a single
+ * global rule failed in both directions. Preceding-only re-excluded `Red Kidney
+ * Beans` (its qualifier is the head noun that FOLLOWS). Either-side then cleared
+ * real products on a co-ingredient or pack claim after the token —
+ * `Maliban Butter Coconut Biscuits`, `Cadbury Dairy Milk Coconut`,
+ * `Butter Almond Cake`, `Pasta Lentil Soup`, `Sliced Loaf Nut Free`.
  *
  * "Every occurrence" rather than "any": `Soya Milk and Milk Chocolate` must stay
  * excluded on the second, unqualified "milk".
@@ -319,18 +330,29 @@ function matchesAxisCategories(
 function everyOccurrenceQualified(
   orderedTokens: readonly string[],
   token: string,
-  qualifiers: readonly string[],
+  qualifier: TokenQualifier,
 ): boolean {
-  const qualifierSet = new Set(qualifiers.map(singularise));
+  const before = new Set((qualifier.before ?? []).map(singularise));
+  const after = new Set((qualifier.after ?? []).map(singularise));
+  if (before.size === 0 && after.size === 0) return false;
+
   let sawOne = false;
   for (let i = 0; i < orderedTokens.length; i += 1) {
     if (orderedTokens[i] !== token) continue;
     sawOne = true;
-    const before = i > 0 ? orderedTokens[i - 1] : null;
-    const after = i + 1 < orderedTokens.length ? orderedTokens[i + 1] : null;
+
+    // ⚠ Step over a possessive "s". `tokeniseFoodName("Shepherd's Pie")` yields
+    // ["shepherd","s","pie"], so a raw i-1 lookup sees "s" and the qualifier never
+    // matches — which would have left Shepherd's and Fisherman's Pie excluded from
+    // a gluten-free pool while Pork Pie sailed through.
+    let b = i - 1;
+    if (b >= 0 && orderedTokens[b] === "s") b -= 1;
+
+    const previous = b >= 0 ? orderedTokens[b] : null;
+    const next = i + 1 < orderedTokens.length ? orderedTokens[i + 1] : null;
     const qualified =
-      (before !== null && qualifierSet.has(before)) ||
-      (after !== null && qualifierSet.has(after));
+      (previous !== null && before.has(previous)) ||
+      (next !== null && after.has(next));
     if (!qualified) return false;
   }
   return sawOne;
@@ -358,10 +380,10 @@ function matchesAxisNames(
         // ⚠ Per-TOKEN disqualifiers, deliberately not axis-clearing: "Peanut
         // Butter" must stop counting as dairy without "Almond & Wheat Flour
         // Blend" ceasing to count as gluten. See `NameAxis.tokenQualifiers`.
-        const qualifiers = axis.tokenQualifiers?.[candidate];
+        const qualifier = axis.tokenQualifiers?.[candidate];
         if (
-          qualifiers !== undefined &&
-          everyOccurrenceQualified(orderedTokens, candidate, qualifiers)
+          qualifier !== undefined &&
+          everyOccurrenceQualified(orderedTokens, candidate, qualifier)
         ) {
           continue;
         }

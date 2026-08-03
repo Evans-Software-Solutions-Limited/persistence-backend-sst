@@ -168,6 +168,32 @@ export const LOCALE_OFF_TAG: Readonly<Record<SupportedLocale, string>> = {
  * must still not be offered it. Scoping negation to the axis gets both right;
  * a global "is anything negated in this name" check gets the second one wrong.
  */
+/**
+ * A per-token disqualifier, with its DIRECTION.
+ *
+ * ⚠ **Direction is a property of the ENTRY, not of the rule** — the conclusion two
+ * independent review passes reached after both of my attempts at a single global
+ * rule failed in opposite directions:
+ *
+ *   - Preceding-only re-excluded `Red Kidney Beans` from a vegan pool, because
+ *     "kidney" is a SHAPE ADJECTIVE and its qualifier ("beans") is the head noun
+ *     that follows it.
+ *   - Either-side then cleared a pile of real products on a co-ingredient or a
+ *     pack claim sitting AFTER the token: `Maliban Butter Coconut Biscuits`,
+ *     `Cadbury Dairy Milk Coconut`, `Butter Almond Cake`, `Pasta Lentil Soup`,
+ *     `Sliced Loaf Nut Free`.
+ *
+ * Every other entry is a MATERIAL relation — "rice noodles" is noodles made of
+ * rice — and in English the material always precedes the head. So `before` is the
+ * norm and `after` is the exception, and the type makes you say which.
+ */
+export interface TokenQualifier {
+  /** Words that must sit immediately BEFORE the token (material modifiers). */
+  before?: readonly string[];
+  /** Words that must sit immediately AFTER it (head nouns — "kidney beans"). */
+  after?: readonly string[];
+}
+
 export interface NameAxis {
   key: string;
   tokens: readonly string[];
@@ -225,7 +251,7 @@ export interface NameAxis {
    *   - `Peanut Butter` excluded from a dairy-free pool on "butter".
    *   - `Almond Flour` excluded from a gluten-free pool on "flour".
    */
-  tokenQualifiers?: Readonly<Record<string, readonly string[]>>;
+  tokenQualifiers?: Readonly<Record<string, TokenQualifier>>;
 }
 
 /**
@@ -274,6 +300,10 @@ export const NAME_TOKENS = {
     "kidney",
     "brisket",
     "ribeye",
+    // ⚠ Carbonara is defined by pancetta or guanciale. Added to the DAIRY axis a
+    // commit earlier and nowhere else, which left a vegetarian (and a halal user)
+    // being served `Spaghetti Carbonara` while a dairy-free user was not.
+    "carbonara",
   ],
   seafood: [
     "fish",
@@ -310,7 +340,8 @@ export const NAME_TOKENS = {
     "whitebait",
     "surimi",
     "roe",
-    // ⚠ "caviar" was REMOVED: "Aubergine Caviar" is a vegetarian dip.
+    // Restored with a qualifier — see the seafood axis' `tokenQualifiers`.
+    "caviar",
     "taramasalata",
   ],
   dairy: [
@@ -339,6 +370,10 @@ export const NAME_TOKENS = {
     "brioche",
     "croissant",
     "pesto",
+    // Butter + condensed milk. The earlier `Cocoa Butter Fudge` finding was
+    // pointing at the right product for the wrong reason: the dairy is the FUDGE,
+    // not the cocoa butter, so no `butter` qualifier change could ever fix it.
+    "fudge",
     "carbonara",
     "alfredo",
     "tiramisu",
@@ -409,7 +444,12 @@ export const NAME_TOKENS = {
     // MISSED "Battered Onion Rings", i.e. the form it was added for. A test
     // written around the former would have pinned a rule that does not cover the
     // real case.
+    "batter",
     "battered",
+    // Restored with qualifiers — see this axis' `tokenQualifiers`. Deleting them
+    // outright served Pork Pie and Chicken Caesar Wrap to a gluten-free user.
+    "pie",
+    "wrap",
     // ⚠ "pie" and "wrap" were REMOVED, not qualified. Cottage, shepherd's and
     // fish pie are potato-topped with no pastry, and "Lettuce Wraps" is the
     // canonical gluten-free substitute — both are standard gluten-free food, and
@@ -419,6 +459,7 @@ export const NAME_TOKENS = {
     "quiche",
   ],
   pork: [
+    "carbonara",
     "pork",
     "bacon",
     "ham",
@@ -479,12 +520,13 @@ export const NAME_AXES: Readonly<Record<string, NameAxis>> = {
     key: "meat",
     tokens: [...NAME_TOKENS.meat],
     tokenQualifiers: {
-      // "Red Kidney Beans" is not offal. The meat axis is always applied, so
-      // without this the exclusion is unconditional and permanent.
-      kidney: ["bean", "beans"],
-      // ⚠ No `liver` entry. An earlier draft had `liver: ["leaf","leaves"]` "for
-      // symmetry of intent" — a rule that cannot fire, which is worse than none
-      // because it reads as coverage in a dangerous-area file.
+      // ⚠ The ONE after-only entry in the file. "Red Kidney Beans" is not offal,
+      // and "kidney" is a shape adjective whose qualifier is the head noun that
+      // FOLLOWS it — the opposite of every material qualifier below.
+      kidney: { after: ["bean", "beans"] },
+      // ⚠ No `liver` entry. An earlier draft had one "for symmetry of intent" —
+      // a rule that cannot fire, which is worse than none in a dangerous-area
+      // file because it reads as coverage.
     },
     negators: ["meat"],
     categorySubstrings: ["meat", "poultry", "charcuterie"],
@@ -506,6 +548,10 @@ export const NAME_AXES: Readonly<Record<string, NameAxis>> = {
   seafood: {
     key: "seafood",
     tokens: [...NAME_TOKENS.seafood],
+    tokenQualifiers: {
+      // "Aubergine Caviar" / "Mushroom Caviar" are vegetable dips.
+      caviar: { before: ["aubergine", "eggplant", "mushroom"] },
+    },
     negators: ["fish", "seafood"],
     categorySubstrings: ["fish", "seafood"],
     clearedBy: ["vegan", "vegetarian", "plantbased"],
@@ -527,45 +573,49 @@ export const NAME_AXES: Readonly<Record<string, NameAxis>> = {
     tokenQualifiers: {
       // Nut, seed and fruit butters are not dairy. "Peanut Butter" excluded from
       // a dairy-free pool was a confirmed false positive.
-      butter: [
-        "peanut",
-        "almond",
-        "cashew",
-        "hazelnut",
-        "pistachio",
-        "walnut",
-        "nut",
-        "seed",
-        "sesame",
-        "tahini",
-        "coconut",
-        "cocoa",
-        "shea",
-        "apple",
-      ],
+      butter: {
+        before: [
+          "peanut",
+          "almond",
+          "cashew",
+          "hazelnut",
+          "pistachio",
+          "walnut",
+          "nut",
+          "seed",
+          "sesame",
+          "tahini",
+          "coconut",
+          "cocoa",
+          "shea",
+          "apple",
+        ],
+      },
       // ⚠ "tomato" is deliberately ABSENT. Heinz Cream of Tomato contains milk,
       // and "cream of tomato" is exactly the adjacency an adjacency rule honours —
       // so no version of this qualifier is safe. It removed a true positive by
       // construction rather than by collision.
-      cream: ["coconut", "oat", "soya", "soy", "almond"],
+      cream: { before: ["coconut", "oat", "soya", "soy", "almond"] },
       // ⚠ Plant milks. This carries real weight now that the name channel is
       // unconditional: without it "Alpro Soya Chocolate Milk Drink" is excluded
       // from a dairy-free pool on "milk" — the exact shelf that user shops from.
       // A QUALIFIER rather than a `clearedBy` marker so "Soya Milk & Butter
       // Blend" is still caught on "butter".
-      milk: [
-        "soya",
-        "soy",
-        "oat",
-        "almond",
-        "coconut",
-        "rice",
-        "hemp",
-        "cashew",
-        "hazelnut",
-        "pea",
-        "plant",
-      ],
+      milk: {
+        before: [
+          "soya",
+          "soy",
+          "oat",
+          "almond",
+          "coconut",
+          "rice",
+          "hemp",
+          "cashew",
+          "hazelnut",
+          "pea",
+          "plant",
+        ],
+      },
     },
   },
   egg: {
@@ -591,32 +641,50 @@ export const NAME_AXES: Readonly<Record<string, NameAxis>> = {
       // Naturally gluten-free flours. ⚠ A QUALIFIER, not a `clearedBy` marker:
       // "Almond & Wheat Flour Blend" must still be caught on "wheat", which an
       // axis-clearing marker would have let through.
-      flour: [
-        "almond",
-        "coconut",
-        "rice",
-        "chickpea",
-        "gram",
-        "corn",
-        "potato",
-        "tapioca",
-        "buckwheat",
-        "quinoa",
-        "cassava",
-        "soya",
-        "soy",
-        "nut",
-      ],
+      flour: {
+        before: [
+          "almond",
+          "coconut",
+          "rice",
+          "chickpea",
+          "gram",
+          "corn",
+          "potato",
+          "tapioca",
+          "buckwheat",
+          "quinoa",
+          "cassava",
+          "soya",
+          "soy",
+          "nut",
+        ],
+      },
       // "Rice pasta", "corn pasta", "buckwheat noodles".
-      pasta: ["rice", "corn", "lentil", "chickpea", "buckwheat", "quinoa"],
+      pasta: {
+        before: ["rice", "corn", "lentil", "chickpea", "buckwheat", "quinoa"],
+      },
       // Rice noodles are the single biggest gluten-free staple in this list, and
       // the `pasta` qualifiers were not extended to `noodle` at first.
-      noodle: ["rice", "corn", "buckwheat", "soba", "mung", "glass", "kelp"],
-      tortilla: ["corn", "maize"],
-      // "Lentil Loaf", "Nut Loaf" are gluten-free mains.
-      loaf: ["lentil", "nut", "chickpea"],
+      noodle: {
+        before: ["rice", "corn", "buckwheat", "soba", "mung", "glass", "kelp"],
+      },
+      tortilla: { before: ["corn", "maize"] },
+      // ⚠ RESTORED with qualifiers, having been deleted a commit earlier. Removing
+      // the token outright meant `Melton Mowbray Pork Pie`, `Steak and Kidney Pie`
+      // and `Chicken Caesar Wrap` were served to a gluten-free user — a false
+      // NEGATIVE, which is worse than the pool cost that motivated the deletion.
+      // "No adjacency list makes these safe" was true under set membership and is
+      // false under directional qualifiers.
+      pie: { before: ["cottage", "shepherd", "fisherman", "fish"] },
+      wrap: { before: ["lettuce", "cabbage", "collard"] },
+      // ⚠ "nut" is deliberately ABSENT. "Nut Loaf" is a gluten-free vegan main but
+      // "Banana Nut Loaf" and "Date & Nut Loaf" are wheat quick-breads, and the
+      // wheat sense is far commoner in a UK catalogue — so the qualifier created a
+      // false negative that `a389968e` did not have. Same reasoning as
+      // `cream: ["tomato"]`: when no direction is safe, the entry goes.
+      loaf: { before: ["lentil", "chickpea"] },
       // "Rice bread", "corn bread" are not wheat products.
-      bread: ["rice", "corn"],
+      bread: { before: ["rice", "corn"] },
     },
   },
   pork: {

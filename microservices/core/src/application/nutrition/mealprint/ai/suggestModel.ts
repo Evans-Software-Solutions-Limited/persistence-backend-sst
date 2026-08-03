@@ -183,7 +183,10 @@ const MAX_CANDIDATE_NAME_IN_PROMPT = 80;
 
 /** Truncate on a whole code point, so a name cannot end in half a surrogate. */
 function capPromptText(value: string, max: number): string {
-  return capModelProse(value, max);
+  // Whitespace collapsed for the same reason as below: a newline in a `foods.name`
+  // would break the pipe-delimited candidate line for every pool it appears in,
+  // and curated names are crowd-edited OFF data.
+  return capModelProse(value.replace(/\s+/gu, " "), max);
 }
 
 /**
@@ -197,7 +200,16 @@ function capPromptText(value: string, max: number): string {
  * delimiters even though a naive `"` check misses them.
  */
 function capDelimitedPromptText(value: string, max: number): string {
-  return capPromptText(value.replace(/["\u201c\u201d]/gu, ""), max);
+  // ⚠ NEWLINES matter more than quotes here. The prompt is `lines.join("\n")`, so
+  // the newline is the real delimiter — a `steer` containing one breaks out of its
+  // labelled line and can forge top-level prompt structure. `steer` is the one
+  // field with no write-time normalisation (the body schema only bounds length),
+  // and `likedFoods` is safe only incidentally, because `normaliseFoodText`
+  // collapses whitespace on write in a different file.
+  return capPromptText(
+    value.replace(/["\u201c\u201d]/gu, "").replace(/\s+/gu, " "),
+    max,
+  );
 }
 
 function describeCandidate(candidate: MealprintCandidate): string {
