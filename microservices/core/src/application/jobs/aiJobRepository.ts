@@ -608,10 +608,11 @@ export class AiJobRepository {
    *
    * `markStaleRunning` cannot cover this: a message that dies before its first
    * receive leaves the row `queued`, and nothing about `running` staleness
-   * applies. Throttled receives count toward the redrive policy, so a burst
-   * against the worker's reserved concurrency really can send a message to the
-   * DLQ having never executed — leaving a client polling `queued 0/120` forever
-   * and a row the terminal-job purge never sees.
+   * applies. ⚠ The cause is NOT poller throttling — `maximumConcurrency` stops the
+   * event source mapping reading at the cap — but a failed publish, a worker dying
+   * before its claim, or account-quota throttling. Any of them leaves a client
+   * polling `queued 0/120` forever and a row the terminal-job purge never sees.
+   * Full list at `jobLifecycle.QUEUED_STALE_AFTER_MS`.
    */
   async markStaleQueued(now: Date = new Date()): Promise<number> {
     const db = getDb();

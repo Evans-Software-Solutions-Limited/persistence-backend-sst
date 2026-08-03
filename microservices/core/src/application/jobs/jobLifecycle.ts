@@ -49,17 +49,32 @@ export const STALE_AFTER_MS = 40 * 60 * 1000;
 /**
  * How long a job may sit `queued` before it is given up on.
  *
- * A message can die before it is ever claimed: throttled receives count toward
- * the redrive policy, so a burst against the worker's reserved concurrency can
- * send a message to the DLQ having never executed. Nothing about `running`
- * staleness covers that — the row stays `queued` forever, so the client polls it
- * indefinitely AND the terminal-job purge never sees it.
+ * A message can die before it is ever claimed — but ⚠ NOT, since the switch to
+ * `maximumConcurrency`, via poller throttling. Eliminating that is the feature's
+ * headline purpose: the event source mapping stops READING at the cap rather than
+ * invoking and being throttled, so receive counts no longer burn on backpressure.
+ * (An earlier revision of this comment named throttled receives as the cause. That
+ * was true under Lambda reserved concurrency and is now wrong.)
+ *
+ * What genuinely remains, and is why this reaper still exists:
+ *   - `enqueueJob` writes the row and then fails to `send` (it deletes the row on
+ *     that path, but the delete can itself fail);
+ *   - a worker dying BEFORE its claim — unparseable body, DB failure at claim, OOM
+ *     in init — burning three real receives to the DLQ;
+ *   - account-quota throttling, which the poller cap cannot prevent because the
+ *     worker holds no reservation.
+ *
+ * Nothing about `running` staleness covers any of those — the row stays `queued`
+ * forever, so the client polls it indefinitely AND the terminal-job purge never
+ * sees it.
  *
  * Sized off the redrive policy, not the worker: 3 receives × a 16-minute
  * visibility timeout is ~48 minutes to reach the DLQ, so 60 minutes clears the
  * window in which a failing message could still be retried.
  *
- * ⚠ It does NOT prove the message is gone under BACKLOG. `reserved: 5` against a
+ * ⚠ It does NOT prove the message is gone under BACKLOG — and since the poller
+ * declines to read at the cap, backlog-parking is now the ONLY overflow behaviour
+ * rather than one of two. A cap of 5 against a
  * ~5-minute job caps throughput near 60 jobs/hour, and a message waiting behind a
  * backlog is never RECEIVED — so its receive count never increments and it never
  * reaches the DLQ. A burst of more than ~60 distinct users would have its tail
