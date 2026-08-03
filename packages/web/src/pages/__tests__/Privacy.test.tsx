@@ -54,15 +54,46 @@ describe("Privacy", () => {
     ).toBeTruthy();
   });
 
-  it("states the 16+ age floor and the under-16 deletion route", () => {
+  it("states the 13+ age floor, the under-13 route, and the under-18 coach warning", () => {
     renderPage(<Privacy />);
+    // 13 is the UK statutory age for a child to consent to an online service on
+    // their own behalf (DPA 2018 s.9). Because the App Store content rating is
+    // 9+, the service is "likely to be accessed by children", so the under-18
+    // coach-sharing warning is load-bearing, not decoration.
     expect(
-      screen.getByText(/Persistence is intended for users aged 16 or over/),
+      screen.getByText(/Persistence is intended for users aged 13 or over/),
     ).toBeTruthy();
     expect(
       screen.getByText(
-        /an account belongs to someone under 16, we will delete it/,
+        /an account belongs to someone under 13, we will delete it/,
       ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(/If you are under 18, please talk to a parent/),
+    ).toBeTruthy();
+  });
+
+  it("covers religious belief, not just health, under Article 9", () => {
+    renderPage(<Privacy />);
+    // `nutrition_preferences.dietary_patterns` permits 'halal' and 'kosher',
+    // which reveal RELIGIOUS BELIEF — a separate Art 9(1) category from health.
+    // A 9(2)(a) basis worded only around "health and body metrics" would not
+    // reach it, so this must stay explicit.
+    // Stated TWICE by design: once where the data is listed as collected, once
+    // in the Art 9(2)(a) basis. Both are load-bearing.
+    expect(
+      screen.getAllByText(/religious or philosophical belief/).length,
+    ).toBe(2);
+    expect(
+      screen.getByText(/the allergens you\s+ask us to avoid/),
+    ).toBeTruthy();
+  });
+
+  it("lists food preferences as collected special-category data", () => {
+    renderPage(<Privacy />);
+    expect(screen.getByText(/Food preferences/)).toBeTruthy();
+    expect(
+      screen.getByText(/halal or kosher\), foods you dislike or like/),
     ).toBeTruthy();
   });
 
@@ -106,7 +137,16 @@ describe("Privacy", () => {
       screen.getByText(/Equipment scanning and workout adaptation/),
     ).toBeTruthy();
     expect(screen.getByText(/Coach summaries/)).toBeTruthy();
+    // Mealprint (#350) landed on main mid-review with a mounted, live
+    // `POST /nutrition/ai/meal-suggest`. It was undisclosed until the rebase.
+    expect(screen.getByText(/Meal suggestions/)).toBeTruthy();
+    expect(screen.getByText(/applied on our servers/)).toBeTruthy();
     expect(screen.getByText(/the summary that comes back/)).toBeTruthy();
+    // Teardown now DELETES the summaries, so the policy must not imply they
+    // merely become inaccessible — reconnecting used to revive them.
+    expect(
+      screen.getByText(/nothing reappears if you later reconnect/),
+    ).toBeTruthy();
   });
 
   it("states the 30-day deletion window and that restore needs confirming", () => {
@@ -129,18 +169,20 @@ describe("Privacy", () => {
     ).toBeTruthy();
   });
 
-  it("does not claim a retention period the code cannot enforce", () => {
+  it("claims the 12-month window now that a nightly sweep enforces it", () => {
     renderPage(<Privacy />);
-    // `cleanup_old_health_data()` is admin-gated and manually invoked (no
-    // pg_cron), so a firm "kept for up to 12 months" would be a commitment with
-    // no mechanism. The wording must stay a periodic-removal statement.
-    // Both the coach access log and the Apple Health bullets carry it.
+    // The firm ceiling is only publishable because `dataRetentionSweep` runs on
+    // the nightly `accountPurgeCron`. If that sweep is ever removed, this claim
+    // becomes false and these assertions must be softened back.
     expect(
-      screen.getAllByText(/remove records older than 12 months periodically/i)
-        .length,
+      screen.getAllByText(/deleted automatically each night/i).length,
     ).toBe(2);
-    // Webhook event tables are never pruned, so retention is unbounded — "at
-    // least six years" is honest where a bare "six years" would understate it.
+    expect(
+      screen.getByText(/is kept for up to 12 months, so that we can answer/),
+    ).toBeTruthy();
+    // Webhook event tables are still never pruned, so retention there IS
+    // unbounded — "at least six years" stays honest where a bare "six years"
+    // would understate it.
     expect(screen.getByText(/at least six years from the/)).toBeTruthy();
   });
 
@@ -153,7 +195,9 @@ describe("Privacy", () => {
 
   it("carries no trace of the superseded copy", () => {
     renderPage(<Privacy />);
-    expect(screen.queryByText(/under the age of 13/)).toBeNull();
     expect(screen.queryByText(/Last updated: 22 July 2026/)).toBeNull();
+    // The 16+ floor was replaced by 13+ (Brad, 2026-08-03) — a stale 16 in
+    // either copy is the divergence this suite exists to catch.
+    expect(screen.queryByText(/aged 16 or over/)).toBeNull();
   });
 });

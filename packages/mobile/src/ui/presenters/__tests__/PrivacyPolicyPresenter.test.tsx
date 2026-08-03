@@ -44,15 +44,21 @@ describe("PrivacyPolicyPresenter", () => {
     expect(getByText("14. Contact us")).toBeTruthy();
   });
 
-  it("states the 16+ age floor and the under-16 deletion route", () => {
+  it("states the 13+ age floor, the under-13 route, and the under-18 coach warning", () => {
     const { getByText } = renderWithTheme(
       <PrivacyPolicyPresenter onBack={jest.fn()} />,
     );
+    // 13 is the UK statutory age (DPA 2018 s.9). The 9+ App Store content rating
+    // means children are likely to use this, so the under-18 coach-sharing
+    // warning is load-bearing.
     expect(
-      getByText(/Persistence is intended for users aged 16 or over/),
+      getByText(/Persistence is intended for users aged 13 or over/),
     ).toBeTruthy();
     expect(
-      getByText(/an account belongs to someone under 16, we will delete it/),
+      getByText(/an account belongs to\s+someone under 13, we will delete it/),
+    ).toBeTruthy();
+    expect(
+      getByText(/If you are under 18, please talk to a parent/),
     ).toBeTruthy();
   });
 
@@ -60,11 +66,26 @@ describe("PrivacyPolicyPresenter", () => {
     const { queryByText } = renderWithTheme(
       <PrivacyPolicyPresenter onBack={jest.fn()} />,
     );
-    // The legacy port set the floor at 13 — invalid for explicit-consent
-    // special-category processing — and named analytics providers we don't use.
-    expect(queryByText(/under the age of 13/)).toBeNull();
+    // The legacy port named analytics providers we do not use. (Its floor was
+    // also 13, which is where we have deliberately landed again — so the stale
+    // marker to guard against is the intermediate 16, asserted below.)
     expect(queryByText(/analytics providers/)).toBeNull();
     expect(queryByText("Last Updated: January 2025")).toBeNull();
+    // The 16+ floor was replaced by 13+ (Brad, 2026-08-03).
+    expect(queryByText(/aged 16 or over/)).toBeNull();
+  });
+
+  it("covers religious belief, not just health, under Article 9", () => {
+    const { getAllByText, getByText } = renderWithTheme(
+      <PrivacyPolicyPresenter onBack={jest.fn()} />,
+    );
+    // `nutrition_preferences.dietary_patterns` permits 'halal' and 'kosher',
+    // which reveal RELIGIOUS BELIEF — a separate Art 9(1) category from health,
+    // so a basis worded only around health would not reach it.
+    // Stated TWICE by design: once where the data is listed as collected, once
+    // in the Art 9(2)(a) basis. Both are load-bearing.
+    expect(getAllByText(/religious or philosophical belief/).length).toBe(2);
+    expect(getByText(/Food preferences/)).toBeTruthy();
   });
 
   it("names all four legal bases with their Article references", () => {
@@ -108,6 +129,17 @@ describe("PrivacyPolicyPresenter", () => {
     expect(getByText(/Recipes from a photo/)).toBeTruthy();
     expect(getByText(/Equipment scanning and workout adaptation/)).toBeTruthy();
     expect(getByText(/the summary that comes back is stored/)).toBeTruthy();
+    // Mealprint (#350) landed on main mid-review with a mounted, live
+    // `POST /nutrition/ai/meal-suggest`. It was undisclosed until the rebase.
+    expect(getByText(/Meal suggestions/)).toBeTruthy();
+    expect(
+      getByText(/applied on our\s+servers to build that shortlist/),
+    ).toBeTruthy();
+    // Teardown DELETES the summaries now — the policy must not imply they only
+    // become inaccessible, because reconnecting used to revive them.
+    expect(
+      getByText(/nothing\s+reappears if you later reconnect/),
+    ).toBeTruthy();
   });
 
   it("does NOT claim AI on the recipe-import-from-link path", () => {
@@ -127,18 +159,15 @@ describe("PrivacyPolicyPresenter", () => {
     ).toBeTruthy();
   });
 
-  it("does not claim a retention period the code cannot enforce", () => {
+  it("claims the 12-month window now that a nightly sweep enforces it", () => {
     const { getAllByText, getByText } = renderWithTheme(
       <PrivacyPolicyPresenter onBack={jest.fn()} />,
     );
-    // Mirrors the web suite. `cleanup_old_health_data()` is admin-gated and
-    // manually invoked (no pg_cron), so a firm 12-month ceiling would be a
-    // commitment with no mechanism; and the provider webhook-event tables are
-    // never pruned, so "at least" is the honest floor. TIGHTENING either of
-    // these re-creates the false claim — that is what this test exists to stop.
-    expect(
-      getAllByText(/remove records older than 12 months periodically/i).length,
-    ).toBe(2);
+    // Mirrors the web suite. The firm ceiling is publishable only because
+    // `dataRetentionSweep` runs on the nightly `accountPurgeCron`; remove that
+    // and these claims must be softened again. The provider webhook-event tables
+    // are still never pruned, so "at least six years" stays a floor.
+    expect(getAllByText(/deleted automatically each night/i).length).toBe(2);
     expect(getByText(/at least six years from the/)).toBeTruthy();
   });
 
@@ -178,7 +207,7 @@ describe("PrivacyPolicyPresenter", () => {
     const { getAllByText } = renderWithTheme(
       <PrivacyPolicyPresenter onBack={jest.fn()} />,
     );
-    // Appears in the under-16 route, the transfers section and Contact us.
+    // Appears in the under-13 route, the transfers section and Contact us.
     const matches = getAllByText(/admin@evans-software-solutions\.com/);
     expect(matches.length).toBeGreaterThanOrEqual(3);
   });

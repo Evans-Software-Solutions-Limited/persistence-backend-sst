@@ -93,6 +93,7 @@ describe("endCoachClientRelationship", () => {
       [{ id: "rel-1" }], // 1. soft-end UPDATE .returning()
       [{ id: "pa-1" }], // 2. delete programAssignments .returning() (1 row)
       [{ id: "wa-1" }, { id: "wa-2" }], // 3. delete workoutAssignments .returning() (2 rows)
+      [{ id: "sum-1" }], // 4. delete clientAiSummaries .returning() (1 row)
     ]);
     (getDb as any).mockReturnValue(ex);
 
@@ -109,6 +110,7 @@ describe("endCoachClientRelationship", () => {
       relationshipId: "rel-1",
       programmesRemoved: 1,
       workoutAssignmentsRemoved: 2,
+      aiSummariesRemoved: 1,
     });
 
     expect(auditTrainerAction).toHaveBeenCalledTimes(1);
@@ -123,6 +125,7 @@ describe("endCoachClientRelationship", () => {
           initiatedBy: "trainer",
           programmesRemoved: 1,
           workoutAssignmentsRemoved: 2,
+          aiSummariesRemoved: 1,
         }),
       }),
     );
@@ -134,7 +137,7 @@ describe("endCoachClientRelationship", () => {
     expect(setArgs.status).toBe("terminated");
     expect(setArgs.endDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(setArgs.updatedAt).toBeInstanceOf(Date);
-    expect(ex.where).toHaveBeenCalledTimes(4); // consent-version select + update + 2 deletes
+    expect(ex.where).toHaveBeenCalledTimes(5); // consent-version select + update + 3 deletes
 
     // 28-coach-data-sharing-consent: withdrawal clears the current-consent
     // stamp on the SAME update, and appends a `withdraw` row — source
@@ -158,20 +161,25 @@ describe("endCoachClientRelationship", () => {
     // pass this test even with clientId/trainerId swapped or dropped.
     const dialect = new PgDialect();
     // wheres order: [0] consent-version select, [1] soft-end update,
-    // [2] programmes delete, [3] workout-assignments delete.
-    const [, , programmesWhere, assignmentsWhere] = capture.wheres.map(
-      (c) => dialect.sqlToQuery(c as never).sql,
-    );
+    // [2] programmes delete, [3] workout-assignments delete,
+    // [4] clientAiSummaries delete.
+    const [, , programmesWhere, assignmentsWhere, summariesWhere] =
+      capture.wheres.map((c) => dialect.sqlToQuery(c as never).sql);
     expect(programmesWhere).toContain('"client_id"');
     expect(programmesWhere).toContain('"assigned_by"');
     expect(assignmentsWhere).toContain('"client_id"');
     expect(assignmentsWhere).toContain('"trainer_id"');
+    // Scoped to BOTH parties: a client_id-only delete would wipe summaries
+    // written by every other coach this client has ever had.
+    expect(summariesWhere).toContain('"client_id"');
+    expect(summariesWhere).toContain('"trainer_id"');
   });
 
   it("happy path (initiatedBy 'client'): audit payload records the client direction", async () => {
     const { ex } = txDb([
       [{ consentVersion: "v1-2026-07" }], // 0. pre-update consent-version SELECT
       [{ id: "rel-2" }],
+      [],
       [],
       [],
     ]);
@@ -190,6 +198,7 @@ describe("endCoachClientRelationship", () => {
       relationshipId: "rel-2",
       programmesRemoved: 0,
       workoutAssignmentsRemoved: 0,
+      aiSummariesRemoved: 0,
     });
     expect(auditTrainerAction).toHaveBeenCalledWith(
       expect.objectContaining({

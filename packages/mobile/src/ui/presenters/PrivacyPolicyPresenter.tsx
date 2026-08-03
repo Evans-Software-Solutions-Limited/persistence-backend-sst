@@ -20,12 +20,16 @@ import { color } from "@/ui/theme/tokens";
  *
  * ⚠ 2026-08-03 — the body copy is NO LONGER the legacy port. The legacy text
  * (`persistence-mobile/app/privacy-policy.tsx`, "Last Updated: January 2025")
- * had drifted into a *different document* from the hosted policy: it set the
- * age floor at 13 where the hosted one now says 16, described analytics
- * providers we do not use, and carried no legal bases, no coach-sharing
- * section and no transfer position. Two contradicting live privacy policies is
- * itself a UK GDPR Art 5(1)(a) accuracy breach, so content parity beats port
- * fidelity here. Layout, styles, props and testIDs are untouched.
+ * had drifted into a *different document* from the hosted policy: it described
+ * analytics providers we do not use, and carried no legal bases, no
+ * coach-sharing section and no transfer position. Two contradicting live privacy
+ * policies is itself a UK GDPR Art 5(1)(a) accuracy breach, so content parity
+ * beats port fidelity here. Layout, styles, props and testIDs are untouched.
+ *
+ * The age floor is 13 (DPA 2018 s.9), Brad's call on 2026-08-03 with the App
+ * Store content rating left at 9+. That combination means the service is
+ * "likely to be accessed by children", so the Children's Code applies — a
+ * separate workstream, NOT satisfied by this copy.
  *
  * This screen and `packages/web/src/pages/Privacy.tsx` are two copies of the
  * SAME document. Change both together, or neither. Both have tests pinning the
@@ -84,15 +88,21 @@ export function PrivacyPolicyPresenter({
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>2. Who can use Persistence</Text>
           <Text style={styles.bodyText}>
-            Persistence is intended for users aged 16 or over. We do not
+            Persistence is intended for users aged 13 or over. We do not
             knowingly collect personal data from anyone under that age.
           </Text>
           <Text style={styles.bodyText}>
-            If you are a parent or guardian and believe your child has created
-            an account, please contact us at admin@evans-software-solutions.com
-            and we will delete the account and its data promptly. If we become
-            aware that an account belongs to someone under 16, we will delete it
-            and the associated data without undue delay.
+            If you are under 18, please talk to a parent or guardian before
+            sharing your health or body information with a coach — a coach you
+            connect with will be able to see your body measurements.
+          </Text>
+          <Text style={styles.bodyText}>
+            If you are a parent or guardian and believe your child under 13 has
+            created an account, please contact us at
+            admin@evans-software-solutions.com and we will delete the account
+            and its data promptly. If we become aware that an account belongs to
+            someone under 13, we will delete it and the associated data without
+            undue delay.
           </Text>
         </View>
 
@@ -120,6 +130,16 @@ export function PrivacyPolicyPresenter({
             body fat, and, where you grant permission, data read from Apple
             Health. This is special-category (health) data under UK data
             protection law, which we process only with your explicit consent.
+          </Text>
+          <Text style={styles.listItem}>
+            • Food preferences — the allergens you tell us to avoid, any dietary
+            pattern you choose (such as vegetarian, vegan, gluten-free, halal or
+            kosher), foods you dislike or like, and how much effort you want a
+            meal to take. Allergen information is health data, and a dietary
+            pattern may reveal a religious or philosophical belief — choosing
+            halal or kosher, or vegetarian or vegan. Both are special-category
+            data, which we process only with your explicit consent. You can
+            change or clear these at any time.
           </Text>
           <Text style={styles.listItem}>
             • Goals &amp; progress — the goals, habits and progress information
@@ -182,16 +202,27 @@ export function PrivacyPolicyPresenter({
             the equipment list are used to suggest substitute exercises.
           </Text>
           <Text style={styles.listItem}>
+            • Meal suggestions — when you ask us to suggest a meal that fits
+            your remaining targets for the day, we send those targets, a
+            shortlist of foods, the foods you have said you like, your chosen
+            effort level, and any note you add about what you fancy. Your
+            allergens and dietary or religious patterns are applied on our
+            servers to build that shortlist — they are not themselves sent to
+            the AI provider. Every suggestion is then re-checked against your
+            allergens and patterns on our servers before you see it.
+          </Text>
+          <Text style={styles.listItem}>
             • Coach summaries — if you have consented to share your data with a
             coach, your coach can generate a written summary of your recent
             progress. To produce it we send your first name, your weight and
             goal weight, your personal records, and your recent training,
             nutrition and habit adherence to our AI provider. Unlike the
             features above, the summary that comes back is stored, so your coach
-            can read it again without regenerating it. If you end the coaching
-            relationship your coach can no longer access it, and it is deleted
-            when your account is deleted. If you later reconnect with the same
-            coach, summaries from before become available to them again.
+            can read it again without regenerating it. When the coaching
+            relationship ends — whether you leave your coach or they remove you
+            — every summary about you is deleted at that moment, so nothing
+            reappears if you later reconnect. Summaries are also deleted with
+            your account.
           </Text>
           <Text style={styles.bodyText}>
             The images and text you submit are not stored. They are held only in
@@ -235,10 +266,12 @@ export function PrivacyPolicyPresenter({
             subscription.
           </Text>
           <Text style={styles.listItem}>
-            • Explicit consent (Article 9(2)(a)) — your health and body metrics
-            are special-category data. We process them, and share them with a
-            coach where you choose to, only on the basis of your explicit
-            consent, which you can withdraw at any time.
+            • Explicit consent (Article 9(2)(a)) — some of what you give us is
+            special-category data: your health and body metrics, the allergens
+            you ask us to avoid, and — in your dietary patterns — information
+            that may reveal a religious or philosophical belief. We process all
+            of it, and share it with a coach where you choose to, only on the
+            basis of your explicit consent, which you can withdraw at any time.
           </Text>
           <Text style={styles.listItem}>
             • Legitimate interests (Article 6(1)(f)) — we process limited
@@ -295,8 +328,10 @@ export function PrivacyPolicyPresenter({
             • RevenueCat — subscription and purchase management.
           </Text>
           <Text style={styles.listItem}>
-            • Stripe — card payment processing for historic subscriptions taken
-            before purchases moved to Apple In-App Purchase.
+            • Stripe — card payment processing for any subscription paid
+            directly rather than through the App Store, such as an arrangement
+            made with us through our website. Stripe handles the card details;
+            we never see or store them.
           </Text>
           <Text style={styles.listItem}>
             • Expo — delivery of push notifications.
@@ -393,11 +428,11 @@ export function PrivacyPolicyPresenter({
             If you don&apos;t sign back in, your account and associated personal
             data — workouts, nutrition logs, progress and personal records,
             custom workouts and recipes, your goals and habits, your health and
-            body measurements, your subscription record, and your profile
-            including your profile photo — are permanently deleted once the 30
-            days have passed. The record of your consent to coach sharing, and
-            the log of when a coach accessed your data, are deleted along with
-            your account.
+            body measurements, your food preferences, your subscription record,
+            and your profile including your profile photo — are permanently
+            deleted once the 30 days have passed. The record of your consent to
+            coach sharing, and the log of when a coach accessed your data, are
+            deleted along with your account.
           </Text>
           <Text style={styles.bodyText}>
             A limited amount of information is kept for longer, or on a separate
@@ -416,14 +451,16 @@ export function PrivacyPolicyPresenter({
           </Text>
           <Text style={styles.listItem}>
             • Coach access records — the log of when a coach accessed your data
-            is kept so that we can answer any question you raise about who has
-            seen your information. We remove records older than 12 months
-            periodically, and the log is deleted in full with your account.
+            is kept for up to 12 months, so that we can answer any question you
+            raise about who has seen your information. Records older than 12
+            months are deleted automatically each night, and the log is deleted
+            in full with your account.
           </Text>
           <Text style={styles.listItem}>
             • Apple Health activity and sleep data — where you have granted
-            permission for us to read it, we remove records older than 12 months
-            periodically, and delete them in full with your account.
+            permission for us to read it, this is kept for up to 12 months.
+            Older records are deleted automatically each night, and all of it is
+            deleted with your account.
           </Text>
           <Text style={styles.listItem}>
             • Records relating to a legal claim or dispute — retained until the
@@ -463,8 +500,9 @@ export function PrivacyPolicyPresenter({
             processing that has a legal effect or otherwise significantly
             affects you. The outputs of the AI features described in section 5 —
             nutritional estimates, extracted recipes, suggested exercise
-            substitutions and coach summaries — are suggestions you and your
-            coach can review and change, and are not decisions of that kind.
+            substitutions, meal suggestions and coach summaries — are
+            suggestions you and your coach can review and change, and are not
+            decisions of that kind.
           </Text>
           <Text style={styles.bodyText}>
             If you have a concern about how we handle your data, you have the

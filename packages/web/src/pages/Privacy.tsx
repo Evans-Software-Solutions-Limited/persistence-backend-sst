@@ -8,21 +8,28 @@ import { useSeo } from "@/marketing/seo";
  *
  * ⚠ This page and `packages/mobile/.../PrivacyPolicyPresenter.tsx` are two
  * copies of the SAME document. They diverged once already (the in-app copy sat
- * at "January 2025" saying under-13 while this one said nothing about age at
- * all — two contradicting live policies is itself a UK GDPR Art 5(1)(a)
- * accuracy problem). Change both together, or neither — both have tests pinning
- * the legally-weighted claims, so a one-sided edit fails CI.
+ * at "January 2025" while this one said nothing about age at all — two
+ * contradicting live policies is itself a UK GDPR Art 5(1)(a) accuracy
+ * problem). Change both together, or neither — both have tests pinning the
+ * legally-weighted claims, so a one-sided edit fails CI.
  *
  * ONE deliberate divergence: the "Cookies and the Persistence website" section
  * below has no in-app counterpart, because an in-app screen sets no website
  * cookies. That is the only content difference; anything else is a bug.
  *
  * Every factual claim below was checked against the code on 2026-08-03. Do NOT
- * add a claim here that the implementation does not actually deliver — and note
- * the two places where the wording is deliberately loose because the mechanism
- * behind it is not yet automated (the 12-month "periodically", and "at least"
- * six years for the never-pruned provider webhook-event tables). Tightening
- * either sentence requires landing the prune first.
+ * add a claim here that the implementation does not actually deliver. Two claims
+ * in particular are load-bearing on code that must keep existing:
+ *
+ *   - The firm 12-month retention window depends on `dataRetentionSweep` running
+ *     nightly off `accountPurgeCron`. Remove that sweep and this becomes false.
+ *   - "Every summary about you is deleted" when a coaching relationship ends
+ *     depends on the `clientAiSummaries` delete in
+ *     `endCoachClientRelationship`. Teardown is a SOFT end that revives the same
+ *     row on reconnect, so without that delete the summaries come back.
+ *
+ * Still deliberately loose: "at least" six years for the provider
+ * webhook-event tables, which are never pruned, so retention there is unbounded.
  */
 export function Privacy() {
   useSeo({
@@ -59,17 +66,22 @@ export function Privacy() {
 
         <h2>Who can use Persistence</h2>
         <p>
-          Persistence is intended for users aged 16 or over. We do not knowingly
+          Persistence is intended for users aged 13 or over. We do not knowingly
           collect personal data from anyone under that age.
         </p>
         <p>
-          If you are a parent or guardian and believe your child has created an
-          account, please contact us at{" "}
+          If you are under 18, please talk to a parent or guardian before
+          sharing your health or body information with a coach — a coach you
+          connect with will be able to see your body measurements.
+        </p>
+        <p>
+          If you are a parent or guardian and believe your child under 13 has
+          created an account, please contact us at{" "}
           <a href="mailto:admin@evans-software-solutions.com">
             admin@evans-software-solutions.com
           </a>{" "}
           and we will delete the account and its data promptly. If we become
-          aware that an account belongs to someone under 16, we will delete it
+          aware that an account belongs to someone under 13, we will delete it
           and the associated data without undue delay.
         </p>
 
@@ -100,6 +112,16 @@ export function Privacy() {
             from Apple Health. This is special-category (health) data under UK
             data protection law, which we process only with your explicit
             consent.
+          </li>
+          <li>
+            <strong>Food preferences</strong> — the allergens you tell us to
+            avoid, any dietary pattern you choose (such as vegetarian, vegan,
+            gluten-free, halal or kosher), foods you dislike or like, and how
+            much effort you want a meal to take. Allergen information is health
+            data, and a dietary pattern may reveal a religious or philosophical
+            belief — choosing halal or kosher, or vegetarian or vegan. Both are
+            special-category data, which we process only with your explicit
+            consent. You can change or clear these at any time.
           </li>
           <li>
             <strong>Goals &amp; progress</strong> — the goals, habits, and
@@ -157,6 +179,17 @@ export function Privacy() {
             exercises.
           </li>
           <li>
+            <strong>Meal suggestions</strong> — when you ask us to suggest a
+            meal that fits your remaining targets for the day, we send those
+            targets, a shortlist of foods, the foods you have said you like,
+            your chosen effort level, and any note you add about what you fancy.
+            Your allergens and dietary or religious patterns are{" "}
+            <strong>applied on our servers</strong> to build that shortlist —
+            they are not themselves sent to the AI provider. Every suggestion is
+            then re-checked against your allergens and patterns on our servers
+            before you see it.
+          </li>
+          <li>
             <strong>Coach summaries</strong> — if you have consented to share
             your data with a coach, your coach can generate a written summary of
             your recent progress. To produce it we send your first name, your
@@ -164,10 +197,10 @@ export function Privacy() {
             training, nutrition and habit adherence to our AI provider. Unlike
             the features above, the summary that comes back{" "}
             <strong>is stored</strong>, so your coach can read it again without
-            regenerating it. If you end the coaching relationship your coach can
-            no longer access it, and it is deleted when your account is deleted.
-            If you later reconnect with the same coach, summaries from before
-            become available to them again.
+            regenerating it. When the coaching relationship ends — whether you
+            leave your coach or they remove you — every summary about you is
+            deleted at that moment, so nothing reappears if you later reconnect.
+            Summaries are also deleted with your account.
           </li>
         </ul>
         <p>
@@ -214,10 +247,13 @@ export function Privacy() {
             subscription.
           </li>
           <li>
-            <strong>Explicit consent (Article 9(2)(a))</strong> — your health
-            and body metrics are special-category data. We process them, and
-            share them with a coach where you choose to, only on the basis of
-            your explicit consent, which you can withdraw at any time.
+            <strong>Explicit consent (Article 9(2)(a))</strong> — some of what
+            you give us is special-category data: your health and body metrics,
+            the allergens you ask us to avoid, and — in your dietary patterns —
+            information that may reveal a religious or philosophical belief. We
+            process all of it, and share it with a coach where you choose to,
+            only on the basis of your explicit consent, which you can withdraw
+            at any time.
           </li>
           <li>
             <strong>Legitimate interests (Article 6(1)(f))</strong> — we process
@@ -271,8 +307,10 @@ export function Privacy() {
             <strong>RevenueCat</strong> — subscription and purchase management.
           </li>
           <li>
-            <strong>Stripe</strong> — card payment processing for historic
-            subscriptions taken before purchases moved to Apple In-App Purchase.
+            <strong>Stripe</strong> — card payment processing for any
+            subscription paid directly rather than through the App Store, such
+            as an arrangement made with us through our website. Stripe handles
+            the card details; we never see or store them.
           </li>
           <li>
             <strong>Expo</strong> — delivery of push notifications.
@@ -371,10 +409,11 @@ export function Privacy() {
           If you don't sign back in, your account and associated personal data —
           workouts, nutrition logs, progress and personal records, custom
           workouts and recipes, your goals and habits, your health and body
-          measurements, your subscription record, and your profile including
-          your profile photo — are permanently deleted once the 30 days have
-          passed. The record of your consent to coach sharing, and the log of
-          when a coach accessed your data, are deleted along with your account.
+          measurements, your food preferences, your subscription record, and
+          your profile including your profile photo — are permanently deleted
+          once the 30 days have passed. The record of your consent to coach
+          sharing, and the log of when a coach accessed your data, are deleted
+          along with your account.
         </p>
         <p>
           A limited amount of information is kept for longer, or on a separate
@@ -394,16 +433,16 @@ export function Privacy() {
           </li>
           <li>
             <strong>Coach access records</strong> — the log of when a coach
-            accessed your data is kept so that we can answer any question you
-            raise about who has seen your information. We remove records older
-            than 12 months periodically, and the log is deleted in full with
-            your account.
+            accessed your data is kept for up to 12 months, so that we can
+            answer any question you raise about who has seen your information.
+            Records older than 12 months are deleted automatically each night,
+            and the log is deleted in full with your account.
           </li>
           <li>
             <strong>Apple Health activity and sleep data</strong> — where you
-            have granted permission for us to read it, we remove records older
-            than 12 months periodically, and delete them in full with your
-            account.
+            have granted permission for us to read it, this is kept for up to 12
+            months. Older records are deleted automatically each night, and all
+            of it is deleted with your account.
           </li>
           <li>
             <strong>Records relating to a legal claim or dispute</strong> —
@@ -442,9 +481,9 @@ export function Privacy() {
           We do not make any decision about you based solely on automated
           processing that has a legal effect or otherwise significantly affects
           you. The outputs of the AI features described above — nutritional
-          estimates, extracted recipes, suggested exercise substitutions and
-          coach summaries — are suggestions you and your coach can review and
-          change, and are not decisions of that kind.
+          estimates, extracted recipes, suggested exercise substitutions, meal
+          suggestions and coach summaries — are suggestions you and your coach
+          can review and change, and are not decisions of that kind.
         </p>
         <p>
           If you have a concern about how we handle your data, you have the
