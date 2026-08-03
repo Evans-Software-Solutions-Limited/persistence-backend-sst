@@ -38,8 +38,85 @@ go), not the calendar" — and no pilot is recorded. If revenue timing starts to
 bite, the separable piece is M21: Loadout Phase 4 + Mealprint alone close the
 "paywall promises what it cannot deliver" gap, which is the launch-blocking half.
 
-**Step 0 (the shared async-job spine) is SHIPPED as of 2026-08-03.** Phase 4,
-Mealprint and M21 remain zero code. See § Next plan of action.
+**Step 0 (the shared async-job spine) is SHIPPED as of 2026-08-03**, and
+**spec-26 Mealprint's BACKEND (Phase 0 + Phase 1) shipped the same day** — see
+§ Mealprint below. Phase 4 and M21 remain zero code; Mealprint's MOBILE half
+(tasks 0.6, 1.5) is also still zero code. See § Next plan of action.
+
+### spec-26 Mealprint — BACKEND SHIPPED 2026-08-03, MOBILE NOT BUILT
+
+Branch **`feat/mealprint-phase-0-1`**, three commits, **NOT a PR yet and NOT
+merged**: `76596e7d` (Phase 0), `863e40d4` (Phase 1), `52b93df0` (Inspector Brad
+fixes). Off `main` @ `14b6a1eb`.
+
+**Built (T-0.1…0.5, T-1.1…1.4):** `foods.allergen_tags/category_tags/locale_tags`
++ GIN indexes; `nutrition_preferences` + `mealprint_ingredient_feedback`;
+`subscription_tiers.mealprint_access`; `GET`/`PUT /nutrition/preferences`;
+`avoidanceFilter`; the four-stage suggestion pipeline behind
+`POST /nutrition/ai/meal-suggest`; `meal_ai` entitlement; `AI_MEAL_MODEL_ID` +
+`AI_MEAL_SUGGEST_DAILY_LIMIT: "20"` in `infra/api.ts`.
+
+**⚠ NOT built: T-0.6 and T-1.5 — the entire MOBILE half.** No port method, no
+adapter, no screen. Nothing in `packages/mobile` calls either endpoint, so
+Mealprint is not user-reachable. That is PR 2 on this branch and it is the
+larger, riskier half: a preferences wizard + editor with the allergen chip set
+and its legally-reviewed disclaimer copy, the Fuel entry card, and the suggest
+sheet with draft-confirm. It needs a device pass. Reference: spec-26 design § 4;
+`useLoadoutGate.ts` is the gate-hook template (note `mealprint_access` is
+premium_plus ONLY, so its tier mirror differs) and `SnapAISheetContainer` is the
+root-mounted-sheet template.
+
+**⚠ Three things must happen before this feature works at all:**
+
+1. **The `foods` tag backfill is a RE-SEED, not an UPDATE.** Tag values exist
+   only in the OFF dump. Run `seedOpenFoodFacts.ts` with the widened DuckDB
+   projection in that file's header. Until then all ~144k curated rows are
+   unknown-allergen and excluded from every allergen-filtered pool, which
+   presents as "Mealprint can't find anything I can eat".
+2. **Three migrations need a MANUAL production apply**: `20260803120000`,
+   `20260803120100`, `20260803120200`.
+3. **Bedrock**: `AI_MEAL_MODEL_ID` reuses the Loadout re-map's Haiku 4.5 id, so
+   it is already granted in both accounts. No IAM change.
+
+**Decisions taken in this slice — do not re-litigate:**
+
+- **`mealprint_access` → `premium_plus` ONLY**, deliberately unlike
+  `loadout_access`. No coach surface in v1 (coach meal plans are explicitly out
+  of scope), and `individual_trainer` is already the most cost-exposed tier at
+  ~212 % of net — repeating the known £14.99-vs-£29.99 Loadout price hole would
+  cost money for nothing.
+- **This exposed a real upsell bug.** `pickUpgradeTier`'s role branch assumed
+  every Premium+ feature is also granted to trainer tiers — true of `loadout`,
+  false of `meal_ai`. A denied coach would have been sold `individual_trainer`
+  and stayed locked out, which is the pay-and-stay-locked-out failure its own
+  docstring says the required `feature` param exists to prevent.
+  `PREMIUM_PLUS_ONLY_FEATURES` now beats the role branch.
+- **Retrieval ordering is protein density.** The catalogue cannot be fetched
+  whole, so something must pick which 600 rows the model sees. A product
+  judgement, deterministic on purpose so it can be measured rather than argued
+  about. **If suggestion quality disappoints, measure this first.**
+- **Empty states are 200s with an `emptyReason`**, not errors, and none consumes
+  the daily ceiling.
+
+**⚠ Two lessons from the Inspector Brad sweeps, both worth carrying forward:**
+
+- **An allergen tag's SILENCE is not evidence of absence.** `allergen_tags = []`
+  is true of a partially-tagged OFF row, and OFF's tagging is routinely partial.
+  A fix that let usable allergen tags suppress the CATEGORY channel served
+  `Fishermans Pie`/`["en:milk"]`/`["en:fish-pies"]` to a vegetarian, reported as
+  verified — and a test had already pinned that as intended. Independent evidence
+  channels must not gate each other.
+- **A NULL Postgres predicate EXCLUDES the row.**
+  `NOT (allergen_tags && ARRAY[…])` is NULL for an untagged row, so a
+  pattern-only user had every untagged row silently dropped in SQL while the JS
+  filter would have kept it. Any `&&`/`@>` exclusion over a nullable array needs
+  an explicit `IS NULL OR`.
+
+**Gates:** prettier + eslint (0 errors), full-workspace typecheck 8/8, build
+13/13, `vitest run src/application` 306 files / 3663 tests. `avoidanceFilter`
+alone is 86 tests. 🕵️ Inspector Brad local: 2 sweeps + 1 closed verification, 14
+findings, all fixed. **@inspector-brad CI NOT fired.** NOT device-verified and
+never exercised against real Bedrock.
 
 ## Superseded state (2026-07-31)
 
@@ -539,11 +616,14 @@ anything near the claim. Also worth carrying forward: the break was in `infra/`,
 which has NEITHER typecheck NOR tests, and CI gates say nothing about whether
 `infra/` will apply.
 
-**1. spec-26 Mealprint — NEXT.** Fully specced, **all six checkpoints RESOLVED by Brad
-2026-07-24** (branding, Premium+ hard gate with no taster, ceilings 20/5/10, the
-marketing-site reprice to £29.99, the UK FIC-14 allergen vocabulary, and week
-plans + shopping list IN v1). 0 of ~23 tasks built. P0 (the tier restructure) is
-already done and free to consume.
+**1. spec-26 Mealprint — BACKEND PHASES 0 + 1 SHIPPED 2026-08-03** (§ spec-26
+Mealprint above). 9 of ~23 tasks built, all backend.
+
+⚠ **The immediate next slice is Mealprint's MOBILE half (T-0.6, T-1.5)** — PR 2
+on `feat/mealprint-phase-0-1`. Without it nothing calls either endpoint and the
+feature does not exist for a user. Then Phase 2 (day plans), then Phase 3 (week
+plans, which is where the async-job spine gets consumed — and where the staging
+Lambda quota becomes a hard blocker, see § 0).
 
 **2. Loadout Phase 4 — coach programme adaptation.** T-4.1…T-4.5. Needs the
 programme-linkage migration (`parent_program_id`, `variation_kind`,
