@@ -64,7 +64,7 @@ export async function aiJobMaintenanceSweep(deps: {
   // The other half of the give-up contract, and it is NOT covered by the reap
   // above: a message that dies before its first receive leaves a `queued` row
   // that nothing ever transitions. Throttled receives count toward the redrive
-  // policy, so a burst against the worker's reserved concurrency really can send
+  // policy, so a burst against the worker's concurrency cap really can send
   // a message to the DLQ having never executed.
   try {
     summary.queuedReaped = await deps.repo.markStaleQueued(deps.now);

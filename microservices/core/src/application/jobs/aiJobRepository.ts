@@ -609,7 +609,7 @@ export class AiJobRepository {
    * `markStaleRunning` cannot cover this: a message that dies before its first
    * receive leaves the row `queued`, and nothing about `running` staleness
    * applies. Throttled receives count toward the redrive policy, so a burst
-   * against the worker's reserved concurrency really can send a message to the
+   * against the worker's concurrency cap really can send a message to the
    * DLQ having never executed — leaving a client polling `queued 0/120` forever
    * and a row the terminal-job purge never sees.
    */

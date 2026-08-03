@@ -50,7 +50,7 @@ export const STALE_AFTER_MS = 40 * 60 * 1000;
  * How long a job may sit `queued` before it is given up on.
  *
  * A message can die before it is ever claimed: throttled receives count toward
- * the redrive policy, so a burst against the worker's reserved concurrency can
+ * the redrive policy, so a burst against the worker's concurrency cap can
  * send a message to the DLQ having never executed. Nothing about `running`
  * staleness covers that — the row stays `queued` forever, so the client polls it
  * indefinitely AND the terminal-job purge never sees it.
@@ -59,7 +59,7 @@ export const STALE_AFTER_MS = 40 * 60 * 1000;
  * visibility timeout is ~48 minutes to reach the DLQ, so 60 minutes clears the
  * window in which a failing message could still be retried.
  *
- * ⚠ It does NOT prove the message is gone under BACKLOG. `reserved: 5` against a
+ * ⚠ It does NOT prove the message is gone under BACKLOG. A cap of 5 against a
  * ~5-minute job caps throughput near 60 jobs/hour, and a message waiting behind a
  * backlog is never RECEIVED — so its receive count never increments and it never
  * reaches the DLQ. A burst of more than ~60 distinct users would have its tail

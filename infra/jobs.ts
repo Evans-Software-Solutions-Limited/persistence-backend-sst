@@ -74,12 +74,24 @@ export const aiJobWorker = aiJobQueue.subscribe(
     // merely wrong, and the worker's own time-budget check (design § 3.3) is
     // sized against THIS number.
     timeout: "15 minutes",
-    // ⚠ Each worker holds up to `DB_POOL_MAX` (4) Postgres sockets for the
-    // whole of a run that can last 15 minutes — far longer than any request
-    // Lambda. 5 concurrent workers → ≤ 20 sockets, comfortably inside
-    // Supavisor's pool, and it doubles as the bound on how much Bedrock spend a
-    // burst can generate.
-    concurrency: { reserved: 5 },
+    // ⚠ The worker's concurrency bound is on the EVENT SOURCE MAPPING (see
+    // `scalingConfig` at the foot of this file), NOT here as Lambda reserved
+    // concurrency. That distinction is not stylistic — `concurrency: { reserved: 5 }`
+    // BROKE THE STAGING DEPLOY:
+    //
+    //   InvalidParameterValueException: Specified ReservedConcurrentExecutions for
+    //   function decreases account's UnreservedConcurrentExecution below its
+    //   minimum value of [10].
+    //
+    // AWS requires at least 10 UNRESERVED concurrent executions to remain after
+    // any reservation. Staging deploys to a different AWS account from production
+    // (see the `dns` comment on `coreAPI` in `infra/api.ts`), and the 2026-08-01
+    // raise to 1000 covered PRODUCTION only — the staging account is still at the
+    // 10 that `packages/db/src/client.ts` recorded on 2026-07-29. On a quota of 10
+    // you cannot reserve ANY concurrency: 10 − n < 10 for every n ≥ 1.
+    //
+    // So reserved concurrency cannot express this bound portably, and a
+    // stage-conditional would leave staging unbounded while pretending otherwise.
     // ⚠ Both ARN shapes are required and this is deliberately COPIED from
     // `coreRoute` rather than shared: Bedrock denies the call if only the
     // inference profile is granted, because the profile is a routing
@@ -111,5 +123,37 @@ export const aiJobWorker = aiJobQueue.subscribe(
     // jobs cannot finish inside one 900 s invocation, and partial-batch-failure
     // reporting would be a second, entirely avoidable correctness problem.
     batch: { size: 1 },
+    transform: {
+      // THE WORKER'S CONCURRENCY BOUND (design § 1.2(3)).
+      //
+      // `maximumConcurrency` caps how many concurrent invocations the SQS poller
+      // creates from this queue. It is the right instrument where Lambda reserved
+      // concurrency is the wrong one:
+      //
+      //   - it does NOT reserve account concurrency, so it never trips the
+      //     unreserved-minimum-10 rule that broke the staging deploy;
+      //   - it therefore behaves identically on the quota-10 staging account and
+      //     the quota-1000 production account, so staging is genuinely bounded
+      //     rather than bounded-only-where-the-quota-allows.
+      //
+      // Why the bound exists at all: each worker holds up to `DB_POOL_MAX` (4)
+      // Postgres sockets for a run that can last 15 minutes — far longer than any
+      // request Lambda. 5 concurrent workers → ≤ 20 sockets, inside Supavisor's
+      // pool, and it doubles as the ceiling on how much Bedrock spend a single
+      // burst can generate.
+      //
+      // ⚠ AWS floors this at 2; 1 is rejected. If a kind ever needs strict
+      // serialisation, that belongs in the job layer (the in-flight unique index
+      // already serialises per user per kind), not here.
+      //
+      // What is genuinely lost versus reserved concurrency: this CAPS the worker
+      // but does not RESERVE capacity for it, so a busy account can still starve
+      // it. That is not a regression — on a quota-10 account nothing can reserve
+      // capacity anyway, and the API route is the one that must win under
+      // contention.
+      eventSourceMapping: {
+        scalingConfig: { maximumConcurrency: 5 },
+      },
+    },
   },
 );

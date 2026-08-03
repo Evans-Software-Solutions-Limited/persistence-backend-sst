@@ -57,7 +57,14 @@ as invariants rather than left to the infra file:
    **20 seconds** — see the comment on `coreRoute` in `infra/api.ts`, which
    documents this default silently truncating two model paths. Never rely on the
    default here.
-3. **`reservedConcurrency` on the worker.** Each worker holds up to
+3. **A concurrency cap on the worker — as `maximumConcurrency` on the EVENT
+   SOURCE MAPPING, not as Lambda reserved concurrency.** ⚠ `reserved` broke the
+   staging deploy: AWS requires ≥ 10 UNRESERVED concurrent executions to remain
+   after any reservation, staging is a different AWS account from production, and
+   the 2026-08-01 raise to 1000 covered production only — so on staging's quota of
+   10 you cannot reserve _any_ concurrency. `maximumConcurrency` caps SQS-driven
+   invocations without touching the account's unreserved pool, so it behaves the
+   same on both accounts. AWS floors it at 2. Each worker holds up to
    `DB_POOL_MAX` (4) Postgres sockets for its whole run, and a 900 s run is a
    long time to hold them. Capped at 5 concurrent workers → ≤ 20 sockets, well
    inside Supavisor's pool. It also bounds Bedrock spend under a burst.
@@ -317,7 +324,7 @@ and succeeds. 40 min = 16 min visibility + 15 min worker run + margin.
 `QUEUED_STALE_AFTER_MS` (**60 min**) covers the death `STALE_AFTER_MS` cannot
 see: a message that dies **before it is ever claimed**, leaving a row nothing
 transitions. Not hypothetical — throttled receives count toward the redrive
-policy, so a burst against the worker's reserved concurrency can send a message to
+policy, so a burst against the worker's concurrency cap can send a message to
 the DLQ having never executed. Without this reaper the client polls
 `queued 0/120` forever AND the terminal-job purge never sees the row. Measured
 from `created_at`, since a never-claimed job has no heartbeat; sized off the
@@ -413,7 +420,7 @@ same count and all proceed. On the synchronous endpoints that is a recorded,
 bounded gap (the #156 pattern). Here one unit of work is up to ~120 inferences, so
 the same race is worth ~$0.69 each: **50 concurrent enqueues with distinct
 idempotency keys against a ceiling of 3 would accept 50 jobs and ~$34 of Bedrock
-spend**, and the worker's `reservedConcurrency` only PACES that — it never caps
+spend**, and the worker's concurrency cap only PACES that — it never caps
 it.
 
 So the spine adds a **partial UNIQUE index** on
@@ -518,10 +525,15 @@ export const aiJobQueue = new sst.aws.Queue("AiJobQueue", {
 aiJobQueue.subscribe({
   handler: "microservices/core/src/aiJobWorker.handler",
   timeout: "15 minutes",             // § 1.2(2) — NOT SST's 20 s default
-  concurrency: { reserved: 5 },      // § 1.2(3)
+  // NOT `concurrency: { reserved: 5 }` — see § 1.2(3).
   permissions: [ /* the same two Bedrock resource shapes as coreRoute */ ],
   environment: { DATABASE_URL, SENTRY_DSN, …the AI model ids },
-}, { batch: { size: 1 } });          // § 1.2(4)
+}, {
+  batch: { size: 1 },                          // § 1.2(4)
+  transform: {                                 // § 1.2(3) — the concurrency bound
+    eventSourceMapping: { scalingConfig: { maximumConcurrency: 5 } },
+  },
+});
 ```
 
 ⚠ **The worker needs `link: [aiJobQueue]` too**, and its absence is silent until a

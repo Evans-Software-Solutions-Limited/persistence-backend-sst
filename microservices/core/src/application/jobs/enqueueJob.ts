@@ -108,7 +108,7 @@ export async function enqueueJob(input: {
   // its siblings. The proper fix belongs in `AiUsageLogRepository` for all of
   // them at once (recorded in STATE.md § Open items). The exposure here is
   // smaller than on the sync endpoints in one respect and larger in another:
-  // the worker's `reservedConcurrency` caps how many jobs actually RUN at once,
+  // the worker's SQS `maximumConcurrency` caps how many jobs actually RUN at once,
   // but each job is worth many inferences.
   const limit = resolveCeiling(kind.ceilingEnv, kind.ceilingDefault);
   const usedToday = await usageLog.countForUserToday(
