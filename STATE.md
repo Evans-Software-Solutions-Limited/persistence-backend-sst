@@ -9,7 +9,39 @@ items, and the four most recent sessions. Trimmed 2026-07-27 from 1554 lines.
 If anything here contradicts `git log --oneline -30`, the git history wins —
 say so and fix this file.
 
-## Current state (2026-07-31)
+## Current state (2026-08-02)
+
+### ⚠ PLAN OF RECORD — the Premium+ launch is now a BUNDLE (Brad, 2026-08-02)
+
+**`premium_plus` does not go active until Loadout Phase 4, spec-26 Mealprint AND
+the M21 B2B org layer are all shipped.** Brad's call, made after the Loadout
+athlete flow signed off. This supersedes the previous plan, in which T-P0.10
+(the ASC + RevenueCat flip) followed the Loadout release on its own, and it
+supersedes `GTM-EXPANSION/BRIEF.md`'s sequencing, which puts M21 **post**-launch
+on a pilot trigger.
+
+Two things make the bundling coherent rather than merely bigger:
+
+- **The catalog row already promises Mealprint.** The `premium_plus` row's
+  `features` jsonb is `{"loadout": true, "mealprint": true}`, and
+  `SubscriptionSelectionPresenter` renders a "Mealprint — AI meal planning
+  around your targets" bullet off it. Flipping `is_active` today would put a
+  £29.99/mo card on the live paywall advertising a feature with **zero code**.
+- **B2B changes the entitlement SEAM, not just the surface.** M21's
+  org-aware resolution ("live personal sub, else highest active grant") rewrites
+  how `assertEntitlement` resolves a tier. Landing that before the tier is
+  purchasable means it is never retrofitted underneath paying subscribers.
+
+⚠ **The honest cost:** the consumer subscription now waits on an enterprise
+layer whose own brief says "build trigger: a real pilot conversation (Brad says
+go), not the calendar" — and no pilot is recorded. If revenue timing starts to
+bite, the separable piece is M21: Loadout Phase 4 + Mealprint alone close the
+"paywall promises what it cannot deliver" gap, which is the launch-blocking half.
+
+**Step 0 (the shared async-job spine) is SHIPPED as of 2026-08-03.** Phase 4,
+Mealprint and M21 remain zero code. See § Next plan of action.
+
+## Superseded state (2026-07-31)
 
 - **⚠ APP STORE: build 1.0 (39) REJECTED under Guideline 4 (Design)** — the Sign
   in with Apple button used app-drawn logo artwork. Fixed on **PR
@@ -459,7 +491,119 @@ Actions, in order of value:
   AC-7.2 rewritten and AC-7.2a/7.2b added plus design § 10.1. The Profile row, its handler, the `Stack.Screen` and
   the route file are deleted, so there is exactly one way in.
 
-### Loadout — the Gyms segment slice (PR #346, 2026-08-02)
+### Next plan of action — the Premium+ launch bundle (2026-08-02)
+
+⚠ **ORDER CHANGED 2026-08-03 (Brad): Mealprint goes NEXT, ahead of Loadout
+Phase 4.** Phase 4 is coach-facing and gated on an open cap decision; Mealprint is
+what the live paywall already advertises, so it is the delivery risk. Phase 4
+slots in after it. Nothing about the dependency graph forces the old order — both
+consume the same spine, which is now built.
+
+**0. The shared async-job spine — ✅ SHIPPED 2026-08-03.**
+PRs [#348](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/348)
+(`c8624248`) + [#349](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/349)
+(`6f756b82`). Spec triplet at `specs/_shared/async-jobs/` — the ONE place the
+job-table design lives; the consuming specs defer there. `ai_jobs` table, SQS
+queue + DLQ + 15-minute worker, claim/checkpoint/resume/poll, `GET /jobs/:id`,
+nightly maintenance sweep, DLQ + worker-error alarms. Deployed to staging, green.
+
+Consuming it is: register a `JobKind` (`registry.ts` ships EMPTY on purpose) and
+call `enqueueJob()`. The spine owns claim, checkpoint, heartbeat, time-budget
+yield, retries, failure taxonomy and staleness — a consumer reimplementing any of
+those is a spine bug.
+
+⚠ **Three things a consumer MUST know:**
+
+- **`ai_jobs` migration `20260802120000` is NOT APPLIED** to staging or prod.
+  Manual. Nothing runs until it is.
+- **The two `ai_usage_log` endpoint keys must differ** — one row per JOB for the
+  ceiling, one per MODEL CALL for telemetry. `registerJobKind` throws if they are
+  equal, because a 120-inference job under one key trips its own ceiling on run
+  one.
+- **`maxInvocations` defaults to 20, sized on Loadout's ~20 s steps.** A kind with
+  slower steps must raise it or it dies mid-progress.
+
+⚠ **STAGING LAMBDA QUOTA IS 10, and it is now a blocker rather than trivia.** It
+broke the first deploy of the spine (`reserved: 5` cannot leave 10 unreserved), it
+makes any load test measure the quota rather than Supabase, and — critically —
+before ANY kind is registered it must be resolved, or five 15-minute workers take
+half the staging account and throttle the API into the same 503s that got build 39
+rejected. Staging is a DIFFERENT AWS account from production; the 2026-08-01 raise
+to 1000 covered prod only. Three routes, recorded in `infra/jobs.ts`: raise the
+staging quota (also unblocks load testing — preferred), cap `maximumConcurrency`
+at 2 on non-production, or give `coreRoute` a reservation.
+
+Six local Inspector Brad passes found 30 findings on the spine, so the concurrency
+semantics are subtle by nature — read `design.md` § 3.1 and § 3.4 before touching
+anything near the claim. Also worth carrying forward: the break was in `infra/`,
+which has NEITHER typecheck NOR tests, and CI gates say nothing about whether
+`infra/` will apply.
+
+**1. spec-26 Mealprint — NEXT.** Fully specced, **all six checkpoints RESOLVED by Brad
+2026-07-24** (branding, Premium+ hard gate with no taster, ceilings 20/5/10, the
+marketing-site reprice to £29.99, the UK FIC-14 allergen vocabulary, and week
+plans + shopping list IN v1). 0 of ~23 tasks built. P0 (the tier restructure) is
+already done and free to consume.
+
+**2. Loadout Phase 4 — coach programme adaptation.** T-4.1…T-4.5. Needs the
+programme-linkage migration (`parent_program_id`, `variation_kind`,
+`source_gym_id`, `source_equipment_type_ids` on `workout_programs` — design
+§ 2.4; none of these columns exist), a programme-level preview/create-variant
+that assembles the candidate pool ONCE for the union of all muscles, the 120-cap
+with a 413 rather than silent truncation, assign-from-variant behind
+`assertTrainerCanActForClient`, coach UI, and an ex-coach-gets-403 test.
+⚠ Brad checkpoint still open in design § 7.3: **confirm the 120 cap** — its
+rationale changed (it is now 120 model calls, ~5 min, ~$0.69, not "nearly free").
+
+**3. M21 B2B org layer.** ⚠ **It has no spec triplet.** `specs/23-organizations/`
+and `specs/milestones/M21-b2b-orgs/` are both referenced by
+`GTM-EXPANSION/BRIEF.md § 5` and **neither exists** — M21 is one brief section
+plus design task D5. Writing the triplet is step one (Kiro discipline). The
+load-bearing change is org-aware entitlement resolution; the rest (org tables,
+invite codes mirroring `trainer_invite_codes`, the founder ops console,
+aggregate-only dashboard with cohort suppression below 5) is comparatively
+mechanical.
+
+**4. Then and only then, T-P0.10** — flip `is_active`, attach and submit the two
+ASC products. Brad's runbook, chat-only.
+
+#### ⚠ Four traps that will bite this bundle
+
+0. ⚠ **The staging Lambda quota (10) must be resolved before ANY job kind is
+   registered.** See § 0 above — it is the same limit that broke the spine's first
+   deploy, and with a kind registered it would throttle the API into 503s on the
+   staging account.
+1. **`assertEntitlement`'s catch-all silently allows everyone.**
+   `assertEntitlement.ts:730-735` documents it: a feature name added to the
+   `EntitlementFeature` union **without** its routing line falls through to
+   `{ allowed: true }` — a paid gate becomes a no-op with no type error and no
+   test failure. Mealprint's `meal_ai` and any Phase-4 programme feature each
+   need that line. Note three keys are ALREADY stubs returning `allowed: true`:
+   `ai_workout`, `gym_buddy`, `unlimited_exercise_library`.
+2. **`useLoadoutGate` mirrors the tier→flag map CLIENT-SIDE by hand.**
+   `/subscriptions/me` still does not project `loadout_access`, so
+   `TIER_GRANTS_LOADOUT` is a hardcoded `Record` over the tier union. **B2B makes
+   this actively wrong**, not just ugly: an org seat grants a tier the client
+   cannot see. Retire it — project the flag on `subscriptionRepository.findForUser`
+   + `MySubscription` + the mobile read. ~4 lines, and it should land with M21.
+3. **The coach/athlete Loadout price hole becomes a product surface at Phase 4.**
+   All three trainer tiers carry `loadout_access`, so a coach gets Loadout at
+   £14.99 while an athlete pays £29.99. Brad's 2026-07-27 decision was "LIVE WITH
+   IT for now" — Phase 4 is the point where that stops being invisible.
+4. **Two briefs in the tree are stale and will mislead.**
+   `TRAINER-CLIENT-CAPS-BRIEF.md` says `trainer_client_limit` is unenforced; it
+   has since been **enforced** (`trainers/seats/trainerSeats.ts` is the surface,
+   guarded at four call sites). And `GTM-EXPANSION/BRIEF.md`'s paywall table
+   still prices Premium+ at £19.99 and specifies a free taster of 3 — the price
+   is £29.99 and the taster was **killed** (spec-21 AC-9.3, spec-26 decision 2).
+
+### Loadout — the Gyms segment slice (PR #346, MERGED 2026-08-02)
+
+**MERGED as `5370abb8`.** Its sibling **PR #345 (`8fcfd5c7`) is MERGED too** —
+the device-pass fix that found Loadout's whole Phase 3 scan path was a dead end
+on device (gorhom fires `onClose` on a PROGRAMMATIC close, so each sheet CTA's
+own `goToStep` was overwritten a beat later; neither exit ever reached an
+adaptation). Both green on CI, Inspector Brad clean. `main` is at `8fcfd5c7`.
 
 Saved-gym management moved from Profile · Account into a fourth **`Gyms` segment
 in the Train hub**. Three things, not one:
