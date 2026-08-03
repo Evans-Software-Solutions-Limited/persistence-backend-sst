@@ -159,12 +159,19 @@ export function useMealSuggest(): UseMealSuggest {
   }, [run]);
 
   const reset = useCallback(() => {
-    // Deliberately does NOT clear `inFlightRef`: a reset while a request is in
+    // ⚠ Deliberately does NOT clear `inFlightRef`: a reset while a request is in
     // flight must not open the door to a second one, or closing and reopening the
-    // sheet mid-generation would bill two suggestions. The in-flight call's
-    // `finally` clears it.
+    // sheet mid-generation would bill two of the user's twenty daily suggestions.
+    // The in-flight call's `finally` clears it.
+    //
+    // ⚠ But the stage must then stay `generating`, not go `idle`. Going idle put
+    // the sheet back to a setup body with a LIVE Generate button that `run`
+    // silently no-opped for up to 30 s (the client timeout), after which the
+    // original request landed and rendered results for the shape and steer the
+    // reset had already wiped off the screen. Keeping the spinner tells the truth:
+    // a request is still out, and its answer is the one that will arrive.
     lastInputRef.current = null;
-    setStage("idle");
+    setStage(inFlightRef.current ? "generating" : "idle");
     setResult(null);
     setFailure(null);
   }, []);

@@ -135,6 +135,8 @@ function prefProps(
     isLoadingInitial: false,
     isSaving: false,
     errorMessage: null,
+    loadFailed: false,
+    onRetryLoad: jest.fn(),
     dietaryPatterns: [],
     onTogglePattern: jest.fn(),
     avoidAllergens: [],
@@ -386,6 +388,7 @@ function sheetProps(
     remaining: null,
     labelCheckRequired: false,
     dietaryPatterns: [],
+    serverPartialEnforcementOnly: false,
     onSelectSuggestion: jest.fn(),
     draft: null,
     onToggleDraftItem: jest.fn(),
@@ -852,5 +855,146 @@ describe("MealprintPreferencesPresenter — saving and full-list states", () => 
     expect(onAvoidFoodDraftChange).toHaveBeenCalledWith("olives");
     fireEvent.changeText(getByTestId("mealprint-like-input"), "tofu");
     expect(onLikedFoodDraftChange).toHaveBeenCalledWith("tofu");
+  });
+});
+
+describe("MealprintPreferencesPresenter — the load-failure guard (Inspector 🔴)", () => {
+  it("⚠ replaces the ENTIRE form with a retry panel, so there is no Save to press", () => {
+    // `PUT /nutrition/preferences` is a full last-write-wins replacement, and the
+    // form renders empty defaults until it is seeded — so an editable form over an
+    // unread server row is a delete button for the user's allergen list.
+    const { getByTestId, queryByTestId } = renderWithTheme(
+      <MealprintPreferencesPresenter {...prefProps({ loadFailed: true })} />,
+    );
+    expect(getByTestId("mealprint-preferences-load-failed")).toBeTruthy();
+    expect(queryByTestId("mealprint-preferences-save")).toBeNull();
+    expect(queryByTestId("mealprint-preferences-wizard-cta")).toBeNull();
+    expect(queryByTestId("mealprint-allergen-peanuts")).toBeNull();
+    expect(queryByTestId("mealprint-dislike-input")).toBeNull();
+  });
+
+  it("says WHY the form is withheld, not just that something failed", () => {
+    const { queryByText } = renderWithTheme(
+      <MealprintPreferencesPresenter {...prefProps({ loadFailed: true })} />,
+    );
+    expect(queryByText(/would clear your allergens/i)).toBeTruthy();
+  });
+
+  it("retries the read, and Back leaves without writing", () => {
+    const onRetryLoad = jest.fn();
+    const onDismiss = jest.fn();
+    const onSave = jest.fn();
+    const { getByTestId } = renderWithTheme(
+      <MealprintPreferencesPresenter
+        {...prefProps({ loadFailed: true, onRetryLoad, onDismiss, onSave })}
+      />,
+    );
+    fireEvent.press(getByTestId("mealprint-preferences-retry-load"));
+    expect(onRetryLoad).toHaveBeenCalled();
+    fireEvent.press(getByTestId("mealprint-preferences-dismiss"));
+    expect(onDismiss).toHaveBeenCalled();
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it("withholds the form in wizard mode too — Skip is a real write", () => {
+    const { getByTestId, queryByTestId } = renderWithTheme(
+      <MealprintPreferencesPresenter
+        {...prefProps({ mode: "wizard", loadFailed: true })}
+      />,
+    );
+    expect(getByTestId("mealprint-preferences-load-failed")).toBeTruthy();
+    expect(queryByTestId("mealprint-preferences-wizard-cta")).toBeNull();
+  });
+
+  it("prefers the loader over the retry panel while the read is still in flight", () => {
+    const { queryByTestId } = renderWithTheme(
+      <MealprintPreferencesPresenter
+        {...prefProps({ isLoadingInitial: true, loadFailed: true })}
+      />,
+    );
+    expect(queryByTestId("mealprint-preferences-load-failed")).toBeNull();
+  });
+});
+
+describe("MealprintSuggestSheetPresenter — the partial-enforcement floor (Inspector 🟠)", () => {
+  const results = {
+    stage: "results" as const,
+    suggestions: [suggestion()],
+    labelCheckRequired: true,
+  };
+
+  it("⚠ falls back to the GENERIC caveat when the server flagged it but the patterns are unknown", () => {
+    // A halal user on a fresh install whose preferences fetch has not landed used
+    // to get a server-flagged result with no caveat at all (locked decision 10).
+    const { getByTestId, queryByText } = renderWithTheme(
+      <MealprintSuggestSheetPresenter
+        {...sheetProps({
+          ...results,
+          dietaryPatterns: [],
+          serverPartialEnforcementOnly: true,
+        })}
+      />,
+    );
+    expect(getByTestId("mealprint-partial-enforcement")).toBeTruthy();
+    // Vague on purpose — naming "pork and alcohol" here would guess which of
+    // halal/kosher is active.
+    expect(queryByText(/pork/i)).toBeNull();
+    expect(queryByText(/no certification information/i)).toBeTruthy();
+  });
+
+  it("prefers the SPECIFIC copy when the patterns are known", () => {
+    const { queryByText } = renderWithTheme(
+      <MealprintSuggestSheetPresenter
+        {...sheetProps({
+          ...results,
+          dietaryPatterns: ["halal"],
+          serverPartialEnforcementOnly: true,
+        })}
+      />,
+    );
+    expect(queryByText(/pork.*alcohol/i)).toBeTruthy();
+  });
+
+  it("shows nothing when neither the server nor the patterns say so", () => {
+    const { queryByTestId } = renderWithTheme(
+      <MealprintSuggestSheetPresenter
+        {...sheetProps({
+          ...results,
+          dietaryPatterns: ["vegan"],
+          serverPartialEnforcementOnly: false,
+        })}
+      />,
+    );
+    expect(queryByTestId("mealprint-partial-enforcement")).toBeNull();
+  });
+
+  it("⚠ repeats the caveat on the DRAFT stage — that is the step that logs", () => {
+    const { getByTestId } = renderWithTheme(
+      <MealprintSuggestSheetPresenter
+        {...sheetProps({
+          stage: "draft",
+          draft: draftFromSuggestion(suggestion(), "snack"),
+          draftKcal: 150,
+          labelCheckRequired: true,
+          dietaryPatterns: ["kosher"],
+          serverPartialEnforcementOnly: true,
+        })}
+      />,
+    );
+    expect(getByTestId("mealprint-draft-partial-enforcement")).toBeTruthy();
+  });
+
+  it("omits the draft-stage caveat when nothing is partially enforced", () => {
+    const { queryByTestId } = renderWithTheme(
+      <MealprintSuggestSheetPresenter
+        {...sheetProps({
+          stage: "draft",
+          draft: draftFromSuggestion(suggestion(), "snack"),
+          draftKcal: 150,
+          labelCheckRequired: true,
+        })}
+      />,
+    );
+    expect(queryByTestId("mealprint-draft-partial-enforcement")).toBeNull();
   });
 });

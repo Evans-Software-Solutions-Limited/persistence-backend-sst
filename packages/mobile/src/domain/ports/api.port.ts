@@ -1148,7 +1148,18 @@ export interface ApiPort {
    * arrives as a flat body rather than the usual `{ error }` envelope — see
    * {@link MealprintApiError} for why that needs its own error type. The closed
    * vocabularies are validated at the edge, so a 400 in practice means a
-   * free-text cap was exceeded, which is recoverable in the editor.
+   * free-text cap was exceeded.
+   *
+   * ⚠ **The interactive editor does NOT call this today.** The preferences save is
+   * offline-capable, so it goes through the sync queue and the drain's raw `fetch`
+   * — which means a rejected PUT surfaces on the sync-failure screen as a generic
+   * banner, NOT inline with the field name. This method (and
+   * `MealprintApiError.preferenceField`) exists for the direct-write path and is
+   * exercised by its own adapter tests; the client mirrors the server's caps
+   * (`MAX_FREE_TEXT_ITEMS` / `MAX_FREE_TEXT_LENGTH`) and vocabularies, which is
+   * what actually makes a 400 unreachable from the UI. Recorded rather than
+   * quietly left: a vocabulary skew between server and app is the one way to reach
+   * it, and the device would then keep showing chips the server never stored.
    */
   setMealprintPreferences(
     input: SetMealprintPreferencesInput,

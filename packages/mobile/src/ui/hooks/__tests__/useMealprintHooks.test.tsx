@@ -818,3 +818,58 @@ describe("useSetMealprintPreferences — edge paths", () => {
     }
   });
 });
+
+describe("useMealSuggest — reset while a request is in flight (Inspector 🟠)", () => {
+  const input = { shape: "either" as const, date: "2026-08-03" };
+
+  it("⚠ stays `generating` after a reset, so the sheet cannot offer a dead Generate button", async () => {
+    // `reset()` deliberately does not clear `inFlightRef` (a second run would bill
+    // a second inference). Going `idle` therefore rendered a setup body with a LIVE
+    // Generate button that `run` silently no-opped for up to 30 s, after which the
+    // original request landed with results for inputs the reset had already wiped.
+    const api = new InMemoryApiAdapter();
+    let release: (() => void) | null = null;
+    const spy = jest.spyOn(api, "suggestMeals").mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          release = () =>
+            resolve(ok({ ...api.mealSuggestResult, emptyReason: null }));
+        }),
+    );
+    const { latest } = harness(api, useMealSuggest);
+
+    await act(async () => {
+      void latest().run(input);
+      await Promise.resolve();
+    });
+    expect(latest().stage).toBe("generating");
+
+    act(() => latest().reset());
+    expect(latest().stage).toBe("generating");
+    expect(latest().result).toBeNull();
+
+    // A second run is still refused — the billing guard is intact.
+    await act(async () => {
+      void latest().run(input);
+      await Promise.resolve();
+    });
+    expect(spy).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      release?.();
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(latest().stage).toBe("ready"));
+  });
+
+  it("goes `idle` on a reset when nothing is in flight", async () => {
+    const api = new InMemoryApiAdapter();
+    const { latest } = harness(api, useMealSuggest);
+    await act(async () => {
+      await latest().run(input);
+    });
+    expect(latest().stage).toBe("ready");
+    act(() => latest().reset());
+    expect(latest().stage).toBe("idle");
+  });
+});

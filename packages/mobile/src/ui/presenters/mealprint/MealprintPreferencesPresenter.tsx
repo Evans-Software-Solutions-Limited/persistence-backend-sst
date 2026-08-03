@@ -84,11 +84,31 @@ export type MealprintPreferencesProps = {
   readonly isLoadingInitial: boolean;
   readonly isSaving: boolean;
   /**
-   * Server-supplied failure text. Carries the field name when the 400 named one
-   * (`MealprintApiError.preferenceField`) — rendering the raw message is the point
-   * of the dedicated error type, so do not replace it with a generic string.
+   * Container-supplied failure text for a state the user can act on.
+   *
+   * ⚠ Today the only two values are "you're not signed in" and "we couldn't load
+   * your preferences, so there's nothing to save yet" — NOT a server validation
+   * message. The save is queued, so a rejected PUT surfaces on the sync-failure
+   * screen rather than here; see `ApiPort.setMealprintPreferences` for the full
+   * note. Do not add a generic "something went wrong" to this: every value here
+   * should tell the user what to do next.
    */
   readonly errorMessage: string | null;
+  /**
+   * ⚠ TRUE when the preferences could not be read AND this device has nothing
+   * cached — so the form would render empty defaults over a server row we never
+   * saw.
+   *
+   * The whole form is replaced by a retry panel in that state, and this is a
+   * SAFETY guard rather than a nicety: `PUT /nutrition/preferences` is a full
+   * last-write-wins replacement, so an unseeded Save (or the wizard's Skip, which
+   * is a real write) would delete the user's saved allergen list. `commit()` also
+   * refuses independently — this is the half that stops the user reaching the
+   * button at all.
+   */
+  readonly loadFailed: boolean;
+  /** Re-read the preferences. Only wired in the `loadFailed` state. */
+  readonly onRetryLoad: () => void;
 
   readonly dietaryPatterns: readonly DietaryPattern[];
   readonly onTogglePattern: (pattern: DietaryPattern) => void;
@@ -125,6 +145,8 @@ export function MealprintPreferencesPresenter({
   isLoadingInitial,
   isSaving,
   errorMessage,
+  loadFailed,
+  onRetryLoad,
   dietaryPatterns,
   onTogglePattern,
   avoidAllergens,
@@ -163,6 +185,74 @@ export function MealprintPreferencesPresenter({
         testID={testID}
       >
         <PLogoDrawLoader />
+      </View>
+    );
+  }
+
+  // ⚠ Before the form, not alongside it. See `loadFailed` — an editable form here
+  // is a delete button for the user's allergen list.
+  if (loadFailed) {
+    return (
+      <View
+        flex={1}
+        backgroundColor="$bg"
+        paddingTop={insets.top}
+        testID={testID}
+      >
+        <HeaderBar
+          title={isWizard ? "Set up Mealprint" : "Food preferences"}
+          leading={
+            <Pressable
+              onPress={onDismiss}
+              testID="mealprint-preferences-dismiss"
+              accessibilityRole="button"
+              accessibilityLabel="Go back"
+            >
+              <Text fontFamily="$body" fontSize={14} color="$text3">
+                Back
+              </Text>
+            </Pressable>
+          }
+        />
+        <View
+          flex={1}
+          alignItems="center"
+          justifyContent="center"
+          paddingHorizontal={24}
+          gap={12}
+          testID="mealprint-preferences-load-failed"
+        >
+          <IconAlert size={22} color={AMBER.base} />
+          <Text
+            fontFamily="$display"
+            fontWeight="700"
+            fontSize={16}
+            color="$text"
+            textAlign="center"
+          >
+            Couldn&apos;t load your preferences
+          </Text>
+          <Text
+            fontFamily="$body"
+            fontSize={13}
+            lineHeight={19}
+            color="$text3"
+            textAlign="center"
+          >
+            We won&apos;t show the form until we can read what you already have
+            — saving over it would clear your allergens.
+          </Text>
+          <Btn
+            variant="filled"
+            tone="primary"
+            size="lg"
+            full
+            onPress={onRetryLoad}
+            testID="mealprint-preferences-retry-load"
+          >
+            Try again
+          </Btn>
+        </View>
       </View>
     );
   }

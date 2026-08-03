@@ -6,6 +6,7 @@ import {
   EFFORT_LEVELS,
   LABEL_CHECK_COPY,
   MEDICAL_SCOPE_COPY,
+  GENERIC_PARTIAL_ENFORCEMENT_COPY,
   draftFromSuggestion,
   isAllergenKey,
   isDietaryPattern,
@@ -288,5 +289,60 @@ describe("draft helpers", () => {
   it("carries the per-item `unverified` flag through untouched", () => {
     const draft = draftFromSuggestion(suggestion(), "lunch");
     expect(draft.items.map((i) => i.unverified)).toEqual([false, true]);
+  });
+});
+
+describe("summarisePreferences treats the wire as untrusted (Inspector 🟡)", () => {
+  it("⚠ drops an unrecognised effortLevel instead of throwing during render", () => {
+    // `getMealprintPreferences` is an unvalidated passthrough, so a server-side
+    // vocabulary extension shipped ahead of an app update lands a level this build
+    // has no label for — and an unguarded `EFFORT_LEVEL_LABELS[...].toLowerCase()`
+    // is a TypeError inside `FuelTargetsContainer`'s render, i.e. a blank Targets
+    // screen rather than a missing word.
+    const summary = summarisePreferences(
+      prefs({ effortLevel: "gourmet" as never, mealsPerDay: 5 }),
+    );
+    expect(summary).toBe("5 meals a day");
+    expect(summary).not.toContain("undefined");
+  });
+
+  it("survives absent arrays without throwing", () => {
+    // The sync path validates their presence (`isMealprintPreferencesEcho`); the GET
+    // path does not, so a partial body must degrade rather than crash.
+    const partial = {
+      ...prefs({ mealsPerDay: 3 }),
+      dietaryPatterns: undefined as never,
+      avoidAllergens: undefined as never,
+      avoidFoods: undefined as never,
+    };
+    expect(() => summarisePreferences(partial)).not.toThrow();
+    expect(summarisePreferences(partial)).toBe("3 meals a day · balanced");
+  });
+
+  it("returns null when nothing at all was readable, rather than an empty string", () => {
+    expect(
+      summarisePreferences({
+        ...prefs(),
+        dietaryPatterns: undefined as never,
+        avoidAllergens: undefined as never,
+        avoidFoods: undefined as never,
+        mealsPerDay: undefined as never,
+        effortLevel: "gourmet" as never,
+      }),
+    ).toBeNull();
+  });
+});
+
+describe("GENERIC_PARTIAL_ENFORCEMENT_COPY", () => {
+  it("says there is no certification information without naming an axis", () => {
+    // Reachable when the server flagged `partialEnforcementOnly` but this device
+    // does not know which of halal/kosher is active — naming "pork and alcohol"
+    // there would be a guess (locked decision 10).
+    expect(GENERIC_PARTIAL_ENFORCEMENT_COPY).toMatch(
+      /no certification information/i,
+    );
+    expect(GENERIC_PARTIAL_ENFORCEMENT_COPY).not.toMatch(
+      /pork|alcohol|shellfish/i,
+    );
   });
 });

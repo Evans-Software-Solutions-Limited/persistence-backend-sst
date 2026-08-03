@@ -637,6 +637,26 @@ describe("processSyncQueue", () => {
     warn.mockRestore();
   });
 
+  it("refuses a NON-OBJECT body too, not just an object missing fields", async () => {
+    // `data: null` and `data: "ok"` reach the same guard by a different branch —
+    // and a `typeof value !== "object"` check that is never exercised is exactly
+    // the kind of guard that gets "simplified" away later.
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+    for (const data of [null, "ok", 42]) {
+      storage.cacheMealprintPreferences("user-1", MEALPRINT_ROW);
+      queueMealprintWrite();
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ data }),
+      });
+      await processSyncQueue(storage, auth, "https://api.test");
+      expect(storage.getCachedMealprintPreferences("user-1")).toEqual(
+        MEALPRINT_ROW,
+      );
+    }
+    warn.mockRestore();
+  });
+
   it("keeps the optimistic row when the response body cannot be parsed", async () => {
     const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
     storage.cacheMealprintPreferences("user-1", MEALPRINT_ROW);

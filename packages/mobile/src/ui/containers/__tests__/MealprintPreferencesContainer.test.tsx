@@ -94,6 +94,27 @@ beforeEach(() => {
   useFuelSheets.setState({ rev: 0 });
 });
 
+/**
+ * The preference write is QUEUED, not sent through the api adapter — so the
+ * evidence is the sync worker's `fetch`, not `api.setMealprintPreferencesCalls`
+ * (which the adapter's own method would populate and this path never reaches).
+ */
+function preferencePuts(): { url: string; body: unknown }[] {
+  return mockFetch.mock.calls
+    .map(([url, init]) => ({
+      url: String(url),
+      init: init as { method?: string; body?: string } | undefined,
+    }))
+    .filter(
+      ({ url, init }) =>
+        url.endsWith("/nutrition/preferences") && init?.method === "PUT",
+    )
+    .map(({ url, init }) => ({
+      url,
+      body: init?.body ? JSON.parse(init.body) : null,
+    }));
+}
+
 describe("MealprintPreferencesContainer", () => {
   it("seeds the form from the fetched preferences", async () => {
     const { probe } = mount("editor", (api) => {
@@ -279,27 +300,6 @@ describe("MealprintPreferencesContainer", () => {
     await waitFor(() => expect(probe().effortLevel).toBe("high_maintenance"));
   });
 
-  /**
-   * The preference write is QUEUED, not sent through the api adapter — so the
-   * evidence is the sync worker's `fetch`, not `api.setMealprintPreferencesCalls`
-   * (which the adapter's own method would populate and this path never reaches).
-   */
-  function preferencePuts(): { url: string; body: unknown }[] {
-    return mockFetch.mock.calls
-      .map(([url, init]) => ({
-        url: String(url),
-        init: init as { method?: string; body?: string } | undefined,
-      }))
-      .filter(
-        ({ url, init }) =>
-          url.endsWith("/nutrition/preferences") && init?.method === "PUT",
-      )
-      .map(({ url, init }) => ({
-        url,
-        body: init?.body ? JSON.parse(init.body) : null,
-      }));
-  }
-
   it("saves the edited shape, notifies Fuel and navigates back", async () => {
     const { probe, storage } = mount();
     await waitFor(() => expect(probe().mealsPerDay).toBe(4));
@@ -385,7 +385,7 @@ describe("MealprintPreferencesContainer", () => {
     expect(mockProbe.last?.isLoadingInitial).toBe(false);
   });
 
-  it("shows a load error only when there is nothing cached to edit", async () => {
+  it("withholds the form entirely when there is nothing cached to edit", async () => {
     const api = new InMemoryApiAdapter();
     api.shouldFail = true;
     // ⚠ `unauthorized`, not the fake's default `server`. `useCachedResource` runs
@@ -400,9 +400,10 @@ describe("MealprintPreferencesContainer", () => {
         <MealprintPreferencesContainer mode="editor" />
       </AdapterProvider>,
     );
-    await waitFor(() =>
-      expect(mockProbe.last?.errorMessage).toMatch(/Check your connection/i),
-    );
+    // ⚠ `loadFailed`, not an inline error banner. An editable form over an unread
+    // server row is a delete button for the user's allergen list — see the
+    // "unseeded-write guard" block below.
+    await waitFor(() => expect(mockProbe.last?.loadFailed).toBe(true));
     expect(mockProbe.last?.isLoadingInitial).toBe(false);
   });
 });
@@ -461,14 +462,18 @@ describe("MealprintPreferencesContainer — caps and the signed-out path", () =>
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
     const adapters = makeAdapters(api, storage);
-    // No session: `useSetMealprintPreferences.mutate` answers null and nothing is
-    // written, so navigating back would claim a save that did not happen.
-    (adapters.auth as unknown as { getSession: jest.Mock }).getSession =
-      jest.fn(async () => ok(null));
+    // ⚠ The REACHABLE shape of the no-session save. Opening the screen already
+    // signed out cannot get here — with no userId the cache read yields null, so
+    // the unseeded-write guard short-circuits first. Signing out from ANOTHER
+    // surface while this screen is open does: `seededRef` is already armed, so
+    // `commit` proceeds and `mutate` answers null. Navigating back then would claim
+    // a save that never happened.
+    let emit: ((s: AuthSession | null) => void) | null = null;
     (
       adapters.auth as unknown as { onAuthStateChange: jest.Mock }
     ).onAuthStateChange = jest.fn((cb: (s: AuthSession | null) => void) => {
-      cb(null);
+      emit = cb;
+      cb(SESSION);
       return () => {};
     });
 
@@ -477,7 +482,13 @@ describe("MealprintPreferencesContainer — caps and the signed-out path", () =>
         <MealprintPreferencesContainer mode="editor" />
       </AdapterProvider>,
     );
-    await waitFor(() => expect(mockProbe.last).not.toBeNull());
+    // Seeded from the 404-free default row while still signed in.
+    await waitFor(() => expect(mockProbe.last?.mealsPerDay).toBe(4));
+    expect(mockProbe.last?.loadFailed).toBe(false);
+
+    await act(async () => {
+      emit?.(null);
+    });
     await act(async () => {
       mockProbe.last!.onSave();
     });
@@ -485,5 +496,119 @@ describe("MealprintPreferencesContainer — caps and the signed-out path", () =>
       expect(mockProbe.last?.errorMessage).toMatch(/signed in/i),
     );
     expect(mockBack).not.toHaveBeenCalled();
+    expect(preferencePuts()).toHaveLength(0);
+  });
+});
+
+describe("MealprintPreferencesContainer — the unseeded-write guard (Inspector 🔴)", () => {
+  /** A device with an EMPTY cache whose preferences read fails. */
+  function mountUnseededFailure(mode: "wizard" | "editor") {
+    const api = new InMemoryApiAdapter();
+    api.shouldFail = true;
+    // Non-retryable, so the error surfaces inside waitFor's budget rather than
+    // sitting in `useCachedResource`'s cold-start retry ladder.
+    api.failError = { kind: "api", code: "unauthorized", message: "nope" };
+    const storage = new InMemoryStorageAdapter();
+    render(
+      <AdapterProvider adapters={makeAdapters(api, storage)}>
+        <MealprintPreferencesContainer mode={mode} />
+      </AdapterProvider>,
+    );
+    return { api, storage, probe: () => mockProbe.last! };
+  }
+
+  it("tells the presenter to withhold the form", async () => {
+    const { probe } = mountUnseededFailure("editor");
+    await waitFor(() => expect(probe().loadFailed).toBe(true));
+    expect(probe().isLoadingInitial).toBe(false);
+  });
+
+  it("⚠ SAVE writes nothing — a full replacement built from empty defaults would delete the server's allergen list", async () => {
+    const { probe, storage } = mountUnseededFailure("editor");
+    await waitFor(() => expect(probe().loadFailed).toBe(true));
+    await act(async () => {
+      probe().onSave();
+    });
+    expect(storage.getPendingMutations()).toHaveLength(0);
+    expect(preferencePuts()).toHaveLength(0);
+    await waitFor(() =>
+      expect(probe().errorMessage).toMatch(/nothing to save yet/i),
+    );
+    expect(mockBack).not.toHaveBeenCalled();
+  });
+
+  it("⚠ the WIZARD's skip writes nothing either — it is a real save of the defaults", async () => {
+    // This is the reachable path: an empty cache makes `useMealprintEntry` report
+    // `needsSetup`, so a reinstalled device opens the wizard first — and Skip would
+    // have queued four empty arrays over a real server row.
+    const { probe, storage } = mountUnseededFailure("wizard");
+    await waitFor(() => expect(probe().loadFailed).toBe(true));
+    await act(async () => {
+      probe().onDismiss();
+    });
+    expect(storage.getPendingMutations()).toHaveLength(0);
+    expect(preferencePuts()).toHaveLength(0);
+    // …and it still lets the user leave, rather than trapping them.
+    expect(mockBack).toHaveBeenCalled();
+  });
+
+  it("re-reads on retry, and the form unlocks once the read lands", async () => {
+    const api = new InMemoryApiAdapter();
+    api.shouldFail = true;
+    api.failError = { kind: "api", code: "unauthorized", message: "nope" };
+    render(
+      <AdapterProvider
+        adapters={makeAdapters(api, new InMemoryStorageAdapter())}
+      >
+        <MealprintPreferencesContainer mode="editor" />
+      </AdapterProvider>,
+    );
+    await waitFor(() => expect(mockProbe.last?.loadFailed).toBe(true));
+
+    api.shouldFail = false;
+    api.mealprintPreferences = {
+      ...api.mealprintPreferences,
+      avoidAllergens: ["peanuts"],
+      isDefault: false,
+    };
+    await act(async () => {
+      mockProbe.last!.onRetryLoad();
+    });
+    await waitFor(() => expect(mockProbe.last?.loadFailed).toBe(false));
+    // Seeded from the server row, so a Save now replaces it with the same data.
+    expect(mockProbe.last?.avoidAllergens).toEqual(["peanuts"]);
+  });
+
+  it("⚠ a refresh that fails AFTER seeding does NOT tear the form down", async () => {
+    // The guard is about an UNSEEDED form. A user editing real values must not have
+    // the screen replaced under them because a background refresh blipped.
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheMealprintPreferences("user-1", {
+      ...api.mealprintPreferences,
+      avoidAllergens: ["milk"],
+      isDefault: false,
+    });
+    api.shouldFail = true;
+    api.failError = { kind: "api", code: "unauthorized", message: "nope" };
+
+    render(
+      <AdapterProvider adapters={makeAdapters(api, storage)}>
+        <MealprintPreferencesContainer mode="editor" />
+      </AdapterProvider>,
+    );
+    await waitFor(() =>
+      expect(mockProbe.last?.avoidAllergens).toEqual(["milk"]),
+    );
+    expect(mockProbe.last?.loadFailed).toBe(false);
+
+    // …and the save still works off the seeded values.
+    await act(async () => {
+      mockProbe.last!.onSave();
+    });
+    await waitFor(() => expect(preferencePuts()).toHaveLength(1));
+    expect(preferencePuts()[0]?.body).toMatchObject({
+      avoidAllergens: ["milk"],
+    });
   });
 });

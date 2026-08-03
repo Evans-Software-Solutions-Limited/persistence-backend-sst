@@ -251,10 +251,39 @@ export function MealprintSuggestSheetContainer() {
       suggestions={suggestions}
       emptyReason={suggest.result?.emptyReason ?? null}
       remaining={suggest.result?.remaining ?? null}
-      // Defaults FALSE when there is no result yet, so nothing claims a
-      // disclaimer the server has not sent. The server always sends `true`.
-      labelCheckRequired={suggest.result?.labelCheckRequired ?? false}
+      /**
+       * ⚠ Two DIFFERENT cases, and collapsing them was a real hole.
+       *
+       * No result yet → `false`: nothing should claim a disclaimer the server has
+       * not sent (and no pre-result stage renders one anyway).
+       *
+       * Result present but the FIELD absent → `true`. `suggestMeals` is an
+       * unvalidated cast over the wire, so a deploy skew or a DTO refactor that
+       * dropped `labelCheckRequired` would leave it `undefined` — and a blanket
+       * `?? false` then renders real suggestions with NO allergen disclaimer,
+       * which is exactly the failure the server's unconditional `true` and this
+       * model's contract 1 exist to prevent. Failing safe costs a redundant
+       * caveat; failing open costs the disclaimer on the surface that needs it.
+       */
+      labelCheckRequired={
+        suggest.result === null
+          ? false
+          : (suggest.result.labelCheckRequired ?? true)
+      }
       dietaryPatterns={preferences.data?.dietaryPatterns ?? []}
+      /**
+       * ⚠ The SERVER's verdict, not just the locally-cached patterns.
+       *
+       * The caveat used to be derived from `dietaryPatterns` alone — which meant a
+       * halal user on a fresh install whose preferences fetch had not landed (or
+       * had failed) got a result the server had flagged
+       * `partialEnforcementOnly: true` with no caveat at all. The local patterns
+       * still win when present, because they let the copy name exactly what is
+       * enforced; this is the floor beneath them.
+       */
+      serverPartialEnforcementOnly={
+        suggest.result?.partialEnforcementOnly ?? false
+      }
       onSelectSuggestion={onSelectSuggestion}
       draft={draft}
       onToggleDraftItem={onToggleDraftItem}

@@ -48,7 +48,9 @@ function render(over: Partial<FuelPresenterProps> = {}) {
     noTarget: false,
     aiLocked: true,
     // spec-26: `unlocked` + no setup needed is the steady state for an entitled
-    // user; the four-state matrix is covered in the card's own suite.
+    // user. The four-state matrix is covered in
+    // `src/ui/presenters/mealprint/__tests__/MealprintPresenters.test.tsx`; the
+    // assertion here is only that the card is composed into the screen.
     mealprintState: "unlocked",
     mealprintNeedsSetup: false,
     onMealprint: jest.fn(),
@@ -73,12 +75,21 @@ function render(over: Partial<FuelPresenterProps> = {}) {
 }
 
 describe("FuelPresenter", () => {
-  it("renders the hero, quick-add row, meal log, and water tracker when data is present", () => {
+  it("renders the hero, quick-add row, Mealprint card, meal log, and water tracker when data is present", () => {
     const { getByTestId } = render();
     expect(getByTestId("fuel-macro-hero")).toBeTruthy();
     expect(getByTestId("fuel-quick-add")).toBeTruthy();
+    // spec-26 design § 4 item 1 — the Mealprint card sits below QuickAddRow.
+    expect(getByTestId("mealprint-entry-card")).toBeTruthy();
     expect(getByTestId("fuel-meal-log")).toBeTruthy();
     expect(getByTestId("fuel-water")).toBeTruthy();
+  });
+
+  it("routes a Mealprint card press to the container's handler", () => {
+    const onMealprint = jest.fn();
+    const { getByTestId } = render({ onMealprint });
+    fireEvent.press(getByTestId("mealprint-entry-card"));
+    expect(onMealprint).toHaveBeenCalled();
   });
 
   it("shows a blocking loader when loading with no cache", () => {

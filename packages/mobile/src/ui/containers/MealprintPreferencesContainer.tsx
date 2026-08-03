@@ -228,9 +228,41 @@ export function MealprintPreferencesContainer({
     [markTouched],
   );
 
+  /**
+   * ⚠ **The form has never been seeded, so nothing here may be written.**
+   *
+   * `PUT /nutrition/preferences` is a full LAST-WRITE-WINS replacement, and the
+   * form renders with {@link DEFAULT_MEALPRINT_PREFERENCES} in state until the
+   * seed effect runs. On a device whose cache is empty (a reinstall, a new device,
+   * a sign-out/in) a FAILED `GET` leaves `data === null` forever — and because
+   * `isLoadingInitial` only covers the still-loading case, the loader clears and
+   * the whole form becomes live with empty arrays in it.
+   *
+   * From there, Save — or the wizard's Skip, which is a real write (AC 1.4) —
+   * queues a replacement that DELETES the user's saved allergen list, dietary
+   * pattern and both free-text lists, server-side, with nothing on screen to say
+   * so. The path is not exotic: `useMealprintEntry` treats an empty cache as
+   * `needsSetup` and pushes `?mode=wizard`, so the first thing a reinstalled
+   * device does is open a form whose Skip button can wipe the row it failed to
+   * read.
+   *
+   * The seed latch protects a TOUCHED form from a late fetch. This protects the
+   * SERVER ROW from an unseeded form. They are different guards and the slice
+   * needed both.
+   */
+  const isUnseeded = !seededRef.current && data === null;
+
   const savingRef = useRef(false);
   const commit = useCallback(
     async (input: SetMealprintPreferencesInput) => {
+      // See `isUnseeded`. Refusing costs the user a retry; writing costs them
+      // their allergen list.
+      if (!seededRef.current && data === null) {
+        setErrorMessage(
+          "We couldn't load your preferences, so there's nothing to save yet. Check your connection and reopen this screen.",
+        );
+        return;
+      }
       // Ref-guarded so a double-tap on Save cannot enqueue two full-replacement
       // writes. State alone leaves a window where both taps pass the check.
       if (savingRef.current) return;
@@ -257,7 +289,7 @@ export function MealprintPreferencesContainer({
         setIsSaving(false);
       }
     },
-    [setPreferences, notifyFuelMutated],
+    [data, setPreferences, notifyFuelMutated],
   );
 
   const onSave = useCallback(() => {
@@ -281,14 +313,23 @@ export function MealprintPreferencesContainer({
   ]);
 
   const onDismiss = useCallback(() => {
-    if (mode === "editor") {
+    // ⚠ An unseeded form leaves WITHOUT writing, in either mode. This is the Back
+    // action on the load-failure panel, and turning it into a save-the-defaults
+    // write there is precisely the allergen-wipe `isUnseeded` exists to prevent.
+    // (`commit` would refuse anyway, but it would refuse by setting an error the
+    // panel does not render — so the button would silently do nothing.)
+    if (mode === "editor" || isUnseeded) {
       router.back();
       return;
     }
     // Wizard skip = save the defaults (AC 1.4). See the docstring for why this is
     // a write rather than a plain `router.back()`.
     void commit(DEFAULT_MEALPRINT_PREFERENCES);
-  }, [mode, commit]);
+  }, [mode, isUnseeded, commit]);
+
+  const onRetryLoad = useCallback(() => {
+    void preferences.refresh();
+  }, [preferences]);
 
   return (
     <MealprintPreferencesPresenter
@@ -298,12 +339,13 @@ export function MealprintPreferencesContainer({
       // what makes that safe.
       isLoadingInitial={data === null && preferences.error === null}
       isSaving={isSaving}
-      errorMessage={
-        errorMessage ??
-        (data === null && preferences.error !== null
-          ? "Couldn't load your preferences. Check your connection."
-          : null)
-      }
+      errorMessage={errorMessage}
+      // ⚠ `isUnseeded`, not `preferences.error !== null`. A refresh that fails
+      // AFTER the form was seeded is harmless — the user is editing real values and
+      // the write is queued — so it must not tear the form down under them. What is
+      // NOT safe is a form that never saw the server row. See `isUnseeded`.
+      loadFailed={isUnseeded && preferences.error !== null}
+      onRetryLoad={onRetryLoad}
       dietaryPatterns={dietaryPatterns}
       onTogglePattern={onTogglePattern}
       avoidAllergens={avoidAllergens}

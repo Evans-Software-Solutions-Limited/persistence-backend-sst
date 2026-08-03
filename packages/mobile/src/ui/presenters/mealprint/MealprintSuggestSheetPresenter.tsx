@@ -59,6 +59,7 @@ import {
 } from "@/ui/components/icons";
 import type { MealSlot } from "@/domain/models/nutrition";
 import {
+  GENERIC_PARTIAL_ENFORCEMENT_COPY,
   LABEL_CHECK_COPY,
   MAX_STEER_LENGTH,
   SUGGEST_SHAPE_LABELS,
@@ -102,6 +103,16 @@ export type MealprintSuggestSheetProps = {
   readonly labelCheckRequired: boolean;
   /** Active dietary patterns, for the halal/kosher enforcement caveat. */
   readonly dietaryPatterns: readonly string[];
+  /**
+   * The server's `partialEnforcementOnly` verdict.
+   *
+   * ⚠ The FLOOR beneath {@link dietaryPatterns}, not a duplicate of it. The
+   * patterns are read from a local cache that may be empty on a fresh install or
+   * after a failed fetch — and a halal user must still get a caveat on a result
+   * the server flagged. When the patterns ARE known they win, because they let the
+   * copy name what is actually enforced.
+   */
+  readonly serverPartialEnforcementOnly: boolean;
   readonly onSelectSuggestion: (index: number) => void;
 
   readonly draft: MealprintDraft | null;
@@ -289,6 +300,25 @@ const EMPTY_COPY: Readonly<
   },
 };
 
+/**
+ * The partial-enforcement caveat, preferring the SPECIFIC copy when this device
+ * knows which pattern is active and falling back to the generic one when only the
+ * server's flag is available.
+ *
+ * ⚠ Returning `null` when the server says `true` is the bug this replaced: the
+ * patterns come from a local cache that is empty on a fresh install and stays
+ * empty if the preferences fetch fails, so a halal user could be shown a flagged
+ * result with no caveat at all (locked decision 10).
+ */
+function resolvePartialCaveat(
+  dietaryPatterns: readonly string[],
+  serverPartialEnforcementOnly: boolean,
+): string | null {
+  const specific = partialEnforcementCopy(dietaryPatterns);
+  if (specific !== null) return specific;
+  return serverPartialEnforcementOnly ? GENERIC_PARTIAL_ENFORCEMENT_COPY : null;
+}
+
 function ResultsStage(props: MealprintSuggestSheetProps) {
   const {
     suggestions,
@@ -296,6 +326,7 @@ function ResultsStage(props: MealprintSuggestSheetProps) {
     remaining,
     labelCheckRequired,
     dietaryPatterns,
+    serverPartialEnforcementOnly,
     onSelectSuggestion,
     onRetry,
   } = props;
@@ -319,7 +350,10 @@ function ResultsStage(props: MealprintSuggestSheetProps) {
     );
   }
 
-  const partialCaveat = partialEnforcementCopy(dietaryPatterns);
+  const partialCaveat = resolvePartialCaveat(
+    dietaryPatterns,
+    serverPartialEnforcementOnly,
+  );
 
   return (
     <View gap={14}>
@@ -460,10 +494,16 @@ function DraftStage({
   confirming,
   onBackToResults,
   labelCheckRequired,
+  dietaryPatterns,
+  serverPartialEnforcementOnly,
   added,
 }: MealprintSuggestSheetProps & { added: boolean }) {
   if (draft === null) return null;
   const keptCount = draft.items.filter((item) => item.on).length;
+  const partialCaveat = resolvePartialCaveat(
+    dietaryPatterns,
+    serverPartialEnforcementOnly,
+  );
 
   return (
     <View gap={16} testID="mealprint-draft">
@@ -557,6 +597,16 @@ function DraftStage({
         <Caveat
           text={LABEL_CHECK_COPY}
           testID="mealprint-draft-label-check-disclaimer"
+        />
+      ) : null}
+
+      {/* ⚠ Repeated here, not only on the results list. This is the step that
+          LOGS — a user who scrolled past the caveat while browsing three cards
+          should still meet it at the point of committing one to their day. */}
+      {partialCaveat ? (
+        <Caveat
+          text={partialCaveat}
+          testID="mealprint-draft-partial-enforcement"
         />
       ) : null}
 

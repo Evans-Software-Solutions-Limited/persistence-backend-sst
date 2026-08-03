@@ -575,3 +575,60 @@ async function openWithDraft() {
   await waitFor(() => expect(harness.probe().stage).toBe("draft"));
   return harness;
 }
+
+describe("MealprintSuggestSheetContainer — the disclaimer floor (Inspector 🟠)", () => {
+  it("⚠ passes labelCheckRequired TRUE when a result omits the field", async () => {
+    // `suggestMeals` is an unvalidated cast over the wire. A deploy skew or a DTO
+    // refactor that dropped the field would otherwise render real suggestions with
+    // NO allergen disclaimer — the exact failure the server's unconditional `true`
+    // exists to prevent. Failing safe costs a redundant caveat.
+    const { probe } = mount((a) => {
+      a.mealSuggestResult = {
+        suggestions: [suggestion()],
+        emptyReason: null,
+        remaining: null,
+        containsUnverified: false,
+        partialEnforcementOnly: false,
+        // Modelling a body that predates (or postdates) the field.
+        labelCheckRequired: undefined as never,
+      };
+    });
+    open();
+    await waitFor(() => expect(probe().visible).toBe(true));
+    await act(async () => {
+      probe().onGenerate();
+    });
+    await waitFor(() => expect(probe().stage).toBe("results"));
+    expect(probe().labelCheckRequired).toBe(true);
+  });
+
+  it("threads the server's partialEnforcementOnly through as the caveat floor", async () => {
+    const { probe } = mount((a) => {
+      a.mealSuggestResult = {
+        suggestions: [suggestion()],
+        emptyReason: null,
+        remaining: null,
+        containsUnverified: false,
+        partialEnforcementOnly: true,
+        labelCheckRequired: true,
+      };
+    });
+    open();
+    await waitFor(() => expect(probe().visible).toBe(true));
+    // No preferences cached, so the local patterns are empty — this is the halal
+    // user on a fresh install whose preferences fetch has not landed.
+    expect(probe().dietaryPatterns).toEqual([]);
+    await act(async () => {
+      probe().onGenerate();
+    });
+    await waitFor(() => expect(probe().stage).toBe("results"));
+    expect(probe().serverPartialEnforcementOnly).toBe(true);
+  });
+
+  it("reports serverPartialEnforcementOnly false before any result", async () => {
+    const { probe } = mount();
+    open();
+    await waitFor(() => expect(probe().visible).toBe(true));
+    expect(probe().serverPartialEnforcementOnly).toBe(false);
+  });
+});

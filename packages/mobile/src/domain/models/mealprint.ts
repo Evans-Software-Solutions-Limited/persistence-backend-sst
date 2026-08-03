@@ -293,6 +293,16 @@ export function partialEnforcementCopy(
  * "5 foods avoided" would flatten "2 allergens" into the same sentence as
  * "3 things I find boring" — the exact conflation the editor's chip styling
  * exists to prevent.
+ *
+ * ⚠ **Every field is treated as untrusted, because this runs during render.**
+ * `getMealprintPreferences` is an unvalidated passthrough over the wire, so a
+ * server-side vocabulary extension shipped ahead of an app update lands values
+ * this build has no label for — and an unguarded
+ * `EFFORT_LEVEL_LABELS[effortLevel].toLowerCase()` is then a TypeError inside
+ * `FuelTargetsContainer`'s render, i.e. a white screen on the Targets tab rather
+ * than a missing word. The array reads are guarded for the same reason: the sync
+ * path validates their presence (`isMealprintPreferencesEcho`) and the GET path
+ * does not.
  */
 export function summarisePreferences(
   preferences: MealprintPreferences | null,
@@ -300,24 +310,45 @@ export function summarisePreferences(
   if (preferences === null || preferences.isDefault) return null;
 
   const parts: string[] = [];
-  const patterns = preferences.dietaryPatterns.filter(isDietaryPattern);
+  const patterns = (preferences.dietaryPatterns ?? []).filter(isDietaryPattern);
   if (patterns.length > 0) {
     parts.push(
       formatList(patterns.map((pattern) => DIETARY_PATTERN_LABELS[pattern])),
     );
   }
-  if (preferences.avoidAllergens.length > 0) {
+  const allergenCount = (preferences.avoidAllergens ?? []).length;
+  if (allergenCount > 0) {
     parts.push(
-      `${preferences.avoidAllergens.length} allergen${preferences.avoidAllergens.length === 1 ? "" : "s"} avoided`,
+      `${allergenCount} allergen${allergenCount === 1 ? "" : "s"} avoided`,
     );
   }
-  if (preferences.avoidFoods.length > 0) {
-    parts.push(`${preferences.avoidFoods.length} disliked`);
+  const dislikeCount = (preferences.avoidFoods ?? []).length;
+  if (dislikeCount > 0) {
+    parts.push(`${dislikeCount} disliked`);
   }
-  parts.push(`${preferences.mealsPerDay} meals a day`);
-  parts.push(EFFORT_LEVEL_LABELS[preferences.effortLevel].toLowerCase());
-  return parts.join(" · ");
+  if (Number.isFinite(preferences.mealsPerDay)) {
+    parts.push(`${preferences.mealsPerDay} meals a day`);
+  }
+  // Dropped rather than rendered as "undefined" — see the docstring.
+  if (isEffortLevel(preferences.effortLevel)) {
+    parts.push(EFFORT_LEVEL_LABELS[preferences.effortLevel].toLowerCase());
+  }
+  // Everything was unreadable → nothing worth summarising.
+  return parts.length > 0 ? parts.join(" · ") : null;
 }
+
+/**
+ * The caveat to show when the SERVER flagged `partialEnforcementOnly` but this
+ * device does not know which pattern caused it.
+ *
+ * ⚠ Deliberately vaguer than {@link partialEnforcementCopy}, which names the
+ * enforced axes. Reachable when the preferences fetch has not landed or has
+ * failed — at which point naming "pork and alcohol" would be a guess about which
+ * of halal/kosher is active. Saying less is the only honest option, and saying
+ * nothing is not (locked decision 10).
+ */
+export const GENERIC_PARTIAL_ENFORCEMENT_COPY =
+  "One of your dietary requirements can't be fully checked from our food data — Mealprint excludes what it can identify by ingredient, but there's no certification information. Check for yourself.";
 
 /** "a", "a and b", "a, b and c" — en-GB serial comma omitted. */
 function formatList(items: readonly string[]): string {
