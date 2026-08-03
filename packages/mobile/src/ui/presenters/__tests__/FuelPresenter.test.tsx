@@ -47,6 +47,13 @@ function render(over: Partial<FuelPresenterProps> = {}) {
     celebrate: false,
     noTarget: false,
     aiLocked: true,
+    // spec-26: `unlocked` + no setup needed is the steady state for an entitled
+    // user; the four-state matrix is covered in the card's own suite.
+    mealprintState: "unlocked",
+    mealprintNeedsSetup: false,
+    onMealprint: jest.fn(),
+    onMealprintUpgrade: jest.fn(),
+    onMealprintRetry: jest.fn(),
     slots,
     waterCups: 6,
     waterGoal: 8,

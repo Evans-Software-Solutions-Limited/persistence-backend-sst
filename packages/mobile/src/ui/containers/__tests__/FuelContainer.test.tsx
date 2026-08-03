@@ -54,6 +54,21 @@ jest.mock("@/ui/hooks/useNutritionAiGate", () => ({
     gateProps: { onUpgrade: jest.fn() },
   }),
 }));
+// Same reason as the AI gate above: `useMealprintEntry` composes
+// `useMealprintGate`, which pulls react-query. Its own four-state resolution,
+// stalled timer and first-run decision are unit-tested in
+// `useMealprintEntry.test.tsx`; here it only has to be threaded through to the
+// presenter, so stub it and assert the wiring.
+const mockMealprintEntry = {
+  state: "unlocked" as const,
+  needsSetup: false,
+  onPress: jest.fn(),
+  onUpgrade: jest.fn(),
+  onRetry: jest.fn(),
+};
+jest.mock("@/ui/hooks/useMealprintEntry", () => ({
+  useMealprintEntry: () => mockMealprintEntry,
+}));
 
 const mockFetch = jest.fn(async () => ({
   ok: true,

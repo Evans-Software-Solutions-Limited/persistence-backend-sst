@@ -44,6 +44,7 @@ import type { CoachOverview } from "@/domain/models/coachOverview";
 import type { ClientDetail } from "@/domain/models/clientDetail";
 import type { TrainerClient } from "@/domain/models/trainerClient";
 import type { ProgramSummary } from "@/domain/models/program";
+import type { MealprintPreferences } from "@/domain/models/mealprint";
 import type {
   Food,
   FuelToday,
@@ -1039,6 +1040,32 @@ export interface StoragePort {
   getNutritionTargetAge(userId: string): string | null;
   /** Write-through the daily target (single row per user). */
   cacheNutritionTarget(userId: string, target: NutritionTarget): void;
+
+  /**
+   * Read the cached Mealprint food preferences for a user, or null when the
+   * device has never fetched them (spec-26 AC 1.3).
+   *
+   * ⚠ `null` is NOT the same as "no preferences set" — the endpoint is 404-free
+   * and answers the defaults with `isDefault: true`, so an absent CACHE means
+   * only "unknown on this device". The Fuel entry card reads this synchronously
+   * with no network (launch fan-out — see `useMealprintPreferences`), so it must
+   * treat null as unknown and let the flow it opens do the fetching.
+   */
+  getCachedMealprintPreferences(userId: string): MealprintPreferences | null;
+  /** Age of the cached preferences as an ISO timestamp, or null. */
+  getMealprintPreferencesAge(userId: string): string | null;
+  /**
+   * Write-through the preferences (single row per user).
+   *
+   * ⚠ Cache the SERVER's response, not the submitted body — the handler
+   * normalises the free-text lists on write (accents stripped, lowercased,
+   * whitespace collapsed), so caching the input leaves the device disagreeing
+   * with the server about what the user's dislikes actually are.
+   */
+  cacheMealprintPreferences(
+    userId: string,
+    preferences: MealprintPreferences,
+  ): void;
 
   /** Cached recipe list for a user (cards show name + totals). */
   getCachedRecipes(userId: string): Recipe[];

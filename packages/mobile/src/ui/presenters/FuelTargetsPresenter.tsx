@@ -38,9 +38,19 @@ import {
   IconBtn,
   Pill,
 } from "@/ui/components/foundation";
-import { toneHex, type Tone } from "@/ui/components/foundation/tones";
+import {
+  NEUTRAL_HEX,
+  toneHex,
+  type Tone,
+} from "@/ui/components/foundation/tones";
 import { LinearSlider } from "@/ui/components/foundation/LinearSlider";
-import { IconDroplet, IconMinus, IconPlus, IconX } from "@/ui/components/icons";
+import {
+  IconChevronR,
+  IconDroplet,
+  IconMinus,
+  IconPlus,
+  IconX,
+} from "@/ui/components/icons";
 import { CoachAttribution } from "@/ui/components/composite";
 import { PLogoDrawLoader } from "@/ui/components/PLogoDrawLoader";
 import { color } from "@/ui/theme/tokens";
@@ -125,6 +135,11 @@ export type FuelTargetsPresenterProps = {
    *  `onWaterCupsChange` still receives cups. */
   volumeUnit?: VolumeUnit;
 
+  // Mealprint (spec-26 AC 1.1) — the second entry point into food preferences.
+  /** One-line summary of the saved preferences, or null when unknown/unset. */
+  foodPreferencesSummary: string | null;
+  onOpenFoodPreferences: () => void;
+
   testID?: string;
 };
 
@@ -163,6 +178,8 @@ export function FuelTargetsPresenter({
   waterCups,
   onWaterCupsChange,
   volumeUnit = "l",
+  foodPreferencesSummary,
+  onOpenFoodPreferences,
   testID = "fuel-targets-screen",
 }: FuelTargetsPresenterProps) {
   const insets = useSafeAreaInsets();
@@ -324,6 +341,11 @@ export function FuelTargetsPresenter({
           cups={waterCups}
           onChange={onWaterCupsChange}
           volumeUnit={volumeUnit}
+        />
+
+        <FoodPreferencesRow
+          summary={foodPreferencesSummary}
+          onPress={onOpenFoodPreferences}
         />
       </ScrollView>
     </View>
@@ -1247,6 +1269,67 @@ function ManualKcalSection({
           {MANUAL_KCAL_MAX.toLocaleString()} kcal.
         </Text>
       ) : null}
+    </View>
+  );
+}
+
+/**
+ * The Mealprint "Food preferences" row (spec-26 AC 1.1, second entry point).
+ *
+ * ⚠ **Not entitlement-gated, on purpose.** Preferences are the user's own data and
+ * both endpoints behind this row are ungated server-side — the Premium+ paywall
+ * sits on generation. A user whose subscription lapsed must still be able to see
+ * and correct the allergen list they entered; hiding the row would make that
+ * impossible and is a GDPR access problem, not just a poor experience. So there is
+ * deliberately no `PREMIUM+` pill here either: the row promises nothing paid.
+ *
+ * It lives at the BOTTOM, after the numeric targets. Targets are what this screen
+ * is for; food preferences are an adjacent setting that happens to share the
+ * surface.
+ */
+function FoodPreferencesRow({
+  summary,
+  onPress,
+}: {
+  /** Container-derived one-liner, or null while unknown on this device. */
+  summary: string | null;
+  onPress: () => void;
+}) {
+  return (
+    <View>
+      <SectionHead title="Food preferences" sub="Used by Mealprint" />
+      <Pressable
+        onPress={onPress}
+        testID="fuel-targets-open-food-preferences"
+        accessibilityRole="button"
+        accessibilityLabel="Edit your food preferences"
+        style={{ marginTop: 10 }}
+      >
+        <Card pad={14} radius={12}>
+          <View flexDirection="row" alignItems="center" gap={12}>
+            <View flex={1} gap={3}>
+              <Text
+                fontFamily="$display"
+                fontWeight="600"
+                fontSize={14}
+                color="$text"
+              >
+                Diet, allergens and dislikes
+              </Text>
+              <Text
+                fontFamily="$body"
+                fontSize={12}
+                lineHeight={17}
+                color="$text3"
+                testID="fuel-targets-food-preferences-summary"
+              >
+                {summary ?? "Not set up yet"}
+              </Text>
+            </View>
+            <IconChevronR size={16} color={NEUTRAL_HEX.text3} />
+          </View>
+        </Card>
+      </Pressable>
     </View>
   );
 }

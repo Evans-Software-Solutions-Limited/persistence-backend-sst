@@ -2398,3 +2398,233 @@ describe("SSTApiAdapter.getHabitCompletions includeDerived", () => {
     expect(url).toContain("includeDerived=true");
   });
 });
+
+describe("SSTApiAdapter Mealprint (spec-26 Phase 0/1)", () => {
+  const PREFERENCES = {
+    userId: "user-1",
+    dietaryPatterns: ["vegan"],
+    avoidAllergens: ["peanuts"],
+    avoidFoods: ["olives"],
+    likedFoods: ["tofu"],
+    mealsPerDay: 4,
+    effortLevel: "balanced",
+    locale: "en-GB",
+    updatedAt: "2026-08-03T12:00:00.000Z",
+    isDefault: false,
+  };
+
+  it("getMealprintPreferences GETs /nutrition/preferences and unwraps {data}", async () => {
+    const mockFetch = installFetchMock(
+      async () =>
+        new Response(JSON.stringify({ data: PREFERENCES }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+    );
+
+    const result = await new SSTApiAdapter().getMealprintPreferences();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.dietaryPatterns).toEqual(["vegan"]);
+    expect(String(mockFetch.mock.calls[0][0])).toContain(
+      "/nutrition/preferences",
+    );
+  });
+
+  it("setMealprintPreferences PUTs the body and returns the SERVER's row", async () => {
+    // The handler normalises the free-text lists on write, so the response — not
+    // the submitted body — is what should be cached.
+    const mockFetch = installFetchMock(
+      async () =>
+        new Response(
+          JSON.stringify({ data: { ...PREFERENCES, avoidFoods: ["olives"] } }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+    );
+
+    const result = await new SSTApiAdapter().setMealprintPreferences({
+      dietaryPatterns: ["vegan"],
+      avoidAllergens: ["peanuts"],
+      avoidFoods: ["Olives"],
+      likedFoods: ["tofu"],
+      mealsPerDay: 4,
+      effortLevel: "balanced",
+      locale: "en-GB",
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.avoidFoods).toEqual(["olives"]);
+    const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/nutrition/preferences");
+    expect(init.method).toBe("PUT");
+    expect(JSON.parse(init.body as string)).toMatchObject({
+      avoidFoods: ["Olives"],
+    });
+  });
+
+  it("⚠ carries the 400's FIELD and MESSAGE off the flat body, not an empty string", async () => {
+    // The whole reason `requestPreferenceWrite` exists instead of
+    // `requestEnvelope`: the 400 answers `{ code, field, value, message }` rather
+    // than `{ error }`, and the generic path reads its message from `body.error`
+    // then falls back to `statusText` — which React Native leaves as "". That made
+    // a rejected save a blank error on the screen where a user enters allergen
+    // data, with nothing to branch on.
+    installFetchMock(
+      async () =>
+        new Response(
+          JSON.stringify({
+            code: "INVALID_PREFERENCE",
+            field: "avoidFoods",
+            value: "x".repeat(200),
+            message: "avoidFoods entries must be 120 characters or fewer",
+          }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        ),
+    );
+
+    const result = await new SSTApiAdapter().setMealprintPreferences({
+      dietaryPatterns: [],
+      avoidAllergens: [],
+      avoidFoods: ["x".repeat(200)],
+      likedFoods: [],
+      mealsPerDay: 4,
+      effortLevel: "balanced",
+      locale: "en-GB",
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.status).toBe(400);
+    expect(result.error.preferenceField).toBe("avoidFoods");
+    expect(result.error.message).toContain("120 characters");
+  });
+
+  it("falls back to a readable message when the error body carries none", async () => {
+    installFetchMock(
+      async () => new Response("null", { status: 500, headers: {} }),
+    );
+    const result = await new SSTApiAdapter().setMealprintPreferences({
+      dietaryPatterns: [],
+      avoidAllergens: [],
+      avoidFoods: [],
+      likedFoods: [],
+      mealsPerDay: 4,
+      effortLevel: "balanced",
+      locale: "en-GB",
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toBe("Couldn't save your preferences.");
+    expect(result.error.preferenceField).toBeUndefined();
+  });
+
+  it("reads an `{ error }` envelope when the generic Elysia path produced one", async () => {
+    installFetchMock(
+      async () =>
+        new Response(JSON.stringify({ error: "validation failed" }), {
+          status: 422,
+          headers: { "Content-Type": "application/json" },
+        }),
+    );
+    const result = await new SSTApiAdapter().setMealprintPreferences({
+      dietaryPatterns: [],
+      avoidAllergens: [],
+      avoidFoods: [],
+      likedFoods: [],
+      mealsPerDay: 4,
+      effortLevel: "balanced",
+      locale: "en-GB",
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toBe("validation failed");
+  });
+
+  it("suggestMeals POSTs the shape/date/steer and unwraps {data}", async () => {
+    const mockFetch = installFetchMock(
+      async () =>
+        new Response(
+          JSON.stringify({
+            data: {
+              suggestions: [],
+              emptyReason: "no_candidates",
+              remaining: null,
+              containsUnverified: false,
+              partialEnforcementOnly: false,
+              labelCheckRequired: true,
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+    );
+
+    const result = await new SSTApiAdapter().suggestMeals({
+      shape: "snack",
+      date: "2026-08-03",
+      steer: "something sweet",
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // ⚠ An empty result is a 200 with a reason, not a failure.
+    expect(result.value.emptyReason).toBe("no_candidates");
+    expect(result.value.labelCheckRequired).toBe(true);
+
+    const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/nutrition/ai/meal-suggest");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body as string)).toEqual({
+      shape: "snack",
+      date: "2026-08-03",
+      steer: "something sweet",
+    });
+  });
+
+  it("suggestMeals preserves the STATUS so callers can tell 429 from 503", async () => {
+    for (const status of [402, 422, 429, 503]) {
+      installFetchMock(
+        async () =>
+          new Response(JSON.stringify({ error: "nope" }), {
+            status,
+            headers: { "Content-Type": "application/json" },
+          }),
+      );
+      const result = await new SSTApiAdapter().suggestMeals({
+        shape: "either",
+        date: "2026-08-03",
+      });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.status).toBe(status);
+    }
+  });
+
+  it("suggestMeals opts into a client timeout long enough for the server's own budget", async () => {
+    // The handler budgets against a 29 s route ceiling and does six sequential
+    // round trips before the model call. Giving up earlier still bills the user a
+    // daily suggestion for an inference that reached the provider.
+    let sawSignal = false;
+    installFetchMock(async (_url, init) => {
+      sawSignal = init?.signal != null;
+      return new Response(
+        JSON.stringify({
+          data: {
+            suggestions: [],
+            emptyReason: "budget_exhausted",
+            remaining: null,
+            containsUnverified: false,
+            partialEnforcementOnly: false,
+            labelCheckRequired: true,
+          },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+    await new SSTApiAdapter().suggestMeals({
+      shape: "either",
+      date: "2026-08-03",
+    });
+    expect(sawSignal).toBe(true);
+  });
+});

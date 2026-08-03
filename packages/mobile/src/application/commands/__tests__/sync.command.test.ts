@@ -4,6 +4,7 @@ import { toggleHabitDayCommand } from "../toggle-habit.command";
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
 import { InMemoryAuthAdapter } from "@/adapters/auth/__tests__/in-memory-auth.adapter";
 import type { Exercise } from "@/domain/models/exercise";
+import type { MealprintPreferences } from "@/domain/models/mealprint";
 import { captureSyncFailure } from "@/lib/sentry";
 
 jest.mock("@/lib/sentry", () => ({ captureSyncFailure: jest.fn() }));
@@ -543,6 +544,117 @@ describe("processSyncQueue", () => {
     expect(storage.getCachedNotificationPreferences()).toEqual({
       goal_milestone: false,
     });
+  });
+
+  // ─── Mealprint preferences (spec-26 T-0.6) ────────────────────────────────
+
+  const MEALPRINT_ROW: MealprintPreferences = {
+    userId: "user-1",
+    dietaryPatterns: ["vegan"],
+    avoidAllergens: ["peanuts"],
+    avoidFoods: ["olives"],
+    likedFoods: ["tofu"],
+    mealsPerDay: 4,
+    effortLevel: "balanced",
+    locale: "en-GB",
+    updatedAt: "2026-08-03T12:00:00.000Z",
+    isDefault: false,
+  };
+
+  function queueMealprintWrite(overrides: Record<string, unknown> = {}) {
+    storage.enqueueMutation({
+      entityType: "nutrition_preferences",
+      entityId: "user-1",
+      operation: "update",
+      payload: { mealsPerDay: 4, ...overrides },
+      endpoint: "/nutrition/preferences",
+      method: "PUT",
+    });
+  }
+
+  it("adopts the server's NORMALISED preferences row on flush", async () => {
+    // The handler lowercases and accent-strips the free-text lists on write, so the
+    // response is not byte-identical to the submitted body — and those strings are
+    // matched against candidate names at generation time, so the device must not
+    // keep disagreeing with the server about them.
+    storage.cacheMealprintPreferences("user-1", {
+      ...MEALPRINT_ROW,
+      avoidFoods: ["Olives"],
+    });
+    queueMealprintWrite();
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ data: MEALPRINT_ROW }),
+    });
+
+    const result = await processSyncQueue(storage, auth, "https://api.test");
+    expect(result.succeeded).toBe(1);
+    expect(storage.getCachedMealprintPreferences("user-1")?.avoidFoods).toEqual(
+      ["olives"],
+    );
+  });
+
+  it("does NOT clobber a still-queued preferences write when an earlier one flushes", async () => {
+    // Each write is a full replacement, so adopting THIS response would revert the
+    // optimistic state of the later edit — the user would watch their newest change
+    // disappear until that entry flushed too.
+    storage.cacheMealprintPreferences("user-1", {
+      ...MEALPRINT_ROW,
+      mealsPerDay: 6,
+    });
+    queueMealprintWrite({ mealsPerDay: 4 });
+    queueMealprintWrite({ mealsPerDay: 6 });
+
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ data: { ...MEALPRINT_ROW, mealsPerDay: 4 } }),
+    });
+
+    await processSyncQueue(storage, auth, "https://api.test");
+    expect(storage.getCachedMealprintPreferences("user-1")?.mealsPerDay).toBe(
+      6,
+    );
+  });
+
+  it("⚠ REFUSES a body that is not a preferences row, rather than poisoning the cache", async () => {
+    // An unreadable echo replacing a good row with one whose arrays are undefined
+    // makes `summarisePreferences` throw on `.filter` — the Fuel Targets screen
+    // would crash rather than degrade. The optimistic row is already correct.
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+    storage.cacheMealprintPreferences("user-1", MEALPRINT_ROW);
+    queueMealprintWrite();
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ data: {} }),
+    });
+
+    const result = await processSyncQueue(storage, auth, "https://api.test");
+    expect(result.succeeded).toBe(1);
+    expect(storage.getCachedMealprintPreferences("user-1")).toEqual(
+      MEALPRINT_ROW,
+    );
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it("keeps the optimistic row when the response body cannot be parsed", async () => {
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+    storage.cacheMealprintPreferences("user-1", MEALPRINT_ROW);
+    queueMealprintWrite();
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => {
+        throw new Error("not json");
+      },
+    });
+
+    const result = await processSyncQueue(storage, auth, "https://api.test");
+    // The PUT succeeded server-side, so the entry still completes.
+    expect(result.succeeded).toBe(1);
+    expect(storage.getCachedMealprintPreferences("user-1")).toEqual(
+      MEALPRINT_ROW,
+    );
+    warn.mockRestore();
   });
 
   it("swaps a custom exercise's local id to the server id on create success", async () => {

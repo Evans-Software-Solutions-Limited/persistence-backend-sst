@@ -52,6 +52,21 @@ export { useEditEntry } from "./useEditEntry";
 export { useDeleteEntry } from "./useDeleteEntry";
 export { useSetWater } from "./useSetWater";
 export { useSetTargets } from "./useSetTargets";
+export { useMealprintPreferences } from "./useMealprintPreferences";
+export { useSetMealprintPreferences } from "./useSetMealprintPreferences";
+export {
+  useMealSuggest,
+  type MealSuggestStage,
+  type MealSuggestFailure,
+  type UseMealSuggest,
+} from "./useMealSuggest";
+// ⚠ `useMealprintGate` and `useMealprintEntry` are deliberately NOT exported
+// here, and `useLoadoutGate` is absent for the same reason: both import
+// `expo-router`'s singleton `router`, and this barrel is imported wholesale by
+// suites that mock neither expo-router nor react-query (`nutrition-hooks`,
+// `progress-hooks`). Re-exporting them pulls expo-router's native
+// `messageSocket` into those suites and they fail to LOAD — not a test failure
+// with a useful message, a module-resolution crash. Import them by path.
 export { useCreateFood } from "./useCreateFood";
 export { useCreateRecipe } from "./useCreateRecipe";
 export { useCreateMeal } from "./useCreateMeal";

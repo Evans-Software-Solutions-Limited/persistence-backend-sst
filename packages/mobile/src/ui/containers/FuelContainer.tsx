@@ -12,6 +12,7 @@ import { useGetMeals } from "@/ui/hooks/useGetMeals";
 import { useSetWater } from "@/ui/hooks/useSetWater";
 import { useDeleteEntry } from "@/ui/hooks/useDeleteEntry";
 import { useNutritionAiGate } from "@/ui/hooks/useNutritionAiGate";
+import { useMealprintEntry } from "@/ui/hooks/useMealprintEntry";
 import { useOnlineStatus } from "@/ui/hooks/useOnlineStatus";
 import { useFuelSheets } from "@/state/fuel-sheets";
 import {
@@ -93,6 +94,11 @@ export function FuelContainer() {
   const setWater = useSetWater();
   const deleteEntry = useDeleteEntry();
   const aiGate = useNutritionAiGate();
+  // spec-26 T-0.6 — the Mealprint card's four-state gate, first-run decision and
+  // stalled retry. Adds NO request on this tab: it reads preferences from the
+  // SQLite cache only (see the hook's docstring on launch fan-out) and reuses the
+  // subscription queries `aiGate` above already primes.
+  const mealprint = useMealprintEntry();
   const online = useOnlineStatus();
   const openScan = useFuelSheets((s) => s.openScan);
   const openQuickAdd = useFuelSheets((s) => s.openQuickAdd);
@@ -303,6 +309,11 @@ export function FuelContainer() {
       noTarget={target === null}
       aiLocked={!aiGate.allowed}
       snapOffline={!online}
+      mealprintState={mealprint.state}
+      mealprintNeedsSetup={mealprint.needsSetup}
+      onMealprint={mealprint.onPress}
+      onMealprintUpgrade={mealprint.onUpgrade}
+      onMealprintRetry={mealprint.onRetry}
       slots={slots}
       waterCups={consumed.waterCups}
       waterGoal={target?.waterCups ?? 8}

@@ -7,6 +7,7 @@ import type { CoachOverview } from "@/domain/models/coachOverview";
 import type { ClientDetail } from "@/domain/models/clientDetail";
 import type { TrainerClient } from "@/domain/models/trainerClient";
 import type { ProgramSummary } from "@/domain/models/program";
+import type { MealprintPreferences } from "@/domain/models/mealprint";
 import type {
   Food,
   FuelToday,
@@ -800,6 +801,16 @@ ${indentSyncQueueDdl(8)}
       );
       -- Current daily target (single small row per user).
       CREATE TABLE IF NOT EXISTS cached_nutrition_target (
+        user_id TEXT PRIMARY KEY,
+        payload TEXT NOT NULL,
+        synced_at TEXT NOT NULL
+      );
+      -- Mealprint food preferences (spec-26 AC 1.3): one small row per user,
+      -- read synchronously by the Fuel entry card so it needs no network on a
+      -- cold launch. The CREATE TABLE IF NOT EXISTS above covers upgrading
+      -- installs too, because this is a new TABLE rather than a new column --
+      -- no explicit ALTER is needed (contrast active_sessions below).
+      CREATE TABLE IF NOT EXISTS cached_mealprint_preferences (
         user_id TEXT PRIMARY KEY,
         payload TEXT NOT NULL,
         synced_at TEXT NOT NULL
@@ -3282,6 +3293,24 @@ ${indentSyncQueueDdl(12)}
     this.writeBlob("cached_nutrition_target", userId, target);
   }
 
+  getCachedMealprintPreferences(userId: string): MealprintPreferences | null {
+    return this.readBlob<MealprintPreferences>(
+      "cached_mealprint_preferences",
+      userId,
+    );
+  }
+
+  getMealprintPreferencesAge(userId: string): string | null {
+    return this.readBlobSyncedAt("cached_mealprint_preferences", userId);
+  }
+
+  cacheMealprintPreferences(
+    userId: string,
+    preferences: MealprintPreferences,
+  ): void {
+    this.writeBlob("cached_mealprint_preferences", userId, preferences);
+  }
+
   getCachedRecipes(userId: string): Recipe[] {
     const rows = this.getDb().getAllSync(
       `SELECT payload FROM cached_recipes WHERE user_id = ? ORDER BY rowid DESC`,
@@ -3397,6 +3426,7 @@ ${indentSyncQueueDdl(12)}
       DELETE FROM cached_recipes;
       DELETE FROM cached_meals;
       DELETE FROM cached_nutrition_target;
+      DELETE FROM cached_mealprint_preferences;
     `);
   }
 }

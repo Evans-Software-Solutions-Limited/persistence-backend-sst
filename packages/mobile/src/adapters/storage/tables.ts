@@ -33,6 +33,16 @@ export const RECIPE_TABLES = ["cached_recipes"] as const;
 export const MEAL_TABLES = ["cached_meals"] as const;
 
 /**
+ * Mealprint food preferences (spec-26). One table, narrow for the same reason as
+ * the two above: the editor writes it optimistically and the entry card and the
+ * suggest sheet both read it, so a local write must wake them — but nothing else
+ * should.
+ */
+export const MEALPRINT_PREFERENCE_TABLES = [
+  "cached_mealprint_preferences",
+] as const;
+
+/**
  * Home aggregate payload.
  *
  * ⚠ `cached_dashboard` is deliberately NOT here, despite being the older Home

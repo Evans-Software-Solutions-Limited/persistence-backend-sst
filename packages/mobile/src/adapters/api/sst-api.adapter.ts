@@ -30,6 +30,12 @@ import type {
   WorkoutVariationSummary,
 } from "@/domain/models/loadout";
 import type {
+  MealprintPreferences,
+  MealSuggestInput,
+  MealSuggestResult,
+  SetMealprintPreferencesInput,
+} from "@/domain/models/mealprint";
+import type {
   ReferenceEntry,
   ReferenceListKind,
 } from "@/domain/models/reference-list";
@@ -38,6 +44,7 @@ import type {
   ApiPort,
   InviteApiError,
   LoadoutApiError,
+  MealprintApiError,
   LoadoutErrorCode,
   ApiNotification,
   ApiNotificationListResponse,
@@ -1861,6 +1868,51 @@ export class SSTApiAdapter implements ApiPort {
     );
   }
 
+  // -- Mealprint (spec-26 Phase 0/1) --
+  //
+  // Single `{ data }` envelopes, camelCase == domain shape (passthrough). The
+  // preferences pair is unauthenticated-by-entitlement and cheap; `suggestMeals`
+  // is the paid, model-backed one and gets the full route window.
+
+  async getMealprintPreferences(): Promise<
+    Result<MealprintPreferences, ApiError>
+  > {
+    return this.requestEnvelope<MealprintPreferences>("/nutrition/preferences");
+  }
+
+  async setMealprintPreferences(
+    input: SetMealprintPreferencesInput,
+  ): Promise<Result<MealprintPreferences, MealprintApiError>> {
+    // NOT `requestEnvelope`: the 400 body is flat (`{ code, field, value,
+    // message }`), and that path would reduce it to an empty-message
+    // `{ code: "server" }` with the field lost. See `requestPreferenceWrite`.
+    return this.requestPreferenceWrite<MealprintPreferences>(
+      "/nutrition/preferences",
+      { method: "PUT", body: input },
+    );
+  }
+
+  async suggestMeals(
+    input: MealSuggestInput,
+  ): Promise<Result<MealSuggestResult, ApiError>> {
+    return this.requestEnvelope<MealSuggestResult>(
+      "/nutrition/ai/meal-suggest",
+      {
+        method: "POST",
+        body: input,
+        // The handler budgets itself against `ROUTE_TIMEOUT_MS` (29 s) and does
+        // SIX sequential round trips before the model call — auth, entries,
+        // targets, preferences, then four candidate queries — so the worst-case
+        // successful response lands well after a default client timeout. Giving
+        // up earlier than the server does is the expensive failure here: a usage
+        // row is written for every inference that reached the provider, so an
+        // abandoned request still costs the user one of their 20 daily
+        // suggestions. Matches `previewLoadout` / `scanEquipment`.
+        timeoutMs: 30_000,
+      },
+    );
+  }
+
   // -- Client side of the coach↔client handshake (10-trainer-features) --
   async getClientRelationships(
     status?: ClientRelationshipStatus,
@@ -2288,6 +2340,51 @@ export class SSTApiAdapter implements ApiPort {
     const base = mapHttpErrorToApiError(status, message, json);
     return fail<LoadoutApiError>(
       loadoutCode !== undefined ? { ...base, loadoutCode } : base,
+    );
+  }
+
+  /**
+   * Write path for `PUT /nutrition/preferences`, whose 400 answers a flat
+   * `{ code: "INVALID_PREFERENCE", field, value, message }` body.
+   *
+   * Same defect and same fix as `requestLoadout`: `mapHttpErrorToApiError` reads
+   * its message from `body.error` and falls back to `statusText`, which RN leaves
+   * as `""` — so routing this through `requestEnvelope` produced a rejected save
+   * with a blank message and no field, i.e. a silent failure on the screen where
+   * a user enters allergen data. Kept separate from `requestLoadout` because the
+   * carried field is different and merging them would widen both.
+   */
+  private async requestPreferenceWrite<T>(
+    path: string,
+    options: RequestOptions = {},
+  ): Promise<Result<T, MealprintApiError>> {
+    const result = await this.requestRaw<
+      { data: T } | { code?: string; field?: string; message?: string }
+    >(path, options);
+    if (!result.ok) return fail<MealprintApiError>(result.error);
+
+    const { status, json } = result.value;
+    if (status >= 200 && status < 300 && json !== null && "data" in json) {
+      return ok(json.data);
+    }
+
+    // Prefer the handler's own `message`, then the `{ error }` envelope the
+    // generic Elysia error path uses, and only then a literal — never
+    // `statusText`, which is the empty string on this platform.
+    const message =
+      json !== null && "message" in json && typeof json.message === "string"
+        ? json.message
+        : json !== null && "error" in json && typeof json.error === "string"
+          ? (json.error as string)
+          : "Couldn't save your preferences.";
+    const field =
+      json !== null && "field" in json && typeof json.field === "string"
+        ? json.field
+        : undefined;
+
+    const base = mapHttpErrorToApiError(status, message, json);
+    return fail<MealprintApiError>(
+      field !== undefined ? { ...base, preferenceField: field } : base,
     );
   }
 }

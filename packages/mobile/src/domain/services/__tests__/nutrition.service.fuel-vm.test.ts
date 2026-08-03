@@ -107,7 +107,7 @@ describe("nutrition.service Fuel view-model helpers", () => {
         "Lunch combo",
       );
     });
-    it("falls back to a typed label when the ref isn't cached", () => {
+    it("falls back to a typed label when the ref isn't cached and there is no name", () => {
       expect(entryDisplayLabel(entry({ foodId: "x" }), lookups)).toBe(
         "Logged food",
       );
@@ -115,6 +115,37 @@ describe("nutrition.service Fuel view-model helpers", () => {
         "Recipe",
       );
       expect(entryDisplayLabel(entry({ mealId: "x" }), lookups)).toBe("Meal");
+    });
+
+    it("⚠ uses customName on a REF path when the lookup misses (spec-26 T-1.5)", () => {
+      // Mealprint logs a suggestion against the CURATED catalogue row it composed
+      // from, and `cached_foods` only holds foods this device searched for or
+      // scanned — so the miss is the normal case there, and before this every
+      // Mealprint row in the meal log read the literal "Logged food".
+      expect(
+        entryDisplayLabel(
+          entry({ foodId: "x", customName: "Greek yoghurt 0%" }),
+          lookups,
+        ),
+      ).toBe("Greek yoghurt 0%");
+      expect(
+        entryDisplayLabel(
+          entry({ recipeId: "x", customName: "Berry compote" }),
+          lookups,
+        ),
+      ).toBe("Berry compote");
+      expect(
+        entryDisplayLabel(
+          entry({ mealId: "x", customName: "Post-gym plate" }),
+          lookups,
+        ),
+      ).toBe("Post-gym plate");
+    });
+
+    it("still prefers the typed label over a BLANK customName on a ref miss", () => {
+      expect(
+        entryDisplayLabel(entry({ foodId: "x", customName: "   " }), lookups),
+      ).toBe("Logged food");
     });
     it("uses the persisted customName for a one-off / AI entry", () => {
       expect(entryDisplayLabel(entry({ customName: "Banana" }), lookups)).toBe(

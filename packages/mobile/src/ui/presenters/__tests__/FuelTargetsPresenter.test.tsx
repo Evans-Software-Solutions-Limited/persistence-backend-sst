@@ -81,6 +81,10 @@ function makeProps(
     onFatPctChange: jest.fn(),
     waterCups: 8,
     onWaterCupsChange: jest.fn(),
+    // spec-26 — null is the honest default here: the row renders "Not set up yet"
+    // for a user who has never opened the Mealprint wizard.
+    foodPreferencesSummary: null,
+    onOpenFoodPreferences: jest.fn(),
     ...overrides,
   };
 }

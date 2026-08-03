@@ -19,6 +19,10 @@ import { MacroHeroPresenter, type MacroLineVM } from "./MacroHeroPresenter";
 import { QuickAddRowPresenter } from "./QuickAddRowPresenter";
 import { MealLogPresenter, type MealSlotVM } from "./MealLogPresenter";
 import { WaterTrackerPresenter } from "./WaterTrackerPresenter";
+import {
+  MealprintEntryCard,
+  type MealprintEntryState,
+} from "./mealprint/MealprintEntryCard";
 
 /**
  * <FuelPresenter> — the Fuel (nutrition) screen (nutrition.jsx). Composes the
@@ -75,6 +79,15 @@ export type FuelPresenterProps = {
   aiLocked: boolean;
   /** True when offline — Snap is disabled independently of the AI entitlement. */
   snapOffline?: boolean;
+
+  // Mealprint (spec-26 T-0.6 entry point). Four states — see
+  // <MealprintEntryCard> for why `pending` and `stalled` are not synonyms for
+  // `locked`. The container resolves them via `useMealprintEntry`.
+  mealprintState: MealprintEntryState;
+  mealprintNeedsSetup: boolean;
+  onMealprint: () => void;
+  onMealprintUpgrade: () => void;
+  onMealprintRetry: () => void;
 
   // Meal log
   slots: readonly MealSlotVM[];
@@ -364,6 +377,11 @@ export function FuelPresenter(props: FuelPresenterProps) {
     noTarget,
     aiLocked,
     snapOffline = false,
+    mealprintState,
+    mealprintNeedsSetup,
+    onMealprint,
+    onMealprintUpgrade,
+    onMealprintRetry,
     slots,
     waterCups,
     waterGoal,
@@ -520,6 +538,17 @@ export function FuelPresenter(props: FuelPresenterProps) {
             onSnap={onSnap}
             onSearch={onSearch}
             onRecipes={onRecipes}
+          />
+          {/* Mealprint sits directly below QuickAddRow (design § 4 item 1):
+              QuickAdd answers "log what I ate", Mealprint answers "what should I
+              eat" — adjacent questions, and this is the point in the scroll where
+              the user has just seen what they have left. */}
+          <MealprintEntryCard
+            state={mealprintState}
+            needsSetup={mealprintNeedsSetup}
+            onPress={onMealprint}
+            onUpgrade={onMealprintUpgrade}
+            onRetry={onMealprintRetry}
           />
           <MealLogPresenter
             slots={slots}

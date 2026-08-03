@@ -92,7 +92,15 @@ import type {
   UpdateClientNoteInput,
   SendClientBriefInput,
   SentClientBrief,
+  MealprintApiError,
 } from "@/domain/ports/api.port";
+import { DEFAULT_MEALPRINT_PREFERENCES } from "@/domain/models/mealprint";
+import type {
+  MealprintPreferences,
+  MealSuggestInput,
+  MealSuggestResult,
+  SetMealprintPreferencesInput,
+} from "@/domain/models/mealprint";
 import type {
   AiSummaryModule,
   ClientDetail,
@@ -3156,5 +3164,107 @@ export class InMemoryApiAdapter implements ApiPort {
         modelId: "test-model",
       },
     );
+  }
+
+  // ─── Mealprint (spec-26 Phase 0/1) ─────────────────────────────────────────
+
+  /**
+   * Canned `GET /nutrition/preferences`. Defaults to the DEFAULT shape with
+   * `isDefault: true` — the real endpoint's no-row answer, and the state every
+   * first-run test starts from.
+   */
+  public mealprintPreferences: MealprintPreferences = {
+    userId: "user-1",
+    ...DEFAULT_MEALPRINT_PREFERENCES,
+    dietaryPatterns: [],
+    avoidAllergens: [],
+    avoidFoods: [],
+    likedFoods: [],
+    updatedAt: null,
+    isDefault: true,
+  };
+  public setMealprintPreferencesCalls: SetMealprintPreferencesInput[] = [];
+  /**
+   * Canned 400 for the preference write.
+   *
+   * ⚠ Carries `preferenceField` so a test can prove the editor surfaces the
+   * FIELD and the server's message rather than a generic failure — the whole
+   * reason `requestPreferenceWrite` exists instead of `requestEnvelope`.
+   */
+  public nextPreferenceWriteError: {
+    status: number;
+    message: string;
+    field?: string;
+  } | null = null;
+
+  /**
+   * Canned `POST /nutrition/ai/meal-suggest`. Defaults to an EMPTY
+   * `no_candidates` result, because that is the real state on staging until the
+   * Open Food Facts re-seed lands and a fake whose default is a happy path
+   * hides it.
+   */
+  public mealSuggestResult: MealSuggestResult = {
+    suggestions: [],
+    emptyReason: "no_candidates",
+    remaining: null,
+    containsUnverified: false,
+    partialEnforcementOnly: false,
+    labelCheckRequired: true,
+  };
+  public suggestMealsCalls: MealSuggestInput[] = [];
+  /** Canned 402/422/429/503 for the suggest call. */
+  public nextMealSuggestError: { status: number; message: string } | null =
+    null;
+
+  async getMealprintPreferences(): Promise<
+    Result<MealprintPreferences, ApiError>
+  > {
+    return this.mayFail<MealprintPreferences>(this.mealprintPreferences);
+  }
+
+  async setMealprintPreferences(
+    input: SetMealprintPreferencesInput,
+  ): Promise<Result<MealprintPreferences, MealprintApiError>> {
+    this.setMealprintPreferencesCalls.push(input);
+    if (this.nextPreferenceWriteError) {
+      const { status, message, field } = this.nextPreferenceWriteError;
+      const error: MealprintApiError = {
+        kind: "api",
+        code: "server",
+        message,
+        status,
+      };
+      return fail<MealprintApiError>(
+        field !== undefined ? { ...error, preferenceField: field } : error,
+      );
+    }
+    if (this.shouldFail) return fail<MealprintApiError>(this.failError);
+    // Echo the write back the way the real endpoint does: the stored row, with
+    // `isDefault` now false. Tests that assert the cache holds the SERVER's
+    // shape (not the submitted body) depend on this being a fresh object.
+    this.mealprintPreferences = {
+      ...this.mealprintPreferences,
+      dietaryPatterns: [...input.dietaryPatterns],
+      avoidAllergens: [...input.avoidAllergens],
+      avoidFoods: [...input.avoidFoods],
+      likedFoods: [...input.likedFoods],
+      mealsPerDay: input.mealsPerDay,
+      effortLevel: input.effortLevel,
+      locale: input.locale,
+      updatedAt: "2026-08-03T12:00:00.000Z",
+      isDefault: false,
+    };
+    return ok(this.mealprintPreferences);
+  }
+
+  async suggestMeals(
+    input: MealSuggestInput,
+  ): Promise<Result<MealSuggestResult, ApiError>> {
+    this.suggestMealsCalls.push(input);
+    if (this.nextMealSuggestError) {
+      const { status, message } = this.nextMealSuggestError;
+      return fail<ApiError>({ kind: "api", code: "server", message, status });
+    }
+    return this.mayFail<MealSuggestResult>(this.mealSuggestResult);
   }
 }

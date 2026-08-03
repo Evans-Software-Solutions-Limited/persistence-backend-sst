@@ -1,0 +1,276 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import * as Haptics from "expo-haptics";
+import { loggedAtNoonUtc } from "@/shared/utils";
+import { useFuelSheets } from "@/state/fuel-sheets";
+import { useLogEntry } from "@/ui/hooks/useLogEntry";
+import { useMealSuggest } from "@/ui/hooks/useMealSuggest";
+import { useMealprintGate } from "@/ui/hooks/useMealprintGate";
+import { useMealprintPreferences } from "@/ui/hooks/useMealprintPreferences";
+import { useOnlineStatus } from "@/ui/hooks/useOnlineStatus";
+import {
+  draftFromSuggestion,
+  sumKeptDraftKcal,
+  type MealprintDraft,
+  type MealSuggestion,
+  type SuggestShape,
+} from "@/domain/models/mealprint";
+import type { MealSlot } from "@/domain/models/nutrition";
+import {
+  MealprintSuggestSheetPresenter,
+  type MealprintSuggestStage,
+} from "@/ui/presenters/mealprint/MealprintSuggestSheetPresenter";
+
+/**
+ * <MealprintSuggestSheetContainer> — root-mounted fill-my-macros sheet
+ * (spec-26 T-1.5, STORY-003).
+ *
+ * Owns the shape/steer inputs, the suggest call, the draft-review state and the
+ * log. The remaining kcal/macros are NOT read here: the endpoint computes them
+ * server-side from `date` + the day's entries + the active target, which is what
+ * makes the tolerance check and the candidate pool agree with each other. This
+ * container only supplies the device's local day.
+ *
+ * ## ⚠ Nothing fires on mount
+ *
+ * Root-mounted means always mounted (that is what keeps z-order and the slide-out
+ * exit animation working), and **closing a sheet is not an unmount**. So every
+ * data path here is gated on `visible`:
+ *
+ *  - `useMealprintPreferences(visible)` fetches on the first real open, not on
+ *    cold launch. Seven sheets calling their hooks unconditionally is what
+ *    produced ~28 requests inside 100 ms against a 10-concurrency Lambda quota,
+ *    with roughly 16 coming back 503.
+ *  - `useMealSuggest` is imperative and only runs from the Generate button.
+ *
+ * ## ⚠ Why the gate is re-checked here
+ *
+ * `useMealprintEntry` already gates the Fuel card, so an unentitled user should
+ * never reach this sheet. This container defends anyway — connectivity and
+ * subscription state can change while a sheet is open, and a 402 arriving in a
+ * sheet with no upgrade affordance is a dead end. Cheap: the gate reads the same
+ * two cached queries the entry card does.
+ *
+ * ## ⚠ Draft state lives here, not in a zustand slice
+ *
+ * The design sketches a store for draft-review state, and that is right for the
+ * PLAN flow (a multi-meal draft surviving swap/edit/remove across a pushed
+ * screen). A suggestion draft is one selection inside one sheet with a single
+ * exit, so a store would add a lifetime that has to be reset on open, on close,
+ * on log and on error — four chances to leak a stale draft into the next open, for
+ * no cross-surface benefit.
+ */
+
+/** Module-level so the "no result yet" case is referentially stable. */
+const EMPTY_SUGGESTIONS: readonly MealSuggestion[] = [];
+
+export function MealprintSuggestSheetContainer() {
+  const sheet = useFuelSheets((s) => s.sheet);
+  const close = useFuelSheets((s) => s.close);
+  const notifyMutated = useFuelSheets((s) => s.notifyMutated);
+  const activeDate = useFuelSheets((s) => s.date);
+  const slotFromStore = useFuelSheets((s) => s.slot);
+  const visible = sheet === "mealprintSuggest";
+
+  const online = useOnlineStatus();
+  const gate = useMealprintGate();
+  // Gated on `visible` — see the docstring. Read for the dietary patterns, which
+  // drive the halal/kosher enforcement caveat.
+  const preferences = useMealprintPreferences(visible);
+  const suggest = useMealSuggest();
+  const logEntry = useLogEntry();
+
+  const [shape, setShape] = useState<SuggestShape>("either");
+  const [steer, setSteer] = useState("");
+  const [draft, setDraft] = useState<MealprintDraft | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const [added, setAdded] = useState(false);
+
+  // Guard convention shared with Scan/Quick-add/Snap: only a genuine dismiss of
+  // THIS sheet (still visible) clears the store — a controlled handoff to another
+  // root sheet must be a no-op (see fuel-sheets.ts § FuelSheet).
+  const onSheetClose = useCallback(() => {
+    if (visible) close();
+  }, [visible, close]);
+
+  const { reset } = suggest;
+  useEffect(() => {
+    if (!visible) return;
+    // Reset on OPEN rather than on close: the close animation is still running
+    // when `visible` flips false, and blanking the body mid-slide-down is visible.
+    reset();
+    setShape("either");
+    setSteer("");
+    setDraft(null);
+    setConfirming(false);
+    setAdded(false);
+  }, [visible, reset]);
+
+  const { run, retry } = suggest;
+  const onGenerate = useCallback(() => {
+    // Offline and the paywall both take precedence over the request. The card
+    // that opens this sheet already checks both; these are the defence for state
+    // that changed while the sheet was open.
+    if (!online) return;
+    if (!gate.allowed) {
+      gate.onUpgrade();
+      return;
+    }
+    setDraft(null);
+    void run({
+      shape,
+      date: activeDate,
+      steer: steer.trim() === "" ? undefined : steer.trim(),
+    });
+  }, [online, gate, run, shape, activeDate, steer]);
+
+  const onRetry = useCallback(() => {
+    if (!online) return;
+    setDraft(null);
+    void retry();
+  }, [online, retry]);
+
+  // Memoised so the `??` fallback does not mint a fresh empty array each render
+  // and re-identify `onSelectSuggestion` (and through it the presenter) every time.
+  const suggestions = useMemo(
+    () => suggest.result?.suggestions ?? EMPTY_SUGGESTIONS,
+    [suggest.result],
+  );
+
+  const onSelectSuggestion = useCallback(
+    (index: number) => {
+      const suggestion = suggestions[index];
+      if (!suggestion) return;
+      void Haptics.selectionAsync();
+      // Seeded with the slot the day's flow was already targeting, so a user who
+      // opened Fuel on a specific meal is not re-picking it.
+      setDraft(draftFromSuggestion(suggestion, slotFromStore));
+    },
+    [suggestions, slotFromStore],
+  );
+
+  const onToggleDraftItem = useCallback((index: number) => {
+    setDraft((prev) =>
+      prev === null
+        ? prev
+        : {
+            ...prev,
+            items: prev.items.map((item, i) =>
+              i === index ? { ...item, on: !item.on } : item,
+            ),
+          },
+    );
+  }, []);
+
+  const onSlotChange = useCallback((slot: MealSlot) => {
+    setDraft((prev) => (prev === null ? prev : { ...prev, slot }));
+  }, []);
+
+  const onBackToResults = useCallback(() => setDraft(null), []);
+
+  const confirmingRef = useRef(false);
+  const onConfirm = useCallback(async () => {
+    // Ref, not state: a second tap during the same in-flight confirm is rejected
+    // synchronously, so a double-tap cannot log the draft twice.
+    if (confirmingRef.current || draft === null) return;
+    const kept = draft.items.filter((item) => item.on);
+    if (kept.length === 0) return;
+    confirmingRef.current = true;
+    setConfirming(true);
+    try {
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      // The store's active day, not a date captured on the draft.
+      // `<FuelContainer>` keeps it in sync with the day being viewed, so a
+      // suggestion reviewed while looking at yesterday logs to yesterday — and
+      // the day can legitimately change under an open sheet, so reading it here
+      // rather than at draft-creation time is the correct freshness.
+      const loggedAt = loggedAtNoonUtc(activeDate);
+      for (const item of kept) {
+        await logEntry.mutate({
+          // ⚠ Log the REFERENCE, not a one-off. The server re-derives macros from
+          // the row (per-serving × servings, identical to the basis the candidate
+          // was assembled on), so the logged entry is server-authoritative, links
+          // back to the real food/recipe/meal, and stays editable and deletable
+          // like any other entry.
+          ...(item.kind === "food"
+            ? { foodId: item.candidateId }
+            : item.kind === "recipe"
+              ? { recipeId: item.candidateId }
+              : { mealId: item.candidateId }),
+          mealSlot: draft.slot,
+          servings: item.servings,
+          // ⚠ Sent even though the server ignores them on a referenced entry, and
+          // that is the point: `logEntryCommand`'s OPTIMISTIC macro derivation
+          // looks the row up in the local cache and falls back to these when it
+          // misses. A curated Mealprint candidate is almost never in
+          // `cached_foods` (the device only caches what it searched or scanned),
+          // so without these the ring would show +0 kcal until the next refresh.
+          kcal: item.kcal,
+          proteinG: item.proteinG,
+          carbsG: item.carbsG,
+          fatG: item.fatG,
+          // ⚠ Same reason. `entryDisplayLabel` resolves a referenced entry from
+          // the local caches and now falls back to `customName` on a miss, so this
+          // is what stops a Mealprint row reading "Logged food" in the meal log.
+          customName: item.name,
+          loggedAt,
+        });
+      }
+      notifyMutated();
+      setAdded(true);
+      // Brief confirmation, then dismiss — matching the Snap sheet's cadence.
+      setTimeout(() => close(), 900);
+    } finally {
+      confirmingRef.current = false;
+      setConfirming(false);
+    }
+  }, [draft, activeDate, logEntry, notifyMutated, close]);
+
+  const stage: MealprintSuggestStage = added
+    ? "added"
+    : draft !== null
+      ? "draft"
+      : suggest.stage === "generating"
+        ? "generating"
+        : suggest.stage === "error"
+          ? "error"
+          : suggest.stage === "ready"
+            ? "results"
+            : "setup";
+
+  return (
+    <MealprintSuggestSheetPresenter
+      visible={visible}
+      onClose={onSheetClose}
+      stage={stage}
+      offline={!online}
+      shape={shape}
+      onShapeChange={setShape}
+      steer={steer}
+      onSteerChange={setSteer}
+      onGenerate={onGenerate}
+      suggestions={suggestions}
+      emptyReason={suggest.result?.emptyReason ?? null}
+      remaining={suggest.result?.remaining ?? null}
+      // Defaults FALSE when there is no result yet, so nothing claims a
+      // disclaimer the server has not sent. The server always sends `true`.
+      labelCheckRequired={suggest.result?.labelCheckRequired ?? false}
+      dietaryPatterns={preferences.data?.dietaryPatterns ?? []}
+      onSelectSuggestion={onSelectSuggestion}
+      draft={draft}
+      onToggleDraftItem={onToggleDraftItem}
+      onSlotChange={onSlotChange}
+      draftKcal={draft === null ? 0 : sumKeptDraftKcal(draft.items)}
+      onConfirm={() => void onConfirm()}
+      confirming={confirming}
+      onBackToResults={onBackToResults}
+      errorMessage={suggest.failure?.message ?? null}
+      errorRetryable={suggest.failure?.retryable ?? false}
+      // A 402 here means the client verdict and the server disagreed (the entry
+      // card gates on the same verdict, so this is rare) — the honest recovery is
+      // the paywall, not a retry that will 402 again.
+      errorIsEntitlement={suggest.failure?.entitlementDenied ?? false}
+      onRetry={onRetry}
+      onUpgrade={gate.onUpgrade}
+    />
+  );
+}
