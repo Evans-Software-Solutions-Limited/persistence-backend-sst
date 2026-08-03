@@ -442,8 +442,17 @@ describe("AiJobRepository", () => {
       expect(lower).toContain("updated_at");
       // ...including the NULL-heartbeat branch `<` alone would miss.
       expect(lower).toContain("is null");
-      // ...and it is a strict comparison, never an equality on a timestamp.
-      expect(lower).toContain("<");
+      // ⚠ ASSERT THE ABSENCE, not the presence. `toContain("<")` is satisfied by
+      // ONE strict comparison anywhere in the predicate, so degrading just the
+      // `running` branch to an equality — the primary case, since a dead worker's
+      // row is `running` — would leave it green while the self-heal was dead
+      // again. Only a negative assertion catches that.
+      //
+      // Safe because `renderSql` is fed the WHERE fragment alone, so the SET
+      // clause's legitimate `updated_at = now()` is not in this string.
+      expect(lower).not.toMatch(
+        /"(heartbeat_at|updated_at|created_at|started_at|finished_at)"\s*=/,
+      );
       expect(params).toContain("j1");
       expect(params).toContainEqual(new Date(now.getTime() - STALE_AFTER_MS));
       expect(params).toContainEqual(
