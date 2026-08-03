@@ -207,6 +207,25 @@ export interface NameAxis {
    * wheat).
    */
   clearedBy: readonly string[];
+  /**
+   * Per-token disqualifiers: `token → words that mean this token is NOT this axis`.
+   *
+   * ⚠ Distinct from {@link clearedBy}, and the difference matters — a marker
+   * clears the WHOLE AXIS, which would be wrong here. "Almond Flour" must not
+   * clear the gluten axis outright (an "Almond & Wheat Flour Blend" is still
+   * wheat); it must only stop the token *flour* from counting.
+   *
+   * Every entry is a confirmed false positive on today's data, and all three bite
+   * TODAY rather than being pre-backfill artefacts:
+   *
+   *   - `Red Kidney Beans` excluded from a VEGAN pool on "kidney" (the meat axis
+   *     axis is applied unconditionally, so that exclusion was permanent) —
+   *     and kidney beans sort near the top of a protein-density-ordered pool for
+   *     exactly that user.
+   *   - `Peanut Butter` excluded from a dairy-free pool on "butter".
+   *   - `Almond Flour` excluded from a gluten-free pool on "flour".
+   */
+  tokenQualifiers?: Readonly<Record<string, readonly string[]>>;
 }
 
 /**
@@ -283,6 +302,16 @@ export const NAME_TOKENS = {
     "herring",
     "trout",
     "seabass",
+    // Forms and trade names that contain no generic word: "Fishermans Pie"
+    // tokenises to ["fisherman","pie"] and matched nothing.
+    "fisherman",
+    "scampi",
+    "kipper",
+    "whitebait",
+    "surimi",
+    "caviar",
+    "roe",
+    "taramasalata",
   ],
   dairy: [
     "milk",
@@ -302,7 +331,17 @@ export const NAME_TOKENS = {
     "mascarpone",
     "ricotta",
   ],
-  egg: ["egg", "omelette", "omelet", "mayonnaise", "meringue"],
+  egg: [
+    "egg",
+    "omelette",
+    "omelet",
+    "mayonnaise",
+    "meringue",
+    // "Deep Filled Quiche" contains no generic egg word.
+    "quiche",
+    "frittata",
+    "pavlova",
+  ],
   gluten: [
     "gluten",
     "wheat",
@@ -318,6 +357,45 @@ export const NAME_TOKENS = {
     "breadcrumb",
     "cracker",
     "pastry",
+    // ⚠ Bread and pasta FORMS. Added because the generic words alone missed
+    // ordinary products outright: "Sourdough Loaf" contains neither "bread" nor
+    // "wheat", so a gluten-free user was offered it whenever its category tags
+    // were absent — which is every row until the OFF re-seed lands.
+    "loaf",
+    "sourdough",
+    "baguette",
+    "ciabatta",
+    "focaccia",
+    "brioche",
+    "bagel",
+    "crumpet",
+    "muffin",
+    "scone",
+    "croissant",
+    "naan",
+    "chapati",
+    "pitta",
+    "pita",
+    "tortilla",
+    "wrap",
+    "noodle",
+    "macaroni",
+    "spaghetti",
+    "penne",
+    "fusilli",
+    "tagliatelle",
+    "lasagne",
+    "lasagna",
+    "ravioli",
+    "gnocchi",
+    "doughnut",
+    "donut",
+    "waffle",
+    "pancake",
+    "batter",
+    "pie",
+    "pasty",
+    "quiche",
   ],
   pork: [
     "pork",
@@ -379,6 +457,14 @@ export const NAME_AXES: Readonly<Record<string, NameAxis>> = {
   meat: {
     key: "meat",
     tokens: [...NAME_TOKENS.meat],
+    tokenQualifiers: {
+      // "Red Kidney Beans" is not offal. The meat axis is always applied, so
+      // without this the exclusion is unconditional and permanent.
+      kidney: ["bean", "beans"],
+      // "Liver" has no plant homonym, but pâté-style qualifiers do not change the
+      // verdict, so only the vegetable sense is listed for symmetry of intent.
+      liver: ["leaf", "leaves"],
+    },
     negators: ["meat"],
     categorySubstrings: ["meat", "poultry", "charcuterie"],
     clearedBy: ["vegan", "vegetarian", "plantbased", "substitute", "analogue"],
@@ -417,6 +503,46 @@ export const NAME_AXES: Readonly<Record<string, NameAxis>> = {
     negators: ["dairy", "milk", "lactose"],
     categorySubstrings: ["dairy", "cheese", "yogurt", "yoghurt", "milk"],
     clearedBy: ["vegan", "plantbased", "nondairy", "lactosefree"],
+    tokenQualifiers: {
+      // Nut, seed and fruit butters are not dairy. "Peanut Butter" excluded from
+      // a dairy-free pool was a confirmed false positive.
+      butter: [
+        "peanut",
+        "almond",
+        "cashew",
+        "hazelnut",
+        "pistachio",
+        "walnut",
+        "nut",
+        "seed",
+        "sesame",
+        "tahini",
+        "coconut",
+        "cocoa",
+        "shea",
+        "apple",
+      ],
+      // "Cream of tomato soup", "coconut cream", "cream crackers".
+      cream: ["coconut", "oat", "soya", "soy", "almond", "cracker", "tomato"],
+      // ⚠ Plant milks. This carries real weight now that the name channel is
+      // unconditional: without it "Alpro Soya Chocolate Milk Drink" is excluded
+      // from a dairy-free pool on "milk" — the exact shelf that user shops from.
+      // A QUALIFIER rather than a `clearedBy` marker so "Soya Milk & Butter
+      // Blend" is still caught on "butter".
+      milk: [
+        "soya",
+        "soy",
+        "oat",
+        "almond",
+        "coconut",
+        "rice",
+        "hemp",
+        "cashew",
+        "hazelnut",
+        "pea",
+        "plant",
+      ],
+    },
   },
   egg: {
     key: "egg",
@@ -437,6 +563,31 @@ export const NAME_AXES: Readonly<Record<string, NameAxis>> = {
     // "pasta" ⊂ en:pastas).
     categorySubstrings: ["bread", "pasta", "biscuit", "cake", "pastr"],
     clearedBy: ["glutenfree", "freefrom"],
+    tokenQualifiers: {
+      // Naturally gluten-free flours. ⚠ A QUALIFIER, not a `clearedBy` marker:
+      // "Almond & Wheat Flour Blend" must still be caught on "wheat", which an
+      // axis-clearing marker would have let through.
+      flour: [
+        "almond",
+        "coconut",
+        "rice",
+        "chickpea",
+        "gram",
+        "corn",
+        "potato",
+        "tapioca",
+        "buckwheat",
+        "quinoa",
+        "cassava",
+        "soya",
+        "soy",
+        "nut",
+      ],
+      // "Rice pasta", "corn pasta", "buckwheat noodles".
+      pasta: ["rice", "corn", "lentil", "chickpea", "buckwheat", "quinoa"],
+      // "Rice bread", "corn bread" are not wheat products.
+      bread: ["rice", "corn"],
+    },
   },
   pork: {
     key: "pork",
@@ -461,25 +612,24 @@ export interface DietaryPatternRule {
   /** OFF `allergens_tags` values whose presence violates the pattern. */
   allergenTags: readonly string[];
   /**
-   * Name axes an OFF **allergen tag can represent** — dairy, egg, gluten,
-   * seafood, shellfish.
+   * Name axes this pattern forbids, matched as whole singularised NAME TOKENS and
+   * as CATEGORY-TAG substrings.
    *
-   * ⚠ Applied ONLY when the row's `allergenTags` are absent, because where they
-   * are present they are strictly better evidence than the name. Running these
-   * unconditionally is the bug that excludes **"Gluten Free Bread"** from a
-   * gluten-free user's pool on the token "bread".
-   */
-  nameAxesWhenUntagged: readonly NameAxis[];
-  /**
-   * Name axes NO allergen tag represents — meat, pork, alcohol. Applied ALWAYS.
+   * ⚠ **ONE list, applied UNCONDITIONALLY.** This used to be two —
+   * `nameAxesAlways` for axes no allergen tag represents (meat, pork, alcohol)
+   * and `nameAxesWhenUntagged` for axes a tag could speak to (dairy, gluten,
+   * seafood, egg) — with the second gated on the row's tag state. That gate
+   * leaked in three successive shapes (`allergenTags === null`, then `tagsUsable`,
+   * then "did the row make a complete `[]` claim") and has been removed: an
+   * allergen tag's SILENCE is not evidence about an axis it was never about, so
+   * no version of the gate could be right. See `assessAvoidance` § 2c.
    *
-   * ⚠ These cannot be gated on tag presence the way the list above is. An OFF
-   * row can carry `allergen_tags = []` (analysed, no regulated allergen — true
-   * of plain chicken breast) and still have patchy or absent `categories_tags`,
-   * so gating on tag presence would hand a vegan chicken. Meat has no allergen
-   * tag to be caught by, so the name is the last line here, not a fallback.
+   * False positives are prevented by POSITIVE evidence instead —
+   * {@link NameAxis.negators}, {@link NameAxis.clearedBy} and
+   * {@link NameAxis.tokenQualifiers} — which is what keeps "Gluten Free Bread",
+   * "Vegan Cheddar", "Peanut Butter" and "Soya Milk" in the pools they belong in.
    */
-  nameAxesAlways: readonly NameAxis[];
+  nameAxes: readonly NameAxis[];
   /**
    * ⚠ TRUE when the pattern CANNOT be fully enforced from available data, so the
    * caller must say so rather than implying certification.
@@ -503,8 +653,7 @@ export const DIETARY_PATTERN_RULES: Readonly<
       ...ALLERGEN_OFF_TAGS.crustaceans,
       ...ALLERGEN_OFF_TAGS.molluscs,
     ],
-    nameAxesWhenUntagged: [NAME_AXES.seafood, NAME_AXES.shellfish],
-    nameAxesAlways: [NAME_AXES.meat],
+    nameAxes: [NAME_AXES.meat, NAME_AXES.seafood, NAME_AXES.shellfish],
     partialEnforcementOnly: false,
   },
   vegan: {
@@ -515,27 +664,26 @@ export const DIETARY_PATTERN_RULES: Readonly<
       ...ALLERGEN_OFF_TAGS.milk,
       ...ALLERGEN_OFF_TAGS.eggs,
     ],
-    nameAxesWhenUntagged: [
+    nameAxes: [
+      NAME_AXES.meat,
+      NAME_AXES.honey,
       NAME_AXES.seafood,
       NAME_AXES.shellfish,
       NAME_AXES.dairy,
       NAME_AXES.egg,
     ],
-    nameAxesAlways: [NAME_AXES.meat, NAME_AXES.honey],
     partialEnforcementOnly: false,
   },
   pescatarian: {
     // Fish and shellfish are permitted, so only land meat is excluded — and meat
     // has no allergen tag, so every token is in the always-applied list.
     allergenTags: [],
-    nameAxesWhenUntagged: [],
-    nameAxesAlways: [NAME_AXES.meat],
+    nameAxes: [NAME_AXES.meat],
     partialEnforcementOnly: false,
   },
   halal: {
     allergenTags: [],
-    nameAxesWhenUntagged: [],
-    nameAxesAlways: [NAME_AXES.pork, NAME_AXES.alcohol],
+    nameAxes: [NAME_AXES.pork, NAME_AXES.alcohol],
     // ⚠ Certification is not in the data — see the field docstring.
     partialEnforcementOnly: true,
   },
@@ -547,21 +695,18 @@ export const DIETARY_PATTERN_RULES: Readonly<
     // ⚠ The SHELLFISH axis only, NOT the whole seafood axis. Fin fish with
     // scales is kosher — excluding salmon and cod would be plainly wrong, and an
     // earlier draft of this rule did exactly that by reusing the seafood list.
-    nameAxesWhenUntagged: [NAME_AXES.shellfish],
-    nameAxesAlways: [NAME_AXES.pork],
+    nameAxes: [NAME_AXES.pork, NAME_AXES.shellfish],
     // ⚠ Certification is not in the data — see the field docstring.
     partialEnforcementOnly: true,
   },
   dairy_free: {
     allergenTags: [...ALLERGEN_OFF_TAGS.milk],
-    nameAxesWhenUntagged: [NAME_AXES.dairy],
-    nameAxesAlways: [],
+    nameAxes: [NAME_AXES.dairy],
     partialEnforcementOnly: false,
   },
   gluten_free: {
     allergenTags: [...ALLERGEN_OFF_TAGS.gluten],
-    nameAxesWhenUntagged: [NAME_AXES.gluten],
-    nameAxesAlways: [],
+    nameAxes: [NAME_AXES.gluten],
     partialEnforcementOnly: false,
   },
 };

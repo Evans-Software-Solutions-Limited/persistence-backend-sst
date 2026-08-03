@@ -236,9 +236,7 @@ describe("assessAvoidance — dietary patterns", () => {
     // the thing that makes adding a key without a rule fail loudly.
     const rule = DIETARY_PATTERN_RULES[pattern];
     const hasSomething =
-      rule.allergenTags.length > 0 ||
-      rule.nameAxesAlways.length > 0 ||
-      rule.nameAxesWhenUntagged.length > 0;
+      rule.allergenTags.length > 0 || rule.nameAxes.length > 0;
     expect(hasSomething, `${pattern} has no enforcement rule`).toBe(true);
   });
 
@@ -946,5 +944,126 @@ describe("vocabulary primitives", () => {
     expect(isTokenNegatedInName("Roast chicken, no bones", "chicken")).toBe(
       false,
     );
+  });
+});
+
+// ── Second Inspector Brad sweep — regressions ───────────────────────────────
+
+describe("assessAvoidance — a PARTIALLY-tagged row does not escape the name channel", () => {
+  // ⚠ The first sweep made the CATEGORY channel unconditional but left the NAME
+  // channel gated on `tagsUsable`, which is true for any partially-tagged row.
+  // Every case below reached a restricted eater reported as `unverified: false`,
+  // and each is a real product name from the earlier fix commit — they only
+  // passed before because their fixtures happened to carry a category tag.
+  const cases: Array<[string, string[], string]> = [
+    ["Cathedral City Mature Cheddar", ["en:gluten"], "dairy_free"],
+    ["Fishermans Pie", ["en:milk"], "vegetarian"],
+    ["Deep Filled Quiche", ["en:gluten"], "vegan"],
+    ["Whole Milk", [], "dairy_free"],
+    ["Sourdough Loaf", [], "gluten_free"],
+  ];
+
+  it.each(cases)(
+    "excludes '%s' with no category tag",
+    (name, allergenTags, pattern) => {
+      const v = assessAvoidance(
+        subject({ name, allergenTags, categoryTags: [] }),
+        { ...NO_PREFS, dietaryPatterns: [pattern] },
+      );
+      expect(v.allowed).toBe(false);
+    },
+  );
+
+  it("still lets a genuine [] + free-from name through (the gate's only real job)", () => {
+    // `[]` IS a complete negative claim, and the free-from marker covers the rest.
+    expect(
+      assessAvoidance(
+        subject({
+          name: "Alpro Soya Chocolate Milk Drink",
+          allergenTags: [],
+          categoryTags: [],
+        }),
+        { ...NO_PREFS, dietaryPatterns: ["dairy_free"] },
+      ).allowed,
+    ).toBe(true);
+  });
+});
+
+describe("assessAvoidance — hierarchical category tags cannot defeat a marker", () => {
+  it("clears the axis when ANY tag carries the marker, not just the matched one", () => {
+    // OFF is hierarchical: a vegan cheese carries `en:vegan-cheeses` AND its
+    // parent `en:cheeses`. A per-tag skip matched the parent on the next
+    // iteration, so the tag-marker channel was dead for its own motivating case.
+    const v = assessAvoidance(
+      subject({
+        name: "Cheddar Style Block",
+        allergenTags: ["en:soybeans"],
+        categoryTags: ["en:vegan-cheeses", "en:cheeses"],
+      }),
+      { ...NO_PREFS, dietaryPatterns: ["vegan"] },
+    );
+    expect(v.allowed).toBe(true);
+  });
+
+  it("does not clear an axis the marker says nothing about", () => {
+    // `vegan` is not a gluten marker — a vegan loaf is still wheat.
+    expect(
+      assessAvoidance(
+        subject({
+          name: "Vegan Sourdough",
+          allergenTags: ["en:gluten"],
+          categoryTags: ["en:vegan-breads", "en:breads"],
+        }),
+        { ...NO_PREFS, dietaryPatterns: ["gluten_free"] },
+      ).allowed,
+    ).toBe(false);
+  });
+});
+
+describe("assessAvoidance — token qualifiers stop confirmed false positives", () => {
+  it.each([
+    ["Red Kidney Beans", "vegan"],
+    ["Peanut Butter", "dairy_free"],
+    ["Almond Flour", "gluten_free"],
+    ["Coconut Cream", "dairy_free"],
+    ["Brown Rice Pasta", "gluten_free"],
+  ])("allows '%s' under %s", (name, pattern) => {
+    const v = assessAvoidance(subject({ name, allergenTags: null }), {
+      ...NO_PREFS,
+      dietaryPatterns: [pattern],
+    });
+    expect(v.allowed, `${name} / ${pattern}`).toBe(true);
+  });
+
+  it("a qualifier does NOT clear the whole axis", () => {
+    // "Almond & Wheat Flour Blend" must still be caught on "wheat" — which is
+    // exactly why these are per-token qualifiers and not `clearedBy` markers.
+    expect(
+      assessAvoidance(
+        subject({ name: "Almond and Wheat Flour Blend", allergenTags: null }),
+        { ...NO_PREFS, dietaryPatterns: ["gluten_free"] },
+      ).allowed,
+    ).toBe(false);
+  });
+
+  it("still excludes the unqualified sense", () => {
+    expect(
+      assessAvoidance(subject({ name: "Salted Butter", allergenTags: null }), {
+        ...NO_PREFS,
+        dietaryPatterns: ["dairy_free"],
+      }).allowed,
+    ).toBe(false);
+    expect(
+      assessAvoidance(subject({ name: "Lambs Kidney", allergenTags: null }), {
+        ...NO_PREFS,
+        dietaryPatterns: ["vegan"],
+      }).allowed,
+    ).toBe(false);
+    expect(
+      assessAvoidance(subject({ name: "Plain Flour", allergenTags: null }), {
+        ...NO_PREFS,
+        dietaryPatterns: ["gluten_free"],
+      }).allowed,
+    ).toBe(false);
   });
 });

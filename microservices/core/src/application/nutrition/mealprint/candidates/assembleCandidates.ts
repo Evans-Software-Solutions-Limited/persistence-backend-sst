@@ -90,7 +90,11 @@ export function dedupeKey(candidate: MealprintCandidate): string {
  *
  * ⚠ Likes are a BIAS, never a constraint (locked decision 1 / design § 1
  * stage 1). Promoting them cannot empty a pool the way filtering on them would,
- * and a user who likes three things still sees the other 197 candidates.
+ * and a user who likes three things still sees the rest of the pool.
+ *
+ * ⚠ The `isOwn` tier is NOT equally harmless, because own rows can fill the cap
+ * outright — see {@link capWithCuratedFloor}, which is what stops this ranking
+ * from becoming a partition.
  */
 export function rankCandidates(
   candidates: readonly MealprintCandidate[],
@@ -115,6 +119,67 @@ export function rankCandidates(
   // keep the repository's deterministic ordering. That determinism is a
   // prerequisite for evaluating the stage above this one.
   return [...candidates].sort((a, b) => tier(a) - tier(b));
+}
+
+/**
+ * Fraction of the cap RESERVED for curated-catalogue rows when own rows would
+ * otherwise fill it.
+ *
+ * ⚠ `rankCandidates` tiers own rows entirely ahead of curated ones, and
+ * `OWN_FOOD_LIMIT` (200) equals {@link CANDIDATE_CAP} (200) — so a plain
+ * `slice(0, cap)` means a user with 200+ own foods NEVER sees a single curated
+ * candidate. That turns the "bias" into a hard partition: the answer to "what can
+ * I eat?" collapses to "something you have already logged", which is the opposite
+ * of the inspiration this feature exists to provide, and it degrades silently as
+ * a user's library grows.
+ *
+ * A floor rather than an interleave, because own rows genuinely SHOULD dominate —
+ * they are foods the user demonstrably eats. 25 % keeps ~50 curated rows in a
+ * 200-row pool, which is enough for the model to compose something new.
+ */
+export const CURATED_FLOOR_FRACTION = 0.25;
+
+/**
+ * Cap the ranked pool, guaranteeing curated rows a share whenever both kinds are
+ * available and own rows would crowd them out entirely.
+ *
+ * Preserves ranked order in the output — the floor decides WHICH rows survive, not
+ * what order they are offered in, because the ranking is what the prompt's
+ * relevance ordering depends on.
+ */
+export function capWithCuratedFloor(
+  ranked: readonly MealprintCandidate[],
+  cap: number,
+): MealprintCandidate[] {
+  if (ranked.length <= cap) return [...ranked];
+
+  const naive = ranked.slice(0, cap);
+  const curatedInNaive = naive.filter((c) => !c.isOwn).length;
+  const floor = Math.floor(cap * CURATED_FLOOR_FRACTION);
+  const curatedAvailable = ranked.filter((c) => !c.isOwn).length;
+  const target = Math.min(floor, curatedAvailable);
+
+  if (curatedInNaive >= target) return naive;
+
+  // Keep the top-ranked own rows up to the remaining budget, then the
+  // top-ranked curated rows up to the floor, then restore ranked order.
+  const ownBudget = cap - target;
+  const chosen = new Set<MealprintCandidate>();
+  let own = 0;
+  let curated = 0;
+  for (const candidate of ranked) {
+    if (candidate.isOwn) {
+      if (own < ownBudget) {
+        chosen.add(candidate);
+        own += 1;
+      }
+    } else if (curated < target) {
+      chosen.add(candidate);
+      curated += 1;
+    }
+    if (own >= ownBudget && curated >= target) break;
+  }
+  return ranked.filter((candidate) => chosen.has(candidate));
 }
 
 /**
@@ -151,7 +216,7 @@ export function assembleCandidates(
   }
 
   const ranked = rankCandidates(unique, preferences.likedFoods ?? []);
-  const capped = ranked.slice(0, cap);
+  const capped = capWithCuratedFloor(ranked, cap);
 
   return {
     candidates: capped,

@@ -52,6 +52,7 @@ import {
   isDietaryPattern,
   isTokenNegatedInName,
   normaliseFoodText,
+  singularise,
   tokeniseFoodName,
   type AllergenKey,
   type DietaryPattern,
@@ -176,14 +177,34 @@ function isAxisCleared(
   subjectName: string,
   subjectTokens: ReadonlySet<string>,
   compactName: string,
+  categoryTags: readonly string[],
   axis: NameAxis,
 ): boolean {
   if (axis.negators.some((n) => isTokenNegatedInName(subjectName, n))) {
     return true;
   }
-  return axis.clearedBy.some(
-    (marker) => subjectTokens.has(marker) || compactName.includes(marker),
-  );
+  if (
+    axis.clearedBy.some(
+      (marker) => subjectTokens.has(marker) || compactName.includes(marker),
+    )
+  ) {
+    return true;
+  }
+  // ⚠ A marker on a CATEGORY TAG clears the axis for BOTH channels, and is
+  // evaluated across the WHOLE tag array at once.
+  //
+  // Two bugs lived here. OFF's `categories_tags` is HIERARCHICAL, so a vegan
+  // cheese carries `en:vegan-cheeses` AND its parent `en:cheeses` — a per-tag
+  // skip stepped past the marker-bearing child only to match the parent next
+  // iteration. And the marker used to be consulted by the category channel only,
+  // so `Cheddar Style Block` / `["en:vegan-cheeses","en:cheeses"]` cleared the
+  // category rule and was then excluded by the NAME rule on "cheddar" anyway.
+  // Evidence that a row is the without-this-axis version is evidence for every
+  // channel, wherever it appears.
+  return categoryTags.some((tag) => {
+    const compactTag = tag.replace(/[^a-z0-9]+/gu, "");
+    return axis.clearedBy.some((marker) => compactTag.includes(marker));
+  });
 }
 
 /** Lowercased, accent-stripped, punctuation-free — for marker containment. */
@@ -219,14 +240,12 @@ function matchesAxisCategories(
   axes: readonly NameAxis[],
 ): { axis: string; evidence: string } | null {
   for (const axis of axes) {
-    if (isAxisCleared(subjectName, subjectTokens, compactName, axis)) continue;
+    if (
+      isAxisCleared(subjectName, subjectTokens, compactName, categoryTags, axis)
+    ) {
+      continue;
+    }
     for (const tag of categoryTags) {
-      // ⚠ The TAG ITSELF can carry the marker: `en:vegan-cheeses` matches the
-      // dairy axis on "cheese" and is simultaneously its own disclaimer. Checked
-      // per tag rather than per axis so `en:cheeses` on the same row still counts.
-      const compactTag = tag.replace(/[^a-z0-9]+/gu, "");
-      if (axis.clearedBy.some((marker) => compactTag.includes(marker)))
-        continue;
       for (const needle of axis.categorySubstrings) {
         if (tag.includes(needle)) {
           return { axis: axis.key, evidence: tag };
@@ -242,17 +261,31 @@ function matchesAxisNames(
   subjectName: string,
   subjectTokens: ReadonlySet<string>,
   compactName: string,
+  categoryTags: readonly string[],
   axes: readonly NameAxis[],
 ): { axis: string; evidence: string } | null {
   for (const axis of axes) {
-    if (isAxisCleared(subjectName, subjectTokens, compactName, axis)) continue;
+    if (
+      isAxisCleared(subjectName, subjectTokens, compactName, categoryTags, axis)
+    ) {
+      continue;
+    }
     for (const token of axis.tokens) {
       // Axis token lists are authored singular already, but singularising both
       // sides costs nothing and removes a class of authoring slip.
       for (const candidate of tokeniseFoodName(token)) {
-        if (subjectTokens.has(candidate)) {
-          return { axis: axis.key, evidence: candidate };
+        if (!subjectTokens.has(candidate)) continue;
+        // ⚠ Per-TOKEN disqualifiers, deliberately not axis-clearing: "Peanut
+        // Butter" must stop counting as dairy without "Almond & Wheat Flour
+        // Blend" ceasing to count as gluten. See `NameAxis.tokenQualifiers`.
+        const qualifiers = axis.tokenQualifiers?.[candidate];
+        if (
+          qualifiers !== undefined &&
+          qualifiers.some((word) => subjectTokens.has(singularise(word)))
+        ) {
+          continue;
         }
+        return { axis: axis.key, evidence: candidate };
       }
     }
   }
@@ -279,13 +312,12 @@ export function assessAvoidance(
   /**
    * ⚠ "Tags present but UNREADABLE is the same evidential state as no tags."
    *
-   * Computed once and used by BOTH sections below, because treating the two
-   * differently was a hole. On the pattern path, `nameAxesWhenUntagged` used to
-   * be gated on `allergenTags === null` — so a row tagged `['fr:gluten']`
-   * satisfied neither channel: the tag rule missed (wrong language) and the name
-   * rule was skipped (tags "present"). A `gluten_free` user was served
-   * "Pain de Campagne" and it was not even flagged. The interpretability check
-   * further down only ever ran when an allergen CHIP was set.
+   * Used for the ALLERGEN path (§ 1) and for the `unverified` flag. The pattern
+   * path no longer consults it at all: its name channel is unconditional, which
+   * is what finally closed the "row tagged `['fr:gluten']` satisfies neither
+   * channel" hole — the tag rule missed on the wrong language and the name rule
+   * was skipped because tags were "present", so a `gluten_free` user was served
+   * "Pain de Campagne" without even a flag.
    */
   const tagsUsable =
     allergenTags !== null && allergenTags.every(isInterpretableAllergenTag);
@@ -390,7 +422,7 @@ export function assessAvoidance(
       subjectTokens,
       compactName,
       categoryTags,
-      [...rule.nameAxesAlways, ...rule.nameAxesWhenUntagged],
+      rule.nameAxes,
     );
     if (categoryHit !== null) {
       return {
@@ -401,48 +433,41 @@ export function assessAvoidance(
       };
     }
 
-    // 2c. NAME tokens for axes with NO allergen-tag representation (meat, pork,
-    //     alcohol, honey). Always applied: a row can legitimately have
-    //     `allergen_tags = []` and no categories at all — true of plain chicken
-    //     breast — so the name is the last line of defence, not a fallback.
-    const alwaysHit = matchesAxisNames(
+    // 2c. NAME tokens. ⚠ ALWAYS APPLIED — there is no longer a tag-presence gate
+    //      here, and removing it is the fix for the whole class of bug this
+    //      channel kept producing.
+    //
+    //      The gate went through three wrong shapes: `allergenTags === null`,
+    //      then `tagsUsable` (true for any PARTIALLY-tagged row), then
+    //      "did the row make a complete `[]` negative claim". Each one leaked,
+    //      because each was reasoning about whether the row's ALLERGEN tags
+    //      vouched for an axis they may never have been about:
+    //
+    //        - `Cathedral City Mature Cheddar` / `["en:gluten"]` → dairy-free user
+    //        - `Fishermans Pie` / `["en:milk"]` → vegetarian
+    //        - `Whole Milk` / `[]` → dairy-free user (self-contradictory OFF data,
+    //          and the name is the more trustworthy half)
+    //
+    //      What actually protects free-from products is `isAxisCleared`
+    //      (free-from phrasing, plant-based markers on the name OR a category tag)
+    //      plus `NameAxis.tokenQualifiers` ("Peanut Butter", "Almond Flour",
+    //      "Soya Milk"). Those are positive evidence about the axis in question;
+    //      an allergen tag's silence never was. With them carrying the load the
+    //      gate is unnecessary, and the merged list cannot be gated wrongly.
+    const nameHit = matchesAxisNames(
       subject.name,
       subjectTokens,
       compactName,
-      rule.nameAxesAlways,
+      categoryTags,
+      rule.nameAxes,
     );
-    if (alwaysHit !== null) {
+    if (nameHit !== null) {
       return {
         allowed: false,
         rule: "pattern_name",
         cause: pattern,
-        evidence: alwaysHit.evidence,
+        evidence: nameHit.evidence,
       };
-    }
-
-    // 2d. NAME tokens for axes an allergen tag DOES represent. THIS is the
-    //     channel that yields to better evidence, because a NAME is a far weaker
-    //     signal than a category tag — applying it against a tagged row is what
-    //     excluded "Gluten Free Bread" on the token "bread".
-    //
-    //     ⚠ Gated on `tagsUsable`, NOT on `allergenTags !== null`. A row with
-    //     unreadable tags has told us nothing, so it must fall through here
-    //     rather than escaping every channel.
-    if (!tagsUsable) {
-      const untaggedHit = matchesAxisNames(
-        subject.name,
-        subjectTokens,
-        compactName,
-        rule.nameAxesWhenUntagged,
-      );
-      if (untaggedHit !== null) {
-        return {
-          allowed: false,
-          rule: "pattern_name",
-          cause: pattern,
-          evidence: untaggedHit.evidence,
-        };
-      }
     }
   }
 

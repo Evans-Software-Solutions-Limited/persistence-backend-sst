@@ -1035,9 +1035,16 @@ async function loadFreeTierLoadoutAccess(
  *
  * Split out for exactly the reason `loadFreeTierLoadoutAccess` is: folding a
  * YOUNG column into `loadTier` would put it on the hot path of `create_workout`
- * and `ai_access`, so a Lambda deployed ahead of the hand-applied migration
- * would throw Postgres 42703 on every workout creation and AI deny — the new
- * column breaking features that predate it. Confining the read here bounds the
+ * and `ai_access`, so a Lambda running against a database that does not yet have
+ * the column would throw Postgres 42703 on every workout creation and AI deny —
+ * the new column breaking features that predate it.
+ *
+ * ⚠ That window is the MIGRATE-THEN-DEPLOY gap, not a manual apply. An earlier
+ * version of this comment said "the hand-applied migration", contradicting
+ * STATE.md § Verified facts: `production-deploy.yml` applies migrations
+ * automatically, before `sst deploy`. The hazard is real either way — the
+ * previous release's Lambda serves briefly against the new schema, and a
+ * rollback inverts it — so the split-out read stays. Confining the read here bounds the
  * blast radius to Mealprint, which is unreachable until `premium_plus` goes
  * active anyway.
  */

@@ -175,6 +175,7 @@ export const nutritionAiMealSuggestHandler = new Elysia()
               remaining: null,
               containsUnverified: false,
               partialEnforcementOnly: false,
+              labelCheckRequired: true,
             },
           };
           console.info(
@@ -235,8 +236,18 @@ export const nutritionAiMealSuggestHandler = new Elysia()
             userId,
             remaining.kcal,
           ),
-          ctx.MealprintCandidateRepository.listOwnRecipeCandidates(userId),
-          ctx.MealprintCandidateRepository.listOwnMealCandidates(userId),
+          // Same serving-kcal ceiling as the two foods queries. Without it a
+          // library of 600-kcal batch-cooks filled the pool of a user with 250
+          // kcal left, and the verifier rejected the lot for `kcal_overshoot` —
+          // a 422 that burned a daily run for a knowable state.
+          ctx.MealprintCandidateRepository.listOwnRecipeCandidates(
+            userId,
+            remaining.kcal,
+          ),
+          ctx.MealprintCandidateRepository.listOwnMealCandidates(
+            userId,
+            remaining.kcal,
+          ),
         ]);
 
         const assembly = assembleCandidates(
@@ -338,6 +349,29 @@ export const nutritionAiMealSuggestHandler = new Elysia()
             partialEnforcementOnly: verified.suggestions.some(
               (suggestion) => suggestion.partialEnforcementOnly,
             ),
+            /**
+             * ⚠ ALWAYS TRUE, and deliberately not derived from anything.
+             *
+             * `containsUnverified` above is a per-row signal (`allergenTags ===
+             * null`) and it is NOT sufficient on its own to decide whether to show
+             * the label-check disclaimer. `offMapper.mapOffAllergenTags` returns
+             * `[]` — "analysed, none found", i.e. `unverified: false` — whenever
+             * `ingredients_text` is non-empty, WITHOUT knowing that OFF actually
+             * parsed it. A foreign-language ingredient list, a "see packaging"
+             * placeholder, or an unparseable free-text blob all yield `[]` and are
+             * indistinguishable from a genuinely clean analysis. Those are exactly
+             * the rows most likely to be wrong, and they would have suppressed the
+             * disclaimer.
+             *
+             * So AC 1.2 / AC 3.4's disclaimer is UNCONDITIONAL on this surface, and
+             * this field makes that a contract the client cannot accidentally
+             * narrow. `containsUnverified` remains useful for the STRONGER
+             * per-suggestion "we don't know what's in this at all" flag.
+             *
+             * ⚠ T-1.5 (mobile): render the label-check copy whenever this is true —
+             * which is always. Do not gate it on `containsUnverified`.
+             */
+            labelCheckRequired: true,
           },
         };
         responseSizeBytes = Buffer.byteLength(JSON.stringify(body));

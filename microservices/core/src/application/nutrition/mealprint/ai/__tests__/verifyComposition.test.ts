@@ -197,6 +197,21 @@ describe("verifySuggestions — avoidance re-runs (defence in depth)", () => {
     expect(result.suggestions[0].containsUnverified).toBe(true);
   });
 
+  it("re-runs the pattern name channel even on an ANALYSED row (defence in depth)", () => {
+    // The stage-1 pool should never have offered this, but stage 3 does not trust
+    // that. "Greek Yogurt" with `allergenTags: []` used to pass a vegan filter
+    // because an empty array suppressed the name channel — the hole the second
+    // Inspector Brad sweep closed. Asserted HERE as well as in avoidanceFilter's
+    // own suite because this is the pass that protects the user.
+    const result = verifySuggestions({
+      suggestions: [suggestion([{ candidateId: "yog", servings: 1 }])],
+      candidates: [candidate({ allergenTags: [] })],
+      remaining: REMAINING,
+      preferences: { ...NO_PREFS, dietaryPatterns: ["vegan"] },
+    });
+    expect(result.suggestions).toHaveLength(0);
+  });
+
   it("does not flag a suggestion whose items were all analysed", () => {
     const result = verifySuggestions({
       suggestions: [suggestion([{ candidateId: "yog", servings: 1 }])],
@@ -210,7 +225,11 @@ describe("verifySuggestions — avoidance re-runs (defence in depth)", () => {
   it("reports partialEnforcementOnly for halal/kosher and not otherwise", () => {
     const base = {
       suggestions: [suggestion([{ candidateId: "yog", servings: 1 }])],
-      candidates: [candidate()],
+      // ⚠ Deliberately a pattern-COMPLIANT food. The default fixture is "Greek
+      // Yogurt", which a vegan must not be offered — so using it here measured
+      // incidental exclusion rather than the flag under test, and started failing
+      // the moment the pattern name channel became unconditional.
+      candidates: [candidate({ name: "Rolled Oats" })],
       remaining: REMAINING,
     };
     expect(

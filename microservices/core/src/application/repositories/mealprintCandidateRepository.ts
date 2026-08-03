@@ -268,8 +268,24 @@ export class MealprintCandidateRepository {
     return rows.map((row) => toFoodCandidate(row, true));
   }
 
-  /** The caller's saved recipes. Macros are per-serving, materialised on write. */
-  async listOwnRecipeCandidates(userId: string): Promise<MealprintCandidate[]> {
+  /**
+   * The caller's saved recipes. Macros are per-serving, materialised on write.
+   *
+   * ⚠ `maxServingKcal` is applied IN THE MAP, not in SQL, and that is forced by
+   * the data: the comparable figure is `total_kcal / servings`, which only exists
+   * after the divide-by-zero guard below has run. Filtering on `total_kcal` in SQL
+   * would reject a 6-serving batch-cook whose per-serving figure fits.
+   *
+   * Without the filter at all, a user with 250 kcal left and a library of
+   * 600-kcal saved meals got a pool the verifier then rejected wholesale for
+   * `kcal_overshoot` — a 422 that consumed a daily run for a state that was
+   * knowable before the model was ever called. Both foods queries already
+   * enforced this ceiling; recipes and meals bypassed it.
+   */
+  async listOwnRecipeCandidates(
+    userId: string,
+    maxServingKcal: number,
+  ): Promise<MealprintCandidate[]> {
     const db = getDb();
     const rows = await db
       .select({
@@ -292,6 +308,7 @@ export class MealprintCandidateRepository {
         if (!Number.isFinite(servings) || servings <= 0) return null;
         const kcal = Number(row.totalKcal) / servings;
         if (!Number.isFinite(kcal) || kcal <= 0) return null;
+        if (kcal > maxServingKcal) return null;
         return {
           kind: "recipe",
           id: row.id,
@@ -317,8 +334,17 @@ export class MealprintCandidateRepository {
       );
   }
 
-  /** The caller's saved meal presets. Macros are absolute, not per-serving. */
-  async listOwnMealCandidates(userId: string): Promise<MealprintCandidate[]> {
+  /**
+   * The caller's saved meal presets. Macros are absolute, not per-serving.
+   *
+   * ⚠ Same `maxServingKcal` reasoning as `listOwnRecipeCandidates` — see there.
+   * Applied in the map for symmetry and because the finite/positive guard has to
+   * run first regardless.
+   */
+  async listOwnMealCandidates(
+    userId: string,
+    maxServingKcal: number,
+  ): Promise<MealprintCandidate[]> {
     const db = getDb();
     const rows = await db
       .select({
@@ -337,6 +363,7 @@ export class MealprintCandidateRepository {
       .map((row): MealprintCandidate | null => {
         const kcal = Number(row.totalKcal);
         if (!Number.isFinite(kcal) || kcal <= 0) return null;
+        if (kcal > maxServingKcal) return null;
         return {
           kind: "meal",
           id: row.id,

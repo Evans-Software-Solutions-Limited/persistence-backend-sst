@@ -276,8 +276,8 @@ describe("MealprintCandidateRepository queries", () => {
     const repo = new MealprintCandidateRepository();
 
     for (const call of [
-      () => repo.listOwnRecipeCandidates(USER_A),
-      () => repo.listOwnMealCandidates(USER_A),
+      () => repo.listOwnRecipeCandidates(USER_A, 9999),
+      () => repo.listOwnMealCandidates(USER_A, 9999),
     ]) {
       const capture: { where?: unknown } = {};
       (getDb as any).mockReturnValue({
@@ -405,7 +405,10 @@ describe("MealprintCandidateRepository row mapping", () => {
     ]);
 
     const out =
-      await new MealprintCandidateRepository().listOwnRecipeCandidates(USER_A);
+      await new MealprintCandidateRepository().listOwnRecipeCandidates(
+        USER_A,
+        9999,
+      );
     expect(out.map((c) => c.id)).toEqual(["r1"]);
     expect(out[0].kcal).toBeCloseTo(500);
     expect(out[0].proteinG).toBeCloseTo(40);
@@ -436,6 +439,7 @@ describe("MealprintCandidateRepository row mapping", () => {
 
     const out = await new MealprintCandidateRepository().listOwnMealCandidates(
       USER_A,
+      9999,
     );
     expect(out.map((c) => c.id)).toEqual(["m1"]);
     expect(out[0].kind).toBe("meal");

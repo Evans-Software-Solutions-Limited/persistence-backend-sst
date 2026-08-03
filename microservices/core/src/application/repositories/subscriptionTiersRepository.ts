@@ -61,7 +61,15 @@ export class SubscriptionTiersRepository {
     // intentionally NOT projected: nothing on this public path reads either
     // (their entitlement gates read them directly, from
     // `assertEntitlement`'s own narrowly-scoped queries), so the catalog must
-    // not require them to exist. Both migrations are hand-applied in production.
+    // not require them to exist.
+    //
+    // ⚠ The reason is the MIGRATE-THEN-DEPLOY WINDOW, not a manual apply. An
+    // earlier version of this comment said "both migrations are hand-applied in
+    // production", which contradicts STATE.md § Verified facts — production
+    // migrations run automatically from `production-deploy.yml`. The split-out
+    // read is still right: migrations run BEFORE `sst deploy`, so the risk is a
+    // Lambda from the previous release briefly serving against the new schema
+    // (and, on any rollback, the reverse).
     const rows = await db
       .select({
         id: subscriptionTiers.id,
