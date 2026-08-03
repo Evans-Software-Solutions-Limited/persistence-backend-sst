@@ -175,12 +175,12 @@ export class AiJobRepository {
             // Bedrock whose `succeed()` silently no-ops, while the user's new job
             // spends the same money again.
             //
-            // `updated_at` is the token: every writer stamps it, and `claim` in
-            // particular, so if anything touched the row we no-op and fall through
-            // to `in_flight` — the honest answer when the row turns out to be alive.
-            const healed = await this.failIfUnchanged(
+            // `failIfStale` re-derives the staleness in SQL rather than trusting
+            // this JS read, so a row claimed in the gap makes the predicate false
+            // and the heal no-ops — we then fall through to `in_flight`, the honest
+            // answer when the row turns out to be alive.
+            const healed = await this.failIfStale(
               colliding.id,
-              colliding.updatedAt,
               colliding.status === "queued"
                 ? STALE_QUEUED_ERROR
                 : STALE_RUNNING_ERROR,
@@ -484,18 +484,38 @@ export class AiJobRepository {
   }
 
   /**
-   * `fail`, but only if the row has not been touched since it was observed.
+   * `fail`, but ONLY if the row is still provably dead — the guard on the enqueue
+   * self-heal (design § 5.1).
    *
-   * Optimistic concurrency on `updated_at`, which every writer stamps — `claim`
-   * included. Returns whether the update landed, so a caller that lost the race
-   * can change its answer rather than proceeding on a false premise.
+   * ⚠ THE STALENESS IS RE-DERIVED IN SQL, deliberately, and an earlier revision
+   * got this wrong in a way that made the whole self-heal DEAD CODE.
+   *
+   * That revision used optimistic concurrency on `updated_at`
+   * (`eq(aiJobs.updatedAt, observed)`). It cannot work: Postgres `timestamptz` has
+   * MICROSECOND resolution and every writer stamps it with `now()`, while a JS
+   * `Date` has millisecond resolution — so the round-trip truncates
+   * `…678912` to `…678000` and the equality matches roughly one time in a
+   * thousand. The self-heal silently never fired, and the 05:00-UTC lockout it
+   * exists to prevent was back. This is the
+   * `reference_drizzle_groupby_param_bug` lesson twice over: the render test even
+   * asserted the truncated parameter and called it correct.
+   *
+   * Re-deriving inside the UPDATE is both correct and simpler, and it is the
+   * pattern `markStaleRunning` already uses in this same file. It closes the same
+   * race for free: a concurrent `claim` sets `heartbeat_at = now()`, which makes
+   * the predicate false, so the heal no-ops on a row that turned out to be alive.
+   *
+   * Returns whether the update landed, so a caller that lost the race can change
+   * its answer rather than proceeding on a false premise.
    */
-  async failIfUnchanged(
+  async failIfStale(
     jobId: string,
-    expectedUpdatedAt: Date,
     error: JobError,
+    now: Date = new Date(),
   ): Promise<boolean> {
     const db = getDb();
+    const runningCutoff = new Date(now.getTime() - STALE_AFTER_MS);
+    const queuedCutoff = new Date(now.getTime() - QUEUED_STALE_AFTER_MS);
     const rows = await db
       .update(aiJobs)
       .set({
@@ -507,8 +527,21 @@ export class AiJobRepository {
       .where(
         and(
           eq(aiJobs.id, jobId),
-          eq(aiJobs.updatedAt, expectedUpdatedAt),
-          sql`${aiJobs.status} IN ('queued', 'running')`,
+          // Mirrors `isStaleRunning` / `isStaleQueued` — including the NULL
+          // heartbeat branch, which `<` alone would evaluate to NULL and miss.
+          sql`(
+            (
+              ${aiJobs.status} = 'running'
+              AND (
+                ${aiJobs.heartbeatAt} IS NULL
+                OR ${aiJobs.heartbeatAt} < ${runningCutoff}
+              )
+            )
+            OR (
+              ${aiJobs.status} = 'queued'
+              AND ${aiJobs.updatedAt} < ${queuedCutoff}
+            )
+          )`,
         ),
       )
       .returning({ id: aiJobs.id });

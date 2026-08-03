@@ -400,7 +400,7 @@ describe("AiJobRepository", () => {
     });
   });
 
-  describe("failIfUnchanged — optimistic concurrency on the self-heal", () => {
+  describe("failIfStale — the self-heal guard", () => {
     function mockFail(returned: unknown[]) {
       const whereSpy = vi.fn();
       (getDb as any).mockReturnValue({
@@ -415,35 +415,53 @@ describe("AiJobRepository", () => {
       return { whereSpy };
     }
 
-    it("scopes the update to the observed updated_at, and reports success", async () => {
-      const observed = new Date("2026-08-02T10:00:00.000Z");
+    it("⚠ re-derives staleness IN SQL, and binds no timestamp EQUALITY", async () => {
+      // The bug this replaced: `eq(updated_at, observedDate)` can essentially never
+      // match. Postgres `timestamptz` is MICROSECOND resolution and every writer
+      // stamps `now()`, while a JS Date is millisecond — so the round-trip
+      // truncates `…678912` to `…678000` and the predicate matches ~1 time in 1000.
+      // The self-heal was silently dead, and the previous version of this very test
+      // asserted the truncated parameter and called it correct — the
+      // `reference_drizzle_groupby_param_bug` lesson exactly.
+      const now = new Date("2026-08-02T12:00:00.000Z");
       const { whereSpy } = mockFail([{ id: "j1" }]);
 
-      const landed = await new AiJobRepository().failIfUnchanged(
+      const landed = await new AiJobRepository().failIfStale(
         "j1",
-        observed,
         { code: "stale", message: "x", retryable: false },
+        now,
       );
 
       expect(landed).toBe(true);
       const { sql, params } = renderSql(whereSpy.mock.calls[0][0]);
-      expect(sql).toContain("updated_at");
-      // `eq()` serialises the Date to an ISO string on the way to postgres.js.
-      expect(params).toEqual(
-        expect.arrayContaining(["j1", observed.toISOString()]),
+      const lower = sql.toLowerCase();
+      // Both statuses re-derived, each against its own cutoff...
+      expect(lower).toContain("'running'");
+      expect(lower).toContain("'queued'");
+      expect(lower).toContain("heartbeat_at");
+      expect(lower).toContain("updated_at");
+      // ...including the NULL-heartbeat branch `<` alone would miss.
+      expect(lower).toContain("is null");
+      // ...and it is a strict comparison, never an equality on a timestamp.
+      expect(lower).toContain("<");
+      expect(params).toContain("j1");
+      expect(params).toContainEqual(new Date(now.getTime() - STALE_AFTER_MS));
+      expect(params).toContainEqual(
+        new Date(now.getTime() - QUEUED_STALE_AFTER_MS),
       );
     });
 
-    it("reports FAILURE when the row moved — so the caller can change its answer", async () => {
+    it("reports FAILURE when the row is no longer stale — so the caller can change its answer", async () => {
       // The race this closes: a redelivery may legally claim a 40-minute-stale row
       // during the enqueue's read→write round-trip (the claim only needs the
-      // heartbeat cold by 5 minutes). Killing it then would leave a worker burning
-      // a whole run of Bedrock whose `succeed()` silently no-ops, while the user's
-      // new job spends the same money again.
+      // heartbeat cold by 5 minutes). Killing it then would leave a worker burning a
+      // whole run of Bedrock whose `succeed()` silently no-ops, while the user's new
+      // job spends the same money again. A concurrent claim stamps `heartbeat_at`,
+      // which makes the predicate above false.
       mockFail([]);
 
       expect(
-        await new AiJobRepository().failIfUnchanged("j1", new Date(), {
+        await new AiJobRepository().failIfStale("j1", {
           code: "stale",
           message: "x",
           retryable: false,

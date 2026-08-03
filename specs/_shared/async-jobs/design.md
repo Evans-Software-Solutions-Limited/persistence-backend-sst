@@ -449,10 +449,19 @@ Two further consequences the naive implementation gets wrong:
   retry until 05:00 UTC — a lockout governed by a cron cadence rather than by any
   threshold this design reasons about. So on a collision with a row that
   `isStaleRunning`/`isStaleQueued` calls dead, the repository fails that row and
-  retries the insert **once** (guarded, so no loop) — and that `fail` is scoped to
-  the row's observed `updated_at`, because a redelivery may legally claim a
-  40-minute-stale row during the read→write round-trip. Losing that race answers
+  retries the insert **once** (guarded, so no loop). That `fail` **re-derives the
+  staleness in SQL** (`failIfStale`), because a redelivery may legally claim a
+  40-minute-stale row during the read→write round-trip; losing that race answers
   `in_flight` rather than proceeding.
+
+  ⚠ **Do not implement that guard as `updated_at` equality.** It was tried, and it
+  made the whole self-heal dead code: Postgres `timestamptz` is MICROSECOND
+  resolution and every writer stamps `now()`, while a JS `Date` is millisecond — so
+  the round-trip truncates `…678912` to `…678000` and the equality matches about
+  one time in a thousand. Re-deriving inside the UPDATE is both correct and
+  simpler, and it is what `markStaleRunning` already does. (The render test that
+  accompanied the broken version asserted the truncated parameter and called it
+  correct — `reference_drizzle_groupby_param_bug`, twice over.)
 
 ⚠ **Client contract:** the replay check runs BEFORE the self-heal, so a client
 retrying with the SAME idempotency key gets its dead job back (derived `failed`),
@@ -566,6 +575,10 @@ has historically missed:
 - **Threshold relationships** — `STALE_AFTER_MS` exceeds visibility + worker
   timeout; `QUEUED_STALE_AFTER_MS` exceeds the redrive window. These are the two
   constants whose wrongness is invisible in any single-function test.
+- **No timestamp EQUALITY in any predicate.** Assert the absence, not just the
+  presence: `timestamptz` is microsecond and a JS `Date` is not, so an equality on
+  a `now()`-stamped column is a predicate that never matches — a silent no-op with
+  a green test.
 - **In-flight collision** — a 23505 from the in-flight index is reported as
   `in_flight`, never as a replay.
 - **Publish failure deletes** — the row is gone, so a retry with the same
