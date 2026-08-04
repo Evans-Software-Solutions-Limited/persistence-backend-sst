@@ -361,6 +361,20 @@ export const APPLE_COMMISSION = 0.15;
 export const REVENUECAT_RATE = 0.01;
 
 /**
+ * Apple's STANDARD commission, for the post-$1M scenario. Crossing $1M/yr in
+ * proceeds removes Small Business Program eligibility, so growth itself moves
+ * every IAP tier onto this rate.
+ */
+export const STANDARD_APPLE_COMMISSION = 0.3;
+
+/**
+ * The web/Stripe rail's effective take (~2.9 % + fixed fee, rounded). ⚠ The point
+ * of the split rail: this does NOT rise with revenue, so its advantage over IAP
+ * GROWS as the business succeeds — 13 points today, 27 points past $1M.
+ */
+export const WEB_RAIL_COMMISSION = 0.03;
+
+/**
  * Fixed monthly platform cost, USD, independent of user count.
  *
  * ⚠ **ESTIMATED — not read from a bill.** These are the services the repo
@@ -447,9 +461,22 @@ export type TierCost = {
   }[];
 };
 
-export function tierCost(tier: Tier): TierCost {
+export function tierCost(
+  tier: Tier,
+  /**
+   * Storefront commission. Defaults to {@link APPLE_COMMISSION} (15 %, Small
+   * Business Program).
+   *
+   * ⚠ Pass `STANDARD_APPLE_COMMISSION` to model the post-$1M world: crossing
+   * $1M/yr REMOVES Small Business Program eligibility and the rate reverts to
+   * 30 %, which is a ~18 % cut in net revenue on every IAP tier. Success itself
+   * triggers it, so it is a planning scenario rather than a tail risk. Pass
+   * `WEB_RAIL_COMMISSION` for the Stripe rail, which does NOT scale with revenue.
+   */
+  commission: number = APPLE_COMMISSION,
+): TierCost {
   const gross = tier.priceMonthly * USD_PER_GBP;
-  const netRevenueUsd = gross * (1 - APPLE_COMMISSION) * (1 - REVENUECAT_RATE);
+  const netRevenueUsd = gross * (1 - commission) * (1 - REVENUECAT_RATE);
 
   const perEndpoint = endpointsForTier(tier)
     // A zero ceiling means the tier cannot reach the endpoint (see
@@ -560,6 +587,25 @@ export function report(): string {
         pct(typicalShare).padStart(8),
         pct(cost.worstCaseEstimatedShare).padStart(10),
       ].join(" | "),
+    );
+  }
+
+  // ⚠ The commission scenario, because growth itself changes it. Crossing $1M/yr
+  // removes Small Business Program eligibility and Apple reverts 15 % → 30 %.
+  // The web rail does not move, which is the whole argument for the split.
+  lines.push("");
+  lines.push(
+    `Commission scenarios — net $/mo per tier (Apple ${pct(APPLE_COMMISSION)} today, ` +
+      `${pct(STANDARD_APPLE_COMMISSION)} past $1M/yr, web rail ${pct(WEB_RAIL_COMMISSION)} always):`,
+  );
+  for (const tier of TIERS.filter((t) => t.priceMonthly > 0)) {
+    const now = tierCost(tier).netRevenueUsd;
+    const past = tierCost(tier, STANDARD_APPLE_COMMISSION).netRevenueUsd;
+    const web = tierCost(tier, WEB_RAIL_COMMISSION).netRevenueUsd;
+    lines.push(
+      `  ${tier.label.padEnd(20)} IAP now ${usd(now).padStart(8)}` +
+        ` · IAP past $1M ${usd(past).padStart(8)}` +
+        ` · web ${usd(web).padStart(8)}`,
     );
   }
 

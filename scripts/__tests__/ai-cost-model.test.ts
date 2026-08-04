@@ -2,6 +2,9 @@ import { describe, it, expect } from "vitest";
 import {
   AI_ENDPOINTS,
   APPLE_COMMISSION,
+  STANDARD_APPLE_COMMISSION,
+  WEB_RAIL_COMMISSION,
+  tierCost,
   MARGINAL_INFRA_USD_PER_USER,
   TIERS,
   bindingCeiling,
@@ -287,6 +290,24 @@ describe("report", () => {
       `Only ${measured} of ${AI_ENDPOINTS.length} unit costs are MEASURED`,
     );
     expect(report()).toContain(`the other ${derived} are derived`);
+  });
+
+  it("⚠ models the post-$1M commission reversion, because growth triggers it", () => {
+    // Crossing $1M/yr removes Small Business Program eligibility and Apple goes
+    // 15% -> 30%. The web rail does not move — that asymmetry is the argument for
+    // the split rail, and it WIDENS as the business succeeds.
+    const premium = TIERS.find((t) => t.name === "premium")!;
+    const now = tierCost(premium).netRevenueUsd;
+    const past = tierCost(premium, STANDARD_APPLE_COMMISSION).netRevenueUsd;
+    const web = tierCost(premium, WEB_RAIL_COMMISSION).netRevenueUsd;
+
+    expect(past).toBeLessThan(now);
+    expect(web).toBeGreaterThan(now);
+    // ~18% less net revenue on the same sticker price.
+    expect(past / now).toBeCloseTo(0.82, 2);
+    // The web rail's advantage over IAP roughly doubles past the threshold.
+    expect(web - past).toBeGreaterThan((web - now) * 1.9);
+    expect(report()).toContain("Commission scenarios");
   });
 
   it("⚠ reaches Mealprint from premium_plus ONLY — the asymmetry with Loadout is the open pricing question", () => {
