@@ -965,12 +965,18 @@ Premium+ (see below).
 | Free | 0 | — | ✗ | — |
 | Premium | 12.99 | — | ✗ | — |
 | Premium+ | 29.99 | — | ✓ | — |
-| Start Up Coach | 12.99 | 3 | ✗ | 4.33 |
-| Start Up Coach + | 34.99 | 3 | ✓ | — |
-| Coach | 49.99 | 10 | ✓ | 5.00 |
-| Studio | 89.99 | 30 | ✓ | 3.00 |
+| Start Up Coach | 14.99 | 5 | ✗ | 3.00 |
+| Start Up Coach + | 34.99 | 5 | ✓ | — |
+| Coach | 59.99 | 15 | ✓ | 4.00 |
+| Studio | 109.99 | 30 | ✓ | 3.67 |
 | Studio Pro | 179.99 | 100 | ✓ | 1.80 |
-| Enterprise | 299.99 | 500 | ✓ | 0.60 |
+| Enterprise | *invoiced* | 100+ | ✓ | — |
+
+⚠ **REVISED 2026-08-04 after Brad supplied the Trainerize add-on screenshots** (see
+the competitive block below). Two changes from the first draft: the MIDDLE rungs went
+up — that is where the most money was being left — and Enterprise left the self-serve
+ladder. Client counts now mirror Trainerize's own 5/15/30/100 rungs so the comparison
+is legible to a coach evaluating both.
 
 The suite/no-suite split exists at **entry only** — that is the one price point where
 it bites (a pure coach should not pay for AI they will not use), and above it a
@@ -1008,6 +1014,61 @@ copy → migrate-FKs → delete dance; do not repeat that voluntarily.
 8. `useLoadoutGate.ts` / `useMealprintGate.ts` — hardcoded tier→boolean Records
    (they mirror the migrations because `/subscriptions/me` projects neither column).
 9. Seed-guard tests: `subscriptionTierSeed.test.ts`, `premiumPlusTierMigration.test.ts`.
+
+#### 🔴 DO NOT EXECUTE `specs/stripe-rail-removal/` — the rail is the coach-tier plan
+
+**The Stripe rail is still live and it is now load-bearing again.** `/stripe/webhook`
+is mounted at `microservices/core/src/api.ts:270`, and the handler, `reconcile`,
+`stripeIdempotency`, `subscriptionState` and `alerts` are all intact. Only the
+**mobile** PassKit / in-app-payments path was removed (PR #336, App Store Guideline
+2.1) — the backend rail survived that and was subsequently parked for deletion.
+
+Deleting it would destroy the enabler for the highest-margin part of the business,
+and rebuilding a subscription rail with webhook idempotency and reconciliation is
+months of work already paid for.
+
+**The split-rail plan (Brad's question, 2026-08-04 — "am I cutting my nose off by
+putting everything through RevenueCat"):**
+
+- **Consumer tiers via Apple IAP.** At £12.99–29.99 these are impulse purchases and
+  the ~16 % (Apple 15 % + RevenueCat 1 %) buys one-tap Face ID conversion.
+- **Coach tiers via web/Stripe.** At £109.99/mo Apple takes £16.50/mo = **£198/yr
+  per coach**; at 100 coaches, **£19,800/yr**.
+
+⚠ **The legal shape matters — this is NOT link-out.** UK link-out is not permitted
+yet (the CMA gave Apple Strategic Market Status; conduct requirements are expected
+within ~12 months. The EU already has the External Purchase Link Entitlement at
+17 %, or 15 % on web purchases within 7 days of a tap). What IS and always has been
+permitted is **selling on your own website to users who arrive independently** —
+anti-steering restricts ADVERTISING the web purchase inside the app, not web selling.
+That is how Trainerize charges $248/mo. The app simply recognises the entitlement.
+So coaches must be acquired **web-first**, which is how coaching software is sold
+anyway (marketing site, not App Store search).
+
+The arbitrage worth knowing: **web pricing can UNDERCUT and net the same.** £109.99
+via IAP nets £93.49; to net that on Stripe at ~3 % you need charge only **£96.99** —
+below Trainerize's ~£102 equivalent, same money retained.
+
+#### Competitive data — ABC Trainerize, from Brad's screenshots 2026-08-04
+
+Their ladder is **Pro 5 / 15 / 30 / 50 / 100 / 200** (confirmed by the add-on
+tiering "Pro 5, 15" and "Pro 30 to Pro 200"), against our two rungs.
+
+⚠ **Their "Advanced Nutrition Coaching" add-on IS Mealprint Phase 2/3** — 7-day meal
+plans, shopping lists, 2,400 recipes, custom recipes — at **$20/mo (Grow, Pro 5/15)
+and $45/mo (Pro 30–200)**, included only in Studio. **And it is not AI**: it is a
+recipe-database template planner. Mealprint generates against actual remaining macros
+from real product data, so we are building the strictly better thing and pricing it
+below the lesser one. Other add-ons: Business $25/mo, Video Coaching $10/mo, Custom
+Branded App $169 one-time.
+
+All-in cost for a working coach (base + Advanced Nutrition only, at $1.27/£):
+5 clients ≈ £34 · 15 ≈ £51 · 30 ≈ £102 · 50 ≈ £130 · 200 ≈ £192 · Studio Plus £195
+for 500–1,000 with every add-on included.
+
+⇒ **Enterprise should LEAVE the self-serve ladder.** At 500 clients Trainerize is
+£195 all-in; £299.99 through Apple cannot win that. § 3's B2B plan is already manual
+invoice — let anything above ~100 clients be invoiced and stop competing on that rung.
 
 #### Still open
 
