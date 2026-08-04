@@ -552,20 +552,37 @@ export type EntryNameLookups = {
 
 /**
  * Resolve a human label for a logged entry from the local name caches, with a
- * graceful fallback chain: referenced item name → typed fallback when the ref
- * isn't cached → "Quick entry" for a macro-only one-off. Pure.
+ * graceful fallback chain: referenced item name → the entry's own `customName` →
+ * typed fallback when neither is available → "Quick entry" for a macro-only
+ * one-off. Pure.
+ *
+ * ⚠ **`customName` is consulted on the REF paths too, not just the one-off path**
+ * (changed for spec-26 T-1.5). It used to be reachable only when there was no
+ * `foodId`/`recipeId`/`mealId`, so an entry that referenced a food the device had
+ * never cached rendered as the literal "Logged food" even when it carried a
+ * perfectly good name.
+ *
+ * That is not a hypothetical: Mealprint logs a suggestion against the CURATED
+ * catalogue row it composed from, and `cached_foods` only ever holds foods this
+ * device searched for or scanned — so the miss is the normal case there, and every
+ * Mealprint row in the meal log would have read "Logged food". The lookup still
+ * wins when it hits (the cache is the fresher name), so this is inert for every
+ * pre-existing flow: none of them set `customName` alongside a reference.
  */
 export function entryDisplayLabel(
   entry: Pick<NutritionEntry, "foodId" | "recipeId" | "mealId" | "customName">,
   lookups: EntryNameLookups,
 ): string {
-  if (entry.foodId) return lookups.food(entry.foodId) ?? "Logged food";
-  if (entry.recipeId) return lookups.recipe(entry.recipeId) ?? "Recipe";
-  if (entry.mealId) return lookups.meal(entry.mealId) ?? "Meal";
+  const custom = entry.customName?.trim();
+  const fallback = custom && custom.length > 0 ? custom : undefined;
+  if (entry.foodId)
+    return lookups.food(entry.foodId) ?? fallback ?? "Logged food";
+  if (entry.recipeId)
+    return lookups.recipe(entry.recipeId) ?? fallback ?? "Recipe";
+  if (entry.mealId) return lookups.meal(entry.mealId) ?? fallback ?? "Meal";
   // One-off / AI entry: the persisted label (e.g. the AI's item name) beats the
   // generic "Quick entry" fallback.
-  const custom = entry.customName?.trim();
-  return custom && custom.length > 0 ? custom : "Quick entry";
+  return fallback ?? "Quick entry";
 }
 
 // ── Portion picker (Scan/Quick-add sheets, fuel-sheets.jsx PortionStepper) ───

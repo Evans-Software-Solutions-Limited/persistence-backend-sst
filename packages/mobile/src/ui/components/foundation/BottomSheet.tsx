@@ -29,6 +29,21 @@ import { toneHex, toneTokens } from "./tones";
  * Default 78% height; `peek` drops to 60%, `tall` rises to 88%. Backdrop tap
  * dismisses. The header (eyebrow + title + drag handle) is fixed; children
  * scroll. `accent` tints the eyebrow + drag-handle.
+ *
+ * ## `footer` — a pinned region below the scroll
+ *
+ * Ports the prototype's `AMSticky` (design-source `screens.jsx:23`). A sheet
+ * whose primary action sits at the BOTTOM OF THE SCROLLING BODY puts that action
+ * below the fold whenever the body grows — and the body grows for reasons the
+ * user did not choose (a multi-item suggestion, a conditional safety caveat). A
+ * confirm button you have to hunt for on the step that writes to a log is a
+ * defect, not a polish item, so the commit action belongs in a region that
+ * cannot scroll away.
+ *
+ * The footer is a flex sibling of the scroll view inside the same definite-height
+ * column, so it takes its intrinsic height and `flex: 1` leaves the remainder to
+ * the scroll view. It also takes over the bottom safe-area inset from the scroll
+ * content — leaving both would open a dead band above the footer.
  */
 
 export type BottomSheetAccent =
@@ -48,6 +63,11 @@ export type BottomSheetProps = {
   /** peek=60%, default=78%, tall=88%, or an explicit percentage number (0-100). */
   height?: BottomSheetHeight;
   children: ReactNode;
+  /**
+   * Pinned below the scrolling body — for a primary action that must stay
+   * reachable however tall `children` grows. See the component docstring.
+   */
+  footer?: ReactNode;
   testID?: string;
 };
 
@@ -92,6 +112,7 @@ export function BottomSheet({
   accent,
   height = "default",
   children,
+  footer,
   testID,
 }: BottomSheetProps) {
   const ref = useRef<GorhomBottomSheet>(null);
@@ -312,14 +333,32 @@ export function BottomSheet({
           // when the body is ~sheet-height it otherwise looks cut off and
           // there's nothing to scroll to. The extra height also lets the
           // scroll view engage when the content is borderline.
+          //
+          // With a `footer`, that inset moves to the footer instead: the footer
+          // is what now sits against the home indicator, and paying the inset
+          // twice would leave a dead band of scroll above it.
           contentContainerStyle={{
             padding: 20,
-            paddingBottom: 40 + bottomInset,
+            paddingBottom: footer ? 24 : 40 + bottomInset,
           }}
           keyboardShouldPersistTaps="handled"
         >
           {children}
         </BottomSheetScrollView>
+
+        {footer ? (
+          <View
+            paddingHorizontal={20}
+            paddingTop={12}
+            paddingBottom={12 + bottomInset}
+            borderTopWidth={1}
+            borderColor="$border"
+            backgroundColor="$surface"
+            testID="bottom-sheet-footer"
+          >
+            {footer}
+          </View>
+        ) : null}
       </View>
     </GorhomBottomSheet>
   );

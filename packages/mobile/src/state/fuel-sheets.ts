@@ -22,7 +22,12 @@ import { localDayISO } from "@/shared/utils";
  *       specs/milestones/GO-LIVE-FINAL/BRIEF-7-device-qa-bugs.md § QA-19/QA-20
  */
 
-export type FuelSheet = "scan" | "quickAdd" | "snap" | null;
+export type FuelSheet =
+  | "scan"
+  | "quickAdd"
+  | "snap"
+  | "mealprintSuggest"
+  | null;
 
 export interface FuelSheetsState {
   sheet: FuelSheet;
@@ -44,6 +49,20 @@ export interface FuelSheetsState {
    * handoff, the "Or describe it…" flow). Gate-checked by the caller before
    * calling this (aiGate.allowed) — the store itself doesn't re-check. */
   openSnap: (slot?: MealSlot) => void;
+  /**
+   * spec-26 T-1.5 — open the Mealprint suggest sheet.
+   *
+   * ⚠ Takes NO slot, unlike its three siblings, and that is deliberate. The other
+   * flows are "log this into that meal" and inherit the row the user tapped;
+   * Mealprint answers "what should I eat?" against the whole day's remaining
+   * budget, and the slot is only chosen at the draft-confirm step once there is
+   * something to log. Accepting one here would imply the suggestion was scoped to
+   * that meal, which it is not.
+   *
+   * Gate-checked by the caller (`useMealprintEntry`) before this is called — the
+   * store does not re-check, matching `openSnap`.
+   */
+  openMealprintSuggest: () => void;
   /** Set the active day (QA-20). <FuelContainer> calls this on every day
    * change; Home's quick "Log meal" calls it with today() right before
    * opening Quick-add so it can never inherit a stale day left over from a
@@ -62,6 +81,7 @@ export const useFuelSheets = create<FuelSheetsState>((set) => ({
   openScan: (slot = "breakfast") => set({ sheet: "scan", slot }),
   openQuickAdd: (slot = "breakfast") => set({ sheet: "quickAdd", slot }),
   openSnap: (slot = "breakfast") => set({ sheet: "snap", slot }),
+  openMealprintSuggest: () => set({ sheet: "mealprintSuggest" }),
   setDate: (date) => set({ date }),
   close: () => set({ sheet: null }),
   notifyMutated: () => set((s) => ({ rev: s.rev + 1 })),

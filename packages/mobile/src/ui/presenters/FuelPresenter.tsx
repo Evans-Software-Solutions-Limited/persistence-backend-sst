@@ -19,6 +19,10 @@ import { MacroHeroPresenter, type MacroLineVM } from "./MacroHeroPresenter";
 import { QuickAddRowPresenter } from "./QuickAddRowPresenter";
 import { MealLogPresenter, type MealSlotVM } from "./MealLogPresenter";
 import { WaterTrackerPresenter } from "./WaterTrackerPresenter";
+import {
+  MealprintEntryCard,
+  type MealprintEntryState,
+} from "./mealprint/MealprintEntryCard";
 
 /**
  * <FuelPresenter> — the Fuel (nutrition) screen (nutrition.jsx). Composes the
@@ -75,6 +79,15 @@ export type FuelPresenterProps = {
   aiLocked: boolean;
   /** True when offline — Snap is disabled independently of the AI entitlement. */
   snapOffline?: boolean;
+
+  // Mealprint (spec-26 T-0.6 entry point). Four states — see
+  // <MealprintEntryCard> for why `pending` and `stalled` are not synonyms for
+  // `locked`. The container resolves them via `useMealprintEntry`.
+  mealprintState: MealprintEntryState;
+  mealprintNeedsSetup: boolean;
+  onMealprint: () => void;
+  onMealprintUpgrade: () => void;
+  onMealprintRetry: () => void;
 
   // Meal log
   slots: readonly MealSlotVM[];
@@ -364,6 +377,11 @@ export function FuelPresenter(props: FuelPresenterProps) {
     noTarget,
     aiLocked,
     snapOffline = false,
+    mealprintState,
+    mealprintNeedsSetup,
+    onMealprint,
+    onMealprintUpgrade,
+    onMealprintRetry,
     slots,
     waterCups,
     waterGoal,
@@ -384,6 +402,29 @@ export function FuelPresenter(props: FuelPresenterProps) {
   } = props;
 
   const insets = useSafeAreaInsets();
+
+  // Protein still owing today, for the Mealprint card's concrete pitch. Derived
+  // from the hero's own view-model rather than added to the container's props, so
+  // the two can never disagree about what "left" means.
+  const proteinLine = macros.find((m) => m.label === "Protein");
+  const remainingProteinG =
+    proteinLine === undefined ? null : proteinLine.target - proteinLine.value;
+
+  // ⚠ Fuel is DAY-NAVIGABLE, and the card's concrete line says "today".
+  //
+  // `remainingKcal`/`macros` describe the VIEWED day, so on a past day the card
+  // would read "You have 1,160 kcal left today" over last Tuesday's numbers —
+  // false, and an invitation to act: the suggest sheet generates and logs against
+  // the active date, so "fill today's gap" would write food to a past day. The
+  // generic subtitle makes no day claim, so it is the safe fallback.
+  //
+  // ⚠ Compared DIRECTLY, not derived from `canGoNext`. An earlier version used
+  // `!canGoNext`, which is equivalent today but only by coincidence: that prop's
+  // contract is "disables the forward chevron". spec-26 is meal PLANNING, so the
+  // day forward-nav is likely to open up — at which point `canGoNext` goes true on
+  // today (silently hiding the line on the one day it is correct) and false on a
+  // future date (putting the false claim straight back).
+  const viewingToday = selectedDate === localDayISO();
 
   const header = (
     <>
@@ -520,6 +561,30 @@ export function FuelPresenter(props: FuelPresenterProps) {
             onSnap={onSnap}
             onSearch={onSearch}
             onRecipes={onRecipes}
+          />
+          {/* Mealprint sits directly below QuickAddRow (design § 4 item 1):
+              QuickAdd answers "log what I ate", Mealprint answers "what should I
+              eat" — adjacent questions, and this is the point in the scroll where
+              the user has just seen what they have left. */}
+          <MealprintEntryCard
+            state={mealprintState}
+            needsSetup={mealprintNeedsSetup}
+            // The card leads on the actual gap rather than a generic promise
+            // (design § the AnyMeal entry card) — but ONLY for today, and only
+            // with a target set. See `viewingToday` above; and note the card
+            // itself also requires `remainingKcal > 0`, because `computeRemaining`
+            // goes NEGATIVE when the user is over target (it is not 0-floored
+            // except on the no-target branch).
+            remainingKcal={noTarget || !viewingToday ? null : remainingKcal}
+            remainingProteinG={
+              noTarget || !viewingToday ? null : remainingProteinG
+            }
+            // ⚠ Separate from nulling the budget: the FALLBACK subtitles also say
+            // "today", and without this the card contradicted the sheet it opens.
+            isToday={viewingToday}
+            onPress={onMealprint}
+            onUpgrade={onMealprintUpgrade}
+            onRetry={onMealprintRetry}
           />
           <MealLogPresenter
             slots={slots}

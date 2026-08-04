@@ -9,6 +9,76 @@ items, and the four most recent sessions. Trimmed 2026-07-27 from 1554 lines.
 If anything here contradicts `git log --oneline -30`, the git history wins —
 say so and fix this file.
 
+## ▶ START HERE — next session (rewritten 2026-08-04, post-Mealprint-merge)
+
+**You are on a fresh `main`. Mealprint mobile is MERGED.** Nothing is half-landed and
+no branch is waiting. Read this block, then pick A or B — they do not block each other.
+
+### The one thing that is NOT done on Mealprint
+
+⚠ **The entitled half of Mealprint has never executed on a device.** Everything
+locked/pending/stalled is device-verified; every path a Premium+ user takes is proven
+only by unit tests. It is merged because it is gate-green and design-signed-off, not
+because it has run. **Before it reaches a real user it needs:**
+
+1. A `user_subscriptions` row on staging (`nxkhlrvjxotyjulodxzk`) with
+   `tier_name='premium_plus'`, `payment_status='active'`. ⚠ Read § "The RevenueCat
+   claim in the old brief was WRONG for staging" and the trap warnings there FIRST —
+   the `update_subscription_limits` trigger sets `profiles.role='user'` for any
+   non-trainer tier, which will knock Brad's account out of coach mode. Use a second
+   test account or accept the flip knowingly.
+2. The device pass in § "What IS device-verified" — specifically the suggest sheet's
+   draft-stage scroll, the pinned footer, and the `KeyboardAvoidingView` on the
+   preferences wizard (simulator hardware keyboard cannot prove the last one).
+3. Prod is `opcvjypsoivaxerahbal`. **Do not touch it.**
+
+### A · Subscription restructure — `specs/29-subscription-restructure/`
+
+Triplet written, **nothing built**. Start at `tasks.md` **Phase 0** (no code).
+
+⚠ **Run checkpoint C5 FIRST, before any pricing task.** `recipe_extract` on Opus is
+$0.0355/call — 55 % of Premium's whole worst case and 44× the cheapest endpoint. If it
+holds quality on a cheaper vision model the number becomes ~$0.007 and most of the
+margin problem, including the Start Up Coach cap-binding in AC 2.3a, dissolves. Every
+other pricing decision is downstream of that one measurement.
+
+Then C2 (measure the 7 estimated unit costs), then Phase 1 (the pooled budget, which
+retro-protects margin on everything already shipped). The App Review question (C1)
+gates Phase 3 **only** — do not let it block Phases 0–2.
+
+**Two prices are still open, and both are recorded as open, not guessed:**
+Start Up Coach £14.99 vs £17.99 (AC 2.3a), and whether the ~30 % annual discount
+applies to the coach ladder or only the two consumer rows (design § 1).
+
+### B · Go-live — `specs/milestones/GO-LIVE-2026-08/PLAN.md`
+
+Five ordered stages with done-when criteria per stage. Unchanged by this session.
+
+### ⚠ Standing hazards, all easy to trip
+
+- `specs/stripe-rail-removal/` must **NOT** be executed — the rail is the coach-tier plan.
+- Never rename a `tier_name` — RevenueCat entitlement ids **are** the tier_names.
+- **`bun run prettier:check` fails at repo root** on two of Brad's UNTRACKED files
+  (`.agents/skills/sst-resource-change/SKILL.md`, `microservices/core/probe-steps.ts`).
+  Not a regression; scope the check to your own diff.
+- Cost figures: `bun run scripts/ai-cost-model.ts`. **Never quote them from prose** —
+  that is why they live in a tested script, and it has gone stale twice.
+  ⚠ Its `TIERS` mirrors the **LIVE DB catalog**, not spec-29's proposal — they
+  deliberately disagree until the Phase 1 migration lands.
+- **Brad authorised a full prod + staging data reset (2026-08-04)** — only test
+  accounts and his own exist, so zero-grandfathering for repricing holds. No agent has
+  touched prod/staging data; the reset is Brad's to run.
+
+### ⚠ The lesson this branch cost six review sweeps to learn
+
+Every one of the first five sweeps found that the **previous sweep's fix had created
+the next defect**, all in one container, and the suite stayed green through all of it.
+Two tests — and a third on this last commit — **passed against their own reverted
+fix**. The discipline that actually worked: *when you add a test for a fix, revert the
+fix and watch it fail.* Reading the test is not evidence. Also: the in-memory storage
+fake never self-notifies, so a whole family of `useCachedResource` staleness bugs is
+invisible unless a test calls `storage.emitChange(...)` explicitly.
+
 ## Current state (2026-08-02)
 
 ### ⚠ PLAN OF RECORD — the Premium+ launch is now a BUNDLE (Brad, 2026-08-02)
@@ -43,15 +113,253 @@ bite, the separable piece is M21: Loadout Phase 4 + Mealprint alone close the
 § Mealprint below. Phase 4 and M21 remain zero code; Mealprint's MOBILE half
 (tasks 0.6, 1.5) is also still zero code. See § Next plan of action.
 
-### spec-26 Mealprint — BACKEND MERGED 2026-08-03 (PR #350, `d1c40b30`)
+### spec-26 Mealprint — ✅ MERGED to main 2026-08-04 (design pass + 6 review sweeps)
+
+> **Merged after SIX Inspector Brad sweeps.** Sweeps 1–5 each found that the previous
+> sweep's fix had created the next defect; sweep 6 returned MERGE and independently
+> confirmed the monotonic-latch fix holds under StrictMode, the change-bus flush and
+> the user-change path. Its four residual findings (one 🟡, three 🟢) were fixed in
+> `0c1ce767`, each with a test verified to fail against its own reverted fix.
+>
+> ⚠ **Still not device-verified on the ENTITLED path** — see § START HERE item A.1.
+>
+> Everything below this line is the build history — the design pass, the five sweeps
+> and the allergen-wipe routes. Kept because the allergen-wipe record is the reason
+> that container is the way it is, and a future session must not "simplify" it.
+
+**Branch `claude/mealprint-mobile-ui-9347a0`, HEAD `ac3a7ac5`** (updated from
+`main` @ `dcc9726a`; PR still NOT raised). T-0.6 + T-1.5 plus a design pass over
+all four surfaces. Gates: prettier, full-workspace typecheck (8/8, web's Eden
+client clean), mobile lint 0 errors, build 13/13, **476 suites / 5910 tests**.
+
+⚠ `bun run lint` FAILS at the workspace level on `microservices/core/probe-steps.ts`
+— an UNTRACKED local scratch file of Brad's with 4 `no-explicit-any` errors. Not on
+the branch, so it cannot reach CI; but it will keep failing the local gate until
+Brad deletes or fixes it.
+
+#### ⚠ The stale-bundle diagnosis was RIGHT, and it is now fixed
+
+The previous session's three "misses" were all the stale bundle, exactly as
+diagnosed. A fresh `expo run:ios --device <udid>` from this checkout (build
+succeeded, `PersistenceStaging` scheme) resolved all three: the Mealprint card
+renders on Fuel, the "Food preferences" row renders on Fuel Targets, and
+`/(app)/fuel/preferences?mode=wizard` deep-links correctly instead of bouncing to
+Home. **Do not re-diagnose these as rendering bugs.**
+
+#### ⚠ The RevenueCat claim in the old brief was WRONG for staging
+
+A promotional entitlement is needed for TestFlight/production, **not** for staging.
+A direct `user_subscriptions` row is sufficient, and the code path was verified
+here: `subscriptionRepository.findForUser` (`:512`) and `assertMealprint` both
+`innerJoin subscription_tiers ON tier_name` with **no `is_active` filter**, so
+`premium_plus` resolves despite its inactive catalog row.
+
+**⚠ BLOCKED, not done.** The Supabase MCP connector only exposes
+`persistence-prod` (`opcvjypsoivaxerahbal`); staging (`nxkhlrvjxotyjulodxzk`) is not
+in its project list, so the row could not be written. Needs either the connector
+re-scoped to the staging project or Brad running the SQL. **And the write needs a
+decision first** — see the trap below.
+
+⚠ **The `update_subscription_limits` trigger will DEMOTE the account.** Verified in
+`supabase/migrations/004_subscriptions_and_roles.sql:95-121`: the role is derived
+solely from `is_trainer_tier`, and `premium_plus` ships `is_trainer_tier = false`
+(`20260725194527_premium_plus_tier.sql:62`). So the trigger sets `role = 'user'` —
+which knocks a `personal_trainer` out of coach mode **and would demote an `admin`
+too**, since the else-branch is an unconditional `'user'`. The brief flagged the
+coach case; the admin case is worse and was not flagged. Decide between switching
+the main staging account and using a second test account BEFORE writing the row.
+
+What shipped:
+
+| Slice | Contents |
+| --- | --- |
+| T-0.6 | `domain/models/mealprint.ts` (wire contract + vocabularies mirrored from the backend + the two pieces of contract copy), api-port/SST-adapter methods, `cached_mealprint_preferences` SQLite table, an offline-queued coalesced write command, the wizard/editor at `/(app)/fuel/preferences`, and both entry points (Fuel card, Fuel Targets row) |
+| T-1.5 | `useMealSuggest` (imperative, never queued, five-way failure taxonomy), the suggest sheet, draft-confirm, and logging by REFERENCE through the existing `POST /nutrition/entries` |
+
+Decisions worth not re-deriving (all in docstrings):
+
+- `useMealprintGate` grants **premium_plus ONLY** — mirrors `mealprint_access`, not
+  `loadout_access`. Upsell target is premium_plus even for a coach.
+- The entry card has **FOUR** states. `pending` and `stalled` exist so a paying
+  subscriber never meets a padlock during the cold-start round trip, and a hung
+  socket never renders as a paywall. `GymsSegmentContainer` is the precedent.
+- The label-check disclaimer renders on `labelCheckRequired` (always true), never
+  on `containsUnverified`. Defaults to `true` when a result omits the field.
+- Preferences are **ungated** on both endpoints and both surfaces — the paywall is
+  on generation, and an expired subscriber must still be able to read and correct
+  their allergen list.
+
+#### The design pass (2026-08-04) — and the one place the prototype is WEAKER
+
+There was no Mealprint design at port time. Brad supplied the **AnyMeal GTM D8
+standalone HTML** (a Claude Design bundle); its JSX unpacks from the
+`__bundler/manifest` script as `anymeal-parts/screens/sheets.jsx` + `ui/icons/iOS`
+— that is the design source of record for this feature, and it post-dates
+`~/Downloads/handoff/design-source/`, so `feedback_prototype_first_source_of_truth`
+has no older prototype to defer to.
+
+⚠ **The Claude Design connector is NOT authorised** — `mcp__claude-design__*` returns
+"run /design consent", which cannot be granted in a non-interactive session. The
+pass was done from the HTML bundle instead. Re-consent before relying on the
+connector.
+
+**Accent decision: Mealprint is GOLD, not cyan.** The design makes nutrition gold
+throughout and our Fuel tab already agrees (`MacroHeroPresenter` is "a single gold
+ring"); the card had shipped `primary`, the one cyan object on a gold screen. The
+rule now written into the docstrings: **gold marks Mealprint where it is being
+OFFERED or GENERATED; cyan stays the control accent where preferences are SET;
+amber is reserved for safety and never competes with a gold fill in the same block.**
+
+⚠ **NOTHING outside Mealprint was restyled, and that was Brad's explicit
+instruction** (2026-08-04): the design source never saw our tokens, so differences
+from it are often OUR palette being right. The hero ring, `MacroHeroPresenter`,
+`QuickAddRowPresenter` and every other Fuel surface are **untouched** — the gold in
+the Mealprint card comes from `$gold`/`$goldDim`/`$goldInk`, which already existed.
+The only non-Mealprint files in the diff are `BottomSheet.tsx` (a new OPTIONAL
+`footer` prop; no other caller passes it, verified no regression) and
+`FuelPresenter`/`FuelTargetsPresenter`, which only compose the Mealprint surfaces
+and pass them props. **Do not "finish the job" by aligning the rest of Fuel to the
+prototype.**
+
+⚠ **The prototype's chip treatment was REJECTED, deliberately.** `AMChip` makes
+allergens and dietary patterns both pills, separated by hue alone (gold patterns vs
+amber allergens). That is weaker than what shipped and would breach AC 1.2 — ours
+keeps amber + square-shouldered (radius 8) + warning glyph against the patterns'
+cyan pill (radius 19), so the distinction survives greyscale. Strengthened further:
+the allergen SECTION now carries the alert glyph and an amber sub-line. **If a
+future pass "aligns the chips to the prototype", that is a regression.**
+
+#### ⚠ `BottomSheet` gained a `footer` — and it is a correctness fix, not styling
+
+The draft stage stacks items + meal picker + two conditional caveats in an 86 %
+sheet, so `Log N kcal` sat below the fold — on the step that writes to a food log,
+for reasons the user does not control. Reachability was a property of content
+length. The confirm (and the setup stage's Generate) now live in
+`BottomSheet.footer`, a flex **sibling** of `BottomSheetScrollView` inside the same
+definite-height column, with the bottom safe-area inset handed from the scroll
+content to the footer. Ports the prototype's `AMSticky`. The wizard's
+"Save and continue" got the same treatment as a plain sticky footer.
+
+⚠ **A footer nested INSIDE the scroll view satisfies a naive test and reintroduces
+the whole bug.** The first version of the structural test only proved the CTA sat in
+a node *named* footer; it passed against the reverted fix. It now asserts against
+`BottomSheetScrollView` directly. Same class of error bit the day-nav test below.
+
+#### What IS device-verified (iPhone 17 Pro, fresh build) — and what is not
+
+✅ Verified end-to-end: the Fuel entry card in **locked** state (gold wash, padlock,
+PREMIUM+ pill, gold CTA, no price literal); the "Food preferences" row; the
+preferences **editor** rendering, scrolling, selecting an allergen, showing
+`LABEL_CHECK_COPY` verbatim, saving, and the summary row updating to
+"1 allergen avoided · 4 meals a day · balanced"; `MEDICAL_SCOPE_COPY` at the foot;
+the **wizard** via deep link with its pinned CTA holding through a full scroll.
+
+❌ **NOT verified, and all of it needs the staging entitlement:** the unlocked card,
+the suggest sheet (shape toggle, steer, generating), `no_candidates`, the happy
+path, and — the one that matters most — **the draft stage scrolling to its pinned
+confirm inside gorhom**. The pinned-footer mechanism is proven on the preferences
+screen, but that is a plain `View`, not a `BottomSheet`; the gorhom container is
+unproven on device. Jest mocks gorhom, so no test can close this.
+
+❌ **The KeyboardAvoidingView fix on the wizard is NOT device-verified** — the
+simulator had a hardware keyboard connected, so the software keyboard never
+appeared. It follows `CreateExercisePresenter`'s reference implementation verbatim,
+which IS device-proven for this exact case, but that is inheritance, not proof.
+
+#### The follow-up Inspector Brad sweep — fixes sound, one SIBLING missed
+
+A second sweep on the fix commit mutation-tested the two load-bearing assertions and
+confirmed none of the fixes was itself the new defect (the failure mode this branch
+hit twice before). It found what the first sweep had missed: **the false "today"
+claim removed from the entry card was still live in the SHEET the card opens** — and
+the sheet is where the write happens (it generates and logs against
+`useFuelSheets().date`). Same defect class, one component over, on the only path the
+card leads to. Now `isToday`-aware in both places, with off-today copy that says
+plainly that anything logged goes to that day.
+
+⚠ **The lesson: fixing a copy-vs-data-source mismatch on one surface does not fix
+its siblings.** Grep for the claim, not the component.
+
+#### 🔴 THE THIRD ROUTE INTO AN ALLERGEN WIPE — found by Brad, on device
+
+He asked why the wizard has no Cancel, only a Skip. The missing button and a
+data-loss bug were the same defect, and this one is reachable in **normal use**:
+
+1. `useMealprintEntry` reads preferences **cache-only** (deliberate — an eager fetch
+   on the Fuel tab was part of the launch fan-out).
+2. So on a reinstall / new device / sign-out-in, `data === null` → the card reports
+   `needsSetup` → it opens the **wizard**.
+3. The wizard's container *does* fetch, succeeds, and seeds the form with the user's
+   real allergen list — so `isUnseeded` is **false**.
+4. Dismiss fell through to `commit(DEFAULT_MEALPRINT_PREFERENCES)`. One tap on the
+   only exit offered, allergens gone.
+
+⚠ **`isUnseeded` cannot catch this, because the read SUCCEEDED.** The earlier 🔴 was
+this wipe via a *failed* read. So the guard is not "did we read the row" but
+**"does the row contain anything worth keeping"** — `hasSavedChoices`
+(`data !== null && data.isDefault !== true`). Dismiss now leaves without writing
+whenever there are saved choices.
+
+⚠ **The write still happens on a genuine first run, and must.** AC 1.4: persisting
+the skip is what flips `isDefault` and stops the card re-offering the wizard forever.
+Not writing when choices exist is safe precisely because `isDefault` is already
+false there.
+
+**The label follows the behaviour** (`dismissLabel`, container-supplied, NOT derived
+from `mode`): "Skip" only on a genuine first run, "Cancel" otherwise. So does the
+intro copy — "or skip it entirely" would promise to discard what is now kept.
+Both verified on device.
+
+**The generalisable lesson:** three separate routes have now produced the same
+allergen wipe, and each guard was written against the route that had just been
+found. A destructive default is not made safe by guarding the path you noticed —
+`PUT /nutrition/preferences` is a full last-write-wins replacement, so **every**
+exit from that form is a candidate wipe until proven otherwise.
+
+#### ⚠ Nine review findings across THREE Inspector Brad sweeps. One was serious.
+
+| # | Finding | Where |
+| --- | --- | --- |
+| 🔴 | A failed preferences GET turned the wizard's **Skip into a delete button** | `MealprintPreferencesContainer` |
+| 🟠 | `labelCheckRequired` defaulted false → suggestions with no disclaimer | suggest container |
+| 🟠 | The server's `partialEnforcementOnly` had no reader at all | suggest container/presenter |
+| 🟠 | `reset()` left `inFlightRef` set with no signal → dead Generate button | `useMealSuggest` |
+| 🟠 | …and the FIX to that left `lastInputRef` nulled → dead retry (2nd sweep) | `useMealSuggest` |
+| 🟡 | `summarisePreferences` threw on an unknown `effortLevel` mid-render | `models/mealprint.ts` |
+| 🟠 | …and the FIX to *that* was committed with no test, the count unchanged (3rd sweep) | `useMealprintHooks.test.tsx` |
+| 🟢 ×2 | A test comment promising an absent assertion; a docstring describing an unreachable path | — |
+
+**The 🔴 is the one to remember.** `PUT /nutrition/preferences` is a full
+last-write-wins replacement and the form renders empty defaults until it is
+seeded — so on a device with an empty cache (reinstall, new device, sign-out/in) a
+failed read left the whole form live with four empty arrays in it. And that is the
+DEFAULT path: an empty cache makes `useMealprintEntry` report `needsSetup`, so the
+first thing a reinstalled device does is open the wizard. Skip then queued a write
+that deleted the user's allergen list, dietary pattern and both free-text lists,
+silently. Fixed in two places deliberately (`commit()` refuses an unseeded write;
+the presenter replaces the whole form with a retry panel), because the general
+lesson is that **a seed latch protects the FORM from a late fetch and protects
+nothing at all from an unseeded write — those are two guards, not one.**
+
+Second lesson, from the pair of `useMealSuggest` findings: when a guard says "this
+in-flight request still owns the state", it owns ALL of it. Fixing the stage and
+leaving the input was half a decision, and half a decision read as a whole one is
+how the second sweep found a bug the first sweep's fix created.
+
+⚠ **Third lesson, and the cheapest one to repeat: a `cd` inside a compound command
+can fail and silently skip everything `&&`-chained after it.** The fix commit
+claimed a regression test it did not contain — the edit never ran, and jest going
+green on the UNCHANGED file read as confirmation. A third sweep caught it (suite
+count identical at both commits, which is the tell). The test now exists and was
+verified BOTH ways: passing with the guard, failing with 1 call where 2 are
+expected without it. **Verify a test by making it fail on purpose, not by watching
+it pass.**
+
+#### Backend, for reference — MERGED 2026-08-03 (PR #350, `d1c40b30`)
 
 **Phase 0 (0.1–0.5) + Phase 1 (1.1–1.4) + the `meal_ai` gate + infra config are on
 `main`.** 6 commits squashed; all 5 CI checks green. Staging deploy fired on merge,
 which auto-applies the three migrations there.
-
-**NOT built: 0.6 and 1.5 — the entire mobile half.** Nothing in `packages/mobile`
-calls any of it, so the feature does not exist for a user yet. That is the next
-slice.
 
 Nothing is user-reachable: `premium_plus` is `is_active = false`,
 `mealprint_access` is granted to that tier only, and no client calls the endpoints.
@@ -129,14 +437,74 @@ by reading it — that is what caught every one of the 23.
 - `Egg Fried Rice Noodle Box` — genuinely ambiguous, no direction rule fixes it.
 - `Shepherd's Pie` needs the possessive-"s" skip in `everyOccurrenceQualified`.
 
-#### Chipped follow-ups (not blocking, land before T-1.5 ships to a user)
+#### Chipped follow-ups
 
-- `labelCheckRequired: true` is returned unconditionally BECAUSE
-  `mapOffAllergenTags` returns `[]` whenever ingredient text exists without knowing
-  OFF parsed it. **T-1.5 must render the label-check copy on that flag, NOT on
-  `containsUnverified`.**
+- ✅ DONE in the mobile slice: the label-check copy renders on `labelCheckRequired`,
+  never on `containsUnverified` — and defaults to `true` when a result omits the
+  field, because `suggestMeals` is an unvalidated cast over the wire.
 - Recall gaps are inherent to a name-token heuristic; they shrink as the re-seed
   populates category tags.
+
+#### What is left before a user can reach Mealprint
+
+1. **Raise the PR** for `claude/mealprint-mobile-ui-9347a0` (not done — Brad's
+   call whether to review the commits as-is or squash).
+
+   ⚠ **The PR body must state plainly which surfaces have executed and which have
+   not.** The ungated half is now device-verified (see § What IS device-verified);
+   the **entire entitled half has still never run**. A clean sweep line is true and
+   does NOT mean the feature works — and the two things most likely to be wrong are
+   still exactly the two static review cannot reach: the draft stage's pinned confirm
+   inside gorhom, and the `no_candidates` path, which is the FIRST thing a real
+   entitled user will see until the re-seed lands.
+
+2. **Write the staging entitlement row.** ⚠ Read the trigger warning above first —
+   this demotes `personal_trainer` and `admin` to `'user'`. Blocked on connector
+   access. The write, once the account question is settled:
+
+   ```sql
+   -- 0. VERIFY (staging nxkhlrvjxotyjulodxzk — NOT prod opcvjypsoivaxerahbal)
+   select tier_name, is_active, mealprint_access, is_trainer_tier
+     from subscription_tiers where tier_name = 'premium_plus';
+   -- expect mealprint_access = true (migration 20260803120200, auto-applied on
+   -- merge to main). If false, the gate denies with no useful error.
+
+   select p.id, p.role, s.id as sub_id, s.tier_name, s.payment_status
+     from profiles p
+     left join user_subscriptions s
+       on s.user_id = p.id
+      and s.payment_status in ('active','pending','trialing','past_due')
+    where p.email = '<the staging account>';
+   -- ⚠ If a LIVE row exists, UPDATE it. A second INSERT violates
+   -- `user_subscriptions_active_unique` (one live sub per user).
+
+   -- 1a. No live row → insert
+   insert into user_subscriptions (user_id, tier_name, payment_status, starts_at)
+   values ('<uuid>', 'premium_plus', 'active', now());
+
+   -- 1b. Live row exists → switch it (records what it was, so it can be put back)
+   update user_subscriptions
+      set tier_name = 'premium_plus', payment_status = 'active',
+          metadata = coalesce(metadata,'{}'::jsonb)
+                     || jsonb_build_object('device_qa_prev_tier', tier_name)
+    where user_id = '<uuid>'
+      and payment_status in ('active','pending','trialing','past_due');
+   ```
+
+   Then verify by calling `GET /subscriptions/me` as that user and checking
+   `tierName` comes back `premium_plus`. **A row that exists but does not resolve is
+   the failure mode to look for.** Reversible: restore `tier_name` from
+   `metadata.device_qa_prev_tier` and the trigger restores the role.
+
+3. **The OFF re-seed.** Brad's, operational. Until it runs, every allergen chip
+   empties the candidate pool and the sheet correctly answers
+   `emptyReason: "no_candidates"`. QA the happy path with NO allergen chips.
+4. **Finish the device pass** on the entitled half once 2 lands — the suggest
+   sheet's six stages, and above all the draft stage's pinned confirm inside gorhom.
+   Also worth a look with a SOFTWARE keyboard (disable Connect Hardware Keyboard in
+   the simulator's I/O menu): the wizard's KeyboardAvoidingView fix is unverified.
+5. **The coach/Premium+ pricing decision** still gates T-P0.10 and therefore
+   `is_active`. Unchanged by this slice.
 
 ## Superseded state (2026-07-31)
 
@@ -595,6 +963,353 @@ from its six siblings. The real fix belongs in `AiUsageLogRepository` for all of
 at once — a reserve-then-reconcile row, or a conditional insert. Exposure needs a
 deliberate parallel burst from an authenticated, entitled, paying account.
 
+### 🔵 TIER + PRICING RESTRUCTURE — Brad's decisions 2026-08-04, numbers PROPOSED
+
+> ### ⚠⚠ READ THIS BEFORE ANY NUMBER BELOW — `specs/29-subscription-restructure/` IS NOW CANONICAL
+>
+> Brad approved two changes late on 2026-08-04 that invalidate figures in the
+> sub-sections below. **The spec triplet has them right; this section has them wrong.**
+>
+> 1. **Apple commission is modelled at 30 %, not 15 %.** Brad applied for the Small
+>    Business Program and it was **NOT approved**. Decision: model everything at 30 %
+>    so the numbers stay good if we never get in, or later fall out. ⇒ § "Apple takes
+>    15 %, not 25 %" below is **superseded** — its net-revenue figures are ~21 % too
+>    high, and every "% of net" derived from them is too low.
+> 2. **Premium → £14.99/mo** (annual £124.99). ⇒ § "Premium: HOLD £12.99" below is
+>    **reversed**. The reason it flipped is (1): £12.99 at 30 % nets $11.43, which is
+>    less than that tier's own worst-case AI spend.
+> 3. **Budget rule is `max(3.5 × typical, 33 % of net)` capped at 40 % of net**, over a
+>    **rolling 30-day** window. ⇒ § "Pooled AI budget — VALIDATED at 33 % of net" is
+>    superseded; recompute from `specs/29-subscription-restructure/design.md` § 2.
+>
+> **A finding I first OVERSTATED, corrected by Brad:** Start Up Coach is the one tier
+> where the 40 % cap binds before the 3.5× usage floor is reached — but at **3.3×, a 6 %
+> shortfall**, not the 2.9× I first reported. The 2.9× priced it with the endpoint set
+> of the LIVE `individual_trainer` row, which has `loadout_access = true`; the PROPOSED
+> Start Up Coach carries **no suite** — six endpoints, not nine. ⇒ **Accept 3.3× and
+> record it; do not reprice the tier for this.** spec-29 AC 2.3a.
+>
+> ⚠ The real consequence of "no suite at the entry rung" is that it **REMOVES Loadout
+> from `individual_trainer`**, which holds it today. Free (nothing is purchasable) but
+> it is a takeaway, and `TIER_GRANTS_LOADOUT` in `useLoadoutGate` grants all three
+> trainer tiers — the client mirror must move with the catalogue or the gate will
+> disagree with the server.
+>
+> **The biggest lever is not a price at all** — spec-29 **C5**. `recipe_extract` on
+> Opus is $0.0355/call: **55 % of Premium's entire worst case** and 44× the cheapest
+> endpoint. On a cheaper vision model it is ~$0.007 and most of the margin problem,
+> including AC 2.3a, dissolves. Run it in Phase 0 alongside C2.
+
+**Supersedes the § below where they disagree.** Brad opened this to settle how the
+adaptive suite (Loadout + Mealprint + the coming programme import and AI workout
+generation) is priced across athlete and coach personas. Nothing is purchasable yet
+— **no ASC products are live**, so every price and tier name below can still change
+with zero grandfathering. That window closes at launch.
+
+#### Decided by Brad
+
+1. **Coaches get Mealprint access.** Structure coach tiers so they move with BOTH
+   client count and features, not client count alone.
+2. **Loadout + Mealprint stay Premium+-only on the CONSUMER track.** Metering them
+   into Premium is rejected — it makes Premium+ feel lesser.
+3. **⚠ A 3/day Mealprint allowance on Premium was proposed and REJECTED, and the
+   reason generalises:** metering only converts if the median user hits the cap. At
+   ~2/day typical use a 3/day allowance converts nobody and spends the feature's
+   exclusivity for nothing. **Do not re-propose a small daily allowance as an
+   upgrade lever.**
+4. **AI ceilings are a BACKEND FAIL-SAFE, never an advertised product quota**, and
+   should be a TOTAL per-user budget rather than a per-feature one — a user should
+   not have to care what each feature costs. See the pooled-ceiling design below.
+5. **Programme import belongs to athlete Premium+ as well as the coach tiers** — an
+   imported programme is just a collection of workouts, so it is athlete-shaped too.
+6. **`individual_trainer` → display name "Start Up Coach"**, plus a suite-bearing
+   "Start Up Coach +". ⚠ See the rename hazard below — change `display_name`, NOT
+   `tier_name`.
+7. **AI workout generation is a FUTURE Premium+ addition** built on top of Loadout
+   and Mealprint. It is not in scope now, and it is the justification for a future
+   price rise rather than a current one.
+
+#### ⚠ The pooled cost ceiling — the structural fix
+
+**Per-feature ceilings make the worst case ADDITIVE**: it is the sum of 9 (soon 12)
+independent daily caps, which is the entire reason every tier looks underwater at
+saturation. A single **cost-weighted daily budget per tier** makes the worst case a
+number you CHOOSE.
+
+- Weight by COST, not call count. The endpoints differ ~44× ($0.0008 ingredient
+  resolve vs $0.0355 recipe extract), so a pooled *call* count would let a user
+  spend the whole budget on the dearest endpoint. `scripts/ai-cost-model.ts`'s
+  `costPerCall` is already the function needed, and `ai_usage_log` already records
+  per-inference rows to sum.
+- **KEEP the per-feature ceilings as a secondary bug-guard**, raised so the pool is
+  what normally binds. Defence in depth: the pool protects margin, the per-feature
+  caps stop one runaway client loop draining a whole day's budget. Deleting them
+  would make a single retry bug a full outage of every AI surface.
+- Never advertised. Sized so a real user does not reach it.
+
+Sizing is a dial with an explicit trade-off (Premium, net $13.88/mo, typical
+$0.047/day):
+
+| Pool as % of net | Premium $/day | × typical | worst-case gross margin |
+| --- | --- | --- | --- |
+| 20 % | $0.093 | 2.0× | 80 % |
+| 25 % | $0.115 | 2.4× | 75 % |
+| **33 %** | **$0.153** | **3.3×** | **67 %** |
+| 50 % | $0.231 | 4.9× | 50 % |
+
+**Recommended 33 %.** 3.3× typical daily spend is generous for a real user and
+guarantees a 67 % gross margin against a determined abuser — against today's 91 %
+worst case (9 % margin) or Premium's current 167 % (negative).
+
+#### Coach brackets — the 2 → 30 gap is genuinely anomalous
+
+Reviewed against ABC Trainerize (Aug 2026, USD, monthly): Basic free/1 client ·
+Grow $9/2 · Pro 5 $23 · Pro 50 $120 · Pro 200 $199+ · Studio Plus $248/location for
+500–1,000. **Their granularity is concentrated in the 5–50 client band** — exactly
+where Persistence has nothing between 2 and 30.
+
+⚠ **The finding that matters most: Trainerize charges $20–45/mo EXTRA for the
+nutrition add-on** ($20 on Grow/lower Pro, $45 on Pro 30–200). Persistence bundles
+AI nutrition. So like-for-like at 30 clients, Trainerize is ~$85 + $45 = ~$130
+(~£102) against a proposed £89.99. **The coach ladder is UNDER-priced relative to
+the market, not over-priced** — which is where the headroom is, and it is not on
+Premium+ (see below).
+
+#### ~~PROPOSED tiers~~ — TABLE REMOVED 2026-08-04, see `specs/29-subscription-restructure/design.md` § 1
+
+> ⚠ The ladder that was here was an **earlier draft** and had already diverged from the
+> spec on three rows (it had Studio at 30 clients in-app; the spec has Coach Pro £99.99
+> at 30 as the top IAP rung, and Studio £179.99/75 as WEB-only). Two divergent ladders
+> in one repo is precisely the drift that made the cost figures go stale twice, so the
+> copy is deleted rather than corrected. **One ladder, in the spec.**
+>
+> What still holds from the reasoning that produced it: the middle rungs are where money
+> was being left; Enterprise leaves the self-serve ladder; client counts mirror
+> Trainerize's own rungs so a coach can compare; 30 clients is the top in-app rung.
+
+⚠ **REVISED 2026-08-04 after Brad supplied the Trainerize add-on screenshots** (see
+the competitive block below). Two changes from the first draft: the MIDDLE rungs went
+up — that is where the most money was being left — and Enterprise left the self-serve
+ladder. Client counts now mirror Trainerize's own 5/15/30/100 rungs so the comparison
+is legible to a coach evaluating both.
+
+The suite/no-suite split exists at **entry only** — that is the one price point where
+it bites (a pure coach should not pay for AI they will not use), and above it a
+professional coach will want the suite anyway.
+
+⚠ **Premium+ should NOT be raised on the current feature set.** £29.99 = **$38.09**
+at $1.27/£, against Ladder and Juggernaut AI at $29.99–34.99 — Premium+ is already
+the most expensive in its comparable set in dollar terms. Raise it when AI workout
+generation ships, not before.
+
+#### ⚠ RENAME HAZARD — change `display_name`, never `tier_name`
+
+`RC_ENTITLEMENT_IDS` in `revenuecat/entitlements.ts:16-22` **are the tier_names**,
+and `user_subscriptions.tier_name` is an FK to `subscription_tiers.tier_name`. So
+renaming the key is a cross-system change (DB rows + RC entitlement ids + ASC
+product mapping) for **zero product benefit** — the user only ever sees
+`display_name`. Keep `individual_trainer` as the key and display "Start Up Coach".
+The last tier rename (`20260526120000_simplify_tier_model.sql`) needed a
+copy → migrate-FKs → delete dance; do not repeat that voluntarily.
+
+#### Every place a tier change has to land
+
+1. `subscription_tiers` catalog row — migration.
+2. **App Store Connect** — a subscription product per tier per billing cycle.
+3. **RevenueCat** — entitlement id + offering/package mapping.
+4. `revenuecat/entitlements.ts` — `RC_ENTITLEMENT_IDS` **and** `TIER_RANK` (rank
+   decides which entitlement wins when RC reports several — insert correctly).
+5. `packages/mobile/src/domain/services/purchaseOfferings.ts` —
+   `tierFromProductId`'s substring ladder (⚠ order-sensitive: longer names first,
+   as `premium_plus` must precede `premium`) and `MONTHLY_ONLY_TIERS`.
+6. `IOSPurchaseFlowPresenter.tsx:200-249` — the trainer rail is a **hardcoded
+   allow-list** `["individual_trainer","small_business","medium_enterprise"]`. New
+   coach tiers are invisible until added here.
+7. `assertEntitlement.ts` — `nextTrainerTierUp` upgrade ladder.
+8. `useLoadoutGate.ts` / `useMealprintGate.ts` — hardcoded tier→boolean Records
+   (they mirror the migrations because `/subscriptions/me` projects neither column).
+9. Seed-guard tests: `subscriptionTierSeed.test.ts`, `premiumPlusTierMigration.test.ts`.
+
+#### ⚠~~Apple takes 15 %, not 25 %~~ — SUPERSEDED 2026-08-04: model at **30 %**
+
+> Small Business Program applied for and **NOT approved**. Every net figure in this
+> sub-section is ~21 % too high. Canonical: `specs/29-subscription-restructure/`.
+
+`net $/mo` in the cost model is already `gross × (1 − Apple) × (1 − RevenueCat)`, so
+every margin figure here is AFTER the storefront cut. The rate is **15 %** (Small
+Business Program, applied and confirmed 2026-07-25 —
+`marketing/FUNDING_AVENUES.md:39-41`) plus RevenueCat 1 %.
+
+Worked example, Start Up Coach at £14.99: gross $19.04 → net **$16.02** → AI budget
+46 % = $7.37 → **$8.65 left = 54 % of net, 45 % of gross** at full saturation, and
+~75 % of gross at typical use.
+
+⚠ **Crossing $1M/yr in proceeds removes Small Business Program eligibility and Apple
+reverts to 30 %** — ~18 % less net revenue on an unchanged price. Growth triggers it,
+so it is a planning scenario, not a tail risk. Now modelled: `tierCost` takes an
+injectable commission and the report prints IAP-now / IAP-past-$1M / web per tier.
+
+**This is also the strongest argument for the split rail, and the single-commission
+model was hiding it:** Stripe's ~3 % does not scale with revenue, so the web rail's
+advantage over IAP roughly DOUBLES past the threshold — 13 points today, 27 after.
+
+#### ~~Premium: HOLD £12.99 monthly~~ — REVERSED 2026-08-04: Premium → **£14.99**
+
+> Flipped by the 30 % commission finding above. The ANNUAL conclusion in this
+> sub-section still stands (~30 % off ⇒ £124.99); only the monthly reversed.
+
+Brad asked whether £12.99 is too cheap. **It is not, and it should not move.**
+MyFitnessPal Premium in the UK is **£9.99/mo** — so Premium is already ~30 % ABOVE
+the category price anchor most users carry, while including AI photo/free-text food
+logging that MFP puts in a higher tier. Raising it to £14.99 would put us 50 % over
+MFP on the volume tier, which is the one place price sensitivity actually bites
+(Free → paid conversion is far more elastic than Premium → Premium+).
+
+⚠ **The real gap is annual.** MFP is **£49.99/yr** (58 % off their monthly); ours is
+£129.99 (16.7 % off — the "2 months free" formula, 10× monthly, applied to every
+tier). On annual we are **2.6× MFP**. Annual prepay is the strongest lever available
+for cash flow and churn, and a 16.7 % discount is too shallow either to compete or to
+drive the switch. **Proposed: deepen the consumer annual to ~30 % off** (Premium
+≈ £109.99, Premium+ ≈ £249.99) and drop the universal 10× rule. Not MFP's 58 % —
+that is an acquisition loss-leader — but competitive.
+
+This supersedes the "£1 = every paid tier offers annual ≈ 2 months free" line in
+`marketing/WEBSITE_PRICING_SPEC.md` § intro.
+
+#### ~~Pooled AI budget — VALIDATED at 33 % of net~~ — RECOMPUTED 2026-08-04
+
+> Rule is now `max(3.5 × typical, 33 % of net)` capped at **40 %**, over a **rolling
+> 30-day** window. Table: `specs/29-subscription-restructure/design.md` § 2. Brad's
+> headroom condition (D9) IS met on call count (~8/day typical vs ~27/day allowed on
+> Premium) — but on COST MIX only because the window is monthly, not daily.
+
+Brad's condition was that the budget beat typical usage with room for heavier users.
+It does, at every tier. Typical is $0.047–0.066/day (cost-model median column):
+
+| Tier | £/mo | net $/mo | budget $/mo | budget $/day | × typical |
+| --- | --- | --- | --- | --- | --- |
+| Premium | 12.99 | 13.88 | 4.58 | $0.153 | **3.3×** |
+| Premium+ | 29.99 | 32.05 | 10.58 | $0.353 | **6.4×** |
+| Start Up Coach | 14.99 | 16.02 | 5.29 | $0.176 | **2.9×** |
+| Start Up Coach + | 34.99 | 37.39 | 12.34 | $0.411 | **6.7×** |
+| Coach | 59.99 | 64.08 | 21.15 | $0.705 | **11×** |
+| Studio (web) | 109.99 | 135.42 | 44.69 | $1.490 | **24×** |
+
+What the TIGHTEST budget buys, per day, at Start Up Coach's $0.176: 4 recipe extracts
+**or** 11 Snap photos **or** 88 free-text estimates **or** 29 coach summaries. A
+5-client coach doing four recipe extractions *and* eleven food photos every day is not
+a real usage pattern. Premium at $0.153/day: five photo-logged meals costs $0.078 —
+51 % of budget, so a heavy legitimate day still has headroom.
+
+⚠ **This whole sub-section is the 15 %-commission, £12.99-Premium draft — superseded.**
+Canonical table: `specs/29-subscription-restructure/design.md` § 2. Two errors in it
+worth naming so they are not re-derived: every net figure assumes Apple 15 % (now 30 %),
+and Start Up Coach's 2.9× priced the LIVE `individual_trainer` endpoint set rather than
+the proposed no-suite one (corrected to 3.3× — see AC 2.3a).
+
+#### 🔴 DO NOT EXECUTE `specs/stripe-rail-removal/` — the rail is the coach-tier plan
+
+**The Stripe rail is still live and it is now load-bearing again.** `/stripe/webhook`
+is mounted at `microservices/core/src/api.ts:270`, and the handler, `reconcile`,
+`stripeIdempotency`, `subscriptionState` and `alerts` are all intact. Only the
+**mobile** PassKit / in-app-payments path was removed (PR #336, App Store Guideline
+2.1) — the backend rail survived that and was subsequently parked for deletion.
+
+Deleting it would destroy the enabler for the highest-margin part of the business,
+and rebuilding a subscription rail with webhook idempotency and reconciliation is
+months of work already paid for.
+
+**The split-rail plan (Brad's question, 2026-08-04 — "am I cutting my nose off by
+putting everything through RevenueCat"):**
+
+- **Consumer tiers via Apple IAP.** At £12.99–29.99 these are impulse purchases and
+  the ~16 % (Apple 15 % + RevenueCat 1 %) buys one-tap Face ID conversion.
+- **Coach tiers via web/Stripe.** At £109.99/mo Apple takes £16.50/mo = **£198/yr
+  per coach**; at 100 coaches, **£19,800/yr**.
+
+⚠⚠ **CORRECTED 2026-08-04 — the split is NOT "consumer vs coach". Guideline
+3.1.3(c) draws the line at ORGANISATION vs SINGLE USER, and a solo coach is a
+single user.**
+
+The three candidate carve-outs, read against the actual guideline text:
+
+- **3.1.3(b) Multiplatform Services** — may allow access to items bought on your
+  website *"provided those items are also available as in-app purchases within the
+  app."* Parity required, so it saves nothing unless the user chooses web.
+- **3.1.3(f) Free Stand-alone Apps** — companion to a paid web tool, *"provided there
+  is no purchasing inside the app."* **Does not apply**: Persistence sells consumer
+  tiers by IAP, so it is not a free stand-alone app.
+- **3.1.3(c) Enterprise Services** — *"If your app is only sold directly by you to
+  organisations or groups for their employees or students … you may allow enterprise
+  users to access previously purchased content or subscriptions. **Consumer,
+  single-user or family sales must use in-app purchase.**"*
+
+⇒ **A solo PT buying for themselves and five clients is a single-user sale and must
+use IAP.** The compliant line therefore sits partway UP the coach ladder, where the
+buyer genuinely becomes an organisation:
+
+| Rail | Tiers | Basis |
+| --- | --- | --- |
+| **Apple IAP** (15 % + 1 %) | Premium, Premium+, Start Up Coach, Start Up Coach +, Coach | single-user sales — 3.1.3(c) requires it |
+| **Web / invoice** (~3 %) | Studio, Studio Pro, Enterprise | sold to gyms, studios, clinics, teams — organisations under 3.1.3(c) |
+
+**This is exactly why merging the coach platform with B2B is the right call (Brad's
+own suggestion): 3.1.3(c) tells us WHERE the merge line sits.** Studio and above are
+positioned and sold as organisation products — multiple trainers, a business buyer,
+invoice or web checkout — which is the same rail § 3's B2B plan already specifies
+("manual invoice — no in-app purchase, no card entry in v1").
+
+Also true, and separate: UK link-out is not permitted yet (the CMA gave Apple
+Strategic Market Status; conduct requirements expected within ~12 months; the EU has
+the External Purchase Link Entitlement at 17 %, or 15 % within 7 days of a tap). So
+there must be **no purchase CTA and no link-out for the web tiers anywhere in the
+app** — the in-app coach surface says "manage your plan on the web", nothing more.
+
+⚠ **This is my reading of guideline text, not advice, and the downside is a 3.1.1
+rejection on a product that has already been rejected twice (2.1 PassKit, 4.0 Apple
+logo). VERIFY with App Review before building** — pre-submission questions are free,
+and getting a written answer on "may a studio subscription be sold off-app while
+consumer tiers use IAP" is worth the week it costs.
+
+The arbitrage worth knowing: **web pricing can UNDERCUT and net the same.** £109.99
+via IAP nets £93.49; to net that on Stripe at ~3 % you need charge only **£96.99** —
+below Trainerize's ~£102 equivalent, same money retained.
+
+#### Competitive data — ABC Trainerize, from Brad's screenshots 2026-08-04
+
+Their ladder is **Pro 5 / 15 / 30 / 50 / 100 / 200** (confirmed by the add-on
+tiering "Pro 5, 15" and "Pro 30 to Pro 200"), against our two rungs.
+
+⚠ **Their "Advanced Nutrition Coaching" add-on IS Mealprint Phase 2/3** — 7-day meal
+plans, shopping lists, 2,400 recipes, custom recipes — at **$20/mo (Grow, Pro 5/15)
+and $45/mo (Pro 30–200)**, included only in Studio. **And it is not AI**: it is a
+recipe-database template planner. Mealprint generates against actual remaining macros
+from real product data, so we are building the strictly better thing and pricing it
+below the lesser one. Other add-ons: Business $25/mo, Video Coaching $10/mo, Custom
+Branded App $169 one-time.
+
+All-in cost for a working coach (base + Advanced Nutrition only, at $1.27/£):
+5 clients ≈ £34 · 15 ≈ £51 · 30 ≈ £102 · 50 ≈ £130 · 200 ≈ £192 · Studio Plus £195
+for 500–1,000 with every add-on included.
+
+⇒ **Enterprise should LEAVE the self-serve ladder.** At 500 clients Trainerize is
+£195 all-in; £299.99 through Apple cannot win that. § 3's B2B plan is already manual
+invoice — let anything above ~100 clients be invoiced and stop competing on that rung.
+
+#### Still open
+
+- **Coach entry £14.99 — SIGNED OFF (Brad 2026-08-04).** Pooled budget at 33 % —
+  SIGNED OFF, conditional on beating typical usage, which it does (table above).
+  Split rail — SIGNED OFF in principle, subject to the App Review verification above.
+- Remaining: the deeper annual discount (~30 %); whether Start Up Coach needs a
+  bespoke pooled percentage at 2.9×; programme-import ceiling (needs the ROADMAP § 5.3 Phase-0 eval first — it will be
+  the most expensive endpoint in the app at an estimated $0.10–0.20/import).
+- **`AI_RECIPE_DAILY_LIMIT` should become MONTHLY, not smaller.** Recipe extraction
+  is bursty-then-dormant (digitise ten recipes one evening, none for a month); a
+  daily cap either throttles the legitimate burst or permits the abuse. 60/month
+  allows the burst and takes the worst case $12.78 → $2.13. Same shape for programme
+  import. This supersedes action 3 in the § below ("12 → ~4").
+
 ### ⚠ Pricing vs AI cost — three tiers are theoretically underwater (2026-07-27)
 
 **Run `bun run scripts/ai-cost-model.ts` for the live table. Do not quote figures
@@ -1041,6 +1756,69 @@ consent copy, privacy section and governing law · the OFF re-seed backfilling
 
 ## Last session
 
+**2026-08-04 (later) — Mealprint MERGED, and the pricing model moved to a 30 % Apple
+rate.** Sixth Inspector Brad sweep returned MERGE; its four residuals were fixed in
+`0c1ce767` with revert-verified tests, and the branch landed on `main`.
+
+- **The sweep-5 monotonic latch holds.** Sweep 6 attacked it from every angle named in
+  the brief (ref-mutation during render under StrictMode, the change-bus flush ordering,
+  the `useCachedResource` user-change path) and could not break it. The cross-user latch
+  leak is real in the abstract but unreachable, because sign-out tears down the `(app)`
+  group and the ref dies with the container. **It becomes a 🔴 the day this screen is
+  made to survive a session flip.**
+- **The 🟡 was a timer, not a wipe.** The 900 ms post-confirm dismiss called `close()`
+  unconditionally, so it closed whichever sheet happened to be open when it fired —
+  and its uncancelled handle was the "jest did not exit" warning that had been masking
+  real open handles.
+- **⚠ A third test passed against its own reverted fix.** The NaN-guard test asserted
+  before the seed effect had run, and the fallback value equals the initial state, so it
+  proved nothing. Third occurrence in one branch. **Revert and watch it fail — always.**
+- **Apple Small Business was NOT approved**, so every model now assumes 30 %. That
+  reversed the earlier "hold Premium at £12.99" call (→ £14.99), tightened the budget
+  rule to `max(3.5 × typical, 33 % of net)` capped at 40 %, and exposed one tier the
+  rule cannot satisfy (Start Up Coach — spec-29 AC 2.3a, left OPEN rather than papered
+  over). Superseded STATE.md sub-sections are struck through in place, not deleted.
+- **The real finding is not a price.** `recipe_extract` on Opus is 55 % of Premium's
+  worst case on its own. A cheaper vision model is worth more than every pricing lever
+  in spec-29 combined — filed as C5 and flagged to run first.
+- **Answering "will a normal user hit the cap?": no.** ~8 AI calls/day typical against
+  ~27 allowed on Premium. But the pool is spent in **money**, not calls, and one
+  endpoint is 44× another — so the honest answer required making the pool a rolling
+  30-day window (AC 2.3b). On a daily window, a Sunday recipe-digitising batch fires
+  the fail-safe and D9's headroom condition is **not** met.
+
+**2026-08-04 — spec-26 Mealprint: the design pass, and the first time any of it
+ran.** Branch `claude/mealprint-mobile-ui-9347a0` @ `9ca501f8`, updated from `main`
+@ `dcc9726a`. Full detail in § "spec-26 Mealprint" above. The
+four things worth carrying forward:
+
+- **The stale-bundle diagnosis was right.** A fresh `expo run:ios` fixed all three
+  "misses" at once. The ungated half now demonstrably works end-to-end, including a
+  real save round trip. The entitled half has still never executed.
+- **A design pass found a defect static review didn't.** The draft stage's confirm
+  button sat below the fold in an 86 % sheet — on the step that writes to a food log.
+  Fixed structurally with a new `BottomSheet.footer` region rather than by hoping the
+  body scrolls. The device pass then found a second one nobody had seen: a section
+  sub-label clipped off the right edge of the preferences form.
+- **⚠ Two structural tests PASSED against the reverted fix on their first draft.**
+  One asserted the CTA sat in a node *named* footer (true either way); the other used
+  `/left today/`, which also matches the generic fallback copy "…you have left
+  today". Both were caught only by deliberately reverting the fix and watching. The
+  third-sweep lesson generalises: **a first-draft assertion is a hypothesis about
+  your test, not just about your code — revert and watch it fail, every time.**
+- **The brief's RevenueCat instruction was wrong for staging and I could not do it
+  anyway.** A plain DB row suffices (verified in the repo); the Supabase connector
+  only exposes prod. And the `update_subscription_limits` trigger demotes not just a
+  coach but an **admin** to `'user'` — a trap the brief half-flagged.
+- **⚠ Brad found a 🔴 by asking a UX question.** "Why is there no cancel button, only
+  a skip?" was the third route into the allergen wipe — reachable in normal use on any
+  reinstall, and invisible to the two guards written for the earlier routes. A
+  destructive default is not made safe by guarding the path you happened to notice.
+- **Brad's standing instruction on the design pass:** the design source never saw our
+  tokens, so differences from it are often our palette being RIGHT. Nothing outside
+  Mealprint was restyled — the hero ring and the rest of Fuel are untouched, and
+  should stay that way.
+
 **2026-08-03 (cont.) — PR [#351](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/351)
 follow-up: Brad's 3 decisions applied, and BOTH deferred items built rather than
 parked. The policy no longer has any claim without a mechanism behind it.**
@@ -1239,6 +2017,17 @@ checked against the code; two of the brief's own assumptions turned out wrong.**
   the app (`.env` is gitignored and `EXPO_PUBLIC_SUPABASE_*` wouldn't inline even
   after a cache-clear). Residual risk is only "does a taller ScrollView scroll",
   with byte-identical styles on a screen that already scrolled.
+
+**2026-08-03 — spec-26 Mealprint T-0.6 + T-1.5, the mobile half.** Branch
+`claude/mealprint-mobile-ui-9347a0` @ `257ec1b1`, 5 commits, PR NOT raised. All
+five gates green (476 suites / 5878 tests, ≥ 90 % coverage on every new file); NOT
+device-verified, and the simulator attempt failed on a stale bundle rather than on
+the code — details and the remaining checklist are in § "spec-26 Mealprint — MOBILE
+HALF BUILT" above. THREE Inspector Brad sweeps found 9 issues including one 🔴 where
+the wizard's Skip could silently delete a user's saved allergen list; all fixed. The
+part worth remembering: sweep 2 found a bug that sweep 1's fix created, and sweep 3
+found that sweep 2's fix had shipped with no test at all.
+
 
 **2026-08-02 — PR [#339](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/339)
 REBASED onto `main` @ `c7ad458`, given the Inspector Brad sweep it had never had,

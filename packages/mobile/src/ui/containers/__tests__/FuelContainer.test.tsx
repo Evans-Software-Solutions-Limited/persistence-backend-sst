@@ -54,6 +54,21 @@ jest.mock("@/ui/hooks/useNutritionAiGate", () => ({
     gateProps: { onUpgrade: jest.fn() },
   }),
 }));
+// Same reason as the AI gate above: `useMealprintEntry` composes
+// `useMealprintGate`, which pulls react-query. Its own four-state resolution,
+// stalled timer and first-run decision are covered in
+// `src/ui/hooks/__tests__/useMealprintHooks.test.tsx`; the assertion here is only
+// that the hook's values reach the presenter.
+const mockMealprintEntry = {
+  state: "unlocked" as const,
+  needsSetup: false,
+  onPress: jest.fn(),
+  onUpgrade: jest.fn(),
+  onRetry: jest.fn(),
+};
+jest.mock("@/ui/hooks/useMealprintEntry", () => ({
+  useMealprintEntry: () => mockMealprintEntry,
+}));
 
 const mockFetch = jest.fn(async () => ({
   ok: true,
@@ -240,6 +255,29 @@ describe("FuelContainer", () => {
     );
     await waitFor(() => expect(mockProbe.last?.hasData).toBe(true));
     expect(mockProbe.last?.aiLocked).toBe(true);
+  });
+
+  it("threads the Mealprint entry state and handlers into the presenter (spec-26)", async () => {
+    const { adapters, storage } = makeAdapters();
+    storage.cacheFuelToday(USER, localDayISO(), makeFuel());
+    render(
+      <Wrapper adapters={adapters}>
+        <FuelContainer />
+      </Wrapper>,
+    );
+    await waitFor(() => expect(mockProbe.last?.hasData).toBe(true));
+    expect(mockProbe.last?.mealprintState).toBe("unlocked");
+    expect(mockProbe.last?.mealprintNeedsSetup).toBe(false);
+
+    // Each handler must reach the presenter as the hook's own callback, not a
+    // wrapper that drops it — the card's locked and stalled bodies are the only
+    // paths to the paywall and the retry.
+    mockProbe.last?.onMealprint();
+    expect(mockMealprintEntry.onPress).toHaveBeenCalled();
+    mockProbe.last?.onMealprintUpgrade();
+    expect(mockMealprintEntry.onUpgrade).toHaveBeenCalled();
+    mockProbe.last?.onMealprintRetry();
+    expect(mockMealprintEntry.onRetry).toHaveBeenCalled();
   });
 
   it("does not fire the goal-hit haptic on cold start into an already-in-band day", async () => {

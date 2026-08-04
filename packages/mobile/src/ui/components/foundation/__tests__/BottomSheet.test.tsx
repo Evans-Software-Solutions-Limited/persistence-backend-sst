@@ -1,4 +1,5 @@
-import GorhomBottomSheet from "@gorhom/bottom-sheet";
+import GorhomBottomSheet, { BottomSheetScrollView } from "@gorhom/bottom-sheet";
+import { within } from "@testing-library/react-native";
 import { Dimensions, StyleSheet } from "react-native";
 import { renderWithTheme } from "../../../../../__tests__/test-utils";
 import { Text } from "../../Text";
@@ -161,6 +162,89 @@ describe("BottomSheet", () => {
       </BottomSheet>,
     );
     expect(getByText("just body")).toBeTruthy();
+  });
+
+  // The `footer` region exists so a commit action cannot scroll below the fold.
+  // Jest renders gorhom as plain Views, so these pin the STRUCTURE (footer is a
+  // sibling of the scroll body, not a child of it) — the thing reading the diff
+  // cannot confirm and the thing a regression would silently undo.
+  describe("footer", () => {
+    it("renders no footer region when none is supplied", () => {
+      const { queryByTestId } = renderWithTheme(
+        <BottomSheet visible onClose={() => undefined} title="Scan">
+          <Text>body</Text>
+        </BottomSheet>,
+      );
+      expect(queryByTestId("bottom-sheet-footer")).toBeNull();
+    });
+
+    it("renders the footer OUTSIDE the scrolling body", () => {
+      const { getByTestId, UNSAFE_getByType } = renderWithTheme(
+        <BottomSheet
+          visible
+          onClose={() => undefined}
+          title="Scan"
+          footer={<Text testID="the-cta">Commit</Text>}
+        >
+          <Text testID="the-body">body</Text>
+        </BottomSheet>,
+      );
+      // The CTA is inside the footer region…
+      expect(
+        within(getByTestId("bottom-sheet-footer")).getByTestId("the-cta"),
+      ).toBeTruthy();
+
+      // …and that region is NOT a descendant of the scroll view, while the
+      // children are. This is the assertion that matters: wrapping the footer in
+      // a <View testID="bottom-sheet-footer"> INSIDE the scroll view satisfies
+      // the check above but reintroduces the whole bug.
+      const scroll = UNSAFE_getByType(BottomSheetScrollView);
+      expect(within(scroll).getByTestId("the-body")).toBeTruthy();
+      expect(within(scroll).queryByTestId("bottom-sheet-footer")).toBeNull();
+      expect(within(scroll).queryByTestId("the-cta")).toBeNull();
+    });
+
+    it("moves the bottom safe-area inset from the scroll content to the footer", () => {
+      // Paying the inset in both places opens a dead band of scroll above the
+      // pinned action; paying it in neither puts the action under the home
+      // indicator.
+      const without = renderWithTheme(
+        <BottomSheet visible onClose={() => undefined}>
+          <Text>body</Text>
+        </BottomSheet>,
+      );
+      const noFooterPad = StyleSheet.flatten(
+        without.UNSAFE_getByType(BottomSheetScrollView).props
+          .contentContainerStyle,
+      ).paddingBottom as number;
+      // Whatever the harness's inset is, the footer-less body carries it.
+      const inset = noFooterPad - 40;
+      expect(inset).toBeGreaterThan(0);
+
+      const withFooter = renderWithTheme(
+        <BottomSheet
+          visible
+          onClose={() => undefined}
+          footer={<Text>Commit</Text>}
+        >
+          <Text>body</Text>
+        </BottomSheet>,
+      );
+      // Scroll content drops the inset entirely…
+      expect(
+        StyleSheet.flatten(
+          withFooter.UNSAFE_getByType(BottomSheetScrollView).props
+            .contentContainerStyle,
+        ).paddingBottom,
+      ).toBe(24);
+      // …and the footer picks it up, so the action still clears the home
+      // indicator.
+      expect(
+        StyleSheet.flatten(
+          withFooter.getByTestId("bottom-sheet-footer").props.style,
+        ).paddingBottom,
+      ).toBe(12 + inset);
+    });
   });
 
   it("keeps the sheet mounted across a parent-driven visible:true->false so it animates DOWN (PR #83 Lead 6)", () => {

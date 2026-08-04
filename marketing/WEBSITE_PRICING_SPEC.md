@@ -1,5 +1,25 @@
 # Website Pricing & Features — Source of Truth
 
+> ## ⚠ UNDER RESTRUCTURE (2026-08-04) — read `STATE.md` § "TIER + PRICING
+> ## RESTRUCTURE" before quoting anything here
+>
+> Brad reopened the tier model to settle how the adaptive suite (Loadout, Mealprint,
+> the coming programme import and AI workout generation) is priced across athlete
+> and coach personas. **Nothing is purchasable yet — no ASC products are live — so
+> every number here can still change with zero grandfathering.** That window closes
+> at launch.
+>
+> Decided: coaches get Mealprint; the suite stays Premium+-only on the consumer
+> track; AI ceilings become a TOTAL per-user cost budget (a backend fail-safe, never
+> an advertised quota); programme import lands on athlete Premium+ as well as the
+> coach tiers; `individual_trainer` displays as "Start Up Coach" (⚠ display_name
+> only — the tier_name is a RevenueCat entitlement id).
+>
+> Proposed but NOT signed off: the coach ladder below is being rebuilt to close the
+> 2 → 30 client gap, and the £14.99 entry tier is being SPLIT into a cheap
+> pure-coach tier and a suite-bearing one. Until Brad signs off, § 1 and § 2 below
+> describe the OLD model.
+
 **Written:** 2026-07-16 · **Owner:** Brad · **Purpose:** the single reference for
 pricing, tiers and feature copy on the marketing site.
 
@@ -17,18 +37,28 @@ confirmed by Brad for the w/c 17 Aug 2026 launch but not yet built. Anything
 marked **TBC** is an open decision (see §6).
 
 **Currency:** GBP (£) — the DB default (`subscription_tiers.currency = 'GBP'`).
-**Billing cadence:** every paid tier offers monthly and annual; annual ≈ 2 months
-free (10× monthly).
+**Billing cadence:** every paid tier offers monthly and annual; annual ≈ **30 % off**
+(revised 2026-08-04 from the 10×-monthly rule — see spec-29 D12).
 
 ---
 
 ## 1. Consumer plans
 
+> ⚠ **SUPERSEDED 2026-08-04 — `specs/29-subscription-restructure/` is canonical for
+> every price on this page.** Premium moved £12.99 → **£14.99** and annual moved to
+> ~30 % off (£124.99 / £249.99), because the Apple Small Business 15 % rate was NOT
+> approved and every tier is now modelled at 30 %. The coach ladder below is also
+> replaced by a 6-rung IAP ladder plus a web-only organisation rail. **Do not build the
+> site pricing page off this file until spec-29 Phase 1 lands.**
+
 | Plan | Monthly | Annual | Status |
 | --- | --- | --- | --- |
 | Free | £0 | — | LIVE |
-| Premium | £12.99 | £129.99 | LIVE |
-| Premium+ | £29.99 | £299.99 | LAUNCH |
+| Premium | £14.99 | £124.99 | NOT PURCHASABLE |
+| Premium+ | £29.99 | £249.99 | NOT PURCHASABLE |
+
+⚠ "LIVE" was wrong on every row: **no ASC products exist**, so nothing is purchasable
+on any rail. That is also the reason these prices can still change for free.
 
 ### What each plan includes — aligned to the shipped site (updated 2026-07-17)
 
@@ -45,7 +75,7 @@ free (10× monthly).
 - Streaks, PRs & core progress
 - **3 Custom Workouts** (cap)
 
-**Premium — £12.99/mo**
+**Premium — £14.99/mo**
 
 - Everything in Free, plus
 - Unlimited workouts & history
@@ -54,8 +84,18 @@ free (10× monthly).
 
 **Premium+ — £29.99/mo** — the athlete flagship (shown "Coming soon"; phase 2 ≈ Aug 2026)
 
+> ⚠ **"AI Workout Suggestions" must come OFF this card until it exists.** There is
+> no workout-generation path anywhere in the codebase: the `ai_workout` entitlement
+> is a stub returning `{allowed: true}` and `subscription_tiers.ai_workout_limit`
+> (0/6/30) is dead data, gated by nothing and rendered nowhere. The in-app paywall
+> is already clean — `getFeaturesList` prints only real features — so this site card
+> is the LAST surface still selling it, and the tier-description migration
+> (`20260725194527`) could not reach it. Brad 2026-08-04: it is a future Premium+
+> addition built on Loadout + Mealprint, and the justification for a later price
+> rise. Lead on Loadout and Mealprint, which are real.
+
 - Everything in Premium, plus the adaptive suite:
-  - **AI Workout Suggestions**
+  - ~~**AI Workout Suggestions**~~ ⚠ UNBUILT — remove from the site
   - **Loadout equipment scan** — equipment-aware programming
   - **Mealprint meal planning** — food plans & fill-your-macros ideas
   - Program import
@@ -204,7 +244,14 @@ now assert the old names never resurface).
 
 ## 6. Open decisions
 
-1. **Free taster — DECIDED (2026-07-16):** Free keeps a one-time pool of **3 AI
+> ⚠ **6.1 and § 7 below are DEAD.** The free taster was dropped on 2026-07-17 and
+> killed again on 2026-07-24 ("No free taster … the hard gate stands"), and spec-21
+> AC-9.3 plus spec-26 locked decision 4 both record it as settled. **No taster code
+> was ever written** — `AI_FREE_TASTER_LIMIT` and the `ai_taster` entitlement exist
+> in no source file. The § 7 copy also still says "AnyGym", retired 2026-07-24.
+> Kept for history only; do not build or publish either.
+
+1. ~~**Free taster — DECIDED (2026-07-16):**~~ **DEAD — see the banner above.** Free keeps a one-time pool of **3 AI
    workout generations** (scan → generate), used as the conversion hook into
    Premium+. Copy in §7. Ceiling is env-tunable (`AI_FREE_TASTER_LIMIT`, default
    3) if the number needs to change.

@@ -10,6 +10,7 @@ import type { EntitlementVerdict } from "@/domain/ports/sync.types";
 import type { HabitConfigEntry } from "@/domain/ports/api.port";
 import { habitConfigFromEntry } from "@/domain/models/habit-config";
 import { normalizePreferences } from "@/domain/models/notification-preferences";
+import type { MealprintPreferences } from "@/domain/models/mealprint";
 import { pendingPreferenceOverrides } from "@/application/notifications/queries/preferences.query";
 import { parseEntitlementDeniedResponseText } from "@/shared/errors/parseEntitlement";
 import { resolveExercisePayloadReferences } from "@/application/commands/resolveExerciseReferences";
@@ -17,6 +18,30 @@ import { captureSyncFailure } from "@/lib/sentry";
 
 /** A non-OK HTTP response from a sync POST/PUT/DELETE, carrying the status so
  * the drain can classify permanent vs transient failures. */
+/**
+ * Does this body look like a real `nutrition_preferences` row?
+ *
+ * Checks only the fields a consumer will dereference without a guard — the four
+ * arrays and the two scalars. Deliberately not a full validator: the goal is to
+ * refuse a body that would make the cache CRASH a reader, not to re-validate the
+ * server. `summarisePreferences` calls `.filter` on `dietaryPatterns`, so an
+ * `undefined` there is a thrown TypeError on the Fuel Targets screen.
+ */
+function isMealprintPreferencesEcho(
+  value: unknown,
+): value is MealprintPreferences {
+  if (typeof value !== "object" || value === null) return false;
+  const row = value as Record<string, unknown>;
+  return (
+    Array.isArray(row.dietaryPatterns) &&
+    Array.isArray(row.avoidAllergens) &&
+    Array.isArray(row.avoidFoods) &&
+    Array.isArray(row.likedFoods) &&
+    typeof row.mealsPerDay === "number" &&
+    typeof row.effortLevel === "string"
+  );
+}
+
 class SyncHttpError extends Error {
   constructor(
     readonly status: number,
@@ -880,6 +905,60 @@ export async function processSyncQueue(
         } catch (err) {
           console.warn(
             "[sync] POST /notifications/preferences succeeded but response capture failed; cache keeps its optimistic value:",
+            err,
+          );
+        }
+      }
+
+      // spec-26: a flushed `PUT /nutrition/preferences` echoes the stored row,
+      // and it is NOT byte-identical to what was sent — the handler normalises
+      // the free-text dislike/like lists on write (accents stripped, lowercased,
+      // whitespace collapsed) and stamps `updated_at`. Reset the cache to the
+      // server's row so the device stops disagreeing with the server about what
+      // the user's dislikes actually are, which matters because those strings are
+      // matched against candidate names at generation time.
+      //
+      // ⚠ Skipped when another preferences write is still QUEUED behind this one.
+      // Each write is a full replacement, so overwriting the cache with THIS
+      // response would revert the optimistic state of the later edit and the user
+      // would watch their newest change disappear until that entry flushed too.
+      // (The in-flight entry itself is excluded from `getPendingMutations`.)
+      //
+      // Non-fatal on parse failure: the PUT already succeeded, so the entry still
+      // marks completed and the cache keeps its optimistic value until the next
+      // preferences read reconciles it.
+      if (
+        entry.entityType === "nutrition_preferences" &&
+        entry.endpoint === "/nutrition/preferences" &&
+        entry.entityId
+      ) {
+        try {
+          const laterWriteQueued = storage
+            .getPendingMutations()
+            .some(
+              (pending) =>
+                pending.entityType === "nutrition_preferences" &&
+                pending.entityId === entry.entityId,
+            );
+          if (!laterWriteQueued) {
+            const body = (await response.json()) as { data?: unknown };
+            // ⚠ SHAPE-CHECKED, not just truthy. Adopting whatever came back would
+            // let a partial or unexpected body replace a good cached row with one
+            // whose arrays are undefined — and `summarisePreferences` calls
+            // `.filter` on `dietaryPatterns`, so the Fuel Targets screen would
+            // throw on the next render rather than degrading. The optimistic row
+            // is already correct, so refusing a body we cannot read costs nothing.
+            if (isMealprintPreferencesEcho(body.data)) {
+              storage.cacheMealprintPreferences(entry.entityId, body.data);
+            } else {
+              console.warn(
+                "[sync] PUT /nutrition/preferences returned an unreadable body; cache keeps its optimistic value",
+              );
+            }
+          }
+        } catch (err) {
+          console.warn(
+            "[sync] PUT /nutrition/preferences succeeded but response capture failed; cache keeps its optimistic value:",
             err,
           );
         }

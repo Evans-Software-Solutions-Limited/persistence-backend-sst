@@ -21,6 +21,12 @@ import type {
   SubstitutesResult,
   WorkoutVariationSummary,
 } from "@/domain/models/loadout";
+import type {
+  MealprintPreferences,
+  MealSuggestInput,
+  MealSuggestResult,
+  SetMealprintPreferencesInput,
+} from "@/domain/models/mealprint";
 import type { ProfilePageData } from "@/domain/models/profilePage";
 import type {
   ReferenceEntry,
@@ -1110,6 +1116,74 @@ export interface ApiPort {
     input: EstimateRecipeInput,
   ): Promise<Result<EstimatedRecipeMacros, ApiError>>;
 
+  // ─── Mealprint (spec-26 Phase 0/1) ─────────────────────────────────────────
+  //
+  // Two very different postures in one feature, and conflating them is the
+  // mistake to avoid:
+  //
+  //  • **Preferences are ordinary user data.** Neither endpoint is
+  //    entitlement-gated — the paywall sits on generation, and gating the read
+  //    would stop an expired subscriber seeing or correcting the allergen list
+  //    they entered, which is both hostile and a GDPR access problem. Cached in
+  //    SQLite and readable offline; the write queues like any other mutation.
+  //  • **`suggestMeals` is the paid, online-only surface.** Never queued: a
+  //    replayed inference after a reconnect spends a daily allowance on a
+  //    request the user abandoned, and the ceiling makes a silent retry
+  //    expensive rather than merely wasteful. Same rule as Snap and Loadout.
+
+  /**
+   * `GET /nutrition/preferences` — **404-free**. Returns
+   * `DEFAULT_MEALPRINT_PREFERENCES` with `isDefault: true` when the user has no
+   * row, so no caller needs an "empty or absent?" branch. `isDefault` is the
+   * signal the Fuel entry card uses to decide first-run wizard vs. straight in.
+   */
+  getMealprintPreferences(): Promise<Result<MealprintPreferences, ApiError>>;
+
+  /**
+   * `PUT /nutrition/preferences` — upsert. Normalises the free-text lists on
+   * write, so the response is the canonical stored form and is what should be
+   * cached (not the submitted body).
+   *
+   * **400 `INVALID_PREFERENCE` names the offending field and value**, and
+   * arrives as a flat body rather than the usual `{ error }` envelope — see
+   * {@link MealprintApiError} for why that needs its own error type. The closed
+   * vocabularies are validated at the edge, so a 400 in practice means a
+   * free-text cap was exceeded.
+   *
+   * ⚠ **The interactive editor does NOT call this today.** The preferences save is
+   * offline-capable, so it goes through the sync queue and the drain's raw `fetch`
+   * — which means a rejected PUT surfaces on the sync-failure screen as a generic
+   * banner, NOT inline with the field name. This method (and
+   * `MealprintApiError.preferenceField`) exists for the direct-write path and is
+   * exercised by its own adapter tests; the client mirrors the server's caps
+   * (`MAX_FREE_TEXT_ITEMS` / `MAX_FREE_TEXT_LENGTH`) and vocabularies, which is
+   * what actually makes a 400 unreachable from the UI. Recorded rather than
+   * quietly left: a vocabulary skew between server and app is the one way to reach
+   * it, and the device would then keep showing chips the server never stored.
+   */
+  setMealprintPreferences(
+    input: SetMealprintPreferencesInput,
+  ): Promise<Result<MealprintPreferences, MealprintApiError>>;
+
+  /**
+   * `POST /nutrition/ai/meal-suggest` — "what can I eat with what I have left
+   * today?" (STORY-003). Premium+ hard gate, **no taster**: a denied caller gets
+   * 402 (`err.code === "entitlement_denied"`), and there is no free code path to
+   * fall back to. 429 = the 20/day ceiling (`ai_daily_limit`); 422 = the model
+   * answered and every suggestion failed server-side verification; 503 = Bedrock
+   * is down and there is deliberately **no** deterministic fallback. Callers
+   * distinguish by `err.status`, matching `estimateFromPhoto`.
+   *
+   * ⚠ **An `ok` result can still carry zero suggestions**, and that is an answer
+   * rather than a failure — see `MealSuggestResult.emptyReason`. Those paths
+   * consumed no inference and no ceiling. Branch on `emptyReason` BEFORE
+   * treating an empty list as an error, or the most common early state
+   * (`no_candidates`, until the Open Food Facts re-seed lands) renders as a bug.
+   */
+  suggestMeals(
+    input: MealSuggestInput,
+  ): Promise<Result<MealSuggestResult, ApiError>>;
+
   // -- Client side of the coach↔client handshake (10-trainer-features) --
   /**
    * List the CURRENT user's trainer relationships as a client
@@ -1457,6 +1531,24 @@ export function isLoadoutErrorCode(value: unknown): value is LoadoutErrorCode {
  */
 export type LoadoutApiError = ApiError & {
   loadoutCode?: LoadoutErrorCode;
+};
+
+/**
+ * `ApiError` extended for `PUT /nutrition/preferences`, whose 400 answers a FLAT
+ * `{ code: "INVALID_PREFERENCE", field, value, message }` body rather than the
+ * usual `{ error }`.
+ *
+ * ⚠ **Without this the failure is invisible.** `mapHttpErrorToApiError` reads its
+ * message from `body.error` and falls back to `statusText`, which React Native
+ * leaves as the empty string — so a rejected save surfaced as a blank error with
+ * nothing to show the user and nothing to branch on. The same defect
+ * `requestLoadout` exists to fix.
+ *
+ * `preferenceField` is the offending field name. Undefined for transport/auth
+ * errors and for any 400 whose body carried no field.
+ */
+export type MealprintApiError = ApiError & {
+  preferenceField?: string;
 };
 
 /** Body for `PATCH …/workout-assignments/:id` (M18 Swap). */

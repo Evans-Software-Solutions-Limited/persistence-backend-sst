@@ -17,6 +17,7 @@ import { ProfileDrawerContainer } from "../../src/ui/containers/ProfileDrawerCon
 import { QuickAddSheetContainer } from "../../src/ui/containers/QuickAddSheetContainer";
 import { ScanBarcodeSheetContainer } from "../../src/ui/containers/ScanBarcodeSheetContainer";
 import { SnapAISheetContainer } from "../../src/ui/containers/SnapAISheetContainer";
+import { MealprintSuggestSheetContainer } from "../../src/ui/containers/MealprintSuggestSheetContainer";
 import { ExerciseFiltersProvider } from "../../src/ui/hooks/useExerciseFilters";
 import { useAutoRetryOnUpgrade } from "../../src/ui/hooks/useAutoRetryOnUpgrade";
 import { useForegroundSubscriptionRefresh } from "../../src/ui/hooks/useForegroundSubscriptionRefresh";
@@ -286,6 +287,15 @@ export default function AppLayout() {
           name="fuel/recipe-snap"
           options={{ headerShown: false }}
         />
+        {/*
+          fuel/preferences (spec-26 T-0.6) — Mealprint food preferences, wizard
+          and editor. Owns its own <HeaderBar> (Skip-or-Cancel / Save), so the
+          native header is off like every sibling here.
+        */}
+        <Stack.Screen
+          name="fuel/preferences"
+          options={{ headerShown: false }}
+        />
       </Stack>
       {/*
         ProfileDrawerContainer is ALWAYS mounted (sibling of the Stack) — its
@@ -398,6 +408,19 @@ export default function AppLayout() {
       <QuickAddSheetContainer />
       <ScanBarcodeSheetContainer />
       <SnapAISheetContainer />
+      {/*
+        Mealprint suggest sheet (spec-26 T-1.5) — the fourth member of the same
+        family, opened by the Fuel Mealprint card via
+        useFuelSheets().openMealprintSuggest.
+
+        ⚠ Root-mounting means ALWAYS mounted, and closing is not unmounting — so
+        every data path inside it is gated on its own `visible` flag. That is the
+        launch fan-out lesson (PR #341): seven root sheets fetching on mount
+        produced ~28 requests inside 100 ms against a 10-concurrency Lambda quota.
+
+        Spec: specs/26-mealprint-meal-planning/design.md § 4 item 3
+      */}
+      <MealprintSuggestSheetContainer />
       {/*
         AddRecipeMenuContainer — the Recipes library "+" bottom sheet
         (Recipes AI PR3). Root-mounted sibling (feedback_sheets_mount_at_root);

@@ -47,6 +47,15 @@ function render(over: Partial<FuelPresenterProps> = {}) {
     celebrate: false,
     noTarget: false,
     aiLocked: true,
+    // spec-26: `unlocked` + no setup needed is the steady state for an entitled
+    // user. The four-state matrix is covered in
+    // `src/ui/presenters/mealprint/__tests__/MealprintPresenters.test.tsx`; the
+    // assertion here is only that the card is composed into the screen.
+    mealprintState: "unlocked",
+    mealprintNeedsSetup: false,
+    onMealprint: jest.fn(),
+    onMealprintUpgrade: jest.fn(),
+    onMealprintRetry: jest.fn(),
     slots,
     waterCups: 6,
     waterGoal: 8,
@@ -66,12 +75,21 @@ function render(over: Partial<FuelPresenterProps> = {}) {
 }
 
 describe("FuelPresenter", () => {
-  it("renders the hero, quick-add row, meal log, and water tracker when data is present", () => {
+  it("renders the hero, quick-add row, Mealprint card, meal log, and water tracker when data is present", () => {
     const { getByTestId } = render();
     expect(getByTestId("fuel-macro-hero")).toBeTruthy();
     expect(getByTestId("fuel-quick-add")).toBeTruthy();
+    // spec-26 design § 4 item 1 — the Mealprint card sits below QuickAddRow.
+    expect(getByTestId("mealprint-entry-card")).toBeTruthy();
     expect(getByTestId("fuel-meal-log")).toBeTruthy();
     expect(getByTestId("fuel-water")).toBeTruthy();
+  });
+
+  it("routes a Mealprint card press to the container's handler", () => {
+    const onMealprint = jest.fn();
+    const { getByTestId } = render({ onMealprint });
+    fireEvent.press(getByTestId("mealprint-entry-card"));
+    expect(onMealprint).toHaveBeenCalled();
   });
 
   it("shows a blocking loader when loading with no cache", () => {
@@ -128,6 +146,38 @@ describe("FuelPresenter", () => {
       expect(
         getByTestId("fuel-next-day").props.accessibilityState.disabled,
       ).toBe(true);
+    });
+
+    // ⚠ Inspector Brad 🟠. The Mealprint card's concrete line says "today", but
+    // `remainingKcal`/`macros` describe the VIEWED day — so on a past day the
+    // card claimed today's budget over last week's numbers, and invited the user
+    // to act on it (the suggest sheet generates and logs against the active
+    // date, so "fill today's gap" would write food to a past day).
+    it("⚠ withholds the Mealprint budget line when NOT viewing today", () => {
+      // ⚠ Match the budget line's own phrase, not /left today/ — the GENERIC
+      // fallback is "…you have left today" and matches that too, which is how the
+      // first version of this test passed against the bug.
+      const past = render({ canGoNext: true, selectedDate: yesterdayIso });
+      expect(past.queryByText(/Let Mealprint fill the gap/)).toBeNull();
+      // ⚠ And the FALLBACK must not say "today" either — nulling the budget kills
+      // the concrete line, but the subtitle it falls through to used to claim
+      // "today" while the sheet that same tap opens says "the day you're viewing".
+      expect(past.queryByText(/on the day you're viewing/)).toBeTruthy();
+      expect(past.queryByText(/left today/)).toBeNull();
+
+      const today = render({ canGoNext: false, selectedDate: todayIso });
+      expect(today.queryByText(/Let Mealprint fill the gap/)).toBeTruthy();
+      // 260 kcal remaining, and protein 170 target − 142 eaten = 28g owing.
+      expect(
+        today.queryByText(/260 kcal and 28g protein left today/),
+      ).toBeTruthy();
+    });
+
+    it("withholds it with no target set, whatever the day", () => {
+      // `computeRemaining` returns 0 on the no-target branch, and "0 kcal left"
+      // is a worse pitch than the generic line.
+      const { queryByText } = render({ noTarget: true, canGoNext: false });
+      expect(queryByText(/Let Mealprint fill the gap/)).toBeNull();
     });
   });
 

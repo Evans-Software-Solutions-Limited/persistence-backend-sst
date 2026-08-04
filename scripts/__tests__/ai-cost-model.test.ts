@@ -2,6 +2,9 @@ import { describe, it, expect } from "vitest";
 import {
   AI_ENDPOINTS,
   APPLE_COMMISSION,
+  SMALL_BUSINESS_APPLE_COMMISSION,
+  WEB_RAIL_COMMISSION,
+  REVENUECAT_RATE,
   MARGINAL_INFRA_USD_PER_USER,
   TIERS,
   bindingCeiling,
@@ -141,8 +144,14 @@ describe("bindingCeiling", () => {
 describe("tierCost", () => {
   it("nets Apple's cut and RevenueCat's off gross revenue", () => {
     const cost = tierCost(tier("premium"));
-    // £12.99 × 1.27 × 0.85 × 0.99
-    expect(cost.netRevenueUsd).toBeCloseTo(12.99 * 1.27 * 0.85 * 0.99, 4);
+    // £12.99 × 1.27 × (1 − Apple) × (1 − RevenueCat). ⚠ Derived from the constants
+    // rather than hardcoding 0.85 — that literal was the unapproved Small Business
+    // rate, and pinning it made the default change a test failure instead of a
+    // recomputation.
+    expect(cost.netRevenueUsd).toBeCloseTo(
+      12.99 * 1.27 * (1 - APPLE_COMMISSION) * (1 - REVENUECAT_RATE),
+      4,
+    );
   });
 
   it("gives Free zero revenue, zero cost and no endpoints", () => {
@@ -276,8 +285,67 @@ describe("report", () => {
     expect(report()).toContain("Premium+ (unlaunched)");
   });
 
-  it("states the measured/estimated caveat up front", () => {
-    expect(report()).toMatch(/only the two loadout unit costs are measured/i);
+  it("states the measured/estimated caveat up front, with counts that cannot go stale", () => {
+    // ⚠ Derived, not pinned to prose. The previous version asserted "only the two
+    // loadout unit costs are measured" and went stale the moment Mealprint became
+    // the ninth endpoint — the same failure mode that moved these figures out of
+    // STATE.md and into this script in the first place.
+    const measured = AI_ENDPOINTS.filter((e) => e.profile.measured).length;
+    const derived = AI_ENDPOINTS.length - measured;
+    expect(report()).toContain(
+      `Only ${measured} of ${AI_ENDPOINTS.length} unit costs are MEASURED`,
+    );
+    expect(report()).toContain(`the other ${derived} are derived`);
+  });
+
+  it("⚠ DEFAULTS to Apple's standard 30%, not the unapproved Small Business rate", () => {
+    // Brad 2026-08-04: the Small Business application is NOT approved, and even once
+    // granted it lapses above $1M/yr. Pricing against a discount we do not hold is
+    // how a tier ships underwater, so the default is the rate we can always be sure
+    // of and the discount is upside.
+    expect(APPLE_COMMISSION).toBe(0.3);
+    expect(SMALL_BUSINESS_APPLE_COMMISSION).toBe(0.15);
+
+    const premium = TIERS.find((t) => t.name === "premium")!;
+    const assumed = tierCost(premium).netRevenueUsd;
+    const ifApproved = tierCost(
+      premium,
+      SMALL_BUSINESS_APPLE_COMMISSION,
+    ).netRevenueUsd;
+    const web = tierCost(premium, WEB_RAIL_COMMISSION).netRevenueUsd;
+
+    // The discount is upside, never a dependency.
+    expect(ifApproved).toBeGreaterThan(assumed);
+    // The web rail beats BOTH, and beats the assumed rate by the wider margin —
+    // which is the argument for the split rail at 30%.
+    expect(web).toBeGreaterThan(ifApproved);
+    expect(web - assumed).toBeGreaterThan(web - ifApproved);
+    expect(report()).toContain("Commission scenarios");
+  });
+
+  it("⚠ reaches Mealprint from premium_plus ONLY — the asymmetry with Loadout is the open pricing question", () => {
+    // `mealprint_access` is granted by migration 20260803120200 to premium_plus
+    // alone, while `loadout_access` also reaches all three trainer tiers. Modelling
+    // them as one flag would hide the number needed to settle that question, so
+    // this pins the two sets apart.
+    const reaches = (tierName: string, key: string) =>
+      endpointsForTier(TIERS.find((t) => t.name === tierName)!).some(
+        (e) => e.key === key,
+      );
+
+    expect(reaches("premium_plus", "meal_suggest")).toBe(true);
+    for (const tier of [
+      "free",
+      "premium",
+      "individual_trainer",
+      "small_business",
+      "medium_enterprise",
+    ]) {
+      expect(reaches(tier, "meal_suggest")).toBe(false);
+    }
+    // …and the contrast that makes it a question at all: a £14.99 coach tier does
+    // reach Loadout, which an athlete pays £29.99 for.
+    expect(reaches("individual_trainer", "loadout_remap")).toBe(true);
   });
 
   it("marks the measured rows in the breakdown", () => {

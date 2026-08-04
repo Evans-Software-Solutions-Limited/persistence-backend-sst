@@ -55,6 +55,7 @@ import type { Goal } from "@/domain/models/goal";
 import type { HabitCompletion } from "@/domain/models/habit-completion";
 import type { HabitConfig } from "@/domain/models/habit-config";
 import type { EntitlementVerdict, SyncStatus } from "@/domain/ports/sync.types";
+import type { MealprintPreferences } from "@/domain/models/mealprint";
 import type {
   Food,
   FuelToday,
@@ -1207,6 +1208,10 @@ export class InMemoryStorageAdapter implements StoragePort {
     string,
     { payload: NutritionTarget; syncedAt: string }
   > = new Map();
+  private mealprintPreferencesCache: Map<
+    string,
+    { payload: MealprintPreferences; syncedAt: string }
+  > = new Map();
   private recipesCache: Map<string, Map<string, Recipe>> = new Map();
   private mealsCache: Map<string, Map<string, Meal>> = new Map();
   private fuelKey(userId: string, date: string): string {
@@ -1252,6 +1257,25 @@ export class InMemoryStorageAdapter implements StoragePort {
       payload: target,
       syncedAt: new Date().toISOString(),
     });
+  }
+
+  getCachedMealprintPreferences(userId: string): MealprintPreferences | null {
+    return this.mealprintPreferencesCache.get(userId)?.payload ?? null;
+  }
+  getMealprintPreferencesAge(userId: string): string | null {
+    return this.mealprintPreferencesCache.get(userId)?.syncedAt ?? null;
+  }
+  cacheMealprintPreferences(
+    userId: string,
+    preferences: MealprintPreferences,
+  ): void {
+    this.mealprintPreferencesCache.set(userId, {
+      payload: preferences,
+      syncedAt: new Date().toISOString(),
+    });
+    // No implicit change-bus emit: this fake's writes never notify (see
+    // `subscribe`'s docstring — tests drive delivery via `emitChange`), and
+    // adding one here alone would make this the only self-notifying write.
   }
 
   getCachedRecipes(userId: string): Recipe[] {
@@ -1315,6 +1339,7 @@ export class InMemoryStorageAdapter implements StoragePort {
     this.fuelTodayCache.clear();
     this.foodsCache.clear();
     this.nutritionTargetCache.clear();
+    this.mealprintPreferencesCache.clear();
     this.recipesCache.clear();
     this.mealsCache.clear();
     this.nextId = 1;
