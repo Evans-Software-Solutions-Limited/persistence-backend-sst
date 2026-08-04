@@ -509,7 +509,6 @@ export function MealprintPreferencesPresenter({
         >
           {MEDICAL_SCOPE_COPY}
         </Text>
-
       </ScrollView>
 
       {/* ⚠ PINNED, not the last row of the scroll. This form is seven sections
@@ -570,7 +569,17 @@ function Section({
 }) {
   return (
     <View gap={10} testID={testID}>
-      <View flexDirection="row" alignItems="center" gap={7}>
+      <View
+        flexDirection="row"
+        alignItems="center"
+        gap={7}
+        // ⚠ Both halves fix a real clip found on an iPhone 17 Pro: with the row
+        // unwrapped and the sub unshrinkable, "Foods you'd rather not eat" +
+        // "Mushrooms, olives, anything you just don't like" ran off the right
+        // edge, losing the last three words. `flexWrap` lets a long sub drop to
+        // its own line; `flexShrink` on the sub lets it wrap rather than push.
+        flexWrap="wrap"
+      >
         {safety ? <IconAlert size={15} color={AMBER.base} /> : null}
         <Text
           fontFamily="$display"
@@ -585,6 +594,7 @@ function Section({
             fontFamily="$body"
             fontSize={11.5}
             color={safety ? "$gold" : "$text3"}
+            flexShrink={1}
           >
             {sub}
           </Text>

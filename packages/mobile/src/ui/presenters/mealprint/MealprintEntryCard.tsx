@@ -207,7 +207,9 @@ export function MealprintEntryCard({
         <LinearGradient
           // The wash is the feature's signature. Suppressed while pending so a
           // dead card does not advertise itself mid-round-trip.
-          colors={isPending ? ["rgba(245,197,24,0)", "rgba(245,197,24,0)"] : WASH}
+          colors={
+            isPending ? ["rgba(245,197,24,0)", "rgba(245,197,24,0)"] : WASH
+          }
           start={WASH_START}
           end={WASH_END}
           style={{ padding: 16 }}

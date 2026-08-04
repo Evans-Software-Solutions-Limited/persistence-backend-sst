@@ -1,6 +1,4 @@
-import GorhomBottomSheet, {
-  BottomSheetScrollView,
-} from "@gorhom/bottom-sheet";
+import GorhomBottomSheet, { BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import { within } from "@testing-library/react-native";
 import { Dimensions, StyleSheet } from "react-native";
 import { renderWithTheme } from "../../../../../__tests__/test-utils";

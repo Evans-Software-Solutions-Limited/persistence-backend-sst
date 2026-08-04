@@ -417,12 +417,7 @@ function RemainingPanel({ remaining }: { remaining: MealSuggestRemaining }) {
       >
         <Label>Left today</Label>
         <View flexDirection="row" alignItems="baseline" gap={4}>
-          <Text
-            fontFamily="$mono"
-            fontWeight="600"
-            fontSize={22}
-            color="$gold"
-          >
+          <Text fontFamily="$mono" fontWeight="600" fontSize={22} color="$gold">
             {round(remaining.kcal).toLocaleString()}
           </Text>
           <Text fontFamily="$mono" fontSize={11} color="$text3">
