@@ -59,7 +59,12 @@
       ⚠ `tier_name` UNCHANGED — it is a RevenueCat entitlement id — D6, design § 1.
 - [ ] **2.2 Migration: insert `start_up_coach_plus`, `coach`, `coach_pro`** with
       client caps 5 / 15 / 30, suite flags on, `is_active = false` until 2.9.
-- [ ] **2.3 Reprice** — Premium annual £109.99, Premium+ annual £249.99 — D12.
+- [ ] **2.3 Reprice** — Premium annual **£139.99**, Premium+ annual £249.99 — D12.
+      ⚠ **This line said £109.99 until 2026-08-04 and that was STALE.** `design.md`
+      § 1, `design.md` line 35 ("Premium £139.99, 31 % off £203.88") and D12 in
+      `requirements.md` — which is marked **FINAL 2026-08-04** — all say £139.99.
+      D12 was revised twice (£12.99 → £14.99 → £16.99 monthly) and this line was
+      not carried along. **The decision record wins over this file.**
 - [ ] **2.4 Grant `mealprint_access`** to every suite-bearing coach tier — D1.
       ⚠ Do NOT grant it to `individual_trainer` (the no-suite entry rung).
 - [ ] **2.5 `revenuecat/entitlements.ts`** — extend `RC_ENTITLEMENT_IDS` and insert
