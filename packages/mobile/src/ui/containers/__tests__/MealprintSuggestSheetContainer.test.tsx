@@ -1,4 +1,4 @@
-import { act, render, waitFor } from "@testing-library/react-native";
+import { act, configure, render, waitFor } from "@testing-library/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
@@ -14,6 +14,20 @@ import { useFuelSheets } from "@/state/fuel-sheets";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import type { MealprintSuggestSheetProps } from "@/ui/presenters/mealprint/MealprintSuggestSheetPresenter";
 import { MealprintSuggestSheetContainer } from "../MealprintSuggestSheetContainer";
+
+/**
+ * ⚠ RTL's `waitFor` has its OWN 1s budget and the package's 20s `testTimeout` does
+ * not govern it (see the `_testTimeout_note` in package.json). This suite mounts a
+ * container with React Query + adapters 30 times and takes ~270s on a CI runner
+ * against ~30s locally — roughly 9× slower — so a 1s wall is really ~110ms of local
+ * headroom for a mount → fetch → rerender chain. It flaked in CI on exactly that,
+ * in `openWithDraft`, on a test nothing in this branch touched.
+ *
+ * Raised HERE rather than package-wide because no other suite has needed it yet. If a
+ * second suite does, make it a package default — that is precisely the path
+ * `testTimeout` took after being patched per-file three times in one day.
+ */
+configure({ asyncUtilTimeout: 5_000 });
 
 const mockProbe: { last: MealprintSuggestSheetProps | null } = { last: null };
 jest.mock("@/ui/presenters/mealprint/MealprintSuggestSheetPresenter", () => ({
