@@ -38,3 +38,25 @@ node_modules
 food.parquet
 off-uk.jsonl
 *.parquet
+
+# ⚠ Private commercial drafts — MUST NOT be committed. This repo is PUBLIC.
+#
+# Added 2026-08-04 after an agent (me) ran `git add -A marketing` while committing a
+# pricing change and swept nine of Brad's UNTRACKED working files into two public
+# commits: a cash plan with real burn figures, a Crowdfunder assessment, non-dilutive
+# funding strategy, unapproved outreach drafts, and the waitlist/founding-offer copy
+# that Brad had explicitly HARD-EXCLUDED from the repo.
+#
+# Two rules this encodes:
+#   1. Never `git add -A <dir>` — stage named paths only.
+#   2. Commercial/financial planning and unapproved outreach live in chat, not here.
+#      Spec briefs under specs/ are fine; these are not.
+marketing/CASH_PLAN_3MONTH_CODES.md
+marketing/CROWDFUNDER_ASSESSMENT.md
+marketing/CHANNEL_GROUNDWORK.md
+marketing/EB_CHANNEL_ANGLES.md
+marketing/FUNDING_AVENUES.md
+marketing/OUTREACH_BATCH_01.md
+marketing/SHIPATON_2026_PLAN.md
+marketing/TRACTION_PLAN.md
+marketing/WAITLIST_AND_FOUNDING_OFFER.md
