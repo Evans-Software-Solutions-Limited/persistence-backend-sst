@@ -9,20 +9,21 @@ launch, and it is the only reason this is cheap to do.
 
 ## Locked decisions (Brad)
 
-| #   | Decision                                                                                                                                                                                                                                                                               |
-| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| D1  | Coaches get Mealprint. Coach tiers move on BOTH client count and features.                                                                                                                                                                                                             |
-| D2  | Loadout + Mealprint stay Premium+-only on the CONSUMER track.                                                                                                                                                                                                                          |
-| D3  | ⚠ No small daily allowance as an upgrade lever. Metering only converts if the median user hits the cap; at ~2/day typical a 3/day allowance converts nobody and spends the exclusivity.                                                                                                |
-| D4  | AI ceilings are a **backend fail-safe, never an advertised quota**, and become a TOTAL per-user cost budget.                                                                                                                                                                           |
-| D5  | Programme import lands on athlete Premium+ **and** the coach tiers — an imported programme is just a collection of workouts.                                                                                                                                                           |
-| D6  | `individual_trainer` displays as "Start Up Coach". ⚠ `display_name` only.                                                                                                                                                                                                              |
-| D7  | AI workout generation is a FUTURE Premium+ addition, built on Loadout + Mealprint. Justifies a later price rise, not a current one.                                                                                                                                                    |
-| D8  | Coach entry £14.99.                                                                                                                                                                                                                                                                    |
-| D9  | Pooled AI budget adopted, conditional on beating typical usage with headroom.                                                                                                                                                                                                          |
-| D10 | Split rail adopted: single-user tiers via IAP, organisation tiers via web.                                                                                                                                                                                                             |
-| D11 | **The top IN-APP coach tier is 30 clients** — the realistic ceiling for one PT.                                                                                                                                                                                                        |
-| D12 | ~~Premium HOLDS at £12.99/mo.~~ **REVISED 2026-08-04: Premium → £14.99/mo.** The annual discount deepens to ~30 %. Reason: the 15 % Apple Small Business rate is NOT approved, so every tier is modelled at 30 %. £12.99 at 30 % nets $11.43 — less than the tier's own worst-case AI. |
+| #   | Decision                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D1  | Coaches get Mealprint. Coach tiers move on BOTH client count and features.                                                                                                                                                                                                                                                                                                                                                    |
+| D2  | Loadout + Mealprint stay Premium+-only on the CONSUMER track.                                                                                                                                                                                                                                                                                                                                                                 |
+| D3  | ⚠ No small daily allowance as an upgrade lever. Metering only converts if the median user hits the cap; at ~2/day typical a 3/day allowance converts nobody and spends the exclusivity.                                                                                                                                                                                                                                       |
+| D4  | AI ceilings are a **backend fail-safe, never an advertised quota**, and become a TOTAL per-user cost budget.                                                                                                                                                                                                                                                                                                                  |
+| D5  | Programme import lands on athlete Premium+ **and** the coach tiers — an imported programme is just a collection of workouts.                                                                                                                                                                                                                                                                                                  |
+| D6  | `individual_trainer` displays as "Start Up Coach". ⚠ `display_name` only.                                                                                                                                                                                                                                                                                                                                                     |
+| D7  | AI workout generation is a FUTURE Premium+ addition, built on Loadout + Mealprint. Justifies a later price rise, not a current one.                                                                                                                                                                                                                                                                                           |
+| D8  | Coach entry £14.99.                                                                                                                                                                                                                                                                                                                                                                                                           |
+| D9  | Pooled AI budget adopted, conditional on beating typical usage with headroom.                                                                                                                                                                                                                                                                                                                                                 |
+| D10 | Split rail adopted: single-user tiers via IAP, organisation tiers via web.                                                                                                                                                                                                                                                                                                                                                    |
+| D11 | **The top IN-APP coach tier is 30 clients** — the realistic ceiling for one PT.                                                                                                                                                                                                                                                                                                                                               |
+| D12 | ~~Premium HOLDS at £12.99/mo.~~ ~~REVISED: → £14.99.~~ **FINAL 2026-08-04: Premium → £16.99/mo** (annual £139.99, 31 % off). Two revisions, two causes: the 15 % Apple Small Business rate is NOT approved (so model at 30 %), and VAT is deducted before commission on IAP whether or not we are registered (AC 2.2a). £16.99 is the price at which Premium clears the 3.5× usage floor without the 40 % margin cap binding. |
+| D13 | **Start Up Coach → £18.99/mo** (annual £189.99), up from £14.99. Same reason as D12: it is the price that clears the 3.5× floor. Brad accepted both on the basis that MyFitnessPal Premium offers no AI barcode/photo logging at all, so the £9.99 comparison is not like-for-like.                                                                                                                                           |
 
 ## STORY-001 — A solo coach can buy a plan that fits their book
 
@@ -60,8 +61,8 @@ so there is nothing to defer and nothing to reclaim.
 
 ⇒ **Every net figure in this spec before 2026-08-04 was ~17 % too high**, because
 `scripts/ai-cost-model.ts` had no VAT term at all. It now does (`IAP_VAT_RATE`), with a
-test pinning it. Corrected nets: Premium £14.99 → **$10.99/mo** (was $13.19); Premium+
-£29.99 → **$22.00** (was $26.39).
+test pinning it. Corrected nets at the FINAL prices: Premium £16.99 → **$12.46/mo**; Start Up Coach
+£18.99 → **$13.93**; Premium+ £29.99 → **$22.00** (was $26.39 before VAT).
 
 ⚠ **The WEB rail is the one place VAT genuinely is deferrable** — we are the merchant
 of record, and below the threshold no VAT is charged. **Therefore quote Studio /
@@ -78,45 +79,35 @@ revenue)`, hard-capped at 40 % of net.** The floor is in real usage, the cap is 
 margin. No bespoke per-tier percentages. (Revised down from 4×/50 % on 2026-08-04:
 at a 30 % Apple rate, 50 % of net was a 50 % gross margin at abuse.)
 
-**AC 2.3a** ⚠ **With VAT applied, TWO tiers are capped below the 3.5× floor, not
-one.** This AC has now been corrected twice — record of both, because each correction
-moved the conclusion:
+**AC 2.3a** ✅ **RESOLVED 2026-08-04 by repricing — every tier now clears the 3.5×
+floor with nothing capped.** Premium → £16.99 (D12), Start Up Coach → £18.99 (D13).
+Range across the ladder is 3.50× to 9.56×; see design § 2.
 
-| Revision                    | Start Up Coach | Why it was wrong                                                |
-| --------------------------- | -------------- | --------------------------------------------------------------- |
-| First draft                 | 2.9×           | Priced the LIVE `individual_trainer` endpoint set (has Loadout) |
-| After Brad's suite question | 3.3×           | Right endpoints, but no VAT in the model                        |
-| **Current (VAT applied)**   | **2.79×**      | —                                                               |
+Brad's reasoning for accepting the rise rather than the shortfall: **MyFitnessPal
+Premium does not offer AI barcode/photo logging at all**, so the £9.99 anchor I had been
+treating as a ceiling is not a like-for-like comparison. Our Premium sells an AI
+capability their Premium does not have.
 
-Current position, from `bun run scripts/ai-cost-model.ts` + design § 2:
+⚠ **Record of how this AC moved, because it was wrong twice and the pattern matters
+more than the current number:**
 
-| Tier           | £/mo  | net $/mo | × typical | capped? |
-| -------------- | ----- | -------- | --------- | ------- |
-| Premium        | 14.99 | 10.99    | **3.15×** | **yes** |
-| Start Up Coach | 14.99 | 10.99    | **2.79×** | **yes** |
-| every other    | —     | —        | 3.6–9.6×  | no      |
+| Revision                    | Start Up Coach | What was wrong                                                        |
+| --------------------------- | -------------- | --------------------------------------------------------------------- |
+| First draft                 | 2.9×           | Priced the LIVE `individual_trainer` endpoint set (which has Loadout) |
+| After Brad's suite question | 3.3×           | Right endpoints, but the model had no VAT term                        |
+| After the VAT fix           | 2.79×          | Correct — and Premium was also capped, at 3.15×                       |
+| **After repricing**         | **3.50×**      | Resolved                                                              |
 
-Prices that would clear the 3.5× floor: **Premium £16.99, Start Up Coach £18.99.**
+⚠ **C5 could have solved this without a price rise, and did not get the chance.** Off
+Opus, `recipe_extract` drops Premium's typical to $0.041/day, which clears 3.5× at
+£14.65. The rise was taken on the evidence available; if C5 lands later it becomes
+margin rather than a repricing. **Do not read D12/D13 as evidence C5 is unnecessary.**
 
-⇒ **DECISION: hold Premium at £14.99; raise Start Up Coach.** Reasoning:
-
-1. **The pooled budget already bounds the downside at 40 % of net by construction.**
-   Once AC 2.1 ships, a tier cannot lose money on AI whatever its price — so this is a
-   margin question, not a solvency one. That is a materially weaker reason to reprice
-   than the pre-budget worst cases implied.
-2. **3.15× is still real headroom.** Typical Premium use is ~8 AI calls/day against
-   ~25 the budget allows. The 3.5× floor is a self-imposed target, not a cliff.
-3. **£16.99 Premium is 70 % above MyFitnessPal's £9.99** — a competitive cost far
-   larger than the 0.35× of headroom it buys.
-4. **Start Up Coach is different**: it sits on the SAME £14.99 as consumer Premium
-   while carrying coach summaries, it is a business purchase rather than an impulse
-   one, and £9.99-consumer-app comparisons do not apply. This is where a rise costs
-   least. **£17.99–18.99.**
-
-⚠ **C5 changes this answer, which is why it runs first.** If `recipe_extract` moves off
-Opus, Premium's typical falls to $0.041/day and **£14.99 clears the 3.5× floor exactly**
-(£14.65 needed). Start Up Coach still needs £16.99. So the honest sequence is: run C5,
-then set the coach entry price — not the reverse.
+⚠ **The no-suite decision still REMOVES Loadout from `individual_trainer`**, which holds
+it today. Free — nothing is purchasable — but it is a takeaway, and
+`TIER_GRANTS_LOADOUT` in `useLoadoutGate` grants all three trainer tiers, so the client
+mirror must move with the catalogue or the gate will disagree with the server. Phase 1
+task, not a side effect.
 
 **AC 2.3b** The pool is a **rolling 30-day** window, not a daily one. A daily pool
 turns a legitimate Sunday batch — someone digitising ten recipe cards in a sitting —

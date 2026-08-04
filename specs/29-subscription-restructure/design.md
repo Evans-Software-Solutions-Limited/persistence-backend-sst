@@ -18,9 +18,9 @@ label this, or the org tiers read ~20 % cheaper than they bill.
 | tier_name             | display_name       | £/mo      | £/yr       | Clients | Suite | Rail                      |
 | --------------------- | ------------------ | --------- | ---------- | ------- | ----- | ------------------------- |
 | `free`                | Free               | 0         | —          | —       | ✗     | —                         |
-| `premium`             | Premium            | **14.99** | **124.99** | —       | ✗     | IAP                       |
+| `premium`             | Premium            | **16.99** | **139.99** | —       | ✗     | IAP                       |
 | `premium_plus`        | Premium+           | 29.99     | **249.99** | —       | ✓     | IAP                       |
-| `individual_trainer`  | **Start Up Coach** | 14.99     | 149.99     | 5       | ✗     | IAP                       |
+| `individual_trainer`  | **Start Up Coach** | **18.99** | **189.99** | 5       | ✗     | IAP                       |
 | `start_up_coach_plus` | Start Up Coach +   | 34.99     | 349.99     | 5       | ✓     | IAP                       |
 | `coach`               | Coach              | 59.99     | 599.99     | 15      | ✓     | IAP                       |
 | `coach_pro`           | Coach Pro          | 99.99     | 999.99     | 30      | ✓     | **IAP — top in-app rung** |
@@ -32,14 +32,20 @@ label this, or the org tiers read ~20 % cheaper than they bill.
 £9.99/mo but **£49.99/yr** — 58 % off — so our 16.7 % was too shallow either to compete
 or to drive prepay. Web tiers are monthly or invoiced; annual there is a contract term.
 
-⚠ **Only the two consumer rows actually apply the 30 % rule.** Premium £124.99 (30 %
-off £179.88) and Premium+ £249.99 (31 % off £359.88) are correct; every COACH annual in
-the table above is still the old 10×-monthly (16.7 %) — Start Up Coach £149.99 should
-be ~£124.99, Coach £599.99 ~£499.99, Coach Pro £999.99 ~£839.99. Left unchanged
-deliberately: a 30 % discount on the coach ladder is a bigger revenue decision than the
-consumer one (coaches churn less, so the prepay incentive buys less) and it is Brad's
-call, not a consistency fix. **Resolve before creating ASC products** — annual price
-points are painful to change once purchasable.
+⚠ **Only the two consumer rows apply the 30 % rule.** Premium £139.99 (31 % off
+£203.88) and Premium+ £249.99 (31 % off £359.88) are correct; the COACH ladder is still
+on the old 10×-monthly (16.7 %) — Coach £599.99 should be ~£499.99 and Coach Pro
+£999.99 ~£839.99 if the deeper discount is extended to it. Left unchanged deliberately:
+a 30 % discount on the coach ladder is a bigger revenue decision than the consumer one
+(coaches churn less, so the prepay incentive buys less) and it is Brad's call, not a
+consistency fix. **Resolve before creating ASC products** — annual price points are
+painful to change once purchasable.
+
+⚠ **Start Up Coach's annual HAD to move with its monthly, and this is why.** At £18.99/mo
+the old £149.99 annual would be **34 % off — deeper than the consumer discount**, by
+accident rather than decision. £189.99 keeps it on the coach ladder's 10×-monthly
+convention pending that call. If the 30 % rule is extended to coaches it becomes
+~£159.99.
 
 ⚠ `individual_trainer` keeps its `tier_name`. `RC_ENTITLEMENT_IDS`
 (`revenuecat/entitlements.ts:16-22`) **are** the tier_names and
@@ -85,30 +91,24 @@ row has `loadout_access = true` (`scripts/ai-cost-model.ts` § TIERS) — the pr
 takes it away, which is why the model script and this table legitimately disagree until
 the Phase 1 migration lands.
 
-| Tier             | net $/mo | typical $/day | budget $/day | budget $/mo | × typical | % of net |
-| ---------------- | -------- | ------------- | ------------ | ----------- | --------- | -------- |
-| Premium          | 10.99    | 0.047         | **0.147**    | 4.40        | **3.15×** | **40 %** |
-| Premium+         | 22.00    | 0.066         | 0.242        | 7.26        | 3.64×     | 33 %     |
-| Start Up Coach   | 10.99    | 0.053         | **0.147**    | 4.40        | **2.79×** | **40 %** |
-| Start Up Coach + | 25.66    | 0.072         | 0.282        | 8.47        | 3.90×     | 33 %     |
-| Coach            | 44.00    | 0.078         | 0.484        | 14.52       | 6.17×     | 33 %     |
-| Coach Pro        | 73.34    | 0.084         | 0.807        | 24.20       | 9.56×     | 33 %     |
+| Tier             | £/mo  | net $/mo | typical $/day | budget $/day | budget $/mo | × typical | % of net |
+| ---------------- | ----- | -------- | ------------- | ------------ | ----------- | --------- | -------- |
+| Premium          | 16.99 | 12.46    | 0.047         | 0.163        | 4.89        | 3.50×     | 39 %     |
+| Premium+         | 29.99 | 22.00    | 0.066         | 0.242        | 7.26        | 3.64×     | 33 %     |
+| Start Up Coach   | 18.99 | 13.93    | 0.053         | 0.184        | 5.52        | 3.50×     | 40 %     |
+| Start Up Coach + | 34.99 | 25.66    | 0.072         | 0.282        | 8.47        | 3.90×     | 33 %     |
+| Coach            | 59.99 | 44.00    | 0.078         | 0.484        | 14.52       | 6.17×     | 33 %     |
+| Coach Pro        | 99.99 | 73.34    | 0.084         | 0.807        | 24.20       | 9.56×     | 33 %     |
 
-⚠ **Recomputed AGAIN 2026-08-04 — this table now includes VAT** (`IAP_VAT_RATE`, AC
-2.2a). Apple is the merchant of record and takes its commission on the VAT-EXCLUSIVE
-price, so every net figure previously here was ~17 % too high. Regenerate with
-`bun run scripts/ai-cost-model.ts`; the script now carries the VAT term and a test pins
-the ordering.
+✅ **Every tier now clears the 3.5× floor and nothing is capped** — the two-sided rule is
+satisfied everywhere for the first time. That is the whole reason Premium moved to
+£16.99 and Start Up Coach to £18.99 (Brad, 2026-08-04); see AC 2.3a.
 
-⚠ **Two tiers are capped below the 3.5× floor** — Premium 3.15× and Start Up Coach
-2.79×, both at 40 % of net. AC 2.3a decides it: **hold Premium at £14.99** (the pooled
-budget already bounds the downside at 40 % by construction, and £16.99 would put Premium
-70 % above MyFitnessPal for 0.35× of headroom), **raise Start Up Coach to £17.99–18.99**
-(business purchase, same price as consumer Premium today, carries coach summaries).
-
-⚠ **C5 flips the Premium answer.** Move `recipe_extract` off Opus and Premium's typical
-falls to $0.041/day, which clears 3.5× at £14.65 — i.e. £14.99 becomes correct rather
-than tolerated. Run C5 before fixing the coach entry price.
+⚠ Includes VAT (`IAP_VAT_RATE`, AC 2.2a) — Apple is the merchant of record and takes its
+commission on the VAT-EXCLUSIVE price. Regenerate with
+`bun run scripts/ai-cost-model.ts`. ⚠ That script's `TIERS` still holds the LIVE
+catalogue prices (£12.99 / £14.99), not these — deliberately, until the Phase 1
+migration lands.
 
 ### 2.1 What the budget means in queries — the answer to "will a normal user hit it?"
 
@@ -116,28 +116,28 @@ than tolerated. Run C5 before fixing the coach entry price.
 
 | Tier     | typical calls/day | budget allows/day | headroom |
 | -------- | ----------------- | ----------------- | -------- |
-| Premium  | ~8                | ~24               | 3.15×    |
+| Premium  | ~8                | ~27               | 3.50×    |
 | Premium+ | ~11               | ~39               | 3.64×    |
 
 ⚠ **But call count is the wrong unit, and that is the whole risk.** The pool is spent
 in money and the endpoints differ 44×, so headroom depends entirely on _which_ calls.
-Premium's $0.147/day, spent on one endpoint only:
+Premium's $0.163/day, spent on one endpoint only:
 
 | Endpoint             | $/call | calls/day before the pool empties |
 | -------------------- | ------ | --------------------------------- |
-| Recipe photo extract | 0.0355 | **4.1** ⚠                         |
-| Snap photo estimate  | 0.0155 | 9.5                               |
-| Snap free-text       | 0.0020 | 73                                |
-| Ingredient resolve   | 0.0008 | 183                               |
+| Recipe photo extract | 0.0355 | **4.6** ⚠                         |
+| Snap photo estimate  | 0.0155 | 10.5                              |
+| Snap free-text       | 0.0020 | 82                                |
+| Ingredient resolve   | 0.0008 | 204                               |
 
 The only row remotely reachable by an honest user is the first, and it is reachable —
 someone digitising a recipe folder on a Sunday does ten in a sitting. Two things keep
 that from firing the fail-safe:
 
 1. **AC 2.3b — the pool is rolling 30-day, not daily.** Premium's real allowance is
-   $4.40/month = **124 recipe extracts**, and the Sunday burst is absorbed.
+   $4.89/month = **138 recipe extracts**, and the Sunday burst is absorbed.
 2. **C5 — the bake-off.** Move `recipe_extract` off Opus and it goes $0.0355 → ~$0.007,
-   the worst row becomes ~21/day, and this table stops having a weak entry at all.
+   the worst row becomes ~23/day, and this table stops having a weak entry at all.
 
 ⇒ The pooled budget clears AC 2.3's "beats typical usage with headroom" condition (D9)
 **on call count comfortably, and on mix only because of the rolling window.** If the
