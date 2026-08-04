@@ -54,7 +54,7 @@ marked **TBC** is an open decision (see §6).
 | Plan | Monthly | Annual | Status |
 | --- | --- | --- | --- |
 | Free | £0 | — | LIVE |
-| Premium | £14.99 | £124.99 | NOT PURCHASABLE |
+| Premium | £16.99 | £139.99 | NOT PURCHASABLE |
 | Premium+ | £29.99 | £249.99 | NOT PURCHASABLE |
 
 ⚠ "LIVE" was wrong on every row: **no ASC products exist**, so nothing is purchasable
@@ -75,7 +75,7 @@ on any rail. That is also the reason these prices can still change for free.
 - Streaks, PRs & core progress
 - **3 Custom Workouts** (cap)
 
-**Premium — £14.99/mo**
+**Premium — £16.99/mo**
 
 - Everything in Free, plus
 - Unlimited workouts & history
