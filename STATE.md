@@ -1015,6 +1015,50 @@ copy → migrate-FKs → delete dance; do not repeat that voluntarily.
    (they mirror the migrations because `/subscriptions/me` projects neither column).
 9. Seed-guard tests: `subscriptionTierSeed.test.ts`, `premiumPlusTierMigration.test.ts`.
 
+#### Premium: HOLD £12.99 monthly — the mistake is the ANNUAL, in the other direction
+
+Brad asked whether £12.99 is too cheap. **It is not, and it should not move.**
+MyFitnessPal Premium in the UK is **£9.99/mo** — so Premium is already ~30 % ABOVE
+the category price anchor most users carry, while including AI photo/free-text food
+logging that MFP puts in a higher tier. Raising it to £14.99 would put us 50 % over
+MFP on the volume tier, which is the one place price sensitivity actually bites
+(Free → paid conversion is far more elastic than Premium → Premium+).
+
+⚠ **The real gap is annual.** MFP is **£49.99/yr** (58 % off their monthly); ours is
+£129.99 (16.7 % off — the "2 months free" formula, 10× monthly, applied to every
+tier). On annual we are **2.6× MFP**. Annual prepay is the strongest lever available
+for cash flow and churn, and a 16.7 % discount is too shallow either to compete or to
+drive the switch. **Proposed: deepen the consumer annual to ~30 % off** (Premium
+≈ £109.99, Premium+ ≈ £249.99) and drop the universal 10× rule. Not MFP's 58 % —
+that is an acquisition loss-leader — but competitive.
+
+This supersedes the "£1 = every paid tier offers annual ≈ 2 months free" line in
+`marketing/WEBSITE_PRICING_SPEC.md` § intro.
+
+#### Pooled AI budget — VALIDATED at 33 % of net (Brad's condition met)
+
+Brad's condition was that the budget beat typical usage with room for heavier users.
+It does, at every tier. Typical is $0.047–0.066/day (cost-model median column):
+
+| Tier | £/mo | net $/mo | budget $/mo | budget $/day | × typical |
+| --- | --- | --- | --- | --- | --- |
+| Premium | 12.99 | 13.88 | 4.58 | $0.153 | **3.3×** |
+| Premium+ | 29.99 | 32.05 | 10.58 | $0.353 | **6.4×** |
+| Start Up Coach | 14.99 | 16.02 | 5.29 | $0.176 | **2.9×** |
+| Start Up Coach + | 34.99 | 37.39 | 12.34 | $0.411 | **6.7×** |
+| Coach | 59.99 | 64.08 | 21.15 | $0.705 | **11×** |
+| Studio (web) | 109.99 | 135.42 | 44.69 | $1.490 | **24×** |
+
+What the TIGHTEST budget buys, per day, at Start Up Coach's $0.176: 4 recipe extracts
+**or** 11 Snap photos **or** 88 free-text estimates **or** 29 coach summaries. A
+5-client coach doing four recipe extractions *and* eleven food photos every day is not
+a real usage pattern. Premium at $0.153/day: five photo-logged meals costs $0.078 —
+51 % of budget, so a heavy legitimate day still has headroom.
+
+⚠ Start Up Coach is the tightest at 2.9× because it is the cheapest tier that ALSO
+reaches the coach-summary endpoint. If any tier needs a bespoke percentage it is that
+one.
+
 #### 🔴 DO NOT EXECUTE `specs/stripe-rail-removal/` — the rail is the coach-tier plan
 
 **The Stripe rail is still live and it is now load-bearing again.** `/stripe/webhook`
@@ -1035,15 +1079,49 @@ putting everything through RevenueCat"):**
 - **Coach tiers via web/Stripe.** At £109.99/mo Apple takes £16.50/mo = **£198/yr
   per coach**; at 100 coaches, **£19,800/yr**.
 
-⚠ **The legal shape matters — this is NOT link-out.** UK link-out is not permitted
-yet (the CMA gave Apple Strategic Market Status; conduct requirements are expected
-within ~12 months. The EU already has the External Purchase Link Entitlement at
-17 %, or 15 % on web purchases within 7 days of a tap). What IS and always has been
-permitted is **selling on your own website to users who arrive independently** —
-anti-steering restricts ADVERTISING the web purchase inside the app, not web selling.
-That is how Trainerize charges $248/mo. The app simply recognises the entitlement.
-So coaches must be acquired **web-first**, which is how coaching software is sold
-anyway (marketing site, not App Store search).
+⚠⚠ **CORRECTED 2026-08-04 — the split is NOT "consumer vs coach". Guideline
+3.1.3(c) draws the line at ORGANISATION vs SINGLE USER, and a solo coach is a
+single user.**
+
+The three candidate carve-outs, read against the actual guideline text:
+
+- **3.1.3(b) Multiplatform Services** — may allow access to items bought on your
+  website *"provided those items are also available as in-app purchases within the
+  app."* Parity required, so it saves nothing unless the user chooses web.
+- **3.1.3(f) Free Stand-alone Apps** — companion to a paid web tool, *"provided there
+  is no purchasing inside the app."* **Does not apply**: Persistence sells consumer
+  tiers by IAP, so it is not a free stand-alone app.
+- **3.1.3(c) Enterprise Services** — *"If your app is only sold directly by you to
+  organisations or groups for their employees or students … you may allow enterprise
+  users to access previously purchased content or subscriptions. **Consumer,
+  single-user or family sales must use in-app purchase.**"*
+
+⇒ **A solo PT buying for themselves and five clients is a single-user sale and must
+use IAP.** The compliant line therefore sits partway UP the coach ladder, where the
+buyer genuinely becomes an organisation:
+
+| Rail | Tiers | Basis |
+| --- | --- | --- |
+| **Apple IAP** (15 % + 1 %) | Premium, Premium+, Start Up Coach, Start Up Coach +, Coach | single-user sales — 3.1.3(c) requires it |
+| **Web / invoice** (~3 %) | Studio, Studio Pro, Enterprise | sold to gyms, studios, clinics, teams — organisations under 3.1.3(c) |
+
+**This is exactly why merging the coach platform with B2B is the right call (Brad's
+own suggestion): 3.1.3(c) tells us WHERE the merge line sits.** Studio and above are
+positioned and sold as organisation products — multiple trainers, a business buyer,
+invoice or web checkout — which is the same rail § 3's B2B plan already specifies
+("manual invoice — no in-app purchase, no card entry in v1").
+
+Also true, and separate: UK link-out is not permitted yet (the CMA gave Apple
+Strategic Market Status; conduct requirements expected within ~12 months; the EU has
+the External Purchase Link Entitlement at 17 %, or 15 % within 7 days of a tap). So
+there must be **no purchase CTA and no link-out for the web tiers anywhere in the
+app** — the in-app coach surface says "manage your plan on the web", nothing more.
+
+⚠ **This is my reading of guideline text, not advice, and the downside is a 3.1.1
+rejection on a product that has already been rejected twice (2.1 PassKit, 4.0 Apple
+logo). VERIFY with App Review before building** — pre-submission questions are free,
+and getting a written answer on "may a studio subscription be sold off-app while
+consumer tiers use IAP" is worth the week it costs.
 
 The arbitrage worth knowing: **web pricing can UNDERCUT and net the same.** £109.99
 via IAP nets £93.49; to net that on Stripe at ~3 % you need charge only **£96.99** —
@@ -1072,8 +1150,11 @@ invoice — let anything above ~100 clients be invoiced and stop competing on th
 
 #### Still open
 
-- The three sign-offs: coach entry at £12.99 vs £9.99; the pooled-budget percentage;
-  programme-import ceiling (needs the ROADMAP § 5.3 Phase-0 eval first — it will be
+- **Coach entry £14.99 — SIGNED OFF (Brad 2026-08-04).** Pooled budget at 33 % —
+  SIGNED OFF, conditional on beating typical usage, which it does (table above).
+  Split rail — SIGNED OFF in principle, subject to the App Review verification above.
+- Remaining: the deeper annual discount (~30 %); whether Start Up Coach needs a
+  bespoke pooled percentage at 2.9×; programme-import ceiling (needs the ROADMAP § 5.3 Phase-0 eval first — it will be
   the most expensive endpoint in the app at an estimated $0.10–0.20/import).
 - **`AI_RECIPE_DAILY_LIMIT` should become MONTHLY, not smaller.** Recipe extraction
   is bursty-then-dormant (digitise ten recipes one evening, none for a month); a
