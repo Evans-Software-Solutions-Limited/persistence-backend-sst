@@ -371,6 +371,42 @@ export const SMALL_BUSINESS_APPLE_COMMISSION = 0.15;
 export const REVENUECAT_RATE = 0.01;
 
 /**
+ * UK VAT, and **it applies to the IAP rail whether or not we are VAT registered.**
+ *
+ * ⚠ Added 2026-08-04. Every net figure this script produced before that date was
+ * ~17 % too HIGH, because there was no VAT term at all. That is the single largest
+ * error the model has had.
+ *
+ * Apple is the **merchant of record** in the UK and EU. It collects VAT from the
+ * customer and remits it itself, and developer proceeds are commission applied to
+ * the price **net of VAT** — not to the shelf price. So a £14.99 subscription is
+ * £12.49 ex-VAT, and 70 % of that is £8.74, not 70 % of £14.99.
+ *
+ * ⚠ **Being under the £90k registration threshold does not help here.** The VAT
+ * liability on that consumer sale is Apple's, not ours, so there is nothing to defer
+ * and nothing to reclaim — it is a permanent haircut on IAP revenue that registering
+ * later neither creates nor removes. This is the opposite of the intuition that VAT
+ * is a future problem to be priced in later.
+ *
+ * ⚠ It does NOT apply to the web rail, where we are the merchant of record — see
+ * {@link WEB_RAIL_VAT_RATE}.
+ */
+export const IAP_VAT_RATE = 0.2;
+
+/**
+ * VAT on the web/Stripe rail — **0 while we are not VAT registered.**
+ *
+ * We are the merchant of record there, so below the threshold no VAT is charged and
+ * the full price is ours. That makes this the one place VAT genuinely IS deferrable.
+ *
+ * ⚠ Which is exactly why the org tiers should be quoted **"+ VAT"** from day one.
+ * Registering later then changes nothing about our net; quoting VAT-inclusive now
+ * turns registration into a silent 16.7 % revenue cut on every existing contract.
+ * B2B buyers expect ex-VAT pricing and reclaim it anyway, so the label costs nothing.
+ */
+export const WEB_RAIL_VAT_RATE = 0;
+
+/**
  * The web/Stripe rail's effective take (~2.9 % + fixed fee, rounded). ⚠ The point
  * of the split rail: this does NOT rise with revenue, so its advantage over IAP is
  * **27 points TODAY** — it no longer widens with success, because
@@ -480,9 +516,23 @@ export function tierCost(
    * its advantage over IAP is therefore widest at the default rate.
    */
   commission: number = APPLE_COMMISSION,
+  /**
+   * VAT deducted before commission. Defaults to {@link IAP_VAT_RATE} because the
+   * default rail is Apple IAP, where Apple is the merchant of record and takes its
+   * cut of the VAT-EXCLUSIVE price.
+   *
+   * ⚠ Pass {@link WEB_RAIL_VAT_RATE} alongside {@link WEB_RAIL_COMMISSION} for the
+   * Stripe rail. Passing the web commission with the default VAT understates that
+   * rail badly — VAT-inclusive pricing is the whole reason the two rails differ by
+   * more than their commission spread.
+   */
+  vatRate: number = IAP_VAT_RATE,
 ): TierCost {
   const gross = tier.priceMonthly * USD_PER_GBP;
-  const netRevenueUsd = gross * (1 - commission) * (1 - REVENUECAT_RATE);
+  // ⚠ VAT comes off FIRST, then commission. Apple's proceeds are a share of the
+  // net-of-VAT price, not of the shelf price — see `IAP_VAT_RATE`.
+  const netOfVat = gross / (1 + vatRate);
+  const netRevenueUsd = netOfVat * (1 - commission) * (1 - REVENUECAT_RATE);
 
   const perEndpoint = endpointsForTier(tier)
     // A zero ceiling means the tier cannot reach the endpoint (see
@@ -562,7 +612,8 @@ export function report(): string {
 
   lines.push("AI + infrastructure cost per subscriber");
   lines.push(
-    `Assumptions: £1 = $${USD_PER_GBP} · Apple ${pct(APPLE_COMMISSION)} · RevenueCat ${pct(REVENUECAT_RATE)} · ${DAYS}-day month`,
+    `Assumptions: £1 = $${USD_PER_GBP} · UK VAT ${pct(IAP_VAT_RATE)} (Apple is merchant of record) · Apple ${pct(APPLE_COMMISSION)} · RevenueCat ${pct(REVENUECAT_RATE)} · ${DAYS}-day month`,
+    `⚠ VAT comes off BEFORE commission and applies whether or not we are VAT registered — see IAP_VAT_RATE. The web rail is quoted at ${pct(WEB_RAIL_VAT_RATE)} VAT (we are MoR, below the threshold).`,
   );
   lines.push(
     `⚠ Only ${AI_ENDPOINTS.filter((e) => e.profile.measured).length} of ${AI_ENDPOINTS.length} unit costs are MEASURED; the other ${AI_ENDPOINTS.filter((e) => !e.profile.measured).length} are derived from declared token profiles.`,
@@ -603,12 +654,20 @@ export function report(): string {
   lines.push(
     `Commission scenarios — net $/mo per tier (Apple ${pct(APPLE_COMMISSION)} assumed, ` +
       `${pct(SMALL_BUSINESS_APPLE_COMMISSION)} if Small Business is approved, ` +
-      `web rail ${pct(WEB_RAIL_COMMISSION)} always):`,
+      `web rail ${pct(WEB_RAIL_COMMISSION)} + no VAT always):`,
   );
   for (const tier of TIERS.filter((t) => t.priceMonthly > 0)) {
     const now = tierCost(tier).netRevenueUsd;
     const past = tierCost(tier, SMALL_BUSINESS_APPLE_COMMISSION).netRevenueUsd;
-    const web = tierCost(tier, WEB_RAIL_COMMISSION).netRevenueUsd;
+    // ⚠ The web rail gets BOTH overrides. We are the merchant of record there, so
+    // below the VAT threshold no VAT is charged at all — passing the web commission
+    // with the default IAP VAT would understate the rail by 17 % and hide the real
+    // size of the split-rail advantage.
+    const web = tierCost(
+      tier,
+      WEB_RAIL_COMMISSION,
+      WEB_RAIL_VAT_RATE,
+    ).netRevenueUsd;
     lines.push(
       `  ${tier.label.padEnd(20)} IAP @30% ${usd(now).padStart(8)}` +
         ` · IAP @15% ${usd(past).padStart(8)}` +

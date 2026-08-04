@@ -1006,6 +1006,27 @@ deliberate parallel burst from an authenticated, entitled, paying account.
 > trainer tiers — the client mirror must move with the catalogue or the gate will
 > disagree with the server.
 >
+> **⚠ 4. VAT — added 2026-08-04, and it is the LARGEST error the model has had.**
+> Brad asked whether prices should be adjusted now so VAT can be baked in later. They
+> should — but the reasoning is the reverse of the question. **Apple is the merchant of
+> record on IAP: it deducts VAT before commission, whether or not we are VAT
+> registered.** Being under the £90k threshold does not help, because the liability on
+> that consumer sale is Apple's — nothing to defer, nothing to reclaim.
+> `scripts/ai-cost-model.ts` had **no VAT term at all**, so every net figure it or this
+> file ever produced was **~17 % too high**. Now fixed (`IAP_VAT_RATE`) with a test.
+> Premium £14.99 nets **$10.99**, not $13.19. Premium+ £29.99 nets **$22.00**.
+>
+> ⇒ Two tiers now sit below the 3.5× floor: **Premium 3.15×** and **Start Up Coach
+> 2.79×**. Decision in AC 2.3a: **hold Premium at £14.99** (the pooled budget bounds the
+> downside at 40 % of net by construction, and £16.99 puts it 70 % above MyFitnessPal for
+> 0.35× of headroom) and **raise Start Up Coach to £17.99–18.99** (business purchase, on
+> the same price as consumer Premium today, and it carries coach summaries).
+>
+> ⚠ **The one price change to make NOW: quote the WEB tiers "+ VAT".** That rail is the
+> only place VAT genuinely is deferrable (we are MoR, below the threshold) — and quoting
+> VAT-inclusive there turns registering later into a silent 16.7 % cut on every existing
+> contract. B2B buyers expect ex-VAT and reclaim it, so the label is free.
+>
 > **The biggest lever is not a price at all** — spec-29 **C5**. `recipe_extract` on
 > Opus is $0.0355/call: **55 % of Premium's entire worst case** and 44× the cheapest
 > endpoint. On a cheaper vision model it is ~$0.007 and most of the margin problem,

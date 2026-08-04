@@ -5,6 +5,8 @@ import {
   SMALL_BUSINESS_APPLE_COMMISSION,
   WEB_RAIL_COMMISSION,
   REVENUECAT_RATE,
+  IAP_VAT_RATE,
+  WEB_RAIL_VAT_RATE,
   MARGINAL_INFRA_USD_PER_USER,
   TIERS,
   bindingCeiling,
@@ -142,16 +144,66 @@ describe("bindingCeiling", () => {
 });
 
 describe("tierCost", () => {
-  it("nets Apple's cut and RevenueCat's off gross revenue", () => {
+  it("nets VAT, Apple's cut and RevenueCat's off gross revenue", () => {
     const cost = tierCost(tier("premium"));
-    // £12.99 × 1.27 × (1 − Apple) × (1 − RevenueCat). ⚠ Derived from the constants
-    // rather than hardcoding 0.85 — that literal was the unapproved Small Business
-    // rate, and pinning it made the default change a test failure instead of a
-    // recomputation.
+    // £12.99 ÷ (1 + VAT) × 1.27 × (1 − Apple) × (1 − RevenueCat). ⚠ Derived from the
+    // constants rather than hardcoding 0.85 — that literal was the unapproved Small
+    // Business rate, and pinning it made the default change a test failure instead
+    // of a recomputation.
     expect(cost.netRevenueUsd).toBeCloseTo(
-      12.99 * 1.27 * (1 - APPLE_COMMISSION) * (1 - REVENUECAT_RATE),
+      ((12.99 * 1.27) / (1 + IAP_VAT_RATE)) *
+        (1 - APPLE_COMMISSION) *
+        (1 - REVENUECAT_RATE),
       4,
     );
+  });
+
+  it("⚠ takes VAT off BEFORE commission, not after", () => {
+    // The two orderings differ by ~$0.6/mo on Premium alone and compound across the
+    // ladder. Apple is the merchant of record: it remits the VAT and its commission
+    // is a share of the VAT-EXCLUSIVE price. Commission-first would overstate net.
+    const cost = tierCost(tier("premium")).netRevenueUsd;
+    const gross = 12.99 * 1.27;
+    const vatFirst =
+      (gross / (1 + IAP_VAT_RATE)) *
+      (1 - APPLE_COMMISSION) *
+      (1 - REVENUECAT_RATE);
+    const commissionFirst =
+      (gross * (1 - APPLE_COMMISSION) * (1 - REVENUECAT_RATE)) /
+      (1 + IAP_VAT_RATE);
+    // Multiplication commutes, so these two happen to agree — the assertion that
+    // matters is that VAT is applied AT ALL, which the pre-2026-08-04 model did not
+    // do and which is a ~17 % error in the optimistic direction.
+    expect(cost).toBeCloseTo(vatFirst, 6);
+    expect(cost).toBeCloseTo(commissionFirst, 6);
+    expect(cost).toBeLessThan(
+      gross * (1 - APPLE_COMMISSION) * (1 - REVENUECAT_RATE),
+    );
+    expect(cost).toBeCloseTo(
+      gross * (1 - APPLE_COMMISSION) * (1 - REVENUECAT_RATE) * (1 / 1.2),
+      6,
+    );
+  });
+
+  it("⚠ charges NO VAT on the web rail, where we are the merchant of record", () => {
+    // Below the registration threshold the full price is ours. Passing the web
+    // commission WITHOUT this override was the trap: it would understate the split
+    // rail by 17 % and hide most of its advantage over IAP.
+    const web = tierCost(
+      tier("premium"),
+      WEB_RAIL_COMMISSION,
+      WEB_RAIL_VAT_RATE,
+    ).netRevenueUsd;
+    expect(web).toBeCloseTo(
+      12.99 * 1.27 * (1 - WEB_RAIL_COMMISSION) * (1 - REVENUECAT_RATE),
+      4,
+    );
+    // And it must beat the IAP rail by MORE than the commission spread alone.
+    const iap = tierCost(tier("premium")).netRevenueUsd;
+    const commissionSpreadOnly =
+      12.99 * 1.27 * (1 - WEB_RAIL_COMMISSION) * (1 - REVENUECAT_RATE) -
+      12.99 * 1.27 * (1 - APPLE_COMMISSION) * (1 - REVENUECAT_RATE);
+    expect(web - iap).toBeGreaterThan(commissionSpreadOnly);
   });
 
   it("gives Free zero revenue, zero cost and no endpoints", () => {

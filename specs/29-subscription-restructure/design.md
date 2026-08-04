@@ -8,6 +8,13 @@ RESTRUCTURE". Live cost model: `bun run scripts/ai-cost-model.ts`.
 ⚠ Prices are PROPOSED until Brad signs off. Client counts on the coach ladder mirror
 Trainerize's own 5/15/30/…/200 rungs so a coach comparing both can read them.
 
+⚠ **VAT presentation differs by rail and is not cosmetic** (AC 2.2a). IAP rows are
+**VAT-INCLUSIVE by construction** — Apple is the merchant of record, so £14.99 is the
+shelf price and £12.49 is ours before commission. Web rows must be quoted **"+ VAT"**,
+because there we are the merchant of record and registering later would otherwise cut
+16.7 % off every existing contract silently. Any pricing page showing both ladders must
+label this, or the org tiers read ~20 % cheaper than they bill.
+
 | tier_name             | display_name       | £/mo      | £/yr       | Clients | Suite | Rail                      |
 | --------------------- | ------------------ | --------- | ---------- | ------- | ----- | ------------------------- |
 | `free`                | Free               | 0         | —          | —       | ✗     | —                         |
@@ -80,46 +87,57 @@ the Phase 1 migration lands.
 
 | Tier             | net $/mo | typical $/day | budget $/day | budget $/mo | × typical | % of net |
 | ---------------- | -------- | ------------- | ------------ | ----------- | --------- | -------- |
-| Premium          | 13.19    | 0.047         | 0.163        | 4.89        | 3.5×      | 37 %     |
-| Premium+         | 26.39    | 0.066         | 0.290        | 8.71        | 4.4×      | 33 %     |
-| Start Up Coach   | 13.19    | 0.053         | **0.176**    | 5.28        | 3.3×      | **40 %** |
-| Start Up Coach + | 30.80    | 0.072         | 0.339        | 10.16       | 4.7×      | 33 %     |
-| Coach            | 52.80    | 0.078         | 0.581        | 17.42       | 7.4×      | 33 %     |
-| Coach Pro        | 88.00    | 0.084         | 0.968        | 29.05       | 11.5×     | 33 %     |
+| Premium          | 10.99    | 0.047         | **0.147**    | 4.40        | **3.15×** | **40 %** |
+| Premium+         | 22.00    | 0.066         | 0.242        | 7.26        | 3.64×     | 33 %     |
+| Start Up Coach   | 10.99    | 0.053         | **0.147**    | 4.40        | **2.79×** | **40 %** |
+| Start Up Coach + | 25.66    | 0.072         | 0.282        | 8.47        | 3.90×     | 33 %     |
+| Coach            | 44.00    | 0.078         | 0.484        | 14.52       | 6.17×     | 33 %     |
+| Coach Pro        | 73.34    | 0.084         | 0.807        | 24.20       | 9.56×     | 33 %     |
 
-Start Up Coach is still the one row where the 40 % cap binds before the 3.5× floor is
-reached — but at **3.3×, a 6 % shortfall against the floor**, not the **2.9×** an
-earlier draft of this table claimed on the wrong endpoint set. See AC 2.3a: accept it,
-do not reprice the tier for it.
+⚠ **Recomputed AGAIN 2026-08-04 — this table now includes VAT** (`IAP_VAT_RATE`, AC
+2.2a). Apple is the merchant of record and takes its commission on the VAT-EXCLUSIVE
+price, so every net figure previously here was ~17 % too high. Regenerate with
+`bun run scripts/ai-cost-model.ts`; the script now carries the VAT term and a test pins
+the ordering.
+
+⚠ **Two tiers are capped below the 3.5× floor** — Premium 3.15× and Start Up Coach
+2.79×, both at 40 % of net. AC 2.3a decides it: **hold Premium at £14.99** (the pooled
+budget already bounds the downside at 40 % by construction, and £16.99 would put Premium
+70 % above MyFitnessPal for 0.35× of headroom), **raise Start Up Coach to £17.99–18.99**
+(business purchase, same price as consumer Premium today, carries coach summaries).
+
+⚠ **C5 flips the Premium answer.** Move `recipe_extract` off Opus and Premium's typical
+falls to $0.041/day, which clears 3.5× at £14.65 — i.e. £14.99 becomes correct rather
+than tolerated. Run C5 before fixing the coach entry price.
 
 ### 2.1 What the budget means in queries — the answer to "will a normal user hit it?"
 
-**No, not at any plausible call count.** At each tier's own typical mix:
+**No, not at any plausible call count** — still true after VAT, with less margin.
 
 | Tier     | typical calls/day | budget allows/day | headroom |
 | -------- | ----------------- | ----------------- | -------- |
-| Premium  | ~8                | ~27               | 3.5×     |
-| Premium+ | ~11               | ~47               | 4.4×     |
+| Premium  | ~8                | ~24               | 3.15×    |
+| Premium+ | ~11               | ~39               | 3.64×    |
 
 ⚠ **But call count is the wrong unit, and that is the whole risk.** The pool is spent
 in money and the endpoints differ 44×, so headroom depends entirely on _which_ calls.
-Premium's $0.163/day, spent on one endpoint only:
+Premium's $0.147/day, spent on one endpoint only:
 
 | Endpoint             | $/call | calls/day before the pool empties |
 | -------------------- | ------ | --------------------------------- |
-| Recipe photo extract | 0.0355 | **4.6** ⚠                         |
-| Snap photo estimate  | 0.0155 | 10.5                              |
-| Snap free-text       | 0.0020 | 82                                |
-| Ingredient resolve   | 0.0008 | 204                               |
+| Recipe photo extract | 0.0355 | **4.1** ⚠                         |
+| Snap photo estimate  | 0.0155 | 9.5                               |
+| Snap free-text       | 0.0020 | 73                                |
+| Ingredient resolve   | 0.0008 | 183                               |
 
-The only row that is remotely reachable by an honest user is the first, and it is
-reachable — someone digitising a recipe folder on a Sunday does ten in a sitting. Two
-things keep that from firing the fail-safe:
+The only row remotely reachable by an honest user is the first, and it is reachable —
+someone digitising a recipe folder on a Sunday does ten in a sitting. Two things keep
+that from firing the fail-safe:
 
 1. **AC 2.3b — the pool is rolling 30-day, not daily.** Premium's real allowance is
-   $4.90/month = 138 recipe extracts, and the Sunday burst is absorbed.
+   $4.40/month = **124 recipe extracts**, and the Sunday burst is absorbed.
 2. **C5 — the bake-off.** Move `recipe_extract` off Opus and it goes $0.0355 → ~$0.007,
-   the worst row becomes 23/day, and this table stops having a weak entry at all.
+   the worst row becomes ~21/day, and this table stops having a weak entry at all.
 
 ⇒ The pooled budget clears AC 2.3's "beats typical usage with headroom" condition (D9)
 **on call count comfortably, and on mix only because of the rolling window.** If the

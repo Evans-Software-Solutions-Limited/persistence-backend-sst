@@ -47,31 +47,76 @@ count would let a user spend the whole budget on the dearest one.
 Defence in depth — the pool protects margin, the per-feature caps stop one runaway
 retry loop draining a whole day's budget. Deleting them makes a client bug a full AI
 outage.
+**AC 2.2a** ⚠ **VAT is deducted on the IAP rail whether or not we are VAT
+registered, and it is NOT deferrable.** Added 2026-08-04 after Brad asked whether
+prices should be adjusted now to absorb VAT later. They should — but the reasoning is
+the reverse of the question.
+
+Apple is the **merchant of record** in the UK and EU. It collects VAT from the customer
+and remits it, and developer proceeds are commission applied to the **VAT-exclusive**
+price. £14.99 is £12.49 ex-VAT; 70 % of that is £8.74, not 70 % of £14.99. Being under
+the £90k threshold does not help: the VAT liability on that consumer sale is Apple's,
+so there is nothing to defer and nothing to reclaim.
+
+⇒ **Every net figure in this spec before 2026-08-04 was ~17 % too high**, because
+`scripts/ai-cost-model.ts` had no VAT term at all. It now does (`IAP_VAT_RATE`), with a
+test pinning it. Corrected nets: Premium £14.99 → **$10.99/mo** (was $13.19); Premium+
+£29.99 → **$22.00** (was $26.39).
+
+⚠ **The WEB rail is the one place VAT genuinely is deferrable** — we are the merchant
+of record, and below the threshold no VAT is charged. **Therefore quote Studio /
+Studio Pro / Enterprise as "+ VAT" from day one.** Registering later then changes
+nothing about our net; quoting VAT-inclusive now turns registration into a silent
+16.7 % revenue cut on every existing contract. B2B buyers expect ex-VAT and reclaim it
+anyway, so the label is free. **This is the price adjustment to make now.**
+
+⚠ Verify against a real App Store Connect proceeds report once any transaction exists.
+The mechanism above is Apple's documented behaviour, not a measurement.
+
 **AC 2.3** Budget sizing rule: **`max(3.5 × typical daily cost, 33 % of net daily
 revenue)`, hard-capped at 40 % of net.** The floor is in real usage, the cap is in
 margin. No bespoke per-tier percentages. (Revised down from 4×/50 % on 2026-08-04:
 at a 30 % Apple rate, 50 % of net was a 50 % gross margin at abuse.)
 
-**AC 2.3a** The cap binds on Start Up Coach, but **only just — corrected 2026-08-04
-(Brad).** At £14.99 net $13.19, 40 % of net is $5.28/mo against 3.5 × typical of
-$5.55, so the tier gets **3.3 × typical rather than 3.5 ×**.
+**AC 2.3a** ⚠ **With VAT applied, TWO tiers are capped below the 3.5× floor, not
+one.** This AC has now been corrected twice — record of both, because each correction
+moved the conclusion:
 
-⚠ **The earlier figure of 2.9× in this AC was WRONG.** It priced Start Up Coach with
-the endpoint set of the LIVE `individual_trainer` row, which has `loadout_access =
-true`. The **proposed** Start Up Coach carries **no suite** (design § 1) — no Loadout,
-no Mealprint — so its typical is $0.053/day, not $0.061. Suite-bearing coach rungs
-start at Start Up Coach + and all clear the floor comfortably (4.7 × to 11.5 ×).
+| Revision                    | Start Up Coach | Why it was wrong                                                |
+| --------------------------- | -------------- | --------------------------------------------------------------- |
+| First draft                 | 2.9×           | Priced the LIVE `individual_trainer` endpoint set (has Loadout) |
+| After Brad's suite question | 3.3×           | Right endpoints, but no VAT in the model                        |
+| **Current (VAT applied)**   | **2.79×**      | —                                                               |
 
-⇒ A 6 % shortfall on one tier is a rounding artefact of a two-sided rule, not a
-pricing problem. **Accept 3.3 × and record it**; do not reprice the tier for this
-alone. (£17.99 remains worth considering on ordinary commercial grounds — it just
-should not be justified by this AC.)
+Current position, from `bun run scripts/ai-cost-model.ts` + design § 2:
 
-⚠ **The real consequence of the no-suite decision is elsewhere:** it REMOVES Loadout
-from `individual_trainer`, which holds it today. Free to do — nothing is purchasable —
-but it is a takeaway, and `TIER_GRANTS_LOADOUT` in `useLoadoutGate` grants all three
-trainer tiers, so the client mirror must change with the catalogue or the gate will
-disagree with the server. Track it as a Phase 1 task, not a side effect.
+| Tier           | £/mo  | net $/mo | × typical | capped? |
+| -------------- | ----- | -------- | --------- | ------- |
+| Premium        | 14.99 | 10.99    | **3.15×** | **yes** |
+| Start Up Coach | 14.99 | 10.99    | **2.79×** | **yes** |
+| every other    | —     | —        | 3.6–9.6×  | no      |
+
+Prices that would clear the 3.5× floor: **Premium £16.99, Start Up Coach £18.99.**
+
+⇒ **DECISION: hold Premium at £14.99; raise Start Up Coach.** Reasoning:
+
+1. **The pooled budget already bounds the downside at 40 % of net by construction.**
+   Once AC 2.1 ships, a tier cannot lose money on AI whatever its price — so this is a
+   margin question, not a solvency one. That is a materially weaker reason to reprice
+   than the pre-budget worst cases implied.
+2. **3.15× is still real headroom.** Typical Premium use is ~8 AI calls/day against
+   ~25 the budget allows. The 3.5× floor is a self-imposed target, not a cliff.
+3. **£16.99 Premium is 70 % above MyFitnessPal's £9.99** — a competitive cost far
+   larger than the 0.35× of headroom it buys.
+4. **Start Up Coach is different**: it sits on the SAME £14.99 as consumer Premium
+   while carrying coach summaries, it is a business purchase rather than an impulse
+   one, and £9.99-consumer-app comparisons do not apply. This is where a rise costs
+   least. **£17.99–18.99.**
+
+⚠ **C5 changes this answer, which is why it runs first.** If `recipe_extract` moves off
+Opus, Premium's typical falls to $0.041/day and **£14.99 clears the 3.5× floor exactly**
+(£14.65 needed). Start Up Coach still needs £16.99. So the honest sequence is: run C5,
+then set the coach entry price — not the reverse.
 
 **AC 2.3b** The pool is a **rolling 30-day** window, not a daily one. A daily pool
 turns a legitimate Sunday batch — someone digitising ten recipe cards in a sitting —
