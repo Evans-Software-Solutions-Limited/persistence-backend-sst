@@ -43,24 +43,49 @@ bite, the separable piece is M21: Loadout Phase 4 + Mealprint alone close the
 § Mealprint below. Phase 4 and M21 remain zero code; Mealprint's MOBILE half
 (tasks 0.6, 1.5) is also still zero code. See § Next plan of action.
 
-### spec-26 Mealprint — MOBILE HALF BUILT, PR NOT YET RAISED 2026-08-03
+### spec-26 Mealprint — DESIGN PASS DONE + PARTIALLY DEVICE-VERIFIED 2026-08-04
 
-**Branch `claude/mealprint-mobile-ui-9347a0`, HEAD `257ec1b1`** (5 commits off
-`6c77dfe3`). T-0.6 + T-1.5 are written and every gate is green: prettier,
-typecheck, lint (0 errors), build, 476 suites / 5878 tests, coverage ≥ 90 % on all
-four axes for every new file. **THREE** Inspector Brad sweeps, the third of which
-was needed because the second's fix shipped without the test that was claimed for
-it.
+**Branch `claude/mealprint-mobile-ui-9347a0`, HEAD `9ca501f8`** (updated from
+`main` @ `dcc9726a`; PR still NOT raised). T-0.6 + T-1.5 plus a design pass over
+all four surfaces. Gates: prettier, full-workspace typecheck (8/8, web's Eden
+client clean), mobile lint 0 errors, build 13/13, **476 suites / 5904 tests**.
 
-**⚠ NOT DEVICE-VERIFIED, and the attempt failed for an environmental reason worth
-knowing.** The simulator's installed dev build serves a STALE bundle: the Mealprint
-card does not render on Fuel, the "Food preferences" row does not render on Fuel
-Targets, and a deep link to `/(app)/fuel/preferences` bounces to Home — three
-misses on modules Metro demonstrably transformed (they appear in the Tamagui
-compile log). So it is the app not picking up the worktree bundle, NOT a rendering
-bug. A fresh `expo run:ios` from this worktree is the fix. Separately, the ENTITLED
-paths cannot be reached by anyone without a **RevenueCat promotional entitlement**
-for `premium_plus` — Brad's to grant, and `individual_trainer` will not do.
+⚠ `bun run lint` FAILS at the workspace level on `microservices/core/probe-steps.ts`
+— an UNTRACKED local scratch file of Brad's with 4 `no-explicit-any` errors. Not on
+the branch, so it cannot reach CI; but it will keep failing the local gate until
+Brad deletes or fixes it.
+
+#### ⚠ The stale-bundle diagnosis was RIGHT, and it is now fixed
+
+The previous session's three "misses" were all the stale bundle, exactly as
+diagnosed. A fresh `expo run:ios --device <udid>` from this checkout (build
+succeeded, `PersistenceStaging` scheme) resolved all three: the Mealprint card
+renders on Fuel, the "Food preferences" row renders on Fuel Targets, and
+`/(app)/fuel/preferences?mode=wizard` deep-links correctly instead of bouncing to
+Home. **Do not re-diagnose these as rendering bugs.**
+
+#### ⚠ The RevenueCat claim in the old brief was WRONG for staging
+
+A promotional entitlement is needed for TestFlight/production, **not** for staging.
+A direct `user_subscriptions` row is sufficient, and the code path was verified
+here: `subscriptionRepository.findForUser` (`:512`) and `assertMealprint` both
+`innerJoin subscription_tiers ON tier_name` with **no `is_active` filter**, so
+`premium_plus` resolves despite its inactive catalog row.
+
+**⚠ BLOCKED, not done.** The Supabase MCP connector only exposes
+`persistence-prod` (`opcvjypsoivaxerahbal`); staging (`nxkhlrvjxotyjulodxzk`) is not
+in its project list, so the row could not be written. Needs either the connector
+re-scoped to the staging project or Brad running the SQL. **And the write needs a
+decision first** — see the trap below.
+
+⚠ **The `update_subscription_limits` trigger will DEMOTE the account.** Verified in
+`supabase/migrations/004_subscriptions_and_roles.sql:95-121`: the role is derived
+solely from `is_trainer_tier`, and `premium_plus` ships `is_trainer_tier = false`
+(`20260725194527_premium_plus_tier.sql:62`). So the trigger sets `role = 'user'` —
+which knocks a `personal_trainer` out of coach mode **and would demote an `admin`
+too**, since the else-branch is an unconditional `'user'`. The brief flagged the
+coach case; the admin case is worse and was not flagged. Decide between switching
+the main staging account and using a second test account BEFORE writing the row.
 
 What shipped:
 
@@ -81,6 +106,80 @@ Decisions worth not re-deriving (all in docstrings):
 - Preferences are **ungated** on both endpoints and both surfaces — the paywall is
   on generation, and an expired subscriber must still be able to read and correct
   their allergen list.
+
+#### The design pass (2026-08-04) — and the one place the prototype is WEAKER
+
+There was no Mealprint design at port time. Brad supplied the **AnyMeal GTM D8
+standalone HTML** (a Claude Design bundle); its JSX unpacks from the
+`__bundler/manifest` script as `anymeal-parts/screens/sheets.jsx` + `ui/icons/iOS`
+— that is the design source of record for this feature, and it post-dates
+`~/Downloads/handoff/design-source/`, so `feedback_prototype_first_source_of_truth`
+has no older prototype to defer to.
+
+⚠ **The Claude Design connector is NOT authorised** — `mcp__claude-design__*` returns
+"run /design consent", which cannot be granted in a non-interactive session. The
+pass was done from the HTML bundle instead. Re-consent before relying on the
+connector.
+
+**Accent decision: Mealprint is GOLD, not cyan.** The design makes nutrition gold
+throughout and our Fuel tab already agrees (`MacroHeroPresenter` is "a single gold
+ring"); the card had shipped `primary`, the one cyan object on a gold screen. The
+rule now written into the docstrings: **gold marks Mealprint where it is being
+OFFERED or GENERATED; cyan stays the control accent where preferences are SET;
+amber is reserved for safety and never competes with a gold fill in the same block.**
+
+⚠ **The prototype's chip treatment was REJECTED, deliberately.** `AMChip` makes
+allergens and dietary patterns both pills, separated by hue alone (gold patterns vs
+amber allergens). That is weaker than what shipped and would breach AC 1.2 — ours
+keeps amber + square-shouldered (radius 8) + warning glyph against the patterns'
+cyan pill (radius 19), so the distinction survives greyscale. Strengthened further:
+the allergen SECTION now carries the alert glyph and an amber sub-line. **If a
+future pass "aligns the chips to the prototype", that is a regression.**
+
+#### ⚠ `BottomSheet` gained a `footer` — and it is a correctness fix, not styling
+
+The draft stage stacks items + meal picker + two conditional caveats in an 86 %
+sheet, so `Log N kcal` sat below the fold — on the step that writes to a food log,
+for reasons the user does not control. Reachability was a property of content
+length. The confirm (and the setup stage's Generate) now live in
+`BottomSheet.footer`, a flex **sibling** of `BottomSheetScrollView` inside the same
+definite-height column, with the bottom safe-area inset handed from the scroll
+content to the footer. Ports the prototype's `AMSticky`. The wizard's
+"Save and continue" got the same treatment as a plain sticky footer.
+
+⚠ **A footer nested INSIDE the scroll view satisfies a naive test and reintroduces
+the whole bug.** The first version of the structural test only proved the CTA sat in
+a node *named* footer; it passed against the reverted fix. It now asserts against
+`BottomSheetScrollView` directly. Same class of error bit the day-nav test below.
+
+#### What IS device-verified (iPhone 17 Pro, fresh build) — and what is not
+
+✅ Verified end-to-end: the Fuel entry card in **locked** state (gold wash, padlock,
+PREMIUM+ pill, gold CTA, no price literal); the "Food preferences" row; the
+preferences **editor** rendering, scrolling, selecting an allergen, showing
+`LABEL_CHECK_COPY` verbatim, saving, and the summary row updating to
+"1 allergen avoided · 4 meals a day · balanced"; `MEDICAL_SCOPE_COPY` at the foot;
+the **wizard** via deep link with its pinned CTA holding through a full scroll.
+
+❌ **NOT verified, and all of it needs the staging entitlement:** the unlocked card,
+the suggest sheet (shape toggle, steer, generating), `no_candidates`, the happy
+path, and — the one that matters most — **the draft stage scrolling to its pinned
+confirm inside gorhom**. The pinned-footer mechanism is proven on the preferences
+screen, but that is a plain `View`, not a `BottomSheet`; the gorhom container is
+unproven on device. Jest mocks gorhom, so no test can close this.
+
+❌ **The KeyboardAvoidingView fix on the wizard is NOT device-verified** — the
+simulator had a hardware keyboard connected, so the software keyboard never
+appeared. It follows `CreateExercisePresenter`'s reference implementation verbatim,
+which IS device-proven for this exact case, but that is inheritance, not proof.
+
+#### One by-design behaviour that reads like a bug
+
+The wizard's **Skip performs a real write of the DEFAULTS** (AC 1.4), so it clears a
+previously-set allergen list. Observed live: deep-linking `?mode=wizard` over saved
+preferences and pressing Skip dropped "1 allergen avoided". This is NOT the 🔴 below
+(that was an *unseeded* write) and is correct in normal use, because the wizard is
+only reached when `needsSetup`. It is only reachable this way by deep link.
 
 #### ⚠ Nine review findings across THREE Inspector Brad sweeps. One was serious.
 
@@ -214,27 +313,61 @@ by reading it — that is what caught every one of the 23.
 #### What is left before a user can reach Mealprint
 
 1. **Raise the PR** for `claude/mealprint-mobile-ui-9347a0` (not done — Brad's
-   call whether to review the six commits as-is or squash).
+   call whether to review the commits as-is or squash).
 
-   ⚠ **The PR body must say, plainly and near the top, that this code passed three
-   review sweeps and has never executed.** `🕵️ Inspector Brad (local): clean @ f1e8d7c2`
-   is true and does NOT mean the feature works — static review cannot reach the two
-   things most likely to be wrong here: whether the draft stage still scrolls to its
-   confirm button now that it carries two caveat blocks in an 86 % sheet (Jest mocks
-   gorhom, so no test in the suite can prove it), and the `no_candidates` path, which
-   is the FIRST thing a real entitled user will see until the re-seed lands. Letting
-   the sweep line carry an implication it hasn't earned is how a clean-looking PR
-   ships a feature nobody has run.
-2. **The OFF re-seed.** Brad's, operational. Until it runs, every allergen chip
+   ⚠ **The PR body must state plainly which surfaces have executed and which have
+   not.** The ungated half is now device-verified (see § What IS device-verified);
+   the **entire entitled half has still never run**. A clean sweep line is true and
+   does NOT mean the feature works — and the two things most likely to be wrong are
+   still exactly the two static review cannot reach: the draft stage's pinned confirm
+   inside gorhom, and the `no_candidates` path, which is the FIRST thing a real
+   entitled user will see until the re-seed lands.
+
+2. **Write the staging entitlement row.** ⚠ Read the trigger warning above first —
+   this demotes `personal_trainer` and `admin` to `'user'`. Blocked on connector
+   access. The write, once the account question is settled:
+
+   ```sql
+   -- 0. VERIFY (staging nxkhlrvjxotyjulodxzk — NOT prod opcvjypsoivaxerahbal)
+   select tier_name, is_active, mealprint_access, is_trainer_tier
+     from subscription_tiers where tier_name = 'premium_plus';
+   -- expect mealprint_access = true (migration 20260803120200, auto-applied on
+   -- merge to main). If false, the gate denies with no useful error.
+
+   select p.id, p.role, s.id as sub_id, s.tier_name, s.payment_status
+     from profiles p
+     left join user_subscriptions s
+       on s.user_id = p.id
+      and s.payment_status in ('active','pending','trialing','past_due')
+    where p.email = '<the staging account>';
+   -- ⚠ If a LIVE row exists, UPDATE it. A second INSERT violates
+   -- `user_subscriptions_active_unique` (one live sub per user).
+
+   -- 1a. No live row → insert
+   insert into user_subscriptions (user_id, tier_name, payment_status, starts_at)
+   values ('<uuid>', 'premium_plus', 'active', now());
+
+   -- 1b. Live row exists → switch it (records what it was, so it can be put back)
+   update user_subscriptions
+      set tier_name = 'premium_plus', payment_status = 'active',
+          metadata = coalesce(metadata,'{}'::jsonb)
+                     || jsonb_build_object('device_qa_prev_tier', tier_name)
+    where user_id = '<uuid>'
+      and payment_status in ('active','pending','trialing','past_due');
+   ```
+
+   Then verify by calling `GET /subscriptions/me` as that user and checking
+   `tierName` comes back `premium_plus`. **A row that exists but does not resolve is
+   the failure mode to look for.** Reversible: restore `tier_name` from
+   `metadata.device_qa_prev_tier` and the trigger restores the role.
+
+3. **The OFF re-seed.** Brad's, operational. Until it runs, every allergen chip
    empties the candidate pool and the sheet correctly answers
-   `emptyReason: "no_candidates"`. Build/QA the happy path with NO allergen chips.
-3. **A RevenueCat promotional entitlement** for `premium_plus` on a test account —
-   without it nothing past the locked card is reachable, on simulator or device.
-4. **A fresh `expo run:ios`** from the branch, then the device pass. Specifically
-   worth looking at: the draft stage now stacks items + meal picker + two caveat
-   blocks above the confirm button in an 86 % sheet, so "Log N kcal" may sit below
-   the fold. It scrolls (the body has an explicit height, not `flex: 1`), but Jest
-   mocks gorhom so nothing can prove that without a device.
+   `emptyReason: "no_candidates"`. QA the happy path with NO allergen chips.
+4. **Finish the device pass** on the entitled half once 2 lands — the suggest
+   sheet's six stages, and above all the draft stage's pinned confirm inside gorhom.
+   Also worth a look with a SOFTWARE keyboard (disable Connect Hardware Keyboard in
+   the simulator's I/O menu): the wizard's KeyboardAvoidingView fix is unverified.
 5. **The coach/Premium+ pricing decision** still gates T-P0.10 and therefore
    `is_active`. Unchanged by this slice.
 
@@ -1140,6 +1273,30 @@ consent copy, privacy section and governing law · the OFF re-seed backfilling
 `serving_quantity` across the ~143k seeded rows.
 
 ## Last session
+
+**2026-08-04 — spec-26 Mealprint: the design pass, and the first time any of it
+ran.** Branch `claude/mealprint-mobile-ui-9347a0` @ `9ca501f8`, updated from `main`
+@ `dcc9726a`. Full detail in § "spec-26 Mealprint — DESIGN PASS DONE" above. The
+four things worth carrying forward:
+
+- **The stale-bundle diagnosis was right.** A fresh `expo run:ios` fixed all three
+  "misses" at once. The ungated half now demonstrably works end-to-end, including a
+  real save round trip. The entitled half has still never executed.
+- **A design pass found a defect static review didn't.** The draft stage's confirm
+  button sat below the fold in an 86 % sheet — on the step that writes to a food log.
+  Fixed structurally with a new `BottomSheet.footer` region rather than by hoping the
+  body scrolls. The device pass then found a second one nobody had seen: a section
+  sub-label clipped off the right edge of the preferences form.
+- **⚠ Two structural tests PASSED against the reverted fix on their first draft.**
+  One asserted the CTA sat in a node *named* footer (true either way); the other used
+  `/left today/`, which also matches the generic fallback copy "…you have left
+  today". Both were caught only by deliberately reverting the fix and watching. The
+  third-sweep lesson generalises: **a first-draft assertion is a hypothesis about
+  your test, not just about your code — revert and watch it fail, every time.**
+- **The brief's RevenueCat instruction was wrong for staging and I could not do it
+  anyway.** A plain DB row suffices (verified in the repo); the Supabase connector
+  only exposes prod. And the `update_subscription_limits` trigger demotes not just a
+  coach but an **admin** to `'user'` — a trap the brief half-flagged.
 
 **2026-08-03 (cont.) — PR [#351](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/351)
 follow-up: Brad's 3 decisions applied, and BOTH deferred items built rather than
