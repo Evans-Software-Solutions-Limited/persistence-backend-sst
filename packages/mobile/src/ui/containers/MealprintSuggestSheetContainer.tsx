@@ -135,6 +135,15 @@ export function MealprintSuggestSheetContainer() {
     // that opens this sheet already checks both; these are the defence for state
     // that changed while the sheet was open.
     if (!online) return;
+    // ⚠ UNRESOLVED IS NOT DENIED. `computeMealprintVerdict(null)` is `false` while
+    // `/subscriptions/me` is still in flight — that is the safe default for
+    // RENDERING (see the entry card's `pending` state), but as an ACTION guard it
+    // sends an entitled Premium+ user to the paywall for a tap that landed inside
+    // the first-fetch window. `useMealprintGate` exposes `isResolved` precisely so
+    // consumers can tell the two apart, and this one was not reading it. Doing
+    // nothing for that ~one frame is the correct failure direction; selling a user
+    // a tier they already own is not.
+    if (!gate.isResolved) return;
     if (!gate.allowed) {
       gate.onUpgrade();
       return;

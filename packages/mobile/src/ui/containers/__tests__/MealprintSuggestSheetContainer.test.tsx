@@ -155,13 +155,25 @@ function makeAdapters(
   };
 }
 
-function mount(
+/**
+ * ⚠ ASYNC because it waits for the ENTITLEMENT GATE to resolve before handing the
+ * harness back, and every test needs that.
+ *
+ * `onGenerate` refuses to act while `/subscriptions/me` is in flight — unresolved
+ * is not denied, see the container — so a tap inside that window is a deliberate
+ * no-op. Locally the window closes before the first tap; on a CI runner running
+ * this suite ~9× slower it does not, and this suite flaked on two DIFFERENT tests
+ * in two consecutive runs because of it. Awaiting the query's own promise is
+ * deterministic; raising `asyncUtilTimeout` only widened the window it flaked in.
+ */
+async function mount(
   seed?: (api: InMemoryApiAdapter, storage: InMemoryStorageAdapter) => void,
 ) {
   const api = new InMemoryApiAdapter();
   api.mySubscription = subscription("premium_plus");
   const storage = new InMemoryStorageAdapter();
   seed?.(api, storage);
+  const subSpy = jest.spyOn(api, "getMySubscription");
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -172,6 +184,10 @@ function mount(
       </AdapterProvider>
     </QueryClientProvider>,
   );
+  await waitFor(() => expect(subSpy).toHaveBeenCalled());
+  await act(async () => {
+    await subSpy.mock.results[0]?.value;
+  });
   return { ...utils, api, storage, probe: () => mockProbe.last! };
 }
 
@@ -202,7 +218,7 @@ describe("MealprintSuggestSheetContainer", () => {
     // Root-mounting means always mounted, and closing is not unmounting. Seven
     // sheets fetching on mount is what produced ~28 requests inside 100 ms against
     // a 10-concurrency Lambda quota, ~16 of them 503s.
-    const { api, probe } = mount();
+    const { api, probe } = await mount();
     const prefSpy = jest.spyOn(api, "getMealprintPreferences");
     const suggestSpy = jest.spyOn(api, "suggestMeals");
     await waitFor(() => expect(probe()).not.toBeNull());
@@ -212,7 +228,7 @@ describe("MealprintSuggestSheetContainer", () => {
   });
 
   it("fetches preferences on the FIRST real open", async () => {
-    const { api, probe } = mount((a) => {
+    const { api, probe } = await mount((a) => {
       a.mealprintPreferences = {
         ...a.mealprintPreferences,
         dietaryPatterns: ["halal"],
@@ -228,7 +244,7 @@ describe("MealprintSuggestSheetContainer", () => {
 
   it("reports offline and refuses to spend a request", async () => {
     mockOnline = false;
-    const { api, probe } = mount();
+    const { api, probe } = await mount();
     const spy = jest.spyOn(api, "suggestMeals");
     open();
     await waitFor(() => expect(probe().offline).toBe(true));
@@ -237,7 +253,7 @@ describe("MealprintSuggestSheetContainer", () => {
   });
 
   it("sends the shape, the device's local day and a trimmed steer", async () => {
-    const { api, probe } = mount();
+    const { api, probe } = await mount();
     open();
     await waitFor(() => expect(probe().visible).toBe(true));
     act(() => probe().onShapeChange("snack"));
@@ -254,7 +270,7 @@ describe("MealprintSuggestSheetContainer", () => {
   });
 
   it("OMITS an all-whitespace steer rather than sending an empty string", async () => {
-    const { api, probe } = mount();
+    const { api, probe } = await mount();
     open();
     await waitFor(() => expect(probe().visible).toBe(true));
     act(() => probe().onSteerChange("   "));
@@ -266,7 +282,7 @@ describe("MealprintSuggestSheetContainer", () => {
   });
 
   it("surfaces suggestions and the label-check flag", async () => {
-    const { probe } = mount((a) => {
+    const { probe } = await mount((a) => {
       a.mealSuggestResult = {
         suggestions: [suggestion()],
         emptyReason: null,
@@ -290,14 +306,14 @@ describe("MealprintSuggestSheetContainer", () => {
   it("⚠ defaults labelCheckRequired to FALSE before any result", async () => {
     // Nothing should claim a disclaimer the server has not sent; the server always
     // sends `true`, so this only covers the pre-result stages.
-    const { probe } = mount();
+    const { probe } = await mount();
     open();
     await waitFor(() => expect(probe().visible).toBe(true));
     expect(probe().labelCheckRequired).toBe(false);
   });
 
   it("carries an empty no_candidates result as a RESULT, not an error", async () => {
-    const { probe } = mount();
+    const { probe } = await mount();
     open();
     await waitFor(() => expect(probe().visible).toBe(true));
     await act(async () => {
@@ -310,7 +326,7 @@ describe("MealprintSuggestSheetContainer", () => {
 
   it("selects a suggestion into a draft seeded with the store's slot", async () => {
     useFuelSheets.setState({ slot: "dinner" });
-    const { probe } = mount((a) => {
+    const { probe } = await mount((a) => {
       a.mealSuggestResult = {
         suggestions: [suggestion()],
         emptyReason: null,
@@ -334,7 +350,7 @@ describe("MealprintSuggestSheetContainer", () => {
   });
 
   it("ignores an out-of-range selection index", async () => {
-    const { probe } = mount((a) => {
+    const { probe } = await mount((a) => {
       a.mealSuggestResult = {
         suggestions: [suggestion()],
         emptyReason: null,
@@ -459,7 +475,7 @@ describe("MealprintSuggestSheetContainer", () => {
   });
 
   it("classifies a 429 as non-retryable and does not offer the paywall", async () => {
-    const { probe } = mount((a) => {
+    const { probe } = await mount((a) => {
       a.nextMealSuggestError = { status: 429, message: "ai_daily_limit" };
     });
     open();
@@ -473,7 +489,7 @@ describe("MealprintSuggestSheetContainer", () => {
   });
 
   it("flags a 402 as an entitlement failure and wires the paywall", async () => {
-    const { probe } = mount((a) => {
+    const { probe } = await mount((a) => {
       a.nextMealSuggestError = { status: 402, message: "denied" };
     });
     open();
@@ -490,8 +506,29 @@ describe("MealprintSuggestSheetContainer", () => {
   });
 
   it("pushes the paywall instead of requesting when the gate denies mid-session", async () => {
+    const { api } = await mount((a) => {
+      a.mySubscription = subscription("premium");
+    });
+    open();
+    await waitFor(() => expect(mockProbe.last?.visible).toBe(true));
+    await act(async () => {
+      mockProbe.last!.onGenerate();
+    });
+    expect(api.suggestMealsCalls).toHaveLength(0);
+    expect(mockPush).toHaveBeenCalledWith(
+      expect.stringContaining("tier=premium_plus"),
+    );
+  });
+
+  it("⚠ does NOT paywall an entitled user whose subscription is still in flight", async () => {
+    // `computeMealprintVerdict(null)` is false while /subscriptions/me is in
+    // flight. As a RENDER default that is right (the entry card shows `pending`);
+    // as an ACTION guard it sold a Premium+ user the tier they already own. The
+    // gate exposes `isResolved` for exactly this and onGenerate wasn't reading it.
     const api = new InMemoryApiAdapter();
-    api.mySubscription = subscription("premium");
+    api.mySubscription = subscription("premium_plus");
+    // Never settles — the first-fetch window, held open.
+    jest.spyOn(api, "getMySubscription").mockReturnValue(new Promise(() => {}));
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     });
@@ -509,10 +546,10 @@ describe("MealprintSuggestSheetContainer", () => {
     await act(async () => {
       mockProbe.last!.onGenerate();
     });
+    // No request (we genuinely do not know yet) and — the point — NO PAYWALL.
     expect(api.suggestMealsCalls).toHaveLength(0);
-    expect(mockPush).toHaveBeenCalledWith(
-      expect.stringContaining("tier=premium_plus"),
-    );
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(mockProbe.last?.stage).toBe("setup");
   });
 
   it("resets to setup when reopened, discarding the previous draft", async () => {
@@ -529,7 +566,7 @@ describe("MealprintSuggestSheetContainer", () => {
   });
 
   it("onClose clears the store only while this sheet is the visible one", async () => {
-    const { probe } = mount();
+    const { probe } = await mount();
     open();
     await waitFor(() => expect(probe().visible).toBe(true));
     act(() => probe().onClose());
@@ -544,7 +581,7 @@ describe("MealprintSuggestSheetContainer", () => {
   });
 
   it("refuses to retry while offline", async () => {
-    const { api, probe } = mount((a) => {
+    const { api, probe } = await mount((a) => {
       a.nextMealSuggestError = { status: 503, message: "ai_unavailable" };
     });
     open();
@@ -569,7 +606,7 @@ describe("MealprintSuggestSheetContainer", () => {
 
 /** Open, generate one suggestion and select it — the shared draft-stage setup. */
 async function openWithDraft() {
-  const harness = mount((a) => {
+  const harness = await mount((a) => {
     a.mealSuggestResult = {
       suggestions: [suggestion()],
       emptyReason: null,
@@ -596,7 +633,7 @@ describe("MealprintSuggestSheetContainer — the disclaimer floor (Inspector �
     // refactor that dropped the field would otherwise render real suggestions with
     // NO allergen disclaimer — the exact failure the server's unconditional `true`
     // exists to prevent. Failing safe costs a redundant caveat.
-    const { probe } = mount((a) => {
+    const { probe } = await mount((a) => {
       a.mealSuggestResult = {
         suggestions: [suggestion()],
         emptyReason: null,
@@ -617,7 +654,7 @@ describe("MealprintSuggestSheetContainer — the disclaimer floor (Inspector �
   });
 
   it("threads the server's partialEnforcementOnly through as the caveat floor", async () => {
-    const { probe } = mount((a) => {
+    const { probe } = await mount((a) => {
       a.mealSuggestResult = {
         suggestions: [suggestion()],
         emptyReason: null,
@@ -640,7 +677,7 @@ describe("MealprintSuggestSheetContainer — the disclaimer floor (Inspector �
   });
 
   it("reports serverPartialEnforcementOnly false before any result", async () => {
-    const { probe } = mount();
+    const { probe } = await mount();
     open();
     await waitFor(() => expect(probe().visible).toBe(true));
     expect(probe().serverPartialEnforcementOnly).toBe(false);
