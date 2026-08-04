@@ -141,8 +141,18 @@ export type MealprintPreferencesProps = {
   readonly onEffortLevelChange: (value: EffortLevel) => void;
 
   readonly onSave: () => void;
-  /** Wizard: "Skip for now" (saves the defaults). Editor: "Cancel". */
+  /** Wizard first run: "Skip for now" (saves the defaults). Otherwise "Cancel". */
   readonly onDismiss: () => void;
+  /**
+   * Text for the dismiss action.
+   *
+   * ⚠ Container-supplied rather than derived from {@link mode}, because it has to
+   * follow what dismiss actually DOES. The wizard writes the defaults only on a
+   * genuine first run; when the user already has saved choices it just leaves, and
+   * labelling that "Skip" would promise to discard answers it in fact keeps. See
+   * `MealprintPreferencesContainer`'s `hasSavedChoices`.
+   */
+  readonly dismissLabel?: string;
   readonly testID?: string;
 };
 
@@ -173,10 +183,12 @@ export function MealprintPreferencesPresenter({
   onEffortLevelChange,
   onSave,
   onDismiss,
+  dismissLabel,
   testID = "mealprint-preferences-screen",
 }: MealprintPreferencesProps) {
   const insets = useSafeAreaInsets();
   const isWizard = mode === "wizard";
+  const dismissText = dismissLabel ?? (isWizard ? "Skip" : "Cancel");
   const partialCaveat = partialEnforcementCopy(dietaryPatterns);
   const hasAllergenChip = avoidAllergens.length > 0;
 
@@ -278,10 +290,12 @@ export function MealprintPreferencesPresenter({
             disabled={isSaving}
             testID="mealprint-preferences-dismiss"
             accessibilityRole="button"
-            accessibilityLabel={isWizard ? "Skip for now" : "Cancel"}
+            accessibilityLabel={
+              dismissText === "Skip" ? "Skip for now" : dismissText
+            }
           >
             <Text fontFamily="$body" fontSize={14} color="$text3">
-              {isWizard ? "Skip" : "Cancel"}
+              {dismissText}
             </Text>
           </Pressable>
         }

@@ -138,6 +138,16 @@ export type MealprintSuggestSheetProps = {
    * copy name what is actually enforced.
    */
   readonly serverPartialEnforcementOnly: boolean;
+  /**
+   * False when Fuel is showing a day other than today.
+   *
+   * ⚠ The sheet generates AND LOGS against the VIEWED day (the container reads
+   * `useFuelSheets().date`), so saying "today" is a false claim about which day the
+   * numbers describe and which day the Log button writes to. Same defect the entry
+   * card's budget line had; this is the surface that card leads to, and the one
+   * where the write happens.
+   */
+  readonly isToday: boolean;
   readonly onSelectSuggestion: (index: number) => void;
 
   readonly draft: MealprintDraft | null;
@@ -312,6 +322,7 @@ function SetupStage({
   onShapeChange,
   steer,
   onSteerChange,
+  isToday,
 }: MealprintSuggestSheetProps) {
   return (
     <View gap={18}>
@@ -363,8 +374,9 @@ function SetupStage({
       </View>
 
       <Text fontFamily="$body" fontSize={12} lineHeight={17} color="$text3">
-        Mealprint works from the calories and macros you have left today, and
-        from your food preferences.
+        {isToday
+          ? "Mealprint works from the calories and macros you have left today, and from your food preferences."
+          : "Mealprint works from the calories and macros left on the day you're viewing, and from your food preferences. Anything you log goes to that day."}
       </Text>
     </View>
   );
@@ -409,7 +421,13 @@ function GeneratingStage() {
 }
 
 /** The remaining-budget readout — kcal as the headline, macros as a three-up row. */
-function RemainingPanel({ remaining }: { remaining: MealSuggestRemaining }) {
+function RemainingPanel({
+  remaining,
+  isToday,
+}: {
+  remaining: MealSuggestRemaining;
+  isToday: boolean;
+}) {
   return (
     <Card pad={14} radius={14} accent="gold" testID="mealprint-remaining">
       <View
@@ -418,7 +436,7 @@ function RemainingPanel({ remaining }: { remaining: MealSuggestRemaining }) {
         justifyContent="space-between"
         marginBottom={10}
       >
-        <Label>Left today</Label>
+        <Label>{isToday ? "Left today" : "Left that day"}</Label>
         <View flexDirection="row" alignItems="baseline" gap={4}>
           <Text fontFamily="$mono" fontWeight="600" fontSize={22} color="$gold">
             {round(remaining.kcal).toLocaleString("en-US")}
@@ -549,6 +567,7 @@ function ResultsStage(props: MealprintSuggestSheetProps) {
     serverPartialEnforcementOnly,
     onSelectSuggestion,
     onRetry,
+    isToday,
   } = props;
 
   if (emptyReason !== null) {
@@ -594,7 +613,9 @@ function ResultsStage(props: MealprintSuggestSheetProps) {
 
   return (
     <View gap={14}>
-      {remaining ? <RemainingPanel remaining={remaining} /> : null}
+      {remaining ? (
+        <RemainingPanel remaining={remaining} isToday={isToday} />
+      ) : null}
 
       {suggestions.map((suggestion, index) => (
         <SuggestionCard

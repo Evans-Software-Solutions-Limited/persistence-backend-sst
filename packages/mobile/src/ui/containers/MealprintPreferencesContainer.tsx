@@ -312,20 +312,48 @@ export function MealprintPreferencesContainer({
     effortLevel,
   ]);
 
+  /**
+   * ⚠ TRUE when the server row this form was seeded from holds REAL choices.
+   *
+   * The wizard's dismiss is a WRITE of the defaults (AC 1.4) — that write is what
+   * records "I have been asked and declined", so the card stops offering the wizard.
+   * But it is only a safe write when there is nothing to lose, and the THIRD route
+   * into an allergen-wipe runs straight through it:
+   *
+   *   `useMealprintEntry` reads preferences CACHE-ONLY (deliberately — an eager
+   *   fetch on the Fuel tab was part of the launch fan-out), so on a reinstall,
+   *   a new device, or after a sign-out/in, `data === null` and the card reports
+   *   `needsSetup`. It therefore opens the WIZARD. This container then fetches for
+   *   itself, succeeds, and seeds the form with the user's real allergen list — so
+   *   `isUnseeded` is false and the old code fell through to
+   *   `commit(DEFAULT_MEALPRINT_PREFERENCES)`. One tap on Skip, allergens gone.
+   *
+   * `isUnseeded` cannot catch this: the fetch SUCCEEDED. The earlier 🔴 was about a
+   * FAILED read; this is the same wipe via a successful one. So the guard here is
+   * not "did we read the row" but "does the row contain anything worth keeping".
+   */
+  const hasSavedChoices = data !== null && data.isDefault !== true;
+
   const onDismiss = useCallback(() => {
     // ⚠ An unseeded form leaves WITHOUT writing, in either mode. This is the Back
     // action on the load-failure panel, and turning it into a save-the-defaults
     // write there is precisely the allergen-wipe `isUnseeded` exists to prevent.
     // (`commit` would refuse anyway, but it would refuse by setting an error the
     // panel does not render — so the button would silently do nothing.)
-    if (mode === "editor" || isUnseeded) {
+    //
+    // ⚠ `hasSavedChoices` is the third case, and it leaves WITHOUT writing too.
+    // Skipping means "don't make me configure this now" — never "erase what I
+    // already told you". Not writing is safe: real choices mean `isDefault` is
+    // false, so `needsSetup` is already false and the card will not re-offer the
+    // wizard once this screen's fetch has warmed the cache.
+    if (mode === "editor" || isUnseeded || hasSavedChoices) {
       router.back();
       return;
     }
-    // Wizard skip = save the defaults (AC 1.4). See the docstring for why this is
-    // a write rather than a plain `router.back()`.
+    // Genuine first run — nothing saved, so save the defaults (AC 1.4). See the
+    // docstring for why this is a write rather than a plain `router.back()`.
     void commit(DEFAULT_MEALPRINT_PREFERENCES);
-  }, [mode, isUnseeded, commit]);
+  }, [mode, isUnseeded, hasSavedChoices, commit]);
 
   const onRetryLoad = useCallback(() => {
     void preferences.refresh();
@@ -345,6 +373,12 @@ export function MealprintPreferencesContainer({
       // the write is queued — so it must not tear the form down under them. What is
       // NOT safe is a form that never saw the server row. See `isUnseeded`.
       loadFailed={isUnseeded && preferences.error !== null}
+      // ⚠ The label has to follow the BEHAVIOUR, not the mode. When there are saved
+      // choices the wizard's dismiss no longer writes the defaults, so calling it
+      // "Skip" would describe an action it no longer performs — and "skip setup" is
+      // exactly what makes a user expect their existing answers to be discarded.
+      // See `hasSavedChoices`.
+      dismissLabel={mode === "editor" || hasSavedChoices ? "Cancel" : "Skip"}
       onRetryLoad={onRetryLoad}
       dietaryPatterns={dietaryPatterns}
       onTogglePattern={onTogglePattern}

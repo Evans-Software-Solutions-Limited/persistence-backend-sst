@@ -418,10 +418,13 @@ export function FuelPresenter(props: FuelPresenterProps) {
   // the active date, so "fill today's gap" would write food to a past day. The
   // generic subtitle makes no day claim, so it is the safe fallback.
   //
-  // `canGoNext` is false exactly when the viewed day is today (see its prop
-  // docstring) — same comparison the container already makes, so the two cannot
-  // drift.
-  const viewingToday = !canGoNext;
+  // ⚠ Compared DIRECTLY, not derived from `canGoNext`. An earlier version used
+  // `!canGoNext`, which is equivalent today but only by coincidence: that prop's
+  // contract is "disables the forward chevron". spec-26 is meal PLANNING, so the
+  // day forward-nav is likely to open up — at which point `canGoNext` goes true on
+  // today (silently hiding the line on the one day it is correct) and false on a
+  // future date (putting the false claim straight back).
+  const viewingToday = selectedDate === localDayISO();
 
   const header = (
     <>

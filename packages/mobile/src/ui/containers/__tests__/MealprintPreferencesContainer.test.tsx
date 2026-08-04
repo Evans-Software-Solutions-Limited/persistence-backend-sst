@@ -500,6 +500,94 @@ describe("MealprintPreferencesContainer — caps and the signed-out path", () =>
   });
 });
 
+describe("MealprintPreferencesContainer — Skip must not erase saved choices (Brad, device)", () => {
+  /**
+   * ⚠ The THIRD route into an allergen wipe, and the one the `isUnseeded` guard
+   * cannot see, because here the read SUCCEEDS.
+   *
+   * `useMealprintEntry` reads preferences CACHE-ONLY, so on a reinstall / new
+   * device / sign-out-in, `data === null` → the Fuel card reports `needsSetup` →
+   * it opens the WIZARD. This container then fetches for itself, succeeds, and
+   * seeds the form with the user's real allergen list. `isUnseeded` is now false,
+   * so the old code fell straight through to `commit(DEFAULT_MEALPRINT_PREFERENCES)`.
+   * One tap on the only exit the wizard offered, and the allergens were gone.
+   *
+   * Found by Brad on device, from the observation that the wizard has no Cancel —
+   * only a Skip. The missing button and the data loss were the same defect.
+   */
+  function mountWizardOverSavedChoices() {
+    const api = new InMemoryApiAdapter();
+    api.mealprintPreferences = {
+      ...api.mealprintPreferences,
+      avoidAllergens: ["peanuts"],
+      avoidFoods: ["olives"],
+      isDefault: false,
+    };
+    const storage = new InMemoryStorageAdapter();
+    render(
+      <AdapterProvider adapters={makeAdapters(api, storage)}>
+        <MealprintPreferencesContainer mode="wizard" />
+      </AdapterProvider>,
+    );
+    return { api, storage, probe: () => mockProbe.last! };
+  }
+
+  it("⚠ dismissing the wizard over SAVED choices writes NOTHING", async () => {
+    const { probe, storage } = mountWizardOverSavedChoices();
+    // Wait for the seed, so `isUnseeded` is genuinely false — otherwise this test
+    // would pass via the older guard and prove nothing.
+    await waitFor(() => expect(probe().avoidAllergens).toEqual(["peanuts"]));
+    expect(probe().loadFailed).toBe(false);
+
+    await act(async () => {
+      probe().onDismiss();
+    });
+
+    expect(storage.getPendingMutations()).toHaveLength(0);
+    expect(preferencePuts()).toHaveLength(0);
+    expect(mockBack).toHaveBeenCalled();
+  });
+
+  it("calls it Cancel, not Skip, when there is something to keep", async () => {
+    // "Skip setup" is what makes a user expect their answers to be discarded, so
+    // the label has to follow the behaviour.
+    const { probe } = mountWizardOverSavedChoices();
+    await waitFor(() => expect(probe().avoidAllergens).toEqual(["peanuts"]));
+    expect(probe().dismissLabel).toBe("Cancel");
+  });
+
+  it("⚠ but a GENUINE first run still saves the defaults — that write is what stops the wizard reappearing", async () => {
+    // AC 1.4. `isDefault: true` is the endpoint's no-row answer, so there is
+    // nothing to preserve and the write is the whole point.
+    const probe = (() => {
+      const api = new InMemoryApiAdapter();
+      api.mealprintPreferences = {
+        ...api.mealprintPreferences,
+        isDefault: true,
+      };
+      render(
+        <AdapterProvider
+          adapters={makeAdapters(api, new InMemoryStorageAdapter())}
+        >
+          <MealprintPreferencesContainer mode="wizard" />
+        </AdapterProvider>,
+      );
+      return () => mockProbe.last!;
+    })();
+
+    await waitFor(() => expect(probe().isLoadingInitial).toBe(false));
+    expect(probe().dismissLabel).toBe("Skip");
+
+    await act(async () => {
+      probe().onDismiss();
+    });
+    // The queue is drained inline after commit, so assert on the PUT that went
+    // out rather than on a pending mutation that has already been flushed.
+    await waitFor(() => expect(preferencePuts()).toHaveLength(1));
+    expect(preferencePuts()[0].body).toMatchObject({ avoidAllergens: [] });
+  });
+});
+
 describe("MealprintPreferencesContainer — the unseeded-write guard (Inspector 🔴)", () => {
   /** A device with an EMPTY cache whose preferences read fails. */
   function mountUnseededFailure(mode: "wizard" | "editor") {

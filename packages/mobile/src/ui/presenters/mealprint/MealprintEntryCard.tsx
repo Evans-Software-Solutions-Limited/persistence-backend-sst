@@ -50,7 +50,7 @@
 import { Pressable } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Text, View } from "@tamagui/core";
-import { Btn, Pill } from "@/ui/components/foundation";
+import { Pill } from "@/ui/components/foundation";
 import { NEUTRAL_HEX, toneHex } from "@/ui/components/foundation/tones";
 import { IconAlert, IconLock, IconSparkles } from "@/ui/components/icons";
 
@@ -198,13 +198,22 @@ export function MealprintEntryCard({
       // The inner button is hidden from a11y for the same reason: on Android it
       // stays focusable and would otherwise read as a second button with the same
       // action.
+      // ⚠ Carries the SUBTITLE in every state, not just `pending`. The card is one
+      // grouped a11y element, so this string is all a screen reader gets — and
+      // without the subtitle the concrete budget line ("You have 260 kcal and 28g
+      // protein left today"), which is the whole point of showing it, never reaches
+      // VoiceOver at all. Same for `needsSetup`'s explanatory line.
       accessibilityLabel={
         isLocked
-          ? `${title}. Premium Plus feature, locked. ${cta}.`
+          ? `${title}. ${subtitle}. Premium Plus feature, locked. ${cta}.`
           : isPending
             ? `${title}. ${subtitle}`
-            : `${title}. ${cta}.`
+            : `${title}. ${subtitle} ${cta}.`
       }
+      // The CTA is not a Pressable any more, so the card has to supply the press
+      // feedback `Btn` used to — otherwise the one element that looks like a button
+      // does not react to touch.
+      style={({ pressed }) => ({ opacity: pressed && !isPending ? 0.85 : 1 })}
     >
       <View
         borderRadius={18}

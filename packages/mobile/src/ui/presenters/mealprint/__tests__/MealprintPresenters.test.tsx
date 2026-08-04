@@ -138,9 +138,32 @@ describe("MealprintEntryCard", () => {
       <MealprintEntryCard {...cardProps({ state: "locked" })} />,
     );
     expect(locked.queryByText("See Premium+")).toBeTruthy();
+    const lockedLabel = locked.getByTestId("mealprint-entry-card").props
+      .accessibilityLabel;
+    expect(lockedLabel).toMatch(/locked/i);
+    // ⚠ Inspector Brad proved this was unguarded: dropping `${cta}` from the
+    // locked branch left all 91 tests green.
+    expect(lockedLabel).toMatch(/See Premium\+/);
+  });
+
+  it("⚠ speaks the SUBTITLE in the a11y label — the card is one grouped element", () => {
+    // Without it the concrete budget line, which is the entire reason for showing
+    // one, never reaches VoiceOver.
+    const withBudget = renderWithTheme(
+      <MealprintEntryCard
+        {...cardProps({ remainingKcal: 1160, remainingProteinG: 84 })}
+      />,
+    );
     expect(
-      locked.getByTestId("mealprint-entry-card").props.accessibilityLabel,
-    ).toMatch(/locked/i);
+      withBudget.getByTestId("mealprint-entry-card").props.accessibilityLabel,
+    ).toMatch(/1,160 kcal and 84g protein left today/);
+
+    const setup = renderWithTheme(
+      <MealprintEntryCard {...cardProps({ needsSetup: true })} />,
+    );
+    expect(
+      setup.getByTestId("mealprint-entry-card").props.accessibilityLabel,
+    ).toMatch(/Set up how you eat/);
   });
 
   it("⚠ exposes exactly ONE pressable, so VoiceOver hears the CTA and Android sees no duplicate", () => {
@@ -483,6 +506,7 @@ function sheetProps(
     labelCheckRequired: false,
     dietaryPatterns: [],
     serverPartialEnforcementOnly: false,
+    isToday: true,
     onSelectSuggestion: jest.fn(),
     draft: null,
     onToggleDraftItem: jest.fn(),
@@ -884,6 +908,42 @@ describe("MealprintSuggestSheetPresenter", () => {
       expect(queryByTestId("bottom-sheet-footer")).toBeNull();
       expect(queryByTestId("mealprint-generate")).toBeNull();
     });
+  });
+
+  it("⚠ never claims 'today' when Fuel is showing another day — the sheet LOGS to that day", () => {
+    // Same defect class as the entry card's budget line, one component over. The
+    // container generates and logs against `useFuelSheets().date`.
+    const past = renderWithTheme(
+      <MealprintSuggestSheetPresenter
+        {...sheetProps({ stage: "setup", isToday: false })}
+      />,
+    );
+    expect(past.queryByText(/you have left today/)).toBeNull();
+    expect(past.queryByText(/day you're viewing/)).toBeTruthy();
+    expect(past.queryByText(/goes to that day/)).toBeTruthy();
+
+    const today = renderWithTheme(
+      <MealprintSuggestSheetPresenter
+        {...sheetProps({ stage: "setup", isToday: true })}
+      />,
+    );
+    expect(today.queryByText(/you have left today/)).toBeTruthy();
+  });
+
+  it("labels the remaining-budget panel for the day it describes", () => {
+    const remaining = { kcal: 620, proteinG: 42, carbsG: 60, fatG: 20 };
+    const past = renderWithTheme(
+      <MealprintSuggestSheetPresenter
+        {...sheetProps({
+          stage: "results",
+          suggestions: [suggestion()],
+          remaining,
+          isToday: false,
+        })}
+      />,
+    );
+    expect(past.queryByText("Left that day")).toBeTruthy();
+    expect(past.queryByText("Left today")).toBeNull();
   });
 
   it("⚠ offers NO retry on a non-retryable failure (the daily ceiling)", () => {

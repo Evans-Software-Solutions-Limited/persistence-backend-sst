@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as Haptics from "expo-haptics";
-import { loggedAtNoonUtc } from "@/shared/utils";
+import { localDayISO, loggedAtNoonUtc } from "@/shared/utils";
 import { useFuelSheets } from "@/state/fuel-sheets";
 import { useLogEntry } from "@/ui/hooks/useLogEntry";
 import { useMealSuggest } from "@/ui/hooks/useMealSuggest";
@@ -251,6 +251,9 @@ export function MealprintSuggestSheetContainer() {
       suggestions={suggestions}
       emptyReason={suggest.result?.emptyReason ?? null}
       remaining={suggest.result?.remaining ?? null}
+      // ⚠ The sheet generates and LOGS against `activeDate`, so the copy must not
+      // claim "today" on any other day. See the presenter's `isToday`.
+      isToday={activeDate === localDayISO()}
       /**
        * ⚠ Two DIFFERENT cases, and collapsing them was a real hole.
        *
