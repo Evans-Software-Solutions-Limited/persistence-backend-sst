@@ -305,7 +305,9 @@ export function MealprintPreferencesPresenter({
         contentContainerStyle={{
           paddingHorizontal: 16,
           paddingTop: 14,
-          paddingBottom: 40 + insets.bottom,
+          // The wizard's pinned footer takes over the bottom inset; paying it
+          // twice would leave a dead band of scroll above the CTA.
+          paddingBottom: isWizard ? 28 : 40 + insets.bottom,
           gap: 20,
         }}
         showsVerticalScrollIndicator={false}
@@ -378,7 +380,8 @@ export function MealprintPreferencesPresenter({
         {/* ── Allergens ───────────────────────────────────────────────── */}
         <Section
           title="Allergens to avoid"
-          sub="Filtered by ingredient data"
+          sub="Hard-filtered by ingredient data"
+          safety
           testID="mealprint-preferences-allergens"
         >
           <View flexDirection="row" flexWrap="wrap" gap={8}>
@@ -507,40 +510,68 @@ export function MealprintPreferencesPresenter({
           {MEDICAL_SCOPE_COPY}
         </Text>
 
-        {isWizard ? (
+      </ScrollView>
+
+      {/* ⚠ PINNED, not the last row of the scroll. This form is seven sections
+          long and grows further with each conditional caveat, so a CTA at the end
+          of the stack is reachable only by scrolling past everything — on the
+          FIRST-RUN screen, where the user has no idea how long the form is. The
+          header Save covers the editor; the wizard gets the explicit commit.
+          Ports the prototype's `AMSticky` (design-source `screens.jsx:23`). */}
+      {isWizard ? (
+        <View
+          paddingHorizontal={16}
+          paddingTop={12}
+          paddingBottom={12 + insets.bottom}
+          borderTopWidth={1}
+          borderColor="$border"
+          backgroundColor="$surface"
+        >
           <Btn
             variant="filled"
             tone="primary"
             size="lg"
             full
+            icon={<IconCheck size={16} />}
             onPress={onSave}
             disabled={isSaving}
             testID="mealprint-preferences-wizard-cta"
           >
             {isSaving ? "Saving…" : "Save and continue"}
           </Btn>
-        ) : null}
-      </ScrollView>
+        </View>
+      ) : null}
     </View>
   );
 }
 
 // ── Building blocks ─────────────────────────────────────────────────────────
 
+/**
+ * A titled block.
+ *
+ * `safety` marks the section as part of the amber channel — an alert glyph beside
+ * the heading and an amber sub-line. Used by the allergen section ONLY, so that
+ * AC 1.2's "visually distinct" holds at section level and not just at chip level:
+ * a user scanning the form sees the amber band before they read a single chip.
+ */
 function Section({
   title,
   sub,
+  safety = false,
   children,
   testID,
 }: {
   title: string;
   sub?: string;
+  safety?: boolean;
   children: React.ReactNode;
   testID?: string;
 }) {
   return (
     <View gap={10} testID={testID}>
-      <View flexDirection="row" alignItems="baseline" gap={8}>
+      <View flexDirection="row" alignItems="center" gap={7}>
+        {safety ? <IconAlert size={15} color={AMBER.base} /> : null}
         <Text
           fontFamily="$display"
           fontWeight="700"
@@ -550,7 +581,11 @@ function Section({
           {title}
         </Text>
         {sub ? (
-          <Text fontFamily="$body" fontSize={11.5} color="$text3">
+          <Text
+            fontFamily="$body"
+            fontSize={11.5}
+            color={safety ? "$gold" : "$text3"}
+          >
             {sub}
           </Text>
         ) : null}

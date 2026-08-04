@@ -49,6 +49,7 @@ import {
   IconDroplet,
   IconMinus,
   IconPlus,
+  IconSparkles,
   IconX,
 } from "@/ui/components/icons";
 import { CoachAttribution } from "@/ui/components/composite";
@@ -1307,6 +1308,19 @@ function FoodPreferencesRow({
       >
         <Card pad={14} radius={12}>
           <View flexDirection="row" alignItems="center" gap={12}>
+            {/* A gold glyph chip, matching the Mealprint entry card on Fuel —
+                these are the feature's two doors and they should look related. */}
+            <View
+              width={38}
+              height={38}
+              borderRadius={11}
+              backgroundColor="$goldDim"
+              alignItems="center"
+              justifyContent="center"
+              flexShrink={0}
+            >
+              <IconSparkles size={17} color={toneHex("gold").base} />
+            </View>
             <View flex={1} gap={3}>
               <Text
                 fontFamily="$display"

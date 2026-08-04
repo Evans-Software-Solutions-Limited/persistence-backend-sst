@@ -403,6 +403,13 @@ export function FuelPresenter(props: FuelPresenterProps) {
 
   const insets = useSafeAreaInsets();
 
+  // Protein still owing today, for the Mealprint card's concrete pitch. Derived
+  // from the hero's own view-model rather than added to the container's props, so
+  // the two can never disagree about what "left" means.
+  const proteinLine = macros.find((m) => m.label === "Protein");
+  const remainingProteinG =
+    proteinLine === undefined ? null : proteinLine.target - proteinLine.value;
+
   const header = (
     <>
       <HeaderBar
@@ -546,6 +553,12 @@ export function FuelPresenter(props: FuelPresenterProps) {
           <MealprintEntryCard
             state={mealprintState}
             needsSetup={mealprintNeedsSetup}
+            // The card leads on the actual gap rather than a generic promise
+            // (design § the AnyMeal entry card). Suppressed when there is no
+            // target — `remainingKcal` is 0-floored against a 0 target, and
+            // "0 kcal left" is a worse pitch than the generic line.
+            remainingKcal={noTarget ? null : remainingKcal}
+            remainingProteinG={noTarget ? null : remainingProteinG}
             onPress={onMealprint}
             onUpgrade={onMealprintUpgrade}
             onRetry={onMealprintRetry}

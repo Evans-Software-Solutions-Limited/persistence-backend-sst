@@ -30,20 +30,36 @@
  * `is_active = false`, so there is no price to print yet — and a hardcoded one is
  * exactly how the prototype's retired £19.99 would have survived the reprice to
  * £29.99.
+ *
+ * ## Design — gold, because Fuel is gold
+ *
+ * The design source (`gtm-d8-anymeal-*.jsx`, post-dating the 01-design-system
+ * handoff) makes nutrition GOLD throughout: the wordmark, the sparkles, the
+ * gradient wash on this very card. Our Fuel tab already agrees — `MacroHeroPresenter`
+ * is "a single gold ring" and `QuickAddRowPresenter` tints in gold. This card
+ * shipped `primary` (cyan), which made the one cyan object on a gold screen.
+ *
+ * ⚠ Gold here does NOT weaken the allergen-chip distinction (AC 1.2), because
+ * that distinction is local to the preferences screen — where the pattern chips
+ * stay cyan pills and the allergen chips stay amber squares. The rule this file
+ * follows: gold marks Mealprint where it is being OFFERED or GENERATED; cyan
+ * stays the control accent where preferences are being SET; amber is reserved for
+ * safety and never competes with a gold fill in the same block.
  */
 
 import { Pressable } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import { Text, View } from "@tamagui/core";
-import { Pill } from "@/ui/components/foundation";
+import { Btn, Pill } from "@/ui/components/foundation";
 import { NEUTRAL_HEX, toneHex } from "@/ui/components/foundation/tones";
-import {
-  IconAlert,
-  IconChevronR,
-  IconLock,
-  IconSparkles,
-} from "@/ui/components/icons";
+import { IconAlert, IconLock, IconSparkles } from "@/ui/components/icons";
 
-const PRIMARY = toneHex("primary");
+const GOLD = toneHex("gold");
+
+/** The design's card wash: `linear-gradient(135deg, gold-dim 0%, transparent 70%)`. */
+const WASH = [GOLD.dim, "rgba(245,197,24,0)"] as const;
+const WASH_START = { x: 0, y: 0 } as const;
+const WASH_END = { x: 1, y: 1 } as const;
 
 export type MealprintEntryState = "pending" | "stalled" | "locked" | "unlocked";
 
@@ -59,6 +75,17 @@ export type MealprintEntryCardProps = {
    * they cannot reach.
    */
   readonly needsSetup?: boolean;
+  /**
+   * Calories left in the day, when Fuel knows them. Makes the pitch concrete —
+   * the design's card leads on the actual gap rather than a generic promise.
+   *
+   * ⚠ Null whenever there is no target set or the day has not loaded, and NOT
+   * shown in `locked`: quoting a real number to someone who cannot act on it
+   * sharpens an upsell rather than helping them.
+   */
+  readonly remainingKcal?: number | null;
+  /** Protein left in the day. Only rendered alongside {@link remainingKcal}. */
+  readonly remainingProteinG?: number | null;
   /** Opens the wizard (when `needsSetup`) or the suggest sheet. */
   readonly onPress: () => void;
   /** Pushes the paywall. Only wired in the `locked` state. */
@@ -71,6 +98,8 @@ export type MealprintEntryCardProps = {
 export function MealprintEntryCard({
   state,
   needsSetup = false,
+  remainingKcal = null,
+  remainingProteinG = null,
   onPress,
   onUpgrade,
   onRetry,
@@ -89,7 +118,7 @@ export function MealprintEntryCard({
           alignItems="center"
           gap={12}
           padding={16}
-          borderRadius={16}
+          borderRadius={18}
           backgroundColor="$surface"
           borderWidth={1}
           borderColor="$border2"
@@ -97,7 +126,7 @@ export function MealprintEntryCard({
           <View
             width={42}
             height={42}
-            borderRadius={10}
+            borderRadius={12}
             backgroundColor="$surface3"
             alignItems="center"
             justifyContent="center"
@@ -130,13 +159,30 @@ export function MealprintEntryCard({
   const isPending = state === "pending";
   const isLocked = state === "locked";
   const title = "What should I eat?";
+
+  // ⚠ The concrete line is for entitled users only. See `remainingKcal`.
+  const hasBudget =
+    !isLocked &&
+    !isPending &&
+    remainingKcal !== null &&
+    remainingKcal !== undefined &&
+    remainingKcal > 0;
+
   const subtitle = isPending
     ? "Checking your plan…"
     : isLocked
       ? "Unlock ideas that fit the calories and protein you have left"
       : needsSetup
         ? "Set up how you eat, then get ideas that fit what's left today"
-        : "Ideas that fit the calories and protein you have left today";
+        : hasBudget
+          ? budgetLine(remainingKcal, remainingProteinG)
+          : "Ideas that fit the calories and protein you have left today";
+
+  const cta = isLocked
+    ? "See Premium+"
+    : needsSetup
+      ? "Set up Mealprint"
+      : "Suggest a meal";
 
   return (
     <Pressable
@@ -148,54 +194,114 @@ export function MealprintEntryCard({
       accessibilityLabel={
         isLocked ? `${title}. Premium Plus feature, locked.` : title
       }
-      style={{ opacity: isPending ? 0.6 : 1 }}
     >
       <View
-        flexDirection="row"
-        alignItems="center"
-        gap={12}
-        padding={16}
-        borderRadius={16}
+        borderRadius={18}
+        overflow="hidden"
         backgroundColor="$surface"
         borderWidth={1}
-        borderColor="$primaryDim"
+        // Muted while pending: the card is visibly inert without being a padlock.
+        borderColor={isPending ? "$border2" : "$goldDim"}
+        opacity={isPending ? 0.6 : 1}
       >
-        <View
-          width={42}
-          height={42}
-          borderRadius={10}
-          backgroundColor="$primaryDim"
-          alignItems="center"
-          justifyContent="center"
+        <LinearGradient
+          // The wash is the feature's signature. Suppressed while pending so a
+          // dead card does not advertise itself mid-round-trip.
+          colors={isPending ? ["rgba(245,197,24,0)", "rgba(245,197,24,0)"] : WASH}
+          start={WASH_START}
+          end={WASH_END}
+          style={{ padding: 16 }}
         >
-          {/* Padlock ONLY when genuinely locked — never while pending, which is
-              the whole reason `pending` is a separate state. */}
-          {isLocked ? (
-            <IconLock size={18} color={PRIMARY.base} />
-          ) : (
-            <IconSparkles size={19} color={PRIMARY.base} />
-          )}
-        </View>
-        <View flex={1} gap={3}>
-          <View flexDirection="row" alignItems="center" gap={8}>
+          {/* Brand row — wordmark + tier, with the state's glyph */}
+          <View
+            flexDirection="row"
+            alignItems="center"
+            gap={8}
+            marginBottom={10}
+          >
+            {/* ⚠ Padlock ONLY when genuinely locked — never while pending, which
+                is the whole reason `pending` is a separate state. */}
+            {isLocked ? (
+              <IconLock size={15} color={GOLD.base} />
+            ) : (
+              <IconSparkles size={15} color={GOLD.base} />
+            )}
             <Text
               fontFamily="$display"
               fontWeight="700"
-              fontSize={15}
-              color="$text"
+              fontSize={14}
+              letterSpacing={-0.2}
+              color="$gold"
             >
-              {title}
+              Mealprint
             </Text>
-            <Pill tone="primary" size="xs">
+            <Pill tone="gold" size="xs">
               PREMIUM+
             </Pill>
           </View>
-          <Text fontFamily="$body" fontSize={12} lineHeight={17} color="$text3">
+
+          <Text
+            fontFamily="$display"
+            fontWeight="700"
+            fontSize={18}
+            letterSpacing={-0.3}
+            color="$text"
+          >
+            {title}
+          </Text>
+          <Text
+            fontFamily="$body"
+            fontSize={12.5}
+            lineHeight={18}
+            color="$text2"
+            marginTop={4}
+          >
             {subtitle}
           </Text>
-        </View>
-        <IconChevronR size={16} color={PRIMARY.base} />
+
+          {/* No CTA while pending — there is nothing to press yet, and a live
+              button on an inert card invites the tap the `disabled` then eats. */}
+          {isPending ? null : (
+            <View marginTop={14}>
+              <Btn
+                variant="filled"
+                tone="gold"
+                size="md"
+                full
+                // No explicit colour — `Btn` tints the glyph to its own ink.
+                icon={
+                  isLocked ? <IconLock size={14} /> : <IconSparkles size={14} />
+                }
+                onPress={isLocked ? onUpgrade : onPress}
+                testID="mealprint-entry-cta"
+              >
+                {cta}
+              </Btn>
+            </View>
+          )}
+        </LinearGradient>
       </View>
     </Pressable>
   );
+}
+
+/**
+ * "You have 620 kcal and 42g protein left today."
+ *
+ * Protein is dropped rather than shown as a negative or a zero: a user already
+ * over on protein is not helped by being told so here, and the sentence still
+ * works without it.
+ */
+function budgetLine(
+  remainingKcal: number,
+  remainingProteinG: number | null | undefined,
+): string {
+  const kcal = Math.round(remainingKcal).toLocaleString();
+  const protein =
+    remainingProteinG !== null &&
+    remainingProteinG !== undefined &&
+    remainingProteinG > 0
+      ? ` and ${Math.round(remainingProteinG)}g protein`
+      : "";
+  return `You have ${kcal} kcal${protein} left today. Let Mealprint fill the gap.`;
 }

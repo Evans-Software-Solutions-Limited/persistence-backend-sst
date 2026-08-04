@@ -1,4 +1,5 @@
-import { fireEvent } from "@testing-library/react-native";
+import { BottomSheetScrollView } from "@gorhom/bottom-sheet";
+import { fireEvent, within } from "@testing-library/react-native";
 import { renderWithTheme } from "../../../../../__tests__/test-utils";
 import {
   AVOID_ALLERGENS,
@@ -111,6 +112,77 @@ describe("MealprintEntryCard", () => {
       />,
     );
     expect(locked.queryByText(/Set up how you eat/i)).toBeNull();
+  });
+
+  it("routes the CTA button the same way as the card body", () => {
+    const onPress = jest.fn();
+    const onUpgrade = jest.fn();
+    const unlocked = renderWithTheme(
+      <MealprintEntryCard {...cardProps({ onPress, onUpgrade })} />,
+    );
+    fireEvent.press(unlocked.getByTestId("mealprint-entry-cta"));
+    expect(onPress).toHaveBeenCalled();
+    expect(onUpgrade).not.toHaveBeenCalled();
+
+    const locked = renderWithTheme(
+      <MealprintEntryCard
+        {...cardProps({ state: "locked", onPress: jest.fn(), onUpgrade })}
+      />,
+    );
+    fireEvent.press(locked.getByTestId("mealprint-entry-cta"));
+    expect(onUpgrade).toHaveBeenCalled();
+  });
+
+  it("⚠ shows no CTA while pending — an inert card must not invite the tap it eats", () => {
+    const { queryByTestId } = renderWithTheme(
+      <MealprintEntryCard {...cardProps({ state: "pending" })} />,
+    );
+    expect(queryByTestId("mealprint-entry-cta")).toBeNull();
+  });
+
+  it("leads on the real remaining budget when Fuel knows it", () => {
+    const { queryByText } = renderWithTheme(
+      <MealprintEntryCard
+        {...cardProps({ remainingKcal: 1160, remainingProteinG: 84 })}
+      />,
+    );
+    expect(queryByText(/1,160 kcal and 84g protein left today/)).toBeTruthy();
+  });
+
+  it("drops protein from the line when there is none owing, keeping the sentence", () => {
+    const { queryByText } = renderWithTheme(
+      <MealprintEntryCard
+        {...cardProps({ remainingKcal: 620, remainingProteinG: -5 })}
+      />,
+    );
+    expect(queryByText(/620 kcal left today/)).toBeTruthy();
+    expect(queryByText(/protein/)).toBeNull();
+  });
+
+  it("falls back to the generic line with no budget, and never quotes one over a padlock", () => {
+    const noBudget = renderWithTheme(
+      <MealprintEntryCard {...cardProps({ remainingKcal: null })} />,
+    );
+    expect(
+      noBudget.queryByText(/Ideas that fit the calories and protein/),
+    ).toBeTruthy();
+
+    // ⚠ Quoting a real number to someone who cannot act on it sharpens an
+    // upsell rather than helping them.
+    const locked = renderWithTheme(
+      <MealprintEntryCard
+        {...cardProps({ state: "locked", remainingKcal: 1160 })}
+      />,
+    );
+    expect(locked.queryByText(/1,160/)).toBeNull();
+
+    // …and the same while the entitlement is still unknown.
+    const pending = renderWithTheme(
+      <MealprintEntryCard
+        {...cardProps({ state: "pending", remainingKcal: 1160 })}
+      />,
+    );
+    expect(pending.queryByText(/1,160/)).toBeNull();
   });
 
   it("prints no price literal in any state", () => {
@@ -673,6 +745,123 @@ describe("MealprintSuggestSheetPresenter", () => {
       />,
     );
     expect(queryByTestId("mealprint-draft")).toBeNull();
+    // ⚠ And no orphan footer either — a pinned confirm under an empty body is a
+    // button that logs an absent draft.
+    expect(queryByTestId("bottom-sheet-footer")).toBeNull();
+    expect(queryByTestId("mealprint-draft-confirm")).toBeNull();
+  });
+
+  // ⚠ The draft stage stacks items + meal picker + two conditional caveats in an
+  // 86% sheet, so a confirm at the end of that stack sits below the fold — on the
+  // step that writes to a food log. These pin it OUTSIDE the scrolling body.
+  // Jest renders gorhom as plain Views, so this is the strongest available proof;
+  // the fold itself still needs the simulator.
+  describe("the commit action is pinned, not scrolled to", () => {
+    const draft = draftFromSuggestion(
+      suggestion({
+        items: [
+          suggestion().items[0],
+          { ...suggestion().items[0], candidateId: "food-2", name: "Oatcakes" },
+        ],
+      }),
+      "snack",
+    );
+
+    it("puts the draft confirm in the sheet footer, not the scrolling body", () => {
+      const { getByTestId, UNSAFE_getByType } = renderWithTheme(
+        <MealprintSuggestSheetPresenter
+          {...sheetProps({
+            stage: "draft",
+            draft,
+            draftKcal: 300,
+            // Both caveats on — the worst case for the fold.
+            labelCheckRequired: true,
+            dietaryPatterns: ["halal"],
+            serverPartialEnforcementOnly: true,
+          })}
+        />,
+      );
+      expect(
+        within(getByTestId("bottom-sheet-footer")).getByTestId(
+          "mealprint-draft-confirm",
+        ),
+      ).toBeTruthy();
+
+      // The scroll view holds the draft body and the caveats — and NOT the
+      // confirm. That is the whole point: the stack it sits above is exactly what
+      // pushed it off-screen.
+      const scroll = UNSAFE_getByType(BottomSheetScrollView);
+      expect(within(scroll).getByTestId("mealprint-draft")).toBeTruthy();
+      expect(
+        within(scroll).getByTestId("mealprint-draft-label-check-disclaimer"),
+      ).toBeTruthy();
+      expect(
+        within(scroll).queryByTestId("mealprint-draft-confirm"),
+      ).toBeNull();
+    });
+
+    it("still fires onConfirm, and still disables at zero kept items, from the footer", () => {
+      const onConfirm = jest.fn();
+      const kept = renderWithTheme(
+        <MealprintSuggestSheetPresenter
+          {...sheetProps({ stage: "draft", draft, draftKcal: 300, onConfirm })}
+        />,
+      );
+      fireEvent.press(
+        within(kept.getByTestId("bottom-sheet-footer")).getByTestId(
+          "mealprint-draft-confirm",
+        ),
+      );
+      expect(onConfirm).toHaveBeenCalled();
+
+      const none = renderWithTheme(
+        <MealprintSuggestSheetPresenter
+          {...sheetProps({
+            stage: "draft",
+            draft: {
+              ...draft,
+              items: draft.items.map((i) => ({ ...i, on: false })),
+            },
+            draftKcal: 0,
+          })}
+        />,
+      );
+      expect(
+        none.getByTestId("mealprint-draft-confirm").props.accessibilityState,
+      ).toMatchObject({ disabled: true });
+    });
+
+    it("pins the setup stage's Generate action too — the keyboard would push it off", () => {
+      const { getByTestId } = renderWithTheme(
+        <MealprintSuggestSheetPresenter {...sheetProps({ stage: "setup" })} />,
+      );
+      expect(
+        within(getByTestId("bottom-sheet-footer")).getByTestId(
+          "mealprint-generate",
+        ),
+      ).toBeTruthy();
+    });
+
+    it("pins nothing on the stages whose actions are inline", () => {
+      for (const stage of ["generating", "results", "error"] as const) {
+        const { queryByTestId } = renderWithTheme(
+          <MealprintSuggestSheetPresenter
+            {...sheetProps({ stage, suggestions: [suggestion()] })}
+          />,
+        );
+        expect(queryByTestId("bottom-sheet-footer")).toBeNull();
+      }
+    });
+
+    it("pins nothing while offline — there is no action to offer", () => {
+      const { queryByTestId } = renderWithTheme(
+        <MealprintSuggestSheetPresenter
+          {...sheetProps({ stage: "setup", offline: true })}
+        />,
+      );
+      expect(queryByTestId("bottom-sheet-footer")).toBeNull();
+      expect(queryByTestId("mealprint-generate")).toBeNull();
+    });
   });
 
   it("⚠ offers NO retry on a non-retryable failure (the daily ceiling)", () => {

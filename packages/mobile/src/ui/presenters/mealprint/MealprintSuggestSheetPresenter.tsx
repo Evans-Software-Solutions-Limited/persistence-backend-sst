@@ -39,6 +39,20 @@
  * scrolls — the recurring "sheet won't scroll" bug, which looks like a gesture
  * problem and is not. Jest mocks gorhom, so no test can prove this: verify on the
  * simulator.
+ *
+ * ## ⚠ The confirm action is PINNED, not the last thing in the scroll
+ *
+ * The draft stage stacks items + meal picker + the label-check caveat + the
+ * partial-enforcement caveat. On a multi-item suggestion with both caveats
+ * active, a "Log N kcal" button at the end of that stack sits below the fold of
+ * an 86 % sheet — and it is the button that WRITES TO A FOOD LOG. Relying on the
+ * body scrolling to reach it makes reachability a property of content length,
+ * which the user does not control.
+ *
+ * So the confirm lives in `BottomSheet`'s `footer`, outside the scroll. It is
+ * hoisted to the top-level component for that reason; {@link DraftStage} renders
+ * everything above it. Same for the setup stage's Generate button, which the
+ * steer field's keyboard would otherwise push out of view.
  */
 
 import { Pressable, TextInput } from "react-native";
@@ -50,7 +64,7 @@ import {
   Pill,
   Segmented,
 } from "@/ui/components/foundation";
-import { toneHex } from "@/ui/components/foundation/tones";
+import { NEUTRAL_HEX, toneHex } from "@/ui/components/foundation/tones";
 import {
   IconAlert,
   IconCheck,
@@ -72,8 +86,19 @@ import {
 } from "@/domain/models/mealprint";
 import { MealPickerPresenter } from "../MealPickerPresenter";
 
+/**
+ * ⚠ ONE colour, TWO roles, and they must not be confused.
+ *
+ * `GOLD` is Mealprint's feature accent (see `MealprintEntryCard`'s design note:
+ * nutrition is gold, and Fuel already is). `AMBER` is the safety channel — the
+ * caveat panels. They resolve to the same token today, which is exactly why the
+ * caveats carry a warning GLYPH and a bordered tinted panel rather than relying
+ * on hue: a solid gold CTA and a 10 %-alpha bordered amber note are different
+ * objects at a glance, and the glyph is what survives if the palette ever moves.
+ * Do not "tidy" these into one constant.
+ */
+const GOLD = toneHex("gold");
 const AMBER = toneHex("gold");
-const PRIMARY = toneHex("primary");
 
 export type MealprintSuggestStage =
   | "setup"
@@ -152,16 +177,13 @@ export function MealprintSuggestSheetPresenter(
       onClose={onClose}
       title="What can I eat?"
       eyebrow="MEALPRINT · AI"
-      accent="primary"
+      accent="gold"
       height={86}
+      footer={resolveFooter(props)}
       testID={testID}
     >
       {offline && stage === "setup" ? (
-        <View gap={16} testID="mealprint-suggest-offline">
-          <Text fontFamily="$body" fontSize={14} color="$text2">
-            Mealprint needs a connection — try Quick Add instead.
-          </Text>
-        </View>
+        <OfflineStage />
       ) : stage === "setup" ? (
         <SetupStage {...props} />
       ) : stage === "generating" ? (
@@ -177,6 +199,97 @@ export function MealprintSuggestSheetPresenter(
   );
 }
 
+/**
+ * The pinned action for the current stage, or `undefined` for the stages whose
+ * only action is inline (results' regenerate, error's three recoveries).
+ *
+ * ⚠ Returns `undefined` for a `draft` stage with a null draft. {@link DraftStage}
+ * renders nothing in that case, and a lone confirm button pinned under an empty
+ * body would be a button that logs an absent draft.
+ */
+function resolveFooter(props: MealprintSuggestSheetProps) {
+  const { stage, offline, draft } = props;
+
+  if (stage === "setup") {
+    return offline ? undefined : <GenerateAction {...props} />;
+  }
+  if ((stage === "draft" || stage === "added") && draft !== null) {
+    return <ConfirmAction {...props} added={stage === "added"} />;
+  }
+  return undefined;
+}
+
+function GenerateAction({ onGenerate }: MealprintSuggestSheetProps) {
+  return (
+    <Btn
+      variant="filled"
+      tone="gold"
+      size="lg"
+      full
+      icon={<IconSparkles size={16} />}
+      onPress={onGenerate}
+      testID="mealprint-generate"
+    >
+      Give me ideas
+    </Btn>
+  );
+}
+
+function ConfirmAction({
+  draft,
+  draftKcal,
+  onConfirm,
+  confirming,
+  added,
+}: MealprintSuggestSheetProps & { added: boolean }) {
+  if (draft === null) return null;
+  const keptCount = draft.items.filter((item) => item.on).length;
+  return (
+    <Btn
+      variant="filled"
+      tone="gold"
+      size="lg"
+      full
+      onPress={onConfirm}
+      // `keptCount === 0` disables rather than logging nothing silently.
+      disabled={added || confirming || keptCount === 0}
+      testID="mealprint-draft-confirm"
+    >
+      {added
+        ? "Added ✓"
+        : confirming
+          ? "Adding…"
+          : `Log ${round(draftKcal)} kcal`}
+    </Btn>
+  );
+}
+
+function OfflineStage() {
+  return (
+    <View gap={12} paddingVertical={20} testID="mealprint-suggest-offline">
+      <StageIcon glyph="alert" />
+      <Text
+        fontFamily="$display"
+        fontWeight="700"
+        fontSize={16}
+        color="$text"
+        textAlign="center"
+      >
+        You&apos;re offline
+      </Text>
+      <Text
+        fontFamily="$body"
+        fontSize={13}
+        lineHeight={19}
+        color="$text3"
+        textAlign="center"
+      >
+        Mealprint needs a connection — try Quick Add instead.
+      </Text>
+    </View>
+  );
+}
+
 // ── Setup ───────────────────────────────────────────────────────────────────
 
 function SetupStage({
@@ -184,10 +297,15 @@ function SetupStage({
   onShapeChange,
   steer,
   onSteerChange,
-  onGenerate,
+  remaining,
 }: MealprintSuggestSheetProps) {
   return (
     <View gap={18}>
+      {/* What Mealprint is aiming at, before it is asked to aim. The design
+          leads the sheet on the budget for the same reason the entry card does:
+          it makes the next tap's purpose concrete. */}
+      {remaining ? <RemainingPanel remaining={remaining} /> : null}
+
       <View gap={7}>
         <Label>What are you after</Label>
         <Segmented
@@ -204,14 +322,17 @@ function SetupStage({
       <View gap={7}>
         <Label>Anything specific? (optional)</Label>
         <View
-          height={44}
+          flexDirection="row"
+          alignItems="center"
+          gap={8}
+          height={46}
           paddingHorizontal={12}
           borderRadius={12}
           backgroundColor="$surface3"
           borderWidth={1}
           borderColor="$border2"
-          justifyContent="center"
         >
+          <IconSparkles size={14} color={NEUTRAL_HEX.text3} />
           <TextInput
             value={steer}
             onChangeText={onSteerChange}
@@ -222,6 +343,7 @@ function SetupStage({
             accessibilityLabel="What you fancy"
             testID="mealprint-steer-input"
             style={{
+              flex: 1,
               color: "#F4F4F8",
               fontFamily: "Geist",
               fontSize: 14,
@@ -230,18 +352,6 @@ function SetupStage({
           />
         </View>
       </View>
-
-      <Btn
-        variant="filled"
-        tone="primary"
-        size="lg"
-        full
-        icon={<IconSparkles size={16} />}
-        onPress={onGenerate}
-        testID="mealprint-generate"
-      >
-        Give me ideas
-      </Btn>
 
       <Text fontFamily="$body" fontSize={12} lineHeight={17} color="$text3">
         Mealprint works from the calories and macros you have left today, and
@@ -256,22 +366,134 @@ function GeneratingStage() {
     <View
       alignItems="center"
       justifyContent="center"
-      gap={10}
-      paddingVertical={48}
+      gap={12}
+      paddingVertical={56}
       testID="mealprint-generating"
     >
-      <IconSparkles size={22} color={PRIMARY.base} />
-      <Text
-        fontFamily="$display"
-        fontWeight="700"
-        fontSize={14}
-        color="$primary"
+      <View
+        width={72}
+        height={72}
+        borderRadius={36}
+        alignItems="center"
+        justifyContent="center"
+        backgroundColor="$goldDim"
+        borderWidth={1}
+        borderColor="$goldGlow"
       >
+        <IconSparkles size={30} color={GOLD.base} />
+      </View>
+      <Text fontFamily="$display" fontWeight="700" fontSize={17} color="$text">
         Working out what fits…
       </Text>
-      <Text fontFamily="$body" fontSize={12} color="$text3">
-        This takes a few seconds.
+      <Text
+        fontFamily="$body"
+        fontSize={13}
+        lineHeight={19}
+        color="$text3"
+        textAlign="center"
+      >
+        Fitting a meal to your remaining macros and preferences. This takes a
+        few seconds.
       </Text>
+    </View>
+  );
+}
+
+/** The remaining-budget readout — kcal as the headline, macros as a three-up row. */
+function RemainingPanel({ remaining }: { remaining: MealSuggestRemaining }) {
+  return (
+    <Card
+      pad={14}
+      radius={14}
+      accent="gold"
+      testID="mealprint-remaining"
+      accessibilityLabel={`${round(remaining.kcal)} calories left today`}
+    >
+      <View
+        flexDirection="row"
+        alignItems="baseline"
+        justifyContent="space-between"
+        marginBottom={10}
+      >
+        <Label>Left today</Label>
+        <View flexDirection="row" alignItems="baseline" gap={4}>
+          <Text
+            fontFamily="$mono"
+            fontWeight="600"
+            fontSize={22}
+            color="$gold"
+          >
+            {round(remaining.kcal).toLocaleString()}
+          </Text>
+          <Text fontFamily="$mono" fontSize={11} color="$text3">
+            kcal
+          </Text>
+        </View>
+      </View>
+      <View flexDirection="row" gap={8}>
+        {(
+          [
+            ["Protein", remaining.proteinG],
+            ["Carbs", remaining.carbsG],
+            ["Fat", remaining.fatG],
+          ] as const
+        ).map(([label, grams]) => (
+          <View
+            key={label}
+            flex={1}
+            paddingHorizontal={10}
+            paddingVertical={8}
+            borderRadius={10}
+            backgroundColor="$surface"
+            borderWidth={1}
+            borderColor="$border"
+          >
+            <Text
+              fontFamily="$display"
+              fontSize={9}
+              fontWeight="600"
+              letterSpacing={1.2}
+              textTransform="uppercase"
+              color="$text3"
+            >
+              {label}
+            </Text>
+            <Text
+              fontFamily="$mono"
+              fontWeight="600"
+              fontSize={15}
+              color="$text"
+              marginTop={3}
+            >
+              {round(grams)}g
+            </Text>
+          </View>
+        ))}
+      </View>
+    </Card>
+  );
+}
+
+/** A centred glyph disc for the empty / offline / error bodies. */
+function StageIcon({ glyph }: { glyph: "alert" | "sparkles" }) {
+  return (
+    <View alignItems="center">
+      <View
+        width={56}
+        height={56}
+        borderRadius={28}
+        alignItems="center"
+        justifyContent="center"
+        backgroundColor="$goldDim"
+        borderWidth={1}
+        borderColor="$border2"
+      >
+        {glyph === "alert" ? (
+          <IconAlert size={24} color={AMBER.base} />
+        ) : (
+          <IconSparkles size={24} color={GOLD.base} />
+        )}
+      </View>
     </View>
   );
 }
@@ -334,16 +556,33 @@ function ResultsStage(props: MealprintSuggestSheetProps) {
   if (emptyReason !== null) {
     const copy = EMPTY_COPY[emptyReason];
     return (
-      <View gap={14} testID={`mealprint-empty-${emptyReason}`}>
+      <View
+        gap={12}
+        paddingVertical={16}
+        testID={`mealprint-empty-${emptyReason}`}
+      >
+        {/* ⚠ Composed as an ANSWER, not a failure. `no_candidates` in particular
+            is the first thing a real entitled user will see until the Open Food
+            Facts re-seed lands, so it gets the same care as the happy path: a
+            neutral glyph rather than an error one, and the body centred with the
+            actions it names. */}
+        <StageIcon glyph="alert" />
         <Text
           fontFamily="$display"
           fontWeight="700"
-          fontSize={16}
+          fontSize={17}
           color="$text"
+          textAlign="center"
         >
           {copy.title}
         </Text>
-        <Text fontFamily="$body" fontSize={13} lineHeight={19} color="$text2">
+        <Text
+          fontFamily="$body"
+          fontSize={13}
+          lineHeight={19.5}
+          color="$text2"
+          textAlign="center"
+        >
           {copy.body}
         </Text>
       </View>
@@ -357,15 +596,7 @@ function ResultsStage(props: MealprintSuggestSheetProps) {
 
   return (
     <View gap={14}>
-      {remaining ? (
-        <View gap={4} testID="mealprint-remaining">
-          <Label>Left today</Label>
-          <Text fontFamily="$mono" fontSize={14} color="$text2">
-            {round(remaining.kcal)} kcal · {round(remaining.proteinG)}P{" "}
-            {round(remaining.carbsG)}C {round(remaining.fatG)}F
-          </Text>
-        </View>
-      ) : null}
+      {remaining ? <RemainingPanel remaining={remaining} /> : null}
 
       {suggestions.map((suggestion, index) => (
         <SuggestionCard
@@ -391,7 +622,7 @@ function ResultsStage(props: MealprintSuggestSheetProps) {
 
       <Btn
         variant="outline"
-        tone="primary"
+        tone="gold"
         size="md"
         full
         onPress={onRetry}
@@ -421,50 +652,127 @@ function SuggestionCard({
       accessibilityRole="button"
       accessibilityLabel={`${suggestion.name}, ${round(suggestion.kcal)} calories`}
     >
-      <View gap={9}>
-        <View flexDirection="row" alignItems="center" gap={8}>
+      <View gap={10}>
+        {/* The stronger per-suggestion flag: at least one item's allergen
+            content is entirely unknown. Distinct from the unconditional
+            label-check line below the list. Given its own row so it reads as a
+            property of the suggestion rather than a decoration on the title. */}
+        {suggestion.containsUnverified ? (
+          <View flexDirection="row">
+            <Pill tone="gold" size="xs">
+              UNVERIFIED
+            </Pill>
+          </View>
+        ) : null}
+
+        {/* Name left, calories right — the two things a user compares across
+            cards, each in a fixed column so the eye can scan down either. */}
+        <View flexDirection="row" alignItems="flex-start" gap={10}>
           <Text
             fontFamily="$display"
             fontWeight="700"
-            fontSize={15}
+            fontSize={15.5}
+            lineHeight={21}
             color="$text"
             flex={1}
           >
             {suggestion.name}
           </Text>
-          {/* The stronger per-suggestion flag: at least one item's allergen
-              content is entirely unknown. Distinct from the unconditional
-              label-check line below the list. */}
-          {suggestion.containsUnverified ? (
-            <Pill tone="gold" size="xs">
-              UNVERIFIED
-            </Pill>
-          ) : null}
-          <IconChevronR size={15} color={PRIMARY.base} />
-        </View>
-
-        <Text fontFamily="$mono" fontSize={13} color="$primary">
-          {round(suggestion.kcal)} kcal · {round(suggestion.proteinG)}P{" "}
-          {round(suggestion.carbsG)}C {round(suggestion.fatG)}F
-        </Text>
-
-        {/* Untrusted model prose — plain text only, never markup or a link. */}
-        <Text fontFamily="$body" fontSize={12.5} lineHeight={18} color="$text2">
-          {suggestion.reason}
-        </Text>
-
-        <View gap={3}>
-          {suggestion.items.map((item, itemIndex) => (
+          <View alignItems="flex-end" flexShrink={0}>
             <Text
-              key={`${item.candidateId}-${itemIndex}`}
-              fontFamily="$body"
-              fontSize={12}
+              fontFamily="$mono"
+              fontWeight="600"
+              fontSize={19}
+              color="$gold"
+            >
+              {round(suggestion.kcal).toLocaleString()}
+            </Text>
+            <Text
+              fontFamily="$display"
+              fontSize={8.5}
+              fontWeight="600"
+              letterSpacing={1.2}
               color="$text3"
             >
-              {item.name} — {formatServings(item.servings)} ×{" "}
-              {item.servingLabel}
+              KCAL
             </Text>
+          </View>
+        </View>
+
+        {/* Untrusted model prose — plain text only, never markup or a link.
+            The sparkle marks it as the model's reasoning rather than our copy. */}
+        <View flexDirection="row" gap={7}>
+          <View paddingTop={2}>
+            <IconSparkles size={12} color={GOLD.base} />
+          </View>
+          <Text
+            fontFamily="$body"
+            fontSize={12.5}
+            lineHeight={18}
+            color="$text2"
+            flex={1}
+          >
+            {suggestion.reason}
+          </Text>
+        </View>
+
+        <View flexDirection="row" gap={6}>
+          <Pill tone="primary" size="xs">
+            P {round(suggestion.proteinG)}g
+          </Pill>
+          <Pill tone="gold" size="xs">
+            C {round(suggestion.carbsG)}g
+          </Pill>
+          <Pill tone="ember" size="xs">
+            F {round(suggestion.fatG)}g
+          </Pill>
+        </View>
+
+        <View gap={4} paddingTop={2}>
+          {suggestion.items.map((item, itemIndex) => (
+            <View
+              key={`${item.candidateId}-${itemIndex}`}
+              flexDirection="row"
+              alignItems="center"
+              gap={8}
+            >
+              <View
+                width={4}
+                height={4}
+                borderRadius={2}
+                backgroundColor="$text4"
+                flexShrink={0}
+              />
+              <Text
+                fontFamily="$body"
+                fontSize={12}
+                color="$text3"
+                flex={1}
+                numberOfLines={2}
+              >
+                {item.name} — {formatServings(item.servings)} ×{" "}
+                {item.servingLabel}
+              </Text>
+            </View>
           ))}
+        </View>
+
+        <View
+          flexDirection="row"
+          alignItems="center"
+          justifyContent="flex-end"
+          gap={4}
+          paddingTop={2}
+        >
+          <Text
+            fontFamily="$display"
+            fontWeight="600"
+            fontSize={12.5}
+            color="$gold"
+          >
+            Review and log
+          </Text>
+          <IconChevronR size={14} color={GOLD.base} />
         </View>
       </View>
     </Card>
@@ -484,13 +792,15 @@ function SuggestionCard({
  * multiplier would either be a lie about the unit or a client-side recompute of
  * numbers the whole pipeline exists to keep server-authoritative. Portion editing
  * belongs in the plan-review flow (AC 4.4), where the contract supports it.
+ *
+ * ⚠ The confirm button is NOT rendered here — {@link resolveFooter} pins it in
+ * the sheet footer. See the file docstring: this stack (items + picker + two
+ * conditional caveats) is exactly what pushed it below the fold of an 86 % sheet.
  */
 function DraftStage({
   draft,
   onToggleDraftItem,
   onSlotChange,
-  draftKcal,
-  onConfirm,
   confirming,
   onBackToResults,
   labelCheckRequired,
@@ -499,7 +809,6 @@ function DraftStage({
   added,
 }: MealprintSuggestSheetProps & { added: boolean }) {
   if (draft === null) return null;
-  const keptCount = draft.items.filter((item) => item.on).length;
   const partialCaveat = resolvePartialCaveat(
     dietaryPatterns,
     serverPartialEnforcementOnly,
@@ -550,7 +859,7 @@ function DraftStage({
               borderRadius={12}
               backgroundColor={item.on ? "$surface2" : "$surface"}
               borderWidth={1}
-              borderColor={item.on ? "$primaryDim" : "$border"}
+              borderColor={item.on ? "$goldDim" : "$border"}
               opacity={item.on ? 1 : 0.55}
             >
               <View
@@ -559,11 +868,11 @@ function DraftStage({
                 borderRadius={6}
                 alignItems="center"
                 justifyContent="center"
-                backgroundColor={item.on ? "$primaryDim" : "transparent"}
+                backgroundColor={item.on ? "$goldDim" : "transparent"}
                 borderWidth={1}
-                borderColor={item.on ? "$primary" : "$border3"}
+                borderColor={item.on ? "$gold" : "$border3"}
               >
-                {item.on ? <IconCheck size={13} color={PRIMARY.base} /> : null}
+                {item.on ? <IconCheck size={13} color={GOLD.base} /> : null}
               </View>
               <View flex={1} gap={2}>
                 <Text
@@ -609,23 +918,6 @@ function DraftStage({
           testID="mealprint-draft-partial-enforcement"
         />
       ) : null}
-
-      <Btn
-        variant="filled"
-        tone="primary"
-        size="lg"
-        full
-        onPress={onConfirm}
-        // `keptCount === 0` disables rather than logging nothing silently.
-        disabled={added || confirming || keptCount === 0}
-        testID="mealprint-draft-confirm"
-      >
-        {added
-          ? "Added ✓"
-          : confirming
-            ? "Adding…"
-            : `Log ${round(draftKcal)} kcal`}
-      </Btn>
     </View>
   );
 }
@@ -650,7 +942,7 @@ function ErrorStage({
       {errorIsEntitlement ? (
         <Btn
           variant="filled"
-          tone="primary"
+          tone="gold"
           size="lg"
           full
           onPress={onUpgrade}
@@ -661,7 +953,7 @@ function ErrorStage({
       ) : errorRetryable ? (
         <Btn
           variant="filled"
-          tone="primary"
+          tone="gold"
           size="lg"
           full
           onPress={onRetry}
@@ -672,7 +964,7 @@ function ErrorStage({
       ) : (
         <Btn
           variant="outline"
-          tone="primary"
+          tone="gold"
           size="md"
           full
           onPress={onClose}
