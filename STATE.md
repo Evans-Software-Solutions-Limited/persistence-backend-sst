@@ -121,6 +121,17 @@ bite, the separable piece is M21: Loadout Phase 4 + Mealprint alone close the
 > the user-change path. Its four residual findings (one 🟡, three 🟢) were fixed in
 > `0c1ce767`, each with a test verified to fail against its own reverted fix.
 >
+> **✅ MERGED as `fa0567fc` (PR #352), all 5 CI checks green.**
+>
+> ⚠ **The sweep was on `0c1ce767`; TWO commits landed after it and Inspector Brad never
+> saw them.** One is docs. The other, `949436ef`, is a PRODUCT change: `onGenerate` read
+> `gate.allowed` without `gate.isResolved`, so a tap inside the `/subscriptions/me`
+> first-fetch window sent an entitled Premium+ user to the paywall to buy the tier they
+> already own. It is covered by a revert-verified test and it is a strictly narrowing
+> guard — but it is unreviewed, and it was found by CI failing twice on two DIFFERENT
+> tests in this suite, not by review. **If anything in Mealprint misbehaves around
+> entitlement, start there.**
+>
 > ⚠ **Still not device-verified on the ENTITLED path** — see § START HERE item A.1.
 >
 > Everything below this line is the build history — the design pass, the five sweeps
@@ -1758,7 +1769,8 @@ consent copy, privacy section and governing law · the OFF re-seed backfilling
 
 **2026-08-04 (later) — Mealprint MERGED, and the pricing model moved to a 30 % Apple
 rate.** Sixth Inspector Brad sweep returned MERGE; its four residuals were fixed in
-`0c1ce767` with revert-verified tests, and the branch landed on `main`.
+`0c1ce767` with revert-verified tests, and the branch landed on `main` as `fa0567fc`
+(PR #352).
 
 - **The sweep-5 monotonic latch holds.** Sweep 6 attacked it from every angle named in
   the brief (ref-mutation during render under StrictMode, the change-bus flush ordering,
@@ -1770,6 +1782,14 @@ rate.** Sixth Inspector Brad sweep returned MERGE; its four residuals were fixed
   unconditionally, so it closed whichever sheet happened to be open when it fired —
   and its uncancelled handle was the "jest did not exit" warning that had been masking
   real open handles.
+- **⚠ A CI "flake" was a real bug, and my first fix for it was wrong.** Two consecutive
+  runs failed on two DIFFERENT tests in one suite, both stuck at the same stage. I
+  raised RTL's `waitFor` budget — treating a correctness bug as a timing budget, which
+  only moved which test lost the race. The actual cause: `onGenerate` treated "gate not
+  yet resolved" as "denied" and paywalled an entitled user. **A flake that moves between
+  tests is a race with a wrong outcome, not slowness.** Fixed properly by making the
+  harness await the query's own promise, plus the `isResolved` guard the hook had always
+  exposed for this.
 - **⚠ A third test passed against its own reverted fix.** The NaN-guard test asserted
   before the seed effect had run, and the fallback value equals the initial state, so it
   proved nothing. Third occurrence in one branch. **Revert and watch it fail — always.**
