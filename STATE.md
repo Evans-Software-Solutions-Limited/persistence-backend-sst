@@ -9,6 +9,36 @@ items, and the four most recent sessions. Trimmed 2026-07-27 from 1554 lines.
 If anything here contradicts `git log --oneline -30`, the git history wins —
 say so and fix this file.
 
+## ▶ START HERE — next session (written 2026-08-04)
+
+Two independent workstreams are queued. They do not block each other.
+
+**A · Merge the Mealprint mobile half.** Branch `claude/mealprint-mobile-ui-9347a0`,
+**PR NOT YET RAISED**. Design-reviewed by Brad and gate-green (476 suites / 5910
+tests, typecheck 8/8, mobile lint 0 errors). Three Inspector Brad sweeps plus a
+fourth on the last two commits. See § "spec-26 Mealprint — DESIGN PASS DONE".
+⚠ **The entitled half has still never executed** — the PR body must say so plainly.
+Read § "What IS device-verified" for the exact line between what ran and what did not.
+Blocked only on the staging entitlement row (§ trap warnings before writing it).
+
+**B · Subscription restructure — `specs/29-subscription-restructure/`.** Triplet
+written; nothing built. Start with `tasks.md` Phase 0 (no code): the App Review
+question is the only real blocker and it gates Phase 3 alone. Phases 0–1 have no
+dependency on Mealprint or Loadout and Phase 1 retro-protects margins on everything
+already shipped. Decision record is § "TIER + PRICING RESTRUCTURE" below.
+
+**⚠ Two standing hazards, both easy to trip:**
+`specs/stripe-rail-removal/` must NOT be executed — the rail is the coach-tier plan.
+Never rename a `tier_name` — RevenueCat entitlement ids ARE the tier_names.
+
+**Brad authorised a full prod + staging data reset (2026-08-04)** — only test accounts
+and his own exist, so the zero-grandfathering assumption for repricing is safe. Task
+0.5 is informational, not blocking. ⚠ No agent has touched prod/staging data; a reset
+is Brad's to run.
+
+Cost figures: `bun run scripts/ai-cost-model.ts`. **Never quote them from prose** —
+that is why they live in a tested script, and it has already gone stale twice.
+
 ## Current state (2026-08-02)
 
 ### ⚠ PLAN OF RECORD — the Premium+ launch is now a BUNDLE (Brad, 2026-08-02)
@@ -1014,6 +1044,26 @@ copy → migrate-FKs → delete dance; do not repeat that voluntarily.
 8. `useLoadoutGate.ts` / `useMealprintGate.ts` — hardcoded tier→boolean Records
    (they mirror the migrations because `/subscriptions/me` projects neither column).
 9. Seed-guard tests: `subscriptionTierSeed.test.ts`, `premiumPlusTierMigration.test.ts`.
+
+#### ⚠ Apple takes 15 %, not 25 % — and 30 % once you succeed
+
+`net $/mo` in the cost model is already `gross × (1 − Apple) × (1 − RevenueCat)`, so
+every margin figure here is AFTER the storefront cut. The rate is **15 %** (Small
+Business Program, applied and confirmed 2026-07-25 —
+`marketing/FUNDING_AVENUES.md:39-41`) plus RevenueCat 1 %.
+
+Worked example, Start Up Coach at £14.99: gross $19.04 → net **$16.02** → AI budget
+46 % = $7.37 → **$8.65 left = 54 % of net, 45 % of gross** at full saturation, and
+~75 % of gross at typical use.
+
+⚠ **Crossing $1M/yr in proceeds removes Small Business Program eligibility and Apple
+reverts to 30 %** — ~18 % less net revenue on an unchanged price. Growth triggers it,
+so it is a planning scenario, not a tail risk. Now modelled: `tierCost` takes an
+injectable commission and the report prints IAP-now / IAP-past-$1M / web per tier.
+
+**This is also the strongest argument for the split rail, and the single-commission
+model was hiding it:** Stripe's ~3 % does not scale with revenue, so the web rail's
+advantage over IAP roughly DOUBLES past the threshold — 13 points today, 27 after.
 
 #### Premium: HOLD £12.99 monthly — the mistake is the ANNUAL, in the other direction
 

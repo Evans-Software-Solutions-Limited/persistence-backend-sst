@@ -24,9 +24,12 @@
       assumes (`scripts/ai-cost-model.ts` `PRICE_PER_MTOK`).
 - [ ] **0.4 Confirm price points** — annual ~30 %; web tiers (C3); Start Up Coach's
       46 % budget.
-- [ ] **0.5 Count live subscribers on `individual_trainer`.** Expected 0 (no ASC
-      products). If non-zero, the zero-grandfathering assumption is dead and every
-      reprice needs Apple's consent flow.
+- [x] **0.5 Zero-grandfathering assumption — AUTHORISED, not verified.** Brad
+      confirmed 2026-08-04 that prod and staging hold only test accounts and his own,
+      and that data can be reset. So repricing is free. ⚠ No agent has touched
+      prod/staging data; any reset is Brad's to run. If the app ever ships before the
+      reprice lands, this reverts to a blocking check — an Apple price increase on an
+      existing subscription needs the consent flow.
 
 ## Phase 1 — Pooled AI budget (backend only, ships independently)
 
