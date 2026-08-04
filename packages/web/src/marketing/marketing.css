@@ -2516,6 +2516,19 @@
   color: var(--m-text);
   margin: 42px 0 12px;
 }
+/* Subsection heading inside a legal section (e.g. the privacy policy's
+   "Importing a recipe from a link"). Sits below h2 in weight and size so the
+   nesting reads, with a tighter top margin since it follows sibling prose
+   rather than opening a new section. Without this rule an <h3> inherits body
+   copy and is indistinguishable from the paragraph under it. */
+.mkt .legal h3 {
+  font-family: var(--m-disp);
+  font-weight: 700;
+  font-size: 17px;
+  letter-spacing: -0.01em;
+  color: var(--m-text);
+  margin: 26px 0 10px;
+}
 .mkt .legal p {
   font-size: 15.5px;
   line-height: 1.7;

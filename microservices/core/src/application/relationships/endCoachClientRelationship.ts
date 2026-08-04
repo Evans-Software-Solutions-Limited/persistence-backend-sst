@@ -1,5 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import {
+  clientAiSummaries,
   ptClientRelationships,
   programAssignments,
   workoutAssignments,
@@ -22,6 +23,8 @@ export type EndCoachClientRelationshipResult =
       relationshipId: string;
       programmesRemoved: number;
       workoutAssignmentsRemoved: number;
+      /** Coach AI summaries about this client removed by the teardown. */
+      aiSummariesRemoved: number;
     }
   | { ok: false; status: 404 };
 
@@ -44,6 +47,9 @@ function todayISODate(): string {
  *      their materialised workout-assignment occurrences via
  *      `workout_assignments.program_assignment_id` (onDelete cascade).
  *   3. Delete the coach's remaining ad-hoc workout assignments for this client.
+ *   3a. Delete the coach's AI summaries about this client — see the inline note;
+ *      teardown is a soft end and the relationship row is REVIVED on reconnect,
+ *      so anything left keyed on the pair comes back with it.
  *   4. Audit (`relationship_terminated`).
  *
  * Coach-set HABITS and GOALS are deliberately NOT touched (D3 / spec 18 +
@@ -141,6 +147,34 @@ export async function endCoachClientRelationship({
       )
       .returning({ id: workoutAssignments.id });
 
+    // 3a — the coach's AI-generated summaries ABOUT this client.
+    //
+    // Unlike habits and goals (kept by design, D3 / spec 18 decision 6, because
+    // they transfer to the client and remain useful to them), a summary is
+    // AI-derived prose about the client that exists solely for the coach to
+    // read. It is of no use to the client, and keeping it after the client has
+    // withdrawn consent to share their data would be storage without a purpose
+    // (Art 5(1)(e)).
+    //
+    // ⚠ The concrete reason this is a DELETE and not a status-gated read:
+    // teardown is a SOFT end, and re-establishing the relationship REVIVES the
+    // same row back to `active` (`trainersRespondToRequestHandler`,
+    // `trainersRespondToClientRequestHandler`). Because `client_ai_summaries` is
+    // keyed `(trainer_id, client_id, covers_date)` and was never deleted here,
+    // every summary from the previous coaching cycle silently became readable
+    // again the moment the client re-accepted — carrying body-composition and
+    // adherence detail from a period the client had ended. The read guard was
+    // working exactly as designed; the rows simply should not have survived.
+    const summaries = await tx
+      .delete(clientAiSummaries)
+      .where(
+        and(
+          eq(clientAiSummaries.clientId, clientId),
+          eq(clientAiSummaries.trainerId, trainerId),
+        ),
+      )
+      .returning({ id: clientAiSummaries.id });
+
     await auditTrainerAction({
       trainerId,
       clientId,
@@ -151,6 +185,7 @@ export async function endCoachClientRelationship({
         initiatedBy,
         programmesRemoved: programmes.length,
         workoutAssignmentsRemoved: assignments.length,
+        aiSummariesRemoved: summaries.length,
       },
       tx,
     });
@@ -172,6 +207,7 @@ export async function endCoachClientRelationship({
       relationshipId: row.id,
       programmesRemoved: programmes.length,
       workoutAssignmentsRemoved: assignments.length,
+      aiSummariesRemoved: summaries.length,
     };
   });
 

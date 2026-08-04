@@ -63,6 +63,14 @@ export const mealsCreateHandler = new Elysia()
     {
       body: t.Object({
         name: t.String({ minLength: 1 }),
+        // ⚠ PRIVACY POLICY DEPENDENCY: the published policy states "the images
+        // and text you submit are not stored ... there is no photo library of
+        // your meals, recipes or gym on our servers". That claim is true today
+        // only because NO client ever sets this field — there is no meal-photo
+        // bucket, and the AI estimate path holds the image in memory and
+        // discards it. Wiring up meal-photo upload therefore falsifies a live
+        // privacy claim: update `packages/web/src/pages/Privacy.tsx` AND
+        // `packages/mobile/.../PrivacyPolicyPresenter.tsx` in the same change.
         photoUrl: t.Optional(t.String()),
         items: t.Array(
           t.Object({

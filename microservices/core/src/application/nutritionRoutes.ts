@@ -62,6 +62,15 @@ export const nutritionRoutes = new Elysia()
   .use(nutritionWaterGetHandler)
   .use(nutritionWaterPatchHandler)
   .use(nutritionBarcodeResolveHandler)
+  // ⚠ PRIVACY POLICY DEPENDENCY — adding an AI route below obliges a policy
+  // update. Both copies of the privacy policy enumerate the AI features by name
+  // (`packages/web/src/pages/Privacy.tsx` § "AI features and what they do with
+  // your data" and `packages/mobile/.../PrivacyPolicyPresenter.tsx` § 5), and
+  // their tests assert a HARDCODED list — so a newly mounted AI endpoint passes
+  // CI while leaving the policy incomplete, which is a UK GDPR Art 13(1)(c) gap.
+  // This has already happened once: `nutritionAiMealSuggestHandler` shipped
+  // undisclosed. If you add one here, add it there.
+  //
   // AI Tier B (M9.5) — both gate on `ai_access` inside the handler.
   .use(nutritionAiEstimateHandler)
   .use(nutritionAiEstimateTextHandler)
