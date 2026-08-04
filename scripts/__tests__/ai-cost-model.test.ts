@@ -276,8 +276,42 @@ describe("report", () => {
     expect(report()).toContain("Premium+ (unlaunched)");
   });
 
-  it("states the measured/estimated caveat up front", () => {
-    expect(report()).toMatch(/only the two loadout unit costs are measured/i);
+  it("states the measured/estimated caveat up front, with counts that cannot go stale", () => {
+    // ⚠ Derived, not pinned to prose. The previous version asserted "only the two
+    // loadout unit costs are measured" and went stale the moment Mealprint became
+    // the ninth endpoint — the same failure mode that moved these figures out of
+    // STATE.md and into this script in the first place.
+    const measured = AI_ENDPOINTS.filter((e) => e.profile.measured).length;
+    const derived = AI_ENDPOINTS.length - measured;
+    expect(report()).toContain(
+      `Only ${measured} of ${AI_ENDPOINTS.length} unit costs are MEASURED`,
+    );
+    expect(report()).toContain(`the other ${derived} are derived`);
+  });
+
+  it("⚠ reaches Mealprint from premium_plus ONLY — the asymmetry with Loadout is the open pricing question", () => {
+    // `mealprint_access` is granted by migration 20260803120200 to premium_plus
+    // alone, while `loadout_access` also reaches all three trainer tiers. Modelling
+    // them as one flag would hide the number needed to settle that question, so
+    // this pins the two sets apart.
+    const reaches = (tierName: string, key: string) =>
+      endpointsForTier(TIERS.find((t) => t.name === tierName)!).some(
+        (e) => e.key === key,
+      );
+
+    expect(reaches("premium_plus", "meal_suggest")).toBe(true);
+    for (const tier of [
+      "free",
+      "premium",
+      "individual_trainer",
+      "small_business",
+      "medium_enterprise",
+    ]) {
+      expect(reaches(tier, "meal_suggest")).toBe(false);
+    }
+    // …and the contrast that makes it a question at all: a £14.99 coach tier does
+    // reach Loadout, which an athlete pays £29.99 for.
+    expect(reaches("individual_trainer", "loadout_remap")).toBe(true);
   });
 
   it("marks the measured rows in the breakdown", () => {

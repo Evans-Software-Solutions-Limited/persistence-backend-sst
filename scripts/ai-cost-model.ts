@@ -76,7 +76,7 @@ export function costPerCall(profile: TokenProfile): number {
 // ─── Inputs: the endpoints ───────────────────────────────────────────────────
 
 /** Which entitlement flag gates an endpoint. */
-export type Gate = "ai_access" | "loadout";
+export type Gate = "ai_access" | "loadout" | "mealprint";
 
 export type AiEndpoint = {
   readonly key: string;
@@ -212,6 +212,24 @@ export const AI_ENDPOINTS: readonly AiEndpoint[] = [
     },
   },
   {
+    key: "meal_suggest",
+    label: "Mealprint — suggest a meal",
+    gate: "mealprint",
+    ceilingEnv: "AI_MEAL_SUGGEST_DAILY_LIMIT",
+    dailyCeiling: 20,
+    // Deciding what to eat is a per-MEAL action, so a few a day for an engaged
+    // user — the same order as the Loadout re-map, not the once-per-gym scan.
+    typicalPerDay: 2,
+    profile: {
+      model: "haiku",
+      inputTokens: 4_200,
+      outputTokens: 300,
+      measured: false,
+      basis:
+        "spec-26 design § Cost: ~£0.006/suggest. Text-only composition over a ~200-candidate list — declared as the SAME shape as the Loadout re-map, so the re-map's measured token profile is reused. Inherits that measurement's basis, not its confidence: the candidate list length is an estimate.",
+    },
+  },
+  {
     key: "equipment_scan",
     label: "Loadout — scan a gym",
     gate: "loadout",
@@ -240,6 +258,15 @@ export type Tier = {
   readonly priceMonthly: number;
   readonly aiAccess: boolean;
   readonly loadoutAccess: boolean;
+  /**
+   * `subscription_tiers.mealprint_access` (migration 20260803120200).
+   *
+   * ⚠ Deliberately NOT the same set as {@link loadoutAccess}: Mealprint is
+   * premium_plus ONLY, while Loadout also reaches all three trainer tiers. That
+   * asymmetry is the open pricing question, and modelling it as one flag would
+   * hide exactly the number needed to settle it.
+   */
+  readonly mealprintAccess: boolean;
   /** `trainer_client_limit`, or null for an athlete tier. */
   readonly clientLimit: number | null;
   /** False for `premium_plus` until the launch flip. */
@@ -254,6 +281,7 @@ export const TIERS: readonly Tier[] = [
     priceMonthly: 0,
     aiAccess: false,
     loadoutAccess: false,
+    mealprintAccess: false,
     clientLimit: null,
     isActive: true,
   },
@@ -263,6 +291,7 @@ export const TIERS: readonly Tier[] = [
     priceMonthly: 12.99,
     aiAccess: true,
     loadoutAccess: false,
+    mealprintAccess: false,
     clientLimit: null,
     isActive: true,
   },
@@ -272,6 +301,7 @@ export const TIERS: readonly Tier[] = [
     priceMonthly: 29.99,
     aiAccess: true,
     loadoutAccess: true,
+    mealprintAccess: true,
     clientLimit: null,
     isActive: false,
   },
@@ -281,6 +311,7 @@ export const TIERS: readonly Tier[] = [
     priceMonthly: 14.99,
     aiAccess: true,
     loadoutAccess: true,
+    mealprintAccess: false,
     clientLimit: 2,
     isActive: true,
   },
@@ -290,6 +321,7 @@ export const TIERS: readonly Tier[] = [
     priceMonthly: 75,
     aiAccess: true,
     loadoutAccess: true,
+    mealprintAccess: false,
     clientLimit: 30,
     isActive: true,
   },
@@ -299,6 +331,7 @@ export const TIERS: readonly Tier[] = [
     priceMonthly: 300,
     aiAccess: true,
     loadoutAccess: true,
+    mealprintAccess: false,
     clientLimit: 500,
     isActive: true,
   },
@@ -362,7 +395,11 @@ const DAYS = 30;
 /** Which endpoints a tier can actually reach. */
 export function endpointsForTier(tier: Tier): readonly AiEndpoint[] {
   return AI_ENDPOINTS.filter((endpoint) =>
-    endpoint.gate === "loadout" ? tier.loadoutAccess : tier.aiAccess,
+    endpoint.gate === "loadout"
+      ? tier.loadoutAccess
+      : endpoint.gate === "mealprint"
+        ? tier.mealprintAccess
+        : tier.aiAccess,
   );
 }
 
@@ -495,7 +532,7 @@ export function report(): string {
     `Assumptions: £1 = $${USD_PER_GBP} · Apple ${pct(APPLE_COMMISSION)} · RevenueCat ${pct(REVENUECAT_RATE)} · ${DAYS}-day month`,
   );
   lines.push(
-    "⚠ Only the two Loadout unit costs are MEASURED; the other six are derived from declared token profiles.",
+    `⚠ Only ${AI_ENDPOINTS.filter((e) => e.profile.measured).length} of ${AI_ENDPOINTS.length} unit costs are MEASURED; the other ${AI_ENDPOINTS.filter((e) => !e.profile.measured).length} are derived from declared token profiles.`,
   );
   lines.push("");
 
