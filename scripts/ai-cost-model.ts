@@ -371,16 +371,12 @@ export const SMALL_BUSINESS_APPLE_COMMISSION = 0.15;
 export const REVENUECAT_RATE = 0.01;
 
 /**
- * Apple's STANDARD commission, for the post-$1M scenario. Crossing $1M/yr in
- * proceeds removes Small Business Program eligibility, so growth itself moves
- * every IAP tier onto this rate.
- */
-export const STANDARD_APPLE_COMMISSION = 0.3;
-
-/**
  * The web/Stripe rail's effective take (~2.9 % + fixed fee, rounded). ⚠ The point
- * of the split rail: this does NOT rise with revenue, so its advantage over IAP
- * GROWS as the business succeeds — 13 points today, 27 points past $1M.
+ * of the split rail: this does NOT rise with revenue, so its advantage over IAP is
+ * **27 points TODAY** — it no longer widens with success, because
+ * `APPLE_COMMISSION` already starts at the standard 30 %. (If the Small Business
+ * application is ever approved the gap narrows to 12 points, then reverts to 27
+ * past $1M/yr in proceeds, which removes eligibility.)
  */
 export const WEB_RAIL_COMMISSION = 0.03;
 

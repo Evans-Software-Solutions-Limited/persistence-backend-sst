@@ -84,6 +84,10 @@ export function MealprintSuggestSheetContainer() {
   const [draft, setDraft] = useState<MealprintDraft | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [added, setAdded] = useState(false);
+  // ⚠ A confirm that throws PART-WAY leaves items logged. Distinct from
+  // `suggest.failure` (which is the generate call) because it is NOT retryable
+  // here — re-running the log would double-count whatever already landed.
+  const [confirmError, setConfirmError] = useState(false);
 
   // Guard convention shared with Scan/Quick-add/Snap: only a genuine dismiss of
   // THIS sheet (still visible) clears the store — a controlled handoff to another
@@ -92,18 +96,38 @@ export function MealprintSuggestSheetContainer() {
     if (visible) close();
   }, [visible, close]);
 
+  /**
+   * The post-confirm auto-dismiss timer.
+   *
+   * ⚠ Held so it can be CANCELLED, not only guarded. The guard inside the callback
+   * stops it closing the wrong sheet; cancelling stops it existing at all once this
+   * sheet has moved on. Root-mounted means unmount is rare, so the re-open cancel
+   * is the one that matters in practice — and a live handle per confirm is what
+   * makes jest report "did not exit one second after the test run".
+   */
+  const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearDismissTimer = useCallback(() => {
+    if (dismissTimerRef.current !== null) {
+      clearTimeout(dismissTimerRef.current);
+      dismissTimerRef.current = null;
+    }
+  }, []);
+  useEffect(() => clearDismissTimer, [clearDismissTimer]);
+
   const { reset } = suggest;
   useEffect(() => {
     if (!visible) return;
     // Reset on OPEN rather than on close: the close animation is still running
     // when `visible` flips false, and blanking the body mid-slide-down is visible.
+    clearDismissTimer();
     reset();
     setShape("either");
     setSteer("");
     setDraft(null);
     setConfirming(false);
     setAdded(false);
-  }, [visible, reset]);
+    setConfirmError(false);
+  }, [visible, reset, clearDismissTimer]);
 
   const { run, retry } = suggest;
   const onGenerate = useCallback(() => {
@@ -218,24 +242,46 @@ export function MealprintSuggestSheetContainer() {
       notifyMutated();
       setAdded(true);
       // Brief confirmation, then dismiss — matching the Snap sheet's cadence.
-      setTimeout(() => close(), 900);
+      //
+      // ⚠ The timer must re-check WHICH sheet is open, not just call `close()`.
+      // Users do not wait 900 ms: dismissing "Added ✓" by backdrop or swipe and
+      // then opening Scan or Quick-add leaves this timer pending, and a bare
+      // `close()` sets `sheet: null` unconditionally — snapping the newly-opened
+      // sibling shut. This is the same reason `onSheetClose` guards on `visible`.
+      // Read from the store rather than closing over `visible`, which is stale by
+      // the time the timer fires.
+      dismissTimerRef.current = setTimeout(() => {
+        dismissTimerRef.current = null;
+        if (useFuelSheets.getState().sheet === "mealprintSuggest") close();
+      }, 900);
+    } catch {
+      // ⚠ A throw here means items 1..k are ALREADY logged (the loop awaits one
+      // mutation per item), so we must not leave the user on an unchanged draft:
+      // they would re-confirm and double-log those k. Surface it and let them
+      // dismiss — `notifyMutated` still fires so the ring reflects what landed.
+      notifyMutated();
+      setConfirmError(true);
     } finally {
       confirmingRef.current = false;
       setConfirming(false);
     }
   }, [draft, activeDate, logEntry, notifyMutated, close]);
 
-  const stage: MealprintSuggestStage = added
-    ? "added"
-    : draft !== null
-      ? "draft"
-      : suggest.stage === "generating"
-        ? "generating"
-        : suggest.stage === "error"
-          ? "error"
-          : suggest.stage === "ready"
-            ? "results"
-            : "setup";
+  // ⚠ `confirmError` outranks `added`: a part-way failure must never render the
+  // success stage, whose 900 ms timer would then dismiss the sheet and hide it.
+  const stage: MealprintSuggestStage = confirmError
+    ? "error"
+    : added
+      ? "added"
+      : draft !== null
+        ? "draft"
+        : suggest.stage === "generating"
+          ? "generating"
+          : suggest.stage === "error"
+            ? "error"
+            : suggest.stage === "ready"
+              ? "results"
+              : "setup";
 
   return (
     <MealprintSuggestSheetPresenter
@@ -295,12 +341,22 @@ export function MealprintSuggestSheetContainer() {
       onConfirm={() => void onConfirm()}
       confirming={confirming}
       onBackToResults={onBackToResults}
-      errorMessage={suggest.failure?.message ?? null}
-      errorRetryable={suggest.failure?.retryable ?? false}
+      errorMessage={
+        confirmError
+          ? "Some items may not have been added. Close this and check your meal log before trying again."
+          : (suggest.failure?.message ?? null)
+      }
+      // ⚠ Deliberately NOT retryable on a confirm failure: the loop logs one item
+      // at a time, so a retry re-logs everything that already landed.
+      errorRetryable={
+        confirmError ? false : (suggest.failure?.retryable ?? false)
+      }
       // A 402 here means the client verdict and the server disagreed (the entry
       // card gates on the same verdict, so this is rare) — the honest recovery is
       // the paywall, not a retry that will 402 again.
-      errorIsEntitlement={suggest.failure?.entitlementDenied ?? false}
+      errorIsEntitlement={
+        confirmError ? false : (suggest.failure?.entitlementDenied ?? false)
+      }
       onRetry={onRetry}
       onUpgrade={gate.onUpgrade}
     />

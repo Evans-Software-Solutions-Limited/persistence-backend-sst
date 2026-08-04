@@ -632,3 +632,99 @@ describe("MealprintSuggestSheetContainer — the disclaimer floor (Inspector �
     expect(probe().serverPartialEnforcementOnly).toBe(false);
   });
 });
+
+describe("MealprintSuggestSheetContainer — the post-confirm timer (Inspector 🟡)", () => {
+  /**
+   * Capture ONLY the 900 ms confirmation timer and leave every other `setTimeout`
+   * alone — React Query's internals and the SQLite change bus both use it, so a
+   * blanket fake would change what is under test.
+   */
+  function captureConfirmTimer() {
+    const pending: (() => void)[] = [];
+    const real = globalThis.setTimeout;
+    const spy = jest.spyOn(globalThis, "setTimeout").mockImplementation(((
+      fn: () => void,
+      ms?: number,
+      ...rest: unknown[]
+    ) => {
+      if (ms === 900) {
+        pending.push(fn);
+        return 0 as unknown as ReturnType<typeof setTimeout>;
+      }
+      return (real as (...a: unknown[]) => unknown)(fn, ms, ...rest);
+    }) as never);
+    return { pending, restore: () => spy.mockRestore() };
+  }
+
+  it("⚠ does NOT close a sibling sheet the user opened before it fired", async () => {
+    // Users do not wait 900 ms. Dismiss "Added ✓" by backdrop or swipe, tap Scan,
+    // and an unguarded `close()` sets `sheet: null` — snapping Scan shut. Same
+    // reason `onSheetClose` guards on `visible`.
+    const timer = captureConfirmTimer();
+    try {
+      const { probe } = await openWithDraft();
+      await act(async () => {
+        probe().onConfirm();
+      });
+      await waitFor(() => expect(probe().stage).toBe("added"));
+      expect(timer.pending).toHaveLength(1);
+
+      // The user dismisses and opens a sibling before the timer fires.
+      act(() => useFuelSheets.getState().openScan("lunch"));
+      expect(useFuelSheets.getState().sheet).toBe("scan");
+
+      act(() => timer.pending[0]!());
+      expect(useFuelSheets.getState().sheet).toBe("scan");
+    } finally {
+      timer.restore();
+    }
+  });
+
+  it("still dismisses itself when it IS the sheet on screen", async () => {
+    // The guard must not defeat the feature it guards.
+    const timer = captureConfirmTimer();
+    try {
+      const { probe } = await openWithDraft();
+      await act(async () => {
+        probe().onConfirm();
+      });
+      await waitFor(() => expect(probe().stage).toBe("added"));
+      act(() => timer.pending[0]!());
+      expect(useFuelSheets.getState().sheet).toBeNull();
+    } finally {
+      timer.restore();
+    }
+  });
+});
+
+describe("MealprintSuggestSheetContainer — a confirm that fails PART-WAY (Inspector 🟢)", () => {
+  it("⚠ surfaces a non-retryable error instead of a false success", async () => {
+    // The loop awaits one mutation per item, so a throw on item 2 leaves item 1
+    // logged. Falling through to `added` would dismiss the sheet 900 ms later and
+    // the user would never know — then re-confirm and double-log item 1.
+    const { probe, storage } = await openWithDraft();
+    let calls = 0;
+    const realEnqueue = storage.enqueueMutation.bind(storage);
+    jest
+      .spyOn(storage, "enqueueMutation")
+      .mockImplementation((...args: Parameters<typeof realEnqueue>) => {
+        calls += 1;
+        if (calls === 2) throw new Error("sqlite: disk I/O error");
+        return realEnqueue(...args);
+      });
+
+    await act(async () => {
+      probe().onConfirm();
+    });
+
+    await waitFor(() => expect(probe().stage).toBe("error"));
+    // Non-retryable ON PURPOSE: a retry re-logs whatever already landed.
+    expect(probe().errorRetryable).toBe(false);
+    expect(probe().errorIsEntitlement).toBe(false);
+    expect(probe().errorMessage).toMatch(/check your meal log/i);
+    // Fuel must still re-read — part of the draft really is logged.
+    expect(useFuelSheets.getState().rev).toBe(1);
+    // And the button is usable again rather than stuck spinning.
+    expect(probe().confirming).toBe(false);
+  });
+});

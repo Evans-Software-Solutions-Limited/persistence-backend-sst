@@ -151,11 +151,19 @@ export function MealprintPreferencesContainer({
     setAvoidAllergens(data.avoidAllergens.filter(isAllergenKey));
     setAvoidFoods([...data.avoidFoods]);
     setLikedFoods([...data.likedFoods]);
+    // ⚠ `Number.isFinite` first: `getMealprintPreferences` is an unvalidated
+    // envelope passthrough, so an absent or non-numeric field makes the clamp
+    // `NaN` — which renders as "NaN" in the stepper and, worse, `JSON.stringify`
+    // writes as `null` on Save, so the server 400s and the user finds out on the
+    // sync-failure screen minutes later. `summarisePreferences` guards this exact
+    // field the same way (`mealprint.ts` § summarise).
     setMealsPerDay(
-      Math.min(
-        MAX_MEALS_PER_DAY,
-        Math.max(MIN_MEALS_PER_DAY, data.mealsPerDay),
-      ),
+      Number.isFinite(data.mealsPerDay)
+        ? Math.min(
+            MAX_MEALS_PER_DAY,
+            Math.max(MIN_MEALS_PER_DAY, data.mealsPerDay),
+          )
+        : DEFAULT_MEALPRINT_PREFERENCES.mealsPerDay,
     );
     // Same reasoning as the arrays above — the DTO types this as `EffortLevel`,
     // but it is a plain string on the wire and it drives a `Segmented` whose

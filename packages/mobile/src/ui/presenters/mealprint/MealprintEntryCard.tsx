@@ -175,9 +175,16 @@ export function MealprintEntryCard({
   const title = "What should I eat?";
 
   // ⚠ The concrete line is for entitled users only. See `remainingKcal`.
+  //
+  // ⚠ `isToday` is in this condition so the prop ENFORCES ITSELF. `budgetLine`
+  // ends "…left today", and today-ness was previously guaranteed only by the one
+  // caller nulling `remainingKcal` off-today (`FuelPresenter`) — a second caller
+  // passing a real `remainingKcal` with `isToday: false` would reopen the very
+  // copy leak this required prop exists to close.
   const hasBudget =
     !isLocked &&
     !isPending &&
+    isToday &&
     remainingKcal !== null &&
     remainingKcal !== undefined &&
     remainingKcal > 0;

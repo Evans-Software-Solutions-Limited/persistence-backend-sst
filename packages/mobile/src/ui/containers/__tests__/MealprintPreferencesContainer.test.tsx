@@ -164,6 +164,27 @@ describe("MealprintPreferencesContainer", () => {
     await waitFor(() => expect(probe().mealsPerDay).toBe(6));
   });
 
+  it("⚠ falls back to the default when the wire mealsPerDay is not a number", async () => {
+    // `getMealprintPreferences` is an unvalidated envelope passthrough, so an
+    // absent or non-numeric field clamps to NaN — which renders as "NaN" in the
+    // stepper and, on Save, `JSON.stringify` writes as `null`, so the server 400s
+    // and the user finds out on the sync-failure screen minutes later.
+    const { probe } = mount("editor", (api) => {
+      api.mealprintPreferences = {
+        ...api.mealprintPreferences,
+        // ⚠ Waited on below — the fallback value EQUALS the initial state, so
+        // without a second seeded field this test would pass before the seed
+        // effect had run at all, and prove nothing.
+        avoidFoods: ["olives"],
+        mealsPerDay: undefined as unknown as number,
+        isDefault: false,
+      };
+    });
+    await waitFor(() => expect(probe().avoidFoods).toEqual(["olives"]));
+    expect(Number.isNaN(probe().mealsPerDay)).toBe(false);
+    expect(probe().mealsPerDay).toBe(DEFAULT_MEALPRINT_PREFERENCES.mealsPerDay);
+  });
+
   it("⚠ does NOT re-seed once the user has started editing", async () => {
     // The latch: a network refresh landing a second after mount must not discard
     // typing — on this screen that means losing an allergen selection.

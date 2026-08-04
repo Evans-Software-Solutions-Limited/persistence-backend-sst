@@ -206,6 +206,25 @@ describe("MealprintEntryCard", () => {
     expect(setup.queryByText(/the day you're viewing/)).toBeTruthy();
   });
 
+  it("⚠ suppresses the budget line itself off-today, not just via a null kcal", () => {
+    // `isToday` is required so the card CANNOT leak "today" copy — but until
+    // `hasBudget` consulted it, that was guaranteed only by FuelPresenter nulling
+    // `remainingKcal`. A second caller passing a real budget with isToday:false
+    // would print "…left today" over another day's numbers.
+    const { queryByText } = renderWithTheme(
+      <MealprintEntryCard
+        {...cardProps({
+          isToday: false,
+          remainingKcal: 1160,
+          remainingProteinG: 84,
+        })}
+      />,
+    );
+    expect(queryByText(/left today/)).toBeNull();
+    expect(queryByText(/Let Mealprint fill the gap/)).toBeNull();
+    expect(queryByText(/on the day you're viewing/)).toBeTruthy();
+  });
+
   it("leads on the real remaining budget when Fuel knows it", () => {
     const { queryByText } = renderWithTheme(
       <MealprintEntryCard
