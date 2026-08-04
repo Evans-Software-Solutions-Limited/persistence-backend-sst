@@ -2030,7 +2030,11 @@ export const recipes = pgTable(
     photoUrl: text("photo_url"),
     servings: numeric("servings").notNull().default("1"),
     instructions: text("instructions"),
-    // 'manual' | 'url_import' | 'ai_extracted'
+    // 'manual' | 'url_import' | 'ai_extracted' | 'ai_generated'
+    // ⚠ Unconstrained at the DB level — there has never been a CHECK on this
+    // column. 'ai_generated' (Mealprint plan-accept, spec-26 Phase 2) therefore
+    // needed no migration; do not write an ALTER for a constraint that does not
+    // exist. See 20260804120000_mealprint_plans.sql.
     source: text("source").notNull().default("manual"),
     sourceUrl: text("source_url"),
     totalKcal: numeric("total_kcal"), // materialised from ingredients
@@ -2236,6 +2240,119 @@ export const mealprintIngredientFeedback = pgTable(
       t.userId,
       t.createdAt.desc(),
     ),
+  ],
+);
+
+/**
+ * Mealprint (spec-26) Phase 2 — one row per planned day. A week plan (Phase 3)
+ * is seven rows sharing a `groupId`.
+ *
+ * ⚠ `mealsPerDay`, `effortLevel` and the four targets are SNAPSHOTS taken at
+ * accept, not live joins to `nutritionPreferences` / `nutritionTargets`. A user
+ * who re-cuts their macros must not retroactively change what an already
+ * accepted plan was aiming at — that is what keeps adherence honest.
+ *
+ * Migration: `20260804120000_mealprint_plans.sql`.
+ */
+export const mealPlans = pgTable(
+  "meal_plans",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    // 'draft' | 'active' | 'archived' (DB CHECK meal_plans_status_known).
+    // ⚠ No current path writes 'draft': plan-generate is stateless and returns
+    // a payload (design § 3). The state exists for Phase 3's async week
+    // generation, which cannot be stateless.
+    status: text("status").notNull().default("draft"),
+    planDate: date("plan_date").notNull(),
+    // NULL for a single day; shared across the seven rows of a week.
+    groupId: uuid("group_id"),
+    mealsPerDay: integer("meals_per_day").notNull(),
+    // 'quick' | 'balanced' | 'high_maintenance' — mirrors
+    // `nutritionPreferences.effortLevel`'s vocabulary.
+    effortLevel: text("effort_level").notNull(),
+    targetKcal: numeric("target_kcal").notNull(),
+    targetProteinG: numeric("target_protein_g").notNull(),
+    targetCarbsG: numeric("target_carbs_g").notNull(),
+    targetFatG: numeric("target_fat_g").notNull(),
+    // 'ai' | 'manual' | 'coach'
+    source: text("source").notNull().default("ai"),
+    // Future coach-authored plans. Deliberately NOT defaulted to userId, so
+    // "a coach made this" stays distinguishable from "we do not know".
+    createdByUserId: uuid("created_by_user_id").references(() => profiles.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+  },
+  (t) => [
+    // ⚠ The partial unique index (one ACTIVE plan per user per date) is NOT
+    // expressible here — Drizzle's uniqueIndex has no WHERE clause in this
+    // version, and the constraint lives in the migration as
+    // `meal_plans_one_active_per_date`. It is what makes "replace today's plan"
+    // safe under a double tap, so a reader must not conclude from this file
+    // that two active plans are possible.
+    index("meal_plans_user_date_idx").on(t.userId, t.planDate.desc()),
+    index("meal_plans_group_idx").on(t.groupId),
+  ],
+);
+
+/**
+ * Mealprint (spec-26) Phase 2 — the meals of one planned day.
+ *
+ * Macros are denormalised so a meal stays readable after the recipe or saved
+ * meal it came from is deleted (both FKs are SET NULL). Same reasoning as
+ * `nutritionEntries` storing macros at write time.
+ */
+export const mealPlanMeals = pgTable(
+  "meal_plan_meals",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // CASCADE is correct here and only here — a meal has no meaning without
+    // its plan.
+    planId: uuid("plan_id")
+      .notNull()
+      .references(() => mealPlans.id, { onDelete: "cascade" }),
+    sortOrder: integer("sort_order").notNull(),
+    label: text("label").notNull(),
+    // ⚠ MUST stay in step with `nutritionEntries.mealSlot`'s vocabulary — the
+    // log path copies this value straight onto the entry, so a value legal
+    // here and illegal there fails at write time rather than as a 400.
+    logSlot: text("log_slot").notNull(),
+    // All three backings are nullable and there is deliberately no XOR check:
+    // SET NULL means a formerly recipe-backed row legitimately becomes
+    // source-less, and the denormalised macros are what keep it readable.
+    recipeId: uuid("recipe_id").references(() => recipes.id, {
+      onDelete: "set null",
+    }),
+    mealId: uuid("meal_id").references(() => meals.id, {
+      onDelete: "set null",
+    }),
+    // [{ foodId, servings }] — shape validated in the handler, not the DB.
+    items: jsonb("items"),
+    kcal: numeric("kcal").notNull(),
+    proteinG: numeric("protein_g").notNull(),
+    carbsG: numeric("carbs_g").notNull(),
+    fatG: numeric("fat_g").notNull(),
+    aiReason: text("ai_reason"),
+    // 'planned' | 'logged' | 'skipped'
+    state: text("state").notNull().default("planned"),
+    // ⚠ SET NULL, never CASCADE. Deleting a PLAN cascades to its meals but must
+    // never reach the food log, and deleting an ENTRY must unlink rather than
+    // delete the planned meal (AC 5.4). A cascade in either direction would let
+    // plan tidy-up silently destroy logged nutrition data.
+    loggedEntryId: uuid("logged_entry_id").references(
+      () => nutritionEntries.id,
+      { onDelete: "set null" },
+    ),
+  },
+  (t) => [
+    uniqueIndex("meal_plan_meals_plan_order_idx").on(t.planId, t.sortOrder),
+    index("meal_plan_meals_entry_idx").on(t.loggedEntryId),
   ],
 );
 
