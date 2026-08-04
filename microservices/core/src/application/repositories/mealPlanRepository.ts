@@ -106,9 +106,19 @@ export type CreatePlanInput = {
  * holds under concurrency.
  */
 export class ActivePlanExistsError extends Error {
-  constructor(public readonly planDate: string) {
+  /**
+   * ⚠ Declared-then-assigned rather than a `public readonly` constructor
+   * parameter property. `packages/web` compiles with `erasableSyntaxOnly`, and
+   * its Eden client pulls this file in through the `CoreApi` type — so a
+   * parameter property here fails the WEB typecheck (TS1294) with no web file
+   * touched. Same class of coupling as `reference_web_eden_couples_to_core_type`.
+   */
+  readonly planDate: string;
+
+  constructor(planDate: string) {
     super(`an active plan already exists for ${planDate}`);
     this.name = "ActivePlanExistsError";
+    this.planDate = planDate;
   }
 }
 

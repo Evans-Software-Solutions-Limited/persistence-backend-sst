@@ -25,6 +25,8 @@ import { nutritionAiEstimateRecipeHandler } from "./nutrition/ai/estimateRecipe/
 import { nutritionPreferencesGetHandler } from "./nutrition/mealprint/preferences/get/nutritionPreferencesGetHandler";
 import { nutritionPreferencesSetHandler } from "./nutrition/mealprint/preferences/set/nutritionPreferencesSetHandler";
 import { nutritionAiMealSuggestHandler } from "./nutrition/mealprint/ai/suggest/nutritionAiMealSuggestHandler";
+import { nutritionPlansCreateHandler } from "./nutrition/mealprint/plans/create/nutritionPlansCreateHandler";
+import { nutritionPlansReadHandlers } from "./nutrition/mealprint/plans/read/nutritionPlansReadHandlers";
 import { foodsListHandler } from "./foods/list/foodsListHandler";
 import { foodsCreateHandler } from "./foods/create/foodsCreateHandler";
 import { recipesListHandler } from "./recipes/list/recipesListHandler";
@@ -86,6 +88,16 @@ export const nutritionRoutes = new Elysia()
   // …but the suggestion endpoint IS gated: `meal_ai` (402) → daily ceiling
   // (429) → pipeline, inside the handler.
   .use(nutritionAiMealSuggestHandler)
+  // Mealprint plans (spec-26 Phase 2). Accept/read/patch/delete are UNGATED for
+  // the same reason preferences are: the paywall is on generation, and a lapsed
+  // subscriber must keep access to plans they made while paying.
+  //
+  // 🔴 `nutritionPlansReadHandlers` declares `/plans/active` BEFORE `/plans/:id`
+  // internally, and that order is load-bearing (see its docstring). Mounting the
+  // create handler either side of it is safe — POST and GET do not collide — but
+  // do NOT split the read handlers up.
+  .use(nutritionPlansCreateHandler)
+  .use(nutritionPlansReadHandlers)
   .use(foodsListHandler)
   .use(foodsCreateHandler)
   // recipes — GET /recipes (list) before GET /recipes/:id; POST /recipes/import
