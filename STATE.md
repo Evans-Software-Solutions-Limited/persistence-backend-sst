@@ -9,35 +9,75 @@ items, and the four most recent sessions. Trimmed 2026-07-27 from 1554 lines.
 If anything here contradicts `git log --oneline -30`, the git history wins —
 say so and fix this file.
 
-## ▶ START HERE — next session (written 2026-08-04)
+## ▶ START HERE — next session (rewritten 2026-08-04, post-Mealprint-merge)
 
-Two independent workstreams are queued. They do not block each other.
+**You are on a fresh `main`. Mealprint mobile is MERGED.** Nothing is half-landed and
+no branch is waiting. Read this block, then pick A or B — they do not block each other.
 
-**A · Merge the Mealprint mobile half.** Branch `claude/mealprint-mobile-ui-9347a0`,
-**PR NOT YET RAISED**. Design-reviewed by Brad and gate-green (476 suites / 5910
-tests, typecheck 8/8, mobile lint 0 errors). Three Inspector Brad sweeps plus a
-fourth on the last two commits. See § "spec-26 Mealprint — DESIGN PASS DONE".
-⚠ **The entitled half has still never executed** — the PR body must say so plainly.
-Read § "What IS device-verified" for the exact line between what ran and what did not.
-Blocked only on the staging entitlement row (§ trap warnings before writing it).
+### The one thing that is NOT done on Mealprint
 
-**B · Subscription restructure — `specs/29-subscription-restructure/`.** Triplet
-written; nothing built. Start with `tasks.md` Phase 0 (no code): the App Review
-question is the only real blocker and it gates Phase 3 alone. Phases 0–1 have no
-dependency on Mealprint or Loadout and Phase 1 retro-protects margins on everything
-already shipped. Decision record is § "TIER + PRICING RESTRUCTURE" below.
+⚠ **The entitled half of Mealprint has never executed on a device.** Everything
+locked/pending/stalled is device-verified; every path a Premium+ user takes is proven
+only by unit tests. It is merged because it is gate-green and design-signed-off, not
+because it has run. **Before it reaches a real user it needs:**
 
-**⚠ Two standing hazards, both easy to trip:**
-`specs/stripe-rail-removal/` must NOT be executed — the rail is the coach-tier plan.
-Never rename a `tier_name` — RevenueCat entitlement ids ARE the tier_names.
+1. A `user_subscriptions` row on staging (`nxkhlrvjxotyjulodxzk`) with
+   `tier_name='premium_plus'`, `payment_status='active'`. ⚠ Read § "The RevenueCat
+   claim in the old brief was WRONG for staging" and the trap warnings there FIRST —
+   the `update_subscription_limits` trigger sets `profiles.role='user'` for any
+   non-trainer tier, which will knock Brad's account out of coach mode. Use a second
+   test account or accept the flip knowingly.
+2. The device pass in § "What IS device-verified" — specifically the suggest sheet's
+   draft-stage scroll, the pinned footer, and the `KeyboardAvoidingView` on the
+   preferences wizard (simulator hardware keyboard cannot prove the last one).
+3. Prod is `opcvjypsoivaxerahbal`. **Do not touch it.**
 
-**Brad authorised a full prod + staging data reset (2026-08-04)** — only test accounts
-and his own exist, so the zero-grandfathering assumption for repricing is safe. Task
-0.5 is informational, not blocking. ⚠ No agent has touched prod/staging data; a reset
-is Brad's to run.
+### A · Subscription restructure — `specs/29-subscription-restructure/`
 
-Cost figures: `bun run scripts/ai-cost-model.ts`. **Never quote them from prose** —
-that is why they live in a tested script, and it has already gone stale twice.
+Triplet written, **nothing built**. Start at `tasks.md` **Phase 0** (no code).
+
+⚠ **Run checkpoint C5 FIRST, before any pricing task.** `recipe_extract` on Opus is
+$0.0355/call — 55 % of Premium's whole worst case and 44× the cheapest endpoint. If it
+holds quality on a cheaper vision model the number becomes ~$0.007 and most of the
+margin problem, including the Start Up Coach cap-binding in AC 2.3a, dissolves. Every
+other pricing decision is downstream of that one measurement.
+
+Then C2 (measure the 7 estimated unit costs), then Phase 1 (the pooled budget, which
+retro-protects margin on everything already shipped). The App Review question (C1)
+gates Phase 3 **only** — do not let it block Phases 0–2.
+
+**Two prices are still open, and both are recorded as open, not guessed:**
+Start Up Coach £14.99 vs £17.99 (AC 2.3a), and whether the ~30 % annual discount
+applies to the coach ladder or only the two consumer rows (design § 1).
+
+### B · Go-live — `specs/milestones/GO-LIVE-2026-08/PLAN.md`
+
+Five ordered stages with done-when criteria per stage. Unchanged by this session.
+
+### ⚠ Standing hazards, all easy to trip
+
+- `specs/stripe-rail-removal/` must **NOT** be executed — the rail is the coach-tier plan.
+- Never rename a `tier_name` — RevenueCat entitlement ids **are** the tier_names.
+- **`bun run prettier:check` fails at repo root** on two of Brad's UNTRACKED files
+  (`.agents/skills/sst-resource-change/SKILL.md`, `microservices/core/probe-steps.ts`).
+  Not a regression; scope the check to your own diff.
+- Cost figures: `bun run scripts/ai-cost-model.ts`. **Never quote them from prose** —
+  that is why they live in a tested script, and it has gone stale twice.
+  ⚠ Its `TIERS` mirrors the **LIVE DB catalog**, not spec-29's proposal — they
+  deliberately disagree until the Phase 1 migration lands.
+- **Brad authorised a full prod + staging data reset (2026-08-04)** — only test
+  accounts and his own exist, so zero-grandfathering for repricing holds. No agent has
+  touched prod/staging data; the reset is Brad's to run.
+
+### ⚠ The lesson this branch cost six review sweeps to learn
+
+Every one of the first five sweeps found that the **previous sweep's fix had created
+the next defect**, all in one container, and the suite stayed green through all of it.
+Two tests — and a third on this last commit — **passed against their own reverted
+fix**. The discipline that actually worked: *when you add a test for a fix, revert the
+fix and watch it fail.* Reading the test is not evidence. Also: the in-memory storage
+fake never self-notifies, so a whole family of `useCachedResource` staleness bugs is
+invisible unless a test calls `storage.emitChange(...)` explicitly.
 
 ## Current state (2026-08-02)
 
@@ -73,7 +113,19 @@ bite, the separable piece is M21: Loadout Phase 4 + Mealprint alone close the
 § Mealprint below. Phase 4 and M21 remain zero code; Mealprint's MOBILE half
 (tasks 0.6, 1.5) is also still zero code. See § Next plan of action.
 
-### spec-26 Mealprint — DESIGN PASS DONE + PARTIALLY DEVICE-VERIFIED 2026-08-04
+### spec-26 Mealprint — ✅ MERGED to main 2026-08-04 (design pass + 6 review sweeps)
+
+> **Merged after SIX Inspector Brad sweeps.** Sweeps 1–5 each found that the previous
+> sweep's fix had created the next defect; sweep 6 returned MERGE and independently
+> confirmed the monotonic-latch fix holds under StrictMode, the change-bus flush and
+> the user-change path. Its four residual findings (one 🟡, three 🟢) were fixed in
+> `0c1ce767`, each with a test verified to fail against its own reverted fix.
+>
+> ⚠ **Still not device-verified on the ENTITLED path** — see § START HERE item A.1.
+>
+> Everything below this line is the build history — the design pass, the five sweeps
+> and the allergen-wipe routes. Kept because the allergen-wipe record is the reason
+> that container is the way it is, and a future session must not "simplify" it.
 
 **Branch `claude/mealprint-mobile-ui-9347a0`, HEAD `ac3a7ac5`** (updated from
 `main` @ `dcc9726a`; PR still NOT raised). T-0.6 + T-1.5 plus a design pass over
@@ -913,6 +965,35 @@ deliberate parallel burst from an authenticated, entitled, paying account.
 
 ### 🔵 TIER + PRICING RESTRUCTURE — Brad's decisions 2026-08-04, numbers PROPOSED
 
+> ### ⚠⚠ READ THIS BEFORE ANY NUMBER BELOW — `specs/29-subscription-restructure/` IS NOW CANONICAL
+>
+> Brad approved two changes late on 2026-08-04 that invalidate figures in the
+> sub-sections below. **The spec triplet has them right; this section has them wrong.**
+>
+> 1. **Apple commission is modelled at 30 %, not 15 %.** Brad applied for the Small
+>    Business Program and it was **NOT approved**. Decision: model everything at 30 %
+>    so the numbers stay good if we never get in, or later fall out. ⇒ § "Apple takes
+>    15 %, not 25 %" below is **superseded** — its net-revenue figures are ~21 % too
+>    high, and every "% of net" derived from them is too low.
+> 2. **Premium → £14.99/mo** (annual £124.99). ⇒ § "Premium: HOLD £12.99" below is
+>    **reversed**. The reason it flipped is (1): £12.99 at 30 % nets $11.43, which is
+>    less than that tier's own worst-case AI spend.
+> 3. **Budget rule is `max(3.5 × typical, 33 % of net)` capped at 40 % of net**, over a
+>    **rolling 30-day** window. ⇒ § "Pooled AI budget — VALIDATED at 33 % of net" is
+>    superseded; recompute from `specs/29-subscription-restructure/design.md` § 2.
+>
+> **The one thing that got WORSE on inspection, and is not yet decided:** Start Up
+> Coach at £14.99 is the single tier where the 40 % cap binds *below* the 3.5× usage
+> floor — it gets 2.9× typical where every other tier gets 3.5–11×, because it carries
+> the athlete endpoints plus Loadout plus client summaries at the consumer price. See
+> spec-29 **AC 2.3a**: price it £17.99, accept 2.9× on the record, or land the C5
+> bake-off first. Do not let it ship by default.
+>
+> **The biggest lever is not a price at all** — spec-29 **C5**. `recipe_extract` on
+> Opus is $0.0355/call: **55 % of Premium's entire worst case** and 44× the cheapest
+> endpoint. On a cheaper vision model it is ~$0.007 and most of the margin problem,
+> including AC 2.3a, dissolves. Run it in Phase 0 alongside C2.
+
 **Supersedes the § below where they disagree.** Brad opened this to settle how the
 adaptive suite (Loadout + Mealprint + the coming programme import and AI workout
 generation) is priced across athlete and coach personas. Nothing is purchasable yet
@@ -988,19 +1069,17 @@ AI nutrition. So like-for-like at 30 clients, Trainerize is ~$85 + $45 = ~$130
 the market, not over-priced** — which is where the headroom is, and it is not on
 Premium+ (see below).
 
-#### PROPOSED tiers — awaiting Brad's sign-off, do NOT treat as decided
+#### ~~PROPOSED tiers~~ — TABLE REMOVED 2026-08-04, see `specs/29-subscription-restructure/design.md` § 1
 
-| Tier | £/mo | Clients | Suite | £/client |
-| --- | --- | --- | --- | --- |
-| Free | 0 | — | ✗ | — |
-| Premium | 12.99 | — | ✗ | — |
-| Premium+ | 29.99 | — | ✓ | — |
-| Start Up Coach | 14.99 | 5 | ✗ | 3.00 |
-| Start Up Coach + | 34.99 | 5 | ✓ | — |
-| Coach | 59.99 | 15 | ✓ | 4.00 |
-| Studio | 109.99 | 30 | ✓ | 3.67 |
-| Studio Pro | 179.99 | 100 | ✓ | 1.80 |
-| Enterprise | *invoiced* | 100+ | ✓ | — |
+> ⚠ The ladder that was here was an **earlier draft** and had already diverged from the
+> spec on three rows (it had Studio at 30 clients in-app; the spec has Coach Pro £99.99
+> at 30 as the top IAP rung, and Studio £179.99/75 as WEB-only). Two divergent ladders
+> in one repo is precisely the drift that made the cost figures go stale twice, so the
+> copy is deleted rather than corrected. **One ladder, in the spec.**
+>
+> What still holds from the reasoning that produced it: the middle rungs are where money
+> was being left; Enterprise leaves the self-serve ladder; client counts mirror
+> Trainerize's own rungs so a coach can compare; 30 clients is the top in-app rung.
 
 ⚠ **REVISED 2026-08-04 after Brad supplied the Trainerize add-on screenshots** (see
 the competitive block below). Two changes from the first draft: the MIDDLE rungs went
@@ -1045,7 +1124,10 @@ copy → migrate-FKs → delete dance; do not repeat that voluntarily.
    (they mirror the migrations because `/subscriptions/me` projects neither column).
 9. Seed-guard tests: `subscriptionTierSeed.test.ts`, `premiumPlusTierMigration.test.ts`.
 
-#### ⚠ Apple takes 15 %, not 25 % — and 30 % once you succeed
+#### ⚠~~Apple takes 15 %, not 25 %~~ — SUPERSEDED 2026-08-04: model at **30 %**
+
+> Small Business Program applied for and **NOT approved**. Every net figure in this
+> sub-section is ~21 % too high. Canonical: `specs/29-subscription-restructure/`.
 
 `net $/mo` in the cost model is already `gross × (1 − Apple) × (1 − RevenueCat)`, so
 every margin figure here is AFTER the storefront cut. The rate is **15 %** (Small
@@ -1065,7 +1147,10 @@ injectable commission and the report prints IAP-now / IAP-past-$1M / web per tie
 model was hiding it:** Stripe's ~3 % does not scale with revenue, so the web rail's
 advantage over IAP roughly DOUBLES past the threshold — 13 points today, 27 after.
 
-#### Premium: HOLD £12.99 monthly — the mistake is the ANNUAL, in the other direction
+#### ~~Premium: HOLD £12.99 monthly~~ — REVERSED 2026-08-04: Premium → **£14.99**
+
+> Flipped by the 30 % commission finding above. The ANNUAL conclusion in this
+> sub-section still stands (~30 % off ⇒ £124.99); only the monthly reversed.
 
 Brad asked whether £12.99 is too cheap. **It is not, and it should not move.**
 MyFitnessPal Premium in the UK is **£9.99/mo** — so Premium is already ~30 % ABOVE
@@ -1085,7 +1170,12 @@ that is an acquisition loss-leader — but competitive.
 This supersedes the "£1 = every paid tier offers annual ≈ 2 months free" line in
 `marketing/WEBSITE_PRICING_SPEC.md` § intro.
 
-#### Pooled AI budget — VALIDATED at 33 % of net (Brad's condition met)
+#### ~~Pooled AI budget — VALIDATED at 33 % of net~~ — RECOMPUTED 2026-08-04
+
+> Rule is now `max(3.5 × typical, 33 % of net)` capped at **40 %**, over a **rolling
+> 30-day** window. Table: `specs/29-subscription-restructure/design.md` § 2. Brad's
+> headroom condition (D9) IS met on call count (~8/day typical vs ~27/day allowed on
+> Premium) — but on COST MIX only because the window is monthly, not daily.
 
 Brad's condition was that the budget beat typical usage with room for heavier users.
 It does, at every tier. Typical is $0.047–0.066/day (cost-model median column):
@@ -1658,9 +1748,40 @@ consent copy, privacy section and governing law · the OFF re-seed backfilling
 
 ## Last session
 
+**2026-08-04 (later) — Mealprint MERGED, and the pricing model moved to a 30 % Apple
+rate.** Sixth Inspector Brad sweep returned MERGE; its four residuals were fixed in
+`0c1ce767` with revert-verified tests, and the branch landed on `main`.
+
+- **The sweep-5 monotonic latch holds.** Sweep 6 attacked it from every angle named in
+  the brief (ref-mutation during render under StrictMode, the change-bus flush ordering,
+  the `useCachedResource` user-change path) and could not break it. The cross-user latch
+  leak is real in the abstract but unreachable, because sign-out tears down the `(app)`
+  group and the ref dies with the container. **It becomes a 🔴 the day this screen is
+  made to survive a session flip.**
+- **The 🟡 was a timer, not a wipe.** The 900 ms post-confirm dismiss called `close()`
+  unconditionally, so it closed whichever sheet happened to be open when it fired —
+  and its uncancelled handle was the "jest did not exit" warning that had been masking
+  real open handles.
+- **⚠ A third test passed against its own reverted fix.** The NaN-guard test asserted
+  before the seed effect had run, and the fallback value equals the initial state, so it
+  proved nothing. Third occurrence in one branch. **Revert and watch it fail — always.**
+- **Apple Small Business was NOT approved**, so every model now assumes 30 %. That
+  reversed the earlier "hold Premium at £12.99" call (→ £14.99), tightened the budget
+  rule to `max(3.5 × typical, 33 % of net)` capped at 40 %, and exposed one tier the
+  rule cannot satisfy (Start Up Coach — spec-29 AC 2.3a, left OPEN rather than papered
+  over). Superseded STATE.md sub-sections are struck through in place, not deleted.
+- **The real finding is not a price.** `recipe_extract` on Opus is 55 % of Premium's
+  worst case on its own. A cheaper vision model is worth more than every pricing lever
+  in spec-29 combined — filed as C5 and flagged to run first.
+- **Answering "will a normal user hit the cap?": no.** ~8 AI calls/day typical against
+  ~27 allowed on Premium. But the pool is spent in **money**, not calls, and one
+  endpoint is 44× another — so the honest answer required making the pool a rolling
+  30-day window (AC 2.3b). On a daily window, a Sunday recipe-digitising batch fires
+  the fail-safe and D9's headroom condition is **not** met.
+
 **2026-08-04 — spec-26 Mealprint: the design pass, and the first time any of it
 ran.** Branch `claude/mealprint-mobile-ui-9347a0` @ `9ca501f8`, updated from `main`
-@ `dcc9726a`. Full detail in § "spec-26 Mealprint — DESIGN PASS DONE" above. The
+@ `dcc9726a`. Full detail in § "spec-26 Mealprint" above. The
 four things worth carrying forward:
 
 - **The stale-bundle diagnosis was right.** A fresh `expo run:ios` fixed all three

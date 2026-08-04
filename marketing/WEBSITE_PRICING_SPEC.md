@@ -37,18 +37,28 @@ confirmed by Brad for the w/c 17 Aug 2026 launch but not yet built. Anything
 marked **TBC** is an open decision (see §6).
 
 **Currency:** GBP (£) — the DB default (`subscription_tiers.currency = 'GBP'`).
-**Billing cadence:** every paid tier offers monthly and annual; annual ≈ 2 months
-free (10× monthly).
+**Billing cadence:** every paid tier offers monthly and annual; annual ≈ **30 % off**
+(revised 2026-08-04 from the 10×-monthly rule — see spec-29 D12).
 
 ---
 
 ## 1. Consumer plans
 
+> ⚠ **SUPERSEDED 2026-08-04 — `specs/29-subscription-restructure/` is canonical for
+> every price on this page.** Premium moved £12.99 → **£14.99** and annual moved to
+> ~30 % off (£124.99 / £249.99), because the Apple Small Business 15 % rate was NOT
+> approved and every tier is now modelled at 30 %. The coach ladder below is also
+> replaced by a 6-rung IAP ladder plus a web-only organisation rail. **Do not build the
+> site pricing page off this file until spec-29 Phase 1 lands.**
+
 | Plan | Monthly | Annual | Status |
 | --- | --- | --- | --- |
 | Free | £0 | — | LIVE |
-| Premium | £12.99 | £129.99 | LIVE |
-| Premium+ | £29.99 | £299.99 | LAUNCH |
+| Premium | £14.99 | £124.99 | NOT PURCHASABLE |
+| Premium+ | £29.99 | £249.99 | NOT PURCHASABLE |
+
+⚠ "LIVE" was wrong on every row: **no ASC products exist**, so nothing is purchasable
+on any rail. That is also the reason these prices can still change for free.
 
 ### What each plan includes — aligned to the shipped site (updated 2026-07-17)
 
@@ -65,7 +75,7 @@ free (10× monthly).
 - Streaks, PRs & core progress
 - **3 Custom Workouts** (cap)
 
-**Premium — £12.99/mo**
+**Premium — £14.99/mo**
 
 - Everything in Free, plus
 - Unlimited workouts & history
