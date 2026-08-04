@@ -30,6 +30,9 @@ function cardProps(
   return {
     state: "unlocked",
     needsSetup: false,
+    // Required now — an optional default of `true` was silently the "today" copy
+    // leak the prop exists to close.
+    isToday: true,
     onPress: jest.fn(),
     onUpgrade: jest.fn(),
     onRetry: jest.fn(),
@@ -183,6 +186,24 @@ describe("MealprintEntryCard", () => {
       <MealprintEntryCard {...cardProps({ state: "pending" })} />,
     );
     expect(queryByTestId("mealprint-entry-cta")).toBeNull();
+  });
+
+  it("⚠ never says 'today' when Fuel is showing another day", () => {
+    // The concrete line is already nulled off-today by FuelPresenter; this pins the
+    // FALLBACK subtitles, which used to claim "today" while the sheet that same tap
+    // opens said "the day you're viewing".
+    const past = renderWithTheme(
+      <MealprintEntryCard {...cardProps({ isToday: false })} />,
+    );
+    expect(past.queryByText(/on the day you're viewing/)).toBeTruthy();
+    expect(past.queryByText(/left today/)).toBeNull();
+
+    const setup = renderWithTheme(
+      <MealprintEntryCard
+        {...cardProps({ isToday: false, needsSetup: true })}
+      />,
+    );
+    expect(setup.queryByText(/the day you're viewing/)).toBeTruthy();
   });
 
   it("leads on the real remaining budget when Fuel knows it", () => {

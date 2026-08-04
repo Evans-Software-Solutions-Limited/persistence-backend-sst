@@ -617,14 +617,14 @@ describe("MealprintPreferencesContainer — STALE CACHE wipes (Inspector 🟠, 4
     return { api, storage, probe: () => mockProbe.last! };
   }
 
-  // ⚠ HONESTY NOTE: this does NOT isolate the pre-fetch window — `act` flushes the
-  // in-memory fetch before `onDismiss` runs, so `hasSavedChoices` blocks the write
-  // here regardless of `serverTruthKnown`. Verified: it passes with the guard
-  // reverted. It is kept as an end-to-end "no write on this path" assertion; the
-  // test that actually pins `serverTruthKnown` is the label one below, which DOES
-  // fail when reverted. Isolating the window needs a fetch whose resolution the test
-  // controls.
-  it("does not write on the stale-cache wizard path (end-to-end, not window-isolating)", async () => {
+  // ⚠ This DOES isolate the pre-fetch window, and an earlier comment here wrongly
+  // said it did not. `probe().onDismiss()` runs synchronously at the top of the `act`
+  // callback, so it invokes the closure built from the PRE-fetch render, where
+  // `hasSavedChoices` is still false — the flush happens after the call, not before.
+  // Verified failing with `serverTruthKnown` neutralised. Telling a maintainer that a
+  // real regression test proves nothing is the more dangerous direction to be wrong
+  // in, on a branch with this history.
+  it("⚠ SKIP inside the fetch window writes NOTHING, even though the cache says isDefault", async () => {
     const { probe, storage } = mountStaleCache("wizard");
     await act(async () => {
       probe().onDismiss();
@@ -657,6 +657,48 @@ describe("MealprintPreferencesContainer — STALE CACHE wipes (Inspector 🟠, 4
     await waitFor(() => expect(probe().avoidAllergens).toContain("sesame"));
     // The network value must NOT overwrite the user's own selection.
     expect(probe().avoidAllergens).not.toEqual(["peanuts"]);
+  });
+});
+
+describe("MealprintPreferencesContainer — the change bus must not disarm the guard (Inspector 🟠, 5th sweep)", () => {
+  /**
+   * ⚠ THE ONLY TEST SHAPE THAT CAN SEE THIS FAMILY OF BUGS. Do not delete it.
+   *
+   * `serverTruthKnown` used to read `isStale` directly. `attemptFetch` clears
+   * `isStale` on success, but its own write-through fires the SQLite change bus, and
+   * `useMealprintPreferences.read` hardcodes `isStale: true` — so the subscription
+   * pushed `true` straight back ~16 ms later and the guard disarmed itself one frame
+   * after arming. AC 1.4's write then never happened, the wizard reappeared forever,
+   * and the suite stayed green because the in-memory storage fake never self-notifies.
+   */
+  it("⚠ still writes the first-run defaults AFTER a change-bus flush (AC 1.4)", async () => {
+    const api = new InMemoryApiAdapter();
+    api.mealprintPreferences = {
+      ...api.mealprintPreferences,
+      isDefault: true,
+    };
+    const storage = new InMemoryStorageAdapter();
+    render(
+      <AdapterProvider adapters={makeAdapters(api, storage)}>
+        <MealprintPreferencesContainer mode="wizard" />
+      </AdapterProvider>,
+    );
+    const probe = () => mockProbe.last!;
+    await waitFor(() => expect(probe().isLoadingInitial).toBe(false));
+    await waitFor(() => expect(probe().dismissLabel).toBe("Skip"));
+
+    // Drive the bus the way a real SQLite upsert does — this is what
+    // `attemptFetch`'s own write-through triggers in production.
+    await act(async () => {
+      storage.emitChange("cached_mealprint_preferences");
+    });
+
+    // The latch must hold: still "Skip", and dismissing still performs the write.
+    expect(probe().dismissLabel).toBe("Skip");
+    await act(async () => {
+      probe().onDismiss();
+    });
+    await waitFor(() => expect(preferencePuts()).toHaveLength(1));
   });
 });
 

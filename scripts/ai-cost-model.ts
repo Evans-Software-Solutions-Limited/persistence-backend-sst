@@ -474,14 +474,14 @@ export type TierCost = {
 export function tierCost(
   tier: Tier,
   /**
-   * Storefront commission. Defaults to {@link APPLE_COMMISSION} (15 %, Small
-   * Business Program).
+   * Storefront commission. Defaults to {@link APPLE_COMMISSION}, which is Apple's
+   * **standard 30 %** — the rate we can always be sure of.
    *
-   * ⚠ Pass `STANDARD_APPLE_COMMISSION` to model the post-$1M world: crossing
-   * $1M/yr REMOVES Small Business Program eligibility and the rate reverts to
-   * 30 %, which is a ~18 % cut in net revenue on every IAP tier. Success itself
-   * triggers it, so it is a planning scenario rather than a tail risk. Pass
-   * `WEB_RAIL_COMMISSION` for the Stripe rail, which does NOT scale with revenue.
+   * ⚠ Pass `SMALL_BUSINESS_APPLE_COMMISSION` (15 %) to see the upside if that
+   * application is approved. It is NOT approved as of 2026-08-04, and even once
+   * granted it lapses above $1M/yr, so it must never be a dependency. Pass
+   * `WEB_RAIL_COMMISSION` for the Stripe rail, which does not scale with revenue —
+   * its advantage over IAP is therefore widest at the default rate.
    */
   commission: number = APPLE_COMMISSION,
 ): TierCost {

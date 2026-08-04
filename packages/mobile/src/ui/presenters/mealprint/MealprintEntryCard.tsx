@@ -93,8 +93,12 @@ export type MealprintEntryCardProps = {
    * CONCRETE line but the fallbacks still said "today", so the card and the sheet it
    * opens contradicted each other on one tap — the sheet says "the day you're
    * viewing… anything you log goes to that day".
+   *
+   * ⚠ REQUIRED, on the same reasoning that made `dismissLabel` required: an optional
+   * default of `true` is silently the "today" copy leak this prop exists to close,
+   * available to the next caller. The sheet's own `isToday` is required too.
    */
-  readonly isToday?: boolean;
+  readonly isToday: boolean;
   /** Opens the wizard (when `needsSetup`) or the suggest sheet. */
   readonly onPress: () => void;
   /** Pushes the paywall. Only wired in the `locked` state. */
@@ -109,7 +113,7 @@ export function MealprintEntryCard({
   needsSetup = false,
   remainingKcal = null,
   remainingProteinG = null,
-  isToday = true,
+  isToday,
   onPress,
   onUpgrade,
   onRetry,

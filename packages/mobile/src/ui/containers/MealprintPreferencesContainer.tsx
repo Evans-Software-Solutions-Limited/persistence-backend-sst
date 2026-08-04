@@ -371,28 +371,37 @@ export function MealprintPreferencesContainer({
   const hasSavedChoices = data !== null && data.isDefault !== true;
 
   /**
-   * ⚠ TRUE once a NETWORK read has landed — i.e. `data` is server truth, not just
-   * whatever SQLite happened to hold.
+   * ⚠ TRUE once a NETWORK read has landed — a MONOTONIC LATCH, deliberately.
    *
-   * `useCachedResource`'s cache read always declares `isStale: true` and only
-   * `attemptFetch` clears it (`setIsStale(false)` on success), so this is exactly
-   * "have we heard from the server". ⚠ Do NOT substitute `isRefreshing` — the first
-   * attempt at this guard used it and it is unobservable: the true→false transition
-   * can batch into one commit, so the effect never sees `true` and the flag never
-   * arms. That silently blocked the AC 1.4 first-run write instead.
+   * `isStale` is NOT monotonic and reading it directly was a functional regression
+   * (Inspector Brad, 5th sweep). `attemptFetch` clears it on success, but its own
+   * `write()` is a real upsert, which fires the SQLite change bus, and
+   * `useMealprintPreferences.read` hardcodes `isStale: true` — so
+   * `useCachedResource`'s subscription pushes `true` straight back ~16 ms later
+   * (`CHANGE_BUS_DEBOUNCE_MS`). The guard armed and then disarmed itself one frame
+   * on, which killed the AC 1.4 first-run write PERMANENTLY: `isDefault` stayed
+   * true, so `useMealprintEntry` kept reporting `needsSetup` and the wizard
+   * reappeared on every launch, with every later fetch re-breaking it.
    *
-   * Why it is needed: {@link hasSavedChoices} is computed from `data`, which on
-   * mount is the SYNCHRONOUS SQLite value. That made it the FOURTH route into the
-   * allergen wipe (Inspector Brad, 4th sweep) — a device holding a cached
-   * `isDefault: true` row, whose user then set allergens elsewhere, opens the wizard
-   * with the form already live (cache hit ⇒ `isLoadingInitial` false),
-   * `hasSavedChoices` false, header reading "Skip". A tap inside that window wrote
-   * the defaults over the real row.
+   * ⚠ It failed CLOSED (no write, so no wipe) which is why the suite stayed green —
+   * and why no test could see it: the in-memory storage fake never self-notifies, so
+   * only a test that calls `emitChange` can reproduce this whole family. There is
+   * one below; do not delete it.
    *
-   * A failed refresh deliberately never arms this, so the wizard does not write.
-   * That costs one extra wizard appearance; writing costs the allergen list.
+   * Latching in render is safe here because the transition is one-way and
+   * idempotent, and the `isStale → false` render is the one that flips it.
+   *
+   * Why the guard exists at all: {@link hasSavedChoices} is computed from `data`,
+   * which on mount is the SYNCHRONOUS SQLite value. A device holding a cached
+   * `isDefault: true` row, whose user set allergens elsewhere, opened the wizard with
+   * the form live and the header reading "Skip" — the FOURTH wipe route.
+   *
+   * A failed refresh never arms it, so the wizard does not write. That costs one
+   * extra wizard appearance; writing costs the allergen list.
    */
-  const serverTruthKnown = !preferences.isStale;
+  const serverTruthRef = useRef(false);
+  if (!preferences.isStale) serverTruthRef.current = true;
+  const serverTruthKnown = serverTruthRef.current;
 
   const onDismiss = useCallback(() => {
     // ⚠ An unseeded form leaves WITHOUT writing, in either mode. This is the Back
