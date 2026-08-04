@@ -1,4 +1,4 @@
-import { and, eq, gt, isNotNull, lte, ne, or, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, isNotNull, lte, ne, or, sql } from "drizzle-orm";
 import { foods, meals, recipes } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
 import { LOCALE_OFF_TAG } from "../nutrition/mealprint/preferences/vocabulary";
@@ -381,6 +381,142 @@ export class MealprintCandidateRepository {
       .filter(
         (candidate): candidate is MealprintCandidate => candidate !== null,
       );
+  }
+
+  /**
+   * Re-resolve specific ids to authoritative per-serving macros — the ACCEPT and
+   * SWAP paths' recompute step (spec-26 design § 3: "server re-verifies +
+   * recomputes before insert; clients never set macros").
+   *
+   * ⚠ **This is the boundary that makes a stored plan trustworthy.** The mobile
+   * client posts references — `{ foodId, servings }`, a recipe id, a meal id —
+   * and never numbers. Every macro written to `meal_plan_meals` is derived here
+   * from the DB row. A handler that trusted a client-supplied `kcal` would let a
+   * user (or a stale cache, or a replayed request) store 3000 kcal as 300 and
+   * silently corrupt their own adherence data.
+   *
+   * ⚠ **No `maxServingKcal` filter, deliberately** — unlike the four `list*`
+   * methods. Those are assembling a pool to offer, where an item that alone
+   * blows the day's budget is noise. This method answers "what IS this id",
+   * and applying a budget ceiling here would silently drop a meal the user has
+   * explicitly chosen, producing a plan quietly missing rows. Budget fit is the
+   * verifier's job, not the resolver's.
+   *
+   * ⚠ **Ownership: recipes and meals are scoped to `userId`; foods are NOT.**
+   * That asymmetry is correct and matches the `list*` methods — the `foods`
+   * catalogue is shared (every OFF row is readable by everyone), while recipes
+   * and meals are personal. A missing id is simply absent from the result, so
+   * the caller decides whether that is a 400 or a dropped row.
+   */
+  async resolveByIds(
+    userId: string,
+    ids: { foodIds?: string[]; recipeIds?: string[]; mealIds?: string[] },
+  ): Promise<MealprintCandidate[]> {
+    const db = getDb();
+    const foodIds = [...new Set(ids.foodIds ?? [])];
+    const recipeIds = [...new Set(ids.recipeIds ?? [])];
+    const mealIds = [...new Set(ids.mealIds ?? [])];
+
+    // ⚠ Each query is skipped when its id list is empty: `inArray(col, [])`
+    // renders `IN ()`, a Postgres syntax error. A mocked-DB test would never
+    // catch it.
+    const [foodRows, recipeRows, mealRows] = await Promise.all([
+      foodIds.length === 0
+        ? Promise.resolve([])
+        : db
+            .select({
+              id: foods.id,
+              name: foods.name,
+              brand: foods.brand,
+              kcal: foods.kcal,
+              proteinG: foods.proteinG,
+              carbsG: foods.carbsG,
+              fatG: foods.fatG,
+              servingSize: foods.servingSize,
+              servingUnit: foods.servingUnit,
+              servingQuantity: foods.servingQuantity,
+              allergenTags: foods.allergenTags,
+              categoryTags: foods.categoryTags,
+              createdBy: foods.createdBy,
+            })
+            .from(foods)
+            .where(inArray(foods.id, foodIds)),
+      recipeIds.length === 0
+        ? Promise.resolve([])
+        : db
+            .select({
+              id: recipes.id,
+              name: recipes.name,
+              servings: recipes.servings,
+              totalKcal: recipes.totalKcal,
+              totalProteinG: recipes.totalProteinG,
+              totalCarbsG: recipes.totalCarbsG,
+              totalFatG: recipes.totalFatG,
+            })
+            .from(recipes)
+            .where(
+              and(eq(recipes.userId, userId), inArray(recipes.id, recipeIds)),
+            ),
+      mealIds.length === 0
+        ? Promise.resolve([])
+        : db
+            .select({
+              id: meals.id,
+              name: meals.name,
+              totalKcal: meals.totalKcal,
+              totalProteinG: meals.totalProteinG,
+              totalCarbsG: meals.totalCarbsG,
+              totalFatG: meals.totalFatG,
+            })
+            .from(meals)
+            .where(and(eq(meals.userId, userId), inArray(meals.id, mealIds))),
+    ]);
+
+    const resolved: MealprintCandidate[] = foodRows.map((row) =>
+      toFoodCandidate(row, row.createdBy === userId),
+    );
+
+    for (const row of recipeRows) {
+      const servings = Number(row.servings);
+      if (!Number.isFinite(servings) || servings <= 0) continue;
+      const kcal = Number(row.totalKcal) / servings;
+      if (!Number.isFinite(kcal) || kcal <= 0) continue;
+      resolved.push({
+        kind: "recipe",
+        id: row.id,
+        name: row.name,
+        kcal,
+        proteinG: Number(row.totalProteinG ?? 0) / servings,
+        carbsG: Number(row.totalCarbsG ?? 0) / servings,
+        fatG: Number(row.totalFatG ?? 0) / servings,
+        servingLabel: "1 serving",
+        // Same reasoning as `listOwnRecipeCandidates`: a free-text recipe has no
+        // OFF tags, so its allergen content is UNKNOWN — never `[]`.
+        allergenTags: null,
+        categoryTags: null,
+        isOwn: true,
+      });
+    }
+
+    for (const row of mealRows) {
+      const kcal = Number(row.totalKcal);
+      if (!Number.isFinite(kcal) || kcal <= 0) continue;
+      resolved.push({
+        kind: "meal",
+        id: row.id,
+        name: row.name,
+        kcal,
+        proteinG: Number(row.totalProteinG),
+        carbsG: Number(row.totalCarbsG),
+        fatG: Number(row.totalFatG),
+        servingLabel: "1 portion",
+        allergenTags: null,
+        categoryTags: null,
+        isOwn: true,
+      });
+    }
+
+    return resolved;
   }
 }
 
