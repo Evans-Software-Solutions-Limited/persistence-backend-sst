@@ -881,6 +881,145 @@ from its six siblings. The real fix belongs in `AiUsageLogRepository` for all of
 at once — a reserve-then-reconcile row, or a conditional insert. Exposure needs a
 deliberate parallel burst from an authenticated, entitled, paying account.
 
+### 🔵 TIER + PRICING RESTRUCTURE — Brad's decisions 2026-08-04, numbers PROPOSED
+
+**Supersedes the § below where they disagree.** Brad opened this to settle how the
+adaptive suite (Loadout + Mealprint + the coming programme import and AI workout
+generation) is priced across athlete and coach personas. Nothing is purchasable yet
+— **no ASC products are live**, so every price and tier name below can still change
+with zero grandfathering. That window closes at launch.
+
+#### Decided by Brad
+
+1. **Coaches get Mealprint access.** Structure coach tiers so they move with BOTH
+   client count and features, not client count alone.
+2. **Loadout + Mealprint stay Premium+-only on the CONSUMER track.** Metering them
+   into Premium is rejected — it makes Premium+ feel lesser.
+3. **⚠ A 3/day Mealprint allowance on Premium was proposed and REJECTED, and the
+   reason generalises:** metering only converts if the median user hits the cap. At
+   ~2/day typical use a 3/day allowance converts nobody and spends the feature's
+   exclusivity for nothing. **Do not re-propose a small daily allowance as an
+   upgrade lever.**
+4. **AI ceilings are a BACKEND FAIL-SAFE, never an advertised product quota**, and
+   should be a TOTAL per-user budget rather than a per-feature one — a user should
+   not have to care what each feature costs. See the pooled-ceiling design below.
+5. **Programme import belongs to athlete Premium+ as well as the coach tiers** — an
+   imported programme is just a collection of workouts, so it is athlete-shaped too.
+6. **`individual_trainer` → display name "Start Up Coach"**, plus a suite-bearing
+   "Start Up Coach +". ⚠ See the rename hazard below — change `display_name`, NOT
+   `tier_name`.
+7. **AI workout generation is a FUTURE Premium+ addition** built on top of Loadout
+   and Mealprint. It is not in scope now, and it is the justification for a future
+   price rise rather than a current one.
+
+#### ⚠ The pooled cost ceiling — the structural fix
+
+**Per-feature ceilings make the worst case ADDITIVE**: it is the sum of 9 (soon 12)
+independent daily caps, which is the entire reason every tier looks underwater at
+saturation. A single **cost-weighted daily budget per tier** makes the worst case a
+number you CHOOSE.
+
+- Weight by COST, not call count. The endpoints differ ~44× ($0.0008 ingredient
+  resolve vs $0.0355 recipe extract), so a pooled *call* count would let a user
+  spend the whole budget on the dearest endpoint. `scripts/ai-cost-model.ts`'s
+  `costPerCall` is already the function needed, and `ai_usage_log` already records
+  per-inference rows to sum.
+- **KEEP the per-feature ceilings as a secondary bug-guard**, raised so the pool is
+  what normally binds. Defence in depth: the pool protects margin, the per-feature
+  caps stop one runaway client loop draining a whole day's budget. Deleting them
+  would make a single retry bug a full outage of every AI surface.
+- Never advertised. Sized so a real user does not reach it.
+
+Sizing is a dial with an explicit trade-off (Premium, net $13.88/mo, typical
+$0.047/day):
+
+| Pool as % of net | Premium $/day | × typical | worst-case gross margin |
+| --- | --- | --- | --- |
+| 20 % | $0.093 | 2.0× | 80 % |
+| 25 % | $0.115 | 2.4× | 75 % |
+| **33 %** | **$0.153** | **3.3×** | **67 %** |
+| 50 % | $0.231 | 4.9× | 50 % |
+
+**Recommended 33 %.** 3.3× typical daily spend is generous for a real user and
+guarantees a 67 % gross margin against a determined abuser — against today's 91 %
+worst case (9 % margin) or Premium's current 167 % (negative).
+
+#### Coach brackets — the 2 → 30 gap is genuinely anomalous
+
+Reviewed against ABC Trainerize (Aug 2026, USD, monthly): Basic free/1 client ·
+Grow $9/2 · Pro 5 $23 · Pro 50 $120 · Pro 200 $199+ · Studio Plus $248/location for
+500–1,000. **Their granularity is concentrated in the 5–50 client band** — exactly
+where Persistence has nothing between 2 and 30.
+
+⚠ **The finding that matters most: Trainerize charges $20–45/mo EXTRA for the
+nutrition add-on** ($20 on Grow/lower Pro, $45 on Pro 30–200). Persistence bundles
+AI nutrition. So like-for-like at 30 clients, Trainerize is ~$85 + $45 = ~$130
+(~£102) against a proposed £89.99. **The coach ladder is UNDER-priced relative to
+the market, not over-priced** — which is where the headroom is, and it is not on
+Premium+ (see below).
+
+#### PROPOSED tiers — awaiting Brad's sign-off, do NOT treat as decided
+
+| Tier | £/mo | Clients | Suite | £/client |
+| --- | --- | --- | --- | --- |
+| Free | 0 | — | ✗ | — |
+| Premium | 12.99 | — | ✗ | — |
+| Premium+ | 29.99 | — | ✓ | — |
+| Start Up Coach | 12.99 | 3 | ✗ | 4.33 |
+| Start Up Coach + | 34.99 | 3 | ✓ | — |
+| Coach | 49.99 | 10 | ✓ | 5.00 |
+| Studio | 89.99 | 30 | ✓ | 3.00 |
+| Studio Pro | 179.99 | 100 | ✓ | 1.80 |
+| Enterprise | 299.99 | 500 | ✓ | 0.60 |
+
+The suite/no-suite split exists at **entry only** — that is the one price point where
+it bites (a pure coach should not pay for AI they will not use), and above it a
+professional coach will want the suite anyway.
+
+⚠ **Premium+ should NOT be raised on the current feature set.** £29.99 = **$38.09**
+at $1.27/£, against Ladder and Juggernaut AI at $29.99–34.99 — Premium+ is already
+the most expensive in its comparable set in dollar terms. Raise it when AI workout
+generation ships, not before.
+
+#### ⚠ RENAME HAZARD — change `display_name`, never `tier_name`
+
+`RC_ENTITLEMENT_IDS` in `revenuecat/entitlements.ts:16-22` **are the tier_names**,
+and `user_subscriptions.tier_name` is an FK to `subscription_tiers.tier_name`. So
+renaming the key is a cross-system change (DB rows + RC entitlement ids + ASC
+product mapping) for **zero product benefit** — the user only ever sees
+`display_name`. Keep `individual_trainer` as the key and display "Start Up Coach".
+The last tier rename (`20260526120000_simplify_tier_model.sql`) needed a
+copy → migrate-FKs → delete dance; do not repeat that voluntarily.
+
+#### Every place a tier change has to land
+
+1. `subscription_tiers` catalog row — migration.
+2. **App Store Connect** — a subscription product per tier per billing cycle.
+3. **RevenueCat** — entitlement id + offering/package mapping.
+4. `revenuecat/entitlements.ts` — `RC_ENTITLEMENT_IDS` **and** `TIER_RANK` (rank
+   decides which entitlement wins when RC reports several — insert correctly).
+5. `packages/mobile/src/domain/services/purchaseOfferings.ts` —
+   `tierFromProductId`'s substring ladder (⚠ order-sensitive: longer names first,
+   as `premium_plus` must precede `premium`) and `MONTHLY_ONLY_TIERS`.
+6. `IOSPurchaseFlowPresenter.tsx:200-249` — the trainer rail is a **hardcoded
+   allow-list** `["individual_trainer","small_business","medium_enterprise"]`. New
+   coach tiers are invisible until added here.
+7. `assertEntitlement.ts` — `nextTrainerTierUp` upgrade ladder.
+8. `useLoadoutGate.ts` / `useMealprintGate.ts` — hardcoded tier→boolean Records
+   (they mirror the migrations because `/subscriptions/me` projects neither column).
+9. Seed-guard tests: `subscriptionTierSeed.test.ts`, `premiumPlusTierMigration.test.ts`.
+
+#### Still open
+
+- The three sign-offs: coach entry at £12.99 vs £9.99; the pooled-budget percentage;
+  programme-import ceiling (needs the ROADMAP § 5.3 Phase-0 eval first — it will be
+  the most expensive endpoint in the app at an estimated $0.10–0.20/import).
+- **`AI_RECIPE_DAILY_LIMIT` should become MONTHLY, not smaller.** Recipe extraction
+  is bursty-then-dormant (digitise ten recipes one evening, none for a month); a
+  daily cap either throttles the legitimate burst or permits the abuse. 60/month
+  allows the burst and takes the worst case $12.78 → $2.13. Same shape for programme
+  import. This supersedes action 3 in the § below ("12 → ~4").
+
 ### ⚠ Pricing vs AI cost — three tiers are theoretically underwater (2026-07-27)
 
 **Run `bun run scripts/ai-cost-model.ts` for the live table. Do not quote figures
