@@ -114,23 +114,45 @@ describe("MealprintEntryCard", () => {
     expect(locked.queryByText(/Set up how you eat/i)).toBeNull();
   });
 
-  it("routes the CTA button the same way as the card body", () => {
-    const onPress = jest.fn();
-    const onUpgrade = jest.fn();
-    const unlocked = renderWithTheme(
-      <MealprintEntryCard {...cardProps({ onPress, onUpgrade })} />,
+  it("shows a state-appropriate CTA, and names it in the card's a11y label", () => {
+    // ⚠ The CTA is an APPEARANCE over the card's single touch target, not a
+    // nested Pressable — see its comment. So the contract is (a) the right label
+    // renders, and (b) the card announces it, because a nested button's text
+    // would never be announced on iOS.
+    const unlocked = renderWithTheme(<MealprintEntryCard {...cardProps()} />);
+    expect(unlocked.getByTestId("mealprint-entry-cta")).toBeTruthy();
+    expect(unlocked.queryByText("Suggest a meal")).toBeTruthy();
+    expect(
+      unlocked.getByTestId("mealprint-entry-card").props.accessibilityLabel,
+    ).toMatch(/Suggest a meal/);
+
+    const setup = renderWithTheme(
+      <MealprintEntryCard {...cardProps({ needsSetup: true })} />,
     );
-    fireEvent.press(unlocked.getByTestId("mealprint-entry-cta"));
-    expect(onPress).toHaveBeenCalled();
-    expect(onUpgrade).not.toHaveBeenCalled();
+    expect(setup.queryByText("Set up Mealprint")).toBeTruthy();
+    expect(
+      setup.getByTestId("mealprint-entry-card").props.accessibilityLabel,
+    ).toMatch(/Set up Mealprint/);
 
     const locked = renderWithTheme(
-      <MealprintEntryCard
-        {...cardProps({ state: "locked", onPress: jest.fn(), onUpgrade })}
-      />,
+      <MealprintEntryCard {...cardProps({ state: "locked" })} />,
     );
-    fireEvent.press(locked.getByTestId("mealprint-entry-cta"));
-    expect(onUpgrade).toHaveBeenCalled();
+    expect(locked.queryByText("See Premium+")).toBeTruthy();
+    expect(
+      locked.getByTestId("mealprint-entry-card").props.accessibilityLabel,
+    ).toMatch(/locked/i);
+  });
+
+  it("⚠ exposes exactly ONE pressable, so VoiceOver hears the CTA and Android sees no duplicate", () => {
+    // A <Btn> here would nest a Pressable inside the card's Pressable: on iOS the
+    // inner text is never announced, on Android it reads as a second button with
+    // the same action.
+    const { getByTestId } = renderWithTheme(
+      <MealprintEntryCard {...cardProps()} />,
+    );
+    const cta = getByTestId("mealprint-entry-cta");
+    expect(cta.props.accessibilityRole).toBeUndefined();
+    expect(cta.props.onStartShouldSetResponder).toBeUndefined();
   });
 
   it("⚠ shows no CTA while pending — an inert card must not invite the tap it eats", () => {

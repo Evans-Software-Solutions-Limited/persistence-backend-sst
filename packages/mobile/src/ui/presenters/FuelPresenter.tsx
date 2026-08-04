@@ -410,6 +410,19 @@ export function FuelPresenter(props: FuelPresenterProps) {
   const remainingProteinG =
     proteinLine === undefined ? null : proteinLine.target - proteinLine.value;
 
+  // ⚠ Fuel is DAY-NAVIGABLE, and the card's concrete line says "today".
+  //
+  // `remainingKcal`/`macros` describe the VIEWED day, so on a past day the card
+  // would read "You have 1,160 kcal left today" over last Tuesday's numbers —
+  // false, and an invitation to act: the suggest sheet generates and logs against
+  // the active date, so "fill today's gap" would write food to a past day. The
+  // generic subtitle makes no day claim, so it is the safe fallback.
+  //
+  // `canGoNext` is false exactly when the viewed day is today (see its prop
+  // docstring) — same comparison the container already makes, so the two cannot
+  // drift.
+  const viewingToday = !canGoNext;
+
   const header = (
     <>
       <HeaderBar
@@ -554,11 +567,15 @@ export function FuelPresenter(props: FuelPresenterProps) {
             state={mealprintState}
             needsSetup={mealprintNeedsSetup}
             // The card leads on the actual gap rather than a generic promise
-            // (design § the AnyMeal entry card). Suppressed when there is no
-            // target — `remainingKcal` is 0-floored against a 0 target, and
-            // "0 kcal left" is a worse pitch than the generic line.
-            remainingKcal={noTarget ? null : remainingKcal}
-            remainingProteinG={noTarget ? null : remainingProteinG}
+            // (design § the AnyMeal entry card) — but ONLY for today, and only
+            // with a target set. See `viewingToday` above; and note the card
+            // itself also requires `remainingKcal > 0`, because `computeRemaining`
+            // goes NEGATIVE when the user is over target (it is not 0-floored
+            // except on the no-target branch).
+            remainingKcal={noTarget || !viewingToday ? null : remainingKcal}
+            remainingProteinG={
+              noTarget || !viewingToday ? null : remainingProteinG
+            }
             onPress={onMealprint}
             onUpgrade={onMealprintUpgrade}
             onRetry={onMealprintRetry}

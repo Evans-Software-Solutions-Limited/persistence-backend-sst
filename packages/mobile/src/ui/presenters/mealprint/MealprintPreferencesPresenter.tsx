@@ -39,7 +39,13 @@
  *       specs/26-mealprint-meal-planning/design.md § 4
  */
 
-import { Pressable, ScrollView, TextInput } from "react-native";
+import {
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  TextInput,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Text, View } from "@tamagui/core";
 
@@ -300,246 +306,266 @@ export function MealprintPreferencesPresenter({
         }
       />
 
-      <ScrollView
+      {/* ⚠ The KeyboardAvoidingView must WRAP both the scroll view and the
+          pinned footer, and the footer must be INSIDE it.
+          `CreateExercisePresenter` documents the same requirement verbatim: iOS
+          does not resize the window, so a footer that is a SIBLING of the KAV
+          stays put and the keyboard covers it. This screen has two
+          always-visible text inputs (dislikes + likes), so on the first-run
+          wizard the sequence "tap Add a food you dislike → press Save and
+          continue" would otherwise be impossible — the commit button occluded on
+          the screen whose whole purpose is to commit. Before the CTA was pinned
+          it was the last scroll row, which the keyboard could be scrolled past;
+          pinning it is what created the need for this. */}
+      <KeyboardAvoidingView
         style={{ flex: 1 }}
-        contentContainerStyle={{
-          paddingHorizontal: 16,
-          paddingTop: 14,
-          // The wizard's pinned footer takes over the bottom inset; paying it
-          // twice would leave a dead band of scroll above the CTA.
-          paddingBottom: isWizard ? 28 : 40 + insets.bottom,
-          gap: 20,
-        }}
-        showsVerticalScrollIndicator={false}
-        // ⚠ Required, not cosmetic. This screen has two always-visible text
-        // fields, and without it RN's responder capture eats the FIRST tap on
-        // every chip, stepper and segment while a field is focused — the exact
-        // failure `Segmented`'s own ScrollView documents.
-        keyboardShouldPersistTaps="handled"
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        {errorMessage ? (
-          <View
-            paddingHorizontal={14}
-            paddingVertical={10}
-            borderRadius={12}
-            backgroundColor="$errorDim"
-            borderWidth={1}
-            borderColor="$error"
-            testID="mealprint-preferences-error"
-          >
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{
+            paddingHorizontal: 16,
+            paddingTop: 14,
+            // The wizard's pinned footer takes over the bottom inset; paying it
+            // twice would leave a dead band of scroll above the CTA.
+            paddingBottom: isWizard ? 28 : 40 + insets.bottom,
+            gap: 20,
+          }}
+          showsVerticalScrollIndicator={false}
+          // ⚠ Required, not cosmetic. This screen has two always-visible text
+          // fields, and without it RN's responder capture eats the FIRST tap on
+          // every chip, stepper and segment while a field is focused — the exact
+          // failure `Segmented`'s own ScrollView documents.
+          keyboardShouldPersistTaps="handled"
+        >
+          {errorMessage ? (
+            <View
+              paddingHorizontal={14}
+              paddingVertical={10}
+              borderRadius={12}
+              backgroundColor="$errorDim"
+              borderWidth={1}
+              borderColor="$error"
+              testID="mealprint-preferences-error"
+            >
+              <Text
+                fontFamily="$body"
+                fontSize={13}
+                color="$error"
+                textAlign="center"
+              >
+                {errorMessage}
+              </Text>
+            </View>
+          ) : null}
+
+          {isWizard ? (
             <Text
               fontFamily="$body"
               fontSize={13}
-              color="$error"
-              textAlign="center"
+              lineHeight={19}
+              color="$text2"
+              testID="mealprint-preferences-intro"
             >
-              {errorMessage}
+              Tell Mealprint how you eat and it will only ever suggest food you
+              actually want. You can change any of this later, or skip it
+              entirely.
             </Text>
-          </View>
-        ) : null}
+          ) : null}
 
-        {isWizard ? (
-          <Text
-            fontFamily="$body"
-            fontSize={13}
-            lineHeight={19}
-            color="$text2"
-            testID="mealprint-preferences-intro"
+          {/* ── Dietary pattern ─────────────────────────────────────────── */}
+          <Section
+            title="How you eat"
+            sub="Pick any that apply"
+            testID="mealprint-preferences-patterns"
           >
-            Tell Mealprint how you eat and it will only ever suggest food you
-            actually want. You can change any of this later, or skip it
-            entirely.
-          </Text>
-        ) : null}
-
-        {/* ── Dietary pattern ─────────────────────────────────────────── */}
-        <Section
-          title="How you eat"
-          sub="Pick any that apply"
-          testID="mealprint-preferences-patterns"
-        >
-          <View flexDirection="row" flexWrap="wrap" gap={8}>
-            {DIETARY_PATTERNS.map((pattern) => (
-              <ToggleChip
-                key={pattern}
-                label={DIETARY_PATTERN_LABELS[pattern]}
-                selected={dietaryPatterns.includes(pattern)}
-                onPress={() => onTogglePattern(pattern)}
-                testID={`mealprint-pattern-${pattern}`}
+            <View flexDirection="row" flexWrap="wrap" gap={8}>
+              {DIETARY_PATTERNS.map((pattern) => (
+                <ToggleChip
+                  key={pattern}
+                  label={DIETARY_PATTERN_LABELS[pattern]}
+                  selected={dietaryPatterns.includes(pattern)}
+                  onPress={() => onTogglePattern(pattern)}
+                  testID={`mealprint-pattern-${pattern}`}
+                />
+              ))}
+            </View>
+            {partialCaveat ? (
+              <Caveat
+                text={partialCaveat}
+                testID="mealprint-partial-enforcement"
               />
-            ))}
-          </View>
-          {partialCaveat ? (
-            <Caveat
-              text={partialCaveat}
-              testID="mealprint-partial-enforcement"
-            />
-          ) : null}
-        </Section>
+            ) : null}
+          </Section>
 
-        {/* ── Allergens ───────────────────────────────────────────────── */}
-        <Section
-          title="Allergens to avoid"
-          sub="Hard-filtered by ingredient data"
-          safety
-          testID="mealprint-preferences-allergens"
-        >
-          <View flexDirection="row" flexWrap="wrap" gap={8}>
-            {AVOID_ALLERGENS.map((allergen) => (
-              <AllergenChip
-                key={allergen}
-                label={ALLERGEN_LABELS[allergen]}
-                selected={avoidAllergens.includes(allergen)}
-                onPress={() => onToggleAllergen(allergen)}
-                testID={`mealprint-allergen-${allergen}`}
-              />
-            ))}
-          </View>
-          {hasAllergenChip ? (
-            /* AC 1.2 — verbatim, and only shown once a chip is active so it
+          {/* ── Allergens ───────────────────────────────────────────────── */}
+          <Section
+            title="Allergens to avoid"
+            sub="Hard-filtered by ingredient data"
+            safety
+            testID="mealprint-preferences-allergens"
+          >
+            <View flexDirection="row" flexWrap="wrap" gap={8}>
+              {AVOID_ALLERGENS.map((allergen) => (
+                <AllergenChip
+                  key={allergen}
+                  label={ALLERGEN_LABELS[allergen]}
+                  selected={avoidAllergens.includes(allergen)}
+                  onPress={() => onToggleAllergen(allergen)}
+                  testID={`mealprint-allergen-${allergen}`}
+                />
+              ))}
+            </View>
+            {hasAllergenChip ? (
+              /* AC 1.2 — verbatim, and only shown once a chip is active so it
                reads as a consequence of the choice rather than boilerplate. */
-            <Caveat
-              text={LABEL_CHECK_COPY}
-              testID="mealprint-label-check-disclaimer"
-            />
-          ) : null}
-        </Section>
+              <Caveat
+                text={LABEL_CHECK_COPY}
+                testID="mealprint-label-check-disclaimer"
+              />
+            ) : null}
+          </Section>
 
-        {/* ── Dislikes ────────────────────────────────────────────────── */}
-        <FreeTextSection
-          title="Foods you'd rather not eat"
-          sub="Mushrooms, olives, anything you just don't like"
-          placeholder="Add a food you dislike"
-          values={avoidFoods}
-          draft={avoidFoodDraft}
-          onDraftChange={onAvoidFoodDraftChange}
-          onAdd={onAddAvoidFood}
-          onRemove={onRemoveAvoidFood}
-          idPrefix="mealprint-dislike"
-          /* ⚠ The one place the UI states the guarantee gap outright. Without it
+          {/* ── Dislikes ────────────────────────────────────────────────── */}
+          <FreeTextSection
+            title="Foods you'd rather not eat"
+            sub="Mushrooms, olives, anything you just don't like"
+            placeholder="Add a food you dislike"
+            values={avoidFoods}
+            draft={avoidFoodDraft}
+            onDraftChange={onAvoidFoodDraftChange}
+            onAdd={onAddAvoidFood}
+            onRemove={onRemoveAvoidFood}
+            idPrefix="mealprint-dislike"
+            /* ⚠ The one place the UI states the guarantee gap outright. Without it
              a user types "peanuts" here and reasonably believes they have
              declared an allergy — this list is name-matched only. */
-          footnote="These are matched by name only. For an allergy, use the allergen chips above."
-        />
-
-        {/* ── Likes ───────────────────────────────────────────────────── */}
-        <FreeTextSection
-          title="Foods you want more of"
-          sub="Mealprint will lean towards these"
-          placeholder="Add a food you like"
-          values={likedFoods}
-          draft={likedFoodDraft}
-          onDraftChange={onLikedFoodDraftChange}
-          onAdd={onAddLikedFood}
-          onRemove={onRemoveLikedFood}
-          idPrefix="mealprint-like"
-        />
-
-        {/* ── Meals per day ───────────────────────────────────────────── */}
-        <Section
-          title="Meals a day"
-          sub={`${MIN_MEALS_PER_DAY}–${MAX_MEALS_PER_DAY}`}
-          testID="mealprint-preferences-meals"
-        >
-          <Card pad={14} radius={12}>
-            <View
-              flexDirection="row"
-              alignItems="center"
-              justifyContent="space-between"
-            >
-              <StepperButton
-                kind="dec"
-                disabled={mealsPerDay <= MIN_MEALS_PER_DAY}
-                onPress={() =>
-                  onMealsPerDayChange(
-                    Math.max(MIN_MEALS_PER_DAY, mealsPerDay - 1),
-                  )
-                }
-                testID="mealprint-meals-dec"
-              />
-              <Text
-                fontFamily="$mono"
-                fontWeight="600"
-                fontSize={28}
-                color="$text"
-                testID="mealprint-meals-value"
-              >
-                {mealsPerDay}
-              </Text>
-              <StepperButton
-                kind="inc"
-                disabled={mealsPerDay >= MAX_MEALS_PER_DAY}
-                onPress={() =>
-                  onMealsPerDayChange(
-                    Math.min(MAX_MEALS_PER_DAY, mealsPerDay + 1),
-                  )
-                }
-                testID="mealprint-meals-inc"
-              />
-            </View>
-          </Card>
-        </Section>
-
-        {/* ── Effort ──────────────────────────────────────────────────── */}
-        <Section title="How much cooking" testID="mealprint-preferences-effort">
-          <Segmented
-            testID="mealprint-effort"
-            options={EFFORT_LEVELS.map((level) => ({
-              value: level,
-              label: EFFORT_LEVEL_LABELS[level],
-            }))}
-            value={effortLevel}
-            onChange={(value) => onEffortLevelChange(value as EffortLevel)}
+            footnote="These are matched by name only. For an allergy, use the allergen chips above."
           />
-          <Text fontFamily="$body" fontSize={12} color="$text3">
-            {EFFORT_LEVEL_BLURBS[effortLevel]}
-          </Text>
-        </Section>
 
-        {/* AC 1.5 / locked decision 10. Rendered in BOTH modes: the AC asks for
+          {/* ── Likes ───────────────────────────────────────────────────── */}
+          <FreeTextSection
+            title="Foods you want more of"
+            sub="Mealprint will lean towards these"
+            placeholder="Add a food you like"
+            values={likedFoods}
+            draft={likedFoodDraft}
+            onDraftChange={onLikedFoodDraftChange}
+            onAdd={onAddLikedFood}
+            onRemove={onRemoveLikedFood}
+            idPrefix="mealprint-like"
+          />
+
+          {/* ── Meals per day ───────────────────────────────────────────── */}
+          <Section
+            title="Meals a day"
+            sub={`${MIN_MEALS_PER_DAY}–${MAX_MEALS_PER_DAY}`}
+            testID="mealprint-preferences-meals"
+          >
+            <Card pad={14} radius={12}>
+              <View
+                flexDirection="row"
+                alignItems="center"
+                justifyContent="space-between"
+              >
+                <StepperButton
+                  kind="dec"
+                  disabled={mealsPerDay <= MIN_MEALS_PER_DAY}
+                  onPress={() =>
+                    onMealsPerDayChange(
+                      Math.max(MIN_MEALS_PER_DAY, mealsPerDay - 1),
+                    )
+                  }
+                  testID="mealprint-meals-dec"
+                />
+                <Text
+                  fontFamily="$mono"
+                  fontWeight="600"
+                  fontSize={28}
+                  color="$text"
+                  testID="mealprint-meals-value"
+                >
+                  {mealsPerDay}
+                </Text>
+                <StepperButton
+                  kind="inc"
+                  disabled={mealsPerDay >= MAX_MEALS_PER_DAY}
+                  onPress={() =>
+                    onMealsPerDayChange(
+                      Math.min(MAX_MEALS_PER_DAY, mealsPerDay + 1),
+                    )
+                  }
+                  testID="mealprint-meals-inc"
+                />
+              </View>
+            </Card>
+          </Section>
+
+          {/* ── Effort ──────────────────────────────────────────────────── */}
+          <Section
+            title="How much cooking"
+            testID="mealprint-preferences-effort"
+          >
+            <Segmented
+              testID="mealprint-effort"
+              options={EFFORT_LEVELS.map((level) => ({
+                value: level,
+                label: EFFORT_LEVEL_LABELS[level],
+              }))}
+              value={effortLevel}
+              onChange={(value) => onEffortLevelChange(value as EffortLevel)}
+            />
+            <Text fontFamily="$body" fontSize={12} color="$text3">
+              {EFFORT_LEVEL_BLURBS[effortLevel]}
+            </Text>
+          </Section>
+
+          {/* AC 1.5 / locked decision 10. Rendered in BOTH modes: the AC asks for
             the wizard footer, and a medical-scope line that vanishes the moment
             the screen becomes an editor would be a strange place to stop
             saying it. */}
-        <Text
-          fontFamily="$body"
-          fontSize={11.5}
-          lineHeight={17}
-          color="$text4"
-          testID="mealprint-medical-scope"
-        >
-          {MEDICAL_SCOPE_COPY}
-        </Text>
-      </ScrollView>
-
-      {/* ⚠ PINNED, not the last row of the scroll. This form is seven sections
-          long and grows further with each conditional caveat, so a CTA at the end
-          of the stack is reachable only by scrolling past everything — on the
-          FIRST-RUN screen, where the user has no idea how long the form is. The
-          header Save covers the editor; the wizard gets the explicit commit.
-          Ports the prototype's `AMSticky` (design-source `screens.jsx:23`). */}
-      {isWizard ? (
-        <View
-          paddingHorizontal={16}
-          paddingTop={12}
-          paddingBottom={12 + insets.bottom}
-          borderTopWidth={1}
-          borderColor="$border"
-          backgroundColor="$surface"
-        >
-          <Btn
-            variant="filled"
-            tone="primary"
-            size="lg"
-            full
-            icon={<IconCheck size={16} />}
-            onPress={onSave}
-            disabled={isSaving}
-            testID="mealprint-preferences-wizard-cta"
+          <Text
+            fontFamily="$body"
+            fontSize={11.5}
+            lineHeight={17}
+            color="$text4"
+            testID="mealprint-medical-scope"
           >
-            {isSaving ? "Saving…" : "Save and continue"}
-          </Btn>
-        </View>
-      ) : null}
+            {MEDICAL_SCOPE_COPY}
+          </Text>
+        </ScrollView>
+
+        {/* ⚠ PINNED, not the last row of the scroll. This form is seven sections
+            long and grows further with each conditional caveat, so a CTA at the
+            end of the stack is reachable only by scrolling past everything — on
+            the FIRST-RUN screen, where the user has no idea how long the form is.
+            The header Save covers the editor; the wizard gets the explicit
+            commit. Ports the prototype's `AMSticky` (design-source
+            `screens.jsx:23`). Inside the KAV — see the note above it. */}
+        {isWizard ? (
+          <View
+            paddingHorizontal={16}
+            paddingTop={12}
+            paddingBottom={12 + insets.bottom}
+            borderTopWidth={1}
+            borderColor="$border"
+            backgroundColor="$surface"
+          >
+            <Btn
+              variant="filled"
+              tone="primary"
+              size="lg"
+              full
+              icon={<IconCheck size={16} />}
+              onPress={onSave}
+              disabled={isSaving}
+              testID="mealprint-preferences-wizard-cta"
+            >
+              {isSaving ? "Saving…" : "Save and continue"}
+            </Btn>
+          </View>
+        ) : null}
+      </KeyboardAvoidingView>
     </View>
   );
 }

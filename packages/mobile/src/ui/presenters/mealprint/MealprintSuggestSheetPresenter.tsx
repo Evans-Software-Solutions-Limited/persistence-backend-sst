@@ -292,20 +292,29 @@ function OfflineStage() {
 
 // ── Setup ───────────────────────────────────────────────────────────────────
 
+/**
+ * ⚠ No remaining-budget panel here, and that is not an oversight.
+ *
+ * The design leads the sheet on the budget, and an earlier version of this pass
+ * rendered {@link RemainingPanel} on setup — dead code. `remaining` comes from
+ * `suggest.result?.remaining`, and the container resolves `setup` exactly when the
+ * hook is `idle`, where `result` is always null (both `run()` and `reset()` null
+ * it, and it is only ever set alongside `ready`). So the panel could never appear
+ * before generating.
+ *
+ * Showing it here properly needs Fuel's own remaining figures threaded into this
+ * container — a real data path, not a prop that only exists post-result. The entry
+ * card that opens this sheet already states the budget, so the pre-generate gap is
+ * covered for now.
+ */
 function SetupStage({
   shape,
   onShapeChange,
   steer,
   onSteerChange,
-  remaining,
 }: MealprintSuggestSheetProps) {
   return (
     <View gap={18}>
-      {/* What Mealprint is aiming at, before it is asked to aim. The design
-          leads the sheet on the budget for the same reason the entry card does:
-          it makes the next tap's purpose concrete. */}
-      {remaining ? <RemainingPanel remaining={remaining} /> : null}
-
       <View gap={7}>
         <Label>What are you after</Label>
         <Segmented
@@ -402,13 +411,7 @@ function GeneratingStage() {
 /** The remaining-budget readout — kcal as the headline, macros as a three-up row. */
 function RemainingPanel({ remaining }: { remaining: MealSuggestRemaining }) {
   return (
-    <Card
-      pad={14}
-      radius={14}
-      accent="gold"
-      testID="mealprint-remaining"
-      accessibilityLabel={`${round(remaining.kcal)} calories left today`}
-    >
+    <Card pad={14} radius={14} accent="gold" testID="mealprint-remaining">
       <View
         flexDirection="row"
         alignItems="baseline"
@@ -418,7 +421,7 @@ function RemainingPanel({ remaining }: { remaining: MealSuggestRemaining }) {
         <Label>Left today</Label>
         <View flexDirection="row" alignItems="baseline" gap={4}>
           <Text fontFamily="$mono" fontWeight="600" fontSize={22} color="$gold">
-            {round(remaining.kcal).toLocaleString()}
+            {round(remaining.kcal).toLocaleString("en-US")}
           </Text>
           <Text fontFamily="$mono" fontSize={11} color="$text3">
             kcal
@@ -680,7 +683,7 @@ function SuggestionCard({
               fontSize={19}
               color="$gold"
             >
-              {round(suggestion.kcal).toLocaleString()}
+              {round(suggestion.kcal).toLocaleString("en-US")}
             </Text>
             <Text
               fontFamily="$display"
@@ -998,7 +1001,10 @@ function Caveat({ text, testID }: { text: string; testID: string }) {
       paddingHorizontal={12}
       paddingVertical={10}
       borderRadius={10}
-      backgroundColor="$goldDim"
+      // Via AMBER, not the raw token: the two-constant split exists so the
+      // safety channel can move independently of the feature gold, and a
+      // hardcoded "$goldDim" here would leave the panel behind when it does.
+      backgroundColor={AMBER.dim}
       borderWidth={1}
       borderColor="$border2"
       testID={testID}

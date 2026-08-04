@@ -147,6 +147,36 @@ describe("FuelPresenter", () => {
         getByTestId("fuel-next-day").props.accessibilityState.disabled,
       ).toBe(true);
     });
+
+    // ⚠ Inspector Brad 🟠. The Mealprint card's concrete line says "today", but
+    // `remainingKcal`/`macros` describe the VIEWED day — so on a past day the
+    // card claimed today's budget over last week's numbers, and invited the user
+    // to act on it (the suggest sheet generates and logs against the active
+    // date, so "fill today's gap" would write food to a past day).
+    it("⚠ withholds the Mealprint budget line when NOT viewing today", () => {
+      // ⚠ Match the budget line's own phrase, not /left today/ — the GENERIC
+      // fallback is "…you have left today" and matches that too, which is how the
+      // first version of this test passed against the bug.
+      const past = render({ canGoNext: true, selectedDate: yesterdayIso });
+      expect(past.queryByText(/Let Mealprint fill the gap/)).toBeNull();
+      expect(
+        past.queryByText(/Ideas that fit the calories and protein/),
+      ).toBeTruthy();
+
+      const today = render({ canGoNext: false, selectedDate: todayIso });
+      expect(today.queryByText(/Let Mealprint fill the gap/)).toBeTruthy();
+      // 260 kcal remaining, and protein 170 target − 142 eaten = 28g owing.
+      expect(
+        today.queryByText(/260 kcal and 28g protein left today/),
+      ).toBeTruthy();
+    });
+
+    it("withholds it with no target set, whatever the day", () => {
+      // `computeRemaining` returns 0 on the no-target branch, and "0 kcal left"
+      // is a worse pitch than the generic line.
+      const { queryByText } = render({ noTarget: true, canGoNext: false });
+      expect(queryByText(/Let Mealprint fill the gap/)).toBeNull();
+    });
   });
 
   describe("calendar modal (BRIEF-7 QA-19)", () => {

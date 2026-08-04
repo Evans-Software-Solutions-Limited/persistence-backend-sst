@@ -191,8 +191,19 @@ export function MealprintEntryCard({
       testID={testID}
       accessibilityRole="button"
       accessibilityState={{ disabled: isPending }}
+      // ⚠ The whole card is ONE a11y element (RN `Pressable` defaults
+      // `accessible`), and the CTA below is a nested Pressable. On iOS that makes
+      // the button's text unreachable to VoiceOver, so the label has to carry it —
+      // otherwise the state-specific "Set up Mealprint" is never announced at all.
+      // The inner button is hidden from a11y for the same reason: on Android it
+      // stays focusable and would otherwise read as a second button with the same
+      // action.
       accessibilityLabel={
-        isLocked ? `${title}. Premium Plus feature, locked.` : title
+        isLocked
+          ? `${title}. Premium Plus feature, locked. ${cta}.`
+          : isPending
+            ? `${title}. ${subtitle}`
+            : `${title}. ${cta}.`
       }
     >
       <View
@@ -264,21 +275,43 @@ export function MealprintEntryCard({
           {/* No CTA while pending — there is nothing to press yet, and a live
               button on an inert card invites the tap the `disabled` then eats. */}
           {isPending ? null : (
-            <View marginTop={14}>
-              <Btn
-                variant="filled"
-                tone="gold"
-                size="md"
-                full
-                // No explicit colour — `Btn` tints the glyph to its own ink.
-                icon={
-                  isLocked ? <IconLock size={14} /> : <IconSparkles size={14} />
-                }
-                onPress={isLocked ? onUpgrade : onPress}
-                testID="mealprint-entry-cta"
+            /* ⚠ NOT a <Btn>, and not a Pressable at all.
+             *
+             * A real button here would be a Pressable nested inside the card's
+             * own Pressable, which costs more than it buys: RN's `Pressable`
+             * defaults `accessible`, so on iOS the card is one a11y element and
+             * the nested button's text is never announced, while on Android the
+             * child stays focusable and reads as a second button firing the same
+             * action. The card handles the press for the whole surface — so this
+             * is the button's APPEARANCE over the card's single touch target, and
+             * the card's `accessibilityLabel` speaks the CTA text. One target,
+             * one announcement, no duplicate. Mirrors <Btn variant="filled"
+             * tone="gold" size="md"> (see Btn's SIZE_SPEC.md). */
+            <View
+              marginTop={14}
+              height={44}
+              borderRadius={12}
+              flexDirection="row"
+              alignItems="center"
+              justifyContent="center"
+              gap={7}
+              paddingHorizontal={16}
+              backgroundColor="$gold"
+              testID="mealprint-entry-cta"
+            >
+              {isLocked ? (
+                <IconLock size={14} color={GOLD.ink} />
+              ) : (
+                <IconSparkles size={14} color={GOLD.ink} />
+              )}
+              <Text
+                fontFamily="$display"
+                fontWeight="600"
+                fontSize={14}
+                color="$goldInk"
               >
                 {cta}
-              </Btn>
+              </Text>
             </View>
           )}
         </LinearGradient>
@@ -298,7 +331,11 @@ function budgetLine(
   remainingKcal: number,
   remainingProteinG: number | null | undefined,
 ): string {
-  const kcal = Math.round(remainingKcal).toLocaleString();
+  // ⚠ Locale PINNED to match `MacroHeroPresenter`, which does the same. This
+  // card sits directly beneath that hero, and an unpinned call would print
+  // "1.160" here against the hero's "1,160" for the same number on a de-DE
+  // device.
+  const kcal = Math.round(remainingKcal).toLocaleString("en-US");
   const protein =
     remainingProteinG !== null &&
     remainingProteinG !== undefined &&
