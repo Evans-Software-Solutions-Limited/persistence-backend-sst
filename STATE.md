@@ -982,12 +982,18 @@ deliberate parallel burst from an authenticated, entitled, paying account.
 >    **rolling 30-day** window. ⇒ § "Pooled AI budget — VALIDATED at 33 % of net" is
 >    superseded; recompute from `specs/29-subscription-restructure/design.md` § 2.
 >
-> **The one thing that got WORSE on inspection, and is not yet decided:** Start Up
-> Coach at £14.99 is the single tier where the 40 % cap binds *below* the 3.5× usage
-> floor — it gets 2.9× typical where every other tier gets 3.5–11×, because it carries
-> the athlete endpoints plus Loadout plus client summaries at the consumer price. See
-> spec-29 **AC 2.3a**: price it £17.99, accept 2.9× on the record, or land the C5
-> bake-off first. Do not let it ship by default.
+> **A finding I first OVERSTATED, corrected by Brad:** Start Up Coach is the one tier
+> where the 40 % cap binds before the 3.5× usage floor is reached — but at **3.3×, a 6 %
+> shortfall**, not the 2.9× I first reported. The 2.9× priced it with the endpoint set
+> of the LIVE `individual_trainer` row, which has `loadout_access = true`; the PROPOSED
+> Start Up Coach carries **no suite** — six endpoints, not nine. ⇒ **Accept 3.3× and
+> record it; do not reprice the tier for this.** spec-29 AC 2.3a.
+>
+> ⚠ The real consequence of "no suite at the entry rung" is that it **REMOVES Loadout
+> from `individual_trainer`**, which holds it today. Free (nothing is purchasable) but
+> it is a takeaway, and `TIER_GRANTS_LOADOUT` in `useLoadoutGate` grants all three
+> trainer tiers — the client mirror must move with the catalogue or the gate will
+> disagree with the server.
 >
 > **The biggest lever is not a price at all** — spec-29 **C5**. `recipe_extract` on
 > Opus is $0.0355/call: **55 % of Premium's entire worst case** and 44× the cheapest
@@ -1195,9 +1201,11 @@ What the TIGHTEST budget buys, per day, at Start Up Coach's $0.176: 4 recipe ext
 a real usage pattern. Premium at $0.153/day: five photo-logged meals costs $0.078 —
 51 % of budget, so a heavy legitimate day still has headroom.
 
-⚠ Start Up Coach is the tightest at 2.9× because it is the cheapest tier that ALSO
-reaches the coach-summary endpoint. If any tier needs a bespoke percentage it is that
-one.
+⚠ **This whole sub-section is the 15 %-commission, £12.99-Premium draft — superseded.**
+Canonical table: `specs/29-subscription-restructure/design.md` § 2. Two errors in it
+worth naming so they are not re-derived: every net figure assumes Apple 15 % (now 30 %),
+and Start Up Coach's 2.9× priced the LIVE `individual_trainer` endpoint set rather than
+the proposed no-suite one (corrected to 3.3× — see AC 2.3a).
 
 #### 🔴 DO NOT EXECUTE `specs/stripe-rail-removal/` — the rail is the coach-tier plan
 

@@ -61,20 +61,36 @@ New module `microservices/core/src/application/ai/aiBudget.ts`.
   approved) and at Premium £14.99. The previous table on this line assumed 15 % and
   £12.99; every figure in it was wrong in the optimistic direction.
 
+⚠ **Endpoint sets, because getting one wrong is what produced a wrong table here
+once already.** "Suite" in § 1 means Loadout **and** Mealprint. So:
+
+| Tier             | Snap + Recipes AI | Coach summary | Loadout | Mealprint |
+| ---------------- | ----------------- | ------------- | ------- | --------- |
+| Premium          | ✓                 | —             | ✗       | ✗         |
+| Premium+         | ✓                 | —             | ✓       | ✓         |
+| Start Up Coach   | ✓                 | ✓ (5 clients) | **✗**   | **✗**     |
+| Start Up Coach + | ✓                 | ✓ (5)         | ✓       | ✓         |
+| Coach            | ✓                 | ✓ (15)        | ✓       | ✓         |
+| Coach Pro        | ✓                 | ✓ (30)        | ✓       | ✓         |
+
+⚠ Start Up Coach reaches **six** endpoints, not nine. The LIVE `individual_trainer`
+row has `loadout_access = true` (`scripts/ai-cost-model.ts` § TIERS) — the proposal
+takes it away, which is why the model script and this table legitimately disagree until
+the Phase 1 migration lands.
+
 | Tier             | net $/mo | typical $/day | budget $/day | budget $/mo | × typical | % of net |
 | ---------------- | -------- | ------------- | ------------ | ----------- | --------- | -------- |
-| Premium          | 13.19    | 0.047         | 0.163        | 4.90        | 3.5×      | 37 %     |
+| Premium          | 13.19    | 0.047         | 0.163        | 4.89        | 3.5×      | 37 %     |
 | Premium+         | 26.39    | 0.066         | 0.290        | 8.71        | 4.4×      | 33 %     |
-| Start Up Coach   | 13.19    | 0.061         | **0.176**    | 5.28        | **2.9×**  | **40 %** |
-| Start Up Coach + | 30.80    | 0.073         | 0.339        | 10.17       | 4.7×      | 33 %     |
-| Coach            | 52.80    | 0.079         | 0.581        | 17.42       | 7.4×      | 33 %     |
-| Coach Pro        | 88.00    | 0.085         | 0.968        | 29.05       | 11.5×     | 33 %     |
+| Start Up Coach   | 13.19    | 0.053         | **0.176**    | 5.28        | 3.3×      | **40 %** |
+| Start Up Coach + | 30.80    | 0.072         | 0.339        | 10.16       | 4.7×      | 33 %     |
+| Coach            | 52.80    | 0.078         | 0.581        | 17.42       | 7.4×      | 33 %     |
+| Coach Pro        | 88.00    | 0.084         | 0.968        | 29.05       | 11.5×     | 33 %     |
 
-⚠ **Start Up Coach is the one row where the 40 % cap binds and the 3.5× floor loses**
-— see AC 2.3a. It is the cheapest tier that reaches the coach-summary endpoint _and_ it
-sits on the same £14.99 as consumer Premium while carrying more endpoints. The rule
-does not "handle it without an exception"; it silently gives that tier less headroom
-than every other. Decide it in Phase 1, don't inherit it.
+Start Up Coach is still the one row where the 40 % cap binds before the 3.5× floor is
+reached — but at **3.3×, a 6 % shortfall against the floor**, not the **2.9×** an
+earlier draft of this table claimed on the wrong endpoint set. See AC 2.3a: accept it,
+do not reprice the tier for it.
 
 ### 2.1 What the budget means in queries — the answer to "will a normal user hit it?"
 
