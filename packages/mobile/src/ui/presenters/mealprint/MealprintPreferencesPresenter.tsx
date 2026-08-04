@@ -382,8 +382,13 @@ export function MealprintPreferencesPresenter({
               testID="mealprint-preferences-intro"
             >
               Tell Mealprint how you eat and it will only ever suggest food you
-              actually want. You can change any of this later, or skip it
-              entirely.
+              actually want. You can change any of this later
+              {/* ⚠ Follows the dismiss action. Offering to "skip it entirely"
+                  while the button says Cancel promises to discard answers that
+                  are in fact kept — see `dismissLabel`. */}
+              {dismissText === "Skip"
+                ? ", or skip it entirely."
+                : ". Your saved choices are already filled in below."}
             </Text>
           ) : null}
 
