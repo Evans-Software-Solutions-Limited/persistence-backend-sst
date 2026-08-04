@@ -45,10 +45,10 @@ bite, the separable piece is M21: Loadout Phase 4 + Mealprint alone close the
 
 ### spec-26 Mealprint — DESIGN PASS DONE + PARTIALLY DEVICE-VERIFIED 2026-08-04
 
-**Branch `claude/mealprint-mobile-ui-9347a0`, HEAD `9ca501f8`** (updated from
+**Branch `claude/mealprint-mobile-ui-9347a0`, HEAD `ac3a7ac5`** (updated from
 `main` @ `dcc9726a`; PR still NOT raised). T-0.6 + T-1.5 plus a design pass over
 all four surfaces. Gates: prettier, full-workspace typecheck (8/8, web's Eden
-client clean), mobile lint 0 errors, build 13/13, **476 suites / 5904 tests**.
+client clean), mobile lint 0 errors, build 13/13, **476 suites / 5910 tests**.
 
 ⚠ `bun run lint` FAILS at the workspace level on `microservices/core/probe-steps.ts`
 — an UNTRACKED local scratch file of Brad's with 4 `no-explicit-any` errors. Not on
@@ -128,6 +128,17 @@ rule now written into the docstrings: **gold marks Mealprint where it is being
 OFFERED or GENERATED; cyan stays the control accent where preferences are SET;
 amber is reserved for safety and never competes with a gold fill in the same block.**
 
+⚠ **NOTHING outside Mealprint was restyled, and that was Brad's explicit
+instruction** (2026-08-04): the design source never saw our tokens, so differences
+from it are often OUR palette being right. The hero ring, `MacroHeroPresenter`,
+`QuickAddRowPresenter` and every other Fuel surface are **untouched** — the gold in
+the Mealprint card comes from `$gold`/`$goldDim`/`$goldInk`, which already existed.
+The only non-Mealprint files in the diff are `BottomSheet.tsx` (a new OPTIONAL
+`footer` prop; no other caller passes it, verified no regression) and
+`FuelPresenter`/`FuelTargetsPresenter`, which only compose the Mealprint surfaces
+and pass them props. **Do not "finish the job" by aligning the rest of Fuel to the
+prototype.**
+
 ⚠ **The prototype's chip treatment was REJECTED, deliberately.** `AMChip` makes
 allergens and dietary patterns both pills, separated by hue alone (gold patterns vs
 amber allergens). That is weaker than what shipped and would breach AC 1.2 — ours
@@ -173,13 +184,55 @@ simulator had a hardware keyboard connected, so the software keyboard never
 appeared. It follows `CreateExercisePresenter`'s reference implementation verbatim,
 which IS device-proven for this exact case, but that is inheritance, not proof.
 
-#### One by-design behaviour that reads like a bug
+#### The follow-up Inspector Brad sweep — fixes sound, one SIBLING missed
 
-The wizard's **Skip performs a real write of the DEFAULTS** (AC 1.4), so it clears a
-previously-set allergen list. Observed live: deep-linking `?mode=wizard` over saved
-preferences and pressing Skip dropped "1 allergen avoided". This is NOT the 🔴 below
-(that was an *unseeded* write) and is correct in normal use, because the wizard is
-only reached when `needsSetup`. It is only reachable this way by deep link.
+A second sweep on the fix commit mutation-tested the two load-bearing assertions and
+confirmed none of the fixes was itself the new defect (the failure mode this branch
+hit twice before). It found what the first sweep had missed: **the false "today"
+claim removed from the entry card was still live in the SHEET the card opens** — and
+the sheet is where the write happens (it generates and logs against
+`useFuelSheets().date`). Same defect class, one component over, on the only path the
+card leads to. Now `isToday`-aware in both places, with off-today copy that says
+plainly that anything logged goes to that day.
+
+⚠ **The lesson: fixing a copy-vs-data-source mismatch on one surface does not fix
+its siblings.** Grep for the claim, not the component.
+
+#### 🔴 THE THIRD ROUTE INTO AN ALLERGEN WIPE — found by Brad, on device
+
+He asked why the wizard has no Cancel, only a Skip. The missing button and a
+data-loss bug were the same defect, and this one is reachable in **normal use**:
+
+1. `useMealprintEntry` reads preferences **cache-only** (deliberate — an eager fetch
+   on the Fuel tab was part of the launch fan-out).
+2. So on a reinstall / new device / sign-out-in, `data === null` → the card reports
+   `needsSetup` → it opens the **wizard**.
+3. The wizard's container *does* fetch, succeeds, and seeds the form with the user's
+   real allergen list — so `isUnseeded` is **false**.
+4. Dismiss fell through to `commit(DEFAULT_MEALPRINT_PREFERENCES)`. One tap on the
+   only exit offered, allergens gone.
+
+⚠ **`isUnseeded` cannot catch this, because the read SUCCEEDED.** The earlier 🔴 was
+this wipe via a *failed* read. So the guard is not "did we read the row" but
+**"does the row contain anything worth keeping"** — `hasSavedChoices`
+(`data !== null && data.isDefault !== true`). Dismiss now leaves without writing
+whenever there are saved choices.
+
+⚠ **The write still happens on a genuine first run, and must.** AC 1.4: persisting
+the skip is what flips `isDefault` and stops the card re-offering the wizard forever.
+Not writing when choices exist is safe precisely because `isDefault` is already
+false there.
+
+**The label follows the behaviour** (`dismissLabel`, container-supplied, NOT derived
+from `mode`): "Skip" only on a genuine first run, "Cancel" otherwise. So does the
+intro copy — "or skip it entirely" would promise to discard what is now kept.
+Both verified on device.
+
+**The generalisable lesson:** three separate routes have now produced the same
+allergen wipe, and each guard was written against the route that had just been
+found. A destructive default is not made safe by guarding the path you noticed —
+`PUT /nutrition/preferences` is a full last-write-wins replacement, so **every**
+exit from that form is a candidate wipe until proven otherwise.
 
 #### ⚠ Nine review findings across THREE Inspector Brad sweeps. One was serious.
 
@@ -1297,6 +1350,14 @@ four things worth carrying forward:
   anyway.** A plain DB row suffices (verified in the repo); the Supabase connector
   only exposes prod. And the `update_subscription_limits` trigger demotes not just a
   coach but an **admin** to `'user'` — a trap the brief half-flagged.
+- **⚠ Brad found a 🔴 by asking a UX question.** "Why is there no cancel button, only
+  a skip?" was the third route into the allergen wipe — reachable in normal use on any
+  reinstall, and invisible to the two guards written for the earlier routes. A
+  destructive default is not made safe by guarding the path you happened to notice.
+- **Brad's standing instruction on the design pass:** the design source never saw our
+  tokens, so differences from it are often our palette being RIGHT. Nothing outside
+  Mealprint was restyled — the hero ring and the rest of Fuel are untouched, and
+  should stay that way.
 
 **2026-08-03 (cont.) — PR [#351](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/351)
 follow-up: Brad's 3 decisions applied, and BOTH deferred items built rather than
