@@ -52,6 +52,17 @@ applies to the coach ladder or only the two consumer rows (design § 1).
 
 ### B · Go-live — `specs/milestones/GO-LIVE-2026-08/PLAN.md`
 
+⚠ **For the App Store RESUBMISSION specifically, start at
+[`RESUBMISSION_BRIEF.md`](../specs/milestones/GO-LIVE-2026-08/RESUBMISSION_BRIEF.md),
+not `PLAN.md`.** Both rejections (2.1 PassKit, 4.0 Apple logo) are fixed and MERGED, so
+resubmission needs only: verify the ASC product state (nobody has), **release + deploy
+prod** (`main` is 13 commits and 5 migrations ahead of `persistence-v1.11.0` — a
+resubmitted build does not fix a production backend, and a reviewer already tripped a
+prod Sentry error on an unpatched prod), a **new build** (both fixes are compiled
+artifacts), and Brad's device recording. **Mealprint, spec-29 pricing and the OFF re-seed
+are NOT resubmission blockers** — `premium_plus` is `is_active = false`, so a reviewer
+cannot reach any of it.
+
 Five ordered stages with done-when criteria per stage. Unchanged by this session.
 
 ### ⚠ Standing hazards, all easy to trip
