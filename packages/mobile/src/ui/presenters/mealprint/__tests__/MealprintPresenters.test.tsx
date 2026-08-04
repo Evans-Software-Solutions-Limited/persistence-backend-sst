@@ -274,6 +274,9 @@ function prefProps(
     onEffortLevelChange: jest.fn(),
     onSave: jest.fn(),
     onDismiss: jest.fn(),
+    // Required now — the mode-derived fallback was the label the container proved
+    // wrong, so it no longer exists.
+    dismissLabel: "Cancel",
     ...over,
   };
 }
@@ -353,7 +356,9 @@ describe("MealprintPreferencesPresenter", () => {
 
   it("labels the dismiss action Skip in the wizard and Cancel in the editor", () => {
     const wizard = renderWithTheme(
-      <MealprintPreferencesPresenter {...prefProps({ mode: "wizard" })} />,
+      <MealprintPreferencesPresenter
+        {...prefProps({ mode: "wizard", dismissLabel: "Skip" })}
+      />,
     );
     expect(wizard.queryByText("Skip")).toBeTruthy();
     expect(wizard.getByTestId("mealprint-preferences-intro")).toBeTruthy();

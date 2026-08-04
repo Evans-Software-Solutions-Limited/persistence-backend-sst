@@ -522,15 +522,26 @@ function StageIcon({ glyph }: { glyph: "alert" | "sparkles" }) {
  * be wrong here, and `no_candidates` in particular.
  */
 const EMPTY_COPY: Readonly<
-  Record<MealSuggestEmptyReason, { title: string; body: string }>
+  Record<
+    MealSuggestEmptyReason | "budget_exhausted_other_day",
+    { title: string; body: string }
+  >
 > = {
   no_targets: {
     title: "Set your targets first",
     body: "Mealprint fills the gap between what you've eaten and your daily target — so it needs a target to aim at.",
   },
+  // ⚠ The only DAY-DEPENDENT empty reason — `no_targets` and `no_candidates` are
+  // day-agnostic. The server answers for the VIEWED day, so "today" is a false
+  // claim on any other one. Same defect the setup copy and the entry card were
+  // fixed for; this was the third instance in the same function.
   budget_exhausted: {
     title: "You're done for today",
     body: "There aren't enough calories left in your day for Mealprint to suggest anything worth logging.",
+  },
+  budget_exhausted_other_day: {
+    title: "That day is already full",
+    body: "There aren't enough calories left on the day you're viewing for Mealprint to suggest anything worth logging.",
   },
   no_candidates: {
     title: "Nothing matched your preferences",
@@ -571,7 +582,10 @@ function ResultsStage(props: MealprintSuggestSheetProps) {
   } = props;
 
   if (emptyReason !== null) {
-    const copy = EMPTY_COPY[emptyReason];
+    const copy =
+      emptyReason === "budget_exhausted" && !isToday
+        ? EMPTY_COPY.budget_exhausted_other_day
+        : EMPTY_COPY[emptyReason];
     return (
       <View
         gap={12}

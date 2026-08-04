@@ -36,25 +36,39 @@ import {
  *    offering a first run to someone who has already declined one.
  *  - `editor` — pushed from Fuel Targets. "Cancel" discards.
  *
- * ## ⚠ Draft seeding, and why it is latched TWICE
+ * ## ⚠ Draft seeding — `touchedRef` ALONE, and five wipe routes taught us why
  *
- * The form is seeded ONCE from whichever preferences arrive first — the
- * synchronous SQLite read on mount, or the network refresh moments later. A naive
- * `useEffect` on `data` would re-seed on the refresh and **silently discard
- * whatever the user had already changed** in the second or two the fetch takes,
- * which on this screen means losing an allergen selection.
+ * `data` arrives twice: the synchronous SQLite read on mount, then the network
+ * refresh. The form re-seeds from whichever is newest **while the user has not
+ * touched it**, and bails the moment they have.
  *
- * Latching on "have I seeded yet" is NOT sufficient on its own, and this is the
- * subtle half. On a fresh install the cache is empty, so `data` is null on mount
- * and the seed effect bails **without arming** — leaving a window between mount
- * and the fetch landing in which the user can already be tapping chips. The seed
- * then fires for the first time and overwrites them. That window is short but it
- * is exactly the one a first-run user is in.
+ * `touchedRef` is set synchronously at the top of every change handler, before its
+ * `setState`, so it is already true by the time the fetch's effect runs — including
+ * in the window between mount and the fetch landing, which on a fresh install is
+ * exactly where a first-run user is.
  *
- * So there are two guards: `seededRef` (seed at most once) and `touchedRef` (never
- * seed over a form the user has already changed). Both are refs — arming them must
- * not re-render, and `touchedRef` in particular has to be set synchronously inside
- * the handler so it is already true by the time the fetch's effect runs.
+ * ⚠ **There used to be a second latch (`seededRef`) bailing this effect, and it was
+ * itself a wipe route.** It pinned the form to the CACHE for life, so a device whose
+ * cached row was older than the server's displayed stale values — and `PUT` being a
+ * full last-write-wins replacement, Save then destroyed the newer row. `seededRef`
+ * survives for `isUnseeded` only.
+ *
+ * ## ⚠ FIVE routes into the same allergen wipe. Read before touching `onDismiss`.
+ *
+ * `PUT /nutrition/preferences` is a full replacement and this form renders empty
+ * defaults until seeded, so **every exit is a candidate wipe until proven
+ * otherwise.** The guards, each closing a route the others did not:
+ *
+ * | Guard | Route it closes |
+ * | --- | --- |
+ * | `isUnseeded` | failed read, empty cache — Save/Skip wrote four empty arrays |
+ * | `commit()`'s own refusal | the same, defended independently of the UI |
+ * | `hasSavedChoices` | SUCCESSFUL read over real preferences — a reinstall opens the wizard and Skip wrote defaults |
+ * | `serverTruthKnown` | cache says `isDefault: true`, server disagrees — Skip inside the fetch window |
+ * | no `seededRef` bail | stale cache never re-seeded — Save wrote the old row over the new one |
+ *
+ * The pattern in all five: **a cached value was treated as server truth.** If you add
+ * a sixth exit from this screen, assume it wipes until you have shown it cannot.
  *
  * ## ⚠ Client-side caps mirror the server's
  *
@@ -98,13 +112,35 @@ export function MealprintPreferencesContainer({
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // See the docstring for why BOTH latches are needed.
+  /**
+   * Set on the first seed. ⚠ Read by {@link isUnseeded} ONLY — it deliberately no
+   * longer bails the seed effect. See the effect's own note.
+   */
   const seededRef = useRef(false);
   /** Set by every change handler, synchronously, before its `setState`. */
   const touchedRef = useRef(false);
   const data = preferences.data;
   useEffect(() => {
-    if (seededRef.current || touchedRef.current || data === null) return;
+    // ⚠ `touchedRef` ALONE, deliberately — `seededRef` used to bail here too and
+    // that was the FIFTH route into the allergen wipe (Inspector Brad, 4th sweep).
+    //
+    // `data` arrives from SQLite synchronously on mount and from the network a
+    // moment later. Latching on "have I seeded once" pinned the form to the CACHE
+    // for the rest of its life, so a device whose cached row was older than the
+    // server's showed the user stale values — and because `PUT` is a full
+    // last-write-wins replacement, **Save then destroyed the newer row**. That
+    // needed no race at all: the form simply displayed the wrong data and the
+    // primary button wrote it.
+    //
+    // Re-seeding while `touchedRef` is false is safe and correct — an untouched
+    // form has nothing to protect, and the fresher value is the one the user
+    // should be editing. `touchedRef` alone still gives the guarantee the
+    // docstring wants (never seed over the user's own edits), including in the
+    // empty-cache window, because it is set synchronously inside every handler.
+    //
+    // Safe against a render loop: `data` is `useState`-held in
+    // `useCachedResource`, so its identity changes only when `setData` runs.
+    if (touchedRef.current || data === null) return;
     seededRef.current = true;
     // The wire arrays are `string[]` (the server validates against the closed
     // vocabularies but the DTO does not narrow). Filter through the local
@@ -334,6 +370,30 @@ export function MealprintPreferencesContainer({
    */
   const hasSavedChoices = data !== null && data.isDefault !== true;
 
+  /**
+   * ⚠ TRUE once a NETWORK read has landed — i.e. `data` is server truth, not just
+   * whatever SQLite happened to hold.
+   *
+   * `useCachedResource`'s cache read always declares `isStale: true` and only
+   * `attemptFetch` clears it (`setIsStale(false)` on success), so this is exactly
+   * "have we heard from the server". ⚠ Do NOT substitute `isRefreshing` — the first
+   * attempt at this guard used it and it is unobservable: the true→false transition
+   * can batch into one commit, so the effect never sees `true` and the flag never
+   * arms. That silently blocked the AC 1.4 first-run write instead.
+   *
+   * Why it is needed: {@link hasSavedChoices} is computed from `data`, which on
+   * mount is the SYNCHRONOUS SQLite value. That made it the FOURTH route into the
+   * allergen wipe (Inspector Brad, 4th sweep) — a device holding a cached
+   * `isDefault: true` row, whose user then set allergens elsewhere, opens the wizard
+   * with the form already live (cache hit ⇒ `isLoadingInitial` false),
+   * `hasSavedChoices` false, header reading "Skip". A tap inside that window wrote
+   * the defaults over the real row.
+   *
+   * A failed refresh deliberately never arms this, so the wizard does not write.
+   * That costs one extra wizard appearance; writing costs the allergen list.
+   */
+  const serverTruthKnown = !preferences.isStale;
+
   const onDismiss = useCallback(() => {
     // ⚠ An unseeded form leaves WITHOUT writing, in either mode. This is the Back
     // action on the load-failure panel, and turning it into a save-the-defaults
@@ -346,14 +406,23 @@ export function MealprintPreferencesContainer({
     // already told you". Not writing is safe: real choices mean `isDefault` is
     // false, so `needsSetup` is already false and the card will not re-offer the
     // wizard once this screen's fetch has warmed the cache.
-    if (mode === "editor" || isUnseeded || hasSavedChoices) {
+    // ⚠ `!serverTruthKnown` is the fourth guard, and it must stay ahead of the
+    // write: an unsettled read means we do not YET know whether there is anything
+    // to preserve, and the cache can say "nothing" while the server says
+    // "peanuts". See `serverTruthKnown`.
+    if (
+      mode === "editor" ||
+      isUnseeded ||
+      hasSavedChoices ||
+      !serverTruthKnown
+    ) {
       router.back();
       return;
     }
     // Genuine first run — nothing saved, so save the defaults (AC 1.4). See the
     // docstring for why this is a write rather than a plain `router.back()`.
     void commit(DEFAULT_MEALPRINT_PREFERENCES);
-  }, [mode, isUnseeded, hasSavedChoices, commit]);
+  }, [mode, isUnseeded, hasSavedChoices, serverTruthKnown, commit]);
 
   const onRetryLoad = useCallback(() => {
     void preferences.refresh();
@@ -378,7 +447,13 @@ export function MealprintPreferencesContainer({
       // "Skip" would describe an action it no longer performs — and "skip setup" is
       // exactly what makes a user expect their existing answers to be discarded.
       // See `hasSavedChoices`.
-      dismissLabel={mode === "editor" || hasSavedChoices ? "Cancel" : "Skip"}
+      // ⚠ Follows the BEHAVIOUR, including the uncertainty: while server truth is
+      // unknown `onDismiss` does not write, so it must not say "Skip".
+      dismissLabel={
+        mode === "editor" || hasSavedChoices || !serverTruthKnown
+          ? "Cancel"
+          : "Skip"
+      }
       onRetryLoad={onRetryLoad}
       dietaryPatterns={dietaryPatterns}
       onTogglePattern={onTogglePattern}

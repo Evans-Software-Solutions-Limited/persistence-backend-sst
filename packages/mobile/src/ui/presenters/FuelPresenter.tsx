@@ -579,6 +579,9 @@ export function FuelPresenter(props: FuelPresenterProps) {
             remainingProteinG={
               noTarget || !viewingToday ? null : remainingProteinG
             }
+            // ⚠ Separate from nulling the budget: the FALLBACK subtitles also say
+            // "today", and without this the card contradicted the sheet it opens.
+            isToday={viewingToday}
             onPress={onMealprint}
             onUpgrade={onMealprintUpgrade}
             onRetry={onMealprintRetry}

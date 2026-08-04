@@ -151,8 +151,11 @@ export type MealprintPreferencesProps = {
    * genuine first run; when the user already has saved choices it just leaves, and
    * labelling that "Skip" would promise to discard answers it in fact keeps. See
    * `MealprintPreferencesContainer`'s `hasSavedChoices`.
+   *
+   * ⚠ REQUIRED. It was optional with a `mode`-derived fallback, which is exactly the
+   * label the container proved wrong — silently available to the next caller.
    */
-  readonly dismissLabel?: string;
+  readonly dismissLabel: string;
   readonly testID?: string;
 };
 
@@ -188,7 +191,7 @@ export function MealprintPreferencesPresenter({
 }: MealprintPreferencesProps) {
   const insets = useSafeAreaInsets();
   const isWizard = mode === "wizard";
-  const dismissText = dismissLabel ?? (isWizard ? "Skip" : "Cancel");
+  const dismissText = dismissLabel;
   const partialCaveat = partialEnforcementCopy(dietaryPatterns);
   const hasAllergenChip = avoidAllergens.length > 0;
 

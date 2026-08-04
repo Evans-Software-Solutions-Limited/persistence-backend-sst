@@ -86,6 +86,15 @@ export type MealprintEntryCardProps = {
   readonly remainingKcal?: number | null;
   /** Protein left in the day. Only rendered alongside {@link remainingKcal}. */
   readonly remainingProteinG?: number | null;
+  /**
+   * False when Fuel is showing a day other than today.
+   *
+   * ⚠ Separate from {@link remainingKcal} being null. Nulling the budget kills the
+   * CONCRETE line but the fallbacks still said "today", so the card and the sheet it
+   * opens contradicted each other on one tap — the sheet says "the day you're
+   * viewing… anything you log goes to that day".
+   */
+  readonly isToday?: boolean;
   /** Opens the wizard (when `needsSetup`) or the suggest sheet. */
   readonly onPress: () => void;
   /** Pushes the paywall. Only wired in the `locked` state. */
@@ -100,6 +109,7 @@ export function MealprintEntryCard({
   needsSetup = false,
   remainingKcal = null,
   remainingProteinG = null,
+  isToday = true,
   onPress,
   onUpgrade,
   onRetry,
@@ -173,10 +183,14 @@ export function MealprintEntryCard({
     : isLocked
       ? "Unlock ideas that fit the calories and protein you have left"
       : needsSetup
-        ? "Set up how you eat, then get ideas that fit what's left today"
+        ? isToday
+          ? "Set up how you eat, then get ideas that fit what's left today"
+          : "Set up how you eat, then get ideas that fit the day you're viewing"
         : hasBudget
           ? budgetLine(remainingKcal, remainingProteinG)
-          : "Ideas that fit the calories and protein you have left today";
+          : isToday
+            ? "Ideas that fit the calories and protein you have left today"
+            : "Ideas that fit what's left on the day you're viewing";
 
   const cta = isLocked
     ? "See Premium+"
@@ -208,7 +222,7 @@ export function MealprintEntryCard({
           ? `${title}. ${subtitle}. Premium Plus feature, locked. ${cta}.`
           : isPending
             ? `${title}. ${subtitle}`
-            : `${title}. ${subtitle} ${cta}.`
+            : `${title}. ${subtitle}. ${cta}.`
       }
       // The CTA is not a Pressable any more, so the card has to supply the press
       // feedback `Btn` used to — otherwise the one element that looks like a button

@@ -347,11 +347,21 @@ export const TIERS: readonly Tier[] = [
 export const USD_PER_GBP = 1.27;
 
 /**
- * Apple's commission. **15 %** assumes enrolment in the Small Business Program
- * (under $1M/yr), which is where this business is. Pass 0.3 to see the standard
- * rate — it is the single biggest lever on every ratio in the output.
+ * Apple's commission. **30 % — the STANDARD rate, and the default deliberately.**
+ *
+ * ⚠ Changed 2026-08-04 (Brad): the Small Business Program application has NOT been
+ * approved. Modelling 15 % was pricing against a discount we do not hold, and even
+ * once granted it is temporary — crossing $1M/yr removes eligibility. So the model
+ * defaults to the rate we can always be sure of, and every tier is sized to work
+ * without the discount. If it is granted, the numbers get better rather than the
+ * plan needing a rebuild.
+ *
+ * Pass `SMALL_BUSINESS_APPLE_COMMISSION` to see the upside.
  */
-export const APPLE_COMMISSION = 0.15;
+export const APPLE_COMMISSION = 0.3;
+
+/** The Small Business Program rate — applied for, NOT approved as of 2026-08-04. */
+export const SMALL_BUSINESS_APPLE_COMMISSION = 0.15;
 
 /**
  * RevenueCat takes 1 % of tracked revenue above $2.5k/month. Modelled as a flat
@@ -595,16 +605,17 @@ export function report(): string {
   // The web rail does not move, which is the whole argument for the split.
   lines.push("");
   lines.push(
-    `Commission scenarios — net $/mo per tier (Apple ${pct(APPLE_COMMISSION)} today, ` +
-      `${pct(STANDARD_APPLE_COMMISSION)} past $1M/yr, web rail ${pct(WEB_RAIL_COMMISSION)} always):`,
+    `Commission scenarios — net $/mo per tier (Apple ${pct(APPLE_COMMISSION)} assumed, ` +
+      `${pct(SMALL_BUSINESS_APPLE_COMMISSION)} if Small Business is approved, ` +
+      `web rail ${pct(WEB_RAIL_COMMISSION)} always):`,
   );
   for (const tier of TIERS.filter((t) => t.priceMonthly > 0)) {
     const now = tierCost(tier).netRevenueUsd;
-    const past = tierCost(tier, STANDARD_APPLE_COMMISSION).netRevenueUsd;
+    const past = tierCost(tier, SMALL_BUSINESS_APPLE_COMMISSION).netRevenueUsd;
     const web = tierCost(tier, WEB_RAIL_COMMISSION).netRevenueUsd;
     lines.push(
-      `  ${tier.label.padEnd(20)} IAP now ${usd(now).padStart(8)}` +
-        ` · IAP past $1M ${usd(past).padStart(8)}` +
+      `  ${tier.label.padEnd(20)} IAP @30% ${usd(now).padStart(8)}` +
+        ` · IAP @15% ${usd(past).padStart(8)}` +
         ` · web ${usd(web).padStart(8)}`,
     );
   }

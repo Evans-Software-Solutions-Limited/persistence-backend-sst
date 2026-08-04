@@ -159,9 +159,11 @@ describe("FuelPresenter", () => {
       // first version of this test passed against the bug.
       const past = render({ canGoNext: true, selectedDate: yesterdayIso });
       expect(past.queryByText(/Let Mealprint fill the gap/)).toBeNull();
-      expect(
-        past.queryByText(/Ideas that fit the calories and protein/),
-      ).toBeTruthy();
+      // ⚠ And the FALLBACK must not say "today" either — nulling the budget kills
+      // the concrete line, but the subtitle it falls through to used to claim
+      // "today" while the sheet that same tap opens says "the day you're viewing".
+      expect(past.queryByText(/on the day you're viewing/)).toBeTruthy();
+      expect(past.queryByText(/left today/)).toBeNull();
 
       const today = render({ canGoNext: false, selectedDate: todayIso });
       expect(today.queryByText(/Let Mealprint fill the gap/)).toBeTruthy();

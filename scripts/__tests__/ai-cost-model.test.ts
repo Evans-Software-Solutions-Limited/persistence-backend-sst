@@ -2,8 +2,9 @@ import { describe, it, expect } from "vitest";
 import {
   AI_ENDPOINTS,
   APPLE_COMMISSION,
-  STANDARD_APPLE_COMMISSION,
+  SMALL_BUSINESS_APPLE_COMMISSION,
   WEB_RAIL_COMMISSION,
+  REVENUECAT_RATE,
   MARGINAL_INFRA_USD_PER_USER,
   TIERS,
   bindingCeiling,
@@ -143,8 +144,14 @@ describe("bindingCeiling", () => {
 describe("tierCost", () => {
   it("nets Apple's cut and RevenueCat's off gross revenue", () => {
     const cost = tierCost(tier("premium"));
-    // £12.99 × 1.27 × 0.85 × 0.99
-    expect(cost.netRevenueUsd).toBeCloseTo(12.99 * 1.27 * 0.85 * 0.99, 4);
+    // £12.99 × 1.27 × (1 − Apple) × (1 − RevenueCat). ⚠ Derived from the constants
+    // rather than hardcoding 0.85 — that literal was the unapproved Small Business
+    // rate, and pinning it made the default change a test failure instead of a
+    // recomputation.
+    expect(cost.netRevenueUsd).toBeCloseTo(
+      12.99 * 1.27 * (1 - APPLE_COMMISSION) * (1 - REVENUECAT_RATE),
+      4,
+    );
   });
 
   it("gives Free zero revenue, zero cost and no endpoints", () => {
@@ -291,21 +298,28 @@ describe("report", () => {
     expect(report()).toContain(`the other ${derived} are derived`);
   });
 
-  it("⚠ models the post-$1M commission reversion, because growth triggers it", () => {
-    // Crossing $1M/yr removes Small Business Program eligibility and Apple goes
-    // 15% -> 30%. The web rail does not move — that asymmetry is the argument for
-    // the split rail, and it WIDENS as the business succeeds.
+  it("⚠ DEFAULTS to Apple's standard 30%, not the unapproved Small Business rate", () => {
+    // Brad 2026-08-04: the Small Business application is NOT approved, and even once
+    // granted it lapses above $1M/yr. Pricing against a discount we do not hold is
+    // how a tier ships underwater, so the default is the rate we can always be sure
+    // of and the discount is upside.
+    expect(APPLE_COMMISSION).toBe(0.3);
+    expect(SMALL_BUSINESS_APPLE_COMMISSION).toBe(0.15);
+
     const premium = TIERS.find((t) => t.name === "premium")!;
-    const now = tierCost(premium).netRevenueUsd;
-    const past = tierCost(premium, STANDARD_APPLE_COMMISSION).netRevenueUsd;
+    const assumed = tierCost(premium).netRevenueUsd;
+    const ifApproved = tierCost(
+      premium,
+      SMALL_BUSINESS_APPLE_COMMISSION,
+    ).netRevenueUsd;
     const web = tierCost(premium, WEB_RAIL_COMMISSION).netRevenueUsd;
 
-    expect(past).toBeLessThan(now);
-    expect(web).toBeGreaterThan(now);
-    // ~18% less net revenue on the same sticker price.
-    expect(past / now).toBeCloseTo(0.82, 2);
-    // The web rail's advantage over IAP roughly doubles past the threshold.
-    expect(web - past).toBeGreaterThan((web - now) * 1.9);
+    // The discount is upside, never a dependency.
+    expect(ifApproved).toBeGreaterThan(assumed);
+    // The web rail beats BOTH, and beats the assumed rate by the wider margin —
+    // which is the argument for the split rail at 30%.
+    expect(web).toBeGreaterThan(ifApproved);
+    expect(web - assumed).toBeGreaterThan(web - ifApproved);
     expect(report()).toContain("Commission scenarios");
   });
 

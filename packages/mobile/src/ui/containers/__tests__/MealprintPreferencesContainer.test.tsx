@@ -588,6 +588,78 @@ describe("MealprintPreferencesContainer — Skip must not erase saved choices (B
   });
 });
 
+describe("MealprintPreferencesContainer — STALE CACHE wipes (Inspector 🟠, 4th sweep)", () => {
+  /**
+   * Device A cached `{isDefault: true}` (opened the editor once, cancelled). The
+   * user then set allergens on device B. Back on A the cache is a HIT, so the form
+   * is live immediately and every guard computed from `data` sees "nothing saved".
+   */
+  function mountStaleCache(mode: "wizard" | "editor") {
+    const api = new InMemoryApiAdapter();
+    // Server truth: the user HAS allergens.
+    api.mealprintPreferences = {
+      ...api.mealprintPreferences,
+      avoidAllergens: ["peanuts"],
+      isDefault: false,
+    };
+    const storage = new InMemoryStorageAdapter();
+    // Cache truth: an older, default row.
+    storage.cacheMealprintPreferences(SESSION.userId, {
+      ...api.mealprintPreferences,
+      avoidAllergens: [],
+      isDefault: true,
+    });
+    render(
+      <AdapterProvider adapters={makeAdapters(api, storage)}>
+        <MealprintPreferencesContainer mode={mode} />
+      </AdapterProvider>,
+    );
+    return { api, storage, probe: () => mockProbe.last! };
+  }
+
+  // ⚠ HONESTY NOTE: this does NOT isolate the pre-fetch window — `act` flushes the
+  // in-memory fetch before `onDismiss` runs, so `hasSavedChoices` blocks the write
+  // here regardless of `serverTruthKnown`. Verified: it passes with the guard
+  // reverted. It is kept as an end-to-end "no write on this path" assertion; the
+  // test that actually pins `serverTruthKnown` is the label one below, which DOES
+  // fail when reverted. Isolating the window needs a fetch whose resolution the test
+  // controls.
+  it("does not write on the stale-cache wizard path (end-to-end, not window-isolating)", async () => {
+    const { probe, storage } = mountStaleCache("wizard");
+    await act(async () => {
+      probe().onDismiss();
+    });
+    expect(storage.getPendingMutations()).toHaveLength(0);
+    expect(preferencePuts()).toHaveLength(0);
+    expect(mockBack).toHaveBeenCalled();
+  });
+
+  it("⚠ and does not offer 'Skip' while the server is still unknown", async () => {
+    const { probe } = mountStaleCache("wizard");
+    // Before server truth lands the label must not promise a write.
+    expect(probe().dismissLabel).toBe("Cancel");
+  });
+
+  it("⚠ RE-SEEDS from the network, so SAVE cannot write the stale row over the new one", async () => {
+    // No race needed for this one: the old `seededRef` bail pinned the form to the
+    // cache for life, so the form showed empty allergens and Save destroyed the
+    // real list.
+    const { probe } = mountStaleCache("editor");
+    await waitFor(() => expect(probe().avoidAllergens).toEqual(["peanuts"]));
+  });
+
+  it("still does not re-seed over edits the user has already made", async () => {
+    // The guarantee `touchedRef` exists for — re-seeding must not clobber a live edit.
+    const { probe } = mountStaleCache("editor");
+    await act(async () => {
+      probe().onToggleAllergen("sesame");
+    });
+    await waitFor(() => expect(probe().avoidAllergens).toContain("sesame"));
+    // The network value must NOT overwrite the user's own selection.
+    expect(probe().avoidAllergens).not.toEqual(["peanuts"]);
+  });
+});
+
 describe("MealprintPreferencesContainer — the unseeded-write guard (Inspector 🔴)", () => {
   /** A device with an EMPTY cache whose preferences read fails. */
   function mountUnseededFailure(mode: "wizard" | "editor") {
