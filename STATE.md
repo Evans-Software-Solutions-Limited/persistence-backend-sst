@@ -74,9 +74,14 @@ it.**
    recipes"; the accept handler currently stores one-off item lists instead. Recommend
    minting a recipe only on an explicit "save as recipe", NOT per accepted plan. UNBUILT
    either way.
-2. **Loadout Phase 4 / programme import** — cap CONFIRMED at 10 (Brad, cycle not
-   weeks×sessions; spec-21 § 7.3 corrected). Still zero code; wants a combined spec triplet
-   with ROADMAP § 5.3 import.
+2. **Loadout Phase 4 / programme import** — ✅ **COMBINED SPEC WRITTEN 2026-08-05:
+   `specs/22-program-import-and-adaptation/`** (triplet). Phase 4 MOVED there from
+   spec-21 (spec-21 keeps the single-workout engine + § 2.4 columns). Cap confirmed 10.
+   **Eval-gated: Phase 0 is an accuracy+cost eval, no code until it clears.** Includes
+   the source-keyed `extraction_cache` (content-hash, copy-on-import, public_url shared
+   / upload per-user — Brad greenlit the direction). Shared cross-user library PARKED
+   (design § 9). Two open Brad checkpoints: C1 (cache reuse split) + C2 (eval bar).
+   Still ZERO code — spec only.
 
 **NEXT SLICE for "whole of Mealprint" — pick up here:** the post-accept **replace-meal
 ROUTE** (`replaceMeal` exists on the repo + swap returns the meal, but no route wires them —
