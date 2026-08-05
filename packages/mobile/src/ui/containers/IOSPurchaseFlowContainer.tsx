@@ -61,7 +61,11 @@ export const MONTHLY_ONLY_TIERS: ReadonlySet<SubscriptionTierName> = new Set(
 
 type Role = "user" | "trainer";
 
-export function IOSPurchaseFlowContainer() {
+export function IOSPurchaseFlowContainer({
+  appStoreEnabled = subscriptionConfig.appStore,
+}: {
+  appStoreEnabled?: boolean;
+} = {}) {
   const router = useRouter();
   const purchases = usePurchases();
 
@@ -144,8 +148,11 @@ export function IOSPurchaseFlowContainer() {
     [offeringsQuery.data],
   );
   const purchasableTiers = useMemo(
-    () => derivePurchasableTiers(packages),
-    [packages],
+    () =>
+      derivePurchasableTiers(
+        packages.filter((pkg) => pkg.billingCycle === billingCycle),
+      ),
+    [packages, billingCycle],
   );
   // Trial length advertised on EACH card — derived ONLY from THAT tier's own
   // product's Apple introductory offer, on the shown billing cycle. `null`
@@ -205,7 +212,7 @@ export function IOSPurchaseFlowContainer() {
 
   const handleTierSelect = useCallback(
     async (tier: SubscriptionTierName) => {
-      if (!subscriptionConfig.appStore) return;
+      if (!appStoreEnabled) return;
       if (isProcessing || purchases === null) return;
       if (tier === "free") return;
 
@@ -268,6 +275,7 @@ export function IOSPurchaseFlowContainer() {
     },
     [
       isProcessing,
+      appStoreEnabled,
       purchases,
       packages,
       billingCycle,
@@ -342,6 +350,7 @@ export function IOSPurchaseFlowContainer() {
       }
       errorMessage={tiersQuery.error?.message ?? null}
       isUnavailable={purchases !== null && !purchases.isConfigured()}
+      appStoreEnabled={appStoreEnabled}
       billingCycle={billingCycle}
       currentTier={currentTier}
       selectedRole={selectedRole}

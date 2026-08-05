@@ -1,4 +1,4 @@
-import { Routes, Route } from "react-router";
+import { Navigate, Routes, Route } from "react-router";
 import Home from "./pages/Home";
 import Pricing from "./pages/Pricing";
 import Support from "./pages/Support";
@@ -24,7 +24,16 @@ function App() {
           <Route path="/auth/callback" element={<AuthCallback />} />
           <Route path="/privacy" element={<Privacy />} />
           <Route path="/terms" element={<Terms />} />
-          <Route path="/org-admin" element={<OrganisationAdmin />} />
+          <Route
+            path="/org-admin"
+            element={
+              import.meta.env.DEV ? (
+                <OrganisationAdmin />
+              ) : (
+                <Navigate to="/pricing" replace />
+              )
+            }
+          />
         </Routes>
       </ThemeProvider>
     </QueryClientProvider>

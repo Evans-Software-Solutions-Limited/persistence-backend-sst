@@ -6,10 +6,15 @@ export const ADAPTIVE_SUITE_LABEL = "Loadout + Mealprint";
  * same state. App Store products are being configured separately; until the
  * switch is deliberately flipped, an IAP tier is informational only.
  */
-export const subscriptionConfig = {
+export type SubscriptionConfig = {
+  appStore: boolean;
+  web: boolean;
+};
+
+export const subscriptionConfig: SubscriptionConfig = {
   appStore: false,
   web: true,
-} as const;
+};
 
 export type SubscriptionAudience = "consumer" | "coach" | "org";
 export type SubscriptionRail = "iap" | "web";
@@ -255,7 +260,10 @@ export type CatalogCta = {
   kind: "free" | "soon" | "iap" | "trial" | "buy" | "contact";
 };
 
-export function ctaFor(tier: CatalogTier): CatalogCta {
+export function ctaFor(
+  tier: CatalogTier,
+  config: SubscriptionConfig = subscriptionConfig,
+): CatalogCta {
   if (tier.rail === "web") {
     if (tier.cta === "contact") {
       return { label: "Talk to us", enabled: true, kind: "contact" };
@@ -270,7 +278,7 @@ export function ctaFor(tier: CatalogTier): CatalogCta {
     return { label: "Continue free", enabled: true, kind: "free" };
   }
 
-  return subscriptionConfig.appStore
+  return config.appStore
     ? { label: `Choose ${tier.name}`, enabled: true, kind: "iap" }
     : { label: "Coming soon", enabled: false, kind: "soon" };
 }

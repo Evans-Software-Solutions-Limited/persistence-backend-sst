@@ -15,6 +15,7 @@ import {
   ctaFor,
   monthlyEquivalent,
   SUBSCRIPTION_CATALOG,
+  subscriptionConfig,
   tiersFor,
   type BillingCadence,
   type CatalogTier,
@@ -50,6 +51,7 @@ export interface IOSPurchaseFlowPresenterProps {
   currentTierDisplayName: string;
   isProcessing: boolean;
   isRestoring: boolean;
+  appStoreEnabled?: boolean;
   screen?: SubscriptionRailScreen;
   onBillingCycleChange: (cycle: BillingCycle) => void;
   onTierSelect: (tier: SubscriptionTierName) => void;
@@ -76,10 +78,12 @@ export function Price({
   tier,
   cadence,
   compact = false,
+  monthlyEquivalentOnly = false,
 }: {
   tier: CatalogTier;
   cadence: BillingCadence;
   compact?: boolean;
+  monthlyEquivalentOnly?: boolean;
 }) {
   if (tier.invoiced) {
     return (
@@ -90,7 +94,11 @@ export function Price({
   }
 
   const annual = cadence === "annual" && tier.annual !== null;
-  const value = annual ? tier.annual : tier.monthly;
+  const value = monthlyEquivalentOnly
+    ? monthlyEquivalent(tier)
+    : annual
+      ? tier.annual
+      : tier.monthly;
   const provisional = annual ? tier.provisionalAnnual : tier.provisionalMonthly;
   if (value === null) return null;
 
@@ -100,15 +108,25 @@ export function Price({
         style={[
           styles.price,
           compact && styles.priceCompact,
+          monthlyEquivalentOnly && styles.equivalentPrice,
           provisional && styles.priceProvisional,
         ]}
         accessibilityHint={provisional ? "Provisional price" : undefined}
       >
-        {formatGbpValue(value)}
+        {formatGbpValue(
+          monthlyEquivalentOnly ? Number(value.toFixed(2)) : value,
+        )}
         {provisional ? "*" : ""}
       </Text>
       {value !== 0 && (
-        <Text style={styles.priceUnit}>{annual ? "/yr" : "/mo"}</Text>
+        <Text
+          style={[
+            styles.priceUnit,
+            monthlyEquivalentOnly && styles.equivalentUnit,
+          ]}
+        >
+          {annual && !monthlyEquivalentOnly ? "/yr" : "/mo"}
+        </Text>
       )}
     </View>
   );
@@ -301,9 +319,35 @@ function SuiteLine({ included }: { included: boolean }) {
   );
 }
 
-function ComingSoonCta({ tier }: { tier: CatalogTier }) {
-  const cta = ctaFor(tier);
+function PaidCta({
+  tier,
+  enabled,
+  disabled,
+  onPress,
+}: {
+  tier: CatalogTier;
+  enabled: boolean;
+  disabled: boolean;
+  onPress: () => void;
+}) {
+  const cta = ctaFor(tier, {
+    ...subscriptionConfig,
+    appStore: enabled,
+  });
   if (tier.monthly === 0) return null;
+  if (cta.enabled) {
+    return (
+      <TouchableOpacity
+        style={[styles.comingSoon, styles.purchaseCta]}
+        onPress={onPress}
+        disabled={disabled}
+        accessibilityRole="button"
+        testID={`subscription-card-${tier.id}-subscribe`}
+      >
+        <Text style={styles.purchaseCtaText}>{cta.label}</Text>
+      </TouchableOpacity>
+    );
+  }
   return (
     <View
       style={styles.comingSoon}
@@ -322,11 +366,21 @@ function TierCard({
   cadence,
   trainer,
   onContinueFree,
+  purchaseEnabled,
+  purchaseDisabled,
+  onTierSelect,
+  trialDays,
+  showTrial,
 }: {
   tier: CatalogTier;
   cadence: BillingCadence;
   trainer: boolean;
   onContinueFree?: () => void;
+  purchaseEnabled: boolean;
+  purchaseDisabled: boolean;
+  onTierSelect: () => void;
+  trialDays: number | null;
+  showTrial: boolean;
 }) {
   const saving = annualSaving(tier);
   const equivalent = monthlyEquivalent(tier);
@@ -359,10 +413,17 @@ function TierCard({
         <View style={styles.tierPriceWrap}>
           <Price tier={tier} cadence={cadence} compact />
           {annual && equivalent !== null && (
-            <Text style={styles.equivalentText}>
-              {formatGbpValue(Number(equivalent.toFixed(2)))}/mo
-              {saving ? ` · save ${saving}%` : ""}
-            </Text>
+            <View style={styles.equivalentRow}>
+              <Price
+                tier={tier}
+                cadence="annual"
+                compact
+                monthlyEquivalentOnly
+              />
+              {saving ? (
+                <Text style={styles.equivalentText}>· save {saving}%</Text>
+              ) : null}
+            </View>
           )}
         </View>
       </View>
@@ -401,6 +462,13 @@ function TierCard({
         ))}
       </View>
 
+      {showTrial && trialDays !== null && (
+        <View style={styles.trialBanner} testID={`trial-banner-${tier.id}`}>
+          <Ionicons name="gift-outline" size={15} color={color.$primary} />
+          <Text style={styles.trialBannerText}>{trialDays}-day free trial</Text>
+        </View>
+      )}
+
       {tier.monthly === 0 ? (
         <TouchableOpacity
           style={styles.continueFree}
@@ -410,7 +478,12 @@ function TierCard({
           <Text style={styles.continueFreeText}>Continue free</Text>
         </TouchableOpacity>
       ) : (
-        <ComingSoonCta tier={tier} />
+        <PaidCta
+          tier={tier}
+          enabled={purchaseEnabled}
+          disabled={purchaseDisabled}
+          onPress={onTierSelect}
+        />
       )}
     </View>
   );
@@ -453,6 +526,7 @@ function PlansScreen(props: IOSPurchaseFlowPresenterProps) {
   const hasProvisional = tiers.some((tier) =>
     cadence === "annual" ? tier.provisionalAnnual : tier.provisionalMonthly,
   );
+  const appStoreEnabled = props.appStoreEnabled ?? subscriptionConfig.appStore;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -547,6 +621,21 @@ function PlansScreen(props: IOSPurchaseFlowPresenterProps) {
               cadence={cadence}
               trainer={trainer}
               onContinueFree={props.onContinueFree}
+              purchaseEnabled={
+                appStoreEnabled &&
+                props.purchasableTiers.has(tier.id as SubscriptionTierName)
+              }
+              purchaseDisabled={props.isProcessing || props.isRestoring}
+              onTierSelect={() =>
+                props.onTierSelect(tier.id as SubscriptionTierName)
+              }
+              trialDays={props.tierTrialDays(tier.id as SubscriptionTierName)}
+              showTrial={
+                appStoreEnabled &&
+                props.hasTrialEligibilityData &&
+                props.currentTier !== tier.id &&
+                props.isTierTrialEligible(tier.id as SubscriptionTierName)
+              }
             />
           ))}
         </View>
@@ -607,9 +696,13 @@ function ManageScreen(props: IOSPurchaseFlowPresenterProps) {
             </View>
             {tier && (
               <View style={styles.tierPriceWrap}>
-                <Price tier={tier} cadence={cadence} compact />
+                <Text style={styles.manageCadence}>
+                  {cadence === "annual" ? "Annual" : "Monthly"}
+                </Text>
                 {renewal && (
-                  <Text style={styles.equivalentText}>renews {renewal}</Text>
+                  <Text style={styles.equivalentText}>
+                    {props.isCancelledButActive ? "ends" : "renews"} {renewal}
+                  </Text>
                 )}
               </View>
             )}
@@ -934,6 +1027,9 @@ const styles = StyleSheet.create({
     textDecorationStyle: "dashed",
   },
   priceUnit: { marginLeft: 3, color: color.$text3, fontSize: 10.5 },
+  equivalentRow: { flexDirection: "row", alignItems: "center", marginTop: 3 },
+  equivalentPrice: { color: color.$text4, fontSize: 9.5, letterSpacing: 0 },
+  equivalentUnit: { color: color.$text4, fontSize: 9.5 },
   equivalentText: { marginTop: 3, color: color.$text4, fontSize: 9.5 },
   clientRow: {
     flexDirection: "row",
@@ -967,6 +1063,21 @@ const styles = StyleSheet.create({
   },
   suiteExcluded: { color: color.$text3, fontSize: 11.5 },
   features: { gap: 7, marginTop: 13 },
+  trialBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 7,
+    marginTop: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: color.$primaryDim,
+  },
+  trialBannerText: {
+    color: color.$primary,
+    fontSize: 12,
+    fontWeight: "700",
+  },
   featureRow: { flexDirection: "row", alignItems: "flex-start", gap: 7 },
   featureText: { flex: 1, color: color.$text2, fontSize: 12, lineHeight: 17 },
   comingSoon: {
@@ -982,6 +1093,15 @@ const styles = StyleSheet.create({
     backgroundColor: color.$surface3,
   },
   comingSoonText: { color: color.$text3, fontSize: 14, fontWeight: "700" },
+  purchaseCta: {
+    borderColor: color.$primary,
+    backgroundColor: color.$primary,
+  },
+  purchaseCtaText: {
+    color: color.$primaryInk,
+    fontSize: 14,
+    fontWeight: "700",
+  },
   continueFree: {
     minHeight: 48,
     alignItems: "center",
@@ -1085,6 +1205,12 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: "800",
     letterSpacing: -0.8,
+  },
+  manageCadence: {
+    color: color.$text,
+    fontSize: 15,
+    fontWeight: "700",
+    textAlign: "right",
   },
   manageActions: {
     overflow: "hidden",

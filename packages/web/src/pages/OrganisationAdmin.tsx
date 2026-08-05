@@ -40,7 +40,9 @@ export function OrganisationAdmin() {
         <div className="c">
           <header className="org-admin-header">
             <div>
-              <span className="kicker c-accent">Organisation admin</span>
+              <span className="kicker c-accent">
+                Organisation admin · Demo data
+              </span>
               <h1>Northwind Logistics</h1>
               <p>Aggregate seat management and privacy-safe engagement only.</p>
             </div>

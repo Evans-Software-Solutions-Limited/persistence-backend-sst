@@ -60,17 +60,23 @@ function Price({
   tier,
   cadence = "monthly",
   compact = false,
+  monthlyEquivalentOnly = false,
 }: {
   tier: CatalogTier;
   cadence?: BillingCadence;
   compact?: boolean;
+  monthlyEquivalentOnly?: boolean;
 }) {
   if (tier.invoiced) {
     return <span className="catalog-price invoiced">Invoiced</span>;
   }
 
   const annual = cadence === "annual" && tier.annual !== null;
-  const value = annual ? tier.annual : tier.monthly;
+  const value = monthlyEquivalentOnly
+    ? monthlyEquivalent(tier)
+    : annual
+      ? tier.annual
+      : tier.monthly;
   const provisional = annual ? tier.provisionalAnnual : tier.provisionalMonthly;
 
   if (value === null) return null;
@@ -92,7 +98,11 @@ function Price({
         {formatted}
         {provisional && <sup>*</sup>}
       </span>
-      {value !== 0 && <span className="unit">{annual ? "/yr" : "/mo"}</span>}
+      {value !== 0 && (
+        <span className="unit">
+          {annual && !monthlyEquivalentOnly ? "/yr" : "/mo"}
+        </span>
+      )}
     </span>
   );
 }
@@ -206,15 +216,18 @@ function PlanCard({
 
       <Price tier={tier} cadence={cadence} />
       <div className="plan-sub">
-        {tier.invoiced
-          ? "Custom terms"
-          : isAnnual && equivalent !== null
-            ? `£${equivalent.toFixed(2)}/mo billed annually${
-                saving ? ` · save ${saving}%` : ""
-              }`
-            : tier.monthly === 0
-              ? "Free forever"
-              : "Billed monthly"}
+        {tier.invoiced ? (
+          "Custom terms"
+        ) : isAnnual && equivalent !== null ? (
+          <>
+            <Price tier={tier} cadence="annual" compact monthlyEquivalentOnly />{" "}
+            billed annually{saving ? ` · save ${saving}%` : ""}
+          </>
+        ) : tier.monthly === 0 ? (
+          "Free forever"
+        ) : (
+          "Billed monthly"
+        )}
       </div>
 
       <SuiteLine included={tier.suite} />
@@ -231,55 +244,26 @@ function PlanCard({
 
 const MATRIX_ROWS: readonly {
   label: string;
-  values: Record<string, string | boolean>;
+  value: (tier: CatalogTier) => string | boolean;
 }[] = [
   {
     label: "Workout and nutrition tracking",
-    values: {
-      free: true,
-      premium: true,
-      premium_plus: true,
-      individual_trainer: true,
-      start_up_coach_plus: true,
-      coach: true,
-      coach_pro: true,
-    },
+    value: () => true,
   },
   {
     label: "Loadout + Mealprint",
-    values: {
-      free: false,
-      premium: false,
-      premium_plus: true,
-      individual_trainer: false,
-      start_up_coach_plus: true,
-      coach: true,
-      coach_pro: true,
-    },
+    value: (tier) => tier.suite,
   },
   {
     label: "Coach tools",
-    values: {
-      free: false,
-      premium: false,
-      premium_plus: false,
-      individual_trainer: true,
-      start_up_coach_plus: true,
-      coach: true,
-      coach_pro: true,
-    },
+    value: (tier) => tier.audience === "coach",
   },
   {
     label: "Client capacity",
-    values: {
-      free: "—",
-      premium: "—",
-      premium_plus: "—",
-      individual_trainer: "5",
-      start_up_coach_plus: "5",
-      coach: "15",
-      coach_pro: "30",
-    },
+    value: (tier) =>
+      tier.audience === "coach" && tier.clients !== null
+        ? String(tier.clients)
+        : "—",
   },
 ];
 
@@ -311,7 +295,7 @@ function TierMatrix() {
               <tr key={row.label}>
                 <th>{row.label}</th>
                 {tiers.map((tier) => {
-                  const value = row.values[tier.id];
+                  const value = row.value(tier);
                   return (
                     <td key={tier.id}>
                       {value === true ? (
@@ -429,7 +413,7 @@ export function Pricing() {
               </span>
             </div>
 
-            {audience === "org" && (
+            {audience === "org" && import.meta.env.DEV && (
               <p className="catalog-admin-link">
                 Already managing a plan?{" "}
                 <Link to="/org-admin">Open organisation admin</Link>

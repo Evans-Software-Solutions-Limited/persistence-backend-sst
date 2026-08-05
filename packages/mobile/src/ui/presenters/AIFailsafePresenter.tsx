@@ -37,10 +37,18 @@ export function AIFailsafePresenter({
         </View>
       </View>
       <View style={styles.footer}>
-        <TouchableOpacity style={styles.primary} onPress={onDismiss}>
+        <TouchableOpacity
+          style={styles.primary}
+          onPress={onDismiss}
+          testID="ai-failsafe-dismiss"
+        >
           <Text style={styles.primaryText}>Got it</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.secondary} onPress={onBuildManually}>
+        <TouchableOpacity
+          style={styles.secondary}
+          onPress={onBuildManually}
+          testID="ai-failsafe-build-manually"
+        >
           <Text style={styles.secondaryText}>Build a workout myself</Text>
         </TouchableOpacity>
       </View>

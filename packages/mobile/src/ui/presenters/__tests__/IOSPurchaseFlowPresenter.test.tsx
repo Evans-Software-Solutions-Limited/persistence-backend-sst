@@ -109,6 +109,23 @@ describe("IOSPurchaseFlowPresenter", () => {
     expect(props.onTierSelect).not.toHaveBeenCalled();
   });
 
+  it("activates only purchasable tiers when the App Store rail is enabled", () => {
+    const props = defaultProps();
+    render(
+      <IOSPurchaseFlowPresenter
+        {...props}
+        appStoreEnabled
+        purchasableTiers={new Set(["premium"])}
+      />,
+    );
+
+    fireEvent.press(screen.getByTestId("subscription-card-premium-subscribe"));
+    expect(props.onTierSelect).toHaveBeenCalledWith("premium");
+    expect(
+      screen.getByTestId("subscription-card-premium_plus-coming-soon"),
+    ).toBeTruthy();
+  });
+
   it("continues free without treating it as an IAP", () => {
     const props = defaultProps();
     render(<IOSPurchaseFlowPresenter {...props} />);
@@ -171,7 +188,7 @@ describe("IOSPurchaseFlowPresenter", () => {
       />,
     );
     expect(screen.getByTestId("subscription-manage-screen")).toBeTruthy();
-    expect(screen.getByText("£249.99")).toBeTruthy();
+    expect(screen.getAllByText("Annual")).toHaveLength(2);
     expect(screen.getByText(/renews 14 Mar 2027/i)).toBeTruthy();
     fireEvent.press(screen.getByTestId("subscription-change-plan"));
     fireEvent.press(screen.getByTestId("ios-purchase-manage"));
@@ -188,9 +205,12 @@ describe("IOSPurchaseFlowPresenter", () => {
         currentTier="premium"
         currentTierDisplayName="Promotional access"
         isCancelledButActive
+        subscriptionEndsAt="2027-03-14T00:00:00.000Z"
       />,
     );
     expect(screen.getByText("CANCELLED")).toBeTruthy();
+    expect(screen.getByText(/ends 14 Mar 2027/i)).toBeTruthy();
+    expect(screen.queryByText(/renews 14 Mar 2027/i)).toBeNull();
   });
 
   it("routes the header back affordance", () => {
@@ -215,5 +235,14 @@ describe("IOSPurchaseFlowPresenter", () => {
       />,
     );
     expect(screen.getByText("£199.99*")).toBeTruthy();
+
+    view.rerender(
+      <Price
+        tier={{ ...tier, annual: 199.99, provisionalAnnual: true }}
+        cadence="annual"
+        monthlyEquivalentOnly
+      />,
+    );
+    expect(screen.getByText("£16.67*")).toBeTruthy();
   });
 });
