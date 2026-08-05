@@ -1,6 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, Linking } from "react-native";
-import { subscriptionConfig } from "@persistence/subscription-catalog";
+import {
+  SUBSCRIPTION_CATALOG,
+  type CatalogTierId,
+  type TierPricing,
+} from "@persistence/subscription-catalog";
 import { useLocalSearchParams, useRouter, type Href } from "expo-router";
 import {
   type BillingCycle,
@@ -61,11 +65,7 @@ export const MONTHLY_ONLY_TIERS: ReadonlySet<SubscriptionTierName> = new Set(
 
 type Role = "user" | "trainer";
 
-export function IOSPurchaseFlowContainer({
-  appStoreEnabled = subscriptionConfig.appStore,
-}: {
-  appStoreEnabled?: boolean;
-} = {}) {
+export function IOSPurchaseFlowContainer() {
   const router = useRouter();
   const purchases = usePurchases();
 
@@ -154,6 +154,55 @@ export function IOSPurchaseFlowContainer({
       ),
     [packages, billingCycle],
   );
+  const tierPricing = useMemo(() => {
+    const pricing: Partial<Record<CatalogTierId, TierPricing>> = {};
+    const catalogIds = new Set<string>(
+      SUBSCRIPTION_CATALOG.map((tier) => tier.id),
+    );
+
+    // The public catalog keeps cards useful before StoreKit has returned an
+    // offering. Join by the canonical tier id; no display price is baked into
+    // the app bundle.
+    for (const tier of tiersQuery.data ?? []) {
+      if (!catalogIds.has(tier.tierName)) continue;
+      pricing[tier.tierName as CatalogTierId] = {
+        monthly: tier.priceMonthly,
+        annual: tier.priceYearly,
+        monthlySource: "api",
+        annualSource: "api",
+      };
+    }
+
+    // StoreKit (through RevenueCat) is authoritative for an IAP product. Its
+    // numeric price drives savings and its localised label is printed exactly
+    // as Apple supplies it. Product id -> tier/cadence mapping is the join.
+    for (const pkg of packages) {
+      if (pkg.tier === null || !catalogIds.has(pkg.tier)) continue;
+      const id = pkg.tier as CatalogTierId;
+      const current = pricing[id] ?? { monthly: null, annual: null };
+      pricing[id] =
+        pkg.billingCycle === "yearly"
+          ? {
+              ...current,
+              annual: pkg.price,
+              annualSource: "store",
+              annualLabel: pkg.priceString,
+              ...(pkg.pricePerMonthString === null
+                ? {}
+                : {
+                    annualMonthlyEquivalentLabel: pkg.pricePerMonthString,
+                  }),
+            }
+          : {
+              ...current,
+              monthly: pkg.price,
+              monthlySource: "store",
+              monthlyLabel: pkg.priceString,
+            };
+    }
+
+    return pricing;
+  }, [packages, tiersQuery.data]);
   // Trial length advertised on EACH card — derived ONLY from THAT tier's own
   // product's Apple introductory offer, on the shown billing cycle. `null`
   // when the product surfaces no real free-trial offer (offer missing/
@@ -212,7 +261,6 @@ export function IOSPurchaseFlowContainer({
 
   const handleTierSelect = useCallback(
     async (tier: SubscriptionTierName) => {
-      if (!appStoreEnabled) return;
       if (isProcessing || purchases === null) return;
       if (tier === "free") return;
 
@@ -275,7 +323,6 @@ export function IOSPurchaseFlowContainer({
     },
     [
       isProcessing,
-      appStoreEnabled,
       purchases,
       packages,
       billingCycle,
@@ -344,13 +391,12 @@ export function IOSPurchaseFlowContainer({
 
   return (
     <IOSPurchaseFlowPresenter
-      subscriptionTiers={tiersQuery.data ?? []}
+      tierPricing={tierPricing}
       isLoading={
         tiersQuery.isLoading || subQuery.isLoading || offeringsQuery.isLoading
       }
       errorMessage={tiersQuery.error?.message ?? null}
       isUnavailable={purchases !== null && !purchases.isConfigured()}
-      appStoreEnabled={appStoreEnabled}
       billingCycle={billingCycle}
       currentTier={currentTier}
       selectedRole={selectedRole}

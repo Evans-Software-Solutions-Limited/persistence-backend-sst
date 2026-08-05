@@ -1,6 +1,5 @@
 import React from "react";
 import { fireEvent, render, screen } from "@testing-library/react-native";
-import type { SubscriptionTier } from "@/domain/models/subscription";
 import {
   IOSPurchaseFlowPresenter,
   Price,
@@ -8,29 +7,17 @@ import {
 } from "@/ui/presenters/IOSPurchaseFlowPresenter";
 import { catalogTier } from "@persistence/subscription-catalog";
 
-const PREMIUM: SubscriptionTier = {
-  tierName: "premium",
-  displayName: "Premium",
-  description: null,
-  priceMonthly: 16.99,
-  priceYearly: 139.99,
-  currency: "GBP",
-  features: {},
-  workoutLimit: null,
-  aiAccess: true,
-  aiWorkoutLimit: 6,
-  gymBuddyAccess: true,
-  trainerClientLimit: null,
-  isTrainerTier: false,
-  analyticsAccess: false,
-  exportAccess: false,
-  stripePriceIdMonthly: null,
-  stripePriceIdYearly: null,
-};
-
 function defaultProps(): IOSPurchaseFlowPresenterProps {
   return {
-    subscriptionTiers: [PREMIUM],
+    tierPricing: {
+      free: { monthly: 0, annual: null },
+      premium: { monthly: 16.99, annual: 139.99 },
+      premium_plus: { monthly: 29.99, annual: 249.99 },
+      individual_trainer: { monthly: 18.99, annual: 159.99 },
+      start_up_coach_plus: { monthly: 34.99, annual: 289.99 },
+      coach: { monthly: 59.99, annual: 499.99 },
+      coach_pro: { monthly: 99.99, annual: 839.99 },
+    },
     isLoading: false,
     errorMessage: null,
     isUnavailable: false,
@@ -109,12 +96,11 @@ describe("IOSPurchaseFlowPresenter", () => {
     expect(props.onTierSelect).not.toHaveBeenCalled();
   });
 
-  it("activates only purchasable tiers when the App Store rail is enabled", () => {
+  it("activates only tiers backed by a live App Store package", () => {
     const props = defaultProps();
     render(
       <IOSPurchaseFlowPresenter
         {...props}
-        appStoreEnabled
         purchasableTiers={new Set(["premium"])}
       />,
     );
@@ -220,17 +206,24 @@ describe("IOSPurchaseFlowPresenter", () => {
     expect(props.onBack).toHaveBeenCalled();
   });
 
-  it("Price supports invoiced, monthly and provisional catalog values", () => {
+  it("Price supports live, localised, invoiced and provisional values", () => {
     const tier = catalogTier("premium");
-    const view = render(<Price tier={tier} cadence="monthly" />);
-    expect(screen.getByText("£16.99")).toBeTruthy();
+    const view = render(
+      <Price
+        tier={tier}
+        pricing={{ monthly: 17.49, annual: 144.99, monthlyLabel: "£17.49" }}
+        cadence="monthly"
+      />,
+    );
+    expect(screen.getByText("£17.49")).toBeTruthy();
 
     view.rerender(<Price tier={catalogTier("enterprise")} cadence="monthly" />);
     expect(screen.getByText("Invoiced")).toBeTruthy();
 
     view.rerender(
       <Price
-        tier={{ ...tier, annual: 199.99, provisionalAnnual: true }}
+        tier={{ ...tier, provisionalAnnual: true }}
+        pricing={{ monthly: 19.99, annual: 199.99 }}
         cadence="annual"
       />,
     );
@@ -238,11 +231,28 @@ describe("IOSPurchaseFlowPresenter", () => {
 
     view.rerender(
       <Price
-        tier={{ ...tier, annual: 199.99, provisionalAnnual: true }}
+        tier={{ ...tier, provisionalAnnual: true }}
+        pricing={{ monthly: 19.99, annual: 199.99 }}
         cadence="annual"
         monthlyEquivalentOnly
       />,
     );
     expect(screen.getByText("£16.67*")).toBeTruthy();
+
+    view.rerender(
+      <Price
+        tier={tier}
+        pricing={{
+          monthly: 24.99,
+          annual: 209.99,
+          annualLabel: "US$209.99",
+          annualMonthlyEquivalentLabel: "US$17.50",
+        }}
+        cadence="annual"
+        monthlyEquivalentOnly
+      />,
+    );
+    expect(screen.getByText("US$17.50")).toBeTruthy();
+    expect(screen.queryByText("£17.50")).toBeNull();
   });
 });

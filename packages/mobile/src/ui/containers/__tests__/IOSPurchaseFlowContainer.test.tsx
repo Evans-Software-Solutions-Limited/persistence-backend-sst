@@ -6,6 +6,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
@@ -60,6 +61,24 @@ const PREMIUM: SubscriptionTier = {
   stripePriceIdYearly: null,
 };
 
+function pricedTier(
+  tierName: SubscriptionTier["tierName"],
+  displayName: string,
+  priceMonthly: number,
+  priceYearly: number,
+  trainerClientLimit: number | null = null,
+): SubscriptionTier {
+  return {
+    ...PREMIUM,
+    tierName,
+    displayName,
+    priceMonthly,
+    priceYearly,
+    trainerClientLimit,
+    isTrainerTier: trainerClientLimit !== null,
+  };
+}
+
 function subscription(overrides: Partial<MySubscription> = {}): MySubscription {
   return {
     subscriptionId: null,
@@ -97,7 +116,14 @@ function makeAdapters(current = subscription()): {
   const api = new InMemoryApiAdapter();
   const auth = new InMemoryAuthAdapter();
   const purchases = new MockPurchasesAdapter();
-  api.subscriptionTiers = [PREMIUM];
+  api.subscriptionTiers = [
+    PREMIUM,
+    pricedTier("premium_plus", "Premium+", 29.99, 249.99),
+    pricedTier("individual_trainer", "Start Up Coach", 18.99, 159.99, 5),
+    pricedTier("start_up_coach_plus", "Start Up Coach +", 34.99, 289.99, 5),
+    pricedTier("coach", "Coach", 59.99, 499.99, 15),
+    pricedTier("coach_pro", "Coach Pro", 99.99, 839.99, 30),
+  ];
   api.mySubscription = current;
   purchases.packages = [
     {
@@ -105,7 +131,9 @@ function makeAdapters(current = subscription()): {
       productId: "app.persistence.premium.monthly",
       tier: "premium",
       billingCycle: "monthly",
+      price: 16.99,
       priceString: "£16.99",
+      pricePerMonthString: "£16.99",
       introTrialDays: null,
     },
   ];
@@ -131,14 +159,14 @@ function makeAdapters(current = subscription()): {
   };
 }
 
-function renderContainer(adapters: Adapters, appStoreEnabled = false) {
+function renderContainer(adapters: Adapters) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   return render(
     <QueryClientProvider client={client}>
       <AdapterProvider adapters={adapters}>
-        <IOSPurchaseFlowContainer appStoreEnabled={appStoreEnabled} />
+        <IOSPurchaseFlowContainer />
       </AdapterProvider>
     </QueryClientProvider>,
   );
@@ -201,7 +229,7 @@ describe("IOSPurchaseFlowContainer", () => {
   it("honours an explicit coach role and cadence-specific availability", async () => {
     mockParams = { role: "personal_trainer", cycle: "yearly" };
     const { adapters } = makeAdapters();
-    renderContainer(adapters, true);
+    renderContainer(adapters);
 
     await screen.findByTestId("trainer-subscription-card-coach");
     expect(screen.getByText("Annual")).toBeTruthy();
@@ -213,7 +241,7 @@ describe("IOSPurchaseFlowContainer", () => {
   it("does not enable a yearly CTA from a monthly-only offering", async () => {
     mockParams = { tier: "premium", cycle: "yearly" };
     const { adapters } = makeAdapters();
-    renderContainer(adapters, true);
+    renderContainer(adapters);
 
     expect(
       await screen.findByTestId("subscription-card-premium-coming-soon"),
@@ -223,17 +251,53 @@ describe("IOSPurchaseFlowContainer", () => {
     ).toBeNull();
   });
 
-  it("never dispatches a purchase while the App Store catalog switch is off", async () => {
+  it("keeps a tier non-interactive when RevenueCat has no matching package", async () => {
     mockParams = { tier: "premium", cycle: "monthly" };
     const { adapters, purchases } = makeAdapters();
+    purchases.packages = [];
     renderContainer(adapters);
     await waitFor(() =>
       expect(
         screen.getByTestId("subscription-card-premium-coming-soon"),
       ).toBeTruthy(),
     );
-    expect(screen.queryByText("Subscribe")).toBeNull();
+    expect(
+      screen.queryByTestId("subscription-card-premium-subscribe"),
+    ).toBeNull();
     expect(purchases.purchaseCalls).toEqual([]);
+  });
+
+  it("prints StoreKit's localised price over the API fallback", async () => {
+    mockParams = { tier: "premium", cycle: "monthly" };
+    const { adapters, purchases } = makeAdapters();
+    purchases.packages[0] = {
+      ...purchases.packages[0]!,
+      price: 17.49,
+      priceString: "US$17.49",
+      pricePerMonthString: "US$17.49",
+    };
+
+    renderContainer(adapters);
+
+    expect(await screen.findByText("US$17.49")).toBeTruthy();
+    expect(screen.queryByText("£16.99")).toBeNull();
+  });
+
+  it("does not derive savings across partial StoreKit and API pricing", async () => {
+    mockParams = { tier: "premium", cycle: "yearly" };
+    const { adapters, purchases } = makeAdapters();
+    purchases.packages[0] = {
+      ...purchases.packages[0]!,
+      price: 17.49,
+      priceString: "US$17.49",
+      pricePerMonthString: "US$17.49",
+    };
+
+    renderContainer(adapters);
+
+    const card = await screen.findByTestId("subscription-card-premium");
+    expect(within(card).getByText("£139.99")).toBeTruthy();
+    expect(within(card).queryByText(/save \d+%/i)).toBeNull();
   });
 
   it("purchases and synchronises an available tier when the App Store rail is enabled", async () => {
@@ -251,7 +315,7 @@ describe("IOSPurchaseFlowContainer", () => {
       ],
     };
 
-    renderContainer(adapters, true);
+    renderContainer(adapters);
     fireEvent.press(
       await screen.findByTestId("subscription-card-premium-subscribe"),
     );
@@ -274,7 +338,7 @@ describe("IOSPurchaseFlowContainer", () => {
       "app.persistence.premium.monthly": true,
     };
 
-    renderContainer(adapters, true);
+    renderContainer(adapters);
     expect(await screen.findByText("7-day free trial")).toBeTruthy();
   });
 
@@ -293,7 +357,7 @@ describe("IOSPurchaseFlowContainer", () => {
         error: { kind, code: null, message: message as string },
       };
 
-      renderContainer(adapters, true);
+      renderContainer(adapters);
       await act(async () => {
         fireEvent.press(
           await screen.findByTestId("subscription-card-premium-subscribe"),
@@ -323,7 +387,7 @@ describe("IOSPurchaseFlowContainer", () => {
       status: 502,
     };
 
-    renderContainer(adapters, true);
+    renderContainer(adapters);
     fireEvent.press(
       await screen.findByTestId("subscription-card-premium-subscribe"),
     );
@@ -335,7 +399,7 @@ describe("IOSPurchaseFlowContainer", () => {
   it("handles an offering disappearing between render and selection", async () => {
     mockParams = { tier: "premium", cycle: "monthly" };
     const { adapters, purchases } = makeAdapters();
-    renderContainer(adapters, true);
+    renderContainer(adapters);
     await screen.findByTestId("subscription-card-premium-subscribe");
 
     purchases.packages.splice(0);

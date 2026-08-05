@@ -137,14 +137,9 @@ export type LoadoutGate = {
    */
   readonly isResolved: boolean;
   /**
-   * Premium+ monthly price from the CATALOG, or null.
-   *
-   * ⚠ Null is the EXPECTED value until launch. `premium_plus` ships
-   * `is_active = false` and `listActive()` only returns active rows, so the tier
-   * has no card and no price yet — deliberately (design § 9.1: an active row
-   * publishes a buyable card for a feature that does not exist). The upsell sheet
-   * must read correctly with no price rather than printing a literal; the
-   * prototype's `£19.99` is retired and the real figure is £29.99 in the catalog.
+   * Premium+ monthly price from the live tier API, or null when unavailable.
+   * The upsell must never fall back to a literal because database and StoreKit
+   * prices can change without an app release.
    */
   readonly upgradePriceMonthly: number | null;
   /** Push the paywall with Premium+ pre-selected. */

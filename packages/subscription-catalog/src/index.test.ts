@@ -7,24 +7,38 @@ import {
 import { describe, expect, it } from "vitest";
 
 describe("subscription catalog", () => {
-  it("keeps all IAP paid calls to action disabled before App Store launch", () => {
+  it("keeps IAP availability runtime-driven rather than build-configured", () => {
     for (const tier of SUBSCRIPTION_CATALOG.filter(
-      (candidate) => candidate.rail === "iap" && candidate.monthly !== 0,
+      (candidate) => candidate.rail === "iap" && candidate.id !== "free",
     )) {
+      expect(tier.monthly).toBeNull();
+      expect(tier.annual).toBeNull();
       expect(ctaFor(tier)).toEqual({
         label: "Coming soon",
         enabled: false,
         kind: "soon",
       });
+      expect(ctaFor(tier, { iapAvailable: true })).toEqual({
+        label: `Choose ${tier.name}`,
+        enabled: true,
+        kind: "iap",
+      });
     }
   });
 
-  it("derives each annual saving from that tier's catalog values", () => {
-    expect(annualSaving(catalogTier("premium"))).toBe(31);
-    expect(annualSaving(catalogTier("individual_trainer"))).toBe(30);
-    expect(catalogTier("start_up_coach_plus").annual).toBe(289.99);
-    expect(annualSaving(catalogTier("start_up_coach_plus"))).toBe(31);
-    expect(annualSaving(catalogTier("coach_pro"))).toBe(30);
+  it("derives annual savings from supplied live prices", () => {
+    expect(annualSaving({ monthly: 16.99, annual: 139.99 })).toBe(31);
+    expect(annualSaving({ monthly: 18.99, annual: 159.99 })).toBe(30);
+    expect(annualSaving({ monthly: 34.99, annual: 289.99 })).toBe(31);
+    expect(annualSaving({ monthly: 99.99, annual: 839.99 })).toBe(30);
+    expect(
+      annualSaving({
+        monthly: 17.49,
+        annual: 139.99,
+        monthlySource: "store",
+        annualSource: "api",
+      }),
+    ).toBeNull();
   });
 
   it("keeps Premium+ led by the real adaptive suite", () => {

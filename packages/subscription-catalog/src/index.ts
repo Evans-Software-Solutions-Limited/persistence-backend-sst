@@ -1,21 +1,6 @@
 export const ADAPTIVE_SUITE = ["Loadout", "Mealprint"] as const;
 export const ADAPTIVE_SUITE_LABEL = "Loadout + Mealprint";
 
-/**
- * Purchase switches live beside the catalog so every surface resolves the
- * same state. App Store products are being configured separately; until the
- * switch is deliberately flipped, an IAP tier is informational only.
- */
-export type SubscriptionConfig = {
-  appStore: boolean;
-  web: boolean;
-};
-
-export const subscriptionConfig: SubscriptionConfig = {
-  appStore: false,
-  web: true,
-};
-
 export type SubscriptionAudience = "consumer" | "coach" | "org";
 export type SubscriptionRail = "iap" | "web";
 export type BillingCadence = "monthly" | "annual";
@@ -37,6 +22,7 @@ export interface CatalogTier {
   name: string;
   audience: SubscriptionAudience;
   tagline: string;
+  /** Static prices are only valid for free/web-only plans. IAP prices are live. */
   monthly: number | null;
   annual: number | null;
   clients: number | "200+" | null;
@@ -51,9 +37,9 @@ export interface CatalogTier {
 }
 
 /**
- * Launch catalog approved in spec-29 on 2026-08-05. This mirrors
- * `20260805120000_coach_ladder_restructure.sql`; production and staging must
- * be checked against it before the App Store switch is enabled.
+ * Layout and feature catalog approved in spec-29 on 2026-08-05. IAP prices do
+ * not live here: native surfaces resolve them from StoreKit/RevenueCat by
+ * product id, while web surfaces join `/subscription-tiers` by tier id.
  */
 export const SUBSCRIPTION_CATALOG = [
   {
@@ -78,8 +64,8 @@ export const SUBSCRIPTION_CATALOG = [
     name: "Premium",
     audience: "consumer",
     tagline: "For consistent training",
-    monthly: 16.99,
-    annual: 139.99,
+    monthly: null,
+    annual: null,
     clients: null,
     suite: false,
     rail: "iap",
@@ -95,8 +81,8 @@ export const SUBSCRIPTION_CATALOG = [
     name: "Premium+",
     audience: "consumer",
     tagline: "Everything in Premium, plus the adaptive suite",
-    monthly: 29.99,
-    annual: 249.99,
+    monthly: null,
+    annual: null,
     clients: null,
     suite: true,
     rail: "iap",
@@ -113,8 +99,8 @@ export const SUBSCRIPTION_CATALOG = [
     name: "Start Up Coach",
     audience: "coach",
     tagline: "Start coaching",
-    monthly: 18.99,
-    annual: 159.99,
+    monthly: null,
+    annual: null,
     clients: 5,
     suite: false,
     rail: "iap",
@@ -129,8 +115,8 @@ export const SUBSCRIPTION_CATALOG = [
     name: "Start Up Coach +",
     audience: "coach",
     tagline: "Coaching plus the adaptive suite",
-    monthly: 34.99,
-    annual: 289.99,
+    monthly: null,
+    annual: null,
     clients: 5,
     suite: true,
     rail: "iap",
@@ -145,8 +131,8 @@ export const SUBSCRIPTION_CATALOG = [
     name: "Coach",
     audience: "coach",
     tagline: "For a growing roster",
-    monthly: 59.99,
-    annual: 499.99,
+    monthly: null,
+    annual: null,
     clients: 15,
     suite: true,
     rail: "iap",
@@ -161,8 +147,8 @@ export const SUBSCRIPTION_CATALOG = [
     name: "Coach Pro",
     audience: "coach",
     tagline: "For a full book of clients",
-    monthly: 99.99,
-    annual: 839.99,
+    monthly: null,
+    annual: null,
     clients: 30,
     suite: true,
     rail: "iap",
@@ -245,13 +231,42 @@ export function formatGbp(value: number): string {
   })}`;
 }
 
-export function annualSaving(tier: CatalogTier): number | null {
-  if (!tier.annual || !tier.monthly) return null;
-  return Math.round((1 - tier.annual / (tier.monthly * 12)) * 100);
+export interface TierPricing {
+  monthly: number | null;
+  annual: number | null;
+  /** Used to avoid deriving savings across store/API currency boundaries. */
+  monthlySource?: "static" | "api" | "store";
+  annualSource?: "static" | "api" | "store";
+  /** Store-localised labels when available (for example `£16.99`). */
+  monthlyLabel?: string;
+  annualLabel?: string;
+  /** Store-localised monthly equivalent of the annual product. */
+  annualMonthlyEquivalentLabel?: string;
 }
 
-export function monthlyEquivalent(tier: CatalogTier): number | null {
-  return tier.annual === null ? null : tier.annual / 12;
+export function staticTierPricing(tier: CatalogTier): TierPricing {
+  return {
+    monthly: tier.monthly,
+    annual: tier.annual,
+    monthlySource: "static",
+    annualSource: "static",
+  };
+}
+
+export function annualSaving(pricing: TierPricing): number | null {
+  if (!pricing.annual || !pricing.monthly) return null;
+  if (
+    pricing.monthlySource !== undefined &&
+    pricing.annualSource !== undefined &&
+    pricing.monthlySource !== pricing.annualSource
+  ) {
+    return null;
+  }
+  return Math.round((1 - pricing.annual / (pricing.monthly * 12)) * 100);
+}
+
+export function monthlyEquivalent(pricing: TierPricing): number | null {
+  return pricing.annual === null ? null : pricing.annual / 12;
 }
 
 export type CatalogCta = {
@@ -262,7 +277,7 @@ export type CatalogCta = {
 
 export function ctaFor(
   tier: CatalogTier,
-  config: SubscriptionConfig = subscriptionConfig,
+  { iapAvailable = false }: { iapAvailable?: boolean } = {},
 ): CatalogCta {
   if (tier.rail === "web") {
     if (tier.cta === "contact") {
@@ -274,11 +289,11 @@ export function ctaFor(
     return { label: "Start trial", enabled: true, kind: "trial" };
   }
 
-  if (tier.monthly === 0) {
+  if (tier.id === "free") {
     return { label: "Continue free", enabled: true, kind: "free" };
   }
 
-  return config.appStore
+  return iapAvailable
     ? { label: `Choose ${tier.name}`, enabled: true, kind: "iap" }
     : { label: "Coming soon", enabled: false, kind: "soon" };
 }

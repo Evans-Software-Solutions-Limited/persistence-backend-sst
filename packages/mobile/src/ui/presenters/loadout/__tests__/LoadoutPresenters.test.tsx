@@ -145,7 +145,7 @@ describe("GymsLockedPanel", () => {
 });
 
 describe("LoadoutUpsellSheet", () => {
-  it("shows the catalog price when there is one", () => {
+  it("shows the live API price when there is one", () => {
     const { getByTestId, getByText } = renderWithTheme(
       <LoadoutUpsellSheet
         visible
@@ -158,9 +158,7 @@ describe("LoadoutUpsellSheet", () => {
     getByText("£29.99");
   });
 
-  it("omits the price block entirely when the catalog has none", () => {
-    // The expected state until launch: `premium_plus` ships `is_active = false`
-    // and the catalog only returns active rows.
+  it("omits the price block entirely when the API has none", () => {
     const { queryByTestId } = renderWithTheme(
       <LoadoutUpsellSheet
         visible

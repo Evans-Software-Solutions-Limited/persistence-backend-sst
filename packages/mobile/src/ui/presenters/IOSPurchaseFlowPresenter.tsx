@@ -15,15 +15,15 @@ import {
   ctaFor,
   monthlyEquivalent,
   SUBSCRIPTION_CATALOG,
-  subscriptionConfig,
+  staticTierPricing,
   tiersFor,
   type BillingCadence,
   type CatalogTier,
   type CatalogTierId,
+  type TierPricing,
 } from "@persistence/subscription-catalog";
 import type {
   BillingCycle,
-  SubscriptionTier,
   SubscriptionTierName,
 } from "@/domain/models/subscription";
 import { PLogoDrawLoader } from "@/ui/components/PLogoDrawLoader";
@@ -34,7 +34,7 @@ type Role = "user" | "trainer";
 export type SubscriptionRailScreen = "persona" | "plans" | "manage";
 
 export interface IOSPurchaseFlowPresenterProps {
-  subscriptionTiers: SubscriptionTier[];
+  tierPricing: Readonly<Partial<Record<CatalogTierId, TierPricing>>>;
   isLoading: boolean;
   errorMessage: string | null;
   isUnavailable: boolean;
@@ -51,7 +51,6 @@ export interface IOSPurchaseFlowPresenterProps {
   currentTierDisplayName: string;
   isProcessing: boolean;
   isRestoring: boolean;
-  appStoreEnabled?: boolean;
   screen?: SubscriptionRailScreen;
   onBillingCycleChange: (cycle: BillingCycle) => void;
   onTierSelect: (tier: SubscriptionTierName) => void;
@@ -73,14 +72,16 @@ function formatGbpValue(value: number): string {
   })}`;
 }
 
-/** The only mobile component allowed to print a catalog price. */
+/** The only mobile component allowed to print a resolved subscription price. */
 export function Price({
   tier,
+  pricing = staticTierPricing(tier),
   cadence,
   compact = false,
   monthlyEquivalentOnly = false,
 }: {
   tier: CatalogTier;
+  pricing?: TierPricing;
   cadence: BillingCadence;
   compact?: boolean;
   monthlyEquivalentOnly?: boolean;
@@ -93,12 +94,12 @@ export function Price({
     );
   }
 
-  const annual = cadence === "annual" && tier.annual !== null;
+  const annual = cadence === "annual" && pricing.annual !== null;
   const value = monthlyEquivalentOnly
-    ? monthlyEquivalent(tier)
+    ? monthlyEquivalent(pricing)
     : annual
-      ? tier.annual
-      : tier.monthly;
+      ? pricing.annual
+      : pricing.monthly;
   const provisional = annual ? tier.provisionalAnnual : tier.provisionalMonthly;
   if (value === null) return null;
 
@@ -113,9 +114,12 @@ export function Price({
         ]}
         accessibilityHint={provisional ? "Provisional price" : undefined}
       >
-        {formatGbpValue(
-          monthlyEquivalentOnly ? Number(value.toFixed(2)) : value,
-        )}
+        {monthlyEquivalentOnly
+          ? (pricing.annualMonthlyEquivalentLabel ??
+            formatGbpValue(Number(value.toFixed(2))))
+          : annual
+            ? (pricing.annualLabel ?? formatGbpValue(value))
+            : (pricing.monthlyLabel ?? formatGbpValue(value))}
         {provisional ? "*" : ""}
       </Text>
       {value !== 0 && (
@@ -330,11 +334,8 @@ function PaidCta({
   disabled: boolean;
   onPress: () => void;
 }) {
-  const cta = ctaFor(tier, {
-    ...subscriptionConfig,
-    appStore: enabled,
-  });
-  if (tier.monthly === 0) return null;
+  const cta = ctaFor(tier, { iapAvailable: enabled });
+  if (tier.id === "free") return null;
   if (cta.enabled) {
     return (
       <TouchableOpacity
@@ -363,6 +364,7 @@ function PaidCta({
 
 function TierCard({
   tier,
+  pricing,
   cadence,
   trainer,
   onContinueFree,
@@ -373,6 +375,7 @@ function TierCard({
   showTrial,
 }: {
   tier: CatalogTier;
+  pricing: TierPricing;
   cadence: BillingCadence;
   trainer: boolean;
   onContinueFree?: () => void;
@@ -382,9 +385,9 @@ function TierCard({
   trialDays: number | null;
   showTrial: boolean;
 }) {
-  const saving = annualSaving(tier);
-  const equivalent = monthlyEquivalent(tier);
-  const annual = cadence === "annual" && tier.annual !== null;
+  const saving = annualSaving(pricing);
+  const equivalent = monthlyEquivalent(pricing);
+  const annual = cadence === "annual" && pricing.annual !== null;
 
   return (
     <View
@@ -411,11 +414,12 @@ function TierCard({
           <Text style={styles.tierTagline}>{tier.tagline}</Text>
         </View>
         <View style={styles.tierPriceWrap}>
-          <Price tier={tier} cadence={cadence} compact />
+          <Price tier={tier} pricing={pricing} cadence={cadence} compact />
           {annual && equivalent !== null && (
             <View style={styles.equivalentRow}>
               <Price
                 tier={tier}
+                pricing={pricing}
                 cadence="annual"
                 compact
                 monthlyEquivalentOnly
@@ -469,7 +473,7 @@ function TierCard({
         </View>
       )}
 
-      {tier.monthly === 0 ? (
+      {tier.id === "free" ? (
         <TouchableOpacity
           style={styles.continueFree}
           onPress={onContinueFree}
@@ -508,7 +512,12 @@ function OrganisationReadOnly() {
             <Text style={styles.orgTierName}>{tier.name}</Text>
             <Text style={styles.orgTierCapacity}>{tier.clients} members</Text>
           </View>
-          <Price tier={tier} cadence="monthly" compact />
+          <Price
+            tier={tier}
+            pricing={staticTierPricing(tier)}
+            cadence="monthly"
+            compact
+          />
         </View>
       ))}
       <Text style={styles.orgFootnote}>
@@ -526,7 +535,6 @@ function PlansScreen(props: IOSPurchaseFlowPresenterProps) {
   const hasProvisional = tiers.some((tier) =>
     cadence === "annual" ? tier.provisionalAnnual : tier.provisionalMonthly,
   );
-  const appStoreEnabled = props.appStoreEnabled ?? subscriptionConfig.appStore;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -618,20 +626,19 @@ function PlansScreen(props: IOSPurchaseFlowPresenterProps) {
             <TierCard
               key={tier.id}
               tier={tier}
+              pricing={props.tierPricing[tier.id] ?? staticTierPricing(tier)}
               cadence={cadence}
               trainer={trainer}
               onContinueFree={props.onContinueFree}
-              purchaseEnabled={
-                appStoreEnabled &&
-                props.purchasableTiers.has(tier.id as SubscriptionTierName)
-              }
+              purchaseEnabled={props.purchasableTiers.has(
+                tier.id as SubscriptionTierName,
+              )}
               purchaseDisabled={props.isProcessing || props.isRestoring}
               onTierSelect={() =>
                 props.onTierSelect(tier.id as SubscriptionTierName)
               }
               trialDays={props.tierTrialDays(tier.id as SubscriptionTierName)}
               showTrial={
-                appStoreEnabled &&
                 props.hasTrialEligibilityData &&
                 props.currentTier !== tier.id &&
                 props.isTierTrialEligible(tier.id as SubscriptionTierName)

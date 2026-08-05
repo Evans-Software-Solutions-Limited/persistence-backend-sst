@@ -1,32 +1,78 @@
 import { fireEvent, screen, within } from "@testing-library/react";
+import { afterEach, beforeEach, vi } from "vitest";
 import { renderPage } from "@/test-utils";
 import Pricing from "../Pricing";
 
+const LIVE_TIERS = [
+  ["free", 0, null],
+  ["premium", 16.99, 139.99],
+  ["premium_plus", 29.99, 249.99],
+  ["individual_trainer", 18.99, 159.99],
+  ["start_up_coach_plus", 34.99, 289.99],
+  ["coach", 59.99, 499.99],
+  ["coach_pro", 99.99, 839.99],
+] as const;
+
+beforeEach(() => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: LIVE_TIERS.map(([tierName, priceMonthly, priceYearly]) => ({
+          tierName,
+          priceMonthly,
+          priceYearly,
+        })),
+      }),
+    }),
+  );
+});
+
+afterEach(() => vi.unstubAllGlobals());
+
 describe("Pricing", () => {
-  it("renders individual prices from the catalog and disables IAP calls to action", () => {
+  it("renders individual prices from the live API and disables web IAP calls to action", async () => {
     renderPage(<Pricing />);
     const premium = screen.getByTestId("pricing-tier-premium");
     const premiumPlus = screen.getByTestId("pricing-tier-premium_plus");
 
-    expect(within(premium).getByText("139.99")).toBeDefined();
-    expect(within(premiumPlus).getByText("249.99")).toBeDefined();
+    expect(await within(premium).findByText("139.99")).toBeDefined();
+    expect(await within(premiumPlus).findByText("249.99")).toBeDefined();
     expect(
       within(premium).getByText("Coming soon").getAttribute("aria-disabled"),
     ).toBe("true");
   });
 
-  it("derives savings per tier when cadence changes", () => {
+  it("derives savings per tier from live prices when cadence changes", async () => {
     renderPage(<Pricing />);
     expect(
-      within(screen.getByTestId("pricing-tier-premium")).getByText(/save 31%/i),
+      await within(screen.getByTestId("pricing-tier-premium")).findByText(
+        /save 31%/i,
+      ),
     ).toBeDefined();
 
     fireEvent.click(screen.getByRole("tab", { name: "Coaches" }));
     expect(
-      within(screen.getByTestId("pricing-tier-individual_trainer")).getByText(
-        /save 30%/i,
+      await within(
+        screen.getByTestId("pricing-tier-individual_trainer"),
+      ).findByText(/save 30%/i),
+    ).toBeDefined();
+  });
+
+  it("does not fall back to a build-time IAP amount when live pricing fails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: false, json: async () => ({}) }),
+    );
+    renderPage(<Pricing />);
+
+    expect(
+      await within(screen.getByTestId("pricing-tier-premium")).findByText(
+        "Unavailable",
       ),
     ).toBeDefined();
+    expect(screen.queryByText("139.99")).toBeNull();
   });
 
   it("keeps Premium+ led by Loadout and Mealprint with no fictional workout feature", () => {

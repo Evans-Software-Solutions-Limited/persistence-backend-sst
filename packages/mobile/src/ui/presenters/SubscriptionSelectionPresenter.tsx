@@ -121,15 +121,15 @@ export function SubscriptionSelectionPresenter(
   // simplification — see migration 20260526120000_simplify_tier_model
   // and CLAUDE.md "Migration intent".
   // A user can hold a tier that isn't in the rendered catalog — e.g. a
-  // RevenueCat promotional grant of a tier still seeded is_active=false
-  // pre-launch. No card is then marked current, so without this guard the
+  // RevenueCat promotional grant of a tier omitted by a stale/partial API
+  // catalog. No card is then marked current, so without this guard the
   // remaining cards render as buyable "free trial"s and a comped user can
   // be nudged onto a WORSE tier than the one they were given. Suppress
   // trial banners in that state; they are not genuinely trial-eligible.
   //
   // Hoisted above BOTH memos: the trainer loop resolves three fixed tier
   // names out of the catalog and has exactly the same hole if a trainer
-  // tier is ever held while inactive — which is now a supported state.
+  // tier is ever held while absent from the response.
   const holdsUnlistedPaidTier =
     currentTier !== "free" &&
     !subscriptionTiers.some((t) => t.tierName === currentTier);

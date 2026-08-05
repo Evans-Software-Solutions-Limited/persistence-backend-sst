@@ -14,9 +14,8 @@ import { color, radius, space } from "@/ui/theme/tokens";
  * would read better as an advert and is precisely what § 5.2 forbids.
  *
  * ⚠ **No price literal.** Same rule as `LoadoutEntryCard`: the number lives in
- * the upsell sheet, sourced from the catalog. `premium_plus` ships
- * `is_active = false`, so there is no price to print yet and a hardcoded one is
- * how a retired figure survives a price change.
+ * the upsell sheet, sourced from the live tier API. A hardcoded number is how a
+ * retired figure survives a price change.
  */
 
 export type GymsLockedPanelProps = {

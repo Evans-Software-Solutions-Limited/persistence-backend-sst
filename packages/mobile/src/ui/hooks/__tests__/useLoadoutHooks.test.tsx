@@ -143,8 +143,7 @@ describe("useLoadoutGate", () => {
   });
 
   it("reports a NULL price when the tier is absent from the catalog", async () => {
-    // The expected pre-launch state: `premium_plus` is seeded `is_active = false`
-    // and `listActive()` only returns active rows.
+    // A partial rollout or unavailable row must not produce a stale literal.
     const api = new InMemoryApiAdapter();
     api.mySubscription = subscription("free");
     jest.spyOn(api, "getSubscriptionTiers").mockResolvedValue(ok([]));

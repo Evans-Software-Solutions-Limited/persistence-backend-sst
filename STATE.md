@@ -167,13 +167,13 @@ untyped-literal survivors fixed (GreetingSection map + two deep-link checks now
 derive from `TRAINER_TIER_NAMES`). **Gates all green** (prettier · typecheck 8/8 ·
 core 3880/3880 · mobile 5928/5928 · build 13/13); Inspector-Brad-local
 **clean @ `adf7111e`**; **PR [#361](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/361)
-MERGED**. ⚠ The tiers remain launch-gated with `is_active=false` until App Store
-Connect and RevenueCat are aligned.
+MERGED**. The historical migration remains immutable; activation follows in a
+new forward migration.
 
-⚠ **PRICE-POINT FOLLOW-UP:** migration
-`20260805180000_start_up_coach_plus_annual_asc_price.sql` updates the
-Start Up Coach + annual price from £293.99 to ASC's supported £289.99 price point.
-The original merged migration remains unchanged so the correction runs on databases
+⚠ **ACTIVATION + PRICE-POINT FOLLOW-UP:** migration
+`20260805180000_activate_iap_coach_ladder.sql` activates the six IAP paid tiers
+and updates Start Up Coach + annual from £293.99 to ASC's supported £289.99 price
+point. The original merged migration remains unchanged so this runs on databases
 that already recorded it.
 
 ⚠ **Design call baked in:** `individual_trainer` (entry coach rung) LOSES the
@@ -1981,21 +1981,21 @@ consent copy, privacy section and governing law · the OFF re-seed backfilling
 **2026-08-05 — GTM D9 subscription UI implemented in isolated worktree.** Branch
 `codex/gtm-d9-subscription-ui`, worktree
 `/private/tmp/persistence-gtm-d9-subscription`, based on the Phase-2 coach-ladder
-commit `adf7111e`. Added `@persistence/subscription-catalog` as the UI source of
-truth; rebuilt the iOS persona/plans/manage rail and AI fail-safe; rebuilt web
+commit `adf7111e`. Added `@persistence/subscription-catalog` as the UI layout and
+feature source of truth; rebuilt the iOS persona/plans/manage rail and AI fail-safe; rebuilt web
 pricing for individuals, coaches and organisations; and added the aggregate-only
-organisation-admin preview with sub-five cohort suppression. `appStore=false`
-renders every paid IAP control as non-interactive `Coming soon`; organisation
-plans remain web-only/read-only in-app. Premium+ and suite-bearing coach/org tiers
+organisation-admin preview with sub-five cohort suppression. IAP prices now resolve
+from StoreKit/RevenueCat by product id, with `/subscription-tiers` as the fallback;
+there is no second build-time activation switch. Organisation plans remain
+web-only/read-only in-app. Premium+ and suite-bearing coach/org tiers
 lead with Loadout + Mealprint; no surface names competitors, adds a VAT caveat, or
 lists “AI Workout Suggestions”.
 
-- **Release blocker:** read-only checks of both public production and staging
+- **Deployment requirement:** read-only checks of both public production and staging
   `/subscription-tiers` endpoints still returned the OLD five-row catalog
   (`premium` £12.99/£129.99, `individual_trainer` £14.99/£149.99, plus retired
-  business tiers). The UI deliberately follows the approved launch catalog in
-  `20260805120000_coach_ladder_restructure.sql` and must not ship until the live
-  catalog/RevenueCat/ASC activation is aligned.
+  business tiers). Apply `20260805180000_activate_iap_coach_ladder.sql`; IAP CTAs
+  become transactional only when a matching RevenueCat/StoreKit package exists.
 - Gates: catalog typecheck + 4/4; web lint/typecheck/build + 32/32 with 85.61%
   statement coverage; mobile lint/typecheck + 5908/5908. The first full mobile
   run exposed an old rail contract: Restore Purchases must be visible on the

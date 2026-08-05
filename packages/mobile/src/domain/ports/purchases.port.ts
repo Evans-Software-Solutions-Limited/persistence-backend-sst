@@ -76,8 +76,12 @@ export interface PurchaseProduct {
   /** The tier this package unlocks; `null` when the id isn't recognised. */
   tier: SubscriptionTierName | null;
   billingCycle: BillingCycle;
+  /** Numeric StoreKit price used for savings and monthly-equivalent maths. */
+  price: number;
   /** Localised, currency-formatted price for display (e.g. `£9.99`). */
   priceString: string;
+  /** Store-localised monthly equivalent, populated for subscriptions. */
+  pricePerMonthString: string | null;
   /**
    * Free-trial length in days derived from the product's introductory offer,
    * or `null` when the product has no free-trial intro offer (paid intro, no

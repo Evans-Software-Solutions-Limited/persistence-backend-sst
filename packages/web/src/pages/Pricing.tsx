@@ -1,14 +1,17 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { Link } from "react-router";
+import { useQuery } from "@tanstack/react-query";
 import {
   ADAPTIVE_SUITE_LABEL,
   annualSaving,
   ctaFor,
   monthlyEquivalent,
+  staticTierPricing,
   tiersFor,
   type BillingCadence,
   type CatalogTier,
   type SubscriptionAudience,
+  type TierPricing,
 } from "@persistence/subscription-catalog";
 import {
   IconBuildingSkyscraper,
@@ -58,11 +61,13 @@ const AUDIENCE_TABS: readonly {
 
 function Price({
   tier,
+  pricing = staticTierPricing(tier),
   cadence = "monthly",
   compact = false,
   monthlyEquivalentOnly = false,
 }: {
   tier: CatalogTier;
+  pricing?: TierPricing;
   cadence?: BillingCadence;
   compact?: boolean;
   monthlyEquivalentOnly?: boolean;
@@ -71,15 +76,17 @@ function Price({
     return <span className="catalog-price invoiced">Invoiced</span>;
   }
 
-  const annual = cadence === "annual" && tier.annual !== null;
+  const annual = cadence === "annual" && pricing.annual !== null;
   const value = monthlyEquivalentOnly
-    ? monthlyEquivalent(tier)
+    ? monthlyEquivalent(pricing)
     : annual
-      ? tier.annual
-      : tier.monthly;
+      ? pricing.annual
+      : pricing.monthly;
   const provisional = annual ? tier.provisionalAnnual : tier.provisionalMonthly;
 
-  if (value === null) return null;
+  if (value === null) {
+    return <span className="catalog-price unavailable">Unavailable</span>;
+  }
 
   const formatted = value.toLocaleString("en-GB", {
     minimumFractionDigits: Number.isInteger(value) ? 0 : 2,
@@ -176,14 +183,16 @@ function PlanFeature({ children }: { children: ReactNode }) {
 
 function PlanCard({
   tier,
+  pricing,
   cadence,
 }: {
   tier: CatalogTier;
+  pricing: TierPricing;
   cadence: BillingCadence;
 }) {
-  const saving = annualSaving(tier);
-  const equivalent = monthlyEquivalent(tier);
-  const isAnnual = cadence === "annual" && tier.annual !== null;
+  const saving = annualSaving(pricing);
+  const equivalent = monthlyEquivalent(pricing);
+  const isAnnual = cadence === "annual" && pricing.annual !== null;
 
   return (
     <article
@@ -214,17 +223,25 @@ function PlanCard({
         )}
       </div>
 
-      <Price tier={tier} cadence={cadence} />
+      <Price tier={tier} pricing={pricing} cadence={cadence} />
       <div className="plan-sub">
         {tier.invoiced ? (
           "Custom terms"
         ) : isAnnual && equivalent !== null ? (
           <>
-            <Price tier={tier} cadence="annual" compact monthlyEquivalentOnly />{" "}
+            <Price
+              tier={tier}
+              pricing={pricing}
+              cadence="annual"
+              compact
+              monthlyEquivalentOnly
+            />{" "}
             billed annually{saving ? ` · save ${saving}%` : ""}
           </>
-        ) : tier.monthly === 0 ? (
+        ) : tier.id === "free" ? (
           "Free forever"
+        ) : pricing.monthly === null ? (
+          "Live price temporarily unavailable"
         ) : (
           "Billed monthly"
         )}
@@ -240,6 +257,38 @@ function PlanCard({
       {tier.rail === "web" ? <WebCta tier={tier} /> : <IapCta tier={tier} />}
     </article>
   );
+}
+
+type TierPriceWire = {
+  tierName: string;
+  priceMonthly: number;
+  priceYearly: number | null;
+};
+
+async function fetchLiveTierPricing(): Promise<
+  Readonly<Record<string, TierPricing>>
+> {
+  const baseUrl = (import.meta.env.VITE_CORE_API_URL ?? "").replace(/\/$/, "");
+  const response = await fetch(`${baseUrl}/subscription-tiers`);
+  if (!response.ok) throw new Error("Unable to load live subscription prices");
+  const body = (await response.json()) as { data?: TierPriceWire[] };
+  const pricing: Record<string, TierPricing> = {};
+  for (const tier of body.data ?? []) {
+    if (
+      typeof tier.tierName !== "string" ||
+      !Number.isFinite(tier.priceMonthly) ||
+      (tier.priceYearly !== null && !Number.isFinite(tier.priceYearly))
+    ) {
+      continue;
+    }
+    pricing[tier.tierName] = {
+      monthly: tier.priceMonthly,
+      annual: tier.priceYearly,
+      monthlySource: "api",
+      annualSource: "api",
+    };
+  }
+  return pricing;
 }
 
 const MATRIX_ROWS: readonly {
@@ -323,6 +372,11 @@ export function Pricing() {
   const [cadence, setCadence] = useState<BillingCadence>("annual");
   const active = AUDIENCE_TABS.find((tab) => tab.id === audience)!;
   const tiers = useMemo(() => tiersFor(audience), [audience]);
+  const livePricingQuery = useQuery({
+    queryKey: ["public-subscription-tier-pricing"],
+    queryFn: fetchLiveTierPricing,
+    staleTime: 5 * 60 * 1000,
+  });
   const provisionalAnnuals = tiers.some((tier) => tier.provisionalAnnual);
 
   useSeo({
@@ -394,7 +448,17 @@ export function Pricing() {
 
             <div className={`plans catalog-grid ${audience}`}>
               {tiers.map((tier) => (
-                <PlanCard key={tier.id} tier={tier} cadence={cadence} />
+                <PlanCard
+                  key={tier.id}
+                  tier={tier}
+                  pricing={
+                    tier.rail === "iap"
+                      ? (livePricingQuery.data?.[tier.id] ??
+                        staticTierPricing(tier))
+                      : staticTierPricing(tier)
+                  }
+                  cadence={cadence}
+                />
               ))}
             </div>
 

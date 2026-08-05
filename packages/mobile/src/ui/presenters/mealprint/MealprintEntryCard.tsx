@@ -43,10 +43,8 @@
  * ## ⚠ No price literal
  *
  * The card says what the feature does and that it is Premium+; the number lives
- * in the paywall, sourced from the catalog. `premium_plus` ships
- * `is_active = false`, so there is no price to print yet — and a hardcoded one is
- * exactly how the prototype's retired £19.99 would have survived the reprice to
- * £29.99.
+ * in the paywall, sourced from StoreKit with the live tier API as fallback. A
+ * hardcoded number is exactly how a retired value survives a reprice.
  *
  * ## Design — gold, because Fuel is gold
  *

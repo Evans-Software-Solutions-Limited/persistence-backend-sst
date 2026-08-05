@@ -11,10 +11,9 @@ import { useAdapters } from "@/ui/hooks/useAdapters";
  *       (mobile) > Tanstack Query keys
  * Satisfies: requirements.md AC 1.7, 1.8
  *
- * Stale-time: 10 minutes. Tier metadata changes are infrequent (the
- * backend is the source of truth and only ships price / feature
- * updates as part of a release), so a long stale-time keeps the cold-
- * start screen from re-fetching needlessly.
+ * Stale-time: 10 minutes. The backend is the fallback source of truth before
+ * StoreKit returns an offering, so database price updates flow to clients
+ * without an app release while avoiding a cold-start refetch on every visit.
  *
  * No auth required — the auth-flow Selection screen renders before
  * sign-in.
