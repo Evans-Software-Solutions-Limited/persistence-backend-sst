@@ -190,6 +190,16 @@ export function Privacy() {
             before you see it.
           </li>
           <li>
+            <strong>Meal plans</strong> — when you ask us to build a day's meal
+            plan, or to swap a single meal within one, we send your daily
+            targets, a shortlist of foods, the foods you have said you like,
+            your chosen effort level, and any note you add. As with meal
+            suggestions, your allergens and dietary or religious patterns are{" "}
+            <strong>applied on our servers</strong> to build that shortlist —
+            they are not themselves sent to the AI provider — and every meal is
+            re-checked against them on our servers before you see the plan.
+          </li>
+          <li>
             <strong>Coach summaries</strong> — if you have consented to share
             your data with a coach, your coach can generate a written summary of
             your recent progress. To produce it we send your first name, your

@@ -140,7 +140,12 @@ describe("Privacy", () => {
     // Mealprint (#350) landed on main mid-review with a mounted, live
     // `POST /nutrition/ai/meal-suggest`. It was undisclosed until the rebase.
     expect(screen.getByText(/Meal suggestions/)).toBeTruthy();
-    expect(screen.getByText(/applied on our servers/)).toBeTruthy();
+    // Plan generation + single-meal swap (spec-26 Phase 2) — new live AI paths.
+    expect(screen.getByText(/Meal plans/)).toBeTruthy();
+    // Two bullets now carry the server-side shortlist promise, so this must be
+    // getAllByText — a singular getByText throws on the ambiguity, which is the
+    // signal that the plan disclosure was added.
+    expect(screen.getAllByText(/applied on our servers/)).toHaveLength(2);
     expect(screen.getByText(/the summary that comes back/)).toBeTruthy();
     // Teardown now DELETES the summaries, so the policy must not imply they
     // merely become inaccessible — reconnecting used to revive them.

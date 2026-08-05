@@ -118,7 +118,7 @@ describe("PrivacyPolicyPresenter", () => {
   });
 
   it("discloses every AI path, including the STORED coach summary", () => {
-    const { getByText } = renderWithTheme(
+    const { getByText, getAllByText } = renderWithTheme(
       <PrivacyPolicyPresenter onBack={jest.fn()} />,
     );
     // A policy naming only the photo path would be an Art 13(1)(c) gap: text
@@ -132,9 +132,16 @@ describe("PrivacyPolicyPresenter", () => {
     // Mealprint (#350) landed on main mid-review with a mounted, live
     // `POST /nutrition/ai/meal-suggest`. It was undisclosed until the rebase.
     expect(getByText(/Meal suggestions/)).toBeTruthy();
+    // Plan generation + single-meal swap (spec-26 Phase 2) are new AI paths
+    // mounted live; disclosing them keeps the policy off an Art 13(1)(c) gap.
+    expect(getByText(/Meal plans/)).toBeTruthy();
+    // ⚠ `getByText` (singular) now that TWO bullets carry the server-side
+    // shortlist promise. `getAllByText` asserts both without ambiguity — a plain
+    // `getByText` throws "multiple elements", which is what caught the missing
+    // plan disclosure here in the first place.
     expect(
-      getByText(/applied on our\s+servers to build that shortlist/),
-    ).toBeTruthy();
+      getAllByText(/applied on our\s+servers to build that shortlist/),
+    ).toHaveLength(2);
     // Teardown DELETES the summaries now — the policy must not imply they only
     // become inaccessible, because reconnecting used to revive them.
     expect(

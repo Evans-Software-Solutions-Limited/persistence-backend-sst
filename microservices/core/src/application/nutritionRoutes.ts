@@ -25,8 +25,11 @@ import { nutritionAiEstimateRecipeHandler } from "./nutrition/ai/estimateRecipe/
 import { nutritionPreferencesGetHandler } from "./nutrition/mealprint/preferences/get/nutritionPreferencesGetHandler";
 import { nutritionPreferencesSetHandler } from "./nutrition/mealprint/preferences/set/nutritionPreferencesSetHandler";
 import { nutritionAiMealSuggestHandler } from "./nutrition/mealprint/ai/suggest/nutritionAiMealSuggestHandler";
+import { nutritionAiPlanGenerateHandler } from "./nutrition/mealprint/ai/planGenerate/nutritionAiPlanGenerateHandler";
+import { nutritionAiPlanMealSwapHandler } from "./nutrition/mealprint/ai/planSwap/nutritionAiPlanMealSwapHandler";
 import { nutritionPlansCreateHandler } from "./nutrition/mealprint/plans/create/nutritionPlansCreateHandler";
 import { nutritionPlansReadHandlers } from "./nutrition/mealprint/plans/read/nutritionPlansReadHandlers";
+import { nutritionPlanMealLogHandler } from "./nutrition/mealprint/plans/log/nutritionPlanMealLogHandler";
 import { foodsListHandler } from "./foods/list/foodsListHandler";
 import { foodsCreateHandler } from "./foods/create/foodsCreateHandler";
 import { recipesListHandler } from "./recipes/list/recipesListHandler";
@@ -88,7 +91,14 @@ export const nutritionRoutes = new Elysia()
   // …but the suggestion endpoint IS gated: `meal_ai` (402) → daily ceiling
   // (429) → pipeline, inside the handler.
   .use(nutritionAiMealSuggestHandler)
-  // Mealprint plans (spec-26 Phase 2). Accept/read/patch/delete are UNGATED for
+  // Mealprint plan GENERATION — both `meal_ai`-gated (402 → 429 → pipeline),
+  // both stateless drafts. ⚠ PRIVACY POLICY: these are new AI features; both
+  // policy copies (web `Privacy.tsx` § AI features, mobile
+  // `PrivacyPolicyPresenter.tsx` § 5) enumerate Mealprint's AI use, and their
+  // tests assert a hardcoded list. Kept in step in this same PR.
+  .use(nutritionAiPlanGenerateHandler)
+  .use(nutritionAiPlanMealSwapHandler)
+  // Mealprint plans (spec-26 Phase 2). Accept/read/patch/delete/log are UNGATED for
   // the same reason preferences are: the paywall is on generation, and a lapsed
   // subscriber must keep access to plans they made while paying.
   //
@@ -98,6 +108,7 @@ export const nutritionRoutes = new Elysia()
   // do NOT split the read handlers up.
   .use(nutritionPlansCreateHandler)
   .use(nutritionPlansReadHandlers)
+  .use(nutritionPlanMealLogHandler)
   .use(foodsListHandler)
   .use(foodsCreateHandler)
   // recipes — GET /recipes (list) before GET /recipes/:id; POST /recipes/import

@@ -233,6 +233,12 @@ export const coreRoute = coreAPI.route("$default", {
     // and is therefore invisible exactly where someone would look (STATE.md
     // § Pricing vs AI cost, action 4).
     AI_MEAL_SUGGEST_DAILY_LIMIT: "20",
+    // Day-plan generation (spec-26 Phase 2). 5/day, design § Cost. Same
+    // fail-safe parse as suggest: a non-finite/non-positive value falls back to
+    // the code default rather than silently disabling the ceiling.
+    AI_MEAL_PLAN_DAILY_LIMIT: "5",
+    // Single-meal swap inside an accepted plan (spec-26 Phase 2). 10/day.
+    AI_MEAL_SWAP_DAILY_LIMIT: "10",
   },
 });
 
