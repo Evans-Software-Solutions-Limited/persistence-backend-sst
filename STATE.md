@@ -11,12 +11,47 @@ say so and fix this file.
 
 ## ▶ START HERE — next session (rewritten 2026-08-04, post-Mealprint-merge)
 
-### ⚠ 2026-08-05 — Mealprint spec-26 PHASE 2 + 3.x BACKEND is built on a branch, NOT merged
+### 🔴 2026-08-05 — APP STORE: a THIRD rejection is OPEN, and it is NOT the two you think
 
-**Branch `claude/mealprint-phase2-backend`, 7 commits off `main`, NOT pushed, NO PR yet.**
-Inspector Brad swept it twice and returned **CLEAN @ `270870d3`** (PR body line:
-`🕵️ Inspector Brad (local): clean @ 270870d3`). Gates: typecheck 8/8, eslint clean, full
-core suite **317 files / 3882 tests**, coverage holds.
+**Build 1.0 (40) was rejected AGAIN on 2026-08-04** (submission
+`9b3438b9-0ed2-4a46-9ebb-78faa0e495b5`, status Unresolved Issues, iPhone 17 Pro Max + iPad
+Air 11-inch M3). The 2.1-PassKit and 4.0-Apple-logo reasons this repo's briefs were written
+for were **NOT re-cited** — build 40 carried both fixes and they appear cleared. The two
+LIVE reasons are new, and **neither is a code defect**:
+
+1. **2.1(a) Information Needed** — Apple wants a **coach invite code** in App Review
+   Information to assess the coach↔client flow. Brad's, operational.
+2. **2.1(b) App Completeness** — "In-app purchase products … could not be found in the
+   submitted binary." The app-side code is CORRECT (verified: `revenuecat.adapter.ts`
+   reads offering `default`; product ids match ASC byte-for-byte). Points at the RevenueCat
+   `default` offering (`ofrng79adc3c998`) / RC↔App Store product mapping — a dashboard
+   config fix, Brad's.
+
+**Full detail + the ASC product state (six subs, all Ready for Review, no `premium_plus`
+product exists) is in [`specs/milestones/GO-LIVE-2026-08/RESUBMISSION_BRIEF.md`](specs/milestones/GO-LIVE-2026-08/RESUBMISSION_BRIEF.md)**
+(TASK 0 done; the release PR #344 exists and is green; prod migrations are AUTOMATIC on
+release, not manual). ⚠ **There is NO outstanding CODE work for the resubmission** — it is
+all Brad's operational/dashboard work.
+
+### ⚠ M21 IS DESCOPED (Brad, 2026-08-04) — plan of record changed
+
+The Premium+ launch bundle is now **Mealprint + Premium+ + the new subscription layers on
+ONE new build**; M21 (the B2B org rail ≡ spec-29 Phase 3) is deferred. `PLAN.md` Stage 5
+reflects this. ⚠ Consequence: the `useLoadoutGate` / `/subscriptions/me` `loadout_access`
+projection fix that was scheduled to "land with M21" is orphaned — fold it into spec-29
+Phase 2 (`PAYWALL_SURFACES_BRIEF.md` task 2.8). Also settled: `small_business` +
+`medium_enterprise` are RETIRED, replaced on the IAP ladder by `coach` + `coach_pro`
+(a `tier_name` change in substance — safe only because of the authorised prod+staging data
+reset; no grandfathering).
+
+### ✅ 2026-08-05 — Mealprint spec-26 PHASE 2 BACKEND is MERGED to `main` (PR #357, `3f047bec`)
+
+Inspector Brad clean @ `270870d3`; all 5 CI checks green; squash-merged. **Staging deploy
+fired on merge and auto-applied the `20260804120000_mealprint_plans.sql` migration there.**
+Nothing user-reachable (`premium_plus` inactive, no mobile caller). ⚠ CI caught one thing
+the local scoped lint missed — a `react/no-unescaped-entities` error in the mobile privacy
+bullet; fixed in the same PR. **Lesson: run the mobile package's own `expo lint`, not just
+`bunx eslint` on core dirs, before pushing anything touching `packages/mobile`.**
 
 What shipped (all spec-26 Phase 2 backend, the whole loggable loop server-side):
 `meal_plans` + `meal_plan_meals` migration/schema · `mealPlanRepository` ·
@@ -26,35 +61,35 @@ What shipped (all spec-26 Phase 2 backend, the whole loggable loop server-side):
 `plan-meal-swap` + `planModel` · infra ceilings (`AI_MEAL_PLAN_DAILY_LIMIT=5`,
 `AI_MEAL_SWAP_DAILY_LIMIT=10`) · privacy-policy "Meal plans" bullet in BOTH copies.
 
-⚠ **IB's first sweep found a real 🟠 isolation leak (now fixed, revert-verified):**
-`resolveByIds` read `foods` UNSCOPED, reopening the PR #124 private-food leak — a user
-could pull another user's custom food's macros into their plan via the accept body. Fixed
-to mirror `foodRepository.getByIds` (`createdBy = userId OR source = 'openfoodfacts'`). The
-test had certified the leak; rewritten. **Lesson restated: a mocked-DB test can pin a
-security hole as correct — assert the scope, not the absence of it.**
+⚠ **IB's first sweep found a real 🟠 isolation leak (fixed in the merged PR,
+revert-verified):** `resolveByIds` read `foods` UNSCOPED, reopening the PR #124 private-food
+leak — a user could pull another user's custom food's macros into their plan via the accept
+body. Fixed to mirror `foodRepository.getByIds` (`createdBy = userId OR source =
+'openfoodfacts'`). The test had certified the leak; rewritten. **Lesson restated: a
+mocked-DB test can pin a security hole as correct — assert the scope, not the absence of
+it.**
 
-**Decisions still open for Brad (do not guess):**
-1. **Push + raise the backend PR?** Public repo — needs Brad's go-ahead, and his call on
-   squash vs the 7 commits. Nothing is user-reachable (`premium_plus` inactive; no mobile
-   caller), so it is safe to release like Phase 0/1.
-2. **`ai_generated` recipes on accept?** Design § 3 says accept "creates ai_generated
+**Two decisions still open for Brad (do not guess):**
+1. **`ai_generated` recipes on accept?** Design § 3 says accept "creates ai_generated
    recipes"; the accept handler currently stores one-off item lists instead. Recommend
    minting a recipe only on an explicit "save as recipe", NOT per accepted plan. UNBUILT
    either way.
-3. **Loadout Phase 4 / programme import** — cap CONFIRMED at 10 (Brad, cycle not
+2. **Loadout Phase 4 / programme import** — cap CONFIRMED at 10 (Brad, cycle not
    weeks×sessions; spec-21 § 7.3 corrected). Still zero code; wants a combined spec triplet
    with ROADMAP § 5.3 import.
 
-**Still NOT done for "whole of Mealprint":** the post-accept **replace-meal ROUTE**
-(`replaceMeal` exists on the repo + swap returns the meal, but no route wires them —
-small); **Phase 2 MOBILE** (tasks 2.6/2.7 — plan flow UI + Fuel integration, the big
-next chunk, `packages/mobile`); **Phase 3** 3.2–3.5 (week plans, shopping list, adherence;
-3.1 async spine already shipped).
+**NEXT SLICE for "whole of Mealprint" — pick up here:** the post-accept **replace-meal
+ROUTE** (`replaceMeal` exists on the repo + swap returns the meal, but no route wires them —
+small, do this first); **Phase 2 MOBILE** (tasks 2.6/2.7 — plan flow UI + Fuel integration,
+the big chunk, `packages/mobile`, ⚠ run `expo lint` locally); **Phase 3** 3.2–3.5 (week
+plans, shopping list, adherence; 3.1 async spine already shipped). The paywall-surfaces work
+(`PAYWALL_SURFACES_BRIEF.md`, spec-29 Phase 2) is parallelisable and independent.
 
 ---
 
-**You are on a fresh `main`. Mealprint mobile is MERGED.** Nothing is half-landed and
-no branch is waiting. Read this block, then pick A or B — they do not block each other.
+**The two paths below (A subscription-restructure, B go-live) still hold, but note the two
+blocks ABOVE supersede their framing: a THIRD App Store rejection is open, and M21 is
+descoped.** Read those first.
 
 ### The one thing that is NOT done on Mealprint
 
