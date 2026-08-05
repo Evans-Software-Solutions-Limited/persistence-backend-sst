@@ -47,9 +47,10 @@ const TIER_DISPLAY_NAMES: Record<SubscriptionTierName, string> = {
   free: "Free",
   premium: "Premium",
   premium_plus: "Premium+",
-  individual_trainer: "Individual Trainer",
-  small_business: "Small Business Trainer",
-  medium_enterprise: "Medium / Enterprise Trainer",
+  individual_trainer: "Start Up Coach",
+  start_up_coach_plus: "Start Up Coach +",
+  coach: "Coach",
+  coach_pro: "Coach Pro",
 };
 
 function formatTier(tier: SubscriptionTierName): string {

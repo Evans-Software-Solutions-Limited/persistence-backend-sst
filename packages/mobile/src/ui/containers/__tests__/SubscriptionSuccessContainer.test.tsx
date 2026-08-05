@@ -250,11 +250,12 @@ describe("getSubscriptionBenefits", () => {
     expect(getSubscriptionBenefits("premium")).toHaveLength(1);
   });
 
-  it("adds Client Management for any trainer / business / enterprise tier", () => {
+  it("adds Client Management for any coach-ladder tier", () => {
     const tiers: SubscriptionTierName[] = [
       "individual_trainer",
-      "small_business",
-      "medium_enterprise",
+      "start_up_coach_plus",
+      "coach",
+      "coach_pro",
     ];
     for (const tier of tiers) {
       const benefits = getSubscriptionBenefits(tier);
@@ -273,7 +274,7 @@ describe("getSuccessMessage", () => {
     expect(getSuccessMessage("individual_trainer")).toMatch(
       /trainer subscription is now active/,
     );
-    expect(getSuccessMessage("small_business")).toMatch(/trainer subscription/);
+    expect(getSuccessMessage("coach")).toMatch(/trainer subscription/);
   });
 
   it("returns premium copy for premium", () => {

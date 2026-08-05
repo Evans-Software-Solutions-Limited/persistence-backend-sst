@@ -200,8 +200,9 @@ export function SubscriptionSelectionPresenter(
   const trainerTierCards = useMemo(() => {
     const baseNames: SubscriptionTierName[] = [
       "individual_trainer",
-      "small_business",
-      "medium_enterprise",
+      "start_up_coach_plus",
+      "coach",
+      "coach_pro",
     ];
     const cards: React.ReactElement[] = [];
 

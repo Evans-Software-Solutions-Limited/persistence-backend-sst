@@ -21,9 +21,10 @@ const TIER_DISPLAY_NAMES: Record<SubscriptionTierName, string> = {
   free: "Free",
   premium: "Premium",
   premium_plus: "Premium+",
-  individual_trainer: "Individual Trainer",
-  small_business: "Small Business Trainer",
-  medium_enterprise: "Medium / Enterprise Trainer",
+  individual_trainer: "Start Up Coach",
+  start_up_coach_plus: "Start Up Coach +",
+  coach: "Coach",
+  coach_pro: "Coach Pro",
 };
 
 // Track classification for multi-track detection. A user-track upgrade
@@ -33,8 +34,9 @@ const TIER_DISPLAY_NAMES: Record<SubscriptionTierName, string> = {
 // decisions; the banner falls back to a generic copy.
 const TRAINER_TIERS: ReadonlySet<SubscriptionTierName> = new Set([
   "individual_trainer",
-  "small_business",
-  "medium_enterprise",
+  "start_up_coach_plus",
+  "coach",
+  "coach_pro",
 ]);
 
 function trackOf(tier: SubscriptionTierName): "trainer" | "user" {

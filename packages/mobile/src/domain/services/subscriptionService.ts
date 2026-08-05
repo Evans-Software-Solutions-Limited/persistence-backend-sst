@@ -108,8 +108,9 @@ export function isCancelledButActive(
  */
 export const TRAINER_TIER_NAMES: ReadonlySet<SubscriptionTierName> = new Set([
   "individual_trainer",
-  "small_business",
-  "medium_enterprise",
+  "start_up_coach_plus",
+  "coach",
+  "coach_pro",
 ]);
 
 export function shouldShowTrialBanner(
@@ -154,12 +155,18 @@ const USER_TRACK_RANK: Partial<Record<SubscriptionTierName, number>> = {
 const TRAINER_TRACK_RANK: Partial<Record<SubscriptionTierName, number>> = {
   // `free` doubles as the no-trainer-tier baseline — a trainer requirement
   // is not satisfied by `free`, so its rank is below any real trainer tier.
-  // Trainer tiers ranked by client-slot capacity:
-  // Individual < Small Business < Medium / Enterprise.
+  //
+  // Spec-29 Phase 2 (2026-08-05) coach ladder: each rung is a strict
+  // superset of the one below — `start_up_coach_plus` keeps
+  // `individual_trainer`'s 5-client cap and adds the adaptive-workout
+  // suite, `coach` raises the cap to 15 (keeping the suite), `coach_pro`
+  // to 30. That superset property is what makes a single rank number
+  // valid: individual_trainer < start_up_coach_plus < coach < coach_pro.
   free: 0,
   individual_trainer: 1,
-  small_business: 2,
-  medium_enterprise: 3,
+  start_up_coach_plus: 2,
+  coach: 3,
+  coach_pro: 4,
 };
 
 /**

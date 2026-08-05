@@ -3,8 +3,8 @@ import type { SubscriptionTier } from "@/domain/models/subscription";
 import { TrainerSubscriptionCard } from "@/ui/components/subscription/TrainerSubscriptionCard";
 
 const STD: SubscriptionTier = {
-  tierName: "small_business",
-  displayName: "Small Business (Standard)",
+  tierName: "coach",
+  displayName: "Coach",
   description: null,
   priceMonthly: 49,
   priceYearly: 490,
@@ -24,8 +24,8 @@ const STD: SubscriptionTier = {
 
 const PRO: SubscriptionTier = {
   ...STD,
-  tierName: "small_business",
-  displayName: "Small Business (Pro)",
+  tierName: "coach",
+  displayName: "Coach",
   priceMonthly: 99,
   priceYearly: 990,
   aiAccess: true,
@@ -67,7 +67,7 @@ describe("TrainerSubscriptionCard", () => {
     expect(screen.queryByText(/reporting & analytics/i)).toBeNull();
   });
 
-  it("derives display name from tier name family — small_business", () => {
+  it("derives display name from tier name family — coach", () => {
     render(
       <TrainerSubscriptionCard
         standardTier={STD}
@@ -79,10 +79,10 @@ describe("TrainerSubscriptionCard", () => {
         onProPress={jest.fn()}
       />,
     );
-    expect(screen.getByText("Small Business")).toBeTruthy();
+    expect(screen.getByText("Coach")).toBeTruthy();
   });
 
-  it("derives display name for individual_trainer family", () => {
+  it("derives display name for individual_trainer family as 'Start Up Coach'", () => {
     const trainerStd = {
       ...STD,
       tierName: "individual_trainer" as const,
@@ -99,16 +99,19 @@ describe("TrainerSubscriptionCard", () => {
         onProPress={jest.fn()}
       />,
     );
-    expect(screen.getByText("Individual Trainer")).toBeTruthy();
+    expect(screen.getByText("Start Up Coach")).toBeTruthy();
   });
 
-  it("derives display name for medium_enterprise as 'Medium to Enterprise'", () => {
-    const medStd = { ...STD, tierName: "medium_enterprise" as const };
-    const medPro = { ...PRO, tierName: "medium_enterprise" as const };
+  // Spec-29 Phase 2 (2026-08-05): every coach product contains the substring
+  // "coach", so start_up_coach_plus and coach_pro must resolve to their OWN
+  // display names, not fall through to the plain "Coach" match.
+  it("derives display name for start_up_coach_plus family as 'Start Up Coach +'", () => {
+    const plusStd = { ...STD, tierName: "start_up_coach_plus" as const };
+    const plusPro = { ...PRO, tierName: "start_up_coach_plus" as const };
     render(
       <TrainerSubscriptionCard
-        standardTier={medStd}
-        proTier={medPro}
+        standardTier={plusStd}
+        proTier={plusPro}
         billingCycle="monthly"
         isStandardCurrent={false}
         isProCurrent={false}
@@ -116,7 +119,24 @@ describe("TrainerSubscriptionCard", () => {
         onProPress={jest.fn()}
       />,
     );
-    expect(screen.getByText("Medium to Enterprise")).toBeTruthy();
+    expect(screen.getByText("Start Up Coach +")).toBeTruthy();
+  });
+
+  it("derives display name for coach_pro family as 'Coach Pro'", () => {
+    const proStd = { ...STD, tierName: "coach_pro" as const };
+    const proPro = { ...PRO, tierName: "coach_pro" as const };
+    render(
+      <TrainerSubscriptionCard
+        standardTier={proStd}
+        proTier={proPro}
+        billingCycle="monthly"
+        isStandardCurrent={false}
+        isProCurrent={false}
+        onStandardPress={jest.fn()}
+        onProPress={jest.fn()}
+      />,
+    );
+    expect(screen.getByText("Coach Pro")).toBeTruthy();
   });
 
   it("renders client slot count from the standard tier when present", () => {
@@ -197,8 +217,8 @@ describe("TrainerSubscriptionCard", () => {
         onProPress={onPro}
       />,
     );
-    fireEvent.press(screen.getByTestId("trainer-card-small_business-standard"));
-    fireEvent.press(screen.getByTestId("trainer-card-small_business-pro"));
+    fireEvent.press(screen.getByTestId("trainer-card-coach-standard"));
+    fireEvent.press(screen.getByTestId("trainer-card-coach-pro"));
     expect(onStd).toHaveBeenCalledTimes(1);
     expect(onPro).toHaveBeenCalledTimes(1);
   });
@@ -230,7 +250,7 @@ describe("TrainerSubscriptionCard", () => {
         onProPress={jest.fn()}
       />,
     );
-    expect(screen.getByText("Small Business")).toBeTruthy();
+    expect(screen.getByText("Coach")).toBeTruthy();
     expect(screen.getByText("£49/month")).toBeTruthy();
     expect(screen.queryByTestId(/-pro$/)).toBeNull();
   });
@@ -247,7 +267,7 @@ describe("TrainerSubscriptionCard", () => {
         onProPress={jest.fn()}
       />,
     );
-    expect(screen.getByText("Small Business")).toBeTruthy();
+    expect(screen.getByText("Coach")).toBeTruthy();
     expect(screen.getByText("£99/month")).toBeTruthy();
     expect(screen.queryByTestId(/-standard$/)).toBeNull();
   });
@@ -303,9 +323,9 @@ describe("TrainerSubscriptionCard", () => {
     expect(screen.getByText("£990/year")).toBeTruthy();
     // Both columns stay tappable — the container alerts on the
     // unavailable column rather than silently swallowing taps.
-    fireEvent.press(screen.getByTestId("trainer-card-small_business-standard"));
+    fireEvent.press(screen.getByTestId("trainer-card-coach-standard"));
     expect(onStandardPress).toHaveBeenCalledTimes(1);
-    fireEvent.press(screen.getByTestId("trainer-card-small_business-pro"));
+    fireEvent.press(screen.getByTestId("trainer-card-coach-pro"));
     expect(onProPress).toHaveBeenCalledTimes(1);
   });
 

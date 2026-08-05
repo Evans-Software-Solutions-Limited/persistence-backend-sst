@@ -65,9 +65,12 @@ import { getDb } from "@persistence/db/client";
  *     outstanding invitations.
  *   - `loadout`: ENFORCED (spec-21) on `subscription_tiers.loadout_access`.
  *   - `meal_ai`: ENFORCED (spec-26) on `subscription_tiers.mealprint_access` —
- *     a hard Premium+ gate with NO taster (Brad 2026-07-24). Unlike
- *     `loadout_access` the flag is granted to `premium_plus` ONLY, which is why
- *     `PREMIUM_PLUS_ONLY_FEATURES` exists.
+ *     a hard gate with NO taster (Brad 2026-07-24). ⚠ Spec-29 Phase 2
+ *     (2026-08-05) made `mealprint_access` track `loadout_access` exactly: both
+ *     are granted to `premium_plus` and the paid coach tiers
+ *     (`start_up_coach_plus`/`coach`/`coach_pro`), NOT the entry rung
+ *     `individual_trainer`. See the file header (§ `PREMIUM_PLUS_FEATURES`) for
+ *     why the two features now share one upsell path.
  *   - everything else (`ai_workout`, `gym_buddy`,
  *     `unlimited_exercise_library`): STUB — returns `{ allowed: true }`
  *     today, wired into the read path so the helper signature stabilises
@@ -85,10 +88,19 @@ export type EntitlementFeature =
   | "meal_ai";
 
 /**
- * Features that only a PREMIUM+ (or trainer) tier unlocks, as opposed to the
- * features any paid tier unlocks. Drives `pickUpgradeTier`: a `loadout` deny
- * must upsell Premium+, not Premium — upselling Premium would take the user's
- * money and still leave the feature locked.
+ * The adaptive-workout SUITE features — Loadout + Mealprint — as opposed to the
+ * features any paid tier unlocks. Drives `pickUpgradeTier`: a suite deny must
+ * upsell a suite-bearing tier, never the cheapest paid one — upselling the wrong
+ * tier would take the user's money and still leave the feature locked.
+ *
+ * ⚠ Spec-29 Phase 2 (2026-08-05): the suite is now carried by `premium_plus`
+ * (consumers) AND the paid coach tiers `start_up_coach_plus` / `coach` /
+ * `coach_pro`. The entry coach rung `individual_trainer` (Start Up Coach) is the
+ * one paid coach tier WITHOUT it (AC 1.3, `20260805120000_coach_ladder_restructure.sql`).
+ * Because BOTH suite features now have a valid coach upsell (Start Up Coach +),
+ * `loadout` and `meal_ai` route identically — which is why the former
+ * `PREMIUM_PLUS_ONLY_FEATURES` split (meal_ai had no trainer upsell) no longer
+ * exists. `pickUpgradeTier` branches on ROLE, not on which suite feature.
  */
 const PREMIUM_PLUS_FEATURES: ReadonlySet<EntitlementFeature> = new Set([
   "loadout",
@@ -96,47 +108,25 @@ const PREMIUM_PLUS_FEATURES: ReadonlySet<EntitlementFeature> = new Set([
 ]);
 
 /**
- * The subset of {@link PREMIUM_PLUS_FEATURES} that **no trainer tier grants**.
- *
- * ⚠ This set exists because the ROLE branch in `pickUpgradeTier` was correct
- * only under an invariant that Mealprint breaks. That invariant, quoted from the
- * comment this replaces: "Trainer tiers are not listed here because they are
- * selected by ROLE, not by feature: all three already carry `loadout_access`, so
- * the cheapest trainer tier remains the right upsell for a coach."
- *
- * `mealprint_access` is granted to `premium_plus` ONLY
- * (`20260803120200_mealprint_access.sql` — Mealprint has no coach surface in v1,
- * and granting it to a £14.99 trainer tier would widen the known Loadout price
- * hole). So for `meal_ai` the premise fails: pointing a denied coach at
- * `individual_trainer` would take their money and leave the feature locked —
- * exactly the failure mode `pickUpgradeTier`'s docstring says the required
- * `feature` parameter exists to turn into a compile error.
- *
- * Membership here must imply membership of {@link PREMIUM_PLUS_FEATURES}; the
- * test suite asserts the subset relation so the two cannot drift.
- */
-const PREMIUM_PLUS_ONLY_FEATURES: ReadonlySet<EntitlementFeature> = new Set([
-  "meal_ai",
-]);
-
-/**
- * Spec-narrow tier-name union. Reflects the simplified tier catalog
- * (post `20260526120000_simplify_tier_model.sql`): Free + Premium +
- * Premium+ for users, and three trainer tiers by business size (all
- * carrying the former `_pro` entitlements — AI buddy etc.). The
- * `_standard` and `basic` variants were dropped. `premium_plus` was
- * added in M19-P0 (spec-21 § 9.1) — a consumer tier above `premium`
- * gating the adaptive-workout suite (Loadout + Mealprint). Unknown tier
- * strings collapse to `'free'` via `coerceTierName` so the wire payload
- * never carries an arbitrary string.
+ * Spec-narrow tier-name union. Reflects the spec-29 Phase 2 coach ladder
+ * (`20260805120000_coach_ladder_restructure.sql`): Free + Premium + Premium+ for
+ * consumers, and the coach ladder `individual_trainer` (Start Up Coach, no suite)
+ * / `start_up_coach_plus` / `coach` / `coach_pro` (all suite-bearing). The old
+ * `small_business` / `medium_enterprise` business tiers were RETIRED and replaced
+ * by `coach` / `coach_pro`; their rows survive inactive as FK tombstones but the
+ * union drops them. `premium_plus` (M19-P0) and the coach suite tiers gate the
+ * adaptive-workout suite (Loadout + Mealprint). Unknown tier strings collapse to
+ * `'free'` via `coerceTierName` so the wire payload never carries an arbitrary
+ * string.
  */
 export type SubscriptionTierName =
   | "free"
   | "premium"
   | "premium_plus"
   | "individual_trainer"
-  | "small_business"
-  | "medium_enterprise";
+  | "start_up_coach_plus"
+  | "coach"
+  | "coach_pro";
 
 /**
  * Why an entitlement assertion was denied. Mobile uses this to pick the
@@ -696,10 +686,13 @@ async function assertLoadout(userId: string): Promise<EntitlementVerdict> {
  * `user_subscriptions` path, which this function sees as an ordinary Premium+
  * grant and needs no code for.
  *
- * ⚠ Unlike `loadout_access`, `mealprint_access` is TRUE for `premium_plus` only
- * — no trainer tier carries it. See {@link PREMIUM_PLUS_ONLY_FEATURES} for why
- * that changes the upsell target, and
- * `20260803120200_mealprint_access.sql` for why the grant is narrower.
+ * ⚠ Spec-29 Phase 2 (2026-08-05): `mealprint_access` now tracks `loadout_access`
+ * exactly — TRUE for `premium_plus` and the paid coach tiers
+ * (`start_up_coach_plus`/`coach`/`coach_pro`), FALSE for the entry rung
+ * `individual_trainer` (`20260805120000_coach_ladder_restructure.sql`). Both suite
+ * features share one upsell path via `PREMIUM_PLUS_FEATURES`: a denied coach is
+ * upsold `start_up_coach_plus`, a denied consumer `premium_plus`
+ * (see `pickUpgradeTier`). The former Premium+-only split no longer exists.
  */
 async function assertMealprint(userId: string): Promise<EntitlementVerdict> {
   const db = getDb();
@@ -858,8 +851,9 @@ export function coerceTierName(
     case "premium":
     case "premium_plus":
     case "individual_trainer":
-    case "small_business":
-    case "medium_enterprise":
+    case "start_up_coach_plus":
+    case "coach":
+    case "coach_pro":
       return tierName;
     default:
       return "free";
@@ -886,23 +880,22 @@ export function normaliseRole(
 
 /**
  * Pick the upgrade target for a deny, from the caller's ROLE and the FEATURE
- * they were denied. Post tier-simplification the picks are:
- *   - `personal_trainer` → `'individual_trainer'` (£14.99 / month — smallest
- *     trainer tier). Role wins over feature: all three trainer tiers already
- *     carry `loadout_access`, so the cheapest one is always the right upsell.
+ * they were denied. Spec-29 Phase 2 (2026-08-05) picks:
  *   - `admin` → no upgrade target (admins shouldn't be denied; if they somehow
  *     are, the gate prompt has nothing useful to suggest).
- *   - `user` / `physiotherapist` → `'premium_plus'` (£29.99 / month) for a
- *     Premium+-only feature, otherwise `'premium'` (£12.99 / month, the
- *     cheapest paid user tier).
+ *   - `personal_trainer` → a SUITE deny (`loadout` / `meal_ai`) upsells
+ *     `'start_up_coach_plus'` (£34.99 — the cheapest coach tier that carries the
+ *     suite AND keeps them in coach mode); any other paid deny upsells
+ *     `'individual_trainer'` (£18.99 — the entry coach rung).
+ *   - `user` / `physiotherapist` → a suite deny upsells `'premium_plus'`
+ *     (£29.99); otherwise `'premium'` (£16.99, the cheapest paid consumer tier).
  *
- * The `feature` parameter is REQUIRED rather than defaulting to
- * `create_workout`: a default would let a future Premium+-only feature be added
- * to `PREMIUM_PLUS_FEATURES` while some deny path silently kept upselling
- * Premium — which is the failure mode that actually costs money, because the
- * user pays and stays locked out. Making it required turns that into a compile
- * error. (Spec-21 design § 9.2 item 4: this seam deliberately waited for
- * `loadout` to exist so the Premium+ branch would be reachable and testable.)
+ * ⚠ Role decides the LADDER (coach vs consumer); feature decides the RUNG within
+ * it. A coach must never be sent to `premium_plus` — that would strip their
+ * coaching role — nor to `individual_trainer` for a suite feature, which does not
+ * carry the suite: either way they pay and stay locked out. That is the exact
+ * failure mode the required `feature` parameter exists to make a compile-time
+ * concern rather than a silent one.
  *
  * Returns `null` to signal "no sensible upgrade", which mobile renders as a
  * generic "contact support" CTA.
@@ -912,33 +905,27 @@ export function pickUpgradeTier(
   feature: EntitlementFeature,
 ): SubscriptionTierName | null {
   // Admins first — they should never be denied, and if they somehow are there is
-  // nothing useful to suggest. Kept ahead of everything else so this stays true
-  // regardless of which feature was denied.
+  // nothing useful to suggest.
   if (role === "admin") return null;
 
-  // ⚠ FEATURE BEATS ROLE for a Premium+-EXCLUSIVE feature, and the order of
-  // these two lines is the whole point. No trainer tier carries
-  // `mealprint_access`, so sending a denied coach to `individual_trainer` would
-  // charge them £14.99 and leave Mealprint locked. See
-  // PREMIUM_PLUS_ONLY_FEATURES.
-  if (PREMIUM_PLUS_ONLY_FEATURES.has(feature)) return "premium_plus";
+  const isSuiteFeature = PREMIUM_PLUS_FEATURES.has(feature);
 
-  if (role === "personal_trainer") return "individual_trainer";
-  // user + physiotherapist fall through to user-tier upgrade.
-  if (PREMIUM_PLUS_FEATURES.has(feature)) return "premium_plus";
-  return "premium";
+  // Coaches stay on the coach ladder so a deny never strips their coaching role.
+  // Suite deny → cheapest suite-bearing coach tier; else the entry coach rung.
+  if (role === "personal_trainer") {
+    return isSuiteFeature ? "start_up_coach_plus" : "individual_trainer";
+  }
+
+  // user + physiotherapist: the consumer ladder.
+  return isSuiteFeature ? "premium_plus" : "premium";
 }
 
 /**
- * Exported ONLY so the test suite can assert
- * `PREMIUM_PLUS_ONLY_FEATURES ⊆ PREMIUM_PLUS_FEATURES`. A member of the
- * exclusive set that is missing from the wider one would upsell Premium to a
- * `user`-role caller — the same pay-and-stay-locked-out bug, reached from the
- * other side.
+ * Exported ONLY so the test suite can assert which features route to a
+ * suite-bearing upsell rather than the cheapest paid tier (`pickUpgradeTier`).
  */
 export const __entitlementUpgradeSetsForTest = {
   premiumPlus: PREMIUM_PLUS_FEATURES,
-  premiumPlusOnly: PREMIUM_PLUS_ONLY_FEATURES,
 } as const;
 
 // ─── Internal ─────────────────────────────────────────────────────────
@@ -1259,30 +1246,34 @@ export async function countActiveTrainerClients(
 }
 
 /**
- * The upgrade target one step up the trainer-tier ladder. Used for the
- * `trainer_clients` `'limit'` upsell (a trainer at cap should be pointed at
- * the next-larger tier, NOT the role-based cheapest paid tier that
- * `pickUpgradeTier` resolves). A non-trainer tier maps to the cheapest
- * trainer tier; `medium_enterprise` (the top trainer tier) has no higher
- * cap to upsell → `null`.
+ * The upgrade target one step up the trainer-tier SEAT ladder. Used for the
+ * `trainer_clients` `'limit'` upsell (a trainer at cap should be pointed at the
+ * next tier with MORE client seats, NOT the role-based cheapest paid tier that
+ * `pickUpgradeTier` resolves).
+ *
+ * ⚠ Spec-29 Phase 2 (2026-08-05): the seat rungs are 5 → 15 → 30 =
+ * `individual_trainer` / `start_up_coach_plus` (both 5) → `coach` (15) →
+ * `coach_pro` (30, the top in-app rung → `null`; above it is the web/org rail).
+ * `start_up_coach_plus` is a SUITE upgrade at the same 5-seat cap, so from a SEAT
+ * deny it steps to `coach`, not to itself. A non-trainer tier maps to the cheapest
+ * coach tier.
  */
 export function nextTrainerTierUp(
   tier: SubscriptionTierName,
 ): SubscriptionTierName | null {
   switch (tier) {
     case "individual_trainer":
-      return "small_business";
-    case "small_business":
-      return "medium_enterprise";
-    case "medium_enterprise":
+    case "start_up_coach_plus":
+      return "coach";
+    case "coach":
+      return "coach_pro";
+    case "coach_pro":
       return null;
     case "free":
     case "premium":
     case "premium_plus":
-      // `premium_plus` is a consumer tier, not a trainer tier — it has no
-      // "next trainer tier up" of its own, so (like `free` and `premium`
-      // before it) a `trainer_clients` deny points it at the cheapest
-      // trainer tier rather than returning null.
+      // Consumer tiers have no "next trainer tier up" of their own, so a
+      // `trainer_clients` deny points them at the cheapest coach rung.
       return "individual_trainer";
   }
 }

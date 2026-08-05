@@ -80,8 +80,11 @@ it.**
    **Eval-gated: Phase 0 is an accuracy+cost eval, no code until it clears.** Includes
    the source-keyed `extraction_cache` (content-hash, copy-on-import, public_url shared
    / upload per-user — Brad greenlit the direction). Shared cross-user library PARKED
-   (design § 9). Two open Brad checkpoints: C1 (cache reuse split) + C2 (eval bar).
-   Still ZERO code — spec only.
+   (design § 9). ✅ **Both checkpoints RESOLVED (Brad, 2026-08-05): C1 = Option A**
+   (public-URL shared cross-user, uploads per-user, NO exclusion list); **C2 = framing
+   + starting thresholds accepted** (~85 % field accuracy, no whole-workout drops,
+   ≥95 % auto-match precision; Phase-0 eval validates). Recorded in design § 10/§ 11.
+   Still ZERO code — spec only; Phase 0 (the eval) is now unblocked to start.
 
 **NEXT SLICE for "whole of Mealprint" — pick up here:** the post-accept **replace-meal
 ROUTE** (`replaceMeal` exists on the repo + swap returns the meal, but no route wires them —
@@ -116,7 +119,41 @@ because it has run. **Before it reaches a real user it needs:**
 
 ### A · Subscription restructure — `specs/29-subscription-restructure/`
 
-Triplet written, **nothing built**. Start at `tasks.md` **Phase 0** (no code).
+⚠ **UPDATE 2026-08-05: Phase 2 (the IAP coach ladder) is BUILT on branch
+`claude/spec29-phase2-coach-ladder` — not yet a PR.** Two pricing decisions
+resolved this session and recorded in `design.md` § 1: (1) coach-ladder annual
+discount extended to **30 % across the board** (Start Up Coach £159.99, Start Up
+Coach + £293.99, Coach £499.99, Coach Pro £839.99; consumer annuals unchanged at
+£139.99 / £249.99); (2) the six-tier IAP ladder is final. What shipped on the
+branch: migration `20260805120000_coach_ladder_restructure.sql` (rename
+individual_trainer→"Start Up Coach" + reprice; insert `start_up_coach_plus` /
+`coach` / `coach_pro` suite-bearing, `is_active=false`; retire
+`small_business`/`medium_enterprise` as inactive tombstones); both
+`SubscriptionTierName` unions; `RC_ENTITLEMENT_IDS`/`TIER_RANK`/`tierFromProductId`;
+both gate Records; paywall rail; `MONTHLY_ONLY_TIERS` now empty; and three
+untyped-literal survivors fixed (GreetingSection map + two deep-link checks now
+derive from `TRAINER_TIER_NAMES`). **Gates all green** (prettier · typecheck 8/8 ·
+core 3880/3880 · mobile 5928/5928 · build 13/13); Inspector-Brad-local sweep in
+progress; PR NOT raised (awaiting Brad).
+
+⚠ **Design call baked in:** `individual_trainer` (entry coach rung) LOSES the
+suite; the paid coach tiers carry it; a coach denied the suite upsells
+`start_up_coach_plus` (not premium_plus — that would strip coach mode). This
+collapsed the old `PREMIUM_PLUS_ONLY_FEATURES` split entirely.
+
+⚠ **The RC/ASC/Stripe alignment RUNBOOK was delivered to Brad in chat this session
+(not committed, per `feedback_setup_briefs_as_chat_copy`).** It covers ASC product
+ids to create/retire, RС entitlements + the `default` offering (the 2.1(b)
+rejection fix), and the web org-tier Stripe products (forward-setup only; org rail
+descoped).
+
+⚠ **`scripts/ai-cost-model.ts` TIERS now DISAGREES with the DB catalog** — Phase 2
+repriced the DB but the script deliberately still holds the OLD live prices until
+Phase 1 lands. Reconcile when Phase 1 (pooled AI budget) is built. NOT stale by
+accident.
+
+**Phases 0, 1 and 3 remain.** Start at `tasks.md` **Phase 0** (no code) for the
+rest; ⚠ run checkpoint C5 FIRST before any Phase-1 pricing/budget task.
 
 ⚠ **Run checkpoint C5 FIRST, before any pricing task.** `recipe_extract` on Opus is
 $0.0355/call — 55 % of Premium's whole worst case and 44× the cheapest endpoint. If it

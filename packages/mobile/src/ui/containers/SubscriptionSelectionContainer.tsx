@@ -9,6 +9,7 @@ import {
   canCancelSubscription,
   getSubscriptionDisplayInfo,
   isCancelledButActive as isCancelledButActiveCheck,
+  TRAINER_TIER_NAMES,
 } from "@/domain/services/subscriptionService";
 import { useCancelSubscription } from "@/ui/hooks/useCancelSubscription";
 import { useMySubscription } from "@/ui/hooks/useMySubscription";
@@ -136,10 +137,11 @@ function SubscriptionCatalogueContainer() {
   // otherwise falls through to the profile role / default. This way a
   // free user deep-linking with `?tier=individual_trainer` lands on the
   // trainer toggle without an extra tap.
-  const tierParamImpliesTrainer =
-    initialTierParam === "individual_trainer" ||
-    initialTierParam === "small_business" ||
-    initialTierParam === "medium_enterprise";
+  // Derived from the catalog's trainer-tier set (not a hardcoded literal list)
+  // so it can never drift when the coach ladder changes — spec-29 Phase 2.
+  const tierParamImpliesTrainer = TRAINER_TIER_NAMES.has(
+    initialTierParam as SubscriptionTierName,
+  );
   const initialRole: Role =
     initialRoleParam === "personal_trainer" || tierParamImpliesTrainer
       ? "trainer"

@@ -205,23 +205,40 @@ describe("IOSPurchaseFlowContainer", () => {
     );
   });
 
-  it("monthly-only tier is hidden on yearly — no mailto, no external purchase path (Apple 3.1.1)", async () => {
+  // Spec-29 Phase 2 (2026-08-05) retired the `small_business` /
+  // `medium_enterprise` monthly-only tiers — MONTHLY_ONLY_TIERS is now EMPTY,
+  // and every coach-ladder tier (`coach_pro` included) ships both a monthly
+  // and an annual IAP product. This replaces the old "hidden on yearly" test:
+  // it asserts the tile now STAYS visible on the yearly cycle instead.
+  it("coach tier stays visible on yearly — no tier is monthly-only anymore (MONTHLY_ONLY_TIERS retired)", async () => {
     const { adapters, purchases } = makeAdapters();
-    const ME: SubscriptionTier = {
+    const COACH_PRO: SubscriptionTier = {
       ...PREMIUM,
-      tierName: "medium_enterprise",
-      displayName: "Medium Enterprise",
+      tierName: "coach_pro",
+      displayName: "Coach Pro",
       isTrainerTier: true,
-      priceYearly: null,
+      priceMonthly: 99.99,
+      priceYearly: 839.99,
     };
-    (adapters.api as InMemoryApiAdapter).subscriptionTiers = [PREMIUM, ME];
+    (adapters.api as InMemoryApiAdapter).subscriptionTiers = [
+      PREMIUM,
+      COACH_PRO,
+    ];
     purchases.packages = [
       {
-        packageId: "$rc_me_monthly",
-        productId: "app.persistence.medium_enterprise.monthly",
-        tier: "medium_enterprise",
+        packageId: "$rc_coach_pro_monthly",
+        productId: "app.persistence.coach_pro.monthly",
+        tier: "coach_pro",
         billingCycle: "monthly",
-        priceString: "£199.99",
+        priceString: "£99.99",
+        introTrialDays: null,
+      },
+      {
+        packageId: "$rc_coach_pro_annual",
+        productId: "app.persistence.coach_pro.annual",
+        tier: "coach_pro",
+        billingCycle: "yearly",
+        priceString: "£839.99",
         introTrialDays: null,
       },
     ];
@@ -234,13 +251,10 @@ describe("IOSPurchaseFlowContainer", () => {
     fireEvent.press(screen.getByTestId("billing-cycle-toggle")); // → yearly
 
     await waitFor(() =>
-      expect(screen.getByTestId("ios-purchase-monthly-only-note")).toBeTruthy(),
+      expect(screen.getByTestId("trainer-card-coach_pro-pro")).toBeTruthy(),
     );
-    // The tile is gone on yearly, so there is no way to reach the old
-    // "Contact Sales" mailto that sold this plan outside IAP.
-    expect(
-      screen.queryByTestId("trainer-card-medium_enterprise-pro"),
-    ).toBeNull();
+    // No monthly-only footnote — the tier is fully purchasable on yearly.
+    expect(screen.queryByTestId("ios-purchase-monthly-only-note")).toBeNull();
     expect(screen.queryByText("Contact Sales")).toBeNull();
     expect(openURLSpy).not.toHaveBeenCalledWith(
       expect.stringContaining("mailto:"),

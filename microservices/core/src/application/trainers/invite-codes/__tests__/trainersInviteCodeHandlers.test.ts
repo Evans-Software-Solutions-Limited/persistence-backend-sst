@@ -198,8 +198,8 @@ describe("trainersInviteCodeCreateHandler", () => {
           allowed: false,
           reason: "limit",
           currentTier: "individual_trainer",
-          upgradeTo: "small_business",
-          upgradePriceMonthly: 49.99,
+          upgradeTo: "coach",
+          upgradePriceMonthly: 59.99,
         },
         "trainer_clients",
       ),
@@ -225,7 +225,7 @@ describe("trainersInviteCodeCreateHandler", () => {
     expect(body.code).toBe("ENTITLEMENT_DENIED");
     expect(body.feature).toBe("trainer_clients");
     expect(body.reason).toBe("limit");
-    expect(body.upgrade_to).toBe("small_business");
+    expect(body.upgrade_to).toBe("coach");
     expect(assertCanInvite).toHaveBeenCalledWith("user-id", expect.anything());
   });
 
@@ -621,8 +621,8 @@ describe("trainersAcceptInviteCodeHandler", () => {
       allowed: false,
       reason: "limit",
       currentTier: "individual_trainer",
-      upgradeTo: "small_business",
-      upgradePriceMonthly: 49.99,
+      upgradeTo: "coach",
+      upgradePriceMonthly: 59.99,
     };
     evaluateJoinSeat.mockResolvedValueOnce(denyVerdict as any);
     (getDb as any).mockReturnValue(

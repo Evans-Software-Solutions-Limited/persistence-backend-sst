@@ -57,8 +57,9 @@ describe("tierBadge / tierPillTone", () => {
     expect(tierBadge("free")).toBeNull();
     expect(tierBadge("premium")).toBe("PREMIUM");
     expect(tierBadge("individual_trainer")).toBe("TRAINER");
-    expect(tierBadge("small_business")).toBe("TRAINER");
-    expect(tierBadge("medium_enterprise")).toBe("TRAINER");
+    expect(tierBadge("start_up_coach_plus")).toBe("TRAINER");
+    expect(tierBadge("coach")).toBe("TRAINER");
+    expect(tierBadge("coach_pro")).toBe("TRAINER");
   });
 
   it("maps tiers to pill tones", () => {

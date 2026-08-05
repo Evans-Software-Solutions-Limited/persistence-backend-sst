@@ -158,30 +158,30 @@ describe("SyncBlockedBannerMount", () => {
 
   it("single-track multi-tier (all trainer) still picks the mode trainer tier", () => {
     const { adapters, storage } = makeAdapters();
-    // Two entries needing individual_trainer, one needing small_business.
+    // Two entries needing individual_trainer, one needing coach.
     // All on the trainer track — should NOT trigger the multi-track guard.
     enqueueAndBlock(storage, {
       feature: "trainer_clients",
       currentTier: "free",
       upgradeTo: "individual_trainer",
-      upgradePriceMonthly: 14.99,
+      upgradePriceMonthly: 18.99,
       blockedAt: "2026-05-24T10:00:00.000Z",
     });
     enqueueAndBlock(storage, {
       feature: "trainer_clients",
       currentTier: "free",
       upgradeTo: "individual_trainer",
-      upgradePriceMonthly: 14.99,
+      upgradePriceMonthly: 18.99,
       blockedAt: "2026-05-24T10:01:00.000Z",
     });
     enqueueAndBlock(storage, {
       feature: "trainer_clients",
       currentTier: "free",
-      upgradeTo: "small_business",
-      upgradePriceMonthly: 29.99,
+      upgradeTo: "coach",
+      upgradePriceMonthly: 59.99,
       blockedAt: "2026-05-24T10:02:00.000Z",
     });
     renderMount(adapters);
-    expect(screen.getByText(/Upgrade to Individual Trainer/)).toBeTruthy();
+    expect(screen.getByText(/Upgrade to Start Up Coach/)).toBeTruthy();
   });
 });

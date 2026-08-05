@@ -400,6 +400,18 @@ const PREMIUM_PLUS_TIER = [
     priceMonthly: "29.99",
   },
 ];
+// Spec-29 Phase 2 (2026-08-05): the cheapest suite-bearing coach rung — the
+// upgrade-tier lookup for a `personal_trainer` denied a SUITE feature
+// (`loadout` / `meal_ai`). `individual_trainer` (Start Up Coach) deliberately
+// has NO suite, so a coach's suite upsell must land here, not on the entry rung.
+const START_UP_COACH_PLUS_TIER = [
+  {
+    tierName: "start_up_coach_plus",
+    workoutLimit: null,
+    aiAccess: true,
+    priceMonthly: "34.99",
+  },
+];
 const PREMIUM_PLUS_SUB_ACTIVE = [
   {
     tierName: "premium_plus",
@@ -514,21 +526,26 @@ describe("assertEntitlement — loadout", () => {
     });
   });
 
-  it("denies a trainer-role free user with individual_trainer, not premium_plus", async () => {
+  // Spec-29 Phase 2: `individual_trainer` (Start Up Coach) has NO suite, so a
+  // trainer-role free user denied a SUITE feature must upsell the cheapest
+  // suite-bearing coach rung (`start_up_coach_plus`), not the entry rung —
+  // upselling `individual_trainer` here would charge them and leave Loadout
+  // locked, same failure mode `pickUpgradeTier`'s `feature` param prevents.
+  it("denies a trainer-role free user with start_up_coach_plus, not individual_trainer or premium_plus", async () => {
     (getDb as any).mockReturnValue(
       makeQueueDb([
         PROFILE_TRAINER,
         [],
         FREE_TIER_NO_LOADOUT,
-        TRAINER_TIER_WITH_AI, // upgrade-tier lookup
+        START_UP_COACH_PLUS_TIER, // upgrade-tier lookup
       ]),
     );
 
     const verdict = await assertEntitlement("user-1", "loadout");
     expect(verdict).toMatchObject({
       allowed: false,
-      upgradeTo: "individual_trainer",
-      upgradePriceMonthly: 14.99,
+      upgradeTo: "start_up_coach_plus",
+      upgradePriceMonthly: 34.99,
     });
   });
 
@@ -730,23 +747,24 @@ describe("assertEntitlement — meal_ai", () => {
     });
   });
 
-  // ⚠ THE DIVERGENCE FROM LOADOUT. A trainer tier grants `loadout_access` but
-  // NOT `mealprint_access`, and the upsell has to follow: pointing this coach at
+  // Spec-29 Phase 2: `individual_trainer` grants neither suite flag, and the
+  // upsell has to follow the coach ladder, not the consumer one — pointing
+  // this coach at `premium_plus` would strip their coaching role, and at
   // `individual_trainer` would charge them and leave the feature locked.
-  it("denies an active trainer subscriber and upsells premium_plus, NOT a trainer tier", async () => {
+  it("denies an active trainer subscriber and upsells start_up_coach_plus, NOT premium_plus or individual_trainer", async () => {
     (getDb as any).mockReturnValue(
       makeQueueDb([
         PROFILE_TRAINER,
         TRAINER_SUB_ACTIVE_NO_MEALPRINT,
-        PREMIUM_PLUS_TIER,
+        START_UP_COACH_PLUS_TIER,
       ]),
     );
     expect(await assertEntitlement("user-1", "meal_ai")).toEqual({
       allowed: false,
       reason: "tier",
       currentTier: "individual_trainer",
-      upgradeTo: "premium_plus",
-      upgradePriceMonthly: 29.99,
+      upgradeTo: "start_up_coach_plus",
+      upgradePriceMonthly: 34.99,
     });
   });
 
@@ -1412,14 +1430,11 @@ describe("pure helpers", () => {
     it.each([
       "free",
       "premium",
-      "premium",
       "premium_plus",
       "individual_trainer",
-      "individual_trainer",
-      "small_business",
-      "small_business",
-      "medium_enterprise",
-      "medium_enterprise",
+      "start_up_coach_plus",
+      "coach",
+      "coach_pro",
     ] as const)("preserves canonical tier %s", (tier) => {
       expect(coerceTierName(tier)).toBe(tier);
     });
@@ -1489,23 +1504,24 @@ describe("pure helpers", () => {
       expect(pickUpgradeTier("user", "trainer_clients")).toBe("premium");
     });
 
-    // Role beats feature for coaches WHERE THE TRAINER TIERS ACTUALLY GRANT THE
-    // FEATURE: all three carry loadout_access, so the CHEAPEST trainer tier
-    // stays the right upsell and a coach is never pushed onto a consumer tier.
-    it("still returns individual_trainer for a trainer denied loadout", () => {
+    // Coaches stay on the coach ladder for a SUITE deny (spec-29 Phase 2):
+    // `individual_trainer` (Start Up Coach) deliberately has NO suite, so the
+    // cheapest suite-bearing coach rung is `start_up_coach_plus`, not the entry
+    // rung — upselling `individual_trainer` here would take the coach's money
+    // and still leave Loadout locked.
+    it("returns start_up_coach_plus for a trainer denied loadout", () => {
       expect(pickUpgradeTier("personal_trainer", "loadout")).toBe(
-        "individual_trainer",
+        "start_up_coach_plus",
       );
     });
 
-    // ⚠ …and feature beats role where they DON'T. `mealprint_access` is granted
-    // to premium_plus only, so the role branch would sell a coach a £14.99 tier
-    // that still locks Mealprint. This is the pay-and-stay-locked-out failure
-    // `pickUpgradeTier`'s required `feature` parameter exists to prevent, and it
-    // is reachable for the first time with spec-26.
-    it("returns premium_plus for a trainer denied meal_ai", () => {
+    // ⚠ …and the same suite-routing applies to meal_ai now that BOTH suite
+    // features have a valid coach upsell (spec-29 Phase 2) — a coach denied
+    // meal_ai must never be sent to premium_plus, which would strip their
+    // coaching role.
+    it("returns start_up_coach_plus for a trainer denied meal_ai", () => {
       expect(pickUpgradeTier("personal_trainer", "meal_ai")).toBe(
-        "premium_plus",
+        "start_up_coach_plus",
       );
     });
 
@@ -1522,13 +1538,16 @@ describe("pure helpers", () => {
       expect(pickUpgradeTier("admin", "meal_ai")).toBeNull();
     });
 
-    // A member of the exclusive set missing from the wider Premium+ set would
-    // upsell Premium to a `user`-role caller — the same bug from the other side.
-    it("keeps PREMIUM_PLUS_ONLY_FEATURES a subset of PREMIUM_PLUS_FEATURES", () => {
-      const { premiumPlus, premiumPlusOnly } = __entitlementUpgradeSetsForTest;
-      for (const feature of premiumPlusOnly) {
-        expect(premiumPlus.has(feature), feature).toBe(true);
-      }
+    // Spec-29 Phase 2 retired the exclusive PREMIUM_PLUS_ONLY_FEATURES split
+    // (both suite features now have a valid coach upsell), so there is no
+    // subset invariant left to assert here — `__entitlementUpgradeSetsForTest`
+    // only exposes `premiumPlus` now. Coverage for the suite set itself lives
+    // in the "returns premium_plus for a loadout/meal_ai deny" tests above.
+    it("exposes the suite feature set for suite-vs-non-suite routing tests", () => {
+      const { premiumPlus } = __entitlementUpgradeSetsForTest;
+      expect(premiumPlus.has("loadout")).toBe(true);
+      expect(premiumPlus.has("meal_ai")).toBe(true);
+      expect(premiumPlus.has("create_workout")).toBe(false);
     });
 
     it("returns null for an admin denied loadout", () => {

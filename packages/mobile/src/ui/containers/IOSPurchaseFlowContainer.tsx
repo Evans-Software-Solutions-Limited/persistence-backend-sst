@@ -8,6 +8,7 @@ import {
 import {
   getSubscriptionDisplayInfo,
   isCancelledButActive as isCancelledButActiveCheck,
+  TRAINER_TIER_NAMES,
 } from "@/domain/services/subscriptionService";
 import {
   findPackageForTier,
@@ -44,16 +45,17 @@ export const APP_STORE_SUBSCRIPTIONS_URL =
 /**
  * Coach tiers with NO annual IAP product, hidden on the yearly cycle.
  *
- * These previously rendered a "Contact Sales" mailto on annual. That sold a
- * subscription unlocking in-app functionality outside IAP directly from the
- * paywall — Apple Guideline 3.1.1. Annual IAP isn't available for both
- * either: £3,000/yr is above Apple's standard price points. Monthly IAP
- * products exist for both, so the plans stay fully purchasable.
+ * ⚠ Spec-29 Phase 2 (2026-08-05): EMPTY. The retired `small_business` /
+ * `medium_enterprise` tiers were the only monthly-only ones; every tier on the
+ * new coach ladder (`individual_trainer` / `start_up_coach_plus` / `coach` /
+ * `coach_pro`) has both a monthly and an annual IAP product, so none are hidden
+ * on the yearly cycle. Kept as a (now empty) set rather than deleted so the
+ * paywall's `monthlyOnlyTiers.has(...)` guard stays wired for any future
+ * monthly-only tier without a signature change.
  */
-export const MONTHLY_ONLY_TIERS: ReadonlySet<SubscriptionTierName> = new Set([
-  "small_business",
-  "medium_enterprise",
-]);
+export const MONTHLY_ONLY_TIERS: ReadonlySet<SubscriptionTierName> = new Set(
+  [],
+);
 
 type Role = "user" | "trainer";
 
@@ -71,10 +73,11 @@ export function IOSPurchaseFlowContainer() {
       ? (searchParams.cycle as BillingCycle)
       : null;
   const initialRoleParam = searchParams.role;
-  const tierParamImpliesTrainer =
-    searchParams.tier === "individual_trainer" ||
-    searchParams.tier === "small_business" ||
-    searchParams.tier === "medium_enterprise";
+  // Derived from the catalog's trainer-tier set (not a hardcoded literal list)
+  // so it can never drift when the coach ladder changes — spec-29 Phase 2.
+  const tierParamImpliesTrainer = TRAINER_TIER_NAMES.has(
+    searchParams.tier as SubscriptionTierName,
+  );
 
   const tiersQuery = useSubscriptionTiers();
   const subQuery = useMySubscription();

@@ -228,14 +228,34 @@ riskiest — that asymmetry should shape whatever the library spec becomes.
 | D4  | Resolution never cached cross-user; never fabricates a silent match.                                  |
 | D5  | Cap 10 distinct cycle-workouts (spec-21 § 7.3 corrected); async job; 413 beyond.                      |
 | D6  | Shared cross-user library PARKED (§ 9).                                                               |
-| C1  | ⚠ **Brad checkpoint** — cache reuse across users. Full detail in § 11.                                |
-| C2  | ⚠ **Brad checkpoint** — the eval quality bar per input type. Full detail in § 11.                     |
+| C1  | ✅ **RESOLVED (Brad, 2026-08-05) — Option A**: public-URL fetches shared cross-user, uploads per-user only, **no exclusion list** in v1. Detail in § 11. |
+| C2  | ✅ **RESOLVED (Brad, 2026-08-05)** — framing accepted (bar = "editing beats retyping", per-failure-mode, auto-match precision strict) + starting thresholds accepted as proposed. Detail in § 11. |
 
-## 11. Open checkpoints — what I need from Brad, in detail
+## 11. Checkpoints — RESOLVED (Brad, 2026-08-05)
 
-Both are decisions only Brad can make; both are recorded here so the answer lands
-against the spec rather than in chat history. Neither blocks the spec existing;
-both gate the START of the phase named.
+Both are decisions only Brad could make; both are now answered and the answers are
+recorded here so they land against the spec rather than in chat history. Neither
+blocked the spec existing; both gated the START of the phase named — now unblocked.
+
+> **✅ C1 — Option A, no exclusion list.** Public-URL fetches (retrieved without
+> authentication) may be served cross-user by content hash; photo/PDF **uploads**
+> stay keyed per-user and are never served to anyone else. No paywalled-domain
+> exclusion list in v1 — the line is "public URL = fetchable without auth". Build
+> the `extraction_cache` per § 4 with `reuse_scope` = `public_url` (shared) vs
+> `upload` (per-user).
+>
+> **✅ C2 — framing + starting thresholds accepted as proposed.** The bar is
+> "editing the draft beats retyping from scratch", assessed per failure-mode, with
+> auto-match precision as the strict axis. Phase-0 ships these thresholds and the
+> eval validates against them; move them only if Phase 0 shows cause:
+>
+> - Structure extraction: **≥ ~85 % per-field accuracy** AND **no systematic
+>   whole-workout / whole-exercise drops**.
+> - Exercise-name **auto-match precision ≥ ~95 %**; recall unbounded (everything
+>   else → ambiguous/unmatched, which cost only a tap).
+> - A type that misses its bar ships **disabled**, not degraded.
+
+The original framing for each, kept for the record:
 
 ### C1 — Can an AI extraction be reused across users, and for which sources?
 

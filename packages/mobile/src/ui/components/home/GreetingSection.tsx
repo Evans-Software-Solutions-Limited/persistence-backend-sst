@@ -33,9 +33,11 @@ const tierDisplayNameMap: Record<string, string> = {
   free: "Free",
   premium: "Premium",
   premium_plus: "Premium+",
-  individual_trainer: "Individual Trainer",
-  small_business: "Small Business Trainer",
-  medium_enterprise: "Medium / Enterprise Trainer",
+  // Spec-29 Phase 2 coach ladder (2026-08-05).
+  individual_trainer: "Start Up Coach",
+  start_up_coach_plus: "Start Up Coach +",
+  coach: "Coach",
+  coach_pro: "Coach Pro",
 };
 
 function getTimeBasedGreeting(): string {

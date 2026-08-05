@@ -144,9 +144,10 @@ describe("nextTrainerTierUp", () => {
   it("steps the trainer-tier ladder; non-trainer → cheapest trainer tier; top → null", () => {
     expect(nextTrainerTierUp("free")).toBe("individual_trainer");
     expect(nextTrainerTierUp("premium")).toBe("individual_trainer");
-    expect(nextTrainerTierUp("individual_trainer")).toBe("small_business");
-    expect(nextTrainerTierUp("small_business")).toBe("medium_enterprise");
-    expect(nextTrainerTierUp("medium_enterprise")).toBeNull();
+    expect(nextTrainerTierUp("individual_trainer")).toBe("coach");
+    expect(nextTrainerTierUp("start_up_coach_plus")).toBe("coach");
+    expect(nextTrainerTierUp("coach")).toBe("coach_pro");
+    expect(nextTrainerTierUp("coach_pro")).toBeNull();
   });
 
   it("maps premium_plus to the cheapest trainer tier, same as premium (M19-P0)", () => {
@@ -226,7 +227,7 @@ describe("computeClientSeatVerdict (pure — mirrors the backend cap)", () => {
 
   it("past_due trainer is treated as not entitled → no seats (mirrors backend)", () => {
     const sub = makeSub({
-      tierName: "small_business",
+      tierName: "coach_pro",
       isTrainerTier: true,
       trainerClientLimit: 30,
       paymentStatus: "past_due",
@@ -772,7 +773,7 @@ describe("useFeatureGate hook", () => {
     // is defensive; the assertion proves we don't suggest a sideways switch
     // to another trainer tier when they're already on one.
     api.mySubscription = makeSub({
-      tierName: "small_business",
+      tierName: "coach",
       isTrainerTier: false,
     });
     api.subscriptionTiers = [PREMIUM_TIER];
@@ -782,7 +783,7 @@ describe("useFeatureGate hook", () => {
     });
 
     await waitFor(() =>
-      expect(result.current.gateProps.currentTier).toBe("small_business"),
+      expect(result.current.gateProps.currentTier).toBe("coach"),
     );
     expect(result.current.gateProps.upgradeTo).toBeNull();
   });

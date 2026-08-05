@@ -229,8 +229,9 @@ describe("shouldShowTrialBanner", () => {
   it("uses trainer-trial flag for any trainer tier (post tier-simplification — all trainer tiers carry the former Pro entitlements)", () => {
     const trainerTiers: SubscriptionTierName[] = [
       "individual_trainer",
-      "small_business",
-      "medium_enterprise",
+      "start_up_coach_plus",
+      "coach",
+      "coach_pro",
     ];
     for (const tier of trainerTiers) {
       expect(shouldShowTrialBanner(eligible, tier)).toBe(true);
@@ -258,9 +259,10 @@ describe("getSubscriptionDisplayInfo", () => {
   const tierNames: Record<string, string> = {
     free: "Free",
     premium: "Premium",
-    individual_trainer: "Individual Trainer",
-    small_business: "Small Business Trainer",
-    medium_enterprise: "Medium / Enterprise Trainer",
+    individual_trainer: "Start Up Coach",
+    start_up_coach_plus: "Start Up Coach +",
+    coach: "Coach",
+    coach_pro: "Coach Pro",
   };
 
   it("returns Free-defaults for null subscription", () => {
@@ -287,28 +289,28 @@ describe("getSubscriptionDisplayInfo", () => {
     const sparseCatalog: Record<string, string> = { free: "Free" };
     const info = getSubscriptionDisplayInfo(
       makeSub({
-        tierName: "small_business",
-        tierDisplayName: "Small Business Trainer",
+        tierName: "coach",
+        tierDisplayName: "Coach",
       }),
-      sparseCatalog, // doesn't include small_business
+      sparseCatalog, // doesn't include coach
     );
-    expect(info.currentTierDisplayName).toBe("Small Business Trainer");
+    expect(info.currentTierDisplayName).toBe("Coach");
   });
 
   it("surfaces scheduledChange metadata when present", () => {
     const info = getSubscriptionDisplayInfo(
       makeSub({
-        tierName: "small_business",
+        tierName: "coach",
         scheduledChange: {
           nextTierName: "individual_trainer",
-          nextDisplayName: "Individual Trainer",
+          nextDisplayName: "Start Up Coach",
           effectiveAt: "2026-06-01T00:00:00.000Z",
         },
       }),
       tierNames,
     );
     expect(info.hasScheduledChange).toBe(true);
-    expect(info.nextTierDisplayName).toBe("Individual Trainer");
+    expect(info.nextTierDisplayName).toBe("Start Up Coach");
     expect(info.effectiveAt).toBe("2026-06-01T00:00:00.000Z");
     expect(info.currentTierActiveUntil).toBe(FUTURE_ISO);
   });
@@ -318,14 +320,14 @@ describe("getSubscriptionDisplayInfo", () => {
     const info = getSubscriptionDisplayInfo(
       makeSub({
         scheduledChange: {
-          nextTierName: "small_business",
-          nextDisplayName: "Small Business Trainer",
+          nextTierName: "coach",
+          nextDisplayName: "Coach",
           effectiveAt: "2026-06-01T00:00:00.000Z",
         },
       }),
       sparseCatalog,
     );
-    expect(info.nextTierDisplayName).toBe("Small Business Trainer");
+    expect(info.nextTierDisplayName).toBe("Coach");
   });
 });
 
@@ -355,15 +357,24 @@ describe("tierSatisfies (M10.6)", () => {
     expect(tierSatisfies("individual_trainer", "individual_trainer")).toBe(
       true,
     );
-    expect(tierSatisfies("small_business", "small_business")).toBe(true);
-    expect(tierSatisfies("medium_enterprise", "medium_enterprise")).toBe(true);
+    expect(tierSatisfies("start_up_coach_plus", "start_up_coach_plus")).toBe(
+      true,
+    );
+    expect(tierSatisfies("coach", "coach")).toBe(true);
+    expect(tierSatisfies("coach_pro", "coach_pro")).toBe(true);
   });
 
-  it("any trainer-pro satisfies any trainer-standard requirement (rank-based, cross-family)", () => {
-    // Both rank 2 vs rank 1 on the trainer track. The hook doesn't
-    // need to know whether they're individual vs small_business — a
-    // Pro tier on any family is "more entitlement" than Standard.
-    expect(tierSatisfies("small_business", "individual_trainer")).toBe(true);
+  it("any higher coach rung satisfies any lower coach rung requirement (rank-based, cross-family)", () => {
+    // Spec-29 Phase 2 coach ladder: each rung is a strict superset of the
+    // one below it, so rank 3 (coach) satisfies rank 2 (start_up_coach_plus)
+    // and rank 1 (individual_trainer) — the hook doesn't need to reason
+    // about WHICH suite/seat feature backs the requirement, just the rank.
+    expect(tierSatisfies("start_up_coach_plus", "individual_trainer")).toBe(
+      true,
+    );
+    expect(tierSatisfies("coach", "start_up_coach_plus")).toBe(true);
+    expect(tierSatisfies("coach_pro", "coach")).toBe(true);
+    expect(tierSatisfies("coach_pro", "individual_trainer")).toBe(true);
   });
 
   // -- Track independence (AC 12.7) --
@@ -371,12 +382,12 @@ describe("tierSatisfies (M10.6)", () => {
   it("user-track tier does NOT satisfy trainer-track requirement", () => {
     expect(tierSatisfies("premium", "individual_trainer")).toBe(false);
     expect(tierSatisfies("premium", "individual_trainer")).toBe(false);
-    expect(tierSatisfies("premium", "small_business")).toBe(false);
+    expect(tierSatisfies("premium", "coach")).toBe(false);
   });
 
   it("trainer-track tier does NOT satisfy user-track requirement", () => {
     expect(tierSatisfies("individual_trainer", "premium")).toBe(false);
-    expect(tierSatisfies("small_business", "premium")).toBe(false);
+    expect(tierSatisfies("coach", "premium")).toBe(false);
   });
 
   // -- Edge cases --

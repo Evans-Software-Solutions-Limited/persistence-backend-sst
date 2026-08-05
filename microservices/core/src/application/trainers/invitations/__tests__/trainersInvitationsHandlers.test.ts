@@ -218,9 +218,9 @@ describe("trainersInvitationsCreateHandler", () => {
         {
           allowed: false,
           reason: "limit",
-          currentTier: "small_business",
-          upgradeTo: "medium_enterprise",
-          upgradePriceMonthly: 199.99,
+          currentTier: "coach",
+          upgradeTo: "coach_pro",
+          upgradePriceMonthly: 99.99,
         },
         "trainer_clients",
       ),
@@ -235,7 +235,7 @@ describe("trainersInvitationsCreateHandler", () => {
     const body = (await res.json()) as any;
     expect(body.code).toBe("ENTITLEMENT_DENIED");
     expect(body.feature).toBe("trainer_clients");
-    expect(body.upgrade_to).toBe("medium_enterprise");
+    expect(body.upgrade_to).toBe("coach_pro");
     // The gate ran before the repository → no invite was created.
     expect(mocks.inviteClientByEmail).not.toHaveBeenCalled();
   });

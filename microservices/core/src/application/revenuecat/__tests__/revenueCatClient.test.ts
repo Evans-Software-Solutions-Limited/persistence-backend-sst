@@ -118,13 +118,13 @@ describe("normalizeSubscription", () => {
         entitlements: {
           items: [
             { lookup_key: "premium" },
-            { lookup_key: "medium_enterprise" },
+            { lookup_key: "coach_pro" },
             { lookup_key: "unknown" },
           ],
         },
       }),
     );
-    expect(result?.tier).toBe("medium_enterprise");
+    expect(result?.tier).toBe("coach_pro");
   });
 
   it("flags auto-renew off (cancelled but active)", () => {

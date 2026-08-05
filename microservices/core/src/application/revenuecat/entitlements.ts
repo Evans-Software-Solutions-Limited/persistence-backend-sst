@@ -17,8 +17,9 @@ export const RC_ENTITLEMENT_IDS = [
   "premium",
   "premium_plus",
   "individual_trainer",
-  "small_business",
-  "medium_enterprise",
+  "start_up_coach_plus",
+  "coach",
+  "coach_pro",
 ] as const;
 
 /**
@@ -33,8 +34,9 @@ export function rcEntitlementToTier(
     case "premium":
     case "premium_plus":
     case "individual_trainer":
-    case "small_business":
-    case "medium_enterprise":
+    case "start_up_coach_plus":
+    case "coach":
+    case "coach_pro":
       return entitlementId;
     default:
       return null;
@@ -53,8 +55,9 @@ export const TIER_RANK: Record<SubscriptionTierName, number> = {
   premium: 1,
   premium_plus: 2,
   individual_trainer: 3,
-  small_business: 4,
-  medium_enterprise: 5,
+  start_up_coach_plus: 4,
+  coach: 5,
+  coach_pro: 6,
 };
 
 /**

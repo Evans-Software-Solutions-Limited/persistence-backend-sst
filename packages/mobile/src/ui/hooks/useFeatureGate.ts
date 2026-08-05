@@ -116,8 +116,9 @@ const USER_UPGRADE_CHAIN: Partial<
  */
 const TRAINER_TIER_NAMES: ReadonlySet<SubscriptionTierName> = new Set([
   "individual_trainer",
-  "small_business",
-  "medium_enterprise",
+  "start_up_coach_plus",
+  "coach",
+  "coach_pro",
 ]);
 
 /**
@@ -129,7 +130,7 @@ const TRAINER_TIER_NAMES: ReadonlySet<SubscriptionTierName> = new Set([
  * a free user hitting `trainer_clients` saw "Upgrade to Premium",
  * paid for Premium, returned to the same paywall (because Premium
  * has `isTrainerTier: false`). Trainer-only features now route to
- * `individual_trainer` (cheapest trainer tier, £14.99/mo).
+ * `individual_trainer` (cheapest trainer tier, £18.99/mo).
  */
 function resolveUpgradeTarget(
   currentTier: SubscriptionTierName,
@@ -254,15 +255,18 @@ const TRAINER_TIER_LADDER: Record<
   free: "individual_trainer",
   premium: "individual_trainer",
   premium_plus: "individual_trainer",
-  individual_trainer: "small_business",
-  small_business: "medium_enterprise",
-  medium_enterprise: null,
+  individual_trainer: "coach",
+  start_up_coach_plus: "coach",
+  coach: "coach_pro",
+  coach_pro: null,
 };
 
 /**
  * The next trainer tier up (for the at-cap "change subscription" CTA). Mirrors
  * the backend `nextTrainerTierUp`: non-trainer → cheapest trainer tier;
- * `medium_enterprise` (top) → no higher cap to upsell.
+ * `coach_pro` (top) → no higher cap to upsell. `start_up_coach_plus` is a SUITE
+ * upgrade at the same 5-seat cap as `individual_trainer`, so from a SEAT deny it
+ * steps to `coach`, not to itself (spec-29 Phase 2, 2026-08-05).
  */
 export function nextTrainerTierUp(
   tier: SubscriptionTierName,
