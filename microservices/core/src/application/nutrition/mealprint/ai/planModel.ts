@@ -93,6 +93,31 @@ export interface ModelPlanMeal {
   items: SuggestedItem[];
 }
 
+/**
+ * A composed item, enriched with the resolved candidate's `kind` and
+ * per-SERVING macros (mealprint gaps 1+2 — see module docstring). These come
+ * straight from the candidate row the model was offered, never from the
+ * model's own output, so they carry the same trust level as everything else
+ * `composeDayPlan` recomputes. `kcal`/`proteinG`/`carbsG`/`fatG` are for ONE
+ * serving — the caller multiplies by `servings` for this item's total, and
+ * that is also what lets the mobile draft recompute a meal's totals when the
+ * user adjusts an item's servings, without a round trip.
+ */
+export interface ComposedPlanItem extends SuggestedItem {
+  kind: MealprintCandidate["kind"];
+  kcal: number;
+  proteinG: number;
+  carbsG: number;
+  fatG: number;
+}
+
+export interface ComposedPlanMeal {
+  name: string;
+  reason: string;
+  logSlot: PlanLogSlot;
+  items: ComposedPlanItem[];
+}
+
 export interface PlanUsage {
   modelId: string;
   latencyMs: number;
@@ -101,7 +126,7 @@ export interface PlanUsage {
 }
 
 export interface PlanResult {
-  meals: ModelPlanMeal[];
+  meals: ComposedPlanMeal[];
   usage: PlanUsage;
 }
 
@@ -372,22 +397,43 @@ export async function composeDayPlan(
 
   const meals = parsePlanMeals(findToolUse(response, TOOL_NAME));
 
-  const offered = new Set(input.candidates.map((candidate) => candidate.id));
-  const usable = meals.filter((meal) =>
-    meal.items.every((item) => offered.has(item.candidateId)),
+  const byId = new Map<string, MealprintCandidate>(
+    input.candidates.map((candidate) => [candidate.id, candidate]),
+  );
+  const usableRaw = meals.filter((meal) =>
+    meal.items.every((item) => byId.has(item.candidateId)),
   );
 
-  if (usable.length === 0) {
+  if (usableRaw.length === 0) {
     throw new AiUnreadableError(
       "ai_non_member_candidate_id: no meal referenced only offered candidates",
     );
   }
 
-  if (usable.length < meals.length) {
+  if (usableRaw.length < meals.length) {
     console.warn(
-      `[mealprint-plan] dropped ${meals.length - usable.length} of ${meals.length} meals for non-member candidate ids (candidates=${input.candidates.length})`,
+      `[mealprint-plan] dropped ${meals.length - usableRaw.length} of ${meals.length} meals for non-member candidate ids (candidates=${input.candidates.length})`,
     );
   }
+
+  // Enrich each item with the resolved candidate's kind + per-serving
+  // macros (gaps 1+2). Every id here is a member of `byId` by construction —
+  // the membership filter above ran first.
+  const usable: ComposedPlanMeal[] = usableRaw.map((meal) => ({
+    ...meal,
+    items: meal.items.map((item) => {
+      const candidate = byId.get(item.candidateId)!;
+      return {
+        candidateId: item.candidateId,
+        servings: item.servings,
+        kind: candidate.kind,
+        kcal: candidate.kcal,
+        proteinG: candidate.proteinG,
+        carbsG: candidate.carbsG,
+        fatG: candidate.fatG,
+      };
+    }),
+  }));
 
   const usage = (
     response as unknown as {

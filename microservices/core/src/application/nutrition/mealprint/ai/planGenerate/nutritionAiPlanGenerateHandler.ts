@@ -59,7 +59,17 @@ interface VerifiedPlanMeal {
   name: string;
   reason: string;
   logSlot: string;
-  items: Array<{ candidateId: string; servings: number; name: string }>;
+  items: Array<{
+    candidateId: string;
+    kind: MealprintCandidate["kind"];
+    servings: number;
+    name: string;
+    /** Per ONE serving — the mobile draft multiplies by `servings` itself. */
+    kcal: number;
+    proteinG: number;
+    carbsG: number;
+    fatG: number;
+  }>;
   kcal: number;
   proteinG: number;
   carbsG: number;
@@ -312,8 +322,13 @@ export const nutritionAiPlanGenerateHandler = new Elysia()
             }
             return {
               candidateId: item.candidateId,
+              kind: candidate.kind,
               servings: item.servings,
               name: candidate.name,
+              kcal: candidate.kcal,
+              proteinG: candidate.proteinG,
+              carbsG: candidate.carbsG,
+              fatG: candidate.fatG,
             };
           });
 

@@ -11,7 +11,18 @@ function result(over: Partial<PlanGenerateResult> = {}): PlanGenerateResult {
         name: "Chicken & rice bowl",
         reason: "protein",
         logSlot: "dinner",
-        items: [{ candidateId: "food-1", servings: 1, name: "Chicken" }],
+        items: [
+          {
+            candidateId: "food-1",
+            kind: "food",
+            servings: 1,
+            name: "Chicken",
+            kcal: 600,
+            proteinG: 45,
+            carbsG: 60,
+            fatG: 15,
+          },
+        ],
         kcal: 600,
         proteinG: 45,
         carbsG: 60,
@@ -180,12 +191,53 @@ describe("usePlanFlow — removeMeal (deterministic edit)", () => {
   });
 });
 
+describe("usePlanFlow — updateItemServings (serving stepper, AC 4.4)", () => {
+  it("recomputes the meal's totals from the new servings, deterministically", () => {
+    get().open("2026-08-05");
+    get().draftReady(result());
+    const localId = get().draft!.meals[0]!.localId;
+
+    get().updateItemServings(localId, "food-1", 2);
+
+    const meal = get().draft!.meals[0]!.meal;
+    expect(meal.items[0]!.servings).toBe(2);
+    // 600 kcal/serving (the fixture's per-serving figure) × 2.
+    expect(meal.kcal).toBe(1200);
+  });
+
+  it("is a no-op before a draft exists", () => {
+    get().open("2026-08-05");
+    expect(get().draft).toBeNull();
+    get().updateItemServings("nonexistent", "food-1", 2);
+    expect(get().draft).toBeNull();
+  });
+
+  it("is a no-op for a localId that isn't in the draft", () => {
+    get().open("2026-08-05");
+    get().draftReady(result());
+    const before = get().draft;
+    get().updateItemServings("nonexistent-meal", "food-1", 2);
+    expect(get().draft).toBe(before);
+  });
+});
+
 describe("usePlanFlow — swap", () => {
   const swapMeal: PlanSwapMeal = {
     name: "Salmon & greens",
     reason: "omega-3",
     logSlot: "dinner",
-    items: [{ candidateId: "food-2", servings: 1, name: "Salmon" }],
+    items: [
+      {
+        candidateId: "food-2",
+        kind: "food",
+        servings: 1,
+        name: "Salmon",
+        kcal: 500,
+        proteinG: 40,
+        carbsG: 20,
+        fatG: 20,
+      },
+    ],
     kcal: 500,
     proteinG: 40,
     carbsG: 20,
@@ -248,7 +300,18 @@ describe("usePlanFlow — markUnresolvable (accept-time flagging)", () => {
             name: "Has the stale id",
             reason: "x",
             logSlot: "lunch",
-            items: [{ candidateId: "stale-id", servings: 1, name: "x" }],
+            items: [
+              {
+                candidateId: "stale-id",
+                kind: "food",
+                servings: 1,
+                name: "x",
+                kcal: 400,
+                proteinG: 30,
+                carbsG: 40,
+                fatG: 10,
+              },
+            ],
             kcal: 400,
             proteinG: 30,
             carbsG: 40,

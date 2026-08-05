@@ -250,8 +250,13 @@ export const nutritionAiPlanMealSwapHandler = new Elysia()
             containsUnverified = true;
           return {
             candidateId: item.candidateId,
+            kind: candidate.kind,
             servings: item.servings,
             name: candidate.name,
+            kcal: candidate.kcal,
+            proteinG: candidate.proteinG,
+            carbsG: candidate.carbsG,
+            fatG: candidate.fatG,
           };
         });
 

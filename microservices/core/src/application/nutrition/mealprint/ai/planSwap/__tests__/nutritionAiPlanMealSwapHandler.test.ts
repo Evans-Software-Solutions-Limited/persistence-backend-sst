@@ -188,6 +188,33 @@ describe("POST /nutrition/ai/plan-meal-swap", () => {
     expect(parsed.data.meal.proteinG).toBe(30);
   });
 
+  // Mealprint gaps 1+2: a swap-in item needs the same kind + per-serving
+  // macros as generate, so a recipe/meal-kind replacement routes correctly
+  // on accept and the draft can recompute servings edits client-side.
+  it("carries the swapped item's candidate kind and per-serving macros", async () => {
+    candidateMocks.listOwnRecipeCandidates.mockResolvedValue([
+      candidate("r1", { kind: "recipe", kcal: 500, proteinG: 40 }),
+    ]);
+    composeDayPlanMock.mockResolvedValue({
+      meals: [
+        {
+          name: "Chilli",
+          reason: "fills the gap",
+          logSlot: "breakfast",
+          items: [{ candidateId: "r1", servings: 1 }],
+        },
+      ],
+      usage: { modelId: "m", latencyMs: 5, inputTokens: 1, outputTokens: 1 },
+    });
+
+    const res = await app.handle(post());
+    const parsed = await body(res);
+    const [item] = parsed.data.meal.items;
+    expect(item.kind).toBe("recipe");
+    expect(item.kcal).toBe(500);
+    expect(item.proteinG).toBe(40);
+  });
+
   it("returns budget_exhausted (no model call) when held meals already meet the day", async () => {
     const res = await app.handle(
       post({

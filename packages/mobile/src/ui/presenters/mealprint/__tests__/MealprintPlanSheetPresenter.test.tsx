@@ -18,7 +18,16 @@ function draft(over: Partial<PlanDraft> = {}): PlanDraft {
           reason: "High protein, fits the rest of your macros.",
           logSlot: "dinner",
           items: [
-            { candidateId: "food-1", servings: 1.5, name: "Chicken breast" },
+            {
+              candidateId: "food-1",
+              kind: "food",
+              servings: 1.5,
+              name: "Chicken breast",
+              kcal: 250,
+              proteinG: 30,
+              carbsG: 0,
+              fatG: 8,
+            },
           ],
           kcal: 600,
           proteinG: 45,
@@ -57,6 +66,7 @@ function props(
     swappingId: null,
     onSwapMeal: jest.fn(),
     onRemoveMeal: jest.fn(),
+    onItemServingsChange: jest.fn(),
     draftTotals: { kcal: 0, proteinG: 0, carbsG: 0, fatG: 0 },
     accepting: false,
     acceptBlocked: false,
@@ -200,6 +210,65 @@ describe("MealprintPlanSheetPresenter — draft stage", () => {
     expect(onSwapMeal).toHaveBeenCalledWith("local-1");
     fireEvent.press(getByTestId("mealprint-plan-meal-remove-local-1"));
     expect(onRemoveMeal).toHaveBeenCalledWith("local-1");
+  });
+
+  it("reports a servings increase for the tapped item via +/- controls (AC 4.4)", () => {
+    const onItemServingsChange = jest.fn();
+    const { getByTestId } = renderWithTheme(
+      <MealprintPlanSheetPresenter
+        {...props({
+          stage: "draft",
+          draft: draft(),
+          onItemServingsChange,
+        })}
+      />,
+    );
+    fireEvent.press(
+      getByTestId("mealprint-plan-item-servings-local-1-food-1-inc"),
+    );
+    expect(onItemServingsChange).toHaveBeenCalledWith(
+      "local-1",
+      "food-1",
+      1.75,
+    );
+
+    fireEvent.press(
+      getByTestId("mealprint-plan-item-servings-local-1-food-1-dec"),
+    );
+    expect(onItemServingsChange).toHaveBeenCalledWith(
+      "local-1",
+      "food-1",
+      1.25,
+    );
+  });
+
+  it("disables the item stepper on a flagged meal", () => {
+    const { getByTestId } = renderWithTheme(
+      <MealprintPlanSheetPresenter
+        {...props({
+          stage: "draft",
+          draft: draft(),
+          flaggedIds: new Set(["local-1"]),
+          acceptBlocked: true,
+        })}
+      />,
+    );
+    const inc = getByTestId("mealprint-plan-item-servings-local-1-food-1-inc");
+    expect(inc.props.accessibilityState?.disabled).toBe(true);
+  });
+
+  it("disables the item stepper on the meal mid-swap", () => {
+    const { getByTestId } = renderWithTheme(
+      <MealprintPlanSheetPresenter
+        {...props({
+          stage: "draft",
+          draft: draft(),
+          swappingId: "local-1",
+        })}
+      />,
+    );
+    const inc = getByTestId("mealprint-plan-item-servings-local-1-food-1-inc");
+    expect(inc.props.accessibilityState?.disabled).toBe(true);
   });
 
   it("shows the flagged banner and blocks Accept when a meal is flagged", () => {
