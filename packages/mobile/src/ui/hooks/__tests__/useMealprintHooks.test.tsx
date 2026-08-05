@@ -197,19 +197,18 @@ describe("computeMealprintVerdict", () => {
     expect(computeMealprintVerdict(subscription("premium"))).toBe(false);
   });
 
-  it("⚠ denies ALL THREE trainer tiers — this is where it diverges from Loadout", () => {
-    // `20260803120200_mealprint_access.sql` grants mealprint_access to
-    // premium_plus ONLY: no coach surface in v1, and `individual_trainer` is
-    // already the most cost-exposed tier. `loadout_access` grants all three.
-    // Aligning the two records would silently hand a £14.99 coach a £29.99
-    // feature.
+  it("denies the entry coach rung but allows the three paid coach tiers (spec-29 Phase 2 — now tracks Loadout exactly)", () => {
+    // `20260805120000_coach_ladder_restructure.sql` made mealprint_access track
+    // loadout_access exactly: the entry rung `individual_trainer` (Start Up
+    // Coach) has neither suite feature; the three PAID coach tiers carry both.
     expect(computeMealprintVerdict(subscription("individual_trainer"))).toBe(
       false,
     );
-    expect(computeMealprintVerdict(subscription("small_business"))).toBe(false);
-    expect(computeMealprintVerdict(subscription("medium_enterprise"))).toBe(
-      false,
+    expect(computeMealprintVerdict(subscription("start_up_coach_plus"))).toBe(
+      true,
     );
+    expect(computeMealprintVerdict(subscription("coach"))).toBe(true);
+    expect(computeMealprintVerdict(subscription("coach_pro"))).toBe(true);
   });
 
   it("denies an expired/past_due premium_plus", () => {

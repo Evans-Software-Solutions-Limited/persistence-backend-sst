@@ -20,10 +20,10 @@ label this, or the org tiers read ~20 % cheaper than they bill.
 | `free`                | Free               | 0         | —          | —       | ✗     | —                         |
 | `premium`             | Premium            | **16.99** | **139.99** | —       | ✗     | IAP                       |
 | `premium_plus`        | Premium+           | 29.99     | **249.99** | —       | ✓     | IAP                       |
-| `individual_trainer`  | **Start Up Coach** | **18.99** | **189.99** | 5       | ✗     | IAP                       |
-| `start_up_coach_plus` | Start Up Coach +   | 34.99     | 349.99     | 5       | ✓     | IAP                       |
-| `coach`               | Coach              | 59.99     | 599.99     | 15      | ✓     | IAP                       |
-| `coach_pro`           | Coach Pro          | 99.99     | 999.99     | 30      | ✓     | **IAP — top in-app rung** |
+| `individual_trainer`  | **Start Up Coach** | **18.99** | **159.99** | 5       | ✗     | IAP                       |
+| `start_up_coach_plus` | Start Up Coach +   | 34.99     | 293.99     | 5       | ✓     | IAP                       |
+| `coach`               | Coach              | 59.99     | 499.99     | 15      | ✓     | IAP                       |
+| `coach_pro`           | Coach Pro          | 99.99     | 839.99     | 30      | ✓     | **IAP — top in-app rung** |
 | `studio`              | Studio             | 179.99    | —          | 75      | ✓     | Web                       |
 | `studio_pro`          | Studio Pro         | 229.99    | —          | 200     | ✓     | Web                       |
 | `enterprise`          | Enterprise         | invoiced  | —          | 200+    | ✓     | Web                       |
@@ -32,20 +32,15 @@ label this, or the org tiers read ~20 % cheaper than they bill.
 £9.99/mo but **£49.99/yr** — 58 % off — so our 16.7 % was too shallow either to compete
 or to drive prepay. Web tiers are monthly or invoiced; annual there is a contract term.
 
-⚠ **Only the two consumer rows apply the 30 % rule.** Premium £139.99 (31 % off
-£203.88) and Premium+ £249.99 (31 % off £359.88) are correct; the COACH ladder is still
-on the old 10×-monthly (16.7 %) — Coach £599.99 should be ~£499.99 and Coach Pro
-£999.99 ~£839.99 if the deeper discount is extended to it. Left unchanged deliberately:
-a 30 % discount on the coach ladder is a bigger revenue decision than the consumer one
-(coaches churn less, so the prepay incentive buys less) and it is Brad's call, not a
-consistency fix. **Resolve before creating ASC products** — annual price points are
-painful to change once purchasable.
+✅ **RESOLVED (Brad, 2026-08-05): the 30 % annual rule is extended to the ENTIRE coach
+ladder.** All four coach annuals are now 30 % off 12×-monthly: Start Up Coach £159.99,
+Start Up Coach + £293.99, Coach £499.99, Coach Pro £999.99 → £839.99. This supersedes
+the earlier "consumer rows only" default; Premium £139.99 and Premium+ £249.99 are
+unchanged. Every IAP annual across the catalog now carries the same ~30 % discount, so
+the pricing page needs no per-ladder discount caveat.
 
-⚠ **Start Up Coach's annual HAD to move with its monthly, and this is why.** At £18.99/mo
-the old £149.99 annual would be **34 % off — deeper than the consumer discount**, by
-accident rather than decision. £189.99 keeps it on the coach ladder's 10×-monthly
-convention pending that call. If the 30 % rule is extended to coaches it becomes
-~£159.99.
+⚠ **Start Up Coach's annual moved with its monthly.** At £18.99/mo, 30 % off 12× is
+£159.99 (was £189.99 on the old 10×-monthly convention before this decision).
 
 ⚠ `individual_trainer` keeps its `tier_name`. `RC_ENTITLEMENT_IDS`
 (`revenuecat/entitlements.ts:16-22`) **are** the tier_names and

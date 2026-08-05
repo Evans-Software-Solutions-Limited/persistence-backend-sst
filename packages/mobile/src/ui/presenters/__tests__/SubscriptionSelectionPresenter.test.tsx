@@ -47,18 +47,18 @@ const INDIVIDUAL_TRAINER: SubscriptionTier = {
   exportAccess: true,
   features: { ai_buddy: true, trainer_clients: 2 },
 };
-const SMALL_BUSINESS: SubscriptionTier = {
+const COACH: SubscriptionTier = {
   ...INDIVIDUAL_TRAINER,
-  tierName: "small_business",
-  displayName: "Small Business Trainer",
-  trainerClientLimit: 30,
-  priceMonthly: 75,
-  priceYearly: 750,
+  tierName: "coach",
+  displayName: "Coach",
+  trainerClientLimit: 15,
+  priceMonthly: 59.99,
+  priceYearly: 499.99,
 };
 
 function defaultProps(): SubscriptionSelectionPresenterProps {
   return {
-    subscriptionTiers: [PREMIUM, INDIVIDUAL_TRAINER, SMALL_BUSINESS],
+    subscriptionTiers: [PREMIUM, INDIVIDUAL_TRAINER, COACH],
     isLoading: false,
     errorMessage: null,
     billingCycle: "monthly",
@@ -146,12 +146,7 @@ describe("SubscriptionSelectionPresenter — render states", () => {
     render(
       <SubscriptionSelectionPresenter
         {...defaultProps()}
-        subscriptionTiers={[
-          PREMIUM_PLUS,
-          PREMIUM,
-          INDIVIDUAL_TRAINER,
-          SMALL_BUSINESS,
-        ]}
+        subscriptionTiers={[PREMIUM_PLUS, PREMIUM, INDIVIDUAL_TRAINER, COACH]}
       />,
     );
     expect(screen.getByTestId("subscription-card-premium")).toBeTruthy();

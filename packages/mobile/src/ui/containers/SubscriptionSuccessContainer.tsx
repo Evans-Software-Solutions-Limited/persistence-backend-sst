@@ -57,13 +57,15 @@ export function getSubscriptionBenefits(
   return benefits;
 }
 
-/** The tier names that unlock coach mode + the trainer CTA. */
+/**
+ * The tier names that unlock coach mode + the trainer CTA.
+ *
+ * Spec-29 Phase 2 (2026-08-05) retired the `small_business` / `medium_enterprise`
+ * business tiers in favour of the coach ladder (`start_up_coach_plus` / `coach` /
+ * `coach_pro`), all of which contain "coach" rather than "business" / "enterprise".
+ */
 function isTrainerTierName(tier: SubscriptionTierName): boolean {
-  return (
-    tier.includes("trainer") ||
-    tier.includes("business") ||
-    tier.includes("enterprise")
-  );
+  return tier.includes("trainer") || tier.includes("coach");
 }
 
 /**
@@ -76,8 +78,9 @@ const KNOWN_TIER_NAMES: Record<SubscriptionTierName, true> = {
   premium: true,
   premium_plus: true,
   individual_trainer: true,
-  small_business: true,
-  medium_enterprise: true,
+  start_up_coach_plus: true,
+  coach: true,
+  coach_pro: true,
 };
 
 /** Narrow a raw route param to a known tier name (or null). */

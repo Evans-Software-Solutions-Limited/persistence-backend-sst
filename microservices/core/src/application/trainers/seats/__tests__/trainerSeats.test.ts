@@ -90,16 +90,17 @@ const tierRow = (
 ];
 const FREE_TIER = tierRow("free", "0.00", null, false);
 const INDIVIDUAL_TIER = tierRow("individual_trainer", "14.99", 2, true);
-const SMALL_BIZ_TIER = tierRow("small_business", "49.99", 30, true);
+const COACH_TIER = tierRow("coach", "59.99", 15, true);
 const count = (n: number) => [{ total: n }];
 
 describe("nextTrainerTierUp", () => {
   it("steps up the trainer-tier ladder; non-trainer → cheapest trainer tier; top → null", async () => {
     const { nextTrainerTierUp } =
       await import("../../../entitlement/assertEntitlement");
-    expect(nextTrainerTierUp("individual_trainer")).toBe("small_business");
-    expect(nextTrainerTierUp("small_business")).toBe("medium_enterprise");
-    expect(nextTrainerTierUp("medium_enterprise")).toBeNull();
+    expect(nextTrainerTierUp("individual_trainer")).toBe("coach");
+    expect(nextTrainerTierUp("start_up_coach_plus")).toBe("coach");
+    expect(nextTrainerTierUp("coach")).toBe("coach_pro");
+    expect(nextTrainerTierUp("coach_pro")).toBeNull();
     expect(nextTrainerTierUp("free")).toBe("individual_trainer");
     expect(nextTrainerTierUp("premium")).toBe("individual_trainer");
   });
@@ -128,15 +129,15 @@ describe("evaluateTrainerClientsActiveSeat (active-cap verdict)", () => {
     const db = makeQueueDb([
       trainerSub(), // limit 2
       count(2), // 2 active → at cap
-      SMALL_BIZ_TIER, // buildDeny loads the upgrade tier price
+      COACH_TIER, // buildDeny loads the upgrade tier price
     ]) as any;
     const v = await evaluateTrainerClientsActiveSeat("t1", db);
     expect(v).toEqual({
       allowed: false,
       reason: "limit",
       currentTier: "individual_trainer",
-      upgradeTo: "small_business",
-      upgradePriceMonthly: 49.99,
+      upgradeTo: "coach",
+      upgradePriceMonthly: 59.99,
     });
   });
 
@@ -179,18 +180,18 @@ describe("evaluateTrainerClientsActiveSeat (active-cap verdict)", () => {
     });
   });
 
-  it("denies medium_enterprise at 500 clients with NO upgrade target (top tier)", async () => {
+  it("denies coach_pro at 30 clients with NO upgrade target (top tier)", async () => {
     const { evaluateTrainerClientsActiveSeat } =
       await import("../../../entitlement/assertEntitlement");
     const db = makeQueueDb([
-      trainerSub({ tierName: "medium_enterprise", trainerClientLimit: 500 }),
-      count(500),
+      trainerSub({ tierName: "coach_pro", trainerClientLimit: 30 }),
+      count(30),
     ]) as any;
     const v = await evaluateTrainerClientsActiveSeat("t1", db);
     expect(v).toEqual({
       allowed: false,
       reason: "limit",
-      currentTier: "medium_enterprise",
+      currentTier: "coach_pro",
       upgradeTo: null,
       upgradePriceMonthly: null,
     });
@@ -212,13 +213,13 @@ describe("assertEntitlement(userId, 'trainer_clients') routing", () => {
     const { assertEntitlement } =
       await import("../../../entitlement/assertEntitlement");
     (getDb as any).mockReturnValue(
-      makeQueueDb([trainerSub(), count(2), SMALL_BIZ_TIER]),
+      makeQueueDb([trainerSub(), count(2), COACH_TIER]),
     );
     const v = await assertEntitlement("t1", "trainer_clients");
     expect(v.allowed).toBe(false);
     if (!v.allowed) {
       expect(v.reason).toBe("limit");
-      expect(v.upgradeTo).toBe("small_business");
+      expect(v.upgradeTo).toBe("coach");
     }
   });
 });
@@ -284,7 +285,7 @@ describe("assertTrainerCanInvite (invite-creation gate → EntitlementError/402)
       trainerSub(), // limit 2
       count(1), // active+pending rels = 1
       count(1), // pending invitations = 1 → committed 2 == cap
-      SMALL_BIZ_TIER,
+      COACH_TIER,
     ]) as any;
     await expect(assertTrainerCanInvite("t1", db)).rejects.toBeInstanceOf(
       EntitlementError,
@@ -333,11 +334,11 @@ describe("evaluateTrainerJoinSeat (invite-code redeem, committed)", () => {
       trainerSub(),
       count(2),
       count(0), // committed 2 == cap
-      SMALL_BIZ_TIER,
+      COACH_TIER,
     ]) as any;
     const v = await evaluateTrainerJoinSeat("t1", db);
     expect(v.allowed).toBe(false);
-    if (!v.allowed) expect(v.upgradeTo).toBe("small_business");
+    if (!v.allowed) expect(v.upgradeTo).toBe("coach");
   });
 
   it("denies when the trainer's tier grants no client slots (non-trainer)", async () => {
@@ -367,7 +368,7 @@ describe("notifyTrainerClientLimitReached (best-effort)", () => {
       allowed: false,
       reason: "limit",
       currentTier: "individual_trainer",
-      upgradeTo: "small_business",
+      upgradeTo: "coach",
       upgradePriceMonthly: 49.99,
     });
     expect(createAndDispatch).toHaveBeenCalledWith(
@@ -376,7 +377,7 @@ describe("notifyTrainerClientLimitReached (best-effort)", () => {
         type: "trainer_client_limit_reached",
         data: expect.objectContaining({
           deepLink: "persistencemobile://clients",
-          upgrade_to: "small_business",
+          upgrade_to: "coach",
         }),
       }),
     );

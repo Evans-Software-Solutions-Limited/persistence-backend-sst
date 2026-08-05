@@ -45,9 +45,10 @@ const TIER_DISPLAY_NAMES: Record<SubscriptionTierName, string> = {
   free: "Free",
   premium: "Premium",
   premium_plus: "Premium+",
-  individual_trainer: "Trainer",
-  small_business: "Business Trainer",
-  medium_enterprise: "Enterprise Trainer",
+  individual_trainer: "Start Up Coach",
+  start_up_coach_plus: "Start Up Coach +",
+  coach: "Coach",
+  coach_pro: "Coach Pro",
 };
 
 function variantFor(tier: SubscriptionTierName): Variant {

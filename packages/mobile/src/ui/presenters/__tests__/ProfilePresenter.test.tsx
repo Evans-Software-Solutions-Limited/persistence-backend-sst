@@ -645,9 +645,10 @@ describe("ProfilePresenter", () => {
 
     it.each([
       ["premium", "active", "Premium"],
-      ["individual_trainer", "active", "Trainer"],
-      ["small_business", "active", "Business Trainer"],
-      ["medium_enterprise", "active", "Enterprise Trainer"],
+      ["individual_trainer", "active", "Start Up Coach"],
+      ["start_up_coach_plus", "active", "Start Up Coach +"],
+      ["coach", "active", "Coach"],
+      ["coach_pro", "active", "Coach Pro"],
     ] as const)(
       "renders the badge for tier %s with label %s",
       (tier, paymentStatus, label) => {

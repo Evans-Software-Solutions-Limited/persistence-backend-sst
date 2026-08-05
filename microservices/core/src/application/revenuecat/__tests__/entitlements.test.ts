@@ -7,17 +7,26 @@ import {
 } from "../entitlements";
 
 describe("rcEntitlementToTier", () => {
-  it("maps the four known entitlement ids to their tiers", () => {
+  it("maps the known consumer + entry-coach entitlement ids to their tiers", () => {
     expect(rcEntitlementToTier("premium")).toBe("premium");
     expect(rcEntitlementToTier("individual_trainer")).toBe(
       "individual_trainer",
     );
-    expect(rcEntitlementToTier("small_business")).toBe("small_business");
-    expect(rcEntitlementToTier("medium_enterprise")).toBe("medium_enterprise");
   });
 
   it("maps the premium_plus entitlement id to its tier (M19-P0)", () => {
     expect(rcEntitlementToTier("premium_plus")).toBe("premium_plus");
+  });
+
+  // Spec-29 Phase 2 coach ladder (2026-08-05): the three new coach-tier
+  // entitlement ids must round-trip, and coach_pro must NOT be shadowed by
+  // the "coach" case above it in the switch.
+  it("maps the three new coach-ladder entitlement ids to their tiers", () => {
+    expect(rcEntitlementToTier("start_up_coach_plus")).toBe(
+      "start_up_coach_plus",
+    );
+    expect(rcEntitlementToTier("coach")).toBe("coach");
+    expect(rcEntitlementToTier("coach_pro")).toBe("coach_pro");
   });
 
   it("returns null for unknown / free ids (forward-compatible)", () => {
@@ -92,10 +101,10 @@ describe("pickDesiredSubscription", () => {
   it("picks the highest-ranked tier when multiple are active", () => {
     const result = pickDesiredSubscription([
       sub({ tier: "premium" }),
-      sub({ tier: "medium_enterprise" }),
+      sub({ tier: "coach_pro" }),
       sub({ tier: "individual_trainer" }),
     ]);
-    expect(result?.tier).toBe("medium_enterprise");
+    expect(result?.tier).toBe("coach_pro");
   });
 
   it("breaks a same-tier tie by the latest expiry (Brad's two sandbox subs)", () => {

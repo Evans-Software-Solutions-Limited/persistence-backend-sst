@@ -13,26 +13,31 @@ describe("SubscriptionBadge", () => {
     expect(screen.getByText("Premium")).toBeTruthy();
   });
 
-  it("collapses individual trainer tier to 'Trainer' compact display name", () => {
+  it("renders 'Start Up Coach' display name for the individual_trainer tier", () => {
     render(
       <SubscriptionBadge tier="individual_trainer" paymentStatus="active" />,
     );
-    expect(screen.getByText("Trainer")).toBeTruthy();
+    expect(screen.getByText("Start Up Coach")).toBeTruthy();
     expect(
       screen.getByTestId("subscription-badge-individual_trainer"),
     ).toBeTruthy();
   });
 
-  it("collapses small_business to 'Business Trainer' display name", () => {
-    render(<SubscriptionBadge tier="small_business" paymentStatus="active" />);
-    expect(screen.getByText("Business Trainer")).toBeTruthy();
+  it("renders 'Start Up Coach +' display name for the start_up_coach_plus tier", () => {
+    render(
+      <SubscriptionBadge tier="start_up_coach_plus" paymentStatus="active" />,
+    );
+    expect(screen.getByText("Start Up Coach +")).toBeTruthy();
   });
 
-  it("collapses medium_enterprise to 'Enterprise Trainer' display name", () => {
-    render(
-      <SubscriptionBadge tier="medium_enterprise" paymentStatus="active" />,
-    );
-    expect(screen.getByText("Enterprise Trainer")).toBeTruthy();
+  it("renders 'Coach' display name for the coach tier", () => {
+    render(<SubscriptionBadge tier="coach" paymentStatus="active" />);
+    expect(screen.getByText("Coach")).toBeTruthy();
+  });
+
+  it("renders 'Coach Pro' display name for the coach_pro tier", () => {
+    render(<SubscriptionBadge tier="coach_pro" paymentStatus="active" />);
+    expect(screen.getByText("Coach Pro")).toBeTruthy();
   });
 
   it("appends ' · Trial' when status is trialing", () => {
@@ -82,8 +87,9 @@ describe("SubscriptionBadge", () => {
       "premium",
       "premium_plus",
       "individual_trainer",
-      "small_business",
-      "medium_enterprise",
+      "start_up_coach_plus",
+      "coach",
+      "coach_pro",
     ] as const;
     for (const tier of tiers) {
       const { unmount } = render(

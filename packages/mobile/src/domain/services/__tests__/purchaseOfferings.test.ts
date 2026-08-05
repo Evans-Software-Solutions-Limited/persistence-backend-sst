@@ -41,10 +41,12 @@ describe("tierFromProductId", () => {
     ["app.persistence.premium.monthly", "premium"],
     ["app.persistence.trainer.individual.annual", "individual_trainer"],
     ["app.persistence.individual.monthly", "individual_trainer"],
-    ["app.persistence.small_business.monthly", "small_business"],
-    ["app.persistence.trainer.small_business.annual", "small_business"],
-    ["app.persistence.medium_enterprise.annual", "medium_enterprise"],
-    ["app.persistence.enterprise.monthly", "medium_enterprise"],
+    ["app.persistence.start_up_coach_plus.monthly", "start_up_coach_plus"],
+    ["app.persistence.start_up_coach_plus.annual", "start_up_coach_plus"],
+    ["app.persistence.coach.monthly", "coach"],
+    ["app.persistence.coach.annual", "coach"],
+    ["app.persistence.coach_pro.monthly", "coach_pro"],
+    ["app.persistence.coach_pro.annual", "coach_pro"],
     ["app.persistence.premium_plus.monthly", "premium_plus"],
     ["app.persistence.premium_plus.annual", "premium_plus"],
   ])("maps %s → %s", (productId, expected) => {
@@ -55,11 +57,27 @@ describe("tierFromProductId", () => {
     expect(tierFromProductId("app.persistence.gizmo.monthly")).toBeNull();
   });
 
-  it("prefers the most specific business keyword over the trainer match", () => {
-    // contains both "trainer" and "small_business" — business wins.
-    expect(tierFromProductId("app.persistence.trainer.small_business")).toBe(
-      "small_business",
+  // Spec-29 Phase 2 (2026-08-05): every coach product id contains the
+  // substring "coach" (`coach_pro`, `start_up_coach_plus`, `coach` itself),
+  // so the ORDER of the substring checks is load-bearing — `coach_pro` and
+  // `start_up_coach_plus` MUST be tested before the plain `coach` match, or
+  // every Coach Pro / Start Up Coach + purchase would misclassify as the
+  // cheaper `coach` tier and under-grant the entitlement.
+  it("classifies coach_pro and start_up_coach_plus BEFORE the plain coach substring match", () => {
+    expect(tierFromProductId("app.persistence.coach_pro.monthly")).toBe(
+      "coach_pro",
     );
+    expect(tierFromProductId("app.persistence.coach_pro.annual")).toBe(
+      "coach_pro",
+    );
+    expect(
+      tierFromProductId("app.persistence.start_up_coach_plus.monthly"),
+    ).toBe("start_up_coach_plus");
+    expect(
+      tierFromProductId("app.persistence.start_up_coach_plus.annual"),
+    ).toBe("start_up_coach_plus");
+    // Plain coach is unaffected by the reordering.
+    expect(tierFromProductId("app.persistence.coach.monthly")).toBe("coach");
   });
 
   it("classifies premium_plus BEFORE the plain premium substring match (M19-P0 regression)", () => {
@@ -106,9 +124,7 @@ describe("findPackageForTier", () => {
   });
 
   it("returns null when the tier is absent", () => {
-    expect(
-      findPackageForTier(packages, "small_business", "monthly"),
-    ).toBeNull();
+    expect(findPackageForTier(packages, "coach", "monthly")).toBeNull();
   });
 });
 

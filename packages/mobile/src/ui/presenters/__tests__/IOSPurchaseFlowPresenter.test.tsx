@@ -53,7 +53,7 @@ function defaultProps(): IOSPurchaseFlowPresenterProps {
     isTierTrialEligible: () => true,
     tierTrialDays: () => 14,
     hasTrialEligibilityData: true,
-    monthlyOnlyTiers: new Set(["small_business", "medium_enterprise"]),
+    monthlyOnlyTiers: new Set(["start_up_coach_plus", "coach_pro"]),
     subscriptionEndsAt: null,
     isCancelledButActive: false,
     currentTierDisplayName: "Free",
@@ -224,53 +224,49 @@ describe("IOSPurchaseFlowPresenter", () => {
   });
 
   it("shows the trial banner per-tier — only on tiers whose own product is eligible", () => {
-    const SMALL_BUSINESS: SubscriptionTier = {
+    const COACH: SubscriptionTier = {
       ...PREMIUM,
-      tierName: "small_business",
-      displayName: "Small Business",
+      tierName: "coach",
+      displayName: "Coach",
       isTrainerTier: true,
     };
     const props = defaultProps();
     render(
       <IOSPurchaseFlowPresenter
         {...props}
-        subscriptionTiers={[PREMIUM, INDIVIDUAL_TRAINER, SMALL_BUSINESS]}
+        subscriptionTiers={[PREMIUM, INDIVIDUAL_TRAINER, COACH]}
         selectedRole="trainer"
         billingCycle="monthly"
-        // Only individual_trainer is eligible; small_business is not.
+        // Only individual_trainer is eligible; coach is not.
         isTierTrialEligible={(tier) => tier === "individual_trainer"}
       />,
     );
-    // Exactly one trainer card shows the banner (individual_trainer), not SB.
+    // Exactly one trainer card shows the banner (individual_trainer), not coach.
     expect(screen.getAllByText("14-day free trial")).toHaveLength(1);
   });
 
   it("renders DIFFERENT trial durations across trainer cards (each from its own product)", () => {
     // Locks the per-tier guarantee: two simultaneously-eligible trainer cards
     // must each show THEIR product's duration, not a single shared number.
-    const SMALL_BUSINESS: SubscriptionTier = {
+    const COACH: SubscriptionTier = {
       ...PREMIUM,
-      tierName: "small_business",
-      displayName: "Small Business",
+      tierName: "coach",
+      displayName: "Coach",
       isTrainerTier: true,
     };
     render(
       <IOSPurchaseFlowPresenter
         {...defaultProps()}
-        subscriptionTiers={[PREMIUM, INDIVIDUAL_TRAINER, SMALL_BUSINESS]}
+        subscriptionTiers={[PREMIUM, INDIVIDUAL_TRAINER, COACH]}
         selectedRole="trainer"
         billingCycle="monthly"
         isTierTrialEligible={() => true}
         tierTrialDays={(tier) =>
-          tier === "individual_trainer"
-            ? 14
-            : tier === "small_business"
-              ? 7
-              : null
+          tier === "individual_trainer" ? 14 : tier === "coach" ? 7 : null
         }
       />,
     );
-    // Both distinct durations render at once; medium_enterprise (null) shows none.
+    // Both distinct durations render at once; coach_pro (null) shows none.
     expect(screen.getByText("14-day free trial")).toBeTruthy();
     expect(screen.getByText("7-day free trial")).toBeTruthy();
   });
@@ -285,24 +281,25 @@ describe("IOSPurchaseFlowPresenter", () => {
 
   it("hides a monthly-only tier on the yearly cycle — no external purchase path", () => {
     // These plans used to render a "Contact Sales" mailto here, selling a
-    // subscription outside IAP from the paywall (Apple 3.1.1).
-    const MEDIUM_ENTERPRISE: SubscriptionTier = {
+    // subscription outside IAP from the paywall (Apple 3.1.1). The presenter's
+    // `monthlyOnlyTiers` mechanism is still general-purpose even though the
+    // REAL set is empty post spec-29 Phase 2 (see IOSPurchaseFlowContainer) —
+    // this test exercises the mechanism directly with an arbitrary member.
+    const COACH_PRO: SubscriptionTier = {
       ...PREMIUM,
-      tierName: "medium_enterprise",
-      displayName: "Medium Enterprise",
+      tierName: "coach_pro",
+      displayName: "Coach Pro",
       isTrainerTier: true,
     };
     render(
       <IOSPurchaseFlowPresenter
         {...defaultProps()}
-        subscriptionTiers={[PREMIUM, INDIVIDUAL_TRAINER, MEDIUM_ENTERPRISE]}
+        subscriptionTiers={[PREMIUM, INDIVIDUAL_TRAINER, COACH_PRO]}
         selectedRole="trainer"
         billingCycle="yearly"
       />,
     );
-    expect(
-      screen.queryByTestId("trainer-card-medium_enterprise-pro"),
-    ).toBeNull();
+    expect(screen.queryByTestId("trainer-card-coach_pro-pro")).toBeNull();
     expect(screen.queryByText(/contact sales/i)).toBeNull();
     // Individual Trainer has a yearly product and still renders.
     expect(
@@ -313,23 +310,23 @@ describe("IOSPurchaseFlowPresenter", () => {
   });
 
   it("shows a monthly-only tier normally on the monthly cycle", () => {
-    const MEDIUM_ENTERPRISE: SubscriptionTier = {
+    const COACH_PRO: SubscriptionTier = {
       ...PREMIUM,
-      tierName: "medium_enterprise",
-      displayName: "Medium Enterprise",
+      tierName: "coach_pro",
+      displayName: "Coach Pro",
       isTrainerTier: true,
     };
     const props = defaultProps();
     render(
       <IOSPurchaseFlowPresenter
         {...props}
-        subscriptionTiers={[PREMIUM, INDIVIDUAL_TRAINER, MEDIUM_ENTERPRISE]}
+        subscriptionTiers={[PREMIUM, INDIVIDUAL_TRAINER, COACH_PRO]}
         selectedRole="trainer"
         billingCycle="monthly"
       />,
     );
-    fireEvent.press(screen.getByTestId("trainer-card-medium_enterprise-pro"));
-    expect(props.onTierSelect).toHaveBeenCalledWith("medium_enterprise");
+    fireEvent.press(screen.getByTestId("trainer-card-coach_pro-pro"));
+    expect(props.onTierSelect).toHaveBeenCalledWith("coach_pro");
   });
 
   it("invokes restore", () => {

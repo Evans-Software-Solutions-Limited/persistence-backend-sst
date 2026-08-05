@@ -10,22 +10,25 @@
  */
 
 /**
- * Named tiers plus `free`. The `free` tier is the default
- * starting state for any signed-in user and is never shown as a
- * buyable card (`requirements.md` AC 1.2). Post tier-simplification
- * (20260526120000_simplify_tier_model.sql) the paid tiers were Premium
- * (only paid user tier) + three trainer tiers by business size. Basic +
- * all Standard trainer variants were dropped. `premium_plus` was added
- * in M19-P0 (spec-21 § 9.1) — a second, higher consumer tier above
- * `premium` gating the adaptive-workout suite (Loadout + Mealprint).
+ * Named tiers plus `free`. The `free` tier is the default starting state for any
+ * signed-in user and is never shown as a buyable card (`requirements.md` AC 1.2).
+ *
+ * Spec-29 Phase 2 (2026-08-05) coach ladder: Premium + Premium+ for consumers,
+ * and the coach ladder `individual_trainer` (Start Up Coach, no suite) /
+ * `start_up_coach_plus` / `coach` / `coach_pro` (all suite-bearing). The old
+ * `small_business` / `medium_enterprise` business tiers were retired and replaced
+ * by `coach` / `coach_pro`. `premium_plus` (M19-P0) and the coach suite tiers gate
+ * the adaptive-workout suite (Loadout + Mealprint). Must stay in lockstep with the
+ * backend union in `microservices/core/.../assertEntitlement.ts`.
  */
 export type SubscriptionTierName =
   | "free"
   | "premium"
   | "premium_plus"
   | "individual_trainer"
-  | "small_business"
-  | "medium_enterprise";
+  | "start_up_coach_plus"
+  | "coach"
+  | "coach_pro";
 
 /**
  * Free-trial length in days for the (now-unused) Stripe rail's copy.

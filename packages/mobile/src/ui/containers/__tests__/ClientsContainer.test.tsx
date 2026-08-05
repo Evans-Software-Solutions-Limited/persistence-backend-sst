@@ -151,7 +151,7 @@ function makeTrainerSub(
   overrides: Partial<MySubscription> = {},
 ): MySubscription {
   return makeSub({
-    tierName: "small_business",
+    tierName: "coach_pro",
     isTrainerTier: true,
     role: "personal_trainer",
     workoutLimit: null,
@@ -309,9 +309,10 @@ describe("ClientsContainer", () => {
   });
 
   it("at the client-slot cap: warns, shows the slots line, and disables invite", async () => {
-    // 30→5 override puts the 5-client roster exactly at cap.
+    // individual_trainer's real 5-client cap — the 5-client roster is exactly
+    // at cap.
     const { adapters, api } = makeAdapters(
-      makeTrainerSub({ trainerClientLimit: 5 }),
+      makeTrainerSub({ tierName: "individual_trainer", trainerClientLimit: 5 }),
     );
     api.trainerClients = makeTrainerClients();
     render(
@@ -327,10 +328,10 @@ describe("ClientsContainer", () => {
     fireEvent.press(screen.getByTestId("clients-invite-btn"));
     expect(useAddClientSheet.getState().open).toBe(false);
     // "Change subscription" routes to selection, pre-selecting the next tier
-    // up (small_business → medium_enterprise).
+    // up (individual_trainer → coach, spec-29 Phase 2 coach ladder).
     fireEvent.press(screen.getByTestId("clients-no-seats-upgrade"));
     expect(mockPush).toHaveBeenCalledWith(
-      "/(auth)/subscription-selection?tier=medium_enterprise&cycle=monthly",
+      "/(auth)/subscription-selection?tier=coach&cycle=monthly",
     );
   });
 

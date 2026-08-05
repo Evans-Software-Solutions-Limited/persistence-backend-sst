@@ -48,8 +48,9 @@ export function tierBadge(tier: SubscriptionTierName): string | null {
     case "premium_plus":
       return "PREMIUM+";
     case "individual_trainer":
-    case "small_business":
-    case "medium_enterprise":
+    case "start_up_coach_plus":
+    case "coach":
+    case "coach_pro":
       return "TRAINER";
   }
 }
@@ -63,8 +64,9 @@ export function tierPillTone(tier: SubscriptionTierName): PillTone {
     case "premium_plus":
       return "gold";
     case "individual_trainer":
-    case "small_business":
-    case "medium_enterprise":
+    case "start_up_coach_plus":
+    case "coach":
+    case "coach_pro":
       return "trainer";
   }
 }

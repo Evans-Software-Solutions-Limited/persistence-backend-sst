@@ -26,21 +26,22 @@ import {
  * is not one of them), and the public catalog endpoint deliberately omits it so
  * the catalog stays readable on a database that has not had the migration.
  *
- * ⚠ **`TIER_GRANTS_MEALPRINT` is NOT a copy of `TIER_GRANTS_LOADOUT`, and the
- * difference is the whole point.** `loadout_access` is granted to Premium+ AND
- * all three trainer tiers; `mealprint_access` is granted to **`premium_plus`
- * alone** (`20260803120200_mealprint_access.sql`). Three reasons, all recorded in
- * that migration's header: there is no coach surface in Mealprint v1, repeating
- * Loadout's accepted £14.99-coach/£29.99-athlete price hole would widen it for
- * no product benefit, and `individual_trainer` is already the most cost-exposed
- * tier in the catalogue. Do not "align" the two records.
+ * ⚠ **Spec-29 Phase 2 (2026-08-05) made `TIER_GRANTS_MEALPRINT` track
+ * `TIER_GRANTS_LOADOUT` exactly.** Before this restructure `mealprint_access`
+ * was granted to `premium_plus` alone (`20260803120200_mealprint_access.sql`) —
+ * no coach surface existed in Mealprint v1. The coach-ladder restructure adds
+ * one: both suite features (`loadout` + `meal_ai`) are now granted to the same
+ * set — `premium_plus` plus the three PAID coach tiers (`start_up_coach_plus` /
+ * `coach` / `coach_pro`) — with the entry rung `individual_trainer` carrying
+ * neither. See `20260805120000_coach_ladder_restructure.sql`.
  *
- * ⚠ That divergence also changes the UPSELL TARGET, which is the trap the backend
- * had to fix. `pickUpgradeTier` used to return `individual_trainer` for a
- * `personal_trainer` BEFORE looking at the feature — so a coach denied `meal_ai`
- * would have been sold a £14.99 tier that still locks them out. Hence
- * `PREMIUM_PLUS_ONLY_FEATURES` server-side, and hence {@link MEALPRINT_UPGRADE_TIER}
- * here being unconditional rather than role-derived.
+ * ⚠ That change also simplified the UPSELL TARGET. Backend `pickUpgradeTier`
+ * used to need a `PREMIUM_PLUS_ONLY_FEATURES` split because `loadout` and
+ * `meal_ai` upsold differently for a `personal_trainer` (one had a trainer
+ * upsell, the other didn't). Now that both suite features have a valid coach
+ * upsell (`start_up_coach_plus`), that split is retired server-side; this hook's
+ * {@link MEALPRINT_UPGRADE_TIER} stays the unconditional CONSUMER fallback, same
+ * as `useLoadoutGate`'s `LOADOUT_UPGRADE_TIER`.
  *
  * ⚠ **When `mealprintAccess` is added to `/subscriptions/me`, delete
  * `TIER_GRANTS_MEALPRINT` and read `subscription.mealprintAccess`.** Four lines
@@ -62,16 +63,20 @@ const TIER_GRANTS_MEALPRINT: Record<SubscriptionTierName, boolean> = {
   free: false,
   premium: false,
   premium_plus: true,
-  // ⚠ FALSE for all three trainer tiers, unlike `loadout_access`. See the
-  // docstring — this is the considered choice, not an oversight.
+  // ⚠ Spec-29 Phase 2: Mealprint now tracks `loadout_access` exactly — the paid
+  // coach tiers carry the suite, the entry rung does not. The former
+  // "premium_plus-only" split is gone (`20260805120000_coach_ladder_restructure.sql`).
   individual_trainer: false,
-  small_business: false,
-  medium_enterprise: false,
+  start_up_coach_plus: true,
+  coach: true,
+  coach_pro: true,
 };
 
 /**
- * The tier a denied user is upsold to — **always Premium+, including for a
- * coach.** Matches `pickUpgradeTier`'s `PREMIUM_PLUS_ONLY_FEATURES` branch.
+ * The tier a denied CONSUMER is upsold to. A denied coach is upsold to
+ * `start_up_coach_plus` by the server verdict's role-aware `upgrade_to`; this is
+ * the consumer fallback rendered when no server verdict is present. Matches the
+ * consumer branch of `pickUpgradeTier`.
  */
 export const MEALPRINT_UPGRADE_TIER: SubscriptionTierName = "premium_plus";
 

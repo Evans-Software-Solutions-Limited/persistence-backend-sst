@@ -18,15 +18,18 @@ import type { PurchaseProduct } from "@/domain/ports/purchases.port";
  * it MUST match the ids configured in App Store Connect + attached in the
  * RevenueCat dashboard.
  *
- * Known product ids (8 packages, all in the `default` offering):
+ * Known product ids (12 packages, all in the `default` offering) — spec-29
+ * Phase 2 coach ladder, every tier now monthly + annual:
  *   - `app.persistence.premium.{monthly,annual}`
  *   - `app.persistence.premium_plus.{monthly,annual}` (M19-P0)
- *   - `app.persistence.trainer.individual.{monthly,annual}`
- *   - `app.persistence.small_business.monthly`      (monthly-only for launch)
- *   - `app.persistence.medium_enterprise.monthly`   (monthly-only for launch)
+ *   - `app.persistence.trainer.individual.{monthly,annual}`   (Start Up Coach)
+ *   - `app.persistence.start_up_coach_plus.{monthly,annual}`
+ *   - `app.persistence.coach.{monthly,annual}`
+ *   - `app.persistence.coach_pro.{monthly,annual}`
  *
- * Anything unrecognised maps to `tier: null` and is filtered out of the
- * paywall.
+ * The retired `small_business` / `medium_enterprise` products are detached in
+ * RevenueCat; anything unrecognised maps to `tier: null` and is filtered out of
+ * the paywall.
  */
 
 /**
@@ -41,25 +44,29 @@ export function billingCycleFromProductId(productId: string): BillingCycle {
 }
 
 /**
- * Map a store product identifier to a `SubscriptionTierName`. `null` for an
- * id we don't model. Most-specific keywords are checked first so the business
- * tiers (which may live under a `trainer.*` namespace) don't get swallowed by
- * the broader `individual` / `trainer` match.
+ * Map a store product identifier to a `SubscriptionTierName`. `null` for an id we
+ * don't model.
  *
- * `premium_plus` MUST be checked before the plain `premium` substring test —
- * a product id like `app.persistence.premium_plus.monthly` also contains
- * "premium", so testing `premium` first would misclassify every Premium+
- * purchase as a Premium one and grant the wrong entitlement (M19-P0).
+ * ⚠ ORDER-SENSITIVE substring ladder — longer names first. Every coach product id
+ * (`coach_pro`, `start_up_coach_plus`) contains the substring `coach`, so the
+ * plain `coach` test MUST come last of the three; likewise `premium_plus` must
+ * precede `premium`. Testing a shorter name first would misclassify the purchase
+ * and grant the wrong entitlement (spec-29 § 5.5; the M19-P0 premium/premium_plus
+ * bug is the precedent). `individual` / `trainer` matches Start Up Coach, whose id
+ * lives under the `trainer.individual` namespace and contains no `coach`.
  */
 export function tierFromProductId(
   productId: string,
 ): SubscriptionTierName | null {
   const lower = productId.toLowerCase();
-  if (lower.includes("medium_enterprise") || lower.includes("enterprise")) {
-    return "medium_enterprise";
+  if (lower.includes("coach_pro")) {
+    return "coach_pro";
   }
-  if (lower.includes("small_business") || lower.includes("business")) {
-    return "small_business";
+  if (lower.includes("start_up_coach_plus")) {
+    return "start_up_coach_plus";
+  }
+  if (lower.includes("coach")) {
+    return "coach";
   }
   if (lower.includes("premium_plus")) {
     return "premium_plus";

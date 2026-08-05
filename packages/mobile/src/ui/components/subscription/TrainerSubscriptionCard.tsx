@@ -11,10 +11,14 @@ import { color } from "@/ui/theme/tokens";
  * Spec: specs/11-payments-subscriptions/design.md § UI structure
  * Satisfies: requirements.md AC 1.3, 6.2, 6.3, 6.4
  *
- * Pure presenter. Three baseName families:
- *   - individual_trainer  → "Individual Trainer"
- *   - small_business      → "Small Business"
- *   - medium_enterprise   → "Medium to Enterprise"
+ * Pure presenter. Spec-29 Phase 2 (2026-08-05) coach ladder, four baseName
+ * families (each now renders as its own single-tier card — see
+ * `SubscriptionSelectionPresenter`'s `trainerTierCards`, which passes
+ * `standardTier: null`):
+ *   - individual_trainer  → "Start Up Coach"
+ *   - start_up_coach_plus → "Start Up Coach +"
+ *   - coach               → "Coach"
+ *   - coach_pro           → "Coach Pro"
  *
  * The display label is derived from whichever of (standardTier, proTier)
  * is non-null — legacy parity.
@@ -59,11 +63,16 @@ export function TrainerSubscriptionCard({
   const clientSlots =
     standardTier?.trainerClientLimit ?? proTier?.trainerClientLimit ?? 0;
   const baseName = standardTier?.tierName ?? proTier?.tierName ?? "";
+  // ORDER-SENSITIVE: every coach product contains the substring "coach", so
+  // `coach_pro` / `start_up_coach_plus` must be tested before the plain
+  // `coach` match (same hazard as `tierFromProductId`).
   const displayName = baseName.includes("individual_trainer")
-    ? "Individual Trainer"
-    : baseName.includes("small_business")
-      ? "Small Business"
-      : "Medium to Enterprise";
+    ? "Start Up Coach"
+    : baseName.includes("coach_pro")
+      ? "Coach Pro"
+      : baseName.includes("start_up_coach_plus")
+        ? "Start Up Coach +"
+        : "Coach";
 
   // Per-column yearly availability. A trainer tier whose `priceYearly`
   // is null on the catalog row can't be sold yearly — render an

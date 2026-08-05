@@ -198,11 +198,26 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
     onTierSelect,
   ]);
 
+  // Whether any catalog tier was actually hidden this render because it's
+  // monthly-only on the current (yearly) cycle. Spec-29 Phase 2 (2026-08-05)
+  // retired the real monthly-only tiers — the container's MONTHLY_ONLY_TIERS
+  // is now empty — so this is normally false; it stays derived from the live
+  // set (rather than hardcoded) so the footnote below only ever appears when
+  // there is something to explain, for any future monthly-only tier without a
+  // signature change here.
+  const hasHiddenMonthlyOnlyTier = useMemo(() => {
+    if (billingCycle !== "yearly") return false;
+    return subscriptionTiers.some(
+      (t) => t.isTrainerTier && monthlyOnlyTiers.has(t.tierName),
+    );
+  }, [subscriptionTiers, billingCycle, monthlyOnlyTiers]);
+
   const trainerTierCards = useMemo(() => {
     const baseNames: SubscriptionTierName[] = [
       "individual_trainer",
-      "small_business",
-      "medium_enterprise",
+      "start_up_coach_plus",
+      "coach",
+      "coach_pro",
     ];
     const cards: React.ReactElement[] = [];
     for (const baseName of baseNames) {
@@ -478,12 +493,15 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
             </Text>
           )}
 
-        {/* Without this the two larger coach plans would simply vanish when a
-            coach flips to Yearly, which reads as a bug. */}
-        {selectedRole === "trainer" && billingCycle === "yearly" && (
+        {/* Without this a monthly-only coach plan would simply vanish when a
+            coach flips to Yearly, which reads as a bug. Gated on
+            `hasHiddenMonthlyOnlyTier` — spec-29 Phase 2 (2026-08-05) retired
+            the real monthly-only tiers (MONTHLY_ONLY_TIERS is now empty), so
+            this normally does not render; it stays wired + tier-name-agnostic
+            for any future monthly-only tier. */}
+        {selectedRole === "trainer" && hasHiddenMonthlyOnlyTier && (
           <Text style={styles.footnote} testID="ios-purchase-monthly-only-note">
-            Small Business and Medium / Enterprise are monthly plans. Switch to
-            Monthly to see them.
+            Some coach plans are monthly only. Switch to Monthly to see them.
           </Text>
         )}
 

@@ -96,12 +96,14 @@ describe("computeLoadoutVerdict", () => {
     ["free", false],
     ["premium", false],
     ["premium_plus", true],
-    // ⚠ All three trainer tiers carry `loadout_access` from the same migration.
-    // Brad accepted that on 2026-07-27 (STATE.md § DECIDED) — this is the
-    // catalog's value, not a bug to "fix" here.
-    ["individual_trainer", true],
-    ["small_business", true],
-    ["medium_enterprise", true],
+    // ⚠ Spec-29 Phase 2 (2026-08-05): `individual_trainer` (Start Up Coach) is
+    // the entry coach rung and deliberately has NO suite — that split is the
+    // whole point of the coach-ladder restructure (AC 1.3). The three PAID
+    // coach tiers carry `loadout_access` instead.
+    ["individual_trainer", false],
+    ["start_up_coach_plus", true],
+    ["coach", true],
+    ["coach_pro", true],
   ])("mirrors the catalog for %s → %s", (tier, expected) => {
     expect(computeLoadoutVerdict(sub(tier))).toBe(expected);
   });

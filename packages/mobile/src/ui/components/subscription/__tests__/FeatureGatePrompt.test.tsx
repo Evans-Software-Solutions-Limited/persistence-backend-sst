@@ -131,6 +131,6 @@ describe("FeatureGatePrompt", () => {
         onUpgrade={jest.fn()}
       />,
     );
-    expect(screen.getByText("Individual Trainer")).toBeTruthy();
+    expect(screen.getByText("Start Up Coach")).toBeTruthy();
   });
 });

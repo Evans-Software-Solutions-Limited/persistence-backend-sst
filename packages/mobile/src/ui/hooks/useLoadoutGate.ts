@@ -48,9 +48,11 @@ import {
  * (repository projection + `MySubscription` type + the mobile mirror) and it was
  * left out of this slice only because the slice is mobile-only.
  *
- * ⚠ **The `individual_trainer` grant is deliberate, not a bug.** All three trainer
- * tiers carry `loadout_access` from the same migration; Brad accepted that on
- * 2026-07-27 (STATE.md § DECIDED). Do not "fix" it here.
+ * ⚠ **Spec-29 Phase 2 (2026-08-05) flipped `individual_trainer` to `false`.**
+ * The entry coach rung (Start Up Coach) deliberately has NO suite — that split is
+ * the whole point of the coach-ladder restructure (AC 1.3,
+ * `20260805120000_coach_ladder_restructure.sql`). The paid coach tiers
+ * (`start_up_coach_plus` / `coach` / `coach_pro`) carry it instead.
  */
 
 /**
@@ -61,12 +63,21 @@ const TIER_GRANTS_LOADOUT: Record<SubscriptionTierName, boolean> = {
   free: false,
   premium: false,
   premium_plus: true,
-  individual_trainer: true,
-  small_business: true,
-  medium_enterprise: true,
+  // ⚠ Spec-29 Phase 2: the entry coach rung LOSES the suite — the no-suite tier
+  // is the whole point of the split (AC 1.3,
+  // `20260805120000_coach_ladder_restructure.sql`). The paid coach tiers carry it.
+  individual_trainer: false,
+  start_up_coach_plus: true,
+  coach: true,
+  coach_pro: true,
 };
 
-/** The tier a denied athlete is upsold to. Matches `pickUpgradeTier`'s `loadout` branch. */
+/**
+ * The tier a denied ATHLETE (consumer role) is upsold to. Matches the consumer
+ * branch of `pickUpgradeTier`. A denied COACH is upsold to `start_up_coach_plus`
+ * by the server verdict's role-aware `upgrade_to`; this consumer default is the
+ * fallback the gate sheet renders when no server verdict is present.
+ */
 export const LOADOUT_UPGRADE_TIER: SubscriptionTierName = "premium_plus";
 
 const ACTIVE_STATUSES = new Set<MySubscription["paymentStatus"]>([
