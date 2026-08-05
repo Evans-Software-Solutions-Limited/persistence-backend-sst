@@ -1674,6 +1674,12 @@ export type MealprintApiError = ApiError & {
  * `"food:<id>"`/`"recipe:<id>"`/`"meal:<id>"` strings, unparsed; pass them
  * through `unresolvableCandidateIds` (domain model) to get bare ids.
  * `activePlanDate` is populated ONLY for `active_plan_exists`.
+ *
+ * `meal_not_found` and `meal_already_logged` are `replace`-only: the read
+ * handlers 404 with the shared `not_found` above, never `meal_not_found`.
+ * Without a code here, `isMealPlanErrorCode` can't recognise the string and
+ * `PlanTodayContainer` has nothing to branch on — the raw wire string would
+ * leak as copy (see that container's docstring).
  */
 export const MEAL_PLAN_ERROR_CODES = [
   "unresolvable_items",
@@ -1681,6 +1687,8 @@ export const MEAL_PLAN_ERROR_CODES = [
   "active_plan_exists",
   "not_found",
   "no_targets",
+  "meal_not_found",
+  "meal_already_logged",
 ] as const;
 
 export type MealPlanErrorCode = (typeof MEAL_PLAN_ERROR_CODES)[number];

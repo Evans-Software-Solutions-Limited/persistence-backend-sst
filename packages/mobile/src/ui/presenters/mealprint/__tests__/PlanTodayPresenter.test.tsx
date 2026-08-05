@@ -70,6 +70,7 @@ function props(over: Partial<PlanTodayProps> = {}): PlanTodayProps {
     loggingMealId: null,
     onSwapMeal: jest.fn(),
     swappingMealId: null,
+    actionFailure: null,
     onDeletePlan: jest.fn(),
     deleting: false,
     ...over,
@@ -167,5 +168,27 @@ describe("PlanTodayPresenter", () => {
     expect(
       getByTestId("plan-today-delete").props.accessibilityState?.disabled,
     ).toBe(true);
+  });
+
+  it("renders the action-failure banner with its message when set", () => {
+    const { getByTestId, getByText } = renderWithTheme(
+      <PlanTodayPresenter
+        {...props({
+          actionFailure:
+            "You've used all of today's swaps — they reset tomorrow.",
+        })}
+      />,
+    );
+    expect(getByTestId("plan-today-action-error")).toBeTruthy();
+    expect(
+      getByText("You've used all of today's swaps — they reset tomorrow."),
+    ).toBeTruthy();
+  });
+
+  it("renders no action-failure banner when actionFailure is null", () => {
+    const { queryByTestId } = renderWithTheme(
+      <PlanTodayPresenter {...props({ actionFailure: null })} />,
+    );
+    expect(queryByTestId("plan-today-action-error")).toBeNull();
   });
 });

@@ -26,6 +26,7 @@ import type { MealPlan, PlanMeal, PlanTarget } from "@/domain/models/mealprint";
 
 const GOLD = toneHex("gold");
 const SUCCESS = toneHex("success");
+const ERROR = toneHex("error");
 
 export type PlanTodayProps = {
   readonly loading: boolean;
@@ -38,6 +39,14 @@ export type PlanTodayProps = {
   readonly loggingMealId: string | null;
   readonly onSwapMeal: (meal: PlanMeal) => void;
   readonly swappingMealId: string | null;
+  /**
+   * The message for the most recent swap-or-replace failure (429 swap
+   * ceiling, 402/422/503 swap, 400/422/404/409 replace) — `null` when there
+   * is nothing to show. See `PlanTodayContainer`'s docstring for why this has
+   * to be mirrored into container state rather than read off the hooks
+   * directly.
+   */
+  readonly actionFailure: string | null;
   readonly onDeletePlan: () => void;
   readonly deleting: boolean;
   readonly testID?: string;
@@ -56,6 +65,7 @@ export function PlanTodayPresenter({
   loggingMealId,
   onSwapMeal,
   swappingMealId,
+  actionFailure,
   onDeletePlan,
   deleting,
   testID = "plan-today-screen",
@@ -129,6 +139,20 @@ export function PlanTodayPresenter({
         </View>
       ) : (
         <View flex={1} padding={16} gap={16}>
+          {actionFailure ? (
+            <View
+              padding={12}
+              borderRadius={12}
+              backgroundColor={ERROR.dim}
+              borderWidth={1}
+              borderColor="$border2"
+              testID="plan-today-action-error"
+            >
+              <Text fontSize={12} color="$text" lineHeight={17}>
+                {actionFailure}
+              </Text>
+            </View>
+          ) : null}
           <Card
             pad={16}
             radius={16}

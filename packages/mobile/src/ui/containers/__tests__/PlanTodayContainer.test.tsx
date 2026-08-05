@@ -249,7 +249,7 @@ describe("PlanTodayContainer", () => {
     );
   });
 
-  it("a swap that fails leaves the meal unchanged and clears the swapping id", async () => {
+  it("a swap that fails leaves the meal unchanged, clears the swapping id, and surfaces the failure message", async () => {
     const today = new Date().toISOString().slice(0, 10);
     const plan = fixturePlan({ planDate: today });
     const { probe, storage } = await mount((api, storage) => {
@@ -265,6 +265,43 @@ describe("PlanTodayContainer", () => {
     expect(
       storage.getCachedActiveMealPlan("user-1", today)!.meals[0]!.label,
     ).toBe("Chicken & rice bowl");
+    // ⚠ This is the revert-verifying assertion for the "swap failures are
+    // swallowed silently" bug: it fails unless `actionFailure` is threaded
+    // through from `swap.failure` into the presenter prop.
+    expect(probe().actionFailure).toMatch(/unavailable/i);
+  });
+
+  it("a swap that hits the daily ceiling surfaces the 429 message", async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const plan = fixturePlan({ planDate: today });
+    const { probe } = await mount((api, storage) => {
+      storage.cacheMealPlan("user-1", plan);
+      api.activePlanByDate.set(today, plan);
+      api.nextPlanSwapError = { status: 429, message: "ai_daily_limit" };
+    });
+    await waitFor(() => expect(probe().plan).not.toBeNull());
+
+    act(() => probe().onSwapMeal(plan.meals[0]!));
+
+    await waitFor(() => expect(probe().swappingMealId).toBeNull());
+    expect(probe().actionFailure).toMatch(/used all of today's swaps/i);
+  });
+
+  it("starting a new swap clears a previous action failure", async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const plan = fixturePlan({ planDate: today });
+    const { probe } = await mount((api, storage) => {
+      storage.cacheMealPlan("user-1", plan);
+      api.activePlanByDate.set(today, plan);
+      api.nextPlanSwapError = { status: 503, message: "ai_unavailable" };
+    });
+    await waitFor(() => expect(probe().plan).not.toBeNull());
+
+    act(() => probe().onSwapMeal(plan.meals[0]!));
+    await waitFor(() => expect(probe().actionFailure).not.toBeNull());
+
+    act(() => probe().onSwapMeal(plan.meals[0]!));
+    expect(probe().actionFailure).toBeNull();
   });
 
   it("shows the empty state when there is no active plan today", async () => {
@@ -290,7 +327,7 @@ describe("PlanTodayContainer", () => {
     expect(probe().plan).toBeNull();
   });
 
-  it("a swap whose replace call fails (unknown plan) leaves the cache untouched", async () => {
+  it("a swap whose replace call fails (unknown plan) leaves the cache untouched and surfaces a failure message", async () => {
     const today = new Date().toISOString().slice(0, 10);
     const held = { ...fixturePlan().meals[0]!, id: "meal-2", kcal: 300 };
     const plan = fixturePlan({
@@ -324,5 +361,50 @@ describe("PlanTodayContainer", () => {
     expect(
       storage.getCachedActiveMealPlan("user-1", today)!.meals[0]!.label,
     ).toBe("Chicken & rice bowl");
+    // ⚠ Revert-verifying assertion: fails unless the replace-failure mirror
+    // effect threads `replace.failure` into `actionFailure`.
+    expect(probe().actionFailure).not.toBeNull();
+  });
+
+  it("a replace failure with a recognised plan error code (meal_not_found) surfaces the mapped message", async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const held = { ...fixturePlan().meals[0]!, id: "meal-2", kcal: 300 };
+    const plan = fixturePlan({
+      planDate: today,
+      meals: [fixturePlan().meals[0]!, held],
+    });
+    const { probe } = await mount((api, storage) => {
+      storage.cacheMealPlan("user-1", plan);
+      api.activePlanByDate.set(today, plan);
+      api.plans.set("plan-1", plan);
+      api.planSwapResult = {
+        meal: {
+          name: "Salmon & greens",
+          reason: "omega-3",
+          logSlot: "dinner",
+          items: [{ candidateId: "food-2", servings: 1, name: "Salmon" }],
+          kcal: 500,
+          proteinG: 40,
+          carbsG: 20,
+          fatG: 20,
+          containsUnverified: false,
+        },
+        emptyReason: null,
+        labelCheckRequired: true,
+      };
+      api.nextReplacePlanMealError = {
+        kind: "api",
+        code: "server",
+        message: "meal_not_found",
+        status: 404,
+        planErrorCode: "meal_not_found",
+      };
+    });
+
+    act(() => probe().onSwapMeal(plan.meals[0]!));
+    await waitFor(() => expect(probe().swappingMealId).toBeNull());
+    expect(probe().actionFailure).toBe(
+      "This meal is no longer part of your plan.",
+    );
   });
 });

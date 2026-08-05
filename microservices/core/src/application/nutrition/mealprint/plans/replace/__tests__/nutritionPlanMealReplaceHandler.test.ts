@@ -7,7 +7,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
  * a plain `const` here would not exist yet when the mock factory runs.
  */
 const { planMocks, candidateMocks, prefMocks } = vi.hoisted(() => ({
-  planMocks: { replaceMeal: vi.fn() },
+  planMocks: { replaceMeal: vi.fn(), get: vi.fn() },
   candidateMocks: { resolveByIds: vi.fn() },
   prefMocks: { get: vi.fn() },
 }));
@@ -140,6 +140,12 @@ beforeEach(() => {
   prefMocks.get.mockResolvedValue(PREFS);
   candidateMocks.resolveByIds.mockResolvedValue([food(FOOD_A)]);
   planMocks.replaceMeal.mockResolvedValue(updatedPlan());
+  // The already-logged guard's own read — defaults to a `planned` meal so
+  // every pre-existing test in this file (none of which care about the
+  // guard) falls straight through it.
+  planMocks.get.mockResolvedValue(
+    updatedPlan({ meals: [{ id: MEAL_ID, state: "planned" }] }),
+  );
 });
 
 describe("POST /nutrition/plans/:id/meals/:mealId/replace", () => {
@@ -302,6 +308,30 @@ describe("POST /nutrition/plans/:id/meals/:mealId/replace", () => {
     expect(res.status).toBe(422);
     expect((await body(res)).error).toBe("avoidance_violation");
     expect(planMocks.replaceMeal).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The orphan-nutrition-entry bug: `replaceMeal` unconditionally resets
+   * `state` to `"planned"` and clears `loggedEntryId`, so replacing an
+   * already-logged meal would double-count (the old `nutrition_entries` row
+   * keeps counting toward consumed AND the meal re-surfaces as loggable).
+   * This guard reads the plan BEFORE any resolve/write work and bails with
+   * no write — assert on `replaceMeal` never being called, not just the
+   * status, since a 409 that still wrote would reintroduce the bug.
+   */
+  it("409s and writes nothing when the target meal is already logged", async () => {
+    planMocks.get.mockResolvedValue(
+      updatedPlan({
+        meals: [{ id: MEAL_ID, state: "logged", loggedEntryId: "entry-1" }],
+      }),
+    );
+
+    const res = await app.handle(post(replaceBody()));
+
+    expect(res.status).toBe(409);
+    expect((await body(res)).error).toBe("meal_already_logged");
+    expect(planMocks.replaceMeal).not.toHaveBeenCalled();
+    expect(candidateMocks.resolveByIds).not.toHaveBeenCalled();
   });
 
   it("404s an unknown plan/meal", async () => {

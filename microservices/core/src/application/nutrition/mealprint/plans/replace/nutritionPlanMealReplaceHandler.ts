@@ -35,10 +35,24 @@ import { partitionByAvoidance } from "../../safety/avoidanceFilter";
  * ## Guard order
  *
  *   1. auth                                        → 401
- *   2. every referenced id resolves                → 400 `unresolvable_items`
- *   3. avoidance re-run on the resolved rows       → 422 `avoidance_violation`
- *   4. replace (ownership + existence arbitrated
+ *   2. target meal isn't already `logged`          → 409 `meal_already_logged`
+ *   3. every referenced id resolves                → 400 `unresolvable_items`
+ *   4. avoidance re-run on the resolved rows       → 422 `avoidance_violation`
+ *   5. replace (ownership + existence arbitrated
  *      by the repository in one query)             → 404 `meal_not_found`
+ *
+ * ⚠ **Step 2 is a READ-then-check, not an atomicity guarantee** — a
+ * concurrent log between this read and the `replaceMeal` write below is not
+ * closed here (same caveat as every other "check then write" guard in this
+ * handler; `replaceMeal` itself has no CAS on `state`). It exists to stop the
+ * common case — replacing a meal that is *already* logged when the request
+ * is made — which is exactly what orphans the `nutrition_entries` row:
+ * `replaceMeal` unconditionally resets `state` to `"planned"` and clears
+ * `loggedEntryId`, so without this guard the logged entry keeps counting
+ * toward consumed totals while the meal re-surfaces as loggable, i.e. a
+ * double-count. `MealPlanRepository.get` is the same ownership-scoped read
+ * `nutritionPlansReadHandlers` uses, so a plan/meal that isn't this user's
+ * simply doesn't match here either — the 404 path below is unaffected.
  *
  * ⚠ **No entitlement gate here, deliberately** — same reasoning as accept:
  * the paywall sits on GENERATION (`plan-generate` and `meal-suggest` are both
@@ -70,7 +84,19 @@ export const nutritionPlanMealReplaceHandler = new Elysia()
 
       const preferences = await ctx.NutritionPreferenceRepository.get(userId);
 
-      // 2. Resolve every referenced id. Same shape as the accept handler,
+      // 2. Bail before doing any resolve/write work if the target meal is
+      // already logged — see the docstring above for why this can't be left
+      // to `replaceMeal`. A plan/meal that isn't this user's (or doesn't
+      // exist) simply won't match here; that falls through to step 5's 404,
+      // unaffected by this check.
+      const existingPlan = await ctx.MealPlanRepository.get(userId, planId);
+      const existingMeal = existingPlan?.meals.find((m) => m.id === mealId);
+      if (existingMeal?.state === "logged") {
+        ctx.set.status = 409;
+        return { error: "meal_already_logged" };
+      }
+
+      // 3. Resolve every referenced id. Same shape as the accept handler,
       // scaled down to one meal.
       const foodIds = (meal.items ?? []).map((item) => item.foodId);
       const recipeIds = meal.recipeId ? [meal.recipeId] : [];
@@ -108,7 +134,7 @@ export const nutritionPlanMealReplaceHandler = new Elysia()
         return { error: "unresolvable_items", items: [...new Set(missing)] };
       }
 
-      // 3. Avoidance re-run against the resolved rows — the replacement may
+      // 4. Avoidance re-run against the resolved rows — the replacement may
       // not have gone through the suggest/swap pipeline's own filter (a
       // hand-picked food, or preferences changed since a swap was generated).
       const { rejected } = partitionByAvoidance(resolved, preferences);
@@ -166,7 +192,7 @@ export const nutritionPlanMealReplaceHandler = new Elysia()
         aiReason: meal.aiReason ?? null,
       };
 
-      // 4. `replaceMeal` scopes by userId in its own query — this is the
+      // 5. `replaceMeal` scopes by userId in its own query — this is the
       // second half of the isolation guard, not a redundant check: a plan or
       // meal that isn't this user's returns null even if every referenced id
       // above happened to resolve (e.g. all public foods).
