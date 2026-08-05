@@ -6,6 +6,7 @@ import Login from "./pages/Login";
 import AuthCallback from "./pages/AuthCallback";
 import Privacy from "./pages/Privacy";
 import Terms from "./pages/Terms";
+import OrganisationAdmin from "./pages/OrganisationAdmin";
 import { ThemeProvider } from "./components/theme-provider";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
@@ -23,6 +24,7 @@ function App() {
           <Route path="/auth/callback" element={<AuthCallback />} />
           <Route path="/privacy" element={<Privacy />} />
           <Route path="/terms" element={<Terms />} />
+          <Route path="/org-admin" element={<OrganisationAdmin />} />
         </Routes>
       </ThemeProvider>
     </QueryClientProvider>

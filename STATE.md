@@ -1938,6 +1938,32 @@ consent copy, privacy section and governing law · the OFF re-seed backfilling
 
 ## Last session
 
+**2026-08-05 — GTM D9 subscription UI implemented in isolated worktree.** Branch
+`codex/gtm-d9-subscription-ui`, worktree
+`/private/tmp/persistence-gtm-d9-subscription`, based on the Phase-2 coach-ladder
+commit `adf7111e`. Added `@persistence/subscription-catalog` as the UI source of
+truth; rebuilt the iOS persona/plans/manage rail and AI fail-safe; rebuilt web
+pricing for individuals, coaches and organisations; and added the aggregate-only
+organisation-admin preview with sub-five cohort suppression. `appStore=false`
+renders every paid IAP control as non-interactive `Coming soon`; organisation
+plans remain web-only/read-only in-app. Premium+ and suite-bearing coach/org tiers
+lead with Loadout + Mealprint; no surface names competitors, adds a VAT caveat, or
+lists “AI Workout Suggestions”.
+
+- **Release blocker:** read-only checks of both public production and staging
+  `/subscription-tiers` endpoints still returned the OLD five-row catalog
+  (`premium` £12.99/£129.99, `individual_trainer` £14.99/£149.99, plus retired
+  business tiers). The UI deliberately follows the approved launch catalog in
+  `20260805120000_coach_ladder_restructure.sql` and must not ship until the live
+  catalog/RevenueCat/ASC activation is aligned.
+- Gates: catalog typecheck + 4/4; web lint/typecheck/build + 32/32 with 85.61%
+  statement coverage; mobile lint/typecheck + 5908/5908. The first full mobile
+  run exposed an old rail contract: Restore Purchases must be visible on the
+  initial screen. The persona screen now carries restore + legal footer; the
+  targeted regression passed and the whole suite passed on the clean rerun.
+  Desktop, 390 px, all audience tabs and the suppressed admin state were visually
+  verified in the in-app browser with no horizontal overflow.
+
 **2026-08-04 (later) — Mealprint MERGED, and the pricing model moved to a 30 % Apple
 rate.** Sixth Inspector Brad sweep returned MERGE; its four residuals were fixed in
 `0c1ce767` with revert-verified tests, and the branch landed on `main` as `fa0567fc`

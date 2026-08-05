@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, Linking } from "react-native";
+import { subscriptionConfig } from "@persistence/subscription-catalog";
 import { useLocalSearchParams, useRouter, type Href } from "expo-router";
 import {
   type BillingCycle,
@@ -23,6 +24,7 @@ import { useSyncSubscription } from "@/ui/hooks/useSyncSubscription";
 import { useMySubscription } from "@/ui/hooks/useMySubscription";
 import { useSubscriptionTiers } from "@/ui/hooks/useSubscriptionTiers";
 import { IOSPurchaseFlowPresenter } from "@/ui/presenters/IOSPurchaseFlowPresenter";
+import type { SubscriptionRailScreen } from "@/ui/presenters/IOSPurchaseFlowPresenter";
 
 /**
  * iOS RevenueCat purchase-flow container (M12, iOS rail).
@@ -101,6 +103,13 @@ export function IOSPurchaseFlowContainer() {
   );
   const [selectedRole, setSelectedRole] = useState<Role>(initialRole);
   const [isProcessing, setIsProcessing] = useState(false);
+  const hasExplicitPlanRoute = Boolean(
+    searchParams.tier || searchParams.cycle || searchParams.role,
+  );
+  const [screen, setScreen] = useState<SubscriptionRailScreen>(
+    hasExplicitPlanRoute ? "plans" : "persona",
+  );
+  const [screenChosen, setScreenChosen] = useState(hasExplicitPlanRoute);
 
   useEffect(() => {
     if (initialRoleParam === "personal_trainer" || tierParamImpliesTrainer) {
@@ -124,6 +133,11 @@ export function IOSPurchaseFlowContainer() {
   const currentTier: SubscriptionTierName =
     subscriptionData?.tierName ?? "free";
   const isCancelledButActive = isCancelledButActiveCheck(subscriptionData);
+
+  useEffect(() => {
+    if (screenChosen || subQuery.isLoading || subscriptionData === null) return;
+    setScreen(currentTier === "free" ? "persona" : "manage");
+  }, [currentTier, screenChosen, subQuery.isLoading, subscriptionData]);
 
   const packages = useMemo(
     () => offeringsQuery.data ?? [],
@@ -191,6 +205,7 @@ export function IOSPurchaseFlowContainer() {
 
   const handleTierSelect = useCallback(
     async (tier: SubscriptionTierName) => {
+      if (!subscriptionConfig.appStore) return;
       if (isProcessing || purchases === null) return;
       if (tier === "free") return;
 
@@ -261,6 +276,13 @@ export function IOSPurchaseFlowContainer() {
       router,
     ],
   );
+
+  const handlePersonaSelect = useCallback((nextRole: Role) => {
+    setSelectedRole(nextRole);
+    setBillingCycle(nextRole === "trainer" ? "monthly" : "yearly");
+    setScreen("plans");
+    setScreenChosen(true);
+  }, []);
 
   const handleRestore = useCallback(async () => {
     if (isProcessing || restoreMutation.isPending || syncMutation.isPending) {
@@ -333,10 +355,24 @@ export function IOSPurchaseFlowContainer() {
       currentTierDisplayName={displayInfo.currentTierDisplayName}
       isProcessing={isProcessing}
       isRestoring={restoreMutation.isPending || syncMutation.isPending}
+      screen={screen}
       onBillingCycleChange={setBillingCycle}
       onTierSelect={(tier) => void handleTierSelect(tier)}
       onRoleChange={setSelectedRole}
-      onBack={() => router.back()}
+      onPersonaSelect={handlePersonaSelect}
+      onChangePlan={() => {
+        setScreen("plans");
+        setScreenChosen(true);
+      }}
+      onContinueFree={() => router.push("/(auth)/success?tier=free" as Href)}
+      onBack={() => {
+        if (screen === "plans") {
+          setScreen("persona");
+          setScreenChosen(true);
+          return;
+        }
+        router.back();
+      }}
       onRetry={() => {
         void tiersQuery.refetch();
         void offeringsQuery.refetch();

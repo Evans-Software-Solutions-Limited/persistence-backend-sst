@@ -1,61 +1,80 @@
-import { screen, fireEvent, within } from "@testing-library/react";
+import { fireEvent, screen, within } from "@testing-library/react";
 import { renderPage } from "@/test-utils";
 import Pricing from "../Pricing";
 
 describe("Pricing", () => {
-  it("renders athlete + coach tiers with monthly prices by default", () => {
+  it("renders individual prices from the catalog and disables IAP calls to action", () => {
     renderPage(<Pricing />);
-    expect(screen.getByText("Premium")).toBeDefined();
-    expect(screen.getByText("Premium+")).toBeDefined();
-    // Monthly Premium price + suffix.
-    expect(screen.getAllByText("12.99").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("/mo").length).toBeGreaterThan(0);
-    expect(screen.getByText("Individual Trainer")).toBeDefined();
-    expect(screen.getByText("Enterprise")).toBeDefined();
+    const premium = screen.getByTestId("pricing-tier-premium");
+    const premiumPlus = screen.getByTestId("pricing-tier-premium_plus");
+
+    expect(within(premium).getByText("139.99")).toBeDefined();
+    expect(within(premiumPlus).getByText("249.99")).toBeDefined();
+    expect(
+      within(premium).getByText("Coming soon").getAttribute("aria-disabled"),
+    ).toBe("true");
   });
 
-  it("switches to annual pricing when the toggle is clicked", () => {
+  it("derives savings per tier when cadence changes", () => {
     renderPage(<Pricing />);
-    fireEvent.click(screen.getByRole("button", { name: "Annual" }));
-    // Premium annual price + /yr suffix + "2 months free" note.
-    expect(screen.getAllByText("129.99").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("/yr").length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/2 months free/i).length).toBeGreaterThan(0);
+    expect(
+      within(screen.getByTestId("pricing-tier-premium")).getByText(/save 31%/i),
+    ).toBeDefined();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Coaches" }));
+    expect(
+      within(screen.getByTestId("pricing-tier-individual_trainer")).getByText(
+        /save 30%/i,
+      ),
+    ).toBeDefined();
   });
 
-  it("shows the Loadout + Mealprint flagship as coming soon at £29.99", () => {
+  it("keeps Premium+ led by Loadout and Mealprint with no fictional workout feature", () => {
     renderPage(<Pricing />);
-    const flagship = screen
-      .getByText("Premium+")
-      .closest(".plan") as HTMLElement;
+    const premiumPlus = screen.getByTestId("pricing-tier-premium_plus");
+    expect(within(premiumPlus).getByText(/Loadout —/i)).toBeDefined();
+    expect(within(premiumPlus).getByText(/Mealprint —/i)).toBeDefined();
     expect(
-      within(flagship).getAllByText(/coming soon/i).length,
-    ).toBeGreaterThan(0);
+      within(premiumPlus).queryByText(/AI Workout Suggestions/i),
+    ).toBeNull();
+  });
+
+  it("renders the coach entry fork and makes the suite explicit on every card", () => {
+    renderPage(<Pricing />);
+    fireEvent.click(screen.getByRole("tab", { name: "Coaches" }));
+
     expect(
-      within(flagship).getByText(/adapt any workout to the equipment/i),
+      within(screen.getByTestId("pricing-tier-individual_trainer")).getByText(
+        "Start Up Coach",
+      ),
     ).toBeDefined();
     expect(
-      within(flagship).getByText(/Mealprint meal planning/i),
+      within(screen.getByTestId("pricing-tier-start_up_coach_plus")).getByText(
+        "Start Up Coach +",
+      ),
     ).toBeDefined();
-    // Scope is Loadout + Mealprint only (Brad, 2026-07-25) — the card must
-    // not sell AI workout generation or program import, neither of which
-    // is built or planned.
-    expect(within(flagship).queryByText(/AI Workout Suggestions/i)).toBeNull();
-    expect(within(flagship).queryByText(/Program import/i)).toBeNull();
-    expect(within(flagship).getByText("29.99")).toBeDefined();
-    // Renamed 2026-07-24 — the old feature brands must not resurface
-    // anywhere in the rendered document (copy, ids, classes, hrefs).
-    const text = document.documentElement.innerHTML;
-    expect(text).not.toMatch(
-      /\banygym\b|\bany gym\b|\banymeal\b|\bany meal\b/i,
+    expect(screen.getAllByText("Adaptive suite not included")).toHaveLength(1);
+    expect(screen.getAllByText("Loadout + Mealprint included")).toHaveLength(3);
+  });
+
+  it("renders web-only organisation tiers with live web calls to action", () => {
+    renderPage(<Pricing />);
+    fireEvent.click(screen.getByRole("tab", { name: "Organisations" }));
+
+    expect(screen.getByTestId("pricing-tier-studio")).toBeDefined();
+    expect(screen.getByTestId("pricing-tier-studio_pro")).toBeDefined();
+    expect(screen.getByTestId("pricing-tier-enterprise")).toBeDefined();
+    expect(screen.getAllByRole("link", { name: "Start trial" })).toHaveLength(
+      2,
     );
+    expect(screen.getByRole("link", { name: "Talk to us" })).toBeDefined();
   });
 
-  it("does NOT ship founding / waitlist content", () => {
+  it("never renders VAT caveats or competitor names", () => {
     const { container } = renderPage(<Pricing />);
+    fireEvent.click(screen.getByRole("tab", { name: "Organisations" }));
     const text = container.textContent ?? "";
-    expect(text).not.toMatch(/waitlist/i);
-    expect(text).not.toMatch(/founding/i);
-    expect(text).not.toMatch(/92%/);
+    expect(text).not.toMatch(/\bVAT\b|excl\.|incl\./i);
+    expect(text).not.toMatch(/Trainerize|MyFitnessPal/i);
   });
 });

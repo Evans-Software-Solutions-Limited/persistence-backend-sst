@@ -1,18 +1,21 @@
+import React from "react";
 import { fireEvent, render, screen } from "@testing-library/react-native";
 import type { SubscriptionTier } from "@/domain/models/subscription";
 import {
   IOSPurchaseFlowPresenter,
+  Price,
   type IOSPurchaseFlowPresenterProps,
 } from "@/ui/presenters/IOSPurchaseFlowPresenter";
+import { catalogTier } from "@persistence/subscription-catalog";
 
 const PREMIUM: SubscriptionTier = {
   tierName: "premium",
   displayName: "Premium",
   description: null,
-  priceMonthly: 9.99,
-  priceYearly: 99.99,
+  priceMonthly: 16.99,
+  priceYearly: 139.99,
   currency: "GBP",
-  features: { gym_buddy: true, progress: true, ai: true },
+  features: {},
   workoutLimit: null,
   aiAccess: true,
   aiWorkoutLimit: 6,
@@ -24,44 +27,33 @@ const PREMIUM: SubscriptionTier = {
   stripePriceIdMonthly: null,
   stripePriceIdYearly: null,
 };
-const INDIVIDUAL_TRAINER: SubscriptionTier = {
-  ...PREMIUM,
-  tierName: "individual_trainer",
-  displayName: "Individual Trainer",
-  isTrainerTier: true,
-  trainerClientLimit: 2,
-};
-const PREMIUM_PLUS: SubscriptionTier = {
-  ...PREMIUM,
-  tierName: "premium_plus",
-  displayName: "Premium+",
-  priceMonthly: 29.99,
-  priceYearly: 299.99,
-  aiWorkoutLimit: 30,
-};
 
 function defaultProps(): IOSPurchaseFlowPresenterProps {
   return {
-    subscriptionTiers: [PREMIUM, INDIVIDUAL_TRAINER],
+    subscriptionTiers: [PREMIUM],
     isLoading: false,
     errorMessage: null,
     isUnavailable: false,
-    billingCycle: "monthly",
+    billingCycle: "yearly",
     currentTier: "free",
     selectedRole: "user",
-    purchasableTiers: new Set(["premium", "individual_trainer"]),
-    isTierTrialEligible: () => true,
-    tierTrialDays: () => 14,
-    hasTrialEligibilityData: true,
-    monthlyOnlyTiers: new Set(["start_up_coach_plus", "coach_pro"]),
+    purchasableTiers: new Set(),
+    isTierTrialEligible: () => false,
+    tierTrialDays: () => null,
+    hasTrialEligibilityData: false,
+    monthlyOnlyTiers: new Set(),
     subscriptionEndsAt: null,
     isCancelledButActive: false,
     currentTierDisplayName: "Free",
     isProcessing: false,
     isRestoring: false,
+    screen: "plans",
     onBillingCycleChange: jest.fn(),
     onTierSelect: jest.fn(),
     onRoleChange: jest.fn(),
+    onPersonaSelect: jest.fn(),
+    onChangePlan: jest.fn(),
+    onContinueFree: jest.fn(),
     onBack: jest.fn(),
     onRetry: jest.fn(),
     onRestore: jest.fn(),
@@ -70,327 +62,158 @@ function defaultProps(): IOSPurchaseFlowPresenterProps {
 }
 
 describe("IOSPurchaseFlowPresenter", () => {
-  it("shows the loading state", () => {
-    render(<IOSPurchaseFlowPresenter {...defaultProps()} isLoading />);
-    expect(screen.getByTestId("ios-purchase-loading")).toBeTruthy();
-  });
-
-  it("shows the error state and retries", () => {
+  it("renders loading and error states", () => {
     const props = defaultProps();
-    render(<IOSPurchaseFlowPresenter {...props} errorMessage="boom" />);
+    const view = render(<IOSPurchaseFlowPresenter {...props} isLoading />);
+    expect(screen.getByTestId("ios-purchase-loading")).toBeTruthy();
+
+    view.rerender(
+      <IOSPurchaseFlowPresenter
+        {...props}
+        errorMessage="catalog unavailable"
+      />,
+    );
+    expect(screen.getByText("catalog unavailable")).toBeTruthy();
     fireEvent.press(screen.getByTestId("ios-purchase-retry"));
     expect(props.onRetry).toHaveBeenCalled();
   });
 
-  it("renders the premium card and dispatches tier select", () => {
+  it("routes all three persona choices and explains the single coach plan", () => {
     const props = defaultProps();
-    render(<IOSPurchaseFlowPresenter {...props} />);
-    expect(screen.getByTestId("subscription-card-premium")).toBeTruthy();
-    fireEvent.press(screen.getByTestId("subscription-card-premium-subscribe"));
-    expect(props.onTierSelect).toHaveBeenCalledWith("premium");
+    render(<IOSPurchaseFlowPresenter {...props} screen="persona" />);
+
+    fireEvent.press(screen.getByTestId("persona-self"));
+    fireEvent.press(screen.getByTestId("persona-coach"));
+    fireEvent.press(screen.getByTestId("persona-both"));
+    expect(props.onPersonaSelect).toHaveBeenNthCalledWith(1, "user");
+    expect(props.onPersonaSelect).toHaveBeenNthCalledWith(2, "trainer");
+    expect(props.onPersonaSelect).toHaveBeenNthCalledWith(3, "trainer");
+    expect(screen.getAllByText(/one coach plan/i).length).toBeGreaterThan(0);
   });
 
-  it("renders exactly one consumer card when the catalog has no premium_plus row (M19-P0 — pre-existing catalog shape unaffected)", () => {
+  it("renders every individual tier from the launch catalog", () => {
     render(<IOSPurchaseFlowPresenter {...defaultProps()} />);
-    expect(screen.getByTestId("subscription-card-premium")).toBeTruthy();
-    expect(screen.queryByTestId("subscription-card-premium_plus")).toBeNull();
-  });
-
-  it("renders a second consumer card, cheapest-first, when the catalog includes premium_plus (M19-P0)", () => {
-    const props = defaultProps();
-    render(
-      <IOSPurchaseFlowPresenter
-        {...props}
-        subscriptionTiers={[PREMIUM_PLUS, PREMIUM, INDIVIDUAL_TRAINER]}
-        purchasableTiers={
-          new Set(["premium", "premium_plus", "individual_trainer"])
-        }
-      />,
-    );
+    expect(screen.getByTestId("subscription-card-free")).toBeTruthy();
     expect(screen.getByTestId("subscription-card-premium")).toBeTruthy();
     expect(screen.getByTestId("subscription-card-premium_plus")).toBeTruthy();
-    const allCardTestIds = screen
-      .getAllByTestId(/^subscription-card-/)
-      .map((el) => el.props.testID);
-    expect(allCardTestIds.indexOf("subscription-card-premium")).toBeLessThan(
-      allCardTestIds.indexOf("subscription-card-premium_plus"),
-    );
-    fireEvent.press(
-      screen.getByTestId("subscription-card-premium_plus-subscribe"),
-    );
-    expect(props.onTierSelect).toHaveBeenCalledWith("premium_plus");
+    expect(screen.getByText("£139.99")).toBeTruthy();
+    expect(screen.getByText("£249.99")).toBeTruthy();
+    expect(screen.getAllByText(/save 31%/i).length).toBeGreaterThan(0);
   });
 
-  it("never renders a trainer-named tier as a consumer card, even if is_trainer_tier is falsy", () => {
-    // mapTierRowToWire coerces a NULL is_trainer_tier to false, so a
-    // trainer row with the flag unset would fall into the consumer filter
-    // and render a coach plan in the User tab. (The two sections are
-    // mutually exclusive via the role toggle, so it is a wrong-tab bug,
-    // not a double render.) The allow-list exclusion prevents it.
-    const misflaggedTrainer: SubscriptionTier = {
-      ...INDIVIDUAL_TRAINER,
-      isTrainerTier: false,
-    };
-    render(
-      <IOSPurchaseFlowPresenter
-        {...defaultProps()}
-        subscriptionTiers={[PREMIUM, misflaggedTrainer]}
-        purchasableTiers={new Set(["premium", "individual_trainer"])}
-      />,
-    );
-    const consumerCards = screen
-      .getAllByTestId(/^subscription-card-/)
-      .map((el) => el.props.testID);
-    expect(consumerCards).not.toContain("subscription-card-individual_trainer");
-    expect(consumerCards).toContain("subscription-card-premium");
-  });
-
-  it("orders two same-priced consumer tiers deterministically by tierName", () => {
-    // listActive orders by price_monthly with no secondary key, so equal
-    // prices come back in arbitrary Postgres order. Without the
-    // localeCompare tiebreak this assertion is a coin flip.
-    const samePrice: SubscriptionTier = {
-      ...PREMIUM_PLUS,
-      priceMonthly: PREMIUM.priceMonthly,
-    };
-    render(
-      <IOSPurchaseFlowPresenter
-        {...defaultProps()}
-        subscriptionTiers={[samePrice, PREMIUM]}
-        purchasableTiers={new Set(["premium", "premium_plus"])}
-      />,
-    );
-    const ids = screen
-      .getAllByTestId(/^subscription-card-/)
-      .map((el) => el.props.testID);
-    expect(ids.indexOf("subscription-card-premium")).toBeLessThan(
-      ids.indexOf("subscription-card-premium_plus"),
-    );
-  });
-
-  it("suppresses trial banners when the user holds a paid tier missing from the catalog", () => {
-    // A promotional premium_plus grant while the tier is still seeded
-    // is_active=false: it never reaches the catalog, so no card is marked
-    // current. Without the guard, Premium renders as a buyable free trial
-    // and tapping it downgrades a comped user.
-    render(
-      <IOSPurchaseFlowPresenter
-        {...defaultProps()}
-        subscriptionTiers={[PREMIUM, INDIVIDUAL_TRAINER]}
-        currentTier="premium_plus"
-        purchasableTiers={new Set(["premium", "individual_trainer"])}
-      />,
-    );
-    expect(screen.queryByText(/free trial/i)).toBeNull();
-  });
-
-  it("states the annual saving as 2 months free, not an overstated percentage", () => {
-    // Every seeded annual price is exactly 10x monthly => 16.7% off. The
-    // old "(Save 20%)" overstated it on an App Store review surface.
-    render(<IOSPurchaseFlowPresenter {...defaultProps()} />);
-    expect(screen.getByText(/2 months free/i)).toBeTruthy();
-    expect(screen.queryByText(/save 20%/i)).toBeNull();
-  });
-
-  it("suppresses trainer-card trial banners in the same state", () => {
-    // The trainer loop resolves fixed tier names out of the catalog and has
-    // the identical hole — a held-but-unlisted tier marks no card current,
-    // so every trainer card would offer a trial.
-    render(
-      <IOSPurchaseFlowPresenter
-        {...defaultProps()}
-        selectedRole="trainer"
-        subscriptionTiers={[PREMIUM, INDIVIDUAL_TRAINER]}
-        currentTier="premium_plus"
-        purchasableTiers={new Set(["premium", "individual_trainer"])}
-      />,
-    );
-    expect(screen.queryByText(/free trial/i)).toBeNull();
-  });
-
-  it("advertises EACH tier's own trial length (per-tier, not one global number)", () => {
-    // Regression: previously one product's offer was stamped on every card, so
-    // a premium 1-week offer could render as a trainer's "14-day". The premium
-    // (user) card must show ITS product's 7 days and never a trainer's 14.
-    render(
-      <IOSPurchaseFlowPresenter
-        {...defaultProps()}
-        selectedRole="user"
-        tierTrialDays={(tier) => (tier === "premium" ? 7 : 14)}
-      />,
-    );
-    expect(screen.getByText("7-day free trial")).toBeTruthy();
-    expect(screen.queryByText("14-day free trial")).toBeNull();
-  });
-
-  it("shows the trial banner per-tier — only on tiers whose own product is eligible", () => {
-    const COACH: SubscriptionTier = {
-      ...PREMIUM,
-      tierName: "coach",
-      displayName: "Coach",
-      isTrainerTier: true,
-    };
-    const props = defaultProps();
-    render(
-      <IOSPurchaseFlowPresenter
-        {...props}
-        subscriptionTiers={[PREMIUM, INDIVIDUAL_TRAINER, COACH]}
-        selectedRole="trainer"
-        billingCycle="monthly"
-        // Only individual_trainer is eligible; coach is not.
-        isTierTrialEligible={(tier) => tier === "individual_trainer"}
-      />,
-    );
-    // Exactly one trainer card shows the banner (individual_trainer), not coach.
-    expect(screen.getAllByText("14-day free trial")).toHaveLength(1);
-  });
-
-  it("renders DIFFERENT trial durations across trainer cards (each from its own product)", () => {
-    // Locks the per-tier guarantee: two simultaneously-eligible trainer cards
-    // must each show THEIR product's duration, not a single shared number.
-    const COACH: SubscriptionTier = {
-      ...PREMIUM,
-      tierName: "coach",
-      displayName: "Coach",
-      isTrainerTier: true,
-    };
-    render(
-      <IOSPurchaseFlowPresenter
-        {...defaultProps()}
-        subscriptionTiers={[PREMIUM, INDIVIDUAL_TRAINER, COACH]}
-        selectedRole="trainer"
-        billingCycle="monthly"
-        isTierTrialEligible={() => true}
-        tierTrialDays={(tier) =>
-          tier === "individual_trainer" ? 14 : tier === "coach" ? 7 : null
-        }
-      />,
-    );
-    // Both distinct durations render at once; coach_pro (null) shows none.
-    expect(screen.getByText("14-day free trial")).toBeTruthy();
-    expect(screen.getByText("7-day free trial")).toBeTruthy();
-  });
-
-  it("renders trainer cards under the trainer role", () => {
-    const props = defaultProps();
-    render(<IOSPurchaseFlowPresenter {...props} selectedRole="trainer" />);
-    expect(
-      screen.getByTestId("trainer-subscription-card-individual_trainer"),
-    ).toBeTruthy();
-  });
-
-  it("hides a monthly-only tier on the yearly cycle — no external purchase path", () => {
-    // These plans used to render a "Contact Sales" mailto here, selling a
-    // subscription outside IAP from the paywall (Apple 3.1.1). The presenter's
-    // `monthlyOnlyTiers` mechanism is still general-purpose even though the
-    // REAL set is empty post spec-29 Phase 2 (see IOSPurchaseFlowContainer) —
-    // this test exercises the mechanism directly with an arbitrary member.
-    const COACH_PRO: SubscriptionTier = {
-      ...PREMIUM,
-      tierName: "coach_pro",
-      displayName: "Coach Pro",
-      isTrainerTier: true,
-    };
-    render(
-      <IOSPurchaseFlowPresenter
-        {...defaultProps()}
-        subscriptionTiers={[PREMIUM, INDIVIDUAL_TRAINER, COACH_PRO]}
-        selectedRole="trainer"
-        billingCycle="yearly"
-      />,
-    );
-    expect(screen.queryByTestId("trainer-card-coach_pro-pro")).toBeNull();
-    expect(screen.queryByText(/contact sales/i)).toBeNull();
-    // Individual Trainer has a yearly product and still renders.
-    expect(
-      screen.getByTestId("trainer-card-individual_trainer-pro"),
-    ).toBeTruthy();
-    // And the coach is told why, rather than the tile silently vanishing.
-    expect(screen.getByTestId("ios-purchase-monthly-only-note")).toBeTruthy();
-  });
-
-  it("shows a monthly-only tier normally on the monthly cycle", () => {
-    const COACH_PRO: SubscriptionTier = {
-      ...PREMIUM,
-      tierName: "coach_pro",
-      displayName: "Coach Pro",
-      isTrainerTier: true,
-    };
-    const props = defaultProps();
-    render(
-      <IOSPurchaseFlowPresenter
-        {...props}
-        subscriptionTiers={[PREMIUM, INDIVIDUAL_TRAINER, COACH_PRO]}
-        selectedRole="trainer"
-        billingCycle="monthly"
-      />,
-    );
-    fireEvent.press(screen.getByTestId("trainer-card-coach_pro-pro"));
-    expect(props.onTierSelect).toHaveBeenCalledWith("coach_pro");
-  });
-
-  it("invokes restore", () => {
+  it("renders every paid IAP action as non-interactive Coming soon", () => {
     const props = defaultProps();
     render(<IOSPurchaseFlowPresenter {...props} />);
-    fireEvent.press(screen.getByTestId("ios-purchase-restore"));
-    expect(props.onRestore).toHaveBeenCalled();
+    expect(screen.getAllByText("Coming soon")).toHaveLength(2);
+    expect(screen.queryByText("Subscribe")).toBeNull();
+    expect(props.onTierSelect).not.toHaveBeenCalled();
   });
 
-  it("toggles billing cycle and role", () => {
+  it("continues free without treating it as an IAP", () => {
     const props = defaultProps();
     render(<IOSPurchaseFlowPresenter {...props} />);
-    fireEvent.press(screen.getByTestId("billing-cycle-toggle"));
-    expect(props.onBillingCycleChange).toHaveBeenCalledWith("yearly");
+    fireEvent.press(screen.getByTestId("subscription-card-free-continue"));
+    expect(props.onContinueFree).toHaveBeenCalled();
+  });
+
+  it("switches cadence and audience", () => {
+    const props = defaultProps();
+    render(<IOSPurchaseFlowPresenter {...props} />);
+    fireEvent.press(screen.getByText("Monthly"));
     fireEvent.press(screen.getByTestId("role-toggle-trainer"));
+    expect(props.onBillingCycleChange).toHaveBeenCalledWith("monthly");
     expect(props.onRoleChange).toHaveBeenCalledWith("trainer");
   });
 
-  it("shows Manage in App Store + status card only for a paid tier", () => {
-    const props = defaultProps();
-    const { rerender } = render(<IOSPurchaseFlowPresenter {...props} />);
-    expect(screen.queryByTestId("ios-purchase-manage")).toBeNull();
-
-    rerender(
+  it("renders the coach ladder, suite split and web-only organisation readout", () => {
+    render(
       <IOSPurchaseFlowPresenter
-        {...props}
-        currentTier="premium"
-        currentTierDisplayName="Premium"
+        {...defaultProps()}
+        selectedRole="trainer"
+        billingCycle="monthly"
       />,
     );
+    expect(
+      screen.getByTestId("trainer-subscription-card-individual_trainer"),
+    ).toBeTruthy();
+    expect(
+      screen.getByTestId("trainer-subscription-card-start_up_coach_plus"),
+    ).toBeTruthy();
+    expect(screen.getByTestId("trainer-subscription-card-coach")).toBeTruthy();
+    expect(
+      screen.getByTestId("trainer-subscription-card-coach_pro"),
+    ).toBeTruthy();
+    expect(screen.getAllByText("Adaptive suite not included")).toHaveLength(1);
+    expect(screen.getAllByText("Loadout + Mealprint included")).toHaveLength(3);
+    expect(screen.getByTestId("organisation-plans-read-only")).toBeTruthy();
+    expect(screen.getByText("Studio Pro")).toBeTruthy();
+    expect(screen.queryByText("Buy")).toBeNull();
+    expect(screen.queryByText("Start trial")).toBeNull();
+    expect(screen.queryByText("Talk to us")).toBeNull();
+  });
+
+  it("shows the unavailable comparison notice and restores purchases", () => {
+    const props = defaultProps();
+    render(<IOSPurchaseFlowPresenter {...props} isUnavailable isRestoring />);
+    expect(screen.getByTestId("ios-purchase-unavailable")).toBeTruthy();
+    expect(screen.getByText("Restoring...")).toBeTruthy();
+  });
+
+  it("renders a current plan management state", () => {
+    const props = defaultProps();
+    render(
+      <IOSPurchaseFlowPresenter
+        {...props}
+        screen="manage"
+        currentTier="premium_plus"
+        currentTierDisplayName="Premium+"
+        subscriptionEndsAt="2027-03-14T00:00:00.000Z"
+      />,
+    );
+    expect(screen.getByTestId("subscription-manage-screen")).toBeTruthy();
+    expect(screen.getByText("£249.99")).toBeTruthy();
+    expect(screen.getByText(/renews 14 Mar 2027/i)).toBeTruthy();
+    fireEvent.press(screen.getByTestId("subscription-change-plan"));
     fireEvent.press(screen.getByTestId("ios-purchase-manage"));
+    expect(props.onChangePlan).toHaveBeenCalled();
     expect(props.onManageInAppStore).toHaveBeenCalled();
   });
 
-  it("shows the inline unavailable notice", () => {
-    render(<IOSPurchaseFlowPresenter {...defaultProps()} isUnavailable />);
-    expect(screen.getByTestId("ios-purchase-unavailable")).toBeTruthy();
+  it("renders cancelled manage state and a catalog-missing grant safely", () => {
+    const props = defaultProps();
+    render(
+      <IOSPurchaseFlowPresenter
+        {...props}
+        screen="manage"
+        currentTier="premium"
+        currentTierDisplayName="Promotional access"
+        isCancelledButActive
+      />,
+    );
+    expect(screen.getByText("CANCELLED")).toBeTruthy();
   });
 
-  it("shows the back affordance", () => {
+  it("routes the header back affordance", () => {
     const props = defaultProps();
     render(<IOSPurchaseFlowPresenter {...props} />);
     fireEvent.press(screen.getByTestId("ios-purchase-back"));
     expect(props.onBack).toHaveBeenCalled();
   });
 
-  it("notes when no trainer tier is purchasable yet", () => {
-    const props = defaultProps();
-    render(
-      <IOSPurchaseFlowPresenter
-        {...props}
-        selectedRole="trainer"
-        purchasableTiers={new Set()}
+  it("Price supports invoiced, monthly and provisional catalog values", () => {
+    const tier = catalogTier("premium");
+    const view = render(<Price tier={tier} cadence="monthly" />);
+    expect(screen.getByText("£16.99")).toBeTruthy();
+
+    view.rerender(<Price tier={catalogTier("enterprise")} cadence="monthly" />);
+    expect(screen.getByText("Invoiced")).toBeTruthy();
+
+    view.rerender(
+      <Price
+        tier={{ ...tier, annual: 199.99, provisionalAnnual: true }}
+        cadence="annual"
       />,
     );
-    expect(screen.getByTestId("ios-purchase-tier-note")).toBeTruthy();
-  });
-
-  it("exposes accessible names/state for the back control and the billing-cycle switch", () => {
-    const props = defaultProps();
-    render(<IOSPurchaseFlowPresenter {...props} />);
-    expect(screen.getByLabelText("Go back")).toBeTruthy();
-    const toggle = screen.getByLabelText("Billing cycle");
-    expect(toggle.props.accessibilityRole).toBe("switch");
-    expect(toggle.props.accessibilityState).toEqual({ checked: false });
+    expect(screen.getByText("£199.99*")).toBeTruthy();
   });
 });
