@@ -22,6 +22,8 @@ describe("subscription catalog", () => {
   it("derives each annual saving from that tier's catalog values", () => {
     expect(annualSaving(catalogTier("premium"))).toBe(31);
     expect(annualSaving(catalogTier("individual_trainer"))).toBe(30);
+    expect(catalogTier("start_up_coach_plus").annual).toBe(289.99);
+    expect(annualSaving(catalogTier("start_up_coach_plus"))).toBe(31);
     expect(annualSaving(catalogTier("coach_pro"))).toBe(30);
   });
 

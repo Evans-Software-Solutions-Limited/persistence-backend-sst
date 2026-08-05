@@ -123,7 +123,7 @@ because it has run. **Before it reaches a real user it needs:**
 `claude/spec29-phase2-coach-ladder` — not yet a PR.** Two pricing decisions
 resolved this session and recorded in `design.md` § 1: (1) coach-ladder annual
 discount extended to **30 % across the board** (Start Up Coach £159.99, Start Up
-Coach + £293.99, Coach £499.99, Coach Pro £839.99; consumer annuals unchanged at
+Coach + £289.99 (nearest permitted ASC GBP price point), Coach £499.99, Coach Pro £839.99; consumer annuals unchanged at
 £139.99 / £249.99); (2) the six-tier IAP ladder is final. What shipped on the
 branch: migration `20260805120000_coach_ladder_restructure.sql` (rename
 individual_trainer→"Start Up Coach" + reprice; insert `start_up_coach_plus` /

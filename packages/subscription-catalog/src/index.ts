@@ -130,7 +130,7 @@ export const SUBSCRIPTION_CATALOG = [
     audience: "coach",
     tagline: "Coaching plus the adaptive suite",
     monthly: 34.99,
-    annual: 293.99,
+    annual: 289.99,
     clients: 5,
     suite: true,
     rail: "iap",

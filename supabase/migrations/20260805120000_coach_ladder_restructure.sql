@@ -5,7 +5,7 @@
 --   premium              Premium            £16.99 / £139.99   (consumer)
 --   premium_plus         Premium+           £29.99 / £249.99   (consumer, suite)
 --   individual_trainer   Start Up Coach     £18.99 / £159.99   (5 clients, NO suite)
---   start_up_coach_plus  Start Up Coach +   £34.99 / £293.99   (5 clients, suite)
+--   start_up_coach_plus  Start Up Coach +   £34.99 / £289.99   (5 clients, suite)
 --   coach                Coach              £59.99 / £499.99   (15 clients, suite)
 --   coach_pro            Coach Pro          £99.99 / £839.99   (30 clients, suite)
 --
@@ -81,7 +81,7 @@ INSERT INTO subscription_tiers (
   (
     'start_up_coach_plus', 'Start Up Coach +',
     'The Start Up Coach plan plus the adaptive suite — Loadout and Mealprint — for you and your clients.',
-    34.99, 293.99, 'GBP',
+    34.99, 289.99, 'GBP',
     NULL, true, 30, true, true, true,
     5, true,
     '{"workouts": "unlimited", "progress": true, "loadout": true, "mealprint": true}',
