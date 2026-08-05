@@ -220,15 +220,15 @@ riskiest — that asymmetry should shape whatever the library spec becomes.
 
 ## 10. Decision record
 
-| #   | Decision                                                                                              |
-| --- | ----------------------------------------------------------------------------------------------------- |
-| D1  | Combined spec: import + Phase 4 adaptation share the athlete/coach entry point and the premium gate.  |
-| D2  | Loadout Phase 4 **moves here** from spec-21; spec-21 keeps the single-workout engine + § 2.4 columns. |
-| D3  | Cache keys on content hash, not URL; reuse scope splits public_url (shared) vs upload (per-user).     |
-| D4  | Resolution never cached cross-user; never fabricates a silent match.                                  |
-| D5  | Cap 10 distinct cycle-workouts (spec-21 § 7.3 corrected); async job; 413 beyond.                      |
-| D6  | Shared cross-user library PARKED (§ 9).                                                               |
-| C1  | ✅ **RESOLVED (Brad, 2026-08-05) — Option A**: public-URL fetches shared cross-user, uploads per-user only, **no exclusion list** in v1. Detail in § 11. |
+| #   | Decision                                                                                                                                                                                          |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D1  | Combined spec: import + Phase 4 adaptation share the athlete/coach entry point and the premium gate.                                                                                              |
+| D2  | Loadout Phase 4 **moves here** from spec-21; spec-21 keeps the single-workout engine + § 2.4 columns.                                                                                             |
+| D3  | Cache keys on content hash, not URL; reuse scope splits public_url (shared) vs upload (per-user).                                                                                                 |
+| D4  | Resolution never cached cross-user; never fabricates a silent match.                                                                                                                              |
+| D5  | Cap 10 distinct cycle-workouts (spec-21 § 7.3 corrected); async job; 413 beyond.                                                                                                                  |
+| D6  | Shared cross-user library PARKED (§ 9).                                                                                                                                                           |
+| C1  | ✅ **RESOLVED (Brad, 2026-08-05) — Option A**: public-URL fetches shared cross-user, uploads per-user only, **no exclusion list** in v1. Detail in § 11.                                          |
 | C2  | ✅ **RESOLVED (Brad, 2026-08-05)** — framing accepted (bar = "editing beats retyping", per-failure-mode, auto-match precision strict) + starting thresholds accepted as proposed. Detail in § 11. |
 
 ## 11. Checkpoints — RESOLVED (Brad, 2026-08-05)
