@@ -102,10 +102,11 @@ export const nutritionRoutes = new Elysia()
   // the same reason preferences are: the paywall is on generation, and a lapsed
   // subscriber must keep access to plans they made while paying.
   //
-  // 🔴 `nutritionPlansReadHandlers` declares `/plans/active` BEFORE `/plans/:id`
-  // internally, and that order is load-bearing (see its docstring). Mounting the
-  // create handler either side of it is safe — POST and GET do not collide — but
-  // do NOT split the read handlers up.
+  // `nutritionPlansReadHandlers` declares `/plans/active` before `/plans/:id` as
+  // a readability convention — NOT a requirement: Elysia's radix router prefers a
+  // static segment over a dynamic one whatever the declaration order, verified by
+  // swapping them (see that file's docstring). Mounting the create handler either
+  // side is safe (POST vs GET). Keep the read handlers together regardless.
   .use(nutritionPlansCreateHandler)
   .use(nutritionPlansReadHandlers)
   .use(nutritionPlanMealLogHandler)

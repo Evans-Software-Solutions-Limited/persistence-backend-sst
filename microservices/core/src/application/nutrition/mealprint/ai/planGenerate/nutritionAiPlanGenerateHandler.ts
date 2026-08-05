@@ -66,6 +66,19 @@ interface VerifiedPlanMeal {
   fatG: number;
   /** TRUE when this meal contains a candidate with UNKNOWN allergen content. */
   containsUnverified: boolean;
+  /**
+   * TRUE when a resolved item FAILED the stage-3 avoidance re-run (an
+   * `allowed: false` verdict). The draft-confirm UI surfaces this so the user
+   * swaps the meal; the accept path independently 422s on the same condition.
+   *
+   * ⚠ This should be unreachable in practice — `assembleCandidates` already ran
+   * the same `partitionByAvoidance` over the same candidate objects, so a pooled
+   * candidate cannot come back `allowed: false` here. It exists so that if the
+   * pool filter and this re-run ever DIVERGE (a bug), the failure surfaces as a
+   * flagged meal rather than silently passing — i.e. the gate the header comment
+   * promises is a real gate, not a no-op.
+   */
+  flaggedUnsafe: boolean;
 }
 
 /**
@@ -273,6 +286,7 @@ export const nutritionAiPlanGenerateHandler = new Elysia()
           let carbsG = 0;
           let fatG = 0;
           let containsUnverified = false;
+          let flaggedUnsafe = false;
 
           const items = meal.items.map((item) => {
             const candidate = byId.get(item.candidateId)!;
@@ -282,9 +296,18 @@ export const nutritionAiPlanGenerateHandler = new Elysia()
             fatG += candidate.fatG * item.servings;
             // Defence in depth (design § 1 stage 3): re-run avoidance on each
             // resolved item. An `allowed: true` verdict can still carry
-            // `unverified` when the row's allergen content is unknown.
+            // `unverified` when the row's allergen content is unknown; an
+            // `allowed: false` verdict means the item breaches an avoidance rule
+            // and the whole meal is flagged for the user to swap (design § 1:
+            // "failing meal returned flagged"). Should not happen — the pool was
+            // already filtered — but flagging is what keeps this a real gate.
             const avoidance = assessAvoidance(candidate, preferences);
-            if (avoidance.allowed && avoidance.unverified) {
+            if (!avoidance.allowed) {
+              flaggedUnsafe = true;
+              console.warn(
+                `[mealprint-plan] stage-3 avoidance rejected a POOLED candidate user=${userId} candidate=${candidate.id} rule=${avoidance.rule} — pool filter and re-run have diverged`,
+              );
+            } else if (avoidance.unverified) {
               containsUnverified = true;
             }
             return {
@@ -305,6 +328,7 @@ export const nutritionAiPlanGenerateHandler = new Elysia()
             carbsG: round(carbsG),
             fatG: round(fatG),
             containsUnverified,
+            flaggedUnsafe,
           };
         });
 

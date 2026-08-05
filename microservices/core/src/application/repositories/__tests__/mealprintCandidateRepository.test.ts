@@ -513,10 +513,13 @@ describe("MealprintCandidateRepository.resolveByIds", () => {
     expect(cap.selects).toBe(0);
   });
 
-  it("scopes recipes and meals to the caller, but NOT foods", async () => {
-    // The foods catalogue is shared (every OFF row is readable); recipes and
-    // meals are personal. Losing the user filter on either would leak another
-    // user's library into a plan.
+  it("scopes EVERY kind to the caller — foods by createdBy-or-OFF, recipes and meals by userId", async () => {
+    // ⚠ This test previously asserted foods were NOT scoped (`not.toContain`),
+    // codifying the PR #124 private-food leak as intended. A custom food
+    // (source='user') is private to its creator, so the foods read carries the
+    // caller's id in an `createdBy = $ OR source = 'openfoodfacts'` predicate —
+    // the OFF catalogue stays shared, custom rows do not leak. Inspector Brad,
+    // 2026-08-05.
     vi.mocked(getDb).mockReturnValue(makeResolveDb({}, cap) as never);
     await repo.resolveByIds(USER_A, {
       foodIds: ["f1"],
@@ -525,7 +528,11 @@ describe("MealprintCandidateRepository.resolveByIds", () => {
     });
 
     const [foodWhere, recipeWhere, mealWhere] = cap.wheres.map(render);
-    expect(foodWhere!.params).not.toContain(USER_A);
+    // The caller's id MUST reach the foods predicate now.
+    expect(foodWhere!.params).toContain(USER_A);
+    // And the OFF escape hatch keeps shared rows readable — as a bound PARAM
+    // (`source = $n`), not interpolated into the SQL text.
+    expect(foodWhere!.params).toContain("openfoodfacts");
     expect(recipeWhere!.params).toContain(USER_A);
     expect(mealWhere!.params).toContain(USER_A);
   });
@@ -536,14 +543,20 @@ describe("MealprintCandidateRepository.resolveByIds", () => {
 
     const q = render(cap.wheres[0]);
     expect(q.sql).not.toMatch(PAREN_CAST);
-    expect(q.params).toEqual(["f1", "f2"]);
+    // The id list is a plain IN; the ownership scope adds USER_A + the OFF
+    // marker as further params, so assert the ids are present rather than an
+    // exact-equal (which the scope params would break).
+    expect(q.params).toEqual(expect.arrayContaining(["f1", "f2"]));
   });
 
   it("de-duplicates ids so a repeated reference is fetched once", async () => {
     vi.mocked(getDb).mockReturnValue(makeResolveDb({}, cap) as never);
     await repo.resolveByIds(USER_A, { foodIds: ["f1", "f1", "f2"] });
 
-    expect(render(cap.wheres[0]).params).toEqual(["f1", "f2"]);
+    const idParams = render(cap.wheres[0]).params.filter(
+      (p) => p === "f1" || p === "f2",
+    );
+    expect(idParams).toEqual(["f1", "f2"]);
   });
 
   it("scales food macros out of the per-100g basis using serving_quantity", async () => {

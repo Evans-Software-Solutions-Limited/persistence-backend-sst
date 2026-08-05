@@ -66,6 +66,21 @@ vi.mock("../../planModel", async () => {
   return { ...actual, composeDayPlan: composeDayPlanMock };
 });
 
+// Delegates to the REAL assembly by default (set in the factory below and
+// preserved across `clearAllMocks`, which clears history but not
+// implementations). The one test that proves the stage-3 avoidance gate fires
+// uses `mockReturnValueOnce` to FORCE a rejected candidate through the pool,
+// simulating a pool-filter/re-run divergence — unreachable via real assembly,
+// which would filter it out and return no_candidates.
+const assembleCandidatesMock = vi.hoisted(() => vi.fn());
+vi.mock("../../../candidates/assembleCandidates", async () => {
+  const actual = await vi.importActual<
+    typeof import("../../../candidates/assembleCandidates")
+  >("../../../candidates/assembleCandidates");
+  assembleCandidatesMock.mockImplementation(actual.assembleCandidates);
+  return { ...actual, assembleCandidates: assembleCandidatesMock };
+});
+
 import { nutritionAiPlanGenerateHandler } from "../nutritionAiPlanGenerateHandler";
 import { coreErrorHandler } from "../../../../../../shared/errorHandler";
 import Elysia from "elysia";
@@ -289,5 +304,41 @@ describe("POST /nutrition/ai/plan-generate", () => {
       m.items.some((i: any) => i.candidateId === "c1"),
     );
     expect(meal.containsUnverified).toBe(true);
+    // The happy-path meals are not spuriously flagged unsafe.
+    expect(meal.flaggedUnsafe).toBe(false);
+  });
+
+  it("flags a meal unsafe if a POOLED candidate fails the stage-3 avoidance re-run (pool/re-run divergence)", async () => {
+    // Simulates the pool filter and the stage-3 re-run diverging: the model
+    // composes from `c1`, but the user's preferences reject milk and c1 carries
+    // an en:milk tag. Real assembly would filter c1 out and return
+    // no_candidates, so it is FORCED through here to reach stage 3 — the test
+    // proves the gate is REAL, not a no-op, if a future filter bug lets it slip.
+    prefMocks.get.mockResolvedValue({ ...PREFS, avoidAllergens: ["milk"] });
+    const milk = candidate("c1", { allergenTags: ["en:milk"] });
+    assembleCandidatesMock.mockReturnValueOnce({
+      candidates: [milk],
+      stats: {
+        fetched: 1,
+        kept: 1,
+        deduped: 0,
+        capped: 0,
+        rejectedByRule: {},
+      },
+    });
+    composeDayPlanMock.mockResolvedValue({
+      meals: [
+        {
+          name: "Cheesy",
+          reason: "r",
+          logSlot: "lunch",
+          items: [{ candidateId: "c1", servings: 1 }],
+        },
+      ],
+      usage: { modelId: "m", latencyMs: 1, inputTokens: 1, outputTokens: 1 },
+    });
+    const res = await app.handle(post());
+    const parsed = await body(res);
+    expect(parsed.data.meals[0].flaggedUnsafe).toBe(true);
   });
 });

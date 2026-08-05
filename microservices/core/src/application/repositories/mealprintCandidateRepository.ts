@@ -402,11 +402,14 @@ export class MealprintCandidateRepository {
    * explicitly chosen, producing a plan quietly missing rows. Budget fit is the
    * verifier's job, not the resolver's.
    *
-   * ⚠ **Ownership: recipes and meals are scoped to `userId`; foods are NOT.**
-   * That asymmetry is correct and matches the `list*` methods — the `foods`
-   * catalogue is shared (every OFF row is readable by everyone), while recipes
-   * and meals are personal. A missing id is simply absent from the result, so
-   * the caller decides whether that is a 400 or a dropped row.
+   * ⚠ **Ownership: recipes and meals are scoped to `userId`; foods are scoped
+   * to `createdBy = userId OR source = 'openfoodfacts'`.** OFF catalogue rows are
+   * shared (readable by everyone), but a CUSTOM food (`source='user'` /
+   * `'ai_recognized'`) is private to its creator — so foods are NOT read
+   * unscoped. An earlier version read them with a bare `id IN (…)`, which
+   * reopened the private-food leak `foodRepository.getByIds` closed in PR #124
+   * (Inspector Brad, 2026-08-05). A missing id is simply absent from the result,
+   * so the caller decides whether that is a 400 or a dropped row.
    */
   async resolveByIds(
     userId: string,
@@ -440,7 +443,23 @@ export class MealprintCandidateRepository {
               createdBy: foods.createdBy,
             })
             .from(foods)
-            .where(inArray(foods.id, foodIds)),
+            .where(
+              and(
+                inArray(foods.id, foodIds),
+                // ⚠ OWNERSHIP SCOPE — do NOT remove. A bare `id IN (…)` read of
+                // `foods` leaks another user's PRIVATE custom foods
+                // (`source='user'`/`'ai_recognized'`, `createdBy=them`) into this
+                // caller's plan and echoes their macros back — the exact breach
+                // `foodRepository.getByIds` was hardened against in PR #124.
+                // OFF rows are shared (readable by everyone); a custom row is
+                // readable only by its creator. A caller's OWN custom foods still
+                // resolve via `createdBy = userId`.
+                or(
+                  eq(foods.createdBy, userId),
+                  eq(foods.source, "openfoodfacts"),
+                ),
+              ),
+            ),
       recipeIds.length === 0
         ? Promise.resolve([])
         : db
