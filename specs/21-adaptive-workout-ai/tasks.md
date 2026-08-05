@@ -543,21 +543,21 @@ no 3-way merge. Use a comma; UUIDs contain none.
   Unmatched rows are deliberately NOT deduplicated: their labels are free text,
   not a key.
 
-## Phase 4 — Coach programme adaptation
+## Phase 4 — Coach programme adaptation → **MOVED to spec-22** (2026-08-05)
 
-- [ ] **T-4.1 [B]** Programme linkage migration + `schema.ts` mirror
-      (design § 2.4).
-- [ ] **T-4.2 [B]** Programme-level preview + create-variant; each adapted
-      workout is itself a workout variation; `program_workouts.position`
-      preserved. Assemble the candidate pool **once** for the union of all
-      muscles across the programme; cap at **120 workouts** → 413 beyond, no
-      silent truncation (design § 7.3).
-- [ ] **T-4.3 [B]** Assign from the variant via the existing programme-assignment
-      path; `assertTrainerCanActForClient` on every entry point (AC-8.4).
-- [ ] **T-4.4 [M]** Coach programme detail entry, per-workout entry, review,
-      assign.
-- [ ] **T-4.5** Tests incl. an ex-coach (terminated relationship, spec-25)
-      getting 403.
+⚠ **These tasks now live in `specs/22-program-import-and-adaptation/` (Phase 4,
+T-4.1…T-4.5)** so programme adaptation shares a home with programme import — import
+ingests an external programme, adaptation reshapes it, and both share the athlete/
+coach entry point and the premium gate (spec-22 D1/D2). **spec-21 remains the
+single-workout adaptation ENGINE** (§ 6 ranker, § 7 save-path, § 6.1 containment) and
+owns the shared programme-linkage columns (§ 2.4); spec-22 orchestrates the
+programme-level flow on top of it. Do not implement Phase 4 from this file — it is
+kept here only as a pointer.
+
+⚠ **The cap is 10 distinct cycle-workouts, not 120.** The 120 figure elsewhere in
+older revisions double-counted weeks×sessions; a programme is a repeating cycle
+(spec-19), so adaptation is linear in DISTINCT workouts. See design § 7.3 (corrected
+2026-08-04) and spec-22 AC-4.3.
 
 ## Phase 5 — Second-engine follow-up (optional) · **unlikely, on E2's evidence**
 
