@@ -228,5 +228,76 @@ riskiest — that asymmetry should shape whatever the library spec becomes.
 | D4  | Resolution never cached cross-user; never fabricates a silent match.                                  |
 | D5  | Cap 10 distinct cycle-workouts (spec-21 § 7.3 corrected); async job; 413 beyond.                      |
 | D6  | Shared cross-user library PARKED (§ 9).                                                               |
-| C1  | ⚠ **Brad checkpoint:** confirm the AC-3.3 public_url-vs-upload reuse split before build.              |
-| C2  | ⚠ **Brad checkpoint:** Phase-0 eval quality bar per input type (AC-0.3).                              |
+| C1  | ⚠ **Brad checkpoint** — cache reuse across users. Full detail in § 11.                                |
+| C2  | ⚠ **Brad checkpoint** — the eval quality bar per input type. Full detail in § 11.                     |
+
+## 11. Open checkpoints — what I need from Brad, in detail
+
+Both are decisions only Brad can make; both are recorded here so the answer lands
+against the spec rather than in chat history. Neither blocks the spec existing;
+both gate the START of the phase named.
+
+### C1 — Can an AI extraction be reused across users, and for which sources?
+
+**The decision.** Whether `extraction_cache` may serve one user's AI-extracted result
+to a **different** user, so the expensive extraction runs once rather than per
+importer. **This is a privacy/IP call, not a technical one** — the cache works
+identically either way; what differs is whether reuse crosses a user boundary, and
+that is a question about other people's material.
+
+| Option              | Behaviour                                                                   | Efficiency                                             | Risk                                                                                                          |
+| ------------------- | --------------------------------------------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
+| **A (recommended)** | Public-URL fetches shared cross-user; **uploads** (photo/PDF) per-user only | High — popular programmes are usually URLs             | Low — a public URL's content is already public; a private upload never leaves its owner                       |
+| B                   | Everything per-user only; no cross-user reuse                               | Low — two users importing the same blog each pay again | Lowest                                                                                                        |
+| C                   | Everything shared by content hash, regardless of source                     | Highest                                                | An uploaded screenshot of a **paid/proprietary** programme could be served to a stranger — IP/consent problem |
+
+What Option A means concretely:
+
+- **"Public URL"** = a URL our SSRF-safe fetch retrieves **without authentication**.
+  Its content is already on the open web, so caching the derived structure cross-user
+  exposes nothing that was not already public.
+- An **upload** could be anything — a paid PDF, a friend's plan, a coach's private
+  programme. Its extraction stays keyed to that user; a second user re-importing the
+  **same file** is deduped, but no one else is ever served it.
+- Either way the cache stores the extracted STRUCTURE only, keyed by content hash,
+  surfaced to no one, attributed to no one; every user still creates their own owned
+  copy, and no user can learn who else imported anything.
+
+**What I need:** pick **A** (or B/C), and say whether any public-URL sources should be
+explicitly excluded from cross-user reuse (e.g. known paywalled domains). My
+recommendation: **A, with no exclusion list in v1** — "public URL = fetchable without
+auth" is a clean, defensible line.
+
+### C2 — What accuracy bar lets each input type ship?
+
+**The decision.** The threshold at which URL / image / PDF import each ship **enabled
+vs disabled**, once Phase 0 produces numbers. **You cannot just pick a %** — the right
+bar depends on the failure shape and the safety net, so what I need is confirmation of
+the FRAMING, then the numbers:
+
+1. **The safety net reframes the bar.** Every import is an **editable draft** before
+   anything is created. So the product does not need perfect extraction — it needs to
+   be **good enough that editing the draft beats typing the programme from scratch.**
+   Below that, import is worse than the manual path it replaces. That, not "% correct",
+   is the bar.
+2. **Failure modes are not equal, so the bar is per-mode:**
+   - A **dropped exercise or whole workout** (silently missing from the draft) is the
+     worst — the user cannot fix what they cannot see. Must be **near-zero.**
+   - A **wrong sets/reps number** is cheap — visible, one tap to fix. Tolerant.
+   - A **wrong SILENT auto-match** on an exercise name (we linked "row" to Barbell Row
+     when they meant Seated Cable Row) is bad because it is silent; an **"ambiguous —
+     pick one"** is safe because the user chooses. So **auto-match precision must be
+     high**, while recall can be traded freely to the ambiguous/unmatched tiers
+     (surfacing costs only a tap).
+
+**My proposed starting bars — accept or move them:**
+
+- Structure extraction: **≥ ~85 % per-field accuracy** AND **no systematic
+  whole-workout / whole-exercise drops.**
+- Exercise-name **auto-match precision ≥ ~95 %** (strict — silent errors); recall
+  unbounded (everything else goes to pick/create).
+- A type that misses its bar ships **disabled**, not degraded.
+
+**What I need:** confirm the framing (bar = "editing beats retyping"; per-failure-mode;
+auto-match precision is the strict one) and whether the starting thresholds are right
+or where you would move them. The Phase-0 eval then validates against whatever we set.
