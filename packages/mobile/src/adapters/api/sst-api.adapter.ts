@@ -30,21 +30,34 @@ import type {
   WorkoutVariationSummary,
 } from "@/domain/models/loadout";
 import type {
+  MealPlan,
   MealprintPreferences,
   MealSuggestInput,
   MealSuggestResult,
+  PlanAcceptInput,
+  PlanGenerateInput,
+  PlanGenerateResult,
+  PlanMealLogResult,
+  PlanPatchInput,
+  PlanReplaceInput,
+  PlanSwapInput,
+  PlanSwapResult,
   SetMealprintPreferencesInput,
 } from "@/domain/models/mealprint";
 import type {
   ReferenceEntry,
   ReferenceListKind,
 } from "@/domain/models/reference-list";
-import { isLoadoutErrorCode } from "@/domain/ports/api.port";
+import {
+  isLoadoutErrorCode,
+  isMealPlanErrorCode,
+} from "@/domain/ports/api.port";
 import type {
   ApiPort,
   InviteApiError,
   LoadoutApiError,
   MealprintApiError,
+  MealPlanApiError,
   LoadoutErrorCode,
   ApiNotification,
   ApiNotificationListResponse,
@@ -1913,6 +1926,92 @@ export class SSTApiAdapter implements ApiPort {
     );
   }
 
+  // -- Mealprint day plans (spec-26 Phase 2) --
+
+  async generatePlan(
+    input: PlanGenerateInput,
+  ): Promise<Result<PlanGenerateResult, ApiError>> {
+    return this.requestEnvelope<PlanGenerateResult>(
+      "/nutrition/ai/plan-generate",
+      {
+        method: "POST",
+        body: input,
+        // Same budget reasoning as `suggestMeals`: the handler runs several
+        // sequential reads before the model call and gives itself up to
+        // `ROUTE_TIMEOUT_MS` (29s). Giving up sooner client-side abandons an
+        // inference that still costs one of the day's 5 plan-generates.
+        timeoutMs: 30_000,
+      },
+    );
+  }
+
+  async swapPlanMeal(
+    input: PlanSwapInput,
+  ): Promise<Result<PlanSwapResult, ApiError>> {
+    return this.requestEnvelope<PlanSwapResult>(
+      "/nutrition/ai/plan-meal-swap",
+      { method: "POST", body: input, timeoutMs: 30_000 },
+    );
+  }
+
+  async acceptPlan(
+    input: PlanAcceptInput,
+  ): Promise<Result<MealPlan, MealPlanApiError>> {
+    return this.requestPlan<MealPlan>("/nutrition/plans", {
+      method: "POST",
+      body: input,
+    });
+  }
+
+  async getActivePlan(
+    date: string,
+  ): Promise<Result<MealPlan | null, ApiError>> {
+    return this.requestEnvelope<MealPlan | null>("/nutrition/plans/active", {
+      params: { date },
+    });
+  }
+
+  async getPlan(id: string): Promise<Result<MealPlan, MealPlanApiError>> {
+    return this.requestPlan<MealPlan>(`/nutrition/plans/${id}`);
+  }
+
+  async patchPlan(
+    id: string,
+    input: PlanPatchInput,
+  ): Promise<Result<MealPlan, MealPlanApiError>> {
+    return this.requestPlan<MealPlan>(`/nutrition/plans/${id}`, {
+      method: "PATCH",
+      body: input,
+    });
+  }
+
+  async deletePlan(id: string): Promise<Result<{ deleted: true }, ApiError>> {
+    return this.requestEnvelope<{ deleted: true }>(`/nutrition/plans/${id}`, {
+      method: "DELETE",
+    });
+  }
+
+  async replacePlanMeal(
+    planId: string,
+    mealId: string,
+    input: PlanReplaceInput,
+  ): Promise<Result<MealPlan, MealPlanApiError>> {
+    return this.requestPlan<MealPlan>(
+      `/nutrition/plans/${planId}/meals/${mealId}/replace`,
+      { method: "POST", body: input },
+    );
+  }
+
+  async logPlanMeal(
+    planId: string,
+    mealId: string,
+  ): Promise<Result<PlanMealLogResult, ApiError>> {
+    return this.requestEnvelope<PlanMealLogResult>(
+      `/nutrition/plans/${planId}/meals/${mealId}/log`,
+      { method: "POST" },
+    );
+  }
+
   // -- Client side of the coach↔client handshake (10-trainer-features) --
   async getClientRelationships(
     status?: ClientRelationshipStatus,
@@ -2386,6 +2485,60 @@ export class SSTApiAdapter implements ApiPort {
     return fail<MealprintApiError>(
       field !== undefined ? { ...base, preferenceField: field } : base,
     );
+  }
+
+  /**
+   * Shared path for the Mealprint plan endpoints, whose domain 400/404/409/422s
+   * answer a flat `{ error: string, items?: string[], planDate?: string }` body
+   * (see each handler's docstring under
+   * `microservices/core/.../nutrition/mealprint/plans/`) rather than the usual
+   * `{ data }`/`{ error }` split `requestEnvelope` expects.
+   *
+   * Same defect class as `requestLoadout`/`requestPreferenceWrite`:
+   * `mapHttpErrorToApiError` only reads `body.error` for the MESSAGE, so without
+   * this the caller could not branch on `unresolvable_items` vs
+   * `active_plan_exists` vs `avoidance_violation` — three failures with three
+   * different recoveries (regenerate the flagged meal / offer "replace today's
+   * plan" / regenerate the whole draft).
+   */
+  private async requestPlan<T>(
+    path: string,
+    options: RequestOptions = {},
+  ): Promise<Result<T, MealPlanApiError>> {
+    const result = await this.requestRaw<
+      { data: T } | { error?: string; items?: string[]; planDate?: string }
+    >(path, options);
+    if (!result.ok) return fail<MealPlanApiError>(result.error);
+
+    const { status, json } = result.value;
+    if (status >= 200 && status < 300 && json !== null && "data" in json) {
+      return ok(json.data);
+    }
+
+    const errorField =
+      json !== null && "error" in json && typeof json.error === "string"
+        ? json.error
+        : undefined;
+    const message = errorField ?? "Request failed";
+    const base = mapHttpErrorToApiError(status, message, json);
+    const planErrorCode = isMealPlanErrorCode(errorField)
+      ? errorField
+      : undefined;
+    const unresolvableItems =
+      json !== null && "items" in json && Array.isArray(json.items)
+        ? json.items
+        : undefined;
+    const activePlanDate =
+      json !== null && "planDate" in json && typeof json.planDate === "string"
+        ? json.planDate
+        : undefined;
+
+    return fail<MealPlanApiError>({
+      ...base,
+      ...(planErrorCode !== undefined ? { planErrorCode } : {}),
+      ...(unresolvableItems !== undefined ? { unresolvableItems } : {}),
+      ...(activePlanDate !== undefined ? { activePlanDate } : {}),
+    });
   }
 }
 

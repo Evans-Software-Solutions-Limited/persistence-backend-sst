@@ -44,6 +44,37 @@ Phase 2 (`PAYWALL_SURFACES_BRIEF.md` task 2.8). Also settled: `small_business` +
 (a `tier_name` change in substance — safe only because of the authorised prod+staging data
 reset; no grandfathering).
 
+### 🎯 SIGN-OFF SCOPE for the launch build (Brad, 2026-08-05) — the finish line
+
+Brad's "main pieces" + the order to the App Store submission:
+
+1. **Mealprint (spec-26)** — backend done (#350/#357); REMAINING = replace-meal route
+   (small), **Phase 2 mobile** (plan-flow UI + Fuel integration, the big chunk), and
+   **Phase 3** (week gen, shopping list, adherence). ~half the feature by user surface.
+2. **Loadout single-workout (spec-21)** — feature-complete & merged; REMAINING = a device
+   pass on an EAS build with an entitled account.
+3. **Loadout Phase 4 / program import (spec-22) — IN SCOPE** (Brad: "we've done a lot of
+   the leg work"). ⚠ **Honest caveat recorded:** the reused leg-work is the single-workout
+   ADAPTATION engine; the IMPORT half (extraction from screenshot/PDF/link + exercise-name
+   resolution) is **net-new AND eval-gated** — Phase 0 is an accuracy+cost eval and NO code
+   ships until it clears the C2 bar (~85 % field accuracy, no whole-workout drops, ≥95 %
+   auto-match). The eval is the first step, not skippable.
+4. **Subscription DESIGN revamp (mobile paywall) — do FIRST, before web.** The catalog+code
+   is done (PR #361); this is the incoming **Claude Design subscription-layout revamp** of
+   the paywall screens (PAYWALL_SURFACES_BRIEF § "sequence 2.7 with the revamp"). ⚠ Needs
+   the design source / the `mcp__claude-design__*` connector RE-AUTHORISED (not available in
+   a non-interactive session) — a Brad dependency.
+5. **Web — pricing page + read-only, to START with.** Rewrite `packages/web/Pricing.tsx` to
+   the new 6-tier catalog/prices (it is STALE — £12.99 Premium, old structure) + in-app
+   read-only for web tiers. **This is a FOLLOW-UP after the mobile revamp.**
+6. **Stripe / org rail (spec-29 Phase 3) — PARALLEL with App Review, NON-BLOCKING for
+   submission** (Brad). Build it in web while the app approval is in flight; it does not
+   gate the submission.
+
+**Not blocking submission:** spec-29 Phase 1 (pooled AI budget — margin protection) and the
+org rail (#6). **App Store submission happens only when ALL the above sign-off code is
+done** (Brad — do not submit early).
+
 ### ✅ 2026-08-05 — Mealprint spec-26 PHASE 2 BACKEND is MERGED to `main` (PR #357, `3f047bec`)
 
 Inspector Brad clean @ `270870d3`; all 5 CI checks green; squash-merged. **Staging deploy
@@ -133,8 +164,12 @@ individual_trainer→"Start Up Coach" + reprice; insert `start_up_coach_plus` /
 both gate Records; paywall rail; `MONTHLY_ONLY_TIERS` now empty; and three
 untyped-literal survivors fixed (GreetingSection map + two deep-link checks now
 derive from `TRAINER_TIER_NAMES`). **Gates all green** (prettier · typecheck 8/8 ·
-core 3880/3880 · mobile 5928/5928 · build 13/13); Inspector-Brad-local sweep in
-progress; PR NOT raised (awaiting Brad).
+core 3880/3880 · mobile 5928/5928 · build 13/13); Inspector-Brad-local
+**clean @ `adf7111e`**; **PR [#361](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/361)
+OPEN** (commit `adf7111e`; excludes untracked `probe-steps.ts` + Brad's other
+scratch paths). ⚠ NOT submit-ready alone — tiers ship `is_active=false`, more code
+remains before App Store submission (Brad, 2026-08-05: submit only when ALL needed
+code is done).
 
 ⚠ **Design call baked in:** `individual_trainer` (entry coach rung) LOSES the
 suite; the paid coach tiers carry it; a coach denied the suite upsells

@@ -7,7 +7,7 @@ import type { CoachOverview } from "@/domain/models/coachOverview";
 import type { ClientDetail } from "@/domain/models/clientDetail";
 import type { TrainerClient } from "@/domain/models/trainerClient";
 import type { ProgramSummary } from "@/domain/models/program";
-import type { MealprintPreferences } from "@/domain/models/mealprint";
+import type { MealPlan, MealprintPreferences } from "@/domain/models/mealprint";
 import type {
   Food,
   FuelToday,
@@ -814,6 +814,17 @@ ${indentSyncQueueDdl(8)}
         user_id TEXT PRIMARY KEY,
         payload TEXT NOT NULL,
         synced_at TEXT NOT NULL
+      );
+      -- Mealprint ACCEPTED day plans (spec-26 Phase 2, AC 5.1/5.3): the ACTIVE
+      -- plan for a given day, one row per (user_id, plan_date) - mirrors
+      -- cached_fuel_today's composite key. Accept/log/replace/re-date all
+      -- write through here; archive/delete remove the row for that date.
+      CREATE TABLE IF NOT EXISTS cached_meal_plans (
+        user_id TEXT NOT NULL,
+        plan_date TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        synced_at TEXT NOT NULL,
+        PRIMARY KEY (user_id, plan_date)
       );
 
       CREATE INDEX IF NOT EXISTS idx_sync_queue_status ON sync_queue(status, created_at);
@@ -3311,6 +3322,38 @@ ${indentSyncQueueDdl(12)}
     this.writeBlob("cached_mealprint_preferences", userId, preferences);
   }
 
+  getCachedActiveMealPlan(userId: string, planDate: string): MealPlan | null {
+    const rows = this.getDb().getAllSync(
+      `SELECT payload FROM cached_meal_plans WHERE user_id = ? AND plan_date = ?`,
+      [userId, planDate],
+    ) as { payload: string }[];
+    return rows[0] ? (JSON.parse(rows[0].payload) as MealPlan) : null;
+  }
+
+  getMealPlanAge(userId: string, planDate: string): string | null {
+    const rows = this.getDb().getAllSync(
+      `SELECT synced_at FROM cached_meal_plans WHERE user_id = ? AND plan_date = ?`,
+      [userId, planDate],
+    ) as { synced_at: string }[];
+    return rows[0]?.synced_at ?? null;
+  }
+
+  cacheMealPlan(userId: string, plan: MealPlan): void {
+    this.getDb().runSync(
+      `INSERT INTO cached_meal_plans (user_id, plan_date, payload, synced_at)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(user_id, plan_date) DO UPDATE SET payload = excluded.payload, synced_at = excluded.synced_at`,
+      [userId, plan.planDate, JSON.stringify(plan), new Date().toISOString()],
+    );
+  }
+
+  removeCachedMealPlan(userId: string, planDate: string): void {
+    this.getDb().runSync(
+      `DELETE FROM cached_meal_plans WHERE user_id = ? AND plan_date = ?`,
+      [userId, planDate],
+    );
+  }
+
   getCachedRecipes(userId: string): Recipe[] {
     const rows = this.getDb().getAllSync(
       `SELECT payload FROM cached_recipes WHERE user_id = ? ORDER BY rowid DESC`,
@@ -3427,6 +3470,7 @@ ${indentSyncQueueDdl(12)}
       DELETE FROM cached_meals;
       DELETE FROM cached_nutrition_target;
       DELETE FROM cached_mealprint_preferences;
+      DELETE FROM cached_meal_plans;
     `);
   }
 }

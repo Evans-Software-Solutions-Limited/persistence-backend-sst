@@ -93,12 +93,22 @@ import type {
   SendClientBriefInput,
   SentClientBrief,
   MealprintApiError,
+  MealPlanApiError,
 } from "@/domain/ports/api.port";
 import { DEFAULT_MEALPRINT_PREFERENCES } from "@/domain/models/mealprint";
 import type {
+  MealPlan,
   MealprintPreferences,
   MealSuggestInput,
   MealSuggestResult,
+  PlanAcceptInput,
+  PlanGenerateInput,
+  PlanGenerateResult,
+  PlanMealLogResult,
+  PlanPatchInput,
+  PlanReplaceInput,
+  PlanSwapInput,
+  PlanSwapResult,
   SetMealprintPreferencesInput,
 } from "@/domain/models/mealprint";
 import type {
@@ -3266,5 +3276,251 @@ export class InMemoryApiAdapter implements ApiPort {
       return fail<ApiError>({ kind: "api", code: "server", message, status });
     }
     return this.mayFail<MealSuggestResult>(this.mealSuggestResult);
+  }
+
+  // ─── Mealprint day plans (spec-26 Phase 2) ─────────────────────────────────
+
+  public planGenerateResult: PlanGenerateResult = {
+    meals: [],
+    emptyReason: "no_candidates",
+    target: null,
+    totals: null,
+    withinTolerance: false,
+    labelCheckRequired: true,
+  };
+  public generatePlanCalls: PlanGenerateInput[] = [];
+  public nextPlanGenerateError: { status: number; message: string } | null =
+    null;
+
+  public planSwapResult: PlanSwapResult = {
+    meal: null,
+    emptyReason: "no_candidates",
+    labelCheckRequired: true,
+  };
+  public swapPlanMealCalls: PlanSwapInput[] = [];
+  public nextPlanSwapError: { status: number; message: string } | null = null;
+
+  /** Plans keyed by id — the store `acceptPlan` writes into and every other
+   * plan method reads/mutates. */
+  public plans = new Map<string, MealPlan>();
+  /** Active plan per `date` — `null` is a valid stored value ("no plan"). */
+  public activePlanByDate = new Map<string, MealPlan | null>();
+  public acceptPlanCalls: PlanAcceptInput[] = [];
+  public nextAcceptPlanError: MealPlanApiError | null = null;
+  public nextGetPlanError: MealPlanApiError | null = null;
+  public nextPatchPlanError: MealPlanApiError | null = null;
+  public replacePlanMealCalls: {
+    planId: string;
+    mealId: string;
+    input: PlanReplaceInput;
+  }[] = [];
+  public nextReplacePlanMealError: MealPlanApiError | null = null;
+  public logPlanMealCalls: { planId: string; mealId: string }[] = [];
+  public nextLogPlanMealError: { status: number; message: string } | null =
+    null;
+
+  async generatePlan(
+    input: PlanGenerateInput,
+  ): Promise<Result<PlanGenerateResult, ApiError>> {
+    this.generatePlanCalls.push(input);
+    if (this.nextPlanGenerateError) {
+      const { status, message } = this.nextPlanGenerateError;
+      return fail<ApiError>({ kind: "api", code: "server", message, status });
+    }
+    return this.mayFail<PlanGenerateResult>(this.planGenerateResult);
+  }
+
+  async swapPlanMeal(
+    input: PlanSwapInput,
+  ): Promise<Result<PlanSwapResult, ApiError>> {
+    this.swapPlanMealCalls.push(input);
+    if (this.nextPlanSwapError) {
+      const { status, message } = this.nextPlanSwapError;
+      return fail<ApiError>({ kind: "api", code: "server", message, status });
+    }
+    return this.mayFail<PlanSwapResult>(this.planSwapResult);
+  }
+
+  async acceptPlan(
+    input: PlanAcceptInput,
+  ): Promise<Result<MealPlan, MealPlanApiError>> {
+    this.acceptPlanCalls.push(input);
+    if (this.nextAcceptPlanError)
+      return fail<MealPlanApiError>(this.nextAcceptPlanError);
+    if (this.shouldFail) return fail<MealPlanApiError>(this.failError);
+
+    const plan: MealPlan = {
+      id: `plan-${this.plans.size + 1}`,
+      userId: "user-1",
+      status: "active",
+      planDate: input.planDate,
+      groupId: input.groupId ?? null,
+      mealsPerDay: input.meals.length,
+      effortLevel: "balanced",
+      targetKcal: 2200,
+      targetProteinG: 160,
+      targetCarbsG: 220,
+      targetFatG: 70,
+      source: "ai",
+      createdByUserId: null,
+      createdAt: "2026-08-05T12:00:00.000Z",
+      acceptedAt: "2026-08-05T12:00:00.000Z",
+      meals: input.meals.map((meal, index) => ({
+        id: `plan-meal-${this.plans.size + 1}-${index}`,
+        sortOrder: index,
+        label: meal.label,
+        logSlot: meal.logSlot,
+        recipeId: meal.recipeId ?? null,
+        mealId: meal.mealId ?? null,
+        items: meal.items ?? null,
+        kcal: 500,
+        proteinG: 35,
+        carbsG: 50,
+        fatG: 15,
+        aiReason: meal.aiReason ?? null,
+        state: "planned",
+        loggedEntryId: null,
+      })),
+    };
+    this.plans.set(plan.id, plan);
+    this.activePlanByDate.set(plan.planDate, plan);
+    return ok(plan);
+  }
+
+  async getActivePlan(
+    date: string,
+  ): Promise<Result<MealPlan | null, ApiError>> {
+    if (this.shouldFail) return fail<ApiError>(this.failError);
+    return ok(this.activePlanByDate.get(date) ?? null);
+  }
+
+  async getPlan(id: string): Promise<Result<MealPlan, MealPlanApiError>> {
+    if (this.nextGetPlanError)
+      return fail<MealPlanApiError>(this.nextGetPlanError);
+    const plan = this.plans.get(id);
+    if (!plan) {
+      return fail<MealPlanApiError>({
+        kind: "api",
+        code: "server",
+        message: "not_found",
+        status: 404,
+        planErrorCode: "not_found",
+      });
+    }
+    return ok(plan);
+  }
+
+  async patchPlan(
+    id: string,
+    input: PlanPatchInput,
+  ): Promise<Result<MealPlan, MealPlanApiError>> {
+    if (this.nextPatchPlanError)
+      return fail<MealPlanApiError>(this.nextPatchPlanError);
+    const plan = this.plans.get(id);
+    if (!plan) {
+      return fail<MealPlanApiError>({
+        kind: "api",
+        code: "server",
+        message: "not_found",
+        status: 404,
+        planErrorCode: "not_found",
+      });
+    }
+    const updated: MealPlan =
+      "status" in input
+        ? { ...plan, status: "archived" }
+        : { ...plan, planDate: input.planDate, status: "active" };
+    this.plans.set(id, updated);
+    this.activePlanByDate.set(updated.planDate, updated);
+    return ok(updated);
+  }
+
+  async deletePlan(id: string): Promise<Result<{ deleted: true }, ApiError>> {
+    if (this.shouldFail) return fail<ApiError>(this.failError);
+    this.plans.delete(id);
+    return ok({ deleted: true });
+  }
+
+  async replacePlanMeal(
+    planId: string,
+    mealId: string,
+    input: PlanReplaceInput,
+  ): Promise<Result<MealPlan, MealPlanApiError>> {
+    this.replacePlanMealCalls.push({ planId, mealId, input });
+    if (this.nextReplacePlanMealError)
+      return fail<MealPlanApiError>(this.nextReplacePlanMealError);
+    const plan = this.plans.get(planId);
+    if (!plan) {
+      return fail<MealPlanApiError>({
+        kind: "api",
+        code: "server",
+        message: "not_found",
+        status: 404,
+        planErrorCode: "not_found",
+      });
+    }
+    const updated: MealPlan = {
+      ...plan,
+      meals: plan.meals.map((meal) =>
+        meal.id === mealId
+          ? {
+              ...meal,
+              label: input.label,
+              logSlot: input.logSlot,
+              recipeId: input.recipeId ?? null,
+              mealId: input.mealId ?? null,
+              items: input.items ?? null,
+              aiReason: input.aiReason ?? null,
+              state: "planned",
+              loggedEntryId: null,
+            }
+          : meal,
+      ),
+    };
+    this.plans.set(planId, updated);
+    this.activePlanByDate.set(updated.planDate, updated);
+    return ok(updated);
+  }
+
+  async logPlanMeal(
+    planId: string,
+    mealId: string,
+  ): Promise<Result<PlanMealLogResult, ApiError>> {
+    this.logPlanMealCalls.push({ planId, mealId });
+    if (this.nextLogPlanMealError) {
+      const { status, message } = this.nextLogPlanMealError;
+      return fail<ApiError>({ kind: "api", code: "server", message, status });
+    }
+    const plan = this.plans.get(planId);
+    const meal = plan?.meals.find((m) => m.id === mealId);
+    if (!plan || !meal) {
+      return fail<ApiError>({
+        kind: "api",
+        code: "server",
+        message: "meal_not_found",
+        status: 404,
+      });
+    }
+    if (meal.state === "logged" && meal.loggedEntryId) {
+      return ok({
+        planMealId: meal.id,
+        loggedEntryId: meal.loggedEntryId,
+        alreadyLogged: true,
+      });
+    }
+    const entryId = `entry-${mealId}`;
+    const updated: MealPlan = {
+      ...plan,
+      meals: plan.meals.map((m) =>
+        m.id === mealId ? { ...m, state: "logged", loggedEntryId: entryId } : m,
+      ),
+    };
+    this.plans.set(planId, updated);
+    this.activePlanByDate.set(updated.planDate, updated);
+    return ok({
+      planMealId: mealId,
+      loggedEntryId: entryId,
+      alreadyLogged: false,
+    });
   }
 }

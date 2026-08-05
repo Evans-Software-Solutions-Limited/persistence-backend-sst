@@ -87,6 +87,55 @@ describe("SSTApiAdapter.getDashboard timeout", () => {
       (result.value as { profile: { firstName: string } }).profile.firstName,
     ).toBe("Alex");
   });
+});
+
+/**
+ * `requestPlan`'s `planErrorCode` extraction only fires for strings in
+ * `MEAL_PLAN_ERROR_CODES` (`isMealPlanErrorCode`) — an unrecognised wire
+ * string is dropped, leaving the caller with nothing to branch on but the
+ * raw string as `message`. `meal_not_found`/`meal_already_logged` are the
+ * replace route's own codes (spec-26 Phase 2 fix): without them registered,
+ * `PlanTodayContainer`'s code-based message mapping can never fire for a 404
+ * or 409 replace failure, and the raw wire string leaks as copy instead.
+ */
+describe("SSTApiAdapter.replacePlanMeal plan error codes", () => {
+  it("surfaces meal_not_found as a recognised planErrorCode on a 404", async () => {
+    installFetchMock(async () => {
+      return new Response(JSON.stringify({ error: "meal_not_found" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.replacePlanMeal("plan-1", "meal-1", {
+      label: "x",
+      logSlot: "dinner",
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.planErrorCode).toBe("meal_not_found");
+  });
+
+  it("surfaces meal_already_logged as a recognised planErrorCode on a 409", async () => {
+    installFetchMock(async () => {
+      return new Response(JSON.stringify({ error: "meal_already_logged" }), {
+        status: 409,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.replacePlanMeal("plan-1", "meal-1", {
+      label: "x",
+      logSlot: "dinner",
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.planErrorCode).toBe("meal_already_logged");
+  });
 
   it("maps non-abort errors to api/network — preserving the existing behaviour for genuine network failures", async () => {
     installFetchMock(async () => {
