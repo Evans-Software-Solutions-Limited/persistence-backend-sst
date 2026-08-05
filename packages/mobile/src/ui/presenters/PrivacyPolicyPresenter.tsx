@@ -212,8 +212,8 @@ export function PrivacyPolicyPresenter({
             allergens and patterns on our servers before you see it.
           </Text>
           <Text style={styles.listItem}>
-            • Meal plans — when you ask us to build a day's meal plan, or to
-            swap a single meal within one, we send your daily targets, a
+            • Meal plans — when you ask us to build a day&apos;s meal plan, or
+            to swap a single meal within one, we send your daily targets, a
             shortlist of foods, the foods you have said you like, your chosen
             effort level, and any note you add. As with meal suggestions, your
             allergens and dietary or religious patterns are applied on our
