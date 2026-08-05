@@ -445,3 +445,258 @@ describe("MealprintCandidateRepository row mapping", () => {
     expect(out[0].kind).toBe("meal");
   });
 });
+
+/**
+ * `resolveByIds` — the ACCEPT/SWAP recompute boundary (spec-26 design § 3).
+ *
+ * This is the method that makes a stored plan trustworthy: the client posts
+ * references, never macros, and every number written to `meal_plan_meals` comes
+ * from a DB row resolved here. The two things that can silently break it are an
+ * empty-`IN ()` syntax error and a lost ownership filter, so both are pinned.
+ */
+describe("MealprintCandidateRepository.resolveByIds", () => {
+  interface Cap {
+    wheres: unknown[];
+    selects: number;
+  }
+
+  function makeResolveDb(
+    results: { foods?: unknown[]; recipes?: unknown[]; meals?: unknown[] },
+    cap: Cap,
+  ) {
+    // Queued in the order resolveByIds builds them (foods, recipes, meals) but
+    // ⚠ ONLY for the kinds this test actually supplies — resolveByIds skips the
+    // query for an empty id list, so a fixed three-slot queue would serve the
+    // foods slot to a recipes-only call.
+    const queue: unknown[] = [];
+    if ("foods" in results) queue.push(results.foods ?? []);
+    if ("recipes" in results) queue.push(results.recipes ?? []);
+    if ("meals" in results) queue.push(results.meals ?? []);
+    let i = 0;
+    const db: any = {};
+    db.select = vi.fn(() => {
+      cap.selects += 1;
+      return db;
+    });
+    db.from = vi.fn(() => db);
+    db.where = vi.fn((w: unknown) => {
+      cap.wheres.push(w);
+      return db;
+    });
+    // resolveByIds awaits the where-chain directly — there is no .limit().
+    db.then = (resolve: (v: unknown) => unknown) =>
+      resolve(i < queue.length ? queue[i++] : []);
+    return db;
+  }
+
+  let cap: Cap;
+  const repo = new MealprintCandidateRepository();
+
+  beforeEach(() => {
+    cap = { wheres: [], selects: 0 };
+    vi.clearAllMocks();
+  });
+
+  it("issues NO query for an id kind that was not asked for", async () => {
+    // ⚠ The guard that matters: `inArray(col, [])` renders `IN ()`, which is a
+    // Postgres syntax error. Passing only foodIds must not touch recipes/meals.
+    vi.mocked(getDb).mockReturnValue(
+      makeResolveDb({ foods: [] }, cap) as never,
+    );
+    await repo.resolveByIds(USER_A, { foodIds: ["f1"] });
+    expect(cap.selects).toBe(1);
+  });
+
+  it("issues no queries at all when every list is empty", async () => {
+    vi.mocked(getDb).mockReturnValue(makeResolveDb({}, cap) as never);
+    await expect(repo.resolveByIds(USER_A, {})).resolves.toEqual([]);
+    expect(cap.selects).toBe(0);
+  });
+
+  it("scopes EVERY kind to the caller — foods by createdBy-or-OFF, recipes and meals by userId", async () => {
+    // ⚠ This test previously asserted foods were NOT scoped (`not.toContain`),
+    // codifying the PR #124 private-food leak as intended. A custom food
+    // (source='user') is private to its creator, so the foods read carries the
+    // caller's id in an `createdBy = $ OR source = 'openfoodfacts'` predicate —
+    // the OFF catalogue stays shared, custom rows do not leak. Inspector Brad,
+    // 2026-08-05.
+    vi.mocked(getDb).mockReturnValue(makeResolveDb({}, cap) as never);
+    await repo.resolveByIds(USER_A, {
+      foodIds: ["f1"],
+      recipeIds: ["r1"],
+      mealIds: ["m1"],
+    });
+
+    const [foodWhere, recipeWhere, mealWhere] = cap.wheres.map(render);
+    // The caller's id MUST reach the foods predicate now.
+    expect(foodWhere!.params).toContain(USER_A);
+    // And the OFF escape hatch keeps shared rows readable — as a bound PARAM
+    // (`source = $n`), not interpolated into the SQL text.
+    expect(foodWhere!.params).toContain("openfoodfacts");
+    expect(recipeWhere!.params).toContain(USER_A);
+    expect(mealWhere!.params).toContain(USER_A);
+  });
+
+  it("renders id lists as a plain IN, never the parenthesised-cast trap", async () => {
+    vi.mocked(getDb).mockReturnValue(makeResolveDb({}, cap) as never);
+    await repo.resolveByIds(USER_A, { foodIds: ["f1", "f2"] });
+
+    const q = render(cap.wheres[0]);
+    expect(q.sql).not.toMatch(PAREN_CAST);
+    // The id list is a plain IN; the ownership scope adds USER_A + the OFF
+    // marker as further params, so assert the ids are present rather than an
+    // exact-equal (which the scope params would break).
+    expect(q.params).toEqual(expect.arrayContaining(["f1", "f2"]));
+  });
+
+  it("de-duplicates ids so a repeated reference is fetched once", async () => {
+    vi.mocked(getDb).mockReturnValue(makeResolveDb({}, cap) as never);
+    await repo.resolveByIds(USER_A, { foodIds: ["f1", "f1", "f2"] });
+
+    const idParams = render(cap.wheres[0]).params.filter(
+      (p) => p === "f1" || p === "f2",
+    );
+    expect(idParams).toEqual(["f1", "f2"]);
+  });
+
+  it("scales food macros out of the per-100g basis using serving_quantity", async () => {
+    vi.mocked(getDb).mockReturnValue(
+      makeResolveDb(
+        {
+          foods: [
+            {
+              id: "f1",
+              name: "Greek Yogurt",
+              brand: "Fage",
+              kcal: "100",
+              proteinG: "10",
+              carbsG: "4",
+              fatG: "5",
+              servingSize: "100",
+              servingQuantity: "170",
+              servingUnit: "g",
+              allergenTags: ["en:milk"],
+              categoryTags: null,
+              createdBy: null,
+            },
+          ],
+        },
+        cap,
+      ) as never,
+    );
+
+    const [food] = await repo.resolveByIds(USER_A, { foodIds: ["f1"] });
+    expect(food!.kcal).toBeCloseTo(170);
+    expect(food!.proteinG).toBeCloseTo(17);
+    expect(food!.name).toBe("Greek Yogurt (Fage)");
+    // A catalogue row is not the caller's own.
+    expect(food!.isOwn).toBe(false);
+  });
+
+  it("divides recipe totals by servings and reports allergens as UNKNOWN", async () => {
+    vi.mocked(getDb).mockReturnValue(
+      makeResolveDb(
+        {
+          recipes: [
+            {
+              id: "r1",
+              name: "Chilli",
+              servings: "4",
+              totalKcal: "2000",
+              totalProteinG: "160",
+              totalCarbsG: "200",
+              totalFatG: "60",
+            },
+          ],
+        },
+        cap,
+      ) as never,
+    );
+
+    const [recipe] = await repo.resolveByIds(USER_A, { recipeIds: ["r1"] });
+    expect(recipe!.kcal).toBe(500);
+    expect(recipe!.proteinG).toBe(40);
+    // ⚠ null, never [] — a free-text recipe's allergen content is unknowable,
+    // and `[]` would read as "analysed, none found".
+    expect(recipe!.allergenTags).toBeNull();
+  });
+
+  it("drops a recipe with zero or nonsense servings rather than dividing by it", async () => {
+    vi.mocked(getDb).mockReturnValue(
+      makeResolveDb(
+        {
+          recipes: [
+            { id: "r1", name: "bad", servings: "0", totalKcal: "500" },
+            { id: "r2", name: "worse", servings: "x", totalKcal: "500" },
+          ],
+        },
+        cap,
+      ) as never,
+    );
+
+    await expect(
+      repo.resolveByIds(USER_A, { recipeIds: ["r1", "r2"] }),
+    ).resolves.toEqual([]);
+  });
+
+  it("treats saved-meal macros as absolute, not per-serving", async () => {
+    vi.mocked(getDb).mockReturnValue(
+      makeResolveDb(
+        {
+          meals: [
+            {
+              id: "m1",
+              name: "Post-gym shake",
+              totalKcal: "320",
+              totalProteinG: "40",
+              totalCarbsG: "30",
+              totalFatG: "4",
+            },
+          ],
+        },
+        cap,
+      ) as never,
+    );
+
+    const [meal] = await repo.resolveByIds(USER_A, { mealIds: ["m1"] });
+    expect(meal!.kcal).toBe(320);
+    expect(meal!.kind).toBe("meal");
+  });
+
+  it("omits an id that does not resolve, rather than inventing a zero-macro row", async () => {
+    // A silent zero-macro row is the dangerous failure: it would store a meal
+    // claiming 0 kcal. Absence lets the handler decide (400 vs drop).
+    vi.mocked(getDb).mockReturnValue(
+      makeResolveDb({ foods: [] }, cap) as never,
+    );
+    await expect(
+      repo.resolveByIds(USER_A, { foodIds: ["missing"] }),
+    ).resolves.toEqual([]);
+  });
+
+  it("does not apply a kcal ceiling — an explicitly chosen big meal must resolve", async () => {
+    // Unlike the list* methods. Dropping it here would produce a plan quietly
+    // missing rows the user picked.
+    vi.mocked(getDb).mockReturnValue(
+      makeResolveDb(
+        {
+          meals: [
+            {
+              id: "m1",
+              name: "Huge",
+              totalKcal: "5000",
+              totalProteinG: "1",
+              totalCarbsG: "1",
+              totalFatG: "1",
+            },
+          ],
+        },
+        cap,
+      ) as never,
+    );
+
+    const resolved = await repo.resolveByIds(USER_A, { mealIds: ["m1"] });
+    expect(resolved).toHaveLength(1);
+    expect(resolved[0]!.kcal).toBe(5000);
+  });
+});

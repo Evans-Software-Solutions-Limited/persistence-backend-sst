@@ -11,6 +11,48 @@ say so and fix this file.
 
 ## ▶ START HERE — next session (rewritten 2026-08-04, post-Mealprint-merge)
 
+### ⚠ 2026-08-05 — Mealprint spec-26 PHASE 2 + 3.x BACKEND is built on a branch, NOT merged
+
+**Branch `claude/mealprint-phase2-backend`, 7 commits off `main`, NOT pushed, NO PR yet.**
+Inspector Brad swept it twice and returned **CLEAN @ `270870d3`** (PR body line:
+`🕵️ Inspector Brad (local): clean @ 270870d3`). Gates: typecheck 8/8, eslint clean, full
+core suite **317 files / 3882 tests**, coverage holds.
+
+What shipped (all spec-26 Phase 2 backend, the whole loggable loop server-side):
+`meal_plans` + `meal_plan_meals` migration/schema · `mealPlanRepository` ·
+`resolveByIds` (accept/swap macro-recompute boundary) · `POST /nutrition/plans` (accept) ·
+`GET /plans/active|/plans|/plans/:id` · `PATCH`/`DELETE /plans/:id` ·
+`POST /plans/:id/meals/:mealId/log` · `POST /nutrition/ai/plan-generate` +
+`plan-meal-swap` + `planModel` · infra ceilings (`AI_MEAL_PLAN_DAILY_LIMIT=5`,
+`AI_MEAL_SWAP_DAILY_LIMIT=10`) · privacy-policy "Meal plans" bullet in BOTH copies.
+
+⚠ **IB's first sweep found a real 🟠 isolation leak (now fixed, revert-verified):**
+`resolveByIds` read `foods` UNSCOPED, reopening the PR #124 private-food leak — a user
+could pull another user's custom food's macros into their plan via the accept body. Fixed
+to mirror `foodRepository.getByIds` (`createdBy = userId OR source = 'openfoodfacts'`). The
+test had certified the leak; rewritten. **Lesson restated: a mocked-DB test can pin a
+security hole as correct — assert the scope, not the absence of it.**
+
+**Decisions still open for Brad (do not guess):**
+1. **Push + raise the backend PR?** Public repo — needs Brad's go-ahead, and his call on
+   squash vs the 7 commits. Nothing is user-reachable (`premium_plus` inactive; no mobile
+   caller), so it is safe to release like Phase 0/1.
+2. **`ai_generated` recipes on accept?** Design § 3 says accept "creates ai_generated
+   recipes"; the accept handler currently stores one-off item lists instead. Recommend
+   minting a recipe only on an explicit "save as recipe", NOT per accepted plan. UNBUILT
+   either way.
+3. **Loadout Phase 4 / programme import** — cap CONFIRMED at 10 (Brad, cycle not
+   weeks×sessions; spec-21 § 7.3 corrected). Still zero code; wants a combined spec triplet
+   with ROADMAP § 5.3 import.
+
+**Still NOT done for "whole of Mealprint":** the post-accept **replace-meal ROUTE**
+(`replaceMeal` exists on the repo + swap returns the meal, but no route wires them —
+small); **Phase 2 MOBILE** (tasks 2.6/2.7 — plan flow UI + Fuel integration, the big
+next chunk, `packages/mobile`); **Phase 3** 3.2–3.5 (week plans, shopping list, adherence;
+3.1 async spine already shipped).
+
+---
+
 **You are on a fresh `main`. Mealprint mobile is MERGED.** Nothing is half-landed and
 no branch is waiting. Read this block, then pick A or B — they do not block each other.
 

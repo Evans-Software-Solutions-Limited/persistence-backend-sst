@@ -717,14 +717,31 @@ workout, so stage 1 stays cheap — **but stage 2 is now one model call per
 workout**, so the work is linear in WORKOUTS, not just in
 `workout_exercises` rows. Revised bound:
 
-- Cap a single programme adaptation at **120 workouts**; beyond that return 413
-  with a message to adapt the programme in parts. No silent truncation.
-  ⚠ **Brad checkpoint:** confirm 120 — and note the case for it changed. It is
-  no longer "the cost analysis does not justify a tighter bound": 120 workouts is
-  **120 model calls, ~5 minutes of model time and ~$0.69** (E2 measured, § 6.0).
-  A tighter bound would still trip on ordinary blocks (12 weeks × 5 sessions is
-  60, a 13-week cycle is 52), so the argument for 120 survives — but it now rests
-  on user-facing coverage, not on the work being nearly free.
+- ~~Cap a single programme adaptation at **120 workouts**~~ 🔴 **RESOLVED
+  2026-08-04 — the cap is 10, and the 120 figure was arrived at by DOUBLE
+  COUNTING.** Brad confirmed 10.
+
+  **The sizing above multiplies weeks × sessions, and a programme does not store
+  its workouts that way.** spec-19 D1 flattened the model: _"programme = ordered
+  cycle of workouts; `program_weeks` dropped"_, and `scheduling.ts` schedules
+  occurrence _k_ as `cycle[k mod cycle.length]`. So a 12-week × 4-session
+  programme holds **4** `program_workouts` rows, not 48 — the cycle repeats.
+  Adapting a programme means adapting each DISTINCT workout in the cycle once;
+  adapting the same workout twelve times would be identical duplicated work.
+
+  **Revised, measured against the real model:** a cycle is a week's worth of
+  training, typically 3–6 workouts. At E2's 2.60 s/workout that is **~8–16 s and
+  ~$0.02–0.035** per programme adaptation — not 5 minutes and $0.69. **Cap at 10
+  workouts**, 413 beyond it, no silent truncation. 10 is comfortable headroom
+  over any realistic cycle (a 6-day split is 6).
+
+  ⚠ **Keep the async-job path anyway, and this is the one number that argues for
+  it:** 10 × 2.60 s ≈ **26 s**, which sits inside the 30 s API Gateway ceiling
+  only just, before auth and the candidate reads. A realistic 5-workout cycle
+  (~13 s) would fit synchronously, but the CAP must not be the thing that decides
+  whether a request survives. The async-job spine is already shipped (step 0,
+  2026-08-03), so this costs nothing to honour.
+
 - ~~The 30s API Gateway ceiling that constrains § 8 does **not** bind here,
   because nothing calls Bedrock.~~ **It binds now.** Stage 2 calls Bedrock, so
   the programme case **must** use the async-job model — this is the point at which

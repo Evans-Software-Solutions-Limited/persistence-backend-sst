@@ -38,7 +38,32 @@ Nothing here is optional: the £29.99 card already advertises Loadout and Mealpr
 3. **Device-test the entitled half** — suggest sheet's six stages, `no_candidates`,
    and the draft stage's pinned confirm inside gorhom. The last is the only thing
    no test can prove.
-4. **Loadout Phase 4** (adapt a client's programme). Its own spec.
+4. **Loadout Phase 4** (adapt a client's programme). Its own spec. **ZERO CODE — verified
+   2026-08-04**, not merged as previously believed: `parent_program_id` has zero hits in
+   the repo, `workout_programs` carries none of the four Phase 4 columns
+   (`parent_program_id`, `variation_kind`, `source_gym_id`,
+   `source_equipment_type_ids` — those exist on **`workouts`**, which is Phase 2/3), and
+   the only route is `/workouts/:id/loadout/preview`. What merged in #339/#346 is the
+   athlete **single-workout** flow plus the scan and Gyms segment. ⚠ **Blocked on Brad:
+   confirm the 120 cap** (design § 7.3) — 120 model calls, ~5 min, ~$0.69.
+
+   ⚠ **SCOPE GREW 2026-08-04 (Brad).** Phase 4 should also cover **importing** a
+   programme — scan it, or give a URL — then adapting the imported programme, and it
+   becomes a second athlete entry point ("add a programme that's imported and generated
+   in"), gated on `premium_plus`.
+
+   💡 **This is largely an ALREADY-COMMITTED workstream — do not spec it from scratch.**
+   `ROADMAP.md` § 5.3 "AI import of programs/workouts (screenshots / photos / links /
+   PDF)" was Brad-committed 2026-07-05: premium athletes + coaches import external
+   programmes into loggable spec-19 rows, reusing the M9.5 Bedrock adapter pattern and
+   the recipes SSRF-safe fetch, starting with a Phase-0 eval.
+
+   **The two halves are complementary, not duplicates, and the distinction matters:**
+   § 5.3 **ingests** an external programme; Loadout Phase 4 **adapts** a programme to the
+   equipment actually available. Import feeds adaptation. They share the `premium_plus`
+   gate and the athlete entry point, so they want **one spec triplet covering both** —
+   which does not exist yet and is step one (Kiro discipline).
+
 5. **Strip unbuilt claims from the site** — "AI Workout Suggestions" has no
    implementation. `marketing/WEBSITE_PRICING_SPEC.md` is already flagged.
 6. **The OFF re-seed** (Brad, operational). Until it runs every allergen chip
@@ -71,9 +96,18 @@ already shipped.
 
 ## STAGE 5 — After launch, not before
 
-15. **spec-29 Phase 3** — the organisation rail. Gated on the App Review answer
-    (spec-29 task 0.1). This is where the margin is, and where coach ⊕ B2B merge.
-16. Programme import, AI workout generation, Mealprint phases 2–3.
+15. ~~**spec-29 Phase 3** — the organisation rail.~~ **DESCOPED 2026-08-04** along with
+    M21 (they are the same work — spec-29 task 4.4 says so). The web rail and the
+    `studio` / `studio_pro` / `enterprise` rows go with it. Revisit post-launch.
+16. ~~Programme import, AI workout generation,~~ **Mealprint phases 2–3 MOVED TO STAGE 1**
+    — see the correction below. Programme import is now scoped WITH Loadout Phase 4.
+
+⚠ **CORRECTION 2026-08-04 — Mealprint phases 2–3 are IN THE FIRST RELEASE.**
+Brad: _"I'd rather have the whole of mealprint completed."_ This line previously deferred
+phases 2–3 to Stage 5 while `specs/26-mealprint-meal-planning/tasks.md` headed Phase 3
+**"IN v1 — decided 2026-07-24"**. The two documents contradicted each other for eleven
+days; the spec was right. **Stage 1 item 1 now means all of Mealprint**, not just the
+merged Phase 0/1. In progress on `claude/mealprint-phase2-backend` (task 2.1 landed).
 
 ---
 
