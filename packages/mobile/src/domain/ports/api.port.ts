@@ -22,9 +22,18 @@ import type {
   WorkoutVariationSummary,
 } from "@/domain/models/loadout";
 import type {
+  MealPlan,
   MealprintPreferences,
   MealSuggestInput,
   MealSuggestResult,
+  PlanAcceptInput,
+  PlanGenerateInput,
+  PlanGenerateResult,
+  PlanMealLogResult,
+  PlanPatchInput,
+  PlanReplaceInput,
+  PlanSwapInput,
+  PlanSwapResult,
   SetMealprintPreferencesInput,
 } from "@/domain/models/mealprint";
 import type { ProfilePageData } from "@/domain/models/profilePage";
@@ -1184,6 +1193,111 @@ export interface ApiPort {
     input: MealSuggestInput,
   ): Promise<Result<MealSuggestResult, ApiError>>;
 
+  // ─── Mealprint day plans (spec-26 Phase 2) ─────────────────────────────────
+  //
+  // Same two postures as above, cut a different way:
+  //  • `generatePlan` / `swapPlanMeal` are the AI-backed, online-only,
+  //    never-queued surfaces (402/429/422/503, matching `suggestMeals`).
+  //  • `acceptPlan` / `getActivePlan` / `getPlan` / `patchPlan` / `deletePlan` /
+  //    `replacePlanMeal` are all UNGATED — the paywall sits on generation, so a
+  //    lapsed subscriber keeps read/write access to plans they made while
+  //    paying. None of them are queued either: a plan accept needs its
+  //    server-assigned id back before anything else in the flow can proceed
+  //    (the Today view, logging a meal), so — unlike suggestion-logging, which
+  //    reuses the already-offline-capable `POST /nutrition/entries` — this
+  //    build keeps the whole generate→accept run direct/online, the same
+  //    reasoning that keeps generation itself online-only.
+  //  • `logPlanMeal` IS offline-queueable (AC 5.2) — see
+  //    `application/commands/mealPlan.command.ts`. This method is the direct
+  //    call the sync drain makes; the offline path goes through the command,
+  //    not through this adapter method directly.
+
+  /**
+   * `POST /nutrition/ai/plan-generate` — compose a DAY PLAN draft (AC 4.1,
+   * 4.2). Stateless: persists nothing. Same failure taxonomy as `suggestMeals`
+   * (402 entitlement / 429 ceiling / 422 unreadable / 503 unavailable), and the
+   * same "empty is an answer" rule — `PlanGenerateResult.emptyReason` covers
+   * `no_targets`/`no_candidates`, neither of which is an `ApiError`.
+   */
+  generatePlan(
+    input: PlanGenerateInput,
+  ): Promise<Result<PlanGenerateResult, ApiError>>;
+
+  /**
+   * `POST /nutrition/ai/plan-meal-swap` — regenerate ONE meal, holding the rest
+   * (AC 4.4). Same online-only, never-queued posture and failure taxonomy as
+   * `generatePlan`. Serves both the pre-accept draft swap and a post-accept
+   * edit — the caller supplies `heldTotals`/`dayTarget` either way; nothing is
+   * read from a stored plan here.
+   */
+  swapPlanMeal(input: PlanSwapInput): Promise<Result<PlanSwapResult, ApiError>>;
+
+  /**
+   * `POST /nutrition/plans` — ACCEPT a reviewed draft (AC 4.5). The body
+   * carries REFERENCES ONLY (ids + servings) — see {@link PlanAcceptInput}
+   * and, more importantly, `planAcceptMealInputFromGenerated` in the domain
+   * model, which is the ONLY place a draft is turned into this shape. Every
+   * macro is recomputed server-side; a client that sent one would have it
+   * silently stripped by the route schema.
+   *
+   * 400 `unresolvable_items` (a referenced id no longer resolves — including
+   * the `kind`-ambiguity gap the domain model docstring explains), 422
+   * `avoidance_violation` (preferences changed since the draft was generated),
+   * 409 `active_plan_exists` (the client can offer "replace today's plan" —
+   * archive then retry). All three carry the raw error code so the caller can
+   * branch; see {@link MealPlanApiError}.
+   */
+  acceptPlan(
+    input: PlanAcceptInput,
+  ): Promise<Result<MealPlan, MealPlanApiError>>;
+
+  /**
+   * `GET /nutrition/plans/active?date=` — the active plan for a date, or
+   * `null` (200, not 404 — "no plan today" is a normal state). `date` is the
+   * DEVICE's local day, matching `getFuelToday`.
+   */
+  getActivePlan(date: string): Promise<Result<MealPlan | null, ApiError>>;
+
+  /** `GET /nutrition/plans/:id` — 404 when the id isn't the caller's. */
+  getPlan(id: string): Promise<Result<MealPlan, MealPlanApiError>>;
+
+  /**
+   * `PATCH /nutrition/plans/:id` — archive, or re-date ("use again"). 409
+   * `active_plan_exists` when the target date already has an active plan.
+   */
+  patchPlan(
+    id: string,
+    input: PlanPatchInput,
+  ): Promise<Result<MealPlan, MealPlanApiError>>;
+
+  /**
+   * `DELETE /nutrition/plans/:id` — the plan only; logged entries survive
+   * (`logged_entry_id` is `SET NULL`, AC 5.4).
+   */
+  deletePlan(id: string): Promise<Result<{ deleted: true }, ApiError>>;
+
+  /**
+   * `POST /nutrition/plans/:id/meals/:mealId/replace` — persist ONE
+   * replacement meal into an ALREADY-ACCEPTED plan (a post-accept swap/edit).
+   * References only, same recompute-server-side contract as `acceptPlan`.
+   */
+  replacePlanMeal(
+    planId: string,
+    mealId: string,
+    input: PlanReplaceInput,
+  ): Promise<Result<MealPlan, MealPlanApiError>>;
+
+  /**
+   * `POST /nutrition/plans/:id/meals/:mealId/log` — log a planned meal (AC
+   * 5.2). Deterministic and idempotent (`alreadyLogged: true` on a repeat
+   * call) — the DIRECT call; `useLogPlanMeal`/`logPlanMealCommand` are what
+   * make this offline-queueable end to end.
+   */
+  logPlanMeal(
+    planId: string,
+    mealId: string,
+  ): Promise<Result<PlanMealLogResult, ApiError>>;
+
   // -- Client side of the coach↔client handshake (10-trainer-features) --
   /**
    * List the CURRENT user's trainer relationships as a client
@@ -1549,6 +1663,49 @@ export type LoadoutApiError = ApiError & {
  */
 export type MealprintApiError = ApiError & {
   preferenceField?: string;
+};
+
+/**
+ * The plan-domain error codes carried on `accept`/`replace`/`patch`/`get`'s flat
+ * `{ error: string, ... }` 400/404/409/422 bodies — see each handler's
+ * docstring in `microservices/core/src/application/nutrition/mealprint/plans/`.
+ *
+ * `unresolvableItems` is populated ONLY for `unresolvable_items` — the raw
+ * `"food:<id>"`/`"recipe:<id>"`/`"meal:<id>"` strings, unparsed; pass them
+ * through `unresolvableCandidateIds` (domain model) to get bare ids.
+ * `activePlanDate` is populated ONLY for `active_plan_exists`.
+ *
+ * `meal_not_found` and `meal_already_logged` are `replace`-only: the read
+ * handlers 404 with the shared `not_found` above, never `meal_not_found`.
+ * Without a code here, `isMealPlanErrorCode` can't recognise the string and
+ * `PlanTodayContainer` has nothing to branch on — the raw wire string would
+ * leak as copy (see that container's docstring).
+ */
+export const MEAL_PLAN_ERROR_CODES = [
+  "unresolvable_items",
+  "avoidance_violation",
+  "active_plan_exists",
+  "not_found",
+  "no_targets",
+  "meal_not_found",
+  "meal_already_logged",
+] as const;
+
+export type MealPlanErrorCode = (typeof MEAL_PLAN_ERROR_CODES)[number];
+
+export function isMealPlanErrorCode(
+  value: unknown,
+): value is MealPlanErrorCode {
+  return (
+    typeof value === "string" &&
+    (MEAL_PLAN_ERROR_CODES as readonly string[]).includes(value)
+  );
+}
+
+export type MealPlanApiError = ApiError & {
+  planErrorCode?: MealPlanErrorCode;
+  unresolvableItems?: readonly string[];
+  activePlanDate?: string;
 };
 
 /** Body for `PATCH …/workout-assignments/:id` (M18 Swap). */

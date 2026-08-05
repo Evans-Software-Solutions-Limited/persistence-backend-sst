@@ -13,6 +13,8 @@ import { useSetWater } from "@/ui/hooks/useSetWater";
 import { useDeleteEntry } from "@/ui/hooks/useDeleteEntry";
 import { useNutritionAiGate } from "@/ui/hooks/useNutritionAiGate";
 import { useMealprintEntry } from "@/ui/hooks/useMealprintEntry";
+import { useGetActiveMealPlan } from "@/ui/hooks/useGetActiveMealPlan";
+import { useLogPlanMeal } from "@/ui/hooks/useLogPlanMeal";
 import { useOnlineStatus } from "@/ui/hooks/useOnlineStatus";
 import { useFuelSheets } from "@/state/fuel-sheets";
 import {
@@ -31,10 +33,14 @@ import {
   macroPct,
   type EntryNameLookups,
 } from "@/domain/services";
+import { plannedMealsForSlot } from "@/domain/models/mealprint";
 import type { MealSlot } from "@/domain/models/nutrition";
 import { FuelPresenter } from "@/ui/presenters/FuelPresenter";
 import type { MacroLineVM } from "@/ui/presenters/MacroHeroPresenter";
-import type { MealSlotVM } from "@/ui/presenters/MealLogPresenter";
+import type {
+  MealGhostRowVM,
+  MealSlotVM,
+} from "@/ui/presenters/MealLogPresenter";
 
 /**
  * <FuelContainer> — wires the cache-first day aggregate + water mutation + AI
@@ -94,11 +100,20 @@ export function FuelContainer() {
   const setWater = useSetWater();
   const deleteEntry = useDeleteEntry();
   const aiGate = useNutritionAiGate();
-  // spec-26 T-0.6 — the Mealprint card's four-state gate, first-run decision and
-  // stalled retry. Adds NO request on this tab: it reads preferences from the
-  // SQLite cache only (see the hook's docstring on launch fan-out) and reuses the
-  // subscription queries `aiGate` above already primes.
-  const mealprint = useMealprintEntry();
+  // spec-26 Phase 2 — the active plan for the VIEWED day (AC 5.1/5.3). Enabled
+  // unconditionally (unlike the Mealprint sheets' `visible`-gated reads):
+  // Fuel is the tab this feeds directly (the entry card's ACTIVE state, the
+  // ghost rows), so it needs the same "always current for this screen"
+  // treatment as `useGetFuelToday` gets, not the launch-fan-out deferral the
+  // ROOT-MOUNTED sheets need.
+  const activePlan = useGetActiveMealPlan(date);
+  const logPlanMeal = useLogPlanMeal();
+  // spec-26 T-0.6/Phase 2 — the Mealprint card's four-state gate, first-run
+  // decision, stalled retry AND (Phase 2) the active-plan progress/Today-view
+  // routing. Preferences are cache-only (see the hook's docstring on launch
+  // fan-out); `activePlan.data` is this container's own already-fetched read,
+  // not a second subscription.
+  const mealprint = useMealprintEntry(activePlan.data);
   const online = useOnlineStatus();
   const openScan = useFuelSheets((s) => s.openScan);
   const openQuickAdd = useFuelSheets((s) => s.openQuickAdd);
@@ -158,6 +173,14 @@ export function FuelContainer() {
     return MEAL_SLOTS.map(({ slot, label }) => {
       const entries = data?.entriesBySlot[slot] ?? [];
       const kcal = entries.reduce((a, e) => a + e.kcal, 0);
+      const ghostRows: MealGhostRowVM[] = activePlan.data
+        ? plannedMealsForSlot(activePlan.data, slot).map((meal) => ({
+            planId: activePlan.data!.id,
+            planMealId: meal.id,
+            label: meal.label,
+            kcal: meal.kcal,
+          }))
+        : [];
       return {
         slot,
         label,
@@ -171,9 +194,10 @@ export function FuelContainer() {
           carbsG: e.carbsG,
           fatG: e.fatG,
         })),
+        ghostRows,
       };
     });
-  }, [data, lookups]);
+  }, [data, lookups, activePlan.data]);
 
   const consumed = useMemo(
     () =>
@@ -280,6 +304,25 @@ export function FuelContainer() {
     [deleteEntry, date, fuel],
   );
 
+  // "Log it" on a ghost row (spec-26 AC 5.2) — offline-queueable, optimistic on
+  // both the plan cache (flips the meal so the ghost row disappears) and the
+  // day aggregate (the ring/slot total update with no round trip).
+  const onLogGhost = useCallback(
+    (planId: string, planMealId: string, _slot: MealSlot) => {
+      const plan = activePlan.data;
+      const meal = plan?.meals.find((m) => m.id === planMealId);
+      if (!plan || plan.id !== planId || !meal) return;
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      void logPlanMeal.mutate({ plan, meal }).then(() => {
+        activePlan.reload();
+        fuel.reload();
+      });
+      activePlan.reload();
+      fuel.reload();
+    },
+    [activePlan, logPlanMeal, fuel],
+  );
+
   const isLoading =
     (fuel.isRefreshing || (fuel.isStale && fuel.error === null)) &&
     data === null;
@@ -311,9 +354,11 @@ export function FuelContainer() {
       snapOffline={!online}
       mealprintState={mealprint.state}
       mealprintNeedsSetup={mealprint.needsSetup}
+      mealprintPlanProgress={mealprint.planProgress}
       onMealprint={mealprint.onPress}
       onMealprintUpgrade={mealprint.onUpgrade}
       onMealprintRetry={mealprint.onRetry}
+      onMealprintPlan={mealprint.onPlanMyDay}
       slots={slots}
       waterCups={consumed.waterCups}
       waterGoal={target?.waterCups ?? 8}
@@ -338,6 +383,7 @@ export function FuelContainer() {
       onAddToSlot={(slot: MealSlot) => openQuickAdd(slot)}
       onSetWater={onSetWater}
       onDeleteEntry={onDeleteEntry}
+      onLogGhost={onLogGhost}
       onLog={() => openQuickAdd("breakfast")}
     />
   );

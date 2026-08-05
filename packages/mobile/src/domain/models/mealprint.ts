@@ -37,6 +37,410 @@
 
 import type { MealSlot } from "./nutrition";
 
+// ─── Day plans (STORY-004/005, spec-26 Phase 2) ─────────────────────────────
+//
+// Mirrors `microservices/core/src/application/repositories/mealPlanRepository.ts`
+// (`MealPlanDTO`/`MealPlanMealDTO`) and the three plan-AI handlers
+// (`nutritionAiPlanGenerateHandler` / `nutritionAiPlanMealSwapHandler` /
+// `nutritionPlanMealReplaceHandler`). camelCase == wire shape (passthrough),
+// same convention as the rest of this file.
+//
+// ⚠ **A generated/swapped item carries NO `kind`, and that is a real gap this
+// file works around rather than papering over.** `VerifiedPlanMeal.items` (the
+// plan-generate handler) and the swap handler's `chosen.items` are both
+// `{ candidateId, servings, name }` — contrast `MealSuggestionItem` above, which
+// DOES carry `kind: "food" | "recipe" | "meal"`. The plan pipeline's candidate
+// pool mixes all three kinds (`assembleCandidates` pools curated foods + the
+// user's own foods/recipes/meals), so a `candidateId` on a plan meal can
+// legitimately be a recipe or meal id — but nothing on the wire says which.
+//
+// `POST /nutrition/plans` (accept) and the `/replace` route need to know: their
+// schema is a SEPARATE `recipeId`/`mealId` field plus an `items: {foodId,
+// servings}[]` array, not one polymorphic list. This file's
+// `planAcceptMealInputFromGenerated` treats every item as a `foodId` — correct
+// for the overwhelmingly common case (the curated OFF pool dwarfs a user's own
+// saved recipes/meals) but WRONG whenever the model picks a recipe/meal
+// candidate, which 400s `unresolvable_items` on accept even though the draft
+// rendered fine. `unresolvableCandidateIds` + `planDraftMealsAffectedBy` exist so
+// that failure degrades to "this meal needs a swap" instead of losing the whole
+// accept — see the mobile build report for why this needs a backend DTO change
+// (a `kind` on the item) to close properly; out of scope for a
+// `packages/mobile`-only pass.
+
+/** Plan meals reuse the Fuel log's fixed four slots (locked decision 6). */
+export type LogSlot = MealSlot;
+
+export type PlanStatus = "draft" | "active" | "archived";
+export type PlanMealState = "planned" | "logged" | "skipped";
+
+export type PlanMealItemRef = {
+  readonly foodId: string;
+  readonly servings: number;
+};
+
+/** One meal inside an ACCEPTED plan (`meal_plan_meals` row). */
+export type PlanMeal = {
+  readonly id: string;
+  readonly sortOrder: number;
+  readonly label: string;
+  readonly logSlot: LogSlot;
+  readonly recipeId: string | null;
+  readonly mealId: string | null;
+  readonly items: readonly PlanMealItemRef[] | null;
+  readonly kcal: number;
+  readonly proteinG: number;
+  readonly carbsG: number;
+  readonly fatG: number;
+  readonly aiReason: string | null;
+  readonly state: PlanMealState;
+  readonly loggedEntryId: string | null;
+};
+
+/** An accepted day plan (`meal_plans` + its `meal_plan_meals`). */
+export type MealPlan = {
+  readonly id: string;
+  readonly userId: string;
+  readonly status: PlanStatus;
+  readonly planDate: string;
+  readonly groupId: string | null;
+  readonly mealsPerDay: number;
+  readonly effortLevel: EffortLevel;
+  readonly targetKcal: number;
+  readonly targetProteinG: number;
+  readonly targetCarbsG: number;
+  readonly targetFatG: number;
+  readonly source: string;
+  readonly createdByUserId: string | null;
+  readonly createdAt: string | null;
+  readonly acceptedAt: string | null;
+  readonly meals: readonly PlanMeal[];
+};
+
+export type PlanTarget = {
+  readonly kcal: number;
+  readonly proteinG: number;
+  readonly carbsG: number;
+  readonly fatG: number;
+};
+
+/** `POST /nutrition/ai/plan-generate` body — AC 4.1/4.2. */
+export type PlanGenerateInput = {
+  readonly planDate: string;
+  readonly mealsPerDay?: number;
+  readonly effortLevel?: EffortLevel;
+  readonly steer?: string;
+};
+
+export type PlanGeneratedItem = {
+  readonly candidateId: string;
+  readonly servings: number;
+  readonly name: string;
+};
+
+/** One meal in a DRAFT (not-yet-persisted) plan — server-verified, never accepted as-is. */
+export type PlanGeneratedMeal = {
+  readonly name: string;
+  /** Untrusted model prose. Render as plain text only. */
+  readonly reason: string;
+  readonly logSlot: LogSlot;
+  readonly items: readonly PlanGeneratedItem[];
+  readonly kcal: number;
+  readonly proteinG: number;
+  readonly carbsG: number;
+  readonly fatG: number;
+  /** TRUE when an item's allergen content is unknown (AC 2.2). */
+  readonly containsUnverified: boolean;
+  /**
+   * TRUE when this meal failed the server's stage-3 avoidance re-run. Design §
+   * 1: "failing meal returned flagged (plan)". Render it as needing a swap —
+   * never silently include it, never auto-drop it either.
+   */
+  readonly flaggedUnsafe: boolean;
+};
+
+export type PlanGenerateEmptyReason = "no_targets" | "no_candidates";
+
+/** `POST /nutrition/ai/plan-generate` response envelope. */
+export type PlanGenerateResult = {
+  readonly meals: readonly PlanGeneratedMeal[];
+  readonly emptyReason: PlanGenerateEmptyReason | null;
+  readonly target: PlanTarget | null;
+  readonly totals: PlanTarget | null;
+  /** A HINT for the UI, not a gate — the user can accept a plan that misses it. */
+  readonly withinTolerance: boolean;
+  readonly labelCheckRequired: boolean;
+};
+
+/** One meal inside a `POST /nutrition/plans` (accept) or `.../replace` body. */
+export type PlanAcceptMealInput = {
+  readonly label: string;
+  readonly logSlot: LogSlot;
+  readonly recipeId?: string;
+  readonly mealId?: string;
+  /** Multiplier for a recipe/meal-backed row. Items carry their own. */
+  readonly servings?: number;
+  readonly items?: readonly PlanMealItemRef[];
+  readonly aiReason?: string;
+};
+
+/** `POST /nutrition/plans` body — AC 4.5. References only, NEVER macros. */
+export type PlanAcceptInput = {
+  readonly planDate: string;
+  /** Phase 3 week plans share one; a day plan omits it. */
+  readonly groupId?: string;
+  readonly meals: readonly PlanAcceptMealInput[];
+};
+
+/** `POST .../meals/:mealId/replace` body — same shape as one accept meal. */
+export type PlanReplaceInput = PlanAcceptMealInput;
+
+/**
+ * `POST /nutrition/ai/plan-meal-swap` body — AC 4.4. Stateless: the caller
+ * supplies the day target and the macros of every meal it is HOLDING (not
+ * touched by this swap); the server composes ONE replacement to fit what's
+ * left. Serves both a pre-accept draft swap (holding the other draft meals)
+ * and a post-accept edit (holding the other saved meals) — nothing is read or
+ * written server-side either way.
+ */
+export type PlanSwapInput = {
+  readonly dayTarget: PlanTarget;
+  readonly heldTotals: PlanTarget;
+  readonly logSlot: LogSlot;
+  readonly steer?: string;
+};
+
+export type PlanSwapMeal = {
+  readonly name: string;
+  readonly reason: string;
+  readonly logSlot: LogSlot;
+  readonly items: readonly PlanGeneratedItem[];
+  readonly kcal: number;
+  readonly proteinG: number;
+  readonly carbsG: number;
+  readonly fatG: number;
+  readonly containsUnverified: boolean;
+};
+
+export type PlanSwapEmptyReason = "budget_exhausted" | "no_candidates";
+
+export type PlanSwapResult = {
+  readonly meal: PlanSwapMeal | null;
+  readonly emptyReason: PlanSwapEmptyReason | null;
+  readonly labelCheckRequired: boolean;
+};
+
+/** `POST .../meals/:mealId/log` response — AC 5.2. */
+export type PlanMealLogResult = {
+  readonly planMealId: string;
+  readonly loggedEntryId: string;
+  readonly alreadyLogged: boolean;
+};
+
+/** `PATCH /nutrition/plans/:id` body — archive XOR re-date, never both. */
+export type PlanPatchInput =
+  | { readonly status: "archived" }
+  | { readonly planDate: string };
+
+// ─── Draft-review client state (AC 4.3/4.4) ─────────────────────────────────
+//
+// A working copy of a generated plan, held client-side until Accept. Mirrors
+// the `MealprintDraft` shape above: nothing here is logged/persisted, and
+// design § 4 calls for "Zustand for the draft-review state" — `state/plan-flow.ts`
+// is that store; these are its pure value types + transforms so the store and
+// its tests don't reinvent the arithmetic.
+
+export type PlanDraftMeal = {
+  /** Client-generated stable key — the draft has no server id yet. */
+  readonly localId: string;
+  readonly meal: PlanGeneratedMeal;
+};
+
+export type PlanDraft = {
+  readonly planDate: string;
+  readonly target: PlanTarget;
+  readonly meals: readonly PlanDraftMeal[];
+};
+
+/** `null` when the result carried no target (the `no_targets`/`no_candidates` empty states). */
+export function planDraftFromResult(
+  planDate: string,
+  result: PlanGenerateResult,
+  idFactory: () => string,
+): PlanDraft | null {
+  if (result.target === null) return null;
+  return {
+    planDate,
+    target: result.target,
+    meals: result.meals.map((meal) => ({ localId: idFactory(), meal })),
+  };
+}
+
+/**
+ * Deterministic day-total recompute from the KEPT meals — exact, because
+ * `PlanGeneratedMeal.kcal`/etc. are already server-verified sums, not
+ * per-item estimates this file has to reconstruct (see the file docstring on
+ * why per-ITEM portion editing isn't offered: the wire carries no per-item
+ * macro breakdown to recompute FROM). Removing a meal and re-summing the rest
+ * is exact; that's the "edit" this build offers pre-accept.
+ */
+export function sumPlanDraftTotals(
+  meals: readonly PlanDraftMeal[],
+): PlanTarget {
+  return meals.reduce(
+    (acc, { meal }) => ({
+      kcal: acc.kcal + meal.kcal,
+      proteinG: acc.proteinG + meal.proteinG,
+      carbsG: acc.carbsG + meal.carbsG,
+      fatG: acc.fatG + meal.fatG,
+    }),
+    { kcal: 0, proteinG: 0, carbsG: 0, fatG: 0 },
+  );
+}
+
+export function planDraftHasFlaggedMeal(
+  meals: readonly PlanDraftMeal[],
+): boolean {
+  return meals.some(({ meal }) => meal.flaggedUnsafe);
+}
+
+export function removePlanDraftMeal(
+  draft: PlanDraft,
+  localId: string,
+): PlanDraft {
+  return { ...draft, meals: draft.meals.filter((m) => m.localId !== localId) };
+}
+
+export function replacePlanDraftMeal(
+  draft: PlanDraft,
+  localId: string,
+  newMeal: PlanGeneratedMeal,
+): PlanDraft {
+  return {
+    ...draft,
+    meals: draft.meals.map((m) =>
+      m.localId === localId ? { ...m, meal: newMeal } : m,
+    ),
+  };
+}
+
+/** The macros of every OTHER draft meal — what a swap's `heldTotals` holds. */
+export function heldTotalsExcluding(
+  draft: PlanDraft,
+  localId: string,
+): PlanTarget {
+  return sumPlanDraftTotals(draft.meals.filter((m) => m.localId !== localId));
+}
+
+/**
+ * Build the accept/replace-shaped input for one generated/swapped meal.
+ *
+ * ⚠ Every item is sent as a `foodId`. See the file docstring: the wire gives us
+ * no `kind` to disambiguate a food/recipe/meal candidate, and the curated food
+ * pool is the overwhelming common case. A recipe/meal-kind candidate 400s on
+ * accept (`unresolvable_items`) rather than silently mis-saving — the caller
+ * maps that failure back to "this meal needs a swap" via
+ * {@link planDraftMealsAffectedBy}.
+ */
+export function planAcceptMealInputFromGenerated(
+  meal: PlanGeneratedMeal | PlanSwapMeal,
+): PlanAcceptMealInput {
+  return {
+    label: meal.name,
+    logSlot: meal.logSlot,
+    items: meal.items.map((item) => ({
+      foodId: item.candidateId,
+      servings: item.servings,
+    })),
+    aiReason: meal.reason,
+  };
+}
+
+export function planDraftToAcceptInput(draft: PlanDraft): PlanAcceptInput {
+  return {
+    planDate: draft.planDate,
+    meals: draft.meals.map(({ meal }) =>
+      planAcceptMealInputFromGenerated(meal),
+    ),
+  };
+}
+
+/**
+ * Parse a `unresolvable_items` 400's `items: string[]` (`"food:<id>"` /
+ * `"recipe:<id>"` / `"meal:<id>"`) down to the bare ids, so a draft meal can be
+ * matched against it regardless of which kind the server thought it was.
+ */
+export function unresolvableCandidateIds(
+  items: readonly string[],
+): ReadonlySet<string> {
+  const ids = new Set<string>();
+  for (const entry of items) {
+    const idx = entry.indexOf(":");
+    ids.add(idx === -1 ? entry : entry.slice(idx + 1));
+  }
+  return ids;
+}
+
+/** Which draft meals (by `localId`) reference one of the unresolvable ids. */
+export function planDraftMealsAffectedBy(
+  draft: PlanDraft,
+  unresolvableIds: ReadonlySet<string>,
+): ReadonlySet<string> {
+  const affected = new Set<string>();
+  for (const { localId, meal } of draft.meals) {
+    if (meal.items.some((item) => unresolvableIds.has(item.candidateId))) {
+      affected.add(localId);
+    }
+  }
+  return affected;
+}
+
+// ─── Accepted-plan reads (STORY-005) ─────────────────────────────────────────
+
+export type PlanAdherence = {
+  readonly loggedCount: number;
+  readonly totalCount: number;
+  readonly loggedTotals: PlanTarget;
+};
+
+/** Planned-vs-logged rollup for the Today/adherence view (AC 5.3). */
+export function computePlanAdherence(plan: MealPlan): PlanAdherence {
+  const logged = plan.meals.filter((m) => m.state === "logged");
+  return {
+    loggedCount: logged.length,
+    totalCount: plan.meals.length,
+    loggedTotals: logged.reduce(
+      (acc, m) => ({
+        kcal: acc.kcal + m.kcal,
+        proteinG: acc.proteinG + m.proteinG,
+        carbsG: acc.carbsG + m.carbsG,
+        fatG: acc.fatG + m.fatG,
+      }),
+      { kcal: 0, proteinG: 0, carbsG: 0, fatG: 0 },
+    ),
+  };
+}
+
+/** The first not-yet-logged meal, by `sortOrder` — the entry card's "Next:" line. */
+export function nextUnloggedPlanMeal(plan: MealPlan): PlanMeal | null {
+  const unlogged = plan.meals
+    .filter((m) => m.state === "planned")
+    .slice()
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+  return unlogged[0] ?? null;
+}
+
+/** Planned-but-unlogged meals mapped to one Fuel log slot — the ghost rows (AC 5.1). */
+export function plannedMealsForSlot(
+  plan: MealPlan | null,
+  slot: LogSlot,
+): readonly PlanMeal[] {
+  if (plan === null) return [];
+  return plan.meals
+    .filter((m) => m.logSlot === slot && m.state === "planned")
+    .slice()
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+}
+
 // ─── Vocabularies (mirror the backend, AC 1.1) ───────────────────────────────
 
 export const DIETARY_PATTERNS = [

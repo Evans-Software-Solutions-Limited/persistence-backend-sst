@@ -740,6 +740,89 @@ describe("useMealprintEntry", () => {
     expect(useFuelSheets.getState().sheet).toBe("mealprintSuggest");
     expect(mockRouterPush).not.toHaveBeenCalled();
   });
+
+  it("onPlanMyDay opens the plan config sheet", async () => {
+    const api = new InMemoryApiAdapter();
+    api.mySubscription = subscription("premium_plus");
+    const { latest } = harness(api, useMealprintEntry);
+    await waitFor(() => expect(latest().state).toBe("unlocked"));
+    act(() => latest().onPlanMyDay());
+    expect(useFuelSheets.getState().sheet).toBe("mealprintPlan");
+  });
+
+  it("planProgress is null with no active plan, and non-null with one — spec-26 Phase 2", async () => {
+    const api = new InMemoryApiAdapter();
+    api.mySubscription = subscription("premium_plus");
+    const { latest } = harness(api, () => useMealprintEntry(null));
+    await waitFor(() => expect(latest().state).toBe("unlocked"));
+    expect(latest().planProgress).toBeNull();
+
+    const plan = {
+      id: "plan-1",
+      userId: "user-1",
+      status: "active" as const,
+      planDate: "2026-08-05",
+      groupId: null,
+      mealsPerDay: 2,
+      effortLevel: "balanced" as const,
+      targetKcal: 2000,
+      targetProteinG: 150,
+      targetCarbsG: 200,
+      targetFatG: 60,
+      source: "ai",
+      createdByUserId: null,
+      createdAt: null,
+      acceptedAt: null,
+      meals: [
+        {
+          id: "meal-1",
+          sortOrder: 0,
+          label: "Breakfast bowl",
+          logSlot: "breakfast" as const,
+          recipeId: null,
+          mealId: null,
+          items: null,
+          kcal: 400,
+          proteinG: 30,
+          carbsG: 40,
+          fatG: 10,
+          aiReason: null,
+          state: "logged" as const,
+          loggedEntryId: "entry-1",
+        },
+        {
+          id: "meal-2",
+          sortOrder: 1,
+          label: "Chicken & rice",
+          logSlot: "dinner" as const,
+          recipeId: null,
+          mealId: null,
+          items: null,
+          kcal: 600,
+          proteinG: 45,
+          carbsG: 60,
+          fatG: 15,
+          aiReason: null,
+          state: "planned" as const,
+          loggedEntryId: null,
+        },
+      ],
+    };
+    const { latest: latestWithPlan } = harness(api, () =>
+      useMealprintEntry(plan),
+    );
+    await waitFor(() => expect(latestWithPlan().planProgress).not.toBeNull());
+    expect(latestWithPlan().planProgress).toEqual({
+      loggedCount: 1,
+      totalCount: 2,
+      nextMealLabel: "Chicken & rice",
+      nextMealKcal: 600,
+    });
+
+    // An active plan takes priority over the suggest sheet on press.
+    act(() => latestWithPlan().onPress());
+    expect(mockRouterPush).toHaveBeenCalledWith("/(app)/fuel/plan-today");
+  });
 });
 
 describe("useSetMealprintPreferences — edge paths", () => {

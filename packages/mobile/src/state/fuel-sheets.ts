@@ -27,6 +27,7 @@ export type FuelSheet =
   | "quickAdd"
   | "snap"
   | "mealprintSuggest"
+  | "mealprintPlan"
   | null;
 
 export interface FuelSheetsState {
@@ -63,6 +64,16 @@ export interface FuelSheetsState {
    * store does not re-check, matching `openSnap`.
    */
   openMealprintSuggest: () => void;
+  /**
+   * spec-26 Phase 2 — open the "Plan my day" sheet (config → generating →
+   * draft review → accept, all one root-mounted sheet — see
+   * `MealprintPlanSheetContainer`). Takes no slot, same reasoning as
+   * `openMealprintSuggest`: a day plan targets the whole day's remaining
+   * budget, not one meal slot.
+   *
+   * Gate-checked by the caller (`useMealprintEntry`) before this is called.
+   */
+  openMealprintPlan: () => void;
   /** Set the active day (QA-20). <FuelContainer> calls this on every day
    * change; Home's quick "Log meal" calls it with today() right before
    * opening Quick-add so it can never inherit a stale day left over from a
@@ -82,6 +93,7 @@ export const useFuelSheets = create<FuelSheetsState>((set) => ({
   openQuickAdd: (slot = "breakfast") => set({ sheet: "quickAdd", slot }),
   openSnap: (slot = "breakfast") => set({ sheet: "snap", slot }),
   openMealprintSuggest: () => set({ sheet: "mealprintSuggest" }),
+  openMealprintPlan: () => set({ sheet: "mealprintPlan" }),
   setDate: (date) => set({ date }),
   close: () => set({ sheet: null }),
   notifyMutated: () => set((s) => ({ rev: s.rev + 1 })),

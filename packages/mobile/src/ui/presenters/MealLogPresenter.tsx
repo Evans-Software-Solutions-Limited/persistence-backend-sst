@@ -1,8 +1,9 @@
 import { Text, View } from "@tamagui/core";
 import { Pressable } from "react-native";
 import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
-import { Card, IconBtn } from "@/ui/components/foundation";
-import { IconPlus, IconTrash } from "@/ui/components/icons";
+import { Btn, Card, IconBtn, Pill } from "@/ui/components/foundation";
+import { toneHex } from "@/ui/components/foundation/tones";
+import { IconPlus, IconSparkles, IconTrash } from "@/ui/components/icons";
 import type { MealSlot } from "@/domain/models/nutrition";
 
 /**
@@ -28,11 +29,26 @@ export type MealRowVM = {
   fatG: number;
 };
 
+/**
+ * A planned-but-unlogged meal-plan meal, mapped to this slot (spec-26 Phase
+ * 2, AC 5.1) — the "ghost row". Rendered as a dashed, gold-tinted row with a
+ * "Log it" action, distinct from a real logged entry.
+ */
+export type MealGhostRowVM = {
+  planId: string;
+  planMealId: string;
+  label: string;
+  kcal: number;
+};
+
 export type MealSlotVM = {
   slot: MealSlot;
   label: string;
   kcal: number;
   rows: readonly MealRowVM[];
+  /** Planned-but-unlogged plan meals mapped to this slot. Empty when there's
+   * no active plan, or every plan meal in this slot is already logged. */
+  ghostRows?: readonly MealGhostRowVM[];
 };
 
 export type MealLogProps = {
@@ -42,6 +58,8 @@ export type MealLogProps = {
   onPressRow?: (id: string, slot: MealSlot) => void;
   /** Swipe a logged row left to reveal Delete; tap it to remove the entry. */
   onDeleteEntry?: (id: string, slot: MealSlot) => void;
+  /** "Log it" on a ghost row (spec-26 AC 5.2) — omit to render ghost rows read-only. */
+  onLogGhost?: (planId: string, planMealId: string, slot: MealSlot) => void;
   testID?: string;
 };
 
@@ -177,11 +195,75 @@ function MealRow({
   );
 }
 
+const GOLD = toneHex("gold");
+
+/**
+ * A planned-but-unlogged meal (spec-26 AC 5.1) — dashed gold-tinted row, "Log
+ * it" writes it through `useLogPlanMeal` (offline-queueable, AC 5.2). Kept
+ * visually distinct from a real logged row (opaque `$surface`, solid border):
+ * this is an OFFER, not a fact about what was eaten.
+ */
+function GhostRow({
+  ghost,
+  slot,
+  onLogGhost,
+}: {
+  ghost: MealGhostRowVM;
+  slot: MealSlot;
+  onLogGhost?: (planId: string, planMealId: string, slot: MealSlot) => void;
+}) {
+  return (
+    <View
+      testID={`fuel-ghost-${ghost.planMealId}`}
+      flexDirection="row"
+      alignItems="center"
+      justifyContent="space-between"
+      gap={10}
+      paddingVertical={8}
+      paddingHorizontal={14}
+      borderTopWidth={1}
+      borderColor="$border"
+      backgroundColor="transparent"
+    >
+      <View flexDirection="row" alignItems="center" gap={8} flex={1}>
+        <IconSparkles size={13} color={GOLD.base} />
+        <View flex={1}>
+          <Pill tone="gold" size="xs">
+            PLANNED
+          </Pill>
+          <Text
+            fontFamily="$body"
+            fontSize={13}
+            color="$text2"
+            numberOfLines={1}
+            marginTop={2}
+          >
+            {ghost.label} · {Math.round(ghost.kcal)} kcal
+          </Text>
+        </View>
+      </View>
+      {onLogGhost ? (
+        <Btn
+          variant="soft"
+          tone="gold"
+          size="sm"
+          icon={<IconPlus size={11} strokeWidth={2.5} />}
+          onPress={() => onLogGhost(ghost.planId, ghost.planMealId, slot)}
+          testID={`fuel-ghost-log-${ghost.planMealId}`}
+        >
+          Log it
+        </Btn>
+      ) : null}
+    </View>
+  );
+}
+
 export function MealLogPresenter({
   slots,
   onAddToSlot,
   onPressRow,
   onDeleteEntry,
+  onLogGhost,
   testID = "fuel-meal-log",
 }: MealLogProps) {
   return (
@@ -242,7 +324,7 @@ export function MealLogPresenter({
                 onDeleteEntry={onDeleteEntry}
               />
             ))
-          ) : (
+          ) : (m.ghostRows?.length ?? 0) === 0 ? (
             <View
               paddingHorizontal={14}
               paddingTop={10}
@@ -254,7 +336,15 @@ export function MealLogPresenter({
                 Nothing logged yet
               </Text>
             </View>
-          )}
+          ) : null}
+          {(m.ghostRows ?? []).map((ghost) => (
+            <GhostRow
+              key={ghost.planMealId}
+              ghost={ghost}
+              slot={m.slot}
+              onLogGhost={onLogGhost}
+            />
+          ))}
         </Card>
       ))}
     </View>

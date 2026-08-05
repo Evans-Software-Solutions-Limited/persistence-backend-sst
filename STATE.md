@@ -44,6 +44,37 @@ Phase 2 (`PAYWALL_SURFACES_BRIEF.md` task 2.8). Also settled: `small_business` +
 (a `tier_name` change in substance — safe only because of the authorised prod+staging data
 reset; no grandfathering).
 
+### 🎯 SIGN-OFF SCOPE for the launch build (Brad, 2026-08-05) — the finish line
+
+Brad's "main pieces" + the order to the App Store submission:
+
+1. **Mealprint (spec-26)** — backend done (#350/#357); REMAINING = replace-meal route
+   (small), **Phase 2 mobile** (plan-flow UI + Fuel integration, the big chunk), and
+   **Phase 3** (week gen, shopping list, adherence). ~half the feature by user surface.
+2. **Loadout single-workout (spec-21)** — feature-complete & merged; REMAINING = a device
+   pass on an EAS build with an entitled account.
+3. **Loadout Phase 4 / program import (spec-22) — IN SCOPE** (Brad: "we've done a lot of
+   the leg work"). ⚠ **Honest caveat recorded:** the reused leg-work is the single-workout
+   ADAPTATION engine; the IMPORT half (extraction from screenshot/PDF/link + exercise-name
+   resolution) is **net-new AND eval-gated** — Phase 0 is an accuracy+cost eval and NO code
+   ships until it clears the C2 bar (~85 % field accuracy, no whole-workout drops, ≥95 %
+   auto-match). The eval is the first step, not skippable.
+4. **Subscription DESIGN revamp (mobile paywall) — do FIRST, before web.** The catalog+code
+   is done (PR #361); this is the incoming **Claude Design subscription-layout revamp** of
+   the paywall screens (PAYWALL_SURFACES_BRIEF § "sequence 2.7 with the revamp"). ⚠ Needs
+   the design source / the `mcp__claude-design__*` connector RE-AUTHORISED (not available in
+   a non-interactive session) — a Brad dependency.
+5. **Web — pricing page + read-only, to START with.** Rewrite `packages/web/Pricing.tsx` to
+   the new 6-tier catalog/prices (it is STALE — £12.99 Premium, old structure) + in-app
+   read-only for web tiers. **This is a FOLLOW-UP after the mobile revamp.**
+6. **Stripe / org rail (spec-29 Phase 3) — PARALLEL with App Review, NON-BLOCKING for
+   submission** (Brad). Build it in web while the app approval is in flight; it does not
+   gate the submission.
+
+**Not blocking submission:** spec-29 Phase 1 (pooled AI budget — margin protection) and the
+org rail (#6). **App Store submission happens only when ALL the above sign-off code is
+done** (Brad — do not submit early).
+
 ### ✅ 2026-08-05 — Mealprint spec-26 PHASE 2 BACKEND is MERGED to `main` (PR #357, `3f047bec`)
 
 Inspector Brad clean @ `270870d3`; all 5 CI checks green; squash-merged. **Staging deploy
@@ -122,8 +153,9 @@ because it has run. **Before it reaches a real user it needs:**
 ⚠ **UPDATE 2026-08-05: Phase 2 (the IAP coach ladder) is BUILT on branch
 `claude/spec29-phase2-coach-ladder` — not yet a PR.** Two pricing decisions
 resolved this session and recorded in `design.md` § 1: (1) coach-ladder annual
-discount extended to **30 % across the board** (Start Up Coach £159.99, Start Up
-Coach + £289.99 (nearest permitted ASC GBP price point), Coach £499.99, Coach Pro £839.99; consumer annuals unchanged at
+discount extended to **approximately 30 % across the board** (Start Up Coach
+£159.99, Start Up Coach + £289.99 — nearest permitted ASC GBP price point —,
+Coach £499.99, Coach Pro £839.99; consumer annuals unchanged at
 £139.99 / £249.99); (2) the six-tier IAP ladder is final. What shipped on the
 branch: migration `20260805120000_coach_ladder_restructure.sql` (rename
 individual_trainer→"Start Up Coach" + reprice; insert `start_up_coach_plus` /
@@ -133,8 +165,16 @@ individual_trainer→"Start Up Coach" + reprice; insert `start_up_coach_plus` /
 both gate Records; paywall rail; `MONTHLY_ONLY_TIERS` now empty; and three
 untyped-literal survivors fixed (GreetingSection map + two deep-link checks now
 derive from `TRAINER_TIER_NAMES`). **Gates all green** (prettier · typecheck 8/8 ·
-core 3880/3880 · mobile 5928/5928 · build 13/13); Inspector-Brad-local sweep in
-progress; PR NOT raised (awaiting Brad).
+core 3880/3880 · mobile 5928/5928 · build 13/13); Inspector-Brad-local
+**clean @ `adf7111e`**; **PR [#361](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/361)
+MERGED**. ⚠ The tiers remain launch-gated with `is_active=false` until App Store
+Connect and RevenueCat are aligned.
+
+⚠ **PRICE-POINT FOLLOW-UP:** migration
+`20260805180000_start_up_coach_plus_annual_asc_price.sql` updates the
+Start Up Coach + annual price from £293.99 to ASC's supported £289.99 price point.
+The original merged migration remains unchanged so the correction runs on databases
+that already recorded it.
 
 ⚠ **Design call baked in:** `individual_trainer` (entry coach rung) LOSES the
 suite; the paid coach tiers carry it; a coach denied the suite upsells

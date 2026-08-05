@@ -23,6 +23,23 @@
  *     gate), so this is the only place the value proposition gets made.
  *  4. **unlocked** — opens the suggest sheet, or the first-run wizard.
  *
+ * ## Plan-aware states (spec-26 Phase 2, T-2.7)
+ *
+ * `unlocked` now branches THREE ways rather than one, mirroring the design
+ * source's `AMFuelScreen` (`hasPlan` prop):
+ *
+ *  - `needsSetup` → unchanged: one CTA, "Set up Mealprint".
+ *  - no active plan, preferences set → TWO real CTAs, "Suggest a meal" AND
+ *    "Plan my day" (design: `gridTemplateColumns: '1fr 1fr'`). This is why the
+ *    outer container stops being a single `Pressable` in this shape — see the
+ *    docstring on the two-CTA branch below for why faking a second button the
+ *    way the single-CTA card fakes its one would break VoiceOver on the first
+ *    button as well as the second.
+ *  - `planProgress` present → the ACTIVE variant: an "ACTIVE" pill, a
+ *    logged/total counter, a per-meal progress strip and a "Next: …" line.
+ *    The whole card is one Pressable again (single action: open the Today
+ *    view), same shape as the original single-CTA card.
+ *
  * ## ⚠ No price literal
  *
  * The card says what the feature does and that it is Premium+; the number lives
@@ -52,7 +69,12 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Text, View } from "@tamagui/core";
 import { Pill } from "@/ui/components/foundation";
 import { NEUTRAL_HEX, toneHex } from "@/ui/components/foundation/tones";
-import { IconAlert, IconLock, IconSparkles } from "@/ui/components/icons";
+import {
+  IconAlert,
+  IconApple,
+  IconLock,
+  IconSparkles,
+} from "@/ui/components/icons";
 
 const GOLD = toneHex("gold");
 
@@ -62,6 +84,16 @@ const WASH_START = { x: 0, y: 0 } as const;
 const WASH_END = { x: 1, y: 1 } as const;
 
 export type MealprintEntryState = "pending" | "stalled" | "locked" | "unlocked";
+
+/** Today's active-plan progress — presence alone selects the ACTIVE variant. */
+export type MealprintPlanProgress = {
+  readonly loggedCount: number;
+  readonly totalCount: number;
+  /** Label + kcal of the first not-yet-logged meal, or both null when every
+   * meal is logged (the progress strip alone says "done"). */
+  readonly nextMealLabel: string | null;
+  readonly nextMealKcal: number | null;
+};
 
 export type MealprintEntryCardProps = {
   readonly state: MealprintEntryState;
@@ -99,8 +131,24 @@ export type MealprintEntryCardProps = {
    * available to the next caller. The sheet's own `isToday` is required too.
    */
   readonly isToday: boolean;
-  /** Opens the wizard (when `needsSetup`) or the suggest sheet. */
+  /**
+   * Present + non-null ⇒ the day has an active plan; renders the ACTIVE
+   * variant and `onPress` opens the Today view instead of the suggest sheet.
+   * Only meaningful in `unlocked` — an unentitled/pending/stalled user never
+   * has a plan to show progress on.
+   */
+  readonly planProgress?: MealprintPlanProgress | null;
+  /**
+   * Primary action: the first-run wizard (`needsSetup`), "Suggest a meal"
+   * (no plan, preferences set), or the Today view (`planProgress` present).
+   */
   readonly onPress: () => void;
+  /**
+   * "Plan my day" — the SECOND cta, rendered only in the no-active-plan,
+   * no-first-run shape (design's two-button row). Omitting it collapses back
+   * to the single-CTA card (e.g. a caller not yet wired for the plan flow).
+   */
+  readonly onPlanMyDay?: () => void;
   /** Pushes the paywall. Only wired in the `locked` state. */
   readonly onUpgrade: () => void;
   /** Re-issues the hung subscription queries. Only wired in `stalled`. */
@@ -114,7 +162,9 @@ export function MealprintEntryCard({
   remainingKcal = null,
   remainingProteinG = null,
   isToday,
+  planProgress = null,
   onPress,
+  onPlanMyDay,
   onUpgrade,
   onRetry,
   testID = "mealprint-entry-card",
@@ -173,6 +223,36 @@ export function MealprintEntryCard({
   const isPending = state === "pending";
   const isLocked = state === "locked";
   const title = "What should I eat?";
+
+  // ── ACTIVE-plan variant — today has a plan, show progress instead of a pitch.
+  if (!isPending && !isLocked && planProgress !== null) {
+    return (
+      <MealprintActivePlanCard
+        progress={planProgress}
+        onPress={onPress}
+        testID={testID}
+      />
+    );
+  }
+
+  // ── Two-CTA variant — no active plan, preferences already set: "Suggest a
+  // meal" AND "Plan my day" side by side (design's two-button row). The outer
+  // wrapper is a plain View, not a Pressable, because the two children below
+  // are the real, independently-actionable buttons — see the function's own
+  // docstring for why faking this the single-CTA way would break both of them
+  // for VoiceOver rather than just one.
+  if (!isPending && !isLocked && !needsSetup && onPlanMyDay !== undefined) {
+    return (
+      <MealprintOfferCard
+        remainingKcal={remainingKcal}
+        remainingProteinG={remainingProteinG}
+        isToday={isToday}
+        onSuggest={onPress}
+        onPlanMyDay={onPlanMyDay}
+        testID={testID}
+      />
+    );
+  }
 
   // ⚠ The concrete line is for entitled users only. See `remainingKcal`.
   //
@@ -351,6 +431,271 @@ export function MealprintEntryCard({
         </LinearGradient>
       </View>
     </Pressable>
+  );
+}
+
+/**
+ * The ACTIVE-plan variant (design's `AMFuelScreen` `hasPlan` card): a logged/
+ * total counter, a per-meal progress strip, and a "Next: …" line. One
+ * Pressable, one action (open the Today view) — same single-CTA shape as the
+ * card this replaces, just with different content.
+ */
+function MealprintActivePlanCard({
+  progress,
+  onPress,
+  testID,
+}: {
+  progress: MealprintPlanProgress;
+  onPress: () => void;
+  testID: string;
+}) {
+  const { loggedCount, totalCount, nextMealLabel, nextMealKcal } = progress;
+  const nextLine =
+    nextMealLabel !== null && nextMealKcal !== null
+      ? `Next: ${nextMealLabel} · ${Math.round(nextMealKcal)} kcal`
+      : "Every planned meal is logged";
+
+  return (
+    <Pressable
+      onPress={onPress}
+      testID={testID}
+      accessibilityRole="button"
+      accessibilityLabel={`Today's Mealprint plan. ${loggedCount} of ${totalCount} meals logged. ${nextLine}. View plan.`}
+      style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}
+    >
+      <View
+        borderRadius={18}
+        padding={16}
+        backgroundColor="$surface"
+        borderWidth={1}
+        borderColor="$goldDim"
+      >
+        <View
+          flexDirection="row"
+          alignItems="center"
+          justifyContent="space-between"
+          marginBottom={10}
+        >
+          <View flexDirection="row" alignItems="center" gap={8}>
+            <IconSparkles size={15} color={GOLD.base} />
+            <Text
+              fontFamily="$display"
+              fontWeight="700"
+              fontSize={14}
+              letterSpacing={-0.2}
+              color="$gold"
+            >
+              Mealprint
+            </Text>
+            <Pill tone="success" size="xs">
+              ACTIVE
+            </Pill>
+          </View>
+        </View>
+
+        <View flexDirection="row" alignItems="center" gap={14}>
+          <View alignItems="center">
+            <Text
+              fontFamily="$mono"
+              fontWeight="600"
+              fontSize={22}
+              color="$gold"
+            >
+              {loggedCount}
+              <Text fontFamily="$mono" fontSize={14} color="$text3">
+                /{totalCount}
+              </Text>
+            </Text>
+            <Text
+              fontFamily="$display"
+              fontSize={8.5}
+              fontWeight="600"
+              letterSpacing={1.2}
+              color="$text3"
+            >
+              LOGGED
+            </Text>
+          </View>
+          <View flex={1} gap={8}>
+            <View flexDirection="row" gap={4}>
+              {Array.from({ length: totalCount }).map((_, index) => (
+                <View
+                  key={index}
+                  flex={1}
+                  height={6}
+                  borderRadius={3}
+                  backgroundColor={index < loggedCount ? "$gold" : "$surface4"}
+                />
+              ))}
+            </View>
+            <Text fontFamily="$body" fontSize={12} color="$text2">
+              {nextLine}
+            </Text>
+          </View>
+        </View>
+      </View>
+    </Pressable>
+  );
+}
+
+/**
+ * The two-CTA "offer" variant — no active plan, preferences already set:
+ * "Suggest a meal" and "Plan my day" as two REAL, independently-actionable
+ * buttons.
+ *
+ * ⚠ NOT structured like the single-CTA card's fake bottom button. That
+ * approach relies on the OUTER Pressable owning the one and only action, with
+ * a nested decorative `View` supplying the CTA's appearance — correct with one
+ * action, broken with two: nesting a real Pressable inside another Pressable
+ * makes RN's default `accessible` swallow the inner one's own label on iOS
+ * (exactly the defect the single-CTA comment describes), and it cannot express
+ * "these are two different actions" at all. So this wrapper is a plain `View`,
+ * and each button below is its own `Pressable` with its own label.
+ */
+function MealprintOfferCard({
+  remainingKcal,
+  remainingProteinG,
+  isToday,
+  onSuggest,
+  onPlanMyDay,
+  testID,
+}: {
+  remainingKcal: number | null | undefined;
+  remainingProteinG: number | null | undefined;
+  isToday: boolean;
+  onSuggest: () => void;
+  onPlanMyDay: () => void;
+  testID: string;
+}) {
+  const hasBudget =
+    isToday &&
+    remainingKcal !== null &&
+    remainingKcal !== undefined &&
+    remainingKcal > 0;
+  const subtitle = hasBudget
+    ? budgetLine(remainingKcal!, remainingProteinG)
+    : isToday
+      ? "Ideas that fit the calories and protein you have left today"
+      : "Ideas that fit what's left on the day you're viewing";
+
+  return (
+    <View
+      borderRadius={18}
+      overflow="hidden"
+      backgroundColor="$surface"
+      borderWidth={1}
+      borderColor="$goldDim"
+      testID={testID}
+    >
+      <LinearGradient
+        colors={WASH}
+        start={WASH_START}
+        end={WASH_END}
+        style={{ padding: 16 }}
+      >
+        <View flexDirection="row" alignItems="center" gap={8} marginBottom={10}>
+          <IconSparkles size={15} color={GOLD.base} />
+          <Text
+            fontFamily="$display"
+            fontWeight="700"
+            fontSize={14}
+            letterSpacing={-0.2}
+            color="$gold"
+          >
+            Mealprint
+          </Text>
+          <Pill tone="gold" size="xs">
+            PREMIUM+
+          </Pill>
+        </View>
+
+        <Text
+          fontFamily="$display"
+          fontWeight="700"
+          fontSize={18}
+          letterSpacing={-0.3}
+          color="$text"
+        >
+          What should I eat?
+        </Text>
+        <Text
+          fontFamily="$body"
+          fontSize={12.5}
+          lineHeight={18}
+          color="$text2"
+          marginTop={4}
+        >
+          {subtitle}
+        </Text>
+
+        <View flexDirection="row" gap={8} marginTop={14}>
+          <Pressable
+            onPress={onSuggest}
+            testID="mealprint-entry-suggest-cta"
+            accessibilityRole="button"
+            accessibilityLabel="Suggest a meal"
+            style={({ pressed }) => ({
+              flex: 1,
+              opacity: pressed ? 0.85 : 1,
+            })}
+          >
+            <View
+              height={44}
+              borderRadius={12}
+              flexDirection="row"
+              alignItems="center"
+              justifyContent="center"
+              gap={7}
+              paddingHorizontal={12}
+              backgroundColor="$surface3"
+              borderWidth={1}
+              borderColor="$goldDim"
+            >
+              <IconSparkles size={14} color={GOLD.base} />
+              <Text
+                fontFamily="$display"
+                fontWeight="600"
+                fontSize={13.5}
+                color="$gold"
+              >
+                Suggest a meal
+              </Text>
+            </View>
+          </Pressable>
+          <Pressable
+            onPress={onPlanMyDay}
+            testID="mealprint-entry-plan-cta"
+            accessibilityRole="button"
+            accessibilityLabel="Plan my day"
+            style={({ pressed }) => ({
+              flex: 1,
+              opacity: pressed ? 0.85 : 1,
+            })}
+          >
+            <View
+              height={44}
+              borderRadius={12}
+              flexDirection="row"
+              alignItems="center"
+              justifyContent="center"
+              gap={7}
+              paddingHorizontal={12}
+              backgroundColor="$gold"
+            >
+              <IconApple size={14} color={GOLD.ink} />
+              <Text
+                fontFamily="$display"
+                fontWeight="600"
+                fontSize={13.5}
+                color="$goldInk"
+              >
+                Plan my day
+              </Text>
+            </View>
+          </Pressable>
+        </View>
+      </LinearGradient>
+    </View>
   );
 }
 

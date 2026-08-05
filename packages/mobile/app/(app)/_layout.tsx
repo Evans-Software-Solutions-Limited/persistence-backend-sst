@@ -18,6 +18,7 @@ import { QuickAddSheetContainer } from "../../src/ui/containers/QuickAddSheetCon
 import { ScanBarcodeSheetContainer } from "../../src/ui/containers/ScanBarcodeSheetContainer";
 import { SnapAISheetContainer } from "../../src/ui/containers/SnapAISheetContainer";
 import { MealprintSuggestSheetContainer } from "../../src/ui/containers/MealprintSuggestSheetContainer";
+import { MealprintPlanSheetContainer } from "../../src/ui/containers/MealprintPlanSheetContainer";
 import { ExerciseFiltersProvider } from "../../src/ui/hooks/useExerciseFilters";
 import { useAutoRetryOnUpgrade } from "../../src/ui/hooks/useAutoRetryOnUpgrade";
 import { useForegroundSubscriptionRefresh } from "../../src/ui/hooks/useForegroundSubscriptionRefresh";
@@ -421,6 +422,17 @@ export default function AppLayout() {
         Spec: specs/26-mealprint-meal-planning/design.md § 4 item 3
       */}
       <MealprintSuggestSheetContainer />
+      {/*
+        Mealprint plan sheet (spec-26 Phase 2, T-2.6) — "Plan my day":
+        config → generating → draft review → accept, all one root-mounted
+        sheet, opened by the Fuel Mealprint card via
+        useFuelSheets().openMealprintPlan. Same launch-fan-out discipline as
+        the suggest sheet above — every data path is gated on its own
+        `visible` flag.
+
+        Spec: specs/26-mealprint-meal-planning/design.md § 4 item 4
+      */}
+      <MealprintPlanSheetContainer />
       {/*
         AddRecipeMenuContainer — the Recipes library "+" bottom sheet
         (Recipes AI PR3). Root-mounted sibling (feedback_sheets_mount_at_root);

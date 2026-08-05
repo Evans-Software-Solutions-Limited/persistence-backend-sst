@@ -1,7 +1,15 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { router, type Href } from "expo-router";
 import { useFuelSheets } from "@/state/fuel-sheets";
-import type { MealprintEntryState } from "@/ui/presenters/mealprint/MealprintEntryCard";
+import {
+  computePlanAdherence,
+  nextUnloggedPlanMeal,
+  type MealPlan,
+} from "@/domain/models/mealprint";
+import type {
+  MealprintEntryState,
+  MealprintPlanProgress,
+} from "@/ui/presenters/mealprint/MealprintEntryCard";
 import { useMealprintGate } from "./useMealprintGate";
 import { useMealprintPreferences } from "./useMealprintPreferences";
 
@@ -46,17 +54,37 @@ export type MealprintEntry = {
   readonly state: MealprintEntryState;
   /** True when the first tap should open the wizard rather than the sheet. */
   readonly needsSetup: boolean;
-  /** Open the wizard or the suggest sheet, as `needsSetup` dictates. */
+  /**
+   * Present + non-null ⇒ the viewed day has an active plan — the card renders
+   * the ACTIVE variant and `onPress` opens the Today view instead of the
+   * suggest sheet (spec-26 Phase 2, AC 5.1).
+   */
+  readonly planProgress: MealprintPlanProgress | null;
+  /** Open the wizard / Today view / suggest sheet, as the state above dictates. */
   readonly onPress: () => void;
+  /** "Plan my day" — opens the plan config sheet. */
+  readonly onPlanMyDay: () => void;
   readonly onUpgrade: () => void;
   readonly onRetry: () => void;
 };
 
-export function useMealprintEntry(): MealprintEntry {
+/**
+ * `activePlan` is the caller's (`FuelContainer`'s) already-fetched active plan
+ * for the VIEWED day — passed in rather than fetched here because it is
+ * day-navigable state this hook has no other reason to know about, and
+ * `FuelContainer` already owns `useGetActiveMealPlan(date)` for the ghost
+ * rows. `null` covers both "no plan that day" and "not loaded yet" — either
+ * way the card falls back to the offer/wizard shape, which is the correct
+ * default (see `MealprintEntryCard`'s ACTIVE-variant docstring).
+ */
+export function useMealprintEntry(
+  activePlan: MealPlan | null = null,
+): MealprintEntry {
   const gate = useMealprintGate();
   // Cache-only — see the docstring. Do NOT pass `true` here.
   const preferences = useMealprintPreferences();
   const openMealprintSuggest = useFuelSheets((s) => s.openMealprintSuggest);
+  const openMealprintPlan = useFuelSheets((s) => s.openMealprintPlan);
 
   const [stalled, setStalled] = useState(false);
   /** Bumped by the retry so the timer effect re-runs while `isResolved` is unchanged. */
@@ -85,13 +113,35 @@ export function useMealprintEntry(): MealprintEntry {
   const needsSetup =
     preferences.data === null || preferences.data.isDefault === true;
 
+  const planProgress = useMemo<MealprintPlanProgress | null>(() => {
+    if (activePlan === null) return null;
+    const adherence = computePlanAdherence(activePlan);
+    const next = nextUnloggedPlanMeal(activePlan);
+    return {
+      loggedCount: adherence.loggedCount,
+      totalCount: adherence.totalCount,
+      nextMealLabel: next?.label ?? null,
+      nextMealKcal: next?.kcal ?? null,
+    };
+  }, [activePlan]);
+
   const onPress = useCallback(() => {
+    // An active plan takes priority — a day already planned should open the
+    // Today view, not the setup wizard or a duplicate suggest sheet.
+    if (planProgress !== null) {
+      router.push("/(app)/fuel/plan-today" as Href);
+      return;
+    }
     if (needsSetup) {
       router.push("/(app)/fuel/preferences?mode=wizard" as Href);
       return;
     }
     openMealprintSuggest();
-  }, [needsSetup, openMealprintSuggest]);
+  }, [planProgress, needsSetup, openMealprintSuggest]);
+
+  const onPlanMyDay = useCallback(() => {
+    openMealprintPlan();
+  }, [openMealprintPlan]);
 
   const state: MealprintEntryState = !gate.isResolved
     ? stalled
@@ -104,7 +154,9 @@ export function useMealprintEntry(): MealprintEntry {
   return {
     state,
     needsSetup,
+    planProgress,
     onPress,
+    onPlanMyDay,
     onUpgrade: gate.onUpgrade,
     onRetry,
   };

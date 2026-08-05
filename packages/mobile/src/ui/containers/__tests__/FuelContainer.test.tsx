@@ -62,12 +62,18 @@ jest.mock("@/ui/hooks/useNutritionAiGate", () => ({
 const mockMealprintEntry = {
   state: "unlocked" as const,
   needsSetup: false,
+  planProgress: null as null | { loggedCount: number; totalCount: number },
   onPress: jest.fn(),
+  onPlanMyDay: jest.fn(),
   onUpgrade: jest.fn(),
   onRetry: jest.fn(),
 };
+const mockUseMealprintEntryCalls: unknown[] = [];
 jest.mock("@/ui/hooks/useMealprintEntry", () => ({
-  useMealprintEntry: () => mockMealprintEntry,
+  useMealprintEntry: (activePlan: unknown) => {
+    mockUseMealprintEntryCalls.push(activePlan);
+    return mockMealprintEntry;
+  },
 }));
 
 const mockFetch = jest.fn(async () => ({
@@ -194,6 +200,8 @@ describe("FuelContainer", () => {
   beforeEach(() => {
     mockProbe.last = null;
     mockPush.mockClear();
+    mockUseMealprintEntryCalls.length = 0;
+    mockMealprintEntry.planProgress = null;
     jest.clearAllMocks();
   });
 
@@ -278,6 +286,144 @@ describe("FuelContainer", () => {
     expect(mockMealprintEntry.onUpgrade).toHaveBeenCalled();
     mockProbe.last?.onMealprintRetry();
     expect(mockMealprintEntry.onRetry).toHaveBeenCalled();
+
+    // spec-26 Phase 2 — the second CTA and its handler.
+    mockProbe.last?.onMealprintPlan();
+    expect(mockMealprintEntry.onPlanMyDay).toHaveBeenCalled();
+  });
+
+  it("spec-26 Phase 2 — renders a planned-but-unlogged meal as a ghost row in its mapped slot", async () => {
+    const { adapters, storage } = makeAdapters();
+    storage.cacheFuelToday(USER, localDayISO(), makeFuel());
+    const activePlan = {
+      id: "plan-1",
+      userId: USER,
+      status: "active" as const,
+      planDate: localDayISO(),
+      groupId: null,
+      mealsPerDay: 1,
+      effortLevel: "balanced" as const,
+      targetKcal: 2200,
+      targetProteinG: 160,
+      targetCarbsG: 220,
+      targetFatG: 70,
+      source: "ai",
+      createdByUserId: null,
+      createdAt: null,
+      acceptedAt: null,
+      meals: [
+        {
+          id: "meal-1",
+          sortOrder: 0,
+          label: "Chicken & rice bowl",
+          logSlot: "dinner" as const,
+          recipeId: null,
+          mealId: null,
+          items: null,
+          kcal: 640,
+          proteinG: 45,
+          carbsG: 60,
+          fatG: 15,
+          aiReason: null,
+          state: "planned" as const,
+          loggedEntryId: null,
+        },
+      ],
+    };
+    storage.cacheMealPlan(USER, activePlan);
+    // The hook's automatic background refresh re-fetches from the API and
+    // would otherwise overwrite the seeded cache with "no plan" — seed the
+    // fake's server-truth too so the refetch agrees.
+    (adapters.api as InMemoryApiAdapter).activePlanByDate.set(
+      localDayISO(),
+      activePlan,
+    );
+    render(
+      <Wrapper adapters={adapters}>
+        <FuelContainer />
+      </Wrapper>,
+    );
+    await waitFor(() => expect(mockProbe.last?.hasData).toBe(true));
+    const dinner = mockProbe.last!.slots.find((s) => s.slot === "dinner")!;
+    expect(dinner.ghostRows).toHaveLength(1);
+    expect(dinner.ghostRows![0]).toMatchObject({
+      planId: "plan-1",
+      planMealId: "meal-1",
+      label: "Chicken & rice bowl",
+      kcal: 640,
+    });
+    // The card passed to useMealprintEntry is the container's own fetched
+    // active plan, not a second independent read.
+    await waitFor(() =>
+      expect(mockUseMealprintEntryCalls.some((p) => p !== null)).toBe(true),
+    );
+  });
+
+  it("onLogGhost logs the plan meal and it stops appearing as a ghost row", async () => {
+    const { adapters, storage } = makeAdapters();
+    storage.cacheFuelToday(USER, localDayISO(), makeFuel());
+    const plan = {
+      id: "plan-1",
+      userId: USER,
+      status: "active" as const,
+      planDate: localDayISO(),
+      groupId: null,
+      mealsPerDay: 1,
+      effortLevel: "balanced" as const,
+      targetKcal: 2200,
+      targetProteinG: 160,
+      targetCarbsG: 220,
+      targetFatG: 70,
+      source: "ai",
+      createdByUserId: null,
+      createdAt: null,
+      acceptedAt: null,
+      meals: [
+        {
+          id: "meal-1",
+          sortOrder: 0,
+          label: "Chicken & rice bowl",
+          logSlot: "dinner" as const,
+          recipeId: null,
+          mealId: null,
+          items: null,
+          kcal: 640,
+          proteinG: 45,
+          carbsG: 60,
+          fatG: 15,
+          aiReason: null,
+          state: "planned" as const,
+          loggedEntryId: null,
+        },
+      ],
+    };
+    storage.cacheMealPlan(USER, plan);
+    (adapters.api as InMemoryApiAdapter).activePlanByDate.set(
+      localDayISO(),
+      plan,
+    );
+    (adapters.api as InMemoryApiAdapter).plans.set("plan-1", plan);
+    render(
+      <Wrapper adapters={adapters}>
+        <FuelContainer />
+      </Wrapper>,
+    );
+    await waitFor(() =>
+      expect(
+        mockProbe.last?.slots.find((s) => s.slot === "dinner")?.ghostRows,
+      ).toHaveLength(1),
+    );
+
+    await act(async () => {
+      mockProbe.last!.onLogGhost!("plan-1", "meal-1", "dinner");
+      await Promise.resolve();
+    });
+
+    await waitFor(() =>
+      expect(
+        storage.getCachedActiveMealPlan(USER, localDayISO())!.meals[0]!.state,
+      ).toBe("logged"),
+    );
   });
 
   it("does not fire the goal-hit haptic on cold start into an already-in-band day", async () => {
