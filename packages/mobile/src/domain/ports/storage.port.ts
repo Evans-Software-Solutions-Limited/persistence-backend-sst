@@ -44,7 +44,7 @@ import type { CoachOverview } from "@/domain/models/coachOverview";
 import type { ClientDetail } from "@/domain/models/clientDetail";
 import type { TrainerClient } from "@/domain/models/trainerClient";
 import type { ProgramSummary } from "@/domain/models/program";
-import type { MealprintPreferences } from "@/domain/models/mealprint";
+import type { MealPlan, MealprintPreferences } from "@/domain/models/mealprint";
 import type {
   Food,
   FuelToday,
@@ -1066,6 +1066,33 @@ export interface StoragePort {
     userId: string,
     preferences: MealprintPreferences,
   ): void;
+
+  /**
+   * Read the cached ACTIVE plan for `(userId, planDate)`, or `null` when
+   * unknown on this device (spec-26 Phase 2, AC 5.1/5.3). Same "null means
+   * unknown, not absent" caveat as the preferences cache does NOT apply here —
+   * the active-plan READ endpoint is itself 200-with-`null` for "no plan
+   * today", and a `refresh()` writes that `null` through
+   * {@link removeCachedMealPlan} rather than caching a null payload, so a
+   * cache miss here really does mean "hasn't been read yet on this device".
+   */
+  getCachedActiveMealPlan(userId: string, planDate: string): MealPlan | null;
+  /** Age of the cached plan as an ISO timestamp, or null. */
+  getMealPlanAge(userId: string, planDate: string): string | null;
+  /**
+   * Write-through the ACTIVE plan for its `planDate` (one row per
+   * `(userId, planDate)` — mirrors `cacheFuelToday`). Accept, log, replace and
+   * re-date all funnel through this so the Fuel card / ghost rows / Today view
+   * read the same row.
+   */
+  cacheMealPlan(userId: string, plan: MealPlan): void;
+  /**
+   * Drop the cached row for a date — a plan archived, re-dated away, or
+   * deleted is no longer "the active plan for that day", and leaving the old
+   * payload in place would keep showing ghost rows for meals nobody can log
+   * into any more.
+   */
+  removeCachedMealPlan(userId: string, planDate: string): void;
 
   /** Cached recipe list for a user (cards show name + totals). */
   getCachedRecipes(userId: string): Recipe[];

@@ -55,7 +55,7 @@ import type { Goal } from "@/domain/models/goal";
 import type { HabitCompletion } from "@/domain/models/habit-completion";
 import type { HabitConfig } from "@/domain/models/habit-config";
 import type { EntitlementVerdict, SyncStatus } from "@/domain/ports/sync.types";
-import type { MealprintPreferences } from "@/domain/models/mealprint";
+import type { MealPlan, MealprintPreferences } from "@/domain/models/mealprint";
 import type {
   Food,
   FuelToday,
@@ -1212,6 +1212,8 @@ export class InMemoryStorageAdapter implements StoragePort {
     string,
     { payload: MealprintPreferences; syncedAt: string }
   > = new Map();
+  private mealPlanCache: Map<string, { payload: MealPlan; syncedAt: string }> =
+    new Map();
   private recipesCache: Map<string, Map<string, Recipe>> = new Map();
   private mealsCache: Map<string, Map<string, Meal>> = new Map();
   private fuelKey(userId: string, date: string): string {
@@ -1278,6 +1280,32 @@ export class InMemoryStorageAdapter implements StoragePort {
     // adding one here alone would make this the only self-notifying write.
   }
 
+  private mealPlanKey(userId: string, planDate: string): string {
+    return `${userId}::${planDate}`;
+  }
+
+  getCachedActiveMealPlan(userId: string, planDate: string): MealPlan | null {
+    return (
+      this.mealPlanCache.get(this.mealPlanKey(userId, planDate))?.payload ??
+      null
+    );
+  }
+  getMealPlanAge(userId: string, planDate: string): string | null {
+    return (
+      this.mealPlanCache.get(this.mealPlanKey(userId, planDate))?.syncedAt ??
+      null
+    );
+  }
+  cacheMealPlan(userId: string, plan: MealPlan): void {
+    this.mealPlanCache.set(this.mealPlanKey(userId, plan.planDate), {
+      payload: plan,
+      syncedAt: new Date().toISOString(),
+    });
+  }
+  removeCachedMealPlan(userId: string, planDate: string): void {
+    this.mealPlanCache.delete(this.mealPlanKey(userId, planDate));
+  }
+
   getCachedRecipes(userId: string): Recipe[] {
     return Array.from(this.recipesCache.get(userId)?.values() ?? []);
   }
@@ -1340,6 +1368,7 @@ export class InMemoryStorageAdapter implements StoragePort {
     this.foodsCache.clear();
     this.nutritionTargetCache.clear();
     this.mealprintPreferencesCache.clear();
+    this.mealPlanCache.clear();
     this.recipesCache.clear();
     this.mealsCache.clear();
     this.nextId = 1;

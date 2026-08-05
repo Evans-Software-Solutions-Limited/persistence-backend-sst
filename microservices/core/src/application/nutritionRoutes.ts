@@ -30,6 +30,7 @@ import { nutritionAiPlanMealSwapHandler } from "./nutrition/mealprint/ai/planSwa
 import { nutritionPlansCreateHandler } from "./nutrition/mealprint/plans/create/nutritionPlansCreateHandler";
 import { nutritionPlansReadHandlers } from "./nutrition/mealprint/plans/read/nutritionPlansReadHandlers";
 import { nutritionPlanMealLogHandler } from "./nutrition/mealprint/plans/log/nutritionPlanMealLogHandler";
+import { nutritionPlanMealReplaceHandler } from "./nutrition/mealprint/plans/replace/nutritionPlanMealReplaceHandler";
 import { foodsListHandler } from "./foods/list/foodsListHandler";
 import { foodsCreateHandler } from "./foods/create/foodsCreateHandler";
 import { recipesListHandler } from "./recipes/list/recipesListHandler";
@@ -110,6 +111,7 @@ export const nutritionRoutes = new Elysia()
   .use(nutritionPlansCreateHandler)
   .use(nutritionPlansReadHandlers)
   .use(nutritionPlanMealLogHandler)
+  .use(nutritionPlanMealReplaceHandler)
   .use(foodsListHandler)
   .use(foodsCreateHandler)
   // recipes — GET /recipes (list) before GET /recipes/:id; POST /recipes/import

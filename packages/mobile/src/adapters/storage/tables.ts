@@ -43,6 +43,14 @@ export const MEALPRINT_PREFERENCE_TABLES = [
 ] as const;
 
 /**
+ * Mealprint ACCEPTED day plans (spec-26 Phase 2). The Fuel card, the ghost
+ * rows and the Today/adherence view all read the active-plan-for-a-date row —
+ * accept/log/replace/re-date/archive/delete all write or remove it, so a
+ * write from any of those has to wake all three readers.
+ */
+export const MEAL_PLAN_TABLES = ["cached_meal_plans"] as const;
+
+/**
  * Home aggregate payload.
  *
  * ⚠ `cached_dashboard` is deliberately NOT here, despite being the older Home

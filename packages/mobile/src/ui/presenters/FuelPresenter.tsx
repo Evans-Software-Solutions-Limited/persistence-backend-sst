@@ -22,6 +22,7 @@ import { WaterTrackerPresenter } from "./WaterTrackerPresenter";
 import {
   MealprintEntryCard,
   type MealprintEntryState,
+  type MealprintPlanProgress,
 } from "./mealprint/MealprintEntryCard";
 
 /**
@@ -85,9 +86,13 @@ export type FuelPresenterProps = {
   // `locked`. The container resolves them via `useMealprintEntry`.
   mealprintState: MealprintEntryState;
   mealprintNeedsSetup: boolean;
+  /** Present ⇒ the viewed day has an active plan (spec-26 Phase 2, AC 5.1). */
+  mealprintPlanProgress: MealprintPlanProgress | null;
   onMealprint: () => void;
   onMealprintUpgrade: () => void;
   onMealprintRetry: () => void;
+  /** "Plan my day" — the entry card's second CTA. */
+  onMealprintPlan: () => void;
 
   // Meal log
   slots: readonly MealSlotVM[];
@@ -111,6 +116,8 @@ export type FuelPresenterProps = {
   onPressRow?: (id: string, slot: MealSlot) => void;
   /** Swipe a logged entry left → tap Delete to remove it (handled in the container). */
   onDeleteEntry?: (id: string, slot: MealSlot) => void;
+  /** "Log it" on a ghost row (spec-26 AC 5.2). */
+  onLogGhost?: (planId: string, planMealId: string, slot: MealSlot) => void;
   onLog: () => void;
   /** Forwarded by the container for tab-press scroll-to-top. */
   scrollRef?: RefObject<ScrollView | null>;
@@ -379,9 +386,11 @@ export function FuelPresenter(props: FuelPresenterProps) {
     snapOffline = false,
     mealprintState,
     mealprintNeedsSetup,
+    mealprintPlanProgress,
     onMealprint,
     onMealprintUpgrade,
     onMealprintRetry,
+    onMealprintPlan,
     slots,
     waterCups,
     waterGoal,
@@ -396,6 +405,7 @@ export function FuelPresenter(props: FuelPresenterProps) {
     onSetWater,
     onPressRow,
     onDeleteEntry,
+    onLogGhost,
     onLog,
     scrollRef,
     testID = "fuel-screen",
@@ -582,7 +592,9 @@ export function FuelPresenter(props: FuelPresenterProps) {
             // ⚠ Separate from nulling the budget: the FALLBACK subtitles also say
             // "today", and without this the card contradicted the sheet it opens.
             isToday={viewingToday}
+            planProgress={mealprintPlanProgress}
             onPress={onMealprint}
+            onPlanMyDay={onMealprintPlan}
             onUpgrade={onMealprintUpgrade}
             onRetry={onMealprintRetry}
           />
@@ -591,6 +603,7 @@ export function FuelPresenter(props: FuelPresenterProps) {
             onAddToSlot={onAddToSlot}
             onPressRow={onPressRow}
             onDeleteEntry={onDeleteEntry}
+            onLogGhost={onLogGhost}
           />
           <WaterTrackerPresenter
             cups={waterCups}

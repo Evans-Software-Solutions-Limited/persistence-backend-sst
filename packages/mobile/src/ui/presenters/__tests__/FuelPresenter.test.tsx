@@ -53,9 +53,11 @@ function render(over: Partial<FuelPresenterProps> = {}) {
     // assertion here is only that the card is composed into the screen.
     mealprintState: "unlocked",
     mealprintNeedsSetup: false,
+    mealprintPlanProgress: null,
     onMealprint: jest.fn(),
     onMealprintUpgrade: jest.fn(),
     onMealprintRetry: jest.fn(),
+    onMealprintPlan: jest.fn(),
     slots,
     waterCups: 6,
     waterGoal: 8,

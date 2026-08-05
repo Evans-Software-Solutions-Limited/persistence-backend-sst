@@ -280,6 +280,121 @@ describe("MealprintEntryCard", () => {
       expect(queryByText(/£/)).toBeNull();
     }
   });
+
+  // ─── spec-26 Phase 2 — plan-aware states ──────────────────────────────────
+
+  describe("the ACTIVE-plan variant", () => {
+    const progress = {
+      loggedCount: 1,
+      totalCount: 3,
+      nextMealLabel: "Chicken & rice bowl",
+      nextMealKcal: 640,
+    };
+
+    it("renders the progress strip and the next-meal line, not the pitch", () => {
+      const { getByTestId, queryByText, getByText } = renderWithTheme(
+        <MealprintEntryCard {...cardProps({ planProgress: progress })} />,
+      );
+      expect(getByTestId("mealprint-entry-card")).toBeTruthy();
+      expect(getByText(/1/)).toBeTruthy();
+      expect(getByText(/Chicken & rice bowl · 640 kcal/)).toBeTruthy();
+      // Not the offer pitch.
+      expect(queryByText("What should I eat?")).toBeNull();
+    });
+
+    it("pressing the card fires onPress (the Today view), not onPlanMyDay", () => {
+      const onPress = jest.fn();
+      const onPlanMyDay = jest.fn();
+      const { getByTestId } = renderWithTheme(
+        <MealprintEntryCard
+          {...cardProps({ planProgress: progress, onPress, onPlanMyDay })}
+        />,
+      );
+      fireEvent.press(getByTestId("mealprint-entry-card"));
+      expect(onPress).toHaveBeenCalled();
+      expect(onPlanMyDay).not.toHaveBeenCalled();
+    });
+
+    it("says 'every planned meal is logged' when nothing is left to log", () => {
+      const { getByText } = renderWithTheme(
+        <MealprintEntryCard
+          {...cardProps({
+            planProgress: {
+              loggedCount: 3,
+              totalCount: 3,
+              nextMealLabel: null,
+              nextMealKcal: null,
+            },
+          })}
+        />,
+      );
+      expect(getByText(/Every planned meal is logged/i)).toBeTruthy();
+    });
+
+    it("takes priority over pending/locked being false — but NOT while pending or locked", () => {
+      // planProgress is only meaningful once resolved+entitled; pending/locked
+      // must still render their own bodies even if a stale plan were passed.
+      const pending = renderWithTheme(
+        <MealprintEntryCard
+          {...cardProps({ state: "pending", planProgress: progress })}
+        />,
+      );
+      expect(pending.queryByText(/Checking your plan/i)).toBeTruthy();
+
+      const locked = renderWithTheme(
+        <MealprintEntryCard
+          {...cardProps({ state: "locked", planProgress: progress })}
+        />,
+      );
+      expect(locked.getByTestId("mealprint-entry-card")).toBeTruthy();
+      expect(locked.queryByText(/Chicken & rice bowl/)).toBeNull();
+    });
+  });
+
+  describe("the two-CTA offer variant", () => {
+    it("renders TWO independently-labelled buttons when onPlanMyDay is supplied", () => {
+      const { getByTestId } = renderWithTheme(
+        <MealprintEntryCard {...cardProps({ onPlanMyDay: jest.fn() })} />,
+      );
+      expect(getByTestId("mealprint-entry-suggest-cta")).toBeTruthy();
+      expect(getByTestId("mealprint-entry-plan-cta")).toBeTruthy();
+      // The single-CTA fallback body must NOT also render.
+      expect(() => getByTestId("mealprint-entry-cta")).toThrow();
+    });
+
+    it("each button fires its own handler independently", () => {
+      const onPress = jest.fn();
+      const onPlanMyDay = jest.fn();
+      const { getByTestId } = renderWithTheme(
+        <MealprintEntryCard {...cardProps({ onPress, onPlanMyDay })} />,
+      );
+      fireEvent.press(getByTestId("mealprint-entry-suggest-cta"));
+      expect(onPress).toHaveBeenCalledTimes(1);
+      expect(onPlanMyDay).not.toHaveBeenCalled();
+
+      fireEvent.press(getByTestId("mealprint-entry-plan-cta"));
+      expect(onPlanMyDay).toHaveBeenCalledTimes(1);
+      expect(onPress).toHaveBeenCalledTimes(1);
+    });
+
+    it("falls back to the single-CTA card when needsSetup, even with onPlanMyDay supplied", () => {
+      const { getByTestId, queryByTestId } = renderWithTheme(
+        <MealprintEntryCard
+          {...cardProps({ needsSetup: true, onPlanMyDay: jest.fn() })}
+        />,
+      );
+      expect(getByTestId("mealprint-entry-cta")).toBeTruthy();
+      expect(queryByTestId("mealprint-entry-plan-cta")).toBeNull();
+    });
+
+    it("omitting onPlanMyDay falls back to the original single-CTA card (existing callers unaffected)", () => {
+      const { getByTestId, queryByTestId } = renderWithTheme(
+        <MealprintEntryCard {...cardProps()} />,
+      );
+      expect(getByTestId("mealprint-entry-cta")).toBeTruthy();
+      expect(queryByTestId("mealprint-entry-plan-cta")).toBeNull();
+    });
+  });
 });
 
 // ─── MealprintPreferencesPresenter ─────────────────────────────────────────
