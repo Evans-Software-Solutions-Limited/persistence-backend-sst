@@ -114,6 +114,17 @@ export function IOSPurchaseFlowContainer() {
     hasExplicitPlanRoute ? "plans" : "persona",
   );
   const [screenChosen, setScreenChosen] = useState(hasExplicitPlanRoute);
+  // Which screen the "plans" screen was entered FROM, so Back returns there
+  // rather than a hardcoded "persona". Set on each transition into "plans".
+  // Default "persona" preserves the pre-existing back path for a new user and
+  // for a deep link into plans (both correctly back into the chooser); the
+  // Manage → change-plan path overrides it to "manage" so an existing
+  // subscriber backs out to their subscription screen instead of the
+  // "How will you use Persistence?" chooser — a screen that was never part of
+  // their journey and shows nothing selected.
+  const [plansOrigin, setPlansOrigin] = useState<"persona" | "manage">(
+    "persona",
+  );
 
   useEffect(() => {
     if (initialRoleParam === "personal_trainer" || tierParamImpliesTrainer) {
@@ -335,6 +346,7 @@ export function IOSPurchaseFlowContainer() {
   const handlePersonaSelect = useCallback((nextRole: Role) => {
     setSelectedRole(nextRole);
     setBillingCycle(nextRole === "trainer" ? "monthly" : "yearly");
+    setPlansOrigin("persona");
     setScreen("plans");
     setScreenChosen(true);
   }, []);
@@ -416,13 +428,16 @@ export function IOSPurchaseFlowContainer() {
       onRoleChange={setSelectedRole}
       onPersonaSelect={handlePersonaSelect}
       onChangePlan={() => {
+        setPlansOrigin("manage");
         setScreen("plans");
         setScreenChosen(true);
       }}
       onContinueFree={() => router.push("/(auth)/success?tier=free" as Href)}
       onBack={() => {
         if (screen === "plans") {
-          setScreen("persona");
+          // Return to whichever screen opened plans — Manage for an existing
+          // subscriber (change-plan), the persona chooser otherwise.
+          setScreen(plansOrigin);
           setScreenChosen(true);
           return;
         }
