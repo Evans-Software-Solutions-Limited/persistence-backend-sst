@@ -3308,3 +3308,21 @@ PR not yet raised. NO product code — script + dataset + verdict + spec updates
   timing language and the locally ambiguous “tomorrow”. Focused presenter +
   Loadout flow: 70/70 tests passed.
 - 390 × 844 visual baseline: `/Users/bradleysimms-evans/.codex/visualizations/2026/08/05/019fd228-9f67-7fa0-913e-7e03bd314bff/ai-failsafe-daily-limit.png`.
+
+### 2026-08-06 — Web pricing visual polish
+
+- Corrected the pricing section's inherited `.sec-head` flex layout so the
+  eyebrow, title, description and cadence control follow the centred hierarchy
+  in the GTM D9 web handoff. The adaptive-suite definition is centred with the
+  same composition.
+- Brought the desktop grid back to the handoff's proportions: 1048px content
+  inside the 1160px marketing container at 1440px, 16px gutters and 18px card
+  radii. Removed the compounded 37px subtitle-to-suite dead zone; cards now use
+  16px into the suite strip and 18px into the feature list.
+- All cards now carry a consistent base shadow and a stronger lift/border glow
+  on hover or keyboard focus, with reduced-motion handling. Organisation
+  highlights use cyan rather than inheriting the consumer gold treatment.
+- Visual baselines:
+  `/Users/bradleysimms-evans/.codex/visualizations/2026/08/05/019fd228-9f67-7fa0-913e-7e03bd314bff/web-pricing-polish-individual.png`
+  and
+  `/Users/bradleysimms-evans/.codex/visualizations/2026/08/05/019fd228-9f67-7fa0-913e-7e03bd314bff/web-pricing-polish-organisation.png`.
