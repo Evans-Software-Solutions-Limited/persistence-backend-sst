@@ -469,6 +469,7 @@ function ConfigStage(props: MealprintPlanSheetProps) {
         <Label>Effort level</Label>
         <Segmented
           testID="mealprint-plan-effort"
+          accent="gold"
           options={EFFORT_LEVELS.map((level) => ({
             value: level,
             label: EFFORT_LEVEL_LABELS[level],

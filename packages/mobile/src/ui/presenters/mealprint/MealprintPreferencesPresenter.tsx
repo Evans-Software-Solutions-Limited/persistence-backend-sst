@@ -530,6 +530,7 @@ export function MealprintPreferencesPresenter({
           >
             <Segmented
               testID="mealprint-effort"
+              accent="gold"
               options={EFFORT_LEVELS.map((level) => ({
                 value: level,
                 label: EFFORT_LEVEL_LABELS[level],

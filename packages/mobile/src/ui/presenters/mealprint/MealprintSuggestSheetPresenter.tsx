@@ -330,6 +330,7 @@ function SetupStage({
         <Label>What are you after</Label>
         <Segmented
           testID="mealprint-shape"
+          accent="gold"
           options={(["snack", "meal", "either"] as const).map((value) => ({
             value,
             label: SUGGEST_SHAPE_LABELS[value],
