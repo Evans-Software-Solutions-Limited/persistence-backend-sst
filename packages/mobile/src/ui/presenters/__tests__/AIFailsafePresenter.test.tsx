@@ -3,7 +3,7 @@ import { fireEvent, render, screen } from "@testing-library/react-native";
 import { AIFailsafePresenter } from "@/ui/presenters/AIFailsafePresenter";
 
 describe("AIFailsafePresenter", () => {
-  it("is temporary, blameless and exposes manual continuation", () => {
+  it("states the daily reset honestly and exposes manual continuation", () => {
     const onDismiss = jest.fn();
     const onBuildManually = jest.fn();
     render(
@@ -12,7 +12,15 @@ describe("AIFailsafePresenter", () => {
         onBuildManually={onBuildManually}
       />,
     );
-    expect(screen.getByText("AI is taking a short break")).toBeTruthy();
+    expect(
+      screen.getByText("You've reached today's workout adaptation limit"),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Workout adaptations reset automatically at the next daily reset — nothing you need to do.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText(/short break|little while|tomorrow/i)).toBeNull();
     expect(screen.queryByText(/credits|used \d|limit of/i)).toBeNull();
     fireEvent.press(screen.getByText("Got it"));
     fireEvent.press(screen.getByText("Build a workout myself"));

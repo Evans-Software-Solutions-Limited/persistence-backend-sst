@@ -17,11 +17,12 @@ export function AIFailsafePresenter({
         <View style={styles.iconWrap}>
           <Ionicons name="pause" size={30} color={color.$primaryBright} />
         </View>
-        <Text style={styles.title}>AI is taking a short break</Text>
+        <Text style={styles.title}>
+          You&apos;ve reached today&apos;s workout adaptation limit
+        </Text>
         <Text style={styles.body}>
-          To keep suggestions fast and reliable, Persistence briefly pauses AI
-          features after a busy stretch. It comes back on its own in a little
-          while — nothing you need to do.
+          Workout adaptations reset automatically at the next daily reset —
+          nothing you need to do.
         </Text>
         <View style={styles.fact}>
           <Ionicons name="checkmark" size={16} color={color.$primary} />

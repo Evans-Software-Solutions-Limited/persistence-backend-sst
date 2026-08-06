@@ -3214,3 +3214,15 @@ PR not yet raised. NO product code — script + dataset + verdict + spec updates
 - **LESSON (worktrees, again):** the shell cwd silently reverted from the
   worktree to the main checkout mid-session and an edit landed on the wrong
   branch. **Always pass absolute paths inside a worktree; re-check `pwd`.**
+
+### 2026-08-06 — GTM D9 daily-cap copy correction
+
+- `AIFailsafePresenter` is mounted only for Loadout's `429 ai_daily_limit`
+  branch. Its former “short break / little while” copy misrepresented a limit
+  scoped to workout adaptations and a 00:00 UTC boundary; the presenter now
+  names that feature-specific ceiling and uses timezone-neutral reset wording
+  while retaining the manual-workout path.
+- Regression coverage asserts the scoped daily-reset copy and rejects vague
+  timing language and the locally ambiguous “tomorrow”. Focused presenter +
+  Loadout flow: 70/70 tests passed.
+- 390 × 844 visual baseline: `/Users/bradleysimms-evans/.codex/visualizations/2026/08/05/019fd228-9f67-7fa0-913e-7e03bd314bff/ai-failsafe-daily-limit.png`.
