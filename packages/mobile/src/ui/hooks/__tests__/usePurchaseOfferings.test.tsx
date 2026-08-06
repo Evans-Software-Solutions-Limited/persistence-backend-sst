@@ -49,7 +49,9 @@ const PKG: PurchaseProduct = {
   productId: "app.persistence.premium.monthly",
   tier: "premium",
   billingCycle: "monthly",
+  price: 9.99,
   priceString: "£9.99",
+  pricePerMonthString: "£9.99",
   introTrialDays: null,
 };
 

@@ -29,7 +29,9 @@ const PREMIUM_PKG = {
   packageType: "MONTHLY",
   product: {
     identifier: "app.persistence.premium.monthly",
+    price: 9.99,
     priceString: "£9.99",
+    pricePerMonthString: "£9.99",
   },
 };
 
@@ -107,7 +109,9 @@ describe("RevenueCatPurchasesAdapter — configured flows", () => {
           productId: "app.persistence.premium.monthly",
           tier: "premium",
           billingCycle: "monthly",
+          price: 9.99,
           priceString: "£9.99",
+          pricePerMonthString: "£9.99",
           // No introPrice on the fixture → no free-trial length.
           introTrialDays: null,
         },
@@ -124,6 +128,7 @@ describe("RevenueCatPurchasesAdapter — configured flows", () => {
           packageType: "MONTHLY",
           product: {
             identifier: "app.persistence.premium.monthly",
+            price: 9.99,
             priceString: "£9.99",
             introPrice: {
               price: 0,

@@ -23,6 +23,7 @@ import { useOnlineStatus } from "@/ui/hooks/useOnlineStatus";
 import { useReferenceLists } from "@/ui/hooks/useReferenceLists";
 import { useSavedGyms } from "@/ui/hooks/useSavedGyms";
 import { EquipmentScanSheetContainer } from "@/ui/containers/EquipmentScanSheetContainer";
+import { AIFailsafePresenter } from "@/ui/presenters/AIFailsafePresenter";
 import {
   LoadoutAdaptingStep,
   type LoadoutAdaptingError,
@@ -765,7 +766,14 @@ export function LoadoutFlowContainer() {
         />
       )}
 
-      {step === "adapting" && (
+      {step === "adapting" && adaptError === "limit" && (
+        <AIFailsafePresenter
+          onDismiss={() => goToStep("collect")}
+          onBuildManually={() => goToStep("manual")}
+        />
+      )}
+
+      {step === "adapting" && adaptError !== "limit" && (
         <LoadoutAdaptingStep
           workoutName={workoutName}
           gymLabel={contextLabel(context)}

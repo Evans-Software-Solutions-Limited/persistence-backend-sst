@@ -139,13 +139,9 @@ export type MealprintGate = {
    */
   readonly isResolved: boolean;
   /**
-   * Premium+ monthly price from the CATALOG, or null.
-   *
-   * ⚠ Null is the EXPECTED value until launch: `premium_plus` ships
-   * `is_active = false` and `listActive()` returns only active rows, so the tier
-   * has no card and no price yet. Every surface must read correctly with no price
-   * rather than printing a literal — the retired prototype `£19.99` is exactly
-   * how a stale figure survives a reprice (the real number is £29.99).
+   * Premium+ monthly price from the live tier API, or null when unavailable.
+   * Every surface must read correctly without a price rather than printing a
+   * literal that can drift from the database or StoreKit.
    */
   readonly upgradePriceMonthly: number | null;
   /** Push the paywall with Premium+ pre-selected. */

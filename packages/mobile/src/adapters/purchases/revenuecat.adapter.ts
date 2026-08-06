@@ -192,7 +192,9 @@ function toPurchaseProduct(pkg: PurchasesPackage): PurchaseProduct {
     productId,
     tier: tierFromProductId(productId),
     billingCycle: billingCycleFromProductId(productId),
+    price: pkg.product.price,
     priceString: pkg.product.priceString,
+    pricePerMonthString: pkg.product.pricePerMonthString ?? null,
     // RevenueCat reflects the App Store Connect introductory offer on the
     // product; derive the free-trial length so the paywall copy matches it.
     introTrialDays: freeTrialDaysFromIntroOffer(pkg.product.introPrice),

@@ -1,447 +1,529 @@
+import { useMemo, useState, type ReactNode } from "react";
 import { Link } from "react-router";
+import { useQuery } from "@tanstack/react-query";
 import {
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type CSSProperties,
-  type ReactNode,
-} from "react";
+  ADAPTIVE_SUITE_LABEL,
+  annualSaving,
+  ctaFor,
+  monthlyEquivalent,
+  staticTierPricing,
+  tiersFor,
+  type BillingCadence,
+  type CatalogTier,
+  type SubscriptionAudience,
+  type TierPricing,
+} from "@persistence/subscription-catalog";
+import {
+  IconBuildingSkyscraper,
+  IconCheck,
+  IconInfoCircle,
+  IconSparkles,
+  IconUsers,
+  IconX,
+} from "@tabler/icons-react";
 import { MarketingLayout } from "@/marketing/MarketingLayout";
+import { TEAMS_MAILTO } from "@/marketing/config";
 import { useReveal } from "@/marketing/hooks";
 import { useSeo } from "@/marketing/seo";
-import { CheckIcon, SeatsIcon } from "@/marketing/icons";
-import { TEAMS_MAILTO } from "@/marketing/config";
 
-type Cycle = "m" | "y";
-const d = (ms: number) => ({ "--d": `${ms}ms` }) as CSSProperties;
+const AUDIENCE_TABS: readonly {
+  id: SubscriptionAudience;
+  label: string;
+  eyebrow: string;
+  title: string;
+  description: string;
+}[] = [
+  {
+    id: "consumer",
+    label: "Individuals",
+    eyebrow: "Personal plans",
+    title: "Train yourself",
+    description:
+      "Free to start. Premium+ unlocks the full adaptive suite — Loadout + Mealprint.",
+  },
+  {
+    id: "coach",
+    label: "Coaches",
+    eyebrow: "Coach plans",
+    title: "Coach your clients",
+    description:
+      "Choose by client capacity, then add the adaptive suite at the entry rung or get it included above.",
+  },
+  {
+    id: "org",
+    label: "Organisations",
+    eyebrow: "Organisation plans",
+    title: "Gyms, studios and teams",
+    description:
+      "Bought and managed on the web, with private member data kept out of organisation reporting.",
+  },
+];
 
-/** GBP formatting: thousands separators, 2dp only when non-integer. */
-function fmt(n: number): string {
-  return n % 1 === 0
-    ? n.toLocaleString("en-GB")
-    : n.toLocaleString("en-GB", {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-      });
-}
-
-function BillingToggle({
-  cycle,
-  onChange,
+function Price({
+  tier,
+  pricing = staticTierPricing(tier),
+  cadence = "monthly",
+  compact = false,
+  monthlyEquivalentOnly = false,
 }: {
-  cycle: Cycle;
-  onChange: (c: Cycle) => void;
+  tier: CatalogTier;
+  pricing?: TierPricing;
+  cadence?: BillingCadence;
+  compact?: boolean;
+  monthlyEquivalentOnly?: boolean;
 }) {
-  const mRef = useRef<HTMLButtonElement>(null);
-  const yRef = useRef<HTMLButtonElement>(null);
-  const [knob, setKnob] = useState<CSSProperties>({});
+  if (tier.invoiced) {
+    return <span className="catalog-price invoiced">Invoiced</span>;
+  }
 
-  useLayoutEffect(() => {
-    const btn = cycle === "m" ? mRef.current : yRef.current;
-    if (!btn) return;
-    setKnob({
-      width: btn.offsetWidth,
-      transform: `translateX(${btn.offsetLeft - 5}px)`,
-    });
-  }, [cycle]);
+  const annual = cadence === "annual" && pricing.annual !== null;
+  const value = monthlyEquivalentOnly
+    ? monthlyEquivalent(pricing)
+    : annual
+      ? pricing.annual
+      : pricing.monthly;
+  const provisional = annual ? tier.provisionalAnnual : tier.provisionalMonthly;
 
-  useEffect(() => {
-    const onResize = () => {
-      const btn = cycle === "m" ? mRef.current : yRef.current;
-      if (!btn) return;
-      setKnob({
-        width: btn.offsetWidth,
-        transform: `translateX(${btn.offsetLeft - 5}px)`,
-      });
-    };
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, [cycle]);
+  if (value === null) {
+    return <span className="catalog-price unavailable">Unavailable</span>;
+  }
+
+  const formatted = value.toLocaleString("en-GB", {
+    minimumFractionDigits: Number.isInteger(value) ? 0 : 2,
+    maximumFractionDigits: Number.isInteger(value) ? 0 : 2,
+  });
 
   return (
-    <div className="toggle-wrap" data-reveal style={d(240)}>
-      <div className="toggle">
-        <span className="knob" style={knob} />
+    <span
+      className={`catalog-price${compact ? " compact" : ""}${
+        provisional ? " provisional" : ""
+      }`}
+      title={provisional ? "Provisional — price not yet finalised" : undefined}
+    >
+      <span className="currency">£</span>
+      <span className="amount">
+        {formatted}
+        {provisional && <sup>*</sup>}
+      </span>
+      {value !== 0 && (
+        <span className="unit">
+          {annual && !monthlyEquivalentOnly ? "/yr" : "/mo"}
+        </span>
+      )}
+    </span>
+  );
+}
+
+function CadenceToggle({
+  cadence,
+  onChange,
+}: {
+  cadence: BillingCadence;
+  onChange: (cadence: BillingCadence) => void;
+}) {
+  return (
+    <div className="catalog-cadence" aria-label="Billing cadence">
+      {(["monthly", "annual"] as const).map((value) => (
         <button
-          ref={mRef}
+          key={value}
           type="button"
-          className={cycle === "m" ? "on" : undefined}
-          onClick={() => onChange("m")}
+          className={cadence === value ? "active" : undefined}
+          onClick={() => onChange(value)}
         >
-          Monthly
+          {value === "monthly" ? "Monthly" : "Annual"}
+          {value === "annual" && <span>save</span>}
         </button>
-        <button
-          ref={yRef}
-          type="button"
-          className={cycle === "y" ? "on" : undefined}
-          onClick={() => onChange("y")}
-        >
-          Annual
-        </button>
-      </div>
-      <span className="save-pill">
-        Annual saves ~2 months on every paid plan
+      ))}
+    </div>
+  );
+}
+
+function SuiteLine({ included }: { included: boolean }) {
+  return (
+    <div className={`suite-line ${included ? "included" : "excluded"}`}>
+      {included ? <IconSparkles size={16} /> : <IconX size={16} />}
+      <span>
+        {included
+          ? `${ADAPTIVE_SUITE_LABEL} included`
+          : "Adaptive suite not included"}
       </span>
     </div>
   );
 }
 
-function PlanPrice({ m, y, cycle }: { m: number; y: number; cycle: Cycle }) {
-  const annual = cycle === "y";
+function IapCta({ tier }: { tier: CatalogTier }) {
+  const cta = ctaFor(tier);
   return (
-    <>
-      <div className="plan-price">
-        <span className="cur">£</span>
-        <span className="amt">{fmt(annual ? y : m)}</span>
-        <span className="per">{annual ? "/yr" : "/mo"}</span>
-      </div>
-      <div className="plan-sub">
-        {annual ? (
-          <>
-            ≈ £{fmt(Number((y / 12).toFixed(2)))}/mo · <b>2 months free</b>
-          </>
-        ) : (
-          "Billed monthly"
-        )}
-      </div>
-    </>
-  );
-}
-
-/** Consumer/coach subscription CTA — non-linking until the app is live. */
-function SoonCta({ label, className }: { label: string; className: string }) {
-  return (
-    <span
-      className={`btn ${className} btn-block cta-soon`}
-      aria-disabled="true"
-    >
-      {label}
+    <span className="btn btn-line btn-block cta-soon" aria-disabled="true">
+      {cta.label}
     </span>
   );
 }
 
-function Feat({ children, head }: { children: ReactNode; head?: boolean }) {
-  if (head) return <li className="head">{children}</li>;
+function WebCta({ tier }: { tier: CatalogTier }) {
+  const cta = ctaFor(tier);
+  return (
+    <a
+      href={TEAMS_MAILTO}
+      className={`btn btn-block ${tier.highlight ? "btn-accent" : "btn-line"}`}
+    >
+      {cta.label}
+    </a>
+  );
+}
+
+function PlanFeature({ children }: { children: ReactNode }) {
   return (
     <li>
-      <CheckIcon className="chk" />
+      <IconCheck className="chk" size={17} />
       <span>{children}</span>
     </li>
   );
 }
 
+function PlanCard({
+  tier,
+  pricing,
+  cadence,
+}: {
+  tier: CatalogTier;
+  pricing: TierPricing;
+  cadence: BillingCadence;
+}) {
+  const saving = annualSaving(pricing);
+  const equivalent = monthlyEquivalent(pricing);
+  const isAnnual = cadence === "annual" && pricing.annual !== null;
+
+  return (
+    <article
+      className={`plan catalog-plan${tier.highlight ? " flagship" : ""}${
+        tier.audience === "coach" ? " coach" : ""
+      }`}
+      data-testid={`pricing-tier-${tier.id}`}
+    >
+      {tier.highlight && (
+        <span
+          className={`plan-ribbon ${tier.audience === "org" ? "cyan" : "gold"}`}
+        >
+          {tier.audience === "consumer" ? "Loadout + Mealprint" : "Recommended"}
+        </span>
+      )}
+      <div className="plan-name-row">
+        <div>
+          <div className="plan-name">{tier.name}</div>
+          <div className="plan-status">{tier.tagline}</div>
+        </div>
+        {tier.clients !== null && (
+          <span className="seats">
+            <IconUsers size={15} />
+            {typeof tier.clients === "number"
+              ? `Up to ${tier.clients}`
+              : tier.clients}
+          </span>
+        )}
+      </div>
+
+      <Price tier={tier} pricing={pricing} cadence={cadence} />
+      <div className="plan-sub">
+        {tier.invoiced ? (
+          "Custom terms"
+        ) : isAnnual && equivalent !== null ? (
+          <>
+            <Price
+              tier={tier}
+              pricing={pricing}
+              cadence="annual"
+              compact
+              monthlyEquivalentOnly
+            />{" "}
+            billed annually{saving ? ` · save ${saving}%` : ""}
+          </>
+        ) : tier.id === "free" ? (
+          "Free forever"
+        ) : pricing.monthly === null ? (
+          "Live price temporarily unavailable"
+        ) : (
+          "Billed monthly"
+        )}
+      </div>
+
+      <SuiteLine included={tier.suite} />
+      <ul className="plan-feats">
+        {tier.features.map((feature) => (
+          <PlanFeature key={feature}>{feature}</PlanFeature>
+        ))}
+      </ul>
+
+      {tier.rail === "web" ? <WebCta tier={tier} /> : <IapCta tier={tier} />}
+    </article>
+  );
+}
+
+type TierPriceWire = {
+  tierName: string;
+  priceMonthly: number;
+  priceYearly: number | null;
+};
+
+async function fetchLiveTierPricing(): Promise<
+  Readonly<Record<string, TierPricing>>
+> {
+  const baseUrl = (import.meta.env.VITE_CORE_API_URL ?? "").replace(/\/$/, "");
+  const response = await fetch(`${baseUrl}/subscription-tiers`);
+  if (!response.ok) throw new Error("Unable to load live subscription prices");
+  const body = (await response.json()) as { data?: TierPriceWire[] };
+  const pricing: Record<string, TierPricing> = {};
+  for (const tier of body.data ?? []) {
+    if (
+      typeof tier.tierName !== "string" ||
+      !Number.isFinite(tier.priceMonthly) ||
+      (tier.priceYearly !== null && !Number.isFinite(tier.priceYearly))
+    ) {
+      continue;
+    }
+    pricing[tier.tierName] = {
+      monthly: tier.priceMonthly,
+      annual: tier.priceYearly,
+      monthlySource: "api",
+      annualSource: "api",
+    };
+  }
+  return pricing;
+}
+
+const MATRIX_ROWS: readonly {
+  label: string;
+  value: (tier: CatalogTier) => string | boolean;
+}[] = [
+  {
+    label: "Workout and nutrition tracking",
+    value: () => true,
+  },
+  {
+    label: "Loadout + Mealprint",
+    value: (tier) => tier.suite,
+  },
+  {
+    label: "Coach tools",
+    value: (tier) => tier.audience === "coach",
+  },
+  {
+    label: "Client capacity",
+    value: (tier) =>
+      tier.audience === "coach" && tier.clients !== null
+        ? String(tier.clients)
+        : "—",
+  },
+];
+
+function TierMatrix() {
+  const tiers = [...tiersFor("consumer"), ...tiersFor("coach")];
+  return (
+    <section
+      className="catalog-matrix-section"
+      aria-labelledby="tier-matrix-title"
+    >
+      <div className="sec-head center">
+        <span className="kicker c-accent center">Compare plans</span>
+        <h2 className="disp" id="tier-matrix-title">
+          The whole ladder, <span className="it">clearly.</span>
+        </h2>
+      </div>
+      <div className="catalog-matrix-wrap">
+        <table className="catalog-matrix">
+          <thead>
+            <tr>
+              <th>Feature</th>
+              {tiers.map((tier) => (
+                <th key={tier.id}>{tier.name}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {MATRIX_ROWS.map((row) => (
+              <tr key={row.label}>
+                <th>{row.label}</th>
+                {tiers.map((tier) => {
+                  const value = row.value(tier);
+                  return (
+                    <td key={tier.id}>
+                      {value === true ? (
+                        <IconCheck aria-label="Included" size={17} />
+                      ) : value === false ? (
+                        <span aria-label="Not included">—</span>
+                      ) : (
+                        value
+                      )}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
 export function Pricing() {
   const revealRef = useReveal<HTMLDivElement>();
-  const [cycle, setCycle] = useState<Cycle>("m");
+  const [audience, setAudience] = useState<SubscriptionAudience>("consumer");
+  const [cadence, setCadence] = useState<BillingCadence>("annual");
+  const active = AUDIENCE_TABS.find((tab) => tab.id === audience)!;
+  const tiers = useMemo(() => tiersFor(audience), [audience]);
+  const livePricingQuery = useQuery({
+    queryKey: ["public-subscription-tier-pricing"],
+    queryFn: fetchLiveTierPricing,
+    staleTime: 5 * 60 * 1000,
+  });
+  const provisionalAnnuals = tiers.some((tier) => tier.provisionalAnnual);
+
   useSeo({
     title:
-      "Pricing — Persistence Gym & Coaching App | Free, Premium & Premium+ (GBP)",
+      "Pricing — Persistence Gym & Coaching App | Individuals, Coaches & Organisations",
     description:
-      "Simple GBP pricing for athletes, coaches and teams. Free forever, Premium from £12.99/mo, Premium+ with Loadout and Mealprint, plus three coach tiers and Persistence for Teams.",
+      "Persistence plans for individuals, coaches and organisations, including Premium+ with Loadout and Mealprint.",
     path: "/pricing",
   });
 
   return (
     <MarketingLayout current="pricing">
-      <div ref={revealRef}>
-        {/* ── Header ── */}
-        <section className="ph">
+      <div ref={revealRef} className="catalog-page">
+        <section className="ph catalog-hero">
           <div className="c">
-            <span className="kicker c-accent center" data-reveal>
-              Pricing
-            </span>
-            <h1 className="disp" data-reveal style={d(100)}>
-              One app. <span className="it">Every</span> athlete,
-              <br />
-              coach and team.
+            <span className="kicker c-accent center">Pricing</span>
+            <h1 className="disp">
+              One subscription. <span className="it">Your</span> way to train.
             </h1>
-            <p className="ph-sub" data-reveal style={d(180)}>
-              Start free, no card needed. Upgrade when you're ready. Coaches and
-              organisations get purpose-built plans.
+            <p className="ph-sub">
+              Start with the audience that fits you. Every card makes the
+              adaptive suite and client capacity explicit.
             </p>
-            <BillingToggle cycle={cycle} onChange={setCycle} />
+
+            <div
+              className="catalog-tabs"
+              role="tablist"
+              aria-label="Pricing audience"
+            >
+              {AUDIENCE_TABS.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={audience === tab.id}
+                  className={audience === tab.id ? "active" : undefined}
+                  onClick={() => setAudience(tab.id)}
+                >
+                  {tab.id === "org" && <IconBuildingSkyscraper size={16} />}
+                  {tab.label}
+                </button>
+              ))}
+            </div>
           </div>
         </section>
 
-        {/* ── Athlete plans ── */}
-        <section className="sec-pad" id="athletes">
+        <section className="sec-pad catalog-plans" id={audience}>
           <div className="c">
-            <div className="sec-head center" data-reveal>
-              <span className="kicker c-accent center">For athletes</span>
-              <h2 className="disp">
-                Train at your <span className="it">level.</span>
-              </h2>
+            <div className="catalog-section-head">
+              <div className="sec-head">
+                <span className="kicker c-accent">{active.eyebrow}</span>
+                <h2 className="disp">{active.title}</h2>
+                <p>{active.description}</p>
+              </div>
+              {audience !== "org" && (
+                <CadenceToggle cadence={cadence} onChange={setCadence} />
+              )}
             </div>
-            <div className="plans">
-              {/* Free */}
-              <div className="plan" data-reveal>
-                <div className="plan-name">Free</div>
-                <div className="plan-status live">Live at launch</div>
-                <div className="plan-price">
-                  <span className="cur">£</span>
-                  <span className="amt">0</span>
-                  <span className="per">forever</span>
-                </div>
-                <div className="plan-sub">No card required</div>
-                <p className="plan-desc">
-                  Everything you need to log workouts and track nutrition.
-                </p>
-                <ul className="plan-feats">
-                  <Feat>Full workout &amp; set logging</Feat>
-                  <Feat>Nutrition tracking &amp; barcode scanner</Feat>
-                  <Feat>Streaks, PRs &amp; core progress</Feat>
-                  <Feat>3 Custom Workouts</Feat>
-                </ul>
-                <SoonCta label="Coming to the App Store" className="btn-line" />
-              </div>
 
-              {/* Premium */}
-              <div className="plan feature" data-reveal style={d(100)}>
-                <span className="plan-ribbon cyan">Most popular</span>
-                <div className="plan-name">Premium</div>
-                <div className="plan-status live">Live at launch</div>
-                <PlanPrice m={12.99} y={129.99} cycle={cycle} />
-                <p className="plan-desc">
-                  The complete tracking experience, with AI nutrition logging
-                  and unlimited history.
-                </p>
-                <ul className="plan-feats">
-                  <Feat head>Everything in Free, plus</Feat>
-                  <Feat>Unlimited workouts &amp; history</Feat>
-                  <Feat>Photo & free text AI nutrition logging</Feat>
-                  <Feat>Smart swap suggestions</Feat>
-                </ul>
-                <SoonCta
-                  label="Coming to the App Store"
-                  className="btn-accent"
-                />
-              </div>
-
-              {/* Premium+ */}
-              <div className="plan flagship" data-reveal style={d(200)}>
-                <span className="plan-ribbon gold">
-                  Flagship · Loadout + Mealprint
+            {audience !== "consumer" && (
+              <div className="suite-definition">
+                <IconSparkles size={17} />
+                <span>
+                  <b>The adaptive suite</b> = Loadout (equipment-aware training)
+                  + Mealprint (AI meal planning).
                 </span>
-                <div className="plan-name">Premium+</div>
-                <div className="plan-status soon">Coming soon</div>
-                <PlanPrice m={29.99} y={299.99} cycle={cycle} />
-                <p className="plan-desc">
-                  The full adaptive suite. Scan your gym and Persistence builds
-                  a workout around exactly what's there — then plans the meals
-                  that hit your numbers.
-                </p>
-                <ul className="plan-feats">
-                  <Feat head>Everything in Premium, plus</Feat>
-                  <Feat>
-                    <b>Loadout</b> — adapt any workout to the equipment you
-                    actually have, scan included
-                  </Feat>
-                  <Feat>
-                    <b>Mealprint meal planning</b> — food plans &amp;
-                    fill-your-macros ideas
-                  </Feat>
-                </ul>
-                <SoonCta label="Coming soon" className="btn-line" />
               </div>
-            </div>
-          </div>
-        </section>
+            )}
 
-        {/* ── Coach plans ── */}
-        <section
-          className="sec-pad"
-          id="coaches"
-          style={{ borderTop: "1px solid var(--m-line)" }}
-        >
-          <div className="c">
-            <div className="sec-head center violet" data-reveal>
-              <span className="kicker c-violet center">For coaches</span>
-              <h2 className="disp">
-                Grow your <span className="it">roster.</span>
-              </h2>
-              <p>
-                Every coach plan includes the AI client-insights buddy and
-                trainer analytics. Pick the plan that matches your client load.
+            <div className={`plans catalog-grid ${audience}`}>
+              {tiers.map((tier) => (
+                <PlanCard
+                  key={tier.id}
+                  tier={tier}
+                  pricing={
+                    tier.rail === "iap"
+                      ? (livePricingQuery.data?.[tier.id] ??
+                        staticTierPricing(tier))
+                      : staticTierPricing(tier)
+                  }
+                  cadence={cadence}
+                />
+              ))}
+            </div>
+
+            {provisionalAnnuals && (
+              <p className="catalog-provisional-note">
+                * Provisional annual price — final value pending confirmation.
               </p>
-            </div>
-            <div className="plans">
-              {/* Individual Trainer */}
-              <div className="plan coach" data-reveal>
-                <div className="plan-name">Individual Trainer</div>
-                <div className="plan-status">For getting started</div>
-                <PlanPrice m={14.99} y={149.99} cycle={cycle} />
-                <span className="seats">
-                  <SeatsIcon width={14} height={14} />
-                  Up to 2 clients
-                </span>
-                <ul className="plan-feats">
-                  <Feat>Client roster &amp; invite flow</Feat>
-                  <Feat>Programme assignment</Feat>
-                  <Feat>AI client-insights buddy</Feat>
-                  <Feat>Trainer analytics</Feat>
-                </ul>
-                <SoonCta label="Coming to the App Store" className="btn-line" />
-              </div>
+            )}
 
-              {/* Small Business */}
-              <div className="plan coach feature" data-reveal style={d(100)}>
-                <span className="plan-ribbon violet">Recommended</span>
-                <div className="plan-name">Small Business</div>
-                <div className="plan-status">For growing studios</div>
-                <PlanPrice m={75} y={750} cycle={cycle} />
-                <span className="seats">
-                  <SeatsIcon width={14} height={14} />
-                  Up to 30 clients
-                </span>
-                <ul className="plan-feats">
-                  <Feat head>Everything in Individual, plus</Feat>
-                  <Feat>Manage up to 30 active clients</Feat>
-                  <Feat>Reusable programme library</Feat>
-                  <Feat>Priority support</Feat>
-                </ul>
-                <SoonCta
-                  label="Coming to the App Store"
-                  className="btn-violet"
-                />
-              </div>
-
-              {/* Enterprise */}
-              <div className="plan coach" data-reveal style={d(200)}>
-                <div className="plan-name">Enterprise</div>
-                <div className="plan-status">For large teams</div>
-                <PlanPrice m={300} y={3000} cycle={cycle} />
-                <span className="seats">
-                  <SeatsIcon width={14} height={14} />
-                  Up to 500 clients
-                </span>
-                <ul className="plan-feats">
-                  <Feat head>Everything in Small Business, plus</Feat>
-                  <Feat>Manage up to 500 active clients</Feat>
-                  <Feat>Multi-coach seats</Feat>
-                  <Feat>Dedicated onboarding</Feat>
-                </ul>
-                <a href={TEAMS_MAILTO} className="btn btn-line btn-block">
-                  Talk to us
-                </a>
-              </div>
+            <div className="catalog-note">
+              <IconInfoCircle size={18} />
+              <span>
+                <b>Nutrition is built in.</b> Meal planning is included on every
+                plan carrying the adaptive suite, never sold as a separate
+                add-on.
+              </span>
             </div>
+
+            {audience === "org" && import.meta.env.DEV && (
+              <p className="catalog-admin-link">
+                Already managing a plan?{" "}
+                <Link to="/org-admin">Open organisation admin</Link>
+              </p>
+            )}
           </div>
         </section>
 
-        {/* ── Teams / B2B ── */}
-        <section className="sec-pad teams" id="teams">
-          <div className="c">
-            <div className="teams-card" data-reveal>
-              <div className="teams-grid">
-                <div className="teams-left">
-                  <span className="kicker c-accent">Persistence for Teams</span>
-                  <h2 className="disp">
-                    Fitness that <span className="it">travels</span> with your
-                    people.
-                  </h2>
-                  <p>
-                    With Loadout, your people keep their programme no matter
-                    where they train — any equipment, any location. Give your
-                    organisation Persistence seats and everyone stays
-                    consistent, wherever the day takes them.
-                  </p>
-                  <div className="teams-use">
-                    <span>Corporate wellness &amp; HR benefits</span>
-                    <span>Sports teams &amp; clubs</span>
-                    <span>Physios &amp; clinics</span>
-                  </div>
-                  <div className="teams-ctas">
-                    <a href={TEAMS_MAILTO} className="btn btn-fill">
-                      Contact sales
-                    </a>
-                    <Link to="/#loadout" className="btn btn-line">
-                      See how Loadout works
-                    </Link>
-                  </div>
-                  <p className="teams-fine">
-                    Seat pricing set per pilot · billed by invoice · minimum
-                    terms apply
-                  </p>
-                </div>
-                <div className="teams-right">
-                  <div className="teams-stat">
-                    <span className="n">Loadout</span>
-                    <span className="l">
-                      Programmes adapt to whatever equipment is on site
-                    </span>
-                  </div>
-                  <div className="teams-divide" />
-                  <div className="teams-stat">
-                    <span className="n">Volume</span>
-                    <span className="l">
-                      Custom seat bundles for your headcount
-                    </span>
-                  </div>
-                  <div className="teams-divide" />
-                  <div className="teams-stat">
-                    <span className="n">Pilot-first</span>
-                    <span className="l">
-                      Start small, prove the value, then roll out
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
+        <div className="c">
+          <TierMatrix />
+        </div>
 
-        {/* ── FAQ ── */}
         <section className="sec-pad faq" id="faq">
           <div className="c">
-            <div className="sec-head center" data-reveal>
-              <h2 className="disp" style={{ marginTop: 0 }}>
+            <div className="sec-head center">
+              <h2 className="disp">
                 Good to <span className="it">know.</span>
               </h2>
             </div>
-            <div className="faq-grid" data-reveal style={d(80)}>
+            <div className="faq-grid">
               <div className="faq-item">
-                <h4>Do I need a card to start?</h4>
-                <p>No. The Free plan is free forever.</p>
-              </div>
-              <div className="faq-item">
-                <h4>What's the difference between Premium and Premium+?</h4>
+                <h4>What is the adaptive suite?</h4>
                 <p>
-                  Premium gives you unlimited tracking plus Snap AI nutrition
-                  logging. Premium+ adds the adaptive suite — Loadout, which
-                  re-maps any workout to the equipment in front of you, and
-                  Mealprint meal planning.
+                  Loadout adapts training to the equipment available; Mealprint
+                  builds meal plans around your targets.
                 </p>
               </div>
               <div className="faq-item">
-                <h4>When does Premium+ arrive?</h4>
+                <h4>Where do I buy an individual or coach plan?</h4>
                 <p>
-                  Premium+ is coming in phase 2 of the app, which is expected
-                  August 2026. Free and Premium are available from launch on the
-                  App Store.
+                  Those plans will be purchased in the Persistence app. Until
+                  App Store products are ready, their controls remain disabled.
                 </p>
               </div>
               <div className="faq-item">
-                <h4>Is annual really cheaper?</h4>
+                <h4>How is organisation reporting kept private?</h4>
                 <p>
-                  Yes — annual billing works out to roughly two months free
-                  versus paying monthly, on every paid plan.
+                  Admin reporting is aggregate-only and engagement metrics are
+                  suppressed whenever the cohort has fewer than five members.
                 </p>
               </div>
               <div className="faq-item">
-                <h4>How do I subscribe and manage billing?</h4>
+                <h4>Is nutrition another add-on?</h4>
                 <p>
-                  Persistence is iPhone-first. Subscriptions are purchased and
-                  billed through your Apple account and can be managed or
-                  cancelled any time in the App Store.
-                </p>
-              </div>
-              <div className="faq-item">
-                <h4>How does Teams billing work?</h4>
-                <p>
-                  Teams is pilot-driven with per-seat pricing set for your
-                  organisation and billed by invoice.{" "}
-                  <a href={TEAMS_MAILTO}>Contact sales →</a>
+                  No. Nutrition tracking is built in, and Mealprint is included
+                  wherever the adaptive suite is included.
                 </p>
               </div>
             </div>

@@ -452,11 +452,6 @@ describe("LoadoutFlowContainer", () => {
         "Loadout is a Premium+ feature",
       ],
       [
-        "limit",
-        { kind: "api", code: "server", message: "", status: 429 },
-        "That's your adaptations for today",
-      ],
-      [
         "unavailable",
         { kind: "api", code: "server", message: "", status: 503 },
         "Loadout can't adapt right now",
@@ -513,8 +508,11 @@ describe("LoadoutFlowContainer", () => {
       openFlow();
 
       fireEvent.press(await findByTestId("loadout-collect-gym-gym-1"));
-      await findByTestId("loadout-adapting-error");
+      await findByTestId("ai-failsafe");
       expect(queryByTestId("loadout-adapting-retry")).toBeNull();
+
+      fireEvent.press(await findByTestId("ai-failsafe-build-manually"));
+      expect(await findByTestId("loadout-manual")).toBeTruthy();
     });
 
     it("re-requests once on an explicit retry", async () => {

@@ -16,20 +16,17 @@ import { color, radius, space } from "@/ui/theme/tokens";
  * Loadout-side code. So this sheet is not "you ran out"; it is the only pitch the
  * feature ever gets, and it has to stand on the benefits alone.
  *
- * ## ⚠ The price comes from the catalog, and null is the EXPECTED value today
+ * ## ⚠ The price comes from the live tier API
  *
- * `premium_plus` ships `is_active = false` (design § 9.1 — an active row
- * publishes a buyable card for a feature that does not exist), and the catalog
- * endpoint only returns active rows. So `priceMonthly` is null until the launch
- * build flips the flag, and the copy has to read correctly without it. It must
- * never fall back to a literal: the prototype's `£19.99` is retired and the real
- * figure is £29.99, which is precisely the drift a hardcoded number produces.
+ * `priceMonthly` can be null while the public endpoint is unavailable, and the
+ * copy has to read correctly without it. It must never fall back to a literal,
+ * which would drift from database and StoreKit pricing.
  */
 
 export type LoadoutUpsellSheetProps = {
   readonly visible: boolean;
   readonly onClose: () => void;
-  /** From the catalog, or from a 402's `entitlement.upgradePriceMonthly`. Null → omitted. */
+  /** From the live API, or from a 402's `entitlement.upgradePriceMonthly`. Null → omitted. */
   readonly priceMonthly: number | null;
   readonly onUpgrade: () => void;
 };

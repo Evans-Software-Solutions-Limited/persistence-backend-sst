@@ -1,5 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, Linking } from "react-native";
+import {
+  SUBSCRIPTION_CATALOG,
+  type CatalogTierId,
+  type TierPricing,
+} from "@persistence/subscription-catalog";
 import { useLocalSearchParams, useRouter, type Href } from "expo-router";
 import {
   type BillingCycle,
@@ -23,6 +28,7 @@ import { useSyncSubscription } from "@/ui/hooks/useSyncSubscription";
 import { useMySubscription } from "@/ui/hooks/useMySubscription";
 import { useSubscriptionTiers } from "@/ui/hooks/useSubscriptionTiers";
 import { IOSPurchaseFlowPresenter } from "@/ui/presenters/IOSPurchaseFlowPresenter";
+import type { SubscriptionRailScreen } from "@/ui/presenters/IOSPurchaseFlowPresenter";
 
 /**
  * iOS RevenueCat purchase-flow container (M12, iOS rail).
@@ -101,6 +107,13 @@ export function IOSPurchaseFlowContainer() {
   );
   const [selectedRole, setSelectedRole] = useState<Role>(initialRole);
   const [isProcessing, setIsProcessing] = useState(false);
+  const hasExplicitPlanRoute = Boolean(
+    searchParams.tier || searchParams.cycle || searchParams.role,
+  );
+  const [screen, setScreen] = useState<SubscriptionRailScreen>(
+    hasExplicitPlanRoute ? "plans" : "persona",
+  );
+  const [screenChosen, setScreenChosen] = useState(hasExplicitPlanRoute);
 
   useEffect(() => {
     if (initialRoleParam === "personal_trainer" || tierParamImpliesTrainer) {
@@ -125,14 +138,71 @@ export function IOSPurchaseFlowContainer() {
     subscriptionData?.tierName ?? "free";
   const isCancelledButActive = isCancelledButActiveCheck(subscriptionData);
 
+  useEffect(() => {
+    if (screenChosen || subQuery.isLoading || subscriptionData === null) return;
+    setScreen(currentTier === "free" ? "persona" : "manage");
+  }, [currentTier, screenChosen, subQuery.isLoading, subscriptionData]);
+
   const packages = useMemo(
     () => offeringsQuery.data ?? [],
     [offeringsQuery.data],
   );
   const purchasableTiers = useMemo(
-    () => derivePurchasableTiers(packages),
-    [packages],
+    () =>
+      derivePurchasableTiers(
+        packages.filter((pkg) => pkg.billingCycle === billingCycle),
+      ),
+    [packages, billingCycle],
   );
+  const tierPricing = useMemo(() => {
+    const pricing: Partial<Record<CatalogTierId, TierPricing>> = {};
+    const catalogIds = new Set<string>(
+      SUBSCRIPTION_CATALOG.map((tier) => tier.id),
+    );
+
+    // The public catalog keeps cards useful before StoreKit has returned an
+    // offering. Join by the canonical tier id; no display price is baked into
+    // the app bundle.
+    for (const tier of tiersQuery.data ?? []) {
+      if (!catalogIds.has(tier.tierName)) continue;
+      pricing[tier.tierName as CatalogTierId] = {
+        monthly: tier.priceMonthly,
+        annual: tier.priceYearly,
+        monthlySource: "api",
+        annualSource: "api",
+      };
+    }
+
+    // StoreKit (through RevenueCat) is authoritative for an IAP product. Its
+    // numeric price drives savings and its localised label is printed exactly
+    // as Apple supplies it. Product id -> tier/cadence mapping is the join.
+    for (const pkg of packages) {
+      if (pkg.tier === null || !catalogIds.has(pkg.tier)) continue;
+      const id = pkg.tier as CatalogTierId;
+      const current = pricing[id] ?? { monthly: null, annual: null };
+      pricing[id] =
+        pkg.billingCycle === "yearly"
+          ? {
+              ...current,
+              annual: pkg.price,
+              annualSource: "store",
+              annualLabel: pkg.priceString,
+              ...(pkg.pricePerMonthString === null
+                ? {}
+                : {
+                    annualMonthlyEquivalentLabel: pkg.pricePerMonthString,
+                  }),
+            }
+          : {
+              ...current,
+              monthly: pkg.price,
+              monthlySource: "store",
+              monthlyLabel: pkg.priceString,
+            };
+    }
+
+    return pricing;
+  }, [packages, tiersQuery.data]);
   // Trial length advertised on EACH card — derived ONLY from THAT tier's own
   // product's Apple introductory offer, on the shown billing cycle. `null`
   // when the product surfaces no real free-trial offer (offer missing/
@@ -262,6 +332,13 @@ export function IOSPurchaseFlowContainer() {
     ],
   );
 
+  const handlePersonaSelect = useCallback((nextRole: Role) => {
+    setSelectedRole(nextRole);
+    setBillingCycle(nextRole === "trainer" ? "monthly" : "yearly");
+    setScreen("plans");
+    setScreenChosen(true);
+  }, []);
+
   const handleRestore = useCallback(async () => {
     if (isProcessing || restoreMutation.isPending || syncMutation.isPending) {
       return;
@@ -314,7 +391,7 @@ export function IOSPurchaseFlowContainer() {
 
   return (
     <IOSPurchaseFlowPresenter
-      subscriptionTiers={tiersQuery.data ?? []}
+      tierPricing={tierPricing}
       isLoading={
         tiersQuery.isLoading || subQuery.isLoading || offeringsQuery.isLoading
       }
@@ -333,10 +410,24 @@ export function IOSPurchaseFlowContainer() {
       currentTierDisplayName={displayInfo.currentTierDisplayName}
       isProcessing={isProcessing}
       isRestoring={restoreMutation.isPending || syncMutation.isPending}
+      screen={screen}
       onBillingCycleChange={setBillingCycle}
       onTierSelect={(tier) => void handleTierSelect(tier)}
       onRoleChange={setSelectedRole}
-      onBack={() => router.back()}
+      onPersonaSelect={handlePersonaSelect}
+      onChangePlan={() => {
+        setScreen("plans");
+        setScreenChosen(true);
+      }}
+      onContinueFree={() => router.push("/(auth)/success?tier=free" as Href)}
+      onBack={() => {
+        if (screen === "plans") {
+          setScreen("persona");
+          setScreenChosen(true);
+          return;
+        }
+        router.back();
+      }}
       onRetry={() => {
         void tiersQuery.refetch();
         void offeringsQuery.refetch();

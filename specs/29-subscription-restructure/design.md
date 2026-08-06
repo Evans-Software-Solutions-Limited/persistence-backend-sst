@@ -21,7 +21,7 @@ label this, or the org tiers read ~20 % cheaper than they bill.
 | `premium`             | Premium            | **16.99** | **139.99** | —       | ✗     | IAP                       |
 | `premium_plus`        | Premium+           | 29.99     | **249.99** | —       | ✓     | IAP                       |
 | `individual_trainer`  | **Start Up Coach** | **18.99** | **159.99** | 5       | ✗     | IAP                       |
-| `start_up_coach_plus` | Start Up Coach +   | 34.99     | 293.99     | 5       | ✓     | IAP                       |
+| `start_up_coach_plus` | Start Up Coach +   | 34.99     | 289.99     | 5       | ✓     | IAP                       |
 | `coach`               | Coach              | 59.99     | 499.99     | 15      | ✓     | IAP                       |
 | `coach_pro`           | Coach Pro          | 99.99     | 839.99     | 30      | ✓     | **IAP — top in-app rung** |
 | `studio`              | Studio             | 179.99    | —          | 75      | ✓     | Web                       |
@@ -33,8 +33,9 @@ label this, or the org tiers read ~20 % cheaper than they bill.
 or to drive prepay. Web tiers are monthly or invoiced; annual there is a contract term.
 
 ✅ **RESOLVED (Brad, 2026-08-05): the 30 % annual rule is extended to the ENTIRE coach
-ladder.** All four coach annuals are now 30 % off 12×-monthly: Start Up Coach £159.99,
-Start Up Coach + £293.99, Coach £499.99, Coach Pro £999.99 → £839.99. This supersedes
+ladder.** All four coach annuals are now approximately 30 % off 12×-monthly: Start Up Coach £159.99,
+Start Up Coach + £289.99 (the nearest permitted App Store GBP price point), Coach £499.99,
+Coach Pro £999.99 → £839.99. This supersedes
 the earlier "consumer rows only" default; Premium £139.99 and Premium+ £249.99 are
 unchanged. Every IAP annual across the catalog now carries the same ~30 % discount, so
 the pricing page needs no per-ladder discount caveat.

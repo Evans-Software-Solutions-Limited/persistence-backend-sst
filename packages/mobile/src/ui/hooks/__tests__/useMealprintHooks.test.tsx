@@ -255,14 +255,13 @@ describe("useMealprintGate", () => {
     expect(latest().allowed).toBe(true);
   });
 
-  it("reads the upgrade price from the CATALOG, and tolerates its absence", async () => {
+  it("reads the upgrade price from the live API, and tolerates its absence", async () => {
     const api = new InMemoryApiAdapter();
     api.mySubscription = subscription("free");
     jest.spyOn(api, "getSubscriptionTiers").mockResolvedValue(ok([]));
     const { latest } = harness(api, useMealprintGate);
     await waitFor(() => expect(latest().isResolved).toBe(true));
-    // ⚠ Null is the EXPECTED value before launch: premium_plus ships
-    // is_active=false, so `listActive()` returns no row for it.
+    // A partial rollout or unavailable row must not produce a stale literal.
     expect(latest().upgradePriceMonthly).toBeNull();
   });
 

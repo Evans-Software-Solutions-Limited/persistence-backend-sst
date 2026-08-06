@@ -153,8 +153,9 @@ because it has run. **Before it reaches a real user it needs:**
 ⚠ **UPDATE 2026-08-05: Phase 2 (the IAP coach ladder) is BUILT on branch
 `claude/spec29-phase2-coach-ladder` — not yet a PR.** Two pricing decisions
 resolved this session and recorded in `design.md` § 1: (1) coach-ladder annual
-discount extended to **30 % across the board** (Start Up Coach £159.99, Start Up
-Coach + £293.99, Coach £499.99, Coach Pro £839.99; consumer annuals unchanged at
+discount extended to **approximately 30 % across the board** (Start Up Coach
+£159.99, Start Up Coach + £289.99 — nearest permitted ASC GBP price point —,
+Coach £499.99, Coach Pro £839.99; consumer annuals unchanged at
 £139.99 / £249.99); (2) the six-tier IAP ladder is final. What shipped on the
 branch: migration `20260805120000_coach_ladder_restructure.sql` (rename
 individual_trainer→"Start Up Coach" + reprice; insert `start_up_coach_plus` /
@@ -166,10 +167,14 @@ untyped-literal survivors fixed (GreetingSection map + two deep-link checks now
 derive from `TRAINER_TIER_NAMES`). **Gates all green** (prettier · typecheck 8/8 ·
 core 3880/3880 · mobile 5928/5928 · build 13/13); Inspector-Brad-local
 **clean @ `adf7111e`**; **PR [#361](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/361)
-OPEN** (commit `adf7111e`; excludes untracked `probe-steps.ts` + Brad's other
-scratch paths). ⚠ NOT submit-ready alone — tiers ship `is_active=false`, more code
-remains before App Store submission (Brad, 2026-08-05: submit only when ALL needed
-code is done).
+MERGED**. The historical migration remains immutable; activation follows in a
+new forward migration.
+
+⚠ **ACTIVATION + PRICE-POINT FOLLOW-UP:** migration
+`20260805180000_activate_iap_coach_ladder.sql` activates the six IAP paid tiers
+and updates Start Up Coach + annual from £293.99 to ASC's supported £289.99 price
+point. The original merged migration remains unchanged so this runs on databases
+that already recorded it.
 
 ⚠ **Design call baked in:** `individual_trainer` (entry coach rung) LOSES the
 suite; the paid coach tiers carry it; a coach denied the suite upsells
@@ -1973,6 +1978,32 @@ consent copy, privacy section and governing law · the OFF re-seed backfilling
 
 ## Last session
 
+**2026-08-05 — GTM D9 subscription UI implemented in isolated worktree.** Branch
+`codex/gtm-d9-subscription-ui`, worktree
+`/private/tmp/persistence-gtm-d9-subscription`, based on the Phase-2 coach-ladder
+commit `adf7111e`. Added `@persistence/subscription-catalog` as the UI layout and
+feature source of truth; rebuilt the iOS persona/plans/manage rail and AI fail-safe; rebuilt web
+pricing for individuals, coaches and organisations; and added the aggregate-only
+organisation-admin preview with sub-five cohort suppression. IAP prices now resolve
+from StoreKit/RevenueCat by product id, with `/subscription-tiers` as the fallback;
+there is no second build-time activation switch. Organisation plans remain
+web-only/read-only in-app. Premium+ and suite-bearing coach/org tiers
+lead with Loadout + Mealprint; no surface names competitors, adds a VAT caveat, or
+lists “AI Workout Suggestions”.
+
+- **Deployment requirement:** read-only checks of both public production and staging
+  `/subscription-tiers` endpoints still returned the OLD five-row catalog
+  (`premium` £12.99/£129.99, `individual_trainer` £14.99/£149.99, plus retired
+  business tiers). Apply `20260805180000_activate_iap_coach_ladder.sql`; IAP CTAs
+  become transactional only when a matching RevenueCat/StoreKit package exists.
+- Gates: catalog typecheck + 4/4; web lint/typecheck/build + 32/32 with 85.61%
+  statement coverage; mobile lint/typecheck + 5908/5908. The first full mobile
+  run exposed an old rail contract: Restore Purchases must be visible on the
+  initial screen. The persona screen now carries restore + legal footer; the
+  targeted regression passed and the whole suite passed on the clean rerun.
+  Desktop, 390 px, all audience tabs and the suppressed admin state were visually
+  verified in the in-app browser with no horizontal overflow.
+
 **2026-08-04 (later) — Mealprint MERGED, and the pricing model moved to a 30 % Apple
 rate.** Sixth Inspector Brad sweep returned MERGE; its four residuals were fixed in
 `0c1ce767` with revert-verified tests, and the branch landed on `main` as `fa0567fc`
@@ -3183,3 +3214,15 @@ PR not yet raised. NO product code — script + dataset + verdict + spec updates
 - **LESSON (worktrees, again):** the shell cwd silently reverted from the
   worktree to the main checkout mid-session and an edit landed on the wrong
   branch. **Always pass absolute paths inside a worktree; re-check `pwd`.**
+
+### 2026-08-06 — GTM D9 daily-cap copy correction
+
+- `AIFailsafePresenter` is mounted only for Loadout's `429 ai_daily_limit`
+  branch. Its former “short break / little while” copy misrepresented a limit
+  scoped to workout adaptations and a 00:00 UTC boundary; the presenter now
+  names that feature-specific ceiling and uses timezone-neutral reset wording
+  while retaining the manual-workout path.
+- Regression coverage asserts the scoped daily-reset copy and rejects vague
+  timing language and the locally ambiguous “tomorrow”. Focused presenter +
+  Loadout flow: 70/70 tests passed.
+- 390 × 844 visual baseline: `/Users/bradleysimms-evans/.codex/visualizations/2026/08/05/019fd228-9f67-7fa0-913e-7e03bd314bff/ai-failsafe-daily-limit.png`.

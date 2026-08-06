@@ -1,4 +1,4 @@
-import { Routes, Route } from "react-router";
+import { Navigate, Routes, Route } from "react-router";
 import Home from "./pages/Home";
 import Pricing from "./pages/Pricing";
 import Support from "./pages/Support";
@@ -6,6 +6,7 @@ import Login from "./pages/Login";
 import AuthCallback from "./pages/AuthCallback";
 import Privacy from "./pages/Privacy";
 import Terms from "./pages/Terms";
+import OrganisationAdmin from "./pages/OrganisationAdmin";
 import { ThemeProvider } from "./components/theme-provider";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
@@ -23,6 +24,16 @@ function App() {
           <Route path="/auth/callback" element={<AuthCallback />} />
           <Route path="/privacy" element={<Privacy />} />
           <Route path="/terms" element={<Terms />} />
+          <Route
+            path="/org-admin"
+            element={
+              import.meta.env.DEV ? (
+                <OrganisationAdmin />
+              ) : (
+                <Navigate to="/pricing" replace />
+              )
+            }
+          />
         </Routes>
       </ThemeProvider>
     </QueryClientProvider>

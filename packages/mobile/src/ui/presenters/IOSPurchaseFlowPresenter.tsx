@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React from "react";
 import {
   ScrollView,
   StatusBar,
@@ -9,281 +9,765 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  ADAPTIVE_SUITE_LABEL,
+  annualSaving,
+  ctaFor,
+  monthlyEquivalent,
+  SUBSCRIPTION_CATALOG,
+  staticTierPricing,
+  tiersFor,
+  type BillingCadence,
+  type CatalogTier,
+  type CatalogTierId,
+  type TierPricing,
+} from "@persistence/subscription-catalog";
 import type {
   BillingCycle,
-  SubscriptionTier,
   SubscriptionTierName,
 } from "@/domain/models/subscription";
-import { CurrentSubscriptionStatusCard } from "@/ui/components/subscription/CurrentSubscriptionStatusCard";
 import { PLogoDrawLoader } from "@/ui/components/PLogoDrawLoader";
-import { SubscriptionCard } from "@/ui/components/subscription/SubscriptionCard";
 import { SubscriptionLegalFooter } from "@/ui/components/subscription/SubscriptionLegalFooter";
-import { TrainerSubscriptionCard } from "@/ui/components/subscription/TrainerSubscriptionCard";
-import { TRAINER_TIER_NAMES } from "@/domain/services/subscriptionService";
-import { getFeaturesList } from "@/ui/presenters/SubscriptionSelectionPresenter";
 import { color } from "@/ui/theme/tokens";
 
-/**
- * Pure presenter for the iOS RevenueCat purchase flow (M12, iOS rail).
- *
- * Spec: specs/milestones/M12-app-store-iap/FRONTEND_BRIEF.md § Deliverables 3–6
- *
- * Renders the SAME plan cards + role/billing toggles as
- * `SubscriptionSelectionPresenter` (fidelity guard — no restyle), but the
- * purchase mechanism is native Apple IAP via RevenueCat, NOT Stripe. There is
- * deliberately **no Stripe / Apple Pay path reachable here** (Apple §3.1.1):
- * tapping a tile drives `onTierSelect`, which the container routes to
- * `Purchases.purchasePackage`. Adds Restore Purchases + "Manage in App Store"
- * affordances Apple requires for IAP.
- *
- * §3.1.1 copy review: no "subscribe on our website", no external-purchase
- * steering — every CTA is an in-app Apple purchase or an Apple-managed link.
- */
-
 type Role = "user" | "trainer";
+export type SubscriptionRailScreen = "persona" | "plans" | "manage";
 
 export interface IOSPurchaseFlowPresenterProps {
-  subscriptionTiers: SubscriptionTier[];
+  tierPricing: Readonly<Partial<Record<CatalogTierId, TierPricing>>>;
   isLoading: boolean;
   errorMessage: string | null;
-  /** RevenueCat not configured (missing dev SDK key) → inline unavailable. */
   isUnavailable: boolean;
-
   billingCycle: BillingCycle;
   currentTier: SubscriptionTierName;
   selectedRole: Role;
-
-  /** Tiers with at least one purchasable Apple product in the offering. */
   purchasableTiers: ReadonlySet<SubscriptionTierName>;
-
-  /** Whether the current Apple Account is intro-eligible for THIS tier's
-   * product on the shown cycle (RevenueCat's real answer). Per-tier so a
-   * banner only shows on a tile whose own product grants a trial. */
   isTierTrialEligible: (tier: SubscriptionTierName) => boolean;
-  /** Free-trial length (days) for a SPECIFIC tile — derived ONLY from THAT
-   * tier's own product's real Apple intro offer, on the shown cycle. `null`
-   * when that product surfaces no real offer; the tile then shows NO trial
-   * banner (we never guess a duration). Per-tier so each card reflects its own
-   * product (e.g. premium 1-week vs a trainer 2-week offer independently). */
   tierTrialDays: (tier: SubscriptionTierName) => number | null;
   hasTrialEligibilityData: boolean;
-
-  /** Tiers with no annual IAP product — hidden on the yearly cycle.
-   * (too large for IAP — handled B2B). Only applies on the yearly cycle. */
-  /** Tiers with no annual IAP product — hidden on the yearly cycle. */
   monthlyOnlyTiers: ReadonlySet<SubscriptionTierName>;
-
   subscriptionEndsAt: string | null;
   isCancelledButActive: boolean;
   currentTierDisplayName: string;
-
   isProcessing: boolean;
   isRestoring: boolean;
-
+  screen?: SubscriptionRailScreen;
   onBillingCycleChange: (cycle: BillingCycle) => void;
   onTierSelect: (tier: SubscriptionTierName) => void;
   onRoleChange: (role: Role) => void;
+  onPersonaSelect?: (role: Role) => void;
+  onChangePlan?: () => void;
+  onContinueFree?: () => void;
   onBack: () => void;
   onRetry: () => void;
   onRestore: () => void;
   onManageInAppStore: () => void;
 }
 
-export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
-  const {
-    subscriptionTiers,
-    isLoading,
-    errorMessage,
-    isUnavailable,
-    billingCycle,
-    currentTier,
-    selectedRole,
-    purchasableTiers,
-    isTierTrialEligible,
-    tierTrialDays,
-    hasTrialEligibilityData,
-    monthlyOnlyTiers,
-    subscriptionEndsAt,
-    isCancelledButActive,
-    currentTierDisplayName,
-    isProcessing,
-    isRestoring,
-    onBillingCycleChange,
-    onTierSelect,
-    onRoleChange,
-    onBack,
-    onRetry,
-    onRestore,
-    onManageInAppStore,
-  } = props;
+function formatGbpValue(value: number): string {
+  if (value === 0) return "£0";
+  return `£${value.toLocaleString("en-GB", {
+    minimumFractionDigits: Number.isInteger(value) ? 0 : 2,
+    maximumFractionDigits: Number.isInteger(value) ? 0 : 2,
+  })}`;
+}
 
-  // A user can hold a tier that isn't in the rendered catalog — e.g. a
-  // RevenueCat promotional grant of a tier still seeded is_active=false
-  // pre-launch. No card is then marked current, so without this guard the
-  // remaining cards render as buyable "free trial"s and a comped user can
-  // be nudged onto a WORSE tier than the one they were given. Suppress
-  // trial banners in that state; they are not genuinely trial-eligible.
-  //
-  // Hoisted above BOTH memos: the trainer loop resolves three fixed tier
-  // names out of the catalog and has exactly the same hole if a trainer
-  // tier is ever held while inactive — which is now a supported state.
-  const holdsUnlistedPaidTier =
-    currentTier !== "free" &&
-    !subscriptionTiers.some((t) => t.tierName === currentTier);
-
-  const userTierCards = useMemo(() => {
-    // Catalog-driven, not a hardcoded "premium" lookup — M19-P0 added a
-    // second consumer tier (`premium_plus`) above Premium, and any future
-    // one lands here automatically. Non-trainer, non-free rows, cheapest
-    // first (ascending `priceMonthly` — the catalog's own ordering signal,
-    // so no separate mobile-side tier-rank map to keep in sync).
-    const consumerTiers = subscriptionTiers
-      .filter(
-        (t) =>
-          !t.isTrainerTier &&
-          t.tierName !== "free" &&
-          // Belt-and-braces: `mapTierRowToWire` coerces a NULL
-          // `is_trainer_tier` to false, so a trainer row with the flag
-          // unset would fall into this consumer filter AND still be
-          // picked up by the trainer section's explicit allow-list —
-          // rendering the same tier twice. Exclude the allow-list here.
-          !TRAINER_TIER_NAMES.has(t.tierName),
-      )
-      // Cheapest first. Secondary sort on tierName so two same-priced
-      // tiers have a stable order — `listActive` orders by price_monthly
-      // with no tiebreak, so Postgres row order is otherwise arbitrary.
-      .sort(
-        (a, b) =>
-          a.priceMonthly - b.priceMonthly ||
-          a.tierName.localeCompare(b.tierName),
-      );
-    const cards: React.ReactElement[] = [];
-    for (const tier of consumerTiers) {
-      const isTierCurrent = currentTier === tier.tierName;
-      const trialDays = tierTrialDays(tier.tierName);
-      const showTrial =
-        hasTrialEligibilityData &&
-        trialDays !== null &&
-        isTierTrialEligible(tier.tierName) &&
-        !isTierCurrent &&
-        !holdsUnlistedPaidTier;
-      cards.push(
-        <SubscriptionCard
-          key={tier.tierName}
-          tier={tier}
-          billingCycle={billingCycle}
-          isCurrent={isTierCurrent}
-          showTrialBanner={showTrial}
-          trialBannerText={
-            trialDays !== null ? `${trialDays}-day free trial` : undefined
-          }
-          onPress={() => onTierSelect(tier.tierName)}
-          disabled={isProcessing || isRestoring}
-          getFeaturesList={getFeaturesList}
-          isTrainer={false}
-        />,
-      );
-    }
-    return cards;
-  }, [
-    holdsUnlistedPaidTier,
-    subscriptionTiers,
-    billingCycle,
-    currentTier,
-    hasTrialEligibilityData,
-    isTierTrialEligible,
-    tierTrialDays,
-    isProcessing,
-    isRestoring,
-    onTierSelect,
-  ]);
-
-  // Whether any catalog tier was actually hidden this render because it's
-  // monthly-only on the current (yearly) cycle. Spec-29 Phase 2 (2026-08-05)
-  // retired the real monthly-only tiers — the container's MONTHLY_ONLY_TIERS
-  // is now empty — so this is normally false; it stays derived from the live
-  // set (rather than hardcoded) so the footnote below only ever appears when
-  // there is something to explain, for any future monthly-only tier without a
-  // signature change here.
-  const hasHiddenMonthlyOnlyTier = useMemo(() => {
-    if (billingCycle !== "yearly") return false;
-    return subscriptionTiers.some(
-      (t) => t.isTrainerTier && monthlyOnlyTiers.has(t.tierName),
+/** The only mobile component allowed to print a resolved subscription price. */
+export function Price({
+  tier,
+  pricing = staticTierPricing(tier),
+  cadence,
+  compact = false,
+  monthlyEquivalentOnly = false,
+}: {
+  tier: CatalogTier;
+  pricing?: TierPricing;
+  cadence: BillingCadence;
+  compact?: boolean;
+  monthlyEquivalentOnly?: boolean;
+}) {
+  if (tier.invoiced) {
+    return (
+      <Text style={[styles.price, compact && styles.priceCompact]}>
+        Invoiced
+      </Text>
     );
-  }, [subscriptionTiers, billingCycle, monthlyOnlyTiers]);
+  }
 
-  const trainerTierCards = useMemo(() => {
-    const baseNames: SubscriptionTierName[] = [
-      "individual_trainer",
-      "start_up_coach_plus",
-      "coach",
-      "coach_pro",
-    ];
-    const cards: React.ReactElement[] = [];
-    for (const baseName of baseNames) {
-      const tier = subscriptionTiers.find((t) => t.tierName === baseName);
-      // MONTHLY-ONLY TIERS ARE HIDDEN ON THE YEARLY CYCLE (Brad, 2026-07-26).
-      //
-      // These plans previously rendered a "Contact Sales" mailto on the
-      // annual cycle. That sold a subscription unlocking in-app coach
-      // functionality outside IAP, straight from the paywall — Apple
-      // Guideline 3.1.1 (anti-steering), and a likely second rejection on
-      // top of the 3.1.2 one. Annual IAP products are not an option for
-      // both either: £3,000/yr sits above Apple's standard price points.
-      //
-      // So on the yearly cycle these tiers simply do not render, and the
-      // note below tells the coach they are monthly plans. Monthly IAP
-      // products exist for both, so nothing is lost — the plans are still
-      // fully purchasable, just on the cycle Apple can actually price.
-      if (
-        tier &&
-        !(billingCycle === "yearly" && monthlyOnlyTiers.has(baseName))
-      ) {
-        const isCurrent = currentTier === tier.tierName;
-        const trainerTrialDays = tierTrialDays(baseName);
-        const showTrialBanner =
-          hasTrialEligibilityData &&
-          trainerTrialDays !== null &&
-          isTierTrialEligible(baseName) &&
-          !isCurrent &&
-          !holdsUnlistedPaidTier;
-        cards.push(
-          <TrainerSubscriptionCard
-            key={baseName}
-            standardTier={null}
-            proTier={tier}
-            billingCycle={billingCycle}
-            isStandardCurrent={false}
-            isProCurrent={isCurrent}
-            showProTrialBanner={showTrialBanner}
-            trialBannerText={
-              trainerTrialDays !== null
-                ? `${trainerTrialDays}-day free trial`
-                : undefined
-            }
-            onStandardPress={() => {}}
-            onProPress={() => onTierSelect(tier.tierName)}
-            disabled={isProcessing || isRestoring}
-          />,
-        );
+  const annual = cadence === "annual" && pricing.annual !== null;
+  const value = monthlyEquivalentOnly
+    ? monthlyEquivalent(pricing)
+    : annual
+      ? pricing.annual
+      : pricing.monthly;
+  const provisional = annual ? tier.provisionalAnnual : tier.provisionalMonthly;
+  if (value === null) return null;
+
+  return (
+    <View style={styles.priceRow}>
+      <Text
+        style={[
+          styles.price,
+          compact && styles.priceCompact,
+          monthlyEquivalentOnly && styles.equivalentPrice,
+          provisional && styles.priceProvisional,
+        ]}
+        accessibilityHint={provisional ? "Provisional price" : undefined}
+      >
+        {monthlyEquivalentOnly
+          ? (pricing.annualMonthlyEquivalentLabel ??
+            formatGbpValue(Number(value.toFixed(2))))
+          : annual
+            ? (pricing.annualLabel ?? formatGbpValue(value))
+            : (pricing.monthlyLabel ?? formatGbpValue(value))}
+        {provisional ? "*" : ""}
+      </Text>
+      {value !== 0 && (
+        <Text
+          style={[
+            styles.priceUnit,
+            monthlyEquivalentOnly && styles.equivalentUnit,
+          ]}
+        >
+          {annual && !monthlyEquivalentOnly ? "/yr" : "/mo"}
+        </Text>
+      )}
+    </View>
+  );
+}
+
+function Header({ title, onBack }: { title: string; onBack: () => void }) {
+  return (
+    <View style={styles.headerContainer}>
+      <TouchableOpacity
+        style={styles.backButton}
+        onPress={onBack}
+        testID="ios-purchase-back"
+        accessibilityRole="button"
+        accessibilityLabel="Go back"
+      >
+        <Ionicons name="arrow-back" size={22} color={color.$text} />
+      </TouchableOpacity>
+      <Text style={styles.headerTitle}>{title}</Text>
+      <View style={styles.headerSpacer} />
+    </View>
+  );
+}
+
+function PersonaChooser({
+  onSelect,
+  onBack,
+  onRestore,
+  restoreDisabled,
+  isRestoring,
+}: {
+  onSelect: (role: Role) => void;
+  onBack: () => void;
+  onRestore: () => void;
+  restoreDisabled: boolean;
+  isRestoring: boolean;
+}) {
+  const choices = [
+    {
+      id: "self",
+      title: "I train myself",
+      description: "Personal training, nutrition and progress tracking.",
+      icon: "person-outline" as const,
+      role: "user" as const,
+    },
+    {
+      id: "coach",
+      title: "I coach others",
+      description: "Manage clients and build programmes for them.",
+      icon: "people-outline" as const,
+      role: "trainer" as const,
+    },
+    {
+      id: "both",
+      title: "Both",
+      description: "Coach clients and train yourself on one coach plan.",
+      icon: "sparkles-outline" as const,
+      role: "trainer" as const,
+    },
+  ];
+
+  return (
+    <SafeAreaView style={styles.safeArea} testID="subscription-persona-chooser">
+      <StatusBar barStyle="light-content" backgroundColor={color.$bg} />
+      <Header title="Welcome" onBack={onBack} />
+      <ScrollView contentContainerStyle={styles.personaContent}>
+        <Text style={styles.eyebrow}>WELCOME TO PERSISTENCE</Text>
+        <Text style={styles.personaTitle}>How will you use Persistence?</Text>
+        <Text style={styles.personaSubtitle}>
+          Your account carries one subscription. This sets your starting point,
+          and you can switch later.
+        </Text>
+
+        <View style={styles.personaChoices}>
+          {choices.map((choice) => (
+            <TouchableOpacity
+              key={choice.id}
+              style={[
+                styles.personaChoice,
+                choice.id === "both" && styles.personaChoiceBoth,
+              ]}
+              onPress={() => onSelect(choice.role)}
+              testID={`persona-${choice.id}`}
+            >
+              <View
+                style={[
+                  styles.personaIcon,
+                  choice.role === "trainer" && styles.personaIconTrainer,
+                ]}
+              >
+                <Ionicons
+                  name={choice.icon}
+                  size={23}
+                  color={
+                    choice.role === "trainer"
+                      ? color.$accentTrainerBright
+                      : color.$primaryBright
+                  }
+                />
+              </View>
+              <View style={styles.personaChoiceText}>
+                <Text style={styles.personaChoiceTitle}>{choice.title}</Text>
+                <Text style={styles.personaChoiceDescription}>
+                  {choice.description}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={color.$text4} />
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <View style={styles.infoCard}>
+          <Ionicons
+            name="information-circle-outline"
+            size={18}
+            color={color.$text3}
+          />
+          <Text style={styles.infoText}>
+            Coaching tools live on coach plans. Choosing Both is not a second
+            subscription: it is one coach plan that also powers your own
+            training with {ADAPTIVE_SUITE_LABEL}.
+          </Text>
+        </View>
+
+        <TouchableOpacity
+          style={styles.restoreButton}
+          onPress={onRestore}
+          disabled={restoreDisabled}
+          testID="ios-purchase-restore"
+        >
+          <Text style={styles.restoreButtonText}>
+            {isRestoring ? "Restoring..." : "Restore Purchases"}
+          </Text>
+        </TouchableOpacity>
+        <SubscriptionLegalFooter />
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+function CadenceToggle({
+  value,
+  onChange,
+}: {
+  value: BillingCycle;
+  onChange: (value: BillingCycle) => void;
+}) {
+  return (
+    <View style={styles.cadenceToggle} accessibilityRole="tablist">
+      {(["monthly", "yearly"] as const).map((cadence) => (
+        <TouchableOpacity
+          key={cadence}
+          style={[
+            styles.cadenceButton,
+            value === cadence && styles.cadenceButtonActive,
+          ]}
+          onPress={() => onChange(cadence)}
+          testID={cadence === "yearly" ? "billing-cycle-toggle" : undefined}
+          accessibilityRole="tab"
+          accessibilityState={{ selected: value === cadence }}
+        >
+          <Text
+            style={[
+              styles.cadenceText,
+              value === cadence && styles.cadenceTextActive,
+            ]}
+          >
+            {cadence === "monthly" ? "Monthly" : "Annual"}
+          </Text>
+          {cadence === "yearly" && <Text style={styles.saveText}>save</Text>}
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+}
+
+function SuiteLine({ included }: { included: boolean }) {
+  return (
+    <View style={styles.suiteLine}>
+      <Ionicons
+        name={included ? "sparkles-outline" : "close"}
+        size={14}
+        color={included ? color.$gold : color.$text4}
+      />
+      <Text style={included ? styles.suiteIncluded : styles.suiteExcluded}>
+        {included
+          ? `${ADAPTIVE_SUITE_LABEL} included`
+          : "Adaptive suite not included"}
+      </Text>
+    </View>
+  );
+}
+
+function PaidCta({
+  tier,
+  enabled,
+  disabled,
+  onPress,
+}: {
+  tier: CatalogTier;
+  enabled: boolean;
+  disabled: boolean;
+  onPress: () => void;
+}) {
+  const cta = ctaFor(tier, { iapAvailable: enabled });
+  if (tier.id === "free") return null;
+  if (cta.enabled) {
+    return (
+      <TouchableOpacity
+        style={[styles.comingSoon, styles.purchaseCta]}
+        onPress={onPress}
+        disabled={disabled}
+        accessibilityRole="button"
+        testID={`subscription-card-${tier.id}-subscribe`}
+      >
+        <Text style={styles.purchaseCtaText}>{cta.label}</Text>
+      </TouchableOpacity>
+    );
+  }
+  return (
+    <View
+      style={styles.comingSoon}
+      accessibilityRole="text"
+      accessibilityLabel={`${tier.name}: ${cta.label}`}
+      testID={`subscription-card-${tier.id}-coming-soon`}
+    >
+      <Ionicons name="time-outline" size={16} color={color.$text4} />
+      <Text style={styles.comingSoonText}>{cta.label}</Text>
+    </View>
+  );
+}
+
+function TierCard({
+  tier,
+  pricing,
+  cadence,
+  trainer,
+  onContinueFree,
+  purchaseEnabled,
+  purchaseDisabled,
+  onTierSelect,
+  trialDays,
+  showTrial,
+}: {
+  tier: CatalogTier;
+  pricing: TierPricing;
+  cadence: BillingCadence;
+  trainer: boolean;
+  onContinueFree?: () => void;
+  purchaseEnabled: boolean;
+  purchaseDisabled: boolean;
+  onTierSelect: () => void;
+  trialDays: number | null;
+  showTrial: boolean;
+}) {
+  const saving = annualSaving(pricing);
+  const equivalent = monthlyEquivalent(pricing);
+  const annual = cadence === "annual" && pricing.annual !== null;
+
+  return (
+    <View
+      style={[
+        styles.tierCard,
+        tier.highlight && styles.tierCardHighlight,
+        trainer && styles.tierCardTrainer,
+      ]}
+      testID={
+        trainer
+          ? `trainer-subscription-card-${tier.id}`
+          : `subscription-card-${tier.id}`
       }
-    }
-    return cards;
-  }, [
-    holdsUnlistedPaidTier,
-    subscriptionTiers,
-    billingCycle,
-    currentTier,
-    hasTrialEligibilityData,
-    isTierTrialEligible,
-    tierTrialDays,
-    monthlyOnlyTiers,
-    isProcessing,
-    isRestoring,
-    onTierSelect,
-  ]);
+    >
+      {tier.highlight && (
+        <View style={styles.recommendedPill}>
+          <Ionicons name="sparkles" size={10} color={color.$goldInk} />
+          <Text style={styles.recommendedText}>LOADOUT + MEALPRINT</Text>
+        </View>
+      )}
+      <View style={styles.tierHeader}>
+        <View style={styles.tierTitleWrap}>
+          <Text style={styles.tierName}>{tier.name}</Text>
+          <Text style={styles.tierTagline}>{tier.tagline}</Text>
+        </View>
+        <View style={styles.tierPriceWrap}>
+          <Price tier={tier} pricing={pricing} cadence={cadence} compact />
+          {annual && equivalent !== null && (
+            <View style={styles.equivalentRow}>
+              <Price
+                tier={tier}
+                pricing={pricing}
+                cadence="annual"
+                compact
+                monthlyEquivalentOnly
+              />
+              {saving ? (
+                <Text style={styles.equivalentText}>· save {saving}%</Text>
+              ) : null}
+            </View>
+          )}
+        </View>
+      </View>
 
-  if (isLoading) {
+      {tier.clients !== null && (
+        <View style={styles.clientRow}>
+          <View style={styles.clientBar}>
+            <View
+              style={[
+                styles.clientBarFill,
+                {
+                  width: `${
+                    typeof tier.clients === "number"
+                      ? Math.min(100, (tier.clients / 30) * 100)
+                      : 100
+                  }%`,
+                },
+              ]}
+            />
+          </View>
+          <Text style={styles.clientText}>{tier.clients} clients</Text>
+        </View>
+      )}
+
+      <SuiteLine included={tier.suite} />
+      <View style={styles.features}>
+        {tier.features.map((feature) => (
+          <View key={feature} style={styles.featureRow}>
+            <Ionicons
+              name="checkmark"
+              size={15}
+              color={trainer ? color.$accentTrainer : color.$primary}
+            />
+            <Text style={styles.featureText}>{feature}</Text>
+          </View>
+        ))}
+      </View>
+
+      {showTrial && trialDays !== null && (
+        <View style={styles.trialBanner} testID={`trial-banner-${tier.id}`}>
+          <Ionicons name="gift-outline" size={15} color={color.$primary} />
+          <Text style={styles.trialBannerText}>{trialDays}-day free trial</Text>
+        </View>
+      )}
+
+      {tier.id === "free" ? (
+        <TouchableOpacity
+          style={styles.continueFree}
+          onPress={onContinueFree}
+          testID="subscription-card-free-continue"
+        >
+          <Text style={styles.continueFreeText}>Continue free</Text>
+        </TouchableOpacity>
+      ) : (
+        <PaidCta
+          tier={tier}
+          enabled={purchaseEnabled}
+          disabled={purchaseDisabled}
+          onPress={onTierSelect}
+        />
+      )}
+    </View>
+  );
+}
+
+function OrganisationReadOnly() {
+  return (
+    <View style={styles.orgCard} testID="organisation-plans-read-only">
+      <View style={styles.orgHeader}>
+        <Ionicons name="business-outline" size={19} color={color.$text3} />
+        <View style={styles.orgHeaderText}>
+          <Text style={styles.orgTitle}>Running a gym or studio?</Text>
+          <Text style={styles.orgSubtitle}>
+            Organisation plans are managed on the web.
+          </Text>
+        </View>
+        <Text style={styles.webOnlyPill}>WEB ONLY</Text>
+      </View>
+      {tiersFor("org").map((tier) => (
+        <View key={tier.id} style={styles.orgTierRow}>
+          <View>
+            <Text style={styles.orgTierName}>{tier.name}</Text>
+            <Text style={styles.orgTierCapacity}>{tier.clients} members</Text>
+          </View>
+          <Price
+            tier={tier}
+            pricing={staticTierPricing(tier)}
+            cadence="monthly"
+            compact
+          />
+        </View>
+      ))}
+      <Text style={styles.orgFootnote}>
+        Sign in on the web to buy or manage an organisation plan.
+      </Text>
+    </View>
+  );
+}
+
+function PlansScreen(props: IOSPurchaseFlowPresenterProps) {
+  const trainer = props.selectedRole === "trainer";
+  const cadence: BillingCadence =
+    props.billingCycle === "yearly" ? "annual" : "monthly";
+  const tiers = tiersFor(trainer ? "coach" : "consumer");
+  const hasProvisional = tiers.some((tier) =>
+    cadence === "annual" ? tier.provisionalAnnual : tier.provisionalMonthly,
+  );
+
+  return (
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar barStyle="light-content" backgroundColor={color.$bg} />
+      <Header
+        title={trainer ? "Coach plans" : "Choose your plan"}
+        onBack={props.onBack}
+      />
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {props.isUnavailable && (
+          <View style={styles.noticeCard} testID="ios-purchase-unavailable">
+            <Text style={styles.noticeText}>
+              In-app purchases are coming soon. You can compare plans now.
+            </Text>
+          </View>
+        )}
+
+        <View style={styles.roleToggleContainer}>
+          <TouchableOpacity
+            style={[
+              styles.roleToggleButton,
+              !trainer && styles.roleToggleButtonActive,
+            ]}
+            onPress={() => props.onRoleChange("user")}
+            testID="role-toggle-user"
+          >
+            <Text
+              style={[
+                styles.roleToggleText,
+                !trainer && styles.roleToggleTextActive,
+              ]}
+            >
+              Individuals
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.roleToggleButton,
+              trainer && styles.roleToggleButtonActiveTrainer,
+            ]}
+            onPress={() => props.onRoleChange("trainer")}
+            testID="role-toggle-trainer"
+          >
+            <Text
+              style={[
+                styles.roleToggleText,
+                trainer && styles.roleToggleTextActive,
+              ]}
+            >
+              Coaches
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.cadenceWrap}>
+          <CadenceToggle
+            value={props.billingCycle}
+            onChange={props.onBillingCycleChange}
+          />
+        </View>
+
+        {trainer && (
+          <View style={styles.coachExplainer}>
+            <View style={styles.coachExplainerColumn}>
+              <Ionicons
+                name="people-outline"
+                size={17}
+                color={color.$accentTrainer}
+              />
+              <Text style={styles.coachExplainerTitle}>CLIENT CAPACITY</Text>
+              <Text style={styles.coachExplainerText}>5 → 15 → 30</Text>
+            </View>
+            <View style={styles.coachExplainerColumn}>
+              <Ionicons name="sparkles-outline" size={17} color={color.$gold} />
+              <Text style={styles.coachExplainerTitle}>ADAPTIVE SUITE</Text>
+              <Text style={styles.coachExplainerText}>
+                Optional only at entry
+              </Text>
+            </View>
+          </View>
+        )}
+
+        <View style={styles.tierCards}>
+          {tiers.map((tier) => (
+            <TierCard
+              key={tier.id}
+              tier={tier}
+              pricing={props.tierPricing[tier.id] ?? staticTierPricing(tier)}
+              cadence={cadence}
+              trainer={trainer}
+              onContinueFree={props.onContinueFree}
+              purchaseEnabled={props.purchasableTiers.has(
+                tier.id as SubscriptionTierName,
+              )}
+              purchaseDisabled={props.isProcessing || props.isRestoring}
+              onTierSelect={() =>
+                props.onTierSelect(tier.id as SubscriptionTierName)
+              }
+              trialDays={props.tierTrialDays(tier.id as SubscriptionTierName)}
+              showTrial={
+                props.hasTrialEligibilityData &&
+                props.currentTier !== tier.id &&
+                props.isTierTrialEligible(tier.id as SubscriptionTierName)
+              }
+            />
+          ))}
+        </View>
+
+        {hasProvisional && (
+          <Text style={styles.provisionalFootnote}>* provisional pricing</Text>
+        )}
+        {trainer && <OrganisationReadOnly />}
+
+        <TouchableOpacity
+          style={styles.restoreButton}
+          onPress={props.onRestore}
+          disabled={props.isProcessing || props.isRestoring}
+          testID="ios-purchase-restore"
+        >
+          <Text style={styles.restoreButtonText}>
+            {props.isRestoring ? "Restoring..." : "Restore Purchases"}
+          </Text>
+        </TouchableOpacity>
+        <SubscriptionLegalFooter />
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+function ManageScreen(props: IOSPurchaseFlowPresenterProps) {
+  const tier = SUBSCRIPTION_CATALOG.find(
+    (candidate) => candidate.id === (props.currentTier as CatalogTierId),
+  );
+  const cadence: BillingCadence =
+    props.billingCycle === "yearly" ? "annual" : "monthly";
+  const renewal = props.subscriptionEndsAt
+    ? new Date(props.subscriptionEndsAt).toLocaleDateString("en-GB", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      })
+    : null;
+
+  return (
+    <SafeAreaView style={styles.safeArea} testID="subscription-manage-screen">
+      <StatusBar barStyle="light-content" backgroundColor={color.$bg} />
+      <Header title="Subscription" onBack={props.onBack} />
+      <ScrollView contentContainerStyle={styles.manageContent}>
+        <View style={styles.manageHero}>
+          <View style={styles.manageHeroTop}>
+            <Text style={styles.eyebrow}>YOUR PLAN</Text>
+            <Text style={styles.activePill}>
+              {props.isCancelledButActive ? "CANCELLED" : "ACTIVE"}
+            </Text>
+          </View>
+          <View style={styles.managePlanRow}>
+            <View>
+              <Text style={styles.managePlanName}>
+                {tier?.name ?? props.currentTierDisplayName}
+              </Text>
+              {tier && <SuiteLine included={tier.suite} />}
+            </View>
+            {tier && (
+              <View style={styles.tierPriceWrap}>
+                <Text style={styles.manageCadence}>
+                  {cadence === "annual" ? "Annual" : "Monthly"}
+                </Text>
+                {renewal && (
+                  <Text style={styles.equivalentText}>
+                    {props.isCancelledButActive ? "ends" : "renews"} {renewal}
+                  </Text>
+                )}
+              </View>
+            )}
+          </View>
+        </View>
+
+        <View style={styles.manageActions}>
+          <TouchableOpacity
+            style={styles.manageRow}
+            onPress={props.onChangePlan}
+            testID="subscription-change-plan"
+          >
+            <Ionicons
+              name="swap-horizontal-outline"
+              size={19}
+              color={color.$text3}
+            />
+            <Text style={styles.manageRowLabel}>Change plan</Text>
+            <Ionicons name="chevron-forward" size={17} color={color.$text4} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.manageRow}
+            onPress={props.onManageInAppStore}
+            testID="ios-purchase-manage"
+          >
+            <Ionicons name="logo-apple" size={19} color={color.$text3} />
+            <Text style={styles.manageRowLabel}>
+              Payment, receipts and cancellation
+            </Text>
+            <Text style={styles.manageRowDetail}>App Store</Text>
+          </TouchableOpacity>
+          <View style={styles.manageRow}>
+            <Ionicons name="calendar-outline" size={19} color={color.$text3} />
+            <Text style={styles.manageRowLabel}>Billing period</Text>
+            <Text style={styles.manageRowDetail}>
+              {cadence === "annual" ? "Annual" : "Monthly"}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.infoCard}>
+          <Ionicons
+            name="information-circle-outline"
+            size={18}
+            color={color.$text3}
+          />
+          <Text style={styles.infoText}>
+            Coach plans are managed here in the app. Organisation plans are
+            managed on the web.
+          </Text>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
+  if (props.isLoading) {
     return (
       <SafeAreaView style={styles.safeArea} testID="ios-purchase-loading">
         <View style={styles.centeredContainer}>
@@ -294,224 +778,38 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
     );
   }
 
-  if (errorMessage) {
+  if (props.errorMessage) {
     return (
       <SafeAreaView style={styles.safeArea} testID="ios-purchase-error">
         <View style={styles.centeredContainer}>
           <Ionicons name="warning" size={48} color={color.$error} />
           <Text style={styles.errorTitle}>Couldn&apos;t load plans</Text>
-          <Text style={styles.errorMessage}>{errorMessage}</Text>
+          <Text style={styles.errorMessage}>{props.errorMessage}</Text>
           <TouchableOpacity
-            style={styles.primaryButton}
-            onPress={onRetry}
+            style={styles.continueFree}
+            onPress={props.onRetry}
             testID="ios-purchase-retry"
           >
-            <Text style={styles.primaryButtonText}>Retry</Text>
+            <Text style={styles.continueFreeText}>Retry</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
     );
   }
 
-  return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="light-content" backgroundColor={color.$bg} />
-
-      <View style={styles.headerContainer}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={onBack}
-          disabled={isProcessing || isRestoring}
-          testID="ios-purchase-back"
-          accessibilityRole="button"
-          accessibilityLabel="Go back"
-        >
-          <Ionicons name="arrow-back" size={24} color={color.$text} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Choose your plan</Text>
-        <View style={styles.headerSpacer} />
-      </View>
-
-      {isProcessing && (
-        <View style={styles.processingOverlay} testID="ios-purchase-processing">
-          <View style={styles.processingContainer}>
-            <PLogoDrawLoader />
-            <Text style={styles.processingText}>Completing purchase...</Text>
-          </View>
-        </View>
-      )}
-
-      <ScrollView
-        style={styles.scrollView}
-        showsVerticalScrollIndicator={false}
-      >
-        {isUnavailable && (
-          <View style={styles.noticeCard} testID="ios-purchase-unavailable">
-            <Text style={styles.noticeText}>
-              In-app purchases aren&apos;t available right now. Please try again
-              later.
-            </Text>
-          </View>
-        )}
-
-        <View style={styles.roleToggleContainer}>
-          <TouchableOpacity
-            style={[
-              styles.roleToggleButton,
-              selectedRole === "user" && styles.roleToggleButtonActive,
-            ]}
-            onPress={() => onRoleChange("user")}
-            testID="role-toggle-user"
-          >
-            <Text
-              style={[
-                styles.roleToggleText,
-                selectedRole === "user" && styles.roleToggleTextActive,
-              ]}
-            >
-              I&apos;m a User
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[
-              styles.roleToggleButton,
-              selectedRole === "trainer" && styles.roleToggleButtonActive,
-            ]}
-            onPress={() => onRoleChange("trainer")}
-            testID="role-toggle-trainer"
-          >
-            <Text
-              style={[
-                styles.roleToggleText,
-                selectedRole === "trainer" && styles.roleToggleTextActive,
-              ]}
-            >
-              I&apos;m a Trainer
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {currentTier !== "free" && (
-          <CurrentSubscriptionStatusCard
-            currentTierDisplayName={currentTierDisplayName}
-            isCancelledButActive={isCancelledButActive}
-            subscriptionEndsAt={subscriptionEndsAt}
-            scheduledChange={null}
-          />
-        )}
-
-        <View style={styles.billingToggleContainer}>
-          <Text style={styles.billingToggleLabel}>Monthly</Text>
-          <TouchableOpacity
-            style={styles.billingToggle}
-            onPress={() =>
-              onBillingCycleChange(
-                billingCycle === "monthly" ? "yearly" : "monthly",
-              )
-            }
-            testID="billing-cycle-toggle"
-            accessibilityRole="switch"
-            accessibilityLabel="Billing cycle"
-            accessibilityState={{ checked: billingCycle === "yearly" }}
-          >
-            <View
-              style={[
-                styles.billingToggleThumb,
-                {
-                  transform: [
-                    { translateX: billingCycle === "yearly" ? 24 : 0 },
-                  ],
-                },
-              ]}
-            />
-          </TouchableOpacity>
-          <Text style={styles.billingToggleLabel}>
-            Yearly{" "}
-            {/* Was "(Save 20%)" — overstated. Every seeded annual price is
-                  10x monthly (£12.99 -> £129.99, £29.99 -> £299.99,
-                  £14.99 -> £149.99, £75 -> £750, £300 -> £3000), i.e. 16.7%
-                  off, not 20%. "2 months free" is exact for every tier and
-                  matches the marketing site. Brad, 2026-07-25. */}
-            <Text style={styles.billingToggleSavings}>(2 months free)</Text>
-          </Text>
-        </View>
-
-        <View style={styles.subscriptionOptions}>
-          {selectedRole === "trainer" ? (
-            <>
-              <Text style={styles.trainerDescriptionText}>
-                The AI Buddy gives your clients the ability to enhance their
-                training experience with you, giving them support of needing to
-                swap exercises out or ask any generic questions about their
-                program.
-              </Text>
-              {trainerTierCards.length > 0 ? (
-                <View style={styles.tierCards}>{trainerTierCards}</View>
-              ) : (
-                <View style={styles.emptyStateContainer}>
-                  <Text style={styles.emptyStateText}>
-                    No trainer plans available right now.
-                  </Text>
-                </View>
-              )}
-            </>
-          ) : (
-            <View style={styles.tierCards}>{userTierCards}</View>
-          )}
-        </View>
-
-        <TouchableOpacity
-          style={styles.restoreButton}
-          onPress={onRestore}
-          disabled={isProcessing || isRestoring || isUnavailable}
-          testID="ios-purchase-restore"
-        >
-          <Text style={styles.restoreButtonText}>
-            {isRestoring ? "Restoring..." : "Restore Purchases"}
-          </Text>
-        </TouchableOpacity>
-
-        {currentTier !== "free" && (
-          <TouchableOpacity
-            style={styles.manageButton}
-            onPress={onManageInAppStore}
-            disabled={isProcessing || isRestoring}
-            testID="ios-purchase-manage"
-          >
-            <Ionicons name="open-outline" size={16} color={color.$text2} />
-            <Text style={styles.manageButtonText}>Manage in App Store</Text>
-          </TouchableOpacity>
-        )}
-
-        {/* Tiers without an Apple product yet surface a neutral note (no
-            external-purchase steering — Apple §3.1.1). */}
-        {selectedRole === "trainer" &&
-          trainerTierCards.length > 0 &&
-          purchasableTiers.size === 0 && (
-            <Text style={styles.footnote} testID="ios-purchase-tier-note">
-              Some plans aren&apos;t available for in-app purchase yet.
-            </Text>
-          )}
-
-        {/* Without this a monthly-only coach plan would simply vanish when a
-            coach flips to Yearly, which reads as a bug. Gated on
-            `hasHiddenMonthlyOnlyTier` — spec-29 Phase 2 (2026-08-05) retired
-            the real monthly-only tiers (MONTHLY_ONLY_TIERS is now empty), so
-            this normally does not render; it stays wired + tier-name-agnostic
-            for any future monthly-only tier. */}
-        {selectedRole === "trainer" && hasHiddenMonthlyOnlyTier && (
-          <Text style={styles.footnote} testID="ios-purchase-monthly-only-note">
-            Some coach plans are monthly only. Switch to Monthly to see them.
-          </Text>
-        )}
-
-        {/* Apple §3.1.2: auto-renew disclosure + functional Terms of Use
-            (EULA) and Privacy Policy links must be present in the binary at
-            the point of purchase, not only in App Store Connect metadata. */}
-        <SubscriptionLegalFooter />
-      </ScrollView>
-    </SafeAreaView>
-  );
+  if (props.screen === "manage") return <ManageScreen {...props} />;
+  if (props.screen === "persona") {
+    return (
+      <PersonaChooser
+        onSelect={props.onPersonaSelect ?? props.onRoleChange}
+        onBack={props.onBack}
+        onRestore={props.onRestore}
+        restoreDisabled={props.isProcessing || props.isRestoring}
+        isRestoring={props.isRestoring}
+      />
+    );
+  }
+  return <PlansScreen {...props} />;
 }
 
 const styles = StyleSheet.create({
@@ -523,187 +821,426 @@ const styles = StyleSheet.create({
     padding: 24,
     gap: 16,
   },
-  loadingText: {
-    color: color.$text,
-    fontSize: 16,
-    marginTop: 16,
-  },
-  errorTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: color.$text,
-    textAlign: "center",
-  },
-  errorMessage: {
-    fontSize: 14,
-    color: color.$text2,
-    textAlign: "center",
-  },
-  primaryButton: {
-    backgroundColor: color.$primary,
-    paddingVertical: 16,
-    paddingHorizontal: 24,
-    borderRadius: 12,
-    marginTop: 16,
-  },
-  primaryButtonText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: color.$bg,
-  },
+  loadingText: { color: color.$text, fontSize: 16, marginTop: 16 },
+  errorTitle: { color: color.$text, fontSize: 20, fontWeight: "700" },
+  errorMessage: { color: color.$text2, fontSize: 14, textAlign: "center" },
   headerContainer: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 24,
-    paddingVertical: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
   },
   backButton: {
     width: 40,
     height: 40,
-    borderRadius: 20,
-    backgroundColor: color.$surface,
+    alignItems: "center",
     justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: color.$surface3,
-  },
-  headerTitle: { fontSize: 20, fontWeight: "600", color: color.$text },
-  headerSpacer: { width: 40 },
-  scrollView: { flex: 1, paddingHorizontal: 24 },
-  processingOverlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: color.$bg + "E6",
-    zIndex: 1000,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  processingContainer: {
+    borderRadius: 12,
     backgroundColor: color.$surface,
-    borderRadius: 16,
-    padding: 32,
-    alignItems: "center",
-    shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.2,
-    shadowRadius: 16,
-    elevation: 8,
-    minWidth: 200,
   },
-  processingText: {
+  headerTitle: {
+    flex: 1,
     color: color.$text,
-    fontSize: 16,
-    fontWeight: "600",
-    marginTop: 16,
+    fontSize: 18,
+    fontWeight: "700",
     textAlign: "center",
   },
-  noticeCard: {
-    backgroundColor: color.$surface,
-    borderRadius: 12,
-    padding: 16,
-    marginTop: 16,
-    borderWidth: 1,
-    borderColor: color.$surface3,
+  headerSpacer: { width: 40 },
+  scrollView: { flex: 1 },
+  scrollContent: { paddingHorizontal: 16, paddingBottom: 28 },
+  personaContent: { padding: 22, paddingBottom: 48 },
+  eyebrow: {
+    color: color.$primaryBright,
+    fontSize: 10,
+    fontWeight: "700",
+    letterSpacing: 1.5,
   },
-  noticeText: { fontSize: 14, color: color.$text2 },
+  personaTitle: {
+    marginTop: 14,
+    color: color.$text,
+    fontSize: 34,
+    lineHeight: 38,
+    fontWeight: "800",
+    letterSpacing: -1.2,
+  },
+  personaSubtitle: {
+    marginTop: 12,
+    color: color.$text2,
+    fontSize: 14,
+    lineHeight: 21,
+  },
+  personaChoices: { marginTop: 25, gap: 12 },
+  personaChoice: {
+    minHeight: 92,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    padding: 15,
+    borderWidth: 1,
+    borderColor: color.$border2,
+    borderRadius: 18,
+    backgroundColor: color.$surface,
+  },
+  personaChoiceBoth: {
+    borderColor: color.$accentTrainerDim,
+    backgroundColor: color.$accentTrainerDim,
+  },
+  personaIcon: {
+    width: 52,
+    height: 52,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 15,
+    backgroundColor: color.$primaryDim,
+  },
+  personaIconTrainer: { backgroundColor: color.$accentTrainerDim },
+  personaChoiceText: { flex: 1 },
+  personaChoiceTitle: { color: color.$text, fontSize: 17, fontWeight: "700" },
+  personaChoiceDescription: {
+    marginTop: 4,
+    color: color.$text3,
+    fontSize: 12.5,
+    lineHeight: 18,
+  },
+  infoCard: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+    marginTop: 20,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: color.$border,
+    borderRadius: 14,
+    backgroundColor: color.$surface,
+  },
+  infoText: { flex: 1, color: color.$text2, fontSize: 12, lineHeight: 18 },
   roleToggleContainer: {
     flexDirection: "row",
-    backgroundColor: color.$surface,
-    borderRadius: 16,
+    gap: 4,
+    marginTop: 8,
     padding: 4,
-    marginTop: 16,
+    borderWidth: 1,
+    borderColor: color.$border,
+    borderRadius: 13,
+    backgroundColor: color.$surface2,
   },
   roleToggleButton: {
     flex: 1,
-    paddingVertical: 16,
-    alignItems: "center",
-    borderRadius: 12,
-  },
-  roleToggleButtonActive: { backgroundColor: color.$primary },
-  roleToggleText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: color.$text2,
-  },
-  roleToggleTextActive: { color: color.$bg },
-  billingToggleContainer: {
-    flexDirection: "row",
+    minHeight: 39,
     alignItems: "center",
     justifyContent: "center",
-    gap: 16,
-    marginTop: 24,
-    marginBottom: 16,
+    borderRadius: 9,
   },
-  billingToggleLabel: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: color.$text,
-  },
-  billingToggleSavings: { color: color.$primary, fontWeight: "700" },
-  billingToggle: {
-    width: 52,
-    height: 28,
+  roleToggleButtonActive: { backgroundColor: color.$primaryDim },
+  roleToggleButtonActiveTrainer: { backgroundColor: color.$accentTrainerDim },
+  roleToggleText: { color: color.$text3, fontSize: 13, fontWeight: "600" },
+  roleToggleTextActive: { color: color.$text },
+  cadenceWrap: { alignItems: "center", marginVertical: 16 },
+  cadenceToggle: {
+    flexDirection: "row",
+    padding: 4,
+    borderWidth: 1,
+    borderColor: color.$border,
+    borderRadius: 12,
     backgroundColor: color.$surface2,
-    borderRadius: 14,
-    padding: 2,
-    justifyContent: "center",
   },
-  billingToggleThumb: {
-    width: 24,
-    height: 24,
-    backgroundColor: color.$primary,
+  cadenceButton: {
+    minHeight: 34,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    borderRadius: 9,
+  },
+  cadenceButtonActive: { backgroundColor: color.$surface4 },
+  cadenceText: { color: color.$text3, fontSize: 13, fontWeight: "600" },
+  cadenceTextActive: { color: color.$text },
+  saveText: { marginLeft: 6, color: color.$success, fontSize: 10 },
+  noticeCard: {
+    marginTop: 8,
+    padding: 12,
     borderRadius: 12,
+    backgroundColor: color.$primaryDim,
   },
-  subscriptionOptions: { marginTop: 16 },
-  tierCards: { gap: 16 },
-  trainerDescriptionText: {
-    fontSize: 14,
-    color: color.$text2,
-    lineHeight: 20,
-    marginBottom: 16,
-  },
-  emptyStateContainer: {
+  noticeText: { color: color.$text2, fontSize: 12, textAlign: "center" },
+  coachExplainer: { flexDirection: "row", gap: 10, marginBottom: 14 },
+  coachExplainerColumn: {
+    flex: 1,
+    minHeight: 92,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: color.$border,
+    borderRadius: 13,
     backgroundColor: color.$surface,
-    borderRadius: 16,
-    padding: 24,
+  },
+  coachExplainerTitle: {
+    marginTop: 8,
+    color: color.$text3,
+    fontSize: 9,
+    fontWeight: "700",
+    letterSpacing: 0.8,
+  },
+  coachExplainerText: { marginTop: 5, color: color.$text2, fontSize: 11.5 },
+  tierCards: { gap: 13 },
+  tierCard: {
+    position: "relative",
+    padding: 16,
+    borderWidth: 1.5,
+    borderColor: color.$border2,
+    borderRadius: 18,
+    backgroundColor: color.$surface,
+  },
+  tierCardHighlight: {
+    borderColor: color.$goldDim,
+    backgroundColor: color.$goldDim,
+  },
+  tierCardTrainer: { borderColor: color.$accentTrainerDim },
+  recommendedPill: {
+    alignSelf: "flex-start",
+    flexDirection: "row",
     alignItems: "center",
+    gap: 5,
+    marginTop: -25,
+    marginBottom: 10,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: color.$gold,
   },
-  emptyStateText: {
-    fontSize: 14,
-    color: color.$text2,
-    textAlign: "center",
+  recommendedText: { color: color.$goldInk, fontSize: 8.5, fontWeight: "800" },
+  tierHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: 10,
   },
-  restoreButton: {
-    marginTop: 24,
-    paddingVertical: 16,
+  tierTitleWrap: { flex: 1 },
+  tierName: { color: color.$text, fontSize: 18, fontWeight: "700" },
+  tierTagline: {
+    marginTop: 3,
+    color: color.$text3,
+    fontSize: 11.5,
+    lineHeight: 16,
+  },
+  tierPriceWrap: { alignItems: "flex-end" },
+  priceRow: { flexDirection: "row", alignItems: "baseline" },
+  price: {
+    color: color.$text,
+    fontSize: 31,
+    fontWeight: "800",
+    letterSpacing: -1,
+  },
+  priceCompact: { fontSize: 22 },
+  priceProvisional: {
+    textDecorationLine: "underline",
+    textDecorationStyle: "dashed",
+  },
+  priceUnit: { marginLeft: 3, color: color.$text3, fontSize: 10.5 },
+  equivalentRow: { flexDirection: "row", alignItems: "center", marginTop: 3 },
+  equivalentPrice: { color: color.$text4, fontSize: 9.5, letterSpacing: 0 },
+  equivalentUnit: { color: color.$text4, fontSize: 9.5 },
+  equivalentText: { marginTop: 3, color: color.$text4, fontSize: 9.5 },
+  clientRow: {
+    flexDirection: "row",
     alignItems: "center",
+    gap: 8,
+    marginTop: 12,
   },
-  restoreButtonText: {
-    fontSize: 15,
+  clientBar: {
+    width: 54,
+    height: 5,
+    overflow: "hidden",
+    borderRadius: 3,
+    backgroundColor: color.$surface4,
+  },
+  clientBarFill: {
+    height: "100%",
+    borderRadius: 3,
+    backgroundColor: color.$accentTrainer,
+  },
+  clientText: { color: color.$text2, fontSize: 11, fontWeight: "600" },
+  suiteLine: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+    marginTop: 12,
+  },
+  suiteIncluded: {
+    color: color.$goldBright,
+    fontSize: 11.5,
     fontWeight: "600",
-    color: color.$primary,
   },
-  manageButton: {
+  suiteExcluded: { color: color.$text3, fontSize: 11.5 },
+  features: { gap: 7, marginTop: 13 },
+  trialBanner: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
-    paddingVertical: 16,
-    marginBottom: 24,
+    gap: 7,
+    marginTop: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: color.$primaryDim,
   },
-  manageButtonText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: color.$text2,
-  },
-  footnote: {
+  trialBannerText: {
+    color: color.$primary,
     fontSize: 12,
-    color: color.$text2,
-    textAlign: "center",
-    marginBottom: 32,
+    fontWeight: "700",
   },
+  featureRow: { flexDirection: "row", alignItems: "flex-start", gap: 7 },
+  featureText: { flex: 1, color: color.$text2, fontSize: 12, lineHeight: 17 },
+  comingSoon: {
+    height: 48,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 7,
+    marginTop: 16,
+    borderWidth: 1,
+    borderColor: color.$border2,
+    borderRadius: 13,
+    backgroundColor: color.$surface3,
+  },
+  comingSoonText: { color: color.$text3, fontSize: 14, fontWeight: "700" },
+  purchaseCta: {
+    borderColor: color.$primary,
+    backgroundColor: color.$primary,
+  },
+  purchaseCtaText: {
+    color: color.$primaryInk,
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  continueFree: {
+    minHeight: 48,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 16,
+    paddingHorizontal: 24,
+    borderRadius: 13,
+    backgroundColor: color.$primary,
+  },
+  continueFreeText: {
+    color: color.$primaryInk,
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  provisionalFootnote: {
+    marginTop: 12,
+    color: color.$text4,
+    fontSize: 10,
+    textAlign: "center",
+  },
+  orgCard: {
+    marginTop: 20,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: color.$border3,
+    borderRadius: 16,
+    backgroundColor: color.$surface,
+  },
+  orgHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    padding: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: color.$border,
+  },
+  orgHeaderText: { flex: 1 },
+  orgTitle: { color: color.$text, fontSize: 14, fontWeight: "700" },
+  orgSubtitle: { marginTop: 2, color: color.$text3, fontSize: 11 },
+  webOnlyPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: color.$surface3,
+    color: color.$text3,
+    fontSize: 8.5,
+    fontWeight: "700",
+  },
+  orgTierRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: color.$border,
+  },
+  orgTierName: { color: color.$text2, fontSize: 13, fontWeight: "700" },
+  orgTierCapacity: { marginTop: 2, color: color.$text4, fontSize: 10 },
+  orgFootnote: {
+    padding: 14,
+    color: color.$text4,
+    fontSize: 10.5,
+    lineHeight: 15,
+  },
+  restoreButton: { alignItems: "center", padding: 16, marginTop: 10 },
+  restoreButtonText: { color: color.$primary, fontSize: 13, fontWeight: "600" },
+  manageContent: { padding: 18, paddingBottom: 40 },
+  manageHero: {
+    padding: 18,
+    borderWidth: 1,
+    borderColor: color.$goldDim,
+    borderRadius: 18,
+    backgroundColor: color.$goldDim,
+  },
+  manageHeroTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  activePill: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    overflow: "hidden",
+    backgroundColor: color.$successDim,
+    color: color.$success,
+    fontSize: 9,
+    fontWeight: "700",
+  },
+  managePlanRow: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    justifyContent: "space-between",
+    gap: 10,
+    marginTop: 13,
+  },
+  managePlanName: {
+    color: color.$text,
+    fontSize: 28,
+    fontWeight: "800",
+    letterSpacing: -0.8,
+  },
+  manageCadence: {
+    color: color.$text,
+    fontSize: 15,
+    fontWeight: "700",
+    textAlign: "right",
+  },
+  manageActions: {
+    overflow: "hidden",
+    marginTop: 18,
+    borderWidth: 1,
+    borderColor: color.$border,
+    borderRadius: 16,
+    backgroundColor: color.$surface,
+  },
+  manageRow: {
+    minHeight: 58,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 11,
+    paddingHorizontal: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: color.$border,
+  },
+  manageRowLabel: {
+    flex: 1,
+    color: color.$text,
+    fontSize: 13.5,
+    fontWeight: "600",
+  },
+  manageRowDetail: { color: color.$text3, fontSize: 11 },
 });
