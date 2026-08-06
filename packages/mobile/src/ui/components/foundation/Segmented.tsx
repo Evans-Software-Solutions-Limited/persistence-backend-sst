@@ -79,6 +79,16 @@ export type SegmentedProps = {
   onChange: (value: string) => void;
   accent?: SegmentedAccent;
   size?: SegmentedSize;
+  /**
+   * Stretch the track to fill its row, splitting the width evenly between
+   * segments, instead of the default content-width left-hugging strip. Opt-in
+   * so existing consumers (Train hub, meal picker) are byte-identical — only
+   * set where the design calls for a full-width control (Mealprint sheets). The
+   * horizontal ScrollView is retained for keyboard-tap safety; at full width it
+   * simply never has overflow to scroll. Long labels truncate (`numberOfLines`)
+   * rather than scroll in this mode, which the full-width design accepts.
+   */
+  full?: boolean;
   testID?: string;
 };
 
@@ -103,6 +113,7 @@ export function Segmented({
   onChange,
   accent = "primary",
   size = "md",
+  full = false,
   testID,
 }: SegmentedProps) {
   const spec = SIZE_SPEC[size];
@@ -183,6 +194,8 @@ export function Segmented({
         onLayout={(e) => onSegmentLayout(v, e)}
         style={{
           minHeight: spec.height - spec.padding * 2,
+          // Full-width: each segment takes an equal share of the track.
+          flex: full ? 1 : undefined,
         }}
       >
         <View
@@ -215,7 +228,10 @@ export function Segmented({
       accessibilityRole="tablist"
       flexDirection="row"
       alignItems="center"
-      alignSelf="flex-start"
+      // Full-width fills the (flexGrow:1) content container; default hugs its
+      // content on the left as before.
+      alignSelf={full ? "stretch" : "flex-start"}
+      flexGrow={full ? 1 : 0}
       gap={2}
       padding={spec.padding}
       borderRadius={12}
