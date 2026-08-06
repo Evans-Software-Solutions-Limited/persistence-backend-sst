@@ -11,6 +11,41 @@ say so and fix this file.
 
 ## ▶ START HERE — next session (rewritten 2026-08-04, post-Mealprint-merge)
 
+### 🟢 2026-08-06 — POST-MERGE SNAPSHOT (read this first; it supersedes the dated blocks below)
+
+**FIVE PRs merged to `main`; the subscription restructure + Mealprint Phase 2 + the
+workout-limit fix are CODE-COMPLETE for launch. What remains is OPERATIONAL (Brad's).**
+
+| PR | commit | what |
+| --- | --- | --- |
+| #361 | `ff832899` | spec-29 Phase 2 IAP **coach ladder** (6 tiers; migration `20260805120000_coach_ladder_restructure`) |
+| #363 | `b9740b4a` | Mealprint **Phase 2 mobile** (plan flow + Fuel) + replace-meal route |
+| #362 | `3ce04ca2` | Codex **GTM D9 subscription rails**: `packages/subscription-catalog` (single source of truth, mobile+web), paywall revamp, web `Pricing` + **dev-only** `OrganisationAdmin`, `AIFailsafePresenter`. Prices from StoreKit/RC (mobile) + live API (web). **⚠ ALSO ACTIVATES tiers** (`20260805180000_activate_iap_coach_ladder`: `is_active=true` on all 6; `start_up_coach_plus` annual → **£289.99**) |
+| #364 | `b38ce8d9` | Mealprint **gap-1/2** (`kind` + per-serving macros → recipe/meal accept + per-item serving stepper) |
+| #365 | `bfda611c` | **Free = 3 workouts TOTAL + over-limit hard-lock** (create counts total; `sessionsRecordHandler` lock before `canSkipGate`; mobile lock screen + stranded-session recovery) |
+
+All IB-clean + CI-green; staging auto-deployed on each merge.
+
+**🔴 THE ONE GUARD:** #362 set `is_active=true` on all six tiers. Fine on staging (testing),
+but **active tiers with NO ASC/RevenueCat products = the 2.1(b) rejection** AND exposes the
+un-seeded, un-device-verified Mealprint. **Do NOT cut a prod release / App Store build until
+the ASC + RevenueCat products + `default` offering are configured.** The prod release IS the
+launch gate now.
+
+**▶ THE OPERATIONAL PATH TO LAUNCH IS WRITTEN DOWN:**
+[`specs/milestones/GO-LIVE-2026-08/TEST_AND_LAUNCH_RUNBOOK.md`](specs/milestones/GO-LIVE-2026-08/TEST_AND_LAUNCH_RUNBOOK.md)
+— OFF seed, staging `premium_plus` entitlement (with the role-demotion trigger trap), prod +
+staging catalog verification, ASC/RC store config, and device QA. All Brad's.
+
+**Remaining CODE (none launch-blocking):** Mealprint Phase 3 (week/shopping/adherence — not
+started); Loadout Phase 4 program import (spec-22, eval-gated, zero code); spec-29 Phase 1
+pooled AI budget (not started — `AIFailsafePresenter` UI exists ahead of it); 🔵 chip: remove
+the orphaned monthly workouts counter (dead DB state); a CLI-pin chore PR (`chore/post-merge-prep`
+pins `supabase/setup-cli` → `2.111.0`; a `latest` rate-limit failed the staging deploy 2026-08-06).
+
+**⚠ NOTHING on the entitled path has run on a device** — the whole entitled Mealprint flow,
+the workout-lock flow, and the #362 paywall are unit-proven only.
+
 ### 🟢 2026-08-05 (late) — FOUR PRs merged; subscription + Mealprint now code-nearly-complete
 
 **Merged to `main` this session (in order):**
@@ -22,7 +57,7 @@ say so and fix this file.
   paywall revamp, web `Pricing` rewrite + a **dev-only** `OrganisationAdmin`, and
   `AIFailsafePresenter`. Prices now come from **StoreKit/RC on mobile, live API on web** (no
   baked-in prices). Reconciled cleanly onto #361 (touched no backend entitlement files).
-- **#364 (this branch, merging LAST)** — Mealprint **gap-1 + gap-2** (`kind` + per-serving
+- **#364 `b38ce8d9` (MERGED)** — Mealprint **gap-1 + gap-2** (`kind` + per-serving
   macros on the draft item → recipe/meal accept + per-item serving stepper). IB-clean.
 
 **⚠⚠ #362 ACTIVATES the tiers — the one guard to remember.** #362 carries
@@ -34,7 +69,7 @@ active tiers with no purchasable products re-triggers the **2.1(b)** rejection a
 un-verified, un-seeded Mealprint. Activation is now coupled to ASC/RC readiness; the prod
 release IS the gate.
 
-**✅ WORKOUT LIMIT — free = 3 TOTAL + over-limit lock — BUILT (PR pending, `claude/workout-total-cap-lock`).**
+**✅ WORKOUT LIMIT — free = 3 TOTAL + over-limit lock — MERGED (#365 `bfda611c`).**
 Brad's call: free = 3 TOTAL (not per month), hard-lock (option A) an over-limit free user from
 starting/recording any workout until they delete to ≤3 or upgrade. Fixed: (1) `create_workout`
 now counts TOTAL workouts, not the monthly `subscription_limits` counter; (2) new
