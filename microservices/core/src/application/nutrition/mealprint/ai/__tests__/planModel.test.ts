@@ -178,6 +178,49 @@ describe("composeDayPlan — membership", () => {
     expect(result.meals[0]!.name).toBe("Good");
   });
 
+  it("enriches each item with the candidate's kind and per-serving macros, never the model's numbers", async () => {
+    const recipeCandidate: MealprintCandidate = {
+      ...candidate("r1"),
+      kind: "recipe",
+      kcal: 500,
+      proteinG: 40,
+      carbsG: 50,
+      fatG: 15,
+    };
+    const result = await composeDayPlan(
+      {
+        target: { kcal: 2000, proteinG: 150, carbsG: 200, fatG: 60 },
+        mealsPerDay: 1,
+        steer: null,
+        candidates: [recipeCandidate],
+        likedFoods: [],
+        effortLevel: "balanced",
+        locale: "en-GB",
+      },
+      {
+        client: clientReturning({
+          meals: [
+            {
+              name: "Chilli",
+              reason: "r",
+              logSlot: "dinner",
+              // The model itself never sends macros; this just proves the
+              // enrichment comes from the candidate row, not from here.
+              items: [{ candidateId: "r1", servings: 2 }],
+            },
+          ],
+        }),
+        timeoutMs: 20_000,
+      },
+    );
+    const [item] = result.meals[0]!.items;
+    expect(item!.kind).toBe("recipe");
+    // Per-serving, not pre-multiplied by servings=2.
+    expect(item!.kcal).toBe(500);
+    expect(item!.proteinG).toBe(40);
+    expect(item!.servings).toBe(2);
+  });
+
   it("throws when EVERY meal references a non-member candidate", async () => {
     await expect(
       composeDayPlan(

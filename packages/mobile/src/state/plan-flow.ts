@@ -12,6 +12,7 @@ import {
   planDraftMealsAffectedBy,
   removePlanDraftMeal,
   replacePlanDraftMeal,
+  setPlanItemServings,
   unresolvableCandidateIds,
 } from "@/domain/models/mealprint";
 
@@ -87,6 +88,18 @@ export interface PlanFlowState {
   draftReady: (result: PlanGenerateResult) => void;
   empty: (reason: PlanFlowEmptyReason) => void;
   removeMeal: (localId: string) => void;
+  /**
+   * The serving stepper's write path (AC 4.4/gap 2) — sets one item's
+   * servings within one draft meal and recomputes that meal's totals
+   * deterministically, client-side (`setPlanItemServings`), so the day
+   * totals card and the accept payload both reflect the edit with no round
+   * trip.
+   */
+  updateItemServings: (
+    localId: string,
+    candidateId: string,
+    servings: number,
+  ) => void;
   beginSwap: (localId: string) => void;
   swapApplied: (localId: string, meal: PlanSwapMeal) => void;
   swapAbandoned: () => void;
@@ -143,6 +156,15 @@ export const usePlanFlow = create<PlanFlowState>((set, get) => ({
         draft: removePlanDraftMeal(state.draft, localId),
         flaggedIds: nextFlagged,
       };
+    }),
+
+  updateItemServings: (localId, candidateId, servings) =>
+    set((state) => {
+      if (state.draft === null) return {};
+      const target = state.draft.meals.find((m) => m.localId === localId);
+      if (target === undefined) return {};
+      const nextMeal = setPlanItemServings(target.meal, candidateId, servings);
+      return { draft: replacePlanDraftMeal(state.draft, localId, nextMeal) };
     }),
 
   beginSwap: (localId) => set({ swappingId: localId }),

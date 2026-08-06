@@ -45,27 +45,30 @@ import type { MealSlot } from "./nutrition";
 // `nutritionPlanMealReplaceHandler`). camelCase == wire shape (passthrough),
 // same convention as the rest of this file.
 //
-// ⚠ **A generated/swapped item carries NO `kind`, and that is a real gap this
-// file works around rather than papering over.** `VerifiedPlanMeal.items` (the
-// plan-generate handler) and the swap handler's `chosen.items` are both
-// `{ candidateId, servings, name }` — contrast `MealSuggestionItem` above, which
-// DOES carry `kind: "food" | "recipe" | "meal"`. The plan pipeline's candidate
-// pool mixes all three kinds (`assembleCandidates` pools curated foods + the
-// user's own foods/recipes/meals), so a `candidateId` on a plan meal can
-// legitimately be a recipe or meal id — but nothing on the wire says which.
+// ⚠ **A generated/swapped item now carries `kind` + per-SERVING macros** (both
+// `nutritionAiPlanGenerateHandler` and `nutritionAiPlanMealSwapHandler`, closing
+// the mealprint item-kind gap). Before this, `items` were `{ candidateId,
+// servings, name }` — no way to tell a curated-food id from a recipe/meal id, so
+// `planAcceptMealInputFromGenerated` sent every item as a `foodId` and a
+// recipe/meal-backed meal 400'd `unresolvable_items` on accept even though the
+// draft rendered fine. `unresolvableCandidateIds` + `planDraftMealsAffectedBy`
+// still exist as the defence-in-depth path for a draft that somehow reaches
+// accept with a stale/foreign id (preferences changed mid-review, a row was
+// deleted) — that is a real 400 the client cannot prevent, not the routing bug
+// this file used to have.
 //
-// `POST /nutrition/plans` (accept) and the `/replace` route need to know: their
-// schema is a SEPARATE `recipeId`/`mealId` field plus an `items: {foodId,
-// servings}[]` array, not one polymorphic list. This file's
-// `planAcceptMealInputFromGenerated` treats every item as a `foodId` — correct
-// for the overwhelmingly common case (the curated OFF pool dwarfs a user's own
-// saved recipes/meals) but WRONG whenever the model picks a recipe/meal
-// candidate, which 400s `unresolvable_items` on accept even though the draft
-// rendered fine. `unresolvableCandidateIds` + `planDraftMealsAffectedBy` exist so
-// that failure degrades to "this meal needs a swap" instead of losing the whole
-// accept — see the mobile build report for why this needs a backend DTO change
-// (a `kind` on the item) to close properly; out of scope for a
-// `packages/mobile`-only pass.
+// `POST /nutrition/plans` (accept) and the `/replace` route take REFERENCES
+// ONLY: a SEPARATE `recipeId`/`mealId` field (at most one of each — the DB row
+// has one column per kind) plus an `items: {foodId, servings}[]` array for
+// food-kind items, never a single polymorphic list. `planAcceptMealInputFromGenerated`
+// buckets a meal's items by `kind` and routes each bucket to its field — see
+// that function's docstring for the one edge it cannot represent (more than one
+// recipe-kind OR more than one meal-kind item in the SAME composed meal; the
+// schema has only one `recipeId` slot and one `mealId` slot).
+//
+// The per-item macros are what let the draft's serving stepper (AC 4.4) recompute
+// a meal's totals deterministically, client-side, without a round trip — see
+// {@link setPlanItemServings}.
 
 /** Plan meals reuse the Fuel log's fixed four slots (locked decision 6). */
 export type LogSlot = MealSlot;
@@ -133,9 +136,26 @@ export type PlanGenerateInput = {
 
 export type PlanGeneratedItem = {
   readonly candidateId: string;
+  readonly kind: "food" | "recipe" | "meal";
   readonly servings: number;
   readonly name: string;
+  /**
+   * Per ONE serving — the server's own recompute basis, never the model's
+   * output. Multiply by `servings` for this item's contribution to the meal
+   * total. Lets {@link setPlanItemServings} recompute a meal deterministically
+   * when the user edits an item's portion, with no round trip.
+   */
+  readonly kcal: number;
+  readonly proteinG: number;
+  readonly carbsG: number;
+  readonly fatG: number;
 };
+
+/** Bounds mirroring the server's own clamp (`MIN_SERVINGS`/`MAX_SERVINGS` in `suggestModel.ts`). */
+export const MIN_PLAN_ITEM_SERVINGS = 0.25;
+export const MAX_PLAN_ITEM_SERVINGS = 6;
+/** The stepper's tap increment (AC 4.4). */
+export const PLAN_ITEM_SERVINGS_STEP = 0.25;
 
 /** One meal in a DRAFT (not-yet-persisted) plan — server-verified, never accepted as-is. */
 export type PlanGeneratedMeal = {
@@ -276,12 +296,82 @@ export function planDraftFromResult(
 }
 
 /**
- * Deterministic day-total recompute from the KEPT meals — exact, because
- * `PlanGeneratedMeal.kcal`/etc. are already server-verified sums, not
- * per-item estimates this file has to reconstruct (see the file docstring on
- * why per-ITEM portion editing isn't offered: the wire carries no per-item
- * macro breakdown to recompute FROM). Removing a meal and re-summing the rest
- * is exact; that's the "edit" this build offers pre-accept.
+ * Recompute one item's contribution: its per-serving macros × its servings.
+ */
+function planItemTotal(item: PlanGeneratedItem): PlanTarget {
+  return {
+    kcal: item.kcal * item.servings,
+    proteinG: item.proteinG * item.servings,
+    carbsG: item.carbsG * item.servings,
+    fatG: item.fatG * item.servings,
+  };
+}
+
+/**
+ * Recompute a meal's totals from its OWN items — deterministic and exact,
+ * because every item carries the resolved candidate's per-serving macros
+ * (gap 2 / AC 4.4). Rounded to 1dp, matching the server's own rounding
+ * convention, so a re-summed meal displays identically to one fresh off
+ * generate/swap.
+ */
+export function recomputePlanMealTotals(
+  meal: PlanGeneratedMeal,
+): PlanGeneratedMeal {
+  const totals = meal.items.reduce(
+    (acc, item) => {
+      const t = planItemTotal(item);
+      return {
+        kcal: acc.kcal + t.kcal,
+        proteinG: acc.proteinG + t.proteinG,
+        carbsG: acc.carbsG + t.carbsG,
+        fatG: acc.fatG + t.fatG,
+      };
+    },
+    { kcal: 0, proteinG: 0, carbsG: 0, fatG: 0 },
+  );
+  const round = (n: number) => Math.round(n * 10) / 10;
+  return {
+    ...meal,
+    kcal: round(totals.kcal),
+    proteinG: round(totals.proteinG),
+    carbsG: round(totals.carbsG),
+    fatG: round(totals.fatG),
+  };
+}
+
+/**
+ * Set ONE item's servings within a meal and recompute the meal's totals —
+ * the serving stepper's core operation (AC 4.4). Clamped to the same band the
+ * server itself clamps a model's servings to
+ * ({@link MIN_PLAN_ITEM_SERVINGS}/{@link MAX_PLAN_ITEM_SERVINGS}), so a
+ * hand-typed or repeatedly-tapped value can't drift outside anything the
+ * server would ever itself produce — accept still recomputes authoritatively
+ * from this value, this is just what the draft SHOWS in the meantime.
+ */
+export function setPlanItemServings(
+  meal: PlanGeneratedMeal,
+  candidateId: string,
+  servings: number,
+): PlanGeneratedMeal {
+  const clamped = Math.min(
+    MAX_PLAN_ITEM_SERVINGS,
+    Math.max(MIN_PLAN_ITEM_SERVINGS, servings),
+  );
+  return recomputePlanMealTotals({
+    ...meal,
+    items: meal.items.map((item) =>
+      item.candidateId === candidateId ? { ...item, servings: clamped } : item,
+    ),
+  });
+}
+
+/**
+ * Deterministic day-total recompute from the KEPT meals. Exact, because
+ * `PlanGeneratedMeal.kcal`/etc. are always either the server-verified sum
+ * (fresh off generate/swap) or {@link recomputePlanMealTotals}'s own re-sum
+ * (after a serving edit) — never a value this function has to reconstruct
+ * itself. Removing a meal and re-summing the rest is exact; so is editing an
+ * item's servings and re-summing.
  */
 export function sumPlanDraftTotals(
   meals: readonly PlanDraftMeal[],
@@ -332,25 +422,67 @@ export function heldTotalsExcluding(
 }
 
 /**
- * Build the accept/replace-shaped input for one generated/swapped meal.
+ * Build the accept/replace-shaped input for one generated/swapped meal,
+ * routing each item to the field its `kind` resolves against — `foodId`s into
+ * `items[]`, a `recipe`-kind item into `recipeId`, a `meal`-kind item into
+ * `mealId`. This is what closes the item-kind gap: previously every item was
+ * sent as a `foodId` regardless of kind, so a meal the AI composed from one of
+ * the user's own recipes/saved meals 400'd `unresolvable_items` on accept.
  *
- * ⚠ Every item is sent as a `foodId`. See the file docstring: the wire gives us
- * no `kind` to disambiguate a food/recipe/meal candidate, and the curated food
- * pool is the overwhelming common case. A recipe/meal-kind candidate 400s on
- * accept (`unresolvable_items`) rather than silently mis-saving — the caller
- * maps that failure back to "this meal needs a swap" via
- * {@link planDraftMealsAffectedBy}.
+ * ⚠ **At most one `recipeId` and one `mealId` are representable per accepted
+ * meal** — `meal_plan_meals` has exactly one `recipe_id` column and one
+ * `meal_id` column, not an array. If a composed meal ever carries MORE than
+ * one recipe-kind item (or more than one meal-kind item) — not something
+ * today's prompts ask for, but not schema-forbidden either — the FIRST of
+ * each kind wins and any extra is dropped from the accept payload. That is a
+ * pre-existing shape limit of the accept schema (spec-26), not something this
+ * change introduces or attempts to lift.
+ *
+ * The one `servings` field on the accept body is the multiplier for
+ * whichever of `recipeId`/`mealId` is present; food items carry their own
+ * per-item `servings` inside `items[]`, unaffected. ⚠ If a single meal ever
+ * carries BOTH a recipe-kind and a meal-kind item, that one `servings` (the
+ * recipe's — `primary`) is applied to both on the backend, so the meal item's
+ * own servings is not independently representable. Same one-column-per-kind
+ * schema limit as above; today's prompts do not compose recipe + meal together.
+ *
+ * ⚠ **An item whose `kind` is missing or unrecognized is treated as a FOOD.**
+ * This is deliberate and is the pre-`kind` behaviour: before this field existed
+ * every item was sent as a `foodId`, so it either resolved or 400'd
+ * `unresolvable_items` — never silently vanished. Bucketing food as
+ * "not recipe and not meal" (rather than `=== "food"`) keeps that guarantee
+ * under DEPLOY SKEW: this client talking to a backend that has not yet shipped
+ * the `kind`-stamping generate/swap handlers returns items with no `kind`, and
+ * routing those to nothing would degrade the meal to zero items / zero macros
+ * and store a silent empty meal — the exact corruption the accept handler
+ * exists to reject. Default-to-food restores "store correctly or 400".
  */
 export function planAcceptMealInputFromGenerated(
   meal: PlanGeneratedMeal | PlanSwapMeal,
 ): PlanAcceptMealInput {
+  // "not recipe and not meal" — NOT `=== "food"` — so a missing/unknown kind
+  // defaults to food. See the docstring's deploy-skew note; this is the guard.
+  const foodItems = meal.items.filter(
+    (item) => item.kind !== "recipe" && item.kind !== "meal",
+  );
+  const recipeItem = meal.items.find((item) => item.kind === "recipe");
+  const mealItem = meal.items.find((item) => item.kind === "meal");
+  const primary = recipeItem ?? mealItem;
+
   return {
     label: meal.name,
     logSlot: meal.logSlot,
-    items: meal.items.map((item) => ({
-      foodId: item.candidateId,
-      servings: item.servings,
-    })),
+    ...(recipeItem ? { recipeId: recipeItem.candidateId } : {}),
+    ...(mealItem ? { mealId: mealItem.candidateId } : {}),
+    ...(primary ? { servings: primary.servings } : {}),
+    ...(foodItems.length > 0
+      ? {
+          items: foodItems.map((item) => ({
+            foodId: item.candidateId,
+            servings: item.servings,
+          })),
+        }
+      : {}),
     aiReason: meal.reason,
   };
 }

@@ -38,6 +38,7 @@ import {
   BottomSheet,
   Btn,
   Card,
+  IconBtn,
   Pill,
   Segmented,
   Stepper,
@@ -48,6 +49,8 @@ import {
   IconApple,
   IconCheck,
   IconEdit,
+  IconMinus,
+  IconPlus,
   IconSparkles,
   IconSwap,
   IconTrash,
@@ -56,7 +59,10 @@ import {
   EFFORT_LEVEL_LABELS,
   EFFORT_LEVELS,
   LABEL_CHECK_COPY,
+  MAX_PLAN_ITEM_SERVINGS,
   MAX_STEER_LENGTH,
+  MIN_PLAN_ITEM_SERVINGS,
+  PLAN_ITEM_SERVINGS_STEP,
   type EffortLevel,
   type PlanDraft,
   type PlanGenerateEmptyReason,
@@ -101,6 +107,12 @@ export type MealprintPlanSheetProps = {
   readonly swappingId: string | null;
   readonly onSwapMeal: (localId: string) => void;
   readonly onRemoveMeal: (localId: string) => void;
+  /** The per-item serving stepper's write path (AC 4.4/gap 2). */
+  readonly onItemServingsChange: (
+    localId: string,
+    candidateId: string,
+    servings: number,
+  ) => void;
   readonly draftTotals: PlanTarget;
   readonly accepting: boolean;
   readonly acceptBlocked: boolean;
@@ -608,6 +620,73 @@ function DayTotalsCard({
   );
 }
 
+function ItemServingsStepper({
+  localId,
+  candidateId,
+  servings,
+  disabled,
+  onChange,
+}: {
+  localId: string;
+  candidateId: string;
+  servings: number;
+  disabled: boolean;
+  onChange: (servings: number) => void;
+}) {
+  const testID = `mealprint-plan-item-servings-${localId}-${candidateId}`;
+  return (
+    <View
+      flexDirection="row"
+      alignItems="center"
+      gap={3}
+      opacity={disabled ? 0.45 : 1}
+    >
+      <IconBtn
+        icon={<IconMinus size={9} strokeWidth={2.5} />}
+        tone="ghost"
+        size={20}
+        disabled={disabled}
+        onPress={() =>
+          onChange(
+            Math.max(
+              MIN_PLAN_ITEM_SERVINGS,
+              servings - PLAN_ITEM_SERVINGS_STEP,
+            ),
+          )
+        }
+        accessibilityLabel="Decrease servings"
+        testID={`${testID}-dec`}
+      />
+      <Text
+        fontFamily="$mono"
+        fontSize={11}
+        color="$text2"
+        minWidth={26}
+        textAlign="center"
+        testID={testID}
+      >
+        {formatServings(servings)}
+      </Text>
+      <IconBtn
+        icon={<IconPlus size={9} strokeWidth={2.5} />}
+        tone="ghost"
+        size={20}
+        disabled={disabled}
+        onPress={() =>
+          onChange(
+            Math.min(
+              MAX_PLAN_ITEM_SERVINGS,
+              servings + PLAN_ITEM_SERVINGS_STEP,
+            ),
+          )
+        }
+        accessibilityLabel="Increase servings"
+        testID={`${testID}-inc`}
+      />
+    </View>
+  );
+}
+
 function PlanMealCard({
   localId,
   meal,
@@ -615,6 +694,7 @@ function PlanMealCard({
   swapping,
   onSwap,
   onRemove,
+  onItemServingsChange,
 }: {
   localId: string;
   meal: PlanDraft["meals"][number]["meal"];
@@ -622,6 +702,7 @@ function PlanMealCard({
   swapping: boolean;
   onSwap: () => void;
   onRemove: () => void;
+  onItemServingsChange: (candidateId: string, servings: number) => void;
 }) {
   return (
     <Card
@@ -710,7 +791,7 @@ function PlanMealCard({
           </View>
         )}
 
-        <View gap={4} paddingTop={10}>
+        <View gap={6} paddingTop={10}>
           {meal.items.map((item, index) => (
             <View
               key={`${item.candidateId}-${index}`}
@@ -725,8 +806,17 @@ function PlanMealCard({
                 backgroundColor="$text4"
               />
               <Text fontSize={12} color="$text3" flex={1} numberOfLines={1}>
-                {item.name} — {formatServings(item.servings)}
+                {item.name}
               </Text>
+              <ItemServingsStepper
+                localId={localId}
+                candidateId={item.candidateId}
+                servings={item.servings}
+                disabled={flagged || swapping}
+                onChange={(servings) =>
+                  onItemServingsChange(item.candidateId, servings)
+                }
+              />
             </View>
           ))}
         </View>
@@ -797,6 +887,7 @@ function DraftStage(props: MealprintPlanSheetProps) {
     swappingId,
     onSwapMeal,
     onRemoveMeal,
+    onItemServingsChange,
     draftTotals,
     acceptErrorMessage,
     acceptRecovery,
@@ -863,6 +954,9 @@ function DraftStage(props: MealprintPlanSheetProps) {
             swapping={swappingId === localId}
             onSwap={() => onSwapMeal(localId)}
             onRemove={() => onRemoveMeal(localId)}
+            onItemServingsChange={(candidateId, servings) =>
+              onItemServingsChange(localId, candidateId, servings)
+            }
           />
         ))
       )}

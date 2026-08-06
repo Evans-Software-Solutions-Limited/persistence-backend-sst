@@ -100,6 +100,7 @@ const TARGET = {
 
 const FOOD_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const RECIPE_A = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+const MEAL_A = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 const PLAN_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 
 function food(id: string, over: Record<string, unknown> = {}) {
@@ -226,6 +227,91 @@ describe("POST /nutrition/plans — the client never sets macros", () => {
     const input = planMocks.create.mock.calls[0]![1];
     expect(input.meals[0].kcal).toBe(750);
     expect(input.meals[0].proteinG).toBe(60);
+  });
+
+  // Mealprint gap 1 (item-kind routing): a plan meal the AI composed from one
+  // of the user's own SAVED MEALS (candidate kind `meal`) must resolve and
+  // accept the same way a recipe-backed meal does, via `mealId` — not by
+  // mis-routing it through `items[].foodId`, which is what produced the
+  // `unresolvable_items` 400 this test guards against regressing to.
+  it("accepts a meal-backed draft meal via mealId, mirroring the recipe path", async () => {
+    candidateMocks.resolveByIds.mockResolvedValue([
+      { ...food(MEAL_A), kind: "meal", kcal: 900, proteinG: 70 },
+    ]);
+
+    const res = await nutritionPlansCreateHandler.handle(
+      post(
+        postBody({
+          meals: [
+            {
+              label: "Leftover Curry",
+              logSlot: "dinner",
+              mealId: MEAL_A,
+              servings: 1,
+            },
+          ],
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(200);
+    expect(candidateMocks.resolveByIds).toHaveBeenCalledWith(
+      "test-user-id",
+      expect.objectContaining({ mealIds: [MEAL_A] }),
+    );
+    const input = planMocks.create.mock.calls[0]![1];
+    expect(input.meals[0].kcal).toBe(900);
+    expect(input.meals[0].proteinG).toBe(70);
+  });
+
+  it("scopes resolution to the authenticated caller — never another user's private rows", async () => {
+    candidateMocks.resolveByIds.mockResolvedValue([food(FOOD_A)]);
+
+    await nutritionPlansCreateHandler.handle(post(postBody()));
+
+    // Every kind resolves through the SAME userId derived from the JWT, not
+    // anything the client could supply — `resolveByIds` (tested separately)
+    // is what scopes recipes/meals by `userId` and foods by
+    // `createdBy = userId OR source = openfoodfacts`; this proves the accept
+    // handler feeds it the authenticated caller's id and no other.
+    expect(candidateMocks.resolveByIds).toHaveBeenCalledWith(
+      "test-user-id",
+      expect.anything(),
+    );
+  });
+
+  it("ignores client-sent macros nested INSIDE an item, not just at the meal level", async () => {
+    const res = await nutritionPlansCreateHandler.handle(
+      post(
+        postBody({
+          meals: [
+            {
+              label: "Meal 1",
+              logSlot: "breakfast",
+              items: [
+                {
+                  foodId: FOOD_A,
+                  servings: 2,
+                  // A lie, and also fields the DRAFT wire carries but the
+                  // accept schema does not — Elysia strips them.
+                  kind: "food",
+                  kcal: 1,
+                  proteinG: 1,
+                  carbsG: 1,
+                  fatG: 1,
+                },
+              ],
+            },
+          ],
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(200);
+    const input = planMocks.create.mock.calls[0]![1];
+    // Resolved food is 170 kcal/serving × 2 = 340, not the lied-about 1.
+    expect(input.meals[0].kcal).toBe(340);
+    expect(input.meals[0].proteinG).toBe(34);
   });
 
   it("snapshots the targets and preferences rather than leaving them to read time", async () => {

@@ -8,15 +8,32 @@ import {
   planDraftMealsAffectedBy,
   planDraftToAcceptInput,
   plannedMealsForSlot,
+  recomputePlanMealTotals,
   removePlanDraftMeal,
   replacePlanDraftMeal,
+  setPlanItemServings,
   sumPlanDraftTotals,
   unresolvableCandidateIds,
   type MealPlan,
   type PlanDraft,
+  type PlanGeneratedItem,
   type PlanGeneratedMeal,
   type PlanGenerateResult,
 } from "../mealprint";
+
+function item(over: Partial<PlanGeneratedItem> = {}): PlanGeneratedItem {
+  return {
+    candidateId: "food-1",
+    kind: "food",
+    servings: 1,
+    name: "Chicken breast",
+    kcal: 200,
+    proteinG: 30,
+    carbsG: 0,
+    fatG: 5,
+    ...over,
+  };
+}
 
 function meal(over: Partial<PlanGeneratedMeal> = {}): PlanGeneratedMeal {
   return {
@@ -24,8 +41,24 @@ function meal(over: Partial<PlanGeneratedMeal> = {}): PlanGeneratedMeal {
     reason: "High protein, fits the rest of your macros.",
     logSlot: "dinner",
     items: [
-      { candidateId: "food-1", servings: 1.5, name: "Chicken breast" },
-      { candidateId: "food-2", servings: 1, name: "Basmati rice" },
+      item({
+        candidateId: "food-1",
+        servings: 1.5,
+        name: "Chicken breast",
+        kcal: 200,
+        proteinG: 30,
+        carbsG: 0,
+        fatG: 5,
+      }),
+      item({
+        candidateId: "food-2",
+        servings: 1,
+        name: "Basmati rice",
+        kcal: 150,
+        proteinG: 3,
+        carbsG: 33,
+        fatG: 1,
+      }),
     ],
     kcal: 600,
     proteinG: 45,
@@ -190,6 +223,100 @@ describe("sumPlanDraftTotals — deterministic recompute (load-bearing)", () => 
   });
 });
 
+describe("recomputePlanMealTotals — deterministic client-side recompute (AC 4.4)", () => {
+  it("sums each item's per-serving macros × servings", () => {
+    const m = meal({
+      items: [
+        item({
+          candidateId: "food-1",
+          servings: 2,
+          kcal: 200,
+          proteinG: 20,
+          carbsG: 10,
+          fatG: 5,
+        }),
+        item({
+          candidateId: "food-2",
+          servings: 1,
+          kcal: 150,
+          proteinG: 5,
+          carbsG: 30,
+          fatG: 1,
+        }),
+      ],
+    });
+    const result = recomputePlanMealTotals(m);
+    // (200*2 + 150*1) = 550, (20*2 + 5*1) = 45, (10*2 + 30*1) = 50, (5*2 + 1*1) = 11
+    expect(result.kcal).toBe(550);
+    expect(result.proteinG).toBe(45);
+    expect(result.carbsG).toBe(50);
+    expect(result.fatG).toBe(11);
+    // Everything else on the meal is untouched.
+    expect(result.name).toBe(m.name);
+    expect(result.items).toBe(m.items);
+  });
+
+  it("rounds to one decimal place, matching the server's own convention", () => {
+    const m = meal({
+      items: [item({ candidateId: "food-1", servings: 1 / 3, kcal: 100 })],
+    });
+    expect(recomputePlanMealTotals(m).kcal).toBe(33.3);
+  });
+});
+
+describe("setPlanItemServings — the serving stepper's core operation (AC 4.4)", () => {
+  it("updates ONE item's servings and re-sums the meal totals", () => {
+    const m = meal({
+      items: [
+        item({
+          candidateId: "food-1",
+          servings: 1,
+          kcal: 200,
+          proteinG: 20,
+          carbsG: 10,
+          fatG: 5,
+        }),
+        item({
+          candidateId: "food-2",
+          servings: 1,
+          kcal: 150,
+          proteinG: 5,
+          carbsG: 30,
+          fatG: 1,
+        }),
+      ],
+    });
+    const result = setPlanItemServings(m, "food-1", 2);
+    const changed = result.items.find((i) => i.candidateId === "food-1")!;
+    expect(changed.servings).toBe(2);
+    // Untouched item stays at its own servings.
+    const other = result.items.find((i) => i.candidateId === "food-2")!;
+    expect(other.servings).toBe(1);
+    // (200*2 + 150*1) = 550
+    expect(result.kcal).toBe(550);
+  });
+
+  it("clamps below the minimum servings", () => {
+    const m = meal({ items: [item({ candidateId: "food-1", kcal: 100 })] });
+    const result = setPlanItemServings(m, "food-1", 0);
+    expect(result.items[0]!.servings).toBe(0.25);
+  });
+
+  it("clamps above the maximum servings", () => {
+    const m = meal({ items: [item({ candidateId: "food-1", kcal: 100 })] });
+    const result = setPlanItemServings(m, "food-1", 99);
+    expect(result.items[0]!.servings).toBe(6);
+  });
+
+  it("is a no-op on servings when the candidateId doesn't match any item", () => {
+    const m = meal();
+    const result = setPlanItemServings(m, "nonexistent", 3);
+    expect(result.items.map((i) => i.servings)).toEqual(
+      m.items.map((i) => i.servings),
+    );
+  });
+});
+
 describe("replacePlanDraftMeal", () => {
   it("swaps in the new meal at the same localId, leaving others untouched", () => {
     const draft: PlanDraft = {
@@ -275,6 +402,88 @@ describe("planAcceptMealInputFromGenerated — accept sends REFERENCES, never ma
   });
 });
 
+describe("planAcceptMealInputFromGenerated — routes by kind (mealprint item-kind gap)", () => {
+  it("routes a recipe-kind item to recipeId + servings, not items[]", () => {
+    const input = planAcceptMealInputFromGenerated(
+      meal({
+        items: [
+          item({ candidateId: "recipe-1", kind: "recipe", servings: 1.5 }),
+        ],
+      }),
+    );
+    expect(input).toEqual({
+      label: "Chicken & rice bowl",
+      logSlot: "dinner",
+      recipeId: "recipe-1",
+      servings: 1.5,
+      aiReason: "High protein, fits the rest of your macros.",
+    });
+    expect(input).not.toHaveProperty("items");
+    expect(input).not.toHaveProperty("mealId");
+  });
+
+  it("routes a meal-kind item to mealId + servings, not items[]", () => {
+    const input = planAcceptMealInputFromGenerated(
+      meal({
+        items: [item({ candidateId: "meal-1", kind: "meal", servings: 1 })],
+      }),
+    );
+    expect(input).toEqual({
+      label: "Chicken & rice bowl",
+      logSlot: "dinner",
+      mealId: "meal-1",
+      servings: 1,
+      aiReason: "High protein, fits the rest of your macros.",
+    });
+    expect(input).not.toHaveProperty("items");
+    expect(input).not.toHaveProperty("recipeId");
+  });
+
+  it("keeps a recipe PLUS extra food items — both recipeId and items[] populated", () => {
+    const input = planAcceptMealInputFromGenerated(
+      meal({
+        items: [
+          item({ candidateId: "recipe-1", kind: "recipe", servings: 1 }),
+          item({ candidateId: "food-9", kind: "food", servings: 2 }),
+        ],
+      }),
+    );
+    expect(input.recipeId).toBe("recipe-1");
+    expect(input.servings).toBe(1);
+    expect(input.items).toEqual([{ foodId: "food-9", servings: 2 }]);
+  });
+
+  it("keeps only the FIRST recipe-kind item when a meal somehow carries two — a pre-existing accept-schema limit, not silently corrupting the rest", () => {
+    const input = planAcceptMealInputFromGenerated(
+      meal({
+        items: [
+          item({ candidateId: "recipe-1", kind: "recipe", servings: 1 }),
+          item({ candidateId: "recipe-2", kind: "recipe", servings: 1 }),
+        ],
+      }),
+    );
+    expect(input.recipeId).toBe("recipe-1");
+  });
+
+  it("defaults an item with a MISSING kind to food — deploy skew must not store a silent empty meal", () => {
+    // A backend that has not yet shipped the kind-stamping handlers returns
+    // items with no `kind`. Routing those to nothing would degrade the meal to
+    // zero items / zero macros and store a silent 0-kcal meal. The pre-kind
+    // behaviour sent every item as a foodId; this must still do that.
+    const legacyItem = {
+      candidateId: "food-legacy",
+      servings: 2,
+      name: "Grilled chicken",
+    } as unknown as PlanGeneratedItem; // no `kind` on the wire
+    const input = planAcceptMealInputFromGenerated(
+      meal({ items: [legacyItem] }),
+    );
+    expect(input.items).toEqual([{ foodId: "food-legacy", servings: 2 }]);
+    expect(input).not.toHaveProperty("recipeId");
+    expect(input).not.toHaveProperty("mealId");
+  });
+});
+
 describe("planDraftToAcceptInput", () => {
   it("maps every draft meal through planAcceptMealInputFromGenerated, in order", () => {
     const draft: PlanDraft = {
@@ -307,13 +516,13 @@ describe("unresolvableCandidateIds / planDraftMealsAffectedBy", () => {
         {
           localId: "a",
           meal: meal({
-            items: [{ candidateId: "food-1", servings: 1, name: "x" }],
+            items: [item({ candidateId: "food-1", name: "x" })],
           }),
         },
         {
           localId: "b",
           meal: meal({
-            items: [{ candidateId: "food-9", servings: 1, name: "y" }],
+            items: [item({ candidateId: "food-9", name: "y" })],
           }),
         },
       ],

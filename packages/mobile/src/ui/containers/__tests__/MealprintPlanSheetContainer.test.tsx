@@ -157,7 +157,18 @@ describe("MealprintPlanSheetContainer", () => {
             name: "Chicken & rice bowl",
             reason: "protein",
             logSlot: "dinner",
-            items: [{ candidateId: "food-1", servings: 1, name: "Chicken" }],
+            items: [
+              {
+                candidateId: "food-1",
+                kind: "food",
+                servings: 1,
+                name: "Chicken",
+                kcal: 600,
+                proteinG: 45,
+                carbsG: 60,
+                fatG: 15,
+              },
+            ],
             kcal: 600,
             proteinG: 45,
             carbsG: 60,
@@ -270,7 +281,18 @@ describe("MealprintPlanSheetContainer", () => {
             name: "Chicken & rice bowl",
             reason: "protein",
             logSlot: "dinner",
-            items: [{ candidateId: "food-1", servings: 1, name: "Chicken" }],
+            items: [
+              {
+                candidateId: "food-1",
+                kind: "food",
+                servings: 1,
+                name: "Chicken",
+                kcal: 600,
+                proteinG: 45,
+                carbsG: 60,
+                fatG: 15,
+              },
+            ],
             kcal: 600,
             proteinG: 45,
             carbsG: 60,
@@ -316,7 +338,18 @@ describe("MealprintPlanSheetContainer", () => {
             name: "Chicken & rice bowl",
             reason: "protein",
             logSlot: "dinner",
-            items: [{ candidateId: "food-1", servings: 1, name: "Chicken" }],
+            items: [
+              {
+                candidateId: "food-1",
+                kind: "food",
+                servings: 1,
+                name: "Chicken",
+                kcal: 600,
+                proteinG: 45,
+                carbsG: 60,
+                fatG: 15,
+              },
+            ],
             kcal: 600,
             proteinG: 45,
             carbsG: 60,
@@ -408,6 +441,58 @@ describe("MealprintPlanSheetContainer", () => {
     expect(probe().draftTotals.kcal).toBe(600);
   });
 
+  it("recomputes day totals when an item's servings change (serving stepper, AC 4.4)", async () => {
+    const { probe } = await mount((seedApi) => {
+      seedApi.planGenerateResult = {
+        meals: [
+          {
+            name: "Chicken & rice bowl",
+            reason: "protein",
+            logSlot: "dinner",
+            items: [
+              {
+                candidateId: "food-1",
+                kind: "food",
+                servings: 1,
+                name: "Chicken",
+                kcal: 600,
+                proteinG: 45,
+                carbsG: 60,
+                fatG: 15,
+              },
+            ],
+            kcal: 600,
+            proteinG: 45,
+            carbsG: 60,
+            fatG: 15,
+            containsUnverified: false,
+            flaggedUnsafe: false,
+          },
+        ],
+        emptyReason: null,
+        target: { kcal: 2200, proteinG: 160, carbsG: 220, fatG: 70 },
+        totals: { kcal: 600, proteinG: 45, carbsG: 60, fatG: 15 },
+        withinTolerance: false,
+        labelCheckRequired: true,
+      };
+    });
+    open();
+    await waitFor(() => expect(probe().visible).toBe(true));
+    await act(async () => {
+      probe().onGenerate();
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(probe().stage).toBe("draft"));
+
+    const localId = probe().draft!.meals[0]!.localId;
+    act(() => probe().onItemServingsChange(localId, "food-1", 2));
+
+    expect(probe().draft!.meals[0]!.meal.items[0]!.servings).toBe(2);
+    // 600 kcal/serving × 2 servings.
+    expect(probe().draft!.meals[0]!.meal.kcal).toBe(1200);
+    expect(probe().draftTotals.kcal).toBe(1200);
+  });
+
   it("swaps a meal via the swap endpoint and replaces it in the draft", async () => {
     const { api, probe } = await mount((seedApi) => {
       seedApi.planGenerateResult = {
@@ -436,7 +521,18 @@ describe("MealprintPlanSheetContainer", () => {
           name: "Salmon & greens",
           reason: "omega-3",
           logSlot: "dinner",
-          items: [{ candidateId: "food-2", servings: 1, name: "Salmon" }],
+          items: [
+            {
+              candidateId: "food-2",
+              kind: "food",
+              servings: 1,
+              name: "Salmon",
+              kcal: 500,
+              proteinG: 40,
+              carbsG: 20,
+              fatG: 20,
+            },
+          ],
           kcal: 500,
           proteinG: 40,
           carbsG: 20,
@@ -655,7 +751,18 @@ describe("MealprintPlanSheetContainer", () => {
               name: "Chicken & rice bowl",
               reason: "protein",
               logSlot: "dinner",
-              items: [{ candidateId: "food-1", servings: 1, name: "Chicken" }],
+              items: [
+                {
+                  candidateId: "food-1",
+                  kind: "food",
+                  servings: 1,
+                  name: "Chicken",
+                  kcal: 600,
+                  proteinG: 45,
+                  carbsG: 60,
+                  fatG: 15,
+                },
+              ],
               kcal: 600,
               proteinG: 45,
               carbsG: 60,

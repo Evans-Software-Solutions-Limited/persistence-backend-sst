@@ -78,6 +78,7 @@ export function MealprintPlanSheetContainer() {
   const flowDraftReady = usePlanFlow((s) => s.draftReady);
   const flowEmpty = usePlanFlow((s) => s.empty);
   const flowRemoveMeal = usePlanFlow((s) => s.removeMeal);
+  const flowUpdateItemServings = usePlanFlow((s) => s.updateItemServings);
   const flowBeginSwap = usePlanFlow((s) => s.beginSwap);
   const flowSwapApplied = usePlanFlow((s) => s.swapApplied);
   const flowSwapAbandoned = usePlanFlow((s) => s.swapAbandoned);
@@ -198,6 +199,12 @@ export function MealprintPlanSheetContainer() {
   const onRemoveMeal = useCallback(
     (localId: string) => flowRemoveMeal(localId),
     [flowRemoveMeal],
+  );
+
+  const onItemServingsChange = useCallback(
+    (localId: string, candidateId: string, servings: number) =>
+      flowUpdateItemServings(localId, candidateId, servings),
+    [flowUpdateItemServings],
   );
 
   const { accept: runAccept, reset: resetAcceptCall } = accept;
@@ -341,6 +348,7 @@ export function MealprintPlanSheetContainer() {
       swappingId={swappingId}
       onSwapMeal={onSwapMeal}
       onRemoveMeal={onRemoveMeal}
+      onItemServingsChange={onItemServingsChange}
       draftTotals={draftTotals}
       accepting={accept.accepting}
       acceptBlocked={

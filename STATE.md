@@ -11,6 +11,49 @@ say so and fix this file.
 
 ## ▶ START HERE — next session (rewritten 2026-08-04, post-Mealprint-merge)
 
+### 🟢 2026-08-05 (late) — FOUR PRs merged; subscription + Mealprint now code-nearly-complete
+
+**Merged to `main` this session (in order):**
+- **#361 `ff832899`** — spec-29 Phase 2 IAP **coach ladder** (Premium/Premium+/Start Up
+  Coach/Start Up Coach +/Coach/Coach Pro; migration `20260805120000_coach_ladder_restructure`).
+- **#363 `b9740b4a`** — spec-26 **Mealprint Phase 2 mobile** (plan flow + Fuel) + replace-meal route.
+- **#362 `3ce04ca2`** — Codex **GTM D9 subscription rails**: adds the shared
+  `packages/subscription-catalog` (single source of truth, consumed by mobile + web), the
+  paywall revamp, web `Pricing` rewrite + a **dev-only** `OrganisationAdmin`, and
+  `AIFailsafePresenter`. Prices now come from **StoreKit/RC on mobile, live API on web** (no
+  baked-in prices). Reconciled cleanly onto #361 (touched no backend entitlement files).
+- **#364 (this branch, merging LAST)** — Mealprint **gap-1 + gap-2** (`kind` + per-serving
+  macros on the draft item → recipe/meal accept + per-item serving stepper). IB-clean.
+
+**⚠⚠ #362 ACTIVATES the tiers — the one guard to remember.** #362 carries
+`20260805180000_activate_iap_coach_ladder.sql` (`SET is_active = true` on all six + Start Up
+Coach + annual → **£289.99**, the nearest permitted ASC GBP price point). **Merging → STAGING
+auto-deploys → tiers active on staging (good for testing).** 🔴 **Do NOT cut a prod release /
+App Store build until the ASC + RevenueCat products + `default` offering are configured** —
+active tiers with no purchasable products re-triggers the **2.1(b)** rejection and exposes the
+un-verified, un-seeded Mealprint. Activation is now coupled to ASC/RC readiness; the prod
+release IS the gate.
+
+**⚠ WORKOUT LIMIT — Brad decided free = 3 TOTAL, not 3/month; the code does the WRONG thing.**
+Enforcement (`assertEntitlement("create_workout")`) reads `subscription_limits.currentCount`
+filtered to the current month → today Free = "3 new workouts **per month**", and it resets.
+Also `workoutRepository.getQuota()` counts TOTAL (for display) — the two disagree. Brad wants:
+(1) enforce a **total cap** (count total workouts, not the monthly counter), and (2) on
+free-and-over-limit, **lock the ability to start/create a workout until the user handles it**
+(delete down to ≤3 or upgrade) — to kill the trial-abuse (make many on trial → keep on free).
+Never auto-delete data. **Queued as a small spec'd slice — NOT yet built.**
+
+**⚠ RESUBMIT ≠ LAUNCH — but note main now carries ACTIVE tiers (via #362).** A build cut from
+current main has `is_active=true`, so it is NO LONGER a clean "inactive tiers, reviewer can't
+reach them" resubmit. To resubmit safely you now EITHER configure ASC/RC products first, OR
+ship a build that pre-dates #362 / temporarily deactivates. The two rejection items are still
+Brad's ops: 2.1(a) **coach demo code**; 2.1(b) **RevenueCat `default` offering / ASC products**.
+
+**Remaining to LAUNCH:** the workout-limit total-cap+lock fix · spec-29 Phase 0/1 (cost eval +
+pooled AI budget) · Mealprint Phase 3 + device pass + OFF re-seed · Loadout device pass +
+Phase 4 import (eval-gated) · ASC/RC products + coach demo code · `user_subscriptions` reset
+(clean slate; authorised) · legal sign-off. Full task list given to Brad in chat 2026-08-05.
+
 ### 🔴 2026-08-05 — APP STORE: a THIRD rejection is OPEN, and it is NOT the two you think
 
 **Build 1.0 (40) was rejected AGAIN on 2026-08-04** (submission

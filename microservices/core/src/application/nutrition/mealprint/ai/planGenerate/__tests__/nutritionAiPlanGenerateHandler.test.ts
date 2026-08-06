@@ -248,6 +248,53 @@ describe("POST /nutrition/ai/plan-generate", () => {
     expect(parsed.data.totals.proteinG).toBe(135);
   });
 
+  // Mealprint gaps 1+2: the draft item now carries the candidate's `kind` and
+  // its per-SERVING macros, so (1) mobile can route a recipe/meal-kind item
+  // to the right accept field instead of always `items[].foodId`, and (2) it
+  // can recompute a meal's total deterministically when the user edits an
+  // item's servings, without a round trip.
+  it("carries each item's candidate kind and per-serving macros in the draft", async () => {
+    candidateMocks.listCuratedCandidates.mockResolvedValue([candidate("c1")]);
+    candidateMocks.listOwnRecipeCandidates.mockResolvedValue([
+      candidate("r1", { kind: "recipe", kcal: 500, proteinG: 40 }),
+    ]);
+    candidateMocks.listOwnMealCandidates.mockResolvedValue([
+      candidate("m1", { kind: "meal", kcal: 900, proteinG: 70 }),
+    ]);
+    composeDayPlanMock.mockResolvedValue({
+      meals: [
+        {
+          name: "Mixed",
+          reason: "r",
+          logSlot: "lunch",
+          items: [
+            { candidateId: "r1", servings: 2 },
+            { candidateId: "m1", servings: 1 },
+          ],
+        },
+      ],
+      usage: { modelId: "m", latencyMs: 1, inputTokens: 1, outputTokens: 1 },
+    });
+
+    const res = await app.handle(post());
+    const parsed = await body(res);
+    const items = parsed.data.meals[0].items;
+
+    const recipeItem = items.find((i: any) => i.candidateId === "r1");
+    expect(recipeItem.kind).toBe("recipe");
+    // Per-serving figure, NOT pre-multiplied by servings=2.
+    expect(recipeItem.kcal).toBe(500);
+    expect(recipeItem.proteinG).toBe(40);
+
+    const mealItem = items.find((i: any) => i.candidateId === "m1");
+    expect(mealItem.kind).toBe("meal");
+    expect(mealItem.kcal).toBe(900);
+
+    // The meal total is still the recomputed sum, unaffected by the new
+    // per-item fields: 500*2 + 900*1 = 1900.
+    expect(parsed.data.meals[0].kcal).toBe(1900);
+  });
+
   it("flags withinTolerance false when the day total misses the target band", async () => {
     // 1800 kcal against a 2000 target is 10% under — outside the ±7% kcal band.
     const res = await app.handle(post());
