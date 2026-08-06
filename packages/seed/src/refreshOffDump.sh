@@ -9,13 +9,22 @@
 # Requires: duckdb CLI (brew install duckdb) and ~10 GB free disk (the dump is ~7.6 GB).
 #
 # IMPORTANT — current HF dump schema:
-#   nutriments   = STRUCT(name VARCHAR, value FLOAT, "100g" FLOAT, ...)[]   (a LIST)
-#   product_name = STRUCT(lang VARCHAR, "text" VARCHAR)[]                    (multilingual LIST)
-# The query below reshapes both into the { code, product_name, brands,
-# countries_tags, nutriments:{energy-kcal_100g,...} } shape the offMapper expects,
+#   nutriments      = STRUCT(name VARCHAR, value FLOAT, "100g" FLOAT, ...)[]  (a LIST)
+#   product_name    = STRUCT(lang VARCHAR, "text" VARCHAR)[]                  (multilingual LIST)
+#   ingredients_text= STRUCT(lang VARCHAR, "text" VARCHAR)[]                  (multilingual LIST)
+#   allergens_tags  = VARCHAR[]   categories_tags = VARCHAR[]   countries_tags = VARCHAR[]
+# The query below reshapes the multilingual LISTs into the
+# { code, product_name, brands, countries_tags, allergens_tags, categories_tags,
+# ingredients_text, nutriments:{energy-kcal_100g,...} } shape the offMapper expects,
 # and dedupes on barcode (the prod unique index is partial on barcode) keeping the
 # row with the most complete macros — a single upsert batch can't touch the same
 # conflict target twice.
+#
+# ⚠ Mealprint (spec-26): allergens_tags / categories_tags / ingredients_text are
+# REQUIRED. Without them offMapper lands NULL allergen_tags, and avoidanceFilter
+# treats NULL as unsafe → every allergen-filtered candidate pool comes back empty
+# ("Mealprint can't find anything I can eat"). ingredients_text is read (never
+# stored) only to tell "analysed, no allergens" ([]) from "never analysed" (NULL).
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"      # packages/seed/src
@@ -41,6 +50,17 @@ COPY (
     ) AS product_name,
     brands,
     countries_tags,
+    -- Mealprint (spec-26 § 2.1): plain VARCHAR[] lists, passed through as-is.
+    allergens_tags,
+    categories_tags,
+    -- ingredients_text is a multilingual STRUCT(lang,text)[] like product_name;
+    -- collapse to one string (row lang → en → any non-empty). offMapper reads it
+    -- ONLY to disambiguate empty vs never-analysed allergens (it is not stored).
+    coalesce(
+      list_extract(list_transform(list_filter(ingredients_text, p -> p.lang = lang AND trim(coalesce(p['text'],'')) <> ''), p -> p['text']), 1),
+      list_extract(list_transform(list_filter(ingredients_text, p -> p.lang = 'en'  AND trim(coalesce(p['text'],'')) <> ''), p -> p['text']), 1),
+      list_extract(list_transform(list_filter(ingredients_text, p -> trim(coalesce(p['text'],'')) <> ''),                    p -> p['text']), 1)
+    ) AS ingredients_text,
     -- Real pack serving (grams) → offMapper reads top-level `serving_quantity`
     -- (positive → value, else NULL). Without this the seed lands serving_quantity
     -- NULL and the mobile Serving tab falls back to servingSize=100g. TRY_CAST
