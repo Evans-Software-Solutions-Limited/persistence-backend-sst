@@ -12,6 +12,7 @@ import type { RecordSessionInput } from "../../repositories/sessionRepository";
 import {
   assertEntitlement,
   EntitlementError,
+  evaluateWorkoutTotalCapLock,
 } from "../../entitlement/assertEntitlement";
 import { safeEvaluateStreaks, resolveEventTs } from "../../streaks/evaluate";
 import { safeRecomputeVolume } from "../../progress/recompute";
@@ -54,57 +55,103 @@ export const sessionsRecordHandler = new Elysia()
       const { sub: userId } = getUser(ctx);
       const payload = ctx.body as RecordSessionInput;
 
-      // Server-side entitlement gate (M10.5). Enforced UNLESS the
-      // recorded session references a workout template the calling
-      // user OWNS — i.e., the user already paid the entitlement-count
-      // for that workout at template-create time via POST /workouts.
+      // Replay bypass (Inspector Brad local sweep, LOW finding). A retry of
+      // an AMBIGUOUS prior success — server committed, the ack was lost,
+      // the sync queue re-POSTs the identical payload — must never be
+      // gated. The entitlement cost (if any) was already resolved at the
+      // ORIGINAL commit; re-running the over-limit lock / create_workout
+      // gate on the retry can 402 a session that is already safely saved,
+      // marking it `blocked_entitlement` in the sync queue even though
+      // there is no real over-limit action being taken (no new workout,
+      // no new session — `recordSession`'s own transactional idempotency
+      // check would just return the existing row).
       //
-      // Why workoutId alone is NOT a safe discriminator (Inspector
-      // Brad PR #72 high-severity find — sweep #2):
-      //   - `recordSession` inserts only into `workout_sessions` /
-      //     `session_exercises` / `exercise_sets`. It does NOT insert
-      //     into `workouts`, so the AFTER-INSERT trigger on `workouts`
-      //     (subscription_limits 'workouts' counter, see migration
-      //     004 line 450) does NOT fire from this path.
-      //   - The FK on `workout_sessions.workout_id` is uncorrelated
-      //     with `user_id`. A free-tier user at-cap could pass ANY
-      //     valid UUID (a public/shared workout, or even someone
-      //     else's private workout if they discovered the UUID) and
-      //     bypass the gate. The session insert would succeed.
-      //   - Therefore: only skip the gate when the workout is OWNED
-      //     by the caller (`workout.createdBy === userId`). A null
-      //     workoutId (ad-hoc session) or a non-owned workoutId
-      //     (someone else's template, a public workout) runs the gate.
-      //
-      // WorkoutRepository.getById applies visibility checks (private /
-      // friends / public) so a malicious user can't discover workout
-      // existence through this path — `null` covers both "doesn't
-      // exist" and "exists but not visible to you". We additionally
-      // require `createdBy === userId` for the entitlement skip;
-      // visibility-only access (e.g., a PT-shared workout) still runs
-      // the gate.
-      //
-      // Position: BEFORE the recordSession transaction (so a denied
-      // request never opens a Postgres transaction at all).
-      //
-      // Spec: specs/11-payments-subscriptions/requirements.md AC 9.4
-      let canSkipGate = false;
-      if (payload.workoutId !== undefined && payload.workoutId !== null) {
-        const referencedWorkout = await ctx.WorkoutRepository.getById(
-          payload.workoutId,
+      // `hasExistingSessionForClient` is a cheap, best-effort PRE-check —
+      // `recordSession`'s own step-0 short-circuit (inside its
+      // transaction) remains the authoritative idempotency source of
+      // truth and runs regardless. A false negative here (e.g. a genuine
+      // first-time record, or a race where the original insert hasn't
+      // committed yet) just falls through to the normal gates below,
+      // exactly as before this bypass existed.
+      const clientSessionId = payload.clientSessionId ?? null;
+      const isReplay =
+        clientSessionId !== null &&
+        (await ctx.SessionRepository.hasExistingSessionForClient(
           userId,
-        );
-        if (
-          referencedWorkout !== null &&
-          referencedWorkout.createdBy === userId
-        ) {
-          canSkipGate = true;
+          clientSessionId,
+        ));
+
+      if (!isReplay) {
+        // Over-limit RECORD lock (anti-trial-abuse backstop). Runs
+        // UNCONDITIONALLY, BEFORE `canSkipGate` below can short-circuit —
+        // that's the whole point. `canSkipGate` lets a user record against
+        // a workout they already own without re-running the create_workout
+        // gate (they already "paid" for it at create time), but that is
+        // exactly the path a free user sitting on a stash of workouts from
+        // a lapsed trial would otherwise use to keep logging forever. This
+        // check applies to EVERY record — owned-template or not — and only
+        // fires when the caller's effective tier is free (or reverted to
+        // free) AND their TOTAL workout count is strictly over the limit.
+        // A user at exactly the limit is unaffected.
+        //
+        // Spec: (this PR) — free tier = 3 workouts TOTAL, over-limit lock.
+        const lockVerdict = await evaluateWorkoutTotalCapLock(userId);
+        if (!lockVerdict.allowed) {
+          throw new EntitlementError(lockVerdict, "create_workout");
         }
-      }
-      if (!canSkipGate) {
-        const verdict = await assertEntitlement(userId, "create_workout");
-        if (!verdict.allowed) {
-          throw new EntitlementError(verdict, "create_workout");
+
+        // Server-side entitlement gate (M10.5). Enforced UNLESS the
+        // recorded session references a workout template the calling
+        // user OWNS — i.e., the user already paid the entitlement-count
+        // for that workout at template-create time via POST /workouts.
+        //
+        // Why workoutId alone is NOT a safe discriminator (Inspector
+        // Brad PR #72 high-severity find — sweep #2):
+        //   - `recordSession` inserts only into `workout_sessions` /
+        //     `session_exercises` / `exercise_sets`. It does NOT insert
+        //     into `workouts`, so the AFTER-INSERT trigger on `workouts`
+        //     (subscription_limits 'workouts' counter, see migration
+        //     004 line 450) does NOT fire from this path.
+        //   - The FK on `workout_sessions.workout_id` is uncorrelated
+        //     with `user_id`. A free-tier user at-cap could pass ANY
+        //     valid UUID (a public/shared workout, or even someone
+        //     else's private workout if they discovered the UUID) and
+        //     bypass the gate. The session insert would succeed.
+        //   - Therefore: only skip the gate when the workout is OWNED
+        //     by the caller (`workout.createdBy === userId`). A null
+        //     workoutId (ad-hoc session) or a non-owned workoutId
+        //     (someone else's template, a public workout) runs the gate.
+        //
+        // WorkoutRepository.getById applies visibility checks (private /
+        // friends / public) so a malicious user can't discover workout
+        // existence through this path — `null` covers both "doesn't
+        // exist" and "exists but not visible to you". We additionally
+        // require `createdBy === userId` for the entitlement skip;
+        // visibility-only access (e.g., a PT-shared workout) still runs
+        // the gate.
+        //
+        // Position: BEFORE the recordSession transaction (so a denied
+        // request never opens a Postgres transaction at all).
+        //
+        // Spec: specs/11-payments-subscriptions/requirements.md AC 9.4
+        let canSkipGate = false;
+        if (payload.workoutId !== undefined && payload.workoutId !== null) {
+          const referencedWorkout = await ctx.WorkoutRepository.getById(
+            payload.workoutId,
+            userId,
+          );
+          if (
+            referencedWorkout !== null &&
+            referencedWorkout.createdBy === userId
+          ) {
+            canSkipGate = true;
+          }
+        }
+        if (!canSkipGate) {
+          const verdict = await assertEntitlement(userId, "create_workout");
+          if (!verdict.allowed) {
+            throw new EntitlementError(verdict, "create_workout");
+          }
         }
       }
 

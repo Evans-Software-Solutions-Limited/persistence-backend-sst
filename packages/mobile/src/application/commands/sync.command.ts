@@ -1130,5 +1130,6 @@ function parseEntitlementBlockedVerdict(
     upgradeTo: payload.upgradeTo as EntitlementVerdict["upgradeTo"],
     upgradePriceMonthly: payload.upgradePriceMonthly,
     blockedAt: new Date().toISOString(),
+    ...(payload.reason !== undefined ? { reason: payload.reason } : {}),
   };
 }

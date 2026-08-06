@@ -156,6 +156,36 @@ describe("SyncBlockedBannerMount", () => {
     expect(screen.queryByText(/Upgrade to Individual Trainer/)).toBeNull();
   });
 
+  it("routes Review to the workout-limit-locked screen when a blocked entry carries reason='workout_limit_exceeded' (server backstop for the over-limit RECORD lock)", () => {
+    const { adapters, storage } = makeAdapters();
+    enqueueAndBlock(storage, {
+      feature: "create_workout",
+      currentTier: "free",
+      upgradeTo: "premium",
+      upgradePriceMonthly: 12.99,
+      blockedAt: "2026-05-24T10:00:00.000Z",
+      reason: "workout_limit_exceeded",
+    });
+    renderMount(adapters);
+    fireEvent.press(screen.getByTestId("sync-blocked-banner-review"));
+    expect(mockPush).toHaveBeenCalledWith("/(app)/workout-limit-locked");
+  });
+
+  it("still routes an ORDINARY limit deny to the generic /(app)/sync-blocked list, not the workout-limit screen", () => {
+    const { adapters, storage } = makeAdapters();
+    enqueueAndBlock(storage, {
+      feature: "create_workout",
+      currentTier: "free",
+      upgradeTo: "premium",
+      upgradePriceMonthly: 12.99,
+      blockedAt: "2026-05-24T10:00:00.000Z",
+      reason: "limit",
+    });
+    renderMount(adapters);
+    fireEvent.press(screen.getByTestId("sync-blocked-banner-review"));
+    expect(mockPush).toHaveBeenCalledWith("/(app)/sync-blocked");
+  });
+
   it("single-track multi-tier (all trainer) still picks the mode trainer tier", () => {
     const { adapters, storage } = makeAdapters();
     // Two entries needing individual_trainer, one needing coach.

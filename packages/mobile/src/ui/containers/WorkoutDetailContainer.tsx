@@ -9,6 +9,7 @@ import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useAuth } from "@/ui/hooks/useAuth";
 import { useLoadoutGate } from "@/ui/hooks/useLoadoutGate";
 import { useSavedGyms } from "@/ui/hooks/useSavedGyms";
+import { useWorkoutTotalCapGate } from "@/ui/hooks/useWorkoutTotalCapGate";
 import { useWorkoutVariations } from "@/ui/hooks/useWorkoutVariations";
 import { LoadoutUpsellSheet } from "@/ui/presenters/loadout/LoadoutUpsellSheet";
 import { useProfilePage } from "@/ui/hooks/useProfilePage";
@@ -48,6 +49,9 @@ export function WorkoutDetailContainer() {
   const detail = useWorkout(workoutId);
   const history = useWorkoutHistory(workoutId);
   const loadoutGate = useLoadoutGate();
+  // Free-tier "3 workouts TOTAL, over-limit lock" — client-side gate on the
+  // start-workout entry point. See onStartWorkout below.
+  const totalCapGate = useWorkoutTotalCapGate();
   const openLoadout = useLoadoutFlow((state) => state.open);
   const selectLoadoutGym = useLoadoutFlow((state) => state.selectGym);
   const openLoadoutUpsell = useLoadoutFlow((state) => state.openUpsell);
@@ -133,9 +137,19 @@ export function WorkoutDetailContainer() {
   }, [workoutId]);
 
   // Start CTA opens the active-session modal seeded from this template.
-  const onStartWorkout = useCallback((id: string) => {
-    router.push(`/(app)/session?workoutId=${id}` as never);
-  }, []);
+  // Free-tier over-limit lock: route to the resolution screen instead of
+  // starting a session — checked client-side so the user never even opens
+  // a session that the server's over-limit backstop would deny at Finish.
+  const onStartWorkout = useCallback(
+    (id: string) => {
+      if (totalCapGate.isOverLimit) {
+        totalCapGate.onLocked();
+        return;
+      }
+      router.push(`/(app)/session?workoutId=${id}` as never);
+    },
+    [totalCapGate],
+  );
 
   // Stack-push the exercise detail on top so the workout stays underneath.
   const onExercisePress = useCallback((exerciseId: string) => {

@@ -21,6 +21,7 @@ import { MealprintSuggestSheetContainer } from "../../src/ui/containers/Mealprin
 import { MealprintPlanSheetContainer } from "../../src/ui/containers/MealprintPlanSheetContainer";
 import { ExerciseFiltersProvider } from "../../src/ui/hooks/useExerciseFilters";
 import { useAutoRetryOnUpgrade } from "../../src/ui/hooks/useAutoRetryOnUpgrade";
+import { useAutoRetryOnWorkoutLimitResolved } from "../../src/ui/hooks/useAutoRetryOnWorkoutLimitResolved";
 import { useForegroundSubscriptionRefresh } from "../../src/ui/hooks/useForegroundSubscriptionRefresh";
 import { useHealthBodyPushSync } from "../../src/ui/hooks/useHealthBodyPushSync";
 import { useNotificationBadge } from "../../src/ui/hooks/useNotificationBadge";
@@ -65,6 +66,13 @@ export default function AppLayout() {
   // own `processSyncQueue` call so freshly-unblocked entries land
   // without waiting for the next foreground tick.
   useAutoRetryOnUpgrade();
+  // Free-tier "3 workouts TOTAL, over-limit lock" — the DELETE-to-resolve
+  // sibling of the auto-retry above. `useAutoRetryOnUpgrade` only fires on
+  // a tier transition; a user who resolves by deleting workouts never
+  // changes tier, so a `workout_limit_exceeded` blocked entry needs its
+  // own trigger keyed on the over-limit verdict itself (Inspector Brad
+  // local sweep, HIGH finding).
+  useAutoRetryOnWorkoutLimitResolved();
   // Re-validate the shared subscription query on every foreground so the
   // permanently-mounted drawer / eligibility / auto-retry consumers self-heal
   // a failed cold-start fetch without needing a full app restart.
@@ -227,6 +235,17 @@ export default function AppLayout() {
         <Stack.Screen
           name="sync-failed"
           options={{ title: "Sync issues", headerShown: true }}
+        />
+        {/*
+          Free-tier "3 workouts TOTAL, over-limit lock" resolution screen.
+          Same push-over-tabs + native-header pattern as sync-blocked /
+          sync-failed above — reached from a start-workout entry point's
+          client-side gate, or from the sync-blocked banner for a
+          'workout_limit_exceeded' server deny.
+        */}
+        <Stack.Screen
+          name="workout-limit-locked"
+          options={{ title: "Workout limit", headerShown: true }}
         />
         {/*
           Generic placeholder route. Renders no <HeaderBar> of its own, so it

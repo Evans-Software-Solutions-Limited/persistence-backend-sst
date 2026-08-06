@@ -1329,6 +1329,51 @@ describe("processSyncQueue", () => {
     expect(storage.getSyncStats().blocked).toBe(1);
   });
 
+  it("carries the wire body's `reason` onto the captured verdict (server backstop for the over-limit RECORD lock)", async () => {
+    // A record against an owned template synced while the client-side gate
+    // was stale — the server's `evaluateWorkoutTotalCapLock` 402 backstop
+    // fires. `reason: 'workout_limit_exceeded'` on the captured verdict is
+    // what lets `SyncBlockedBannerMount` route to the dedicated resolution
+    // screen instead of the generic blocked-entries list.
+    storage.enqueueMutation({
+      entityType: "session",
+      entityId: "s-over-limit",
+      operation: "create",
+      payload: { status: "completed" },
+      endpoint: "/sessions/record",
+      method: "POST",
+    });
+
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 402,
+      text: async () =>
+        JSON.stringify({
+          code: "ENTITLEMENT_DENIED",
+          error: "Subscription does not include this feature",
+          feature: "create_workout",
+          reason: "workout_limit_exceeded",
+          current_tier: "free",
+          upgrade_to: "premium",
+          upgrade_price_monthly: 12.99,
+        }),
+    });
+
+    await processSyncQueue(storage, auth, "https://api.test");
+
+    const blockedEntries = storage.getBlockedEntries();
+    expect(blockedEntries).toHaveLength(1);
+    expect(blockedEntries[0].entitlementVerdict).toEqual(
+      expect.objectContaining({
+        feature: "create_workout",
+        reason: "workout_limit_exceeded",
+        currentTier: "free",
+        upgradeTo: "premium",
+        upgradePriceMonthly: 12.99,
+      }),
+    );
+  });
+
   it("falls through to the generic failed path on 402 with a malformed body (AC 12.6)", async () => {
     // 402 status BUT the body isn't a recognisable ENTITLEMENT_DENIED
     // envelope — we never fabricate a verdict from a partial parse.

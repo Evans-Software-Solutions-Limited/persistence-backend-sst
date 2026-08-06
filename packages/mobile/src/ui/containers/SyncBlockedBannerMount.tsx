@@ -89,9 +89,25 @@ export function SyncBlockedBannerMount() {
     return bestTarget ? TIER_DISPLAY_NAMES[bestTarget] : null;
   }, [blocked.entries]);
 
+  // Server-side backstop for the free-tier over-limit RECORD lock
+  // (`evaluateWorkoutTotalCapLock`, reason `'workout_limit_exceeded'`).
+  // This only fires when the client-side gate (`useWorkoutTotalCapGate`,
+  // checked on every start-workout entry point) was stale or bypassed — a
+  // second device, a workout deleted server-side but not yet re-synced
+  // locally, or direct API use. Route Review to the dedicated resolution
+  // screen instead of the generic blocked-entries list, since that screen
+  // has the actionable "delete or upgrade" copy this specific reason needs.
+  const hasWorkoutLimitExceeded = blocked.entries.some(
+    (entry) => entry.entitlementVerdict?.reason === "workout_limit_exceeded",
+  );
+
   const onReview = useCallback(() => {
-    router.push("/(app)/sync-blocked" as Href);
-  }, [router]);
+    router.push(
+      (hasWorkoutLimitExceeded
+        ? "/(app)/workout-limit-locked"
+        : "/(app)/sync-blocked") as Href,
+    );
+  }, [router, hasWorkoutLimitExceeded]);
 
   return (
     <SyncBlockedBanner

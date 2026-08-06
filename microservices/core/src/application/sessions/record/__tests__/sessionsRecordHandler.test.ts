@@ -1,7 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const sessionMocks = { recordSession: vi.fn() };
+const sessionMocks = {
+  recordSession: vi.fn(),
+  hasExistingSessionForClient: vi.fn(),
+};
 const prMocks = {
   recordPRsForSession: vi.fn(),
   getPersonalRecordsForSessionReplay: vi.fn(),
@@ -20,7 +23,35 @@ const assertEntitlementMock = vi.hoisted(() =>
       | { allowed: true }
       | {
           allowed: false;
-          reason: "tier" | "limit" | "cancelled" | "expired";
+          reason:
+            | "tier"
+            | "limit"
+            | "cancelled"
+            | "expired"
+            | "workout_limit_exceeded";
+          currentTier: string;
+          upgradeTo: string | null;
+          upgradePriceMonthly: number | null;
+        }
+    >
+  >(async () => ({ allowed: true })),
+);
+
+// Same widened-verdict shape as `assertEntitlementMock` — the over-limit
+// RECORD lock (Part 2) that runs BEFORE `canSkipGate` can short-circuit.
+// Default allow-all; per-test overrides via `mockResolvedValueOnce`.
+const evaluateWorkoutTotalCapLockMock = vi.hoisted(() =>
+  vi.fn<
+    (userId: string) => Promise<
+      | { allowed: true }
+      | {
+          allowed: false;
+          reason:
+            | "tier"
+            | "limit"
+            | "cancelled"
+            | "expired"
+            | "workout_limit_exceeded";
           currentTier: string;
           upgradeTo: string | null;
           upgradePriceMonthly: number | null;
@@ -77,6 +108,7 @@ vi.mock("../../../entitlement/assertEntitlement", async () => {
   return {
     ...actual,
     assertEntitlement: assertEntitlementMock,
+    evaluateWorkoutTotalCapLock: evaluateWorkoutTotalCapLockMock,
   };
 });
 
@@ -114,6 +146,10 @@ describe("sessionsRecordHandler", () => {
     // the impl). Tests that need a deny verdict override per-call via
     // mockResolvedValueOnce.
     assertEntitlementMock.mockResolvedValue({ allowed: true });
+    evaluateWorkoutTotalCapLockMock.mockResolvedValue({ allowed: true });
+    // Default to "not a replay" so existing tests exercise the normal
+    // (non-bypass) gate path. Per-test overrides via mockResolvedValueOnce.
+    sessionMocks.hasExistingSessionForClient.mockResolvedValue(false);
     // Default to "workout owned by the calling user" so existing tests
     // using validBody (workoutId: "workout-1") continue to skip the gate.
     // Per-test overrides via mockResolvedValueOnce.
@@ -586,6 +622,242 @@ describe("sessionsRecordHandler", () => {
         }),
       );
       expect(sessionMocks.recordSession).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── Over-limit RECORD lock (Part 2 — anti-trial-abuse backstop) ──
+  //
+  // Runs UNCONDITIONALLY, BEFORE the `canSkipGate` ownership check above
+  // can short-circuit — that's the entire point. Free tier = 3 workouts
+  // TOTAL; a user strictly OVER that total is locked out of recording
+  // ANY session, owned-template or not, until they delete down to ≤3 or
+  // upgrade.
+  describe("over-limit RECORD lock", () => {
+    async function buildAppWithErrorHandler() {
+      const { default: Elysia } = await import("elysia");
+      const { coreErrorHandler } =
+        await import("../../../../shared/errorHandler");
+      const { sessionsRecordHandler } =
+        await import("../sessionsRecordHandler");
+      return new Elysia().use(coreErrorHandler).use(sessionsRecordHandler);
+    }
+
+    it("REVERT-VERIFY: denies a record against an OWNED template when the caller is over the free workout-total limit — previously this path SKIPPED assertEntitlement via canSkipGate and always succeeded (the trial-abuse bypass this closes)", async () => {
+      // validBody references workoutId: 'workout-1', owned by the caller
+      // (default mock) — canSkipGate would be true. The lock runs first
+      // and denies before canSkipGate is even evaluated.
+      evaluateWorkoutTotalCapLockMock.mockResolvedValueOnce({
+        allowed: false,
+        reason: "workout_limit_exceeded",
+        currentTier: "free",
+        upgradeTo: "premium",
+        upgradePriceMonthly: 7.99,
+      });
+
+      const app = await buildAppWithErrorHandler();
+      const response = await app.handle(
+        new Request("http://localhost/sessions/record", {
+          method: "POST",
+          headers: {
+            authorization: "Bearer token",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(validBody),
+        }),
+      );
+
+      expect(response.status).toBe(402);
+      const body = (await response.json()) as Record<string, unknown>;
+      expect(body).toMatchObject({
+        code: "ENTITLEMENT_DENIED",
+        feature: "create_workout",
+        reason: "workout_limit_exceeded",
+        current_tier: "free",
+        upgrade_to: "premium",
+        upgrade_price_monthly: 7.99,
+      });
+      // The ownership-based skip never got a chance to run.
+      expect(assertEntitlementMock).not.toHaveBeenCalled();
+      expect(sessionMocks.recordSession).not.toHaveBeenCalled();
+    });
+
+    it("checks the over-limit lock even when workoutId is owned by the caller (runs BEFORE canSkipGate, not just on the fresh-workout path)", async () => {
+      const { sessionsRecordHandler } =
+        await import("../sessionsRecordHandler");
+      await sessionsRecordHandler.handle(
+        new Request("http://localhost/sessions/record", {
+          method: "POST",
+          headers: {
+            authorization: "Bearer token",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(validBody),
+        }),
+      );
+      expect(evaluateWorkoutTotalCapLockMock).toHaveBeenCalledWith(
+        "test-user-id",
+      );
+    });
+
+    it("allows a record against an owned template when the caller is exactly AT the limit (not over)", async () => {
+      // Default mock already resolves { allowed: true } — this pins the
+      // "at exactly the limit is fine" boundary explicitly rather than
+      // relying on the beforeEach default alone.
+      evaluateWorkoutTotalCapLockMock.mockResolvedValueOnce({
+        allowed: true,
+      });
+
+      const response = await (
+        await import("../sessionsRecordHandler")
+      ).sessionsRecordHandler.handle(
+        new Request("http://localhost/sessions/record", {
+          method: "POST",
+          headers: {
+            authorization: "Bearer token",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(validBody),
+        }),
+      );
+
+      expect(response.status).toBe(201);
+      expect(sessionMocks.recordSession).toHaveBeenCalled();
+    });
+
+    it("calls the over-limit lock with the JWT-derived userId, never a body-supplied one (same spoof-resistance as the ownership check)", async () => {
+      const { sessionsRecordHandler } =
+        await import("../sessionsRecordHandler");
+      await sessionsRecordHandler.handle(
+        new Request("http://localhost/sessions/record", {
+          method: "POST",
+          headers: {
+            authorization: "Bearer token",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            ...validBody,
+            userId: "ATTACKER-SPOOFED-USER",
+          }),
+        }),
+      );
+      expect(evaluateWorkoutTotalCapLockMock).toHaveBeenCalledWith(
+        "test-user-id",
+      );
+      expect(evaluateWorkoutTotalCapLockMock).not.toHaveBeenCalledWith(
+        "ATTACKER-SPOOFED-USER",
+      );
+    });
+  });
+
+  // ─── Replay bypass (Inspector Brad local sweep, LOW finding) ──────
+  //
+  // A retry of an ambiguously-failed flush (server committed, ack lost)
+  // must never be gated a second time — the entitlement cost was already
+  // resolved at the ORIGINAL commit. Gating the retry can 402 an
+  // already-saved session into a phantom `blocked_entitlement` entry.
+  describe("replay bypass", () => {
+    it("REVERT-VERIFY: a replay (hasExistingSessionForClient=true) bypasses BOTH the over-limit lock and the create_workout gate entirely", async () => {
+      // Before the fix: evaluateWorkoutTotalCapLock ran unconditionally on
+      // every record. After the fix: the replay short-circuit runs first
+      // and neither gate is ever consulted — proven below via
+      // `not.toHaveBeenCalled()`, not by queuing a deny value (a queued
+      // `mockResolvedValueOnce` this test's assertions prove is NEVER
+      // consumed would otherwise sit in the mock's queue and leak into
+      // the next test that DOES call it).
+      sessionMocks.hasExistingSessionForClient.mockResolvedValueOnce(true);
+
+      const { sessionsRecordHandler } =
+        await import("../sessionsRecordHandler");
+      const response = await sessionsRecordHandler.handle(
+        new Request("http://localhost/sessions/record", {
+          method: "POST",
+          headers: {
+            authorization: "Bearer token",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            ...validBody,
+            clientSessionId: "local-session-abc",
+          }),
+        }),
+      );
+
+      expect(response.status).toBe(201);
+      expect(sessionMocks.hasExistingSessionForClient).toHaveBeenCalledWith(
+        "test-user-id",
+        "local-session-abc",
+      );
+      expect(evaluateWorkoutTotalCapLockMock).not.toHaveBeenCalled();
+      expect(assertEntitlementMock).not.toHaveBeenCalled();
+      expect(sessionMocks.recordSession).toHaveBeenCalled();
+    });
+
+    it("does NOT check for a replay when clientSessionId is omitted (legacy caller) — falls through to the normal gate", async () => {
+      const { sessionsRecordHandler } =
+        await import("../sessionsRecordHandler");
+      const response = await sessionsRecordHandler.handle(
+        new Request("http://localhost/sessions/record", {
+          method: "POST",
+          headers: {
+            authorization: "Bearer token",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(validBody), // no clientSessionId
+        }),
+      );
+
+      expect(response.status).toBe(201);
+      expect(sessionMocks.hasExistingSessionForClient).not.toHaveBeenCalled();
+    });
+
+    it("runs the normal gates when hasExistingSessionForClient resolves false (genuine first record with a clientSessionId)", async () => {
+      sessionMocks.hasExistingSessionForClient.mockResolvedValueOnce(false);
+
+      const { sessionsRecordHandler } =
+        await import("../sessionsRecordHandler");
+      await sessionsRecordHandler.handle(
+        new Request("http://localhost/sessions/record", {
+          method: "POST",
+          headers: {
+            authorization: "Bearer token",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            ...validBody,
+            clientSessionId: "local-session-fresh",
+          }),
+        }),
+      );
+
+      expect(evaluateWorkoutTotalCapLockMock).toHaveBeenCalledWith(
+        "test-user-id",
+      );
+    });
+
+    it("calls hasExistingSessionForClient with the JWT-derived userId, never a body-supplied one", async () => {
+      sessionMocks.hasExistingSessionForClient.mockResolvedValueOnce(false);
+
+      const { sessionsRecordHandler } =
+        await import("../sessionsRecordHandler");
+      await sessionsRecordHandler.handle(
+        new Request("http://localhost/sessions/record", {
+          method: "POST",
+          headers: {
+            authorization: "Bearer token",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            ...validBody,
+            clientSessionId: "local-session-spoof-check",
+            userId: "ATTACKER-SPOOFED-USER",
+          }),
+        }),
+      );
+
+      expect(sessionMocks.hasExistingSessionForClient).toHaveBeenCalledWith(
+        "test-user-id",
+        "local-session-spoof-check",
+      );
     });
   });
 });

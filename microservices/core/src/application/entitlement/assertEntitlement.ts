@@ -1,10 +1,10 @@
-import { and, desc, eq, gte, sql } from "drizzle-orm";
+import { and, count, desc, eq, sql } from "drizzle-orm";
 import {
   profiles,
   ptClientRelationships,
-  subscriptionLimits,
   subscriptionTiers,
   userSubscriptions,
+  workouts,
 } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
 
@@ -36,14 +36,17 @@ import { getDb } from "@persistence/db/client";
  * the per-table workout/AI increment triggers. Writing from here would
  * race the trigger and corrupt the derived state.
  *
- * Likewise, the workout-count comparison is read from
- * `subscription_limits.current_count` rather than recomputed from
- * `workouts` rows — the trigger advances `current_count` on each
- * `workouts` insert and resets it on month boundary, so its value is
- * the canonical "workouts used this month" for the active user. Calling
- * `COUNT(*) FROM workouts WHERE …` would risk drift if the trigger ever
- * fires for a path the count query doesn't see (e.g. trainer-on-behalf
- * inserts in M8).
+ * Free tier = 3 workouts TOTAL, not per month (Brad, locked product
+ * decision — see `evaluateWorkoutTotalCapLock` below). The workout-count
+ * comparison is therefore a live `COUNT(*) FROM workouts WHERE
+ * created_by = userId` — the same query `workoutRepository.getQuota()`
+ * runs for the mobile "N of 3 workouts" display — NOT
+ * `subscription_limits.current_count` (that column is a MONTHLY
+ * counter the `increment_usage_limit` trigger resets on month
+ * boundary; reading it here previously meant "3 new workouts per
+ * month", which reset every month and let a user accumulate an
+ * unbounded number of workouts over time on the free tier — the exact
+ * bug this total-cap rewrite closes).
  */
 
 // ─── Public types ─────────────────────────────────────────────────────
@@ -143,8 +146,23 @@ export type SubscriptionTierName =
  *     `incomplete_expired`) — likewise revert-to-free, and this reason
  *     surfaces once the free allowance is gone; user needs to update
  *     payment, not pick a new tier.
+ *   - `workout_limit_exceeded`: a DISTINCT reason from `evaluateWorkoutTotalCapLock`
+ *     (the `POST /sessions/record` anti-abuse backstop), never returned by
+ *     `assertEntitlement` itself. Unlike `limit` (which denies AT the cap on a
+ *     NEW create), this denies STRICTLY OVER the cap on RECORDING against an
+ *     already-owned workout — the trial-abuse path where a user built up a
+ *     stash of workouts on a paid tier, downgraded to free, and kept logging
+ *     against every one of them via the `canSkipGate` owned-workout bypass in
+ *     `sessionsRecordHandler.ts`. Mobile renders distinct "you're over the
+ *     free limit — delete or upgrade" copy for this reason rather than the
+ *     ordinary at-cap / lapsed-sub prompts.
  */
-export type EntitlementDenyReason = "tier" | "limit" | "cancelled" | "expired";
+export type EntitlementDenyReason =
+  | "tier"
+  | "limit"
+  | "cancelled"
+  | "expired"
+  | "workout_limit_exceeded";
 
 /**
  * Verdict returned by `assertEntitlement`. Discriminated by `allowed`
@@ -209,12 +227,14 @@ export class EntitlementError extends Error {
  *   2. SELECT most-recent `user_subscriptions` row joined with
  *      `subscription_tiers` (LEFT JOIN, ordered by `createdAt DESC`,
  *      limit 1). Missing sub → treat the user as `free`.
- *   3. SELECT `subscription_limits` row for `limit_type = 'workouts'`
- *      if the feature requires it (currently only `create_workout`).
- *      Missing row → trigger hasn't ever fired for this user → treat as
- *      `current_count = 0`. The trigger inserts the row lazily on the
- *      first sub change OR first workout insert, so a brand-new user
- *      with no workouts and no sub-row legitimately has no limit row.
+ *   3. SELECT `COUNT(*) FROM workouts WHERE created_by = userId` if the
+ *      feature requires a usage count (currently only `create_workout`).
+ *      This is the user's TOTAL workout count, ever — the same query
+ *      `workoutRepository.getQuota()` runs for the mobile "N of 3
+ *      workouts" display. NOT `subscription_limits.current_count` (a
+ *      MONTHLY counter that resets on month boundary — reading it here
+ *      would mean "3 new workouts per month", not "3 workouts total",
+ *      which is the free-tier rule Brad locked).
  *
  * Verdict logic for `create_workout`:
  *   - `payment_status NOT IN ('active', 'trialing')` AND (no
@@ -228,7 +248,7 @@ export class EntitlementError extends Error {
  *     that expiry — the user paid through that date.
  *   - `tier.workout_limit IS NULL` (active premium / trainer) →
  *     unlimited → allowed.
- *   - `current_count >= effective workout_limit` → deny. Reason is
+ *   - `total_workout_count >= effective workout_limit` → deny. Reason is
  *     `'limit'` for an active tier at cap (upgrade_to = cheapest tier
  *     that satisfies, per role), or `'cancelled'` / `'expired'` for a
  *     reverted sub that has also exhausted its free allowance
@@ -427,33 +447,18 @@ export async function assertEntitlement(
     return { allowed: true };
   }
 
-  // 5. Read the trigger-maintained current usage. If no row, the user
-  //    has never had a sub-change AND never inserted a workout — both
-  //    are "0 used" states.
-  const limitRows = await db
-    .select({
-      currentCount: subscriptionLimits.currentCount,
-    })
-    .from(subscriptionLimits)
-    .where(
-      and(
-        eq(subscriptionLimits.userId, userId),
-        eq(subscriptionLimits.limitType, "workouts"),
-        // Mirror the month-boundary filter the trigger uses on writes
-        // (`increment_usage_limit` in 004_subscriptions_and_roles.sql).
-        // Without this filter, a free user who hit cap in month N is read
-        // as at-cap in month N+1 — denying the next workout before the
-        // trigger ever gets a chance to reset the row. There is no
-        // scheduled invocation of `reset_monthly_limits()` so the row
-        // stays stale forever; the user is locked out until they upgrade
-        // (Inspector Brad PR #72 high-severity find — sweep #1).
-        gte(subscriptionLimits.resetDate, currentMonthStartUtc()),
-      ),
-    )
-    .limit(1);
-
-  // Missing current-month row ⇒ user has no usage this month ⇒ count = 0.
-  const currentCount = limitRows[0]?.currentCount ?? 0;
+  // 5. Total workout count, ever — NOT the monthly `subscription_limits`
+  //    counter. Free tier is 3 workouts TOTAL (Brad, locked product
+  //    decision): the monthly counter reset every month and let a free
+  //    user accumulate an unbounded number of workouts over time, 3 at a
+  //    time — the exact bug this rewrite closes. This is the identical
+  //    query `workoutRepository.getQuota()` runs for the mobile "N of 3
+  //    workouts" display, so the create-gate and the display agree.
+  const totalRows = await db
+    .select({ value: count() })
+    .from(workouts)
+    .where(eq(workouts.createdBy, userId));
+  const currentCount = totalRows[0].value;
 
   if (currentCount >= workoutLimit) {
     return buildDenyVerdict({
@@ -770,18 +775,160 @@ async function assertMealprint(userId: string): Promise<EntitlementVerdict> {
   });
 }
 
-// ─── Pure helpers (exported for testing) ──────────────────────────────
+// ─── Workout total-cap RECORD lock (anti-trial-abuse backstop) ────────
 
 /**
- * UTC-midnight of the first day of the current month. Used as the lower
- * bound on `subscription_limits.reset_date` to filter out stale rows from
- * prior months. Matches `date_trunc('month', NOW())` semantics in
- * Postgres; the trigger's UTC-month-boundary comparison and this helper
- * agree on the same instant.
+ * Over-limit RECORD lock — a hard backstop closing the trial-abuse path
+ * `create_workout`'s own cap cannot reach.
+ *
+ * Product decision (Brad, locked): free tier = 3 workouts TOTAL. A free
+ * user who is OVER that total (not just at it) must be locked out of
+ * starting/recording ANY workout session until they delete down to ≤3 or
+ * upgrade — never auto-deleted.
+ *
+ * Why this can't just be `create_workout`'s existing `>= limit` check:
+ * `POST /sessions/record` (`sessionsRecordHandler.ts`) skips the
+ * `create_workout` gate entirely (`canSkipGate`) when the session
+ * references a workout the caller already OWNS — deliberately, since the
+ * user already "paid" the entitlement cost for that workout at create
+ * time. But that means a user who built up a stash of workouts on a paid
+ * tier and then downgraded to free can keep logging against every one of
+ * those owned templates forever, with zero further checks — the exact
+ * "make 20 workouts on trial → drop to Free → keep using them all" abuse
+ * vector. This function is called from `sessionsRecordHandler.ts` BEFORE
+ * `canSkipGate` is even evaluated, so it applies to owned-template
+ * records too.
+ *
+ * Distinct from `create_workout` in three ways:
+ *   1. Denies STRICTLY OVER the limit (`count > limit`), not AT it
+ *      (`count >= limit`) — a user sitting at exactly 3 of 3 is not
+ *      locked out of recording against their existing workouts, only an
+ *      over-stocked user is.
+ *   2. Always denies with reason `'workout_limit_exceeded'`, regardless
+ *      of WHY the effective tier is free (genuinely free, or reverted
+ *      cancelled/expired) — this check is "you're over the free total
+ *      right now", not "why can't you create", so it doesn't reuse
+ *      `'limit'` / `'cancelled'` / `'expired'`.
+ *   3. Read-only, same as every other entitlement check — never deletes
+ *      or touches a workout row. The user chooses what to remove; the
+ *      primary UX (mobile's client-side gate on the start-workout entry
+ *      points) is what stops a legitimate user from ever reaching this
+ *      402 in the first place. This is the backstop for when they don't
+ *      (stale client cache, a second device, direct API use).
+ *
+ * Resolution mirrors `create_workout`'s profile + latest-subscription +
+ * revert-to-free-on-lapse read (same shared helpers: `loadTier`,
+ * `classifySubscriptionStatus`, `coerceTierName`, `normaliseRole`), then
+ * compares against the SAME total `COUNT(*) FROM workouts WHERE
+ * created_by = userId` query `create_workout` and `workoutRepository
+ * .getQuota()` both use.
  */
-export function currentMonthStartUtc(now: Date = new Date()): Date {
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+export async function evaluateWorkoutTotalCapLock(
+  userId: string,
+  executor: Pick<Db, "select"> = getDb(),
+): Promise<EntitlementVerdict> {
+  // 1. Profile slice — same schema-corruption guard as every other path.
+  const profileRows = await executor
+    .select({ role: profiles.role })
+    .from(profiles)
+    .where(eq(profiles.id, userId))
+    .limit(1);
+
+  const profile = profileRows[0];
+  if (!profile) {
+    throw new Error(
+      `evaluateWorkoutTotalCapLock: no profiles row for user ${userId} — schema corruption (JWT-bound user without profile)`,
+    );
+  }
+  const role = normaliseRole(profile.role);
+
+  // 2. Latest subscription joined with the tier, for workout_limit — same
+  //    shape as create_workout's resolution.
+  const subRows = await executor
+    .select({
+      tierName: userSubscriptions.tierName,
+      paymentStatus: userSubscriptions.paymentStatus,
+      expiresAt: userSubscriptions.expiresAt,
+      workoutLimit: subscriptionTiers.workoutLimit,
+    })
+    .from(userSubscriptions)
+    .leftJoin(
+      subscriptionTiers,
+      eq(userSubscriptions.tierName, subscriptionTiers.tierName),
+    )
+    .where(eq(userSubscriptions.userId, userId))
+    .orderBy(desc(userSubscriptions.createdAt))
+    .limit(1);
+
+  const subRow = subRows[0] ?? null;
+
+  let currentTier: SubscriptionTierName;
+  let workoutLimit: number | null;
+
+  if (subRow === null) {
+    const freeTier = await loadTier(executor, "free");
+    if (!freeTier) {
+      throw new Error(
+        "evaluateWorkoutTotalCapLock: subscription_tiers row for tier_name='free' is missing — catalog misconfiguration",
+      );
+    }
+    currentTier = "free";
+    workoutLimit = freeTier.workoutLimit ?? null;
+  } else {
+    currentTier = coerceTierName(subRow.tierName);
+    workoutLimit = subRow.workoutLimit ?? null;
+  }
+
+  // 3. Cancelled/expired → revert to free-tier rules, same clamp as
+  //    create_workout. Unlike create_workout, we don't remember a
+  //    status-specific deny reason here — every deny from this function
+  //    is 'workout_limit_exceeded' regardless of why the tier is free.
+  if (subRow !== null) {
+    const statusDeny = classifySubscriptionStatus(
+      subRow.paymentStatus,
+      subRow.expiresAt,
+    );
+    if (statusDeny !== null) {
+      const freeTier = await loadTier(executor, "free");
+      if (!freeTier) {
+        throw new Error(
+          "evaluateWorkoutTotalCapLock: subscription_tiers row for tier_name='free' is missing — catalog misconfiguration",
+        );
+      }
+      workoutLimit = freeTier.workoutLimit ?? null;
+    }
+  }
+
+  // 4. Unlimited (active paid tier, or a free tier configured with a
+  //    NULL limit) → never locked.
+  if (workoutLimit === null) {
+    return { allowed: true };
+  }
+
+  // 5. Total workout count, ever — identical query to create_workout's
+  //    count and workoutRepository.getQuota()'s `used`. Scoped strictly
+  //    to this userId, so one user's stash can never affect another's
+  //    verdict.
+  const totalRows = await executor
+    .select({ value: count() })
+    .from(workouts)
+    .where(eq(workouts.createdBy, userId));
+  const totalCount = totalRows[0].value;
+
+  // STRICTLY over — at exactly the limit is fine.
+  if (totalCount > workoutLimit) {
+    return buildDenyVerdict({
+      reason: "workout_limit_exceeded",
+      currentTier,
+      role,
+      feature: "create_workout",
+    });
+  }
+
+  return { allowed: true };
 }
+
+// ─── Pure helpers (exported for testing) ──────────────────────────────
 
 /**
  * Tier-status → deny reason mapping. `null` means "no status-based

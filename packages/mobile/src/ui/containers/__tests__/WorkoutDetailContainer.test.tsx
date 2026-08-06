@@ -183,6 +183,75 @@ describe("WorkoutDetailContainer", () => {
     expect(mockRouterPush).toHaveBeenCalledWith("/(app)/session?workoutId=w-1");
   });
 
+  it("routes to the workout-limit-locked screen instead of starting a session when the caller is over the free workout-total limit", async () => {
+    const api = new InMemoryApiAdapter();
+    jest.spyOn(api, "getWorkout").mockResolvedValue(ok(buildWorkout()));
+    api.mySubscription = {
+      subscriptionId: null,
+      tierName: "free",
+      paymentStatus: "active",
+      billingCycle: null,
+      startsAt: "2026-01-01T00:00:00Z",
+      expiresAt: null,
+      cancelledAt: null,
+      trialEndsAt: null,
+      externalSubscriptionId: null,
+      tierDisplayName: "Free",
+      tierDescription: null,
+      workoutLimit: 3,
+      aiAccess: false,
+      aiWorkoutLimit: 0,
+      gymBuddyAccess: false,
+      trainerClientLimit: null,
+      isTrainerTier: false,
+      role: "user",
+      hasUsedUserTrial: false,
+      hasUsedTrainerTrial: false,
+      isEligibleForUserTrial: true,
+      isEligibleForTrainerTrial: true,
+      scheduledChange: null,
+    };
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheWorkoutDetail("user-1", buildWorkout());
+    // Over the free limit — 4 total workouts, cap is 3 (from mySubscription
+    // above). `useWorkoutTotalCapGate` reads this count, NOT the quota's own
+    // `limit` field (which is unreliable for a genuinely-free user — see the
+    // hook's docstring).
+    storage.cacheWorkoutsList(
+      "user-1",
+      "mine",
+      [
+        buildWorkout({ id: "w-1" }),
+        buildWorkout({ id: "w-2" }),
+        buildWorkout({ id: "w-3" }),
+        buildWorkout({ id: "w-4" }),
+      ],
+      { used: 4, limit: 3 },
+    );
+    // `assigned` / `default` also need a cache entry — a missing entry
+    // reads as "stale" (`isWorkoutsListStale(null) === true`), which
+    // triggers `useWorkouts()`'s one-shot auto-refresh and overwrites ALL
+    // THREE sections (including `mine`'s seeded quota above) with the
+    // in-memory adapter's default `getWorkouts()` response.
+    storage.cacheWorkoutsList("user-1", "assigned", [], null);
+    storage.cacheWorkoutsList("user-1", "default", [], null);
+
+    const { getByTestId, findByText } = renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <WorkoutDetailContainer />),
+    );
+    await findByText("Bench Press");
+    // The subscription query settles asynchronously; re-press inside
+    // `waitFor` (rather than a single fire-and-assert) so the test doesn't
+    // race the gate's resolution — it presses on every poll until the query
+    // has settled and the gate denies.
+    await waitFor(() => {
+      fireEvent.press(getByTestId("workout-detail-start"));
+      expect(mockRouterPush).toHaveBeenCalledWith(
+        "/(app)/workout-limit-locked",
+      );
+    });
+  });
+
   it("renders the loader on cold start when no cached detail", async () => {
     const api = new InMemoryApiAdapter();
     jest

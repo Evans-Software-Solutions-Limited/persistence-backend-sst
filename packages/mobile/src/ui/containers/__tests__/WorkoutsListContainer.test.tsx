@@ -1,4 +1,5 @@
 import { act, fireEvent } from "@testing-library/react-native";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import React from "react";
 import { Alert, RefreshControl } from "react-native";
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
@@ -65,7 +66,19 @@ function makeAdapters(
 }
 
 function withAdapters(adapters: Adapters, ui: React.ReactElement) {
-  return <AdapterProvider adapters={adapters}>{ui}</AdapterProvider>;
+  // `useWorkoutTotalCapGate` (wired into `onStart`) reads `useMySubscription`,
+  // a React Query hook — needs a QueryClientProvider ancestor or it throws
+  // "No QueryClient set" instead of rendering. `retry: false` keeps a
+  // deliberately-failing `getMySubscription` (the InMemoryApiAdapter default —
+  // no `mySubscription` set) from retrying and slowing tests down.
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return (
+    <QueryClientProvider client={queryClient}>
+      <AdapterProvider adapters={adapters}>{ui}</AdapterProvider>
+    </QueryClientProvider>
+  );
 }
 
 const mockRouterPush = jest.fn();

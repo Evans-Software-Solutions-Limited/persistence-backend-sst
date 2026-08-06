@@ -26,6 +26,7 @@ type WireEntitlementDeniedBody = {
   code?: unknown;
   error?: unknown;
   feature?: unknown;
+  reason?: unknown;
   current_tier?: unknown;
   upgrade_to?: unknown;
   upgrade_price_monthly?: unknown;
@@ -67,11 +68,16 @@ export function parseEntitlementDeniedResponseBody(
       : undefined;
   if (upgradePriceMonthly === undefined) return null;
 
+  // `reason` is optional on the wire (older backend versions omit it) —
+  // lenient parse, no null-drops-to-null branch needed.
+  const reason = typeof raw.reason === "string" ? raw.reason : undefined;
+
   return {
     feature: raw.feature as EntitlementFeature,
     currentTier: raw.current_tier as SubscriptionTierName,
     upgradeTo: upgradeTo as SubscriptionTierName | null,
     upgradePriceMonthly,
+    ...(reason !== undefined ? { reason } : {}),
   };
 }
 

@@ -34,14 +34,18 @@ active tiers with no purchasable products re-triggers the **2.1(b)** rejection a
 un-verified, un-seeded Mealprint. Activation is now coupled to ASC/RC readiness; the prod
 release IS the gate.
 
-**⚠ WORKOUT LIMIT — Brad decided free = 3 TOTAL, not 3/month; the code does the WRONG thing.**
-Enforcement (`assertEntitlement("create_workout")`) reads `subscription_limits.currentCount`
-filtered to the current month → today Free = "3 new workouts **per month**", and it resets.
-Also `workoutRepository.getQuota()` counts TOTAL (for display) — the two disagree. Brad wants:
-(1) enforce a **total cap** (count total workouts, not the monthly counter), and (2) on
-free-and-over-limit, **lock the ability to start/create a workout until the user handles it**
-(delete down to ≤3 or upgrade) — to kill the trial-abuse (make many on trial → keep on free).
-Never auto-delete data. **Queued as a small spec'd slice — NOT yet built.**
+**✅ WORKOUT LIMIT — free = 3 TOTAL + over-limit lock — BUILT (PR pending, `claude/workout-total-cap-lock`).**
+Brad's call: free = 3 TOTAL (not per month), hard-lock (option A) an over-limit free user from
+starting/recording any workout until they delete to ≤3 or upgrade. Fixed: (1) `create_workout`
+now counts TOTAL workouts, not the monthly `subscription_limits` counter; (2) new
+`evaluateWorkoutTotalCapLock` + deny reason `workout_limit_exceeded`, run in `sessionsRecordHandler`
+**before** `canSkipGate` (closing the owned-template bypass — the actual abuse vector); (3) mobile
+`useWorkoutTotalCapGate` + `WorkoutLimitLocked` screen on the start paths, reason threaded end-to-end.
+IB-swept: enforcement/isolation/boundaries clean; fixed a 🟠 (a session finished in the fail-open
+window was silently STRANDED on the delete-to-resolve path — new `useAutoRetryOnWorkoutLimitResolved`
+hook re-drives blocked entries when the count clears, not just on upgrade) + a 🟢 (replay bypasses
+the lock). Never auto-deletes. ⚠ 🔵 chip filed: the old monthly `subscription_limits` workouts
+counter is now dead DB state (trigger still writes it) — cleanup migration pending.
 
 **⚠ RESUBMIT ≠ LAUNCH — but note main now carries ACTIVE tiers (via #362).** A build cut from
 current main has `is_active=true`, so it is NO LONGER a clean "inactive tiers, reviewer can't
