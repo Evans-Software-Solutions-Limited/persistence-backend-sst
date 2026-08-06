@@ -703,6 +703,43 @@ describe("SessionRepository", () => {
     });
   });
 
+  // Inspector Brad local sweep, LOW finding: the replay-bypass pre-check
+  // consumed by `sessionsRecordHandler` so a retry of an
+  // already-committed record never re-runs the entitlement gates.
+  describe("hasExistingSessionForClient", () => {
+    it("returns true when a session for (userId, clientSessionId) exists", async () => {
+      const mockDb = {
+        select: vi.fn().mockReturnValue(makeSelectChain([{ id: "sess-1" }])),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const { SessionRepository } = await import("../sessionRepository");
+      const repo = new SessionRepository();
+      const result = await repo.hasExistingSessionForClient(
+        "user-1",
+        "local-session-abc",
+      );
+
+      expect(result).toBe(true);
+    });
+
+    it("returns false when no matching session exists", async () => {
+      const mockDb = {
+        select: vi.fn().mockReturnValue(makeSelectChain([])),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const { SessionRepository } = await import("../sessionRepository");
+      const repo = new SessionRepository();
+      const result = await repo.hasExistingSessionForClient(
+        "user-1",
+        "local-session-abc",
+      );
+
+      expect(result).toBe(false);
+    });
+  });
+
   // BACKEND_BRIEF § 7 step 5: after the bulk insert + PR detection,
   // re-fetch the full session inside the same tx so the response
   // reflects post-detection state (is_personal_record flags).

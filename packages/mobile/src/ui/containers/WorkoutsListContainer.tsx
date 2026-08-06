@@ -13,6 +13,7 @@ import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useAuth } from "@/ui/hooks/useAuth";
 import { useWorkouts } from "@/ui/hooks/useWorkouts";
 import { useWorkoutLibrary } from "@/ui/hooks/useWorkoutLibrary";
+import { useWorkoutTotalCapGate } from "@/ui/hooks/useWorkoutTotalCapGate";
 import { WorkoutsListPresenter } from "@/ui/presenters/WorkoutsListPresenter";
 
 /**
@@ -31,6 +32,9 @@ export function WorkoutsListContainer() {
 
   const workouts = useWorkouts();
   const markWorkoutsChanged = useWorkoutLibrary((s) => s.markChanged);
+  // Free-tier "3 workouts TOTAL, over-limit lock" — client-side gate on the
+  // start-workout entry point. See onStart below.
+  const totalCapGate = useWorkoutTotalCapGate();
 
   const scrollRef = useRef<ScrollView>(null);
   useScrollToTopOnTabPress(scrollRef);
@@ -102,12 +106,23 @@ export function WorkoutsListContainer() {
     router.push(`/(app)/workouts/${workoutId}` as never);
   }, []);
 
-  const onStart = useCallback((workoutId: string) => {
-    // Hands off to 05-active-session via the session route's ?workoutId=
-    // param (the real session-start entry — no `useStartSession` hook
-    // exists; the local active-session machine seeds from the template).
-    router.push(`/(app)/session?workoutId=${workoutId}` as never);
-  }, []);
+  const onStart = useCallback(
+    (workoutId: string) => {
+      // Free-tier over-limit lock: route to the resolution screen instead
+      // of starting a session. Checked client-side first (the server's
+      // `evaluateWorkoutTotalCapLock` 402 backstop only fires once the
+      // session actually flushes, which is too late for a good UX here).
+      if (totalCapGate.isOverLimit) {
+        totalCapGate.onLocked();
+        return;
+      }
+      // Hands off to 05-active-session via the session route's ?workoutId=
+      // param (the real session-start entry — no `useStartSession` hook
+      // exists; the local active-session machine seeds from the template).
+      router.push(`/(app)/session?workoutId=${workoutId}` as never);
+    },
+    [totalCapGate],
+  );
 
   const confirmDelete = useCallback(
     (workout: Workout) => {

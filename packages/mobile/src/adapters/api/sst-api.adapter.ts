@@ -2581,6 +2581,7 @@ type WireEntitlementDeniedBody = {
   code?: unknown;
   error?: unknown;
   feature?: unknown;
+  reason?: unknown;
   current_tier?: unknown;
   upgrade_to?: unknown;
   upgrade_price_monthly?: unknown;
@@ -2620,11 +2621,15 @@ function parseEntitlementDeniedBody(
       : undefined;
   if (upgradePriceMonthly === undefined) return null;
 
+  // `reason` is optional on the wire — lenient parse.
+  const reason = typeof raw.reason === "string" ? raw.reason : undefined;
+
   return {
     feature: raw.feature,
     currentTier: raw.current_tier,
     upgradeTo,
     upgradePriceMonthly,
+    ...(reason !== undefined ? { reason } : {}),
   };
 }
 

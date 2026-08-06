@@ -13,6 +13,7 @@ import {
   EntitlementError,
   classifySubscriptionStatus,
   coerceTierName,
+  evaluateWorkoutTotalCapLock,
   isExpiresInFuture,
   normaliseRole,
   parsePriceDecimal,
@@ -20,22 +21,38 @@ import {
 } from "../assertEntitlement";
 
 /**
- * Drizzle select chains in this helper take three terminal shapes:
+ * Drizzle select chains in this helper take four terminal shapes:
  *
  *   profile read:  select().from().where().limit()
  *   sub join read: select().from().leftJoin().where().orderBy().limit()
- *   limit read:    select().from().where().limit()
  *   tier read:     select().from().where().limit()
+ *   total-count read (create_workout / evaluateWorkoutTotalCapLock):
+ *                  select().from().where() — awaited DIRECTLY, no
+ *                  `.limit()` (mirrors `count()` aggregate queries
+ *                  elsewhere in the codebase, e.g.
+ *                  `workoutRepository.getQuota()`).
  *
  * Tests stage the responses in the order calls are made by the helper.
  * `makeQueueDb` returns a Drizzle-shaped stub whose `.select()` consumes
  * one queued row-set per call, so a test can assert "profile=X, then
- * sub=Y, then tier=Z" without per-table threading.
+ * sub=Y, then tier=Z" without per-table threading. The object `where()`
+ * returns is BOTH chainable (`.limit()` / `.orderBy()` for the other
+ * three shapes) AND directly thenable (a bare `await ...where(...)`
+ * resolves to the queued rows), so one helper serves every shape without
+ * the test needing to know which one a given call site uses.
  */
 function makeChainResolving(rows: unknown) {
   const limit = vi.fn().mockResolvedValue(rows);
   const orderBy = vi.fn().mockReturnValue({ limit });
-  const where = vi.fn().mockReturnValue({ limit, orderBy });
+  const whereResult = {
+    limit,
+    orderBy,
+    // Makes `await db.select(...).from(...).where(...)` resolve to
+    // `rows` directly, for call sites that never call `.limit()`
+    // (the total-count aggregate query).
+    then: (resolve: (value: unknown) => void) => resolve(rows),
+  };
+  const where = vi.fn().mockReturnValue(whereResult);
   const leftJoin = vi.fn().mockReturnValue({ where });
   const from = vi.fn().mockReturnValue({ where, leftJoin });
   return { from };
@@ -847,13 +864,13 @@ describe("assertEntitlement — create_workout, no sub row (free defaults)", () 
   });
 
   it("allows when user is under the free-tier workout limit", async () => {
-    // Queue: profile → sub (empty) → free tier meta → limits (count=1)
+    // Queue: profile → sub (empty) → free tier meta → total count (1)
     (getDb as any).mockReturnValue(
       makeQueueDb([
         PROFILE_USER,
         [], // no user_subscriptions row
         FREE_TIER_ROW,
-        [{ currentCount: 1 }],
+        [{ value: 1 }],
       ]),
     );
 
@@ -861,27 +878,32 @@ describe("assertEntitlement — create_workout, no sub row (free defaults)", () 
     expect(verdict).toEqual({ allowed: true });
   });
 
-  it("allows when limit-row query returns no current-month row (stale prior-month data filtered out by gte(resetDate) — Inspector Brad PR #72 high-severity find — sweep #1)", async () => {
-    // Regression: previously the limit-row WHERE had no month-boundary
-    // filter, so a free user who hit cap in month N read at-cap in month
-    // N+1, denying the next workout before the trigger could ever reset
-    // the row. There is no scheduled `reset_monthly_limits()` job, so
-    // the user was locked out until they upgraded.
-    //
-    // After the fix: the gte(resetDate, currentMonthStartUtc) filter
-    // excludes stale prior-month rows; query returns []; helper defaults
-    // count to 0; verdict is `allowed`.
+  it("REVERT-VERIFY: denies once the TOTAL count exceeds the limit, even though the workouts were created in a PRIOR month (total cap, not a monthly counter)", async () => {
+    // This is the money test for the total-cap rewrite. Before the fix,
+    // `create_workout` read `subscription_limits.current_count` filtered
+    // to the current month — a free user who created 3 workouts last
+    // month and 0 this month read as count=0 and was ALLOWED to create a
+    // 4th, forever, 3 at a time, every month. After the fix the count is
+    // `COUNT(*) FROM workouts WHERE created_by = userId` — a TOTAL that
+    // never resets — so the same user is now denied.
     (getDb as any).mockReturnValue(
       makeQueueDb([
         PROFILE_USER,
         [],
         FREE_TIER_ROW,
-        [], // ← stale prior-month row excluded by the new gte filter
+        [{ value: 3 }], // 3 workouts total, none created this month
+        BASIC_TIER_ROW,
       ]),
     );
 
     const verdict = await assertEntitlement("user-1", "create_workout");
-    expect(verdict).toEqual({ allowed: true });
+    expect(verdict).toEqual({
+      allowed: false,
+      reason: "limit",
+      currentTier: "free",
+      upgradeTo: "premium",
+      upgradePriceMonthly: 7.99,
+    });
   });
 
   it("denies with reason='limit' when count >= 3 and suggests basic", async () => {
@@ -890,7 +912,7 @@ describe("assertEntitlement — create_workout, no sub row (free defaults)", () 
         PROFILE_USER,
         [],
         FREE_TIER_ROW,
-        [{ currentCount: 3 }],
+        [{ value: 3 }],
         BASIC_TIER_ROW, // buildDenyVerdict loads the upgrade tier
       ]),
     );
@@ -911,7 +933,7 @@ describe("assertEntitlement — create_workout, no sub row (free defaults)", () 
         PROFILE_TRAINER,
         [],
         FREE_TIER_ROW,
-        [{ currentCount: 5 }],
+        [{ value: 5 }],
         TRAINER_TIER_ROW,
       ]),
     );
@@ -932,7 +954,7 @@ describe("assertEntitlement — create_workout, no sub row (free defaults)", () 
         PROFILE_ADMIN,
         [],
         FREE_TIER_ROW,
-        [{ currentCount: 3 }],
+        [{ value: 3 }],
         // No tier load — admin path returns null upgradeTo before loadTier.
       ]),
     );
@@ -953,7 +975,7 @@ describe("assertEntitlement — create_workout, no sub row (free defaults)", () 
         PROFILE_PHYSIO,
         [],
         FREE_TIER_ROW,
-        [{ currentCount: 3 }],
+        [{ value: 3 }],
         BASIC_TIER_ROW,
       ]),
     );
@@ -978,7 +1000,7 @@ describe("assertEntitlement — create_workout, no sub row (free defaults)", () 
         PROFILE_USER,
         [],
         FREE_TIER_ROW,
-        [{ currentCount: 3 }],
+        [{ value: 3 }],
         [], // upgrade-tier catalog row missing
       ]),
     );
@@ -993,23 +1015,9 @@ describe("assertEntitlement — create_workout, no sub row (free defaults)", () 
     });
   });
 
-  it("treats missing subscription_limits row as count=0", async () => {
+  it("treats a brand-new user with zero workouts as count=0", async () => {
     (getDb as any).mockReturnValue(
-      makeQueueDb([
-        PROFILE_USER,
-        [],
-        FREE_TIER_ROW,
-        [], // no limits row
-      ]),
-    );
-
-    const verdict = await assertEntitlement("user-1", "create_workout");
-    expect(verdict).toEqual({ allowed: true });
-  });
-
-  it("treats subscription_limits.current_count = null as count=0", async () => {
-    (getDb as any).mockReturnValue(
-      makeQueueDb([PROFILE_USER, [], FREE_TIER_ROW, [{ currentCount: null }]]),
+      makeQueueDb([PROFILE_USER, [], FREE_TIER_ROW, [{ value: 0 }]]),
     );
 
     const verdict = await assertEntitlement("user-1", "create_workout");
@@ -1078,7 +1086,7 @@ describe("assertEntitlement — create_workout, active sub", () => {
       makeQueueDb([
         PROFILE_USER,
         FREE_SUB_ACTIVE_WITH_LIMIT_3,
-        [{ currentCount: 3 }],
+        [{ value: 3 }],
         BASIC_TIER_ROW,
       ]),
     );
@@ -1113,7 +1121,7 @@ describe("assertEntitlement — create_workout, active sub", () => {
             workoutLimit: 1, // catalog still has the row joined
           },
         ],
-        [{ currentCount: 1 }],
+        [{ value: 1 }],
         BASIC_TIER_ROW,
       ]),
     );
@@ -1146,24 +1154,24 @@ describe("assertEntitlement — cancelled / expired subscriptions", () => {
   // ── Revert-to-free behaviour (the over-block fix) ──────────────────
   //
   // A cancelled/expired sub does NOT cut the user off — they fall back
-  // to free-tier rules (3 workouts/mo). Under the free allowance →
+  // to free-tier rules (3 workouts TOTAL). Under the free allowance →
   // allowed; over it → denied with the cancelled/expired reason (so
   // mobile shows reinstate / fix-payment, not "upgrade").
   //
   // Queue for these paths: profile → sub → FREE tier (the revert-to-free
-  // load) → limits. buildDenyVerdict short-circuits to upgradeTo=null for
-  // cancelled/expired, so NO extra upgrade-tier load is queued.
+  // load) → total count. buildDenyVerdict short-circuits to upgradeTo=null
+  // for cancelled/expired, so NO extra upgrade-tier load is queued.
 
   it("ALLOWS a cancelled-with-past-expires_at sub when still under the free allowance", async () => {
     // Regression for #117: a premium-cancelled account was 402'd on every
-    // create regardless of usage. Now it reverts to free (3/mo) and a
-    // user with 1 workout this month is allowed.
+    // create regardless of usage. Now it reverts to free (3 total) and a
+    // user with 1 workout is allowed.
     (getDb as any).mockReturnValue(
       makeQueueDb([
         PROFILE_USER,
         CANCELLED_SUB_EXPIRED,
         FREE_TIER_ROW,
-        [{ currentCount: 1 }],
+        [{ value: 1 }],
       ]),
     );
 
@@ -1171,13 +1179,13 @@ describe("assertEntitlement — cancelled / expired subscriptions", () => {
     expect(verdict).toEqual({ allowed: true });
   });
 
-  it("ALLOWS a cancelled sub with no current-month usage row (count defaults to 0)", async () => {
+  it("ALLOWS a cancelled sub with zero workouts (count=0)", async () => {
     (getDb as any).mockReturnValue(
       makeQueueDb([
         PROFILE_USER,
         CANCELLED_SUB_EXPIRED,
         FREE_TIER_ROW,
-        [], // no current-month limit row → count 0
+        [{ value: 0 }],
       ]),
     );
 
@@ -1191,7 +1199,7 @@ describe("assertEntitlement — cancelled / expired subscriptions", () => {
         PROFILE_USER,
         CANCELLED_SUB_EXPIRED,
         FREE_TIER_ROW,
-        [{ currentCount: 3 }],
+        [{ value: 3 }],
       ]),
     );
 
@@ -1219,7 +1227,7 @@ describe("assertEntitlement — cancelled / expired subscriptions", () => {
         PROFILE_USER,
         cancelledNoExpiry,
         FREE_TIER_ROW,
-        [{ currentCount: 4 }],
+        [{ value: 4 }],
       ]),
     );
 
@@ -1234,12 +1242,7 @@ describe("assertEntitlement — cancelled / expired subscriptions", () => {
 
   it("denies past_due sub as reason='expired' once the free allowance is exhausted", async () => {
     (getDb as any).mockReturnValue(
-      makeQueueDb([
-        PROFILE_USER,
-        PAST_DUE_SUB,
-        FREE_TIER_ROW,
-        [{ currentCount: 3 }],
-      ]),
+      makeQueueDb([PROFILE_USER, PAST_DUE_SUB, FREE_TIER_ROW, [{ value: 3 }]]),
     );
 
     const verdict = await assertEntitlement("user-1", "create_workout");
@@ -1254,12 +1257,7 @@ describe("assertEntitlement — cancelled / expired subscriptions", () => {
 
   it("ALLOWS a past_due sub when still under the free allowance", async () => {
     (getDb as any).mockReturnValue(
-      makeQueueDb([
-        PROFILE_USER,
-        PAST_DUE_SUB,
-        FREE_TIER_ROW,
-        [{ currentCount: 2 }],
-      ]),
+      makeQueueDb([PROFILE_USER, PAST_DUE_SUB, FREE_TIER_ROW, [{ value: 2 }]]),
     );
 
     const verdict = await assertEntitlement("user-1", "create_workout");
@@ -1276,7 +1274,7 @@ describe("assertEntitlement — cancelled / expired subscriptions", () => {
       },
     ];
     (getDb as any).mockReturnValue(
-      makeQueueDb([PROFILE_USER, exotic, FREE_TIER_ROW, [{ currentCount: 9 }]]),
+      makeQueueDb([PROFILE_USER, exotic, FREE_TIER_ROW, [{ value: 9 }]]),
     );
 
     const verdict = await assertEntitlement("user-1", "create_workout");
@@ -1311,6 +1309,174 @@ describe("assertEntitlement — cancelled / expired subscriptions", () => {
     await expect(assertEntitlement("user-1", "create_workout")).rejects.toThrow(
       /free.*missing/,
     );
+  });
+});
+
+describe("evaluateWorkoutTotalCapLock — over-limit RECORD lock", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("allows a free user who is UNDER the limit", async () => {
+    (getDb as any).mockReturnValue(
+      makeQueueDb([PROFILE_USER, [], FREE_TIER_ROW, [{ value: 1 }]]),
+    );
+
+    const verdict = await evaluateWorkoutTotalCapLock("user-1");
+    expect(verdict).toEqual({ allowed: true });
+  });
+
+  it("allows a free user sitting at EXACTLY the limit (strictly-over, not at-or-over)", async () => {
+    // The AC that distinguishes this from create_workout's `>=` check: a
+    // user at exactly 3 of 3 is fine — only strictly over 3 is locked.
+    (getDb as any).mockReturnValue(
+      makeQueueDb([PROFILE_USER, [], FREE_TIER_ROW, [{ value: 3 }]]),
+    );
+
+    const verdict = await evaluateWorkoutTotalCapLock("user-1");
+    expect(verdict).toEqual({ allowed: true });
+  });
+
+  it("denies with reason='workout_limit_exceeded' when a free user is STRICTLY OVER the limit", async () => {
+    (getDb as any).mockReturnValue(
+      makeQueueDb([
+        PROFILE_USER,
+        [],
+        FREE_TIER_ROW,
+        [{ value: 4 }],
+        BASIC_TIER_ROW,
+      ]),
+    );
+
+    const verdict = await evaluateWorkoutTotalCapLock("user-1");
+    expect(verdict).toEqual({
+      allowed: false,
+      reason: "workout_limit_exceeded",
+      currentTier: "free",
+      upgradeTo: "premium",
+      upgradePriceMonthly: 7.99,
+    });
+  });
+
+  it("REVERT-VERIFY: denies an over-limit user recording against an OWNED template — previously `sessionsRecordHandler`'s canSkipGate bypassed assertEntitlement entirely for this path and the record always succeeded", async () => {
+    // This function exists specifically because create_workout's own
+    // gate never runs for an owned-workout record (canSkipGate). Calling
+    // it directly (as the handler now does, before canSkipGate) proves
+    // the abuse path — 20 workouts made on a lapsed trial, now free — is
+    // closed: the verdict denies regardless of which workout is
+    // referenced, because it never looks at workoutId at all.
+    (getDb as any).mockReturnValue(
+      makeQueueDb([
+        PROFILE_USER,
+        [],
+        FREE_TIER_ROW,
+        [{ value: 20 }],
+        BASIC_TIER_ROW,
+      ]),
+    );
+
+    const verdict = await evaluateWorkoutTotalCapLock("user-1");
+    expect(verdict.allowed).toBe(false);
+    if (!verdict.allowed) {
+      expect(verdict.reason).toBe("workout_limit_exceeded");
+    }
+  });
+
+  it("denies with reason='workout_limit_exceeded' (NOT 'cancelled') for a reverted cancelled-and-expired sub that is over the free allowance", async () => {
+    // Distinct from create_workout: this function ALWAYS surfaces
+    // 'workout_limit_exceeded' on deny, regardless of why the effective
+    // tier is free.
+    (getDb as any).mockReturnValue(
+      makeQueueDb([
+        PROFILE_USER,
+        CANCELLED_SUB_EXPIRED,
+        FREE_TIER_ROW,
+        [{ value: 6 }],
+        BASIC_TIER_ROW,
+      ]),
+    );
+
+    const verdict = await evaluateWorkoutTotalCapLock("user-1");
+    expect(verdict).toEqual({
+      allowed: false,
+      reason: "workout_limit_exceeded",
+      currentTier: "premium", // actual tier preserved, same as create_workout
+      upgradeTo: "premium",
+      upgradePriceMonthly: 7.99,
+    });
+  });
+
+  it("allows a cancelled-with-future-expires_at sub regardless of count (still entitled, grace period)", async () => {
+    (getDb as any).mockReturnValue(
+      makeQueueDb([PROFILE_USER, CANCELLED_SUB_FUTURE]),
+    );
+
+    const verdict = await evaluateWorkoutTotalCapLock("user-1");
+    expect(verdict).toEqual({ allowed: true });
+  });
+
+  it("allows an active premium sub regardless of count (unlimited)", async () => {
+    (getDb as any).mockReturnValue(
+      makeQueueDb([PROFILE_USER, PREMIUM_SUB_ACTIVE]),
+    );
+
+    const verdict = await evaluateWorkoutTotalCapLock("user-1");
+    expect(verdict).toEqual({ allowed: true });
+  });
+
+  it("throws when the profiles row is missing (schema corruption)", async () => {
+    (getDb as any).mockReturnValue(makeQueueDb([[]]));
+
+    await expect(evaluateWorkoutTotalCapLock("user-missing")).rejects.toThrow(
+      /no profiles row/,
+    );
+  });
+
+  it("throws when the free tier row is missing from the catalog", async () => {
+    (getDb as any).mockReturnValue(makeQueueDb([PROFILE_USER, [], []]));
+
+    await expect(evaluateWorkoutTotalCapLock("user-1")).rejects.toThrow(
+      /free.*missing/,
+    );
+  });
+
+  it("ISOLATION: one user's over-limit stash never affects another user's verdict — each call resolves against its own independently-mocked DB executor", async () => {
+    // `evaluateWorkoutTotalCapLock` is a pure function of (userId,
+    // executor) with no module-level state, so user B's DB reads can
+    // never leak into user A's verdict. Two independent executors, two
+    // independent counts, run back-to-back in the same test.
+    const dbForUserA = makeQueueDb([
+      PROFILE_USER,
+      [],
+      FREE_TIER_ROW,
+      [{ value: 1 }], // user A: well under the limit
+    ]);
+    const dbForUserB = makeQueueDb([
+      PROFILE_USER,
+      [],
+      FREE_TIER_ROW,
+      [{ value: 20 }], // user B: badly over the limit (lapsed-trial stash)
+    ]);
+
+    const verdictA = await evaluateWorkoutTotalCapLock(
+      "user-A",
+      dbForUserA as any,
+    );
+    // buildDenyVerdict's upgrade-tier price lookup always reads the
+    // MODULE-LEVEL getDb() (not the passed executor) — same as every
+    // other deny path in this file — so it needs its own queued response
+    // even though the rest of user B's reads go through `dbForUserB`.
+    (getDb as any).mockReturnValue(makeQueueDb([BASIC_TIER_ROW]));
+    const verdictB = await evaluateWorkoutTotalCapLock(
+      "user-B",
+      dbForUserB as any,
+    );
+
+    expect(verdictA).toEqual({ allowed: true });
+    expect(verdictB).toMatchObject({
+      allowed: false,
+      reason: "workout_limit_exceeded",
+    });
   });
 });
 

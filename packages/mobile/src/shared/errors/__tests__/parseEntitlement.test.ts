@@ -82,6 +82,38 @@ describe("parseEntitlementDeniedResponseBody", () => {
       }),
     ).toBeNull();
   });
+
+  it("carries `reason` through when the wire body has it (workout_limit_exceeded backstop)", () => {
+    expect(
+      parseEntitlementDeniedResponseBody({
+        ...fullBody,
+        reason: "workout_limit_exceeded",
+      }),
+    ).toEqual({
+      feature: "create_workout",
+      currentTier: "premium",
+      upgradeTo: "premium",
+      upgradePriceMonthly: 12.99,
+      reason: "workout_limit_exceeded",
+    });
+  });
+
+  it("omits `reason` (rather than defaulting to undefined-on-the-object) when the wire body doesn't carry one — older backend responses stay parseable", () => {
+    const result = parseEntitlementDeniedResponseBody(fullBody);
+    expect(result).not.toBeNull();
+    expect(result).not.toHaveProperty("reason");
+  });
+
+  it("ignores a non-string `reason` rather than failing the whole parse", () => {
+    expect(
+      parseEntitlementDeniedResponseBody({ ...fullBody, reason: 42 }),
+    ).toEqual({
+      feature: "create_workout",
+      currentTier: "premium",
+      upgradeTo: "premium",
+      upgradePriceMonthly: 12.99,
+    });
+  });
 });
 
 describe("parseEntitlementDeniedResponseText", () => {

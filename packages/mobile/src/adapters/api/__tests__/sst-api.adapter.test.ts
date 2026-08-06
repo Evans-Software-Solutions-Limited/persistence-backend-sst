@@ -1056,6 +1056,39 @@ describe("SSTApiAdapter 402 entitlement-denied interception (M10.5)", () => {
     });
   });
 
+  it("carries the wire body's `reason` through to the entitlement payload — distinguishes workout_limit_exceeded from an ordinary limit deny", async () => {
+    installFetchMock(async () => {
+      return new Response(
+        JSON.stringify({
+          code: "ENTITLEMENT_DENIED",
+          error: "Subscription does not include this feature",
+          feature: "create_workout",
+          reason: "workout_limit_exceeded",
+          current_tier: "free",
+          upgrade_to: "premium",
+          upgrade_price_monthly: 12.99,
+        }),
+        { status: 402, headers: { "Content-Type": "application/json" } },
+      );
+    });
+
+    const adapter = new SSTApiAdapter();
+    const result = await adapter.createWorkout({
+      name: "Push Day",
+      visibility: "private",
+      exercises: [],
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.entitlement).toEqual({
+      feature: "create_workout",
+      currentTier: "free",
+      upgradeTo: "premium",
+      upgradePriceMonthly: 12.99,
+      reason: "workout_limit_exceeded",
+    });
+  });
+
   it("converts snake_case wire fields to camelCase on the domain payload", async () => {
     // Anti-regression: the contract is camelCase domain-side. Any drift
     // would leave snake_case keys leaking into containers/presenters.

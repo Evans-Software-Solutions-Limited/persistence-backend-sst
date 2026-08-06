@@ -45,6 +45,16 @@ export type ApiErrorEntitlementPayload = {
   readonly currentTier: string;
   readonly upgradeTo: string | null;
   readonly upgradePriceMonthly: number | null;
+  /**
+   * The backend's `EntitlementDenyReason` (`tier` | `limit` | `cancelled` |
+   * `expired` | `workout_limit_exceeded`), when the wire body carries one.
+   * Optional — added after `feature`/`currentTier`/`upgradeTo`/
+   * `upgradePriceMonthly`, so older parse call sites that don't stage it
+   * stay unaffected. Lets a consumer distinguish `workout_limit_exceeded`
+   * (the free-tier over-limit RECORD lock backstop) from an ordinary
+   * `limit` deny.
+   */
+  readonly reason?: string;
 };
 
 export type ApiError = {

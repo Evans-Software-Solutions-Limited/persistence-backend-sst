@@ -260,6 +260,50 @@ export class SessionRepository {
   }
 
   /**
+   * Fast, NON-transactional pre-check: does a session for
+   * `(userId, clientSessionId)` already exist?
+   *
+   * Exists so `sessionsRecordHandler` can detect a REPLAY (the sync queue
+   * retrying an ambiguously-failed flush — server committed, ack lost)
+   * BEFORE running `evaluateWorkoutTotalCapLock` / the `create_workout`
+   * gate. Without this, a session that already landed server-side can get
+   * gated a SECOND time on retry if the caller's workout count crossed the
+   * limit in between — 402ing an already-saved session into a phantom
+   * `blocked_entitlement` sync-queue entry (misleading banner; no data
+   * loss, since the session is safely committed, but confusing and it
+   * pointlessly consumes the entitlement gate's DB round-trips on a
+   * request that was always going to be a no-op insert).
+   *
+   * This is deliberately a CHEAP, best-effort signal, not the source of
+   * truth — `recordSession`'s own transactional step-0 short-circuit
+   * (below) remains the authoritative idempotency check and is unaffected
+   * by this method. A false negative here (e.g. a race where the original
+   * insert hasn't committed yet) just means the request falls through to
+   * the normal gate, exactly like before this method existed — never a
+   * double-insert, because `recordSession`'s unique-index backstop still
+   * catches it. A false positive is not possible: a matching row only
+   * exists if this exact `(userId, clientSessionId)` pair already
+   * committed.
+   */
+  async hasExistingSessionForClient(
+    userId: string,
+    clientSessionId: string,
+  ): Promise<boolean> {
+    const db = getDb();
+    const rows = await db
+      .select({ id: workoutSessions.id })
+      .from(workoutSessions)
+      .where(
+        and(
+          eq(workoutSessions.userId, userId),
+          eq(workoutSessions.clientSessionId, clientSessionId),
+        ),
+      )
+      .limit(1);
+    return rows.length > 0;
+  }
+
+  /**
    * Bulk-record a completed (or cancelled) session in one transaction.
    * The M3 active-session flush path: mobile keeps the active session
    * in local state, then on Finish posts the entire payload here.

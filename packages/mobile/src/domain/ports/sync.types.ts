@@ -55,4 +55,13 @@ export type EntitlementVerdict = {
   upgradePriceMonthly: number | null;
   /** ISO timestamp recorded at the moment the 402 landed. */
   blockedAt: string;
+  /**
+   * The backend's `EntitlementDenyReason` string, when the 402 body carried
+   * one. Distinguishes `workout_limit_exceeded` (the free-tier over-limit
+   * RECORD lock backstop — `evaluateWorkoutTotalCapLock`) from an ordinary
+   * `limit` deny, so the review screen can route to the dedicated
+   * workout-limit resolution screen instead of the generic blocked-entries
+   * list. Optional — older/other denies may not carry it.
+   */
+  reason?: string;
 };
