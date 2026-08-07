@@ -6,6 +6,7 @@ import {
 } from "@persistence/api-utils/auth/supabaseAuth";
 import { MealPlanService } from "../../../../repositories/mealPlanService";
 import { NutritionEntryService } from "../../../../repositories/nutritionEntryService";
+import { MealprintCandidateService } from "../../../../repositories/mealprintCandidateService";
 import {
   assertEntitlement,
   EntitlementError,
@@ -44,6 +45,7 @@ export const nutritionPlanMealLogHandler = new Elysia()
   .onBeforeHandle(requireAuth)
   .use(MealPlanService)
   .use(NutritionEntryService)
+  .use(MealprintCandidateService)
   .post(
     "/nutrition/plans/:id/meals/:mealId/log",
     async (ctx) => {
@@ -74,6 +76,38 @@ export const nutritionPlanMealLogHandler = new Elysia()
             alreadyLogged: true,
           },
         };
+      }
+
+      // The plan intentionally freezes its accepted macros, but its provenance
+      // must still be trusted at log time. A source can be quarantined after a
+      // plan was accepted (for example an OFF kcal/kJ contradiction). Resolve
+      // every reference through the same fail-closed boundary used by plan
+      // creation; if any source is now unavailable, retain the historical plan
+      // but do not turn its stale total into a diary entry.
+      const foodIds = (meal.items ?? []).map((item) => item.foodId);
+      const recipeIds = meal.recipeId ? [meal.recipeId] : [];
+      const mealIds = meal.mealId ? [meal.mealId] : [];
+      const resolved = await ctx.MealprintCandidateRepository.resolveByIds(
+        userId,
+        { foodIds, recipeIds, mealIds },
+      );
+      const resolvedKeys = new Set(
+        resolved.map((candidate) => `${candidate.kind}:${candidate.id}`),
+      );
+      const requiredKeys = [
+        ...foodIds.map((id) => `food:${id}`),
+        ...recipeIds.map((id) => `recipe:${id}`),
+        ...mealIds.map((id) => `meal:${id}`),
+      ];
+      const unavailable = [
+        ...new Set(requiredKeys.filter((key) => !resolvedKeys.has(key))),
+      ];
+      if (unavailable.length > 0) {
+        console.warn(
+          `[mealprint-plan-log] unavailable-nutrition user=${userId} plan=${planId} meal=${mealId} ids=${unavailable.join(",")}`,
+        );
+        ctx.set.status = 409;
+        return { error: "plan_meal_nutrition_unavailable" };
       }
 
       // 3. Create the entry from the meal's DENORMALISED macros — never

@@ -12,13 +12,16 @@
  * `{ found: false }` (handler → 404 barcode_not_found).
  */
 
-import { kcalFromOffNutriments } from "../../services/offEnergy";
+import {
+  resolveOffEnergy,
+  type OffNutritionDataIssue,
+} from "../../services/offEnergy";
 import { mapOffAllergenTags, normaliseOffTags } from "../../services/offMapper";
 
 const OFF_BASE = "https://world.openfoodfacts.org/api/v2/product";
 // `serving_quantity` is the real per-serving size in grams (drives the scan
 // sheet's Serving tab); `energy-kj_100g` backs the kJ→kcal fallback for
-// kcal-less products (see kcalFromOffNutriments).
+// kcal-less products and allows contradictory energy to be quarantined.
 //
 // ⚠ The four Mealprint fields (spec-26 § 2.1) are requested here as well as in
 // the bulk seed, because this path also WRITES `foods` rows — a live barcode
@@ -30,7 +33,8 @@ const OFF_BASE = "https://world.openfoodfacts.org/api/v2/product";
 // `offMapper.mapOffAllergenTags`).
 const OFF_FIELDS =
   "product_name,brands,nutriments,serving_quantity,serving_size," +
-  "allergens_tags,categories_tags,countries_tags,ingredients_text";
+  "allergens_tags,categories_tags,countries_tags,ingredients_text," +
+  "data_quality_tags,data_quality_errors_tags,data_quality_warnings_tags";
 const TIMEOUT_MS = 8000;
 // ODbL + politeness: a descriptive UA is mandatory; a generic/missing one gets
 // throttled or blocked by OFF.
@@ -65,11 +69,13 @@ export type ResolvedFood = {
   allergenTags: string[] | null;
   categoryTags: string[] | null;
   localeTags: string[] | null;
+  nutritionDataValid: boolean;
+  nutritionDataIssue: OffNutritionDataIssue | null;
 };
 
 export type ResolveResult =
   | { found: true; food: ResolvedFood }
-  | { found: false };
+  | { found: false; invalidFood?: ResolvedFood };
 
 type OffNutriments = Record<string, number | string | undefined>;
 
@@ -83,7 +89,7 @@ function num(v: number | string | undefined): number | null {
  * Map an OFF product to our Food shape. Macros are per-100g (serving_size=100,
  * unit=g); `serving_quantity` (the real pack serving, grams) is carried through
  * separately so the scan sheet's Serving tab can mean the real pack. Returns
- * null when NO energy figure is present (kcal or kJ — see kcalFromOffNutriments)
+ * null when NO energy figure is present (kcal or kJ)
  * — we can't persist a NOT NULL kcal, so treat it as "not found" and let the
  * user add the food manually.
  */
@@ -98,20 +104,35 @@ export function mapOffProduct(
     categories_tags?: string[];
     countries_tags?: string[];
     ingredients_text?: string;
+    data_quality_tags?: string[];
+    data_quality_errors_tags?: string[];
+    data_quality_warnings_tags?: string[];
   },
 ): ResolvedFood | null {
   const n = product.nutriments ?? {};
-  const kcal = kcalFromOffNutriments(n);
-  if (kcal === null) return null;
+  const proteinG = num(n["proteins_100g"]) ?? 0;
+  const carbsG = num(n["carbohydrates_100g"]) ?? 0;
+  const fatG = num(n["fat_100g"]) ?? 0;
+  const energy = resolveOffEnergy(n, {
+    proteinG,
+    carbsG,
+    fatG,
+    qualityTags: [
+      ...(product.data_quality_tags ?? []),
+      ...(product.data_quality_errors_tags ?? []),
+      ...(product.data_quality_warnings_tags ?? []),
+    ],
+  });
+  if (energy.kcal === null) return null;
   const sq = num(product.serving_quantity);
   return {
     name: product.product_name?.trim() || "Unknown product",
     brand: product.brands?.split(",")[0]?.trim() || null,
     barcode: code,
-    kcal,
-    proteinG: num(n["proteins_100g"]) ?? 0,
-    carbsG: num(n["carbohydrates_100g"]) ?? 0,
-    fatG: num(n["fat_100g"]) ?? 0,
+    kcal: energy.kcal,
+    proteinG,
+    carbsG,
+    fatG,
     servingSize: 100,
     servingUnit: "g",
     // Only a positive serving is meaningful; 0 / negative / absent → null.
@@ -119,6 +140,8 @@ export function mapOffProduct(
     allergenTags: mapOffAllergenTags(product),
     categoryTags: normaliseOffTags(product.categories_tags),
     localeTags: normaliseOffTags(product.countries_tags),
+    nutritionDataValid: energy.nutritionDataValid,
+    nutritionDataIssue: energy.nutritionDataIssue,
   };
 }
 
@@ -161,6 +184,9 @@ export async function resolveBarcodeFromOFF(
       categories_tags?: string[];
       countries_tags?: string[];
       ingredients_text?: string;
+      data_quality_tags?: string[];
+      data_quality_errors_tags?: string[];
+      data_quality_warnings_tags?: string[];
     };
   };
   try {
@@ -178,5 +204,8 @@ export async function resolveBarcodeFromOFF(
   if (body.status !== 1 || !body.product) return { found: false };
 
   const food = mapOffProduct(code, body.product);
-  return food ? { found: true, food } : { found: false };
+  if (!food) return { found: false };
+  return food.nutritionDataValid
+    ? { found: true, food }
+    : { found: false, invalidFood: food };
 }

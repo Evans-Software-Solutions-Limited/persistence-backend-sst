@@ -15,6 +15,7 @@ const product = {
   ingredients_text: "Wholegrain rolled oats",
   nutriments: {
     "energy-kcal_100g": 379,
+    "energy-kj_100g": 1585,
     proteins_100g: 11,
     carbohydrates_100g: 67,
     fat_100g: 8,
@@ -45,6 +46,8 @@ describe("mapOffProduct", () => {
       allergenTags: ["en:gluten"],
       categoryTags: ["en:breakfast-cereals"],
       localeTags: ["en:united-kingdom"],
+      nutritionDataValid: true,
+      nutritionDataIssue: null,
     });
   });
 
@@ -84,6 +87,30 @@ describe("mapOffProduct", () => {
     });
     expect(out?.kcal).toBe(239);
     expect(out?.proteinG).toBe(5);
+  });
+
+  it("quarantines contradictory energy instead of resolving it", async () => {
+    const contradictory = {
+      ...product,
+      nutriments: {
+        "energy-kcal_100g": 2.4,
+        "energy-kj_100g": 850.6,
+        proteins_100g: 23,
+        carbohydrates_100g: 59,
+        fat_100g: 5,
+      },
+    };
+    const res = await resolveBarcodeFromOFF("01851960", {
+      fetcher: async () => jsonResponse({ status: 1, product: contradictory }),
+    });
+    expect(res.found).toBe(false);
+    if (!res.found) {
+      expect(res.invalidFood).toMatchObject({
+        kcal: 203.3,
+        nutritionDataValid: false,
+        nutritionDataIssue: "energy_mismatch",
+      });
+    }
   });
 
   it("carries a null servingQuantity when OFF omits serving_quantity", () => {

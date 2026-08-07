@@ -90,6 +90,7 @@ describe("MealprintCandidateRepository.buildCuratedWhere", () => {
     );
     expect(sql).toContain('"source"');
     expect(params).toContain("openfoodfacts");
+    expect(params).toContain(true);
     // AC 7.3 — the pool draws only locale-curated rows.
     expect(params).toContain("en:united-kingdom");
     expect(sql).toContain("&&");

@@ -61,6 +61,27 @@ function suggestion(
 }
 
 describe("verifySuggestions — macros come from the DB, never the model", () => {
+  it("rejects an impossible candidate even if repository filtering regresses", () => {
+    const result = verifySuggestions({
+      suggestions: [suggestion([{ candidateId: "bad", servings: 1 }])],
+      candidates: [
+        candidate({
+          id: "bad",
+          kcal: 5,
+          proteinG: 23,
+          carbsG: 59,
+          fatG: 5,
+        }),
+      ],
+      remaining: REMAINING,
+      preferences: NO_PREFS,
+    });
+    expect(result.suggestions).toEqual([]);
+    expect(result.rejected[0]).toMatchObject({
+      failure: "degenerate_macros",
+    });
+  });
+
   it("recomputes every macro as row × servings", () => {
     const result = verifySuggestions({
       suggestions: [suggestion([{ candidateId: "yog", servings: 2 }])],

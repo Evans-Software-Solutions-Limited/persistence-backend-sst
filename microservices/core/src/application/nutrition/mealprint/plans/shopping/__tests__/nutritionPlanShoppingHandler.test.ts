@@ -41,6 +41,7 @@ vi.mock("../../../../../entitlement/assertEntitlement", async () => {
 });
 
 import { nutritionPlanShoppingHandlers } from "../nutritionPlanShoppingHandler";
+import { PlanNutritionUnavailableError } from "../../../../../repositories/nutritionDataValidity";
 
 const PLAN_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 
@@ -76,6 +77,17 @@ describe("GET /nutrition/plans/:id/shopping", () => {
 
     expect(res.status).toBe(404);
     expect((await body(res)).error).toBe("not_found");
+  });
+
+  it("409s when a source in an accepted plan has been quarantined", async () => {
+    planMocks.getShoppingSource.mockRejectedValue(
+      new PlanNutritionUnavailableError(),
+    );
+    const res = await nutritionPlanShoppingHandlers.handle(
+      get(`/nutrition/plans/${PLAN_ID}/shopping`),
+    );
+    expect(res.status).toBe(409);
+    expect((await body(res)).error).toBe("plan_nutrition_unavailable");
   });
 
   it("passes the caller's id and the plan id to the repository", async () => {

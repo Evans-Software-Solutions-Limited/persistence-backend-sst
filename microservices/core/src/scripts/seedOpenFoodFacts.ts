@@ -14,11 +14,14 @@
  *        duckdb -c "COPY (
  *          SELECT code, product_name, brands, countries_tags,
  *                 allergens_tags, categories_tags, ingredients_text,
+ *                 data_quality_tags, data_quality_errors_tags,
+ *                 data_quality_warnings_tags,
  *                 nutriments,
  *                 TRY_CAST(serving_quantity AS DOUBLE) AS serving_quantity
  *          FROM 'food.parquet'
  *          WHERE code IS NOT NULL
- *            AND nutriments->>'energy-kcal_100g' IS NOT NULL
+ *            AND (nutriments->>'energy-kcal_100g' IS NOT NULL
+ *              OR nutriments->>'energy-kj_100g' IS NOT NULL)
  *            AND list_contains(countries_tags, 'en:united-kingdom')
  *        ) TO 'off-uk.jsonl' (FORMAT JSON);"
  *   3. DATABASE_URL=... bun run microservices/core/src/scripts/seedOpenFoodFacts.ts off-uk.jsonl
@@ -33,6 +36,10 @@
  * unsafe. So an out-of-date projection does not merely skip an enrichment — it
  * leaves ~144k curated foods excluded from every allergen-filtered candidate
  * pool, which presents to the user as "Mealprint can't find anything I can eat".
+ *
+ * Both kcal and kJ plus OFF quality tags are required: contradictory records
+ * are stored as quarantined rows and excluded from search, logging, and
+ * Mealprint rather than silently trusting a malformed kcal value.
  *
  * `ingredients_text` is read but never stored: it is the only way to tell
  * "OFF analysed the ingredients and found no allergens" (→ `[]`) from "nobody

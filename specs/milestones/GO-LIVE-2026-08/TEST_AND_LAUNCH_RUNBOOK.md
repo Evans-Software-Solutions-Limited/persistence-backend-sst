@@ -26,14 +26,15 @@ slice; the remaining work here is **operational and Brad's**.
 
 ## 1. OFF re-seed (Mealprint candidate pool) — Brad, operational
 
-Without this, every allergen filter empties the candidate pool and Mealprint looks
-broken (all ~144k seeded `foods` rows have NULL `allergen_tags` / `categories_tags`).
+The committed UK seed now carries allergen/category tags plus kcal, kJ and OFF
+quality signals. Re-seeding both backfills Mealprint tags and quarantines
+contradictory nutrition rows.
 
 - Script + full instructions: **`microservices/core/src/scripts/seedOpenFoodFacts.ts`**
   (header has the DuckDB filter over the OFF Parquet dump → NDJSON → idempotent upsert).
-- The updated script now selects `allergens_tags` + `categories_tags`, so re-running it
-  **backfills** those columns. Idempotent (upsert by `code`).
-- ⚠ Run it **after** the tag-column migration is applied (staging: already deployed).
+- The refresh selects kcal + kJ + quality tags; the mapper stores a source issue and
+  sets `nutrition_data_valid=false` on contradictions. Idempotent (upsert by `code`).
+- ⚠ Run it **after** the tag and nutrition trust-boundary migrations are applied.
 - Until it runs, QA Mealprint with **no allergen chips** (an allergen chip correctly
   returns `emptyReason: "no_candidates"` against an untagged pool).
 
@@ -103,6 +104,34 @@ Expect (active rows):
 | coach_pro                           | 99.99 | 839.99     | ✓       | ✓       | ✓         | 30      |
 
 `small_business` / `medium_enterprise` should be **`is_active = false`** (tombstones).
+
+OFF nutrition is also a release gate. After migration + re-seed, run on both DBs:
+
+```sql
+select nutrition_data_issue, count(*)
+  from foods
+ where source = 'openfoodfacts' and not nutrition_data_valid
+ group by nutrition_data_issue order by nutrition_data_issue;
+
+select f.barcode, f.name, f.kcal, f.nutrition_data_issue,
+       count(distinct ne.id) as diary_entries,
+       count(distinct ri.id) as recipe_ingredients,
+       count(distinct mi.id) as meal_items
+  from foods f
+  left join nutrition_entries ne on ne.food_id = f.id
+  left join recipe_ingredients ri on ri.food_id = f.id
+  left join meal_items mi on mi.food_id = f.id
+ where f.source = 'openfoodfacts' and not f.nutrition_data_valid
+ group by f.id
+having count(distinct ne.id) > 0
+    or count(distinct ri.id) > 0
+    or count(distinct mi.id) > 0;
+```
+
+The first query is an audit count, not a zero-count expectation: quarantined OFF
+rows remain deliberately. The second must be empty before production release,
+except for the three incident diary rows repaired by the migration (which should
+show corrected kcal and remain quarantined from future use).
 
 ⚠ **Do we need to RESET subscription data?** Not for schema safety — the migration kept
 retired tiers as FK-safe tombstones, so nothing breaks. Reset (clear `user_subscriptions`)

@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { NutritionSourceUnavailableError } from "../../../repositories/nutritionDataValidity";
 
 const mealMocks = { create: vi.fn() };
 const foodMocks = { getByIds: vi.fn() };
@@ -84,5 +85,43 @@ describe("mealsCreateHandler", () => {
       expect.objectContaining({ name: "Lunch" }),
       { kcal: 200, proteinG: 20, carbsG: 40, fatG: 10 },
     );
+  });
+
+  it("rejects unresolved food or recipe references before writing", async () => {
+    foodMocks.getByIds.mockResolvedValue([]);
+    recipeMocks.getMacroSummaries.mockResolvedValue(new Map());
+    const { mealsCreateHandler } = await import("../mealsCreateHandler");
+    const res = await mealsCreateHandler.handle(
+      post({
+        name: "Bad lunch",
+        items: [{ recipeId: "bad", servings: 1, sortOrder: 0 }],
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(mealMocks.create).not.toHaveBeenCalled();
+  });
+
+  it("409s when a source is quarantined during the create transaction", async () => {
+    foodMocks.getByIds.mockResolvedValue([
+      {
+        id: "f1",
+        kcal: 100,
+        proteinG: 10,
+        carbsG: 20,
+        fatG: 5,
+        servingSize: 100,
+      },
+    ]);
+    mealMocks.create.mockRejectedValue(
+      new NutritionSourceUnavailableError(["food:f1"]),
+    );
+    const { mealsCreateHandler } = await import("../mealsCreateHandler");
+    const res = await mealsCreateHandler.handle(
+      post({
+        name: "Raced lunch",
+        items: [{ foodId: "f1", servings: 1, sortOrder: 0 }],
+      }),
+    );
+    expect(res.status).toBe(409);
   });
 });

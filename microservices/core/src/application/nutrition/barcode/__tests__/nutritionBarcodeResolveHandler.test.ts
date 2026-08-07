@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const foodMocks = {
   getByBarcode: vi.fn(),
+  hasInvalidOffBarcode: vi.fn(),
   upsertManyFromOff: vi.fn(),
 };
 
@@ -48,7 +49,10 @@ function post(code: string, auth = true) {
 const food = { id: "f1", barcode: "123", kcal: 150 };
 
 describe("nutritionBarcodeResolveHandler", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    foodMocks.hasInvalidOffBarcode.mockResolvedValue(false);
+  });
 
   it("requires auth", async () => {
     const { nutritionBarcodeResolveHandler } =
@@ -97,6 +101,40 @@ describe("nutritionBarcodeResolveHandler", () => {
     const res = await nutritionBarcodeResolveHandler.handle(post("999"));
     expect(res.status).toBe(404);
     expect(((await res.json()) as any).error).toBe("barcode_not_found");
+  });
+
+  it("caches a contradictory OFF row as quarantined and returns 404", async () => {
+    foodMocks.getByBarcode.mockResolvedValue(null);
+    foodMocks.upsertManyFromOff.mockResolvedValue(1);
+    (resolveBarcodeFromOFF as any).mockResolvedValue({
+      found: false,
+      invalidFood: {
+        barcode: "01851960",
+        kcal: 203.3,
+        nutritionDataValid: false,
+        nutritionDataIssue: "energy_mismatch",
+      },
+    });
+    const { nutritionBarcodeResolveHandler } =
+      await import("../nutritionBarcodeResolveHandler");
+    const res = await nutritionBarcodeResolveHandler.handle(post("01851960"));
+    expect(res.status).toBe(404);
+    expect(foodMocks.upsertManyFromOff).toHaveBeenCalledWith([
+      expect.objectContaining({
+        barcode: "01851960",
+        nutritionDataValid: false,
+      }),
+    ]);
+  });
+
+  it("does not call OFF again for a known quarantined barcode", async () => {
+    foodMocks.getByBarcode.mockResolvedValue(null);
+    foodMocks.hasInvalidOffBarcode.mockResolvedValue(true);
+    const { nutritionBarcodeResolveHandler } =
+      await import("../nutritionBarcodeResolveHandler");
+    const res = await nutritionBarcodeResolveHandler.handle(post("01851960"));
+    expect(res.status).toBe(404);
+    expect(resolveBarcodeFromOFF).not.toHaveBeenCalled();
   });
 
   it("503s when OFF is unavailable / rate-limited", async () => {

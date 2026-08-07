@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { NutritionSourceUnavailableError } from "../../../repositories/nutritionDataValidity";
 
 const recipeMocks = { create: vi.fn() };
 const foodMocks = { getByIds: vi.fn() };
@@ -106,6 +107,47 @@ describe("recipesCreateHandler", () => {
       }),
       { kcal: 1200, proteinG: 60, carbsG: 140, fatG: 40 },
     );
+  });
+
+  it("rejects a quarantined or unknown linked food before writing", async () => {
+    foodMocks.getByIds.mockResolvedValue([]);
+    const { recipesCreateHandler } = await import("../recipesCreateHandler");
+    const res = await recipesCreateHandler.handle(
+      post({
+        name: "Bad bowl",
+        servings: 1,
+        ingredients: [
+          { foodId: "bad", quantity: 100, unit: "g", sortOrder: 0 },
+        ],
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(recipeMocks.create).not.toHaveBeenCalled();
+  });
+
+  it("409s when a linked source is quarantined during the create transaction", async () => {
+    foodMocks.getByIds.mockResolvedValue([
+      {
+        id: "f1",
+        kcal: 100,
+        proteinG: 10,
+        carbsG: 20,
+        fatG: 5,
+        servingSize: 100,
+      },
+    ]);
+    recipeMocks.create.mockRejectedValue(
+      new NutritionSourceUnavailableError(["food:f1"]),
+    );
+    const { recipesCreateHandler } = await import("../recipesCreateHandler");
+    const res = await recipesCreateHandler.handle(
+      post({
+        name: "Raced bowl",
+        servings: 1,
+        ingredients: [{ foodId: "f1", quantity: 100, unit: "g", sortOrder: 0 }],
+      }),
+    );
+    expect(res.status).toBe(409);
   });
 
   it("rejects an unknown source value", async () => {
