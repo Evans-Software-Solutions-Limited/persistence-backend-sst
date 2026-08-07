@@ -359,6 +359,7 @@ export function FuelContainer() {
       onMealprintUpgrade={mealprint.onUpgrade}
       onMealprintRetry={mealprint.onRetry}
       onMealprintPlan={mealprint.onPlanMyDay}
+      onMealprintEditPreferences={mealprint.onEditPreferences}
       slots={slots}
       waterCups={consumed.waterCups}
       waterGoal={target?.waterCups ?? 8}

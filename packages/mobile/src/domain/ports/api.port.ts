@@ -41,6 +41,7 @@ import type {
   ReferenceEntry,
   ReferenceListKind,
 } from "@/domain/models/reference-list";
+import type { ShoppingList } from "@/domain/models/shoppingList";
 import type {
   BillingCycle,
   CancelSubscriptionResult,
@@ -1297,6 +1298,17 @@ export interface ApiPort {
     planId: string,
     mealId: string,
   ): Promise<Result<PlanMealLogResult, ApiError>>;
+
+  /**
+   * `GET /nutrition/plans/:id/shopping` — the day-scoped shopping list
+   * derived from an accepted plan (spec-26 amendment 2026-08, § B, STORY-006
+   * decision B.1). Reads, ungated like the other plan reads. Nothing is
+   * stored server-side — every call re-derives from `meal_plan_meals` — and
+   * nothing is cached client-side either; the checked-off state a caller
+   * layers on top is local-only (decision B.2). 404 `not_found` when `id`
+   * isn't the caller's plan.
+   */
+  getShoppingList(planId: string): Promise<Result<ShoppingList, ApiError>>;
 
   // -- Client side of the coach↔client handshake (10-trainer-features) --
   /**

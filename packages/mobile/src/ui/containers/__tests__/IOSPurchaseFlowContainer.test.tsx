@@ -538,6 +538,36 @@ describe("IOSPurchaseFlowContainer", () => {
     expect(screen.getByTestId("subscription-card-premium_plus")).toBeTruthy();
   });
 
+  it("returns a subscriber from the plan catalog back to Manage, not the persona chooser", async () => {
+    const paid = subscription({
+      subscriptionId: "sub-1",
+      tierName: "premium",
+      tierDisplayName: "Premium",
+      billingCycle: "monthly",
+      externalSubscriptionId: "rc-1",
+    });
+    const { adapters } = makeAdapters(paid);
+    renderContainer(adapters);
+    // Manage → Change plan → plan catalog.
+    fireEvent.press(await screen.findByTestId("subscription-change-plan"));
+    expect(screen.getByTestId("subscription-card-premium_plus")).toBeTruthy();
+    // Back must return to Manage (where plans was opened from), NOT the
+    // "How will you use Persistence?" persona chooser.
+    fireEvent.press(screen.getByTestId("ios-purchase-back"));
+    expect(screen.getByTestId("subscription-manage-screen")).toBeTruthy();
+    expect(screen.queryByTestId("subscription-persona-chooser")).toBeNull();
+  });
+
+  it("returns a new user from the plan catalog back to the persona chooser", async () => {
+    const { adapters } = makeAdapters();
+    renderContainer(adapters);
+    fireEvent.press(await screen.findByTestId("persona-self"));
+    expect(screen.getByTestId("subscription-card-premium_plus")).toBeTruthy();
+    // A free user reached plans via the persona chooser, so Back returns there.
+    fireEvent.press(screen.getByTestId("ios-purchase-back"));
+    expect(screen.getByTestId("subscription-persona-chooser")).toBeTruthy();
+  });
+
   it("derives coach plans from an existing physiotherapist subscription", async () => {
     const paid = subscription({
       subscriptionId: "sub-physio",

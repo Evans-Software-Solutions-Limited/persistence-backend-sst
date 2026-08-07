@@ -433,6 +433,9 @@ describe("useMealSuggest", () => {
           fatG: 1,
           containsUnverified: false,
           partialEnforcementOnly: false,
+          cheat: false,
+          isOrder: false,
+          tag: null,
         },
       ],
       emptyReason: null,
@@ -747,6 +750,17 @@ describe("useMealprintEntry", () => {
     await waitFor(() => expect(latest().state).toBe("unlocked"));
     act(() => latest().onPlanMyDay());
     expect(useFuelSheets.getState().sheet).toBe("mealprintPlan");
+  });
+
+  it("onEditPreferences pushes the preferences EDITOR route directly (amendment 2026-08 § C)", async () => {
+    const api = new InMemoryApiAdapter();
+    api.mySubscription = subscription("premium_plus");
+    const { latest } = harness(api, useMealprintEntry);
+    await waitFor(() => expect(latest().state).toBe("unlocked"));
+    act(() => latest().onEditPreferences());
+    expect(mockRouterPush).toHaveBeenCalledWith(
+      "/(app)/fuel/preferences?mode=editor",
+    );
   });
 
   it("planProgress is null with no active plan, and non-null with one — spec-26 Phase 2", async () => {

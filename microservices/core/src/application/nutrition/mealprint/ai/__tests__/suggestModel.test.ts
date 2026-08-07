@@ -23,6 +23,7 @@ import {
   mealModelId,
   MIN_SERVINGS,
   minUsefulSuggestTokens,
+  OCCASION_SUGGESTION_COUNT,
   parseSuggestions,
   SUGGEST_TIMEOUT_MS,
   suggestMaxTokens,
@@ -64,6 +65,7 @@ function promptInput(
 ): SuggestPromptInput {
   return {
     shape: "either",
+    occasion: "on_plan",
     remaining: { kcal: 620, proteinG: 42, carbsG: 60, fatG: 20 },
     steer: null,
     candidates: CANDIDATES,
@@ -540,5 +542,259 @@ describe("composeSuggestions", () => {
     await composeSuggestions(promptInput(), { client, timeoutMs: 60_000 });
     const params = (client.messages.create as any).mock.calls[0][0];
     expect(params.max_tokens).toBe(suggestMaxTokens(SUGGEST_TIMEOUT_MS));
+  });
+});
+
+// ── occasions (amendment 2026-08 § A) ──────────────────────────────────────
+
+describe("buildSuggestPrompt — occasions", () => {
+  it("asks for 3 suggestions and renders shape for on_plan (unchanged behaviour)", () => {
+    const prompt = buildSuggestPrompt(promptInput({ occasion: "on_plan" }));
+    expect(prompt).toContain("Compose 3 distinct suggestions");
+    expect(prompt).toContain("Suggestions may be snacks or meals");
+  });
+
+  it("asks for EXACTLY 2 cheat-meal suggestions and omits shape", () => {
+    const prompt = buildSuggestPrompt(
+      promptInput({ occasion: "cheat_meal", shape: "snack" }),
+    );
+    expect(prompt).toContain("EXACTLY 2 suggestions");
+    expect(prompt).toContain('"Have it"');
+    expect(prompt).toContain('"Smart swap"');
+    // Shape only means something for on_plan (amendment § A.1).
+    expect(prompt).not.toContain("must be a SNACK");
+  });
+
+  it("relaxes the budget rule for the cheat-meal 'Have it' card only", () => {
+    const prompt = buildSuggestPrompt(promptInput({ occasion: "cheat_meal" }));
+    expect(prompt).toContain("allowed to exceed them on purpose");
+    // The generic "do not exceed the calories" rule must not also be present —
+    // otherwise the prompt contradicts itself.
+    expect(prompt).not.toContain("Do not exceed the calories.");
+  });
+
+  it("labels steer as the restaurant name for eating_out, not a generic preference", () => {
+    const withRestaurant = buildSuggestPrompt(
+      promptInput({ occasion: "eating_out", steer: "Nando's" }),
+    );
+    expect(withRestaurant).toContain('RESTAURANT: "Nando\'s"');
+    expect(withRestaurant).not.toContain("THE USER ALSO ASKED FOR");
+
+    const withoutRestaurant = buildSuggestPrompt(
+      promptInput({ occasion: "eating_out", steer: null }),
+    );
+    expect(withoutRestaurant).toContain("RESTAURANT: not specified");
+  });
+
+  it("asks for 3 best-order suggestions tagged Meal/Snack for eating_out", () => {
+    const prompt = buildSuggestPrompt(promptInput({ occasion: "eating_out" }));
+    expect(prompt).toContain("3 best orders");
+    expect(prompt).toContain('"Meal" or "Snack"');
+    expect(prompt).not.toContain("must be a SNACK");
+  });
+});
+
+describe("parseSuggestions — occasion resolution", () => {
+  function payload(entries: Array<Record<string, unknown>>) {
+    return { suggestions: entries };
+  }
+
+  it("defaults to on_plan and leaves cheat/isOrder/tag at their defaults", () => {
+    const out = parseSuggestions(
+      payload([
+        {
+          name: "Yogurt bowl",
+          reason: "r",
+          items: [{ candidateId: "cand-1", servings: 1 }],
+        },
+      ]),
+    );
+    expect(out[0]).toMatchObject({ cheat: false, isOrder: false, tag: null });
+  });
+
+  // ⚠ THE LOAD-BEARING TEST for this amendment. `verifyComposition` gates the
+  // kcal-ceiling exemption on `cheat === true && tag === "Have it"`. If an
+  // on_plan response could set those fields itself, any on_plan suggestion
+  // could forge its way past the budget check it exists to enforce.
+  it("ignores a model-claimed cheat/tag on on_plan — never trusts it", () => {
+    const out = parseSuggestions(
+      payload([
+        {
+          name: "Sneaky",
+          reason: "r",
+          tag: "Have it",
+          cheat: true,
+          isOrder: true,
+          items: [{ candidateId: "cand-1", servings: 1 }],
+        },
+      ]),
+      "on_plan",
+    );
+    expect(out[0]).toMatchObject({ cheat: false, isOrder: false, tag: null });
+  });
+
+  it("truncates cheat_meal to exactly 2 suggestions even when more are returned", () => {
+    const out = parseSuggestions(
+      payload(
+        Array.from({ length: 4 }, (_, i) => ({
+          name: `S${i}`,
+          reason: "r",
+          items: [{ candidateId: "cand-1", servings: 1 }],
+        })),
+      ),
+      "cheat_meal",
+    );
+    expect(out).toHaveLength(OCCASION_SUGGESTION_COUNT.cheat_meal);
+    expect(out).toHaveLength(2);
+  });
+
+  it("forces cheat=true and resolves Have it / Smart swap positionally for cheat_meal", () => {
+    const out = parseSuggestions(
+      payload([
+        {
+          name: "Pizza",
+          reason: "r",
+          items: [{ candidateId: "cand-1", servings: 1 }],
+        },
+        {
+          name: "Salad",
+          reason: "r",
+          items: [{ candidateId: "cand-1", servings: 1 }],
+        },
+      ]),
+      "cheat_meal",
+    );
+    expect(out[0]).toMatchObject({
+      cheat: true,
+      isOrder: false,
+      tag: "Have it",
+    });
+    expect(out[1]).toMatchObject({
+      cheat: true,
+      isOrder: false,
+      tag: "Smart swap",
+    });
+  });
+
+  it("ignores model-supplied cheat_meal tags — assignment is positional, exemption can't be moved or doubled", () => {
+    // IB 🟢: the kcal-ceiling exemption is `cheat && tag === "Have it"`. If the
+    // model's tag were trusted, a response tagging BOTH cards "Have it" would
+    // exempt both from the budget and drop the lighter "Smart swap" the design
+    // guarantees. Positional resolution ignores the model: card 0 is always
+    // "Have it", card 1 always "Smart swap".
+    const out = parseSuggestions(
+      payload([
+        {
+          name: "Pizza",
+          reason: "r",
+          tag: "Have it",
+          items: [{ candidateId: "cand-1", servings: 1 }],
+        },
+        {
+          name: "Salad",
+          reason: "r",
+          tag: "Have it", // model tries to claim the exemption for card 1 too
+          items: [{ candidateId: "cand-1", servings: 1 }],
+        },
+      ]),
+      "cheat_meal",
+    );
+    expect(out[0].tag).toBe("Have it");
+    expect(out[1].tag).toBe("Smart swap");
+    // Exactly one exemptable "Have it" card, whatever the model claimed.
+    expect(out.filter((s) => s.tag === "Have it")).toHaveLength(1);
+  });
+
+  it("forces isOrder=true and defaults tag to Meal for eating_out", () => {
+    const out = parseSuggestions(
+      payload([
+        {
+          name: "Wrap",
+          reason: "r",
+          items: [{ candidateId: "cand-1", servings: 1 }],
+        },
+      ]),
+      "eating_out",
+    );
+    expect(out[0]).toMatchObject({ cheat: false, isOrder: true, tag: "Meal" });
+  });
+
+  it("honours a model-supplied Snack tag for eating_out", () => {
+    const out = parseSuggestions(
+      payload([
+        {
+          name: "Fries",
+          reason: "r",
+          tag: "Snack",
+          items: [{ candidateId: "cand-1", servings: 1 }],
+        },
+      ]),
+      "eating_out",
+    );
+    expect(out[0].tag).toBe("Snack");
+  });
+});
+
+describe("composeSuggestions — occasions (end to end through the tool-call seam)", () => {
+  it("returns exactly 2 tagged, cheat-flagged suggestions for cheat_meal", async () => {
+    const client = cannedClient(
+      toolResponse({
+        suggestions: [
+          {
+            name: "Burger",
+            reason: "r",
+            items: [{ candidateId: "cand-1", servings: 1 }],
+          },
+          {
+            name: "Salad wrap",
+            reason: "r",
+            items: [{ candidateId: "cand-2", servings: 1 }],
+          },
+        ],
+      }),
+    );
+    const result = await composeSuggestions(
+      promptInput({ occasion: "cheat_meal" }),
+      { client },
+    );
+    expect(result.suggestions).toHaveLength(2);
+    expect(result.suggestions.map((s) => s.tag)).toEqual([
+      "Have it",
+      "Smart swap",
+    ]);
+    expect(result.suggestions.every((s) => s.cheat)).toBe(true);
+  });
+
+  it("flags every eating_out suggestion isOrder with a Meal/Snack tag", async () => {
+    const client = cannedClient(
+      toolResponse({
+        suggestions: [
+          {
+            name: "Grilled chicken wrap",
+            reason: "r",
+            items: [{ candidateId: "cand-1", servings: 1 }],
+          },
+        ],
+      }),
+    );
+    const result = await composeSuggestions(
+      promptInput({ occasion: "eating_out", steer: "Nando's" }),
+      { client },
+    );
+    expect(result.suggestions[0]).toMatchObject({
+      isOrder: true,
+      cheat: false,
+      tag: "Meal",
+    });
+  });
+
+  it("threads the occasion into the prompt sent to the model", async () => {
+    const client = cannedClient(toolResponse(GOOD_PAYLOAD));
+    await composeSuggestions(promptInput({ occasion: "eating_out" }), {
+      client,
+    });
+    const params = (client.messages.create as any).mock.calls[0][0];
+    const promptText = params.messages[0].content[0].text;
+    expect(promptText).toContain("best orders");
   });
 });

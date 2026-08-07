@@ -73,6 +73,7 @@ function props(over: Partial<PlanTodayProps> = {}): PlanTodayProps {
     actionFailure: null,
     onDeletePlan: jest.fn(),
     deleting: false,
+    onOpenShoppingList: jest.fn(),
     ...over,
   };
 }
@@ -168,6 +169,22 @@ describe("PlanTodayPresenter", () => {
     expect(
       getByTestId("plan-today-delete").props.accessibilityState?.disabled,
     ).toBe(true);
+  });
+
+  it("shows the basket icon and fires onOpenShoppingList when there's a plan", () => {
+    const onOpenShoppingList = jest.fn();
+    const { getByTestId } = renderWithTheme(
+      <PlanTodayPresenter {...props({ onOpenShoppingList })} />,
+    );
+    fireEvent.press(getByTestId("plan-today-shopping"));
+    expect(onOpenShoppingList).toHaveBeenCalled();
+  });
+
+  it("does not render the basket icon when there is no plan", () => {
+    const { queryByTestId } = renderWithTheme(
+      <PlanTodayPresenter {...props({ loading: false, plan: null })} />,
+    );
+    expect(queryByTestId("plan-today-shopping")).toBeNull();
   });
 
   it("renders the action-failure banner with its message when set", () => {

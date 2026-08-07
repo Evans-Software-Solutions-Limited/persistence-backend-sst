@@ -22,6 +22,17 @@ import {
   type MealprintSuggestSheetProps,
 } from "../MealprintSuggestSheetPresenter";
 
+/** Flatten a (possibly array-form) RN style prop into a plain object. */
+function flattenStyle(style: unknown): Record<string, unknown> {
+  if (Array.isArray(style)) {
+    return style.reduce<Record<string, unknown>>(
+      (acc, s) => ({ ...acc, ...flattenStyle(s) }),
+      {},
+    );
+  }
+  return (style as Record<string, unknown>) ?? {};
+}
+
 // ─── MealprintEntryCard ────────────────────────────────────────────────────
 
 function cardProps(
@@ -394,6 +405,63 @@ describe("MealprintEntryCard", () => {
       expect(getByTestId("mealprint-entry-cta")).toBeTruthy();
       expect(queryByTestId("mealprint-entry-plan-cta")).toBeNull();
     });
+
+    // Amendment 2026-08 § C — Fuel-page-level Preferences entry. Opening the
+    // editor from the suggest sheet's own link rendered it BEHIND the sheet
+    // (root-mounted), so the direct route now lives on this card instead.
+    it("renders a Preferences link when onEditPreferences is supplied, and fires it independently", () => {
+      const onEditPreferences = jest.fn();
+      const onPress = jest.fn();
+      const onPlanMyDay = jest.fn();
+      const { getByTestId } = renderWithTheme(
+        <MealprintEntryCard
+          {...cardProps({ onPress, onPlanMyDay, onEditPreferences })}
+        />,
+      );
+      fireEvent.press(getByTestId("mealprint-entry-preferences"));
+      expect(onEditPreferences).toHaveBeenCalledTimes(1);
+      expect(onPress).not.toHaveBeenCalled();
+      expect(onPlanMyDay).not.toHaveBeenCalled();
+    });
+
+    it("omits the Preferences link when onEditPreferences is not supplied", () => {
+      const { queryByTestId } = renderWithTheme(
+        <MealprintEntryCard {...cardProps({ onPlanMyDay: jest.fn() })} />,
+      );
+      expect(queryByTestId("mealprint-entry-preferences")).toBeNull();
+    });
+
+    it("omits the Preferences link from needsSetup — that card's own CTA already opens the same form", () => {
+      const { queryByTestId } = renderWithTheme(
+        <MealprintEntryCard
+          {...cardProps({
+            needsSetup: true,
+            onPlanMyDay: jest.fn(),
+            onEditPreferences: jest.fn(),
+          })}
+        />,
+      );
+      expect(queryByTestId("mealprint-entry-preferences")).toBeNull();
+    });
+  });
+
+  describe("the ACTIVE-plan variant — Preferences entry", () => {
+    it("does not carry the Preferences link — matches the design source, which omits it there too", () => {
+      const { queryByTestId } = renderWithTheme(
+        <MealprintEntryCard
+          {...cardProps({
+            planProgress: {
+              loggedCount: 1,
+              totalCount: 3,
+              nextMealLabel: "Chicken & rice bowl",
+              nextMealKcal: 640,
+            },
+            onEditPreferences: jest.fn(),
+          })}
+        />,
+      );
+      expect(queryByTestId("mealprint-entry-preferences")).toBeNull();
+    });
   });
 });
 
@@ -449,11 +517,16 @@ describe("MealprintPreferencesPresenter", () => {
     }
   });
 
-  it("⚠ shows the AC 1.2 disclaimer verbatim once an allergen chip is active", () => {
+  it("⚠ shows the AC 1.2 disclaimer verbatim ALWAYS, regardless of allergen selection (amendment 2026-08 § C)", () => {
+    // Deliberate divergence from AC 1.2's literal "adding a chip shows it" —
+    // the design source's `AMDisclaimer` is persistent, and a user who sets a
+    // dietary pattern or a dislike but never touches an allergen chip must
+    // still see "always check labels".
     const off = renderWithTheme(
       <MealprintPreferencesPresenter {...prefProps()} />,
     );
-    expect(off.queryByTestId("mealprint-label-check-disclaimer")).toBeNull();
+    expect(off.getByTestId("mealprint-label-check-disclaimer")).toBeTruthy();
+    expect(off.queryByText(LABEL_CHECK_COPY)).toBeTruthy();
 
     const on = renderWithTheme(
       <MealprintPreferencesPresenter
@@ -643,6 +716,9 @@ function suggestion(over: Partial<MealSuggestion> = {}): MealSuggestion {
     fatG: 0,
     containsUnverified: false,
     partialEnforcementOnly: false,
+    cheat: false,
+    isOrder: false,
+    tag: null,
     ...over,
   };
 }
@@ -655,6 +731,8 @@ function sheetProps(
     onClose: jest.fn(),
     stage: "setup",
     offline: false,
+    occasion: "on_plan",
+    onOccasionChange: jest.fn(),
     shape: "either",
     onShapeChange: jest.fn(),
     steer: "",
@@ -713,6 +791,113 @@ describe("MealprintSuggestSheetPresenter", () => {
     expect(getByTestId("mealprint-shape-option-either")).toBeTruthy();
   });
 
+  // ─── Amendment 2026-08 § A.1 — occasion selector ──────────────────────────
+
+  it("offers on_plan + cheat_meal (eating_out dropped for now) and reports a change", () => {
+    const onOccasionChange = jest.fn();
+    const { getByTestId, queryByTestId } = renderWithTheme(
+      <MealprintSuggestSheetPresenter {...sheetProps({ onOccasionChange })} />,
+    );
+    expect(getByTestId("mealprint-occasion-option-on_plan")).toBeTruthy();
+    expect(getByTestId("mealprint-occasion-option-cheat_meal")).toBeTruthy();
+    // eating_out is deliberately not surfaced this release (restaurant data source).
+    expect(queryByTestId("mealprint-occasion-option-eating_out")).toBeNull();
+    fireEvent.press(getByTestId("mealprint-occasion-option-cheat_meal"));
+    expect(onOccasionChange).toHaveBeenCalledWith("cheat_meal");
+  });
+
+  it("renders the occasion selector for every occasion without throwing (accent switch)", () => {
+    // The ember accent (cheat_meal only, amendment § A.1) is proved directly
+    // on the suggestion card below — the literal hex is threaded through a
+    // plain colour prop there, unlike the Segmented's tone TOKEN, which does
+    // not resolve to a comparable literal in this render environment. This
+    // test is the render-level half: the selector renders for all three
+    // occasions and reports each option correctly.
+    for (const occasion of ["on_plan", "cheat_meal"] as const) {
+      const { getByTestId } = renderWithTheme(
+        <MealprintSuggestSheetPresenter {...sheetProps({ occasion })} />,
+      );
+      expect(getByTestId(`mealprint-occasion-option-${occasion}`)).toBeTruthy();
+      expect(
+        getByTestId(`mealprint-occasion-option-${occasion}`).props
+          .accessibilityState.selected,
+      ).toBe(true);
+    }
+  });
+
+  it("⚠ gates the shape control to on_plan only — the server ignores it otherwise", () => {
+    const onPlan = renderWithTheme(
+      <MealprintSuggestSheetPresenter
+        {...sheetProps({ occasion: "on_plan" })}
+      />,
+    );
+    expect(onPlan.getByTestId("mealprint-shape")).toBeTruthy();
+
+    for (const occasion of ["cheat_meal"] as const) {
+      const { queryByTestId } = renderWithTheme(
+        <MealprintSuggestSheetPresenter {...sheetProps({ occasion })} />,
+      );
+      expect(queryByTestId("mealprint-shape")).toBeNull();
+    }
+  });
+
+  it("⚠ renders per-occasion copy verbatim — subtitle, steer placeholder and generate label", () => {
+    // Table is amendment § A.1, verbatim. A paraphrase here would silently
+    // drift from the reviewed copy the same way LABEL_CHECK_COPY guards against.
+    const onPlan = renderWithTheme(
+      <MealprintSuggestSheetPresenter
+        {...sheetProps({ occasion: "on_plan" })}
+      />,
+    );
+    expect(onPlan.queryByText("Meals that keep you on target.")).toBeTruthy();
+    expect(onPlan.getByTestId("mealprint-steer-input").props.placeholder).toBe(
+      'Add a steer — "something sweet"',
+    );
+    expect(
+      within(onPlan.getByTestId("mealprint-generate")).getByText(
+        "Suggest a meal",
+      ),
+    ).toBeTruthy();
+
+    const cheat = renderWithTheme(
+      <MealprintSuggestSheetPresenter
+        {...sheetProps({ occasion: "cheat_meal" })}
+      />,
+    );
+    expect(
+      cheat.queryByText(
+        "Fancy a treat? See how it fits — or the lighter swap that scratches the itch.",
+      ),
+    ).toBeTruthy();
+    expect(cheat.getByTestId("mealprint-steer-input").props.placeholder).toBe(
+      'Add a steer — "something sweet"',
+    );
+    expect(
+      within(cheat.getByTestId("mealprint-generate")).getByText(
+        "Show me the options",
+      ),
+    ).toBeTruthy();
+
+    const eatingOut = renderWithTheme(
+      <MealprintSuggestSheetPresenter
+        {...sheetProps({ occasion: "eating_out" })}
+      />,
+    );
+    expect(
+      eatingOut.queryByText(
+        "Heading out? Get the best order for your remaining macros before you go.",
+      ),
+    ).toBeTruthy();
+    expect(
+      eatingOut.getByTestId("mealprint-steer-input").props.placeholder,
+    ).toBe("Which restaurant? (optional)");
+    expect(
+      within(eatingOut.getByTestId("mealprint-generate")).getByText(
+        "Find my best order",
+      ),
+    ).toBeTruthy();
+  });
+
   it("renders the generating stage", () => {
     const { getByTestId } = renderWithTheme(
       <MealprintSuggestSheetPresenter
@@ -765,6 +950,60 @@ describe("MealprintSuggestSheetPresenter", () => {
       />,
     );
     expect(queryByText("UNVERIFIED")).toBeTruthy();
+  });
+
+  it("⚠ renders a cheat suggestion ember-accented with its tag as a pill", () => {
+    // Amendment § A.2: the indulgent "have it" card is ember, not gold — the
+    // kcal figure is a literal hex threaded straight through a colour prop
+    // (see `SuggestionCard`), so it is directly comparable here, unlike a
+    // Tamagui tone TOKEN passed to `Segmented`/`Card`.
+    const cheat = renderWithTheme(
+      <MealprintSuggestSheetPresenter
+        {...sheetProps({
+          stage: "results",
+          suggestions: [suggestion({ cheat: true, tag: "Have it", kcal: 480 })],
+        })}
+      />,
+    );
+    const kcalFlat = flattenStyle(cheat.getByText("480").props.style);
+    expect(kcalFlat.color).toBe("#FB923C"); // $ember base (tones.ts TONE_HEX)
+    expect(cheat.getByTestId("mealprint-suggestion-0-tag")).toBeTruthy();
+    expect(cheat.queryByText("Have it")).toBeTruthy();
+
+    // A non-cheat suggestion (on_plan/eating_out) stays gold.
+    const notCheat = renderWithTheme(
+      <MealprintSuggestSheetPresenter
+        {...sheetProps({
+          stage: "results",
+          suggestions: [suggestion({ cheat: false, kcal: 195 })],
+        })}
+      />,
+    );
+    const goldFlat = flattenStyle(notCheat.getByText("195").props.style);
+    expect(goldFlat.color).toBe("#F5C518"); // $gold base
+  });
+
+  it("shows the occasion tag pill on a non-cheat card too, when present", () => {
+    // `Meal`/`Snack` on eating_out cards — `null` (no pill) on on_plan.
+    const tagged = renderWithTheme(
+      <MealprintSuggestSheetPresenter
+        {...sheetProps({
+          stage: "results",
+          suggestions: [suggestion({ cheat: false, tag: "Meal" })],
+        })}
+      />,
+    );
+    expect(tagged.getByTestId("mealprint-suggestion-0-tag")).toBeTruthy();
+
+    const untagged = renderWithTheme(
+      <MealprintSuggestSheetPresenter
+        {...sheetProps({
+          stage: "results",
+          suggestions: [suggestion({ tag: null })],
+        })}
+      />,
+    );
+    expect(untagged.queryByTestId("mealprint-suggestion-0-tag")).toBeNull();
   });
 
   it("selects a suggestion by index", () => {
@@ -926,6 +1165,37 @@ describe("MealprintSuggestSheetPresenter", () => {
     expect(
       added.getByTestId("mealprint-draft-confirm").props.accessibilityState,
     ).toMatchObject({ disabled: true });
+  });
+
+  it("⚠ labels the confirm 'Save order' for an isOrder (eating_out) draft — same log flow", () => {
+    // Amendment § A.3 decision 3: "Save order" is copy only. It routes through
+    // the identical `onConfirm` as "Log it" — no separate saved-orders store.
+    const onConfirm = jest.fn();
+    const draft = draftFromSuggestion(
+      suggestion({ isOrder: true, tag: "Meal" }),
+      "lunch",
+    );
+    const { getByTestId } = renderWithTheme(
+      <MealprintSuggestSheetPresenter
+        {...sheetProps({ stage: "draft", draft, draftKcal: 195, onConfirm })}
+      />,
+    );
+    const confirmBtn = getByTestId("mealprint-draft-confirm");
+    expect(within(confirmBtn).getByText("Save order")).toBeTruthy();
+    fireEvent.press(confirmBtn);
+    expect(onConfirm).toHaveBeenCalled();
+  });
+
+  it("keeps the ordinary 'Log N kcal' label when the draft is not an order", () => {
+    const draft = draftFromSuggestion(suggestion({ isOrder: false }), "snack");
+    const { getByTestId } = renderWithTheme(
+      <MealprintSuggestSheetPresenter
+        {...sheetProps({ stage: "draft", draft, draftKcal: 195 })}
+      />,
+    );
+    expect(
+      within(getByTestId("mealprint-draft-confirm")).getByText("Log 195 kcal"),
+    ).toBeTruthy();
   });
 
   it("goes back to the results from the draft", () => {

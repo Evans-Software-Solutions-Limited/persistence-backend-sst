@@ -1,7 +1,23 @@
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
-import { mealPlanMeals, mealPlans } from "@persistence/db";
+import {
+  foods,
+  meals,
+  mealItems,
+  mealPlanMeals,
+  mealPlans,
+  recipeIngredients,
+  recipes,
+} from "@persistence/db";
 import { getDb } from "@persistence/db/client";
 import { type EffortLevel } from "../nutrition/mealprint/preferences/vocabulary";
+import type {
+  ShoppingFoodRow,
+  ShoppingListSource,
+  ShoppingMealItemRow,
+  ShoppingMealTotal,
+  ShoppingRecipeIngredientRow,
+  ShoppingRecipeTotal,
+} from "../nutrition/mealprint/plans/shopping/deriveShoppingList";
 
 /**
  * Mealprint (spec-26 § 2.3, Phase 2) — accepted meal plans and their meals.
@@ -308,6 +324,167 @@ export class MealPlanRepository {
 
     const hydrated = await this.hydrate(rows);
     return hydrated[0] ?? null;
+  }
+
+  /**
+   * Ownership-checked read of everything `deriveShoppingList` needs to
+   * explode ONE plan's meals into a shopping list (spec-26 amendment §B.3).
+   * Returns null for a foreign/nonexistent plan id, same as {@link get}.
+   *
+   * ⚠ Sequential awaits, not `Promise.all` — deliberately. This method has no
+   * hot-path latency requirement (a shopping-list read, not plan generation),
+   * and sequential queries keep the call order — and therefore the mocked-DB
+   * test queue order — trivially readable. See the repo's own note on why
+   * `create()` is not a transaction for the general reasoning on trading a
+   * little latency for a simpler, more provably-correct implementation here.
+   */
+  async getShoppingSource(
+    userId: string,
+    planId: string,
+  ): Promise<ShoppingListSource | null> {
+    const plan = await this.get(userId, planId);
+    if (!plan) return null;
+
+    const db = getDb();
+
+    const recipeIds = [
+      ...new Set(
+        plan.meals
+          .map((m) => m.recipeId)
+          .filter((id): id is string => id !== null),
+      ),
+    ];
+    const mealIds = [
+      ...new Set(
+        plan.meals
+          .map((m) => m.mealId)
+          .filter((id): id is string => id !== null),
+      ),
+    ];
+
+    const recipeIngredientRows =
+      recipeIds.length > 0
+        ? await db
+            .select({
+              recipeId: recipeIngredients.recipeId,
+              foodId: recipeIngredients.foodId,
+              customName: recipeIngredients.customName,
+              quantity: recipeIngredients.quantity,
+              unit: recipeIngredients.unit,
+            })
+            .from(recipeIngredients)
+            .where(inArray(recipeIngredients.recipeId, recipeIds))
+        : [];
+
+    const mealItemRows =
+      mealIds.length > 0
+        ? await db
+            .select({
+              mealId: mealItems.mealId,
+              foodId: mealItems.foodId,
+              recipeId: mealItems.recipeId,
+              servings: mealItems.servings,
+            })
+            .from(mealItems)
+            .where(inArray(mealItems.mealId, mealIds))
+        : [];
+
+    const recipeTotalRows =
+      recipeIds.length > 0
+        ? await db
+            .select({ id: recipes.id, totalKcal: recipes.totalKcal })
+            .from(recipes)
+            .where(inArray(recipes.id, recipeIds))
+        : [];
+
+    const mealTotalRows =
+      mealIds.length > 0
+        ? await db
+            .select({ id: meals.id, totalKcal: meals.totalKcal })
+            .from(meals)
+            .where(inArray(meals.id, mealIds))
+        : [];
+
+    const foodIds = new Set<string>();
+    for (const meal of plan.meals) {
+      for (const item of meal.items ?? []) foodIds.add(item.foodId);
+    }
+    for (const row of recipeIngredientRows) {
+      if (row.foodId) foodIds.add(row.foodId);
+    }
+    for (const row of mealItemRows) {
+      if (row.foodId) foodIds.add(row.foodId);
+    }
+
+    const foodRows =
+      foodIds.size > 0
+        ? await db
+            .select({
+              id: foods.id,
+              name: foods.name,
+              servingSize: foods.servingSize,
+              servingUnit: foods.servingUnit,
+              servingQuantity: foods.servingQuantity,
+              categoryTags: foods.categoryTags,
+            })
+            .from(foods)
+            .where(inArray(foods.id, [...foodIds]))
+        : [];
+
+    const recipeIngredientsOut: ShoppingRecipeIngredientRow[] =
+      recipeIngredientRows.map((row) => ({
+        recipeId: row.recipeId,
+        foodId: row.foodId,
+        customName: row.customName,
+        quantity: Number(row.quantity),
+        unit: row.unit,
+      }));
+
+    const mealItemsOut: ShoppingMealItemRow[] = mealItemRows.map((row) => ({
+      mealId: row.mealId,
+      foodId: row.foodId,
+      recipeId: row.recipeId,
+      servings: Number(row.servings),
+    }));
+
+    const foodsOut: ShoppingFoodRow[] = foodRows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      servingSize: Number(row.servingSize),
+      servingUnit: row.servingUnit,
+      servingQuantity:
+        row.servingQuantity == null ? null : Number(row.servingQuantity),
+      categoryTags: (row.categoryTags as string[] | null) ?? null,
+    }));
+
+    const recipeTotalsOut: ShoppingRecipeTotal[] = recipeTotalRows.map(
+      (row) => ({
+        id: row.id,
+        totalKcal: row.totalKcal == null ? null : Number(row.totalKcal),
+      }),
+    );
+
+    const mealTotalsOut: ShoppingMealTotal[] = mealTotalRows.map((row) => ({
+      id: row.id,
+      // `meals.totalKcal` is `NOT NULL` — unlike a recipe's, which may be
+      // un-materialised — so no null-guard is needed here.
+      totalKcal: Number(row.totalKcal),
+    }));
+
+    return {
+      planId: plan.id,
+      meals: plan.meals.map((m) => ({
+        kcal: m.kcal,
+        recipeId: m.recipeId,
+        mealId: m.mealId,
+        items: m.items,
+      })),
+      recipeIngredients: recipeIngredientsOut,
+      mealItems: mealItemsOut,
+      foods: foodsOut,
+      recipeTotals: recipeTotalsOut,
+      mealTotals: mealTotalsOut,
+    };
   }
 
   /**

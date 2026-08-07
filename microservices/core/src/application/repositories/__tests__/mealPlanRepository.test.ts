@@ -417,4 +417,240 @@ describe("redate — must not silently overwrite an occupied day", () => {
       repo.redate(OTHER_USER, PLAN, "2026-08-09"),
     ).resolves.toBeNull();
   });
+
+  it("re-reads and returns the plan once the re-date succeeds", async () => {
+    useDb([[{ id: PLAN }], [planRow({ planDate: "2026-08-09" })], [mealRow()]]);
+    const result = await repo.redate(USER, PLAN, "2026-08-09");
+    expect(result?.planDate).toBe("2026-08-09");
+  });
+});
+
+describe("archive — frees the active slot for its date", () => {
+  it("returns the archived plan on success", async () => {
+    useDb([[{ id: PLAN }], [planRow({ status: "archived" })], [mealRow()]]);
+    const result = await repo.archive(USER, PLAN);
+    expect(result?.status).toBe("archived");
+  });
+
+  it("returns null for a foreign plan id", async () => {
+    useDb([[]]);
+    await expect(repo.archive(OTHER_USER, PLAN)).resolves.toBeNull();
+  });
+});
+
+describe("getShoppingSource — day-scoped shopping-list read (spec-26 amendment §B)", () => {
+  const RECIPE_ID = "66666666-6666-6666-6666-666666666666";
+  const SAVED_MEAL_ID = "77777777-7777-7777-7777-777777777777";
+  const FOOD_RECIPE = "88888888-8888-8888-8888-888888888888";
+  const FOOD_SAVED_MEAL = "99999999-9999-9999-9999-999999999999";
+  const FOOD_ITEM = "aaaaaaa1-0000-0000-0000-000000000000";
+
+  it("returns null for a foreign/nonexistent plan id, and issues no further queries", async () => {
+    useDb([[]]);
+    await expect(repo.getShoppingSource(OTHER_USER, PLAN)).resolves.toBeNull();
+    // Ownership check short-circuits via `get()` — `hydrate()` never runs a
+    // query for zero rows, so exactly one select should have been issued.
+    expect(capture.calls.filter((c) => c === "select")).toHaveLength(1);
+  });
+
+  it("fetches recipe ingredients, meal items, totals and foods scoped to THIS plan's own references", async () => {
+    useDb([
+      [planRow()], // get(): plan row
+      [
+        // get() -> hydrate(): the plan's own meals
+        mealRow({
+          id: "m1",
+          recipeId: RECIPE_ID,
+          mealId: null,
+          items: null,
+          kcal: "400",
+        }),
+        mealRow({
+          id: "m2",
+          recipeId: null,
+          mealId: SAVED_MEAL_ID,
+          items: null,
+          kcal: "300",
+        }),
+        mealRow({
+          id: "m3",
+          recipeId: null,
+          mealId: null,
+          items: [{ foodId: FOOD_ITEM, servings: 2 }],
+          kcal: "200",
+        }),
+      ],
+      [
+        {
+          recipeId: RECIPE_ID,
+          foodId: FOOD_RECIPE,
+          customName: null,
+          quantity: "400",
+          unit: "g",
+        },
+      ], // recipeIngredients
+      [
+        {
+          mealId: SAVED_MEAL_ID,
+          foodId: FOOD_SAVED_MEAL,
+          recipeId: null,
+          servings: "3",
+        },
+      ], // mealItems
+      [{ id: RECIPE_ID, totalKcal: "800" }], // recipes totals
+      [{ id: SAVED_MEAL_ID, totalKcal: "600" }], // meals totals
+      [
+        // foods — one per source (recipe ingredient, meal item, items jsonb)
+        {
+          id: FOOD_RECIPE,
+          name: "Chicken",
+          servingSize: "100",
+          servingUnit: "g",
+          // Real pack size present, unlike the other two fixtures below —
+          // exercises both branches of the servingQuantity null-guard.
+          servingQuantity: "220",
+          categoryTags: ["en:meats"],
+        },
+        {
+          id: FOOD_SAVED_MEAL,
+          name: "Milk",
+          servingSize: "100",
+          servingUnit: "ml",
+          servingQuantity: null,
+          categoryTags: ["en:milks"],
+        },
+        {
+          id: FOOD_ITEM,
+          name: "Apple",
+          servingSize: "100",
+          servingUnit: "g",
+          servingQuantity: null,
+          categoryTags: ["en:fruits"],
+        },
+      ],
+    ]);
+
+    const result = await repo.getShoppingSource(USER, PLAN);
+
+    expect(result).not.toBeNull();
+    expect(result!.planId).toBe(PLAN);
+    expect(result!.meals).toHaveLength(3);
+    expect(result!.recipeIngredients).toEqual([
+      {
+        recipeId: RECIPE_ID,
+        foodId: FOOD_RECIPE,
+        customName: null,
+        quantity: 400,
+        unit: "g",
+      },
+    ]);
+    expect(result!.mealItems).toEqual([
+      {
+        mealId: SAVED_MEAL_ID,
+        foodId: FOOD_SAVED_MEAL,
+        recipeId: null,
+        servings: 3,
+      },
+    ]);
+    expect(result!.recipeTotals).toEqual([{ id: RECIPE_ID, totalKcal: 800 }]);
+    expect(result!.mealTotals).toEqual([{ id: SAVED_MEAL_ID, totalKcal: 600 }]);
+    expect(result!.foods.map((f) => f.id).sort()).toEqual(
+      [FOOD_RECIPE, FOOD_SAVED_MEAL, FOOD_ITEM].sort(),
+    );
+    expect(
+      result!.foods.find((f) => f.id === FOOD_RECIPE)!.servingQuantity,
+    ).toBe(220);
+
+    // Scoped to THIS plan's referenced recipe id, not every recipe in the
+    // table — the `inArray` param is exactly the one recipe id in the plan.
+    const recipeQueryWhere = render(capture.wheres[2]);
+    expect(recipeQueryWhere.params).toEqual([RECIPE_ID]);
+  });
+
+  it("maps a never-materialised recipe's NULL totalKcal through as null", async () => {
+    // `mealId`/`items` are both null on the one meal, so the mealItems/
+    // mealTotals queries are skipped entirely — no queue slot for them.
+    useDb([
+      [planRow()],
+      [
+        mealRow({
+          id: "m1",
+          recipeId: RECIPE_ID,
+          mealId: null,
+          items: null,
+          kcal: "400",
+        }),
+      ],
+      [], // recipeIngredients — none needed for this assertion
+      [{ id: RECIPE_ID, totalKcal: null }], // recipe totals — never materialised
+    ]);
+
+    const result = await repo.getShoppingSource(USER, PLAN);
+    expect(result!.recipeTotals).toEqual([{ id: RECIPE_ID, totalKcal: null }]);
+  });
+
+  it("issues no foods query when the plan's meals reference zero foodIds", async () => {
+    useDb([
+      [planRow()],
+      [
+        // A recipe-backed meal whose only ingredient is a custom-name row —
+        // no foodId anywhere on the plan.
+        mealRow({
+          id: "m1",
+          recipeId: RECIPE_ID,
+          mealId: null,
+          items: null,
+          kcal: "400",
+        }),
+      ],
+      [
+        {
+          recipeId: RECIPE_ID,
+          foodId: null,
+          customName: "Salt",
+          quantity: "5",
+          unit: "g",
+        },
+      ], // recipeIngredients
+      [{ id: RECIPE_ID, totalKcal: "800" }], // recipe totals
+    ]);
+
+    const result = await repo.getShoppingSource(USER, PLAN);
+    expect(result!.foods).toEqual([]);
+    // plan + hydrate + recipeIngredients + recipeTotals — no foods query.
+    expect(capture.calls.filter((c) => c === "select")).toHaveLength(4);
+  });
+
+  it("skips the recipe/meal lookups entirely (no empty-IN() query) when the plan references neither", async () => {
+    useDb([
+      [planRow()],
+      [
+        mealRow({
+          id: "m1",
+          recipeId: null,
+          mealId: null,
+          items: [{ foodId: FOOD_ITEM, servings: 1 }],
+        }),
+      ],
+      [
+        {
+          id: FOOD_ITEM,
+          name: "Apple",
+          servingSize: "100",
+          servingUnit: "g",
+          servingQuantity: null,
+          categoryTags: null,
+        },
+      ], // foods — the only query issued besides plan + hydrate
+    ]);
+
+    const result = await repo.getShoppingSource(USER, PLAN);
+
+    expect(result!.recipeIngredients).toEqual([]);
+    expect(result!.mealItems).toEqual([]);
+    expect(result!.recipeTotals).toEqual([]);
+    expect(result!.mealTotals).toEqual([]);
+    expect(result!.foods).toHaveLength(1);
+    expect(capture.calls.filter((c) => c === "select")).toHaveLength(3);
+  });
 });

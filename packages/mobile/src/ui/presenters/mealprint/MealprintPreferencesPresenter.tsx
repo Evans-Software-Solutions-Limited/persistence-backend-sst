@@ -22,10 +22,18 @@
  *    treatment, the warning glyph, the separate section, and copy on the dislike
  *    field pointing at the allergen chips.
  *
- * 2. **{@link LABEL_CHECK_COPY} appears verbatim whenever any allergen chip is
- *    active**, and it is a legal surface — do not paraphrase, shorten, or split
- *    it. See `domain/models/mealprint.ts` for why the equivalent disclaimer on the
- *    suggest sheet is unconditional.
+ * 2. **{@link LABEL_CHECK_COPY} + {@link MEDICAL_SCOPE_COPY} render together, in
+ *    ONE always-visible panel, regardless of allergen selection** (amendment
+ *    2026-08 § C). AC 1.2 reads as "adding a chip shows it"; this screen
+ *    deliberately diverges, because AC 1.2's authoring predates the design
+ *    source review — `gtm-d8-anymeal-parts.jsx:220-228`'s `AMDisclaimer` is
+ *    persistent, and prototype fidelity wins per this repo's port discipline. A
+ *    user who sets a dietary pattern or a dislike but never touches an
+ *    allergen chip must still see "always check labels" — the copy is a legal
+ *    surface either way, do not paraphrase, shorten, or split it. See
+ *    `domain/models/mealprint.ts` for why the equivalent disclaimer on the
+ *    suggest/plan/draft surfaces stays gated on `labelCheckRequired` — THAT
+ *    gating is untouched; this divergence is local to this screen only.
  *
  * ## ⚠ Halal / kosher say what is ENFORCED, never that it is certified
  *
@@ -193,7 +201,6 @@ export function MealprintPreferencesPresenter({
   const isWizard = mode === "wizard";
   const dismissText = dismissLabel;
   const partialCaveat = partialEnforcementCopy(dietaryPatterns);
-  const hasAllergenChip = avoidAllergens.length > 0;
 
   if (isLoadingInitial) {
     return (
@@ -438,14 +445,6 @@ export function MealprintPreferencesPresenter({
                 />
               ))}
             </View>
-            {hasAllergenChip ? (
-              /* AC 1.2 — verbatim, and only shown once a chip is active so it
-               reads as a consequence of the choice rather than boilerplate. */
-              <Caveat
-                text={LABEL_CHECK_COPY}
-                testID="mealprint-label-check-disclaimer"
-              />
-            ) : null}
           </Section>
 
           {/* ── Dislikes ────────────────────────────────────────────────── */}
@@ -530,6 +529,8 @@ export function MealprintPreferencesPresenter({
           >
             <Segmented
               testID="mealprint-effort"
+              accent="gold"
+              full
               options={EFFORT_LEVELS.map((level) => ({
                 value: level,
                 label: EFFORT_LEVEL_LABELS[level],
@@ -542,19 +543,14 @@ export function MealprintPreferencesPresenter({
             </Text>
           </Section>
 
-          {/* AC 1.5 / locked decision 10. Rendered in BOTH modes: the AC asks for
-            the wizard footer, and a medical-scope line that vanishes the moment
-            the screen becomes an editor would be a strange place to stop
-            saying it. */}
-          <Text
-            fontFamily="$body"
-            fontSize={11.5}
-            lineHeight={17}
-            color="$text4"
-            testID="mealprint-medical-scope"
-          >
-            {MEDICAL_SCOPE_COPY}
-          </Text>
+          {/* AC 1.5 / locked decision 10 + amendment 2026-08 § C. Rendered
+            unconditionally in BOTH modes — the AC asks for the wizard footer,
+            and a disclaimer that vanishes the moment the screen becomes an
+            editor, or the moment no allergen chip is active, would be a
+            strange place to stop saying either line. See the file docstring
+            for why this diverges from AC 1.2's literal "adding a chip shows
+            it" wording. */}
+          <PersistentDisclaimer />
         </ScrollView>
 
         {/* ⚠ PINNED, not the last row of the scroll. This form is seven sections
@@ -789,6 +785,52 @@ function Caveat({ text, testID }: { text: string; testID: string }) {
       >
         {text}
       </Text>
+    </View>
+  );
+}
+
+/**
+ * The persistent safety disclaimer (amendment 2026-08 § C) — carries BOTH
+ * {@link LABEL_CHECK_COPY} and {@link MEDICAL_SCOPE_COPY}, ALWAYS visible on
+ * this screen regardless of allergen selection. Mirrors the design source's
+ * always-on `AMDisclaimer` (`gtm-d8-anymeal-parts.jsx:220-228`) — see the file
+ * docstring for why this diverges from AC 1.2's "adding a chip shows it"
+ * wording, and why that gating is untouched everywhere else (suggest/plan/
+ * draft still key off `labelCheckRequired`).
+ *
+ * ⚠ Both lines stay the reviewed CONSTANTS verbatim — this only changes WHEN
+ * they render, never what they say.
+ */
+function PersistentDisclaimer() {
+  return (
+    <View
+      flexDirection="row"
+      gap={10}
+      paddingHorizontal={14}
+      paddingVertical={12}
+      borderRadius={12}
+      backgroundColor="$goldDim"
+      borderWidth={1}
+      borderColor="$border2"
+      testID="mealprint-label-check-disclaimer"
+    >
+      <View paddingTop={1}>
+        <IconAlert size={15} color={AMBER.base} />
+      </View>
+      <View flex={1} gap={4}>
+        <Text fontFamily="$body" fontSize={12} lineHeight={17.5} color="$text2">
+          {LABEL_CHECK_COPY}
+        </Text>
+        <Text
+          fontFamily="$body"
+          fontSize={11.5}
+          lineHeight={17}
+          color="$text4"
+          testID="mealprint-medical-scope"
+        >
+          {MEDICAL_SCOPE_COPY}
+        </Text>
+      </View>
     </View>
   );
 }

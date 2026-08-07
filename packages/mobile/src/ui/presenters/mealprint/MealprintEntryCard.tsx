@@ -40,6 +40,17 @@
  *    The whole card is one Pressable again (single action: open the Today
  *    view), same shape as the original single-CTA card.
  *
+ * ## Fuel-page-level Preferences entry (amendment 2026-08 § C)
+ *
+ * The dietary-preferences editor is a PUSHED screen (`fuel/preferences.tsx`),
+ * not a root-mounted sheet. Opening it from inside a root-mounted gorhom sheet
+ * renders it BEHIND that sheet — root-mounted sheets sit above the navigator
+ * stack — so the editor needs a Fuel-page-level entry point rather than a link
+ * buried in the suggest sheet (which is where it used to live). This card is
+ * that entry point: {@link MealprintEntryCardProps.onEditPreferences}, wired
+ * only into the two-CTA offer variant. See that prop's own docstring for why
+ * `needsSetup` and the ACTIVE variant deliberately do not carry it.
+ *
  * ## ⚠ No price literal
  *
  * The card says what the feature does and that it is Premium+; the number lives
@@ -71,6 +82,7 @@ import {
   IconAlert,
   IconApple,
   IconLock,
+  IconSettings,
   IconSparkles,
 } from "@/ui/components/icons";
 
@@ -147,6 +159,20 @@ export type MealprintEntryCardProps = {
    * to the single-CTA card (e.g. a caller not yet wired for the plan flow).
    */
   readonly onPlanMyDay?: () => void;
+  /**
+   * Pushes `/(app)/fuel/preferences?mode=editor` (fuel-page-level entry,
+   * amendment 2026-08 § C). Rendered as a small, light link in the two-CTA
+   * offer card's header only — the shape once setup is done and the card's
+   * two real actions (Suggest / Plan) otherwise have NO route to the editor
+   * at all. Omitted from `needsSetup` deliberately: that card's one action
+   * already opens the SAME form in wizard mode, so a second link there would
+   * duplicate the card's own CTA. Omitted from the ACTIVE-plan variant to
+   * match the design source, which does not carry it there either.
+   *
+   * ⚠ Optional so existing callers/tests that do not care about this entry
+   * point are unaffected — mirrors {@link onPlanMyDay}'s own optionality.
+   */
+  readonly onEditPreferences?: () => void;
   /** Pushes the paywall. Only wired in the `locked` state. */
   readonly onUpgrade: () => void;
   /** Re-issues the hung subscription queries. Only wired in `stalled`. */
@@ -163,6 +189,7 @@ export function MealprintEntryCard({
   planProgress = null,
   onPress,
   onPlanMyDay,
+  onEditPreferences,
   onUpgrade,
   onRetry,
   testID = "mealprint-entry-card",
@@ -247,6 +274,7 @@ export function MealprintEntryCard({
         isToday={isToday}
         onSuggest={onPress}
         onPlanMyDay={onPlanMyDay}
+        onEditPreferences={onEditPreferences}
         testID={testID}
       />
     );
@@ -556,6 +584,7 @@ function MealprintOfferCard({
   isToday,
   onSuggest,
   onPlanMyDay,
+  onEditPreferences,
   testID,
 }: {
   remainingKcal: number | null | undefined;
@@ -563,6 +592,7 @@ function MealprintOfferCard({
   isToday: boolean;
   onSuggest: () => void;
   onPlanMyDay: () => void;
+  onEditPreferences?: () => void;
   testID: string;
 }) {
   const hasBudget =
@@ -591,20 +621,54 @@ function MealprintOfferCard({
         end={WASH_END}
         style={{ padding: 16 }}
       >
-        <View flexDirection="row" alignItems="center" gap={8} marginBottom={10}>
-          <IconSparkles size={15} color={GOLD.base} />
-          <Text
-            fontFamily="$display"
-            fontWeight="700"
-            fontSize={14}
-            letterSpacing={-0.2}
-            color="$gold"
-          >
-            Mealprint
-          </Text>
-          <Pill tone="gold" size="xs">
-            PREMIUM+
-          </Pill>
+        <View
+          flexDirection="row"
+          alignItems="center"
+          justifyContent="space-between"
+          gap={8}
+          marginBottom={10}
+        >
+          <View flexDirection="row" alignItems="center" gap={8}>
+            <IconSparkles size={15} color={GOLD.base} />
+            <Text
+              fontFamily="$display"
+              fontWeight="700"
+              fontSize={14}
+              letterSpacing={-0.2}
+              color="$gold"
+            >
+              Mealprint
+            </Text>
+            <Pill tone="gold" size="xs">
+              PREMIUM+
+            </Pill>
+          </View>
+          {/* Fuel-page-level Preferences entry (amendment 2026-08 § C) —
+              design source `gtm-d8-anymeal-screens.jsx:87`. Light, muted text
+              rather than a filled control: this card's two real actions are
+              Suggest/Plan, and this link is a secondary route, not a third
+              CTA competing with them. */}
+          {onEditPreferences ? (
+            <Pressable
+              onPress={onEditPreferences}
+              testID="mealprint-entry-preferences"
+              accessibilityRole="button"
+              accessibilityLabel="Edit food preferences"
+              style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+            >
+              <View flexDirection="row" alignItems="center" gap={4}>
+                <IconSettings size={12} color={NEUTRAL_HEX.text3} />
+                <Text
+                  fontFamily="$display"
+                  fontWeight="600"
+                  fontSize={11.5}
+                  color="$text3"
+                >
+                  Preferences
+                </Text>
+              </View>
+            </Pressable>
+          ) : null}
         </View>
 
         <Text
