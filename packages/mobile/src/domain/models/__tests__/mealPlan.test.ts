@@ -76,6 +76,7 @@ function generateResult(
 ): PlanGenerateResult {
   return {
     meals,
+    mealsPerDay: 3,
     emptyReason: null,
     target: { kcal: 2200, proteinG: 160, carbsG: 220, fatG: 70 },
     totals: { kcal: 600, proteinG: 45, carbsG: 60, fatG: 15 },
@@ -158,6 +159,7 @@ describe("planDraftFromResult", () => {
       "Salad",
     ]);
     expect(draft!.target).toEqual(result.target);
+    expect(draft!.mealsPerDay).toBe(3);
   });
 });
 
@@ -165,6 +167,7 @@ describe("sumPlanDraftTotals — deterministic recompute (load-bearing)", () => 
   it("sums the kept meals' already-verified macros exactly", () => {
     const draft: PlanDraft = {
       planDate: "2026-08-05",
+      mealsPerDay: 4,
       target: { kcal: 2200, proteinG: 160, carbsG: 220, fatG: 70 },
       meals: [
         {
@@ -191,6 +194,7 @@ describe("sumPlanDraftTotals — deterministic recompute (load-bearing)", () => 
     // wired to the ACTUAL kept set rather than a stale total.
     const draft: PlanDraft = {
       planDate: "2026-08-05",
+      mealsPerDay: 4,
       target: { kcal: 2200, proteinG: 160, carbsG: 220, fatG: 70 },
       meals: [
         {
@@ -305,7 +309,7 @@ describe("setPlanItemServings — the serving stepper's core operation (AC 4.4)"
   it("clamps above the maximum servings", () => {
     const m = meal({ items: [item({ candidateId: "food-1", kcal: 100 })] });
     const result = setPlanItemServings(m, "food-1", 99);
-    expect(result.items[0]!.servings).toBe(6);
+    expect(result.items[0]!.servings).toBe(2);
   });
 
   it("is a no-op on servings when the candidateId doesn't match any item", () => {
@@ -321,6 +325,7 @@ describe("replacePlanDraftMeal", () => {
   it("swaps in the new meal at the same localId, leaving others untouched", () => {
     const draft: PlanDraft = {
       planDate: "2026-08-05",
+      mealsPerDay: 4,
       target: { kcal: 2200, proteinG: 160, carbsG: 220, fatG: 70 },
       meals: [
         { localId: "a", meal: meal({ name: "Original" }) },
@@ -339,6 +344,7 @@ describe("heldTotalsExcluding", () => {
   it("sums every OTHER meal's macros — what a swap's heldTotals holds", () => {
     const draft: PlanDraft = {
       planDate: "2026-08-05",
+      mealsPerDay: 4,
       target: { kcal: 2200, proteinG: 160, carbsG: 220, fatG: 70 },
       meals: [
         {
@@ -370,6 +376,16 @@ describe("planDraftHasFlaggedMeal", () => {
     const meals = [
       { localId: "a", meal: meal({ flaggedUnsafe: false }) },
       { localId: "b", meal: meal({ flaggedUnsafe: true }) },
+    ];
+    expect(planDraftHasFlaggedMeal(meals)).toBe(true);
+  });
+
+  it("is true when the server flags an implausible generated portion", () => {
+    const meals = [
+      {
+        localId: "a",
+        meal: meal({ flaggedUnsafe: false, flaggedPortion: true }),
+      },
     ];
     expect(planDraftHasFlaggedMeal(meals)).toBe(true);
   });
@@ -488,6 +504,7 @@ describe("planDraftToAcceptInput", () => {
   it("maps every draft meal through planAcceptMealInputFromGenerated, in order", () => {
     const draft: PlanDraft = {
       planDate: "2026-08-05",
+      mealsPerDay: 4,
       target: { kcal: 2200, proteinG: 160, carbsG: 220, fatG: 70 },
       meals: [
         { localId: "a", meal: meal({ name: "First" }) },
@@ -496,6 +513,7 @@ describe("planDraftToAcceptInput", () => {
     };
     const input = planDraftToAcceptInput(draft);
     expect(input.planDate).toBe("2026-08-05");
+    expect(input.mealsPerDay).toBe(4);
     expect(input.meals).toHaveLength(2);
     expect(input.meals[0]!.label).toBe("First");
     expect(input.meals[1]!.logSlot).toBe("lunch");
@@ -511,6 +529,7 @@ describe("unresolvableCandidateIds / planDraftMealsAffectedBy", () => {
   it("identifies exactly the draft meals referencing an unresolvable id", () => {
     const draft: PlanDraft = {
       planDate: "2026-08-05",
+      mealsPerDay: 4,
       target: { kcal: 2200, proteinG: 160, carbsG: 220, fatG: 70 },
       meals: [
         {

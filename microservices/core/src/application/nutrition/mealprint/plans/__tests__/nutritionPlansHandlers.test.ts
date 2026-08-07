@@ -126,6 +126,8 @@ function food(id: string, over: Record<string, unknown> = {}) {
     carbsG: 7,
     fatG: 1,
     servingLabel: "170 g",
+    servingBasis: "declared" as const,
+    maxServings: 2,
     allergenTags: [] as string[] | null,
     categoryTags: [] as string[] | null,
     isOwn: false,
@@ -242,7 +244,7 @@ describe("POST /nutrition/plans — the client never sets macros", () => {
 
   it("multiplies a recipe-backed meal by its servings", async () => {
     candidateMocks.resolveByIds.mockResolvedValue([
-      { ...food(RECIPE_A), kind: "recipe", kcal: 500, proteinG: 40 },
+      { ...food(RECIPE_A), kind: "recipe", kcal: 480, proteinG: 40 },
     ]);
 
     await nutritionPlansCreateHandler.handle(
@@ -261,7 +263,7 @@ describe("POST /nutrition/plans — the client never sets macros", () => {
     );
 
     const input = planMocks.create.mock.calls[0]![1];
-    expect(input.meals[0].kcal).toBe(750);
+    expect(input.meals[0].kcal).toBe(720);
     expect(input.meals[0].proteinG).toBe(60);
   });
 
@@ -272,7 +274,7 @@ describe("POST /nutrition/plans — the client never sets macros", () => {
   // `unresolvable_items` 400 this test guards against regressing to.
   it("accepts a meal-backed draft meal via mealId, mirroring the recipe path", async () => {
     candidateMocks.resolveByIds.mockResolvedValue([
-      { ...food(MEAL_A), kind: "meal", kcal: 900, proteinG: 70 },
+      { ...food(MEAL_A), kind: "meal", kcal: 700, proteinG: 70 },
     ]);
 
     const res = await nutritionPlansCreateHandler.handle(
@@ -296,7 +298,7 @@ describe("POST /nutrition/plans — the client never sets macros", () => {
       expect.objectContaining({ mealIds: [MEAL_A] }),
     );
     const input = planMocks.create.mock.calls[0]![1];
-    expect(input.meals[0].kcal).toBe(900);
+    expect(input.meals[0].kcal).toBe(700);
     expect(input.meals[0].proteinG).toBe(70);
   });
 
@@ -358,6 +360,38 @@ describe("POST /nutrition/plans — the client never sets macros", () => {
     expect(input.targetProteinG).toBe(170);
     expect(input.mealsPerDay).toBe(4);
     expect(input.effortLevel).toBe("balanced");
+  });
+
+  it("snapshots the meal count selected for generation, not the stored preference", async () => {
+    await nutritionPlansCreateHandler.handle(
+      post(postBody({ mealsPerDay: 3 })),
+    );
+
+    const input = planMocks.create.mock.calls[0]![1];
+    expect(input.mealsPerDay).toBe(3);
+  });
+
+  it("cannot loosen the plate ceiling by claiming fewer meals than it submits", async () => {
+    candidateMocks.resolveByIds.mockResolvedValue([
+      food(FOOD_A, { kcal: 400 }),
+    ]);
+    const submittedMeal = {
+      label: "Meal",
+      logSlot: "lunch",
+      items: [{ foodId: FOOD_A, servings: 2 }],
+    };
+    const res = await nutritionPlansCreateHandler.handle(
+      post(
+        postBody({
+          mealsPerDay: 2,
+          meals: Array.from({ length: 4 }, () => ({ ...submittedMeal })),
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(422);
+    expect((await body(res)).error).toBe("portion_violation");
+    expect(planMocks.create).not.toHaveBeenCalled();
   });
 
   it("assigns sortOrder server-side, ignoring client ordering", async () => {
@@ -442,6 +476,50 @@ describe("POST /nutrition/plans — the client never sets macros", () => {
     expect(planMocks.create).not.toHaveBeenCalled();
   });
 
+  it("422s a stale client that submits more than the allowed serving count", async () => {
+    const res = await nutritionPlansCreateHandler.handle(
+      post(
+        postBody({
+          meals: [
+            {
+              ...postBody().meals[0],
+              items: [{ foodId: FOOD_A, servings: 2.25 }],
+            },
+          ],
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(422);
+    expect((await body(res)).error).toBe("portion_violation");
+    expect(planMocks.create).not.toHaveBeenCalled();
+  });
+
+  it("422s a reference-basis OFF row because 100 g is not a declared serving", async () => {
+    candidateMocks.resolveByIds.mockResolvedValue([
+      food(FOOD_A, { servingBasis: "reference" }),
+    ]);
+
+    const res = await nutritionPlansCreateHandler.handle(post(postBody()));
+
+    expect(res.status).toBe(422);
+    expect((await body(res)).error).toBe("portion_violation");
+    expect(planMocks.create).not.toHaveBeenCalled();
+  });
+
+  it("uses the lower snack ceiling at the durable accept boundary", async () => {
+    candidateMocks.resolveByIds.mockResolvedValue([
+      food(FOOD_A, { kcal: 220 }),
+    ]);
+    const res = await nutritionPlansCreateHandler.handle(
+      post(postBody({ meals: [{ ...postBody().meals[0], logSlot: "snack" }] })),
+    );
+
+    expect(res.status).toBe(422);
+    expect((await body(res)).error).toBe("portion_violation");
+    expect(planMocks.create).not.toHaveBeenCalled();
+  });
+
   it("409s when the day already has an active plan", async () => {
     planMocks.create.mockRejectedValue(new ActivePlanExistsError("2026-08-05"));
     const res = await nutritionPlansCreateHandler.handle(post(postBody()));
@@ -455,6 +533,15 @@ describe("POST /nutrition/plans — the client never sets macros", () => {
       post(postBody({ meals: [] })),
     );
     expect(res.status).toBe(422);
+  });
+
+  it("rejects a fractional mealsPerDay before it can reach the integer column", async () => {
+    const res = await nutritionPlansCreateHandler.handle(
+      post(postBody({ mealsPerDay: 2.5 })),
+    );
+
+    expect(res.status).toBe(422);
+    expect(planMocks.create).not.toHaveBeenCalled();
   });
 });
 

@@ -48,6 +48,8 @@ function candidate(over: Partial<MealprintCandidate> = {}): MealprintCandidate {
     carbsG: 7,
     fatG: 1,
     servingLabel: "170 g",
+    servingBasis: "declared",
+    maxServings: 2,
     allergenTags: [],
     categoryTags: [],
     isOwn: false,
@@ -67,6 +69,8 @@ function promptInput(
     shape: "either",
     occasion: "on_plan",
     remaining: { kcal: 620, proteinG: 42, carbsG: 60, fatG: 20 },
+    maxMealKcal: 620,
+    maxCheatMealKcal: 1_500,
     steer: null,
     candidates: CANDIDATES,
     likedFoods: [],
@@ -154,6 +158,9 @@ describe("buildSuggestPrompt", () => {
     expect(prompt).toContain("620 kcal");
     expect(prompt).toContain("42g protein");
     for (const c of CANDIDATES) expect(prompt).toContain(c.id);
+    expect(prompt).toContain("declared serving");
+    expect(prompt).toContain("max 2 servings");
+    expect(prompt).toContain("at or below 620 kcal");
   });
 
   it("forbids inventing an id and forbids returning macros", () => {

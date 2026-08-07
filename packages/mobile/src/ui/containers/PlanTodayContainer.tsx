@@ -31,6 +31,8 @@ function replaceFailureMessage(failure: PlanReplaceFailure): string {
       return "That item is no longer available. Try swapping again.";
     case "avoidance_violation":
       return "That swap conflicts with your preferences. Try again.";
+    case "portion_violation":
+      return "That swap is too large for one portion. Try swapping again.";
     case "meal_not_found":
       return "This meal is no longer part of your plan.";
     case "meal_already_logged":
@@ -137,6 +139,7 @@ export function PlanTodayContainer() {
         },
         heldTotals: held,
         logSlot: meal.logSlot,
+        mealsPerDay: plan.mealsPerDay,
       });
     },
     [activePlan, runSwap],

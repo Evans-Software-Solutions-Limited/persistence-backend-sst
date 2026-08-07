@@ -45,6 +45,7 @@ import {
   MIN_USEFUL_REMAINING_KCAL,
   verifySuggestions,
 } from "../verifyComposition";
+import { maxCheatMealKcal, maxMealKcal } from "../portionPolicy";
 
 const ENDPOINT = "/nutrition/ai/meal-suggest";
 
@@ -352,11 +353,22 @@ export const nutritionAiMealSuggestHandler = new Elysia()
 
         // Set LAST, immediately before the provider call.
         reachedModel = true;
+        const normalMealKcalCeiling = maxMealKcal({
+          dailyKcal: target.dailyKcal,
+          mealsPerDay: preferences.mealsPerDay,
+          shape: shape as SuggestShape,
+        });
+        const cheatMealKcalCeiling = maxCheatMealKcal({
+          dailyKcal: target.dailyKcal,
+          mealsPerDay: preferences.mealsPerDay,
+        });
         const result = await composeSuggestions(
           {
             shape: shape as SuggestShape,
             occasion,
             remaining,
+            maxMealKcal: normalMealKcalCeiling,
+            maxCheatMealKcal: cheatMealKcalCeiling,
             steer: steer ?? null,
             candidates: assembly.candidates,
             likedFoods: preferences.likedFoods,
@@ -374,6 +386,8 @@ export const nutritionAiMealSuggestHandler = new Elysia()
           candidates: assembly.candidates,
           remaining,
           preferences,
+          maxMealKcal: normalMealKcalCeiling,
+          maxCheatMealKcal: cheatMealKcalCeiling,
         });
 
         console.info(

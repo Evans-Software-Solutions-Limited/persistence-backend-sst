@@ -134,6 +134,10 @@ export interface PlanPromptInput {
   /** The FULL day target — not remaining-today (that is suggest's input). */
   target: RemainingBudget;
   mealsPerDay: number;
+  /** Server-derived maximum for any single meal in this composition. */
+  maxMealKcal?: number;
+  /** Lower ceiling applied when the model assigns the snack diary slot. */
+  maxSnackKcal?: number;
   steer: string | null;
   candidates: readonly MealprintCandidate[];
   likedFoods: readonly string[];
@@ -158,11 +162,13 @@ function describeCandidate(candidate: MealprintCandidate): string {
     candidate.id,
     capPromptText(candidate.name, MAX_CANDIDATE_NAME_IN_PROMPT),
     candidate.servingLabel,
+    `${candidate.servingBasis} serving`,
     `${round(candidate.kcal)}kcal`,
     `P${round(candidate.proteinG)}`,
     `C${round(candidate.carbsG)}`,
     `F${round(candidate.fatG)}`,
     candidate.isOwn ? "yours" : candidate.kind,
+    `max ${candidate.maxServings} servings`,
   ].join(" | ");
 }
 
@@ -207,6 +213,8 @@ export function buildPlanPrompt(input: PlanPromptInput): string {
     "1. `candidateId` MUST be an id copied exactly from the list above. Never invent one.",
     `2. At most ${MAX_ITEMS_PER_SUGGESTION} items per meal. Prefer combinations a person would actually assemble.`,
     "3. `servings` is a multiplier of the serving shown. Use realistic amounts.",
+    `   Never exceed the per-candidate maximum shown or ${Math.round(input.maxMealKcal ?? input.target.kcal)} kcal in one meal.`,
+    `   A meal assigned to the snack slot must not exceed ${Math.round(input.maxSnackKcal ?? input.maxMealKcal ?? input.target.kcal)} kcal.`,
     "4. Across ALL meals, the day's totals should land as close as possible to the",
     "   daily target — both calories and each macro, protein especially.",
     "5. `logSlot` must be one of: breakfast, lunch, snack, dinner. Distribute the",

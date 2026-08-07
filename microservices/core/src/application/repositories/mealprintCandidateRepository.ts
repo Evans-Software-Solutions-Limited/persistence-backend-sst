@@ -7,6 +7,10 @@ import {
 } from "./nutritionDataValidity";
 import { LOCALE_OFF_TAG } from "../nutrition/mealprint/preferences/vocabulary";
 import type { SupportedLocale } from "../nutrition/mealprint/preferences/vocabulary";
+import {
+  MAX_FOOD_SERVINGS,
+  MAX_PRESET_SERVINGS,
+} from "../nutrition/mealprint/ai/portionPolicy";
 
 /**
  * Mealprint (spec-26 design § 1 stage 1) — CANDIDATE ASSEMBLY.
@@ -54,6 +58,10 @@ export interface MealprintCandidate {
   fatG: number;
   /** Human serving description for the prompt ("220 g", "1 serving"). */
   servingLabel: string;
+  /** Whether the amount is product-declared, user-authored, or only a nutrition basis. */
+  servingBasis: "declared" | "saved" | "reference";
+  /** Maximum multiplier the AI may put into one composition. */
+  maxServings: number;
   /** ⚠ `null` = UNKNOWN. Never `[]`. Fed straight to `avoidanceFilter`. */
   allergenTags: string[] | null;
   categoryTags: string[] | null;
@@ -131,6 +139,10 @@ export class MealprintCandidateRepository {
       // Zero-kcal rows (water, spices, some drinks) can never help hit a macro
       // target and only consume prompt budget.
       gt(foods.kcal, "0"),
+      // OFF's 100 g nutrition reference is not a real portion. Rows without a
+      // declared serving remain searchable/loggable, but cannot be composed by
+      // Mealprint until a trustworthy serving quantity exists.
+      gt(foods.servingQuantity, "0"),
       // One serving must not alone exceed the budget. `serving_quantity` is the
       // real pack serving in grams when OFF has it; macros are per-100g, so the
       // serving's kcal is kcal * q / 100.
@@ -331,6 +343,8 @@ export class MealprintCandidateRepository {
           carbsG: Number(row.totalCarbsG ?? 0) / servings,
           fatG: Number(row.totalFatG ?? 0) / servings,
           servingLabel: "1 serving",
+          servingBasis: "saved",
+          maxServings: MAX_PRESET_SERVINGS,
           // ⚠ A recipe has no OFF tags, so its allergen content is UNKNOWN and
           // `avoidanceFilter` will exclude it from any allergen-filtered pool.
           // That is the correct answer for a free-text recipe: we cannot vouch
@@ -386,6 +400,8 @@ export class MealprintCandidateRepository {
           carbsG: Number(row.totalCarbsG),
           fatG: Number(row.totalFatG),
           servingLabel: "1 portion",
+          servingBasis: "saved",
+          maxServings: MAX_PRESET_SERVINGS,
           allergenTags: null,
           categoryTags: null,
           isOwn: true,
@@ -535,6 +551,8 @@ export class MealprintCandidateRepository {
         carbsG: Number(row.totalCarbsG ?? 0) / servings,
         fatG: Number(row.totalFatG ?? 0) / servings,
         servingLabel: "1 serving",
+        servingBasis: "saved",
+        maxServings: MAX_PRESET_SERVINGS,
         // Same reasoning as `listOwnRecipeCandidates`: a free-text recipe has no
         // OFF tags, so its allergen content is UNKNOWN — never `[]`.
         allergenTags: null,
@@ -555,6 +573,8 @@ export class MealprintCandidateRepository {
         carbsG: Number(row.totalCarbsG),
         fatG: Number(row.totalFatG),
         servingLabel: "1 portion",
+        servingBasis: "saved",
+        maxServings: MAX_PRESET_SERVINGS,
         allergenTags: null,
         categoryTags: null,
         isOwn: true,
@@ -587,8 +607,13 @@ function toFoodCandidate(
   // stored `serving_size` (100 for every OFF row). Macros are per-`serving_size`
   // grams, so the scale factor is quantity / serving_size.
   const servingSize = Number(row.servingSize) || 100;
-  const quantity =
-    row.servingQuantity != null ? Number(row.servingQuantity) : servingSize;
+  const hasDeclaredServing =
+    row.servingQuantity != null &&
+    Number.isFinite(Number(row.servingQuantity)) &&
+    Number(row.servingQuantity) > 0;
+  const quantity = hasDeclaredServing
+    ? Number(row.servingQuantity)
+    : servingSize;
   const scale =
     Number.isFinite(quantity) && quantity > 0 ? quantity / servingSize : 1;
 
@@ -604,6 +629,12 @@ function toFoodCandidate(
     carbsG: Number(row.carbsG) * scale,
     fatG: Number(row.fatG) * scale,
     servingLabel: `${Math.round(quantity)} ${row.servingUnit}`,
+    servingBasis: isOwn
+      ? "saved"
+      : hasDeclaredServing
+        ? "declared"
+        : "reference",
+    maxServings: MAX_FOOD_SERVINGS,
     allergenTags: row.allergenTags,
     categoryTags: row.categoryTags,
     isOwn,

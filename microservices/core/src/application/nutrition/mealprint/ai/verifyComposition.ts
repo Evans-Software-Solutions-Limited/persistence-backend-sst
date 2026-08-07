@@ -28,6 +28,7 @@ import {
 import type { MealprintCandidate } from "../../../repositories/mealprintCandidateRepository";
 import type { ModelSuggestion, RemainingBudget } from "./suggestModel";
 import { hasGrossMacroEnergyMismatch } from "../../services/offEnergy";
+import { assessCompositionPortion } from "./portionPolicy";
 
 /**
  * Tolerance for a suggestion (design § 1 stage 3): it must fit the remaining
@@ -58,6 +59,8 @@ export type VerificationFailure =
   | "avoidance_violation"
   /** The recomputed total exceeds the remaining calories beyond tolerance. */
   | "kcal_overshoot"
+  /** An item or whole plate exceeds the server-derived portion policy. */
+  | "implausible_portion"
   /** Every item resolved to a zero/negative macro row — nothing to show. */
   | "degenerate_macros";
 
@@ -126,6 +129,8 @@ export function verifySuggestions(input: {
   candidates: readonly MealprintCandidate[];
   remaining: RemainingBudget;
   preferences: AvoidancePreferences;
+  maxMealKcal?: number;
+  maxCheatMealKcal?: number;
 }): VerificationResult {
   const byId = new Map(
     input.candidates.map((candidate) => [candidate.id, candidate]),
@@ -212,6 +217,23 @@ export function verifySuggestions(input: {
 
     if (failure !== null) {
       rejected.push({ name: suggestion.name, ...failure });
+      continue;
+    }
+
+    const portionFailure = assessCompositionPortion({
+      items: suggestion.items,
+      candidates: byId,
+      kcalCeiling:
+        suggestion.cheat === true && suggestion.tag === "Have it"
+          ? (input.maxCheatMealKcal ?? Number.POSITIVE_INFINITY)
+          : (input.maxMealKcal ?? Number.POSITIVE_INFINITY),
+    });
+    if (portionFailure) {
+      rejected.push({
+        name: suggestion.name,
+        failure: "implausible_portion",
+        detail: portionFailure.detail,
+      });
       continue;
     }
 

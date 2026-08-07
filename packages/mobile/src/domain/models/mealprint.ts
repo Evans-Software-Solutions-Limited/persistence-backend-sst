@@ -151,9 +151,9 @@ export type PlanGeneratedItem = {
   readonly fatG: number;
 };
 
-/** Bounds mirroring the server's own clamp (`MIN_SERVINGS`/`MAX_SERVINGS` in `suggestModel.ts`). */
+/** Bounds mirroring the server-enforced AI candidate portion policy. */
 export const MIN_PLAN_ITEM_SERVINGS = 0.25;
-export const MAX_PLAN_ITEM_SERVINGS = 6;
+export const MAX_PLAN_ITEM_SERVINGS = 2;
 /** The stepper's tap increment (AC 4.4). */
 export const PLAN_ITEM_SERVINGS_STEP = 0.25;
 
@@ -176,6 +176,8 @@ export type PlanGeneratedMeal = {
    * never silently include it, never auto-drop it either.
    */
   readonly flaggedUnsafe: boolean;
+  /** Server-detected AI portion issue; swap is required before acceptance. */
+  readonly flaggedPortion?: boolean;
 };
 
 export type PlanGenerateEmptyReason = "no_targets" | "no_candidates";
@@ -183,6 +185,8 @@ export type PlanGenerateEmptyReason = "no_targets" | "no_candidates";
 /** `POST /nutrition/ai/plan-generate` response envelope. */
 export type PlanGenerateResult = {
   readonly meals: readonly PlanGeneratedMeal[];
+  /** The selected count used to derive every per-meal ceiling. */
+  readonly mealsPerDay?: number;
   readonly emptyReason: PlanGenerateEmptyReason | null;
   readonly target: PlanTarget | null;
   readonly totals: PlanTarget | null;
@@ -206,6 +210,7 @@ export type PlanAcceptMealInput = {
 /** `POST /nutrition/plans` body — AC 4.5. References only, NEVER macros. */
 export type PlanAcceptInput = {
   readonly planDate: string;
+  readonly mealsPerDay: number;
   /** Phase 3 week plans share one; a day plan omits it. */
   readonly groupId?: string;
   readonly meals: readonly PlanAcceptMealInput[];
@@ -226,6 +231,7 @@ export type PlanSwapInput = {
   readonly dayTarget: PlanTarget;
   readonly heldTotals: PlanTarget;
   readonly logSlot: LogSlot;
+  readonly mealsPerDay: number;
   readonly steer?: string;
 };
 
@@ -278,6 +284,7 @@ export type PlanDraftMeal = {
 export type PlanDraft = {
   readonly planDate: string;
   readonly target: PlanTarget;
+  readonly mealsPerDay: number;
   readonly meals: readonly PlanDraftMeal[];
 };
 
@@ -291,6 +298,7 @@ export function planDraftFromResult(
   return {
     planDate,
     target: result.target,
+    mealsPerDay: result.mealsPerDay ?? result.meals.length,
     meals: result.meals.map((meal) => ({ localId: idFactory(), meal })),
   };
 }
@@ -390,7 +398,7 @@ export function sumPlanDraftTotals(
 export function planDraftHasFlaggedMeal(
   meals: readonly PlanDraftMeal[],
 ): boolean {
-  return meals.some(({ meal }) => meal.flaggedUnsafe);
+  return meals.some(({ meal }) => meal.flaggedUnsafe || meal.flaggedPortion);
 }
 
 export function removePlanDraftMeal(
@@ -490,6 +498,7 @@ export function planAcceptMealInputFromGenerated(
 export function planDraftToAcceptInput(draft: PlanDraft): PlanAcceptInput {
   return {
     planDate: draft.planDate,
+    mealsPerDay: draft.mealsPerDay,
     meals: draft.meals.map(({ meal }) =>
       planAcceptMealInputFromGenerated(meal),
     ),

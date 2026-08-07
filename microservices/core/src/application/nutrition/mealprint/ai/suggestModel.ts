@@ -180,6 +180,10 @@ export interface SuggestPromptInput {
   /** Defaults to `"on_plan"` at the handler; required here so every caller is explicit. */
   occasion: SuggestOccasion;
   remaining: RemainingBudget;
+  /** Server-derived one-plate ceiling; independently re-enforced after output. */
+  maxMealKcal: number;
+  /** Larger one-plate ceiling for the positional cheat "Have it" card only. */
+  maxCheatMealKcal: number;
   steer: string | null;
   candidates: readonly MealprintCandidate[];
   /** Rendered as a soft preference line; never a filter. */
@@ -245,11 +249,13 @@ function describeCandidate(candidate: MealprintCandidate): string {
     candidate.id,
     capPromptText(candidate.name, MAX_CANDIDATE_NAME_IN_PROMPT),
     `${candidate.servingLabel}`,
+    `${candidate.servingBasis} serving`,
     `${round(candidate.kcal)}kcal`,
     `P${round(candidate.proteinG)}`,
     `C${round(candidate.carbsG)}`,
     `F${round(candidate.fatG)}`,
     candidate.isOwn ? "yours" : candidate.kind,
+    `max ${candidate.maxServings} servings`,
   ].join(" | ");
 }
 
@@ -355,6 +361,8 @@ export function buildSuggestPrompt(input: SuggestPromptInput): string {
     "1. `candidateId` MUST be an id copied exactly from the list above. Never invent one.",
     `2. At most ${MAX_ITEMS_PER_SUGGESTION} items per suggestion. Prefer 1-3 — combinations a person would actually assemble.`,
     "3. `servings` is a multiplier of the serving shown. Use realistic amounts.",
+    `   Never exceed the per-candidate maximum shown, and keep each normal suggestion at or below ${Math.round(input.maxMealKcal)} kcal.`,
+    `   Only the positional "Have it" card may instead use up to ${Math.round(input.maxCheatMealKcal)} kcal.`,
     budgetRule,
     `5. Make the ${suggestionCount} suggestions genuinely different from each other — not one idea`,
     "   with a substitution.",

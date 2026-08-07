@@ -38,11 +38,12 @@ import {
  * (via `usePlanAccept`), and the Fuel card / Today view read THAT, not this
  * store, so they still work after the sheet closes and this store resets.
  *
- * ## Why `flaggedIds` exists separately from `PlanGeneratedMeal.flaggedUnsafe`
+ * ## Why `flaggedIds` exists separately from the server flags
  *
  * A meal can become "needs a swap" two ways: the SERVER flagged it at
- * generation time (`meal.flaggedUnsafe`), or the client's accept attempt came
- * back `unresolvable_items` naming this meal's candidate ids (the `kind`-
+ * generation time (`meal.flaggedUnsafe` or `meal.flaggedPortion`), or the
+ * client's accept attempt came back `unresolvable_items` naming this meal's
+ * candidate ids (the `kind`-
  * ambiguity gap — see the domain model's file docstring). Both render
  * identically (the same "needs a swap" card state), so `flaggedIds` is the
  * UNION, computed once via {@link markUnresolvable} rather than forcing every
@@ -140,7 +141,7 @@ export const usePlanFlow = create<PlanFlowState>((set, get) => ({
     }
     const flagged = new Set<string>();
     for (const { localId, meal } of draft.meals) {
-      if (meal.flaggedUnsafe) flagged.add(localId);
+      if (meal.flaggedUnsafe || meal.flaggedPortion) flagged.add(localId);
     }
     set({ step: "draft", draft, flaggedIds: flagged, emptyReason: null });
   },
@@ -173,11 +174,15 @@ export const usePlanFlow = create<PlanFlowState>((set, get) => ({
     set((state) => {
       if (state.draft === null) return { swappingId: null };
       const newFlagged = new Set(state.flaggedIds);
-      // A fresh swap is never itself server-flagged (see `PlanSwapMeal` — it
-      // carries no `flaggedUnsafe`); clear this meal's flag whichever kind it
-      // was (server-flagged or accept-unresolvable).
+      // A fresh swap is never itself server-flagged (see `PlanSwapMeal`); clear
+      // this meal's flag whichever kind it was (server-flagged or
+      // accept-unresolvable).
       newFlagged.delete(localId);
-      const nextMeal: PlanGeneratedMeal = { ...meal, flaggedUnsafe: false };
+      const nextMeal: PlanGeneratedMeal = {
+        ...meal,
+        flaggedUnsafe: false,
+        flaggedPortion: false,
+      };
       return {
         draft: replacePlanDraftMeal(state.draft, localId, nextMeal),
         flaggedIds: newFlagged,
