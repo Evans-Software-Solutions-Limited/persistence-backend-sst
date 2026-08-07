@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ScrollView } from "react-native";
+import { Alert, type ScrollView } from "react-native";
 import { useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { useScrollToTopOnTabPress } from "@/ui/hooks/useScrollToTopOnTabPress";
@@ -343,8 +343,24 @@ export function FuelContainer() {
     setClearingPlan(true);
     void api
       .deletePlan(plan.id)
-      .then(() => {
+      .then((res) => {
+        // `deletePlan` resolves `Result.Err` (never rejects) on a 5xx/404/offline
+        // attempt. Do NOT touch the cache on failure: the plan still exists
+        // server-side, and faking success flashes the row + ghost rows away only
+        // for the subscription to re-fetch them right back (online) or leaves them
+        // wrongly gone until reconnect (offline). Surface it and leave the plan +
+        // dialog in place so the user can retry.
+        if (!res.ok) {
+          Alert.alert(
+            "Couldn't clear plan",
+            "We couldn't clear your plan just now. Check your connection and try again.",
+          );
+          return;
+        }
         if (userId) storage.removeCachedMealPlan(userId, plan.planDate);
+        // Only the active-plan cache is invalidated: the ghost rows derive solely
+        // from `activePlan`, and /nutrition/today carries no plan-derived data (the
+        // prototyped `plannedMeals` field was reverted), so today needs no reload.
         activePlan.reload();
       })
       .finally(() => setClearingPlan(false));

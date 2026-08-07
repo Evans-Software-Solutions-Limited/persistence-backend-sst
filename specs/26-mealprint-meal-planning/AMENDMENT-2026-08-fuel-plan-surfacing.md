@@ -30,7 +30,10 @@ the Fuel page. Add both:
   `DELETE /nutrition/plans/:id` (shipped in #357). Because `meal_plan_meals.logged_entry_id`
   is `ON DELETE SET NULL`, already-logged `nutrition_entries` are RETAINED — clearing a plan
   never erases eaten food. The confirm copy must say so explicitly. On success, invalidate
-  the active-plan + today caches so the ghost rows disappear.
+  the **active-plan** cache (the ghost rows derive solely from it); `/nutrition/today` carries
+  no plan-derived data — the prototyped `plannedMeals` field was reverted — so it needs no
+  reload. On a failed/offline delete (`deletePlan` resolves `Result.Err`), do NOT touch the
+  cache: surface the error and keep the plan + dialog so the user can retry.
 - The actions row shows only when there is an active plan for the day.
 
 No schema change, no new endpoint (delete already exists). Day-scoped; extends to a week

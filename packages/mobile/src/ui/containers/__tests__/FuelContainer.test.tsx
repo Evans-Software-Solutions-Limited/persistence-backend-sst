@@ -1,3 +1,4 @@
+import { Alert } from "react-native";
 import { act, render, waitFor } from "@testing-library/react-native";
 import type { ReactNode } from "react";
 import * as Haptics from "expo-haptics";
@@ -528,6 +529,49 @@ describe("FuelContainer", () => {
     expect(
       mockProbe.last?.slots.find((s) => s.slot === "breakfast")?.rows,
     ).toHaveLength(1);
+  });
+
+  it("surfaces an error and keeps the plan + ghost rows when clearing FAILS (no false success)", async () => {
+    const { adapters, storage } = makeAdapters();
+    storage.cacheFuelToday(USER, localDayISO(), makeFuel());
+    const plan = fixtureActivePlan();
+    storage.cacheMealPlan(USER, plan);
+    (adapters.api as InMemoryApiAdapter).activePlanByDate.set(
+      localDayISO(),
+      plan,
+    );
+    (adapters.api as InMemoryApiAdapter).plans.set("plan-1", plan);
+    const alertSpy = jest.spyOn(Alert, "alert").mockImplementation(() => {});
+    jest.spyOn(adapters.api, "deletePlan").mockResolvedValue({
+      ok: false,
+      error: { message: "network" },
+    } as Awaited<ReturnType<InMemoryApiAdapter["deletePlan"]>>);
+
+    render(
+      <Wrapper adapters={adapters}>
+        <FuelContainer />
+      </Wrapper>,
+    );
+    await waitFor(() =>
+      expect(
+        mockProbe.last?.slots.find((s) => s.slot === "dinner")?.ghostRows,
+      ).toHaveLength(1),
+    );
+
+    await act(async () => {
+      mockProbe.last!.onClearPlan();
+      await Promise.resolve();
+    });
+
+    // ⚠ Revert-verifying: if the Result is ignored, the cache is cleared and the
+    // ghost row collapses — a false success. The guard keeps both intact and
+    // surfaces the failure instead.
+    expect(alertSpy).toHaveBeenCalled();
+    expect(storage.getCachedActiveMealPlan(USER, localDayISO())).not.toBeNull();
+    expect(
+      mockProbe.last?.slots.find((s) => s.slot === "dinner")?.ghostRows,
+    ).toHaveLength(1);
+    alertSpy.mockRestore();
   });
 
   it("onClearPlan is a no-op when there is no active plan", async () => {
