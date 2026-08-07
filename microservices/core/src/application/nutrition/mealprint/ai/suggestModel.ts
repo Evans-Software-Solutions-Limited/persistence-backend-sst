@@ -446,14 +446,16 @@ function resolveOccasionFields(
   rawTag: string,
 ): Pick<ModelSuggestion, "cheat" | "isOrder" | "tag"> {
   if (occasion === "cheat_meal") {
-    const matched = CHEAT_MEAL_TAGS.find(
-      (candidate) => candidate.toLowerCase() === rawTag.toLowerCase(),
-    );
+    // Tag is POSITIONAL, never taken from the model: card 0 → "Have it", card 1
+    // → "Smart swap". Load-bearing for the kcal-ceiling exemption
+    // (`verifyComposition` exempts `tag === "Have it"`): if the tag were trusted
+    // from `rawTag`, a model returning "Have it" for BOTH cards would exempt
+    // both and drop the lighter swap the design guarantees (IB 🟢). `cheat_meal`
+    // is always truncated to exactly 2 suggestions, so index 0/1 map cleanly.
     return {
       cheat: true,
       isOrder: false,
-      tag:
-        matched ?? CHEAT_MEAL_TAGS[Math.min(index, CHEAT_MEAL_TAGS.length - 1)],
+      tag: CHEAT_MEAL_TAGS[Math.min(index, CHEAT_MEAL_TAGS.length - 1)],
     };
   }
   if (occasion === "eating_out") {

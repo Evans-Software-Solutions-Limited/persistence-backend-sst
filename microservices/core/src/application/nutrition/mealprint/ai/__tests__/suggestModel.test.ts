@@ -676,26 +676,33 @@ describe("parseSuggestions — occasion resolution", () => {
     });
   });
 
-  it("honours a model-supplied cheat_meal tag over the positional fallback", () => {
+  it("ignores model-supplied cheat_meal tags — assignment is positional, exemption can't be moved or doubled", () => {
+    // IB 🟢: the kcal-ceiling exemption is `cheat && tag === "Have it"`. If the
+    // model's tag were trusted, a response tagging BOTH cards "Have it" would
+    // exempt both from the budget and drop the lighter "Smart swap" the design
+    // guarantees. Positional resolution ignores the model: card 0 is always
+    // "Have it", card 1 always "Smart swap".
     const out = parseSuggestions(
       payload([
         {
           name: "Pizza",
           reason: "r",
-          tag: "smart swap", // case-insensitive match
+          tag: "Have it",
           items: [{ candidateId: "cand-1", servings: 1 }],
         },
         {
           name: "Salad",
           reason: "r",
-          tag: "Have it",
+          tag: "Have it", // model tries to claim the exemption for card 1 too
           items: [{ candidateId: "cand-1", servings: 1 }],
         },
       ]),
       "cheat_meal",
     );
-    expect(out[0].tag).toBe("Smart swap");
-    expect(out[1].tag).toBe("Have it");
+    expect(out[0].tag).toBe("Have it");
+    expect(out[1].tag).toBe("Smart swap");
+    // Exactly one exemptable "Have it" card, whatever the model claimed.
+    expect(out.filter((s) => s.tag === "Have it")).toHaveLength(1);
   });
 
   it("forces isOrder=true and defaults tag to Meal for eating_out", () => {

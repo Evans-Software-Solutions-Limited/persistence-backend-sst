@@ -144,6 +144,36 @@ describe("deriveShoppingList", () => {
     expect(result.totalItems).toBe(4);
   });
 
+  it("renders a non-mass recipe ingredient in its own unit under the food's name, not the food's mass unit", () => {
+    // IB 🟡: a "2 cups" ingredient linked to a gram-based food used to
+    // round-trip through the food's serving and print "2g" in Meat & fish.
+    // A non-mass unit must keep its own quantity + unit (grouped by food name).
+    const result = deriveShoppingList({
+      planId: PLAN_ID,
+      meals: [{ kcal: 800, recipeId: "recipe-1", mealId: null, items: null }],
+      recipeIngredients: [
+        {
+          recipeId: "recipe-1",
+          foodId: CHICKEN.id,
+          customName: null,
+          quantity: 2,
+          unit: "cups",
+        },
+      ],
+      mealItems: [],
+      foods: [CHICKEN],
+      recipeTotals: [{ id: "recipe-1", totalKcal: 800 }], // scale 1×
+      mealTotals: [],
+    });
+    // NOT "2g" in the food's mass aisle.
+    expect(
+      result.aisles.find((a) => a.aisle === "Meat & fish"),
+    ).toBeUndefined();
+    const other = result.aisles.find((a) => a.aisle === "Other")!;
+    const line = other.items.find((i) => i.name === "Chicken breast")!;
+    expect(line.quantity).toBe("2 cups");
+  });
+
   it("falls back to an unscaled (1×) recipe when totalKcal is missing", () => {
     const source = baseSource();
     source.recipeTotals = [{ id: "recipe-1", totalKcal: null }];

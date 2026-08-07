@@ -1,4 +1,4 @@
-import { servingScaleFactor } from "../../../../recipes/services/units";
+import { toGrams } from "../../../../recipes/services/units";
 import type { PlanMealItem } from "../../../../repositories/mealPlanRepository";
 import {
   mapCategoryTagsToAisle,
@@ -283,13 +283,21 @@ export function deriveShoppingList(
         if (ing.foodId) {
           const food = foodsById.get(ing.foodId);
           if (!food) continue; // stale/deleted food row — nothing to show
-          const foodServings = servingScaleFactor(
-            ing.quantity,
-            ing.unit,
-            food.servingSize,
-            food.servingUnit,
-          );
-          foodAcc.add(ing.foodId, foodServings * scale);
+          const ingGrams = toGrams(ing.quantity, ing.unit);
+          const servingGrams = toGrams(food.servingSize, food.servingUnit);
+          if (ingGrams !== null && servingGrams !== null && servingGrams > 0) {
+            // Exact mass conversion → aggregate in the food's serving unit,
+            // keeping the food's name + aisle.
+            foodAcc.add(ing.foodId, (ingGrams / servingGrams) * scale);
+          } else {
+            // Non-mass ingredient unit (cups/tbsp/pieces, or a unitless count):
+            // the food's serving unit is the WRONG unit to render this in — the
+            // old `servings × servingSize` round-trip printed "2 cups" as "2g"
+            // (IB 🟡). Keep the ingredient's own quantity + unit under the food's
+            // name instead. Lands in the Other aisle, since a native-unit line
+            // isn't a food-serving measure we can slot by category.
+            customAcc.add(food.name, ing.unit, ing.quantity * scale);
+          }
         } else {
           customAcc.add(
             ing.customName ?? "Ingredient",
