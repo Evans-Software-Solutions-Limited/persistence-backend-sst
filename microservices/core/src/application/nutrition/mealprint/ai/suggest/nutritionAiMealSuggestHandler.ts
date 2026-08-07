@@ -37,6 +37,7 @@ import {
   minUsefulSuggestTokens,
   SUGGEST_TIMEOUT_MS,
   suggestMaxTokens,
+  type SuggestOccasion,
   type SuggestShape,
 } from "../suggestModel";
 import {
@@ -110,6 +111,29 @@ const POST_MODEL_RESERVE_MS = 3_500;
  * high-protein foods" fallback, for the same reason Loadout refuses one: shipping
  * mechanically-assembled output under a Premium+ badge is worse product than a
  * visible outage.
+ *
+ * ## `occasion` (amendment 2026-08 § A) — SCOPE NOTE
+ *
+ * `on_plan` / `cheat_meal` / `eating_out` change the count, per-card
+ * `tag`/`cheat`/`isOrder` semantics, and — for `cheat_meal`'s "Have it" card
+ * only — relax the budget ceiling (decision 1, implemented below and in
+ * `verifyComposition`). The candidate-constrained contract (design § 1 rule 1)
+ * is UNCHANGED for all three occasions in this slice: every item still resolves
+ * to a real DB candidate with server-recomputed macros.
+ *
+ * The amendment's decision 2 additionally describes `eating_out` as
+ * "AI-estimated, not candidate-constrained" — i.e. the model naming real,
+ * off-catalogue restaurant dishes with its own macro estimates. That is a
+ * materially larger change (a parallel item schema, a verification path that
+ * does not recompute macros from a DB row) than anything in this backend's
+ * explicit task scope, so it has been left UNIMPLEMENTED here rather than
+ * guessed at. What IS implemented: `eating_out` suggestions still draw from the
+ * same candidate pool as every other occasion, tagged `isOrder: true` with
+ * `tag: "Meal" | "Snack"`, and the response is unconditionally forced
+ * `containsUnverified: true` for those cards (`verifyComposition`) — on top of
+ * the `labelCheckRequired: true` this route already sends unconditionally for
+ * every occasion. Flag this to Brad before shipping the full off-catalogue
+ * allowance.
  */
 export const nutritionAiMealSuggestHandler = new Elysia()
   .derive(async ({ headers }) => ({
@@ -156,6 +180,9 @@ export const nutritionAiMealSuggestHandler = new Elysia()
         }
 
         const { shape, steer } = ctx.body;
+        // Amendment 2026-08 § A.2: `occasion` defaults to `on_plan`, matching the
+        // original single-occasion behaviour when a client omits it.
+        const occasion: SuggestOccasion = ctx.body.occasion ?? "on_plan";
         const today = ctx.body.date;
 
         const [entries, target, preferences] = await Promise.all([
@@ -206,7 +233,16 @@ export const nutritionAiMealSuggestHandler = new Elysia()
         //     verifier uses, so the two layers agree on what "nothing left" means
         //     — otherwise this would spend an inference to have every suggestion
         //     rejected for overshoot.
-        if (remaining.kcal < MIN_USEFUL_REMAINING_KCAL) {
+        //
+        // ⚠ SKIPPED for `cheat_meal` (amendment § A.3 decision 1). The whole
+        //   point of the "Have it" card is that it is allowed to exceed the
+        //   remaining budget — including when the budget is already exhausted —
+        //   so "nothing left" is not itself a reason to refuse a cheat-meal
+        //   request the way it is for every other occasion.
+        if (
+          occasion !== "cheat_meal" &&
+          remaining.kcal < MIN_USEFUL_REMAINING_KCAL
+        ) {
           return respondEmpty(
             "budget_exhausted",
             `remainingKcal=${Math.round(remaining.kcal)}`,
@@ -225,16 +261,30 @@ export const nutritionAiMealSuggestHandler = new Elysia()
           ]),
         ];
 
+        // ⚠ Amendment § A.3 decision 1: the cheat-meal "Have it" card is meant to
+        // be genuinely indulgent and MAY exceed the remaining budget. If
+        // candidate assembly still ceilinged every query at `remaining.kcal`,
+        // the model could never be OFFERED anything over budget in the first
+        // place, and the "have it" card would be no different from any other
+        // suggestion. A fixed, generous headroom (not `Infinity` — this value
+        // is bound into a SQL numeric comparison) widens the pool for
+        // `cheat_meal` only; every other occasion keeps the existing ceiling.
+        const CHEAT_MEAL_KCAL_HEADROOM = 2000;
+        const candidateKcalCeiling =
+          occasion === "cheat_meal"
+            ? remaining.kcal + CHEAT_MEAL_KCAL_HEADROOM
+            : remaining.kcal;
+
         const [curated, ownFoods, ownRecipes, ownMeals] = await Promise.all([
           ctx.MealprintCandidateRepository.listCuratedCandidates({
             locale,
-            maxServingKcal: remaining.kcal,
+            maxServingKcal: candidateKcalCeiling,
             forbiddenAllergenTags: forbidden,
             requireKnownAllergens,
           }),
           ctx.MealprintCandidateRepository.listOwnFoodCandidates(
             userId,
-            remaining.kcal,
+            candidateKcalCeiling,
           ),
           // Same serving-kcal ceiling as the two foods queries. Without it a
           // library of 600-kcal batch-cooks filled the pool of a user with 250
@@ -242,11 +292,11 @@ export const nutritionAiMealSuggestHandler = new Elysia()
           // a 422 that burned a daily run for a knowable state.
           ctx.MealprintCandidateRepository.listOwnRecipeCandidates(
             userId,
-            remaining.kcal,
+            candidateKcalCeiling,
           ),
           ctx.MealprintCandidateRepository.listOwnMealCandidates(
             userId,
-            remaining.kcal,
+            candidateKcalCeiling,
           ),
         ]);
 
@@ -305,6 +355,7 @@ export const nutritionAiMealSuggestHandler = new Elysia()
         const result = await composeSuggestions(
           {
             shape: shape as SuggestShape,
+            occasion,
             remaining,
             steer: steer ?? null,
             candidates: assembly.candidates,
@@ -419,6 +470,17 @@ export const nutritionAiMealSuggestHandler = new Elysia()
           t.Literal("meal"),
           t.Literal("either"),
         ]),
+        // Amendment 2026-08 § A.2. Defaults to `on_plan` in the handler above —
+        // absent here for backward compatibility with a client that has not yet
+        // shipped the occasion selector. Shape is only meaningful for `on_plan`
+        // (§ A.1); it is ignored for the other two.
+        occasion: t.Optional(
+          t.Union([
+            t.Literal("on_plan"),
+            t.Literal("cheat_meal"),
+            t.Literal("eating_out"),
+          ]),
+        ),
         // The day the remaining budget is computed for. Supplied by the client
         // rather than derived from server time because "today" is the DEVICE's
         // local day — the shipped Fuel screen already passes it to
@@ -427,7 +489,8 @@ export const nutritionAiMealSuggestHandler = new Elysia()
         date: t.String({ pattern: "^\\d{4}-\\d{2}-\\d{2}$" }),
         // Bounded because it lands in the prompt. 200 chars is generous for
         // "something sweet using the chicken I have in" and bounds a channel the
-        // user controls.
+        // user controls. For `eating_out`, this is repurposed as the restaurant
+        // name (amendment § A.1 table) — same field, same bound.
         steer: t.Optional(t.String({ maxLength: 200 })),
       }),
     },

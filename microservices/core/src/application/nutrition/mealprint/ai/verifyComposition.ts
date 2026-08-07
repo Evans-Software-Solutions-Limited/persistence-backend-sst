@@ -84,12 +84,21 @@ export interface VerifiedSuggestion {
   carbsG: number;
   fatG: number;
   /**
-   * TRUE when ANY item's allergen content is unknown. Drives the inline
-   * label-check disclaimer (AC 3.4).
+   * TRUE when ANY item's allergen content is unknown, OR the suggestion is an
+   * `eating_out` "best order" card (amendment § A.3 decision 2 — forced TRUE
+   * regardless of the resolved items, because there is no restaurant-menu
+   * dataset to verify against). Drives the inline label-check disclaimer
+   * (AC 3.4).
    */
   containsUnverified: boolean;
   /** TRUE when an active pattern cannot be fully enforced (halal/kosher). */
   partialEnforcementOnly: boolean;
+  /** TRUE for both `cheat_meal` cards. Carried through from the model suggestion. */
+  cheat: boolean;
+  /** TRUE for every `eating_out` "best order" card. */
+  isOrder: boolean;
+  /** `"Have it"` / `"Smart swap"` / `"Meal"` / `"Snack"`, or `null` for `on_plan`. */
+  tag: string | null;
 }
 
 export interface VerificationResult {
@@ -207,7 +216,16 @@ export function verifySuggestions(input: {
       continue;
     }
 
-    if (totals.kcal > kcalCeiling) {
+    // ⚠ Amendment § A.3 decision 1: the cheat-meal "Have it" card is intentionally
+    // allowed to exceed the remaining calories — that is the whole point of the
+    // card. `cheat`/`tag` are resolved deterministically from the occasion in
+    // `suggestModel.resolveOccasionFields`, never trusted verbatim from the
+    // model, so this exemption cannot be forged by an `on_plan` response. The
+    // "Smart swap" cheat card (`tag !== "Have it"`) still respects the ceiling,
+    // as does every other occasion.
+    const exemptFromKcalCeiling =
+      suggestion.cheat === true && suggestion.tag === "Have it";
+    if (!exemptFromKcalCeiling && totals.kcal > kcalCeiling) {
       rejected.push({
         name: suggestion.name,
         failure: "kcal_overshoot",
@@ -215,6 +233,16 @@ export function verifySuggestions(input: {
       });
       continue;
     }
+
+    // ⚠ Amendment § A.3 decision 2: `eating_out` cards are forced unverified
+    // regardless of what the resolved items say, because there is no
+    // restaurant-menu dataset to check them against. `labelCheckRequired` in the
+    // handler response is ALREADY unconditionally true for every occasion (see
+    // its doc comment there), so this is the one additional flag decision 2
+    // needs — it does not (and structurally cannot) weaken that existing
+    // disclaimer.
+    const containsUnverified =
+      suggestion.isOrder === true || items.some((item) => item.unverified);
 
     suggestions.push({
       name: suggestion.name,
@@ -224,8 +252,11 @@ export function verifySuggestions(input: {
       proteinG: round1(totals.proteinG),
       carbsG: round1(totals.carbsG),
       fatG: round1(totals.fatG),
-      containsUnverified: items.some((item) => item.unverified),
+      containsUnverified,
       partialEnforcementOnly,
+      cheat: suggestion.cheat === true,
+      isOrder: suggestion.isOrder === true,
+      tag: typeof suggestion.tag === "string" ? suggestion.tag : null,
     });
   }
 

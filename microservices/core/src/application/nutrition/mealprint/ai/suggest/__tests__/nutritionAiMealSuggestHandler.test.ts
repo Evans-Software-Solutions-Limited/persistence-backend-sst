@@ -248,6 +248,138 @@ describe("nutritionAiMealSuggestHandler", () => {
     expect(composeSuggestionsMock).not.toHaveBeenCalled();
   });
 
+  // ── Occasions (amendment 2026-08 § A) ─────────────────────────────────────
+
+  it("skips the budget_exhausted pre-check for a cheat meal (decision 1)", async () => {
+    // ⚠ Without the occasion !== "cheat_meal" guard in the handler, this would
+    // 200 with emptyReason=budget_exhausted and never reach the model — exactly
+    // the failure this test is written to catch. The "Have it" tag is what
+    // exempts this suggestion from the (still-active) kcal_overshoot check
+    // downstream, so a genuine 200 with a real suggestion requires it.
+    entryMocks.listByDate.mockResolvedValue([
+      { kcal: 2180, proteinG: 165, carbsG: 235, fatG: 68, mealSlot: "dinner" },
+    ]);
+    composeSuggestionsMock.mockResolvedValue({
+      suggestions: [
+        {
+          name: "Indulgent",
+          reason: "you earned it",
+          items: [{ candidateId: "yog", servings: 2 }],
+          cheat: true,
+          isOrder: false,
+          tag: "Have it",
+        },
+      ],
+      usage: {
+        modelId: "test-model",
+        latencyMs: 900,
+        inputTokens: 3000,
+        outputTokens: 400,
+      },
+    });
+    const h = await handler();
+    const res = await h.handle(
+      post({ shape: "either", date: "2026-08-03", occasion: "cheat_meal" }),
+    );
+    expect(composeSuggestionsMock).toHaveBeenCalledTimes(1);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as any;
+    expect(body.data.emptyReason).toBeNull();
+    expect(body.data.suggestions[0].kcal).toBe(340);
+  });
+
+  it("still applies budget_exhausted for on_plan and eating_out", async () => {
+    entryMocks.listByDate.mockResolvedValue([
+      { kcal: 2180, proteinG: 165, carbsG: 235, fatG: 68, mealSlot: "dinner" },
+    ]);
+    const h = await handler();
+
+    const onPlanRes = await h.handle(
+      post({ shape: "either", date: "2026-08-03", occasion: "on_plan" }),
+    );
+    expect(((await onPlanRes.json()) as any).data.emptyReason).toBe(
+      "budget_exhausted",
+    );
+
+    const eatingOutRes = await h.handle(
+      post({ shape: "either", date: "2026-08-03", occasion: "eating_out" }),
+    );
+    expect(((await eatingOutRes.json()) as any).data.emptyReason).toBe(
+      "budget_exhausted",
+    );
+    expect(composeSuggestionsMock).not.toHaveBeenCalled();
+  });
+
+  it("defaults occasion to on_plan when omitted", async () => {
+    const h = await handler();
+    await h.handle(post({ shape: "either", date: "2026-08-03" }));
+    expect(composeSuggestionsMock.mock.calls[0][0].occasion).toBe("on_plan");
+  });
+
+  it("threads the requested occasion into composeSuggestions", async () => {
+    const h = await handler();
+    await h.handle(
+      post({ shape: "either", date: "2026-08-03", occasion: "eating_out" }),
+    );
+    expect(composeSuggestionsMock.mock.calls[0][0].occasion).toBe("eating_out");
+  });
+
+  it("rejects an unknown occasion", async () => {
+    const h = await handler();
+    const res = await h.handle(
+      post({ shape: "either", date: "2026-08-03", occasion: "brunch" }),
+    );
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(res.status).toBeLessThan(500);
+    expect(composeSuggestionsMock).not.toHaveBeenCalled();
+  });
+
+  it("widens the candidate kcal ceiling for a cheat meal so indulgent options are not pre-filtered", async () => {
+    // Decision 1's "Have it" card can only ever include something over budget if
+    // candidate assembly actually FETCHED it — a ceiling pinned to `remaining.kcal`
+    // would silently defeat the feature.
+    entryMocks.listByDate.mockResolvedValue([
+      { kcal: 2100, proteinG: 160, carbsG: 230, fatG: 65, mealSlot: "dinner" },
+    ]); // remaining.kcal = 100
+    const h = await handler();
+    await h.handle(
+      post({ shape: "either", date: "2026-08-03", occasion: "cheat_meal" }),
+    );
+    const args = candidateMocks.listCuratedCandidates.mock.calls[0][0];
+    expect(args.maxServingKcal).toBeGreaterThan(100);
+  });
+
+  it("returns cheat/isOrder/tag on the final response, verbatim from verification", async () => {
+    composeSuggestionsMock.mockResolvedValue({
+      suggestions: [
+        {
+          name: "Have it",
+          reason: "you earned it",
+          items: [{ candidateId: "yog", servings: 1 }],
+          cheat: true,
+          isOrder: false,
+          tag: "Have it",
+        },
+      ],
+      usage: {
+        modelId: "test-model",
+        latencyMs: 900,
+        inputTokens: 3000,
+        outputTokens: 400,
+      },
+    });
+    const h = await handler();
+    const res = await h.handle(
+      post({ shape: "either", date: "2026-08-03", occasion: "cheat_meal" }),
+    );
+    const body = (await res.json()) as any;
+    expect(body.data.suggestions[0]).toMatchObject({
+      cheat: true,
+      isOrder: false,
+      tag: "Have it",
+    });
+  });
+
   it("returns 200 + no_candidates when the pool filters to nothing", async () => {
     // ⚠ The EXPECTED early state while the `foods` tag backfill is outstanding, so
     // it must be a legible answer rather than a generic error.

@@ -45,8 +45,19 @@ const REMAINING = { kcal: 620, proteinG: 42, carbsG: 60, fatG: 20 };
 function suggestion(
   items: Array<{ candidateId: string; servings: number }>,
   name = "A suggestion",
+  occasionFields: Partial<
+    Pick<ModelSuggestion, "cheat" | "isOrder" | "tag">
+  > = {},
 ): ModelSuggestion {
-  return { name, reason: "because it fits", items };
+  return {
+    name,
+    reason: "because it fits",
+    items,
+    cheat: false,
+    isOrder: false,
+    tag: null,
+    ...occasionFields,
+  };
 }
 
 describe("verifySuggestions — macros come from the DB, never the model", () => {
@@ -376,5 +387,138 @@ describe("describeVerification", () => {
       preferences: NO_PREFS,
     });
     expect(describeVerification(result)).toContain("rejected=0");
+  });
+});
+
+// ── occasions (amendment 2026-08 § A) ──────────────────────────────────────
+
+describe("verifySuggestions — cheat_meal kcal exemption (decision 1)", () => {
+  it("exempts the 'Have it' cheat card from kcal_overshoot", () => {
+    const result = verifySuggestions({
+      // 5 × 100 kcal = 500, far past the 210 kcal ceiling (200 remaining + 5%).
+      suggestions: [
+        suggestion([{ candidateId: "yog", servings: 5 }], "Indulgent", {
+          cheat: true,
+          tag: "Have it",
+        }),
+      ],
+      candidates: [candidate()],
+      remaining: { ...REMAINING, kcal: 200 },
+      preferences: NO_PREFS,
+    });
+    expect(result.suggestions).toHaveLength(1);
+    expect(result.suggestions[0].kcal).toBe(500);
+    expect(result.rejected).toEqual([]);
+  });
+
+  it("still rejects the 'Smart swap' cheat card for overshoot — only 'Have it' is exempt", () => {
+    const result = verifySuggestions({
+      suggestions: [
+        suggestion(
+          [{ candidateId: "yog", servings: 5 }],
+          "Lighter but still too big",
+          { cheat: true, tag: "Smart swap" },
+        ),
+      ],
+      candidates: [candidate()],
+      remaining: { ...REMAINING, kcal: 200 },
+      preferences: NO_PREFS,
+    });
+    expect(result.suggestions).toEqual([]);
+    expect(result.rejected[0].failure).toBe("kcal_overshoot");
+  });
+
+  it("does not exempt an on_plan suggestion even if cheat/tag were somehow set", () => {
+    // Defence in depth: `suggestModel.resolveOccasionFields` already prevents an
+    // on_plan suggestion from ever carrying `cheat`/`tag` — this asserts the
+    // exemption ALSO requires both fields together, not just one.
+    const result = verifySuggestions({
+      suggestions: [
+        suggestion([{ candidateId: "yog", servings: 5 }], "Mislabelled", {
+          tag: "Have it",
+        }),
+      ],
+      candidates: [candidate()],
+      remaining: { ...REMAINING, kcal: 200 },
+      preferences: NO_PREFS,
+    });
+    expect(result.suggestions).toEqual([]);
+    expect(result.rejected[0].failure).toBe("kcal_overshoot");
+  });
+
+  it("regular (non-cheat) suggestions still respect the kcal ceiling", () => {
+    const result = verifySuggestions({
+      suggestions: [suggestion([{ candidateId: "yog", servings: 5 }])],
+      candidates: [candidate()],
+      remaining: { ...REMAINING, kcal: 200 },
+      preferences: NO_PREFS,
+    });
+    expect(result.suggestions).toEqual([]);
+    expect(result.rejected[0].failure).toBe("kcal_overshoot");
+  });
+});
+
+describe("verifySuggestions — eating_out forces unverified (decision 2)", () => {
+  it("forces containsUnverified=true even when every item was analysed", () => {
+    const result = verifySuggestions({
+      suggestions: [
+        suggestion([{ candidateId: "yog", servings: 1 }], "Best order", {
+          isOrder: true,
+          tag: "Meal",
+        }),
+      ],
+      // `allergenTags: []` — genuinely analysed, so without the forced flag
+      // `containsUnverified` would be false.
+      candidates: [candidate({ allergenTags: [] })],
+      remaining: REMAINING,
+      preferences: NO_PREFS,
+    });
+    expect(result.suggestions).toHaveLength(1);
+    expect(result.suggestions[0].containsUnverified).toBe(true);
+  });
+
+  it("does not force containsUnverified for a non-order suggestion with analysed items", () => {
+    const result = verifySuggestions({
+      suggestions: [suggestion([{ candidateId: "yog", servings: 1 }])],
+      candidates: [candidate({ allergenTags: [] })],
+      remaining: REMAINING,
+      preferences: NO_PREFS,
+    });
+    expect(result.suggestions[0].containsUnverified).toBe(false);
+  });
+});
+
+describe("verifySuggestions — carries cheat/isOrder/tag onto the verified suggestion", () => {
+  it("passes cheat/isOrder/tag through unchanged", () => {
+    const result = verifySuggestions({
+      suggestions: [
+        suggestion([{ candidateId: "yog", servings: 1 }], "Have it", {
+          cheat: true,
+          tag: "Have it",
+        }),
+      ],
+      candidates: [candidate()],
+      remaining: REMAINING,
+      preferences: NO_PREFS,
+    });
+    expect(result.suggestions[0]).toMatchObject({
+      cheat: true,
+      isOrder: false,
+      tag: "Have it",
+    });
+  });
+
+  it("defaults cheat=false, isOrder=false, tag=null for on_plan", () => {
+    const result = verifySuggestions({
+      suggestions: [suggestion([{ candidateId: "yog", servings: 1 }])],
+      candidates: [candidate()],
+      remaining: REMAINING,
+      preferences: NO_PREFS,
+    });
+    expect(result.suggestions[0]).toMatchObject({
+      cheat: false,
+      isOrder: false,
+      tag: null,
+    });
   });
 });
