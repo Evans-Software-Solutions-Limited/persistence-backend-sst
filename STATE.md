@@ -11,6 +11,58 @@ say so and fix this file.
 
 ## ▶ START HERE — next session (rewritten 2026-08-04, post-Mealprint-merge)
 
+### 🤖 2026-08-07 — ANDROID READINESS AUDIT (docs only; no code changed)
+
+Full audit + ordered plan written to
+[`specs/milestones/ANDROID-LAUNCH/BRIEF.md`](specs/milestones/ANDROID-LAUNCH/BRIEF.md).
+**Nothing was implemented** — every item there is unbuilt.
+
+**Headline: the backend needs ~zero work.** The RevenueCat rail is already
+store-agnostic (entitlements keyed on `lookup_key` ≡ `tier_name`; `store` is a
+passthrough string, never branched on). `subscription-catalog` and
+`SubscriptionLegalFooter` are already platform-neutral/Android-aware.
+
+**Four hard blockers, all in `packages/mobile`:**
+
+1. 🔴 **`targetSdkVersion: 34`** (`app.json` → `expo-build-properties`) is below Play's
+   floor — API 35 required since Aug 2025, **API 36 from 31 Aug 2026**. Rejected at
+   upload, before review. Go straight to 36; `edgeToEdgeEnabled` is already true but
+   needs a device pass.
+2. 🔴 **No Android purchase rail** — no `EXPO_PUBLIC_REVENUECAT_ANDROID_KEY`;
+   `providers.tsx:71` + `revenuecat.adapter.ts:60` both hard-return on non-iOS. And
+   the fallback alert (`SubscriptionSelectionContainer.tsx:222-224`) tells Android
+   users to buy in the iOS app — a **Play Payments anti-steering breach**. ⚠ With
+   #362's `is_active = true` this now renders a live 6-tier paywall that can't
+   transact: the iOS **2.1(b)** failure shape, on Play.
+3. 🔴 **14 `android.permission.health.*` declared with zero implementation** —
+   `react-native-health-connect` isn't a dep; `createHealthAdapter()` returns
+   `AndroidStubHealthAdapter`. Play gates these behind a declaration form approved
+   only for demonstrated use. **Recommend stripping for v1** (the stub already
+   renders honest "not available" states; costs nothing on iOS).
+4. 🟠 **`TERMS_OF_USE_URL` is Apple's stdeula** (`legal.ts:25`) and renders on both
+   rails — Play users get an Apple licence at point of purchase. `SERVICE_TERMS_URL`
+   already exists; make it platform-aware.
+
+⚠ **The subtle one — Play product naming.** `billingCycleFromProductId` decides
+yearly by the substrings `annual`/`year`, and Play returns `productId:basePlanId`.
+**Base plans must be named `monthly`/`annual`** — Play's default `p1y` silently
+records annual purchases as monthly, no error anywhere.
+
+**Never started, and the actual critical path:** Play Console app, Android keystore
+(`eas credentials`), `submit.*.android` in `eas.json`, an Android submit step in the
+workflows (today an `android` dispatch **builds and silently never submits**), FCM V1
+key, Data Safety form, web account-deletion URL, RC Android app, store assets.
+
+⚠ **The app has never run on Android in this migration** — no SDK in the agent
+container, so § 4 of the brief is static analysis only. Known-flat shadows (4
+components), zero `BackHandler` usage, no `intentFilters` (App Links — **check the
+Supabase reset-password flow**), a full-colour notification icon that will render as
+a white blob, and 14 `KeyboardAvoidingView` sites unproven under edge-to-edge.
+
+**Recommended sequencing: decide scope + start store setup now, submit only after iOS
+is approved** — the iOS 2.1(b) rejection is blocked on the same RevenueCat `default`
+offering the Android rail would use.
+
 ### 🟢 2026-08-06 — POST-MERGE SNAPSHOT (read this first; it supersedes the dated blocks below)
 
 **FIVE PRs merged to `main`; the subscription restructure + Mealprint Phase 2 + the
