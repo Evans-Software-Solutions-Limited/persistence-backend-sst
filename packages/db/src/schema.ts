@@ -2002,6 +2002,11 @@ export const foods = pgTable(
     allergenTags: text("allergen_tags").array(),
     categoryTags: text("category_tags").array(),
     localeTags: text("locale_tags").array(),
+    // External nutrition rows are fail-closed. OFF occasionally publishes kcal
+    // and kJ values that contradict each other; those rows remain auditable in
+    // the catalogue but cannot be searched, logged, or offered by Mealprint.
+    nutritionDataValid: boolean("nutrition_data_valid").notNull().default(true),
+    nutritionDataIssue: text("nutrition_data_issue"),
     // 'user' | 'openfoodfacts' | 'ai_recognized'
     source: text("source").notNull().default("user"),
     createdBy: uuid("created_by").references(() => profiles.id),

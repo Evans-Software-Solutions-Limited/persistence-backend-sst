@@ -1,6 +1,10 @@
 import { and, eq, gt, inArray, isNotNull, lte, ne, or, sql } from "drizzle-orm";
 import { foods, meals, recipes } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
+import {
+  mealNutritionDataIsUsable,
+  recipeNutritionDataIsUsable,
+} from "./nutritionDataValidity";
 import { LOCALE_OFF_TAG } from "../nutrition/mealprint/preferences/vocabulary";
 import type { SupportedLocale } from "../nutrition/mealprint/preferences/vocabulary";
 
@@ -118,6 +122,9 @@ export class MealprintCandidateRepository {
       // catalogue standing and no tags, so it is excluded here and reaches the
       // pool only via the owner's own-foods query.
       eq(foods.source, "openfoodfacts"),
+      // External rows with contradictory kcal/kJ or grossly impossible energy
+      // are retained for audit but are never candidates.
+      eq(foods.nutritionDataValid, true),
       // Locale containment. NULL locale_tags are excluded by `&&` semantics,
       // which is correct: an untagged row has no established UK availability.
       sql`${foods.localeTags} && ${textArray([localeTag])}`,
@@ -298,7 +305,13 @@ export class MealprintCandidateRepository {
         totalFatG: recipes.totalFatG,
       })
       .from(recipes)
-      .where(and(eq(recipes.userId, userId), isNotNull(recipes.totalKcal)))
+      .where(
+        and(
+          eq(recipes.userId, userId),
+          isNotNull(recipes.totalKcal),
+          recipeNutritionDataIsUsable(recipes.id),
+        ),
+      )
       .limit(OWN_RECIPE_LIMIT);
 
     return rows
@@ -356,7 +369,7 @@ export class MealprintCandidateRepository {
         totalFatG: meals.totalFatG,
       })
       .from(meals)
-      .where(eq(meals.userId, userId))
+      .where(and(eq(meals.userId, userId), mealNutritionDataIsUsable(meals.id)))
       .limit(OWN_MEAL_LIMIT);
 
     return rows
@@ -456,7 +469,10 @@ export class MealprintCandidateRepository {
                 // resolve via `createdBy = userId`.
                 or(
                   eq(foods.createdBy, userId),
-                  eq(foods.source, "openfoodfacts"),
+                  and(
+                    eq(foods.source, "openfoodfacts"),
+                    eq(foods.nutritionDataValid, true),
+                  ),
                 ),
               ),
             ),
@@ -474,7 +490,11 @@ export class MealprintCandidateRepository {
             })
             .from(recipes)
             .where(
-              and(eq(recipes.userId, userId), inArray(recipes.id, recipeIds)),
+              and(
+                eq(recipes.userId, userId),
+                inArray(recipes.id, recipeIds),
+                recipeNutritionDataIsUsable(recipes.id),
+              ),
             ),
       mealIds.length === 0
         ? Promise.resolve([])
@@ -488,7 +508,13 @@ export class MealprintCandidateRepository {
               totalFatG: meals.totalFatG,
             })
             .from(meals)
-            .where(and(eq(meals.userId, userId), inArray(meals.id, mealIds))),
+            .where(
+              and(
+                eq(meals.userId, userId),
+                inArray(meals.id, mealIds),
+                mealNutritionDataIsUsable(meals.id),
+              ),
+            ),
     ]);
 
     const resolved: MealprintCandidate[] = foodRows.map((row) =>

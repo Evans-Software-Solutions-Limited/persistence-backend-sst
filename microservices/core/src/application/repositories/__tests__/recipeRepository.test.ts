@@ -82,8 +82,15 @@ describe("RecipeRepository", () => {
   });
 
   it("create inserts recipe + ingredients in a tx and returns the hydrated recipe", async () => {
-    const ingValuesSpy = vi.fn().mockResolvedValue(undefined);
+    const ingValuesSpy = vi.fn().mockReturnValue({
+      returning: () => Promise.resolve([ingRow]),
+    });
     const tx = {
+      select: vi.fn().mockReturnValue({
+        from: () => ({
+          where: () => ({ for: () => Promise.resolve([{ id: "f1" }]) }),
+        }),
+      }),
       insert: vi
         .fn()
         .mockReturnValueOnce({
@@ -93,10 +100,6 @@ describe("RecipeRepository", () => {
     };
     (getDb as any).mockReturnValue({
       transaction: (cb: any) => cb(tx),
-      select: vi
-        .fn()
-        .mockReturnValueOnce(recipeLookup([recipeRow]))
-        .mockReturnValueOnce(ingLookup([ingRow])),
     });
 
     const out = await new RecipeRepository().create(
@@ -110,6 +113,34 @@ describe("RecipeRepository", () => {
     );
     expect(out.id).toBe("r1");
     expect(ingValuesSpy).toHaveBeenCalled();
+  });
+
+  it("rolls back before insert when a linked food is unavailable", async () => {
+    const insert = vi.fn();
+    const tx = {
+      select: vi.fn().mockReturnValue({
+        from: () => ({
+          where: () => ({ for: () => Promise.resolve([]) }),
+        }),
+      }),
+      insert,
+    };
+    (getDb as any).mockReturnValue({ transaction: (cb: any) => cb(tx) });
+
+    await expect(
+      new RecipeRepository().create(
+        "u1",
+        {
+          name: "Bad",
+          servings: 1,
+          ingredients: [
+            { foodId: "f1", quantity: 100, unit: "g", sortOrder: 0 },
+          ],
+        },
+        { kcal: 1, proteinG: 1, carbsG: 1, fatG: 1 },
+      ),
+    ).rejects.toThrow("nutrition_source_unavailable");
+    expect(insert).not.toHaveBeenCalled();
   });
 
   it("update returns null when not owned", async () => {

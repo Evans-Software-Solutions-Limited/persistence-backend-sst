@@ -10,6 +10,7 @@ import {
   assertEntitlement,
   EntitlementError,
 } from "../../../../entitlement/assertEntitlement";
+import { PlanNutritionUnavailableError } from "../../../../repositories/nutritionDataValidity";
 
 /**
  * `GET /nutrition/plans/:id/shopping` — spec-26 amendment §B. A day-scoped
@@ -32,10 +33,19 @@ export const nutritionPlanShoppingHandlers = new Elysia()
       const { sub: userId } = getUser(ctx);
       const verdict = await assertEntitlement(userId, "meal_ai");
       if (!verdict.allowed) throw new EntitlementError(verdict, "meal_ai");
-      const source = await ctx.MealPlanRepository.getShoppingSource(
-        userId,
-        ctx.params.id,
-      );
+      let source;
+      try {
+        source = await ctx.MealPlanRepository.getShoppingSource(
+          userId,
+          ctx.params.id,
+        );
+      } catch (error) {
+        if (error instanceof PlanNutritionUnavailableError) {
+          ctx.set.status = 409;
+          return { error: "plan_nutrition_unavailable" };
+        }
+        throw error;
+      }
       if (!source) {
         ctx.set.status = 404;
         return { error: "not_found" };

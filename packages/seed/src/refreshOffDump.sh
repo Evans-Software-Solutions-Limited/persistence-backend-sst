@@ -15,7 +15,8 @@
 #   allergens_tags  = VARCHAR[]   categories_tags = VARCHAR[]   countries_tags = VARCHAR[]
 # The query below reshapes the multilingual LISTs into the
 # { code, product_name, brands, countries_tags, allergens_tags, categories_tags,
-# ingredients_text, nutriments:{energy-kcal_100g,...} } shape the offMapper expects,
+# ingredients_text, quality tags, nutriments:{energy-kcal_100g,energy-kj_100g,...} }
+# shape the offMapper expects,
 # and dedupes on barcode (the prod unique index is partial on barcode) keeping the
 # row with the most complete macros — a single upsert batch can't touch the same
 # conflict target twice.
@@ -53,6 +54,12 @@ COPY (
     -- Mealprint (spec-26 § 2.1): plain VARCHAR[] lists, passed through as-is.
     allergens_tags,
     categories_tags,
+    -- The API calls this combined field data_quality_tags; the Parquet dump
+    -- calls its informational component data_quality_info_tags. Alias it to
+    -- the API shape so both ingestion paths share one mapper.
+    data_quality_info_tags AS data_quality_tags,
+    data_quality_errors_tags,
+    data_quality_warnings_tags,
     -- ingredients_text is a multilingual STRUCT(lang,text)[] like product_name;
     -- collapse to one string (row lang → en → any non-empty). offMapper reads it
     -- ONLY to disambiguate empty vs never-analysed allergens (it is not stored).
@@ -61,7 +68,7 @@ COPY (
       list_extract(list_transform(list_filter(ingredients_text, p -> p.lang = 'en'  AND trim(coalesce(p['text'],'')) <> ''), p -> p['text']), 1),
       list_extract(list_transform(list_filter(ingredients_text, p -> trim(coalesce(p['text'],'')) <> ''),                    p -> p['text']), 1)
     ) AS ingredients_text,
-    -- Real pack serving (grams) → offMapper reads top-level `serving_quantity`
+    -- Real pack serving (grams) → offMapper reads top-level serving_quantity
     -- (positive → value, else NULL). Without this the seed lands serving_quantity
     -- NULL and the mobile Serving tab falls back to servingSize=100g. TRY_CAST
     -- coerces a non-numeric VARCHAR value to NULL; if OFF ever drops/renames the
@@ -69,8 +76,10 @@ COPY (
     -- refresh-off-dump.yml header).
     TRY_CAST(serving_quantity AS DOUBLE) AS serving_quantity,
     map(
-      ['energy-kcal_100g','proteins_100g','carbohydrates_100g','fat_100g'],
+      ['energy-kcal_100g','energy-kj_100g','energy_100g','proteins_100g','carbohydrates_100g','fat_100g'],
       [ list_extract(list_transform(list_filter(nutriments, x -> x.name = 'energy-kcal'),   x -> x['100g']), 1),
+        list_extract(list_transform(list_filter(nutriments, x -> x.name = 'energy-kj'),     x -> x['100g']), 1),
+        list_extract(list_transform(list_filter(nutriments, x -> x.name = 'energy'),        x -> x['100g']), 1),
         list_extract(list_transform(list_filter(nutriments, x -> x.name = 'proteins'),      x -> x['100g']), 1),
         list_extract(list_transform(list_filter(nutriments, x -> x.name = 'carbohydrates'), x -> x['100g']), 1),
         list_extract(list_transform(list_filter(nutriments, x -> x.name = 'fat'),           x -> x['100g']), 1) ]
@@ -78,7 +87,11 @@ COPY (
   FROM read_parquet('food.parquet')
   WHERE code IS NOT NULL
     AND list_contains(countries_tags, 'en:united-kingdom')
-    AND list_extract(list_transform(list_filter(nutriments, x -> x.name = 'energy-kcal'), x -> x['100g']), 1) IS NOT NULL
+    AND coalesce(
+      list_extract(list_transform(list_filter(nutriments, x -> x.name = 'energy-kcal'), x -> x['100g']), 1),
+      list_extract(list_transform(list_filter(nutriments, x -> x.name = 'energy-kj'),   x -> x['100g']), 1),
+      list_extract(list_transform(list_filter(nutriments, x -> x.name = 'energy'),      x -> x['100g']), 1)
+    ) IS NOT NULL
   QUALIFY row_number() OVER (
     PARTITION BY trim(code)
     ORDER BY ( (list_extract(list_transform(list_filter(nutriments, x -> x.name = 'proteins'),      x -> x['100g']), 1) IS NOT NULL)::int

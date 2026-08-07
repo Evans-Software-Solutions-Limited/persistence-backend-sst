@@ -10,7 +10,7 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import { kcalFromOffNutriments } from "./offEnergy";
+import { resolveOffEnergy, type OffNutritionDataIssue } from "./offEnergy";
 
 export type OffProduct = {
   code?: string;
@@ -30,6 +30,10 @@ export type OffProduct = {
    * {@link mapOffAllergenTags}.
    */
   ingredients_text?: string;
+  /** OFF data-quality signals used to quarantine contradictory nutrition rows. */
+  data_quality_tags?: string[];
+  data_quality_errors_tags?: string[];
+  data_quality_warnings_tags?: string[];
 };
 
 export type OffFoodRow = {
@@ -53,6 +57,8 @@ export type OffFoodRow = {
   allergenTags: string[] | null;
   categoryTags: string[] | null;
   localeTags: string[] | null;
+  nutritionDataValid: boolean;
+  nutritionDataIssue: OffNutritionDataIssue | null;
   source: "openfoodfacts";
 };
 
@@ -155,16 +161,25 @@ export function mapOffProductToFood(
   }
 
   const n = product.nutriments ?? {};
-  // kcal with a kJ→kcal fallback so kJ-only products aren't dropped from the
-  // seed (mirrors the live resolver).
-  const kcal = kcalFromOffNutriments(n as Record<string, unknown>);
   const proteinG = finiteNumber((n as any)["proteins_100g"]);
   const carbsG = finiteNumber((n as any)["carbohydrates_100g"]);
   const fatG = finiteNumber((n as any)["fat_100g"]);
-  if (kcal === null || proteinG === null || carbsG === null || fatG === null) {
+  if (proteinG === null || carbsG === null || fatG === null) {
     return null;
   }
-  if (kcal < 0 || proteinG < 0 || carbsG < 0 || fatG < 0) return null;
+  if (proteinG < 0 || carbsG < 0 || fatG < 0) return null;
+
+  const energy = resolveOffEnergy(n as Record<string, unknown>, {
+    proteinG,
+    carbsG,
+    fatG,
+    qualityTags: [
+      ...(product.data_quality_tags ?? []),
+      ...(product.data_quality_errors_tags ?? []),
+      ...(product.data_quality_warnings_tags ?? []),
+    ],
+  });
+  if (energy.kcal === null) return null;
 
   // Real pack serving (grams). Only a positive value is meaningful.
   const sq = finiteNumber(product.serving_quantity);
@@ -173,7 +188,7 @@ export function mapOffProductToFood(
     barcode,
     name,
     brand: product.brands?.trim() || null,
-    kcal,
+    kcal: energy.kcal,
     proteinG,
     carbsG,
     fatG,
@@ -185,6 +200,8 @@ export function mapOffProductToFood(
     // Reuses the SAME array the `countriesAllow` filter above reads, so a row
     // that passed the locale filter always carries the tag that let it through.
     localeTags: normaliseOffTags(product.countries_tags),
+    nutritionDataValid: energy.nutritionDataValid,
+    nutritionDataIssue: energy.nutritionDataIssue,
     source: "openfoodfacts",
   };
 }

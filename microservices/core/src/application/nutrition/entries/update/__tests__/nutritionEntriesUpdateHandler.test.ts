@@ -3,6 +3,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const entryMocks = { getById: vi.fn(), update: vi.fn() };
 const foodMocks = { getById: vi.fn() };
+const recipeMocks = { getById: vi.fn() };
+const mealMocks = { getById: vi.fn() };
 
 vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getAuthUser: vi.fn(async (h: string | undefined) =>
@@ -24,6 +26,12 @@ vi.mock("../../../../repositories/nutritionEntryRepository", () => ({
 }));
 vi.mock("../../../../repositories/foodRepository", () => ({
   FoodRepository: vi.fn().mockImplementation(() => foodMocks),
+}));
+vi.mock("../../../../repositories/recipeRepository", () => ({
+  RecipeRepository: vi.fn().mockImplementation(() => recipeMocks),
+}));
+vi.mock("../../../../repositories/mealRepository", () => ({
+  MealRepository: vi.fn().mockImplementation(() => mealMocks),
 }));
 
 function put(body: unknown, auth = true) {
@@ -88,6 +96,67 @@ describe("nutritionEntriesUpdateHandler", () => {
     expect(patch.servings).toBe(2);
     expect(patch.kcal).toBe(300); // 150 × 2, NOT 99999
     expect(patch.proteinG).toBe(20);
+  });
+
+  it("409s instead of trusting client macros when a food has been quarantined", async () => {
+    entryMocks.getById.mockResolvedValue({
+      id: "e1",
+      foodId: "quarantined-food",
+      servings: 1,
+    });
+    foodMocks.getById.mockResolvedValue(null);
+    const { nutritionEntriesUpdateHandler } =
+      await import("../nutritionEntriesUpdateHandler");
+    const res = await nutritionEntriesUpdateHandler.handle(
+      put({ servings: 2, kcal: 1 }),
+    );
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { error: string }).error).toBe(
+      "entry_nutrition_unavailable",
+    );
+    expect(entryMocks.update).not.toHaveBeenCalled();
+  });
+
+  it("re-derives recipe-backed entry macros and rejects an unavailable recipe", async () => {
+    entryMocks.getById.mockResolvedValue({
+      id: "e1",
+      foodId: null,
+      recipeId: "r1",
+      mealId: null,
+      servings: 1,
+    });
+    recipeMocks.getById.mockResolvedValue({
+      id: "r1",
+      servings: 4,
+      totalKcal: 800,
+      totalProteinG: 40,
+      totalCarbsG: 80,
+      totalFatG: 20,
+    });
+    const { nutritionEntriesUpdateHandler } =
+      await import("../nutritionEntriesUpdateHandler");
+    let res = await nutritionEntriesUpdateHandler.handle(
+      put({ servings: 2, kcal: 1 }),
+    );
+    expect(res.status).toBe(200);
+    expect(entryMocks.update.mock.calls[0][2]).toMatchObject({
+      servings: 2,
+      kcal: 400,
+      proteinG: 20,
+    });
+
+    vi.clearAllMocks();
+    entryMocks.getById.mockResolvedValue({
+      id: "e1",
+      foodId: null,
+      recipeId: "r1",
+      mealId: null,
+      servings: 1,
+    });
+    recipeMocks.getById.mockResolvedValue(null);
+    res = await nutritionEntriesUpdateHandler.handle(put({ kcal: 1 }));
+    expect(res.status).toBe(409);
+    expect(entryMocks.update).not.toHaveBeenCalled();
   });
 
   it("trusts client macros for a one-off entry (no foodId)", async () => {

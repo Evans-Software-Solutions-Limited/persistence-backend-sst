@@ -18,6 +18,12 @@ import type {
   ShoppingRecipeIngredientRow,
   ShoppingRecipeTotal,
 } from "../nutrition/mealprint/plans/shopping/deriveShoppingList";
+import {
+  mealNutritionDataIsUsable,
+  PlanNutritionUnavailableError,
+  recipeNutritionDataIsUsable,
+} from "./nutritionDataValidity";
+import { usableFoodForUserCondition } from "./foodRepository";
 
 /**
  * Mealprint (spec-26 § 2.3, Phase 2) — accepted meal plans and their meals.
@@ -394,7 +400,13 @@ export class MealPlanRepository {
         ? await db
             .select({ id: recipes.id, totalKcal: recipes.totalKcal })
             .from(recipes)
-            .where(inArray(recipes.id, recipeIds))
+            .where(
+              and(
+                inArray(recipes.id, recipeIds),
+                eq(recipes.userId, userId),
+                recipeNutritionDataIsUsable(recipes.id),
+              ),
+            )
         : [];
 
     const mealTotalRows =
@@ -402,7 +414,13 @@ export class MealPlanRepository {
         ? await db
             .select({ id: meals.id, totalKcal: meals.totalKcal })
             .from(meals)
-            .where(inArray(meals.id, mealIds))
+            .where(
+              and(
+                inArray(meals.id, mealIds),
+                eq(meals.userId, userId),
+                mealNutritionDataIsUsable(meals.id),
+              ),
+            )
         : [];
 
     const foodIds = new Set<string>();
@@ -428,8 +446,24 @@ export class MealPlanRepository {
               categoryTags: foods.categoryTags,
             })
             .from(foods)
-            .where(inArray(foods.id, [...foodIds]))
+            .where(
+              and(
+                inArray(foods.id, [...foodIds]),
+                usableFoodForUserCondition(userId),
+              ),
+            )
         : [];
+
+    // Missing rows mean a source was deleted, moved out of the caller's scope,
+    // or quarantined after this plan was accepted. Do not derive a partial
+    // shopping list that still recommends an unusable meal.
+    if (
+      recipeTotalRows.length !== recipeIds.length ||
+      mealTotalRows.length !== mealIds.length ||
+      foodRows.length !== foodIds.size
+    ) {
+      throw new PlanNutritionUnavailableError();
+    }
 
     const recipeIngredientsOut: ShoppingRecipeIngredientRow[] =
       recipeIngredientRows.map((row) => ({

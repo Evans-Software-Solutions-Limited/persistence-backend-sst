@@ -88,6 +88,7 @@ describe("FoodRepository", () => {
       const rendered = new PgDialect().sqlToQuery(capturedWhere as any);
       expect(rendered.params).toContain("openfoodfacts");
       expect(rendered.params).toContain("u1");
+      expect(rendered.params).toContain(true);
       // The old, leaky predicate bound the string 'user' (source <> 'user').
       expect(rendered.params).not.toContain("user");
     });
@@ -117,6 +118,15 @@ describe("FoodRepository", () => {
         select: vi.fn().mockReturnValue(barcodeChain([])),
       });
       expect(await new FoodRepository().getByBarcode("999", "u1")).toBeNull();
+    });
+
+    it("recognises a quarantined OFF barcode without returning the food", async () => {
+      (getDb as any).mockReturnValue({
+        select: vi.fn().mockReturnValue(selectLimitChain([{ id: "f1" }])),
+      });
+      expect(await new FoodRepository().hasInvalidOffBarcode("01851960")).toBe(
+        true,
+      );
     });
   });
 
@@ -203,6 +213,8 @@ describe("FoodRepository", () => {
           allergenTags: ["en:gluten"],
           categoryTags: ["en:breakfast-cereals"],
           localeTags: ["en:united-kingdom"],
+          nutritionDataValid: true,
+          nutritionDataIssue: null,
           source: "openfoodfacts",
         },
       ]);
@@ -258,6 +270,8 @@ describe("FoodRepository", () => {
           allergenTags: ["en:gluten"],
           categoryTags: ["en:breakfast-cereals"],
           localeTags: ["en:united-kingdom"],
+          nutritionDataValid: true,
+          nutritionDataIssue: null,
           source: "openfoodfacts",
         },
       ]);
@@ -305,6 +319,8 @@ describe("FoodRepository", () => {
           allergenTags: null,
           categoryTags: null,
           localeTags: null,
+          nutritionDataValid: true,
+          nutritionDataIssue: null,
           source: "openfoodfacts",
         },
       ]);
@@ -335,6 +351,8 @@ describe("FoodRepository", () => {
           allergenTags: ["en:gluten"],
           categoryTags: ["en:breakfast-cereals"],
           localeTags: ["en:united-kingdom"],
+          nutritionDataValid: true,
+          nutritionDataIssue: null,
           source: "openfoodfacts",
         },
       ]);

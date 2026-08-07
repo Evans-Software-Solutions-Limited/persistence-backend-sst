@@ -27,6 +27,7 @@ import {
 } from "../safety/avoidanceFilter";
 import type { MealprintCandidate } from "../../../repositories/mealprintCandidateRepository";
 import type { ModelSuggestion, RemainingBudget } from "./suggestModel";
+import { hasGrossMacroEnergyMismatch } from "../../services/offEnergy";
 
 /**
  * Tolerance for a suggestion (design § 1 stage 3): it must fit the remaining
@@ -159,6 +160,23 @@ export function verifySuggestions(input: {
         failure = {
           failure: "non_member_candidate",
           detail: item.candidateId,
+        };
+        break;
+      }
+
+      // Independent fail-closed guard. Repository filtering is the primary
+      // trust boundary, but a stale/injected candidate must still not reach a
+      // user with impossible energy values.
+      if (
+        hasGrossMacroEnergyMismatch(candidate.kcal, {
+          proteinG: candidate.proteinG,
+          carbsG: candidate.carbsG,
+          fatG: candidate.fatG,
+        })
+      ) {
+        failure = {
+          failure: "degenerate_macros",
+          detail: `candidate=${candidate.id}:kcal=${candidate.kcal}`,
         };
         break;
       }

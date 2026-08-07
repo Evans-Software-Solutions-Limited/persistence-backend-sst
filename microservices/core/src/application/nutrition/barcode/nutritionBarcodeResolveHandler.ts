@@ -33,6 +33,11 @@ export const nutritionBarcodeResolveHandler = new Elysia()
       const cached = await ctx.FoodRepository.getByBarcode(code, userId);
       if (cached) return { data: cached };
 
+      if (await ctx.FoodRepository.hasInvalidOffBarcode(code)) {
+        ctx.set.status = 404;
+        return { error: "barcode_not_found" };
+      }
+
       let result;
       try {
         result = await resolveBarcodeFromOFF(code);
@@ -45,6 +50,11 @@ export const nutritionBarcodeResolveHandler = new Elysia()
       }
 
       if (!result.found) {
+        if (result.invalidFood) {
+          await ctx.FoodRepository.upsertManyFromOff([
+            { ...result.invalidFood, source: "openfoodfacts" },
+          ]);
+        }
         ctx.set.status = 404;
         return { error: "barcode_not_found" };
       }
