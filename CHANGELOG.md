@@ -1,5 +1,41 @@
 # Changelog
 
+## [1.12.0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.11.0...persistence-v1.12.0) (2026-08-07)
+
+
+### Features
+
+* add GTM D9 subscription rails ([#362](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/362)) ([3ce04ca](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/3ce04ca2e3821e964b64ad506856a9aa9c255ff3))
+* **async-jobs:** the shared async-job spine — step 0 of the Premium+ launch bundle ([#348](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/348)) ([c862424](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/c8624248503803b4ee2f3b87875c5b17f6ca63d1))
+* **loadout:** Phase 2 mobile athlete screens + Phase 3 scan sheet (spec-21) ([#339](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/339)) ([e180ac8](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/e180ac8a062cd80f8d4d1b99ea68f8feb80ceebe))
+* **loadout:** saved gyms move into the Train tab as a Gyms segment (spec-21) ([#346](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/346)) ([5370abb](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/5370abb8bb36f6bafe4c344ee37e674584839b21))
+* lock adaptive suite data after subscription loss ([#371](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/371)) ([3960ad7](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/3960ad72c4e3cdf0b8e63f39747829c24521888f))
+* **mealprint:** carry item kind + per-serving macros — recipe/meal accept (gap 1) + per-item editing (gap 2) ([#364](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/364)) ([b38ce8d](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/b38ce8d9dd86b244f9249fde7c7e3be6d1a68801))
+* **mealprint:** edit / clear plan from the Fuel page ([#370](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/370)) ([15658da](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/15658da43658697a67afae265cead5129dfb167a))
+* **mealprint:** mobile design pass, allergen-wipe fixes, and a structural sheet footer (spec-26) ([#352](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/352)) ([fa0567f](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/fa0567fc4c833ebfe96e6d9ed05b758a6446ea46))
+* **mealprint:** spec-26 Phase 2 backend — plans, generate, accept, log, swap ([#357](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/357)) ([3f047be](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/3f047beca9c66917f0dc742e917acca3d22d947d))
+* **mealprint:** spec-26 Phase 2 mobile — plan flow + Fuel integration + replace-meal route ([#363](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/363)) ([b9740b4](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/b9740b4afe8b49252b04c83eca704897563ba4ca))
+* **mealprint:** suggest occasions + day-scoped shopping list (+ staging build fixes) ([#369](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/369)) ([bdfb378](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/bdfb3785e62b266ad40c9608e6042697c6d5c4a1))
+* **mobile:** prepare Android launch ([#375](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/375)) ([57f075a](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/57f075a906dd306179dee8df3844a7f052f3d576))
+* **privacy:** revise the policy to the UK-GDPR brief, and make its promises real ([#351](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/351)) ([dcc9726](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/dcc9726a2667fcc4280042bef834816581a014d9))
+* **subscriptions:** free tier = 3 workouts TOTAL + over-limit lock ([#365](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/365)) ([bfda611](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/bfda611c47bab4a24c5f65e4cc31fa19b7fa586f))
+* **subscriptions:** spec-29 Phase 2 — IAP coach ladder (Start Up Coach → Coach Pro) ([#361](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/361)) ([ff83289](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/ff832899c34e6593375ed6730fb2681a922078ef))
+
+
+### Bug Fixes
+
+* **async-jobs:** worker concurrency cap must not reserve account concurrency ([#349](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/349)) ([6f756b8](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/6f756b821b53545ed1cb95176488384d3b6c5f15))
+* enforce Mealprint portion guardrails ([#374](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/374)) ([dda4585](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/dda458501741c0fd119135481cfe0e9124c0f100))
+* **mobile:** Loadout scan path was a dead end on device — sheet close clobbered the step ([#345](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/345)) ([8fcfd5c](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/8fcfd5c709379baa10f72a2a5805c0ab34e1c821))
+* polish web pricing cards ([#367](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/367)) ([7b580ae](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/7b580aeeffd379edd310898b62ac6a725b2ca566))
+* reconcile and quarantine contradictory OFF energy ([#373](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/373)) ([e45d8b7](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/e45d8b7fd659b7829359fbac21b3a2275e72ea60))
+* **seed:** carry OFF allergen/category/ingredients tags for Mealprint ([#368](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/368)) ([48426cc](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/48426cc60b1d7f781f397e07a4794ee164c46d6b))
+
+
+### Reverts
+
+* **marketing:** untrack 9 private drafts I committed to a PUBLIC repo by mistake ([#355](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/355)) ([b4a8ba3](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/b4a8ba3e86f4c5cd80e486ac90af47bc45ffb82f))
+
 ## [1.11.0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.10.0...persistence-v1.11.0) (2026-08-01)
 
 
