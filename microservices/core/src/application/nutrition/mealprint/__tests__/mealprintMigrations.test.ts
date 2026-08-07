@@ -76,6 +76,31 @@ describe("20260803120000_foods_mealprint_tags.sql", () => {
   });
 });
 
+describe("20260807185359_off_energy_trust_boundary.sql", () => {
+  const sql = loadStripped("20260807185359_off_energy_trust_boundary.sql");
+
+  it("adds the quarantine columns idempotently and fail-open only for existing rows", () => {
+    expect(sql).toContain(
+      "ADD COLUMN IF NOT EXISTS nutrition_data_valid boolean NOT NULL DEFAULT true",
+    );
+    expect(sql).toContain("ADD COLUMN IF NOT EXISTS nutrition_data_issue text");
+  });
+
+  it("quarantines gross OFF energy contradictions with a conservative lower bound", () => {
+    expect(sql).toContain("source = 'openfoodfacts'");
+    expect(sql).toContain("nutrition_data_issue = 'macro_energy_mismatch'");
+    expect(sql).toMatch(/kcal\s*<[^;]*\* 0\.10/);
+  });
+
+  it("repairs all three audited foods and their denormalised diary kcal", () => {
+    for (const barcode of ["01851960", "5018605966459", "9555387101471"]) {
+      expect(sql).toContain(`'${barcode}'::text`);
+    }
+    expect(sql).toMatch(/UPDATE nutrition_entries AS ne/);
+    expect(sql).toContain("round(c.corrected_kcal * ne.servings, 1)");
+  });
+});
+
 describe("20260803120100_nutrition_preferences.sql", () => {
   const sql = loadStripped("20260803120100_nutrition_preferences.sql");
 

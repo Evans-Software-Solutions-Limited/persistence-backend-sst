@@ -149,6 +149,7 @@ function mealPlanFixture(over: Partial<MealPlan> = {}): MealPlan {
 function acceptInput(over: Partial<PlanAcceptInput> = {}): PlanAcceptInput {
   return {
     planDate: "2026-08-05",
+    mealsPerDay: 4,
     meals: [
       {
         label: "Chicken & rice bowl",
@@ -319,6 +320,7 @@ describe("usePlanSwap", () => {
     dayTarget: { kcal: 2200, proteinG: 160, carbsG: 220, fatG: 70 },
     heldTotals: { kcal: 1600, proteinG: 115, carbsG: 160, fatG: 55 },
     logSlot: "dinner" as const,
+    mealsPerDay: 4,
   };
 
   it("resolves with the swapped meal", async () => {

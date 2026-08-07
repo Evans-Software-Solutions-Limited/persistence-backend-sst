@@ -74,8 +74,15 @@ describe("MealRepository", () => {
   });
 
   it("create inserts meal + items in a tx and returns the hydrated meal", async () => {
-    const itemValuesSpy = vi.fn().mockResolvedValue(undefined);
+    const itemValuesSpy = vi.fn().mockReturnValue({
+      returning: () => Promise.resolve([itemRow]),
+    });
     const tx = {
+      select: vi.fn().mockReturnValue({
+        from: () => ({
+          where: () => ({ for: () => Promise.resolve([{ id: "f1" }]) }),
+        }),
+      }),
       insert: vi
         .fn()
         .mockReturnValueOnce({
@@ -85,10 +92,6 @@ describe("MealRepository", () => {
     };
     (getDb as any).mockReturnValue({
       transaction: (cb: any) => cb(tx),
-      select: vi
-        .fn()
-        .mockReturnValueOnce(mealLookup([mealRow]))
-        .mockReturnValueOnce(itemLookup([itemRow])),
     });
     const out = await new MealRepository().create(
       "u1",
@@ -100,6 +103,80 @@ describe("MealRepository", () => {
     );
     expect(out.id).toBe("m1");
     expect(itemValuesSpy).toHaveBeenCalled();
+  });
+
+  it("rolls back before insert when a linked source is unavailable", async () => {
+    const insert = vi.fn();
+    const tx = {
+      select: vi.fn().mockReturnValue({
+        from: () => ({
+          where: () => ({ for: () => Promise.resolve([]) }),
+        }),
+      }),
+      insert,
+    };
+    (getDb as any).mockReturnValue({ transaction: (cb: any) => cb(tx) });
+
+    await expect(
+      new MealRepository().create(
+        "u1",
+        {
+          name: "Bad",
+          items: [{ foodId: "f1", servings: 1, sortOrder: 0 }],
+        },
+        { kcal: 1, proteinG: 1, carbsG: 1, fatG: 1 },
+      ),
+    ).rejects.toMatchObject({
+      message: "nutrition_source_unavailable",
+      items: ["food:f1"],
+    });
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it("locks and rejects a recipe whose nested OFF food is quarantined", async () => {
+    const insert = vi.fn();
+    const tx = {
+      select: vi
+        .fn()
+        .mockReturnValueOnce({
+          from: () => ({
+            where: () => ({ for: () => Promise.resolve([{ id: "r1" }]) }),
+          }),
+        })
+        .mockReturnValueOnce({
+          from: () => ({
+            innerJoin: () => ({
+              where: () => ({
+                for: () =>
+                  Promise.resolve([
+                    {
+                      id: "off-1",
+                      recipeId: "r1",
+                      nutritionDataValid: false,
+                    },
+                  ]),
+              }),
+            }),
+          }),
+        }),
+      insert,
+    };
+    (getDb as any).mockReturnValue({ transaction: (cb: any) => cb(tx) });
+
+    await expect(
+      new MealRepository().create(
+        "u1",
+        {
+          name: "Bad recipe meal",
+          items: [{ recipeId: "r1", servings: 1, sortOrder: 0 }],
+        },
+        { kcal: 1, proteinG: 1, carbsG: 1, fatG: 1 },
+      ),
+    ).rejects.toMatchObject({
+      message: "nutrition_source_unavailable",
+      items: ["recipe:r1"],
+    });
+    expect(insert).not.toHaveBeenCalled();
   });
 
   it("update returns null when not owned", async () => {

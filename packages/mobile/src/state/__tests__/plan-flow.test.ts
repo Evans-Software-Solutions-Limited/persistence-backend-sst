@@ -105,6 +105,30 @@ describe("usePlanFlow — generate → draft", () => {
     expect(get().flaggedIds.has(localId)).toBe(true);
   });
 
+  it("a server portion flag blocks the draft until that meal is swapped", () => {
+    get().open("2026-08-05");
+    get().draftReady(
+      result({
+        meals: [
+          {
+            name: "Too much",
+            reason: "x",
+            logSlot: "dinner",
+            items: [],
+            kcal: 1_200,
+            proteinG: 40,
+            carbsG: 160,
+            fatG: 30,
+            containsUnverified: false,
+            flaggedUnsafe: false,
+            flaggedPortion: true,
+          },
+        ],
+      }),
+    );
+    expect(get().flaggedIds.size).toBe(1);
+  });
+
   it("empty() records the reason and returns to config", () => {
     get().open("2026-08-05");
     get().generating();

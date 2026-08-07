@@ -3,6 +3,7 @@ import { RecipeService } from "../../repositories/recipeService";
 import { FoodService } from "../../repositories/foodService";
 import { materialiseTotals, roundTotals } from "../services/materialiseMacros";
 import type { FoodDTO } from "../../repositories/foodRepository";
+import { NutritionSourceUnavailableError } from "../../repositories/nutritionDataValidity";
 import {
   getAuthUser,
   requireAuth,
@@ -46,25 +47,42 @@ export const recipesCreateHandler = new Elysia()
       ];
       const foods = await ctx.FoodRepository.getByIds(foodIds, userId);
       const foodsById = new Map<string, FoodDTO>(foods.map((f) => [f.id, f]));
+      const unresolved = foodIds.filter((id) => !foodsById.has(id));
+      if (unresolved.length > 0) {
+        ctx.set.status = 400;
+        return {
+          error: "unresolvable_items",
+          items: unresolved.map((id) => `food:${id}`),
+        };
+      }
       const derived = materialiseTotals(ingredients, foodsById);
 
       // `providedTotals` (from a scrape / whole-recipe AI estimate) wins when
       // present — it's what the user saw. Otherwise derive from ingredients.
       const totals = roundTotals(ctx.body.providedTotals ?? derived);
 
-      const recipe = await ctx.RecipeRepository.create(
-        userId,
-        {
-          name: ctx.body.name,
-          photoUrl: ctx.body.photoUrl,
-          servings: ctx.body.servings,
-          instructions: ctx.body.instructions,
-          source: ctx.body.source ?? "manual",
-          sourceUrl: ctx.body.sourceUrl,
-          ingredients,
-        },
-        totals,
-      );
+      let recipe;
+      try {
+        recipe = await ctx.RecipeRepository.create(
+          userId,
+          {
+            name: ctx.body.name,
+            photoUrl: ctx.body.photoUrl,
+            servings: ctx.body.servings,
+            instructions: ctx.body.instructions,
+            source: ctx.body.source ?? "manual",
+            sourceUrl: ctx.body.sourceUrl,
+            ingredients,
+          },
+          totals,
+        );
+      } catch (error) {
+        if (error instanceof NutritionSourceUnavailableError) {
+          ctx.set.status = 409;
+          return { error: "nutrition_source_changed", items: error.items };
+        }
+        throw error;
+      }
 
       ctx.set.status = 201;
       return { data: recipe };

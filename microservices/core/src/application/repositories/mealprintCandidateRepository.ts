@@ -1,8 +1,16 @@
 import { and, eq, gt, inArray, isNotNull, lte, ne, or, sql } from "drizzle-orm";
 import { foods, meals, recipes } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
+import {
+  mealNutritionDataIsUsable,
+  recipeNutritionDataIsUsable,
+} from "./nutritionDataValidity";
 import { LOCALE_OFF_TAG } from "../nutrition/mealprint/preferences/vocabulary";
 import type { SupportedLocale } from "../nutrition/mealprint/preferences/vocabulary";
+import {
+  MAX_FOOD_SERVINGS,
+  MAX_PRESET_SERVINGS,
+} from "../nutrition/mealprint/ai/portionPolicy";
 
 /**
  * Mealprint (spec-26 design § 1 stage 1) — CANDIDATE ASSEMBLY.
@@ -50,6 +58,10 @@ export interface MealprintCandidate {
   fatG: number;
   /** Human serving description for the prompt ("220 g", "1 serving"). */
   servingLabel: string;
+  /** Whether the amount is product-declared, user-authored, or only a nutrition basis. */
+  servingBasis: "declared" | "saved" | "reference";
+  /** Maximum multiplier the AI may put into one composition. */
+  maxServings: number;
   /** ⚠ `null` = UNKNOWN. Never `[]`. Fed straight to `avoidanceFilter`. */
   allergenTags: string[] | null;
   categoryTags: string[] | null;
@@ -118,12 +130,19 @@ export class MealprintCandidateRepository {
       // catalogue standing and no tags, so it is excluded here and reaches the
       // pool only via the owner's own-foods query.
       eq(foods.source, "openfoodfacts"),
+      // External rows with contradictory kcal/kJ or grossly impossible energy
+      // are retained for audit but are never candidates.
+      eq(foods.nutritionDataValid, true),
       // Locale containment. NULL locale_tags are excluded by `&&` semantics,
       // which is correct: an untagged row has no established UK availability.
       sql`${foods.localeTags} && ${textArray([localeTag])}`,
       // Zero-kcal rows (water, spices, some drinks) can never help hit a macro
       // target and only consume prompt budget.
       gt(foods.kcal, "0"),
+      // OFF's 100 g nutrition reference is not a real portion. Rows without a
+      // declared serving remain searchable/loggable, but cannot be composed by
+      // Mealprint until a trustworthy serving quantity exists.
+      gt(foods.servingQuantity, "0"),
       // One serving must not alone exceed the budget. `serving_quantity` is the
       // real pack serving in grams when OFF has it; macros are per-100g, so the
       // serving's kcal is kcal * q / 100.
@@ -298,7 +317,13 @@ export class MealprintCandidateRepository {
         totalFatG: recipes.totalFatG,
       })
       .from(recipes)
-      .where(and(eq(recipes.userId, userId), isNotNull(recipes.totalKcal)))
+      .where(
+        and(
+          eq(recipes.userId, userId),
+          isNotNull(recipes.totalKcal),
+          recipeNutritionDataIsUsable(recipes.id),
+        ),
+      )
       .limit(OWN_RECIPE_LIMIT);
 
     return rows
@@ -318,6 +343,8 @@ export class MealprintCandidateRepository {
           carbsG: Number(row.totalCarbsG ?? 0) / servings,
           fatG: Number(row.totalFatG ?? 0) / servings,
           servingLabel: "1 serving",
+          servingBasis: "saved",
+          maxServings: MAX_PRESET_SERVINGS,
           // ⚠ A recipe has no OFF tags, so its allergen content is UNKNOWN and
           // `avoidanceFilter` will exclude it from any allergen-filtered pool.
           // That is the correct answer for a free-text recipe: we cannot vouch
@@ -356,7 +383,7 @@ export class MealprintCandidateRepository {
         totalFatG: meals.totalFatG,
       })
       .from(meals)
-      .where(eq(meals.userId, userId))
+      .where(and(eq(meals.userId, userId), mealNutritionDataIsUsable(meals.id)))
       .limit(OWN_MEAL_LIMIT);
 
     return rows
@@ -373,6 +400,8 @@ export class MealprintCandidateRepository {
           carbsG: Number(row.totalCarbsG),
           fatG: Number(row.totalFatG),
           servingLabel: "1 portion",
+          servingBasis: "saved",
+          maxServings: MAX_PRESET_SERVINGS,
           allergenTags: null,
           categoryTags: null,
           isOwn: true,
@@ -456,7 +485,10 @@ export class MealprintCandidateRepository {
                 // resolve via `createdBy = userId`.
                 or(
                   eq(foods.createdBy, userId),
-                  eq(foods.source, "openfoodfacts"),
+                  and(
+                    eq(foods.source, "openfoodfacts"),
+                    eq(foods.nutritionDataValid, true),
+                  ),
                 ),
               ),
             ),
@@ -474,7 +506,11 @@ export class MealprintCandidateRepository {
             })
             .from(recipes)
             .where(
-              and(eq(recipes.userId, userId), inArray(recipes.id, recipeIds)),
+              and(
+                eq(recipes.userId, userId),
+                inArray(recipes.id, recipeIds),
+                recipeNutritionDataIsUsable(recipes.id),
+              ),
             ),
       mealIds.length === 0
         ? Promise.resolve([])
@@ -488,7 +524,13 @@ export class MealprintCandidateRepository {
               totalFatG: meals.totalFatG,
             })
             .from(meals)
-            .where(and(eq(meals.userId, userId), inArray(meals.id, mealIds))),
+            .where(
+              and(
+                eq(meals.userId, userId),
+                inArray(meals.id, mealIds),
+                mealNutritionDataIsUsable(meals.id),
+              ),
+            ),
     ]);
 
     const resolved: MealprintCandidate[] = foodRows.map((row) =>
@@ -509,6 +551,8 @@ export class MealprintCandidateRepository {
         carbsG: Number(row.totalCarbsG ?? 0) / servings,
         fatG: Number(row.totalFatG ?? 0) / servings,
         servingLabel: "1 serving",
+        servingBasis: "saved",
+        maxServings: MAX_PRESET_SERVINGS,
         // Same reasoning as `listOwnRecipeCandidates`: a free-text recipe has no
         // OFF tags, so its allergen content is UNKNOWN — never `[]`.
         allergenTags: null,
@@ -529,6 +573,8 @@ export class MealprintCandidateRepository {
         carbsG: Number(row.totalCarbsG),
         fatG: Number(row.totalFatG),
         servingLabel: "1 portion",
+        servingBasis: "saved",
+        maxServings: MAX_PRESET_SERVINGS,
         allergenTags: null,
         categoryTags: null,
         isOwn: true,
@@ -561,8 +607,13 @@ function toFoodCandidate(
   // stored `serving_size` (100 for every OFF row). Macros are per-`serving_size`
   // grams, so the scale factor is quantity / serving_size.
   const servingSize = Number(row.servingSize) || 100;
-  const quantity =
-    row.servingQuantity != null ? Number(row.servingQuantity) : servingSize;
+  const hasDeclaredServing =
+    row.servingQuantity != null &&
+    Number.isFinite(Number(row.servingQuantity)) &&
+    Number(row.servingQuantity) > 0;
+  const quantity = hasDeclaredServing
+    ? Number(row.servingQuantity)
+    : servingSize;
   const scale =
     Number.isFinite(quantity) && quantity > 0 ? quantity / servingSize : 1;
 
@@ -578,6 +629,12 @@ function toFoodCandidate(
     carbsG: Number(row.carbsG) * scale,
     fatG: Number(row.fatG) * scale,
     servingLabel: `${Math.round(quantity)} ${row.servingUnit}`,
+    servingBasis: isOwn
+      ? "saved"
+      : hasDeclaredServing
+        ? "declared"
+        : "reference",
+    maxServings: MAX_FOOD_SERVINGS,
     allergenTags: row.allergenTags,
     categoryTags: row.categoryTags,
     isOwn,

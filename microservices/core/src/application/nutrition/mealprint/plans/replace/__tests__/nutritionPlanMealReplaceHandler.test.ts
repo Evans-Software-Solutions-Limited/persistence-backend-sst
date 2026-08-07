@@ -98,6 +98,8 @@ function food(id: string, over: Record<string, unknown> = {}) {
     carbsG: 7,
     fatG: 1,
     servingLabel: "170 g",
+    servingBasis: "declared" as const,
+    maxServings: 2,
     allergenTags: [] as string[] | null,
     categoryTags: [] as string[] | null,
     isOwn: false,
@@ -111,6 +113,8 @@ function updatedPlan(over: Record<string, unknown> = {}) {
     userId: "test-user-id",
     status: "active",
     planDate: "2026-08-05",
+    mealsPerDay: 4,
+    targetKcal: 2400,
     meals: [],
     ...over,
   };
@@ -331,6 +335,28 @@ describe("POST /nutrition/plans/:id/meals/:mealId/replace", () => {
 
     expect(res.status).toBe(422);
     expect((await body(res)).error).toBe("avoidance_violation");
+    expect(planMocks.replaceMeal).not.toHaveBeenCalled();
+  });
+
+  it("422s a direct replacement above the allowed serving count", async () => {
+    const res = await app.handle(
+      post(replaceBody({ items: [{ foodId: FOOD_A, servings: 2.25 }] })),
+    );
+
+    expect(res.status).toBe(422);
+    expect((await body(res)).error).toBe("portion_violation");
+    expect(planMocks.replaceMeal).not.toHaveBeenCalled();
+  });
+
+  it("422s a reference-basis OFF row at the durable replace boundary", async () => {
+    candidateMocks.resolveByIds.mockResolvedValue([
+      food(FOOD_A, { servingBasis: "reference" }),
+    ]);
+
+    const res = await app.handle(post(replaceBody()));
+
+    expect(res.status).toBe(422);
+    expect((await body(res)).error).toBe("portion_violation");
     expect(planMocks.replaceMeal).not.toHaveBeenCalled();
   });
 

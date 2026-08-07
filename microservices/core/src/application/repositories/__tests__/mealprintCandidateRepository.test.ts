@@ -90,10 +90,14 @@ describe("MealprintCandidateRepository.buildCuratedWhere", () => {
     );
     expect(sql).toContain('"source"');
     expect(params).toContain("openfoodfacts");
+    expect(params).toContain(true);
     // AC 7.3 — the pool draws only locale-curated rows.
     expect(params).toContain("en:united-kingdom");
     expect(sql).toContain("&&");
     expect(sql).not.toMatch(PAREN_CAST);
+    // A 100 g nutrition reference is not a declared portion. The AI pool must
+    // fail closed when OFF has no serving_quantity.
+    expect(sql).toMatch(/"serving_quantity" > \$\d+/);
   });
 
   it("adds the NOT NULL allergen predicate only when an allergen chip is set", () => {
@@ -173,8 +177,9 @@ describe("MealprintCandidateRepository.buildCuratedWhere", () => {
 
   it("bounds one serving's kcal against the remaining budget", () => {
     // Macros are per-100g and `serving_quantity` is the real pack serving in
-    // grams, so the serving's kcal is kcal * q / 100 — the arithmetic has to be
-    // in the SQL, and it has to COALESCE because OFF often omits the quantity.
+    // grams, so the serving's kcal is kcal * q / 100. Reference-only rows are
+    // excluded by the serving_quantity predicate above; COALESCE remains shared
+    // with the authored-food expression and is harmless here.
     const { sql, params } = render(
       repo.buildCuratedWhere({
         locale: "en-GB",
@@ -332,6 +337,8 @@ describe("MealprintCandidateRepository row mapping", () => {
     expect(candidate.kcal).toBeCloseTo(170);
     expect(candidate.proteinG).toBeCloseTo(17);
     expect(candidate.servingLabel).toBe("170 g");
+    expect(candidate.servingBasis).toBe("declared");
+    expect(candidate.maxServings).toBe(2);
     // The brand is part of a branded row's identity — "Greek Yogurt" alone is not
     // something a user can find in a shop, and it is what makes near-duplicate
     // catalogue rows distinguishable in the prompt.
@@ -365,6 +372,7 @@ describe("MealprintCandidateRepository row mapping", () => {
         requireKnownAllergens: false,
       });
     expect(candidate.kcal).toBeCloseTo(379);
+    expect(candidate.servingBasis).toBe("reference");
     // ⚠ Preserved as null, not coerced to []: `avoidanceFilter` reads this as
     // UNKNOWN and excludes the row from allergen-filtered pools.
     expect(candidate.allergenTags).toBeNull();

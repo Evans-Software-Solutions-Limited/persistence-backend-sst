@@ -6,6 +6,7 @@ const planMocks = vi.hoisted(() => ({
   markMealLogged: vi.fn(),
 }));
 const entryMocks = vi.hoisted(() => ({ create: vi.fn(), delete: vi.fn() }));
+const candidateMocks = vi.hoisted(() => ({ resolveByIds: vi.fn() }));
 const assertEntitlementMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
@@ -33,6 +34,11 @@ vi.mock("../../../../../repositories/mealPlanRepository", async () => {
 });
 vi.mock("../../../../../repositories/nutritionEntryRepository", () => ({
   NutritionEntryRepository: vi.fn().mockImplementation(() => entryMocks),
+}));
+vi.mock("../../../../../repositories/mealprintCandidateRepository", () => ({
+  MealprintCandidateRepository: vi
+    .fn()
+    .mockImplementation(() => candidateMocks),
 }));
 vi.mock("../../../../../entitlement/assertEntitlement", async () => {
   const actual = await vi.importActual<
@@ -100,6 +106,7 @@ beforeEach(() => {
   planMocks.markMealLogged.mockResolvedValue(true);
   entryMocks.create.mockResolvedValue({ id: ENTRY_ID });
   entryMocks.delete.mockResolvedValue(true);
+  candidateMocks.resolveByIds.mockResolvedValue([{ kind: "food", id: "f1" }]);
 });
 
 describe("POST /nutrition/plans/:id/meals/:mealId/log", () => {
@@ -144,7 +151,23 @@ describe("POST /nutrition/plans/:id/meals/:mealId/log", () => {
     expect(input.foodId).toBeNull();
   });
 
+  it("409s when a plan source has since been quarantined", async () => {
+    candidateMocks.resolveByIds.mockResolvedValue([]);
+    const res = await app.handle(req());
+    expect(res.status).toBe(409);
+    expect((await body(res)).error).toBe("plan_meal_nutrition_unavailable");
+    expect(candidateMocks.resolveByIds).toHaveBeenCalledWith("test-user-id", {
+      foodIds: ["f1"],
+      recipeIds: [],
+      mealIds: [],
+    });
+    expect(entryMocks.create).not.toHaveBeenCalled();
+  });
+
   it("carries the recipe id when the meal is recipe-backed, with no custom name", async () => {
+    candidateMocks.resolveByIds.mockResolvedValue([
+      { kind: "recipe", id: "rec-1" },
+    ]);
     planMocks.get.mockResolvedValue(
       plan({}, [meal({ recipeId: "rec-1", items: null })]),
     );

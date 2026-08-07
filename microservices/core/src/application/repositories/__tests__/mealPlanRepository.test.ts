@@ -564,7 +564,10 @@ describe("getShoppingSource — day-scoped shopping-list read (spec-26 amendment
     // Scoped to THIS plan's referenced recipe id, not every recipe in the
     // table — the `inArray` param is exactly the one recipe id in the plan.
     const recipeQueryWhere = render(capture.wheres[2]);
-    expect(recipeQueryWhere.params).toEqual([RECIPE_ID]);
+    expect(recipeQueryWhere.params).toContain(RECIPE_ID);
+    const recipeTotalWhere = render(capture.wheres[4]);
+    expect(recipeTotalWhere.params).toContain(RECIPE_ID);
+    expect(recipeTotalWhere.params).toContain(USER);
   });
 
   it("maps a never-materialised recipe's NULL totalKcal through as null", async () => {
@@ -652,5 +655,24 @@ describe("getShoppingSource — day-scoped shopping-list read (spec-26 amendment
     expect(result!.mealTotals).toEqual([]);
     expect(result!.foods).toHaveLength(1);
     expect(capture.calls.filter((c) => c === "select")).toHaveLength(3);
+  });
+
+  it("rejects rather than returning a partial list when a food is quarantined", async () => {
+    useDb([
+      [planRow()],
+      [
+        mealRow({
+          id: "m1",
+          recipeId: null,
+          mealId: null,
+          items: [{ foodId: FOOD_ITEM, servings: 1 }],
+        }),
+      ],
+      [], // validity-filtered food query omits the quarantined row
+    ]);
+
+    await expect(repo.getShoppingSource(USER, PLAN)).rejects.toThrow(
+      "plan_nutrition_unavailable",
+    );
   });
 });

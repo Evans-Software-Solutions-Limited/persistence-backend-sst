@@ -1,4 +1,4 @@
-import { and, eq, ilike, or, desc, inArray, sql } from "drizzle-orm";
+import { and, eq, ilike, or, desc, inArray, ne, sql } from "drizzle-orm";
 import { foods, type Food } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
 import type { OffFoodRow } from "../nutrition/services/offMapper";
@@ -58,6 +58,25 @@ export function toFoodDTO(row: Food): FoodDTO {
   };
 }
 
+/**
+ * Invalid external rows stay in the catalogue for audit/remediation, but they
+ * must never be offered, materialised into a recipe/meal, or logged. User-owned
+ * foods are not external OFF data and remain visible.
+ */
+export function usableFoodCondition() {
+  return or(
+    ne(foods.source, "openfoodfacts"),
+    eq(foods.nutritionDataValid, true),
+  );
+}
+
+export function usableFoodForUserCondition(userId: string) {
+  return and(
+    usableFoodCondition(),
+    or(eq(foods.createdBy, userId), eq(foods.source, "openfoodfacts")),
+  );
+}
+
 export class FoodRepository {
   static readonly key = "FoodRepository";
 
@@ -76,12 +95,7 @@ export class FoodRepository {
     const result = await db
       .select()
       .from(foods)
-      .where(
-        and(
-          eq(foods.id, id),
-          or(eq(foods.createdBy, userId), eq(foods.source, "openfoodfacts")),
-        ),
-      )
+      .where(and(eq(foods.id, id), usableFoodForUserCondition(userId)))
       .limit(1);
     return result[0] ? toFoodDTO(result[0]) : null;
   }
@@ -98,12 +112,7 @@ export class FoodRepository {
     const rows = await db
       .select()
       .from(foods)
-      .where(
-        and(
-          inArray(foods.id, ids),
-          or(eq(foods.createdBy, userId), eq(foods.source, "openfoodfacts")),
-        ),
-      );
+      .where(and(inArray(foods.id, ids), usableFoodForUserCondition(userId)));
     return rows.map(toFoodDTO);
   }
 
@@ -122,6 +131,7 @@ export class FoodRepository {
       .where(
         and(
           eq(foods.barcode, barcode),
+          usableFoodCondition(),
           or(eq(foods.createdBy, userId), eq(foods.source, "openfoodfacts")),
         ),
       )
@@ -129,6 +139,23 @@ export class FoodRepository {
       .orderBy(sql`(${foods.createdBy} = ${userId}) DESC`)
       .limit(1);
     return result[0] ? toFoodDTO(result[0]) : null;
+  }
+
+  /** Avoid repeatedly calling rate-limited OFF for a known quarantined row. */
+  async hasInvalidOffBarcode(barcode: string): Promise<boolean> {
+    const db = getDb();
+    const result = await db
+      .select({ id: foods.id })
+      .from(foods)
+      .where(
+        and(
+          eq(foods.barcode, barcode),
+          eq(foods.source, "openfoodfacts"),
+          eq(foods.nutritionDataValid, false),
+        ),
+      )
+      .limit(1);
+    return result.length > 0;
   }
 
   /**
@@ -144,6 +171,7 @@ export class FoodRepository {
       .where(
         and(
           ilike(foods.name, `%${query}%`),
+          usableFoodCondition(),
           or(eq(foods.createdBy, userId), eq(foods.source, "openfoodfacts")),
         ),
       )
@@ -206,6 +234,8 @@ export class FoodRepository {
           allergenTags: r.allergenTags,
           categoryTags: r.categoryTags,
           localeTags: r.localeTags,
+          nutritionDataValid: r.nutritionDataValid,
+          nutritionDataIssue: r.nutritionDataIssue,
           source: r.source,
           createdBy: null,
         })),
@@ -239,6 +269,8 @@ export class FoodRepository {
           allergenTags: sql`excluded.allergen_tags`,
           categoryTags: sql`excluded.category_tags`,
           localeTags: sql`excluded.locale_tags`,
+          nutritionDataValid: sql`excluded.nutrition_data_valid`,
+          nutritionDataIssue: sql`excluded.nutrition_data_issue`,
         },
       });
     return rows.length;

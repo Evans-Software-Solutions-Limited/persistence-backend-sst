@@ -27,6 +27,10 @@ function candidate(over: Partial<MealprintCandidate> = {}): MealprintCandidate {
     carbsG: 4,
     fatG: 1,
     servingLabel: "170 g",
+    servingBasis: "declared",
+    // Most legacy verifier cases exercise calorie/avoidance behaviour with the
+    // historical parser range. Portion-specific cases override this to 2.
+    maxServings: 6,
     allergenTags: [],
     categoryTags: [],
     isOwn: false,
@@ -61,6 +65,27 @@ function suggestion(
 }
 
 describe("verifySuggestions — macros come from the DB, never the model", () => {
+  it("rejects an impossible candidate even if repository filtering regresses", () => {
+    const result = verifySuggestions({
+      suggestions: [suggestion([{ candidateId: "bad", servings: 1 }])],
+      candidates: [
+        candidate({
+          id: "bad",
+          kcal: 5,
+          proteinG: 23,
+          carbsG: 59,
+          fatG: 5,
+        }),
+      ],
+      remaining: REMAINING,
+      preferences: NO_PREFS,
+    });
+    expect(result.suggestions).toEqual([]);
+    expect(result.rejected[0]).toMatchObject({
+      failure: "degenerate_macros",
+    });
+  });
+
   it("recomputes every macro as row × servings", () => {
     const result = verifySuggestions({
       suggestions: [suggestion([{ candidateId: "yog", servings: 2 }])],
@@ -485,6 +510,41 @@ describe("verifySuggestions — eating_out forces unverified (decision 2)", () =
       preferences: NO_PREFS,
     });
     expect(result.suggestions[0].containsUnverified).toBe(false);
+  });
+});
+
+describe("verifySuggestions — portion plausibility", () => {
+  it("drops a normal suggestion above its one-plate ceiling", () => {
+    const result = verifySuggestions({
+      suggestions: [suggestion([{ candidateId: "yog", servings: 2 }])],
+      candidates: [candidate({ kcal: 350, maxServings: 2 })],
+      remaining: { ...REMAINING, kcal: 1_800 },
+      preferences: NO_PREFS,
+      maxMealKcal: 607.5,
+      maxCheatMealKcal: 1_350,
+    });
+    expect(result.rejected[0]).toMatchObject({
+      failure: "implausible_portion",
+      detail: "kcal=700>608",
+    });
+  });
+
+  it("keeps Have it exempt from remaining kcal while enforcing its larger portion ceiling", () => {
+    const result = verifySuggestions({
+      suggestions: [
+        suggestion([{ candidateId: "yog", servings: 2 }], "Have it", {
+          cheat: true,
+          tag: "Have it",
+        }),
+      ],
+      candidates: [candidate({ kcal: 250, maxServings: 2 })],
+      remaining: { ...REMAINING, kcal: 200 },
+      preferences: NO_PREFS,
+      maxMealKcal: 607.5,
+      maxCheatMealKcal: 1_350,
+    });
+    expect(result.suggestions).toHaveLength(1);
+    expect(result.suggestions[0]!.kcal).toBe(500);
   });
 });
 

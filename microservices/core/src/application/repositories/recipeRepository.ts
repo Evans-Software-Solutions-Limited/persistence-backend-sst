@@ -1,5 +1,6 @@
 import { and, eq, desc, inArray } from "drizzle-orm";
 import {
+  foods,
   recipes,
   recipeIngredients,
   type Recipe,
@@ -10,6 +11,11 @@ import type {
   IngredientInput,
   MacroTotals,
 } from "../recipes/services/materialiseMacros";
+import {
+  NutritionSourceUnavailableError,
+  recipeNutritionDataIsUsable,
+} from "./nutritionDataValidity";
+import { usableFoodForUserCondition } from "./foodRepository";
 
 export type RecipeIngredientDTO = {
   id: string;
@@ -93,7 +99,12 @@ export class RecipeRepository {
     const rows = await db
       .select()
       .from(recipes)
-      .where(eq(recipes.userId, userId))
+      .where(
+        and(
+          eq(recipes.userId, userId),
+          recipeNutritionDataIsUsable(recipes.id),
+        ),
+      )
       .orderBy(desc(recipes.createdAt));
     // List view omits ingredients for payload size; cards show name + totals.
     return rows.map((r) => toRecipeDTO(r, []));
@@ -104,7 +115,13 @@ export class RecipeRepository {
     const found = await db
       .select()
       .from(recipes)
-      .where(and(eq(recipes.id, id), eq(recipes.userId, userId)))
+      .where(
+        and(
+          eq(recipes.id, id),
+          eq(recipes.userId, userId),
+          recipeNutritionDataIsUsable(recipes.id),
+        ),
+      )
       .limit(1);
     if (!found[0]) return null;
     const ings = await db
@@ -149,7 +166,13 @@ export class RecipeRepository {
     const rows = await db
       .select()
       .from(recipes)
-      .where(and(inArray(recipes.id, ids), eq(recipes.userId, userId)));
+      .where(
+        and(
+          inArray(recipes.id, ids),
+          eq(recipes.userId, userId),
+          recipeNutritionDataIsUsable(recipes.id),
+        ),
+      );
     for (const r of rows) {
       map.set(r.id, {
         totalKcal: Number(r.totalKcal ?? 0),
@@ -168,7 +191,31 @@ export class RecipeRepository {
     totals: MacroTotals,
   ): Promise<RecipeDTO> {
     const db = getDb();
-    const recipeId = await db.transaction(async (tx) => {
+    return db.transaction(async (tx) => {
+      const foodIds = [
+        ...new Set(
+          input.ingredients
+            .map((ingredient) => ingredient.foodId)
+            .filter((id): id is string => id != null),
+        ),
+      ];
+      if (foodIds.length > 0) {
+        const usable = await tx
+          .select({ id: foods.id })
+          .from(foods)
+          .where(
+            and(inArray(foods.id, foodIds), usableFoodForUserCondition(userId)),
+          )
+          .for("share");
+        const found = new Set(usable.map((row) => row.id));
+        const missing = foodIds.filter((id) => !found.has(id));
+        if (missing.length > 0) {
+          throw new NutritionSourceUnavailableError(
+            missing.map((id) => `food:${id}`),
+          );
+        }
+      }
+
       const [recipe] = await tx
         .insert(recipes)
         .values({
@@ -186,24 +233,24 @@ export class RecipeRepository {
         })
         .returning();
 
-      if (input.ingredients.length > 0) {
-        await tx.insert(recipeIngredients).values(
-          input.ingredients.map((ing) => ({
-            recipeId: recipe.id,
-            foodId: ing.foodId ?? null,
-            customName: ing.customName ?? null,
-            quantity: String(ing.quantity),
-            unit: ing.unit,
-            sortOrder: ing.sortOrder,
-          })),
-        );
-      }
-      return recipe.id;
+      const ingredientRows =
+        input.ingredients.length > 0
+          ? await tx
+              .insert(recipeIngredients)
+              .values(
+                input.ingredients.map((ing) => ({
+                  recipeId: recipe.id,
+                  foodId: ing.foodId ?? null,
+                  customName: ing.customName ?? null,
+                  quantity: String(ing.quantity),
+                  unit: ing.unit,
+                  sortOrder: ing.sortOrder,
+                })),
+              )
+              .returning()
+          : [];
+      return toRecipeDTO(recipe, ingredientRows);
     });
-
-    const created = await this.getById(recipeId, userId);
-    if (!created) throw new Error("recipe_create_failed");
-    return created;
   }
 
   /** Metadata-only update (name/photo/servings/instructions); ownership in WHERE. */
@@ -223,10 +270,21 @@ export class RecipeRepository {
     const [updated] = await db
       .update(recipes)
       .set(patch)
-      .where(and(eq(recipes.id, id), eq(recipes.userId, userId)))
+      .where(
+        and(
+          eq(recipes.id, id),
+          eq(recipes.userId, userId),
+          recipeNutritionDataIsUsable(recipes.id),
+        ),
+      )
       .returning();
 
-    return updated ? this.getById(id, userId) : null;
+    if (!updated) return null;
+    const ingredients = await db
+      .select()
+      .from(recipeIngredients)
+      .where(eq(recipeIngredients.recipeId, id));
+    return toRecipeDTO(updated, ingredients);
   }
 
   async delete(id: string, userId: string): Promise<boolean> {
