@@ -306,9 +306,12 @@ describe("useAutoRetryOnWorkoutLimitResolved", () => {
       });
     });
 
-    await waitFor(() => {
-      expect(storage.getBlockedEntries()).toHaveLength(0);
-    });
+    await waitFor(
+      () => {
+        expect(storage.getBlockedEntries()).toHaveLength(0);
+      },
+      { timeout: 5_000 },
+    );
     expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 

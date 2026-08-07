@@ -3355,3 +3355,12 @@ PR not yet raised. NO product code — script + dataset + verdict + spec updates
   `/Users/bradleysimms-evans/.codex/visualizations/2026/08/05/019fd228-9f67-7fa0-913e-7e03bd314bff/web-pricing-polish-individual.png`
   and
   `/Users/bradleysimms-evans/.codex/visualizations/2026/08/05/019fd228-9f67-7fa0-913e-7e03bd314bff/web-pricing-polish-organisation.png`.
+
+### 2026-08-07 — Staging full-suite timeout correction
+
+- The post-#371 staging run failed only in `useAutoRetryOnWorkoutLimitResolved`'s
+  upgrade case: its async assertion retained RTL's 1-second default while the
+  equivalent deletion case already allowed 5 seconds. The behavior passed in
+  isolation and five consecutive stress runs; the full 494-suite mobile run
+  passed 6,217/6,217 after aligning the upgrade assertion to the established
+  5-second bound.
