@@ -9,6 +9,7 @@ import { StubHealthAdapter } from "@/adapters/health";
 import { StubNotificationsAdapter } from "@/adapters/notifications";
 import { InMemoryNetInfoAdapter } from "@/adapters/netInfo/__tests__/InMemoryNetInfoAdapter";
 import type { WorkoutSession } from "@/domain/models/session";
+import type { Workout } from "@/domain/models/workout";
 import type { Adapters } from "@/shared/types";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import { useActiveWorkout } from "@/state/active-workout";
@@ -17,6 +18,11 @@ import {
   useActiveWorkoutRehydration,
   type UseActiveWorkoutRehydrationOptions,
 } from "@/ui/hooks/useActiveWorkoutRehydration";
+
+const mockLoadoutGate = { allowed: true, isResolved: true };
+jest.mock("@/ui/hooks/useLoadoutGate", () => ({
+  useLoadoutGate: () => mockLoadoutGate,
+}));
 
 /**
  * useActiveWorkoutRehydration tests — launch reconciliation between the
@@ -69,6 +75,23 @@ function makeSession(overrides: Partial<WorkoutSession> = {}): WorkoutSession {
   };
 }
 
+function makeLoadoutWorkout(): Workout {
+  return {
+    id: "w-1",
+    name: "Upper Body",
+    description: null,
+    createdBy: USER,
+    visibility: "private",
+    estimatedDurationMinutes: 45,
+    showInOwnerLibrary: true,
+    exercises: [],
+    createdAt: "2026-08-01T00:00:00.000Z",
+    updatedAt: "2026-08-01T00:00:00.000Z",
+    parentWorkoutId: "w-root",
+    variationKind: "loadout",
+  };
+}
+
 function wrapper(adapters: Adapters) {
   return function TestWrapper({ children }: { children: ReactNode }) {
     return <AdapterProvider adapters={adapters}>{children}</AdapterProvider>;
@@ -88,6 +111,25 @@ beforeEach(() => {
   useActiveWorkout.setState({ active: null, expanded: false });
   mockGetItem.mockReset();
   mockGetItem.mockResolvedValue(null);
+  mockLoadoutGate.allowed = true;
+  mockLoadoutGate.isResolved = true;
+});
+
+it("recovers pre-migration provenance without adopting, prompting, or discarding", async () => {
+  const { adapters, storage, auth } = makeAdapters();
+  signIn(auth);
+  storage.cacheWorkoutDetail(USER, makeLoadoutWorkout());
+  const session = makeSession();
+  storage.cacheActiveSession(USER, session);
+  mockLoadoutGate.allowed = false;
+  const confirm = jest.fn();
+
+  render(adapters, { confirm });
+
+  await waitFor(() => expect(mockGetItem).toHaveBeenCalled());
+  expect(useActiveWorkout.getState().active).toBeNull();
+  expect(confirm).not.toHaveBeenCalled();
+  expect(storage.getActiveSession(USER)?.id).toBe(session.id);
 });
 
 it("no signed-in user → no-op (no prompt, slice untouched)", async () => {

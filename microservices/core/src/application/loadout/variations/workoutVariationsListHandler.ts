@@ -5,6 +5,10 @@ import {
   requireAuth,
   getUser,
 } from "@persistence/api-utils/auth/supabaseAuth";
+import {
+  assertEntitlement,
+  EntitlementError,
+} from "../../entitlement/assertEntitlement";
 
 /**
  * GET /workouts/:id/variations — the caller's Loadout variations of this parent.
@@ -30,10 +34,8 @@ import {
  * A missing workout and an unreadable one now both return `200 []`, which also
  * discloses strictly less than the 404/200 split did.
  *
- * This endpoint is NOT entitlement-gated either. Reading setups you already own
- * must keep working if a subscription lapses — losing access to your own saved
- * training data on a failed payment is the kind of thing that generates refunds.
- * CREATING a variation is what costs money, and that is gated.
+ * Rows are retained after a lapse but locked behind the same Loadout entitlement
+ * as creation. Resubscribing restores the list unchanged; nothing is deleted.
  */
 export const workoutVariationsListHandler = new Elysia()
   .derive(async ({ headers }) => ({
@@ -46,6 +48,8 @@ export const workoutVariationsListHandler = new Elysia()
     async (ctx) => {
       const { sub: userId } = getUser(ctx);
       const parentId = ctx.params.id;
+      const verdict = await assertEntitlement(userId, "loadout");
+      if (!verdict.allowed) throw new EntitlementError(verdict, "loadout");
 
       const variations = await ctx.WorkoutRepository.listVariations(
         parentId,

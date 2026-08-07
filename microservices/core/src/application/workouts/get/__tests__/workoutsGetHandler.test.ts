@@ -1,6 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+const assertEntitlementMock = vi.hoisted(() => vi.fn());
+
 const workoutRepositoryMocks = {
   getById: vi.fn(),
   list: vi.fn(),
@@ -35,10 +37,17 @@ vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
 vi.mock("../../../repositories/workoutRepository", () => ({
   WorkoutRepository: vi.fn().mockImplementation(() => workoutRepositoryMocks),
 }));
+vi.mock("../../../entitlement/assertEntitlement", async () => {
+  const actual = await vi.importActual<
+    typeof import("../../../entitlement/assertEntitlement")
+  >("../../../entitlement/assertEntitlement");
+  return { ...actual, assertEntitlement: assertEntitlementMock };
+});
 
 describe("WorkoutsGetHandler", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    assertEntitlementMock.mockResolvedValue({ allowed: true });
     workoutRepositoryMocks.getById.mockResolvedValue({
       id: "workout-1",
       name: "Test Workout",
@@ -77,6 +86,36 @@ describe("WorkoutsGetHandler", () => {
   });
 
   describe("authenticated requests", () => {
+    it("402s instead of returning a retained adapted workout after entitlement loss", async () => {
+      workoutRepositoryMocks.getById.mockResolvedValue({
+        id: "workout-1",
+        variationKind: "loadout",
+      });
+      assertEntitlementMock.mockResolvedValue({
+        allowed: false,
+        reason: "expired",
+        currentTier: "free",
+        upgradeTo: "premium_plus",
+        upgradePriceMonthly: 1999,
+      });
+      const { default: Elysia } = await import("elysia");
+      const { coreErrorHandler } =
+        await import("../../../../shared/errorHandler");
+      const { workoutsGetHandler } = await import("../workoutsGetHandler");
+      const app = new Elysia().use(coreErrorHandler).use(workoutsGetHandler);
+
+      const response = await app.handle(
+        new Request("http://localhost/workouts/workout-1", {
+          headers: { authorization: "Bearer test-token" },
+        }),
+      );
+
+      expect(response.status).toBe(402);
+      expect(assertEntitlementMock).toHaveBeenCalledWith(
+        "test-user-id",
+        "loadout",
+      );
+    });
     it("should return 200 with single-envelope { data }", async () => {
       const { workoutsGetHandler } = await import("../workoutsGetHandler");
       const response = await workoutsGetHandler.handle(

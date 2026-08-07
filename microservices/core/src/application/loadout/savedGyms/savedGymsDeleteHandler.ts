@@ -5,6 +5,10 @@ import {
   requireAuth,
   getUser,
 } from "@persistence/api-utils/auth/supabaseAuth";
+import {
+  assertEntitlement,
+  EntitlementError,
+} from "../../entitlement/assertEntitlement";
 
 /**
  * DELETE /saved-gyms/:id — Loadout (spec-21) AC-7.1 / AC-7.3.
@@ -27,6 +31,8 @@ export const savedGymsDeleteHandler = new Elysia()
     "/saved-gyms/:id",
     async (ctx) => {
       const { sub: userId } = getUser(ctx);
+      const verdict = await assertEntitlement(userId, "loadout");
+      if (!verdict.allowed) throw new EntitlementError(verdict, "loadout");
       const deleted = await ctx.SavedGymRepository.delete(
         ctx.params.id,
         userId,

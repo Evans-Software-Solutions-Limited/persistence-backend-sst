@@ -60,6 +60,8 @@ import {
   type PickerExerciseRow,
 } from "@/ui/containers/active-session-picker";
 import { buildTemplateMap } from "@/ui/containers/active-session-template";
+import { useLoadoutGate } from "@/ui/hooks/useLoadoutGate";
+import { AdaptiveSuiteRouteGuard } from "@/ui/components/subscription/AdaptiveSuiteRouteGuard";
 
 // Default rest seconds when the workout template doesn't carry one.
 // FRONTEND_BRIEF "Out of scope" notes M6 ships the configurator; M3
@@ -119,6 +121,10 @@ export function ActiveSessionContainer() {
   // ignoring the template value.
   const workoutId = session?.workoutId ?? requestedWorkoutId ?? null;
   const detail = useWorkout(workoutId);
+  const loadoutGate = useLoadoutGate();
+  const isLoadoutSession =
+    session?.templateVariationKind === "loadout" ||
+    detail.workout?.variationKind === "loadout";
   const startAttemptedRef = useRef(false);
 
   useEffect(() => {
@@ -133,6 +139,15 @@ export function ActiveSessionContainer() {
       // Wait for the workout payload before starting; we need the
       // exercise list to seed the session.
       if (!detail.workout) return;
+      // A retained Loadout template remains paid data even when its parent was
+      // deleted. Do not hydrate a new local session from it while entitlement is
+      // pending or denied.
+      if (
+        detail.workout.variationKind === "loadout" &&
+        (!loadoutGate.isResolved || !loadoutGate.allowed)
+      ) {
+        return;
+      }
       startAttemptedRef.current = true;
       // Coach Start-live (M18): the on-behalf client context (from the route
       // params) is stamped onto the SESSION so it persists in SQLite — the
@@ -173,6 +188,8 @@ export function ActiveSessionContainer() {
     session,
     workoutId,
     detail.workout,
+    loadoutGate.isResolved,
+    loadoutGate.allowed,
     storage,
     generateId,
     rereadCache,
@@ -592,6 +609,21 @@ export function ActiveSessionContainer() {
 
   if (!userId) {
     return null;
+  }
+  if (isLoadoutSession && (!loadoutGate.isResolved || !loadoutGate.allowed)) {
+    return (
+      <AdaptiveSuiteRouteGuard
+        allowed={loadoutGate.allowed}
+        isResolved={loadoutGate.isResolved}
+        fallback={
+          detail.workout?.parentWorkoutId
+            ? (`/(app)/workouts/${detail.workout.parentWorkoutId}` as never)
+            : "/(app)/(tabs)/train"
+        }
+      >
+        <></>
+      </AdaptiveSuiteRouteGuard>
+    );
   }
   if (!session) {
     // Either start command is in-flight (workout payload still loading)

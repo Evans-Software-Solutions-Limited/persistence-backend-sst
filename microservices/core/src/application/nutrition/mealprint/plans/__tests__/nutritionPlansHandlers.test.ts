@@ -9,22 +9,27 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
  * and the suite dies at collection with "Cannot access 'planMocks' before
  * initialization" — no tests run at all.
  */
-const { planMocks, candidateMocks, prefMocks, targetMocks } = vi.hoisted(
-  () => ({
-    planMocks: {
-      create: vi.fn(),
-      get: vi.fn(),
-      getActiveForDate: vi.fn(),
-      listRecent: vi.fn(),
-      archive: vi.fn(),
-      redate: vi.fn(),
-      remove: vi.fn(),
-    },
-    candidateMocks: { resolveByIds: vi.fn() },
-    prefMocks: { get: vi.fn() },
-    targetMocks: { get: vi.fn() },
-  }),
-);
+const {
+  planMocks,
+  candidateMocks,
+  prefMocks,
+  targetMocks,
+  assertEntitlementMock,
+} = vi.hoisted(() => ({
+  planMocks: {
+    create: vi.fn(),
+    get: vi.fn(),
+    getActiveForDate: vi.fn(),
+    listRecent: vi.fn(),
+    archive: vi.fn(),
+    redate: vi.fn(),
+    remove: vi.fn(),
+  },
+  candidateMocks: { resolveByIds: vi.fn() },
+  prefMocks: { get: vi.fn() },
+  targetMocks: { get: vi.fn() },
+  assertEntitlementMock: vi.fn(),
+}));
 
 vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getAuthUser: vi.fn(async (h: string | undefined) =>
@@ -67,10 +72,18 @@ vi.mock("../../../../repositories/nutritionPreferenceRepository", () => ({
 vi.mock("../../../../repositories/nutritionTargetRepository", () => ({
   NutritionTargetRepository: vi.fn().mockImplementation(() => targetMocks),
 }));
+vi.mock("../../../../entitlement/assertEntitlement", async () => {
+  const actual = await vi.importActual<
+    typeof import("../../../../entitlement/assertEntitlement")
+  >("../../../../entitlement/assertEntitlement");
+  return { ...actual, assertEntitlement: assertEntitlementMock };
+});
 
 import { nutritionPlansCreateHandler } from "../create/nutritionPlansCreateHandler";
 import { nutritionPlansReadHandlers } from "../read/nutritionPlansReadHandlers";
 import { ActivePlanExistsError } from "../../../../repositories/mealPlanRepository";
+import Elysia from "elysia";
+import { coreErrorHandler } from "../../../../../shared/errorHandler";
 
 const PREFS = {
   userId: "test-user-id",
@@ -162,6 +175,7 @@ function get(path: string, auth = true) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  assertEntitlementMock.mockResolvedValue({ allowed: true });
   prefMocks.get.mockResolvedValue(PREFS);
   targetMocks.get.mockResolvedValue(TARGET);
   candidateMocks.resolveByIds.mockResolvedValue([food(FOOD_A)]);
@@ -175,6 +189,28 @@ beforeEach(() => {
 });
 
 describe("POST /nutrition/plans — the client never sets macros", () => {
+  it("402s before accepting a retained draft after entitlement loss", async () => {
+    assertEntitlementMock.mockResolvedValue({
+      allowed: false,
+      reason: "cancelled",
+      currentTier: "free",
+      upgradeTo: "premium_plus",
+      upgradePriceMonthly: 1999,
+    });
+
+    const app = new Elysia()
+      .use(coreErrorHandler)
+      .use(nutritionPlansCreateHandler);
+    const res = await app.handle(post(postBody()));
+
+    expect(res.status).toBe(402);
+    expect(assertEntitlementMock).toHaveBeenCalledWith(
+      "test-user-id",
+      "meal_ai",
+    );
+    expect(candidateMocks.resolveByIds).not.toHaveBeenCalled();
+    expect(planMocks.create).not.toHaveBeenCalled();
+  });
   /**
    * ⚠ THE test for this handler. The whole correctness model of a stored plan is
    * that its macros come from the DB, not the request. If this assertion ever
@@ -423,6 +459,23 @@ describe("POST /nutrition/plans — the client never sets macros", () => {
 });
 
 describe("plan reads — route ordering and ownership", () => {
+  it("402s without exposing retained plans after entitlement loss", async () => {
+    assertEntitlementMock.mockResolvedValue({
+      allowed: false,
+      reason: "expired",
+      currentTier: "free",
+      upgradeTo: "premium_plus",
+      upgradePriceMonthly: 1999,
+    });
+
+    const app = new Elysia()
+      .use(coreErrorHandler)
+      .use(nutritionPlansReadHandlers);
+    const res = await app.handle(get("/nutrition/plans"));
+
+    expect(res.status).toBe(402);
+    expect(planMocks.listRecent).not.toHaveBeenCalled();
+  });
   /**
    * ⚠ This asserts the OUTCOME, not the declaration order. Swapping the two
    * `.get` declarations was tried and every test here still passed — Elysia's

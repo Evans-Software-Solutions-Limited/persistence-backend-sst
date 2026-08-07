@@ -14,6 +14,7 @@ import { useAuth } from "@/ui/hooks/useAuth";
 import { useWorkouts } from "@/ui/hooks/useWorkouts";
 import { useWorkoutLibrary } from "@/ui/hooks/useWorkoutLibrary";
 import { useWorkoutTotalCapGate } from "@/ui/hooks/useWorkoutTotalCapGate";
+import { useLoadoutGate } from "@/ui/hooks/useLoadoutGate";
 import { WorkoutsListPresenter } from "@/ui/presenters/WorkoutsListPresenter";
 
 /**
@@ -35,6 +36,7 @@ export function WorkoutsListContainer() {
   // Free-tier "3 workouts TOTAL, over-limit lock" — client-side gate on the
   // start-workout entry point. See onStart below.
   const totalCapGate = useWorkoutTotalCapGate();
+  const loadoutGate = useLoadoutGate();
 
   const scrollRef = useRef<ScrollView>(null);
   useScrollToTopOnTabPress(scrollRef);
@@ -52,8 +54,11 @@ export function WorkoutsListContainer() {
   // "MY WORKOUTS" = mine + assigned (the prototype shows a single saved
   // section); "TEMPLATES" = public defaults.
   const saved = useMemo(
-    () => [...workouts.mine.workouts, ...workouts.assigned.workouts],
-    [workouts.mine, workouts.assigned],
+    () =>
+      [...workouts.mine.workouts, ...workouts.assigned.workouts].filter(
+        (workout) => loadoutGate.allowed || workout.variationKind !== "loadout",
+      ),
+    [loadoutGate.allowed, workouts.mine, workouts.assigned],
   );
   const templates = workouts.default.workouts;
   const quota = workouts.mine.quota;

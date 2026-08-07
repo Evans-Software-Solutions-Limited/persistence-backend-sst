@@ -6,6 +6,10 @@ import {
 } from "@persistence/api-utils/auth/supabaseAuth";
 import { MealPlanService } from "../../../../repositories/mealPlanService";
 import { deriveShoppingList } from "./deriveShoppingList";
+import {
+  assertEntitlement,
+  EntitlementError,
+} from "../../../../entitlement/assertEntitlement";
 
 /**
  * `GET /nutrition/plans/:id/shopping` — spec-26 amendment §B. A day-scoped
@@ -13,10 +17,8 @@ import { deriveShoppingList } from "./deriveShoppingList";
  * Nothing is stored (§B.1 DECISION: week-scoping + persisted checklist state
  * are later slices; check-off state lives client-side in SQLite per §B.2).
  *
- * Ownership-checked and ungated exactly like `nutritionPlansReadHandlers`:
- * same "reading a plan you already generated must survive a lapsed
- * subscription" reasoning (see that file's docstring), and the same
- * 404-for-another-user's-id posture — a 403 would confirm the plan exists.
+ * Ownership-checked and Mealprint-gated. The source plan is retained after a
+ * lapse, but its derived shopping list is unavailable until resubscription.
  */
 export const nutritionPlanShoppingHandlers = new Elysia()
   .derive(async ({ headers }) => ({
@@ -28,6 +30,8 @@ export const nutritionPlanShoppingHandlers = new Elysia()
     "/nutrition/plans/:id/shopping",
     async (ctx) => {
       const { sub: userId } = getUser(ctx);
+      const verdict = await assertEntitlement(userId, "meal_ai");
+      if (!verdict.allowed) throw new EntitlementError(verdict, "meal_ai");
       const source = await ctx.MealPlanRepository.getShoppingSource(
         userId,
         ctx.params.id,

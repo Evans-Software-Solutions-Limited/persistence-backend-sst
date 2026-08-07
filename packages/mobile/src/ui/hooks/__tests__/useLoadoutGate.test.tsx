@@ -152,6 +152,40 @@ describe("computeLoadoutVerdict", () => {
       false,
     );
   });
+
+  it("denies an active period-end cancellation once expiresAt passes", () => {
+    const past = new Date(Date.now() - 60_000).toISOString();
+    expect(
+      computeLoadoutVerdict({
+        ...sub("premium_plus", "active", past),
+        cancelledAt: new Date(Date.now() - 86_400_000).toISOString(),
+      }),
+    ).toBe(false);
+  });
+
+  it("uses the scheduled tier at effectiveAt even when the cached row is stale", () => {
+    const base = sub("premium_plus");
+    expect(
+      computeLoadoutVerdict({
+        ...base,
+        scheduledChange: {
+          nextTierName: "premium",
+          nextDisplayName: "Premium",
+          effectiveAt: new Date(Date.now() - 60_000).toISOString(),
+        },
+      }),
+    ).toBe(false);
+    expect(
+      computeLoadoutVerdict({
+        ...base,
+        scheduledChange: {
+          nextTierName: "premium",
+          nextDisplayName: "Premium",
+          effectiveAt: new Date(Date.now() + 60_000).toISOString(),
+        },
+      }),
+    ).toBe(true);
+  });
 });
 
 /**
@@ -166,6 +200,25 @@ describe("computeLoadoutVerdict", () => {
  * genuinely never-settling `getMySubscription`.
  */
 describe("useLoadoutGate.refetch against a HUNG first fetch", () => {
+  it("issues no subscription or catalog request when a root consumer disables it", async () => {
+    const api = new InMemoryApiAdapter();
+    const auth = new InMemoryAuthAdapter();
+    await auth.signInWithEmail("u@example.com", "pw");
+    const subscriptionSpy = jest.spyOn(api, "getMySubscription");
+    const catalogSpy = jest.spyOn(api, "getSubscriptionTiers");
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+
+    const { result } = renderHook(() => useLoadoutGate(false), {
+      wrapper: wrap({ ...makeAdapters(), api, auth }, client),
+    });
+
+    expect(result.current.isResolved).toBe(false);
+    expect(subscriptionSpy).not.toHaveBeenCalled();
+    expect(catalogSpy).not.toHaveBeenCalled();
+  });
+
   it("abandons the dead request and issues a new one", async () => {
     const api = new InMemoryApiAdapter();
     const auth = new InMemoryAuthAdapter();

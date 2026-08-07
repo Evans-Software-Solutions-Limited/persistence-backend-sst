@@ -11,6 +11,35 @@ say so and fix this file.
 
 ## ▶ START HERE — next session (rewritten 2026-08-04, post-Mealprint-merge)
 
+### 🟢 2026-08-07 — ADAPTIVE-SUITE SUBSCRIPTION-LAPSE LOCKS
+
+`main` now includes #368 (OFF tag seed repair), #369 (Mealprint occasions,
+day-scoped shopping, Fuel preferences entry and subscription navigation fixes)
+and #370 (Edit/Clear plan from Fuel). Branch
+`codex/subscription-lock-adaptive-data` adds the missing effective-downgrade
+contract across Loadout, Mealprint and saved gyms:
+
+- scheduled cancellation/downgrade keeps access through the paid-through
+  `expires_at`; expiry, failed payment or an effective downgrade locks access
+  from the stored boundary even if the terminal provider webhook is delayed;
+- all Mealprint plan/preferences/shopping reads and writes and all saved-gym
+  reads/writes now enforce the live server entitlement (`402`);
+- retained Loadout variations are filtered from generic workout lists and
+  direct workout/history/update/delete/session-record paths are gated;
+- mobile stops entitled reads, masks cached Mealprint ghost rows and adapted
+  workout cards, hides the Fuel-targets preferences row, and redirects stale
+  plan/shopping/preferences/Loadout/adapted-workout routes;
+- no downgrade deletes product data. Resubscription restores it. Logged Fuel
+  entries and completed training sessions remain ordinary user history. A
+  pre-expiry in-progress adapted session is retained locally but locked until
+  the subscription is restored, and no new session can be hydrated from the
+  retained adapted template after expiry.
+
+Still required before a production build: merge this branch, complete the
+on-device regression pass (the staging dev build previously wedged), and finish
+the existing ASC/RevenueCat/default-offering + demo-account launch runbook. No
+schema migration is introduced by this branch.
+
 ### 🟢 2026-08-06 — POST-MERGE SNAPSHOT (read this first; it supersedes the dated blocks below)
 
 **FIVE PRs merged to `main`; the subscription restructure + Mealprint Phase 2 + the

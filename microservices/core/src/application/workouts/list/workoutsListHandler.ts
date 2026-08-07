@@ -5,6 +5,7 @@ import {
   requireAuth,
   getUser,
 } from "@persistence/api-utils/auth/supabaseAuth";
+import { assertEntitlement } from "../../entitlement/assertEntitlement";
 
 export const workoutsListHandler = new Elysia()
   .derive(async ({ headers }) => ({
@@ -20,6 +21,7 @@ export const workoutsListHandler = new Elysia()
 
       const effectiveLimit = limit ?? 20;
       const effectiveOffset = offset ?? 0;
+      const loadoutVerdict = await assertEntitlement(userId, "loadout");
 
       const result = await ctx.WorkoutRepository.list(userId, {
         type: type ?? "mine",
@@ -28,6 +30,7 @@ export const workoutsListHandler = new Elysia()
         // Trainers send this to de-crowd their personal My Workouts; only
         // meaningful with type="mine". Absent => unchanged behaviour.
         ownerLibraryOnly: ownerLibraryOnly ?? false,
+        includeLoadoutVariations: loadoutVerdict.allowed,
       });
 
       const meta: {

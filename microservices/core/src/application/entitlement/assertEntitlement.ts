@@ -625,6 +625,8 @@ async function assertLoadout(userId: string): Promise<EntitlementVerdict> {
       tierName: userSubscriptions.tierName,
       paymentStatus: userSubscriptions.paymentStatus,
       expiresAt: userSubscriptions.expiresAt,
+      cancelledAt: userSubscriptions.cancelledAt,
+      metadata: userSubscriptions.metadata,
       loadoutAccess: subscriptionTiers.loadoutAccess,
     })
     .from(userSubscriptions)
@@ -650,6 +652,12 @@ async function assertLoadout(userId: string): Promise<EntitlementVerdict> {
   } else {
     effectiveTierName = coerceTierName(subRow.tierName);
     loadoutAccessFlag = subRow.loadoutAccess ?? null;
+
+    const scheduledTier = resolveEffectiveScheduledTier(subRow.metadata);
+    if (scheduledTier !== null) {
+      effectiveTierName = coerceTierName(scheduledTier);
+      loadoutAccessFlag = await loadTierLoadoutAccess(db, scheduledTier);
+    }
   }
 
   // 3. Status check BEFORE the flag check — a cancelled/expired sub reverts to
@@ -661,6 +669,7 @@ async function assertLoadout(userId: string): Promise<EntitlementVerdict> {
     const statusDeny = classifySubscriptionStatus(
       subRow.paymentStatus,
       subRow.expiresAt,
+      subRow.cancelledAt,
     );
     if (statusDeny !== null) {
       loadoutAccessFlag = await loadFreeTierLoadoutAccess(db);
@@ -721,6 +730,8 @@ async function assertMealprint(userId: string): Promise<EntitlementVerdict> {
       tierName: userSubscriptions.tierName,
       paymentStatus: userSubscriptions.paymentStatus,
       expiresAt: userSubscriptions.expiresAt,
+      cancelledAt: userSubscriptions.cancelledAt,
+      metadata: userSubscriptions.metadata,
       mealprintAccess: subscriptionTiers.mealprintAccess,
     })
     .from(userSubscriptions)
@@ -746,6 +757,12 @@ async function assertMealprint(userId: string): Promise<EntitlementVerdict> {
   } else {
     effectiveTierName = coerceTierName(subRow.tierName);
     mealprintAccessFlag = subRow.mealprintAccess ?? null;
+
+    const scheduledTier = resolveEffectiveScheduledTier(subRow.metadata);
+    if (scheduledTier !== null) {
+      effectiveTierName = coerceTierName(scheduledTier);
+      mealprintAccessFlag = await loadTierMealprintAccess(db, scheduledTier);
+    }
   }
 
   // Status check BEFORE the flag check — a cancelled/expired sub reverts to
@@ -756,6 +773,7 @@ async function assertMealprint(userId: string): Promise<EntitlementVerdict> {
     const statusDeny = classifySubscriptionStatus(
       subRow.paymentStatus,
       subRow.expiresAt,
+      subRow.cancelledAt,
     );
     if (statusDeny !== null) {
       mealprintAccessFlag = await loadFreeTierMealprintAccess(db);
@@ -935,7 +953,8 @@ export async function evaluateWorkoutTotalCapLock(
  * deny — fall through to the count check".
  *
  * Rules:
- *   - `'active'` / `'trialing'` → no deny (premium-equivalent states).
+ *   - `'active'` / `'trialing'` → no deny, unless `cancelled_at` marks a
+ *     period-end cancellation whose `expires_at` has passed.
  *   - `'cancelled'` with `expires_at > now` → no deny (user paid
  *     through that date and the sub stays entitled until then).
  *   - `'cancelled'` with no / past `expires_at` → `'cancelled'` deny.
@@ -950,8 +969,16 @@ export async function evaluateWorkoutTotalCapLock(
 export function classifySubscriptionStatus(
   paymentStatus: string | null,
   expiresAt: Date | string | null,
+  cancelledAt?: Date | string | null,
 ): EntitlementDenyReason | null {
   if (paymentStatus === "active" || paymentStatus === "trialing") {
+    // Period-end cancellation preserves the provider's `active` status until
+    // the paid-through instant. The local cancellation stamp is therefore the
+    // signal that `expires_at` is an access boundary, even if the terminal
+    // webhook is delayed or lost.
+    if (cancelledAt != null && !isExpiresInFuture(expiresAt)) {
+      return "cancelled";
+    }
     return null;
   }
   if (paymentStatus === "cancelled") {
@@ -966,6 +993,27 @@ export function classifySubscriptionStatus(
   // unrecognised strings all collapse to 'expired' — they all mean
   // "payment is not in a working state".
   return "expired";
+}
+
+/**
+ * Resolve a scheduled tier change only once its effective timestamp has passed.
+ * This makes the database marker authoritative at period-end instead of relying
+ * on the provider webhook to rewrite `tier_name` at exactly that instant.
+ */
+export function resolveEffectiveScheduledTier(
+  metadata: Record<string, unknown> | null | undefined,
+): string | null {
+  const raw = metadata?.scheduled_change;
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw))
+    return null;
+  const change = raw as Record<string, unknown>;
+  const tierName = change.next_tier_name;
+  const effectiveAt = change.effective_at;
+  if (typeof tierName !== "string" || tierName.length === 0) return null;
+  if (typeof effectiveAt !== "string") return null;
+  const effectiveMs = Date.parse(effectiveAt);
+  if (Number.isNaN(effectiveMs) || effectiveMs > Date.now()) return null;
+  return tierName;
 }
 
 /**
@@ -1148,18 +1196,27 @@ async function loadTier(
 async function loadFreeTierLoadoutAccess(
   db: Pick<Db, "select">,
 ): Promise<boolean> {
-  const rows = await db
-    .select({ loadoutAccess: subscriptionTiers.loadoutAccess })
-    .from(subscriptionTiers)
-    .where(eq(subscriptionTiers.tierName, "free"))
-    .limit(1);
-
-  const row = rows[0];
-  if (!row) {
+  const access = await loadTierLoadoutAccess(db, "free");
+  if (access === null) {
     throw new Error(
       "assertEntitlement: subscription_tiers row for tier_name='free' is missing — catalog misconfiguration",
     );
   }
+  return access;
+}
+
+async function loadTierLoadoutAccess(
+  db: Pick<Db, "select">,
+  tierName: string,
+): Promise<boolean | null> {
+  const rows = await db
+    .select({ loadoutAccess: subscriptionTiers.loadoutAccess })
+    .from(subscriptionTiers)
+    .where(eq(subscriptionTiers.tierName, tierName))
+    .limit(1);
+
+  const row = rows[0];
+  if (!row) return null;
   return row.loadoutAccess ?? false;
 }
 
@@ -1185,18 +1242,27 @@ async function loadFreeTierLoadoutAccess(
 async function loadFreeTierMealprintAccess(
   db: Pick<Db, "select">,
 ): Promise<boolean> {
-  const rows = await db
-    .select({ mealprintAccess: subscriptionTiers.mealprintAccess })
-    .from(subscriptionTiers)
-    .where(eq(subscriptionTiers.tierName, "free"))
-    .limit(1);
-
-  const row = rows[0];
-  if (!row) {
+  const access = await loadTierMealprintAccess(db, "free");
+  if (access === null) {
     throw new Error(
       "assertEntitlement: subscription_tiers row for tier_name='free' is missing — catalog misconfiguration",
     );
   }
+  return access;
+}
+
+async function loadTierMealprintAccess(
+  db: Pick<Db, "select">,
+  tierName: string,
+): Promise<boolean | null> {
+  const rows = await db
+    .select({ mealprintAccess: subscriptionTiers.mealprintAccess })
+    .from(subscriptionTiers)
+    .where(eq(subscriptionTiers.tierName, tierName))
+    .limit(1);
+
+  const row = rows[0];
+  if (!row) return null;
   return row.mealprintAccess ?? false;
 }
 

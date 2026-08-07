@@ -18,6 +18,8 @@ import {
   type WorkoutFormState,
 } from "@/ui/hooks/useWorkoutForm";
 import { WorkoutEditorPresenter } from "@/ui/presenters/WorkoutEditorPresenter";
+import { useLoadoutGate } from "@/ui/hooks/useLoadoutGate";
+import { AdaptiveSuiteRouteGuard } from "@/ui/components/subscription/AdaptiveSuiteRouteGuard";
 
 /**
  * Editor container — async-loads the workout via `useWorkout(id)`,
@@ -47,6 +49,7 @@ export function WorkoutEditorContainer() {
   const userId = session?.userId ?? null;
 
   const detail = useWorkout(workoutId);
+  const loadoutGate = useLoadoutGate();
   // Stable identity — see WorkoutCreatorContainer for the cascade
   // rationale. Without this, every render rebuilds the form handle
   // and every downstream callback.
@@ -168,6 +171,25 @@ export function WorkoutEditorContainer() {
   }, [form.isDirty]);
 
   const onGoBackFromError = useCallback(() => router.back(), []);
+
+  if (
+    detail.workout?.variationKind === "loadout" &&
+    (!loadoutGate.isResolved || !loadoutGate.allowed)
+  ) {
+    return (
+      <AdaptiveSuiteRouteGuard
+        allowed={loadoutGate.allowed}
+        isResolved={loadoutGate.isResolved}
+        fallback={
+          detail.workout.parentWorkoutId
+            ? (`/(app)/workouts/${detail.workout.parentWorkoutId}` as never)
+            : "/(app)/(tabs)/train"
+        }
+      >
+        <></>
+      </AdaptiveSuiteRouteGuard>
+    );
+  }
 
   return (
     <WorkoutEditorPresenter

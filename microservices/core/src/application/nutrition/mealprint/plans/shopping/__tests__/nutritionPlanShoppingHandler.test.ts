@@ -4,8 +4,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // Same hoisting requirement as `nutritionPlansHandlers.test.ts` — importing
 // the handler constructs `MealPlanService`'s `new MealPlanRepository()` at
 // module load, so the mock factory must exist before that import runs.
-const { planMocks } = vi.hoisted(() => ({
+const { planMocks, assertEntitlementMock } = vi.hoisted(() => ({
   planMocks: { getShoppingSource: vi.fn() },
+  assertEntitlementMock: vi.fn(),
 }));
 
 vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
@@ -32,6 +33,12 @@ vi.mock("../../../../../repositories/mealPlanRepository", async () => {
     MealPlanRepository: vi.fn().mockImplementation(() => planMocks),
   };
 });
+vi.mock("../../../../../entitlement/assertEntitlement", async () => {
+  const actual = await vi.importActual<
+    typeof import("../../../../../entitlement/assertEntitlement")
+  >("../../../../../entitlement/assertEntitlement");
+  return { ...actual, assertEntitlement: assertEntitlementMock };
+});
 
 import { nutritionPlanShoppingHandlers } from "../nutritionPlanShoppingHandler";
 
@@ -49,6 +56,7 @@ async function body(res: Response): Promise<any> {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  assertEntitlementMock.mockResolvedValue({ allowed: true });
 });
 
 describe("GET /nutrition/plans/:id/shopping", () => {

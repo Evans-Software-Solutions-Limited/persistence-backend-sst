@@ -1,6 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+const assertEntitlementMock = vi.hoisted(() => vi.fn());
+
 const savedGymRepositoryMocks = {
   list: vi.fn(),
   getById: vi.fn(),
@@ -35,6 +37,13 @@ vi.mock("../../../repositories/savedGymRepository", () => ({
   SavedGymRepository: vi.fn().mockImplementation(() => savedGymRepositoryMocks),
 }));
 
+vi.mock("../../../entitlement/assertEntitlement", async () => {
+  const actual = await vi.importActual<
+    typeof import("../../../entitlement/assertEntitlement")
+  >("../../../entitlement/assertEntitlement");
+  return { ...actual, assertEntitlement: assertEntitlementMock };
+});
+
 const GYM_ID = "11111111-1111-4111-8111-111111111111";
 const EQ_1 = "22222222-2222-4222-8222-222222222222";
 const EQ_2 = "33333333-3333-4333-8333-333333333333";
@@ -65,6 +74,7 @@ function req(
 describe("saved-gym handlers", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    assertEntitlementMock.mockResolvedValue({ allowed: true });
   });
 
   describe("GET /saved-gyms", () => {
@@ -87,6 +97,26 @@ describe("saved-gym handlers", () => {
       // The userId comes from the validated JWT, never from the request —
       // there is no path by which user-b lists user-a's gyms.
       expect(savedGymRepositoryMocks.list).toHaveBeenCalledWith("user-b");
+    });
+
+    it("402s after entitlement loss without exposing retained gyms", async () => {
+      assertEntitlementMock.mockResolvedValue({
+        allowed: false,
+        reason: "expired",
+        currentTier: "free",
+        upgradeTo: "premium_plus",
+        upgradePriceMonthly: 1999,
+      });
+      const { default: Elysia } = await import("elysia");
+      const { coreErrorHandler } =
+        await import("../../../../shared/errorHandler");
+      const { savedGymsListHandler } = await import("../savedGymsListHandler");
+      const app = new Elysia().use(coreErrorHandler).use(savedGymsListHandler);
+      const res = await app.handle(req("/saved-gyms"));
+
+      expect(res.status).toBe(402);
+      expect(assertEntitlementMock).toHaveBeenCalledWith("user-a", "loadout");
+      expect(savedGymRepositoryMocks.list).not.toHaveBeenCalled();
     });
   });
 

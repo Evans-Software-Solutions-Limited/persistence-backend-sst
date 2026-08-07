@@ -114,6 +114,17 @@ function withAdapters(adapters: Adapters, ui: React.ReactElement) {
 
 const mockRouterBack = jest.fn();
 const mockRouterPush = jest.fn();
+const mockRedirect = jest.fn((_props: { href: string }) => null);
+const mockLoadoutGate = {
+  allowed: true,
+  isResolved: true,
+  upgradePriceMonthly: null,
+  onUpgrade: jest.fn(),
+  refetch: jest.fn(),
+};
+jest.mock("@/ui/hooks/useLoadoutGate", () => ({
+  useLoadoutGate: () => mockLoadoutGate,
+}));
 const mockUseLocalSearchParams = jest.fn(
   () => ({ id: "w-1" }) as Record<string, string>,
 );
@@ -128,12 +139,15 @@ jest.mock("expo-router", () => ({
     push: (...args: unknown[]) => mockRouterPush(...args),
   }),
   useLocalSearchParams: () => mockUseLocalSearchParams(),
+  Redirect: (props: { href: string }) => mockRedirect(props),
 }));
 
 describe("WorkoutEditorContainer", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockUseLocalSearchParams.mockReturnValue({ id: "w-1" });
+    mockLoadoutGate.allowed = true;
+    mockLoadoutGate.isResolved = true;
   });
 
   afterEach(() => {
@@ -605,5 +619,30 @@ describe("WorkoutEditorContainer", () => {
       await new Promise((r) => setTimeout(r, 10));
     });
     expect(getByTestId("workout-name-input").props.value).toBe("User-edit");
+  });
+
+  it("redirects instead of hydrating a retained Loadout editor after entitlement loss", async () => {
+    const api = new InMemoryApiAdapter();
+    const variation = buildWorkout({
+      id: "v-locked",
+      parentWorkoutId: null,
+      variationKind: "loadout",
+    });
+    jest.spyOn(api, "getWorkout").mockResolvedValue(ok(variation));
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheWorkoutDetail("user-1", variation);
+    mockUseLocalSearchParams.mockReturnValue({ id: "v-locked" });
+    mockLoadoutGate.allowed = false;
+
+    const { queryByText } = renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <WorkoutEditorContainer />),
+    );
+
+    await waitFor(() =>
+      expect(mockRedirect).toHaveBeenCalledWith({
+        href: "/(app)/(tabs)/train",
+      }),
+    );
+    expect(queryByText("Edit Workout")).toBeNull();
   });
 });

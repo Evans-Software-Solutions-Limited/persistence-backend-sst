@@ -12,13 +12,17 @@ import {
   requireAuth,
   getUser,
 } from "@persistence/api-utils/auth/supabaseAuth";
+import {
+  assertEntitlement,
+  EntitlementError,
+} from "../../../../entitlement/assertEntitlement";
 
 /**
  * PUT /nutrition/preferences — upsert the caller's Mealprint food preferences
  * (spec-26 AC 1.3).
  *
- * Not entitlement-gated, for the reasons on the GET handler: preferences are the
- * user's own data and the paywall sits on generation.
+ * Entitlement-gated as part of Mealprint product access. The row is retained on
+ * lapse and becomes editable again after resubscription.
  *
  * ## Validation happens in three places, none of them redundant
  *
@@ -47,6 +51,8 @@ export const nutritionPreferencesSetHandler = new Elysia()
     "/nutrition/preferences",
     async (ctx) => {
       const { sub: userId } = getUser(ctx);
+      const verdict = await assertEntitlement(userId, "meal_ai");
+      if (!verdict.allowed) throw new EntitlementError(verdict, "meal_ai");
       try {
         const preferences = await ctx.NutritionPreferenceRepository.upsert(
           userId,

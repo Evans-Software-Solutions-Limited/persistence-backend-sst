@@ -228,7 +228,7 @@ describe("GET /workouts/:id/variations", () => {
     );
   });
 
-  it("is NOT entitlement-gated — reading your own saved setups survives a lapse", async () => {
+  it("402s without exposing retained saved setups after entitlement loss", async () => {
     assertEntitlementMock.mockResolvedValue({
       allowed: false,
       reason: "tier",
@@ -236,14 +236,19 @@ describe("GET /workouts/:id/variations", () => {
       upgradeTo: "premium_plus",
       upgradePriceMonthly: 29.99,
     });
+    const { default: Elysia } = await import("elysia");
+    const { coreErrorHandler } =
+      await import("../../../../shared/errorHandler");
     const { workoutVariationsListHandler } =
       await import("../workoutVariationsListHandler");
-    const res = await workoutVariationsListHandler.handle(
-      req(`/workouts/${PARENT_ID}/variations`),
-    );
+    const app = new Elysia()
+      .use(coreErrorHandler)
+      .use(workoutVariationsListHandler);
+    const res = await app.handle(req(`/workouts/${PARENT_ID}/variations`));
 
-    expect(res.status).toBe(200);
-    expect(assertEntitlementMock).not.toHaveBeenCalled();
+    expect(res.status).toBe(402);
+    expect(assertEntitlementMock).toHaveBeenCalledWith("user-a", "loadout");
+    expect(workoutRepositoryMocks.listVariations).not.toHaveBeenCalled();
   });
 });
 

@@ -17,6 +17,7 @@ import { useWorkout } from "@/ui/hooks/useWorkout";
 import { useWorkoutHistory } from "@/ui/hooks/useWorkoutHistory";
 import { WorkoutDetailPresenter } from "@/ui/presenters/WorkoutDetailPresenter";
 import { hasGymEquipmentChanged } from "@/domain/services/loadout.service";
+import { AdaptiveSuiteRouteGuard } from "@/ui/components/subscription/AdaptiveSuiteRouteGuard";
 
 /**
  * Workout-detail screen container. Routed at `/(app)/workouts/[id]` so the
@@ -62,23 +63,28 @@ export function WorkoutDetailContainer() {
   const workout = detail.workout;
   const isOwner =
     workout != null && userId != null && workout.createdBy === userId;
-  const isVariation = workout?.parentWorkoutId != null;
+  const isLoadoutWorkout = workout?.variationKind === "loadout";
 
   // Caller-scoped server-side, but the readable parent need not be caller-owned:
   // AC-1.2 lets an athlete save their own setups under a coach/template workout.
   //
-  // ⚠ `workout != null` is load-bearing, not a null-guard. `isVariation` is
-  // derived from `workout`, which is undefined until the detail read lands — so
-  // `!isVariation` alone is TRUE on mount for every workout, and opening a saved
-  // setup fires `GET /workouts/<variationId>/variations` before `isVariation`
+  // ⚠ `workout != null` is load-bearing, not a null-guard. The paid-feature
+  // identity is `variationKind`, not `parentWorkoutId`: deleting a parent sets
+  // the latter null but deliberately retains the Loadout variation. Using the
+  // relationship as the gate would reopen that orphan after subscription loss.
   // flips and the response is thrown away. One dead request per variation-detail
   // open, in a codebase that has just spent two PRs (#341, #343) trimming exactly
   // this kind of fetch.
   const variations = useWorkoutVariations(
-    workout != null && !isVariation ? workoutId : null,
+    loadoutGate.allowed && workout != null && !isLoadoutWorkout
+      ? workoutId
+      : null,
   );
   const savedGyms = useSavedGyms(
-    isOwner && isVariation && workout?.sourceGymId != null,
+    loadoutGate.allowed &&
+      isOwner &&
+      isLoadoutWorkout &&
+      workout?.sourceGymId != null,
   );
   const sourceGym =
     workout?.sourceGymId == null
@@ -92,7 +98,7 @@ export function WorkoutDetailContainer() {
       currentSourceGymEquipmentTypeIds: sourceGym?.equipmentTypeIds ?? null,
     });
   const loadoutContextPending =
-    isVariation === true && workout?.sourceGymId != null && savedGyms.isLoading;
+    isLoadoutWorkout && workout?.sourceGymId != null && savedGyms.isLoading;
 
   // Replacing a variation happens while this detail screen sits underneath the
   // Loadout route. Refresh it as soon as the save lands so dismissing the flow
@@ -101,8 +107,8 @@ export function WorkoutDetailContainer() {
   useEffect(() => {
     if (previousLoadoutRevRef.current === loadoutRev) return;
     previousLoadoutRevRef.current = loadoutRev;
-    if (isVariation) void detail.refresh();
-  }, [detail, isVariation, loadoutRev]);
+    if (isLoadoutWorkout) void detail.refresh();
+  }, [detail, isLoadoutWorkout, loadoutRev]);
 
   // Derive muscle pills + the dominant equipment label from the cached
   // exercise library (workout refs carry neither). Recomputes only when the
@@ -133,8 +139,12 @@ export function WorkoutDetailContainer() {
 
   const onEdit = useCallback(() => {
     if (!workoutId) return;
+    if (isLoadoutWorkout && !loadoutGate.allowed) {
+      openLoadoutUpsell();
+      return;
+    }
     router.push(`/(app)/workouts/${workoutId}/edit` as never);
-  }, [workoutId]);
+  }, [workoutId, isLoadoutWorkout, loadoutGate.allowed, openLoadoutUpsell]);
 
   // Start CTA opens the active-session modal seeded from this template.
   // Free-tier over-limit lock: route to the resolution screen instead of
@@ -142,13 +152,17 @@ export function WorkoutDetailContainer() {
   // a session that the server's over-limit backstop would deny at Finish.
   const onStartWorkout = useCallback(
     (id: string) => {
+      if (isLoadoutWorkout && !loadoutGate.allowed) {
+        openLoadoutUpsell();
+        return;
+      }
       if (totalCapGate.isOverLimit) {
         totalCapGate.onLocked();
         return;
       }
       router.push(`/(app)/session?workoutId=${id}` as never);
     },
-    [totalCapGate],
+    [isLoadoutWorkout, loadoutGate.allowed, openLoadoutUpsell, totalCapGate],
   );
 
   // Stack-push the exercise detail on top so the workout stays underneath.
@@ -184,16 +198,20 @@ export function WorkoutDetailContainer() {
     // on a null `workoutId`, and that redirect is the thing keeping a direct deep
     // link from rendering an empty shell.
     const rootWorkoutId = workout.parentWorkoutId ?? workout.id;
-    openLoadout(rootWorkoutId, workout.name, isVariation ? workout.id : null);
+    openLoadout(
+      rootWorkoutId,
+      workout.name,
+      isLoadoutWorkout ? workout.id : null,
+    );
     // A linked setup re-adapts against that gym immediately. If the gym was
     // deleted, fall back to collect so the user can choose a new context.
-    if (isVariation && sourceGym !== null) {
+    if (isLoadoutWorkout && sourceGym !== null) {
       selectLoadoutGym(sourceGym);
     }
     router.push("/(app)/loadout" as never);
   }, [
     workout,
-    isVariation,
+    isLoadoutWorkout,
     sourceGym,
     loadoutContextPending,
     loadoutGate.isResolved,
@@ -207,6 +225,22 @@ export function WorkoutDetailContainer() {
   const onOpenVariation = useCallback((variationId: string) => {
     router.push(`/(app)/workouts/${variationId}` as never);
   }, []);
+
+  if (isLoadoutWorkout && (!loadoutGate.isResolved || !loadoutGate.allowed)) {
+    return (
+      <AdaptiveSuiteRouteGuard
+        allowed={loadoutGate.allowed}
+        isResolved={loadoutGate.isResolved}
+        fallback={
+          workout.parentWorkoutId
+            ? (`/(app)/workouts/${workout.parentWorkoutId}` as never)
+            : "/(app)/(tabs)/train"
+        }
+      >
+        <></>
+      </AdaptiveSuiteRouteGuard>
+    );
+  }
 
   return (
     <>
@@ -234,12 +268,12 @@ export function WorkoutDetailContainer() {
         // output, which a mutation sweep showed by surviving its removal.
         loadoutLocked={!loadoutGate.allowed}
         loadoutPending={!loadoutGate.isResolved || loadoutContextPending}
-        loadoutMode={isVariation ? "readapt" : "adapt"}
-        loadoutLinkedGymAvailable={!isVariation || sourceGym !== null}
+        loadoutMode={isLoadoutWorkout ? "readapt" : "adapt"}
+        loadoutLinkedGymAvailable={!isLoadoutWorkout || sourceGym !== null}
         loadoutGymUpdated={sourceGymUpdated}
-        loadoutVariations={variations.variations}
+        loadoutVariations={loadoutGate.allowed ? variations.variations : []}
         onOpenLoadout={onOpenLoadout}
-        onOpenVariation={isVariation ? undefined : onOpenVariation}
+        onOpenVariation={isLoadoutWorkout ? undefined : onOpenVariation}
       />
       {/* The upsell belongs to, and is layered within, its owning screen. */}
       <LoadoutUpsellSheet

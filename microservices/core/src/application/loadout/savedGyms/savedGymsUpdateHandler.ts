@@ -5,6 +5,10 @@ import {
   requireAuth,
   getUser,
 } from "@persistence/api-utils/auth/supabaseAuth";
+import {
+  assertEntitlement,
+  EntitlementError,
+} from "../../entitlement/assertEntitlement";
 
 /**
  * PATCH /saved-gyms/:id — rename a gym and/or change its kit.
@@ -29,6 +33,8 @@ export const savedGymsUpdateHandler = new Elysia()
     "/saved-gyms/:id",
     async (ctx) => {
       const { sub: userId } = getUser(ctx);
+      const verdict = await assertEntitlement(userId, "loadout");
+      if (!verdict.allowed) throw new EntitlementError(verdict, "loadout");
       const { name, equipmentTypeIds } = ctx.body;
 
       if (name === undefined && equipmentTypeIds === undefined) {

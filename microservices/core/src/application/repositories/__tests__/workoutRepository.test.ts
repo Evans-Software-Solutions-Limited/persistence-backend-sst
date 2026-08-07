@@ -1099,6 +1099,31 @@ describe("WorkoutRepository", () => {
       expect(rendered).toContain('"parent_workout_id" is null');
     });
 
+    it("excludes retained Loadout variations when the caller denies Loadout access", async () => {
+      const capture: { where?: unknown } = {};
+      const mockDb = {
+        select: vi
+          .fn()
+          .mockReturnValueOnce(makeRecordingListChain([baseWorkout], capture))
+          .mockReturnValueOnce(makeCountChain(1))
+          .mockReturnValueOnce(
+            makeExercisesByWorkoutChain(mockExercisesWithWorkoutId),
+          )
+          .mockReturnValueOnce(makeQuotaUsedChain(1))
+          .mockReturnValueOnce(makeQuotaTierChain(null)),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      await new WorkoutRepository().list("user-1", {
+        type: "mine",
+        includeLoadoutVariations: false,
+      });
+
+      const rendered = new PgDialect().sqlToQuery(capture.where as never).sql;
+      expect(rendered).toContain('"variation_kind" is null');
+      expect(rendered).toContain('"variation_kind" <>');
+    });
+
     it("still counts ALL created workouts for quota regardless of the filter", async () => {
       // Quota (used) must not be de-crowded — a trainer at 40 authored
       // workouts still reads used=40 even when the list is filtered to the

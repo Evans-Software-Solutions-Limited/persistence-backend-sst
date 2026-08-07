@@ -1,5 +1,7 @@
 import { useLocalSearchParams } from "expo-router";
 import { MealprintPreferencesContainer } from "@/ui/containers/MealprintPreferencesContainer";
+import { AdaptiveSuiteRouteGuard } from "@/ui/components/subscription/AdaptiveSuiteRouteGuard";
+import { useMealprintGate } from "@/ui/hooks/useMealprintGate";
 
 /**
  * Fuel → Mealprint food preferences (spec-26 T-0.6, STORY-001).
@@ -8,11 +10,9 @@ import { MealprintPreferencesContainer } from "@/ui/containers/MealprintPreferen
  * Mealprint card; anything else (including no param) is the editor pushed from
  * the Fuel Targets "Food preferences" row.
  *
- * ⚠ **NOT entitlement-gated, and that is deliberate.** Preferences are the user's
- * own data — the Premium+ paywall sits on generation. Gating this route would stop
- * an expired subscriber viewing or correcting the allergen list they entered,
- * which is both hostile and a GDPR access problem. Both endpoints behind it are
- * ungated server-side for the same reason.
+ * Entitlement-gated as a Mealprint product surface. Preferences remain stored
+ * during a lapse and are restored on resubscription; account export remains the
+ * data-rights path.
  *
  * A route rather than a sheet: the form is long, has two text inputs, and a
  * `BottomSheet` fighting the keyboard on a screen where a mis-tap changes an
@@ -20,9 +20,16 @@ import { MealprintPreferencesContainer } from "@/ui/containers/MealprintPreferen
  */
 export default function MealprintPreferencesScreen() {
   const { mode } = useLocalSearchParams<{ mode?: string }>();
+  const gate = useMealprintGate();
   return (
-    <MealprintPreferencesContainer
-      mode={mode === "wizard" ? "wizard" : "editor"}
-    />
+    <AdaptiveSuiteRouteGuard
+      allowed={gate.allowed}
+      isResolved={gate.isResolved}
+      fallback="/(app)/(tabs)/fuel"
+    >
+      <MealprintPreferencesContainer
+        mode={mode === "wizard" ? "wizard" : "editor"}
+      />
+    </AdaptiveSuiteRouteGuard>
   );
 }

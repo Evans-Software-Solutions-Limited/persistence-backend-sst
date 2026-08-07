@@ -1,4 +1,5 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import type { MySubscription } from "@/domain/models/subscription";
 import type { ApiError } from "@/shared/errors";
 import { useAdapters } from "@/ui/hooks/useAdapters";
@@ -45,7 +46,9 @@ export function useMySubscription(enabled = true) {
   const { session } = useAuth();
   const userId = session?.userId ?? null;
 
-  return useQuery<MySubscription, ApiError>({
+  const queryClient = useQueryClient();
+  const [accessNowMs, setAccessNowMs] = useState(() => Date.now());
+  const query = useQuery<MySubscription, ApiError>({
     queryKey: userId
       ? userSubscriptionQueryKey(userId)
       : [USER_SUBSCRIPTION_QUERY_KEY_PREFIX, "anonymous"],
@@ -57,4 +60,34 @@ export function useMySubscription(enabled = true) {
     },
     staleTime: USER_SUBSCRIPTION_STALE_TIME_MS,
   });
+
+  useEffect(() => {
+    const subscription = query.data;
+    if (!subscription) return;
+
+    const candidates = [
+      subscription.cancelledAt ? subscription.expiresAt : null,
+      subscription.scheduledChange?.effectiveAt ?? null,
+    ]
+      .map((value) => (value === null ? Number.NaN : Date.parse(value)))
+      .filter((value) => Number.isFinite(value) && value > Date.now());
+    if (candidates.length === 0) return;
+
+    const boundaryMs = Math.min(...candidates);
+    const timer = setTimeout(
+      () => {
+        // Force client verdicts to recompute at the paid-through instant even if
+        // the provider webhook is late or the refresh fails offline.
+        setAccessNowMs(Date.now());
+        void queryClient.invalidateQueries({
+          queryKey: [USER_SUBSCRIPTION_QUERY_KEY_PREFIX],
+        });
+      },
+      Math.min(boundaryMs - Date.now() + 25, 2_147_483_647),
+    );
+
+    return () => clearTimeout(timer);
+  }, [query.data, queryClient, accessNowMs]);
+
+  return { ...query, accessNowMs };
 }

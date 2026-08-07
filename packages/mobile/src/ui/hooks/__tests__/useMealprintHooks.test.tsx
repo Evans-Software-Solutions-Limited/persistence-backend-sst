@@ -255,6 +255,29 @@ describe("useMealprintGate", () => {
     expect(latest().allowed).toBe(true);
   });
 
+  it("denies stale active cancellation and applies a due scheduled downgrade", () => {
+    const past = new Date(Date.now() - 60_000).toISOString();
+    expect(
+      computeMealprintVerdict(
+        subscription("premium_plus", {
+          expiresAt: past,
+          cancelledAt: new Date(Date.now() - 86_400_000).toISOString(),
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      computeMealprintVerdict(
+        subscription("premium_plus", {
+          scheduledChange: {
+            nextTierName: "premium",
+            nextDisplayName: "Premium",
+            effectiveAt: past,
+          },
+        }),
+      ),
+    ).toBe(false);
+  });
+
   it("reads the upgrade price from the live API, and tolerates its absence", async () => {
     const api = new InMemoryApiAdapter();
     api.mySubscription = subscription("free");
@@ -737,7 +760,10 @@ describe("useMealprintEntry", () => {
       isDefault: false,
     });
     const { latest } = harness(api, useMealprintEntry, storage);
-    await waitFor(() => expect(latest().needsSetup).toBe(false));
+    await waitFor(() => {
+      expect(latest().needsSetup).toBe(false);
+      expect(latest().state).toBe("unlocked");
+    });
     act(() => latest().onPress());
     expect(useFuelSheets.getState().sheet).toBe("mealprintSuggest");
     expect(mockRouterPush).not.toHaveBeenCalled();

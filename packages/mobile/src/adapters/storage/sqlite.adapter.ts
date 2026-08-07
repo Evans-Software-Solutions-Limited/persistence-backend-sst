@@ -108,6 +108,19 @@ const SYNC_BACKOFF_BASE_SECONDS = 5;
 const SYNC_BACKOFF_MAX_SECONDS = 300;
 
 /**
+ * Cached server payloads are disposable. A partial write or an older buggy
+ * client must never make a root-mounted consumer crash before the user can
+ * reach the app and refresh the cache.
+ */
+export function parseCachedWorkoutPayload(payload: string): Workout | null {
+  try {
+    return JSON.parse(payload) as Workout;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * `sync_queue` columns added after the table's original shape — the SINGLE source
  * of truth for all three places an install can arrive at that shape:
  *
@@ -492,6 +505,7 @@ ${indentSyncQueueDdl(8)}
         id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL,
         workout_id TEXT,
+        template_variation_kind TEXT,
         name TEXT NOT NULL,
         status TEXT NOT NULL,
         started_at TEXT NOT NULL,
@@ -841,11 +855,35 @@ ${indentSyncQueueDdl(8)}
       `PRAGMA table_info(active_sessions)`,
     ) as { name: string }[];
     const existingNames = new Set(activeSessionColumns.map((c) => c.name));
-    for (const col of ["client_id", "client_name", "client_initials"]) {
+    for (const col of [
+      "client_id",
+      "client_name",
+      "client_initials",
+      "template_variation_kind",
+    ]) {
       if (!existingNames.has(col)) {
         db.execSync(`ALTER TABLE active_sessions ADD COLUMN ${col} TEXT`);
       }
     }
+    // Sessions created by an older app version predate the provenance column.
+    // Recover it from the cached detail that originally seeded the session.
+    db.execSync(`
+      UPDATE active_sessions
+      SET template_variation_kind = 'loadout'
+      WHERE template_variation_kind IS NULL
+        AND workout_id IS NOT NULL
+        AND EXISTS (
+          SELECT 1
+          FROM cached_workout_detail AS detail
+          WHERE detail.user_id = active_sessions.user_id
+            AND detail.workout_id = active_sessions.workout_id
+            AND CASE
+              WHEN json_valid(detail.payload)
+              THEN json_extract(detail.payload, '$.variationKind') = 'loadout'
+              ELSE 0
+            END
+        )
+    `);
 
     // M10.6 migration for installs that predate this milestone.
     //
@@ -2046,10 +2084,18 @@ ${indentSyncQueueDdl(12)}
     }[];
     const row = rows[0];
     if (!row) return null;
+    const workout = parseCachedWorkoutPayload(row.payload);
+    if (!workout) {
+      db.runSync(
+        `DELETE FROM cached_workout_detail WHERE user_id = ? AND workout_id = ?`,
+        [userId, workoutId],
+      );
+      return null;
+    }
     return {
       userId: row.user_id,
       workoutId: row.workout_id,
-      workout: JSON.parse(row.payload) as Workout,
+      workout,
       syncedAt: row.synced_at,
     };
   }
@@ -2808,7 +2854,7 @@ ${indentSyncQueueDdl(12)}
       ? `WHERE user_id = ? AND status = 'in_progress'`
       : `WHERE user_id = ?`;
     const sessionRows = db.getAllSync(
-      `SELECT id, user_id, workout_id, name, status, started_at, completed_at, notes,
+      `SELECT id, user_id, workout_id, template_variation_kind, name, status, started_at, completed_at, notes,
               client_id, client_name, client_initials
        FROM active_sessions
        ${where}
@@ -2864,6 +2910,7 @@ ${indentSyncQueueDdl(12)}
       id: sessionRow.id,
       userId: sessionRow.user_id,
       workoutId: sessionRow.workout_id,
+      templateVariationKind: sessionRow.template_variation_kind,
       name: sessionRow.name,
       status: sessionRow.status as SessionStatus,
       startedAt: sessionRow.started_at,
@@ -2912,12 +2959,13 @@ ${indentSyncQueueDdl(12)}
 
       db.runSync(
         `INSERT INTO active_sessions
-           (id, user_id, workout_id, name, status, started_at, completed_at,
+           (id, user_id, workout_id, template_variation_kind, name, status, started_at, completed_at,
             notes, client_id, client_name, client_initials, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            user_id = excluded.user_id,
            workout_id = excluded.workout_id,
+           template_variation_kind = excluded.template_variation_kind,
            name = excluded.name,
            status = excluded.status,
            started_at = excluded.started_at,
@@ -2931,6 +2979,7 @@ ${indentSyncQueueDdl(12)}
           session.id,
           userId,
           session.workoutId,
+          session.templateVariationKind ?? null,
           session.name,
           session.status,
           session.startedAt,
@@ -3515,6 +3564,7 @@ type ActiveSessionRow = {
   id: string;
   user_id: string;
   workout_id: string | null;
+  template_variation_kind: string | null;
   name: string;
   status: string;
   started_at: string;

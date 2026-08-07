@@ -77,6 +77,13 @@ jest.mock("@/ui/hooks/useMealprintEntry", () => ({
     return mockMealprintEntry;
   },
 }));
+const mockMealprintGate = {
+  allowed: true,
+  isResolved: true,
+};
+jest.mock("@/ui/hooks/useMealprintGate", () => ({
+  useMealprintGate: () => mockMealprintGate,
+}));
 
 const mockFetch = jest.fn(async () => ({
   ok: true,
@@ -204,6 +211,8 @@ describe("FuelContainer", () => {
     mockPush.mockClear();
     mockUseMealprintEntryCalls.length = 0;
     mockMealprintEntry.planProgress = null;
+    mockMealprintGate.allowed = true;
+    mockMealprintGate.isResolved = true;
     jest.clearAllMocks();
   });
 
@@ -471,15 +480,44 @@ describe("FuelContainer", () => {
     };
   }
 
-  it("onEditPlan pushes the plan-today route", async () => {
+  it("hides cached Mealprint rows and actions after entitlement loss", async () => {
+    mockMealprintGate.allowed = false;
     const { adapters, storage } = makeAdapters();
     storage.cacheFuelToday(USER, localDayISO(), makeFuel());
+    storage.cacheMealPlan(USER, fixtureActivePlan());
+
     render(
       <Wrapper adapters={adapters}>
         <FuelContainer />
       </Wrapper>,
     );
     await waitFor(() => expect(mockProbe.last?.hasData).toBe(true));
+
+    expect(
+      mockProbe.last?.slots.find((s) => s.slot === "dinner")?.ghostRows,
+    ).toHaveLength(0);
+    expect(mockUseMealprintEntryCalls.at(-1)).toBeNull();
+  });
+
+  it("onEditPlan pushes the plan-today route", async () => {
+    const { adapters, storage } = makeAdapters();
+    storage.cacheFuelToday(USER, localDayISO(), makeFuel());
+    const plan = fixtureActivePlan();
+    storage.cacheMealPlan(USER, plan);
+    (adapters.api as InMemoryApiAdapter).activePlanByDate.set(
+      localDayISO(),
+      plan,
+    );
+    render(
+      <Wrapper adapters={adapters}>
+        <FuelContainer />
+      </Wrapper>,
+    );
+    await waitFor(() =>
+      expect(
+        mockProbe.last?.slots.find((s) => s.slot === "dinner")?.ghostRows,
+      ).toHaveLength(1),
+    );
 
     act(() => mockProbe.last!.onEditPlan());
 

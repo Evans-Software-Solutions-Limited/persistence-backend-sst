@@ -5,6 +5,8 @@ import {
 } from "react-native-safe-area-context";
 import { useLoadoutFlow } from "@/state/loadout-flow";
 import { LoadoutFlowContainer } from "@/ui/containers/LoadoutFlowContainer";
+import { AdaptiveSuiteRouteGuard } from "@/ui/components/subscription/AdaptiveSuiteRouteGuard";
+import { useLoadoutGate } from "@/ui/hooks/useLoadoutGate";
 
 /**
  * `/(app)/loadout` — the Premium+ "adapt this workout to your gym" flow
@@ -48,10 +50,17 @@ import { LoadoutFlowContainer } from "@/ui/containers/LoadoutFlowContainer";
  */
 export default function LoadoutRoute() {
   const workoutId = useLoadoutFlow((state) => state.workoutId);
+  const gate = useLoadoutGate();
   if (workoutId === null) return <Redirect href="/(app)/(tabs)/train" />;
   return (
-    <SafeAreaProvider initialMetrics={initialWindowMetrics}>
-      <LoadoutFlowContainer />
-    </SafeAreaProvider>
+    <AdaptiveSuiteRouteGuard
+      allowed={gate.allowed}
+      isResolved={gate.isResolved}
+      fallback="/(app)/(tabs)/train"
+    >
+      <SafeAreaProvider initialMetrics={initialWindowMetrics}>
+        <LoadoutFlowContainer />
+      </SafeAreaProvider>
+    </AdaptiveSuiteRouteGuard>
   );
 }

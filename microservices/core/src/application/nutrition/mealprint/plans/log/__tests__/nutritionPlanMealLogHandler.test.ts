@@ -6,6 +6,7 @@ const planMocks = vi.hoisted(() => ({
   markMealLogged: vi.fn(),
 }));
 const entryMocks = vi.hoisted(() => ({ create: vi.fn(), delete: vi.fn() }));
+const assertEntitlementMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getAuthUser: vi.fn(async (h: string | undefined) =>
@@ -33,6 +34,12 @@ vi.mock("../../../../../repositories/mealPlanRepository", async () => {
 vi.mock("../../../../../repositories/nutritionEntryRepository", () => ({
   NutritionEntryRepository: vi.fn().mockImplementation(() => entryMocks),
 }));
+vi.mock("../../../../../entitlement/assertEntitlement", async () => {
+  const actual = await vi.importActual<
+    typeof import("../../../../../entitlement/assertEntitlement")
+  >("../../../../../entitlement/assertEntitlement");
+  return { ...actual, assertEntitlement: assertEntitlementMock };
+});
 
 import { nutritionPlanMealLogHandler } from "../nutritionPlanMealLogHandler";
 import { coreErrorHandler } from "../../../../../../shared/errorHandler";
@@ -88,6 +95,7 @@ async function body(res: Response): Promise<any> {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  assertEntitlementMock.mockResolvedValue({ allowed: true });
   planMocks.get.mockResolvedValue(plan());
   planMocks.markMealLogged.mockResolvedValue(true);
   entryMocks.create.mockResolvedValue({ id: ENTRY_ID });
@@ -95,6 +103,19 @@ beforeEach(() => {
 });
 
 describe("POST /nutrition/plans/:id/meals/:mealId/log", () => {
+  it("402s before creating a Fuel entry after entitlement loss", async () => {
+    assertEntitlementMock.mockResolvedValue({
+      allowed: false,
+      reason: "expired",
+      currentTier: "free",
+      upgradeTo: "premium_plus",
+      upgradePriceMonthly: 1999,
+    });
+    const res = await app.handle(req());
+
+    expect(res.status).toBe(402);
+    expect(entryMocks.create).not.toHaveBeenCalled();
+  });
   it("404s a plan that is not the caller's", async () => {
     planMocks.get.mockResolvedValue(null);
     const res = await app.handle(req());

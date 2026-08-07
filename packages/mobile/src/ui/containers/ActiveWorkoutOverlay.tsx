@@ -43,6 +43,7 @@ import {
   formatBarElapsed,
 } from "@/ui/presenters/ActiveWorkoutBarPresenter";
 import { EndConfirmDialogPresenter } from "@/ui/presenters/EndConfirmDialogPresenter";
+import { useLoadoutGate } from "@/ui/hooks/useLoadoutGate";
 
 // Tab-bar geometry contract — kept in lockstep with `14-navigation`'s
 // `app/(app)/(tabs)/_layout.tsx` (`TAB_BAR_CONTENT_HEIGHT` 60 +
@@ -62,6 +63,15 @@ const BAR_GLOW_CLEARANCE = 10;
 export function ActiveWorkoutOverlay() {
   const { session, rereadCache } = useActiveSession();
   const { storage } = useAdapters();
+  const recoveredVariationKind =
+    session?.templateVariationKind ??
+    (session?.workoutId
+      ? (storage.getCachedWorkoutDetail(session.userId, session.workoutId)
+          ?.workout.variationKind ?? null)
+      : null);
+  // Root-mounted on every signed-in launch: keep both subscription queries
+  // disabled unless the retained session actually needs this paid-data gate.
+  const loadoutGate = useLoadoutGate(recoveredVariationKind === "loadout");
   const insets = useSafeAreaInsets();
   const [endConfirmVisible, setEndConfirmVisible] = useState(false);
 
@@ -85,7 +95,15 @@ export function ActiveWorkoutOverlay() {
     startedAt ? activeWorkoutElapsedSeconds(startedAt) : 0,
   );
 
-  const visible = session != null && !onSessionScreen && !inAuth && !drawerOpen;
+  const loadoutLocked =
+    recoveredVariationKind === "loadout" &&
+    (!loadoutGate.isResolved || !loadoutGate.allowed);
+  const visible =
+    session != null &&
+    !loadoutLocked &&
+    !onSessionScreen &&
+    !inAuth &&
+    !drawerOpen;
 
   // Tick the clock once a second while visible. Wall-clock derivation means a
   // missed tick (background) self-corrects on the next one.

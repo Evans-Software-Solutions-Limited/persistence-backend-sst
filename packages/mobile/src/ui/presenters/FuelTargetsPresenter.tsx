@@ -139,6 +139,8 @@ export type FuelTargetsPresenterProps = {
   // Mealprint (spec-26 AC 1.1) — the second entry point into food preferences.
   /** One-line summary of the saved preferences, or null when unknown/unset. */
   foodPreferencesSummary: string | null;
+  /** Hidden once the Mealprint entitlement is no longer effective. */
+  showFoodPreferences?: boolean;
   onOpenFoodPreferences: () => void;
 
   testID?: string;
@@ -180,6 +182,7 @@ export function FuelTargetsPresenter({
   onWaterCupsChange,
   volumeUnit = "l",
   foodPreferencesSummary,
+  showFoodPreferences = true,
   onOpenFoodPreferences,
   testID = "fuel-targets-screen",
 }: FuelTargetsPresenterProps) {
@@ -344,10 +347,12 @@ export function FuelTargetsPresenter({
           volumeUnit={volumeUnit}
         />
 
-        <FoodPreferencesRow
-          summary={foodPreferencesSummary}
-          onPress={onOpenFoodPreferences}
-        />
+        {showFoodPreferences ? (
+          <FoodPreferencesRow
+            summary={foodPreferencesSummary}
+            onPress={onOpenFoodPreferences}
+          />
+        ) : null}
       </ScrollView>
     </View>
   );
@@ -1277,12 +1282,9 @@ function ManualKcalSection({
 /**
  * The Mealprint "Food preferences" row (spec-26 AC 1.1, second entry point).
  *
- * ⚠ **Not entitlement-gated, on purpose.** Preferences are the user's own data and
- * both endpoints behind this row are ungated server-side — the Premium+ paywall
- * sits on generation. A user whose subscription lapsed must still be able to see
- * and correct the allergen list they entered; hiding the row would make that
- * impossible and is a GDPR access problem, not just a poor experience. So there is
- * deliberately no `PREMIUM+` pill here either: the row promises nothing paid.
+ * The container hides this row after effective Mealprint entitlement loss. The
+ * preferences remain retained for restoration on resubscription; account export
+ * is the separate data-rights path.
  *
  * It lives at the BOTTOM, after the numeric targets. Targets are what this screen
  * is for; food preferences are an adjacent setting that happens to share the

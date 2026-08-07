@@ -1,6 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+const assertEntitlementMock = vi.hoisted(() => vi.fn());
+
 const workoutRepositoryMocks = {
   getById: vi.fn(),
   list: vi.fn(),
@@ -36,6 +38,10 @@ vi.mock("../../../repositories/workoutRepository", () => ({
   WorkoutRepository: vi.fn().mockImplementation(() => workoutRepositoryMocks),
 }));
 
+vi.mock("../../../entitlement/assertEntitlement", () => ({
+  assertEntitlement: assertEntitlementMock,
+}));
+
 const baseWorkout = {
   id: "workout-1",
   name: "Test Workout",
@@ -51,6 +57,7 @@ const baseWorkout = {
 describe("WorkoutsListHandler", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    assertEntitlementMock.mockResolvedValue({ allowed: true });
     workoutRepositoryMocks.list.mockResolvedValue({
       workouts: [baseWorkout],
       total: 1,
@@ -118,7 +125,31 @@ describe("WorkoutsListHandler", () => {
         limit: 5,
         offset: 10,
         ownerLibraryOnly: false,
+        includeLoadoutVariations: true,
       });
+    });
+
+    it("asks the repository to hide adapted workouts after entitlement loss", async () => {
+      assertEntitlementMock.mockResolvedValue({
+        allowed: false,
+        reason: "expired",
+        currentTier: "free",
+        upgradeTo: "premium_plus",
+        upgradePriceMonthly: 1999,
+      });
+      const { workoutsListHandler } = await import("../workoutsListHandler");
+
+      const response = await workoutsListHandler.handle(
+        new Request("http://localhost/workouts?type=mine", {
+          headers: { authorization: "Bearer test-token" },
+        }),
+      );
+
+      expect(response.status).toBe(200);
+      expect(workoutRepositoryMocks.list).toHaveBeenCalledWith(
+        "test-user-id",
+        expect.objectContaining({ includeLoadoutVariations: false }),
+      );
     });
 
     it("passes ownerLibraryOnly through to the repository when set", async () => {

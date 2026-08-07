@@ -34,6 +34,7 @@ import {
 } from "@/state/active-workout";
 import { useAdapters } from "./useAdapters";
 import { useAuth } from "./useAuth";
+import { useLoadoutGate } from "./useLoadoutGate";
 
 /** "We found a workout from {date}" — friendly, locale-aware. Exported for test. */
 export function formatStartedAt(startedAt: string): string {
@@ -78,11 +79,22 @@ export function useActiveWorkoutRehydration(
   const { storage } = useAdapters();
   const { session: authSession } = useAuth();
   const userId = authSession?.userId ?? null;
+  const liveForGate = userId ? storage.getActiveSession(userId) : null;
+  const recoveredGateVariationKind =
+    liveForGate?.templateVariationKind ??
+    (liveForGate?.workoutId && userId
+      ? (storage.getCachedWorkoutDetail(userId, liveForGate.workoutId)?.workout
+          .variationKind ?? null)
+      : null);
+  // Root-mounted at launch: ordinary/absent sessions must not add subscription
+  // and catalog requests to the cold-start fan-out.
+  const requiresLoadoutGate = recoveredGateVariationKind === "loadout";
+  const loadoutGate = useLoadoutGate(requiresLoadoutGate);
   const confirm = options.confirm ?? defaultConfirm;
   const ranForUserRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!userId) return;
+    if (!userId || (requiresLoadoutGate && !loadoutGate.isResolved)) return;
     // Run once per signed-in user. Re-running on a different userId is
     // intentional (account switch on the same device).
     if (ranForUserRef.current === userId) return;
@@ -99,6 +111,23 @@ export function useActiveWorkoutRehydration(
 
       // SQLite has no live session for this user.
       if (!live) {
+        if (active) void useActiveWorkout.getState().end();
+        return;
+      }
+
+      // The cached-detail fallback covers sessions spanning the app version that
+      // introduced the provenance column, even if the one-time SQL backfill
+      // could not classify a missing cache row at migration time.
+      const recoveredVariationKind =
+        live.templateVariationKind ??
+        (live.workoutId
+          ? (storage.getCachedWorkoutDetail(userId, live.workoutId)?.workout
+              .variationKind ?? null)
+          : null);
+      // While locked, preserve SQLite untouched and clear only the presentation
+      // pointer: no resume/discard prompt and no overlay action may expose or
+      // cancel the session.
+      if (recoveredVariationKind === "loadout" && !loadoutGate.allowed) {
         if (active) void useActiveWorkout.getState().end();
         return;
       }
@@ -135,5 +164,12 @@ export function useActiveWorkoutRehydration(
     return () => {
       cancelled = true;
     };
-  }, [userId, storage, confirm]);
+  }, [
+    userId,
+    storage,
+    confirm,
+    requiresLoadoutGate,
+    loadoutGate.isResolved,
+    loadoutGate.allowed,
+  ]);
 }

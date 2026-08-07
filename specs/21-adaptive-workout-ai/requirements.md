@@ -465,6 +465,25 @@ US-9.
 
 ## Non-functional requirements
 
+- **Subscription lifecycle.** Cancellation or a scheduled downgrade keeps
+  Loadout available until the paid-through `expires_at`. Once the effective
+  entitlement is lost (expiry, failed payment, or an immediate downgrade),
+  saved gyms and adapted workout variations are retained but inaccessible:
+  the API returns `402`, generic workout lists omit Loadout variations, direct
+  workout/history/update/delete and session-record paths enforce the same
+  gate, and mobile masks cached rows and redirects stale deep links. Restoring
+  an eligible subscription restores the retained data; no downgrade cleanup
+  deletes it. Completed session records remain ordinary training history; the
+  retained adapted template itself cannot be opened or started while locked.
+  An in-progress session created from an adapted template is retained locally
+  but cannot be reopened or completed after the boundary; restoring an eligible
+  subscription makes it resumable again. Loadout provenance is persisted on the
+  session so the root workout overlay and launch rehydration prompt stay hidden
+  and cannot discard it while locked; sessions spanning the app upgrade are
+  backfilled or recovered from their user-scoped cached workout detail. A stale
+  template deep link cannot create a new session after the boundary. Server and mobile apply
+  `cancelled_at` / `scheduled_change.effective_at` at the timestamp even if the
+  provider webhook that updates the row is delayed.
 - **Data isolation.** Every Loadout repository method takes `userId` first and
   every query filters by ownership. Saved gyms, variations and adaptation
   previews are strictly per-user. Coach access is only via
