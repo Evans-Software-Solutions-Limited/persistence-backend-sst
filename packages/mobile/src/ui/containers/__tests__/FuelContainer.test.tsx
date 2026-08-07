@@ -431,6 +431,162 @@ describe("FuelContainer", () => {
     );
   });
 
+  // amendment 2026-08-fuel-plan-surfacing § B — Edit/Clear from Fuel itself.
+  function fixtureActivePlan() {
+    return {
+      id: "plan-1",
+      userId: USER,
+      status: "active" as const,
+      planDate: localDayISO(),
+      groupId: null,
+      mealsPerDay: 1,
+      effortLevel: "balanced" as const,
+      targetKcal: 2200,
+      targetProteinG: 160,
+      targetCarbsG: 220,
+      targetFatG: 70,
+      source: "ai",
+      createdByUserId: null,
+      createdAt: null,
+      acceptedAt: null,
+      meals: [
+        {
+          id: "meal-1",
+          sortOrder: 0,
+          label: "Chicken & rice bowl",
+          logSlot: "dinner" as const,
+          recipeId: null,
+          mealId: null,
+          items: null,
+          kcal: 640,
+          proteinG: 45,
+          carbsG: 60,
+          fatG: 15,
+          aiReason: null,
+          state: "planned" as const,
+          loggedEntryId: null,
+        },
+      ],
+    };
+  }
+
+  it("onEditPlan pushes the plan-today route", async () => {
+    const { adapters, storage } = makeAdapters();
+    storage.cacheFuelToday(USER, localDayISO(), makeFuel());
+    render(
+      <Wrapper adapters={adapters}>
+        <FuelContainer />
+      </Wrapper>,
+    );
+    await waitFor(() => expect(mockProbe.last?.hasData).toBe(true));
+
+    act(() => mockProbe.last!.onEditPlan());
+
+    expect(mockPush).toHaveBeenCalledWith("/(app)/fuel/plan-today");
+  });
+
+  it("onClearPlan deletes the active plan, clears its cache, and the ghost rows disappear", async () => {
+    const { adapters, storage } = makeAdapters();
+    storage.cacheFuelToday(USER, localDayISO(), makeFuel());
+    const plan = fixtureActivePlan();
+    storage.cacheMealPlan(USER, plan);
+    (adapters.api as InMemoryApiAdapter).activePlanByDate.set(
+      localDayISO(),
+      plan,
+    );
+    (adapters.api as InMemoryApiAdapter).plans.set("plan-1", plan);
+    const deleteSpy = jest.spyOn(adapters.api, "deletePlan");
+
+    render(
+      <Wrapper adapters={adapters}>
+        <FuelContainer />
+      </Wrapper>,
+    );
+    await waitFor(() =>
+      expect(
+        mockProbe.last?.slots.find((s) => s.slot === "dinner")?.ghostRows,
+      ).toHaveLength(1),
+    );
+
+    await act(async () => {
+      mockProbe.last!.onClearPlan();
+      await Promise.resolve();
+    });
+
+    expect(deleteSpy).toHaveBeenCalledWith("plan-1");
+    await waitFor(() =>
+      expect(storage.getCachedActiveMealPlan(USER, localDayISO())).toBeNull(),
+    );
+    // ⚠ Revert-verifying: fails unless clearing the plan reloads
+    // `activePlan`, which is what makes the ghost row disappear.
+    await waitFor(() =>
+      expect(
+        mockProbe.last?.slots.find((s) => s.slot === "dinner")?.ghostRows,
+      ).toHaveLength(0),
+    );
+    // Logged entries are untouched — only the plan disappeared.
+    expect(
+      mockProbe.last?.slots.find((s) => s.slot === "breakfast")?.rows,
+    ).toHaveLength(1);
+  });
+
+  it("onClearPlan is a no-op when there is no active plan", async () => {
+    const { adapters, storage } = makeAdapters();
+    storage.cacheFuelToday(USER, localDayISO(), makeFuel());
+    const deleteSpy = jest.spyOn(adapters.api, "deletePlan");
+    render(
+      <Wrapper adapters={adapters}>
+        <FuelContainer />
+      </Wrapper>,
+    );
+    await waitFor(() => expect(mockProbe.last?.hasData).toBe(true));
+
+    await act(async () => {
+      mockProbe.last!.onClearPlan();
+      await Promise.resolve();
+    });
+
+    expect(deleteSpy).not.toHaveBeenCalled();
+  });
+
+  it("a second onClearPlan call while the first is in flight is a no-op", async () => {
+    const { adapters, storage } = makeAdapters();
+    storage.cacheFuelToday(USER, localDayISO(), makeFuel());
+    const plan = fixtureActivePlan();
+    storage.cacheMealPlan(USER, plan);
+    (adapters.api as InMemoryApiAdapter).activePlanByDate.set(
+      localDayISO(),
+      plan,
+    );
+    (adapters.api as InMemoryApiAdapter).plans.set("plan-1", plan);
+    let resolveDelete!: (
+      r: Awaited<ReturnType<InMemoryApiAdapter["deletePlan"]>>,
+    ) => void;
+    const deleteSpy = jest
+      .spyOn(adapters.api, "deletePlan")
+      .mockReturnValue(new Promise((r) => (resolveDelete = r)));
+
+    render(
+      <Wrapper adapters={adapters}>
+        <FuelContainer />
+      </Wrapper>,
+    );
+    await waitFor(() =>
+      expect(
+        mockProbe.last?.slots.find((s) => s.slot === "dinner")?.ghostRows,
+      ).toHaveLength(1),
+    );
+
+    act(() => mockProbe.last!.onClearPlan());
+    act(() => mockProbe.last!.onClearPlan());
+    expect(deleteSpy).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveDelete({ ok: true, value: { deleted: true } });
+      await Promise.resolve();
+    });
+  });
+
   it("does not fire the goal-hit haptic on cold start into an already-in-band day", async () => {
     const { adapters, storage } = makeAdapters();
     // consumed == targets → every macro in band → goalHit.all true at hydrate.
