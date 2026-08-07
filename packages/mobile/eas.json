@@ -26,6 +26,23 @@
         "buildType": "app-bundle"
       }
     },
+    "play-testing": {
+      "distribution": "store",
+      "channel": "play-testing",
+      "environment": "preview",
+      "autoIncrement": true,
+      "env": {
+        "APP_VARIANT": "play-testing",
+        "EXPO_PUBLIC_API_URL": "https://api.staging.persistence.evans-software-solutions.com",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://nxkhlrvjxotyjulodxzk.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im54a2hscnZqeG90eWp1bG9keHprIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQwMjY1NjEsImV4cCI6MjA5OTYwMjU2MX0.0_Y1EZmY4erEII_7u1gKm1XbffLkM6PIfDEtMWI8Kmc",
+        "EXPO_PUBLIC_SENTRY_DSN": "https://3f4ad3f4f8967f9efc794a701dba8043@o4511741146169344.ingest.de.sentry.io/4511741227761744"
+      },
+      "android": {
+        "resourceClass": "medium",
+        "buildType": "app-bundle"
+      }
+    },
     "production": {
       "distribution": "store",
       "channel": "production",
@@ -53,12 +70,26 @@
       "ios": {
         "ascAppId": "6790912063",
         "appleTeamId": "U9S9BFTM4V"
+      },
+      "android": {
+        "track": "internal",
+        "releaseStatus": "draft"
+      }
+    },
+    "play-testing": {
+      "android": {
+        "track": "internal",
+        "releaseStatus": "draft"
       }
     },
     "production": {
       "ios": {
         "ascAppId": "6755091280",
         "appleTeamId": "U9S9BFTM4V"
+      },
+      "android": {
+        "track": "production",
+        "releaseStatus": "draft"
       }
     }
   }

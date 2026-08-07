@@ -126,7 +126,7 @@ describe("StepsTodayTile", () => {
         <StepsTodayTile {...unavailableProps} />,
       );
       expect(getByTestId("steps-tile-unavailable")).toBeTruthy();
-      expect(getByText("Not available on Android yet")).toBeTruthy();
+      expect(getByText("Health Connect unavailable")).toBeTruthy();
     });
 
     it("renders the iOS-specific copy on iOS", () => {

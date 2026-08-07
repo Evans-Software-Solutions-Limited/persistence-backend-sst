@@ -118,6 +118,8 @@ describe("useHealthData", () => {
     });
     expect(result.current.activeCaloriesToday).toBe(312);
     expect(result.current.latestBodyWeight?.value).toBe(74.5);
+    expect(result.current.heartRateLatest).toBe(62);
+    expect(health.getHeartRateLatest).toHaveBeenCalled();
     expect(result.current.latestBodyFat).toEqual({
       value: 18.2,
       date: "2026-04-20T07:00:00Z",

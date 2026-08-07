@@ -74,6 +74,7 @@ function makeHealthStub(over: Partial<HealthPort> = {}): HealthPort {
     getBasalCaloriesToday: async () => ok(0),
     getStandTimeTodayMinutes: async () => ok(0),
     getLatestBodyWeight: async () => ok(null),
+    getHeartRateLatest: async () => ok(null),
     getLatestBodyFat: async () => ok(null),
     ...over,
   } as unknown as HealthPort;

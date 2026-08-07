@@ -18,7 +18,7 @@ import { Platform } from "react-native";
 // eslint-disable-next-line import/first
 import { ExpoHealthKitAdapter } from "@/adapters/health/expo-healthkit.adapter";
 // eslint-disable-next-line import/first
-import { AndroidStubHealthAdapter } from "@/adapters/health/android-stub.adapter";
+import { HealthConnectAdapter } from "@/adapters/health/health-connect.adapter";
 // eslint-disable-next-line import/first
 import { StubHealthAdapter } from "@/adapters/health/stub.adapter";
 // eslint-disable-next-line import/first
@@ -54,10 +54,10 @@ describe("createHealthAdapter", () => {
     expect(adapter).toBeInstanceOf(ExpoHealthKitAdapter);
   });
 
-  it("picks AndroidStubHealthAdapter on Android", () => {
+  it("picks HealthConnectAdapter on Android", () => {
     setOS("android");
     const adapter = createHealthAdapter();
-    expect(adapter).toBeInstanceOf(AndroidStubHealthAdapter);
+    expect(adapter).toBeInstanceOf(HealthConnectAdapter);
   });
 
   it("falls back to StubHealthAdapter on web / unknown platforms", () => {

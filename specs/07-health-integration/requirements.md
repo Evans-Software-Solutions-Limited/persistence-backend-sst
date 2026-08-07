@@ -24,10 +24,10 @@ Sync health data (steps, calories, body weight, active energy) from Apple Health
 
 **Acceptance Criteria:**
 
-- [ ] Health Connect permissions request
-- [ ] Same data types as iOS: steps, calories, body mass, heart rate
-- [ ] Handle Health Connect not installed (redirect to Play Store)
-- [ ] Permission state persisted
+- [x] Health Connect permissions request
+- [x] Android parity for the data Persistence currently uses: steps, active and basal calories, body weight, body fat, heart rate, and sleep
+- [x] Handle Health Connect not installed or requiring an update (redirect to Play Store)
+- [x] Permission state is owned and persisted by Health Connect
 
 ### STORY-003: As a user, I want to see today's steps and calories on the dashboard
 
@@ -71,7 +71,7 @@ Sync health data (steps, calories, body weight, active energy) from Apple Health
 
 - [ ] AC 7.1 — On iOS (device or simulator): `ExpoHealthKitAdapter` provides `getStepsToday`, `getActiveCaloriesToday`, `getLatestBodyWeight`, `getHeartRateLatest`, `requestPermissions`, `getPermissionStatus`, `isAvailable`, `disconnect`. The permission grant sheet covers the full legacy read + write scope (steps, walking distance, basal energy, active energy, exercise minutes, stand time, body mass, body fat %, heart rate). `writeBodyWeight` returns `fail(UNAVAILABLE)` in M1 (lights up M6).
 - [ ] AC 7.2 — On iOS simulator: HealthKit reports `isAvailable: false` and tiles render the existing "Health not available on this iOS build" copy. The earlier `SimulatorMockHealthAdapter` was removed in PR #38 follow-up — simulator builds now show live empty state honestly rather than a fixture.
-- [ ] AC 7.3 — On Android: `AndroidStubHealthAdapter` reports `isAvailable: false`; reads return `fail(UNAVAILABLE)`; dashboard renders a muted "Not available on Android yet" tile.
+- [x] AC 7.3 — On Android: `HealthConnectAdapter` provides live read/write parity for the health data used by Persistence; unavailable/provider-update states render honest Health Connect copy and link to its Play listing.
 - [ ] AC 7.4 — Selection logic lives in `adapters/health/index.ts` — `createHealthAdapter()` picks the correct implementation once at provider construction.
 - [ ] AC 7.5 — Denied / not-determined permission state renders a "Connect Health" CTA tile on the dashboard; tap navigates toward `/health-permissions` (destination is a placeholder until Phase 4 ships the screen).
 - [ ] AC 7.6 — `useHealthData()` rate-limits reads to one per 5 minutes; re-reads fire on app-foreground transitions.

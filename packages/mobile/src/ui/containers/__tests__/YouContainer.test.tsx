@@ -145,6 +145,7 @@ describe("YouContainer", () => {
       getBasalCaloriesToday: jest.fn(async () => ok(0)),
       getStandTimeTodayMinutes: jest.fn(async () => ok(0)),
       getLatestBodyWeight: jest.fn(async () => ok(null)),
+      getHeartRateLatest: jest.fn(async () => ok(null)),
       getLatestBodyFat: jest.fn(async () => ok(null)),
     } as unknown as Adapters["health"];
 
@@ -262,6 +263,7 @@ describe("YouContainer", () => {
       getLatestBodyWeight: jest.fn(async () =>
         ok({ value: 78.2, unit: "kg", date: "2026-06-29T12:00:00.000Z" }),
       ),
+      getHeartRateLatest: jest.fn(async () => ok(null)),
       getLatestBodyFat: jest.fn(async () =>
         ok({ value: 22.5, date: "2026-06-29T12:00:00.000Z" }),
       ),
@@ -308,6 +310,7 @@ describe("YouContainer", () => {
       getLatestBodyWeight: jest.fn(async () =>
         ok({ value: 78.2, unit: "kg", date: "2026-06-30T12:00:00.000Z" }),
       ),
+      getHeartRateLatest: jest.fn(async () => ok(null)),
       // ...but a STALE fat reading from before the last in-app fat log.
       // Must not become "current".
       getLatestBodyFat: jest.fn(async () =>
@@ -356,6 +359,7 @@ describe("YouContainer", () => {
       getLatestBodyWeight: jest.fn(async () =>
         ok({ value: 78.2, unit: "kg", date: "2026-06-30T12:00:00.000Z" }),
       ),
+      getHeartRateLatest: jest.fn(async () => ok(null)),
       getLatestBodyFat: jest.fn(async () =>
         ok({ value: 18.9, date: "2026-06-30T12:00:00.000Z" }),
       ),

@@ -1,4 +1,5 @@
-import Purchases from "react-native-purchases";
+import { Platform } from "react-native";
+import Purchases, { STORE_REPLACEMENT_MODE } from "react-native-purchases";
 import {
   classifyPurchasesError,
   RevenueCatPurchasesAdapter,
@@ -12,6 +13,7 @@ const mockPurchases = Purchases as unknown as {
   logIn: jest.Mock;
   logOut: jest.Mock;
   getOfferings: jest.Mock;
+  getCustomerInfo: jest.Mock;
   purchasePackage: jest.Mock;
   restorePurchases: jest.Mock;
   checkTrialOrIntroductoryPriceEligibility: jest.Mock;
@@ -37,6 +39,10 @@ const PREMIUM_PKG = {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockPurchases.getCustomerInfo.mockResolvedValue({
+    activeSubscriptions: [],
+    managementURL: null,
+  });
 });
 
 describe("RevenueCatPurchasesAdapter — configure", () => {
@@ -61,14 +67,15 @@ describe("RevenueCatPurchasesAdapter — configure", () => {
 });
 
 describe("RevenueCatPurchasesAdapter — guards when unconfigured", () => {
-  it("logIn / getPurchasablePackages / purchase / restore fail not_configured", async () => {
+  it("native operations fail not_configured", async () => {
     const a = new RevenueCatPurchasesAdapter();
     const login = await a.logIn("u-1");
     const pkgs = await a.getPurchasablePackages();
     const elig = await a.getIntroEligibility(["x"]);
+    const management = await a.getManagementUrl();
     const buy = await a.purchase("$rc_monthly");
     const restore = await a.restore();
-    for (const r of [login, pkgs, elig, buy, restore]) {
+    for (const r of [login, pkgs, elig, management, buy, restore]) {
       expect(r.ok).toBe(false);
       if (!r.ok) expect(r.error.kind).toBe("not_configured");
     }
@@ -88,6 +95,26 @@ describe("RevenueCatPurchasesAdapter — configured flows", () => {
     a.configure("appl_public_key");
     return a;
   }
+
+  async function configuredAndBound(): Promise<RevenueCatPurchasesAdapter> {
+    const a = configured();
+    mockPurchases.logIn.mockResolvedValue({ created: false });
+    await a.logIn("supabase-uid");
+    return a;
+  }
+
+  it("returns RevenueCat's originating-store management URL", async () => {
+    const a = await configuredAndBound();
+    mockPurchases.getCustomerInfo.mockResolvedValue({
+      activeSubscriptions: ["app.persistence.premium"],
+      managementURL: "https://play.google.com/store/account/subscriptions",
+    });
+    const result = await a.getManagementUrl();
+    expect(result).toEqual({
+      ok: true,
+      value: "https://play.google.com/store/account/subscriptions",
+    });
+  });
 
   it("logIn binds the supabase id", async () => {
     const a = configured();
@@ -144,6 +171,42 @@ describe("RevenueCatPurchasesAdapter — configured flows", () => {
     if (r.ok) expect(r.value[0].introTrialDays).toBe(14);
   });
 
+  it("normalises a Google Play base plan and its selected free-trial phase", async () => {
+    const a = configured();
+    mockPurchases.getOfferings.mockResolvedValue(
+      offeringWith([
+        {
+          identifier: "premium-monthly",
+          packageType: "CUSTOM",
+          product: {
+            identifier: "app.persistence.premium",
+            price: 9.99,
+            priceString: "£9.99",
+            pricePerMonthString: "£9.99",
+            defaultOption: {
+              storeProductId: "app.persistence.premium:monthly",
+              freePhase: {
+                billingPeriod: { unit: "WEEK", value: 2 },
+                price: { amountMicros: 0 },
+              },
+            },
+          },
+        },
+      ]),
+    );
+    const r = await a.getPurchasablePackages();
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value[0]).toMatchObject({
+        packageId: "premium-monthly",
+        productId: "app.persistence.premium:monthly",
+        tier: "premium",
+        billingCycle: "monthly",
+        introTrialDays: 14,
+      });
+    }
+  });
+
   it("maps intro eligibility: only ELIGIBLE → true", async () => {
     const a = configured();
     mockPurchases.checkTrialOrIntroductoryPriceEligibility.mockResolvedValue({
@@ -186,7 +249,7 @@ describe("RevenueCatPurchasesAdapter — configured flows", () => {
   });
 
   it("purchase resolves active entitlements on success", async () => {
-    const a = configured();
+    const a = await configuredAndBound();
     mockPurchases.getOfferings.mockResolvedValue(offeringWith([PREMIUM_PKG]));
     mockPurchases.purchasePackage.mockResolvedValue({
       customerInfo: {
@@ -216,8 +279,69 @@ describe("RevenueCatPurchasesAdapter — configured flows", () => {
     expect(mockPurchases.purchasePackage).toHaveBeenCalledWith(PREMIUM_PKG);
   });
 
-  it("purchase fails store_problem when the package id is gone", async () => {
+  it("blocks a purchase until RevenueCat confirms the Supabase identity", async () => {
     const a = configured();
+    const result = await a.purchase("$rc_monthly");
+    expect(result).toEqual({
+      ok: false,
+      error: expect.objectContaining({ kind: "identity_not_bound" }),
+    });
+    expect(mockPurchases.getOfferings).not.toHaveBeenCalled();
+    expect(mockPurchases.purchasePackage).not.toHaveBeenCalled();
+  });
+
+  it("passes the active Play product when replacing an Android subscription", async () => {
+    const originalOS = Platform.OS;
+    Platform.OS = "android";
+    try {
+      const a = await configuredAndBound();
+      mockPurchases.getOfferings.mockResolvedValue(offeringWith([PREMIUM_PKG]));
+      mockPurchases.getCustomerInfo.mockResolvedValue({
+        activeSubscriptions: ["app.persistence.premium"],
+      });
+      mockPurchases.purchasePackage.mockResolvedValue({
+        customerInfo: { entitlements: { active: {} } },
+      });
+      await a.purchase("$rc_monthly");
+      expect(mockPurchases.purchasePackage).toHaveBeenCalledWith(
+        PREMIUM_PKG,
+        null,
+        {
+          oldProductIdentifier: "app.persistence.premium",
+          replacementMode: STORE_REPLACEMENT_MODE.WITH_TIME_PRORATION,
+        },
+      );
+    } finally {
+      Platform.OS = originalOS;
+    }
+  });
+
+  it("does not pass an Apple product into Play subscription replacement", async () => {
+    const originalOS = Platform.OS;
+    Platform.OS = "android";
+    try {
+      const a = await configuredAndBound();
+      mockPurchases.getOfferings.mockResolvedValue(offeringWith([PREMIUM_PKG]));
+      mockPurchases.getCustomerInfo.mockResolvedValue({
+        activeSubscriptions: ["app.persistence.premium.monthly"],
+        managementURL: "https://apps.apple.com/account/subscriptions",
+      });
+      mockPurchases.purchasePackage.mockResolvedValue({
+        customerInfo: { entitlements: { active: {} } },
+      });
+      await a.purchase("$rc_monthly");
+      expect(mockPurchases.purchasePackage).toHaveBeenCalledWith(
+        PREMIUM_PKG,
+        null,
+        null,
+      );
+    } finally {
+      Platform.OS = originalOS;
+    }
+  });
+
+  it("purchase fails store_problem when the package id is gone", async () => {
+    const a = await configuredAndBound();
     mockPurchases.getOfferings.mockResolvedValue(offeringWith([PREMIUM_PKG]));
     const r = await a.purchase("$rc_unknown");
     expect(r.ok).toBe(false);
@@ -225,7 +349,7 @@ describe("RevenueCatPurchasesAdapter — configured flows", () => {
   });
 
   it("purchase maps a user cancellation to kind cancelled", async () => {
-    const a = configured();
+    const a = await configuredAndBound();
     mockPurchases.getOfferings.mockResolvedValue(offeringWith([PREMIUM_PKG]));
     mockPurchases.purchasePackage.mockRejectedValue({
       userCancelled: true,
@@ -237,12 +361,22 @@ describe("RevenueCatPurchasesAdapter — configured flows", () => {
   });
 
   it("restore resolves active entitlements", async () => {
-    const a = configured();
+    const a = await configuredAndBound();
     mockPurchases.restorePurchases.mockResolvedValue({
       entitlements: { active: {} },
     });
     const r = await a.restore();
     expect(r.ok && r.value).toEqual([]);
+  });
+
+  it("blocks restore until RevenueCat confirms the Supabase identity", async () => {
+    const a = configured();
+    const result = await a.restore();
+    expect(result).toEqual({
+      ok: false,
+      error: expect.objectContaining({ kind: "identity_not_bound" }),
+    });
+    expect(mockPurchases.restorePurchases).not.toHaveBeenCalled();
   });
 });
 

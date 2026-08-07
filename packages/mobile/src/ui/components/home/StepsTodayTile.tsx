@@ -16,7 +16,7 @@ import { SimpleLineGraph } from "./SimpleLineGraph";
  */
 
 function unavailableMessage(platformOS: typeof Platform.OS): string {
-  if (platformOS === "android") return "Not available on Android yet";
+  if (platformOS === "android") return "Health Connect unavailable";
   if (platformOS === "ios") return "Health not available on this iOS build";
   return "Health data not available";
 }

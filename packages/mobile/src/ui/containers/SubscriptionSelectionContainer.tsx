@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Alert, Platform } from "react-native";
+import { Alert } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import type {
   BillingCycle,
@@ -58,8 +58,8 @@ const OFFLINE_ALERT_MESSAGE =
 
 /**
  * Public entry for the post-sign-up subscription screen. Dispatches by rail:
- * on iOS (where a RevenueCat purchases adapter is wired) the native Apple IAP
- * flow renders. Everywhere else falls through to the catalogue container below,
+ * on iOS/Android (where a RevenueCat purchases adapter is wired) the native
+ * store flow renders. Everywhere else falls through to the catalogue container below,
  * which lists tiers and can cancel but cannot purchase — the Stripe Apple Pay
  * rail it used to carry was removed in full (App Review Guideline 2.1: it
  * linked PassKit into the binary while being unreachable on iOS). Android
@@ -72,7 +72,7 @@ const OFFLINE_ALERT_MESSAGE =
  */
 export function SubscriptionSelectionContainer() {
   const purchases = usePurchases();
-  if (Platform.OS === "ios" && purchases !== null) {
+  if (purchases !== null) {
     return <IOSPurchaseFlowContainer />;
   }
   return <SubscriptionCatalogueContainer />;

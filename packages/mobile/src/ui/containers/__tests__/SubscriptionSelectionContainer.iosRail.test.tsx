@@ -1,4 +1,5 @@
 import { render, screen, waitFor } from "@testing-library/react-native";
+import { Platform } from "react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
 import { InMemoryAuthAdapter } from "@/adapters/auth/__tests__/in-memory-auth.adapter";
@@ -122,5 +123,18 @@ describe("SubscriptionSelectionContainer — rail dispatch", () => {
       expect(screen.getByTestId("subscription-card-premium")).toBeTruthy(),
     );
     expect(screen.queryByTestId("ios-purchase-restore")).toBeNull();
+  });
+
+  it("renders the same native RevenueCat rail on Android", async () => {
+    const originalOS = Platform.OS;
+    Platform.OS = "android";
+    try {
+      renderWith(makeAdapters(true));
+      await waitFor(() =>
+        expect(screen.getByTestId("ios-purchase-restore")).toBeTruthy(),
+      );
+    } finally {
+      Platform.OS = originalOS;
+    }
   });
 });

@@ -1,4 +1,4 @@
-name: Mobile Build (Production → App Store)
+name: Mobile Build (Production → App Store / Google Play)
 
 # The release-published auto-trigger is temporarily disabled to conserve EAS
 # build minutes while iterating on backend-only changes. Re-enable by
@@ -16,7 +16,7 @@ on:
         options: [ios, android, all]
         default: ios
       submit:
-        description: "Submit to App Store after build?"
+        description: "Submit to the selected store after build?"
         required: true
         type: boolean
         default: true
@@ -30,7 +30,7 @@ permissions:
 
 jobs:
   build:
-    name: Build + Submit to App Store
+    name: Build + Submit to Store
     runs-on: ubuntu-latest
     environment: Production
     timeout-minutes: 60
@@ -52,19 +52,31 @@ jobs:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
 
-      - name: Build (EAS)
-        # --wait (not --no-wait): the Submit step below uses `eas submit --latest`,
-        # which resolves to the latest *finished* build. Without --wait the build
-        # is only queued, so --latest would error on the first-ever build (none
-        # finished) or submit the PREVIOUS build on later runs. Blocking the job
-        # until the build completes makes --latest unambiguous. Public repo =
-        # unlimited Actions minutes, and --wait consumes no extra EAS build minutes.
+      - name: Build iOS (EAS)
+        id: ios_build
+        if: ${{ github.event_name == 'release' || github.event.inputs.platform == 'ios' || github.event.inputs.platform == 'all' }}
         run: |
-          eas build \
-            --platform ${{ github.event.inputs.platform || 'ios' }} \
+          build_json="$(eas build \
+            --platform ios \
             --profile production \
             --non-interactive \
-            --wait
+            --wait \
+            --json)"
+          build_id="$(jq -er '.[0].id' <<<"$build_json")"
+          echo "build_id=$build_id" >> "$GITHUB_OUTPUT"
+
+      - name: Build Android (EAS)
+        id: android_build
+        if: ${{ github.event.inputs.platform == 'android' || github.event.inputs.platform == 'all' }}
+        run: |
+          build_json="$(eas build \
+            --platform android \
+            --profile production \
+            --non-interactive \
+            --wait \
+            --json)"
+          build_id="$(jq -er '.[0].id' <<<"$build_json")"
+          echo "build_id=$build_id" >> "$GITHUB_OUTPUT"
 
       - name: Submit to App Store (iOS)
         # Release events: always submit (iOS-only by default — release-please publishes the GitHub release).
@@ -76,6 +88,16 @@ jobs:
           eas submit \
             --platform ios \
             --profile production \
-            --latest \
+            --id "${{ steps.ios_build.outputs.build_id }}" \
+            --non-interactive \
+            --wait
+
+      - name: Submit to Google Play (Android draft)
+        if: ${{ github.event.inputs.submit != 'false' && (github.event.inputs.platform == 'android' || github.event.inputs.platform == 'all') }}
+        run: |
+          eas submit \
+            --platform android \
+            --profile production \
+            --id "${{ steps.android_build.outputs.build_id }}" \
             --non-interactive \
             --wait

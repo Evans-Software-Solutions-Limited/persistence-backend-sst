@@ -17,7 +17,7 @@ describe("PrivacyPolicyPresenter", () => {
       <PrivacyPolicyPresenter onBack={jest.fn()} />,
     );
     expect(getByText("Privacy Policy")).toBeTruthy();
-    expect(getByText("Last Updated: 3 August 2026")).toBeTruthy();
+    expect(getByText("Last Updated: 7 August 2026")).toBeTruthy();
   });
 
   it("renders all fourteen section titles verbatim", () => {
@@ -86,6 +86,16 @@ describe("PrivacyPolicyPresenter", () => {
     // in the Art 9(2)(a) basis. Both are load-bearing.
     expect(getAllByText(/religious or philosophical belief/).length).toBe(2);
     expect(getByText(/Food preferences/)).toBeTruthy();
+  });
+
+  it("discloses Health Connect alongside Apple Health", () => {
+    const { getByText } = renderWithTheme(
+      <PrivacyPolicyPresenter onBack={jest.fn()} />,
+    );
+    expect(
+      getByText(/data read from Apple\s+Health or Health Connect/),
+    ).toBeTruthy();
+    expect(getByText(/raw\s+Apple Health or Health Connect data/)).toBeTruthy();
   });
 
   it("names all four legal bases with their Article references", () => {

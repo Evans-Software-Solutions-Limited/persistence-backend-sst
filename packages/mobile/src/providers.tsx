@@ -60,20 +60,24 @@ export function defaultQueryRetry(
 }
 
 /**
- * Build the RevenueCat purchases adapter — iOS only (M12), and the app's ONLY
- * purchase rail. On Android this stays `undefined` until Play billing is wired
- * through RevenueCat, so the paywall degrades to its inline "unavailable"
- * state. Configured eagerly with the **public** iOS SDK key (client-safe); an absent
- * key leaves the adapter unconfigured so the iOS paywall degrades to its
+ * Build the native RevenueCat purchases adapter for App Store / Play Billing.
+ * Configured eagerly with the platform's **public** SDK key (client-safe); an absent
+ * key leaves the adapter unconfigured so the store paywall degrades to its
  * inline "unavailable" state rather than throwing on the first SDK call.
  */
-function createPurchasesAdapter(): PurchasesPort | undefined {
-  if (Platform.OS !== "ios") return undefined;
+export function createPurchasesAdapter(): PurchasesPort | undefined {
+  if (Platform.OS !== "ios" && Platform.OS !== "android") return undefined;
   const adapter = new RevenueCatPurchasesAdapter();
-  const publicSdkKey =
-    (Constants.expoConfig?.extra?.revenueCatIosKey as string | undefined) ??
-    process.env.EXPO_PUBLIC_REVENUECAT_IOS_KEY ??
-    "";
+  const keyName =
+    Platform.OS === "android" ? "revenueCatAndroidKey" : "revenueCatIosKey";
+  const configKey = Constants.expoConfig?.extra?.[keyName] as
+    | string
+    | undefined;
+  const envKey =
+    Platform.OS === "android"
+      ? process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY
+      : process.env.EXPO_PUBLIC_REVENUECAT_IOS_KEY;
+  const publicSdkKey = configKey?.trim() ? configKey : (envKey ?? "");
   adapter.configure(publicSdkKey);
   return adapter;
 }
@@ -86,7 +90,7 @@ function createPurchasesAdapter(): PurchasesPort | undefined {
  * 4. Health (HealthKit / Health Connect)
  * 5. Notifications (Expo)
  * 6. NetInfo (RN community netinfo — M10.5)
- * 7. Purchases (RevenueCat native IAP — M12, iOS only)
+ * 7. Purchases (RevenueCat native App Store / Play Billing)
  *
  * Also mounts a Tanstack Query client at the root for the M10
  * subscription hooks (useSubscriptionTiers / useMySubscription /

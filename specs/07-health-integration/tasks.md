@@ -1,8 +1,12 @@
 # 07 — Health Integration: Tasks
 
-## Current state (2026-04-19)
+## Current state (2026-08-07)
 
-**Shipped: ~1 of ~30 tasks complete. Stub adapter only.**
+Both native rails are implemented. Android now selects a real Health Connect
+adapter, requests the permission set used by the product, exposes an install /
+update fallback, and generates the Android 13 and Android 14+ privacy-rationale
+manifest entries. Play Console declaration and physical-device QA remain
+operational release gates.
 
 What's there:
 
@@ -39,21 +43,20 @@ Traces to `design.md` § M1 scope: platform adapter matrix and
 
 ## Phase 3: Android Adapter (Health Connect)
 
-**M1 scope:** ship `AndroidStubHealthAdapter` only. Full Health Connect
-integration deferred past M1 (post-M4 candidate).
-
-Traces to `requirements.md` STORY-007 AC 7.3 + 7.4.
+Traces to `requirements.md` STORY-002 and STORY-007 AC 7.3 + 7.4.
 
 - [x] Create `AndroidStubHealthAdapter` at `packages/mobile/src/adapters/health/android-stub.adapter.ts` — `isAvailable: false`, reads return `fail(UNAVAILABLE)`, permission request resolves as no-op success
 
-**Deferred past M1:**
-
-- [ ] Add `react-native-health-connect` / `expo-health-connect` dependency
-- [ ] Create real `HealthConnectAdapter` implementing `HealthPort`
-- [ ] Implement permission request
-- [ ] Implement data reads
-- [ ] Handle Health Connect not installed (redirect to Play Store)
-- [ ] Write tests
+- [x] Add `react-native-health-connect` dependency
+- [x] Create real `HealthConnectAdapter` implementing `HealthPort`
+- [x] Implement permission request for the read/write features actually used
+- [x] Implement steps, calories, weight, body-fat, heart-rate and sleep reads
+- [x] Implement weight, body-fat and sleep writes
+- [x] Handle Health Connect not installed / provider update required (redirect to Play Store)
+- [x] Generate the Health Connect privacy-rationale activity and manifest aliases
+- [x] Write adapter, factory, hook and settings tests
+- [ ] Complete Play Console Health apps declaration and provider allow-list review
+- [ ] Run Android 13 and Android 14+ physical-device permission/read/write QA
 
 ## Phase 4: UI — Permission Flow
 
@@ -70,7 +73,7 @@ STORY-005 AC 5.12 for animation).
 
 - [x] Create `StepsTile` presenter (step count, last-synced caption, `$success` dot when granted)
 - [x] Add "Connect Health" CTA variant for denied / not-determined state (AC 7.5)
-- [x] Add "Not available on Android yet" variant for Android / web (AC 7.3)
+- [x] Add Health Connect unavailable/install variant for Android and a generic unavailable variant for web (AC 7.3)
 - [x] Create `useHealthData()` hook at `packages/mobile/src/ui/hooks/useHealthData.tsx` with 5-min rate limit + app-foreground re-read (AC 7.6)
 - [x] Integrate `StepsTile` into `HomePresenter` MyProgress section
 - [x] Wire active-energy read into MyProgress (single tile for M1; basal / standTime remain placeholder zeros per design §)

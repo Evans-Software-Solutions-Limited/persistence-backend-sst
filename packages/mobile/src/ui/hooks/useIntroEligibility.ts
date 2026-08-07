@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { Platform } from "react-native";
 import type { PurchasesError } from "@/domain/ports/purchases.port";
 import { usePurchases } from "@/ui/hooks/usePurchases";
 
@@ -27,7 +28,8 @@ export function useIntroEligibility(productIds: string[]) {
   const purchases = usePurchases();
   return useQuery<Record<string, boolean>, PurchasesError>({
     queryKey: introEligibilityQueryKey(productIds),
-    enabled: purchases !== null && productIds.length > 0,
+    enabled:
+      Platform.OS === "ios" && purchases !== null && productIds.length > 0,
     staleTime: INTRO_ELIGIBILITY_STALE_TIME_MS,
     queryFn: async () => {
       // `enabled` guarantees a non-null adapter + non-empty ids here.

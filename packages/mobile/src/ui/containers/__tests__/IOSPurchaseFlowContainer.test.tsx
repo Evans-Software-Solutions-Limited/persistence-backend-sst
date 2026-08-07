@@ -1,5 +1,5 @@
 import React from "react";
-import { Alert, Linking } from "react-native";
+import { Alert, Linking, Platform } from "react-native";
 import {
   act,
   fireEvent,
@@ -25,6 +25,7 @@ import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import {
   APP_STORE_SUBSCRIPTIONS_URL,
   IOSPurchaseFlowContainer,
+  PLAY_STORE_SUBSCRIPTIONS_URL,
 } from "@/ui/containers/IOSPurchaseFlowContainer";
 
 const mockPush = jest.fn();
@@ -518,7 +519,60 @@ describe("IOSPurchaseFlowContainer", () => {
       expect(screen.getByTestId("subscription-manage-screen")).toBeTruthy(),
     );
     fireEvent.press(screen.getByTestId("ios-purchase-manage"));
-    expect(openURLSpy).toHaveBeenCalledWith(APP_STORE_SUBSCRIPTIONS_URL);
+    await waitFor(() =>
+      expect(openURLSpy).toHaveBeenCalledWith(APP_STORE_SUBSCRIPTIONS_URL),
+    );
+  });
+
+  it("hands Android subscription management to Google Play", async () => {
+    const originalOS = Platform.OS;
+    Platform.OS = "android";
+    try {
+      const paid = subscription({
+        subscriptionId: "sub-1",
+        tierName: "premium",
+        tierDisplayName: "Premium",
+        billingCycle: "monthly",
+        expiresAt: "2027-03-14T00:00:00.000Z",
+        externalSubscriptionId: "rc-1",
+      });
+      const { adapters } = makeAdapters(paid);
+      renderContainer(adapters);
+      await waitFor(() =>
+        expect(screen.getByTestId("subscription-manage-screen")).toBeTruthy(),
+      );
+      fireEvent.press(screen.getByTestId("ios-purchase-manage"));
+      await waitFor(() =>
+        expect(openURLSpy).toHaveBeenCalledWith(PLAY_STORE_SUBSCRIPTIONS_URL),
+      );
+      expect(screen.getByText("Google Play")).toBeTruthy();
+    } finally {
+      Platform.OS = originalOS;
+    }
+  });
+
+  it("uses RevenueCat's originating-store management URL across platforms", async () => {
+    const originalOS = Platform.OS;
+    Platform.OS = "android";
+    try {
+      const paid = subscription({
+        subscriptionId: "sub-1",
+        tierName: "premium",
+        tierDisplayName: "Premium",
+        billingCycle: "monthly",
+        externalSubscriptionId: "rc-1",
+      });
+      const { adapters, purchases } = makeAdapters(paid);
+      purchases.managementUrl = APP_STORE_SUBSCRIPTIONS_URL;
+      renderContainer(adapters);
+      fireEvent.press(await screen.findByTestId("ios-purchase-manage"));
+      await waitFor(() =>
+        expect(openURLSpy).toHaveBeenCalledWith(APP_STORE_SUBSCRIPTIONS_URL),
+      );
+      expect(purchases.managementUrlCalls).toBe(1);
+    } finally {
+      Platform.OS = originalOS;
+    }
   });
 
   it("changes from management into the plan catalog", async () => {

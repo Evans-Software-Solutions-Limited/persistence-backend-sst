@@ -1,6 +1,6 @@
 import { Text, View } from "@tamagui/core";
 import { useState } from "react";
-import { Pressable } from "react-native";
+import { Platform, Pressable } from "react-native";
 
 import { Avatar, BottomSheet, Card, Pill } from "@/ui/components/foundation";
 import type { PillTone } from "@/ui/components/foundation/tones";
@@ -356,7 +356,11 @@ export function ProfileDrawerPresenter({
         <DrawerRow
           icon={<IconHealth {...iconDefaults({ size: 16 })} />}
           title="Health & integrations"
-          sub={healthConnected ? "Apple Health connected" : "Not connected"}
+          sub={
+            healthConnected
+              ? `${Platform.OS === "android" ? "Health Connect" : "Apple Health"} connected`
+              : "Not connected"
+          }
           trailing={
             healthConnected ? (
               <View

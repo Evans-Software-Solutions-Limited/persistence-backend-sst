@@ -85,26 +85,33 @@ describe("usePurchasesIdentity", () => {
     ).not.toThrow();
   });
 
-  it("does not latch a failed logIn — a later attempt retries", async () => {
+  it("automatically retries a failed identity binding", async () => {
+    jest.useFakeTimers();
     const purchases = new MockPurchasesAdapter();
     purchases.nextLogInResponse = {
       ok: false,
       error: { kind: "network", code: null, message: "offline" },
     };
     mockSession = { userId: "u1" };
-    const { rerender } = renderHook(() => usePurchasesIdentity(), {
+    const { unmount } = renderHook(() => usePurchasesIdentity(), {
       wrapper: wrap(makeAdapters(purchases)),
     });
-    await waitFor(() => expect(purchases.logInCalls).toEqual(["u1"]));
+    try {
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(purchases.logInCalls).toEqual(["u1"]);
 
-    // The failed attempt must not have latched the ref. Sign out → back in to
-    // re-run the effect; with the network back it should retry, not skip.
-    purchases.nextLogInResponse = { ok: true };
-    mockSession = null;
-    rerender({});
-    mockSession = { userId: "u1" };
-    rerender({});
-    await waitFor(() => expect(purchases.logInCalls).toEqual(["u1", "u1"]));
+      purchases.nextLogInResponse = { ok: true };
+      await act(async () => {
+        jest.advanceTimersByTime(1_000);
+        await Promise.resolve();
+      });
+      expect(purchases.logInCalls).toEqual(["u1", "u1"]);
+    } finally {
+      unmount();
+      jest.useRealTimers();
+    }
   });
 
   it("sign-out during an in-flight logIn does not stale-latch (re-login still binds)", async () => {

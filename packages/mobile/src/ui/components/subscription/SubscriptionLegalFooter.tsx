@@ -7,7 +7,10 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { PRIVACY_POLICY_URL, TERMS_OF_USE_URL } from "@/domain/models/legal";
+import {
+  PRIVACY_POLICY_URL,
+  termsOfUseUrlForPlatform,
+} from "@/domain/models/legal";
 import { color } from "@/ui/theme/tokens";
 
 /**
@@ -93,7 +96,7 @@ export function SubscriptionLegalFooter({
 
       <View style={styles.linkRow}>
         <TouchableOpacity
-          onPress={() => open(TERMS_OF_USE_URL)}
+          onPress={() => open(termsOfUseUrlForPlatform(Platform.OS))}
           testID="subscription-terms-link"
           accessibilityRole="link"
           accessibilityLabel="Terms of Use, opens in browser"

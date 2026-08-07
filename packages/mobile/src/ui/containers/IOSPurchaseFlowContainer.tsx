@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Alert, Linking } from "react-native";
+import { Alert, Linking, Platform } from "react-native";
 import {
   SUBSCRIPTION_CATALOG,
   type CatalogTierId,
@@ -31,22 +31,24 @@ import { IOSPurchaseFlowPresenter } from "@/ui/presenters/IOSPurchaseFlowPresent
 import type { SubscriptionRailScreen } from "@/ui/presenters/IOSPurchaseFlowPresenter";
 
 /**
- * iOS RevenueCat purchase-flow container (M12, iOS rail).
+ * Native RevenueCat purchase-flow container (App Store + Google Play rails).
  *
  * Spec: specs/milestones/M12-app-store-iap/FRONTEND_BRIEF.md § Deliverables 3–6
  *
- * Owns offering fetch + purchase / restore dispatch + the Apple-managed
- * "Manage in App Store" link. Reuses the same tier catalog + current-sub
+ * Owns offering fetch + purchase / restore dispatch + store-managed
+ * subscription links. Reuses the same tier catalog + current-sub
  * shape as the Stripe Selection container so entitlement + coach-mode behave
- * identically — only the purchase mechanism differs (Apple IAP, no Stripe).
+ * identically — only the purchase mechanism differs (native IAP, no Stripe).
  *
- * Mounted by `SubscriptionSelectionContainer` when `Platform.OS === "ios"`
- * AND a purchases adapter is present.
+ * Mounted by `SubscriptionSelectionContainer` when a native purchases adapter
+ * is present.
  */
 
 /** Apple's account-level subscription management page (IAP can't be cancelled in-app). */
 export const APP_STORE_SUBSCRIPTIONS_URL =
   "https://apps.apple.com/account/subscriptions";
+export const PLAY_STORE_SUBSCRIPTIONS_URL =
+  "https://play.google.com/store/account/subscriptions?package=com.bradleyevans96.persistence";
 
 /**
  * Coach tiers with NO annual IAP product, hidden on the yearly cycle.
@@ -243,7 +245,9 @@ export function IOSPurchaseFlowContainer() {
     () => packages.map((p) => p.productId),
     [packages],
   );
-  const introEligibilityQuery = useIntroEligibility(productIds);
+  const introEligibilityQuery = useIntroEligibility(
+    Platform.OS === "ios" ? productIds : [],
+  );
   const introEligibility = introEligibilityQuery.data ?? null;
   // Per-tier (per the CURRENT cycle's product), so each card's banner reflects
   // its OWN product's eligibility — not an OR across tiers, which could show a
@@ -251,13 +255,17 @@ export function IOSPurchaseFlowContainer() {
   // presenter's card useMemos stay stable.
   const isTierTrialEligible = useCallback(
     (tier: SubscriptionTierName): boolean => {
+      if (Platform.OS === "android") return tierTrialDays(tier) !== null;
       if (introEligibility === null) return false;
       const pkg = findPackageForTier(packages, tier, billingCycle);
       return pkg !== null && (introEligibility[pkg.productId] ?? false);
     },
-    [introEligibility, packages, billingCycle],
+    [introEligibility, packages, billingCycle, tierTrialDays],
   );
-  const hasTrialEligibilityData = introEligibility !== null;
+  const hasTrialEligibilityData =
+    Platform.OS === "android"
+      ? !offeringsQuery.isLoading
+      : introEligibility !== null;
 
   const tierDisplayNames = useMemo(() => {
     const map: Record<string, string> = {};
@@ -380,7 +388,7 @@ export function IOSPurchaseFlowContainer() {
         }
         Alert.alert(
           "Couldn't Confirm Subscription",
-          "We couldn't confirm an active subscription for this Apple ID. If you believe this is an error, contact support.",
+          `We couldn't confirm an active subscription for this ${Platform.OS === "android" ? "Google Play account" : "Apple ID"}. If you believe this is an error, contact support.`,
         );
       } catch {
         Alert.alert(
@@ -397,9 +405,20 @@ export function IOSPurchaseFlowContainer() {
     }
   }, [isProcessing, restoreMutation, syncMutation, router]);
 
-  const handleManageInAppStore = useCallback(() => {
-    void Linking.openURL(APP_STORE_SUBSCRIPTIONS_URL);
-  }, []);
+  const handleManageInAppStore = useCallback(async () => {
+    const fallbackUrl =
+      Platform.OS === "android"
+        ? PLAY_STORE_SUBSCRIPTIONS_URL
+        : APP_STORE_SUBSCRIPTIONS_URL;
+    if (purchases === null || !purchases.isConfigured()) {
+      await Linking.openURL(fallbackUrl);
+      return;
+    }
+    const result = await purchases.getManagementUrl();
+    await Linking.openURL(
+      result.ok && result.value ? result.value : fallbackUrl,
+    );
+  }, [purchases]);
 
   return (
     <IOSPurchaseFlowPresenter
@@ -449,7 +468,7 @@ export function IOSPurchaseFlowContainer() {
         void introEligibilityQuery.refetch();
       }}
       onRestore={() => void handleRestore()}
-      onManageInAppStore={handleManageInAppStore}
+      onManageInAppStore={() => void handleManageInAppStore()}
     />
   );
 }

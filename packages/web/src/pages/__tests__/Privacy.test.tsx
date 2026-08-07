@@ -97,6 +97,16 @@ describe("Privacy", () => {
     ).toBeTruthy();
   });
 
+  it("discloses Health Connect alongside Apple Health", () => {
+    renderPage(<Privacy />);
+    expect(
+      screen.getByText(/data read\s+from Apple Health or Health Connect/),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(/raw Apple Health or\s+Health Connect data/),
+    ).toBeTruthy();
+  });
+
   it("names all four legal bases with their Article references", () => {
     renderPage(<Privacy />);
     expect(

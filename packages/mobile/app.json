@@ -29,24 +29,20 @@
         "foregroundImage": "./assets/icons/adaptive-icon.png",
         "monochromeImage": "./assets/icons/adaptive-icon.png"
       },
-      "edgeToEdgeEnabled": true,
       "package": "com.bradleyevans96.persistence",
       "minSdkVersion": 28,
       "permissions": [
+        "com.android.vending.BILLING",
         "android.permission.health.READ_STEPS",
-        "android.permission.health.WRITE_STEPS",
-        "android.permission.health.READ_DISTANCE",
-        "android.permission.health.WRITE_DISTANCE",
         "android.permission.health.READ_BASAL_METABOLIC_RATE",
-        "android.permission.health.WRITE_BASAL_METABOLIC_RATE",
         "android.permission.health.READ_ACTIVE_CALORIES_BURNED",
-        "android.permission.health.WRITE_ACTIVE_CALORIES_BURNED",
-        "android.permission.health.READ_EXERCISE",
-        "android.permission.health.WRITE_EXERCISE",
         "android.permission.health.READ_WEIGHT",
         "android.permission.health.WRITE_WEIGHT",
         "android.permission.health.READ_BODY_FAT",
-        "android.permission.health.WRITE_BODY_FAT"
+        "android.permission.health.WRITE_BODY_FAT",
+        "android.permission.health.READ_HEART_RATE",
+        "android.permission.health.READ_SLEEP",
+        "android.permission.health.WRITE_SLEEP"
       ]
     },
     "web": {
@@ -73,13 +69,15 @@
         "expo-build-properties",
         {
           "android": {
-            "compileSdkVersion": 35,
-            "targetSdkVersion": 34,
+            "compileSdkVersion": 36,
+            "targetSdkVersion": 36,
             "minSdkVersion": 28,
-            "buildToolsVersion": "35.0.0"
+            "buildToolsVersion": "36.0.0"
           }
         }
       ],
+      "./plugins/withHealthConnectRationale",
+      "./plugins/withAndroidStoreBilling",
       "expo-sqlite",
       [
         "expo-notifications",

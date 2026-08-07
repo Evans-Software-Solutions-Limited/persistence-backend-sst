@@ -38,12 +38,14 @@ export class MockPurchasesAdapter implements PurchasesPort {
    */
   public introEligibility: Record<string, boolean> = {};
   public nextIntroEligibilityError: PurchasesError | null = null;
+  public managementUrl: string | null = null;
 
   public configureCalls: string[] = [];
   public logInCalls: string[] = [];
   public logOutCalls = 0;
   public getPackagesCalls = 0;
   public introEligibilityCalls: string[][] = [];
+  public managementUrlCalls = 0;
   public purchaseCalls: string[] = [];
   public restoreCalls = 0;
 
@@ -88,6 +90,11 @@ export class MockPurchasesAdapter implements PurchasesPort {
       map[id] = this.introEligibility[id] ?? true;
     }
     return ok(map);
+  }
+
+  async getManagementUrl(): Promise<Result<string | null, PurchasesError>> {
+    this.managementUrlCalls += 1;
+    return ok(this.managementUrl);
   }
 
   async purchase(

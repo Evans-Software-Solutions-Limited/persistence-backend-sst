@@ -36,6 +36,9 @@ import type {
  *   the in-flight selection silently (no alert), mirroring the Stripe path.
  * - `not_configured` — `configure` hasn't run (missing SDK key in dev). The
  *   flow surfaces an inline "unavailable" state rather than crashing.
+ * - `identity_not_bound` — RevenueCat has not confirmed the authenticated
+ *   Supabase user id yet. Purchases stay blocked rather than being attributed
+ *   to an anonymous RevenueCat customer.
  * - `network` — transient connectivity / store-comms failure; retryable.
  * - `store_problem` — App Store returned an error (product not available,
  *   payment declined, etc.). Surfaced to the user.
@@ -49,6 +52,7 @@ import type {
 export type PurchasesErrorKind =
   | "cancelled"
   | "not_configured"
+  | "identity_not_bound"
   | "network"
   | "store_problem"
   | "purchase_not_allowed"
@@ -109,14 +113,14 @@ export interface ActiveEntitlement {
 
 export interface PurchasesPort {
   /**
-   * `true` once `configure` has run with a non-empty SDK key. The iOS flow
+   * `true` once `configure` has run with a non-empty SDK key. The native flow
    * gates on this so a missing dev key degrades to an inline "unavailable"
    * state instead of throwing on the first SDK call.
    */
   isConfigured(): boolean;
 
   /**
-   * Configure the SDK with the **public** iOS SDK key. Idempotent — safe to
+   * Configure the SDK with the platform's **public** SDK key. Idempotent — safe to
    * call more than once; a no-op after the first successful configure. An
    * empty key is a no-op (leaves `isConfigured()` false).
    */
@@ -150,6 +154,13 @@ export interface PurchasesPort {
   getIntroEligibility(
     productIds: string[],
   ): Promise<Result<Record<string, boolean>, PurchasesError>>;
+
+  /**
+   * Store-specific subscription-management URL for the current customer.
+   * RevenueCat derives this from the originating store, which also handles a
+   * customer using Android while their active subscription originated on iOS.
+   */
+  getManagementUrl(): Promise<Result<string | null, PurchasesError>>;
 
   /**
    * Run the native purchase sheet for `packageId` and return the resulting

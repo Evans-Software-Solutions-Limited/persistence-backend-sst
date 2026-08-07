@@ -44,7 +44,7 @@ export function Privacy() {
       <section className="legal">
         <span className="kicker c-accent legal-kicker">Legal</span>
         <h1>Privacy Policy</h1>
-        <p className="legal-updated">Last updated: 3 August 2026</p>
+        <p className="legal-updated">Last updated: 7 August 2026</p>
 
         <p>
           Persistence ("we", "us", "our") is a fitness-tracking application
@@ -109,9 +109,9 @@ export function Privacy() {
           <li>
             <strong>Health &amp; body metrics</strong> — measurements such as
             body weight and body fat, and, where you grant permission, data read
-            from Apple Health. This is special-category (health) data under UK
-            data protection law, which we process only with your explicit
-            consent.
+            from Apple Health or Health Connect. This is special-category
+            (health) data under UK data protection law, which we process only
+            with your explicit consent.
           </li>
           <li>
             <strong>Food preferences</strong> — the allergens you tell us to
@@ -287,9 +287,9 @@ export function Privacy() {
           asked to give explicit consent before any of your data is shared. With
           your consent, your coach can see: your body measurements (including
           weight and body fat), your workout sessions and personal records, your
-          nutrition totals, and your goals and habits. Your raw Apple Health
-          data (such as sleep, heart rate, and steps) is never shared with your
-          coach.
+          nutrition totals, and your goals and habits. Your raw Apple Health or
+          Health Connect data (such as sleep, heart rate, and steps) is never
+          shared with your coach.
         </p>
         <p>
           You can withdraw this consent at any time by removing your coach in
@@ -449,10 +449,12 @@ export function Privacy() {
             and the log is deleted in full with your account.
           </li>
           <li>
-            <strong>Apple Health activity and sleep data</strong> — where you
-            have granted permission for us to read it, this is kept for up to 12
-            months. Older records are deleted automatically each night, and all
-            of it is deleted with your account.
+            <strong>
+              Apple Health and Health Connect activity and sleep data
+            </strong>{" "}
+            — where you have granted permission for us to read it, this is kept
+            for up to 12 months. Older records are deleted automatically each
+            night, and all of it is deleted with your account.
           </li>
           <li>
             <strong>Records relating to a legal claim or dispute</strong> —

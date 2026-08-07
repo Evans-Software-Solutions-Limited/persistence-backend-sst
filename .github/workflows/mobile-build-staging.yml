@@ -1,4 +1,4 @@
-name: Mobile Build (Staging → TestFlight)
+name: Mobile Build (Staging → TestFlight / Play Internal)
 
 # Mirrors the backend release flow — push to main fires a TestFlight build
 # (release-please's "chore: release" PR is the gate to production via the
@@ -23,7 +23,7 @@ on:
         options: [ios, android, all]
         default: ios
       submit:
-        description: "Submit to TestFlight after build?"
+        description: "Submit to the selected test track after build?"
         required: true
         type: boolean
         default: true
@@ -37,7 +37,7 @@ permissions:
 
 jobs:
   build:
-    name: Build + Submit to TestFlight
+    name: Build + Submit to Test Track
     runs-on: ubuntu-latest
     environment: staging
     timeout-minutes: 60
@@ -57,19 +57,31 @@ jobs:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
 
-      - name: Build (EAS)
-        # --wait (not --no-wait): the Submit step below uses `eas submit --latest`,
-        # which resolves to the latest *finished* build. Without --wait the build
-        # is only queued, so --latest would error on the first-ever build (none
-        # finished) or submit the PREVIOUS build on later runs. Blocking the job
-        # until the build completes makes --latest unambiguous. Public repo =
-        # unlimited Actions minutes, and --wait consumes no extra EAS build minutes.
+      - name: Build iOS (EAS)
+        id: ios_build
+        if: ${{ github.event_name == 'push' || github.event.inputs.platform == 'ios' || github.event.inputs.platform == 'all' }}
         run: |
-          eas build \
-            --platform ${{ github.event.inputs.platform || 'ios' }} \
+          build_json="$(eas build \
+            --platform ios \
             --profile staging \
             --non-interactive \
-            --wait
+            --wait \
+            --json)"
+          build_id="$(jq -er '.[0].id' <<<"$build_json")"
+          echo "build_id=$build_id" >> "$GITHUB_OUTPUT"
+
+      - name: Build Android for Play testing (EAS)
+        id: android_build
+        if: ${{ github.event.inputs.platform == 'android' || github.event.inputs.platform == 'all' }}
+        run: |
+          build_json="$(eas build \
+            --platform android \
+            --profile play-testing \
+            --non-interactive \
+            --wait \
+            --json)"
+          build_id="$(jq -er '.[0].id' <<<"$build_json")"
+          echo "build_id=$build_id" >> "$GITHUB_OUTPUT"
 
       - name: Submit to TestFlight (iOS)
         # Push events: always submit (iOS-only by default).
@@ -81,6 +93,16 @@ jobs:
           eas submit \
             --platform ios \
             --profile staging \
-            --latest \
+            --id "${{ steps.ios_build.outputs.build_id }}" \
+            --non-interactive \
+            --wait
+
+      - name: Submit to Google Play internal testing (Android draft)
+        if: ${{ github.event.inputs.submit != 'false' && (github.event.inputs.platform == 'android' || github.event.inputs.platform == 'all') }}
+        run: |
+          eas submit \
+            --platform android \
+            --profile play-testing \
+            --id "${{ steps.android_build.outputs.build_id }}" \
             --non-interactive \
             --wait
