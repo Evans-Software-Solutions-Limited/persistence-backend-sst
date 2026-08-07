@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as Haptics from "expo-haptics";
-import { router, type Href } from "expo-router";
 import { localDayISO, loggedAtNoonUtc } from "@/shared/utils";
 import { useFuelSheets } from "@/state/fuel-sheets";
 import { useLogEntry } from "@/ui/hooks/useLogEntry";
@@ -161,10 +160,6 @@ export function MealprintSuggestSheetContainer() {
     });
   }, [online, gate, run, shape, activeDate, steer, occasion]);
 
-  const onEditPreferences = useCallback(() => {
-    router.push("/(app)/fuel/preferences?mode=editor" as Href);
-  }, []);
-
   const onRetry = useCallback(() => {
     if (!online) return;
     setDraft(null);
@@ -314,7 +309,6 @@ export function MealprintSuggestSheetContainer() {
       steer={steer}
       onSteerChange={setSteer}
       onGenerate={onGenerate}
-      onEditPreferences={onEditPreferences}
       suggestions={suggestions}
       emptyReason={suggest.result?.emptyReason ?? null}
       remaining={suggest.result?.remaining ?? null}

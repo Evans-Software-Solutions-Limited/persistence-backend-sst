@@ -272,9 +272,15 @@ export function MealprintPlanSheetContainer() {
     router.push("/(app)/fuel/plan-today" as Href);
   }, [close, flowReset]);
 
+  // ⚠ CLOSE FIRST, same reasoning as `onViewToday` above. `preferences.tsx` is
+  // a pushed screen, not a root-mounted sheet — leaving this sheet open under
+  // it renders the editor BEHIND the gorhom sheet (root-mounted sheets sit
+  // above the navigator stack), which looked like the preferences screen had
+  // failed to open at all.
   const onEditPreferences = useCallback(() => {
+    close();
     router.push("/(app)/fuel/preferences?mode=editor" as Href);
-  }, []);
+  }, [close]);
 
   const stage: MealprintPlanSheetStage =
     step === "saved"

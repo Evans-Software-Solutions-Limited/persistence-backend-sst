@@ -58,6 +58,7 @@ function render(over: Partial<FuelPresenterProps> = {}) {
     onMealprintUpgrade: jest.fn(),
     onMealprintRetry: jest.fn(),
     onMealprintPlan: jest.fn(),
+    onMealprintEditPreferences: jest.fn(),
     slots,
     waterCups: 6,
     waterGoal: 8,

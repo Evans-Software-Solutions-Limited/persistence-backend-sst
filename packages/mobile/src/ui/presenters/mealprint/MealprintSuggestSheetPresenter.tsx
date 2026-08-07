@@ -69,7 +69,6 @@ import {
   IconAlert,
   IconCheck,
   IconChevronR,
-  IconEdit,
   IconSparkles,
 } from "@/ui/components/icons";
 import type { MealSlot } from "@/domain/models/nutrition";
@@ -185,8 +184,6 @@ export type MealprintSuggestSheetProps = {
   readonly steer: string;
   readonly onSteerChange: (steer: string) => void;
   readonly onGenerate: () => void;
-  /** "Edit preferences" (allergens/likes/dislikes) — mirrors the plan sheet's link. */
-  readonly onEditPreferences: () => void;
 
   readonly suggestions: readonly MealSuggestion[];
   readonly emptyReason: MealSuggestEmptyReason | null;
@@ -393,7 +390,6 @@ function SetupStage({
   onShapeChange,
   steer,
   onSteerChange,
-  onEditPreferences,
   isToday,
 }: MealprintSuggestSheetProps) {
   const copy = OCCASION_COPY[occasion];
@@ -416,32 +412,6 @@ function SetupStage({
         <Text fontFamily="$body" fontSize={12.5} lineHeight={18} color="$text2">
           {copy.subtitle}
         </Text>
-      </View>
-
-      <View
-        flexDirection="row"
-        alignItems="center"
-        justifyContent="space-between"
-      >
-        <Label>Your preferences</Label>
-        <Pressable
-          onPress={onEditPreferences}
-          testID="mealprint-suggest-edit-preferences"
-          accessibilityRole="button"
-          accessibilityLabel="Edit food preferences"
-        >
-          <View flexDirection="row" alignItems="center" gap={4}>
-            <IconEdit size={12} color={GOLD.base} />
-            <Text
-              fontFamily="$display"
-              fontWeight="600"
-              fontSize={12}
-              color="$gold"
-            >
-              Edit
-            </Text>
-          </View>
-        </Pressable>
       </View>
 
       {/* Shape only means anything for `on_plan` — the server ignores it

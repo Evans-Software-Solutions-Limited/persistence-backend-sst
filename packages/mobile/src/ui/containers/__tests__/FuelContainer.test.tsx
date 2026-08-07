@@ -65,6 +65,7 @@ const mockMealprintEntry = {
   planProgress: null as null | { loggedCount: number; totalCount: number },
   onPress: jest.fn(),
   onPlanMyDay: jest.fn(),
+  onEditPreferences: jest.fn(),
   onUpgrade: jest.fn(),
   onRetry: jest.fn(),
 };
@@ -290,6 +291,10 @@ describe("FuelContainer", () => {
     // spec-26 Phase 2 — the second CTA and its handler.
     mockProbe.last?.onMealprintPlan();
     expect(mockMealprintEntry.onPlanMyDay).toHaveBeenCalled();
+
+    // Amendment 2026-08 § C — the offer card's Preferences link.
+    mockProbe.last?.onMealprintEditPreferences();
+    expect(mockMealprintEntry.onEditPreferences).toHaveBeenCalled();
   });
 
   it("spec-26 Phase 2 — renders a planned-but-unlogged meal as a ghost row in its mapped slot", async () => {

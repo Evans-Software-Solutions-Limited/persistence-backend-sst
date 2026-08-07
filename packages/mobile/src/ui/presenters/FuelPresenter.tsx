@@ -93,6 +93,11 @@ export type FuelPresenterProps = {
   onMealprintRetry: () => void;
   /** "Plan my day" — the entry card's second CTA. */
   onMealprintPlan: () => void;
+  /**
+   * Fuel-page-level "Preferences" entry (amendment 2026-08 § C) — the
+   * two-CTA offer card's header link. See `MealprintEntryCard`'s docstring.
+   */
+  onMealprintEditPreferences: () => void;
 
   // Meal log
   slots: readonly MealSlotVM[];
@@ -391,6 +396,7 @@ export function FuelPresenter(props: FuelPresenterProps) {
     onMealprintUpgrade,
     onMealprintRetry,
     onMealprintPlan,
+    onMealprintEditPreferences,
     slots,
     waterCups,
     waterGoal,
@@ -595,6 +601,7 @@ export function FuelPresenter(props: FuelPresenterProps) {
             planProgress={mealprintPlanProgress}
             onPress={onMealprint}
             onPlanMyDay={onMealprintPlan}
+            onEditPreferences={onMealprintEditPreferences}
             onUpgrade={onMealprintUpgrade}
             onRetry={onMealprintRetry}
           />

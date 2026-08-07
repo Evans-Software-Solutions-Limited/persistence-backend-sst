@@ -64,6 +64,13 @@ export type MealprintEntry = {
   readonly onPress: () => void;
   /** "Plan my day" — opens the plan config sheet. */
   readonly onPlanMyDay: () => void;
+  /**
+   * Fuel-page-level "Preferences" entry (amendment 2026-08 § C) — pushes the
+   * editor directly, bypassing the wizard framing. See
+   * `MealprintEntryCard`'s docstring for why this needs to be a card-level
+   * entry rather than a link inside a root-mounted sheet.
+   */
+  readonly onEditPreferences: () => void;
   readonly onUpgrade: () => void;
   readonly onRetry: () => void;
 };
@@ -143,6 +150,10 @@ export function useMealprintEntry(
     openMealprintPlan();
   }, [openMealprintPlan]);
 
+  const onEditPreferences = useCallback(() => {
+    router.push("/(app)/fuel/preferences?mode=editor" as Href);
+  }, []);
+
   const state: MealprintEntryState = !gate.isResolved
     ? stalled
       ? "stalled"
@@ -157,6 +168,7 @@ export function useMealprintEntry(
     planProgress,
     onPress,
     onPlanMyDay,
+    onEditPreferences,
     onUpgrade: gate.onUpgrade,
     onRetry,
   };

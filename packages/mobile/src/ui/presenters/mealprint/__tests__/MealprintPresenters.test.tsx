@@ -405,6 +405,63 @@ describe("MealprintEntryCard", () => {
       expect(getByTestId("mealprint-entry-cta")).toBeTruthy();
       expect(queryByTestId("mealprint-entry-plan-cta")).toBeNull();
     });
+
+    // Amendment 2026-08 § C — Fuel-page-level Preferences entry. Opening the
+    // editor from the suggest sheet's own link rendered it BEHIND the sheet
+    // (root-mounted), so the direct route now lives on this card instead.
+    it("renders a Preferences link when onEditPreferences is supplied, and fires it independently", () => {
+      const onEditPreferences = jest.fn();
+      const onPress = jest.fn();
+      const onPlanMyDay = jest.fn();
+      const { getByTestId } = renderWithTheme(
+        <MealprintEntryCard
+          {...cardProps({ onPlanMyDay, onEditPreferences })}
+        />,
+      );
+      fireEvent.press(getByTestId("mealprint-entry-preferences"));
+      expect(onEditPreferences).toHaveBeenCalledTimes(1);
+      expect(onPress).not.toHaveBeenCalled();
+      expect(onPlanMyDay).not.toHaveBeenCalled();
+    });
+
+    it("omits the Preferences link when onEditPreferences is not supplied", () => {
+      const { queryByTestId } = renderWithTheme(
+        <MealprintEntryCard {...cardProps({ onPlanMyDay: jest.fn() })} />,
+      );
+      expect(queryByTestId("mealprint-entry-preferences")).toBeNull();
+    });
+
+    it("omits the Preferences link from needsSetup — that card's own CTA already opens the same form", () => {
+      const { queryByTestId } = renderWithTheme(
+        <MealprintEntryCard
+          {...cardProps({
+            needsSetup: true,
+            onPlanMyDay: jest.fn(),
+            onEditPreferences: jest.fn(),
+          })}
+        />,
+      );
+      expect(queryByTestId("mealprint-entry-preferences")).toBeNull();
+    });
+  });
+
+  describe("the ACTIVE-plan variant — Preferences entry", () => {
+    it("does not carry the Preferences link — matches the design source, which omits it there too", () => {
+      const { queryByTestId } = renderWithTheme(
+        <MealprintEntryCard
+          {...cardProps({
+            planProgress: {
+              loggedCount: 1,
+              totalCount: 3,
+              nextMealLabel: "Chicken & rice bowl",
+              nextMealKcal: 640,
+            },
+            onEditPreferences: jest.fn(),
+          })}
+        />,
+      );
+      expect(queryByTestId("mealprint-entry-preferences")).toBeNull();
+    });
   });
 });
 
@@ -460,11 +517,16 @@ describe("MealprintPreferencesPresenter", () => {
     }
   });
 
-  it("⚠ shows the AC 1.2 disclaimer verbatim once an allergen chip is active", () => {
+  it("⚠ shows the AC 1.2 disclaimer verbatim ALWAYS, regardless of allergen selection (amendment 2026-08 § C)", () => {
+    // Deliberate divergence from AC 1.2's literal "adding a chip shows it" —
+    // the design source's `AMDisclaimer` is persistent, and a user who sets a
+    // dietary pattern or a dislike but never touches an allergen chip must
+    // still see "always check labels".
     const off = renderWithTheme(
       <MealprintPreferencesPresenter {...prefProps()} />,
     );
-    expect(off.queryByTestId("mealprint-label-check-disclaimer")).toBeNull();
+    expect(off.getByTestId("mealprint-label-check-disclaimer")).toBeTruthy();
+    expect(off.queryByText(LABEL_CHECK_COPY)).toBeTruthy();
 
     const on = renderWithTheme(
       <MealprintPreferencesPresenter
@@ -676,7 +738,6 @@ function sheetProps(
     steer: "",
     onSteerChange: jest.fn(),
     onGenerate: jest.fn(),
-    onEditPreferences: jest.fn(),
     suggestions: [],
     emptyReason: null,
     remaining: null,
@@ -835,15 +896,6 @@ describe("MealprintSuggestSheetPresenter", () => {
         "Find my best order",
       ),
     ).toBeTruthy();
-  });
-
-  it("fires onEditPreferences from the setup stage's link", () => {
-    const onEditPreferences = jest.fn();
-    const { getByTestId } = renderWithTheme(
-      <MealprintSuggestSheetPresenter {...sheetProps({ onEditPreferences })} />,
-    );
-    fireEvent.press(getByTestId("mealprint-suggest-edit-preferences"));
-    expect(onEditPreferences).toHaveBeenCalled();
   });
 
   it("renders the generating stage", () => {

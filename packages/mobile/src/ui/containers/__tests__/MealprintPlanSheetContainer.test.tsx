@@ -573,11 +573,15 @@ describe("MealprintPlanSheetContainer", () => {
     expect(mockPush).toHaveBeenCalledWith("/(app)/fuel/plan-today");
   });
 
-  it("onEditPreferences pushes the preferences editor route", async () => {
+  it("onEditPreferences closes the sheet before navigating to the preferences editor route", async () => {
     const { probe } = await mount();
     open();
     await waitFor(() => expect(probe().visible).toBe(true));
     act(() => probe().onEditPreferences());
+    // ⚠ Must CLOSE first — `preferences.tsx` is a pushed screen, not a
+    // root-mounted sheet, so leaving this sheet open renders the editor
+    // BEHIND it (root-mounted sheets sit above the navigator stack).
+    expect(useFuelSheets.getState().sheet).toBeNull();
     expect(mockPush).toHaveBeenCalledWith(
       "/(app)/fuel/preferences?mode=editor",
     );

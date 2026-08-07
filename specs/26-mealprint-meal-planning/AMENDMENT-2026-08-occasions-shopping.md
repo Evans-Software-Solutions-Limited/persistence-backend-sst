@@ -116,3 +116,31 @@ Week plans + async generation; real restaurant menu data source; saved-orders st
 - Gold accent + full-width on the Mealprint segmented controls.
 - "Edit preferences" (allergens/likes/dislikes) link on the suggest sheet — the editor
   already exists; only the plan sheet linked to it.
+
+### C.1 Follow-up (2026-08-07) — preferences entry moved to Fuel-page level; disclaimer made persistent
+
+- **Preferences editor entry point moved.** The suggest sheet's "Edit preferences" link
+  (above) opened `fuel/preferences.tsx` — a PUSHED screen — from inside a root-mounted
+  gorhom sheet, which rendered the editor BEHIND that sheet (root-mounted sheets sit
+  above the navigator stack). Fixed by moving the entry to Fuel-page level:
+  - Removed from `MealprintSuggestSheetPresenter`/`MealprintSuggestSheetContainer`
+    entirely (no replacement inside that sheet).
+  - The plan sheet's own "Edit" link (`MealprintPlanSheetContainer.onEditPreferences`)
+    now closes the sheet BEFORE navigating, mirroring `onViewToday` — same behind-the-
+    drawer defect, same fix shape.
+  - New entry on the Mealprint entry card itself (`MealprintEntryCard`): a light
+    "Preferences" link in the two-CTA offer card's header, next to the PREMIUM+ pill —
+    ports the design source's header link (`gtm-d8-anymeal-screens.jsx:87`). Deliberately
+    NOT added to the `needsSetup` card (its one CTA already opens the same form, in
+    wizard mode) or to the ACTIVE-plan variant (the design source omits it there too).
+- **Preferences-screen disclaimer made persistent.** `MealprintPreferencesPresenter`
+  previously rendered `LABEL_CHECK_COPY` only once an allergen chip was active
+  (`hasAllergenChip`), while `MEDICAL_SCOPE_COPY` rendered unconditionally — so a user who
+  set a dietary pattern or a dislike but never touched an allergen chip never saw the
+  "always check labels" line. Both lines now render together, always, in one panel
+  (`PersistentDisclaimer`), matching the design source's always-on `AMDisclaimer`
+  (`gtm-d8-anymeal-parts.jsx:220-228`). This is a **deliberate divergence from AC 1.2's
+  literal "adding a chip shows it" wording**, justified by this repo's prototype-first
+  fidelity discipline — the design source postdates AC 1.2's authoring. The equivalent
+  `labelCheckRequired`-gated rendering on the suggest/plan/draft surfaces is UNCHANGED;
+  this divergence is local to the preferences screen only.

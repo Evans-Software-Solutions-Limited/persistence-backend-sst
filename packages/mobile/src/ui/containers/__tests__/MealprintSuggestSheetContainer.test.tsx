@@ -287,16 +287,6 @@ describe("MealprintSuggestSheetContainer", () => {
     expect(api.suggestMealsCalls[0]?.occasion).toBe("cheat_meal");
   });
 
-  it("navigates to the preferences editor from onEditPreferences", async () => {
-    const { probe } = await mount();
-    open();
-    await waitFor(() => expect(probe().visible).toBe(true));
-    act(() => probe().onEditPreferences());
-    expect(mockPush).toHaveBeenCalledWith(
-      expect.stringContaining("fuel/preferences"),
-    );
-  });
-
   it("OMITS an all-whitespace steer rather than sending an empty string", async () => {
     const { api, probe } = await mount();
     open();
