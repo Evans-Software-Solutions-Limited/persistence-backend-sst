@@ -14,7 +14,7 @@
  * items off needs no connectivity at all.
  */
 
-import { Pressable } from "react-native";
+import { Pressable, ScrollView } from "react-native";
 import { Text, View } from "@tamagui/core";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Card, HeaderBar, IconBtn, Pill } from "@/ui/components/foundation";
@@ -108,7 +108,19 @@ export function ShoppingListPresenter({
           </Text>
         </View>
       ) : list === null ? null : (
-        <View flex={1} padding={16} gap={16}>
+        // ScrollView, not a plain View: a day plan across 3-5 meals explodes
+        // into 15-40 aisle rows, well past a phone viewport. A flex View would
+        // clip the lower aisles (incl. the Other bucket where non-mass items
+        // land) with no way to reach them — the recurring "won't scroll" trap.
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{
+            padding: 16,
+            gap: 16,
+            paddingBottom: insets.bottom + 24,
+          }}
+          testID="shopping-list-scroll"
+        >
           <Card
             pad={14}
             radius={14}
@@ -238,7 +250,7 @@ export function ShoppingListPresenter({
               </Card>
             </View>
           ))}
-        </View>
+        </ScrollView>
       )}
     </View>
   );
