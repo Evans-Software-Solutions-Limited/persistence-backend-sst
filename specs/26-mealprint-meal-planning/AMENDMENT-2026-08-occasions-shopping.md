@@ -26,18 +26,18 @@ deliberate decision below says otherwise.
   state, and card accents all take the occasion accent.
 - Per-occasion copy (verbatim):
 
-  | occasion | subtitle | shape shown | steer placeholder | generate label | #cards | accent |
-  |---|---|---|---|---|---|---|
-  | on_plan | Meals that keep you on target. | yes | Add a steer — "something sweet" | Suggest a meal | 3 | gold |
-  | cheat_meal | Fancy a treat? See how it fits — or the lighter swap that scratches the itch. | no | Add a steer — "something sweet" | Show me the options | 2 | ember |
-  | eating_out | Heading out? Get the best order for your remaining macros before you go. | no | Which restaurant? (optional) | Find my best order | 3 | gold |
+  | occasion   | subtitle                                                                      | shape shown | steer placeholder               | generate label      | #cards | accent |
+  | ---------- | ----------------------------------------------------------------------------- | ----------- | ------------------------------- | ------------------- | ------ | ------ |
+  | on_plan    | Meals that keep you on target.                                                | yes         | Add a steer — "something sweet" | Suggest a meal      | 3      | gold   |
+  | cheat_meal | Fancy a treat? See how it fits — or the lighter swap that scratches the itch. | no          | Add a steer — "something sweet" | Show me the options | 2      | ember  |
+  | eating_out | Heading out? Get the best order for your remaining macros before you go.      | no          | Which restaurant? (optional)    | Find my best order  | 3      | gold   |
 
 - Shape (`snack/meal/either`) only renders for `on_plan`; ignored otherwise.
 
 ### A.2 Backend contract
 
 - `POST /nutrition/ai/meal-suggest` gains `occasion: "on_plan" | "cheat_meal" |
-  "eating_out"` (default `on_plan`). `shape` stays optional (meaningful only for
+"eating_out"` (default `on_plan`). `shape` stays optional (meaningful only for
   `on_plan`).
 - `MealSuggestion` gains: `cheat: boolean`, `isOrder: boolean`, `tag: string | null`
   (`Have it` / `Smart swap` / `Snack` / `Meal`).
@@ -54,14 +54,15 @@ deliberate decision below says otherwise.
    over-budget. Relax, for `cheat_meal` only: the handler `budget_exhausted` pre-check
    and `verifyComposition` `kcal_overshoot` rejection. The "lighter swap" card still
    respects a sensible ceiling. Every other occasion keeps the existing budget rules.
-2. **Eating-out is AI-estimated, not candidate-constrained.** There is no restaurant-menu
-   dataset, and the candidate-constrained contract (design rule 1) structurally cannot
-   name real menu items. The prototype already treats these as estimates (its eating-out
-   cards carry `CHECK LABEL` + `AI EST.` pills). So for `eating_out` only, the model may
-   name off-catalogue restaurant items with AI-estimated macros, and the response
-   **forces** `containsUnverified: true` + label-check disclaimer on every eating-out
-   card. This keeps the "AI never silently owns the numbers" invariant via the existing
-   label-check safety layer — it does not remove it.
+2. **Eating-out is DEFERRED this release (Brad, 2026-08-07) — not surfaced.** A faithful
+   "best order" needs a restaurant-menu data source; without one it would mean the AI
+   inventing restaurant macros, which crosses the one line the Mealprint safety design
+   holds. So the selector ships **`on_plan` + `cheat_meal` only** (`OFFERED_OCCASIONS` in
+   `MealprintSuggestSheetPresenter`). Retained DORMANT so re-enabling is a one-line change
+   once a menu source exists: the `eating_out` value + copy, the card `isOrder`/"Save
+   order" handling, and a SAFE backend path (still candidate-constrained + forced
+   `containsUnverified` + label-check — the model does NOT invent macros). The
+   off-catalogue AI-estimated variant is a separate future decision, not shipped.
 3. **"Save order" = log via the existing draft/confirm flow.** No separate saved-orders
    store this slice; the primary action on an `isOrder` card is labelled `Save order`
    but routes through the same draft-confirm → log path as `Log it`. A real
@@ -87,8 +88,8 @@ generation exists.
   navigates to the shopping list for that day's accepted plan.
 - Screen `Shopping list`: `OFFLINE ✓` pill; a progress card (`{done}/{total}`, gold bar);
   aisle groups each a `Card` of rows; row = checkbox + item name (checked → strikethrough)
-  + right-aligned quantity. Check-off is local optimistic state (client-side; persisted
-  in SQLite so it survives offline).
+  - right-aligned quantity. Check-off is local optimistic state (client-side; persisted
+    in SQLite so it survives offline).
 - Aisle order + vocabulary: `Meat & fish` · `Dairy & eggs` · `Fruit & veg` · `Bakery` ·
   `Cupboard` · `Other` (unmapped/NULL tags).
 

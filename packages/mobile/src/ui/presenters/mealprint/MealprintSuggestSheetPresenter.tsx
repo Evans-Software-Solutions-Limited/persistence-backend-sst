@@ -69,6 +69,7 @@ import {
   IconAlert,
   IconCheck,
   IconChevronR,
+  IconEdit,
   IconSparkles,
 } from "@/ui/components/icons";
 import type { MealSlot } from "@/domain/models/nutrition";
@@ -76,15 +77,75 @@ import {
   GENERIC_PARTIAL_ENFORCEMENT_COPY,
   LABEL_CHECK_COPY,
   MAX_STEER_LENGTH,
+  SUGGEST_OCCASION_LABELS,
   SUGGEST_SHAPE_LABELS,
   partialEnforcementCopy,
   type MealprintDraft,
   type MealSuggestEmptyReason,
   type MealSuggestRemaining,
   type MealSuggestion,
+  type SuggestOccasion,
   type SuggestShape,
 } from "@/domain/models/mealprint";
 import { MealPickerPresenter } from "../MealPickerPresenter";
+
+/**
+ * Per-{@link SuggestOccasion} copy, **verbatim** from amendment
+ * `AMENDMENT-2026-08-occasions-shopping.md` § A.1's table. Do not paraphrase —
+ * same discipline as {@link LABEL_CHECK_COPY} elsewhere in this feature, even
+ * though this table is UX copy rather than a legal surface: it is the one
+ * place all three occasions' subtitle/placeholder/label triad is reviewable
+ * together, and a per-callsite rewrite would drift silently.
+ */
+const OCCASION_COPY: Readonly<
+  Record<
+    SuggestOccasion,
+    { subtitle: string; steerPlaceholder: string; generateLabel: string }
+  >
+> = {
+  on_plan: {
+    subtitle: "Meals that keep you on target.",
+    steerPlaceholder: 'Add a steer — "something sweet"',
+    generateLabel: "Suggest a meal",
+  },
+  cheat_meal: {
+    subtitle:
+      "Fancy a treat? See how it fits — or the lighter swap that scratches the itch.",
+    steerPlaceholder: 'Add a steer — "something sweet"',
+    generateLabel: "Show me the options",
+  },
+  eating_out: {
+    subtitle:
+      "Heading out? Get the best order for your remaining macros before you go.",
+    steerPlaceholder: "Which restaurant? (optional)",
+    generateLabel: "Find my best order",
+  },
+};
+
+/**
+ * Occasion → accent (amendment § A.1): `cheat_meal` is the ONE occasion that
+ * breaks from Mealprint's gold — the selector, generate button, generating
+ * state and card accents all follow this. Typed as the narrow "gold"|"ember"
+ * union rather than the full `Tone`/`SegmentedAccent` surface, so it is
+ * assignable straight into `Segmented`'s `accent`, `Btn`'s `tone` and `Card`'s
+ * `accent` alike.
+ */
+function occasionAccent(occasion: SuggestOccasion): "gold" | "ember" {
+  return occasion === "cheat_meal" ? "ember" : "gold";
+}
+
+/**
+ * Occasions surfaced in the selector. `eating_out` is intentionally omitted for
+ * this release (Brad, 2026-08-07): a faithful "best order" needs a restaurant
+ * menu data source, and without one it would mean the AI inventing restaurant
+ * macros — the one line the Mealprint safety design holds. The `SuggestOccasion`
+ * type, the per-occasion copy, the card `isOrder`/"Save order" handling and the
+ * backend path all still support it, so re-enabling is just adding it back here.
+ */
+const OFFERED_OCCASIONS = [
+  "on_plan",
+  "cheat_meal",
+] as const satisfies readonly SuggestOccasion[];
 
 /**
  * ⚠ ONE colour, TWO roles, and they must not be confused.
@@ -115,11 +176,17 @@ export type MealprintSuggestSheetProps = {
   /** True when the device is offline — replaces the setup body (Snap parity). */
   readonly offline: boolean;
 
+  /** Amendment § A.1. Gates the shape control and drives per-occasion copy + accent. */
+  readonly occasion: SuggestOccasion;
+  readonly onOccasionChange: (occasion: SuggestOccasion) => void;
+  /** Ignored server-side unless `occasion === "on_plan"`; hidden otherwise. */
   readonly shape: SuggestShape;
   readonly onShapeChange: (shape: SuggestShape) => void;
   readonly steer: string;
   readonly onSteerChange: (steer: string) => void;
   readonly onGenerate: () => void;
+  /** "Edit preferences" (allergens/likes/dislikes) — mirrors the plan sheet's link. */
+  readonly onEditPreferences: () => void;
 
   readonly suggestions: readonly MealSuggestion[];
   readonly emptyReason: MealSuggestEmptyReason | null;
@@ -197,7 +264,7 @@ export function MealprintSuggestSheetPresenter(
       ) : stage === "setup" ? (
         <SetupStage {...props} />
       ) : stage === "generating" ? (
-        <GeneratingStage />
+        <GeneratingStage occasion={props.occasion} />
       ) : stage === "results" ? (
         <ResultsStage {...props} />
       ) : stage === "draft" || stage === "added" ? (
@@ -229,18 +296,18 @@ function resolveFooter(props: MealprintSuggestSheetProps) {
   return undefined;
 }
 
-function GenerateAction({ onGenerate }: MealprintSuggestSheetProps) {
+function GenerateAction({ occasion, onGenerate }: MealprintSuggestSheetProps) {
   return (
     <Btn
       variant="filled"
-      tone="gold"
+      tone={occasionAccent(occasion)}
       size="lg"
       full
       icon={<IconSparkles size={16} />}
       onPress={onGenerate}
       testID="mealprint-generate"
     >
-      Give me ideas
+      {OCCASION_COPY[occasion].generateLabel}
     </Btn>
   );
 }
@@ -269,7 +336,9 @@ function ConfirmAction({
         ? "Added ✓"
         : confirming
           ? "Adding…"
-          : `Log ${round(draftKcal)} kcal`}
+          : draft.suggestion.isOrder
+            ? "Save order"
+            : `Log ${round(draftKcal)} kcal`}
     </Btn>
   );
 }
@@ -318,28 +387,82 @@ function OfflineStage() {
  * covered for now.
  */
 function SetupStage({
+  occasion,
+  onOccasionChange,
   shape,
   onShapeChange,
   steer,
   onSteerChange,
+  onEditPreferences,
   isToday,
 }: MealprintSuggestSheetProps) {
+  const copy = OCCASION_COPY[occasion];
+  const accent = occasionAccent(occasion);
   return (
     <View gap={18}>
       <View gap={7}>
-        <Label>What are you after</Label>
+        <Label>Occasion</Label>
         <Segmented
-          testID="mealprint-shape"
-          accent="gold"
+          testID="mealprint-occasion"
+          accent={accent}
           full
-          options={(["snack", "meal", "either"] as const).map((value) => ({
+          options={OFFERED_OCCASIONS.map((value) => ({
             value,
-            label: SUGGEST_SHAPE_LABELS[value],
+            label: SUGGEST_OCCASION_LABELS[value],
           }))}
-          value={shape}
-          onChange={(value) => onShapeChange(value as SuggestShape)}
+          value={occasion}
+          onChange={(value) => onOccasionChange(value as SuggestOccasion)}
         />
+        <Text fontFamily="$body" fontSize={12.5} lineHeight={18} color="$text2">
+          {copy.subtitle}
+        </Text>
       </View>
+
+      <View
+        flexDirection="row"
+        alignItems="center"
+        justifyContent="space-between"
+      >
+        <Label>Your preferences</Label>
+        <Pressable
+          onPress={onEditPreferences}
+          testID="mealprint-suggest-edit-preferences"
+          accessibilityRole="button"
+          accessibilityLabel="Edit food preferences"
+        >
+          <View flexDirection="row" alignItems="center" gap={4}>
+            <IconEdit size={12} color={GOLD.base} />
+            <Text
+              fontFamily="$display"
+              fontWeight="600"
+              fontSize={12}
+              color="$gold"
+            >
+              Edit
+            </Text>
+          </View>
+        </Pressable>
+      </View>
+
+      {/* Shape only means anything for `on_plan` — the server ignores it
+          otherwise, and rendering a control with no effect would be a lie
+          about what the tap does (amendment § A.1). */}
+      {occasion === "on_plan" ? (
+        <View gap={7}>
+          <Label>What are you after</Label>
+          <Segmented
+            testID="mealprint-shape"
+            accent="gold"
+            full
+            options={(["snack", "meal", "either"] as const).map((value) => ({
+              value,
+              label: SUGGEST_SHAPE_LABELS[value],
+            }))}
+            value={shape}
+            onChange={(value) => onShapeChange(value as SuggestShape)}
+          />
+        </View>
+      ) : null}
 
       <View gap={7}>
         <Label>Anything specific? (optional)</Label>
@@ -358,11 +481,13 @@ function SetupStage({
           <TextInput
             value={steer}
             onChangeText={onSteerChange}
-            placeholder="Something sweet, using the chicken I have in…"
+            placeholder={copy.steerPlaceholder}
             placeholderTextColor="#8A8A98"
             maxLength={MAX_STEER_LENGTH}
             returnKeyType="done"
-            accessibilityLabel="What you fancy"
+            accessibilityLabel={
+              occasion === "eating_out" ? "Which restaurant" : "What you fancy"
+            }
             testID="mealprint-steer-input"
             style={{
               flex: 1,
@@ -384,7 +509,8 @@ function SetupStage({
   );
 }
 
-function GeneratingStage() {
+function GeneratingStage({ occasion }: { occasion: SuggestOccasion }) {
+  const accentHex = toneHex(occasionAccent(occasion));
   return (
     <View
       alignItems="center"
@@ -399,11 +525,15 @@ function GeneratingStage() {
         borderRadius={36}
         alignItems="center"
         justifyContent="center"
-        backgroundColor="$goldDim"
+        backgroundColor={
+          occasionAccent(occasion) === "ember" ? "$emberDim" : "$goldDim"
+        }
         borderWidth={1}
-        borderColor="$goldGlow"
+        borderColor={
+          occasionAccent(occasion) === "ember" ? "$emberGlow" : "$goldGlow"
+        }
       >
-        <IconSparkles size={30} color={GOLD.base} />
+        <IconSparkles size={30} color={accentHex.base} />
       </View>
       <Text fontFamily="$display" fontWeight="700" fontSize={17} color="$text">
         Working out what fits…
@@ -678,10 +808,17 @@ function SuggestionCard({
   index: number;
   onPress: () => void;
 }) {
+  // Amendment § A.2: `cheat` cards (the indulgent "have it" / "smart swap"
+  // pair from occasion `cheat_meal`) render ember-accented — border, kcal
+  // figure, reasoning sparkle and tag pill. Every other card (on_plan,
+  // eating_out) keeps the sheet's usual gold.
+  const accentTone = suggestion.cheat ? "ember" : "gold";
+  const accentHex = toneHex(accentTone);
   return (
     <Card
       pad={14}
       radius={14}
+      accent={accentTone}
       onPress={onPress}
       testID={`mealprint-suggestion-${index}`}
       accessibilityRole="button"
@@ -696,6 +833,20 @@ function SuggestionCard({
           <View flexDirection="row">
             <Pill tone="gold" size="xs">
               UNVERIFIED
+            </Pill>
+          </View>
+        ) : null}
+
+        {/* The occasion tag (`Have it` / `Smart swap` / `Meal` / `Snack`) —
+            `null` on `on_plan`, so nothing renders there. */}
+        {suggestion.tag !== null ? (
+          <View flexDirection="row">
+            <Pill
+              tone={accentTone}
+              size="xs"
+              testID={`mealprint-suggestion-${index}-tag`}
+            >
+              {suggestion.tag}
             </Pill>
           </View>
         ) : null}
@@ -718,7 +869,7 @@ function SuggestionCard({
               fontFamily="$mono"
               fontWeight="600"
               fontSize={19}
-              color="$gold"
+              color={accentHex.base}
             >
               {round(suggestion.kcal).toLocaleString("en-US")}
             </Text>
@@ -738,7 +889,7 @@ function SuggestionCard({
             The sparkle marks it as the model's reasoning rather than our copy. */}
         <View flexDirection="row" gap={7}>
           <View paddingTop={2}>
-            <IconSparkles size={12} color={GOLD.base} />
+            <IconSparkles size={12} color={accentHex.base} />
           </View>
           <Text
             fontFamily="$body"

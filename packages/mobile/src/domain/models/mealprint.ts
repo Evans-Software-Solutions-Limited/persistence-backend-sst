@@ -904,14 +904,35 @@ export const SUGGEST_SHAPE_LABELS: Readonly<Record<SuggestShape, string>> = {
 };
 
 /**
+ * The occasion layer (amendment 2026-08, § A.1). `shape` is meaningful only
+ * for `on_plan` — `cheat_meal` always returns exactly 2 cards, `eating_out`
+ * composes restaurant-oriented "best order" cards, and the server ignores
+ * `shape` for either. Default `on_plan` on both sides.
+ */
+export type SuggestOccasion = "on_plan" | "cheat_meal" | "eating_out";
+
+export const SUGGEST_OCCASION_LABELS: Readonly<
+  Record<SuggestOccasion, string>
+> = {
+  on_plan: "On plan",
+  cheat_meal: "Cheat meal",
+  eating_out: "Eating out",
+};
+
+/**
  * `POST /nutrition/ai/meal-suggest` body. `date` is the DEVICE's local day, not
  * server time — the same reason `GET /nutrition/today` takes it: deriving it
  * server-side would give a user in NZ the wrong day's entries.
+ *
+ * `occasion` defaults to `on_plan` server-side when omitted; this client
+ * always sends it explicitly (see `MealprintSuggestSheetContainer`). For
+ * `eating_out`, `steer` carries the restaurant name rather than a craving.
  */
 export type MealSuggestInput = {
   readonly shape: SuggestShape;
   readonly date: string;
   readonly steer?: string;
+  readonly occasion?: SuggestOccasion;
 };
 
 /**
@@ -946,6 +967,22 @@ export type MealSuggestion = {
   readonly containsUnverified: boolean;
   /** TRUE when an active pattern cannot be fully enforced (halal/kosher). */
   readonly partialEnforcementOnly: boolean;
+  /**
+   * TRUE for a `cheat_meal` card (amendment § A.2). Drives the ember accent —
+   * see `MealprintSuggestSheetPresenter`'s `SuggestionCard`.
+   */
+  readonly cheat: boolean;
+  /**
+   * TRUE for an `eating_out` card. The primary action reads "Save order"
+   * instead of "Log it", but still routes through the same draft-confirm →
+   * log flow (amendment § A.3 decision 3 — no separate saved-orders store).
+   */
+  readonly isOrder: boolean;
+  /**
+   * `"Have it"` / `"Smart swap"` (cheat_meal) or `"Meal"` / `"Snack"`
+   * (eating_out); `null` for `on_plan`. Rendered as a small pill on the card.
+   */
+  readonly tag: string | null;
 };
 
 export type MealSuggestRemaining = {

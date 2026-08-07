@@ -70,6 +70,9 @@ function suggestion(over: Partial<MealSuggestion> = {}): MealSuggestion {
     fatG: 0,
     containsUnverified: true,
     partialEnforcementOnly: false,
+    cheat: false,
+    isOrder: false,
+    tag: null,
     ...over,
   };
 }

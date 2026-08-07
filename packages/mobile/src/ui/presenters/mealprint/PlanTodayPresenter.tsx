@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Card, HeaderBar, IconBtn, Pill } from "@/ui/components/foundation";
 import { toneHex } from "@/ui/components/foundation/tones";
 import {
+  IconBasket,
   IconCheck,
   IconChevronL,
   IconMedal,
@@ -49,6 +50,13 @@ export type PlanTodayProps = {
   readonly actionFailure: string | null;
   readonly onDeletePlan: () => void;
   readonly deleting: boolean;
+  /**
+   * Opens the shopping list for today's accepted plan (spec-26 amendment
+   * 2026-08 § B). Only rendered when `plan` is non-null — same gate as the
+   * delete icon, since there is nothing to shop for without an accepted
+   * plan.
+   */
+  readonly onOpenShoppingList: () => void;
   readonly testID?: string;
 };
 
@@ -68,6 +76,7 @@ export function PlanTodayPresenter({
   actionFailure,
   onDeletePlan,
   deleting,
+  onOpenShoppingList,
   testID = "plan-today-screen",
 }: PlanTodayProps) {
   const insets = useSafeAreaInsets();
@@ -91,14 +100,23 @@ export function PlanTodayPresenter({
         }
         trailing={
           plan ? (
-            <IconBtn
-              icon={<IconTrash size={16} />}
-              tone="ghost"
-              onPress={onDeletePlan}
-              disabled={deleting}
-              testID="plan-today-delete"
-              accessibilityLabel="Delete this plan"
-            />
+            <>
+              <IconBtn
+                icon={<IconBasket size={16} />}
+                tone="ghost"
+                onPress={onOpenShoppingList}
+                testID="plan-today-shopping"
+                accessibilityLabel="Shopping list"
+              />
+              <IconBtn
+                icon={<IconTrash size={16} />}
+                tone="ghost"
+                onPress={onDeletePlan}
+                disabled={deleting}
+                testID="plan-today-delete"
+                accessibilityLabel="Delete this plan"
+              />
+            </>
           ) : undefined
         }
       />

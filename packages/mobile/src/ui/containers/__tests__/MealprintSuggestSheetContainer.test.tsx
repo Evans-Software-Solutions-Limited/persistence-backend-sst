@@ -130,6 +130,9 @@ function suggestion(over: Partial<MealSuggestion> = {}): MealSuggestion {
     fatG: 0,
     containsUnverified: true,
     partialEnforcementOnly: false,
+    cheat: false,
+    isOrder: false,
+    tag: null,
     ...over,
   };
 }
@@ -252,7 +255,7 @@ describe("MealprintSuggestSheetContainer", () => {
     expect(spy).not.toHaveBeenCalled();
   });
 
-  it("sends the shape, the device's local day and a trimmed steer", async () => {
+  it("sends the shape, the device's local day, a trimmed steer and the default occasion", async () => {
     const { api, probe } = await mount();
     open();
     await waitFor(() => expect(probe().visible).toBe(true));
@@ -266,7 +269,32 @@ describe("MealprintSuggestSheetContainer", () => {
       shape: "snack",
       date: "2026-08-03",
       steer: "something sweet",
+      occasion: "on_plan",
     });
+  });
+
+  it("resets occasion to on_plan on open, and threads a changed occasion into the request", async () => {
+    const { api, probe } = await mount();
+    open();
+    await waitFor(() => expect(probe().visible).toBe(true));
+    expect(probe().occasion).toBe("on_plan");
+    act(() => probe().onOccasionChange("cheat_meal"));
+    await waitFor(() => expect(probe().occasion).toBe("cheat_meal"));
+    await act(async () => {
+      probe().onGenerate();
+    });
+    await waitFor(() => expect(api.suggestMealsCalls).toHaveLength(1));
+    expect(api.suggestMealsCalls[0]?.occasion).toBe("cheat_meal");
+  });
+
+  it("navigates to the preferences editor from onEditPreferences", async () => {
+    const { probe } = await mount();
+    open();
+    await waitFor(() => expect(probe().visible).toBe(true));
+    act(() => probe().onEditPreferences());
+    expect(mockPush).toHaveBeenCalledWith(
+      expect.stringContaining("fuel/preferences"),
+    );
   });
 
   it("OMITS an all-whitespace steer rather than sending an empty string", async () => {
@@ -563,6 +591,7 @@ describe("MealprintSuggestSheetContainer", () => {
     expect(probe().draft).toBeNull();
     expect(probe().steer).toBe("");
     expect(probe().shape).toBe("either");
+    expect(probe().occasion).toBe("on_plan");
   });
 
   it("onClose clears the store only while this sheet is the visible one", async () => {

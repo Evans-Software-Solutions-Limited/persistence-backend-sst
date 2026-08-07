@@ -69,7 +69,12 @@ import { toneTokens } from "./tones";
  */
 
 export type SegmentedOption = string | { value: string; label: string };
-export type SegmentedAccent = "primary" | "gold" | "trainer";
+/**
+ * `ember` added for Mealprint's cheat-meal occasion (amendment 2026-08 § A.1)
+ * — the only consumer today that switches a segmented control's accent based
+ * on which option is selected, rather than a fixed per-surface tone.
+ */
+export type SegmentedAccent = "primary" | "gold" | "trainer" | "ember";
 export type SegmentedSize = "sm" | "md";
 
 export type SegmentedProps = {

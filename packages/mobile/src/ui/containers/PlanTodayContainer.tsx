@@ -85,6 +85,16 @@ export function PlanTodayContainer() {
     router.back();
   }, []);
 
+  // Basket icon in the header (spec-26 amendment 2026-08 § B) — the
+  // presenter only renders it when `plan` is non-null, but the callback is
+  // guarded here too so a stray press during the brief window before the
+  // plan loads can't push a route with no `planId`.
+  const onOpenShoppingList = useCallback(() => {
+    const plan = activePlan.data;
+    if (!plan) return;
+    router.push(`/(app)/fuel/shopping?planId=${plan.id}` as never);
+  }, [activePlan]);
+
   const onLogMeal = useCallback(
     async (meal: PlanMeal) => {
       const plan = activePlan.data;
@@ -210,6 +220,7 @@ export function PlanTodayContainer() {
       actionFailure={actionFailure}
       onDeletePlan={() => void onDeletePlan()}
       deleting={deleting}
+      onOpenShoppingList={onOpenShoppingList}
     />
   );
 }

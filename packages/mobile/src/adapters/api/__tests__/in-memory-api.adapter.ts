@@ -14,6 +14,7 @@ import type {
   ReferenceEntry,
   ReferenceListKind,
 } from "@/domain/models/reference-list";
+import type { ShoppingList } from "@/domain/models/shoppingList";
 import { filterExercises } from "@/domain/services/exercise.service";
 import {
   computeConsumed,
@@ -3318,6 +3319,10 @@ export class InMemoryApiAdapter implements ApiPort {
   public logPlanMealCalls: { planId: string; mealId: string }[] = [];
   public nextLogPlanMealError: { status: number; message: string } | null =
     null;
+  /** Shopping lists keyed by plan id — seed via `.set(planId, list)`. */
+  public shoppingListByPlanId = new Map<string, ShoppingList>();
+  public nextGetShoppingListError: { status: number; message: string } | null =
+    null;
 
   async generatePlan(
     input: PlanGenerateInput,
@@ -3522,5 +3527,29 @@ export class InMemoryApiAdapter implements ApiPort {
       loggedEntryId: entryId,
       alreadyLogged: false,
     });
+  }
+
+  async getShoppingList(
+    planId: string,
+  ): Promise<Result<ShoppingList, ApiError>> {
+    if (this.nextGetShoppingListError) {
+      const { status, message } = this.nextGetShoppingListError;
+      return fail<ApiError>({
+        kind: "api",
+        code: status === 404 ? "not_found" : "server",
+        message,
+        status,
+      });
+    }
+    const list = this.shoppingListByPlanId.get(planId);
+    if (!list) {
+      return fail<ApiError>({
+        kind: "api",
+        code: "not_found",
+        message: "not_found",
+        status: 404,
+      });
+    }
+    return ok(list);
   }
 }

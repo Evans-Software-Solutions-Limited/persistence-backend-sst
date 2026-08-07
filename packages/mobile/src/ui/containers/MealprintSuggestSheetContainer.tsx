@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as Haptics from "expo-haptics";
+import { router, type Href } from "expo-router";
 import { localDayISO, loggedAtNoonUtc } from "@/shared/utils";
 import { useFuelSheets } from "@/state/fuel-sheets";
 import { useLogEntry } from "@/ui/hooks/useLogEntry";
@@ -12,6 +13,7 @@ import {
   sumKeptDraftKcal,
   type MealprintDraft,
   type MealSuggestion,
+  type SuggestOccasion,
   type SuggestShape,
 } from "@/domain/models/mealprint";
 import type { MealSlot } from "@/domain/models/nutrition";
@@ -79,6 +81,7 @@ export function MealprintSuggestSheetContainer() {
   const suggest = useMealSuggest();
   const logEntry = useLogEntry();
 
+  const [occasion, setOccasion] = useState<SuggestOccasion>("on_plan");
   const [shape, setShape] = useState<SuggestShape>("either");
   const [steer, setSteer] = useState("");
   const [draft, setDraft] = useState<MealprintDraft | null>(null);
@@ -121,6 +124,7 @@ export function MealprintSuggestSheetContainer() {
     // when `visible` flips false, and blanking the body mid-slide-down is visible.
     clearDismissTimer();
     reset();
+    setOccasion("on_plan");
     setShape("either");
     setSteer("");
     setDraft(null);
@@ -153,8 +157,13 @@ export function MealprintSuggestSheetContainer() {
       shape,
       date: activeDate,
       steer: steer.trim() === "" ? undefined : steer.trim(),
+      occasion,
     });
-  }, [online, gate, run, shape, activeDate, steer]);
+  }, [online, gate, run, shape, activeDate, steer, occasion]);
+
+  const onEditPreferences = useCallback(() => {
+    router.push("/(app)/fuel/preferences?mode=editor" as Href);
+  }, []);
 
   const onRetry = useCallback(() => {
     if (!online) return;
@@ -298,11 +307,14 @@ export function MealprintSuggestSheetContainer() {
       onClose={onSheetClose}
       stage={stage}
       offline={!online}
+      occasion={occasion}
+      onOccasionChange={setOccasion}
       shape={shape}
       onShapeChange={setShape}
       steer={steer}
       onSteerChange={setSteer}
       onGenerate={onGenerate}
+      onEditPreferences={onEditPreferences}
       suggestions={suggestions}
       emptyReason={suggest.result?.emptyReason ?? null}
       remaining={suggest.result?.remaining ?? null}

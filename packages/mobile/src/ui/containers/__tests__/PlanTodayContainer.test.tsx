@@ -18,9 +18,13 @@ jest.mock("@/ui/presenters/mealprint/PlanTodayPresenter", () => ({
 }));
 
 const mockBack = jest.fn();
+const mockPush = jest.fn();
 jest.mock("expo-router", () => ({
   __esModule: true,
-  router: { push: jest.fn(), back: (...a: unknown[]) => mockBack(...a) },
+  router: {
+    push: (...a: unknown[]) => mockPush(...a),
+    back: (...a: unknown[]) => mockBack(...a),
+  },
 }));
 
 const SESSION: AuthSession = {
@@ -128,6 +132,27 @@ describe("PlanTodayContainer", () => {
     const { probe } = await mount();
     act(() => probe().onBack());
     expect(mockBack).toHaveBeenCalled();
+  });
+
+  it("onOpenShoppingList pushes the shopping route with today's plan id", async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const plan = fixturePlan({ planDate: today });
+    const { probe } = await mount((api, storage) => {
+      storage.cacheMealPlan("user-1", plan);
+      api.activePlanByDate.set(today, plan);
+    });
+    await waitFor(() => expect(probe().plan).not.toBeNull());
+
+    act(() => probe().onOpenShoppingList());
+
+    expect(mockPush).toHaveBeenCalledWith("/(app)/fuel/shopping?planId=plan-1");
+  });
+
+  it("onOpenShoppingList is a no-op when there is no active plan", async () => {
+    const { probe } = await mount();
+    await waitFor(() => expect(probe().loading).toBe(false));
+    act(() => probe().onOpenShoppingList());
+    expect(mockPush).not.toHaveBeenCalled();
   });
 
   it("onLogMeal logs the meal and reflects it in the reloaded plan", async () => {

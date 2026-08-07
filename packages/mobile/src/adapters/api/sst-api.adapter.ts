@@ -49,6 +49,10 @@ import type {
   ReferenceListKind,
 } from "@/domain/models/reference-list";
 import {
+  parseShoppingList,
+  type ShoppingList,
+} from "@/domain/models/shoppingList";
+import {
   isLoadoutErrorCode,
   isMealPlanErrorCode,
 } from "@/domain/ports/api.port";
@@ -2010,6 +2014,15 @@ export class SSTApiAdapter implements ApiPort {
       `/nutrition/plans/${planId}/meals/${mealId}/log`,
       { method: "POST" },
     );
+  }
+
+  async getShoppingList(
+    planId: string,
+  ): Promise<Result<ShoppingList, ApiError>> {
+    const result = await this.requestEnvelope<ShoppingList>(
+      `/nutrition/plans/${planId}/shopping`,
+    );
+    return result.ok ? ok(parseShoppingList(result.value)) : result;
   }
 
   // -- Client side of the coach↔client handshake (10-trainer-features) --
