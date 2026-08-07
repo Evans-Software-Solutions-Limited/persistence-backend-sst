@@ -502,6 +502,41 @@ describe("sessionsRecordHandler", () => {
       expect(assertEntitlementMock).not.toHaveBeenCalled();
     });
 
+    it("402s an owned adapted workout after Loadout entitlement loss", async () => {
+      workoutMocks.getById.mockResolvedValueOnce({
+        id: "workout-1",
+        createdBy: "test-user-id",
+        variationKind: "loadout",
+        name: "Hotel setup",
+      });
+      assertEntitlementMock.mockResolvedValueOnce({
+        allowed: false,
+        reason: "expired",
+        currentTier: "free",
+        upgradeTo: "premium_plus",
+        upgradePriceMonthly: 19.99,
+      });
+      const app = await buildAppWithErrorHandler();
+
+      const response = await app.handle(
+        new Request("http://localhost/sessions/record", {
+          method: "POST",
+          headers: {
+            authorization: "Bearer token",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(validBody),
+        }),
+      );
+
+      expect(response.status).toBe(402);
+      expect(assertEntitlementMock).toHaveBeenCalledWith(
+        "test-user-id",
+        "loadout",
+      );
+      expect(sessionMocks.recordSession).not.toHaveBeenCalled();
+    });
+
     it("RUNS the gate when workoutId is set but the workout is owned by ANOTHER user (Inspector Brad PR #72 high-severity find — sweep #2)", async () => {
       // Regression: previously, ANY non-null workoutId bypassed the
       // gate — a free-tier user at cap could send some-other-user's

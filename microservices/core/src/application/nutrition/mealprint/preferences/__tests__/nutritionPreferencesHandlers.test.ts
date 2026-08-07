@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { PreferenceValidationError } from "../../../../repositories/nutritionPreferenceRepository";
 
 const prefMocks = { get: vi.fn(), upsert: vi.fn() };
+const assertEntitlementMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getAuthUser: vi.fn(async (h: string | undefined) =>
@@ -27,6 +28,12 @@ vi.mock("../../../../repositories/nutritionPreferenceRepository", async () => {
     ...actual,
     NutritionPreferenceRepository: vi.fn().mockImplementation(() => prefMocks),
   };
+});
+vi.mock("../../../../entitlement/assertEntitlement", async () => {
+  const actual = await vi.importActual<
+    typeof import("../../../../entitlement/assertEntitlement")
+  >("../../../../entitlement/assertEntitlement");
+  return { ...actual, assertEntitlement: assertEntitlementMock };
 });
 
 const DEFAULTS = {
@@ -73,6 +80,7 @@ function put(body: unknown, auth = true) {
 describe("nutritionPreferencesGetHandler", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    assertEntitlementMock.mockResolvedValue({ allowed: true });
     prefMocks.get.mockResolvedValue(DEFAULTS);
   });
 
@@ -82,6 +90,29 @@ describe("nutritionPreferencesGetHandler", () => {
     expect(
       (await nutritionPreferencesGetHandler.handle(get(false))).status,
     ).toBe(401);
+  });
+
+  it("402s without exposing retained preferences after entitlement loss", async () => {
+    assertEntitlementMock.mockResolvedValue({
+      allowed: false,
+      reason: "cancelled",
+      currentTier: "free",
+      upgradeTo: "premium_plus",
+      upgradePriceMonthly: 1999,
+    });
+    const { default: Elysia } = await import("elysia");
+    const { coreErrorHandler } =
+      await import("../../../../../shared/errorHandler");
+    const { nutritionPreferencesGetHandler } =
+      await import("../get/nutritionPreferencesGetHandler");
+    const app = new Elysia()
+      .use(coreErrorHandler)
+      .use(nutritionPreferencesGetHandler);
+
+    const res = await app.handle(get());
+
+    expect(res.status).toBe(402);
+    expect(prefMocks.get).not.toHaveBeenCalled();
   });
 
   it("returns the caller's preferences, scoped to their own id", async () => {
@@ -108,6 +139,7 @@ describe("nutritionPreferencesGetHandler", () => {
 describe("nutritionPreferencesSetHandler", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    assertEntitlementMock.mockResolvedValue({ allowed: true });
     prefMocks.upsert.mockResolvedValue({ ...DEFAULTS, isDefault: false });
   });
 

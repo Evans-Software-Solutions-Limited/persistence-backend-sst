@@ -86,12 +86,25 @@ Marketing-wise the two form the Premium+ "adaptive suite" pair.
 | 6   | Meal-slot mapping     | Plans support **2–6 meals/day** but the shipped Fuel log keeps its 4 fixed slots (`breakfast/lunch/snack/dinner`, DB check constraint untouched). Plan meals carry their own label ("Meal 3 · Post-gym snack") plus a `logSlot` mapping; multiple plan meals may map to one slot (the log already allows multiple entries per slot). No hot-table migration.                                                                |
 | 7   | Recipes source        | No licensed third-party recipe DB in v1. Plan meals are (a) the user's own recipes/meals, (b) AI-composed simple recipes whose ingredients are verified `foods` rows (macros computed server-side), or (c) curated system recipes (system-owned rows, same pattern as template workouts #257) added over time. Ingredient-level grounding beats recipe APIs.                                                                |
 | 8   | Reuse                 | `nutrition_targets` is the single source of targets (no separate plan targets editor — plans snapshot it). `recipes`/`meals`/`foods`/`nutrition_entries` are reused as-is. Bedrock adapter (M9.5 `aiEstimation.ts` pattern), entitlement + `ai_usage_log` ceilings (#156 pattern) reused.                                                                                                                                   |
-| 9   | Offline posture       | Generation/suggestion are **online-only** (same as Snap: AI calls never enter the sync queue). Accepted plans and preferences are cached in SQLite and fully readable offline; log-from-plan writes queue offline like any manual entry.                                                                                                                                                                                    |
+| 9   | Offline posture       | Generation/suggestion are **online-only** (same as Snap: AI calls never enter the sync queue). Accepted plans and preferences are cached in SQLite and readable offline only while the latest resolved Mealprint entitlement remains allowed; once a deny is resolved, product queries mask the cache. Log-from-plan writes queue offline like any manual entry while entitled.                                             |
 | 10  | Medical scope         | Mealprint is a lifestyle/fitness feature. **No medical-diet claims** (renal, diabetic dosing, ARFID etc.), no medical-condition inputs, and a persistent "not medical advice / consult a professional" line in the preferences flow. Dietary requirements are patterns + exclusions, not prescriptions.                                                                                                                     |
 
 ---
 
 ## User stories — P0 (foundations: preferences + data)
+
+### Subscription lifecycle (applies to every Mealprint story)
+
+- A cancellation or scheduled downgrade keeps Mealprint available until the
+  paid-through `expires_at`.
+- Once the effective entitlement is lost (expiry, failed payment, or immediate
+  downgrade), preferences, plans, planned ghost rows, shopping lists and plan
+  actions are retained but inaccessible. Every Mealprint read and mutation
+  returns `402`; mobile stops fetching, masks cached product data and redirects
+  stale deep links.
+- Restoring an eligible subscription restores the retained Mealprint data.
+  Logged Fuel entries are ordinary nutrition history and are never removed or
+  hidden merely because the source plan becomes locked.
 
 ### STORY-001: As an athlete, I want a dietary profile so every suggestion respects how I actually eat
 

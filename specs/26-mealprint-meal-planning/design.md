@@ -181,8 +181,8 @@ ownership checks on plan ids (`get(userId, id)` shape).
 
 | Endpoint                                       | Notes                                                                                                                                            |
 | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `GET /nutrition/preferences`                   | 404-free: returns defaults when no row                                                                                                           |
-| `PUT /nutrition/preferences`                   | upsert; normalises avoid/like text on write; validates vocabularies                                                                              |
+| `GET /nutrition/preferences`                   | Mealprint-entitled; 404-free and returns defaults when no row                                                                                    |
+| `PUT /nutrition/preferences`                   | Mealprint-entitled; upsert; normalises avoid/like text on write; validates vocabularies                                                          |
 | `POST /nutrition/ai/meal-suggest`              | P1. Body: `{ shape: 'snack'\|'meal'\|'either', steer?, slot? }`; reads remaining-today server-side (reuses today aggregation); pipeline § 1      |
 | `POST /nutrition/ai/plan-generate`             | P2. Body: `{ planDate, mealsPerDay?, effortLevel?, steer?, includeSaved? }`; returns draft plan payload (NOT persisted — stateless like Snap)    |
 | `POST /nutrition/plans`                        | P2. Accept: persists a reviewed draft (server re-verifies + recomputes before insert — clients never set macros), creates `ai_generated` recipes |

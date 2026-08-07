@@ -6,6 +6,15 @@ import {
 } from "@persistence/api-utils/auth/supabaseAuth";
 import { MealPlanService } from "../../../../repositories/mealPlanService";
 import { ActivePlanExistsError } from "../../../../repositories/mealPlanRepository";
+import {
+  assertEntitlement,
+  EntitlementError,
+} from "../../../../entitlement/assertEntitlement";
+
+async function requireMealprint(userId: string): Promise<void> {
+  const verdict = await assertEntitlement(userId, "meal_ai");
+  if (!verdict.allowed) throw new EntitlementError(verdict, "meal_ai");
+}
 
 /**
  * Meal-plan reads and lifecycle edits (spec-26 Phase 2, AC 4.5 / 5.4).
@@ -30,10 +39,9 @@ import { ActivePlanExistsError } from "../../../../repositories/mealPlanReposito
  * by. What IS worth asserting (and is asserted) is the OUTCOME: a request to
  * `/plans/active` reaches the active handler and never the `:id` one.
  *
- * ⚠ **Ungated, like the preferences endpoints.** The `meal_ai` paywall sits on
- * GENERATION. Reading, re-dating and deleting a plan the user already generated
- * must keep working after a subscription lapses — gating it would revoke access
- * to data they created while paying.
+ * Plan rows survive a lapse, but every product read/edit is entitlement-gated.
+ * Resubscription restores the same plan; account export/deletion remains the
+ * separate data-rights path.
  */
 export const nutritionPlansReadHandlers = new Elysia()
   .derive(async ({ headers }) => ({
@@ -46,6 +54,7 @@ export const nutritionPlansReadHandlers = new Elysia()
     "/nutrition/plans/active",
     async (ctx) => {
       const { sub: userId } = getUser(ctx);
+      await requireMealprint(userId);
       // `date` is supplied by the client, not derived from server time: "today"
       // is the DEVICE's local day. Same contract as `GET /nutrition/today` and
       // `meal-suggest` — deriving it here gives a user in NZ the wrong day.
@@ -67,6 +76,7 @@ export const nutritionPlansReadHandlers = new Elysia()
     "/nutrition/plans",
     async (ctx) => {
       const { sub: userId } = getUser(ctx);
+      await requireMealprint(userId);
       const plans = await ctx.MealPlanRepository.listRecent(
         userId,
         ctx.query.limit ?? 30,
@@ -83,6 +93,7 @@ export const nutritionPlansReadHandlers = new Elysia()
     "/nutrition/plans/:id",
     async (ctx) => {
       const { sub: userId } = getUser(ctx);
+      await requireMealprint(userId);
       const plan = await ctx.MealPlanRepository.get(userId, ctx.params.id);
       if (!plan) {
         // 404 for another user's id as well as a nonexistent one — the
@@ -99,6 +110,7 @@ export const nutritionPlansReadHandlers = new Elysia()
     "/nutrition/plans/:id",
     async (ctx) => {
       const { sub: userId } = getUser(ctx);
+      await requireMealprint(userId);
       const { id } = ctx.params;
 
       try {
@@ -149,6 +161,7 @@ export const nutritionPlansReadHandlers = new Elysia()
     "/nutrition/plans/:id",
     async (ctx) => {
       const { sub: userId } = getUser(ctx);
+      await requireMealprint(userId);
       const removed = await ctx.MealPlanRepository.remove(
         userId,
         ctx.params.id,

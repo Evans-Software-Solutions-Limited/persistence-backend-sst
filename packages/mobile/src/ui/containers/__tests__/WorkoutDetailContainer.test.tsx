@@ -107,6 +107,7 @@ const mockRouterPush = jest.fn();
 const mockUseLocalSearchParams = jest.fn(
   () => ({ id: "w-1" }) as Record<string, string>,
 );
+const mockRedirect = jest.fn((_props: { href: string }) => null);
 jest.mock("expo-router", () => ({
   __esModule: true,
   router: {
@@ -114,6 +115,7 @@ jest.mock("expo-router", () => ({
     push: (...args: unknown[]) => mockRouterPush(...args),
   },
   useLocalSearchParams: () => mockUseLocalSearchParams(),
+  Redirect: (props: { href: string }) => mockRedirect(props),
 }));
 
 describe("WorkoutDetailContainer", () => {
@@ -478,7 +480,7 @@ describe("WorkoutDetailContainer", () => {
     it("lists saved setups and opens one as its own workout", async () => {
       const api = new InMemoryApiAdapter();
       const storage = new InMemoryStorageAdapter();
-      seedOwnedWorkout(api, storage);
+      seedOwnedWorkout(api, storage, "premium_plus");
       await api.createWorkoutVariation("w-1", {
         name: "Push Day · Hotel gym",
         exercises: [{ exerciseId: "ex-bench", sortOrder: 1 }],
@@ -595,6 +597,7 @@ describe("WorkoutDetailContainer", () => {
       const workout = buildWorkout({ createdBy: "someone-else" });
       storage.cacheWorkoutDetail("user-1", workout);
       jest.spyOn(api, "getWorkout").mockResolvedValue(ok(workout));
+      api.mySubscription = subscription("premium_plus") as never;
       const variations = jest.spyOn(api, "getWorkoutVariations");
       const { findByTestId, queryByTestId } = renderWithTheme(
         withAdapters(makeAdapters(api, storage), <WorkoutDetailContainer />),
@@ -617,6 +620,7 @@ describe("WorkoutDetailContainer", () => {
       });
       storage.cacheWorkoutDetail("user-1", variation);
       jest.spyOn(api, "getWorkout").mockResolvedValue(ok(variation));
+      api.mySubscription = subscription("premium_plus") as never;
       const variations = jest.spyOn(api, "getWorkoutVariations");
 
       const { findByTestId } = renderWithTheme(
@@ -628,6 +632,83 @@ describe("WorkoutDetailContainer", () => {
       // so a gate of `!isVariation` alone is TRUE for one render and fires a
       // request whose response is then discarded.
       await waitFor(() => expect(variations).not.toHaveBeenCalled());
+    });
+
+    it("redirects a retained adapted workout and fetches no Loadout data after entitlement loss", async () => {
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      const variation = buildWorkout({
+        id: "v-locked",
+        parentWorkoutId: "w-root",
+        variationKind: "loadout",
+      });
+      storage.cacheWorkoutDetail("user-1", variation);
+      jest.spyOn(api, "getWorkout").mockResolvedValue(ok(variation));
+      api.mySubscription = subscription("free") as never;
+      const variations = jest.spyOn(api, "getWorkoutVariations");
+      const gyms = jest.spyOn(api, "getSavedGyms");
+      mockUseLocalSearchParams.mockReturnValue({ id: "v-locked" });
+
+      renderWithTheme(
+        withAdapters(makeAdapters(api, storage), <WorkoutDetailContainer />),
+      );
+
+      await waitFor(() =>
+        expect(mockRedirect).toHaveBeenCalledWith({
+          href: "/(app)/workouts/w-root",
+        }),
+      );
+      expect(variations).not.toHaveBeenCalled();
+      expect(gyms).not.toHaveBeenCalled();
+    });
+
+    it("locks an orphaned Loadout variation by variationKind, not parentWorkoutId", async () => {
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      const orphan = buildWorkout({
+        id: "v-orphan",
+        parentWorkoutId: null,
+        variationKind: "loadout",
+      });
+      storage.cacheWorkoutDetail("user-1", orphan);
+      jest.spyOn(api, "getWorkout").mockResolvedValue(ok(orphan));
+      api.mySubscription = subscription("free") as never;
+      mockUseLocalSearchParams.mockReturnValue({ id: "v-orphan" });
+
+      renderWithTheme(
+        withAdapters(makeAdapters(api, storage), <WorkoutDetailContainer />),
+      );
+
+      await waitFor(() =>
+        expect(mockRedirect).toHaveBeenCalledWith({
+          href: "/(app)/(tabs)/train",
+        }),
+      );
+    });
+
+    it("renders only the neutral pending guard for cached Loadout data while entitlement resolves", async () => {
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      const variation = buildWorkout({
+        id: "v-pending",
+        name: "Private adapted plan",
+        parentWorkoutId: "w-root",
+        variationKind: "loadout",
+      });
+      storage.cacheWorkoutDetail("user-1", variation);
+      jest.spyOn(api, "getWorkout").mockResolvedValue(ok(variation));
+      jest
+        .spyOn(api, "getMySubscription")
+        .mockReturnValue(new Promise(() => {}));
+      mockUseLocalSearchParams.mockReturnValue({ id: "v-pending" });
+
+      const { findByTestId, queryByText } = renderWithTheme(
+        withAdapters(makeAdapters(api, storage), <WorkoutDetailContainer />),
+      );
+
+      expect(await findByTestId("adaptive-suite-route-pending")).toBeTruthy();
+      expect(queryByText("Private adapted plan")).toBeNull();
+      expect(mockRedirect).not.toHaveBeenCalled();
     });
   });
 });

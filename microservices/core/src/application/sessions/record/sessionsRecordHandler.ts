@@ -140,6 +140,12 @@ export const sessionsRecordHandler = new Elysia()
             payload.workoutId,
             userId,
           );
+          if (referencedWorkout?.variationKind === "loadout") {
+            const loadoutVerdict = await assertEntitlement(userId, "loadout");
+            if (!loadoutVerdict.allowed) {
+              throw new EntitlementError(loadoutVerdict, "loadout");
+            }
+          }
           if (
             referencedWorkout !== null &&
             referencedWorkout.createdBy === userId

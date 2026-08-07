@@ -6,6 +6,10 @@ import {
 } from "@persistence/api-utils/auth/supabaseAuth";
 import { MealPlanService } from "../../../../repositories/mealPlanService";
 import { NutritionEntryService } from "../../../../repositories/nutritionEntryService";
+import {
+  assertEntitlement,
+  EntitlementError,
+} from "../../../../entitlement/assertEntitlement";
 
 /**
  * POST /nutrition/plans/:id/meals/:mealId/log — log a planned meal to the food
@@ -30,8 +34,8 @@ import { NutritionEntryService } from "../../../../repositories/nutritionEntrySe
  * created BEFORE the flip because the flip needs its id — the compensating
  * delete on a lost race is the price of that ordering, and a lost race is rare.
  *
- * ⚠ **Ungated.** Logging a plan the user already generated is not gated for the
- * same reason reads are not — the paywall is on generation.
+ * Logging a planned meal is Mealprint use and is entitlement-gated. Previously
+ * logged nutrition entries remain ordinary Fuel history after a lapse.
  */
 export const nutritionPlanMealLogHandler = new Elysia()
   .derive(async ({ headers }) => ({
@@ -44,6 +48,8 @@ export const nutritionPlanMealLogHandler = new Elysia()
     "/nutrition/plans/:id/meals/:mealId/log",
     async (ctx) => {
       const { sub: userId } = getUser(ctx);
+      const verdict = await assertEntitlement(userId, "meal_ai");
+      if (!verdict.allowed) throw new EntitlementError(verdict, "meal_ai");
       const { id: planId, mealId } = ctx.params;
 
       const plan = await ctx.MealPlanRepository.get(userId, planId);

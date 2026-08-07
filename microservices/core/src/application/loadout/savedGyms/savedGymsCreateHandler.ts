@@ -5,6 +5,10 @@ import {
   requireAuth,
   getUser,
 } from "@persistence/api-utils/auth/supabaseAuth";
+import {
+  assertEntitlement,
+  EntitlementError,
+} from "../../entitlement/assertEntitlement";
 
 /**
  * POST /saved-gyms — create a named equipment set for the caller.
@@ -32,6 +36,8 @@ export const savedGymsCreateHandler = new Elysia()
     "/saved-gyms",
     async (ctx) => {
       const { sub: userId } = getUser(ctx);
+      const verdict = await assertEntitlement(userId, "loadout");
+      if (!verdict.allowed) throw new EntitlementError(verdict, "loadout");
       const { name, equipmentTypeIds } = ctx.body;
 
       if (name.trim().length === 0) {

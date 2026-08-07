@@ -6,11 +6,13 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
  * for why: the service files construct their repositories at MODULE LOAD, so
  * a plain `const` here would not exist yet when the mock factory runs.
  */
-const { planMocks, candidateMocks, prefMocks } = vi.hoisted(() => ({
-  planMocks: { replaceMeal: vi.fn(), get: vi.fn() },
-  candidateMocks: { resolveByIds: vi.fn() },
-  prefMocks: { get: vi.fn() },
-}));
+const { planMocks, candidateMocks, prefMocks, assertEntitlementMock } =
+  vi.hoisted(() => ({
+    planMocks: { replaceMeal: vi.fn(), get: vi.fn() },
+    candidateMocks: { resolveByIds: vi.fn() },
+    prefMocks: { get: vi.fn() },
+    assertEntitlementMock: vi.fn(),
+  }));
 
 vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getAuthUser: vi.fn(async (h: string | undefined) =>
@@ -53,6 +55,12 @@ vi.mock(
 vi.mock("../../../../../repositories/nutritionPreferenceRepository", () => ({
   NutritionPreferenceRepository: vi.fn().mockImplementation(() => prefMocks),
 }));
+vi.mock("../../../../../entitlement/assertEntitlement", async () => {
+  const actual = await vi.importActual<
+    typeof import("../../../../../entitlement/assertEntitlement")
+  >("../../../../../entitlement/assertEntitlement");
+  return { ...actual, assertEntitlement: assertEntitlementMock };
+});
 
 import { nutritionPlanMealReplaceHandler } from "../nutritionPlanMealReplaceHandler";
 import { coreErrorHandler } from "../../../../../../shared/errorHandler";
@@ -137,6 +145,7 @@ async function body(res: Response): Promise<any> {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  assertEntitlementMock.mockResolvedValue({ allowed: true });
   prefMocks.get.mockResolvedValue(PREFS);
   candidateMocks.resolveByIds.mockResolvedValue([food(FOOD_A)]);
   planMocks.replaceMeal.mockResolvedValue(updatedPlan());
@@ -149,6 +158,21 @@ beforeEach(() => {
 });
 
 describe("POST /nutrition/plans/:id/meals/:mealId/replace", () => {
+  it("402s before resolving or replacing a meal after entitlement loss", async () => {
+    assertEntitlementMock.mockResolvedValue({
+      allowed: false,
+      reason: "cancelled",
+      currentTier: "free",
+      upgradeTo: "premium_plus",
+      upgradePriceMonthly: 1999,
+    });
+
+    const res = await app.handle(post(replaceBody()));
+
+    expect(res.status).toBe(402);
+    expect(candidateMocks.resolveByIds).not.toHaveBeenCalled();
+    expect(planMocks.replaceMeal).not.toHaveBeenCalled();
+  });
   it("401s without a bearer token", async () => {
     const res = await app.handle(post(replaceBody(), false));
     expect(res.status).toBe(401);

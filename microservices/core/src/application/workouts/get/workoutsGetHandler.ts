@@ -5,6 +5,10 @@ import {
   requireAuth,
   getUser,
 } from "@persistence/api-utils/auth/supabaseAuth";
+import {
+  assertEntitlement,
+  EntitlementError,
+} from "../../entitlement/assertEntitlement";
 
 export const workoutsGetHandler = new Elysia()
   .derive(async ({ headers }) => ({
@@ -23,6 +27,11 @@ export const workoutsGetHandler = new Elysia()
       if (!workout) {
         ctx.set.status = 404;
         return { error: "Workout not found" };
+      }
+
+      if (workout.variationKind === "loadout") {
+        const verdict = await assertEntitlement(userId, "loadout");
+        if (!verdict.allowed) throw new EntitlementError(verdict, "loadout");
       }
 
       return { data: workout };

@@ -5,6 +5,10 @@ import {
   requireAuth,
   getUser,
 } from "@persistence/api-utils/auth/supabaseAuth";
+import {
+  assertEntitlement,
+  EntitlementError,
+} from "../../entitlement/assertEntitlement";
 
 // GET /workouts/:id/history — per-workout completed-session stats for the
 // CALLING user, feeding the detail hero's market-standard history block
@@ -24,6 +28,16 @@ export const workoutsHistoryHandler = new Elysia()
     async (ctx) => {
       const { sub: userId } = getUser(ctx);
       const { id } = ctx.params;
+
+      const workout = await ctx.WorkoutRepository.getById(id, userId);
+      if (!workout) {
+        ctx.set.status = 404;
+        return { error: "Workout not found" };
+      }
+      if (workout.variationKind === "loadout") {
+        const verdict = await assertEntitlement(userId, "loadout");
+        if (!verdict.allowed) throw new EntitlementError(verdict, "loadout");
+      }
 
       const history = await ctx.WorkoutRepository.getHistory(id, userId);
 

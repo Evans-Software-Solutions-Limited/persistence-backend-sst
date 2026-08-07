@@ -15,6 +15,10 @@ import {
 } from "../../../../repositories/mealPlanRepository";
 import type { MealprintCandidate } from "../../../../repositories/mealprintCandidateRepository";
 import { partitionByAvoidance } from "../../safety/avoidanceFilter";
+import {
+  assertEntitlement,
+  EntitlementError,
+} from "../../../../entitlement/assertEntitlement";
 
 /**
  * POST /nutrition/plans — ACCEPT a reviewed draft plan (spec-26 AC 4.5, 5.4).
@@ -42,11 +46,8 @@ import { partitionByAvoidance } from "../../safety/avoidanceFilter";
  *   4. targets snapshot resolvable                 → 400 `no_targets`
  *   5. insert (Postgres arbitrates the day slot)   → 409 `active_plan_exists`
  *
- * ⚠ **No entitlement gate here, deliberately.** The paywall sits on GENERATION
- * (`/nutrition/ai/plan-generate` and `meal-suggest` both 402). Accepting, reading
- * and logging a plan the user already generated must keep working after a
- * subscription lapses — the same reasoning that leaves the preferences endpoints
- * ungated. Gating this would delete access to data they created while paying.
+ * Accept is gated as well as generation: a draft generated before a downgrade
+ * must not become durable after the entitlement has ended.
  *
  * ⚠ **Step 3 is a 422, not a filter.** Silently dropping a meal that fails
  * avoidance would hand back a plan quietly missing rows, which is worse than
@@ -68,6 +69,8 @@ export const nutritionPlansCreateHandler = new Elysia()
     "/nutrition/plans",
     async (ctx) => {
       const { sub: userId } = getUser(ctx);
+      const verdict = await assertEntitlement(userId, "meal_ai");
+      if (!verdict.allowed) throw new EntitlementError(verdict, "meal_ai");
       const { planDate, meals, groupId } = ctx.body;
 
       const [preferences, target] = await Promise.all([

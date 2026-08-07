@@ -13,6 +13,10 @@ import type {
 } from "../../../../repositories/mealPlanRepository";
 import type { MealprintCandidate } from "../../../../repositories/mealprintCandidateRepository";
 import { partitionByAvoidance } from "../../safety/avoidanceFilter";
+import {
+  assertEntitlement,
+  EntitlementError,
+} from "../../../../entitlement/assertEntitlement";
 
 /**
  * POST /nutrition/plans/:id/meals/:mealId/replace — persist ONE replacement
@@ -79,6 +83,8 @@ export const nutritionPlanMealReplaceHandler = new Elysia()
     "/nutrition/plans/:id/meals/:mealId/replace",
     async (ctx) => {
       const { sub: userId } = getUser(ctx);
+      const verdict = await assertEntitlement(userId, "meal_ai");
+      if (!verdict.allowed) throw new EntitlementError(verdict, "meal_ai");
       const { id: planId, mealId } = ctx.params;
       const meal = ctx.body;
 

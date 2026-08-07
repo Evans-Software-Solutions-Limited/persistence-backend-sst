@@ -42,6 +42,8 @@ export interface ListWorkoutsFilters {
   // the client only for trainers so a coach's personal My Workouts isn't
   // crowded by workouts authored for clients. Absent => unchanged behaviour.
   ownerLibraryOnly?: boolean;
+  /** Include orphaned Loadout variations promoted by a deleted parent. */
+  includeLoadoutVariations?: boolean;
 }
 
 export interface WorkoutExerciseRow {
@@ -239,6 +241,7 @@ export class WorkoutRepository {
       userId,
       db,
       filters.ownerLibraryOnly ?? false,
+      filters.includeLoadoutVariations ?? true,
     );
 
     const [rows, totalRows] = await Promise.all([
@@ -994,7 +997,15 @@ export class WorkoutRepository {
     userId: string,
     db: Db,
     ownerLibraryOnly: boolean,
+    includeLoadoutVariations: boolean,
   ) {
+    const loadoutVisibility = includeLoadoutVariations
+      ? undefined
+      : or(
+          isNull(workouts.variationKind),
+          ne(workouts.variationKind, "loadout"),
+        );
+
     if (type === "mine") {
       // `ownerLibraryOnly` de-crowds a trainer's personal My Workouts: only
       // workouts they authored AND flagged owner-visible. The client sends it
@@ -1023,8 +1034,13 @@ export class WorkoutRepository {
             eq(workouts.createdBy, userId),
             eq(workouts.showInOwnerLibrary, true),
             isNull(workouts.parentWorkoutId),
+            loadoutVisibility,
           )
-        : and(eq(workouts.createdBy, userId), isNull(workouts.parentWorkoutId));
+        : and(
+            eq(workouts.createdBy, userId),
+            isNull(workouts.parentWorkoutId),
+            loadoutVisibility,
+          );
     }
     if (type === "assigned") {
       // `show_in_library` is the coach's per-assignment "clutter the
@@ -1040,7 +1056,7 @@ export class WorkoutRepository {
             eq(workoutAssignments.showInLibrary, true),
           ),
         );
-      return inArray(workouts.id, assignedIds);
+      return and(inArray(workouts.id, assignedIds), loadoutVisibility);
     }
     // default — public, but exclude user's own publics (those show under
     // "mine"). Uses `isNull OR ne` because in SQL `NULL != value`
@@ -1051,6 +1067,7 @@ export class WorkoutRepository {
     return and(
       eq(workouts.visibility, "public"),
       or(isNull(workouts.createdBy), ne(workouts.createdBy, userId)),
+      loadoutVisibility,
       // Cluster 2a — hide a soft-deleted author's public workouts from
       // everyone else's browse/list immediately. `createdBy IS NULL`
       // (system-seeded) trivially satisfies NOT EXISTS, so this only

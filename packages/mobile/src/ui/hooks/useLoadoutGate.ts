@@ -90,7 +90,7 @@ const ACTIVE_STATUSES = new Set<MySubscription["paymentStatus"]>([
  * `expires_at` has not passed is still entitled — the user paid through that date
  * and the server honours it, so showing them a paywall would be wrong.
  */
-function isExpiresAtInFuture(expiresAt: string | null): boolean {
+function isExpiresAtInFuture(expiresAt: string | null, nowMs: number): boolean {
   if (expiresAt === null) return false;
   const parsed = Date.parse(expiresAt);
   // ⚠ EQUIVALENT MUTANT — removing this line changes no behaviour, because
@@ -101,7 +101,7 @@ function isExpiresAtInFuture(expiresAt: string | null): boolean {
   // is the only thing making "the client gate agrees with the server" checkable
   // by reading.
   if (Number.isNaN(parsed)) return false;
-  return parsed > Date.now();
+  return parsed > nowMs;
 }
 
 /**
@@ -112,14 +112,31 @@ function isExpiresAtInFuture(expiresAt: string | null): boolean {
  */
 export function computeLoadoutVerdict(
   subscription: MySubscription | null,
+  nowMs = Date.now(),
 ): boolean {
   if (subscription === null) return false;
+  const tierName = effectiveAdaptiveTier(subscription, nowMs);
   const entitled =
-    ACTIVE_STATUSES.has(subscription.paymentStatus) ||
+    (ACTIVE_STATUSES.has(subscription.paymentStatus) &&
+      (subscription.cancelledAt === null ||
+        isExpiresAtInFuture(subscription.expiresAt, nowMs))) ||
     (subscription.paymentStatus === "cancelled" &&
-      isExpiresAtInFuture(subscription.expiresAt));
+      isExpiresAtInFuture(subscription.expiresAt, nowMs));
   if (!entitled) return false;
-  return TIER_GRANTS_LOADOUT[subscription.tierName] === true;
+  return TIER_GRANTS_LOADOUT[tierName] === true;
+}
+
+function effectiveAdaptiveTier(
+  subscription: MySubscription,
+  nowMs: number,
+): SubscriptionTierName {
+  const change = subscription.scheduledChange;
+  if (change === null) return subscription.tierName;
+  const effectiveMs = Date.parse(change.effectiveAt);
+  if (Number.isNaN(effectiveMs) || effectiveMs > nowMs) {
+    return subscription.tierName;
+  }
+  return change.nextTierName;
 }
 
 export type LoadoutGate = {
@@ -174,9 +191,9 @@ export type LoadoutGate = {
   readonly refetch: () => void;
 };
 
-export function useLoadoutGate(): LoadoutGate {
-  const subQuery = useMySubscription();
-  const tiersQuery = useSubscriptionTiers();
+export function useLoadoutGate(enabled = true): LoadoutGate {
+  const subQuery = useMySubscription(enabled);
+  const tiersQuery = useSubscriptionTiers(enabled);
 
   const subscription = subQuery.data ?? null;
   const isResolved = subscription !== null || subQuery.isError;
@@ -216,11 +233,18 @@ export function useLoadoutGate(): LoadoutGate {
       (tier) => tier.tierName === LOADOUT_UPGRADE_TIER,
     );
     return {
-      allowed: computeLoadoutVerdict(subscription),
+      allowed: computeLoadoutVerdict(subscription, subQuery.accessNowMs),
       isResolved,
       upgradePriceMonthly: upgradeTier?.priceMonthly ?? null,
       onUpgrade,
       refetch,
     };
-  }, [subscription, isResolved, tiersQuery.data, onUpgrade, refetch]);
+  }, [
+    subscription,
+    isResolved,
+    subQuery.accessNowMs,
+    tiersQuery.data,
+    onUpgrade,
+    refetch,
+  ]);
 }

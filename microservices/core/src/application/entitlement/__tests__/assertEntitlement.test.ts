@@ -18,6 +18,7 @@ import {
   normaliseRole,
   parsePriceDecimal,
   pickUpgradeTier,
+  resolveEffectiveScheduledTier,
 } from "../assertEntitlement";
 
 /**
@@ -603,6 +604,62 @@ describe("assertEntitlement — loadout", () => {
     );
     expect(await assertEntitlement("user-1", "loadout")).toEqual({
       allowed: true,
+    });
+  });
+
+  it("denies an active period-end cancellation after expires_at without waiting for the webhook", async () => {
+    (getDb as any).mockReturnValue(
+      makeQueueDb([
+        PROFILE_USER,
+        [
+          {
+            tierName: "premium_plus",
+            paymentStatus: "active",
+            expiresAt: new Date(Date.now() - 60_000),
+            cancelledAt: new Date(Date.now() - 86_400_000),
+            loadoutAccess: true,
+          },
+        ],
+        FREE_TIER_NO_LOADOUT,
+      ]),
+    );
+
+    expect(await assertEntitlement("user-1", "loadout")).toMatchObject({
+      allowed: false,
+      reason: "cancelled",
+    });
+  });
+
+  it("applies a scheduled downgrade at effective_at without waiting for the webhook", async () => {
+    (getDb as any).mockReturnValue(
+      makeQueueDb([
+        PROFILE_USER,
+        [
+          {
+            tierName: "premium_plus",
+            paymentStatus: "active",
+            expiresAt: new Date(Date.now() - 60_000),
+            cancelledAt: null,
+            metadata: {
+              scheduled_change: {
+                next_tier_name: "premium",
+                effective_at: new Date(Date.now() - 60_000).toISOString(),
+              },
+            },
+            loadoutAccess: true,
+          },
+        ],
+        [{ loadoutAccess: false }],
+        PREMIUM_PLUS_TIER,
+      ]),
+    );
+
+    expect(await assertEntitlement("user-1", "loadout")).toEqual({
+      allowed: false,
+      reason: "tier",
+      currentTier: "premium",
+      upgradeTo: "premium_plus",
+      upgradePriceMonthly: 29.99,
     });
   });
 
@@ -1529,6 +1586,24 @@ describe("pure helpers", () => {
     it("returns null for trialing", () => {
       expect(classifySubscriptionStatus("trialing", null)).toBeNull();
     });
+    it("returns cancelled when an active period-end cancellation has expired", () => {
+      expect(
+        classifySubscriptionStatus(
+          "active",
+          new Date(Date.now() - 60_000),
+          new Date(Date.now() - 86_400_000),
+        ),
+      ).toBe("cancelled");
+    });
+    it("keeps an active period-end cancellation entitled before expiry", () => {
+      expect(
+        classifySubscriptionStatus(
+          "active",
+          new Date(Date.now() + 60_000),
+          new Date(),
+        ),
+      ).toBeNull();
+    });
     it("returns null for cancelled-with-future-expires_at", () => {
       expect(
         classifySubscriptionStatus("cancelled", new Date(Date.now() + 60_000)),
@@ -1589,6 +1664,42 @@ describe("pure helpers", () => {
     });
     it("returns false for invalid date strings", () => {
       expect(isExpiresInFuture("not a date")).toBe(false);
+    });
+  });
+
+  describe("resolveEffectiveScheduledTier", () => {
+    it("returns the target only once the effective instant has passed", () => {
+      expect(
+        resolveEffectiveScheduledTier({
+          scheduled_change: {
+            next_tier_name: "premium",
+            effective_at: new Date(Date.now() - 60_000).toISOString(),
+          },
+        }),
+      ).toBe("premium");
+      expect(
+        resolveEffectiveScheduledTier({
+          scheduled_change: {
+            next_tier_name: "premium",
+            effective_at: new Date(Date.now() + 60_000).toISOString(),
+          },
+        }),
+      ).toBeNull();
+    });
+
+    it("rejects malformed scheduled-change metadata", () => {
+      expect(resolveEffectiveScheduledTier(null)).toBeNull();
+      expect(
+        resolveEffectiveScheduledTier({ scheduled_change: "premium" }),
+      ).toBeNull();
+      expect(
+        resolveEffectiveScheduledTier({
+          scheduled_change: {
+            next_tier_name: "premium",
+            effective_at: "not-a-date",
+          },
+        }),
+      ).toBeNull();
     });
   });
 

@@ -21,10 +21,11 @@ import { useAdapters } from "@/ui/hooks/useAdapters";
 export const SUBSCRIPTION_TIERS_QUERY_KEY = ["subscription-tiers"] as const;
 export const SUBSCRIPTION_TIERS_STALE_TIME_MS = 10 * 60 * 1000;
 
-export function useSubscriptionTiers() {
+export function useSubscriptionTiers(enabled = true) {
   const { api } = useAdapters();
   return useQuery<SubscriptionTier[], ApiError>({
     queryKey: SUBSCRIPTION_TIERS_QUERY_KEY,
+    enabled,
     queryFn: async () => {
       const result = await api.getSubscriptionTiers();
       if (!result.ok) throw result.error;

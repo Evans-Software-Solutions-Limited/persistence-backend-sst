@@ -14,6 +14,7 @@ import { useSetWater } from "@/ui/hooks/useSetWater";
 import { useDeleteEntry } from "@/ui/hooks/useDeleteEntry";
 import { useNutritionAiGate } from "@/ui/hooks/useNutritionAiGate";
 import { useMealprintEntry } from "@/ui/hooks/useMealprintEntry";
+import { useMealprintGate } from "@/ui/hooks/useMealprintGate";
 import { useGetActiveMealPlan } from "@/ui/hooks/useGetActiveMealPlan";
 import { useLogPlanMeal } from "@/ui/hooks/useLogPlanMeal";
 import { useOnlineStatus } from "@/ui/hooks/useOnlineStatus";
@@ -103,20 +104,20 @@ export function FuelContainer() {
   const setWater = useSetWater();
   const deleteEntry = useDeleteEntry();
   const aiGate = useNutritionAiGate();
+  const mealprintGate = useMealprintGate();
   // spec-26 Phase 2 — the active plan for the VIEWED day (AC 5.1/5.3). Enabled
-  // unconditionally (unlike the Mealprint sheets' `visible`-gated reads):
-  // Fuel is the tab this feeds directly (the entry card's ACTIVE state, the
-  // ghost rows), so it needs the same "always current for this screen"
-  // treatment as `useGetFuelToday` gets, not the launch-fan-out deferral the
-  // ROOT-MOUNTED sheets need.
-  const activePlan = useGetActiveMealPlan(date);
+  // whenever Mealprint is entitled (unlike the sheets' `visible`-gated reads):
+  // Fuel is the tab this feeds directly, but entitlement loss must suppress
+  // both the network read and any cached plan rows immediately.
+  const activePlan = useGetActiveMealPlan(date, mealprintGate.allowed);
+  const visiblePlan = mealprintGate.allowed ? activePlan.data : null;
   const logPlanMeal = useLogPlanMeal();
   // spec-26 T-0.6/Phase 2 — the Mealprint card's four-state gate, first-run
   // decision, stalled retry AND (Phase 2) the active-plan progress/Today-view
   // routing. Preferences are cache-only (see the hook's docstring on launch
   // fan-out); `activePlan.data` is this container's own already-fetched read,
   // not a second subscription.
-  const mealprint = useMealprintEntry(activePlan.data);
+  const mealprint = useMealprintEntry(visiblePlan);
   const online = useOnlineStatus();
   const openScan = useFuelSheets((s) => s.openScan);
   const openQuickAdd = useFuelSheets((s) => s.openQuickAdd);
@@ -176,9 +177,9 @@ export function FuelContainer() {
     return MEAL_SLOTS.map(({ slot, label }) => {
       const entries = data?.entriesBySlot[slot] ?? [];
       const kcal = entries.reduce((a, e) => a + e.kcal, 0);
-      const ghostRows: MealGhostRowVM[] = activePlan.data
-        ? plannedMealsForSlot(activePlan.data, slot).map((meal) => ({
-            planId: activePlan.data!.id,
+      const ghostRows: MealGhostRowVM[] = visiblePlan
+        ? plannedMealsForSlot(visiblePlan, slot).map((meal) => ({
+            planId: visiblePlan.id,
             planMealId: meal.id,
             label: meal.label,
             kcal: meal.kcal,
@@ -200,7 +201,7 @@ export function FuelContainer() {
         ghostRows,
       };
     });
-  }, [data, lookups, activePlan.data]);
+  }, [data, lookups, visiblePlan]);
 
   const consumed = useMemo(
     () =>
@@ -312,7 +313,7 @@ export function FuelContainer() {
   // day aggregate (the ring/slot total update with no round trip).
   const onLogGhost = useCallback(
     (planId: string, planMealId: string, _slot: MealSlot) => {
-      const plan = activePlan.data;
+      const plan = visiblePlan;
       const meal = plan?.meals.find((m) => m.id === planMealId);
       if (!plan || plan.id !== planId || !meal) return;
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -323,12 +324,12 @@ export function FuelContainer() {
       activePlan.reload();
       fuel.reload();
     },
-    [activePlan, logPlanMeal, fuel],
+    [visiblePlan, activePlan, logPlanMeal, fuel],
   );
 
   // "Clear plan" (amendment 2026-08-fuel-plan-surfacing § B) — DELETE the
   // viewed day's active plan, confirmed already in the presenter's dialog.
-  // Direct/online, matching `deletePlan`'s ungated-but-unqueued posture (see
+  // Direct/online, matching `deletePlan`'s gated-but-unqueued posture (see
   // `api.port.ts`'s "Mealprint day plans" docstring) — the same shape as
   // `PlanTodayContainer.onDeletePlan`. Logged entries are untouched
   // (`loggedEntryId` is `ON DELETE SET NULL` server-side): only the plan and
@@ -338,7 +339,7 @@ export function FuelContainer() {
   // own reset effect).
   const [clearingPlan, setClearingPlan] = useState(false);
   const onClearPlan = useCallback(() => {
-    const plan = activePlan.data;
+    const plan = visiblePlan;
     if (!plan || clearingPlan) return;
     setClearingPlan(true);
     void api
@@ -364,14 +365,15 @@ export function FuelContainer() {
         activePlan.reload();
       })
       .finally(() => setClearingPlan(false));
-  }, [activePlan, api, storage, userId, clearingPlan]);
+  }, [visiblePlan, activePlan, api, storage, userId, clearingPlan]);
 
   // "Edit plan" — the same Today/plan-config route the ACTIVE entry-card
   // variant itself opens on tap (`useMealprintEntry`'s `onPress`); per-meal
   // swap ("replace-meal") lives there (amendment § B).
   const onEditPlan = useCallback(() => {
+    if (!mealprintGate.allowed || visiblePlan === null) return;
     router.push("/(app)/fuel/plan-today");
-  }, [router]);
+  }, [router, mealprintGate.allowed, visiblePlan]);
 
   const isLoading =
     (fuel.isRefreshing || (fuel.isStale && fuel.error === null)) &&

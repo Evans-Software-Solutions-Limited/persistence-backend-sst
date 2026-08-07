@@ -34,6 +34,8 @@ export type WorkoutSession = {
   userId: string;
   /** null for Quick Start sessions (no template). */
   workoutId: string | null;
+  /** Paid-template provenance retained independently of the parent relationship. */
+  templateVariationKind?: string | null;
   name: string;
   status: SessionStatus;
   startedAt: string;

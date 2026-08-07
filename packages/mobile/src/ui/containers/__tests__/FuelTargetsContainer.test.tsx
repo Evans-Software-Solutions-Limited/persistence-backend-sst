@@ -17,6 +17,10 @@ jest.mock("@/ui/presenters/FuelTargetsPresenter", () => ({
     return null;
   },
 }));
+const mockMealprintGate = { allowed: true };
+jest.mock("@/ui/hooks/useMealprintGate", () => ({
+  useMealprintGate: () => mockMealprintGate,
+}));
 
 const mockBack = jest.fn();
 const mockPush = jest.fn();
@@ -119,6 +123,23 @@ describe("FuelTargetsContainer", () => {
     mockBack.mockClear();
     mockPush.mockClear();
     mockFetch.mockClear();
+    mockMealprintGate.allowed = true;
+  });
+
+  it("hides the Mealprint preferences entry after entitlement loss", async () => {
+    mockMealprintGate.allowed = false;
+    const { adapters, storage } = makeAdapters();
+    storage.cacheProfilePage("user-1", makeProfilePagePayload());
+
+    render(
+      <AdapterProvider adapters={adapters}>
+        <FuelTargetsContainer />
+      </AdapterProvider>,
+    );
+
+    await waitFor(() =>
+      expect(mockProbe.last?.showFoodPreferences).toBe(false),
+    );
   });
 
   it("derives age/gender/height from the profile and computes a live kcal target", async () => {

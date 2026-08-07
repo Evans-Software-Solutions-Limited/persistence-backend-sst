@@ -7,6 +7,10 @@ jest.mock("expo-router", () => ({
   router: { push: (...args: unknown[]) => mockPush(...args) },
   useSegments: () => mockSegments,
 }));
+const mockLoadoutGate = { allowed: true, isResolved: true };
+jest.mock("@/ui/hooks/useLoadoutGate", () => ({
+  useLoadoutGate: () => mockLoadoutGate,
+}));
 
 // eslint-disable-next-line import/first
 import { renderWithTheme, waitFor } from "../../../../__tests__/test-utils";
@@ -26,6 +30,8 @@ import { StubNotificationsAdapter } from "@/adapters/notifications";
 import { InMemoryNetInfoAdapter } from "@/adapters/netInfo/__tests__/InMemoryNetInfoAdapter";
 // eslint-disable-next-line import/first
 import type { WorkoutSession } from "@/domain/models/session";
+// eslint-disable-next-line import/first
+import type { Workout } from "@/domain/models/workout";
 // eslint-disable-next-line import/first
 import type { Adapters } from "@/shared/types";
 // eslint-disable-next-line import/first
@@ -112,6 +118,23 @@ function makeSession(overrides: Partial<WorkoutSession> = {}): WorkoutSession {
   };
 }
 
+function makeLoadoutWorkout(): Workout {
+  return {
+    id: "w-1",
+    name: "Upper Body",
+    description: null,
+    createdBy: USER,
+    visibility: "private",
+    estimatedDurationMinutes: 45,
+    showInOwnerLibrary: true,
+    exercises: [],
+    createdAt: "2026-08-01T00:00:00.000Z",
+    updatedAt: "2026-08-01T00:00:00.000Z",
+    parentWorkoutId: "w-root",
+    variationKind: "loadout",
+  };
+}
+
 function renderOverlay(adapters: Adapters) {
   const Wrapper = ({ children }: { children: ReactNode }) => (
     <AdapterProvider adapters={adapters}>{children}</AdapterProvider>
@@ -128,6 +151,8 @@ beforeEach(() => {
   useDrawer.setState({ open: false });
   mockPush.mockReset();
   mockSegments = ["(app)", "(tabs)", "train"];
+  mockLoadoutGate.allowed = true;
+  mockLoadoutGate.isResolved = true;
 });
 
 it("shows the bar on a tab screen when a session is live, floating above the tab bar", async () => {
@@ -216,6 +241,23 @@ it("renders nothing when there's no active session", async () => {
   await waitFor(() => {
     expect(queryByTestId("active-workout-bar")).toBeNull();
   });
+});
+
+it("recovers pre-migration provenance and hides the session without cancelling it", async () => {
+  const { adapters, storage, auth } = makeAdapters();
+  signIn(auth);
+  storage.cacheWorkoutDetail(USER, makeLoadoutWorkout());
+  // No templateVariationKind: this is the on-device shape from before the
+  // provenance column shipped.
+  storage.cacheActiveSession(USER, makeSession());
+  mockLoadoutGate.allowed = false;
+
+  const { queryByTestId } = renderOverlay(adapters);
+  await waitFor(() => {
+    expect(queryByTestId("active-workout-bar")).toBeNull();
+    expect(queryByTestId("end-confirm-dialog")).toBeNull();
+  });
+  expect(storage.getActiveSession(USER)?.id).toBe("local-abc");
 });
 
 it("tapping the bar pushes the session route to expand", async () => {

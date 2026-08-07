@@ -5,6 +5,10 @@ import {
   requireAuth,
   getUser,
 } from "@persistence/api-utils/auth/supabaseAuth";
+import {
+  assertEntitlement,
+  EntitlementError,
+} from "../../entitlement/assertEntitlement";
 
 /**
  * GET /saved-gyms — the CALLER's saved equipment sets, newest first.
@@ -21,6 +25,8 @@ export const savedGymsListHandler = new Elysia()
   .use(SavedGymService)
   .get("/saved-gyms", async (ctx) => {
     const { sub: userId } = getUser(ctx);
+    const verdict = await assertEntitlement(userId, "loadout");
+    if (!verdict.allowed) throw new EntitlementError(verdict, "loadout");
     const gyms = await ctx.SavedGymRepository.list(userId);
     return { data: gyms };
   });

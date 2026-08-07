@@ -91,7 +91,7 @@ const ACTIVE_STATUSES = new Set<MySubscription["paymentStatus"]>([
  * date and `classifySubscriptionStatus` honours it, so showing them a paywall
  * would be wrong.
  */
-function isExpiresAtInFuture(expiresAt: string | null): boolean {
+function isExpiresAtInFuture(expiresAt: string | null, nowMs: number): boolean {
   if (expiresAt === null) return false;
   const parsed = Date.parse(expiresAt);
   // Explicit rather than incidental: `NaN > x` is already false, so this line
@@ -100,7 +100,7 @@ function isExpiresAtInFuture(expiresAt: string | null): boolean {
   // `useLoadoutGate` / `useFeatureGate` — which is the only thing that makes
   // "the client gate agrees with the server" checkable by reading.
   if (Number.isNaN(parsed)) return false;
-  return parsed > Date.now();
+  return parsed > nowMs;
 }
 
 /**
@@ -114,14 +114,31 @@ function isExpiresAtInFuture(expiresAt: string | null): boolean {
  */
 export function computeMealprintVerdict(
   subscription: MySubscription | null,
+  nowMs = Date.now(),
 ): boolean {
   if (subscription === null) return false;
+  const tierName = effectiveAdaptiveTier(subscription, nowMs);
   const entitled =
-    ACTIVE_STATUSES.has(subscription.paymentStatus) ||
+    (ACTIVE_STATUSES.has(subscription.paymentStatus) &&
+      (subscription.cancelledAt === null ||
+        isExpiresAtInFuture(subscription.expiresAt, nowMs))) ||
     (subscription.paymentStatus === "cancelled" &&
-      isExpiresAtInFuture(subscription.expiresAt));
+      isExpiresAtInFuture(subscription.expiresAt, nowMs));
   if (!entitled) return false;
-  return TIER_GRANTS_MEALPRINT[subscription.tierName] === true;
+  return TIER_GRANTS_MEALPRINT[tierName] === true;
+}
+
+function effectiveAdaptiveTier(
+  subscription: MySubscription,
+  nowMs: number,
+): SubscriptionTierName {
+  const change = subscription.scheduledChange;
+  if (change === null) return subscription.tierName;
+  const effectiveMs = Date.parse(change.effectiveAt);
+  if (Number.isNaN(effectiveMs) || effectiveMs > nowMs) {
+    return subscription.tierName;
+  }
+  return change.nextTierName;
 }
 
 export type MealprintGate = {
@@ -214,11 +231,18 @@ export function useMealprintGate(): MealprintGate {
       (tier) => tier.tierName === MEALPRINT_UPGRADE_TIER,
     );
     return {
-      allowed: computeMealprintVerdict(subscription),
+      allowed: computeMealprintVerdict(subscription, subQuery.accessNowMs),
       isResolved,
       upgradePriceMonthly: upgradeTier?.priceMonthly ?? null,
       onUpgrade,
       refetch,
     };
-  }, [subscription, isResolved, tiersQuery.data, onUpgrade, refetch]);
+  }, [
+    subscription,
+    isResolved,
+    subQuery.accessNowMs,
+    tiersQuery.data,
+    onUpgrade,
+    refetch,
+  ]);
 }

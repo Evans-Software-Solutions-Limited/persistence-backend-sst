@@ -165,6 +165,17 @@ const mockRouterBack = jest.fn();
 const mockRouterPush = jest.fn();
 const mockRouterDismissAll = jest.fn();
 const mockRouterDismiss = jest.fn();
+const mockRedirect = jest.fn((_props: { href: string }) => null);
+const mockLoadoutGate = {
+  allowed: true,
+  isResolved: true,
+  upgradePriceMonthly: null,
+  onUpgrade: jest.fn(),
+  refetch: jest.fn(),
+};
+jest.mock("@/ui/hooks/useLoadoutGate", () => ({
+  useLoadoutGate: () => mockLoadoutGate,
+}));
 const mockUseLocalSearchParams = jest.fn(() => ({}) as Record<string, string>);
 jest.mock("expo-router", () => {
   // useFocusEffect's prod implementation registers with the React
@@ -192,6 +203,7 @@ jest.mock("expo-router", () => {
       dismissAll: (...args: unknown[]) => mockRouterDismissAll(...args),
       dismiss: (...args: unknown[]) => mockRouterDismiss(...args),
     }),
+    Redirect: (props: { href: string }) => mockRedirect(props),
   };
 });
 
@@ -199,6 +211,8 @@ describe("ActiveSessionContainer", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockUseLocalSearchParams.mockReturnValue({});
+    mockLoadoutGate.allowed = true;
+    mockLoadoutGate.isResolved = true;
     useActiveWorkout.setState({ active: null, expanded: false });
   });
 
@@ -225,6 +239,68 @@ describe("ActiveSessionContainer", () => {
     const cached = storage.getActiveSession("user-1");
     expect(cached?.status).toBe("in_progress");
     expect(cached?.exercises).toHaveLength(2);
+  });
+
+  it("does not seed a new session from a retained Loadout template after entitlement loss", async () => {
+    const api = new InMemoryApiAdapter();
+    const workout = buildWorkout({
+      id: "v-locked",
+      parentWorkoutId: null,
+      variationKind: "loadout",
+    });
+    jest.spyOn(api, "getWorkout").mockResolvedValue(ok(workout));
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheWorkoutDetail("user-1", workout);
+    mockUseLocalSearchParams.mockReturnValue({ workoutId: "v-locked" });
+    mockLoadoutGate.allowed = false;
+
+    renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <ActiveSessionContainer />),
+    );
+
+    await waitFor(() =>
+      expect(mockRedirect).toHaveBeenCalledWith({
+        href: "/(app)/(tabs)/train",
+      }),
+    );
+    expect(storage.getActiveSession("user-1")).toBeNull();
+  });
+
+  it("retains but does not reopen an in-progress Loadout session after entitlement loss", async () => {
+    const api = new InMemoryApiAdapter();
+    const workout = buildWorkout({
+      id: "v-locked",
+      parentWorkoutId: "w-root",
+      variationKind: "loadout",
+    });
+    jest.spyOn(api, "getWorkout").mockResolvedValue(ok(workout));
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheWorkoutDetail("user-1", workout);
+    storage.cacheActiveSession("user-1", {
+      id: "local-loadout",
+      userId: "user-1",
+      workoutId: "v-locked",
+      templateVariationKind: "loadout",
+      name: "Adapted Push Day",
+      status: "in_progress",
+      startedAt: "2026-08-07T10:00:00.000Z",
+      completedAt: null,
+      notes: null,
+      exercises: [],
+    });
+    mockLoadoutGate.allowed = false;
+
+    const { queryByText } = renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <ActiveSessionContainer />),
+    );
+
+    await waitFor(() =>
+      expect(mockRedirect).toHaveBeenCalledWith({
+        href: "/(app)/workouts/w-root",
+      }),
+    );
+    expect(queryByText("Adapted Push Day")).toBeNull();
+    expect(storage.getActiveSession("user-1")?.id).toBe("local-loadout");
   });
 
   it("coach Start-live: promotes the client ref onto the withClient pointer and shows the trainer banner", async () => {

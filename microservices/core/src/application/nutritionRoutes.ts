@@ -86,8 +86,8 @@ export const nutritionRoutes = new Elysia()
   .use(nutritionAiExtractRecipeHandler)
   .use(nutritionAiResolveIngredientHandler)
   .use(nutritionAiEstimateRecipeHandler)
-  // Mealprint (spec-26) — preferences are NOT entitlement-gated (they are the
-  // user's own data; the paywall sits on generation). See the handlers.
+  // Mealprint (spec-26) — preferences and every plan surface are hard-gated.
+  // Rows are retained during a lapse and restored on resubscription.
   .use(nutritionPreferencesGetHandler)
   .use(nutritionPreferencesSetHandler)
   // …but the suggestion endpoint IS gated: `meal_ai` (402) → daily ceiling
@@ -100,9 +100,9 @@ export const nutritionRoutes = new Elysia()
   // tests assert a hardcoded list. Kept in step in this same PR.
   .use(nutritionAiPlanGenerateHandler)
   .use(nutritionAiPlanMealSwapHandler)
-  // Mealprint plans (spec-26 Phase 2). Accept/read/patch/delete/log are UNGATED for
-  // the same reason preferences are: the paywall is on generation, and a lapsed
-  // subscriber must keep access to plans they made while paying.
+  // Mealprint plans (spec-26 Phase 2). Accept/read/patch/delete/log all enforce
+  // `meal_ai`, including deterministic endpoints: a lapse locks product access
+  // without deleting the user's rows.
   //
   // `nutritionPlansReadHandlers` declares `/plans/active` before `/plans/:id` as
   // a readability convention — NOT a requirement: Elysia's radix router prefers a
@@ -114,8 +114,7 @@ export const nutritionRoutes = new Elysia()
   .use(nutritionPlanMealLogHandler)
   .use(nutritionPlanMealReplaceHandler)
   // Shopping list (spec-26 amendment §B) — day-scoped, computed on read from
-  // ONE accepted plan; nothing stored. Same ungated/ownership posture as the
-  // other plan reads above.
+  // ONE accepted plan; nothing stored. Same entitlement + ownership posture.
   .use(nutritionPlanShoppingHandlers)
   .use(foodsListHandler)
   .use(foodsCreateHandler)

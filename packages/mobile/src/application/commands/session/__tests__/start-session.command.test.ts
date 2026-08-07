@@ -54,6 +54,24 @@ describe("startSessionCommand", () => {
     expect(storage.getActiveSession("user-1")?.id).toBe(result.value.id);
   });
 
+  it("persists Loadout provenance independently of the parent relationship", () => {
+    const result = startSessionCommand(
+      { storage, generateId, userId: "user-1", now },
+      {
+        workout: buildWorkout({
+          parentWorkoutId: null,
+          variationKind: "loadout",
+        }),
+      },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.templateVariationKind).toBe("loadout");
+    expect(storage.getActiveSession("user-1")?.templateVariationKind).toBe(
+      "loadout",
+    );
+  });
+
   it("stamps the coach on-behalf client onto the session so it persists in SQLite (M18 Start-live)", () => {
     const result = startSessionCommand(
       { storage, generateId, userId: "coach-1", now },
@@ -95,6 +113,7 @@ describe("startSessionCommand", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.workoutId).toBeNull();
+    expect(result.value.templateVariationKind).toBeNull();
     expect(result.value.exercises).toEqual([]);
     expect(result.value.name).toBe("Quick Workout");
   });

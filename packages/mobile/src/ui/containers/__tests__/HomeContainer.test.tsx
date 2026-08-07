@@ -41,6 +41,10 @@ jest.mock("@/ui/presenters/HomePresenter", () => ({
     return null;
   },
 }));
+const mockLoadoutGate = { allowed: true };
+jest.mock("@/ui/hooks/useLoadoutGate", () => ({
+  useLoadoutGate: () => mockLoadoutGate,
+}));
 
 const mockFetch = jest.fn(async () => ({
   ok: true,
@@ -130,6 +134,7 @@ describe("HomeContainer (V2)", () => {
   beforeEach(() => {
     mockProbe.last = null;
     mockPush.mockClear();
+    mockLoadoutGate.allowed = true;
     useFuelSheets.setState({
       sheet: null,
       slot: "breakfast",
@@ -262,6 +267,47 @@ describe("HomeContainer (V2)", () => {
     // spinning the skeleton forever (regression: isStale stays true on a failed
     // fetch, so loading must gate on isRefreshing/error, not stale+empty).
     await waitFor(() => expect(mockProbe.last?.workoutsLoading).toBe(false));
+  });
+
+  it("masks cached adapted workouts after Loadout entitlement loss", async () => {
+    mockLoadoutGate.allowed = false;
+    const { adapters, api } = makeAdapters();
+    api.workouts = [
+      {
+        id: "normal",
+        name: "Push day",
+        description: null,
+        createdBy: "test-user",
+        visibility: "private",
+        estimatedDurationMinutes: 45,
+        showInOwnerLibrary: true,
+        exercises: [],
+        createdAt: "2026-08-07T10:00:00Z",
+        updatedAt: "2026-08-07T10:00:00Z",
+      },
+      {
+        id: "adapted",
+        name: "Push day · Hotel",
+        description: null,
+        createdBy: "test-user",
+        visibility: "private",
+        estimatedDurationMinutes: 45,
+        showInOwnerLibrary: true,
+        exercises: [],
+        createdAt: "2026-08-07T10:00:00Z",
+        updatedAt: "2026-08-07T10:00:00Z",
+        variationKind: "loadout",
+      },
+    ];
+
+    render(
+      <Wrapper adapters={adapters}>
+        <HomeContainer />
+      </Wrapper>,
+    );
+
+    await waitFor(() => expect(mockProbe.last?.workouts).toHaveLength(1));
+    expect(mockProbe.last?.workouts[0]?.id).toBe("normal");
   });
 
   it("escapes the loader and surfaces the error when a cold-start fetch fails", async () => {

@@ -1,6 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+const assertEntitlementMock = vi.hoisted(() => vi.fn());
+
 const workoutRepositoryMocks = {
   getById: vi.fn(),
   list: vi.fn(),
@@ -35,6 +37,12 @@ vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
 vi.mock("../../../repositories/workoutRepository", () => ({
   WorkoutRepository: vi.fn().mockImplementation(() => workoutRepositoryMocks),
 }));
+vi.mock("../../../entitlement/assertEntitlement", async () => {
+  const actual = await vi.importActual<
+    typeof import("../../../entitlement/assertEntitlement")
+  >("../../../entitlement/assertEntitlement");
+  return { ...actual, assertEntitlement: assertEntitlementMock };
+});
 
 const updatedWorkout = {
   id: "workout-1",
@@ -51,6 +59,7 @@ const updatedWorkout = {
 describe("WorkoutsUpdateHandler", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    assertEntitlementMock.mockResolvedValue({ allowed: true });
     workoutRepositoryMocks.update.mockResolvedValue(updatedWorkout);
   });
 
@@ -70,6 +79,39 @@ describe("WorkoutsUpdateHandler", () => {
   });
 
   describe("authenticated metadata updates", () => {
+    it("402s before mutating an adapted workout after entitlement loss", async () => {
+      workoutRepositoryMocks.getById.mockResolvedValue({
+        id: "workout-1",
+        variationKind: "loadout",
+      });
+      assertEntitlementMock.mockResolvedValue({
+        allowed: false,
+        reason: "cancelled",
+        currentTier: "free",
+        upgradeTo: "premium_plus",
+        upgradePriceMonthly: 1999,
+      });
+      const { default: Elysia } = await import("elysia");
+      const { coreErrorHandler } =
+        await import("../../../../shared/errorHandler");
+      const { workoutsUpdateHandler } =
+        await import("../workoutsUpdateHandler");
+      const app = new Elysia().use(coreErrorHandler).use(workoutsUpdateHandler);
+
+      const response = await app.handle(
+        new Request("http://localhost/workouts/workout-1", {
+          method: "PATCH",
+          headers: {
+            authorization: "Bearer test-token",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ name: "Locked" }),
+        }),
+      );
+
+      expect(response.status).toBe(402);
+      expect(workoutRepositoryMocks.update).not.toHaveBeenCalled();
+    });
     it("should return 200 single-envelope on success", async () => {
       const { workoutsUpdateHandler } =
         await import("../workoutsUpdateHandler");

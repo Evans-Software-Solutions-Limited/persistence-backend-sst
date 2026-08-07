@@ -95,7 +95,8 @@ generation exists.
 
 ### B.3 Backend derivation (nothing stored)
 
-- `GET /nutrition/plans/:id/shopping` (reads, ungated like other plan reads).
+- `GET /nutrition/plans/:id/shopping` (hard-gated with every other Mealprint
+  read; retained data is restored if entitlement returns).
 - Explode `meal_plan_meals` → foods: `recipeId` → `recipe_ingredients`; `mealId` →
   `meal_items`; `items` jsonb → foods directly. Scale by serving multiplier.
 - Group by `foods.categoryTags` → aisle via a NEW OFF-category-tag → aisle mapping module

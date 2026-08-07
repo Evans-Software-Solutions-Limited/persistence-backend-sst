@@ -121,7 +121,7 @@ export function useMealprintEntry(
     preferences.data === null || preferences.data.isDefault === true;
 
   const planProgress = useMemo<MealprintPlanProgress | null>(() => {
-    if (activePlan === null) return null;
+    if (!gate.allowed || activePlan === null) return null;
     const adherence = computePlanAdherence(activePlan);
     const next = nextUnloggedPlanMeal(activePlan);
     return {
@@ -130,9 +130,10 @@ export function useMealprintEntry(
       nextMealLabel: next?.label ?? null,
       nextMealKcal: next?.kcal ?? null,
     };
-  }, [activePlan]);
+  }, [activePlan, gate.allowed]);
 
   const onPress = useCallback(() => {
+    if (!gate.isResolved || !gate.allowed) return;
     // An active plan takes priority — a day already planned should open the
     // Today view, not the setup wizard or a duplicate suggest sheet.
     if (planProgress !== null) {
@@ -144,15 +145,23 @@ export function useMealprintEntry(
       return;
     }
     openMealprintSuggest();
-  }, [planProgress, needsSetup, openMealprintSuggest]);
+  }, [
+    gate.isResolved,
+    gate.allowed,
+    planProgress,
+    needsSetup,
+    openMealprintSuggest,
+  ]);
 
   const onPlanMyDay = useCallback(() => {
+    if (!gate.allowed) return;
     openMealprintPlan();
-  }, [openMealprintPlan]);
+  }, [gate.allowed, openMealprintPlan]);
 
   const onEditPreferences = useCallback(() => {
+    if (!gate.allowed) return;
     router.push("/(app)/fuel/preferences?mode=editor" as Href);
-  }, []);
+  }, [gate.allowed]);
 
   const state: MealprintEntryState = !gate.isResolved
     ? stalled

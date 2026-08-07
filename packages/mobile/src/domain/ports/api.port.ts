@@ -1200,9 +1200,9 @@ export interface ApiPort {
   //  • `generatePlan` / `swapPlanMeal` are the AI-backed, online-only,
   //    never-queued surfaces (402/429/422/503, matching `suggestMeals`).
   //  • `acceptPlan` / `getActivePlan` / `getPlan` / `patchPlan` / `deletePlan` /
-  //    `replacePlanMeal` are all UNGATED — the paywall sits on generation, so a
-  //    lapsed subscriber keeps read/write access to plans they made while
-  //    paying. None of them are queued either: a plan accept needs its
+  //    `replacePlanMeal` are all HARD-GATED — retained rows restore when the
+  //    subscriber regains entitlement, but are inaccessible during the lapse.
+  //    None of them are queued either: a plan accept needs its
   //    server-assigned id back before anything else in the flow can proceed
   //    (the Today view, logging a meal), so — unlike suggestion-logging, which
   //    reuses the already-offline-capable `POST /nutrition/entries` — this
@@ -1302,7 +1302,7 @@ export interface ApiPort {
   /**
    * `GET /nutrition/plans/:id/shopping` — the day-scoped shopping list
    * derived from an accepted plan (spec-26 amendment 2026-08, § B, STORY-006
-   * decision B.1). Reads, ungated like the other plan reads. Nothing is
+   * decision B.1). Reads are Mealprint-gated like the other plan reads. Nothing is
    * stored server-side — every call re-derives from `meal_plan_meals` — and
    * nothing is cached client-side either; the checked-off state a caller
    * layers on top is local-only (decision B.2). 404 `not_found` when `id`

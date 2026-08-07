@@ -12,6 +12,7 @@ import { useHealthSync } from "@/state/health-sync";
 import { useGetHabits } from "@/ui/hooks/useGetHabits";
 import { useRefreshOnFocus } from "@/ui/hooks/useRefreshOnFocus";
 import { useWorkouts } from "@/ui/hooks/useWorkouts";
+import { useLoadoutGate } from "@/ui/hooks/useLoadoutGate";
 import { useTrainSegment } from "@/ui/hooks/useTrainSegment";
 import { useStaggeredEntry } from "@/ui/hooks/useStaggeredEntry";
 import { useUserMode } from "@/state/user-mode";
@@ -45,6 +46,7 @@ export function HomeContainer() {
   const notificationCount = useUnreadNotificationCount();
   const habitsState = useGetHabits();
   const workoutsState = useWorkouts();
+  const loadoutGate = useLoadoutGate();
   const profile = useProfilePage();
   const openQuickAdd = useFuelSheets((s) => s.openQuickAdd);
   const setFuelActiveDate = useFuelSheets((s) => s.setDate);
@@ -52,14 +54,20 @@ export function HomeContainer() {
   // Map the user's own workouts → carousel items (home.jsx WorkoutCarousel).
   const workoutItems = useMemo(
     () =>
-      workoutsState.mine.workouts.slice(0, 8).map((w) => ({
-        id: w.id,
-        title: w.name,
-        mins: w.estimatedDurationMinutes,
-        sub: w.description ?? "",
-        chips: [] as string[],
-      })),
-    [workoutsState.mine.workouts],
+      workoutsState.mine.workouts
+        .filter(
+          (workout) =>
+            loadoutGate.allowed || workout.variationKind !== "loadout",
+        )
+        .slice(0, 8)
+        .map((w) => ({
+          id: w.id,
+          title: w.name,
+          mins: w.estimatedDurationMinutes,
+          sub: w.description ?? "",
+          chips: [] as string[],
+        })),
+    [loadoutGate.allowed, workoutsState.mine.workouts],
   );
   // Loading posture: actively fetching, OR stale with no error yet (cold
   // start). Crucially NOT "stale && empty" — useWorkouts leaves `isStale: true`

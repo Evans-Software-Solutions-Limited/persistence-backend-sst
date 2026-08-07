@@ -32,6 +32,7 @@ import { useGetNutritionTarget } from "@/ui/hooks/useGetNutritionTarget";
 import { useGetBodyMeasurements } from "@/ui/hooks/useGetBodyMeasurements";
 import { useSetTargets } from "@/ui/hooks/useSetTargets";
 import { useMealprintPreferences } from "@/ui/hooks/useMealprintPreferences";
+import { useMealprintGate } from "@/ui/hooks/useMealprintGate";
 import { summarisePreferences } from "@/domain/models/mealprint";
 import { useFuelSheets } from "@/state/fuel-sheets";
 import { computeAge, localDayISO, preferredVolumeUnit } from "@/shared/utils";
@@ -68,10 +69,10 @@ export function FuelTargetsContainer() {
   const target = useGetNutritionTarget();
   const body = useGetBodyMeasurements(30);
   const { mutate: setTargets } = useSetTargets();
-  // spec-26 AC 1.1 — the "Food preferences" row's summary. Fetch-enabled here (and
-  // NOT on the Fuel tab's entry card) because this is a pushed route the user
-  // deliberately opened, so one request is a fair cost for an accurate summary.
-  const mealprintPreferences = useMealprintPreferences(true);
+  const mealprintGate = useMealprintGate();
+  // spec-26 AC 1.1 — the "Food preferences" row's summary. Fetch only while
+  // Mealprint remains entitled; cached preferences are masked during a lapse.
+  const mealprintPreferences = useMealprintPreferences(mealprintGate.allowed);
   const foodPreferencesSummary = summarisePreferences(
     mealprintPreferences.data,
   );
@@ -305,6 +306,7 @@ export function FuelTargetsContainer() {
       onWaterCupsChange={onWaterCupsChange}
       volumeUnit={volumeUnit}
       foodPreferencesSummary={foodPreferencesSummary}
+      showFoodPreferences={mealprintGate.allowed}
       onOpenFoodPreferences={() => router.push("/(app)/fuel/preferences")}
     />
   );

@@ -170,6 +170,34 @@ describe("useMySubscription", () => {
     expect(result.current.data?.tierName).toBe("premium");
   });
 
+  it("recomputes and refreshes at a paid-through boundary", async () => {
+    const { adapters, api, auth } = makeAdapters();
+    api.mySubscription = {
+      ...SAMPLE_SUB,
+      cancelledAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 75).toISOString(),
+    };
+    const fetchSubscription = jest.spyOn(api, "getMySubscription");
+    auth.currentSession = {
+      accessToken: "tok",
+      refreshToken: "rtok",
+      userId: "u-1",
+      email: "x@y.com",
+      expiresAt: Date.now() + 3600_000,
+    };
+    const { result } = renderHook(() => useMySubscription(), {
+      wrapper: wrapper(adapters, makeQueryClient()),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    const beforeBoundary = result.current.accessNowMs;
+    await waitFor(
+      () => expect(result.current.accessNowMs).toBeGreaterThan(beforeBoundary),
+      { timeout: 1_000 },
+    );
+    expect(fetchSubscription.mock.calls.length).toBeGreaterThan(1);
+  });
+
   it("uses the documented query-key prefix + 2-minute stale-time + helper builder", () => {
     expect(USER_SUBSCRIPTION_QUERY_KEY_PREFIX).toBe("user-subscription");
     expect(USER_SUBSCRIPTION_STALE_TIME_MS).toBe(2 * 60 * 1000);
