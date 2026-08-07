@@ -11,6 +11,30 @@ say so and fix this file.
 
 ## ▶ START HERE — next session (rewritten 2026-08-04, post-Mealprint-merge)
 
+### 🟢 2026-08-07 — MEALPRINT PORTION TRUST BOUNDARY
+
+Branch `codex/mealprint-portion-guardrails` fixes the second half of the staging
+Mealprint incident: corrected kcal values exposed that OFF's 100 g nutrition
+reference had been presented to the model as a real serving, and a suggestion
+could consume the user's whole remaining-day allowance as one meal.
+
+- reference-only OFF rows (no positive `serving_quantity`) are excluded from AI
+  pools but remain searchable/loggable;
+- candidates carry declared/saved/reference provenance plus a two-serving AI cap;
+- the draft carries its selected meal count through swap/accept and the mobile
+  serving stepper is capped to the same two-serving server policy;
+- suggestion, day-plan and swap prompts now receive server-derived per-item and
+  per-meal ceilings (including the lower snack ceiling), with the same policy
+  enforced after model output and again at durable plan accept/replace writes;
+- the exact corrected lentil/rice/curry plate (~1,036 kcal) is a regression and
+  fails the 608 kcal one-plate ceiling for a 1,800 kcal / four-meal day;
+- plan meals fail soft as `flaggedPortion` (swap required); swaps fail 422;
+  cheat `Have it` retains its positional remaining-budget exemption within a
+  separate generous one-plate ceiling.
+
+No migration or seed is required. Existing OFF energy reconciliation remains
+unchanged.
+
 ### 🟢 2026-08-07 — ADAPTIVE-SUITE SUBSCRIPTION-LAPSE LOCKS
 
 `main` now includes #368 (OFF tag seed repair), #369 (Mealprint occasions,

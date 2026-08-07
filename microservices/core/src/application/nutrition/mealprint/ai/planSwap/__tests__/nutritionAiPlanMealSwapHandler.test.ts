@@ -93,6 +93,8 @@ function candidate(id: string, over: Record<string, unknown> = {}) {
     carbsG: 40,
     fatG: 12,
     servingLabel: "1 serving",
+    servingBasis: "declared" as const,
+    maxServings: 2,
     allergenTags: [] as string[] | null,
     categoryTags: null,
     isOwn: false,
@@ -172,6 +174,35 @@ describe("POST /nutrition/ai/plan-meal-swap", () => {
     expect(arg.target.kcal).toBe(600);
     expect(arg.target.proteinG).toBe(40);
     expect(arg.mealsPerDay).toBe(1);
+    expect(arg.maxMealKcal).toBe(600);
+  });
+
+  it("rejects an implausibly large replacement instead of returning it", async () => {
+    composeDayPlanMock.mockResolvedValue({
+      meals: [
+        {
+          name: "Too large",
+          reason: "r",
+          logSlot: "dinner",
+          items: [{ candidateId: "c1", servings: 2 }],
+        },
+      ],
+      usage: { modelId: "m", latencyMs: 1, inputTokens: 1, outputTokens: 1 },
+    });
+    const res = await app.handle(post());
+    expect(res.status).toBe(422);
+    expect(await body(res)).toEqual({ error: "ai_unreadable" });
+  });
+
+  it("uses the lower snack ceiling for a snack replacement", async () => {
+    candidateMocks.listCuratedCandidates.mockResolvedValue([
+      candidate("c1", { kcal: 550 }),
+    ]);
+    const res = await app.handle(post({ logSlot: "snack", mealsPerDay: 4 }));
+
+    expect(composeDayPlanMock.mock.calls[0]![0].maxMealKcal).toBe(375);
+    expect(res.status).toBe(422);
+    expect(await body(res)).toEqual({ error: "ai_unreadable" });
   });
 
   it("keeps the slot the client asked to fill, not the model's choice", async () => {

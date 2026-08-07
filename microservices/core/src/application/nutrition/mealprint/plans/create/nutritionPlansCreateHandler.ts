@@ -19,6 +19,7 @@ import {
   assertEntitlement,
   EntitlementError,
 } from "../../../../entitlement/assertEntitlement";
+import { assessCompositionPortion, maxMealKcal } from "../../ai/portionPolicy";
 
 /**
  * POST /nutrition/plans — ACCEPT a reviewed draft plan (spec-26 AC 4.5, 5.4).
@@ -43,8 +44,9 @@ import {
  *   1. auth                                        → 401
  *   2. every referenced id resolves                → 400 `unresolvable_items`
  *   3. avoidance re-run on the resolved rows       → 422 `avoidance_violation`
- *   4. targets snapshot resolvable                 → 400 `no_targets`
- *   5. insert (Postgres arbitrates the day slot)   → 409 `active_plan_exists`
+ *   4. portion policy still holds                  → 422 `portion_violation`
+ *   5. targets snapshot resolvable                 → 400 `no_targets`
+ *   6. insert (Postgres arbitrates the day slot)   → 409 `active_plan_exists`
  *
  * Accept is gated as well as generation: a draft generated before a downgrade
  * must not become durable after the entitlement has ended.
@@ -77,6 +79,12 @@ export const nutritionPlansCreateHandler = new Elysia()
         ctx.NutritionPreferenceRepository.get(userId),
         ctx.NutritionTargetRepository.get(userId),
       ]);
+      const acceptedMealsPerDay =
+        ctx.body.mealsPerDay ?? preferences.mealsPerDay;
+      // The selected count may preserve a larger allocation after the user
+      // removes a draft meal, but it may never claim FEWER slots than the body
+      // actually contains to loosen the per-plate divisor.
+      const enforcedMealsPerDay = Math.max(acceptedMealsPerDay, meals.length);
 
       // 4 (checked early — it is the cheapest reject and the snapshot is
       // mandatory). A plan with no target has nothing to be measured against,
@@ -154,6 +162,62 @@ export const nutritionPlansCreateHandler = new Elysia()
         };
       }
 
+      // 4. Generation flags implausible meals for a swap, but the durable
+      // write must remain the final authority for stale or direct clients.
+      // Reference-basis OFF rows describe nutrition per 100 g, not a declared
+      // portion, so they are never valid AI-plan inputs.
+      const referenceCandidate = resolved.find(
+        (candidate) => candidate.servingBasis === "reference",
+      );
+      if (referenceCandidate) {
+        ctx.set.status = 422;
+        return {
+          error: "portion_violation",
+          detail: `${referenceCandidate.kind}:${referenceCandidate.id}:reference_serving`,
+        };
+      }
+
+      for (const meal of meals) {
+        const portionItems = [
+          ...(meal.recipeId
+            ? [
+                {
+                  candidateId: `recipe:${meal.recipeId}`,
+                  servings: meal.servings ?? 1,
+                },
+              ]
+            : []),
+          ...(meal.mealId
+            ? [
+                {
+                  candidateId: `meal:${meal.mealId}`,
+                  servings: meal.servings ?? 1,
+                },
+              ]
+            : []),
+          ...(meal.items ?? []).map((item) => ({
+            candidateId: `food:${item.foodId}`,
+            servings: item.servings,
+          })),
+        ];
+        const portionFailure = assessCompositionPortion({
+          items: portionItems,
+          candidates: byKindId,
+          kcalCeiling: maxMealKcal({
+            dailyKcal: target.dailyKcal,
+            mealsPerDay: enforcedMealsPerDay,
+            shape: meal.logSlot === "snack" ? "snack" : undefined,
+          }),
+        });
+        if (portionFailure) {
+          ctx.set.status = 422;
+          return {
+            error: "portion_violation",
+            detail: portionFailure.detail,
+          };
+        }
+      }
+
       // Recompute. A meal's macros are the sum of its resolved parts:
       //   - recipe/meal-backed → the resolved per-serving figure
       //   - item list          → Σ candidate macro × servings
@@ -209,7 +273,7 @@ export const nutritionPlansCreateHandler = new Elysia()
           planDate,
           groupId: groupId ?? null,
           // Snapshots, taken here rather than read at display time.
-          mealsPerDay: preferences.mealsPerDay,
+          mealsPerDay: enforcedMealsPerDay,
           effortLevel: preferences.effortLevel,
           targetKcal: target.dailyKcal,
           targetProteinG: target.proteinG,
@@ -238,6 +302,9 @@ export const nutritionPlansCreateHandler = new Elysia()
         // Phase 3 week plans supply a shared group id. Optional so a day plan
         // does not have to invent one.
         groupId: t.Optional(t.String({ format: "uuid" })),
+        // Optional only for compatibility with already-deployed clients.
+        // Current generated drafts return and preserve this exact count.
+        mealsPerDay: t.Optional(t.Integer({ minimum: 2, maximum: 6 })),
         meals: t.Array(
           t.Object({
             label: t.String({ minLength: 1, maxLength: 120 }),
@@ -265,9 +332,9 @@ export const nutritionPlansCreateHandler = new Elysia()
           // ⚠ NOTE WHAT IS ABSENT: no kcal/proteinG/carbsG/fatG. Elysia strips
           // unknown properties, so a client that sends macros has them
           // discarded rather than honoured — the schema is the enforcement, not
-          // just documentation. Bounded at 12 to match the preferences ceiling
-          // (6 meals/day) with headroom, and to bound the resolve fan-out.
-          { minItems: 1, maxItems: 12 },
+          // just documentation. Bounded at the same six-meal ceiling as
+          // preferences, which also bounds the resolve fan-out.
+          { minItems: 1, maxItems: 6 },
         ),
       }),
     },

@@ -177,6 +177,7 @@ export function MealprintPlanSheetContainer() {
         dayTarget: draft.target,
         heldTotals: heldTotalsExcluding(draft, localId),
         logSlot: targetMeal.meal.logSlot,
+        mealsPerDay: draft.mealsPerDay,
       });
     },
     [draft, flowBeginSwap, runSwap],
@@ -319,9 +320,11 @@ export function MealprintPlanSheetContainer() {
         ? "Some of this plan's items are no longer available — swap the flagged meal(s) and try again."
         : accept.failure.code === "avoidance_violation"
           ? "Your preferences changed since this plan was generated. Start over to build a fresh one."
-          : accept.failure.code === "active_plan_exists"
-            ? `You already have a plan for ${accept.failure.activePlanDate ?? "that day"}.`
-            : accept.failure.message;
+          : accept.failure.code === "portion_violation"
+            ? "One meal is too large for a realistic portion. Swap it or build a fresh plan."
+            : accept.failure.code === "active_plan_exists"
+              ? `You already have a plan for ${accept.failure.activePlanDate ?? "that day"}.`
+              : accept.failure.message;
 
   return (
     <MealprintPlanSheetPresenter

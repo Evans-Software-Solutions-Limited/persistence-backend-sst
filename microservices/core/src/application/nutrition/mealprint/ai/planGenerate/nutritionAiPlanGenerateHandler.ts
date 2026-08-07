@@ -37,6 +37,7 @@ import {
   planMaxTokens,
   PLAN_TIMEOUT_MS,
 } from "../planModel";
+import { assessCompositionPortion, maxMealKcal } from "../portionPolicy";
 
 const ENDPOINT = "/nutrition/ai/plan-generate";
 
@@ -89,6 +90,8 @@ interface VerifiedPlanMeal {
    * promises is a real gate, not a no-op.
    */
   flaggedUnsafe: boolean;
+  /** TRUE when the model exceeded an item or one-plate portion ceiling. */
+  flaggedPortion: boolean;
 }
 
 /**
@@ -159,6 +162,7 @@ export const nutritionAiPlanGenerateHandler = new Elysia()
           ctx.NutritionTargetRepository.get(userId),
           ctx.NutritionPreferenceRepository.get(userId),
         ]);
+        const mealsPerDay = ctx.body.mealsPerDay ?? preferences.mealsPerDay;
 
         const respondEmpty = (
           emptyReason: "no_targets" | "no_candidates",
@@ -167,6 +171,7 @@ export const nutritionAiPlanGenerateHandler = new Elysia()
           const body = {
             data: {
               meals: [],
+              mealsPerDay,
               emptyReason,
               target: null,
               totals: null,
@@ -188,7 +193,6 @@ export const nutritionAiPlanGenerateHandler = new Elysia()
 
         // A plan uses the user's configured meal count unless the request
         // overrides it (both bounded 2–6 by the schema).
-        const mealsPerDay = ctx.body.mealsPerDay ?? preferences.mealsPerDay;
         const effortLevel = ctx.body.effortLevel ?? preferences.effortLevel;
         const steer = ctx.body.steer ?? null;
 
@@ -264,6 +268,15 @@ export const nutritionAiPlanGenerateHandler = new Elysia()
         );
 
         reachedModel = true;
+        const mealKcalCeiling = maxMealKcal({
+          dailyKcal: target.dailyKcal,
+          mealsPerDay,
+        });
+        const snackKcalCeiling = maxMealKcal({
+          dailyKcal: target.dailyKcal,
+          mealsPerDay,
+          shape: "snack",
+        });
         const result = await composeDayPlan(
           {
             target: {
@@ -273,6 +286,8 @@ export const nutritionAiPlanGenerateHandler = new Elysia()
               fatG: target.fatG,
             },
             mealsPerDay,
+            maxMealKcal: mealKcalCeiling,
+            maxSnackKcal: snackKcalCeiling,
             steer,
             candidates: assembly.candidates,
             likedFoods: preferences.likedFoods,
@@ -297,6 +312,13 @@ export const nutritionAiPlanGenerateHandler = new Elysia()
           let fatG = 0;
           let containsUnverified = false;
           let flaggedUnsafe = false;
+          const portionFailure = assessCompositionPortion({
+            items: meal.items,
+            candidates: byId,
+            kcalCeiling:
+              meal.logSlot === "snack" ? snackKcalCeiling : mealKcalCeiling,
+          });
+          const flaggedPortion = portionFailure !== null;
 
           const items = meal.items.map((item) => {
             const candidate = byId.get(item.candidateId)!;
@@ -344,6 +366,7 @@ export const nutritionAiPlanGenerateHandler = new Elysia()
             fatG: round(fatG),
             containsUnverified,
             flaggedUnsafe,
+            flaggedPortion,
           };
         });
 
@@ -372,6 +395,7 @@ export const nutritionAiPlanGenerateHandler = new Elysia()
         const body = {
           data: {
             meals: verifiedMeals,
+            mealsPerDay,
             emptyReason: null,
             target: {
               kcal: target.dailyKcal,
@@ -436,7 +460,7 @@ export const nutritionAiPlanGenerateHandler = new Elysia()
         // step itself does not need it, but carrying it keeps the draft
         // self-describing.
         planDate: t.Optional(t.String({ pattern: "^\\d{4}-\\d{2}-\\d{2}$" })),
-        mealsPerDay: t.Optional(t.Number({ minimum: 2, maximum: 6 })),
+        mealsPerDay: t.Optional(t.Integer({ minimum: 2, maximum: 6 })),
         effortLevel: t.Optional(
           t.Union([
             t.Literal("quick"),

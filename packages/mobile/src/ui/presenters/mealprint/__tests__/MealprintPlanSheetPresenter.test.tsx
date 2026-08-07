@@ -9,6 +9,7 @@ import {
 function draft(over: Partial<PlanDraft> = {}): PlanDraft {
   return {
     planDate: "2026-08-05",
+    mealsPerDay: 4,
     target: { kcal: 2200, proteinG: 160, carbsG: 220, fatG: 70 },
     meals: [
       {

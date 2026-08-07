@@ -105,6 +105,8 @@ const CANDIDATE = {
   carbsG: 7,
   fatG: 1,
   servingLabel: "170 g",
+  servingBasis: "declared" as const,
+  maxServings: 2,
   allergenTags: [] as string[] | null,
   categoryTags: [] as string[] | null,
   isOwn: false,

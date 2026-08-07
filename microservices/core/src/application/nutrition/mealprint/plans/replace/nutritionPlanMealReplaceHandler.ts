@@ -17,6 +17,7 @@ import {
   assertEntitlement,
   EntitlementError,
 } from "../../../../entitlement/assertEntitlement";
+import { assessCompositionPortion, maxMealKcal } from "../../ai/portionPolicy";
 
 /**
  * POST /nutrition/plans/:id/meals/:mealId/replace — persist ONE replacement
@@ -42,7 +43,8 @@ import {
  *   2. target meal isn't already `logged`          → 409 `meal_already_logged`
  *   3. every referenced id resolves                → 400 `unresolvable_items`
  *   4. avoidance re-run on the resolved rows       → 422 `avoidance_violation`
- *   5. replace (ownership + existence arbitrated
+ *   5. portion policy still holds                  → 422 `portion_violation`
+ *   6. replace (ownership + existence arbitrated
  *      by the repository in one query)             → 404 `meal_not_found`
  *
  * ⚠ **Step 2 is a READ-then-check, not an atomicity guarantee** — a
@@ -158,6 +160,61 @@ export const nutritionPlanMealReplaceHandler = new Elysia()
           error: "avoidance_violation",
           items: rejected.map((entry) => entry.subject.id),
         };
+      }
+
+      // 5. Re-apply the generation policy at the durable write boundary. The
+      // existing plan's target snapshot keeps this stable even if today's live
+      // target has changed since the plan was accepted.
+      if (existingPlan) {
+        const referenceCandidate = resolved.find(
+          (candidate) => candidate.servingBasis === "reference",
+        );
+        if (referenceCandidate) {
+          ctx.set.status = 422;
+          return {
+            error: "portion_violation",
+            detail: `${referenceCandidate.kind}:${referenceCandidate.id}:reference_serving`,
+          };
+        }
+
+        const portionItems = [
+          ...(meal.recipeId
+            ? [
+                {
+                  candidateId: `recipe:${meal.recipeId}`,
+                  servings: meal.servings ?? 1,
+                },
+              ]
+            : []),
+          ...(meal.mealId
+            ? [
+                {
+                  candidateId: `meal:${meal.mealId}`,
+                  servings: meal.servings ?? 1,
+                },
+              ]
+            : []),
+          ...(meal.items ?? []).map((item) => ({
+            candidateId: `food:${item.foodId}`,
+            servings: item.servings,
+          })),
+        ];
+        const portionFailure = assessCompositionPortion({
+          items: portionItems,
+          candidates: byKindId,
+          kcalCeiling: maxMealKcal({
+            dailyKcal: existingPlan.targetKcal,
+            mealsPerDay: existingPlan.mealsPerDay,
+            shape: meal.logSlot === "snack" ? "snack" : undefined,
+          }),
+        });
+        if (portionFailure) {
+          ctx.set.status = 422;
+          return {
+            error: "portion_violation",
+            detail: portionFailure.detail,
+          };
+        }
       }
 
       // Recompute — identical arithmetic to the accept handler: Σ candidate

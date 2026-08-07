@@ -37,6 +37,7 @@ import {
   planMaxTokens,
   PLAN_TIMEOUT_MS,
 } from "../planModel";
+import { assessCompositionPortion, maxMealKcal } from "../portionPolicy";
 
 const ENDPOINT = "/nutrition/ai/plan-meal-swap";
 
@@ -210,12 +211,22 @@ export const nutritionAiPlanMealSwapHandler = new Elysia()
         );
 
         reachedModel = true;
+        const mealKcalCeiling = Math.min(
+          remaining.kcal,
+          maxMealKcal({
+            dailyKcal: dayTarget.kcal,
+            mealsPerDay: ctx.body.mealsPerDay ?? preferences.mealsPerDay,
+            shape: logSlot === "snack" ? "snack" : undefined,
+          }),
+        );
         // Reuse the day composer with mealsPerDay = 1: one meal, fitting the
         // remaining budget. The prompt's "compose exactly 1 meal" is the swap.
         const result = await composeDayPlan(
           {
             target: remaining,
             mealsPerDay: 1,
+            maxMealKcal: mealKcalCeiling,
+            maxSnackKcal: mealKcalCeiling,
             steer: steer ?? null,
             candidates: assembly.candidates,
             likedFoods: preferences.likedFoods,
@@ -234,6 +245,16 @@ export const nutritionAiPlanMealSwapHandler = new Elysia()
         const byId = new Map<string, MealprintCandidate>(
           assembly.candidates.map((candidate) => [candidate.id, candidate]),
         );
+        const portionFailure = assessCompositionPortion({
+          items: chosen.items,
+          candidates: byId,
+          kcalCeiling: mealKcalCeiling,
+        });
+        if (portionFailure) {
+          throw new AiUnreadableError(
+            `ai_implausible_portion: ${portionFailure.detail}`,
+          );
+        }
         let kcal = 0;
         let proteinG = 0;
         let carbsG = 0;
@@ -344,6 +365,9 @@ export const nutritionAiPlanMealSwapHandler = new Elysia()
           t.Literal("snack"),
           t.Literal("dinner"),
         ]),
+        // Optional for deployed-client compatibility; current drafts and saved
+        // plans always send the count used to derive their original ceiling.
+        mealsPerDay: t.Optional(t.Integer({ minimum: 2, maximum: 6 })),
         steer: t.Optional(t.String({ maxLength: 200 })),
       }),
     },

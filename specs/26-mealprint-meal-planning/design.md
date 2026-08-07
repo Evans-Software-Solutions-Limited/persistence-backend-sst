@@ -62,6 +62,33 @@ Design consequences:
   with `source = 'ai_generated'` (new enum value alongside
   `'manual' | 'url_import' | 'ai_extracted'`).
 
+### Portion trust boundary
+
+Energy correctness does not make an AI-selected quantity a sensible
+one-person portion. Candidate assembly therefore distinguishes a product's
+declared `serving_quantity` from OFF's per-100 g nutrition reference:
+
+- curated OFF rows without a positive declared serving are excluded from AI
+  composition (they remain searchable and manually loggable);
+- declared foods and saved foods/recipes/meals are capped at two servings per
+  composition, aggregated by candidate id; the draft editor uses the same cap;
+- a normal meal is capped at 1.35× its even share of the daily target (minimum
+  450 kcal), and a snack at 0.75× (minimum 250 kcal), never above the full day;
+- the positional cheat-meal `Have it` card remains exempt from _remaining-today_
+  calories, but is capped at the greater of a normal meal allowance or 75% of
+  the daily target and still obeys the per-item cap.
+
+The prompt displays these server-derived limits, but stage 3 is authoritative:
+suggestions are dropped with `implausible_portion`; generated plan meals are
+returned `flaggedPortion` and must be swapped before acceptance; swaps reject an
+implausible replacement with 422. Plan accept and durable meal replacement
+re-run the same item and slot-specific plate limits, and reject reference-basis
+rows, so a stale or direct client cannot bypass the generation guardrail. The
+selected `mealsPerDay` is returned with the draft and carried through swaps and
+acceptance so every stage derives its ceiling from the same allocation. At the
+durable boundary, the divisor is never smaller than the number of meals actually
+submitted, preventing a crafted count from loosening the plate ceiling.
+
 ### Model + sizing
 
 - Text-only task → **Haiku-class model first** (`AI_MEAL_MODEL_ID`, deploy-time

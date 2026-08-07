@@ -121,6 +121,8 @@ function candidate(id: string, over: Record<string, unknown> = {}) {
     carbsG: 60,
     fatG: 18,
     servingLabel: "1 serving",
+    servingBasis: "declared" as const,
+    maxServings: 2,
     allergenTags: [] as string[] | null,
     categoryTags: null,
     isOwn: false,
@@ -243,9 +245,17 @@ describe("POST /nutrition/ai/plan-generate", () => {
     const parsed = await body(res);
     // Each meal is one 600-kcal candidate → per-meal 600, totals 1800.
     expect(parsed.data.meals).toHaveLength(3);
+    expect(parsed.data.mealsPerDay).toBe(3);
     expect(parsed.data.meals[0].kcal).toBe(600);
     expect(parsed.data.totals.kcal).toBe(1800);
     expect(parsed.data.totals.proteinG).toBe(135);
+  });
+
+  it("returns the request's meal-count override with the generated draft", async () => {
+    const parsed = await body(await app.handle(post({ mealsPerDay: 2 })));
+
+    expect(composeDayPlanMock.mock.calls[0]![0].mealsPerDay).toBe(2);
+    expect(parsed.data.mealsPerDay).toBe(2);
   });
 
   // Mealprint gaps 1+2: the draft item now carries the candidate's `kind` and
@@ -387,5 +397,42 @@ describe("POST /nutrition/ai/plan-generate", () => {
     const res = await app.handle(post());
     const parsed = await body(res);
     expect(parsed.data.meals[0].flaggedUnsafe).toBe(true);
+  });
+
+  it("flags an implausibly large generated meal so Accept requires a swap", async () => {
+    composeDayPlanMock.mockResolvedValue({
+      meals: [
+        {
+          name: "Double dinner",
+          reason: "r",
+          logSlot: "dinner",
+          items: [{ candidateId: "c1", servings: 2 }],
+        },
+      ],
+      usage: { modelId: "m", latencyMs: 1, inputTokens: 1, outputTokens: 1 },
+    });
+    const parsed = await body(await app.handle(post()));
+    expect(parsed.data.meals[0].kcal).toBe(1_200);
+    expect(parsed.data.meals[0].flaggedPortion).toBe(true);
+  });
+
+  it("applies the lower calorie ceiling to a generated snack", async () => {
+    composeDayPlanMock.mockResolvedValue({
+      meals: [
+        {
+          name: "Oversized snack",
+          reason: "r",
+          logSlot: "snack",
+          items: [{ candidateId: "c1", servings: 1 }],
+        },
+      ],
+      usage: { modelId: "m", latencyMs: 1, inputTokens: 1, outputTokens: 1 },
+    });
+
+    const parsed = await body(await app.handle(post()));
+    // c1 is 600 kcal: below the normal 675 kcal meal ceiling for this target,
+    // but above the 375 kcal snack ceiling.
+    expect(parsed.data.meals[0].kcal).toBe(600);
+    expect(parsed.data.meals[0].flaggedPortion).toBe(true);
   });
 });

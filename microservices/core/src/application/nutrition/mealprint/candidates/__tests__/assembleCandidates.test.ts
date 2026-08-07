@@ -18,6 +18,8 @@ function candidate(over: Partial<MealprintCandidate> = {}): MealprintCandidate {
     carbsG: 7,
     fatG: 1,
     servingLabel: "170 g",
+    servingBasis: "declared",
+    maxServings: 2,
     allergenTags: [],
     categoryTags: [],
     isOwn: false,

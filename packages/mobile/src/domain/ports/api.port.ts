@@ -1696,6 +1696,7 @@ export type MealprintApiError = ApiError & {
 export const MEAL_PLAN_ERROR_CODES = [
   "unresolvable_items",
   "avoidance_violation",
+  "portion_violation",
   "active_plan_exists",
   "not_found",
   "no_targets",
