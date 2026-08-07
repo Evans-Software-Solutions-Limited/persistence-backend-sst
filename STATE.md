@@ -11,6 +11,54 @@ say so and fix this file.
 
 ## ▶ START HERE — next session (rewritten 2026-08-04, post-Mealprint-merge)
 
+### 🟢 2026-08-07 — ANDROID LAUNCH RAIL IMPLEMENTED (external activation + device QA remain)
+
+Android no longer selects the health stub. `packages/mobile` now includes
+`react-native-health-connect@4.1.3` and a real `HealthConnectAdapter` for steps,
+active/basal calories, weight, body fat, heart rate and sleep; confirmed
+weigh-ins write weight/body fat and confirmed sleep logs write sleep sessions.
+The Health settings surface is platform-aware, links to the provider when it is
+missing/outdated, and visibly surfaces the latest heart-rate sample so every
+declared permission has a demonstrable product use. No backend change was
+required.
+
+Native config targets Android API 36 and declares only the ten permissions
+used by those features. The custom Expo plugin generates a dedicated privacy
+rationale activity plus both Android 13 and Android 14+ manifest entry points;
+an actual `expo prebuild --platform android --no-install` verified the manifest
+and Kotlin output. The hosted and in-app privacy policies now name Health
+Connect. Play declaration copy and the device test checklist live in
+`specs/milestones/ANDROID-LAUNCH/HEALTH-CONNECT-DECLARATION.md`.
+
+Verification: mobile/web typecheck and lint have no task errors; root build
+passes; focused health/privacy/purchase tests pass; new health adapter
+changed-file coverage is 100% statements/branches/functions/lines. The
+complete mobile run passes all 496 suites and 6,248 tests. `actionlint` passes
+both build workflows. Android visual/native behavior remains unverified
+because this environment has no Android SDK/emulator.
+
+The native RevenueCat rail is now shared by iOS and Android. Android selects a
+dedicated `goog_…` public key, reads Google base-plan products and trial phases,
+uses Play's replacement mode for same-store plan changes, restores purchases,
+and opens RevenueCat's originating-store management URL. Purchase copy, legal
+links and icons are platform-correct. The manifest includes Play Billing and a
+config plugin generates RevenueCat's required `singleTop` activity mode. A
+production-package `play-testing` build plus draft internal/production submit
+profiles and both Android workflow legs are configured; workflow submission is
+pinned to the exact build ID produced by its run. Purchase and restore fail
+closed until RevenueCat confirms the Supabase user identity, with automatic
+retry after transient binding failures. The exact Console,
+RevenueCat, RTDN, product and acceptance checklist is in
+`specs/milestones/ANDROID-LAUNCH/REVENUECAT-PLAY-SETUP.md`.
+
+Still required before calling the **whole Android release** ready: create and
+verify the Play Console app/payments profile; approve Health apps access;
+publish the updated web privacy page; add the Android RevenueCat public key to
+EAS; create/import the twelve Play base-plan products and attach them to the
+existing `default` offering; upload RevenueCat and EAS service-account
+credentials; configure/test RTDN; and complete physical Android 13 + 14+
+health/purchase QA. No secret credential belongs in this repository.
+
 ### 🟢 2026-08-07 — ADAPTIVE-SUITE SUBSCRIPTION-LAPSE LOCKS
 
 `main` now includes #368 (OFF tag seed repair), #369 (Mealprint occasions,

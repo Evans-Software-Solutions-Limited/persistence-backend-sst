@@ -43,6 +43,8 @@ export type HealthDataState = {
   /** Cumulative Apple Stand Time today in minutes, or null. */
   standTimeTodayMinutes: number | null;
   latestBodyWeight: HealthWeight | null;
+  /** Most recent heart-rate sample in beats per minute, or null. */
+  heartRateLatest: number | null;
   /**
    * Most recent body-fat reading — percentage (0..100) + sample date — or
    * null. The /body-trend API only carries body fat logged IN the app, so a
@@ -90,6 +92,7 @@ export function useHealthData(): HealthDataState {
   const [latestBodyWeight, setLatestBodyWeight] = useState<HealthWeight | null>(
     null,
   );
+  const [heartRateLatest, setHeartRateLatest] = useState<number | null>(null);
   const [latestBodyFat, setLatestBodyFat] = useState<HealthBodyFat | null>(
     null,
   );
@@ -138,6 +141,7 @@ export function useHealthData(): HealthDataState {
           basalResult,
           standResult,
           weightResult,
+          heartRateResult,
           bodyFatResult,
         ] = await Promise.all([
           health.getStepsToday(),
@@ -146,6 +150,7 @@ export function useHealthData(): HealthDataState {
           health.getBasalCaloriesToday(),
           health.getStandTimeTodayMinutes(),
           health.getLatestBodyWeight(),
+          health.getHeartRateLatest(),
           health.getLatestBodyFat(),
         ]);
         if (stepsResult.ok) setStepsToday(stepsResult.value);
@@ -154,6 +159,7 @@ export function useHealthData(): HealthDataState {
         if (basalResult.ok) setBasalCaloriesToday(basalResult.value);
         if (standResult.ok) setStandTimeTodayMinutes(standResult.value);
         if (weightResult.ok) setLatestBodyWeight(weightResult.value);
+        if (heartRateResult.ok) setHeartRateLatest(heartRateResult.value);
         if (bodyFatResult.ok) setLatestBodyFat(bodyFatResult.value);
         setLastReadAt(new Date(now).toISOString());
       } finally {
@@ -202,6 +208,7 @@ export function useHealthData(): HealthDataState {
     basalCaloriesToday,
     standTimeTodayMinutes,
     latestBodyWeight,
+    heartRateLatest,
     latestBodyFat,
     permissionStatus,
     isAvailable,

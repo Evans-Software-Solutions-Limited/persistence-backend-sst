@@ -1,12 +1,13 @@
 import { Platform } from "react-native";
 import type { HealthPort } from "@/domain/ports/health.port";
-import { AndroidStubHealthAdapter } from "./android-stub.adapter";
+import { HealthConnectAdapter } from "./health-connect.adapter";
 import { ExpoHealthKitAdapter } from "./expo-healthkit.adapter";
 import { StubHealthAdapter } from "./stub.adapter";
 
 export { StubHealthAdapter } from "./stub.adapter";
 export { ExpoHealthKitAdapter } from "./expo-healthkit.adapter";
 export { AndroidStubHealthAdapter } from "./android-stub.adapter";
+export { HealthConnectAdapter } from "./health-connect.adapter";
 
 /**
  * Picks the right `HealthPort` implementation for the current runtime.
@@ -20,8 +21,8 @@ export { AndroidStubHealthAdapter } from "./android-stub.adapter";
  *   simulator-mock adapter was removed because Brad called the
  *   disclosure-chip approach unsatisfactory and asked for live data
  *   regardless — see PR #38 review.
- * - **Android** (any build) → `AndroidStubHealthAdapter`. Health
- *   Connect is deferred past M1.
+ * - **Android** → `HealthConnectAdapter`. Android 14+ uses the system Health
+ *   Connect module; Android 13 and below use the Play-distributed provider.
  * - **Web / unknown** → `StubHealthAdapter` from 00-guardrails.
  *
  * Called once at `AdapterProvider` construction, not per hook.
@@ -34,7 +35,7 @@ export function createHealthAdapter(): HealthPort {
     return new ExpoHealthKitAdapter();
   }
   if (Platform.OS === "android") {
-    return new AndroidStubHealthAdapter();
+    return new HealthConnectAdapter();
   }
   return new StubHealthAdapter();
 }

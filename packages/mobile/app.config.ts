@@ -20,6 +20,11 @@ const VARIANTS = {
     name: "Persistence (Staging)",
     scheme: "persistencemobile-staging",
   },
+  "play-testing": {
+    bundleId: "com.bradleyevans96.persistence",
+    name: "Persistence (Play Test)",
+    scheme: "persistencemobile-play-test",
+  },
   development: {
     bundleId: "com.bradleyevans96.persistence.dev",
     name: "Persistence (Dev)",
@@ -115,7 +120,9 @@ export default ({ config }: ConfigContext): ExpoConfig => {
   // APP_VARIANT collapses to "production" to match the variant fallback above.
   const environment: "production" | "staging" | "development" = isProduction
     ? "production"
-    : (rawVariant as "staging" | "development");
+    : rawVariant === "play-testing"
+      ? "staging"
+      : (rawVariant as "staging" | "development");
 
   return {
     ...config,
@@ -150,6 +157,9 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     extra: {
       ...config.extra,
       appVariant: environment,
+      revenueCatIosKey: process.env.EXPO_PUBLIC_REVENUECAT_IOS_KEY ?? "",
+      revenueCatAndroidKey:
+        process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY ?? "",
     },
   };
 };

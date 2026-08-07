@@ -26,6 +26,7 @@ MockPresenter.mockImplementation((props) => {
     <View>
       <Text testID="p-available">{String(props.isAvailable)}</Text>
       <Text testID="p-steps">{String(props.stepsToday)}</Text>
+      <Text testID="p-heart-rate">{String(props.heartRateLatest)}</Text>
       <Text testID="p-requesting">{String(props.isRequesting)}</Text>
       <Pressable testID="p-connect" onPress={() => void props.onConnect()} />
       <Pressable testID="p-back" onPress={() => props.onBack()} />
@@ -41,6 +42,7 @@ function healthState(over: Partial<HealthDataState> = {}): HealthDataState {
     basalCaloriesToday: null,
     standTimeTodayMinutes: null,
     latestBodyWeight: null,
+    heartRateLatest: null,
     latestBodyFat: null,
     permissionStatus: {
       steps: "granted",
@@ -67,10 +69,13 @@ describe("HealthSettingsContainer", () => {
   });
 
   it("maps the health state onto the presenter", () => {
-    mockUseHealthData.mockReturnValue(healthState({ stepsToday: 8421 }));
+    mockUseHealthData.mockReturnValue(
+      healthState({ stepsToday: 8421, heartRateLatest: 64 }),
+    );
     const { getByTestId } = render(<HealthSettingsContainer />);
     expect(getByTestId("p-available").props.children).toBe("true");
     expect(getByTestId("p-steps").props.children).toBe("8421");
+    expect(getByTestId("p-heart-rate").props.children).toBe("64");
   });
 
   it("requests permissions on connect and guards against concurrent presses", async () => {

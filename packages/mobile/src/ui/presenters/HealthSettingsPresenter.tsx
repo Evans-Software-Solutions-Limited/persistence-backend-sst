@@ -10,6 +10,7 @@ import {
   IconBolt,
   IconHealth,
   IconHeart,
+  IconMoon,
   IconTrending,
   IconUser,
   iconDefaults,
@@ -32,6 +33,7 @@ import type { HealthPermissionStatus } from "@/domain/ports/health.port";
  */
 
 export type HealthSettingsPresenterProps = {
+  provider: "apple_health" | "health_connect";
   /** HealthKit / Health Connect reachable on this build (false on simulator
    *  and Android M1). */
   isAvailable: boolean;
@@ -42,8 +44,11 @@ export type HealthSettingsPresenterProps = {
   isRequesting: boolean;
   /** Today's step count once granted, or null. Mirrors the MOVE ring. */
   stepsToday: number | null;
+  /** Latest heart-rate sample in beats per minute, or null. */
+  heartRateLatest: number | null;
   onBack: () => void;
   onConnect: () => void;
+  onInstallProvider: () => void;
   testID?: string;
 };
 
@@ -74,13 +79,25 @@ const METRICS: readonly MetricRow[] = [
     label: "Heart rate",
     icon: <IconHeart {...iconDefaults({ size: 16 })} />,
   },
+  {
+    key: "sleep",
+    label: "Sleep",
+    icon: <IconMoon {...iconDefaults({ size: 16 })} />,
+  },
 ];
 
-const TROUBLESHOOTING: readonly string[] = [
+const APPLE_TROUBLESHOOTING: readonly string[] = [
   "Open the Health app and tap your profile icon (top right).",
   "Scroll to Privacy and select Apps.",
   "Choose Persistence from the list.",
   "Turn on the data categories you want to share.",
+];
+
+const HEALTH_CONNECT_TROUBLESHOOTING: readonly string[] = [
+  "Open Android Settings and select Health Connect.",
+  "Tap App permissions, then choose Persistence.",
+  "Turn on the data categories you want to share.",
+  "Return to Persistence and refresh this screen.",
 ];
 
 function StatusDot({
@@ -98,17 +115,25 @@ function StatusDot({
 }
 
 export function HealthSettingsPresenter({
+  provider,
   isAvailable,
   permissionStatus,
   isReading,
   isRequesting,
   stepsToday,
+  heartRateLatest,
   onBack,
   onConnect,
+  onInstallProvider,
   testID = "health-settings",
 }: HealthSettingsPresenterProps) {
   const insets = useSafeAreaInsets();
   const connected = isAvailable && permissionStatus.steps === "granted";
+  const isHealthConnect = provider === "health_connect";
+  const providerName = isHealthConnect ? "Health Connect" : "Apple Health";
+  const troubleshooting = isHealthConnect
+    ? HEALTH_CONNECT_TROUBLESHOOTING
+    : APPLE_TROUBLESHOOTING;
 
   return (
     <View
@@ -162,7 +187,9 @@ export function HealthSettingsPresenter({
               color="$text"
               textAlign="center"
             >
-              {connected ? "Apple Health connected" : "Connect Apple Health"}
+              {connected
+                ? `${providerName} connected`
+                : `Connect ${providerName}`}
             </Text>
             <Text
               fontFamily="$body"
@@ -177,16 +204,32 @@ export function HealthSettingsPresenter({
             </Text>
 
             {!isAvailable ? (
-              <Text
-                fontFamily="$body"
-                fontSize={12}
-                color="$text3"
-                textAlign="center"
-                testID="health-unavailable"
-              >
-                Apple Health isn’t available on this device. Try again on an
-                iPhone with the Health app installed.
-              </Text>
+              <View width="100%" gap={10} marginTop={4}>
+                <Text
+                  fontFamily="$body"
+                  fontSize={12}
+                  color="$text3"
+                  textAlign="center"
+                  testID="health-unavailable"
+                >
+                  {isHealthConnect
+                    ? "Health Connect isn’t available on this device. Install or update it to sync your health data."
+                    : "Apple Health isn’t available on this device. Try again on an iPhone with the Health app installed."}
+                </Text>
+                {isHealthConnect ? (
+                  <Btn
+                    tone="ember"
+                    variant="filled"
+                    size="lg"
+                    full
+                    onPress={onInstallProvider}
+                    icon={<IconHealth {...iconDefaults({ size: 18 })} />}
+                    testID="health-install-provider-btn"
+                  >
+                    Install or update Health Connect
+                  </Btn>
+                ) : null}
+              </View>
             ) : !connected ? (
               <View width="100%" gap={8} marginTop={4}>
                 <Btn
@@ -199,7 +242,7 @@ export function HealthSettingsPresenter({
                   icon={<IconHealth {...iconDefaults({ size: 18 })} />}
                   testID="health-connect-btn"
                 >
-                  {isRequesting ? "Requesting…" : "Connect Apple Health"}
+                  {isRequesting ? "Requesting…" : `Connect ${providerName}`}
                 </Btn>
                 <Text
                   fontFamily="$body"
@@ -208,14 +251,13 @@ export function HealthSettingsPresenter({
                   textAlign="center"
                 >
                   We’ll ask permission to read your health data. You can change
-                  individual data types anytime in the Health app.
+                  individual data types anytime in {providerName}.
                 </Text>
               </View>
             ) : (
               <View
-                flexDirection="row"
                 alignItems="center"
-                gap={6}
+                gap={4}
                 marginTop={2}
                 testID="health-steps-today"
               >
@@ -226,6 +268,16 @@ export function HealthSettingsPresenter({
                       ? "Reading today’s activity…"
                       : "No steps recorded yet today"}
                 </Text>
+                {heartRateLatest != null ? (
+                  <Text
+                    fontFamily="$body"
+                    fontSize={12}
+                    color="$text3"
+                    testID="health-heart-rate-latest"
+                  >
+                    Latest heart rate: {Math.round(heartRateLatest)} bpm
+                  </Text>
+                ) : null}
               </View>
             )}
           </View>
@@ -278,7 +330,7 @@ export function HealthSettingsPresenter({
               If your data doesn’t show up
             </Text>
             <View gap={8}>
-              {TROUBLESHOOTING.map((step, i) => (
+              {troubleshooting.map((step, i) => (
                 <View key={i} flexDirection="row" gap={10}>
                   <Text
                     fontFamily="$display"

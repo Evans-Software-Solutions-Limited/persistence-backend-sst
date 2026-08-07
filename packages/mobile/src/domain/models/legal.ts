@@ -40,3 +40,8 @@ export const PRIVACY_POLICY_URL =
  */
 export const SERVICE_TERMS_URL =
   "https://persistence.evans-software-solutions.com/terms";
+
+/** Store-appropriate agreement shown at the point of purchase. */
+export function termsOfUseUrlForPlatform(platform: string): string {
+  return platform === "android" ? SERVICE_TERMS_URL : TERMS_OF_USE_URL;
+}

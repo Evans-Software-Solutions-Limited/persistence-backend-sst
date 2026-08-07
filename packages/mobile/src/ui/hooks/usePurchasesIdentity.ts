@@ -22,6 +22,7 @@ export function usePurchasesIdentity(): void {
   const userId = session?.userId ?? null;
   const boundUserIdRef = useRef<string | null>(null);
   const inFlightUserIdRef = useRef<string | null>(null);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (purchases === null) return;
@@ -30,30 +31,43 @@ export function usePurchasesIdentity(): void {
       // Already bound, or an attempt for this user is already in flight.
       if (boundUserIdRef.current === userId) return;
       if (inFlightUserIdRef.current === userId) return;
-      inFlightUserIdRef.current = userId;
-      void purchases.logIn(userId).then((result) => {
-        // Guard against a stale resolution: if identity changed while this
-        // logIn was in flight (sign-out, or a switch to another user), this
-        // result is no longer current — don't clear the newer in-flight
-        // marker and don't latch a now-incorrect binding. Without this, a
-        // sign-out mid-flight would latch the signed-out user, so signing
-        // back in short-circuits and RevenueCat stays on the anonymous id.
-        if (inFlightUserIdRef.current !== userId) return;
+      let cancelled = false;
+      let retryCount = 0;
+      const bind = async () => {
+        inFlightUserIdRef.current = userId;
+        const result = await purchases.logIn(userId);
+        // Guard against a stale resolution after sign-out/user switching.
+        if (cancelled || inFlightUserIdRef.current !== userId) return;
         inFlightUserIdRef.current = null;
-        // Latch ONLY on success. A transient failure must not strand the ref —
-        // otherwise we'd never re-attempt and RevenueCat would stay on the
-        // anonymous App User ID, mis-attributing the purchase and breaking the
-        // cross-rail merge. Leaving the ref unset lets a later effect run (e.g.
-        // a re-auth) retry. RevenueCat also retries the network call itself.
-        if (result.ok) boundUserIdRef.current = userId;
-      });
-      return;
+        if (result.ok) {
+          boundUserIdRef.current = userId;
+          return;
+        }
+        // Keep retrying transient failures with a capped delay. The adapter
+        // independently blocks purchase() until one attempt confirms the
+        // Supabase user id, so no payment can land on an anonymous customer.
+        const delayMs = Math.min(1_000 * 2 ** retryCount, 30_000);
+        retryCount += 1;
+        retryTimerRef.current = setTimeout(() => void bind(), delayMs);
+      };
+      void bind();
+      return () => {
+        cancelled = true;
+        if (retryTimerRef.current !== null) {
+          clearTimeout(retryTimerRef.current);
+          retryTimerRef.current = null;
+        }
+      };
     }
 
     // Signed out — reset and log out if we'd bound (or were binding) a user.
     if (boundUserIdRef.current !== null || inFlightUserIdRef.current !== null) {
       boundUserIdRef.current = null;
       inFlightUserIdRef.current = null;
+      if (retryTimerRef.current !== null) {
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
       void purchases.logOut();
     }
   }, [purchases, userId]);

@@ -1,10 +1,11 @@
-import { Linking } from "react-native";
+import { Linking, Platform } from "react-native";
 import {
   fireEvent,
   renderWithTheme,
 } from "../../../../../__tests__/test-utils";
 import {
   PRIVACY_POLICY_URL,
+  SERVICE_TERMS_URL,
   TERMS_OF_USE_URL,
 } from "../../../../domain/models/legal";
 import { SubscriptionLegalFooter } from "../SubscriptionLegalFooter";
@@ -80,6 +81,24 @@ describe("SubscriptionLegalFooter", () => {
     fireEvent.press(getByTestId("subscription-privacy-link"));
 
     expect(spy).toHaveBeenCalledWith(PRIVACY_POLICY_URL);
+  });
+
+  it("uses Google Play wording and Persistence terms on Android", () => {
+    const originalOS = Platform.OS;
+    Platform.OS = "android";
+    const spy = jest
+      .spyOn(Linking, "openURL")
+      .mockResolvedValue(undefined as unknown as never);
+    try {
+      const { getByTestId } = renderWithTheme(<SubscriptionLegalFooter />);
+      expect(
+        getByTestId("subscription-legal-disclosure").props.children,
+      ).toContain("Google Play account");
+      fireEvent.press(getByTestId("subscription-terms-link"));
+      expect(spy).toHaveBeenCalledWith(SERVICE_TERMS_URL);
+    } finally {
+      Platform.OS = originalOS;
+    }
   });
 
   it("swallows a Linking.openURL rejection so a dead handoff can't wedge the purchase flow", async () => {

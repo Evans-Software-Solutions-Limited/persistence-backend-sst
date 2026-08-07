@@ -1,6 +1,7 @@
 import React from "react";
 import {
   ScrollView,
+  Platform,
   StatusBar,
   StyleSheet,
   Text,
@@ -735,11 +736,21 @@ function ManageScreen(props: IOSPurchaseFlowPresenterProps) {
             onPress={props.onManageInAppStore}
             testID="ios-purchase-manage"
           >
-            <Ionicons name="logo-apple" size={19} color={color.$text3} />
+            <Ionicons
+              name={
+                Platform.OS === "android"
+                  ? "logo-google-playstore"
+                  : "logo-apple"
+              }
+              size={19}
+              color={color.$text3}
+            />
             <Text style={styles.manageRowLabel}>
               Payment, receipts and cancellation
             </Text>
-            <Text style={styles.manageRowDetail}>App Store</Text>
+            <Text style={styles.manageRowDetail}>
+              {Platform.OS === "android" ? "Google Play" : "App Store"}
+            </Text>
           </TouchableOpacity>
           <View style={styles.manageRow}>
             <Ionicons name="calendar-outline" size={19} color={color.$text3} />

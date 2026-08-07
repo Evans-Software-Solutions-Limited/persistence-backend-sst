@@ -54,7 +54,7 @@ export const FAQ_ITEMS: readonly FaqItem[] = [
   {
     question: "How do I sync my health data?",
     answer:
-      "Go to Profile > Health Data to connect your Apple Health or Google Fit account. This allows us to sync steps, calories, and other health metrics.",
+      "Go to Profile > Health & integrations to connect Apple Health or Health Connect. This allows us to sync steps, calories, and other health metrics.",
   },
   {
     question: "How do I change my subscription?",

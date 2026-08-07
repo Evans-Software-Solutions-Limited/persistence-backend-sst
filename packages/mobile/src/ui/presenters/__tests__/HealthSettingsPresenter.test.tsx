@@ -23,13 +23,16 @@ describe("HealthSettingsPresenter", () => {
     const onConnect = jest.fn();
     const { getByTestId, queryByTestId } = renderWithTheme(
       <HealthSettingsPresenter
+        provider="apple_health"
         isAvailable
         permissionStatus={NONE}
         isReading={false}
         isRequesting={false}
         stepsToday={null}
+        heartRateLatest={null}
         onBack={jest.fn()}
         onConnect={onConnect}
+        onInstallProvider={jest.fn()}
       />,
     );
     expect(queryByTestId("health-unavailable")).toBeNull();
@@ -41,13 +44,16 @@ describe("HealthSettingsPresenter", () => {
     const onConnect = jest.fn();
     const { getByTestId } = renderWithTheme(
       <HealthSettingsPresenter
+        provider="apple_health"
         isAvailable
         permissionStatus={NONE}
         isReading={false}
         isRequesting
         stepsToday={null}
+        heartRateLatest={null}
         onBack={jest.fn()}
         onConnect={onConnect}
+        onInstallProvider={jest.fn()}
       />,
     );
     fireEvent.press(getByTestId("health-connect-btn"));
@@ -57,13 +63,16 @@ describe("HealthSettingsPresenter", () => {
   it("renders the unavailable copy and no connect button on an unsupported device", () => {
     const { getByTestId, queryByTestId } = renderWithTheme(
       <HealthSettingsPresenter
+        provider="apple_health"
         isAvailable={false}
         permissionStatus={NONE}
         isReading={false}
         isRequesting={false}
         stepsToday={null}
+        heartRateLatest={null}
         onBack={jest.fn()}
         onConnect={jest.fn()}
+        onInstallProvider={jest.fn()}
       />,
     );
     expect(getByTestId("health-unavailable")).toBeTruthy();
@@ -73,13 +82,16 @@ describe("HealthSettingsPresenter", () => {
   it("shows today's steps and the metric list once connected", () => {
     const { getByTestId, queryByTestId } = renderWithTheme(
       <HealthSettingsPresenter
+        provider="apple_health"
         isAvailable
         permissionStatus={GRANTED}
         isReading={false}
         isRequesting={false}
         stepsToday={8421}
+        heartRateLatest={62}
         onBack={jest.fn()}
         onConnect={jest.fn()}
+        onInstallProvider={jest.fn()}
       />,
     );
     expect(queryByTestId("health-connect-btn")).toBeNull();
@@ -87,19 +99,23 @@ describe("HealthSettingsPresenter", () => {
     // Per-metric rows render for each tracked data type.
     expect(getByTestId("health-metric-steps")).toBeTruthy();
     expect(getByTestId("health-metric-heartRate")).toBeTruthy();
+    expect(getByTestId("health-heart-rate-latest")).toBeTruthy();
   });
 
   it("invokes onBack from the header back button", () => {
     const onBack = jest.fn();
     const { getByTestId } = renderWithTheme(
       <HealthSettingsPresenter
+        provider="apple_health"
         isAvailable
         permissionStatus={GRANTED}
         isReading
         isRequesting={false}
         stepsToday={null}
+        heartRateLatest={null}
         onBack={onBack}
         onConnect={jest.fn()}
+        onInstallProvider={jest.fn()}
       />,
     );
     fireEvent.press(getByTestId("health-settings-back"));

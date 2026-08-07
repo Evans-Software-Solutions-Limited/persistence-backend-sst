@@ -26,23 +26,24 @@ existing `persistence-mobile` app.
 
 ## Environment Variables (required in `.env`)
 
-| Variable                        | Purpose                          | Status                                                    |
-| ------------------------------- | -------------------------------- | --------------------------------------------------------- |
-| `EXPO_PUBLIC_SUPABASE_URL`      | Supabase project URL (auth only) | **Bradley to provide**                                    |
-| `EXPO_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key (auth only)    | **Bradley to provide**                                    |
-| `EXPO_PUBLIC_API_URL`           | SST API base URL                 | **Bradley to provide** (from `sst dev` or deployed stage) |
+| Variable                             | Purpose                               | Status                                                    |
+| ------------------------------------ | ------------------------------------- | --------------------------------------------------------- |
+| `EXPO_PUBLIC_SUPABASE_URL`           | Supabase project URL (auth only)      | **Bradley to provide**                                    |
+| `EXPO_PUBLIC_SUPABASE_ANON_KEY`      | Supabase anon key (auth only)         | **Bradley to provide**                                    |
+| `EXPO_PUBLIC_API_URL`                | SST API base URL                      | **Bradley to provide** (from `sst dev` or deployed stage) |
+| `EXPO_PUBLIC_REVENUECAT_IOS_KEY`     | RevenueCat App Store public SDK key   | Configured for current EAS profiles                       |
+| `EXPO_PUBLIC_REVENUECAT_ANDROID_KEY` | RevenueCat Google Play public SDK key | **Required in EAS preview + production environments**     |
 
 ---
 
-## Integrations — Not Yet Wired (intentionally deferred)
+## Native integrations
 
 ### HealthKit / Health Connect
 
-- iOS entitlements and Info.plist descriptions are **preserved** in app.json
-- Android Health Connect permissions are **preserved** in app.json
-- The actual health data hooks need to be migrated from the old app when
-  the health feature is built on the new foundation
-- Dependencies needed: `@kingstinct/react-native-healthkit`, `react-native-health-connect`, `expo-health-connect`
+- HealthKit and Health Connect are both wired through the shared health port.
+- Android declares only the permissions exercised by visible read/write features.
+- Health Connect Console declaration copy and device QA live under
+  `specs/milestones/ANDROID-LAUNCH/`.
 
 ### Stripe / Apple Pay — REMOVED, do not reinstate on iOS
 
@@ -57,9 +58,20 @@ existing `persistence-mobile` app.
 - **Do not re-add any of these for an iOS purchase path** — charging a payment
   method for digital goods on iOS is a Guideline 3.1.1 violation. iOS purchasing
   is RevenueCat only.
-- A future Android / web rail should go through RevenueCat (Play billing) rather
-  than re-linking the Stripe SDK. `useCreateSubscription` survives as the typed
+- Android now goes through RevenueCat (Play Billing), rather than re-linking
+  Stripe. `useCreateSubscription` survives as the typed
   client for `POST /subscriptions` if a non-Apple card rail is ever needed.
+
+### RevenueCat / Google Play Billing
+
+- The mobile adapter, native paywall, restore flow and subscription-management
+  handoff support both App Store and Google Play.
+- Set `EXPO_PUBLIC_REVENUECAT_ANDROID_KEY` as an EAS environment variable; it is
+  a client-safe `goog_…` public SDK key, never a RevenueCat secret key.
+- Google service-account JSON belongs only in RevenueCat/EAS credential stores
+  and must never be committed.
+- Full Console/product checklist:
+  [`REVENUECAT-PLAY-SETUP.md`](../../specs/milestones/ANDROID-LAUNCH/REVENUECAT-PLAY-SETUP.md).
 
 ### Push Notifications
 
@@ -70,8 +82,10 @@ existing `persistence-mobile` app.
 
 ### EAS Build
 
-- `eas.json` lives in this package with two profiles: `staging` (TestFlight) and `production` (App Store). Local dev points at staging via `expo run:ios` / `expo start` against `EXPO_PUBLIC_API_URL=<staging-api>` — no separate dev profile.
-- CI/CD: push to main → TestFlight via `.github/workflows/mobile-build-staging.yml`. Release-please published release → App Store via `.github/workflows/mobile-build-production.yml`.
+- `eas.json` includes `staging` (TestFlight), `play-testing` (production Android
+  package against staging services) and `production` (both stores).
+- Mobile workflows build and submit each selected platform independently;
+  Android submissions are created as drafts until Play verification is complete.
 - Full setup walkthrough: [`docs/mobile-release-pipeline.md`](../../docs/mobile-release-pipeline.md).
 
 ---

@@ -2,6 +2,7 @@ import { Platform } from "react-native";
 import Purchases, {
   INTRO_ELIGIBILITY_STATUS,
   LOG_LEVEL,
+  STORE_REPLACEMENT_MODE,
   type CustomerInfo,
   type PurchasesEntitlementInfo,
   type PurchasesPackage,
@@ -15,6 +16,7 @@ import type {
 } from "@/domain/ports/purchases.port";
 import {
   billingCycleFromProductId,
+  freeTrialDaysFromGooglePlayOption,
   freeTrialDaysFromIntroOffer,
   tierFromProductId,
 } from "@/domain/services/purchaseOfferings";
@@ -22,13 +24,13 @@ import { fail, ok, type Result } from "@/shared/errors";
 
 /**
  * Production `PurchasesPort` backed by RevenueCat's `react-native-purchases`
- * (M12, iOS rail).
+ * (App Store and Google Play rails).
  *
  * Spec: specs/milestones/M12-app-store-iap/FRONTEND_BRIEF.md
  *
  * Native module — only functional on a real device / EAS dev build (Expo Go
- * runs RevenueCat's mock "Preview API mode"). Constructed iOS-only in
- * `providers.tsx`; web / Android keep the Stripe rail.
+ * runs RevenueCat's mock "Preview API mode"). Constructed for iOS/Android in
+ * `providers.tsx`; web has no native purchase adapter.
  *
  * The SDK exposes everything as static methods on `Purchases`; this adapter
  * wraps them behind the `Result`-returning port so containers stay free of
@@ -42,9 +44,19 @@ import { fail, ok, type Result } from "@/shared/errors";
  */
 
 const DEFAULT_OFFERING_ID = "default";
+const GOOGLE_PLAY_SUBSCRIPTION_IDS = new Set([
+  "app.persistence.premium",
+  "app.persistence.premium_plus",
+  "app.persistence.trainer.individual",
+  "app.persistence.start_up_coach_plus",
+  "app.persistence.coach",
+  "app.persistence.coach_pro",
+]);
 
 export class RevenueCatPurchasesAdapter implements PurchasesPort {
   private configured = false;
+  private boundAppUserId: string | null = null;
+  private identityGeneration = 0;
 
   isConfigured(): boolean {
     return this.configured;
@@ -56,9 +68,6 @@ export class RevenueCatPurchasesAdapter implements PurchasesPort {
     // the iOS flow shows its inline "unavailable" state instead of the SDK
     // throwing on the first call.
     if (publicSdkKey.length === 0) return;
-    // iOS-only rail — never configure on Android (Stripe owns that platform).
-    if (Platform.OS !== "ios") return;
-
     if (__DEV__) {
       void Purchases.setLogLevel(LOG_LEVEL.DEBUG);
     }
@@ -70,8 +79,14 @@ export class RevenueCatPurchasesAdapter implements PurchasesPort {
     if (!this.configured) {
       return fail(notConfigured("logIn"));
     }
+    const generation = ++this.identityGeneration;
+    // Fail closed while changing customers or retrying a failed binding.
+    this.boundAppUserId = null;
     try {
       await Purchases.logIn(appUserId);
+      if (this.identityGeneration === generation) {
+        this.boundAppUserId = appUserId;
+      }
       return ok(undefined);
     } catch (err) {
       return fail(classifyPurchasesError(err));
@@ -83,6 +98,8 @@ export class RevenueCatPurchasesAdapter implements PurchasesPort {
       // Nothing bound yet — logging out is a no-op, not an error.
       return ok(undefined);
     }
+    ++this.identityGeneration;
+    this.boundAppUserId = null;
     try {
       await Purchases.logOut();
       return ok(undefined);
@@ -132,11 +149,31 @@ export class RevenueCatPurchasesAdapter implements PurchasesPort {
     }
   }
 
+  async getManagementUrl(): Promise<Result<string | null, PurchasesError>> {
+    if (!this.configured) {
+      return fail(notConfigured("getManagementUrl"));
+    }
+    try {
+      const customerInfo = await Purchases.getCustomerInfo();
+      return ok(customerInfo.managementURL);
+    } catch (err) {
+      return fail(classifyPurchasesError(err));
+    }
+  }
+
   async purchase(
     packageId: string,
   ): Promise<Result<ActiveEntitlement[], PurchasesError>> {
     if (!this.configured) {
       return fail(notConfigured("purchase"));
+    }
+    if (this.boundAppUserId === null) {
+      return fail({
+        kind: "identity_not_bound",
+        code: null,
+        message:
+          "We're still connecting purchases to your account. Please try again in a moment.",
+      });
     }
     try {
       const pkg = await this.findPackage(packageId);
@@ -147,7 +184,24 @@ export class RevenueCatPurchasesAdapter implements PurchasesPort {
           message: "That plan is no longer available. Please try again.",
         });
       }
-      const { customerInfo } = await Purchases.purchasePackage(pkg);
+      let productChangeInfo = null;
+      if (Platform.OS === "android") {
+        const beforePurchase = await Purchases.getCustomerInfo();
+        const oldProductIdentifier = beforePurchase.activeSubscriptions[0];
+        if (
+          oldProductIdentifier &&
+          GOOGLE_PLAY_SUBSCRIPTION_IDS.has(oldProductIdentifier)
+        ) {
+          productChangeInfo = {
+            oldProductIdentifier,
+            replacementMode: STORE_REPLACEMENT_MODE.WITH_TIME_PRORATION,
+          };
+        }
+      }
+      const { customerInfo } =
+        Platform.OS === "android"
+          ? await Purchases.purchasePackage(pkg, null, productChangeInfo)
+          : await Purchases.purchasePackage(pkg);
       return ok(toActiveEntitlements(customerInfo));
     } catch (err) {
       return fail(classifyPurchasesError(err));
@@ -157,6 +211,14 @@ export class RevenueCatPurchasesAdapter implements PurchasesPort {
   async restore(): Promise<Result<ActiveEntitlement[], PurchasesError>> {
     if (!this.configured) {
       return fail(notConfigured("restore"));
+    }
+    if (this.boundAppUserId === null) {
+      return fail({
+        kind: "identity_not_bound",
+        code: null,
+        message:
+          "We're still connecting purchases to your account. Please try again in a moment.",
+      });
     }
     try {
       const customerInfo = await Purchases.restorePurchases();
@@ -186,7 +248,12 @@ export class RevenueCatPurchasesAdapter implements PurchasesPort {
 
 /** Normalise a RevenueCat package into the port's `PurchaseProduct`. */
 function toPurchaseProduct(pkg: PurchasesPackage): PurchaseProduct {
-  const productId = pkg.product.identifier;
+  // Google exposes the base-plan-aware identifier on the selected option as
+  // `subscriptionId:basePlanId`; the parent StoreProduct may contain only the
+  // subscription id. Prefer the option id so annual/monthly classification is
+  // deterministic on both stores.
+  const productId =
+    pkg.product.defaultOption?.storeProductId ?? pkg.product.identifier;
   return {
     packageId: pkg.identifier,
     productId,
@@ -197,7 +264,9 @@ function toPurchaseProduct(pkg: PurchasesPackage): PurchaseProduct {
     pricePerMonthString: pkg.product.pricePerMonthString ?? null,
     // RevenueCat reflects the App Store Connect introductory offer on the
     // product; derive the free-trial length so the paywall copy matches it.
-    introTrialDays: freeTrialDaysFromIntroOffer(pkg.product.introPrice),
+    introTrialDays:
+      freeTrialDaysFromGooglePlayOption(pkg.product.defaultOption) ??
+      freeTrialDaysFromIntroOffer(pkg.product.introPrice),
   };
 }
 

@@ -1,4 +1,5 @@
 import { useCallback, useState } from "react";
+import { Linking, Platform } from "react-native";
 import { useRouter } from "expo-router";
 
 import { useHealthSync } from "@/state/health-sync";
@@ -37,15 +38,23 @@ export function HealthSettingsContainer() {
   }, [health, isRequesting]);
 
   const onBack = useCallback(() => router.back(), [router]);
+  const onInstallHealthConnect = useCallback(() => {
+    void Linking.openURL(
+      "https://play.google.com/store/apps/details?id=com.google.android.apps.healthdata",
+    );
+  }, []);
 
   return (
     <HealthSettingsPresenter
+      provider={Platform.OS === "android" ? "health_connect" : "apple_health"}
       isAvailable={health.isAvailable}
       permissionStatus={health.permissionStatus}
       isReading={health.isReading}
       isRequesting={isRequesting}
       stepsToday={health.stepsToday}
+      heartRateLatest={health.heartRateLatest}
       onConnect={onConnect}
+      onInstallProvider={onInstallHealthConnect}
       onBack={onBack}
     />
   );

@@ -152,6 +152,43 @@ export function freeTrialDaysFromIntroOffer(
   }
 }
 
+type GooglePlaySubscriptionOption = {
+  readonly freePhase?: {
+    readonly billingPeriod: {
+      readonly unit: string;
+      readonly value: number;
+    };
+    readonly price: { readonly amountMicros: number };
+  } | null;
+} | null;
+
+/**
+ * Derive the free-trial duration selected by Google Play for this customer.
+ * RevenueCat's explicit intro-eligibility API is iOS-only; on Android its
+ * `defaultOption` already reflects the eligible base-plan/offer and exposes a
+ * zero-priced `freePhase` when a trial can be presented.
+ */
+export function freeTrialDaysFromGooglePlayOption(
+  option: GooglePlaySubscriptionOption | undefined,
+): number | null {
+  const phase = option?.freePhase;
+  if (!phase || phase.price.amountMicros !== 0) return null;
+  const n = phase.billingPeriod.value;
+  if (!Number.isFinite(n) || n <= 0) return null;
+  switch (phase.billingPeriod.unit) {
+    case "DAY":
+      return n;
+    case "WEEK":
+      return n * 7;
+    case "MONTH":
+      return n * 30;
+    case "YEAR":
+      return n * 365;
+    default:
+      return null;
+  }
+}
+
 /**
  * The free-trial length (days) to advertise for an offering: the first package
  * carrying a free-trial intro offer wins, else `null`. All products share the

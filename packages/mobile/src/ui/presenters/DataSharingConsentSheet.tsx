@@ -80,8 +80,8 @@ export function DataSharingConsentSheet({
         </Text>
 
         <Text fontFamily="$body" fontSize={13} color="$text3" lineHeight={18}>
-          Your raw Apple Health data — sleep, heart rate, steps — is never
-          shared. Only the coaching metrics above.
+          Your raw Apple Health or Health Connect data — sleep, heart rate,
+          steps — is never shared. Only the coaching metrics above.
         </Text>
 
         <Text fontFamily="$body" fontSize={13} color="$text3" lineHeight={18}>

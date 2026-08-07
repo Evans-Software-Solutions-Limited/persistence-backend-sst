@@ -2,6 +2,7 @@ import type { PurchaseProduct } from "@/domain/ports/purchases.port";
 import {
   billingCycleFromProductId,
   findPackageForTier,
+  freeTrialDaysFromGooglePlayOption,
   freeTrialDaysFromIntroOffer,
   offeringTrialDays,
   purchasableTiers,
@@ -26,6 +27,7 @@ describe("billingCycleFromProductId", () => {
   it.each([
     ["app.persistence.premium.monthly", "monthly"],
     ["app.persistence.premium.annual", "yearly"],
+    ["app.persistence.premium:annual", "yearly"],
     ["app.persistence.trainer.individual.yearly", "yearly"],
     ["something.year.plan", "yearly"],
     ["no.cycle.signal", "monthly"],
@@ -35,6 +37,44 @@ describe("billingCycleFromProductId", () => {
 
   it("is case-insensitive", () => {
     expect(billingCycleFromProductId("APP.PREMIUM.ANNUAL")).toBe("yearly");
+  });
+});
+
+describe("freeTrialDaysFromGooglePlayOption", () => {
+  it.each([
+    ["DAY", 7, 7],
+    ["WEEK", 2, 14],
+    ["MONTH", 1, 30],
+    ["YEAR", 1, 365],
+  ])("converts a %s free phase to days", (unit, value, expected) => {
+    expect(
+      freeTrialDaysFromGooglePlayOption({
+        freePhase: {
+          billingPeriod: { unit, value },
+          price: { amountMicros: 0 },
+        },
+      }),
+    ).toBe(expected);
+  });
+
+  it("rejects absent, paid, invalid and unknown phases", () => {
+    expect(freeTrialDaysFromGooglePlayOption(null)).toBeNull();
+    expect(
+      freeTrialDaysFromGooglePlayOption({
+        freePhase: {
+          billingPeriod: { unit: "DAY", value: 7 },
+          price: { amountMicros: 1 },
+        },
+      }),
+    ).toBeNull();
+    expect(
+      freeTrialDaysFromGooglePlayOption({
+        freePhase: {
+          billingPeriod: { unit: "UNKNOWN", value: 7 },
+          price: { amountMicros: 0 },
+        },
+      }),
+    ).toBeNull();
   });
 });
 

@@ -529,6 +529,10 @@ jest.mock("react-native-purchases", () => ({
     logIn: jest.fn(async () => ({ customerInfo: {}, created: false })),
     logOut: jest.fn(async () => ({})),
     getOfferings: jest.fn(async () => ({ all: {}, current: null })),
+    getCustomerInfo: jest.fn(async () => ({
+      activeSubscriptions: [],
+      managementURL: null,
+    })),
     purchasePackage: jest.fn(async () => ({
       customerInfo: { entitlements: { active: {} } },
       productIdentifier: "",
@@ -537,6 +541,9 @@ jest.mock("react-native-purchases", () => ({
     checkTrialOrIntroductoryPriceEligibility: jest.fn(async () => ({})),
   },
   LOG_LEVEL: { DEBUG: "DEBUG", INFO: "INFO" },
+  STORE_REPLACEMENT_MODE: {
+    WITH_TIME_PRORATION: "WITH_TIME_PRORATION",
+  },
   INTRO_ELIGIBILITY_STATUS: {
     INTRO_ELIGIBILITY_STATUS_UNKNOWN: 0,
     INTRO_ELIGIBILITY_STATUS_INELIGIBLE: 1,

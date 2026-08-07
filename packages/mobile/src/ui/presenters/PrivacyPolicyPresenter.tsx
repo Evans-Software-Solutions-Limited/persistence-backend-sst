@@ -67,7 +67,7 @@ export function PrivacyPolicyPresenter({
       />
 
       <ScrollView style={styles.content} testID="privacy-policy-scroll">
-        <Text style={styles.lastUpdated}>Last Updated: 3 August 2026</Text>
+        <Text style={styles.lastUpdated}>Last Updated: 7 August 2026</Text>
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>1. Who we are</Text>
@@ -128,8 +128,9 @@ export function PrivacyPolicyPresenter({
           <Text style={styles.listItem}>
             • Health &amp; body metrics — measurements such as body weight and
             body fat, and, where you grant permission, data read from Apple
-            Health. This is special-category (health) data under UK data
-            protection law, which we process only with your explicit consent.
+            Health or Health Connect. This is special-category (health) data
+            under UK data protection law, which we process only with your
+            explicit consent.
           </Text>
           <Text style={styles.listItem}>
             • Food preferences — the allergens you tell us to avoid, any dietary
@@ -308,8 +309,8 @@ export function PrivacyPolicyPresenter({
             With your consent, your coach can see: your body measurements
             (including weight and body fat), your workout sessions and personal
             records, your nutrition totals, and your goals and habits. Your raw
-            Apple Health data (such as sleep, heart rate and steps) is never
-            shared with your coach.
+            Apple Health or Health Connect data (such as sleep, heart rate and
+            steps) is never shared with your coach.
           </Text>
           <Text style={styles.bodyText}>
             You can withdraw this consent at any time by removing your coach in
@@ -467,10 +468,10 @@ export function PrivacyPolicyPresenter({
             in full with your account.
           </Text>
           <Text style={styles.listItem}>
-            • Apple Health activity and sleep data — where you have granted
-            permission for us to read it, this is kept for up to 12 months.
-            Older records are deleted automatically each night, and all of it is
-            deleted with your account.
+            • Apple Health and Health Connect activity and sleep data — where
+            you have granted permission for us to read it, this is kept for up
+            to 12 months. Older records are deleted automatically each night,
+            and all of it is deleted with your account.
           </Text>
           <Text style={styles.listItem}>
             • Records relating to a legal claim or dispute — retained until the
