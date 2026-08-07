@@ -415,7 +415,7 @@ describe("MealprintEntryCard", () => {
       const onPlanMyDay = jest.fn();
       const { getByTestId } = renderWithTheme(
         <MealprintEntryCard
-          {...cardProps({ onPlanMyDay, onEditPreferences })}
+          {...cardProps({ onPress, onPlanMyDay, onEditPreferences })}
         />,
       );
       fireEvent.press(getByTestId("mealprint-entry-preferences"));
