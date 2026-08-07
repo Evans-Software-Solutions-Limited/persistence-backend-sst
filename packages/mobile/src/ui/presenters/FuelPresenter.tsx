@@ -9,7 +9,9 @@ import {
   IconCalendar,
   IconChevronL,
   IconChevronR,
+  IconEdit,
   IconTarget,
+  IconTrash,
   IconX,
 } from "@/ui/components/icons";
 import { localDayISO, type VolumeUnit } from "@/shared/utils";
@@ -24,6 +26,7 @@ import {
   type MealprintEntryState,
   type MealprintPlanProgress,
 } from "./mealprint/MealprintEntryCard";
+import { ClearPlanConfirmDialog } from "./mealprint/ClearPlanConfirmDialog";
 
 /**
  * <FuelPresenter> — the Fuel (nutrition) screen (nutrition.jsx). Composes the
@@ -98,6 +101,21 @@ export type FuelPresenterProps = {
    * two-CTA offer card's header link. See `MealprintEntryCard`'s docstring.
    */
   onMealprintEditPreferences: () => void;
+  /**
+   * "Edit plan" (amendment 2026-08-fuel-plan-surfacing § B) — pushes the
+   * Today/plan-config view where per-meal swap ("replace-meal") lives.
+   * Rendered in the plan actions row, only shown when there's an active plan
+   * (`mealprintPlanProgress !== null`).
+   */
+  onEditPlan: () => void;
+  /**
+   * "Clear plan" (amendment § B) — the container's DELETE mutation. Called
+   * only after the in-presenter confirm dialog is accepted; logged entries
+   * are never touched (`ON DELETE SET NULL` server-side).
+   */
+  onClearPlan: () => void;
+  /** True while the clear-plan DELETE is in flight — disables the dialog's CTAs. */
+  clearingPlan?: boolean;
 
   // Meal log
   slots: readonly MealSlotVM[];
@@ -365,6 +383,91 @@ function FuelCalendarModal({
   );
 }
 
+const ERROR_TONE = toneHex("error");
+
+/**
+ * <PlanActionsRow> — "Edit"/"Clear" for the day's active Mealprint plan
+ * (spec-26 amendment 2026-08-fuel-plan-surfacing § B). Sits between the
+ * Mealprint entry card and the meal log — "where the plan is shown on Fuel"
+ * per the amendment — only rendered while there IS an active plan
+ * (`mealprintPlanProgress !== null`, mirrored by <FuelPresenter>'s gate).
+ *
+ * Two independent, sibling `Pressable`s (not nested inside one outer
+ * Pressable) — same reasoning as `MealprintOfferCard`'s two real CTAs: each
+ * needs its own a11y label, and a shared outer Pressable would swallow one of
+ * them on iOS.
+ */
+function PlanActionsRow({
+  onEditPlan,
+  onOpenClearConfirm,
+  testID = "fuel-plan-actions",
+}: {
+  onEditPlan: () => void;
+  onOpenClearConfirm: () => void;
+  testID?: string;
+}) {
+  return (
+    <View
+      flexDirection="row"
+      alignItems="center"
+      justifyContent="space-between"
+      paddingHorizontal={2}
+      testID={testID}
+    >
+      <Text
+        fontFamily="$display"
+        fontSize={10.5}
+        fontWeight="600"
+        letterSpacing={1.5}
+        textTransform="uppercase"
+        color="$gold"
+      >
+        Mealprint plan
+      </Text>
+      <View flexDirection="row" alignItems="center" gap={16}>
+        <Pressable
+          onPress={onEditPlan}
+          testID={`${testID}-edit`}
+          accessibilityRole="button"
+          accessibilityLabel="Edit plan"
+          style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+        >
+          <View flexDirection="row" alignItems="center" gap={4}>
+            <IconEdit size={12} color={NEUTRAL_HEX.text3} />
+            <Text
+              fontFamily="$display"
+              fontWeight="600"
+              fontSize={11.5}
+              color="$text3"
+            >
+              Edit
+            </Text>
+          </View>
+        </Pressable>
+        <Pressable
+          onPress={onOpenClearConfirm}
+          testID={`${testID}-clear`}
+          accessibilityRole="button"
+          accessibilityLabel="Clear plan"
+          style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+        >
+          <View flexDirection="row" alignItems="center" gap={4}>
+            <IconTrash size={12} color={ERROR_TONE.base} />
+            <Text
+              fontFamily="$display"
+              fontWeight="600"
+              fontSize={11.5}
+              color="$error"
+            >
+              Clear
+            </Text>
+          </View>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
 export function FuelPresenter(props: FuelPresenterProps) {
   const {
     dateLabel,
@@ -397,6 +500,9 @@ export function FuelPresenter(props: FuelPresenterProps) {
     onMealprintRetry,
     onMealprintPlan,
     onMealprintEditPreferences,
+    onEditPlan,
+    onClearPlan,
+    clearingPlan = false,
     slots,
     waterCups,
     waterGoal,
@@ -418,6 +524,14 @@ export function FuelPresenter(props: FuelPresenterProps) {
   } = props;
 
   const insets = useSafeAreaInsets();
+
+  const [confirmClearOpen, setConfirmClearOpen] = useState(false);
+  // The plan can disappear out from under an open dialog (cleared elsewhere,
+  // or this device's own clear just succeeded) — reset so a LATER plan
+  // doesn't inherit a stale "confirm open" flag from a previous one.
+  useEffect(() => {
+    if (mealprintPlanProgress === null) setConfirmClearOpen(false);
+  }, [mealprintPlanProgress]);
 
   // Protein still owing today, for the Mealprint card's concrete pitch. Derived
   // from the hero's own view-model rather than added to the container's props, so
@@ -605,6 +719,17 @@ export function FuelPresenter(props: FuelPresenterProps) {
             onUpgrade={onMealprintUpgrade}
             onRetry={onMealprintRetry}
           />
+          {/* Edit/Clear for today's active plan (amendment
+              2026-08-fuel-plan-surfacing § B) — "where the plan is shown on
+              Fuel", directly above its planned rows. Gated the same way the
+              ACTIVE entry-card variant is: an active plan is what
+              `mealprintPlanProgress` presence means. */}
+          {mealprintPlanProgress !== null ? (
+            <PlanActionsRow
+              onEditPlan={onEditPlan}
+              onOpenClearConfirm={() => setConfirmClearOpen(true)}
+            />
+          ) : null}
           <MealLogPresenter
             slots={slots}
             onAddToSlot={onAddToSlot}
@@ -620,6 +745,13 @@ export function FuelPresenter(props: FuelPresenterProps) {
           />
         </View>
       </ScrollView>
+      {mealprintPlanProgress !== null && confirmClearOpen ? (
+        <ClearPlanConfirmDialog
+          isProcessing={clearingPlan}
+          onCancel={() => setConfirmClearOpen(false)}
+          onConfirm={onClearPlan}
+        />
+      ) : null}
     </View>
   );
 }

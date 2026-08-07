@@ -59,6 +59,8 @@ function render(over: Partial<FuelPresenterProps> = {}) {
     onMealprintRetry: jest.fn(),
     onMealprintPlan: jest.fn(),
     onMealprintEditPreferences: jest.fn(),
+    onEditPlan: jest.fn(),
+    onClearPlan: jest.fn(),
     slots,
     waterCups: 6,
     waterGoal: 8,
@@ -251,6 +253,93 @@ describe("FuelPresenter", () => {
       });
       fireEvent.press(getByTestId("fuel-calendar-modal-backdrop"));
       expect(props.onCloseCalendar).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // spec-26 amendment 2026-08-fuel-plan-surfacing § B — Edit/Clear for the
+  // day's active plan, surfaced on Fuel itself (not just plan-today).
+  describe("plan actions (amendment 2026-08-fuel-plan-surfacing § B)", () => {
+    const planProgress = {
+      loggedCount: 1,
+      totalCount: 3,
+      nextMealLabel: "Chicken & rice bowl",
+      nextMealKcal: 640,
+    };
+
+    it("renders nothing when there's no active plan", () => {
+      const { queryByTestId } = render({ mealprintPlanProgress: null });
+      expect(queryByTestId("fuel-plan-actions")).toBeNull();
+    });
+
+    it("renders the plan actions row when there's an active plan", () => {
+      const { getByTestId } = render({ mealprintPlanProgress: planProgress });
+      expect(getByTestId("fuel-plan-actions")).toBeTruthy();
+      expect(getByTestId("fuel-plan-actions-edit")).toBeTruthy();
+      expect(getByTestId("fuel-plan-actions-clear")).toBeTruthy();
+    });
+
+    it("Edit calls onEditPlan directly (no confirm step)", () => {
+      const { getByTestId, props } = render({
+        mealprintPlanProgress: planProgress,
+      });
+      fireEvent.press(getByTestId("fuel-plan-actions-edit"));
+      expect(props.onEditPlan).toHaveBeenCalledTimes(1);
+      expect(props.onClearPlan).not.toHaveBeenCalled();
+    });
+
+    it("Clear opens a confirm dialog rather than calling onClearPlan directly", () => {
+      const { getByTestId, queryByTestId, props } = render({
+        mealprintPlanProgress: planProgress,
+      });
+      expect(queryByTestId("clear-plan-confirm")).toBeNull();
+      fireEvent.press(getByTestId("fuel-plan-actions-clear"));
+      expect(getByTestId("clear-plan-confirm")).toBeTruthy();
+      expect(props.onClearPlan).not.toHaveBeenCalled();
+    });
+
+    it("confirming the dialog calls onClearPlan", () => {
+      const { getByTestId, props } = render({
+        mealprintPlanProgress: planProgress,
+      });
+      fireEvent.press(getByTestId("fuel-plan-actions-clear"));
+      fireEvent.press(getByTestId("clear-plan-confirm-confirm"));
+      expect(props.onClearPlan).toHaveBeenCalledTimes(1);
+    });
+
+    it("cancelling the dialog dismisses it without calling onClearPlan", () => {
+      const { getByTestId, queryByTestId, props } = render({
+        mealprintPlanProgress: planProgress,
+      });
+      fireEvent.press(getByTestId("fuel-plan-actions-clear"));
+      fireEvent.press(getByTestId("clear-plan-confirm-cancel"));
+      expect(queryByTestId("clear-plan-confirm")).toBeNull();
+      expect(props.onClearPlan).not.toHaveBeenCalled();
+    });
+
+    it("disables the dialog's CTAs while clearingPlan is true", () => {
+      const { getByTestId } = render({
+        mealprintPlanProgress: planProgress,
+        clearingPlan: true,
+      });
+      fireEvent.press(getByTestId("fuel-plan-actions-clear"));
+      expect(
+        getByTestId("clear-plan-confirm-confirm").props.accessibilityState
+          .disabled,
+      ).toBe(true);
+      expect(
+        getByTestId("clear-plan-confirm-cancel").props.accessibilityState
+          .disabled,
+      ).toBe(true);
+    });
+
+    // ⚠ Revert-verifying: fails if the plan header/ghost rows/clear-confirm
+    // wiring is ever made to feed the ring — planned meals are informational
+    // only (amendment § A.1) and must never move `consumedKcal`/`ringPct`.
+    it("an active plan's presence never changes the consumed/ring props", () => {
+      const withoutPlan = render({ mealprintPlanProgress: null });
+      const withPlan = render({ mealprintPlanProgress: planProgress });
+      expect(withPlan.props.consumedKcal).toBe(withoutPlan.props.consumedKcal);
+      expect(withPlan.props.ringPct).toBe(withoutPlan.props.ringPct);
     });
   });
 });

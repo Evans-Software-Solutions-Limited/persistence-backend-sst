@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ScrollView } from "react-native";
+import { Alert, type ScrollView } from "react-native";
 import { useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { useScrollToTopOnTabPress } from "@/ui/hooks/useScrollToTopOnTabPress";
 import { useAdapters } from "@/ui/hooks/useAdapters";
+import { useAuth } from "@/ui/hooks/useAuth";
 import { useDashboard } from "@/ui/hooks/useDashboard";
 import { useGetFuelToday } from "@/ui/hooks/useGetFuelToday";
 import { useRefreshOnFocus } from "@/ui/hooks/useRefreshOnFocus";
@@ -60,7 +61,9 @@ const MACRO_COLORS = {
 
 export function FuelContainer() {
   const router = useRouter();
-  const { storage } = useAdapters();
+  const { api, storage } = useAdapters();
+  const { session } = useAuth();
+  const userId = session?.userId ?? null;
 
   const scrollRef = useRef<ScrollView>(null);
   useScrollToTopOnTabPress(scrollRef);
@@ -323,6 +326,53 @@ export function FuelContainer() {
     [activePlan, logPlanMeal, fuel],
   );
 
+  // "Clear plan" (amendment 2026-08-fuel-plan-surfacing § B) — DELETE the
+  // viewed day's active plan, confirmed already in the presenter's dialog.
+  // Direct/online, matching `deletePlan`'s ungated-but-unqueued posture (see
+  // `api.port.ts`'s "Mealprint day plans" docstring) — the same shape as
+  // `PlanTodayContainer.onDeletePlan`. Logged entries are untouched
+  // (`loggedEntryId` is `ON DELETE SET NULL` server-side): only the plan and
+  // its unlogged meals disappear, which `activePlan.reload()` reflects by
+  // collapsing `mealprintPlanProgress` back to `null` — that in turn hides
+  // this row, the ghost rows, and closes the confirm dialog (FuelPresenter's
+  // own reset effect).
+  const [clearingPlan, setClearingPlan] = useState(false);
+  const onClearPlan = useCallback(() => {
+    const plan = activePlan.data;
+    if (!plan || clearingPlan) return;
+    setClearingPlan(true);
+    void api
+      .deletePlan(plan.id)
+      .then((res) => {
+        // `deletePlan` resolves `Result.Err` (never rejects) on a 5xx/404/offline
+        // attempt. Do NOT touch the cache on failure: the plan still exists
+        // server-side, and faking success flashes the row + ghost rows away only
+        // for the subscription to re-fetch them right back (online) or leaves them
+        // wrongly gone until reconnect (offline). Surface it and leave the plan +
+        // dialog in place so the user can retry.
+        if (!res.ok) {
+          Alert.alert(
+            "Couldn't clear plan",
+            "We couldn't clear your plan just now. Check your connection and try again.",
+          );
+          return;
+        }
+        if (userId) storage.removeCachedMealPlan(userId, plan.planDate);
+        // Only the active-plan cache is invalidated: the ghost rows derive solely
+        // from `activePlan`, and /nutrition/today carries no plan-derived data (the
+        // prototyped `plannedMeals` field was reverted), so today needs no reload.
+        activePlan.reload();
+      })
+      .finally(() => setClearingPlan(false));
+  }, [activePlan, api, storage, userId, clearingPlan]);
+
+  // "Edit plan" — the same Today/plan-config route the ACTIVE entry-card
+  // variant itself opens on tap (`useMealprintEntry`'s `onPress`); per-meal
+  // swap ("replace-meal") lives there (amendment § B).
+  const onEditPlan = useCallback(() => {
+    router.push("/(app)/fuel/plan-today");
+  }, [router]);
+
   const isLoading =
     (fuel.isRefreshing || (fuel.isStale && fuel.error === null)) &&
     data === null;
@@ -360,6 +410,9 @@ export function FuelContainer() {
       onMealprintRetry={mealprint.onRetry}
       onMealprintPlan={mealprint.onPlanMyDay}
       onMealprintEditPreferences={mealprint.onEditPreferences}
+      onEditPlan={onEditPlan}
+      onClearPlan={onClearPlan}
+      clearingPlan={clearingPlan}
       slots={slots}
       waterCups={consumed.waterCups}
       waterGoal={target?.waterCups ?? 8}
