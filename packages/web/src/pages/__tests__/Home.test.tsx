@@ -37,13 +37,26 @@ describe("Home", () => {
     expect(cta.closest("a")).toBeNull();
   });
 
-  it("does NOT ship the excluded waitlist / founding content", () => {
+  it("does NOT ship the excluded founding / fake-stat content", () => {
+    // The launch waitlist + coach enquiry forms ARE shipped now (Brad approved
+    // lead capture 2026-08-08, reversing the earlier hard-exclusion). What stays
+    // excluded is the founding-discount framing and any invented proof stats.
     const { container } = renderPage(<Home />);
     const text = container.textContent ?? "";
-    expect(text).not.toMatch(/waitlist/i);
     expect(text).not.toMatch(/founding/i);
     expect(text).not.toMatch(/92%/);
     expect(text).not.toMatch(/early access/i);
-    expect(container.querySelector("form")).toBeNull();
+  });
+
+  it("ships the launch waitlist and coach enquiry capture forms", () => {
+    const { container } = renderPage(<Home />);
+    // Two lead-capture forms: waitlist (email) + coach enquiry.
+    expect(container.querySelectorAll("form.lead-form").length).toBe(2);
+    expect(screen.getByText("Notify me at launch")).toBeDefined();
+    expect(screen.getByText("Register your interest")).toBeDefined();
+    // Both carry a required marketing-consent checkbox (UK-GDPR).
+    expect(
+      container.querySelectorAll('.lead-consent input[type="checkbox"]'),
+    ).toHaveLength(2);
   });
 });

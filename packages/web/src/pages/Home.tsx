@@ -9,6 +9,7 @@ import { ClientDetailScreen } from "@/marketing/screens/ClientDetailScreen";
 import { useReveal } from "@/marketing/hooks";
 import { useSeo } from "@/marketing/seo";
 import { heroScreenshot } from "@/marketing/config";
+import { WaitlistForm, CoachEnquiryForm } from "@/marketing/LeadForms";
 import {
   AppleIcon,
   GooglePlayIcon,
@@ -373,13 +374,6 @@ export function Home() {
                 <span className="kicker c-accent" data-reveal>
                   Mealprint · Premium+
                 </span>
-                <div
-                  className="soon-badge"
-                  data-reveal
-                  style={{ ...d(60), marginLeft: 5 }}
-                >
-                  Coming soon
-                </div>
                 <h2 className="disp" data-reveal style={d(80)}>
                   Mealprint. Your macros,
                   <br />
@@ -546,6 +540,13 @@ export function Home() {
                   <Link to="/pricing#coaches" className="coach-cta">
                     See coach plans <span className="arw">→</span>
                   </Link>
+                  <div className="coach-enquiry" style={{ marginTop: 24 }}>
+                    <p className="coach-enquiry-lead">
+                      Bringing a roster with you? Tell us about your practice
+                      and we'll help you get set up.
+                    </p>
+                    <CoachEnquiryForm />
+                  </div>
                 </div>
                 <div className="coach-right">
                   <PhoneDevice
@@ -598,6 +599,13 @@ export function Home() {
                   <span className="big">Google Play</span>
                 </div>
               </span>
+            </div>
+            <div
+              className="store-waitlist"
+              data-reveal
+              style={{ ...d(230), margin: "6px auto 34px" }}
+            >
+              <WaitlistForm />
             </div>
             <ul className="feat-grid" data-reveal style={d(260)}>
               <li>

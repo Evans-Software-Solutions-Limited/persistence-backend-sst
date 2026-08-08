@@ -28,6 +28,14 @@ import { workoutVariationsCreateHandler } from "./loadout/variations/workoutVari
 import { workoutVariationsReplaceHandler } from "./loadout/variations/workoutVariationsReplaceHandler";
 import { workoutLoadoutPreviewHandler } from "./loadout/preview/workoutLoadoutPreviewHandler";
 import { aiEquipmentScanHandler } from "./loadout/scan/aiEquipmentScanHandler";
+// Marketing lead capture (website waitlist + coach enquiry forms) — unrelated
+// to loadout, but nested here (rather than as its own `.use()` on the api.ts
+// root) for the same reason `coachClientOffboardingRoutes` nests inside
+// `trainersOnBehalfRoutes`: the root chain was already at TS's
+// instantiation-depth ceiling (TS2589), confirmed by adding this as a 24th
+// root `.use()` before moving it here. Both routes declare absolute paths, so
+// nesting adds no prefix and no ordering risk.
+import { leadsRoutes } from "./leads/leadsRoutes";
 
 export const loadoutRoutes = new Elysia()
   // saved gyms — literal /saved-gyms (GET/POST) and parameterised
@@ -48,4 +56,7 @@ export const loadoutRoutes = new Elysia()
   // under a prefix no other route uses (the nutrition AI endpoints all sit under
   // `/nutrition/ai/...`), so no parameterised matcher can capture it and the
   // late-mount argument above applies unchanged.
-  .use(aiEquipmentScanHandler);
+  .use(aiEquipmentScanHandler)
+  // Marketing lead capture — PUBLIC (no auth) waitlist + coach-enquiry
+  // endpoints backing the website forms. See ./leads/leadsRoutes.
+  .use(leadsRoutes);
