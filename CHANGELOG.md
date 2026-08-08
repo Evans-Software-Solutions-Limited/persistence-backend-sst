@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.13.0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.12.1...persistence-v1.13.0) (2026-08-08)
+
+
+### Features
+
+* **web:** marketing lead capture + launch-readiness pass ([#379](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/379)) ([c1ec373](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/c1ec3733ae5e8f1585ebdb56270c19e5d1a8b169))
+
+
+### Bug Fixes
+
+* **infra:** preserve CloudFront cache behavior ([#382](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/382)) ([ac662d1](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/ac662d108e2a745974717535e84dadd234d7d1ac))
+* **mobile:** keep IAP prices storefront-localized ([#381](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/381)) ([d8a24c9](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/d8a24c9853344521b5b92102a0df48abd097cba7))
+
 ## [1.12.1](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.12.0...persistence-v1.12.1) (2026-08-08)
 
 
