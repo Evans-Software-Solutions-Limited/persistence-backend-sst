@@ -128,7 +128,7 @@ describe("IOSPurchaseFlowPresenter", () => {
     expect(props.onRoleChange).toHaveBeenCalledWith("trainer");
   });
 
-  it("renders the coach ladder, suite split and web-only organisation readout", () => {
+  it("renders the coach ladder without organisation plans or web purchase messaging", () => {
     render(
       <IOSPurchaseFlowPresenter
         {...defaultProps()}
@@ -148,8 +148,12 @@ describe("IOSPurchaseFlowPresenter", () => {
     ).toBeTruthy();
     expect(screen.getAllByText("Adaptive suite not included")).toHaveLength(1);
     expect(screen.getAllByText("Loadout + Mealprint included")).toHaveLength(3);
-    expect(screen.getByTestId("organisation-plans-read-only")).toBeTruthy();
-    expect(screen.getByText("Studio Pro")).toBeTruthy();
+    expect(screen.queryByText("Studio")).toBeNull();
+    expect(screen.queryByText("Studio Pro")).toBeNull();
+    expect(screen.queryByText("Enterprise")).toBeNull();
+    expect(screen.queryByText(/organisation/i)).toBeNull();
+    expect(screen.queryByText(/web only/i)).toBeNull();
+    expect(screen.queryByText(/on the web/i)).toBeNull();
     expect(screen.queryByText("Buy")).toBeNull();
     expect(screen.queryByText("Start trial")).toBeNull();
     expect(screen.queryByText("Talk to us")).toBeNull();
@@ -176,6 +180,8 @@ describe("IOSPurchaseFlowPresenter", () => {
     expect(screen.getByTestId("subscription-manage-screen")).toBeTruthy();
     expect(screen.getAllByText("Annual")).toHaveLength(2);
     expect(screen.getByText(/renews 14 Mar 2027/i)).toBeTruthy();
+    expect(screen.queryByText(/organisation/i)).toBeNull();
+    expect(screen.queryByText(/on the web/i)).toBeNull();
     fireEvent.press(screen.getByTestId("subscription-change-plan"));
     fireEvent.press(screen.getByTestId("ios-purchase-manage"));
     expect(props.onChangePlan).toHaveBeenCalled();
@@ -206,7 +212,7 @@ describe("IOSPurchaseFlowPresenter", () => {
     expect(props.onBack).toHaveBeenCalled();
   });
 
-  it("Price supports live, localised, invoiced and provisional values", () => {
+  it("Price supports live, localised and provisional values", () => {
     const tier = catalogTier("premium");
     const view = render(
       <Price
@@ -216,9 +222,6 @@ describe("IOSPurchaseFlowPresenter", () => {
       />,
     );
     expect(screen.getByText("£17.49")).toBeTruthy();
-
-    view.rerender(<Price tier={catalogTier("enterprise")} cadence="monthly" />);
-    expect(screen.getByText("Invoiced")).toBeTruthy();
 
     view.rerender(
       <Price
