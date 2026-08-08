@@ -1,5 +1,10 @@
 import React from "react";
-import { fireEvent, render, screen } from "@testing-library/react-native";
+import {
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react-native";
 import {
   IOSPurchaseFlowPresenter,
   Price,
@@ -11,12 +16,48 @@ function defaultProps(): IOSPurchaseFlowPresenterProps {
   return {
     tierPricing: {
       free: { monthly: 0, annual: null },
-      premium: { monthly: 16.99, annual: 139.99 },
-      premium_plus: { monthly: 29.99, annual: 249.99 },
-      individual_trainer: { monthly: 18.99, annual: 159.99 },
-      start_up_coach_plus: { monthly: 34.99, annual: 289.99 },
-      coach: { monthly: 59.99, annual: 499.99 },
-      coach_pro: { monthly: 99.99, annual: 839.99 },
+      premium: {
+        monthly: 16.99,
+        annual: 139.99,
+        monthlyLabel: "£16.99",
+        annualLabel: "£139.99",
+        annualMonthlyEquivalentLabel: "£11.67",
+      },
+      premium_plus: {
+        monthly: 29.99,
+        annual: 249.99,
+        monthlyLabel: "£29.99",
+        annualLabel: "£249.99",
+        annualMonthlyEquivalentLabel: "£20.83",
+      },
+      individual_trainer: {
+        monthly: 18.99,
+        annual: 159.99,
+        monthlyLabel: "£18.99",
+        annualLabel: "£159.99",
+        annualMonthlyEquivalentLabel: "£13.33",
+      },
+      start_up_coach_plus: {
+        monthly: 34.99,
+        annual: 289.99,
+        monthlyLabel: "£34.99",
+        annualLabel: "£289.99",
+        annualMonthlyEquivalentLabel: "£24.17",
+      },
+      coach: {
+        monthly: 59.99,
+        annual: 499.99,
+        monthlyLabel: "£59.99",
+        annualLabel: "£499.99",
+        annualMonthlyEquivalentLabel: "£41.67",
+      },
+      coach_pro: {
+        monthly: 99.99,
+        annual: 839.99,
+        monthlyLabel: "£99.99",
+        annualLabel: "£839.99",
+        annualMonthlyEquivalentLabel: "£70.00",
+      },
     },
     isLoading: false,
     errorMessage: null,
@@ -115,6 +156,9 @@ describe("IOSPurchaseFlowPresenter", () => {
   it("continues free without treating it as an IAP", () => {
     const props = defaultProps();
     render(<IOSPurchaseFlowPresenter {...props} />);
+    const freeCard = screen.getByTestId("subscription-card-free");
+    expect(within(freeCard).getByText("Free")).toBeTruthy();
+    expect(within(freeCard).queryByText("£0")).toBeNull();
     fireEvent.press(screen.getByTestId("subscription-card-free-continue"));
     expect(props.onContinueFree).toHaveBeenCalled();
   });
@@ -226,7 +270,11 @@ describe("IOSPurchaseFlowPresenter", () => {
     view.rerender(
       <Price
         tier={{ ...tier, provisionalAnnual: true }}
-        pricing={{ monthly: 19.99, annual: 199.99 }}
+        pricing={{
+          monthly: 19.99,
+          annual: 199.99,
+          annualLabel: "£199.99",
+        }}
         cadence="annual"
       />,
     );
@@ -240,7 +288,7 @@ describe("IOSPurchaseFlowPresenter", () => {
         monthlyEquivalentOnly
       />,
     );
-    expect(screen.getByText("£16.67*")).toBeTruthy();
+    expect(screen.queryByText("£16.67*")).toBeNull();
 
     view.rerender(
       <Price
