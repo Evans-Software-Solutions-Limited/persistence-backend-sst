@@ -87,13 +87,13 @@ export const frontend = new sst.aws.StaticSite("web", {
     wait: true,
   },
   // Attach the security-headers policy to the distribution's default behaviour.
-  // Merged into SST's generated defaultCacheBehavior, so the cache policy and
-  // CloudFront Function associations SST sets up are preserved.
+  // Use the callback form because SST shallow-merges object transforms at the
+  // CdnArgs level. Supplying a partial `defaultCacheBehavior` object would
+  // replace SST's generated behaviour and remove required fields such as
+  // `allowedMethods`, the cache policy and CloudFront Function associations.
   transform: {
-    cdn: {
-      defaultCacheBehavior: {
-        responseHeadersPolicyId: securityHeaders.id,
-      },
+    cdn: (args) => {
+      args.defaultCacheBehavior.responseHeadersPolicyId = securityHeaders.id;
     },
   },
   environment: {
