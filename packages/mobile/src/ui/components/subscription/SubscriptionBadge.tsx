@@ -61,8 +61,8 @@ function variantFor(tier: SubscriptionTierName): Variant {
       // consumer tier, not a trainer one.
       return "premium";
     default:
-      // Every other tierName is a trainer / business / enterprise tier.
-      // Treated uniformly under one palette.
+      // Every other tierName is a coach tier. Organisation tiers are not part
+      // of the mobile subscription domain or purchase experience.
       return "trainer";
   }
 }

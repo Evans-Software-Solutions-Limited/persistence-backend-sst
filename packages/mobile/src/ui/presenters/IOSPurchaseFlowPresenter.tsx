@@ -87,14 +87,6 @@ export function Price({
   compact?: boolean;
   monthlyEquivalentOnly?: boolean;
 }) {
-  if (tier.invoiced) {
-    return (
-      <Text style={[styles.price, compact && styles.priceCompact]}>
-        Invoiced
-      </Text>
-    );
-  }
-
   const annual = cadence === "annual" && pricing.annual !== null;
   const value = monthlyEquivalentOnly
     ? monthlyEquivalent(pricing)
@@ -494,40 +486,6 @@ function TierCard({
   );
 }
 
-function OrganisationReadOnly() {
-  return (
-    <View style={styles.orgCard} testID="organisation-plans-read-only">
-      <View style={styles.orgHeader}>
-        <Ionicons name="business-outline" size={19} color={color.$text3} />
-        <View style={styles.orgHeaderText}>
-          <Text style={styles.orgTitle}>Running a gym or studio?</Text>
-          <Text style={styles.orgSubtitle}>
-            Organisation plans are managed on the web.
-          </Text>
-        </View>
-        <Text style={styles.webOnlyPill}>WEB ONLY</Text>
-      </View>
-      {tiersFor("org").map((tier) => (
-        <View key={tier.id} style={styles.orgTierRow}>
-          <View>
-            <Text style={styles.orgTierName}>{tier.name}</Text>
-            <Text style={styles.orgTierCapacity}>{tier.clients} members</Text>
-          </View>
-          <Price
-            tier={tier}
-            pricing={staticTierPricing(tier)}
-            cadence="monthly"
-            compact
-          />
-        </View>
-      ))}
-      <Text style={styles.orgFootnote}>
-        Sign in on the web to buy or manage an organisation plan.
-      </Text>
-    </View>
-  );
-}
-
 function PlansScreen(props: IOSPurchaseFlowPresenterProps) {
   const trainer = props.selectedRole === "trainer";
   const cadence: BillingCadence =
@@ -651,8 +609,6 @@ function PlansScreen(props: IOSPurchaseFlowPresenterProps) {
         {hasProvisional && (
           <Text style={styles.provisionalFootnote}>* provisional pricing</Text>
         )}
-        {trainer && <OrganisationReadOnly />}
-
         <TouchableOpacity
           style={styles.restoreButton}
           onPress={props.onRestore}
@@ -759,18 +715,6 @@ function ManageScreen(props: IOSPurchaseFlowPresenterProps) {
               {cadence === "annual" ? "Annual" : "Monthly"}
             </Text>
           </View>
-        </View>
-
-        <View style={styles.infoCard}>
-          <Ionicons
-            name="information-circle-outline"
-            size={18}
-            color={color.$text3}
-          />
-          <Text style={styles.infoText}>
-            Coach plans are managed here in the app. Organisation plans are
-            managed on the web.
-          </Text>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -1139,52 +1083,6 @@ const styles = StyleSheet.create({
     color: color.$text4,
     fontSize: 10,
     textAlign: "center",
-  },
-  orgCard: {
-    marginTop: 20,
-    overflow: "hidden",
-    borderWidth: 1,
-    borderStyle: "dashed",
-    borderColor: color.$border3,
-    borderRadius: 16,
-    backgroundColor: color.$surface,
-  },
-  orgHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    padding: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: color.$border,
-  },
-  orgHeaderText: { flex: 1 },
-  orgTitle: { color: color.$text, fontSize: 14, fontWeight: "700" },
-  orgSubtitle: { marginTop: 2, color: color.$text3, fontSize: 11 },
-  webOnlyPill: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 999,
-    backgroundColor: color.$surface3,
-    color: color.$text3,
-    fontSize: 8.5,
-    fontWeight: "700",
-  },
-  orgTierRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: color.$border,
-  },
-  orgTierName: { color: color.$text2, fontSize: 13, fontWeight: "700" },
-  orgTierCapacity: { marginTop: 2, color: color.$text4, fontSize: 10 },
-  orgFootnote: {
-    padding: 14,
-    color: color.$text4,
-    fontSize: 10.5,
-    lineHeight: 15,
   },
   restoreButton: { alignItems: "center", padding: 16, marginTop: 10 },
   restoreButtonText: { color: color.$primary, fontSize: 13, fontWeight: "600" },
