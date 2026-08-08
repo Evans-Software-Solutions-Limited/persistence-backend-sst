@@ -65,14 +65,6 @@ export interface IOSPurchaseFlowPresenterProps {
   onManageInAppStore: () => void;
 }
 
-function formatGbpValue(value: number): string {
-  if (value === 0) return "£0";
-  return `£${value.toLocaleString("en-GB", {
-    minimumFractionDigits: Number.isInteger(value) ? 0 : 2,
-    maximumFractionDigits: Number.isInteger(value) ? 0 : 2,
-  })}`;
-}
-
 /** The only mobile component allowed to print a resolved subscription price. */
 export function Price({
   tier,
@@ -87,7 +79,11 @@ export function Price({
   compact?: boolean;
   monthlyEquivalentOnly?: boolean;
 }) {
-  const annual = cadence === "annual" && pricing.annual !== null;
+  // The free tier is already named "Free" and has no StoreKit product.
+  // Omitting an amount avoids implying a storefront currency with `£0`.
+  if (tier.id === "free") return null;
+
+  const annual = cadence === "annual";
   const value = monthlyEquivalentOnly
     ? monthlyEquivalent(pricing)
     : annual
@@ -95,6 +91,17 @@ export function Price({
       : pricing.monthly;
   const provisional = annual ? tier.provisionalAnnual : tier.provisionalMonthly;
   if (value === null) return null;
+
+  // Paid native-IAP prices must be printed exactly as StoreKit supplies them.
+  // The API catalog contains GBP-denominated numeric values, which are useful
+  // for the web rail but are not safe display fallbacks for another App Store
+  // storefront.
+  const label = monthlyEquivalentOnly
+    ? pricing.annualMonthlyEquivalentLabel
+    : annual
+      ? pricing.annualLabel
+      : pricing.monthlyLabel;
+  if (label === undefined) return null;
 
   return (
     <View style={styles.priceRow}>
@@ -107,24 +114,17 @@ export function Price({
         ]}
         accessibilityHint={provisional ? "Provisional price" : undefined}
       >
-        {monthlyEquivalentOnly
-          ? (pricing.annualMonthlyEquivalentLabel ??
-            formatGbpValue(Number(value.toFixed(2))))
-          : annual
-            ? (pricing.annualLabel ?? formatGbpValue(value))
-            : (pricing.monthlyLabel ?? formatGbpValue(value))}
+        {label}
         {provisional ? "*" : ""}
       </Text>
-      {value !== 0 && (
-        <Text
-          style={[
-            styles.priceUnit,
-            monthlyEquivalentOnly && styles.equivalentUnit,
-          ]}
-        >
-          {annual && !monthlyEquivalentOnly ? "/yr" : "/mo"}
-        </Text>
-      )}
+      <Text
+        style={[
+          styles.priceUnit,
+          monthlyEquivalentOnly && styles.equivalentUnit,
+        ]}
+      >
+        {annual && !monthlyEquivalentOnly ? "/yr" : "/mo"}
+      </Text>
     </View>
   );
 }
@@ -408,20 +408,22 @@ function TierCard({
         </View>
         <View style={styles.tierPriceWrap}>
           <Price tier={tier} pricing={pricing} cadence={cadence} compact />
-          {annual && equivalent !== null && (
-            <View style={styles.equivalentRow}>
-              <Price
-                tier={tier}
-                pricing={pricing}
-                cadence="annual"
-                compact
-                monthlyEquivalentOnly
-              />
-              {saving ? (
-                <Text style={styles.equivalentText}>· save {saving}%</Text>
-              ) : null}
-            </View>
-          )}
+          {annual &&
+            equivalent !== null &&
+            pricing.annualMonthlyEquivalentLabel !== undefined && (
+              <View style={styles.equivalentRow}>
+                <Price
+                  tier={tier}
+                  pricing={pricing}
+                  cadence="annual"
+                  compact
+                  monthlyEquivalentOnly
+                />
+                {saving ? (
+                  <Text style={styles.equivalentText}>· save {saving}%</Text>
+                ) : null}
+              </View>
+            )}
         </View>
       </View>
 

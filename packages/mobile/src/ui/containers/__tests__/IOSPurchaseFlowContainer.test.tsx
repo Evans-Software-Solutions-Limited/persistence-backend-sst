@@ -27,6 +27,7 @@ import {
   IOSPurchaseFlowContainer,
   PLAY_STORE_SUBSCRIPTIONS_URL,
 } from "@/ui/containers/IOSPurchaseFlowContainer";
+import { PURCHASE_OFFERINGS_QUERY_KEY } from "@/ui/hooks/usePurchaseOfferings";
 
 const mockPush = jest.fn();
 const mockBack = jest.fn();
@@ -160,10 +161,12 @@ function makeAdapters(current = subscription()): {
   };
 }
 
-function renderContainer(adapters: Adapters) {
-  const client = new QueryClient({
+function renderContainer(
+  adapters: Adapters,
+  client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  });
+  }),
+) {
   return render(
     <QueryClientProvider client={client}>
       <AdapterProvider adapters={adapters}>
@@ -204,7 +207,7 @@ describe("IOSPurchaseFlowContainer", () => {
     fireEvent.press(screen.getByTestId("persona-self"));
 
     expect(screen.getByTestId("subscription-card-premium_plus")).toBeTruthy();
-    expect(screen.getByText("£249.99")).toBeTruthy();
+    expect(screen.queryByText("£249.99")).toBeNull();
   });
 
   it("routes the coach persona into coach plans", async () => {
@@ -284,7 +287,7 @@ describe("IOSPurchaseFlowContainer", () => {
     expect(screen.queryByText("£16.99")).toBeNull();
   });
 
-  it("does not derive savings across partial StoreKit and API pricing", async () => {
+  it("does not display a GBP fallback when the selected StoreKit cadence is missing", async () => {
     mockParams = { tier: "premium", cycle: "yearly" };
     const { adapters, purchases } = makeAdapters();
     purchases.packages[0] = {
@@ -297,8 +300,66 @@ describe("IOSPurchaseFlowContainer", () => {
     renderContainer(adapters);
 
     const card = await screen.findByTestId("subscription-card-premium");
-    expect(within(card).getByText("£139.99")).toBeTruthy();
+    expect(within(card).queryByText("£139.99")).toBeNull();
+    expect(within(card).queryByText("US$17.49")).toBeNull();
     expect(within(card).queryByText(/save \d+%/i)).toBeNull();
+  });
+
+  it("surfaces a RevenueCat offering failure instead of showing fallback prices", async () => {
+    const { adapters, purchases } = makeAdapters();
+    purchases.nextPackagesError = {
+      kind: "network",
+      code: null,
+      message: "Store prices unavailable",
+    };
+
+    renderContainer(adapters);
+
+    expect(await screen.findByTestId("ios-purchase-error")).toBeTruthy();
+    expect(screen.getByText("Store prices unavailable")).toBeTruthy();
+    expect(screen.queryByText("£16.99")).toBeNull();
+  });
+
+  it("does not expose a cached storefront price while its mandatory refresh is pending", async () => {
+    mockParams = { tier: "premium", cycle: "monthly" };
+    const { adapters, purchases } = makeAdapters();
+    const stalePackage = purchases.packages[0]!;
+    const client = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    });
+    client.setQueryData(PURCHASE_OFFERINGS_QUERY_KEY, [stalePackage]);
+
+    let finishRefresh: (() => void) | undefined;
+    jest.spyOn(purchases, "getPurchasablePackages").mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishRefresh = () =>
+            resolve({
+              ok: true,
+              value: [
+                {
+                  ...stalePackage,
+                  price: 19.99,
+                  priceString: "US$19.99",
+                  pricePerMonthString: "US$19.99",
+                },
+              ],
+            });
+        }),
+    );
+
+    renderContainer(adapters, client);
+
+    expect(await screen.findByTestId("ios-purchase-loading")).toBeTruthy();
+    expect(screen.queryByText("£16.99")).toBeNull();
+
+    await act(async () => finishRefresh?.());
+
+    expect(await screen.findByText("US$19.99")).toBeTruthy();
+    expect(screen.queryByText("£16.99")).toBeNull();
   });
 
   it("purchases and synchronises an available tier when the App Store rail is enabled", async () => {

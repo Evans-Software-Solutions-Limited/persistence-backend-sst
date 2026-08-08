@@ -173,22 +173,10 @@ export function IOSPurchaseFlowContainer() {
       SUBSCRIPTION_CATALOG.map((tier) => tier.id),
     );
 
-    // The public catalog keeps cards useful before StoreKit has returned an
-    // offering. Join by the canonical tier id; no display price is baked into
-    // the app bundle.
-    for (const tier of tiersQuery.data ?? []) {
-      if (!catalogIds.has(tier.tierName)) continue;
-      pricing[tier.tierName as CatalogTierId] = {
-        monthly: tier.priceMonthly,
-        annual: tier.priceYearly,
-        monthlySource: "api",
-        annualSource: "api",
-      };
-    }
-
-    // StoreKit (through RevenueCat) is authoritative for an IAP product. Its
-    // numeric price drives savings and its localised label is printed exactly
-    // as Apple supplies it. Product id -> tier/cadence mapping is the join.
+    // StoreKit (through RevenueCat) is the only price source for native IAP.
+    // The API catalog is GBP-denominated; using it as a display fallback can
+    // mix `£` with the customer's real App Store currency. Product id ->
+    // tier/cadence mapping is the join.
     for (const pkg of packages) {
       if (pkg.tier === null || !catalogIds.has(pkg.tier)) continue;
       const id = pkg.tier as CatalogTierId;
@@ -215,7 +203,7 @@ export function IOSPurchaseFlowContainer() {
     }
 
     return pricing;
-  }, [packages, tiersQuery.data]);
+  }, [packages]);
   // Trial length advertised on EACH card — derived ONLY from THAT tier's own
   // product's Apple introductory offer, on the shown billing cycle. `null`
   // when the product surfaces no real free-trial offer (offer missing/
@@ -424,9 +412,11 @@ export function IOSPurchaseFlowContainer() {
     <IOSPurchaseFlowPresenter
       tierPricing={tierPricing}
       isLoading={
-        tiersQuery.isLoading || subQuery.isLoading || offeringsQuery.isLoading
+        tiersQuery.isLoading || subQuery.isLoading || offeringsQuery.isFetching
       }
-      errorMessage={tiersQuery.error?.message ?? null}
+      errorMessage={
+        offeringsQuery.error?.message ?? tiersQuery.error?.message ?? null
+      }
       isUnavailable={purchases !== null && !purchases.isConfigured()}
       billingCycle={billingCycle}
       currentTier={currentTier}
