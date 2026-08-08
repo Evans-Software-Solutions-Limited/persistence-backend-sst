@@ -1,6 +1,9 @@
 import {
   databaseUrl,
   expoAccessToken,
+  resendApiKey,
+  resendAthletesAudienceId,
+  resendCoachesAudienceId,
   revenueCatApiKey,
   revenueCatProjectId,
   revenueCatWebhookSecret,
@@ -144,6 +147,13 @@ export const coreRoute = coreAPI.route("$default", {
     // string is valid (`initSentry()` no-ops), so an unset value still deploys
     // and runs (mirrors EXPO_ACCESS_TOKEN, not the fail-fast secrets).
     SENTRY_DSN: sentryDsn.value,
+    // Resend — marketing lead capture (website waitlist + coach enquiry
+    // forms). OPTIONAL + fail-safe: the leads routes treat an empty API key
+    // or audience id as "not configured" and return 503 (mirrors
+    // EXPO_ACCESS_TOKEN/SENTRY_DSN, not the fail-fast secrets).
+    RESEND_API_KEY: resendApiKey.value,
+    RESEND_ATHLETES_AUDIENCE_ID: resendAthletesAudienceId.value,
+    RESEND_COACHES_AUDIENCE_ID: resendCoachesAudienceId.value,
     // AI Tier B model ids (M9.5). Plain deploy-time config, not secrets —
     // Bedrock auth is IAM (see `permissions` above), so there's nothing
     // sensitive here. Defaults match `nutrition/services/aiEstimation.ts`;

@@ -334,6 +334,11 @@ export function Privacy() {
             the app reliable. Technical error data is automatically scrubbed to
             remove personal information before it is sent.
           </li>
+          <li>
+            <strong>Resend</strong> — email delivery and list management for our
+            launch waitlist, coach enquiries and product updates, where you have
+            asked to hear from us. You can unsubscribe at any time.
+          </li>
         </ul>
 
         <h2>Where your data is stored and international transfers</h2>
@@ -507,6 +512,24 @@ export function Privacy() {
           or by calling their helpline on 0303 123 1113. We would, however,
           appreciate the chance to address your concerns first, so please do
           contact us before approaching the ICO.
+        </p>
+
+        <h2>Website enquiries and launch emails</h2>
+        <p>
+          If you join our launch waitlist or send a coach enquiry through this
+          website, we collect the details you give us — your email address, and
+          for a coach enquiry your name and any information you add about your
+          practice (such as how many clients you train or the tools you use
+          today). We use these details only to email you about the launch and
+          product updates you asked for, and to respond to your enquiry.
+        </p>
+        <p>
+          Our lawful basis is your consent, which you give by ticking the box on
+          the form. You can withdraw it at any time by using the unsubscribe
+          link in any email or by contacting us at the address below —
+          withdrawing it does not affect anything we did beforehand. We keep
+          these details only while they remain useful for this purpose, and we
+          do not sell them or use them for advertising.
         </p>
 
         <h2>Cookies and the Persistence website</h2>

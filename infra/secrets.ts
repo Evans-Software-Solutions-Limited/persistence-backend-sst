@@ -79,3 +79,32 @@ export const supabaseServiceRoleKey = new sst.Secret("SupabaseServiceRoleKey");
 //
 // Set per-stage from CI via `bunx sst secret set SentryDsn "<dsn>" --stage <stage>`.
 export const sentryDsn = new sst.Secret("SentryDsn", "");
+
+// Resend — marketing lead capture (website waitlist + coach enquiry forms).
+// There is no database for leads; Resend Audiences ARE the store.
+//
+// `ResendApiKey`               — Resend REST API key (`re_…`), server-side
+//                                 only. Used both to add contacts to an
+//                                 audience and to send the coach-enquiry
+//                                 internal notification email.
+// `ResendAthletesAudienceId`   — the Resend Audience id that
+//                                 `POST /leads/waitlist` adds contacts to.
+// `ResendCoachesAudienceId`    — the Resend Audience id that
+//                                 `POST /leads/coach` adds contacts to.
+//
+// All three are OPTIONAL + fail-safe, mirroring `SentryDsn`/`ExpoAccessToken`
+// rather than the fail-fast secrets above: the lead-capture routes treat an
+// empty API key or audience id as "not configured" and return 503 rather than
+// throwing, so a stage without these secrets still deploys cleanly.
+//
+// Set per-stage from CI via `bunx sst secret set <name> "<value>" --stage <stage>`.
+// Never file-commit values — the repo is public.
+export const resendApiKey = new sst.Secret("ResendApiKey", "");
+export const resendAthletesAudienceId = new sst.Secret(
+  "ResendAthletesAudienceId",
+  "",
+);
+export const resendCoachesAudienceId = new sst.Secret(
+  "ResendCoachesAudienceId",
+  "",
+);
