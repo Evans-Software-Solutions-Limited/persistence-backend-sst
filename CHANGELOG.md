@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.12.1](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.12.0...persistence-v1.12.1) (2026-08-08)
+
+
+### Bug Fixes
+
+* **catalog:** align Start Up Coach client cap ([#376](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/376)) ([0ed1f4f](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/0ed1f4f4f4aca27b2a4a5040235106e3eafaca3a))
+* **mobile:** remove organisation plans from iOS ([#378](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/378)) ([b6b53e3](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/b6b53e3ea55ebf955cecd5678385b283ae89b223))
+
 ## [1.12.0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.11.0...persistence-v1.12.0) (2026-08-07)
 
 
