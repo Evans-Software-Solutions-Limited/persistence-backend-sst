@@ -134,9 +134,10 @@ export function Support() {
               <div className="faq-item">
                 <h4>Do you support Android?</h4>
                 <p>
-                  Persistence is built for iPhone first, with deep HealthKit
-                  integration. An Android release on Google Play is planned for
-                  later.
+                  Yes — Persistence is launching on Google Play alongside the
+                  iPhone release, with Health Connect integration in place of
+                  HealthKit. Both are coming soon; the store links land here the
+                  day each goes live.
                 </p>
               </div>
               <div className="faq-item">

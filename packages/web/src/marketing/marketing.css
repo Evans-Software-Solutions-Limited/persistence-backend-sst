@@ -1950,6 +1950,115 @@
   font-weight: 700;
   letter-spacing: -0.02em;
 }
+
+/* ── Lead-capture forms (waitlist + coach enquiry) ────────────────────── */
+.mkt .lead-form {
+  width: 100%;
+  max-width: 520px;
+  margin: 0 auto;
+  text-align: left;
+}
+.mkt .lead-form-stack {
+  max-width: 620px;
+}
+.mkt .lead-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.mkt .lead-row .btn {
+  flex-shrink: 0;
+}
+.mkt .lead-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.mkt .lead-input {
+  flex: 1 1 220px;
+  min-width: 0;
+  width: 100%;
+  padding: 14px 16px;
+  font-family: var(--m-font);
+  font-size: 15px;
+  color: var(--m-text);
+  background: var(--m-surface);
+  border: 1px solid var(--m-line-2);
+  border-radius: 12px;
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s;
+}
+.mkt .lead-input::placeholder {
+  color: var(--m-text-3);
+}
+.mkt .lead-input:focus {
+  outline: none;
+  border-color: var(--m-accent);
+  box-shadow: 0 0 0 3px var(--m-accent-dim);
+}
+.mkt .lead-textarea {
+  resize: vertical;
+  min-height: 80px;
+}
+.mkt .lead-consent {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin-top: 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--m-text-2);
+}
+.mkt .lead-consent input {
+  margin-top: 2px;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  accent-color: var(--m-accent);
+}
+.mkt .lead-success {
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 16px 18px;
+  border-radius: 12px;
+  background: var(--m-success-t);
+  color: var(--m-paper);
+  font-weight: 600;
+  text-align: center;
+}
+.mkt .lead-error {
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--m-ember-t);
+}
+/* Honeypot: display:none (not the SR-clip technique) so browser/password-
+   manager autofill skips it — an autofilled "company" field would trip the
+   server honeypot and silently drop a real lead. It never needs to be
+   reachable by anyone or anything legitimate. */
+.mkt .lead-hp {
+  display: none;
+}
+.mkt .coach-enquiry {
+  border-top: 1px solid var(--m-line);
+  padding-top: 22px;
+}
+.mkt .coach-enquiry-lead {
+  font-size: 14px;
+  color: var(--m-text-2);
+  margin-bottom: 14px;
+  max-width: 480px;
+}
+.mkt .coach-enquiry .lead-form {
+  margin-left: 0;
+  margin-right: 0;
+}
+@media (max-width: 560px) {
+  .mkt .lead-grid {
+    grid-template-columns: 1fr;
+  }
+}
 .mkt .feat-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
