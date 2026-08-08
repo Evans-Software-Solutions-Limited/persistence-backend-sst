@@ -15,8 +15,8 @@ import { NotificationDispatcher } from "../../notifications/push/notificationDis
  * Trainer client-slot seat accounting + gates (revenue-leak fix).
  *
  * The subscription catalog advertises per-tier client caps
- * (`subscription_tiers.trainer_client_limit`: individual_trainer 2,
- * small_business 30, medium_enterprise 500) but nothing enforced them at the
+ * (`subscription_tiers.trainer_client_limit`: individual_trainer 5,
+ * start_up_coach_plus 5, coach 15, coach_pro 30) but nothing enforced them at the
  * application layer. This module is the enforcement surface, layered over the
  * `trainer_clients` entitlement in `assertEntitlement.ts`:
  *
