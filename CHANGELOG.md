@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.13.2](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.13.1...persistence-v1.13.2) (2026-08-09)
+
+
+### Bug Fixes
+
+* **release:** repair progress, milestone, and mobile UX gaps ([#386](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/386)) ([a38e22f](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/a38e22f7f6c896134ff64f5b59246d69c18b4270))
+
 ## [1.13.1](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.13.0...persistence-v1.13.1) (2026-08-09)
 
 
