@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.13.1](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.13.0...persistence-v1.13.1) (2026-08-09)
+
+
+### Bug Fixes
+
+* **mobile:** reconcile native plan changes safely ([#383](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/383)) ([1df077f](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/1df077fb928d96b909783b37a2fb646d59986760))
+* **mobile:** standardize branded loading states ([#385](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/385)) ([948d712](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/948d7123ca994e00c275a7a4ccf4ab3569a5bab3))
+
 ## [1.13.0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.12.1...persistence-v1.13.0) (2026-08-08)
 
 
