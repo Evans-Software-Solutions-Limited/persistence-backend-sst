@@ -63,6 +63,7 @@ function defaultProps(): IOSPurchaseFlowPresenterProps {
     errorMessage: null,
     isUnavailable: false,
     billingCycle: "yearly",
+    currentBillingCycle: null,
     currentTier: "free",
     selectedRole: "user",
     purchasableTiers: new Set(),
@@ -74,6 +75,7 @@ function defaultProps(): IOSPurchaseFlowPresenterProps {
     isCancelledButActive: false,
     currentTierDisplayName: "Free",
     isProcessing: false,
+    processingPhase: null,
     isRestoring: false,
     screen: "plans",
     onBillingCycleChange: jest.fn(),
@@ -217,6 +219,7 @@ describe("IOSPurchaseFlowPresenter", () => {
         {...props}
         screen="manage"
         currentTier="premium_plus"
+        currentBillingCycle="yearly"
         currentTierDisplayName="Premium+"
         subscriptionEndsAt="2027-03-14T00:00:00.000Z"
       />,
@@ -230,6 +233,56 @@ describe("IOSPurchaseFlowPresenter", () => {
     fireEvent.press(screen.getByTestId("ios-purchase-manage"));
     expect(props.onChangePlan).toHaveBeenCalled();
     expect(props.onManageInAppStore).toHaveBeenCalled();
+  });
+
+  it("marks the active tier without disabling either sandbox cadence", () => {
+    render(
+      <IOSPurchaseFlowPresenter
+        {...defaultProps()}
+        selectedRole="trainer"
+        billingCycle="monthly"
+        currentTier="start_up_coach_plus"
+        purchasableTiers={new Set(["start_up_coach_plus"])}
+      />,
+    );
+
+    expect(
+      screen.getByTestId("subscription-card-start_up_coach_plus-current"),
+    ).toBeTruthy();
+    expect(
+      screen.getByTestId("subscription-card-start_up_coach_plus-subscribe"),
+    ).toBeTruthy();
+  });
+
+  it("disables only the exact active product when its cadence is reliable", () => {
+    render(
+      <IOSPurchaseFlowPresenter
+        {...defaultProps()}
+        selectedRole="trainer"
+        billingCycle="monthly"
+        currentBillingCycle="monthly"
+        currentTier="start_up_coach_plus"
+        purchasableTiers={new Set(["start_up_coach_plus"])}
+      />,
+    );
+
+    expect(screen.getByText("Current plan")).toBeTruthy();
+    expect(
+      screen.queryByTestId("subscription-card-start_up_coach_plus-subscribe"),
+    ).toBeNull();
+  });
+
+  it("covers the paywall while the purchased plan is activating", () => {
+    render(
+      <IOSPurchaseFlowPresenter
+        {...defaultProps()}
+        isProcessing
+        processingPhase="activating"
+      />,
+    );
+
+    expect(screen.getByTestId("ios-purchase-processing")).toBeTruthy();
+    expect(screen.getByText("Activating your plan…")).toBeTruthy();
   });
 
   it("renders cancelled manage state and a catalog-missing grant safely", () => {
