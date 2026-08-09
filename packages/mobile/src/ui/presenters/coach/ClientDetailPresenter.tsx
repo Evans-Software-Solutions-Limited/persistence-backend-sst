@@ -1,9 +1,4 @@
-import {
-  ActivityIndicator,
-  RefreshControl,
-  ScrollView,
-  Pressable,
-} from "react-native";
+import { RefreshControl, ScrollView, Pressable } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Text, View } from "@tamagui/core";
 import {
@@ -32,6 +27,7 @@ import {
   type TrendData,
 } from "@/ui/presenters/BodyTrendPresenter";
 import { ErrorState, PLogoDrawLoader } from "@/ui/components";
+import { LoadingSpinner } from "@/ui/components/LoadingSpinner";
 import type { ApiError } from "@/shared/errors";
 import type {
   AdherenceModule,
@@ -749,7 +745,11 @@ function AISummaryCard({
           gap={8}
           testID="client-detail-ai-summary-generating"
         >
-          <ActivityIndicator size="small" color={toneHex("trainer").base} />
+          <LoadingSpinner
+            size="sm"
+            color={toneHex("trainer").base}
+            accessibilityLabel="Generating today's summary"
+          />
           <Text fontFamily="$body" fontSize={14} lineHeight={20} color="$text3">
             Generating today’s summary…
           </Text>

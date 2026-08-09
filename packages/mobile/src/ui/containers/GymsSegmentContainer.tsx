@@ -1,11 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import {
-  ActivityIndicator,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { LoadingSpinner } from "@/ui/components/LoadingSpinner";
 import { useLoadoutGate } from "@/ui/hooks/useLoadoutGate";
 import { GymsLockedPanel } from "@/ui/presenters/loadout/GymsLockedPanel";
 import { SavedGymsContainer } from "@/ui/containers/SavedGymsContainer";
@@ -84,7 +79,7 @@ export function GymsSegmentContainer() {
     if (!stalled) {
       return (
         <View style={styles.centred} testID="gyms-segment-pending">
-          <ActivityIndicator color={color.$text3} />
+          <LoadingSpinner color={color.$text3} />
         </View>
       );
     }

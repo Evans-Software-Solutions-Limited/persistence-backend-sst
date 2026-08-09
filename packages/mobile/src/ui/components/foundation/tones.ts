@@ -104,7 +104,7 @@ export function toneTokens(tone: Tone): ToneTokens {
 /**
  * Tone → **concrete** colour values (hex / rgba), for non-Tamagui consumers
  * that can't resolve `$token` strings: react-native-svg (lucide icon `color`),
- * `@gorhom/bottom-sheet` style props, `ActivityIndicator`, `LinearGradient`,
+ * `@gorhom/bottom-sheet` style props, branded loaders, `LinearGradient`,
  * RN `StyleSheet`. Mirrors the handoff palette in `theme/tokens.ts` verbatim.
  *
  * Use `toneHex(tone)` when passing a tone colour into one of those consumers;

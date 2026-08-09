@@ -35,12 +35,20 @@ type PLogoDrawLoaderProps = {
   size?: number;
   color?: string;
   testID?: string;
+  /** Outer breathing room. Set to 0 when the loader sits inside a button/row. */
+  containerPadding?: number;
+  accessibilityLabel?: string;
+  /** Disable when an enclosing progress region already describes the state. */
+  accessible?: boolean;
 };
 
 export function PLogoDrawLoader({
   size = 220,
   color = colorPalette.primary500,
   testID = "logo-loader",
+  containerPadding = 20,
+  accessibilityLabel = "Loading",
+  accessible = true,
 }: PLogoDrawLoaderProps) {
   const progress = useSharedValue(0);
 
@@ -95,8 +103,15 @@ export function PLogoDrawLoader({
     return { strokeDashoffset: (1 - local) * PATH_LENGTH_4 };
   });
 
-  // Container sized to match SVG with 20px padding per side
-  const containerSize = size + 40;
+  const resolvedSize = Number.isFinite(size) && size > 0 ? size : 1;
+  const resolvedPadding =
+    Number.isFinite(containerPadding) && containerPadding > 0
+      ? containerPadding
+      : 0;
+  const containerSize = resolvedSize + resolvedPadding * 2;
+  // Keep the drawn P legible at compact button/row sizes. SVG strokes are in
+  // view-box units, so a fixed value becomes sub-pixel below ~64 display px.
+  const strokeWidth = Math.max(STROKE_WIDTH, 1024 / resolvedSize);
 
   return (
     <View
@@ -105,14 +120,19 @@ export function PLogoDrawLoader({
         { width: containerSize, height: containerSize },
       ]}
       testID={testID}
+      accessible={accessible}
+      accessibilityRole={accessible ? "progressbar" : undefined}
+      accessibilityLabel={accessible ? accessibilityLabel : undefined}
+      accessibilityElementsHidden={!accessible}
+      importantForAccessibility={accessible ? "yes" : "no-hide-descendants"}
     >
-      <Svg width={size} height={size} viewBox="0 0 1024 1024">
+      <Svg width={resolvedSize} height={resolvedSize} viewBox="0 0 1024 1024">
         <AnimatedPath
           d={PATH_1}
           transform="translate(378.117919921875,247.8388671875)"
           fill="none"
           stroke={color}
-          strokeWidth={STROKE_WIDTH}
+          strokeWidth={strokeWidth}
           strokeLinecap="round"
           strokeLinejoin="round"
           strokeDasharray={PATH_LENGTH_1}
@@ -123,7 +143,7 @@ export function PLogoDrawLoader({
           transform="translate(349,460)"
           fill="none"
           stroke={color}
-          strokeWidth={STROKE_WIDTH}
+          strokeWidth={strokeWidth}
           strokeLinecap="round"
           strokeLinejoin="round"
           strokeDasharray={PATH_LENGTH_2}
@@ -134,7 +154,7 @@ export function PLogoDrawLoader({
           transform="translate(313.344482421875,650.822998046875)"
           fill="none"
           stroke={color}
-          strokeWidth={STROKE_WIDTH}
+          strokeWidth={strokeWidth}
           strokeLinecap="round"
           strokeLinejoin="round"
           strokeDasharray={PATH_LENGTH_3}
@@ -145,7 +165,7 @@ export function PLogoDrawLoader({
           transform="translate(301.4375,488.75)"
           fill="none"
           stroke={color}
-          strokeWidth={STROKE_WIDTH}
+          strokeWidth={strokeWidth}
           strokeLinecap="round"
           strokeLinejoin="round"
           strokeDasharray={PATH_LENGTH_4}

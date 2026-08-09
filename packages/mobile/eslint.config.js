@@ -35,6 +35,27 @@ module.exports = defineConfig([
       "design-system/no-raw-hex-colors": "error",
     },
   },
+  // The animated P is the app's single indeterminate loading indicator. Keep
+  // raw platform spinners out of every UI surface so new flows cannot regress
+  // to an unbranded loader.
+  {
+    files: ["src/ui/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "react-native",
+              importNames: ["ActivityIndicator"],
+              message:
+                "Use LoadingSpinner (compact/inline) or PLogoDrawLoader (blocking) instead.",
+            },
+          ],
+        },
+      ],
+    },
+  },
   // Enforce domain layer purity: no framework imports in domain/
   {
     files: ["src/domain/**/*.ts"],

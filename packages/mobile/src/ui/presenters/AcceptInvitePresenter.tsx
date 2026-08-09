@@ -1,7 +1,8 @@
-import { ActivityIndicator, TextInput } from "react-native";
+import { TextInput } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Text, View } from "@tamagui/core";
 import { Btn, HeaderBar, IconBtn } from "@/ui/components/foundation";
+import { LoadingSpinner } from "@/ui/components/LoadingSpinner";
 import { toneHex } from "@/ui/components/foundation/tones";
 import { IconBack } from "@/ui/components/icons";
 import { DataSharingConsentSheet } from "@/ui/presenters/DataSharingConsentSheet";
@@ -117,7 +118,11 @@ export function AcceptInvitePresenter({
           disabled={submitDisabled}
           icon={
             isSubmitting ? (
-              <ActivityIndicator size="small" color={toneHex("trainer").ink} />
+              <LoadingSpinner
+                size="sm"
+                color={toneHex("trainer").ink}
+                accessibilityLabel="Joining coach"
+              />
             ) : undefined
           }
           testID="accept-invite-submit"

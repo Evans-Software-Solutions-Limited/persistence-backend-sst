@@ -1,11 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  ActivityIndicator,
-  Pressable,
-  ScrollView,
-  TextInput,
-} from "react-native";
+import { Pressable, ScrollView, TextInput } from "react-native";
 import { Text, View } from "@tamagui/core";
+import { LoadingSpinner } from "@/ui/components/LoadingSpinner";
 import { BottomSheet } from "@/ui/components/foundation/BottomSheet";
 import { Btn } from "@/ui/components/foundation/Btn";
 import { toneHex } from "@/ui/components/foundation/tones";
@@ -198,9 +194,10 @@ export function GoalSheet() {
                 alignItems="center"
                 testID="goal-sheet-types-loading"
               >
-                <ActivityIndicator
-                  size="small"
+                <LoadingSpinner
+                  size="sm"
                   color={toneHex("primary").base}
+                  accessibilityLabel="Loading goal types"
                 />
               </View>
             ) : typesError ? (

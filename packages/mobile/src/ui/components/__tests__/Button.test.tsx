@@ -61,8 +61,28 @@ describe("Button", () => {
     const { getByTestId, queryByText } = renderWithTheme(
       <Button label="Loading" onPress={onPress} isLoading testID="btn" />,
     );
-    expect(getByTestId("btn-spinner")).toBeTruthy();
+    expect(getByTestId("btn-spinner").props.style).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ width: 18, height: 18 }),
+      ]),
+    );
     expect(queryByText("Loading")).toBeNull();
+  });
+
+  it("uses the compact branded loader for non-inverse buttons without a test ID", () => {
+    const { getByTestId } = renderWithTheme(
+      <Button
+        label="Loading"
+        onPress={onPress}
+        variant="secondary"
+        isLoading
+      />,
+    );
+    expect(getByTestId("logo-loader").props.style).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ width: 18, height: 18 }),
+      ]),
+    );
   });
 
   it("renders all size variants", () => {
