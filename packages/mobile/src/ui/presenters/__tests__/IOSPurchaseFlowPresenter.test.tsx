@@ -303,6 +303,34 @@ describe("IOSPurchaseFlowPresenter", () => {
     expect(screen.queryByText(/renews 14 Mar 2027/i)).toBeNull();
   });
 
+  it("stacks long plan details above billing metadata within the card", () => {
+    render(
+      <IOSPurchaseFlowPresenter
+        {...defaultProps()}
+        screen="manage"
+        currentTier="start_up_coach_plus"
+        currentTierDisplayName="Start Up Coach +"
+        currentBillingCycle={null}
+        subscriptionEndsAt="2026-08-10T00:00:00.000Z"
+      />,
+    );
+
+    expect(screen.getByText("Start Up Coach +")).toBeTruthy();
+    expect(screen.getByText("Current billing period")).toBeTruthy();
+    expect(screen.getByText(/renews 10 Aug 2026/i)).toBeTruthy();
+    expect(
+      screen.getByTestId("subscription-manage-plan-layout").props.style,
+    ).not.toHaveProperty("flexDirection", "row");
+    expect(
+      screen.getByTestId("subscription-manage-billing").props.style,
+    ).toEqual(
+      expect.objectContaining({
+        alignSelf: "stretch",
+        alignItems: "flex-end",
+      }),
+    );
+  });
+
   it("routes the header back affordance", () => {
     const props = defaultProps();
     render(<IOSPurchaseFlowPresenter {...props} />);
