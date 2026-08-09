@@ -42,6 +42,8 @@ export interface AchievementRow {
 }
 
 export interface BodyTrendPoint {
+  id: string;
+  measuredAt: string;
   date: string;
   weightKg: number | null;
   bodyFat: number | null;
@@ -322,6 +324,7 @@ export class HomeReadRepository {
     const db = getDb();
     const rows = await db
       .select({
+        id: bodyMeasurements.id,
         measuredAt: bodyMeasurements.measuredAt,
         weightKg: bodyMeasurements.weightKg,
         bodyFat: bodyMeasurements.bodyFatPercentage,
@@ -338,6 +341,8 @@ export class HomeReadRepository {
       )
       .orderBy(bodyMeasurements.measuredAt);
     return rows.map((r) => ({
+      id: r.id,
+      measuredAt: r.measuredAt?.toISOString() ?? "",
       date: r.measuredAt ? localDateISO(new Date(r.measuredAt), tz) : "",
       weightKg: r.weightKg != null ? Number(r.weightKg) : null,
       bodyFat: r.bodyFat != null ? Number(r.bodyFat) : null,

@@ -156,19 +156,32 @@ export class HabitConfigRepository {
     userId: string,
     category: HabitCategory,
   ): Promise<number | null> {
+    return this.getActiveTarget(userId, category, "daily");
+  }
+
+  /**
+   * The user's effective target for an active habit category, or null when the
+   * habit is not configured. Progress surfaces use this for Gym's weekly
+   * sessions target so they never invent an adherence plan for a user who has
+   * not chosen one.
+   */
+  async getActiveTarget(
+    userId: string,
+    category: HabitCategory,
+    period?: "daily" | "weekly",
+  ): Promise<number | null> {
     const db = getDb();
+    const predicates = [
+      eq(habitConfigs.userId, userId),
+      eq(habitConfigs.category, category),
+      eq(userGoals.isActive, true),
+    ];
+    if (period) predicates.push(eq(habitConfigs.period, period));
     const rows = await db
       .select({ targetValue: habitConfigs.targetValue })
       .from(habitConfigs)
       .innerJoin(userGoals, eq(habitConfigs.goalId, userGoals.id))
-      .where(
-        and(
-          eq(habitConfigs.userId, userId),
-          eq(habitConfigs.category, category),
-          eq(habitConfigs.period, "daily"),
-          eq(userGoals.isActive, true),
-        ),
-      )
+      .where(and(...predicates))
       .limit(1);
     const raw = rows[0]?.targetValue;
     if (raw == null) return null;

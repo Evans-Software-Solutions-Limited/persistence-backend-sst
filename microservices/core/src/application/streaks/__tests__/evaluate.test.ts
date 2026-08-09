@@ -6,9 +6,26 @@ vi.mock("../engine", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../engine")>();
   return { ...actual, evaluateStreaks: vi.fn() };
 });
+const ensureWorkoutStreak = vi.hoisted(() =>
+  vi.fn(async (userId: string, ts: Date) => {
+    void userId;
+    void ts;
+  }),
+);
+const reconcileWorkoutStreakHistory = vi.hoisted(() => vi.fn(async () => {}));
+vi.mock("../../repositories/streakRepository", () => ({
+  StreakRepository: vi.fn().mockImplementation(() => ({
+    ensureWorkoutStreak,
+    reconcileWorkoutStreakHistory,
+  })),
+}));
 
 import { evaluateStreaks } from "../engine";
-import { safeEvaluateStreaks, resolveEventTs } from "../evaluate";
+import {
+  safeEvaluateStreaks,
+  safeReconcileWorkoutStreak,
+  resolveEventTs,
+} from "../evaluate";
 
 const TS = new Date("2026-06-07T12:00:00Z");
 
@@ -42,6 +59,7 @@ describe("safeEvaluateStreaks", () => {
     );
     const out = await safeEvaluateStreaks("u1", "workout_logged", TS);
     expect(out).toBe(result);
+    expect(ensureWorkoutStreak).toHaveBeenCalledWith("u1", TS);
     expect(evaluateStreaks).toHaveBeenCalledWith(
       "u1",
       "workout_logged",
@@ -60,6 +78,7 @@ describe("safeEvaluateStreaks", () => {
       milestones: [],
     } as never);
     await safeEvaluateStreaks("u1", "habit_completed", TS, "2026-06-04");
+    expect(ensureWorkoutStreak).not.toHaveBeenCalled();
     expect(evaluateStreaks).toHaveBeenCalledWith(
       "u1",
       "habit_completed",
@@ -76,6 +95,24 @@ describe("safeEvaluateStreaks", () => {
     );
     const out = await safeEvaluateStreaks("u1", "habit_completed", TS);
     expect(out).toEqual({ advanced: [], milestones: [] });
+    expect(spy).toHaveBeenCalled();
+    spy.mockRestore();
+  });
+});
+
+describe("safeReconcileWorkoutStreak", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("atomically reconciles the workout streak history", async () => {
+    await safeReconcileWorkoutStreak("u1");
+    expect(reconcileWorkoutStreakHistory).toHaveBeenCalledWith("u1");
+    expect(evaluateStreaks).not.toHaveBeenCalled();
+  });
+
+  it("does not fail an achievements read when reconciliation fails", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    reconcileWorkoutStreakHistory.mockRejectedValueOnce(new Error("db down"));
+    await expect(safeReconcileWorkoutStreak("u1")).resolves.toBeUndefined();
     expect(spy).toHaveBeenCalled();
     spy.mockRestore();
   });

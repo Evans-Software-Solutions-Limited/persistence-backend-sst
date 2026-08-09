@@ -23,7 +23,10 @@ export { useGetWeeklyVolume } from "./useGetWeeklyVolume";
 export { useGetRecentPRs } from "./useGetRecentPRs";
 export { useGetPRHistory } from "./useGetPRHistory";
 export { useGetVolumeStats } from "./useGetVolumeStats";
-export { useGetBodyMeasurements } from "./useGetBodyMeasurements";
+export {
+  useGetBodyMeasurements,
+  useGetBodyMeasurementHistory,
+} from "./useGetBodyMeasurements";
 export { useGetAchievements } from "./useGetAchievements";
 export { useGetStreaks } from "./useGetStreaks";
 export { useGetHabits, buildHabitGrid, type HabitsState } from "./useGetHabits";

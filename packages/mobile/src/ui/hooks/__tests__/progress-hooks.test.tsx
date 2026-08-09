@@ -14,6 +14,7 @@ import {
   useGetPRHistory,
   useGetVolumeStats,
   useGetBodyMeasurements,
+  useGetBodyMeasurementHistory,
   useGetAchievements,
   useGetStreaks,
   useGetHabits,
@@ -172,6 +173,25 @@ describe("Progress/Home read hooks (cache-first + refresh)", () => {
       wrapper,
     });
     await waitFor(() => expect(result.current.data?.length).toBe(1));
+  });
+
+  it("long-window body history bypasses the shared 30-day cache", async () => {
+    const { api, storage, wrapper } = setup();
+    const cached = [{ date: "2026-08-01", weightKg: 80, bodyFat: null }];
+    storage.cacheBodyTrend(USER, cached);
+    api.bodyTrend = [
+      { date: "2025-09-01", weightKg: 85, bodyFat: null },
+      ...cached,
+    ];
+    const fetch = jest.spyOn(api, "getBodyTrend");
+
+    const { result } = renderHook(() => useGetBodyMeasurementHistory(366), {
+      wrapper,
+    });
+
+    await waitFor(() => expect(result.current.data?.length).toBe(2));
+    expect(fetch).toHaveBeenCalledWith("366d");
+    expect(storage.getCachedBodyTrend(USER)).toEqual(cached);
   });
 
   it("useGetAchievements refreshes", async () => {

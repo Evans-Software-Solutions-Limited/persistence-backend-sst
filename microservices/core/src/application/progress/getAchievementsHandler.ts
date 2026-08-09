@@ -5,6 +5,7 @@ import {
   requireAuth,
   getUser,
 } from "@persistence/api-utils/auth/supabaseAuth";
+import { safeReconcileWorkoutStreak } from "../streaks/evaluate";
 
 /**
  * GET /users/me/achievements — all unlocked achievements joined to their lookup
@@ -18,6 +19,11 @@ export const getAchievementsHandler = new Elysia()
   .use(HomeReadService)
   .get("/users/me/achievements", async (ctx) => {
     const { sub: userId } = getUser(ctx);
+    // Self-heal accounts that completed workouts before the missing workout
+    // streak creation path was fixed. The repository reconstructs weekly runs
+    // and unlocks every earned milestone atomically, so concurrent live events
+    // cannot move a replay cursor past unrepaired history.
+    await safeReconcileWorkoutStreak(userId);
     const achievements = await ctx.HomeReadRepository.getAchievements(userId);
     return { data: achievements };
   });

@@ -445,6 +445,10 @@ export function MealprintPreferencesContainer({
     void preferences.refresh();
   }, [preferences]);
 
+  const onCancel = useCallback(() => {
+    router.back();
+  }, []);
+
   return (
     <MealprintPreferencesPresenter
       mode={mode}
@@ -491,6 +495,7 @@ export function MealprintPreferencesContainer({
       effortLevel={effortLevel}
       onEffortLevelChange={onEffortLevelChange}
       onSave={onSave}
+      onCancel={onCancel}
       onDismiss={onDismiss}
     />
   );

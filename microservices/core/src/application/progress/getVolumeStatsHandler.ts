@@ -1,16 +1,13 @@
 import Elysia, { t } from "elysia";
 import { VolumeService } from "../repositories/volumeService";
+import { HabitConfigService } from "../repositories/habitConfigService";
 import {
   getAuthUser,
   requireAuth,
   getUser,
 } from "@persistence/api-utils/auth/supabaseAuth";
 import { localDateISO } from "../streaks/period";
-import {
-  parseWindowKind,
-  windowStartISO,
-  DEFAULT_WORKOUTS_PER_WEEK,
-} from "./window";
+import { parseWindowKind, windowStartISO } from "./window";
 import {
   withMusclePct,
   adherencePct,
@@ -29,6 +26,7 @@ export const getVolumeStatsHandler = new Elysia()
   }))
   .onBeforeHandle(requireAuth)
   .use(VolumeService)
+  .use(HabitConfigService)
   .get(
     "/users/me/volume-stats",
     async (ctx) => {
@@ -72,20 +70,22 @@ export const getVolumeStatsHandler = new Elysia()
         });
       }
 
-      const [workouts, totalKg, byMuscleRaw] = await Promise.all([
-        ctx.VolumeRepository.completedSessionCount(userId, tz, start, end),
-        ctx.VolumeRepository.totalVolume(userId, tz, start, end),
-        recomputeFailed
-          ? Promise.resolve([])
-          : ctx.VolumeRepository.getVolumeByMuscle(userId, kind, start),
-      ]);
+      const [workouts, totalKg, byMuscleRaw, weeklyWorkoutTarget] =
+        await Promise.all([
+          ctx.VolumeRepository.completedSessionCount(userId, tz, start, end),
+          ctx.VolumeRepository.totalVolume(userId, tz, start, end),
+          recomputeFailed
+            ? Promise.resolve([])
+            : ctx.VolumeRepository.getVolumeByMuscle(userId, kind, start),
+          ctx.HabitConfigRepository.getActiveTarget(userId, "gym", "weekly"),
+        ]);
 
       const adherence =
-        kind === "lifetime"
+        kind === "lifetime" || weeklyWorkoutTarget === null
           ? null
           : adherencePct(
               workouts,
-              DEFAULT_WORKOUTS_PER_WEEK,
+              weeklyWorkoutTarget,
               daysBetweenInclusive(start, end),
             );
 

@@ -362,6 +362,30 @@ describe("HabitConfigRepository.upsert", () => {
     });
   });
 
+  describe("getActiveTarget", () => {
+    it("returns a weekly Gym target", async () => {
+      const { db } = makeDb({ selects: [[{ targetValue: "3" }]] });
+      (getDb as never as ReturnType<typeof vi.fn>).mockReturnValue(db);
+
+      expect(
+        await new HabitConfigRepository().getActiveTarget(
+          "u1",
+          "gym",
+          "weekly",
+        ),
+      ).toBe(3);
+    });
+
+    it("returns null for an invalid target", async () => {
+      const { db } = makeDb({ selects: [[{ targetValue: "invalid" }]] });
+      (getDb as never as ReturnType<typeof vi.fn>).mockReturnValue(db);
+
+      expect(
+        await new HabitConfigRepository().getActiveTarget("u1", "gym"),
+      ).toBeNull();
+    });
+  });
+
   it("returns null for an unknown / unseeded category", async () => {
     const { db } = makeDb({ selects: [[]] }); // resolveGoalTypeId → none
     (getDb as unknown as ReturnType<typeof vi.fn>).mockReturnValue(db);

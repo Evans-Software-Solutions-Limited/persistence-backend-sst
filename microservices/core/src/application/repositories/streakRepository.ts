@@ -31,7 +31,10 @@ import {
   previousPeriodEndISO,
   type Period,
 } from "../streaks/period";
-import { PERIODS_PER_FREEZE_TOKEN } from "../streaks/milestones";
+import {
+  FREEZE_TOKEN_CAP,
+  PERIODS_PER_FREEZE_TOKEN,
+} from "../streaks/milestones";
 import {
   collectionSatisfied,
   type HabitWeekAggregate,
@@ -71,6 +74,56 @@ export class StreakRepository implements StreakDataPort, StreakCronDataPort {
       .where(eq(profiles.id, userId))
       .limit(1);
     return rows[0]?.tz ?? "Europe/London";
+  }
+
+  /**
+   * Ensure the user's ad-hoc weekly workout streak exists before evaluating a
+   * completed session. M4 created the table and achievements but never created
+   * this row, so seed it from all committed workout history rather than from an
+   * empty counter. The dedicated partial unique index makes concurrent first-
+   * session/reconciliation calls safe.
+   */
+  async ensureWorkoutStreak(userId: string, now: Date): Promise<void> {
+    const db = getDb();
+    const existing = await db
+      .select({ id: userStreaks.id })
+      .from(userStreaks)
+      .where(
+        and(
+          eq(userStreaks.userId, userId),
+          eq(userStreaks.streakType, "workout_streak"),
+          isNull(userStreaks.sourceGoalId),
+        ),
+      )
+      .limit(1);
+    if (existing.length > 0) return;
+
+    const tz = await this.getUserTimezone(userId);
+    const eventEnd = periodEndForDateISO(localDateISO(now, tz), "weekly");
+    const eventStart = periodStartFromEndISO(eventEnd, "weekly");
+
+    // The triggering workout is already committed. Repair only weeks BEFORE
+    // its week so the normal evaluator owns this live period and emits any
+    // newly crossed milestone notification exactly once.
+    await this.reconcileWorkoutStreakHistory(userId, eventStart);
+
+    // A genuinely new user has no earlier week for reconciliation to insert.
+    // Seed the zero row immediately before the event week; the unique partial
+    // index makes this safe against another first workout racing us.
+    await db
+      .insert(userStreaks)
+      .values({
+        userId,
+        streakType: "workout_streak",
+        sourceGoalId: null,
+        period: "weekly",
+        currentCount: 0,
+        longestCount: 0,
+        lastPeriodEnd: previousPeriodEndISO(eventEnd, "weekly"),
+        freezeTokens: 0,
+        status: "active",
+      })
+      .onConflictDoNothing();
   }
 
   /**
@@ -146,8 +199,9 @@ export class StreakRepository implements StreakDataPort, StreakCronDataPort {
     const db = getDb();
 
     if (streak.streakType === "workout_streak") {
-      // ≥ N completed sessions in the window; N = source goal's target_value
-      // (default 1 for ad-hoc / unset goals).
+      // Workout milestones measure weekly consistency (at least one completed
+      // workout), independently from Gym-habit adherence. A goal-backed legacy
+      // streak retains its explicit goal target.
       const n = await this.resolveWorkoutThreshold(streak.sourceGoalId);
       const rows = await db
         .select({ c: sql<number>`count(*)::int` })
@@ -737,9 +791,171 @@ export class StreakRepository implements StreakDataPort, StreakCronDataPort {
     return rows[0] ?? null;
   }
 
+  /**
+   * Atomically repair the ad-hoc workout streak and every historical workout
+   * milestone. M4 seeded the achievement lookup without creating the streak
+   * row, so replaying history a page at a time is unsafe: a live workout/cron
+   * can move the cursor past the next page, and an achievement insert failure
+   * after a cursor advance cannot be retried. One set-based statement avoids
+   * both failure modes and is bounded by the user's completed workout weeks.
+   *
+   * Workout milestones intentionally mean "trained at least once this week";
+   * Gym-habit targets remain the separate adherence source of truth. Historical
+   * repair does not emit old notifications.
+   */
+  async reconcileWorkoutStreakHistory(
+    userId: string,
+    beforeLocalDate?: string,
+  ): Promise<void> {
+    const db = getDb();
+    const tz = await this.getUserTimezone(userId);
+    const historyBound = beforeLocalDate
+      ? sql`AND (${workoutSessions.completedAt} AT TIME ZONE ${tz})::date < ${beforeLocalDate}`
+      : sql``;
+    const replayHorizon = beforeLocalDate
+      ? sql`${beforeLocalDate}::date`
+      : sql`date_trunc('week', now() AT TIME ZONE ${tz})::date`;
+    await db.execute(sql`
+      WITH RECURSIVE workout_weeks AS MATERIALIZED (
+        SELECT date_trunc('week', ${workoutSessions.completedAt} AT TIME ZONE ${tz})::date AS week_start
+        FROM ${workoutSessions}
+        WHERE ${workoutSessions.userId} = ${userId}
+          AND ${workoutSessions.status} = 'completed'
+          AND ${workoutSessions.completedAt} IS NOT NULL
+          AND ${workoutSessions.completedAt} <= now()
+          ${historyBound}
+        GROUP BY 1
+      ), ordered_weeks AS (
+        SELECT week_start, row_number() OVER (ORDER BY week_start)::int AS rn
+        FROM workout_weeks
+      ), replay AS (
+        SELECT
+          ow.rn,
+          ow.week_start,
+          1::int AS current_count,
+          1::int AS longest_count,
+          0::int AS freeze_tokens
+        FROM ordered_weeks ow
+        WHERE ow.rn = 1
+
+        UNION ALL
+
+        SELECT
+          ow.rn,
+          ow.week_start,
+          step.new_count,
+          greatest(r.longest_count, step.new_count)::int,
+          least(
+            ${FREEZE_TOKEN_CAP},
+            step.tokens_after_gap + CASE
+              WHEN step.new_count % ${PERIODS_PER_FREEZE_TOKEN} = 0 THEN 1
+              ELSE 0
+            END
+          )::int
+        FROM replay r
+        JOIN ordered_weeks ow ON ow.rn = r.rn + 1
+        CROSS JOIN LATERAL (
+          SELECT greatest(((ow.week_start - r.week_start) / 7) - 1, 0)::int AS missed
+        ) gap
+        CROSS JOIN LATERAL (
+          SELECT
+            CASE
+              WHEN r.freeze_tokens >= gap.missed THEN r.current_count + 1
+              ELSE 1
+            END::int AS new_count,
+            CASE
+              WHEN r.freeze_tokens >= gap.missed THEN r.freeze_tokens - gap.missed
+              ELSE r.freeze_tokens
+            END::int AS tokens_after_gap
+        ) step
+      ), replayed AS (
+        SELECT rn, week_start, current_count, longest_count, freeze_tokens
+        FROM replay
+        ORDER BY rn DESC
+        LIMIT 1
+      ), summary AS (
+        SELECT
+          r.week_start AS latest_week,
+          r.longest_count,
+          CASE
+            WHEN r.freeze_tokens >= terminal.missed THEN r.current_count
+            ELSE 0
+          END::int AS current_count,
+          CASE
+            WHEN r.freeze_tokens >= terminal.missed THEN r.freeze_tokens - terminal.missed
+            ELSE r.freeze_tokens
+          END::int AS freeze_tokens,
+          CASE
+            WHEN r.freeze_tokens >= terminal.missed THEN 'active'
+            ELSE 'broken'
+          END AS status,
+          CASE
+            WHEN terminal.missed > 0
+              THEN ${replayHorizon} - 1
+            ELSE r.week_start + 6
+          END AS last_period_end
+        FROM replayed r
+        CROSS JOIN LATERAL (
+          SELECT greatest(
+            ((${replayHorizon} - r.week_start) / 7) - 1,
+            0
+          )::int AS missed
+        ) terminal
+      ), repaired_streak AS (
+        INSERT INTO ${userStreaks} (
+          user_id, streak_type, source_goal_id, period, current_count,
+          longest_count, last_period_end, freeze_tokens, status
+        )
+        SELECT
+          ${userId}, 'workout_streak', NULL, 'weekly',
+          s.current_count,
+          s.longest_count,
+          s.last_period_end,
+          s.freeze_tokens,
+          s.status
+        FROM summary s
+        WHERE s.latest_week IS NOT NULL
+        ON CONFLICT (user_id)
+          WHERE streak_type = 'workout_streak' AND source_goal_id IS NULL
+        DO UPDATE SET
+          current_count = CASE
+            WHEN ${userStreaks.lastPeriodEnd} < EXCLUDED.last_period_end
+              THEN EXCLUDED.current_count
+            ELSE ${userStreaks.currentCount}
+          END,
+          longest_count = greatest(${userStreaks.longestCount}, EXCLUDED.longest_count),
+          last_period_end = greatest(${userStreaks.lastPeriodEnd}, EXCLUDED.last_period_end),
+          freeze_tokens = CASE
+            WHEN ${userStreaks.lastPeriodEnd} < EXCLUDED.last_period_end
+              THEN EXCLUDED.freeze_tokens
+            ELSE ${userStreaks.freezeTokens}
+          END,
+          status = CASE
+            WHEN ${userStreaks.lastPeriodEnd} < EXCLUDED.last_period_end
+              THEN EXCLUDED.status
+            ELSE ${userStreaks.status}
+          END,
+          updated_at = now()
+        RETURNING longest_count
+      ), attainable AS (
+        SELECT longest_count FROM repaired_streak LIMIT 1
+      )
+      INSERT INTO ${userAchievements} (user_id, achievement_id)
+      SELECT ${userId}, ${achievements.id}
+      FROM ${achievements}
+      CROSS JOIN attainable a
+      WHERE ${achievements.category} = 'streak'
+        AND ${achievements.requirements}->>'streak_type' = 'workout_streak'
+        AND (${achievements.requirements}->>'threshold')::int <= a.longest_count
+      ON CONFLICT DO NOTHING
+    `);
+  }
+
   private async resolveWorkoutThreshold(
     sourceGoalId: string | null,
   ): Promise<number> {
+    // The singleton is deliberately habit-independent: Gym config drives the
+    // adherence percentage; this streak answers "did I train this week?".
     if (!sourceGoalId) return 1;
     const db = getDb();
     const rows = await db

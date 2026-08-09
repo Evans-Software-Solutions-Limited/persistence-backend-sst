@@ -41,6 +41,7 @@ const habitMock = vi.hoisted(() => ({ list: vi.fn(async () => [] as any[]) }));
 // Move-ring goal source. Default: no Steps habit → DEFAULT_GOAL_STEPS.
 const habitConfigMock = vi.hoisted(() => ({
   getActiveDailyTarget: vi.fn(async () => null as number | null),
+  getActiveTarget: vi.fn(async () => null as number | null),
 }));
 const nutEntryMock = vi.hoisted(() => ({
   sumKcalForDay: vi.fn(async () => 1200),
@@ -66,6 +67,9 @@ const streakMock = vi.hoisted(() => ({
 const sleepMock = vi.hoisted(() => ({
   getForDate: vi.fn(async () => null as any),
 }));
+const safeReconcileWorkoutStreakMock = vi.hoisted(() =>
+  vi.fn(async () => undefined),
+);
 
 vi.mock("../../repositories/volumeRepository", () => ({
   VolumeRepository: vi.fn().mockImplementation(() => volMock),
@@ -90,6 +94,9 @@ vi.mock("../../repositories/nutritionTargetRepository", () => ({
 }));
 vi.mock("../../repositories/sleepRepository", () => ({
   SleepRepository: vi.fn().mockImplementation(() => sleepMock),
+}));
+vi.mock("../../streaks/evaluate", () => ({
+  safeReconcileWorkoutStreak: safeReconcileWorkoutStreakMock,
 }));
 vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getAuthUser: vi.fn(async (h: string | undefined) =>
@@ -131,6 +138,14 @@ describe("Home/You endpoints", () => {
     const { data } = (await res.json()) as any;
     expect(data.move.current).toBe(7420);
     expect(data.fuel).toBe("gated");
+  });
+
+  it("GET /users/me/achievements reconciles the missing workout streak before reading", async () => {
+    const res = await getAchievementsHandler.handle(
+      new Request("http://localhost/users/me/achievements", { headers: AUTH }),
+    );
+    expect(res.status).toBe(200);
+    expect(safeReconcileWorkoutStreakMock).toHaveBeenCalledWith("u1");
   });
 
   it("GET /users/me/today-rings makes Fuel live once a daily kcal target is set", async () => {
@@ -175,7 +190,7 @@ describe("Home/You endpoints", () => {
     expect(data.micro.streak).toBe(23);
     // No sleep_data row for today (sleepMock default) → the pill stays null.
     expect(data.micro.sleep).toBeNull();
-    expect(data.weeklyVolume.workouts).toEqual({ completed: 4, target: 5 });
+    expect(data.weeklyVolume.workouts).toEqual({ completed: 4, target: null });
     expect(data.recentPRs).toHaveLength(1);
     expect(Array.isArray(data.habits)).toBe(true);
     // specs/19-programs STORY-005 — programme slices are topped up first, then
@@ -194,6 +209,21 @@ describe("Home/You endpoints", () => {
       workoutId: "w1",
       assignedByType: "personal_trainer",
     });
+  });
+
+  it("uses the active Gym habit as the weekly workout target", async () => {
+    habitConfigMock.getActiveTarget.mockResolvedValueOnce(3);
+    const res = await getHomeHandler.handle(
+      new Request("http://localhost/users/me/home", { headers: AUTH }),
+    );
+    const { data } = (await res.json()) as any;
+
+    expect(data.weeklyVolume.workouts).toEqual({ completed: 4, target: 3 });
+    expect(habitConfigMock.getActiveTarget).toHaveBeenCalledWith(
+      "u1",
+      "gym",
+      "weekly",
+    );
   });
 
   it("GET /users/me/home merges DERIVED Gym/Calories rows into the completions-based habits grid (BRIEF-7 QA-1..QA-4)", async () => {

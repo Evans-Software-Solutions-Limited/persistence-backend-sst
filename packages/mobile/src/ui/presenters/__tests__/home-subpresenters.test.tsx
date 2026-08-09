@@ -74,6 +74,15 @@ describe("WeeklyVolumePresenter", () => {
     );
     expect(getByTestId("weekly-volume")).toBeTruthy();
   });
+  it("shows logged workouts without inventing a target when Gym is not configured", () => {
+    const { getByText, queryByText } = renderWithTheme(
+      <WeeklyVolumePresenter
+        weeklyVolume={{ ...base, workouts: { completed: 4, target: null } }}
+      />,
+    );
+    expect(getByText("WORKOUTS LOGGED")).toBeTruthy();
+    expect(queryByText("/5")).toBeNull();
+  });
 });
 
 describe("HabitsGridPresenter", () => {

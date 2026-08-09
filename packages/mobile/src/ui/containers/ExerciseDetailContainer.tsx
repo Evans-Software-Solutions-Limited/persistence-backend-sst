@@ -1,5 +1,6 @@
 import { router, useLocalSearchParams } from "expo-router";
 import { useCallback } from "react";
+import { Alert, Linking } from "react-native";
 
 import { ExerciseDetailPresenter } from "@/ui/presenters/ExerciseDetailPresenter";
 import { useAuth } from "@/ui/hooks/useAuth";
@@ -36,6 +37,12 @@ export function ExerciseDetailContainer() {
   const onRetry = useCallback(() => {
     void refresh();
   }, [refresh]);
+  const onOpenVideo = useCallback(() => {
+    if (!exercise?.videoUrl) return;
+    void Linking.openURL(exercise.videoUrl).catch(() => {
+      Alert.alert("Couldn't open video", "Please try again later.");
+    });
+  }, [exercise?.videoUrl]);
 
   return (
     <ExerciseDetailPresenter
@@ -45,6 +52,7 @@ export function ExerciseDetailContainer() {
       isOwner={isOwner}
       onClose={onClose}
       onEdit={onEdit}
+      onOpenVideo={onOpenVideo}
       onRetry={onRetry}
     />
   );

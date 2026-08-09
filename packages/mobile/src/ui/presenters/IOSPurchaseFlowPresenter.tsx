@@ -699,15 +699,21 @@ function ManageScreen(props: IOSPurchaseFlowPresenterProps) {
               {props.isCancelledButActive ? "CANCELLED" : "ACTIVE"}
             </Text>
           </View>
-          <View style={styles.managePlanRow}>
-            <View>
+          <View
+            style={styles.managePlanRow}
+            testID="subscription-manage-plan-layout"
+          >
+            <View style={styles.managePlanDetails}>
               <Text style={styles.managePlanName}>
                 {tier?.name ?? props.currentTierDisplayName}
               </Text>
               {tier && <SuiteLine included={tier.suite} />}
             </View>
             {tier && (
-              <View style={styles.tierPriceWrap}>
+              <View
+                style={styles.manageBilling}
+                testID="subscription-manage-billing"
+              >
                 <Text style={styles.manageCadence}>
                   {cadence === null
                     ? "Current billing period"
@@ -1267,11 +1273,13 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   managePlanRow: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    justifyContent: "space-between",
-    gap: 10,
+    gap: 12,
     marginTop: 13,
+  },
+  managePlanDetails: { minWidth: 0 },
+  manageBilling: {
+    alignSelf: "stretch",
+    alignItems: "flex-end",
   },
   managePlanName: {
     color: color.$text,

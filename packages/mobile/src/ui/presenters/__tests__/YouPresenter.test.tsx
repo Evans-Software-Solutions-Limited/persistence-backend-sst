@@ -61,8 +61,8 @@ function render(overrides: Partial<YouPresenterProps> = {}) {
     myPendingCoachRequests: [],
     onRefresh: jest.fn(),
     onOpenDrawer: jest.fn(),
-    onOpenCalendar: jest.fn(),
     onUseToken,
+    onOpenBodyHistory: jest.fn(),
     onOpenRequests: jest.fn(),
     onOpenAcceptInvite: jest.fn(),
     ...overrides,
@@ -79,6 +79,13 @@ describe("YouPresenter", () => {
     expect(getByTestId("you-body")).toBeTruthy();
     expect(getByTestId("you-volume")).toBeTruthy();
     expect(getByTestId("you-prs")).toBeTruthy();
+  });
+
+  it("opens body measurement history from the trend cards", () => {
+    const onOpenBodyHistory = jest.fn();
+    const { getByTestId } = render({ onOpenBodyHistory });
+    fireEvent.press(getByTestId("body-trend-weight-card-pressable"));
+    expect(onOpenBodyHistory).toHaveBeenCalledTimes(1);
   });
 
   it("fires onUseToken from the StreakHero Use button", () => {

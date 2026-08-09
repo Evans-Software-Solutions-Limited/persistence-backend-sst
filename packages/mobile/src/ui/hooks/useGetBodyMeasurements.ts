@@ -1,4 +1,7 @@
 import type { BodyTrendPoint } from "@/domain/models/progress";
+import { useCallback, useEffect, useState } from "react";
+import type { ApiError } from "@/shared/errors";
+import { useAdapters } from "./useAdapters";
 import {
   useCachedResource,
   type CachedResourceState,
@@ -26,4 +29,43 @@ export function useGetBodyMeasurements(
     write: (storage, userId, value) => storage.cacheBodyTrend(userId, value),
     enabled,
   });
+}
+
+export type BodyMeasurementHistoryState = {
+  data: BodyTrendPoint[] | null;
+  isLoading: boolean;
+  error: ApiError | null;
+  refresh: () => Promise<void>;
+};
+
+/**
+ * Network-only long-window history. It intentionally bypasses
+ * `cached_body_trend`, whose 30-day payload is shared by You, Fuel Targets and
+ * optimistic weigh-ins; caching a year here would corrupt those summaries.
+ */
+export function useGetBodyMeasurementHistory(
+  windowDays = 366,
+): BodyMeasurementHistoryState {
+  const { api } = useAdapters();
+  const [data, setData] = useState<BodyTrendPoint[] | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<ApiError | null>(null);
+
+  const load = useCallback(async () => {
+    setIsLoading(true);
+    const result = await api.getBodyTrend(`${windowDays}d`);
+    if (result.ok) {
+      setData(result.value);
+      setError(null);
+    } else {
+      setError(result.error);
+    }
+    setIsLoading(false);
+  }, [api, windowDays]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  return { data, isLoading, error, refresh: load };
 }

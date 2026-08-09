@@ -65,7 +65,7 @@ export function VolumeStatsPresenter({
             unit={stats.adherencePct != null ? "%" : undefined}
             size="md"
             label="ADHERENCE"
-            sub="of plan"
+            sub={stats.adherencePct != null ? "of Gym habit" : "no Gym habit"}
             tone="primary"
           />
         </View>

@@ -45,7 +45,10 @@ function streak(overrides: Partial<UserStreak> = {}): UserStreak {
 }
 
 describe("StreakRepository", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.clearAllMocks();
+  });
 
   it("getUserTimezone returns the profile tz, defaulting to Europe/London", async () => {
     (getDb as any).mockReturnValue({
@@ -59,6 +62,102 @@ describe("StreakRepository", () => {
     expect(await new StreakRepository().getUserTimezone("u1")).toBe(
       "Europe/London",
     );
+  });
+
+  it("ensureWorkoutStreak reconstructs history when the singleton is missing", async () => {
+    const inserted: unknown[] = [];
+    (getDb as any).mockReturnValue({
+      select: vi
+        .fn()
+        .mockReturnValueOnce(selectWhereLimit([]))
+        .mockReturnValueOnce(selectWhereLimit([{ tz: "Europe/London" }])),
+      insert: () => ({
+        values: (value: unknown) => {
+          inserted.push(value);
+          return { onConflictDoNothing: () => Promise.resolve() };
+        },
+      }),
+    });
+    const repo = new StreakRepository();
+    const reconcile = vi
+      .spyOn(repo, "reconcileWorkoutStreakHistory")
+      .mockResolvedValueOnce();
+
+    await repo.ensureWorkoutStreak("u1", new Date("2026-06-10T12:00:00Z"));
+    expect(reconcile).toHaveBeenCalledWith("u1", "2026-06-08");
+    expect(inserted).toEqual([
+      expect.objectContaining({
+        userId: "u1",
+        currentCount: 0,
+        lastPeriodEnd: "2026-06-07",
+      }),
+    ]);
+  });
+
+  it("ensureWorkoutStreak leaves an existing row unchanged", async () => {
+    const insert = vi.fn();
+    (getDb as any).mockReturnValue({
+      select: () => selectWhereLimit([{ id: "s1" }]),
+      insert,
+    });
+    await new StreakRepository().ensureWorkoutStreak("u1", new Date());
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it("atomically rebuilds the workout streak and all earned milestones", async () => {
+    const select = vi
+      .fn()
+      .mockReturnValueOnce(selectWhereLimit([{ tz: "Europe/London" }]));
+    const execute = vi.fn(async (queryInput: unknown) => {
+      void queryInput;
+      return [];
+    });
+    (getDb as any).mockReturnValue({ select, execute });
+
+    await new StreakRepository().reconcileWorkoutStreakHistory("u1");
+
+    expect(execute).toHaveBeenCalledTimes(1);
+    const query = new PgDialect().sqlToQuery(
+      execute.mock.calls[0]![0] as Parameters<PgDialect["sqlToQuery"]>[0],
+    );
+    expect(query.params).toContain(4); // shared cap: 12 weeks earns 3, enough to bridge a 3-week gap
+    const { sql: querySql } = query;
+    expect(querySql).toContain('"workout_sessions"."completed_at" <= now()');
+    expect(querySql).toContain("WITH RECURSIVE");
+    expect(querySql).toContain("FROM replay");
+    expect(querySql).toContain("r.freeze_tokens >= gap.missed");
+    expect(querySql).toContain("ON CONFLICT (user_id)");
+    expect(querySql).toContain("current_count = CASE");
+    expect(querySql).toContain(
+      '"user_streaks"."last_period_end" < EXCLUDED.last_period_end',
+    );
+    expect(querySql).toContain('INSERT INTO "user_achievements"');
+    expect(querySql).toContain("ON CONFLICT DO NOTHING");
+  });
+
+  it("can bound lazy repair before the triggering workout week", async () => {
+    const select = vi
+      .fn()
+      .mockReturnValueOnce(selectWhereLimit([{ tz: "Europe/London" }]));
+    const execute = vi.fn(async (queryInput: unknown) => {
+      void queryInput;
+      return [];
+    });
+    (getDb as any).mockReturnValue({ select, execute });
+
+    await new StreakRepository().reconcileWorkoutStreakHistory(
+      "u1",
+      "2026-06-08",
+    );
+
+    const query = new PgDialect().sqlToQuery(
+      execute.mock.calls[0]![0] as Parameters<PgDialect["sqlToQuery"]>[0],
+    );
+    expect(query.params).toContain("2026-06-08");
+    expect(query.sql).toContain("::date < $");
+    expect(query.params.filter((param) => param === "2026-06-08")).toHaveLength(
+      3,
+    ); // history bound + terminal cursor/gap horizon
   });
 
   it("getActiveStreaksByType / getActiveStreaks / forUser return rows", async () => {

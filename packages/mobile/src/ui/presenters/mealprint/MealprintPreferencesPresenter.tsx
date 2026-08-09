@@ -149,7 +149,9 @@ export type MealprintPreferencesProps = {
   readonly onEffortLevelChange: (value: EffortLevel) => void;
 
   readonly onSave: () => void;
-  /** Wizard first run: "Skip for now" (saves the defaults). Otherwise "Cancel". */
+  /** Leave without saving or changing the user's existing preferences. */
+  readonly onCancel: () => void;
+  /** Wizard first run: explicitly skip setup (records the default choice). */
   readonly onDismiss: () => void;
   /**
    * Text for the dismiss action.
@@ -193,6 +195,7 @@ export function MealprintPreferencesPresenter({
   effortLevel,
   onEffortLevelChange,
   onSave,
+  onCancel,
   onDismiss,
   dismissLabel,
   testID = "mealprint-preferences-screen",
@@ -231,7 +234,7 @@ export function MealprintPreferencesPresenter({
           title={isWizard ? "Set up Mealprint" : "Food preferences"}
           leading={
             <Pressable
-              onPress={onDismiss}
+              onPress={onCancel}
               testID="mealprint-preferences-dismiss"
               accessibilityRole="button"
               accessibilityLabel="Go back"
@@ -296,16 +299,16 @@ export function MealprintPreferencesPresenter({
         title={isWizard ? "Set up Mealprint" : "Food preferences"}
         leading={
           <Pressable
-            onPress={onDismiss}
+            onPress={onCancel}
             disabled={isSaving}
             testID="mealprint-preferences-dismiss"
             accessibilityRole="button"
             accessibilityLabel={
-              dismissText === "Skip" ? "Skip for now" : dismissText
+              isWizard ? "Cancel setup" : "Cancel editing food preferences"
             }
           >
             <Text fontFamily="$body" fontSize={14} color="$text3">
-              {dismissText}
+              Cancel
             </Text>
           </Pressable>
         }
@@ -569,18 +572,33 @@ export function MealprintPreferencesPresenter({
             borderColor="$border"
             backgroundColor="$surface"
           >
-            <Btn
-              variant="filled"
-              tone="primary"
-              size="lg"
-              full
-              icon={<IconCheck size={16} />}
-              onPress={onSave}
-              disabled={isSaving}
-              testID="mealprint-preferences-wizard-cta"
-            >
-              {isSaving ? "Saving…" : "Save and continue"}
-            </Btn>
+            <View gap={10}>
+              <Btn
+                variant="filled"
+                tone="primary"
+                size="lg"
+                full
+                icon={<IconCheck size={16} />}
+                onPress={onSave}
+                disabled={isSaving}
+                testID="mealprint-preferences-wizard-cta"
+              >
+                {isSaving ? "Saving…" : "Save and continue"}
+              </Btn>
+              {dismissText === "Skip" ? (
+                <Btn
+                  variant="ghost"
+                  tone="primary"
+                  size="md"
+                  full
+                  onPress={onDismiss}
+                  disabled={isSaving}
+                  testID="mealprint-preferences-skip"
+                >
+                  Skip for now
+                </Btn>
+              ) : null}
+            </View>
           </View>
         ) : null}
       </KeyboardAvoidingView>
