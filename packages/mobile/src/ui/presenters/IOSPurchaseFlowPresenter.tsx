@@ -40,6 +40,7 @@ export interface IOSPurchaseFlowPresenterProps {
   errorMessage: string | null;
   isUnavailable: boolean;
   billingCycle: BillingCycle;
+  currentBillingCycle: BillingCycle | null;
   currentTier: SubscriptionTierName;
   selectedRole: Role;
   purchasableTiers: ReadonlySet<SubscriptionTierName>;
@@ -51,6 +52,7 @@ export interface IOSPurchaseFlowPresenterProps {
   isCancelledButActive: boolean;
   currentTierDisplayName: string;
   isProcessing: boolean;
+  processingPhase: "purchasing" | "activating" | null;
   isRestoring: boolean;
   screen?: SubscriptionRailScreen;
   onBillingCycleChange: (cycle: BillingCycle) => void;
@@ -320,13 +322,27 @@ function PaidCta({
   tier,
   enabled,
   disabled,
+  isCurrentPlan,
   onPress,
 }: {
   tier: CatalogTier;
   enabled: boolean;
   disabled: boolean;
+  isCurrentPlan: boolean;
   onPress: () => void;
 }) {
+  if (isCurrentPlan) {
+    return (
+      <View
+        style={[styles.comingSoon, styles.currentPlanCta]}
+        accessibilityRole="text"
+        accessibilityLabel={`${tier.name}: current plan`}
+      >
+        <Ionicons name="checkmark-circle" size={17} color={color.$success} />
+        <Text style={styles.currentPlanCtaText}>Current plan</Text>
+      </View>
+    );
+  }
   const cta = ctaFor(tier, { iapAvailable: enabled });
   if (tier.id === "free") return null;
   if (cta.enabled) {
@@ -363,6 +379,8 @@ function TierCard({
   onContinueFree,
   purchaseEnabled,
   purchaseDisabled,
+  isCurrent,
+  isCurrentPlan,
   onTierSelect,
   trialDays,
   showTrial,
@@ -374,6 +392,8 @@ function TierCard({
   onContinueFree?: () => void;
   purchaseEnabled: boolean;
   purchaseDisabled: boolean;
+  isCurrent: boolean;
+  isCurrentPlan: boolean;
   onTierSelect: () => void;
   trialDays: number | null;
   showTrial: boolean;
@@ -388,6 +408,7 @@ function TierCard({
         styles.tierCard,
         tier.highlight && styles.tierCardHighlight,
         trainer && styles.tierCardTrainer,
+        isCurrent && styles.tierCardCurrent,
       ]}
       testID={
         trainer
@@ -399,6 +420,17 @@ function TierCard({
         <View style={styles.recommendedPill}>
           <Ionicons name="sparkles" size={10} color={color.$goldInk} />
           <Text style={styles.recommendedText}>LOADOUT + MEALPRINT</Text>
+        </View>
+      )}
+      {isCurrent && (
+        <View
+          style={styles.currentPlanPill}
+          accessibilityRole="text"
+          accessibilityLabel={`${tier.name}: current tier`}
+          testID={`subscription-card-${tier.id}-current`}
+        >
+          <Ionicons name="checkmark-circle" size={14} color={color.$success} />
+          <Text style={styles.currentPlanPillText}>CURRENT TIER</Text>
         </View>
       )}
       <View style={styles.tierHeader}>
@@ -481,6 +513,7 @@ function TierCard({
           tier={tier}
           enabled={purchaseEnabled}
           disabled={purchaseDisabled}
+          isCurrentPlan={isCurrentPlan}
           onPress={onTierSelect}
         />
       )}
@@ -496,7 +529,12 @@ function PlansScreen(props: IOSPurchaseFlowPresenterProps) {
   const hasProvisional = tiers.some((tier) =>
     cadence === "annual" ? tier.provisionalAnnual : tier.provisionalMonthly,
   );
-
+  const currentCadence =
+    props.currentBillingCycle === null
+      ? null
+      : props.currentBillingCycle === "yearly"
+        ? "annual"
+        : "monthly";
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="light-content" backgroundColor={color.$bg} />
@@ -595,6 +633,10 @@ function PlansScreen(props: IOSPurchaseFlowPresenterProps) {
                 tier.id as SubscriptionTierName,
               )}
               purchaseDisabled={props.isProcessing || props.isRestoring}
+              isCurrent={props.currentTier === tier.id}
+              isCurrentPlan={
+                props.currentTier === tier.id && currentCadence === cadence
+              }
               onTierSelect={() =>
                 props.onTierSelect(tier.id as SubscriptionTierName)
               }
@@ -631,8 +673,12 @@ function ManageScreen(props: IOSPurchaseFlowPresenterProps) {
   const tier = SUBSCRIPTION_CATALOG.find(
     (candidate) => candidate.id === (props.currentTier as CatalogTierId),
   );
-  const cadence: BillingCadence =
-    props.billingCycle === "yearly" ? "annual" : "monthly";
+  const cadence: BillingCadence | null =
+    props.currentBillingCycle === null
+      ? null
+      : props.currentBillingCycle === "yearly"
+        ? "annual"
+        : "monthly";
   const renewal = props.subscriptionEndsAt
     ? new Date(props.subscriptionEndsAt).toLocaleDateString("en-GB", {
         day: "numeric",
@@ -663,7 +709,11 @@ function ManageScreen(props: IOSPurchaseFlowPresenterProps) {
             {tier && (
               <View style={styles.tierPriceWrap}>
                 <Text style={styles.manageCadence}>
-                  {cadence === "annual" ? "Annual" : "Monthly"}
+                  {cadence === null
+                    ? "Current billing period"
+                    : cadence === "annual"
+                      ? "Annual"
+                      : "Monthly"}
                 </Text>
                 {renewal && (
                   <Text style={styles.equivalentText}>
@@ -714,7 +764,11 @@ function ManageScreen(props: IOSPurchaseFlowPresenterProps) {
             <Ionicons name="calendar-outline" size={19} color={color.$text3} />
             <Text style={styles.manageRowLabel}>Billing period</Text>
             <Text style={styles.manageRowDetail}>
-              {cadence === "annual" ? "Annual" : "Monthly"}
+              {cadence === null
+                ? "Not available"
+                : cadence === "annual"
+                  ? "Annual"
+                  : "Monthly"}
             </Text>
           </View>
         </View>
@@ -754,9 +808,11 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
     );
   }
 
-  if (props.screen === "manage") return <ManageScreen {...props} />;
-  if (props.screen === "persona") {
-    return (
+  let content: React.ReactNode;
+  if (props.screen === "manage") {
+    content = <ManageScreen {...props} />;
+  } else if (props.screen === "persona") {
+    content = (
       <PersonaChooser
         onSelect={props.onPersonaSelect ?? props.onRoleChange}
         onBack={props.onBack}
@@ -765,11 +821,44 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
         isRestoring={props.isRestoring}
       />
     );
+  } else {
+    content = <PlansScreen {...props} />;
   }
-  return <PlansScreen {...props} />;
+
+  return (
+    <View style={styles.presenterRoot}>
+      {content}
+      {props.processingPhase !== null && (
+        <View
+          style={styles.processingOverlay}
+          accessibilityRole="progressbar"
+          accessibilityLiveRegion="polite"
+          accessibilityLabel={
+            props.processingPhase === "activating"
+              ? "Activating your plan"
+              : "Completing your purchase"
+          }
+          testID="ios-purchase-processing"
+        >
+          <View style={styles.processingCard}>
+            <PLogoDrawLoader />
+            <Text style={styles.processingTitle}>
+              {props.processingPhase === "activating"
+                ? "Activating your plan…"
+                : "Completing your purchase…"}
+            </Text>
+            <Text style={styles.processingBody}>
+              Keep Persistence open while we confirm your access.
+            </Text>
+          </View>
+        </View>
+      )}
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
+  presenterRoot: { flex: 1, backgroundColor: color.$bg },
   safeArea: { flex: 1, backgroundColor: color.$bg },
   centeredContainer: {
     flex: 1,
@@ -951,6 +1040,10 @@ const styles = StyleSheet.create({
     backgroundColor: color.$goldDim,
   },
   tierCardTrainer: { borderColor: color.$accentTrainerDim },
+  tierCardCurrent: {
+    borderColor: color.$success,
+    backgroundColor: color.$successDim,
+  },
   recommendedPill: {
     alignSelf: "flex-start",
     flexDirection: "row",
@@ -1065,6 +1158,67 @@ const styles = StyleSheet.create({
     color: color.$primaryInk,
     fontSize: 14,
     fontWeight: "700",
+  },
+  currentPlanPill: {
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderWidth: 1,
+    borderColor: color.$success,
+    borderRadius: 999,
+    backgroundColor: color.$successDim,
+  },
+  currentPlanPillText: {
+    color: color.$success,
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 0.7,
+  },
+  currentPlanCta: {
+    borderColor: color.$success,
+    backgroundColor: color.$successDim,
+  },
+  currentPlanCtaText: {
+    color: color.$success,
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  processingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 100,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24,
+    backgroundColor: "rgba(8, 10, 15, 0.82)",
+  },
+  processingCard: {
+    width: "100%",
+    maxWidth: 340,
+    alignItems: "center",
+    paddingHorizontal: 24,
+    paddingVertical: 28,
+    borderWidth: 1,
+    borderColor: color.$border2,
+    borderRadius: 18,
+    backgroundColor: color.$surface,
+  },
+  processingTitle: {
+    marginTop: 18,
+    color: color.$text,
+    fontSize: 18,
+    fontWeight: "700",
+    textAlign: "center",
+  },
+  processingBody: {
+    marginTop: 8,
+    color: color.$text2,
+    fontSize: 13,
+    lineHeight: 19,
+    textAlign: "center",
   },
   continueFree: {
     minHeight: 48,

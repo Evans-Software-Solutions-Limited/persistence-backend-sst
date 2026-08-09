@@ -219,6 +219,23 @@ describe("IOSPurchaseFlowContainer", () => {
     ).toBeTruthy();
   });
 
+  it("does not label a compressed sandbox annual period as monthly", async () => {
+    const { adapters } = makeAdapters(
+      subscription({
+        tierName: "individual_trainer",
+        billingCycle: "monthly",
+        startsAt: "2026-08-09T16:54:29.000Z",
+        expiresAt: "2026-08-09T17:54:29.000Z",
+        role: "personal_trainer",
+      }),
+    );
+
+    renderContainer(adapters);
+
+    expect(await screen.findByText("Current billing period")).toBeTruthy();
+    expect(screen.queryByText("Monthly")).toBeNull();
+  });
+
   it("uses a deep link to bypass persona and open coach plans", async () => {
     mockParams = { tier: "coach", cycle: "monthly" };
     const { adapters } = makeAdapters();
@@ -376,6 +393,10 @@ describe("IOSPurchaseFlowContainer", () => {
         },
       ],
     };
+    api.nextSyncSubscriptionResult = subscription({
+      tierName: "premium",
+      billingCycle: "monthly",
+    });
 
     renderContainer(adapters);
     fireEvent.press(
@@ -439,9 +460,20 @@ describe("IOSPurchaseFlowContainer", () => {
     },
   );
 
-  it("does not block a successful Apple purchase when server sync is temporarily unavailable", async () => {
+  it("does not claim activation when server sync is temporarily unavailable", async () => {
     mockParams = { tier: "premium", cycle: "monthly" };
-    const { adapters, api } = makeAdapters();
+    const { adapters, api, purchases } = makeAdapters();
+    purchases.nextPurchaseResponse = {
+      ok: true,
+      entitlements: [
+        {
+          entitlementId: "premium",
+          productId: "app.persistence.premium.monthly",
+          tier: "premium",
+          expiresAt: "2026-09-05T00:00:00.000Z",
+        },
+      ],
+    };
     api.nextSyncSubscriptionError = {
       kind: "api",
       code: "server",
@@ -454,8 +486,165 @@ describe("IOSPurchaseFlowContainer", () => {
       await screen.findByTestId("subscription-card-premium-subscribe"),
     );
     await waitFor(() =>
+      expect(alertSpy).toHaveBeenCalledWith(
+        "Purchase Confirmed",
+        expect.stringContaining("haven't finished activating"),
+      ),
+    );
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it("keeps the activation cover visible while the server reconciliation is pending", async () => {
+    mockParams = { tier: "premium", cycle: "monthly" };
+    const { adapters, api, purchases } = makeAdapters();
+    purchases.nextPurchaseResponse = {
+      ok: true,
+      entitlements: [
+        {
+          entitlementId: "premium",
+          productId: "app.persistence.premium.monthly",
+          tier: "premium",
+          expiresAt: "2026-09-05T00:00:00.000Z",
+        },
+      ],
+    };
+    let finishSync: (() => void) | undefined;
+    jest.spyOn(api, "syncSubscription").mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishSync = () =>
+            resolve({
+              ok: true,
+              value: subscription({
+                tierName: "premium",
+                billingCycle: "monthly",
+              }),
+            });
+        }),
+    );
+
+    renderContainer(adapters);
+    fireEvent.press(
+      await screen.findByTestId("subscription-card-premium-subscribe"),
+    );
+
+    expect(await screen.findByTestId("ios-purchase-processing")).toBeTruthy();
+    expect(screen.getByText("Activating your plan…")).toBeTruthy();
+
+    await act(async () => finishSync?.());
+    await waitFor(() =>
       expect(mockPush).toHaveBeenCalledWith("/(auth)/success?tier=premium"),
     );
+  });
+
+  it("keeps plan-change wording neutral while both sources still report the old tier", async () => {
+    mockParams = { tier: "premium", cycle: "monthly" };
+    const current = subscription({
+      tierName: "individual_trainer",
+      billingCycle: "yearly",
+      role: "personal_trainer",
+    });
+    const { adapters, api, purchases } = makeAdapters(current);
+    purchases.packages = [
+      {
+        packageId: "$rc_plus_monthly",
+        productId: "app.persistence.start_up_coach_plus.monthly",
+        tier: "start_up_coach_plus",
+        billingCycle: "monthly",
+        price: 34.99,
+        priceString: "£34.99",
+        pricePerMonthString: "£34.99",
+        introTrialDays: null,
+      },
+    ];
+    purchases.nextPurchaseResponse = {
+      ok: true,
+      entitlements: [
+        {
+          entitlementId: "individual_trainer",
+          productId: "app.persistence.trainer.individual.annual",
+          tier: "individual_trainer",
+          expiresAt: "2026-08-09T17:54:29.000Z",
+        },
+      ],
+    };
+    api.nextSyncSubscriptionResult = current;
+    mockParams = {
+      tier: "start_up_coach_plus",
+      cycle: "monthly",
+      role: "personal_trainer",
+    };
+
+    renderContainer(adapters);
+    fireEvent.press(
+      await screen.findByTestId(
+        "subscription-card-start_up_coach_plus-subscribe",
+      ),
+    );
+
+    await waitFor(() =>
+      expect(alertSpy).toHaveBeenCalledWith(
+        "Plan Change Pending",
+        expect.stringContaining("still active"),
+      ),
+    );
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it("does not call a stale device entitlement a scheduled change when the server activated the tier", async () => {
+    mockParams = { tier: "premium", cycle: "monthly" };
+    const { adapters, api, purchases } = makeAdapters();
+    purchases.nextPurchaseResponse = { ok: true, entitlements: [] };
+    api.nextSyncSubscriptionResult = subscription({
+      tierName: "premium",
+      billingCycle: "monthly",
+    });
+
+    renderContainer(adapters);
+    fireEvent.press(
+      await screen.findByTestId("subscription-card-premium-subscribe"),
+    );
+
+    await waitFor(() =>
+      expect(alertSpy).toHaveBeenCalledWith(
+        "Purchase Confirmed",
+        expect.stringContaining("device is still refreshing"),
+      ),
+    );
+    expect(alertSpy).not.toHaveBeenCalledWith(
+      "Plan Change Pending",
+      expect.any(String),
+    );
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it("reports activation pending when neither RevenueCat nor the server can confirm the tier", async () => {
+    mockParams = { tier: "premium", cycle: "monthly" };
+    const { adapters, api, purchases } = makeAdapters();
+    purchases.nextPurchaseResponse = { ok: true, entitlements: [] };
+    api.nextSyncSubscriptionError = {
+      kind: "api",
+      code: "server",
+      message: "subscription_sync_failed",
+      status: 502,
+    };
+
+    renderContainer(adapters);
+    fireEvent.press(
+      await screen.findByTestId("subscription-card-premium-subscribe"),
+    );
+
+    await waitFor(() =>
+      expect(alertSpy).toHaveBeenCalledWith(
+        "Activation Pending",
+        expect.stringContaining("couldn't confirm"),
+      ),
+    );
+    expect(alertSpy).not.toHaveBeenCalledWith(
+      "Plan Change Pending",
+      expect.any(String),
+    );
+    expect(mockPush).not.toHaveBeenCalled();
   });
 
   it("handles an offering disappearing between render and selection", async () => {

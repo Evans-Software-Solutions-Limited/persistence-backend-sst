@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Alert, Linking, Platform } from "react-native";
 import {
   SUBSCRIPTION_CATALOG,
@@ -89,6 +95,7 @@ export function IOSPurchaseFlowContainer() {
 
   const tiersQuery = useSubscriptionTiers();
   const subQuery = useMySubscription();
+  const refetchSubscription = subQuery.refetch;
   const offeringsQuery = usePurchaseOfferings();
   const purchaseMutation = usePurchasePackage();
   const restoreMutation = useRestorePurchases();
@@ -108,9 +115,24 @@ export function IOSPurchaseFlowContainer() {
     initialCycleParam ?? "monthly",
   );
   const [selectedRole, setSelectedRole] = useState<Role>(initialRole);
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [processingPhase, setProcessingPhase] = useState<
+    "purchasing" | "activating" | null
+  >(null);
+  const navigationCoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const isProcessing = processingPhase !== null;
   const hasExplicitPlanRoute = Boolean(
     searchParams.tier || searchParams.cycle || searchParams.role,
+  );
+
+  useEffect(
+    () => () => {
+      if (navigationCoverTimerRef.current !== null) {
+        clearTimeout(navigationCoverTimerRef.current);
+      }
+    },
+    [],
   );
   const [screen, setScreen] = useState<SubscriptionRailScreen>(
     hasExplicitPlanRoute ? "plans" : "persona",
@@ -139,7 +161,29 @@ export function IOSPurchaseFlowContainer() {
     );
   }, [role, initialRoleParam, tierParamImpliesTrainer]);
 
-  const currentBillingCycle = subscriptionData?.billingCycle ?? null;
+  const currentBillingCycle = useMemo(() => {
+    const reportedCycle = subscriptionData?.billingCycle ?? null;
+    if (
+      reportedCycle === null ||
+      subscriptionData === null ||
+      subscriptionData.expiresAt === null
+    ) {
+      return null;
+    }
+
+    const startsAt = Date.parse(subscriptionData.startsAt);
+    const expiresAt = Date.parse(subscriptionData.expiresAt);
+    const periodMs = expiresAt - startsAt;
+    // RevenueCat sandbox periods and introductory trials are compressed, so
+    // the backend's period-length heuristic cannot distinguish monthly from
+    // annual there. Do not present a cadence as authoritative until the
+    // observed period is long enough to represent a real paid month.
+    const minimumReliablePeriodMs = 20 * 24 * 60 * 60 * 1000;
+    if (!Number.isFinite(periodMs) || periodMs < minimumReliablePeriodMs) {
+      return null;
+    }
+    return reportedCycle;
+  }, [subscriptionData]);
   useEffect(() => {
     if (initialCycleParam !== null) return;
     if (currentBillingCycle === "monthly" || currentBillingCycle === "yearly") {
@@ -281,30 +325,63 @@ export function IOSPurchaseFlowContainer() {
         return;
       }
 
-      setIsProcessing(true);
+      setProcessingPhase("purchasing");
+      let navigationStarted = false;
       try {
         const result = await purchaseMutation.mutateAsync(pkg.packageId);
-        // `result` is the active-entitlement snapshot; RevenueCat has already
-        // confirmed the purchase on Apple's side at this point, so the tier
-        // the user just bought (`tier`) is authoritative for the success
-        // screen. The backend's `user_subscriptions` row is only updated by
-        // an ASYNC RevenueCat→backend webhook, so force a server-side
-        // reconcile via `syncSubscription` here to persist the entitlement +
-        // invalidate the subscription/profile caches BEFORE navigating —
-        // without this, coach-mode / the drawer could briefly read `free`.
-        // The sync is for the DB write, NOT to override display: we always
-        // route with the purchased `tier`. If sync errors (e.g. a transient
-        // 502), don't block a purchase RevenueCat already reported as
-        // successful — the webhook reconciles the row shortly after.
-        void result;
+        setProcessingPhase("activating");
+        // `result` is RevenueCat's ACTIVE entitlement snapshot after Apple's
+        // sheet closes. It may still contain the old tier when Apple schedules
+        // a downgrade for the next renewal, so the tapped tile is not itself
+        // proof that access changed. Force a server-side reconcile and only
+        // announce activation when BOTH RevenueCat and the backend confirm the
+        // requested tier. This prevents a success-screen flash followed by
+        // locked features or an apparently unselected current plan.
+        const purchasedTierIsActive = result.some(
+          (entitlement) => entitlement.tier === tier,
+        );
+        let syncedTier: SubscriptionTierName | null = null;
         try {
-          await syncMutation.mutateAsync();
+          const synced = await syncMutation.mutateAsync();
+          syncedTier = synced.tierName;
         } catch {
-          // Sync failed — proceed with the purchased tier; the purchase
-          // itself already succeeded on Apple's side and the webhook will
-          // reconcile the DB row.
+          // Handled below. Never announce unlocked access until the server has
+          // confirmed the tier that RevenueCat reports as active.
+        }
+
+        if (!purchasedTierIsActive) {
+          await refetchSubscription();
+          if (syncedTier !== null && syncedTier !== tier) {
+            Alert.alert(
+              "Plan Change Pending",
+              "Your existing plan is still active while the store confirms this change. Your access will update automatically once confirmation completes.",
+            );
+          } else if (syncedTier === tier) {
+            Alert.alert(
+              "Purchase Confirmed",
+              "Your plan is active on our server, but this device is still refreshing its store access. Please keep Persistence open and try again shortly.",
+            );
+          } else {
+            Alert.alert(
+              "Activation Pending",
+              "Your purchase completed, but we couldn't confirm the active plan yet. Please keep Persistence open and try again shortly.",
+            );
+          }
+          setScreen("manage");
+          setScreenChosen(true);
+          return;
+        }
+
+        if (syncedTier !== tier) {
+          await refetchSubscription();
+          Alert.alert(
+            "Purchase Confirmed",
+            "Apple confirmed your purchase, but we haven't finished activating the plan yet. Please keep the app open and try again shortly.",
+          );
+          return;
         }
         router.push(`/(auth)/success?tier=${tier}` as Href);
+        navigationStarted = true;
       } catch (err) {
         const error = err as { kind?: string; message?: string };
         // User dismissed the native sheet — silent (no alert), matching the
@@ -325,7 +402,17 @@ export function IOSPurchaseFlowContainer() {
           error.message ?? "Something went wrong. Please try again.",
         );
       } finally {
-        setIsProcessing(false);
+        if (navigationStarted) {
+          // Keep the activation cover mounted through the navigation
+          // transition so the paywall cannot flash back into an interactive
+          // state after Apple's sheet closes.
+          navigationCoverTimerRef.current = setTimeout(() => {
+            navigationCoverTimerRef.current = null;
+            setProcessingPhase(null);
+          }, 750);
+        } else {
+          setProcessingPhase(null);
+        }
       }
     },
     [
@@ -335,6 +422,7 @@ export function IOSPurchaseFlowContainer() {
       billingCycle,
       purchaseMutation,
       syncMutation,
+      refetchSubscription,
       router,
     ],
   );
@@ -419,6 +507,7 @@ export function IOSPurchaseFlowContainer() {
       }
       isUnavailable={purchases !== null && !purchases.isConfigured()}
       billingCycle={billingCycle}
+      currentBillingCycle={currentBillingCycle}
       currentTier={currentTier}
       selectedRole={selectedRole}
       purchasableTiers={purchasableTiers}
@@ -430,6 +519,7 @@ export function IOSPurchaseFlowContainer() {
       isCancelledButActive={isCancelledButActive}
       currentTierDisplayName={displayInfo.currentTierDisplayName}
       isProcessing={isProcessing}
+      processingPhase={processingPhase}
       isRestoring={restoreMutation.isPending || syncMutation.isPending}
       screen={screen}
       onBillingCycleChange={setBillingCycle}
