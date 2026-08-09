@@ -154,7 +154,11 @@ export function CreateExercisePresenter({
           showsVerticalScrollIndicator={false}
           testID="create-exercise-scroll"
         >
-          <ExerciseFormFields value={value} onChange={setValue} showsPhoto />
+          <ExerciseFormFields
+            value={value}
+            onChange={setValue}
+            showsPhoto={false}
+          />
 
           {/* Live preview chip */}
           <LinearGradient

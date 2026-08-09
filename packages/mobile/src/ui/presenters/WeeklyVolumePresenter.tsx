@@ -55,7 +55,7 @@ export function WeeklyVolumePresenter({
         <View alignItems="flex-end">
           <Stat
             value={workouts.completed}
-            unit={`/${workouts.target}`}
+            unit={workouts.target != null ? `/${workouts.target}` : undefined}
             size="md"
             align="center"
           />
@@ -65,7 +65,7 @@ export function WeeklyVolumePresenter({
             letterSpacing={1.5}
             color="$text3"
           >
-            WORKOUTS
+            {workouts.target != null ? "WORKOUTS" : "WORKOUTS LOGGED"}
           </Text>
         </View>
       </View>

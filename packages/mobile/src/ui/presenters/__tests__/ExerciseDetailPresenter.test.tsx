@@ -33,6 +33,7 @@ function setup(
     isOwner: true,
     onClose: jest.fn(),
     onEdit: jest.fn(),
+    onOpenVideo: jest.fn(),
     onRetry: jest.fn(),
     ...overrides,
   };
@@ -69,7 +70,7 @@ describe("ExerciseDetailPresenter", () => {
     expect(props.onClose).toHaveBeenCalled();
   });
 
-  it("renders the photo when a thumbnailUrl is present, placeholder otherwise", () => {
+  it("renders optional media without an empty placeholder", () => {
     const withPhoto = setup({
       exercise: { ...exercise, thumbnailUrl: "https://x/y.png" },
     });
@@ -81,8 +82,18 @@ describe("ExerciseDetailPresenter", () => {
     const noPhoto = setup();
     expect(
       noPhoto.queryByTestId("exercise-detail-photo-placeholder"),
-    ).toBeTruthy();
+    ).toBeNull();
     expect(noPhoto.queryByTestId("exercise-detail-photo")).toBeNull();
+  });
+
+  it("opens the exercise demonstration when a video is available", () => {
+    const onOpenVideo = jest.fn();
+    const { getByTestId } = setup({
+      exercise: { ...exercise, videoUrl: "https://example.com/demo" },
+      onOpenVideo,
+    });
+    fireEvent.press(getByTestId("exercise-detail-video"));
+    expect(onOpenVideo).toHaveBeenCalledTimes(1);
   });
 
   it("omits empty sections (no resolved labels, no description/instructions)", () => {

@@ -124,6 +124,9 @@ export function YouContainer() {
   const onOpenAcceptInvite = useCallback(() => {
     router.push("/(app)/accept-invite" as never);
   }, [router]);
+  const onOpenBodyHistory = useCallback(() => {
+    router.push("/(app)/body-history" as never);
+  }, [router]);
 
   const primary = useMemo(
     () => pickPrimaryStreak(streaks.data ?? []),
@@ -297,8 +300,6 @@ export function YouContainer() {
     void refreshStreaks();
   }, [spendFreezeToken, primary, refreshStreaks]);
 
-  const noop = useCallback(() => {}, []);
-
   return (
     <YouPresenter
       scrollRef={scrollRef}
@@ -323,8 +324,8 @@ export function YouContainer() {
       busyToken={freeze.isPending}
       onRefresh={onRefresh}
       onOpenDrawer={openDrawer}
-      onOpenCalendar={noop}
       onUseToken={onUseToken}
+      onOpenBodyHistory={onOpenBodyHistory}
       onOpenRequests={onOpenRequests}
       onOpenAcceptInvite={onOpenAcceptInvite}
     />

@@ -496,6 +496,7 @@ function prefProps(
     effortLevel: "balanced",
     onEffortLevelChange: jest.fn(),
     onSave: jest.fn(),
+    onCancel: jest.fn(),
     onDismiss: jest.fn(),
     // Required now — the mode-derived fallback was the label the container proved
     // wrong, so it no longer exists.
@@ -582,19 +583,33 @@ describe("MealprintPreferencesPresenter", () => {
     }
   });
 
-  it("labels the dismiss action Skip in the wizard and Cancel in the editor", () => {
+  it("always offers Cancel and keeps Skip for now as a distinct wizard action", () => {
+    const onCancel = jest.fn();
+    const onDismiss = jest.fn();
     const wizard = renderWithTheme(
       <MealprintPreferencesPresenter
-        {...prefProps({ mode: "wizard", dismissLabel: "Skip" })}
+        {...prefProps({
+          mode: "wizard",
+          dismissLabel: "Skip",
+          onCancel,
+          onDismiss,
+        })}
       />,
     );
-    expect(wizard.queryByText("Skip")).toBeTruthy();
+    expect(wizard.queryByText("Cancel")).toBeTruthy();
+    expect(wizard.queryByText("Skip for now")).toBeTruthy();
+    fireEvent.press(wizard.getByTestId("mealprint-preferences-dismiss"));
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    expect(onDismiss).not.toHaveBeenCalled();
+    fireEvent.press(wizard.getByTestId("mealprint-preferences-skip"));
+    expect(onDismiss).toHaveBeenCalledTimes(1);
     expect(wizard.getByTestId("mealprint-preferences-intro")).toBeTruthy();
 
     const editor = renderWithTheme(
       <MealprintPreferencesPresenter {...prefProps({ mode: "editor" })} />,
     );
     expect(editor.queryByText("Cancel")).toBeTruthy();
+    expect(editor.queryByTestId("mealprint-preferences-skip")).toBeNull();
     expect(editor.queryByTestId("mealprint-preferences-intro")).toBeNull();
   });
 
@@ -1475,13 +1490,13 @@ describe("MealprintPreferencesPresenter — saving and full-list states", () => 
     expect(onSave).toHaveBeenCalled();
   });
 
-  it("fires onDismiss from the header action", () => {
-    const onDismiss = jest.fn();
+  it("fires onCancel from the header action", () => {
+    const onCancel = jest.fn();
     const { getByTestId } = renderWithTheme(
-      <MealprintPreferencesPresenter {...prefProps({ onDismiss })} />,
+      <MealprintPreferencesPresenter {...prefProps({ onCancel })} />,
     );
     fireEvent.press(getByTestId("mealprint-preferences-dismiss"));
-    expect(onDismiss).toHaveBeenCalled();
+    expect(onCancel).toHaveBeenCalled();
   });
 
   it("adds a free-text entry on submit from the keyboard", () => {
@@ -1583,17 +1598,17 @@ describe("MealprintPreferencesPresenter — the load-failure guard (Inspector �
 
   it("retries the read, and Back leaves without writing", () => {
     const onRetryLoad = jest.fn();
-    const onDismiss = jest.fn();
+    const onCancel = jest.fn();
     const onSave = jest.fn();
     const { getByTestId } = renderWithTheme(
       <MealprintPreferencesPresenter
-        {...prefProps({ loadFailed: true, onRetryLoad, onDismiss, onSave })}
+        {...prefProps({ loadFailed: true, onRetryLoad, onCancel, onSave })}
       />,
     );
     fireEvent.press(getByTestId("mealprint-preferences-retry-load"));
     expect(onRetryLoad).toHaveBeenCalled();
     fireEvent.press(getByTestId("mealprint-preferences-dismiss"));
-    expect(onDismiss).toHaveBeenCalled();
+    expect(onCancel).toHaveBeenCalled();
     expect(onSave).not.toHaveBeenCalled();
   });
 

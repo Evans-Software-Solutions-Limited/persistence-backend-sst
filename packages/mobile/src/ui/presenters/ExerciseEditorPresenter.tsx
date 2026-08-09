@@ -241,7 +241,7 @@ export function ExerciseEditorPresenter({
               value={value}
               onChange={setValue}
               autoFocus={false}
-              showsPhoto
+              showsPhoto={false}
             />
           </ScrollView>
 

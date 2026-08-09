@@ -40,7 +40,8 @@ export type WeeklyVolume = {
   days: WeeklyVolumeDay[];
   totalKg: number;
   deltaPct: number | null;
-  workouts: { completed: number; target: number };
+  /** Target is null until the user enables a Gym habit. */
+  workouts: { completed: number; target: number | null };
 };
 
 export type MuscleVolume = {
@@ -59,6 +60,9 @@ export type VolumeStats = {
 };
 
 export type BodyTrendPoint = {
+  /** Present on server reads; optional for optimistic legacy cache rows. */
+  id?: string;
+  measuredAt?: string;
   date: string;
   weightKg: number | null;
   bodyFat: number | null;

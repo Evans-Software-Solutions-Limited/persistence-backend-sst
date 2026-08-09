@@ -165,6 +165,46 @@ describe("evaluateStreaks", () => {
     });
   });
 
+  it("advances 1- and 2-week workout milestones chronologically", async () => {
+    let row = makeStreak({
+      streakType: "workout_streak",
+      period: "weekly",
+      sourceGoalId: null,
+      lastPeriodEnd: "2026-05-31",
+    });
+    const unlocked: number[] = [];
+    const data: StreakDataPort = {
+      getUserTimezone: vi.fn(async () => "Europe/London"),
+      getActiveStreaksByType: vi.fn(async () => [row]),
+      isPeriodSatisfied: vi.fn(async () => true),
+      persistAdvance: vi.fn(async (id, fields) => {
+        row = { ...row, id, ...fields };
+        return row;
+      }),
+      unlockAchievement: vi.fn(async (_userId, _streakId, threshold) => {
+        unlocked.push(threshold);
+        return { achievementId: `a${threshold}`, newlyUnlocked: true };
+      }),
+    };
+    const notifier = makeNotifier();
+
+    await evaluateStreaks(
+      "u1",
+      "workout_logged",
+      new Date("2026-06-07T12:00:00Z"),
+      { data, notifier },
+    );
+    await evaluateStreaks(
+      "u1",
+      "workout_logged",
+      new Date("2026-06-14T12:00:00Z"),
+      { data, notifier },
+    );
+
+    expect(row.currentCount).toBe(2);
+    expect(unlocked).toEqual([1, 2]);
+  });
+
   it("does not re-notify when the achievement was already unlocked", async () => {
     const data = makeData({
       streaks: [makeStreak({ streakType: "workout_streak", period: "weekly" })],

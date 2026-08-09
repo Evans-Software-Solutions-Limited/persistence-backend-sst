@@ -2,10 +2,9 @@ import { type RefObject } from "react";
 import { RefreshControl, ScrollView } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Text, View } from "@tamagui/core";
-import { Avatar, HeaderBar, IconBtn } from "@/ui/components/foundation";
+import { Avatar, HeaderBar } from "@/ui/components/foundation";
 import { Section } from "@/ui/components/composite";
 import { ErrorState, PLogoDrawLoader } from "@/ui/components";
-import { IconCalendar } from "@/ui/components/icons";
 import type { ApiError } from "@/shared/errors";
 import type { PersonalRecord } from "@/domain/models/record";
 import type { VolumeStats } from "@/domain/models/progress";
@@ -64,8 +63,8 @@ export type YouPresenterProps = {
 
   onRefresh: () => void;
   onOpenDrawer: () => void;
-  onOpenCalendar: () => void;
   onUseToken: () => void;
+  onOpenBodyHistory: () => void;
   /** Navigate to the Requests screen. */
   onOpenRequests: () => void;
   /** Navigate to the invite-code redeem screen (Phase 8). */
@@ -94,8 +93,8 @@ export function YouPresenter(props: YouPresenterProps) {
     busyToken,
     onRefresh,
     onOpenDrawer,
-    onOpenCalendar,
     onUseToken,
+    onOpenBodyHistory,
     onOpenRequests,
     onOpenAcceptInvite,
     scrollRef,
@@ -143,14 +142,6 @@ export function YouPresenter(props: YouPresenterProps) {
           eyebrow={workoutsLabel}
           title="Progress"
           leading={<Avatar initials={initials} onPress={onOpenDrawer} />}
-          trailing={
-            <IconBtn
-              icon={<IconCalendar size={18} />}
-              tone="ghost"
-              onPress={onOpenCalendar}
-              accessibilityLabel="Open calendar"
-            />
-          }
         />
 
         <View paddingHorizontal={16} gap={16}>
@@ -201,6 +192,7 @@ export function YouPresenter(props: YouPresenterProps) {
             <BodyTrendPresenter
               weight={bodyTrend.weight}
               bodyFat={bodyTrend.bodyFat}
+              onOpenDetails={onOpenBodyHistory}
             />
           </Section>
 

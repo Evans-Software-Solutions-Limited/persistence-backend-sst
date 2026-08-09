@@ -1,12 +1,13 @@
 import Elysia, { t } from "elysia";
 import { VolumeService } from "../repositories/volumeService";
+import { HabitConfigService } from "../repositories/habitConfigService";
 import {
   getAuthUser,
   requireAuth,
   getUser,
 } from "@persistence/api-utils/auth/supabaseAuth";
 import { addDaysISO, localDateISO } from "../streaks/period";
-import { weekStartISO, DEFAULT_WORKOUTS_PER_WEEK } from "./window";
+import { weekStartISO } from "./window";
 import { fillWeekDays, computeDeltaPct } from "./volumeView";
 
 /**
@@ -21,6 +22,7 @@ export const getWeeklyVolumeHandler = new Elysia()
   }))
   .onBeforeHandle(requireAuth)
   .use(VolumeService)
+  .use(HabitConfigService)
   .get(
     "/users/me/weekly-volume",
     async (ctx) => {
@@ -45,26 +47,28 @@ export const getWeeklyVolumeHandler = new Elysia()
         thisWeekEnd,
       );
 
-      const [thisKg, lastKg, completed] = await Promise.all([
-        ctx.VolumeRepository.totalVolume(
-          userId,
-          tz,
-          thisWeekStart,
-          thisWeekEnd,
-        ),
-        ctx.VolumeRepository.totalVolume(
-          userId,
-          tz,
-          lastWeekStart,
-          lastWeekEnd,
-        ),
-        ctx.VolumeRepository.completedSessionCount(
-          userId,
-          tz,
-          thisWeekStart,
-          thisWeekEnd,
-        ),
-      ]);
+      const [thisKg, lastKg, completed, weeklyWorkoutTarget] =
+        await Promise.all([
+          ctx.VolumeRepository.totalVolume(
+            userId,
+            tz,
+            thisWeekStart,
+            thisWeekEnd,
+          ),
+          ctx.VolumeRepository.totalVolume(
+            userId,
+            tz,
+            lastWeekStart,
+            lastWeekEnd,
+          ),
+          ctx.VolumeRepository.completedSessionCount(
+            userId,
+            tz,
+            thisWeekStart,
+            thisWeekEnd,
+          ),
+          ctx.HabitConfigRepository.getActiveTarget(userId, "gym", "weekly"),
+        ]);
 
       return {
         data: {
@@ -76,7 +80,7 @@ export const getWeeklyVolumeHandler = new Elysia()
           ),
           totalKg: thisKg,
           deltaPct: computeDeltaPct(thisKg, lastKg),
-          workouts: { completed, target: DEFAULT_WORKOUTS_PER_WEEK },
+          workouts: { completed, target: weeklyWorkoutTarget },
         },
       };
     },

@@ -33,7 +33,7 @@ describe("BodyTrendPresenter", () => {
 
 describe("VolumeStatsPresenter", () => {
   it("renders with null adherence + empty muscles", () => {
-    const { getByTestId } = renderWithTheme(
+    const { getByTestId, getByText } = renderWithTheme(
       <VolumeStatsPresenter
         stats={{
           window: "lifetime",
@@ -46,6 +46,7 @@ describe("VolumeStatsPresenter", () => {
       />,
     );
     expect(getByTestId("volume-stats")).toBeTruthy();
+    expect(getByText("no Gym habit")).toBeTruthy();
   });
 });
 

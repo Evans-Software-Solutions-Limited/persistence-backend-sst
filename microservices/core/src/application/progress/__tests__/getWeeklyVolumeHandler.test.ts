@@ -7,9 +7,15 @@ const repoMock = vi.hoisted(() => ({
   totalVolume: vi.fn(async () => 0),
   completedSessionCount: vi.fn(async () => 0),
 }));
+const habitConfigMock = vi.hoisted(() => ({
+  getActiveTarget: vi.fn(async () => null as number | null),
+}));
 
 vi.mock("../../repositories/volumeRepository", () => ({
   VolumeRepository: vi.fn().mockImplementation(() => repoMock),
+}));
+vi.mock("../../repositories/habitConfigRepository", () => ({
+  HabitConfigRepository: vi.fn().mockImplementation(() => habitConfigMock),
 }));
 vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getAuthUser: vi.fn(async (h: string | undefined) =>
@@ -50,7 +56,24 @@ describe("getWeeklyVolumeHandler", () => {
     expect(data.days).toHaveLength(7);
     expect(data.totalKg).toBe(8000);
     expect(data.deltaPct).toBe(14); // (8000-7000)/7000
-    expect(data.workouts).toEqual({ completed: 4, target: 5 });
+    expect(data.workouts).toEqual({ completed: 4, target: null });
+  });
+
+  it("uses the configured Gym habit target", async () => {
+    habitConfigMock.getActiveTarget.mockResolvedValueOnce(3);
+    repoMock.completedSessionCount.mockResolvedValueOnce(0);
+    const res = await getWeeklyVolumeHandler.handle(
+      new Request("http://localhost/users/me/weekly-volume?window=7d", {
+        headers: { authorization: "Bearer t" },
+      }),
+    );
+    const { data } = (await res.json()) as any;
+    expect(data.workouts).toEqual({ completed: 0, target: 3 });
+    expect(habitConfigMock.getActiveTarget).toHaveBeenCalledWith(
+      "u1",
+      "gym",
+      "weekly",
+    );
   });
 
   it("requires authentication", async () => {

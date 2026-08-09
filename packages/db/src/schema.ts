@@ -1378,6 +1378,13 @@ export const userStreaks = pgTable(
       .where(
         sql`${t.streakType} = 'habit_streak' AND ${t.sourceGoalId} IS NULL`,
       ),
+    // 20260809120000: one ad-hoc workout streak per user. This also makes the
+    // lazy first-session seed safe when two completed-session events race.
+    uniqueIndex("user_streaks_workout_singleton_uq")
+      .on(t.userId)
+      .where(
+        sql`${t.streakType} = 'workout_streak' AND ${t.sourceGoalId} IS NULL`,
+      ),
     index("user_streaks_user_status").on(t.userId, t.status),
     check(
       "user_streaks_period_chk",

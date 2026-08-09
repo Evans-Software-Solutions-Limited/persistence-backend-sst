@@ -148,6 +148,7 @@ describe("HomeReadRepository", () => {
       select: () =>
         chain([
           {
+            id: "m1",
             measuredAt: new Date("2026-06-01T08:00:00Z"),
             weightKg: "82.50",
             bodyFat: null,
@@ -162,6 +163,8 @@ describe("HomeReadRepository", () => {
       "Australia/Sydney",
     );
     expect(series[0]).toEqual({
+      id: "m1",
+      measuredAt: "2026-06-01T08:00:00.000Z",
       date: "2026-06-01",
       weightKg: 82.5,
       bodyFat: null,
@@ -173,6 +176,7 @@ describe("HomeReadRepository", () => {
       select: () =>
         chain([
           {
+            id: "m2",
             // 22:00 UTC 06-01 = 08:00 06-02 in Sydney → local day is 06-02.
             measuredAt: new Date("2026-06-01T22:00:00Z"),
             weightKg: "80.00",

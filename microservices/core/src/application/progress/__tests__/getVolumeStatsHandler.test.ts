@@ -8,9 +8,15 @@ const repoMock = vi.hoisted(() => ({
   getVolumeByMuscle: vi.fn(async () => [] as any[]),
   recomputeVolumeByMuscle: vi.fn(async () => undefined),
 }));
+const habitConfigMock = vi.hoisted(() => ({
+  getActiveTarget: vi.fn(async () => null as number | null),
+}));
 
 vi.mock("../../repositories/volumeRepository", () => ({
   VolumeRepository: vi.fn().mockImplementation(() => repoMock),
+}));
+vi.mock("../../repositories/habitConfigRepository", () => ({
+  HabitConfigRepository: vi.fn().mockImplementation(() => habitConfigMock),
 }));
 vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getAuthUser: vi.fn(async (h: string | undefined) =>
@@ -38,6 +44,7 @@ describe("getVolumeStatsHandler", () => {
     // the date rolled to July). Mid-month avoids any TZ-boundary ambiguity.
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-06-15T12:00:00Z"));
+    habitConfigMock.getActiveTarget.mockResolvedValue(3);
   });
 
   afterEach(() => vi.useRealTimers());
@@ -62,6 +69,11 @@ describe("getVolumeStatsHandler", () => {
     expect(data.byMuscle[0]).toEqual({ muscle: "legs", kg: 14460, pct: 1 });
     expect(data.byMuscle[1].pct).toBe(0.5);
     expect(data.adherencePct).not.toBeNull();
+    expect(habitConfigMock.getActiveTarget).toHaveBeenCalledWith(
+      "u1",
+      "gym",
+      "weekly",
+    );
     // Always recomputes the requested window before reading so by-muscle never
     // goes stale vs the live workouts/totalKg headline (Inspector finding).
     expect(repoMock.recomputeVolumeByMuscle).toHaveBeenCalledWith(
@@ -98,6 +110,19 @@ describe("getVolumeStatsHandler", () => {
       }),
     );
     const { data } = (await res.json()) as any;
+    expect(data.adherencePct).toBeNull();
+  });
+
+  it("returns null adherence when no Gym habit is configured", async () => {
+    habitConfigMock.getActiveTarget.mockResolvedValueOnce(null);
+    repoMock.completedSessionCount.mockResolvedValueOnce(3);
+    const res = await getVolumeStatsHandler.handle(
+      new Request("http://localhost/users/me/volume-stats?window=month", {
+        headers: { authorization: "Bearer t" },
+      }),
+    );
+    const { data } = (await res.json()) as any;
+    expect(data.workouts).toBe(3);
     expect(data.adherencePct).toBeNull();
   });
 

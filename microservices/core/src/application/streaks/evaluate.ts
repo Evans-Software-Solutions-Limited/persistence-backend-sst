@@ -46,12 +46,19 @@ export async function safeEvaluateStreaks(
   localDate?: string,
 ): Promise<EvaluateResult> {
   try {
+    const data = new StreakRepository();
+    // M4 shipped workout achievements without ever creating the row they
+    // evaluate. Create it lazily on the first completed session (or the
+    // achievements reconciliation read) before asking the engine to advance.
+    if (eventType === "workout_logged") {
+      await data.ensureWorkoutStreak(userId, ts);
+    }
     return await evaluateStreaks(
       userId,
       eventType,
       ts,
       {
-        data: new StreakRepository(),
+        data,
         notifier: new StreakNotificationDispatcher(),
       },
       { localDate },
@@ -63,5 +70,25 @@ export async function safeEvaluateStreaks(
       error: err,
     });
     return EMPTY;
+  }
+}
+
+/**
+ * Idempotent repair for accounts whose workout streak row was absent while
+ * completed sessions were being recorded. Called before achievements are read
+ * so historical weekly milestones become visible without requiring a new
+ * workout. Failures stay non-blocking, matching the on-write evaluator.
+ */
+export async function safeReconcileWorkoutStreak(
+  userId: string,
+): Promise<void> {
+  try {
+    const data = new StreakRepository();
+    await data.reconcileWorkoutStreakHistory(userId);
+  } catch (err) {
+    console.error("[streaks] workout reconciliation failed", {
+      userId,
+      error: err,
+    });
   }
 }

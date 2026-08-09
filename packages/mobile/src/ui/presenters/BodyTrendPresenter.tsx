@@ -25,6 +25,8 @@ export type TrendData = {
 export type BodyTrendProps = {
   weight: TrendData & { unit: "kg" | "lb" };
   bodyFat: TrendData;
+  /** Opens the full measurement history. Both summary cards share it. */
+  onOpenDetails?: () => void;
   testID?: string;
 };
 
@@ -67,6 +69,7 @@ function TrendHeader({
 export function BodyTrendPresenter({
   weight,
   bodyFat,
+  onOpenDetails,
   testID = "body-trend",
 }: BodyTrendProps) {
   const { line, area, lastPoint } = computePath(
@@ -81,61 +84,83 @@ export function BodyTrendPresenter({
 
   return (
     <View flexDirection="row" gap={12} testID={testID}>
-      <Card pad={14} radius={14} style={{ flex: 1 }}>
-        <TrendHeader
-          label="WEIGHT"
-          value={weight.current}
-          unit={weight.unit}
-          delta={weight.delta}
-        />
-        {weight.series.length > 1 && (
-          <Svg
-            width="100%"
-            height={H}
-            viewBox={`0 0 ${W} ${H}`}
-            preserveAspectRatio="none"
-            style={{ marginTop: 8 }}
-          >
-            <Defs>
-              <LinearGradient id="bt-w" x1="0" y1="0" x2="0" y2="1">
-                <Stop offset="0%" stopColor={PRIMARY} stopOpacity={0.3} />
-                <Stop offset="100%" stopColor={PRIMARY} stopOpacity={0} />
-              </LinearGradient>
-            </Defs>
-            <Path d={area} fill="url(#bt-w)" />
-            <Path d={line} fill="none" stroke={PRIMARY} strokeWidth={2} />
-            <Circle cx={lastPoint[0]} cy={lastPoint[1]} r={3} fill={PRIMARY} />
-          </Svg>
-        )}
-      </Card>
-
-      <Card pad={14} radius={14} style={{ flex: 1 }}>
-        <TrendHeader
-          label="BODY FAT"
-          value={bodyFat.current}
-          unit="%"
-          delta={bodyFat.delta}
-        />
-        <View
-          flexDirection="row"
-          alignItems="flex-end"
-          gap={3}
-          height={H}
-          marginTop={8}
+      <View flex={1}>
+        <Card
+          pad={14}
+          radius={14}
+          onPress={onOpenDetails}
+          accessibilityLabel="Open body measurement history"
+          testID={`${testID}-weight-card`}
         >
-          {bodyFat.series.map((v, i) => (
-            <View
-              key={i}
-              flex={1}
-              height={`${Math.max(6, ((v - bfMin) / bfSpan) * 100)}%`}
-              backgroundColor="$primaryDim"
-              borderTopWidth={2}
-              borderColor={PRIMARY}
-              borderRadius={1}
-            />
-          ))}
-        </View>
-      </Card>
+          <TrendHeader
+            label="WEIGHT"
+            value={weight.current}
+            unit={weight.unit}
+            delta={weight.delta}
+          />
+          <View height={H} marginTop={8}>
+            {weight.series.length > 1 ? (
+              <Svg
+                width="100%"
+                height={H}
+                viewBox={`0 0 ${W} ${H}`}
+                preserveAspectRatio="none"
+              >
+                <Defs>
+                  <LinearGradient id="bt-w" x1="0" y1="0" x2="0" y2="1">
+                    <Stop offset="0%" stopColor={PRIMARY} stopOpacity={0.3} />
+                    <Stop offset="100%" stopColor={PRIMARY} stopOpacity={0} />
+                  </LinearGradient>
+                </Defs>
+                <Path d={area} fill="url(#bt-w)" />
+                <Path d={line} fill="none" stroke={PRIMARY} strokeWidth={2} />
+                <Circle
+                  cx={lastPoint[0]}
+                  cy={lastPoint[1]}
+                  r={3}
+                  fill={PRIMARY}
+                />
+              </Svg>
+            ) : null}
+          </View>
+        </Card>
+      </View>
+
+      <View flex={1}>
+        <Card
+          pad={14}
+          radius={14}
+          onPress={onOpenDetails}
+          accessibilityLabel="Open body measurement history"
+          testID={`${testID}-body-fat-card`}
+        >
+          <TrendHeader
+            label="BODY FAT"
+            value={bodyFat.current}
+            unit="%"
+            delta={bodyFat.delta}
+          />
+          <View
+            flexDirection="row"
+            alignItems="flex-end"
+            gap={3}
+            height={H}
+            marginTop={8}
+          >
+            {bodyFat.series.map((v, i) => (
+              <View
+                key={i}
+                flex={1}
+                height={`${Math.max(6, ((v - bfMin) / bfSpan) * 100)}%`}
+                backgroundColor="$primaryDim"
+                borderTopWidth={2}
+                borderColor={PRIMARY}
+                borderRadius={1}
+              />
+            ))}
+          </View>
+        </Card>
+      </View>
     </View>
   );
 }

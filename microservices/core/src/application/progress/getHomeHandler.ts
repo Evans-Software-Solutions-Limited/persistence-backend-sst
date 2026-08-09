@@ -14,7 +14,7 @@ import {
 } from "@persistence/api-utils/auth/supabaseAuth";
 import { buildRings } from "./rings";
 import { DEFAULT_GOAL_ACTIVE_KCAL, DEFAULT_GOAL_STEPS } from "./loadRings";
-import { weekStartISO, DEFAULT_WORKOUTS_PER_WEEK } from "./window";
+import { weekStartISO } from "./window";
 import { addDaysISO, localDateISO } from "../streaks/period";
 import { fillWeekDays, computeDeltaPct } from "./volumeView";
 import {
@@ -85,6 +85,7 @@ export const getHomeHandler = new Elysia()
       steps,
       activeKcal,
       stepsGoal,
+      weeklyWorkoutTarget,
       daily,
       thisKg,
       lastKg,
@@ -104,6 +105,9 @@ export const getHomeHandler = new Elysia()
       ctx.HomeReadRepository.getTodayActiveKcal(userId, today),
       // Move ring goal: the user's own Steps habit target where they have one.
       ctx.HabitConfigRepository.getActiveDailyTarget(userId, "steps"),
+      // The Gym habit is the user's training plan. No Gym habit means no
+      // target — never score them against an invisible default.
+      ctx.HabitConfigRepository.getActiveTarget(userId, "gym", "weekly"),
       ctx.VolumeRepository.dailyVolume(userId, tz, thisWeekStart, thisWeekEnd),
       ctx.VolumeRepository.totalVolume(userId, tz, thisWeekStart, thisWeekEnd),
       ctx.VolumeRepository.totalVolume(userId, tz, lastWeekStart, lastWeekEnd),
@@ -158,7 +162,7 @@ export const getHomeHandler = new Elysia()
           ),
           totalKg: thisKg,
           deltaPct: computeDeltaPct(thisKg, lastKg),
-          workouts: { completed, target: DEFAULT_WORKOUTS_PER_WEEK },
+          workouts: { completed, target: weeklyWorkoutTarget },
         },
         recentPRs,
         habits: mergeDerivedHabitRows(

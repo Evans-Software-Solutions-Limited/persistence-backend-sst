@@ -62,6 +62,7 @@ export type ExerciseDetailProps = {
   isOwner: boolean;
   onClose: () => void;
   onEdit: () => void;
+  onOpenVideo: () => void;
   onRetry: () => void;
 };
 
@@ -72,6 +73,7 @@ export function ExerciseDetailPresenter({
   isOwner,
   onClose,
   onEdit,
+  onOpenVideo,
   onRetry,
 }: ExerciseDetailProps) {
   return (
@@ -160,7 +162,8 @@ export function ExerciseDetailPresenter({
           showsVerticalScrollIndicator={false}
           testID="exercise-detail-scroll"
         >
-          {/* Photo / placeholder */}
+          {/* Media is optional. Do not render an empty "coming soon" panel for
+              the system catalogue; instructions remain the useful content. */}
           {exercise.thumbnailUrl ? (
             <Image
               source={{ uri: exercise.thumbnailUrl }}
@@ -170,24 +173,19 @@ export function ExerciseDetailPresenter({
               cachePolicy="memory-disk"
               testID="exercise-detail-photo"
             />
-          ) : (
-            <View
-              aspectRatio={16 / 9}
-              borderRadius={14}
-              backgroundColor="$surface2"
-              borderWidth={1}
-              borderColor="$border"
-              alignItems="center"
-              justifyContent="center"
-              gap={6}
-              testID="exercise-detail-photo-placeholder"
+          ) : null}
+
+          {exercise.videoUrl ? (
+            <Btn
+              variant="outline"
+              tone="primary"
+              size="md"
+              onPress={onOpenVideo}
+              testID="exercise-detail-video"
             >
-              <IconDumbbell size={26} color={color.$text3} />
-              <Text fontFamily="$body" fontSize={12} color="$text3">
-                No photo yet
-              </Text>
-            </View>
-          )}
+              Watch demonstration
+            </Btn>
+          ) : null}
 
           {/* Name + level */}
           <View flexDirection="row" alignItems="center" gap={10}>
