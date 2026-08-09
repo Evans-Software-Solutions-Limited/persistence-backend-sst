@@ -435,7 +435,7 @@ describe("EquipmentScanSheetContainer", () => {
     fireEvent.press(await findByTestId("loadout-scan-capture-photo"));
 
     // ⚠ The stage is set to `scanning` BEFORE the await, so an escaped rejection
-    // leaves an ActivityIndicator with no error branch, no retry, and no way out
+    // leaves a loading indicator with no error branch, no retry, and no way out
     // but dismissing the sheet.
     expect(await findByTestId("loadout-scan-error")).toBeTruthy();
     expect(await findByTestId("loadout-scan-error-manual")).toBeTruthy();

@@ -1,7 +1,8 @@
-import { ActivityIndicator, TextInput } from "react-native";
+import { TextInput } from "react-native";
 import * as Linking from "expo-linking";
 import { Text, View } from "@tamagui/core";
 import QRCode from "react-native-qrcode-svg";
+import { LoadingSpinner } from "@/ui/components/LoadingSpinner";
 import {
   BottomSheet,
   Btn,
@@ -232,7 +233,11 @@ function CodeView({
           disabled={!isOnline || isGeneratingCode}
           icon={
             isGeneratingCode ? (
-              <ActivityIndicator size="small" color={toneHex("trainer").ink} />
+              <LoadingSpinner
+                size="sm"
+                color={toneHex("trainer").ink}
+                accessibilityLabel="Generating invite code"
+              />
             ) : undefined
           }
           testID="add-client-generate-code"
@@ -424,9 +429,10 @@ export function AddClientSheetPresenter({
                 disabled={sendDisabled}
                 icon={
                   isLoading ? (
-                    <ActivityIndicator
-                      size="small"
+                    <LoadingSpinner
+                      size="sm"
                       color={toneHex("trainer").ink}
+                      accessibilityLabel="Sending invitation"
                     />
                   ) : undefined
                 }

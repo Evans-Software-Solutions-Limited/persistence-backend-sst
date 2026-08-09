@@ -1,11 +1,6 @@
 import React from "react";
-import {
-  ActivityIndicator,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { LoadingSpinner } from "@/ui/components/LoadingSpinner";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { color } from "@/ui/theme/tokens";
 
@@ -76,7 +71,10 @@ export function RestoreAccountPresenter({
           accessibilityLabel="Restore my account"
         >
           {isRestoring ? (
-            <ActivityIndicator color={color.$bg} />
+            <LoadingSpinner
+              color={color.$bg}
+              accessibilityLabel="Restoring account"
+            />
           ) : (
             <Text style={styles.restoreButtonText}>Restore my account</Text>
           )}

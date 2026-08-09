@@ -831,6 +831,7 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
       {props.processingPhase !== null && (
         <View
           style={styles.processingOverlay}
+          accessible
           accessibilityRole="progressbar"
           accessibilityLiveRegion="polite"
           accessibilityLabel={
@@ -841,7 +842,7 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
           testID="ios-purchase-processing"
         >
           <View style={styles.processingCard}>
-            <PLogoDrawLoader />
+            <PLogoDrawLoader accessible={false} />
             <Text style={styles.processingTitle}>
               {props.processingPhase === "activating"
                 ? "Activating your plan…"

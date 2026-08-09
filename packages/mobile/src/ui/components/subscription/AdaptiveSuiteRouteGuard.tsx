@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Redirect, type Href } from "expo-router";
-import { ActivityIndicator, StyleSheet, View } from "react-native";
+import { StyleSheet, View } from "react-native";
+import { LoadingSpinner } from "@/ui/components/LoadingSpinner";
 import { color } from "@/ui/theme/tokens";
 
 export type AdaptiveSuiteRouteGuardProps = {
@@ -24,7 +25,7 @@ export function AdaptiveSuiteRouteGuard({
   if (!isResolved) {
     return (
       <View style={styles.pending} testID="adaptive-suite-route-pending">
-        <ActivityIndicator color={color.$text3} />
+        <LoadingSpinner color={color.$text3} />
       </View>
     );
   }

@@ -1,11 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
-import {
-  ActivityIndicator,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { LoadingSpinner } from "@/ui/components/LoadingSpinner";
 import { LoadoutScaffold } from "./LoadoutScaffold";
 import { color, radius, space } from "@/ui/theme/tokens";
 
@@ -173,7 +168,10 @@ export function LoadoutAdaptingStep({
       testID="loadout-adapting"
     >
       <View style={styles.statusRow}>
-        <ActivityIndicator color={color.$primary} />
+        <LoadingSpinner
+          color={color.$primary}
+          accessibilityLabel="Adapting workout"
+        />
         <Text style={styles.statusText}>
           Re-mapping <Text style={styles.statusStrong}>{workoutName}</Text> to{" "}
           <Text style={styles.statusAccent}>{gymLabel}</Text>…
