@@ -1,12 +1,12 @@
 import { Ionicons } from "@expo/vector-icons";
 import {
-  ActivityIndicator,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
+import { LoadingSpinner } from "@/ui/components/LoadingSpinner";
 import type { EquipmentScanDraft } from "@/domain/models/loadout";
 import { itemLabel } from "@/shared/utils";
 import { BottomSheet } from "@/ui/components/foundation";
@@ -254,7 +254,10 @@ function ScanningStage() {
   return (
     <View style={styles.stage} testID="loadout-scan-scanning">
       <View style={styles.frame}>
-        <ActivityIndicator color={color.$primary} />
+        <LoadingSpinner
+          color={color.$primary}
+          accessibilityLabel="Reading gym equipment"
+        />
       </View>
       <Text style={styles.scanningText}>Reading your gym…</Text>
       <Text style={styles.scanningSub}>

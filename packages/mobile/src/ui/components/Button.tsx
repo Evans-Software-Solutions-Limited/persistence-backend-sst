@@ -1,6 +1,6 @@
 import { styled, View, Text as TamaguiText } from "@tamagui/core";
 import type { ReactNode } from "react";
-import { ActivityIndicator } from "react-native";
+import { LoadingSpinner } from "./LoadingSpinner";
 
 const ButtonFrame = styled(View, {
   flexDirection: "row",
@@ -150,10 +150,11 @@ export function Button({
       accessibilityState={{ disabled: isDisabled || isLoading }}
     >
       {isLoading ? (
-        <ActivityIndicator
-          size="small"
+        <LoadingSpinner
+          size="sm"
           color={textColor ?? "#00D4FF"}
           testID={testID ? `${testID}-spinner` : undefined}
+          accessibilityLabel={`${label} in progress`}
         />
       ) : (
         <>

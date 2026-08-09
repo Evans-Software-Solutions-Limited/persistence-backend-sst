@@ -5,7 +5,7 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { ActivityIndicator, Alert, StyleSheet, View } from "react-native";
+import { Alert, StyleSheet, View } from "react-native";
 import {
   router,
   useFocusEffect,
@@ -13,6 +13,7 @@ import {
   type Href,
 } from "expo-router";
 import { FeatureGatePrompt } from "@/ui/components/subscription/FeatureGatePrompt";
+import { LoadingSpinner } from "@/ui/components/LoadingSpinner";
 import {
   useFeatureGate,
   computeClientSeatVerdict,
@@ -229,7 +230,7 @@ export function ClientsContainer() {
   if (subQuery.isPending) {
     return (
       <View style={styles.loading} testID="clients-loading">
-        <ActivityIndicator size="large" color={color.$primary} />
+        <LoadingSpinner size="lg" color={color.$primary} />
       </View>
     );
   }

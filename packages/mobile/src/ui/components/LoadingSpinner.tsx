@@ -1,26 +1,34 @@
 import { useTheme as useTamaguiTheme } from "@tamagui/core";
-import { ActivityIndicator } from "react-native";
+import { PLogoDrawLoader } from "./PLogoDrawLoader";
 
 type LoadingSpinnerProps = {
   size?: "sm" | "md" | "lg";
   testID?: string;
+  color?: string;
+  accessibilityLabel?: string;
 };
 
 const sizeMap = {
-  sm: "small" as const,
-  md: "small" as const,
-  lg: "large" as const,
+  sm: 18,
+  md: 24,
+  lg: 40,
 };
 
-export function LoadingSpinner({ size = "md", testID }: LoadingSpinnerProps) {
+export function LoadingSpinner({
+  size = "md",
+  testID,
+  color,
+  accessibilityLabel = "Loading",
+}: LoadingSpinnerProps) {
   const theme = useTamaguiTheme();
 
   return (
-    <ActivityIndicator
+    <PLogoDrawLoader
       size={sizeMap[size]}
-      color={theme.primary?.val}
+      color={color ?? theme.primary?.val}
       testID={testID}
-      accessibilityLabel="Loading"
+      containerPadding={0}
+      accessibilityLabel={accessibilityLabel}
     />
   );
 }

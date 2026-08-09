@@ -283,6 +283,7 @@ describe("IOSPurchaseFlowPresenter", () => {
 
     expect(screen.getByTestId("ios-purchase-processing")).toBeTruthy();
     expect(screen.getByText("Activating your plan…")).toBeTruthy();
+    expect(screen.getAllByRole("progressbar")).toHaveLength(1);
   });
 
   it("renders cancelled manage state and a catalog-missing grant safely", () => {

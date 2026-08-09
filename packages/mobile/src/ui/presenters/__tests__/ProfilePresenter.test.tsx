@@ -618,6 +618,11 @@ describe("ProfilePresenter", () => {
     );
     fireEvent.press(getByTestId("profile-avatar-button"));
     expect(onSelectProfilePicture).not.toHaveBeenCalled();
+    expect(getByTestId("logo-loader").props.style).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ width: 18, height: 18 }),
+      ]),
+    );
   });
 
   describe("SubscriptionBadge placement (M10.5 Wave 2)", () => {

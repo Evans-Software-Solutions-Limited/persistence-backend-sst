@@ -10,6 +10,7 @@ import {
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { ComingSoon } from "@/ui/components/ComingSoon";
+import { LoadingSpinner } from "@/ui/components/LoadingSpinner";
 import { PLogoDrawLoader } from "@/ui/components/PLogoDrawLoader";
 import { SubscriptionBadge } from "@/ui/components/subscription/SubscriptionBadge";
 import { color } from "@/ui/theme/tokens";
@@ -250,7 +251,11 @@ export function ProfilePresenter({
             </View>
             <View style={styles.editIconContainer}>
               {isAvatarWorking ? (
-                <PLogoDrawLoader size={16} />
+                <LoadingSpinner
+                  size="sm"
+                  color={color.$text}
+                  accessibilityLabel="Updating profile picture"
+                />
               ) : (
                 <Ionicons name="camera" size={16} color={color.$text} />
               )}

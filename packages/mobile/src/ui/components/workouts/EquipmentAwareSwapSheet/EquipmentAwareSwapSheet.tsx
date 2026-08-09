@@ -59,7 +59,6 @@ import React, {
   useState,
 } from "react";
 import {
-  ActivityIndicator,
   ScrollView,
   StyleSheet,
   Text,
@@ -67,6 +66,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { LoadingSpinner } from "@/ui/components/LoadingSpinner";
 import type {
   SubstituteCandidate,
   SubstitutesResult,
@@ -539,7 +539,10 @@ export function EquipmentAwareSwapSheet({
 
           {isLoading ? (
             <View style={styles.stateBlock} testID="swap-sheet-loading">
-              <ActivityIndicator color={color.$primary} />
+              <LoadingSpinner
+                color={color.$primary}
+                accessibilityLabel="Finding exercise matches"
+              />
               <Text style={styles.stateText}>Finding matches…</Text>
             </View>
           ) : null}
