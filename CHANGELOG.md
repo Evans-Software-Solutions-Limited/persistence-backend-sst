@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.14.0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.13.2...persistence-v1.14.0) (2026-08-10)
+
+
+### Features
+
+* **launch:** add deletion page and Android release wiring ([#388](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/388)) ([383ea42](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/383ea42b3e6920006a456f6902f1b577b4605235))
+
 ## [1.13.2](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.13.1...persistence-v1.13.2) (2026-08-09)
 
 
