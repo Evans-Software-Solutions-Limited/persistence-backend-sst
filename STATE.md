@@ -27,12 +27,17 @@ the staging, play-testing and production EAS profiles. The Play service-account
 JSON and Google developer notifications are not configured yet.
 
 GitHub Actions run `31405965473` was dispatched as an Android-only staging
-build with submission disabled. It was still building when this entry was
-written. Play Internal upload, Health-app access/declaration, separate EAS and
-RevenueCat service accounts, RTDN, and physical Android QA remain operational
-work. Play Console currently requires the owner account sign-in before any of
-those console steps can continue; do not submit the Health declaration without
-Brad's action-time approval.
+build with submission disabled and completed successfully as EAS build
+`f7391e03-933f-40b0-ab25-a168dc6a11f8`: app `1.1.1`, version code `2`, target
+SDK 36. The validated AAB is saved in Play Internal testing draft release
+`1.1.1 (2) - Android internal`; it has not been published.
+
+The Health declaration is saved with Activity and fitness, Nutrition and weight
+management, and Sleep management selected. It is waiting in Publishing overview
+and has not been sent for review; do not submit it without Brad's action-time
+approval. Separate EAS and RevenueCat service accounts, RTDN, internal rollout,
+and physical Android QA remain. Google Cloud requires a fresh company-account
+password verification before the two service accounts can be created.
 
 ### 🟢 2026-08-07 — ANDROID LAUNCH RAIL IMPLEMENTED (external activation + device QA remain)
 
