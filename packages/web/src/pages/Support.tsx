@@ -114,13 +114,12 @@ export function Support() {
                 </p>
               </div>
               <div className="faq-item">
-                <h4>How do I delete my account?</h4>
+                <h4 id="delete-account">How do I delete my account?</h4>
                 <p>
                   You can request deletion any time from the app's profile
-                  settings. Your account is deactivated immediately and
-                  permanently deleted after 30 days; signing back in during that
-                  window restores it. See the{" "}
-                  <Link to="/privacy">Privacy policy</Link> for details.
+                  settings; see our{" "}
+                  <Link to="/delete-account">Delete account page</Link> for the
+                  steps and what to do if you cannot sign in.
                 </p>
               </div>
               <div className="faq-item">
