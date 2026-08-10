@@ -1,12 +1,11 @@
 name: Mobile Build (Production → App Store / Google Play)
 
-# The release-published auto-trigger is temporarily disabled to conserve EAS
-# build minutes while iterating on backend-only changes. Re-enable by
-# uncommenting the `release:` block below once the build budget allows.
-# Manual runs via workflow_dispatch are unaffected.
+# Published releases build and submit both store binaries. Production releases
+# are infrequent, and silently omitting Android here would leave Play behind iOS.
+# Manual runs via workflow_dispatch can still target one platform and skip submit.
 on:
-  # release:
-  #   types: [published]
+  release:
+    types: [published]
   workflow_dispatch:
     inputs:
       platform:
@@ -22,7 +21,7 @@ on:
         default: true
 
 concurrency:
-  group: mobile-build-production-${{ github.event.inputs.platform || 'ios' }}
+  group: mobile-build-production-${{ github.event.inputs.platform || 'all' }}
   cancel-in-progress: false
 
 permissions:
@@ -67,7 +66,7 @@ jobs:
 
       - name: Build Android (EAS)
         id: android_build
-        if: ${{ github.event.inputs.platform == 'android' || github.event.inputs.platform == 'all' }}
+        if: ${{ github.event_name == 'release' || github.event.inputs.platform == 'android' || github.event.inputs.platform == 'all' }}
         run: |
           build_json="$(eas build \
             --platform android \
@@ -79,7 +78,7 @@ jobs:
           echo "build_id=$build_id" >> "$GITHUB_OUTPUT"
 
       - name: Submit to App Store (iOS)
-        # Release events: always submit (iOS-only by default — release-please publishes the GitHub release).
+        # Release events: always submit both platforms after release-please publishes.
         # Manual dispatch: respect the `submit` input + platform choice.
         # Auth: EAS uses the App Store Connect API key registered globally via
         # `eas credentials` (one-time local setup) — no per-run secrets needed.
@@ -93,7 +92,10 @@ jobs:
             --wait
 
       - name: Submit to Google Play (Android draft)
-        if: ${{ github.event.inputs.submit != 'false' && (github.event.inputs.platform == 'android' || github.event.inputs.platform == 'all') }}
+        # Turn this repository variable on only after the EAS Google Play service
+        # account credential has been installed and verified. Until then, release
+        # events still produce the Android AAB without creating a partial release.
+        if: ${{ vars.GOOGLE_PLAY_SUBMIT_ENABLED == 'true' && (github.event_name == 'release' || (github.event.inputs.submit != 'false' && (github.event.inputs.platform == 'android' || github.event.inputs.platform == 'all'))) }}
         run: |
           eas submit \
             --platform android \

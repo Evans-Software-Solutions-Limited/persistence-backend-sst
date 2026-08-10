@@ -11,6 +11,29 @@ say so and fix this file.
 
 ## ▶ START HERE — next session (rewritten 2026-08-04, post-Mealprint-merge)
 
+### 🟡 2026-08-10 — ANDROID PLAY BUILD + STORE WIRING IN PROGRESS
+
+Branch `codex/public-account-deletion` / PR #388 now also carries the Android
+release-rail fixes. Production GitHub releases build both iOS and Android;
+Google Play submission is gated by the `GOOGLE_PLAY_SUBMIT_ENABLED` repository
+variable until its service-account credential is installed. Manual dispatches
+can still target one platform or skip submission.
+Staging remains manual, with its dormant push conditions made safe for both
+platforms if re-enabled.
+
+RevenueCat project `b408fd30` now has Google Play app `app4f48073f5e` for
+`com.bradleyevans96.persistence`; its public `goog_...` SDK key is wired into
+the staging, play-testing and production EAS profiles. The Play service-account
+JSON and Google developer notifications are not configured yet.
+
+GitHub Actions run `31405965473` was dispatched as an Android-only staging
+build with submission disabled. It was still building when this entry was
+written. Play Internal upload, Health-app access/declaration, separate EAS and
+RevenueCat service accounts, RTDN, and physical Android QA remain operational
+work. Play Console currently requires the owner account sign-in before any of
+those console steps can continue; do not submit the Health declaration without
+Brad's action-time approval.
+
 ### 🟢 2026-08-07 — ANDROID LAUNCH RAIL IMPLEMENTED (external activation + device QA remain)
 
 Android no longer selects the health stub. `packages/mobile` now includes
