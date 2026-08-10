@@ -37,6 +37,7 @@ export function MarketingFooter() {
             <Link to="/support">Support</Link>
             <Link to="/privacy">Privacy</Link>
             <Link to="/terms">Terms</Link>
+            <Link to="/delete-account">Delete account</Link>
             <a href={COMPANY_URL} target="_blank" rel="noopener noreferrer">
               Evans Software Solutions ↗
             </a>

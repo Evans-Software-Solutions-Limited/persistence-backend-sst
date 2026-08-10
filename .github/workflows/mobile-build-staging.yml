@@ -29,7 +29,7 @@ on:
         default: true
 
 concurrency:
-  group: mobile-build-staging-${{ github.event.inputs.platform || 'ios' }}
+  group: mobile-build-staging-${{ github.event.inputs.platform || 'all' }}
   cancel-in-progress: false
 
 permissions:
@@ -72,7 +72,7 @@ jobs:
 
       - name: Build Android for Play testing (EAS)
         id: android_build
-        if: ${{ github.event.inputs.platform == 'android' || github.event.inputs.platform == 'all' }}
+        if: ${{ github.event_name == 'push' || github.event.inputs.platform == 'android' || github.event.inputs.platform == 'all' }}
         run: |
           build_json="$(eas build \
             --platform android \
@@ -84,7 +84,7 @@ jobs:
           echo "build_id=$build_id" >> "$GITHUB_OUTPUT"
 
       - name: Submit to TestFlight (iOS)
-        # Push events: always submit (iOS-only by default).
+        # Push events: build and submit both platforms if that trigger is re-enabled.
         # Manual dispatch: respect the `submit` input + platform choice.
         # Auth: EAS uses the App Store Connect API key registered globally via
         # `eas credentials` (one-time local setup) — no per-run secrets needed.
@@ -98,7 +98,7 @@ jobs:
             --wait
 
       - name: Submit to Google Play internal testing (Android draft)
-        if: ${{ github.event.inputs.submit != 'false' && (github.event.inputs.platform == 'android' || github.event.inputs.platform == 'all') }}
+        if: ${{ github.event_name == 'push' || (github.event.inputs.submit != 'false' && (github.event.inputs.platform == 'android' || github.event.inputs.platform == 'all')) }}
         run: |
           eas submit \
             --platform android \
