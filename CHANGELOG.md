@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.14.1](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.14.0...persistence-v1.14.1) (2026-08-11)
+
+
+### Bug Fixes
+
+* **mobile:** map Google Play base-plan product ids in the purchase layer ([#390](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/390)) ([0b35eb0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/0b35eb0c7782040ff34cf2c19811651cea5b3fda))
+
 ## [1.14.0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.13.2...persistence-v1.14.0) (2026-08-10)
 
 
