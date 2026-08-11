@@ -1,13 +1,62 @@
 import type { PurchaseProduct } from "@/domain/ports/purchases.port";
 import {
   billingCycleFromProductId,
+  billingCycleFromStoreProductId,
   findPackageForTier,
   freeTrialDaysFromGooglePlayOption,
   freeTrialDaysFromIntroOffer,
   offeringTrialDays,
+  parseStoreProductId,
   purchasableTiers,
   tierFromProductId,
 } from "@/domain/services/purchaseOfferings";
+
+/**
+ * The twelve live products, in every identifier shape the mobile purchase
+ * layer must classify: Apple dotted (`.monthly`/`.annual`), and the Google
+ * Play `subscriptionId:basePlanId` form RevenueCat surfaces on Android. Both
+ * must resolve to the same tier + cadence.
+ */
+const PLAY_IDENTIFIERS: readonly [
+  string,
+  ReturnType<typeof tierFromProductId>,
+  "monthly" | "yearly",
+][] = [
+  ["app.persistence.premium:monthly", "premium", "monthly"],
+  ["app.persistence.premium:annual", "premium", "yearly"],
+  ["app.persistence.premium_plus:monthly", "premium_plus", "monthly"],
+  ["app.persistence.premium_plus:annual", "premium_plus", "yearly"],
+  [
+    "app.persistence.trainer.individual:monthly",
+    "individual_trainer",
+    "monthly",
+  ],
+  ["app.persistence.trainer.individual:annual", "individual_trainer", "yearly"],
+  [
+    "app.persistence.start_up_coach_plus:monthly",
+    "start_up_coach_plus",
+    "monthly",
+  ],
+  [
+    "app.persistence.start_up_coach_plus:annual",
+    "start_up_coach_plus",
+    "yearly",
+  ],
+  ["app.persistence.coach:monthly", "coach", "monthly"],
+  ["app.persistence.coach:annual", "coach", "yearly"],
+  ["app.persistence.coach_pro:monthly", "coach_pro", "monthly"],
+  ["app.persistence.coach_pro:annual", "coach_pro", "yearly"],
+];
+
+const APPLE_IDENTIFIERS: readonly [
+  string,
+  ReturnType<typeof tierFromProductId>,
+  "monthly" | "yearly",
+][] = PLAY_IDENTIFIERS.map(([id, tier, cycle]) => [
+  id.replace(":", "."),
+  tier,
+  cycle,
+]);
 
 function pkg(overrides: Partial<PurchaseProduct>): PurchaseProduct {
   return {
@@ -40,6 +89,95 @@ describe("billingCycleFromProductId", () => {
   });
 });
 
+describe("parseStoreProductId", () => {
+  it("splits a Google Play subscriptionId:basePlanId identifier", () => {
+    expect(parseStoreProductId("app.persistence.coach:annual")).toEqual({
+      subscriptionId: "app.persistence.coach",
+      basePlanId: "annual",
+    });
+  });
+
+  it("returns a null basePlanId for a bare / Apple-dotted identifier", () => {
+    expect(parseStoreProductId("app.persistence.coach")).toEqual({
+      subscriptionId: "app.persistence.coach",
+      basePlanId: null,
+    });
+    expect(parseStoreProductId("app.persistence.coach.monthly")).toEqual({
+      subscriptionId: "app.persistence.coach.monthly",
+      basePlanId: null,
+    });
+  });
+
+  it("treats a trailing colon with no base plan as null", () => {
+    expect(parseStoreProductId("app.persistence.coach:")).toEqual({
+      subscriptionId: "app.persistence.coach",
+      basePlanId: null,
+    });
+  });
+});
+
+describe("billingCycleFromStoreProductId (strict)", () => {
+  it.each(PLAY_IDENTIFIERS)(
+    "classifies Play id %s → %s cadence",
+    (productId, _tier, expectedCycle) => {
+      expect(billingCycleFromStoreProductId(productId)).toBe(expectedCycle);
+    },
+  );
+
+  it.each(APPLE_IDENTIFIERS)(
+    "classifies Apple id %s → %s cadence",
+    (productId, _tier, expectedCycle) => {
+      expect(billingCycleFromStoreProductId(productId)).toBe(expectedCycle);
+    },
+  );
+
+  // The hostile cases are the point: an auto-named Play base plan like `p1y`
+  // contains neither "annual" nor "year", so the old total classifier would
+  // silently render a yearly plan as monthly — the App Store 3.0.0 defect class.
+  it.each([
+    ["app.persistence.coach_pro:p1y", "yearly"],
+    ["app.persistence.coach_pro:p1m", "monthly"],
+  ])(
+    "recognises the unit-1 ISO-8601 period token in %s → %s",
+    (id, expected) => {
+      expect(billingCycleFromStoreProductId(id)).toBe(expected);
+    },
+  );
+
+  // Multi-unit periods have no monthly/yearly representation, so they must DROP
+  // (null) rather than mislabel a quarterly/biannual price as "monthly" — the
+  // same pricing-misrepresentation class behind the 3.0.0 rejection. No live
+  // product uses these; the guard is a latent-trap tripwire.
+  it.each([
+    ["app.persistence.coach_pro:p3m"],
+    ["app.persistence.coach_pro:p6m"],
+    ["app.persistence.coach_pro:p2y"],
+    ["app.persistence.coach_pro:p12m"],
+  ])("drops multi-unit period %s (null, not monthly)", (id) => {
+    expect(billingCycleFromStoreProductId(id)).toBeNull();
+  });
+
+  it("returns null when the cadence genuinely can't be determined", () => {
+    expect(
+      billingCycleFromStoreProductId("app.persistence.coach_pro:weird"),
+    ).toBeNull();
+    expect(
+      billingCycleFromStoreProductId("app.persistence.coach_pro"),
+    ).toBeNull();
+  });
+
+  it("classifies from the base plan id first, falling back to the whole id", () => {
+    // basePlanId carries the signal even when the subscription id is neutral.
+    expect(billingCycleFromStoreProductId("app.persistence.x:annual")).toBe(
+      "yearly",
+    );
+    // No signal in the base plan → fall back to the full id (Apple-dotted here).
+    expect(
+      billingCycleFromStoreProductId("app.persistence.premium.annual:base"),
+    ).toBe("yearly");
+  });
+});
+
 describe("freeTrialDaysFromGooglePlayOption", () => {
   it.each([
     ["DAY", 7, 7],
@@ -55,6 +193,25 @@ describe("freeTrialDaysFromGooglePlayOption", () => {
         },
       }),
     ).toBe(expected);
+  });
+
+  it("rejects a zero-length or non-finite free phase", () => {
+    expect(
+      freeTrialDaysFromGooglePlayOption({
+        freePhase: {
+          billingPeriod: { unit: "DAY", value: 0 },
+          price: { amountMicros: 0 },
+        },
+      }),
+    ).toBeNull();
+    expect(
+      freeTrialDaysFromGooglePlayOption({
+        freePhase: {
+          billingPeriod: { unit: "DAY", value: Number.NaN },
+          price: { amountMicros: 0 },
+        },
+      }),
+    ).toBeNull();
   });
 
   it("rejects absent, paid, invalid and unknown phases", () => {
@@ -94,6 +251,16 @@ describe("tierFromProductId", () => {
   ])("maps %s → %s", (productId, expected) => {
     expect(tierFromProductId(productId)).toBe(expected);
   });
+
+  // The order-sensitive substring ladder must survive Play's `:basePlanId`
+  // suffix exactly as it does Apple's dotted cadence — the suffix carries no
+  // tier substring, so the same ladder classifies both shapes.
+  it.each(PLAY_IDENTIFIERS)(
+    "maps Play id %s → %s tier",
+    (productId, expectedTier) => {
+      expect(tierFromProductId(productId)).toBe(expectedTier);
+    },
+  );
 
   it("returns null for an unrecognised id", () => {
     expect(tierFromProductId("app.persistence.gizmo.monthly")).toBeNull();

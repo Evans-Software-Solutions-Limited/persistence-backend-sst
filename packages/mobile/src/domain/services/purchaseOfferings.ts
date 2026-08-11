@@ -36,11 +36,96 @@ import type { PurchaseProduct } from "@/domain/ports/purchases.port";
  * Derive the billing cycle from a store product identifier. Mirrors the
  * backend's `billingCycleFromProductId` so both rails agree. Defaults to
  * monthly when the id doesn't signal a yearly term.
+ *
+ * ⚠ Total-but-lax: this silently defaults to `monthly`, so it will render an
+ * unrecognised yearly Play base plan (e.g. `p1y`) as monthly. `toPurchaseProduct`
+ * and any paywall path MUST use the strict `billingCycleFromStoreProductId`
+ * below instead. Retained only for callers that genuinely need a total function;
+ * do NOT reach for this by name.
  */
 export function billingCycleFromProductId(productId: string): BillingCycle {
   const lower = productId.toLowerCase();
   if (lower.includes("annual") || lower.includes("year")) return "yearly";
   return "monthly";
+}
+
+/**
+ * Split a store product identifier into its subscription id and optional base
+ * plan id. Google Play exposes the RevenueCat-selected option as
+ * `subscriptionId:basePlanId` (`app.persistence.premium:annual`); Apple ids
+ * carry the cadence inline with no `:` (`app.persistence.premium.monthly`), so
+ * `basePlanId` is `null` there. This is the ONLY store-product-id parser in the
+ * mobile layer — the adapter reuses it rather than re-splitting on `:`.
+ */
+export function parseStoreProductId(id: string): {
+  subscriptionId: string;
+  basePlanId: string | null;
+} {
+  const separator = id.indexOf(":");
+  if (separator === -1) return { subscriptionId: id, basePlanId: null };
+  const basePlanId = id.slice(separator + 1);
+  return {
+    subscriptionId: id.slice(0, separator),
+    basePlanId: basePlanId.length > 0 ? basePlanId : null,
+  };
+}
+
+/**
+ * Classify a single cadence token (a base plan id, or a whole product id) into a
+ * `BillingCycle`, or `null` when it carries no recognisable cadence signal.
+ *
+ * Recognises both the word forms Apple/our-convention use (`annual` / `year` /
+ * `month`) and the ISO-8601 period tokens Google Play generates for auto-named
+ * base plans. `BillingCycle` has only `monthly` / `yearly`, so ONLY the unit-1
+ * periods map onto it: `p1y` → yearly, `p1m` → monthly. A multi-unit period
+ * (`p3m`, `p6m`, `p2y`, …) has NO `BillingCycle` representation and returns
+ * `null` — the caller then DROPS the package rather than mislabel a
+ * quarterly/biannual price as "monthly", which is the pricing-misrepresentation
+ * class behind the current App Store Guideline 3.0.0 rejection. We ship only
+ * monthly + annual base plans, so no live product hits the null path today.
+ */
+function cycleFromCadenceToken(value: string): BillingCycle | null {
+  const lower = value.toLowerCase();
+  if (lower.includes("annual") || lower.includes("year")) return "yearly";
+  if (lower.includes("month")) return "monthly";
+  const isoPeriod = /(?:^|[^a-z0-9])p(\d+)([ym])(?![a-z])/.exec(lower);
+  if (isoPeriod !== null && isoPeriod[1] === "1") {
+    return isoPeriod[2] === "y" ? "yearly" : "monthly";
+  }
+  return null;
+}
+
+/**
+ * Strict cadence classifier — the variant `toPurchaseProduct` uses. Derives the
+ * billing cycle from a store product identifier, returning `null` when the
+ * cadence genuinely can't be determined rather than defaulting to monthly.
+ * Classifies from the base plan id first (Play's `subscriptionId:basePlanId`),
+ * then falls back to the whole identifier.
+ *
+ * Callers must DROP a `null`-cadence package from the paywall — mirroring
+ * `offeringTrialDays`: never advertise a term we can't verify. A Play base plan
+ * auto-named `p1y` must render as yearly, not silently as the monthly default —
+ * the same class of defect behind the current App Store Guideline 3.0.0
+ * rejection. The total `billingCycleFromProductId` above is retained unchanged
+ * for callers that need a total function.
+ *
+ * ⚠ Play Console naming contract: every base plan MUST be named with a
+ * recognised cadence token (`monthly` / `annual`, or `p1m` / `p1y`). A base
+ * plan named otherwise (e.g. `1yr`, `standard`) classifies to `null` and its
+ * tile is dropped from the Android paywall — unbuyable, not merely
+ * mis-labelled. Our twelve live base plans use `:monthly` / `:annual`, so this
+ * holds; re-confirm it whenever a base plan is added or renamed in Play
+ * Console.
+ */
+export function billingCycleFromStoreProductId(
+  id: string,
+): BillingCycle | null {
+  const { basePlanId } = parseStoreProductId(id);
+  if (basePlanId !== null) {
+    const fromBasePlan = cycleFromCadenceToken(basePlanId);
+    if (fromBasePlan !== null) return fromBasePlan;
+  }
+  return cycleFromCadenceToken(id);
 }
 
 /**

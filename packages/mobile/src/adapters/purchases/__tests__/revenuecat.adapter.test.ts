@@ -241,6 +241,51 @@ describe("RevenueCatPurchasesAdapter — configured flows", () => {
     expect(r.ok).toBe(false);
   });
 
+  it("drops a package whose base-plan cadence can't be verified", async () => {
+    const a = configured();
+    mockPurchases.getOfferings.mockResolvedValue(
+      offeringWith([
+        {
+          identifier: "coach-pro-annual",
+          packageType: "CUSTOM",
+          product: {
+            identifier: "app.persistence.coach_pro",
+            price: 799.99,
+            priceString: "£799.99",
+            defaultOption: {
+              storeProductId: "app.persistence.coach_pro:annual",
+            },
+          },
+        },
+        {
+          identifier: "coach-pro-weird",
+          packageType: "CUSTOM",
+          product: {
+            identifier: "app.persistence.coach_pro",
+            price: 1,
+            priceString: "£1",
+            defaultOption: {
+              storeProductId: "app.persistence.coach_pro:weird",
+            },
+          },
+        },
+      ]),
+    );
+    const r = await a.getPurchasablePackages();
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      // The unverifiable `:weird` base plan is filtered out; only the annual
+      // plan survives to the paywall.
+      expect(r.value).toHaveLength(1);
+      expect(r.value[0]).toMatchObject({
+        packageId: "coach-pro-annual",
+        productId: "app.persistence.coach_pro:annual",
+        tier: "coach_pro",
+        billingCycle: "yearly",
+      });
+    }
+  });
+
   it("getPurchasablePackages returns empty when no offering exists", async () => {
     const a = configured();
     mockPurchases.getOfferings.mockResolvedValue({ all: {}, current: null });
@@ -308,6 +353,46 @@ describe("RevenueCatPurchasesAdapter — configured flows", () => {
         null,
         {
           oldProductIdentifier: "app.persistence.premium",
+          replacementMode: STORE_REPLACEMENT_MODE.WITH_TIME_PRORATION,
+        },
+      );
+    } finally {
+      Platform.OS = originalOS;
+    }
+  });
+
+  it("passes the suffixed Play identifier intact when upgrading a base-plan subscription", async () => {
+    const originalOS = Platform.OS;
+    Platform.OS = "android";
+    try {
+      const a = await configuredAndBound();
+      const COACH_PRO_PKG = {
+        identifier: "$rc_coach_pro_annual",
+        packageType: "ANNUAL",
+        product: {
+          identifier: "app.persistence.coach_pro",
+          price: 799.99,
+          priceString: "£799.99",
+          defaultOption: { storeProductId: "app.persistence.coach_pro:annual" },
+        },
+      };
+      mockPurchases.getOfferings.mockResolvedValue(
+        offeringWith([COACH_PRO_PKG]),
+      );
+      // Play reports the active sub as `subscriptionId:basePlanId`; the bare
+      // subscription id is what lives in GOOGLE_PLAY_SUBSCRIPTION_IDS.
+      mockPurchases.getCustomerInfo.mockResolvedValue({
+        activeSubscriptions: ["app.persistence.coach:monthly"],
+      });
+      mockPurchases.purchasePackage.mockResolvedValue({
+        customerInfo: { entitlements: { active: {} } },
+      });
+      await a.purchase("$rc_coach_pro_annual");
+      expect(mockPurchases.purchasePackage).toHaveBeenCalledWith(
+        COACH_PRO_PKG,
+        null,
+        {
+          oldProductIdentifier: "app.persistence.coach:monthly",
           replacementMode: STORE_REPLACEMENT_MODE.WITH_TIME_PRORATION,
         },
       );

@@ -15,9 +15,10 @@ import type {
   PurchasesPort,
 } from "@/domain/ports/purchases.port";
 import {
-  billingCycleFromProductId,
+  billingCycleFromStoreProductId,
   freeTrialDaysFromGooglePlayOption,
   freeTrialDaysFromIntroOffer,
+  parseStoreProductId,
   tierFromProductId,
 } from "@/domain/services/purchaseOfferings";
 import { fail, ok, type Result } from "@/shared/errors";
@@ -119,7 +120,11 @@ export class RevenueCatPurchasesAdapter implements PurchasesPort {
       const offering =
         offerings.all[DEFAULT_OFFERING_ID] ?? offerings.current ?? null;
       if (offering === null) return ok([]);
-      return ok(offering.availablePackages.map(toPurchaseProduct));
+      return ok(
+        offering.availablePackages
+          .map(toPurchaseProduct)
+          .filter((p): p is PurchaseProduct => p !== null),
+      );
     } catch (err) {
       return fail(classifyPurchasesError(err));
     }
@@ -188,9 +193,18 @@ export class RevenueCatPurchasesAdapter implements PurchasesPort {
       if (Platform.OS === "android") {
         const beforePurchase = await Purchases.getCustomerInfo();
         const oldProductIdentifier = beforePurchase.activeSubscriptions[0];
+        // Play reports the active subscription as `subscriptionId:basePlanId`
+        // (`app.persistence.coach:monthly`); test membership on the
+        // subscription-id portion so an upgrade is recognised as a product
+        // change (proration) rather than mis-attempted as a fresh purchase —
+        // which Play rejects as already-owned or double-bills. The FULL,
+        // suffix-intact identifier is still what Play needs as
+        // `oldProductIdentifier`.
         if (
           oldProductIdentifier &&
-          GOOGLE_PLAY_SUBSCRIPTION_IDS.has(oldProductIdentifier)
+          GOOGLE_PLAY_SUBSCRIPTION_IDS.has(
+            parseStoreProductId(oldProductIdentifier).subscriptionId,
+          )
         ) {
           productChangeInfo = {
             oldProductIdentifier,
@@ -246,19 +260,25 @@ export class RevenueCatPurchasesAdapter implements PurchasesPort {
   }
 }
 
-/** Normalise a RevenueCat package into the port's `PurchaseProduct`. */
-function toPurchaseProduct(pkg: PurchasesPackage): PurchaseProduct {
+/**
+ * Normalise a RevenueCat package into the port's `PurchaseProduct`, or `null`
+ * when its billing cadence can't be verified (an unrecognised Play base-plan
+ * name) — the caller drops those rather than advertise a guessed term.
+ */
+function toPurchaseProduct(pkg: PurchasesPackage): PurchaseProduct | null {
   // Google exposes the base-plan-aware identifier on the selected option as
   // `subscriptionId:basePlanId`; the parent StoreProduct may contain only the
   // subscription id. Prefer the option id so annual/monthly classification is
   // deterministic on both stores.
   const productId =
     pkg.product.defaultOption?.storeProductId ?? pkg.product.identifier;
+  const billingCycle = billingCycleFromStoreProductId(productId);
+  if (billingCycle === null) return null;
   return {
     packageId: pkg.identifier,
     productId,
     tier: tierFromProductId(productId),
-    billingCycle: billingCycleFromProductId(productId),
+    billingCycle,
     price: pkg.product.price,
     priceString: pkg.product.priceString,
     pricePerMonthString: pkg.product.pricePerMonthString ?? null,
