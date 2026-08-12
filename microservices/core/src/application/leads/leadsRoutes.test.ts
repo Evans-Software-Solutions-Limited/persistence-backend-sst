@@ -14,6 +14,21 @@ vi.mock("./resendClient", () => ({
   RESEND_NOTIFICATION_TO: "admin@evans-software-solutions.com",
 }));
 
+// Turnstile + emit are best-effort side paths; mock them so the route tests
+// stay isolated from DB/HTTP. `turnstileOutcome` is switchable per-test.
+let turnstileOutcome = "skipped";
+const emitEventMock = vi.fn<(...args: unknown[]) => Promise<void>>(
+  async () => {},
+);
+
+vi.mock("./turnstile", () => ({
+  verifyTurnstile: vi.fn(async () => turnstileOutcome),
+}));
+
+vi.mock("../analytics/emitEvent", () => ({
+  emitEvent: (...args: unknown[]) => emitEventMock(...args),
+}));
+
 async function post(path: string, body: Record<string, unknown>) {
   const { leadsRoutes } = await import("./leadsRoutes");
   return leadsRoutes.handle(
@@ -24,6 +39,12 @@ async function post(path: string, body: Record<string, unknown>) {
     }),
   );
 }
+
+// Default the challenge to "off" (skipped) so the pre-existing suites are
+// unaffected; the WS3 suite below flips it per-test.
+beforeEach(() => {
+  turnstileOutcome = "skipped";
+});
 
 describe("POST /leads/waitlist", () => {
   beforeEach(() => {
@@ -199,5 +220,81 @@ describe("POST /leads/coach", () => {
     });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true });
+  });
+});
+
+describe("growth instrumentation (spec-30 WS1/WS3)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resendMocks.addContactToAudience.mockResolvedValue(undefined);
+  });
+
+  it("emits lead_captured (athletes) with forwarded fbc/fbp/event_id", async () => {
+    const res = await post("/leads/waitlist", {
+      email: "athlete@example.com",
+      fbc: "fb.1.1.abc",
+      fbp: "fb.1.1.xyz",
+      event_id: "evt-web-1",
+    });
+    expect(res.status).toBe(200);
+    expect(emitEventMock).toHaveBeenCalledWith({
+      name: "lead_captured",
+      source: "web",
+      eventId: "evt-web-1",
+      properties: {
+        audience: "athletes",
+        fbc: "fb.1.1.abc",
+        fbp: "fb.1.1.xyz",
+      },
+    });
+  });
+
+  it("emits lead_captured (coaches) with only the audience when no click ids", async () => {
+    const res = await post("/leads/coach", {
+      email: "coach@example.com",
+      name: "Grace Hopper",
+    });
+    expect(res.status).toBe(200);
+    expect(emitEventMock).toHaveBeenCalledWith({
+      name: "lead_captured",
+      source: "web",
+      eventId: undefined,
+      properties: { audience: "coaches" },
+    });
+  });
+
+  it("does NOT emit when the honeypot is tripped", async () => {
+    await post("/leads/waitlist", {
+      email: "bot@example.com",
+      hp: "i am a bot",
+    });
+    expect(emitEventMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects the waitlist with 400 when the Turnstile challenge fails", async () => {
+    turnstileOutcome = "failed";
+    const res = await post("/leads/waitlist", { email: "a@example.com" });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ ok: false, error: "challenge_failed" });
+    expect(resendMocks.addContactToAudience).not.toHaveBeenCalled();
+    expect(emitEventMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects the coach route with 400 when the token is missing", async () => {
+    turnstileOutcome = "missing_token";
+    const res = await post("/leads/coach", {
+      email: "coach@example.com",
+      name: "Grace Hopper",
+    });
+    expect(res.status).toBe(400);
+    expect(resendMocks.addContactToAudience).not.toHaveBeenCalled();
+  });
+
+  it("still captures when the challenge passes", async () => {
+    turnstileOutcome = "passed";
+    const res = await post("/leads/waitlist", { email: "a@example.com" });
+    expect(res.status).toBe(200);
+    expect(resendMocks.addContactToAudience).toHaveBeenCalled();
+    expect(emitEventMock).toHaveBeenCalled();
   });
 });

@@ -11,6 +11,86 @@ say so and fix this file.
 
 ## ▶ START HERE — next session (rewritten 2026-08-04, post-Mealprint-merge)
 
+### 🟢 2026-08-12 — GROWTH INSTRUMENTATION (spec-30 / M20-P1) BUILT — backend/web-only, binary frozen (branch `feat/growth-instrumentation-spec`)
+
+Server-side growth instrumentation for the launch funnel, built under the
+zero-`packages/mobile`-diffs constraint (both apps in review). Spec triplet at
+`specs/30-growth-instrumentation/`. All four workstreams in ONE PR (Brad's
+call). Gates green: core 336 files/4176 tests, coverage 97.97% (analytics +
+leads 100%); web 11/69; workspace typecheck + lint + prettier clean.
+
+- **WS1 — first-party events.** New `analytics_events` table
+  (`supabase/migrations/20260812120000_analytics_events.sql` + schema.ts
+  mirror) — append-only funnel log AND the Meta CAPI outbox. Best-effort
+  `emitEvent` (`application/analytics/`) writes one row, never throws (HC-2).
+  Emitters wired into: the RevenueCat webhook (trial_started /
+  subscription_purchased[value+currency] / renewal / cancellation / expiration,
+  after sync, before mark-done), the session-record handler (session_completed,
+  gated on clientSessionId so legacy clients can't double-emit), the two
+  `/leads/*` routes (lead_captured + audience). `registration_completed` is
+  written by an ADDITIVE `auth.users` trigger
+  (`20260812130000_registration_analytics_event.sql`) — profiles are created by
+  a DB trigger, so there is no Node path at registration. analytics_events added
+  to the nightly `dataRetentionSweep` (12-month prune).
+- **WS2 — Meta CAPI (server-side, no SDK).** `metaCapiClient.ts` (native fetch,
+  SHA-256 email/external_id, no-op when unconfigured), `metaEventMap.ts`
+  (analytics→Meta standard events), and the **outbox drainer** (Option B, Brad's
+  pick): `meta-capi-forward` Cron (rate 5 min, `infra/api.ts`) drains
+  `meta_forwarded_at IS NULL` rows → CAPI, at-least-once (Meta dedups on
+  event_id). Drainer ages-out rows past Meta's 7-day window (bulk, unbatched)
+  so a rollout backlog / bad token can't stall the queue or grow it unbounded.
+  `analytics_events` has a partial UNIQUE on event_id + `ON CONFLICT DO NOTHING`
+  so a webhook retry can't double-count. Secrets `META_DATASET_ID`/
+  `META_CAPI_ACCESS_TOKEN`/`META_TEST_EVENT_CODE` — OPTIONAL + fail-safe.
+- **WS3 — web (`packages/web`).** Meta Pixel (`lib/metaPixel.ts`, no-op without
+  `VITE_META_PIXEL_ID`) + PageView on route change; click-capture (fbclid→fbc,
+  _fbp, event_id) in `useLeadSubmit` forwarded to `/leads/*` and deduped with the
+  server Lead; **Turnstile** on the forms (`VITE_TURNSTILE_SITE_KEY`) + server
+  verification (`leads/turnstile.ts`, fail-safe: no-op until `TURNSTILE_SECRET`
+  set) — R3.3 gate before public linking; campaign routes `/uon` `/flyer`
+  `/qr/:slug` + `appStoreUrl`/`playStoreUrl` attribution helpers in
+  marketing/config (ready; outbound decoration activates when `appStore.available`
+  flips true). CSP in `infra/web.ts` extended for facebook + cloudflare.
+- **WS4 — subscriptions verification.** No code-side price/offering list (catalog
+  = `subscription_tiers` DB row + store consoles; entitlements.ts is structural
+  mapping, not pricing). Coach Pro EUR-annual defect (16.7% vs 29.9% GBP) is a
+  **console-only fix — raise the EUR monthly in ASC/Play/RC (Brad's action)**,
+  nothing in this repo. Promo-grant handling verified + tested (R4.3).
+
+**⚠ Brad's manual actions before this is live:** (1) apply both migrations to
+prod (manual); (2) set SST secrets per stage: `MetaDatasetId`,
+`MetaCapiAccessToken`, optional `MetaTestEventCode`, `TurnstileSecret`; (3) set
+web build vars `VITE_META_PIXEL_ID` + `VITE_TURNSTILE_SITE_KEY`; (4) verify in
+Meta Events Manager → Test Events before driving traffic; (5) raise EUR Coach Pro
+monthly in the store consoles. **Build-2 backlog** (queued, needs a binary):
+client-side event emitter, Meta/FB SDK, MMP, SKAdNetwork/AEM, ATT prompt, share
+card, referral codes — no install-level SKAN attribution until the SDK ships
+(server signals suffice; playbook gates Meta spend to month 3+).
+`microservices/core/probe-steps.ts` is a pre-existing untracked file that fails
+lint/prettier locally — NOT part of this PR.
+
+### 🟢 2026-08-12 — BOTH APPS SUBMITTED · PLAY CONSOLE RUNBOOK COMPLETE (Brad, confirmed in Cowork session)
+
+**iOS and Android are both submitted and sitting in store review as of
+2026-08-12.** The full Play Console operational runbook from the 2026-08-07
+Android entry below is DONE (Brad): app/payments profile created and verified,
+Health apps access approved, Android RevenueCat public key in EAS, the twelve
+Play base-plan products created and attached to the `default` offering,
+RevenueCat + EAS service-account credentials uploaded, RTDN configured and
+tested. The "Still required before calling the whole Android release ready"
+list in the 2026-08-07 block is SUPERSEDED by this entry — the remaining
+Android caveat is whatever physical-device QA was outstanding at submission
+time, plus anything App Review itself raises.
+
+Launch is now gated purely on review outcomes (both stores). RevenueCat
+**Shipaton 2026 is registered** (submit by 30 Sep 23:45 PDT; release must land
+1 Aug–30 Sep; grand prize judged on post-release traction — every review day
+counts). Next actions: daily review-queue watch with same-day responses;
+Devpost submission drafting underway (Cowork 2026-08-12); launch-day assets
+being banked under `marketing/launch-assets/`. Growth-instrumentation
+(backend-only, no new binary) brief handed to Claude Code 2026-08-12 — see
+that session's spec when it lands.
+
 ### 🟡 2026-08-10 — ANDROID PLAY BUILD + STORE WIRING IN PROGRESS
 
 Branch `codex/public-account-deletion` / PR #388 now also carries the Android
@@ -39,7 +119,7 @@ approval. Separate EAS and RevenueCat service accounts, RTDN, internal rollout,
 and physical Android QA remain. Google Cloud requires a fresh company-account
 password verification before the two service accounts can be created.
 
-### 🟢 2026-08-07 — ANDROID LAUNCH RAIL IMPLEMENTED (external activation + device QA remain)
+### 🟢 2026-08-07 — ANDROID LAUNCH RAIL IMPLEMENTED (external activation + device QA remain) — ⚠ runbook items below SUPERSEDED by 2026-08-12 entry
 
 Android no longer selects the health stub. `packages/mobile` now includes
 `react-native-health-connect@4.1.3` and a real `HealthConnectAdapter` for steps,
@@ -79,7 +159,8 @@ retry after transient binding failures. The exact Console,
 RevenueCat, RTDN, product and acceptance checklist is in
 `specs/milestones/ANDROID-LAUNCH/REVENUECAT-PLAY-SETUP.md`.
 
-Still required before calling the **whole Android release** ready: create and
+~~Still required before calling the **whole Android release** ready~~
+(**✅ ALL DONE 2026-08-12 — see the entry above; Android is submitted**): create and
 verify the Play Console app/payments profile; approve Health apps access;
 publish the updated web privacy page; add the Android RevenueCat public key to
 EAS; create/import the twelve Play base-plan products and attach them to the

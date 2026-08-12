@@ -2399,6 +2399,59 @@ export const aiUsageLog = pgTable(
 );
 
 /**
+ * Growth instrumentation (spec-30 / M20-P1) — first-party analytics event log.
+ *
+ * Append-only funnel store AND the Meta Conversions API outbox: server-derived
+ * events land here best-effort, and the `meta-capi-forward` cron forwards rows
+ * with `metaForwardedAt IS NULL`. Authoritative DDL:
+ * `supabase/migrations/20260812120000_analytics_events.sql`.
+ *
+ * ⚠ NO PII at rest (spec-30 HC-4): `properties` carries value/currency/audience/
+ * tier/store only — never email or name. `userId` is nullable + ON DELETE SET
+ * NULL (a lead has no user; account deletion de-identifies, not cascade-wipes).
+ *
+ * The partial pending index (`… WHERE meta_forwarded_at IS NULL`) is declared
+ * here in bare-column form only — Drizzle's `.on()` takes columns, not
+ * expressions — so this records the index NAME and rough shape; the migration
+ * carries the real partial predicate (same convention as `aiJobs` below).
+ */
+export const analyticsEvents = pgTable(
+  "analytics_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id").references(() => profiles.id, {
+      onDelete: "set null",
+    }),
+    eventName: text("event_name").notNull(),
+    occurredAt: timestamp("occurred_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    properties: jsonb("properties")
+      .notNull()
+      .$type<Record<string, unknown>>()
+      .default({}),
+    source: text("source").notNull().default("server"),
+    eventId: text("event_id"),
+    metaForwardedAt: timestamp("meta_forwarded_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index("analytics_events_name_occurred_idx").on(t.eventName, t.occurredAt),
+    index("analytics_events_created_at_idx").on(t.createdAt),
+    index("analytics_events_meta_pending_idx").on(t.occurredAt),
+    // Partial UNIQUE on event_id (idempotency for at-least-once emit paths).
+    // Recorded name+shape only — the real `WHERE event_id IS NOT NULL` predicate
+    // lives in the migration (Drizzle `.on()` takes columns, not expressions).
+    uniqueIndex("analytics_events_event_id_key").on(t.eventId),
+  ],
+);
+
+export type AnalyticsEventRow = typeof analyticsEvents.$inferSelect;
+export type NewAnalyticsEventRow = typeof analyticsEvents.$inferInsert;
+
+/**
  * Shared async-job spine — `specs/_shared/async-jobs/design.md` § 2.
  *
  * Work that outlives the 29 s request ceiling: Loadout programme adaptation

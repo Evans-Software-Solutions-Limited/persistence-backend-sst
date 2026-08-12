@@ -1,6 +1,9 @@
 import {
   databaseUrl,
   expoAccessToken,
+  metaCapiAccessToken,
+  metaDatasetId,
+  metaTestEventCode,
   resendApiKey,
   resendAthletesAudienceId,
   resendCoachesAudienceId,
@@ -11,6 +14,7 @@ import {
   stripeSecretKey,
   stripeWebhookSecret,
   supabaseServiceRoleKey,
+  turnstileSecret,
 } from "./secrets";
 import { coreApiDomain, hostedZoneId, supabaseUrl } from "./domains";
 import { avatarsBucket } from "./storage";
@@ -154,6 +158,10 @@ export const coreRoute = coreAPI.route("$default", {
     RESEND_API_KEY: resendApiKey.value,
     RESEND_ATHLETES_AUDIENCE_ID: resendAthletesAudienceId.value,
     RESEND_COACHES_AUDIENCE_ID: resendCoachesAudienceId.value,
+    // Cloudflare Turnstile — bot challenge for the public /leads/* forms
+    // (spec-30 WS3). OPTIONAL + fail-safe: empty = verification skipped (forms
+    // behave as before). Set before the forms are publicly linked.
+    TURNSTILE_SECRET: turnstileSecret.value,
     // AI Tier B model ids (M9.5). Plain deploy-time config, not secrets —
     // Bedrock auth is IAM (see `permissions` above), so there's nothing
     // sensitive here. Defaults match `nutrition/services/aiEstimation.ts`;
@@ -372,6 +380,36 @@ export const accountPurgeCron = new sst.aws.Cron("account-purge-sweep", {
       SUPABASE_URL: supabaseUrl,
       SUPABASE_SERVICE_ROLE_KEY: supabaseServiceRoleKey.value,
       STRIPE_SECRET_KEY: stripeSecretKey.value,
+      // Sentry crash reporting (optional; empty DSN = disabled).
+      SENTRY_DSN: sentryDsn.value,
+    },
+  },
+});
+
+// ─── Meta Conversions API forward drain (spec-30 / M20-P1, WS2 Option B) ────
+//
+// Every 5 minutes. Drains the `analytics_events` outbox (rows with
+// `meta_forwarded_at IS NULL`) to the Meta Conversions API. Server-side
+// ad-conversion signals with no in-app SDK (binary frozen). Decoupled from the
+// RevenueCat webhook / leads paths on purpose: those write one local row and
+// return fast, and this cron owns the outbound Graph latency + retries.
+//
+// OPTIONAL + fail-safe: with `META_DATASET_ID`/`META_CAPI_ACCESS_TOKEN` unset the
+// handler makes ONE config check and returns — no DB read, effectively free — so
+// a stage without Meta secrets is a clean no-op. Logs `[meta-capi-forward:
+// summary]` each run. Reuses the API route's DATABASE_URL + SENTRY_DSN bindings.
+export const metaCapiForwardCron = new sst.aws.Cron("meta-capi-forward", {
+  schedule: "rate(5 minutes)",
+  job: {
+    handler: "microservices/core/src/metaCapiForwardCron.handler",
+    timeout: "120 seconds",
+    environment: {
+      DATABASE_URL: databaseUrl.value,
+      // Meta CAPI — OPTIONAL + fail-safe (empty = drainer no-ops, mirrors
+      // RESEND_API_KEY/SENTRY_DSN, not the fail-fast secrets).
+      META_DATASET_ID: metaDatasetId.value,
+      META_CAPI_ACCESS_TOKEN: metaCapiAccessToken.value,
+      META_TEST_EVENT_CODE: metaTestEventCode.value,
       // Sentry crash reporting (optional; empty DSN = disabled).
       SENTRY_DSN: sentryDsn.value,
     },

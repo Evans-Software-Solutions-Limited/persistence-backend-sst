@@ -6,6 +6,9 @@ import {
   RESEND_NOTIFICATION_TO,
   sendEmail,
 } from "./resendClient";
+import { emitEvent } from "../analytics/emitEvent";
+import type { AnalyticsEventInput } from "../analytics/events";
+import { verifyTurnstile } from "./turnstile";
 
 /**
  * Marketing lead capture — PUBLIC (no auth) endpoints backing the website's
@@ -56,14 +59,56 @@ function splitName(name: string | undefined): {
   return lastName !== undefined ? { firstName, lastName } : { firstName };
 }
 
+/**
+ * Build the best-effort `lead_captured` event (spec-30 R1.4 / R3.2).
+ *
+ * `fbc`/`fbp` are Meta click identifiers and `event_id` is the pixel dedup key —
+ * NOT PII (no email/name), so they are safe to persist in `properties` for the
+ * CAPI drainer to forward and dedup the server `Lead` against the browser pixel.
+ */
+function leadCapturedEvent(
+  audience: "athletes" | "coaches",
+  attribution: { fbc?: string; fbp?: string; eventId?: string },
+): AnalyticsEventInput {
+  const properties: Record<string, unknown> = { audience };
+  if (attribution.fbc) properties.fbc = attribution.fbc;
+  if (attribution.fbp) properties.fbp = attribution.fbp;
+  return {
+    name: "lead_captured",
+    source: "web",
+    eventId: attribution.eventId,
+    properties,
+  };
+}
+
+/** Optional Meta click-capture + Turnstile fields shared by both lead routes (WS3). */
+const attributionFields = {
+  fbc: t.Optional(t.String({ maxLength: 255 })),
+  fbp: t.Optional(t.String({ maxLength: 255 })),
+  event_id: t.Optional(t.String({ maxLength: 100 })),
+  turnstileToken: t.Optional(t.String({ maxLength: 2048 })),
+};
+
+/** true when the Turnstile challenge is on and the token is absent/invalid. */
+function challengeRejected(outcome: string): boolean {
+  return outcome === "missing_token" || outcome === "failed";
+}
+
 export const leadsRoutes = new Elysia()
   .post(
     "/leads/waitlist",
     async (ctx) => {
-      const { email, name, hp } = ctx.body;
+      const { email, name, hp, fbc, fbp, event_id, turnstileToken } = ctx.body;
 
       if (isHoneypotTripped(hp)) {
         return { ok: true as const };
+      }
+
+      // Bot challenge (WS3). No-op until TURNSTILE_SECRET is set — checked after
+      // the honeypot so an obvious bot never burns a siteverify call.
+      if (challengeRejected(await verifyTurnstile(turnstileToken))) {
+        ctx.set.status = 400;
+        return { ok: false as const, error: "challenge_failed" as const };
       }
 
       const normalizedEmail = normalizeEmail(email);
@@ -77,6 +122,12 @@ export const leadsRoutes = new Elysia()
           email: normalizedEmail,
           ...splitName(name),
         });
+        // Best-effort funnel emit (never affects the 200/503; emitEvent
+        // swallows its own errors — HC-2). Deduped with the browser pixel via
+        // the shared event_id (WS3).
+        await emitEvent(
+          leadCapturedEvent("athletes", { fbc, fbp, eventId: event_id }),
+        );
         return { ok: true as const };
       } catch (err) {
         console.error(
@@ -96,6 +147,7 @@ export const leadsRoutes = new Elysia()
         name: t.Optional(t.String({ maxLength: 200 })),
         source: t.Optional(t.String({ maxLength: 60 })),
         hp: t.Optional(t.String({ maxLength: 200 })),
+        ...attributionFields,
       }),
       detail: {
         description:
@@ -107,10 +159,28 @@ export const leadsRoutes = new Elysia()
   .post(
     "/leads/coach",
     async (ctx) => {
-      const { email, name, clientCount, currentTool, message, hp } = ctx.body;
+      const {
+        email,
+        name,
+        clientCount,
+        currentTool,
+        message,
+        hp,
+        fbc,
+        fbp,
+        event_id,
+        turnstileToken,
+      } = ctx.body;
 
       if (isHoneypotTripped(hp)) {
         return { ok: true as const };
+      }
+
+      // Bot challenge (WS3) — the coach route is the email-amplification vector,
+      // so this matters most here. No-op until TURNSTILE_SECRET is set.
+      if (challengeRejected(await verifyTurnstile(turnstileToken))) {
+        ctx.set.status = 400;
+        return { ok: false as const, error: "challenge_failed" as const };
       }
 
       const normalizedEmail = normalizeEmail(email);
@@ -139,6 +209,12 @@ export const leadsRoutes = new Elysia()
         ctx.set.status = 503;
         return { ok: false as const, error: "unavailable" as const };
       }
+
+      // Best-effort funnel emit (never affects the 200/503; emitEvent swallows
+      // its own errors — HC-2). Deduped with the browser pixel via event_id.
+      await emitEvent(
+        leadCapturedEvent("coaches", { fbc, fbp, eventId: event_id }),
+      );
 
       // Internal notification — BEST-EFFORT. The contact is already captured
       // above; a delivery failure here must not fail the request (the lead
@@ -175,6 +251,7 @@ export const leadsRoutes = new Elysia()
         currentTool: t.Optional(t.String({ maxLength: 200 })),
         message: t.Optional(t.String({ maxLength: 4000 })),
         hp: t.Optional(t.String({ maxLength: 200 })),
+        ...attributionFields,
       }),
       detail: {
         description:

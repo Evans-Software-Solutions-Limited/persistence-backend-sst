@@ -34,7 +34,15 @@ const securityHeaders = new aws.cloudfront.ResponseHeadersPolicy(
       },
       contentSecurityPolicy: {
         override: true,
-        contentSecurityPolicy: $interpolate`default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self'; connect-src 'self' ${coreAPI.url} https://itunes.apple.com; form-action 'self'; upgrade-insecure-requests`,
+        // spec-30 WS3 additions:
+        //  - Meta Pixel: `script-src` loads fbevents.js from connect.facebook.net;
+        //    `connect-src` covers the /tr beacon on www.facebook.com. `img-src`
+        //    already allows `https:`, covering the pixel's tracking GIF.
+        //  - Cloudflare Turnstile: `script-src` loads api.js and `frame-src`
+        //    allows the challenge iframe, both from challenges.cloudflare.com.
+        //    (There was no `frame-src` before; without it the iframe would fall
+        //    back to `default-src 'self'` and be blocked.)
+        contentSecurityPolicy: $interpolate`default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; frame-src https://challenges.cloudflare.com; script-src 'self' https://connect.facebook.net https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self'; connect-src 'self' ${coreAPI.url} https://itunes.apple.com https://www.facebook.com https://connect.facebook.net https://challenges.cloudflare.com; form-action 'self'; upgrade-insecure-requests`,
       },
     },
     customHeadersConfig: {

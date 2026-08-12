@@ -60,6 +60,7 @@ describe("DataRetentionRepository", () => {
         [{ id: "a1" }, { id: "a2" }], // daily_activity_data
         [{ id: "s1" }], // sleep_data
         [{ id: "l1" }, { id: "l2" }, { id: "l3" }], // client_data_access_log
+        [{ id: "e1" }, { id: "e2" }], // analytics_events
       ],
       capture,
     );
@@ -75,13 +76,14 @@ describe("DataRetentionRepository", () => {
       dailyActivity: 2,
       sleep: 1,
       clientDataAccessLog: 3,
+      analyticsEvents: 2,
     });
-    expect(ex.delete).toHaveBeenCalledTimes(3);
+    expect(ex.delete).toHaveBeenCalledTimes(4);
   });
 
   it("compares the TEXT date columns against a bare ISO date, not a timestamp", async () => {
     const capture: Capture = { wheres: [], tables: [] };
-    const ex = executor([[], [], []], capture);
+    const ex = executor([[], [], [], []], capture);
     (getDb as any).mockReturnValue(ex);
 
     const { DataRetentionRepository } =
@@ -101,16 +103,19 @@ describe("DataRetentionRepository", () => {
     expect(rendered[1].sql).toContain('"sleep_date"');
     expect(rendered[1].params).toEqual(["2025-08-03"]);
 
-    // [2] client_data_access_log — a real timestamptz. Drizzle's column mapper
-    // serialises the Date to a full ISO timestamp, so the param keeps the TIME
-    // component that the two date columns above deliberately drop.
+    // [2] client_data_access_log, [3] analytics_events — real timestamptz
+    // columns. Drizzle's column mapper serialises the Date to a full ISO
+    // timestamp, so the param keeps the TIME component that the two date columns
+    // above deliberately drop.
     expect(rendered[2].sql).toContain('"created_at"');
     expect(rendered[2].params).toEqual(["2025-08-03T02:00:00.000Z"]);
+    expect(rendered[3].sql).toContain('"created_at"');
+    expect(rendered[3].params).toEqual(["2025-08-03T02:00:00.000Z"]);
   });
 
   it("scopes every delete with a strict less-than, never an equality or a range", async () => {
     const capture: Capture = { wheres: [], tables: [] };
-    const ex = executor([[], [], []], capture);
+    const ex = executor([[], [], [], []], capture);
     (getDb as any).mockReturnValue(ex);
 
     const { DataRetentionRepository } =
@@ -125,6 +130,6 @@ describe("DataRetentionRepository", () => {
       expect(sql).toContain("<");
       expect(sql).not.toContain(">");
     }
-    expect(capture.wheres).toHaveLength(3);
+    expect(capture.wheres).toHaveLength(4);
   });
 });

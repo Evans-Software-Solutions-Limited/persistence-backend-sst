@@ -1,5 +1,6 @@
 import { lt } from "drizzle-orm";
 import {
+  analyticsEvents,
   clientDataAccessLog,
   dailyActivityData,
   sleepData,
@@ -64,10 +65,17 @@ export class DataRetentionRepository implements DataRetentionRepo {
       .where(lt(clientDataAccessLog.createdAt, cutoff))
       .returning({ id: clientDataAccessLog.id });
 
+    // `analytics_events.created_at` is a real timestamptz — compare the Date.
+    const analytics = await db
+      .delete(analyticsEvents)
+      .where(lt(analyticsEvents.createdAt, cutoff))
+      .returning({ id: analyticsEvents.id });
+
     return {
       dailyActivity: activity.length,
       sleep: sleep.length,
       clientDataAccessLog: accessLog.length,
+      analyticsEvents: analytics.length,
     };
   }
 }

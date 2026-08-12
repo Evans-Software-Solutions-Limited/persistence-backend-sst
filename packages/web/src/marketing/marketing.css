@@ -2040,6 +2040,11 @@
 .mkt .lead-hp {
   display: none;
 }
+/* Cloudflare Turnstile: renders nothing (0×0) until VITE_TURNSTILE_SITE_KEY
+   is set and the widget mounts, so this is a no-op spacer otherwise. */
+.mkt .lead-turnstile:not(:empty) {
+  margin-top: 12px;
+}
 .mkt .coach-enquiry {
   border-top: 1px solid var(--m-line);
   padding-top: 22px;

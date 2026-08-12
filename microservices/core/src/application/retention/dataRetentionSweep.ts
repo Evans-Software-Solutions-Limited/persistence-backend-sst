@@ -55,6 +55,13 @@ export interface DataRetentionCounts {
    * design and is NOT swept here.
    */
   clientDataAccessLog: number;
+  /**
+   * Growth-instrumentation events (`analytics_events`, spec-30). High-volume,
+   * user-linked funnel data — kept on the same 12-month clock as the privacy
+   * policy's stated window. Rows are de-identified (`user_id` nullable, no PII in
+   * `properties`), but they still fall out of the rolling window here.
+   */
+  analyticsEvents: number;
 }
 
 export interface DataRetentionSweepDeps {
@@ -113,6 +120,10 @@ export async function dataRetentionSweep(
   return {
     ...counts,
     cutoff: cutoff.toISOString(),
-    total: counts.dailyActivity + counts.sleep + counts.clientDataAccessLog,
+    total:
+      counts.dailyActivity +
+      counts.sleep +
+      counts.clientDataAccessLog +
+      counts.analyticsEvents,
   };
 }

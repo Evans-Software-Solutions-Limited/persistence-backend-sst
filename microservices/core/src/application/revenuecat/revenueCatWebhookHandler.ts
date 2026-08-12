@@ -1,8 +1,13 @@
 import { timingSafeEqual } from "node:crypto";
 import { RevenueCatWebhookEventsRepository } from "../repositories/revenuecatWebhookEventsRepository";
 import { getRevenueCatWebhookSecret } from "./revenueCatClient";
-import { syncRevenueCatCustomer } from "./revenueCatSync";
+import {
+  isRevenueCatAnonymousId,
+  syncRevenueCatCustomer,
+} from "./revenueCatSync";
 import { notifySubscriptionTransferred } from "./notifySubscriptionTransferred";
+import { emitEvent } from "../analytics/emitEvent";
+import { mapRevenueCatEventToAnalytics } from "../analytics/revenueCatEventMap";
 
 // The customer-reconcile logic now lives in `revenueCatSync` (shared with
 // `POST /subscriptions/sync`). Re-exported so existing importers/tests that
@@ -204,6 +209,26 @@ export async function handleRevenueCatWebhook(req: Request): Promise<Response> {
       );
     });
     return jsonResponse({ error: "sync_failed", message }, 500);
+  }
+
+  // 4.5 Best-effort funnel emit (spec-30 R1.4). Runs only after the sync
+  // succeeded (we're past the catch) and BEFORE mark-done, so it happens once
+  // per event: a duplicate delivery dedupes at the `claim` above and never
+  // reaches here. `emitEvent` swallows its own errors and the map is pure, so
+  // this can NEVER fail the webhook (HC-2) — no extra guard needed. Only the
+  // primary `app_user_id` is the funnel subject (transfers carry no purchase/
+  // renewal meaning); anonymous / pre-identity ids are skipped, matching sync.
+  const analytics = mapRevenueCatEventToAnalytics(
+    event as unknown as Parameters<typeof mapRevenueCatEventToAnalytics>[0],
+  );
+  const analyticsUserId =
+    typeof event.app_user_id === "string" ? event.app_user_id : null;
+  if (
+    analytics !== null &&
+    analyticsUserId !== null &&
+    !isRevenueCatAnonymousId(analyticsUserId)
+  ) {
+    await emitEvent({ ...analytics, userId: analyticsUserId, eventId });
   }
 
   // 5. Done — future deliveries of this id dedupe.

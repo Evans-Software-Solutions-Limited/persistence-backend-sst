@@ -1,6 +1,14 @@
-import { useState, type FormEvent } from "react";
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 import { Link } from "react-router";
 import { useLeadSubmit, isValidEmail } from "./useLeadSubmit";
+import { loadTurnstileScript } from "../lib/turnstile";
 
 /**
  * Marketing lead-capture forms — a launch waitlist (email only) and a coach
@@ -62,12 +70,98 @@ function ConsentRow({
   );
 }
 
+function turnstileSiteKey(): string {
+  return (import.meta.env.VITE_TURNSTILE_SITE_KEY ?? "").trim();
+}
+
+/** Imperative handle exposed by {@link TurnstileWidget} to its parent form. */
+interface TurnstileHandle {
+  /**
+   * Resets the underlying widget so Turnstile issues a fresh token. Call
+   * this after a failed submit — Cloudflare tokens are single-use, so
+   * resubmitting the same (already-consumed) token gets a
+   * timeout-or-duplicate rejection and the form would otherwise be stuck
+   * until a full page reload.
+   */
+  reset: () => void;
+}
+
+/**
+ * Cloudflare Turnstile widget — renders only when `VITE_TURNSTILE_SITE_KEY`
+ * is set (spec-30 R3.3); otherwise renders nothing and the form submits
+ * exactly as it did before Turnstile existed, matching the backend's
+ * unconfigured-secret no-op. Loads the challenge script lazily on mount
+ * (never eagerly at app startup) and reports the solved token back to the
+ * form via `onToken`. Clears the token via `onToken("")` when Turnstile
+ * reports the challenge expired (~5 min); the parent form is responsible
+ * for clearing its own token state on a failed submit and calling
+ * `ref.current.reset()` so a retry gets a fresh challenge.
+ */
+const TurnstileWidget = forwardRef<
+  TurnstileHandle,
+  { onToken: (token: string) => void }
+>(function TurnstileWidget({ onToken }, ref) {
+  const siteKey = turnstileSiteKey();
+  const containerRef = useRef<HTMLDivElement>(null);
+  const widgetIdRef = useRef<string | null>(null);
+  // Keep the latest callback in a ref so the widget doesn't need to be
+  // re-created every time a parent re-renders (e.g. on each keystroke).
+  const onTokenRef = useRef(onToken);
+  useEffect(() => {
+    onTokenRef.current = onToken;
+  }, [onToken]);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      reset: () => {
+        if (widgetIdRef.current && window.turnstile) {
+          window.turnstile.reset(widgetIdRef.current);
+        }
+      },
+    }),
+    [],
+  );
+
+  useEffect(() => {
+    if (!siteKey || !containerRef.current) return;
+    let cancelled = false;
+
+    loadTurnstileScript()
+      .then(() => {
+        if (cancelled || !containerRef.current || !window.turnstile) return;
+        widgetIdRef.current = window.turnstile.render(containerRef.current, {
+          sitekey: siteKey,
+          callback: (token) => onTokenRef.current(token),
+          "expired-callback": () => onTokenRef.current(""),
+        });
+      })
+      .catch(() => {
+        // Best-effort: a failed script load just means no token is
+        // captured. The backend skips verification the same way it does
+        // when TURNSTILE_SECRET is unset, so submission still works.
+      });
+
+    return () => {
+      cancelled = true;
+      if (widgetIdRef.current && window.turnstile) {
+        window.turnstile.remove(widgetIdRef.current);
+      }
+    };
+  }, [siteKey]);
+
+  if (!siteKey) return null;
+  return <div ref={containerRef} className="lead-turnstile" />;
+});
+
 export function WaitlistForm() {
   const { status, submit } = useLeadSubmit("waitlist");
   const [email, setEmail] = useState("");
   const [consent, setConsent] = useState(false);
   const [hp, setHp] = useState("");
   const [touched, setTouched] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState("");
+  const turnstileRef = useRef<TurnstileHandle>(null);
 
   const emailOk = isValidEmail(email);
   const canSubmit = emailOk && consent && status !== "submitting";
@@ -76,7 +170,18 @@ export function WaitlistForm() {
     e.preventDefault();
     setTouched(true);
     if (!canSubmit) return;
-    await submit({ email: email.trim(), source: "waitlist", hp });
+    const ok = await submit({
+      email: email.trim(),
+      source: "waitlist",
+      hp,
+      ...(turnstileToken ? { turnstileToken } : {}),
+    });
+    if (!ok) {
+      // The token Turnstile just issued was consumed by that attempt —
+      // reset the widget and clear it so a retry gets a fresh one.
+      turnstileRef.current?.reset();
+      setTurnstileToken("");
+    }
   }
 
   if (status === "success") {
@@ -112,6 +217,7 @@ export function WaitlistForm() {
         onChange={setConsent}
         id="waitlist-consent"
       />
+      <TurnstileWidget ref={turnstileRef} onToken={setTurnstileToken} />
       <Honeypot value={hp} onChange={setHp} />
       {touched && !emailOk && (
         <p className="lead-error" role="alert">
@@ -142,6 +248,8 @@ export function CoachEnquiryForm() {
   const [consent, setConsent] = useState(false);
   const [hp, setHp] = useState("");
   const [touched, setTouched] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState("");
+  const turnstileRef = useRef<TurnstileHandle>(null);
 
   const emailOk = isValidEmail(email);
   const nameOk = name.trim().length > 0;
@@ -151,14 +259,21 @@ export function CoachEnquiryForm() {
     e.preventDefault();
     setTouched(true);
     if (!canSubmit) return;
-    await submit({
+    const ok = await submit({
       name: name.trim(),
       email: email.trim(),
       clientCount,
       currentTool: currentTool.trim(),
       message: message.trim(),
       hp,
+      ...(turnstileToken ? { turnstileToken } : {}),
     });
+    if (!ok) {
+      // The token Turnstile just issued was consumed by that attempt —
+      // reset the widget and clear it so a retry gets a fresh one.
+      turnstileRef.current?.reset();
+      setTurnstileToken("");
+    }
   }
 
   if (status === "success") {
@@ -220,6 +335,7 @@ export function CoachEnquiryForm() {
         onChange={(e) => setMessage(e.target.value)}
       />
       <ConsentRow checked={consent} onChange={setConsent} id="coach-consent" />
+      <TurnstileWidget ref={turnstileRef} onToken={setTurnstileToken} />
       <div className="lead-row">
         <button
           type="submit"

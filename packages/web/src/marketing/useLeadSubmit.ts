@@ -1,4 +1,5 @@
 import { useState, useCallback } from "react";
+import { getFbc, getFbp, newEventId, trackLead } from "../lib/metaPixel";
 
 /**
  * Lightweight lead-capture submit hook for the marketing forms (waitlist +
@@ -11,6 +12,13 @@ import { useState, useCallback } from "react";
  * or network failure resolves to the `error` state — the caller shows a retry
  * message. Honeypot + validation live server-side too; the `hp` field is passed
  * straight through.
+ *
+ * spec-30 WS3 click capture: every submit is decorated with `fbc`/`fbp`
+ * (Meta click/browser ids, present only when captured) and a fresh
+ * `event_id`. On success, the browser pixel fires `Lead` with that same
+ * `event_id` so it dedups against the server-side CAPI `Lead` the endpoint
+ * emits (R3.2). `turnstileToken`, when the caller includes it in `body`
+ * (see `LeadForms.tsx`), passes straight through like any other field.
  */
 export type LeadStatus = "idle" | "submitting" | "success" | "error";
 
@@ -30,14 +38,24 @@ export function useLeadSubmit(path: "waitlist" | "coach") {
   const submit = useCallback(
     async (body: Record<string, string>): Promise<boolean> => {
       setStatus("submitting");
+      const fbc = getFbc();
+      const fbp = getFbp();
+      const eventId = newEventId();
+      const payload: Record<string, string> = {
+        ...body,
+        ...(fbc ? { fbc } : {}),
+        ...(fbp ? { fbp } : {}),
+        event_id: eventId,
+      };
       try {
         const res = await fetch(`${API_BASE}/leads/${path}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
+          body: JSON.stringify(payload),
         });
         const ok = res.ok && ((await res.json().catch(() => ({}))).ok ?? false);
         setStatus(ok ? "success" : "error");
+        if (ok) trackLead(eventId);
         return ok;
       } catch {
         setStatus("error");

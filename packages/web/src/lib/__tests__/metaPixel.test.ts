@@ -1,0 +1,127 @@
+import {
+  initMetaPixel,
+  trackPageView,
+  trackLead,
+  getFbc,
+  getFbp,
+  newEventId,
+} from "../metaPixel";
+
+function clearCookies() {
+  document.cookie.split(";").forEach((c) => {
+    const name = c.split("=")[0]?.trim();
+    if (name) {
+      document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`;
+    }
+  });
+}
+
+describe("metaPixel", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    delete (window as unknown as { fbq?: unknown }).fbq;
+    delete (window as unknown as { _fbq?: unknown })._fbq;
+    document.head
+      .querySelectorAll('script[src*="connect.facebook.net"]')
+      .forEach((el) => el.remove());
+    clearCookies();
+    window.history.replaceState({}, "", "/");
+  });
+
+  describe("initMetaPixel", () => {
+    it("no-ops when VITE_META_PIXEL_ID is unset", () => {
+      vi.stubEnv("VITE_META_PIXEL_ID", "");
+      initMetaPixel();
+      expect(window.fbq).toBeUndefined();
+      expect(
+        document.head.querySelector('script[src*="connect.facebook.net"]'),
+      ).toBeNull();
+    });
+
+    it("injects the pixel script + fbq('init', id) when an id is configured", () => {
+      vi.stubEnv("VITE_META_PIXEL_ID", "123456789");
+      initMetaPixel();
+
+      expect(window.fbq).toBeDefined();
+      expect(window.fbq!.loaded).toBe(true);
+      const script = document.head.querySelector<HTMLScriptElement>(
+        'script[src*="connect.facebook.net"]',
+      );
+      expect(script).not.toBeNull();
+      expect(script!.src).toBe(
+        "https://connect.facebook.net/en_US/fbevents.js",
+      );
+    });
+
+    it("is idempotent — a second call does not inject a second script", () => {
+      vi.stubEnv("VITE_META_PIXEL_ID", "123456789");
+      initMetaPixel();
+      initMetaPixel();
+      const scripts = document.head.querySelectorAll(
+        'script[src*="connect.facebook.net"]',
+      );
+      expect(scripts.length).toBe(1);
+    });
+  });
+
+  describe("trackPageView / trackLead", () => {
+    it("no-op before the pixel is loaded", () => {
+      vi.stubEnv("VITE_META_PIXEL_ID", "");
+      expect(() => trackPageView()).not.toThrow();
+      expect(() => trackLead("evt_1")).not.toThrow();
+    });
+
+    it("call fbq('track', ...) once the pixel is loaded", () => {
+      vi.stubEnv("VITE_META_PIXEL_ID", "123456789");
+      initMetaPixel();
+      const calls: unknown[][] = [];
+      window.fbq = Object.assign(
+        (...args: unknown[]) => calls.push(args),
+        window.fbq,
+      );
+
+      trackPageView();
+      trackLead("evt_42");
+
+      expect(calls[0]).toEqual(["track", "PageView"]);
+      expect(calls[1]).toEqual(["track", "Lead", {}, { eventID: "evt_42" }]);
+    });
+  });
+
+  describe("getFbc", () => {
+    it("returns null when there is no fbclid param and no _fbc cookie", () => {
+      expect(getFbc()).toBeNull();
+    });
+
+    it("formats a fresh fbclid into the standard fbc shape", () => {
+      window.history.replaceState({}, "", "/?fbclid=abc123");
+      const fbc = getFbc();
+      expect(fbc).toMatch(/^fb\.1\.\d+\.abc123$/);
+    });
+
+    it("falls back to the _fbc cookie when there is no fbclid param", () => {
+      document.cookie = "_fbc=fb.1.1690000000000.storedclid";
+      expect(getFbc()).toBe("fb.1.1690000000000.storedclid");
+    });
+  });
+
+  describe("getFbp", () => {
+    it("returns null when the _fbp cookie is absent", () => {
+      expect(getFbp()).toBeNull();
+    });
+
+    it("reads the _fbp cookie", () => {
+      document.cookie = "_fbp=fb.1.1690000000000.999888777";
+      expect(getFbp()).toBe("fb.1.1690000000000.999888777");
+    });
+  });
+
+  describe("newEventId", () => {
+    it("returns unique values", () => {
+      const a = newEventId();
+      const b = newEventId();
+      expect(a).not.toBe(b);
+      expect(a).toMatch(/^[0-9a-f-]{36}$/i);
+    });
+  });
+});

@@ -16,6 +16,7 @@ import {
 } from "../../entitlement/assertEntitlement";
 import { safeEvaluateStreaks, resolveEventTs } from "../../streaks/evaluate";
 import { safeRecomputeVolume } from "../../progress/recompute";
+import { emitEvent } from "../../analytics/emitEvent";
 
 /**
  * POST /sessions/record
@@ -211,6 +212,21 @@ export const sessionsRecordHandler = new Elysia()
         // Backup volume recompute so Home/You weekly volume is fresh before
         // the 03:00 cron (design.md § Risks — two-write redundancy).
         await safeRecomputeVolume(userId);
+
+        // Best-effort funnel emit (spec-30 R1.4). Gated on `clientSessionId`:
+        // legacy clients that omit it get a fresh row on every sync (no
+        // dedup), so `!wasReplay` alone can't stop a re-sync from
+        // double-emitting — the id gate does. `emitEvent` swallows its own
+        // errors, so this can never fail the already-committed record (HC-2).
+        if (clientSessionId !== null) {
+          await emitEvent({
+            name: "session_completed",
+            userId,
+            eventId: `sess_${recorded.id}`,
+            occurredAt: resolveEventTs(payload.completedAt),
+            source: "app",
+          });
+        }
       }
 
       ctx.set.status = 201;
