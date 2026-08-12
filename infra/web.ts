@@ -107,5 +107,13 @@ export const frontend = new sst.aws.StaticSite("web", {
   environment: {
     VITE_REGION: region,
     VITE_CORE_API_URL: coreAPI.url,
+    // Growth instrumentation (spec-30 WS3). PUBLIC, client-exposed by design —
+    // the Meta Pixel id and Cloudflare Turnstile SITE key. Sourced from the
+    // deploy job's env (GitHub env secrets); an empty/unset value makes the
+    // pixel and the Turnstile widget no-op cleanly, so a stage without them
+    // still builds and serves normally. NOT sensitive (unlike the server-side
+    // Meta CAPI token / Turnstile SECRET, which live in SST Secrets).
+    VITE_META_PIXEL_ID: process.env.VITE_META_PIXEL_ID ?? "",
+    VITE_TURNSTILE_SITE_KEY: process.env.VITE_TURNSTILE_SITE_KEY ?? "",
   },
 });
