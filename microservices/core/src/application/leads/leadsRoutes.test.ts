@@ -530,4 +530,15 @@ describe("CORS (browser-facing marketing routes)", () => {
     expect(res.status).toBe(429);
     expect(res.headers.get("access-control-allow-origin")).toBe("*");
   });
+
+  it("stamps CORS on a 422 schema-validation error (rejected before the handler)", async () => {
+    // An over-length email fails the t.Object body schema BEFORE the handler's
+    // withCors runs; the onError hook must still add CORS so the browser can
+    // read the validation error.
+    const res = await post("/leads/waitlist", {
+      email: `${"a".repeat(400)}@example.com`,
+    });
+    expect(res.status).toBe(422);
+    expect(res.headers.get("access-control-allow-origin")).toBe("*");
+  });
 });

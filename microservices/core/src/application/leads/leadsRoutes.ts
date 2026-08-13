@@ -114,9 +114,12 @@ const CORS_HEADERS: Record<string, string> = {
 
 /**
  * Stamp CORS headers onto the response. Called once at the TOP of each handler
- * so every return path — including the 429 and validation errors — carries them
- * (the browser needs CORS headers to read an error response too). `ctx.set` is
- * the response context, mutated in place, so a single early call suffices.
+ * so every response the handler itself returns — 200, 400, 429, 503 — carries
+ * them (`ctx.set` is the response context, mutated in place, so one early call
+ * suffices). Schema-validation failures short-circuit BEFORE the handler runs,
+ * so those (422s) are covered separately by the `onError` hook below — without
+ * it the browser couldn't read a validation error and the form would show a
+ * generic failure instead of the field message.
  */
 function withCors(ctx: {
   set: { headers: Record<string, string | number> };
@@ -275,6 +278,16 @@ function challengeRejected(outcome: string): boolean {
 }
 
 export const leadsRoutes = new Elysia()
+  // CORS on the error path too. Schema-validation (t.Object) failures reject
+  // BEFORE the handler's `withCors` runs, so a 422 would otherwise reach the
+  // browser without `access-control-*` headers and be unreadable — the form
+  // would show a generic failure instead of the field error. This only stamps
+  // headers and does not build a body, so Elysia's normal error response (and
+  // the root `coreErrorHandler` in production) still renders it; local to this
+  // sub-app, so it does not touch sibling routes' error handling.
+  .onError(({ set }) => {
+    withCors({ set });
+  })
   .post(
     "/leads/waitlist",
     async (ctx) => {
