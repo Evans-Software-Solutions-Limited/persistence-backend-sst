@@ -120,6 +120,21 @@ export function mapPendingToMetaEvents(
     fbc: typeof props.fbc === "string" ? props.fbc : null,
     fbp: typeof props.fbp === "string" ? props.fbp : null,
   });
+
+  // Meta rejects an event with NO matching identifier, and one rejected event
+  // fails the whole batch POST — the drainer then re-sends that batch every tick
+  // until the row ages out (7 days). A consented anonymous row whose visitor has
+  // no `_fbp`/`_fbc` (pixel blocked but consent stored) yields empty `user_data`;
+  // skip it rather than poison the batch. It could never be matched anyway.
+  if (
+    userData.em === undefined &&
+    userData.external_id === undefined &&
+    userData.fbc === undefined &&
+    userData.fbp === undefined
+  ) {
+    return [];
+  }
+
   const eventTime = Math.floor(pending.occurredAt.getTime() / 1000);
 
   return skeletons.map((s) => ({

@@ -28,12 +28,21 @@ import { verifyTurnstile } from "./turnstile";
  * ./resendClient). Both routes: a non-empty `hp` (honeypot) field silently
  * drops the submission as a bot with a 200, WITHOUT calling Resend.
  *
- * ⚠ FOLLOW-UP before the forms are publicly linked: these public endpoints
- * have NO rate limiting beyond the honeypot. `/leads/coach` fires an internal
- * notification email per accepted request, so an unthrottled script is an
- * email-amplification + Resend-quota abuse vector. Add a per-IP throttle
- * (API Gateway route throttle) or a Turnstile/CAPTCHA challenge on the forms.
- * Bounded input (maxLength below) and the honeypot are only a first line.
+ * ⚠ FOLLOW-UP before the forms / App Store CTA are publicly linked: ALL THREE
+ * public endpoints here (`/leads/waitlist`, `/leads/coach`, `/store-click`) have
+ * NO rate limiting beyond the honeypot (and `/store-click` has no honeypot — a
+ * click beacon can't carry one). Unthrottled they are abuse vectors:
+ *   - `/leads/coach` fires an internal notification email per accepted request
+ *     (email-amplification + Resend-quota abuse);
+ *   - `/store-click` writes an `analytics_events` row per request (table
+ *     inflation — the 7-day age-out only stamps, it doesn't delete) and, worse,
+ *     a script posting `{marketing_consent:true, fbp:…}` can forge `AppStoreClick`
+ *     conversions and pollute the very ad-optimisation signal this exists for.
+ * Add an AWS WAF rate-based rule (or a per-IP API-Gateway throttle) covering all
+ * three routes before the store CTA goes live. Bounded input (maxLength below)
+ * + the honeypot are only a first line. The store CTA is NOT live yet
+ * (`config.appStore.url` is null), so nothing drives `/store-click` publicly
+ * today — this gate activates when Brad flips the CTA on.
  */
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;

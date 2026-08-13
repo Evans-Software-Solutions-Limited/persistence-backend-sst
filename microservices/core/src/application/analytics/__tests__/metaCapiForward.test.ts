@@ -16,7 +16,7 @@ function pending(over: Partial<PendingMetaEvent>): PendingMetaEvent {
     marketingConsent: null,
     eventName: "lead_captured",
     occurredAt: new Date("2026-08-12T00:00:00.000Z"),
-    properties: { marketing_consent: true },
+    properties: { marketing_consent: true, fbp: "fb.1.1.default" },
     source: "web",
     eventId: "evt-1",
     ...over,

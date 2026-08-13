@@ -6,8 +6,9 @@ import {
 import { hashEmail, hashExternalId } from "../metaCapiClient";
 import type { PendingMetaEvent } from "../../repositories/analyticsEventRepository";
 
-// Default: a CONSENTED, anonymous, WEB-origin event — the shape that actually
-// forwards after the R2.7/R2.8 gates. Gate-specific tests override source/consent.
+// Default: a CONSENTED, anonymous, WEB-origin event WITH an identifier (`fbp`) —
+// the shape that actually forwards after the R2.7/R2.8 gates + the empty-
+// user_data guard. Gate-specific tests override source/consent/identifiers.
 function pending(over: Partial<PendingMetaEvent>): PendingMetaEvent {
   return {
     id: "row-1",
@@ -16,7 +17,7 @@ function pending(over: Partial<PendingMetaEvent>): PendingMetaEvent {
     marketingConsent: null,
     eventName: "lead_captured",
     occurredAt: new Date("2026-08-12T00:00:00.000Z"),
-    properties: { marketing_consent: true },
+    properties: { marketing_consent: true, fbp: "fb.1.1.default" },
     source: "web",
     eventId: "evt-1",
     ...over,
@@ -55,7 +56,7 @@ describe("mapPendingToMetaEvents — consent gate, fail closed (R2.7)", () => {
   it("anonymous row forwards ONLY when properties.marketing_consent === true", () => {
     expect(
       mapPendingToMetaEvents(
-        pending({ properties: { marketing_consent: true } }),
+        pending({ properties: { marketing_consent: true, fbp: "fb.1.1.z" } }),
       ).length,
     ).toBeGreaterThan(0);
     expect(
@@ -136,7 +137,10 @@ describe("mapPendingToMetaEvents — event mapping", () => {
 
   it("renewal→Purchase, trial_started→StartTrial, registration→CompleteRegistration", () => {
     const web = (name: string) =>
-      pending({ eventName: name, properties: { marketing_consent: true } });
+      pending({
+        eventName: name,
+        properties: { marketing_consent: true, fbp: "fb.1.1.z" },
+      });
     expect(
       mapPendingToMetaEvents(web("renewal")).map((e) => e.event_name),
     ).toEqual(["Purchase"]);
@@ -153,6 +157,17 @@ describe("mapPendingToMetaEvents — event mapping", () => {
   it("returns [] for an unmapped event name", () => {
     expect(
       mapPendingToMetaEvents(pending({ eventName: "cancellation" })),
+    ).toEqual([]);
+  });
+
+  it("skips a consented anonymous row with NO identifier (no em/external_id/fbc/fbp) — Meta would reject it and poison the batch", () => {
+    expect(
+      mapPendingToMetaEvents(
+        pending({
+          eventName: "store_click",
+          properties: { marketing_consent: true }, // consented but no fbc/fbp
+        }),
+      ),
     ).toEqual([]);
   });
 
