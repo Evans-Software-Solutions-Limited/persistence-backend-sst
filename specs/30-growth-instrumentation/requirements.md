@@ -87,6 +87,8 @@ no client-side emitter, no new binary this cycle.
 - **R3.1** Meta Pixel loads on the marketing site (`packages/web`). The CSP in
   `infra/web.ts` is extended (`script-src`/`connect-src`/`img-src`) for
   `connect.facebook.net` + `www.facebook.com` — the documented one-line seam.
+  **Gated by R3.5:** the pixel must not initialise until the visitor has given
+  explicit opt-in consent.
 - **R3.2** The waitlist + coach forms capture `fbclid` (→`fbc`) and the `_fbp`
   cookie and forward them to `/leads/*`; the two endpoints accept them as
   bounded, optional fields and forward a CAPI `Lead` deduped with the browser
@@ -97,6 +99,23 @@ no client-side emitter, no new binary this cycle.
 - **R3.4** Per-campaign landing routes (e.g. `/uon`, `/flyer`, `/qr/...`) whose
   outbound store links carry ASC campaign tokens (`ct`/`pt`) and Play UTM
   params, giving per-asset install attribution via store analytics (no SDK).
+- **R3.5** **Consent gate (PECR reg 6 / UK-GDPR).** The Meta Pixel MUST NOT
+  initialise (inject `fbevents.js`, call `fbq('init')`, or set `_fbp`/`_fbc`)
+  until the visitor gives explicit **opt-in** consent. Default is "no consent"
+  (no pre-ticked boxes, no consent-by-continuing). Consent is captured by a
+  banner where **Reject is as easy as Accept** (equal prominence, one click),
+  persists across page views, and is **withdrawable**; withdrawal stops future
+  pixel loads/events and clears `_fbp`/`_fbc`. Not geo-gated — opt-in for every
+  visitor. The server-side CAPI path is deliberately NOT gated here (separate
+  lawful basis; Brad decision). Turnstile and the theme preference are
+  strictly-necessary / user-initiated and are NOT gated.
+- **R3.6** **Policy accuracy (UK-GDPR Art 5(1)(a)).** The `/privacy` cookies
+  section MUST describe actual behaviour — name Meta as the third party, state
+  that its advertising cookie is set only after consent, and give the withdrawal
+  route. The web and in-app privacy copies stay in sync per the `Privacy.tsx`
+  header rule, except the cookies section, which is web-only (an in-app screen
+  sets no website cookies). Do not claim a mechanism the build does not run
+  (e.g. Turnstile is dormant unless its site key is set).
 
 ## Workstream 4 — Subscriptions: confirm backend-only levers
 
