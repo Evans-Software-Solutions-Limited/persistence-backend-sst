@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { resetRateLimits } from "./rateLimit";
 
 const resendMocks = {
   addContactToAudience: vi.fn(),
@@ -29,21 +30,53 @@ vi.mock("../analytics/emitEvent", () => ({
   emitEvent: (...args: unknown[]) => emitEventMock(...args),
 }));
 
-async function post(path: string, body: Record<string, unknown>) {
+async function post(path: string, body: Record<string, unknown>, ip?: string) {
   const { leadsRoutes } = await import("./leadsRoutes");
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+  };
+  // Distinct IPs land in distinct rate-limit buckets; omit for the common case
+  // (shares the "unknown" bucket, reset before every test).
+  if (ip) headers["x-forwarded-for"] = ip;
   return leadsRoutes.handle(
     new Request(`http://localhost${path}`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers,
       body: JSON.stringify(body),
     }),
   );
 }
 
+/** POST a raw text/plain body — the production `/store-click` beacon shape. */
+async function postText(path: string, raw: string) {
+  const { leadsRoutes } = await import("./leadsRoutes");
+  return leadsRoutes.handle(
+    new Request(`http://localhost${path}`, {
+      method: "POST",
+      headers: { "content-type": "text/plain" },
+      body: raw,
+    }),
+  );
+}
+
+/** A CORS preflight for `path`. */
+async function preflight(path: string) {
+  const { leadsRoutes } = await import("./leadsRoutes");
+  return leadsRoutes.handle(
+    new Request(`http://localhost${path}`, {
+      method: "OPTIONS",
+      headers: { origin: "https://persistence.example.com" },
+    }),
+  );
+}
+
 // Default the challenge to "off" (skipped) so the pre-existing suites are
-// unaffected; the WS3 suite below flips it per-test.
+// unaffected; the WS3 suite below flips it per-test. Reset the in-memory rate
+// limiter too, so the per-IP windows never leak a count from one test into the
+// next (the whole file otherwise shares the "unknown" bucket).
 beforeEach(() => {
   turnstileOutcome = "skipped";
+  resetRateLimits();
 });
 
 describe("POST /leads/waitlist", () => {
@@ -334,5 +367,167 @@ describe("POST /store-click (spec-30 R3.8)", () => {
       eventId: "evt-store-2",
       properties: { marketing_consent: false },
     });
+  });
+
+  it("accepts the production text/plain beacon body and parses it as JSON", async () => {
+    const res = await postText(
+      "/store-click",
+      JSON.stringify({
+        event_id: "evt-beacon-1",
+        fbp: "fb.1.1.beacon",
+        marketing_consent: true,
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(emitEventMock).toHaveBeenCalledWith({
+      name: "store_click",
+      source: "web",
+      eventId: "evt-beacon-1",
+      properties: { marketing_consent: true, fbp: "fb.1.1.beacon" },
+    });
+  });
+
+  it("still emits (consent false) when the beacon body is unparseable — fail-safe", async () => {
+    const res = await postText("/store-click", "not json at all");
+    expect(res.status).toBe(200);
+    expect(emitEventMock).toHaveBeenCalledWith({
+      name: "store_click",
+      source: "web",
+      eventId: undefined,
+      properties: { marketing_consent: false },
+    });
+  });
+
+  it("drops an oversized beacon body but still emits the bare conversion", async () => {
+    const res = await postText(
+      "/store-click",
+      JSON.stringify({ event_id: "x", fbp: "y".repeat(5000) }),
+    );
+    expect(res.status).toBe(200);
+    // >4096 chars → parseBeaconBody returns {} → nothing forwarded but the
+    // conversion still counts.
+    expect(emitEventMock).toHaveBeenCalledWith({
+      name: "store_click",
+      source: "web",
+      eventId: undefined,
+      properties: { marketing_consent: false },
+    });
+  });
+});
+
+describe("per-IP origin-backstop rate limit (spec-30 R3.3)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resendMocks.addContactToAudience.mockResolvedValue(undefined);
+  });
+
+  it("429s the 11th waitlist post from one IP within the window, keeping the first 10", async () => {
+    const ip = "203.0.113.7";
+    for (let i = 0; i < 10; i++) {
+      const res = await post("/leads/waitlist", { email: "a@example.com" }, ip);
+      expect(res.status).toBe(200);
+    }
+    const res = await post("/leads/waitlist", { email: "a@example.com" }, ip);
+    expect(res.status).toBe(429);
+    expect(await res.json()).toEqual({ ok: false, error: "rate_limited" });
+  });
+
+  it("shares one leads budget across /leads/waitlist + /leads/coach per IP", async () => {
+    const ip = "203.0.113.8";
+    // 10 waitlist posts exhaust the shared 'leads' bucket...
+    for (let i = 0; i < 10; i++) {
+      await post("/leads/waitlist", { email: "a@example.com" }, ip);
+    }
+    // ...so the very next coach post from the same IP is throttled.
+    const res = await post(
+      "/leads/coach",
+      { email: "coach@example.com", name: "Grace Hopper" },
+      ip,
+    );
+    expect(res.status).toBe(429);
+    expect(resendMocks.addContactToAudience).toHaveBeenCalledTimes(10);
+  });
+
+  it("rate-limits BEFORE any work — no Resend call, no emit on the throttled request", async () => {
+    const ip = "203.0.113.9";
+    for (let i = 0; i < 10; i++) {
+      await post("/leads/waitlist", { email: "a@example.com" }, ip);
+    }
+    vi.clearAllMocks();
+    const res = await post("/leads/waitlist", { email: "a@example.com" }, ip);
+    expect(res.status).toBe(429);
+    expect(resendMocks.addContactToAudience).not.toHaveBeenCalled();
+    expect(emitEventMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps store-click on its own, higher budget — 60 pass, the 61st 429s", async () => {
+    const ip = "203.0.113.10";
+    for (let i = 0; i < 60; i++) {
+      const res = await post("/store-click", { event_id: `e${i}` }, ip);
+      expect(res.status).toBe(200);
+    }
+    const res = await post("/store-click", { event_id: "e60" }, ip);
+    expect(res.status).toBe(429);
+    expect(await res.json()).toEqual({ ok: false, error: "rate_limited" });
+  });
+
+  it("isolates buckets by IP — a second IP is unaffected by the first's exhaustion", async () => {
+    const hot = "203.0.113.11";
+    for (let i = 0; i < 10; i++) {
+      await post("/leads/waitlist", { email: "a@example.com" }, hot);
+    }
+    expect(
+      (await post("/leads/waitlist", { email: "a@example.com" }, hot)).status,
+    ).toBe(429);
+    const fresh = await post(
+      "/leads/waitlist",
+      { email: "a@example.com" },
+      "198.51.100.2",
+    );
+    expect(fresh.status).toBe(200);
+  });
+});
+
+describe("CORS (browser-facing marketing routes)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resendMocks.addContactToAudience.mockResolvedValue(undefined);
+  });
+
+  it("answers the waitlist preflight with 204 + permissive CORS headers", async () => {
+    const res = await preflight("/leads/waitlist");
+    expect(res.status).toBe(204);
+    expect(res.headers.get("access-control-allow-origin")).toBe("*");
+    expect(res.headers.get("access-control-allow-methods")).toContain("POST");
+    expect(res.headers.get("access-control-allow-headers")).toContain(
+      "content-type",
+    );
+    // A preflight must never touch Resend/emit.
+    expect(resendMocks.addContactToAudience).not.toHaveBeenCalled();
+    expect(emitEventMock).not.toHaveBeenCalled();
+  });
+
+  it("answers the coach + store-click preflights with 204 + ACAO", async () => {
+    for (const path of ["/leads/coach", "/store-click"]) {
+      const res = await preflight(path);
+      expect(res.status).toBe(204);
+      expect(res.headers.get("access-control-allow-origin")).toBe("*");
+    }
+  });
+
+  it("stamps CORS on the actual POST response so the browser can read it", async () => {
+    const res = await post("/leads/waitlist", { email: "a@example.com" });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("access-control-allow-origin")).toBe("*");
+  });
+
+  it("stamps CORS even on the 429 response (browser needs it to read the error)", async () => {
+    const ip = "203.0.113.55";
+    for (let i = 0; i < 10; i++) {
+      await post("/leads/waitlist", { email: "a@example.com" }, ip);
+    }
+    const res = await post("/leads/waitlist", { email: "a@example.com" }, ip);
+    expect(res.status).toBe(429);
+    expect(res.headers.get("access-control-allow-origin")).toBe("*");
   });
 });

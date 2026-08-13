@@ -42,6 +42,9 @@ describe("reportStoreClick", () => {
     expect(typeof url).toBe("string");
     expect(url).toMatch(/\/store-click$/);
     expect(blob).toBeInstanceOf(Blob);
+    // Must be a CORS-simple content-type or sendBeacon won't deliver it
+    // cross-origin (it can't preflight an application/json body).
+    expect((blob as Blob).type).toBe("text/plain");
   });
 
   it("includes marketing_consent: false when consent is unset", async () => {

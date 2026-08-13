@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
 import { getFbc, getFbp, newEventId, trackLead } from "../lib/metaPixel";
 import { getConsent } from "@/lib/consent";
+import { marketingApiBase } from "@/lib/marketingApiBase";
 
 /**
  * Lightweight lead-capture submit hook for the marketing forms (waitlist +
@@ -28,8 +29,6 @@ import { getConsent } from "@/lib/consent";
  */
 export type LeadStatus = "idle" | "submitting" | "success" | "error";
 
-const API_BASE = (import.meta.env.VITE_CORE_API_URL ?? "").replace(/\/+$/, "");
-
 // Pragmatic address check — the server validates authoritatively; this only
 // stops an obviously-empty/garbled submit before the round-trip.
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -55,7 +54,7 @@ export function useLeadSubmit(path: "waitlist" | "coach") {
         marketing_consent: getConsent() === "granted",
       };
       try {
-        const res = await fetch(`${API_BASE}/leads/${path}`, {
+        const res = await fetch(`${marketingApiBase()}/leads/${path}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),

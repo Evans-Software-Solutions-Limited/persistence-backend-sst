@@ -1,7 +1,14 @@
 import { coreAPI } from "./api";
+import { marketingEdge } from "./web-edge";
 import { webDomain, hostedZoneId } from "./domains";
 
 const region = aws.getRegionOutput().name;
+
+// The WAF-fronted marketing edge the website routes its anonymous /leads +
+// /store-click POSTs through (spec-30 R3.3; see infra/web-edge.ts). `undefined`
+// on dev stages, where the website falls back to the direct Core API URL — so
+// this is `""` there, both for the CSP token and the build var below.
+const marketingEdgeOrigin = marketingEdge ? marketingEdge.url : "";
 
 // Security response headers for the static site. A CloudFront
 // ResponseHeadersPolicy is the AWS-native way to attach these — no per-request
@@ -42,7 +49,10 @@ const securityHeaders = new aws.cloudfront.ResponseHeadersPolicy(
         //    allows the challenge iframe, both from challenges.cloudflare.com.
         //    (There was no `frame-src` before; without it the iframe would fall
         //    back to `default-src 'self'` and be blocked.)
-        contentSecurityPolicy: $interpolate`default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; frame-src https://challenges.cloudflare.com; script-src 'self' https://connect.facebook.net https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self'; connect-src 'self' ${coreAPI.url} https://itunes.apple.com https://www.facebook.com https://connect.facebook.net https://challenges.cloudflare.com; form-action 'self'; upgrade-insecure-requests`,
+        // `${marketingEdgeOrigin}` adds the marketing-edge CloudFront origin to
+        // connect-src on named stages (the website POSTs /leads + /store-click
+        // there); it is `""` on dev, leaving connect-src as it was.
+        contentSecurityPolicy: $interpolate`default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; frame-src https://challenges.cloudflare.com; script-src 'self' https://connect.facebook.net https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self'; connect-src 'self' ${coreAPI.url} ${marketingEdgeOrigin} https://itunes.apple.com https://www.facebook.com https://connect.facebook.net https://challenges.cloudflare.com; form-action 'self'; upgrade-insecure-requests`,
       },
     },
     customHeadersConfig: {
@@ -115,5 +125,10 @@ export const frontend = new sst.aws.StaticSite("web", {
     // Meta CAPI token / Turnstile SECRET, which live in SST Secrets).
     VITE_META_PIXEL_ID: process.env.VITE_META_PIXEL_ID ?? "",
     VITE_TURNSTILE_SITE_KEY: process.env.VITE_TURNSTILE_SITE_KEY ?? "",
+    // The WAF-fronted marketing edge (spec-30 R3.3) the anonymous /leads +
+    // /store-click POSTs go through. Empty on dev stages → the website's
+    // `API_BASE` falls back to VITE_CORE_API_URL (today's direct call). Not
+    // sensitive — it's a public CloudFront hostname.
+    VITE_MARKETING_EDGE_URL: marketingEdgeOrigin,
   },
 });

@@ -1,7 +1,6 @@
 import { getConsent } from "./consent";
+import { marketingApiBase } from "./marketingApiBase";
 import { getFbc, getFbp, newEventId, trackAppStoreClick } from "./metaPixel";
-
-const API_BASE = (import.meta.env.VITE_CORE_API_URL ?? "").replace(/\/+$/, "");
 
 /**
  * Outbound App Store click reporter (spec-30 R3.8). Fires the browser pixel
@@ -16,6 +15,15 @@ const API_BASE = (import.meta.env.VITE_CORE_API_URL ?? "").replace(/\/+$/, "");
  * it's designed to survive page unload, with a `keepalive: true` fetch as
  * the fallback. Any send failure is swallowed in a try/catch — a broken
  * beacon must never block the outbound navigation.
+ *
+ * ⚠ The body is sent as `text/plain`, NOT `application/json`. This endpoint is
+ * cross-origin (the site's origin ≠ the API / marketing-edge host), and only a
+ * CORS "simple request" (text/plain among the safelisted content-types) can be
+ * delivered by `sendBeacon`, which cannot perform the preflight an
+ * `application/json` body would require. A simple request is still delivered
+ * cross-origin regardless of CORS — the browser only blocks *reading* the
+ * response, which this fire-and-forget beacon never does. The server parses the
+ * text as JSON (see `parseBeaconBody` in leadsRoutes.ts).
  */
 export function reportStoreClick(): string {
   const eventId = newEventId();
@@ -29,13 +37,15 @@ export function reportStoreClick(): string {
   });
 
   try {
-    const url = `${API_BASE}/store-click`;
+    const url = `${marketingApiBase()}/store-click`;
     if (typeof navigator !== "undefined" && navigator.sendBeacon) {
-      navigator.sendBeacon(url, new Blob([body], { type: "application/json" }));
+      navigator.sendBeacon(url, new Blob([body], { type: "text/plain" }));
     } else {
       fetch(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        // text/plain keeps this a simple request too — no preflight, delivered
+        // cross-origin on unload.
+        headers: { "Content-Type": "text/plain" },
         body,
         keepalive: true,
       }).catch(() => {
