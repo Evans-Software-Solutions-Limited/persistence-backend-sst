@@ -81,6 +81,19 @@ no client-side emitter, no new binary this cycle.
   be added later without touching the event stream or call-sites.
 - **R2.6** RC webhook behaviour is provably unchanged when Meta config is absent
   or Graph is down (best-effort, isolated try/catch).
+- **R2.7** **CAPI consent gate — fail closed.** The sink MUST NOT forward an
+  event whose subject has not affirmatively given marketing consent. A
+  user-attributed row is gated on `profiles.marketing_consent === true`; an
+  anonymous row (leads, store clicks) on `properties.marketing_consent === true`.
+  `NULL` / absent / `false` = no forward (no recorded decision is a refusal). Do
+  NOT strip `em`/`external_id` and send the rest — an unmatched event still tells
+  Meta a conversion happened; skip the row entirely.
+- **R2.8** **Web-only sink.** The sink forwards `source: 'web'` events ONLY.
+  App/server-origin events are retained in `analytics_events` for funnel maths
+  but are never forwarded, because Meta's app-event requirements (`extinfo`,
+  `advertiser_tracking_enabled`) cannot be met without an in-app SDK (HC-1), so
+  app events are unattributable and carry only a compliance cost. `action_source`
+  is therefore always `website`.
 
 ## Workstream 3 — Web pixel + click-capture + campaign attribution
 
@@ -106,9 +119,9 @@ no client-side emitter, no new binary this cycle.
   banner where **Reject is as easy as Accept** (equal prominence, one click),
   persists across page views, and is **withdrawable**; withdrawal stops future
   pixel loads/events and clears `_fbp`/`_fbc`. Not geo-gated — opt-in for every
-  visitor. The server-side CAPI path is deliberately NOT gated here (separate
-  lawful basis; Brad decision). Turnstile and the theme preference are
-  strictly-necessary / user-initiated and are NOT gated.
+  visitor. The server-side CAPI path is **also** consent-gated — see R2.7
+  (superseding the earlier "not gated" decision). Turnstile and the theme
+  preference are strictly-necessary / user-initiated and are NOT gated.
 - **R3.6** **Policy accuracy (UK-GDPR Art 5(1)(a)).** The `/privacy` cookies
   section MUST describe actual behaviour — name Meta as the third party, state
   that its advertising cookie is set only after consent, and give the withdrawal
@@ -116,6 +129,20 @@ no client-side emitter, no new binary this cycle.
   header rule, except the cookies section, which is web-only (an in-app screen
   sets no website cookies). Do not claim a mechanism the build does not run
   (e.g. Turnstile is dormant unless its site key is set).
+- **R3.7** **Advertising disclosure (UK-GDPR Art 13(1)(e) recipients).**
+  `/privacy` MUST disclose Meta (Meta Platforms Ireland) as a recipient of
+  server-side conversion data — sent only with consent, never sold, never
+  including training/nutrition/health data — and MUST state that app activity is
+  never sent to Meta. NO blanket "not used for advertising" claim may appear
+  anywhere, **including the SEO `description` metadata**. These claims DO have
+  in-app counterparts (unlike the cookies section), so the web + mobile copies
+  change together.
+- **R3.8** **Store-click conversion.** An outbound App Store click on the
+  marketing site emits a `store_click` conversion, deduped browser↔server on a
+  shared `event_id` (the R3.2 pattern), forwarded to Meta as a custom
+  `AppStoreClick` event. This is the optimisable ads signal in the absence of an
+  install SDK. The click navigates away, so the server call uses
+  `navigator.sendBeacon` / `keepalive` and the pixel fires before navigation.
 
 ## Workstream 4 — Subscriptions: confirm backend-only levers
 
