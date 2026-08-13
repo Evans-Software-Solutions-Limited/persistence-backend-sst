@@ -1,5 +1,6 @@
 import { useState, useCallback } from "react";
 import { getFbc, getFbp, newEventId, trackLead } from "../lib/metaPixel";
+import { getConsent } from "@/lib/consent";
 
 /**
  * Lightweight lead-capture submit hook for the marketing forms (waitlist +
@@ -19,6 +20,11 @@ import { getFbc, getFbp, newEventId, trackLead } from "../lib/metaPixel";
  * `event_id` so it dedups against the server-side CAPI `Lead` the endpoint
  * emits (R3.2). `turnstileToken`, when the caller includes it in `body`
  * (see `LeadForms.tsx`), passes straight through like any other field.
+ *
+ * spec-30 R2.7 consent carry: every submit also carries the visitor's current
+ * marketing-consent choice (`getConsent() === "granted"`) so the server can
+ * consent-gate its own Meta CAPI forward for this lead the same way the
+ * browser pixel is gated.
  */
 export type LeadStatus = "idle" | "submitting" | "success" | "error";
 
@@ -41,11 +47,12 @@ export function useLeadSubmit(path: "waitlist" | "coach") {
       const fbc = getFbc();
       const fbp = getFbp();
       const eventId = newEventId();
-      const payload: Record<string, string> = {
+      const payload: Record<string, string | boolean> = {
         ...body,
         ...(fbc ? { fbc } : {}),
         ...(fbp ? { fbp } : {}),
         event_id: eventId,
+        marketing_consent: getConsent() === "granted",
       };
       try {
         const res = await fetch(`${API_BASE}/leads/${path}`, {

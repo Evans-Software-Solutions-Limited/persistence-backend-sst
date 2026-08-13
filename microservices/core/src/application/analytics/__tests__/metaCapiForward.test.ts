@@ -5,15 +5,19 @@ import {
 } from "../metaCapiForward";
 import type { PendingMetaEvent } from "../../repositories/analyticsEventRepository";
 
+// Default: a CONSENTED, anonymous, WEB-origin row — the shape that forwards
+// after the R2.7/R2.8 gates in `mapPendingToMetaEvents` (which this drainer runs
+// for real).
 function pending(over: Partial<PendingMetaEvent>): PendingMetaEvent {
   return {
     id: "row-1",
-    userId: "user-1",
-    email: "a@b.com",
-    eventName: "subscription_purchased",
+    userId: null,
+    email: null,
+    marketingConsent: null,
+    eventName: "lead_captured",
     occurredAt: new Date("2026-08-12T00:00:00.000Z"),
-    properties: { value: 9.99, currency: "GBP" },
-    source: "app",
+    properties: { marketing_consent: true },
+    source: "web",
     eventId: "evt-1",
     ...over,
   };
@@ -65,8 +69,8 @@ describe("forwardPendingToMeta", () => {
 
   it("sends the mapped fresh events and marks the whole batch forwarded", async () => {
     const rows = [
-      pending({ id: "r1" }),
-      pending({ id: "r2", eventName: "renewal" }),
+      pending({ id: "r1" }), // lead_captured → Lead (1)
+      pending({ id: "r2", eventName: "store_click" }), // → AppStoreClick (1)
     ];
     const send = vi.fn(async () => true);
     const markForwarded = vi.fn(async () => {});
@@ -78,16 +82,38 @@ describe("forwardPendingToMeta", () => {
       configured: () => true,
       now: NOW,
     });
-    // r1 → Purchase+Subscribe (2), r2 → Purchase (1) = 3 Meta events
     expect(summary).toEqual({
       configured: true,
       pending: 2,
       forwarded: 2,
       skipped: 1,
-      metaEvents: 3,
+      metaEvents: 2,
     });
     expect(send).toHaveBeenCalledTimes(1);
     expect(markForwarded).toHaveBeenCalledWith(["r1", "r2"]);
+  });
+
+  it("an all-skipped batch (app-origin / no consent) sends nothing but STILL stamps forwarded — no re-scan loop", async () => {
+    // These rows all map to [] (app-origin + unconsented), so nothing is sent —
+    // but they must still be marked forwarded or the drainer re-pulls them every
+    // drain forever.
+    const rows = [
+      pending({ id: "a1", source: "app", eventName: "subscription_purchased" }),
+      pending({ id: "a2", properties: { marketing_consent: false } }),
+    ];
+    const send = vi.fn(async () => true);
+    const markForwarded = vi.fn(async () => {});
+    const summary = await forwardPendingToMeta({
+      markExpired: vi.fn(async () => 0),
+      listPending: vi.fn(async () => rows),
+      markForwarded,
+      send,
+      configured: () => true,
+      now: NOW,
+    });
+    expect(summary).toMatchObject({ pending: 2, forwarded: 2, metaEvents: 0 });
+    expect(send).not.toHaveBeenCalled();
+    expect(markForwarded).toHaveBeenCalledWith(["a1", "a2"]);
   });
 
   it("marks fresh rows nothing when send throws (they retry; expired stay retired)", async () => {
@@ -105,9 +131,7 @@ describe("forwardPendingToMeta", () => {
         now: NOW,
       }),
     ).rejects.toThrow("graph 500");
-    // expired retired BEFORE the send, so they don't accumulate...
     expect(markExpired).toHaveBeenCalledTimes(1);
-    // ...but the fresh batch is left for the next drain.
     expect(markForwarded).not.toHaveBeenCalled();
   });
 

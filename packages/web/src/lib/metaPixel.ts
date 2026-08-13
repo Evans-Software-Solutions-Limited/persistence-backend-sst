@@ -124,6 +124,17 @@ export function trackLead(eventId: string): void {
   window.fbq!("track", "Lead", {}, { eventID: eventId });
 }
 
+/**
+ * Fire an `AppStoreClick` custom event with an explicit `eventID` so Meta
+ * dedups it against the server-side CAPI `AppStoreClick` sharing the same id
+ * (spec-30 R3.8, see `lib/storeClick.ts`). No-op without consent or when the
+ * pixel isn't loaded.
+ */
+export function trackAppStoreClick(eventId: string): void {
+  if (getConsent() !== "granted" || !isLoaded()) return;
+  window.fbq!("trackCustom", "AppStoreClick", {}, { eventID: eventId });
+}
+
 function readCookie(name: string): string | null {
   if (typeof document === "undefined") return null;
   const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`));

@@ -2,6 +2,7 @@ import {
   initMetaPixel,
   trackPageView,
   trackLead,
+  trackAppStoreClick,
   getFbc,
   getFbp,
   newEventId,
@@ -127,6 +128,31 @@ describe("metaPixel", () => {
       trackLead("evt_x");
 
       expect(calls).toHaveLength(0);
+    });
+  });
+
+  describe("trackAppStoreClick", () => {
+    it("no-ops without consent", () => {
+      vi.stubEnv("VITE_META_PIXEL_ID", "123456789");
+      setConsent("denied");
+      expect(() => trackAppStoreClick("evt_store")).not.toThrow();
+      expect(window.fbq).toBeUndefined();
+    });
+
+    it("fires fbq('trackCustom', 'AppStoreClick', {}, { eventID }) when consent is granted and the pixel is loaded", () => {
+      vi.stubEnv("VITE_META_PIXEL_ID", "123456789");
+      initMetaPixel();
+      const calls: unknown[][] = [];
+      window.fbq = Object.assign(
+        (...args: unknown[]) => calls.push(args),
+        window.fbq,
+      );
+
+      trackAppStoreClick("evt_store");
+
+      expect(calls).toEqual([
+        ["trackCustom", "AppStoreClick", {}, { eventID: "evt_store" }],
+      ]);
     });
   });
 

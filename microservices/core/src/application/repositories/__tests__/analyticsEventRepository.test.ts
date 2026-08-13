@@ -72,6 +72,7 @@ describe("AnalyticsEventRepository.listPendingMetaForward", () => {
         id: "r1",
         userId: "u1",
         email: "a@b.com",
+        marketingConsent: true,
         eventName: "renewal",
         occurredAt: new Date("2026-08-12T00:00:00.000Z"),
         properties: { value: 1 },
@@ -82,6 +83,7 @@ describe("AnalyticsEventRepository.listPendingMetaForward", () => {
         id: "r2",
         userId: null,
         email: null,
+        marketingConsent: null,
         eventName: "lead_captured",
         occurredAt: new Date("2026-08-12T00:00:00.000Z"),
         properties: null,
@@ -105,8 +107,17 @@ describe("AnalyticsEventRepository.listPendingMetaForward", () => {
       50,
     );
     expect(limit).toHaveBeenCalledWith(50);
-    expect(out[0]).toMatchObject({ id: "r1", email: "a@b.com" });
-    expect(out[1]).toMatchObject({ id: "r2", email: null, properties: {} });
+    expect(out[0]).toMatchObject({
+      id: "r1",
+      email: "a@b.com",
+      marketingConsent: true,
+    });
+    expect(out[1]).toMatchObject({
+      id: "r2",
+      email: null,
+      marketingConsent: null,
+      properties: {},
+    });
   });
 });
 

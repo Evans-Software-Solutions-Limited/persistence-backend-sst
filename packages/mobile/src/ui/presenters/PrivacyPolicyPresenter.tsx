@@ -169,7 +169,9 @@ export function PrivacyPolicyPresenter({
             and displaying your workouts, nutrition and progress; syncing your
             data across your devices; and, where applicable, sharing it with a
             coach or trainer you have explicitly connected with. We do not sell
-            your personal data, and we do not use it for advertising.
+            your personal data, and we never use your workouts, nutrition,
+            progress or health data for advertising — none of it is sent to Meta
+            or any advertising network.
           </Text>
         </View>
 

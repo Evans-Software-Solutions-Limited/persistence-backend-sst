@@ -229,12 +229,13 @@ describe("growth instrumentation (spec-30 WS1/WS3)", () => {
     resendMocks.addContactToAudience.mockResolvedValue(undefined);
   });
 
-  it("emits lead_captured (athletes) with forwarded fbc/fbp/event_id", async () => {
+  it("emits lead_captured (athletes) with forwarded fbc/fbp/event_id + consent true", async () => {
     const res = await post("/leads/waitlist", {
       email: "athlete@example.com",
       fbc: "fb.1.1.abc",
       fbp: "fb.1.1.xyz",
       event_id: "evt-web-1",
+      marketing_consent: true,
     });
     expect(res.status).toBe(200);
     expect(emitEventMock).toHaveBeenCalledWith({
@@ -243,13 +244,14 @@ describe("growth instrumentation (spec-30 WS1/WS3)", () => {
       eventId: "evt-web-1",
       properties: {
         audience: "athletes",
+        marketing_consent: true,
         fbc: "fb.1.1.abc",
         fbp: "fb.1.1.xyz",
       },
     });
   });
 
-  it("emits lead_captured (coaches) with only the audience when no click ids", async () => {
+  it("emits lead_captured (coaches) defaulting consent to FALSE when not sent (fail closed)", async () => {
     const res = await post("/leads/coach", {
       email: "coach@example.com",
       name: "Grace Hopper",
@@ -259,7 +261,7 @@ describe("growth instrumentation (spec-30 WS1/WS3)", () => {
       name: "lead_captured",
       source: "web",
       eventId: undefined,
-      properties: { audience: "coaches" },
+      properties: { audience: "coaches", marketing_consent: false },
     });
   });
 
@@ -296,5 +298,41 @@ describe("growth instrumentation (spec-30 WS1/WS3)", () => {
     expect(res.status).toBe(200);
     expect(resendMocks.addContactToAudience).toHaveBeenCalled();
     expect(emitEventMock).toHaveBeenCalled();
+  });
+});
+
+describe("POST /store-click (spec-30 R3.8)", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("emits a store_click conversion carrying fbc/fbp/event_id + consent", async () => {
+    const res = await post("/store-click", {
+      fbc: "fb.1.1.abc",
+      fbp: "fb.1.1.xyz",
+      event_id: "evt-store-1",
+      marketing_consent: true,
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+    expect(emitEventMock).toHaveBeenCalledWith({
+      name: "store_click",
+      source: "web",
+      eventId: "evt-store-1",
+      properties: {
+        marketing_consent: true,
+        fbc: "fb.1.1.abc",
+        fbp: "fb.1.1.xyz",
+      },
+    });
+  });
+
+  it("defaults consent to FALSE when the field is absent (fail closed)", async () => {
+    const res = await post("/store-click", { event_id: "evt-store-2" });
+    expect(res.status).toBe(200);
+    expect(emitEventMock).toHaveBeenCalledWith({
+      name: "store_click",
+      source: "web",
+      eventId: "evt-store-2",
+      properties: { marketing_consent: false },
+    });
   });
 });

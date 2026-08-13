@@ -33,6 +33,7 @@ describe("Privacy", () => {
       "Data retention",
       "Your rights",
       "Cookies and the Persistence website",
+      "Advertising and measurement",
       "Changes to this policy",
       "Contact",
     ]) {
@@ -213,7 +214,40 @@ describe("Privacy", () => {
     // NOT claiming the dormant Turnstile runs.
     expect(screen.getByText(/one advertising cookie from Meta/)).toBeTruthy();
     expect(screen.getByText(/nothing is stored until you choose/)).toBeTruthy();
-    expect(screen.getByText(/link in the footer of any page/)).toBeTruthy();
+    // Unique to the cookies section (the advertising section reuses the "footer"
+    // phrasing, so assert the cookie-specific withdrawal wording instead).
+    expect(
+      screen.getByText(/withdrawing consent\s+removes these cookies/),
+    ).toBeTruthy();
+  });
+
+  it("discloses Meta as a server-side recipient and drops the blanket advertising claim (R3.7)", () => {
+    renderPage(<Privacy />);
+    // The blanket "we don't use it for advertising" claims are gone — the CAPI
+    // makes them false.
+    expect(screen.queryByText(/we do not use it for advertising/)).toBeNull();
+    expect(
+      screen.queryByText(/do not sell them or use them for advertising/),
+    ).toBeNull();
+    // Replaced with an accurate, scoped disclosure: Meta named as a server-side
+    // recipient, hashed email, consent-based, and app activity never sent.
+    expect(
+      screen.getByText(
+        /our servers send Meta Platforms Ireland Limited a limited set of website events/,
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        /Your activity\s+inside the Persistence app is never sent to Meta/,
+      ),
+    ).toBeTruthy();
+    // The remaining scoped claim (health/app data not used for advertising) is
+    // fine and stays — assert it survives so we don't over-scrub.
+    expect(
+      screen.getByText(
+        /we never use your workouts, nutrition, progress or\s+health data for advertising/,
+      ),
+    ).toBeTruthy();
   });
 
   it("carries no trace of the superseded copy", () => {

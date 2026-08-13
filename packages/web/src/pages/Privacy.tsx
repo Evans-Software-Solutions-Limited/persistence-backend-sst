@@ -41,7 +41,7 @@ export function Privacy() {
   useSeo({
     title: "Privacy Policy — Persistence",
     description:
-      "How Persistence collects, uses and protects your data. We don't sell your personal data or use it for advertising.",
+      "How Persistence collects, uses and protects your data. We never sell your personal data, and your training, nutrition and health data is never used for advertising.",
     path: "/privacy",
   });
 
@@ -153,7 +153,9 @@ export function Privacy() {
           displaying your workouts, nutrition, and progress; syncing your data
           across your devices; and, where applicable, sharing it with a coach or
           trainer you have explicitly connected with. We do not sell your
-          personal data, and we do not use it for advertising.
+          personal data, and we never use your workouts, nutrition, progress or
+          health data for advertising &mdash; none of it is sent to Meta or any
+          advertising network.
         </p>
 
         <h2>AI features and what they do with your data</h2>
@@ -535,7 +537,10 @@ export function Privacy() {
           link in any email or by contacting us at the address below —
           withdrawing it does not affect anything we did beforehand. We keep
           these details only while they remain useful for this purpose, and we
-          do not sell them or use them for advertising.
+          never sell them. Where you have consented, a hashed version of your
+          email may be shared with Meta to measure our advertising &mdash; see
+          &ldquo;Advertising and measurement&rdquo; below &mdash; and you can
+          withdraw that consent at any time.
         </p>
 
         <h2>Cookies and the Persistence website</h2>
@@ -558,6 +563,23 @@ export function Privacy() {
           settings&rdquo; link in the footer of any page; withdrawing consent
           removes these cookies. Nothing about your training, food or health is
           ever shared with Meta.
+        </p>
+
+        <h2>Advertising and measurement</h2>
+        <p>
+          We measure whether our advertising brings people to Persistence. Where
+          you have given consent, our servers send Meta Platforms Ireland
+          Limited a limited set of website events &mdash; such as joining the
+          waitlist or tapping &ldquo;Get the app&rdquo; &mdash; including a
+          hashed (irreversible) version of your email address where you provided
+          one. This is used only to measure our own advertising, is never sold,
+          and never includes your training, nutrition or health data. Your
+          activity inside the Persistence app is never sent to Meta.
+        </p>
+        <p>
+          Our lawful basis for this measurement is your consent (UK GDPR Article
+          6(1)(a)). You can withdraw it at any time using the &ldquo;Cookie
+          settings&rdquo; link in the footer of any page.
         </p>
 
         <h2>Changes to this policy</h2>

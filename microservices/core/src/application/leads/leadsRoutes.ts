@@ -11,10 +11,10 @@ import type { AnalyticsEventInput } from "../analytics/events";
 import { verifyTurnstile } from "./turnstile";
 
 /**
- * Marketing lead capture — PUBLIC (no auth) endpoints backing the website's
- * waitlist + coach-enquiry forms. Grouped into ONE sub-app so it can be
- * mounted with a single `.use()`, mirroring `jobsRoutes` /
- * `trainersOnBehalfRoutes`.
+ * Marketing lead + conversion capture — PUBLIC (no auth) endpoints backing the
+ * website's waitlist + coach-enquiry forms and the outbound App Store-click
+ * conversion (spec-30 R3.8). Grouped into ONE sub-app so it can be mounted with
+ * a single `.use()`, mirroring `jobsRoutes` / `trainersOnBehalfRoutes`.
  *
  * Mounted inside `loadoutRoutes` (see ../loadoutRoutes.ts) rather than
  * directly on the api.ts root: the root `.use()` chain was already at TS's
@@ -59,22 +59,53 @@ function splitName(name: string | undefined): {
   return lastName !== undefined ? { firstName, lastName } : { firstName };
 }
 
+interface WebAttribution {
+  fbc?: string;
+  fbp?: string;
+  eventId?: string;
+  /**
+   * The visitor's marketing-consent choice, carried from the browser
+   * (`getConsent() === "granted"`). A boolean is NOT PII (HC-4), so it is safe
+   * to persist in `properties`; the CAPI drainer gates forwarding on it
+   * (spec-30 R2.7). Absent → false → fail closed.
+   */
+  marketingConsent?: boolean;
+}
+
 /**
- * Build the best-effort `lead_captured` event (spec-30 R1.4 / R3.2).
+ * Build the best-effort `lead_captured` event (spec-30 R1.4 / R3.2 / R2.7).
  *
- * `fbc`/`fbp` are Meta click identifiers and `event_id` is the pixel dedup key —
- * NOT PII (no email/name), so they are safe to persist in `properties` for the
- * CAPI drainer to forward and dedup the server `Lead` against the browser pixel.
+ * `fbc`/`fbp` are Meta click identifiers, `event_id` is the pixel dedup key, and
+ * `marketing_consent` is a boolean — none is PII, so all are safe to persist in
+ * `properties` for the CAPI drainer to forward, dedup, and consent-gate.
  */
 function leadCapturedEvent(
   audience: "athletes" | "coaches",
-  attribution: { fbc?: string; fbp?: string; eventId?: string },
+  attribution: WebAttribution,
 ): AnalyticsEventInput {
-  const properties: Record<string, unknown> = { audience };
+  const properties: Record<string, unknown> = {
+    audience,
+    marketing_consent: attribution.marketingConsent === true,
+  };
   if (attribution.fbc) properties.fbc = attribution.fbc;
   if (attribution.fbp) properties.fbp = attribution.fbp;
   return {
     name: "lead_captured",
+    source: "web",
+    eventId: attribution.eventId,
+    properties,
+  };
+}
+
+/** Build the best-effort `store_click` conversion event (spec-30 R3.8). */
+function storeClickEvent(attribution: WebAttribution): AnalyticsEventInput {
+  const properties: Record<string, unknown> = {
+    marketing_consent: attribution.marketingConsent === true,
+  };
+  if (attribution.fbc) properties.fbc = attribution.fbc;
+  if (attribution.fbp) properties.fbp = attribution.fbp;
+  return {
+    name: "store_click",
     source: "web",
     eventId: attribution.eventId,
     properties,
@@ -86,6 +117,9 @@ const attributionFields = {
   fbc: t.Optional(t.String({ maxLength: 255 })),
   fbp: t.Optional(t.String({ maxLength: 255 })),
   event_id: t.Optional(t.String({ maxLength: 100 })),
+  // Marketing consent (spec-30 R2.7) — a boolean, not PII. Default false server-
+  // side (fail closed): only an affirmative true lets the drainer forward.
+  marketing_consent: t.Optional(t.Boolean()),
   turnstileToken: t.Optional(t.String({ maxLength: 2048 })),
 };
 
@@ -98,7 +132,16 @@ export const leadsRoutes = new Elysia()
   .post(
     "/leads/waitlist",
     async (ctx) => {
-      const { email, name, hp, fbc, fbp, event_id, turnstileToken } = ctx.body;
+      const {
+        email,
+        name,
+        hp,
+        fbc,
+        fbp,
+        event_id,
+        marketing_consent,
+        turnstileToken,
+      } = ctx.body;
 
       if (isHoneypotTripped(hp)) {
         return { ok: true as const };
@@ -126,7 +169,12 @@ export const leadsRoutes = new Elysia()
         // swallows its own errors — HC-2). Deduped with the browser pixel via
         // the shared event_id (WS3).
         await emitEvent(
-          leadCapturedEvent("athletes", { fbc, fbp, eventId: event_id }),
+          leadCapturedEvent("athletes", {
+            fbc,
+            fbp,
+            eventId: event_id,
+            marketingConsent: marketing_consent,
+          }),
         );
         return { ok: true as const };
       } catch (err) {
@@ -169,6 +217,7 @@ export const leadsRoutes = new Elysia()
         fbc,
         fbp,
         event_id,
+        marketing_consent,
         turnstileToken,
       } = ctx.body;
 
@@ -213,7 +262,12 @@ export const leadsRoutes = new Elysia()
       // Best-effort funnel emit (never affects the 200/503; emitEvent swallows
       // its own errors — HC-2). Deduped with the browser pixel via event_id.
       await emitEvent(
-        leadCapturedEvent("coaches", { fbc, fbp, eventId: event_id }),
+        leadCapturedEvent("coaches", {
+          fbc,
+          fbp,
+          eventId: event_id,
+          marketingConsent: marketing_consent,
+        }),
       );
 
       // Internal notification — BEST-EFFORT. The contact is already captured
@@ -256,6 +310,38 @@ export const leadsRoutes = new Elysia()
       detail: {
         description:
           "Public — capture a coach enquiry (COACHES Resend audience) + best-effort ops notification.",
+        tags: ["Leads"],
+      },
+    },
+  )
+  .post(
+    "/store-click",
+    async (ctx) => {
+      const { fbc, fbp, event_id, marketing_consent } = ctx.body;
+      // Best-effort conversion emit (spec-30 R3.8). Public + anonymous, no email
+      // — so no honeypot / Turnstile (it is not an email-amplification vector).
+      // Deduped with the browser pixel's `AppStoreClick` via the shared
+      // event_id; the CAPI drainer consent-gates on `marketing_consent` (R2.7).
+      await emitEvent(
+        storeClickEvent({
+          fbc,
+          fbp,
+          eventId: event_id,
+          marketingConsent: marketing_consent,
+        }),
+      );
+      return { ok: true as const };
+    },
+    {
+      body: t.Object({
+        fbc: t.Optional(t.String({ maxLength: 255 })),
+        fbp: t.Optional(t.String({ maxLength: 255 })),
+        event_id: t.Optional(t.String({ maxLength: 100 })),
+        marketing_consent: t.Optional(t.Boolean()),
+      }),
+      detail: {
+        description:
+          "Public — record an outbound App Store click conversion (spec-30 R3.8).",
         tags: ["Leads"],
       },
     },

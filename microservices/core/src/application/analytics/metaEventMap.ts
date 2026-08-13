@@ -13,12 +13,17 @@ export type MetaStandardEventName =
   | "Subscribe"
   | "StartTrial"
   | "CompleteRegistration"
-  | "Lead";
+  | "Lead"
+  // Custom (not a Meta standard event) — the optimisable web install signal
+  // (spec-30 R3.8). Sent via `fbq('trackCustom', …)` on the browser side.
+  | "AppStoreClick";
 
 /**
- * The analytics `event_name`s that map to at least one Meta event — the filter
- * `listPendingMetaForward` uses so the drainer only pulls forwardable rows.
- * `cancellation`/`expiration` have no Meta standard event and are excluded.
+ * The analytics `event_name`s the drainer pulls (the `listPendingMetaForward`
+ * filter). Kept broad — the app-origin subscription/registration names stay so
+ * those rows are pulled and stamped forwarded rather than re-scanned — but
+ * `mapPendingToMetaEvents` then drops everything that isn't a consented,
+ * web-origin event (R2.7/R2.8). `cancellation`/`expiration` map to nothing.
  */
 export const META_FORWARDED_EVENT_NAMES = [
   "subscription_purchased",
@@ -26,6 +31,7 @@ export const META_FORWARDED_EVENT_NAMES = [
   "trial_started",
   "registration_completed",
   "lead_captured",
+  "store_click",
 ] as const;
 
 interface MetaEventSkeleton {
@@ -66,20 +72,44 @@ function skeletonsFor(
       return [{ eventName: "CompleteRegistration" }];
     case "lead_captured":
       return [{ eventName: "Lead" }];
+    case "store_click":
+      return [{ eventName: "AppStoreClick" }];
     default:
       return [];
   }
 }
 
 /**
+ * Does this row have affirmative marketing consent (spec-30 R2.7)? A
+ * user-attributed row reads `profiles.marketing_consent` (joined onto the row);
+ * an anonymous row (leads, store clicks) reads `properties.marketing_consent`.
+ * NULL / absent / false all mean "no". Fail closed.
+ */
+function hasConsent(pending: PendingMetaEvent): boolean {
+  if (pending.userId != null) return pending.marketingConsent === true;
+  return pending.properties.marketing_consent === true;
+}
+
+/**
  * Build the fully-formed Meta server events for one pending outbox row —
  * including hashed `user_data` (email/external_id) and the pass-through
- * `fbc`/`fbp` from `properties`. `action_source` is `website` for web-origin
- * events (source==='web'), else `app`.
+ * `fbc`/`fbp` from `properties`.
+ *
+ * Two gates return `[]` (nothing forwarded) up front:
+ *  - **Web-only (R2.8):** `source !== 'web'` → skip. App/server events can't be
+ *    attributed by Meta without an in-app SDK (`extinfo`/
+ *    `advertiser_tracking_enabled`), so forwarding them is unusable data with a
+ *    live compliance cost. `action_source` is therefore always `website`.
+ *  - **Consent (R2.7):** no affirmative marketing consent → skip the WHOLE row.
+ *    Never strip identifiers and send the rest — an unmatched event still tells
+ *    Meta a conversion happened.
  */
 export function mapPendingToMetaEvents(
   pending: PendingMetaEvent,
 ): MetaServerEvent[] {
+  if (pending.source !== "web") return [];
+  if (!hasConsent(pending)) return [];
+
   const skeletons = skeletonsFor(pending.eventName, pending.properties);
   if (skeletons.length === 0) return [];
 
@@ -90,15 +120,13 @@ export function mapPendingToMetaEvents(
     fbc: typeof props.fbc === "string" ? props.fbc : null,
     fbp: typeof props.fbp === "string" ? props.fbp : null,
   });
-  const actionSource: "website" | "app" =
-    pending.source === "web" ? "website" : "app";
   const eventTime = Math.floor(pending.occurredAt.getTime() / 1000);
 
   return skeletons.map((s) => ({
     event_name: s.eventName,
     event_time: eventTime,
     ...(pending.eventId != null ? { event_id: pending.eventId } : {}),
-    action_source: actionSource,
+    action_source: "website" as const,
     user_data: userData,
     ...(s.customData !== undefined ? { custom_data: s.customData } : {}),
   }));

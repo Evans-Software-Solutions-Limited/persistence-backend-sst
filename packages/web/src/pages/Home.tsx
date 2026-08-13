@@ -10,8 +10,8 @@ import { useReveal } from "@/marketing/hooks";
 import { useSeo } from "@/marketing/seo";
 import { heroScreenshot } from "@/marketing/config";
 import { WaitlistForm, CoachEnquiryForm } from "@/marketing/LeadForms";
+import { AppStoreCta } from "@/marketing/AppStoreCta";
 import {
-  AppleIcon,
   GooglePlayIcon,
   CheckIcon,
   DumbbellIcon,
@@ -80,10 +80,7 @@ export function Home() {
                   into their clients.
                 </p>
                 <div className="hero-ctas" data-reveal style={d(300)}>
-                  <span className="btn btn-fill cta-soon" aria-disabled="true">
-                    <AppleIcon />
-                    Coming to the App Store
-                  </span>
+                  <AppStoreCta variant="hero" />
                   <a href="#coach" className="btn btn-line">
                     For coaches
                   </a>
@@ -585,13 +582,7 @@ export function Home() {
               live.
             </p>
             <div className="store-btns" data-reveal style={d(200)}>
-              <span className="store-btn disabled" aria-disabled="true">
-                <AppleIcon />
-                <div className="store-btn-text">
-                  <span className="small">Coming soon to</span>
-                  <span className="big">App Store</span>
-                </div>
-              </span>
+              <AppStoreCta variant="store" />
               <span className="store-btn disabled" aria-disabled="true">
                 <GooglePlayIcon />
                 <div className="store-btn-text">

@@ -73,6 +73,15 @@ describe("PrivacyPolicyPresenter", () => {
     expect(queryByText("Last Updated: January 2025")).toBeNull();
     // The 16+ floor was replaced by 13+ (Brad, 2026-08-03).
     expect(queryByText(/aged 16 or over/)).toBeNull();
+    // Blanket "we do not use it for advertising" dropped in sync with the web
+    // copy (spec-30 R3.7) — now scoped: app data is never used for advertising
+    // / sent to Meta, but the CAPI measures WEBSITE conversions.
+    expect(queryByText(/we do not use it for advertising/)).toBeNull();
+    expect(
+      queryByText(
+        /never use your workouts, nutrition, progress or health data for advertising/,
+      ),
+    ).toBeTruthy();
   });
 
   it("covers religious belief, not just health, under Article 9", () => {

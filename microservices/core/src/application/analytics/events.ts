@@ -22,7 +22,10 @@ export type AnalyticsEventName =
   | "cancellation"
   | "expiration"
   | "session_completed"
-  | "lead_captured";
+  | "lead_captured"
+  // Web-origin: an outbound App Store CTA click (spec-30 R3.8) — the optimisable
+  // ads signal in the absence of an install SDK.
+  | "store_click";
 
 /** Where the event originated. `app` is reserved for the build-2 client emitter. */
 export type AnalyticsEventSource = "server" | "web" | "app";

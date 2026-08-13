@@ -64,18 +64,41 @@ opt-in via a `ConsentBanner` (equal-weight Reject/Accept, withdrawable via a
 section rewritten to match (names Meta Platforms Ireland, consent-gated,
 withdrawal route). `initMetaPixel`/`trackPageView`/`trackLead` all no-op unless
 `getConsent()==='granted'`. This is the gate that makes `VITE_META_PIXEL_ID`
-**safe to set on the Production environment**. ⚠ TWO copy items flagged for Brad
-in the PR, NOT decided: (a) the `/privacy` SEO meta description still says "we
-don't … use it for advertising" — now questionable given pixel+CAPI; (b) whether
-the policy needs a server-side-CAPI data-sharing disclosure (out of scope here;
-CAPI is not consent-gated by design).
+**safe to set on the Production environment**.
+
+**"Make Meta ads runnable" (R2.7/R2.8/R3.7/R3.8, added 2026-08-13):** resolved
+the pixel-vs-CAPI question — keep both, but (a) **web-only CAPI sink**: app/
+server events stay in analytics_events for funnel maths but never forward to Meta
+(unattributable without an in-app SDK — `extinfo`/`advertiser_tracking_enabled`);
+(b) **fail-closed consent gate** on forwarding — `profiles.marketing_consent`
+(migration `20260813120000`, nullable, ⚠ MANUAL PROD APPLY; nothing writes it yet
+since the web has no sign-up) for user rows, `properties.marketing_consent`
+(carried from the browser) for anonymous leads/store-clicks; (c) **App Store-
+click conversion** `store_click`→Meta custom `AppStoreClick`, deduped browser↔
+server via `event_id`, sent by `navigator.sendBeacon` — the optimisable ads
+signal. New public `POST /store-click`; new shared `AppStoreCta` component (live
+copy activates when `config.appStore.url` is set). Privacy copy fixed in all 3
+web spots (SEO/how-we-use/lead) + new "Advertising and measurement" section
+(Meta named as server-side recipient, hashed email, consent-based) + **mobile
+Section 4** in sync (ships next app build; the live app copy is NOT false in the
+interim because app data is never sent to Meta). Both blanket "not used for
+advertising" claims removed; the advertising wording is scoped/protective —
+⚠ **DPO/solicitor pass recommended before flipping the Production pixel on**.
+Gates green: core 4185 tests / 97.97% cov, web 113, mobile presenter 15,
+workspace typecheck 9/9. ⚠ Brad ALSO must create the `AppStoreClick` Custom
+Conversion in Meta Events Manager before running a campaign.
 
 **⚠ Brad's manual actions before this is live:** (1) apply both migrations to
-prod (manual); (2) set SST secrets per stage: `MetaDatasetId`,
-`MetaCapiAccessToken`, optional `MetaTestEventCode`, `TurnstileSecret`; (3) set
-web build vars `VITE_META_PIXEL_ID` + `VITE_TURNSTILE_SITE_KEY`; (4) verify in
-Meta Events Manager → Test Events before driving traffic; (5) raise EUR Coach Pro
-monthly in the store consoles. **Build-2 backlog** (queued, needs a binary):
+prod (manual) — now THREE: analytics_events, registration trigger, AND
+`20260813120000_profiles_marketing_consent`; (2) set SST secrets per stage:
+`MetaDatasetId`, `MetaCapiAccessToken`, optional `MetaTestEventCode`,
+`TurnstileSecret` (Meta creds already in GitHub: dataset/pixel `2072560130045942`,
+`META_TEST_EVENT_CODE=TEST8583` staging-only); (3) set web build vars
+`VITE_META_PIXEL_ID` (=`2072560130045942`) + `VITE_TURNSTILE_SITE_KEY`; (4) verify
+in Meta Events Manager → Test Events before driving traffic; (5) **create the
+`AppStoreClick` Custom Conversion** in Events Manager to optimise campaigns on;
+(6) raise EUR Coach Pro monthly in the store consoles; (7) DPO/solicitor pass on
+the advertising privacy copy. **Build-2 backlog** (queued, needs a binary):
 client-side event emitter, Meta/FB SDK, MMP, SKAdNetwork/AEM, ATT prompt, share
 card, referral codes — no install-level SKAN attribution until the SDK ships
 (server signals suffice; playbook gates Meta spend to month 3+).

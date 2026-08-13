@@ -23,6 +23,12 @@ export interface PendingMetaEvent {
   userId: string | null;
   /** From `profiles.email` at read time — hashed in-flight, never persisted. */
   email: string | null;
+  /**
+   * From `profiles.marketing_consent` at read time (spec-30 R2.7). Gates whether
+   * a USER-ATTRIBUTED row may forward; anonymous rows (leads, store clicks) carry
+   * their consent in `properties.marketing_consent` instead. NULL = never asked.
+   */
+  marketingConsent: boolean | null;
   eventName: string;
   occurredAt: Date;
   properties: Record<string, unknown>;
@@ -76,6 +82,7 @@ export class AnalyticsEventRepository {
         id: analyticsEvents.id,
         userId: analyticsEvents.userId,
         email: profiles.email,
+        marketingConsent: profiles.marketingConsent,
         eventName: analyticsEvents.eventName,
         occurredAt: analyticsEvents.occurredAt,
         properties: analyticsEvents.properties,
@@ -97,6 +104,7 @@ export class AnalyticsEventRepository {
       id: r.id,
       userId: r.userId,
       email: r.email ?? null,
+      marketingConsent: r.marketingConsent ?? null,
       eventName: r.eventName,
       occurredAt: r.occurredAt,
       properties: (r.properties ?? {}) as Record<string, unknown>,

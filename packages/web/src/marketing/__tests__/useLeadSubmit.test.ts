@@ -1,6 +1,7 @@
 import { renderHook, act, waitFor } from "@testing-library/react";
 import { useLeadSubmit } from "../useLeadSubmit";
 import * as metaPixel from "../../lib/metaPixel";
+import { setConsent } from "@/lib/consent";
 
 function mockFetch(ok: boolean, body: unknown = { ok }) {
   return vi.fn().mockResolvedValue({
@@ -13,12 +14,42 @@ describe("useLeadSubmit", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     window.history.replaceState({}, "", "/");
+    window.localStorage.clear();
     document.cookie.split(";").forEach((c) => {
       const name = c.split("=")[0]?.trim();
       if (name) {
         document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`;
       }
     });
+  });
+
+  it("includes marketing_consent: false when consent has not been granted", async () => {
+    const fetchSpy = mockFetch(true);
+    vi.stubGlobal("fetch", fetchSpy);
+    const { result } = renderHook(() => useLeadSubmit("waitlist"));
+
+    await act(async () => {
+      await result.current.submit({ email: "a@b.co", source: "waitlist" });
+    });
+
+    const [, init] = fetchSpy.mock.calls[0];
+    const body = JSON.parse(init.body as string);
+    expect(body.marketing_consent).toBe(false);
+  });
+
+  it("includes marketing_consent: true when consent has been granted (R2.7)", async () => {
+    setConsent("granted");
+    const fetchSpy = mockFetch(true);
+    vi.stubGlobal("fetch", fetchSpy);
+    const { result } = renderHook(() => useLeadSubmit("waitlist"));
+
+    await act(async () => {
+      await result.current.submit({ email: "a@b.co", source: "waitlist" });
+    });
+
+    const [, init] = fetchSpy.mock.calls[0];
+    const body = JSON.parse(init.body as string);
+    expect(body.marketing_consent).toBe(true);
   });
 
   it("posts event_id on every submit, with no fbc/fbp when neither is present", async () => {

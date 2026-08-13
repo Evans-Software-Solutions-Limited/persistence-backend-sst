@@ -454,6 +454,11 @@ export const profiles = pgTable("profiles", {
   // 20260713120000_account_soft_delete.sql.
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
   purgeAfter: timestamp("purge_after", { withTimezone: true }),
+  // Marketing-measurement consent (spec-30 R2.7). NULLABLE: NULL = never asked
+  // (distinct from explicit false); both fail closed. Gates Meta CAPI forwarding
+  // of user-attributed conversion events. Migration:
+  // 20260813120000_profiles_marketing_consent.sql.
+  marketingConsent: boolean("marketing_consent"),
 });
 
 // ─── Subscriptions ────────────────────────────────────────────────────────────
