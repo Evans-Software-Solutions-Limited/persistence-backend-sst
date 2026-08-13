@@ -6,6 +6,7 @@ import {
   getFbp,
   newEventId,
 } from "../metaPixel";
+import { setConsent } from "../consent";
 
 function clearCookies() {
   document.cookie.split(";").forEach((c) => {
@@ -17,6 +18,13 @@ function clearCookies() {
 }
 
 describe("metaPixel", () => {
+  beforeEach(() => {
+    // The pixel is consent-gated (spec-30 R3.5). Most cases below exercise the
+    // loaded pixel, so default to granted and let the gate-specific tests
+    // override. afterEach clears storage back to "unset".
+    setConsent("granted");
+  });
+
   afterEach(() => {
     vi.unstubAllEnvs();
     delete (window as unknown as { fbq?: unknown }).fbq;
@@ -25,6 +33,7 @@ describe("metaPixel", () => {
       .querySelectorAll('script[src*="connect.facebook.net"]')
       .forEach((el) => el.remove());
     clearCookies();
+    window.localStorage.clear();
     window.history.replaceState({}, "", "/");
   });
 
@@ -62,6 +71,23 @@ describe("metaPixel", () => {
       );
       expect(scripts.length).toBe(1);
     });
+
+    it("no-ops without consent even when an id is configured (R3.5)", () => {
+      vi.stubEnv("VITE_META_PIXEL_ID", "123456789");
+      setConsent("denied");
+      initMetaPixel();
+      expect(window.fbq).toBeUndefined();
+      expect(
+        document.head.querySelector('script[src*="connect.facebook.net"]'),
+      ).toBeNull();
+    });
+
+    it("no-ops when consent is unset (the default first-visit state)", () => {
+      vi.stubEnv("VITE_META_PIXEL_ID", "123456789");
+      window.localStorage.clear(); // → "unset"
+      initMetaPixel();
+      expect(window.fbq).toBeUndefined();
+    });
   });
 
   describe("trackPageView / trackLead", () => {
@@ -85,6 +111,22 @@ describe("metaPixel", () => {
 
       expect(calls[0]).toEqual(["track", "PageView"]);
       expect(calls[1]).toEqual(["track", "Lead", {}, { eventID: "evt_42" }]);
+    });
+
+    it("stop firing after consent is withdrawn, even though fbq is still loaded (R3.5)", () => {
+      vi.stubEnv("VITE_META_PIXEL_ID", "123456789");
+      initMetaPixel();
+      const calls: unknown[][] = [];
+      window.fbq = Object.assign(
+        (...args: unknown[]) => calls.push(args),
+        window.fbq,
+      );
+
+      setConsent("denied"); // withdrawal — the script can't be unloaded
+      trackPageView();
+      trackLead("evt_x");
+
+      expect(calls).toHaveLength(0);
     });
   });
 

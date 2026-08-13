@@ -201,11 +201,19 @@ describe("Privacy", () => {
     expect(screen.getByText(/at least six years from the/)).toBeTruthy();
   });
 
-  it("states the cookie position, which is that there are none", () => {
+  it("describes the consent-gated Meta cookie, not the old 'no cookies' claim", () => {
     renderPage(<Privacy />);
-    // Verified: no analytics dependency, no external script/font/CDN host, and
-    // the only browser storage in packages/web is the theme key.
-    expect(screen.getByText(/It sets no cookies at all/)).toBeTruthy();
+    // The superseded absolute claims are gone (the pixel now exists, behind a
+    // consent gate — spec-30 R3.5/R3.6).
+    expect(screen.queryByText(/It sets no cookies at all/)).toBeNull();
+    expect(
+      screen.queryByText(/there is no cookie banner to dismiss/),
+    ).toBeNull();
+    // The accurate replacement: Meta named, consent-gated, withdrawable — and
+    // NOT claiming the dormant Turnstile runs.
+    expect(screen.getByText(/one advertising cookie from Meta/)).toBeTruthy();
+    expect(screen.getByText(/nothing is stored until you choose/)).toBeTruthy();
+    expect(screen.getByText(/link in the footer of any page/)).toBeTruthy();
   });
 
   it("carries no trace of the superseded copy", () => {

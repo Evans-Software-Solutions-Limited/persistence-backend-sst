@@ -11,9 +11,33 @@ import DeleteAccount from "./pages/DeleteAccount";
 import OrganisationAdmin from "./pages/OrganisationAdmin";
 import { ThemeProvider } from "./components/theme-provider";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { trackPageView } from "./lib/metaPixel";
+import {
+  initMetaPixel,
+  teardownMetaPixel,
+  trackPageView,
+} from "./lib/metaPixel";
+import { getConsent, subscribe } from "./lib/consent";
 
 const queryClient = new QueryClient();
+
+/**
+ * Bridges consent → the Meta Pixel across every route (spec-30 R3.5). On mount
+ * it loads the pixel only if the visitor has ALREADY granted consent (a
+ * returning visitor); it then reacts to live changes — loading on grant, tearing
+ * down (clearing `_fbp`/`_fbc`) on withdrawal. First-time consent is captured by
+ * `ConsentBanner` (marketing pages). `initMetaPixel` self-guards on consent, so
+ * this can never load the pixel without it. Renders nothing.
+ */
+function MetaConsentEffect() {
+  useEffect(() => {
+    if (getConsent() === "granted") initMetaPixel();
+    return subscribe((state) => {
+      if (state === "granted") initMetaPixel();
+      else if (state === "denied") teardownMetaPixel();
+    });
+  }, []);
+  return null;
+}
 
 /**
  * Fires the Meta Pixel `PageView` on every client-side route change (the
@@ -32,6 +56,7 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider defaultTheme="dark">
+        <MetaConsentEffect />
         <PageViewTracker />
         <Routes>
           <Route path="/" element={<Home />} />

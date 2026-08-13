@@ -57,6 +57,19 @@ leads 100%); web 11/69; workspace typecheck + lint + prettier clean.
   **console-only fix — raise the EUR monthly in ASC/Play/RC (Brad's action)**,
   nothing in this repo. Promo-grant handling verified + tested (R4.3).
 
+**Meta Pixel consent gate (spec-30 R3.5/R3.6, added to this PR 2026-08-13):**
+the pixel no longer loads at first paint — it initialises ONLY after explicit
+opt-in via a `ConsentBanner` (equal-weight Reject/Accept, withdrawable via a
+"Cookie settings" footer link that clears `_fbp`/`_fbc`). `/privacy` cookies
+section rewritten to match (names Meta Platforms Ireland, consent-gated,
+withdrawal route). `initMetaPixel`/`trackPageView`/`trackLead` all no-op unless
+`getConsent()==='granted'`. This is the gate that makes `VITE_META_PIXEL_ID`
+**safe to set on the Production environment**. ⚠ TWO copy items flagged for Brad
+in the PR, NOT decided: (a) the `/privacy` SEO meta description still says "we
+don't … use it for advertising" — now questionable given pixel+CAPI; (b) whether
+the policy needs a server-side-CAPI data-sharing disclosure (out of scope here;
+CAPI is not consent-gated by design).
+
 **⚠ Brad's manual actions before this is live:** (1) apply both migrations to
 prod (manual); (2) set SST secrets per stage: `MetaDatasetId`,
 `MetaCapiAccessToken`, optional `MetaTestEventCode`, `TurnstileSecret`; (3) set
