@@ -100,6 +100,14 @@ export const frontend = new sst.aws.StaticSite("web", {
   // invalidation completes, so `sst deploy` finishing means the site is live.
   // (SST already stamps hashed assets immutable and index.html no-cache; the
   // missing piece was the edge invalidation.)
+  //
+  // ⚠ This invalidation was NECESSARY but not SUFFICIENT on its own: the web
+  // build also shipped a Workbox precaching service worker (vite-plugin-pwa)
+  // that answered navigations cache-first, BEFORE the network, so a fresh deploy
+  // still needed a hard refresh even with the edge purged — the SW never asked
+  // CloudFront. That SW has been removed (self-destroying; see
+  // packages/web/vite.config.ts), so this edge invalidation is now the effective
+  // freshness mechanism. Do NOT reintroduce a precaching SW without revisiting.
   invalidation: {
     paths: "all",
     wait: true,
