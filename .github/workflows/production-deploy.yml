@@ -58,6 +58,12 @@ jobs:
         run: bun run build
 
       - name: Unit tests
+        # Raise the V8 heap for this step only — a packages/db change busts
+        # turbo's mobile test:unit cache, so mobile runs `jest --coverage` fresh
+        # and OOMs at the default ~2 GB heap (exit 137). Mirrors deploy-staging.yml
+        # and pr-checks.yml; scoped to this step so `sst deploy` is untouched.
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
         run: bun run test:unit
 
       - name: Install Supabase CLI
