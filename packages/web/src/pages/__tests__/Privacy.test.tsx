@@ -212,8 +212,10 @@ describe("Privacy", () => {
     ).toBeNull();
     // The accurate replacement: Meta named, consent-gated, withdrawable — and
     // NOT claiming the dormant Turnstile runs.
-    expect(screen.getByText(/one advertising cookie from Meta/)).toBeTruthy();
-    expect(screen.getByText(/nothing is stored until you choose/)).toBeTruthy();
+    expect(screen.getByText(/Meta \(Facebook\) cookie/)).toBeTruthy();
+    expect(
+      screen.getByText(/nothing optional\s+is stored until you opt in/),
+    ).toBeTruthy();
     // Unique to the cookies section (the advertising section reuses the "footer"
     // phrasing, so assert the cookie-specific withdrawal wording instead).
     expect(

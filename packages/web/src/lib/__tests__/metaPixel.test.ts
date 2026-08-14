@@ -23,7 +23,7 @@ describe("metaPixel", () => {
     // The pixel is consent-gated (spec-30 R3.5). Most cases below exercise the
     // loaded pixel, so default to granted and let the gate-specific tests
     // override. afterEach clears storage back to "unset".
-    setConsent("granted");
+    setConsent({ advertising: true });
   });
 
   afterEach(() => {
@@ -75,7 +75,7 @@ describe("metaPixel", () => {
 
     it("no-ops without consent even when an id is configured (R3.5)", () => {
       vi.stubEnv("VITE_META_PIXEL_ID", "123456789");
-      setConsent("denied");
+      setConsent({ advertising: false });
       initMetaPixel();
       expect(window.fbq).toBeUndefined();
       expect(
@@ -123,7 +123,7 @@ describe("metaPixel", () => {
         window.fbq,
       );
 
-      setConsent("denied"); // withdrawal — the script can't be unloaded
+      setConsent({ advertising: false }); // withdrawal — the script can't be unloaded
       trackPageView();
       trackLead("evt_x");
 
@@ -134,7 +134,7 @@ describe("metaPixel", () => {
   describe("trackAppStoreClick", () => {
     it("no-ops without consent", () => {
       vi.stubEnv("VITE_META_PIXEL_ID", "123456789");
-      setConsent("denied");
+      setConsent({ advertising: false });
       expect(() => trackAppStoreClick("evt_store")).not.toThrow();
       expect(window.fbq).toBeUndefined();
     });

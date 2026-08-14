@@ -1,11 +1,17 @@
 import {
+  CONSENT_VERSION,
   clearMetaCookies,
-  getConsent,
+  getChoices,
+  hasConsent,
+  isConsentDecided,
   setConsent,
   subscribe,
+  type ConsentChoices,
 } from "../consent";
 
-describe("consent", () => {
+const KEY = "persistence.consent.v2";
+
+describe("consent (category model)", () => {
   afterEach(() => {
     window.localStorage.clear();
     vi.restoreAllMocks();
@@ -17,47 +23,70 @@ describe("consent", () => {
     });
   });
 
-  it("defaults to 'unset'", () => {
-    expect(getConsent()).toBe("unset");
+  it("is undecided with all categories off by default", () => {
+    expect(isConsentDecided()).toBe(false);
+    expect(getChoices()).toEqual({ advertising: false });
+    expect(hasConsent("advertising")).toBe(false);
   });
 
-  it("round-trips granted and denied", () => {
-    setConsent("granted");
-    expect(getConsent()).toBe("granted");
-    setConsent("denied");
-    expect(getConsent()).toBe("denied");
+  it("round-trips a per-category choice and marks it decided", () => {
+    setConsent({ advertising: true });
+    expect(isConsentDecided()).toBe(true);
+    expect(hasConsent("advertising")).toBe(true);
+
+    setConsent({ advertising: false });
+    expect(isConsentDecided()).toBe(true); // a reject is still a decision
+    expect(hasConsent("advertising")).toBe(false);
+  });
+
+  it("stamps the current version on write", () => {
+    setConsent({ advertising: true });
+    const stored = JSON.parse(window.localStorage.getItem(KEY)!);
+    expect(stored).toEqual({ v: CONSENT_VERSION, advertising: true });
+  });
+
+  it("re-prompts (reads as undecided) for a record from an older version", () => {
+    // Scope-creep guard: a stale record from before a category was added must
+    // NOT silently satisfy consent.
+    window.localStorage.setItem(
+      KEY,
+      JSON.stringify({ v: CONSENT_VERSION - 1, advertising: true }),
+    );
+    expect(isConsentDecided()).toBe(false);
+    expect(hasConsent("advertising")).toBe(false);
   });
 
   it("ignores a corrupt stored value", () => {
-    window.localStorage.setItem("persistence.consent.marketing.v1", "banana");
-    expect(getConsent()).toBe("unset");
+    window.localStorage.setItem(KEY, "not json");
+    expect(isConsentDecided()).toBe(false);
+    expect(hasConsent("advertising")).toBe(false);
   });
 
-  it("notifies subscribers on change and stops after unsubscribe", () => {
-    const seen: string[] = [];
-    const unsub = subscribe((s) => seen.push(s));
-    setConsent("granted");
+  it("notifies subscribers with the choices and stops after unsubscribe", () => {
+    const seen: ConsentChoices[] = [];
+    const unsub = subscribe((c) => seen.push(c));
+    setConsent({ advertising: true });
     unsub();
-    setConsent("denied");
-    expect(seen).toEqual(["granted"]);
+    setConsent({ advertising: false });
+    expect(seen).toEqual([{ advertising: true }]);
   });
 
-  it("degrades to 'unset' (never 'granted') when localStorage throws", () => {
+  it("degrades to undecided (never granted) when localStorage throws", () => {
     vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
       throw new Error("private mode");
     });
-    expect(getConsent()).toBe("unset");
+    expect(isConsentDecided()).toBe(false);
+    expect(hasConsent("advertising")).toBe(false);
   });
 
-  it("does not throw when setConsent's write is blocked", () => {
+  it("does not throw when setConsent's write is blocked, and still notifies", () => {
     vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
       throw new Error("private mode");
     });
-    const seen: string[] = [];
-    subscribe((s) => seen.push(s));
-    expect(() => setConsent("granted")).not.toThrow();
-    // the in-memory notification still fires so the current page reacts
-    expect(seen).toEqual(["granted"]);
+    const seen: ConsentChoices[] = [];
+    subscribe((c) => seen.push(c));
+    expect(() => setConsent({ advertising: true })).not.toThrow();
+    expect(seen).toEqual([{ advertising: true }]);
   });
 
   it("clearMetaCookies expires _fbp and _fbc", () => {

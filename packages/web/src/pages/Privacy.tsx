@@ -29,8 +29,8 @@ import { useSeo } from "@/marketing/seo";
  *     `endCoachClientRelationship`. Teardown is a SOFT end that revives the same
  *     row on reconnect, so without that delete the summaries come back.
  *   - "nothing is stored until you choose Accept" depends on the consent gate in
- *     `lib/metaPixel.ts` (`initMetaPixel` no-ops unless `getConsent() ===
- *     "granted"`, spec-30 R3.5). Remove that gate and the pixel loads pre-consent
+ *     `lib/metaPixel.ts` (`initMetaPixel` no-ops unless
+ *     `hasConsent("advertising")`, spec-30 R3.5). Remove that gate and the pixel loads pre-consent
  *     and this becomes false. Turnstile is deliberately NOT mentioned: it is
  *     dormant unless its site key is set, so a claim about it would be false.
  *
@@ -545,24 +545,29 @@ export function Privacy() {
 
         <h2>Cookies and the Persistence website</h2>
         <p>
-          Your theme choice (light or dark) is remembered locally in your
-          browser as a strictly-necessary preference. It is not a cookie and is
-          never sent anywhere.
+          Cookies on this website are grouped into categories.
+          Strictly-necessary items &mdash; like your light or dark theme choice
+          &mdash; are always on, stored locally in your browser, and never sent
+          anywhere. Everything else is optional and off until you opt in.
         </p>
         <p>
-          With your consent, we set one advertising cookie from Meta (Facebook)
-          &mdash; <code>_fbp</code>, plus <code>_fbc</code> if you arrive from
-          one of our adverts &mdash; so we can measure whether our advertising
-          brings people to Persistence. Meta Platforms Ireland Limited is the
-          third party involved, and this data is shared with Meta. We ask first:
-          nothing is stored until you choose &ldquo;Accept&rdquo; on the cookie
-          banner, and choosing &ldquo;Reject&rdquo; sets nothing.
+          The one optional category today is <strong>advertising</strong>: with
+          your consent we set a Meta (Facebook) cookie &mdash; <code>_fbp</code>
+          , plus <code>_fbc</code> if you arrive from one of our adverts &mdash;
+          so we can measure whether our advertising brings people to
+          Persistence. Meta Platforms Ireland Limited is the third party
+          involved, and this data is shared with Meta.
         </p>
         <p>
-          You can change your choice at any time using the &ldquo;Cookie
-          settings&rdquo; link in the footer of any page; withdrawing consent
-          removes these cookies. Nothing about your training, food or health is
-          ever shared with Meta.
+          We ask first. On the cookie banner you can <strong>Accept all</strong>
+          , <strong>Reject all</strong>, or <strong>Manage</strong> your choice
+          for each category; nothing optional is stored until you opt in, and
+          rejecting sets nothing. You can change your choice at any time using
+          the &ldquo;Cookie settings&rdquo; link in the footer of any page;
+          withdrawing consent removes these cookies. If we ever add a new
+          optional cookie category we will ask you again rather than rely on an
+          earlier choice. Nothing about your training, food or health is ever
+          shared with Meta.
         </p>
 
         <h2>Advertising and measurement</h2>
