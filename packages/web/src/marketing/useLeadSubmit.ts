@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react";
 import { getFbc, getFbp, newEventId, trackLead } from "../lib/metaPixel";
-import { getConsent } from "@/lib/consent";
+import { hasConsent } from "@/lib/consent";
 import { marketingApiBase } from "@/lib/marketingApiBase";
 
 /**
@@ -51,7 +51,7 @@ export function useLeadSubmit(path: "waitlist" | "coach") {
         ...(fbc ? { fbc } : {}),
         ...(fbp ? { fbp } : {}),
         event_id: eventId,
-        marketing_consent: getConsent() === "granted",
+        marketing_consent: hasConsent("advertising"),
       };
       try {
         const res = await fetch(`${marketingApiBase()}/leads/${path}`, {

@@ -16,7 +16,7 @@ import {
   teardownMetaPixel,
   trackPageView,
 } from "./lib/metaPixel";
-import { getConsent, subscribe } from "./lib/consent";
+import { hasConsent, subscribe } from "./lib/consent";
 
 const queryClient = new QueryClient();
 
@@ -30,10 +30,10 @@ const queryClient = new QueryClient();
  */
 function MetaConsentEffect() {
   useEffect(() => {
-    if (getConsent() === "granted") initMetaPixel();
-    return subscribe((state) => {
-      if (state === "granted") initMetaPixel();
-      else if (state === "denied") teardownMetaPixel();
+    if (hasConsent("advertising")) initMetaPixel();
+    return subscribe((choices) => {
+      if (choices.advertising) initMetaPixel();
+      else teardownMetaPixel();
     });
   }, []);
   return null;

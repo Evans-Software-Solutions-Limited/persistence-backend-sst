@@ -1,4 +1,4 @@
-import { getConsent } from "./consent";
+import { hasConsent } from "./consent";
 import { marketingApiBase } from "./marketingApiBase";
 import { getFbc, getFbp, newEventId, trackAppStoreClick } from "./metaPixel";
 
@@ -33,7 +33,7 @@ export function reportStoreClick(): string {
     event_id: eventId,
     fbc: getFbc() ?? undefined,
     fbp: getFbp() ?? undefined,
-    marketing_consent: getConsent() === "granted",
+    marketing_consent: hasConsent("advertising"),
   });
 
   try {

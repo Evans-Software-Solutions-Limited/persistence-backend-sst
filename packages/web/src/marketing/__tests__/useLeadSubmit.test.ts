@@ -38,7 +38,7 @@ describe("useLeadSubmit", () => {
   });
 
   it("includes marketing_consent: true when consent has been granted (R2.7)", async () => {
-    setConsent("granted");
+    setConsent({ advertising: true });
     const fetchSpy = mockFetch(true);
     vi.stubGlobal("fetch", fetchSpy);
     const { result } = renderHook(() => useLeadSubmit("waitlist"));

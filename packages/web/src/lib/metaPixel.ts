@@ -14,13 +14,13 @@
  *
  * ⚠ Consent (spec-30 R3.5): the pixel is advertising/measurement, not strictly
  * necessary, so nothing here runs until the visitor has opted in. `init` +
- * `trackPageView` + `trackLead` all no-op unless `getConsent() === "granted"`,
+ * `trackPageView` + `trackLead` all no-op unless `hasConsent("advertising")`,
  * so a call at the wrong moment (before consent, or after withdrawal — the
  * script can't be unloaded once injected) can never set a cookie or fire an
  * event. The CAPI server path is intentionally NOT gated by this.
  */
 
-import { clearMetaCookies, getConsent } from "./consent";
+import { clearMetaCookies, hasConsent } from "./consent";
 
 type FbqArgs = unknown[];
 
@@ -65,7 +65,7 @@ export function initMetaPixel(): void {
   if (typeof window === "undefined" || typeof document === "undefined") {
     return;
   }
-  if (getConsent() !== "granted" || !isEnabled() || isLoaded()) {
+  if (!hasConsent("advertising") || !isEnabled() || isLoaded()) {
     return;
   }
 
@@ -110,7 +110,7 @@ export function teardownMetaPixel(): void {
 /** Fire the standard `PageView` event. No-op without consent or when the pixel
  *  isn't loaded — so a route change after withdrawal fires nothing. */
 export function trackPageView(): void {
-  if (getConsent() !== "granted" || !isLoaded()) return;
+  if (!hasConsent("advertising") || !isLoaded()) return;
   window.fbq!("track", "PageView");
 }
 
@@ -120,7 +120,7 @@ export function trackPageView(): void {
  * consent or when the pixel isn't loaded.
  */
 export function trackLead(eventId: string): void {
-  if (getConsent() !== "granted" || !isLoaded()) return;
+  if (!hasConsent("advertising") || !isLoaded()) return;
   window.fbq!("track", "Lead", {}, { eventID: eventId });
 }
 
@@ -131,7 +131,7 @@ export function trackLead(eventId: string): void {
  * pixel isn't loaded.
  */
 export function trackAppStoreClick(eventId: string): void {
-  if (getConsent() !== "granted" || !isLoaded()) return;
+  if (!hasConsent("advertising") || !isLoaded()) return;
   window.fbq!("trackCustom", "AppStoreClick", {}, { eventID: eventId });
 }
 
