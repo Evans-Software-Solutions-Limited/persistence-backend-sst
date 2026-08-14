@@ -49,22 +49,32 @@ function ConsentRow({
   checked,
   onChange,
   id,
+  invalid,
 }: {
   checked: boolean;
   onChange: (v: boolean) => void;
   id: string;
+  /** True once the form is submitted without ticking — shows the error state. */
+  invalid?: boolean;
 }) {
   return (
-    <label className="lead-consent" htmlFor={id}>
+    <label
+      className={`lead-consent${invalid ? " lead-consent-invalid" : ""}`}
+      htmlFor={id}
+    >
       <input
         id={id}
         type="checkbox"
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}
+        required
+        aria-required="true"
       />
       <span>
-        Email me about the launch and product updates. Unsubscribe anytime — see
-        our <Link to="/privacy">Privacy policy</Link>.
+        <span className="lead-consent-req">Required</span>
+        Tick to confirm you're happy for us to email you about the launch and
+        product updates. You can unsubscribe at any time — see our{" "}
+        <Link to="/privacy">Privacy policy</Link>.
       </span>
     </label>
   );
@@ -216,6 +226,7 @@ export function WaitlistForm() {
         checked={consent}
         onChange={setConsent}
         id="waitlist-consent"
+        invalid={touched && emailOk && !consent}
       />
       <TurnstileWidget ref={turnstileRef} onToken={setTurnstileToken} />
       <Honeypot value={hp} onChange={setHp} />
@@ -334,7 +345,12 @@ export function CoachEnquiryForm() {
         value={message}
         onChange={(e) => setMessage(e.target.value)}
       />
-      <ConsentRow checked={consent} onChange={setConsent} id="coach-consent" />
+      <ConsentRow
+        checked={consent}
+        onChange={setConsent}
+        id="coach-consent"
+        invalid={touched && nameOk && emailOk && !consent}
+      />
       <TurnstileWidget ref={turnstileRef} onToken={setTurnstileToken} />
       <div className="lead-row">
         <button

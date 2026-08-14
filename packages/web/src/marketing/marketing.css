@@ -2004,19 +2004,50 @@
 }
 .mkt .lead-consent {
   display: flex;
-  gap: 10px;
+  gap: 12px;
   align-items: flex-start;
-  margin-top: 12px;
-  font-size: 13px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--m-line-2);
+  border-radius: 12px;
+  background: var(--m-surface);
+  font-size: 13.5px;
   line-height: 1.5;
-  color: var(--m-text-2);
+  /* Full-strength text (not --m-text-2): this is an action the user must take,
+     not fine print. The bordered container + Required tag read it as a field. */
+  color: var(--m-text);
+  cursor: pointer;
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s;
 }
 .mkt .lead-consent input {
-  margin-top: 2px;
-  width: 16px;
-  height: 16px;
+  margin-top: 1px;
+  width: 18px;
+  height: 18px;
   flex-shrink: 0;
   accent-color: var(--m-accent);
+  cursor: pointer;
+}
+/* "Required" pill — the unmistakable signal the box must be ticked to submit. */
+.mkt .lead-consent-req {
+  display: inline-block;
+  margin-right: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--m-accent-dim);
+  color: var(--m-accent);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  vertical-align: 1px;
+}
+/* Error state — shown once the form is submitted without ticking (mirrors the
+   ember colour used by .lead-error so the two read as one validation cue). */
+.mkt .lead-consent-invalid {
+  border-color: var(--m-ember-t);
+  box-shadow: 0 0 0 3px var(--m-ember-dim, rgba(220, 90, 70, 0.18));
 }
 .mkt .lead-success {
   max-width: 520px;
@@ -2379,11 +2410,15 @@
 .mkt .btn-violet {
   background: var(--m-violet);
   color: #1c1340;
+  /* Padding is set per-variant (base .btn has none); this matches .btn-fill so
+     the coach-form submit reads as a full primary CTA, not a cramped pill. */
+  padding: 15px 26px;
   box-shadow: 0 0 22px var(--m-violet-dim);
 }
 .mkt .btn-violet:hover {
   color: #1c1340;
   transform: translateY(-2px);
+  box-shadow: 0 0 30px var(--m-violet-dim);
 }
 
 /* ── Teams / B2B ──────────────────────────────────────────────────────── */
