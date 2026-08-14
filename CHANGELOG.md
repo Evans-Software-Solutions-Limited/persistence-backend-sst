@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.15.0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.14.1...persistence-v1.15.0) (2026-08-14)
+
+
+### Features
+
+* **growth:** server-side growth instrumentation (spec-30 / M20-P1) ([#392](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/392)) ([5b4e55b](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/5b4e55b665a2318e7cea7235c3fba4a2401b7521))
+* **web:** category-based cookie consent (extensible, granular, versioned) ([#399](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/399)) ([1cf33ed](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/1cf33ed284b193212f718007fbebe5c6144534e8))
+
+
+### Bug Fixes
+
+* **web:** pad the coach-form CTA + make the marketing consent read as required ([#396](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/396)) ([5f917e0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/5f917e0078c5ef875daefd4b5a25a62858032fca))
+* **web:** remove the precaching service worker (stale content after deploy) ([#398](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/398)) ([bc58780](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/bc58780207cc8032d8fcaf8f3d4e4a58e840eb77))
+
 ## [1.14.1](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.14.0...persistence-v1.14.1) (2026-08-11)
 
 
