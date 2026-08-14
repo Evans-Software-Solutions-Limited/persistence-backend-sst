@@ -1,11 +1,21 @@
 name: Mobile Build (Production → App Store / Google Play)
 
-# Published releases build and submit both store binaries. Production releases
-# are infrequent, and silently omitting Android here would leave Play behind iOS.
-# Manual runs via workflow_dispatch can still target one platform and skip submit.
+# ⚠ MANUAL ONLY (Brad's decision, 2026-08-14). The `release: published` trigger
+# is DELIBERATELY DISABLED: merging the release-please chore publishes a GitHub
+# Release, which would otherwise auto-run an EAS build here (with `submit: true`)
+# and burn Expo build quota / risk charges on every production release. Mobile
+# binaries are cut deliberately, not on every backend/web release. Run this via
+# `workflow_dispatch` (Actions → this workflow → Run workflow) when you actually
+# want a store build, choosing platform + whether to submit.
+#
+# `production-deploy.yml` still fires on `release: published` — that deploys the
+# SST backend + web static site only, and does NOT build mobile.
+#
+# The `github.event_name == 'release'` conditions in the jobs below are now
+# dead (harmless) and kept only so re-enabling is a one-line uncomment.
 on:
-  release:
-    types: [published]
+  # release:
+  #   types: [published]
   workflow_dispatch:
     inputs:
       platform:
