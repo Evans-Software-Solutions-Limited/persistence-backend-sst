@@ -9,26 +9,29 @@ export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
-    VitePWA({
-      registerType: "autoUpdate",
-      includeAssets: [
-        "favicon.ico",
-        "favicon.svg",
-        "favicon-96x96.png",
-        "apple-touch-icon.png",
-        "web-app-manifest-192x192.png",
-        "web-app-manifest-512x512.png",
-      ],
-      // Use the hand-authored /site.webmanifest (linked in index.html) rather
-      // than generating one, so the icon set stays the single source of truth.
-      manifest: false,
-      workbox: {
-        cleanupOutdatedCaches: true,
-        globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
-        // Disable minification to avoid terser/rollup compatibility issues with Vite 7
-        mode: "development",
-      },
-    }),
+    // ⚠ SELF-DESTROYING on purpose — this is a MARKETING/LEGAL site, not an app.
+    //
+    // The previous config precached `**/*.{js,css,html,…}` with a Workbox
+    // service worker (registerType: "autoUpdate"). Nothing in the site consumes
+    // the PWA (no offline UX, no install-prompt handling — the "Offline-first"
+    // copy is about the MOBILE app), so the SW added no value and one serious
+    // bug: it answers navigations cache-first, BEFORE the network, so a new
+    // deploy showed only stale content until a hard refresh — and it silently
+    // defeated the CloudFront edge invalidation in infra/web.ts (the SW never
+    // asks the CDN). Freshness matters here: stale pricing, App Store links, or
+    // the cookie-consent banner is a launch + compliance risk.
+    //
+    // `selfDestroying: true` ships a SW that unregisters itself and clears the
+    // old precache. Returning visitors' existing SW picks this up on their next
+    // navigation (the SW script bypasses the HTTP cache), self-destructs, and
+    // reloads to live content; new visitors register a SW that immediately
+    // unregisters — i.e. effectively no SW. After this has been live long
+    // enough for the fleet to clean up, delete vite-plugin-pwa entirely
+    // (tracked as a follow-up). Do NOT reintroduce a precaching SW here.
+    // `manifest: false` is REQUIRED: without it the plugin generates and injects
+    // its own /manifest.webmanifest (name "@persistence/web", wrong theme) as a
+    // SECOND <link rel="manifest">, overriding the hand-authored /site.webmanifest.
+    VitePWA({ selfDestroying: true, manifest: false }),
   ],
   resolve: {
     alias: {
