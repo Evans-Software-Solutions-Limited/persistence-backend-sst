@@ -144,6 +144,15 @@ jobs:
           META_CAPI_ACCESS_TOKEN: ${{ secrets.META_CAPI_ACCESS_TOKEN }}
           META_TEST_EVENT_CODE: ${{ secrets.META_TEST_EVENT_CODE }}
           TURNSTILE_SECRET: ${{ secrets.TURNSTILE_SECRET }}
+          # Resend — marketing lead capture (website waitlist + coach forms).
+          # OPTIONAL + fail-safe like Sentry/Meta above (empty is valid): with no
+          # key the /leads routes return 503 "unavailable", but the deploy never
+          # breaks. These were missing here, so they stayed at their "" default
+          # on every deploy and the live forms 503'd. Create the two Audiences in
+          # the Resend dashboard, then set these on the staging GitHub env.
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          RESEND_ATHLETES_AUDIENCE_ID: ${{ secrets.RESEND_ATHLETES_AUDIENCE_ID }}
+          RESEND_COACHES_AUDIENCE_ID: ${{ secrets.RESEND_COACHES_AUDIENCE_ID }}
         run: |
           if [ -z "$DATABASE_URL" ]; then
             echo "::error::DATABASE_URL is not set on the staging GitHub environment."
@@ -195,6 +204,11 @@ jobs:
           bunx sst secret set MetaCapiAccessToken "$META_CAPI_ACCESS_TOKEN" --stage staging
           bunx sst secret set MetaTestEventCode "$META_TEST_EVENT_CODE" --stage staging
           bunx sst secret set TurnstileSecret "$TURNSTILE_SECRET" --stage staging
+          # Resend (optional + fail-safe — empty is valid; the leads routes 503
+          # "unavailable" until these carry a real key + audience ids).
+          bunx sst secret set ResendApiKey "$RESEND_API_KEY" --stage staging
+          bunx sst secret set ResendAthletesAudienceId "$RESEND_ATHLETES_AUDIENCE_ID" --stage staging
+          bunx sst secret set ResendCoachesAudienceId "$RESEND_COACHES_AUDIENCE_ID" --stage staging
 
       - name: Deploy
         # VITE_* are PUBLIC, build-time web vars (client-exposed by design), read
