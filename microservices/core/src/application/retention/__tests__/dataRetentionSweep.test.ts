@@ -42,6 +42,7 @@ describe("dataRetentionSweep", () => {
       dailyActivity: 4,
       sleep: 3,
       clientDataAccessLog: 11,
+      analyticsEvents: 7,
     }));
 
     const summary = await dataRetentionSweep({
@@ -57,8 +58,9 @@ describe("dataRetentionSweep", () => {
       dailyActivity: 4,
       sleep: 3,
       clientDataAccessLog: 11,
+      analyticsEvents: 7,
       cutoff: "2025-08-03T02:00:00.000Z",
-      total: 18,
+      total: 25,
     });
   });
 
@@ -71,6 +73,7 @@ describe("dataRetentionSweep", () => {
           dailyActivity: 0,
           sleep: 0,
           clientDataAccessLog: 0,
+          analyticsEvents: 0,
         }),
       },
       now: new Date("2026-08-03T02:00:00.000Z"),

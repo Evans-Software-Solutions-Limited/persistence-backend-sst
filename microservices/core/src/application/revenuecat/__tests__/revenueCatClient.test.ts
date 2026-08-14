@@ -94,6 +94,22 @@ describe("normalizeSubscription", () => {
     ).toBeNull();
   });
 
+  it("activates a PROMOTIONAL grant like any other access-granting subscription (spec-30 R4.3)", () => {
+    // Comps / founding / student rail = RevenueCat promotional entitlements.
+    // They surface in the same /subscriptions snapshot with gives_access:true and
+    // an entitlement lookup_key that maps to a tier, so the reconcile activates
+    // the tier cleanly — no special-casing needed. `store` carries "promotional".
+    const promo = realSubscriptionItem({
+      store: "promotional",
+      auto_renewal_status: "will_not_renew",
+      entitlements: { items: [{ lookup_key: "premium" }] },
+    });
+    expect(normalizeSubscription(promo)).toMatchObject({
+      tier: "premium",
+      store: "promotional",
+    });
+  });
+
   it("returns null when no entitlement maps to a modelled tier", () => {
     expect(
       normalizeSubscription(

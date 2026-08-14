@@ -3,6 +3,7 @@ import { useScrolled } from "./hooks";
 import { useTheme } from "@/components/theme-provider";
 import { SunIcon, MoonIcon } from "./icons";
 import { SectionLink } from "./SectionLink";
+import { AppStoreCta } from "./AppStoreCta";
 
 /** Wordmark + gradient "P" glyph, links to home. */
 function Logo() {
@@ -51,9 +52,7 @@ export function MarketingNav({ current }: { current?: "pricing" }) {
           >
             {isDark ? <SunIcon /> : <MoonIcon />}
           </button>
-          <span className="nav-btn disabled" aria-disabled="true">
-            Coming to App Store
-          </span>
+          <AppStoreCta variant="nav" />
         </div>
       </div>
     </nav>

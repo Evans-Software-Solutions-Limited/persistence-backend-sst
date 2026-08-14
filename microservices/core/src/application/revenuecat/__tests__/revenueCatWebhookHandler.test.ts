@@ -17,6 +17,7 @@ const {
   markFailedMock,
   fetchSubsMock,
   createAndDispatchMock,
+  emitEventMock,
 } = vi.hoisted(() => ({
   findByExternalIdMock: vi.fn(),
   updateByIdMock: vi.fn(),
@@ -30,6 +31,7 @@ const {
   markFailedMock: vi.fn(),
   fetchSubsMock: vi.fn(),
   createAndDispatchMock: vi.fn(),
+  emitEventMock: vi.fn(),
 }));
 
 vi.mock("../../repositories/subscriptionRepository", () => ({
@@ -62,6 +64,10 @@ vi.mock("../../notifications/push/notificationDispatcher", () => ({
   NotificationDispatcher: vi.fn().mockImplementation(() => ({
     createAndDispatch: createAndDispatchMock,
   })),
+}));
+
+vi.mock("../../analytics/emitEvent", () => ({
+  emitEvent: emitEventMock,
 }));
 
 import {
@@ -165,6 +171,88 @@ describe("handleRevenueCatWebhook", () => {
     cancelLiveMock.mockResolvedValue(0);
     userExistsMock.mockResolvedValue(true);
     fetchSubsMock.mockResolvedValue([]);
+    emitEventMock.mockResolvedValue(undefined);
+  });
+
+  // ── Growth-instrumentation emit (spec-30 R1.4) ──────────────────────────
+  it("emits subscription_purchased with value+currency after a successful INITIAL_PURCHASE", async () => {
+    fetchSubsMock.mockResolvedValue([subFixture({ tier: "premium" })]);
+    const body = JSON.stringify({
+      event: {
+        id: "evt_1",
+        type: "INITIAL_PURCHASE",
+        app_user_id: "user-1",
+        period_type: "NORMAL",
+        price: 12.99,
+        currency: "GBP",
+        store: "APP_STORE",
+      },
+    });
+    const res = await handleRevenueCatWebhook(buildRequest({ body }));
+    expect(res.status).toBe(200);
+    expect(emitEventMock).toHaveBeenCalledWith({
+      name: "subscription_purchased",
+      source: "app",
+      userId: "user-1",
+      eventId: "evt_1",
+      properties: {
+        value: 12.99,
+        currency: "GBP",
+        store: "APP_STORE",
+        period_type: "NORMAL",
+      },
+    });
+  });
+
+  it("emits trial_started for a TRIAL INITIAL_PURCHASE", async () => {
+    const body = JSON.stringify({
+      event: {
+        id: "evt_t",
+        type: "INITIAL_PURCHASE",
+        app_user_id: "user-1",
+        period_type: "TRIAL",
+      },
+    });
+    await handleRevenueCatWebhook(buildRequest({ body }));
+    expect(emitEventMock).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "trial_started", userId: "user-1" }),
+    );
+  });
+
+  it("does NOT emit for an anonymous app_user_id or a non-funnel event type", async () => {
+    await handleRevenueCatWebhook(
+      buildRequest({
+        body: JSON.stringify({
+          event: {
+            id: "evt_anon2",
+            type: "INITIAL_PURCHASE",
+            app_user_id: "$RCAnonymousID:z",
+          },
+        }),
+      }),
+    );
+    expect(emitEventMock).not.toHaveBeenCalled();
+
+    await handleRevenueCatWebhook(
+      buildRequest({
+        body: JSON.stringify({
+          event: {
+            id: "evt_pc",
+            type: "PRODUCT_CHANGE",
+            app_user_id: "user-1",
+          },
+        }),
+      }),
+    );
+    expect(emitEventMock).not.toHaveBeenCalled();
+  });
+
+  it("does NOT emit when the sync fails (webhook returns 500 before the emit)", async () => {
+    userExistsMock.mockResolvedValue(true);
+    fetchSubsMock.mockRejectedValue(new Error("rc down"));
+    const res = await handleRevenueCatWebhook(buildRequest());
+    expect(res.status).toBe(500);
+    expect(emitEventMock).not.toHaveBeenCalled();
   });
 
   it("401 when the Authorization header is missing (claim not attempted)", async () => {

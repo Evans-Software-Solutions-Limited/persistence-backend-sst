@@ -108,3 +108,44 @@ export const resendCoachesAudienceId = new sst.Secret(
   "ResendCoachesAudienceId",
   "",
 );
+
+// Meta Conversions API — server-side ad-conversion signals (spec-30 / M20-P1).
+// No Meta SDK; a native-fetch client posts hashed conversion events to the
+// Graph API. There is no in-app Meta SDK this cycle (binary frozen).
+//
+// `MetaDatasetId`        — the Meta dataset (pixel) id the CAPI events post to
+//                           (`POST /v21.0/{dataset_id}/events`).
+// `MetaCapiAccessToken`  — the CAPI access token (server-side only, never
+//                           shipped to any client).
+// `MetaTestEventCode`    — OPTIONAL. When set, events show up under Events
+//                           Manager → Test Events for verification; leave empty
+//                           in production so real events are counted.
+//
+// All three are OPTIONAL + fail-safe, mirroring `SentryDsn`/`ResendApiKey`
+// rather than the fail-fast secrets: the CAPI client + drainer treat an empty
+// dataset id or token as "not configured" and no-op silently, so a stage
+// without these secrets still deploys and the RC webhook / leads paths behave
+// identically (spec-30 HC-3).
+//
+// Set per-stage from CI via `bunx sst secret set <name> "<value>" --stage <stage>`.
+// Never file-commit values — the repo is public.
+export const metaDatasetId = new sst.Secret("MetaDatasetId", "");
+export const metaCapiAccessToken = new sst.Secret("MetaCapiAccessToken", "");
+export const metaTestEventCode = new sst.Secret("MetaTestEventCode", "");
+
+// Cloudflare Turnstile — bot challenge for the PUBLIC `/leads/*` forms
+// (spec-30 WS3, R3.3). The coach route sends an internal notification email per
+// accepted request, so an unthrottled script is an email-amplification vector.
+//
+// `TurnstileSecret` — the Turnstile secret key, verified server-side against
+//                      challenges.cloudflare.com/turnstile/v0/siteverify.
+//
+// OPTIONAL + fail-safe (empty default): with the secret UNSET the leads routes
+// skip verification entirely, so the forms keep working exactly as today. Set it
+// (plus add the widget's site key to the web build) BEFORE the forms are
+// publicly linked / any ad traffic is driven — from then on a submission without
+// a valid token is rejected. Mirrors RESEND_API_KEY, not the fail-fast secrets.
+//
+// Set per-stage from CI via `bunx sst secret set TurnstileSecret "<value>" --stage <stage>`.
+// Never file-commit values — the repo is public.
+export const turnstileSecret = new sst.Secret("TurnstileSecret", "");

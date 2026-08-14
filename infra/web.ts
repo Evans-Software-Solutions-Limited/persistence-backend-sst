@@ -1,7 +1,14 @@
 import { coreAPI } from "./api";
+import { marketingEdge } from "./web-edge";
 import { webDomain, hostedZoneId } from "./domains";
 
 const region = aws.getRegionOutput().name;
+
+// The WAF-fronted marketing edge the website routes its anonymous /leads +
+// /store-click POSTs through (spec-30 R3.3; see infra/web-edge.ts). `undefined`
+// on dev stages, where the website falls back to the direct Core API URL — so
+// this is `""` there, both for the CSP token and the build var below.
+const marketingEdgeOrigin = marketingEdge ? marketingEdge.url : "";
 
 // Security response headers for the static site. A CloudFront
 // ResponseHeadersPolicy is the AWS-native way to attach these — no per-request
@@ -34,7 +41,18 @@ const securityHeaders = new aws.cloudfront.ResponseHeadersPolicy(
       },
       contentSecurityPolicy: {
         override: true,
-        contentSecurityPolicy: $interpolate`default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self'; connect-src 'self' ${coreAPI.url} https://itunes.apple.com; form-action 'self'; upgrade-insecure-requests`,
+        // spec-30 WS3 additions:
+        //  - Meta Pixel: `script-src` loads fbevents.js from connect.facebook.net;
+        //    `connect-src` covers the /tr beacon on www.facebook.com. `img-src`
+        //    already allows `https:`, covering the pixel's tracking GIF.
+        //  - Cloudflare Turnstile: `script-src` loads api.js and `frame-src`
+        //    allows the challenge iframe, both from challenges.cloudflare.com.
+        //    (There was no `frame-src` before; without it the iframe would fall
+        //    back to `default-src 'self'` and be blocked.)
+        // `${marketingEdgeOrigin}` adds the marketing-edge CloudFront origin to
+        // connect-src on named stages (the website POSTs /leads + /store-click
+        // there); it is `""` on dev, leaving connect-src as it was.
+        contentSecurityPolicy: $interpolate`default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; frame-src https://challenges.cloudflare.com; script-src 'self' https://connect.facebook.net https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self'; connect-src 'self' ${coreAPI.url} ${marketingEdgeOrigin} https://itunes.apple.com https://www.facebook.com https://connect.facebook.net https://challenges.cloudflare.com; form-action 'self'; upgrade-insecure-requests`,
       },
     },
     customHeadersConfig: {
@@ -99,5 +117,18 @@ export const frontend = new sst.aws.StaticSite("web", {
   environment: {
     VITE_REGION: region,
     VITE_CORE_API_URL: coreAPI.url,
+    // Growth instrumentation (spec-30 WS3). PUBLIC, client-exposed by design —
+    // the Meta Pixel id and Cloudflare Turnstile SITE key. Sourced from the
+    // deploy job's env (GitHub env secrets); an empty/unset value makes the
+    // pixel and the Turnstile widget no-op cleanly, so a stage without them
+    // still builds and serves normally. NOT sensitive (unlike the server-side
+    // Meta CAPI token / Turnstile SECRET, which live in SST Secrets).
+    VITE_META_PIXEL_ID: process.env.VITE_META_PIXEL_ID ?? "",
+    VITE_TURNSTILE_SITE_KEY: process.env.VITE_TURNSTILE_SITE_KEY ?? "",
+    // The WAF-fronted marketing edge (spec-30 R3.3) the anonymous /leads +
+    // /store-click POSTs go through. Empty on dev stages → the website's
+    // `API_BASE` falls back to VITE_CORE_API_URL (today's direct call). Not
+    // sensitive — it's a public CloudFront hostname.
+    VITE_MARKETING_EDGE_URL: marketingEdgeOrigin,
   },
 });

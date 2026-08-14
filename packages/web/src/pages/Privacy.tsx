@@ -17,9 +17,10 @@ import { useSeo } from "@/marketing/seo";
  * below has no in-app counterpart, because an in-app screen sets no website
  * cookies. That is the only content difference; anything else is a bug.
  *
- * Every factual claim below was checked against the code on 2026-08-03. Do NOT
- * add a claim here that the implementation does not actually deliver. Two claims
- * in particular are load-bearing on code that must keep existing:
+ * Every factual claim below was checked against the code on 2026-08-03 (cookies
+ * section re-checked 2026-08-13 for the Meta Pixel consent gate). Do NOT add a
+ * claim here that the implementation does not actually deliver. Three claims in
+ * particular are load-bearing on code that must keep existing:
  *
  *   - The firm 12-month retention window depends on `dataRetentionSweep` running
  *     nightly off `accountPurgeCron`. Remove that sweep and this becomes false.
@@ -27,6 +28,11 @@ import { useSeo } from "@/marketing/seo";
  *     depends on the `clientAiSummaries` delete in
  *     `endCoachClientRelationship`. Teardown is a SOFT end that revives the same
  *     row on reconnect, so without that delete the summaries come back.
+ *   - "nothing is stored until you choose Accept" depends on the consent gate in
+ *     `lib/metaPixel.ts` (`initMetaPixel` no-ops unless `getConsent() ===
+ *     "granted"`, spec-30 R3.5). Remove that gate and the pixel loads pre-consent
+ *     and this becomes false. Turnstile is deliberately NOT mentioned: it is
+ *     dormant unless its site key is set, so a claim about it would be false.
  *
  * Still deliberately loose: "at least" six years for the provider
  * webhook-event tables, which are never pruned, so retention there is unbounded.
@@ -35,7 +41,7 @@ export function Privacy() {
   useSeo({
     title: "Privacy Policy — Persistence",
     description:
-      "How Persistence collects, uses and protects your data. We don't sell your personal data or use it for advertising.",
+      "How Persistence collects, uses and protects your data. We never sell your personal data, and your training, nutrition and health data is never used for advertising.",
     path: "/privacy",
   });
 
@@ -44,7 +50,7 @@ export function Privacy() {
       <section className="legal">
         <span className="kicker c-accent legal-kicker">Legal</span>
         <h1>Privacy Policy</h1>
-        <p className="legal-updated">Last updated: 7 August 2026</p>
+        <p className="legal-updated">Last updated: 13 August 2026</p>
 
         <p>
           Persistence ("we", "us", "our") is a fitness-tracking application
@@ -147,7 +153,9 @@ export function Privacy() {
           displaying your workouts, nutrition, and progress; syncing your data
           across your devices; and, where applicable, sharing it with a coach or
           trainer you have explicitly connected with. We do not sell your
-          personal data, and we do not use it for advertising.
+          personal data, and we never use your workouts, nutrition, progress or
+          health data for advertising &mdash; none of it is sent to Meta or any
+          advertising network.
         </p>
 
         <h2>AI features and what they do with your data</h2>
@@ -529,19 +537,49 @@ export function Privacy() {
           link in any email or by contacting us at the address below —
           withdrawing it does not affect anything we did beforehand. We keep
           these details only while they remain useful for this purpose, and we
-          do not sell them or use them for advertising.
+          never sell them. Where you have consented, a hashed version of your
+          email may be shared with Meta to measure our advertising &mdash; see
+          &ldquo;Advertising and measurement&rdquo; below &mdash; and you can
+          withdraw that consent at any time.
         </p>
 
         <h2>Cookies and the Persistence website</h2>
         <p>
-          Our website stores one thing in your browser: whether you chose the
-          light or dark theme. It sets no cookies at all.
+          Your theme choice (light or dark) is remembered locally in your
+          browser as a strictly-necessary preference. It is not a cookie and is
+          never sent anywhere.
         </p>
         <p>
-          We do not use analytics, advertising or tracking cookies, and we do
-          not allow third parties to set cookies on our site. Because we set
-          nothing that requires your consent, there is no cookie banner to
-          dismiss.
+          With your consent, we set one advertising cookie from Meta (Facebook)
+          &mdash; <code>_fbp</code>, plus <code>_fbc</code> if you arrive from
+          one of our adverts &mdash; so we can measure whether our advertising
+          brings people to Persistence. Meta Platforms Ireland Limited is the
+          third party involved, and this data is shared with Meta. We ask first:
+          nothing is stored until you choose &ldquo;Accept&rdquo; on the cookie
+          banner, and choosing &ldquo;Reject&rdquo; sets nothing.
+        </p>
+        <p>
+          You can change your choice at any time using the &ldquo;Cookie
+          settings&rdquo; link in the footer of any page; withdrawing consent
+          removes these cookies. Nothing about your training, food or health is
+          ever shared with Meta.
+        </p>
+
+        <h2>Advertising and measurement</h2>
+        <p>
+          We measure whether our advertising brings people to Persistence. Where
+          you have given consent, our servers send Meta Platforms Ireland
+          Limited a limited set of website events &mdash; such as joining the
+          waitlist or tapping &ldquo;Get the app&rdquo; &mdash; including a
+          hashed (irreversible) version of your email address where you provided
+          one. This is used only to measure our own advertising, is never sold,
+          and never includes your training, nutrition or health data. Your
+          activity inside the Persistence app is never sent to Meta.
+        </p>
+        <p>
+          Our lawful basis for this measurement is your consent (UK GDPR Article
+          6(1)(a)). You can withdraw it at any time using the &ldquo;Cookie
+          settings&rdquo; link in the footer of any page.
         </p>
 
         <h2>Changes to this policy</h2>

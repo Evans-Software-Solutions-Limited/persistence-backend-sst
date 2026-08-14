@@ -128,6 +128,14 @@ jobs:
           # empty value is valid (initSentry() no-ops on an empty DSN). A DSN is
           # public-safe but flows through the secret pattern for per-stage wiring.
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          # Meta Conversions API + Turnstile (spec-30 growth instrumentation).
+          # ALL OPTIONAL + NOT fail-fast (like EXPO_ACCESS_TOKEN/SENTRY_DSN): an
+          # empty value is valid — the CAPI drainer + Turnstile verification
+          # no-op until these are set, so the deploy never breaks for their sake.
+          META_DATASET_ID: ${{ secrets.META_DATASET_ID }}
+          META_CAPI_ACCESS_TOKEN: ${{ secrets.META_CAPI_ACCESS_TOKEN }}
+          META_TEST_EVENT_CODE: ${{ secrets.META_TEST_EVENT_CODE }}
+          TURNSTILE_SECRET: ${{ secrets.TURNSTILE_SECRET }}
         run: |
           if [ -z "$DATABASE_URL" ]; then
             echo "::error::DATABASE_URL is not set on the Production GitHub environment."
@@ -173,6 +181,18 @@ jobs:
           bunx sst secret set ExpoAccessToken "$EXPO_ACCESS_TOKEN" --stage production
           # Optional — safe to set empty; initSentry() no-ops on an empty DSN.
           bunx sst secret set SentryDsn "$SENTRY_DSN" --stage production
+          # Optional (spec-30) — safe to set empty; the CAPI drainer + Turnstile
+          # verification no-op until these carry real values.
+          bunx sst secret set MetaDatasetId "$META_DATASET_ID" --stage production
+          bunx sst secret set MetaCapiAccessToken "$META_CAPI_ACCESS_TOKEN" --stage production
+          bunx sst secret set MetaTestEventCode "$META_TEST_EVENT_CODE" --stage production
+          bunx sst secret set TurnstileSecret "$TURNSTILE_SECRET" --stage production
 
       - name: Deploy
+        # VITE_* are PUBLIC, build-time web vars (client-exposed by design), read
+        # by infra/web.ts and baked into the marketing build. Empty ⇒ the pixel
+        # and Turnstile widget no-op. Safe to keep in GitHub env secrets.
+        env:
+          VITE_META_PIXEL_ID: ${{ secrets.VITE_META_PIXEL_ID }}
+          VITE_TURNSTILE_SITE_KEY: ${{ secrets.VITE_TURNSTILE_SITE_KEY }}
         run: bunx sst deploy --stage production

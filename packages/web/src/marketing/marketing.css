@@ -2040,6 +2040,11 @@
 .mkt .lead-hp {
   display: none;
 }
+/* Cloudflare Turnstile: renders nothing (0×0) until VITE_TURNSTILE_SITE_KEY
+   is set and the widget mounts, so this is a no-op spacer otherwise. */
+.mkt .lead-turnstile:not(:empty) {
+  margin-top: 12px;
+}
 .mkt .coach-enquiry {
   border-top: 1px solid var(--m-line);
   padding-top: 22px;
@@ -2721,6 +2726,25 @@
 .mkt .footer-col a:hover {
   color: var(--m-text);
 }
+/* "Cookie settings" — a button (it opens the consent banner) styled to sit in
+   the footer link column exactly like the anchors around it (spec-30 R3.5). */
+.mkt .footer-linkbtn {
+  display: block;
+  appearance: none;
+  background: none;
+  border: none;
+  padding: 0;
+  margin-bottom: 10px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--m-text-3);
+  text-align: left;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+.mkt .footer-linkbtn:hover {
+  color: var(--m-text);
+}
 .mkt .footer-bar {
   display: flex;
   align-items: center;
@@ -3092,4 +3116,56 @@
 @media (prefers-reduced-motion: reduce) {
   .mkt .catalog-plan { transition: border-color 180ms ease, box-shadow 180ms ease; }
   .mkt .catalog-plan:hover, .mkt .catalog-plan:focus-within { transform: none; }
+}
+
+/* ── Marketing-cookie consent banner (spec-30 R3.5) ───────────────────────────
+   Fixed to the bottom, above the nav (z 200 > nav's 100). Compact so it never
+   permanently hides a lead-form CTA at 375px — it's dismissed on the first
+   choice. Two equal-weight buttons; visible focus rings for keyboard users. */
+.mkt .mkt-consent {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 200;
+  background: var(--m-surface);
+  border-top: 1px solid var(--m-line-2);
+  box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.18);
+}
+.mkt .mkt-consent-inner {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 14px 20px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+.mkt .mkt-consent-copy {
+  flex: 1 1 320px;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--m-text-2);
+}
+.mkt .mkt-consent-copy a {
+  color: var(--m-text);
+  text-decoration: underline;
+}
+.mkt .mkt-consent-actions {
+  display: flex;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+.mkt .mkt-consent .btn:focus-visible {
+  outline: 2px solid var(--m-text);
+  outline-offset: 2px;
+}
+@media (max-width: 520px) {
+  .mkt .mkt-consent-actions {
+    width: 100%;
+  }
+  .mkt .mkt-consent-actions .btn {
+    flex: 1 1 0;
+  }
 }

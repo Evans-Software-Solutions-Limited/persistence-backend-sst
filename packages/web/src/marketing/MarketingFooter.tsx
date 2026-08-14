@@ -1,6 +1,7 @@
 import { Link } from "react-router";
 import { COMPANY, COMPANY_URL } from "./config";
 import { SectionLink } from "./SectionLink";
+import { CONSENT_REOPEN_EVENT } from "./ConsentBanner";
 
 export function MarketingFooter() {
   return (
@@ -38,6 +39,17 @@ export function MarketingFooter() {
             <Link to="/privacy">Privacy</Link>
             <Link to="/terms">Terms</Link>
             <Link to="/delete-account">Delete account</Link>
+            {/* Withdrawal route for marketing-cookie consent (spec-30 R3.5) —
+                re-opens the banner so a prior choice can be changed. */}
+            <button
+              type="button"
+              className="footer-linkbtn"
+              onClick={() =>
+                window.dispatchEvent(new Event(CONSENT_REOPEN_EVENT))
+              }
+            >
+              Cookie settings
+            </button>
             <a href={COMPANY_URL} target="_blank" rel="noopener noreferrer">
               Evans Software Solutions ↗
             </a>

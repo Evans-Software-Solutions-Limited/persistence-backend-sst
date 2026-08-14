@@ -76,6 +76,143 @@ describe("WaitlistForm", () => {
   });
 });
 
+describe("Turnstile widget", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    document.head
+      .querySelectorAll('script[src*="challenges.cloudflare.com"]')
+      .forEach((el) => el.remove());
+  });
+
+  it("renders no widget and submit still works when no site key is configured", async () => {
+    vi.stubEnv("VITE_TURNSTILE_SITE_KEY", "");
+    const fetchSpy = mockFetch(true);
+    vi.stubGlobal("fetch", fetchSpy);
+    const { container } = renderPage(<WaitlistForm />);
+
+    expect(container.querySelector(".lead-turnstile")).toBeNull();
+    expect(
+      document.head.querySelector('script[src*="challenges.cloudflare.com"]'),
+    ).toBeNull();
+
+    fireEvent.change(screen.getByLabelText("Email address"), {
+      target: { value: "me@example.com" },
+    });
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByText("Notify me at launch"));
+
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
+    const [, init] = fetchSpy.mock.calls[0];
+    expect(JSON.parse(init.body as string).turnstileToken).toBeUndefined();
+  });
+
+  it("renders a container and lazily loads the challenge script when a site key is configured", () => {
+    vi.stubEnv("VITE_TURNSTILE_SITE_KEY", "test-site-key");
+    const { container } = renderPage(<WaitlistForm />);
+
+    expect(container.querySelector(".lead-turnstile")).not.toBeNull();
+    expect(
+      document.head.querySelector('script[src*="challenges.cloudflare.com"]'),
+    ).not.toBeNull();
+  });
+
+  describe("with window.turnstile mocked (script already loaded)", () => {
+    let renderMock: ReturnType<typeof vi.fn>;
+    let resetMock: ReturnType<typeof vi.fn>;
+    let capturedOptions:
+      | {
+          callback?: (token: string) => void;
+          "expired-callback"?: () => void;
+        }
+      | undefined;
+
+    beforeEach(() => {
+      capturedOptions = undefined;
+      renderMock = vi.fn((_el: HTMLElement, opts: typeof capturedOptions) => {
+        capturedOptions = opts;
+        return "widget-1";
+      });
+      resetMock = vi.fn();
+      (window as unknown as { turnstile?: unknown }).turnstile = {
+        render: renderMock,
+        remove: vi.fn(),
+        reset: resetMock,
+      };
+    });
+
+    afterEach(() => {
+      delete (window as unknown as { turnstile?: unknown }).turnstile;
+    });
+
+    it("resets the widget and clears the token after a failed submit, so a retry doesn't resend the consumed token", async () => {
+      vi.stubEnv("VITE_TURNSTILE_SITE_KEY", "test-site-key");
+      const fetchSpy = mockFetch(false, { ok: false });
+      vi.stubGlobal("fetch", fetchSpy);
+      renderPage(<WaitlistForm />);
+
+      await waitFor(() => expect(renderMock).toHaveBeenCalledTimes(1));
+      capturedOptions!.callback!("tok-first");
+
+      fireEvent.change(screen.getByLabelText("Email address"), {
+        target: { value: "me@example.com" },
+      });
+      fireEvent.click(screen.getByRole("checkbox"));
+      fireEvent.click(screen.getByText("Notify me at launch"));
+
+      await waitFor(() => expect(screen.getByText(/went wrong/i)).toBeDefined());
+      expect(resetMock).toHaveBeenCalledWith("widget-1");
+
+      // Retry without solving a new challenge — the already-consumed token
+      // must not be resent.
+      fireEvent.click(screen.getByText("Notify me at launch"));
+      await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(2));
+      const [, secondInit] = fetchSpy.mock.calls[1];
+      expect(
+        JSON.parse(secondInit.body as string).turnstileToken,
+      ).toBeUndefined();
+    });
+
+    it("does not reset the widget after a successful submit", async () => {
+      vi.stubEnv("VITE_TURNSTILE_SITE_KEY", "test-site-key");
+      vi.stubGlobal("fetch", mockFetch(true));
+      renderPage(<WaitlistForm />);
+
+      await waitFor(() => expect(renderMock).toHaveBeenCalledTimes(1));
+      capturedOptions!.callback!("tok-first");
+
+      fireEvent.change(screen.getByLabelText("Email address"), {
+        target: { value: "me@example.com" },
+      });
+      fireEvent.click(screen.getByRole("checkbox"));
+      fireEvent.click(screen.getByText("Notify me at launch"));
+
+      await waitFor(() => expect(screen.getByText(/on the list/i)).toBeDefined());
+      expect(resetMock).not.toHaveBeenCalled();
+    });
+
+    it("clears the token when Turnstile reports the challenge expired, so a stale token is never sent", async () => {
+      vi.stubEnv("VITE_TURNSTILE_SITE_KEY", "test-site-key");
+      const fetchSpy = mockFetch(true);
+      vi.stubGlobal("fetch", fetchSpy);
+      renderPage(<WaitlistForm />);
+
+      await waitFor(() => expect(renderMock).toHaveBeenCalledTimes(1));
+      capturedOptions!.callback!("tok-first");
+      capturedOptions!["expired-callback"]!();
+
+      fireEvent.change(screen.getByLabelText("Email address"), {
+        target: { value: "me@example.com" },
+      });
+      fireEvent.click(screen.getByRole("checkbox"));
+      fireEvent.click(screen.getByText("Notify me at launch"));
+
+      await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
+      const [, init] = fetchSpy.mock.calls[0];
+      expect(JSON.parse(init.body as string).turnstileToken).toBeUndefined();
+    });
+  });
+});
+
 describe("CoachEnquiryForm", () => {
   afterEach(() => vi.restoreAllMocks());
 

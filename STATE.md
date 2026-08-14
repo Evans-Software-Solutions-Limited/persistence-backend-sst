@@ -11,6 +11,122 @@ say so and fix this file.
 
 ## ▶ START HERE — next session (rewritten 2026-08-04, post-Mealprint-merge)
 
+### 🟢 2026-08-12 — GROWTH INSTRUMENTATION (spec-30 / M20-P1) BUILT — backend/web-only, binary frozen (branch `feat/growth-instrumentation-spec`)
+
+Server-side growth instrumentation for the launch funnel, built under the
+zero-`packages/mobile`-diffs constraint (both apps in review). Spec triplet at
+`specs/30-growth-instrumentation/`. All four workstreams in ONE PR (Brad's
+call). Gates green: core 336 files/4176 tests, coverage 97.97% (analytics +
+leads 100%); web 11/69; workspace typecheck + lint + prettier clean.
+
+- **WS1 — first-party events.** New `analytics_events` table
+  (`supabase/migrations/20260812120000_analytics_events.sql` + schema.ts
+  mirror) — append-only funnel log AND the Meta CAPI outbox. Best-effort
+  `emitEvent` (`application/analytics/`) writes one row, never throws (HC-2).
+  Emitters wired into: the RevenueCat webhook (trial_started /
+  subscription_purchased[value+currency] / renewal / cancellation / expiration,
+  after sync, before mark-done), the session-record handler (session_completed,
+  gated on clientSessionId so legacy clients can't double-emit), the two
+  `/leads/*` routes (lead_captured + audience). `registration_completed` is
+  written by an ADDITIVE `auth.users` trigger
+  (`20260812130000_registration_analytics_event.sql`) — profiles are created by
+  a DB trigger, so there is no Node path at registration. analytics_events added
+  to the nightly `dataRetentionSweep` (12-month prune).
+- **WS2 — Meta CAPI (server-side, no SDK).** `metaCapiClient.ts` (native fetch,
+  SHA-256 email/external_id, no-op when unconfigured), `metaEventMap.ts`
+  (analytics→Meta standard events), and the **outbox drainer** (Option B, Brad's
+  pick): `meta-capi-forward` Cron (rate 5 min, `infra/api.ts`) drains
+  `meta_forwarded_at IS NULL` rows → CAPI, at-least-once (Meta dedups on
+  event_id). Drainer ages-out rows past Meta's 7-day window (bulk, unbatched)
+  so a rollout backlog / bad token can't stall the queue or grow it unbounded.
+  `analytics_events` has a partial UNIQUE on event_id + `ON CONFLICT DO NOTHING`
+  so a webhook retry can't double-count. Secrets `META_DATASET_ID`/
+  `META_CAPI_ACCESS_TOKEN`/`META_TEST_EVENT_CODE` — OPTIONAL + fail-safe.
+- **WS3 — web (`packages/web`).** Meta Pixel (`lib/metaPixel.ts`, no-op without
+  `VITE_META_PIXEL_ID`) + PageView on route change; click-capture (fbclid→fbc,
+  _fbp, event_id) in `useLeadSubmit` forwarded to `/leads/*` and deduped with the
+  server Lead; **Turnstile** on the forms (`VITE_TURNSTILE_SITE_KEY`) + server
+  verification (`leads/turnstile.ts`, fail-safe: no-op until `TURNSTILE_SECRET`
+  set) — R3.3 gate before public linking; campaign routes `/uon` `/flyer`
+  `/qr/:slug` + `appStoreUrl`/`playStoreUrl` attribution helpers in
+  marketing/config (ready; outbound decoration activates when `appStore.available`
+  flips true). CSP in `infra/web.ts` extended for facebook + cloudflare.
+- **WS4 — subscriptions verification.** No code-side price/offering list (catalog
+  = `subscription_tiers` DB row + store consoles; entitlements.ts is structural
+  mapping, not pricing). Coach Pro EUR-annual defect (16.7% vs 29.9% GBP) is a
+  **console-only fix — raise the EUR monthly in ASC/Play/RC (Brad's action)**,
+  nothing in this repo. Promo-grant handling verified + tested (R4.3).
+
+**Meta Pixel consent gate (spec-30 R3.5/R3.6, added to this PR 2026-08-13):**
+the pixel no longer loads at first paint — it initialises ONLY after explicit
+opt-in via a `ConsentBanner` (equal-weight Reject/Accept, withdrawable via a
+"Cookie settings" footer link that clears `_fbp`/`_fbc`). `/privacy` cookies
+section rewritten to match (names Meta Platforms Ireland, consent-gated,
+withdrawal route). `initMetaPixel`/`trackPageView`/`trackLead` all no-op unless
+`getConsent()==='granted'`. This is the gate that makes `VITE_META_PIXEL_ID`
+**safe to set on the Production environment**.
+
+**"Make Meta ads runnable" (R2.7/R2.8/R3.7/R3.8, added 2026-08-13):** resolved
+the pixel-vs-CAPI question — keep both, but (a) **web-only CAPI sink**: app/
+server events stay in analytics_events for funnel maths but never forward to Meta
+(unattributable without an in-app SDK — `extinfo`/`advertiser_tracking_enabled`);
+(b) **fail-closed consent gate** on forwarding — `profiles.marketing_consent`
+(migration `20260813120000`, nullable, ⚠ MANUAL PROD APPLY; nothing writes it yet
+since the web has no sign-up) for user rows, `properties.marketing_consent`
+(carried from the browser) for anonymous leads/store-clicks; (c) **App Store-
+click conversion** `store_click`→Meta custom `AppStoreClick`, deduped browser↔
+server via `event_id`, sent by `navigator.sendBeacon` — the optimisable ads
+signal. New public `POST /store-click`; new shared `AppStoreCta` component (live
+copy activates when `config.appStore.url` is set). Privacy copy fixed in all 3
+web spots (SEO/how-we-use/lead) + new "Advertising and measurement" section
+(Meta named as server-side recipient, hashed email, consent-based) + **mobile
+Section 4** in sync (ships next app build; the live app copy is NOT false in the
+interim because app data is never sent to Meta). Both blanket "not used for
+advertising" claims removed; the advertising wording is scoped/protective —
+⚠ **DPO/solicitor pass recommended before flipping the Production pixel on**.
+Gates green: core 4185 tests / 97.97% cov, web 113, mobile presenter 15,
+workspace typecheck 9/9. ⚠ Brad ALSO must create the `AppStoreClick` Custom
+Conversion in Meta Events Manager before running a campaign.
+
+**⚠ Brad's manual actions before this is live:** (1) apply both migrations to
+prod (manual) — now THREE: analytics_events, registration trigger, AND
+`20260813120000_profiles_marketing_consent`; (2) set SST secrets per stage:
+`MetaDatasetId`, `MetaCapiAccessToken`, optional `MetaTestEventCode`,
+`TurnstileSecret` (Meta creds already in GitHub: dataset/pixel `2072560130045942`,
+`META_TEST_EVENT_CODE=TEST8583` staging-only); (3) set web build vars
+`VITE_META_PIXEL_ID` (=`2072560130045942`) + `VITE_TURNSTILE_SITE_KEY`; (4) verify
+in Meta Events Manager → Test Events before driving traffic; (5) **create the
+`AppStoreClick` Custom Conversion** in Events Manager to optimise campaigns on;
+(6) raise EUR Coach Pro monthly in the store consoles; (7) DPO/solicitor pass on
+the advertising privacy copy. **Build-2 backlog** (queued, needs a binary):
+client-side event emitter, Meta/FB SDK, MMP, SKAdNetwork/AEM, ATT prompt, share
+card, referral codes — no install-level SKAN attribution until the SDK ships
+(server signals suffice; playbook gates Meta spend to month 3+).
+`microservices/core/probe-steps.ts` is a pre-existing untracked file that fails
+lint/prettier locally — NOT part of this PR.
+
+### 🟢 2026-08-12 — BOTH APPS SUBMITTED · PLAY CONSOLE RUNBOOK COMPLETE (Brad, confirmed in Cowork session)
+
+**iOS and Android are both submitted and sitting in store review as of
+2026-08-12.** The full Play Console operational runbook from the 2026-08-07
+Android entry below is DONE (Brad): app/payments profile created and verified,
+Health apps access approved, Android RevenueCat public key in EAS, the twelve
+Play base-plan products created and attached to the `default` offering,
+RevenueCat + EAS service-account credentials uploaded, RTDN configured and
+tested. The "Still required before calling the whole Android release ready"
+list in the 2026-08-07 block is SUPERSEDED by this entry — the remaining
+Android caveat is whatever physical-device QA was outstanding at submission
+time, plus anything App Review itself raises.
+
+Launch is now gated purely on review outcomes (both stores). RevenueCat
+**Shipaton 2026 is registered** (submit by 30 Sep 23:45 PDT; release must land
+1 Aug–30 Sep; grand prize judged on post-release traction — every review day
+counts). Next actions: daily review-queue watch with same-day responses;
+Devpost submission drafting underway (Cowork 2026-08-12); launch-day assets
+being banked under `marketing/launch-assets/`. Growth-instrumentation
+(backend-only, no new binary) brief handed to Claude Code 2026-08-12 — see
+that session's spec when it lands.
+
 ### 🟡 2026-08-10 — ANDROID PLAY BUILD + STORE WIRING IN PROGRESS
 
 Branch `codex/public-account-deletion` / PR #388 now also carries the Android
@@ -39,7 +155,7 @@ approval. Separate EAS and RevenueCat service accounts, RTDN, internal rollout,
 and physical Android QA remain. Google Cloud requires a fresh company-account
 password verification before the two service accounts can be created.
 
-### 🟢 2026-08-07 — ANDROID LAUNCH RAIL IMPLEMENTED (external activation + device QA remain)
+### 🟢 2026-08-07 — ANDROID LAUNCH RAIL IMPLEMENTED (external activation + device QA remain) — ⚠ runbook items below SUPERSEDED by 2026-08-12 entry
 
 Android no longer selects the health stub. `packages/mobile` now includes
 `react-native-health-connect@4.1.3` and a real `HealthConnectAdapter` for steps,
@@ -79,7 +195,8 @@ retry after transient binding failures. The exact Console,
 RevenueCat, RTDN, product and acceptance checklist is in
 `specs/milestones/ANDROID-LAUNCH/REVENUECAT-PLAY-SETUP.md`.
 
-Still required before calling the **whole Android release** ready: create and
+~~Still required before calling the **whole Android release** ready~~
+(**✅ ALL DONE 2026-08-12 — see the entry above; Android is submitted**): create and
 verify the Play Console app/payments profile; approve Health apps access;
 publish the updated web privacy page; add the Android RevenueCat public key to
 EAS; create/import the twelve Play base-plan products and attach them to the

@@ -4,6 +4,7 @@ import "./fonts";
 import "./marketing.css";
 import { MarketingNav } from "./MarketingNav";
 import { MarketingFooter } from "./MarketingFooter";
+import { ConsentBanner } from "./ConsentBanner";
 
 /**
  * Shell for every marketing page: scoped `.mkt` root (so its warm editorial
@@ -39,6 +40,7 @@ export function MarketingLayout({
       <MarketingNav current={current} />
       <main>{children}</main>
       <MarketingFooter />
+      <ConsentBanner />
     </div>
   );
 }
