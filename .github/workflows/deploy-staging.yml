@@ -59,15 +59,16 @@ jobs:
       - name: Build
         run: bun run build
 
-      - name: Unit tests
-        # Raise the V8 heap for this step only. A change under packages/db (e.g.
-        # the spec-30 profiles.marketing_consent column) busts turbo's mobile
-        # test:unit cache, so mobile runs `jest --coverage` fresh here and OOMs
-        # at the default ~2 GB heap (exit 137). Same fix as pr-checks.yml's
-        # unit-test job; scoped to this step so `sst deploy` below is untouched.
-        env:
-          NODE_OPTIONS: --max-old-space-size=6144
-        run: bun run test:unit
+      - name: Unit tests (backend + web; mobile excluded)
+        # This workflow deploys the SST backend + web static site — NOT the
+        # mobile app (that ships via mobile-build-*.yml / EAS). Mobile's
+        # `jest --coverage` suite (~6k tests, ~13-15 min, and the sole source of
+        # the earlier deploy OOM) is irrelevant to what this deploys, so it is
+        # excluded here — it is still fully gated at merge by pr-checks.yml, on
+        # the same code. The remaining vitest suites (core/web/db/…) run in
+        # ~1-2 min, so no heap bump is needed either. This is the sustainable
+        # replacement for the --max-old-space-size bump added in #394.
+        run: bunx turbo run test:unit --cache-dir .turbo --filter='!@persistence/mobile'
 
       - name: Install Supabase CLI
         uses: supabase/setup-cli@v1
