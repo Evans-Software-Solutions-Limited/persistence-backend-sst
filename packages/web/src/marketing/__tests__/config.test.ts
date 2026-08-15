@@ -1,11 +1,35 @@
-import { appStore, playStore, appStoreUrl, playStoreUrl } from "../config";
+import {
+  appStore,
+  playStore,
+  appStoreUrl,
+  playStoreUrl,
+  APPLE_PROVIDER_TOKEN,
+} from "../config";
+
+/**
+ * Captured at import time, before any reset below mutates the module. These are
+ * the values the site actually ships with — asserted in "shipped config" at the
+ * bottom of this file.
+ */
+const SHIPPED = {
+  appStore: { ...appStore },
+  playStore: { ...playStore },
+};
 
 describe("appStoreUrl / playStoreUrl", () => {
-  afterEach(() => {
+  // Reset BEFORE each test, not after: the store config now ships live, so a
+  // test that wants the not-yet-live behaviour has to clear it first. An
+  // afterEach alone left the very first test reading the real shipped values.
+  beforeEach(() => {
     appStore.url = null;
     appStore.available = false;
     playStore.url = null;
     playStore.available = false;
+  });
+
+  afterEach(() => {
+    Object.assign(appStore, SHIPPED.appStore);
+    Object.assign(playStore, SHIPPED.playStore);
   });
 
   it("returns null when the store url is not set, campaign or not", () => {
@@ -25,13 +49,28 @@ describe("appStoreUrl / playStoreUrl", () => {
     );
   });
 
-  it("appends Apple ct/pt params for a known campaign", () => {
-    appStore.url = "https://apps.apple.com/app/id123456789";
+  it("appends Apple ct/pt/mt params for a known campaign", () => {
+    appStore.url = "https://apps.apple.com/app/apple-store/id123456789";
     const url = appStoreUrl("uon");
     expect(url).not.toBeNull();
     const parsed = new URL(url!);
     expect(parsed.searchParams.get("ct")).toBe("uon");
-    expect(parsed.searchParams.get("pt")).toBe("uon_campus");
+    expect(parsed.searchParams.get("pt")).toBe(APPLE_PROVIDER_TOKEN);
+    expect(parsed.searchParams.get("mt")).toBe("8");
+  });
+
+  it("uses the same provider token on every campaign — pt is not per-campaign", () => {
+    appStore.url = "https://apps.apple.com/app/apple-store/id123456789";
+    const pt = (slug: string) =>
+      new URL(appStoreUrl(slug)!).searchParams.get("pt");
+
+    expect(pt("uon")).toBe(APPLE_PROVIDER_TOKEN);
+    expect(pt("flyer")).toBe(APPLE_PROVIDER_TOKEN);
+    expect(pt("default")).toBe(APPLE_PROVIDER_TOKEN);
+  });
+
+  it("uses a numeric provider token", () => {
+    expect(APPLE_PROVIDER_TOKEN).toMatch(/^\d+$/);
   });
 
   it("appends Play utm_source/utm_campaign params for a known campaign, preserving existing query params", () => {
@@ -52,10 +91,33 @@ describe("appStoreUrl / playStoreUrl", () => {
   });
 
   it("uses the default campaign entry for /qr/:slug style lookups", () => {
-    appStore.url = "https://apps.apple.com/app/id123456789";
+    appStore.url = "https://apps.apple.com/app/apple-store/id123456789";
     const url = appStoreUrl("default");
     const parsed = new URL(url!);
     expect(parsed.searchParams.get("ct")).toBe("qr");
-    expect(parsed.searchParams.get("pt")).toBe("qr");
+    expect(parsed.searchParams.get("pt")).toBe(APPLE_PROVIDER_TOKEN);
+  });
+});
+
+describe("shipped config", () => {
+  it("has the App Store live, so every CTA renders as a real link", () => {
+    expect(SHIPPED.appStore.available).toBe(true);
+    expect(SHIPPED.appStore.url).toBe(
+      "https://apps.apple.com/app/apple-store/id6755091280",
+    );
+    expect(SHIPPED.appStore.appId).toBe("6755091280");
+  });
+
+  it("uses a storefront-agnostic App Store url", () => {
+    // A /gb/ or any other country-locked path would send all 175 territories
+    // to the UK store.
+    expect(SHIPPED.appStore.url).not.toMatch(
+      /apps\.apple\.com\/[a-z]{2}\//,
+    );
+  });
+
+  it("keeps Play not-live until Android clears review", () => {
+    expect(SHIPPED.playStore.available).toBe(false);
+    expect(SHIPPED.playStore.url).toBeNull();
   });
 });
