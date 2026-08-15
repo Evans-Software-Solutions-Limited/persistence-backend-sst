@@ -22,8 +22,10 @@ import {
  *
  * Ownership: `userId` comes from the validated JWT and scopes every row (see
  * `SessionRepository.getRecentSets`) — a user can only ever read their own
- * history. Registered BEFORE `GET /sessions/:sessionId` so the static
- * `recent-sets` segment is never captured as a `:sessionId` param.
+ * history. Mounted via `loadoutRoutes` near the END of the `api.ts` chain
+ * (after `GET /sessions/:sessionId`); ordering is nonetheless safe because
+ * memoirist (Elysia's router) always matches the static `recent-sets` segment
+ * before the `:sessionId` param, regardless of registration order.
  *
  * Response shape matches the mobile `RecentSetEntry`:
  *   { exerciseId, setNumber, weightKg (number), reps (number), recordedAt (ISO) }

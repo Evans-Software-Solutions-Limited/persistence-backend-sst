@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { getTableConfig } from "drizzle-orm/pg-core";
+import { getTableConfig, PgDialect } from "drizzle-orm/pg-core";
 import { workoutSessions } from "@persistence/db";
 
 vi.mock("@persistence/db/client", () => ({
@@ -147,19 +147,37 @@ describe("SessionRepository", () => {
   });
 
   describe("getRecentSets", () => {
+    // Captures the WHERE clause and ORDER BY args the method actually passes,
+    // so a render-based test can assert the EXECUTABLE SQL shape (the repo's
+    // documented mocked-DB blind spot — see reference_drizzle_groupby_param_bug).
     function makeRecentSetsChain(resolvedValue: unknown) {
-      const orderBy = vi.fn().mockResolvedValue(resolvedValue);
-      const where = vi.fn().mockReturnValue({ orderBy });
+      const captured: {
+        on?: unknown[];
+        where?: unknown;
+        orderBy?: unknown[];
+      } = {};
+      const orderBy = vi.fn((...args: unknown[]) => {
+        captured.orderBy = args;
+        return Promise.resolve(resolvedValue);
+      });
+      const where = vi.fn((clause: unknown) => {
+        captured.where = clause;
+        return { orderBy };
+      });
       const innerJoin2 = vi.fn().mockReturnValue({ where });
       const innerJoin1 = vi.fn().mockReturnValue({ innerJoin: innerJoin2 });
       const from = vi.fn().mockReturnValue({ innerJoin: innerJoin1 });
-      return { chain: { from }, where };
+      const selectDistinctOn = vi.fn((on: unknown[]) => {
+        captured.on = on;
+        return { from };
+      });
+      return { selectDistinctOn, captured };
     }
 
     it("maps rows and uses completedAt as recordedAt", async () => {
       const completedAt = new Date("2026-08-07T14:25:28.838Z");
       const startedAt = new Date("2026-08-07T13:08:00.185Z");
-      const { chain } = makeRecentSetsChain([
+      const { selectDistinctOn } = makeRecentSetsChain([
         {
           exerciseId: "ex-1",
           setNumber: 1,
@@ -169,8 +187,7 @@ describe("SessionRepository", () => {
           startedAt,
         },
       ]);
-      const mockDb = { selectDistinctOn: vi.fn().mockReturnValue(chain) };
-      (getDb as any).mockReturnValue(mockDb);
+      (getDb as any).mockReturnValue({ selectDistinctOn });
 
       const { SessionRepository } = await import("../sessionRepository");
       const repo = new SessionRepository();
@@ -189,7 +206,7 @@ describe("SessionRepository", () => {
 
     it("falls back to startedAt when completedAt is null", async () => {
       const startedAt = new Date("2026-08-07T13:08:00.185Z");
-      const { chain } = makeRecentSetsChain([
+      const { selectDistinctOn } = makeRecentSetsChain([
         {
           exerciseId: "ex-2",
           setNumber: 3,
@@ -199,8 +216,7 @@ describe("SessionRepository", () => {
           startedAt,
         },
       ]);
-      const mockDb = { selectDistinctOn: vi.fn().mockReturnValue(chain) };
-      (getDb as any).mockReturnValue(mockDb);
+      (getDb as any).mockReturnValue({ selectDistinctOn });
 
       const { SessionRepository } = await import("../sessionRepository");
       const repo = new SessionRepository();
@@ -209,19 +225,35 @@ describe("SessionRepository", () => {
       expect(result[0]?.recordedAt).toEqual(startedAt);
     });
 
-    it("scopes the query to the requested user id", async () => {
-      const { chain } = makeRecentSetsChain([]);
-      const mockDb = { selectDistinctOn: vi.fn().mockReturnValue(chain) };
-      (getDb as any).mockReturnValue(mockDb);
+    it("builds SQL scoped to the user, completed-only, ordered NULLS LAST", async () => {
+      const { selectDistinctOn, captured } = makeRecentSetsChain([]);
+      (getDb as any).mockReturnValue({ selectDistinctOn });
 
       const { SessionRepository } = await import("../sessionRepository");
-      const repo = new SessionRepository();
-      const result = await repo.getRecentSets("user-42");
+      await new SessionRepository().getRecentSets("user-42");
 
-      // The user filter is applied inside the composed `where(and(...))`; the
-      // empty result proves the chain resolved without throwing.
-      expect(result).toEqual([]);
-      expect(mockDb.selectDistinctOn).toHaveBeenCalledTimes(1);
+      const dialect = new PgDialect();
+
+      // WHERE: the user filter is the isolation guarantee. Also completed-only,
+      // non-substituted, and non-null weight/reps — rendered, not stubbed.
+      const whereSql = dialect.sqlToQuery(captured.where as any);
+      expect(whereSql.sql).toContain('"user_id"');
+      expect(whereSql.params).toContain("user-42");
+      expect(whereSql.sql).toContain('"status"');
+      expect(whereSql.params).toContain("completed");
+      expect(whereSql.sql).toContain('"is_substituted"');
+      expect(whereSql.sql.toLowerCase()).toContain("is not null");
+
+      // ORDER BY tiebreak must coalesce and be NULLS LAST — the finding #1 fix:
+      // a bare DESC (NULLS FIRST) would let a null completed_at win DISTINCT ON.
+      const orderArgs = captured.orderBy as unknown[];
+      const tiebreak = orderArgs[orderArgs.length - 1];
+      const orderSql = dialect.sqlToQuery(tiebreak as any).sql.toLowerCase();
+      expect(orderSql).toContain("coalesce");
+      expect(orderSql).toContain("nulls last");
+
+      // DISTINCT ON groups by (exercise, setNumber).
+      expect(captured.on).toHaveLength(2);
     });
   });
 

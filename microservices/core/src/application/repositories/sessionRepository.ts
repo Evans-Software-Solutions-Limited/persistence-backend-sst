@@ -260,8 +260,15 @@ export class SessionRepository {
       .orderBy(
         sessionExercises.exerciseId,
         exerciseSets.setNumber,
-        desc(workoutSessions.completedAt),
-        desc(workoutSessions.startedAt),
+        // "Most recent attempt wins" per group. Order by the SAME coalesced
+        // timestamp used for `recordedAt` below, with an explicit NULLS LAST:
+        // Drizzle's `desc()` emits a bare `DESC`, which is Postgres NULLS FIRST,
+        // so a completed session with a null `completed_at` (reachable via the
+        // PATCH-complete path in `update`, which doesn't coalesce like
+        // `recordSession` does) would otherwise sort AHEAD of genuinely newer
+        // rows and win DISTINCT ON — surfacing a stale hint. NULLS LAST keeps a
+        // real timestamp winning over a null one.
+        sql`coalesce(${workoutSessions.completedAt}, ${workoutSessions.startedAt}) desc nulls last`,
       );
 
     // `weight_kg` is a NUMERIC column → postgres.js returns it as a string;
