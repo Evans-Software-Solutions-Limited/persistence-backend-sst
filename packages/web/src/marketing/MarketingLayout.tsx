@@ -5,6 +5,7 @@ import "./marketing.css";
 import { MarketingNav } from "./MarketingNav";
 import { MarketingFooter } from "./MarketingFooter";
 import { ConsentBanner } from "./ConsentBanner";
+import { AppBanner } from "./AppBanner";
 
 /**
  * Shell for every marketing page: scoped `.mkt` root (so its warm editorial
@@ -37,6 +38,7 @@ export function MarketingLayout({
   return (
     <div className="mkt">
       <div className="mkt-bg" aria-hidden="true" />
+      <AppBanner />
       <MarketingNav current={current} />
       <main>{children}</main>
       <MarketingFooter />
