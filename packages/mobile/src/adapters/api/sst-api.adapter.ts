@@ -125,6 +125,7 @@ import type { PersonalRecord } from "@/domain/models/record";
 import type { Achievement } from "@/domain/models/achievement";
 import type { HabitCompletion } from "@/domain/models/habit-completion";
 import type { Streak } from "@/domain/models/streak";
+import type { RecentSetEntry } from "@/domain/ports/storage.port";
 import type {
   ActiveProgramme,
   HomePayload,
@@ -631,6 +632,10 @@ export class SSTApiAdapter implements ApiPort {
 
   async deleteSession(id: string) {
     return this.request<void>(`/sessions/${id}`, { method: "DELETE" });
+  }
+
+  async getRecentSets() {
+    return this.requestEnvelope<RecentSetEntry[]>("/sessions/recent-sets");
   }
 
   async recordSession(payload: RecordSessionInput) {

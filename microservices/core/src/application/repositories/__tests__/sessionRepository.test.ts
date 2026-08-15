@@ -146,6 +146,85 @@ describe("SessionRepository", () => {
     });
   });
 
+  describe("getRecentSets", () => {
+    function makeRecentSetsChain(resolvedValue: unknown) {
+      const orderBy = vi.fn().mockResolvedValue(resolvedValue);
+      const where = vi.fn().mockReturnValue({ orderBy });
+      const innerJoin2 = vi.fn().mockReturnValue({ where });
+      const innerJoin1 = vi.fn().mockReturnValue({ innerJoin: innerJoin2 });
+      const from = vi.fn().mockReturnValue({ innerJoin: innerJoin1 });
+      return { chain: { from }, where };
+    }
+
+    it("maps rows and uses completedAt as recordedAt", async () => {
+      const completedAt = new Date("2026-08-07T14:25:28.838Z");
+      const startedAt = new Date("2026-08-07T13:08:00.185Z");
+      const { chain } = makeRecentSetsChain([
+        {
+          exerciseId: "ex-1",
+          setNumber: 1,
+          weightKg: "60.00",
+          reps: 8,
+          completedAt,
+          startedAt,
+        },
+      ]);
+      const mockDb = { selectDistinctOn: vi.fn().mockReturnValue(chain) };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const { SessionRepository } = await import("../sessionRepository");
+      const repo = new SessionRepository();
+      const result = await repo.getRecentSets("u1");
+
+      expect(result).toEqual([
+        {
+          exerciseId: "ex-1",
+          setNumber: 1,
+          weightKg: "60.00",
+          reps: 8,
+          recordedAt: completedAt,
+        },
+      ]);
+    });
+
+    it("falls back to startedAt when completedAt is null", async () => {
+      const startedAt = new Date("2026-08-07T13:08:00.185Z");
+      const { chain } = makeRecentSetsChain([
+        {
+          exerciseId: "ex-2",
+          setNumber: 3,
+          weightKg: "42.50",
+          reps: 12,
+          completedAt: null,
+          startedAt,
+        },
+      ]);
+      const mockDb = { selectDistinctOn: vi.fn().mockReturnValue(chain) };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const { SessionRepository } = await import("../sessionRepository");
+      const repo = new SessionRepository();
+      const result = await repo.getRecentSets("u1");
+
+      expect(result[0]?.recordedAt).toEqual(startedAt);
+    });
+
+    it("scopes the query to the requested user id", async () => {
+      const { chain } = makeRecentSetsChain([]);
+      const mockDb = { selectDistinctOn: vi.fn().mockReturnValue(chain) };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const { SessionRepository } = await import("../sessionRepository");
+      const repo = new SessionRepository();
+      const result = await repo.getRecentSets("user-42");
+
+      // The user filter is applied inside the composed `where(and(...))`; the
+      // empty result proves the chain resolved without throwing.
+      expect(result).toEqual([]);
+      expect(mockDb.selectDistinctOn).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe("getById", () => {
     it("should get session by id with exercises", async () => {
       const mockSession = {

@@ -15,6 +15,7 @@ import type {
   ReferenceListKind,
 } from "@/domain/models/reference-list";
 import type { ShoppingList } from "@/domain/models/shoppingList";
+import type { RecentSetEntry } from "@/domain/ports/storage.port";
 import { filterExercises } from "@/domain/services/exercise.service";
 import {
   computeConsumed,
@@ -492,6 +493,13 @@ export class InMemoryApiAdapter implements ApiPort {
   async getActiveSession() {
     const active = this.sessions.find((s) => s.status === "in_progress");
     return this.mayFail(active ?? null);
+  }
+
+  /** Settable fixture for the recent-sets hydration path. */
+  recentSets: RecentSetEntry[] = [];
+
+  async getRecentSets() {
+    return this.mayFail(this.recentSets);
   }
 
   async recordSession(payload: RecordSessionInput) {

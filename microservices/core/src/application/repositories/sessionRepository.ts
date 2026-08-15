@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import {
   workoutSessions,
   sessionExercises,
@@ -195,6 +195,88 @@ export class SessionRepository {
       .orderBy(desc(workoutSessions.startedAt))
       .limit(limit)
       .offset(offset);
+  }
+
+  /**
+   * The user's most-recent logged weight+reps for every (exercise, setNumber)
+   * they have ever completed. Drives the mobile "Previous" hint chips.
+   *
+   * Why this exists: V2's recent-sets hints are cached device-local and were
+   * only ever written when a session is completed ON that device — there was
+   * no server backfill, so a fresh install (new phone, App Store install after
+   * TestFlight, reinstall) started with empty hints even though the full set
+   * history is on the server. This endpoint lets the client hydrate that cache
+   * on login. Mirrors legacy `user_history.recent_sets`.
+   *
+   * Semantics match the on-device writer in `completeSessionCommand`:
+   *   - only `completed` sessions (cancelled/in-progress aren't real attempts)
+   *   - substituted rows excluded (their sets belong to an exercise the user
+   *     moved away from; the canonical attempt is the non-substituted row)
+   *   - only sets with BOTH weight and reps (a meaningful "previous" hint)
+   *   - most-recent attempt wins per (exerciseId, setNumber)
+   *
+   * `DISTINCT ON (exercise_id, set_number)` with a matching leading ORDER BY
+   * keeps one row per group — the newest by `completed_at` (then `started_at`
+   * as a stable tiebreak). Scoped to `userId` throughout — no cross-user leak.
+   */
+  async getRecentSets(userId: string): Promise<
+    Array<{
+      exerciseId: string;
+      setNumber: number;
+      weightKg: string;
+      reps: number;
+      recordedAt: Date | null;
+    }>
+  > {
+    const db = getDb();
+
+    const rows = await db
+      .selectDistinctOn([sessionExercises.exerciseId, exerciseSets.setNumber], {
+        exerciseId: sessionExercises.exerciseId,
+        setNumber: exerciseSets.setNumber,
+        weightKg: exerciseSets.weightKg,
+        reps: exerciseSets.reps,
+        completedAt: workoutSessions.completedAt,
+        startedAt: workoutSessions.startedAt,
+      })
+      .from(exerciseSets)
+      .innerJoin(
+        sessionExercises,
+        eq(sessionExercises.id, exerciseSets.sessionExerciseId),
+      )
+      .innerJoin(
+        workoutSessions,
+        eq(workoutSessions.id, sessionExercises.sessionId),
+      )
+      .where(
+        and(
+          eq(workoutSessions.userId, userId),
+          eq(workoutSessions.status, "completed"),
+          eq(sessionExercises.isSubstituted, false),
+          isNotNull(exerciseSets.weightKg),
+          isNotNull(exerciseSets.reps),
+        ),
+      )
+      .orderBy(
+        sessionExercises.exerciseId,
+        exerciseSets.setNumber,
+        desc(workoutSessions.completedAt),
+        desc(workoutSessions.startedAt),
+      );
+
+    // `weight_kg` is a NUMERIC column → postgres.js returns it as a string;
+    // `reps` filtered non-null above but Drizzle still types it nullable, so
+    // narrow it here. `weightKg` stays a string — the handler parses it into
+    // the numeric shape the mobile `RecentSetEntry` expects. `recordedAt`
+    // falls back to `startedAt` for the (theoretical) completed row with a
+    // null `completedAt`, so it is never null.
+    return rows.map((r) => ({
+      exerciseId: r.exerciseId,
+      setNumber: r.setNumber,
+      weightKg: r.weightKg as string,
+      reps: r.reps as number,
+      recordedAt: r.completedAt ?? r.startedAt,
+    }));
   }
 
   async getById(

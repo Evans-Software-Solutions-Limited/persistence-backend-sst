@@ -3205,6 +3205,15 @@ ${indentSyncQueueDdl(12)}
     });
   }
 
+  hasAnyRecentSets(userId: string): boolean {
+    const db = this.getDb();
+    const row = db.getFirstSync(
+      `SELECT 1 AS present FROM recent_sets WHERE user_id = ? LIMIT 1`,
+      [userId],
+    ) as { present: number } | null;
+    return row != null;
+  }
+
   swapLocalSessionId(localId: string, serverId: string): void {
     if (localId === serverId) return;
     const db = this.getDb();

@@ -1150,6 +1150,10 @@ export class InMemoryStorageAdapter implements StoragePort {
     this.recentSets.set(userId, Array.from(byKey.values()));
   }
 
+  hasAnyRecentSets(userId: string): boolean {
+    return (this.recentSets.get(userId)?.length ?? 0) > 0;
+  }
+
   getRestTimerState(userId: string): RestTimerState | null {
     const session = this.activeSessions.get(userId);
     if (!session || session.status !== "in_progress") return null;
