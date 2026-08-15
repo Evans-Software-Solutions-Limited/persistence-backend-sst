@@ -30,11 +30,17 @@ describe("Home", () => {
     expect(cta?.getAttribute("href")).toBe("/pricing#athletes");
   });
 
-  it("shows the App Store CTA as a non-linking 'coming soon' state", () => {
+  it("renders the App Store CTA as a live link now the store is live", () => {
     renderPage(<Home />);
-    const cta = screen.getByText("Coming to the App Store");
-    expect(cta).toBeDefined();
-    expect(cta.closest("a")).toBeNull();
+    // Store went live 15 Aug 2026 (appStore.available flipped in config): the
+    // hero CTA is now a real <a> to the storefront-agnostic App Store url, not
+    // the old non-linking "Coming to the App Store" placeholder.
+    expect(screen.queryByText("Coming to the App Store")).toBeNull();
+    const cta = screen.getByText("Get it on the App Store").closest("a");
+    expect(cta).not.toBeNull();
+    expect(cta?.getAttribute("href")).toBe(
+      "https://apps.apple.com/app/apple-store/id6755091280",
+    );
   });
 
   it("does NOT ship the excluded founding / fake-stat content", () => {
