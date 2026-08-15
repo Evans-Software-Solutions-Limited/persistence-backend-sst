@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.16.0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.15.0...persistence-v1.16.0) (2026-08-15)
+
+
+### Features
+
+* **web:** flip App Store CTAs live + fix campaign attribution ([#401](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/401)) ([b660a06](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/b660a068f05185090512bb318f9b4781a84982db))
+
 ## [1.15.0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.14.1...persistence-v1.15.0) (2026-08-14)
 
 
