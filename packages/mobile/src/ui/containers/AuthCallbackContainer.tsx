@@ -5,7 +5,19 @@ import { useRouter } from "expo-router";
 import { parseAuthCallbackUrl } from "@/application/auth/callback-tokens";
 import { usePasswordRecovery } from "@/state/password-recovery";
 import { useAdapters } from "@/ui/hooks/useAdapters";
+import {
+  clearAuthCallbackUrl,
+  useAuthCallbackUrl,
+} from "@/ui/hooks/useAuthCallbackUrl";
 import { PLogoDrawLoader } from "@/ui/components";
+
+/**
+ * Safety net: if no token-bearing URL ever resolves (a link that never carried
+ * the app the tokens, or an OS/linking edge case), never leave the user on a
+ * permanent spinner — bounce to sign-in, where a now email-confirmed account
+ * can simply sign in. Generous so a slow warm-start capture still wins first.
+ */
+const AUTH_CALLBACK_TIMEOUT_MS = 12_000;
 
 /**
  * <AuthCallbackContainer> — handler for the `persistencemobile://auth/callback`
@@ -26,16 +38,37 @@ import { PLogoDrawLoader } from "@/ui/components";
  * (no tokens, or an expired/used token) bounces to sign-in.
  */
 export function AuthCallbackContainer() {
-  const url = Linking.useURL();
+  // Prefer the root-captured URL (survives a warm start, where the deep-link
+  // event fires before this container mounts and `useURL` would miss it — prod
+  // incident 2026-08-16). Fall back to `useURL` for a cold start or if capture
+  // hasn't populated yet.
+  const capturedUrl = useAuthCallbackUrl();
+  const hookUrl = Linking.useURL();
+  const url = capturedUrl ?? hookUrl;
   const { auth } = useAdapters();
   const router = useRouter();
   // The launch URL is stable, but `useURL` can re-emit it; guard so the
   // session is only established once per mount.
   const handled = useRef(false);
 
+  // Safety net: a confirmation link that never delivers tokens to the app must
+  // not strand the user on the spinner forever (AuthGate exempts this route, so
+  // nothing else rescues it). If nothing resolves within the timeout, bounce to
+  // sign-in — a now-confirmed account can just sign in there.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (handled.current) return;
+      handled.current = true;
+      router.replace("/(auth)/sign-in");
+    }, AUTH_CALLBACK_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [router]);
+
   useEffect(() => {
     if (url == null || handled.current) return;
     handled.current = true;
+    // Consumed — clear so a later mount can't reprocess a stale link.
+    clearAuthCallbackUrl();
 
     const { accessToken, refreshToken, type } = parseAuthCallbackUrl(url);
     if (!accessToken || !refreshToken) {
