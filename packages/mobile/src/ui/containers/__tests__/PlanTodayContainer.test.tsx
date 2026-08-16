@@ -4,6 +4,7 @@ import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-s
 import type { AuthSession } from "@/domain/ports/auth.port";
 import type { MealPlan } from "@/domain/models/mealprint";
 import { ok } from "@/shared/errors";
+import { localDayISO } from "@/shared/utils/date";
 import type { Adapters } from "@/shared/types";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import type { PlanTodayProps } from "@/ui/presenters/mealprint/PlanTodayPresenter";
@@ -61,7 +62,7 @@ function fixturePlan(over: Partial<MealPlan> = {}): MealPlan {
     id: "plan-1",
     userId: "user-1",
     status: "active",
-    planDate: new Date().toISOString().slice(0, 10),
+    planDate: localDayISO(),
     groupId: null,
     mealsPerDay: 1,
     effortLevel: "balanced",
@@ -117,7 +118,7 @@ beforeEach(() => {
 
 describe("PlanTodayContainer", () => {
   it("reads today's active plan and derives adherence for the presenter", async () => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localDayISO();
     const plan = fixturePlan({ planDate: today });
     const { probe } = await mount((api, storage) => {
       storage.cacheMealPlan("user-1", plan);
@@ -135,7 +136,7 @@ describe("PlanTodayContainer", () => {
   });
 
   it("onOpenShoppingList pushes the shopping route with today's plan id", async () => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localDayISO();
     const plan = fixturePlan({ planDate: today });
     const { probe } = await mount((api, storage) => {
       storage.cacheMealPlan("user-1", plan);
@@ -156,7 +157,7 @@ describe("PlanTodayContainer", () => {
   });
 
   it("onLogMeal logs the meal and reflects it in the reloaded plan", async () => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localDayISO();
     const plan = fixturePlan({ planDate: today });
     const { probe, storage } = await mount((api, storage) => {
       storage.cacheMealPlan("user-1", plan);
@@ -176,7 +177,7 @@ describe("PlanTodayContainer", () => {
   });
 
   it("onDeletePlan calls the API, clears the cache and navigates back", async () => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localDayISO();
     const plan = fixturePlan({ planDate: today });
     const { probe, storage, api } = await mount((api, storage) => {
       storage.cacheMealPlan("user-1", plan);
@@ -206,7 +207,7 @@ describe("PlanTodayContainer", () => {
   });
 
   it("a second onDeletePlan call while the first is still in flight is a no-op", async () => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localDayISO();
     const plan = fixturePlan({ planDate: today });
     const { probe, api } = await mount((seedApi, storage) => {
       storage.cacheMealPlan("user-1", plan);
@@ -234,7 +235,7 @@ describe("PlanTodayContainer", () => {
   });
 
   it("swaps a meal via swap+replace and reflects the result", async () => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localDayISO();
     // TWO meals — the held-totals reduce actually runs over the OTHER one
     // (a single-meal plan filters down to an empty array, and Array.reduce
     // never invokes its callback on an empty array with an initial value).
@@ -286,7 +287,7 @@ describe("PlanTodayContainer", () => {
   });
 
   it("a swap that fails leaves the meal unchanged, clears the swapping id, and surfaces the failure message", async () => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localDayISO();
     const plan = fixturePlan({ planDate: today });
     const { probe, storage } = await mount((api, storage) => {
       storage.cacheMealPlan("user-1", plan);
@@ -308,7 +309,7 @@ describe("PlanTodayContainer", () => {
   });
 
   it("a swap that hits the daily ceiling surfaces the 429 message", async () => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localDayISO();
     const plan = fixturePlan({ planDate: today });
     const { probe } = await mount((api, storage) => {
       storage.cacheMealPlan("user-1", plan);
@@ -324,7 +325,7 @@ describe("PlanTodayContainer", () => {
   });
 
   it("starting a new swap clears a previous action failure", async () => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localDayISO();
     const plan = fixturePlan({ planDate: today });
     const { probe } = await mount((api, storage) => {
       storage.cacheMealPlan("user-1", plan);
@@ -364,7 +365,7 @@ describe("PlanTodayContainer", () => {
   });
 
   it("a swap whose replace call fails (unknown plan) leaves the cache untouched and surfaces a failure message", async () => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localDayISO();
     const held = { ...fixturePlan().meals[0]!, id: "meal-2", kcal: 300 };
     const plan = fixturePlan({
       planDate: today,
@@ -414,7 +415,7 @@ describe("PlanTodayContainer", () => {
   });
 
   it("a replace failure with a recognised plan error code (meal_not_found) surfaces the mapped message", async () => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localDayISO();
     const held = { ...fixturePlan().meals[0]!, id: "meal-2", kcal: 300 };
     const plan = fixturePlan({
       planDate: today,
