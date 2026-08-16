@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.17.0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.16.0...persistence-v1.17.0) (2026-08-16)
+
+
+### Features
+
+* restore missing 'Previous' set hints (OTA) + mobile app-install banner ([#403](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/403)) ([13dfdd8](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/13dfdd8c3ff0675cdccaf79dfd967b1709b5a9d9))
+
 ## [1.16.0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.15.0...persistence-v1.16.0) (2026-08-15)
 
 
