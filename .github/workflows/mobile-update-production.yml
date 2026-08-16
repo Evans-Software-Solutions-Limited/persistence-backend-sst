@@ -1,0 +1,95 @@
+name: Mobile OTA Update (Production channel)
+
+# MANUAL ONLY. Publishes a JS-only over-the-air update to the `production`
+# EAS Update channel, reaching existing App Store installs on their next launch
+# (no store review). Run via Actions → this workflow → Run workflow.
+#
+# WHY THIS EXISTS (incident 2026-08-16): a production OTA was once published
+# from a laptop, where `eas update` picked up the local, git-ignored
+# `packages/mobile/.env` (which holds STAGING urls) and baked staging config
+# into the production channel — pointing the live app at the staging database.
+# CI has no local `.env`, and this workflow sources the public `EXPO_PUBLIC_*`
+# config straight from `eas.json`'s `build.production.env` (the SAME block
+# `eas build --profile production` uses), then hard-guards that the Supabase url
+# is the production project before publishing. A staging url aborts the run.
+#
+# Native/binary changes still go through `mobile-build-production.yml` + a store
+# submission — OTA only ships JS/asset changes compatible with the shipped
+# runtimeVersion.
+
+on:
+  workflow_dispatch:
+    inputs:
+      message:
+        description: "Update message (shown in EAS dashboard / update history)"
+        required: true
+        type: string
+
+concurrency:
+  group: mobile-update-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  update:
+    name: Publish OTA to production channel
+    runs-on: ubuntu-latest
+    # Same GitHub environment as the production build — carries EXPO_TOKEN and
+    # any environment protection rules.
+    environment: Production
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: packages/mobile
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      - name: Install Expo + EAS CLI
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Load production client config from eas.json
+        # Single source of truth: the committed `build.production.env` block.
+        # These EXPO_PUBLIC_* values are inlined into the JS bundle by Metro at
+        # `eas update` time, exactly as they are for `eas build --profile
+        # production`. Exporting them here means the update never depends on a
+        # local `.env` or on server-side EAS env being configured.
+        run: |
+          jq -r '.build.production.env | to_entries[] | "\(.key)=\(.value)"' eas.json >> "$GITHUB_ENV"
+
+      - name: Guard — refuse to publish non-production config
+        # Hard stop if the resolved Supabase/API config isn't production. This is
+        # the backstop that makes the 2026-08-16 staging-leak impossible to repeat.
+        run: |
+          echo "Supabase: $EXPO_PUBLIC_SUPABASE_URL"
+          echo "API:      $EXPO_PUBLIC_API_URL"
+          case "$EXPO_PUBLIC_SUPABASE_URL" in
+            *opcvjypsoivaxerahbal*) : ;;
+            *) echo "::error::EXPO_PUBLIC_SUPABASE_URL is not the production project ($EXPO_PUBLIC_SUPABASE_URL) — aborting."; exit 1 ;;
+          esac
+          case "$EXPO_PUBLIC_API_URL" in
+            *staging*) echo "::error::EXPO_PUBLIC_API_URL points at staging ($EXPO_PUBLIC_API_URL) — aborting."; exit 1 ;;
+            https://api.persistence.evans-software-solutions.com*) : ;;
+            *) echo "::error::EXPO_PUBLIC_API_URL is not the production api ($EXPO_PUBLIC_API_URL) — aborting."; exit 1 ;;
+          esac
+          echo "Production config verified."
+
+      - name: Publish OTA update
+        env:
+          # Passed via env (not string-interpolated into the script) so an
+          # arbitrary message can't break quoting or inject shell.
+          UPDATE_MESSAGE: ${{ inputs.message }}
+        run: |
+          eas update \
+            --branch production \
+            --environment production \
+            --message "$UPDATE_MESSAGE" \
+            --non-interactive
