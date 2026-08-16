@@ -193,6 +193,33 @@ describe("useAuth", () => {
     ).rejects.toThrow("Test auth error");
   });
 
+  it("still tears down local state when the remote sign-out revoke fails (offline escape hatch)", async () => {
+    // The Home-error "Sign out" escape hatch must work when the device is
+    // offline (the common cause of a stuck app). Even though the remote revoke
+    // errors and signOut re-throws, local state MUST be cleared so AuthGate
+    // redirects to sign-in instead of re-stranding the user.
+    const { adapters, auth, storage } = createTestAdapters();
+    const clearAllSpy = jest.spyOn(storage, "clearAll");
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <AdapterProvider adapters={adapters}>{children}</AdapterProvider>
+    );
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    await act(async () => {
+      await result.current.signIn("test@example.com", "password");
+    });
+
+    auth.shouldFail = true;
+
+    await act(async () => {
+      await result.current.signOut().catch(() => {});
+    });
+
+    expect(clearAllSpy).toHaveBeenCalled();
+  });
+
   it("signs in with OAuth provider", async () => {
     const { adapters } = createTestAdapters();
     const wrapper = ({ children }: { children: ReactNode }) => (

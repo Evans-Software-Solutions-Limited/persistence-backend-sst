@@ -142,7 +142,11 @@ export function ProfileDrawerContainer() {
       await signOut();
       closeDrawer();
     } catch {
-      // useAuth captures the error; the drawer stays open so the user can retry.
+      // useAuth captures the error for display. As of the offline-resilient
+      // sign-out, a failed remote revoke still tears down local state, so
+      // AuthGate redirects to sign-in regardless — this catch just prevents an
+      // unhandled rejection (closeDrawer is skipped, but the redirect unmounts
+      // the drawer anyway).
     } finally {
       setIsSigningOut(false);
     }

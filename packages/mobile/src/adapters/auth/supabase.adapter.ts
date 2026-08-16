@@ -418,6 +418,13 @@ export class SupabaseAuthAdapter implements AuthPort {
   async signOut(): Promise<Result<void, AuthError>> {
     const { error } = await this.client.auth.signOut();
     if (error) {
+      // The global (network) revoke failed — commonly because the device is
+      // offline, which is exactly when a user gets stuck and reaches for "Sign
+      // out". The revoke may have left the on-device token in place, so fall
+      // back to a local-scope clear (no network): it drops the persisted
+      // session and fires SIGNED_OUT so `AuthGate` still redirects to sign-in.
+      // Best-effort — never let this mask the original error.
+      await this.client.auth.signOut({ scope: "local" }).catch(() => {});
       return fail({ kind: "auth", code: "unknown", message: error.message });
     }
     return ok(undefined);
