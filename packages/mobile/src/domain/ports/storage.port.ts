@@ -849,6 +849,16 @@ export interface StoragePort {
   upsertRecentSets(userId: string, sets: readonly RecentSetEntry[]): void;
 
   /**
+   * True when the user has ANY row in the recent-sets cache. Used by
+   * `hydrateRecentSetsCommand` to decide whether to backfill from the server:
+   * a fresh install (new phone / App Store install after TestFlight /
+   * reinstall) starts empty, so the "Previous" hints are blank even though the
+   * set history is on the server. Hydration runs ONLY when this is false, so it
+   * never overwrites fresher offline-logged entries on a returning device.
+   */
+  hasAnyRecentSets(userId: string): boolean;
+
+  /**
    * Persist the server's augmented `/sessions/record` response — the
    * PR-of-the-session list (with `previousValue` for the "before →
    * after" arrow) and `workoutsThisMonth` count — so the Summary

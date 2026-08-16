@@ -24,6 +24,7 @@ import { useAutoRetryOnUpgrade } from "../../src/ui/hooks/useAutoRetryOnUpgrade"
 import { useAutoRetryOnWorkoutLimitResolved } from "../../src/ui/hooks/useAutoRetryOnWorkoutLimitResolved";
 import { useForegroundSubscriptionRefresh } from "../../src/ui/hooks/useForegroundSubscriptionRefresh";
 import { useHealthBodyPushSync } from "../../src/ui/hooks/useHealthBodyPushSync";
+import { useHydrateRecentSets } from "../../src/ui/hooks/useHydrateRecentSets";
 import { useNotificationBadge } from "../../src/ui/hooks/useNotificationBadge";
 import { useNotificationDeepLink } from "../../src/ui/hooks/useNotificationDeepLink";
 import { useSyncWorker } from "../../src/ui/hooks/useSyncWorker";
@@ -88,6 +89,11 @@ export default function AppLayout() {
   // Complements useHealthWeightSync (YouContainer), which runs the OTHER
   // direction: coach-logged server rows → HealthKit.
   useHealthBodyPushSync();
+  // Fresh-install backfill of the local "Previous" set-hint cache from the
+  // server. No-op once the cache has entries, so it effectively only runs on a
+  // new install / new device where the hints would otherwise be blank despite
+  // the set history being safe on the server.
+  useHydrateRecentSets();
 
   return (
     <ExerciseFiltersProvider>

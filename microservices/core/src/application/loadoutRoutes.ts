@@ -36,6 +36,15 @@ import { aiEquipmentScanHandler } from "./loadout/scan/aiEquipmentScanHandler";
 // root `.use()` before moving it here. Both routes declare absolute paths, so
 // nesting adds no prefix and no ordering risk.
 import { leadsRoutes } from "./leads/leadsRoutes";
+// `GET /sessions/recent-sets` — the server source for the mobile "Previous"
+// hint cache (fresh-install hydration). Unrelated to loadout, but nested here
+// for the SAME reason as `leadsRoutes` above: the api.ts root `.use()` chain is
+// at TS's instantiation-depth ceiling and adding a 25th root `.use()` tripped
+// TS2589 (felt in packages/web's Eden `treaty<CoreApi>`). Route ordering is
+// safe despite the late mount: `/sessions/recent-sets` is a fully STATIC path,
+// and memoirist (Elysia's router) always prefers a static segment over the
+// `/sessions/:sessionId` param matcher regardless of registration order.
+import { sessionsRecentSetsHandler } from "./sessions/recentSets/sessionsRecentSetsHandler";
 
 export const loadoutRoutes = new Elysia()
   // saved gyms — literal /saved-gyms (GET/POST) and parameterised
@@ -59,4 +68,6 @@ export const loadoutRoutes = new Elysia()
   .use(aiEquipmentScanHandler)
   // Marketing lead capture — PUBLIC (no auth) waitlist + coach-enquiry
   // endpoints backing the website forms. See ./leads/leadsRoutes.
-  .use(leadsRoutes);
+  .use(leadsRoutes)
+  // Recent-sets hydration (see the import comment for why this lives here).
+  .use(sessionsRecentSetsHandler);

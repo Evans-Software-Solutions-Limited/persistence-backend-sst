@@ -42,6 +42,7 @@ import type {
   ReferenceListKind,
 } from "@/domain/models/reference-list";
 import type { ShoppingList } from "@/domain/models/shoppingList";
+import type { RecentSetEntry } from "@/domain/ports/storage.port";
 import type {
   BillingCycle,
   CancelSubscriptionResult,
@@ -245,6 +246,16 @@ export interface ApiPort {
     data: UpdateSessionInput,
   ): Promise<Result<ApiSession, ApiError>>;
   deleteSession(id: string): Promise<Result<void, ApiError>>;
+  /**
+   * The user's most-recent weight+reps for every (exercise, setNumber) they
+   * have completed — the server-side source for the local "Previous" hint
+   * cache. `GET /sessions/recent-sets` (user-scoped). Lets a fresh install
+   * (new phone / App Store install after TestFlight / reinstall) hydrate its
+   * empty `recent_sets` cache so previous-set hints appear without re-logging
+   * every lift. The client only calls this when the local cache is empty (see
+   * `hydrateRecentSetsCommand`), so it never clobbers fresher offline entries.
+   */
+  getRecentSets(): Promise<Result<RecentSetEntry[], ApiError>>;
 
   /**
    * M3: app-launch resume detection. Returns the user's most recent
