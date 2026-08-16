@@ -84,6 +84,12 @@ jobs:
 
       - name: Publish OTA update
         env:
+          # `eas update` runs `expo export` for all platforms with sourcemaps +
+          # assetmaps; this app's bundle overflows Node's default ~2GB heap and
+          # aborts (SIGABRT / "Reached heap limit"). ubuntu-latest has ~16GB RAM,
+          # so give the bundler a generous heap. Propagates to the expo/Metro
+          # child process.
+          NODE_OPTIONS: --max-old-space-size=8192
           # Passed via env (not string-interpolated into the script) so an
           # arbitrary message can't break quoting or inject shell.
           UPDATE_MESSAGE: ${{ inputs.message }}
