@@ -73,6 +73,14 @@ export type HomePresenterProps = {
   animationStyles?: readonly object[];
 
   onRefresh: () => void;
+  /**
+   * Escape hatch for the "couldn't load your home" state. When the initial
+   * load fails with nothing cached, the header (and therefore the drawer
+   * avatar — the only in-screen route to sign-out) is not rendered, so a
+   * persistent failure (e.g. a hard 401 that Retry can't clear) strands the
+   * user with no way out. This signs them out back to the login screen.
+   */
+  onSignOut: () => void;
   onOpenDrawer: () => void;
   onOpenNotifications: () => void;
   /** Unread-notification count for the header bell badge. 0/undefined hides it. */
@@ -118,6 +126,7 @@ export function HomePresenter(props: HomePresenterProps) {
     error,
     animationStyles = [],
     onRefresh,
+    onSignOut,
     onOpenDrawer,
     onOpenNotifications,
     notificationCount,
@@ -152,7 +161,13 @@ export function HomePresenter(props: HomePresenterProps) {
   if (error && !home) {
     return (
       <View flex={1} testID="home-error-state">
-        <ErrorState message="Couldn't load your home." onRetry={onRefresh} />
+        <ErrorState
+          message="Couldn't load your home."
+          onRetry={onRefresh}
+          secondaryLabel="Sign out"
+          onSecondary={onSignOut}
+          testID="home-error"
+        />
       </View>
     );
   }

@@ -74,6 +74,7 @@ function render(overrides: Partial<HomePresenterProps> = {}) {
     isLoading: false,
     isRefreshing: false,
     onRefresh: jest.fn(),
+    onSignOut: jest.fn(),
     onOpenDrawer: jest.fn(),
     onOpenNotifications: jest.fn(),
     onOpenWorkout: jest.fn(),
@@ -136,6 +137,17 @@ describe("HomePresenter (V2)", () => {
       error: { kind: "api", code: "server", message: "boom" },
     });
     expect(getByTestId("home-error-state")).toBeTruthy();
+  });
+
+  it("offers a Sign out escape hatch in the error state and fires onSignOut", () => {
+    // A hard load failure hides the header (and its drawer avatar), so without
+    // this the user is stranded on Retry with no way back to login.
+    const { getByTestId, props } = render({
+      home: null,
+      error: { kind: "api", code: "server", message: "boom" },
+    });
+    fireEvent.press(getByTestId("home-error-secondary"));
+    expect(props.onSignOut).toHaveBeenCalledTimes(1);
   });
 
   it("gates the CoachQuickPeek behind showCoachPeek + coachPeek data", () => {

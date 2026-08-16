@@ -46,6 +46,8 @@ import {
 } from "@/state/active-workout";
 import { useActiveSession } from "@/ui/hooks/useActiveSession";
 import { useAdapters } from "@/ui/hooks/useAdapters";
+import { useCacheRevision } from "@/ui/hooks/useCacheRevision";
+import { RECENT_SETS_TABLES } from "@/adapters/storage/tables";
 import { useProfilePage } from "@/ui/hooks/useProfilePage";
 import { useRestTimer } from "@/ui/hooks/useRestTimer";
 import { useWorkout } from "@/ui/hooks/useWorkout";
@@ -207,6 +209,16 @@ export function ActiveSessionContainer() {
   // sourced from the local recent-sets cache (1A.4). Mirrors legacy
   // `user_history.recent_sets`. Empty map for exercises the user has
   // never logged before — SetLogger renders an em-dash in that case.
+  //
+  // `recentSetsRevision` folds the change bus into the deps: on a fresh
+  // install the server backfill (`hydrateRecentSetsCommand`) upserts
+  // `recent_sets` asynchronously, AFTER this screen has mounted and read an
+  // empty cache. Subscribing here re-runs the read when that write lands, so
+  // the PREV hints appear without needing a screen re-focus. Without it the
+  // whole first post-install workout showed blank hints even though the
+  // history was safe on the server (the original "restore Previous hints" fix
+  // regressed exactly here).
+  const recentSetsRevision = useCacheRevision(RECENT_SETS_TABLES);
   const previousSetsByExercise = useMemo(() => {
     const map: Record<
       string,
@@ -220,7 +232,7 @@ export function ActiveSessionContainer() {
       map[ex.id] = recent[ex.exerciseId] ?? {};
     }
     return map;
-  }, [session, userId, storage]);
+  }, [session, userId, storage, recentSetsRevision]);
 
   // Per-exercise template metadata threaded from the workout template.
   // Drives the legacy "{N} sets × {min}-{max} reps" caption + thumbnail

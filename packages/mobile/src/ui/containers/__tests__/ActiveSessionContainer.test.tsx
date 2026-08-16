@@ -1729,4 +1729,79 @@ describe("ActiveSessionContainer", () => {
     // Picker opens — the screen still mounts.
     expect(await findByTestId("active-session-screen")).toBeTruthy();
   });
+
+  it("shows PREV hints when the recent-sets backfill lands AFTER the screen has mounted (change-bus reactivity)", async () => {
+    // Regression for the fresh-install "Previous" bug: the server backfill
+    // (`hydrateRecentSetsCommand`) upserts `recent_sets` asynchronously, after
+    // the active-session screen has already mounted and read an EMPTY cache.
+    // The read must re-run when that write lands via the change bus — otherwise
+    // the whole first post-install workout shows blank hints even though the
+    // history is safe on the server. Without the `recentSetsRevision` dep on
+    // the `previousSetsByExercise` memo, the chip below never appears.
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheActiveSession("user-1", {
+      id: "local-1",
+      userId: "user-1",
+      workoutId: null,
+      name: "Quick Workout",
+      status: "in_progress",
+      startedAt: "2026-05-05T10:00:00.000Z",
+      completedAt: null,
+      notes: null,
+      exercises: [
+        {
+          id: "se-1",
+          sessionId: "local-1",
+          exerciseId: "ex-bench",
+          exerciseName: "Bench Press",
+          sortOrder: 0,
+          supersetGroup: null,
+          isSubstituted: false,
+          originalExerciseId: null,
+          notes: null,
+          sets: [
+            {
+              id: "set-1",
+              sessionExerciseId: "se-1",
+              setNumber: 1,
+              weightKg: null,
+              reps: null,
+              rpe: null,
+              durationSeconds: null,
+              distanceMeters: null,
+              isCompleted: false,
+              completedAt: null,
+            },
+          ],
+        },
+      ],
+    });
+
+    const { findByTestId, findByText, queryByTestId } = renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <ActiveSessionContainer />),
+    );
+
+    // Screen mounts with an empty recent-sets cache → em-dash, no fill chip.
+    expect(await findByTestId("active-session-screen")).toBeTruthy();
+    expect(queryByTestId("set-logger-fill-previous")).toBeNull();
+
+    // The backfill lands: write recent_sets, then tick the change bus for that
+    // table (the in-memory fake requires explicit `emitChange`; the real
+    // adapter's SQLite update hook does this automatically).
+    storage.upsertRecentSets("user-1", [
+      {
+        exerciseId: "ex-bench",
+        setNumber: 1,
+        weightKg: 60,
+        reps: 8,
+        recordedAt: "2026-08-07T14:25:28.838Z",
+      },
+    ]);
+    storage.emitChange("recent_sets");
+
+    const chip = await findByTestId("set-logger-fill-previous");
+    expect(chip).toBeTruthy();
+    expect(await findByText("8 reps • 60 kg")).toBeTruthy();
+  });
 });

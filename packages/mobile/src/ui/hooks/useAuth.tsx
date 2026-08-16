@@ -185,6 +185,15 @@ export function useAuth(): AuthState {
     setError(null);
     const result = await auth.signOut();
     if (!result.ok) {
+      // The remote revoke failed — almost always a network partition, which is
+      // itself a common cause of a stuck/offline app (e.g. the Home-error
+      // "Sign out" escape hatch). The user asked to sign out, so we must NOT
+      // leave them signed in locally, or the escape hatch re-strands them.
+      // Tear down local state anyway; the adapter has already dropped the
+      // on-device token (local-scope fallback in `signOut`), so `AuthGate`
+      // redirects to sign-in. Still surface + throw the error for callers that
+      // display it (ProfileContainer / RestoreAccount).
+      clearLocalState();
       setError(result.error);
       throw new Error(result.error.message);
     }

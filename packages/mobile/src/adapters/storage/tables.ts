@@ -66,6 +66,19 @@ export const MEAL_PLAN_TABLES = ["cached_meal_plans"] as const;
 export const HOME_TABLES = ["cached_home"] as const;
 
 /**
+ * Cross-session "Previous" set hints (`recent_sets`). Written by two paths:
+ * `completeSessionCommand` when a session finishes ON this device, and
+ * `hydrateRecentSetsCommand` which backfills the whole cache from the server on
+ * a fresh install. The active-session screen reads this table to show the
+ * PREV column, so a write from either path — crucially the async fresh-install
+ * backfill that lands AFTER the screen has already mounted and read an empty
+ * cache — must wake the read. Without this subscription the backfill is
+ * invisible until the screen is re-focused, which is why a fresh install showed
+ * blank hints for the whole first workout.
+ */
+export const RECENT_SETS_TABLES = ["recent_sets"] as const;
+
+/**
  * The outbound mutation queue. Subscribing to this is how a surface learns that
  * a local write became a *pending* write, or that a drain resolved/failed one —
  * it is what lets the sync banner and the "unsynced row" overlay update without

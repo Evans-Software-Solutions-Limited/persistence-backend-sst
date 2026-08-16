@@ -101,6 +101,7 @@ function makeAdapters(healthOverride: Partial<HealthPort> = {}): {
       return () => {};
     }),
     getAccessToken: jest.fn(async () => "t"),
+    signOut: jest.fn(async () => ok(undefined)),
   } as unknown as Adapters["auth"];
   return {
     api,
@@ -608,5 +609,35 @@ describe("HomeContainer (V2)", () => {
     await waitFor(() => expect(mockProbe.last).not.toBeNull());
     act(() => mockProbe.last?.onOpenMealLog());
     expect(useFuelSheets.getState().date).toBe(localDayISO());
+  });
+
+  it("onSignOut escape hatch invokes auth.signOut (route out of a stuck error state)", async () => {
+    const { adapters } = makeAdapters();
+    render(
+      <Wrapper adapters={adapters}>
+        <HomeContainer />
+      </Wrapper>,
+    );
+    await waitFor(() => expect(mockProbe.last).not.toBeNull());
+    await act(async () => {
+      mockProbe.last?.onSignOut();
+    });
+    expect(adapters.auth.signOut).toHaveBeenCalledTimes(1);
+  });
+
+  it("onSignOut guards against a double-tap firing two concurrent teardowns", async () => {
+    const { adapters } = makeAdapters();
+    render(
+      <Wrapper adapters={adapters}>
+        <HomeContainer />
+      </Wrapper>,
+    );
+    await waitFor(() => expect(mockProbe.last).not.toBeNull());
+    await act(async () => {
+      // Two synchronous taps before the first teardown settles.
+      mockProbe.last?.onSignOut();
+      mockProbe.last?.onSignOut();
+    });
+    expect(adapters.auth.signOut).toHaveBeenCalledTimes(1);
   });
 });

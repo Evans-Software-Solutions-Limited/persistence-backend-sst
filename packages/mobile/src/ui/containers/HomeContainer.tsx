@@ -34,7 +34,7 @@ import { HomePresenter } from "@/ui/presenters/HomePresenter";
  */
 export function HomeContainer() {
   const router = useRouter();
-  const { session } = useAuth();
+  const { session, signOut } = useAuth();
   const openDrawer = useDrawer((s) => s.openDrawer);
   const mode = useUserMode((s) => s.mode);
 
@@ -212,6 +212,24 @@ export function HomeContainer() {
     void Promise.all([refreshHome(), refreshHabits(), refreshWorkouts()]);
   }, [refreshHome, refreshHabits, refreshWorkouts]);
 
+  // Escape hatch for a stuck Home error state (see HomePresenter's
+  // `error && !home` branch): when the initial load fails hard (e.g. a 401
+  // that Retry can't clear) the header/drawer avatar isn't rendered, so this
+  // is the only route back out. `signOut` clears local state and AuthGate
+  // redirects to the login screen; a thrown error is captured by useAuth.
+  // The ref guards against a double-tap firing two concurrent teardowns while
+  // the redirect is in flight (mirrors ProfileContainer's isSigningOutRef).
+  const isSigningOutRef = useRef(false);
+  const onSignOut = useCallback(() => {
+    if (isSigningOutRef.current) return;
+    isSigningOutRef.current = true;
+    void signOut()
+      .catch(() => {})
+      .finally(() => {
+        isSigningOutRef.current = false;
+      });
+  }, [signOut]);
+
   // Tabs stay mounted, so without a focus refresh Home shows stale rings /
   // volume / PRs / workouts on every re-entry until a pull-to-refresh. Skips
   // the mount focus (the cache-first hooks already auto-fetch once there).
@@ -356,6 +374,7 @@ export function HomeContainer() {
         error={home.error}
         animationStyles={animationStyles}
         onRefresh={onRefresh}
+        onSignOut={onSignOut}
         onOpenDrawer={openDrawer}
         onOpenNotifications={onOpenNotifications}
         notificationCount={notificationCount}
