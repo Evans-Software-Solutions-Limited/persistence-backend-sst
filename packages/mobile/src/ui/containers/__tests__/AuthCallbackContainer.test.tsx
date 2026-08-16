@@ -1,4 +1,4 @@
-import { render, waitFor } from "@testing-library/react-native";
+import { act, render, waitFor } from "@testing-library/react-native";
 import { TamaguiProvider } from "@tamagui/core";
 import type { ReactNode } from "react";
 import config from "../../../../tamagui.config";
@@ -17,6 +17,15 @@ import { AuthCallbackContainer } from "../AuthCallbackContainer";
 let mockUrl: string | null = null;
 jest.mock("expo-linking", () => ({
   useURL: () => mockUrl,
+}));
+
+// The root-captured URL (warm-start path). Defaults to null so existing tests
+// exercise the useURL fallback unchanged.
+let mockCapturedUrl: string | null = null;
+const mockClearAuthCallbackUrl = jest.fn();
+jest.mock("@/ui/hooks/useAuthCallbackUrl", () => ({
+  useAuthCallbackUrl: () => mockCapturedUrl,
+  clearAuthCallbackUrl: () => mockClearAuthCallbackUrl(),
 }));
 
 const mockReplace = jest.fn();
@@ -63,6 +72,8 @@ function TestWrapper({
 describe("AuthCallbackContainer", () => {
   beforeEach(() => {
     mockUrl = null;
+    mockCapturedUrl = null;
+    mockClearAuthCallbackUrl.mockClear();
     mockReplace.mockClear();
     usePasswordRecovery.setState({ pending: false });
   });
@@ -192,5 +203,77 @@ describe("AuthCallbackContainer", () => {
 
     expect(auth.currentSession).toBeNull();
     expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  it("uses the root-captured URL (warm start) when useURL is still null, and clears it", async () => {
+    // Regression for the prod stuck-loading: on a warm start `useURL` misses
+    // the event, so the container must consume the root-captured URL instead.
+    mockUrl = null;
+    mockCapturedUrl =
+      "persistencemobile://auth/callback#access_token=warm&refresh_token=warm2&type=signup";
+    const { adapters, auth } = createTestAdapters();
+
+    render(
+      <TestWrapper adapters={adapters}>
+        <AuthCallbackContainer />
+      </TestWrapper>,
+    );
+
+    await waitFor(() => {
+      expect(auth.currentSession?.accessToken).toBe("warm");
+    });
+    // Consumed so a later mount can't reprocess a stale link.
+    expect(mockClearAuthCallbackUrl).toHaveBeenCalled();
+  });
+
+  it("bounces to sign-in after the timeout when no URL ever resolves (never strands the user)", () => {
+    jest.useFakeTimers();
+    try {
+      mockUrl = null;
+      mockCapturedUrl = null;
+      const { adapters } = createTestAdapters();
+
+      render(
+        <TestWrapper adapters={adapters}>
+          <AuthCallbackContainer />
+        </TestWrapper>,
+      );
+
+      // Nothing yet — the spinner is showing.
+      expect(mockReplace).not.toHaveBeenCalled();
+      act(() => {
+        jest.advanceTimersByTime(12_000);
+      });
+      expect(mockReplace).toHaveBeenCalledWith("/(auth)/sign-in");
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("bounces to sign-in when session establishment STALLS past the timeout (offline confirm)", () => {
+    jest.useFakeTimers();
+    try {
+      mockUrl =
+        "persistencemobile://auth/callback#access_token=abc&refresh_token=def";
+      const { adapters, auth } = createTestAdapters();
+      // setSessionFromTokens never resolves — the exact offline hang the plain
+      // "handled" guard failed to cover.
+      auth.setSessionFromTokens = jest.fn(() => new Promise(() => {}));
+
+      render(
+        <TestWrapper adapters={adapters}>
+          <AuthCallbackContainer />
+        </TestWrapper>,
+      );
+
+      // Processing started, but no terminal outcome yet.
+      expect(mockReplace).not.toHaveBeenCalled();
+      act(() => {
+        jest.advanceTimersByTime(12_000);
+      });
+      expect(mockReplace).toHaveBeenCalledWith("/(auth)/sign-in");
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });

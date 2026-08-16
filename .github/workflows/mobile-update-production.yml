@@ -57,30 +57,56 @@ jobs:
           token: ${{ secrets.EXPO_TOKEN }}
 
       - name: Load production client config from eas.json
-        # Single source of truth: the committed `build.production.env` block.
-        # These EXPO_PUBLIC_* values are inlined into the JS bundle by Metro at
-        # `eas update` time, exactly as they are for `eas build --profile
-        # production`. Exporting them here means the update never depends on a
-        # local `.env` or on server-side EAS env being configured.
+        # Exports the committed `build.production.env` block into the shell so the
+        # guard below can sanity-check it. NOTE: this is NOT the whole story —
+        # `eas update --environment production` (the publish step) also pulls
+        # EXPO_PUBLIC_* from the EAS SERVER-SIDE environment store, which takes
+        # precedence for any var defined there. That store — not eas.json — is
+        # the source that actually gets baked, which is why the second guard
+        # below is the load-bearing one.
         run: |
           jq -r '.build.production.env | to_entries[] | "\(.key)=\(.value)"' eas.json >> "$GITHUB_ENV"
 
-      - name: Guard — refuse to publish non-production config
-        # Hard stop if the resolved Supabase/API config isn't production. This is
-        # the backstop that makes the 2026-08-16 staging-leak impossible to repeat.
+      - name: Guard — eas.json config is production
+        # Necessary but NOT sufficient (see next step): eas.json is what a build
+        # uses; an update uses the EAS store.
         run: |
           echo "Supabase: $EXPO_PUBLIC_SUPABASE_URL"
           echo "API:      $EXPO_PUBLIC_API_URL"
           case "$EXPO_PUBLIC_SUPABASE_URL" in
             *opcvjypsoivaxerahbal*) : ;;
-            *) echo "::error::EXPO_PUBLIC_SUPABASE_URL is not the production project ($EXPO_PUBLIC_SUPABASE_URL) — aborting."; exit 1 ;;
+            *) echo "::error::eas.json EXPO_PUBLIC_SUPABASE_URL is not the production project ($EXPO_PUBLIC_SUPABASE_URL) — aborting."; exit 1 ;;
           esac
           case "$EXPO_PUBLIC_API_URL" in
-            *staging*) echo "::error::EXPO_PUBLIC_API_URL points at staging ($EXPO_PUBLIC_API_URL) — aborting."; exit 1 ;;
+            *staging*) echo "::error::eas.json EXPO_PUBLIC_API_URL points at staging ($EXPO_PUBLIC_API_URL) — aborting."; exit 1 ;;
             https://api.persistence.evans-software-solutions.com*) : ;;
-            *) echo "::error::EXPO_PUBLIC_API_URL is not the production api ($EXPO_PUBLIC_API_URL) — aborting."; exit 1 ;;
+            *) echo "::error::eas.json EXPO_PUBLIC_API_URL is not the production api ($EXPO_PUBLIC_API_URL) — aborting."; exit 1 ;;
           esac
-          echo "Production config verified."
+          echo "eas.json config verified."
+
+      - name: Guard — EAS server-side production env store is production
+        # THE load-bearing guard (added after the 2026-08-16 outage). `eas update
+        # --environment production` inlines EXPO_PUBLIC_* from the EAS server-side
+        # store, which overrides eas.json. That store had been left pointing at a
+        # DEAD Supabase project (dfeyebgdktfteqlacmru), so every CI OTA baked the
+        # wrong Supabase and auth-broke prod while the eas.json guard passed.
+        # Validate the ACTUAL source here, and reject any known non-prod project.
+        run: |
+          store="$(eas env:list production 2>/dev/null || true)"
+          echo "$store" | grep -E '^EXPO_PUBLIC_(SUPABASE_URL|API_URL)=' || true
+          # Positively assert BOTH the Supabase project AND the API host are prod
+          # (tolerate an optional trailing slash / whitespace across CLI versions).
+          if ! echo "$store" | grep -qE '^EXPO_PUBLIC_SUPABASE_URL=https://opcvjypsoivaxerahbal\.supabase\.co/?[[:space:]]*$'; then
+            echo "::error::EAS 'production' store EXPO_PUBLIC_SUPABASE_URL is not the prod project. Fix with 'eas env' before publishing."; exit 1
+          fi
+          if ! echo "$store" | grep -qE '^EXPO_PUBLIC_API_URL=https://api\.persistence\.evans-software-solutions\.com/?[[:space:]]*$'; then
+            echo "::error::EAS 'production' store EXPO_PUBLIC_API_URL is not the prod api. Fix with 'eas env' before publishing."; exit 1
+          fi
+          # Belt-and-braces denylist of known non-prod projects/hosts.
+          if echo "$store" | grep -qE '^EXPO_PUBLIC_(SUPABASE_URL|API_URL)=.*(staging|nxkhlrvjxotyjulodxzk|dfeyebgdktfteqlacmru)'; then
+            echo "::error::EAS 'production' store contains a non-prod URL — aborting."; exit 1
+          fi
+          echo "EAS production env store verified."
 
       - name: Publish OTA update
         env:

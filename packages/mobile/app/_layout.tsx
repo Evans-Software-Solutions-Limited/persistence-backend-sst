@@ -18,6 +18,7 @@ import { usePendingInvite } from "../src/state/pending-invite";
 import { usePasswordRecovery } from "../src/state/password-recovery";
 import { useNotificationPermissions } from "../src/ui/hooks/useNotificationPermissions";
 import { useReferenceListBootstrap } from "@/ui/hooks/useReferenceListBootstrap";
+import { initAuthCallbackCapture } from "@/ui/hooks/useAuthCallbackUrl";
 import { usePurchasesIdentity } from "../src/ui/hooks/usePurchasesIdentity";
 import { usePushNotifications } from "../src/ui/hooks/usePushNotifications";
 import { useUserModeEligibility } from "../src/ui/hooks/useUserModeEligibility";
@@ -141,6 +142,20 @@ function PurchasesIdentityBootstrap() {
  */
 function ReferenceListBootstrap() {
   useReferenceListBootstrap();
+  return null;
+}
+
+/**
+ * Installs the auth-callback deep-link capture at the root so the OS-linking
+ * listeners are live BEFORE a warm-start email-confirmation link can arrive —
+ * otherwise `AuthCallbackContainer` mounts after the `url` event has already
+ * fired and the confirmation screen spins forever (prod incident 2026-08-16).
+ * Sibling to the other bootstraps; renders nothing.
+ */
+function AuthCallbackCaptureBootstrap() {
+  useEffect(() => {
+    initAuthCallbackCapture();
+  }, []);
   return null;
 }
 
@@ -290,6 +305,7 @@ function RootLayout() {
         }
       >
         <AppProviders>
+          <AuthCallbackCaptureBootstrap />
           <NotificationPermissionsBootstrap />
           <PushNotificationsBootstrap />
           <UserModeBootstrap />
