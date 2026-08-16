@@ -47,18 +47,25 @@ export function AuthCallbackContainer() {
   const url = capturedUrl ?? hookUrl;
   const { auth } = useAdapters();
   const router = useRouter();
-  // The launch URL is stable, but `useURL` can re-emit it; guard so the
-  // session is only established once per mount.
+  // `handled` guards re-entry of the URL effect (useURL can re-emit the same
+  // URL). `settled` tracks whether a TERMINAL outcome was reached (session
+  // established, or bounced) — it, not `handled`, gates the safety-net timeout,
+  // so a URL that started processing but STALLED (e.g. setSession hangs offline)
+  // is still rescued.
   const handled = useRef(false);
+  const settled = useRef(false);
 
-  // Safety net: a confirmation link that never delivers tokens to the app must
-  // not strand the user on the spinner forever (AuthGate exempts this route, so
-  // nothing else rescues it). If nothing resolves within the timeout, bounce to
-  // sign-in — a now-confirmed account can just sign in there.
+  // Safety net: the confirm screen must never spin forever (AuthGate exempts
+  // this route, so nothing else rescues it). Covers BOTH "no token URL ever
+  // arrived" AND "URL arrived but session establishment stalled". After the
+  // timeout, bounce to sign-in — a now-confirmed account can just sign in.
   useEffect(() => {
     const timer = setTimeout(() => {
-      if (handled.current) return;
-      handled.current = true;
+      if (settled.current) return;
+      settled.current = true;
+      // Defensive: if a recovery link stalled, don't leave the flag armed to
+      // divert a later normal sign-in. No-op when not armed.
+      usePasswordRecovery.getState().clear();
       router.replace("/(auth)/sign-in");
     }, AUTH_CALLBACK_TIMEOUT_MS);
     return () => clearTimeout(timer);
@@ -73,6 +80,7 @@ export function AuthCallbackContainer() {
     const { accessToken, refreshToken, type } = parseAuthCallbackUrl(url);
     if (!accessToken || !refreshToken) {
       // Error fragment or a link with no session — nothing to establish.
+      settled.current = true;
       router.replace("/(auth)/sign-in");
       return;
     }
@@ -93,14 +101,18 @@ export function AuthCallbackContainer() {
         if (!result.ok) {
           // Undo the recovery flag so it can't divert a later normal sign-in.
           if (isRecovery) usePasswordRecovery.getState().clear();
+          settled.current = true;
           router.replace("/(auth)/sign-in");
+          return;
         }
         // Success: AuthGate routes on the new session (tabs, or
         // set-new-password when the recovery flag is set).
+        settled.current = true;
       } catch {
         // Defensive — the adapter is contracted to return a Result, but never
         // leave the user stranded on the loader if it throws anyway.
         if (isRecovery) usePasswordRecovery.getState().clear();
+        settled.current = true;
         router.replace("/(auth)/sign-in");
       }
     })();

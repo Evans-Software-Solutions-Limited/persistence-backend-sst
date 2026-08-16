@@ -94,11 +94,17 @@ jobs:
         run: |
           store="$(eas env:list production 2>/dev/null || true)"
           echo "$store" | grep -E '^EXPO_PUBLIC_(SUPABASE_URL|API_URL)=' || true
-          if ! echo "$store" | grep -q '^EXPO_PUBLIC_SUPABASE_URL=https://opcvjypsoivaxerahbal.supabase.co$'; then
-            echo "::error::EAS 'production' env store EXPO_PUBLIC_SUPABASE_URL is not the prod project. Fix with 'eas env' before publishing."; exit 1
+          # Positively assert BOTH the Supabase project AND the API host are prod
+          # (tolerate an optional trailing slash / whitespace across CLI versions).
+          if ! echo "$store" | grep -qE '^EXPO_PUBLIC_SUPABASE_URL=https://opcvjypsoivaxerahbal\.supabase\.co/?[[:space:]]*$'; then
+            echo "::error::EAS 'production' store EXPO_PUBLIC_SUPABASE_URL is not the prod project. Fix with 'eas env' before publishing."; exit 1
           fi
+          if ! echo "$store" | grep -qE '^EXPO_PUBLIC_API_URL=https://api\.persistence\.evans-software-solutions\.com/?[[:space:]]*$'; then
+            echo "::error::EAS 'production' store EXPO_PUBLIC_API_URL is not the prod api. Fix with 'eas env' before publishing."; exit 1
+          fi
+          # Belt-and-braces denylist of known non-prod projects/hosts.
           if echo "$store" | grep -qE '^EXPO_PUBLIC_(SUPABASE_URL|API_URL)=.*(staging|nxkhlrvjxotyjulodxzk|dfeyebgdktfteqlacmru)'; then
-            echo "::error::EAS 'production' env store contains a non-prod URL — aborting."; exit 1
+            echo "::error::EAS 'production' store contains a non-prod URL — aborting."; exit 1
           fi
           echo "EAS production env store verified."
 

@@ -249,4 +249,31 @@ describe("AuthCallbackContainer", () => {
       jest.useRealTimers();
     }
   });
+
+  it("bounces to sign-in when session establishment STALLS past the timeout (offline confirm)", () => {
+    jest.useFakeTimers();
+    try {
+      mockUrl =
+        "persistencemobile://auth/callback#access_token=abc&refresh_token=def";
+      const { adapters, auth } = createTestAdapters();
+      // setSessionFromTokens never resolves — the exact offline hang the plain
+      // "handled" guard failed to cover.
+      auth.setSessionFromTokens = jest.fn(() => new Promise(() => {}));
+
+      render(
+        <TestWrapper adapters={adapters}>
+          <AuthCallbackContainer />
+        </TestWrapper>,
+      );
+
+      // Processing started, but no terminal outcome yet.
+      expect(mockReplace).not.toHaveBeenCalled();
+      act(() => {
+        jest.advanceTimersByTime(12_000);
+      });
+      expect(mockReplace).toHaveBeenCalledWith("/(auth)/sign-in");
+    } finally {
+      jest.useRealTimers();
+    }
+  });
 });
