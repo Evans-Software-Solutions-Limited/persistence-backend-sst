@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.17.1](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.17.0...persistence-v1.17.1) (2026-08-17)
+
+
+### Bug Fixes
+
+* expired-sub workout quota reverts to free limit + gate Create at cap + fix staging CI ([#411](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/411)) ([f40b7c3](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/f40b7c3010be5f5b5a76b2c195769ca09c0d22b5))
+* **mobile:** make Previous-set hints react to the async backfill + add a resilient Home error escape hatch ([#408](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/408)) ([2e9f5da](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/2e9f5da8023873afcc69dc2507367cf87b5997c1))
+* **mobile:** reliable email-confirm deep-link capture + OTA env-store guard ([#410](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/410)) ([ebfaffe](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/ebfaffe1251c875f528d8990d327d33ccc917698))
+
 ## [1.17.0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.16.0...persistence-v1.17.0) (2026-08-16)
 
 
