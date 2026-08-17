@@ -131,6 +131,12 @@ export function WorkoutsListPresenter({
           size="lg"
           icon={<IconPlus size={16} />}
           onPress={onCreate}
+          // At the free-tier cap the button is disabled (greyed): the user
+          // can't create another workout, and the WorkoutLimitIndicator below
+          // carries the "Upgrade" path. `isAtLimit` is false for premium/
+          // trainer (unlimited), so they're never blocked. Container also
+          // routes onCreate to the paywall as a belt-and-braces fallback.
+          disabled={isAtLimit}
           testID="create-workout-cta"
         >
           Create Workout

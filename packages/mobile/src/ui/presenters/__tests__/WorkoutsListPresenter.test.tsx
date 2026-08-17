@@ -131,6 +131,22 @@ describe("WorkoutsListPresenter", () => {
     expect(onCreate).toHaveBeenCalledTimes(1);
   });
 
+  it("disables the Create Workout CTA at the cap (isAtLimit) and does not fire onCreate", () => {
+    const onCreate = jest.fn();
+    const { getByTestId } = render(
+      <WorkoutsListPresenter
+        {...baseProps}
+        userWorkoutLimit={3}
+        isAtLimit
+        onCreate={onCreate}
+      />,
+    );
+    const cta = getByTestId("create-workout-cta");
+    expect(cta.props.accessibilityState?.disabled).toBe(true);
+    fireEvent.press(cta);
+    expect(onCreate).not.toHaveBeenCalled();
+  });
+
   it("fires onUpgrade from the limit indicator", () => {
     const onUpgrade = jest.fn();
     const { getByText } = render(
