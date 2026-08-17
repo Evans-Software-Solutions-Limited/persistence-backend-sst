@@ -68,15 +68,33 @@ function App() {
           <Route path="/terms" element={<Terms />} />
           <Route path="/delete-account" element={<DeleteAccount />} />
           {/*
-           * Campaign landing routes (spec-30 R3.4): render the same Home
-           * hero as "/" for now — Home's store CTAs are not yet
-           * campaign-aware (the store isn't live, see marketing/config.ts),
-           * so these routes just give printed/QR assets a distinct path for
-           * store-console install attribution today. Wiring the CTA
-           * decoration through is a follow-up once appStore.available flips.
+           * Campaign landing routes (spec-30 R3.4): all render Home, and each
+           * decorates every store CTA on the page with its own `ct` — see
+           * marketing/campaign.tsx, which maps the pathname to a CAMPAIGNS
+           * entry, and MarketingLayout, which provides it.
+           *
+           * Adding a channel is two lines that must land together: an entry in
+           * CAMPAIGNS and a Route here. A CAMPAIGNS entry on its own attributes
+           * nothing — that was the state of this file until 17 Aug 2026, when
+           * appStoreUrl() was fully tested and simply never called with a slug.
+           *
+           * These are also where the `/g/:slug` edge redirect sends every
+           * non-iOS scan (marketing/edgeRedirect.ts, wired in infra/web.ts), so
+           * a slug reachable as /g/<slug> with no Route here is a blank page on
+           * a printed QR. `campaignWiring.test.tsx` asserts the two lists match.
            */}
           <Route path="/uon" element={<Home />} />
           <Route path="/flyer" element={<Home />} />
+          {/*
+           * `banner` has been a CAMPAIGNS entry since the print assets were
+           * specced, but had no Route until 17 Aug 2026 — a scan of the printed
+           * banner would have attributed nothing and rendered nothing.
+           */}
+          <Route path="/banner" element={<Home />} />
+          <Route path="/social" element={<Home />} />
+          <Route path="/tt" element={<Home />} />
+          <Route path="/ig" element={<Home />} />
+          <Route path="/li" element={<Home />} />
           <Route path="/qr/:slug" element={<Home />} />
           <Route
             path="/org-admin"

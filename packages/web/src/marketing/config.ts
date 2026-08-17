@@ -72,8 +72,25 @@ export interface Campaign {
 }
 
 export const CAMPAIGNS: Record<string, Campaign> = {
+  // Print / physical assets. These slugs are encoded into artwork that is
+  // fixed for the life of the print run — never rename or remove one.
   uon: { ct: "uon", utm_source: "uon", utm_campaign: "campus" },
   flyer: { ct: "flyer", utm_source: "flyer", utm_campaign: "print" },
+  banner: { ct: "banner", utm_source: "banner", utm_campaign: "print" },
+
+  // Social. `social` is the human-memorable one — spoken aloud, typed into
+  // WhatsApp; the rest are pasted once into a bio field.
+  //
+  // Note what these do NOT do: Meta attributes on its own click id (`fbclid`)
+  // and pixel cookies, and never reads `ct` or `utm_source`. These serve App
+  // Store Connect, the Play Console and our own analytics_events. What helps
+  // Meta is that the link lands on the marketing site at all, so the pixel can
+  // fire — which is the reason none of these point straight at apps.apple.com.
+  social: { ct: "social", utm_source: "social", utm_campaign: "launch" },
+  tt: { ct: "tt", utm_source: "tiktok", utm_campaign: "bio" },
+  ig: { ct: "ig", utm_source: "instagram", utm_campaign: "bio" },
+  li: { ct: "li", utm_source: "linkedin", utm_campaign: "bio" },
+
   default: { ct: "qr", utm_source: "qr", utm_campaign: "qr" },
 };
 

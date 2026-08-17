@@ -1,5 +1,6 @@
 import { AppleIcon } from "./icons";
 import { appStoreUrl } from "./config";
+import { useCampaign } from "./campaign";
 import { reportStoreClick } from "@/lib/storeClick";
 
 export type AppStoreCtaVariant = "hero" | "store" | "nav";
@@ -25,7 +26,10 @@ export interface AppStoreCtaProps {
  * by a shared event id — see `lib/storeClick.ts`) without blocking navigation.
  */
 export function AppStoreCta({ variant, campaign, className }: AppStoreCtaProps) {
-  const href = appStoreUrl(campaign);
+  // An explicit prop wins; otherwise inherit the landing route's campaign, so
+  // a CTA on /uon attributes without every call-site having to know the route.
+  const routeCampaign = useCampaign();
+  const href = appStoreUrl(campaign ?? routeCampaign);
   const extra = className ? ` ${className}` : "";
   const live = href !== null;
 
