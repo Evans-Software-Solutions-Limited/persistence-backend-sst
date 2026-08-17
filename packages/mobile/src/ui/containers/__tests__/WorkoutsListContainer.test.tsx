@@ -241,10 +241,12 @@ describe("WorkoutsListContainer", () => {
     expect(mockRouterPush).toHaveBeenCalledWith("/(app)/workouts/create");
   });
 
-  it("Create Workout at the cap routes to the paywall, NOT the creator", async () => {
+  it("Create Workout at the cap is disabled and does not route to the creator", async () => {
     // Regression: an at-limit (incl. expired-premium reverted) user could tap
     // Create and land in the creator; the backend then rejected the sync with a
-    // 402. Gate at tap time and show the upsell instead.
+    // 402. The CTA is now disabled at the cap (the WorkoutLimitIndicator's
+    // Upgrade CTA carries the path); the container's onCreate→paywall gate
+    // remains as a belt-and-braces fallback.
     const storage = new InMemoryStorageAdapter();
     seedSlices(storage, {
       mine: [buildWorkout({ id: "w-1", name: "Push Day" })],
@@ -256,10 +258,9 @@ describe("WorkoutsListContainer", () => {
       withAdapters(adapters, <WorkoutsListContainer />),
     );
 
-    fireEvent.press(await findByTestId("create-workout-cta"));
-    expect(mockRouterPush).toHaveBeenCalledWith(
-      "/(auth)/subscription-selection",
-    );
+    const cta = await findByTestId("create-workout-cta");
+    expect(cta.props.accessibilityState?.disabled).toBe(true);
+    fireEvent.press(cta);
     expect(mockRouterPush).not.toHaveBeenCalledWith("/(app)/workouts/create");
   }, 30_000);
 
