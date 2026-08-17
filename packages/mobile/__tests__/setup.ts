@@ -483,6 +483,13 @@ jest.mock("expo-linking", () => ({
       return `persistencemobile://${path}${query}`;
     },
   ),
+  // Auth-callback deep-link capture (useAuthCallbackUrl / AuthCallbackContainer,
+  // installed at the root layout) reads these. Default to "no deep link" so any
+  // test that mounts the root tree doesn't crash; tests that exercise the
+  // callback flow override this module locally.
+  getInitialURL: jest.fn(async () => null),
+  addEventListener: jest.fn(() => ({ remove: jest.fn() })),
+  useURL: jest.fn(() => null),
 }));
 
 // Mock expo-notifications (M3 — native bindings unavailable in Jest).

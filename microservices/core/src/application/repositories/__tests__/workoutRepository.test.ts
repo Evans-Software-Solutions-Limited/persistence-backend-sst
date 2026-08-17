@@ -138,18 +138,57 @@ function makeQuotaUsedChain(value: number) {
   };
 }
 
-function makeQuotaTierChain(workoutLimit: number | null) {
+// The latest-subscription lookup in getQuota: from().leftJoin().where()
+// .orderBy().limit() → [{ paymentStatus, expiresAt, workoutLimit }] or [].
+function makeQuotaSubChain(
+  row: {
+    paymentStatus?: string;
+    expiresAt?: Date | null;
+    workoutLimit: number | null;
+  } | null,
+) {
   return {
     from: vi.fn().mockReturnValue({
-      innerJoin: vi.fn().mockReturnValue({
+      leftJoin: vi.fn().mockReturnValue({
         where: vi.fn().mockReturnValue({
-          limit: vi
-            .fn()
-            .mockResolvedValue(workoutLimit === null ? [] : [{ workoutLimit }]),
+          orderBy: vi.fn().mockReturnValue({
+            limit: vi.fn().mockResolvedValue(
+              row === null
+                ? []
+                : [
+                    {
+                      paymentStatus: row.paymentStatus ?? "active",
+                      expiresAt: row.expiresAt ?? null,
+                      workoutLimit: row.workoutLimit,
+                    },
+                  ],
+            ),
+          }),
         }),
       }),
     }),
   };
+}
+
+// The free-tier fallback lookup (only runs when there is no sub, or the sub is
+// expired/cancelled): from().where().limit() → [{ workoutLimit }].
+function makeQuotaFreeChain(workoutLimit: number | null) {
+  return {
+    from: vi.fn().mockReturnValue({
+      where: vi.fn().mockReturnValue({
+        limit: vi
+          .fn()
+          .mockResolvedValue(workoutLimit === null ? [] : [{ workoutLimit }]),
+      }),
+    }),
+  };
+}
+
+// Back-compat for the list/render tests, which only care that quota resolves to
+// a given limit: model an ACTIVE sub carrying that limit (single sub query, no
+// free-tier fallback), so their call sequences + assertions are unchanged.
+function makeQuotaTierChain(workoutLimit: number | null) {
+  return makeQuotaSubChain({ paymentStatus: "active", workoutLimit });
 }
 
 describe("WorkoutRepository", () => {
@@ -2216,34 +2255,120 @@ describe("WorkoutRepository", () => {
   });
 
   describe("getQuota", () => {
-    it("should return used count + tier limit when subscription is active", async () => {
+    it("returns the active tier's limit for an active subscription", async () => {
       const mockDb = {
         select: vi
           .fn()
           .mockReturnValueOnce(makeQuotaUsedChain(7))
-          .mockReturnValueOnce(makeQuotaTierChain(50)),
+          .mockReturnValueOnce(
+            makeQuotaSubChain({ paymentStatus: "active", workoutLimit: 50 }),
+          ),
       };
       (getDb as any).mockReturnValue(mockDb);
 
-      const repo = new WorkoutRepository();
-      const quota = await repo.getQuota("user-1");
+      const quota = await new WorkoutRepository().getQuota("user-1");
 
       expect(quota).toEqual({ used: 7, limit: 50 });
+      // Active sub → no free-tier fallback query.
+      expect(mockDb.select).toHaveBeenCalledTimes(2);
     });
 
-    it("should return limit=null when no active subscription exists", async () => {
+    it("returns unlimited (null) for an active premium tier", async () => {
+      const mockDb = {
+        select: vi
+          .fn()
+          .mockReturnValueOnce(makeQuotaUsedChain(12))
+          .mockReturnValueOnce(
+            makeQuotaSubChain({ paymentStatus: "active", workoutLimit: null }),
+          ),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const quota = await new WorkoutRepository().getQuota("user-1");
+
+      expect(quota).toEqual({ used: 12, limit: null });
+    });
+
+    it("reverts an EXPIRED (past_due) subscription to the free-tier limit — regression: was reported as unlimited so the client hid the limit banner", async () => {
+      const mockDb = {
+        select: vi
+          .fn()
+          .mockReturnValueOnce(makeQuotaUsedChain(3))
+          // Latest sub is a premium (workoutLimit null) but payment lapsed.
+          .mockReturnValueOnce(
+            makeQuotaSubChain({
+              paymentStatus: "past_due",
+              expiresAt: null,
+              workoutLimit: null,
+            }),
+          )
+          // → revert-to-free fallback query returns the free limit of 3.
+          .mockReturnValueOnce(makeQuotaFreeChain(3)),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const quota = await new WorkoutRepository().getQuota("user-1");
+
+      expect(quota).toEqual({ used: 3, limit: 3 });
+      expect(mockDb.select).toHaveBeenCalledTimes(3);
+    });
+
+    it("reverts a CANCELLED-and-lapsed subscription to the free-tier limit", async () => {
+      const mockDb = {
+        select: vi
+          .fn()
+          .mockReturnValueOnce(makeQuotaUsedChain(5))
+          .mockReturnValueOnce(
+            makeQuotaSubChain({
+              paymentStatus: "cancelled",
+              expiresAt: new Date(Date.now() - 86_400_000), // paid period ended
+              workoutLimit: null,
+            }),
+          )
+          .mockReturnValueOnce(makeQuotaFreeChain(3)),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const quota = await new WorkoutRepository().getQuota("user-1");
+
+      expect(quota).toEqual({ used: 5, limit: 3 });
+    });
+
+    it("keeps full entitlement for a cancelled-but-still-paid-through subscription", async () => {
+      const mockDb = {
+        select: vi
+          .fn()
+          .mockReturnValueOnce(makeQuotaUsedChain(9))
+          .mockReturnValueOnce(
+            makeQuotaSubChain({
+              paymentStatus: "cancelled",
+              expiresAt: new Date(Date.now() + 86_400_000), // still within paid period
+              workoutLimit: null,
+            }),
+          ),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const quota = await new WorkoutRepository().getQuota("user-1");
+
+      // classify returns null → not reverted → keeps the premium (unlimited).
+      expect(quota).toEqual({ used: 9, limit: null });
+      expect(mockDb.select).toHaveBeenCalledTimes(2);
+    });
+
+    it("falls back to the free-tier limit when the user has no subscription", async () => {
       const mockDb = {
         select: vi
           .fn()
           .mockReturnValueOnce(makeQuotaUsedChain(0))
-          .mockReturnValueOnce(makeQuotaTierChain(null)),
+          .mockReturnValueOnce(makeQuotaSubChain(null))
+          .mockReturnValueOnce(makeQuotaFreeChain(3)),
       };
       (getDb as any).mockReturnValue(mockDb);
 
-      const repo = new WorkoutRepository();
-      const quota = await repo.getQuota("user-1");
+      const quota = await new WorkoutRepository().getQuota("user-1");
 
-      expect(quota).toEqual({ used: 0, limit: null });
+      expect(quota).toEqual({ used: 0, limit: 3 });
     });
   });
 });
