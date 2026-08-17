@@ -11,6 +11,55 @@ say so and fix this file.
 
 ## ▶ START HERE — next session (rewritten 2026-08-04, post-Mealprint-merge)
 
+### 🟡 2026-08-17 — `/g/:slug` EDGE REDIRECT BUILT, NOT DEPLOYED, NOT DEVICE-VERIFIED (branch `feat/edge-redirect-g-slug`, commit `f28b2881`)
+
+The device-aware short link a printed QR code encodes. iPhone → App Store with
+that campaign's `pt`/`ct`/`mt`; Android, desktop, bots → the campaign's landing
+page. Brief at `specs/milestones/M20-growth-loop/EDGE_REDIRECT_G_SLUG_AGENT_BRIEF.md`.
+
+- **There is no server.** `packages/web` is `sst.aws.StaticSite`, so this is a
+  **CloudFront Function** on FOUR ordered cache behaviours (`/g`, `/g/*`, `/G`,
+  `/G/*` — `/g/*` does not match a bare `/g`, and CloudFront path patterns are
+  case-sensitive; anything missing every pattern falls to S3 → index.html → no
+  React route → blank page). SST's StaticSite owns the default behaviour's
+  viewer-request function and a behaviour may carry only one, so this gets its
+  own — which also keeps the blast radius off `/`, `/privacy` and every asset.
+- **The function body is GENERATED at synth** from `CAMPAIGNS`
+  (`marketing/edgeRedirectSource.ts`, imported by `infra/web.ts`). The
+  `cloudfront-js-2.0` runtime has no modules, and a retyped slug table is how
+  the `ct` on a fixed print run would drift from the `ct` on the web CTA.
+  ⚠ `Boolean` is NOT in that runtime's documented globals — `filter(Boolean)`
+  there is a 502 on every scan. 3.4 KB body, 10 KB cap.
+- **All decisions live in `marketing/edgeRedirect.ts`** under vitest, because
+  `infra/` has neither typecheck nor tests. `edgeRedirect.test.ts` EXECUTES the
+  generated source and asserts parity with the reference implementation over a
+  user-agent × path matrix, so the twins cannot drift silently.
+- **Android reaches no Play URL** — gated on `playStore.available` (false, in
+  review). Flips from config alone, no artwork reprint. ⚠ But `playStoreUrl`
+  emits top-level `utm_*` params, which **Play Console does not attribute on** —
+  it wants a URL-encoded `referrer` param. Dormant today; **MUST be fixed before
+  the Android launch** or every Android QR install records as organic. Left out
+  of scope deliberately; the test no longer blesses the wrong shape.
+- **Fixed a latent gap:** `banner` had been a `CAMPAIGNS` entry with no
+  `<Route>` since the print assets were specced — a printed-banner scan would
+  have rendered a blank page. `campaignWiring.test.tsx` now derives its slug list
+  from the redirect table, so a `CAMPAIGNS` entry with no landing route fails a
+  test. `buildRedirectTable()` also THROWS at synth on a slug outside
+  `/^[a-z0-9-]+$/`, because both twins lower-case and split the URI before
+  lookup — such a slug is unreachable and the parity tests are blind to it.
+- **Carries the campaign-attribution wiring it depends on** (`campaign.ts`,
+  `CampaignContext` in `MarketingLayout`, the CTA call sites, `CAMPAIGNS`) —
+  that work was uncommitted in the working tree and on no branch.
+
+Gates green: prettier, typecheck, build, `test:unit` 21/21 (818 web tests).
+Inspector Brad: clean @ `f28b2881` after three fix rounds.
+
+⚠ **NOT pushed, no PR, NOT deployed, NOT device-verified.** Before any leaflet
+is printed: deploy to staging, then scan the real QR with a real iPhone AND a
+real Android handset. `curl -A "<iPhone UA>" -I` is a smoke test only — and
+plain `curl -I` hits the bot branch and returns the landing page, which is
+correct behaviour, not a failure.
+
 ### 🟢 2026-08-12 — GROWTH INSTRUMENTATION (spec-30 / M20-P1) BUILT — backend/web-only, binary frozen (branch `feat/growth-instrumentation-spec`)
 
 Server-side growth instrumentation for the launch funnel, built under the
