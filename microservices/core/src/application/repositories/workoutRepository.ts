@@ -30,6 +30,7 @@ import {
   estimateWorkoutDurationMinutes,
   resolveEstimatedDurationMinutes,
 } from "../workouts/estimateDuration";
+import { classifySubscriptionStatus } from "../entitlement/assertEntitlement";
 
 export type WorkoutListType = "mine" | "assigned" | "default";
 
@@ -302,31 +303,61 @@ export class WorkoutRepository {
   async getQuota(userId: string): Promise<WorkoutQuota> {
     const db = getDb();
 
-    const [usedRow, tierRow] = await Promise.all([
+    // The effective limit MUST mirror `assertEntitlement` (the create-workout
+    // gate): read the LATEST subscription (by createdAt) LEFT-JOINed to its
+    // tier, and revert an EXPIRED/CANCELLED sub to the free-tier limit. The
+    // previous query filtered to payment_status IN ('active','pending') with no
+    // revert clamp, so an expired premium returned limit=null (unlimited) — the
+    // client then hid the "limit reached" upsell while the backend still
+    // enforced 3 on create (the same client-tier-vs-server-entitlement skew as
+    // the is-a-trainer flag). Kept in lockstep via the shared
+    // `classifySubscriptionStatus`.
+    const [usedRow, subRows] = await Promise.all([
       db
         .select({ value: count() })
         .from(workouts)
         .where(eq(workouts.createdBy, userId)),
       db
-        .select({ workoutLimit: subscriptionTiers.workoutLimit })
+        .select({
+          paymentStatus: userSubscriptions.paymentStatus,
+          expiresAt: userSubscriptions.expiresAt,
+          workoutLimit: subscriptionTiers.workoutLimit,
+        })
         .from(userSubscriptions)
-        .innerJoin(
+        .leftJoin(
           subscriptionTiers,
           eq(userSubscriptions.tierName, subscriptionTiers.tierName),
         )
-        .where(
-          and(
-            eq(userSubscriptions.userId, userId),
-            inArray(userSubscriptions.paymentStatus, ["active", "pending"]),
-          ),
-        )
+        .where(eq(userSubscriptions.userId, userId))
+        .orderBy(desc(userSubscriptions.createdAt))
         .limit(1),
     ]);
 
-    return {
-      used: usedRow[0].value,
-      limit: tierRow[0]?.workoutLimit ?? null,
-    };
+    const used = usedRow[0].value;
+    const subRow = subRows[0] ?? null;
+
+    // No sub row, or a cancelled/expired one (classify returns a non-null deny
+    // reason) → the free-tier limit applies. An active/trialing sub — or a
+    // cancelled-but-still-paid-through one (classify returns null) — keeps its
+    // own tier limit.
+    const reverted =
+      subRow !== null &&
+      classifySubscriptionStatus(subRow.paymentStatus, subRow.expiresAt) !==
+        null;
+
+    let limit: number | null;
+    if (subRow === null || reverted) {
+      const freeRows = await db
+        .select({ workoutLimit: subscriptionTiers.workoutLimit })
+        .from(subscriptionTiers)
+        .where(eq(subscriptionTiers.tierName, "free"))
+        .limit(1);
+      limit = freeRows[0]?.workoutLimit ?? null;
+    } else {
+      limit = subRow.workoutLimit ?? null;
+    }
+
+    return { used, limit };
   }
 
   /**

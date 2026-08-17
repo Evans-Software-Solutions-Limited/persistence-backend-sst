@@ -99,13 +99,23 @@ export function WorkoutsListContainer() {
     [workoutsRefresh],
   );
 
-  const onCreate = useCallback(() => {
-    router.push("/(app)/workouts/create" as never);
-  }, []);
-
   const onUpgrade = useCallback(() => {
     router.push("/(auth)/subscription-selection" as never);
   }, []);
+
+  const onCreate = useCallback(() => {
+    // Free-tier (incl. expired/cancelled → reverted) cap: route to the paywall
+    // instead of the creator. The backend rejects the create with a 402
+    // (assertEntitlement) regardless, but gating here surfaces the upsell at tap
+    // time rather than after the optimistic local write fails to sync. Mirrors
+    // the `onStart` over-limit gate. `isAtLimit` is false for premium/trainer
+    // (limit === null), so they're never blocked.
+    if (isAtLimit) {
+      onUpgrade();
+      return;
+    }
+    router.push("/(app)/workouts/create" as never);
+  }, [isAtLimit, onUpgrade]);
 
   const onOpen = useCallback((workoutId: string) => {
     router.push(`/(app)/workouts/${workoutId}` as never);

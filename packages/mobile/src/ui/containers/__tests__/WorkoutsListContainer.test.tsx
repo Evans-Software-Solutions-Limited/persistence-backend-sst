@@ -241,6 +241,28 @@ describe("WorkoutsListContainer", () => {
     expect(mockRouterPush).toHaveBeenCalledWith("/(app)/workouts/create");
   });
 
+  it("Create Workout at the cap routes to the paywall, NOT the creator", async () => {
+    // Regression: an at-limit (incl. expired-premium reverted) user could tap
+    // Create and land in the creator; the backend then rejected the sync with a
+    // 402. Gate at tap time and show the upsell instead.
+    const storage = new InMemoryStorageAdapter();
+    seedSlices(storage, {
+      mine: [buildWorkout({ id: "w-1", name: "Push Day" })],
+      quota: { used: 3, limit: 3 },
+    });
+
+    const adapters = makeAdapters(new InMemoryApiAdapter(), storage);
+    const { findByTestId } = renderWithTheme(
+      withAdapters(adapters, <WorkoutsListContainer />),
+    );
+
+    fireEvent.press(await findByTestId("create-workout-cta"));
+    expect(mockRouterPush).toHaveBeenCalledWith(
+      "/(auth)/subscription-selection",
+    );
+    expect(mockRouterPush).not.toHaveBeenCalledWith("/(app)/workouts/create");
+  }, 30_000);
+
   it("at-limit users see the indicator and Upgrade routes to subscription selection", async () => {
     const storage = new InMemoryStorageAdapter();
     seedSlices(storage, {
