@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.17.2](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.17.1...persistence-v1.17.2) (2026-08-18)
+
+
+### Bug Fixes
+
+* **mobile:** disable the Create Workout CTA at the free-tier cap ([#412](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/412)) ([5c060cc](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/5c060ccb39acca77ef8b49b66a0a8a5a457e207c))
+* **mobile:** drop the Android BasalMetabolicRate Health Connect scope ([#414](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/414)) ([773363d](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/773363d091e784078df3431115d46a8eff0951e0))
+
 ## [1.17.1](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.17.0...persistence-v1.17.1) (2026-08-17)
 
 
