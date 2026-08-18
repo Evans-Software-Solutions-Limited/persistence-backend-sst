@@ -79,11 +79,17 @@ export interface HealthPort {
   ): Promise<Result<readonly HealthDailySteps[], HealthError>>;
   getActiveCaloriesToday(): Promise<Result<number, HealthError>>;
   /**
-   * Cumulative basal (resting) energy burn so far today, in kcal. The
-   * Home tab's "Resting" ring reads this; legacy mobile rendered 0
-   * here because the read path was never wired. Implementations that
-   * can't surface this (Android in M1, stub) return 0 — same
-   * convention as `getActiveCaloriesToday`.
+   * Cumulative basal (resting) energy burn so far today, in kcal.
+   * Implementations that can't surface it return 0 — same convention as
+   * `getStandTimeTodayMinutes`.
+   *
+   * No screen currently renders this on either platform: its only surface,
+   * `EnergyTile` (via `MyProgressSection`), is ported from legacy but mounted
+   * nowhere. iOS still reads it from HealthKit; Android returns 0 without
+   * reading, because Play review rejected the `BasalMetabolicRate` scope under
+   * the Health Connect "Minimum Scope" policy precisely for backing no visible
+   * feature. Wiring a consumer means re-declaring that scope on Android — see
+   * specs/milestones/ANDROID-LAUNCH/HEALTH-CONNECT-DECLARATION.md.
    */
   getBasalCaloriesToday(): Promise<Result<number, HealthError>>;
   /**

@@ -19,7 +19,9 @@ function nativeModule(
       if (request.recordType === "ActiveCaloriesBurned") {
         return { ACTIVE_CALORIES_TOTAL: { inKilocalories: 456.4 } };
       }
-      return { BASAL_CALORIES_TOTAL: { inKilocalories: 1_702.6 } };
+      // Fail loudly rather than returning a plausible payload: the adapter
+      // aggregates exactly two record types, so anything else is a typo.
+      throw new Error(`unexpected aggregate recordType: ${request.recordType}`);
     }),
     aggregateGroupByPeriod: jest.fn(async () => [
       {
@@ -365,10 +367,6 @@ describe("HealthConnectAdapter", () => {
       value: [{ date: "2026-08-07T00:00:00.000Z", steps: 0 }],
     });
     await expect(adapter.getActiveCaloriesToday()).resolves.toEqual({
-      ok: true,
-      value: 0,
-    });
-    await expect(adapter.getBasalCaloriesToday()).resolves.toEqual({
       ok: true,
       value: 0,
     });
