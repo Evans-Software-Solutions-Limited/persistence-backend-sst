@@ -19,7 +19,9 @@ function nativeModule(
       if (request.recordType === "ActiveCaloriesBurned") {
         return { ACTIVE_CALORIES_TOTAL: { inKilocalories: 456.4 } };
       }
-      return { BASAL_CALORIES_TOTAL: { inKilocalories: 1_702.6 } };
+      // Fail loudly rather than returning a plausible payload: the adapter
+      // aggregates exactly two record types, so anything else is a typo.
+      throw new Error(`unexpected aggregate recordType: ${request.recordType}`);
     }),
     aggregateGroupByPeriod: jest.fn(async () => [
       {
@@ -83,6 +85,25 @@ function nativeModule(
 }
 
 describe("HealthConnectAdapter", () => {
+  // Play review rejected version code 4 for declaring BasalMetabolicRate with
+  // no Android surface that renders resting energy (Health Connect "Minimum
+  // Scope"). Keep the scope free of it until such a screen ships.
+  it("never requests or reads BasalMetabolicRate", async () => {
+    expect(
+      HEALTH_CONNECT_PERMISSIONS.map((permission) => permission.recordType),
+    ).not.toContain("BasalMetabolicRate");
+
+    const native = nativeModule();
+    const adapter = new HealthConnectAdapter(native);
+
+    await expect(adapter.getBasalCaloriesToday()).resolves.toEqual({
+      ok: true,
+      value: 0,
+    });
+    expect(native.aggregateRecord).not.toHaveBeenCalled();
+    expect(native.readRecords).not.toHaveBeenCalled();
+  });
+
   it("initializes Health Connect and requests the least-privilege parity scope", async () => {
     const native = nativeModule();
     const adapter = new HealthConnectAdapter(native);
@@ -114,10 +135,6 @@ describe("HealthConnectAdapter", () => {
     await expect(adapter.getActiveCaloriesToday()).resolves.toEqual({
       ok: true,
       value: 456,
-    });
-    await expect(adapter.getBasalCaloriesToday()).resolves.toEqual({
-      ok: true,
-      value: 1703,
     });
     await expect(adapter.getLatestBodyWeight()).resolves.toEqual({
       ok: true,
@@ -205,7 +222,6 @@ describe("HealthConnectAdapter", () => {
       () => adapter.getStepsToday(),
       () => adapter.getStepsLastNDays(7),
       () => adapter.getActiveCaloriesToday(),
-      () => adapter.getBasalCaloriesToday(),
       () => adapter.getLatestBodyWeight(),
       () => adapter.getHeartRateLatest(),
       () => adapter.getLatestBodyFat(),
@@ -354,10 +370,6 @@ describe("HealthConnectAdapter", () => {
       ok: true,
       value: 0,
     });
-    await expect(adapter.getBasalCaloriesToday()).resolves.toEqual({
-      ok: true,
-      value: 0,
-    });
     await expect(adapter.getLatestBodyWeight()).resolves.toEqual({
       ok: true,
       value: null,
@@ -439,7 +451,6 @@ describe("HealthConnectAdapter", () => {
       () => adapter.getStepsToday(),
       () => adapter.getStepsLastNDays(7),
       () => adapter.getActiveCaloriesToday(),
-      () => adapter.getBasalCaloriesToday(),
       () => adapter.getLatestBodyWeight(),
       () => adapter.getHeartRateLatest(),
       () => adapter.getLatestBodyFat(),

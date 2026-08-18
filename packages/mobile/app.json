@@ -34,7 +34,6 @@
       "permissions": [
         "com.android.vending.BILLING",
         "android.permission.health.READ_STEPS",
-        "android.permission.health.READ_BASAL_METABOLIC_RATE",
         "android.permission.health.READ_ACTIVE_CALORIES_BURNED",
         "android.permission.health.READ_WEIGHT",
         "android.permission.health.WRITE_WEIGHT",

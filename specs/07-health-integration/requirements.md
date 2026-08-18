@@ -25,7 +25,8 @@ Sync health data (steps, calories, body weight, active energy) from Apple Health
 **Acceptance Criteria:**
 
 - [x] Health Connect permissions request
-- [x] Android parity for the data Persistence currently uses: steps, active and basal calories, body weight, body fat, heart rate, and sleep
+- [x] Android parity for the data Persistence currently uses: steps, active calories, body weight, body fat, heart rate, and sleep
+  - Basal calories are excluded on Android: the scope was rejected by Play review under the Health Connect "Minimum Scope" policy because no screen renders it. See `specs/milestones/ANDROID-LAUNCH/HEALTH-CONNECT-DECLARATION.md`.
 - [x] Handle Health Connect not installed or requiring an update (redirect to Play Store)
 - [x] Permission state is owned and persisted by Health Connect
 
