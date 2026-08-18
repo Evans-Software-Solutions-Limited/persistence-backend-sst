@@ -70,7 +70,7 @@ function App() {
           {/*
            * Campaign landing routes (spec-30 R3.4): all render Home, and each
            * decorates every store CTA on the page with its own `ct` — see
-           * marketing/campaign.tsx, which maps the pathname to a CAMPAIGNS
+           * marketing/campaign.ts, which maps the pathname to a CAMPAIGNS
            * entry, and MarketingLayout, which provides it.
            *
            * Adding a channel is two lines that must land together: an entry in

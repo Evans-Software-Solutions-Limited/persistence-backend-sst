@@ -11,7 +11,7 @@ say so and fix this file.
 
 ## ▶ START HERE — next session (rewritten 2026-08-04, post-Mealprint-merge)
 
-### 🟡 2026-08-17 — `/g/:slug` EDGE REDIRECT BUILT, NOT DEPLOYED, NOT DEVICE-VERIFIED (branch `feat/edge-redirect-g-slug`, commit `f28b2881`)
+### 🟡 2026-08-17 — `/g/:slug` EDGE REDIRECT BUILT, NOT DEPLOYED, NOT DEVICE-VERIFIED (branch `feat/edge-redirect-g-slug`, commit `25105b70`)
 
 The device-aware short link a printed QR code encodes. iPhone → App Store with
 that campaign's `pt`/`ct`/`mt`; Android, desktop, bots → the campaign's landing
@@ -51,8 +51,17 @@ page. Brief at `specs/milestones/M20-growth-loop/EDGE_REDIRECT_G_SLUG_AGENT_BRIE
   `CampaignContext` in `MarketingLayout`, the CTA call sites, `CAMPAIGNS`) —
   that work was uncommitted in the working tree and on no branch.
 
-Gates green: prettier, typecheck, build, `test:unit` 21/21 (818 web tests).
-Inspector Brad: clean @ `f28b2881` after three fix rounds.
+Gates green: prettier, typecheck, build, `test:unit` 20/20 files (818 web tests;
+687 of them in `edgeRedirect.test.ts` + `campaignWiring.test.tsx`, which cover
+`edgeRedirect.ts`, `edgeRedirectSource.ts` and `campaign.ts` at 100%).
+Inspector Brad @ `ef678832` (2026-08-18, post-rebase onto `origin/main`): no
+blocking findings. Two 🟡 raised, BOTH deliberately left standing, neither on
+the printed path (`/g/flyer` and `/g/banner` are the only URLs in artwork):
+(a) iOS scans of the SOCIAL slugs (`/g/ig`, `/g/tt`, `/g/li`, `/g/social`) go
+straight to the App Store, so no Meta pixel fires and `fbclid` is dropped —
+which defeats the stated reason those slugs land on the site at all. Use `/ig`,
+not `/g/ig`, in any Meta AD; awaiting Brad’s call on making the iOS branch
+table-driven. (b) the `playStoreUrl` `utm_*` shape below.
 
 ⚠ **NOT pushed, no PR, NOT deployed, NOT device-verified.** Before any leaflet
 is printed: deploy to staging, then scan the real QR with a real iPhone AND a
