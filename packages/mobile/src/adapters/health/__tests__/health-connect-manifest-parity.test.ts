@@ -25,6 +25,17 @@ const PERMISSION_SUFFIX: Record<string, string> = {
 
 const HEALTH_PREFIX = "android.permission.health.";
 
+/**
+ * Reading `app.json` is correct because it is the only source of health
+ * permissions in the build: `app.config.ts` spreads `...config.android` and
+ * overrides only `package`, `withHealthConnectRationale` injects activities
+ * rather than `uses-permission`, and `react-native-health-connect` ships none
+ * in its library manifest. If a config plugin or an `app.config.ts` override
+ * ever starts adding permissions, this test must read the resolved config
+ * instead — it would otherwise pass against a source that is no longer what
+ * ships.
+ */
+
 describe("Health Connect manifest parity", () => {
   const declared = (appJson.expo.android.permissions ?? []).filter((name) =>
     name.startsWith(HEALTH_PREFIX),
