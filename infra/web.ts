@@ -1,6 +1,8 @@
 import { coreAPI } from "./api";
 import { marketingEdge } from "./web-edge";
 import { webDomain, hostedZoneId } from "./domains";
+import { EDGE_REDIRECT_PREFIX } from "../packages/web/src/marketing/edgeRedirect";
+import { buildEdgeFunctionSource } from "../packages/web/src/marketing/edgeRedirectSource";
 
 const region = aws.getRegionOutput().name;
 
@@ -68,6 +70,86 @@ const securityHeaders = new aws.cloudfront.ResponseHeadersPolicy(
   },
 );
 
+// ─────────────────────────────────────────────────────────────────────────────
+// `/g/:slug` — the device-aware redirect a printed QR code resolves to.
+//
+// iPhone → the App Store with this campaign's `pt`/`ct`/`mt`; everyone else
+// (Android, desktop, bots) → the campaign's landing page on this site, which
+// decorates its own CTAs with the same `ct` and fires the Meta pixel. All the
+// decisions, and the tests that pin them, live in
+// `packages/web/src/marketing/edgeRedirect.ts`; this block is only the wiring.
+//
+// ─── Why a CloudFront Function, and why its OWN behaviour ───
+//
+// There is no server: `packages/web` is a StaticSite (S3 behind CloudFront), so
+// this cannot be a route. Rejected alternatives: Lambda@Edge (us-east-1 only,
+// per-invocation cost, and a cold start on top of a QR scan over conference
+// wifi), S3 website routing rules (cannot see the user-agent at all), and a
+// client-side React route (a scanner on bad wifi would download the whole JS
+// bundle and wait for hydration before anything happened).
+//
+// A CloudFront behaviour may carry at most ONE viewer-request function, and
+// SST's StaticSite already puts its own on the default behaviour — that is the
+// SPA/KV router the warning further down refers to. So this gets ordered
+// behaviours of its own rather than being merged into SST's function, which also
+// keeps the blast radius off `/`, `/privacy`, `/pricing` and every asset: a fault
+// here can only ever affect `/g/*`.
+//
+// FOUR patterns, not one. `/g/*` does not match a bare `/g`, and CloudFront path
+// patterns are CASE-SENSITIVE, so `/G/flyer` would not match either — anything
+// that misses every pattern falls through to the default behaviour, is served
+// index.html, matches no React route and renders a blank page. On printed
+// artwork that is unrecoverable, so all four are bound. The function answers
+// every request under them, so the origin is never reached; a behaviour still
+// requires an origin, hence `targetOriginId`.
+const campaignRedirectFunction = new aws.cloudfront.Function(
+  "webCampaignRedirect",
+  {
+    runtime: "cloudfront-js-2.0",
+    comment:
+      "302 /g/<slug> to the App Store (iOS) or the campaign landing page",
+    // Generated at synth time from CAMPAIGNS — the restricted `cloudfront-js-2.0`
+    // runtime has no modules, and a hand-retyped slug table is exactly how the
+    // `ct` on a printed QR would drift from the `ct` on the web CTA, splitting
+    // one campaign across two tokens in App Analytics.
+    code: buildEdgeFunctionSource(),
+  },
+);
+
+// CloudFront's managed CachingDisabled policy (minTTL/defaultTTL/maxTTL all 0),
+// the same one infra/web-edge.ts uses. The response varies by user-agent;
+// CloudFront never caches a viewer-request-generated response, and the function
+// also sets `cache-control: no-store` for browsers and corporate proxies.
+const CACHE_POLICY_CACHING_DISABLED = "4135ea2d-6df8-44a3-9df3-4b5a84be39ad";
+
+// SST gives the StaticSite distribution exactly one origin, with this id (see
+// `createDistribution` in .sst/platform/.../static-site.ts). Never contacted on
+// these behaviours — if SST ever renames it, CloudFront rejects the deploy,
+// which is the intended failure mode for a directory with no typecheck.
+const SST_STATIC_SITE_ORIGIN_ID = "default";
+
+const campaignRedirectBehaviors = [
+  EDGE_REDIRECT_PREFIX,
+  EDGE_REDIRECT_PREFIX.toUpperCase(),
+]
+  .flatMap((prefix) => [`/${prefix}`, `/${prefix}/*`])
+  .map((pathPattern) => ({
+    pathPattern,
+    targetOriginId: SST_STATIC_SITE_ORIGIN_ID,
+    viewerProtocolPolicy: "redirect-to-https",
+    allowedMethods: ["GET", "HEAD"],
+    cachedMethods: ["GET", "HEAD"],
+    compress: false, // a 302 with no body
+    cachePolicyId: CACHE_POLICY_CACHING_DISABLED,
+    responseHeadersPolicyId: securityHeaders.id,
+    functionAssociations: [
+      {
+        eventType: "viewer-request",
+        functionArn: campaignRedirectFunction.arn,
+      },
+    ],
+  }));
+
 // Custom domain only on stable named stages (production / staging); personal
 // dev stages fall back to the auto-generated CloudFront URL. `dns: sst.aws.dns
 // ({ zone: hostedZoneId })` is passed explicitly for the same reasons as the
@@ -112,7 +194,9 @@ export const frontend = new sst.aws.StaticSite("web", {
     paths: "all",
     wait: true,
   },
-  // Attach the security-headers policy to the distribution's default behaviour.
+  // Attach the security-headers policy to the distribution's default behaviour,
+  // and the `/g/*` redirect behaviours defined above.
+  //
   // Use the callback form because SST shallow-merges object transforms at the
   // CdnArgs level. Supplying a partial `defaultCacheBehavior` object would
   // replace SST's generated behaviour and remove required fields such as
@@ -120,6 +204,13 @@ export const frontend = new sst.aws.StaticSite("web", {
   transform: {
     cdn: (args) => {
       args.defaultCacheBehavior.responseHeadersPolicyId = securityHeaders.id;
+      // Assigned, not appended: SST's StaticSite defines no ordered behaviours
+      // of its own, so there is nothing here to preserve. Note that ordered
+      // behaviours bypass SST's viewer-request function — including its
+      // cloudfront.net 403 guard — but the redirect is site-RELATIVE, so a
+      // `/g/*` request to the raw distribution URL 302s back to the same host
+      // and the follow-up hits the default behaviour and is refused there.
+      args.orderedCacheBehaviors = campaignRedirectBehaviors;
     },
   },
   environment: {

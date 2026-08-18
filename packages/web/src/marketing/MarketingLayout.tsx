@@ -6,6 +6,7 @@ import { MarketingNav } from "./MarketingNav";
 import { MarketingFooter } from "./MarketingFooter";
 import { ConsentBanner } from "./ConsentBanner";
 import { AppBanner } from "./AppBanner";
+import { CampaignContext, campaignFromPath } from "./campaign";
 
 /**
  * Shell for every marketing page: scoped `.mkt` root (so its warm editorial
@@ -36,13 +37,17 @@ export function MarketingLayout({
   }, [pathname, hash]);
 
   return (
-    <div className="mkt">
-      <div className="mkt-bg" aria-hidden="true" />
-      <AppBanner />
-      <MarketingNav current={current} />
-      <main>{children}</main>
-      <MarketingFooter />
-      <ConsentBanner />
-    </div>
+    // Renders no DOM of its own — every store CTA beneath this point (Home's
+    // hero + store buttons, MarketingNav, AppBanner) inherits the campaign.
+    <CampaignContext.Provider value={campaignFromPath(pathname)}>
+      <div className="mkt">
+        <div className="mkt-bg" aria-hidden="true" />
+        <AppBanner />
+        <MarketingNav current={current} />
+        <main>{children}</main>
+        <MarketingFooter />
+        <ConsentBanner />
+      </div>
+    </CampaignContext.Provider>
   );
 }

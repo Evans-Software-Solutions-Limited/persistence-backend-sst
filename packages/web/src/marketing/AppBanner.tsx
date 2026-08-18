@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { AppleIcon } from "./icons";
 import { appStore, appStoreUrl } from "./config";
+import { useCampaign } from "./campaign";
 import { reportStoreClick } from "@/lib/storeClick";
 
 const STORAGE_KEY = "mkt.appBanner.dismissed";
@@ -42,7 +43,8 @@ function persistDismissed(): void {
 export function AppBanner() {
   const [dismissed, setDismissed] = useState<boolean>(() => readDismissed());
 
-  const href = appStoreUrl();
+  const campaign = useCampaign();
+  const href = appStoreUrl(campaign);
   if (!appStore.available || !href || dismissed) return null;
 
   const dismiss = () => {
