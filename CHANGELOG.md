@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.18.0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.17.2...persistence-v1.18.0) (2026-08-18)
+
+
+### Features
+
+* **web:** device-aware /g/:slug redirect for printed QR codes ([#415](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/415)) ([7b2d92a](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/7b2d92ab06f644d11340b9767da2f1911eedf0ef))
+
 ## [1.17.2](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.17.1...persistence-v1.17.2) (2026-08-18)
 
 
