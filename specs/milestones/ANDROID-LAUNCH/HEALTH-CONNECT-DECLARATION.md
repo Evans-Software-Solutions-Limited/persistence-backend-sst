@@ -13,11 +13,17 @@ nutrition/weight management. The manifest and Console declaration must match.
 | ---------------------- | ------------ | ------------------------------------------------------------------------------- |
 | Steps                  | Read         | Populate today's activity ring and seven-day step history.                      |
 | Active calories burned | Read         | Populate today's activity/progress energy.                                      |
-| Basal metabolic rate   | Read         | Populate today's resting-energy progress.                                       |
 | Weight                 | Read + write | Prefill weigh-ins from a connected scale and mirror confirmed in-app weigh-ins. |
 | Body fat               | Read + write | Prefill body-composition values and mirror confirmed in-app weigh-ins.          |
 | Heart rate             | Read         | Show the latest sample on Health & integrations.                                |
 | Sleep session          | Read + write | Prefill the sleep quick-log and mirror a confirmed in-app sleep log.            |
+
+Basal metabolic rate was declared and read up to version code 4 and was
+rejected by Play review on 2026-08-18 under the Health Connect "Minimum Scope"
+policy: the value populated `EnergyTile`, which no Android screen renders, so
+the permission backed no shippable feature. It stays out of the manifest, the
+adapter scope and this table until a screen that displays resting energy
+actually ships.
 
 Suggested declaration wording:
 

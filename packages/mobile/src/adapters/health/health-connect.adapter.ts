@@ -30,7 +30,6 @@ const ASLEEP_STAGE_VALUES: ReadonlySet<number> = new Set([2, 4, 5, 6]);
 export const HEALTH_CONNECT_PERMISSIONS: readonly Permission[] = [
   { accessType: "read", recordType: "Steps" },
   { accessType: "read", recordType: "ActiveCaloriesBurned" },
-  { accessType: "read", recordType: "BasalMetabolicRate" },
   { accessType: "read", recordType: "Weight" },
   { accessType: "write", recordType: "Weight" },
   { accessType: "read", recordType: "BodyFat" },
@@ -268,18 +267,14 @@ export class HealthConnectAdapter implements HealthPort {
   }
 
   async getBasalCaloriesToday(): Promise<Result<number, HealthError>> {
-    if (!(await this.ensureInitialized())) return fail(unavailable());
-    try {
-      const result = await this.native.aggregateRecord({
-        recordType: "BasalMetabolicRate",
-        timeRangeFilter: between(startOfToday(), new Date()),
-      });
-      return ok(Math.round(result.BASAL_CALORIES_TOTAL?.inKilocalories ?? 0));
-    } catch (error) {
-      return fail(
-        operationFailure("read_failed", "Failed to read basal calories", error),
-      );
-    }
+    // Not read on Android. `BasalMetabolicRate` was declared and read here,
+    // but no Android surface renders resting energy, so Play review rejected
+    // the permission under the Health Connect "Minimum Scope" policy
+    // (version code 4, 2026-08-18). Do NOT reinstate the read or the
+    // `android.permission.health.READ_BASAL_METABOLIC_RATE` entry in app.json
+    // without first shipping a screen that displays the value and updating
+    // the Play Console Health Connect declaration to match.
+    return ok(0);
   }
 
   async getStandTimeTodayMinutes(): Promise<Result<number, HealthError>> {
