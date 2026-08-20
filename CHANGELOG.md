@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.18.1](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.18.0...persistence-v1.18.1) (2026-08-20)
+
+
+### Bug Fixes
+
+* **web:** stop the site telling visitors the live app is still coming ([#417](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/417)) ([1fb912b](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/1fb912b8cfc06be0d57a30bf90c267f43b81cc04))
+
 ## [1.18.0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.17.2...persistence-v1.18.0) (2026-08-18)
 
 
