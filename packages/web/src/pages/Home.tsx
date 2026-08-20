@@ -8,7 +8,7 @@ import { ClientsScreen } from "@/marketing/screens/ClientsScreen";
 import { ClientDetailScreen } from "@/marketing/screens/ClientDetailScreen";
 import { useReveal } from "@/marketing/hooks";
 import { useSeo } from "@/marketing/seo";
-import { heroScreenshot } from "@/marketing/config";
+import { appStore, playStore, heroScreenshot } from "@/marketing/config";
 import { WaitlistForm, CoachEnquiryForm } from "@/marketing/LeadForms";
 import { AppStoreCta } from "@/marketing/AppStoreCta";
 import {
@@ -576,10 +576,19 @@ export function Home() {
               <br />
               <span className="it">in your pocket.</span>
             </h2>
+            {/*
+             * Driven off `appStore.available` rather than hardcoded: this
+             * paragraph still read "Coming to iPhone — the App Store link lands
+             * here the day it goes live" for four days after the 15 Aug launch,
+             * directly beneath an "Available on iPhone" kicker and above a
+             * working Download button. Reading it from config means the copy
+             * cannot fall out of step with the CTA again.
+             */}
             <p className="store-sub" data-reveal style={d(140)}>
-              Built offline-first, so your training never waits for a signal.
-              Coming to iPhone — the App Store link lands here the day it goes
-              live.
+              Built offline-first, so your training never waits for a signal.{" "}
+              {appStore.available
+                ? "Out now on the App Store — free to start, no card needed."
+                : "Coming to iPhone — the App Store link lands here the day it goes live."}
             </p>
             <div className="store-btns" data-reveal style={d(200)}>
               <AppStoreCta variant="store" />
@@ -591,13 +600,35 @@ export function Home() {
                 </div>
               </span>
             </div>
-            <div
-              className="store-waitlist"
-              data-reveal
-              style={{ ...d(230), margin: "6px auto 34px" }}
-            >
-              <WaitlistForm />
-            </div>
+            {/*
+             * The launch waitlist, repurposed rather than removed.
+             *
+             * It offered a bare email field and "Notify me at launch" with no
+             * context, directly beneath a LIVE App Store button — so from 15 Aug
+             * it invited people to wait for something that had already shipped.
+             * The only launch still ahead is Google Play, so it now says so, and
+             * it removes itself when `playStore.available` flips instead of
+             * going stale a third time.
+             *
+             * ⚠ Sign-ups still POST /leads/waitlist and land in the ATHLETES
+             * Resend audience. That endpoint accepts a `source` field but never
+             * reads it (the audience and the `lead_captured` event are both
+             * hardcoded), so these Android sign-ups CANNOT be told apart from
+             * the original pre-launch list without a backend change.
+             */}
+            {!playStore.available && (
+              <div
+                className="store-waitlist"
+                data-reveal
+                style={{ ...d(230), margin: "6px auto 34px" }}
+              >
+                <p className="store-sub" style={{ marginBottom: 10 }}>
+                  Android is next — get an email the day it lands on Google
+                  Play.
+                </p>
+                <WaitlistForm />
+              </div>
+            )}
             <ul className="feat-grid" data-reveal style={d(260)}>
               <li>
                 <CheckIcon />

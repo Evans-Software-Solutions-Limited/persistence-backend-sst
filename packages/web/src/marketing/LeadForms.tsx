@@ -197,7 +197,8 @@ export function WaitlistForm() {
   if (status === "success") {
     return (
       <p className="lead-success" role="status">
-        You're on the list — we'll email you the moment it goes live.
+        You're on the list — we'll email you the moment the Android app lands on
+        Google Play.
       </p>
     );
   }

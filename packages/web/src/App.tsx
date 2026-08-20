@@ -106,6 +106,29 @@ function App() {
               )
             }
           />
+          {/*
+           * Catch-all — keep this last.
+           *
+           * The server hands back `index.html` for every path, which reads like
+           * a catch-all SPA shell but is not one: a path with no Route above
+           * matched nothing and React Router rendered nothing. The result was a
+           * blank dark page served with HTTP 200 and the correct <title>, so it
+           * looked like the site was broken rather than the URL being wrong.
+           * Verified on production 19 Aug 2026 against an unlisted path.
+           *
+           * Home is the right fallback rather than a 404 page: this is a
+           * single-page marketing site with no deep content to be "not found",
+           * and `campaignFromPath()` returns undefined for an unknown first
+           * segment, so a mistyped or retired URL renders the ordinary,
+           * undecorated homepage and attributes nothing to a campaign that did
+           * not drive it.
+           *
+           * This is a safety net, not a substitute for the explicit campaign
+           * routes above — those exist so each slug decorates its CTAs with its
+           * own `ct`, and `campaignWiring.test.tsx` still asserts every CAMPAIGNS
+           * entry has one.
+           */}
+          <Route path="*" element={<Home />} />
         </Routes>
       </ThemeProvider>
     </QueryClientProvider>

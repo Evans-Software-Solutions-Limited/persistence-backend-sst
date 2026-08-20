@@ -4,7 +4,12 @@ import { MarketingLayout } from "@/marketing/MarketingLayout";
 import { useReveal } from "@/marketing/hooks";
 import { useSeo } from "@/marketing/seo";
 import { MailIcon, LifeBuoyIcon } from "@/marketing/icons";
-import { CONTACT_EMAIL, SUPPORT_MAILTO } from "@/marketing/config";
+import {
+  CONTACT_EMAIL,
+  SUPPORT_MAILTO,
+  appStore,
+  playStore,
+} from "@/marketing/config";
 
 const d = (ms: number) => ({ "--d": `${ms}ms` }) as CSSProperties;
 
@@ -132,11 +137,21 @@ export function Support() {
               </div>
               <div className="faq-item">
                 <h4>Do you support Android?</h4>
+                {/*
+                 * Driven off config, not hardcoded. This answer read "launching
+                 * on Google Play alongside the iPhone release … both are coming
+                 * soon" for five days after the 15 Aug App Store launch — by
+                 * which point iPhone had shipped and Play had not, so it was
+                 * wrong in both halves. Reading the store state from the same
+                 * source as every CTA means it cannot drift again.
+                 */}
                 <p>
-                  Yes — Persistence is launching on Google Play alongside the
-                  iPhone release, with Health Connect integration in place of
-                  HealthKit. Both are coming soon; the store links land here the
-                  day each goes live.
+                  {appStore.available
+                    ? "Persistence is on the App Store now."
+                    : "Persistence is coming to iPhone."}{" "}
+                  {playStore.available
+                    ? "It's on Google Play too, with Health Connect integration in place of HealthKit."
+                    : "The Android build is in review with Google Play, with Health Connect integration in place of HealthKit — the Play link lands here the day it goes live."}
                 </p>
               </div>
               <div className="faq-item">
