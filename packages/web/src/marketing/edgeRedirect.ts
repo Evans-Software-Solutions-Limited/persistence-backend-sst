@@ -42,8 +42,28 @@ export const EDGE_REDIRECT_PREFIX = "g";
  * `default` is the catch-all `/qr/:slug` attribution bucket, not a channel of
  * its own — it has no landing route, so `/g/default` is treated as an unknown
  * slug and lands on `/` like any other typo.
+ *
+ * See {@link FORBIDDEN_SLUGS} for the names a campaign may not take at all.
  */
-const RESERVED_SLUGS = ["default"];
+const UNROUTED_SLUGS = ["default"];
+
+/**
+ * Slugs a campaign must NEVER be named, as opposed to {@link UNROUTED_SLUGS},
+ * which are legitimately present and merely have no `/g/` path.
+ *
+ * `campaignFromPath` intercepts both of these as PATH PREFIXES, so a campaign
+ * actually named `qr` or `g` would resolve `/qr` and `/g` to the `default`
+ * bucket and be attributed `ct=qr` rather than its own token. `g` is worse
+ * still — it equals {@link EDGE_REDIRECT_PREFIX}, so a `/g/g` scan would be
+ * sent to the landing path `/g`, which the edge behaviours also own, and the
+ * second hop resolves to `/` with the campaign lost.
+ *
+ * These THROW rather than being skipped. Skipping them (which is what a single
+ * shared reserved-list did) silently dropped the slug from the table, so
+ * `/g/qr` resolved to `/` for every scanner — a dead printed QR, i.e. exactly
+ * the outcome this validator exists to prevent, reached by the validator itself.
+ */
+const FORBIDDEN_SLUGS = [EDGE_REDIRECT_PREFIX, "qr"];
 
 /**
  * User-agent patterns, as RegExp source strings rather than literals: the
@@ -128,7 +148,14 @@ export interface RedirectDecision {
 export function buildRedirectTable(): RedirectTable {
   const slugs: Record<string, RedirectTargets> = {};
   for (const slug of Object.keys(CAMPAIGNS)) {
-    if (RESERVED_SLUGS.indexOf(slug) !== -1) continue;
+    // Order matters: FORBIDDEN is checked BEFORE anything can `continue` past
+    // it, or the throw never fires.
+    if (FORBIDDEN_SLUGS.indexOf(slug) !== -1) {
+      throw new Error(
+        `Campaign slug "${slug}" is reserved: /${slug}/ is a path prefix campaignFromPath intercepts, so this campaign would be attributed ct=qr instead of its own token, and "${EDGE_REDIRECT_PREFIX}" additionally collides with the /g/ edge behaviours and would resolve to / with the campaign lost. Rename it.`,
+      );
+    }
+    if (UNROUTED_SLUGS.indexOf(slug) !== -1) continue;
     // The ways to add a CAMPAIGNS entry and get a silently dead QR code, all of
     // which the parity tests are structurally blind to because BOTH twins would
     // agree on `/`:

@@ -1,5 +1,5 @@
 import { AppleIcon } from "./icons";
-import { appStoreUrl } from "./config";
+import { appStoreLive, appStoreUrl } from "./config";
 import { useCampaign } from "./campaign";
 import { reportStoreClick } from "@/lib/storeClick";
 
@@ -17,9 +17,10 @@ export interface AppStoreCtaProps {
  * hero, Home store section, `MarketingNav`) so the outbound-click reporter is
  * wired up once.
  *
- * Until `config.appStoreUrl()` returns a real URL (the store isn't live yet, so
- * this is the only state that renders today) it renders the exact disabled
- * placeholder each call-site used before — byte-identical. Once live, it renders
+ * While `config.appStoreUrl()` returns null it renders the exact disabled
+ * placeholder each call-site used before — byte-identical. The App Store went
+ * live on 15 Aug 2026, so that is now the DEAD branch and the live one below is
+ * what renders; it is kept because a listing can be pulled. Live, it renders
  * a real `<a href>` with proper "get the app" copy (NOT "coming soon"), dropping
  * the `cta-soon`/`disabled` classes, and reports the click via
  * `reportStoreClick()` (browser pixel `AppStoreClick` + server beacon, deduped
@@ -31,7 +32,13 @@ export function AppStoreCta({ variant, campaign, className }: AppStoreCtaProps) 
   const routeCampaign = useCampaign();
   const href = appStoreUrl(campaign ?? routeCampaign);
   const extra = className ? ` ${className}` : "";
-  const live = href !== null;
+  // BOTH flags, not just the URL. This read `href !== null` alone, which meant
+  // setting `appStore.available = false` — the documented way to pull the
+  // listing — changed the prose on Home, /support and /login to "Coming to
+  // iPhone" while leaving every CTA on those same pages a live `<a href>`
+  // reading "Get it on the App Store". `AppBanner` has always checked both;
+  // this was the outlier.
+  const live = appStoreLive() && href !== null;
 
   if (variant === "hero") {
     const content = (

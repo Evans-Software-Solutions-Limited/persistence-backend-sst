@@ -18,8 +18,9 @@ function Logo() {
 /**
  * Fixed marketing nav. Section links resolve to in-page hash anchors when
  * already on the home route, or to `/#anchor` (navigate home, then scroll)
- * otherwise. The primary CTA is a non-linking "Coming to the App Store" state
- * until the app is live (see config.appStore).
+ * otherwise. The primary CTA reads "Get the app" while the store is live, and
+ * falls back to a non-linking "Coming to the App Store" state if it is not
+ * (see config.appStore — live since 15 Aug 2026).
  */
 export function MarketingNav({ current }: { current?: "pricing" }) {
   const scrolled = useScrolled();

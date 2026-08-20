@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { AppleIcon } from "./icons";
-import { appStore, appStoreUrl } from "./config";
+import { appStoreLive, appStoreUrl } from "./config";
 import { useCampaign } from "./campaign";
 import { reportStoreClick } from "@/lib/storeClick";
 
@@ -45,7 +45,7 @@ export function AppBanner() {
 
   const campaign = useCampaign();
   const href = appStoreUrl(campaign);
-  if (!appStore.available || !href || dismissed) return null;
+  if (!appStoreLive() || !href || dismissed) return null;
 
   const dismiss = () => {
     persistDismissed();

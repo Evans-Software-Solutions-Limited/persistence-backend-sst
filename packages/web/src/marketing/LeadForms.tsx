@@ -11,8 +11,9 @@ import { useLeadSubmit, isValidEmail } from "./useLeadSubmit";
 import { loadTurnstileScript } from "../lib/turnstile";
 
 /**
- * Marketing lead-capture forms — a launch waitlist (email only) and a coach
- * enquiry (structured). Both post to the public `/leads/*` Core API endpoints
+ * Marketing lead-capture forms — an Android notify list (email only; was the
+ * iOS launch waitlist until the App Store went live) and a coach enquiry
+ * (structured). Both post to the public `/leads/*` Core API endpoints
  * via {@link useLeadSubmit}, carry a required marketing-consent checkbox
  * (UK-GDPR), and a hidden honeypot field the server drops silently when filled.
  *
@@ -197,7 +198,8 @@ export function WaitlistForm() {
   if (status === "success") {
     return (
       <p className="lead-success" role="status">
-        You're on the list — we'll email you the moment it goes live.
+        You're on the list — we'll email you the moment the Android app lands on
+        Google Play.
       </p>
     );
   }

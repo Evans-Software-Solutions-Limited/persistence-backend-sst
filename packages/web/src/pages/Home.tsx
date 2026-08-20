@@ -8,11 +8,15 @@ import { ClientsScreen } from "@/marketing/screens/ClientsScreen";
 import { ClientDetailScreen } from "@/marketing/screens/ClientDetailScreen";
 import { useReveal } from "@/marketing/hooks";
 import { useSeo } from "@/marketing/seo";
-import { heroScreenshot } from "@/marketing/config";
+import {
+  appStoreLive,
+  playStoreLive,
+  heroScreenshot,
+} from "@/marketing/config";
 import { WaitlistForm, CoachEnquiryForm } from "@/marketing/LeadForms";
 import { AppStoreCta } from "@/marketing/AppStoreCta";
+import { PlayStoreCta } from "@/marketing/PlayStoreCta";
 import {
-  GooglePlayIcon,
   CheckIcon,
   DumbbellIcon,
   FlameIcon,
@@ -26,6 +30,20 @@ import {
 } from "@/marketing/icons";
 
 const d = (ms: number) => ({ "--d": `${ms}ms` }) as CSSProperties;
+
+/**
+ * Which platforms the store section claims, from config alone. Both live is the
+ * post-Android-launch state; neither is a pulled listing, where "Coming soon"
+ * is the honest heading.
+ */
+function storeKicker(): string {
+  const ios = appStoreLive();
+  const play = playStoreLive();
+  if (ios && play) return "Available on iPhone and Android";
+  if (play) return "Available on Android";
+  if (ios) return "Available on iPhone";
+  return "Coming soon";
+}
 
 const MARQUEE: { d: string; label: string }[] = [
   { d: "M9 11l3 3L22 4", label: "Offline-first" },
@@ -564,8 +582,14 @@ export function Home() {
         {/* ── App store ── */}
         <section className="sec-pad store">
           <div className="c">
+            {/*
+             * Config-driven: hardcoded, this section would be headed "Available
+             * on iPhone" with a live Google Play button inside it the day Play
+             * launches — the same copy drift this section's paragraph was fixed
+             * for, one element up.
+             */}
             <span className="kicker c-accent center" data-reveal>
-              Available on iPhone
+              {storeKicker()}
             </span>
             <h2
               className="disp"
@@ -576,28 +600,53 @@ export function Home() {
               <br />
               <span className="it">in your pocket.</span>
             </h2>
+            {/*
+             * Driven off `appStore.available` rather than hardcoded: this
+             * paragraph still read "Coming to iPhone — the App Store link lands
+             * here the day it goes live" for four days after the 15 Aug launch,
+             * directly beneath an "Available on iPhone" kicker and above a
+             * working Download button. Reading it from config means the copy
+             * cannot fall out of step with the CTA again.
+             */}
             <p className="store-sub" data-reveal style={d(140)}>
-              Built offline-first, so your training never waits for a signal.
-              Coming to iPhone — the App Store link lands here the day it goes
-              live.
+              Built offline-first, so your training never waits for a signal.{" "}
+              {appStoreLive()
+                ? "Out now on the App Store — free to start, no card needed."
+                : "Coming to iPhone — the App Store link lands here the day it goes live."}
             </p>
             <div className="store-btns" data-reveal style={d(200)}>
               <AppStoreCta variant="store" />
-              <span className="store-btn disabled" aria-disabled="true">
-                <GooglePlayIcon />
-                <div className="store-btn-text">
-                  <span className="small">Coming soon to</span>
-                  <span className="big">Google Play</span>
-                </div>
-              </span>
+              <PlayStoreCta />
             </div>
-            <div
-              className="store-waitlist"
-              data-reveal
-              style={{ ...d(230), margin: "6px auto 34px" }}
-            >
-              <WaitlistForm />
-            </div>
+            {/*
+             * The launch waitlist, repurposed rather than removed.
+             *
+             * It offered a bare email field and "Notify me at launch" with no
+             * context, directly beneath a LIVE App Store button — so from 15 Aug
+             * it invited people to wait for something that had already shipped.
+             * The only launch still ahead is Google Play, so it now says so, and
+             * it removes itself when `playStore.available` flips instead of
+             * going stale a third time.
+             *
+             * ⚠ Sign-ups still POST /leads/waitlist and land in the ATHLETES
+             * Resend audience. That endpoint accepts a `source` field but never
+             * reads it (the audience and the `lead_captured` event are both
+             * hardcoded), so these Android sign-ups CANNOT be told apart from
+             * the original pre-launch list without a backend change.
+             */}
+            {!playStoreLive() && (
+              <div
+                className="store-waitlist"
+                data-reveal
+                style={{ ...d(230), margin: "6px auto 34px" }}
+              >
+                <p className="store-sub" style={{ marginBottom: 10 }}>
+                  Android is next — get an email the day it lands on Google
+                  Play.
+                </p>
+                <WaitlistForm />
+              </div>
+            )}
             <ul className="feat-grid" data-reveal style={d(260)}>
               <li>
                 <CheckIcon />

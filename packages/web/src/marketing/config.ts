@@ -26,15 +26,38 @@ export const appStore = {
 };
 
 /**
- * Play Store: mirrors `appStore` above — the Android app isn't live yet
- * either, so every "get the app" CTA that targets Android stays in the
- * non-linking "coming soon" state until `available` flips to `true` and
- * `url` is filled in.
+ * Play Store: mirrors `appStore` above, but still awaiting review — so every
+ * "get the app" CTA that targets Android stays in the non-linking "coming soon"
+ * state until `available` flips to `true` and `url` is filled in.
+ *
+ * Flipping it also retires the Android notify list on Home and re-points the
+ * /support Android answer and the `/g/<slug>` edge redirect, all from here.
  */
 export const playStore = {
   available: false as boolean,
   url: null as string | null,
 };
+
+/**
+ * ONE predicate per store, and the only thing any page, gate or CTA should ask.
+ *
+ * Both store configs carry TWO fields, and a CTA cannot render without both —
+ * `available` says we intend to link, `url` is what it links to. Reading only
+ * `available` is what let a half-state produce an incoherent page: setting
+ * `playStore.available = true` and leaving `url` null (the obvious one-line
+ * edit on Android launch day, and exactly what Home's own comment invited)
+ * removed the Android notify list, left the Play button reading "Coming soon",
+ * and had /support announce the app was on Play — no route to it from anywhere.
+ * The App Store side had the identical shape with `url` nulled.
+ *
+ * So prose, gating and CTAs all read this, and a half-state is simply the
+ * not-live state rather than a third, incoherent one.
+ */
+export const appStoreLive = (): boolean =>
+  appStore.available && appStore.url !== null;
+
+export const playStoreLive = (): boolean =>
+  playStore.available && playStore.url !== null;
 
 /**
  * Apple's Provider Token — the numeric id of our App Store Connect provider.

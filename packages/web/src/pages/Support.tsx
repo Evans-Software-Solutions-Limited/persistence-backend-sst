@@ -4,7 +4,12 @@ import { MarketingLayout } from "@/marketing/MarketingLayout";
 import { useReveal } from "@/marketing/hooks";
 import { useSeo } from "@/marketing/seo";
 import { MailIcon, LifeBuoyIcon } from "@/marketing/icons";
-import { CONTACT_EMAIL, SUPPORT_MAILTO } from "@/marketing/config";
+import {
+  CONTACT_EMAIL,
+  SUPPORT_MAILTO,
+  appStoreLive,
+  playStoreLive,
+} from "@/marketing/config";
 
 const d = (ms: number) => ({ "--d": `${ms}ms` }) as CSSProperties;
 
@@ -132,11 +137,34 @@ export function Support() {
               </div>
               <div className="faq-item">
                 <h4>Do you support Android?</h4>
+                {/*
+                 * Driven off config, not hardcoded. This answer read "launching
+                 * on Google Play alongside the iPhone release … both are coming
+                 * soon" for five days after the 15 Aug App Store launch — by
+                 * which point iPhone had shipped and Play had not, so it was
+                 * wrong in both halves. Reading the store state from the same
+                 * source as every CTA means it cannot drift again.
+                 */}
                 <p>
-                  Yes — Persistence is launching on Google Play alongside the
-                  iPhone release, with Health Connect integration in place of
-                  HealthKit. Both are coming soon; the store links land here the
-                  day each goes live.
+                  {appStoreLive()
+                    ? "Persistence is on the App Store now."
+                    : "Persistence is coming to iPhone."}{" "}
+                  {/*
+                   * Deliberately vague about WHERE in Google's pipeline the
+                   * build is. `playStore.available` encodes live/not-live only —
+                   * it cannot represent rejected, withdrawn, or not-yet-
+                   * submitted, so "is in review" would become the same species
+                   * of stale factual claim this file is fixing the moment Play
+                   * rejects a build, and every test would still pass. The iOS
+                   * pre-launch branch above is vague for the same reason.
+                   *
+                   * No "too" in the Play-live string: with the App Store pulled
+                   * and Play live it would assert the iPhone availability the
+                   * preceding clause just denied.
+                   */}
+                  {playStoreLive()
+                    ? "It's on Google Play, with Health Connect integration in place of HealthKit."
+                    : "The Android build is on its way to Google Play, with Health Connect integration in place of HealthKit — the Play link lands here the day it goes live."}
                 </p>
               </div>
               <div className="faq-item">
