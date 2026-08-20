@@ -11,8 +11,8 @@ import { useSeo } from "@/marketing/seo";
 import { appStore, playStore, heroScreenshot } from "@/marketing/config";
 import { WaitlistForm, CoachEnquiryForm } from "@/marketing/LeadForms";
 import { AppStoreCta } from "@/marketing/AppStoreCta";
+import { PlayStoreCta } from "@/marketing/PlayStoreCta";
 import {
-  GooglePlayIcon,
   CheckIcon,
   DumbbellIcon,
   FlameIcon,
@@ -592,13 +592,7 @@ export function Home() {
             </p>
             <div className="store-btns" data-reveal style={d(200)}>
               <AppStoreCta variant="store" />
-              <span className="store-btn disabled" aria-disabled="true">
-                <GooglePlayIcon />
-                <div className="store-btn-text">
-                  <span className="small">Coming soon to</span>
-                  <span className="big">Google Play</span>
-                </div>
-              </span>
+              <PlayStoreCta />
             </div>
             {/*
              * The launch waitlist, repurposed rather than removed.

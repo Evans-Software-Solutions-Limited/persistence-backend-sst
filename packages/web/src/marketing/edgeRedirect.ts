@@ -42,8 +42,16 @@ export const EDGE_REDIRECT_PREFIX = "g";
  * `default` is the catch-all `/qr/:slug` attribution bucket, not a channel of
  * its own — it has no landing route, so `/g/default` is treated as an unknown
  * slug and lands on `/` like any other typo.
+ *
+ * `qr` and `g` are reserved because `campaignFromPath` intercepts both as PATH
+ * PREFIXES: a campaign actually named `qr` or `g` would resolve `/qr` and `/g`
+ * to the `default` bucket and be attributed `ct=qr` rather than its own token.
+ * `g` is worse still — it equals {@link EDGE_REDIRECT_PREFIX}, so a `/g/g` scan
+ * would be sent to the landing path `/g`, which the edge behaviours also own,
+ * and the second hop resolves to `/` with the campaign lost. Reserving them
+ * here means that is a synth-time throw rather than a dead printed QR.
  */
-const RESERVED_SLUGS = ["default"];
+const RESERVED_SLUGS = ["default", EDGE_REDIRECT_PREFIX, "qr"];
 
 /**
  * User-agent patterns, as RegExp source strings rather than literals: the

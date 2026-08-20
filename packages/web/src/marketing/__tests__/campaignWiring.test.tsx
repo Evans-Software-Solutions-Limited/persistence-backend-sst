@@ -98,14 +98,19 @@ describe("campaign attribution is wired to the landing routes", () => {
     },
   );
 
-  it("declares a landing route for exactly the slugs /g/<slug> can resolve to", () => {
-    // Two independent exclusion rules, in two modules: campaign.ts drops the
-    // `/qr` fallback bucket from the ROUTES, edgeRedirect.ts drops its own
-    // RESERVED_SLUGS from the /g/ TABLE. They are supposed to agree. This is
-    // what is left of the old route-existence check now that App.tsx generates
-    // the routes — the routes cannot lag CAMPAIGNS any more, but the two
-    // definitions of "which slug is not a real channel" still can.
-    expect([...CAMPAIGN_LANDING_SLUGS].sort()).toEqual([...LANDING_SLUGS].sort());
+  it("keeps campaign.ts and edgeRedirect.ts agreed on which slugs are real channels", () => {
+    // Narrow on purpose, and titled for what it actually covers. Both lists
+    // start from Object.keys(CAMPAIGNS); the ONLY divergence it can detect is
+    // the two exclusion rules drifting apart — campaign.ts drops the `/qr`
+    // fallback bucket from the ROUTES, edgeRedirect.ts drops RESERVED_SLUGS
+    // from the /g/ TABLE, and those lists are no longer identical.
+    //
+    // It does NOT verify App.tsx declares any route; nothing does, and nothing
+    // can — see the note there. Route drift is prevented structurally now
+    // rather than tested for.
+    expect([...CAMPAIGN_LANDING_SLUGS].sort()).toEqual(
+      [...LANDING_SLUGS].sort(),
+    );
   });
 
   it("renders the homepage, undecorated, for a path matching no route", () => {

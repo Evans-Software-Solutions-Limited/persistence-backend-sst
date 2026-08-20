@@ -25,6 +25,23 @@ import { appStore, playStore } from "../config";
  * states, on the two pages that talk about store availability.
  */
 
+/** Stand-in Play URL for the flag-flipped cases. Shape only; never requested. */
+const PLAY_URL =
+  "https://play.google.com/store/apps/details?id=com.evanssoftware.persistence";
+
+/**
+ * The store state as SHIPPED, captured at module load — before any test has had
+ * a chance to flip a flag. The restore check at the bottom compares against
+ * this rather than against literal `true`/`false`, so it tests what it claims
+ * to test (that `withStores` puts things back) instead of quietly doubling as a
+ * tripwire that fails the day Android launches under a title about restoration.
+ */
+const SHIPPED = {
+  ios: appStore.available,
+  play: playStore.available,
+  playUrl: playStore.url,
+};
+
 /**
  * Flip a store flag for one assertion, always restoring it.
  *
@@ -42,13 +59,22 @@ function withStores<T>(
 ): T {
   const beforeIos = appStore.available;
   const beforePlay = playStore.available;
+  const beforePlayUrl = playStore.url;
   try {
     if (next.ios !== undefined) appStore.available = next.ios;
-    if (next.play !== undefined) playStore.available = next.play;
+    if (next.play !== undefined) {
+      playStore.available = next.play;
+      // `available` alone is not enough to make a Play CTA render: PlayStoreCta
+      // requires a non-null URL too, the same gate AppStoreCta uses. Supplying
+      // one here is what makes "Play is live" mean the thing it means in
+      // production, rather than a half-state no deploy would ever produce.
+      playStore.url = next.play ? PLAY_URL : null;
+    }
     return assert() as T;
   } finally {
     appStore.available = beforeIos;
     playStore.available = beforePlay;
+    playStore.url = beforePlayUrl;
   }
 }
 
@@ -77,13 +103,22 @@ describe("store-availability copy tracks the store flags", () => {
     expect(bodyText()).not.toMatch(/both are coming soon/i);
   });
 
-  it("reverts to pre-launch copy if the App Store listing is ever pulled", () => {
+  it("reverts to pre-launch copy AND kills every store link if the listing is pulled", () => {
     // Symmetry, and the reason this is flag-driven rather than a one-off string
     // edit: an app pulled from sale must not keep claiming to be downloadable.
+    //
+    // The link assertion is the load-bearing half. Asserting only the prose,
+    // as this originally did, passed against a page that said "Coming to
+    // iPhone" above three live apps.apple.com CTAs reading "Get it on the App
+    // Store" — because AppStoreCta gated on `appStore.url` and never read
+    // `appStore.available`. Copy and CTA have to agree, so test both.
     withStores({ ios: false }, () => {
-      renderPage(<Home />);
+      const { container } = renderPage(<Home />);
       expect(bodyText()).toMatch(/coming to iphone/i);
       expect(bodyText()).not.toMatch(/out now on the app store/i);
+      expect(container.querySelectorAll('a[href*="apps.apple.com"]')).toHaveLength(
+        0,
+      );
     });
   });
 
@@ -94,13 +129,21 @@ describe("store-availability copy tracks the store flags", () => {
     expect(screen.getByText("Notify me at launch")).toBeDefined();
   });
 
-  it("removes the Android notify list once Play goes live", () => {
-    // Otherwise this becomes the same defect a third time: a form inviting
-    // people to wait for something that already shipped.
+  it("swaps the Android notify list for a real Play link once Play goes live", () => {
+    // Removing the notify list is only half of it, and on its own it strands
+    // the visitor: the Play button used to be a hardcoded permanently-disabled
+    // span, so flipping the flag would have deleted the notify list, left the
+    // button reading "Coming soon", and had /support say the app was on Play —
+    // no way to reach it from anywhere. A flag flip has to leave a coherent
+    // page, so assert what APPEARS, not just what goes.
     withStores({ play: true }, () => {
-      renderPage(<Home />);
+      const { container } = renderPage(<Home />);
       expect(bodyText()).not.toMatch(/android is next/i);
       expect(screen.queryByText("Notify me at launch")).toBeNull();
+      expect(bodyText()).not.toMatch(/coming soon to/i);
+      expect(
+        container.querySelectorAll('a[href*="play.google.com"]').length,
+      ).toBeGreaterThan(0);
     });
   });
 
@@ -146,8 +189,9 @@ describe("store-availability copy tracks the store flags", () => {
     expect(bodyText()).toMatch(/sign in from the app/i);
   });
 
-  it("restores both flags after the flips above", () => {
-    expect(appStore.available).toBe(true);
-    expect(playStore.available).toBe(false);
+  it("leaves the store config exactly as it found it", () => {
+    expect(appStore.available).toBe(SHIPPED.ios);
+    expect(playStore.available).toBe(SHIPPED.play);
+    expect(playStore.url).toBe(SHIPPED.playUrl);
   });
 });

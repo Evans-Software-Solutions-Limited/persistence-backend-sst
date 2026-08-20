@@ -90,6 +90,15 @@ function App() {
            *
            * `/qr/:slug` stays separate: it is one parameterised route for every
            * unrecognised QR, not one route per campaign.
+           *
+           * ⚠ Be aware this block is BEHAVIOURALLY INERT as things stand, and no
+           * test can prove otherwise: every route here renders `<Home />`, the
+           * catch-all below renders `<Home />` for any path, and attribution
+           * comes from the pathname. Deleting the whole block leaves the full
+           * suite green and the site identical. It is kept as the explicit
+           * contract — and so that removing the catch-all one day does not
+           * silently take the campaign landing pages with it — NOT because
+           * anything currently depends on it.
            */}
           {CAMPAIGN_LANDING_SLUGS.map((slug) => (
             <Route key={slug} path={`/${slug}`} element={<Home />} />

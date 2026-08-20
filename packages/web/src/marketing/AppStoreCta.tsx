@@ -1,5 +1,5 @@
 import { AppleIcon } from "./icons";
-import { appStoreUrl } from "./config";
+import { appStore, appStoreUrl } from "./config";
 import { useCampaign } from "./campaign";
 import { reportStoreClick } from "@/lib/storeClick";
 
@@ -32,7 +32,13 @@ export function AppStoreCta({ variant, campaign, className }: AppStoreCtaProps) 
   const routeCampaign = useCampaign();
   const href = appStoreUrl(campaign ?? routeCampaign);
   const extra = className ? ` ${className}` : "";
-  const live = href !== null;
+  // BOTH flags, not just the URL. This read `href !== null` alone, which meant
+  // setting `appStore.available = false` — the documented way to pull the
+  // listing — changed the prose on Home, /support and /login to "Coming to
+  // iPhone" while leaving every CTA on those same pages a live `<a href>`
+  // reading "Get it on the App Store". `AppBanner` has always checked both;
+  // this was the outlier.
+  const live = appStore.available && href !== null;
 
   if (variant === "hero") {
     const content = (
