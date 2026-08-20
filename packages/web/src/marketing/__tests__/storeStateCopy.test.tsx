@@ -2,6 +2,7 @@ import { screen } from "@testing-library/react";
 import { renderPage } from "@/test-utils";
 import { Home } from "@/pages/Home";
 import Support from "@/pages/Support";
+import Login from "@/pages/Login";
 import { appStore, playStore } from "../config";
 
 /**
@@ -24,17 +25,27 @@ import { appStore, playStore } from "../config";
  * states, on the two pages that talk about store availability.
  */
 
-/** Flip a store flag for one assertion, always restoring it. */
-function withStores(
+/**
+ * Flip a store flag for one assertion, always restoring it.
+ *
+ * `assert` is typed to return `void` specifically so that passing an `async`
+ * callback is a type error. TypeScript would otherwise accept a
+ * `() => Promise<void>` where `() => void` is expected, and because nothing
+ * here awaits it, `finally` would restore both flags BEFORE the assertions ran —
+ * leaking the flipped state into every later test in the file and quietly
+ * asserting against the wrong config. Returning the callback's value keeps an
+ * accidental promise visible rather than silently discarded.
+ */
+function withStores<T>(
   next: { ios?: boolean; play?: boolean },
-  assert: () => void,
-) {
+  assert: () => T extends Promise<unknown> ? never : T,
+): T {
   const beforeIos = appStore.available;
   const beforePlay = playStore.available;
   try {
     if (next.ios !== undefined) appStore.available = next.ios;
     if (next.play !== undefined) playStore.available = next.play;
-    assert();
+    return assert() as T;
   } finally {
     appStore.available = beforeIos;
     playStore.available = beforePlay;
@@ -97,8 +108,42 @@ describe("store-availability copy tracks the store flags", () => {
     withStores({ play: true }, () => {
       renderPage(<Support />);
       expect(bodyText()).toMatch(/on google play/i);
-      expect(bodyText()).not.toMatch(/lands here the day it goes live/i);
+      // Targets the MEANING, not the current string. An earlier version of this
+      // pinned /lands here the day it goes live/ — which never matched the copy
+      // that actually shipped ("the store links land here the day EACH goes
+      // live"), so it passed happily against the defect it was meant to catch.
+      expect(bodyText()).not.toMatch(/lands? here the day/i);
+      expect(bodyText()).not.toMatch(/on its way to google play/i);
     });
+  });
+
+  it("does not claim iPhone availability it just denied, when only Play is live", () => {
+    // The combination neither flag covers alone. With the App Store pulled and
+    // Play live, "It's on Google Play TOO" would assert the iPhone availability
+    // the preceding clause denies.
+    withStores({ ios: false, play: true }, () => {
+      renderPage(<Support />);
+      expect(bodyText()).toMatch(/coming to iphone/i);
+      expect(bodyText()).not.toMatch(/google play too/i);
+    });
+  });
+
+  it("does not name a Google review stage the flag cannot back", () => {
+    // `playStore.available` is live/not-live only — it cannot represent
+    // rejected, withdrawn or not-yet-submitted, so asserting "in review" would
+    // become a stale factual claim the moment Play rejects a build, with every
+    // test still green.
+    renderPage(<Support />);
+    expect(bodyText()).not.toMatch(/in review/i);
+  });
+
+  it("does not tell a /login visitor to wait for a launch that happened", () => {
+    // Nothing links to /login and it is absent from sitemap.xml, so this is
+    // reached by a typed URL or a stale link — i.e. by someone whose
+    // information is already out of date.
+    renderPage(<Login />);
+    expect(bodyText()).not.toMatch(/once it's live/i);
+    expect(bodyText()).toMatch(/sign in from the app/i);
   });
 
   it("restores both flags after the flips above", () => {

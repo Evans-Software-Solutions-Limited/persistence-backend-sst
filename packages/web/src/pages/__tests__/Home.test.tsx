@@ -1,6 +1,7 @@
 import { screen } from "@testing-library/react";
 import { renderPage } from "@/test-utils";
 import Home from "../Home";
+import { playStore } from "@/marketing/config";
 
 describe("Home", () => {
   it("renders the hero and core sections", () => {
@@ -54,15 +55,25 @@ describe("Home", () => {
     expect(text).not.toMatch(/early access/i);
   });
 
-  it("ships the launch waitlist and coach enquiry capture forms", () => {
+  it("ships the Android notify list and coach enquiry capture forms", () => {
+    // ⚠ The email form here is gated on `!playStore.available` — it is the
+    // Android notify list, and it retires itself when Play goes live. Asserting
+    // a flat count of 2 would turn Android launch day into "Home broke", which
+    // is why the expected count is derived from the flag rather than hardcoded.
+    // The deliberate tripwires for that flip live in config.test.ts and
+    // edgeRedirect.test.ts, which say so in their names; this test is not one.
+    const expectedForms = playStore.available ? 1 : 2;
     const { container } = renderPage(<Home />);
-    // Two lead-capture forms: waitlist (email) + coach enquiry.
-    expect(container.querySelectorAll("form.lead-form").length).toBe(2);
-    expect(screen.getByText("Notify me at launch")).toBeDefined();
+    expect(container.querySelectorAll("form.lead-form").length).toBe(
+      expectedForms,
+    );
     expect(screen.getByText("Register your interest")).toBeDefined();
-    // Both carry a required marketing-consent checkbox (UK-GDPR).
+    if (!playStore.available) {
+      expect(screen.getByText("Notify me at launch")).toBeDefined();
+    }
+    // Every form carries a required marketing-consent checkbox (UK-GDPR).
     expect(
       container.querySelectorAll('.lead-consent input[type="checkbox"]'),
-    ).toHaveLength(2);
+    ).toHaveLength(expectedForms);
   });
 });

@@ -9,6 +9,7 @@ import Privacy from "./pages/Privacy";
 import Terms from "./pages/Terms";
 import DeleteAccount from "./pages/DeleteAccount";
 import OrganisationAdmin from "./pages/OrganisationAdmin";
+import { CAMPAIGN_LANDING_SLUGS } from "./marketing/campaign";
 import { ThemeProvider } from "./components/theme-provider";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -73,28 +74,26 @@ function App() {
            * marketing/campaign.ts, which maps the pathname to a CAMPAIGNS
            * entry, and MarketingLayout, which provides it.
            *
-           * Adding a channel is two lines that must land together: an entry in
-           * CAMPAIGNS and a Route here. A CAMPAIGNS entry on its own attributes
-           * nothing — that was the state of this file until 17 Aug 2026, when
-           * appStoreUrl() was fully tested and simply never called with a slug.
+           * GENERATED from CAMPAIGNS rather than listed by hand, so adding a
+           * printed or social channel is one entry in `CAMPAIGNS` and nothing
+           * else. These were hand-listed until 20 Aug 2026, and the drift that
+           * invites had already happened twice: `banner` was a CAMPAIGNS entry
+           * with no route for as long as the print assets had existed, and every
+           * social slug was missing until 17 Aug.
            *
-           * These are also where the `/g/:slug` edge redirect sends every
-           * non-iOS scan (marketing/edgeRedirect.ts, wired in infra/web.ts), so
-           * a slug reachable as /g/<slug> with no Route here is a blank page on
-           * a printed QR. `campaignWiring.test.tsx` asserts the two lists match.
+           * A hand-written list used to be guarded by a test asserting the page
+           * was not blank at each slug. The catch-all below silently made that
+           * test unfalsifiable — and because `campaignFromPath` reads the
+           * pathname rather than the matched route, a missing route no longer
+           * costs attribution either, so NOTHING would have failed. Generating
+           * the routes removes the failure mode instead of re-testing for it.
+           *
+           * `/qr/:slug` stays separate: it is one parameterised route for every
+           * unrecognised QR, not one route per campaign.
            */}
-          <Route path="/uon" element={<Home />} />
-          <Route path="/flyer" element={<Home />} />
-          {/*
-           * `banner` has been a CAMPAIGNS entry since the print assets were
-           * specced, but had no Route until 17 Aug 2026 — a scan of the printed
-           * banner would have attributed nothing and rendered nothing.
-           */}
-          <Route path="/banner" element={<Home />} />
-          <Route path="/social" element={<Home />} />
-          <Route path="/tt" element={<Home />} />
-          <Route path="/ig" element={<Home />} />
-          <Route path="/li" element={<Home />} />
+          {CAMPAIGN_LANDING_SLUGS.map((slug) => (
+            <Route key={slug} path={`/${slug}`} element={<Home />} />
+          ))}
           <Route path="/qr/:slug" element={<Home />} />
           <Route
             path="/org-admin"
@@ -123,10 +122,20 @@ function App() {
            * undecorated homepage and attributes nothing to a campaign that did
            * not drive it.
            *
-           * This is a safety net, not a substitute for the explicit campaign
-           * routes above — those exist so each slug decorates its CTAs with its
-           * own `ct`, and `campaignWiring.test.tsx` still asserts every CAMPAIGNS
-           * entry has one.
+           * ⚠ This WEAKENS the old route-existence check, so read that test
+           * before trusting it. `campaignWiring.test.tsx` used to prove a
+           * CAMPAIGNS entry had a `<Route>` by rendering `<App />` at `/<slug>`
+           * and asserting the page was not blank — which this catch-all now
+           * satisfies whether the explicit route exists or not. That test has
+           * been changed to assert the rendered CTAs are DECORATED with the
+           * slug's `ct` instead, which is the property actually worth having and
+           * which a bare catch-all does not provide for free.
+           *
+           * (Attribution itself survives a fallthrough: `MarketingLayout`
+           * resolves the campaign from `useLocation().pathname`, not from the
+           * matched route, so it does not depend on these routes existing. They
+           * are kept explicit because that is the documented contract, and
+           * because relying on the catch-all would make the coupling invisible.)
            */}
           <Route path="*" element={<Home />} />
         </Routes>

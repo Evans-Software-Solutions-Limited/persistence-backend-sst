@@ -17,9 +17,10 @@ export interface AppStoreCtaProps {
  * hero, Home store section, `MarketingNav`) so the outbound-click reporter is
  * wired up once.
  *
- * Until `config.appStoreUrl()` returns a real URL (the store isn't live yet, so
- * this is the only state that renders today) it renders the exact disabled
- * placeholder each call-site used before — byte-identical. Once live, it renders
+ * While `config.appStoreUrl()` returns null it renders the exact disabled
+ * placeholder each call-site used before — byte-identical. The App Store went
+ * live on 15 Aug 2026, so that is now the DEAD branch and the live one below is
+ * what renders; it is kept because a listing can be pulled. Live, it renders
  * a real `<a href>` with proper "get the app" copy (NOT "coming soon"), dropping
  * the `cta-soon`/`disabled` classes, and reports the click via
  * `reportStoreClick()` (browser pixel `AppStoreClick` + server beacon, deduped

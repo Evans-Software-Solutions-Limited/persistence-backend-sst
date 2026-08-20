@@ -149,9 +149,22 @@ export function Support() {
                   {appStore.available
                     ? "Persistence is on the App Store now."
                     : "Persistence is coming to iPhone."}{" "}
+                  {/*
+                   * Deliberately vague about WHERE in Google's pipeline the
+                   * build is. `playStore.available` encodes live/not-live only —
+                   * it cannot represent rejected, withdrawn, or not-yet-
+                   * submitted, so "is in review" would become the same species
+                   * of stale factual claim this file is fixing the moment Play
+                   * rejects a build, and every test would still pass. The iOS
+                   * pre-launch branch above is vague for the same reason.
+                   *
+                   * No "too" in the Play-live string: with the App Store pulled
+                   * and Play live it would assert the iPhone availability the
+                   * preceding clause just denied.
+                   */}
                   {playStore.available
-                    ? "It's on Google Play too, with Health Connect integration in place of HealthKit."
-                    : "The Android build is in review with Google Play, with Health Connect integration in place of HealthKit — the Play link lands here the day it goes live."}
+                    ? "It's on Google Play, with Health Connect integration in place of HealthKit."
+                    : "The Android build is on its way to Google Play, with Health Connect integration in place of HealthKit — the Play link lands here the day it goes live."}
                 </p>
               </div>
               <div className="faq-item">

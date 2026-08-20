@@ -26,10 +26,12 @@ export const appStore = {
 };
 
 /**
- * Play Store: mirrors `appStore` above — the Android app isn't live yet
- * either, so every "get the app" CTA that targets Android stays in the
- * non-linking "coming soon" state until `available` flips to `true` and
- * `url` is filled in.
+ * Play Store: mirrors `appStore` above, but still awaiting review — so every
+ * "get the app" CTA that targets Android stays in the non-linking "coming soon"
+ * state until `available` flips to `true` and `url` is filled in.
+ *
+ * Flipping it also retires the Android notify list on Home and re-points the
+ * /support Android answer and the `/g/<slug>` edge redirect, all from here.
  */
 export const playStore = {
   available: false as boolean,

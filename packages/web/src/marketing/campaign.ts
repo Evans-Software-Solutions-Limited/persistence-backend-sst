@@ -23,6 +23,27 @@ import { CAMPAIGNS } from "./config";
  */
 export const CampaignContext = createContext<string | undefined>(undefined);
 
+/**
+ * The `/qr/:slug` catch-all attribution bucket. Not a channel of its own and
+ * not a landing route — see {@link CAMPAIGN_LANDING_SLUGS}.
+ */
+const QR_FALLBACK_SLUG = "default";
+
+/**
+ * Every `CAMPAIGNS` slug that gets a landing route of its own. `App.tsx` maps
+ * over this to declare the routes, so a new entry in `CAMPAIGNS` is reachable
+ * and attributing with no other change — the hand-written list this replaced
+ * had silently lagged `CAMPAIGNS` twice.
+ *
+ * `default` is excluded because it is the bucket `/qr/<unknown>` falls into,
+ * which has no path of its own. `edgeRedirect.ts` excludes the same slug from
+ * the `/g/<slug>` table for the same reason, and `campaignWiring.test.tsx`
+ * asserts the two exclusions still agree.
+ */
+export const CAMPAIGN_LANDING_SLUGS = Object.keys(CAMPAIGNS).filter(
+  (slug) => slug !== QR_FALLBACK_SLUG,
+);
+
 function isKnownCampaign(slug: string): boolean {
   // hasOwnProperty, not `in`: CAMPAIGNS is a plain object, so `in` would answer
   // true for inherited keys like "constructor" and "toString".
@@ -41,7 +62,17 @@ function isKnownCampaign(slug: string): boolean {
 export function campaignFromPath(pathname: string): string | undefined {
   const [first, second] = pathname.split("/").filter(Boolean);
   if (!first) return undefined;
-  if (first === "qr") {
+  // `g` is handled alongside `qr` as a SAFETY NET, not as a landing route.
+  //
+  // In production `/g/<slug>` never reaches the SPA — a CloudFront Function
+  // answers it with a 302 before the origin is touched (infra/web.ts). But if
+  // that behaviour is missing, misordered, or simply not deployed to a new
+  // stage, the request falls through to index.html, and since App.tsx gained a
+  // catch-all it now renders a plausible-looking homepage with HTTP 200 instead
+  // of the blank page that used to make the fault obvious. Recognising `g` here
+  // means such a fallthrough at least keeps the campaign's `ct`, so a scan of
+  // printed artwork that cannot be reprinted still attributes.
+  if (first === "qr" || first === "g") {
     return second && isKnownCampaign(second) ? second : "default";
   }
   return isKnownCampaign(first) ? first : undefined;

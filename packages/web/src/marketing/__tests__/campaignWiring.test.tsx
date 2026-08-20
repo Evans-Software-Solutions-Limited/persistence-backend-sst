@@ -3,7 +3,7 @@ import { renderPage } from "@/test-utils";
 import Home from "@/pages/Home";
 import App from "@/App";
 import { APPLE_PROVIDER_TOKEN, CAMPAIGNS, appStore } from "../config";
-import { campaignFromPath } from "../campaign";
+import { CAMPAIGN_LANDING_SLUGS, campaignFromPath } from "../campaign";
 import { buildRedirectTable } from "../edgeRedirect";
 
 /**
@@ -76,15 +76,60 @@ describe("campaign attribution is wired to the landing routes", () => {
   });
 
   it.each(LANDING_SLUGS)(
-    "registers /%s as a real route, so the link is never a blank page",
+    "serves /%s through the real route tree with its attribution intact",
     (slug) => {
-      // A CAMPAIGNS entry without a matching <Route> is worse than no
-      // attribution: nothing matches, Routes renders nothing, and the visitor
-      // gets a blank page. For a printed QR that is unrecoverable.
+      // Renders <App /> — the whole <Routes> tree — rather than <Home /> alone,
+      // so this exercises the route match and MarketingLayout's campaign
+      // resolution together, the way a visitor does.
+      //
+      // This used to assert only that the page was not blank, which was a valid
+      // proof that a <Route> existed right up until App.tsx gained a catch-all:
+      // after that, ANY path renders Home and the assertion could no longer
+      // fail. Asserting the DECORATION instead keeps a real failure mode in
+      // reach — a slug that resolves to an undecorated homepage earns nothing
+      // from a printed QR, and unlike a blank page it looks fine.
       renderPage(<App />, { route: `/${slug}` });
-      expect(screen.getByText("Track everything.")).toBeDefined();
+      const links = appStoreLinks();
+      expect(links.length).toBeGreaterThanOrEqual(4);
+      for (const link of links) {
+        const params = new URL(link.getAttribute("href")!).searchParams;
+        expect(params.get("ct")).toBe(CAMPAIGNS[slug].ct);
+      }
     },
   );
+
+  it("declares a landing route for exactly the slugs /g/<slug> can resolve to", () => {
+    // Two independent exclusion rules, in two modules: campaign.ts drops the
+    // `/qr` fallback bucket from the ROUTES, edgeRedirect.ts drops its own
+    // RESERVED_SLUGS from the /g/ TABLE. They are supposed to agree. This is
+    // what is left of the old route-existence check now that App.tsx generates
+    // the routes — the routes cannot lag CAMPAIGNS any more, but the two
+    // definitions of "which slug is not a real channel" still can.
+    expect([...CAMPAIGN_LANDING_SLUGS].sort()).toEqual([...LANDING_SLUGS].sort());
+  });
+
+  it("renders the homepage, undecorated, for a path matching no route", () => {
+    // The catch-all. Undecorated is the point: an unknown path belongs to no
+    // campaign, so attributing it to one would credit a channel that did not
+    // drive the visit.
+    renderPage(<App />, { route: "/not-a-real-path" });
+    expect(screen.getByText("Track everything.")).toBeDefined();
+    for (const link of appStoreLinks()) {
+      expect(link.getAttribute("href")).toBe(appStore.url);
+    }
+  });
+
+  it("keeps a campaign's ct if a /g/<slug> scan ever falls through to the SPA", () => {
+    // CloudFront answers /g/* at the edge, so this path should never render.
+    // If the behaviour is missing or undeployed the catch-all now returns a
+    // plausible 200 instead of a blank page, so the campaign must survive it —
+    // printed artwork cannot be reprinted. See campaignFromPath.
+    renderPage(<App />, { route: "/g/flyer" });
+    for (const link of appStoreLinks()) {
+      const params = new URL(link.getAttribute("href")!).searchParams;
+      expect(params.get("ct")).toBe(CAMPAIGNS.flyer.ct);
+    }
+  });
 });
 
 describe("campaignFromPath", () => {
