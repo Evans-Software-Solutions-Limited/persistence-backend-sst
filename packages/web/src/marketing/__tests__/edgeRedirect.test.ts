@@ -139,6 +139,26 @@ describe("the redirect table", () => {
     },
   );
 
+  it.each(["g", "qr"])(
+    "THROWS on a campaign named %s rather than silently dropping it",
+    (slug) => {
+      // These are path prefixes campaignFromPath intercepts, so such a campaign
+      // would be attributed ct=qr instead of its own token — and "g" collides
+      // with EDGE_REDIRECT_PREFIX, so a /g/g scan would hop to /g and resolve
+      // to /, campaign lost, on artwork that cannot be reprinted.
+      //
+      // Throwing is the whole point: a shared skip-list merely dropped the slug
+      // from the table, which produced that dead QR via the very validator
+      // meant to prevent it. So this asserts the THROW, not the absence.
+      CAMPAIGNS[slug] = { ct: slug };
+      try {
+        expect(() => buildRedirectTable()).toThrow(/reserved/i);
+      } finally {
+        delete CAMPAIGNS[slug];
+      }
+    },
+  );
+
   it.each(["uon-2027", "flyer2", "gym-open-day"])(
     "accepts the well-formed slug %o",
     (slug) => {

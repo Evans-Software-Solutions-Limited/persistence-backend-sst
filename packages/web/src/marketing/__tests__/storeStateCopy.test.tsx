@@ -189,6 +189,42 @@ describe("store-availability copy tracks the store flags", () => {
     expect(bodyText()).toMatch(/sign in from the app/i);
   });
 
+  /**
+   * The half-states: `available` flipped, `url` left behind. These are not
+   * hypothetical — flipping the flag is a one-line edit, and Home's own comment
+   * used to invite exactly that. The rule is that a visitor always has SOMEWHERE
+   * to go: a live store link, or the notify list. Never neither.
+   */
+  describe("a half-configured store never strands the visitor", () => {
+    it("treats Play as not-live when the flag is on but no URL is set", () => {
+      withStores({ play: true }, () => {
+        // Undo half of what withStores did, reproducing the one-line edit.
+        playStore.url = null;
+        const { container } = renderPage(<Home />);
+        const hasPlayLink =
+          container.querySelectorAll('a[href*="play.google.com"]').length > 0;
+        const hasNotifyList = /android is next/i.test(bodyText());
+        expect(hasPlayLink || hasNotifyList).toBe(true);
+      });
+    });
+
+    it("does not claim the App Store is live with no URL to send anyone to", () => {
+      withStores({ ios: true }, () => {
+        const beforeUrl = appStore.url;
+        appStore.url = null;
+        try {
+          const { container } = renderPage(<Support />);
+          const claimsLive = /on the app store now/i.test(bodyText());
+          const hasLink =
+            container.querySelectorAll('a[href*="apps.apple.com"]').length > 0;
+          expect(claimsLive && !hasLink).toBe(false);
+        } finally {
+          appStore.url = beforeUrl;
+        }
+      });
+    });
+  });
+
   it("leaves the store config exactly as it found it", () => {
     expect(appStore.available).toBe(SHIPPED.ios);
     expect(playStore.available).toBe(SHIPPED.play);

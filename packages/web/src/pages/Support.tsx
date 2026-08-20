@@ -7,8 +7,8 @@ import { MailIcon, LifeBuoyIcon } from "@/marketing/icons";
 import {
   CONTACT_EMAIL,
   SUPPORT_MAILTO,
-  appStore,
-  playStore,
+  appStoreLive,
+  playStoreLive,
 } from "@/marketing/config";
 
 const d = (ms: number) => ({ "--d": `${ms}ms` }) as CSSProperties;
@@ -146,7 +146,7 @@ export function Support() {
                  * source as every CTA means it cannot drift again.
                  */}
                 <p>
-                  {appStore.available
+                  {appStoreLive()
                     ? "Persistence is on the App Store now."
                     : "Persistence is coming to iPhone."}{" "}
                   {/*
@@ -162,7 +162,7 @@ export function Support() {
                    * and Play live it would assert the iPhone availability the
                    * preceding clause just denied.
                    */}
-                  {playStore.available
+                  {playStoreLive()
                     ? "It's on Google Play, with Health Connect integration in place of HealthKit."
                     : "The Android build is on its way to Google Play, with Health Connect integration in place of HealthKit — the Play link lands here the day it goes live."}
                 </p>

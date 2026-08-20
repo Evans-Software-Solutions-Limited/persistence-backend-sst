@@ -8,7 +8,11 @@ import { ClientsScreen } from "@/marketing/screens/ClientsScreen";
 import { ClientDetailScreen } from "@/marketing/screens/ClientDetailScreen";
 import { useReveal } from "@/marketing/hooks";
 import { useSeo } from "@/marketing/seo";
-import { appStore, playStore, heroScreenshot } from "@/marketing/config";
+import {
+  appStoreLive,
+  playStoreLive,
+  heroScreenshot,
+} from "@/marketing/config";
 import { WaitlistForm, CoachEnquiryForm } from "@/marketing/LeadForms";
 import { AppStoreCta } from "@/marketing/AppStoreCta";
 import { PlayStoreCta } from "@/marketing/PlayStoreCta";
@@ -26,6 +30,20 @@ import {
 } from "@/marketing/icons";
 
 const d = (ms: number) => ({ "--d": `${ms}ms` }) as CSSProperties;
+
+/**
+ * Which platforms the store section claims, from config alone. Both live is the
+ * post-Android-launch state; neither is a pulled listing, where "Coming soon"
+ * is the honest heading.
+ */
+function storeKicker(): string {
+  const ios = appStoreLive();
+  const play = playStoreLive();
+  if (ios && play) return "Available on iPhone and Android";
+  if (play) return "Available on Android";
+  if (ios) return "Available on iPhone";
+  return "Coming soon";
+}
 
 const MARQUEE: { d: string; label: string }[] = [
   { d: "M9 11l3 3L22 4", label: "Offline-first" },
@@ -564,8 +582,14 @@ export function Home() {
         {/* ── App store ── */}
         <section className="sec-pad store">
           <div className="c">
+            {/*
+             * Config-driven: hardcoded, this section would be headed "Available
+             * on iPhone" with a live Google Play button inside it the day Play
+             * launches — the same copy drift this section's paragraph was fixed
+             * for, one element up.
+             */}
             <span className="kicker c-accent center" data-reveal>
-              Available on iPhone
+              {storeKicker()}
             </span>
             <h2
               className="disp"
@@ -586,7 +610,7 @@ export function Home() {
              */}
             <p className="store-sub" data-reveal style={d(140)}>
               Built offline-first, so your training never waits for a signal.{" "}
-              {appStore.available
+              {appStoreLive()
                 ? "Out now on the App Store — free to start, no card needed."
                 : "Coming to iPhone — the App Store link lands here the day it goes live."}
             </p>
@@ -610,7 +634,7 @@ export function Home() {
              * hardcoded), so these Android sign-ups CANNOT be told apart from
              * the original pre-launch list without a backend change.
              */}
-            {!playStore.available && (
+            {!playStoreLive() && (
               <div
                 className="store-waitlist"
                 data-reveal

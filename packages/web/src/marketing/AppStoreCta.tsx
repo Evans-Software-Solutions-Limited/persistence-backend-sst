@@ -1,5 +1,5 @@
 import { AppleIcon } from "./icons";
-import { appStore, appStoreUrl } from "./config";
+import { appStoreLive, appStoreUrl } from "./config";
 import { useCampaign } from "./campaign";
 import { reportStoreClick } from "@/lib/storeClick";
 
@@ -38,7 +38,7 @@ export function AppStoreCta({ variant, campaign, className }: AppStoreCtaProps) 
   // iPhone" while leaving every CTA on those same pages a live `<a href>`
   // reading "Get it on the App Store". `AppBanner` has always checked both;
   // this was the outlier.
-  const live = appStore.available && href !== null;
+  const live = appStoreLive() && href !== null;
 
   if (variant === "hero") {
     const content = (

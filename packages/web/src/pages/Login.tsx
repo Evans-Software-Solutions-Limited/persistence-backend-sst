@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
 import { Link } from "react-router";
-import { appStore } from "@/marketing/config";
+import { appStoreLive } from "@/marketing/config";
 
 // Placeholder login route. Not wired to auth yet — kept as a minimal, tidy
 // stub (self-contained styles so it doesn't depend on the removed App.css).
@@ -31,7 +31,7 @@ const Login = () => {
        */}
       <p style={{ color: "var(--muted-foreground)", maxWidth: "28rem" }}>
         Account sign-in isn't available on the web.{" "}
-        {appStore.available
+        {appStoreLive()
           ? "Persistence is an iPhone app — sign in from the app."
           : "Persistence is an iPhone app — sign in from the app once it's live."}
       </p>

@@ -1,5 +1,5 @@
 import { GooglePlayIcon } from "./icons";
-import { playStore, playStoreUrl } from "./config";
+import { playStoreLive, playStoreUrl } from "./config";
 import { useCampaign } from "./campaign";
 import { reportStoreClick } from "@/lib/storeClick";
 
@@ -25,17 +25,30 @@ import { reportStoreClick } from "@/lib/storeClick";
  * Attribution comes from the landing route's campaign the same way, so a Play
  * CTA on /flyer carries that campaign's `utm_source`/`utm_campaign`.
  *
- * ⚠ Those `utm_*` params are NOT what the Play Console attributes on — it reads
- * a single URL-encoded `referrer`. That is a known gap in `playStoreUrl` and
- * must be fixed before the Android launch, or every Play install from this
- * button records as organic. Not fixed here: it is Android-launch work, and
- * nothing reaches this branch while `available` is false.
+ * ⚠ TWO known gaps, both dormant while Play is not live, both Android-launch
+ * work rather than anything this component can fix alone:
+ *
+ * 1. The `utm_*` params `playStoreUrl` appends are NOT what the Play Console
+ *    attributes on — it reads a single URL-encoded `referrer`. Left as-is, every
+ *    Play install from this button records as organic.
+ *
+ * 2. `reportStoreClick()` is PLATFORM-BLIND. It takes no argument, the browser
+ *    pixel fires `trackCustom('AppStoreClick')` (lib/metaPixel.ts) and the
+ *    server writes `analytics_events.name = 'store_click'` with no field saying
+ *    which store, so once Play is live an Android click is indistinguishable
+ *    from an iOS one and reaches Meta under an event literally named
+ *    `AppStoreClick`. Fixing it means threading a `store: "ios" | "android"`
+ *    through `reportStoreClick` → the `/store-click` beacon body →
+ *    `storeClickEvent`'s properties → `metaEventMap`, i.e. both sides.
+ *
+ * The call is otherwise safe to make here: `reportStoreClick` posts to
+ * `/store-click` and reads nothing Apple-specific.
  */
 export function PlayStoreCta({ className }: { className?: string }) {
   const campaign = useCampaign();
   const href = playStoreUrl(campaign);
   const extra = className ? ` ${className}` : "";
-  const live = playStore.available && href !== null;
+  const live = playStoreLive() && href !== null;
 
   const content = (
     <>
