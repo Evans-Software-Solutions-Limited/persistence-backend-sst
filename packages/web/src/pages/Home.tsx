@@ -257,16 +257,28 @@ export function Home() {
           <div className="c">
             <div className="adapt-grid">
               <div className="adapt-left">
+                {/*
+                 * No "Coming soon" badge: Loadout is SHIPPED and Premium+ is
+                 * purchasable. Verified 2026-08-21 against the production DB —
+                 * `subscription_tiers` has `premium_plus` (plus `coach`,
+                 * `coach_pro`, `start_up_coach_plus`) at `is_active = true`
+                 * with `loadout_access = true` — and Brad ran the flow on
+                 * staging, which carries the same code and schema.
+                 *
+                 * ⚠ STATE.md's 2026-08-02 "Premium+ launch is a BUNDLE" entry
+                 * says premium_plus waits on Loadout Phase 4 + Mealprint + M21.
+                 * That is STALE: migration
+                 * `20260805180000_activate_iap_coach_ladder.sql` activated it
+                 * on 5 Aug. Trust the DB over that entry.
+                 *
+                 * Which tiers include Loadout is deliberately NOT restated
+                 * here — the kicker names Premium+ and /pricing carries each
+                 * tier's own feature list, so this section has no tier copy to
+                 * drift out of step with the catalog.
+                 */}
                 <span className="kicker c-accent" data-reveal>
                   Loadout · Premium+
                 </span>
-                <div
-                  className="soon-badge"
-                  data-reveal
-                  style={{ ...d(60), marginLeft: 5 }}
-                >
-                  Coming soon
-                </div>
                 <h2 className="disp" data-reveal style={d(80)}>
                   Loadout. Any kit.
                   <br />

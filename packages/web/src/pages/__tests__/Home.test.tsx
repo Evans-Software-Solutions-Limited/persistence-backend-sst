@@ -21,6 +21,40 @@ describe("Home", () => {
     expect(screen.getByText("Mealprint · Premium+")).toBeDefined();
   });
 
+  it("does not advertise Loadout as unavailable — it ships and Premium+ is purchasable", () => {
+    renderPage(<Home />);
+    const loadout = document.querySelector("#loadout");
+    expect(loadout).not.toBeNull();
+
+    // Assert on the SECTION, not the document: "Coming soon to Google Play"
+    // legitimately appears elsewhere on this page, so a document-wide search
+    // would either pass vacuously or fail for the wrong reason.
+    //
+    // The badge this replaces sat directly under the "Loadout · Premium+"
+    // kicker and read "Coming soon" while `premium_plus` was live at £29.99/mo
+    // with `loadout_access = true` in production — the section advertised a
+    // shipped, purchasable feature as unavailable, suppressing its own CTA.
+    expect(loadout!.textContent).not.toMatch(/coming soon|not yet|waitlist/i);
+    expect(loadout!.querySelector(".soon-badge")).toBeNull();
+
+    // The section still has to SELL it: kicker plus some route to pricing.
+    //
+    // Matched on the `/pricing` PREFIX only, and deliberately so — the section's
+    // one CTA is `/pricing#teams`, and that anchor does not exist. `Pricing.tsx`
+    // renders `id={audience}` (`consumer` / `coach` / `org`) plus `#faq` and
+    // `#tier-matrix-title`; `audience` initialises to "consumer" with no hash
+    // wiring, so `MarketingLayout`'s `querySelector(hash)` finds nothing and
+    // falls through to `scrollTo(0, 0)`. Same for the Mealprint section's
+    // `#athletes` and the coach section's `#coaches`.
+    //
+    // So this asserts only that the section routes to the pricing PAGE, which
+    // is the part that is true. Pinning the anchor would pin a bug. Two open
+    // items behind it, both outside this change: the dead anchors, and the fact
+    // that a section selling a £29.99 consumer tier points at team pricing.
+    expect(loadout!.textContent).toMatch(/Loadout · Premium\+/);
+    expect(loadout!.querySelector('a[href^="/pricing"]')).not.toBeNull();
+  });
+
   it("renders the Mealprint section with plan mock and Premium+ link", () => {
     renderPage(<Home />);
     expect(screen.getByText("on your plate.")).toBeDefined();
