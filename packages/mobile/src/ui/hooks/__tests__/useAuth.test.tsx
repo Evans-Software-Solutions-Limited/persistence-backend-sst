@@ -627,6 +627,209 @@ describe("useAuth", () => {
     jest.useRealTimers();
   });
 
+  // Offline-first session persistence -----------------------------------------
+  // The bug: using the app abroad on flaky signal, an expired access token
+  // couldn't be refreshed, getSession() failed/hung, and the user was bounced
+  // to the signed-out screen despite a valid stored session. These prove the
+  // stored session keeps the user signed in offline.
+
+  it("keeps the user signed in from the persisted session when getSession fails offline", async () => {
+    const { adapters, auth } = createTestAdapters();
+    // A valid session was stored last launch...
+    const stored = {
+      accessToken: "stored-token",
+      refreshToken: "stored-refresh",
+      userId: "abroad-user",
+      email: "abroad@example.com",
+      expiresAt: Date.now() / 1000 - 60, // access token already expired
+    };
+    auth.persistedSession = stored;
+    auth.currentSession = null;
+    // ...but the device is offline, so the network-backed getSession() fails
+    // trying to refresh the expired token.
+    auth.shouldFail = true;
+
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <AdapterProvider adapters={adapters}>{children}</AdapterProvider>
+    );
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    // Stays signed in from the stored session instead of bouncing to sign-in.
+    expect(result.current.session).not.toBeNull();
+    expect(result.current.session?.userId).toBe("abroad-user");
+    expect(result.current.isAuthenticated).toBe(true);
+  });
+
+  it("bootstraps instantly from the persisted session without waiting on getSession()", async () => {
+    const { adapters, auth } = createTestAdapters();
+    auth.persistedSession = {
+      accessToken: "stored-token",
+      refreshToken: "stored-refresh",
+      userId: "cached-user",
+      email: "cached@example.com",
+      expiresAt: Date.now() / 1000 - 60,
+    };
+    auth.currentSession = null;
+    // getSession() never resolves (network hung); the persisted read must
+    // still resolve the bootstrap.
+    auth.getSession = () => new Promise(() => {});
+
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <AdapterProvider adapters={adapters}>{children}</AdapterProvider>
+    );
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    expect(result.current.session?.userId).toBe("cached-user");
+  });
+
+  it("adopts the refreshed session once getSession() reconciles after an offline bootstrap", async () => {
+    const { adapters, auth } = createTestAdapters();
+    auth.persistedSession = {
+      accessToken: "stale-token",
+      refreshToken: "stored-refresh",
+      userId: "reconcile-user",
+      email: "reconcile@example.com",
+      expiresAt: Date.now() / 1000 - 60,
+    };
+    // getSession() succeeds with a freshly-refreshed access token.
+    auth.currentSession = {
+      accessToken: "fresh-token",
+      refreshToken: "fresh-refresh",
+      userId: "reconcile-user",
+      email: "reconcile@example.com",
+      expiresAt: Date.now() / 1000 + 3600,
+    };
+
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <AdapterProvider adapters={adapters}>{children}</AdapterProvider>
+    );
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.session?.accessToken).toBe("fresh-token");
+    });
+  });
+
+  it("ignores a transient null auth event (offline INITIAL_SESSION) but honours SIGNED_OUT", async () => {
+    const { adapters, auth } = createTestAdapters();
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <AdapterProvider adapters={adapters}>{children}</AdapterProvider>
+    );
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    // Establish a live session.
+    await act(async () => {
+      await result.current.signIn("live@example.com", "password");
+    });
+    expect(result.current.session).not.toBeNull();
+
+    // Supabase emits INITIAL_SESSION/refresh events carrying null while
+    // offline — this must NOT log the user out.
+    await act(async () => {
+      auth.emitAuthEvent(null, "INITIAL_SESSION");
+    });
+    expect(result.current.session).not.toBeNull();
+    expect(result.current.session?.email).toBe("live@example.com");
+
+    // A genuine SIGNED_OUT still clears the session.
+    await act(async () => {
+      auth.emitAuthEvent(null, "SIGNED_OUT");
+    });
+    expect(result.current.session).toBeNull();
+  });
+
+  it("still resolves the bootstrap when the persisted-session read rejects", async () => {
+    const { adapters, auth } = createTestAdapters();
+    auth.getPersistedSession = () =>
+      Promise.reject(new Error("storage blew up"));
+
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <AdapterProvider adapters={adapters}>{children}</AdapterProvider>
+    );
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+    // getSession() (no session) still resolves it to signed-out.
+    expect(result.current.session).toBeNull();
+  });
+
+  it("resolves the bootstrap from the persisted session when getSession rejects", async () => {
+    const { adapters, auth } = createTestAdapters();
+    auth.persistedSession = {
+      accessToken: "stored-token",
+      refreshToken: "stored-refresh",
+      userId: "rejecting-user",
+      email: "rejecting@example.com",
+      expiresAt: Date.now() / 1000 - 60,
+    };
+    auth.currentSession = null;
+    // getSession() throws outright rather than returning a failed Result.
+    auth.getSession = () => Promise.reject(new Error("network down"));
+
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <AdapterProvider adapters={adapters}>{children}</AdapterProvider>
+    );
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+    expect(result.current.session?.userId).toBe("rejecting-user");
+  });
+
+  it("bootstraps from the onAuthStateChange event when there is no persisted session and getSession hangs", async () => {
+    jest.useFakeTimers();
+    const { adapters, auth } = createTestAdapters();
+    auth.persistedSession = null;
+    auth.currentSession = null;
+    auth.getSession = () => new Promise(() => {});
+
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <AdapterProvider adapters={adapters}>{children}</AdapterProvider>
+    );
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+
+    // A session arrives via the auth-state listener before the timeout fires.
+    await act(async () => {
+      auth.emitAuthEvent(
+        {
+          accessToken: "listener-token",
+          refreshToken: "listener-refresh",
+          userId: "listener-user",
+          email: "listener@example.com",
+          expiresAt: Date.now() / 1000 + 3600,
+        },
+        "SIGNED_IN",
+      );
+    });
+
+    expect(result.current.isLoading).toBe(false);
+    expect(result.current.session?.userId).toBe("listener-user");
+
+    jest.useRealTimers();
+  });
+
   it("clears storage cache on sign-out", async () => {
     const { adapters, auth, storage } = createTestAdapters();
     const wrapper = ({ children }: { children: ReactNode }) => (

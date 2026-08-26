@@ -47,6 +47,11 @@ export function useAuth(): AuthState {
 
   useEffect(() => {
     let bootstrapped = false;
+    // The on-device session, read with no network. Populated as soon as the
+    // fast local read resolves; the timeout and getSession-failure paths fall
+    // back to it so an offline launch keeps the user signed in (offline-first)
+    // instead of bouncing them to sign-in.
+    let persisted: AuthSession | null = null;
 
     function finishBootstrap(s: AuthSession | null, err?: AuthError) {
       if (bootstrapped) return;
@@ -56,31 +61,82 @@ export function useAuth(): AuthState {
       setIsLoading(false);
     }
 
-    // Bootstrap: read persisted session. Race against a timeout so a
-    // hanging network refresh (expired token + bad connectivity) can
-    // never keep the app stuck on the loading spinner.
+    // Offline-first: read the persisted session straight from device storage
+    // (no network) and, if one exists, resolve the bootstrap with it
+    // immediately — the app renders from the local cache without waiting on a
+    // token refresh that may hang or fail with no connectivity. getSession()
+    // below reconciles with the authoritative/refreshed session once it lands.
+    //
+    // `getPersistedSession` is optional on the port (a lightweight adapter may
+    // omit it); when absent, fall back to the getSession()-only bootstrap.
+    const persistedRead = auth.getPersistedSession
+      ? auth.getPersistedSession()
+      : Promise.resolve<AuthSession | null>(null);
+    persistedRead
+      .then((s) => {
+        persisted = s;
+        if (s) finishBootstrap(s);
+      })
+      .catch(() => {
+        // Local read failed — leave `persisted` null; getSession()/timeout
+        // still resolve the bootstrap.
+      });
+
+    // Live session — may hit the network to refresh an expired access token.
     auth
       .getSession()
       .then((result) => {
         if (result.ok) {
-          finishBootstrap(result.value);
-        } else {
+          if (!bootstrapped) {
+            // Online, fast path (or genuinely signed out → null).
+            finishBootstrap(result.value);
+          } else if (result.value) {
+            // Already bootstrapped from the persisted session; adopt the
+            // refreshed token. getSession() only yields a null value when
+            // nothing is stored, which can't co-exist with a persisted
+            // bootstrap — so a null here is never a sign-out.
+            setSession(result.value);
+            setError(null);
+          }
+        } else if (!bootstrapped) {
+          // getSession() failed (commonly: offline, expired token, refresh
+          // couldn't reach the network). If a stored session existed the
+          // persisted read above would have already bootstrapped from it (so
+          // we'd be `bootstrapped` and skip this branch) — reaching here means
+          // there was none, so this is a genuine signed-out state.
           finishBootstrap(null, result.error);
         }
       })
       .catch(() => {
-        finishBootstrap(null);
+        if (!bootstrapped) finishBootstrap(persisted);
       });
 
-    // Hard timeout — if getSession() hangs (e.g. Supabase trying to
-    // refresh an expired token over a slow network), force-resolve
-    // loading after 3 seconds so the app remains usable.
-    const timeout = setTimeout(() => finishBootstrap(null), 3000);
+    // Hard timeout — if BOTH reads hang (e.g. Supabase refreshing an expired
+    // token over a dead network AND the local read stalling), force-resolve
+    // loading after 3 seconds so the app is never stuck on the spinner. Uses
+    // the persisted session if the local read has landed by then.
+    const timeout = setTimeout(() => finishBootstrap(persisted), 3000);
 
-    // Reactive listener for auth changes after bootstrap (sign-in,
-    // sign-out, token refresh). Also picks up INITIAL_SESSION if it
-    // fires after subscription (handles the race with getSession).
-    const unsubscribe = auth.onAuthStateChange((s) => {
+    // Reactive listener for auth changes after bootstrap (sign-in, sign-out,
+    // token refresh). Also picks up INITIAL_SESSION if it fires after
+    // subscription (handles the race with getSession).
+    //
+    // ⚠ Offline-first invariant: a `null` session is honoured ONLY when the
+    // event is `SIGNED_OUT`. Supabase emits `INITIAL_SESSION`/refresh events
+    // carrying `null` when it can't refresh an expired token offline — but it
+    // leaves the stored session in place and retries, so treating that
+    // transient null as a sign-out is exactly the bug that logs the user out
+    // abroad. Keep the last good session until a genuine `SIGNED_OUT` (real
+    // sign-out, or a server-confirmed revocation) arrives.
+    const unsubscribe = auth.onAuthStateChange((s, event) => {
+      // Ignore a null session ONLY when we positively know the event is a
+      // non-sign-out one (Supabase's offline INITIAL_SESSION/refresh). An
+      // `undefined` event (a lightweight adapter that emits without a name)
+      // is treated as authoritative, preserving the older single-arg contract
+      // where a `null` meant "signed out".
+      if (s === null && event != null && event !== "SIGNED_OUT") {
+        return;
+      }
       if (!bootstrapped) {
         finishBootstrap(s);
       } else {

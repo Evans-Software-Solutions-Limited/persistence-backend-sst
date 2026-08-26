@@ -11,6 +11,46 @@ say so and fix this file.
 
 ## ▶ START HERE — next session (rewritten 2026-08-04, post-Mealprint-merge)
 
+### 🟢 2026-08-26 — OFFLINE SESSION PERSISTENCE FIX (branch `claude/offline-session-persistence-m0sofs`, NOT device-verified)
+
+Brad's report: using the app abroad on flaky signal, it kicks him to the
+signed-out home screen even though a valid session existed from last time —
+defeating "offline-first". Root cause was entirely in the **mobile auth
+bootstrap** (`packages/mobile/src/ui/hooks/useAuth.tsx`); the data layer is
+already cache-first (`useCachedResource` renders from SQLite offline). Two
+ways the bootstrap logged the user out offline, both fixed:
+
+1. **`getSession()` resolves to `null` offline.** supabase-js `getSession()`
+   network-refreshes an expired access token; offline that fails (or hangs),
+   and the old bootstrap's failure/3s-timeout paths both resolved to `null` →
+   `AuthGate` redirects to `/(auth)/sign-in`. Fix: new **optional** port
+   method `getPersistedSession()` reads the stored session straight from
+   AsyncStorage (no network, any expiry) and the bootstrap resolves from it
+   immediately (instant offline start), reconciling with `getSession()` once
+   it lands. supabase-js keeps the stored session on a *retryable* (network)
+   refresh failure, so reading it is safe.
+2. **`INITIAL_SESSION` null clobbers a live session.** supabase emits
+   `INITIAL_SESSION`/refresh events carrying `null` when it can't refresh
+   offline. The listener now honours a `null` session ONLY on a `SIGNED_OUT`
+   event (real sign-out / server-confirmed revocation); an `undefined` event
+   (1-arg partial test doubles) stays authoritative.
+
+⚠ **Design note — `getPersistedSession` is OPTIONAL on `AuthPort` on purpose.**
+~56 test suites hand-roll partial `as unknown as Adapters["auth"]` fakes with
+no shared factory; a required method broke them all. Optional + a defensive
+call site keeps them valid (they resolve via `getSession()`), and both real
+adapters (Supabase + `InMemoryAuthAdapter`) implement it. The Supabase adapter
+now pins `storageKey` to the value supabase-js already derives
+(`sb-<ref>-auth-token`, via exported `deriveAuthStorageKey`) so the read key
+is known — identical to the historical default, so no signed-in user is
+stranded on upgrade.
+
+Gates green locally: mobile typecheck 0, `expo lint` 0 errors, full suite
+**502 suites / 6374 tests**, coverage 96.64/91.45/97.03/98.02 (useAuth.tsx
+100% lines). ⚠ **NOT run on a device** — needs an on-device check: launch
+signed-in, enable Airplane Mode, cold-relaunch → app must stay in and render
+cached data, not bounce to sign-in. NOT pushed as a PR yet.
+
 ### 🟡 2026-08-17 — `/g/:slug` EDGE REDIRECT BUILT, NOT DEPLOYED, NOT DEVICE-VERIFIED (branch `feat/edge-redirect-g-slug`, commit `25105b70`)
 
 The device-aware short link a printed QR code encodes. iPhone → App Store with

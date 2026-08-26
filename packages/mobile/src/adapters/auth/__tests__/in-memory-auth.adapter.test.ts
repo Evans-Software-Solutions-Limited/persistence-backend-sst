@@ -38,7 +38,7 @@ describe("InMemoryAuthAdapter", () => {
     // Initial event fires via microtask
     await Promise.resolve();
     expect(listener).toHaveBeenCalledTimes(1);
-    expect(listener).toHaveBeenCalledWith(null);
+    expect(listener).toHaveBeenCalledWith(null, "INITIAL_SESSION");
   });
 
   it("notifies listeners on auth state change", async () => {
@@ -53,11 +53,12 @@ describe("InMemoryAuthAdapter", () => {
     expect(listener).toHaveBeenCalledTimes(1);
     expect(listener).toHaveBeenCalledWith(
       expect.objectContaining({ email: "test@example.com" }),
+      "SIGNED_IN",
     );
 
     await auth.signOut();
     expect(listener).toHaveBeenCalledTimes(2);
-    expect(listener).toHaveBeenLastCalledWith(null);
+    expect(listener).toHaveBeenLastCalledWith(null, "SIGNED_OUT");
   });
 
   it("unsubscribes listener", async () => {
