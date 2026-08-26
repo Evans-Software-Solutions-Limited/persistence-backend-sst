@@ -92,9 +92,10 @@ export function useAuth(): AuthState {
             finishBootstrap(result.value);
           } else if (result.value) {
             // Already bootstrapped from the persisted session; adopt the
-            // refreshed token. getSession() only yields a null value when
-            // nothing is stored, which can't co-exist with a persisted
-            // bootstrap — so a null here is never a sign-out.
+            // refreshed token. A null value here (supabase found no valid
+            // stored session) is deliberately ignored: if the session was
+            // concurrently invalidated, supabase fires SIGNED_OUT and the
+            // listener below clears it — so we never strand a signed-out user.
             setSession(result.value);
             setError(null);
           }

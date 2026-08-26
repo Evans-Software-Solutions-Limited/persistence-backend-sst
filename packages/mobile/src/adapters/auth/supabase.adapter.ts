@@ -29,9 +29,19 @@ import { ok, fail, type Result, type AuthError } from "@/shared/errors";
  * throws on a missing URL before this runs).
  */
 export function deriveAuthStorageKey(supabaseUrl: string): string {
-  const match = supabaseUrl.match(/^https?:\/\/([^./:]+)/i);
-  const ref = match?.[1];
-  return ref ? `sb-${ref}-auth-token` : "supabase.auth.token";
+  try {
+    // Match supabase-js byte-for-byte: it derives the key from
+    // `new URL(url).hostname.split(".")[0]` (SupabaseClient.ts). Reusing the
+    // same primitive guarantees parity (host lower-casing, userinfo stripping,
+    // port handling) so the pinned key can never diverge from the one existing
+    // sessions were written under. `new URL` is always available here —
+    // createClient relies on it too.
+    const ref = new URL(supabaseUrl).hostname.split(".")[0];
+    if (ref) return `sb-${ref}-auth-token`;
+  } catch {
+    // Unparseable URL — fall through to the legacy key.
+  }
+  return "supabase.auth.token";
 }
 
 /** The persisted session shape `mapSession` consumes. */
