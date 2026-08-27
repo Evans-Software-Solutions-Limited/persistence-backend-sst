@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import type { AuthSession, OAuthProvider } from "@/domain/ports/auth.port";
-import type { AuthError } from "@/shared/errors";
+import { fail, type AuthError, type Result } from "@/shared/errors";
 import { useUserMode } from "@/state/user-mode";
 import { useTrainSegment } from "@/ui/hooks/useTrainSegment";
 import { useCoachLibrarySegment } from "@/ui/hooks/useCoachLibrarySegment";
@@ -62,55 +62,62 @@ export function useAuth(): AuthState {
     }
 
     // Offline-first: read the persisted session straight from device storage
-    // (no network) and, if one exists, resolve the bootstrap with it
+    // (no network). `getPersistedSession` is optional on the port (a
+    // lightweight adapter may omit it); when absent, fall back to the
+    // getSession()-only bootstrap. Normalised to never reject so the two reads
+    // below can be coordinated without a rejection racing the decision.
+    const persistedRead: Promise<AuthSession | null> = (
+      auth.getPersistedSession
+        ? auth.getPersistedSession()
+        : Promise.resolve<AuthSession | null>(null)
+    ).catch(() => null);
+
+    // If a stored session lands first, resolve the bootstrap with it
     // immediately — the app renders from the local cache without waiting on a
-    // token refresh that may hang or fail with no connectivity. getSession()
-    // below reconciles with the authoritative/refreshed session once it lands.
-    //
-    // `getPersistedSession` is optional on the port (a lightweight adapter may
-    // omit it); when absent, fall back to the getSession()-only bootstrap.
-    const persistedRead = auth.getPersistedSession
-      ? auth.getPersistedSession()
-      : Promise.resolve<AuthSession | null>(null);
-    persistedRead
-      .then((s) => {
-        persisted = s;
-        if (s) finishBootstrap(s);
-      })
-      .catch(() => {
-        // Local read failed — leave `persisted` null; getSession()/timeout
-        // still resolve the bootstrap.
-      });
+    // token refresh that may hang or fail with no connectivity.
+    void persistedRead.then((s) => {
+      persisted = s;
+      if (s) finishBootstrap(s);
+    });
 
     // Live session — may hit the network to refresh an expired access token.
-    auth
-      .getSession()
-      .then((result) => {
-        if (result.ok) {
-          if (!bootstrapped) {
-            // Online, fast path (or genuinely signed out → null).
-            finishBootstrap(result.value);
-          } else if (result.value) {
-            // Already bootstrapped from the persisted session; adopt the
-            // refreshed token. A null value here (supabase found no valid
-            // stored session) is deliberately ignored: if the session was
-            // concurrently invalidated, supabase fires SIGNED_OUT and the
-            // listener below clears it — so we never strand a signed-out user.
+    // Normalised to never reject (offline refresh failure → a failed Result).
+    const liveRead = auth.getSession().then(
+      (result) => result,
+      (): Result<AuthSession | null, AuthError> =>
+        fail({
+          kind: "auth",
+          code: "token_expired",
+          message: "getSession failed",
+        }),
+    );
+
+    // Authoritative decision — combine BOTH reads. The signed-out conclusion
+    // requires that getSession produced no session AND there is no persisted
+    // session; it must never fire on a getSession() failure ALONE, because the
+    // two reads race and a network-failure that lands before the (slower)
+    // on-device read would otherwise bounce a valid offline user to sign-in
+    // (Inspector Brad 🟠). A fresh session from getSession() always wins.
+    void Promise.all([liveRead, persistedRead]).then(
+      ([result, persistedSession]) => {
+        if (result.ok && result.value) {
+          // Online / refreshed session is authoritative. Adopt it whether or
+          // not we already bootstrapped from the persisted session.
+          if (!bootstrapped) finishBootstrap(result.value);
+          else {
             setSession(result.value);
             setError(null);
           }
         } else if (!bootstrapped) {
-          // getSession() failed (commonly: offline, expired token, refresh
-          // couldn't reach the network). If a stored session existed the
-          // persisted read above would have already bootstrapped from it (so
-          // we'd be `bootstrapped` and skip this branch) — reaching here means
-          // there was none, so this is a genuine signed-out state.
-          finishBootstrap(null, result.error);
+          // No live session. Fall back to the on-device one if present;
+          // only conclude signed-out when there is genuinely nothing stored.
+          finishBootstrap(
+            persistedSession,
+            persistedSession || result.ok ? undefined : result.error,
+          );
         }
-      })
-      .catch(() => {
-        if (!bootstrapped) finishBootstrap(persisted);
-      });
+      },
+    );
 
     // Hard timeout — if BOTH reads hang (e.g. Supabase refreshing an expired
     // token over a dead network AND the local read stalling), force-resolve

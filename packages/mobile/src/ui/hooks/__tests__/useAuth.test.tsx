@@ -721,6 +721,41 @@ describe("useAuth", () => {
     });
   });
 
+  it("does not bounce to sign-in when getSession fails BEFORE the slower on-device read lands (race regression, IB 🟠)", async () => {
+    // The two bootstrap reads race. If the offline getSession() failure lands
+    // before the (slower) AsyncStorage read, the signed-out conclusion must
+    // still wait for the on-device session — otherwise the user is bounced to
+    // sign-in, the exact bug this PR fixes. The in-memory getPersistedSession
+    // normally resolves in the same microtask as getSession, so delay it here
+    // to force the losing timing.
+    const { adapters, auth } = createTestAdapters();
+    const stored = {
+      accessToken: "stored-token",
+      refreshToken: "stored-refresh",
+      userId: "race-user",
+      email: "race@example.com",
+      expiresAt: Date.now() / 1000 - 60,
+    };
+    auth.persistedSession = stored;
+    auth.currentSession = null;
+    auth.shouldFail = true; // getSession() rejects immediately (offline)
+    auth.getPersistedSession = () =>
+      new Promise((resolve) => setTimeout(() => resolve(stored), 50));
+
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <AdapterProvider adapters={adapters}>{children}</AdapterProvider>
+    );
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    expect(result.current.session?.userId).toBe("race-user");
+    expect(result.current.isAuthenticated).toBe(true);
+  });
+
   it("ignores a transient null auth event (offline INITIAL_SESSION) but honours SIGNED_OUT", async () => {
     const { adapters, auth } = createTestAdapters();
     const wrapper = ({ children }: { children: ReactNode }) => (

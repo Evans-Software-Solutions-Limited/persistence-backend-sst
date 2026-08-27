@@ -45,11 +45,23 @@ now pins `storageKey` to the value supabase-js already derives
 is known — identical to the historical default, so no signed-in user is
 stranded on upgrade.
 
+⚠ **Inspector Brad (real, @ high effort) caught a 🟠 RACE on the first push and
+it is FIXED — do not reintroduce.** The two bootstrap reads (getPersistedSession
+vs getSession) run concurrently; the old code concluded signed-out on a
+getSession() failure ALONE, so if the offline network-refresh rejection landed
+before the (slower) AsyncStorage read, the user was bounced to sign-in — the
+exact bug. Fix: the signed-out conclusion now awaits BOTH reads (`Promise.all([
+liveRead, persistedRead])`); a fresh getSession session still wins, the instant
+offline-start from the persisted read is kept. Regression test
+("race regression, IB 🟠") was verified to FAIL against the racy commit. The
+in-memory fake's getPersistedSession resolves same-microtask, so the test DELAYS
+it (setTimeout) to force the losing order — don't "simplify" that away.
+
 Gates green locally: mobile typecheck 0, `expo lint` 0 errors, full suite
-**502 suites / 6374 tests**, coverage 96.64/91.45/97.03/98.02 (useAuth.tsx
-100% lines). ⚠ **NOT run on a device** — needs an on-device check: launch
+**502 suites / 6375 tests**, coverage 96.65/91.46/97.03/98.02 (useAuth.tsx 100%
+lines & branches). ⚠ **NOT run on a device** — needs an on-device check: launch
 signed-in, enable Airplane Mode, cold-relaunch → app must stay in and render
-cached data, not bounce to sign-in. NOT pushed as a PR yet.
+cached data, not bounce to sign-in. **PR [#421](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/421)** open; awaiting the IB re-sweep to go green before merge.
 
 ### 🟡 2026-08-17 — `/g/:slug` EDGE REDIRECT BUILT, NOT DEPLOYED, NOT DEVICE-VERIFIED (branch `feat/edge-redirect-g-slug`, commit `25105b70`)
 
