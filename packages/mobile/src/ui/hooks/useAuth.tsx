@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import type { AuthSession, OAuthProvider } from "@/domain/ports/auth.port";
-import type { AuthError } from "@/shared/errors";
+import { fail, type AuthError, type Result } from "@/shared/errors";
 import { useUserMode } from "@/state/user-mode";
 import { useTrainSegment } from "@/ui/hooks/useTrainSegment";
 import { useCoachLibrarySegment } from "@/ui/hooks/useCoachLibrarySegment";
@@ -47,6 +47,11 @@ export function useAuth(): AuthState {
 
   useEffect(() => {
     let bootstrapped = false;
+    // The on-device session, read with no network. Populated as soon as the
+    // fast local read resolves; the timeout and getSession-failure paths fall
+    // back to it so an offline launch keeps the user signed in (offline-first)
+    // instead of bouncing them to sign-in.
+    let persisted: AuthSession | null = null;
 
     function finishBootstrap(s: AuthSession | null, err?: AuthError) {
       if (bootstrapped) return;
@@ -56,31 +61,90 @@ export function useAuth(): AuthState {
       setIsLoading(false);
     }
 
-    // Bootstrap: read persisted session. Race against a timeout so a
-    // hanging network refresh (expired token + bad connectivity) can
-    // never keep the app stuck on the loading spinner.
-    auth
-      .getSession()
-      .then((result) => {
-        if (result.ok) {
-          finishBootstrap(result.value);
-        } else {
-          finishBootstrap(null, result.error);
+    // Offline-first: read the persisted session straight from device storage
+    // (no network). `getPersistedSession` is optional on the port (a
+    // lightweight adapter may omit it); when absent, fall back to the
+    // getSession()-only bootstrap. Normalised to never reject so the two reads
+    // below can be coordinated without a rejection racing the decision.
+    const persistedRead: Promise<AuthSession | null> = (
+      auth.getPersistedSession
+        ? auth.getPersistedSession()
+        : Promise.resolve<AuthSession | null>(null)
+    ).catch(() => null);
+
+    // If a stored session lands first, resolve the bootstrap with it
+    // immediately — the app renders from the local cache without waiting on a
+    // token refresh that may hang or fail with no connectivity.
+    void persistedRead.then((s) => {
+      persisted = s;
+      if (s) finishBootstrap(s);
+    });
+
+    // Live session — may hit the network to refresh an expired access token.
+    // Normalised to never reject (offline refresh failure → a failed Result).
+    const liveRead = auth.getSession().then(
+      (result) => result,
+      (): Result<AuthSession | null, AuthError> =>
+        fail({
+          kind: "auth",
+          code: "token_expired",
+          message: "getSession failed",
+        }),
+    );
+
+    // Authoritative decision — combine BOTH reads. The signed-out conclusion
+    // requires that getSession produced no session AND there is no persisted
+    // session; it must never fire on a getSession() failure ALONE, because the
+    // two reads race and a network-failure that lands before the (slower)
+    // on-device read would otherwise bounce a valid offline user to sign-in
+    // (Inspector Brad 🟠). A fresh session from getSession() always wins.
+    void Promise.all([liveRead, persistedRead]).then(
+      ([result, persistedSession]) => {
+        if (result.ok && result.value) {
+          // Online / refreshed session is authoritative. Adopt it whether or
+          // not we already bootstrapped from the persisted session.
+          if (!bootstrapped) finishBootstrap(result.value);
+          else {
+            setSession(result.value);
+            setError(null);
+          }
+        } else if (!bootstrapped) {
+          // No live session. Fall back to the on-device one if present;
+          // only conclude signed-out when there is genuinely nothing stored.
+          finishBootstrap(
+            persistedSession,
+            persistedSession || result.ok ? undefined : result.error,
+          );
         }
-      })
-      .catch(() => {
-        finishBootstrap(null);
-      });
+      },
+    );
 
-    // Hard timeout — if getSession() hangs (e.g. Supabase trying to
-    // refresh an expired token over a slow network), force-resolve
-    // loading after 3 seconds so the app remains usable.
-    const timeout = setTimeout(() => finishBootstrap(null), 3000);
+    // Hard timeout — if BOTH reads hang (e.g. Supabase refreshing an expired
+    // token over a dead network AND the local read stalling), force-resolve
+    // loading after 3 seconds so the app is never stuck on the spinner. Uses
+    // the persisted session if the local read has landed by then.
+    const timeout = setTimeout(() => finishBootstrap(persisted), 3000);
 
-    // Reactive listener for auth changes after bootstrap (sign-in,
-    // sign-out, token refresh). Also picks up INITIAL_SESSION if it
-    // fires after subscription (handles the race with getSession).
-    const unsubscribe = auth.onAuthStateChange((s) => {
+    // Reactive listener for auth changes after bootstrap (sign-in, sign-out,
+    // token refresh). Also picks up INITIAL_SESSION if it fires after
+    // subscription (handles the race with getSession).
+    //
+    // ⚠ Offline-first invariant: a `null` session is honoured ONLY when the
+    // event is `SIGNED_OUT`. Supabase emits `INITIAL_SESSION`/refresh events
+    // carrying `null` when it can't refresh an expired token offline — but it
+    // leaves the stored session in place and retries, so treating that
+    // transient null as a sign-out is exactly the bug that logs the user out
+    // abroad. Keep the last good session until a genuine `SIGNED_OUT` (real
+    // sign-out, or a server-confirmed revocation) arrives.
+    const unsubscribe = auth.onAuthStateChange((s, event) => {
+      // Ignore a null session ONLY when we positively know the event is a
+      // non-sign-out one (Supabase's offline INITIAL_SESSION/refresh). An
+      // `undefined` event (a lightweight adapter that emits without a name)
+      // is treated as authoritative, preserving the older single-arg contract
+      // where a `null` meant "signed out".
+      if (s === null && event != null && event !== "SIGNED_OUT") {
+        return;
+      }
       if (!bootstrapped) {
         finishBootstrap(s);
       } else {

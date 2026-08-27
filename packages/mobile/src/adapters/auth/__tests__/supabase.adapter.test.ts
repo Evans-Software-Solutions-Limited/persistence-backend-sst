@@ -83,7 +83,9 @@ import * as WebBrowser from "expo-web-browser";
 // eslint-disable-next-line import/first
 import * as AppleAuthentication from "expo-apple-authentication";
 // eslint-disable-next-line import/first
-import { SupabaseAuthAdapter } from "../supabase.adapter";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+// eslint-disable-next-line import/first
+import { SupabaseAuthAdapter, deriveAuthStorageKey } from "../supabase.adapter";
 
 const MOCK_SUPABASE_SESSION = {
   access_token: "access-123",
@@ -644,6 +646,69 @@ describe("SupabaseAuthAdapter", () => {
     });
   });
 
+  // -- getPersistedSession (offline-first bootstrap fallback) --
+
+  describe("getPersistedSession", () => {
+    const getItem = AsyncStorage.getItem as jest.Mock;
+
+    it("reads the stored session by the derived storage key with no network", async () => {
+      getItem.mockResolvedValue(JSON.stringify(MOCK_SUPABASE_SESSION));
+
+      const result = await adapter.getPersistedSession();
+
+      // Never touches getSession() (which would try to refresh over network).
+      expect(mockGetSession).not.toHaveBeenCalled();
+      expect(getItem).toHaveBeenCalledWith("sb-test-auth-token");
+      expect(result).toEqual(EXPECTED_AUTH_SESSION);
+    });
+
+    it("returns the stored session even when the access token has expired", async () => {
+      getItem.mockResolvedValue(
+        JSON.stringify({ ...MOCK_SUPABASE_SESSION, expires_at: 1 }),
+      );
+
+      const result = await adapter.getPersistedSession();
+
+      expect(result?.userId).toBe("user-789");
+    });
+
+    it("unwraps a { currentSession } wrapper shape", async () => {
+      getItem.mockResolvedValue(
+        JSON.stringify({ currentSession: MOCK_SUPABASE_SESSION }),
+      );
+
+      const result = await adapter.getPersistedSession();
+
+      expect(result).toEqual(EXPECTED_AUTH_SESSION);
+    });
+
+    it("returns null when nothing is stored", async () => {
+      getItem.mockResolvedValue(null);
+
+      expect(await adapter.getPersistedSession()).toBeNull();
+    });
+
+    it("returns null for a stored value missing required fields", async () => {
+      getItem.mockResolvedValue(
+        JSON.stringify({ access_token: "a", user: { id: "u" } }), // no refresh_token
+      );
+
+      expect(await adapter.getPersistedSession()).toBeNull();
+    });
+
+    it("returns null (never throws) on malformed JSON", async () => {
+      getItem.mockResolvedValue("{not json");
+
+      expect(await adapter.getPersistedSession()).toBeNull();
+    });
+
+    it("returns null (never throws) when storage read rejects", async () => {
+      getItem.mockRejectedValue(new Error("storage unavailable"));
+
+      expect(await adapter.getPersistedSession()).toBeNull();
+    });
+  });
+
   // -- setSessionFromTokens --
 
   describe("setSessionFromTokens", () => {
@@ -725,6 +790,51 @@ describe("SupabaseAuthAdapter", () => {
       expect(mockUnsubscribe).toHaveBeenCalled();
 
       freshAdapter.destroy();
+    });
+
+    it("forwards the change event alongside the mapped session", () => {
+      let supabaseHandler:
+        | ((event: string, session: unknown) => void)
+        | undefined;
+      mockOnAuthStateChange.mockImplementation((handler) => {
+        supabaseHandler = handler;
+        return { data: { subscription: { unsubscribe: jest.fn() } } };
+      });
+
+      const freshAdapter = new SupabaseAuthAdapter();
+      const callback = jest.fn();
+      freshAdapter.onAuthStateChange(callback);
+
+      supabaseHandler?.("SIGNED_OUT", null);
+      expect(callback).toHaveBeenCalledWith(null, "SIGNED_OUT");
+
+      supabaseHandler?.("TOKEN_REFRESHED", MOCK_SUPABASE_SESSION);
+      expect(callback).toHaveBeenCalledWith(
+        EXPECTED_AUTH_SESSION,
+        "TOKEN_REFRESHED",
+      );
+
+      freshAdapter.destroy();
+    });
+  });
+
+  // -- deriveAuthStorageKey --
+
+  describe("deriveAuthStorageKey", () => {
+    it("derives Supabase's default sb-<ref>-auth-token key from the URL", () => {
+      expect(deriveAuthStorageKey("https://abcdef123.supabase.co")).toBe(
+        "sb-abcdef123-auth-token",
+      );
+    });
+
+    it("handles a URL with a port", () => {
+      expect(deriveAuthStorageKey("http://localhost:54321")).toBe(
+        "sb-localhost-auth-token",
+      );
+    });
+
+    it("falls back to the legacy key for an unparseable URL", () => {
+      expect(deriveAuthStorageKey("")).toBe("supabase.auth.token");
     });
   });
 

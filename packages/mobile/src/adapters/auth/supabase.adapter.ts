@@ -10,11 +10,65 @@ import * as Linking from "expo-linking";
 import * as WebBrowser from "expo-web-browser";
 import { AppState } from "react-native";
 import type {
+  AuthChangeEvent,
   AuthPort,
   AuthSession,
   OAuthProvider,
 } from "@/domain/ports/auth.port";
 import { ok, fail, type Result, type AuthError } from "@/shared/errors";
+
+/**
+ * Derive Supabase's default auth storage key (`sb-<project-ref>-auth-token`)
+ * from the project URL. The project ref is the first hostname label of the
+ * Supabase URL. We compute it ourselves and pass it to `createClient` as an
+ * explicit `storageKey` — set to the SAME value supabase-js would default to,
+ * so no already-signed-in user is stranded — so that `getPersistedSession()`
+ * can read the stored session back by a key we know, without depending on
+ * supabase-js's internal derivation. Falls back to the pre-namespacing legacy
+ * key only if the URL is unparseable (should never happen: the constructor
+ * throws on a missing URL before this runs).
+ */
+export function deriveAuthStorageKey(supabaseUrl: string): string {
+  try {
+    // Match supabase-js byte-for-byte: it derives the key from
+    // `new URL(url).hostname.split(".")[0]` (SupabaseClient.ts). Reusing the
+    // same primitive guarantees parity (host lower-casing, userinfo stripping,
+    // port handling) so the pinned key can never diverge from the one existing
+    // sessions were written under. `new URL` is always available here —
+    // createClient relies on it too.
+    const ref = new URL(supabaseUrl).hostname.split(".")[0];
+    if (ref) return `sb-${ref}-auth-token`;
+  } catch {
+    // Unparseable URL — fall through to the legacy key.
+  }
+  return "supabase.auth.token";
+}
+
+/** The persisted session shape `mapSession` consumes. */
+type StoredSupabaseSession = {
+  access_token?: unknown;
+  refresh_token?: unknown;
+  expires_at?: unknown;
+  user?: { id?: unknown; email?: unknown };
+};
+
+/**
+ * Unwrap the session object from the raw JSON persisted under the auth storage
+ * key. supabase-js has stored it both as the bare `Session` and (in older
+ * shapes) wrapped under `currentSession`/`session`, so accept either.
+ */
+function extractStoredSession(parsed: unknown): StoredSupabaseSession | null {
+  if (parsed == null || typeof parsed !== "object") return null;
+  const obj = parsed as Record<string, unknown>;
+  if (typeof obj.access_token === "string") {
+    return obj as StoredSupabaseSession;
+  }
+  const wrapped = obj.currentSession ?? obj.session;
+  if (wrapped != null && typeof wrapped === "object") {
+    return wrapped as StoredSupabaseSession;
+  }
+  return null;
+}
 
 const supabaseUrl =
   Constants.expoConfig?.extra?.supabaseUrl ??
@@ -56,6 +110,11 @@ const QUERY_PARAMS_BY_PROVIDER: Record<
  */
 export class SupabaseAuthAdapter implements AuthPort {
   private client: SupabaseClient;
+  /**
+   * The AsyncStorage key supabase-js persists the session under. Held so
+   * `getPersistedSession()` can read the stored session back with no network.
+   */
+  private readonly storageKey: string;
   private appStateSubscription: ReturnType<
     typeof AppState.addEventListener
   > | null = null;
@@ -73,9 +132,16 @@ export class SupabaseAuthAdapter implements AuthPort {
       );
     }
 
+    this.storageKey = deriveAuthStorageKey(supabaseUrl);
+
     this.client = createClient(supabaseUrl, supabaseAnonKey, {
       auth: {
         storage: AsyncStorage,
+        // Pinned to the value supabase-js would otherwise derive itself, so
+        // `getPersistedSession()` can read the session back by a known key.
+        // Identical to the historical default — does not strand existing
+        // signed-in users on upgrade.
+        storageKey: this.storageKey,
         autoRefreshToken: true,
         persistSession: true,
         detectSessionInUrl: false,
@@ -475,13 +541,58 @@ export class SupabaseAuthAdapter implements AuthPort {
     return ok(session ? this.mapSession(session) : null);
   }
 
+  /**
+   * Read the on-device session straight from AsyncStorage — no network, no
+   * token refresh. This is the offline-first bootstrap fallback: when
+   * `getSession()` can't reach the network to refresh an expired access token,
+   * the stored session's refresh token is still good, so we keep the user
+   * signed in locally from this. supabase-js leaves the stored session in
+   * place on a *retryable* (network) refresh failure and only clears it on a
+   * genuine revocation (which also fires `SIGNED_OUT`), so reading it here is
+   * safe — a truly signed-out user has no stored session to return.
+   *
+   * Tolerant of both the bare `Session` shape supabase-js persists and a
+   * `{ currentSession }`/`{ session }` wrapper, and returns `null` (never
+   * throws) on any missing field or parse error.
+   */
+  async getPersistedSession(): Promise<AuthSession | null> {
+    try {
+      const raw = await AsyncStorage.getItem(this.storageKey);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as unknown;
+      const session = extractStoredSession(parsed);
+      if (
+        !session ||
+        typeof session.access_token !== "string" ||
+        typeof session.refresh_token !== "string" ||
+        typeof session.user?.id !== "string"
+      ) {
+        return null;
+      }
+      return this.mapSession(
+        session as {
+          access_token: string;
+          refresh_token: string;
+          user: { id: string; email?: string };
+          expires_at?: number;
+        },
+      );
+    } catch (err) {
+      console.error("[SupabaseAuthAdapter] getPersistedSession failed:", err);
+      return null;
+    }
+  }
+
   onAuthStateChange(
-    callback: (session: AuthSession | null) => void,
+    callback: (session: AuthSession | null, event: AuthChangeEvent) => void,
   ): () => void {
     const {
       data: { subscription },
-    } = this.client.auth.onAuthStateChange((_event, session) => {
-      callback(session ? this.mapSession(session) : null);
+    } = this.client.auth.onAuthStateChange((event, session) => {
+      callback(
+        session ? this.mapSession(session) : null,
+        event as AuthChangeEvent,
+      );
     });
     return () => subscription.unsubscribe();
   }

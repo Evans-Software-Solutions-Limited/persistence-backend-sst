@@ -10,6 +10,21 @@ export type AuthSession = {
   expiresAt: number;
 };
 
+/**
+ * The auth-state transitions a caller may need to distinguish. Mirrors the
+ * Supabase `AuthChangeEvent` names we actually act on. The load-bearing one is
+ * `SIGNED_OUT`: it is the ONLY event that should clear a locally-held session.
+ * Every other event either carries a fresh session or (offline) a transient
+ * `null` that must NOT be treated as a sign-out — see `useAuth`.
+ */
+export type AuthChangeEvent =
+  | "INITIAL_SESSION"
+  | "SIGNED_IN"
+  | "SIGNED_OUT"
+  | "TOKEN_REFRESHED"
+  | "USER_UPDATED"
+  | "PASSWORD_RECOVERY";
+
 export interface AuthPort {
   signInWithEmail(
     email: string,
@@ -49,8 +64,28 @@ export interface AuthPort {
     refreshToken: string,
   ): Promise<Result<AuthSession, AuthError>>;
   getSession(): Promise<Result<AuthSession | null, AuthError>>;
+  /**
+   * Read the session persisted on-device WITHOUT any network round-trip.
+   *
+   * Offline-first bootstrap fallback. `getSession()` refreshes an expired
+   * access token over the network, so on a bad/absent connection it can hang
+   * or fail even though a perfectly valid session (with an unexpired refresh
+   * token) is sitting in on-device storage. This reads that stored session
+   * directly so the app can keep the user signed in and render from the local
+   * cache until connectivity returns — at which point the background
+   * auto-refresh reconciles the token, and a genuine revocation arrives as a
+   * `SIGNED_OUT` event.
+   *
+   * Returns the stored session regardless of access-token expiry, or `null`
+   * when nothing is persisted. Never throws.
+   *
+   * Optional: the production adapter always provides it, but the bootstrap
+   * degrades gracefully to a `getSession()`-only path when an adapter (e.g. a
+   * lightweight test double) omits it.
+   */
+  getPersistedSession?(): Promise<AuthSession | null>;
   onAuthStateChange(
-    callback: (session: AuthSession | null) => void,
+    callback: (session: AuthSession | null, event: AuthChangeEvent) => void,
   ): () => void;
   resetPassword(email: string): Promise<Result<void, AuthError>>;
   /**
