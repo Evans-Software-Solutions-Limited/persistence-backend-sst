@@ -130,9 +130,12 @@ export function trackLead(eventId: string): void {
  * (spec-30 R3.8, see `lib/storeClick.ts`). No-op without consent or when the
  * pixel isn't loaded.
  */
-export function trackAppStoreClick(eventId: string): void {
+export function trackStoreClick(
+  eventId: string,
+  store: "ios" | "android",
+): void {
   if (!hasConsent("advertising") || !isLoaded()) return;
-  window.fbq!("trackCustom", "AppStoreClick", {}, { eventID: eventId });
+  window.fbq!("trackCustom", "AppStoreClick", { store }, { eventID: eventId });
 }
 
 function readCookie(name: string): string | null {

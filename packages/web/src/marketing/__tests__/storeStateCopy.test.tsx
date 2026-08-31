@@ -90,14 +90,16 @@ describe("store-availability copy tracks the store flags", () => {
     // The literal string that shipped. Guarding the phrase, not the sentence,
     // so a reworded variant of the same mistake still fails.
     expect(appStore.available).toBe(true);
+    expect(playStore.available).toBe(true);
     renderPage(<Home />);
     expect(bodyText()).not.toMatch(/coming to iphone/i);
-    expect(bodyText()).toMatch(/out now on the app store/i);
+    expect(bodyText()).toMatch(/out now on the app store and google play/i);
   });
 
   it("says the App Store is live on /support while it is live", () => {
     renderPage(<Support />);
-    expect(bodyText()).toMatch(/on the app store now/i);
+    expect(bodyText()).toMatch(/on the app store/i);
+    expect(bodyText()).toMatch(/also on google play/i);
     // The exact wrong claim that shipped: Play arriving WITH the iPhone release.
     expect(bodyText()).not.toMatch(/alongside the iphone release/i);
     expect(bodyText()).not.toMatch(/both are coming soon/i);
@@ -114,7 +116,7 @@ describe("store-availability copy tracks the store flags", () => {
     // `appStore.available`. Copy and CTA have to agree, so test both.
     withStores({ ios: false }, () => {
       const { container } = renderPage(<Home />);
-      expect(bodyText()).toMatch(/coming to iphone/i);
+      expect(bodyText()).toMatch(/out now on google play/i);
       expect(bodyText()).not.toMatch(/out now on the app store/i);
       expect(container.querySelectorAll('a[href*="apps.apple.com"]')).toHaveLength(
         0,
@@ -122,11 +124,12 @@ describe("store-availability copy tracks the store flags", () => {
     });
   });
 
-  it("offers the Android notify list only while Play is not live", () => {
-    expect(playStore.available).toBe(false);
-    renderPage(<Home />);
-    expect(bodyText()).toMatch(/android is next/i);
-    expect(screen.getByText("Notify me at launch")).toBeDefined();
+  it("offers the Android notify list if the Play listing is pulled", () => {
+    withStores({ play: false }, () => {
+      renderPage(<Home />);
+      expect(bodyText()).toMatch(/android is next/i);
+      expect(screen.getByText("Notify me at launch")).toBeDefined();
+    });
   });
 
   it("swaps the Android notify list for a real Play link once Play goes live", () => {
@@ -136,28 +139,20 @@ describe("store-availability copy tracks the store flags", () => {
     // button reading "Coming soon", and had /support say the app was on Play —
     // no way to reach it from anywhere. A flag flip has to leave a coherent
     // page, so assert what APPEARS, not just what goes.
-    withStores({ play: true }, () => {
-      const { container } = renderPage(<Home />);
-      expect(bodyText()).not.toMatch(/android is next/i);
-      expect(screen.queryByText("Notify me at launch")).toBeNull();
-      expect(bodyText()).not.toMatch(/coming soon to/i);
-      expect(
-        container.querySelectorAll('a[href*="play.google.com"]').length,
-      ).toBeGreaterThan(0);
-    });
+    const { container } = renderPage(<Home />);
+    expect(bodyText()).not.toMatch(/android is next/i);
+    expect(screen.queryByText("Notify me at launch")).toBeNull();
+    expect(bodyText()).not.toMatch(/coming soon to/i);
+    expect(
+      container.querySelectorAll('a[href*="play.google.com"]').length,
+    ).toBeGreaterThan(0);
   });
 
   it("stops promising a future Play link on /support once Play is live", () => {
-    withStores({ play: true }, () => {
-      renderPage(<Support />);
-      expect(bodyText()).toMatch(/on google play/i);
-      // Targets the MEANING, not the current string. An earlier version of this
-      // pinned /lands here the day it goes live/ — which never matched the copy
-      // that actually shipped ("the store links land here the day EACH goes
-      // live"), so it passed happily against the defect it was meant to catch.
-      expect(bodyText()).not.toMatch(/lands? here the day/i);
-      expect(bodyText()).not.toMatch(/on its way to google play/i);
-    });
+    renderPage(<Support />);
+    expect(bodyText()).toMatch(/on google play/i);
+    expect(bodyText()).not.toMatch(/lands? here the day/i);
+    expect(bodyText()).not.toMatch(/on its way to google play/i);
   });
 
   it("does not claim iPhone availability it just denied, when only Play is live", () => {

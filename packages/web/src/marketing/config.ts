@@ -26,16 +26,17 @@ export const appStore = {
 };
 
 /**
- * Play Store: mirrors `appStore` above, but still awaiting review — so every
- * "get the app" CTA that targets Android stays in the non-linking "coming soon"
- * state until `available` flips to `true` and `url` is filled in.
+ * Play Store: LIVE since 31 Aug 2026. Every Android CTA and the `/g/<slug>`
+ * QR redirect reads from here, so this is the single launch switch.
  *
  * Flipping it also retires the Android notify list on Home and re-points the
  * /support Android answer and the `/g/<slug>` edge redirect, all from here.
  */
 export const playStore = {
-  available: false as boolean,
-  url: null as string | null,
+  available: true as boolean,
+  url: "https://play.google.com/store/apps/details?id=com.bradleyevans96.persistence" as
+    | string
+    | null,
 };
 
 /**
@@ -152,18 +153,25 @@ export function appStoreUrl(campaign?: string): string | null {
 }
 
 /**
- * Play Store CTA URL — see {@link appStoreUrl}; uses `utm_source`/
- * `utm_campaign` instead of Apple's `ct`/`pt`. Returns `null` when
- * `playStore.url` is `null` (not live yet).
+ * Play Store CTA URL — see {@link appStoreUrl}. Google Play attributes installs
+ * from one URL-encoded `referrer` parameter, so the campaign's UTM query string
+ * is nested inside it rather than emitted as top-level `utm_*` parameters.
+ * Returns `null` when `playStore.url` is `null`.
  */
 export function playStoreUrl(campaign?: string): string | null {
   if (!playStore.url) return null;
   if (!campaign) return playStore.url;
   const c = CAMPAIGNS[campaign];
   if (!c) return playStore.url;
+  const referrer = new URLSearchParams(
+    Object.entries({
+      utm_source: c.utm_source,
+      utm_campaign: c.utm_campaign,
+    }).filter((entry): entry is [string, string] => Boolean(entry[1])),
+  ).toString();
+  if (!referrer) return playStore.url;
   return appendParams(playStore.url, {
-    utm_source: c.utm_source,
-    utm_campaign: c.utm_campaign,
+    referrer,
   });
 }
 

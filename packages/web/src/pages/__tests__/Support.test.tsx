@@ -29,4 +29,15 @@ describe("Support", () => {
       .filter((a) => a.getAttribute("href")?.startsWith("mailto:"));
     expect(mailtos.length).toBeGreaterThan(0);
   });
+
+  it("links both app-store subscription management pages", () => {
+    renderPage(<Support />);
+    const hrefs = screen
+      .getAllByRole("link")
+      .map((link) => link.getAttribute("href"));
+    expect(hrefs).toContain("https://apps.apple.com/account/subscriptions");
+    expect(hrefs).toContain(
+      "https://play.google.com/store/account/subscriptions",
+    );
+  });
 });

@@ -14,6 +14,8 @@ import {
 const d = (ms: number) => ({ "--d": `${ms}ms` }) as CSSProperties;
 
 const APPLE_SUBSCRIPTIONS = "https://apps.apple.com/account/subscriptions";
+const GOOGLE_PLAY_SUBSCRIPTIONS =
+  "https://play.google.com/store/account/subscriptions";
 
 export function Support() {
   const revealRef = useReveal<HTMLDivElement>();
@@ -21,7 +23,7 @@ export function Support() {
     title:
       "Support — Persistence Workout & Nutrition App | Help, Billing & Account",
     description:
-      "Get help with Persistence: account, billing, subscriptions and bug reports. Contact the UK team directly, or manage your subscription in the App Store.",
+      "Get help with Persistence on iPhone and Android: account, billing, subscriptions and bug reports. Contact the UK team directly, or manage your subscription in the App Store or Google Play.",
     path: "/support",
   });
 
@@ -56,7 +58,7 @@ export function Support() {
                 </h3>
                 <p>
                   Email us and we'll get back to you, usually within two working
-                  days. Including your device model and iOS version helps us
+                  days. Including your device model and OS version helps us
                   resolve issues faster.
                 </p>
                 <a href={SUPPORT_MAILTO} className="support-email">
@@ -75,7 +77,15 @@ export function Support() {
                     target="_blank"
                     rel="noopener noreferrer"
                   >
-                    Manage your subscription <span className="arw">↗</span>
+                    Manage App Store subscription <span className="arw">↗</span>
+                  </a>
+                  <a
+                    href={GOOGLE_PLAY_SUBSCRIPTIONS}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Manage Google Play subscription{" "}
+                    <span className="arw">↗</span>
                   </a>
                   <Link to="/pricing">
                     Plans &amp; pricing <span className="arw">→</span>
@@ -104,15 +114,23 @@ export function Support() {
               <div className="faq-item">
                 <h4>How do I cancel my subscription?</h4>
                 <p>
-                  Subscriptions are billed through your Apple account. Open the
-                  App Store, tap your profile, choose Subscriptions, then
-                  Persistence — or use{" "}
+                  Subscriptions are billed through the store where you bought
+                  them. On iPhone, open the App Store, tap your profile, choose
+                  Subscriptions, then Persistence — or use{" "}
                   <a
                     href={APPLE_SUBSCRIPTIONS}
                     target="_blank"
                     rel="noopener noreferrer"
                   >
                     Apple's subscription settings
+                  </a>
+                  . On Android, use{" "}
+                  <a
+                    href={GOOGLE_PLAY_SUBSCRIPTIONS}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Google Play subscription settings
                   </a>
                   . Cancelling stops future renewals; access continues to the
                   end of the paid period.
@@ -131,8 +149,8 @@ export function Support() {
                 <h4>Something isn't working — how do I report it?</h4>
                 <p>
                   Email <a href={SUPPORT_MAILTO}>{CONTACT_EMAIL}</a> with your
-                  device model, iOS version and a short description (a
-                  screenshot helps). We triage bug reports quickly.
+                  device model, OS version and a short description (a screenshot
+                  helps). We triage bug reports quickly.
                 </p>
               </div>
               <div className="faq-item">
@@ -147,7 +165,7 @@ export function Support() {
                  */}
                 <p>
                   {appStoreLive()
-                    ? "Persistence is on the App Store now."
+                    ? "Persistence is on the App Store."
                     : "Persistence is coming to iPhone."}{" "}
                   {/*
                    * Deliberately vague about WHERE in Google's pipeline the
@@ -163,7 +181,7 @@ export function Support() {
                    * preceding clause just denied.
                    */}
                   {playStoreLive()
-                    ? "It's on Google Play, with Health Connect integration in place of HealthKit."
+                    ? `${appStoreLive() ? "It's also" : "It's"} on Google Play, with Health Connect integration in place of Apple Health.`
                     : "The Android build is on its way to Google Play, with Health Connect integration in place of HealthKit — the Play link lands here the day it goes live."}
                 </p>
               </div>

@@ -343,6 +343,7 @@ describe("POST /store-click (spec-30 R3.8)", () => {
       fbp: "fb.1.1.xyz",
       event_id: "evt-store-1",
       marketing_consent: true,
+      store: "android",
     });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true });
@@ -354,7 +355,22 @@ describe("POST /store-click (spec-30 R3.8)", () => {
         marketing_consent: true,
         fbc: "fb.1.1.abc",
         fbp: "fb.1.1.xyz",
+        store: "android",
       },
+    });
+  });
+
+  it("drops an invalid store value rather than persisting unbounded input", async () => {
+    const res = await post("/store-click", {
+      event_id: "evt-store-invalid",
+      store: "windows",
+    });
+    expect(res.status).toBe(200);
+    expect(emitEventMock).toHaveBeenCalledWith({
+      name: "store_click",
+      source: "web",
+      eventId: "evt-store-invalid",
+      properties: { marketing_consent: false },
     });
   });
 

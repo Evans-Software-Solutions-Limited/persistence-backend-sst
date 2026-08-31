@@ -51,7 +51,7 @@ export function AppStoreCta({ variant, campaign, className }: AppStoreCtaProps) 
       <a
         href={href!}
         className={`btn btn-fill${extra}`}
-        onClick={() => reportStoreClick()}
+        onClick={() => reportStoreClick("ios")}
       >
         {content}
       </a>
@@ -76,7 +76,7 @@ export function AppStoreCta({ variant, campaign, className }: AppStoreCtaProps) 
       <a
         href={href!}
         className={`store-btn${extra}`}
-        onClick={() => reportStoreClick()}
+        onClick={() => reportStoreClick("ios")}
       >
         {content}
       </a>
@@ -92,7 +92,7 @@ export function AppStoreCta({ variant, campaign, className }: AppStoreCtaProps) 
     <a
       href={href!}
       className={`nav-btn${extra}`}
-      onClick={() => reportStoreClick()}
+      onClick={() => reportStoreClick("ios")}
     >
       Get the app
     </a>

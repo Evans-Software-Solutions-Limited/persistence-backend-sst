@@ -11,6 +11,36 @@ say so and fix this file.
 
 ## ▶ START HERE — next session (rewritten 2026-08-04, post-Mealprint-merge)
 
+### 🟡 2026-08-31 — GOOGLE PLAY LIVE + STAGING APPLE AUDIENCE DIAGNOSED (branch `codex/fix-auth-and-google-play`)
+
+Google Play is live at
+`https://play.google.com/store/apps/details?id=com.bradleyevans96.persistence`.
+The web config now marks it available, all hero/download/banner/support/SEO
+copy is cross-platform, and Android store clicks carry `store: "android"`
+through first-party analytics and Meta custom data. `/g/:slug` Android scans
+now redirect to Google Play and put campaign UTMs inside Google's URL-encoded
+`referrer` parameter. The Android notify form retires automatically while the
+shared download section exposes both stores.
+
+The staging sign-in failure after PR #421 is NOT caused by offline-session
+bootstrap code. Supabase Auth logs for staging project `nxkhlrvjxotyjulodxzk`
+showed the exact rejection at 2026-08-30T11:40:14Z:
+`Unacceptable audience in id_token: [com.bradleyevans96.persistence.staging]`.
+The staging Expo build uses that bundle ID, but Supabase's Apple provider has
+not accepted it as a native Client ID. Add
+`com.bradleyevans96.persistence.staging` to Authentication → Providers → Apple
+→ Client IDs in the staging Supabase project (preserve the existing IDs).
+The dashboard session was signed out during this run, so this external setting
+is still pending; the setup runbook now documents the required staging and
+production audience lists and the characteristic error.
+
+Verification green: focused web 9 files / 725 tests and core 2 files / 50
+tests; full workspace prettier, typecheck, lint (0 errors; pre-existing warnings
+only), build, and `test:unit` (21/21 tasks). Web coverage: 89.79% statements,
+89.47% branches, 87.87% functions, 90.81% lines. Mobile light/dark visual
+checks at 390×844 confirmed both live store buttons and cross-platform copy
+with no overflow.
+
 ### 🟢 2026-08-26 — OFFLINE SESSION PERSISTENCE FIX (branch `claude/offline-session-persistence-m0sofs`, NOT device-verified)
 
 Brad's report: using the app abroad on flaky signal, it kicks him to the
@@ -61,7 +91,7 @@ Gates green locally: mobile typecheck 0, `expo lint` 0 errors, full suite
 **502 suites / 6375 tests**, coverage 96.65/91.46/97.03/98.02 (useAuth.tsx 100%
 lines & branches). ⚠ **NOT run on a device** — needs an on-device check: launch
 signed-in, enable Airplane Mode, cold-relaunch → app must stay in and render
-cached data, not bounce to sign-in. **PR [#421](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/421)** open; awaiting the IB re-sweep to go green before merge.
+cached data, not bounce to sign-in. **PR [#421](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/421)** merged and deployed to staging.
 
 ### 🟡 2026-08-17 — `/g/:slug` EDGE REDIRECT BUILT, NOT DEPLOYED, NOT DEVICE-VERIFIED (branch `feat/edge-redirect-g-slug`, commit `25105b70`)
 
@@ -86,12 +116,10 @@ page. Brief at `specs/milestones/M20-growth-loop/EDGE_REDIRECT_G_SLUG_AGENT_BRIE
   `infra/` has neither typecheck nor tests. `edgeRedirect.test.ts` EXECUTES the
   generated source and asserts parity with the reference implementation over a
   user-agent × path matrix, so the twins cannot drift silently.
-- **Android reaches no Play URL** — gated on `playStore.available` (false, in
-  review). Flips from config alone, no artwork reprint. ⚠ But `playStoreUrl`
-  emits top-level `utm_*` params, which **Play Console does not attribute on** —
-  it wants a URL-encoded `referrer` param. Dormant today; **MUST be fixed before
-  the Android launch** or every Android QR install records as organic. Left out
-  of scope deliberately; the test no longer blesses the wrong shape.
+- **Android now reaches the live Play listing** — `playStore.available` is true
+  and `playStoreUrl` nests campaign UTMs inside Google's URL-encoded `referrer`
+  parameter. The fixed artwork continues to use `/g/:slug`, so no reprint was
+  needed when the listing launched.
 - **Fixed a latent gap:** `banner` had been a `CAMPAIGNS` entry with no
   `<Route>` since the print assets were specced — a printed-banner scan would
   have rendered a blank page. `campaignWiring.test.tsx` now derives its slug list
@@ -113,7 +141,7 @@ the printed path (`/g/flyer` and `/g/banner` are the only URLs in artwork):
 straight to the App Store, so no Meta pixel fires and `fbclid` is dropped —
 which defeats the stated reason those slugs land on the site at all. Use `/ig`,
 not `/g/ig`, in any Meta AD; awaiting Brad’s call on making the iOS branch
-table-driven. (b) the `playStoreUrl` `utm_*` shape below.
+table-driven.
 
 ⚠ **NOT pushed, no PR, NOT deployed, NOT device-verified.** Before any leaflet
 is printed: deploy to staging, then scan the real QR with a real iPhone AND a

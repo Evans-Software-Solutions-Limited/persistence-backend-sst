@@ -508,8 +508,8 @@ export function Pricing() {
               <div className="faq-item">
                 <h4>Where do I buy an individual or coach plan?</h4>
                 <p>
-                  Those plans will be purchased in the Persistence app. Until
-                  App Store products are ready, their controls remain disabled.
+                  Purchase individual and coach plans securely in the
+                  Persistence app through the App Store or Google Play.
                 </p>
               </div>
               <div className="faq-item">

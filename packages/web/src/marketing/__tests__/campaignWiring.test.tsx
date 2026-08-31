@@ -2,7 +2,12 @@ import { screen } from "@testing-library/react";
 import { renderPage } from "@/test-utils";
 import Home from "@/pages/Home";
 import App from "@/App";
-import { APPLE_PROVIDER_TOKEN, CAMPAIGNS, appStore } from "../config";
+import {
+  APPLE_PROVIDER_TOKEN,
+  CAMPAIGNS,
+  appStore,
+  playStore,
+} from "../config";
 import { CAMPAIGN_LANDING_SLUGS, campaignFromPath } from "../campaign";
 import { buildRedirectTable } from "../edgeRedirect";
 
@@ -28,6 +33,15 @@ const appStoreLinks = () =>
       (el.getAttribute("href") ?? "").startsWith("https://apps.apple.com/"),
     );
 
+const playStoreLinks = () =>
+  screen
+    .getAllByRole("link")
+    .filter((el) =>
+      (el.getAttribute("href") ?? "").startsWith(
+        "https://play.google.com/store/apps/",
+      ),
+    );
+
 /**
  * Derived from the `/g/:slug` edge redirect's table rather than listed here, so
  * the set of slugs a printed QR can resolve to and the set of slugs with a
@@ -44,10 +58,10 @@ describe("campaign attribution is wired to the landing routes", () => {
       renderPage(<Home />, { route: `/${slug}` });
       const links = appStoreLinks();
 
-      // Four known call sites today: AppBanner, MarketingNav, Home hero,
-      // Home store section. If this number changes, the loop below is what
-      // matters — confirm the new CTA attributes rather than just bumping it.
-      expect(links.length).toBeGreaterThanOrEqual(4);
+      // Two direct store call sites today: Home hero and download section.
+      // AppBanner and MarketingNav now land on the shared download section so
+      // visitors can choose their platform.
+      expect(links.length).toBeGreaterThanOrEqual(2);
 
       for (const link of links) {
         const params = new URL(link.getAttribute("href")!).searchParams;
@@ -55,15 +69,32 @@ describe("campaign attribution is wired to the landing routes", () => {
         expect(params.get("pt")).toBe(APPLE_PROVIDER_TOKEN);
         expect(params.get("mt")).toBe("8");
       }
+
+      const playLinks = playStoreLinks();
+      expect(playLinks.length).toBeGreaterThanOrEqual(2);
+      for (const link of playLinks) {
+        const referrer = new URL(link.getAttribute("href")!).searchParams.get(
+          "referrer",
+        );
+        expect(new URLSearchParams(referrer ?? "").get("utm_source")).toBe(
+          CAMPAIGNS[slug].utm_source,
+        );
+        expect(new URLSearchParams(referrer ?? "").get("utm_campaign")).toBe(
+          CAMPAIGNS[slug].utm_campaign,
+        );
+      }
     },
   );
 
   it("leaves organic traffic on / undecorated", () => {
     renderPage(<Home />, { route: "/" });
     const links = appStoreLinks();
-    expect(links.length).toBeGreaterThanOrEqual(4);
+    expect(links.length).toBeGreaterThanOrEqual(2);
     for (const link of links) {
       expect(link.getAttribute("href")).toBe(appStore.url);
+    }
+    for (const link of playStoreLinks()) {
+      expect(link.getAttribute("href")).toBe(playStore.url);
     }
   });
 
@@ -90,7 +121,7 @@ describe("campaign attribution is wired to the landing routes", () => {
       // from a printed QR, and unlike a blank page it looks fine.
       renderPage(<App />, { route: `/${slug}` });
       const links = appStoreLinks();
-      expect(links.length).toBeGreaterThanOrEqual(4);
+      expect(links.length).toBeGreaterThanOrEqual(2);
       for (const link of links) {
         const params = new URL(link.getAttribute("href")!).searchParams;
         expect(params.get("ct")).toBe(CAMPAIGNS[slug].ct);

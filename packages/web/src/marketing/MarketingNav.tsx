@@ -3,7 +3,6 @@ import { useScrolled } from "./hooks";
 import { useTheme } from "@/components/theme-provider";
 import { SunIcon, MoonIcon } from "./icons";
 import { SectionLink } from "./SectionLink";
-import { AppStoreCta } from "./AppStoreCta";
 
 /** Wordmark + gradient "P" glyph, links to home. */
 function Logo() {
@@ -18,9 +17,8 @@ function Logo() {
 /**
  * Fixed marketing nav. Section links resolve to in-page hash anchors when
  * already on the home route, or to `/#anchor` (navigate home, then scroll)
- * otherwise. The primary CTA reads "Get the app" while the store is live, and
- * falls back to a non-linking "Coming to the App Store" state if it is not
- * (see config.appStore — live since 15 Aug 2026).
+ * otherwise. The primary CTA lands on the cross-platform download section so
+ * visitors can choose their store.
  */
 export function MarketingNav({ current }: { current?: "pricing" }) {
   const scrolled = useScrolled();
@@ -53,7 +51,9 @@ export function MarketingNav({ current }: { current?: "pricing" }) {
           >
             {isDark ? <SunIcon /> : <MoonIcon />}
           </button>
-          <AppStoreCta variant="nav" />
+          <Link to="/#download" className="nav-btn">
+            Get the app
+          </Link>
         </div>
       </div>
     </nav>
