@@ -56,6 +56,8 @@ export type YouPresenterProps = {
    */
   myPendingCoachRequests: MyPendingCoachRequest[];
 
+  /** At least one backing read model has loaded, even if its value is empty. */
+  hasData: boolean;
   isLoading: boolean;
   isRefreshing: boolean;
   error?: ApiError | null;
@@ -87,6 +89,7 @@ export function YouPresenter(props: YouPresenterProps) {
     trainer,
     pendingRequestCount,
     myPendingCoachRequests,
+    hasData,
     isLoading,
     isRefreshing,
     error,
@@ -100,11 +103,9 @@ export function YouPresenter(props: YouPresenterProps) {
     scrollRef,
   } = props;
 
-  const hasAny =
-    streak !== null || volumeStats !== null || prHistory.length > 0;
   const insets = useSafeAreaInsets();
 
-  if (isLoading && !hasAny) {
+  if (isLoading && !hasData) {
     return (
       <View
         flex={1}
@@ -116,7 +117,7 @@ export function YouPresenter(props: YouPresenterProps) {
       </View>
     );
   }
-  if (error && !hasAny) {
+  if (error && !hasData) {
     return (
       <View flex={1} testID="you-error-state">
         <ErrorState

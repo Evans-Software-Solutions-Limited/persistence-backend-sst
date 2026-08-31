@@ -690,6 +690,32 @@ describe("ExerciseListContainer", () => {
     expect(getByTestId("stub-load-error").props.children).toBe("none");
   });
 
+  it("shows an empty filtered result, not an offline error, when the library cache is populated", async () => {
+    const { adapters, api, storage } = createTestAdapters();
+    storage.cacheExercises([makeExercise({ id: "seed" })]);
+    storage.setLastSyncedAt("exercises", new Date().toISOString());
+
+    const { getByTestId } = render(
+      <TestWrapper adapters={adapters}>
+        <ExerciseListContainer />
+      </TestWrapper>,
+    );
+
+    fireEvent.changeText(getByTestId("stub-search"), "no such exercise");
+    await waitFor(() => {
+      expect(getByTestId("stub-count").props.children).toBe(0);
+    });
+
+    api.shouldFail = true;
+    await act(async () => {
+      fireEvent.press(getByTestId("stub-refresh"));
+    });
+
+    await waitFor(() => expect(lastProps?.isRefreshing).toBe(false));
+    expect(getByTestId("stub-load-error").props.children).toBe("none");
+    expect(getByTestId("stub-has-any-filter").props.children).toBe("true");
+  });
+
   /**
    * Pins the storage-bus subscription. `useExerciseLibrary.revision` only
    * covers writers that remember to call `markChanged()`, and the sync drain

@@ -59,6 +59,7 @@ function render(overrides: Partial<YouPresenterProps> = {}) {
     trainer: null,
     pendingRequestCount: 0,
     myPendingCoachRequests: [],
+    hasData: true,
     onRefresh: jest.fn(),
     onOpenDrawer: jest.fn(),
     onUseToken,
@@ -99,6 +100,7 @@ describe("YouPresenter", () => {
       streak: null,
       volumeStats: null,
       prHistory: [],
+      hasData: false,
       isLoading: true,
     });
     expect(getByTestId("you-loader")).toBeTruthy();
@@ -109,9 +111,22 @@ describe("YouPresenter", () => {
       streak: null,
       volumeStats: null,
       prHistory: [],
+      hasData: false,
       error: { kind: "api", code: "server", message: "boom" },
     });
     expect(getByTestId("you-error-state")).toBeTruthy();
+  });
+
+  it("renders empty cached progress instead of a blocking offline error", () => {
+    const { getByTestId, queryByTestId } = render({
+      streak: null,
+      volumeStats: null,
+      prHistory: [],
+      hasData: true,
+      error: { kind: "api", code: "network", message: "offline" },
+    });
+    expect(getByTestId("you-scroll")).toBeTruthy();
+    expect(queryByTestId("you-error-state")).toBeNull();
   });
 
   it("hides volume + PR sections when absent", () => {

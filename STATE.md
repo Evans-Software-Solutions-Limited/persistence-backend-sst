@@ -11,6 +11,34 @@ say so and fix this file.
 
 ## ▶ START HERE — next session (rewritten 2026-08-04, post-Mealprint-merge)
 
+### 🟡 2026-08-31 — OFFLINE READ-MODEL BASELINE (branch `codex/fix-auth-and-google-play`)
+
+Follow-up device testing after the offline-session fix showed Fuel, You and
+Exercises failing when those tabs had not first been opened online. Root cause:
+authentication was restored globally, but the screen data caches were populated
+only when their owning lazy tab/segment mounted. The authenticated app layout now
+runs a bounded, sequential offline-data bootstrap after login and on reconnect:
+sync queued writes, cache today's Fuel aggregate + targets, warm the full exercise
+catalogue, then cache recipe/meal labels and the You progress read models
+(streaks, achievements, monthly volume, 30-day body trend and 20 PRs). Individual
+endpoint failure does not stop the remaining baseline.
+
+Two independent blocking-error bugs were also fixed: You now distinguishes
+"loaded but empty" read models from no data, and Exercises determines cache
+availability from the unfiltered library rather than the visible filtered result.
+Thus an offline refresh cannot replace cached body/achievement/profile content,
+or a zero-result search over a populated library, with a full-screen error.
+
+Verification green: full workspace prettier, typecheck, lint (0 errors;
+pre-existing warnings only), build and `test:unit` (21/21 tasks); mobile 503
+suites / 6,383 tests. New bootstrap changed-file coverage is 96.34% statements,
+91.37% branches, 100% functions and 100% lines. Device QA still required: sign
+in online, allow the initial background sync to complete, enable Airplane Mode,
+cold-relaunch, then open Fuel, You and Train → Exercises without having opened
+them online first. Offline remains bounded by the synced baseline: other dates/
+history and explicitly online-only features (AI, uploads, live trainer
+relationships) require prior cache coverage or connectivity.
+
 ### 🟡 2026-08-31 — GOOGLE PLAY LIVE + STAGING APPLE AUDIENCE DIAGNOSED (branch `codex/fix-auth-and-google-play`)
 
 Google Play is live at

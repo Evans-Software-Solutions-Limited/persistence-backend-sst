@@ -27,6 +27,7 @@ import { useHealthBodyPushSync } from "../../src/ui/hooks/useHealthBodyPushSync"
 import { useHydrateRecentSets } from "../../src/ui/hooks/useHydrateRecentSets";
 import { useNotificationBadge } from "../../src/ui/hooks/useNotificationBadge";
 import { useNotificationDeepLink } from "../../src/ui/hooks/useNotificationDeepLink";
+import { useOfflineDataBootstrap } from "../../src/ui/hooks/useOfflineDataBootstrap";
 import { useSyncWorker } from "../../src/ui/hooks/useSyncWorker";
 import { colorPalette } from "../../src/ui/theme";
 
@@ -94,6 +95,9 @@ export default function AppLayout() {
   // new install / new device where the hints would otherwise be blank despite
   // the set history being safe on the server.
   useHydrateRecentSets();
+  // Populate Fuel, Progress and Exercises read models after login so offline
+  // use does not depend on the user having opened every tab while connected.
+  useOfflineDataBootstrap();
 
   return (
     <ExerciseFiltersProvider>

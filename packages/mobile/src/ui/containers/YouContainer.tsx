@@ -315,6 +315,14 @@ export function YouContainer() {
       trainer={trainer}
       pendingRequestCount={pendingRequestCount}
       myPendingCoachRequests={myPendingCoachRequests}
+      hasData={
+        profile.payload !== null ||
+        streaks.data !== null ||
+        achievements.data !== null ||
+        volume.data !== null ||
+        body.data !== null ||
+        prs.data !== null
+      }
       isLoading={
         (streaks.isRefreshing || (streaks.isStale && streaks.error === null)) &&
         streaks.data === null
