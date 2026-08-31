@@ -409,7 +409,8 @@
   color: var(--m-fill-fg);
   padding: 15px 26px;
 }
-.mkt .btn-fill:hover {
+.mkt .btn-fill:hover,
+.mkt a.btn-fill:hover {
   color: var(--m-fill-fg);
   transform: translateY(-2px);
   box-shadow: var(--m-fill-shadow);
@@ -420,7 +421,8 @@
   padding: 14px 24px;
   box-shadow: var(--m-accent-btn-glow);
 }
-.mkt .btn-accent:hover {
+.mkt .btn-accent:hover,
+.mkt a.btn-accent:hover {
   color: var(--m-accent-btn-fg);
   transform: translateY(-2px);
 }
@@ -430,7 +432,8 @@
   padding: 15px 24px;
   box-shadow: inset 0 0 0 1px var(--m-line-2);
 }
-.mkt .btn-line:hover {
+.mkt .btn-line:hover,
+.mkt a.btn-line:hover {
   color: var(--m-text);
   box-shadow: inset 0 0 0 1px var(--m-text-3);
   transform: translateY(-2px);
@@ -443,8 +446,14 @@
   color: var(--m-text-2);
   padding: 15px 6px;
 }
-.mkt .btn-ghost:hover {
+.mkt .btn-ghost:hover,
+.mkt a.btn-ghost:hover {
   color: var(--m-text);
+}
+.mkt .btn:focus-visible,
+.mkt .store-btn:focus-visible {
+  outline: 3px solid var(--m-accent-t);
+  outline-offset: 3px;
 }
 .mkt .arw {
   transition: transform 0.25s;
@@ -2383,6 +2392,9 @@
   transition:
     border-color 0.2s,
     transform 0.2s;
+}
+.mkt a.store-btn:hover {
+  color: var(--m-text);
 }
 .mkt .store-btn svg {
   width: 24px;
