@@ -20,9 +20,14 @@ type CapturedScreen = {
   name: string;
   href: string | null | undefined;
   title: string;
+  options: unknown;
 };
 
 const capturedScreens: CapturedScreen[] = [];
+const capturedNavigatorConfigs: {
+  screenOptions: unknown;
+  tabBar: unknown;
+}[] = [];
 
 jest.mock("expo-router", () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -30,7 +35,12 @@ jest.mock("expo-router", () => {
   function Tabs(props: {
     children: React.ReactNode;
     tabBar?: (p: unknown) => React.ReactNode;
+    screenOptions?: unknown;
   }) {
+    capturedNavigatorConfigs.push({
+      screenOptions: props.screenOptions,
+      tabBar: props.tabBar,
+    });
     // Render the custom tabBar with a minimal navigation state so the
     // visible-tab assertions can exercise it. The route names mirror the
     // registered screens; index 0 is active.
@@ -65,6 +75,7 @@ jest.mock("expo-router", () => {
       name: props.name,
       href: props.options?.href,
       title: props.options?.title ?? "",
+      options: props.options,
     });
     return null;
   }
@@ -116,11 +127,47 @@ function renderLayout() {
 
 beforeEach(() => {
   capturedScreens.length = 0;
+  capturedNavigatorConfigs.length = 0;
   mockMode.mockReset();
   mockMode.mockReturnValue("athlete");
 });
 
 describe("TabsLayout — route registration", () => {
+  it("keeps navigator configuration identities stable across unrelated renders", () => {
+    const view = renderLayout();
+    const firstNavigator = capturedNavigatorConfigs.at(-1)!;
+    const firstScreens = new Map(
+      capturedScreens.slice(-6).map((screen) => [screen.name, screen]),
+    );
+
+    view.rerender(
+      <SafeAreaProvider initialMetrics={safeAreaMetrics}>
+        <TamaguiProvider config={config} defaultTheme="dark">
+          <TabsLayout />
+        </TamaguiProvider>
+      </SafeAreaProvider>,
+    );
+
+    const secondNavigator = capturedNavigatorConfigs.at(-1)!;
+    const secondScreens = new Map(
+      capturedScreens.slice(-6).map((screen) => [screen.name, screen]),
+    );
+    expect(secondNavigator.screenOptions).toBe(firstNavigator.screenOptions);
+    expect(secondNavigator.tabBar).toBe(firstNavigator.tabBar);
+    for (const name of [
+      "index",
+      "you",
+      "train",
+      "fuel",
+      "clients",
+      "programs",
+    ]) {
+      expect(secondScreens.get(name)?.options).toBe(
+        firstScreens.get(name)?.options,
+      );
+    }
+  });
+
   it("registers all six tab routes regardless of mode", () => {
     renderLayout();
     const names = capturedScreens.map((s) => s.name).sort();

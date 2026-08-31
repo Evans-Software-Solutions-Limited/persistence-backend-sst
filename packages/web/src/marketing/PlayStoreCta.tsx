@@ -29,6 +29,10 @@ import { reportStoreClick } from "@/lib/storeClick";
  * `playStoreUrl` nests campaign UTMs in Google's encoded install `referrer`,
  * while `reportStoreClick("android")` carries the destination through the
  * first-party analytics row and Meta custom data.
+ *
+ * The live CTA keeps the site's existing icon-led button treatment. Its
+ * multicolour prism is cropped from Google's supplied web-badge artwork rather
+ * than approximated with a monochrome custom path.
  */
 export function PlayStoreCta({
   className,
@@ -43,48 +47,42 @@ export function PlayStoreCta({
   const live = playStoreLive() && href !== null;
 
   if (variant === "hero") {
-    const content = (
-      <>
-        <GooglePlayIcon />
-        {live ? "Get it on Google Play" : "Coming to Google Play"}
-      </>
-    );
     return live ? (
       <a
         href={href!}
         className={`btn btn-fill${extra}`}
+        aria-label="Get it on Google Play"
         onClick={() => reportStoreClick("android")}
       >
-        {content}
+        <GooglePlayIcon />
+        Get it on Google Play
       </a>
     ) : (
       <span className={`btn btn-fill cta-soon${extra}`} aria-disabled="true">
-        {content}
+        Coming to Google Play
       </span>
     );
   }
-
-  const content = (
-    <>
-      <GooglePlayIcon />
-      <div className="store-btn-text">
-        <span className="small">{live ? "Get it on" : "Coming soon to"}</span>
-        <span className="big">Google Play</span>
-      </div>
-    </>
-  );
 
   return live ? (
     <a
       href={href!}
       className={`store-btn${extra}`}
+      aria-label="Get it on Google Play"
       onClick={() => reportStoreClick("android")}
     >
-      {content}
+      <GooglePlayIcon />
+      <div className="store-btn-text">
+        <span className="small">Get it on</span>
+        <span className="big">Google Play</span>
+      </div>
     </a>
   ) : (
     <span className={`store-btn disabled${extra}`} aria-disabled="true">
-      {content}
+      <div className="store-btn-text">
+        <span className="small">Coming soon to</span>
+        <span className="big">Google Play</span>
+      </div>
     </span>
   );
 }

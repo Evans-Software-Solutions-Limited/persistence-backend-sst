@@ -81,13 +81,15 @@ describe("Home", () => {
   it("renders the production Google Play listing as a live link", () => {
     renderPage(<Home />);
     expect(screen.queryByText("Coming to Google Play")).toBeNull();
-    const links = screen
-      .getAllByRole("link")
-      .filter((link) => link.getAttribute("href")?.includes("play.google.com"));
+    const links = screen.getAllByRole("link", {
+      name: "Get it on Google Play",
+    });
     expect(links.length).toBeGreaterThan(0);
     expect(links[0]?.getAttribute("href")).toContain(
       "id=com.bradleyevans96.persistence",
     );
+    expect(links[0]?.querySelector("img")).toBeNull();
+    expect(links[0]?.querySelector("svg")).not.toBeNull();
   });
 
   it("does NOT ship the excluded founding / fake-stat content", () => {

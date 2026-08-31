@@ -11,6 +11,34 @@ say so and fix this file.
 
 ## ▶ START HERE — next session (rewritten 2026-08-04, post-Mealprint-merge)
 
+### 🟡 2026-08-31 — GOOGLE PLAY WEBSITE LOGO (branch `codex/official-google-play-badge`)
+
+The first implementation used Google's full black store badge, but that did not
+fit the website's existing icon-led CTA design. Both Home download placements
+now keep their original hero-pill and outlined-card styling and use only the
+official multicolour Google Play prism, cropped from Google's web badge. The
+buttons retain campaign attribution/click reporting, and the unavailable-listing
+fallback remains plain text.
+
+Light and dark desktop visual checks are clean for both placements. Focused
+tests, web typecheck, lint, production build and full web unit suite are green
+(22 files / 842 tests; coverage 89.94% statements, 89.43% branches, 88.36%
+functions, 90.97% lines).
+
+The programme-assignment incident is a foreground-push-triggered mobile render
+failure, not an API/AWS failure. Sentry issues PERSISTENCE-MOBILE-4/5 contain six
+production iOS events on release `1.1.1+45`: notification refreshes completed
+with 200 responses, then React Navigation's `BottomTabNavigator` external store
+hit `Maximum update depth exceeded`. One symbolicated async stack was
+mis-attributed to `useReflectStepsHabit`; the paired renderer stack and captured
+component stack both identify the navigator itself. The tab layout now keeps its
+`screenOptions`, `tabBar` callback and all six route-option objects referentially
+stable across unrelated parent renders (including the state updates caused by a
+foreground notification), while still changing the visibility options on a real
+athlete/coach mode switch. A regression test asserts that identity contract.
+Mobile typecheck and lint are green (pre-existing warnings only); the full
+mobile suite passes 503 files / 6,391 tests.
+
 ### 🟡 2026-08-31 — OFFLINE READ-MODEL BASELINE (branch `codex/fix-auth-and-google-play`)
 
 Follow-up device testing after the offline-session fix showed Fuel, You and
