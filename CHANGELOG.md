@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.18.2](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.18.1...persistence-v1.18.2) (2026-08-31)
+
+
+### Bug Fixes
+
+* complete offline bootstrap and Android store launch ([#422](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/422)) ([73cc32f](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/73cc32fac64b0fe32e31e68ef0c4683c1b014718))
+* **mobile:** keep signed-in session offline instead of bouncing to sign-in ([#421](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/421)) ([07dc05f](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/07dc05fc2bd95d511a5990ab3f796a90787edf12))
+* **web,mobile:** align Google Play CTA and stabilise push navigation ([#423](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/423)) ([1826d62](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/1826d626bd3d70a8a53135035876eafe4077cdf2))
+* **web:** preserve accessible CTA contrast ([#424](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/424)) ([97d6e90](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/97d6e900e99034246e7c1acb5e1aab472f274e3b))
+* **web:** stop advertising Loadout as coming soon ([#419](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/419)) ([3801058](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/38010581646af6baf94b78568ea76debaec7e79d))
+
 ## [1.18.1](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.18.0...persistence-v1.18.1) (2026-08-20)
 
 
