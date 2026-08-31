@@ -1,6 +1,6 @@
 import { Tabs } from "expo-router";
 import type { ComponentProps } from "react";
-import { useEffect } from "react";
+import { useCallback, useEffect } from "react";
 import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -61,6 +61,27 @@ export const COACH_TABS: TabSpec[] = [
   { id: "programs", icon: IconLayers, label: "Programs" },
   { id: "you", icon: IconChart, label: "You" },
 ];
+
+// React Navigation treats these values as navigator configuration, not ordinary
+// presentational props. Keep their identities stable across unrelated parent
+// renders (for example, the state updates driven by a foreground push). Passing
+// fresh objects/functions on every render can repeatedly invalidate the
+// navigator's external store while React is committing that same update.
+const TAB_SCREEN_OPTIONS = {
+  headerShown: false,
+  sceneStyle: { backgroundColor: color.$bg },
+} as const;
+
+const HOME_OPTIONS = { title: "Home" } as const;
+const YOU_OPTIONS = { title: "You" } as const;
+const TRAIN_OPTIONS = { title: "Train" } as const;
+const TRAIN_HIDDEN_OPTIONS = { title: "Train", href: null } as const;
+const FUEL_OPTIONS = { title: "Fuel" } as const;
+const FUEL_HIDDEN_OPTIONS = { title: "Fuel", href: null } as const;
+const CLIENTS_OPTIONS = { title: "Clients" } as const;
+const CLIENTS_HIDDEN_OPTIONS = { title: "Clients", href: null } as const;
+const PROGRAMS_OPTIONS = { title: "Programs" } as const;
+const PROGRAMS_HIDDEN_OPTIONS = { title: "Programs", href: null } as const;
 
 /**
  * Tab-bar layout contract (consumed by 05-active-session for the
@@ -149,43 +170,37 @@ export function NavTabBar({
 export default function TabsLayout() {
   const mode = useUserMode((s) => s.mode);
   const tabs = mode === "coach" ? COACH_TABS : ATHLETE_TABS;
+  const renderTabBar = useCallback(
+    (props: NavTabBarProps) => (
+      <NavTabBar props={props} tabs={tabs} mode={mode} />
+    ),
+    [tabs, mode],
+  );
 
   return (
-    <Tabs
-      screenOptions={{
-        headerShown: false,
-        sceneStyle: { backgroundColor: color.$bg },
-      }}
-      tabBar={(props) => <NavTabBar props={props} tabs={tabs} mode={mode} />}
-    >
+    <Tabs screenOptions={TAB_SCREEN_OPTIONS} tabBar={renderTabBar}>
       {/* Always-registered athlete tabs. */}
-      <Tabs.Screen name="index" options={{ title: "Home" }} />
-      <Tabs.Screen name="you" options={{ title: "You" }} />
+      <Tabs.Screen name="index" options={HOME_OPTIONS} />
+      <Tabs.Screen name="you" options={YOU_OPTIONS} />
 
       {/* Athlete-only routes — hidden in coach mode. */}
       <Tabs.Screen
         name="train"
-        options={{ title: "Train", href: mode === "coach" ? null : undefined }}
+        options={mode === "coach" ? TRAIN_HIDDEN_OPTIONS : TRAIN_OPTIONS}
       />
       <Tabs.Screen
         name="fuel"
-        options={{ title: "Fuel", href: mode === "coach" ? null : undefined }}
+        options={mode === "coach" ? FUEL_HIDDEN_OPTIONS : FUEL_OPTIONS}
       />
 
       {/* Coach-only routes — hidden in athlete mode. */}
       <Tabs.Screen
         name="clients"
-        options={{
-          title: "Clients",
-          href: mode === "coach" ? undefined : null,
-        }}
+        options={mode === "coach" ? CLIENTS_OPTIONS : CLIENTS_HIDDEN_OPTIONS}
       />
       <Tabs.Screen
         name="programs"
-        options={{
-          title: "Programs",
-          href: mode === "coach" ? undefined : null,
-        }}
+        options={mode === "coach" ? PROGRAMS_OPTIONS : PROGRAMS_HIDDEN_OPTIONS}
       />
     </Tabs>
   );
