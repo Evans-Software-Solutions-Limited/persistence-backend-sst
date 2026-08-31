@@ -22,6 +22,20 @@ type WarmOfflineDataDeps = {
   shouldStop?: () => boolean;
 };
 
+const FUEL_MUTATION_TYPES = new Set([
+  "nutrition_entry",
+  "nutrition_target",
+  "water_log",
+  "meal_plan_log",
+]);
+
+function hasUnreconciledFuelMutations(storage: StoragePort): boolean {
+  return [
+    ...storage.getPendingMutations(),
+    ...storage.getBlockedEntries(),
+  ].some((entry) => FUEL_MUTATION_TYPES.has(entry.entityType));
+}
+
 /**
  * Populate the read models needed by Fuel, You/Progress and Exercises.
  *
@@ -51,11 +65,17 @@ export async function warmOfflineData({
 
   // Reconcile queued offline writes before snapshotting today's aggregate, or
   // a stale server GET can overwrite optimistic Fuel state in SQLite.
+  let queueReconciled = false;
   await run(async () => {
     await processSyncQueue(storage, auth, getApiBaseUrl());
+    queueReconciled = true;
   });
 
   await run(async () => {
+    // Preserve optimistic Fuel state until all writes which contribute to the
+    // aggregate have reached the server. A failed/backed-off/entitlement-
+    // blocked mutation must not be replaced by an older server snapshot.
+    if (!queueReconciled || hasUnreconciledFuelMutations(storage)) return;
     const result = await api.getFuelToday(date);
     if (!result.ok || shouldStop()) return;
     storage.cacheFuelToday(userId, date, result.value);
@@ -146,11 +166,17 @@ export function useOfflineDataBootstrap(): void {
           userId: activeUserId,
           shouldStop,
         });
-      })().finally(() => {
-        if (inFlightRef.current?.userId === activeUserId) {
-          inFlightRef.current = null;
-        }
-      });
+      })()
+        .catch(() => {
+          // Connectivity probes are best-effort. A later NetInfo transition
+          // retries the bootstrap; rejected probes must never escape as an
+          // unhandled promise rejection during app startup.
+        })
+        .finally(() => {
+          if (inFlightRef.current?.userId === activeUserId) {
+            inFlightRef.current = null;
+          }
+        });
       inFlightRef.current = { userId: activeUserId, promise };
       return promise;
     },
@@ -163,6 +189,7 @@ export function useOfflineDataBootstrap(): void {
     let cancelled = false;
     const shouldStop = () => cancelled;
     let previousConnected: boolean | null = null;
+    let subscribeFired = false;
     const observeConnectivity = (connected: boolean) => {
       const wasConnected = previousConnected;
       previousConnected = connected;
@@ -172,13 +199,23 @@ export function useOfflineDataBootstrap(): void {
         void warm(userId, shouldStop);
       }
     };
-    const unsubscribe = netInfo.subscribe(observeConnectivity);
+    const unsubscribe = netInfo.subscribe((connected) => {
+      subscribeFired = true;
+      observeConnectivity(connected);
+    });
     // InMemoryNetInfo emits only transitions while RN NetInfo may emit an
     // initial value on subscribe. The explicit probe makes both contracts
     // behave identically; `warm` dedupes if both report online.
-    void netInfo.isConnected().then((connected) => {
-      if (!cancelled) observeConnectivity(connected);
-    });
+    void netInfo
+      .isConnected()
+      .then((connected) => {
+        // A subscription event is newer than this async snapshot. Never let a
+        // stale probe overwrite it and suppress the next genuine reconnect.
+        if (!cancelled && !subscribeFired) observeConnectivity(connected);
+      })
+      .catch(() => {
+        // The subscription remains the source of truth when a probe fails.
+      });
 
     return () => {
       cancelled = true;

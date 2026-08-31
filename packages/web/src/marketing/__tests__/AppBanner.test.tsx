@@ -68,4 +68,13 @@ describe("AppBanner", () => {
     const link = screen.getByRole("link", { name: "Get" });
     expect(link.getAttribute("href")).toBe("/#download");
   });
+
+  it("keeps campaign visitors on the attributed route", () => {
+    appStore.available = true;
+    appStore.url = "https://apps.apple.com/app/apple-store/id6755091280";
+    renderPage(<AppBanner />, { route: "/flyer" });
+    expect(screen.getByRole("link", { name: "Get" }).getAttribute("href")).toBe(
+      "/flyer#download",
+    );
+  });
 });

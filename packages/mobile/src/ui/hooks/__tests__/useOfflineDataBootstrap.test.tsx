@@ -7,6 +7,7 @@ import { InMemoryNetInfoAdapter } from "@/adapters/netInfo/__tests__/InMemoryNet
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
 import type { Exercise } from "@/domain/models/exercise";
 import type { AuthSession } from "@/domain/ports/auth.port";
+import type { SyncResult } from "@/application/commands/sync.command";
 import { fail, ok } from "@/shared/errors";
 import type { Adapters } from "@/shared/types";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
@@ -15,8 +16,14 @@ import {
   warmOfflineData,
 } from "@/ui/hooks/useOfflineDataBootstrap";
 
+const EMPTY_SYNC_RESULT: SyncResult = {
+  processed: 0,
+  succeeded: 0,
+  failed: 0,
+  blocked: 0,
+};
 const mockProcessSyncQueue = jest.fn(
-  async (..._args: unknown[]): Promise<void> => undefined,
+  async (..._args: unknown[]): Promise<SyncResult> => EMPTY_SYNC_RESULT,
 );
 jest.mock("@/application/commands/sync.command", () => ({
   processSyncQueue: (...args: unknown[]) => mockProcessSyncQueue(...args),
@@ -87,7 +94,10 @@ function wrapper(adapters: Adapters) {
 }
 
 describe("warmOfflineData", () => {
-  beforeEach(() => mockProcessSyncQueue.mockClear());
+  beforeEach(() => {
+    mockProcessSyncQueue.mockReset();
+    mockProcessSyncQueue.mockResolvedValue(EMPTY_SYNC_RESULT);
+  });
 
   it("warms the Fuel, Progress and Exercises offline baseline", async () => {
     const { api, auth, storage } = makeAdapters();
@@ -178,10 +188,60 @@ describe("warmOfflineData", () => {
     expect(storage.getCachedVolumeStats(SESSION.userId)).toBeNull();
     expect(storage.getCachedExercises()).toHaveLength(0);
   });
+
+  it("does not replace optimistic Fuel while a Fuel mutation remains queued", async () => {
+    const { api, auth, storage } = makeAdapters();
+    const date = "2026-08-31";
+    const initial = await api.getFuelToday(date);
+    if (!initial.ok) throw new Error("test fixture returned no Fuel data");
+    storage.cacheFuelToday(SESSION.userId, date, initial.value);
+    storage.enqueueMutation({
+      entityType: "nutrition_entry",
+      entityId: "local-entry",
+      operation: "create",
+      payload: {},
+      endpoint: "/nutrition/entries",
+      method: "POST",
+    });
+    const fuelSpy = jest.spyOn(api, "getFuelToday");
+
+    await warmOfflineData({
+      api,
+      auth,
+      storage,
+      userId: SESSION.userId,
+      date,
+    });
+
+    expect(fuelSpy).not.toHaveBeenCalled();
+    expect(storage.getCachedFuelToday(SESSION.userId, date)).toEqual(
+      initial.value,
+    );
+  });
+
+  it("does not refresh Fuel when the queue drain itself fails", async () => {
+    const { api, auth, storage } = makeAdapters();
+    mockProcessSyncQueue.mockRejectedValueOnce(new Error("sync unavailable"));
+    const fuelSpy = jest.spyOn(api, "getFuelToday");
+
+    await warmOfflineData({
+      api,
+      auth,
+      storage,
+      userId: SESSION.userId,
+      date: "2026-08-31",
+    });
+
+    expect(fuelSpy).not.toHaveBeenCalled();
+    expect(storage.getCachedVolumeStats(SESSION.userId)).not.toBeNull();
+  });
 });
 
 describe("useOfflineDataBootstrap", () => {
-  beforeEach(() => mockProcessSyncQueue.mockClear());
+  beforeEach(() => {
+    mockProcessSyncQueue.mockReset();
+    mockProcessSyncQueue.mockResolvedValue(EMPTY_SYNC_RESULT);
+  });
 
   it("waits while offline, then warms on reconnect", async () => {
     const { adapters, api, netInfo } = makeAdapters(false);
@@ -214,7 +274,10 @@ describe("useOfflineDataBootstrap", () => {
     const { adapters, api, netInfo } = makeAdapters(true);
     let release!: () => void;
     mockProcessSyncQueue.mockImplementationOnce(
-      () => new Promise<void>((resolve) => (release = resolve)),
+      () =>
+        new Promise<SyncResult>(
+          (resolve) => (release = () => resolve(EMPTY_SYNC_RESULT)),
+        ),
     );
     const fuelSpy = jest.spyOn(api, "getFuelToday");
 
@@ -231,5 +294,43 @@ describe("useOfflineDataBootstrap", () => {
 
     await waitFor(() => expect(fuelSpy).toHaveBeenCalledTimes(1));
     expect(mockProcessSyncQueue).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores a stale probe after the connectivity subscription has fired", async () => {
+    const { adapters, api, netInfo } = makeAdapters(true);
+    let resolveProbe!: (connected: boolean) => void;
+    jest
+      .spyOn(netInfo, "isConnected")
+      .mockImplementationOnce(
+        () => new Promise<boolean>((resolve) => (resolveProbe = resolve)),
+      );
+    const fuelSpy = jest.spyOn(api, "getFuelToday");
+
+    renderHook(() => useOfflineDataBootstrap(), {
+      wrapper: wrapper(adapters),
+    });
+    act(() => netInfo.setConnected(false));
+    await act(async () => resolveProbe(true));
+    expect(fuelSpy).not.toHaveBeenCalled();
+
+    act(() => netInfo.setConnected(true));
+    await waitFor(() => expect(fuelSpy).toHaveBeenCalledTimes(1));
+  });
+
+  it("recovers from a rejected initial connectivity probe", async () => {
+    const { adapters, api, netInfo } = makeAdapters(true);
+    jest
+      .spyOn(netInfo, "isConnected")
+      .mockRejectedValueOnce(new Error("probe unavailable"));
+    const fuelSpy = jest.spyOn(api, "getFuelToday");
+
+    renderHook(() => useOfflineDataBootstrap(), {
+      wrapper: wrapper(adapters),
+    });
+    await act(async () => Promise.resolve());
+    act(() => netInfo.setConnected(false));
+    act(() => netInfo.setConnected(true));
+
+    await waitFor(() => expect(fuelSpy).toHaveBeenCalledTimes(1));
   });
 });

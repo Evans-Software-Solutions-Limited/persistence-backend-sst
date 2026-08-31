@@ -3747,3 +3747,19 @@ PR not yet raised. NO product code — script + dataset + verdict + spec updates
   isolation and five consecutive stress runs; the full 494-suite mobile run
   passed 6,217/6,217 after aligning the upgrade assertion to the established
   5-second bound.
+
+### 2026-08-31 — Offline bootstrap and Android launch hardening
+
+- Critical Fuel, You/Progress and exercise read models now warm after auth and
+  on genuine reconnects, so a user does not have to visit every tab online
+  before those screens work offline.
+- Startup connectivity observation is race-safe and probe failures are handled;
+  a stale async snapshot can no longer suppress a later reconnect warm.
+- Fuel bootstrap never replaces optimistic SQLite state while a contributing
+  nutrition mutation is pending, failed or entitlement-blocked, nor when the
+  queue drain itself fails.
+- Campaign banner/nav jumps retain the landing pathname before `#download`, so
+  App Store `ct` and Play Install Referrer attribution survive platform choice.
+- Full pre-PR gates passed: formatting, typecheck, lint (0 errors; existing
+  warnings only), build and all unit tests, including mobile 503 suites / 6,387
+  tests.

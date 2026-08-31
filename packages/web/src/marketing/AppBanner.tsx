@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Link } from "react-router";
+import { Link, useLocation } from "react-router";
+import { downloadSectionPath } from "./campaign";
 import { appStoreLive, playStoreLive } from "./config";
 
 const STORAGE_KEY = "mkt.appBanner.dismissed";
@@ -40,6 +41,7 @@ function persistDismissed(): void {
  * Dismissal persists in localStorage so closing it sticks across visits.
  */
 export function AppBanner() {
+  const { pathname } = useLocation();
   const [dismissed, setDismissed] = useState<boolean>(() => readDismissed());
 
   if ((!appStoreLive() && !playStoreLive()) || dismissed) return null;
@@ -67,7 +69,7 @@ export function AppBanner() {
           Coach &amp; Train — now on iPhone and Android
         </span>
       </div>
-      <Link to="/#download" className="mkt-app-banner-cta">
+      <Link to={downloadSectionPath(pathname)} className="mkt-app-banner-cta">
         Get
       </Link>
       <button

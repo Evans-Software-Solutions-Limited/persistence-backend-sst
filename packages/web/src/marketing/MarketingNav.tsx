@@ -1,4 +1,5 @@
-import { Link } from "react-router";
+import { Link, useLocation } from "react-router";
+import { downloadSectionPath } from "./campaign";
 import { useScrolled } from "./hooks";
 import { useTheme } from "@/components/theme-provider";
 import { SunIcon, MoonIcon } from "./icons";
@@ -21,6 +22,7 @@ function Logo() {
  * visitors can choose their store.
  */
 export function MarketingNav({ current }: { current?: "pricing" }) {
+  const { pathname } = useLocation();
   const scrolled = useScrolled();
   const { theme, setTheme } = useTheme();
 
@@ -51,7 +53,7 @@ export function MarketingNav({ current }: { current?: "pricing" }) {
           >
             {isDark ? <SunIcon /> : <MoonIcon />}
           </button>
-          <Link to="/#download" className="nav-btn">
+          <Link to={downloadSectionPath(pathname)} className="nav-btn">
             Get the app
           </Link>
         </div>

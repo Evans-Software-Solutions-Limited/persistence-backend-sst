@@ -78,6 +78,11 @@ export function campaignFromPath(pathname: string): string | undefined {
   return isKnownCampaign(first) ? first : undefined;
 }
 
+/** Keep campaign landing visitors on their attributed route when jumping down. */
+export function downloadSectionPath(pathname: string): string {
+  return campaignFromPath(pathname) ? `${pathname}#download` : "/#download";
+}
+
 /** The current route's campaign slug, or undefined outside a campaign route. */
 export function useCampaign(): string | undefined {
   return useContext(CampaignContext);
