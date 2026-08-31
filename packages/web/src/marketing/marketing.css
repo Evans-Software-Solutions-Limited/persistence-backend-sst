@@ -556,27 +556,6 @@
   flex-wrap: wrap;
   margin-bottom: 40px;
 }
-.mkt .google-play-badge-link {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  line-height: 0;
-  transition: transform 0.18s;
-}
-.mkt .google-play-badge-link:hover {
-  transform: translateY(-2px);
-}
-.mkt .google-play-badge-link:focus-visible {
-  outline: 2px solid var(--m-accent-t);
-  outline-offset: 3px;
-}
-.mkt .google-play-badge {
-  display: block;
-  width: auto;
-}
-.mkt .google-play-badge--hero {
-  height: 53px;
-}
 .mkt .hero-proof {
   display: flex;
   align-items: center;
@@ -2391,9 +2370,6 @@
   justify-content: center;
   flex-wrap: wrap;
   margin-bottom: 14px;
-}
-.mkt .google-play-badge--store {
-  height: 69px;
 }
 .mkt .store-btn {
   display: inline-flex;

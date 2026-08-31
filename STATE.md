@@ -11,18 +11,19 @@ say so and fix this file.
 
 ## ▶ START HERE — next session (rewritten 2026-08-04, post-Mealprint-merge)
 
-### 🟡 2026-08-31 — OFFICIAL GOOGLE PLAY WEBSITE BADGE (branch `codex/official-google-play-badge`)
+### 🟡 2026-08-31 — GOOGLE PLAY WEBSITE LOGO (branch `codex/official-google-play-badge`)
 
-The website's custom monochrome Play prism was not a valid Google Play download
-badge. Both Home download placements now use Google's current, unmodified
-English “Get it on Google Play” SVG from Partner Marketing Hub as the clickable
-control; the removed inline prism can no longer reappear in marketing. The badge
-renders at least as tall as the adjacent App Store control, retains campaign
-attribution/click reporting, and the unavailable-listing fallback is plain text.
+The first implementation used Google's full black store badge, but that did not
+fit the website's existing icon-led CTA design. Both Home download placements
+now keep their original hero-pill and outlined-card styling and use only the
+official multicolour Google Play prism, cropped from Google's web badge. The
+buttons retain campaign attribution/click reporting, and the unavailable-listing
+fallback remains plain text.
 
-Light and dark desktop visual checks are clean. Focused tests, web typecheck,
-lint, production build and full web unit suite are green (22 files / 842 tests;
-coverage 89.93% statements, 89.43% branches, 88.31% functions, 90.96% lines).
+Light and dark desktop visual checks are clean for both placements. Focused
+tests, web typecheck, lint, production build and full web unit suite are green
+(22 files / 842 tests; coverage 89.94% statements, 89.43% branches, 88.36%
+functions, 90.97% lines).
 
 The programme-assignment incident is a foreground-push-triggered mobile render
 failure, not an API/AWS failure. Sentry issues PERSISTENCE-MOBILE-4/5 contain six

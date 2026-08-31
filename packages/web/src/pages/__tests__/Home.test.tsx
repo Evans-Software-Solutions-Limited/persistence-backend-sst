@@ -88,10 +88,8 @@ describe("Home", () => {
     expect(links[0]?.getAttribute("href")).toContain(
       "id=com.bradleyevans96.persistence",
     );
-    expect(links[0]?.querySelector("img")?.getAttribute("src")).toBe(
-      "/google-play-badge.svg",
-    );
-    expect(links[0]?.querySelector("svg")).toBeNull();
+    expect(links[0]?.querySelector("img")).toBeNull();
+    expect(links[0]?.querySelector("svg")).not.toBeNull();
   });
 
   it("does NOT ship the excluded founding / fake-stat content", () => {

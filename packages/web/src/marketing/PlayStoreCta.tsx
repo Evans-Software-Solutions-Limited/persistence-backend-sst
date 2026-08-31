@@ -1,3 +1,4 @@
+import { GooglePlayIcon } from "./icons";
 import { playStoreLive, playStoreUrl } from "./config";
 import { useCampaign } from "./campaign";
 import { reportStoreClick } from "@/lib/storeClick";
@@ -29,9 +30,9 @@ import { reportStoreClick } from "@/lib/storeClick";
  * while `reportStoreClick("android")` carries the destination through the
  * first-party analytics row and Meta custom data.
  *
- * The live artwork is Google's English web badge from Partner Marketing Hub
- * (downloaded 31 Aug 2026). Keep the asset intact: Google does not permit the
- * standalone prism, recolouring, rearranging, or recreating this download CTA.
+ * The live CTA keeps the site's existing icon-led button treatment. Its
+ * multicolour prism is cropped from Google's supplied web-badge artwork rather
+ * than approximated with a monochrome custom path.
  */
 export function PlayStoreCta({
   className,
@@ -49,16 +50,12 @@ export function PlayStoreCta({
     return live ? (
       <a
         href={href!}
-        className={`google-play-badge-link google-play-badge-link--hero${extra}`}
+        className={`btn btn-fill${extra}`}
+        aria-label="Get it on Google Play"
         onClick={() => reportStoreClick("android")}
       >
-        <img
-          src="/google-play-badge.svg"
-          alt="Get it on Google Play"
-          width="239"
-          height="71"
-          className="google-play-badge google-play-badge--hero"
-        />
+        <GooglePlayIcon />
+        Get it on Google Play
       </a>
     ) : (
       <span className={`btn btn-fill cta-soon${extra}`} aria-disabled="true">
@@ -70,16 +67,15 @@ export function PlayStoreCta({
   return live ? (
     <a
       href={href!}
-      className={`google-play-badge-link google-play-badge-link--store${extra}`}
+      className={`store-btn${extra}`}
+      aria-label="Get it on Google Play"
       onClick={() => reportStoreClick("android")}
     >
-      <img
-        src="/google-play-badge.svg"
-        alt="Get it on Google Play"
-        width="239"
-        height="71"
-        className="google-play-badge google-play-badge--store"
-      />
+      <GooglePlayIcon />
+      <div className="store-btn-text">
+        <span className="small">Get it on</span>
+        <span className="big">Google Play</span>
+      </div>
     </a>
   ) : (
     <span className={`store-btn disabled${extra}`} aria-disabled="true">

@@ -23,6 +23,30 @@ export function AppleIcon(props: IconProps) {
   );
 }
 
+/** Official multicolour Google Play prism, cropped from Google's web badge. */
+export function GooglePlayIcon(props: IconProps) {
+  return (
+    <svg viewBox="15 10 46 51" aria-hidden="true" {...props}>
+      <path
+        fill="#EA4335"
+        d="M36.6 34.41 17.74 54.43v.01a5.1 5.1 0 0 0 4.92 3.77c.94 0 1.83-.26 2.58-.7l.06-.04 21.23-12.25-9.94-10.82Z"
+      />
+      <path
+        fill="#FBBC04"
+        d="m55.68 31-.02.01-9.17-5.34-10.33 9.19 10.36 10.36 9.12-5.26a5.1 5.1 0 0 0 .03-8.96Z"
+      />
+      <path
+        fill="#4285F4"
+        d="M17.73 16.44c-.11.42-.17.86-.17 1.31v35.38c0 .45.06.89.17 1.31l19.51-19.51-19.51-18.49Z"
+      />
+      <path
+        fill="#34A853"
+        d="m36.74 35.43 9.76-9.76-21.21-12.3a5.1 5.1 0 0 0-7.55 3.05l19 19.01Z"
+      />
+    </svg>
+  );
+}
+
 export function CheckIcon(props: IconProps) {
   return (
     <svg viewBox="0 0 24 24" {...stroke} strokeWidth={2.4} aria-hidden="true" {...props}>

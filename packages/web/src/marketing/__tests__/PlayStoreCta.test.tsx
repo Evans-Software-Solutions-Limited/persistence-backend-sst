@@ -29,7 +29,7 @@ describe("PlayStoreCta", () => {
   );
 
   it.each(["hero", "store"] as const)(
-    "uses Google's official badge as the live link for variant=%s",
+    "uses the multicolour Google Play logo inside the existing live CTA for variant=%s",
     (variant) => {
       vi.mocked(playStoreUrl).mockReturnValue(
         "https://play.google.com/store/apps/details?id=com.example.app",
@@ -38,10 +38,9 @@ describe("PlayStoreCta", () => {
 
       const link = screen.getByRole("link", { name: "Get it on Google Play" });
       expect(link.getAttribute("href")).toContain("id=com.example.app");
-      expect(link.querySelector("img")?.getAttribute("src")).toBe(
-        "/google-play-badge.svg",
-      );
-      expect(link.querySelector("svg")).toBeNull();
+      expect(link.querySelector("img")).toBeNull();
+      expect(link.querySelector("svg")).not.toBeNull();
+      expect(link.querySelectorAll("svg path")).toHaveLength(4);
     },
   );
 
