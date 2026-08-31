@@ -30,10 +30,9 @@ const FUEL_MUTATION_TYPES = new Set([
 ]);
 
 function hasUnreconciledFuelMutations(storage: StoragePort): boolean {
-  return [
-    ...storage.getPendingMutations(),
-    ...storage.getBlockedEntries(),
-  ].some((entry) => FUEL_MUTATION_TYPES.has(entry.entityType));
+  return storage
+    .getUncompletedMutations()
+    .some((entry) => FUEL_MUTATION_TYPES.has(entry.entityType));
 }
 
 /**

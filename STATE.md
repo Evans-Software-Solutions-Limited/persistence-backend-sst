@@ -3761,5 +3761,5 @@ PR not yet raised. NO product code — script + dataset + verdict + spec updates
 - Campaign banner/nav jumps retain the landing pathname before `#download`, so
   App Store `ct` and Play Install Referrer attribution survive platform choice.
 - Full pre-PR gates passed: formatting, typecheck, lint (0 errors; existing
-  warnings only), build and all unit tests, including mobile 503 suites / 6,387
+  warnings only), build and all unit tests, including mobile 503 suites / 6,390
   tests.

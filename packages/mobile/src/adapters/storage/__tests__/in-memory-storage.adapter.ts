@@ -273,6 +273,12 @@ export class InMemoryStorageAdapter implements StoragePort {
       .map((e) => ({ ...e }));
   }
 
+  getUncompletedMutations(): SyncQueueEntry[] {
+    return this.queue
+      .filter((e) => e.status !== "completed")
+      .map((e) => ({ ...e }));
+  }
+
   getMutationById(id: number): SyncQueueEntry | null {
     // A snapshot, matching `getPendingMutations` and the real adapter.
     const entry = this.queue.find((e) => e.id === id);

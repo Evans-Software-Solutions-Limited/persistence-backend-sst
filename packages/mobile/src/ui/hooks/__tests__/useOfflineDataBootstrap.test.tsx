@@ -219,6 +219,38 @@ describe("warmOfflineData", () => {
     );
   });
 
+  it.each(["in_flight", "permanently_failed"] as const)(
+    "preserves optimistic Fuel for a %s Fuel mutation",
+    async (status) => {
+      const { api, auth, storage } = makeAdapters();
+      storage.enqueueMutation({
+        entityType: "nutrition_entry",
+        entityId: "local-entry",
+        operation: "create",
+        payload: {},
+        endpoint: "/nutrition/entries",
+        method: "POST",
+      });
+      const [entry] = storage.getPendingMutations();
+      if (status === "in_flight") {
+        storage.markMutationInFlight(entry.id);
+      } else {
+        storage.markMutationPermanentlyFailed(entry.id, "invalid payload");
+      }
+      const fuelSpy = jest.spyOn(api, "getFuelToday");
+
+      await warmOfflineData({
+        api,
+        auth,
+        storage,
+        userId: SESSION.userId,
+        date: "2026-08-31",
+      });
+
+      expect(fuelSpy).not.toHaveBeenCalled();
+    },
+  );
+
   it("does not refresh Fuel when the queue drain itself fails", async () => {
     const { api, auth, storage } = makeAdapters();
     mockProcessSyncQueue.mockRejectedValueOnce(new Error("sync unavailable"));

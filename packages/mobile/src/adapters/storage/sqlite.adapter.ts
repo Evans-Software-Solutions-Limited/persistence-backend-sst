@@ -1145,6 +1145,15 @@ ${indentSyncQueueDdl(12)}
     return rows.map(mapRow);
   }
 
+  getUncompletedMutations(): SyncQueueEntry[] {
+    const db = this.getDb();
+    const rows = db.getAllSync(
+      `SELECT * FROM sync_queue WHERE status != 'completed'
+       ORDER BY created_at ASC, id ASC`,
+    ) as Record<string, unknown>[];
+    return rows.map(mapRow);
+  }
+
   /**
    * Return `in_flight` entries to `pending` on startup.
    *
