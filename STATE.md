@@ -11,6 +11,22 @@ say so and fix this file.
 
 ## ▶ START HERE — next session (rewritten 2026-08-04, post-Mealprint-merge)
 
+### 🟡 2026-08-31 — OFFICIAL GOOGLE PLAY WEBSITE BADGE (branch `codex/official-google-play-badge`)
+
+The website's custom monochrome Play prism was not a valid Google Play download
+badge. Both Home download placements now use Google's current, unmodified
+English “Get it on Google Play” SVG from Partner Marketing Hub as the clickable
+control; the removed inline prism can no longer reappear in marketing. The badge
+renders at least as tall as the adjacent App Store control, retains campaign
+attribution/click reporting, and the unavailable-listing fallback is plain text.
+
+Light and dark desktop visual checks are clean. Focused tests, web typecheck,
+lint, production build and full web unit suite are green (22 files / 842 tests;
+coverage 89.93% statements, 89.43% branches, 88.31% functions, 90.96% lines).
+The separate programme-assignment Sentry investigation is still pending because
+`SENTRY_AUTH_TOKEN` is not available to the installed read-only Sentry skill;
+do not substitute AWS event logs for that investigation.
+
 ### 🟡 2026-08-31 — OFFLINE READ-MODEL BASELINE (branch `codex/fix-auth-and-google-play`)
 
 Follow-up device testing after the offline-session fix showed Fuel, You and

@@ -1,4 +1,3 @@
-import { GooglePlayIcon } from "./icons";
 import { playStoreLive, playStoreUrl } from "./config";
 import { useCampaign } from "./campaign";
 import { reportStoreClick } from "@/lib/storeClick";
@@ -29,6 +28,10 @@ import { reportStoreClick } from "@/lib/storeClick";
  * `playStoreUrl` nests campaign UTMs in Google's encoded install `referrer`,
  * while `reportStoreClick("android")` carries the destination through the
  * first-party analytics row and Meta custom data.
+ *
+ * The live artwork is Google's English web badge from Partner Marketing Hub
+ * (downloaded 31 Aug 2026). Keep the asset intact: Google does not permit the
+ * standalone prism, recolouring, rearranging, or recreating this download CTA.
  */
 export function PlayStoreCta({
   className,
@@ -43,48 +46,47 @@ export function PlayStoreCta({
   const live = playStoreLive() && href !== null;
 
   if (variant === "hero") {
-    const content = (
-      <>
-        <GooglePlayIcon />
-        {live ? "Get it on Google Play" : "Coming to Google Play"}
-      </>
-    );
     return live ? (
       <a
         href={href!}
-        className={`btn btn-fill${extra}`}
+        className={`google-play-badge-link google-play-badge-link--hero${extra}`}
         onClick={() => reportStoreClick("android")}
       >
-        {content}
+        <img
+          src="/google-play-badge.svg"
+          alt="Get it on Google Play"
+          width="239"
+          height="71"
+          className="google-play-badge google-play-badge--hero"
+        />
       </a>
     ) : (
       <span className={`btn btn-fill cta-soon${extra}`} aria-disabled="true">
-        {content}
+        Coming to Google Play
       </span>
     );
   }
 
-  const content = (
-    <>
-      <GooglePlayIcon />
-      <div className="store-btn-text">
-        <span className="small">{live ? "Get it on" : "Coming soon to"}</span>
-        <span className="big">Google Play</span>
-      </div>
-    </>
-  );
-
   return live ? (
     <a
       href={href!}
-      className={`store-btn${extra}`}
+      className={`google-play-badge-link google-play-badge-link--store${extra}`}
       onClick={() => reportStoreClick("android")}
     >
-      {content}
+      <img
+        src="/google-play-badge.svg"
+        alt="Get it on Google Play"
+        width="239"
+        height="71"
+        className="google-play-badge google-play-badge--store"
+      />
     </a>
   ) : (
     <span className={`store-btn disabled${extra}`} aria-disabled="true">
-      {content}
+      <div className="store-btn-text">
+        <span className="small">Coming soon to</span>
+        <span className="big">Google Play</span>
+      </div>
     </span>
   );
 }

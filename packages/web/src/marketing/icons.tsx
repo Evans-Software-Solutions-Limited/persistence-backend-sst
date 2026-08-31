@@ -23,14 +23,6 @@ export function AppleIcon(props: IconProps) {
   );
 }
 
-export function GooglePlayIcon(props: IconProps) {
-  return (
-    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" {...props}>
-      <path d="M3.6 1.8l10.3 10.2L3.6 22.2c-.3-.2-.5-.6-.5-1V2.8c0-.4.2-.8.5-1zm11.4 11.3l2.7 2.7-3.3 1.9-2.1-2.1 2.7-2.5zm0-2.2L12.3 8.4l2.1-2.1 3.3 1.9-2.7 2.7zm5.4-1.1l1.7 1c.6.4.6 1.4 0 1.8l-1.7 1-3-1.9 3-1.9z" />
-    </svg>
-  );
-}
-
 export function CheckIcon(props: IconProps) {
   return (
     <svg viewBox="0 0 24 24" {...stroke} strokeWidth={2.4} aria-hidden="true" {...props}>
