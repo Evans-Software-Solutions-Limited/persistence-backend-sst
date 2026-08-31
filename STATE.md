@@ -25,6 +25,18 @@ tests, web typecheck, lint, production build and full web unit suite are green
 (22 files / 842 tests; coverage 89.94% statements, 89.43% branches, 88.36%
 functions, 90.97% lines).
 
+Follow-up accessibility fix: the global dark-theme anchor hover selector was
+more specific than the button variants, so hovering an off-white store CTA
+changed its text to cyan (the failure was visible only in the interactive
+state). Anchor-backed button variants now explicitly retain their own foreground
+tokens on hover, and buttons/store cards have a 3px high-contrast focus-visible
+ring. Browser-computed contrast is 17.54:1 for the dark hero CTA, 16.11:1 for
+the light hero CTA, and at least 4.40:1 for the focus ring against either page
+background.
+Approved dark hover/focus and light hover screenshots are stored under
+`~/.codex/visualizations/2026/08/31/01a056b6-b878-7472-a1c0-67dce007be2d/`
+with the `pr423-accessibility-` prefix.
+
 The programme-assignment incident is a foreground-push-triggered mobile render
 failure, not an API/AWS failure. Sentry issues PERSISTENCE-MOBILE-4/5 contain six
 production iOS events on release `1.1.1+45`: notification refreshes completed
