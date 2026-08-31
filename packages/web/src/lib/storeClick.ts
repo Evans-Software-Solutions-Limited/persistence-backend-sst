@@ -1,10 +1,12 @@
 import { hasConsent } from "./consent";
 import { marketingApiBase } from "./marketingApiBase";
-import { getFbc, getFbp, newEventId, trackAppStoreClick } from "./metaPixel";
+import { getFbc, getFbp, newEventId, trackStoreClick } from "./metaPixel";
+
+export type StorePlatform = "ios" | "android";
 
 /**
- * Outbound App Store click reporter (spec-30 R3.8). Fires the browser pixel
- * custom event (`trackAppStoreClick`, itself consent-gated) and beacons the
+ * Outbound app-store click reporter (spec-30 R3.8). Fires the browser pixel
+ * custom event (`trackStoreClick`, itself consent-gated) and beacons the
  * server `/store-click` endpoint with the same `event_id` so the two dedup
  * against each other on the Meta side, plus the click/browser ids and the
  * visitor's current marketing-consent choice (R2.7) so the server can
@@ -25,12 +27,13 @@ import { getFbc, getFbp, newEventId, trackAppStoreClick } from "./metaPixel";
  * response, which this fire-and-forget beacon never does. The server parses the
  * text as JSON (see `parseBeaconBody` in leadsRoutes.ts).
  */
-export function reportStoreClick(): string {
+export function reportStoreClick(store: StorePlatform): string {
   const eventId = newEventId();
-  trackAppStoreClick(eventId);
+  trackStoreClick(eventId, store);
 
   const body = JSON.stringify({
     event_id: eventId,
+    store,
     fbc: getFbc() ?? undefined,
     fbp: getFbp() ?? undefined,
     marketing_consent: hasConsent("advertising"),

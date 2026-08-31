@@ -20,22 +20,22 @@ describe("reportStoreClick", () => {
   });
 
   it("returns an event id", () => {
-    const eventId = reportStoreClick();
+    const eventId = reportStoreClick("ios");
     expect(typeof eventId).toBe("string");
     expect(eventId.length).toBeGreaterThan(0);
   });
 
   it("fires the browser pixel with the returned event id", () => {
-    const spy = vi.spyOn(metaPixel, "trackAppStoreClick");
-    const eventId = reportStoreClick();
-    expect(spy).toHaveBeenCalledWith(eventId);
+    const spy = vi.spyOn(metaPixel, "trackStoreClick");
+    const eventId = reportStoreClick("android");
+    expect(spy).toHaveBeenCalledWith(eventId, "android");
   });
 
   it("sends a beacon via navigator.sendBeacon when available", () => {
     const sendBeacon = vi.fn().mockReturnValue(true);
     vi.stubGlobal("navigator", { ...navigator, sendBeacon });
 
-    reportStoreClick();
+    reportStoreClick("ios");
 
     expect(sendBeacon).toHaveBeenCalledTimes(1);
     const [url, blob] = sendBeacon.mock.calls[0];
@@ -51,12 +51,13 @@ describe("reportStoreClick", () => {
     const sendBeacon = vi.fn().mockReturnValue(true);
     vi.stubGlobal("navigator", { ...navigator, sendBeacon });
 
-    reportStoreClick();
+    reportStoreClick("android");
 
     const [, blob] = sendBeacon.mock.calls[0];
     const text = await (blob as Blob).text();
     const body = JSON.parse(text);
     expect(body.marketing_consent).toBe(false);
+    expect(body.store).toBe("android");
   });
 
   it("includes marketing_consent: true when consent is granted", async () => {
@@ -64,7 +65,7 @@ describe("reportStoreClick", () => {
     const sendBeacon = vi.fn().mockReturnValue(true);
     vi.stubGlobal("navigator", { ...navigator, sendBeacon });
 
-    reportStoreClick();
+    reportStoreClick("ios");
 
     const [, blob] = sendBeacon.mock.calls[0];
     const text = await (blob as Blob).text();
@@ -79,7 +80,7 @@ describe("reportStoreClick", () => {
     const fetchSpy = vi.fn().mockResolvedValue({ ok: true } as Response);
     vi.stubGlobal("fetch", fetchSpy);
 
-    reportStoreClick();
+    reportStoreClick("ios");
 
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     const [url, init] = fetchSpy.mock.calls[0];
@@ -95,6 +96,6 @@ describe("reportStoreClick", () => {
       },
     });
 
-    expect(() => reportStoreClick()).not.toThrow();
+    expect(() => reportStoreClick("ios")).not.toThrow();
   });
 });

@@ -261,13 +261,18 @@ per project** (staging + prod separately).
 
 1. Apple Developer → the App ID `com.bradleyevans96.persistence` → ensure **Sign in
    with Apple** capability is enabled (matches `usesAppleSignIn: true`).
-2. In **each** Supabase project → Authentication → Providers → **Apple** → enable, and
-   under **Client IDs** add:
-   - `com.bradleyevans96.persistence` (the app bundle id)
-   - `host.exp.Exponent` (Expo Go dev)
-     Native id-token verification checks the token audience against these Client IDs —
-     **no Services ID / secret key required** (those are only for a web Apple-OAuth flow,
-     which this app does not use).
+2. In each Supabase project → Authentication → Sign In / Providers → **Apple** →
+   enable it and register every native App ID that can send tokens to that project:
+   - **staging** (`nxkhlrvjxotyjulodxzk`):
+     `com.bradleyevans96.persistence.staging`, `host.exp.Exponent`
+   - **production** (`opcvjypsoivaxerahbal`):
+     `com.bradleyevans96.persistence`, `host.exp.Exponent`
+
+   Native id-token verification checks the token audience against these Client IDs.
+   Omitting the staging App ID produces
+   `Unacceptable audience in id_token: [com.bradleyevans96.persistence.staging]`.
+   **No Services ID / secret key is required** because the app uses native Apple
+   authentication rather than the web Apple OAuth flow.
 
 Providers are Auth-dashboard settings — **not MCP-addressable**, and prod is outside
 the MCP's org, so all of Phase 5 is manual dashboard work.

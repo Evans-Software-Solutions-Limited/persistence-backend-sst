@@ -59,7 +59,7 @@ describe("AppStoreCta", () => {
       render(<AppStoreCta variant="hero" />);
       const link = screen.getByRole("link");
       fireEvent.click(link);
-      expect(spy).toHaveBeenCalledTimes(1);
+      expect(spy).toHaveBeenCalledWith("ios");
     });
   });
 });

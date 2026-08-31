@@ -4,8 +4,9 @@ import { useCampaign } from "./campaign";
 import { reportStoreClick } from "@/lib/storeClick";
 
 /**
- * The Google Play counterpart to {@link AppStoreCta}, in the `store` variant
- * that is the only one Play needs today (Home's store section).
+ * The Google Play counterpart to {@link AppStoreCta}. The `hero` and `store`
+ * variants keep both download placements on the same availability and
+ * attribution path.
  *
  * ─── Why this exists ───
  *
@@ -25,30 +26,43 @@ import { reportStoreClick } from "@/lib/storeClick";
  * Attribution comes from the landing route's campaign the same way, so a Play
  * CTA on /flyer carries that campaign's `utm_source`/`utm_campaign`.
  *
- * ⚠ TWO known gaps, both dormant while Play is not live, both Android-launch
- * work rather than anything this component can fix alone:
- *
- * 1. The `utm_*` params `playStoreUrl` appends are NOT what the Play Console
- *    attributes on — it reads a single URL-encoded `referrer`. Left as-is, every
- *    Play install from this button records as organic.
- *
- * 2. `reportStoreClick()` is PLATFORM-BLIND. It takes no argument, the browser
- *    pixel fires `trackCustom('AppStoreClick')` (lib/metaPixel.ts) and the
- *    server writes `analytics_events.name = 'store_click'` with no field saying
- *    which store, so once Play is live an Android click is indistinguishable
- *    from an iOS one and reaches Meta under an event literally named
- *    `AppStoreClick`. Fixing it means threading a `store: "ios" | "android"`
- *    through `reportStoreClick` → the `/store-click` beacon body →
- *    `storeClickEvent`'s properties → `metaEventMap`, i.e. both sides.
- *
- * The call is otherwise safe to make here: `reportStoreClick` posts to
- * `/store-click` and reads nothing Apple-specific.
+ * `playStoreUrl` nests campaign UTMs in Google's encoded install `referrer`,
+ * while `reportStoreClick("android")` carries the destination through the
+ * first-party analytics row and Meta custom data.
  */
-export function PlayStoreCta({ className }: { className?: string }) {
+export function PlayStoreCta({
+  className,
+  variant = "store",
+}: {
+  className?: string;
+  variant?: "hero" | "store";
+}) {
   const campaign = useCampaign();
   const href = playStoreUrl(campaign);
   const extra = className ? ` ${className}` : "";
   const live = playStoreLive() && href !== null;
+
+  if (variant === "hero") {
+    const content = (
+      <>
+        <GooglePlayIcon />
+        {live ? "Get it on Google Play" : "Coming to Google Play"}
+      </>
+    );
+    return live ? (
+      <a
+        href={href!}
+        className={`btn btn-fill${extra}`}
+        onClick={() => reportStoreClick("android")}
+      >
+        {content}
+      </a>
+    ) : (
+      <span className={`btn btn-fill cta-soon${extra}`} aria-disabled="true">
+        {content}
+      </span>
+    );
+  }
 
   const content = (
     <>
@@ -64,7 +78,7 @@ export function PlayStoreCta({ className }: { className?: string }) {
     <a
       href={href!}
       className={`store-btn${extra}`}
-      onClick={() => reportStoreClick()}
+      onClick={() => reportStoreClick("android")}
     >
       {content}
     </a>

@@ -85,6 +85,27 @@ describe("InMemoryStorageAdapter", () => {
       expect(stats.pending).toBe(0);
     });
 
+    it("returns every non-completed mutation for optimistic read guards", () => {
+      for (const entityId of ["pending", "in-flight", "terminal", "done"]) {
+        storage.enqueueMutation({
+          entityType: "nutrition_entry",
+          entityId,
+          operation: "create",
+          payload: {},
+          endpoint: "/nutrition/entries",
+          method: "POST",
+        });
+      }
+      const entries = storage.getPendingMutations();
+      storage.markMutationInFlight(entries[1].id);
+      storage.markMutationPermanentlyFailed(entries[2].id, "invalid payload");
+      storage.markMutationCompleted(entries[3].id);
+
+      expect(
+        storage.getUncompletedMutations().map((entry) => entry.entityId),
+      ).toEqual(["pending", "in-flight", "terminal"]);
+    });
+
     it("marks mutation failed and increments retry count", () => {
       storage.enqueueMutation({
         entityType: "workout",

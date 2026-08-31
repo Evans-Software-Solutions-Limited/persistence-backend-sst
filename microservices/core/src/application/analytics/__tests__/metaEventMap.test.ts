@@ -109,12 +109,19 @@ describe("mapPendingToMetaEvents — event mapping", () => {
     );
   });
 
-  it("store_click → AppStoreClick", () => {
-    expect(
-      mapPendingToMetaEvents(pending({ eventName: "store_click" })).map(
-        (e) => e.event_name,
-      ),
-    ).toEqual(["AppStoreClick"]);
+  it("store_click → AppStoreClick with the destination platform", () => {
+    const [event] = mapPendingToMetaEvents(
+      pending({
+        eventName: "store_click",
+        properties: {
+          marketing_consent: true,
+          fbp: "fb.1.1.default",
+          store: "android",
+        },
+      }),
+    );
+    expect(event!.event_name).toBe("AppStoreClick");
+    expect(event!.custom_data).toEqual({ store: "android" });
   });
 
   it("a consented web purchase → Purchase + Subscribe w/ value/currency, hashes em+external_id", () => {

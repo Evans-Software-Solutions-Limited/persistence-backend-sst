@@ -78,6 +78,18 @@ describe("Home", () => {
     );
   });
 
+  it("renders the production Google Play listing as a live link", () => {
+    renderPage(<Home />);
+    expect(screen.queryByText("Coming to Google Play")).toBeNull();
+    const links = screen
+      .getAllByRole("link")
+      .filter((link) => link.getAttribute("href")?.includes("play.google.com"));
+    expect(links.length).toBeGreaterThan(0);
+    expect(links[0]?.getAttribute("href")).toContain(
+      "id=com.bradleyevans96.persistence",
+    );
+  });
+
   it("does NOT ship the excluded founding / fake-stat content", () => {
     // The launch waitlist + coach enquiry forms ARE shipped now (Brad approved
     // lead capture 2026-08-08, reversing the earlier hard-exclusion). What stays

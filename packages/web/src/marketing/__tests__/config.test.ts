@@ -73,14 +73,17 @@ describe("appStoreUrl / playStoreUrl", () => {
     expect(APPLE_PROVIDER_TOKEN).toMatch(/^\d+$/);
   });
 
-  it("appends Play utm_source/utm_campaign params for a known campaign, preserving existing query params", () => {
+  it("nests Play campaign UTMs inside the encoded install referrer", () => {
     playStore.url = "https://play.google.com/store/apps/details?id=com.app";
     const url = playStoreUrl("flyer");
     expect(url).not.toBeNull();
     const parsed = new URL(url!);
     expect(parsed.searchParams.get("id")).toBe("com.app");
-    expect(parsed.searchParams.get("utm_source")).toBe("flyer");
-    expect(parsed.searchParams.get("utm_campaign")).toBe("print");
+    expect(parsed.searchParams.has("utm_source")).toBe(false);
+    expect(parsed.searchParams.has("utm_campaign")).toBe(false);
+    const referrer = new URLSearchParams(parsed.searchParams.get("referrer")!);
+    expect(referrer.get("utm_source")).toBe("flyer");
+    expect(referrer.get("utm_campaign")).toBe("print");
   });
 
   it("falls back to the bare url for an unknown campaign slug", () => {
@@ -116,8 +119,10 @@ describe("shipped config", () => {
     );
   });
 
-  it("keeps Play not-live until Android clears review", () => {
-    expect(SHIPPED.playStore.available).toBe(false);
-    expect(SHIPPED.playStore.url).toBeNull();
+  it("has Google Play live with the production package listing", () => {
+    expect(SHIPPED.playStore.available).toBe(true);
+    expect(SHIPPED.playStore.url).toBe(
+      "https://play.google.com/store/apps/details?id=com.bradleyevans96.persistence",
+    );
   });
 });

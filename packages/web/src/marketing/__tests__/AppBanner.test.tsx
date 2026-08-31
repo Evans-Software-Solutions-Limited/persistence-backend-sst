@@ -1,24 +1,26 @@
 import { fireEvent, screen } from "@testing-library/react";
 import { renderPage } from "@/test-utils";
 import { AppBanner } from "../AppBanner";
-import { appStore } from "../config";
-import * as storeClick from "@/lib/storeClick";
+import { appStore, playStore } from "../config";
 
 const STORAGE_KEY = "mkt.appBanner.dismissed";
 
 /** Captured before any test mutates the shared config module. */
-const SHIPPED = { ...appStore };
+const SHIPPED = { appStore: { ...appStore }, playStore: { ...playStore } };
 
 describe("AppBanner", () => {
   afterEach(() => {
-    Object.assign(appStore, SHIPPED);
+    Object.assign(appStore, SHIPPED.appStore);
+    Object.assign(playStore, SHIPPED.playStore);
     window.localStorage.clear();
     vi.restoreAllMocks();
   });
 
-  it("renders nothing when the store isn't live", () => {
+  it("renders nothing when neither store is live", () => {
     appStore.available = false;
     appStore.url = null;
+    playStore.available = false;
+    playStore.url = null;
     renderPage(<AppBanner />);
     expect(
       screen.queryByRole("region", { name: /Get the Persistence app/i }),
@@ -34,7 +36,7 @@ describe("AppBanner", () => {
     ).toBeTruthy();
     expect(screen.getByText("Persistence")).toBeTruthy();
     expect(
-      screen.getByText(/Coach & Train — now on the App Store/),
+      screen.getByText(/Coach & Train — now on iPhone and Android/),
     ).toBeTruthy();
   });
 
@@ -59,18 +61,20 @@ describe("AppBanner", () => {
     expect(window.localStorage.getItem(STORAGE_KEY)).toBe("1");
   });
 
-  it("CTA links to appStoreUrl() and fires reportStoreClick on click", () => {
+  it("CTA takes visitors to the cross-platform download section", () => {
     appStore.available = true;
     appStore.url = "https://apps.apple.com/app/apple-store/id6755091280";
-    const spy = vi
-      .spyOn(storeClick, "reportStoreClick")
-      .mockReturnValue("evt_1");
     renderPage(<AppBanner />);
     const link = screen.getByRole("link", { name: "Get" });
-    expect(link.getAttribute("href")).toBe(
-      "https://apps.apple.com/app/apple-store/id6755091280",
+    expect(link.getAttribute("href")).toBe("/#download");
+  });
+
+  it("keeps campaign visitors on the attributed route", () => {
+    appStore.available = true;
+    appStore.url = "https://apps.apple.com/app/apple-store/id6755091280";
+    renderPage(<AppBanner />, { route: "/flyer" });
+    expect(screen.getByRole("link", { name: "Get" }).getAttribute("href")).toBe(
+      "/flyer#download",
     );
-    fireEvent.click(link);
-    expect(spy).toHaveBeenCalledTimes(1);
   });
 });

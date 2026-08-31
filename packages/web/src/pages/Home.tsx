@@ -50,7 +50,7 @@ const MARQUEE: { d: string; label: string }[] = [
   { d: "M3 3v18h18", label: "146k UK foods" },
   { d: "M12 2v20M2 12h20", label: "Barcode scanner" },
   { d: "M20 6L9 17l-5-5", label: "Automatic PRs" },
-  { d: "M22 12h-4l-3 9L9 3l-3 9H2", label: "HealthKit native" },
+  { d: "M22 12h-4l-3 9L9 3l-3 9H2", label: "Health sync" },
   { d: "M17 21v-2a4 4 0 0 0-4-4H5", label: "Coach mode" },
   { d: "M13 2L3 14h9l-1 8 10-12h-9z", label: "Rest timer haptics" },
   { d: "M18 20V10M12 20V4M6 20v-6", label: "Progress charts" },
@@ -70,7 +70,7 @@ export function Home() {
     title:
       "Persistence — Workout & Nutrition Tracking App (UK) | Train · Fuel · Coach",
     description:
-      "The UK workout and nutrition tracking app for serious athletes and coaches. Offline-first logging, 146k UK foods, barcode scanner, automatic PRs, HealthKit sync and built-in coach mode. iPhone-first.",
+      "The UK workout and nutrition tracking app for serious athletes and coaches. Offline-first logging, 146k UK foods, barcode scanner, automatic PRs, Apple Health and Health Connect sync, on iPhone and Android.",
     path: "/",
   });
 
@@ -99,6 +99,7 @@ export function Home() {
                 </p>
                 <div className="hero-ctas" data-reveal style={d(300)}>
                   <AppStoreCta variant="hero" />
+                  <PlayStoreCta variant="hero" />
                   <a href="#coach" className="btn btn-line">
                     For coaches
                   </a>
@@ -244,7 +245,7 @@ export function Home() {
                   </li>
                   <li>
                     <CheckIcon />
-                    HealthKit sync
+                    Apple Health &amp; Health Connect sync
                   </li>
                 </ul>
               </div>
@@ -592,7 +593,7 @@ export function Home() {
         </section>
 
         {/* ── App store ── */}
-        <section className="sec-pad store">
+        <section className="sec-pad store" id="download">
           <div className="c">
             {/*
              * Config-driven: hardcoded, this section would be headed "Available
@@ -622,9 +623,13 @@ export function Home() {
              */}
             <p className="store-sub" data-reveal style={d(140)}>
               Built offline-first, so your training never waits for a signal.{" "}
-              {appStoreLive()
-                ? "Out now on the App Store — free to start, no card needed."
-                : "Coming to iPhone — the App Store link lands here the day it goes live."}
+              {appStoreLive() && playStoreLive()
+                ? "Out now on the App Store and Google Play — free to start, no card needed."
+                : appStoreLive()
+                  ? "Out now on the App Store — free to start, no card needed."
+                  : playStoreLive()
+                    ? "Out now on Google Play — free to start, no card needed."
+                    : "Coming to iPhone and Android — the store links land here when available."}
             </p>
             <div className="store-btns" data-reveal style={d(200)}>
               <AppStoreCta variant="store" />
@@ -670,7 +675,7 @@ export function Home() {
               </li>
               <li>
                 <CheckIcon />
-                HealthKit integration (iOS)
+                Apple Health (iOS) and Health Connect (Android)
               </li>
               <li>
                 <CheckIcon />
@@ -690,7 +695,7 @@ export function Home() {
               </li>
               <li>
                 <CheckIcon />
-                Subscription management via App Store
+                Subscription management via App Store or Google Play
               </li>
             </ul>
           </div>

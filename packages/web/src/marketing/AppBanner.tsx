@@ -1,8 +1,7 @@
 import { useState } from "react";
-import { AppleIcon } from "./icons";
-import { appStoreLive, appStoreUrl } from "./config";
-import { useCampaign } from "./campaign";
-import { reportStoreClick } from "@/lib/storeClick";
+import { Link, useLocation } from "react-router";
+import { downloadSectionPath } from "./campaign";
+import { appStoreLive, playStoreLive } from "./config";
 
 const STORAGE_KEY = "mkt.appBanner.dismissed";
 
@@ -33,19 +32,19 @@ function persistDismissed(): void {
  * only iOS Safari renders). Mounted at the very top of `MarketingLayout`,
  * above `MarketingNav`, on every marketing page.
  *
- * Gated on `appStore.available` (and `appStoreUrl()` returning non-null) so it
- * renders nothing until the store listing goes live — same source of truth as
- * `AppStoreCta`. Hidden on desktop viewports via a `min-width` media query in
- * marketing.css rather than UA sniffing, so there's no hydration mismatch risk.
+ * Gated on either store being live, so it renders nothing until there is a
+ * download destination. The CTA lands on the shared download section where
+ * visitors can choose App Store or Google Play. Hidden on desktop viewports via
+ * a `min-width` media query in marketing.css rather than UA sniffing, so
+ * there's no hydration mismatch risk.
  *
  * Dismissal persists in localStorage so closing it sticks across visits.
  */
 export function AppBanner() {
+  const { pathname } = useLocation();
   const [dismissed, setDismissed] = useState<boolean>(() => readDismissed());
 
-  const campaign = useCampaign();
-  const href = appStoreUrl(campaign);
-  if (!appStoreLive() || !href || dismissed) return null;
+  if ((!appStoreLive() && !playStoreLive()) || dismissed) return null;
 
   const dismiss = () => {
     persistDismissed();
@@ -58,20 +57,21 @@ export function AppBanner() {
       role="region"
       aria-label="Get the Persistence app"
     >
-      <AppleIcon className="mkt-app-banner-icon" />
+      <img
+        className="mkt-app-banner-icon"
+        src="/apple-touch-icon.png"
+        alt=""
+        aria-hidden="true"
+      />
       <div className="mkt-app-banner-text">
         <span className="mkt-app-banner-name">Persistence</span>
         <span className="mkt-app-banner-copy">
-          Coach &amp; Train — now on the App Store
+          Coach &amp; Train — now on iPhone and Android
         </span>
       </div>
-      <a
-        href={href}
-        className="mkt-app-banner-cta"
-        onClick={() => reportStoreClick()}
-      >
+      <Link to={downloadSectionPath(pathname)} className="mkt-app-banner-cta">
         Get
-      </a>
+      </Link>
       <button
         type="button"
         className="mkt-app-banner-close"

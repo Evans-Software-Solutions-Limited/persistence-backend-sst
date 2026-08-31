@@ -73,7 +73,15 @@ function skeletonsFor(
     case "lead_captured":
       return [{ eventName: "Lead" }];
     case "store_click":
-      return [{ eventName: "AppStoreClick" }];
+      return [
+        {
+          eventName: "AppStoreClick",
+          customData:
+            properties.store === "ios" || properties.store === "android"
+              ? { store: properties.store }
+              : undefined,
+        },
+      ];
     default:
       return [];
   }

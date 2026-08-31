@@ -247,8 +247,6 @@ describe("iOS scans reach the App Store with this campaign's attribution", () =>
 
 describe("everyone else gets the campaign landing page", () => {
   it.each([
-    ["Android Chrome", UA.android],
-    ["a CUBOT Android handset", UA.androidCubot],
     ["desktop Chrome", UA.chromeDesktop],
     ["macOS Safari", UA.macSafari],
     ["an empty user-agent", UA.empty],
@@ -265,7 +263,7 @@ describe("everyone else gets the campaign landing page", () => {
     (slug) => {
       // NOT `/`. `/<slug>` decorates every store CTA with this campaign's ct and
       // fires the Meta pixel; `/` does neither, so falling back to the homepage
-      // would silently drop attribution for every Android and desktop scan.
+      // would silently drop attribution for every desktop scan.
       expect(resolveRedirect(`/g/${slug}`, UA.chromeDesktop).location).toBe(
         `/${slug}`,
       );
@@ -354,7 +352,8 @@ describe("the query string survives the hop to a landing page", () => {
 
   it("accepts a query string with or without the leading ?", () => {
     expect(
-      resolveRedirect("/g/flyer", UA.android, { search: "a=1&b=2" }).location,
+      resolveRedirect("/g/flyer", UA.chromeDesktop, { search: "a=1&b=2" })
+        .location,
     ).toBe("/flyer?a=1&b=2");
   });
 
@@ -376,11 +375,11 @@ describe("the query string survives the hop to a landing page", () => {
   });
 
   it("is a no-op for an empty or bare query string", () => {
-    expect(resolveRedirect("/g/flyer", UA.android, { search: "" }).location).toBe(
-      "/flyer",
-    );
     expect(
-      resolveRedirect("/g/flyer", UA.android, { search: "?" }).location,
+      resolveRedirect("/g/flyer", UA.chromeDesktop, { search: "" }).location,
+    ).toBe("/flyer");
+    expect(
+      resolveRedirect("/g/flyer", UA.chromeDesktop, { search: "?" }).location,
     ).toBe("/flyer");
   });
 });
@@ -415,10 +414,14 @@ describe("nothing under /g can 404", () => {
 });
 
 describe("Android is gated on the Play listing being live", () => {
-  it("reaches no Play URL while playStore.available is false", () => {
-    expect(playStore.available).toBe(false);
+  it("falls back to campaign landings if the Play listing is pulled", () => {
+    const before = { available: playStore.available, url: playStore.url };
+    playStore.available = false;
+    const table = buildRedirectTable();
+    playStore.available = before.available;
+    playStore.url = before.url;
     for (const slug of REACHABLE_SLUGS) {
-      const { location } = resolveRedirect(`/g/${slug}`, UA.android);
+      const { location } = resolveRedirect(`/g/${slug}`, UA.android, { table });
       expect(location).toBe(`/${slug}`);
       expect(location).not.toContain("play.google.com");
     }
@@ -433,15 +436,11 @@ describe("Android is gated on the Play listing being live", () => {
     });
     expect(status).toBe(302);
     expect(new URL(location).origin).toBe("https://play.google.com");
-    // Deliberately NOT asserting the parameter shape. `playStoreUrl` appends
-    // `utm_source`/`utm_campaign` as top-level query params, and Play Console
-    // does not attribute on those — it reads a single URL-encoded `referrer`
-    // param (`&referrer=utm_source%3Dflyer%26utm_campaign%3Dprint`). Pinning the
-    // current shape here would bless an unattributable URL as correct. Android
-    // launch work is out of scope for this change; the tokens themselves are
-    // carried through, which is what the assertion below checks.
-    expect(location).toContain(CAMPAIGNS.flyer.utm_source!);
-    expect(location).toContain(CAMPAIGNS.flyer.utm_campaign!);
+    const referrer = new URLSearchParams(
+      new URL(location).searchParams.get("referrer")!,
+    );
+    expect(referrer.get("utm_source")).toBe(CAMPAIGNS.flyer.utm_source);
+    expect(referrer.get("utm_campaign")).toBe(CAMPAIGNS.flyer.utm_campaign);
   });
 
   it("still sends iOS to the App Store once Play is live", () => {
@@ -470,8 +469,10 @@ describe("Android is gated on the Play listing being live", () => {
 
   it("restores playStore config after the flip", () => {
     playLiveTable();
-    expect(playStore.available).toBe(false);
-    expect(playStore.url).toBeNull();
+    expect(playStore.available).toBe(true);
+    expect(playStore.url).toBe(
+      "https://play.google.com/store/apps/details?id=com.bradleyevans96.persistence",
+    );
   });
 });
 
@@ -546,8 +547,10 @@ describe("the generated CloudFront Function", () => {
     expect(source).toContain(APPLE_PROVIDER_TOKEN);
   });
 
-  it("hardcodes no Play URL while Android is unreleased", () => {
-    expect(buildEdgeFunctionSource()).not.toContain("play.google.com");
+  it("embeds the live Play listing and encoded install referrers", () => {
+    const source = buildEdgeFunctionSource();
+    expect(source).toContain("play.google.com");
+    expect(source).toContain("referrer=utm_source%3Dflyer%26utm_campaign%3Dprint");
   });
 
   /**

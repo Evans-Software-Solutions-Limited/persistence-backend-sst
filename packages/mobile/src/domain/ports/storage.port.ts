@@ -148,6 +148,13 @@ export interface StoragePort {
   enqueueMutation(entry: EnqueueMutationInput): void;
   getPendingMutations(): SyncQueueEntry[];
   /**
+   * Every queue row the server has not accepted yet, regardless of whether it
+   * is retryable, in flight, blocked or terminally failed. Used by read-model
+   * refreshes that must not overwrite optimistic state while any contributing
+   * write remains unresolved.
+   */
+  getUncompletedMutations(): SyncQueueEntry[];
+  /**
    * Atomically claim a queue entry: flips status to `in_flight` ONLY
    * when the row is currently `pending` or `failed`. Returns `true`
    * if the caller now owns the entry (proceed with the fetch),

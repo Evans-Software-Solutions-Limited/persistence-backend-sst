@@ -291,7 +291,11 @@ export function ExerciseListContainer() {
     [api, storage, markChanged],
   );
 
-  const hasCachedExercises = queryResult.exercises.length > 0;
+  // Cache availability must be based on the unfiltered library. A search can
+  // legitimately produce zero visible rows while thousands remain available
+  // offline; treating that as a cold cache turns a failed background refresh
+  // into a blocking network error instead of the correct "Nothing matches".
+  const hasCachedExercises = cacheRead.exercises.length > 0;
   const showSkeleton =
     !hasCachedExercises && isRefreshing && queryResult.lastSyncedAt === null;
   const loadError =

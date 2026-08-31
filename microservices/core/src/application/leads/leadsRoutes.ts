@@ -170,6 +170,8 @@ interface WebAttribution {
    * (spec-30 R2.7). Absent → false → fail closed.
    */
   marketingConsent?: boolean;
+  /** Store destination for an outbound app-download click. */
+  store?: "ios" | "android";
 }
 
 /**
@@ -204,6 +206,7 @@ function storeClickEvent(attribution: WebAttribution): AnalyticsEventInput {
   };
   if (attribution.fbc) properties.fbc = attribution.fbc;
   if (attribution.fbp) properties.fbp = attribution.fbp;
+  if (attribution.store) properties.store = attribution.store;
   return {
     name: "store_click",
     source: "web",
@@ -217,6 +220,7 @@ interface StoreClickBody {
   fbp?: string;
   event_id?: string;
   marketing_consent?: boolean;
+  store?: "ios" | "android";
 }
 
 /**
@@ -258,6 +262,8 @@ function parseBeaconBody(raw: unknown): StoreClickBody {
     fbp: str(obj.fbp, 255),
     event_id: str(obj.event_id, 100),
     marketing_consent: obj.marketing_consent === true ? true : undefined,
+    store:
+      obj.store === "ios" || obj.store === "android" ? obj.store : undefined,
   };
 }
 
@@ -500,7 +506,7 @@ export const leadsRoutes = new Elysia()
       // No `body` schema: the production beacon is `text/plain` (so sendBeacon
       // delivers cross-origin — see parseBeaconBody), which a `t.Object` JSON
       // schema would 422. parseBeaconBody accepts text/plain OR json and bounds.
-      const { fbc, fbp, event_id, marketing_consent } = parseBeaconBody(
+      const { fbc, fbp, event_id, marketing_consent, store } = parseBeaconBody(
         ctx.body,
       );
       // Best-effort conversion emit (spec-30 R3.8). Public + anonymous, no email
@@ -513,6 +519,7 @@ export const leadsRoutes = new Elysia()
           fbp,
           eventId: event_id,
           marketingConsent: marketing_consent,
+          store,
         }),
       );
       return { ok: true as const };
@@ -520,7 +527,7 @@ export const leadsRoutes = new Elysia()
     {
       detail: {
         description:
-          "Public — record an outbound App Store click conversion (spec-30 R3.8).",
+          "Public — record an outbound app-store click conversion (spec-30 R3.8).",
         tags: ["Leads"],
       },
     },
