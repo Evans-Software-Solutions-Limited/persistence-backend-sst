@@ -9,6 +9,7 @@ import { renderWithTheme } from "../../../../__tests__/test-utils";
 import {
   DateCalendarModal,
   DatePickerField,
+  nativeDatePickerWidth,
   nativeDateSheetHeightPercent,
 } from "../DatePickerField";
 
@@ -103,6 +104,11 @@ describe("DatePickerField", () => {
   it("uses a taller native drawer where a small iPhone needs it", () => {
     expect(nativeDateSheetHeightPercent(667)).toBe(69);
     expect(nativeDateSheetHeightPercent(956)).toBe(52);
+  });
+
+  it("gives the native spinner the drawer's full padded width", () => {
+    expect(nativeDatePickerWidth(440)).toBe(400);
+    expect(nativeDatePickerWidth(375)).toBe(335);
   });
 });
 

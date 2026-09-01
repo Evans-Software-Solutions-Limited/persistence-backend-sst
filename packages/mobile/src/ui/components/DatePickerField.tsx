@@ -492,6 +492,11 @@ export function nativeDateSheetHeightPercent(windowHeight: number): number {
   return Math.min(88, Math.max(52, Math.ceil((460 / windowHeight) * 100)));
 }
 
+/** Percentage widths fall back to UIDatePicker's 320pt intrinsic width. */
+export function nativeDatePickerWidth(windowWidth: number): number {
+  return Math.max(0, windowWidth - 40);
+}
+
 function NativeDateSheet({
   visible,
   value,
@@ -504,7 +509,7 @@ function NativeDateSheet({
   locale,
   testID,
 }: NativeDateSheetProps) {
-  const windowHeight = useWindowDimensions().height;
+  const { height: windowHeight, width: windowWidth } = useWindowDimensions();
   const fallback =
     maximumDate && validIsoDay(maximumDate) ? maximumDate : todayIso();
   const selected = nativeDate(value, fallback);
@@ -592,7 +597,10 @@ function NativeDateSheet({
               locale={locale}
               themeVariant="dark"
               accentColor={toneHex("primary").base}
-              style={{ width: "100%" }}
+              style={{
+                width: nativeDatePickerWidth(windowWidth),
+                alignSelf: "center",
+              }}
               onChange={(event, nextDate) => {
                 if (event.type === "set" && nextDate) setDraft(nextDate);
               }}
