@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { Modal, Pressable } from "react-native";
+import { Modal, Platform, Pressable } from "react-native";
+import DateTimePicker, {
+  DateTimePickerAndroid,
+  type DateTimePickerEvent,
+} from "@react-native-community/datetimepicker";
 import { Text, View } from "@tamagui/core";
 
 import {
@@ -78,6 +82,17 @@ function formatDisplayDate(value: string, locale?: string): string {
     year: "numeric",
     timeZone: "UTC",
   });
+}
+
+function nativeDate(value: string, fallback: string): Date {
+  const day = validIsoDay(value) ? value : fallback;
+  const [year, month, date] = day.split("-").map(Number);
+  // Noon avoids a daylight-saving boundary changing the selected calendar day.
+  return new Date(year, month - 1, date, 12);
+}
+
+function nativeDateToIso(value: Date): string {
+  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
 }
 
 export type DateCalendarModalProps = {
@@ -486,10 +501,91 @@ export function DatePickerField({
 }: DatePickerFieldProps) {
   const [open, setOpen] = useState(false);
   const display = formatDisplayDate(value, locale);
+  const fallback =
+    maximumDate && validIsoDay(maximumDate) ? maximumDate : todayIso();
+  const selected = nativeDate(value, fallback);
+  const minimum =
+    minimumDate && validIsoDay(minimumDate)
+      ? nativeDate(minimumDate, fallback)
+      : undefined;
+  const maximum =
+    maximumDate && validIsoDay(maximumDate)
+      ? nativeDate(maximumDate, fallback)
+      : undefined;
+
+  const handleNativeChange = (event: DateTimePickerEvent, nextDate?: Date) => {
+    if (event.type === "set" && nextDate) onChange(nativeDateToIso(nextDate));
+  };
+
+  const openAndroidPicker = () => {
+    DateTimePickerAndroid.open({
+      value: selected,
+      mode: "date",
+      display: "default",
+      minimumDate: minimum,
+      maximumDate: maximum,
+      onChange: handleNativeChange,
+    });
+  };
+
+  if (Platform.OS === "ios") {
+    return (
+      <>
+        <View
+          minHeight={48}
+          paddingHorizontal={10}
+          borderRadius={12}
+          borderWidth={1}
+          borderColor="$border"
+          backgroundColor="$surface2"
+          justifyContent="center"
+          opacity={disabled ? 0.5 : 1}
+          accessibilityLabel={`${label}, ${value ? `selected ${display}` : "not selected"}`}
+          accessibilityState={{ disabled }}
+          testID={testID}
+        >
+          <DateTimePicker
+            value={selected}
+            mode="date"
+            display="compact"
+            minimumDate={minimum}
+            maximumDate={maximum}
+            disabled={disabled}
+            locale={locale}
+            themeVariant="dark"
+            accentColor={toneHex("primary").base}
+            onChange={handleNativeChange}
+            testID={`${testID}-native`}
+          />
+        </View>
+        {allowClear && value ? (
+          <Pressable
+            onPress={() => onChange("")}
+            disabled={disabled}
+            accessibilityRole="button"
+            accessibilityLabel={`Clear ${label.toLowerCase()}`}
+            testID={`${testID}-clear`}
+          >
+            <Text color="$primary" fontSize={12} marginTop={6}>
+              Clear date
+            </Text>
+          </Pressable>
+        ) : null}
+        {helperText ? (
+          <Text fontFamily="$body" fontSize={11} color="$text3" marginTop={4}>
+            {helperText}
+          </Text>
+        ) : null}
+      </>
+    );
+  }
+
   return (
     <>
       <Pressable
-        onPress={() => setOpen(true)}
+        onPress={() =>
+          Platform.OS === "android" ? openAndroidPicker() : setOpen(true)
+        }
         disabled={disabled}
         accessibilityRole="button"
         accessibilityLabel={`${label}, ${value ? `selected ${display}` : "not selected"}`}
@@ -521,26 +617,41 @@ export function DatePickerField({
           <IconCalendar size={18} color={NEUTRAL_HEX.text3} />
         </View>
       </Pressable>
+      {Platform.OS === "android" && allowClear && value ? (
+        <Pressable
+          onPress={() => onChange("")}
+          disabled={disabled}
+          accessibilityRole="button"
+          accessibilityLabel={`Clear ${label.toLowerCase()}`}
+          testID={`${testID}-clear`}
+        >
+          <Text color="$primary" fontSize={12} marginTop={6}>
+            Clear date
+          </Text>
+        </Pressable>
+      ) : null}
       {helperText ? (
         <Text fontFamily="$body" fontSize={11} color="$text3" marginTop={4}>
           {helperText}
         </Text>
       ) : null}
-      <DateCalendarModal
-        visible={open}
-        selectedDate={value}
-        minimumDate={minimumDate}
-        maximumDate={maximumDate}
-        allowClear={allowClear && value.length > 0}
-        onClear={() => onChange("")}
-        onSelectDate={(iso) => {
-          onChange(iso);
-          setOpen(false);
-        }}
-        onClose={() => setOpen(false)}
-        label={label}
-        testID={`${testID}-calendar`}
-      />
+      {Platform.OS === "web" ? (
+        <DateCalendarModal
+          visible={open}
+          selectedDate={value}
+          minimumDate={minimumDate}
+          maximumDate={maximumDate}
+          allowClear={allowClear && value.length > 0}
+          onClear={() => onChange("")}
+          onSelectDate={(iso) => {
+            onChange(iso);
+            setOpen(false);
+          }}
+          onClose={() => setOpen(false)}
+          label={label}
+          testID={`${testID}-calendar`}
+        />
+      ) : null}
     </>
   );
 }

@@ -130,7 +130,7 @@ describe("HabitsGridPresenter", () => {
         onManageHabits={onManageHabits}
       />,
     );
-    fireEvent.press(getByTestId("habits-grid-empty"));
+    fireEvent.press(getByTestId("habits-grid-pressable"));
     expect(onManageHabits).toHaveBeenCalled();
   });
 
@@ -150,7 +150,7 @@ describe("HabitsGridPresenter", () => {
         onManageHabits={onManageHabits}
       />,
     );
-    fireEvent.press(getByTestId("habits-grid-manage"));
+    fireEvent.press(getByTestId("habits-grid-pressable"));
     expect(onManageHabits).toHaveBeenCalled();
   });
 

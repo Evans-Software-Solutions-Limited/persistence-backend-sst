@@ -1,9 +1,24 @@
 import { fireEvent } from "@testing-library/react-native";
+import { Platform } from "react-native";
+import {
+  DateTimePickerAndroid,
+  type DateTimePickerEvent,
+} from "@react-native-community/datetimepicker";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 
 import { DateCalendarModal, DatePickerField } from "../DatePickerField";
 
 describe("DatePickerField", () => {
+  const originalPlatform = Platform.OS;
+
+  afterEach(() => {
+    Object.defineProperty(Platform, "OS", {
+      configurable: true,
+      value: originalPlatform,
+    });
+    jest.restoreAllMocks();
+  });
+
   it("persists the selected date as an ISO calendar day", () => {
     const onChange = jest.fn();
     const screen = renderWithTheme(
@@ -15,10 +30,9 @@ describe("DatePickerField", () => {
       />,
     );
 
-    fireEvent.press(screen.getByTestId("date-picker-field"));
-    fireEvent.press(
-      screen.getByTestId("date-picker-field-calendar-day-1994-03-08"),
-    );
+    fireEvent(screen.getByTestId("date-picker-field-native"), "change", {
+      nativeEvent: { timestamp: new Date(1994, 2, 8, 12).getTime() },
+    });
 
     expect(onChange).toHaveBeenCalledWith("1994-03-08");
   });
@@ -33,9 +47,48 @@ describe("DatePickerField", () => {
       />,
     );
 
-    fireEvent.press(screen.getByTestId("date-picker-field"));
-    fireEvent.press(screen.getByTestId("date-picker-field-calendar-clear"));
+    fireEvent.press(screen.getByTestId("date-picker-field-clear"));
     expect(onChange).toHaveBeenCalledWith("");
+  });
+
+  it("opens Android's native picker with bounds and ignores dismissals", () => {
+    Object.defineProperty(Platform, "OS", {
+      configurable: true,
+      value: "android",
+    });
+    const open = jest
+      .spyOn(DateTimePickerAndroid, "open")
+      .mockImplementation(() => undefined);
+    const onChange = jest.fn();
+    const screen = renderWithTheme(
+      <DatePickerField
+        label="Date of birth"
+        value="1994-03-12"
+        minimumDate="1900-01-01"
+        maximumDate="2026-09-01"
+        onChange={onChange}
+      />,
+    );
+
+    fireEvent.press(screen.getByTestId("date-picker-field"));
+
+    expect(open).toHaveBeenCalledTimes(1);
+    const options = open.mock.calls[0]?.[0];
+    expect(options?.display).toBe("default");
+    expect(options?.minimumDate).toEqual(new Date(1900, 0, 1, 12));
+    expect(options?.maximumDate).toEqual(new Date(2026, 8, 1, 12));
+
+    options?.onChange?.(
+      { type: "dismissed" } as DateTimePickerEvent,
+      new Date(1994, 2, 8, 12),
+    );
+    expect(onChange).not.toHaveBeenCalled();
+
+    options?.onChange?.(
+      { type: "set" } as DateTimePickerEvent,
+      new Date(1994, 2, 8, 12),
+    );
+    expect(onChange).toHaveBeenCalledWith("1994-03-08");
   });
 });
 

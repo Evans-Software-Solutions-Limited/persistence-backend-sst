@@ -85,8 +85,9 @@ describe("EditProfilePresenter", () => {
     expect(getByTestId("edit-profile-dob").props.accessibilityLabel).toContain(
       "January 15, 1990",
     );
-    fireEvent.press(getByTestId("edit-profile-dob"));
-    fireEvent.press(getByTestId("edit-profile-dob-calendar-day-1990-01-10"));
+    fireEvent(getByTestId("edit-profile-dob-native"), "change", {
+      nativeEvent: { timestamp: new Date(1990, 0, 10, 12).getTime() },
+    });
     expect(onDateOfBirthChange).toHaveBeenCalledWith("1990-01-10");
   });
 
