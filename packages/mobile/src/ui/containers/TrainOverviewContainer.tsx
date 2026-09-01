@@ -35,8 +35,9 @@ export function TrainOverviewContainer() {
   const assignment = experiencePolish
     ? (activeRelationship?.assignment ?? null)
     : null;
-  const resolvedActiveProgramme =
-    assignment?.activeProgramme ?? activeProgramme;
+  const resolvedActiveProgramme = assignment
+    ? assignment.activeProgramme
+    : activeProgramme;
   const refreshRelationships = relationships.refresh;
   const enabledHabits = useMemo(
     () => (assignment?.habits ?? habitConfig.configs).filter((c) => c.enabled),

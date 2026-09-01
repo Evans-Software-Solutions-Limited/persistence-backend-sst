@@ -158,6 +158,40 @@ describe("<TrainOverviewContainer>", () => {
     expect(mockPush).toHaveBeenCalledWith("/(app)/programs/view/p-1");
   });
 
+  it("does not fall back to another coach's programme when the relationship assignment explicitly has none", async () => {
+    process.env.EXPO_PUBLIC_EXPERIENCE_POLISH_V1_ENABLED = "true";
+    const { adapters, storage } = makeAdapters();
+    storage.cacheHome(USER, homePayload());
+    (adapters.api as InMemoryApiAdapter).clientRelationships = [
+      {
+        relationshipId: "rel-1",
+        trainerId: "coach-a",
+        trainerName: "Coach A",
+        trainerRole: "personal_trainer",
+        trainerAvatarUrl: null,
+        status: "active",
+        relationshipReason: null,
+        since: "2026-06-01T00:00:00.000Z",
+        initiatedBy: "trainer",
+        assignment: {
+          activeProgramme: null,
+          upcomingWorkouts: [],
+          habits: [],
+          nutritionTarget: null,
+          activeGoal: null,
+          visibleBriefs: [],
+        },
+      },
+    ];
+
+    renderContainer(adapters);
+
+    await waitFor(() => expect(props().coaching?.assignmentLoaded).toBe(true));
+    expect(props().activeProgramme).toBeNull();
+    props().onOpenProgramme?.();
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
   it("onRefresh refetches the home payload from the network", async () => {
     const { adapters, storage } = makeAdapters();
     storage.cacheHome(USER, homePayload());
