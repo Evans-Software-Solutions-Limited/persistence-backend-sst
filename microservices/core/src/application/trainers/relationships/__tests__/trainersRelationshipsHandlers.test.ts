@@ -7,9 +7,16 @@ vi.mock("@persistence/db/client", () => ({
 
 import { getDb } from "@persistence/db/client";
 
-const coachingGet = vi.hoisted(() => vi.fn(async () => ({ marker: "shared" })));
+const coachingGetMany = vi.hoisted(() =>
+  vi.fn(
+    async (trainerIds: string[]) =>
+      new Map(trainerIds.map((trainerId) => [trainerId, { marker: "shared" }])),
+  ),
+);
 vi.mock("../../../repositories/coachingAggregateRepository", () => ({
-  CoachingAggregateRepository: vi.fn(() => ({ get: coachingGet })),
+  CoachingAggregateRepository: vi.fn(function () {
+    return { getMany: coachingGetMany };
+  }),
 }));
 
 vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
@@ -343,7 +350,7 @@ describe("trainersClientRelationshipsListHandler", () => {
     expect(body.data[0].initiatedBy).toBe("client");
     expect(body.data[0].since).toBe("2026-06-01T00:00:00.000Z");
     expect(body.data[0].assignment).toBeNull();
-    expect(coachingGet).not.toHaveBeenCalled();
+    expect(coachingGetMany).toHaveBeenCalledWith([], "client-id");
   });
 
   it("passes through rows for an explicit status filter", async () => {
@@ -373,7 +380,48 @@ describe("trainersClientRelationshipsListHandler", () => {
     expect(body.data).toHaveLength(1);
     expect(body.data[0].status).toBe("active");
     expect(body.data[0].assignment).toEqual({ marker: "shared" });
-    expect(coachingGet).toHaveBeenCalledWith("trainer-1", "client-id");
+    expect(coachingGetMany).toHaveBeenCalledWith(["trainer-1"], "client-id");
+  });
+
+  it("batches assignment loading for multiple active specialists", async () => {
+    (getDb as any).mockReturnValue(
+      executor([
+        [
+          {
+            relationshipId: "rel-1",
+            trainerId: "trainer-1",
+            status: "active",
+            trainerName: "Coach Carter",
+            trainerRole: "personal_trainer",
+          },
+          {
+            relationshipId: "rel-2",
+            trainerId: "trainer-2",
+            status: "active",
+            trainerName: "Pat Physio",
+            trainerRole: "physiotherapist",
+          },
+        ],
+      ]),
+    );
+    const { trainersClientRelationshipsListHandler } =
+      await import("../trainersClientRelationshipsListHandler");
+
+    const res = await trainersClientRelationshipsListHandler.handle(
+      get("?status=active"),
+    );
+
+    expect(res.status).toBe(200);
+    expect(coachingGetMany).toHaveBeenCalledTimes(1);
+    expect(coachingGetMany).toHaveBeenCalledWith(
+      ["trainer-1", "trainer-2"],
+      "client-id",
+    );
+    const body = (await res.json()) as any;
+    expect(body.data.map((row: any) => row.assignment)).toEqual([
+      { marker: "shared" },
+      { marker: "shared" },
+    ]);
   });
 
   it("returns an empty contract for no relationship", async () => {
@@ -382,7 +430,7 @@ describe("trainersClientRelationshipsListHandler", () => {
       await import("../trainersClientRelationshipsListHandler");
     const res = await trainersClientRelationshipsListHandler.handle(get());
     expect((await res.json()) as any).toEqual({ data: [] });
-    expect(coachingGet).not.toHaveBeenCalled();
+    expect(coachingGetMany).toHaveBeenCalledWith([], "client-id");
   });
 
   it("Cluster 2a: filters on profiles.deleted_at IS NULL — a soft-deleted trainer disappears from the client's own relationship list immediately", async () => {

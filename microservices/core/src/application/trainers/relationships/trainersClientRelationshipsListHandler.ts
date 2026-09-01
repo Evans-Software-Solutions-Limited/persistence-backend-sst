@@ -74,25 +74,28 @@ export const trainersClientRelationshipsListHandler = new Elysia()
         : rows.filter((r) => r.status === "pending" || r.status === "active");
 
       const aggregateRepository = new CoachingAggregateRepository();
-      const data = await Promise.all(
-        visible.map(async (r) => ({
-          relationshipId: r.relationshipId,
-          trainerId: r.trainerId,
-          trainerName: r.trainerName ?? "Your trainer",
-          trainerRole: r.trainerRole ?? null,
-          trainerAvatarUrl: r.trainerAvatarUrl ?? null,
-          status: r.status,
-          // 'trainer' = the client accepts this pending (email invite);
-          // 'client' = the client redeemed a code, awaiting the coach's accept.
-          initiatedBy: r.initiatedBy === "client" ? "client" : "trainer",
-          relationshipReason: r.relationshipReason ?? null,
-          since: r.createdAt ? new Date(r.createdAt).toISOString() : null,
-          assignment:
-            r.status === "active"
-              ? await aggregateRepository.get(r.trainerId, userId)
-              : null,
-        })),
+      const activeTrainerIds = visible
+        .filter((relationship) => relationship.status === "active")
+        .map((relationship) => relationship.trainerId);
+      const assignments = await aggregateRepository.getMany(
+        activeTrainerIds,
+        userId,
       );
+      const data = visible.map((r) => ({
+        relationshipId: r.relationshipId,
+        trainerId: r.trainerId,
+        trainerName: r.trainerName ?? "Your trainer",
+        trainerRole: r.trainerRole ?? null,
+        trainerAvatarUrl: r.trainerAvatarUrl ?? null,
+        status: r.status,
+        // 'trainer' = the client accepts this pending (email invite);
+        // 'client' = the client redeemed a code, awaiting the coach's accept.
+        initiatedBy: r.initiatedBy === "client" ? "client" : "trainer",
+        relationshipReason: r.relationshipReason ?? null,
+        since: r.createdAt ? new Date(r.createdAt).toISOString() : null,
+        assignment:
+          r.status === "active" ? (assignments.get(r.trainerId) ?? null) : null,
+      }));
       return {
         data,
       };

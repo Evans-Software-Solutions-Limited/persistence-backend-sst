@@ -6,8 +6,8 @@ vi.mock("@persistence/db/client", () => ({ getDb: vi.fn() }));
 import { getDb } from "@persistence/db/client";
 
 const programmes = {
-  getActiveProgrammeForRelationship: vi.fn(),
-  listOpenAssignmentsForClient: vi.fn(),
+  getActiveProgrammesForRelationships: vi.fn(),
+  listOpenAssignmentsForRelationships: vi.fn(),
 };
 const nutrition = { get: vi.fn() };
 const habits = { listForUser: vi.fn() };
@@ -35,18 +35,21 @@ vi.mock("../goalRepository", () => ({
 
 import { CoachingAggregateRepository } from "../coachingAggregateRepository";
 
-function aggregateDb(queue: unknown[][], whereValues: unknown[] = []) {
-  let index = 0;
+function aggregateDb(queue: unknown[][]) {
+  const [selectRows = [], executeRows = []] = queue;
   return {
     select: vi.fn(() => {
       const chain: any = {};
       for (const key of ["from", "orderBy"]) chain[key] = vi.fn(() => chain);
-      chain.where = vi.fn((value) => {
-        whereValues.push(value);
-        return chain;
-      });
-      chain.limit = vi.fn(async () => queue[index++] ?? []);
+      chain.where = vi.fn(() => chain);
+      chain.limit = vi.fn(async () => selectRows);
+      chain.then = (resolve: (value: unknown[]) => unknown) =>
+        resolve(selectRows);
       return chain;
+    }),
+    execute: vi.fn(async (query: unknown) => {
+      void query;
+      return executeRows;
     }),
   };
 }
@@ -54,12 +57,19 @@ function aggregateDb(queue: unknown[][], whereValues: unknown[] = []) {
 describe("CoachingAggregateRepository", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    programmes.getActiveProgrammeForRelationship.mockResolvedValue(null);
-    programmes.listOpenAssignmentsForClient.mockResolvedValue([]);
+    programmes.getActiveProgrammesForRelationships.mockResolvedValue(new Map());
+    programmes.listOpenAssignmentsForRelationships.mockResolvedValue(new Map());
     nutrition.get.mockResolvedValue(null);
     habits.listForUser.mockResolvedValue([]);
     goals.list.mockResolvedValue([]);
     (getDb as any).mockReturnValue(aggregateDb([[], [], []]));
+  });
+
+  it("does not issue client-wide reads when there are no active relationships", async () => {
+    const out = await new CoachingAggregateRepository().getMany([], "client-a");
+    expect(out).toEqual(new Map());
+    expect(getDb).not.toHaveBeenCalled();
+    expect(habits.listForUser).not.toHaveBeenCalled();
   });
 
   it("returns purposeful empty modules for an active relationship with no setup", async () => {
@@ -78,19 +88,27 @@ describe("CoachingAggregateRepository", () => {
   });
 
   it("shares public assignment data and never exposes private notes", async () => {
-    programmes.getActiveProgrammeForRelationship.mockResolvedValue({
-      programId: "program-a",
-      assignedByName: "Coach A",
-    });
-    programmes.listOpenAssignmentsForClient.mockResolvedValue([
-      {
-        assignmentId: "assignment-a",
-        workoutId: "workout-a",
-        name: "Upper",
-        estimatedDurationMinutes: 45,
-        dueDate: "2026-09-02",
-      },
-    ]);
+    programmes.getActiveProgrammesForRelationships.mockResolvedValue(
+      new Map([
+        ["trainer-a", { programId: "program-a", assignedByName: "Coach A" }],
+      ]),
+    );
+    programmes.listOpenAssignmentsForRelationships.mockResolvedValue(
+      new Map([
+        [
+          "trainer-a",
+          [
+            {
+              assignmentId: "assignment-a",
+              workoutId: "workout-a",
+              name: "Upper",
+              estimatedDurationMinutes: 45,
+              dueDate: "2026-09-02",
+            },
+          ],
+        ],
+      ]),
+    );
     habits.listForUser.mockResolvedValue([
       {
         goalId: "enabled",
@@ -127,10 +145,11 @@ describe("CoachingAggregateRepository", () => {
     ]);
     (getDb as any).mockReturnValue(
       aggregateDb([
-        [{ role: "personal_trainer", name: "Coach A" }],
+        [{ id: "trainer-a", role: "personal_trainer", name: "Coach A" }],
         [
           {
             id: "brief-a",
+            trainerId: "trainer-a",
             title: "Brief",
             message: "Visible guidance",
             createdAt: new Date("2026-09-01T09:00:00Z"),
@@ -173,15 +192,22 @@ describe("CoachingAggregateRepository", () => {
   });
 
   it("maps physio attribution, pending habit edits, and nullable brief content", async () => {
-    programmes.listOpenAssignmentsForClient.mockResolvedValue([
-      {
-        assignmentId: "assignment-b",
-        workoutId: "workout-b",
-        name: null,
-        estimatedDurationMinutes: null,
-        dueDate: null,
-      },
-    ]);
+    programmes.listOpenAssignmentsForRelationships.mockResolvedValue(
+      new Map([
+        [
+          "trainer-b",
+          [
+            {
+              assignmentId: "assignment-b",
+              workoutId: "workout-b",
+              name: null,
+              estimatedDurationMinutes: null,
+              dueDate: null,
+            },
+          ],
+        ],
+      ]),
+    );
     habits.listForUser.mockResolvedValue([
       {
         goalId: "habit-b",
@@ -195,15 +221,25 @@ describe("CoachingAggregateRepository", () => {
         completionRule: "value_gte",
         daysPerWeek: 7,
         tolerancePct: null,
-        pending: { from: "2026-09-07", config: { targetValue: 3 } },
+        pending: {
+          from: "2026-09-07",
+          config: { targetValue: 3, from: "untrusted-json-value" },
+        },
       },
     ]);
     (getDb as any).mockReturnValue(
       aggregateDb([
-        [{ role: "physiotherapist", name: "Pat Physio" }],
+        [
+          {
+            id: "trainer-b",
+            role: "physiotherapist",
+            name: "Pat Physio",
+          },
+        ],
         [
           {
             id: "brief-b",
+            trainerId: "trainer-b",
             title: "Check-in",
             message: null,
             createdAt: "2026-09-01T09:00:00.000Z",
@@ -230,6 +266,73 @@ describe("CoachingAggregateRepository", () => {
       content: "",
       createdAt: "2026-09-01T09:00:00.000Z",
     });
+  });
+
+  it("batches two active coaching relationships without repeating client-wide reads", async () => {
+    programmes.getActiveProgrammesForRelationships.mockResolvedValue(
+      new Map([
+        ["trainer-a", { programId: "program-a" }],
+        ["trainer-b", { programId: "program-b" }],
+      ]),
+    );
+    programmes.listOpenAssignmentsForRelationships.mockResolvedValue(new Map());
+    habits.listForUser.mockResolvedValue([
+      {
+        goalId: "habit-a",
+        enabled: true,
+        assignedByUserId: "trainer-a",
+        pending: null,
+      },
+      {
+        goalId: "habit-b",
+        enabled: true,
+        assignedByUserId: "trainer-b",
+        pending: null,
+      },
+    ]);
+    const db = aggregateDb([
+      [
+        { id: "trainer-a", role: "personal_trainer", name: "Coach A" },
+        { id: "trainer-b", role: "physiotherapist", name: "Coach B" },
+      ],
+      [
+        {
+          id: "brief-a",
+          trainerId: "trainer-a",
+          title: "A",
+          message: "A",
+          createdAt: "2026-09-02T00:00:00Z",
+        },
+        {
+          id: "brief-b",
+          trainerId: "trainer-b",
+          title: "B",
+          message: "B",
+          createdAt: "2026-09-01T00:00:00Z",
+        },
+      ],
+    ]);
+    (getDb as any).mockReturnValue(db);
+
+    const out = await new CoachingAggregateRepository().getMany(
+      ["trainer-a", "trainer-b"],
+      "client-a",
+    );
+
+    expect(programmes.getActiveProgrammesForRelationships).toHaveBeenCalledWith(
+      ["trainer-a", "trainer-b"],
+      "client-a",
+      expect.any(String),
+    );
+    expect(habits.listForUser).toHaveBeenCalledTimes(1);
+    expect(nutrition.get).toHaveBeenCalledTimes(1);
+    expect(goals.list).toHaveBeenCalledTimes(1);
+    expect(db.select).toHaveBeenCalledTimes(1);
+    expect(db.execute).toHaveBeenCalledTimes(1);
+    expect(out.get("trainer-a")?.habits).toHaveLength(1);
+    expect(out.get("trainer-a")?.visibleBriefs[0]?.id).toBe("brief-a");
+    expect(out.get("trainer-b")?.habits).toHaveLength(1);
+    expect(out.get("trainer-b")?.visibleBriefs[0]?.id).toBe("brief-b");
   });
 
   it("excludes self-authored and other-coach setup from this relationship", async () => {
@@ -273,13 +376,11 @@ describe("CoachingAggregateRepository", () => {
   });
 
   it("fails closed for unattributed legacy briefs", async () => {
-    const predicates: unknown[] = [];
-    (getDb as any).mockReturnValue(
-      aggregateDb(
-        [[{ role: "personal_trainer", name: "Coach A" }], []],
-        predicates,
-      ),
-    );
+    const db = aggregateDb([
+      [{ id: "trainer-a", role: "personal_trainer", name: "Coach A" }],
+      [],
+    ]);
+    (getDb as any).mockReturnValue(db);
 
     const out = await new CoachingAggregateRepository().get(
       "trainer-a",
@@ -287,8 +388,12 @@ describe("CoachingAggregateRepository", () => {
     );
 
     expect(out.visibleBriefs).toEqual([]);
-    const briefPredicate = new PgDialect().sqlToQuery(predicates[1] as never);
+    const briefPredicate = new PgDialect().sqlToQuery(
+      db.execute.mock.calls[0][0] as never,
+    );
     expect(briefPredicate.sql).toContain("trainerId");
+    expect(briefPredicate.sql).toContain("row_number() OVER");
+    expect(briefPredicate.sql).toContain("relationship_rank <= 20");
     expect(briefPredicate.sql).not.toContain("is null");
   });
 });

@@ -391,46 +391,70 @@ export class ProgramAssignmentRepository {
     clientId: string,
     today: string,
   ): Promise<ActiveProgrammeSummary | null> {
+    const summaries = await this.getActiveProgrammesForRelationships(
+      [trainerId],
+      clientId,
+      today,
+    );
+    return summaries.get(trainerId) ?? null;
+  }
+
+  /** Batch form used by athlete relationship lists to avoid one query/coach. */
+  async getActiveProgrammesForRelationships(
+    trainerIds: string[],
+    clientId: string,
+    today: string,
+  ): Promise<Map<string, ActiveProgrammeSummary>> {
+    const uniqueTrainerIds = [...new Set(trainerIds)];
+    if (uniqueTrainerIds.length === 0) return new Map();
     const db = getDb();
-    const rows = await db
-      .select({
-        assignmentId: programAssignments.id,
-        programId: programAssignments.programId,
-        name: workoutPrograms.name,
-        durationWeeks: workoutPrograms.durationWeeks,
-        startDate: programAssignments.startDate,
-        endDate: programAssignments.endDate,
-        assignedByName: profiles.fullName,
-      })
-      .from(programAssignments)
-      .innerJoin(
-        workoutPrograms,
-        eq(workoutPrograms.id, programAssignments.programId),
-      )
-      .leftJoin(profiles, eq(profiles.id, programAssignments.assignedBy))
-      .where(
-        and(
-          eq(programAssignments.assignedBy, trainerId),
-          eq(programAssignments.clientId, clientId),
-          inArray(programAssignments.status, [...LIVE_ASSIGNMENT_STATUSES]),
-          eq(programAssignments.showInPlan, true),
-        ),
-      )
-      .orderBy(sql`${programAssignments.startDate} desc`)
-      .limit(1);
-    const row = rows[0];
-    return row
-      ? {
-          assignmentId: row.assignmentId,
-          programId: row.programId,
-          name: row.name,
-          week: currentWeek(row.startDate, today, row.durationWeeks),
-          totalWeeks: row.durationWeeks,
-          endDate: row.endDate,
-          startDate: row.startDate,
-          assignedByName: row.assignedByName ?? null,
-        }
-      : null;
+    const rows = (await db.execute(sql`
+      SELECT DISTINCT ON (${programAssignments.assignedBy})
+        ${programAssignments.assignedBy} AS "assignedBy",
+        ${programAssignments.id} AS "assignmentId",
+        ${programAssignments.programId} AS "programId",
+        ${workoutPrograms.name} AS "name",
+        ${workoutPrograms.durationWeeks} AS "durationWeeks",
+        ${programAssignments.startDate} AS "startDate",
+        ${programAssignments.endDate} AS "endDate",
+        ${profiles.fullName} AS "assignedByName"
+      FROM ${programAssignments}
+      INNER JOIN ${workoutPrograms}
+        ON ${workoutPrograms.id} = ${programAssignments.programId}
+      LEFT JOIN ${profiles}
+        ON ${profiles.id} = ${programAssignments.assignedBy}
+      WHERE ${inArray(programAssignments.assignedBy, uniqueTrainerIds)}
+        AND ${programAssignments.clientId} = ${clientId}
+        AND ${inArray(programAssignments.status, [...LIVE_ASSIGNMENT_STATUSES])}
+        AND ${programAssignments.showInPlan} = true
+      ORDER BY ${programAssignments.assignedBy},
+               ${programAssignments.startDate} DESC,
+               ${programAssignments.id} DESC
+    `)) as unknown as Array<{
+      assignedBy: string;
+      assignmentId: string;
+      programId: string;
+      name: string;
+      durationWeeks: number | null;
+      startDate: string;
+      endDate: string | null;
+      assignedByName: string | null;
+    }>;
+
+    const summaries = new Map<string, ActiveProgrammeSummary>();
+    for (const row of rows) {
+      summaries.set(row.assignedBy, {
+        assignmentId: row.assignmentId,
+        programId: row.programId,
+        name: row.name,
+        week: currentWeek(row.startDate, today, row.durationWeeks),
+        totalWeeks: row.durationWeeks,
+        endDate: row.endDate,
+        startDate: row.startDate,
+        assignedByName: row.assignedByName ?? null,
+      });
+    }
+    return summaries;
   }
 
   /**
@@ -656,43 +680,95 @@ export class ProgramAssignmentRepository {
     limit = 20,
     tx?: DbOrTx,
   ): Promise<CoachClientAssignment[]> {
-    const db = tx ?? getDb();
-    const rows = await db
-      .select({
-        assignmentId: workoutAssignments.id,
-        workoutId: workouts.id,
-        name: workouts.name,
-        estimatedDurationMinutes: workouts.estimatedDurationMinutes,
-        dueDate: workoutAssignments.dueDate,
-        status: workoutAssignments.status,
-        programAssignmentId: workoutAssignments.programAssignmentId,
-        occurrenceIndex: workoutAssignments.occurrenceIndex,
-        swappedFromWorkoutId: workoutAssignments.swappedFromWorkoutId,
-      })
-      .from(workoutAssignments)
-      .innerJoin(workouts, eq(workoutAssignments.workoutId, workouts.id))
-      .where(
-        and(
-          eq(workoutAssignments.trainerId, trainerId),
-          eq(workoutAssignments.clientId, clientId),
-          eq(workoutAssignments.status, "assigned"),
-          eq(workoutAssignments.showInPlan, true),
-        ),
-      )
-      .orderBy(sql`${workoutAssignments.dueDate} asc nulls last`)
-      .limit(limit);
+    const assignments = await this.listOpenAssignmentsForRelationships(
+      [trainerId],
+      clientId,
+      limit,
+      tx,
+    );
+    return assignments.get(trainerId) ?? [];
+  }
 
-    return rows.map((r) => ({
-      assignmentId: r.assignmentId,
-      workoutId: r.workoutId,
-      name: r.name,
-      estimatedDurationMinutes: r.estimatedDurationMinutes,
-      dueDate: r.dueDate ?? null,
-      status: r.status ?? "assigned",
-      isProgrammeOccurrence: r.programAssignmentId !== null,
-      occurrenceIndex: r.occurrenceIndex ?? null,
-      isSwapped: r.swappedFromWorkoutId !== null,
-    }));
+  /** Batch form used by athlete relationship lists to avoid one query/coach. */
+  async listOpenAssignmentsForRelationships(
+    trainerIds: string[],
+    clientId: string,
+    limitPerTrainer = 20,
+    tx?: DbOrTx,
+  ): Promise<Map<string, CoachClientAssignment[]>> {
+    const uniqueTrainerIds = [...new Set(trainerIds)];
+    if (uniqueTrainerIds.length === 0) return new Map();
+    const db = tx ?? getDb();
+    const rows = (await db.execute(sql`
+      WITH ranked_assignments AS (
+        SELECT
+          ${workoutAssignments.trainerId} AS "trainerId",
+          ${workoutAssignments.id} AS "assignmentId",
+          ${workouts.id} AS "workoutId",
+          ${workouts.name} AS "name",
+          ${workouts.estimatedDurationMinutes} AS "estimatedDurationMinutes",
+          ${workoutAssignments.dueDate} AS "dueDate",
+          ${workoutAssignments.status} AS "status",
+          ${workoutAssignments.programAssignmentId} AS "programAssignmentId",
+          ${workoutAssignments.occurrenceIndex} AS "occurrenceIndex",
+          ${workoutAssignments.swappedFromWorkoutId} AS "swappedFromWorkoutId",
+          row_number() OVER (
+            PARTITION BY ${workoutAssignments.trainerId}
+            ORDER BY ${workoutAssignments.dueDate} ASC NULLS LAST,
+                     ${workoutAssignments.id} ASC
+          ) AS relationship_rank
+        FROM ${workoutAssignments}
+        INNER JOIN ${workouts}
+          ON ${workoutAssignments.workoutId} = ${workouts.id}
+        WHERE ${inArray(workoutAssignments.trainerId, uniqueTrainerIds)}
+          AND ${workoutAssignments.clientId} = ${clientId}
+          AND ${workoutAssignments.status} = 'assigned'
+          AND ${workoutAssignments.showInPlan} = true
+      )
+      SELECT
+        "trainerId",
+        "assignmentId",
+        "workoutId",
+        "name",
+        "estimatedDurationMinutes",
+        "dueDate",
+        "status",
+        "programAssignmentId",
+        "occurrenceIndex",
+        "swappedFromWorkoutId"
+      FROM ranked_assignments
+      WHERE relationship_rank <= ${limitPerTrainer}
+      ORDER BY "trainerId", relationship_rank
+    `)) as unknown as Array<{
+      trainerId: string;
+      assignmentId: string;
+      workoutId: string;
+      name: string | null;
+      estimatedDurationMinutes: number | null;
+      dueDate: string | null;
+      status: "assigned";
+      programAssignmentId: string | null;
+      occurrenceIndex: number | null;
+      swappedFromWorkoutId: string | null;
+    }>;
+
+    const assignments = new Map<string, CoachClientAssignment[]>();
+    for (const row of rows) {
+      const trainerAssignments = assignments.get(row.trainerId) ?? [];
+      trainerAssignments.push({
+        assignmentId: row.assignmentId,
+        workoutId: row.workoutId,
+        name: row.name,
+        estimatedDurationMinutes: row.estimatedDurationMinutes,
+        dueDate: row.dueDate ?? null,
+        status: row.status ?? "assigned",
+        isProgrammeOccurrence: row.programAssignmentId !== null,
+        occurrenceIndex: row.occurrenceIndex ?? null,
+        isSwapped: row.swappedFromWorkoutId !== null,
+      });
+      assignments.set(row.trainerId, trainerAssignments);
+    }
+    return assignments;
   }
 
   /**
