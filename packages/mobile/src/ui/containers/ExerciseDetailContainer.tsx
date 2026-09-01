@@ -5,7 +5,7 @@ import { Alert, Linking } from "react-native";
 import { ExerciseDetailPresenter } from "@/ui/presenters/ExerciseDetailPresenter";
 import { useAuth } from "@/ui/hooks/useAuth";
 import { useExercise } from "@/ui/hooks/useExercise";
-import { useEstimatedOneRepMax } from "@/ui/hooks/useEstimatedOneRepMax";
+import { useExercisePerformanceSummary } from "@/ui/hooks/useExercisePerformanceSummary";
 import { useProfilePage } from "@/ui/hooks/useProfilePage";
 import { isExperiencePolishEnabled } from "@/ui/state/experiencePolish";
 import { useAdapters } from "@/ui/hooks/useAdapters";
@@ -26,7 +26,7 @@ export function ExerciseDetailContainer() {
   const exerciseId = id ?? null;
   const { api } = useAdapters();
   const { exercise, isLoading, error, refresh } = useExercise(exerciseId);
-  const oneRepMax = useEstimatedOneRepMax(
+  const performance = useExercisePerformanceSummary(
     exerciseId,
     isExperiencePolishEnabled(),
   );
@@ -35,12 +35,13 @@ export function ExerciseDetailContainer() {
   const trackedEstimateRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!exerciseId || !oneRepMax.data) return;
-    const key = `${exerciseId}:${oneRepMax.data.estimateKg}`;
+    const oneRepMax = performance.data?.estimatedOneRepMax;
+    if (!exerciseId || !oneRepMax) return;
+    const key = `${exerciseId}:${oneRepMax.estimateKg}`;
     if (trackedEstimateRef.current === key) return;
     trackedEstimateRef.current = key;
     void api.trackAnalyticsEvent({ name: "estimated_1rm_banner_viewed" });
-  }, [api, exerciseId, oneRepMax.data]);
+  }, [api, exerciseId, performance.data?.estimatedOneRepMax]);
 
   const isOwner =
     exercise !== null &&
@@ -73,7 +74,7 @@ export function ExerciseDetailContainer() {
       onEdit={onEdit}
       onOpenVideo={onOpenVideo}
       onRetry={onRetry}
-      estimatedOneRepMax={oneRepMax.data}
+      performanceSummary={performance.data}
       weightUnit={profile.payload?.profile.weightUnit ?? "kg"}
     />
   );

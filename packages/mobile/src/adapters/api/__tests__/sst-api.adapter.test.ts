@@ -495,37 +495,65 @@ describe("SSTApiAdapter.searchExercises", () => {
   });
 });
 
-describe("SSTApiAdapter.getEstimatedOneRepMax", () => {
-  it("uses the exercise-scoped route and preserves the source-set contract", async () => {
+describe("SSTApiAdapter.getExercisePerformanceSummary", () => {
+  it("uses the exercise-scoped route and preserves the summary contract", async () => {
     const fetchMock = installFetchMock(
       async () =>
         new Response(
           JSON.stringify({
             data: {
-              estimateKg: 120,
-              source: {
-                weightKg: 100,
-                reps: 6,
-                completedAt: "2026-09-01T10:00:00Z",
+              estimatedOneRepMax: {
+                estimateKg: 120,
+                source: {
+                  weightKg: 100,
+                  reps: 6,
+                  completedAt: "2026-09-01T10:00:00Z",
+                },
               },
+              estimatedTenRepMax: null,
+              tenRepMax: null,
+              bestSetVolume: {
+                volumeKg: 600,
+                source: {
+                  weightKg: 100,
+                  reps: 6,
+                  completedAt: "2026-09-01T10:00:00Z",
+                },
+              },
+              lifetimeVolumeKg: 600,
             },
           }),
           { status: 200, headers: { "Content-Type": "application/json" } },
         ),
     );
 
-    const result = await new SSTApiAdapter().getEstimatedOneRepMax("bench-1");
+    const result = await new SSTApiAdapter().getExercisePerformanceSummary(
+      "bench-1",
+    );
     expect(String(fetchMock.mock.calls[0][0])).toContain(
-      "/exercises/bench-1/estimated-1rm",
+      "/exercises/bench-1/performance-summary",
     );
     expect(result).toEqual(
       ok({
-        estimateKg: 120,
-        source: {
-          weightKg: 100,
-          reps: 6,
-          completedAt: "2026-09-01T10:00:00Z",
+        estimatedOneRepMax: {
+          estimateKg: 120,
+          source: {
+            weightKg: 100,
+            reps: 6,
+            completedAt: "2026-09-01T10:00:00Z",
+          },
         },
+        estimatedTenRepMax: null,
+        tenRepMax: null,
+        bestSetVolume: {
+          volumeKg: 600,
+          source: {
+            weightKg: 100,
+            reps: 6,
+            completedAt: "2026-09-01T10:00:00Z",
+          },
+        },
+        lifetimeVolumeKg: 600,
       }),
     );
   });

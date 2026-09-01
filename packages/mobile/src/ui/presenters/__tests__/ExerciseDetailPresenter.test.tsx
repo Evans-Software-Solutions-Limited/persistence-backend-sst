@@ -98,9 +98,26 @@ describe("ExerciseDetailPresenter", () => {
 
   it("shows one compact estimated 1RM banner without formula copy", () => {
     const { getByTestId, getByText, queryByText } = setup({
-      estimatedOneRepMax: {
-        estimateKg: 144,
-        source: { weightKg: 120, reps: 6, completedAt: "2026-09-01T10:00:00Z" },
+      performanceSummary: {
+        estimatedOneRepMax: {
+          estimateKg: 144,
+          source: {
+            weightKg: 120,
+            reps: 6,
+            completedAt: "2026-09-01T10:00:00Z",
+          },
+        },
+        estimatedTenRepMax: null,
+        tenRepMax: null,
+        bestSetVolume: {
+          volumeKg: 720,
+          source: {
+            weightKg: 120,
+            reps: 6,
+            completedAt: "2026-09-01T10:00:00Z",
+          },
+        },
+        lifetimeVolumeKg: 720,
       },
     });
     expect(getByTestId("exercise-estimated-1rm")).toBeTruthy();
@@ -111,7 +128,7 @@ describe("ExerciseDetailPresenter", () => {
 
   it("leaves detail unchanged when there is no qualifying 1RM", () => {
     expect(
-      setup({ estimatedOneRepMax: null }).queryByTestId(
+      setup({ performanceSummary: null }).queryByTestId(
         "exercise-estimated-1rm",
       ),
     ).toBeNull();

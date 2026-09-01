@@ -782,13 +782,16 @@ export class InMemoryApiAdapter implements ApiPort {
     return this.mayFail(e);
   }
 
-  public estimatedOneRepMaxByExercise: Record<
+  public exercisePerformanceSummaryByExercise: Record<
     string,
-    import("@/domain/models/exercisePerformance").EstimatedOneRepMax | null
+    | import("@/domain/models/exercisePerformance").ExercisePerformanceSummary
+    | null
   > = {};
 
-  async getEstimatedOneRepMax(exerciseId: string) {
-    return this.mayFail(this.estimatedOneRepMaxByExercise[exerciseId] ?? null);
+  async getExercisePerformanceSummary(exerciseId: string) {
+    return this.mayFail(
+      this.exercisePerformanceSummaryByExercise[exerciseId] ?? null,
+    );
   }
 
   async createExercise(data: CreateExerciseInput) {

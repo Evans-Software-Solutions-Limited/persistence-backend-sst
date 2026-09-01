@@ -10,7 +10,7 @@ import {
   type ExerciseFilters,
   type MuscleGroup,
 } from "@/domain/models/exercise";
-import type { EstimatedOneRepMax } from "@/domain/models/exercisePerformance";
+import type { ExercisePerformanceSummary } from "@/domain/models/exercisePerformance";
 import type { ProfilePageData } from "@/domain/models/profilePage";
 import type {
   AnalyticsEventInput,
@@ -924,11 +924,11 @@ export class SSTApiAdapter implements ApiPort {
     return ok(this.enrichExerciseLabels(mapApiExerciseToDomain(result.value)));
   }
 
-  async getEstimatedOneRepMax(
+  async getExercisePerformanceSummary(
     exerciseId: string,
-  ): Promise<Result<EstimatedOneRepMax | null, ApiError>> {
-    return this.requestEnvelope<EstimatedOneRepMax | null>(
-      `/exercises/${exerciseId}/estimated-1rm`,
+  ): Promise<Result<ExercisePerformanceSummary | null, ApiError>> {
+    return this.requestEnvelope<ExercisePerformanceSummary | null>(
+      `/exercises/${exerciseId}/performance-summary`,
     );
   }
 

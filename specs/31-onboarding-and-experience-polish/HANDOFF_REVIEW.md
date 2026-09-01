@@ -36,6 +36,9 @@ Reviewed against `main` at `12dfda83` and the production mobile component tree.
 - Recommendation intent is persisted with onboarding progress for resume and
   analytics, but never grants entitlement.
 - 1RM uses an authorised user/exercise-scoped backend read over completed sets;
+  that read is the extensible performance-summary contract (actual 10RM,
+  best-set volume, lifetime volume, estimated 1RM and estimated 10RM), while
+  this release still renders only the compact Estimated 1RM banner;
   the client does not infer an all-time result from the recent-set hint cache.
 - The old combined body-history route redirects to Weight for compatibility.
 - Athlete-visible briefs and private coach notes remain separate API fields;

@@ -3842,7 +3842,8 @@ PR not yet raised. NO product code — script + dataset + verdict + spec updates
   edit and live workouts, and athlete-safe coaching assignments in the existing
   Train surface. Home and the tab structure remain unchanged.
 - Backend additions: user-scoped onboarding state, analytics allowlisting,
-  Estimated 1RM history query, and a purpose-built athlete coaching aggregate;
+  exercise performance-summary aggregation, and a purpose-built athlete
+  coaching aggregate;
   migration `20260901120000_onboarding_states.sql` enables RLS and keeps writes
   on the authenticated backend rail.
 - Both feature families are safe-off through
@@ -3859,3 +3860,9 @@ PR not yet raised. NO product code — script + dataset + verdict + spec updates
   same-day measurement merging, queued-measurement identity, relationship
   cache races, local-date DOB bounds, and cross-coach brief privacy. The final
   local Inspector Brad sweep returned `INSPECTOR_VERDICT: CLEAN`.
+- Replaced the narrow Estimated 1RM transport with the authenticated
+  `/exercises/:exerciseId/performance-summary` contract. One aggregate query
+  now returns actual 10RM, best single-set volume, lifetime exercise volume,
+  estimated 1RM and estimated 10RM with source provenance. Mobile caches the
+  whole user/exercise summary, while Spec 31 continues to render only its
+  compact Estimated 1RM banner so a future carousel remains additive.

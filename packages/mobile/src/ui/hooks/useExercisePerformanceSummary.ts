@@ -1,25 +1,26 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { EstimatedOneRepMax } from "@/domain/models/exercisePerformance";
+import type { ExercisePerformanceSummary } from "@/domain/models/exercisePerformance";
 import type { ApiError } from "@/shared/errors";
 import { useAdapters } from "./useAdapters";
 import { useAuth } from "./useAuth";
 
-/** Stable cache-key contract shared with future persistent storage/query clients. */
-export const estimatedOneRepMaxKey = (userId: string, exerciseId: string) =>
-  ["estimated-one-rep-max", userId, exerciseId] as const;
+/** Stable cache-key contract shared with future persistent/query clients. */
+export const exercisePerformanceSummaryKey = (
+  userId: string,
+  exerciseId: string,
+) => ["exercise-performance-summary", userId, exerciseId] as const;
 
-// Small process cache makes repeated detail opens cache-first and, critically,
-// scopes values by BOTH authenticated user and exercise. The port key above is
-// deliberately storage-agnostic so this can move to SQLite without changing UI.
-const cache = new Map<string, EstimatedOneRepMax | null>();
+// The summary changes with workout history and is private to both user and
+// exercise. Keep that full identity in the process cache and request guard.
+const cache = new Map<string, ExercisePerformanceSummary | null>();
 const cacheId = (userId: string, exerciseId: string) =>
   `${userId}:${exerciseId}`;
 
-export function useEstimatedOneRepMax(
+export function useExercisePerformanceSummary(
   exerciseId: string | null,
   enabled = true,
 ): {
-  data: EstimatedOneRepMax | null;
+  data: ExercisePerformanceSummary | null;
   isLoading: boolean;
   error: ApiError | null;
   refresh: () => Promise<void>;
@@ -31,7 +32,7 @@ export function useEstimatedOneRepMax(
     enabled && userId && exerciseId ? cacheId(userId, exerciseId) : null;
   const activeKeyRef = useRef(key);
   activeKeyRef.current = key;
-  const [data, setData] = useState<EstimatedOneRepMax | null>(() =>
+  const [data, setData] = useState<ExercisePerformanceSummary | null>(() =>
     key && cache.has(key) ? (cache.get(key) ?? null) : null,
   );
   const [isLoading, setIsLoading] = useState(key != null && !cache.has(key));
@@ -41,7 +42,7 @@ export function useEstimatedOneRepMax(
     if (!key || !exerciseId) return;
     const requestKey = key;
     setIsLoading(true);
-    const result = await api.getEstimatedOneRepMax(exerciseId);
+    const result = await api.getExercisePerformanceSummary(exerciseId);
     if (result.ok) {
       cache.set(requestKey, result.value);
       if (activeKeyRef.current !== requestKey) return;

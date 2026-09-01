@@ -225,13 +225,26 @@ describe("ExerciseDetailContainer", () => {
   it("tracks the 1RM banner once when a qualifying estimate is shown", async () => {
     process.env.EXPO_PUBLIC_EXPERIENCE_POLISH_V1_ENABLED = "true";
     const api = new InMemoryApiAdapter();
-    api.estimatedOneRepMaxByExercise["analytics-exercise"] = {
-      estimateKg: 120,
-      source: {
-        weightKg: 100,
-        reps: 6,
-        completedAt: "2026-08-30T10:00:00.000Z",
+    api.exercisePerformanceSummaryByExercise["analytics-exercise"] = {
+      estimatedOneRepMax: {
+        estimateKg: 120,
+        source: {
+          weightKg: 100,
+          reps: 6,
+          completedAt: "2026-08-30T10:00:00.000Z",
+        },
       },
+      estimatedTenRepMax: null,
+      tenRepMax: null,
+      bestSetVolume: {
+        volumeKg: 600,
+        source: {
+          weightKg: 100,
+          reps: 6,
+          completedAt: "2026-08-30T10:00:00.000Z",
+        },
+      },
+      lifetimeVolumeKg: 600,
     };
     mockUseLocalSearchParams.mockReturnValue({ id: "analytics-exercise" });
     const storage = new InMemoryStorageAdapter();

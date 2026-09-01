@@ -5,7 +5,10 @@ import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import type { Exercise, ExerciseDifficulty } from "@/domain/models/exercise";
-import type { EstimatedOneRepMax } from "@/domain/models/exercisePerformance";
+import type {
+  ExercisePerformanceSummary,
+  PerformanceEstimate,
+} from "@/domain/models/exercisePerformance";
 import {
   Btn,
   Card,
@@ -72,7 +75,7 @@ export type ExerciseDetailProps = {
   onEdit: () => void;
   onOpenVideo: () => void;
   onRetry: () => void;
-  estimatedOneRepMax?: EstimatedOneRepMax | null;
+  performanceSummary?: ExercisePerformanceSummary | null;
   weightUnit?: WeightUnit;
 };
 
@@ -85,7 +88,7 @@ export function ExerciseDetailPresenter({
   onEdit,
   onOpenVideo,
   onRetry,
-  estimatedOneRepMax = null,
+  performanceSummary = null,
   weightUnit = "kg",
 }: ExerciseDetailProps) {
   return (
@@ -199,9 +202,9 @@ export function ExerciseDetailPresenter({
             </Btn>
           ) : null}
 
-          {estimatedOneRepMax ? (
+          {performanceSummary?.estimatedOneRepMax ? (
             <EstimatedOneRepMaxBanner
-              value={estimatedOneRepMax}
+              value={performanceSummary.estimatedOneRepMax}
               weightUnit={weightUnit}
             />
           ) : null}
@@ -304,7 +307,7 @@ function EstimatedOneRepMaxBanner({
   value,
   weightUnit,
 }: {
-  value: EstimatedOneRepMax;
+  value: PerformanceEstimate;
   weightUnit: WeightUnit;
 }) {
   const estimate = weightInUnit(value.estimateKg, weightUnit);

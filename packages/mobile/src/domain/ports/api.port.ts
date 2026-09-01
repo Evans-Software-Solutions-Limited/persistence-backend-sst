@@ -4,7 +4,7 @@ import type {
   Exercise,
   ExerciseFilters,
 } from "@/domain/models/exercise";
-import type { EstimatedOneRepMax } from "@/domain/models/exercisePerformance";
+import type { ExercisePerformanceSummary } from "@/domain/models/exercisePerformance";
 import type {
   Notification,
   NotificationsPage,
@@ -396,10 +396,10 @@ export interface ApiPort {
     limit?: number,
   ): Promise<Result<PaginatedResult<Exercise>, ApiError>>;
   getExercise(id: string): Promise<Result<Exercise, ApiError>>;
-  /** Best qualifying completed set for this user/exercise, or null. */
-  getEstimatedOneRepMax(
+  /** Current user's aggregated performance metrics for one exercise. */
+  getExercisePerformanceSummary(
     exerciseId: string,
-  ): Promise<Result<EstimatedOneRepMax | null, ApiError>>;
+  ): Promise<Result<ExercisePerformanceSummary | null, ApiError>>;
   createExercise(
     data: CreateExerciseInput,
   ): Promise<Result<Exercise, ApiError>>;

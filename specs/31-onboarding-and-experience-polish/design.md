@@ -219,11 +219,19 @@ estimateOneRepMax(weightKg: number, reps: number): number | null
 - reps 2–10 → Epley
 - otherwise → null
 
-Exercise detail needs a current-user, exercise-scoped performance read. Prefer
-one authorised endpoint returning only the best qualifying source set over
-fetching full workout history. Cache by both user ID and exercise ID. No result
-means no banner. The Epley calculation remains internal; no formula copy is
-rendered on Exercise Detail.
+Exercise detail uses `GET /exercises/:exerciseId/performance-summary`, an
+authorised, current-user and exercise-scoped aggregate. It returns actual 10RM,
+best single-set volume, lifetime exercise volume, estimated 1RM, and estimated
+10RM with source-set provenance where applicable. The backend calculates the
+summary in one aggregate query rather than transferring workout history. Cache
+the full summary by both user ID and exercise ID.
+
+Actual 10RM is the heaviest completed set of exactly ten repetitions. Set
+volume is `weightKg * reps`; lifetime volume sums it across all qualifying
+completed weighted sets. Estimated 10RM reverses Epley from the best estimated
+1RM: `oneRepMaxKg / (1 + 10 / 30)`. Spec 31 renders only the Estimated 1RM
+banner; the wider contract is ready for a later stats carousel. Calculation
+formulae remain internal and are not rendered on Exercise Detail.
 
 ## Coaching contract—not a new dashboard
 

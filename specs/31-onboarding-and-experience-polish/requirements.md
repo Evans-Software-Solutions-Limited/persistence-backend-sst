@@ -187,6 +187,10 @@ Acceptance criteria:
 6. Zero/negative load, assisted/bodyweight-only sets, incomplete sets, and more
    than 10 reps are excluded.
 7. With no qualifying lift history, Exercise Detail is unchanged.
+8. The authorised exercise performance read is an extensible summary contract,
+   initially returning actual 10RM, best single-set volume, lifetime exercise
+   volume, estimated 1RM, and estimated 10RM. Spec 31 renders only Estimated
+   1RM; the remaining values support later stat-card/carousel work.
 
 ## STORY-011 — Complete the existing coaching contract
 
