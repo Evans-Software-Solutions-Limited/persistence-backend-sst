@@ -11,6 +11,19 @@ say so and fix this file.
 
 ## ▶ START HERE — next session (rewritten 2026-08-04, post-Mealprint-merge)
 
+### 🔴 2026-09-01 — STAGING CORE API ROUTE STARTUP HOTFIX
+
+After Spec 31 backend #426 deployed, every staging core API request returned
+HTTP 500 during Lambda initialisation. CloudWatch showed Elysia/Memoirist
+rejecting `/exercises/:exerciseId/performance-summary` because the existing
+exercise family uses `:id` at the same dynamic segment. The performance route
+now uses `:id` consistently, and the composed exercise-route test mounts both
+detail and performance handlers so the pre-fix application-startup crash is a
+regression failure rather than an isolated-handler blind spot. Focused route
+tests pass 8/8, the full core suite and coverage pass, and repository
+formatting, 9-package typecheck, lint and build are green (pre-existing lint
+warnings only).
+
 ### 🟡 2026-08-31 — GOOGLE PLAY WEBSITE LOGO (branch `codex/official-google-play-badge`)
 
 The first implementation used Google's full black store badge, but that did not

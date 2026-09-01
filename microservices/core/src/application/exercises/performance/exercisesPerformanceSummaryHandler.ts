@@ -14,15 +14,15 @@ export const exercisesPerformanceSummaryHandler = new Elysia()
   .onBeforeHandle(requireAuth)
   .use(ExercisePerformanceService)
   .get(
-    "/exercises/:exerciseId/performance-summary",
+    "/exercises/:id/performance-summary",
     async (ctx) => {
       const { sub: userId } = getUser(ctx);
       return {
         data: await ctx.ExercisePerformanceRepository.getSummary(
           userId,
-          ctx.params.exerciseId,
+          ctx.params.id,
         ),
       };
     },
-    { params: t.Object({ exerciseId: t.String({ format: "uuid" }) }) },
+    { params: t.Object({ id: t.String({ format: "uuid" }) }) },
   );
