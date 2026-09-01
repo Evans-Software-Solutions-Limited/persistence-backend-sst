@@ -32,15 +32,18 @@ also normalises unexpected arguments so a React Native press event cannot
 replace the measurement context. The legacy body-history route now accepts a
 validated `metric` query parameter; You's Body Fat card and the disabled-polish
 body-fat route preserve `bodyFat`, while missing or unknown values fail closed
-to weight. Post-auth routing now waits for both onboarding state and fresh
-profile eligibility before choosing onboarding or Home, preventing a new user
-from seeing the tabs flash while either request is unresolved. It waits through
-bounded profile retries, but a fully exhausted profile request fails open to
-Home. Failed onboarding reads no longer synthesize a fresh journey, and a
-disabled rollout bypasses onboarding loading and ejects any resumed/deep-linked
-onboarding route. The focused AuthGate/provider suites pass 46 tests; the full
-mobile suite passes 515 suites / 6,490 tests, and mobile typecheck and lint are
-green (pre-existing warnings only).
+to weight. Post-auth routing waits for onboarding state before choosing
+onboarding or Home, preventing the tabs from flashing while the read is
+unresolved. Failed onboarding reads no longer synthesize a fresh journey.
+Product direction removed the onboarding environment/activation-date gate:
+shipping the code sends every existing or new account without a terminal
+`completed`/`dismissed` state through onboarding, independent of profile age.
+The focused AuthGate/eligibility/provider suites pass 51 tests; the full mobile
+suite passes 515 suites / 6,490 tests, and mobile typecheck and lint are green
+(pre-existing warnings only). Staging applied the onboarding migration, but a
+route-parameter collision crashed the core Lambda at startup and made Marcus
+Whitfield's onboarding read return HTTP 500; backend hotfix PR #427 corrects
+the collision and adds a composed-router regression.
 
 ### 🟡 2026-08-31 — GOOGLE PLAY WEBSITE LOGO (branch `codex/official-google-play-badge`)
 
@@ -3864,10 +3867,13 @@ PR not yet raised. NO product code — script + dataset + verdict + spec updates
   coaching aggregate;
   migration `20260901120000_onboarding_states.sql` enables RLS and keeps writes
   on the authenticated backend rail.
-- Both feature families are safe-off through
-  `EXPO_PUBLIC_ONBOARDING_V1_ENABLED` and
-  `EXPO_PUBLIC_EXPERIENCE_POLISH_V1_ENABLED`. Native iPhone 16 Pro visual QA
-  and Android emulator QA caught and corrected wrapped onboarding headings;
+- Onboarding has no environment rollout switch or account-age cutoff: when
+  this mobile release ships, every existing or new authenticated account with
+  no terminal onboarding state enters at Welcome, while an `in_progress`
+  account resumes at its persisted page. Only `completed` or `dismissed`
+  accounts enter Home directly. Experience polish remains independently
+  safe-off through `EXPO_PUBLIC_EXPERIENCE_POLISH_V1_ENABLED`. Native iPhone 16
+  Pro visual QA and Android emulator QA caught and corrected wrapped headings;
   evidence is in the Codex visualizations folder for this task. DOB uses the
   existing JS calendar extraction, so this release needs no new native binary.
 - The local Inspector Brad sweeps found and the implementation now fixes
@@ -3885,3 +3891,10 @@ PR not yet raised. NO product code — script + dataset + verdict + spec updates
   source provenance. Mobile caches the whole user/exercise summary, while Spec
   31 continues to render only its compact Estimated 1RM banner so a future
   carousel remains additive.
+- Staging sign-in returned 500 for every core route after the backend merge,
+  including onboarding. CloudWatch identified an Elysia/Memoirist cold-start
+  collision between `/exercises/:id` and the newly registered
+  `/exercises/:exerciseId/performance-summary`; it is unrelated to RevenueCat,
+  and migration `20260901120000_onboarding_states.sql` did apply successfully.
+  Backend hotfix PR #427 standardises the internal parameter name to `:id`
+  without changing the public URL shape and adds a composed-router regression.

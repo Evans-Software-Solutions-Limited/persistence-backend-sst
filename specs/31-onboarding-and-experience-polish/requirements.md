@@ -9,10 +9,11 @@ commands, catalogue, and data contracts remain authoritative.
 
 ## Goal
 
-Show each new user one useful onboarding journey that configures the existing
-profile, habits, nutrition, and training features before recommending the
-existing subscription that best matches what they said they want. The journey
-must not duplicate existing feature setup or become a mandatory paywall.
+Show every user who has not completed or dismissed it one useful onboarding
+journey that configures the existing profile, habits, nutrition, and training
+features before recommending the existing subscription that best matches what
+they said they want. The journey must not duplicate existing feature setup or
+become a mandatory paywall.
 
 ## Product principles
 
@@ -28,7 +29,7 @@ must not duplicate existing feature setup or become a mandatory paywall.
 
 ## STORY-001 — One-time journey
 
-**As a newly verified user, I want one guided setup so Persistence starts in a
+**As a Persistence user, I want one guided setup so Persistence starts in a
 useful state without repeatedly interrupting me.**
 
 Acceptance criteria:
@@ -49,10 +50,13 @@ Acceptance criteria:
    prevents automatic replay.
 5. Killing the app during an unfinished journey resumes at the last incomplete
    page.
-6. The production welcome page uses the existing Persistence logo asset.
-7. Settings edit the same underlying data later; there is no second onboarding
+6. When released, existing and newly created accounts with no terminal
+   onboarding state enter the journey; account creation date does not affect
+   eligibility.
+7. The production welcome page uses the existing Persistence logo asset.
+8. Settings edit the same underlying data later; there is no second onboarding
    database model for profile, habits, or nutrition values.
-8. Analytics record page viewed/completed/skipped and journey completed/dismissed
+9. Analytics record page viewed/completed/skipped and journey completed/dismissed
    without body values, names, birth dates, exercise loads, or client IDs.
 
 ## STORY-002 — Make it yours using the real profile

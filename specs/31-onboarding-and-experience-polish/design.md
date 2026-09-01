@@ -296,8 +296,10 @@ No names, dates of birth, health values, loads, free text, or client identifiers
 
 ## Rollout
 
-Gate onboarding behind `onboarding_v1`. Only users created after activation
-enter it automatically. Existing users are not backfilled into the journey.
+Onboarding goes live with the application release and has no environment or
+feature-flag gate. Every existing or newly created user without a `completed`
+or `dismissed` onboarding state enters it automatically. No bulk backfill is
+required: absence of a state row means the journey has not started.
 
 Weight, Body Fat, 1RM, coaching, and exercise-ordering changes can ship
 independently behind `experience_polish_v1`. The native date-picker dependency

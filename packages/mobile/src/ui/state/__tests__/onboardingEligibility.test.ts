@@ -1,7 +1,4 @@
-import {
-  onboardingRolloutFromEnv,
-  shouldAutoShowOnboarding,
-} from "../onboardingEligibility";
+import { shouldAutoShowOnboarding } from "../onboardingEligibility";
 import type { OnboardingState } from "@/domain/models/onboarding";
 
 const state = (status: OnboardingState["status"]): OnboardingState => ({
@@ -19,35 +16,21 @@ const state = (status: OnboardingState["status"]): OnboardingState => ({
   updatedAt: "2026-09-01T10:00:00Z",
 });
 
-describe("onboarding rollout eligibility", () => {
-  const rollout = { enabled: true, activatedAt: "2026-09-01T00:00:00.000Z" };
-
-  it("defaults safely off when the flag or activation timestamp is absent", () => {
-    expect(onboardingRolloutFromEnv(undefined, undefined)).toEqual({
-      enabled: false,
-      activatedAt: null,
-    });
-    expect(onboardingRolloutFromEnv("true", "not-a-date").enabled).toBe(false);
-  });
-
-  it("includes a user created exactly at activation", () => {
+describe("onboarding eligibility", () => {
+  it("includes an existing user with no onboarding state", () => {
     expect(
       shouldAutoShowOnboarding({
-        createdAt: "2026-09-01T00:00:00.000Z",
-        state: state("in_progress"),
-        rollout,
+        state: null,
       }),
     ).toBe(true);
   });
 
-  it("does not backfill users created before activation", () => {
+  it("resumes an existing in-progress journey", () => {
     expect(
       shouldAutoShowOnboarding({
-        createdAt: "2026-08-31T23:59:59.999Z",
-        state: null,
-        rollout,
+        state: state("in_progress"),
       }),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it.each(["completed", "dismissed"] as const)(
@@ -55,9 +38,7 @@ describe("onboarding rollout eligibility", () => {
     (status) => {
       expect(
         shouldAutoShowOnboarding({
-          createdAt: "2026-09-01T00:00:01.000Z",
           state: state(status),
-          rollout,
         }),
       ).toBe(false);
     },

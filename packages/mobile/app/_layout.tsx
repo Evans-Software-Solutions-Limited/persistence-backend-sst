@@ -23,10 +23,7 @@ import { usePurchasesIdentity } from "../src/ui/hooks/usePurchasesIdentity";
 import { usePushNotifications } from "../src/ui/hooks/usePushNotifications";
 import { useUserModeEligibility } from "../src/ui/hooks/useUserModeEligibility";
 import { useOptionalOnboarding } from "../src/ui/state/OnboardingProvider";
-import {
-  onboardingRolloutFromEnv,
-  shouldAutoShowOnboarding,
-} from "../src/ui/state/onboardingEligibility";
+import { shouldAutoShowOnboarding } from "../src/ui/state/onboardingEligibility";
 import { type Href } from "expo-router";
 
 // Initialise Sentry at module load, before the app renders. No-op when
@@ -188,14 +185,8 @@ function AuthGate() {
   const onboarding = useOptionalOnboarding();
 
   const deletedAt = profilePage.payload?.profile.deletedAt ?? null;
-  const profileCreatedAt = profilePage.payload?.profile.createdAt ?? null;
-  const onboardingRollout = onboardingRolloutFromEnv();
   const onboardingRoutingPending =
-    session !== null &&
-    onboardingRollout.enabled &&
-    ((onboarding?.isLoading ?? false) ||
-      (profilePage.payload === null &&
-        (profilePage.error === null || profilePage.isAutoRetrying)));
+    session !== null && (onboarding?.isLoading ?? false);
   // `code` off the incoming invite deep link (/(app)/accept-invite?code=X).
   const inviteCode = typeof params.code === "string" ? params.code : null;
 
@@ -227,6 +218,7 @@ function AuthGate() {
       inPostAuthSubscriptionFlow && params.onboarding === "1";
     const inRestoreAccountScreen =
       inAppGroup && segmentName === "restore-account";
+    const inAcceptInviteScreen = inAppGroup && segmentName === "accept-invite";
     // A recovery-link session must set a new password before reaching the
     // tabs. Whitelisted like the post-sign-up screens so AuthGate doesn't
     // bounce the signed-in user off set-new-password back to the app.
@@ -250,13 +242,34 @@ function AuthGate() {
       return;
     }
 
+    // Password recovery is an auth-security flow and must not wait for the
+    // onboarding state request. The reset screen owns clearing the flag.
+    if (
+      session &&
+      usePasswordRecovery.getState().pending &&
+      !inSetNewPasswordScreen
+    ) {
+      router.replace("/(auth)/set-new-password");
+      return;
+    }
+
+    // Invite consent must also be reachable without waiting for onboarding.
+    // Peek rather than clear: the accept-invite screen owns the stash, and
+    // repeated auth-state events must keep resolving to the same destination.
+    const pendingInviteCode = usePendingInvite.getState().pendingCode;
+    if (session && pendingInviteCode && !inAcceptInviteScreen) {
+      router.replace(
+        `/(app)/accept-invite?code=${encodeURIComponent(pendingInviteCode)}`,
+      );
+      return;
+    }
+
     const onboardingState = onboarding?.state ?? null;
     const onboardingRequired =
       // A failed read with no offline mirror is unknown, not "never started".
       // Fail open to Home and retry on the next provider lifecycle.
       (onboardingState !== null || onboarding?.loadError == null) &&
       shouldAutoShowOnboarding({
-        createdAt: profileCreatedAt,
         state: onboardingState,
       });
     if (
@@ -265,21 +278,9 @@ function AuthGate() {
       onboardingRequired &&
       !inOnboardingGroup &&
       !inOnboardingPurchaseFlow &&
-      !inSetNewPasswordScreen
+      !inSetNewPasswordScreen &&
+      !inAcceptInviteScreen
     ) {
-      // Recovery and an invite's required data-sharing consent take priority.
-      // Onboarding resumes automatically after either flow resolves.
-      if (usePasswordRecovery.getState().pending) {
-        router.replace("/(auth)/set-new-password");
-        return;
-      }
-      const pendingCode = usePendingInvite.getState().pendingCode;
-      if (pendingCode) {
-        router.replace(
-          `/(app)/accept-invite?code=${encodeURIComponent(pendingCode)}`,
-        );
-        return;
-      }
       const page = onboarding?.state?.currentPage ?? "welcome";
       router.replace(`/(onboarding)/${page}` as Href);
       return;
@@ -287,9 +288,8 @@ function AuthGate() {
     if (
       session &&
       inOnboardingGroup &&
-      (!onboardingRollout.enabled ||
-        (!(onboarding?.isLoading ?? false) &&
-          onboarding?.state?.status !== "in_progress"))
+      !(onboarding?.isLoading ?? false) &&
+      onboarding?.state?.status !== "in_progress"
     ) {
       router.replace("/(app)/(tabs)");
       return;
@@ -304,29 +304,7 @@ function AuthGate() {
       !onboardingRoutingPending
     ) {
       // Signed in but not in app and not in a whitelisted auth-flow screen.
-      // A recovery-link session wins first: divert to set-new-password so the
-      // user resets before the app (peeked — the set-new-password screen owns
-      // the clear, same non-reactive-peek reasoning as the invite code below).
-      if (usePasswordRecovery.getState().pending) {
-        router.replace("/(auth)/set-new-password");
-        return;
-      }
-      // If a coach invite code was stashed before auth (unauthenticated athlete
-      // opened /(app)/accept-invite?code=X — device-QA #2 follow-up), redeem it
-      // now instead of landing on the tabs. PEEK (don't clear) — Supabase fires
-      // several auth-state events in quick succession, so this effect can re-run
-      // with `segments` still on (auth); a read-and-clear would return null on
-      // the second run and clobber this redirect with the tabs one. The
-      // accept-invite screen clears the stash on arrival, and both peeks resolve
-      // to the same redirect (idempotent) until `segments` catch up.
-      const pendingCode = usePendingInvite.getState().pendingCode;
-      if (pendingCode) {
-        router.replace(
-          `/(app)/accept-invite?code=${encodeURIComponent(pendingCode)}`,
-        );
-      } else {
-        router.replace("/(app)/(tabs)");
-      }
+      router.replace("/(app)/(tabs)");
     } else if (!session && !inAuthGroup && !onAuthCallback) {
       // Not signed in and not on an auth screen — go to sign-in. If they were
       // opening a coach invite deep link, stash the code first so it survives
@@ -343,11 +321,9 @@ function AuthGate() {
     router,
     deletedAt,
     inviteCode,
-    profileCreatedAt,
     onboarding?.state,
     onboarding?.isLoading,
     onboarding?.loadError,
-    onboardingRollout.enabled,
     onboardingRoutingPending,
     params.onboarding,
   ]);
