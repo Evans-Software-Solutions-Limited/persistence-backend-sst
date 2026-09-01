@@ -126,7 +126,9 @@ export class CoachingAggregateRepository {
       .orderBy(desc(notifications.createdAt))
       .limit(20);
 
-    const activeGoal = goals.find((goal) => goal.isActive === true);
+    const activeGoal = goals.find(
+      (goal) => goal.isActive === true && goal.assignedByUserId === trainerId,
+    );
     return {
       activeProgramme,
       upcomingWorkouts: upcomingWorkouts.map(
@@ -141,7 +143,12 @@ export class CoachingAggregateRepository {
         }),
       ),
       habits: habits
-        .filter((habit) => habit.enabled)
+        // Relationship modules must contain only THIS coach's assignments.
+        // Client-authored and co-coach setup belongs on the client's canonical
+        // surfaces, not under a misleading "your coach" heading here.
+        .filter(
+          (habit) => habit.enabled && habit.assignedByUserId === trainerId,
+        )
         .map((habit) => ({
           category: habit.category,
           enabled: habit.enabled,
@@ -160,7 +167,8 @@ export class CoachingAggregateRepository {
             ? { from: habit.pending.from, ...habit.pending.config }
             : null,
         })),
-      nutritionTarget,
+      nutritionTarget:
+        nutritionTarget?.setByUserId === trainerId ? nutritionTarget : null,
       activeGoal: activeGoal
         ? {
             id: activeGoal.id,

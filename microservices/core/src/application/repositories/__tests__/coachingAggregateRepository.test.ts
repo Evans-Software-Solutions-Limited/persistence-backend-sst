@@ -108,12 +108,16 @@ describe("CoachingAggregateRepository", () => {
       },
       { goalId: "disabled", enabled: false },
     ]);
-    nutrition.get.mockResolvedValue({ dailyKcal: 2200 });
+    nutrition.get.mockResolvedValue({
+      dailyKcal: 2200,
+      setByUserId: "trainer-a",
+    });
     goals.list.mockResolvedValue([
       { id: "old", isActive: false },
       {
         id: "active",
         isActive: true,
+        assignedByUserId: "trainer-a",
         goalTypeName: "Lose weight",
         targetValue: 75,
         currentValue: 80,
@@ -183,8 +187,8 @@ describe("CoachingAggregateRepository", () => {
         goalId: "habit-b",
         enabled: true,
         category: "water",
-        assignedByUserId: null,
-        assignedByName: null,
+        assignedByUserId: "trainer-b",
+        assignedByName: "Pat Physio",
         targetValue: 2,
         unit: "l",
         period: "daily",
@@ -216,8 +220,8 @@ describe("CoachingAggregateRepository", () => {
       assignedByName: "Pat Physio",
     });
     expect(out.habits[0]).toMatchObject({
-      assignedByCoach: false,
-      locked: false,
+      assignedByCoach: true,
+      locked: true,
       pending: { from: "2026-09-07", targetValue: 3 },
     });
     expect(out.visibleBriefs[0]).toEqual({
@@ -226,6 +230,46 @@ describe("CoachingAggregateRepository", () => {
       content: "",
       createdAt: "2026-09-01T09:00:00.000Z",
     });
+  });
+
+  it("excludes self-authored and other-coach setup from this relationship", async () => {
+    habits.listForUser.mockResolvedValue([
+      {
+        goalId: "self-habit",
+        enabled: true,
+        assignedByUserId: null,
+      },
+      {
+        goalId: "other-habit",
+        enabled: true,
+        assignedByUserId: "trainer-b",
+      },
+    ]);
+    nutrition.get.mockResolvedValue({
+      dailyKcal: 2200,
+      setByUserId: "trainer-b",
+    });
+    goals.list.mockResolvedValue([
+      {
+        id: "self-goal",
+        isActive: true,
+        assignedByUserId: null,
+      },
+      {
+        id: "other-goal",
+        isActive: true,
+        assignedByUserId: "trainer-b",
+      },
+    ]);
+
+    const out = await new CoachingAggregateRepository().get(
+      "trainer-a",
+      "client-a",
+    );
+
+    expect(out.habits).toEqual([]);
+    expect(out.nutritionTarget).toBeNull();
+    expect(out.activeGoal).toBeNull();
   });
 
   it("fails closed for unattributed legacy briefs", async () => {

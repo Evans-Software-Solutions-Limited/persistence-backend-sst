@@ -60,6 +60,44 @@ describe("analyticsEventsHandler", () => {
     });
   });
 
+  it("drops free text hidden under an allowed key", async () => {
+    const { analyticsEventsHandler } =
+      await import("../analyticsEventsHandler");
+    const res = await analyticsEventsHandler.handle(
+      post({
+        name: "onboarding_page_viewed",
+        properties: {
+          page: "Jane Smith DOB 1990-01-01 weight 80kg",
+          intentKey: "nutrition_mealprint",
+        },
+      }),
+    );
+    expect(res.status).toBe(202);
+    expect(emitEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ properties: {} }),
+    );
+  });
+
+  it("keeps only finite values valid for that event", async () => {
+    const { analyticsEventsHandler } =
+      await import("../analyticsEventsHandler");
+    const res = await analyticsEventsHandler.handle(
+      post({
+        name: "onboarding_plan_selected",
+        properties: {
+          selectedTier: "premium_plus",
+          page: "recommendation",
+        },
+      }),
+    );
+    expect(res.status).toBe(202);
+    expect(emitEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        properties: { selectedTier: "premium_plus" },
+      }),
+    );
+  });
+
   it("rejects event names outside the client allowlist", async () => {
     const { analyticsEventsHandler } =
       await import("../analyticsEventsHandler");
