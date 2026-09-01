@@ -37,8 +37,8 @@ against `main` at `12dfda83`; implementation may begin from these slices.
 - [x] Add metric-specific logging actions and immediate cache refresh.
 - [x] Add pure 1RM estimator and edge-case tests.
 - [x] Add user/exercise-scoped performance-summary endpoint and cache, including
-      actual 10RM, best-set volume, lifetime volume, estimated 1RM, and
-      estimated 10RM.
+      actual 10RM, heaviest set at any rep count, best-set volume, lifetime
+      volume, estimated 1RM, and estimated 10RM.
 - [x] Insert the Estimated 1RM banner below Exercise Detail media only.
 
 ## Slice E — Coaching data contract

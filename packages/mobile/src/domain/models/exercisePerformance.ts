@@ -17,6 +17,10 @@ export type ExercisePerformanceSummary = {
     weightKg: number;
     source: PerformanceSetSource;
   } | null;
+  heaviestSet: {
+    weightKg: number;
+    source: PerformanceSetSource;
+  };
   bestSetVolume: {
     volumeKg: number;
     source: PerformanceSetSource;

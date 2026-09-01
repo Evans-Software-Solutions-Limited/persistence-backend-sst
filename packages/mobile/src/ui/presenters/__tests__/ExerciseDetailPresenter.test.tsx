@@ -109,6 +109,14 @@ describe("ExerciseDetailPresenter", () => {
         },
         estimatedTenRepMax: null,
         tenRepMax: null,
+        heaviestSet: {
+          weightKg: 120,
+          source: {
+            weightKg: 120,
+            reps: 6,
+            completedAt: "2026-09-01T10:00:00Z",
+          },
+        },
         bestSetVolume: {
           volumeKg: 720,
           source: {

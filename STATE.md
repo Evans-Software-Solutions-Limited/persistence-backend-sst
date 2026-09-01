@@ -3862,7 +3862,8 @@ PR not yet raised. NO product code — script + dataset + verdict + spec updates
   local Inspector Brad sweep returned `INSPECTOR_VERDICT: CLEAN`.
 - Replaced the narrow Estimated 1RM transport with the authenticated
   `/exercises/:exerciseId/performance-summary` contract. One aggregate query
-  now returns actual 10RM, best single-set volume, lifetime exercise volume,
-  estimated 1RM and estimated 10RM with source provenance. Mobile caches the
-  whole user/exercise summary, while Spec 31 continues to render only its
-  compact Estimated 1RM banner so a future carousel remains additive.
+  now returns actual 10RM, heaviest set at any rep count, best single-set
+  volume, lifetime exercise volume, estimated 1RM and estimated 10RM with
+  source provenance. Mobile caches the whole user/exercise summary, while Spec
+  31 continues to render only its compact Estimated 1RM banner so a future
+  carousel remains additive.

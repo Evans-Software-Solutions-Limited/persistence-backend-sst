@@ -512,6 +512,14 @@ describe("SSTApiAdapter.getExercisePerformanceSummary", () => {
               },
               estimatedTenRepMax: null,
               tenRepMax: null,
+              heaviestSet: {
+                weightKg: 100,
+                source: {
+                  weightKg: 100,
+                  reps: 6,
+                  completedAt: "2026-09-01T10:00:00Z",
+                },
+              },
               bestSetVolume: {
                 volumeKg: 600,
                 source: {
@@ -545,6 +553,14 @@ describe("SSTApiAdapter.getExercisePerformanceSummary", () => {
         },
         estimatedTenRepMax: null,
         tenRepMax: null,
+        heaviestSet: {
+          weightKg: 100,
+          source: {
+            weightKg: 100,
+            reps: 6,
+            completedAt: "2026-09-01T10:00:00Z",
+          },
+        },
         bestSetVolume: {
           volumeKg: 600,
           source: {

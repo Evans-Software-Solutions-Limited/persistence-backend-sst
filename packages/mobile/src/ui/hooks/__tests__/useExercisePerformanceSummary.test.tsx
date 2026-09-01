@@ -29,6 +29,7 @@ function summary(estimateKg: number): ExercisePerformanceSummary {
     estimatedOneRepMax: { estimateKg, source },
     estimatedTenRepMax: { estimateKg: estimateKg * 0.75, source },
     tenRepMax: null,
+    heaviestSet: { weightKg: source.weightKg, source },
     bestSetVolume: { volumeKg: 600, source },
     lifetimeVolumeKg: 600,
   };

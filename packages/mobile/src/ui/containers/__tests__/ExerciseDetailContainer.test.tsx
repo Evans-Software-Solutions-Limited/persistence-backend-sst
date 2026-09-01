@@ -236,6 +236,14 @@ describe("ExerciseDetailContainer", () => {
       },
       estimatedTenRepMax: null,
       tenRepMax: null,
+      heaviestSet: {
+        weightKg: 100,
+        source: {
+          weightKg: 100,
+          reps: 6,
+          completedAt: "2026-08-30T10:00:00.000Z",
+        },
+      },
       bestSetVolume: {
         volumeKg: 600,
         source: {
