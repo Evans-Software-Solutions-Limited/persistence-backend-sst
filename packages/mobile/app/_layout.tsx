@@ -24,9 +24,11 @@ import { initAuthCallbackCapture } from "@/ui/hooks/useAuthCallbackUrl";
 import { usePurchasesIdentity } from "../src/ui/hooks/usePurchasesIdentity";
 import { usePushNotifications } from "../src/ui/hooks/usePushNotifications";
 import { useUserModeEligibility } from "../src/ui/hooks/useUserModeEligibility";
+import { useMetaAttribution } from "../src/ui/hooks/useMetaAttribution";
 import { useOptionalOnboarding } from "../src/ui/state/OnboardingProvider";
 import { shouldAutoShowOnboarding } from "../src/ui/state/onboardingEligibility";
 import { type Href } from "expo-router";
+import { color } from "../src/ui/theme/tokens";
 
 // Initialise Sentry at module load, before the app renders. No-op when
 // `EXPO_PUBLIC_SENTRY_DSN` is unset (fail-safe — DSN-less builds run
@@ -79,6 +81,11 @@ Notifications.setNotificationHandler({
  */
 function NotificationPermissionsBootstrap() {
   useNotificationPermissions(true);
+  return null;
+}
+
+function MetaAttributionBootstrap() {
+  useMetaAttribution();
   return null;
 }
 
@@ -387,7 +394,12 @@ function AuthGate() {
   if (blocksForOnboarding || priorityRedirectPending) {
     return (
       <View
-        style={{ flex: 1, alignItems: "center", justifyContent: "center" }}
+        style={{
+          flex: 1,
+          alignItems: "center",
+          justifyContent: "center",
+          backgroundColor: color.$bg,
+        }}
         testID="onboarding-bootstrap-loading"
       >
         <PLogoDrawLoader size={120} accessibilityLabel="Loading your account" />
@@ -425,7 +437,10 @@ function RootLayout() {
   // the root above every other provider so all descendants — modals, tabs,
   // slot — share the same gesture root).
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
+    <GestureHandlerRootView
+      style={{ flex: 1, backgroundColor: color.$bg }}
+      testID="app-root"
+    >
       <ErrorBoundary
         onError={(error, errorInfo) =>
           captureBoundaryError(error, {
@@ -436,6 +451,7 @@ function RootLayout() {
         <AppProviders>
           <AuthCallbackCaptureBootstrap />
           <NotificationPermissionsBootstrap />
+          <MetaAttributionBootstrap />
           <PushNotificationsBootstrap />
           <UserModeBootstrap />
           <ActiveWorkoutBootstrap />

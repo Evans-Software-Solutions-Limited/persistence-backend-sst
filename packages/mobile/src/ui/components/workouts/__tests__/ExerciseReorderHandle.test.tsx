@@ -1,4 +1,5 @@
 import { fireEvent } from "@testing-library/react-native";
+import * as Haptics from "expo-haptics";
 import { ExerciseReorderHandle } from "../ExerciseReorderHandle";
 import { renderWithTheme } from "../../../../../__tests__/test-utils";
 
@@ -24,5 +25,25 @@ describe("ExerciseReorderHandle", () => {
       nativeEvent: { actionName: "decrement" },
     });
     expect(onMove).toHaveBeenCalledWith(-1);
+  });
+
+  it("starts a real drag from a long press and gives start haptics", () => {
+    const onDrag = jest.fn();
+    const { getByTestId } = renderWithTheme(
+      <ExerciseReorderHandle
+        label="Bench"
+        position={1}
+        total={3}
+        onMove={jest.fn()}
+        onDrag={onDrag}
+      />,
+    );
+
+    fireEvent(getByTestId("reorder-1"), "longPress");
+
+    expect(Haptics.impactAsync).toHaveBeenCalledWith(
+      Haptics.ImpactFeedbackStyle.Medium,
+    );
+    expect(onDrag).toHaveBeenCalledTimes(1);
   });
 });

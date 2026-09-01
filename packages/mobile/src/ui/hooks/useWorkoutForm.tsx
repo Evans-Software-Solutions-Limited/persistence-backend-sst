@@ -78,6 +78,7 @@ type Action =
       value: number;
     }
   | { type: "moveExercise"; exerciseId: string; direction: -1 | 1 }
+  | { type: "reorderExercise"; exerciseId: string; toPosition: number }
   | { type: "reset"; state: WorkoutFormState };
 
 function reducer(state: WorkoutFormState, action: Action): WorkoutFormState {
@@ -153,7 +154,8 @@ function reducer(state: WorkoutFormState, action: Action): WorkoutFormState {
         }),
       };
     }
-    case "moveExercise": {
+    case "moveExercise":
+    case "reorderExercise": {
       const ordered = [...state.exercises].sort(
         (a, b) => a.sort_order - b.sort_order,
       );
@@ -177,7 +179,10 @@ function reducer(state: WorkoutFormState, action: Action): WorkoutFormState {
         }
       }
       const sourceBlock = blocks.findIndex((block) => block.includes(source));
-      const targetBlock = sourceBlock + action.direction;
+      const targetBlock =
+        action.type === "moveExercise"
+          ? sourceBlock + action.direction
+          : action.toPosition;
       if (targetBlock < 0 || targetBlock >= blocks.length) return state;
       const targetIndex = ordered.indexOf(blocks[targetBlock][0]);
       const proxies = ordered.map((exercise) => ({
@@ -213,6 +218,7 @@ export type WorkoutFormHandle = {
   removeExercise: (exerciseId: string) => void;
   setExerciseField: (exerciseId: string, field: string, value: number) => void;
   moveExercise: (exerciseId: string, direction: -1 | 1) => void;
+  reorderExercise: (exerciseId: string, toPosition: number) => void;
   reset: (state: WorkoutFormState) => void;
 };
 
@@ -281,6 +287,11 @@ export function useWorkoutForm(
       dispatch({ type: "moveExercise", exerciseId, direction }),
     [],
   );
+  const reorderExercise = useCallback(
+    (exerciseId: string, toPosition: number) =>
+      dispatch({ type: "reorderExercise", exerciseId, toPosition }),
+    [],
+  );
   const reset = useCallback((next: WorkoutFormState) => {
     pristineRef.current = next;
     dispatch({ type: "reset", state: next });
@@ -298,6 +309,7 @@ export function useWorkoutForm(
     removeExercise,
     setExerciseField,
     moveExercise,
+    reorderExercise,
     reset,
   };
 }

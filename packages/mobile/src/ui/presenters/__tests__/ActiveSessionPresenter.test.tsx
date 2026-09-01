@@ -1,4 +1,5 @@
 import { fireEvent } from "@testing-library/react-native";
+import { AccessibilityInfo } from "react-native";
 import React from "react";
 import { ActiveSessionPresenter } from "../ActiveSessionPresenter";
 import type { SessionExercise } from "@/domain/models/session";
@@ -97,6 +98,35 @@ describe("ActiveSessionPresenter (vertical scroll, legacy parity)", () => {
     // No pager controls.
     expect(queryByTestId("exercise-pager")).toBeNull();
     expect(queryByTestId("exercise-tab-strip")).toBeNull();
+  });
+
+  it("persists the exact destination and announces a multi-position drop", () => {
+    const onReorderExercise = jest.fn();
+    const announce = jest
+      .spyOn(AccessibilityInfo, "announceForAccessibility")
+      .mockImplementation(jest.fn());
+    const props = {
+      ...baseProps,
+      onReorderExercise,
+      exercises: [
+        buildExercise({ id: "se-1" }),
+        buildExercise({ id: "se-2", sortOrder: 1 }),
+        buildExercise({ id: "se-3", sortOrder: 2 }),
+      ],
+    };
+    const { getByTestId } = renderWithTheme(
+      <ActiveSessionPresenter {...props} />,
+    );
+
+    fireEvent(getByTestId("active-session-draggable-list"), "dragEnd", {
+      from: 0,
+      to: 2,
+    });
+
+    expect(onReorderExercise).toHaveBeenCalledWith("se-1", 2);
+    expect(announce).toHaveBeenCalledWith(
+      "Bench Press moved to position 3 of 3",
+    );
   });
 
   it("threads weightUnit='lb' into the previous-set chip (device-QA #8b)", () => {

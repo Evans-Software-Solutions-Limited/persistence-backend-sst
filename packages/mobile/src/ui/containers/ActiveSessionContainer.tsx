@@ -474,6 +474,18 @@ export function ActiveSessionContainer() {
     [storage, userId, rereadCache],
   );
 
+  const onReorderExercise = useCallback(
+    (sessionExerciseId: string, toPosition: number) => {
+      if (!userId) return;
+      reorderSessionExercisesCommand(
+        { storage, userId },
+        { sessionExerciseId, toPosition },
+      );
+      rereadCache();
+    },
+    [storage, userId, rereadCache],
+  );
+
   const onAddExercise = useCallback(() => {
     setPickerMode({ kind: "add" });
   }, []);
@@ -684,6 +696,7 @@ export function ActiveSessionContainer() {
         onSubstitute={onSubstitute}
         onRemoveExercise={onRemoveExercise}
         onMoveExercise={onMoveExercise}
+        onReorderExercise={onReorderExercise}
         onTapExercise={onTapExercise}
         onAddExercise={onAddExercise}
         onAddExerciseToSuperset={onAddExerciseToSuperset}

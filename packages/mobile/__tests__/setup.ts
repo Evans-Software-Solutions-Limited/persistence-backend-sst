@@ -1,6 +1,19 @@
 // Jest setup file for mobile package
 // Runs after test framework is installed but before tests execute
 
+// Optional native Meta attribution SDK. Production initializes it only after
+// explicit consent; Jest has no native FB modules, so expose inert spies.
+jest.mock("react-native-fbsdk-next", () => ({
+  __esModule: true,
+  Settings: {
+    initializeSDK: jest.fn(),
+    setAdvertiserTrackingEnabled: jest.fn(async () => true),
+    setAdvertiserIDCollectionEnabled: jest.fn(),
+    setAutoLogAppEventsEnabled: jest.fn(),
+  },
+  AppEventsLogger: { logEvent: jest.fn() },
+}));
+
 // Mock react-native-reanimated
 jest.mock("react-native-reanimated", () => {
   const { View, Text } = require("react-native");
@@ -635,6 +648,46 @@ jest.mock("@expo/vector-icons", () => {
       },
     },
   );
+});
+
+// Native drag mechanics are covered on-device. Tests render each row and can
+// invoke `onDragEnd` on the host View to verify exact-position persistence.
+jest.mock("react-native-draggable-flatlist", () => {
+  const React = require("react");
+  const { View } = require("react-native");
+  const NestableScrollContainer = ({ children, ...props }: any) =>
+    React.createElement(View, props, children);
+  const NestableDraggableFlatList = ({
+    data,
+    renderItem,
+    keyExtractor,
+    onDragEnd,
+    ...props
+  }: any) =>
+    React.createElement(
+      View,
+      { ...props, onDragEnd },
+      data.map((item: any, index: number) =>
+        React.createElement(
+          View,
+          { key: keyExtractor(item, index) },
+          renderItem({
+            item,
+            drag: jest.fn(),
+            isActive: false,
+            getIndex: () => index,
+          }),
+        ),
+      ),
+    );
+  const ScaleDecorator = ({ children }: any) => children;
+  return {
+    __esModule: true,
+    default: NestableDraggableFlatList,
+    NestableDraggableFlatList,
+    NestableScrollContainer,
+    ScaleDecorator,
+  };
 });
 
 // Silence known-noisy warnings in tests unless debugging.

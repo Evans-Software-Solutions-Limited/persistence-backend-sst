@@ -1,10 +1,15 @@
-import { render, waitFor } from "@testing-library/react-native";
+import { act, render, waitFor } from "@testing-library/react-native";
 import { Alert } from "react-native";
 import type { PrivacySettingsPresenterProps } from "@/ui/presenters/PrivacySettingsPresenter";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useAuth } from "@/ui/hooks/useAuth";
 import { useProfilePage } from "@/ui/hooks/useProfilePage";
 import { PrivacySettingsContainer } from "../PrivacySettingsContainer";
+import {
+  denyMetaAttributionConsent,
+  grantMetaAttributionConsent,
+  getMetaAttributionConsent,
+} from "@/application/analytics/metaAttribution";
 
 // Capture the props handed to the (mocked) presenter so we can drive the
 // container's handlers directly. `mock`-prefixed so jest's hoist allows it.
@@ -24,6 +29,24 @@ jest.mock("expo-router", () => ({
 jest.mock("@/ui/hooks/useAdapters");
 jest.mock("@/ui/hooks/useAuth");
 jest.mock("@/ui/hooks/useProfilePage");
+jest.mock("react-native-fbsdk-next", () => ({
+  Settings: {
+    initializeSDK: jest.fn(),
+    setAdvertiserTrackingEnabled: jest.fn(),
+    setAdvertiserIDCollectionEnabled: jest.fn(),
+    setAutoLogAppEventsEnabled: jest.fn(),
+  },
+  AppEventsLogger: { logEvent: jest.fn() },
+}));
+jest.mock("expo-tracking-transparency", () => ({
+  requestTrackingPermissionsAsync: jest.fn(),
+}));
+jest.mock("@/application/analytics/metaAttribution", () => ({
+  denyMetaAttributionConsent: jest.fn(async () => true),
+  getMetaAttributionConsent: jest.fn(async () => "denied"),
+  grantMetaAttributionConsent: jest.fn(async () => false),
+  isMetaAttributionConfigured: jest.fn(() => true),
+}));
 
 type AlertButton = { text?: string; onPress?: () => void | Promise<void> };
 
@@ -56,6 +79,40 @@ describe("PrivacySettingsContainer — delete account", () => {
       payload: { profile: { isProfilePublic: false } },
     });
     jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
+    (getMetaAttributionConsent as jest.Mock).mockResolvedValue("denied");
+    (grantMetaAttributionConsent as jest.Mock).mockResolvedValue(false);
+    (denyMetaAttributionConsent as jest.Mock).mockResolvedValue(true);
+  });
+
+  it("keeps the attribution switch off when ATT/native activation is denied", async () => {
+    render(<PrivacySettingsContainer />);
+    await act(async () => {
+      await mockProbe.props!.onSetMetaAttributionEnabled(true);
+    });
+    await waitFor(() => {
+      expect(mockProbe.props!.metaAttributionEnabled).toBe(false);
+    });
+  });
+
+  it("keeps attribution visibly enabled when withdrawal cannot be guaranteed", async () => {
+    (getMetaAttributionConsent as jest.Mock).mockResolvedValue("granted");
+    (denyMetaAttributionConsent as jest.Mock).mockResolvedValue(false);
+    render(<PrivacySettingsContainer />);
+    await waitFor(() => {
+      expect(mockProbe.props!.metaAttributionEnabled).toBe(true);
+    });
+
+    await act(async () => {
+      await mockProbe.props!.onSetMetaAttributionEnabled(false);
+    });
+
+    await waitFor(() => {
+      expect(mockProbe.props!.metaAttributionEnabled).toBe(true);
+      expect(Alert.alert).toHaveBeenCalledWith(
+        "Couldn't update advertising measurement",
+        "We couldn't safely save that change. Please try again.",
+      );
+    });
   });
 
   it("double-confirms then calls deleteAccount", async () => {

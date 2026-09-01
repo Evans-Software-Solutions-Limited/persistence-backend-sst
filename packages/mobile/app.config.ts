@@ -37,9 +37,8 @@ const VARIANTS = {
  * from this at prebuild — `ios/` is gitignored, so app.config.ts is the source
  * of truth. Audited against the codebase (see the Sentry/privacy PR):
  *
- *  - NSPrivacyTracking = false — the app does NO cross-app tracking (no ATT,
- *    no ad/attribution/analytics SDKs). Sentry/RevenueCat/Stripe/Supabase are
- *    the only data egress and none build a device/ad graph.
+ *  - NSPrivacyTracking is enabled only in native builds that include the
+ *    optional, consent-gated Meta attribution configuration.
  *  - NSPrivacyCollectedDataTypes — every type is Linked to the authenticated
  *    Supabase user id and NOT used for tracking; purpose is App Functionality.
  *  - NSPrivacyAccessedAPITypes — required-reason APIs for app-owned usage
@@ -100,6 +99,28 @@ const IOS_PRIVACY_MANIFESTS = {
   ],
 };
 
+const IOS_META_PRIVACY_MANIFESTS = {
+  ...IOS_PRIVACY_MANIFESTS,
+  NSPrivacyTracking: true,
+  // FBSDKCoreKit 18.1.1 declares the same domain in its bundled privacy
+  // manifest. Keep the app aggregate explicit so declined ATT blocks it.
+  NSPrivacyTrackingDomains: ["ep1.facebook.com"],
+  NSPrivacyCollectedDataTypes:
+    IOS_PRIVACY_MANIFESTS.NSPrivacyCollectedDataTypes.map((entry) =>
+      entry.NSPrivacyCollectedDataType === "NSPrivacyCollectedDataTypeDeviceID"
+        ? {
+            ...entry,
+            NSPrivacyCollectedDataTypeTracking: true,
+            NSPrivacyCollectedDataTypePurposes: [
+              DATA_PURPOSE_APP_FUNCTIONALITY,
+              "NSPrivacyCollectedDataTypePurposeThirdPartyAdvertising",
+              "NSPrivacyCollectedDataTypePurposeAnalytics",
+            ],
+          }
+        : entry,
+    ),
+};
+
 /**
  * Expo dynamic config. Expo loads `app.json` first and hands its `expo`
  * object in as `config`, so spreading `...config` and overriding ONLY the
@@ -123,6 +144,29 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     : rawVariant === "play-testing"
       ? "staging"
       : (rawVariant as "staging" | "development");
+  const metaAppId = process.env.EXPO_PUBLIC_META_APP_ID?.trim() ?? "";
+  const metaClientToken =
+    process.env.EXPO_PUBLIC_META_CLIENT_TOKEN?.trim() ?? "";
+  const metaConfigured = metaAppId.length > 0 && metaClientToken.length > 0;
+  const metaPlugins: NonNullable<ExpoConfig["plugins"]> = metaConfigured
+    ? [
+        [
+          "react-native-fbsdk-next",
+          {
+            appID: metaAppId,
+            clientToken: metaClientToken,
+            displayName: "Persistence",
+            scheme: `fb${metaAppId}`,
+            // Consent is resolved at runtime before the SDK is initialized.
+            advertiserIDCollectionEnabled: false,
+            autoLogAppEventsEnabled: false,
+            isAutoInitEnabled: false,
+            iosUserTrackingPermission:
+              "Allow Persistence to measure app installs from our advertising. Your workouts, health data and activity are never shared.",
+          },
+        ],
+      ]
+    : [];
 
   return {
     ...config,
@@ -138,7 +182,9 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     ios: {
       ...config.ios,
       bundleIdentifier: variant.bundleId,
-      privacyManifests: IOS_PRIVACY_MANIFESTS,
+      privacyManifests: metaConfigured
+        ? IOS_META_PRIVACY_MANIFESTS
+        : IOS_PRIVACY_MANIFESTS,
     },
     android: { ...config.android, package: variant.bundleId },
     // EAS Update (OTA JS updates). Shared across all variants — the single EAS
@@ -161,6 +207,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       )
         ? []
         : ["@react-native-community/datetimepicker"]),
+      ...metaPlugins,
     ],
     // Preserve app.json's `extra` (eas.projectId, router) and add the resolved
     // build variant so the runtime can tag Sentry's `environment` off it.
@@ -170,6 +217,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       revenueCatIosKey: process.env.EXPO_PUBLIC_REVENUECAT_IOS_KEY ?? "",
       revenueCatAndroidKey:
         process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY ?? "",
+      metaConfigured,
     },
   };
 };
