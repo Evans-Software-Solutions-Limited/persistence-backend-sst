@@ -45,6 +45,7 @@ interface WorkoutEditorPresenterProps {
     field: string,
     value: number,
   ) => void;
+  readonly onMoveExercise?: (exerciseId: string, direction: -1 | 1) => void;
   readonly onSubmit: () => void;
   readonly onCancel: () => void;
   readonly onGoBackFromError: () => void;

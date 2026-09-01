@@ -25,7 +25,9 @@ export type TrendData = {
 export type BodyTrendProps = {
   weight: TrendData & { unit: "kg" | "lb" };
   bodyFat: TrendData;
-  /** Opens the full measurement history. Both summary cards share it. */
+  onOpenWeight?: () => void;
+  onOpenBodyFat?: () => void;
+  /** @deprecated compatibility for coach/detail callers with one destination. */
   onOpenDetails?: () => void;
   testID?: string;
 };
@@ -69,6 +71,8 @@ function TrendHeader({
 export function BodyTrendPresenter({
   weight,
   bodyFat,
+  onOpenWeight,
+  onOpenBodyFat,
   onOpenDetails,
   testID = "body-trend",
 }: BodyTrendProps) {
@@ -88,8 +92,8 @@ export function BodyTrendPresenter({
         <Card
           pad={14}
           radius={14}
-          onPress={onOpenDetails}
-          accessibilityLabel="Open body measurement history"
+          onPress={onOpenWeight ?? onOpenDetails}
+          accessibilityLabel="Open weight history"
           testID={`${testID}-weight-card`}
         >
           <TrendHeader
@@ -130,8 +134,8 @@ export function BodyTrendPresenter({
         <Card
           pad={14}
           radius={14}
-          onPress={onOpenDetails}
-          accessibilityLabel="Open body measurement history"
+          onPress={onOpenBodyFat ?? onOpenDetails}
+          accessibilityLabel="Open body fat history"
           testID={`${testID}-body-fat-card`}
         >
           <TrendHeader

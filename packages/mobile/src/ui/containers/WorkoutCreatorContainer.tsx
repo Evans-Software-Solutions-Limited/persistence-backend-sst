@@ -12,6 +12,7 @@ import {
   type WorkoutFormState,
 } from "@/ui/hooks/useWorkoutForm";
 import { WorkoutCreatorPresenter } from "@/ui/presenters/WorkoutCreatorPresenter";
+import { isExperiencePolishEnabled } from "@/ui/state/experiencePolish";
 
 /**
  * Creator container — owns form state via `useWorkoutForm`, opens the
@@ -222,6 +223,9 @@ export function WorkoutCreatorContainer() {
       onAddSuperset={onAddSuperset}
       onRemoveExercise={form.removeExercise}
       onExerciseConfigChange={form.setExerciseField}
+      onMoveExercise={
+        isExperiencePolishEnabled() ? form.moveExercise : undefined
+      }
       onSubmit={onSubmit}
       onCancel={onCancel}
     />

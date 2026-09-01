@@ -37,15 +37,25 @@ import { create } from "zustand";
  */
 
 export type HomeSheet = "weighIn" | "water" | "sleep" | null;
+export type MeasurementSheetContext = "weight" | "bodyFat";
+export type MeasurementSheetOrigin = "home" | "history";
 
 export interface HomeSheetsState {
   sheet: HomeSheet;
+  measurementContext: MeasurementSheetContext;
+  measurementOrigin: MeasurementSheetOrigin;
   /**
    * Monotonic counter bumped when a sheet that reflects into the habit cache
    * (water or sleep) closes. <HomeContainer> reloads its habit grid on change.
    */
   habitsRev: number;
-  openWeighIn: () => void;
+  /** Bumped after a measurement is accepted so open history screens refresh. */
+  measurementsRev: number;
+  openWeighIn: (
+    context?: MeasurementSheetContext,
+    origin?: MeasurementSheetOrigin,
+  ) => void;
+  measurementLogged: () => void;
   openWater: () => void;
   openSleep: () => void;
   close: () => void;
@@ -53,8 +63,14 @@ export interface HomeSheetsState {
 
 export const useHomeSheets = create<HomeSheetsState>((set) => ({
   sheet: null,
+  measurementContext: "weight",
+  measurementOrigin: "home",
   habitsRev: 0,
-  openWeighIn: () => set({ sheet: "weighIn" }),
+  measurementsRev: 0,
+  openWeighIn: (measurementContext = "weight", measurementOrigin = "home") =>
+    set({ sheet: "weighIn", measurementContext, measurementOrigin }),
+  measurementLogged: () =>
+    set((s) => ({ measurementsRev: s.measurementsRev + 1 })),
   openWater: () => set({ sheet: "water" }),
   openSleep: () => set({ sheet: "sleep" }),
   close: () =>

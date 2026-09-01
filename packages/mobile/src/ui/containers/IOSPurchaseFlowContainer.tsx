@@ -33,8 +33,11 @@ import { useRestorePurchases } from "@/ui/hooks/useRestorePurchases";
 import { useSyncSubscription } from "@/ui/hooks/useSyncSubscription";
 import { useMySubscription } from "@/ui/hooks/useMySubscription";
 import { useSubscriptionTiers } from "@/ui/hooks/useSubscriptionTiers";
-import { IOSPurchaseFlowPresenter } from "@/ui/presenters/IOSPurchaseFlowPresenter";
-import type { SubscriptionRailScreen } from "@/ui/presenters/IOSPurchaseFlowPresenter";
+import {
+  IOSPurchaseFlowPresenter,
+  type OnboardingRecommendationMode,
+  type SubscriptionRailScreen,
+} from "@/ui/presenters/IOSPurchaseFlowPresenter";
 
 /**
  * Native RevenueCat purchase-flow container (App Store + Google Play rails).
@@ -73,7 +76,16 @@ export const MONTHLY_ONLY_TIERS: ReadonlySet<SubscriptionTierName> = new Set(
 
 type Role = "user" | "trainer";
 
-export function IOSPurchaseFlowContainer() {
+export interface IOSPurchaseFlowContainerProps {
+  onboardingRecommendation?: OnboardingRecommendationMode & {
+    onBack: () => void;
+    onPlanSelected?: (tier: SubscriptionTierName) => void;
+  };
+}
+
+export function IOSPurchaseFlowContainer({
+  onboardingRecommendation,
+}: IOSPurchaseFlowContainerProps = {}) {
   const router = useRouter();
   const purchases = usePurchases();
 
@@ -81,16 +93,22 @@ export function IOSPurchaseFlowContainer() {
     tier?: string;
     cycle?: string;
     role?: string;
+    onboarding?: string;
   }>();
   const initialCycleParam =
     searchParams.cycle === "yearly" || searchParams.cycle === "monthly"
       ? (searchParams.cycle as BillingCycle)
       : null;
-  const initialRoleParam = searchParams.role;
+  const initialRoleParam = onboardingRecommendation
+    ? TRAINER_TIER_NAMES.has(onboardingRecommendation.recommendedTier)
+      ? "personal_trainer"
+      : "user"
+    : searchParams.role;
   // Derived from the catalog's trainer-tier set (not a hardcoded literal list)
   // so it can never drift when the coach ladder changes — spec-29 Phase 2.
   const tierParamImpliesTrainer = TRAINER_TIER_NAMES.has(
-    searchParams.tier as SubscriptionTierName,
+    (onboardingRecommendation?.recommendedTier ??
+      searchParams.tier) as SubscriptionTierName,
   );
 
   const tiersQuery = useSubscriptionTiers();
@@ -123,7 +141,10 @@ export function IOSPurchaseFlowContainer() {
   );
   const isProcessing = processingPhase !== null;
   const hasExplicitPlanRoute = Boolean(
-    searchParams.tier || searchParams.cycle || searchParams.role,
+    onboardingRecommendation ||
+    searchParams.tier ||
+    searchParams.cycle ||
+    searchParams.role,
   );
 
   useEffect(
@@ -314,6 +335,7 @@ export function IOSPurchaseFlowContainer() {
     async (tier: SubscriptionTierName) => {
       if (isProcessing || purchases === null) return;
       if (tier === "free") return;
+      onboardingRecommendation?.onPlanSelected?.(tier);
 
       const pkg = findPackageForTier(packages, tier, billingCycle);
       if (pkg === null) {
@@ -380,7 +402,9 @@ export function IOSPurchaseFlowContainer() {
           );
           return;
         }
-        router.push(`/(auth)/success?tier=${tier}` as Href);
+        router.push(
+          `/(auth)/success?tier=${tier}${onboardingRecommendation || searchParams.onboarding === "1" ? "&onboarding=1" : ""}` as Href,
+        );
         navigationStarted = true;
       } catch (err) {
         const error = err as { kind?: string; message?: string };
@@ -424,6 +448,8 @@ export function IOSPurchaseFlowContainer() {
       syncMutation,
       refetchSubscription,
       router,
+      onboardingRecommendation,
+      searchParams.onboarding,
     ],
   );
 
@@ -459,7 +485,9 @@ export function IOSPurchaseFlowContainer() {
       try {
         const sub = await syncMutation.mutateAsync();
         if (sub.tierName !== "free") {
-          router.push(`/(auth)/success?tier=${sub.tierName}` as Href);
+          router.push(
+            `/(auth)/success?tier=${sub.tierName}${onboardingRecommendation || searchParams.onboarding === "1" ? "&onboarding=1" : ""}` as Href,
+          );
           return;
         }
         Alert.alert(
@@ -479,7 +507,14 @@ export function IOSPurchaseFlowContainer() {
         error.message ?? "Couldn't restore purchases. Please try again.",
       );
     }
-  }, [isProcessing, restoreMutation, syncMutation, router]);
+  }, [
+    isProcessing,
+    restoreMutation,
+    syncMutation,
+    router,
+    onboardingRecommendation,
+    searchParams.onboarding,
+  ]);
 
   const handleManageInAppStore = useCallback(async () => {
     const fallbackUrl =
@@ -522,6 +557,7 @@ export function IOSPurchaseFlowContainer() {
       processingPhase={processingPhase}
       isRestoring={restoreMutation.isPending || syncMutation.isPending}
       screen={screen}
+      onboardingRecommendation={onboardingRecommendation}
       onBillingCycleChange={setBillingCycle}
       onTierSelect={(tier) => void handleTierSelect(tier)}
       onRoleChange={setSelectedRole}
@@ -531,8 +567,20 @@ export function IOSPurchaseFlowContainer() {
         setScreen("plans");
         setScreenChosen(true);
       }}
-      onContinueFree={() => router.push("/(auth)/success?tier=free" as Href)}
+      onContinueFree={() => {
+        if (onboardingRecommendation) {
+          onboardingRecommendation.onContinueFree();
+          return;
+        }
+        router.push(
+          `/(auth)/success?tier=free${searchParams.onboarding === "1" ? "&onboarding=1" : ""}` as Href,
+        );
+      }}
       onBack={() => {
+        if (onboardingRecommendation) {
+          onboardingRecommendation.onBack();
+          return;
+        }
         if (screen === "plans") {
           // Return to whichever screen opened plans — Manage for an existing
           // subscriber (change-plan), the persona chooser otherwise.

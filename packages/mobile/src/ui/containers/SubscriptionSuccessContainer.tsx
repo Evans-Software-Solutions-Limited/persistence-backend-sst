@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo } from "react";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import type { SubscriptionTierName } from "@/domain/models/subscription";
 import { useUserMode } from "@/state/user-mode";
@@ -8,6 +8,7 @@ import {
   SubscriptionSuccessPresenter,
   type SubscriptionBenefit,
 } from "@/ui/presenters/SubscriptionSuccessPresenter";
+import { useOptionalOnboarding } from "@/ui/state/OnboardingProvider";
 
 /**
  * Post-payment Success container. Ported 1:1 from legacy
@@ -105,7 +106,10 @@ export function getSuccessMessage(tier: SubscriptionTierName): string {
 
 export function SubscriptionSuccessContainer() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ tier?: string }>();
+  const params = useLocalSearchParams<{ tier?: string; onboarding?: string }>();
+  const onboarding = useOptionalOnboarding();
+  const completeOnboardingPage = onboarding?.completePage;
+  const completeOnboardingJourney = onboarding?.completeJourney;
   const subQuery = useMySubscription();
   const setEligibility = useUserMode((s) => s.setEligibility);
   const switchTo = useUserMode((s) => s.switchTo);
@@ -126,6 +130,22 @@ export function SubscriptionSuccessContainer() {
 
   const successMessage = useMemo(() => getSuccessMessage(tierName), [tierName]);
   const benefits = useMemo(() => getSubscriptionBenefits(tierName), [tierName]);
+
+  // A confirmed purchase (or explicit Continue Free) is terminal even if the
+  // app is killed on this success screen. Persist immediately; AuthGate keeps
+  // this whitelisted screen visible until the user chooses where to go next.
+  useEffect(() => {
+    if (
+      params.onboarding !== "1" ||
+      !completeOnboardingPage ||
+      !completeOnboardingJourney
+    )
+      return;
+    void (async () => {
+      await completeOnboardingPage("recommendation");
+      await completeOnboardingJourney();
+    })();
+  }, [params.onboarding, completeOnboardingPage, completeOnboardingJourney]);
 
   // Under the Option 3 IA, the Clients tab is visible only in coach mode
   // (mode — not subscription tier — gates tab VISIBILITY; 14-navigation

@@ -79,7 +79,7 @@ describe("<TrainOverviewPresenter>", () => {
   });
 
   it("shows the targets card with enabled habits as an informative sheet", () => {
-    const { getByTestId, getByText, queryByTestId } = renderWithTheme(
+    const { getByTestId, getByText } = renderWithTheme(
       <TrainOverviewPresenter {...baseProps()} habits={ENABLED_HABITS} />,
     );
     expect(getByTestId("train-targets-card")).toBeTruthy();

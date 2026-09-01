@@ -28,6 +28,7 @@ import {
   cancelSessionCommand,
   logSetCommand,
   removeExerciseCommand,
+  reorderSessionExercisesCommand,
   removeSupersetSetCommand,
   setExerciseNotesCommand,
   startSessionCommand,
@@ -51,6 +52,7 @@ import { RECENT_SETS_TABLES } from "@/adapters/storage/tables";
 import { useProfilePage } from "@/ui/hooks/useProfilePage";
 import { useRestTimer } from "@/ui/hooks/useRestTimer";
 import { useWorkout } from "@/ui/hooks/useWorkout";
+import { isExperiencePolishEnabled } from "@/ui/state/experiencePolish";
 import { AddExercisePopover } from "@/ui/components/workouts/AddExercisePopover";
 import { AddExerciseToSupersetPopover } from "@/ui/components/workouts/AddExerciseToSupersetPopover";
 import { SwapExercisePopover } from "@/ui/components/workouts/SwapExercisePopover";
@@ -461,6 +463,18 @@ export function ActiveSessionContainer() {
     [userId, storage, rereadCache],
   );
 
+  const onMoveExercise = useCallback(
+    (sessionExerciseId: string, direction: -1 | 1) => {
+      if (!userId) return;
+      reorderSessionExercisesCommand(
+        { storage, userId },
+        { sessionExerciseId, direction },
+      );
+      rereadCache();
+    },
+    [storage, userId, rereadCache],
+  );
+
   const onAddExercise = useCallback(() => {
     setPickerMode({ kind: "add" });
   }, []);
@@ -670,6 +684,9 @@ export function ActiveSessionContainer() {
         onOpenSupersetNotes={onOpenSupersetNotes}
         onSubstitute={onSubstitute}
         onRemoveExercise={onRemoveExercise}
+        onMoveExercise={
+          isExperiencePolishEnabled() ? onMoveExercise : undefined
+        }
         onTapExercise={onTapExercise}
         onAddExercise={onAddExercise}
         onAddExerciseToSuperset={onAddExerciseToSuperset}

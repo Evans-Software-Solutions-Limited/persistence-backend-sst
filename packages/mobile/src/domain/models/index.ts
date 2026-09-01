@@ -80,6 +80,19 @@ export {
 } from "./subscription";
 
 export {
+  ONBOARDING_PAGES,
+  ONBOARDING_INTENT_KEYS,
+  DEFAULT_ATHLETE_ONBOARDING_INTENTS,
+  type OnboardingPage,
+  type OnboardingIntentKey,
+  type OnboardingPath,
+  type CoachClientBand,
+  type OnboardingStatus,
+  type OnboardingState,
+  type OnboardingRecommendation,
+} from "./onboarding";
+
+export {
   type NotificationType,
   type WireNotificationType,
   type Notification,

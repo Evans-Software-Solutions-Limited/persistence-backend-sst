@@ -18,6 +18,7 @@ import {
   DASHBOARD_REQUEST_TIMEOUT_MS,
   SSTApiAdapter,
 } from "@/adapters/api/sst-api.adapter";
+import { ok } from "@/shared/errors";
 
 type FetchImpl = (input: any, init?: any) => Promise<Response>;
 
@@ -491,6 +492,42 @@ describe("SSTApiAdapter.searchExercises", () => {
     const adapter = new SSTApiAdapter();
     const result = await adapter.searchExercises("a");
     expect(result.ok).toBe(false);
+  });
+});
+
+describe("SSTApiAdapter.getEstimatedOneRepMax", () => {
+  it("uses the exercise-scoped route and preserves the source-set contract", async () => {
+    const fetchMock = installFetchMock(
+      async () =>
+        new Response(
+          JSON.stringify({
+            data: {
+              estimateKg: 120,
+              source: {
+                weightKg: 100,
+                reps: 6,
+                completedAt: "2026-09-01T10:00:00Z",
+              },
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+    );
+
+    const result = await new SSTApiAdapter().getEstimatedOneRepMax("bench-1");
+    expect(String(fetchMock.mock.calls[0][0])).toContain(
+      "/exercises/bench-1/estimated-1rm",
+    );
+    expect(result).toEqual(
+      ok({
+        estimateKg: 120,
+        source: {
+          weightKg: 100,
+          reps: 6,
+          completedAt: "2026-09-01T10:00:00Z",
+        },
+      }),
+    );
   });
 });
 

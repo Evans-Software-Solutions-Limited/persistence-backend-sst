@@ -25,6 +25,7 @@ import { SubscriptionCard } from "@/ui/components/subscription/SubscriptionCard"
 import { SubscriptionLegalFooter } from "@/ui/components/subscription/SubscriptionLegalFooter";
 import { TrainerSubscriptionCard } from "@/ui/components/subscription/TrainerSubscriptionCard";
 import { color } from "@/ui/theme/tokens";
+import type { OnboardingRecommendationMode } from "@/ui/presenters/IOSPurchaseFlowPresenter";
 
 /**
  * Pure presenter for the Subscription Selection screen. Ported 1:1
@@ -83,6 +84,7 @@ export interface SubscriptionSelectionPresenterProps {
   onBack: () => void;
   onRetry: () => void;
   onCancelSubscription: () => void;
+  onboardingRecommendation?: OnboardingRecommendationMode;
 }
 
 export function SubscriptionSelectionPresenter(
@@ -111,6 +113,7 @@ export function SubscriptionSelectionPresenter(
     onBack,
     onRetry,
     onCancelSubscription,
+    onboardingRecommendation,
   } = props;
 
   // User-tier cards: catalog-driven, not a hardcoded "premium" lookup —
@@ -155,9 +158,16 @@ export function SubscriptionSelectionPresenter(
           a.priceMonthly - b.priceMonthly ||
           a.tierName.localeCompare(b.tierName),
       );
+    const visibleConsumerTiers =
+      onboardingRecommendation && !onboardingRecommendation.showOtherPlans
+        ? consumerTiers.filter(
+            (tier) =>
+              tier.tierName === onboardingRecommendation.recommendedTier,
+          )
+        : consumerTiers;
     const cards: React.ReactElement[] = [];
 
-    for (const tier of consumerTiers) {
+    for (const tier of visibleConsumerTiers) {
       const isTierCurrent = currentTier === tier.tierName;
       const showTrial =
         hasTrialEligibilityData &&
@@ -175,6 +185,9 @@ export function SubscriptionSelectionPresenter(
           onPress={() => onTierSelect(tier.tierName)}
           getFeaturesList={getFeaturesList}
           isTrainer={false}
+          isRecommended={
+            onboardingRecommendation?.recommendedTier === tier.tierName
+          }
         />,
       );
     }
@@ -188,6 +201,7 @@ export function SubscriptionSelectionPresenter(
     hasTrialEligibilityData,
     isTrialEligibleUser,
     onTierSelect,
+    onboardingRecommendation,
   ]);
 
   // Trainer-tier cards: post tier-simplification, one tier per
@@ -206,7 +220,13 @@ export function SubscriptionSelectionPresenter(
     ];
     const cards: React.ReactElement[] = [];
 
-    for (const baseName of baseNames) {
+    const visibleBaseNames =
+      onboardingRecommendation && !onboardingRecommendation.showOtherPlans
+        ? baseNames.filter(
+            (tier) => tier === onboardingRecommendation.recommendedTier,
+          )
+        : baseNames;
+    for (const baseName of visibleBaseNames) {
       const tier = subscriptionTiers.find((t) => t.tierName === baseName);
       if (tier) {
         const isCurrent = currentTier === tier.tierName;
@@ -228,6 +248,9 @@ export function SubscriptionSelectionPresenter(
             trialBannerText={`${DEFAULT_TRIAL_DAYS}-day free trial`}
             onStandardPress={() => {}}
             onProPress={() => onTierSelect(tier.tierName)}
+            isRecommended={
+              onboardingRecommendation?.recommendedTier === tier.tierName
+            }
           />,
         );
       }
@@ -242,6 +265,7 @@ export function SubscriptionSelectionPresenter(
     hasTrialEligibilityData,
     isTrialEligibleTrainer,
     onTierSelect,
+    onboardingRecommendation,
   ]);
 
   if (isLoading) {
@@ -307,7 +331,19 @@ export function SubscriptionSelectionPresenter(
           <Ionicons name="arrow-back" size={24} color={color.$text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Choose your plan</Text>
-        <View style={styles.headerSpacer} />
+        {onboardingRecommendation ? (
+          <TouchableOpacity
+            style={styles.headerSkip}
+            onPress={onboardingRecommendation.onSkip}
+            testID="onboarding-recommendation-skip"
+            accessibilityRole="button"
+            accessibilityLabel="Skip recommendation"
+          >
+            <Text style={styles.headerSkipText}>Skip</Text>
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.headerSpacer} />
+        )}
       </View>
 
       {isOffline && <OfflineBanner />}
@@ -320,42 +356,86 @@ export function SubscriptionSelectionPresenter(
           style={styles.scrollView}
           showsVerticalScrollIndicator={false}
         >
-          <View style={styles.roleToggleContainer}>
-            <TouchableOpacity
-              style={[
-                styles.roleToggleButton,
-                selectedRole === "user" && styles.roleToggleButtonActive,
-              ]}
-              onPress={() => onRoleChange("user")}
-              testID="role-toggle-user"
-            >
-              <Text
-                style={[
-                  styles.roleToggleText,
-                  selectedRole === "user" && styles.roleToggleTextActive,
-                ]}
-              >
-                I&apos;m a User
+          {onboardingRecommendation && (
+            <View style={styles.onboardingRecommendationIntro}>
+              <Text style={styles.onboardingEyebrow}>
+                BASED ON YOUR ANSWERS
               </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.roleToggleButton,
-                selectedRole === "trainer" && styles.roleToggleButtonActive,
-              ]}
-              onPress={() => onRoleChange("trainer")}
-              testID="role-toggle-trainer"
-            >
-              <Text
-                style={[
-                  styles.roleToggleText,
-                  selectedRole === "trainer" && styles.roleToggleTextActive,
-                ]}
-              >
-                I&apos;m a Trainer
+              <Text style={styles.onboardingTitle}>Your recommended plan</Text>
+              <Text style={styles.onboardingBody}>
+                This is the lowest plan that covers the capabilities you
+                selected.
               </Text>
-            </TouchableOpacity>
-          </View>
+              {onboardingRecommendation.reasons.slice(0, 3).map((reason) => (
+                <Text key={reason} style={styles.onboardingReason}>
+                  • {reason}
+                </Text>
+              ))}
+            </View>
+          )}
+          {!onboardingRecommendation && (
+            <View style={styles.roleToggleContainer}>
+              <TouchableOpacity
+                style={[
+                  styles.roleToggleButton,
+                  selectedRole === "user" && styles.roleToggleButtonActive,
+                ]}
+                onPress={() => onRoleChange("user")}
+                testID="role-toggle-user"
+              >
+                <Text
+                  style={[
+                    styles.roleToggleText,
+                    selectedRole === "user" && styles.roleToggleTextActive,
+                  ]}
+                >
+                  I&apos;m a User
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.roleToggleButton,
+                  selectedRole === "trainer" && styles.roleToggleButtonActive,
+                ]}
+                onPress={() => onRoleChange("trainer")}
+                testID="role-toggle-trainer"
+              >
+                <Text
+                  style={[
+                    styles.roleToggleText,
+                    selectedRole === "trainer" && styles.roleToggleTextActive,
+                  ]}
+                >
+                  I&apos;m a Trainer
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {onboardingRecommendation && (
+            <>
+              <TouchableOpacity
+                style={styles.onboardingTextButton}
+                onPress={onboardingRecommendation.onToggleOtherPlans}
+                testID="onboarding-show-other-plans"
+              >
+                <Text style={styles.onboardingTextButtonLabel}>
+                  {onboardingRecommendation.showOtherPlans
+                    ? "Hide other plans"
+                    : "Show other plans"}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.onboardingFreeButton}
+                onPress={onboardingRecommendation.onContinueFree}
+                testID="onboarding-continue-free"
+              >
+                <Text style={styles.onboardingFreeButtonLabel}>
+                  Continue with Free
+                </Text>
+              </TouchableOpacity>
+            </>
+          )}
 
           {currentTier !== "free" && (
             <CurrentSubscriptionStatusCard
@@ -603,12 +683,62 @@ const styles = StyleSheet.create({
   headerSpacer: {
     width: 40,
   },
+  headerSkip: {
+    minWidth: 40,
+    minHeight: 40,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerSkipText: { color: color.$primary, fontSize: 14, fontWeight: "700" },
   container: {
     flex: 1,
   },
   scrollView: {
     flex: 1,
     paddingHorizontal: 24,
+  },
+  onboardingRecommendationIntro: {
+    gap: 6,
+    marginTop: 8,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: color.$border,
+    borderRadius: 16,
+    backgroundColor: color.$surface,
+  },
+  onboardingEyebrow: {
+    color: color.$primary,
+    fontSize: 10,
+    fontWeight: "700",
+    letterSpacing: 1.4,
+  },
+  onboardingTitle: { color: color.$text, fontSize: 23, fontWeight: "800" },
+  onboardingBody: { color: color.$text2, fontSize: 13, lineHeight: 19 },
+  onboardingReason: { color: color.$text2, fontSize: 12, lineHeight: 18 },
+  onboardingTextButton: {
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 12,
+  },
+  onboardingTextButtonLabel: {
+    color: color.$primary,
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  onboardingFreeButton: {
+    minHeight: 48,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: color.$primary,
+    borderRadius: 13,
+  },
+  onboardingFreeButtonLabel: {
+    color: color.$primary,
+    fontSize: 14,
+    fontWeight: "700",
   },
   roleToggleContainer: {
     flexDirection: "row",

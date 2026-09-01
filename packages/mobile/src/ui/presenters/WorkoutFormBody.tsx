@@ -116,6 +116,7 @@ export type WorkoutFormBodyProps = {
     field: string,
     value: number,
   ) => void;
+  readonly onMoveExercise?: (exerciseId: string, direction: -1 | 1) => void;
   readonly onSubmit: () => void;
   readonly onCancel: () => void;
 
@@ -146,6 +147,7 @@ export function WorkoutFormBody({
   onAddSuperset,
   onRemoveExercise,
   onExerciseConfigChange,
+  onMoveExercise,
   onSubmit,
   onCancel,
   headerTitle,
@@ -157,6 +159,15 @@ export function WorkoutFormBody({
   const supersetLetters = buildSupersetLetterMap(
     exercises.map((ex) => ex.superset_group),
   );
+  const reorderBlockLeadIds: string[] = [];
+  const seenReorderGroups = new Set<number>();
+  for (const exercise of exercises) {
+    if (exercise.superset_group == null) reorderBlockLeadIds.push(exercise.id);
+    else if (!seenReorderGroups.has(exercise.superset_group)) {
+      seenReorderGroups.add(exercise.superset_group);
+      reorderBlockLeadIds.push(exercise.id);
+    }
+  }
   const nameError =
     hasAttemptedSubmit && formState.name.trim().length === 0
       ? "Workout name is required"
@@ -457,6 +468,17 @@ export function WorkoutFormBody({
                                   : undefined
                               }
                               supersetLeadExercise={supersetExercises[0]}
+                              reorderPosition={
+                                reorderBlockLeadIds.indexOf(exercise.id) + 1
+                              }
+                              reorderTotal={reorderBlockLeadIds.length}
+                              onMove={
+                                onMoveExercise &&
+                                (!hasSupersetGroup || isSupersetStart)
+                                  ? (direction) =>
+                                      onMoveExercise(exercise.id, direction)
+                                  : undefined
+                              }
                             />
                           </View>
                         );

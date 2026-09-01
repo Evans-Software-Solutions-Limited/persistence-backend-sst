@@ -82,9 +82,12 @@ describe("EditProfilePresenter", () => {
     const { getByTestId } = renderWithTheme(
       <EditProfilePresenter {...makeProps({ onDateOfBirthChange })} />,
     );
-    expect(getByTestId("edit-profile-dob").props.value).toBe("1990-01-15");
-    fireEvent.changeText(getByTestId("edit-profile-dob"), "1992-02-29");
-    expect(onDateOfBirthChange).toHaveBeenCalledWith("1992-02-29");
+    expect(getByTestId("edit-profile-dob").props.accessibilityLabel).toContain(
+      "January 15, 1990",
+    );
+    fireEvent.press(getByTestId("edit-profile-dob"));
+    fireEvent.press(getByTestId("edit-profile-dob-calendar-day-1990-01-10"));
+    expect(onDateOfBirthChange).toHaveBeenCalledWith("1990-01-10");
   });
 
   it("fires onFitnessLevelChange when a different level is tapped", () => {
@@ -268,7 +271,9 @@ describe("EditProfilePresenter", () => {
       />,
     );
     expect(getByTestId("edit-profile-full-name").props.editable).toBe(false);
-    expect(getByTestId("edit-profile-dob").props.editable).toBe(false);
+    expect(
+      getByTestId("edit-profile-dob").props.accessibilityState.disabled,
+    ).toBe(true);
     // Save button shows the processing label + is disabled.
     expect(getByText("Saving…")).toBeTruthy();
     expect(

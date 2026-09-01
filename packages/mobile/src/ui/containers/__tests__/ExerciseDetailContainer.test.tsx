@@ -1,4 +1,4 @@
-import { act, fireEvent } from "@testing-library/react-native";
+import { act, fireEvent, waitFor } from "@testing-library/react-native";
 import React from "react";
 
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
@@ -105,6 +105,7 @@ describe("ExerciseDetailContainer", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockUseLocalSearchParams.mockReturnValue({ id: "ex-1" });
+    delete process.env.EXPO_PUBLIC_EXPERIENCE_POLISH_V1_ENABLED;
   });
 
   afterEach(() => {
@@ -219,5 +220,38 @@ describe("ExerciseDetailContainer", () => {
     await findByText("Bench Press");
     fireEvent.press(getByLabelText("Back"));
     expect(mockRouterBack).toHaveBeenCalledTimes(1);
+  });
+
+  it("tracks the 1RM banner once when a qualifying estimate is shown", async () => {
+    process.env.EXPO_PUBLIC_EXPERIENCE_POLISH_V1_ENABLED = "true";
+    const api = new InMemoryApiAdapter();
+    api.estimatedOneRepMaxByExercise["analytics-exercise"] = {
+      estimateKg: 120,
+      source: {
+        weightKg: 100,
+        reps: 6,
+        completedAt: "2026-08-30T10:00:00.000Z",
+      },
+    };
+    mockUseLocalSearchParams.mockReturnValue({ id: "analytics-exercise" });
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheExercises([
+      buildExercise({ id: "analytics-exercise", createdBy: "user-1" }),
+    ]);
+
+    renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <ExerciseDetailContainer />),
+    );
+
+    await waitFor(() =>
+      expect(api.analyticsEvents).toContainEqual({
+        name: "estimated_1rm_banner_viewed",
+      }),
+    );
+    expect(
+      api.analyticsEvents.filter(
+        (event) => event.name === "estimated_1rm_banner_viewed",
+      ),
+    ).toHaveLength(1);
   });
 });

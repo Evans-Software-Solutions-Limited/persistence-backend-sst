@@ -96,6 +96,27 @@ describe("ExerciseDetailPresenter", () => {
     expect(onOpenVideo).toHaveBeenCalledTimes(1);
   });
 
+  it("shows one compact estimated 1RM banner without formula copy", () => {
+    const { getByTestId, getByText, queryByText } = setup({
+      estimatedOneRepMax: {
+        estimateKg: 144,
+        source: { weightKg: 120, reps: 6, completedAt: "2026-09-01T10:00:00Z" },
+      },
+    });
+    expect(getByTestId("exercise-estimated-1rm")).toBeTruthy();
+    expect(getByText("144.0")).toBeTruthy();
+    expect(getByText("From 120.0 kg × 6")).toBeTruthy();
+    expect(queryByText(/Epley|formula/i)).toBeNull();
+  });
+
+  it("leaves detail unchanged when there is no qualifying 1RM", () => {
+    expect(
+      setup({ estimatedOneRepMax: null }).queryByTestId(
+        "exercise-estimated-1rm",
+      ),
+    ).toBeNull();
+  });
+
   it("omits empty sections (no resolved labels, no description/instructions)", () => {
     const { queryByTestId, queryByText } = setup({
       exercise: {

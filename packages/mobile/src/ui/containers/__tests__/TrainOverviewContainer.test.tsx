@@ -17,6 +17,7 @@ jest.mock("@/adapters/api", () => ({
 }));
 
 const mockPush = jest.fn();
+let mockFocusCallback: (() => void | (() => void)) | null = null;
 jest.mock("expo-router", () => {
   const React = jest.requireActual("react") as typeof import("react");
   return {
@@ -24,8 +25,10 @@ jest.mock("expo-router", () => {
     // Run the focus callback once on mount (= first focus, which
     // useRefreshOnFocus skips) so the container's focus-refresh wiring doesn't
     // throw and existing assertions are unaffected.
-    useFocusEffect: (cb: () => void | (() => void)) =>
-      React.useEffect(cb, [cb]),
+    useFocusEffect: (cb: () => void | (() => void)) => {
+      mockFocusCallback = cb;
+      React.useEffect(cb, [cb]);
+    },
   };
 });
 
@@ -117,6 +120,7 @@ describe("<TrainOverviewContainer>", () => {
     captured.props = null;
     mockPush.mockReset();
     jest.restoreAllMocks();
+    delete process.env.EXPO_PUBLIC_EXPERIENCE_POLISH_V1_ENABLED;
   });
 
   it("passes the cached active programme + today's training to the presenter", async () => {
@@ -170,6 +174,26 @@ describe("<TrainOverviewContainer>", () => {
     });
     await waitFor(() =>
       expect(getHome.mock.calls.length).toBeGreaterThan(before),
+    );
+  });
+
+  it("refetches active relationships when the kept-alive tab regains focus", async () => {
+    process.env.EXPO_PUBLIC_EXPERIENCE_POLISH_V1_ENABLED = "true";
+    const { adapters, storage } = makeAdapters();
+    storage.cacheHome(USER, homePayload());
+    const getRelationships = jest.spyOn(adapters.api, "getClientRelationships");
+
+    renderContainer(adapters);
+    await waitFor(() => expect(mockFocusCallback).not.toBeNull());
+    const before = getRelationships.mock.calls.length;
+    await act(async () => {
+      mockFocusCallback?.();
+    });
+    await waitFor(() =>
+      expect(getRelationships.mock.calls.length).toBeGreaterThan(before),
+    );
+    expect((adapters.api as InMemoryApiAdapter).analyticsEvents).toContainEqual(
+      { name: "coaching_overview_opened" },
     );
   });
 });

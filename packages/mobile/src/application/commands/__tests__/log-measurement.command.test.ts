@@ -36,6 +36,9 @@ describe("logMeasurementCommand", () => {
     const queued = storage.getPendingMutations();
     expect(queued[0].endpoint).toBe("/measurements");
     expect(queued[0].method).toBe("POST");
+    expect(JSON.parse(queued[0].payload)).toMatchObject({
+      measuredAt: new Date("2026-06-10T12:00:00").toISOString(),
+    });
     expect(storage.getCachedHome("u1")).toBeNull();
   });
 

@@ -66,7 +66,10 @@ export type YouPresenterProps = {
   onRefresh: () => void;
   onOpenDrawer: () => void;
   onUseToken: () => void;
-  onOpenBodyHistory: () => void;
+  onOpenWeightHistory?: () => void;
+  onOpenBodyFatHistory?: () => void;
+  /** @deprecated test/caller compatibility while routes migrate. */
+  onOpenBodyHistory?: () => void;
   /** Navigate to the Requests screen. */
   onOpenRequests: () => void;
   /** Navigate to the invite-code redeem screen (Phase 8). */
@@ -97,6 +100,8 @@ export function YouPresenter(props: YouPresenterProps) {
     onRefresh,
     onOpenDrawer,
     onUseToken,
+    onOpenWeightHistory,
+    onOpenBodyFatHistory,
     onOpenBodyHistory,
     onOpenRequests,
     onOpenAcceptInvite,
@@ -193,7 +198,8 @@ export function YouPresenter(props: YouPresenterProps) {
             <BodyTrendPresenter
               weight={bodyTrend.weight}
               bodyFat={bodyTrend.bodyFat}
-              onOpenDetails={onOpenBodyHistory}
+              onOpenWeight={onOpenWeightHistory ?? onOpenBodyHistory}
+              onOpenBodyFat={onOpenBodyFatHistory ?? onOpenBodyHistory}
             />
           </Section>
 

@@ -22,6 +22,9 @@ import { initAuthCallbackCapture } from "@/ui/hooks/useAuthCallbackUrl";
 import { usePurchasesIdentity } from "../src/ui/hooks/usePurchasesIdentity";
 import { usePushNotifications } from "../src/ui/hooks/usePushNotifications";
 import { useUserModeEligibility } from "../src/ui/hooks/useUserModeEligibility";
+import { useOptionalOnboarding } from "../src/ui/state/OnboardingProvider";
+import { shouldAutoShowOnboarding } from "../src/ui/state/onboardingEligibility";
+import { type Href } from "expo-router";
 
 // Initialise Sentry at module load, before the app renders. No-op when
 // `EXPO_PUBLIC_SENTRY_DSN` is unset (fail-safe — DSN-less builds run
@@ -172,17 +175,27 @@ function AuthGate() {
   const profilePage = useProfilePage();
   const segments = useSegments();
   const router = useRouter();
-  const params = useGlobalSearchParams<{ code?: string }>();
+  const params = useGlobalSearchParams<{
+    code?: string;
+    onboarding?: string;
+  }>();
+  // `AppProviders` owns this context in production. The optional read keeps
+  // this routing component independently testable when AppProviders is mocked
+  // as a pass-through; signed-out users cannot require onboarding anyway.
+  const onboarding = useOptionalOnboarding();
 
   const deletedAt = profilePage.payload?.profile.deletedAt ?? null;
+  const profileCreatedAt = profilePage.payload?.profile.createdAt ?? null;
   // `code` off the incoming invite deep link (/(app)/accept-invite?code=X).
   const inviteCode = typeof params.code === "string" ? params.code : null;
 
   useEffect(() => {
     if (isLoading) return;
 
-    const inAuthGroup = segments[0] === "(auth)";
-    const inAppGroup = segments[0] === "(app)";
+    const rootSegment = (segments as readonly string[])[0];
+    const inAuthGroup = rootSegment === "(auth)";
+    const inAppGroup = rootSegment === "(app)";
+    const inOnboardingGroup = rootSegment === "(onboarding)";
     // The auth-callback deep-link screen (`app/auth/callback.tsx`) is
     // ungrouped, so it's in neither group. It owns its own routing — the
     // container establishes the session (then the `session && !inAppGroup`
@@ -190,7 +203,7 @@ function AuthGate() {
     // it from the signed-out redirect so a cold open from a confirmation link
     // doesn't bounce a *successful* confirm to sign-in in the window before
     // the container's async `setSessionFromTokens` has resolved.
-    const onAuthCallback = segments[0] === "auth";
+    const onAuthCallback = rootSegment === "auth";
     // M10: subscription-selection + success live under (auth) because
     // they're rendered post-sign-up before the user has reached the
     // app. AuthGate must NOT bounce signed-in users out of those
@@ -200,6 +213,8 @@ function AuthGate() {
     const inPostAuthSubscriptionFlow =
       inAuthGroup &&
       (segmentName === "subscription-selection" || segmentName === "success");
+    const inOnboardingPurchaseFlow =
+      inPostAuthSubscriptionFlow && params.onboarding === "1";
     const inRestoreAccountScreen =
       inAppGroup && segmentName === "restore-account";
     // A recovery-link session must set a new password before reaching the
@@ -225,9 +240,49 @@ function AuthGate() {
       return;
     }
 
+    const onboardingRequired = shouldAutoShowOnboarding({
+      createdAt: profileCreatedAt,
+      state: onboarding?.state ?? null,
+    });
+    if (
+      session &&
+      !(onboarding?.isLoading ?? false) &&
+      onboardingRequired &&
+      !inOnboardingGroup &&
+      !inOnboardingPurchaseFlow &&
+      !inSetNewPasswordScreen
+    ) {
+      // Recovery and an invite's required data-sharing consent take priority.
+      // Onboarding resumes automatically after either flow resolves.
+      if (usePasswordRecovery.getState().pending) {
+        router.replace("/(auth)/set-new-password");
+        return;
+      }
+      const pendingCode = usePendingInvite.getState().pendingCode;
+      if (pendingCode) {
+        router.replace(
+          `/(app)/accept-invite?code=${encodeURIComponent(pendingCode)}`,
+        );
+        return;
+      }
+      const page = onboarding?.state?.currentPage ?? "welcome";
+      router.replace(`/(onboarding)/${page}` as Href);
+      return;
+    }
+    if (
+      session &&
+      inOnboardingGroup &&
+      !(onboarding?.isLoading ?? false) &&
+      onboarding?.state?.status !== "in_progress"
+    ) {
+      router.replace("/(app)/(tabs)");
+      return;
+    }
+
     if (
       session &&
       !inAppGroup &&
+      !inOnboardingGroup &&
       !inPostAuthSubscriptionFlow &&
       !inSetNewPasswordScreen
     ) {
@@ -264,7 +319,18 @@ function AuthGate() {
       }
       router.replace("/(auth)/sign-in");
     }
-  }, [session, isLoading, segments, router, deletedAt, inviteCode]);
+  }, [
+    session,
+    isLoading,
+    segments,
+    router,
+    deletedAt,
+    inviteCode,
+    profileCreatedAt,
+    onboarding?.state,
+    onboarding?.isLoading,
+    params.onboarding,
+  ]);
 
   return <Slot />;
 }

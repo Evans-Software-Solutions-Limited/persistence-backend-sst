@@ -1,10 +1,14 @@
 import { router, useLocalSearchParams } from "expo-router";
-import { useCallback } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { Alert, Linking } from "react-native";
 
 import { ExerciseDetailPresenter } from "@/ui/presenters/ExerciseDetailPresenter";
 import { useAuth } from "@/ui/hooks/useAuth";
 import { useExercise } from "@/ui/hooks/useExercise";
+import { useEstimatedOneRepMax } from "@/ui/hooks/useEstimatedOneRepMax";
+import { useProfilePage } from "@/ui/hooks/useProfilePage";
+import { isExperiencePolishEnabled } from "@/ui/state/experiencePolish";
+import { useAdapters } from "@/ui/hooks/useAdapters";
 
 /**
  * <ExerciseDetailContainer> — wires the `/(app)/exercises/[id]` route to the
@@ -20,8 +24,23 @@ import { useExercise } from "@/ui/hooks/useExercise";
 export function ExerciseDetailContainer() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const exerciseId = id ?? null;
+  const { api } = useAdapters();
   const { exercise, isLoading, error, refresh } = useExercise(exerciseId);
+  const oneRepMax = useEstimatedOneRepMax(
+    exerciseId,
+    isExperiencePolishEnabled(),
+  );
+  const profile = useProfilePage();
   const { session } = useAuth();
+  const trackedEstimateRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!exerciseId || !oneRepMax.data) return;
+    const key = `${exerciseId}:${oneRepMax.data.estimateKg}`;
+    if (trackedEstimateRef.current === key) return;
+    trackedEstimateRef.current = key;
+    void api.trackAnalyticsEvent({ name: "estimated_1rm_banner_viewed" });
+  }, [api, exerciseId, oneRepMax.data]);
 
   const isOwner =
     exercise !== null &&
@@ -54,6 +73,8 @@ export function ExerciseDetailContainer() {
       onEdit={onEdit}
       onOpenVideo={onOpenVideo}
       onRetry={onRetry}
+      estimatedOneRepMax={oneRepMax.data}
+      weightUnit={profile.payload?.profile.weightUnit ?? "kg"}
     />
   );
 }

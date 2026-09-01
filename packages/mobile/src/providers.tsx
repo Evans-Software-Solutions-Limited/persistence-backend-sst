@@ -14,6 +14,7 @@ import type { ApiError } from "@/shared/errors";
 import type { Adapters } from "@/shared/types";
 import { captureStorageInitFailure } from "@/lib/sentry";
 import { AdapterProvider, type StorageStatus } from "@/ui/hooks/useAdapters";
+import { OnboardingProvider } from "@/ui/state/OnboardingProvider";
 import { ThemeProvider } from "@/ui/theme";
 
 /**
@@ -214,7 +215,9 @@ export function AppProviders({ children }: { children: ReactNode }) {
   return (
     <AdapterProvider adapters={adapters} storageStatus={storageStatus}>
       <QueryClientProvider client={queryClient}>
-        <ThemeProvider>{children}</ThemeProvider>
+        <ThemeProvider>
+          <OnboardingProvider>{children}</OnboardingProvider>
+        </ThemeProvider>
       </QueryClientProvider>
     </AdapterProvider>
   );

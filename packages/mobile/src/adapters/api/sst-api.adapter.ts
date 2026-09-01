@@ -10,7 +10,13 @@ import {
   type ExerciseFilters,
   type MuscleGroup,
 } from "@/domain/models/exercise";
+import type { EstimatedOneRepMax } from "@/domain/models/exercisePerformance";
 import type { ProfilePageData } from "@/domain/models/profilePage";
+import type {
+  AnalyticsEventInput,
+  OnboardingState,
+  OnboardingUpdateInput,
+} from "@/domain/models/onboarding";
 import type {
   Notification,
   NotificationsPage,
@@ -544,6 +550,28 @@ export class SSTApiAdapter implements ApiPort {
     });
   }
 
+  async getOnboarding(): Promise<Result<OnboardingState | null, ApiError>> {
+    return this.requestEnvelope<OnboardingState | null>("/users/me/onboarding");
+  }
+
+  async updateOnboarding(
+    input: OnboardingUpdateInput,
+  ): Promise<Result<OnboardingState, ApiError>> {
+    return this.requestEnvelope<OnboardingState>("/users/me/onboarding", {
+      method: "PUT",
+      body: input,
+    });
+  }
+
+  async trackAnalyticsEvent(
+    input: AnalyticsEventInput,
+  ): Promise<Result<void, ApiError>> {
+    return this.requestEnvelope<void>("/analytics/events", {
+      method: "POST",
+      body: input,
+    });
+  }
+
   // -- Workouts (M2) --
   async getWorkouts(
     params?: GetWorkoutsParams,
@@ -894,6 +922,14 @@ export class SSTApiAdapter implements ApiPort {
     const result = await this.requestEnvelope<ApiExercise>(`/exercises/${id}`);
     if (!result.ok) return result;
     return ok(this.enrichExerciseLabels(mapApiExerciseToDomain(result.value)));
+  }
+
+  async getEstimatedOneRepMax(
+    exerciseId: string,
+  ): Promise<Result<EstimatedOneRepMax | null, ApiError>> {
+    return this.requestEnvelope<EstimatedOneRepMax | null>(
+      `/exercises/${exerciseId}/estimated-1rm`,
+    );
   }
 
   async createExercise(

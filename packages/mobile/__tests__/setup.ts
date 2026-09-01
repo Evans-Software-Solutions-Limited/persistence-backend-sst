@@ -71,6 +71,7 @@ jest.mock("react-native-gesture-handler", () => {
     fn.onStart = builder;
     fn.onUpdate = builder;
     fn.onEnd = builder;
+    fn.activateAfterLongPress = builder;
     fn.maxDuration = builder;
     return fn;
   };

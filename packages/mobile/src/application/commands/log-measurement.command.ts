@@ -9,6 +9,7 @@ import type { StoragePort } from "@/domain/ports/storage.port";
 import type { LogMeasurementInput } from "@/domain/ports/api.port";
 import type { BodyTrendPoint } from "@/domain/models/progress";
 import { fail, ok, type Result, type ValidationError } from "@/shared/errors";
+import { localDayISO } from "@/shared/utils";
 
 export type LogMeasurementCommandDeps = {
   storage: StoragePort;
@@ -57,7 +58,17 @@ export function logMeasurementCommand(
     entityType: "measurement",
     entityId: deps.day,
     operation: "create",
-    payload: input,
+    payload: {
+      ...input,
+      // Give every interactive log a stable server timestamp. Historical days
+      // use local noon (DST-safe and unambiguous); today's reading uses now so
+      // an early-morning log is never rejected as future-dated.
+      measuredAt:
+        input.measuredAt ??
+        (deps.day === localDayISO()
+          ? new Date().toISOString()
+          : new Date(`${deps.day}T12:00:00`).toISOString()),
+    },
     endpoint: "/measurements",
     method: "POST",
   });

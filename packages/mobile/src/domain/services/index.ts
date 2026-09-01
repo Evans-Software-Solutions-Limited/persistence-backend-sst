@@ -33,6 +33,9 @@ export {
   getSubscriptionDisplayInfo,
 } from "./subscriptionService";
 
+export { recommendOnboardingPlan } from "./onboardingRecommendation";
+export { estimateOneRepMax } from "./oneRepMax";
+
 export {
   deriveStreak,
   deriveCollectionStreak,

@@ -140,6 +140,29 @@ describe("useWorkoutForm", () => {
     expect(result.current.state.exercises[1].target_reps_min).toBe(8);
   });
 
+  it("moves a two-member superset as one block and marks the form dirty", () => {
+    const ids = generateId();
+    const { result } = renderHook(() => useWorkoutForm(EMPTY_FORM_STATE, ids));
+    act(() => result.current.addExercises([{ id: "a", name: "A" }]));
+    act(() =>
+      result.current.addSuperset([
+        { id: "b", name: "B" },
+        { id: "c", name: "C" },
+      ]),
+    );
+    const supersetLead = result.current.state.exercises[1];
+    act(() => result.current.moveExercise(supersetLead.id, -1));
+    expect(
+      result.current.state.exercises.map((exercise) => exercise.exercise_name),
+    ).toEqual(["B", "C", "A"]);
+    expect(
+      result.current.state.exercises
+        .slice(0, 2)
+        .map((exercise) => exercise.superset_group),
+    ).toEqual([1, 1]);
+    expect(result.current.isDirty).toBe(true);
+  });
+
   it("reset re-anchors pristine baseline; isDirty becomes false", () => {
     const { result } = renderHook(() =>
       useWorkoutForm(EMPTY_FORM_STATE, generateId()),

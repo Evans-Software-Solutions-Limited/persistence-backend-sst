@@ -70,6 +70,7 @@ export type HabitSetupPresenterProps = {
   onSpendFreeze: () => void;
   onAdjustNutrition: () => void;
   onSave: () => void;
+  onSkip?: () => void;
   testID?: string;
 };
 
@@ -100,6 +101,7 @@ export function HabitSetupPresenter({
   onSpendFreeze,
   onAdjustNutrition,
   onSave,
+  onSkip,
   testID = "habit-setup",
 }: HabitSetupPresenterProps) {
   const insets = useSafeAreaInsets();
@@ -119,6 +121,13 @@ export function HabitSetupPresenter({
             accessibilityLabel="Back"
             testID={`${testID}-back`}
           />
+        }
+        trailing={
+          onSkip ? (
+            <Btn variant="ghost" tone="primary" size="md" onPress={onSkip}>
+              Skip
+            </Btn>
+          ) : undefined
         }
       />
 

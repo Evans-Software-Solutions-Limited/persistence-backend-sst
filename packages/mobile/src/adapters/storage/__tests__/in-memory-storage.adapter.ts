@@ -11,6 +11,7 @@ import type {
   CachedProfilePage,
   ProfilePageData,
 } from "@/domain/models/profilePage";
+import type { OnboardingState } from "@/domain/models/onboarding";
 import type { Notification } from "@/domain/models/notification";
 import type { NotificationPreferences } from "@/domain/models/notification-preferences";
 import type { CoachOverview } from "@/domain/models/coachOverview";
@@ -121,6 +122,7 @@ export class InMemoryStorageAdapter implements StoragePort {
     { payload: ProgramSummary[]; syncedAt: string }
   > = new Map();
   private profilePageCache: Map<string, CachedProfilePage> = new Map();
+  private onboardingCache: Map<string, OnboardingState> = new Map();
   private workoutsListCache: Map<string, CachedWorkoutsList> = new Map();
   private workoutDetailCache: Map<string, CachedWorkoutDetail> = new Map();
   private workoutHistoryCache: Map<string, CachedWorkoutHistory> = new Map();
@@ -924,6 +926,24 @@ export class InMemoryStorageAdapter implements StoragePort {
     });
   }
 
+  getCachedOnboarding(userId: string): OnboardingState | null {
+    const value = this.onboardingCache.get(userId);
+    return value ? { ...value, intentKeys: [...value.intentKeys] } : null;
+  }
+
+  cacheOnboarding(userId: string, state: OnboardingState): void {
+    this.onboardingCache.set(userId, {
+      ...state,
+      completedPages: [...state.completedPages],
+      skippedPages: [...state.skippedPages],
+      intentKeys: [...state.intentKeys],
+    });
+  }
+
+  clearCachedOnboarding(userId: string): void {
+    this.onboardingCache.delete(userId);
+  }
+
   getProfilePageAge(userId: string): string | null {
     return this.profilePageCache.get(userId)?.syncedAt ?? null;
   }
@@ -1364,6 +1384,7 @@ export class InMemoryStorageAdapter implements StoragePort {
     this.trainerClientsCache.clear();
     this.programsCache.clear();
     this.profilePageCache.clear();
+    this.onboardingCache.clear();
     this.workoutsListCache.clear();
     this.workoutDetailCache.clear();
     this.workoutHistoryCache.clear();

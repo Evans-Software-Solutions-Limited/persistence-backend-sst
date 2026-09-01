@@ -66,6 +66,8 @@ export type BodyTrendPoint = {
   date: string;
   weightKg: number | null;
   bodyFat: number | null;
+  /** Origin when provided by the history endpoint (app, coach, Health, etc.). */
+  source?: string | null;
 };
 
 /**

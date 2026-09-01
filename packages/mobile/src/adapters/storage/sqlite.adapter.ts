@@ -24,6 +24,7 @@ import type {
   CachedProfilePage,
   ProfilePageData,
 } from "@/domain/models/profilePage";
+import type { OnboardingState } from "@/domain/models/onboarding";
 import type { Notification } from "@/domain/models/notification";
 import type { NotificationPreferences } from "@/domain/models/notification-preferences";
 import { normalizePreferences } from "@/domain/models/notification-preferences";
@@ -615,6 +616,12 @@ ${indentSyncQueueDdl(8)}
       -- full JSON-serialised ProfilePageData. 5-minute TTL
       -- (PROFILE_PAGE_STALE_AFTER_MS) enforced by the query layer.
       CREATE TABLE IF NOT EXISTS cached_profile_page (
+        user_id TEXT PRIMARY KEY,
+        payload TEXT NOT NULL,
+        synced_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS cached_onboarding (
         user_id TEXT PRIMARY KEY,
         payload TEXT NOT NULL,
         synced_at TEXT NOT NULL
@@ -2844,6 +2851,35 @@ ${indentSyncQueueDdl(12)}
     db.runSync(`DELETE FROM cached_profile_page WHERE user_id = ?`, [userId]);
   }
 
+  // -- Onboarding cache --
+
+  getCachedOnboarding(userId: string): OnboardingState | null {
+    const row = this.getDb().getFirstSync(
+      `SELECT payload FROM cached_onboarding WHERE user_id = ?`,
+      [userId],
+    ) as { payload: string } | null;
+    if (!row) return null;
+    try {
+      return JSON.parse(row.payload) as OnboardingState;
+    } catch {
+      return null;
+    }
+  }
+
+  cacheOnboarding(userId: string, state: OnboardingState): void {
+    this.getDb().runSync(
+      `INSERT INTO cached_onboarding (user_id, payload, synced_at) VALUES (?, ?, ?)
+       ON CONFLICT(user_id) DO UPDATE SET payload = excluded.payload, synced_at = excluded.synced_at`,
+      [userId, JSON.stringify(state), new Date().toISOString()],
+    );
+  }
+
+  clearCachedOnboarding(userId: string): void {
+    this.getDb().runSync(`DELETE FROM cached_onboarding WHERE user_id = ?`, [
+      userId,
+    ]);
+  }
+
   // -- Active Session (M3) --
 
   getActiveSession(userId: string): WorkoutSession | null {
@@ -3525,6 +3561,7 @@ ${indentSyncQueueDdl(12)}
       DELETE FROM reference_lists;
       DELETE FROM cached_dashboard;
       DELETE FROM cached_profile_page;
+      DELETE FROM cached_onboarding;
       DELETE FROM cached_coach_overview;
       DELETE FROM cached_client_detail;
       DELETE FROM cached_trainer_clients;

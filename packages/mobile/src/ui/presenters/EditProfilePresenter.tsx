@@ -14,6 +14,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Btn, HeaderBar, IconBtn } from "@/ui/components/foundation";
 import { IconBack, iconDefaults } from "@/ui/components/icons";
 import { PLogoDrawLoader } from "@/ui/components/PLogoDrawLoader";
+import { DatePickerField } from "@/ui/components/DatePickerField";
+import { localDayISO } from "@/shared/utils";
 import type {
   ProfileGender,
   ProfilePageHeightUnit,
@@ -112,6 +114,12 @@ export type EditProfilePresenterProps = {
   onIsProfilePublicChange: (value: boolean) => void;
   onSave: () => void;
   onBack: () => void;
+  /** Onboarding reuses this screen with journey-specific shell copy/actions. */
+  title?: string;
+  eyebrow?: string;
+  subtitle?: string;
+  saveLabel?: string;
+  onSkip?: () => void;
   /** Current avatar URL (null when no avatar set). */
   avatarUrl?: string | null;
   /** Cache-bust key for the avatar image. */
@@ -149,6 +157,11 @@ export function EditProfilePresenter({
   onHeightUnitChange,
   onSave,
   onBack,
+  title = "Edit Profile",
+  eyebrow,
+  subtitle,
+  saveLabel = "Save Changes",
+  onSkip,
 }: EditProfilePresenterProps) {
   const insets = useSafeAreaInsets();
 
@@ -231,7 +244,9 @@ export function EditProfilePresenter({
       testID="edit-profile-screen"
     >
       <HeaderBar
-        title="Edit Profile"
+        title={title}
+        eyebrow={eyebrow}
+        sub={subtitle}
         leading={
           <IconBtn
             icon={<IconBack {...iconDefaults({ size: 20 })} />}
@@ -240,6 +255,13 @@ export function EditProfilePresenter({
             accessibilityLabel="Go back"
             testID="edit-profile-back"
           />
+        }
+        trailing={
+          onSkip ? (
+            <Btn variant="ghost" tone="primary" size="md" onPress={onSkip}>
+              Skip
+            </Btn>
+          ) : undefined
         }
       />
 
@@ -359,21 +381,16 @@ export function EditProfilePresenter({
           {/* Date of Birth (STORY-010) */}
           <View marginBottom={20}>
             <FieldLabel>Date of Birth</FieldLabel>
-            <TextInput
-              style={inputStyle}
+            <DatePickerField
+              label="Date of birth"
               value={dateOfBirth}
-              onChangeText={onDateOfBirthChange}
-              placeholder="YYYY-MM-DD"
-              placeholderTextColor="#8A8A98"
-              autoCapitalize="none"
-              autoCorrect={false}
-              keyboardType="numbers-and-punctuation"
-              editable={!isSaving}
+              onChange={onDateOfBirthChange}
+              maximumDate={localDayISO()}
+              allowClear
+              disabled={isSaving}
+              helperText="Used to show your age on your profile."
               testID="edit-profile-dob"
             />
-            <Text fontFamily="$body" fontSize={11} color="$text3" marginTop={4}>
-              Used to show your age on your profile.
-            </Text>
           </View>
 
           {/* Sex — TDEE calculator input (M9). Framed as a metabolic input. */}
@@ -602,7 +619,7 @@ export function EditProfilePresenter({
               disabled={isSaving}
               testID="edit-profile-save"
             >
-              {isSaving ? "Saving…" : "Save Changes"}
+              {isSaving ? "Saving…" : saveLabel}
             </Btn>
           </View>
         </ScrollView>

@@ -3829,3 +3829,33 @@ PR not yet raised. NO product code — script + dataset + verdict + spec updates
 - Regression coverage includes PT + physio batching, per-trainer aggregate
   isolation, SQL-enforced per-trainer programme/workout/brief bounds, and an
   untrusted `pending.config.from` collision.
+
+### 2026-09-01 — Spec 31 onboarding and experience polish
+
+- Implemented the once-only, seven-page onboarding journey with persisted
+  server/SQLite state, Welcome whole-journey Skip, later page-level Skip, two
+  role tiles, single-select Nutrition/Train choices, and the existing profile,
+  Habit Setup and subscription experiences. Recommended plans retain live store
+  pricing, restore, legal copy, `Show other plans`, and `Continue with Free`.
+- Added separate Weight and Body Fat history pages from You/Progress, an
+  exercise-detail Estimated 1RM banner, OTA-safe block reorder across create,
+  edit and live workouts, and athlete-safe coaching assignments in the existing
+  Train surface. Home and the tab structure remain unchanged.
+- Backend additions: user-scoped onboarding state, analytics allowlisting,
+  Estimated 1RM history query, and a purpose-built athlete coaching aggregate;
+  migration `20260901120000_onboarding_states.sql` enables RLS and keeps writes
+  on the authenticated backend rail.
+- Both feature families are safe-off through
+  `EXPO_PUBLIC_ONBOARDING_V1_ENABLED` and
+  `EXPO_PUBLIC_EXPERIENCE_POLISH_V1_ENABLED`. Native iPhone 16 Pro visual QA
+  and Android emulator QA caught and corrected wrapped onboarding headings;
+  evidence is in the Codex visualizations folder for this task. DOB uses the
+  existing JS calendar extraction, so this release needs no new native binary.
+- The local Inspector Brad sweeps found and the implementation now fixes
+  serialized onboarding writes, body-fat-only logging, immediate history
+  refresh, recommendation Skip, relationship focus refresh, legacy brief
+  attribution, assisted 1RM exclusion, coach measurement attribution, and the
+  complete Spec 31 analytics surface. Follow-up findings also hardened
+  same-day measurement merging, queued-measurement identity, relationship
+  cache races, local-date DOB bounds, and cross-coach brief privacy. The final
+  local Inspector Brad sweep returned `INSPECTOR_VERDICT: CLEAN`.

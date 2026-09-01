@@ -18,6 +18,7 @@ import { initialsOf, KG_PER_LB, weightInUnit } from "@/shared/utils";
 import type { Streak } from "@/domain/models/streak";
 import { YouPresenter } from "@/ui/presenters/YouPresenter";
 import { buildMilestoneTiers } from "./buildMilestoneTiers";
+import { isExperiencePolishEnabled } from "@/ui/state/experiencePolish";
 
 // Re-exported so existing callers/tests (`import { buildMilestoneTiers } from
 // "./YouContainer"`) keep working now that the mapping lives in its own
@@ -37,6 +38,7 @@ function pickPrimaryStreak(streaks: Streak[]): Streak | null {
  * <YouPresenter>. (Coach You variant is owned by 10-trainer-features.)
  */
 export function YouContainer() {
+  const experiencePolish = isExperiencePolishEnabled();
   const { session } = useAuth();
   const profile = useProfilePage();
   const weightUnit = profile.payload?.profile.weightUnit ?? "kg";
@@ -124,9 +126,20 @@ export function YouContainer() {
   const onOpenAcceptInvite = useCallback(() => {
     router.push("/(app)/accept-invite" as never);
   }, [router]);
-  const onOpenBodyHistory = useCallback(() => {
-    router.push("/(app)/body-history" as never);
-  }, [router]);
+  const onOpenWeightHistory = useCallback(() => {
+    router.push(
+      (experiencePolish
+        ? "/(app)/weight-history"
+        : "/(app)/body-history") as never,
+    );
+  }, [experiencePolish, router]);
+  const onOpenBodyFatHistory = useCallback(() => {
+    router.push(
+      (experiencePolish
+        ? "/(app)/body-fat-history"
+        : "/(app)/body-history") as never,
+    );
+  }, [experiencePolish, router]);
 
   const primary = useMemo(
     () => pickPrimaryStreak(streaks.data ?? []),
@@ -333,7 +346,8 @@ export function YouContainer() {
       onRefresh={onRefresh}
       onOpenDrawer={openDrawer}
       onUseToken={onUseToken}
-      onOpenBodyHistory={onOpenBodyHistory}
+      onOpenWeightHistory={onOpenWeightHistory}
+      onOpenBodyFatHistory={onOpenBodyFatHistory}
       onOpenRequests={onOpenRequests}
       onOpenAcceptInvite={onOpenAcceptInvite}
     />

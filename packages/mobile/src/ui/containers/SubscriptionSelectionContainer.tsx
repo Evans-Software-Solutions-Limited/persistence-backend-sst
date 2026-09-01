@@ -20,6 +20,7 @@ import { newIdempotencyKey } from "@/shared/utils";
 import { CancelSubscriptionModal } from "@/ui/components/subscription/CancelSubscriptionModal";
 import { IOSPurchaseFlowContainer } from "@/ui/containers/IOSPurchaseFlowContainer";
 import { SubscriptionSelectionPresenter } from "@/ui/presenters/SubscriptionSelectionPresenter";
+import type { OnboardingRecommendationMode } from "@/ui/presenters/IOSPurchaseFlowPresenter";
 
 /**
  * Subscription Selection container. Owns data fetching, state machine,
@@ -70,19 +71,38 @@ const OFFLINE_ALERT_MESSAGE =
  *
  * Spec: specs/milestones/M12-app-store-iap/FRONTEND_BRIEF.md § Deliverable 3
  */
-export function SubscriptionSelectionContainer() {
+export interface SubscriptionSelectionContainerProps {
+  onboardingRecommendation?: OnboardingRecommendationMode & {
+    onBack: () => void;
+    onPlanSelected?: (tier: SubscriptionTierName) => void;
+  };
+}
+
+export function SubscriptionSelectionContainer({
+  onboardingRecommendation,
+}: SubscriptionSelectionContainerProps = {}) {
   const purchases = usePurchases();
   if (purchases !== null) {
-    return <IOSPurchaseFlowContainer />;
+    return (
+      <IOSPurchaseFlowContainer
+        onboardingRecommendation={onboardingRecommendation}
+      />
+    );
   }
-  return <SubscriptionCatalogueContainer />;
+  return (
+    <SubscriptionCatalogueContainer
+      onboardingRecommendation={onboardingRecommendation}
+    />
+  );
 }
 
 /**
  * Non-iOS subscription surface: a read-only tier catalogue plus cancel. There
  * is deliberately no purchase path here — see the dispatch comment above.
  */
-function SubscriptionCatalogueContainer() {
+function SubscriptionCatalogueContainer({
+  onboardingRecommendation,
+}: SubscriptionSelectionContainerProps) {
   const router = useRouter();
   const isOnline = useOnlineStatus();
 
@@ -107,6 +127,9 @@ function SubscriptionCatalogueContainer() {
       ? (searchParams.cycle as BillingCycle)
       : null;
   const initialRoleParam = searchParams.role;
+  const onboardingTrainer = onboardingRecommendation
+    ? TRAINER_TIER_NAMES.has(onboardingRecommendation.recommendedTier)
+    : null;
 
   const tiersQuery = useSubscriptionTiers();
   const subQuery = useMySubscription();
@@ -143,7 +166,9 @@ function SubscriptionCatalogueContainer() {
     initialTierParam as SubscriptionTierName,
   );
   const initialRole: Role =
-    initialRoleParam === "personal_trainer" || tierParamImpliesTrainer
+    onboardingTrainer === true ||
+    initialRoleParam === "personal_trainer" ||
+    tierParamImpliesTrainer
       ? "trainer"
       : role === "personal_trainer" || role === "physiotherapist"
         ? "trainer"
@@ -161,7 +186,11 @@ function SubscriptionCatalogueContainer() {
   // link role/tier params take precedence — if the user explicitly
   // asked for a trainer tier via URL, don't override on cache resolve.
   useEffect(() => {
-    if (initialRoleParam === "personal_trainer" || tierParamImpliesTrainer) {
+    if (
+      onboardingTrainer !== null ||
+      initialRoleParam === "personal_trainer" ||
+      tierParamImpliesTrainer
+    ) {
       return; // Honour the deep link.
     }
     setSelectedRole(
@@ -169,7 +198,7 @@ function SubscriptionCatalogueContainer() {
         ? "trainer"
         : "user",
     );
-  }, [role, initialRoleParam, tierParamImpliesTrainer]);
+  }, [role, initialRoleParam, tierParamImpliesTrainer, onboardingTrainer]);
 
   // Default the billing cycle to the user's current sub's cycle, if any.
   // Deep-link `cycle` param takes precedence — if the user explicitly
@@ -211,6 +240,7 @@ function SubscriptionCatalogueContainer() {
   // subscription. Those want the alert; only a genuine no-op is ignored.
   const handleTierSelect = useCallback(
     (tier: SubscriptionTierName) => {
+      onboardingRecommendation?.onPlanSelected?.(tier);
       const effectiveCurrentCycle = currentBillingCycle ?? "monthly";
       if (
         tier === currentTier &&
@@ -225,7 +255,13 @@ function SubscriptionCatalogueContainer() {
           "Open Persistence on your iPhone or iPad to subscribe.",
       );
     },
-    [currentTier, isCancelledButActive, billingCycle, currentBillingCycle],
+    [
+      currentTier,
+      isCancelledButActive,
+      billingCycle,
+      currentBillingCycle,
+      onboardingRecommendation,
+    ],
   );
 
   const handleConfirmCancel = useCallback(async () => {
@@ -297,10 +333,15 @@ function SubscriptionCatalogueContainer() {
         currentTierDisplayName={displayInfo.currentTierDisplayName}
         isOffline={!isOnline}
         isSlowLoading={isSlowLoading}
+        onboardingRecommendation={onboardingRecommendation}
         onBillingCycleChange={setBillingCycle}
         onTierSelect={handleTierSelect}
         onRoleChange={setSelectedRole}
-        onBack={() => router.back()}
+        onBack={() =>
+          onboardingRecommendation
+            ? onboardingRecommendation.onBack()
+            : router.back()
+        }
         onRetry={() => {
           void tiersQuery.refetch();
         }}

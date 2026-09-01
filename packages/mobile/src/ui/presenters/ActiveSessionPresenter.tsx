@@ -103,6 +103,7 @@ export type ActiveSessionPresenterProps = {
   onOpenNotes: (sessionExerciseId: string) => void;
   onSubstitute: (sessionExerciseId: string) => void;
   onRemoveExercise: (sessionExerciseId: string) => void;
+  onMoveExercise?: (sessionExerciseId: string, direction: -1 | 1) => void;
   onTapExercise: (exerciseId: string) => void;
   onAddExercise: () => void;
   /**
@@ -260,7 +261,7 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
             </View>
           ) : (
             <View style={styles.exercisesContainer}>
-              {displayItems.map((item) => {
+              {displayItems.map((item, itemIndex) => {
                 if (item.kind === "exercise") {
                   const ex = item.exercise;
                   const template =
@@ -288,6 +289,14 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
                       onRemoveExercise={() => props.onRemoveExercise(ex.id)}
                       onTapExercise={() => props.onTapExercise(ex.exerciseId)}
                       onStartRest={() => props.onStartRest(ex.id)}
+                      reorderPosition={itemIndex + 1}
+                      reorderTotal={displayItems.length}
+                      onMove={
+                        props.onMoveExercise
+                          ? (direction) =>
+                              props.onMoveExercise?.(ex.id, direction)
+                          : undefined
+                      }
                     />
                   );
                 }
@@ -307,6 +316,17 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
                     onRemoveExercise={props.onRemoveExercise}
                     onOpenSupersetNotes={props.onOpenSupersetNotes}
                     onAddExerciseToSuperset={props.onAddExerciseToSuperset}
+                    reorderPosition={itemIndex + 1}
+                    reorderTotal={displayItems.length}
+                    onMove={
+                      props.onMoveExercise
+                        ? (direction) =>
+                            props.onMoveExercise?.(
+                              item.exercises[0].id,
+                              direction,
+                            )
+                        : undefined
+                    }
                   />
                 );
               })}

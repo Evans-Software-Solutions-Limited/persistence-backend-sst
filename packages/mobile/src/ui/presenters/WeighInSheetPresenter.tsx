@@ -48,7 +48,8 @@ const clampKg = (kg: number) => Math.min(MAX_KG, Math.max(MIN_KG, kg));
 export type WeighInUnit = "kg" | "lb";
 
 export type WeighInSaveInput = {
-  weightKg: number;
+  /** Omitted when the body-fat history launched a body-fat-only log. */
+  weightKg?: number;
   /** Body-fat %, 0..100. Null when the user left it blank. */
   bodyFatPercentage: number | null;
   day: string; // YYYY-MM-DD
@@ -70,6 +71,8 @@ export type WeighInSheetProps = {
   /** Injected for deterministic tests; defaults to now. */
   today?: Date;
   testID?: string;
+  /** Metric that launched the shared sheet; changes title/focus copy only. */
+  context?: "weight" | "bodyFat";
 };
 
 function addDaysISO(iso: string, delta: number): string {
@@ -89,6 +92,7 @@ export function WeighInSheetPresenter({
   saving = false,
   today = new Date(),
   testID = "weigh-in-sheet",
+  context = "weight",
 }: WeighInSheetProps) {
   const fmt = (v: number) => v.toFixed(1);
   const toDisplay = (kgValue: number, u: WeighInUnit) =>
@@ -231,120 +235,123 @@ export function WeighInSheetPresenter({
     <BottomSheet
       visible={visible}
       onClose={onClose}
-      title="Weigh in"
+      title={context === "bodyFat" ? "Log body fat" : "Log weight"}
       eyebrow="LOG"
       accent="primary"
       height="tall"
       testID={testID}
     >
       <View padding={16} paddingBottom={28} gap={16}>
-        {/* Weight input + unit toggle */}
-        <Card pad={20} radius={18} accent="primary">
-          <Text
-            fontSize={10.5}
-            fontWeight="600"
-            letterSpacing={1.5}
-            color="$primary"
-            textAlign="center"
-            marginBottom={12}
-          >
-            BODY WEIGHT
-          </Text>
-          <View
-            flexDirection="row"
-            alignItems="center"
-            justifyContent="center"
-            gap={14}
-          >
-            <View
-              width={46}
-              height={46}
-              borderRadius={14}
-              backgroundColor="$surface3"
-              alignItems="center"
-              justifyContent="center"
-              onPress={() => adjust(-1)}
-              accessibilityLabel="Decrease weight"
+        {/* A body-fat history log must not invent a weight when no reading is
+            available. Weight remains part of the normal combined weigh-in. */}
+        {context === "weight" && (
+          <Card pad={20} radius={18} accent="primary">
+            <Text
+              fontSize={10.5}
+              fontWeight="600"
+              letterSpacing={1.5}
+              color="$primary"
+              textAlign="center"
+              marginBottom={12}
             >
-              <IconMinus size={18} color={toneHex("primary").base} />
-            </View>
+              BODY WEIGHT
+            </Text>
             <View
               flexDirection="row"
-              alignItems="baseline"
-              gap={6}
-              minWidth={168}
-              justifyContent="center"
-            >
-              <TextInput
-                value={weightText}
-                onChangeText={onType}
-                inputMode="decimal"
-                accessibilityLabel="Weight value"
-                testID="weigh-in-input"
-                style={{
-                  width: 132,
-                  textAlign: "right",
-                  color: "#F4F4F8",
-                  fontFamily: "Geist Mono",
-                  fontWeight: "600",
-                  fontSize: 52,
-                  letterSpacing: -2,
-                  padding: 0,
-                }}
-              />
-              <Text fontFamily="$mono" color="$text3" fontSize={16}>
-                {unit}
-              </Text>
-            </View>
-            <View
-              width={46}
-              height={46}
-              borderRadius={14}
-              backgroundColor="$surface3"
               alignItems="center"
               justifyContent="center"
-              onPress={() => adjust(1)}
-              accessibilityLabel="Increase weight"
+              gap={14}
             >
-              <IconPlus size={18} color={toneHex("primary").base} />
+              <View
+                width={46}
+                height={46}
+                borderRadius={14}
+                backgroundColor="$surface3"
+                alignItems="center"
+                justifyContent="center"
+                onPress={() => adjust(-1)}
+                accessibilityLabel="Decrease weight"
+              >
+                <IconMinus size={18} color={toneHex("primary").base} />
+              </View>
+              <View
+                flexDirection="row"
+                alignItems="baseline"
+                gap={6}
+                minWidth={168}
+                justifyContent="center"
+              >
+                <TextInput
+                  value={weightText}
+                  onChangeText={onType}
+                  inputMode="decimal"
+                  accessibilityLabel="Weight value"
+                  testID="weigh-in-input"
+                  style={{
+                    width: 132,
+                    textAlign: "right",
+                    color: "#F4F4F8",
+                    fontFamily: "Geist Mono",
+                    fontWeight: "600",
+                    fontSize: 52,
+                    letterSpacing: -2,
+                    padding: 0,
+                  }}
+                />
+                <Text fontFamily="$mono" color="$text3" fontSize={16}>
+                  {unit}
+                </Text>
+              </View>
+              <View
+                width={46}
+                height={46}
+                borderRadius={14}
+                backgroundColor="$surface3"
+                alignItems="center"
+                justifyContent="center"
+                onPress={() => adjust(1)}
+                accessibilityLabel="Increase weight"
+              >
+                <IconPlus size={18} color={toneHex("primary").base} />
+              </View>
             </View>
-          </View>
 
-          <View
-            flexDirection="row"
-            gap={4}
-            alignSelf="center"
-            marginTop={16}
-            width={132}
-            backgroundColor="$surface3"
-            borderRadius={999}
-            padding={3}
-          >
-            {(["kg", "lb"] as const).map((u) => {
-              const on = unit === u;
-              return (
-                <View
-                  key={u}
-                  flex={1}
-                  paddingVertical={6}
-                  borderRadius={999}
-                  alignItems="center"
-                  backgroundColor={on ? "$primary" : "transparent"}
-                  onPress={() => onChangeUnit(u)}
-                  accessibilityLabel={`Use ${u}`}
-                >
-                  <Text
-                    fontWeight="700"
-                    fontSize={12}
-                    color={on ? "$primaryInk" : "$text3"}
+            <View
+              flexDirection="row"
+              gap={4}
+              alignSelf="center"
+              marginTop={16}
+              width={132}
+              backgroundColor="$surface3"
+              borderRadius={999}
+              padding={3}
+            >
+              {(["kg", "lb"] as const).map((u) => {
+                const on = unit === u;
+                return (
+                  <View
+                    key={u}
+                    flex={1}
+                    paddingVertical={6}
+                    borderRadius={999}
+                    alignItems="center"
+                    backgroundColor={on ? "$primary" : "transparent"}
+                    onPress={() => onChangeUnit(u)}
+                    accessibilityLabel={`Use ${u}`}
                   >
-                    {u.toUpperCase()}
-                  </Text>
-                </View>
-              );
-            })}
-          </View>
-        </Card>
+                    <Text
+                      fontWeight="700"
+                      fontSize={12}
+                      color={on ? "$primaryInk" : "$text3"}
+                    >
+                      {u.toUpperCase()}
+                    </Text>
+                  </View>
+                );
+              })}
+            </View>
+          </Card>
+        )}
 
         {/* Body fat — optional. Not in the weight-only prototype; added per
             product (read/write to Apple Health both weight + body fat). */}
@@ -447,7 +454,7 @@ export function WeighInSheetPresenter({
         </View>
 
         {/* Body-trend sparkline preview */}
-        {series.length > 1 && (
+        {context === "weight" && series.length > 1 && (
           <Card pad={14} radius={14}>
             <View
               flexDirection="row"
@@ -506,17 +513,29 @@ export function WeighInSheetPresenter({
         )}
 
         <Btn
+          testID="weigh-in-save"
           full
           variant="filled"
           tone="primary"
           size="lg"
-          disabled={saving}
+          disabled={saving || (context === "bodyFat" && bodyFat == null)}
           icon={<IconCheck size={16} color={toneHex("primary").ink} />}
           onPress={() =>
-            onSave({ weightKg: kg, bodyFatPercentage: bodyFat, day, unit })
+            onSave({
+              weightKg: context === "weight" ? kg : undefined,
+              bodyFatPercentage: bodyFat,
+              day,
+              unit,
+            })
           }
         >
-          {saving ? "Logged ✓" : `Log ${fmt(display)} ${unit} · ${dateLabel}`}
+          {saving
+            ? "Logged ✓"
+            : context === "bodyFat"
+              ? bodyFat == null
+                ? "Enter body fat to log"
+                : `Log ${bodyFat}% · ${dateLabel}`
+              : `Log ${fmt(display)} ${unit} · ${dateLabel}`}
         </Btn>
       </View>
     </BottomSheet>

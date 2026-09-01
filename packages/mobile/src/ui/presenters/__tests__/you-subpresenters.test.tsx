@@ -1,3 +1,4 @@
+import { fireEvent } from "@testing-library/react-native";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 import { StreakHeroPresenter } from "../StreakHeroPresenter";
 import { BodyTrendPresenter } from "../BodyTrendPresenter";
@@ -28,6 +29,23 @@ describe("BodyTrendPresenter", () => {
       />,
     );
     expect(getByTestId("body-trend")).toBeTruthy();
+  });
+
+  it("opens Weight and Body Fat through distinct actions", () => {
+    const onOpenWeight = jest.fn();
+    const onOpenBodyFat = jest.fn();
+    const { getByTestId } = renderWithTheme(
+      <BodyTrendPresenter
+        weight={{ current: 80, delta: -1, series: [81, 80], unit: "kg" }}
+        bodyFat={{ current: 17, delta: -1, series: [18, 17] }}
+        onOpenWeight={onOpenWeight}
+        onOpenBodyFat={onOpenBodyFat}
+      />,
+    );
+    fireEvent.press(getByTestId("body-trend-weight-card"));
+    fireEvent.press(getByTestId("body-trend-body-fat-card"));
+    expect(onOpenWeight).toHaveBeenCalledTimes(1);
+    expect(onOpenBodyFat).toHaveBeenCalledTimes(1);
   });
 });
 

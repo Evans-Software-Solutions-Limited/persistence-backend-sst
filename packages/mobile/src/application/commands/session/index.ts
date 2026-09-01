@@ -46,6 +46,7 @@ export {
   type RemoveExerciseCommandDeps,
   type RemoveExerciseInput,
 } from "./remove-exercise.command";
+export { reorderSessionExercisesCommand } from "./reorder-exercises.command";
 export {
   setExerciseNotesCommand,
   type SetExerciseNotesCommandDeps,
