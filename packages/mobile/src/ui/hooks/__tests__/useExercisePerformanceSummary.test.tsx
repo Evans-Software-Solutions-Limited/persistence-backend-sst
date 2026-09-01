@@ -88,4 +88,40 @@ describe("useExercisePerformanceSummary", () => {
     rerender({ exerciseId: "squat" });
     expect(result.current.data).toBeNull();
   });
+
+  it("rejects an older same-key response after a newer refresh resolves", async () => {
+    const pending: ((
+      value: ReturnType<typeof ok<ExercisePerformanceSummary | null>>,
+    ) => void)[] = [];
+    const api = {
+      getExercisePerformanceSummary: jest.fn(
+        () =>
+          new Promise<ReturnType<typeof ok<ExercisePerformanceSummary | null>>>(
+            (resolve) => pending.push(resolve),
+          ),
+      ),
+    };
+    const adapters = { api } as unknown as Adapters;
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <AdapterProvider adapters={adapters}>{children}</AdapterProvider>
+    );
+    const { result } = renderHook(
+      () => useExercisePerformanceSummary("overlapping-bench"),
+      { wrapper },
+    );
+    await waitFor(() => expect(pending).toHaveLength(1));
+
+    act(() => {
+      void result.current.refresh();
+    });
+    await waitFor(() => expect(pending).toHaveLength(2));
+
+    await act(async () => pending[1]?.(ok(summary(150))));
+    await waitFor(() =>
+      expect(result.current.data?.estimatedOneRepMax?.estimateKg).toBe(150),
+    );
+
+    await act(async () => pending[0]?.(ok(summary(100))));
+    expect(result.current.data?.estimatedOneRepMax?.estimateKg).toBe(150);
+  });
 });
