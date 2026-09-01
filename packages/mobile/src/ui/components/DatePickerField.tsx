@@ -532,13 +532,10 @@ export function DatePickerField({
     return (
       <>
         <View
-          minHeight={48}
-          paddingHorizontal={10}
-          borderRadius={12}
-          borderWidth={1}
-          borderColor="$border"
-          backgroundColor="$surface2"
-          justifyContent="center"
+          minHeight={40}
+          flexDirection="row"
+          alignItems="center"
+          justifyContent="flex-start"
           opacity={disabled ? 0.5 : 1}
           accessibilityLabel={`${label}, ${value ? `selected ${display}` : "not selected"}`}
           accessibilityState={{ disabled }}

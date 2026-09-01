@@ -53,6 +53,26 @@ describe("EditProfilePresenter", () => {
     );
   });
 
+  it("uses the shared large onboarding header and sticky action shell", () => {
+    const { getByTestId, getByText } = renderWithTheme(
+      <EditProfilePresenter
+        {...makeProps({
+          onboarding: true,
+          eyebrow: "Step 1 of 5",
+          title: "Make it yours",
+          subtitle: "A short explanation",
+          saveLabel: "Continue",
+        })}
+      />,
+    );
+
+    expect(getByText("Step 1 of 5")).toBeTruthy();
+    expect(getByText("Make it yours")).toBeTruthy();
+    expect(getByText("A short explanation")).toBeTruthy();
+    expect(getByTestId("edit-profile-save-footer")).toBeTruthy();
+    expect(getByText("Continue")).toBeTruthy();
+  });
+
   it("highlights the selected fitness level", () => {
     const { getByTestId } = renderWithTheme(
       <EditProfilePresenter {...makeProps({ fitnessLevel: "advanced" })} />,

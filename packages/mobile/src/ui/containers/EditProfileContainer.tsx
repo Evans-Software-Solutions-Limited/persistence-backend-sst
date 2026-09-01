@@ -317,11 +317,12 @@ export function EditProfileContainer({
       onIsProfilePublicChange={setIsProfilePublic}
       onSave={() => void handleSave()}
       onBack={handleBack}
+      onboarding={onboarding}
       title={onboarding ? "Make it yours" : undefined}
       eyebrow={onboarding ? "Step 1 of 5" : undefined}
       subtitle={
         onboarding
-          ? "These are the same details as Edit Profile. We use them for your calorie and training targets."
+          ? "A few details to personalise your training, nutrition and progress."
           : undefined
       }
       saveLabel={onboarding ? "Continue" : undefined}

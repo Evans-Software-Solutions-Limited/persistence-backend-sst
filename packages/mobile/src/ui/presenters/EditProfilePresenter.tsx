@@ -115,6 +115,7 @@ export type EditProfilePresenterProps = {
   onSave: () => void;
   onBack: () => void;
   /** Onboarding reuses this screen with journey-specific shell copy/actions. */
+  onboarding?: boolean;
   title?: string;
   eyebrow?: string;
   subtitle?: string;
@@ -157,6 +158,7 @@ export function EditProfilePresenter({
   onHeightUnitChange,
   onSave,
   onBack,
+  onboarding = false,
   title = "Edit Profile",
   eyebrow,
   subtitle,
@@ -244,6 +246,7 @@ export function EditProfilePresenter({
       testID="edit-profile-screen"
     >
       <HeaderBar
+        large={onboarding}
         title={title}
         eyebrow={eyebrow}
         sub={subtitle}
@@ -272,9 +275,9 @@ export function EditProfilePresenter({
         <ScrollView
           style={{ flex: 1 }}
           contentContainerStyle={{
-            paddingHorizontal: 20,
-            paddingTop: 12,
-            paddingBottom: 40 + insets.bottom,
+            paddingHorizontal: onboarding ? 16 : 20,
+            paddingTop: onboarding ? 4 : 12,
+            paddingBottom: onboarding ? 88 : 40 + insets.bottom,
           }}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
@@ -609,7 +612,32 @@ export function EditProfilePresenter({
               de-risk). Container wiring retained; see the props-type note.
               Reintroduce WITH moderation in a later update. */}
 
-          <View marginTop={8}>
+          {onboarding ? null : (
+            <View marginTop={8}>
+              <Btn
+                variant="filled"
+                tone="primary"
+                size="lg"
+                full
+                onPress={onSave}
+                disabled={isSaving}
+                testID="edit-profile-save"
+              >
+                {isSaving ? "Saving…" : saveLabel}
+              </Btn>
+            </View>
+          )}
+        </ScrollView>
+        {onboarding ? (
+          <View
+            paddingHorizontal={20}
+            paddingTop={12}
+            paddingBottom={insets.bottom + 12}
+            backgroundColor="$bg"
+            borderTopWidth={1}
+            borderColor="$border"
+            testID="edit-profile-save-footer"
+          >
             <Btn
               variant="filled"
               tone="primary"
@@ -622,7 +650,7 @@ export function EditProfilePresenter({
               {isSaving ? "Saving…" : saveLabel}
             </Btn>
           </View>
-        </ScrollView>
+        ) : null}
       </KeyboardAvoidingView>
     </View>
   );
