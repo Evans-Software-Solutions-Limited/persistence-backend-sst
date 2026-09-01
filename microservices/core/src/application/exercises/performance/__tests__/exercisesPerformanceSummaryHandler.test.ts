@@ -1,11 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const getBest = vi.fn();
+const getSummary = vi.fn();
 vi.mock("../../../repositories/exercisePerformanceRepository", () => ({
-  ExercisePerformanceRepository: vi.fn(() => ({
-    getBestEstimatedOneRepMax: getBest,
-  })),
+  ExercisePerformanceRepository: vi.fn(() => ({ getSummary })),
 }));
 vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getAuthUser: vi.fn(async (header?: string) =>
@@ -20,28 +18,28 @@ vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getUser: vi.fn((ctx) => ctx.user),
 }));
 
-describe("exercisesEstimatedOneRepMaxHandler", () => {
+describe("exercisesPerformanceSummaryHandler", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("requires auth", async () => {
-    const { exercisesEstimatedOneRepMaxHandler } =
-      await import("../exercisesEstimatedOneRepMaxHandler");
-    const res = await exercisesEstimatedOneRepMaxHandler.handle(
-      new Request("http://localhost/exercises/ex-1/estimated-1rm"),
+    const { exercisesPerformanceSummaryHandler } =
+      await import("../exercisesPerformanceSummaryHandler");
+    const res = await exercisesPerformanceSummaryHandler.handle(
+      new Request("http://localhost/exercises/ex-1/performance-summary"),
     );
     expect(res.status).toBe(401);
   });
 
   it("scopes by JWT user and returns data:null when history is absent", async () => {
-    getBest.mockResolvedValue(null);
-    const { exercisesEstimatedOneRepMaxHandler } =
-      await import("../exercisesEstimatedOneRepMaxHandler");
-    const res = await exercisesEstimatedOneRepMaxHandler.handle(
-      new Request("http://localhost/exercises/ex-1/estimated-1rm", {
+    getSummary.mockResolvedValue(null);
+    const { exercisesPerformanceSummaryHandler } =
+      await import("../exercisesPerformanceSummaryHandler");
+    const res = await exercisesPerformanceSummaryHandler.handle(
+      new Request("http://localhost/exercises/ex-1/performance-summary", {
         headers: { authorization: "Bearer token" },
       }),
     );
-    expect(getBest).toHaveBeenCalledWith("user-a", "ex-1");
+    expect(getSummary).toHaveBeenCalledWith("user-a", "ex-1");
     expect(await res.json()).toEqual({ data: null });
   });
 });

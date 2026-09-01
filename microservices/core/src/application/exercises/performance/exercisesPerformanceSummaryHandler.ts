@@ -6,18 +6,19 @@ import {
 } from "@persistence/api-utils/auth/supabaseAuth";
 import { ExercisePerformanceService } from "../../repositories/exercisePerformanceService";
 
-export const exercisesEstimatedOneRepMaxHandler = new Elysia()
+/** Current-user performance metrics for one exercise. */
+export const exercisesPerformanceSummaryHandler = new Elysia()
   .derive(async ({ headers }) => ({
     user: await getAuthUser(headers.authorization),
   }))
   .onBeforeHandle(requireAuth)
   .use(ExercisePerformanceService)
   .get(
-    "/exercises/:exerciseId/estimated-1rm",
+    "/exercises/:exerciseId/performance-summary",
     async (ctx) => {
       const { sub: userId } = getUser(ctx);
       return {
-        data: await ctx.ExercisePerformanceRepository.getBestEstimatedOneRepMax(
+        data: await ctx.ExercisePerformanceRepository.getSummary(
           userId,
           ctx.params.exerciseId,
         ),
