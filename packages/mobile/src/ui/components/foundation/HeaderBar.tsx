@@ -20,6 +20,8 @@ export type HeaderBarProps = {
   leading?: ReactNode;
   trailing?: ReactNode;
   large?: boolean;
+  /** Large titles default to one line; opt in when product copy must wrap. */
+  titleNumberOfLines?: number;
   testID?: string;
 };
 
@@ -30,6 +32,7 @@ export function HeaderBar({
   leading,
   trailing,
   large = false,
+  titleNumberOfLines = 1,
   testID,
 }: HeaderBarProps) {
   return (
@@ -98,7 +101,7 @@ export function HeaderBar({
               fontSize={32}
               letterSpacing={-1}
               color="$text"
-              numberOfLines={1}
+              numberOfLines={titleNumberOfLines}
               ellipsizeMode="tail"
             >
               {title}

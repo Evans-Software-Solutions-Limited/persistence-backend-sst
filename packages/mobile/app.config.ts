@@ -152,6 +152,16 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       url: "https://u.expo.dev/255d542d-8dae-43c9-8d98-d9a3a325a470",
     },
     runtimeVersion: { policy: "appVersion" },
+    plugins: [
+      ...(config.plugins ?? []),
+      ...((config.plugins ?? []).some((plugin) =>
+        Array.isArray(plugin)
+          ? plugin[0] === "@react-native-community/datetimepicker"
+          : plugin === "@react-native-community/datetimepicker",
+      )
+        ? []
+        : ["@react-native-community/datetimepicker"]),
+    ],
     // Preserve app.json's `extra` (eas.projectId, router) and add the resolved
     // build variant so the runtime can tag Sentry's `environment` off it.
     extra: {

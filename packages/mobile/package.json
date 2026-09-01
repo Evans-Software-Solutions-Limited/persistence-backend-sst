@@ -5,8 +5,8 @@
   "main": "expo-router/entry",
   "scripts": {
     "start": "expo start",
-    "android": "expo run:android",
-    "ios": "expo run:ios",
+    "android": "SENTRY_DISABLE_AUTO_UPLOAD=true expo run:android",
+    "ios": "SENTRY_DISABLE_AUTO_UPLOAD=true expo run:ios",
     "web": "expo start --web",
     "lint": "expo lint",
     "typecheck": "tsc --noEmit",
@@ -22,6 +22,7 @@
     "@kingstinct/react-native-healthkit": "^14.0.0",
     "@persistence/subscription-catalog": "workspace:*",
     "@react-native-async-storage/async-storage": "2.2.0",
+    "@react-native-community/datetimepicker": "8.6.0",
     "@react-native-community/netinfo": "11.4.1",
     "@sentry/cli": "2.58.4",
     "@sentry/react-native": "~7.11.0",

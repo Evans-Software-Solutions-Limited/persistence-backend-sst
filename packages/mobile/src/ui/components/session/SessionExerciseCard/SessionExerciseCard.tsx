@@ -30,6 +30,7 @@ import {
 import { color } from "@/ui/theme/tokens";
 import type { ExerciseSet, SessionExercise } from "@/domain/models/session";
 import type { WeightUnit } from "@/shared/utils";
+import { ExerciseReorderHandle } from "@/ui/components/workouts/ExerciseReorderHandle";
 
 export type SessionExerciseCardProps = {
   exercise: SessionExercise;
@@ -69,6 +70,9 @@ export type SessionExerciseCardProps = {
   onRemoveExercise: () => void;
   onTapExercise: () => void;
   onStartRest: () => void;
+  reorderPosition?: number;
+  reorderTotal?: number;
+  onMove?: (direction: -1 | 1) => void;
 };
 
 const formatRepsLabel = (
@@ -93,6 +97,14 @@ export function SessionExerciseCard(props: SessionExerciseCardProps) {
       testID={`session-exercise-${props.exercise.id}`}
     >
       <View style={styles.exerciseHeader}>
+        {props.onMove && props.reorderPosition && props.reorderTotal ? (
+          <ExerciseReorderHandle
+            label={props.exercise.exerciseName}
+            position={props.reorderPosition}
+            total={props.reorderTotal}
+            onMove={props.onMove}
+          />
+        ) : null}
         {props.exerciseImageUrl ? (
           <Image
             source={{ uri: props.exerciseImageUrl }}

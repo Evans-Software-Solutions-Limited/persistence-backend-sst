@@ -26,6 +26,7 @@ export interface SubscriptionCardProps {
   disabled?: boolean;
   getFeaturesList: (tier: SubscriptionTier, isTrainer: boolean) => string[];
   isTrainer?: boolean;
+  isRecommended?: boolean;
 }
 
 export function SubscriptionCard({
@@ -38,6 +39,7 @@ export function SubscriptionCard({
   disabled = false,
   getFeaturesList,
   isTrainer = false,
+  isRecommended = false,
 }: SubscriptionCardProps) {
   // A tier without a configured yearly Stripe price can't be sold on the
   // yearly cycle. Compute an explicit unavailability flag so we don't
@@ -61,9 +63,16 @@ export function SubscriptionCard({
 
   return (
     <View
-      style={[styles.card, isCurrent && styles.cardSelected]}
+      style={[
+        styles.card,
+        isRecommended && styles.cardRecommended,
+        isCurrent && styles.cardSelected,
+      ]}
       testID={`subscription-card-${tier.tierName}`}
     >
+      {isRecommended && (
+        <Text style={styles.recommendedBadge}>RECOMMENDED FOR YOU</Text>
+      )}
       {showTrialBanner && (
         <View style={styles.trialBanner}>
           <Text style={styles.trialBannerText}>
@@ -155,6 +164,14 @@ const styles = StyleSheet.create({
   cardSelected: {
     borderColor: color.$primary,
     backgroundColor: color.$primary + "10",
+  },
+  cardRecommended: { borderColor: color.$primary },
+  recommendedBadge: {
+    color: color.$primary,
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 1,
+    marginBottom: 8,
   },
   trialBanner: {
     position: "absolute",

@@ -47,6 +47,22 @@ describe("HabitSetupPresenter", () => {
     expect(getByTestId("habit-setup-footer")).toBeTruthy();
   });
 
+  it("uses journey chrome while keeping the real habit cards in onboarding", () => {
+    const { getByText, getByTestId, queryByTestId } = render({
+      onboarding: true,
+      canSave: true,
+      title: "Build your daily habits",
+    });
+
+    expect(getByText("Step 3 of 5")).toBeTruthy();
+    expect(getByText("Continue")).toBeTruthy();
+    for (const category of HABIT_ORDER) {
+      expect(getByTestId(`habit-setup-card-${category}`)).toBeTruthy();
+    }
+    expect(queryByTestId("habit-streak-section")).toBeNull();
+    expect(queryByTestId("habit-setup-footer")).toBeNull();
+  });
+
   it("back button fires onBack", () => {
     const { getByTestId, props } = render();
     fireEvent.press(getByTestId("habit-setup-back"));

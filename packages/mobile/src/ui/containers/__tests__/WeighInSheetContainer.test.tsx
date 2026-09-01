@@ -103,18 +103,24 @@ function makeAdapters(): {
 describe("WeighInSheetContainer", () => {
   // Root-mounted now: open-state comes from the store, not props.
   beforeEach(() => {
-    useHomeSheets.setState({ sheet: "weighIn", habitsRev: 0 });
+    useHomeSheets.setState({
+      sheet: "weighIn",
+      measurementContext: "weight",
+      measurementOrigin: "home",
+      habitsRev: 0,
+      measurementsRev: 0,
+    });
   });
   beforeEach(() => mockFetch.mockClear());
 
   it("logs the weigh-in and closes on save", async () => {
     const { adapters } = makeAdapters();
-    const { getByText } = renderWithTheme(
+    const { getByTestId } = renderWithTheme(
       <AdapterProvider adapters={adapters}>
         <WeighInSheetContainer />
       </AdapterProvider>,
     );
-    fireEvent.press(getByText(/Log/));
+    fireEvent.press(getByTestId("weigh-in-save"));
     // Save → useLogMeasurement (optimistic append + queue + drain) → close.
     // The optimistic body-trend write itself is unit-tested in
     // log-measurement.command.test (06.6); here we prove the container wiring.
@@ -133,7 +139,7 @@ describe("WeighInSheetContainer", () => {
       writeBodyWeight,
       writeBodyFat,
     });
-    const { getByTestId, getByText } = renderWithTheme(
+    const { getByTestId } = renderWithTheme(
       <AdapterProvider adapters={adapters}>
         <WeighInSheetContainer />
       </AdapterProvider>,
@@ -144,7 +150,7 @@ describe("WeighInSheetContainer", () => {
     );
     expect(getByTestId("weigh-in-bodyfat-input").props.value).toBe("18.5");
 
-    fireEvent.press(getByText(/Log/));
+    fireEvent.press(getByTestId("weigh-in-save"));
     await waitFor(() => expect(useHomeSheets.getState().sheet).toBeNull());
     // Weight written in kg; body fat as the 0..100 percentage (adapter converts
     // to HealthKit's fraction).
@@ -196,7 +202,7 @@ describe("WeighInSheetContainer", () => {
     const writeBodyWeight = jest.fn(async () => ok(undefined));
     const writeBodyFat = jest.fn(async () => ok(undefined));
     Object.assign(adapters.health, { writeBodyWeight, writeBodyFat });
-    const { getByTestId, getByText } = renderWithTheme(
+    const { getByTestId } = renderWithTheme(
       <AdapterProvider adapters={adapters}>
         <WeighInSheetContainer />
       </AdapterProvider>,
@@ -204,7 +210,7 @@ describe("WeighInSheetContainer", () => {
     // A negative weight is rejected by logMeasurementCommand (weightKg <= 0).
     fireEvent.changeText(getByTestId("weigh-in-input"), "-50");
     await act(async () => {
-      fireEvent.press(getByText(/Log/));
+      fireEvent.press(getByTestId("weigh-in-save"));
       await new Promise((r) => setTimeout(r, 0));
     });
     // The bad value never reaches Apple Health, and the sheet stays open so the
@@ -212,6 +218,36 @@ describe("WeighInSheetContainer", () => {
     expect(writeBodyWeight).not.toHaveBeenCalled();
     expect(writeBodyFat).not.toHaveBeenCalled();
     expect(useHomeSheets.getState().sheet).toBe("weighIn");
+  });
+
+  it("logs body fat from history without writing a fabricated weight", async () => {
+    const { adapters } = makeAdapters();
+    const writeBodyWeight = jest.fn(async () => ok(undefined));
+    const writeBodyFat = jest.fn(async () => ok(undefined));
+    const track = jest.spyOn(adapters.api, "trackAnalyticsEvent");
+    Object.assign(adapters.health, { writeBodyWeight, writeBodyFat });
+    useHomeSheets.setState({
+      measurementContext: "bodyFat",
+      measurementOrigin: "history",
+    });
+    const { getByTestId, queryByTestId } = renderWithTheme(
+      <AdapterProvider adapters={adapters}>
+        <WeighInSheetContainer />
+      </AdapterProvider>,
+    );
+
+    expect(queryByTestId("weigh-in-input")).toBeNull();
+    fireEvent.changeText(getByTestId("weigh-in-bodyfat-input"), "19.2");
+    fireEvent.press(getByTestId("weigh-in-save"));
+
+    await waitFor(() => expect(useHomeSheets.getState().sheet).toBeNull());
+    expect(writeBodyWeight).not.toHaveBeenCalled();
+    expect(writeBodyFat).toHaveBeenCalledWith(19.2, expect.any(Date));
+    expect(useHomeSheets.getState().measurementsRev).toBe(1);
+    expect(track).toHaveBeenCalledWith({
+      name: "measurement_logged_from_history",
+      properties: { metric: "bodyFat" },
+    });
   });
 
   // Launch fan-out reduction: this sheet is root-mounted always (feedback_

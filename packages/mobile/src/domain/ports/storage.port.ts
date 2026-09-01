@@ -7,6 +7,7 @@ import type {
   CachedProfilePage,
   ProfilePageData,
 } from "@/domain/models/profilePage";
+import type { OnboardingState } from "@/domain/models/onboarding";
 import type { Notification } from "@/domain/models/notification";
 import type { NotificationPreferences } from "@/domain/models/notification-preferences";
 import type { PersonalRecord, RecordType } from "@/domain/models/record";
@@ -671,6 +672,11 @@ export interface StoragePort {
    * `syncedAt = now()`.
    */
   cacheProfilePage(userId: string, payload: ProfilePageData): void;
+
+  // -- Onboarding (user-scoped offline resume mirror) --
+  getCachedOnboarding(userId: string): OnboardingState | null;
+  cacheOnboarding(userId: string, state: OnboardingState): void;
+  clearCachedOnboarding(userId: string): void;
   /**
    * Age of the cached profile-page row as an ISO timestamp, or null
    * when no row exists. Lets a caller fetch only the timestamp

@@ -215,6 +215,7 @@ export function WorkoutEditorContainer() {
       onAddSuperset={onAddSuperset}
       onRemoveExercise={form.removeExercise}
       onExerciseConfigChange={form.setExerciseField}
+      onMoveExercise={form.moveExercise}
       onSubmit={onSubmit}
       onCancel={onCancel}
       onGoBackFromError={onGoBackFromError}

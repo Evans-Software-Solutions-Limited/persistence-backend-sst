@@ -34,6 +34,15 @@ import { color } from "@/ui/theme/tokens";
 type Role = "user" | "trainer";
 export type SubscriptionRailScreen = "persona" | "plans" | "manage";
 
+export interface OnboardingRecommendationMode {
+  recommendedTier: SubscriptionTierName;
+  reasons: readonly string[];
+  showOtherPlans: boolean;
+  onToggleOtherPlans: () => void;
+  onContinueFree: () => void;
+  onSkip: () => void;
+}
+
 export interface IOSPurchaseFlowPresenterProps {
   tierPricing: Readonly<Partial<Record<CatalogTierId, TierPricing>>>;
   isLoading: boolean;
@@ -65,6 +74,7 @@ export interface IOSPurchaseFlowPresenterProps {
   onRetry: () => void;
   onRestore: () => void;
   onManageInAppStore: () => void;
+  onboardingRecommendation?: OnboardingRecommendationMode;
 }
 
 /** The only mobile component allowed to print a resolved subscription price. */
@@ -131,7 +141,15 @@ export function Price({
   );
 }
 
-function Header({ title, onBack }: { title: string; onBack: () => void }) {
+function Header({
+  title,
+  onBack,
+  onSkip,
+}: {
+  title: string;
+  onBack: () => void;
+  onSkip?: () => void;
+}) {
   return (
     <View style={styles.headerContainer}>
       <TouchableOpacity
@@ -144,7 +162,19 @@ function Header({ title, onBack }: { title: string; onBack: () => void }) {
         <Ionicons name="arrow-back" size={22} color={color.$text} />
       </TouchableOpacity>
       <Text style={styles.headerTitle}>{title}</Text>
-      <View style={styles.headerSpacer} />
+      {onSkip ? (
+        <TouchableOpacity
+          style={styles.headerSkip}
+          onPress={onSkip}
+          testID="onboarding-recommendation-skip"
+          accessibilityRole="button"
+          accessibilityLabel="Skip recommendation"
+        >
+          <Text style={styles.headerSkipText}>Skip</Text>
+        </TouchableOpacity>
+      ) : (
+        <View style={styles.headerSpacer} />
+      )}
     </View>
   );
 }
@@ -384,6 +414,7 @@ function TierCard({
   onTierSelect,
   trialDays,
   showTrial,
+  isOnboardingRecommendation = false,
 }: {
   tier: CatalogTier;
   pricing: TierPricing;
@@ -397,6 +428,7 @@ function TierCard({
   onTierSelect: () => void;
   trialDays: number | null;
   showTrial: boolean;
+  isOnboardingRecommendation?: boolean;
 }) {
   const saving = annualSaving(pricing);
   const equivalent = monthlyEquivalent(pricing);
@@ -416,10 +448,16 @@ function TierCard({
           : `subscription-card-${tier.id}`
       }
     >
-      {tier.highlight && (
+      {tier.highlight && !isOnboardingRecommendation && (
         <View style={styles.recommendedPill}>
           <Ionicons name="sparkles" size={10} color={color.$goldInk} />
           <Text style={styles.recommendedText}>LOADOUT + MEALPRINT</Text>
+        </View>
+      )}
+      {isOnboardingRecommendation && (
+        <View style={styles.recommendedPill}>
+          <Ionicons name="sparkles" size={10} color={color.$goldInk} />
+          <Text style={styles.recommendedText}>RECOMMENDED FOR YOU</Text>
         </View>
       )}
       {isCurrent && (
@@ -506,7 +544,11 @@ function TierCard({
           onPress={onContinueFree}
           testID="subscription-card-free-continue"
         >
-          <Text style={styles.continueFreeText}>Continue free</Text>
+          <Text style={styles.continueFreeText}>
+            {isOnboardingRecommendation
+              ? "Continue with Free"
+              : "Continue free"}
+          </Text>
         </TouchableOpacity>
       ) : (
         <PaidCta
@@ -525,7 +567,13 @@ function PlansScreen(props: IOSPurchaseFlowPresenterProps) {
   const trainer = props.selectedRole === "trainer";
   const cadence: BillingCadence =
     props.billingCycle === "yearly" ? "annual" : "monthly";
-  const tiers = tiersFor(trainer ? "coach" : "consumer");
+  const allTiers = tiersFor(trainer ? "coach" : "consumer");
+  const recommendation = props.onboardingRecommendation;
+  const tiers = recommendation?.showOtherPlans
+    ? allTiers
+    : recommendation
+      ? allTiers.filter((tier) => tier.id === recommendation.recommendedTier)
+      : allTiers;
   const hasProvisional = tiers.some((tier) =>
     cadence === "annual" ? tier.provisionalAnnual : tier.provisionalMonthly,
   );
@@ -541,6 +589,7 @@ function PlansScreen(props: IOSPurchaseFlowPresenterProps) {
       <Header
         title={trainer ? "Coach plans" : "Choose your plan"}
         onBack={props.onBack}
+        onSkip={recommendation?.onSkip}
       />
       <ScrollView
         style={styles.scrollView}
@@ -555,42 +604,61 @@ function PlansScreen(props: IOSPurchaseFlowPresenterProps) {
           </View>
         )}
 
-        <View style={styles.roleToggleContainer}>
-          <TouchableOpacity
-            style={[
-              styles.roleToggleButton,
-              !trainer && styles.roleToggleButtonActive,
-            ]}
-            onPress={() => props.onRoleChange("user")}
-            testID="role-toggle-user"
-          >
-            <Text
-              style={[
-                styles.roleToggleText,
-                !trainer && styles.roleToggleTextActive,
-              ]}
-            >
-              Individuals
+        {recommendation && (
+          <View style={styles.onboardingRecommendationIntro}>
+            <Text style={styles.eyebrow}>BASED ON YOUR ANSWERS</Text>
+            <Text style={styles.onboardingRecommendationTitle}>
+              Your recommended plan
             </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[
-              styles.roleToggleButton,
-              trainer && styles.roleToggleButtonActiveTrainer,
-            ]}
-            onPress={() => props.onRoleChange("trainer")}
-            testID="role-toggle-trainer"
-          >
-            <Text
-              style={[
-                styles.roleToggleText,
-                trainer && styles.roleToggleTextActive,
-              ]}
-            >
-              Coaches
+            <Text style={styles.onboardingRecommendationBody}>
+              This is the lowest plan that covers the capabilities you selected.
             </Text>
-          </TouchableOpacity>
-        </View>
+            {recommendation.reasons.slice(0, 3).map((reason) => (
+              <Text key={reason} style={styles.onboardingRecommendationReason}>
+                • {reason}
+              </Text>
+            ))}
+          </View>
+        )}
+
+        {!recommendation && (
+          <View style={styles.roleToggleContainer}>
+            <TouchableOpacity
+              style={[
+                styles.roleToggleButton,
+                !trainer && styles.roleToggleButtonActive,
+              ]}
+              onPress={() => props.onRoleChange("user")}
+              testID="role-toggle-user"
+            >
+              <Text
+                style={[
+                  styles.roleToggleText,
+                  !trainer && styles.roleToggleTextActive,
+                ]}
+              >
+                Individuals
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.roleToggleButton,
+                trainer && styles.roleToggleButtonActiveTrainer,
+              ]}
+              onPress={() => props.onRoleChange("trainer")}
+              testID="role-toggle-trainer"
+            >
+              <Text
+                style={[
+                  styles.roleToggleText,
+                  trainer && styles.roleToggleTextActive,
+                ]}
+              >
+                Coaches
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         <View style={styles.cadenceWrap}>
           <CadenceToggle
@@ -646,9 +714,39 @@ function PlansScreen(props: IOSPurchaseFlowPresenterProps) {
                 props.currentTier !== tier.id &&
                 props.isTierTrialEligible(tier.id as SubscriptionTierName)
               }
+              isOnboardingRecommendation={
+                recommendation?.recommendedTier === tier.id
+              }
             />
           ))}
         </View>
+
+        {recommendation && (
+          <>
+            <TouchableOpacity
+              style={styles.onboardingOtherPlans}
+              onPress={recommendation.onToggleOtherPlans}
+              testID="onboarding-show-other-plans"
+              accessibilityRole="button"
+            >
+              <Text style={styles.onboardingOtherPlansText}>
+                {recommendation.showOtherPlans
+                  ? "Hide other plans"
+                  : "Show other plans"}
+              </Text>
+            </TouchableOpacity>
+            {recommendation.recommendedTier !== "free" && (
+              <TouchableOpacity
+                style={styles.continueFree}
+                onPress={recommendation.onContinueFree}
+                testID="onboarding-continue-free"
+                accessibilityRole="button"
+              >
+                <Text style={styles.continueFreeText}>Continue with Free</Text>
+              </TouchableOpacity>
+            )}
+          </>
+        )}
 
         {hasProvisional && (
           <Text style={styles.provisionalFootnote}>* provisional pricing</Text>
@@ -899,6 +997,13 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   headerSpacer: { width: 40 },
+  headerSkip: {
+    minWidth: 40,
+    minHeight: 40,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerSkipText: { color: color.$primary, fontSize: 14, fontWeight: "700" },
   scrollView: { flex: 1 },
   scrollContent: { paddingHorizontal: 16, paddingBottom: 28 },
   personaContent: { padding: 22, paddingBottom: 48 },
@@ -1015,6 +1120,42 @@ const styles = StyleSheet.create({
     backgroundColor: color.$primaryDim,
   },
   noticeText: { color: color.$text2, fontSize: 12, textAlign: "center" },
+  onboardingRecommendationIntro: {
+    gap: 6,
+    marginTop: 10,
+    marginBottom: 18,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: color.$border,
+    borderRadius: 16,
+    backgroundColor: color.$surface,
+  },
+  onboardingRecommendationTitle: {
+    color: color.$text,
+    fontSize: 23,
+    fontWeight: "800",
+  },
+  onboardingRecommendationBody: {
+    color: color.$text2,
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  onboardingRecommendationReason: {
+    color: color.$text2,
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  onboardingOtherPlans: {
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 44,
+    marginTop: 10,
+  },
+  onboardingOtherPlansText: {
+    color: color.$primary,
+    fontSize: 14,
+    fontWeight: "700",
+  },
   coachExplainer: { flexDirection: "row", gap: 10, marginBottom: 14 },
   coachExplainerColumn: {
     flex: 1,

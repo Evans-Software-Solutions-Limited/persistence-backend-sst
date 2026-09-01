@@ -3,7 +3,8 @@ import type { ReactNode } from "react";
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
 import type { AuthSession } from "@/domain/ports/auth.port";
-import { ok } from "@/shared/errors";
+import { ok, type ApiError, type Result } from "@/shared/errors";
+import type { BodyTrendPoint } from "@/domain/models/progress";
 import type { Adapters } from "@/shared/types";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import {
@@ -192,6 +193,152 @@ describe("Progress/Home read hooks (cache-first + refresh)", () => {
     await waitFor(() => expect(result.current.data?.length).toBe(2));
     expect(fetch).toHaveBeenCalledWith("366d");
     expect(storage.getCachedBodyTrend(USER)).toEqual(cached);
+  });
+
+  it("keeps optimistic history and ignores an older request", async () => {
+    const { api, storage, wrapper } = setup();
+    let resolveInitial!: (value: Result<BodyTrendPoint[], ApiError>) => void;
+    const initial = new Promise<Result<BodyTrendPoint[], ApiError>>(
+      (resolve) => {
+        resolveInitial = resolve;
+      },
+    );
+    jest
+      .spyOn(api, "getBodyTrend")
+      .mockImplementationOnce(() => initial)
+      .mockResolvedValueOnce(ok([]));
+    const { result } = renderHook(() => useGetBodyMeasurementHistory(366), {
+      wrapper,
+    });
+
+    const optimistic = {
+      date: "2026-09-01",
+      measuredAt: "2026-09-01T12:00:00.000Z",
+      weightKg: null,
+      bodyFat: 18,
+    };
+    storage.enqueueMutation({
+      entityType: "measurement",
+      entityId: optimistic.date,
+      operation: "create",
+      payload: {
+        bodyFatPercentage: optimistic.bodyFat,
+        measuredAt: "2026-09-01T12:00:00.000Z",
+      },
+      endpoint: "/measurements",
+      method: "POST",
+    });
+    await act(async () => {
+      await result.current.refresh();
+    });
+    expect(result.current.data).toEqual([optimistic]);
+
+    await act(async () => {
+      resolveInitial(ok([{ date: "2026-08-31", weightKg: 80, bodyFat: null }]));
+      await initial;
+    });
+    expect(result.current.data).toEqual([optimistic]);
+  });
+
+  it("preserves distinct same-day server measurements when merging cache", async () => {
+    const { api, storage, wrapper } = setup();
+    const morning = {
+      id: "morning",
+      measuredAt: "2026-09-01T08:00:00.000Z",
+      date: "2026-09-01",
+      weightKg: 80,
+      bodyFat: null,
+    };
+    const evening = {
+      id: "evening",
+      measuredAt: "2026-09-01T18:00:00.000Z",
+      date: "2026-09-01",
+      weightKg: 79.5,
+      bodyFat: 18,
+    };
+    storage.cacheBodyTrend(USER, [
+      { date: "2026-09-01", weightKg: 79.5, bodyFat: 18 },
+    ]);
+    api.bodyTrend = [morning, evening];
+
+    const { result } = renderHook(() => useGetBodyMeasurementHistory(366), {
+      wrapper,
+    });
+    await waitFor(() => expect(result.current.data).toHaveLength(2));
+    expect(result.current.data).toEqual([morning, evening]);
+  });
+
+  it("does not fabricate a composite row from the trend cache", async () => {
+    const { api, storage, wrapper } = setup();
+    const weight = {
+      date: "2026-09-01",
+      weightKg: 80,
+      bodyFat: null,
+    };
+    const bodyFat = {
+      measuredAt: "2026-09-01T18:00:00.000Z",
+      date: "2026-09-01",
+      weightKg: null,
+      bodyFat: 18,
+    };
+    storage.cacheBodyTrend(USER, [
+      { date: "2026-09-01", weightKg: 80, bodyFat: 18 },
+    ]);
+    storage.enqueueMutation({
+      entityType: "measurement",
+      entityId: "2026-09-01",
+      operation: "create",
+      payload: {
+        bodyFatPercentage: 18,
+        measuredAt: "2026-09-01T18:00:00.000Z",
+      },
+      endpoint: "/measurements",
+      method: "POST",
+    });
+    api.bodyTrend = [weight, bodyFat];
+
+    const { result } = renderHook(() => useGetBodyMeasurementHistory(366), {
+      wrapper,
+    });
+    await waitFor(() => expect(result.current.data).toHaveLength(2));
+    expect(result.current.data).toEqual([weight, bodyFat]);
+  });
+
+  it("keeps an identical new pending measurement beside an older row", async () => {
+    const { api, storage, wrapper } = setup();
+    const older = {
+      id: "older",
+      measuredAt: "2026-09-01T08:00:00.000Z",
+      date: "2026-09-01",
+      weightKg: 80,
+      bodyFat: null,
+    };
+    storage.enqueueMutation({
+      entityType: "measurement",
+      entityId: "2026-09-01",
+      operation: "create",
+      payload: {
+        weightKg: 80,
+        measuredAt: "2026-09-01T18:00:00.000Z",
+      },
+      endpoint: "/measurements",
+      method: "POST",
+    });
+    api.bodyTrend = [older];
+
+    const { result } = renderHook(() => useGetBodyMeasurementHistory(366), {
+      wrapper,
+    });
+    await waitFor(() => expect(result.current.data).toHaveLength(2));
+    expect(result.current.data).toEqual([
+      older,
+      {
+        measuredAt: "2026-09-01T18:00:00.000Z",
+        date: "2026-09-01",
+        weightKg: 80,
+        bodyFat: null,
+      },
+    ]);
   });
 
   it("useGetAchievements refreshes", async () => {

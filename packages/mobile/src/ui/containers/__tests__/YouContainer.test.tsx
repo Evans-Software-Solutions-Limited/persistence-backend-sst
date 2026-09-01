@@ -18,8 +18,9 @@ jest.mock("@/state/drawer", () => ({ useDrawer: () => jest.fn() }));
 // Holder so a test can re-fire the focus callback (simulate returning to the
 // You tab). The `mock` prefix lets jest.mock reference it despite hoisting.
 const mockFocus: { cb: (() => void | (() => void)) | null } = { cb: null };
+const mockPush = jest.fn();
 jest.mock("expo-router", () => ({
-  useRouter: () => ({ push: jest.fn() }),
+  useRouter: () => ({ push: mockPush }),
   useNavigation: () => ({ addListener: () => () => {} }),
   // One-shot on mount + re-fireable via mockFocus.cb() (mirrors the shape used
   // in ProfileContainer's test).
@@ -118,6 +119,23 @@ describe("YouContainer", () => {
     mockProbe.last = null;
     mockFocus.cb = null;
     mockFetch.mockClear();
+    mockPush.mockClear();
+  });
+
+  it("routes weight and body fat to their dedicated history pages", async () => {
+    const { adapters } = makeAdapters();
+    render(
+      <AdapterProvider adapters={adapters}>
+        <YouContainer />
+      </AdapterProvider>,
+    );
+    await waitFor(() => expect(mockProbe.last).not.toBeNull());
+
+    act(() => mockProbe.last?.onOpenWeightHistory?.());
+    expect(mockPush).toHaveBeenLastCalledWith("/(app)/weight-history");
+
+    act(() => mockProbe.last?.onOpenBodyFatHistory?.());
+    expect(mockPush).toHaveBeenLastCalledWith("/(app)/body-fat-history");
   });
 
   it("regression: returning to You (focus) reflects a weigh-in logged from another tab, without a re-mount", async () => {

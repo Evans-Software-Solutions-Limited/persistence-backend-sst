@@ -16,8 +16,11 @@ jest.mock("expo-constants", () => ({
 // eslint-disable-next-line import/first
 import {
   DASHBOARD_REQUEST_TIMEOUT_MS,
+  ONBOARDING_REQUEST_TIMEOUT_MS,
   SSTApiAdapter,
 } from "@/adapters/api/sst-api.adapter";
+// eslint-disable-next-line import/first
+import { ok } from "@/shared/errors";
 
 type FetchImpl = (input: any, init?: any) => Promise<Response>;
 
@@ -27,6 +30,52 @@ const originalFetch = globalScope.fetch;
 afterEach(() => {
   globalScope.fetch = originalFetch;
   jest.useRealTimers();
+});
+
+describe("SSTApiAdapter API Gateway error mapping", () => {
+  it("preserves the gateway message when React Native provides no status text", async () => {
+    installFetchMock(
+      async () =>
+        new Response(JSON.stringify({ message: "Internal Server Error" }), {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        }),
+    );
+
+    const result = await new SSTApiAdapter().getOnboarding();
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toMatchObject({
+      code: "server",
+      status: 500,
+      message: "Internal Server Error",
+    });
+  });
+
+  it("times out a stalled onboarding bootstrap so AuthGate can offer Retry", async () => {
+    jest.useFakeTimers();
+    installFetchMock((_url, init) => {
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          const error = new Error("Aborted");
+          error.name = "AbortError";
+          reject(error);
+        });
+      });
+    });
+
+    const promise = new SSTApiAdapter().getOnboarding();
+    jest.advanceTimersByTime(ONBOARDING_REQUEST_TIMEOUT_MS + 100);
+    const result = await promise;
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toMatchObject({
+      code: "timeout",
+      message: `Request timed out after ${ONBOARDING_REQUEST_TIMEOUT_MS}ms`,
+    });
+  });
 });
 
 function installFetchMock(impl: FetchImpl): jest.Mock {
@@ -491,6 +540,86 @@ describe("SSTApiAdapter.searchExercises", () => {
     const adapter = new SSTApiAdapter();
     const result = await adapter.searchExercises("a");
     expect(result.ok).toBe(false);
+  });
+});
+
+describe("SSTApiAdapter.getExercisePerformanceSummary", () => {
+  it("uses the exercise-scoped route and preserves the summary contract", async () => {
+    const fetchMock = installFetchMock(
+      async () =>
+        new Response(
+          JSON.stringify({
+            data: {
+              estimatedOneRepMax: {
+                estimateKg: 120,
+                source: {
+                  weightKg: 100,
+                  reps: 6,
+                  completedAt: "2026-09-01T10:00:00Z",
+                },
+              },
+              estimatedTenRepMax: null,
+              tenRepMax: null,
+              heaviestSet: {
+                weightKg: 100,
+                source: {
+                  weightKg: 100,
+                  reps: 6,
+                  completedAt: "2026-09-01T10:00:00Z",
+                },
+              },
+              bestSetVolume: {
+                volumeKg: 600,
+                source: {
+                  weightKg: 100,
+                  reps: 6,
+                  completedAt: "2026-09-01T10:00:00Z",
+                },
+              },
+              lifetimeVolumeKg: 600,
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+    );
+
+    const result = await new SSTApiAdapter().getExercisePerformanceSummary(
+      "bench-1",
+    );
+    expect(String(fetchMock.mock.calls[0][0])).toContain(
+      "/exercises/bench-1/performance-summary",
+    );
+    expect(result).toEqual(
+      ok({
+        estimatedOneRepMax: {
+          estimateKg: 120,
+          source: {
+            weightKg: 100,
+            reps: 6,
+            completedAt: "2026-09-01T10:00:00Z",
+          },
+        },
+        estimatedTenRepMax: null,
+        tenRepMax: null,
+        heaviestSet: {
+          weightKg: 100,
+          source: {
+            weightKg: 100,
+            reps: 6,
+            completedAt: "2026-09-01T10:00:00Z",
+          },
+        },
+        bestSetVolume: {
+          volumeKg: 600,
+          source: {
+            weightKg: 100,
+            reps: 6,
+            completedAt: "2026-09-01T10:00:00Z",
+          },
+        },
+        lifetimeVolumeKg: 600,
+      }),
+    );
   });
 });
 

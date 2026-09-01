@@ -227,6 +227,23 @@ describe("reorderExercises", () => {
     const items = [makeExercise({ id: "A" })];
     expect(reorderExercises(items, 0, 5).map((e) => e.id)).toEqual(["A"]);
   });
+
+  it("moves every member of a superset as one contiguous block", () => {
+    const items = [
+      makeExercise({ id: "A", sortOrder: 0 }),
+      makeExercise({ id: "B1", sortOrder: 1, supersetGroup: 7 }),
+      makeExercise({ id: "B2", sortOrder: 2, supersetGroup: 7 }),
+      makeExercise({ id: "C", sortOrder: 3 }),
+    ];
+    const result = reorderExercises(items, 1, 3);
+    expect(result.map((exercise) => exercise.id)).toEqual([
+      "A",
+      "C",
+      "B1",
+      "B2",
+    ]);
+    expect(result.map((exercise) => exercise.sortOrder)).toEqual([0, 1, 2, 3]);
+  });
 });
 
 describe("groupAsSuperSet", () => {

@@ -92,6 +92,54 @@ function defaultProps(): IOSPurchaseFlowPresenterProps {
 }
 
 describe("IOSPurchaseFlowPresenter", () => {
+  it("uses the existing live-price plan surface for a locked onboarding recommendation", () => {
+    const onToggleOtherPlans = jest.fn();
+    const onContinueFree = jest.fn();
+    const onSkip = jest.fn();
+    render(
+      <IOSPurchaseFlowPresenter
+        {...defaultProps()}
+        onboardingRecommendation={{
+          recommendedTier: "premium_plus",
+          reasons: ["Mealprint matches your nutrition goal"],
+          showOtherPlans: false,
+          onToggleOtherPlans,
+          onContinueFree,
+          onSkip,
+        }}
+      />,
+    );
+
+    expect(screen.getByText("£249.99")).toBeTruthy();
+    expect(screen.getByText("RECOMMENDED FOR YOU")).toBeTruthy();
+    expect(screen.getByText(/Mealprint matches/)).toBeTruthy();
+    expect(screen.queryByTestId("role-toggle-user")).toBeNull();
+    expect(screen.queryByTestId("subscription-card-premium")).toBeNull();
+    fireEvent.press(screen.getByTestId("onboarding-show-other-plans"));
+    fireEvent.press(screen.getByTestId("onboarding-continue-free"));
+    fireEvent.press(screen.getByTestId("onboarding-recommendation-skip"));
+    expect(onToggleOtherPlans).toHaveBeenCalledTimes(1);
+    expect(onContinueFree).toHaveBeenCalledTimes(1);
+    expect(onSkip).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses exact onboarding free CTA copy when Free is recommended", () => {
+    render(
+      <IOSPurchaseFlowPresenter
+        {...defaultProps()}
+        onboardingRecommendation={{
+          recommendedTier: "free",
+          reasons: ["Free covers your selected tools"],
+          showOtherPlans: false,
+          onToggleOtherPlans: jest.fn(),
+          onContinueFree: jest.fn(),
+          onSkip: jest.fn(),
+        }}
+      />,
+    );
+    expect(screen.getByText("Continue with Free")).toBeTruthy();
+  });
+
   it("renders loading and error states", () => {
     const props = defaultProps();
     const view = render(<IOSPurchaseFlowPresenter {...props} isLoading />);

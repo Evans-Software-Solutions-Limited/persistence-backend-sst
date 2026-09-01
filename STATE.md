@@ -24,6 +24,27 @@ tests pass 8/8, the full core suite and coverage pass, and repository
 formatting, 9-package typecheck, lint and build are green (pre-existing lint
 warnings only).
 
+### 🟡 2026-09-01 — SPEC 31 PR #425 INSPECTOR FOLLOW-UP (branch `codex/spec-31-onboarding-polish`)
+
+Inspector Brad's three default-off rollout findings were valid. Home now wraps
+the shared weigh-in store action at the press-handler boundary, and the store
+also normalises unexpected arguments so a React Native press event cannot
+replace the measurement context. The legacy body-history route now accepts a
+validated `metric` query parameter; You's Body Fat card and the disabled-polish
+body-fat route preserve `bodyFat`, while missing or unknown values fail closed
+to weight. Post-auth routing waits for onboarding state before choosing
+onboarding or Home, preventing the tabs from flashing while the read is
+unresolved. Failed onboarding reads no longer synthesize a fresh journey.
+Product direction removed the onboarding environment/activation-date gate:
+shipping the code sends every existing or new account without a terminal
+`completed`/`dismissed` state through onboarding, independent of profile age.
+The focused AuthGate/eligibility/provider suites pass 51 tests; the full mobile
+suite passes 515 suites / 6,490 tests, and mobile typecheck and lint are green
+(pre-existing warnings only). Staging applied the onboarding migration, but a
+route-parameter collision crashed the core Lambda at startup and made Marcus
+Whitfield's onboarding read return HTTP 500; backend hotfix PR #427 corrects
+the collision and adds a composed-router regression.
+
 ### 🟡 2026-08-31 — GOOGLE PLAY WEBSITE LOGO (branch `codex/official-google-play-badge`)
 
 The first implementation used Google's full black store badge, but that did not
@@ -3829,3 +3850,51 @@ PR not yet raised. NO product code — script + dataset + verdict + spec updates
 - Regression coverage includes PT + physio batching, per-trainer aggregate
   isolation, SQL-enforced per-trainer programme/workout/brief bounds, and an
   untrusted `pending.config.from` collision.
+
+### 2026-09-01 — Spec 31 onboarding and experience polish
+
+- Implemented the once-only, seven-page onboarding journey with persisted
+  server/SQLite state, Welcome whole-journey Skip, later page-level Skip, two
+  role tiles, single-select Nutrition/Train choices, and the existing profile,
+  Habit Setup and subscription experiences. Recommended plans retain live store
+  pricing, restore, legal copy, `Show other plans`, and `Continue with Free`.
+- Added separate Weight and Body Fat history pages from You/Progress, an
+  exercise-detail Estimated 1RM banner, OTA-safe block reorder across create,
+  edit and live workouts, and athlete-safe coaching assignments in the existing
+  Train surface. Home and the tab structure remain unchanged.
+- Backend additions: user-scoped onboarding state, analytics allowlisting,
+  exercise performance-summary aggregation, and a purpose-built athlete
+  coaching aggregate;
+  migration `20260901120000_onboarding_states.sql` enables RLS and keeps writes
+  on the authenticated backend rail.
+- Onboarding has no environment rollout switch or account-age cutoff: when
+  this mobile release ships, every existing or new authenticated account with
+  no terminal onboarding state enters at Welcome, while an `in_progress`
+  account resumes at its persisted page. Only `completed` or `dismissed`
+  accounts enter Home directly. Experience-polish surfaces have no environment
+  rollout switch either and ship enabled with this mobile release. Native iPhone
+  16 Pro visual QA and Android emulator QA caught and corrected wrapped headings;
+  evidence is in the Codex visualizations folder for this task. DOB uses the
+  existing JS calendar extraction, so this release needs no new native binary.
+- The local Inspector Brad sweeps found and the implementation now fixes
+  serialized onboarding writes, body-fat-only logging, immediate history
+  refresh, recommendation Skip, relationship focus refresh, legacy brief
+  attribution, assisted 1RM exclusion, coach measurement attribution, and the
+  complete Spec 31 analytics surface. Follow-up findings also hardened
+  same-day measurement merging, queued-measurement identity, relationship
+  cache races, local-date DOB bounds, and cross-coach brief privacy. The final
+  local Inspector Brad sweep returned `INSPECTOR_VERDICT: CLEAN`.
+- Replaced the narrow Estimated 1RM transport with the authenticated
+  `/exercises/:exerciseId/performance-summary` contract. One aggregate query
+  now returns actual 10RM, heaviest set at any rep count, best single-set
+  volume, lifetime exercise volume, estimated 1RM and estimated 10RM with
+  source provenance. Mobile caches the whole user/exercise summary, while Spec
+  31 continues to render only its compact Estimated 1RM banner so a future
+  carousel remains additive.
+- Staging sign-in returned 500 for every core route after the backend merge,
+  including onboarding. CloudWatch identified an Elysia/Memoirist cold-start
+  collision between `/exercises/:id` and the newly registered
+  `/exercises/:exerciseId/performance-summary`; it is unrelated to RevenueCat,
+  and migration `20260901120000_onboarding_states.sql` did apply successfully.
+  Backend hotfix PR #427 standardises the internal parameter name to `:id`
+  without changing the public URL shape and adds a composed-router regression.

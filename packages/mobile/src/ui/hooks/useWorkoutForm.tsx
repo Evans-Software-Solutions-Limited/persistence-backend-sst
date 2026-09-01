@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useReducer, useRef } from "react";
+import { reorderExercises } from "@/domain/services/workout.service";
 
 /**
  * Form-state hook for the workout creator + editor. Holds the in-flight
@@ -76,6 +77,7 @@ type Action =
       field: string;
       value: number;
     }
+  | { type: "moveExercise"; exerciseId: string; direction: -1 | 1 }
   | { type: "reset"; state: WorkoutFormState };
 
 function reducer(state: WorkoutFormState, action: Action): WorkoutFormState {
@@ -151,6 +153,47 @@ function reducer(state: WorkoutFormState, action: Action): WorkoutFormState {
         }),
       };
     }
+    case "moveExercise": {
+      const ordered = [...state.exercises].sort(
+        (a, b) => a.sort_order - b.sort_order,
+      );
+      const sourceIndex = ordered.findIndex(
+        (ex) => ex.id === action.exerciseId,
+      );
+      if (sourceIndex < 0) return state;
+      const source = ordered[sourceIndex];
+      const blocks: WorkoutFormExercise[][] = [];
+      const used = new Set<number>();
+      for (const exercise of ordered) {
+        if (exercise.superset_group == null) blocks.push([exercise]);
+        else if (!used.has(exercise.superset_group)) {
+          used.add(exercise.superset_group);
+          blocks.push(
+            ordered.filter(
+              (candidate) =>
+                candidate.superset_group === exercise.superset_group,
+            ),
+          );
+        }
+      }
+      const sourceBlock = blocks.findIndex((block) => block.includes(source));
+      const targetBlock = sourceBlock + action.direction;
+      if (targetBlock < 0 || targetBlock >= blocks.length) return state;
+      const targetIndex = ordered.indexOf(blocks[targetBlock][0]);
+      const proxies = ordered.map((exercise) => ({
+        exercise,
+        sortOrder: exercise.sort_order,
+        supersetGroup: exercise.superset_group,
+      }));
+      const reordered = reorderExercises(proxies, sourceIndex, targetIndex);
+      return {
+        ...state,
+        exercises: reordered.map((proxy, index) => ({
+          ...proxy.exercise,
+          sort_order: index,
+        })),
+      };
+    }
     case "reset":
       return action.state;
   }
@@ -169,6 +212,7 @@ export type WorkoutFormHandle = {
   addSuperset: (exercises: any[]) => void;
   removeExercise: (exerciseId: string) => void;
   setExerciseField: (exerciseId: string, field: string, value: number) => void;
+  moveExercise: (exerciseId: string, direction: -1 | 1) => void;
   reset: (state: WorkoutFormState) => void;
 };
 
@@ -232,6 +276,11 @@ export function useWorkoutForm(
       dispatch({ type: "setExerciseField", exerciseId, field, value }),
     [],
   );
+  const moveExercise = useCallback(
+    (exerciseId: string, direction: -1 | 1) =>
+      dispatch({ type: "moveExercise", exerciseId, direction }),
+    [],
+  );
   const reset = useCallback((next: WorkoutFormState) => {
     pristineRef.current = next;
     dispatch({ type: "reset", state: next });
@@ -248,6 +297,7 @@ export function useWorkoutForm(
     addSuperset,
     removeExercise,
     setExerciseField,
+    moveExercise,
     reset,
   };
 }

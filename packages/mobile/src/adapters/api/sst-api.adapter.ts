@@ -10,7 +10,13 @@ import {
   type ExerciseFilters,
   type MuscleGroup,
 } from "@/domain/models/exercise";
+import type { ExercisePerformanceSummary } from "@/domain/models/exercisePerformance";
 import type { ProfilePageData } from "@/domain/models/profilePage";
+import type {
+  AnalyticsEventInput,
+  OnboardingState,
+  OnboardingUpdateInput,
+} from "@/domain/models/onboarding";
 import type {
   Notification,
   NotificationsPage,
@@ -257,6 +263,9 @@ type RequestOptions = {
  * settles inside the window.
  */
 export const DASHBOARD_REQUEST_TIMEOUT_MS = 10_000;
+
+/** Onboarding routing cannot remain pending forever; expiry enables Retry. */
+export const ONBOARDING_REQUEST_TIMEOUT_MS = 10_000;
 
 /**
  * SST API adapter implementing ApiPort.
@@ -541,6 +550,31 @@ export class SSTApiAdapter implements ApiPort {
   async restoreAccount(): Promise<Result<{ restored: true }, ApiError>> {
     return this.requestEnvelope<{ restored: true }>("/account/restore", {
       method: "POST",
+    });
+  }
+
+  async getOnboarding(): Promise<Result<OnboardingState | null, ApiError>> {
+    return this.requestEnvelope<OnboardingState | null>(
+      "/users/me/onboarding",
+      { timeoutMs: ONBOARDING_REQUEST_TIMEOUT_MS },
+    );
+  }
+
+  async updateOnboarding(
+    input: OnboardingUpdateInput,
+  ): Promise<Result<OnboardingState, ApiError>> {
+    return this.requestEnvelope<OnboardingState>("/users/me/onboarding", {
+      method: "PUT",
+      body: input,
+    });
+  }
+
+  async trackAnalyticsEvent(
+    input: AnalyticsEventInput,
+  ): Promise<Result<void, ApiError>> {
+    return this.requestEnvelope<void>("/analytics/events", {
+      method: "POST",
+      body: input,
     });
   }
 
@@ -894,6 +928,14 @@ export class SSTApiAdapter implements ApiPort {
     const result = await this.requestEnvelope<ApiExercise>(`/exercises/${id}`);
     if (!result.ok) return result;
     return ok(this.enrichExerciseLabels(mapApiExerciseToDomain(result.value)));
+  }
+
+  async getExercisePerformanceSummary(
+    exerciseId: string,
+  ): Promise<Result<ExercisePerformanceSummary | null, ApiError>> {
+    return this.requestEnvelope<ExercisePerformanceSummary | null>(
+      `/exercises/${exerciseId}/performance-summary`,
+    );
   }
 
   async createExercise(
@@ -2672,10 +2714,14 @@ export function mapHttpErrorToApiError(
   statusText: string,
   body: unknown,
 ): ApiError {
+  const errorBody = body as {
+    error?: unknown;
+    message?: unknown;
+  } | null;
   const message =
-    (body as { error?: string } | null)?.error ??
-    statusText ??
-    "Request failed";
+    (typeof errorBody?.error === "string" ? errorBody.error : null) ??
+    (typeof errorBody?.message === "string" ? errorBody.message : null) ??
+    (statusText || "Request failed");
 
   if (status === 402) {
     const entitlement = parseEntitlementDeniedBody(body);

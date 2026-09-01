@@ -6,6 +6,11 @@ import type {
 } from "@/domain/models/exercise";
 import type { ProfilePageData } from "@/domain/models/profilePage";
 import type {
+  AnalyticsEventInput,
+  OnboardingState,
+  OnboardingUpdateInput,
+} from "@/domain/models/onboarding";
+import type {
   Notification,
   NotificationsPage,
 } from "@/domain/models/notification";
@@ -195,6 +200,8 @@ import type { PaginatedResult, PaginationParams } from "@/shared/types";
  * Stores data in arrays, returns it directly.
  */
 export class InMemoryApiAdapter implements ApiPort {
+  onboarding: OnboardingState | null = null;
+  analyticsEvents: AnalyticsEventInput[] = [];
   public profiles: ApiProfile[] = [];
   public workouts: Workout[] = [];
   public workoutQuota: WorkoutQuota | null = null;
@@ -301,6 +308,31 @@ export class InMemoryApiAdapter implements ApiPort {
       };
     }
     return ok({ restored: true });
+  }
+
+  async getOnboarding(): Promise<Result<OnboardingState | null, ApiError>> {
+    return ok(this.onboarding);
+  }
+
+  async updateOnboarding(
+    input: OnboardingUpdateInput,
+  ): Promise<Result<OnboardingState, ApiError>> {
+    const now = new Date().toISOString();
+    const current = this.onboarding;
+    if (current && current.status !== "in_progress") return ok(current);
+    this.onboarding = {
+      userId: current?.userId ?? "user-1",
+      ...input,
+      updatedAt: now,
+    };
+    return ok(this.onboarding);
+  }
+
+  async trackAnalyticsEvent(
+    input: AnalyticsEventInput,
+  ): Promise<Result<void, ApiError>> {
+    this.analyticsEvents.push(input);
+    return ok(undefined);
   }
 
   async getWorkouts(
@@ -748,6 +780,18 @@ export class InMemoryApiAdapter implements ApiPort {
         message: "Not found",
       });
     return this.mayFail(e);
+  }
+
+  public exercisePerformanceSummaryByExercise: Record<
+    string,
+    | import("@/domain/models/exercisePerformance").ExercisePerformanceSummary
+    | null
+  > = {};
+
+  async getExercisePerformanceSummary(exerciseId: string) {
+    return this.mayFail(
+      this.exercisePerformanceSummaryByExercise[exerciseId] ?? null,
+    );
   }
 
   async createExercise(data: CreateExerciseInput) {

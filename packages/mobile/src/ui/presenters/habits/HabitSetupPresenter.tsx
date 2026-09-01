@@ -38,6 +38,8 @@ export type HabitSetupPresenterProps = {
   skipped: boolean;
   /** Coach view → the Save button reads the trainer accent. */
   isCoach?: boolean;
+  /** Journey mode keeps the real editor/save path but adopts onboarding chrome. */
+  onboarding?: boolean;
   /** Display unit for the WATER category's target (device-QA #5/#7) — "l"
    *  (default) is unchanged; "cups" (imperial) displays/steps it in cups.
    *  Forwarded to every `<HabitCardPresenter>`; every other category
@@ -70,6 +72,7 @@ export type HabitSetupPresenterProps = {
   onSpendFreeze: () => void;
   onAdjustNutrition: () => void;
   onSave: () => void;
+  onSkip?: () => void;
   testID?: string;
 };
 
@@ -84,6 +87,7 @@ export function HabitSetupPresenter({
   atRisk,
   skipped,
   isCoach = false,
+  onboarding = false,
   volumeUnit = "l",
   canSave,
   saving,
@@ -100,15 +104,21 @@ export function HabitSetupPresenter({
   onSpendFreeze,
   onAdjustNutrition,
   onSave,
+  onSkip,
   testID = "habit-setup",
 }: HabitSetupPresenterProps) {
   const insets = useSafeAreaInsets();
 
   return (
-    <View flex={1} paddingTop={insets.top} testID={testID}>
+    <View
+      flex={1}
+      paddingTop={insets.top}
+      backgroundColor="$bg"
+      testID={testID}
+    >
       <HeaderBar
         large
-        eyebrow="HABIT SETUP"
+        eyebrow={onboarding ? "Step 3 of 5" : "HABIT SETUP"}
         title={title}
         sub={intro ?? DEFAULT_INTRO}
         leading={
@@ -119,6 +129,13 @@ export function HabitSetupPresenter({
             accessibilityLabel="Back"
             testID={`${testID}-back`}
           />
+        }
+        trailing={
+          onSkip ? (
+            <Btn variant="ghost" tone="primary" size="md" onPress={onSkip}>
+              Skip
+            </Btn>
+          ) : undefined
         }
       />
 
@@ -180,14 +197,16 @@ export function HabitSetupPresenter({
           </View>
         ) : null}
 
-        <StreakSectionPresenter
-          streak={streak}
-          longest={longest}
-          freezeTokens={freezeTokens}
-          atRisk={atRisk}
-          skipped={skipped}
-          onSpendFreeze={onSpendFreeze}
-        />
+        {onboarding ? null : (
+          <StreakSectionPresenter
+            streak={streak}
+            longest={longest}
+            freezeTokens={freezeTokens}
+            atRisk={atRisk}
+            skipped={skipped}
+            onSpendFreeze={onSpendFreeze}
+          />
+        )}
 
         {HABIT_ORDER.map((category) => (
           <HabitCardPresenter
@@ -204,45 +223,47 @@ export function HabitSetupPresenter({
           />
         ))}
 
-        {/* Footer note — holidays live on Home (locked decision 11). */}
-        <View
-          flexDirection="row"
-          gap={10}
-          paddingVertical={13}
-          paddingHorizontal={14}
-          marginTop={2}
-          backgroundColor="$surface"
-          borderWidth={1}
-          borderColor="$border"
-          borderRadius={14}
-          testID={`${testID}-footer`}
-        >
-          <View style={{ flexShrink: 0, marginTop: 1 }}>
-            {/* --text-4 neutral in the prototype. */}
-            <IconInfo size={15} color="#5A5A66" />
-          </View>
-          <Text
-            fontFamily="$body"
-            fontSize={11.5}
-            color="$text3"
-            lineHeight={17}
-            flex={1}
+        {onboarding ? null : (
+          /* Footer note — holidays live on Home (locked decision 11). */
+          <View
+            flexDirection="row"
+            gap={10}
+            paddingVertical={13}
+            paddingHorizontal={14}
+            marginTop={2}
+            backgroundColor="$surface"
+            borderWidth={1}
+            borderColor="$border"
+            borderRadius={14}
+            testID={`${testID}-footer`}
           >
-            Going away? Schedule a break from{" "}
-            <Text fontFamily="$body" fontSize={11.5} color="$text2">
-              Home
-            </Text>{" "}
-            — your streak pauses for the dates you&rsquo;re gone, pro-rated
-            around the habits due that week.
-          </Text>
-        </View>
+            <View style={{ flexShrink: 0, marginTop: 1 }}>
+              {/* --text-4 neutral in the prototype. */}
+              <IconInfo size={15} color="#5A5A66" />
+            </View>
+            <Text
+              fontFamily="$body"
+              fontSize={11.5}
+              color="$text3"
+              lineHeight={17}
+              flex={1}
+            >
+              Going away? Schedule a break from{" "}
+              <Text fontFamily="$body" fontSize={11.5} color="$text2">
+                Home
+              </Text>{" "}
+              — your streak pauses for the dates you&rsquo;re gone, pro-rated
+              around the habits due that week.
+            </Text>
+          </View>
+        )}
       </ScrollView>
 
       {/* Sticky Save footer — pinned above the bottom safe-area inset so it's
           always visible while the cards scroll. Disabled until the draft is
           dirty; shows "Saving…" while a commit is in flight. */}
       <View
-        paddingHorizontal={16}
+        paddingHorizontal={onboarding ? 20 : 16}
         paddingTop={12}
         paddingBottom={insets.bottom + 12}
         backgroundColor="$bg"
@@ -271,7 +292,7 @@ export function HabitSetupPresenter({
           disabled={!canSave}
           testID={`${testID}-save`}
         >
-          {saving ? "Saving…" : "Save"}
+          {saving ? "Saving…" : onboarding ? "Continue" : "Save"}
         </Btn>
       </View>
     </View>

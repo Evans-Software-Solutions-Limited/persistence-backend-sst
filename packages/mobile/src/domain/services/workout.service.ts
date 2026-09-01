@@ -164,21 +164,45 @@ export function calculateEstimatedDuration(
  * Reorder exercises by moving `fromIndex` to `toIndex`. Returns a new
  * array with `sortOrder` re-stamped 0..n-1 to match the array index.
  */
-export function reorderExercises(
-  exercises: readonly WorkoutExercise[],
-  fromIndex: number,
-  toIndex: number,
-): WorkoutExercise[] {
+export function reorderExercises<
+  T extends Pick<WorkoutExercise, "sortOrder" | "supersetGroup">,
+>(exercises: readonly T[], fromIndex: number, toIndex: number): T[] {
   if (fromIndex < 0 || fromIndex >= exercises.length) {
     return [...exercises];
   }
   if (toIndex < 0 || toIndex >= exercises.length) {
     return [...exercises];
   }
-  const next = [...exercises];
-  const [moved] = next.splice(fromIndex, 1);
-  next.splice(toIndex, 0, moved);
-  return next.map((ex, idx) => ({ ...ex, sortOrder: idx }));
+  if (fromIndex === toIndex) return [...exercises];
+
+  // A superset is one reorderable block. Group peers even if legacy data has
+  // them interleaved, restoring the contiguous invariant as part of the move.
+  const usedGroups = new Set<number>();
+  const blocks: T[][] = [];
+  for (const exercise of exercises) {
+    if (exercise.supersetGroup == null) {
+      blocks.push([exercise]);
+      continue;
+    }
+    if (usedGroups.has(exercise.supersetGroup)) continue;
+    usedGroups.add(exercise.supersetGroup);
+    blocks.push(
+      exercises.filter(
+        (candidate) => candidate.supersetGroup === exercise.supersetGroup,
+      ),
+    );
+  }
+  const source = exercises[fromIndex];
+  const target = exercises[toIndex];
+  const sourceBlockIndex = blocks.findIndex((block) => block.includes(source));
+  const targetBlockIndex = blocks.findIndex((block) => block.includes(target));
+  if (sourceBlockIndex === targetBlockIndex) return [...exercises];
+  const nextBlocks = [...blocks];
+  const [movedBlock] = nextBlocks.splice(sourceBlockIndex, 1);
+  nextBlocks.splice(targetBlockIndex, 0, movedBlock);
+  return nextBlocks
+    .flat()
+    .map((exercise, index) => ({ ...exercise, sortOrder: index }));
 }
 
 /**

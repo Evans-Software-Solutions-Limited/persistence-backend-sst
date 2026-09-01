@@ -42,6 +42,7 @@ export interface TrainerSubscriptionCardProps {
   onStandardPress: () => void;
   onProPress: () => void;
   disabled?: boolean;
+  isRecommended?: boolean;
 }
 
 export function TrainerSubscriptionCard({
@@ -55,6 +56,7 @@ export function TrainerSubscriptionCard({
   onStandardPress,
   onProPress,
   disabled = false,
+  isRecommended = false,
 }: TrainerSubscriptionCardProps) {
   if (!standardTier && !proTier) {
     return null;
@@ -105,7 +107,13 @@ export function TrainerSubscriptionCard({
       : 0;
 
   return (
-    <View style={styles.card} testID={`trainer-subscription-card-${baseName}`}>
+    <View
+      style={[styles.card, isRecommended && styles.cardRecommended]}
+      testID={`trainer-subscription-card-${baseName}`}
+    >
+      {isRecommended && (
+        <Text style={styles.recommendedBadge}>RECOMMENDED FOR YOU</Text>
+      )}
       <View style={styles.header}>
         <Text style={styles.title}>{displayName}</Text>
       </View>
@@ -271,6 +279,14 @@ const styles = StyleSheet.create({
     elevation: 4,
     overflow: "hidden",
     position: "relative",
+  },
+  cardRecommended: { borderColor: color.$primary },
+  recommendedBadge: {
+    color: color.$primary,
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 1,
+    marginBottom: 8,
   },
   header: {
     marginBottom: 8,

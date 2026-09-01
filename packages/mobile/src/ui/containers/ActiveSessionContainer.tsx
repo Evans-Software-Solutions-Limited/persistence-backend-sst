@@ -28,6 +28,7 @@ import {
   cancelSessionCommand,
   logSetCommand,
   removeExerciseCommand,
+  reorderSessionExercisesCommand,
   removeSupersetSetCommand,
   setExerciseNotesCommand,
   startSessionCommand,
@@ -461,6 +462,18 @@ export function ActiveSessionContainer() {
     [userId, storage, rereadCache],
   );
 
+  const onMoveExercise = useCallback(
+    (sessionExerciseId: string, direction: -1 | 1) => {
+      if (!userId) return;
+      reorderSessionExercisesCommand(
+        { storage, userId },
+        { sessionExerciseId, direction },
+      );
+      rereadCache();
+    },
+    [storage, userId, rereadCache],
+  );
+
   const onAddExercise = useCallback(() => {
     setPickerMode({ kind: "add" });
   }, []);
@@ -670,6 +683,7 @@ export function ActiveSessionContainer() {
         onOpenSupersetNotes={onOpenSupersetNotes}
         onSubstitute={onSubstitute}
         onRemoveExercise={onRemoveExercise}
+        onMoveExercise={onMoveExercise}
         onTapExercise={onTapExercise}
         onAddExercise={onAddExercise}
         onAddExerciseToSuperset={onAddExerciseToSuperset}

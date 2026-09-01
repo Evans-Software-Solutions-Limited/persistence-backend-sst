@@ -84,6 +84,38 @@ function defaultProps(): SubscriptionSelectionPresenterProps {
 }
 
 describe("SubscriptionSelectionPresenter — render states", () => {
+  it("locks and highlights the recommended onboarding ladder", () => {
+    const onToggleOtherPlans = jest.fn();
+    const onContinueFree = jest.fn();
+    const onSkip = jest.fn();
+    render(
+      <SubscriptionSelectionPresenter
+        {...defaultProps()}
+        subscriptionTiers={[PREMIUM, PREMIUM_PLUS, INDIVIDUAL_TRAINER, COACH]}
+        onboardingRecommendation={{
+          recommendedTier: "premium_plus",
+          reasons: ["Adaptive tools match your choices"],
+          showOtherPlans: false,
+          onToggleOtherPlans,
+          onContinueFree,
+          onSkip,
+        }}
+      />,
+    );
+
+    expect(screen.getByText("RECOMMENDED FOR YOU")).toBeTruthy();
+    expect(screen.getByText(/Adaptive tools match/)).toBeTruthy();
+    expect(screen.queryByTestId("role-toggle-user")).toBeNull();
+    expect(screen.queryByTestId("subscription-card-premium")).toBeNull();
+    expect(screen.getByTestId("subscription-card-premium_plus")).toBeTruthy();
+    fireEvent.press(screen.getByTestId("onboarding-show-other-plans"));
+    fireEvent.press(screen.getByTestId("onboarding-continue-free"));
+    fireEvent.press(screen.getByTestId("onboarding-recommendation-skip"));
+    expect(onToggleOtherPlans).toHaveBeenCalledTimes(1);
+    expect(onContinueFree).toHaveBeenCalledTimes(1);
+    expect(onSkip).toHaveBeenCalledTimes(1);
+  });
+
   it("renders the loading state when isLoading", () => {
     render(<SubscriptionSelectionPresenter {...defaultProps()} isLoading />);
     expect(screen.getByTestId("subscription-selection-loading")).toBeTruthy();

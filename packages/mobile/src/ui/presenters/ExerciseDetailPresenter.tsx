@@ -5,7 +5,17 @@ import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import type { Exercise, ExerciseDifficulty } from "@/domain/models/exercise";
-import { Btn, HeaderBar, IconBtn, Pill } from "@/ui/components/foundation";
+import type {
+  ExercisePerformanceSummary,
+  PerformanceEstimate,
+} from "@/domain/models/exercisePerformance";
+import {
+  Btn,
+  Card,
+  HeaderBar,
+  IconBtn,
+  Pill,
+} from "@/ui/components/foundation";
 import type { PillTone } from "@/ui/components/foundation";
 import {
   IconAlert,
@@ -15,6 +25,7 @@ import {
 } from "@/ui/components/icons";
 import { color } from "@/ui/theme/tokens";
 import type { ApiError } from "@/shared/errors";
+import { weightInUnit, type WeightUnit } from "@/shared/utils";
 
 /**
  * <ExerciseDetailPresenter> — full-screen exercise detail.
@@ -64,6 +75,8 @@ export type ExerciseDetailProps = {
   onEdit: () => void;
   onOpenVideo: () => void;
   onRetry: () => void;
+  performanceSummary?: ExercisePerformanceSummary | null;
+  weightUnit?: WeightUnit;
 };
 
 export function ExerciseDetailPresenter({
@@ -75,6 +88,8 @@ export function ExerciseDetailPresenter({
   onEdit,
   onOpenVideo,
   onRetry,
+  performanceSummary = null,
+  weightUnit = "kg",
 }: ExerciseDetailProps) {
   return (
     <SafeAreaView
@@ -187,6 +202,13 @@ export function ExerciseDetailPresenter({
             </Btn>
           ) : null}
 
+          {performanceSummary?.estimatedOneRepMax ? (
+            <EstimatedOneRepMaxBanner
+              value={performanceSummary.estimatedOneRepMax}
+              weightUnit={weightUnit}
+            />
+          ) : null}
+
           {/* Name + level */}
           <View flexDirection="row" alignItems="center" gap={10}>
             <Text
@@ -278,6 +300,56 @@ export function ExerciseDetailPresenter({
         </View>
       )}
     </SafeAreaView>
+  );
+}
+
+function EstimatedOneRepMaxBanner({
+  value,
+  weightUnit,
+}: {
+  value: PerformanceEstimate;
+  weightUnit: WeightUnit;
+}) {
+  const estimate = weightInUnit(value.estimateKg, weightUnit);
+  const sourceWeight = weightInUnit(value.source.weightKg, weightUnit);
+  return (
+    <Card
+      pad={14}
+      radius={14}
+      accent="primary"
+      testID="exercise-estimated-1rm"
+      accessibilityLabel={`Estimated one rep max ${estimate.toFixed(1)} ${weightUnit}, from ${sourceWeight.toFixed(1)} ${weightUnit} for ${value.source.reps} reps`}
+    >
+      <View
+        flexDirection="row"
+        alignItems="center"
+        justifyContent="space-between"
+        gap={12}
+      >
+        <View>
+          <Text
+            fontFamily="$display"
+            fontSize={10.5}
+            fontWeight="700"
+            letterSpacing={1.5}
+            color="$primary"
+          >
+            ESTIMATED 1RM
+          </Text>
+          <Text fontFamily="$body" fontSize={12} color="$text3" marginTop={3}>
+            From {sourceWeight.toFixed(1)} {weightUnit} × {value.source.reps}
+          </Text>
+        </View>
+        <View flexDirection="row" alignItems="baseline" gap={4}>
+          <Text fontFamily="$mono" fontSize={24} fontWeight="700" color="$text">
+            {estimate.toFixed(1)}
+          </Text>
+          <Text fontFamily="$mono" fontSize={12} color="$text3">
+            {weightUnit}
+          </Text>
+        </View>
+      </View>
+    </Card>
   );
 }
 

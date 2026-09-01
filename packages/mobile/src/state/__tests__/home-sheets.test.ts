@@ -5,7 +5,13 @@ import { useHomeSheets } from "@/state/home-sheets";
  *       specs/06-progress-goals/design.md § Home quick-log
  */
 
-const reset = () => useHomeSheets.setState({ sheet: null, habitsRev: 0 });
+const reset = () =>
+  useHomeSheets.setState({
+    sheet: null,
+    measurementContext: "weight",
+    measurementOrigin: "home",
+    habitsRev: 0,
+  });
 
 describe("useHomeSheets", () => {
   beforeEach(reset);
@@ -34,6 +40,26 @@ describe("useHomeSheets", () => {
     useHomeSheets.getState().openWeighIn();
     useHomeSheets.getState().close();
     expect(useHomeSheets.getState().sheet).toBeNull();
+  });
+
+  it("opens a body-fat history measurement with its explicit context", () => {
+    useHomeSheets.getState().openWeighIn("bodyFat", "history");
+    expect(useHomeSheets.getState()).toMatchObject({
+      sheet: "weighIn",
+      measurementContext: "bodyFat",
+      measurementOrigin: "history",
+    });
+  });
+
+  it("normalises a press event accidentally passed to the action", () => {
+    useHomeSheets
+      .getState()
+      .openWeighIn({} as never, { unexpected: true } as never);
+    expect(useHomeSheets.getState()).toMatchObject({
+      sheet: "weighIn",
+      measurementContext: "weight",
+      measurementOrigin: "home",
+    });
   });
 
   // The subtle part, and the reason this store exists rather than three

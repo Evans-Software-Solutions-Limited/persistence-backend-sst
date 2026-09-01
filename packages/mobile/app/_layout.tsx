@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Platform } from "react-native";
+import { Platform, View } from "react-native";
 import {
   Slot,
   useGlobalSearchParams,
@@ -9,6 +9,8 @@ import {
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import * as Notifications from "expo-notifications";
 import { ErrorBoundary } from "../src/ui/components/ErrorBoundary";
+import { ErrorState } from "../src/ui/components/ErrorState";
+import { PLogoDrawLoader } from "../src/ui/components/PLogoDrawLoader";
 import { captureBoundaryError, initSentry, Sentry } from "../src/lib/sentry";
 import { AppProviders } from "../src/providers";
 import { useActiveWorkoutRehydration } from "../src/ui/hooks/useActiveWorkoutRehydration";
@@ -22,6 +24,9 @@ import { initAuthCallbackCapture } from "@/ui/hooks/useAuthCallbackUrl";
 import { usePurchasesIdentity } from "../src/ui/hooks/usePurchasesIdentity";
 import { usePushNotifications } from "../src/ui/hooks/usePushNotifications";
 import { useUserModeEligibility } from "../src/ui/hooks/useUserModeEligibility";
+import { useOptionalOnboarding } from "../src/ui/state/OnboardingProvider";
+import { shouldAutoShowOnboarding } from "../src/ui/state/onboardingEligibility";
+import { type Href } from "expo-router";
 
 // Initialise Sentry at module load, before the app renders. No-op when
 // `EXPO_PUBLIC_SENTRY_DSN` is unset (fail-safe — DSN-less builds run
@@ -172,17 +177,49 @@ function AuthGate() {
   const profilePage = useProfilePage();
   const segments = useSegments();
   const router = useRouter();
-  const params = useGlobalSearchParams<{ code?: string }>();
+  const params = useGlobalSearchParams<{
+    code?: string;
+    onboarding?: string;
+  }>();
+  // `AppProviders` owns this context in production. The optional read keeps
+  // this routing component independently testable when AppProviders is mocked
+  // as a pass-through; signed-out users cannot require onboarding anyway.
+  const onboarding = useOptionalOnboarding();
 
   const deletedAt = profilePage.payload?.profile.deletedAt ?? null;
+  const onboardingRoutingPending =
+    session !== null &&
+    ((onboarding?.isLoading ?? false) ||
+      (onboarding?.state === null && onboarding.loadError != null));
   // `code` off the incoming invite deep link (/(app)/accept-invite?code=X).
   const inviteCode = typeof params.code === "string" ? params.code : null;
+
+  const rootSegment = (segments as readonly string[])[0];
+  const segmentName = (segments as readonly string[])[1];
+  const inAuthGroup = rootSegment === "(auth)";
+  const inAppGroup = rootSegment === "(app)";
+  const inOnboardingGroup = rootSegment === "(onboarding)";
+  const onAuthCallback = rootSegment === "auth";
+  const inPostAuthSubscriptionFlow =
+    inAuthGroup &&
+    (segmentName === "subscription-selection" || segmentName === "success");
+  const inOnboardingPurchaseFlow =
+    inPostAuthSubscriptionFlow && params.onboarding === "1";
+  const inRestoreAccountScreen =
+    inAppGroup && segmentName === "restore-account";
+  const inAcceptInviteScreen = inAppGroup && segmentName === "accept-invite";
+  const inSetNewPasswordScreen =
+    inAuthGroup && segmentName === "set-new-password";
+  const onboardingState = onboarding?.state ?? null;
+  const onboardingRequired =
+    // A failed read with no offline mirror is unknown, not "never started".
+    // Fail open to Home and retry on the next provider lifecycle.
+    (onboardingState !== null || onboarding?.loadError == null) &&
+    shouldAutoShowOnboarding({ state: onboardingState });
 
   useEffect(() => {
     if (isLoading) return;
 
-    const inAuthGroup = segments[0] === "(auth)";
-    const inAppGroup = segments[0] === "(app)";
     // The auth-callback deep-link screen (`app/auth/callback.tsx`) is
     // ungrouped, so it's in neither group. It owns its own routing — the
     // container establishes the session (then the `session && !inAppGroup`
@@ -190,23 +227,14 @@ function AuthGate() {
     // it from the signed-out redirect so a cold open from a confirmation link
     // doesn't bounce a *successful* confirm to sign-in in the window before
     // the container's async `setSessionFromTokens` has resolved.
-    const onAuthCallback = segments[0] === "auth";
     // M10: subscription-selection + success live under (auth) because
     // they're rendered post-sign-up before the user has reached the
     // app. AuthGate must NOT bounce signed-in users out of those
     // screens — otherwise the auth-flow Selection card never gets
     // its chance to appear before AuthGate redirects to home.
-    const segmentName = (segments as readonly string[])[1];
-    const inPostAuthSubscriptionFlow =
-      inAuthGroup &&
-      (segmentName === "subscription-selection" || segmentName === "success");
-    const inRestoreAccountScreen =
-      inAppGroup && segmentName === "restore-account";
     // A recovery-link session must set a new password before reaching the
     // tabs. Whitelisted like the post-sign-up screens so AuthGate doesn't
     // bounce the signed-in user off set-new-password back to the app.
-    const inSetNewPasswordScreen =
-      inAuthGroup && segmentName === "set-new-password";
 
     // Soft-deleted (grace-period) gate: a signed-in user whose profile
     // carries a non-null `deletedAt` must restore (or sign out) before
@@ -225,36 +253,61 @@ function AuthGate() {
       return;
     }
 
+    // Password recovery is an auth-security flow and must not wait for the
+    // onboarding state request. The reset screen owns clearing the flag.
+    if (
+      session &&
+      usePasswordRecovery.getState().pending &&
+      !inSetNewPasswordScreen
+    ) {
+      router.replace("/(auth)/set-new-password");
+      return;
+    }
+
+    // Invite consent must also be reachable without waiting for onboarding.
+    // Peek rather than clear: the accept-invite screen owns the stash, and
+    // repeated auth-state events must keep resolving to the same destination.
+    const pendingInviteCode = usePendingInvite.getState().pendingCode;
+    if (session && pendingInviteCode && !inAcceptInviteScreen) {
+      router.replace(
+        `/(app)/accept-invite?code=${encodeURIComponent(pendingInviteCode)}`,
+      );
+      return;
+    }
+
+    if (
+      session &&
+      !(onboarding?.isLoading ?? false) &&
+      onboardingRequired &&
+      !inOnboardingGroup &&
+      !inOnboardingPurchaseFlow &&
+      !inSetNewPasswordScreen &&
+      !inAcceptInviteScreen
+    ) {
+      const page = onboarding?.state?.currentPage ?? "welcome";
+      router.replace(`/(onboarding)/${page}` as Href);
+      return;
+    }
+    if (
+      session &&
+      inOnboardingGroup &&
+      !(onboarding?.isLoading ?? false) &&
+      onboarding?.state?.status !== "in_progress"
+    ) {
+      router.replace("/(app)/(tabs)");
+      return;
+    }
+
     if (
       session &&
       !inAppGroup &&
+      !inOnboardingGroup &&
       !inPostAuthSubscriptionFlow &&
-      !inSetNewPasswordScreen
+      !inSetNewPasswordScreen &&
+      !onboardingRoutingPending
     ) {
       // Signed in but not in app and not in a whitelisted auth-flow screen.
-      // A recovery-link session wins first: divert to set-new-password so the
-      // user resets before the app (peeked — the set-new-password screen owns
-      // the clear, same non-reactive-peek reasoning as the invite code below).
-      if (usePasswordRecovery.getState().pending) {
-        router.replace("/(auth)/set-new-password");
-        return;
-      }
-      // If a coach invite code was stashed before auth (unauthenticated athlete
-      // opened /(app)/accept-invite?code=X — device-QA #2 follow-up), redeem it
-      // now instead of landing on the tabs. PEEK (don't clear) — Supabase fires
-      // several auth-state events in quick succession, so this effect can re-run
-      // with `segments` still on (auth); a read-and-clear would return null on
-      // the second run and clobber this redirect with the tabs one. The
-      // accept-invite screen clears the stash on arrival, and both peeks resolve
-      // to the same redirect (idempotent) until `segments` catch up.
-      const pendingCode = usePendingInvite.getState().pendingCode;
-      if (pendingCode) {
-        router.replace(
-          `/(app)/accept-invite?code=${encodeURIComponent(pendingCode)}`,
-        );
-      } else {
-        router.replace("/(app)/(tabs)");
-      }
+      router.replace("/(app)/(tabs)");
     } else if (!session && !inAuthGroup && !onAuthCallback) {
       // Not signed in and not on an auth screen — go to sign-in. If they were
       // opening a coach invite deep link, stash the code first so it survives
@@ -264,7 +317,83 @@ function AuthGate() {
       }
       router.replace("/(auth)/sign-in");
     }
-  }, [session, isLoading, segments, router, deletedAt, inviteCode]);
+  }, [
+    session,
+    isLoading,
+    segments,
+    router,
+    deletedAt,
+    inviteCode,
+    onboarding?.state,
+    onboarding?.isLoading,
+    onboarding?.loadError,
+    onboardingRequired,
+    onboardingRoutingPending,
+    params.onboarding,
+    segmentName,
+    inAcceptInviteScreen,
+    inAppGroup,
+    inAuthGroup,
+    inOnboardingGroup,
+    inOnboardingPurchaseFlow,
+    inPostAuthSubscriptionFlow,
+    inRestoreAccountScreen,
+    inSetNewPasswordScreen,
+    onAuthCallback,
+  ]);
+
+  // Do not mount protected app/auth content while an unfinished journey is
+  // being redirected. This covers both a fresh null state and a cached
+  // in-progress page during its server refresh; otherwise the previous screen
+  // can be visible and interactive for a frame before `replace` commits.
+  const blocksForOnboarding =
+    session !== null &&
+    onboardingRequired &&
+    !inOnboardingGroup &&
+    !inOnboardingPurchaseFlow &&
+    !onAuthCallback &&
+    !inRestoreAccountScreen &&
+    !inAcceptInviteScreen &&
+    !inSetNewPasswordScreen;
+
+  const priorityRedirectPending =
+    session !== null &&
+    ((deletedAt != null && !inRestoreAccountScreen) ||
+      (usePasswordRecovery.getState().pending && !inSetNewPasswordScreen) ||
+      (usePendingInvite.getState().pendingCode !== null &&
+        !inAcceptInviteScreen));
+  const onboardingUnavailable =
+    session !== null &&
+    onboardingState === null &&
+    onboarding?.loadError != null &&
+    !onAuthCallback &&
+    !inOnboardingPurchaseFlow &&
+    !inRestoreAccountScreen &&
+    !inAcceptInviteScreen &&
+    !inSetNewPasswordScreen &&
+    !priorityRedirectPending;
+
+  if (onboardingUnavailable) {
+    return (
+      <ErrorState
+        title="Persistence is temporarily unavailable"
+        message="We couldn't finish loading your account. Your data is safe. Check your connection and try again."
+        onRetry={onboarding?.retryLoad}
+        testID="core-service-unavailable"
+      />
+    );
+  }
+
+  if (blocksForOnboarding || priorityRedirectPending) {
+    return (
+      <View
+        style={{ flex: 1, alignItems: "center", justifyContent: "center" }}
+        testID="onboarding-bootstrap-loading"
+      >
+        <PLogoDrawLoader size={120} accessibilityLabel="Loading your account" />
+      </View>
+    );
+  }
 
   return <Slot />;
 }

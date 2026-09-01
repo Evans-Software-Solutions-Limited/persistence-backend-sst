@@ -4,6 +4,7 @@ import type {
   Exercise,
   ExerciseFilters,
 } from "@/domain/models/exercise";
+import type { ExercisePerformanceSummary } from "@/domain/models/exercisePerformance";
 import type {
   Notification,
   NotificationsPage,
@@ -37,6 +38,11 @@ import type {
   SetMealprintPreferencesInput,
 } from "@/domain/models/mealprint";
 import type { ProfilePageData } from "@/domain/models/profilePage";
+import type {
+  AnalyticsEventInput,
+  OnboardingState,
+  OnboardingUpdateInput,
+} from "@/domain/models/onboarding";
 import type {
   ReferenceEntry,
   ReferenceListKind,
@@ -205,6 +211,15 @@ export interface ApiPort {
    * screen.
    */
   restoreAccount(): Promise<Result<{ restored: true }, ApiError>>;
+
+  // -- Onboarding --
+  getOnboarding(): Promise<Result<OnboardingState | null, ApiError>>;
+  updateOnboarding(
+    input: OnboardingUpdateInput,
+  ): Promise<Result<OnboardingState, ApiError>>;
+  trackAnalyticsEvent(
+    input: AnalyticsEventInput,
+  ): Promise<Result<void, ApiError>>;
 
   // -- Workouts (M2) --
   /**
@@ -381,6 +396,10 @@ export interface ApiPort {
     limit?: number,
   ): Promise<Result<PaginatedResult<Exercise>, ApiError>>;
   getExercise(id: string): Promise<Result<Exercise, ApiError>>;
+  /** Current user's aggregated performance metrics for one exercise. */
+  getExercisePerformanceSummary(
+    exerciseId: string,
+  ): Promise<Result<ExercisePerformanceSummary | null, ApiError>>;
   createExercise(
     data: CreateExerciseInput,
   ): Promise<Result<Exercise, ApiError>>;

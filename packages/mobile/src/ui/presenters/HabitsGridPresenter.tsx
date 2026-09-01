@@ -1,5 +1,4 @@
 import { Text, View } from "@tamagui/core";
-import { Pressable } from "react-native";
 import { Card } from "@/ui/components/foundation";
 import { HabitTile, type HabitTone } from "@/ui/components/composite";
 import { localDayISO } from "@/shared/utils";
@@ -13,8 +12,8 @@ import { localDayISO } from "@/shared/utils";
  * it is NOT a manual toggle surface. Every habit category now ticks from its
  * real logging flow (water/sleep/steps reflect on log; gym/calories derive
  * server-side), so a cell is filled iff the day's habit was genuinely hit.
- * Cells are non-interactive; the only affordance is the header "Manage" link
- * to the habit-setup screen. Today is highlighted wherever it falls; days
+ * Cells are non-interactive; the card opens the habit-setup screen. Today is
+ * highlighted wherever it falls; days
  * after today read as locked (upcoming), days before today without a
  * completion read as missed.
  */
@@ -55,7 +54,13 @@ export function HabitsGridPresenter({
 }: HabitsGridProps) {
   const todayISO = localDayISO();
   return (
-    <Card pad={14} radius={16} testID={testID}>
+    <Card
+      pad={14}
+      radius={16}
+      testID={testID}
+      onPress={onManageHabits}
+      accessibilityLabel={onManageHabits ? "Manage habits" : undefined}
+    >
       <View
         flexDirection="row"
         alignItems="center"
@@ -69,17 +74,9 @@ export function HabitsGridPresenter({
           </Text>
           {/* Persistent "Manage" affordance once habits exist (STORY-007 7.2). */}
           {onManageHabits && habits.length > 0 ? (
-            <Pressable
-              onPress={onManageHabits}
-              accessibilityRole="button"
-              accessibilityLabel="Manage habits"
-              hitSlop={8}
-              testID="habits-grid-manage"
-            >
-              <Text fontSize={11} fontWeight="600" color="$primary">
-                Manage
-              </Text>
-            </Pressable>
+            <Text fontSize={11} fontWeight="600" color="$primary">
+              Manage
+            </Text>
           ) : null}
         </View>
         <View flexDirection="row" gap={8}>
@@ -102,30 +99,18 @@ export function HabitsGridPresenter({
       {habits.length === 0 ? (
         // Empty-state CTA → the habit-setup screen (18-habit-setup STORY-007
         // 7.1). Pressable when a handler is wired; plain text otherwise.
-        <Pressable
-          onPress={onManageHabits}
-          disabled={!onManageHabits}
-          accessibilityRole={onManageHabits ? "button" : undefined}
-          accessibilityLabel={
-            onManageHabits ? "Get started by setting your habits" : undefined
-          }
-          style={({ pressed }) => ({
-            opacity: pressed && onManageHabits ? 0.7 : 1,
-          })}
+        <View
+          paddingTop={16}
+          paddingBottom={8}
+          alignItems="center"
+          borderTopWidth={1}
+          borderColor="$border"
           testID="habits-grid-empty"
         >
-          <View
-            paddingTop={16}
-            paddingBottom={8}
-            alignItems="center"
-            borderTopWidth={1}
-            borderColor="$border"
-          >
-            <Text fontSize={13} fontWeight="600" color="$primary">
-              Get started by setting your habits
-            </Text>
-          </View>
-        </Pressable>
+          <Text fontSize={13} fontWeight="600" color="$primary">
+            Get started by setting your habits
+          </Text>
+        </View>
       ) : null}
 
       {habits.map((h) => (

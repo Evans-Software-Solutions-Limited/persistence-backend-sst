@@ -17,6 +17,7 @@ jest.mock("@/adapters/api", () => ({
 }));
 
 const mockPush = jest.fn();
+let mockFocusCallback: (() => void | (() => void)) | null = null;
 jest.mock("expo-router", () => {
   const React = jest.requireActual("react") as typeof import("react");
   return {
@@ -24,8 +25,10 @@ jest.mock("expo-router", () => {
     // Run the focus callback once on mount (= first focus, which
     // useRefreshOnFocus skips) so the container's focus-refresh wiring doesn't
     // throw and existing assertions are unaffected.
-    useFocusEffect: (cb: () => void | (() => void)) =>
-      React.useEffect(cb, [cb]),
+    useFocusEffect: (cb: () => void | (() => void)) => {
+      mockFocusCallback = cb;
+      React.useEffect(cb, [cb]);
+    },
   };
 });
 
@@ -154,6 +157,39 @@ describe("<TrainOverviewContainer>", () => {
     expect(mockPush).toHaveBeenCalledWith("/(app)/programs/view/p-1");
   });
 
+  it("does not fall back to another coach's programme when the relationship assignment explicitly has none", async () => {
+    const { adapters, storage } = makeAdapters();
+    storage.cacheHome(USER, homePayload());
+    (adapters.api as InMemoryApiAdapter).clientRelationships = [
+      {
+        relationshipId: "rel-1",
+        trainerId: "coach-a",
+        trainerName: "Coach A",
+        trainerRole: "personal_trainer",
+        trainerAvatarUrl: null,
+        status: "active",
+        relationshipReason: null,
+        since: "2026-06-01T00:00:00.000Z",
+        initiatedBy: "trainer",
+        assignment: {
+          activeProgramme: null,
+          upcomingWorkouts: [],
+          habits: [],
+          nutritionTarget: null,
+          activeGoal: null,
+          visibleBriefs: [],
+        },
+      },
+    ];
+
+    renderContainer(adapters);
+
+    await waitFor(() => expect(props().coaching?.assignmentLoaded).toBe(true));
+    expect(props().activeProgramme).toBeNull();
+    props().onOpenProgramme?.();
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
   it("onRefresh refetches the home payload from the network", async () => {
     const { adapters, storage } = makeAdapters();
     storage.cacheHome(USER, homePayload());
@@ -170,6 +206,25 @@ describe("<TrainOverviewContainer>", () => {
     });
     await waitFor(() =>
       expect(getHome.mock.calls.length).toBeGreaterThan(before),
+    );
+  });
+
+  it("refetches active relationships when the kept-alive tab regains focus", async () => {
+    const { adapters, storage } = makeAdapters();
+    storage.cacheHome(USER, homePayload());
+    const getRelationships = jest.spyOn(adapters.api, "getClientRelationships");
+
+    renderContainer(adapters);
+    await waitFor(() => expect(mockFocusCallback).not.toBeNull());
+    const before = getRelationships.mock.calls.length;
+    await act(async () => {
+      mockFocusCallback?.();
+    });
+    await waitFor(() =>
+      expect(getRelationships.mock.calls.length).toBeGreaterThan(before),
+    );
+    expect((adapters.api as InMemoryApiAdapter).analyticsEvents).toContainEqual(
+      { name: "coaching_overview_opened" },
     );
   });
 });

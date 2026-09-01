@@ -76,7 +76,19 @@ type Snapshot = {
   isProfilePublic: boolean;
 };
 
-export function EditProfileContainer() {
+export type EditProfileContainerProps = {
+  onboarding?: boolean;
+  onComplete?: () => void;
+  onBack?: () => void;
+  onSkip?: () => void;
+};
+
+export function EditProfileContainer({
+  onboarding = false,
+  onComplete,
+  onBack: onBackOverride,
+  onSkip,
+}: EditProfileContainerProps = {}) {
   const router = useRouter();
   const { storage, auth } = useAdapters();
   const { session } = useAuth();
@@ -232,7 +244,8 @@ export function EditProfileContainer() {
         console.warn("[EditProfileContainer] post-save drain failed:", err);
       });
 
-      router.back();
+      if (onComplete) onComplete();
+      else router.back();
     } finally {
       setIsSaving(false);
     }
@@ -240,6 +253,7 @@ export function EditProfileContainer() {
     storage,
     auth,
     router,
+    onComplete,
     session?.userId,
     isSaving,
     initial,
@@ -255,7 +269,8 @@ export function EditProfileContainer() {
 
   const handleBack = useCallback(() => {
     if (!isDirty) {
-      router.back();
+      if (onBackOverride) onBackOverride();
+      else router.back();
       return;
     }
     Alert.alert(
@@ -266,11 +281,14 @@ export function EditProfileContainer() {
         {
           text: "Discard",
           style: "destructive",
-          onPress: () => router.back(),
+          onPress: () => {
+            if (onBackOverride) onBackOverride();
+            else router.back();
+          },
         },
       ],
     );
-  }, [isDirty, router]);
+  }, [isDirty, router, onBackOverride]);
 
   return (
     <EditProfilePresenter
@@ -299,6 +317,16 @@ export function EditProfileContainer() {
       onIsProfilePublicChange={setIsProfilePublic}
       onSave={() => void handleSave()}
       onBack={handleBack}
+      onboarding={onboarding}
+      title={onboarding ? "Make it yours" : undefined}
+      eyebrow={onboarding ? "Step 1 of 5" : undefined}
+      subtitle={
+        onboarding
+          ? "A few details to personalise your training, nutrition and progress."
+          : undefined
+      }
+      saveLabel={onboarding ? "Continue" : undefined}
+      onSkip={onboarding ? onSkip : undefined}
     />
   );
 }

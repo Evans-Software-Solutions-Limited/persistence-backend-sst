@@ -27,6 +27,29 @@ export type ClientTrainerRelationship = {
    * Phase 8 flow, driven by `respondToClientRelationship`).
    */
   initiatedBy: "trainer" | "client";
+  /** Athlete-safe assignment aggregate. Private coach notes are not part of it. */
+  assignment?: AthleteCoachingAssignment | null;
+};
+
+export type AthleteCoachingAssignment = {
+  activeProgramme: import("./progress").ActiveProgramme | null;
+  upcomingWorkouts: import("./progress").TodaysTrainingItem[];
+  habits: import("./habit-config").HabitConfig[];
+  nutritionTarget: import("./nutrition").NutritionTarget | null;
+  activeGoal: {
+    id: string;
+    title: string;
+    targetValue: number | null;
+    currentValue: number | null;
+    unit: string | null;
+    targetDate: string | null;
+  } | null;
+  visibleBriefs: {
+    id: string;
+    title?: string | null;
+    content: string;
+    createdAt: string;
+  }[];
 };
 
 /** Client's response to a pending coach request. */

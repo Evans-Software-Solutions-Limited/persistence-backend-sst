@@ -225,16 +225,17 @@ describe("FuelPresenter", () => {
     });
 
     it("paging to the previous month changes the displayed month label", () => {
-      const { getByTestId } = render({
+      const { getByTestId, getByText, queryByText } = render({
         selectedDate: todayIso,
         calendarOpen: true,
       });
-      const before = getByTestId("fuel-calendar-modal-month-label").props
-        .children;
+      const selected = new Date(`${todayIso}T00:00:00.000Z`);
+      const previousMonth = new Date(
+        Date.UTC(selected.getUTCFullYear(), selected.getUTCMonth() - 1, 1),
+      ).toLocaleDateString("en", { month: "long", timeZone: "UTC" });
+      expect(queryByText(previousMonth)).toBeNull();
       fireEvent.press(getByTestId("fuel-calendar-modal-prev-month"));
-      const after = getByTestId("fuel-calendar-modal-month-label").props
-        .children;
-      expect(after).not.toBe(before);
+      expect(getByText(previousMonth)).toBeTruthy();
     });
 
     it("closing via the X calls onCloseCalendar", () => {

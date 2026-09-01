@@ -381,7 +381,7 @@ export function HomeContainer() {
         onOpenWorkout={onOpenWorkout}
         onOpenWorkoutsList={onOpenWorkoutsList}
         onOpenTab={onOpenTab}
-        onOpenWeighIn={openWeighIn}
+        onOpenWeighIn={() => openWeighIn()}
         onOpenMealLog={onOpenMealLog}
         onLogWater={openWater}
         onOpenSleep={openSleep}

@@ -124,8 +124,11 @@ export function YouContainer() {
   const onOpenAcceptInvite = useCallback(() => {
     router.push("/(app)/accept-invite" as never);
   }, [router]);
-  const onOpenBodyHistory = useCallback(() => {
-    router.push("/(app)/body-history" as never);
+  const onOpenWeightHistory = useCallback(() => {
+    router.push("/(app)/weight-history" as never);
+  }, [router]);
+  const onOpenBodyFatHistory = useCallback(() => {
+    router.push("/(app)/body-fat-history" as never);
   }, [router]);
 
   const primary = useMemo(
@@ -333,7 +336,8 @@ export function YouContainer() {
       onRefresh={onRefresh}
       onOpenDrawer={openDrawer}
       onUseToken={onUseToken}
-      onOpenBodyHistory={onOpenBodyHistory}
+      onOpenWeightHistory={onOpenWeightHistory}
+      onOpenBodyFatHistory={onOpenBodyFatHistory}
       onOpenRequests={onOpenRequests}
       onOpenAcceptInvite={onOpenAcceptInvite}
     />

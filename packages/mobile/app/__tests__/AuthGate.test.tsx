@@ -21,13 +21,30 @@ jest.mock("../../src/ui/hooks/useAuth", () => ({
 // soft-delete describe block below overrides the return value per test.
 const mockUseProfilePage = jest.fn<
   {
-    payload: { profile: { deletedAt: string | null } } | null;
+    payload: {
+      profile: { deletedAt: string | null; createdAt?: string | null };
+    } | null;
+    error?: unknown;
+    isAutoRetrying?: boolean;
     refresh: () => Promise<void>;
   },
   []
 >();
 jest.mock("../../src/ui/hooks/useProfilePage", () => ({
   useProfilePage: () => mockUseProfilePage(),
+}));
+
+const mockUseOptionalOnboarding = jest.fn<
+  {
+    state: { status: string; currentPage: string } | null;
+    isLoading: boolean;
+    loadError?: unknown;
+    retryLoad?: () => void;
+  } | null,
+  []
+>(() => null);
+jest.mock("../../src/ui/state/OnboardingProvider", () => ({
+  useOptionalOnboarding: () => mockUseOptionalOnboarding(),
 }));
 
 // Mock expo-router
@@ -40,7 +57,13 @@ const mockUseGlobalSearchParams = jest.fn<Record<string, string>, []>(
   () => ({}),
 );
 jest.mock("expo-router", () => ({
-  Slot: ({ children }: { children?: React.ReactNode }) => children ?? null,
+  Slot: () => {
+    const React = jest.requireActual("react") as typeof import("react");
+    const { View } = jest.requireActual(
+      "react-native",
+    ) as typeof import("react-native");
+    return React.createElement(View, { testID: "router-slot" });
+  },
   useRouter: () => ({ replace: mockReplace }),
   useSegments: () => mockUseSegments(),
   useGlobalSearchParams: () => mockUseGlobalSearchParams(),
@@ -54,6 +77,16 @@ jest.mock("../../src/providers", () => ({
 // Mock ErrorBoundary
 jest.mock("../../src/ui/components/ErrorBoundary", () => ({
   ErrorBoundary: ({ children }: { children: React.ReactNode }) => children,
+}));
+
+const mockErrorState = jest.fn((_props: unknown) => null);
+jest.mock("../../src/ui/components/ErrorState", () => ({
+  ErrorState: (props: unknown) => mockErrorState(props),
+}));
+
+const mockPLogoDrawLoader = jest.fn((_props: unknown) => null);
+jest.mock("../../src/ui/components/PLogoDrawLoader", () => ({
+  PLogoDrawLoader: (props: unknown) => mockPLogoDrawLoader(props),
 }));
 
 // Mock useNotificationPermissions — the real hook calls useAdapters,
@@ -143,7 +176,12 @@ describe("AuthGate", () => {
     mockUseGlobalSearchParams.mockReturnValue({});
     mockUseProfilePage.mockReturnValue({
       payload: null,
+      error: undefined,
       refresh: jest.fn(),
+    });
+    mockUseOptionalOnboarding.mockReturnValue({
+      state: { status: "completed", currentPage: "recommendation" },
+      isLoading: false,
     });
     usePendingInvite.getState().reset();
     usePasswordRecovery.getState().reset();
@@ -229,6 +267,167 @@ describe("AuthGate", () => {
     });
   });
 
+  it("does not flash the app tabs while onboarding state resolves", async () => {
+    mockUseAuth.mockReturnValue({
+      session: SIGNED_IN_SESSION,
+      isLoading: false,
+    });
+    mockUseSegments.mockReturnValue(["(auth)"]);
+    mockUseProfilePage.mockReturnValue({
+      payload: {
+        profile: {
+          deletedAt: null,
+          createdAt: "2025-01-01T00:00:00.000Z",
+        },
+      },
+      error: null,
+      refresh: jest.fn(),
+    });
+    mockUseOptionalOnboarding.mockReturnValue({
+      state: null,
+      isLoading: true,
+    });
+
+    const view = render(<RootLayout />);
+    expect(view.queryByTestId("router-slot")).toBeNull();
+    expect(mockPLogoDrawLoader).toHaveBeenCalledWith(
+      expect.objectContaining({ accessibilityLabel: "Loading your account" }),
+    );
+    expect(mockReplace).not.toHaveBeenCalled();
+
+    mockUseOptionalOnboarding.mockReturnValue({
+      state: { status: "in_progress", currentPage: "welcome" },
+      isLoading: false,
+    });
+    view.rerender(<RootLayout />);
+
+    await waitFor(() =>
+      expect(mockReplace).toHaveBeenCalledWith("/(onboarding)/welcome"),
+    );
+    expect(view.queryByTestId("router-slot")).toBeNull();
+    expect(mockReplace).not.toHaveBeenCalledWith("/(app)/(tabs)");
+  });
+
+  it("does not expose tabs from a cached in-progress page during refresh", () => {
+    mockUseAuth.mockReturnValue({
+      session: SIGNED_IN_SESSION,
+      isLoading: false,
+    });
+    mockUseSegments.mockReturnValue(["(app)", "(tabs)"]);
+    mockUseOptionalOnboarding.mockReturnValue({
+      state: { status: "in_progress", currentPage: "recommendation" },
+      isLoading: true,
+    });
+
+    const view = render(<RootLayout />);
+
+    expect(view.queryByTestId("router-slot")).toBeNull();
+  });
+
+  it("pushes an existing signed-in account into its saved onboarding page", async () => {
+    mockUseAuth.mockReturnValue({
+      session: SIGNED_IN_SESSION,
+      isLoading: false,
+    });
+    mockUseSegments.mockReturnValue(["(app)", "(tabs)"]);
+    mockUseProfilePage.mockReturnValue({
+      payload: {
+        profile: {
+          deletedAt: null,
+          createdAt: "2024-06-01T00:00:00.000Z",
+        },
+      },
+      error: null,
+      refresh: jest.fn(),
+    });
+    mockUseOptionalOnboarding.mockReturnValue({
+      state: { status: "in_progress", currentPage: "habits" },
+      isLoading: false,
+    });
+
+    render(<RootLayout />);
+
+    await waitFor(() =>
+      expect(mockReplace).toHaveBeenCalledWith("/(onboarding)/habits"),
+    );
+  });
+
+  it("does not wait for profile retry backoff before showing onboarding", async () => {
+    mockUseAuth.mockReturnValue({
+      session: SIGNED_IN_SESSION,
+      isLoading: false,
+    });
+    mockUseSegments.mockReturnValue(["(auth)"]);
+    mockUseProfilePage.mockReturnValue({
+      payload: null,
+      error: new Error("first attempt failed"),
+      isAutoRetrying: true,
+      refresh: jest.fn(),
+    });
+    mockUseOptionalOnboarding.mockReturnValue({
+      state: { status: "in_progress", currentPage: "welcome" },
+      isLoading: false,
+    });
+
+    render(<RootLayout />);
+
+    await waitFor(() =>
+      expect(mockReplace).toHaveBeenCalledWith("/(onboarding)/welcome"),
+    );
+  });
+
+  it("surfaces an onboarding bootstrap outage and provides Retry", () => {
+    mockUseAuth.mockReturnValue({
+      session: SIGNED_IN_SESSION,
+      isLoading: false,
+    });
+    mockUseSegments.mockReturnValue(["(auth)"]);
+    mockUseProfilePage.mockReturnValue({
+      payload: {
+        profile: {
+          deletedAt: null,
+          createdAt: "2026-09-01T12:00:00.000Z",
+        },
+      },
+      error: null,
+      refresh: jest.fn(),
+    });
+    const retryLoad = jest.fn();
+    mockUseOptionalOnboarding.mockReturnValue({
+      state: null,
+      isLoading: false,
+      loadError: new Error("onboarding unavailable"),
+      retryLoad,
+    });
+
+    const view = render(<RootLayout />);
+
+    expect(mockErrorState).toHaveBeenCalledWith(
+      expect.objectContaining({
+        testID: "core-service-unavailable",
+        title: "Persistence is temporarily unavailable",
+      }),
+    );
+    const props = mockErrorState.mock.calls.at(-1)?.[0] as {
+      onRetry: () => void;
+    };
+    props.onRetry();
+    expect(retryLoad).toHaveBeenCalledTimes(1);
+
+    mockUseOptionalOnboarding.mockReturnValue({
+      state: null,
+      isLoading: true,
+      loadError: null,
+      retryLoad,
+    });
+    view.rerender(<RootLayout />);
+    expect(mockPLogoDrawLoader).toHaveBeenCalledWith(
+      expect.objectContaining({ accessibilityLabel: "Loading your account" }),
+    );
+    expect(mockReplace).not.toHaveBeenCalledWith("/(app)/(tabs)");
+    expect(mockReplace).not.toHaveBeenCalledWith("/(onboarding)/welcome");
+  });
+
   it("does not redirect authenticated user already on app route", () => {
     mockUseAuth.mockReturnValue({
       session: {
@@ -295,6 +494,26 @@ describe("AuthGate", () => {
     expect(mockReplace).not.toHaveBeenCalledWith("/(app)/(tabs)");
     // Peeked, not cleared — the set-new-password screen owns the clear.
     expect(usePasswordRecovery.getState().pending).toBe(true);
+  });
+
+  it("diverts password recovery immediately while onboarding is still loading", async () => {
+    usePasswordRecovery.getState().begin();
+    mockUseAuth.mockReturnValue({
+      session: SIGNED_IN_SESSION,
+      isLoading: false,
+    });
+    mockUseOptionalOnboarding.mockReturnValue({
+      state: null,
+      isLoading: true,
+    });
+    mockUseSegments.mockReturnValue(["(auth)"]);
+
+    render(<RootLayout />);
+
+    await waitFor(() => {
+      expect(mockReplace).toHaveBeenCalledWith("/(auth)/set-new-password");
+    });
+    expect(mockReplace).not.toHaveBeenCalledWith("/(onboarding)/welcome");
   });
 
   it("clears an armed recovery flag when the soft-delete gate pre-empts the divert", async () => {
@@ -382,6 +601,51 @@ describe("AuthGate", () => {
     expect(usePendingInvite.getState().pendingCode).toBe("AB23CD");
   });
 
+  it("redeems a stashed invite immediately while onboarding is still loading", async () => {
+    usePendingInvite.getState().setPendingCode("AB23CD");
+    mockUseAuth.mockReturnValue({
+      session: SIGNED_IN_SESSION,
+      isLoading: false,
+    });
+    mockUseOptionalOnboarding.mockReturnValue({
+      state: null,
+      isLoading: true,
+    });
+    mockUseSegments.mockReturnValue(["(auth)"]);
+
+    render(<RootLayout />);
+
+    await waitFor(() => {
+      expect(mockReplace).toHaveBeenCalledWith(
+        "/(app)/accept-invite?code=AB23CD",
+      );
+    });
+    expect(mockReplace).not.toHaveBeenCalledWith("/(onboarding)/welcome");
+    expect(usePendingInvite.getState().pendingCode).toBe("AB23CD");
+  });
+
+  it("does not interrupt an active invite-consent screen with onboarding", () => {
+    mockUseAuth.mockReturnValue({
+      session: SIGNED_IN_SESSION,
+      isLoading: false,
+    });
+    mockUseOptionalOnboarding.mockReturnValue({
+      state: null,
+      isLoading: false,
+    });
+    mockUseSegments.mockReturnValue(["(app)", "accept-invite"]);
+    mockUseGlobalSearchParams.mockReturnValue({ code: "AB23CD" });
+
+    const view = render(<RootLayout />);
+
+    // AcceptInvite clears the transient stash on arrival. A later AuthGate
+    // render must still respect the active route and its direct query code.
+    usePendingInvite.getState().reset();
+    view.rerender(<RootLayout />);
+
+    expect(mockReplace).not.toHaveBeenCalled();
+  });
+
   it("lands an authenticated user with no stashed code on the tabs as usual", async () => {
     mockUseAuth.mockReturnValue({
       session: SIGNED_IN_SESSION,
@@ -425,6 +689,13 @@ describe("AuthGate — soft-delete restore gate (Cluster 2b)", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockUseSegments.mockReturnValue([]);
+    mockUseGlobalSearchParams.mockReturnValue({});
+    mockUseOptionalOnboarding.mockReturnValue({
+      state: { status: "completed", currentPage: "recommendation" },
+      isLoading: false,
+    });
+    usePendingInvite.getState().reset();
+    usePasswordRecovery.getState().reset();
   });
 
   it("redirects a signed-in user with a soft-deleted profile to /(app)/restore-account from the tabs", async () => {

@@ -50,6 +50,24 @@ describe("WeighInSheetPresenter", () => {
     });
   });
 
+  it("logs body fat without fabricating a weight from the hidden default", () => {
+    const { getByTestId, queryByTestId, onSave } = render({
+      context: "bodyFat",
+      history: [],
+    });
+
+    expect(queryByTestId("weigh-in-input")).toBeNull();
+    fireEvent.changeText(getByTestId("weigh-in-bodyfat-input"), "21.4");
+    fireEvent.press(getByTestId("weigh-in-save"));
+
+    expect(onSave).toHaveBeenCalledWith({
+      weightKg: undefined,
+      bodyFatPercentage: 21.4,
+      day: "2026-06-10",
+      unit: "kg",
+    });
+  });
+
   it("clamps an out-of-range body-fat entry to 0..100", () => {
     const { getByTestId } = render();
     fireEvent.changeText(getByTestId("weigh-in-bodyfat-input"), "150");
@@ -172,10 +190,10 @@ describe("WeighInSheetPresenter", () => {
     // can keep the sheet open to correct (gate covered by WeighInSheetContainer).
     // The field shows the raw typed text verbatim (not reformatted) — see the
     // "can be cleared" test below for why.
-    const { getByTestId, onSave, getByText } = render();
+    const { getByTestId, onSave } = render();
     fireEvent.changeText(getByTestId("weigh-in-input"), "-50");
     expect(getByTestId("weigh-in-input").props.value).toBe("-50");
-    fireEvent.press(getByText(/Log/));
+    fireEvent.press(getByTestId("weigh-in-save"));
     expect(onSave).toHaveBeenCalledWith(
       expect.objectContaining({ weightKg: -50 }),
     );

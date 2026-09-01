@@ -53,6 +53,26 @@ describe("EditProfilePresenter", () => {
     );
   });
 
+  it("uses the shared large onboarding header and sticky action shell", () => {
+    const { getByTestId, getByText } = renderWithTheme(
+      <EditProfilePresenter
+        {...makeProps({
+          onboarding: true,
+          eyebrow: "Step 1 of 5",
+          title: "Make it yours",
+          subtitle: "A short explanation",
+          saveLabel: "Continue",
+        })}
+      />,
+    );
+
+    expect(getByText("Step 1 of 5")).toBeTruthy();
+    expect(getByText("Make it yours")).toBeTruthy();
+    expect(getByText("A short explanation")).toBeTruthy();
+    expect(getByTestId("edit-profile-save-footer")).toBeTruthy();
+    expect(getByText("Continue")).toBeTruthy();
+  });
+
   it("highlights the selected fitness level", () => {
     const { getByTestId } = renderWithTheme(
       <EditProfilePresenter {...makeProps({ fitnessLevel: "advanced" })} />,
@@ -82,9 +102,15 @@ describe("EditProfilePresenter", () => {
     const { getByTestId } = renderWithTheme(
       <EditProfilePresenter {...makeProps({ onDateOfBirthChange })} />,
     );
-    expect(getByTestId("edit-profile-dob").props.value).toBe("1990-01-15");
-    fireEvent.changeText(getByTestId("edit-profile-dob"), "1992-02-29");
-    expect(onDateOfBirthChange).toHaveBeenCalledWith("1992-02-29");
+    expect(getByTestId("edit-profile-dob").props.accessibilityLabel).toContain(
+      "Jan 15, 1990",
+    );
+    fireEvent.press(getByTestId("edit-profile-dob"));
+    fireEvent(getByTestId("edit-profile-dob-drawer-native"), "change", {
+      nativeEvent: { timestamp: new Date(1990, 0, 10, 12).getTime() },
+    });
+    fireEvent.press(getByTestId("edit-profile-dob-drawer-confirm"));
+    expect(onDateOfBirthChange).toHaveBeenCalledWith("1990-01-10");
   });
 
   it("fires onFitnessLevelChange when a different level is tapped", () => {
@@ -268,7 +294,9 @@ describe("EditProfilePresenter", () => {
       />,
     );
     expect(getByTestId("edit-profile-full-name").props.editable).toBe(false);
-    expect(getByTestId("edit-profile-dob").props.editable).toBe(false);
+    expect(
+      getByTestId("edit-profile-dob").props.accessibilityState.disabled,
+    ).toBe(true);
     // Save button shows the processing label + is disabled.
     expect(getByText("Saving…")).toBeTruthy();
     expect(

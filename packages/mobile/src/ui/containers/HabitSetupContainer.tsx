@@ -51,7 +51,18 @@ import { preferredVolumeUnit } from "@/shared/utils";
 export function HabitSetupContainer({
   clientId,
   clientName,
-}: { clientId?: string; clientName?: string } = {}) {
+  onboarding = false,
+  onComplete,
+  onBack: onBackOverride,
+  onSkip,
+}: {
+  clientId?: string;
+  clientName?: string;
+  onboarding?: boolean;
+  onComplete?: () => void;
+  onBack?: () => void;
+  onSkip?: () => void;
+} = {}) {
   const router = useRouter();
   const { storage } = useAdapters();
   const { session } = useAuth();
@@ -232,8 +243,9 @@ export function HabitSetupContainer({
   const onBack = useCallback(() => {
     // Discard is implicit: nothing was written to the server, so navigating
     // away drops the unsaved draft.
-    if (router.canGoBack()) router.back();
-  }, [router]);
+    if (onBackOverride) onBackOverride();
+    else if (router.canGoBack()) router.back();
+  }, [router, onBackOverride]);
 
   // --- Draft mutators — local only, instant, no server write ---
   const patchDraft = useCallback(
@@ -286,7 +298,11 @@ export function HabitSetupContainer({
   // Enable-then-disable before Save collapses back to the baseline (draft ==
   // baseline for that category) → no write, for free.
   const onSave = useCallback(async () => {
-    if (saving || !dirty || !draft) return;
+    if (saving || !draft) return;
+    if (!dirty) {
+      onComplete?.();
+      return;
+    }
     setSaving(true);
     try {
       const writes: Promise<void>[] = [];
@@ -335,7 +351,8 @@ export function HabitSetupContainer({
       // destination re-fetches on focus and shows the saved habits, so the
       // setup sheet is a task the user completes and leaves, not a dead-end
       // that just flashes "Saved" in place.
-      if (router.canGoBack()) router.back();
+      if (onComplete) onComplete();
+      else if (router.canGoBack()) router.back();
     } finally {
       setSaving(false);
     }
@@ -350,9 +367,10 @@ export function HabitSetupContainer({
     refreshClientConfig,
     reloadSelfConfig,
     router,
+    onComplete,
   ]);
 
-  const canSave = dirty && !saving;
+  const canSave = (onboarding || dirty) && !saving;
 
   const onSpendFreeze = useCallback(() => {
     if (!collectionStreak || freezeTokens <= 0 || skipped) return;
@@ -383,22 +401,27 @@ export function HabitSetupContainer({
       atRisk={atRisk}
       skipped={skipped}
       isCoach={isCoachView}
+      onboarding={onboarding}
       volumeUnit={volumeUnit}
       canSave={canSave}
       saving={saving}
       justSaved={justSaved}
       deferredChangesPending={hasDeferredChanges}
       title={
-        isCoachView
-          ? clientName
-            ? `${clientName}'s habits`
-            : "Client's habits"
-          : undefined
+        onboarding
+          ? "Build your daily habits"
+          : isCoachView
+            ? clientName
+              ? `${clientName}'s habits`
+              : "Client's habits"
+            : undefined
       }
       intro={
-        isCoachView
-          ? "Set each target and how often they'll hit it. Changes start next Monday."
-          : undefined
+        onboarding
+          ? "Set each target and how often you'll hit it. Your streak counts them all."
+          : isCoachView
+            ? "Set each target and how often they'll hit it. Changes start next Monday."
+            : undefined
       }
       coachSubtitle={
         isCoachView ? "You're editing this client's habits" : undefined
@@ -411,6 +434,7 @@ export function HabitSetupContainer({
       onSpendFreeze={onSpendFreeze}
       onAdjustNutrition={onAdjustNutrition}
       onSave={onSave}
+      onSkip={onboarding ? onSkip : undefined}
     />
   );
 }

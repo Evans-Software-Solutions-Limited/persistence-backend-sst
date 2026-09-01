@@ -1,4 +1,4 @@
-import { act, fireEvent } from "@testing-library/react-native";
+import { act, fireEvent, waitFor } from "@testing-library/react-native";
 import React from "react";
 
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
@@ -219,5 +219,58 @@ describe("ExerciseDetailContainer", () => {
     await findByText("Bench Press");
     fireEvent.press(getByLabelText("Back"));
     expect(mockRouterBack).toHaveBeenCalledTimes(1);
+  });
+
+  it("tracks the 1RM banner once when a qualifying estimate is shown", async () => {
+    const api = new InMemoryApiAdapter();
+    api.exercisePerformanceSummaryByExercise["analytics-exercise"] = {
+      estimatedOneRepMax: {
+        estimateKg: 120,
+        source: {
+          weightKg: 100,
+          reps: 6,
+          completedAt: "2026-08-30T10:00:00.000Z",
+        },
+      },
+      estimatedTenRepMax: null,
+      tenRepMax: null,
+      heaviestSet: {
+        weightKg: 100,
+        source: {
+          weightKg: 100,
+          reps: 6,
+          completedAt: "2026-08-30T10:00:00.000Z",
+        },
+      },
+      bestSetVolume: {
+        volumeKg: 600,
+        source: {
+          weightKg: 100,
+          reps: 6,
+          completedAt: "2026-08-30T10:00:00.000Z",
+        },
+      },
+      lifetimeVolumeKg: 600,
+    };
+    mockUseLocalSearchParams.mockReturnValue({ id: "analytics-exercise" });
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheExercises([
+      buildExercise({ id: "analytics-exercise", createdBy: "user-1" }),
+    ]);
+
+    renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <ExerciseDetailContainer />),
+    );
+
+    await waitFor(() =>
+      expect(api.analyticsEvents).toContainEqual({
+        name: "estimated_1rm_banner_viewed",
+      }),
+    );
+    expect(
+      api.analyticsEvents.filter(
+        (event) => event.name === "estimated_1rm_banner_viewed",
+      ),
+    ).toHaveLength(1);
   });
 });

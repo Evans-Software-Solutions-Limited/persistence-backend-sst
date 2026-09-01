@@ -36,6 +36,14 @@ export type TrainOverviewPresenterProps = {
   onOpenProgramme?: () => void;
   /** Injected today (YYYY-MM-DD) for deterministic due-label tests. */
   todayISO?: string;
+  coaching?: {
+    coachName: string;
+    coachRole: string | null;
+    nutritionTarget: import("@/domain/models/nutrition").NutritionTarget | null;
+    activeGoal: import("@/domain/models/clientRelationship").AthleteCoachingAssignment["activeGoal"];
+    visibleBriefs: import("@/domain/models/clientRelationship").AthleteCoachingAssignment["visibleBriefs"];
+    assignmentLoaded: boolean;
+  } | null;
 };
 
 export function TrainOverviewPresenter({
@@ -47,6 +55,7 @@ export function TrainOverviewPresenter({
   onOpenWorkout,
   onOpenProgramme,
   todayISO,
+  coaching = null,
 }: TrainOverviewPresenterProps) {
   return (
     <ScrollView
@@ -57,6 +66,24 @@ export function TrainOverviewPresenter({
       }
     >
       <View paddingHorizontal={16} paddingTop={4} gap={16}>
+        {coaching ? (
+          <Card pad={16} radius={16} accent="trainer" testID="train-coach-card">
+            <Text
+              fontFamily="$display"
+              fontWeight="700"
+              fontSize={17}
+              color="$text"
+            >
+              Coaching with {coaching.coachName}
+            </Text>
+            <Text fontFamily="$body" fontSize={12} color="$text3" marginTop={3}>
+              {coaching.coachRole === "physiotherapist"
+                ? "Physiotherapist"
+                : "Coach"}{" "}
+              · Your assigned setup
+            </Text>
+          </Card>
+        ) : null}
         {/* Active programme — hidden when the athlete has no live plan. */}
         {activeProgramme ? (
           <View testID="train-active-programme">
@@ -79,6 +106,14 @@ export function TrainOverviewPresenter({
           todayISO={todayISO}
           testID="train-todays-training"
         />
+
+        {coaching && todaysTraining.length === 0 ? (
+          <CoachingEmpty
+            title="No upcoming workouts"
+            body="Your coach hasn't scheduled another workout yet."
+            testID="train-workouts-empty"
+          />
+        ) : null}
 
         {/* Your Targets — the informative sheet of what the coach has set. */}
         {habits.length > 0 ? (
@@ -105,9 +140,134 @@ export function TrainOverviewPresenter({
               <HabitTargetRow key={h.category} habit={h} />
             ))}
           </Card>
+        ) : coaching ? (
+          <CoachingEmpty
+            title="No habits assigned"
+            body="Your coach hasn't set any habit targets yet."
+            testID="train-habits-empty"
+          />
+        ) : null}
+
+        {coaching?.nutritionTarget ? (
+          <Card pad={16} radius={16} testID="train-nutrition-target">
+            <Text
+              fontFamily="$display"
+              fontWeight="700"
+              fontSize={17}
+              color="$text"
+            >
+              Nutrition target
+            </Text>
+            <Text
+              fontFamily="$mono"
+              fontSize={20}
+              color="$primary"
+              marginTop={8}
+            >
+              {coaching.nutritionTarget.dailyKcal} kcal
+            </Text>
+            <Text fontFamily="$body" fontSize={12} color="$text3" marginTop={3}>
+              {coaching.nutritionTarget.proteinG}g protein ·{" "}
+              {coaching.nutritionTarget.carbsG}g carbs ·{" "}
+              {coaching.nutritionTarget.fatG}g fat
+            </Text>
+          </Card>
+        ) : coaching ? (
+          <CoachingEmpty
+            title="No nutrition target"
+            body="Your coach hasn't set a nutrition target yet."
+            testID="train-nutrition-empty"
+          />
+        ) : null}
+
+        {coaching?.activeGoal ? (
+          <Card pad={16} radius={16} testID="train-active-goal">
+            <Text
+              fontFamily="$display"
+              fontWeight="700"
+              fontSize={17}
+              color="$text"
+            >
+              Active goal
+            </Text>
+            <Text fontFamily="$body" fontSize={14} color="$text2" marginTop={6}>
+              {coaching.activeGoal.title}
+            </Text>
+          </Card>
+        ) : coaching ? (
+          <CoachingEmpty
+            title="No active goal"
+            body="Your coach hasn't assigned a goal yet."
+            testID="train-goal-empty"
+          />
+        ) : null}
+
+        {coaching?.visibleBriefs.length ? (
+          <Card pad={0} radius={16} testID="train-visible-briefs">
+            <View padding={16} paddingBottom={10}>
+              <Text
+                fontFamily="$display"
+                fontWeight="700"
+                fontSize={17}
+                color="$text"
+              >
+                Coach briefs
+              </Text>
+            </View>
+            {coaching.visibleBriefs.map((brief) => (
+              <View
+                key={brief.id}
+                paddingHorizontal={16}
+                paddingVertical={12}
+                borderTopWidth={1}
+                borderColor="$border"
+              >
+                {brief.title ? (
+                  <Text fontFamily="$display" fontWeight="600" color="$text">
+                    {brief.title}
+                  </Text>
+                ) : null}
+                <Text
+                  fontFamily="$body"
+                  fontSize={13}
+                  color="$text2"
+                  marginTop={brief.title ? 4 : 0}
+                >
+                  {brief.content}
+                </Text>
+              </View>
+            ))}
+          </Card>
+        ) : coaching ? (
+          <CoachingEmpty
+            title="No coach briefs"
+            body="Messages and plan notes your coach shares will appear here."
+            testID="train-briefs-empty"
+          />
         ) : null}
       </View>
     </ScrollView>
+  );
+}
+
+function CoachingEmpty({
+  title,
+  body,
+  testID,
+}: {
+  title: string;
+  body: string;
+  testID: string;
+}) {
+  return (
+    <Card pad={16} radius={16} testID={testID}>
+      <Text fontFamily="$display" fontWeight="700" fontSize={15} color="$text">
+        {title}
+      </Text>
+      <Text fontFamily="$body" fontSize={12.5} color="$text3" marginTop={4}>
+        {body}
+      </Text>
+    </Card>
   );
 }
 

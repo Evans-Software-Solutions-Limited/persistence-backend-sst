@@ -3,6 +3,7 @@ import { Text, View } from "@tamagui/core";
 import { IconBtn, Pill, RepRange, Stepper } from "@/ui/components/foundation";
 import { toneHex } from "@/ui/components/foundation/tones";
 import { IconLayers, IconTrash } from "@/ui/components/icons";
+import { ExerciseReorderHandle } from "@/ui/components/workouts/ExerciseReorderHandle";
 
 /**
  * <ExerciseConfigCard> — v3 restyle onto the foundation kit + prototype
@@ -13,7 +14,6 @@ import { IconLayers, IconTrash } from "@/ui/components/icons";
  *
  * Kept as-is (not a prototype feature — no data/callback exists for it in
  * this app's model, so it's out of scope for a visual-only restyle):
- *  - No drag handle / reorder (no reorder logic in `useWorkoutForm`).
  *  - No per-card "ungroup" / "superset with exercise above" affordance (no
  *    `onUnlink`/`onLinkUp`/`canLinkUp` prop exists on this component —
  *    grouping is only set via the AddExercisePopover "add as superset" flow).
@@ -39,6 +39,9 @@ interface ExerciseConfigCardProps {
   readonly supersetLetter?: string;
 
   readonly supersetLeadExercise?: any;
+  readonly reorderPosition?: number;
+  readonly reorderTotal?: number;
+  readonly onMove?: (direction: -1 | 1) => void;
 }
 
 export default function ExerciseConfigCard({
@@ -51,6 +54,9 @@ export default function ExerciseConfigCard({
   supersetGroupNumber,
   supersetLetter,
   supersetLeadExercise,
+  reorderPosition,
+  reorderTotal,
+  onMove,
 }: ExerciseConfigCardProps) {
   const isInSuperset =
     isSupersetStart ||
@@ -162,6 +168,14 @@ export default function ExerciseConfigCard({
         padding={12}
       >
         <View flexDirection="row" alignItems="center" gap={9} marginBottom={11}>
+          {onMove && reorderPosition && reorderTotal ? (
+            <ExerciseReorderHandle
+              label={exercise.exercise_name}
+              position={reorderPosition}
+              total={reorderTotal}
+              onMove={onMove}
+            />
+          ) : null}
           <View
             minWidth={22}
             height={22}

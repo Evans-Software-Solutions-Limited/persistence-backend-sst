@@ -26,8 +26,11 @@ export function WeighInSheetContainer() {
   // Root-mounted (sibling of the tab Stack), so open-state comes from the
   // shared store rather than props — same as the Fuel sheets and the drawer.
   const visible = useHomeSheets((s) => s.sheet === "weighIn");
+  const measurementContext = useHomeSheets((s) => s.measurementContext);
+  const measurementOrigin = useHomeSheets((s) => s.measurementOrigin);
+  const measurementLogged = useHomeSheets((s) => s.measurementLogged);
   const onClose = useHomeSheets((s) => s.close);
-  const { health } = useAdapters();
+  const { health, api } = useAdapters();
   const log = useLogMeasurement();
   // Root-mounted (feedback_sheets_mount_at_root), so gate both reads on
   // `visible` — otherwise they fire on every cold launch regardless of
@@ -100,13 +103,30 @@ export function WeighInSheetContainer() {
       // the right calendar day. Fire-and-forget — a Health write failure must
       // not block the log that already succeeded.
       const when = new Date(`${input.day}T12:00:00`);
-      void health.writeBodyWeight(input.weightKg, when);
+      if (input.weightKg != null) {
+        void health.writeBodyWeight(input.weightKg, when);
+      }
       if (input.bodyFatPercentage != null) {
         void health.writeBodyFat(input.bodyFatPercentage, when);
       }
+      measurementLogged();
+      if (measurementOrigin === "history") {
+        void api.trackAnalyticsEvent({
+          name: "measurement_logged_from_history",
+          properties: { metric: measurementContext },
+        });
+      }
       onClose();
     },
-    [log, health, onClose],
+    [
+      log,
+      health,
+      measurementLogged,
+      measurementOrigin,
+      api,
+      measurementContext,
+      onClose,
+    ],
   );
 
   return (
@@ -119,6 +139,7 @@ export function WeighInSheetContainer() {
       defaultWeightKg={prefillWeightKg}
       defaultBodyFat={prefillBodyFat}
       saving={saving}
+      context={measurementContext}
     />
   );
 }
