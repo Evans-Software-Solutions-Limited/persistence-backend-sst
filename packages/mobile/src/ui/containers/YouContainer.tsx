@@ -137,7 +137,7 @@ export function YouContainer() {
     router.push(
       (experiencePolish
         ? "/(app)/body-fat-history"
-        : "/(app)/body-history") as never,
+        : "/(app)/body-history?metric=bodyFat") as never,
     );
   }, [experiencePolish, router]);
 

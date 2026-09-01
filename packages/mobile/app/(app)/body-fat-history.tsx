@@ -4,7 +4,7 @@ import { isExperiencePolishEnabled } from "@/ui/state/experiencePolish";
 
 export default function BodyFatHistoryScreen() {
   if (!isExperiencePolishEnabled()) {
-    return <Redirect href={"/(app)/body-history" as never} />;
+    return <Redirect href={"/(app)/body-history?metric=bodyFat" as never} />;
   }
   return <BodyHistoryContainer metric="bodyFat" />;
 }

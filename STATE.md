@@ -24,6 +24,18 @@ tests pass 8/8, the full core suite and coverage pass, and repository
 formatting, 9-package typecheck, lint and build are green (pre-existing lint
 warnings only).
 
+### 🟡 2026-09-01 — SPEC 31 PR #425 INSPECTOR FOLLOW-UP (branch `codex/spec-31-onboarding-polish`)
+
+Inspector Brad's two default-off rollout findings were valid. Home now wraps
+the shared weigh-in store action at the press-handler boundary, and the store
+also normalises unexpected arguments so a React Native press event cannot
+replace the measurement context. The legacy body-history route now accepts a
+validated `metric` query parameter; You's Body Fat card and the disabled-polish
+body-fat route preserve `bodyFat`, while missing or unknown values fail closed
+to weight. Focused regression verification passes 5 suites / 51 tests; the full
+mobile suite passes 514 suites / 6,482 tests, and mobile typecheck and lint are
+green (pre-existing warnings only).
+
 ### 🟡 2026-08-31 — GOOGLE PLAY WEBSITE LOGO (branch `codex/official-google-play-badge`)
 
 The first implementation used Google's full black store badge, but that did not

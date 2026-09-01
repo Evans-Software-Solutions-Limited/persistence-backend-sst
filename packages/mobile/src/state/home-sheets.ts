@@ -68,7 +68,15 @@ export const useHomeSheets = create<HomeSheetsState>((set) => ({
   habitsRev: 0,
   measurementsRev: 0,
   openWeighIn: (measurementContext = "weight", measurementOrigin = "home") =>
-    set({ sheet: "weighIn", measurementContext, measurementOrigin }),
+    set({
+      sheet: "weighIn",
+      // React Native press handlers receive a GestureResponderEvent. Keep the
+      // store boundary defensive so passing this action directly to onPress
+      // can never corrupt the sheet context.
+      measurementContext:
+        measurementContext === "bodyFat" ? "bodyFat" : "weight",
+      measurementOrigin: measurementOrigin === "history" ? "history" : "home",
+    }),
   measurementLogged: () =>
     set((s) => ({ measurementsRev: s.measurementsRev + 1 })),
   openWater: () => set({ sheet: "water" }),
