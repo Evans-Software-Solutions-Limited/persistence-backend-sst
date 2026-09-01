@@ -104,6 +104,23 @@ export function OnboardingWelcomePresenter({
       paddingTop={insets.top}
       testID="onboarding-welcome"
     >
+      <View
+        minHeight={48}
+        paddingHorizontal={16}
+        flexDirection="row"
+        alignItems="center"
+        justifyContent="flex-end"
+      >
+        <Btn
+          variant="ghost"
+          tone="primary"
+          size="md"
+          onPress={onSkip}
+          testID="onboarding-welcome-skip"
+        >
+          Skip setup
+        </Btn>
+      </View>
       <ScrollView contentContainerStyle={{ padding: 24, paddingBottom: 16 }}>
         <View alignItems="center" marginTop={16} marginBottom={20}>
           <Image
@@ -202,15 +219,6 @@ export function OnboardingWelcomePresenter({
           testID="onboarding-welcome-continue"
         >
           Continue
-        </Btn>
-        <Btn
-          variant="ghost"
-          tone="primary"
-          size="md"
-          onPress={onSkip}
-          testID="onboarding-welcome-skip"
-        >
-          Skip setup
         </Btn>
       </StickyActions>
     </View>
@@ -449,7 +457,7 @@ export function OnboardingIntentPresenter({
       <HeaderBar
         large
         titleNumberOfLines={nutrition ? 2 : 1}
-        eyebrow={nutrition ? "Step 3 of 5" : "Step 4 of 5"}
+        eyebrow={nutrition ? "Step 4 of 5" : "Step 5 of 5"}
         title={nutrition ? "Let's set up your nutrition" : "Train"}
         sub={
           nutrition

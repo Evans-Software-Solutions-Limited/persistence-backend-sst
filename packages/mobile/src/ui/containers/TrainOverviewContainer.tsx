@@ -5,7 +5,6 @@ import { useGetHabitConfig } from "@/ui/hooks/useGetHabitConfig";
 import { useRefreshOnFocus } from "@/ui/hooks/useRefreshOnFocus";
 import { TrainOverviewPresenter } from "@/ui/presenters/TrainOverviewPresenter";
 import { useClientRelationships } from "@/ui/hooks/useClientRelationships";
-import { isExperiencePolishEnabled } from "@/ui/state/experiencePolish";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 
 /**
@@ -21,7 +20,6 @@ import { useAdapters } from "@/ui/hooks/useAdapters";
  * the targets/habits the coach has set alongside the training programme.
  */
 export function TrainOverviewContainer() {
-  const experiencePolish = isExperiencePolishEnabled();
   const router = useRouter();
   const { api } = useAdapters();
 
@@ -30,11 +28,9 @@ export function TrainOverviewContainer() {
   const activeProgramme = home.data?.activeProgramme ?? null;
 
   const habitConfig = useGetHabitConfig();
-  const relationships = useClientRelationships("active", experiencePolish);
+  const relationships = useClientRelationships("active");
   const activeRelationship = relationships.data[0] ?? null;
-  const assignment = experiencePolish
-    ? (activeRelationship?.assignment ?? null)
-    : null;
+  const assignment = activeRelationship?.assignment ?? null;
   const resolvedActiveProgramme = assignment
     ? assignment.activeProgramme
     : activeProgramme;
@@ -59,9 +55,8 @@ export function TrainOverviewContainer() {
   useRefreshOnFocus(onFocusRefresh);
 
   useEffect(() => {
-    if (!experiencePolish) return;
     void api.trackAnalyticsEvent({ name: "coaching_overview_opened" });
-  }, [api, experiencePolish]);
+  }, [api]);
 
   const onOpenWorkout = useCallback(
     (workoutId: string) => {
@@ -87,7 +82,7 @@ export function TrainOverviewContainer() {
       }
       habits={enabledHabits}
       coaching={
-        experiencePolish && activeRelationship
+        activeRelationship
           ? {
               coachName: activeRelationship.trainerName,
               coachRole: activeRelationship.trainerRole,

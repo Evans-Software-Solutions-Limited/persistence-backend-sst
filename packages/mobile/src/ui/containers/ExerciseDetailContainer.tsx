@@ -7,7 +7,6 @@ import { useAuth } from "@/ui/hooks/useAuth";
 import { useExercise } from "@/ui/hooks/useExercise";
 import { useExercisePerformanceSummary } from "@/ui/hooks/useExercisePerformanceSummary";
 import { useProfilePage } from "@/ui/hooks/useProfilePage";
-import { isExperiencePolishEnabled } from "@/ui/state/experiencePolish";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 
 /**
@@ -26,10 +25,7 @@ export function ExerciseDetailContainer() {
   const exerciseId = id ?? null;
   const { api } = useAdapters();
   const { exercise, isLoading, error, refresh } = useExercise(exerciseId);
-  const performance = useExercisePerformanceSummary(
-    exerciseId,
-    isExperiencePolishEnabled(),
-  );
+  const performance = useExercisePerformanceSummary(exerciseId);
   const profile = useProfilePage();
   const { session } = useAuth();
   const trackedEstimateRef = useRef<string | null>(null);

@@ -264,6 +264,9 @@ type RequestOptions = {
  */
 export const DASHBOARD_REQUEST_TIMEOUT_MS = 10_000;
 
+/** Onboarding routing cannot remain pending forever; expiry enables Retry. */
+export const ONBOARDING_REQUEST_TIMEOUT_MS = 10_000;
+
 /**
  * SST API adapter implementing ApiPort.
  *
@@ -551,7 +554,10 @@ export class SSTApiAdapter implements ApiPort {
   }
 
   async getOnboarding(): Promise<Result<OnboardingState | null, ApiError>> {
-    return this.requestEnvelope<OnboardingState | null>("/users/me/onboarding");
+    return this.requestEnvelope<OnboardingState | null>(
+      "/users/me/onboarding",
+      { timeoutMs: ONBOARDING_REQUEST_TIMEOUT_MS },
+    );
   }
 
   async updateOnboarding(
@@ -2708,10 +2714,14 @@ export function mapHttpErrorToApiError(
   statusText: string,
   body: unknown,
 ): ApiError {
+  const errorBody = body as {
+    error?: unknown;
+    message?: unknown;
+  } | null;
   const message =
-    (body as { error?: string } | null)?.error ??
-    statusText ??
-    "Request failed";
+    (typeof errorBody?.error === "string" ? errorBody.error : null) ??
+    (typeof errorBody?.message === "string" ? errorBody.message : null) ??
+    (statusText || "Request failed");
 
   if (status === 402) {
     const entitlement = parseEntitlementDeniedBody(body);

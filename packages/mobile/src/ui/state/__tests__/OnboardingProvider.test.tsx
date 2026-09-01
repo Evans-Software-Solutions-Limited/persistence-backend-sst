@@ -92,6 +92,42 @@ describe("OnboardingProvider", () => {
     expect(mockCache.has("user-a")).toBe(false);
   });
 
+  it("retries a failed initial read and clears the blocking error", async () => {
+    const failure = new Error("onboarding unavailable");
+    let resolveRetry!: (value: { ok: true; value: null }) => void;
+    mockGetOnboarding
+      .mockResolvedValueOnce({ ok: false, error: failure })
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveRetry = resolve;
+          }),
+      );
+
+    render(
+      <OnboardingProvider>
+        <Probe />
+      </OnboardingProvider>,
+    );
+
+    await waitFor(() => expect(context.loadError).toBe(failure));
+    act(() => context.retryLoad());
+
+    await waitFor(() => expect(context.isLoading).toBe(true));
+    expect(context.state).toBeNull();
+    expect(context.loadError).toBeNull();
+
+    act(() => resolveRetry({ ok: true, value: null }));
+    await waitFor(() => expect(context.isLoading).toBe(false));
+    expect(context.loadError).toBeNull();
+    expect(context.state).toMatchObject({
+      userId: "user-a",
+      currentPage: "welcome",
+      status: "in_progress",
+    });
+    expect(mockGetOnboarding).toHaveBeenCalledTimes(2);
+  });
+
   it("persists page completion locally and remotely before advancing", async () => {
     render(
       <OnboardingProvider>

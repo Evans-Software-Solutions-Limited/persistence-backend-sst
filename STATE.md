@@ -3871,9 +3871,9 @@ PR not yet raised. NO product code — script + dataset + verdict + spec updates
   this mobile release ships, every existing or new authenticated account with
   no terminal onboarding state enters at Welcome, while an `in_progress`
   account resumes at its persisted page. Only `completed` or `dismissed`
-  accounts enter Home directly. Experience polish remains independently
-  safe-off through `EXPO_PUBLIC_EXPERIENCE_POLISH_V1_ENABLED`. Native iPhone 16
-  Pro visual QA and Android emulator QA caught and corrected wrapped headings;
+  accounts enter Home directly. Experience-polish surfaces have no environment
+  rollout switch either and ship enabled with this mobile release. Native iPhone
+  16 Pro visual QA and Android emulator QA caught and corrected wrapped headings;
   evidence is in the Codex visualizations folder for this task. DOB uses the
   existing JS calendar extraction, so this release needs no new native binary.
 - The local Inspector Brad sweeps found and the implementation now fixes

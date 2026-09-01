@@ -19,8 +19,9 @@ become a mandatory paywall.
 
 1. Reuse the app's existing profile, subscription-role, habit, nutrition,
    workout, and purchase components and commands.
-2. **Skip setup** on the opening page skips and permanently dismisses the whole
-   journey. Skip on later pages skips only that page.
+2. **Skip setup** is a top-right action on the opening page. It asks for
+   confirmation before permanently dismissing the whole journey. Skip on later
+   pages skips only that page.
 3. The journey is automatically shown once per user. Normal Settings screens
    remain the way to edit the same information later.
 4. Explain Free, Premium, and Premium+ capability boundaries before asking for
@@ -43,8 +44,9 @@ Acceptance criteria:
    5. Let's set up your nutrition
    6. Train
    7. Your recommended plan
-2. The opening **Skip setup** action exits to Home, records `dismissed`, and
-   prevents the journey from being shown automatically again.
+2. The opening **Skip setup** action is shown at the top right. It opens a
+   warning with a safe cancel action and only exits to Home, records
+   `dismissed`, and prevents automatic replay after explicit confirmation.
 3. Skip on pages 2–7 records that page as skipped and advances to the next page.
 4. Completing, subscribing, or continuing with Free records `completed` and
    prevents automatic replay.
@@ -58,6 +60,10 @@ Acceptance criteria:
    database model for profile, habits, or nutrition values.
 9. Analytics record page viewed/completed/skipped and journey completed/dismissed
    without body values, names, birth dates, exercise loads, or client IDs.
+10. If onboarding state cannot be loaded and there is no trusted user-scoped
+    offline mirror, the app shows a blocking service-unavailable state with a
+    working Retry action. It does not silently open Home or start a new journey,
+    and both the initial read and retry use a finite client timeout.
 
 ## STORY-002 — Make it yours using the real profile
 
@@ -95,6 +101,9 @@ Acceptance criteria:
 1. The page is titled **Build your daily habits**.
 2. It mounts/reuses the existing Habit Setup components, category definitions,
    bounds, unit handling, attribution, and `configure-habit` command.
+   Onboarding uses the shared step header and Continue footer; existing
+   progress-management chrome such as the streak summary and holiday note stays
+   on the normal Habit Setup screen.
 3. The user can enable and configure supported habits with real targets.
 4. No onboarding-specific habit schema, command, or validation is introduced.
 5. Skipping leaves habits unchanged; failed/offline saves follow the existing

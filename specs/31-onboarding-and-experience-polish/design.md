@@ -26,7 +26,9 @@ flowchart TD
 ```
 
 Skip on P–S advances one page. Only the welcome-page Skip dismisses the whole
-journey. The journey never auto-runs after either terminal state.
+journey. That action sits at the top right and opens a confirmation warning;
+cancel keeps the user on Welcome, while confirmation persists `dismissed` and
+opens Home. The journey never auto-runs after either terminal state.
 
 ## Reuse boundaries
 
@@ -102,6 +104,8 @@ Settings edit profile/habit/nutrition data but never reset onboarding state.
 
 - Auth/consent resolves first, then onboarding state.
 - New `/(onboarding)` route group owns the seven-page orchestration shell.
+- Steps use the native horizontal page transition (`slide_from_right`), not a
+  full-screen cross-fade.
 - The main tabs do not mount behind an unfinished journey.
 - Terminal actions use `replace`, preventing Back from reopening onboarding.
 - There is no user-facing “replay onboarding” action; Settings exposes the real
@@ -278,6 +282,21 @@ adds no native dependency.
 - `coaching_overview_opened`
 
 No names, dates of birth, health values, loads, free text, or client identifiers.
+
+## Bootstrap failure handling
+
+Onboarding state is part of post-auth routing authority. When its initial read
+fails and no user-scoped offline mirror exists, AuthGate holds navigation and
+renders the shared full-screen error state with Retry. Password recovery,
+soft-delete restoration, auth callback, purchase completion, and coach-invite
+consent retain priority. A cached onboarding state remains usable offline. The
+initial read and retries use a 10-second client timeout; while routing an
+unfinished journey, the root retains the branded loader instead of exposing the
+underlying route.
+
+API error mapping accepts both application `{ error }` responses and API Gateway
+`{ message }` responses, so an HTTP failure is not reduced to an empty
+`server: no detail` warning.
 
 ## Existing-state audit
 

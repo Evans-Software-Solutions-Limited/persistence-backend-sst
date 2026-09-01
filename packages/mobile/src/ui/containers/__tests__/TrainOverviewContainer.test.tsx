@@ -120,7 +120,6 @@ describe("<TrainOverviewContainer>", () => {
     captured.props = null;
     mockPush.mockReset();
     jest.restoreAllMocks();
-    delete process.env.EXPO_PUBLIC_EXPERIENCE_POLISH_V1_ENABLED;
   });
 
   it("passes the cached active programme + today's training to the presenter", async () => {
@@ -159,7 +158,6 @@ describe("<TrainOverviewContainer>", () => {
   });
 
   it("does not fall back to another coach's programme when the relationship assignment explicitly has none", async () => {
-    process.env.EXPO_PUBLIC_EXPERIENCE_POLISH_V1_ENABLED = "true";
     const { adapters, storage } = makeAdapters();
     storage.cacheHome(USER, homePayload());
     (adapters.api as InMemoryApiAdapter).clientRelationships = [
@@ -212,7 +210,6 @@ describe("<TrainOverviewContainer>", () => {
   });
 
   it("refetches active relationships when the kept-alive tab regains focus", async () => {
-    process.env.EXPO_PUBLIC_EXPERIENCE_POLISH_V1_ENABLED = "true";
     const { adapters, storage } = makeAdapters();
     storage.cacheHome(USER, homePayload());
     const getRelationships = jest.spyOn(adapters.api, "getClientRelationships");

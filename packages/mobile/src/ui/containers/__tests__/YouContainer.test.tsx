@@ -122,8 +122,7 @@ describe("YouContainer", () => {
     mockPush.mockClear();
   });
 
-  it("keeps weight and body-fat history distinct while polish is off", async () => {
-    delete process.env.EXPO_PUBLIC_EXPERIENCE_POLISH_V1_ENABLED;
+  it("routes weight and body fat to their dedicated history pages", async () => {
     const { adapters } = makeAdapters();
     render(
       <AdapterProvider adapters={adapters}>
@@ -133,12 +132,10 @@ describe("YouContainer", () => {
     await waitFor(() => expect(mockProbe.last).not.toBeNull());
 
     act(() => mockProbe.last?.onOpenWeightHistory?.());
-    expect(mockPush).toHaveBeenLastCalledWith("/(app)/body-history");
+    expect(mockPush).toHaveBeenLastCalledWith("/(app)/weight-history");
 
     act(() => mockProbe.last?.onOpenBodyFatHistory?.());
-    expect(mockPush).toHaveBeenLastCalledWith(
-      "/(app)/body-history?metric=bodyFat",
-    );
+    expect(mockPush).toHaveBeenLastCalledWith("/(app)/body-fat-history");
   });
 
   it("regression: returning to You (focus) reflects a weigh-in logged from another tab, without a re-mount", async () => {

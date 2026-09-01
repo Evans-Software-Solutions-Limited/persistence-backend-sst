@@ -69,6 +69,7 @@ export type OnboardingContextValue = {
   state: OnboardingState | null;
   isLoading: boolean;
   loadError: unknown | null;
+  retryLoad: () => void;
   goBack: () => Promise<OnboardingPage>;
   completePage: (page: OnboardingPage) => Promise<OnboardingPage | null>;
   skipPage: (page: OnboardingPage) => Promise<OnboardingPage | null>;
@@ -110,6 +111,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     userId: string;
     error: unknown;
   } | null>(null);
+  const [loadRevision, setLoadRevision] = useState(0);
   const writeQueueRef = useRef<Promise<void>>(Promise.resolve());
   const revisionRef = useRef(0);
 
@@ -198,7 +200,11 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     return () => {
       active = false;
     };
-  }, [api, enqueueUpdate, storage, userId]);
+  }, [api, enqueueUpdate, loadRevision, storage, userId]);
+
+  const retryLoad = useCallback(() => {
+    setLoadRevision((revision) => revision + 1);
+  }, []);
 
   const persist = useCallback(
     async (derive: (current: OnboardingState) => OnboardingState) => {
@@ -353,6 +359,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
         visibleLoadError === null &&
         (isLoading || visibleState === null),
       loadError: visibleLoadError,
+      retryLoad,
       goBack,
       completePage,
       skipPage,
@@ -366,6 +373,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     state,
     isLoading,
     loadFailure,
+    retryLoad,
     userId,
     goBack,
     completePage,

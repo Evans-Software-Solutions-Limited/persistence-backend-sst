@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, type Href } from "expo-router";
+import { Alert } from "react-native";
 
 import {
   type CoachClientBand,
@@ -76,6 +77,25 @@ export function OnboardingPageContainer({ page }: { page: OnboardingPage }) {
     router.replace(ONBOARDING_ROUTES[previous] as Href);
   };
 
+  const confirmDismissJourney = () => {
+    Alert.alert(
+      "Skip setup?",
+      "Are you sure? This dismisses the setup journey and takes you straight to Home. You can update your profile, habits and preferences later.",
+      [
+        { text: "Keep setting up", style: "cancel" },
+        {
+          text: "Skip setup",
+          style: "destructive",
+          onPress: () => {
+            void onboarding
+              .dismissJourney()
+              .then(() => router.replace("/(app)/(tabs)"));
+          },
+        },
+      ],
+    );
+  };
+
   const recommendation = useMemo(() => {
     if (!state) return null;
     return recommendOnboardingPlan({
@@ -103,11 +123,7 @@ export function OnboardingPageContainer({ page }: { page: OnboardingPage }) {
     return (
       <OnboardingWelcomePresenter
         onContinue={() => void complete()}
-        onSkip={() => {
-          void onboarding
-            .dismissJourney()
-            .then(() => router.replace("/(app)/(tabs)"));
-        }}
+        onSkip={confirmDismissJourney}
       />
     );
   }

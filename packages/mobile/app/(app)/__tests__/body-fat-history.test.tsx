@@ -1,27 +1,15 @@
 import { render } from "@testing-library/react-native";
-import type { ComponentProps } from "react";
-import type { Redirect } from "expo-router";
 import BodyFatHistoryScreen from "../body-fat-history";
 
-const mockRedirect = jest.fn((_props: ComponentProps<typeof Redirect>) => null);
-
-jest.mock("expo-router", () => ({
-  Redirect: (props: ComponentProps<typeof Redirect>) => mockRedirect(props),
-}));
+const mockBodyHistory = jest.fn((_props: { metric: string }) => null);
 
 jest.mock("@/ui/containers/BodyHistoryContainer", () => ({
-  BodyHistoryContainer: () => null,
+  BodyHistoryContainer: (props: { metric: string }) => mockBodyHistory(props),
 }));
 
-jest.mock("@/ui/state/experiencePolish", () => ({
-  isExperiencePolishEnabled: () => false,
-}));
-
-describe("BodyFatHistoryScreen compatibility redirect", () => {
-  it("preserves body-fat context while experience polish is disabled", () => {
+describe("BodyFatHistoryScreen", () => {
+  it("opens the dedicated history container with body-fat context", () => {
     render(<BodyFatHistoryScreen />);
-    expect(mockRedirect).toHaveBeenLastCalledWith({
-      href: "/(app)/body-history?metric=bodyFat",
-    });
+    expect(mockBodyHistory).toHaveBeenLastCalledWith({ metric: "bodyFat" });
   });
 });

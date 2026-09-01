@@ -20,7 +20,6 @@ import {
 import { WorkoutEditorPresenter } from "@/ui/presenters/WorkoutEditorPresenter";
 import { useLoadoutGate } from "@/ui/hooks/useLoadoutGate";
 import { AdaptiveSuiteRouteGuard } from "@/ui/components/subscription/AdaptiveSuiteRouteGuard";
-import { isExperiencePolishEnabled } from "@/ui/state/experiencePolish";
 
 /**
  * Editor container — async-loads the workout via `useWorkout(id)`,
@@ -216,9 +215,7 @@ export function WorkoutEditorContainer() {
       onAddSuperset={onAddSuperset}
       onRemoveExercise={form.removeExercise}
       onExerciseConfigChange={form.setExerciseField}
-      onMoveExercise={
-        isExperiencePolishEnabled() ? form.moveExercise : undefined
-      }
+      onMoveExercise={form.moveExercise}
       onSubmit={onSubmit}
       onCancel={onCancel}
       onGoBackFromError={onGoBackFromError}

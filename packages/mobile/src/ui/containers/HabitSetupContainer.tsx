@@ -401,6 +401,7 @@ export function HabitSetupContainer({
       atRisk={atRisk}
       skipped={skipped}
       isCoach={isCoachView}
+      onboarding={onboarding}
       volumeUnit={volumeUnit}
       canSave={canSave}
       saving={saving}

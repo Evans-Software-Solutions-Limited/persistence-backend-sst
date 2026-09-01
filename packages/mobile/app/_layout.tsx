@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Platform } from "react-native";
+import { Platform, View } from "react-native";
 import {
   Slot,
   useGlobalSearchParams,
@@ -9,6 +9,8 @@ import {
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import * as Notifications from "expo-notifications";
 import { ErrorBoundary } from "../src/ui/components/ErrorBoundary";
+import { ErrorState } from "../src/ui/components/ErrorState";
+import { PLogoDrawLoader } from "../src/ui/components/PLogoDrawLoader";
 import { captureBoundaryError, initSentry, Sentry } from "../src/lib/sentry";
 import { AppProviders } from "../src/providers";
 import { useActiveWorkoutRehydration } from "../src/ui/hooks/useActiveWorkoutRehydration";
@@ -186,17 +188,38 @@ function AuthGate() {
 
   const deletedAt = profilePage.payload?.profile.deletedAt ?? null;
   const onboardingRoutingPending =
-    session !== null && (onboarding?.isLoading ?? false);
+    session !== null &&
+    ((onboarding?.isLoading ?? false) ||
+      (onboarding?.state === null && onboarding.loadError != null));
   // `code` off the incoming invite deep link (/(app)/accept-invite?code=X).
   const inviteCode = typeof params.code === "string" ? params.code : null;
+
+  const rootSegment = (segments as readonly string[])[0];
+  const segmentName = (segments as readonly string[])[1];
+  const inAuthGroup = rootSegment === "(auth)";
+  const inAppGroup = rootSegment === "(app)";
+  const inOnboardingGroup = rootSegment === "(onboarding)";
+  const onAuthCallback = rootSegment === "auth";
+  const inPostAuthSubscriptionFlow =
+    inAuthGroup &&
+    (segmentName === "subscription-selection" || segmentName === "success");
+  const inOnboardingPurchaseFlow =
+    inPostAuthSubscriptionFlow && params.onboarding === "1";
+  const inRestoreAccountScreen =
+    inAppGroup && segmentName === "restore-account";
+  const inAcceptInviteScreen = inAppGroup && segmentName === "accept-invite";
+  const inSetNewPasswordScreen =
+    inAuthGroup && segmentName === "set-new-password";
+  const onboardingState = onboarding?.state ?? null;
+  const onboardingRequired =
+    // A failed read with no offline mirror is unknown, not "never started".
+    // Fail open to Home and retry on the next provider lifecycle.
+    (onboardingState !== null || onboarding?.loadError == null) &&
+    shouldAutoShowOnboarding({ state: onboardingState });
 
   useEffect(() => {
     if (isLoading) return;
 
-    const rootSegment = (segments as readonly string[])[0];
-    const inAuthGroup = rootSegment === "(auth)";
-    const inAppGroup = rootSegment === "(app)";
-    const inOnboardingGroup = rootSegment === "(onboarding)";
     // The auth-callback deep-link screen (`app/auth/callback.tsx`) is
     // ungrouped, so it's in neither group. It owns its own routing — the
     // container establishes the session (then the `session && !inAppGroup`
@@ -204,26 +227,14 @@ function AuthGate() {
     // it from the signed-out redirect so a cold open from a confirmation link
     // doesn't bounce a *successful* confirm to sign-in in the window before
     // the container's async `setSessionFromTokens` has resolved.
-    const onAuthCallback = rootSegment === "auth";
     // M10: subscription-selection + success live under (auth) because
     // they're rendered post-sign-up before the user has reached the
     // app. AuthGate must NOT bounce signed-in users out of those
     // screens — otherwise the auth-flow Selection card never gets
     // its chance to appear before AuthGate redirects to home.
-    const segmentName = (segments as readonly string[])[1];
-    const inPostAuthSubscriptionFlow =
-      inAuthGroup &&
-      (segmentName === "subscription-selection" || segmentName === "success");
-    const inOnboardingPurchaseFlow =
-      inPostAuthSubscriptionFlow && params.onboarding === "1";
-    const inRestoreAccountScreen =
-      inAppGroup && segmentName === "restore-account";
-    const inAcceptInviteScreen = inAppGroup && segmentName === "accept-invite";
     // A recovery-link session must set a new password before reaching the
     // tabs. Whitelisted like the post-sign-up screens so AuthGate doesn't
     // bounce the signed-in user off set-new-password back to the app.
-    const inSetNewPasswordScreen =
-      inAuthGroup && segmentName === "set-new-password";
 
     // Soft-deleted (grace-period) gate: a signed-in user whose profile
     // carries a non-null `deletedAt` must restore (or sign out) before
@@ -264,14 +275,6 @@ function AuthGate() {
       return;
     }
 
-    const onboardingState = onboarding?.state ?? null;
-    const onboardingRequired =
-      // A failed read with no offline mirror is unknown, not "never started".
-      // Fail open to Home and retry on the next provider lifecycle.
-      (onboardingState !== null || onboarding?.loadError == null) &&
-      shouldAutoShowOnboarding({
-        state: onboardingState,
-      });
     if (
       session &&
       !(onboarding?.isLoading ?? false) &&
@@ -324,9 +327,73 @@ function AuthGate() {
     onboarding?.state,
     onboarding?.isLoading,
     onboarding?.loadError,
+    onboardingRequired,
     onboardingRoutingPending,
     params.onboarding,
+    segmentName,
+    inAcceptInviteScreen,
+    inAppGroup,
+    inAuthGroup,
+    inOnboardingGroup,
+    inOnboardingPurchaseFlow,
+    inPostAuthSubscriptionFlow,
+    inRestoreAccountScreen,
+    inSetNewPasswordScreen,
+    onAuthCallback,
   ]);
+
+  // Do not mount protected app/auth content while an unfinished journey is
+  // being redirected. This covers both a fresh null state and a cached
+  // in-progress page during its server refresh; otherwise the previous screen
+  // can be visible and interactive for a frame before `replace` commits.
+  const blocksForOnboarding =
+    session !== null &&
+    onboardingRequired &&
+    !inOnboardingGroup &&
+    !inOnboardingPurchaseFlow &&
+    !onAuthCallback &&
+    !inRestoreAccountScreen &&
+    !inAcceptInviteScreen &&
+    !inSetNewPasswordScreen;
+
+  const priorityRedirectPending =
+    session !== null &&
+    ((deletedAt != null && !inRestoreAccountScreen) ||
+      (usePasswordRecovery.getState().pending && !inSetNewPasswordScreen) ||
+      (usePendingInvite.getState().pendingCode !== null &&
+        !inAcceptInviteScreen));
+  const onboardingUnavailable =
+    session !== null &&
+    onboardingState === null &&
+    onboarding?.loadError != null &&
+    !onAuthCallback &&
+    !inOnboardingPurchaseFlow &&
+    !inRestoreAccountScreen &&
+    !inAcceptInviteScreen &&
+    !inSetNewPasswordScreen &&
+    !priorityRedirectPending;
+
+  if (onboardingUnavailable) {
+    return (
+      <ErrorState
+        title="Persistence is temporarily unavailable"
+        message="We couldn't finish loading your account. Your data is safe. Check your connection and try again."
+        onRetry={onboarding?.retryLoad}
+        testID="core-service-unavailable"
+      />
+    );
+  }
+
+  if (blocksForOnboarding || priorityRedirectPending) {
+    return (
+      <View
+        style={{ flex: 1, alignItems: "center", justifyContent: "center" }}
+        testID="onboarding-bootstrap-loading"
+      >
+        <PLogoDrawLoader size={120} accessibilityLabel="Loading your account" />
+      </View>
+    );
+  }
 
   return <Slot />;
 }

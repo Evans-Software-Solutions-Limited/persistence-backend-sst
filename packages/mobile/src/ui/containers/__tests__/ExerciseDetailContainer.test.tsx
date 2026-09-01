@@ -105,7 +105,6 @@ describe("ExerciseDetailContainer", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockUseLocalSearchParams.mockReturnValue({ id: "ex-1" });
-    delete process.env.EXPO_PUBLIC_EXPERIENCE_POLISH_V1_ENABLED;
   });
 
   afterEach(() => {
@@ -223,7 +222,6 @@ describe("ExerciseDetailContainer", () => {
   });
 
   it("tracks the 1RM banner once when a qualifying estimate is shown", async () => {
-    process.env.EXPO_PUBLIC_EXPERIENCE_POLISH_V1_ENABLED = "true";
     const api = new InMemoryApiAdapter();
     api.exercisePerformanceSummaryByExercise["analytics-exercise"] = {
       estimatedOneRepMax: {

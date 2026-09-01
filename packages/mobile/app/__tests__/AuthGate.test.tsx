@@ -39,6 +39,7 @@ const mockUseOptionalOnboarding = jest.fn<
     state: { status: string; currentPage: string } | null;
     isLoading: boolean;
     loadError?: unknown;
+    retryLoad?: () => void;
   } | null,
   []
 >(() => null);
@@ -56,7 +57,13 @@ const mockUseGlobalSearchParams = jest.fn<Record<string, string>, []>(
   () => ({}),
 );
 jest.mock("expo-router", () => ({
-  Slot: ({ children }: { children?: React.ReactNode }) => children ?? null,
+  Slot: () => {
+    const React = jest.requireActual("react") as typeof import("react");
+    const { View } = jest.requireActual(
+      "react-native",
+    ) as typeof import("react-native");
+    return React.createElement(View, { testID: "router-slot" });
+  },
   useRouter: () => ({ replace: mockReplace }),
   useSegments: () => mockUseSegments(),
   useGlobalSearchParams: () => mockUseGlobalSearchParams(),
@@ -70,6 +77,16 @@ jest.mock("../../src/providers", () => ({
 // Mock ErrorBoundary
 jest.mock("../../src/ui/components/ErrorBoundary", () => ({
   ErrorBoundary: ({ children }: { children: React.ReactNode }) => children,
+}));
+
+const mockErrorState = jest.fn((_props: unknown) => null);
+jest.mock("../../src/ui/components/ErrorState", () => ({
+  ErrorState: (props: unknown) => mockErrorState(props),
+}));
+
+const mockPLogoDrawLoader = jest.fn((_props: unknown) => null);
+jest.mock("../../src/ui/components/PLogoDrawLoader", () => ({
+  PLogoDrawLoader: (props: unknown) => mockPLogoDrawLoader(props),
 }));
 
 // Mock useNotificationPermissions — the real hook calls useAdapters,
@@ -272,6 +289,10 @@ describe("AuthGate", () => {
     });
 
     const view = render(<RootLayout />);
+    expect(view.queryByTestId("router-slot")).toBeNull();
+    expect(mockPLogoDrawLoader).toHaveBeenCalledWith(
+      expect.objectContaining({ accessibilityLabel: "Loading your account" }),
+    );
     expect(mockReplace).not.toHaveBeenCalled();
 
     mockUseOptionalOnboarding.mockReturnValue({
@@ -283,7 +304,24 @@ describe("AuthGate", () => {
     await waitFor(() =>
       expect(mockReplace).toHaveBeenCalledWith("/(onboarding)/welcome"),
     );
+    expect(view.queryByTestId("router-slot")).toBeNull();
     expect(mockReplace).not.toHaveBeenCalledWith("/(app)/(tabs)");
+  });
+
+  it("does not expose tabs from a cached in-progress page during refresh", () => {
+    mockUseAuth.mockReturnValue({
+      session: SIGNED_IN_SESSION,
+      isLoading: false,
+    });
+    mockUseSegments.mockReturnValue(["(app)", "(tabs)"]);
+    mockUseOptionalOnboarding.mockReturnValue({
+      state: { status: "in_progress", currentPage: "recommendation" },
+      isLoading: true,
+    });
+
+    const view = render(<RootLayout />);
+
+    expect(view.queryByTestId("router-slot")).toBeNull();
   });
 
   it("pushes an existing signed-in account into its saved onboarding page", async () => {
@@ -338,7 +376,7 @@ describe("AuthGate", () => {
     );
   });
 
-  it("fails open when onboarding cannot be loaded and has no cached state", async () => {
+  it("surfaces an onboarding bootstrap outage and provides Retry", () => {
     mockUseAuth.mockReturnValue({
       session: SIGNED_IN_SESSION,
       isLoading: false,
@@ -354,17 +392,39 @@ describe("AuthGate", () => {
       error: null,
       refresh: jest.fn(),
     });
+    const retryLoad = jest.fn();
     mockUseOptionalOnboarding.mockReturnValue({
       state: null,
       isLoading: false,
       loadError: new Error("onboarding unavailable"),
+      retryLoad,
     });
 
-    render(<RootLayout />);
+    const view = render(<RootLayout />);
 
-    await waitFor(() =>
-      expect(mockReplace).toHaveBeenCalledWith("/(app)/(tabs)"),
+    expect(mockErrorState).toHaveBeenCalledWith(
+      expect.objectContaining({
+        testID: "core-service-unavailable",
+        title: "Persistence is temporarily unavailable",
+      }),
     );
+    const props = mockErrorState.mock.calls.at(-1)?.[0] as {
+      onRetry: () => void;
+    };
+    props.onRetry();
+    expect(retryLoad).toHaveBeenCalledTimes(1);
+
+    mockUseOptionalOnboarding.mockReturnValue({
+      state: null,
+      isLoading: true,
+      loadError: null,
+      retryLoad,
+    });
+    view.rerender(<RootLayout />);
+    expect(mockPLogoDrawLoader).toHaveBeenCalledWith(
+      expect.objectContaining({ accessibilityLabel: "Loading your account" }),
+    );
+    expect(mockReplace).not.toHaveBeenCalledWith("/(app)/(tabs)");
     expect(mockReplace).not.toHaveBeenCalledWith("/(onboarding)/welcome");
   });
 

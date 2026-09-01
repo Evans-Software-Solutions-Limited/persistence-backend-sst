@@ -1,17 +1,39 @@
-import { act, render, waitFor } from "@testing-library/react-native";
+import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
+import { Alert } from "react-native";
 
+import type { OnboardingPage } from "@/domain/models/onboarding";
 import type { SubscriptionSelectionContainerProps } from "@/ui/containers/SubscriptionSelectionContainer";
 import { OnboardingPageContainer } from "@/ui/containers/OnboardingPageContainer";
 
 const mockReplace = jest.fn();
 const mockTrack = jest.fn();
 const mockSkipPage = jest.fn();
+const mockDismissJourney = jest.fn();
 const mockCompleteJourney = jest.fn();
 let mockSubscriptionProps: SubscriptionSelectionContainerProps | null = null;
+let mockCurrentPage: OnboardingPage = "recommendation";
 
 jest.mock("expo-router", () => ({
   useRouter: () => ({ replace: mockReplace, push: jest.fn() }),
 }));
+
+jest.mock("react-native-safe-area-context", () => ({
+  useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }),
+}));
+
+jest.mock("@/ui/presenters/OnboardingPresenter", () => {
+  const actual = jest.requireActual("@/ui/presenters/OnboardingPresenter");
+  const React = jest.requireActual("react");
+  const { Pressable } = jest.requireActual("react-native");
+  return {
+    ...actual,
+    OnboardingWelcomePresenter: ({ onSkip }: { onSkip: () => void }) =>
+      React.createElement(Pressable, {
+        onPress: onSkip,
+        testID: "onboarding-welcome-skip",
+      }),
+  };
+});
 
 jest.mock("@/ui/hooks/useMySubscription", () => ({
   useMySubscription: () => ({ data: { tierName: "free" } }),
@@ -22,7 +44,7 @@ jest.mock("@/ui/state/OnboardingProvider", () => ({
     state: {
       userId: "user-a",
       version: 1,
-      currentPage: "recommendation",
+      currentPage: mockCurrentPage,
       completedPages: [
         "welcome",
         "profile",
@@ -44,7 +66,7 @@ jest.mock("@/ui/state/OnboardingProvider", () => ({
     goBack: jest.fn(),
     completePage: jest.fn(),
     skipPage: mockSkipPage,
-    dismissJourney: jest.fn(),
+    dismissJourney: mockDismissJourney,
     completeJourney: mockCompleteJourney,
     setPath: jest.fn(),
     setIntentChoice: jest.fn(),
@@ -65,8 +87,37 @@ describe("OnboardingPageContainer recommendation", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockSubscriptionProps = null;
+    mockCurrentPage = "recommendation";
     mockSkipPage.mockResolvedValue(null);
+    mockDismissJourney.mockResolvedValue(undefined);
     mockCompleteJourney.mockResolvedValue(undefined);
+  });
+
+  it("warns before dismissing the whole journey from the Welcome header", async () => {
+    mockCurrentPage = "welcome";
+    const alert = jest.spyOn(Alert, "alert");
+    const { getByTestId } = render(<OnboardingPageContainer page="welcome" />);
+
+    fireEvent.press(getByTestId("onboarding-welcome-skip"));
+
+    expect(mockDismissJourney).not.toHaveBeenCalled();
+    expect(alert).toHaveBeenCalledWith(
+      "Skip setup?",
+      expect.stringContaining("takes you straight to Home"),
+      expect.arrayContaining([
+        expect.objectContaining({ text: "Keep setting up", style: "cancel" }),
+        expect.objectContaining({ text: "Skip setup", style: "destructive" }),
+      ]),
+    );
+
+    const buttons = alert.mock.calls[0]?.[2];
+    const confirm = buttons?.find((button) => button.text === "Skip setup");
+    act(() => confirm?.onPress?.());
+
+    await waitFor(() => {
+      expect(mockDismissJourney).toHaveBeenCalledTimes(1);
+      expect(mockReplace).toHaveBeenCalledWith("/(app)/(tabs)");
+    });
   });
 
   it("uses selectedTier for plan-selection analytics", () => {

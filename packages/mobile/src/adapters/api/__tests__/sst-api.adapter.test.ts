@@ -16,8 +16,10 @@ jest.mock("expo-constants", () => ({
 // eslint-disable-next-line import/first
 import {
   DASHBOARD_REQUEST_TIMEOUT_MS,
+  ONBOARDING_REQUEST_TIMEOUT_MS,
   SSTApiAdapter,
 } from "@/adapters/api/sst-api.adapter";
+// eslint-disable-next-line import/first
 import { ok } from "@/shared/errors";
 
 type FetchImpl = (input: any, init?: any) => Promise<Response>;
@@ -28,6 +30,52 @@ const originalFetch = globalScope.fetch;
 afterEach(() => {
   globalScope.fetch = originalFetch;
   jest.useRealTimers();
+});
+
+describe("SSTApiAdapter API Gateway error mapping", () => {
+  it("preserves the gateway message when React Native provides no status text", async () => {
+    installFetchMock(
+      async () =>
+        new Response(JSON.stringify({ message: "Internal Server Error" }), {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        }),
+    );
+
+    const result = await new SSTApiAdapter().getOnboarding();
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toMatchObject({
+      code: "server",
+      status: 500,
+      message: "Internal Server Error",
+    });
+  });
+
+  it("times out a stalled onboarding bootstrap so AuthGate can offer Retry", async () => {
+    jest.useFakeTimers();
+    installFetchMock((_url, init) => {
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          const error = new Error("Aborted");
+          error.name = "AbortError";
+          reject(error);
+        });
+      });
+    });
+
+    const promise = new SSTApiAdapter().getOnboarding();
+    jest.advanceTimersByTime(ONBOARDING_REQUEST_TIMEOUT_MS + 100);
+    const result = await promise;
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toMatchObject({
+      code: "timeout",
+      message: `Request timed out after ${ONBOARDING_REQUEST_TIMEOUT_MS}ms`,
+    });
+  });
 });
 
 function installFetchMock(impl: FetchImpl): jest.Mock {

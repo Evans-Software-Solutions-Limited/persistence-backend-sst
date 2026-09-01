@@ -52,7 +52,6 @@ import { RECENT_SETS_TABLES } from "@/adapters/storage/tables";
 import { useProfilePage } from "@/ui/hooks/useProfilePage";
 import { useRestTimer } from "@/ui/hooks/useRestTimer";
 import { useWorkout } from "@/ui/hooks/useWorkout";
-import { isExperiencePolishEnabled } from "@/ui/state/experiencePolish";
 import { AddExercisePopover } from "@/ui/components/workouts/AddExercisePopover";
 import { AddExerciseToSupersetPopover } from "@/ui/components/workouts/AddExerciseToSupersetPopover";
 import { SwapExercisePopover } from "@/ui/components/workouts/SwapExercisePopover";
@@ -684,9 +683,7 @@ export function ActiveSessionContainer() {
         onOpenSupersetNotes={onOpenSupersetNotes}
         onSubstitute={onSubstitute}
         onRemoveExercise={onRemoveExercise}
-        onMoveExercise={
-          isExperiencePolishEnabled() ? onMoveExercise : undefined
-        }
+        onMoveExercise={onMoveExercise}
         onTapExercise={onTapExercise}
         onAddExercise={onAddExercise}
         onAddExerciseToSuperset={onAddExerciseToSuperset}
