@@ -24,5 +24,5 @@ export const exercisesPerformanceSummaryHandler = new Elysia()
         ),
       };
     },
-    { params: t.Object({ exerciseId: t.String({ minLength: 1 }) }) },
+    { params: t.Object({ exerciseId: t.String({ format: "uuid" }) }) },
   );

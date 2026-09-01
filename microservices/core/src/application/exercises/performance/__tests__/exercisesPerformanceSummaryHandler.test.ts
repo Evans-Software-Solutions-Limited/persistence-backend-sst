@@ -2,6 +2,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const getSummary = vi.fn();
+const EXERCISE_ID = "11111111-1111-4111-8111-111111111111";
 vi.mock("../../../repositories/exercisePerformanceRepository", () => ({
   ExercisePerformanceRepository: vi.fn(() => ({ getSummary })),
 }));
@@ -25,7 +26,9 @@ describe("exercisesPerformanceSummaryHandler", () => {
     const { exercisesPerformanceSummaryHandler } =
       await import("../exercisesPerformanceSummaryHandler");
     const res = await exercisesPerformanceSummaryHandler.handle(
-      new Request("http://localhost/exercises/ex-1/performance-summary"),
+      new Request(
+        `http://localhost/exercises/${EXERCISE_ID}/performance-summary`,
+      ),
     );
     expect(res.status).toBe(401);
   });
@@ -35,11 +38,26 @@ describe("exercisesPerformanceSummaryHandler", () => {
     const { exercisesPerformanceSummaryHandler } =
       await import("../exercisesPerformanceSummaryHandler");
     const res = await exercisesPerformanceSummaryHandler.handle(
-      new Request("http://localhost/exercises/ex-1/performance-summary", {
+      new Request(
+        `http://localhost/exercises/${EXERCISE_ID}/performance-summary`,
+        {
+          headers: { authorization: "Bearer token" },
+        },
+      ),
+    );
+    expect(getSummary).toHaveBeenCalledWith("user-a", EXERCISE_ID);
+    expect(await res.json()).toEqual({ data: null });
+  });
+
+  it("rejects a malformed exercise id before querying PostgreSQL", async () => {
+    const { exercisesPerformanceSummaryHandler } =
+      await import("../exercisesPerformanceSummaryHandler");
+    const res = await exercisesPerformanceSummaryHandler.handle(
+      new Request("http://localhost/exercises/not-a-uuid/performance-summary", {
         headers: { authorization: "Bearer token" },
       }),
     );
-    expect(getSummary).toHaveBeenCalledWith("user-a", "ex-1");
-    expect(await res.json()).toEqual({ data: null });
+    expect(res.status).toBe(422);
+    expect(getSummary).not.toHaveBeenCalled();
   });
 });
