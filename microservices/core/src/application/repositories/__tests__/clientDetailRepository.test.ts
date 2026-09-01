@@ -23,6 +23,15 @@ const streaks = {
 const programmes = {
   getActiveProgrammeForClient: vi.fn(async () => null as any),
 };
+const assignment = {
+  activeProgramme: null,
+  upcomingWorkouts: [],
+  habits: [],
+  nutritionTarget: null,
+  activeGoal: null,
+  visibleBriefs: [],
+};
+const coaching = { get: vi.fn(async () => assignment) };
 
 vi.mock("../homeReadRepository", () => ({
   HomeReadRepository: vi.fn(() => home),
@@ -38,6 +47,9 @@ vi.mock("../streakRepository", () => ({
 }));
 vi.mock("../programAssignmentRepository", () => ({
   ProgramAssignmentRepository: vi.fn(() => programmes),
+}));
+vi.mock("../coachingAggregateRepository", () => ({
+  CoachingAggregateRepository: vi.fn(() => coaching),
 }));
 
 // Module g reads (only exercised when a client_ai_summaries row exists). The

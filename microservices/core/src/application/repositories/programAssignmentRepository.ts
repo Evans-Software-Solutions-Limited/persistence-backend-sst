@@ -385,6 +385,54 @@ export class ProgramAssignmentRepository {
     };
   }
 
+  /** Active programme belonging to one specific coach↔athlete relationship. */
+  async getActiveProgrammeForRelationship(
+    trainerId: string,
+    clientId: string,
+    today: string,
+  ): Promise<ActiveProgrammeSummary | null> {
+    const db = getDb();
+    const rows = await db
+      .select({
+        assignmentId: programAssignments.id,
+        programId: programAssignments.programId,
+        name: workoutPrograms.name,
+        durationWeeks: workoutPrograms.durationWeeks,
+        startDate: programAssignments.startDate,
+        endDate: programAssignments.endDate,
+        assignedByName: profiles.fullName,
+      })
+      .from(programAssignments)
+      .innerJoin(
+        workoutPrograms,
+        eq(workoutPrograms.id, programAssignments.programId),
+      )
+      .leftJoin(profiles, eq(profiles.id, programAssignments.assignedBy))
+      .where(
+        and(
+          eq(programAssignments.assignedBy, trainerId),
+          eq(programAssignments.clientId, clientId),
+          inArray(programAssignments.status, [...LIVE_ASSIGNMENT_STATUSES]),
+          eq(programAssignments.showInPlan, true),
+        ),
+      )
+      .orderBy(sql`${programAssignments.startDate} desc`)
+      .limit(1);
+    const row = rows[0];
+    return row
+      ? {
+          assignmentId: row.assignmentId,
+          programId: row.programId,
+          name: row.name,
+          week: currentWeek(row.startDate, today, row.durationWeeks),
+          totalWeeks: row.durationWeeks,
+          endDate: row.endDate,
+          startDate: row.startDate,
+          assignedByName: row.assignedByName ?? null,
+        }
+      : null;
+  }
+
   /**
    * Link a just-recorded completed session to the client's earliest OPEN
    * occurrence of that workout, then advance the parent programme

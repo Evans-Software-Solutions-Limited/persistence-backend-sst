@@ -135,7 +135,7 @@ describe("sendClientBriefOnBehalf", () => {
         type: "coach_brief",
         title: "Brief from Coach Alex",
         message: ARGS.message,
-        data: { deepLink: CLIENT_BRIEF_DEEP_LINK },
+        data: { deepLink: CLIENT_BRIEF_DEEP_LINK, trainerId: "trainer-1" },
       },
       txStub,
     );

@@ -152,6 +152,7 @@ describe("HomeReadRepository", () => {
             measuredAt: new Date("2026-06-01T08:00:00Z"),
             weightKg: "82.50",
             bodyFat: null,
+            loggedByUserId: "coach-1",
           },
         ]),
     });
@@ -168,7 +169,30 @@ describe("HomeReadRepository", () => {
       date: "2026-06-01",
       weightKg: 82.5,
       bodyFat: null,
+      source: "Coach",
     });
+  });
+
+  it("maps a self-logged body measurement to a null source", async () => {
+    (getDb as any).mockReturnValue({
+      select: () =>
+        chain([
+          {
+            id: "m-self",
+            measuredAt: new Date("2026-06-01T08:00:00Z"),
+            weightKg: "82.50",
+            bodyFat: null,
+            loggedByUserId: null,
+          },
+        ]),
+    });
+
+    const [point] = await new HomeReadRepository().getBodyTrend(
+      "u1",
+      30,
+      "Europe/London",
+    );
+    expect(point.source).toBeNull();
   });
 
   it("getBodyTrend buckets the date by user-local day, not UTC", async () => {

@@ -45,6 +45,7 @@ import { leadsRoutes } from "./leads/leadsRoutes";
 // and memoirist (Elysia's router) always prefers a static segment over the
 // `/sessions/:sessionId` param matcher regardless of registration order.
 import { sessionsRecentSetsHandler } from "./sessions/recentSets/sessionsRecentSetsHandler";
+import { experiencePolishRoutes } from "./experiencePolishRoutes";
 
 export const loadoutRoutes = new Elysia()
   // saved gyms — literal /saved-gyms (GET/POST) and parameterised
@@ -70,4 +71,5 @@ export const loadoutRoutes = new Elysia()
   // endpoints backing the website forms. See ./leads/leadsRoutes.
   .use(leadsRoutes)
   // Recent-sets hydration (see the import comment for why this lives here).
-  .use(sessionsRecentSetsHandler);
+  .use(sessionsRecentSetsHandler)
+  .use(experiencePolishRoutes);

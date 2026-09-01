@@ -25,7 +25,36 @@ export type AnalyticsEventName =
   | "lead_captured"
   // Web-origin: an outbound App Store CTA click (spec-30 R3.8) — the optimisable
   // ads signal in the absence of an install SDK.
-  | "store_click";
+  | "store_click"
+  | "onboarding_page_viewed"
+  | "onboarding_page_completed"
+  | "onboarding_page_skipped"
+  | "onboarding_dismissed"
+  | "onboarding_completed"
+  | "onboarding_intent_changed"
+  | "onboarding_recommendation_viewed"
+  | "onboarding_plan_selected"
+  | "weight_history_opened"
+  | "body_fat_history_opened"
+  | "measurement_logged_from_history"
+  | "estimated_1rm_banner_viewed"
+  | "coaching_overview_opened";
+
+export const CLIENT_ANALYTICS_EVENT_NAMES = [
+  "onboarding_page_viewed",
+  "onboarding_page_completed",
+  "onboarding_page_skipped",
+  "onboarding_dismissed",
+  "onboarding_completed",
+  "onboarding_intent_changed",
+  "onboarding_recommendation_viewed",
+  "onboarding_plan_selected",
+  "weight_history_opened",
+  "body_fat_history_opened",
+  "measurement_logged_from_history",
+  "estimated_1rm_banner_viewed",
+  "coaching_overview_opened",
+] as const satisfies readonly AnalyticsEventName[];
 
 /** Where the event originated. `app` is reserved for the build-2 client emitter. */
 export type AnalyticsEventSource = "server" | "web" | "app";

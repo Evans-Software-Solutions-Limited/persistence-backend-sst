@@ -2,6 +2,7 @@ import Elysia, { t } from "elysia";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { ptClientRelationships, profiles } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
+import { CoachingAggregateRepository } from "../../repositories/coachingAggregateRepository";
 import {
   getAuthUser,
   requireAuth,
@@ -72,8 +73,9 @@ export const trainersClientRelationshipsListHandler = new Elysia()
         ? rows
         : rows.filter((r) => r.status === "pending" || r.status === "active");
 
-      return {
-        data: visible.map((r) => ({
+      const aggregateRepository = new CoachingAggregateRepository();
+      const data = await Promise.all(
+        visible.map(async (r) => ({
           relationshipId: r.relationshipId,
           trainerId: r.trainerId,
           trainerName: r.trainerName ?? "Your trainer",
@@ -85,7 +87,14 @@ export const trainersClientRelationshipsListHandler = new Elysia()
           initiatedBy: r.initiatedBy === "client" ? "client" : "trainer",
           relationshipReason: r.relationshipReason ?? null,
           since: r.createdAt ? new Date(r.createdAt).toISOString() : null,
+          assignment:
+            r.status === "active"
+              ? await aggregateRepository.get(r.trainerId, userId)
+              : null,
         })),
+      );
+      return {
+        data,
       };
     },
     {

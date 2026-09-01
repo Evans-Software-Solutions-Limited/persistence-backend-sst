@@ -22,6 +22,7 @@ import { NutritionTargetRepository } from "./nutritionTargetRepository";
 import { StreakRepository } from "./streakRepository";
 import { ProgramAssignmentRepository } from "./programAssignmentRepository";
 import { AiUsageLogRepository } from "./aiUsageLogRepository";
+import { CoachingAggregateRepository } from "./coachingAggregateRepository";
 import {
   AI_COACH_SUMMARY_DAILY_LIMIT,
   AI_COACH_SUMMARY_ENDPOINT,
@@ -82,6 +83,7 @@ export class ClientDetailRepository {
   private readonly programmes = new ProgramAssignmentRepository();
   private readonly aiSummaries = new ClientAiSummaryRepository();
   private readonly aiUsage = new AiUsageLogRepository();
+  private readonly coaching = new CoachingAggregateRepository();
 
   async getClientDetail(
     trainerId: string,
@@ -113,6 +115,7 @@ export class ClientDetailRepository {
       workoutsCompleted,
       workoutsPlanned,
       aiSummary,
+      assignment,
     ] = await Promise.all([
       this.getHeader(trainerId, clientId, now),
       this.getCalorieHit(clientId, tz, weekStart, weekEnd, todayISO),
@@ -126,6 +129,7 @@ export class ClientDetailRepository {
       this.volume.completedSessionCount(clientId, tz, weekStart, weekEnd),
       this.getWorkoutsPlannedThisWeek(clientId, todayISO, weekStart, weekEnd),
       this.getAiSummaryModule(trainerId, clientId, coversDate),
+      this.coaching.get(trainerId, clientId),
     ]);
 
     const prs: PrHighlight[] = prsRaw.map((r) => ({
@@ -205,6 +209,7 @@ export class ClientDetailRepository {
       },
       recentSessions,
       notes,
+      assignment,
     };
   }
 

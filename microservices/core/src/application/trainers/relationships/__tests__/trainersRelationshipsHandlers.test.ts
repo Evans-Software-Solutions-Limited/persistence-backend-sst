@@ -7,6 +7,11 @@ vi.mock("@persistence/db/client", () => ({
 
 import { getDb } from "@persistence/db/client";
 
+const coachingGet = vi.hoisted(() => vi.fn(async () => ({ marker: "shared" })));
+vi.mock("../../../repositories/coachingAggregateRepository", () => ({
+  CoachingAggregateRepository: vi.fn(() => ({ get: coachingGet })),
+}));
+
 vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getAuthUser: vi.fn(async (authHeader: string | undefined) => {
     if (!authHeader || !authHeader.startsWith("Bearer ")) return null;
@@ -337,6 +342,8 @@ describe("trainersClientRelationshipsListHandler", () => {
     expect(body.data[0].trainerName).toBe("Coach Carter");
     expect(body.data[0].initiatedBy).toBe("client");
     expect(body.data[0].since).toBe("2026-06-01T00:00:00.000Z");
+    expect(body.data[0].assignment).toBeNull();
+    expect(coachingGet).not.toHaveBeenCalled();
   });
 
   it("passes through rows for an explicit status filter", async () => {
@@ -365,6 +372,17 @@ describe("trainersClientRelationshipsListHandler", () => {
     const body = (await res.json()) as any;
     expect(body.data).toHaveLength(1);
     expect(body.data[0].status).toBe("active");
+    expect(body.data[0].assignment).toEqual({ marker: "shared" });
+    expect(coachingGet).toHaveBeenCalledWith("trainer-1", "client-id");
+  });
+
+  it("returns an empty contract for no relationship", async () => {
+    (getDb as any).mockReturnValue(executor([[]]));
+    const { trainersClientRelationshipsListHandler } =
+      await import("../trainersClientRelationshipsListHandler");
+    const res = await trainersClientRelationshipsListHandler.handle(get());
+    expect((await res.json()) as any).toEqual({ data: [] });
+    expect(coachingGet).not.toHaveBeenCalled();
   });
 
   it("Cluster 2a: filters on profiles.deleted_at IS NULL — a soft-deleted trainer disappears from the client's own relationship list immediately", async () => {
