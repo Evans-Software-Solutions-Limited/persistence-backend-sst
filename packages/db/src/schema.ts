@@ -461,6 +461,62 @@ export const profiles = pgTable("profiles", {
   marketingConsent: boolean("marketing_consent"),
 });
 
+// Spec 31 — one durable onboarding progress row per user. Feature data entered
+// during onboarding remains in its canonical tables; this row owns orchestration
+// progress and recommendation intent only.
+export const onboardingStates = pgTable(
+  "onboarding_states",
+  {
+    userId: uuid("user_id")
+      .primaryKey()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    version: integer("version").notNull().default(1),
+    currentPage: text("current_page").notNull().default("welcome"),
+    completedPages: text("completed_pages").array().notNull().default([]),
+    skippedPages: text("skipped_pages").array().notNull().default([]),
+    status: text("status").notNull().default("in_progress"),
+    path: text("path"),
+    coachClientBand: text("coach_client_band"),
+    intentKeys: text("intent_keys").array().notNull().default([]),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    dismissedAt: timestamp("dismissed_at", { withTimezone: true }),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    check("onboarding_states_version_check", sql`${t.version} = 1`),
+    check(
+      "onboarding_states_page_check",
+      sql`${t.currentPage} IN ('welcome', 'profile', 'role', 'habits', 'nutrition', 'train', 'recommendation')`,
+    ),
+    check(
+      "onboarding_states_status_check",
+      sql`${t.status} IN ('in_progress', 'completed', 'dismissed')`,
+    ),
+    check(
+      "onboarding_states_path_check",
+      sql`${t.path} IS NULL OR ${t.path} IN ('athlete', 'coach')`,
+    ),
+    check(
+      "onboarding_states_coach_band_check",
+      sql`${t.coachClientBand} IS NULL OR ${t.coachClientBand} IN ('1_5', '6_15', '16_30')`,
+    ),
+    check(
+      "onboarding_states_completed_pages_check",
+      sql`${t.completedPages} <@ ARRAY['welcome', 'profile', 'role', 'habits', 'nutrition', 'train', 'recommendation']::text[]`,
+    ),
+    check(
+      "onboarding_states_skipped_pages_check",
+      sql`${t.skippedPages} <@ ARRAY['welcome', 'profile', 'role', 'habits', 'nutrition', 'train', 'recommendation']::text[]`,
+    ),
+    check(
+      "onboarding_states_intent_keys_check",
+      sql`${t.intentKeys} <@ ARRAY['nutrition_barcode', 'nutrition_photo_estimate', 'nutrition_mealprint', 'training_three_workouts', 'training_unlimited_workouts', 'training_loadout']::text[]`,
+    ),
+  ],
+);
+
 // ─── Subscriptions ────────────────────────────────────────────────────────────
 
 export const subscriptionTiers = pgTable("subscription_tiers", {

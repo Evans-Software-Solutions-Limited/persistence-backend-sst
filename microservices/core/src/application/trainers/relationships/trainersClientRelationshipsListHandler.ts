@@ -2,6 +2,7 @@ import Elysia, { t } from "elysia";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { ptClientRelationships, profiles } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
+import { CoachingAggregateRepository } from "../../repositories/coachingAggregateRepository";
 import {
   getAuthUser,
   requireAuth,
@@ -72,20 +73,31 @@ export const trainersClientRelationshipsListHandler = new Elysia()
         ? rows
         : rows.filter((r) => r.status === "pending" || r.status === "active");
 
+      const aggregateRepository = new CoachingAggregateRepository();
+      const activeTrainerIds = visible
+        .filter((relationship) => relationship.status === "active")
+        .map((relationship) => relationship.trainerId);
+      const assignments = await aggregateRepository.getMany(
+        activeTrainerIds,
+        userId,
+      );
+      const data = visible.map((r) => ({
+        relationshipId: r.relationshipId,
+        trainerId: r.trainerId,
+        trainerName: r.trainerName ?? "Your trainer",
+        trainerRole: r.trainerRole ?? null,
+        trainerAvatarUrl: r.trainerAvatarUrl ?? null,
+        status: r.status,
+        // 'trainer' = the client accepts this pending (email invite);
+        // 'client' = the client redeemed a code, awaiting the coach's accept.
+        initiatedBy: r.initiatedBy === "client" ? "client" : "trainer",
+        relationshipReason: r.relationshipReason ?? null,
+        since: r.createdAt ? new Date(r.createdAt).toISOString() : null,
+        assignment:
+          r.status === "active" ? (assignments.get(r.trainerId) ?? null) : null,
+      }));
       return {
-        data: visible.map((r) => ({
-          relationshipId: r.relationshipId,
-          trainerId: r.trainerId,
-          trainerName: r.trainerName ?? "Your trainer",
-          trainerRole: r.trainerRole ?? null,
-          trainerAvatarUrl: r.trainerAvatarUrl ?? null,
-          status: r.status,
-          // 'trainer' = the client accepts this pending (email invite);
-          // 'client' = the client redeemed a code, awaiting the coach's accept.
-          initiatedBy: r.initiatedBy === "client" ? "client" : "trainer",
-          relationshipReason: r.relationshipReason ?? null,
-          since: r.createdAt ? new Date(r.createdAt).toISOString() : null,
-        })),
+        data,
       };
     },
     {

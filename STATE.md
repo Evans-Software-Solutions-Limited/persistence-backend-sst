@@ -3803,3 +3803,16 @@ PR not yet raised. NO product code — script + dataset + verdict + spec updates
 - Full pre-PR gates passed: formatting, typecheck, lint (0 errors; existing
   warnings only), build and all unit tests, including mobile 503 suites / 6,390
   tests.
+
+### 2026-09-01 — Spec 31 Inspector follow-up
+
+- Validated both CI Inspector findings on backend PR #426. Athlete relationship
+  reads previously repeated the seven-query coaching aggregate for every active
+  specialist; they now batch all trainer IDs into one fixed seven-query read,
+  while the coach-detail single-relationship contract delegates to the same
+  implementation.
+- Pending habit JSON can no longer override its canonical effective `from`
+  date; the typed field is applied after spreading the stored configuration.
+- Regression coverage includes PT + physio batching, per-trainer aggregate
+  isolation, SQL-enforced per-trainer programme/workout/brief bounds, and an
+  untrusted `pending.config.from` collision.

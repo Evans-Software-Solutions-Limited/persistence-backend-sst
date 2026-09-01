@@ -94,7 +94,9 @@ export async function sendClientBriefOnBehalf({
         type: "coach_brief",
         title: briefTitle(trainerRows[0]),
         message,
-        data: { deepLink: CLIENT_BRIEF_DEEP_LINK },
+        // trainerId is non-sensitive relationship metadata and lets the shared
+        // coaching aggregate include only briefs from this relationship.
+        data: { deepLink: CLIENT_BRIEF_DEEP_LINK, trainerId },
       },
       tx,
     );

@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { PgDialect } from "drizzle-orm/pg-core";
 
 vi.mock("@persistence/db/client", () => ({
   getDb: vi.fn(),
@@ -33,12 +34,14 @@ function selectResult(resolveRows: () => unknown[]) {
 
 function makeDb(opts: {
   selects?: unknown[][];
+  executeResults?: unknown[][];
   insertResults?: (unknown[] | Error)[];
   updateResults?: unknown[][];
   deleteResults?: unknown[][];
 }) {
   const {
     selects = [],
+    executeResults = [],
     insertResults = [],
     updateResults = [],
     deleteResults = [],
@@ -47,12 +50,14 @@ function makeDb(opts: {
   let i = 0;
   let u = 0;
   let d = 0;
+  let e = 0;
   const insertedValues: unknown[] = [];
   const onConflictCalls: unknown[] = [];
   const db: any = {
     insertedValues,
     onConflictCalls,
     select: vi.fn(() => selectResult(() => selects[s++] ?? [])),
+    execute: vi.fn(async () => executeResults[e++] ?? []),
     insert: vi.fn(() => ({
       values: vi.fn((vals: unknown) => {
         const res = insertResults[i++] ?? [];
@@ -656,9 +661,10 @@ describe("ProgramAssignmentRepository", () => {
   describe("listOpenAssignmentsForClient", () => {
     it("maps rows to concrete assignments (ad-hoc vs occurrence, swapped flag)", async () => {
       const db = makeDb({
-        selects: [
+        executeResults: [
           [
             {
+              trainerId: TRAINER,
               assignmentId: "wa-1",
               workoutId: "w-1",
               name: "Push",
@@ -670,6 +676,7 @@ describe("ProgramAssignmentRepository", () => {
               swappedFromWorkoutId: null,
             },
             {
+              trainerId: TRAINER,
               assignmentId: "wa-2",
               workoutId: "w-2",
               name: "Pull",
@@ -712,11 +719,123 @@ describe("ProgramAssignmentRepository", () => {
     });
 
     it("returns [] when the client has no open assignments", async () => {
-      const db = makeDb({ selects: [[]] });
+      const db = makeDb({ executeResults: [[]] });
       vi.mocked(getDb).mockReturnValue(db);
       expect(await repo.listOpenAssignmentsForClient(TRAINER, CLIENT)).toEqual(
         [],
       );
+    });
+
+    it("does not query when the relationship batch is empty", async () => {
+      const db = makeDb({});
+      vi.mocked(getDb).mockReturnValue(db);
+      expect(
+        await repo.listOpenAssignmentsForRelationships([], CLIENT),
+      ).toEqual(new Map());
+      expect(db.execute).not.toHaveBeenCalled();
+    });
+
+    it("groups batched assignments by trainer and applies the per-trainer limit", async () => {
+      const db = makeDb({
+        executeResults: [
+          [
+            {
+              trainerId: "trainer-1",
+              assignmentId: "wa-1",
+              workoutId: "w-1",
+              status: "assigned",
+              programAssignmentId: null,
+              occurrenceIndex: null,
+              swappedFromWorkoutId: null,
+            },
+            {
+              trainerId: "trainer-2",
+              assignmentId: "wa-2",
+              workoutId: "w-2",
+              status: "assigned",
+              programAssignmentId: null,
+              occurrenceIndex: null,
+              swappedFromWorkoutId: null,
+            },
+          ],
+        ],
+      });
+      vi.mocked(getDb).mockReturnValue(db);
+
+      const out = await repo.listOpenAssignmentsForRelationships(
+        ["trainer-1", "trainer-2"],
+        CLIENT,
+        1,
+      );
+
+      expect(out.get("trainer-1")?.map((row) => row.assignmentId)).toEqual([
+        "wa-1",
+      ]);
+      expect(out.get("trainer-2")?.map((row) => row.assignmentId)).toEqual([
+        "wa-2",
+      ]);
+      expect(db.execute).toHaveBeenCalledTimes(1);
+      const query = new PgDialect().sqlToQuery(
+        db.execute.mock.calls[0][0] as never,
+      );
+      expect(query.sql).toContain("row_number() OVER");
+      expect(query.sql).toContain("PARTITION BY");
+      expect(query.sql).toContain("relationship_rank <=");
+    });
+  });
+
+  describe("getActiveProgrammesForRelationships", () => {
+    it("selects the latest live programme for each trainer in one query", async () => {
+      const db = makeDb({
+        executeResults: [
+          [
+            {
+              assignedBy: "trainer-1",
+              assignmentId: "pa-new",
+              programId: "program-new",
+              name: "New",
+              durationWeeks: 4,
+              startDate: "2026-08-01",
+              endDate: "2026-08-28",
+              assignedByName: "Coach A",
+            },
+            {
+              assignedBy: "trainer-2",
+              assignmentId: "pa-physio",
+              programId: "program-physio",
+              name: "Rehab",
+              durationWeeks: null,
+              startDate: "2026-07-15",
+              endDate: null,
+              assignedByName: "Pat Physio",
+            },
+          ],
+        ],
+      });
+      vi.mocked(getDb).mockReturnValue(db);
+
+      const out = await repo.getActiveProgrammesForRelationships(
+        ["trainer-1", "trainer-2"],
+        CLIENT,
+        TODAY,
+      );
+
+      expect(out.get("trainer-1")?.assignmentId).toBe("pa-new");
+      expect(out.get("trainer-2")?.assignmentId).toBe("pa-physio");
+      expect(db.execute).toHaveBeenCalledTimes(1);
+      const query = new PgDialect().sqlToQuery(
+        db.execute.mock.calls[0][0] as never,
+      );
+      expect(query.sql).toContain("DISTINCT ON");
+    });
+
+    it("does not query for an empty trainer list", async () => {
+      const db = makeDb({});
+      vi.mocked(getDb).mockReturnValue(db);
+      expect(
+        await repo.getActiveProgrammesForRelationships([], CLIENT, TODAY),
+      ).toEqual(new Map());
+      expect(db.execute).not.toHaveBeenCalled();
     });
   });
 

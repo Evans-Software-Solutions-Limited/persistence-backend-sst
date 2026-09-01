@@ -144,6 +144,8 @@ export interface ClientDetail {
   thisWeek: ClientDetailThisWeek;
   recentSessions: ClientDetailRecentSession[];
   notes: ClientDetailNote[];
+  /** Public contract also returned to the athlete; never contains notes. */
+  assignment: import("./coachingAggregateRepository").CoachingAssignmentAggregate;
 }
 
 // ─── Pure helpers (exported for unit testing) ──────────────────────────────

@@ -47,6 +47,7 @@ export interface BodyTrendPoint {
   date: string;
   weightKg: number | null;
   bodyFat: number | null;
+  source: "Coach" | null;
 }
 
 /**
@@ -328,6 +329,7 @@ export class HomeReadRepository {
         measuredAt: bodyMeasurements.measuredAt,
         weightKg: bodyMeasurements.weightKg,
         bodyFat: bodyMeasurements.bodyFatPercentage,
+        loggedByUserId: bodyMeasurements.loggedByUserId,
       })
       .from(bodyMeasurements)
       .where(
@@ -346,6 +348,7 @@ export class HomeReadRepository {
       date: r.measuredAt ? localDateISO(new Date(r.measuredAt), tz) : "",
       weightKg: r.weightKg != null ? Number(r.weightKg) : null,
       bodyFat: r.bodyFat != null ? Number(r.bodyFat) : null,
+      source: r.loggedByUserId != null ? "Coach" : null,
     }));
   }
 }
