@@ -52,6 +52,9 @@ const exerciseRepositoryMocks = {
   listPreviouslyLoggedExerciseIds: vi.fn(async () => []),
   search: vi.fn(async () => ({ rows: [{ id: "MARKER-SEARCH" }], total: 1 })),
 };
+const getPerformanceSummary = vi.fn(async () => ({
+  estimatedOneRepMaxKg: 100,
+}));
 
 vi.mock("../repositories/exerciseRepository", async () => {
   const actual = await vi.importActual<
@@ -71,6 +74,12 @@ vi.mock("../repositories/savedGymRepository", () => ({
   })),
 }));
 
+vi.mock("../repositories/exercisePerformanceRepository", () => ({
+  ExercisePerformanceRepository: vi.fn().mockImplementation(() => ({
+    getSummary: getPerformanceSummary,
+  })),
+}));
+
 const SOURCE_ID = "11111111-1111-4111-8111-111111111111";
 
 function authed(path: string) {
@@ -87,12 +96,15 @@ async function buildApp() {
     await import("../exercises/substitutes/exercisesSubstitutesHandler");
   const { exercisesGetHandler } =
     await import("../exercises/get/exercisesGetHandler");
+  const { exercisesPerformanceSummaryHandler } =
+    await import("../exercises/performance/exercisesPerformanceSummaryHandler");
 
   // Same relative order as api.ts.
   return new Elysia()
     .use(exercisesSearchHandler)
     .use(exercisesSubstitutesHandler)
-    .use(exercisesGetHandler);
+    .use(exercisesGetHandler)
+    .use(exercisesPerformanceSummaryHandler);
 }
 
 describe("/exercises route ordering", () => {
@@ -127,6 +139,19 @@ describe("/exercises route ordering", () => {
 
     expect(res.status).toBe(200);
     expect(body.data.id).toBe("MARKER-DETAIL");
+  });
+
+  it("composes and routes performance-summary under the shared :id segment", async () => {
+    const app = await buildApp();
+
+    const res = await app.handle(
+      authed(`/exercises/${SOURCE_ID}/performance-summary`),
+    );
+    const body = (await res.json()) as any;
+
+    expect(res.status).toBe(200);
+    expect(getPerformanceSummary).toHaveBeenCalledWith("user-a", SOURCE_ID);
+    expect(body.data.estimatedOneRepMaxKg).toBe(100);
   });
 
   it("still routes /exercises/search to the search handler", async () => {
