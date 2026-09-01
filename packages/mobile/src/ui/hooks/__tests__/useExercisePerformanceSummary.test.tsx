@@ -124,4 +124,51 @@ describe("useExercisePerformanceSummary", () => {
     await act(async () => pending[0]?.(ok(summary(100))));
     expect(result.current.data?.estimatedOneRepMax?.estimateKg).toBe(150);
   });
+
+  it("does not let an unmounted instance overwrite a newer instance's cache", async () => {
+    const pending: ((
+      value: ReturnType<typeof ok<ExercisePerformanceSummary | null>>,
+    ) => void)[] = [];
+    const api = {
+      getExercisePerformanceSummary: jest.fn(
+        () =>
+          new Promise<ReturnType<typeof ok<ExercisePerformanceSummary | null>>>(
+            (resolve) => pending.push(resolve),
+          ),
+      ),
+    };
+    const adapters = { api } as unknown as Adapters;
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <AdapterProvider adapters={adapters}>{children}</AdapterProvider>
+    );
+
+    const first = renderHook(
+      () => useExercisePerformanceSummary("remounted-bench"),
+      { wrapper },
+    );
+    await waitFor(() => expect(pending).toHaveLength(1));
+    first.unmount();
+
+    const second = renderHook(
+      () => useExercisePerformanceSummary("remounted-bench"),
+      { wrapper },
+    );
+    await waitFor(() => expect(pending).toHaveLength(2));
+    await act(async () => pending[1]?.(ok(summary(175))));
+    await waitFor(() =>
+      expect(second.result.current.data?.estimatedOneRepMax?.estimateKg).toBe(
+        175,
+      ),
+    );
+
+    await act(async () => pending[0]?.(ok(summary(90))));
+    second.unmount();
+
+    const third = renderHook(
+      () => useExercisePerformanceSummary("remounted-bench"),
+      { wrapper },
+    );
+    expect(third.result.current.data?.estimatedOneRepMax?.estimateKg).toBe(175);
+    third.unmount();
+  });
 });

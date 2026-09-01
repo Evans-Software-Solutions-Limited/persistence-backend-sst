@@ -13,6 +13,9 @@ export const exercisePerformanceSummaryKey = (
 // The summary changes with workout history and is private to both user and
 // exercise. Keep that full identity in the process cache and request guard.
 const cache = new Map<string, ExercisePerformanceSummary | null>();
+// Shared across hook instances so a request started by an older/unmounted
+// detail screen cannot overwrite a newer screen's result for the same key.
+const requestGenerationByKey = new Map<string, number>();
 const cacheId = (userId: string, exerciseId: string) =>
   `${userId}:${exerciseId}`;
 
@@ -44,12 +47,15 @@ export function useExercisePerformanceSummary(
     if (!key || !exerciseId) return;
     const requestKey = key;
     const requestRevision = ++requestRevisionRef.current;
+    const requestGeneration = (requestGenerationByKey.get(requestKey) ?? 0) + 1;
+    requestGenerationByKey.set(requestKey, requestGeneration);
     setIsLoading(true);
     const result = await api.getExercisePerformanceSummary(exerciseId);
     if (result.ok) {
       if (
         activeKeyRef.current !== requestKey ||
-        requestRevisionRef.current !== requestRevision
+        requestRevisionRef.current !== requestRevision ||
+        requestGenerationByKey.get(requestKey) !== requestGeneration
       )
         return;
       cache.set(requestKey, result.value);
@@ -59,14 +65,16 @@ export function useExercisePerformanceSummary(
     } else {
       if (
         activeKeyRef.current !== requestKey ||
-        requestRevisionRef.current !== requestRevision
+        requestRevisionRef.current !== requestRevision ||
+        requestGenerationByKey.get(requestKey) !== requestGeneration
       )
         return;
       setError(result.error);
     }
     if (
       activeKeyRef.current === requestKey &&
-      requestRevisionRef.current === requestRevision
+      requestRevisionRef.current === requestRevision &&
+      requestGenerationByKey.get(requestKey) === requestGeneration
     )
       setIsLoading(false);
   }, [api, exerciseId, key]);
