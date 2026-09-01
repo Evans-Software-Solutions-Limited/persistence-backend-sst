@@ -23,7 +23,10 @@ import { usePurchasesIdentity } from "../src/ui/hooks/usePurchasesIdentity";
 import { usePushNotifications } from "../src/ui/hooks/usePushNotifications";
 import { useUserModeEligibility } from "../src/ui/hooks/useUserModeEligibility";
 import { useOptionalOnboarding } from "../src/ui/state/OnboardingProvider";
-import { shouldAutoShowOnboarding } from "../src/ui/state/onboardingEligibility";
+import {
+  onboardingRolloutFromEnv,
+  shouldAutoShowOnboarding,
+} from "../src/ui/state/onboardingEligibility";
 import { type Href } from "expo-router";
 
 // Initialise Sentry at module load, before the app renders. No-op when
@@ -186,6 +189,13 @@ function AuthGate() {
 
   const deletedAt = profilePage.payload?.profile.deletedAt ?? null;
   const profileCreatedAt = profilePage.payload?.profile.createdAt ?? null;
+  const onboardingRollout = onboardingRolloutFromEnv();
+  const onboardingRoutingPending =
+    session !== null &&
+    onboardingRollout.enabled &&
+    ((onboarding?.isLoading ?? false) ||
+      (profilePage.payload === null &&
+        (profilePage.error === null || profilePage.isAutoRetrying)));
   // `code` off the incoming invite deep link (/(app)/accept-invite?code=X).
   const inviteCode = typeof params.code === "string" ? params.code : null;
 
@@ -240,10 +250,15 @@ function AuthGate() {
       return;
     }
 
-    const onboardingRequired = shouldAutoShowOnboarding({
-      createdAt: profileCreatedAt,
-      state: onboarding?.state ?? null,
-    });
+    const onboardingState = onboarding?.state ?? null;
+    const onboardingRequired =
+      // A failed read with no offline mirror is unknown, not "never started".
+      // Fail open to Home and retry on the next provider lifecycle.
+      (onboardingState !== null || onboarding?.loadError == null) &&
+      shouldAutoShowOnboarding({
+        createdAt: profileCreatedAt,
+        state: onboardingState,
+      });
     if (
       session &&
       !(onboarding?.isLoading ?? false) &&
@@ -272,8 +287,9 @@ function AuthGate() {
     if (
       session &&
       inOnboardingGroup &&
-      !(onboarding?.isLoading ?? false) &&
-      onboarding?.state?.status !== "in_progress"
+      (!onboardingRollout.enabled ||
+        (!(onboarding?.isLoading ?? false) &&
+          onboarding?.state?.status !== "in_progress"))
     ) {
       router.replace("/(app)/(tabs)");
       return;
@@ -284,7 +300,8 @@ function AuthGate() {
       !inAppGroup &&
       !inOnboardingGroup &&
       !inPostAuthSubscriptionFlow &&
-      !inSetNewPasswordScreen
+      !inSetNewPasswordScreen &&
+      !onboardingRoutingPending
     ) {
       // Signed in but not in app and not in a whitelisted auth-flow screen.
       // A recovery-link session wins first: divert to set-new-password so the
@@ -329,6 +346,9 @@ function AuthGate() {
     profileCreatedAt,
     onboarding?.state,
     onboarding?.isLoading,
+    onboarding?.loadError,
+    onboardingRollout.enabled,
+    onboardingRoutingPending,
     params.onboarding,
   ]);
 

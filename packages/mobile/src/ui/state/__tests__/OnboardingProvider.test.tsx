@@ -76,6 +76,22 @@ describe("OnboardingProvider", () => {
     expect(mockCache.has("user-b")).toBe(false);
   });
 
+  it("does not seed a fresh journey when the server read fails without a cache", async () => {
+    const failure = new Error("onboarding unavailable");
+    mockGetOnboarding.mockResolvedValueOnce({ ok: false, error: failure });
+
+    render(
+      <OnboardingProvider>
+        <Probe />
+      </OnboardingProvider>,
+    );
+
+    await waitFor(() => expect(context.isLoading).toBe(false));
+    expect(context.state).toBeNull();
+    expect(context.loadError).toBe(failure);
+    expect(mockCache.has("user-a")).toBe(false);
+  });
+
   it("persists page completion locally and remotely before advancing", async () => {
     render(
       <OnboardingProvider>

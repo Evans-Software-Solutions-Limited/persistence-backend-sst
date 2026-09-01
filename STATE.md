@@ -26,14 +26,20 @@ warnings only).
 
 ### 🟡 2026-09-01 — SPEC 31 PR #425 INSPECTOR FOLLOW-UP (branch `codex/spec-31-onboarding-polish`)
 
-Inspector Brad's two default-off rollout findings were valid. Home now wraps
+Inspector Brad's three default-off rollout findings were valid. Home now wraps
 the shared weigh-in store action at the press-handler boundary, and the store
 also normalises unexpected arguments so a React Native press event cannot
 replace the measurement context. The legacy body-history route now accepts a
 validated `metric` query parameter; You's Body Fat card and the disabled-polish
 body-fat route preserve `bodyFat`, while missing or unknown values fail closed
-to weight. Focused regression verification passes 5 suites / 51 tests; the full
-mobile suite passes 514 suites / 6,482 tests, and mobile typecheck and lint are
+to weight. Post-auth routing now waits for both onboarding state and fresh
+profile eligibility before choosing onboarding or Home, preventing a new user
+from seeing the tabs flash while either request is unresolved. It waits through
+bounded profile retries, but a fully exhausted profile request fails open to
+Home. Failed onboarding reads no longer synthesize a fresh journey, and a
+disabled rollout bypasses onboarding loading and ejects any resumed/deep-linked
+onboarding route. The focused AuthGate/provider suites pass 46 tests; the full
+mobile suite passes 515 suites / 6,490 tests, and mobile typecheck and lint are
 green (pre-existing warnings only).
 
 ### 🟡 2026-08-31 — GOOGLE PLAY WEBSITE LOGO (branch `codex/official-google-play-badge`)

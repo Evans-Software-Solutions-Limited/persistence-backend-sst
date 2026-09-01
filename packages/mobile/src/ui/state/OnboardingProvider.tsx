@@ -68,6 +68,7 @@ function withoutServerFields(state: OnboardingState): OnboardingUpdateInput {
 export type OnboardingContextValue = {
   state: OnboardingState | null;
   isLoading: boolean;
+  loadError: unknown | null;
   goBack: () => Promise<OnboardingPage>;
   completePage: (page: OnboardingPage) => Promise<OnboardingPage | null>;
   skipPage: (page: OnboardingPage) => Promise<OnboardingPage | null>;
@@ -105,6 +106,10 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<OnboardingState | null>(null);
   const stateRef = useRef<OnboardingState | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [loadFailure, setLoadFailure] = useState<{
+    userId: string;
+    error: unknown;
+  } | null>(null);
   const writeQueueRef = useRef<Promise<void>>(Promise.resolve());
   const revisionRef = useRef(0);
 
@@ -140,22 +145,30 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     if (!userId) {
       setState(null);
       setIsLoading(false);
+      setLoadFailure(null);
       return () => {
         active = false;
       };
     }
 
     setIsLoading(true);
+    setLoadFailure(null);
     const cached = storage.getCachedOnboarding(userId);
     if (cached) setState(cached);
 
     void (async () => {
       const remote = await api.getOnboarding();
       if (!active) return;
-      const serverState = normalizeRemoteState(
-        userId,
-        remote.ok ? remote.value : null,
-      );
+      if (!remote.ok) {
+        // A failed read is not evidence that onboarding has never started.
+        // Keep a user-scoped offline mirror when one exists; otherwise expose
+        // the failure so AuthGate can fail open without replaying the journey.
+        setState(cached);
+        setLoadFailure({ userId, error: remote.error });
+        setIsLoading(false);
+        return;
+      }
+      const serverState = normalizeRemoteState(userId, remote.value);
       const next =
         serverState &&
         (!cached ||
@@ -327,12 +340,19 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     [persist, track],
   );
 
-  const value = useMemo<OnboardingContextValue>(
-    () => ({
-      // Never expose another account's cached state during the passive-effect
-      // window after an auth identity changes.
-      state: state?.userId === userId ? state : null,
-      isLoading: userId !== null && (isLoading || state?.userId !== userId),
+  const value = useMemo<OnboardingContextValue>(() => {
+    // Never expose another account's cached state or load failure during the
+    // passive-effect window after an auth identity changes.
+    const visibleState = state?.userId === userId ? state : null;
+    const visibleLoadError =
+      loadFailure?.userId === userId ? loadFailure.error : null;
+    return {
+      state: visibleState,
+      isLoading:
+        userId !== null &&
+        visibleLoadError === null &&
+        (isLoading || visibleState === null),
+      loadError: visibleLoadError,
       goBack,
       completePage,
       skipPage,
@@ -341,21 +361,21 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
       setPath,
       setIntentChoice,
       track,
-    }),
-    [
-      state,
-      isLoading,
-      userId,
-      goBack,
-      completePage,
-      skipPage,
-      dismissJourney,
-      completeJourney,
-      setPath,
-      setIntentChoice,
-      track,
-    ],
-  );
+    };
+  }, [
+    state,
+    isLoading,
+    loadFailure,
+    userId,
+    goBack,
+    completePage,
+    skipPage,
+    dismissJourney,
+    completeJourney,
+    setPath,
+    setIntentChoice,
+    track,
+  ]);
 
   return (
     <OnboardingContext.Provider value={value}>

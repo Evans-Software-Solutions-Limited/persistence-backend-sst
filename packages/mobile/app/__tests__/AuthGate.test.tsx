@@ -21,13 +21,29 @@ jest.mock("../../src/ui/hooks/useAuth", () => ({
 // soft-delete describe block below overrides the return value per test.
 const mockUseProfilePage = jest.fn<
   {
-    payload: { profile: { deletedAt: string | null } } | null;
+    payload: {
+      profile: { deletedAt: string | null; createdAt?: string | null };
+    } | null;
+    error?: unknown;
+    isAutoRetrying?: boolean;
     refresh: () => Promise<void>;
   },
   []
 >();
 jest.mock("../../src/ui/hooks/useProfilePage", () => ({
   useProfilePage: () => mockUseProfilePage(),
+}));
+
+const mockUseOptionalOnboarding = jest.fn<
+  {
+    state: { status: string; currentPage: string } | null;
+    isLoading: boolean;
+    loadError?: unknown;
+  } | null,
+  []
+>(() => null);
+jest.mock("../../src/ui/state/OnboardingProvider", () => ({
+  useOptionalOnboarding: () => mockUseOptionalOnboarding(),
 }));
 
 // Mock expo-router
@@ -143,8 +159,12 @@ describe("AuthGate", () => {
     mockUseGlobalSearchParams.mockReturnValue({});
     mockUseProfilePage.mockReturnValue({
       payload: null,
+      error: undefined,
       refresh: jest.fn(),
     });
+    mockUseOptionalOnboarding.mockReturnValue(null);
+    delete process.env.EXPO_PUBLIC_ONBOARDING_V1_ENABLED;
+    delete process.env.EXPO_PUBLIC_ONBOARDING_V1_ACTIVATED_AT;
     usePendingInvite.getState().reset();
     usePasswordRecovery.getState().reset();
   });
@@ -227,6 +247,176 @@ describe("AuthGate", () => {
     await waitFor(() => {
       expect(mockReplace).toHaveBeenCalledWith("/(app)/(tabs)");
     });
+  });
+
+  it("does not flash the app tabs while fresh-sign-up onboarding eligibility resolves", async () => {
+    process.env.EXPO_PUBLIC_ONBOARDING_V1_ENABLED = "true";
+    process.env.EXPO_PUBLIC_ONBOARDING_V1_ACTIVATED_AT =
+      "2026-09-01T00:00:00.000Z";
+    mockUseAuth.mockReturnValue({
+      session: SIGNED_IN_SESSION,
+      isLoading: false,
+    });
+    mockUseSegments.mockReturnValue(["(auth)"]);
+    mockUseProfilePage.mockReturnValue({
+      payload: null,
+      error: null,
+      refresh: jest.fn(),
+    });
+    mockUseOptionalOnboarding.mockReturnValue({
+      state: null,
+      isLoading: true,
+    });
+
+    const view = render(<RootLayout />);
+    expect(mockReplace).not.toHaveBeenCalled();
+
+    // Onboarding may resolve before the fresh profile request. We still need
+    // createdAt to apply the rollout cutoff, so this intermediate render must
+    // remain on the auth surface too.
+    mockUseOptionalOnboarding.mockReturnValue({
+      state: null,
+      isLoading: false,
+    });
+    view.rerender(<RootLayout />);
+    expect(mockReplace).not.toHaveBeenCalled();
+
+    mockUseProfilePage.mockReturnValue({
+      payload: {
+        profile: {
+          deletedAt: null,
+          createdAt: "2026-09-01T12:00:00.000Z",
+        },
+      },
+      error: null,
+      refresh: jest.fn(),
+    });
+    view.rerender(<RootLayout />);
+
+    await waitFor(() =>
+      expect(mockReplace).toHaveBeenCalledWith("/(onboarding)/welcome"),
+    );
+    expect(mockReplace).not.toHaveBeenCalledWith("/(app)/(tabs)");
+  });
+
+  it("does not wait on onboarding when the rollout is disabled", async () => {
+    mockUseAuth.mockReturnValue({
+      session: SIGNED_IN_SESSION,
+      isLoading: false,
+    });
+    mockUseSegments.mockReturnValue(["(auth)"]);
+    mockUseOptionalOnboarding.mockReturnValue({
+      state: null,
+      isLoading: true,
+    });
+
+    render(<RootLayout />);
+
+    await waitFor(() =>
+      expect(mockReplace).toHaveBeenCalledWith("/(app)/(tabs)"),
+    );
+  });
+
+  it("exits an onboarding route when the rollout is disabled", async () => {
+    mockUseAuth.mockReturnValue({
+      session: SIGNED_IN_SESSION,
+      isLoading: false,
+    });
+    mockUseSegments.mockReturnValue(["(onboarding)", "profile"]);
+    mockUseOptionalOnboarding.mockReturnValue({
+      state: { status: "in_progress", currentPage: "profile" },
+      isLoading: true,
+    });
+
+    render(<RootLayout />);
+
+    await waitFor(() =>
+      expect(mockReplace).toHaveBeenCalledWith("/(app)/(tabs)"),
+    );
+  });
+
+  it("holds routing through profile retry backoff", async () => {
+    process.env.EXPO_PUBLIC_ONBOARDING_V1_ENABLED = "true";
+    process.env.EXPO_PUBLIC_ONBOARDING_V1_ACTIVATED_AT =
+      "2026-09-01T00:00:00.000Z";
+    mockUseAuth.mockReturnValue({
+      session: SIGNED_IN_SESSION,
+      isLoading: false,
+    });
+    mockUseSegments.mockReturnValue(["(auth)"]);
+    mockUseProfilePage.mockReturnValue({
+      payload: null,
+      error: new Error("first attempt failed"),
+      isAutoRetrying: true,
+      refresh: jest.fn(),
+    });
+    mockUseOptionalOnboarding.mockReturnValue({
+      state: null,
+      isLoading: false,
+    });
+
+    render(<RootLayout />);
+
+    expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  it("fails open when onboarding cannot be loaded and has no cached state", async () => {
+    process.env.EXPO_PUBLIC_ONBOARDING_V1_ENABLED = "true";
+    process.env.EXPO_PUBLIC_ONBOARDING_V1_ACTIVATED_AT =
+      "2026-09-01T00:00:00.000Z";
+    mockUseAuth.mockReturnValue({
+      session: SIGNED_IN_SESSION,
+      isLoading: false,
+    });
+    mockUseSegments.mockReturnValue(["(auth)"]);
+    mockUseProfilePage.mockReturnValue({
+      payload: {
+        profile: {
+          deletedAt: null,
+          createdAt: "2026-09-01T12:00:00.000Z",
+        },
+      },
+      error: null,
+      refresh: jest.fn(),
+    });
+    mockUseOptionalOnboarding.mockReturnValue({
+      state: null,
+      isLoading: false,
+      loadError: new Error("onboarding unavailable"),
+    });
+
+    render(<RootLayout />);
+
+    await waitFor(() =>
+      expect(mockReplace).toHaveBeenCalledWith("/(app)/(tabs)"),
+    );
+    expect(mockReplace).not.toHaveBeenCalledWith("/(onboarding)/welcome");
+  });
+
+  it("fails open to the app after profile eligibility loading exhausts", async () => {
+    process.env.EXPO_PUBLIC_ONBOARDING_V1_ENABLED = "true";
+    process.env.EXPO_PUBLIC_ONBOARDING_V1_ACTIVATED_AT =
+      "2026-09-01T00:00:00.000Z";
+    mockUseAuth.mockReturnValue({
+      session: SIGNED_IN_SESSION,
+      isLoading: false,
+    });
+    mockUseSegments.mockReturnValue(["(auth)"]);
+    mockUseProfilePage.mockReturnValue({
+      payload: null,
+      error: new Error("profile unavailable"),
+      refresh: jest.fn(),
+    });
+    mockUseOptionalOnboarding.mockReturnValue({
+      state: null,
+      isLoading: false,
+    });
+
+    render(<RootLayout />);
+
+    await waitFor(() =>
+      expect(mockReplace).toHaveBeenCalledWith("/(app)/(tabs)"),
+    );
   });
 
   it("does not redirect authenticated user already on app route", () => {
