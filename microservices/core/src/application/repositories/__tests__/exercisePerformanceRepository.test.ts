@@ -80,6 +80,9 @@ describe("ExercisePerformanceRepository", () => {
       oneRepSourceCompletedAt: new Date("2026-08-01T10:00:00Z"),
       tenRepMaxKg: "120.00",
       tenRepMaxCompletedAt: new Date("2026-08-01T10:00:00Z"),
+      heaviestSetWeightKg: "180.00",
+      heaviestSetSourceReps: 4,
+      heaviestSetSourceCompletedAt: new Date("2026-08-03T10:00:00Z"),
       bestSetVolumeKg: "1200.00",
       bestVolumeSourceWeightKg: "120.00",
       bestVolumeSourceReps: 10,
@@ -101,6 +104,14 @@ describe("ExercisePerformanceRepository", () => {
       estimatedOneRepMax: { estimateKg: 160, source },
       estimatedTenRepMax: { estimateKg: 120, source },
       tenRepMax: { weightKg: 120, source },
+      heaviestSet: {
+        weightKg: 180,
+        source: {
+          weightKg: 180,
+          reps: 4,
+          completedAt: "2026-08-03T10:00:00.000Z",
+        },
+      },
       bestSetVolume: { volumeKg: 1200, source },
       lifetimeVolumeKg: 3650,
     });
@@ -130,6 +141,9 @@ describe("ExercisePerformanceRepository", () => {
       oneRepSourceCompletedAt: null,
       tenRepMaxKg: null,
       tenRepMaxCompletedAt: null,
+      heaviestSetWeightKg: "50",
+      heaviestSetSourceReps: 20,
+      heaviestSetSourceCompletedAt: "2026-08-02T10:00:00.000Z",
       bestSetVolumeKg: "1000",
       bestVolumeSourceWeightKg: "50",
       bestVolumeSourceReps: 20,
@@ -143,6 +157,14 @@ describe("ExercisePerformanceRepository", () => {
       estimatedOneRepMax: null,
       estimatedTenRepMax: null,
       tenRepMax: null,
+      heaviestSet: {
+        weightKg: 50,
+        source: {
+          weightKg: 50,
+          reps: 20,
+          completedAt: "2026-08-02T10:00:00.000Z",
+        },
+      },
       bestSetVolume: {
         volumeKg: 1000,
         source: {

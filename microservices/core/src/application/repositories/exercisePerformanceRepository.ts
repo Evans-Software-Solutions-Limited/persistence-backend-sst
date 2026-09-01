@@ -27,6 +27,11 @@ export type ExercisePerformanceSummary = {
     weightKg: number;
     source: PerformanceSetSource;
   } | null;
+  /** Greatest load recorded in any completed weighted set. */
+  heaviestSet: {
+    weightKg: number;
+    source: PerformanceSetSource;
+  };
   /** Greatest load × repetitions recorded in one completed set. */
   bestSetVolume: {
     volumeKg: number;
@@ -124,6 +129,9 @@ export class ExercisePerformanceRepository {
           string | null
         >`max(${exerciseSets.weightKg}) filter (where ${exactlyTen})`,
         tenRepMaxCompletedAt: sql<Date | null>`(array_agg(${recordedAt} order by ${exerciseSets.weightKg} desc, ${recordedAt} desc) filter (where ${exactlyTen}))[1]`,
+        heaviestSetWeightKg: sql<string>`max(${exerciseSets.weightKg})`,
+        heaviestSetSourceReps: sql<number>`(array_agg(${exerciseSets.reps} order by ${exerciseSets.weightKg} desc, ${recordedAt} desc))[1]`,
+        heaviestSetSourceCompletedAt: sql<Date>`(array_agg(${recordedAt} order by ${exerciseSets.weightKg} desc, ${recordedAt} desc))[1]`,
         bestSetVolumeKg: sql<string>`max(${setVolume})`,
         bestVolumeSourceWeightKg: sql<string>`(array_agg(${exerciseSets.weightKg} order by ${setVolume} desc, ${recordedAt} desc))[1]`,
         bestVolumeSourceReps: sql<number>`(array_agg(${exerciseSets.reps} order by ${setVolume} desc, ${recordedAt} desc))[1]`,
@@ -176,6 +184,11 @@ export class ExercisePerformanceRepository {
       10,
       row.tenRepMaxCompletedAt,
     );
+    const heaviestSetSource = setSource(
+      row.heaviestSetWeightKg,
+      row.heaviestSetSourceReps,
+      row.heaviestSetSourceCompletedAt,
+    );
     const bestVolumeSource = setSource(
       row.bestVolumeSourceWeightKg,
       row.bestVolumeSourceReps,
@@ -187,6 +200,7 @@ export class ExercisePerformanceRepository {
     // Count > 0 guarantees these aggregate values. Fail closed if a driver or
     // schema mismatch violates that invariant rather than emitting bad stats.
     if (
+      !heaviestSetSource ||
       !bestVolumeSource ||
       bestSetVolumeKg == null ||
       lifetimeVolumeKg == null
@@ -206,6 +220,10 @@ export class ExercisePerformanceRepository {
       tenRepMax: tenRepSource
         ? { weightKg: tenRepSource.weightKg, source: tenRepSource }
         : null,
+      heaviestSet: {
+        weightKg: heaviestSetSource.weightKg,
+        source: heaviestSetSource,
+      },
       bestSetVolume: {
         volumeKg: bestSetVolumeKg,
         source: bestVolumeSource,
