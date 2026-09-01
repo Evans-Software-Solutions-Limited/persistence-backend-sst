@@ -164,6 +164,17 @@ describe("BottomSheet", () => {
     expect(getByText("just body")).toBeTruthy();
   });
 
+  it("lets fixed controls own scrolling gestures", () => {
+    const { getByTestId, UNSAFE_queryByType } = renderWithTheme(
+      <BottomSheet visible onClose={() => undefined} scrollable={false}>
+        <Text>Wheel controls</Text>
+      </BottomSheet>,
+    );
+
+    expect(getByTestId("bottom-sheet-static-body")).toBeTruthy();
+    expect(UNSAFE_queryByType(BottomSheetScrollView)).toBeNull();
+  });
+
   // The `footer` region exists so a commit action cannot scroll below the fold.
   // Jest renders gorhom as plain Views, so these pin the STRUCTURE (footer is a
   // sibling of the scroll body, not a child of it) — the thing reading the diff

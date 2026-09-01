@@ -6,7 +6,11 @@ import {
 } from "@react-native-community/datetimepicker";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 
-import { DateCalendarModal, DatePickerField } from "../DatePickerField";
+import {
+  DateCalendarModal,
+  DatePickerField,
+  nativeDateSheetHeightPercent,
+} from "../DatePickerField";
 
 describe("DatePickerField", () => {
   const originalPlatform = Platform.OS;
@@ -19,7 +23,7 @@ describe("DatePickerField", () => {
     jest.restoreAllMocks();
   });
 
-  it("persists the selected date as an ISO calendar day", () => {
+  it("looks like a form field and confirms the native wheel selection", () => {
     const onChange = jest.fn();
     const screen = renderWithTheme(
       <DatePickerField
@@ -27,12 +31,18 @@ describe("DatePickerField", () => {
         value="1994-03-12"
         onChange={onChange}
         maximumDate="2026-09-01"
+        locale="en-GB"
       />,
     );
 
-    fireEvent(screen.getByTestId("date-picker-field-native"), "change", {
+    expect(screen.getByText("12 Mar 1994")).toBeTruthy();
+    fireEvent.press(screen.getByTestId("date-picker-field"));
+    expect(screen.getByTestId("date-picker-field-drawer-wheels")).toBeTruthy();
+    fireEvent(screen.getByTestId("date-picker-field-drawer-native"), "change", {
       nativeEvent: { timestamp: new Date(1994, 2, 8, 12).getTime() },
     });
+    expect(onChange).not.toHaveBeenCalled();
+    fireEvent.press(screen.getByTestId("date-picker-field-drawer-confirm"));
 
     expect(onChange).toHaveBeenCalledWith("1994-03-08");
   });
@@ -47,7 +57,8 @@ describe("DatePickerField", () => {
       />,
     );
 
-    fireEvent.press(screen.getByTestId("date-picker-field-clear"));
+    fireEvent.press(screen.getByTestId("date-picker-field"));
+    fireEvent.press(screen.getByTestId("date-picker-field-drawer-clear"));
     expect(onChange).toHaveBeenCalledWith("");
   });
 
@@ -71,10 +82,8 @@ describe("DatePickerField", () => {
     );
 
     fireEvent.press(screen.getByTestId("date-picker-field"));
-
     expect(open).toHaveBeenCalledTimes(1);
     const options = open.mock.calls[0]?.[0];
-    expect(options?.display).toBe("default");
     expect(options?.minimumDate).toEqual(new Date(1900, 0, 1, 12));
     expect(options?.maximumDate).toEqual(new Date(2026, 8, 1, 12));
 
@@ -89,6 +98,11 @@ describe("DatePickerField", () => {
       new Date(1994, 2, 8, 12),
     );
     expect(onChange).toHaveBeenCalledWith("1994-03-08");
+  });
+
+  it("uses a taller native drawer where a small iPhone needs it", () => {
+    expect(nativeDateSheetHeightPercent(667)).toBe(69);
+    expect(nativeDateSheetHeightPercent(956)).toBe(52);
   });
 });
 

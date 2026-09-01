@@ -103,11 +103,13 @@ describe("EditProfilePresenter", () => {
       <EditProfilePresenter {...makeProps({ onDateOfBirthChange })} />,
     );
     expect(getByTestId("edit-profile-dob").props.accessibilityLabel).toContain(
-      "January 15, 1990",
+      "Jan 15, 1990",
     );
-    fireEvent(getByTestId("edit-profile-dob-native"), "change", {
+    fireEvent.press(getByTestId("edit-profile-dob"));
+    fireEvent(getByTestId("edit-profile-dob-drawer-native"), "change", {
       nativeEvent: { timestamp: new Date(1990, 0, 10, 12).getTime() },
     });
+    fireEvent.press(getByTestId("edit-profile-dob-drawer-confirm"));
     expect(onDateOfBirthChange).toHaveBeenCalledWith("1990-01-10");
   });
 

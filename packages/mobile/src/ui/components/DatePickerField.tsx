@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Modal, Platform, Pressable } from "react-native";
+import { Modal, Platform, Pressable, useWindowDimensions } from "react-native";
 import DateTimePicker, {
   DateTimePickerAndroid,
   type DateTimePickerEvent,
@@ -7,12 +7,12 @@ import DateTimePicker, {
 import { Text, View } from "@tamagui/core";
 
 import {
-  IconCalendar,
+  IconChevronD,
   IconChevronL,
   IconChevronR,
   IconX,
 } from "@/ui/components/icons";
-import { IconBtn } from "@/ui/components/foundation";
+import { BottomSheet, Btn, IconBtn } from "@/ui/components/foundation";
 import { NEUTRAL_HEX, toneHex } from "@/ui/components/foundation/tones";
 
 const WEEKDAY_LETTERS = ["M", "T", "W", "T", "F", "S", "S"];
@@ -78,7 +78,7 @@ function formatDisplayDate(value: string, locale?: string): string {
   if (!validIsoDay(value)) return "Select date";
   return new Date(`${value}T00:00:00.000Z`).toLocaleDateString(locale, {
     day: "numeric",
-    month: "long",
+    month: "short",
     year: "numeric",
     timeZone: "UTC",
   });
@@ -87,7 +87,7 @@ function formatDisplayDate(value: string, locale?: string): string {
 function nativeDate(value: string, fallback: string): Date {
   const day = validIsoDay(value) ? value : fallback;
   const [year, month, date] = day.split("-").map(Number);
-  // Noon avoids a daylight-saving boundary changing the selected calendar day.
+  // Noon prevents a daylight-saving boundary changing the calendar day.
   return new Date(year, month - 1, date, 12);
 }
 
@@ -474,6 +474,137 @@ export function DateCalendarModal({
   );
 }
 
+type NativeDateSheetProps = {
+  visible: boolean;
+  value: string;
+  minimumDate?: string;
+  maximumDate?: string;
+  allowClear: boolean;
+  onChange: (value: string) => void;
+  onClose: () => void;
+  label: string;
+  locale?: string;
+  testID: string;
+};
+
+/** Keep enough physical height for iOS's 216pt spinner plus sheet chrome. */
+export function nativeDateSheetHeightPercent(windowHeight: number): number {
+  return Math.min(88, Math.max(52, Math.ceil((460 / windowHeight) * 100)));
+}
+
+function NativeDateSheet({
+  visible,
+  value,
+  minimumDate,
+  maximumDate,
+  allowClear,
+  onChange,
+  onClose,
+  label,
+  locale,
+  testID,
+}: NativeDateSheetProps) {
+  const windowHeight = useWindowDimensions().height;
+  const fallback =
+    maximumDate && validIsoDay(maximumDate) ? maximumDate : todayIso();
+  const selected = nativeDate(value, fallback);
+  const minimum =
+    minimumDate && validIsoDay(minimumDate)
+      ? nativeDate(minimumDate, fallback)
+      : undefined;
+  const maximum =
+    maximumDate && validIsoDay(maximumDate)
+      ? nativeDate(maximumDate, fallback)
+      : undefined;
+  const [draft, setDraft] = useState(selected);
+  const selectedTime = selected.getTime();
+
+  useEffect(() => {
+    if (!visible) return;
+    setDraft(new Date(selectedTime));
+  }, [selectedTime, visible]);
+
+  const footer = (
+    <View flexDirection="row" gap={10}>
+      {allowClear && value ? (
+        <View flex={1}>
+          <Btn
+            variant="outline"
+            tone="primary"
+            size="lg"
+            full
+            onPress={() => {
+              onChange("");
+              onClose();
+            }}
+            testID={`${testID}-clear`}
+          >
+            Clear date
+          </Btn>
+        </View>
+      ) : null}
+      <View flex={1}>
+        <Btn
+          variant="filled"
+          tone="primary"
+          size="lg"
+          full
+          onPress={() => {
+            onChange(nativeDateToIso(draft));
+            onClose();
+          }}
+          testID={`${testID}-confirm`}
+        >
+          Done
+        </Btn>
+      </View>
+    </View>
+  );
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="none"
+      presentationStyle="overFullScreen"
+      statusBarTranslucent
+      onRequestClose={onClose}
+    >
+      <View flex={1}>
+        <BottomSheet
+          visible={visible}
+          onClose={onClose}
+          eyebrow="SELECT DATE"
+          title={label}
+          accent="primary"
+          height={nativeDateSheetHeightPercent(windowHeight)}
+          footer={footer}
+          scrollable={false}
+          testID={testID}
+        >
+          <View flex={1} justifyContent="center" testID={`${testID}-wheels`}>
+            <DateTimePicker
+              value={draft}
+              mode="date"
+              display="spinner"
+              minimumDate={minimum}
+              maximumDate={maximum}
+              locale={locale}
+              themeVariant="dark"
+              accentColor={toneHex("primary").base}
+              style={{ width: "100%" }}
+              onChange={(event, nextDate) => {
+                if (event.type === "set" && nextDate) setDraft(nextDate);
+              }}
+              testID={`${testID}-native`}
+            />
+          </View>
+        </BottomSheet>
+      </View>
+    </Modal>
+  );
+}
+
 export type DatePickerFieldProps = {
   label: string;
   value: string;
@@ -517,76 +648,29 @@ export function DatePickerField({
     if (event.type === "set" && nextDate) onChange(nativeDateToIso(nextDate));
   };
 
-  const openAndroidPicker = () => {
-    DateTimePickerAndroid.open({
-      value: selected,
-      mode: "date",
-      display: "default",
-      minimumDate: minimum,
-      maximumDate: maximum,
-      onChange: handleNativeChange,
-    });
+  const openPicker = () => {
+    if (Platform.OS === "android") {
+      DateTimePickerAndroid.open({
+        value: selected,
+        mode: "date",
+        display: "default",
+        minimumDate: minimum,
+        maximumDate: maximum,
+        onChange: handleNativeChange,
+      });
+      return;
+    }
+    setOpen(true);
   };
-
-  if (Platform.OS === "ios") {
-    return (
-      <>
-        <View
-          minHeight={40}
-          flexDirection="row"
-          alignItems="center"
-          justifyContent="flex-start"
-          opacity={disabled ? 0.5 : 1}
-          accessibilityLabel={`${label}, ${value ? `selected ${display}` : "not selected"}`}
-          accessibilityState={{ disabled }}
-          testID={testID}
-        >
-          <DateTimePicker
-            value={selected}
-            mode="date"
-            display="compact"
-            minimumDate={minimum}
-            maximumDate={maximum}
-            disabled={disabled}
-            locale={locale}
-            themeVariant="dark"
-            accentColor={toneHex("primary").base}
-            onChange={handleNativeChange}
-            testID={`${testID}-native`}
-          />
-        </View>
-        {allowClear && value ? (
-          <Pressable
-            onPress={() => onChange("")}
-            disabled={disabled}
-            accessibilityRole="button"
-            accessibilityLabel={`Clear ${label.toLowerCase()}`}
-            testID={`${testID}-clear`}
-          >
-            <Text color="$primary" fontSize={12} marginTop={6}>
-              Clear date
-            </Text>
-          </Pressable>
-        ) : null}
-        {helperText ? (
-          <Text fontFamily="$body" fontSize={11} color="$text3" marginTop={4}>
-            {helperText}
-          </Text>
-        ) : null}
-      </>
-    );
-  }
 
   return (
     <>
       <Pressable
-        onPress={() =>
-          Platform.OS === "android" ? openAndroidPicker() : setOpen(true)
-        }
+        onPress={openPicker}
         disabled={disabled}
         accessibilityRole="button"
         accessibilityLabel={`${label}, ${value ? `selected ${display}` : "not selected"}`}
-        accessibilityHint="Opens a calendar"
+        accessibilityHint="Opens date selectors"
         accessibilityState={{ disabled }}
         testID={testID}
         style={({ pressed }) => ({
@@ -611,9 +695,14 @@ export function DatePickerField({
           >
             {display}
           </Text>
-          <IconCalendar size={18} color={NEUTRAL_HEX.text3} />
+          <IconChevronD size={18} color={NEUTRAL_HEX.text3} />
         </View>
       </Pressable>
+      {helperText ? (
+        <Text fontFamily="$body" fontSize={11} color="$text3" marginTop={4}>
+          {helperText}
+        </Text>
+      ) : null}
       {Platform.OS === "android" && allowClear && value ? (
         <Pressable
           onPress={() => onChange("")}
@@ -627,10 +716,19 @@ export function DatePickerField({
           </Text>
         </Pressable>
       ) : null}
-      {helperText ? (
-        <Text fontFamily="$body" fontSize={11} color="$text3" marginTop={4}>
-          {helperText}
-        </Text>
+      {Platform.OS === "ios" ? (
+        <NativeDateSheet
+          visible={open}
+          value={value}
+          minimumDate={minimumDate}
+          maximumDate={maximumDate}
+          allowClear={allowClear}
+          onChange={onChange}
+          onClose={() => setOpen(false)}
+          label={label}
+          locale={locale}
+          testID={`${testID}-drawer`}
+        />
       ) : null}
       {Platform.OS === "web" ? (
         <DateCalendarModal

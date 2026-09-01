@@ -68,6 +68,8 @@ export type BottomSheetProps = {
    * reachable however tall `children` grows. See the component docstring.
    */
   footer?: ReactNode;
+  /** Fixed controls (for example wheel pickers) can own their gestures. */
+  scrollable?: boolean;
   testID?: string;
 };
 
@@ -113,6 +115,7 @@ export function BottomSheet({
   height = "default",
   children,
   footer,
+  scrollable = true,
   testID,
 }: BottomSheetProps) {
   const ref = useRef<GorhomBottomSheet>(null);
@@ -321,30 +324,41 @@ export function BottomSheet({
           </View>
         ) : null}
 
-        <BottomSheetScrollView
-          // `flex: 1` bounds the scroll view to the space below the fixed
-          // header (the sheet is a fixed-height flex column now that dynamic
-          // sizing is off). Without it the scroll view grows to its content
-          // height and overflows — clipped by the sheet's `overflow: hidden`,
-          // so the body looked cut off and unscrollable.
-          style={{ flex: 1 }}
-          // Add the bottom safe-area inset so the last row (e.g. the drawer's
-          // Sign out) clears the home indicator instead of sitting under it —
-          // when the body is ~sheet-height it otherwise looks cut off and
-          // there's nothing to scroll to. The extra height also lets the
-          // scroll view engage when the content is borderline.
-          //
-          // With a `footer`, that inset moves to the footer instead: the footer
-          // is what now sits against the home indicator, and paying the inset
-          // twice would leave a dead band of scroll above it.
-          contentContainerStyle={{
-            padding: 20,
-            paddingBottom: footer ? 24 : 40 + bottomInset,
-          }}
-          keyboardShouldPersistTaps="handled"
-        >
-          {children}
-        </BottomSheetScrollView>
+        {scrollable ? (
+          <BottomSheetScrollView
+            // `flex: 1` bounds the scroll view to the space below the fixed
+            // header (the sheet is a fixed-height flex column now that dynamic
+            // sizing is off). Without it the scroll view grows to its content
+            // height and overflows — clipped by the sheet's `overflow: hidden`,
+            // so the body looked cut off and unscrollable.
+            style={{ flex: 1 }}
+            // Add the bottom safe-area inset so the last row (e.g. the drawer's
+            // Sign out) clears the home indicator instead of sitting under it —
+            // when the body is ~sheet-height it otherwise looks cut off and
+            // there's nothing to scroll to. The extra height also lets the
+            // scroll view engage when the content is borderline.
+            //
+            // With a `footer`, that inset moves to the footer instead: the footer
+            // is what now sits against the home indicator, and paying the inset
+            // twice would leave a dead band of scroll above it.
+            contentContainerStyle={{
+              padding: 20,
+              paddingBottom: footer ? 24 : 40 + bottomInset,
+            }}
+            keyboardShouldPersistTaps="handled"
+          >
+            {children}
+          </BottomSheetScrollView>
+        ) : (
+          <View
+            flex={1}
+            padding={20}
+            paddingBottom={footer ? 24 : 40 + bottomInset}
+            testID="bottom-sheet-static-body"
+          >
+            {children}
+          </View>
+        )}
 
         {footer ? (
           <View
