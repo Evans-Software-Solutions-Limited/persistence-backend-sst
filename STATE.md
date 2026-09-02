@@ -16,6 +16,13 @@ say so and fix this file.
 Workout creation/editing and live sessions now use nestable draggable lists;
 supersets move as indivisible blocks, handle long-press starts drag with haptics,
 exact block positions persist, and accessibility actions/announcements remain.
+Post-PR simulator QA found two iOS gesture regressions: Active Session now uses
+one draggable list as its scroll surface instead of competing nested vertical
+recognizers, and native swipe-to-dismiss is disabled on Create Workout, Edit
+Workout and Active Session so the modal cannot steal a handle drag. The same
+simulated vertical gesture that previously dismissed the session now leaves it
+open; simulator mouse input cannot reliably trigger React Native long-press,
+so physical-device handle feel remains an owner check before release.
 Native splash/bootstrap/auth-callback surfaces use the canonical dark background.
 Optional native Meta install/open measurement is explicitly consent gated (plus
 ATT on iOS), sends only the parameter-free activation event/advertising ID,
