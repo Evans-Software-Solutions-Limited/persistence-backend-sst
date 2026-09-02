@@ -407,16 +407,18 @@ describe("ActiveSessionPresenter (vertical scroll, legacy parity)", () => {
     let nextFrame = 1;
     const frames = new Map<number, FrameRequestCallback>();
     jest
-      .spyOn(global, "requestAnimationFrame")
-      .mockImplementation((callback) => {
+      .spyOn(globalThis, "requestAnimationFrame")
+      .mockImplementation((callback: FrameRequestCallback) => {
         const frame = nextFrame;
         nextFrame += 1;
         frames.set(frame, callback);
         return frame;
       });
-    jest.spyOn(global, "cancelAnimationFrame").mockImplementation((frame) => {
-      frames.delete(frame);
-    });
+    jest
+      .spyOn(globalThis, "cancelAnimationFrame")
+      .mockImplementation((frame: number) => {
+        frames.delete(frame);
+      });
     jest
       .spyOn(AppState, "addEventListener")
       .mockImplementation((_type, listener) => {
