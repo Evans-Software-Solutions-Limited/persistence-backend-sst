@@ -135,7 +135,7 @@ export function ActiveSupersetRow(props: ActiveSupersetRowProps) {
       testID={`superset-group-${props.supersetGroup}`}
     >
       <View style={styles.supersetConnector}>
-        {props.onMove &&
+        {(props.onMove || props.onDrag) &&
         props.reorderPosition &&
         props.reorderTotal &&
         leadExercise ? (

@@ -657,39 +657,59 @@ jest.mock("react-native-draggable-flatlist", () => {
   const { View } = require("react-native");
   const NestableScrollContainer = ({ children, ...props }: any) =>
     React.createElement(View, props, children);
-  const NestableDraggableFlatList = ({
-    data,
-    renderItem,
-    keyExtractor,
-    onDragEnd,
-    ListHeaderComponent,
-    ListEmptyComponent,
-    ListFooterComponent,
-    ...props
-  }: any) => {
-    const renderSlot = (slot: any) => {
-      if (!slot) return null;
-      return React.isValidElement(slot) ? slot : React.createElement(slot);
-    };
-    const children = [
-      renderSlot(ListHeaderComponent),
-      data.length === 0 ? renderSlot(ListEmptyComponent) : null,
-      ...data.map((item: any, index: number) =>
-        React.createElement(
-          View,
-          { key: keyExtractor(item, index) },
-          renderItem({
-            item,
-            drag: jest.fn(),
-            isActive: false,
-            getIndex: () => index,
-          }),
+  const NestableDraggableFlatList = React.forwardRef(
+    (allProps: any, ref: any) => {
+      const {
+        data,
+        renderItem,
+        keyExtractor,
+        onDragBegin,
+        onDragEnd,
+        ListHeaderComponent,
+        ListEmptyComponent,
+        ListFooterComponent,
+        ...props
+      } = allProps;
+      const scrollToOffset = React.useMemo(() => jest.fn(), []);
+      React.useImperativeHandle(ref, () => ({ scrollToOffset }), [
+        scrollToOffset,
+      ]);
+      const dragMocks = data.map((_: unknown, index: number) =>
+        jest.fn(() => onDragBegin?.(index)),
+      );
+      const renderSlot = (slot: any) => {
+        if (!slot) return null;
+        return React.isValidElement(slot) ? slot : React.createElement(slot);
+      };
+      const children = [
+        renderSlot(ListHeaderComponent),
+        data.length === 0 ? renderSlot(ListEmptyComponent) : null,
+        ...data.map((item: any, index: number) =>
+          React.createElement(
+            View,
+            { key: keyExtractor(item, index) },
+            renderItem({
+              item,
+              drag: dragMocks[index],
+              isActive: false,
+              getIndex: () => index,
+            }),
+          ),
         ),
-      ),
-      renderSlot(ListFooterComponent),
-    ].filter(Boolean);
-    return React.createElement(View, { ...props, onDragEnd }, ...children);
-  };
+        renderSlot(ListFooterComponent),
+      ].filter(Boolean);
+      return React.createElement(
+        View,
+        {
+          ...props,
+          onDragBegin,
+          onDragEnd,
+          testScrollToOffset: scrollToOffset,
+        },
+        ...children,
+      );
+    },
+  );
   const ScaleDecorator = ({ children }: any) => children;
   return {
     __esModule: true,

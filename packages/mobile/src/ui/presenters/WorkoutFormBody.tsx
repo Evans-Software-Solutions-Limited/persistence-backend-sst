@@ -14,7 +14,7 @@ import {
   ScaleDecorator,
   type RenderItemParams,
 } from "react-native-draggable-flatlist";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AddExercisePopover } from "@/ui/components/workouts/AddExercisePopover";
 import { ExerciseConfigCard } from "@/ui/components/workouts/ExerciseConfigCard";
@@ -163,6 +163,7 @@ export function WorkoutFormBody({
   saveLabel,
   ownerToggleSub,
 }: WorkoutFormBodyProps) {
+  const insets = useSafeAreaInsets();
   const exercises = formState.exercises;
   const supersetLetters = buildSupersetLetterMap(
     exercises.map((ex) => ex.superset_group),
@@ -195,7 +196,15 @@ export function WorkoutFormBody({
 
   return (
     <>
-      <SafeAreaView style={{ flex: 1, backgroundColor: "#0A0B12" }}>
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: color.$bg,
+          paddingTop: insets.top,
+          paddingBottom: insets.bottom,
+        }}
+        testID="workout-form-screen"
+      >
         <View flex={1}>
           <HeaderBar
             title={headerTitle}
@@ -444,9 +453,17 @@ export function WorkoutFormBody({
                       keyExtractor={(block) => block[0].id}
                       scrollEnabled={false}
                       autoscrollThreshold={72}
-                      autoscrollSpeed={120}
+                      autoscrollSpeed={80}
                       activationDistance={6}
-                      dragItemOverflow
+                      renderPlaceholder={() => (
+                        <View
+                          flex={1}
+                          borderRadius={14}
+                          borderWidth={1}
+                          borderColor="$primary"
+                          backgroundColor="$primaryDim"
+                        />
+                      )}
                       ItemSeparatorComponent={() => <View height={10} />}
                       onDragEnd={({ from, to }) => {
                         if (from === to) return;
@@ -629,7 +646,7 @@ export function WorkoutFormBody({
             </View>
           </View>
         </View>
-      </SafeAreaView>
+      </View>
 
       <AddExercisePopover
         visible={pickerVisible}

@@ -4,7 +4,7 @@
  * list does. Each screen already provides an explicit close/minimise action.
  */
 export const reorderModalOptions = {
-  presentation: "modal" as const,
+  presentation: "fullScreenModal" as const,
   headerShown: false,
   gestureEnabled: false,
 };

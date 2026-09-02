@@ -22,9 +22,10 @@
  */
 
 import { Ionicons } from "@expo/vector-icons";
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   AccessibilityInfo,
+  AppState,
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
@@ -33,12 +34,18 @@ import {
   View,
 } from "react-native";
 import DraggableFlatList, {
-  ScaleDecorator,
   type RenderItemParams,
 } from "react-native-draggable-flatlist";
+import type { FlatList } from "react-native-gesture-handler";
+import type { SharedValue } from "react-native-reanimated";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ActiveSupersetRow } from "@/ui/components/session/ActiveSupersetRow";
 import { RestTimerDisplay } from "@/ui/components/session/RestTimerDisplay";
 import { SessionExerciseCard } from "@/ui/components/session/SessionExerciseCard";
+import {
+  COMPACT_REORDER_ROW_HEIGHT,
+  CompactReorderRow,
+} from "@/ui/components/workouts/CompactReorderRow";
 import { SessionHeader } from "@/ui/components/session/SessionHeader";
 import { TrainerBannerPresenter } from "@/ui/presenters/TrainerBannerPresenter";
 import { Btn } from "@/ui/components/foundation/Btn";
@@ -207,7 +214,28 @@ function buildDisplayItems(exercises: SessionExercise[]): DisplayItem[] {
   return items;
 }
 
+function displayItemKey(item: DisplayItem) {
+  return item.kind === "exercise"
+    ? item.exercise.id
+    : `superset-${item.supersetGroup}`;
+}
+
 export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
+  const insets = useSafeAreaInsets();
+  const [isReordering, setIsReordering] = useState(false);
+  const [dragAnchorPadding, setDragAnchorPadding] = useState(0);
+  const [dragContentMinHeight, setDragContentMinHeight] = useState(0);
+  const [dragListEpoch, setDragListEpoch] = useState(0);
+  const listRef = useRef<FlatList<DisplayItem>>(null);
+  const fullCellHeightsRef = useRef(new Map<string, number>());
+  const fullContentHeightRef = useRef(0);
+  const isReorderingRef = useRef(false);
+  const pendingScrollFrameRef = useRef<number | null>(null);
+  const restoreAfterRemountRef = useRef(false);
+  const restoreScrollOffsetRef = useRef(0);
+  const activeCellSizeRef = useRef<SharedValue<number> | null>(null);
+  const activeCellOffsetRef = useRef<SharedValue<number> | null>(null);
+  const scrollOffsetRef = useRef<SharedValue<number> | null>(null);
   const weightUnit = props.weightUnit ?? "kg";
   const orderedExercises = useMemo(
     () => [...props.exercises].sort((a, b) => a.sortOrder - b.sortOrder),
@@ -218,8 +246,57 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
     [props.exercises],
   );
 
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (nextState) => {
+      if (nextState === "active" || !isReorderingRef.current) return;
+
+      // RNDFL 4.0.3 does not finalize a native CANCELLED pan. Resetting and
+      // remounting prevents an OS interruption from leaving the workout in
+      // compact mode with its scroll and Finish action disabled.
+      if (pendingScrollFrameRef.current !== null) {
+        cancelAnimationFrame(pendingScrollFrameRef.current);
+        pendingScrollFrameRef.current = null;
+      }
+      isReorderingRef.current = false;
+      restoreAfterRemountRef.current = true;
+      setIsReordering(false);
+      setDragAnchorPadding(0);
+      setDragContentMinHeight(0);
+      setDragListEpoch((epoch) => epoch + 1);
+    });
+
+    return () => {
+      subscription.remove();
+      if (pendingScrollFrameRef.current !== null) {
+        cancelAnimationFrame(pendingScrollFrameRef.current);
+        pendingScrollFrameRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!restoreAfterRemountRef.current) return;
+    restoreAfterRemountRef.current = false;
+    pendingScrollFrameRef.current = requestAnimationFrame(() => {
+      const restoreScrollOffset = restoreScrollOffsetRef.current;
+      if (scrollOffsetRef.current) {
+        scrollOffsetRef.current.value = restoreScrollOffset;
+      }
+      listRef.current?.scrollToOffset?.({
+        offset: restoreScrollOffset,
+        animated: false,
+      });
+      pendingScrollFrameRef.current = null;
+    });
+  }, [dragListEpoch]);
+  const canReorder =
+    displayItems.length > 1 && props.onReorderExercise !== undefined;
+
   return (
-    <View style={styles.container} testID="active-session-screen">
+    <View
+      style={[styles.container, { paddingTop: insets.top }]}
+      testID="active-session-screen"
+    >
       {/* SetLogger TextInputs sit inside the ScrollView; without an
           explicit KeyboardAvoidingView wrapper the keyboard slides over
           the active weight/reps field and the user can't see what they're
@@ -229,24 +306,92 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         <DraggableFlatList
+          key={`active-session-drag-list-${dragListEpoch}`}
+          ref={listRef}
           testID="active-session-draggable-list"
           containerStyle={styles.scroll}
           style={styles.scroll}
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scrollContent,
+            dragContentMinHeight > 0
+              ? { minHeight: dragContentMinHeight }
+              : undefined,
+          ]}
+          onContentSizeChange={(_width, height) => {
+            if (!isReorderingRef.current) {
+              fullContentHeightRef.current = height;
+            }
+          }}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
           automaticallyAdjustKeyboardInsets
+          scrollEnabled={!isReordering}
           data={displayItems}
-          keyExtractor={(item) =>
-            item.kind === "exercise"
-              ? item.exercise.id
-              : `superset-${item.supersetGroup}`
-          }
-          autoscrollThreshold={72}
-          autoscrollSpeed={120}
+          extraData={isReordering}
+          onAnimValInit={({
+            activeCellOffset,
+            activeCellSize,
+            scrollOffset,
+          }) => {
+            activeCellOffsetRef.current = activeCellOffset;
+            activeCellSizeRef.current = activeCellSize;
+            scrollOffsetRef.current = scrollOffset;
+          }}
+          keyExtractor={displayItemKey}
+          autoscrollThreshold={48}
+          autoscrollSpeed={60}
           activationDistance={20}
-          dragItemOverflow
+          renderPlaceholder={() => <View style={styles.dragPlaceholder} />}
+          onDragBegin={(index) => {
+            const shrinkAbove = displayItems
+              .slice(0, index)
+              .reduce(
+                (total, item) =>
+                  total +
+                  Math.max(
+                    0,
+                    (fullCellHeightsRef.current.get(displayItemKey(item)) ??
+                      COMPACT_REORDER_ROW_HEIGHT) - COMPACT_REORDER_ROW_HEIGHT,
+                  ),
+                0,
+              );
+            const originalScrollOffset = scrollOffsetRef.current?.value ?? 0;
+            const compactScrollOffset = Math.max(
+              0,
+              originalScrollOffset - shrinkAbove,
+            );
+            const anchorPadding = Math.max(
+              0,
+              shrinkAbove - originalScrollOffset,
+            );
+            restoreScrollOffsetRef.current = originalScrollOffset;
+            if (activeCellSizeRef.current) {
+              activeCellSizeRef.current.value = COMPACT_REORDER_ROW_HEIGHT;
+            }
+            if (activeCellOffsetRef.current) {
+              activeCellOffsetRef.current.value =
+                activeCellOffsetRef.current.value - shrinkAbove + anchorPadding;
+            }
+            if (scrollOffsetRef.current) {
+              scrollOffsetRef.current.value = compactScrollOffset;
+            }
+            // Keep the full list's scroll extent while its cells and footer
+            // collapse. Without this lower anchor, native scrolling clamps a
+            // lower item to the compact content boundary and pulls it away
+            // from the stationary finger.
+            isReorderingRef.current = true;
+            setDragContentMinHeight(fullContentHeightRef.current);
+            setDragAnchorPadding(anchorPadding);
+            setIsReordering(true);
+            pendingScrollFrameRef.current = requestAnimationFrame(() => {
+              listRef.current?.scrollToOffset?.({
+                offset: compactScrollOffset,
+                animated: false,
+              });
+              pendingScrollFrameRef.current = null;
+            });
+          }}
           ListHeaderComponent={
             <>
               <SessionHeader
@@ -261,6 +406,12 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
                   retroactive={props.retroactive}
                 />
               )}
+              {dragAnchorPadding > 0 ? (
+                <View
+                  style={{ height: dragAnchorPadding }}
+                  testID="active-session-drag-anchor"
+                />
+              ) : null}
             </>
           }
           ListEmptyComponent={
@@ -281,7 +432,7 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
             </View>
           }
           ListFooterComponent={
-            orderedExercises.length > 0 ? (
+            orderedExercises.length > 0 && !isReordering ? (
               <View
                 style={styles.addExerciseSection}
                 testID="active-session-add-exercise-row"
@@ -304,6 +455,24 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
             ) : null
           }
           onDragEnd={({ from, to }) => {
+            const restoreScrollOffset = restoreScrollOffsetRef.current;
+            isReorderingRef.current = false;
+            setIsReordering(false);
+            setDragAnchorPadding(0);
+            setDragContentMinHeight(0);
+            if (pendingScrollFrameRef.current !== null) {
+              cancelAnimationFrame(pendingScrollFrameRef.current);
+            }
+            pendingScrollFrameRef.current = requestAnimationFrame(() => {
+              if (scrollOffsetRef.current) {
+                scrollOffsetRef.current.value = restoreScrollOffset;
+              }
+              listRef.current?.scrollToOffset?.({
+                offset: restoreScrollOffset,
+                animated: false,
+              });
+              pendingScrollFrameRef.current = null;
+            });
             if (from === to) return;
             const item = displayItems[from];
             const lead =
@@ -325,88 +494,116 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
             getIndex,
           }: RenderItemParams<DisplayItem>) => {
             const itemIndex = getIndex() ?? 0;
+            const lead =
+              item.kind === "exercise" ? item.exercise : item.exercises[0];
+            const exerciseNames =
+              item.kind === "exercise"
+                ? [item.exercise.exerciseName]
+                : item.exercises.map((exercise) => exercise.exerciseName);
+
+            if (isReordering) {
+              return (
+                <CompactReorderRow
+                  exerciseNames={exerciseNames}
+                  position={itemIndex + 1}
+                  total={displayItems.length}
+                  onMove={
+                    props.onMoveExercise
+                      ? (direction) =>
+                          props.onMoveExercise?.(lead.id, direction)
+                      : undefined
+                  }
+                  onDrag={drag}
+                  isDragging={isActive}
+                />
+              );
+            }
+
             return (
-              <ScaleDecorator activeScale={1.015}>
-                <View style={{ opacity: isActive ? 0.96 : 1 }}>
-                  {(() => {
-                    if (item.kind === "exercise") {
-                      const ex = item.exercise;
-                      const template =
-                        props.templateByExercise[ex.id] ?? DEFAULT_TEMPLATE;
-                      return (
-                        <SessionExerciseCard
-                          key={ex.id}
-                          exercise={ex}
-                          previousSetsBySetNumber={
-                            props.previousSetsByExercise[ex.id] ?? {}
-                          }
-                          weightUnit={weightUnit}
-                          exerciseImageUrl={template.imageUrl}
-                          targetSets={template.targetSets}
-                          targetRepsMin={template.targetRepsMin}
-                          targetRepsMax={template.targetRepsMax}
-                          restSeconds={template.restSeconds}
-                          onLogSet={() => props.onLogSet(ex.id)}
-                          onUpdateSet={(setId, patch) =>
-                            props.onUpdateSet(ex.id, setId, patch)
-                          }
-                          onRemoveSet={(setId) =>
-                            props.onRemoveSet(ex.id, setId)
-                          }
-                          onOpenNotes={() => props.onOpenNotes(ex.id)}
-                          onSubstitute={() => props.onSubstitute(ex.id)}
-                          onRemoveExercise={() => props.onRemoveExercise(ex.id)}
-                          onTapExercise={() =>
-                            props.onTapExercise(ex.exerciseId)
-                          }
-                          onStartRest={() => props.onStartRest(ex.id)}
-                          reorderPosition={itemIndex + 1}
-                          reorderTotal={displayItems.length}
-                          onMove={
-                            props.onMoveExercise
-                              ? (direction) =>
-                                  props.onMoveExercise?.(ex.id, direction)
-                              : undefined
-                          }
-                          onDrag={drag}
-                          isDragging={isActive}
-                        />
-                      );
-                    }
+              <View
+                style={styles.dragBlock}
+                testID={`active-session-drag-block-${itemIndex + 1}`}
+                onLayout={({ nativeEvent: { layout } }) => {
+                  fullCellHeightsRef.current.set(
+                    displayItemKey(item),
+                    layout.height,
+                  );
+                }}
+              >
+                {(() => {
+                  if (item.kind === "exercise") {
+                    const ex = item.exercise;
+                    const template =
+                      props.templateByExercise[ex.id] ?? DEFAULT_TEMPLATE;
                     return (
-                      <ActiveSupersetRow
-                        key={`superset-${item.supersetGroup}`}
-                        supersetGroup={item.supersetGroup}
-                        exercises={item.exercises}
-                        previousSetsByExercise={props.previousSetsByExercise}
+                      <SessionExerciseCard
+                        key={ex.id}
+                        exercise={ex}
+                        previousSetsBySetNumber={
+                          props.previousSetsByExercise[ex.id] ?? {}
+                        }
                         weightUnit={weightUnit}
-                        templateByExercise={props.templateByExercise}
-                        onLogSupersetSet={props.onLogSupersetSet}
-                        onUpdateSet={props.onUpdateSet}
-                        onRemoveSupersetSet={props.onRemoveSupersetSet}
-                        onStartRest={props.onStartRest}
-                        onSubstitute={props.onSubstitute}
-                        onRemoveExercise={props.onRemoveExercise}
-                        onOpenSupersetNotes={props.onOpenSupersetNotes}
-                        onAddExerciseToSuperset={props.onAddExerciseToSuperset}
+                        exerciseImageUrl={template.imageUrl}
+                        targetSets={template.targetSets}
+                        targetRepsMin={template.targetRepsMin}
+                        targetRepsMax={template.targetRepsMax}
+                        restSeconds={template.restSeconds}
+                        onLogSet={() => props.onLogSet(ex.id)}
+                        onUpdateSet={(setId, patch) =>
+                          props.onUpdateSet(ex.id, setId, patch)
+                        }
+                        onRemoveSet={(setId) => props.onRemoveSet(ex.id, setId)}
+                        onOpenNotes={() => props.onOpenNotes(ex.id)}
+                        onSubstitute={() => props.onSubstitute(ex.id)}
+                        onRemoveExercise={() => props.onRemoveExercise(ex.id)}
+                        onTapExercise={() => props.onTapExercise(ex.exerciseId)}
+                        onStartRest={() => props.onStartRest(ex.id)}
                         reorderPosition={itemIndex + 1}
                         reorderTotal={displayItems.length}
                         onMove={
                           props.onMoveExercise
                             ? (direction) =>
-                                props.onMoveExercise?.(
-                                  item.exercises[0].id,
-                                  direction,
-                                )
+                                props.onMoveExercise?.(ex.id, direction)
                             : undefined
                         }
-                        onDrag={drag}
+                        onDrag={canReorder ? drag : undefined}
                         isDragging={isActive}
                       />
                     );
-                  })()}
-                </View>
-              </ScaleDecorator>
+                  }
+                  return (
+                    <ActiveSupersetRow
+                      key={`superset-${item.supersetGroup}`}
+                      supersetGroup={item.supersetGroup}
+                      exercises={item.exercises}
+                      previousSetsByExercise={props.previousSetsByExercise}
+                      weightUnit={weightUnit}
+                      templateByExercise={props.templateByExercise}
+                      onLogSupersetSet={props.onLogSupersetSet}
+                      onUpdateSet={props.onUpdateSet}
+                      onRemoveSupersetSet={props.onRemoveSupersetSet}
+                      onStartRest={props.onStartRest}
+                      onSubstitute={props.onSubstitute}
+                      onRemoveExercise={props.onRemoveExercise}
+                      onOpenSupersetNotes={props.onOpenSupersetNotes}
+                      onAddExerciseToSuperset={props.onAddExerciseToSuperset}
+                      reorderPosition={itemIndex + 1}
+                      reorderTotal={displayItems.length}
+                      onMove={
+                        props.onMoveExercise
+                          ? (direction) =>
+                              props.onMoveExercise?.(
+                                item.exercises[0].id,
+                                direction,
+                              )
+                          : undefined
+                      }
+                      onDrag={canReorder ? drag : undefined}
+                      isDragging={isActive}
+                    />
+                  );
+                })()}
+              </View>
             );
           }}
         />
@@ -415,20 +612,22 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
       {/* Sticky Finish CTA — floats above the content per the prototype
           (`active-workout.jsx:110–112`). Discard moved to the header "End"
           pill (STORY-002). */}
-      <View style={styles.finishContainer} pointerEvents="box-none">
-        <Btn
-          full
-          variant="filled"
-          tone="primary"
-          size="lg"
-          icon={<IconCheck size={16} color={color.$primaryInk} />}
-          onPress={props.onFinish}
-          testID="active-session-finish"
-          accessibilityLabel="Finish workout"
-        >
-          Finish Workout
-        </Btn>
-      </View>
+      {!isReordering && (
+        <View style={styles.finishContainer} pointerEvents="box-none">
+          <Btn
+            full
+            variant="filled"
+            tone="primary"
+            size="lg"
+            icon={<IconCheck size={16} color={color.$primaryInk} />}
+            onPress={props.onFinish}
+            testID="active-session-finish"
+            accessibilityLabel="Finish workout"
+          >
+            Finish Workout
+          </Btn>
+        </View>
+      )}
 
       <RestTimerDisplay
         isActive={props.restTimer.isActive}
@@ -458,6 +657,16 @@ const styles = StyleSheet.create({
     // room) so the last exercise's actions aren't hidden behind it.
     paddingBottom: 100,
     gap: 16,
+  },
+  dragBlock: {
+    backgroundColor: color.$bg,
+  },
+  dragPlaceholder: {
+    flex: 1,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: color.$primary,
+    backgroundColor: color.$primaryDim,
   },
   emptyWrap: {
     alignItems: "center",

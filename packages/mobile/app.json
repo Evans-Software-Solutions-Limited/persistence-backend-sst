@@ -78,6 +78,7 @@
       "./plugins/withHealthConnectRationale",
       "./plugins/withAndroidStoreBilling",
       "expo-sqlite",
+      "./plugins/withExpoSQLiteHeader",
       [
         "expo-notifications",
         {

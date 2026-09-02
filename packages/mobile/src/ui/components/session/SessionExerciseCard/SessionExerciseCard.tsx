@@ -99,7 +99,9 @@ export function SessionExerciseCard(props: SessionExerciseCardProps) {
       testID={`session-exercise-${props.exercise.id}`}
     >
       <View style={styles.exerciseHeader}>
-        {props.onMove && props.reorderPosition && props.reorderTotal ? (
+        {(props.onMove || props.onDrag) &&
+        props.reorderPosition &&
+        props.reorderTotal ? (
           <ExerciseReorderHandle
             label={props.exercise.exerciseName}
             position={props.reorderPosition}

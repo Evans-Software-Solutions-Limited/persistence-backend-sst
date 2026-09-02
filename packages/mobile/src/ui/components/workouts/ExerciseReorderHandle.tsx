@@ -8,7 +8,7 @@ export type ExerciseReorderHandleProps = {
   label: string;
   position: number;
   total: number;
-  onMove: (direction: -1 | 1) => void;
+  onMove?: (direction: -1 | 1) => void;
   onDrag?: () => void;
   isDragging?: boolean;
 };
@@ -25,7 +25,7 @@ export function ExerciseReorderHandle({
   const move = useCallback(
     (direction: -1 | 1) => {
       const next = position + direction;
-      if (next < 1 || next > total) return;
+      if (!onMove || next < 1 || next > total) return;
       onMove(direction);
       void Haptics.selectionAsync();
       void AccessibilityInfo.announceForAccessibility(
@@ -41,10 +41,10 @@ export function ExerciseReorderHandle({
       accessibilityLabel={`Reorder ${label}, position ${position} of ${total}`}
       accessibilityHint="Long press and drag, or use Move up and Move down actions"
       accessibilityActions={[
-        ...(position > 1
+        ...(onMove && position > 1
           ? [{ name: "decrement" as const, label: "Move up" }]
           : []),
-        ...(position < total
+        ...(onMove && position < total
           ? [{ name: "increment" as const, label: "Move down" }]
           : []),
       ]}

@@ -68,6 +68,7 @@ const formState: WorkoutFormState = {
 describe("WorkoutFormBody drag reorder", () => {
   it("renders a superset as one draggable block and persists its exact drop", () => {
     const onReorderExercise = jest.fn();
+    const onMoveExercise = jest.fn();
     const announce = jest
       .spyOn(AccessibilityInfo, "announceForAccessibility")
       .mockImplementation(jest.fn());
@@ -89,7 +90,7 @@ describe("WorkoutFormBody drag reorder", () => {
         onAddSuperset={jest.fn()}
         onRemoveExercise={jest.fn()}
         onExerciseConfigChange={jest.fn()}
-        onMoveExercise={jest.fn()}
+        onMoveExercise={onMoveExercise}
         onReorderExercise={onReorderExercise}
         onSubmit={jest.fn()}
         onCancel={jest.fn()}
@@ -99,7 +100,19 @@ describe("WorkoutFormBody drag reorder", () => {
         ownerToggleSub="Owner copy"
       />,
     );
+    expect(getByTestId("workout-form-screen").props.style).toMatchObject({
+      paddingTop: 44,
+      paddingBottom: 34,
+    });
     const list = getByTestId("workout-exercise-draggable-list");
+    expect(list.props.dragItemOverflow).toBeUndefined();
+    expect(list.props.renderPlaceholder).toEqual(expect.any(Function));
+    expect(list.props.renderPlaceholder()).toBeTruthy();
+
+    fireEvent(getByTestId("reorder-1"), "accessibilityAction", {
+      nativeEvent: { actionName: "increment" },
+    });
+    expect(onMoveExercise).toHaveBeenCalledWith("standalone-a", 1);
 
     // Four exercises become three draggable blocks: standalone, superset,
     // standalone. The superset's members render together inside block 2.

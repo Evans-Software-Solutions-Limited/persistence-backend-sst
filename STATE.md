@@ -18,11 +18,30 @@ supersets move as indivisible blocks, handle long-press starts drag with haptics
 exact block positions persist, and accessibility actions/announcements remain.
 Post-PR simulator QA found two iOS gesture regressions: Active Session now uses
 one draggable list as its scroll surface instead of competing nested vertical
-recognizers, and native swipe-to-dismiss is disabled on Create Workout, Edit
-Workout and Active Session so the modal cannot steal a handle drag. The same
-simulated vertical gesture that previously dismissed the session now leaves it
-open; simulator mouse input cannot reliably trigger React Native long-press,
-so physical-device handle feel remains an owner check before release.
+recognizers. Create Workout, Edit Workout and Active Session use non-dismissible
+full-screen modal presentation, removing the iOS page-sheet pan recognizer that
+continued to move despite `gestureEnabled: false` and stole handle drags. The
+same simulated vertical gesture that previously dismissed the session now
+leaves it open; simulator mouse input cannot reliably trigger React Native
+long-press, so physical-device handle feel remains an owner check before release.
+Create/Edit retain their normal full-card drag presentation. Active Workout
+alone follows a dedicated compact reorder mode: starting a handle drag
+automatically converts the whole list to fixed
+72px rows for that same gesture, then releasing automatically restores the
+full workout. The library first captures the original cell offset so the row
+stays anchored beneath the held finger; `onDragBegin` then compensates the
+compact offset and scroll position by the measured height removed above the
+active row, synchronizes the active-cell/placeholder height, and preserves the
+full list's scroll extent so lower rows cannot be displaced by native bottom
+clamping. Superset names
+are capped at two lines regardless of exercise or set count; Done is unnecessary
+and the sticky Finish action is hidden only while dragging.
+Autoscroll is intentionally less aggressive.
+`react-native-draggable-flatlist` 4.0.3 remains the dependency.
+An ExpoSQLite native rebuild exposed Xcode 26 resolving the system `sqlite3.h`
+from CocoaPods' generated umbrella header, hiding Expo's renamed C symbols.
+The source-controlled Expo config plugin now qualifies that generated import;
+fresh Expo prebuild, pod installation and an iOS simulator build pass.
 Native splash/bootstrap/auth-callback surfaces use the canonical dark background.
 Optional native Meta install/open measurement is explicitly consent gated (plus
 ATT on iOS), sends only the parameter-free activation event/advertising ID,
