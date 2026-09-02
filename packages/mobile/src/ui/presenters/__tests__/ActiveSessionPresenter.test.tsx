@@ -118,7 +118,12 @@ describe("ActiveSessionPresenter (vertical scroll, legacy parity)", () => {
       <ActiveSessionPresenter {...props} />,
     );
 
-    fireEvent(getByTestId("active-session-draggable-list"), "dragEnd", {
+    const list = getByTestId("active-session-draggable-list");
+    expect(list.props.activationDistance).toBe(20);
+    expect(list.props.containerStyle).toEqual({ flex: 1 });
+    expect(list.props.scrollEnabled).not.toBe(false);
+
+    fireEvent(list, "dragEnd", {
       from: 0,
       to: 2,
     });

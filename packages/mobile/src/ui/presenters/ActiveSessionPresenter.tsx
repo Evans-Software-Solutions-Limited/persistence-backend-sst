@@ -3,7 +3,7 @@
  * 002 + 005 + 007.)
  *
  * Ported 1:1 from `persistence-mobile/components/workouts/ActiveWorkoutScreen`
- * — vertical `ScrollView` with all exercises stacked, flush header at
+ * — vertical list with all exercises stacked, flush header at
  * top (no top-bar chrome), "+ Add Exercise" link below the list,
  * Discard / Complete buttons at the very bottom. Substituted exercises
  * render in place — sets stay visible and the source list mirrors what
@@ -32,9 +32,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import {
-  NestableDraggableFlatList,
-  NestableScrollContainer,
+import DraggableFlatList, {
   ScaleDecorator,
   type RenderItemParams,
 } from "react-native-draggable-flatlist";
@@ -230,27 +228,42 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
         style={styles.keyboardAvoider}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <NestableScrollContainer
+        <DraggableFlatList
+          testID="active-session-draggable-list"
+          containerStyle={styles.scroll}
           style={styles.scroll}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
           automaticallyAdjustKeyboardInsets
-        >
-          <SessionHeader
-            startedAt={props.startedAt}
-            sessionName={props.sessionName}
-            onMinimize={props.onMinimize}
-            onEnd={props.onDiscard}
-          />
-          {props.withClient && (
-            <TrainerBannerPresenter
-              withClient={props.withClient}
-              retroactive={props.retroactive}
-            />
-          )}
-          {orderedExercises.length === 0 ? (
+          data={displayItems}
+          keyExtractor={(item) =>
+            item.kind === "exercise"
+              ? item.exercise.id
+              : `superset-${item.supersetGroup}`
+          }
+          autoscrollThreshold={72}
+          autoscrollSpeed={120}
+          activationDistance={20}
+          dragItemOverflow
+          ListHeaderComponent={
+            <>
+              <SessionHeader
+                startedAt={props.startedAt}
+                sessionName={props.sessionName}
+                onMinimize={props.onMinimize}
+                onEnd={props.onDiscard}
+              />
+              {props.withClient && (
+                <TrainerBannerPresenter
+                  withClient={props.withClient}
+                  retroactive={props.retroactive}
+                />
+              )}
+            </>
+          }
+          ListEmptyComponent={
             <View style={styles.emptyWrap} testID="active-session-empty">
               <Text style={styles.emptyTitle}>No exercises yet</Text>
               <Text style={styles.emptyBody}>
@@ -266,160 +279,137 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
                 <Text style={styles.emptyAddLabel}>Add exercise</Text>
               </TouchableOpacity>
             </View>
-          ) : (
-            <NestableDraggableFlatList
-              testID="active-session-draggable-list"
-              data={displayItems}
-              keyExtractor={(item) =>
-                item.kind === "exercise"
-                  ? item.exercise.id
-                  : `superset-${item.supersetGroup}`
-              }
-              scrollEnabled={false}
-              autoscrollThreshold={72}
-              autoscrollSpeed={120}
-              activationDistance={6}
-              dragItemOverflow
-              contentContainerStyle={styles.exercisesContainer}
-              onDragEnd={({ from, to }) => {
-                if (from === to) return;
-                const item = displayItems[from];
-                const lead =
-                  item?.kind === "exercise"
-                    ? item.exercise
-                    : item?.exercises[0];
-                if (!lead) return;
-                props.onReorderExercise?.(lead.id, to);
-                const label =
-                  item.kind === "superset"
-                    ? `Superset starting with ${lead.exerciseName}`
-                    : lead.exerciseName;
-                void AccessibilityInfo.announceForAccessibility(
-                  `${label} moved to position ${to + 1} of ${displayItems.length}`,
-                );
-              }}
-              renderItem={({
-                item,
-                drag,
-                isActive,
-                getIndex,
-              }: RenderItemParams<DisplayItem>) => {
-                const itemIndex = getIndex() ?? 0;
-                return (
-                  <ScaleDecorator activeScale={1.015}>
-                    <View style={{ opacity: isActive ? 0.96 : 1 }}>
-                      {(() => {
-                        if (item.kind === "exercise") {
-                          const ex = item.exercise;
-                          const template =
-                            props.templateByExercise[ex.id] ?? DEFAULT_TEMPLATE;
-                          return (
-                            <SessionExerciseCard
-                              key={ex.id}
-                              exercise={ex}
-                              previousSetsBySetNumber={
-                                props.previousSetsByExercise[ex.id] ?? {}
-                              }
-                              weightUnit={weightUnit}
-                              exerciseImageUrl={template.imageUrl}
-                              targetSets={template.targetSets}
-                              targetRepsMin={template.targetRepsMin}
-                              targetRepsMax={template.targetRepsMax}
-                              restSeconds={template.restSeconds}
-                              onLogSet={() => props.onLogSet(ex.id)}
-                              onUpdateSet={(setId, patch) =>
-                                props.onUpdateSet(ex.id, setId, patch)
-                              }
-                              onRemoveSet={(setId) =>
-                                props.onRemoveSet(ex.id, setId)
-                              }
-                              onOpenNotes={() => props.onOpenNotes(ex.id)}
-                              onSubstitute={() => props.onSubstitute(ex.id)}
-                              onRemoveExercise={() =>
-                                props.onRemoveExercise(ex.id)
-                              }
-                              onTapExercise={() =>
-                                props.onTapExercise(ex.exerciseId)
-                              }
-                              onStartRest={() => props.onStartRest(ex.id)}
-                              reorderPosition={itemIndex + 1}
-                              reorderTotal={displayItems.length}
-                              onMove={
-                                props.onMoveExercise
-                                  ? (direction) =>
-                                      props.onMoveExercise?.(ex.id, direction)
-                                  : undefined
-                              }
-                              onDrag={drag}
-                              isDragging={isActive}
-                            />
-                          );
-                        }
-                        return (
-                          <ActiveSupersetRow
-                            key={`superset-${item.supersetGroup}`}
-                            supersetGroup={item.supersetGroup}
-                            exercises={item.exercises}
-                            previousSetsByExercise={
-                              props.previousSetsByExercise
-                            }
-                            weightUnit={weightUnit}
-                            templateByExercise={props.templateByExercise}
-                            onLogSupersetSet={props.onLogSupersetSet}
-                            onUpdateSet={props.onUpdateSet}
-                            onRemoveSupersetSet={props.onRemoveSupersetSet}
-                            onStartRest={props.onStartRest}
-                            onSubstitute={props.onSubstitute}
-                            onRemoveExercise={props.onRemoveExercise}
-                            onOpenSupersetNotes={props.onOpenSupersetNotes}
-                            onAddExerciseToSuperset={
-                              props.onAddExerciseToSuperset
-                            }
-                            reorderPosition={itemIndex + 1}
-                            reorderTotal={displayItems.length}
-                            onMove={
-                              props.onMoveExercise
-                                ? (direction) =>
-                                    props.onMoveExercise?.(
-                                      item.exercises[0].id,
-                                      direction,
-                                    )
-                                : undefined
-                            }
-                            onDrag={drag}
-                            isDragging={isActive}
-                          />
-                        );
-                      })()}
-                    </View>
-                  </ScaleDecorator>
-                );
-              }}
-            />
-          )}
-
-          {orderedExercises.length > 0 && (
-            <View
-              style={styles.addExerciseSection}
-              testID="active-session-add-exercise-row"
-            >
-              <View style={styles.divider} />
-              <TouchableOpacity
-                onPress={props.onAddExercise}
-                style={styles.addExerciseLink}
-                testID="active-session-add-exercise"
-                accessibilityLabel="Add exercise"
+          }
+          ListFooterComponent={
+            orderedExercises.length > 0 ? (
+              <View
+                style={styles.addExerciseSection}
+                testID="active-session-add-exercise-row"
               >
-                <Ionicons
-                  name="add-circle-outline"
-                  size={20}
-                  color={color.$primary}
-                />
-                <Text style={styles.addExerciseText}>Add Exercise</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-        </NestableScrollContainer>
+                <View style={styles.divider} />
+                <TouchableOpacity
+                  onPress={props.onAddExercise}
+                  style={styles.addExerciseLink}
+                  testID="active-session-add-exercise"
+                  accessibilityLabel="Add exercise"
+                >
+                  <Ionicons
+                    name="add-circle-outline"
+                    size={20}
+                    color={color.$primary}
+                  />
+                  <Text style={styles.addExerciseText}>Add Exercise</Text>
+                </TouchableOpacity>
+              </View>
+            ) : null
+          }
+          onDragEnd={({ from, to }) => {
+            if (from === to) return;
+            const item = displayItems[from];
+            const lead =
+              item?.kind === "exercise" ? item.exercise : item?.exercises[0];
+            if (!lead) return;
+            props.onReorderExercise?.(lead.id, to);
+            const label =
+              item.kind === "superset"
+                ? `Superset starting with ${lead.exerciseName}`
+                : lead.exerciseName;
+            void AccessibilityInfo.announceForAccessibility(
+              `${label} moved to position ${to + 1} of ${displayItems.length}`,
+            );
+          }}
+          renderItem={({
+            item,
+            drag,
+            isActive,
+            getIndex,
+          }: RenderItemParams<DisplayItem>) => {
+            const itemIndex = getIndex() ?? 0;
+            return (
+              <ScaleDecorator activeScale={1.015}>
+                <View style={{ opacity: isActive ? 0.96 : 1 }}>
+                  {(() => {
+                    if (item.kind === "exercise") {
+                      const ex = item.exercise;
+                      const template =
+                        props.templateByExercise[ex.id] ?? DEFAULT_TEMPLATE;
+                      return (
+                        <SessionExerciseCard
+                          key={ex.id}
+                          exercise={ex}
+                          previousSetsBySetNumber={
+                            props.previousSetsByExercise[ex.id] ?? {}
+                          }
+                          weightUnit={weightUnit}
+                          exerciseImageUrl={template.imageUrl}
+                          targetSets={template.targetSets}
+                          targetRepsMin={template.targetRepsMin}
+                          targetRepsMax={template.targetRepsMax}
+                          restSeconds={template.restSeconds}
+                          onLogSet={() => props.onLogSet(ex.id)}
+                          onUpdateSet={(setId, patch) =>
+                            props.onUpdateSet(ex.id, setId, patch)
+                          }
+                          onRemoveSet={(setId) =>
+                            props.onRemoveSet(ex.id, setId)
+                          }
+                          onOpenNotes={() => props.onOpenNotes(ex.id)}
+                          onSubstitute={() => props.onSubstitute(ex.id)}
+                          onRemoveExercise={() => props.onRemoveExercise(ex.id)}
+                          onTapExercise={() =>
+                            props.onTapExercise(ex.exerciseId)
+                          }
+                          onStartRest={() => props.onStartRest(ex.id)}
+                          reorderPosition={itemIndex + 1}
+                          reorderTotal={displayItems.length}
+                          onMove={
+                            props.onMoveExercise
+                              ? (direction) =>
+                                  props.onMoveExercise?.(ex.id, direction)
+                              : undefined
+                          }
+                          onDrag={drag}
+                          isDragging={isActive}
+                        />
+                      );
+                    }
+                    return (
+                      <ActiveSupersetRow
+                        key={`superset-${item.supersetGroup}`}
+                        supersetGroup={item.supersetGroup}
+                        exercises={item.exercises}
+                        previousSetsByExercise={props.previousSetsByExercise}
+                        weightUnit={weightUnit}
+                        templateByExercise={props.templateByExercise}
+                        onLogSupersetSet={props.onLogSupersetSet}
+                        onUpdateSet={props.onUpdateSet}
+                        onRemoveSupersetSet={props.onRemoveSupersetSet}
+                        onStartRest={props.onStartRest}
+                        onSubstitute={props.onSubstitute}
+                        onRemoveExercise={props.onRemoveExercise}
+                        onOpenSupersetNotes={props.onOpenSupersetNotes}
+                        onAddExerciseToSuperset={props.onAddExerciseToSuperset}
+                        reorderPosition={itemIndex + 1}
+                        reorderTotal={displayItems.length}
+                        onMove={
+                          props.onMoveExercise
+                            ? (direction) =>
+                                props.onMoveExercise?.(
+                                  item.exercises[0].id,
+                                  direction,
+                                )
+                            : undefined
+                        }
+                        onDrag={drag}
+                        isDragging={isActive}
+                      />
+                    );
+                  })()}
+                </View>
+              </ScaleDecorator>
+            );
+          }}
+        />
       </KeyboardAvoidingView>
 
       {/* Sticky Finish CTA — floats above the content per the prototype
@@ -467,8 +457,6 @@ const styles = StyleSheet.create({
     // Clear the floating "Finish Workout" CTA (52pt + 24pt offset + breathing
     // room) so the last exercise's actions aren't hidden behind it.
     paddingBottom: 100,
-  },
-  exercisesContainer: {
     gap: 16,
   },
   emptyWrap: {

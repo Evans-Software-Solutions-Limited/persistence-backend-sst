@@ -662,12 +662,19 @@ jest.mock("react-native-draggable-flatlist", () => {
     renderItem,
     keyExtractor,
     onDragEnd,
+    ListHeaderComponent,
+    ListEmptyComponent,
+    ListFooterComponent,
     ...props
-  }: any) =>
-    React.createElement(
-      View,
-      { ...props, onDragEnd },
-      data.map((item: any, index: number) =>
+  }: any) => {
+    const renderSlot = (slot: any) => {
+      if (!slot) return null;
+      return React.isValidElement(slot) ? slot : React.createElement(slot);
+    };
+    const children = [
+      renderSlot(ListHeaderComponent),
+      data.length === 0 ? renderSlot(ListEmptyComponent) : null,
+      ...data.map((item: any, index: number) =>
         React.createElement(
           View,
           { key: keyExtractor(item, index) },
@@ -679,7 +686,10 @@ jest.mock("react-native-draggable-flatlist", () => {
           }),
         ),
       ),
-    );
+      renderSlot(ListFooterComponent),
+    ].filter(Boolean);
+    return React.createElement(View, { ...props, onDragEnd }, ...children);
+  };
   const ScaleDecorator = ({ children }: any) => children;
   return {
     __esModule: true,
