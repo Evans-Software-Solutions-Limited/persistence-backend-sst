@@ -25,14 +25,18 @@ jest.mock("expo-router", () => ({
     push: mockPush,
     dismissTo: mockDismissTo,
   }),
+  useFocusEffect: (callback: () => void | (() => void)) => {
+    const React = jest.requireActual("react");
+    const focused = mockIsFocused;
+    React.useEffect(() => {
+      if (!focused) return;
+      return callback();
+    }, [callback, focused]);
+  },
 }));
 
 jest.mock("react-native-safe-area-context", () => ({
   useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }),
-}));
-
-jest.mock("@react-navigation/native", () => ({
-  useIsFocused: () => mockIsFocused,
 }));
 
 jest.mock("@/ui/presenters/OnboardingPresenter", () => {
@@ -177,7 +181,9 @@ describe("OnboardingPageContainer recommendation", () => {
 
     mockIsFocused = true;
     screen.rerender(<OnboardingPageContainer page="train" />);
-    expect(mockReplace).toHaveBeenCalledWith("/(onboarding)/recommendation");
+    await waitFor(() => {
+      expect(mockReplace).toHaveBeenCalledWith("/(onboarding)/recommendation");
+    });
   });
 
   it("routes Android system Back through persisted onboarding state", async () => {

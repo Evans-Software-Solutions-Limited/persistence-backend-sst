@@ -30,6 +30,10 @@ formatting are green; the Settings screen also passed iPhone 17 Pro Max simulato
 visual QA. The final local Inspector Brad sweep is clean. The repository-wide
 formatter is blocked only by an unrelated untracked funding scratchpad, which
 remains untouched.
+PR #430's first clean-install CI run exposed a transitive-only
+`@react-navigation/native` import in the onboarding container. It now uses
+Expo Router's declared `useFocusEffect` API with a stable blur lifecycle; the
+fresh CI typecheck failure is covered by the focused navigation regression.
 
 ### 🟡 2026-09-02 — MOBILE RELEASE READINESS (branch `codex/mobile-release-drag-loader-meta`)
 

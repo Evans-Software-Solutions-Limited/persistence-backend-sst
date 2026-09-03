@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter, type Href } from "expo-router";
+import { useFocusEffect, useRouter, type Href } from "expo-router";
 import { Alert, BackHandler } from "react-native";
-import { useIsFocused } from "@react-navigation/native";
 
 import {
   type CoachClientBand,
@@ -37,21 +36,27 @@ export const ONBOARDING_ROUTES: Record<OnboardingPage, string> = {
 
 export function OnboardingPageContainer({ page }: { page: OnboardingPage }) {
   const router = useRouter();
-  const isFocused = useIsFocused();
   const onboarding = useOnboarding();
   const subscription = useMySubscription();
   const [showOthers, setShowOthers] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
   const viewedRef = useRef<OnboardingPage | null>(null);
   const navigationInFlightRef = useRef(false);
 
   const state = onboarding.state;
 
-  // A pushed screen leaves this instance mounted. Clear its one-way
-  // navigation guard when it blurs so a later system pop cannot expose stale
-  // UI while permanently suppressing provider/page reconciliation.
-  useEffect(() => {
-    if (!isFocused) navigationInFlightRef.current = false;
-  }, [isFocused]);
+  // Expo Router owns the navigation dependency, so this also works in a clean
+  // install without importing React Navigation transitively. The callback is
+  // stable: its cleanup runs on a real blur, not on each provider state update.
+  useFocusEffect(
+    useCallback(() => {
+      setIsFocused(true);
+      return () => {
+        setIsFocused(false);
+        navigationInFlightRef.current = false;
+      };
+    }, []),
+  );
 
   useEffect(() => {
     if (
@@ -116,17 +121,19 @@ export function OnboardingPageContainer({ page }: { page: OnboardingPage }) {
     }
   }, [onboarding, router]);
 
-  useEffect(() => {
-    if (!isFocused || page === "welcome") return;
-    const subscription = BackHandler.addEventListener(
-      "hardwareBackPress",
-      () => {
-        void back();
-        return true;
-      },
-    );
-    return () => subscription.remove();
-  }, [back, isFocused, page]);
+  useFocusEffect(
+    useCallback(() => {
+      if (page === "welcome") return;
+      const subscription = BackHandler.addEventListener(
+        "hardwareBackPress",
+        () => {
+          void back();
+          return true;
+        },
+      );
+      return () => subscription.remove();
+    }, [back, page]),
+  );
 
   const confirmDismissJourney = () => {
     Alert.alert(
