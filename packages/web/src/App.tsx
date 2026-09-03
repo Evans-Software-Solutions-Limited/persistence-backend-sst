@@ -9,6 +9,17 @@ import Privacy from "./pages/Privacy";
 import Terms from "./pages/Terms";
 import DeleteAccount from "./pages/DeleteAccount";
 import OrganisationAdmin from "./pages/OrganisationAdmin";
+import {
+  AdminAudit,
+  AdminCallback,
+  AdminCodes,
+  AdminDashboard,
+  AdminGrants,
+  AdminLayout,
+  AdminLogin,
+  AdminLookup,
+  RequireAdmin,
+} from "./admin";
 import { CAMPAIGN_LANDING_SLUGS } from "./marketing/campaign";
 import { ThemeProvider } from "./components/theme-provider";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -104,6 +115,27 @@ function App() {
             <Route key={slug} path={`/${slug}`} element={<Home />} />
           ))}
           <Route path="/qr/:slug" element={<Home />} />
+          {/*
+           * Internal admin (FOUNDING-OFFER). Server-enforced: every /admin API
+           * call needs the JWT `app_metadata.admin` claim; the RequireAdmin
+           * guard is UX only. Not linked from anywhere, noindex.
+           */}
+          <Route path="/admin/login" element={<AdminLogin />} />
+          <Route path="/admin/callback" element={<AdminCallback />} />
+          <Route
+            path="/admin"
+            element={
+              <RequireAdmin>
+                <AdminLayout />
+              </RequireAdmin>
+            }
+          >
+            <Route index element={<AdminDashboard />} />
+            <Route path="grants" element={<AdminGrants />} />
+            <Route path="codes" element={<AdminCodes />} />
+            <Route path="lookup" element={<AdminLookup />} />
+            <Route path="audit" element={<AdminAudit />} />
+          </Route>
           <Route
             path="/org-admin"
             element={

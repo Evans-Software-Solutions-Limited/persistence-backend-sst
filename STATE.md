@@ -31,9 +31,18 @@ first `GET /subscriptions/me`. ⚠ `adminRoutes` is mounted from
 `subscriptionsRoutes`, not the root chain — a root `.use()` tripped TS2589.
 `WEB_ORIGIN` env added to the core Lambda (infra/api.ts). Container-verified:
 9-package typecheck, lint (pre-existing warnings only), core 349 files / 4,297
-tests, api-utils 27, scripts 116, prettier on touched files. **Not yet**: web
-`/admin` panel + `?ref=` capture (FRONTEND_BRIEF § Web), mobile code entry
-(§ Mobile), staging smoke test, prod release. The worktree's `node_modules`
+tests, api-utils 27, scripts 116, prettier on touched files.
+**Web `/admin` panel landed the same day** (`packages/web/src/admin/`): magic-link
+sign-in via GoTrue REST (no new dependency; session in `sessionStorage`),
+`RequireAdmin` UX guard, dashboard (seat meters), founding grants with the
+at-the-stand **New grant** form (live email lookup → account/pending, coach
+demotion warning, confirm step, invite email, seats remaining), referral codes
+(create/pause/archive/uses/copy link), lookup, audit log. Env:
+`VITE_SUPABASE_URL` (from domains) + `VITE_SUPABASE_ANON_KEY` (deploy env) in
+infra/web.ts. Web: 26 files / 860 tests, typecheck/lint/build green. **Not
+yet**: `?ref=` capture + `/founding` landing section (FRONTEND_BRIEF § W3),
+mobile code entry (§ Mobile), Supabase redirect-URL allow-list for
+`/admin/callback`, staging smoke test, prod release. The worktree's `node_modules`
 dirs are VM-generated junk — `rm -rf` them and `bun install` before local use.
 
 

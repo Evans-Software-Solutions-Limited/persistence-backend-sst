@@ -1,6 +1,6 @@
 import { coreAPI } from "./api";
 import { marketingEdge } from "./web-edge";
-import { webDomain, hostedZoneId } from "./domains";
+import { webDomain, hostedZoneId, supabaseUrl } from "./domains";
 import { EDGE_REDIRECT_PREFIX } from "../packages/web/src/marketing/edgeRedirect";
 import { buildEdgeFunctionSource } from "../packages/web/src/marketing/edgeRedirectSource";
 
@@ -229,5 +229,11 @@ export const frontend = new sst.aws.StaticSite("web", {
     // `API_BASE` falls back to VITE_CORE_API_URL (today's direct call). Not
     // sensitive — it's a public CloudFront hostname.
     VITE_MARKETING_EDGE_URL: marketingEdgeOrigin,
+    // Internal admin sign-in (FOUNDING-OFFER). PUBLIC values by design — the
+    // project URL and the anon key are what every client already ships with.
+    // The anon key comes from the deploy job's env like the pixel id; unset →
+    // /admin/login renders "not configured" and nothing else changes.
+    VITE_SUPABASE_URL: supabaseUrl,
+    VITE_SUPABASE_ANON_KEY: process.env.VITE_SUPABASE_ANON_KEY ?? "",
   },
 });
