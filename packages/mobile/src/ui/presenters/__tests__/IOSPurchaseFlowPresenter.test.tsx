@@ -1,4 +1,5 @@
 import React from "react";
+import { Text } from "react-native";
 import {
   fireEvent,
   render,
@@ -92,6 +93,17 @@ function defaultProps(): IOSPurchaseFlowPresenterProps {
 }
 
 describe("IOSPurchaseFlowPresenter", () => {
+  it("renders referral entry content beneath the native tier cards", () => {
+    render(
+      <IOSPurchaseFlowPresenter
+        {...defaultProps()}
+        referralCodeEntry={<Text testID="native-referral-entry">Referral</Text>}
+      />,
+    );
+
+    expect(screen.getByTestId("native-referral-entry")).toBeTruthy();
+  });
+
   it("uses the existing live-price plan surface for a locked onboarding recommendation", () => {
     const onToggleOtherPlans = jest.fn();
     const onContinueFree = jest.fn();

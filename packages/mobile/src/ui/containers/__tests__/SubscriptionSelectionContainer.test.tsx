@@ -20,7 +20,10 @@ import type {
 } from "@/domain/models/subscription";
 import type { Adapters } from "@/shared/types";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
-import { SubscriptionSelectionContainer } from "@/ui/containers/SubscriptionSelectionContainer";
+import {
+  skipOnboardingWithReferralCancellation,
+  SubscriptionSelectionContainer,
+} from "@/ui/containers/SubscriptionSelectionContainer";
 
 // CI runners are markedly slower than local — async `waitFor` chains
 // across React Query providers + AdapterProvider can exceed Jest's
@@ -168,6 +171,161 @@ beforeEach(() => {
   mockPush.mockReset();
   mockBack.mockReset();
   alertSpy.mockReset();
+});
+
+describe("SubscriptionSelectionContainer referrals", () => {
+  const onboardingRecommendation = (
+    overrides: {
+      onSkip?: jest.Mock;
+      onContinueFree?: jest.Mock;
+    } = {},
+  ) => ({
+    recommendedTier: "premium" as const,
+    reasons: ["It matches your goals"],
+    showOtherPlans: false,
+    onToggleOtherPlans: jest.fn(),
+    onPlanSelected: jest.fn(),
+    onContinueFree: overrides.onContinueFree ?? jest.fn(),
+    onSkip: overrides.onSkip ?? jest.fn(),
+    onBack: jest.fn(),
+  });
+
+  it("shows an unlocked applied referral beneath the tier cards and allows change", async () => {
+    const { adapters, api } = makeAdapters();
+    api.appliedReferral = {
+      code: "UONFRESHERS",
+      label: "UoN Freshers",
+      partnerName: "University of Nottingham",
+      lockedAt: null,
+    };
+
+    render(
+      <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
+        <SubscriptionSelectionContainer />
+      </Wrapper>,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByText("Referral: UoN Freshers")).toBeTruthy(),
+    );
+    fireEvent.press(screen.getByTestId("referral-change"));
+    expect(screen.getByTestId("referral-code-input").props.value).toBe(
+      "UONFRESHERS",
+    );
+  });
+
+  it("renders a locked referral as read-only", async () => {
+    const { adapters, api } = makeAdapters();
+    api.appliedReferral = {
+      code: "UONFRESHERS",
+      label: "UoN Freshers",
+      partnerName: null,
+      lockedAt: "2026-09-03T12:00:00.000Z",
+    };
+
+    render(
+      <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
+        <SubscriptionSelectionContainer />
+      </Wrapper>,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByText("Referral: UoN Freshers")).toBeTruthy(),
+    );
+    expect(screen.queryByTestId("referral-change")).toBeNull();
+  });
+
+  it("upper-cases input and renders the server's neutral error verbatim", async () => {
+    const { adapters, api } = makeAdapters();
+    jest.spyOn(api, "claimReferral").mockResolvedValue({
+      ok: false,
+      error: {
+        kind: "api",
+        code: "not_found",
+        status: 404,
+        message: "That code isn't valid",
+      },
+    });
+
+    render(
+      <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
+        <SubscriptionSelectionContainer />
+      </Wrapper>,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByTestId("referral-entry-toggle")).toBeTruthy(),
+    );
+    fireEvent.press(screen.getByTestId("referral-entry-toggle"));
+    fireEvent.changeText(screen.getByTestId("referral-code-input"), "nope");
+    expect(screen.getByTestId("referral-code-input").props.value).toBe("NOPE");
+    fireEvent.press(screen.getByTestId("referral-code-apply"));
+    await waitFor(() =>
+      expect(screen.getByText("That code isn't valid")).toBeTruthy(),
+    );
+  });
+
+  it("shows the onboarding success label after applying a code", async () => {
+    const { adapters } = makeAdapters();
+
+    render(
+      <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
+        <SubscriptionSelectionContainer
+          onboardingRecommendation={onboardingRecommendation()}
+        />
+      </Wrapper>,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByTestId("referral-entry-toggle")).toBeTruthy(),
+    );
+    fireEvent.press(screen.getByTestId("referral-entry-toggle"));
+    fireEvent.changeText(
+      screen.getByTestId("referral-code-input"),
+      "UONFRESHERS",
+    );
+    fireEvent.press(screen.getByTestId("referral-code-apply"));
+
+    await waitFor(() =>
+      expect(screen.getByText("Applied: UONFRESHERS")).toBeTruthy(),
+    );
+    expect(screen.queryByTestId("referral-change")).toBeNull();
+  });
+
+  it("keeps Continue independent from the optional referral row", async () => {
+    const { adapters } = makeAdapters();
+    const onContinueFree = jest.fn();
+
+    render(
+      <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
+        <SubscriptionSelectionContainer
+          onboardingRecommendation={onboardingRecommendation({
+            onContinueFree,
+          })}
+        />
+      </Wrapper>,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByTestId("referral-entry-toggle")).toBeTruthy(),
+    );
+    fireEvent.press(screen.getByTestId("referral-entry-toggle"));
+    fireEvent.press(screen.getByTestId("onboarding-continue-free"));
+    expect(onContinueFree).toHaveBeenCalledTimes(1);
+  });
+
+  it("cancels an in-flight claim before continuing Skip", () => {
+    const cancelPendingClaim = jest.fn();
+    const onSkip = jest.fn();
+
+    skipOnboardingWithReferralCancellation(cancelPendingClaim, onSkip);
+
+    expect(cancelPendingClaim).toHaveBeenCalledTimes(1);
+    expect(onSkip).toHaveBeenCalledTimes(1);
+    expect(cancelPendingClaim.mock.invocationCallOrder[0]).toBeLessThan(
+      onSkip.mock.invocationCallOrder[0],
+    );
+  });
 });
 
 afterAll(() => {

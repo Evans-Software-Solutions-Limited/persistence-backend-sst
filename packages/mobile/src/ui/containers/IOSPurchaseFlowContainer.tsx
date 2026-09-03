@@ -81,10 +81,12 @@ export interface IOSPurchaseFlowContainerProps {
     onBack: () => void;
     onPlanSelected?: (tier: SubscriptionTierName) => void;
   };
+  referralCodeEntry?: React.ReactNode;
 }
 
 export function IOSPurchaseFlowContainer({
   onboardingRecommendation,
+  referralCodeEntry,
 }: IOSPurchaseFlowContainerProps = {}) {
   const router = useRouter();
   const purchases = usePurchases();
@@ -558,6 +560,7 @@ export function IOSPurchaseFlowContainer({
       isRestoring={restoreMutation.isPending || syncMutation.isPending}
       screen={screen}
       onboardingRecommendation={onboardingRecommendation}
+      referralCodeEntry={referralCodeEntry}
       onBillingCycleChange={setBillingCycle}
       onTierSelect={(tier) => void handleTierSelect(tier)}
       onRoleChange={setSelectedRole}

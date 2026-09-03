@@ -66,6 +66,7 @@ import type {
   WorkoutQuota,
 } from "@/domain/models/workout";
 import type { Result, ApiError } from "@/shared/errors";
+import type { ReferralsPort } from "@/domain/ports/referrals.port";
 import type { PaginatedResult, PaginationParams } from "@/shared/types";
 import type { PersonalRecord } from "@/domain/models/record";
 import type { Achievement } from "@/domain/models/achievement";
@@ -146,7 +147,7 @@ import type {
  * Methods are added per-feature milestone. This initial definition
  * covers the foundation endpoints.
  */
-export interface ApiPort {
+export interface ApiPort extends ReferralsPort {
   /** Health check */
   healthCheck(): Promise<Result<{ status: string }, ApiError>>;
 

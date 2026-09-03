@@ -75,6 +75,7 @@ export interface IOSPurchaseFlowPresenterProps {
   onRestore: () => void;
   onManageInAppStore: () => void;
   onboardingRecommendation?: OnboardingRecommendationMode;
+  referralCodeEntry?: React.ReactNode;
 }
 
 /** The only mobile component allowed to print a resolved subscription price. */
@@ -720,6 +721,8 @@ function PlansScreen(props: IOSPurchaseFlowPresenterProps) {
             />
           ))}
         </View>
+
+        {props.referralCodeEntry}
 
         {recommendation && (
           <>

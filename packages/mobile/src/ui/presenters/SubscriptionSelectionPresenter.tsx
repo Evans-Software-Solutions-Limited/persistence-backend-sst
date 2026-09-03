@@ -85,6 +85,7 @@ export interface SubscriptionSelectionPresenterProps {
   onRetry: () => void;
   onCancelSubscription: () => void;
   onboardingRecommendation?: OnboardingRecommendationMode;
+  referralCodeEntry?: React.ReactNode;
 }
 
 export function SubscriptionSelectionPresenter(
@@ -114,6 +115,7 @@ export function SubscriptionSelectionPresenter(
     onRetry,
     onCancelSubscription,
     onboardingRecommendation,
+    referralCodeEntry,
   } = props;
 
   // User-tier cards: catalog-driven, not a hardcoded "premium" lookup —
@@ -511,6 +513,8 @@ export function SubscriptionSelectionPresenter(
               <View style={styles.tierCards}>{userTierCards}</View>
             )}
           </View>
+
+          {referralCodeEntry}
 
           {currentTier !== "free" && canCancel && !isCancelledButActive && (
             <View style={styles.cancelSubscriptionContainer}>
