@@ -17,11 +17,18 @@ export function useClaimReferral() {
 
   const mutation = useMutation<AppliedReferral, ApiError, string>({
     mutationFn: async (code) => {
+      activeController.current?.abort();
       const controller = new AbortController();
       activeController.current = controller;
-      const result = await api.claimReferral(code, controller.signal);
-      if (!result.ok) throw result.error;
-      return result.value;
+      try {
+        const result = await api.claimReferral(code, controller.signal);
+        if (!result.ok) throw result.error;
+        return result.value;
+      } finally {
+        if (activeController.current === controller) {
+          activeController.current = null;
+        }
+      }
     },
     onSuccess: (applied) => {
       if (session?.userId) {
@@ -30,9 +37,6 @@ export function useClaimReferral() {
       void queryClient.invalidateQueries({
         queryKey: [REFERRAL_QUERY_KEY_PREFIX],
       });
-    },
-    onSettled: () => {
-      activeController.current = null;
     },
   });
 

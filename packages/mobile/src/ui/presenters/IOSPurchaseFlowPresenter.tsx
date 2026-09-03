@@ -856,38 +856,56 @@ function ManageScreen(props: IOSPurchaseFlowPresenterProps) {
             <Text style={styles.manageRowLabel}>Change plan</Text>
             <Ionicons name="chevron-forward" size={17} color={color.$text4} />
           </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.manageRow}
-            onPress={props.onManageInAppStore}
-            testID="ios-purchase-manage"
-          >
-            <Ionicons
-              name={
-                Platform.OS === "android"
-                  ? "logo-google-playstore"
-                  : "logo-apple"
-              }
-              size={19}
-              color={color.$text3}
-            />
-            <Text style={styles.manageRowLabel}>
-              Payment, receipts and cancellation
-            </Text>
-            <Text style={styles.manageRowDetail}>
-              {Platform.OS === "android" ? "Google Play" : "App Store"}
-            </Text>
-          </TouchableOpacity>
-          <View style={styles.manageRow}>
-            <Ionicons name="calendar-outline" size={19} color={color.$text3} />
-            <Text style={styles.manageRowLabel}>Billing period</Text>
-            <Text style={styles.manageRowDetail}>
-              {cadence === null
-                ? "Not available"
-                : cadence === "annual"
-                  ? "Annual"
-                  : "Monthly"}
-            </Text>
-          </View>
+          {props.isFoundingAccess ? (
+            <View style={styles.manageRow} testID="founding-access-details">
+              <Ionicons
+                name="calendar-outline"
+                size={19}
+                color={color.$text3}
+              />
+              <Text style={styles.manageRowLabel}>Fixed-term access</Text>
+              <Text style={styles.manageRowDetail}>No automatic renewal</Text>
+            </View>
+          ) : (
+            <>
+              <TouchableOpacity
+                style={styles.manageRow}
+                onPress={props.onManageInAppStore}
+                testID="ios-purchase-manage"
+              >
+                <Ionicons
+                  name={
+                    Platform.OS === "android"
+                      ? "logo-google-playstore"
+                      : "logo-apple"
+                  }
+                  size={19}
+                  color={color.$text3}
+                />
+                <Text style={styles.manageRowLabel}>
+                  Payment, receipts and cancellation
+                </Text>
+                <Text style={styles.manageRowDetail}>
+                  {Platform.OS === "android" ? "Google Play" : "App Store"}
+                </Text>
+              </TouchableOpacity>
+              <View style={styles.manageRow}>
+                <Ionicons
+                  name="calendar-outline"
+                  size={19}
+                  color={color.$text3}
+                />
+                <Text style={styles.manageRowLabel}>Billing period</Text>
+                <Text style={styles.manageRowDetail}>
+                  {cadence === null
+                    ? "Not available"
+                    : cadence === "annual"
+                      ? "Annual"
+                      : "Monthly"}
+                </Text>
+              </View>
+            </>
+          )}
         </View>
       </ScrollView>
     </SafeAreaView>

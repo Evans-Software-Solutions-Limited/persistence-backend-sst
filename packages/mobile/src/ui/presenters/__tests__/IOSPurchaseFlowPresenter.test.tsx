@@ -378,6 +378,10 @@ describe("IOSPurchaseFlowPresenter", () => {
     expect(screen.getByText("ACTIVE")).toBeTruthy();
     expect(screen.getByText("Founding access")).toBeTruthy();
     expect(screen.getByText(/active until 3 Mar 2027/i)).toBeTruthy();
+    expect(screen.getByText("Fixed-term access")).toBeTruthy();
+    expect(screen.getByText("No automatic renewal")).toBeTruthy();
+    expect(screen.queryByTestId("ios-purchase-manage")).toBeNull();
+    expect(screen.queryByText("Billing period")).toBeNull();
     expect(screen.queryByText("CANCELLED")).toBeNull();
   });
 

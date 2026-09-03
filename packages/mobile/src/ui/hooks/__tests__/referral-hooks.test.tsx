@@ -169,4 +169,39 @@ describe("referral hooks", () => {
 
     expect(aborted).toBe(true);
   });
+
+  it("keeps the newest overlapping claim cancellable after the first settles", async () => {
+    const { api, Wrapper } = setup();
+    const signals: AbortSignal[] = [];
+    jest.spyOn(api, "claimReferral").mockImplementation(
+      (_code, signal) =>
+        new Promise((resolve) => {
+          if (signal) signals.push(signal);
+          signal?.addEventListener("abort", () => {
+            resolve({
+              ok: false,
+              error: {
+                kind: "api",
+                code: "network",
+                message: "Request cancelled",
+              },
+            });
+          });
+        }),
+    );
+    const { result } = renderHook(() => useClaimReferral(), {
+      wrapper: Wrapper,
+    });
+
+    act(() => result.current.mutate("FIRST"));
+    await waitFor(() => expect(signals).toHaveLength(1));
+
+    act(() => result.current.reset());
+    act(() => result.current.mutate("SECOND"));
+    await waitFor(() => expect(signals).toHaveLength(2));
+    expect(signals[0].aborted).toBe(true);
+
+    act(() => result.current.cancel());
+    expect(signals[1].aborted).toBe(true);
+  });
 });
