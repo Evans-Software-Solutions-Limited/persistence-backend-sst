@@ -410,6 +410,8 @@ export class ReferralRepository {
       canonicalCode: string;
       source: ClaimSource;
       createdBy?: string | null;
+      /** Exclude the immediate founding grant currently being finalized. */
+      capacityExclusionGrantId?: string;
       /**
        * A pending paid grant reserved this exact code while it was eligible.
        * Supplying its code id consumes that reservation without re-checking
@@ -463,9 +465,14 @@ export class ReferralRepository {
             or(
               isNull(referralCodes.maxRedemptions),
               sql`${referralCodes.redemptionCount} + (
-                SELECT count(*) FROM ${foundingGrants}
-                WHERE ${foundingGrants.referralCodeId} = ${referralCodes.id}
-                  AND ${foundingGrants.revokedAt} IS NULL
+              SELECT count(*) FROM ${foundingGrants}
+              WHERE ${foundingGrants.referralCodeId} = ${referralCodes.id}
+                ${
+                  input.capacityExclusionGrantId
+                    ? sql`AND ${foundingGrants.id} <> ${input.capacityExclusionGrantId}`
+                    : sql``
+                }
+                AND ${foundingGrants.revokedAt} IS NULL
                   AND (
                     ${foundingGrants.userId} IS NULL OR NOT EXISTS (
                       SELECT 1 FROM ${referralRedemptions}

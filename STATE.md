@@ -49,6 +49,15 @@ outstanding capacity reservation for its paid code; the audit records
 conflict/counter policy. Focused result: **3 files / 27 tests**; core typecheck,
 touched ESLint/Prettier and diff-check pass.
 
+The final cap-boundary correction excludes only the immediate existing-user
+grant currently being finalized from the referral reservation subquery. It
+still performs ordinary active/window/cap validation and counts every other
+grant reservation. A direct real-repository regression proves a one-use code
+with zero prior claims accepts the first immediate grant, atomically produces
+one grant + one redemption + count 1, rejects the next grant, and leaves no
+partial row. Focused result: **3 files / 28 tests**; core typecheck and touched
+lint/format/diff gates pass.
+
 The public `/founding` route now carries the approved £30 Premium, £50 Premium+
 and £99 Start Up Coach+ six-month offers, the static consumer seat counter,
 funding/redemption copy, optional bank instructions and per-tier Stripe Payment

@@ -208,6 +208,7 @@ export class FoundingGrantService {
                   canonicalCode: normalizeReferralCode(req.referralCode ?? ""),
                   source: "admin",
                   createdBy: actorId,
+                  capacityExclusionGrantId: grantId,
                 },
                 transaction,
               );

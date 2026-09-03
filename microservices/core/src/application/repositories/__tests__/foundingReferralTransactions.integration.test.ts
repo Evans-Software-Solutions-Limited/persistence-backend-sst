@@ -10,6 +10,7 @@ import { getDb } from "@persistence/db/client";
 import { AdminAuditRepository } from "../adminAuditRepository";
 import { FoundingGrantRepository } from "../foundingGrantRepository";
 import { ReferralRepository } from "../referralRepository";
+import { FoundingGrantService } from "../../founding/foundingGrantService";
 
 const ADMIN = "00000000-0000-4000-8000-000000000001";
 const USER = "00000000-0000-4000-8000-000000000002";
@@ -309,6 +310,69 @@ describe("founding/referral repository transaction invariants", () => {
       redemption_count: 1,
     });
     expect(final.rows[0].locked_at).not.toBeNull();
+  });
+
+  it("lets an immediate capped grant consume its own slot while retaining the cap boundary", async () => {
+    const referrals = new ReferralRepository();
+    const grants = new FoundingGrantRepository();
+    const audit = new AdminAuditRepository();
+    const service = new FoundingGrantService(
+      grants,
+      referrals,
+      audit,
+      async () => undefined,
+      "https://example.test",
+    );
+    await createCode("DIRECTCAP", 1);
+
+    const first = await service.grant(
+      {
+        email: "user@example.test",
+        tierName: "premium",
+        paymentMethod: "other",
+        referralCode: "DIRECTCAP",
+        sendInvite: false,
+      },
+      ADMIN,
+    );
+    expect(first.ok).toBe(true);
+    const counts = await pg.query<{
+      grants: number;
+      redemptions: number;
+      redemption_count: number;
+    }>(`SELECT
+          (SELECT count(*)::int FROM founding_grants) grants,
+          (SELECT count(*)::int FROM referral_redemptions) redemptions,
+          redemption_count
+        FROM referral_codes WHERE code = 'DIRECTCAP'`);
+    expect(counts.rows[0]).toEqual({
+      grants: 1,
+      redemptions: 1,
+      redemption_count: 1,
+    });
+
+    const secondUser = "00000000-0000-4000-8000-000000000032";
+    await pg.query(
+      "INSERT INTO profiles (id, email, role) VALUES ($1, 'second@example.test', 'user')",
+      [secondUser],
+    );
+    const second = await service.grant(
+      {
+        email: "second@example.test",
+        tierName: "premium",
+        paymentMethod: "other",
+        referralCode: "DIRECTCAP",
+        sendInvite: false,
+      },
+      ADMIN,
+    );
+    expect(second).toEqual({
+      ok: false,
+      error: { code: "invalid_referral_code" },
+    });
+    expect(
+      (await pg.query("SELECT id FROM founding_grants")).rows,
+    ).toHaveLength(1);
   });
 
   it("consumes paid reservations after the code is paused, archived or expired", async () => {
