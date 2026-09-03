@@ -6,7 +6,10 @@ import type { SessionNotFoundError } from "./log-set.command";
 
 export function reorderSessionExercisesCommand(
   deps: { storage: StoragePort; userId: string },
-  input: { sessionExerciseId: string; direction: -1 | 1 },
+  input: { sessionExerciseId: string } & (
+    | { direction: -1 | 1; toPosition?: never }
+    | { toPosition: number; direction?: never }
+  ),
 ): Result<WorkoutSession, SessionNotFoundError> {
   const session = deps.storage.getActiveSession(deps.userId);
   if (!session) {
@@ -38,7 +41,8 @@ export function reorderSessionExercisesCommand(
     }
   }
   const sourceBlock = blocks.findIndex((block) => block.includes(source));
-  const targetBlock = sourceBlock + input.direction;
+  const targetBlock =
+    input.toPosition == null ? sourceBlock + input.direction : input.toPosition;
   if (targetBlock < 0 || targetBlock >= blocks.length) return ok(session);
   const targetIndex = ordered.indexOf(blocks[targetBlock][0]);
   const updated = {

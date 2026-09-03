@@ -73,6 +73,8 @@ export type SessionExerciseCardProps = {
   reorderPosition?: number;
   reorderTotal?: number;
   onMove?: (direction: -1 | 1) => void;
+  onDrag?: () => void;
+  isDragging?: boolean;
 };
 
 const formatRepsLabel = (
@@ -97,12 +99,16 @@ export function SessionExerciseCard(props: SessionExerciseCardProps) {
       testID={`session-exercise-${props.exercise.id}`}
     >
       <View style={styles.exerciseHeader}>
-        {props.onMove && props.reorderPosition && props.reorderTotal ? (
+        {(props.onMove || props.onDrag) &&
+        props.reorderPosition &&
+        props.reorderTotal ? (
           <ExerciseReorderHandle
             label={props.exercise.exerciseName}
             position={props.reorderPosition}
             total={props.reorderTotal}
             onMove={props.onMove}
+            onDrag={props.onDrag}
+            isDragging={props.isDragging}
           />
         ) : null}
         {props.exerciseImageUrl ? (

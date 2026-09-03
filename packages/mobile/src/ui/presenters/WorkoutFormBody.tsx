@@ -1,14 +1,20 @@
 import { Text, View } from "@tamagui/core";
 import React from "react";
 import {
+  AccessibilityInfo,
   KeyboardAvoidingView,
   Platform,
   Pressable,
-  ScrollView,
   Switch,
   TextInput,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  NestableDraggableFlatList,
+  NestableScrollContainer,
+  ScaleDecorator,
+  type RenderItemParams,
+} from "react-native-draggable-flatlist";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AddExercisePopover } from "@/ui/components/workouts/AddExercisePopover";
 import { ExerciseConfigCard } from "@/ui/components/workouts/ExerciseConfigCard";
@@ -117,6 +123,7 @@ export type WorkoutFormBodyProps = {
     value: number,
   ) => void;
   readonly onMoveExercise?: (exerciseId: string, direction: -1 | 1) => void;
+  readonly onReorderExercise?: (exerciseId: string, toPosition: number) => void;
   readonly onSubmit: () => void;
   readonly onCancel: () => void;
 
@@ -148,6 +155,7 @@ export function WorkoutFormBody({
   onRemoveExercise,
   onExerciseConfigChange,
   onMoveExercise,
+  onReorderExercise,
   onSubmit,
   onCancel,
   headerTitle,
@@ -155,17 +163,22 @@ export function WorkoutFormBody({
   saveLabel,
   ownerToggleSub,
 }: WorkoutFormBodyProps) {
+  const insets = useSafeAreaInsets();
   const exercises = formState.exercises;
   const supersetLetters = buildSupersetLetterMap(
     exercises.map((ex) => ex.superset_group),
   );
-  const reorderBlockLeadIds: string[] = [];
+  const reorderBlocks: WorkoutFormExercise[][] = [];
   const seenReorderGroups = new Set<number>();
   for (const exercise of exercises) {
-    if (exercise.superset_group == null) reorderBlockLeadIds.push(exercise.id);
+    if (exercise.superset_group == null) reorderBlocks.push([exercise]);
     else if (!seenReorderGroups.has(exercise.superset_group)) {
       seenReorderGroups.add(exercise.superset_group);
-      reorderBlockLeadIds.push(exercise.id);
+      reorderBlocks.push(
+        exercises.filter(
+          (candidate) => candidate.superset_group === exercise.superset_group,
+        ),
+      );
     }
   }
   const nameError =
@@ -183,7 +196,15 @@ export function WorkoutFormBody({
 
   return (
     <>
-      <SafeAreaView style={{ flex: 1, backgroundColor: "#0A0B12" }}>
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: color.$bg,
+          paddingTop: insets.top,
+          paddingBottom: insets.bottom,
+        }}
+        testID="workout-form-screen"
+      >
         <View flex={1}>
           <HeaderBar
             title={headerTitle}
@@ -202,7 +223,7 @@ export function WorkoutFormBody({
             style={{ flex: 1 }}
             behavior={Platform.OS === "ios" ? "padding" : undefined}
           >
-            <ScrollView
+            <NestableScrollContainer
               style={{ flex: 1, paddingHorizontal: 16 }}
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
@@ -426,64 +447,119 @@ export function WorkoutFormBody({
                       </Text>
                     </View>
                   ) : (
-                    <View gap={10}>
-                      {exercises.map((exercise, index) => {
-                        const hasSupersetGroup =
-                          exercise.superset_group !== null;
-                        const supersetExercises: WorkoutFormExercise[] =
-                          hasSupersetGroup
-                            ? exercises.filter(
-                                (ex) =>
-                                  ex.superset_group === exercise.superset_group,
-                              )
-                            : [];
-                        const isSupersetStart =
-                          hasSupersetGroup &&
-                          supersetExercises[0]?.id === exercise.id;
-                        const isSupersetEnd =
-                          hasSupersetGroup &&
-                          supersetExercises.at(-1)?.id === exercise.id;
-
-                        return (
-                          <View key={exercise.id}>
-                            <ExerciseConfigCard
-                              exercise={exercise}
-                              index={index}
-                              onRemove={() => onRemoveExercise(exercise.id)}
-                              onConfigChange={(field, value) =>
-                                onExerciseConfigChange(
-                                  exercise.id,
-                                  field,
-                                  value,
-                                )
-                              }
-                              isSupersetStart={isSupersetStart}
-                              isSupersetEnd={isSupersetEnd}
-                              supersetGroupNumber={
-                                exercise.superset_group ?? undefined
-                              }
-                              supersetLetter={
-                                exercise.superset_group !== null
-                                  ? supersetLetters.get(exercise.superset_group)
-                                  : undefined
-                              }
-                              supersetLeadExercise={supersetExercises[0]}
-                              reorderPosition={
-                                reorderBlockLeadIds.indexOf(exercise.id) + 1
-                              }
-                              reorderTotal={reorderBlockLeadIds.length}
-                              onMove={
-                                onMoveExercise &&
-                                (!hasSupersetGroup || isSupersetStart)
-                                  ? (direction) =>
-                                      onMoveExercise(exercise.id, direction)
-                                  : undefined
-                              }
-                            />
-                          </View>
+                    <NestableDraggableFlatList
+                      testID="workout-exercise-draggable-list"
+                      data={reorderBlocks}
+                      keyExtractor={(block) => block[0].id}
+                      scrollEnabled={false}
+                      autoscrollThreshold={72}
+                      autoscrollSpeed={80}
+                      activationDistance={6}
+                      renderPlaceholder={() => (
+                        <View
+                          flex={1}
+                          borderRadius={14}
+                          borderWidth={1}
+                          borderColor="$primary"
+                          backgroundColor="$primaryDim"
+                        />
+                      )}
+                      ItemSeparatorComponent={() => <View height={10} />}
+                      onDragEnd={({ from, to }) => {
+                        if (from === to) return;
+                        const block = reorderBlocks[from];
+                        const lead = block?.[0];
+                        if (!lead) return;
+                        onReorderExercise?.(lead.id, to);
+                        const label =
+                          block.length > 1
+                            ? `Superset starting with ${lead.exercise_name}`
+                            : lead.exercise_name;
+                        void AccessibilityInfo.announceForAccessibility(
+                          `${label} moved to position ${to + 1} of ${reorderBlocks.length}`,
                         );
-                      })}
-                    </View>
+                      }}
+                      renderItem={({
+                        item: block,
+                        drag,
+                        isActive,
+                        getIndex,
+                      }: RenderItemParams<WorkoutFormExercise[]>) => {
+                        const blockPosition = (getIndex() ?? 0) + 1;
+                        return (
+                          <ScaleDecorator activeScale={1.015}>
+                            <View gap={10} opacity={isActive ? 0.96 : 1}>
+                              {block.map((exercise) => {
+                                const index = exercises.indexOf(exercise);
+                                const hasSupersetGroup =
+                                  exercise.superset_group !== null;
+                                const supersetExercises = hasSupersetGroup
+                                  ? block
+                                  : [];
+                                const isSupersetStart =
+                                  hasSupersetGroup &&
+                                  supersetExercises[0]?.id === exercise.id;
+                                const isSupersetEnd =
+                                  hasSupersetGroup &&
+                                  supersetExercises.at(-1)?.id === exercise.id;
+
+                                return (
+                                  <View key={exercise.id}>
+                                    <ExerciseConfigCard
+                                      exercise={exercise}
+                                      index={index}
+                                      onRemove={() =>
+                                        onRemoveExercise(exercise.id)
+                                      }
+                                      onConfigChange={(field, value) =>
+                                        onExerciseConfigChange(
+                                          exercise.id,
+                                          field,
+                                          value,
+                                        )
+                                      }
+                                      isSupersetStart={isSupersetStart}
+                                      isSupersetEnd={isSupersetEnd}
+                                      supersetGroupNumber={
+                                        exercise.superset_group ?? undefined
+                                      }
+                                      supersetLetter={
+                                        exercise.superset_group !== null
+                                          ? supersetLetters.get(
+                                              exercise.superset_group,
+                                            )
+                                          : undefined
+                                      }
+                                      supersetLeadExercise={
+                                        supersetExercises[0]
+                                      }
+                                      reorderPosition={blockPosition}
+                                      reorderTotal={reorderBlocks.length}
+                                      onMove={
+                                        onMoveExercise &&
+                                        (!hasSupersetGroup || isSupersetStart)
+                                          ? (direction) =>
+                                              onMoveExercise(
+                                                exercise.id,
+                                                direction,
+                                              )
+                                          : undefined
+                                      }
+                                      onDrag={
+                                        !hasSupersetGroup || isSupersetStart
+                                          ? drag
+                                          : undefined
+                                      }
+                                      isDragging={isActive}
+                                    />
+                                  </View>
+                                );
+                              })}
+                            </View>
+                          </ScaleDecorator>
+                        );
+                      }}
+                    />
                   )}
 
                   <Pressable
@@ -532,7 +608,7 @@ export function WorkoutFormBody({
                   ) : null}
                 </View>
               </View>
-            </ScrollView>
+            </NestableScrollContainer>
           </KeyboardAvoidingView>
 
           <View
@@ -570,7 +646,7 @@ export function WorkoutFormBody({
             </View>
           </View>
         </View>
-      </SafeAreaView>
+      </View>
 
       <AddExercisePopover
         visible={pickerVisible}

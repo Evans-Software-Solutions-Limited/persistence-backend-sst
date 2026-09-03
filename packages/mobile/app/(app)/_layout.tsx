@@ -29,6 +29,7 @@ import { useNotificationBadge } from "../../src/ui/hooks/useNotificationBadge";
 import { useNotificationDeepLink } from "../../src/ui/hooks/useNotificationDeepLink";
 import { useOfflineDataBootstrap } from "../../src/ui/hooks/useOfflineDataBootstrap";
 import { useSyncWorker } from "../../src/ui/hooks/useSyncWorker";
+import { reorderModalOptions } from "../../src/ui/navigation/reorderModalOptions";
 import { colorPalette } from "../../src/ui/theme";
 
 /**
@@ -179,9 +180,8 @@ export default function AppLayout() {
         <Stack.Screen
           name="workouts/create"
           options={{
+            ...reorderModalOptions,
             title: "New workout",
-            presentation: "modal",
-            headerShown: false,
           }}
         />
         <Stack.Screen
@@ -194,9 +194,8 @@ export default function AppLayout() {
         <Stack.Screen
           name="workouts/[id]/edit"
           options={{
+            ...reorderModalOptions,
             title: "Edit workout",
-            presentation: "modal",
-            headerShown: false,
           }}
         />
         <Stack.Screen
@@ -206,9 +205,8 @@ export default function AppLayout() {
         <Stack.Screen
           name="session/index"
           options={{
+            ...reorderModalOptions,
             title: "Active session",
-            presentation: "modal",
-            headerShown: false,
           }}
         />
         <Stack.Screen

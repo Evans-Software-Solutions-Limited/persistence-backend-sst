@@ -85,4 +85,27 @@ describe("reorderSessionExercisesCommand", () => {
       storage.getActiveSession("user")?.exercises.map((item) => item.id),
     ).toEqual(["B", "C", "A"]);
   });
+
+  it("persists an exact multi-position drop by block index", () => {
+    const storage = new InMemoryStorageAdapter();
+    const longerSession = {
+      ...session,
+      exercises: [
+        exercise("A", 0, null),
+        exercise("B", 1, 4),
+        exercise("C", 2, 4),
+        exercise("D", 3, null),
+      ],
+    };
+    storage.cacheActiveSession("user", longerSession);
+
+    reorderSessionExercisesCommand(
+      { storage, userId: "user" },
+      { sessionExerciseId: "A", toPosition: 2 },
+    );
+
+    const persisted = storage.getActiveSession("user")?.exercises;
+    expect(persisted?.map((item) => item.id)).toEqual(["B", "C", "D", "A"]);
+    expect(persisted?.map((item) => item.sortOrder)).toEqual([0, 1, 2, 3]);
+  });
 });

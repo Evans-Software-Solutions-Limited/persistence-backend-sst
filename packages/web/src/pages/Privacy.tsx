@@ -50,7 +50,7 @@ export function Privacy() {
       <section className="legal">
         <span className="kicker c-accent legal-kicker">Legal</span>
         <h1>Privacy Policy</h1>
-        <p className="legal-updated">Last updated: 13 August 2026</p>
+        <p className="legal-updated">Last updated: 1 September 2026</p>
 
         <p>
           Persistence ("we", "us", "our") is a fitness-tracking application
@@ -578,8 +578,12 @@ export function Privacy() {
           waitlist or tapping &ldquo;Get the app&rdquo; &mdash; including a
           hashed (irreversible) version of your email address where you provided
           one. This is used only to measure our own advertising, is never sold,
-          and never includes your training, nutrition or health data. Your
-          activity inside the Persistence app is never sent to Meta.
+          and never includes your training, nutrition or health data. If you
+          separately opt in inside the Persistence app, its Meta SDK sends only
+          an app-install/opening measurement and the device&apos;s advertising
+          identifier; it does not send workouts, health, nutrition, purchases,
+          names, account IDs or anything you type. Mobile consent can be
+          withdrawn in the app&apos;s Privacy Settings.
         </p>
         <p>
           Our lawful basis for this measurement is your consent (UK GDPR Article

@@ -10,6 +10,7 @@ import {
   useAuthCallbackUrl,
 } from "@/ui/hooks/useAuthCallbackUrl";
 import { PLogoDrawLoader } from "@/ui/components";
+import { color } from "@/ui/theme/tokens";
 
 /**
  * Safety net: if no token-bearing URL ever resolves (a link that never carried
@@ -123,7 +124,8 @@ export function AuthCallbackContainer() {
       flex={1}
       justifyContent="center"
       alignItems="center"
-      backgroundColor="$background"
+      backgroundColor={color.$bg}
+      testID="auth-callback-loading"
     >
       <PLogoDrawLoader />
     </View>

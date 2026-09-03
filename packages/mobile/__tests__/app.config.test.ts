@@ -37,6 +37,8 @@ function invoke(): ExpoConfig {
 
 describe("app.config.ts", () => {
   const originalVariant = process.env.APP_VARIANT;
+  const originalMetaAppId = process.env.EXPO_PUBLIC_META_APP_ID;
+  const originalMetaClientToken = process.env.EXPO_PUBLIC_META_CLIENT_TOKEN;
 
   afterEach(() => {
     if (originalVariant === undefined) {
@@ -44,6 +46,12 @@ describe("app.config.ts", () => {
     } else {
       process.env.APP_VARIANT = originalVariant;
     }
+    if (originalMetaAppId === undefined)
+      delete process.env.EXPO_PUBLIC_META_APP_ID;
+    else process.env.EXPO_PUBLIC_META_APP_ID = originalMetaAppId;
+    if (originalMetaClientToken === undefined)
+      delete process.env.EXPO_PUBLIC_META_CLIENT_TOKEN;
+    else process.env.EXPO_PUBLIC_META_CLIENT_TOKEN = originalMetaClientToken;
   });
 
   it("defaults to the production variant when APP_VARIANT is unset", () => {
@@ -110,6 +118,59 @@ describe("app.config.ts", () => {
     expect(result.android?.adaptiveIcon?.backgroundColor).toBe("#0C111A");
     expect(result.extra?.eas?.projectId).toBe(
       "255d542d-8dae-43c9-8d98-d9a3a325a470",
+    );
+  });
+
+  it("omits Meta native config and declares no tracking when either value is absent", () => {
+    process.env.EXPO_PUBLIC_META_APP_ID = "1502579917743484";
+    delete process.env.EXPO_PUBLIC_META_CLIENT_TOKEN;
+    const result = invoke();
+    expect(result.extra?.metaConfigured).toBe(false);
+    expect(result.plugins).not.toEqual(
+      expect.arrayContaining([
+        expect.arrayContaining(["react-native-fbsdk-next"]),
+      ]),
+    );
+    expect(result.ios?.privacyManifests?.NSPrivacyTracking).toBe(false);
+  });
+
+  it("adds a disabled-by-default Meta plugin only when both verified values exist", () => {
+    process.env.EXPO_PUBLIC_META_APP_ID = "verified-app-id";
+    process.env.EXPO_PUBLIC_META_CLIENT_TOKEN = "verified-client-token";
+    const result = invoke();
+    expect(result.extra?.metaConfigured).toBe(true);
+    expect(result.plugins).toEqual(
+      expect.arrayContaining([
+        [
+          "react-native-fbsdk-next",
+          expect.objectContaining({
+            appID: "verified-app-id",
+            clientToken: "verified-client-token",
+            advertiserIDCollectionEnabled: false,
+            autoLogAppEventsEnabled: false,
+            isAutoInitEnabled: false,
+          }),
+        ],
+      ]),
+    );
+    expect(result.ios?.privacyManifests?.NSPrivacyTracking).toBe(true);
+    expect(result.ios?.privacyManifests?.NSPrivacyTrackingDomains).toEqual([
+      "ep1.facebook.com",
+    ]);
+    expect(
+      result.ios?.privacyManifests?.NSPrivacyCollectedDataTypes?.find(
+        (entry) =>
+          entry.NSPrivacyCollectedDataType ===
+          "NSPrivacyCollectedDataTypeDeviceID",
+      ),
+    ).toEqual(
+      expect.objectContaining({
+        NSPrivacyCollectedDataTypeTracking: true,
+        NSPrivacyCollectedDataTypePurposes: expect.arrayContaining([
+          "NSPrivacyCollectedDataTypePurposeThirdPartyAdvertising",
+          "NSPrivacyCollectedDataTypePurposeAnalytics",
+        ]),
+      }),
     );
   });
 });

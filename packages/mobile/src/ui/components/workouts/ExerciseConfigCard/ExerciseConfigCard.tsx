@@ -42,6 +42,8 @@ interface ExerciseConfigCardProps {
   readonly reorderPosition?: number;
   readonly reorderTotal?: number;
   readonly onMove?: (direction: -1 | 1) => void;
+  readonly onDrag?: () => void;
+  readonly isDragging?: boolean;
 }
 
 export default function ExerciseConfigCard({
@@ -57,6 +59,8 @@ export default function ExerciseConfigCard({
   reorderPosition,
   reorderTotal,
   onMove,
+  onDrag,
+  isDragging,
 }: ExerciseConfigCardProps) {
   const isInSuperset =
     isSupersetStart ||
@@ -174,6 +178,8 @@ export default function ExerciseConfigCard({
               position={reorderPosition}
               total={reorderTotal}
               onMove={onMove}
+              onDrag={onDrag}
+              isDragging={isDragging}
             />
           ) : null}
           <View

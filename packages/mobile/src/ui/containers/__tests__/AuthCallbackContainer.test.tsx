@@ -1,6 +1,7 @@
 import { act, render, waitFor } from "@testing-library/react-native";
 import { TamaguiProvider } from "@tamagui/core";
 import type { ReactNode } from "react";
+import { StyleSheet } from "react-native";
 import config from "../../../../tamagui.config";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
@@ -76,6 +77,20 @@ describe("AuthCallbackContainer", () => {
     mockClearAuthCallbackUrl.mockClear();
     mockReplace.mockClear();
     usePasswordRecovery.setState({ pending: false });
+  });
+
+  it("keeps the full-screen callback loader on the canonical dark surface", () => {
+    const { adapters } = createTestAdapters();
+
+    const view = render(
+      <TestWrapper adapters={adapters}>
+        <AuthCallbackContainer />
+      </TestWrapper>,
+    );
+
+    expect(
+      StyleSheet.flatten(view.getByTestId("auth-callback-loading").props.style),
+    ).toEqual(expect.objectContaining({ backgroundColor: "#0A0B12" }));
   });
 
   it("establishes a session from the fragment tokens and lets AuthGate route (no explicit nav)", async () => {

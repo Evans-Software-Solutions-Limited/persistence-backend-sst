@@ -1,4 +1,8 @@
 import { ActiveSessionContainer } from "@/ui/containers/ActiveSessionContainer";
+import {
+  SafeAreaProvider,
+  initialWindowMetrics,
+} from "react-native-safe-area-context";
 
 /**
  * Active-session modal route — `/(app)/session`. (M3, Story-001 / 005 / 008.)
@@ -11,5 +15,9 @@ import { ActiveSessionContainer } from "@/ui/containers/ActiveSessionContainer";
  *       specs/milestones/M3-active-session/EXECUTION_PLAN.md § 2 Commit 7
  */
 export default function ActiveSessionRoute() {
-  return <ActiveSessionContainer />;
+  return (
+    <SafeAreaProvider initialMetrics={initialWindowMetrics}>
+      <ActiveSessionContainer />
+    </SafeAreaProvider>
+  );
 }

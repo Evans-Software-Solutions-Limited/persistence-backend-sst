@@ -1,6 +1,7 @@
 import React from "react";
 import {
   ScrollView,
+  Switch,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -53,6 +54,9 @@ export type PrivacySettingsPresenterProps = {
   onOpenPrivacyPolicy: () => void;
   onOpenTerms: () => void;
   onDeleteAccount: () => void;
+  metaAttributionAvailable: boolean;
+  metaAttributionEnabled: boolean;
+  onSetMetaAttributionEnabled: (enabled: boolean) => void;
 };
 
 function PrivacySettingsHeader({ onBack }: { onBack: () => void }) {
@@ -81,6 +85,9 @@ export function PrivacySettingsPresenter({
   onOpenPrivacyPolicy,
   onOpenTerms,
   onDeleteAccount,
+  metaAttributionAvailable,
+  metaAttributionEnabled,
+  onSetMetaAttributionEnabled,
 }: PrivacySettingsPresenterProps) {
   const insets = useSafeAreaInsets();
 
@@ -111,6 +118,26 @@ export function PrivacySettingsPresenter({
             Your data is stored securely and used only to provide the service.
             Contact support to request a copy of your data.
           </Text>
+          {metaAttributionAvailable ? (
+            <View
+              style={styles.option}
+              testID="privacy-settings-meta-attribution"
+            >
+              <View style={styles.optionContent}>
+                <Text style={styles.optionTitle}>Advertising measurement</Text>
+                <Text style={styles.optionDescription}>
+                  Allow Meta to use this device&apos;s advertising identifier to
+                  measure app installs. Workout, health, purchase and account
+                  data are never included.
+                </Text>
+              </View>
+              <Switch
+                value={metaAttributionEnabled}
+                onValueChange={onSetMetaAttributionEnabled}
+                accessibilityLabel="Allow Meta advertising measurement"
+              />
+            </View>
+          ) : null}
         </View>
 
         {/* Legal — the Privacy Policy + Terms live here now that the drawer's
@@ -235,5 +262,11 @@ const styles = StyleSheet.create({
     lineHeight: 24,
     color: color.$text,
     marginBottom: 4,
+  },
+  optionDescription: {
+    color: color.$text2,
+    fontSize: 13,
+    lineHeight: 18,
+    paddingRight: 12,
   },
 });

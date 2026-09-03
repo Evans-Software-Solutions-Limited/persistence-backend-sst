@@ -14,6 +14,9 @@ function setup(overrides: Partial<PrivacySettingsPresenterProps> = {}) {
     onOpenPrivacyPolicy: jest.fn(),
     onOpenTerms: jest.fn(),
     onDeleteAccount: jest.fn(),
+    metaAttributionAvailable: false,
+    metaAttributionEnabled: false,
+    onSetMetaAttributionEnabled: jest.fn(),
     ...overrides,
   };
   return { props, ...renderWithTheme(<PrivacySettingsPresenter {...props} />) };

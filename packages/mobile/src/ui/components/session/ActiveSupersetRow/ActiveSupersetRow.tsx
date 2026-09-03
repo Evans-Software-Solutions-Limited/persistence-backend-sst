@@ -86,6 +86,8 @@ export type ActiveSupersetRowProps = {
   reorderPosition?: number;
   reorderTotal?: number;
   onMove?: (direction: -1 | 1) => void;
+  onDrag?: () => void;
+  isDragging?: boolean;
 };
 
 const DEFAULT_TEMPLATE: SessionExerciseTemplate = { restSeconds: 90 };
@@ -133,7 +135,7 @@ export function ActiveSupersetRow(props: ActiveSupersetRowProps) {
       testID={`superset-group-${props.supersetGroup}`}
     >
       <View style={styles.supersetConnector}>
-        {props.onMove &&
+        {(props.onMove || props.onDrag) &&
         props.reorderPosition &&
         props.reorderTotal &&
         leadExercise ? (
@@ -142,6 +144,8 @@ export function ActiveSupersetRow(props: ActiveSupersetRowProps) {
             position={props.reorderPosition}
             total={props.reorderTotal}
             onMove={props.onMove}
+            onDrag={props.onDrag}
+            isDragging={props.isDragging}
           />
         ) : null}
         <View style={styles.supersetLineStart} />
