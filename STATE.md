@@ -11,6 +11,40 @@ say so and fix this file.
 
 ## ▶ START HERE — next session (rewritten 2026-08-04, post-Mealprint-merge)
 
+### 🟡 2026-09-03 — FOUNDING-OFFER website work package A implemented (branch `feat/founding-offer-admin`)
+
+The public `/founding` route now carries the approved £30 Premium, £50 Premium+
+and £99 Start Up Coach+ six-month offers, the static consumer seat counter,
+funding/redemption copy, optional bank instructions and per-tier Stripe Payment
+Link buttons, 14-day cancellation acknowledgement, terms link and route SEO.
+Home links to it from both the hero and download section; the route is in the
+sitemap. There is no mobile-app link to the off-app offer (Apple 3.1.3(b)).
+
+Every `MarketingLayout` route now normalises `?ref=` (upper-case, strips spaces
+and hyphens, `[A-Z0-9]{4,24}`), stores it under session key `persistence.ref`,
+and shows a dismissible referral notice without backend validation. Store-click
+beacons include the stored `ref`; `/store-click` bounds it to 24 characters and
+stores it in `analytics_events.properties`. A Meta-mapper regression test proves
+the referral value is never forwarded in Meta custom data.
+
+Verification: focused web and core suites pass (**52 core tests**); full web
+suite **29 files / 874 tests** passed. Changed web logic coverage was **100%**
+statements, **95.12%** branches, **100%** functions and **100%** lines. Root
+typecheck passed **9/9** packages; root lint passed with zero errors (existing /
+generated warnings only); web production build passed. Touched-file Prettier
+and `git diff --check` passed. Root Prettier remains blocked by the unrelated,
+pre-existing `adminFoundingGrantsHandler.test.ts`. Browser verification passed
+in light, dark and 390×844 mobile layouts.
+
+The approved public `VITE_FOUNDING_BANK_DETAILS` value is wired through both
+deploy workflows and SST alongside the other founding-page variables; no actual
+bank details are committed. Founding invite emails now set Resend `reply_to` to
+the monitored admin address, so the existing invitation to reply does not route
+to `no-reply@`. Open: the existing general `/terms` subscription
+paragraph says paid subscriptions renew automatically, while the founding page
+correctly says these founding places do not auto-renew. Legal terms
+reconciliation is outside this work package and remains for Brad to decide.
+
 ### 🟡 2026-09-03 — FOUNDING-OFFER backend (branch `feat/founding-offer-admin`, worktree `.claude/worktrees/founding-offer`)
 
 New milestone `specs/milestones/FOUNDING-OFFER/` (BRIEF + BACKEND/FRONTEND briefs +

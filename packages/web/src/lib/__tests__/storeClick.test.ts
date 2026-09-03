@@ -16,6 +16,7 @@ describe("reportStoreClick", () => {
     vi.restoreAllMocks();
     clearCookies();
     window.localStorage.clear();
+    window.sessionStorage.clear();
     window.history.replaceState({}, "", "/");
   });
 
@@ -71,6 +72,30 @@ describe("reportStoreClick", () => {
     const text = await (blob as Blob).text();
     const body = JSON.parse(text);
     expect(body.marketing_consent).toBe(true);
+  });
+
+  it("includes the captured referral code when present", async () => {
+    window.sessionStorage.setItem("persistence.ref", "UON2026");
+    const sendBeacon = vi.fn().mockReturnValue(true);
+    vi.stubGlobal("navigator", { ...navigator, sendBeacon });
+
+    reportStoreClick("ios");
+
+    const [, blob] = sendBeacon.mock.calls[0];
+    const body = JSON.parse(await (blob as Blob).text());
+    expect(body.ref).toBe("UON2026");
+  });
+
+  it("omits an invalid stored referral value", async () => {
+    window.sessionStorage.setItem("persistence.ref", "bad!");
+    const sendBeacon = vi.fn().mockReturnValue(true);
+    vi.stubGlobal("navigator", { ...navigator, sendBeacon });
+
+    reportStoreClick("ios");
+
+    const [, blob] = sendBeacon.mock.calls[0];
+    const body = JSON.parse(await (blob as Blob).text());
+    expect(body).not.toHaveProperty("ref");
   });
 
   it("falls back to a keepalive fetch when sendBeacon is unavailable", () => {

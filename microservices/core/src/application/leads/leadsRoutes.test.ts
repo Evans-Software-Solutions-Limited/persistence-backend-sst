@@ -344,6 +344,7 @@ describe("POST /store-click (spec-30 R3.8)", () => {
       event_id: "evt-store-1",
       marketing_consent: true,
       store: "android",
+      ref: "UON2026",
     });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true });
@@ -356,7 +357,22 @@ describe("POST /store-click (spec-30 R3.8)", () => {
         fbc: "fb.1.1.abc",
         fbp: "fb.1.1.xyz",
         store: "android",
+        ref: "UON2026",
       },
+    });
+  });
+
+  it("drops a ref longer than 24 characters", async () => {
+    const res = await post("/store-click", {
+      event_id: "evt-ref-too-long",
+      ref: "A".repeat(25),
+    });
+    expect(res.status).toBe(200);
+    expect(emitEventMock).toHaveBeenCalledWith({
+      name: "store_click",
+      source: "web",
+      eventId: "evt-ref-too-long",
+      properties: { marketing_consent: false },
     });
   });
 
@@ -392,6 +408,7 @@ describe("POST /store-click (spec-30 R3.8)", () => {
         event_id: "evt-beacon-1",
         fbp: "fb.1.1.beacon",
         marketing_consent: true,
+        ref: "UON2026",
       }),
     );
     expect(res.status).toBe(200);
@@ -399,7 +416,25 @@ describe("POST /store-click (spec-30 R3.8)", () => {
       name: "store_click",
       source: "web",
       eventId: "evt-beacon-1",
-      properties: { marketing_consent: true, fbp: "fb.1.1.beacon" },
+      properties: {
+        marketing_consent: true,
+        fbp: "fb.1.1.beacon",
+        ref: "UON2026",
+      },
+    });
+  });
+
+  it("drops a non-string ref", async () => {
+    const res = await post("/store-click", {
+      event_id: "evt-ref-wrong-type",
+      ref: { code: "UON2026" },
+    });
+    expect(res.status).toBe(200);
+    expect(emitEventMock).toHaveBeenCalledWith({
+      name: "store_click",
+      source: "web",
+      eventId: "evt-ref-wrong-type",
+      properties: { marketing_consent: false },
     });
   });
 

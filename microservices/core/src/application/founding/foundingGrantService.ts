@@ -5,7 +5,7 @@ import {
   type CreateGrantOutcome,
 } from "../repositories/foundingGrantRepository";
 import { ReferralRepository } from "../repositories/referralRepository";
-import { sendEmail } from "../leads/resendClient";
+import { RESEND_NOTIFICATION_TO, sendEmail } from "../leads/resendClient";
 import {
   normalizeReferralCode,
   isValidReferralCode,
@@ -323,6 +323,7 @@ export class FoundingGrantService {
         to: input.email,
         subject: mail.subject,
         text: mail.text,
+        replyTo: RESEND_NOTIFICATION_TO,
       });
       await this.grants.markInvited(input.grantId);
       return { ok: true };

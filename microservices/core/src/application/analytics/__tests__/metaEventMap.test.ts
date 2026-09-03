@@ -117,10 +117,13 @@ describe("mapPendingToMetaEvents — event mapping", () => {
           marketing_consent: true,
           fbp: "fb.1.1.default",
           store: "android",
+          ref: "UON2026",
         },
       }),
     );
     expect(event!.event_name).toBe("AppStoreClick");
+    // Referral attribution is first-party analytics only and is not consented
+    // advertising data. The mapper must never copy it into Meta custom_data.
     expect(event!.custom_data).toEqual({ store: "android" });
   });
 

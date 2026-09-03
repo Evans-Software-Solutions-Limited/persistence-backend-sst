@@ -172,6 +172,8 @@ interface WebAttribution {
   marketingConsent?: boolean;
   /** Store destination for an outbound app-download click. */
   store?: "ios" | "android";
+  /** First-party referral attribution. Persisted, never forwarded to Meta. */
+  ref?: string;
 }
 
 /**
@@ -207,6 +209,7 @@ function storeClickEvent(attribution: WebAttribution): AnalyticsEventInput {
   if (attribution.fbc) properties.fbc = attribution.fbc;
   if (attribution.fbp) properties.fbp = attribution.fbp;
   if (attribution.store) properties.store = attribution.store;
+  if (attribution.ref) properties.ref = attribution.ref;
   return {
     name: "store_click",
     source: "web",
@@ -221,6 +224,7 @@ interface StoreClickBody {
   event_id?: string;
   marketing_consent?: boolean;
   store?: "ios" | "android";
+  ref?: string;
 }
 
 /**
@@ -264,6 +268,7 @@ function parseBeaconBody(raw: unknown): StoreClickBody {
     marketing_consent: obj.marketing_consent === true ? true : undefined,
     store:
       obj.store === "ios" || obj.store === "android" ? obj.store : undefined,
+    ref: str(obj.ref, 24),
   };
 }
 
@@ -506,9 +511,8 @@ export const leadsRoutes = new Elysia()
       // No `body` schema: the production beacon is `text/plain` (so sendBeacon
       // delivers cross-origin — see parseBeaconBody), which a `t.Object` JSON
       // schema would 422. parseBeaconBody accepts text/plain OR json and bounds.
-      const { fbc, fbp, event_id, marketing_consent, store } = parseBeaconBody(
-        ctx.body,
-      );
+      const { fbc, fbp, event_id, marketing_consent, store, ref } =
+        parseBeaconBody(ctx.body);
       // Best-effort conversion emit (spec-30 R3.8). Public + anonymous, no email
       // — so no honeypot / Turnstile (it is not an email-amplification vector).
       // Deduped with the browser pixel's `AppStoreClick` via the shared
@@ -520,6 +524,7 @@ export const leadsRoutes = new Elysia()
           eventId: event_id,
           marketingConsent: marketing_consent,
           store,
+          ref,
         }),
       );
       return { ok: true as const };

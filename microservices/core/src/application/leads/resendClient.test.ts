@@ -210,6 +210,28 @@ describe("sendEmail", () => {
     });
   });
 
+  it("maps an optional reply-to address to Resend's wire field", async () => {
+    const fetchMock = vi.fn(
+      () => new Response(JSON.stringify({ id: "e1" }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await sendEmail({
+      to: "buyer@example.com",
+      subject: "Your founding access",
+      text: "body",
+      replyTo: "admin@evans-software-solutions.com",
+    });
+
+    const [, init] = fetchMock.mock.calls[0] as unknown as [
+      string,
+      RequestInit,
+    ];
+    expect(JSON.parse(init.body as string)).toMatchObject({
+      reply_to: "admin@evans-software-solutions.com",
+    });
+  });
+
   it("throws on a non-2xx response", async () => {
     vi.stubGlobal(
       "fetch",

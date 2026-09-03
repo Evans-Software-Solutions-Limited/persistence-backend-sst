@@ -91,7 +91,10 @@ describe("FoundingGrantService.grant", () => {
       res.result.grantId,
     );
     expect(mailer).toHaveBeenCalledWith(
-      expect.objectContaining({ to: "buyer@example.com" }),
+      expect.objectContaining({
+        to: "buyer@example.com",
+        replyTo: "admin@evans-software-solutions.com",
+      }),
     );
     expect((mailer.mock.calls[0] as any)[0].text).toMatch(/already on/);
   });

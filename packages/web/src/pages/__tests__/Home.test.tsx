@@ -92,13 +92,12 @@ describe("Home", () => {
     expect(links[0]?.querySelector("svg")).not.toBeNull();
   });
 
-  it("does NOT ship the excluded founding / fake-stat content", () => {
-    // The launch waitlist + coach enquiry forms ARE shipped now (Brad approved
-    // lead capture 2026-08-08, reversing the earlier hard-exclusion). What stays
-    // excluded is the founding-discount framing and any invented proof stats.
+  it("links the approved founding offer without invented proof stats", () => {
     const { container } = renderPage(<Home />);
     const text = container.textContent ?? "";
-    expect(text).not.toMatch(/founding/i);
+    expect(
+      screen.getAllByRole("link", { name: /founding offer/i }),
+    ).toHaveLength(2);
     expect(text).not.toMatch(/92%/);
     expect(text).not.toMatch(/early access/i);
   });
