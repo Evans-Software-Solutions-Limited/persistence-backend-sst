@@ -43,6 +43,9 @@ the monitored admin address, so the existing invitation to reply does not route
 to `no-reply@`. Brad approved the legal reconciliation on 2026-09-03: `/terms`
 now distinguishes renewable app-store subscriptions from paid-once fixed-term
 offers (including the founding offer), and its last-updated date is current.
+Both deploy workflows forward the public Supabase anon key from the environment
+variable `VITE_SUPABASE_ANON_KEY`; without it, `/admin/login` deliberately
+renders “not configured”.
 
 ### 🟡 2026-09-03 — FOUNDING-OFFER backend (branch `feat/founding-offer-admin`, worktree `.claude/worktrees/founding-offer`)
 
