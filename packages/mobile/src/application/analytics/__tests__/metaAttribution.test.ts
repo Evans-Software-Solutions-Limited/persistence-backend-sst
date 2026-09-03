@@ -292,6 +292,32 @@ describe("Meta attribution consent gate", () => {
     expect(AppEventsLogger.logEvent).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps the final withdrawal when it supersedes a queued re-grant", async () => {
+    let resolveWithdrawal: (() => void) | undefined;
+    (AsyncStorage.setItem as jest.Mock).mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveWithdrawal = resolve;
+        }),
+    );
+
+    const firstWithdrawal = denyMetaAttributionConsent();
+    const queuedGrant = grantMetaAttributionConsent();
+    const finalWithdrawal = denyMetaAttributionConsent();
+    while (!resolveWithdrawal) await Promise.resolve();
+    resolveWithdrawal();
+
+    await expect(firstWithdrawal).resolves.toBe(true);
+    await expect(queuedGrant).resolves.toBe(false);
+    await expect(finalWithdrawal).resolves.toBe(true);
+    expect(AsyncStorage.setItem).toHaveBeenLastCalledWith(
+      "persistence.meta-attribution-consent.v1",
+      "denied",
+    );
+    expect(Settings.initializeSDK).not.toHaveBeenCalled();
+    expect(AppEventsLogger.logEvent).not.toHaveBeenCalled();
+  });
+
   it("does not re-grant when the preceding withdrawal fails", async () => {
     (AsyncStorage.setItem as jest.Mock).mockRejectedValueOnce(
       new Error("storage unavailable"),
@@ -331,6 +357,29 @@ describe("Meta attribution consent gate", () => {
 
     await expect(bootstrapMetaAttribution()).resolves.toBe("granted");
     expect(Settings.initializeSDK).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not restore a stale bootstrap grant after a withdrawal", async () => {
+    let resolveConsentRead!: (value: string) => void;
+    (AsyncStorage.getItem as jest.Mock).mockReturnValueOnce(
+      new Promise<string>((resolve) => {
+        resolveConsentRead = resolve;
+      }),
+    );
+
+    const bootstrap = bootstrapMetaAttribution();
+    await Promise.resolve();
+    const withdrawal = denyMetaAttributionConsent();
+    resolveConsentRead("granted");
+
+    await expect(withdrawal).resolves.toBe(true);
+    await expect(bootstrap).resolves.toBe("denied");
+    expect(AsyncStorage.setItem).toHaveBeenLastCalledWith(
+      "persistence.meta-attribution-consent.v1",
+      "denied",
+    );
+    expect(Settings.initializeSDK).not.toHaveBeenCalled();
+    expect(AppEventsLogger.logEvent).not.toHaveBeenCalled();
   });
 
   it("is a silent no-op when native Meta configuration is absent", async () => {

@@ -28,17 +28,25 @@ export async function getMetaAttributionConsent(): Promise<MetaAttributionConsen
  * names, free text and internal identifiers cannot enter this integration.
  */
 export function grantMetaAttributionConsent(): Promise<boolean> {
+  return grantMetaAttributionConsentForGeneration(consentGeneration);
+}
+
+function grantMetaAttributionConsentForGeneration(
+  requestedGeneration: number,
+): Promise<boolean> {
   if (!isMetaAttributionConfigured() || initialized) {
     return Promise.resolve(initialized);
   }
   if (revocationInFlight) {
     return revocationInFlight.then((revoked) =>
-      revoked ? grantMetaAttributionConsent() : false,
+      revoked && requestedGeneration === consentGeneration
+        ? grantMetaAttributionConsentForGeneration(requestedGeneration)
+        : false,
     );
   }
+  if (requestedGeneration !== consentGeneration) return Promise.resolve(false);
   if (grantInFlight) return grantInFlight;
-  const generation = consentGeneration;
-  grantInFlight = activateMetaAttribution(generation).finally(() => {
+  grantInFlight = activateMetaAttribution(requestedGeneration).finally(() => {
     grantInFlight = null;
   });
   return grantInFlight;
@@ -92,9 +100,9 @@ async function activateMetaAttribution(generation: number): Promise<boolean> {
 }
 
 export async function denyMetaAttributionConsent(): Promise<boolean> {
-  if (revocationInFlight) return revocationInFlight;
   consentGeneration += 1;
   initialized = false;
+  if (revocationInFlight) return revocationInFlight;
   const pendingGrant = grantInFlight;
   revocationInFlight = revokeMetaAttribution(pendingGrant).finally(() => {
     revocationInFlight = null;
@@ -138,8 +146,14 @@ async function revokeMetaAttribution(
 }
 
 export async function bootstrapMetaAttribution(): Promise<MetaAttributionConsent> {
+  const requestedGeneration = consentGeneration;
   const consent = await getMetaAttributionConsent();
-  if (consent === "granted") await grantMetaAttributionConsent();
+  // A withdrawal that lands while storage is being read supersedes that
+  // snapshot, even if the delayed read returns the old durable grant.
+  if (requestedGeneration !== consentGeneration) return "denied";
+  if (consent === "granted") {
+    await grantMetaAttributionConsentForGeneration(requestedGeneration);
+  }
   return consent;
 }
 

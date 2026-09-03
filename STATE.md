@@ -47,10 +47,13 @@ Optional native Meta install/open measurement is explicitly consent gated (plus
 ATT on iOS), sends only the parameter-free activation event/advertising ID,
 keeps automatic and purchase events disabled, fails closed when unconfigured or
 on native/storage errors, and can be withdrawn/regranted in Privacy Settings.
+Every withdrawal now advances the consent-intent generation, including a
+deduplicated withdrawal already in flight, so a rapid OFF → ON → OFF sequence
+cannot let the queued grant override the user's final denial.
 The mobile/web policy and `docs/mobile-meta-attribution.md` document the scope.
 
 Repository format/typecheck/lint/build and all monorepo unit suites are green;
-mobile passes 520 suites / 6,539 tests at 97.46% lines and 90.60% branches.
+mobile passes 521 suites / 6,546 tests.
 Android debug builds with Temurin JDK 17; the unsigned iOS simulator build passes
 with New Architecture, FBSDK and ATT linked. Before release, an owner must verify
 Meta app/client-token and bundle/package associations, reconcile captured payloads
