@@ -26,6 +26,18 @@ four audited mutation families. Focused result: 3 files / 20 tests pass; core
 typecheck, touched-file ESLint/Prettier and `git diff --check` pass. The parent
 release session owns the full workspace gates and PR creation.
 
+A second Inspector pass closed the remaining cross-repository gaps. Pending
+grants now reserve capped referral capacity at sale time; ordinary app claims
+count those live pending reservations, while applying the reserved grant frees
+and consumes its own slot in one transaction. Pending grant binding,
+subscription creation, required attribution, lock and audit now commit or roll
+back together. Manual admin attribution performs its serialized before-read,
+claim and audit under the same per-user transaction. Referral-code PATCH takes
+`SELECT … FOR UPDATE` before deriving the audit `before` image, so concurrent
+PATCHes cannot both claim the same starting state. Real PGlite rollback/cap
+tests plus handler wiring tests bring the focused result to **3 files / 24
+tests**; core typecheck and touched-file format/lint/diff gates pass.
+
 The public `/founding` route now carries the approved £30 Premium, £50 Premium+
 and £99 Start Up Coach+ six-month offers, the static consumer seat counter,
 funding/redemption copy, optional bank instructions and per-tier Stripe Payment

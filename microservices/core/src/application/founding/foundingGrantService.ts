@@ -222,8 +222,9 @@ export class FoundingGrantService {
               }
               await this.referrals.lock(profile.id, transaction);
             } else if (
-              !(await this.referrals.isCodeEligible(
+              !(await this.referrals.isCodeEligibleForPendingGrant(
                 referralCodeId,
+                grantId,
                 transaction,
               ))
             ) {
@@ -395,32 +396,54 @@ export class FoundingGrantService {
       if (pending.length === 0) return false;
       let appliedAny = false;
       for (const grant of pending) {
-        const res = await this.grants.applyPending(grant.id, userId);
+        const res = await this.grants.applyPending(
+          grant.id,
+          userId,
+          async ({ transaction, expiresAt }) => {
+            if (grant.referralCodeId) {
+              const code = await this.referrals.findCodeByIdIn(
+                transaction,
+                grant.referralCodeId,
+              );
+              if (!code) throw new ReferralClaimRejected("invalid");
+              const claim = await this.referrals.claim(
+                {
+                  userId,
+                  canonicalCode: code.code,
+                  source: "admin",
+                  createdBy: grant.grantedBy,
+                },
+                transaction,
+              );
+              if (claim.kind === "invalid") {
+                throw new ReferralClaimRejected("invalid");
+              }
+              if (
+                claim.kind === "locked" &&
+                claim.applied.codeId !== grant.referralCodeId
+              ) {
+                throw new ReferralClaimRejected("locked_elsewhere");
+              }
+            }
+            await this.referrals.lock(userId, transaction);
+            await this.audit.record(
+              {
+                actorId: grant.grantedBy,
+                action: "founding_grant.apply_pending",
+                entityType: "founding_grant",
+                entityId: grant.id,
+                after: {
+                  userId,
+                  tierName: grant.tierName,
+                  expiresAt: expiresAt.toISOString(),
+                },
+              },
+              transaction,
+            );
+          },
+        );
         if (!res.applied) continue;
         appliedAny = true;
-        if (grant.referralCodeId) {
-          const code = await this.referrals.findCodeById(grant.referralCodeId);
-          if (code) {
-            await this.referrals.claim({
-              userId,
-              canonicalCode: code.code,
-              source: "admin",
-              createdBy: grant.grantedBy,
-            });
-          }
-        }
-        await this.referrals.lock(userId).catch(() => undefined);
-        await this.audit.record({
-          actorId: grant.grantedBy,
-          action: "founding_grant.apply_pending",
-          entityType: "founding_grant",
-          entityId: grant.id,
-          after: {
-            userId,
-            tierName: res.tierName,
-            expiresAt: res.expiresAt?.toISOString() ?? null,
-          },
-        });
       }
       return appliedAny;
     } catch (err) {

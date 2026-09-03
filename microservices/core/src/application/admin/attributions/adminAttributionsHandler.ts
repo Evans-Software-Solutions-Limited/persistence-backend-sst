@@ -23,13 +23,29 @@ export const adminAttributionsHandler = new Elysia().use(adminGuard).post(
       return { message: "Code must be 4–24 letters or digits" };
     }
     const repo = new ReferralRepository();
-    const before = await repo.findAppliedForUser(ctx.body.userId);
-    const outcome = await repo.claim({
-      userId: ctx.body.userId,
-      canonicalCode: canonical,
-      source: "admin",
-      createdBy: actorId,
-    });
+    const outcome = await repo.claim(
+      {
+        userId: ctx.body.userId,
+        canonicalCode: canonical,
+        source: "admin",
+        createdBy: actorId,
+      },
+      undefined,
+      async (before, applied, transaction) => {
+        await new AdminAuditRepository().record(
+          {
+            actorId,
+            action: "referral_attribution.set",
+            entityType: "user",
+            entityId: ctx.body.userId,
+            before: before ? { code: before.code } : null,
+            after: { code: applied.applied.code },
+            reason: ctx.body.reason,
+          },
+          transaction,
+        );
+      },
+    );
     if (outcome.kind === "invalid") {
       ctx.set.status = 404;
       return { message: "That code isn't valid" };
@@ -38,15 +54,6 @@ export const adminAttributionsHandler = new Elysia().use(adminGuard).post(
       ctx.set.status = 409;
       return { message: "This user's attribution is locked" };
     }
-    await new AdminAuditRepository().record({
-      actorId,
-      action: "referral_attribution.set",
-      entityType: "user",
-      entityId: ctx.body.userId,
-      before: before ? { code: before.code } : null,
-      after: { code: outcome.applied.code },
-      reason: ctx.body.reason,
-    });
     return { data: outcome.applied };
   },
   {

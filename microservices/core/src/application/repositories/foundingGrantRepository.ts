@@ -95,6 +95,12 @@ export interface GrantTransactionContext {
   subscriptionExpiresAt: Date | null;
 }
 
+export interface PendingGrantTransactionContext {
+  transaction: DatabaseTransaction;
+  grant: FoundingGrant;
+  expiresAt: Date;
+}
+
 function statusOf(row: {
   userId: string | null;
   revokedAt: Date | null;
@@ -343,6 +349,7 @@ export class FoundingGrantRepository {
   async applyPending(
     grantId: string,
     userId: string,
+    finalize?: (context: PendingGrantTransactionContext) => Promise<void>,
   ): Promise<{
     applied: boolean;
     expiresAt: Date | null;
@@ -378,6 +385,13 @@ export class FoundingGrantRepository {
         .update(foundingGrants)
         .set({ subscriptionId: sub.id })
         .where(eq(foundingGrants.id, grant.id));
+      if (finalize) {
+        await finalize({
+          transaction: tx,
+          grant,
+          expiresAt: sub.expiresAt,
+        });
+      }
       return {
         applied: true,
         expiresAt: sub.expiresAt,

@@ -41,11 +41,17 @@ describe("founding/referral repository transaction invariants", () => {
         starts_at timestamptz,
         expires_at timestamptz,
         cancelled_at timestamptz,
+        trial_ends_at timestamptz,
         billing_cycle text,
+        next_billing_date timestamptz,
         external_subscription_id text,
         metadata jsonb,
+        created_at timestamptz DEFAULT now(),
         updated_at timestamptz DEFAULT now()
       );
+      CREATE UNIQUE INDEX user_subscriptions_active_unique
+        ON user_subscriptions (user_id)
+        WHERE payment_status IN ('active', 'pending', 'trialing', 'past_due');
       INSERT INTO profiles (id, email, role) VALUES
         ('${ADMIN}', 'admin@example.test', 'admin'),
         ('${USER}', 'user@example.test', 'user');
@@ -168,6 +174,195 @@ describe("founding/referral repository transaction invariants", () => {
     for (const code of [paused, future, expired, full]) {
       expect(await repo.isCodeEligible(code.id)).toBe(false);
     }
+  });
+
+  it("reserves the last capped referral for one pending sale and applies it atomically", async () => {
+    const referrals = new ReferralRepository();
+    const grants = new FoundingGrantRepository();
+    const audit = new AdminAuditRepository();
+    const code = await createCode("RESERVED", 1);
+    const grantInput = (id: string, email: string) => ({
+      id,
+      userId: null,
+      email,
+      tierName: "premium" as const,
+      months: 6,
+      amountMinor: 3000,
+      currency: "GBP",
+      paymentMethod: "bank_transfer" as const,
+      paymentReference: null,
+      paidAt: new Date(),
+      referralCodeId: code.id,
+      grantedBy: ADMIN,
+      notes: null,
+    });
+    const firstId = "00000000-0000-4000-8000-000000000030";
+    const secondId = "00000000-0000-4000-8000-000000000031";
+
+    await grants.create(
+      grantInput(firstId, "first@example.test"),
+      "consumer",
+      async ({ transaction }) => {
+        expect(
+          await referrals.isCodeEligibleForPendingGrant(
+            code.id,
+            firstId,
+            transaction,
+          ),
+        ).toBe(true);
+      },
+    );
+    await expect(
+      grants.create(
+        grantInput(secondId, "second@example.test"),
+        "consumer",
+        async ({ transaction }) => {
+          if (
+            !(await referrals.isCodeEligibleForPendingGrant(
+              code.id,
+              secondId,
+              transaction,
+            ))
+          ) {
+            throw new Error("reserved cap exhausted");
+          }
+        },
+      ),
+    ).rejects.toThrow("reserved cap exhausted");
+
+    await expect(
+      grants.applyPending(firstId, USER, async ({ transaction }) => {
+        const outcome = await referrals.claim(
+          { userId: USER, canonicalCode: code.code, source: "admin" },
+          transaction,
+        );
+        expect(outcome.kind).toBe("applied");
+        await referrals.lock(USER, transaction);
+        await audit.record(
+          {
+            actorId: null as never,
+            action: "founding_grant.apply_pending",
+            entityType: "founding_grant",
+          },
+          transaction,
+        );
+      }),
+    ).rejects.toThrow();
+    expect(
+      (
+        await pg.query<{ user_id: string | null }>(
+          "SELECT user_id FROM founding_grants WHERE id = $1",
+          [firstId],
+        )
+      ).rows[0].user_id,
+    ).toBeNull();
+    expect(
+      (await pg.query("SELECT id FROM referral_redemptions")).rows,
+    ).toEqual([]);
+    expect((await pg.query("SELECT id FROM user_subscriptions")).rows).toEqual(
+      [],
+    );
+
+    const applied = await grants.applyPending(
+      firstId,
+      USER,
+      async ({ transaction }) => {
+        const outcome = await referrals.claim(
+          { userId: USER, canonicalCode: code.code, source: "admin" },
+          transaction,
+        );
+        expect(outcome.kind).toBe("applied");
+        await referrals.lock(USER, transaction);
+        await audit.record(
+          {
+            actorId: ADMIN,
+            action: "founding_grant.apply_pending",
+            entityType: "founding_grant",
+            entityId: firstId,
+          },
+          transaction,
+        );
+      },
+    );
+    expect(applied.applied).toBe(true);
+    const final = await pg.query<{
+      user_id: string;
+      redemption_count: number;
+      locked_at: string;
+    }>(`SELECT g.user_id, c.redemption_count, r.locked_at
+        FROM founding_grants g
+        JOIN referral_codes c ON c.id = g.referral_code_id
+        JOIN referral_redemptions r ON r.user_id = g.user_id
+        WHERE g.id = '${firstId}'`);
+    expect(final.rows[0]).toMatchObject({
+      user_id: USER,
+      redemption_count: 1,
+    });
+    expect(final.rows[0].locked_at).not.toBeNull();
+  });
+
+  it("rolls back manual attribution when its serialized audit callback fails", async () => {
+    const referrals = new ReferralRepository();
+    const audit = new AdminAuditRepository();
+    await createCode("MANUAL");
+
+    await expect(
+      referrals.claim(
+        { userId: USER, canonicalCode: "MANUAL", source: "admin" },
+        undefined,
+        (_before, _outcome, transaction) =>
+          audit.record(
+            {
+              actorId: null as never,
+              action: "referral_attribution.set",
+              entityType: "user",
+            },
+            transaction,
+          ),
+      ),
+    ).rejects.toThrow();
+    expect(
+      (await pg.query("SELECT id FROM referral_redemptions")).rows,
+    ).toEqual([]);
+    expect(
+      (
+        await pg.query<{ redemption_count: number }>(
+          "SELECT redemption_count FROM referral_codes WHERE code = 'MANUAL'",
+        )
+      ).rows[0].redemption_count,
+    ).toBe(0);
+  });
+
+  it("serializes concurrent manual reassignments and gives each audit its true before-state", async () => {
+    const referrals = new ReferralRepository();
+    await createCode("ORIGINAL");
+    await createCode("OPTIONB");
+    await createCode("OPTIONC");
+    await referrals.claim({
+      userId: USER,
+      canonicalCode: "ORIGINAL",
+      source: "admin",
+    });
+    const transitions: Array<{ before: string | null; after: string }> = [];
+
+    await Promise.all(
+      ["OPTIONB", "OPTIONC"].map((canonicalCode) =>
+        referrals.claim(
+          { userId: USER, canonicalCode, source: "admin" },
+          undefined,
+          async (before, outcome) => {
+            transitions.push({
+              before: before?.code ?? null,
+              after: outcome.applied.code,
+            });
+          },
+        ),
+      ),
+    );
+
+    expect(transitions).toHaveLength(2);
+    expect(transitions[0].before).toBe("ORIGINAL");
+    expect(transitions[1].before).toBe(transitions[0].after);
   });
 
   it("rolls back a founding grant when its audit insert fails", async () => {

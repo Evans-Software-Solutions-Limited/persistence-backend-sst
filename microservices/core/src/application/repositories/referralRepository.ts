@@ -143,6 +143,19 @@ export class ReferralRepository {
     return rows[0] ?? null;
   }
 
+  async findCodeByIdForUpdate(
+    transaction: Tx,
+    id: string,
+  ): Promise<ReferralCode | null> {
+    const rows = await transaction
+      .select()
+      .from(referralCodes)
+      .where(eq(referralCodes.id, id))
+      .limit(1)
+      .for("update");
+    return rows[0] ?? null;
+  }
+
   async findCodeByCanonical(code: string): Promise<ReferralCode | null> {
     const db = getDb();
     const rows = await db
@@ -172,12 +185,54 @@ export class ReferralRepository {
           ),
           or(
             isNull(referralCodes.maxRedemptions),
-            sql`${referralCodes.redemptionCount} < ${referralCodes.maxRedemptions}`,
+            sql`${referralCodes.redemptionCount} + (
+              SELECT count(*) FROM ${foundingGrants}
+              WHERE ${foundingGrants.referralCodeId} = ${referralCodes.id}
+                AND ${foundingGrants.userId} IS NULL
+                AND ${foundingGrants.revokedAt} IS NULL
+            ) < ${referralCodes.maxRedemptions}`,
           ),
         ),
       )
       .limit(1);
     const rows = transaction ? await query.for("update") : await query;
+    return rows.length > 0;
+  }
+
+  async isCodeEligibleForPendingGrant(
+    id: string,
+    grantId: string,
+    transaction: Tx,
+  ): Promise<boolean> {
+    const rows = await transaction
+      .select({ id: referralCodes.id })
+      .from(referralCodes)
+      .where(
+        and(
+          eq(referralCodes.id, id),
+          eq(referralCodes.status, "active"),
+          or(
+            isNull(referralCodes.startsAt),
+            sql`${referralCodes.startsAt} <= now()`,
+          ),
+          or(
+            isNull(referralCodes.endsAt),
+            sql`${referralCodes.endsAt} > now()`,
+          ),
+          or(
+            isNull(referralCodes.maxRedemptions),
+            sql`${referralCodes.redemptionCount} + (
+              SELECT count(*) FROM ${foundingGrants}
+              WHERE ${foundingGrants.referralCodeId} = ${referralCodes.id}
+                AND ${foundingGrants.id} <> ${grantId}
+                AND ${foundingGrants.userId} IS NULL
+                AND ${foundingGrants.revokedAt} IS NULL
+            ) < ${referralCodes.maxRedemptions}`,
+          ),
+        ),
+      )
+      .limit(1)
+      .for("update");
     return rows.length > 0;
   }
 
@@ -345,6 +400,11 @@ export class ReferralRepository {
       createdBy?: string | null;
     },
     transaction?: Tx,
+    finalize?: (
+      before: AppliedReferral | null,
+      outcome: Extract<ClaimOutcome, { kind: "applied" | "unchanged" }>,
+      transaction: Tx,
+    ) => Promise<void>,
   ): Promise<ClaimOutcome> {
     const db = getDb();
     const execute = async (tx: Tx): Promise<ClaimOutcome> => {
@@ -361,7 +421,9 @@ export class ReferralRepository {
       // who already owns the final redemption can retry after the cap fills or
       // the campaign closes without turning success into an invalid-code error.
       if (existing && existingRows[0].canonicalCode === input.canonicalCode) {
-        return { kind: "unchanged", applied: existing };
+        const outcome = { kind: "unchanged", applied: existing } as const;
+        if (finalize) await finalize(existing, outcome, tx);
+        return outcome;
       }
 
       const claimed = await tx
@@ -384,7 +446,12 @@ export class ReferralRepository {
             ),
             or(
               isNull(referralCodes.maxRedemptions),
-              sql`${referralCodes.redemptionCount} < ${referralCodes.maxRedemptions}`,
+              sql`${referralCodes.redemptionCount} + (
+                SELECT count(*) FROM ${foundingGrants}
+                WHERE ${foundingGrants.referralCodeId} = ${referralCodes.id}
+                  AND ${foundingGrants.userId} IS NULL
+                  AND ${foundingGrants.revokedAt} IS NULL
+              ) < ${referralCodes.maxRedemptions}`,
             ),
           ),
         )
@@ -424,7 +491,7 @@ export class ReferralRepository {
         });
       }
 
-      return {
+      const outcome = {
         kind: "applied",
         replacedCodeId: existing?.codeId ?? null,
         applied: {
@@ -436,7 +503,9 @@ export class ReferralRepository {
           source: input.source,
           createdAt: existing?.createdAt ?? now,
         },
-      };
+      } as const;
+      if (finalize) await finalize(existing, outcome, tx);
+      return outcome;
     };
     return transaction ? execute(transaction) : db.transaction(execute);
   }

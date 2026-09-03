@@ -56,4 +56,53 @@ describe("adminReferralCodesHandler", () => {
       expect(getDb).not.toHaveBeenCalled();
     },
   );
+
+  it("locks the code row before PATCH and audits the serialized before-state", async () => {
+    const { getDb } = await import("@persistence/db/client");
+    const { ReferralRepository } =
+      await import("../../repositories/referralRepository");
+    const { AdminAuditRepository } =
+      await import("../../repositories/adminAuditRepository");
+    const { adminReferralCodesHandler } =
+      await import("../referral-codes/adminReferralCodesHandler");
+    const transaction = { kind: "test-transaction" };
+    vi.mocked(getDb).mockReturnValue({
+      transaction: (run: (tx: object) => unknown) => run(transaction),
+    } as never);
+    const before = {
+      id: "11111111-1111-4111-8111-111111111111",
+      status: "active",
+      label: "Before",
+      maxRedemptions: 10,
+      startsAt: null,
+      endsAt: null,
+    };
+    const after = { ...before, status: "archived" };
+    const find = vi
+      .spyOn(ReferralRepository.prototype, "findCodeByIdForUpdate")
+      .mockResolvedValue(before as never);
+    vi.spyOn(ReferralRepository.prototype, "updateCodeIn").mockResolvedValue(
+      after as never,
+    );
+    const audit = vi
+      .spyOn(AdminAuditRepository.prototype, "record")
+      .mockResolvedValue();
+
+    const response = await adminReferralCodesHandler.handle(
+      request({ status: "archived" }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(find).toHaveBeenCalledWith(
+      transaction,
+      "11111111-1111-4111-8111-111111111111",
+    );
+    expect(audit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        before: expect.objectContaining({ status: "active" }),
+        after: { status: "archived" },
+      }),
+      transaction,
+    );
+  });
 });

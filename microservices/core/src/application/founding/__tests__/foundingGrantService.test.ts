@@ -18,8 +18,10 @@ function makeRepos() {
   const referrals = {
     findCodeByCanonical: vi.fn(async () => null),
     findCodeById: vi.fn(async () => null),
+    findCodeByIdIn: vi.fn(async () => null),
     hasLockedOtherCode: vi.fn(async () => false),
     isCodeEligible: vi.fn(async () => true),
+    isCodeEligibleForPendingGrant: vi.fn(async () => true),
     claim: vi.fn(async () => ({ kind: "applied" })),
     lock: vi.fn(async () => true),
   };
@@ -368,27 +370,49 @@ describe("FoundingGrantService.applyPendingForUser", () => {
     grants.findPendingByEmail.mockResolvedValue([
       { id: "g9", referralCodeId: "code1", grantedBy: "admin-1" },
     ] as any);
-    grants.applyPending.mockResolvedValue({
-      applied: true,
-      expiresAt: new Date("2027-01-01T00:00:00Z"),
-      tierName: "premium",
-    });
-    referrals.findCodeById.mockResolvedValue({
+    grants.applyPending.mockImplementation(
+      async (_grantId, _userId, finalize) => {
+        await finalize({
+          transaction: { kind: "test-transaction" },
+          grant: {
+            id: "g9",
+            tierName: "premium",
+            referralCodeId: "code1",
+          },
+          expiresAt: new Date("2027-01-01T00:00:00Z"),
+        });
+        return {
+          applied: true,
+          expiresAt: new Date("2027-01-01T00:00:00Z"),
+          tierName: "premium",
+        };
+      },
+    );
+    referrals.findCodeByIdIn.mockResolvedValue({
       id: "code1",
       code: "UONFRESHERS",
     } as any);
 
     expect(await svc.applyPendingForUser("u9", "A@B.co")).toBe(true);
-    expect(grants.applyPending).toHaveBeenCalledWith("g9", "u9");
+    expect(grants.applyPending).toHaveBeenCalledWith(
+      "g9",
+      "u9",
+      expect.any(Function),
+    );
     expect(referrals.claim).toHaveBeenCalledWith(
       expect.objectContaining({ userId: "u9", canonicalCode: "UONFRESHERS" }),
+      expect.objectContaining({ kind: "test-transaction" }),
     );
-    expect(referrals.lock).toHaveBeenCalledWith("u9");
+    expect(referrals.lock).toHaveBeenCalledWith(
+      "u9",
+      expect.objectContaining({ kind: "test-transaction" }),
+    );
     expect(audit.record).toHaveBeenCalledWith(
       expect.objectContaining({
         action: "founding_grant.apply_pending",
         entityId: "g9",
       }),
+      expect.objectContaining({ kind: "test-transaction" }),
     );
   });
 

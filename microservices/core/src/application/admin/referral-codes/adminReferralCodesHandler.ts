@@ -140,7 +140,10 @@ export const adminReferralCodesHandler = new Elysia()
         return { message: "endsAt is not a valid date" };
       }
       const result = await getDb().transaction(async (transaction) => {
-        const before = await repo.findCodeByIdIn(transaction, ctx.params.id);
+        const before = await repo.findCodeByIdForUpdate(
+          transaction,
+          ctx.params.id,
+        );
         if (!before) return null;
         const updated = await repo.updateCodeIn(transaction, ctx.params.id, {
           status: ctx.body.status,
