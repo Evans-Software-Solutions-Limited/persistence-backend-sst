@@ -126,7 +126,55 @@ mobile code entry (§ Mobile), Supabase redirect-URL allow-list for
 `/admin/callback`, staging smoke test, prod release. The worktree's `node_modules`
 dirs are VM-generated junk — `rm -rf` them and `bun install` before local use.
 
+### 🟡 2026-09-02 — MOBILE RELEASE READINESS (branch `codex/mobile-release-drag-loader-meta`)
 
+Workout creation/editing and live sessions now use nestable draggable lists;
+supersets move as indivisible blocks, handle long-press starts drag with haptics,
+exact block positions persist, and accessibility actions/announcements remain.
+Post-PR simulator QA found two iOS gesture regressions: Active Session now uses
+one draggable list as its scroll surface instead of competing nested vertical
+recognizers. Create Workout, Edit Workout and Active Session use non-dismissible
+full-screen modal presentation, removing the iOS page-sheet pan recognizer that
+continued to move despite `gestureEnabled: false` and stole handle drags. The
+same simulated vertical gesture that previously dismissed the session now
+leaves it open; simulator mouse input cannot reliably trigger React Native
+long-press, so physical-device handle feel remains an owner check before release.
+Create/Edit retain their normal full-card drag presentation. Active Workout
+alone follows a dedicated compact reorder mode: starting a handle drag
+automatically converts the whole list to fixed
+72px rows for that same gesture, then releasing automatically restores the
+full workout. The library first captures the original cell offset so the row
+stays anchored beneath the held finger; `onDragBegin` then compensates the
+compact offset and scroll position by the measured height removed above the
+active row, synchronizes the active-cell/placeholder height, and preserves the
+full list's scroll extent so lower rows cannot be displaced by native bottom
+clamping. Superset names
+are capped at two lines regardless of exercise or set count; Done is unnecessary
+and the sticky Finish action is hidden only while dragging.
+Autoscroll is intentionally less aggressive.
+`react-native-draggable-flatlist` 4.0.3 remains the dependency.
+An ExpoSQLite native rebuild exposed Xcode 26 resolving the system `sqlite3.h`
+from CocoaPods' generated umbrella header, hiding Expo's renamed C symbols.
+The source-controlled Expo config plugin now qualifies that generated import;
+fresh Expo prebuild, pod installation and an iOS simulator build pass.
+Native splash/bootstrap/auth-callback surfaces use the canonical dark background.
+Optional native Meta install/open measurement is explicitly consent gated (plus
+ATT on iOS), sends only the parameter-free activation event/advertising ID,
+keeps automatic and purchase events disabled, fails closed when unconfigured or
+on native/storage errors, and can be withdrawn/regranted in Privacy Settings.
+Every withdrawal now advances the consent-intent generation, including a
+deduplicated withdrawal already in flight, so a rapid OFF → ON → OFF sequence
+cannot let the queued grant override the user's final denial.
+The mobile/web policy and `docs/mobile-meta-attribution.md` document the scope.
+
+Repository format/typecheck/lint/build and all monorepo unit suites are green;
+mobile passes 521 suites / 6,546 tests.
+Android debug builds with Temurin JDK 17; the unsigned iOS simulator build passes
+with New Architecture, FBSDK and ATT linked. Before release, an owner must verify
+Meta app/client-token and bundle/package associations, reconcile captured payloads
+with App Store/Play disclosures, test Events Manager and consent/ATT on physical
+iOS/Android devices, and visually verify drag/autoscroll plus light/dark launch on
+both platforms. No store binary was submitted.
 ### 🔴 2026-09-01 — STAGING CORE API ROUTE STARTUP HOTFIX
 
 After Spec 31 backend #426 deployed, every staging core API request returned

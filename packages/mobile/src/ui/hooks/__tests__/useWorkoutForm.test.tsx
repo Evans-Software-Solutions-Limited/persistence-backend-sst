@@ -163,6 +163,33 @@ describe("useWorkoutForm", () => {
     expect(result.current.isDirty).toBe(true);
   });
 
+  it("reorders across multiple positions while keeping a superset intact", () => {
+    const ids = generateId();
+    const { result } = renderHook(() => useWorkoutForm(EMPTY_FORM_STATE, ids));
+    act(() =>
+      result.current.addSuperset([
+        { id: "a", name: "A" },
+        { id: "b", name: "B" },
+      ]),
+    );
+    act(() =>
+      result.current.addExercises([
+        { id: "c", name: "C" },
+        { id: "d", name: "D" },
+      ]),
+    );
+    const leadId = result.current.state.exercises[0].id;
+
+    act(() => result.current.reorderExercise(leadId, 2));
+
+    expect(
+      result.current.state.exercises.map((exercise) => exercise.exercise_name),
+    ).toEqual(["C", "D", "A", "B"]);
+    expect(
+      result.current.state.exercises.map((exercise) => exercise.sort_order),
+    ).toEqual([0, 1, 2, 3]);
+  });
+
   it("reset re-anchors pristine baseline; isDirty becomes false", () => {
     const { result } = renderHook(() =>
       useWorkoutForm(EMPTY_FORM_STATE, generateId()),

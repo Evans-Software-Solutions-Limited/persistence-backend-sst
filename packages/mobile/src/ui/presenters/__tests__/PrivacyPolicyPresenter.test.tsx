@@ -17,7 +17,7 @@ describe("PrivacyPolicyPresenter", () => {
       <PrivacyPolicyPresenter onBack={jest.fn()} />,
     );
     expect(getByText("Privacy Policy")).toBeTruthy();
-    expect(getByText("Last Updated: 7 August 2026")).toBeTruthy();
+    expect(getByText("Last Updated: 1 September 2026")).toBeTruthy();
   });
 
   it("renders all fourteen section titles verbatim", () => {
@@ -95,6 +95,14 @@ describe("PrivacyPolicyPresenter", () => {
     // in the Art 9(2)(a) basis. Both are load-bearing.
     expect(getAllByText(/religious or philosophical belief/).length).toBe(2);
     expect(getByText(/Food preferences/)).toBeTruthy();
+  });
+
+  it("discloses the narrow consent-gated Meta mobile attribution boundary", () => {
+    const { getByText } = renderWithTheme(
+      <PrivacyPolicyPresenter onBack={jest.fn()} />,
+    );
+    expect(getByText(/optional, consent-based measurement/)).toBeTruthy();
+    expect(getByText(/withdraw consent in Privacy Settings/)).toBeTruthy();
   });
 
   it("discloses Health Connect alongside Apple Health", () => {

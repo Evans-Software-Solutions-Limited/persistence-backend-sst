@@ -232,17 +232,14 @@ describe("Privacy", () => {
       screen.queryByText(/do not sell them or use them for advertising/),
     ).toBeNull();
     // Replaced with an accurate, scoped disclosure: Meta named as a server-side
-    // recipient, hashed email, consent-based, and app activity never sent.
+    // recipient, hashed email, consent-based, and the separately consented
+    // mobile measurement is narrowly disclosed.
     expect(
       screen.getByText(
         /our servers send Meta Platforms Ireland Limited a limited set of website events/,
       ),
     ).toBeTruthy();
-    expect(
-      screen.getByText(
-        /Your activity\s+inside the Persistence app is never sent to Meta/,
-      ),
-    ).toBeTruthy();
+    expect(screen.getByText(/device's advertising identifier/)).toBeTruthy();
     // The remaining scoped claim (health/app data not used for advertising) is
     // fine and stays — assert it survives so we don't over-scrub.
     expect(

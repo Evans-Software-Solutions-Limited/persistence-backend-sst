@@ -9,6 +9,12 @@ import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useAuth } from "@/ui/hooks/useAuth";
 import { useDeleteAccountFlow } from "@/ui/hooks/useDeleteAccountFlow";
 import { useProfilePage } from "@/ui/hooks/useProfilePage";
+import {
+  denyMetaAttributionConsent,
+  getMetaAttributionConsent,
+  grantMetaAttributionConsent,
+  isMetaAttributionConfigured,
+} from "@/application/analytics/metaAttribution";
 
 /**
  * M12: Privacy Settings container.
@@ -36,6 +42,13 @@ export function PrivacySettingsContainer() {
   const [isProfilePublic, setIsProfilePublic] = useState<boolean>(
     cachedIsPublic ?? false,
   );
+  const [metaAttributionEnabled, setMetaAttributionEnabled] = useState(false);
+
+  useEffect(() => {
+    void getMetaAttributionConsent().then((value) => {
+      setMetaAttributionEnabled(value === "granted");
+    });
+  }, []);
 
   // Seed local state once the cached payload arrives. Same pattern as
   // EditProfileContainer — cache-first hydration so a user coming in
@@ -89,6 +102,22 @@ export function PrivacySettingsContainer() {
   // action — one implementation, two entry points.
   const onDeleteAccount = useDeleteAccountFlow();
 
+  const onSetMetaAttributionEnabled = useCallback(async (enabled: boolean) => {
+    if (enabled) {
+      const activated = await grantMetaAttributionConsent();
+      setMetaAttributionEnabled(activated);
+    } else {
+      const revoked = await denyMetaAttributionConsent();
+      setMetaAttributionEnabled(!revoked);
+      if (!revoked) {
+        Alert.alert(
+          "Couldn't update advertising measurement",
+          "We couldn't safely save that change. Please try again.",
+        );
+      }
+    }
+  }, []);
+
   return (
     <PrivacySettingsPresenter
       isLoading={!hydrated}
@@ -98,6 +127,9 @@ export function PrivacySettingsContainer() {
       onOpenPrivacyPolicy={onOpenPrivacyPolicy}
       onOpenTerms={onOpenTerms}
       onDeleteAccount={onDeleteAccount}
+      metaAttributionAvailable={isMetaAttributionConfigured()}
+      metaAttributionEnabled={metaAttributionEnabled}
+      onSetMetaAttributionEnabled={onSetMetaAttributionEnabled}
     />
   );
 }

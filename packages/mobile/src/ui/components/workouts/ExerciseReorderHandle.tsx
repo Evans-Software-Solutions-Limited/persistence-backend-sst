@@ -1,8 +1,6 @@
-import { useCallback, useMemo } from "react";
+import { useCallback } from "react";
 import { AccessibilityInfo, Pressable } from "react-native";
 import * as Haptics from "expo-haptics";
-import { Gesture, GestureDetector } from "react-native-gesture-handler";
-import { runOnJS } from "react-native-reanimated";
 import { IconGrip } from "@/ui/components/icons";
 import { color } from "@/ui/theme/tokens";
 
@@ -10,7 +8,9 @@ export type ExerciseReorderHandleProps = {
   label: string;
   position: number;
   total: number;
-  onMove: (direction: -1 | 1) => void;
+  onMove?: (direction: -1 | 1) => void;
+  onDrag?: () => void;
+  isDragging?: boolean;
 };
 
 /** OTA-safe gesture + accessibility control shared by form and live rows. */
@@ -19,11 +19,13 @@ export function ExerciseReorderHandle({
   position,
   total,
   onMove,
+  onDrag,
+  isDragging = false,
 }: ExerciseReorderHandleProps) {
   const move = useCallback(
     (direction: -1 | 1) => {
       const next = position + direction;
-      if (next < 1 || next > total) return;
+      if (!onMove || next < 1 || next > total) return;
       onMove(direction);
       void Haptics.selectionAsync();
       void AccessibilityInfo.announceForAccessibility(
@@ -32,44 +34,40 @@ export function ExerciseReorderHandle({
     },
     [label, onMove, position, total],
   );
-  const pan = useMemo(
-    () =>
-      Gesture.Pan()
-        .activateAfterLongPress(180)
-        .onEnd((event) => {
-          if (Math.abs(event.translationY) < 28) return;
-          runOnJS(move)(event.translationY < 0 ? -1 : 1);
-        }),
-    [move],
-  );
   return (
-    <GestureDetector gesture={pan}>
-      <Pressable
-        testID={`reorder-${position}`}
-        accessibilityRole="adjustable"
-        accessibilityLabel={`Reorder ${label}, position ${position} of ${total}`}
-        accessibilityHint="Drag up or down, or use accessibility actions"
-        accessibilityActions={[
-          ...(position > 1
-            ? [{ name: "decrement" as const, label: "Move up" }]
-            : []),
-          ...(position < total
-            ? [{ name: "increment" as const, label: "Move down" }]
-            : []),
-        ]}
-        onAccessibilityAction={(event) => {
-          if (event.nativeEvent.actionName === "decrement") move(-1);
-          if (event.nativeEvent.actionName === "increment") move(1);
-        }}
-        style={{
-          minWidth: 44,
-          minHeight: 44,
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <IconGrip size={20} color={color.$text3} />
-      </Pressable>
-    </GestureDetector>
+    <Pressable
+      testID={`reorder-${position}`}
+      accessibilityRole="adjustable"
+      accessibilityLabel={`Reorder ${label}, position ${position} of ${total}`}
+      accessibilityHint="Long press and drag, or use Move up and Move down actions"
+      accessibilityActions={[
+        ...(onMove && position > 1
+          ? [{ name: "decrement" as const, label: "Move up" }]
+          : []),
+        ...(onMove && position < total
+          ? [{ name: "increment" as const, label: "Move down" }]
+          : []),
+      ]}
+      onAccessibilityAction={(event) => {
+        if (event.nativeEvent.actionName === "decrement") move(-1);
+        if (event.nativeEvent.actionName === "increment") move(1);
+      }}
+      onLongPress={() => {
+        if (!onDrag || isDragging) return;
+        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        onDrag();
+      }}
+      delayLongPress={180}
+      disabled={isDragging}
+      style={{
+        minWidth: 44,
+        minHeight: 44,
+        alignItems: "center",
+        justifyContent: "center",
+        opacity: isDragging ? 0.7 : 1,
+      }}
+    >
+      <IconGrip size={20} color={color.$text3} />
+    </Pressable>
   );
 }

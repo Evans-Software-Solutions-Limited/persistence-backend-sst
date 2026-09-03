@@ -1,6 +1,19 @@
 // Jest setup file for mobile package
 // Runs after test framework is installed but before tests execute
 
+// Optional native Meta attribution SDK. Production initializes it only after
+// explicit consent; Jest has no native FB modules, so expose inert spies.
+jest.mock("react-native-fbsdk-next", () => ({
+  __esModule: true,
+  Settings: {
+    initializeSDK: jest.fn(),
+    setAdvertiserTrackingEnabled: jest.fn(async () => true),
+    setAdvertiserIDCollectionEnabled: jest.fn(),
+    setAutoLogAppEventsEnabled: jest.fn(),
+  },
+  AppEventsLogger: { logEvent: jest.fn() },
+}));
+
 // Mock react-native-reanimated
 jest.mock("react-native-reanimated", () => {
   const { View, Text } = require("react-native");
@@ -635,6 +648,76 @@ jest.mock("@expo/vector-icons", () => {
       },
     },
   );
+});
+
+// Native drag mechanics are covered on-device. Tests render each row and can
+// invoke `onDragEnd` on the host View to verify exact-position persistence.
+jest.mock("react-native-draggable-flatlist", () => {
+  const React = require("react");
+  const { View } = require("react-native");
+  const NestableScrollContainer = ({ children, ...props }: any) =>
+    React.createElement(View, props, children);
+  const NestableDraggableFlatList = React.forwardRef(
+    (allProps: any, ref: any) => {
+      const {
+        data,
+        renderItem,
+        keyExtractor,
+        onDragBegin,
+        onDragEnd,
+        ListHeaderComponent,
+        ListEmptyComponent,
+        ListFooterComponent,
+        ...props
+      } = allProps;
+      const scrollToOffset = React.useMemo(() => jest.fn(), []);
+      React.useImperativeHandle(ref, () => ({ scrollToOffset }), [
+        scrollToOffset,
+      ]);
+      const dragMocks = data.map((_: unknown, index: number) =>
+        jest.fn(() => onDragBegin?.(index)),
+      );
+      const renderSlot = (slot: any) => {
+        if (!slot) return null;
+        return React.isValidElement(slot) ? slot : React.createElement(slot);
+      };
+      const children = [
+        renderSlot(ListHeaderComponent),
+        data.length === 0 ? renderSlot(ListEmptyComponent) : null,
+        ...data.map((item: any, index: number) =>
+          React.createElement(
+            View,
+            { key: keyExtractor(item, index) },
+            renderItem({
+              item,
+              drag: dragMocks[index],
+              isActive: false,
+              getIndex: () => index,
+            }),
+          ),
+        ),
+        renderSlot(ListFooterComponent),
+      ].filter(Boolean);
+      return React.createElement(
+        View,
+        {
+          ...props,
+          onDragBegin,
+          onDragEnd,
+          testScrollToOffset: scrollToOffset,
+        },
+        ...children,
+      );
+    },
+  );
+  const ScaleDecorator = ({ children }: any) => children;
+  return {
+    __esModule: true,
+    default: NestableDraggableFlatList,
+    NestableDraggableFlatList,
+    NestableScrollContainer,
+    ScaleDecorator,
+  };
 });
 
 // Silence known-noisy warnings in tests unless debugging.

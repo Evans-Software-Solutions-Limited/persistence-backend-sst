@@ -67,7 +67,7 @@ export function PrivacyPolicyPresenter({
       />
 
       <ScrollView style={styles.content} testID="privacy-policy-scroll">
-        <Text style={styles.lastUpdated}>Last Updated: 7 August 2026</Text>
+        <Text style={styles.lastUpdated}>Last Updated: 1 September 2026</Text>
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>1. Who we are</Text>
@@ -357,6 +357,13 @@ export function PrivacyPolicyPresenter({
             • Sentry — error and crash reporting to help us keep the app
             reliable. Technical error data is automatically scrubbed to remove
             personal information before it is sent.
+          </Text>
+          <Text style={styles.listItem}>
+            • Meta Platforms Ireland — optional, consent-based measurement of an
+            app install or opening using your device&apos;s advertising
+            identifier. Meta never receives your workouts, health, nutrition,
+            purchases, name, account ID or anything you type. You can withdraw
+            consent in Privacy Settings.
           </Text>
         </View>
 

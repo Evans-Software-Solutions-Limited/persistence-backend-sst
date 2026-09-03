@@ -223,6 +223,7 @@ export function WorkoutCreatorContainer() {
       onRemoveExercise={form.removeExercise}
       onExerciseConfigChange={form.setExerciseField}
       onMoveExercise={form.moveExercise}
+      onReorderExercise={form.reorderExercise}
       onSubmit={onSubmit}
       onCancel={onCancel}
     />

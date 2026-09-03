@@ -7,7 +7,6 @@
  * - Unauthenticated + not in (auth): redirect to /(auth)/sign-in
  * - Already on correct route: no redirect
  */
-
 // Mock useAuth hook
 const mockUseAuth = jest.fn<{ session: unknown; isLoading: boolean }, []>();
 jest.mock("../../src/ui/hooks/useAuth", () => ({
@@ -112,6 +111,11 @@ jest.mock("../../src/ui/hooks/useUserModeEligibility", () => ({
   useUserModeEligibility: () => mockUseUserModeEligibility(),
 }));
 
+const mockUseMetaAttribution = jest.fn<void, []>();
+jest.mock("../../src/ui/hooks/useMetaAttribution", () => ({
+  useMetaAttribution: () => mockUseMetaAttribution(),
+}));
+
 // Mock usePushNotifications — same rationale as the bootstraps above: the
 // real hook calls useAdapters/useAuth and throws without the provider
 // plumbing (covered in src/ui/hooks/__tests__/usePushNotifications.test.tsx).
@@ -159,7 +163,7 @@ import { usePasswordRecovery } from "../../src/state/password-recovery";
 // eslint-disable-next-line import/first
 import * as Notifications from "expo-notifications";
 // eslint-disable-next-line import/first
-import { Platform } from "react-native";
+import { Platform, StyleSheet } from "react-native";
 
 const SIGNED_IN_SESSION = {
   accessToken: "t",
@@ -290,6 +294,11 @@ describe("AuthGate", () => {
 
     const view = render(<RootLayout />);
     expect(view.queryByTestId("router-slot")).toBeNull();
+    expect(
+      StyleSheet.flatten(
+        view.getByTestId("onboarding-bootstrap-loading").props.style,
+      ),
+    ).toEqual(expect.objectContaining({ backgroundColor: "#0A0B12" }));
     expect(mockPLogoDrawLoader).toHaveBeenCalledWith(
       expect.objectContaining({ accessibilityLabel: "Loading your account" }),
     );
