@@ -19,7 +19,7 @@ export function Terms() {
       <section className="legal">
         <span className="kicker c-accent legal-kicker">Legal</span>
         <h1>Terms of Service</h1>
-        <p className="legal-updated">Last updated: 10 July 2026</p>
+        <p className="legal-updated">Last updated: 3 September 2026</p>
 
         <h2>Acceptance of terms</h2>
         <p>
@@ -38,10 +38,12 @@ export function Terms() {
 
         <h2>Subscriptions</h2>
         <p>
-          Some features require a paid subscription. Purchases are billed
-          through your app store account, and subscriptions renew automatically
-          unless cancelled. You can manage or cancel your subscription through
-          your app store account settings.
+          Some features require payment. Standard in-app subscriptions are
+          billed through your app store account and renew automatically unless
+          cancelled; you can manage or cancel them through your app store
+          account settings. Separately identified fixed-term offers, including
+          the founding offer, are paid once, do not renew automatically, and
+          expire at the stated end of their access period.
         </p>
 
         <h2>Health disclaimer</h2>

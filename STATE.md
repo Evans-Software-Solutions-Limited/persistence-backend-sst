@@ -40,10 +40,9 @@ The approved public `VITE_FOUNDING_BANK_DETAILS` value is wired through both
 deploy workflows and SST alongside the other founding-page variables; no actual
 bank details are committed. Founding invite emails now set Resend `reply_to` to
 the monitored admin address, so the existing invitation to reply does not route
-to `no-reply@`. Open: the existing general `/terms` subscription
-paragraph says paid subscriptions renew automatically, while the founding page
-correctly says these founding places do not auto-renew. Legal terms
-reconciliation is outside this work package and remains for Brad to decide.
+to `no-reply@`. Brad approved the legal reconciliation on 2026-09-03: `/terms`
+now distinguishes renewable app-store subscriptions from paid-once fixed-term
+offers (including the founding offer), and its last-updated date is current.
 
 ### 🟡 2026-09-03 — FOUNDING-OFFER backend (branch `feat/founding-offer-admin`, worktree `.claude/worktrees/founding-offer`)
 
