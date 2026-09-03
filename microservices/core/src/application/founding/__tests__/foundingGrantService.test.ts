@@ -411,6 +411,53 @@ describe("FoundingGrantService.applyPendingForUser", () => {
       expect.objectContaining({
         action: "founding_grant.apply_pending",
         entityId: "g9",
+        after: expect.objectContaining({ referralApplication: "applied" }),
+      }),
+      expect.objectContaining({ kind: "test-transaction" }),
+    );
+  });
+
+  it("applies purchased access while preserving a conflicting locked attribution", async () => {
+    const { svc, grants, referrals, audit } = makeRepos();
+    const grant = {
+      id: "g10",
+      tierName: "premium",
+      referralCodeId: "reserved-code",
+      grantedBy: "admin-1",
+    };
+    grants.findPendingByEmail.mockResolvedValue([grant] as any);
+    grants.applyPending.mockImplementation(
+      async (_grantId, _userId, finalize) => {
+        await finalize({
+          transaction: { kind: "test-transaction" },
+          grant,
+          expiresAt: new Date("2027-01-01T00:00:00Z"),
+        });
+        return {
+          applied: true,
+          expiresAt: new Date("2027-01-01T00:00:00Z"),
+          tierName: "premium",
+        };
+      },
+    );
+    referrals.findCodeByIdIn.mockResolvedValue({
+      id: "reserved-code",
+      code: "RESERVED",
+    } as any);
+    referrals.claim.mockResolvedValue({
+      kind: "locked",
+      applied: { codeId: "other-code", code: "OTHER" },
+    } as any);
+
+    expect(await svc.applyPendingForUser("u9", "buyer@example.test")).toBe(
+      true,
+    );
+    expect(referrals.lock).not.toHaveBeenCalled();
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        after: expect.objectContaining({
+          referralApplication: "locked_conflict",
+        }),
       }),
       expect.objectContaining({ kind: "test-transaction" }),
     );

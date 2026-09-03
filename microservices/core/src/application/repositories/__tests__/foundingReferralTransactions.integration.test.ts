@@ -233,7 +233,12 @@ describe("founding/referral repository transaction invariants", () => {
     await expect(
       grants.applyPending(firstId, USER, async ({ transaction }) => {
         const outcome = await referrals.claim(
-          { userId: USER, canonicalCode: code.code, source: "admin" },
+          {
+            userId: USER,
+            canonicalCode: code.code,
+            source: "admin",
+            reservedCodeId: code.id,
+          },
           transaction,
         );
         expect(outcome.kind).toBe("applied");
@@ -268,7 +273,12 @@ describe("founding/referral repository transaction invariants", () => {
       USER,
       async ({ transaction }) => {
         const outcome = await referrals.claim(
-          { userId: USER, canonicalCode: code.code, source: "admin" },
+          {
+            userId: USER,
+            canonicalCode: code.code,
+            source: "admin",
+            reservedCodeId: code.id,
+          },
           transaction,
         );
         expect(outcome.kind).toBe("applied");
@@ -299,6 +309,164 @@ describe("founding/referral repository transaction invariants", () => {
       redemption_count: 1,
     });
     expect(final.rows[0].locked_at).not.toBeNull();
+  });
+
+  it("consumes paid reservations after the code is paused, archived or expired", async () => {
+    const referrals = new ReferralRepository();
+    const grants = new FoundingGrantRepository();
+    const cases = [
+      {
+        code: "PAIDPAUSED",
+        userId: "00000000-0000-4000-8000-000000000041",
+        mutation: "status = 'paused'",
+      },
+      {
+        code: "PAIDARCHIVED",
+        userId: "00000000-0000-4000-8000-000000000042",
+        mutation: "status = 'archived'",
+      },
+      {
+        code: "PAIDEXPIRED",
+        userId: "00000000-0000-4000-8000-000000000043",
+        mutation: "ends_at = now() - interval '1 day'",
+      },
+    ];
+    for (const [index, testCase] of cases.entries()) {
+      await pg.query(
+        "INSERT INTO profiles (id, email, role) VALUES ($1, $2, 'user')",
+        [testCase.userId, `${testCase.code.toLowerCase()}@example.test`],
+      );
+      const code = await createCode(testCase.code, 1);
+      const grantId = `00000000-0000-4000-8000-${String(50 + index).padStart(12, "0")}`;
+      await grants.create(
+        {
+          id: grantId,
+          userId: null,
+          email: `${testCase.code.toLowerCase()}@example.test`,
+          tierName: "premium",
+          months: 6,
+          amountMinor: 3000,
+          currency: "GBP",
+          paymentMethod: "bank_transfer",
+          paymentReference: null,
+          paidAt: new Date(),
+          referralCodeId: code.id,
+          grantedBy: ADMIN,
+          notes: null,
+        },
+        "consumer",
+        async ({ transaction }) => {
+          expect(
+            await referrals.isCodeEligibleForPendingGrant(
+              code.id,
+              grantId,
+              transaction,
+            ),
+          ).toBe(true);
+        },
+      );
+      await pg.query(
+        `UPDATE referral_codes SET ${testCase.mutation} WHERE id = $1`,
+        [code.id],
+      );
+
+      const result = await grants.applyPending(
+        grantId,
+        testCase.userId,
+        async ({ transaction }) => {
+          const claim = await referrals.claim(
+            {
+              userId: testCase.userId,
+              canonicalCode: code.code,
+              source: "admin",
+              reservedCodeId: code.id,
+            },
+            transaction,
+          );
+          expect(claim.kind).toBe("applied");
+          await referrals.lock(testCase.userId, transaction);
+        },
+      );
+      expect(result.applied).toBe(true);
+    }
+  });
+
+  it("preserves a locked conflict without releasing the paid code reservation", async () => {
+    const referrals = new ReferralRepository();
+    const grants = new FoundingGrantRepository();
+    const reserved = await createCode("PAIDLOCKED", 1);
+    await createCode("EXISTING");
+    const grantId = "00000000-0000-4000-8000-000000000060";
+    await grants.create(
+      {
+        id: grantId,
+        userId: null,
+        email: "user@example.test",
+        tierName: "premium",
+        months: 6,
+        amountMinor: 3000,
+        currency: "GBP",
+        paymentMethod: "bank_transfer",
+        paymentReference: null,
+        paidAt: new Date(),
+        referralCodeId: reserved.id,
+        grantedBy: ADMIN,
+        notes: null,
+      },
+      "consumer",
+      async ({ transaction }) => {
+        expect(
+          await referrals.isCodeEligibleForPendingGrant(
+            reserved.id,
+            grantId,
+            transaction,
+          ),
+        ).toBe(true);
+      },
+    );
+    await referrals.claim({
+      userId: USER,
+      canonicalCode: "EXISTING",
+      source: "app",
+    });
+    await referrals.lock(USER);
+
+    const applied = await grants.applyPending(
+      grantId,
+      USER,
+      async ({ transaction }) => {
+        const claim = await referrals.claim(
+          {
+            userId: USER,
+            canonicalCode: reserved.code,
+            source: "admin",
+            reservedCodeId: reserved.id,
+          },
+          transaction,
+        );
+        expect(claim.kind).toBe("locked");
+      },
+    );
+    expect(applied.applied).toBe(true);
+    const newcomer = "00000000-0000-4000-8000-000000000061";
+    await pg.query(
+      "INSERT INTO profiles (id, email, role) VALUES ($1, 'new@example.test', 'user')",
+      [newcomer],
+    );
+    expect(
+      (
+        await referrals.claim({
+          userId: newcomer,
+          canonicalCode: reserved.code,
+          source: "app",
+        })
+      ).kind,
+    ).toBe("invalid");
+    const count = await pg.query<{ redemption_count: number }>(
+      "SELECT redemption_count FROM referral_codes WHERE id = $1",
+      [reserved.id],
+    );
+    expect(count.rows[0].redemption_count).toBe(0);
   });
 
   it("rolls back manual attribution when its serialized audit callback fails", async () => {

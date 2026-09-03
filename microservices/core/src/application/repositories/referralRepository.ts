@@ -188,8 +188,14 @@ export class ReferralRepository {
             sql`${referralCodes.redemptionCount} + (
               SELECT count(*) FROM ${foundingGrants}
               WHERE ${foundingGrants.referralCodeId} = ${referralCodes.id}
-                AND ${foundingGrants.userId} IS NULL
                 AND ${foundingGrants.revokedAt} IS NULL
+                AND (
+                  ${foundingGrants.userId} IS NULL OR NOT EXISTS (
+                    SELECT 1 FROM ${referralRedemptions}
+                    WHERE ${referralRedemptions.userId} = ${foundingGrants.userId}
+                      AND ${referralRedemptions.codeId} = ${referralCodes.id}
+                  )
+                )
             ) < ${referralCodes.maxRedemptions}`,
           ),
         ),
@@ -225,8 +231,14 @@ export class ReferralRepository {
               SELECT count(*) FROM ${foundingGrants}
               WHERE ${foundingGrants.referralCodeId} = ${referralCodes.id}
                 AND ${foundingGrants.id} <> ${grantId}
-                AND ${foundingGrants.userId} IS NULL
                 AND ${foundingGrants.revokedAt} IS NULL
+                AND (
+                  ${foundingGrants.userId} IS NULL OR NOT EXISTS (
+                    SELECT 1 FROM ${referralRedemptions}
+                    WHERE ${referralRedemptions.userId} = ${foundingGrants.userId}
+                      AND ${referralRedemptions.codeId} = ${referralCodes.id}
+                  )
+                )
             ) < ${referralCodes.maxRedemptions}`,
           ),
         ),
@@ -398,6 +410,12 @@ export class ReferralRepository {
       canonicalCode: string;
       source: ClaimSource;
       createdBy?: string | null;
+      /**
+       * A pending paid grant reserved this exact code while it was eligible.
+       * Supplying its code id consumes that reservation without re-checking
+       * mutable campaign status/window/cap at account-creation time.
+       */
+      reservedCodeId?: string;
     },
     transaction?: Tx,
     finalize?: (
@@ -426,14 +444,12 @@ export class ReferralRepository {
         return outcome;
       }
 
-      const claimed = await tx
-        .update(referralCodes)
-        .set({
-          redemptionCount: sql`${referralCodes.redemptionCount} + 1`,
-          updatedAt: new Date(),
-        })
-        .where(
-          and(
+      const claimableCode = input.reservedCodeId
+        ? and(
+            eq(referralCodes.id, input.reservedCodeId),
+            eq(referralCodes.code, input.canonicalCode),
+          )
+        : and(
             eq(referralCodes.code, input.canonicalCode),
             eq(referralCodes.status, "active"),
             or(
@@ -449,12 +465,24 @@ export class ReferralRepository {
               sql`${referralCodes.redemptionCount} + (
                 SELECT count(*) FROM ${foundingGrants}
                 WHERE ${foundingGrants.referralCodeId} = ${referralCodes.id}
-                  AND ${foundingGrants.userId} IS NULL
                   AND ${foundingGrants.revokedAt} IS NULL
+                  AND (
+                    ${foundingGrants.userId} IS NULL OR NOT EXISTS (
+                      SELECT 1 FROM ${referralRedemptions}
+                      WHERE ${referralRedemptions.userId} = ${foundingGrants.userId}
+                        AND ${referralRedemptions.codeId} = ${referralCodes.id}
+                    )
+                  )
               ) < ${referralCodes.maxRedemptions}`,
             ),
-          ),
-        )
+          );
+      const claimed = await tx
+        .update(referralCodes)
+        .set({
+          redemptionCount: sql`${referralCodes.redemptionCount} + 1`,
+          updatedAt: new Date(),
+        })
+        .where(claimableCode)
         .returning({
           id: referralCodes.id,
           displayCode: referralCodes.displayCode,

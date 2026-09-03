@@ -400,32 +400,48 @@ export class FoundingGrantService {
           grant.id,
           userId,
           async ({ transaction, expiresAt }) => {
+            let referralApplication:
+              | "none"
+              | "applied"
+              | "unchanged"
+              | "already_locked"
+              | "locked_conflict"
+              | "unavailable" = "none";
             if (grant.referralCodeId) {
               const code = await this.referrals.findCodeByIdIn(
                 transaction,
                 grant.referralCodeId,
               );
-              if (!code) throw new ReferralClaimRejected("invalid");
-              const claim = await this.referrals.claim(
-                {
-                  userId,
-                  canonicalCode: code.code,
-                  source: "admin",
-                  createdBy: grant.grantedBy,
-                },
-                transaction,
-              );
-              if (claim.kind === "invalid") {
-                throw new ReferralClaimRejected("invalid");
-              }
-              if (
-                claim.kind === "locked" &&
-                claim.applied.codeId !== grant.referralCodeId
-              ) {
-                throw new ReferralClaimRejected("locked_elsewhere");
+              if (!code) {
+                // FK integrity normally makes this impossible. Access still
+                // belongs to the buyer; expose the inconsistency for repair.
+                referralApplication = "unavailable";
+              } else {
+                const claim = await this.referrals.claim(
+                  {
+                    userId,
+                    canonicalCode: code.code,
+                    source: "admin",
+                    createdBy: grant.grantedBy,
+                    reservedCodeId: grant.referralCodeId,
+                  },
+                  transaction,
+                );
+                if (claim.kind === "invalid") {
+                  referralApplication = "unavailable";
+                } else if (claim.kind === "locked") {
+                  referralApplication =
+                    claim.applied.codeId === grant.referralCodeId
+                      ? "already_locked"
+                      : "locked_conflict";
+                } else {
+                  referralApplication = claim.kind;
+                }
               }
             }
-            await this.referrals.lock(userId, transaction);
+            if (referralApplication !== "locked_conflict") {
+              await this.referrals.lock(userId, transaction);
+            }
             await this.audit.record(
               {
                 actorId: grant.grantedBy,
@@ -436,6 +452,7 @@ export class FoundingGrantService {
                   userId,
                   tierName: grant.tierName,
                   expiresAt: expiresAt.toISOString(),
+                  referralApplication,
                 },
               },
               transaction,

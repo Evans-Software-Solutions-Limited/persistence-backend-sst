@@ -38,6 +38,17 @@ PATCHes cannot both claim the same starting state. Real PGlite rollback/cap
 tests plus handler wiring tests bring the focused result to **3 files / 24
 tests**; core typecheck and touched-file format/lint/diff gates pass.
 
+Final Inspector follow-up clarified reservation lifetime: mutable code state is
+checked when a pending paid grant is recorded, not again when its buyer later
+creates an account. Applying that grant now consumes the exact reserved code id
+even if the campaign has since paused, archived or expired. If the account is
+already locked to another attribution, purchased access still applies, the
+existing attribution remains untouched, and the founding grant remains an
+outstanding capacity reservation for its paid code; the audit records
+`locked_conflict`. PGlite regressions cover all three mutable states and the
+conflict/counter policy. Focused result: **3 files / 27 tests**; core typecheck,
+touched ESLint/Prettier and diff-check pass.
+
 The public `/founding` route now carries the approved £30 Premium, £50 Premium+
 and £99 Start Up Coach+ six-month offers, the static consumer seat counter,
 funding/redemption copy, optional bank instructions and per-tier Stripe Payment
