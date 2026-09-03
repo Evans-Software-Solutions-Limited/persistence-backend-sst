@@ -121,6 +121,58 @@ describe("updateProfileCommand", () => {
     });
   });
 
+  it("enqueues fresh intent instead of coalescing into an exhausted preference", () => {
+    updateProfileCommand(
+      { storage, userId: USER },
+      { showTemplateWorkouts: false },
+    );
+    const [exhausted] = storage.getPendingMutations();
+    storage.markMutationFailed(exhausted.id, "rejected");
+    storage.markMutationFailed(exhausted.id, "rejected");
+    storage.markMutationFailed(exhausted.id, "rejected");
+
+    updateProfileCommand(
+      { storage, userId: USER },
+      { showTemplateWorkouts: true },
+    );
+
+    const queued = storage.getQueuedEntriesForEntity("profile", USER);
+    expect(queued).toHaveLength(1);
+    expect(JSON.parse(queued[0].payload)).toEqual({
+      showTemplateWorkouts: true,
+    });
+    expect(queued[0].status).toBe("pending");
+  });
+
+  it("strips superseded preference from a mixed terminal retry payload", () => {
+    updateProfileCommand(
+      { storage, userId: USER },
+      { fullName: "Still recoverable", showTemplateWorkouts: false },
+    );
+    const [terminal] = storage.getPendingMutations();
+    storage.markMutationPermanentlyFailed(terminal.id, "invalid preference");
+
+    updateProfileCommand(
+      { storage, userId: USER },
+      { showTemplateWorkouts: true },
+    );
+
+    const queued = storage.getQueuedEntriesForEntity("profile", USER);
+    expect(queued).toHaveLength(2);
+    expect(queued[0].status).toBe("permanently_failed");
+    expect(JSON.parse(queued[0].payload)).toEqual({
+      fullName: "Still recoverable",
+    });
+    expect(JSON.parse(queued[1].payload)).toEqual({
+      showTemplateWorkouts: true,
+    });
+
+    storage.resetFailedEntries([terminal.id]);
+    expect(JSON.parse(storage.getPendingMutations()[0].payload)).toEqual({
+      fullName: "Still recoverable",
+    });
+  });
+
   it("is a no-op success for an empty patch (nothing enqueued)", () => {
     const result = updateProfileCommand({ storage, userId: USER }, {});
     expect(result.ok).toBe(true);

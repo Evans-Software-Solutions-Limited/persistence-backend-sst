@@ -350,6 +350,45 @@ describe("WorkoutsListContainer", () => {
     expect(queryByText(/TEMPLATES/)).toBeNull();
   });
 
+  it("does not hide templates from a terminally failed preference", async () => {
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheProfilePage("test-user", {
+      ...PROFILE_PAGE_FIXTURE,
+      profile: {
+        ...PROFILE_PAGE_FIXTURE.profile,
+        id: "test-user",
+        showTemplateWorkouts: true,
+      },
+    });
+    updateProfileCommand(
+      { storage, userId: "test-user" },
+      { showTemplateWorkouts: false },
+    );
+    const [failed] = storage.getPendingMutations();
+    storage.patchQueueEntryForTest(failed.id, {
+      status: "permanently_failed",
+    });
+    // A successful profile refresh has restored authoritative server truth.
+    storage.cacheProfilePage("test-user", {
+      ...PROFILE_PAGE_FIXTURE,
+      profile: {
+        ...PROFILE_PAGE_FIXTURE.profile,
+        id: "test-user",
+        showTemplateWorkouts: true,
+      },
+    });
+    seedSlices(storage, {
+      defaults: [buildWorkout({ id: "tpl-visible", name: "Visible Template" })],
+    });
+
+    const adapters = makeAdapters(new InMemoryApiAdapter(), storage);
+    const { findByText } = renderWithTheme(
+      withAdapters(adapters, <WorkoutsListContainer />),
+    );
+
+    expect(await findByText("Visible Template")).toBeTruthy();
+  });
+
   it("derives a split badge from the cached exercise library", async () => {
     const storage = new InMemoryStorageAdapter();
     // Seed push-muscle exercises in the runtime shape: primaryMuscleGroups

@@ -6,7 +6,10 @@ import type {
   StoragePort,
   SyncQueueEntry,
 } from "@/domain/ports/storage.port";
-import type { EntitlementVerdict } from "@/domain/ports/sync.types";
+import {
+  isAutoResolvableSyncEntry,
+  type EntitlementVerdict,
+} from "@/domain/ports/sync.types";
 import type { HabitConfigEntry } from "@/domain/ports/api.port";
 import { habitConfigFromEntry } from "@/domain/models/habit-config";
 import { normalizePreferences } from "@/domain/models/notification-preferences";
@@ -15,6 +18,10 @@ import { pendingPreferenceOverrides } from "@/application/notifications/queries/
 import { parseEntitlementDeniedResponseText } from "@/shared/errors/parseEntitlement";
 import { resolveExercisePayloadReferences } from "@/application/commands/resolveExerciseReferences";
 import { captureSyncFailure } from "@/lib/sentry";
+import {
+  hasTemplatePreference,
+  stripSupersededTemplatePreferences,
+} from "./template-preference-queue";
 
 /** A non-OK HTTP response from a sync POST/PUT/DELETE, carrying the status so
  * the drain can classify permanent vs transient failures. */
@@ -519,7 +526,10 @@ export function isMutationEligible(
   return !storage
     .getQueuedEntriesForEntity("profile", entry.entityId)
     .some(
-      (older) => older.id < entry.id && hasTemplatePreference(older.payload),
+      (older) =>
+        older.id < entry.id &&
+        isAutoResolvableSyncEntry(older) &&
+        hasTemplatePreference(older.payload),
     );
 }
 
@@ -595,6 +605,18 @@ export async function processSyncQueue(
   let blocked = 0;
 
   for (let entry of entries) {
+    if (
+      entry.entityType === "profile" &&
+      entry.entityId !== null &&
+      hasTemplatePreference(entry.payload)
+    ) {
+      // An older request may have been in flight when this newer preference
+      // was written, then become terminal afterwards. Neutralise that stale
+      // field now, before eligibility and before a later manual Retry can
+      // replay it over the newer choice.
+      stripSupersededTemplatePreferences(storage, entry.entityId, entry.id);
+    }
+
     // Backoff: skip an entry whose retry window hasn't opened. Checked BEFORE
     // the claim so a not-yet-due entry stays `failed` (visible to the status UI
     // and to the coalescing paths) rather than being flipped to `in_flight` and
@@ -1137,21 +1159,6 @@ export async function processSyncQueue(
     failed,
     blocked,
   };
-}
-
-function hasTemplatePreference(payload: string): boolean {
-  try {
-    const parsed = JSON.parse(payload) as unknown;
-    return (
-      typeof parsed === "object" &&
-      parsed !== null &&
-      !Array.isArray(parsed) &&
-      typeof (parsed as Record<string, unknown>).showTemplateWorkouts ===
-        "boolean"
-    );
-  } catch {
-    return false;
-  }
 }
 
 /**

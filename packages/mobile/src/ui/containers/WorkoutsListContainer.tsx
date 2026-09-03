@@ -17,6 +17,7 @@ import { useWorkoutTotalCapGate } from "@/ui/hooks/useWorkoutTotalCapGate";
 import { useLoadoutGate } from "@/ui/hooks/useLoadoutGate";
 import { WorkoutsListPresenter } from "@/ui/presenters/WorkoutsListPresenter";
 import type { StoragePort } from "@/domain/ports/storage.port";
+import { isAutoResolvableSyncEntry } from "@/domain/ports/sync.types";
 
 function readShowTemplateWorkouts(
   storage: StoragePort,
@@ -27,6 +28,7 @@ function readShowTemplateWorkouts(
   // intent, so it wins until the sync entry completes.
   const queued = storage.getQueuedEntriesForEntity("profile", userId);
   for (let index = queued.length - 1; index >= 0; index -= 1) {
+    if (!isAutoResolvableSyncEntry(queued[index])) continue;
     try {
       const payload = JSON.parse(queued[index].payload) as {
         showTemplateWorkouts?: unknown;

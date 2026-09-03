@@ -16,6 +16,7 @@ import {
 } from "@/domain/models/profilePage";
 import type { ApiPort } from "@/domain/ports/api.port";
 import type { StoragePort } from "@/domain/ports/storage.port";
+import { isAutoResolvableSyncEntry } from "@/domain/ports/sync.types";
 import { ok, type Result, type ApiError } from "@/shared/errors";
 
 export { PROFILE_PAGE_STALE_AFTER_MS };
@@ -34,6 +35,7 @@ export function reconcilePendingProfilePreferences(
 ): ProfilePageData {
   const queued = storage.getQueuedEntriesForEntity("profile", userId);
   for (let index = queued.length - 1; index >= 0; index -= 1) {
+    if (!isAutoResolvableSyncEntry(queued[index])) continue;
     try {
       const update = JSON.parse(queued[index].payload) as {
         showTemplateWorkouts?: unknown;

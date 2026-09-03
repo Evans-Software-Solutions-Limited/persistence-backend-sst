@@ -96,6 +96,36 @@ describe("profile-page.query", () => {
       ).toBe(false);
     });
 
+    it("does not apply a permanently failed preference over server truth", async () => {
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      const serverPayload = {
+        ...PROFILE_PAGE_FIXTURE,
+        profile: {
+          ...PROFILE_PAGE_FIXTURE.profile,
+          showTemplateWorkouts: true,
+        },
+      };
+      storage.cacheProfilePage(USER_ID, serverPayload);
+      updateProfileCommand(
+        { storage, userId: USER_ID },
+        { showTemplateWorkouts: false },
+      );
+      const [failed] = storage.getPendingMutations();
+      storage.patchQueueEntryForTest(failed.id, {
+        status: "permanently_failed",
+      });
+      api.profilePage = serverPayload;
+
+      const result = await refreshProfilePage(api, storage, USER_ID);
+
+      expect(result.ok && result.value.profile.showTemplateWorkouts).toBe(true);
+      expect(
+        storage.getCachedProfilePage(USER_ID)?.payload.profile
+          .showTemplateWorkouts,
+      ).toBe(true);
+    });
+
     it("propagates the ApiError unchanged on failure", async () => {
       const api = new InMemoryApiAdapter();
       const storage = new InMemoryStorageAdapter();

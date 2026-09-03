@@ -34,6 +34,14 @@ PR #430's first clean-install CI run exposed a transitive-only
 `@react-navigation/native` import in the onboarding container. It now uses
 Expo Router's declared `useFocusEffect` API with a stable blur lifecycle; the
 fresh CI typecheck failure is covered by the focused navigation regression.
+The CI Inspector follow-up found terminal profile mutations were still treated
+as live intent. A shared auto-resolvable queue predicate now excludes exhausted,
+permanently-failed and entitlement-blocked rows from preference FIFO gating and
+both UI reconciliation paths, so dead history neither blocks a newer toggle nor
+shadows fresh server truth. New preference writes also bypass exhausted rows
+and remove the superseded preference field from older recoverable failures,
+preventing a later manual Retry from reversing the user's final choice while
+preserving unrelated failed profile edits.
 
 ### 🟡 2026-09-02 — MOBILE RELEASE READINESS (branch `codex/mobile-release-drag-loader-meta`)
 
