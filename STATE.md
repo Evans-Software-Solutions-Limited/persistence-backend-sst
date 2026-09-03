@@ -28,7 +28,7 @@ stores it in `analytics_events.properties`. A Meta-mapper regression test proves
 the referral value is never forwarded in Meta custom data.
 
 Verification: focused web and core suites pass (**52 core tests**); full web
-suite **29 files / 874 tests** passed. Changed web logic coverage was **100%**
+suite **30 files / 875 tests** passed. Changed web logic coverage was **100%**
 statements, **95.12%** branches, **100%** functions and **100%** lines. Root
 typecheck passed **9/9** packages; root lint passed with zero errors (existing /
 generated warnings only); web production build passed. Touched-file Prettier
