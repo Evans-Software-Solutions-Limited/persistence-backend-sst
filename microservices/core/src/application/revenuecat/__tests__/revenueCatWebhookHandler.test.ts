@@ -47,6 +47,11 @@ vi.mock("../../repositories/subscriptionRepository", () => ({
   })),
 }));
 
+// FOUNDING-OFFER: the sync's best-effort attribution lock is a DB write.
+vi.mock("../../referrals/lockReferralAttribution", () => ({
+  lockReferralAttribution: vi.fn(async () => true),
+}));
+
 vi.mock("../../repositories/revenuecatWebhookEventsRepository", () => ({
   RevenueCatWebhookEventsRepository: vi.fn().mockImplementation(() => ({
     claim: claimMock,

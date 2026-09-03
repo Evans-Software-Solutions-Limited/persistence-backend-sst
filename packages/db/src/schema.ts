@@ -2626,3 +2626,171 @@ export type NewAiJob = typeof aiJobs.$inferInsert;
 
 // Add missing import for sql
 import { sql } from "drizzle-orm";
+
+// ─── FOUNDING-OFFER · referral attribution + founding grants + admin audit ────
+// specs/milestones/FOUNDING-OFFER/BACKEND_BRIEF.md § 1. Mirrors
+// 20260903120000_founding_offer_referrals.sql (index parity kept here so
+// drizzle-kit never flags the partial unique index for drop).
+
+export const referralCodes = pgTable(
+  "referral_codes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** Canonical upper-case `[A-Z0-9]{4,24}` — UNIQUE. */
+    code: text("code").notNull().unique(),
+    displayCode: text("display_code").notNull(),
+    label: text("label").notNull(),
+    partnerName: text("partner_name"),
+    kind: text("kind").notNull(),
+    status: text("status").notNull().default("active"),
+    /** `null` = unlimited. */
+    maxRedemptions: integer("max_redemptions"),
+    redemptionCount: integer("redemption_count").notNull().default(0),
+    startsAt: timestamp("starts_at", { withTimezone: true }),
+    endsAt: timestamp("ends_at", { withTimezone: true }),
+    campaignSlug: text("campaign_slug"),
+    notes: text("notes"),
+    createdBy: uuid("created_by").references(() => profiles.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    check("referral_codes_code_format_ck", sql`${t.code} ~ '^[A-Z0-9]{4,24}$'`),
+    check(
+      "referral_codes_kind_ck",
+      sql`${t.kind} IN ('vendor', 'campaign', 'founding', 'internal')`,
+    ),
+    check(
+      "referral_codes_status_ck",
+      sql`${t.status} IN ('active', 'paused', 'archived')`,
+    ),
+  ],
+);
+
+export type ReferralCode = typeof referralCodes.$inferSelect;
+export type NewReferralCode = typeof referralCodes.$inferInsert;
+
+export const referralRedemptions = pgTable(
+  "referral_redemptions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    codeId: uuid("code_id")
+      .notNull()
+      .references(() => referralCodes.id),
+    /** UNIQUE — one attribution per user (BRIEF D5). */
+    userId: uuid("user_id")
+      .notNull()
+      .unique()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    source: text("source").notNull(),
+    /** Set at first paid conversion; the attribution is immutable afterwards. */
+    lockedAt: timestamp("locked_at", { withTimezone: true }),
+    replacedCodeId: uuid("replaced_code_id").references(() => referralCodes.id),
+    createdBy: uuid("created_by").references(() => profiles.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index("referral_redemptions_code_id_idx").on(t.codeId),
+    check(
+      "referral_redemptions_source_ck",
+      sql`${t.source} IN ('app', 'admin', 'web_link')`,
+    ),
+  ],
+);
+
+export type ReferralRedemption = typeof referralRedemptions.$inferSelect;
+export type NewReferralRedemption = typeof referralRedemptions.$inferInsert;
+
+export const foundingGrants = pgTable(
+  "founding_grants",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** NULL while pending (buyer paid before signing up) — applied by email. */
+    userId: uuid("user_id").references(() => profiles.id, {
+      onDelete: "cascade",
+    }),
+    /** Lower-cased. The key a pending grant is applied on. */
+    email: text("email").notNull(),
+    tierName: text("tier_name")
+      .notNull()
+      .references(() => subscriptionTiers.tierName),
+    months: integer("months").notNull().default(6),
+    /** Pence actually paid. */
+    amountMinor: integer("amount_minor").notNull(),
+    currency: text("currency").notNull().default("GBP"),
+    paymentMethod: text("payment_method").notNull(),
+    paymentReference: text("payment_reference"),
+    paidAt: timestamp("paid_at", { withTimezone: true }).notNull(),
+    referralCodeId: uuid("referral_code_id").references(() => referralCodes.id),
+    subscriptionId: uuid("subscription_id").references(
+      () => userSubscriptions.id,
+      { onDelete: "set null" },
+    ),
+    grantedBy: uuid("granted_by")
+      .notNull()
+      .references(() => profiles.id),
+    invitedAt: timestamp("invited_at", { withTimezone: true }),
+    appliedAt: timestamp("applied_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    revokeReason: text("revoke_reason"),
+    notes: text("notes"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index("founding_grants_user_id_idx").on(t.userId),
+    // One LIVE founding grant per user — parity with the SQL partial index.
+    uniqueIndex("founding_grants_user_active_uq")
+      .on(t.userId)
+      .where(sql`revoked_at IS NULL AND user_id IS NOT NULL`),
+    uniqueIndex("founding_grants_email_pending_uq")
+      .on(sql`lower(${t.email})`)
+      .where(sql`revoked_at IS NULL AND user_id IS NULL`),
+    index("founding_grants_email_idx").on(sql`lower(${t.email})`),
+    check(
+      "founding_grants_payment_method_ck",
+      sql`${t.paymentMethod} IN ('bank_transfer', 'stripe_link', 'card_in_person', 'other')`,
+    ),
+  ],
+);
+
+export type FoundingGrant = typeof foundingGrants.$inferSelect;
+export type NewFoundingGrant = typeof foundingGrants.$inferInsert;
+
+export const adminAuditLog = pgTable(
+  "admin_audit_log",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    actorId: uuid("actor_id").notNull(),
+    action: text("action").notNull(),
+    entityType: text("entity_type").notNull(),
+    entityId: text("entity_id"),
+    before: jsonb("before").$type<Record<string, unknown> | null>(),
+    after: jsonb("after").$type<Record<string, unknown> | null>(),
+    reason: text("reason"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index("admin_audit_log_entity_idx").on(t.entityType, t.entityId),
+    index("admin_audit_log_created_at_idx").on(t.createdAt),
+  ],
+);
+
+export type AdminAuditLogEntry = typeof adminAuditLog.$inferSelect;
+export type NewAdminAuditLogEntry = typeof adminAuditLog.$inferInsert;

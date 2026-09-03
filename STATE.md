@@ -11,6 +11,32 @@ say so and fix this file.
 
 ## ▶ START HERE — next session (rewritten 2026-08-04, post-Mealprint-merge)
 
+### 🟡 2026-09-03 — FOUNDING-OFFER backend (branch `feat/founding-offer-admin`, worktree `.claude/worktrees/founding-offer`)
+
+New milestone `specs/milestones/FOUNDING-OFFER/` (BRIEF + BACKEND/FRONTEND briefs +
+SMOKE_TEST) — a thin, **approved** slice of spec-32: founding-member offer (£30 →
+6 mo `premium`, £50 → 6 mo `premium_plus`, 200 seats; £99 → 6 mo
+`start_up_coach_plus`, 20 seats), internal admin API, referral codes with
+one-attribution-per-user, admin audit log. Backend PR contents are on the branch:
+migration `20260903120000_founding_offer_referrals.sql` (4 tables, additive),
+Drizzle schema, `requireAdmin` on the JWT `app_metadata.admin` claim (NOT
+`profiles.role` — the tier trigger rewrites it), `scripts/set-admin.ts`,
+`/admin/*` (summary, users lookup, referral codes, attributions, founding grants
+incl. **pending-by-email grants + Resend invite email**, audit log) and
+`/referrals/{claim,me}`. Founding grants write a direct `user_subscriptions` row
+(`external_subscription_id = founding_<grantId>`, `cancelled_at` set so the app
+shows "active until"); RC sync supersedes it on a real purchase and never
+revokes it (revocation only touches `rc_*`). Pending grants apply on the buyer's
+first `GET /subscriptions/me`. ⚠ `adminRoutes` is mounted from
+`subscriptionsRoutes`, not the root chain — a root `.use()` tripped TS2589.
+`WEB_ORIGIN` env added to the core Lambda (infra/api.ts). Container-verified:
+9-package typecheck, lint (pre-existing warnings only), core 349 files / 4,297
+tests, api-utils 27, scripts 116, prettier on touched files. **Not yet**: web
+`/admin` panel + `?ref=` capture (FRONTEND_BRIEF § Web), mobile code entry
+(§ Mobile), staging smoke test, prod release. The worktree's `node_modules`
+dirs are VM-generated junk — `rm -rf` them and `bun install` before local use.
+
+
 ### 🔴 2026-09-01 — STAGING CORE API ROUTE STARTUP HOTFIX
 
 After Spec 31 backend #426 deployed, every staging core API request returned

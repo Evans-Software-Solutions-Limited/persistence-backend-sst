@@ -1,6 +1,7 @@
 import { SubscriptionRepository } from "../repositories/subscriptionRepository";
 import { fetchCustomerSubscriptions } from "./revenueCatClient";
 import { pickDesiredSubscription } from "./entitlements";
+import { lockReferralAttribution } from "../referrals/lockReferralAttribution";
 
 /**
  * Reconcile a single RevenueCat customer's `user_subscriptions` row from the
@@ -108,6 +109,10 @@ export async function syncRevenueCatCustomer(
       startsAt: new Date(),
       ...values,
     });
+    // FOUNDING-OFFER D5: a live store subscription is a paid conversion, so
+    // the user's referral attribution (if any) freezes here. Best-effort —
+    // never fails the sync.
+    await lockReferralAttribution(appUserId);
     return "activated";
   }
 

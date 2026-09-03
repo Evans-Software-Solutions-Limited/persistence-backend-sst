@@ -25,6 +25,13 @@ vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getUser: vi.fn((ctx) => ctx.user || { sub: "user-1" }),
 }));
 
+const applyPendingMock = vi.fn(async () => false);
+vi.mock("../../../founding/foundingGrantService", () => ({
+  FoundingGrantService: vi
+    .fn()
+    .mockImplementation(() => ({ applyPendingForUser: applyPendingMock })),
+}));
+
 vi.mock("../../../repositories/subscriptionRepository", () => ({
   SubscriptionRepository: vi
     .fn()
