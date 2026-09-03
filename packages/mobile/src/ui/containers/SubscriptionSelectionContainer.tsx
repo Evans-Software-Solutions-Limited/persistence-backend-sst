@@ -15,6 +15,7 @@ import {
   canCancelSubscription,
   getSubscriptionDisplayInfo,
   isCancelledButActive as isCancelledButActiveCheck,
+  isFoundingAccess as isFoundingAccessCheck,
   TRAINER_TIER_NAMES,
 } from "@/domain/services/subscriptionService";
 import { useCancelSubscription } from "@/ui/hooks/useCancelSubscription";
@@ -264,6 +265,7 @@ function SubscriptionCatalogueContainer({
   const subscriptionEndsAt = subscriptionData?.expiresAt ?? null;
   const canCancel = canCancelSubscription(subscriptionData);
   const isCancelledButActive = isCancelledButActiveCheck(subscriptionData);
+  const isFoundingAccess = isFoundingAccessCheck(subscriptionData);
 
   const tierDisplayNames = useMemo(() => {
     const map: Record<string, string> = {};
@@ -368,6 +370,7 @@ function SubscriptionCatalogueContainer({
         subscriptionEndsAt={subscriptionEndsAt}
         canCancel={canCancel}
         isCancelledButActive={isCancelledButActive}
+        isFoundingAccess={isFoundingAccess}
         scheduledChange={
           displayInfo.hasScheduledChange && displayInfo.effectiveAt
             ? {

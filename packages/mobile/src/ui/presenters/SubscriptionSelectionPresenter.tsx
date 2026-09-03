@@ -65,6 +65,7 @@ export interface SubscriptionSelectionPresenterProps {
   subscriptionEndsAt: string | null;
   canCancel: boolean;
   isCancelledButActive: boolean;
+  isFoundingAccess?: boolean;
   scheduledChange: {
     nextTierDisplayName: string;
     effectiveAt: string;
@@ -104,6 +105,7 @@ export function SubscriptionSelectionPresenter(
     subscriptionEndsAt,
     canCancel,
     isCancelledButActive,
+    isFoundingAccess = false,
     scheduledChange,
     currentTierDisplayName,
     isOffline,
@@ -443,6 +445,7 @@ export function SubscriptionSelectionPresenter(
             <CurrentSubscriptionStatusCard
               currentTierDisplayName={currentTierDisplayName}
               isCancelledButActive={isCancelledButActive}
+              isFoundingAccess={isFoundingAccess}
               subscriptionEndsAt={subscriptionEndsAt}
               scheduledChange={scheduledChange}
             />

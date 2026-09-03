@@ -28,6 +28,12 @@ Changed referral UI/hooks coverage is **100% statements/functions/lines** and
 remain deliberately unperformed pending release approval and a deployed staging
 backend.
 
+Brad approved the founding-access copy on 2026-09-03. Rows whose
+`externalSubscriptionId` starts with `founding_` now remain technically
+cancelled-at-period-end but render as active fixed-term access: “Access active”
+and “will not renew automatically”, with no reinstatement instruction. The iOS
+manage screen uses the same semantics.
+
 ## ▶ START HERE — next session (rewritten 2026-08-04, post-Mealprint-merge)
 
 ### 🔴 2026-09-01 — STAGING CORE API ROUTE STARTUP HOTFIX

@@ -19,6 +19,7 @@ import {
 import {
   getSubscriptionDisplayInfo,
   isCancelledButActive as isCancelledButActiveCheck,
+  isFoundingAccess as isFoundingAccessCheck,
   TRAINER_TIER_NAMES,
 } from "@/domain/services/subscriptionService";
 import {
@@ -217,6 +218,7 @@ export function IOSPurchaseFlowContainer({
   const currentTier: SubscriptionTierName =
     subscriptionData?.tierName ?? "free";
   const isCancelledButActive = isCancelledButActiveCheck(subscriptionData);
+  const isFoundingAccess = isFoundingAccessCheck(subscriptionData);
 
   useEffect(() => {
     if (screenChosen || subQuery.isLoading || subscriptionData === null) return;
@@ -554,6 +556,7 @@ export function IOSPurchaseFlowContainer({
       monthlyOnlyTiers={MONTHLY_ONLY_TIERS}
       subscriptionEndsAt={subscriptionData?.expiresAt ?? null}
       isCancelledButActive={isCancelledButActive}
+      isFoundingAccess={isFoundingAccess}
       currentTierDisplayName={displayInfo.currentTierDisplayName}
       isProcessing={isProcessing}
       processingPhase={processingPhase}

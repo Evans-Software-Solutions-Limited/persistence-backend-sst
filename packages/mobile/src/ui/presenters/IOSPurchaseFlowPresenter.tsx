@@ -59,6 +59,7 @@ export interface IOSPurchaseFlowPresenterProps {
   monthlyOnlyTiers: ReadonlySet<SubscriptionTierName>;
   subscriptionEndsAt: string | null;
   isCancelledButActive: boolean;
+  isFoundingAccess?: boolean;
   currentTierDisplayName: string;
   isProcessing: boolean;
   processingPhase: "purchasing" | "activating" | null;
@@ -797,7 +798,9 @@ function ManageScreen(props: IOSPurchaseFlowPresenterProps) {
           <View style={styles.manageHeroTop}>
             <Text style={styles.eyebrow}>YOUR PLAN</Text>
             <Text style={styles.activePill}>
-              {props.isCancelledButActive ? "CANCELLED" : "ACTIVE"}
+              {props.isCancelledButActive && !props.isFoundingAccess
+                ? "CANCELLED"
+                : "ACTIVE"}
             </Text>
           </View>
           <View
@@ -816,15 +819,22 @@ function ManageScreen(props: IOSPurchaseFlowPresenterProps) {
                 testID="subscription-manage-billing"
               >
                 <Text style={styles.manageCadence}>
-                  {cadence === null
-                    ? "Current billing period"
-                    : cadence === "annual"
-                      ? "Annual"
-                      : "Monthly"}
+                  {props.isFoundingAccess
+                    ? "Founding access"
+                    : cadence === null
+                      ? "Current billing period"
+                      : cadence === "annual"
+                        ? "Annual"
+                        : "Monthly"}
                 </Text>
                 {renewal && (
                   <Text style={styles.equivalentText}>
-                    {props.isCancelledButActive ? "ends" : "renews"} {renewal}
+                    {props.isFoundingAccess
+                      ? "active until"
+                      : props.isCancelledButActive
+                        ? "ends"
+                        : "renews"}{" "}
+                    {renewal}
                   </Text>
                 )}
               </View>

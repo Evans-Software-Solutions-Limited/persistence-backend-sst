@@ -363,6 +363,24 @@ describe("IOSPurchaseFlowPresenter", () => {
     expect(screen.queryByText(/renews 14 Mar 2027/i)).toBeNull();
   });
 
+  it("renders founding access as active fixed-term access", () => {
+    render(
+      <IOSPurchaseFlowPresenter
+        {...defaultProps()}
+        screen="manage"
+        currentTier="premium"
+        currentTierDisplayName="Premium"
+        isCancelledButActive
+        isFoundingAccess
+        subscriptionEndsAt="2027-03-03T00:00:00.000Z"
+      />,
+    );
+    expect(screen.getByText("ACTIVE")).toBeTruthy();
+    expect(screen.getByText("Founding access")).toBeTruthy();
+    expect(screen.getByText(/active until 3 Mar 2027/i)).toBeTruthy();
+    expect(screen.queryByText("CANCELLED")).toBeNull();
+  });
+
   it("stacks long plan details above billing metadata within the card", () => {
     render(
       <IOSPurchaseFlowPresenter

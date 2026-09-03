@@ -30,6 +30,21 @@ describe("CurrentSubscriptionStatusCard", () => {
     expect(screen.getByText(/reinstate/)).toBeTruthy();
   });
 
+  it("renders fixed-term founding access without cancellation or reinstatement copy", () => {
+    render(
+      <CurrentSubscriptionStatusCard
+        currentTierDisplayName="Premium"
+        isCancelledButActive
+        isFoundingAccess
+        subscriptionEndsAt="2027-03-03T00:00:00.000Z"
+        scheduledChange={null}
+      />,
+    );
+    expect(screen.getByText("Access active: Premium")).toBeTruthy();
+    expect(screen.getByText(/will not renew automatically/)).toBeTruthy();
+    expect(screen.queryByText(/reinstate/)).toBeNull();
+  });
+
   it("doesn't render the ends-at subtext when subscriptionEndsAt is null", () => {
     render(
       <CurrentSubscriptionStatusCard
