@@ -91,4 +91,21 @@ describe("CurrentSubscriptionStatusCard", () => {
     );
     expect(screen.queryByText(/active until/)).toBeNull();
   });
+
+  it("renders a scheduled change safely when its effective date is absent", () => {
+    render(
+      <CurrentSubscriptionStatusCard
+        currentTierDisplayName="Premium"
+        isCancelledButActive={false}
+        subscriptionEndsAt={null}
+        scheduledChange={{
+          nextTierDisplayName: "Basic",
+          effectiveAt: "",
+          currentTierActiveUntil: null,
+          currentTierDisplayName: "Premium",
+        }}
+      />,
+    );
+    expect(screen.getByText(/Scheduled: Basic/)).toBeTruthy();
+  });
 });
