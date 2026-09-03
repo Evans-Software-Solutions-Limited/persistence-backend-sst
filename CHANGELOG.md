@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.19.0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.18.2...persistence-v1.19.0) (2026-09-03)
+
+
+### Features
+
+* finish mobile release readiness ([#429](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/429)) ([0be1139](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/0be1139325f3d37fe52383dcb98357cec4e08dab))
+
+
+### Bug Fixes
+
+* align exercise route parameters ([#427](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/427)) ([28160cc](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/28160cc3c343422a6c1ce3b6492de4153de07776))
+
 ## [1.18.2](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.18.1...persistence-v1.18.2) (2026-08-31)
 
 
