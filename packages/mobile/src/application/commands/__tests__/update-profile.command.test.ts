@@ -88,6 +88,39 @@ describe("updateProfileCommand", () => {
     expect(cached?.payload.profile.fitnessLevel).toBe("intermediate");
   });
 
+  it("queues and caches the template-workout preference", () => {
+    const result = updateProfileCommand(
+      { storage, userId: USER },
+      { showTemplateWorkouts: false },
+    );
+
+    expect(result.ok).toBe(true);
+    expect(JSON.parse(storage.getPendingMutations()[0].payload)).toEqual({
+      showTemplateWorkouts: false,
+    });
+    expect(
+      storage.getCachedProfilePage(USER)?.payload.profile.showTemplateWorkouts,
+    ).toBe(false);
+  });
+
+  it("coalesces rapid profile edits so the newest preference wins", () => {
+    updateProfileCommand(
+      { storage, userId: USER },
+      { fullName: "Newest Name", showTemplateWorkouts: false },
+    );
+    updateProfileCommand(
+      { storage, userId: USER },
+      { showTemplateWorkouts: true },
+    );
+
+    const pending = storage.getPendingMutations();
+    expect(pending).toHaveLength(1);
+    expect(JSON.parse(pending[0].payload)).toEqual({
+      fullName: "Newest Name",
+      showTemplateWorkouts: true,
+    });
+  });
+
   it("is a no-op success for an empty patch (nothing enqueued)", () => {
     const result = updateProfileCommand({ storage, userId: USER }, {});
     expect(result.ok).toBe(true);

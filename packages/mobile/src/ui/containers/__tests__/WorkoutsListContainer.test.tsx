@@ -13,6 +13,8 @@ import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import { WorkoutsListContainer } from "@/ui/containers/WorkoutsListContainer";
 import { useTrainSegment } from "@/ui/hooks/useTrainSegment";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
+import { PROFILE_PAGE_FIXTURE } from "@/adapters/api/__tests__/fixtures/profile-page.fixture";
+import { updateProfileCommand } from "@/application/commands/update-profile.command";
 
 const buildWorkout = (overrides: Partial<Workout> = {}): Workout => ({
   id: overrides.id ?? "w-1",
@@ -83,6 +85,7 @@ function withAdapters(adapters: Adapters, ui: React.ReactElement) {
 
 const mockRouterPush = jest.fn();
 const mockUseLocalSearchParams = jest.fn(() => ({}));
+let mockLatestFocusEffect: React.EffectCallback | null = null;
 jest.mock("expo-router", () => {
   const React = jest.requireActual("react") as typeof import("react");
   return {
@@ -93,6 +96,7 @@ jest.mock("expo-router", () => {
     useLocalSearchParams: () => mockUseLocalSearchParams(),
     useNavigation: () => ({ addListener: () => () => {} }),
     useFocusEffect: (cb: React.EffectCallback) => {
+      mockLatestFocusEffect = cb;
       React.useEffect(() => cb(), [cb]);
     },
   };
@@ -299,6 +303,51 @@ describe("WorkoutsListContainer", () => {
     expect(queryByLabelText("Start PPL Push")).toBeNull();
     fireEvent.press(row);
     expect(mockRouterPush).toHaveBeenCalledWith("/(app)/workouts/tpl-1");
+  });
+
+  it("hides public defaults after returning with the profile preference disabled", async () => {
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheProfilePage("test-user", {
+      ...PROFILE_PAGE_FIXTURE,
+      profile: {
+        ...PROFILE_PAGE_FIXTURE.profile,
+        id: "test-user",
+        showTemplateWorkouts: true,
+      },
+    });
+    seedSlices(storage, {
+      mine: [buildWorkout({ id: "mine-1", name: "My Workout" })],
+      defaults: [buildWorkout({ id: "tpl-hidden", name: "Hidden Template" })],
+    });
+
+    const adapters = makeAdapters(new InMemoryApiAdapter(), storage);
+    const { findByText, queryByText } = renderWithTheme(
+      withAdapters(adapters, <WorkoutsListContainer />),
+    );
+
+    expect(await findByText("My Workout")).toBeTruthy();
+    expect(await findByText("Hidden Template")).toBeTruthy();
+
+    updateProfileCommand(
+      { storage, userId: "test-user" },
+      { showTemplateWorkouts: false },
+    );
+    // Simulate an older in-flight profile refresh landing after the optimistic
+    // toggle. The queued preference must still win over this stale cache.
+    storage.cacheProfilePage("test-user", {
+      ...PROFILE_PAGE_FIXTURE,
+      profile: {
+        ...PROFILE_PAGE_FIXTURE.profile,
+        id: "test-user",
+        showTemplateWorkouts: true,
+      },
+    });
+    act(() => {
+      mockLatestFocusEffect?.();
+    });
+
+    expect(queryByText("Hidden Template")).toBeNull();
+    expect(queryByText(/TEMPLATES/)).toBeNull();
   });
 
   it("derives a split badge from the cached exercise library", async () => {

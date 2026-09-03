@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, type Href } from "expo-router";
-import { Alert } from "react-native";
+import { Alert, BackHandler } from "react-native";
+import { useIsFocused } from "@react-navigation/native";
 
 import {
   type CoachClientBand,
@@ -36,15 +37,30 @@ export const ONBOARDING_ROUTES: Record<OnboardingPage, string> = {
 
 export function OnboardingPageContainer({ page }: { page: OnboardingPage }) {
   const router = useRouter();
+  const isFocused = useIsFocused();
   const onboarding = useOnboarding();
   const subscription = useMySubscription();
   const [showOthers, setShowOthers] = useState(false);
   const viewedRef = useRef<OnboardingPage | null>(null);
+  const navigationInFlightRef = useRef(false);
 
   const state = onboarding.state;
 
+  // A pushed screen leaves this instance mounted. Clear its one-way
+  // navigation guard when it blurs so a later system pop cannot expose stale
+  // UI while permanently suppressing provider/page reconciliation.
   useEffect(() => {
-    if (!state || onboarding.isLoading || state.status !== "in_progress")
+    if (!isFocused) navigationInFlightRef.current = false;
+  }, [isFocused]);
+
+  useEffect(() => {
+    if (
+      !isFocused ||
+      navigationInFlightRef.current ||
+      !state ||
+      onboarding.isLoading ||
+      state.status !== "in_progress"
+    )
       return;
     if (state.currentPage !== page) {
       router.replace(ONBOARDING_ROUTES[state.currentPage] as Href);
@@ -57,25 +73,60 @@ export function OnboardingPageContainer({ page }: { page: OnboardingPage }) {
         onboarding.track("onboarding_recommendation_viewed");
       }
     }
-  }, [state, onboarding, page, router]);
+  }, [state, onboarding, page, router, isFocused]);
 
   const goTo = (next: OnboardingPage | null) => {
-    if (next) router.replace(ONBOARDING_ROUTES[next] as Href);
+    if (next) router.push(ONBOARDING_ROUTES[next] as Href);
   };
 
-  const complete = async () => goTo(await onboarding.completePage(page));
-  const skip = async () => {
-    const next = await onboarding.skipPage(page);
-    if (next) goTo(next);
-    else {
-      await onboarding.completeJourney();
-      router.replace("/(app)/(tabs)");
+  const complete = async () => {
+    navigationInFlightRef.current = true;
+    try {
+      goTo(await onboarding.completePage(page));
+    } catch (error) {
+      navigationInFlightRef.current = false;
+      throw error;
     }
   };
-  const back = async () => {
-    const previous = await onboarding.goBack();
-    router.replace(ONBOARDING_ROUTES[previous] as Href);
+  const skip = async () => {
+    navigationInFlightRef.current = true;
+    try {
+      const next = await onboarding.skipPage(page);
+      if (next) goTo(next);
+      else {
+        await onboarding.completeJourney();
+        router.replace("/(app)/(tabs)");
+      }
+    } catch (error) {
+      navigationInFlightRef.current = false;
+      throw error;
+    }
   };
+  const back = useCallback(async () => {
+    navigationInFlightRef.current = true;
+    try {
+      const previous = await onboarding.goBack();
+      // Pop to a previously visited onboarding page so the native stack uses
+      // its reverse transition. On a resumed journey where that page is not in
+      // this process's history, dismissTo safely falls back to replace.
+      router.dismissTo(ONBOARDING_ROUTES[previous] as Href);
+    } catch (error) {
+      navigationInFlightRef.current = false;
+      throw error;
+    }
+  }, [onboarding, router]);
+
+  useEffect(() => {
+    if (!isFocused || page === "welcome") return;
+    const subscription = BackHandler.addEventListener(
+      "hardwareBackPress",
+      () => {
+        void back();
+        return true;
+      },
+    );
+    return () => subscription.remove();
+  }, [back, isFocused, page]);
 
   const confirmDismissJourney = () => {
     Alert.alert(

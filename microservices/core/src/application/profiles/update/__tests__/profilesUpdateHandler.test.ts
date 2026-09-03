@@ -470,6 +470,7 @@ describe("ProfilesUpdateHandler", () => {
             weightUnit: "lb",
             heightUnit: "ftin",
             isProfilePublic: false,
+            showTemplateWorkouts: false,
           }),
         }),
       );
@@ -485,6 +486,7 @@ describe("ProfilesUpdateHandler", () => {
           weightUnit: "lb",
           heightUnit: "ftin",
           isProfilePublic: false,
+          showTemplateWorkouts: false,
         }),
       );
     });

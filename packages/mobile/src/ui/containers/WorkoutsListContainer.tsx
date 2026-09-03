@@ -1,5 +1,5 @@
 import { router, useFocusEffect } from "expo-router";
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { Alert, type ScrollView } from "react-native";
 import { useScrollToTopOnTabPress } from "@/ui/hooks/useScrollToTopOnTabPress";
 
@@ -16,6 +16,33 @@ import { useWorkoutLibrary } from "@/ui/hooks/useWorkoutLibrary";
 import { useWorkoutTotalCapGate } from "@/ui/hooks/useWorkoutTotalCapGate";
 import { useLoadoutGate } from "@/ui/hooks/useLoadoutGate";
 import { WorkoutsListPresenter } from "@/ui/presenters/WorkoutsListPresenter";
+import type { StoragePort } from "@/domain/ports/storage.port";
+
+function readShowTemplateWorkouts(
+  storage: StoragePort,
+  userId: string,
+): boolean {
+  // A profile refresh can race an offline optimistic toggle and briefly cache
+  // older server truth. The newest queued preference is the user's latest
+  // intent, so it wins until the sync entry completes.
+  const queued = storage.getQueuedEntriesForEntity("profile", userId);
+  for (let index = queued.length - 1; index >= 0; index -= 1) {
+    try {
+      const payload = JSON.parse(queued[index].payload) as {
+        showTemplateWorkouts?: unknown;
+      };
+      if (typeof payload.showTemplateWorkouts === "boolean") {
+        return payload.showTemplateWorkouts;
+      }
+    } catch {
+      // A malformed unrelated profile patch should not hide templates.
+    }
+  }
+  return (
+    storage.getCachedProfilePage(userId)?.payload.profile
+      .showTemplateWorkouts !== false
+  );
+}
 
 /**
  * Train > Workouts segment container. Owns data fetching (useWorkouts),
@@ -32,6 +59,10 @@ export function WorkoutsListContainer() {
   const userId = session?.userId ?? null;
 
   const workouts = useWorkouts();
+  const [showTemplateWorkouts, setShowTemplateWorkouts] = useState(() => {
+    if (!userId) return true;
+    return readShowTemplateWorkouts(storage, userId);
+  });
   const markWorkoutsChanged = useWorkoutLibrary((s) => s.markChanged);
   // Free-tier "3 workouts TOTAL, over-limit lock" — client-side gate on the
   // start-workout entry point. See onStart below.
@@ -48,7 +79,10 @@ export function WorkoutsListContainer() {
   useFocusEffect(
     useCallback(() => {
       rereadCache();
-    }, [rereadCache]),
+      if (userId) {
+        setShowTemplateWorkouts(readShowTemplateWorkouts(storage, userId));
+      }
+    }, [rereadCache, storage, userId]),
   );
 
   // "MY WORKOUTS" = mine + assigned (the prototype shows a single saved
@@ -60,7 +94,10 @@ export function WorkoutsListContainer() {
       ),
     [loadoutGate.allowed, workouts.mine, workouts.assigned],
   );
-  const templates = workouts.default.workouts;
+  const templates = useMemo(
+    () => (showTemplateWorkouts ? workouts.default.workouts : []),
+    [showTemplateWorkouts, workouts.default.workouts],
+  );
   const quota = workouts.mine.quota;
 
   // Derive each workout's split (colored tile + badge) by joining its

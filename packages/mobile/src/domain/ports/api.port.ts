@@ -2057,6 +2057,8 @@ export type ApiProfile = {
   /** M6 PR-4: visibility flag. Backend has accepted this on PATCH from M0;
    *  added to the wire type when Edit Profile started writing it. */
   isProfilePublic?: boolean;
+  /** Whether bundled templates appear in the user's workout library. */
+  showTemplateWorkouts?: boolean;
   createdAt: string;
   updatedAt: string;
   /**

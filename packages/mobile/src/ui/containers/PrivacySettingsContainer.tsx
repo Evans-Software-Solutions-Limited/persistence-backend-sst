@@ -1,5 +1,5 @@
 import { useRouter } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert } from "react-native";
 import {
   PrivacySettingsPresenter,
@@ -15,6 +15,7 @@ import {
   grantMetaAttributionConsent,
   isMetaAttributionConfigured,
 } from "@/application/analytics/metaAttribution";
+import { updateProfileCommand } from "@/application/commands/update-profile.command";
 
 /**
  * M12: Privacy Settings container.
@@ -37,12 +38,19 @@ export function PrivacySettingsContainer() {
   const profilePage = useProfilePage();
 
   const cachedIsPublic = profilePage.payload?.profile.isProfilePublic ?? null;
+  const cachedShowTemplateWorkouts = profilePage.payload
+    ? profilePage.payload.profile.showTemplateWorkouts !== false
+    : null;
   const hydrated = cachedIsPublic !== null;
 
   const [isProfilePublic, setIsProfilePublic] = useState<boolean>(
     cachedIsPublic ?? false,
   );
   const [metaAttributionEnabled, setMetaAttributionEnabled] = useState(false);
+  const [showTemplateWorkouts, setShowTemplateWorkouts] = useState(
+    cachedShowTemplateWorkouts ?? true,
+  );
+  const templatePreferenceTouchedRef = useRef(false);
 
   useEffect(() => {
     void getMetaAttributionConsent().then((value) => {
@@ -58,6 +66,38 @@ export function PrivacySettingsContainer() {
       setIsProfilePublic(cachedIsPublic);
     }
   }, [cachedIsPublic]);
+
+  useEffect(() => {
+    if (
+      cachedShowTemplateWorkouts !== null &&
+      !templatePreferenceTouchedRef.current
+    ) {
+      setShowTemplateWorkouts(cachedShowTemplateWorkouts);
+    }
+  }, [cachedShowTemplateWorkouts]);
+
+  const onSetShowTemplateWorkouts = useCallback(
+    (enabled: boolean) => {
+      if (!session?.userId || enabled === showTemplateWorkouts) return;
+
+      templatePreferenceTouchedRef.current = true;
+      setShowTemplateWorkouts(enabled);
+      const result = updateProfileCommand(
+        { storage, userId: session.userId },
+        { showTemplateWorkouts: enabled },
+      );
+      if (!result.ok) {
+        setShowTemplateWorkouts(!enabled);
+        Alert.alert("Error", "Failed to update workout library settings");
+        return;
+      }
+
+      // The app-level sync worker observes the enqueue and drains it through
+      // its single-flight path. Starting a second inline drain here would let
+      // rapid toggles claim separate rows concurrently and reorder intent.
+    },
+    [session?.userId, showTemplateWorkouts, storage],
+  );
 
   const handleUpdateVisibility = useCallback(
     async (next: PrivacyVisibility) => {
@@ -130,6 +170,8 @@ export function PrivacySettingsContainer() {
       metaAttributionAvailable={isMetaAttributionConfigured()}
       metaAttributionEnabled={metaAttributionEnabled}
       onSetMetaAttributionEnabled={onSetMetaAttributionEnabled}
+      showTemplateWorkouts={showTemplateWorkouts}
+      onSetShowTemplateWorkouts={onSetShowTemplateWorkouts}
     />
   );
 }

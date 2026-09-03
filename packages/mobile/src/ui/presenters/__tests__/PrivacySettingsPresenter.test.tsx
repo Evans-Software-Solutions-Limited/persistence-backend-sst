@@ -17,6 +17,8 @@ function setup(overrides: Partial<PrivacySettingsPresenterProps> = {}) {
     metaAttributionAvailable: false,
     metaAttributionEnabled: false,
     onSetMetaAttributionEnabled: jest.fn(),
+    showTemplateWorkouts: true,
+    onSetShowTemplateWorkouts: jest.fn(),
     ...overrides,
   };
   return { props, ...renderWithTheme(<PrivacySettingsPresenter {...props} />) };
@@ -52,6 +54,16 @@ describe("PrivacySettingsPresenter — account deletion (Apple 5.1.1(v))", () =>
     const { queryByTestId } = setup({ isLoading: true });
     expect(queryByTestId("privacy-settings-delete-account")).toBeNull();
     expect(queryByTestId("privacy-settings-loader")).not.toBeNull();
+  });
+});
+
+describe("PrivacySettingsPresenter — workout library", () => {
+  it("renders the template preference and forwards switch changes", () => {
+    const { props, getByLabelText } = setup({ showTemplateWorkouts: true });
+
+    fireEvent(getByLabelText("Show template workouts"), "valueChange", false);
+
+    expect(props.onSetShowTemplateWorkouts).toHaveBeenCalledWith(false);
   });
 });
 

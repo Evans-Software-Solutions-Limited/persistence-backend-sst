@@ -1,24 +1,38 @@
 import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
-import { Alert } from "react-native";
+import { Alert, BackHandler } from "react-native";
 
 import type { OnboardingPage } from "@/domain/models/onboarding";
 import type { SubscriptionSelectionContainerProps } from "@/ui/containers/SubscriptionSelectionContainer";
 import { OnboardingPageContainer } from "@/ui/containers/OnboardingPageContainer";
 
 const mockReplace = jest.fn();
+const mockPush = jest.fn();
+const mockDismissTo = jest.fn();
 const mockTrack = jest.fn();
+const mockGoBack = jest.fn();
+const mockCompletePage = jest.fn();
 const mockSkipPage = jest.fn();
 const mockDismissJourney = jest.fn();
 const mockCompleteJourney = jest.fn();
 let mockSubscriptionProps: SubscriptionSelectionContainerProps | null = null;
+let mockIntentProps: { onContinue: () => void } | null = null;
 let mockCurrentPage: OnboardingPage = "recommendation";
+let mockIsFocused = true;
 
 jest.mock("expo-router", () => ({
-  useRouter: () => ({ replace: mockReplace, push: jest.fn() }),
+  useRouter: () => ({
+    replace: mockReplace,
+    push: mockPush,
+    dismissTo: mockDismissTo,
+  }),
 }));
 
 jest.mock("react-native-safe-area-context", () => ({
   useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }),
+}));
+
+jest.mock("@react-navigation/native", () => ({
+  useIsFocused: () => mockIsFocused,
 }));
 
 jest.mock("@/ui/presenters/OnboardingPresenter", () => {
@@ -32,6 +46,10 @@ jest.mock("@/ui/presenters/OnboardingPresenter", () => {
         onPress: onSkip,
         testID: "onboarding-welcome-skip",
       }),
+    OnboardingIntentPresenter: (props: { onContinue: () => void }) => {
+      mockIntentProps = props;
+      return null;
+    },
   };
 });
 
@@ -63,8 +81,8 @@ jest.mock("@/ui/state/OnboardingProvider", () => ({
       updatedAt: "2026-09-01T12:00:00.000Z",
     },
     isLoading: false,
-    goBack: jest.fn(),
-    completePage: jest.fn(),
+    goBack: mockGoBack,
+    completePage: mockCompletePage,
     skipPage: mockSkipPage,
     dismissJourney: mockDismissJourney,
     completeJourney: mockCompleteJourney,
@@ -87,10 +105,14 @@ describe("OnboardingPageContainer recommendation", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockSubscriptionProps = null;
+    mockIntentProps = null;
     mockCurrentPage = "recommendation";
+    mockIsFocused = true;
     mockSkipPage.mockResolvedValue(null);
     mockDismissJourney.mockResolvedValue(undefined);
     mockCompleteJourney.mockResolvedValue(undefined);
+    mockGoBack.mockResolvedValue("train");
+    mockCompletePage.mockResolvedValue("recommendation");
   });
 
   it("warns before dismissing the whole journey from the Welcome header", async () => {
@@ -128,6 +150,73 @@ describe("OnboardingPageContainer recommendation", () => {
     );
     expect(mockTrack).toHaveBeenCalledWith("onboarding_plan_selected", {
       selectedTier: "premium_plus",
+    });
+  });
+
+  it("does not redirect an inactive onboarding screen after a forward push", () => {
+    mockCurrentPage = "train";
+    mockIsFocused = false;
+
+    render(<OnboardingPageContainer page="nutrition" />);
+
+    expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  it("reconciles provider state after a pushed screen loses and regains focus", async () => {
+    mockCurrentPage = "train";
+    const screen = render(<OnboardingPageContainer page="train" />);
+    act(() => mockIntentProps?.onContinue());
+    await waitFor(() => {
+      expect(mockPush).toHaveBeenCalledWith("/(onboarding)/recommendation");
+    });
+
+    mockCurrentPage = "recommendation";
+    mockIsFocused = false;
+    screen.rerender(<OnboardingPageContainer page="train" />);
+    mockReplace.mockClear();
+
+    mockIsFocused = true;
+    screen.rerender(<OnboardingPageContainer page="train" />);
+    expect(mockReplace).toHaveBeenCalledWith("/(onboarding)/recommendation");
+  });
+
+  it("routes Android system Back through persisted onboarding state", async () => {
+    let hardwareBack: (() => boolean | null | undefined) | undefined;
+    jest
+      .spyOn(BackHandler, "addEventListener")
+      .mockImplementation((_event, handler) => {
+        hardwareBack = handler;
+        return { remove: jest.fn() };
+      });
+
+    render(<OnboardingPageContainer page="recommendation" />);
+    expect(hardwareBack?.()).toBe(true);
+
+    await waitFor(() => {
+      expect(mockGoBack).toHaveBeenCalledTimes(1);
+      expect(mockDismissTo).toHaveBeenCalledWith("/(onboarding)/train");
+    });
+  });
+
+  it("pushes forward and dismisses backward for native direction-aware transitions", async () => {
+    const recommendation = render(
+      <OnboardingPageContainer page="recommendation" />,
+    );
+
+    act(() => {
+      mockSubscriptionProps?.onboardingRecommendation?.onBack();
+    });
+    await waitFor(() => {
+      expect(mockDismissTo).toHaveBeenCalledWith("/(onboarding)/train");
+    });
+
+    recommendation.unmount();
+    mockCurrentPage = "train";
+    mockCompletePage.mockResolvedValue("recommendation");
+    render(<OnboardingPageContainer page="train" />);
+    act(() => mockIntentProps?.onContinue());
+    await waitFor(() => {
+      expect(mockPush).toHaveBeenCalledWith("/(onboarding)/recommendation");
     });
   });
 

@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { AppState, type AppStateStatus } from "react-native";
 import {
-  isMutationDue,
+  isMutationEligible,
   processSyncQueue,
 } from "@/application/commands/sync.command";
 import { getApiBaseUrl } from "@/adapters/api";
@@ -31,7 +31,9 @@ function hasWorkDue(storage: StoragePort): boolean {
   try {
     // The SAME predicate the drain skips by. If these disagreed, the loop would
     // spin forever on an entry `processSyncQueue` always passes over.
-    return storage.getPendingMutations().some((e) => isMutationDue(e));
+    return storage
+      .getPendingMutations()
+      .some((entry) => isMutationEligible(storage, entry));
   } catch (err) {
     console.error("[useSyncWorker] could not read the queue:", err);
     return false;

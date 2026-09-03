@@ -94,6 +94,50 @@ describe("processSyncQueue", () => {
     );
   });
 
+  it("does not dispatch a newer template preference while an older one is unresolved", async () => {
+    for (const showTemplateWorkouts of [false, true]) {
+      storage.enqueueMutation({
+        entityType: "profile",
+        entityId: "user-1",
+        operation: "update",
+        payload: { showTemplateWorkouts },
+        endpoint: "/profile",
+        method: "PATCH",
+      });
+    }
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 500,
+      text: async () => "temporary failure",
+    });
+
+    const first = await processSyncQueue(storage, auth, "https://api.test");
+
+    expect(first).toMatchObject({ processed: 1, failed: 1 });
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(mockFetch.mock.calls[0][1].body)).toEqual({
+      showTemplateWorkouts: false,
+    });
+
+    mockFetch
+      .mockResolvedValueOnce({ ok: true })
+      .mockResolvedValueOnce({ ok: true });
+    const retry = await processSyncQueue(
+      storage,
+      auth,
+      "https://api.test",
+      AFTER_BACKOFF,
+    );
+
+    expect(retry).toMatchObject({ processed: 2, succeeded: 2 });
+    expect(
+      mockFetch.mock.calls.slice(1).map((call) => JSON.parse(call[1].body)),
+    ).toEqual([
+      { showTemplateWorkouts: false },
+      { showTemplateWorkouts: true },
+    ]);
+  });
+
   it("reports a terminal sync failure to Sentry once the retry budget is exhausted", async () => {
     storage.enqueueMutation({
       entityType: "session",

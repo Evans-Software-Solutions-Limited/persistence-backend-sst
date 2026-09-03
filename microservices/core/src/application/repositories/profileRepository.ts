@@ -114,6 +114,7 @@ export interface ProfilePageProfileSlice {
   weightUnit: "kg" | "lb";
   heightUnit: "cm" | "ftin";
   isProfilePublic: boolean;
+  showTemplateWorkouts: boolean;
   createdAt: string;
   /**
    * Cluster 2a 30-day soft-delete cooling-off. Non-null = the account is
@@ -320,6 +321,7 @@ export class ProfileRepository {
         weightUnit: profiles.weightUnit,
         heightUnit: profiles.heightUnit,
         isProfilePublic: profiles.isProfilePublic,
+        showTemplateWorkouts: profiles.showTemplateWorkouts,
         createdAt: profiles.createdAt,
         deletedAt: profiles.deletedAt,
         purgeAfter: profiles.purgeAfter,
@@ -361,6 +363,7 @@ export class ProfileRepository {
       weightUnit: row.weightUnit === "lb" ? "lb" : "kg",
       heightUnit: row.heightUnit === "ftin" ? "ftin" : "cm",
       isProfilePublic: row.isProfilePublic === true,
+      showTemplateWorkouts: row.showTemplateWorkouts !== false,
       createdAt: toIsoString(row.createdAt),
       deletedAt: toOptionalIsoString(row.deletedAt),
       purgeAfter: toOptionalIsoString(row.purgeAfter),

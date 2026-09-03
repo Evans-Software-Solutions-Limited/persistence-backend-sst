@@ -494,6 +494,35 @@ export function isMutationDue(
   return dueAt <= now;
 }
 
+/**
+ * The complete dispatch predicate shared by the drain and its worker loop.
+ * Keeping this in one place is load-bearing: if the worker calls the drain
+ * again for a row the drain must skip, its do/while loop becomes a hot spin.
+ */
+export function isMutationEligible(
+  storage: StoragePort,
+  entry: SyncQueueEntry,
+  now: number = Date.now(),
+): boolean {
+  if (!isMutationDue(entry, now)) return false;
+  if (
+    entry.entityType !== "profile" ||
+    entry.entityId === null ||
+    !hasTemplatePreference(entry.payload)
+  ) {
+    return true;
+  }
+
+  // A template-visibility PATCH is ordered intent: an older OFF must never
+  // arrive after a newer ON (or vice versa). Concurrent drains can claim
+  // different rows, so a per-row claim alone cannot preserve that order.
+  return !storage
+    .getQueuedEntriesForEntity("profile", entry.entityId)
+    .some(
+      (older) => older.id < entry.id && hasTemplatePreference(older.payload),
+    );
+}
+
 export type SyncResult = {
   processed: number;
   succeeded: number;
@@ -570,7 +599,9 @@ export async function processSyncQueue(
     // the claim so a not-yet-due entry stays `failed` (visible to the status UI
     // and to the coalescing paths) rather than being flipped to `in_flight` and
     // released again.
-    if (!isMutationDue(entry, now())) continue;
+    // The shared predicate also enforces per-preference FIFO; the app worker
+    // uses the same predicate for its loop continuation to prevent hot spins.
+    if (!isMutationEligible(storage, entry, now())) continue;
 
     // Atomic claim — `markMutationInFlight` is row-conditional at the
     // storage layer (only flips status when currently
@@ -1106,6 +1137,21 @@ export async function processSyncQueue(
     failed,
     blocked,
   };
+}
+
+function hasTemplatePreference(payload: string): boolean {
+  try {
+    const parsed = JSON.parse(payload) as unknown;
+    return (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      !Array.isArray(parsed) &&
+      typeof (parsed as Record<string, unknown>).showTemplateWorkouts ===
+        "boolean"
+    );
+  } catch {
+    return false;
+  }
 }
 
 /**
