@@ -19,6 +19,7 @@ function makeRepos() {
     findCodeByCanonical: vi.fn(async () => null),
     findCodeById: vi.fn(async () => null),
     hasLockedOtherCode: vi.fn(async () => false),
+    isCodeEligible: vi.fn(async () => true),
     claim: vi.fn(async () => ({ kind: "applied" })),
     lock: vi.fn(async () => true),
   };
@@ -41,6 +42,20 @@ const created = (overrides: Partial<any> = {}) => ({
   seats: { pool: "consumer", used: 1, cap: 200 },
 });
 
+function mockGrantCreated(
+  grants: ReturnType<typeof makeRepos>["grants"],
+  outcome = created(),
+) {
+  grants.create.mockImplementationOnce(async (_input, _pool, finalize) => {
+    await finalize({
+      transaction: { kind: "test-transaction" },
+      grant: outcome.grant,
+      subscriptionExpiresAt: outcome.subscriptionExpiresAt,
+    });
+    return outcome;
+  });
+}
+
 describe("FoundingGrantService.grant", () => {
   beforeEach(() => vi.clearAllMocks());
 
@@ -51,7 +66,7 @@ describe("FoundingGrantService.grant", () => {
       email: "Buyer@Example.com",
       role: "user",
     } as any);
-    grants.create.mockResolvedValue(created());
+    mockGrantCreated(grants);
 
     const res = await svc.grant(
       {
@@ -79,13 +94,18 @@ describe("FoundingGrantService.grant", () => {
         grantedBy: "admin-1",
       }),
       "consumer",
+      expect.any(Function),
     );
-    expect(referrals.lock).toHaveBeenCalledWith("u1");
+    expect(referrals.lock).toHaveBeenCalledWith(
+      "u1",
+      expect.objectContaining({ kind: "test-transaction" }),
+    );
     expect(audit.record).toHaveBeenCalledWith(
       expect.objectContaining({
         action: "founding_grant.create",
         entityType: "founding_grant",
       }),
+      expect.objectContaining({ kind: "test-transaction" }),
     );
     expect((audit.record.mock.calls[0] as any)[0].entityId).toBe(
       res.result.grantId,
@@ -101,7 +121,7 @@ describe("FoundingGrantService.grant", () => {
 
   it("creates a PENDING grant when there is no account yet and sends the sign-up invite", async () => {
     const { svc, grants, referrals, mailer } = makeRepos();
-    grants.create.mockResolvedValue(created({ id: "g2" }));
+    mockGrantCreated(grants, created({ id: "g2" }));
 
     const res = await svc.grant(
       {
@@ -119,6 +139,7 @@ describe("FoundingGrantService.grant", () => {
     expect(grants.create).toHaveBeenCalledWith(
       expect.objectContaining({ userId: null, amountMinor: 5000 }),
       "consumer",
+      expect.any(Function),
     );
     expect(referrals.lock).not.toHaveBeenCalled();
     expect((mailer.mock.calls[0] as any)[0].text).toMatch(
@@ -140,7 +161,7 @@ describe("FoundingGrantService.grant", () => {
     expect(res).toEqual({ ok: false, error: { code: "coach_demotion" } });
     expect(grants.create).not.toHaveBeenCalled();
 
-    grants.create.mockResolvedValue(created());
+    mockGrantCreated(grants);
     const forced = await svc.grant(
       {
         email: "coach@x.co",
@@ -160,7 +181,7 @@ describe("FoundingGrantService.grant", () => {
       email: "coach@x.co",
       role: "personal_trainer",
     } as any);
-    grants.create.mockResolvedValue({
+    mockGrantCreated(grants, {
       ...created(),
       seats: { pool: "coach", used: 1, cap: 20 },
     });
@@ -176,6 +197,7 @@ describe("FoundingGrantService.grant", () => {
     expect(grants.create).toHaveBeenCalledWith(
       expect.objectContaining({ amountMinor: 9900 }),
       "coach",
+      expect.any(Function),
     );
   });
 
@@ -254,7 +276,7 @@ describe("FoundingGrantService.grant", () => {
       id: "code1",
       code: "UONFRESHERS",
     } as any);
-    grants.create.mockResolvedValue(created());
+    mockGrantCreated(grants);
     const res = await svc.grant(
       {
         email: "a@b.co",
@@ -268,6 +290,7 @@ describe("FoundingGrantService.grant", () => {
     expect(grants.create).toHaveBeenCalledWith(
       expect.objectContaining({ referralCodeId: "code1" }),
       "consumer",
+      expect.any(Function),
     );
     expect(referrals.claim).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -275,13 +298,48 @@ describe("FoundingGrantService.grant", () => {
         canonicalCode: "UONFRESHERS",
         source: "admin",
       }),
+      expect.objectContaining({ kind: "test-transaction" }),
     );
-    expect(referrals.lock).toHaveBeenCalledWith("u1");
+    expect(referrals.lock).toHaveBeenCalledWith(
+      "u1",
+      expect.objectContaining({ kind: "test-transaction" }),
+    );
+  });
+
+  it("rolls the grant back when the transactional referral claim is no longer eligible", async () => {
+    const { svc, grants, referrals, audit, mailer } = makeRepos();
+    grants.findProfileByEmail.mockResolvedValue({
+      id: "u1",
+      email: "a@b.co",
+      role: "user",
+    } as any);
+    referrals.findCodeByCanonical.mockResolvedValue({
+      id: "code1",
+      code: "EXPIRED",
+      displayCode: "EXPIRED",
+      label: "Expired",
+    } as any);
+    referrals.claim.mockResolvedValue({ kind: "invalid" });
+    mockGrantCreated(grants);
+
+    expect(
+      await svc.grant(
+        {
+          email: "a@b.co",
+          tierName: "premium",
+          paymentMethod: "other",
+          referralCode: "EXPIRED",
+        },
+        "admin-1",
+      ),
+    ).toEqual({ ok: false, error: { code: "invalid_referral_code" } });
+    expect(audit.record).not.toHaveBeenCalled();
+    expect(mailer).not.toHaveBeenCalled();
   });
 
   it("treats an invite email failure as non-fatal and reports it", async () => {
     const { svc, grants, mailer } = makeRepos();
-    grants.create.mockResolvedValue(created());
+    mockGrantCreated(grants);
     mailer.mockRejectedValueOnce(new Error("Resend 500"));
     const res = await svc.grant(
       { email: "a@b.co", tierName: "premium", paymentMethod: "other" },
@@ -347,16 +405,21 @@ describe("FoundingGrantService.revoke", () => {
   it("revokes once and audits with the reason", async () => {
     const { svc, grants, audit } = makeRepos();
     grants.findById.mockResolvedValueOnce({ id: "g1", revokedAt: null } as any);
-    grants.revoke.mockResolvedValueOnce({
-      id: "g1",
-      revokedAt: new Date("2026-09-03T00:00:00Z"),
-    } as any);
+    grants.revoke.mockImplementationOnce(async (_id, _reason, finalize) => {
+      const grant = {
+        id: "g1",
+        revokedAt: new Date("2026-09-03T00:00:00Z"),
+      } as any;
+      await finalize(grant, { kind: "test-transaction" });
+      return grant;
+    });
     expect(await svc.revoke("g1", "refunded", "admin-1")).toEqual({ ok: true });
     expect(audit.record).toHaveBeenCalledWith(
       expect.objectContaining({
         action: "founding_grant.revoke",
         reason: "refunded",
       }),
+      expect.objectContaining({ kind: "test-transaction" }),
     );
 
     grants.findById.mockResolvedValueOnce({

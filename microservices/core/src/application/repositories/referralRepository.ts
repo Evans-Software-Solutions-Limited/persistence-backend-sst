@@ -68,11 +68,21 @@ export interface UpdateReferralCodeInput {
 }
 
 type Db = ReturnType<typeof getDb>;
-type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+export type DatabaseTransaction = Parameters<
+  Parameters<Db["transaction"]>[0]
+>[0];
+type Tx = DatabaseTransaction;
+
+async function lockReferralUser(tx: Tx, userId: string): Promise<void> {
+  await tx.execute(
+    sql`SELECT pg_advisory_xact_lock(hashtext(${`referral_user_${userId}`}))`,
+  );
+}
 
 function toApplied(row: {
   codeId: string;
   code: string;
+  canonicalCode?: string;
   label: string;
   partnerName: string | null;
   lockedAt: Date | null;
@@ -94,7 +104,13 @@ export class ReferralRepository {
   // ─── Codes (admin) ──────────────────────────────────────────────────────
 
   async createCode(input: CreateReferralCodeInput): Promise<ReferralCode> {
-    const db = getDb();
+    return this.createCodeIn(getDb(), input);
+  }
+
+  async createCodeIn(
+    db: Db | Tx,
+    input: CreateReferralCodeInput,
+  ): Promise<ReferralCode> {
     const rows = await db
       .insert(referralCodes)
       .values({
@@ -115,7 +131,10 @@ export class ReferralRepository {
   }
 
   async findCodeById(id: string): Promise<ReferralCode | null> {
-    const db = getDb();
+    return this.findCodeByIdIn(getDb(), id);
+  }
+
+  async findCodeByIdIn(db: Db | Tx, id: string): Promise<ReferralCode | null> {
     const rows = await db
       .select()
       .from(referralCodes)
@@ -134,11 +153,46 @@ export class ReferralRepository {
     return rows[0] ?? null;
   }
 
+  async isCodeEligible(id: string, transaction?: Tx): Promise<boolean> {
+    const db = transaction ?? getDb();
+    const query = db
+      .select({ id: referralCodes.id })
+      .from(referralCodes)
+      .where(
+        and(
+          eq(referralCodes.id, id),
+          eq(referralCodes.status, "active"),
+          or(
+            isNull(referralCodes.startsAt),
+            sql`${referralCodes.startsAt} <= now()`,
+          ),
+          or(
+            isNull(referralCodes.endsAt),
+            sql`${referralCodes.endsAt} > now()`,
+          ),
+          or(
+            isNull(referralCodes.maxRedemptions),
+            sql`${referralCodes.redemptionCount} < ${referralCodes.maxRedemptions}`,
+          ),
+        ),
+      )
+      .limit(1);
+    const rows = transaction ? await query.for("update") : await query;
+    return rows.length > 0;
+  }
+
   async updateCode(
     id: string,
     patch: UpdateReferralCodeInput,
   ): Promise<ReferralCode | null> {
-    const db = getDb();
+    return this.updateCodeIn(getDb(), id, patch);
+  }
+
+  async updateCodeIn(
+    db: Db | Tx,
+    id: string,
+    patch: UpdateReferralCodeInput,
+  ): Promise<ReferralCode | null> {
     const rows = await db
       .update(referralCodes)
       .set({ ...patch, updatedAt: new Date() })
@@ -256,6 +310,7 @@ export class ReferralRepository {
       .select({
         codeId: referralCodes.id,
         code: referralCodes.displayCode,
+        canonicalCode: referralCodes.code,
         label: referralCodes.label,
         partnerName: referralCodes.partnerName,
         lockedAt: referralRedemptions.lockedAt,
@@ -273,26 +328,40 @@ export class ReferralRepository {
 
   /**
    * Claim `canonicalCode` for `userId` (BRIEF D5). One transaction:
-   *  1. If the user already holds a LOCKED attribution → `locked` (no writes).
-   *  2. Conditional increment on the code (active, inside its window, below
+   *  1. Serialize all claim/remove/lock work for this user.
+   *  2. If the user already holds a LOCKED attribution → `locked` (no writes),
+   *     or already holds this code → `unchanged`, even if its cap is now full.
+   *  3. Conditional increment on the code (active, inside its window, below
    *     cap) → zero rows means `invalid` — uniformly, whatever the reason.
-   *  3. Upsert the user's single redemption row; when replacing an unlocked
+   *  4. Upsert the user's single redemption row; when replacing an unlocked
    *     attribution, decrement the previous code's count and remember it in
-   *     `replaced_code_id`. Re-claiming the same code is `unchanged` (the
-   *     increment from step 2 is reversed so the count stays honest).
+   *     `replaced_code_id`.
    */
-  async claim(input: {
-    userId: string;
-    canonicalCode: string;
-    source: ClaimSource;
-    createdBy?: string | null;
-  }): Promise<ClaimOutcome> {
+  async claim(
+    input: {
+      userId: string;
+      canonicalCode: string;
+      source: ClaimSource;
+      createdBy?: string | null;
+    },
+    transaction?: Tx,
+  ): Promise<ClaimOutcome> {
     const db = getDb();
-    return db.transaction(async (tx) => {
+    const execute = async (tx: Tx): Promise<ClaimOutcome> => {
+      // `lock()` and `remove()` take the same transaction-scoped lock. Once it
+      // is held, the redemption read below cannot go stale before our write.
+      await lockReferralUser(tx, input.userId);
       const existingRows = await this.selectApplied(tx, input.userId);
       const existing = existingRows[0] ? toApplied(existingRows[0]) : null;
       if (existing?.lockedAt) {
         return { kind: "locked", applied: existing };
+      }
+
+      // Idempotency must not depend on the code still being claimable. A user
+      // who already owns the final redemption can retry after the cap fills or
+      // the campaign closes without turning success into an invalid-code error.
+      if (existing && existingRows[0].canonicalCode === input.canonicalCode) {
+        return { kind: "unchanged", applied: existing };
       }
 
       const claimed = await tx
@@ -327,15 +396,6 @@ export class ReferralRepository {
         });
       const code = claimed[0];
       if (!code) return { kind: "invalid" };
-
-      if (existing && existing.codeId === code.id) {
-        // Same code again — undo the increment, nothing else changes.
-        await tx
-          .update(referralCodes)
-          .set({ redemptionCount: sql`${referralCodes.redemptionCount} - 1` })
-          .where(eq(referralCodes.id, code.id));
-        return { kind: "unchanged", applied: existing };
-      }
 
       const now = new Date();
       if (existing) {
@@ -377,13 +437,15 @@ export class ReferralRepository {
           createdAt: existing?.createdAt ?? now,
         },
       };
-    });
+    };
+    return transaction ? execute(transaction) : db.transaction(execute);
   }
 
   /** Remove an UNLOCKED attribution. Returns false when locked or absent. */
   async remove(userId: string): Promise<"removed" | "locked" | "none"> {
     const db = getDb();
     return db.transaction(async (tx) => {
+      await lockReferralUser(tx, userId);
       const rows = await tx
         .select({
           codeId: referralRedemptions.codeId,
@@ -413,19 +475,23 @@ export class ReferralRepository {
    * returns whether this call did the locking. Best-effort callers (the RC sync)
    * must catch — a lock failure must never fail a purchase.
    */
-  async lock(userId: string): Promise<boolean> {
+  async lock(userId: string, transaction?: Tx): Promise<boolean> {
     const db = getDb();
-    const rows = await db
-      .update(referralRedemptions)
-      .set({ lockedAt: new Date(), updatedAt: new Date() })
-      .where(
-        and(
-          eq(referralRedemptions.userId, userId),
-          isNull(referralRedemptions.lockedAt),
-        ),
-      )
-      .returning({ id: referralRedemptions.id });
-    return rows.length > 0;
+    const execute = async (tx: Tx): Promise<boolean> => {
+      await lockReferralUser(tx, userId);
+      const rows = await tx
+        .update(referralRedemptions)
+        .set({ lockedAt: new Date(), updatedAt: new Date() })
+        .where(
+          and(
+            eq(referralRedemptions.userId, userId),
+            isNull(referralRedemptions.lockedAt),
+          ),
+        )
+        .returning({ id: referralRedemptions.id });
+      return rows.length > 0;
+    };
+    return transaction ? execute(transaction) : db.transaction(execute);
   }
 
   /** True when the user holds a locked attribution to a DIFFERENT code. */

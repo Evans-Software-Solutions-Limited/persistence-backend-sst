@@ -8,6 +8,7 @@ import {
   isValidReferralCode,
   normalizeReferralCode,
 } from "../../referrals/referralCode";
+import { getDb } from "@persistence/db/client";
 
 const KIND = t.Union([
   t.Literal("vendor"),
@@ -67,30 +68,36 @@ export const adminReferralCodesHandler = new Elysia()
       }
       const repo = new ReferralRepository();
       try {
-        const created = await repo.createCode({
-          code: canonical,
-          displayCode: ctx.body.displayCode?.trim() || canonical,
-          label: ctx.body.label.trim(),
-          partnerName: ctx.body.partnerName?.trim() || null,
-          kind: ctx.body.kind,
-          maxRedemptions: ctx.body.maxRedemptions ?? null,
-          startsAt: startsAt ?? null,
-          endsAt: endsAt ?? null,
-          campaignSlug: ctx.body.campaignSlug?.trim() || null,
-          notes: ctx.body.notes?.trim() || null,
-          createdBy: actorId,
-        });
-        await new AdminAuditRepository().record({
-          actorId,
-          action: "referral_code.create",
-          entityType: "referral_code",
-          entityId: created.id,
-          after: {
-            code: created.code,
-            label: created.label,
-            kind: created.kind,
-            maxRedemptions: created.maxRedemptions,
-          },
+        const created = await getDb().transaction(async (transaction) => {
+          const row = await repo.createCodeIn(transaction, {
+            code: canonical,
+            displayCode: ctx.body.displayCode?.trim() || canonical,
+            label: ctx.body.label.trim(),
+            partnerName: ctx.body.partnerName?.trim() || null,
+            kind: ctx.body.kind,
+            maxRedemptions: ctx.body.maxRedemptions ?? null,
+            startsAt: startsAt ?? null,
+            endsAt: endsAt ?? null,
+            campaignSlug: ctx.body.campaignSlug?.trim() || null,
+            notes: ctx.body.notes?.trim() || null,
+            createdBy: actorId,
+          });
+          await new AdminAuditRepository().record(
+            {
+              actorId,
+              action: "referral_code.create",
+              entityType: "referral_code",
+              entityId: row.id,
+              after: {
+                code: row.code,
+                label: row.label,
+                kind: row.kind,
+                maxRedemptions: row.maxRedemptions,
+              },
+            },
+            transaction,
+          );
+          return row;
         });
         ctx.set.status = 201;
         return { data: created };
@@ -122,47 +129,62 @@ export const adminReferralCodesHandler = new Elysia()
     async (ctx) => {
       const { sub: actorId } = getUser(ctx);
       const repo = new ReferralRepository();
-      const before = await repo.findCodeById(ctx.params.id);
-      if (!before) {
+      const startsAt = parseDate(ctx.body.startsAt);
+      const endsAt = parseDate(ctx.body.endsAt);
+      if (startsAt === undefined && ctx.body.startsAt) {
+        ctx.set.status = 400;
+        return { message: "startsAt is not a valid date" };
+      }
+      if (endsAt === undefined && ctx.body.endsAt) {
+        ctx.set.status = 400;
+        return { message: "endsAt is not a valid date" };
+      }
+      const result = await getDb().transaction(async (transaction) => {
+        const before = await repo.findCodeByIdIn(transaction, ctx.params.id);
+        if (!before) return null;
+        const updated = await repo.updateCodeIn(transaction, ctx.params.id, {
+          status: ctx.body.status,
+          label: ctx.body.label?.trim(),
+          partnerName:
+            ctx.body.partnerName === undefined
+              ? undefined
+              : ctx.body.partnerName?.trim() || null,
+          maxRedemptions: ctx.body.maxRedemptions,
+          startsAt: startsAt === undefined ? undefined : startsAt,
+          endsAt: endsAt === undefined ? undefined : endsAt,
+          campaignSlug:
+            ctx.body.campaignSlug === undefined
+              ? undefined
+              : ctx.body.campaignSlug?.trim() || null,
+          notes:
+            ctx.body.notes === undefined
+              ? undefined
+              : ctx.body.notes?.trim() || null,
+        });
+        await new AdminAuditRepository().record(
+          {
+            actorId,
+            action: "referral_code.update",
+            entityType: "referral_code",
+            entityId: ctx.params.id,
+            before: {
+              status: before.status,
+              label: before.label,
+              maxRedemptions: before.maxRedemptions,
+              startsAt: before.startsAt,
+              endsAt: before.endsAt,
+            },
+            after: { ...ctx.body },
+          },
+          transaction,
+        );
+        return updated;
+      });
+      if (!result) {
         ctx.set.status = 404;
         return { message: "Not found" };
       }
-      const startsAt = parseDate(ctx.body.startsAt);
-      const endsAt = parseDate(ctx.body.endsAt);
-      const updated = await repo.updateCode(ctx.params.id, {
-        status: ctx.body.status,
-        label: ctx.body.label?.trim(),
-        partnerName:
-          ctx.body.partnerName === undefined
-            ? undefined
-            : ctx.body.partnerName?.trim() || null,
-        maxRedemptions: ctx.body.maxRedemptions,
-        startsAt: startsAt === undefined ? undefined : startsAt,
-        endsAt: endsAt === undefined ? undefined : endsAt,
-        campaignSlug:
-          ctx.body.campaignSlug === undefined
-            ? undefined
-            : ctx.body.campaignSlug?.trim() || null,
-        notes:
-          ctx.body.notes === undefined
-            ? undefined
-            : ctx.body.notes?.trim() || null,
-      });
-      await new AdminAuditRepository().record({
-        actorId,
-        action: "referral_code.update",
-        entityType: "referral_code",
-        entityId: ctx.params.id,
-        before: {
-          status: before.status,
-          label: before.label,
-          maxRedemptions: before.maxRedemptions,
-          startsAt: before.startsAt,
-          endsAt: before.endsAt,
-        },
-        after: { ...ctx.body },
-      });
-      return { data: updated };
+      return { data: result };
     },
     {
       params: t.Object({ id: t.String({ format: "uuid" }) }),

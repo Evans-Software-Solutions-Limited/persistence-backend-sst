@@ -83,6 +83,15 @@ const COACH_ROLES: ReadonlySet<string> = new Set([
 ]);
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+class ReferralClaimRejected extends Error {
+  readonly reason: "invalid" | "locked_elsewhere";
+
+  constructor(reason: "invalid" | "locked_elsewhere") {
+    super(reason);
+    this.reason = reason;
+  }
+}
+
 export class FoundingGrantService {
   // Plain field declarations, not constructor parameter properties — the web
   // package's tsconfig has `erasableSyntaxOnly` and type-checks this file
@@ -156,7 +165,7 @@ export class FoundingGrantService {
         return { ok: false, error: { code: "invalid_referral_code" } };
       }
       const code = await this.referrals.findCodeByCanonical(canonical);
-      if (!code || code.status === "archived") {
+      if (!code) {
         return { ok: false, error: { code: "invalid_referral_code" } };
       }
       if (
@@ -171,67 +180,101 @@ export class FoundingGrantService {
 
     const offer = FOUNDING_OFFERS[tierName];
     const grantId = randomUUID();
-    const outcome: CreateGrantOutcome = await this.grants.create(
-      {
-        id: grantId,
-        userId: profile?.id ?? null,
-        email,
-        tierName,
-        months: offer.months,
-        amountMinor: req.amountMinor ?? offer.priceMinor,
-        currency: req.currency ?? "GBP",
-        paymentMethod: req.paymentMethod,
-        paymentReference: req.paymentReference ?? null,
-        paidAt: req.paidAt ?? new Date(),
-        referralCodeId,
-        grantedBy: actorId,
-        notes: req.notes ?? null,
-      },
-      offer.pool,
-    );
+    let outcome: CreateGrantOutcome;
+    try {
+      outcome = await this.grants.create(
+        {
+          id: grantId,
+          userId: profile?.id ?? null,
+          email,
+          tierName,
+          months: offer.months,
+          amountMinor: req.amountMinor ?? offer.priceMinor,
+          currency: req.currency ?? "GBP",
+          paymentMethod: req.paymentMethod,
+          paymentReference: req.paymentReference ?? null,
+          paidAt: req.paidAt ?? new Date(),
+          referralCodeId,
+          grantedBy: actorId,
+          notes: req.notes ?? null,
+        },
+        offer.pool,
+        async ({ transaction, grant }) => {
+          if (referralCodeId) {
+            if (profile) {
+              const claim = await this.referrals.claim(
+                {
+                  userId: profile.id,
+                  canonicalCode: normalizeReferralCode(req.referralCode ?? ""),
+                  source: "admin",
+                  createdBy: actorId,
+                },
+                transaction,
+              );
+              if (claim.kind === "invalid") {
+                throw new ReferralClaimRejected("invalid");
+              }
+              if (
+                claim.kind === "locked" &&
+                claim.applied.codeId !== referralCodeId
+              ) {
+                throw new ReferralClaimRejected("locked_elsewhere");
+              }
+              await this.referrals.lock(profile.id, transaction);
+            } else if (
+              !(await this.referrals.isCodeEligible(
+                referralCodeId,
+                transaction,
+              ))
+            ) {
+              throw new ReferralClaimRejected("invalid");
+            }
+          } else if (profile) {
+            // A pre-existing unlocked attribution becomes final when this paid
+            // grant is recorded, even if the admin did not re-enter its code.
+            await this.referrals.lock(profile.id, transaction);
+          }
+
+          await this.audit.record(
+            {
+              actorId,
+              action: "founding_grant.create",
+              entityType: "founding_grant",
+              entityId: grantId,
+              after: {
+                email,
+                userId: profile?.id ?? null,
+                tierName,
+                amountMinor: grant.amountMinor,
+                paymentMethod: req.paymentMethod,
+                paymentReference: req.paymentReference ?? null,
+                referralCodeId,
+                pending: !profile,
+              },
+            },
+            transaction,
+          );
+        },
+      );
+    } catch (err) {
+      if (err instanceof ReferralClaimRejected) {
+        return {
+          ok: false,
+          error: {
+            code:
+              err.reason === "locked_elsewhere"
+                ? "referral_locked_elsewhere"
+                : "invalid_referral_code",
+          },
+        };
+      }
+      throw err;
+    }
     if (outcome.kind === "pool_full") {
       return { ok: false, error: { code: "pool_full", seats: outcome.seats } };
     }
     if (outcome.kind === "duplicate")
       return { ok: false, error: { code: "duplicate" } };
-
-    // Attribution: attach + lock (the grant is the paid conversion).
-    if (profile && referralCodeId) {
-      const code = await this.referrals.findCodeById(referralCodeId);
-      if (code) {
-        await this.referrals.claim({
-          userId: profile.id,
-          canonicalCode: code.code,
-          source: "admin",
-          createdBy: actorId,
-        });
-      }
-    }
-    if (profile) {
-      await this.referrals.lock(profile.id).catch((err) => {
-        console.warn(
-          `[founding] lock attribution failed for ${profile?.id}:`,
-          err,
-        );
-      });
-    }
-
-    await this.audit.record({
-      actorId,
-      action: "founding_grant.create",
-      entityType: "founding_grant",
-      entityId: grantId,
-      after: {
-        email,
-        userId: profile?.id ?? null,
-        tierName,
-        amountMinor: outcome.grant.amountMinor,
-        paymentMethod: req.paymentMethod,
-        paymentReference: req.paymentReference ?? null,
-        referralCodeId,
-        pending: !profile,
-      },
-    });
 
     let invited = false;
     let inviteError: string | null = null;
@@ -399,17 +442,25 @@ export class FoundingGrantService {
     const existing = await this.grants.findById(grantId);
     if (!existing) return { ok: false, error: "not_found" };
     if (existing.revokedAt) return { ok: false, error: "already_revoked" };
-    const revoked = await this.grants.revoke(grantId, reason);
-    if (!revoked) return { ok: false, error: "already_revoked" };
-    await this.audit.record({
-      actorId,
-      action: "founding_grant.revoke",
-      entityType: "founding_grant",
-      entityId: grantId,
-      before: { revokedAt: null },
-      after: { revokedAt: revoked.revokedAt?.toISOString() ?? null },
+    const revoked = await this.grants.revoke(
+      grantId,
       reason,
-    });
+      async (grant, transaction) => {
+        await this.audit.record(
+          {
+            actorId,
+            action: "founding_grant.revoke",
+            entityType: "founding_grant",
+            entityId: grantId,
+            before: { revokedAt: null },
+            after: { revokedAt: grant.revokedAt?.toISOString() ?? null },
+            reason,
+          },
+          transaction,
+        );
+      },
+    );
+    if (!revoked) return { ok: false, error: "already_revoked" };
     return { ok: true };
   }
 }

@@ -18,6 +18,7 @@ import {
   type FoundingTierName,
 } from "../founding/foundingOffer";
 import { LIVE_SUBSCRIPTION_STATUSES } from "./subscriptionRepository";
+import type { DatabaseTransaction } from "./referralRepository";
 
 /**
  * Founding-member grants (FOUNDING-OFFER BACKEND_BRIEF § 1, § 5).
@@ -87,6 +88,12 @@ export type CreateGrantOutcome =
 
 type Db = ReturnType<typeof getDb>;
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+
+export interface GrantTransactionContext {
+  transaction: DatabaseTransaction;
+  grant: FoundingGrant;
+  subscriptionExpiresAt: Date | null;
+}
 
 function statusOf(row: {
   userId: string | null;
@@ -231,6 +238,7 @@ export class FoundingGrantRepository {
   async create(
     input: CreateGrantInput,
     pool: FoundingPool,
+    finalize?: (context: GrantTransactionContext) => Promise<void>,
   ): Promise<CreateGrantOutcome> {
     const db = getDb();
     return db.transaction(async (tx) => {
@@ -293,6 +301,14 @@ export class FoundingGrantRepository {
           notes: input.notes,
         })
         .returning();
+
+      if (finalize) {
+        await finalize({
+          transaction: tx,
+          grant: rows[0],
+          subscriptionExpiresAt,
+        });
+      }
 
       return {
         kind: "created",
@@ -392,7 +408,14 @@ export class FoundingGrantRepository {
    * Revoke: stamp the grant and cancel + expire its subscription row (the user
    * reverts to free-tier rules immediately). Idempotent.
    */
-  async revoke(id: string, reason: string): Promise<FoundingGrant | null> {
+  async revoke(
+    id: string,
+    reason: string,
+    finalize?: (
+      grant: FoundingGrant,
+      transaction: DatabaseTransaction,
+    ) => Promise<void>,
+  ): Promise<FoundingGrant | null> {
     const db = getDb();
     return db.transaction(async (tx) => {
       const rows = await tx
@@ -412,6 +435,7 @@ export class FoundingGrantRepository {
           })
           .where(eq(userSubscriptions.id, grant.subscriptionId));
       }
+      if (finalize) await finalize(grant, tx);
       return grant;
     });
   }

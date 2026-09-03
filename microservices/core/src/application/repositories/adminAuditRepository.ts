@@ -1,6 +1,7 @@
 import { and, desc, eq } from "drizzle-orm";
 import { adminAuditLog, type AdminAuditLogEntry } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
+import type { DatabaseTransaction } from "./referralRepository";
 
 /**
  * Append-only audit trail for every `/admin/*` mutation (spec-32 § 5 admin
@@ -17,8 +18,11 @@ export interface AuditInput {
 }
 
 export class AdminAuditRepository {
-  async record(input: AuditInput): Promise<void> {
-    const db = getDb();
+  async record(
+    input: AuditInput,
+    transaction?: DatabaseTransaction,
+  ): Promise<void> {
+    const db = transaction ?? getDb();
     await db.insert(adminAuditLog).values({
       actorId: input.actorId,
       action: input.action,

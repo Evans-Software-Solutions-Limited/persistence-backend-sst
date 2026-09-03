@@ -13,6 +13,19 @@ say so and fix this file.
 
 ### 🟡 2026-09-03 — FOUNDING-OFFER website work package A implemented (branch `feat/founding-offer-admin`)
 
+Inspector follow-up hardened the founding/referral write paths before PR: all
+claim, remove and paid-conversion lock operations now share a transaction-scoped
+per-user advisory lock; same-code retries are idempotent even after a cap fills;
+and founding grants require an eligible referral plus a successful claim in the
+same transaction. Grant create/revoke and referral-code create/update now write
+their admin audit entry inside the mutation transaction, so an audit failure
+rolls the mutation back. PATCH rejects malformed dates instead of silently
+dropping them. Real PGlite repository tests cover cap retry, lock-vs-replace
+serialization, paused/future/expired/exhausted eligibility, and rollback for all
+four audited mutation families. Focused result: 3 files / 20 tests pass; core
+typecheck, touched-file ESLint/Prettier and `git diff --check` pass. The parent
+release session owns the full workspace gates and PR creation.
+
 The public `/founding` route now carries the approved £30 Premium, £50 Premium+
 and £99 Start Up Coach+ six-month offers, the static consumer seat counter,
 funding/redemption copy, optional bank instructions and per-tier Stripe Payment
