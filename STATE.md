@@ -22,7 +22,7 @@ server errors, and explicit abort of an in-flight claim when Skip is pressed.
 
 No package, Expo config, permission, runtime-version, or other native change was
 made. Mobile typecheck and lint pass (13 pre-existing warnings, zero errors),
-and the full non-coverage Jest suite passes (**516 suites / 6,513 tests**).
+and the full non-coverage Jest suite passes (**516 suites / 6,516 tests**).
 Changed referral UI/hooks coverage is **100% statements/functions/lines** and
 **93.93% branches**. Staging/production EAS Updates and iOS/Android device checks
 remain deliberately unperformed pending release approval and a deployed staging
