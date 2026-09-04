@@ -59,6 +59,16 @@ tasks, including **354 core files / 4,352 tests**. Hardening-diff coverage is at
 least 90% for statements, branches, functions and lines; the pre-existing
 whole-PR coverage debt remains tracked separately from this post-review scope.
 
+The CI Inspector follow-up on `b0a77209` found a pending-grant/RevenueCat
+TOCTOU. RevenueCat activation and founding subscription writes now share a
+transaction-scoped per-user advisory lock, and both pending application and
+immediate grant creation recheck live store entitlement after taking that lock.
+The default path leaves the seat pending; the admin's explicit store override
+still permits supersession. Regression coverage proves a store winner does not
+populate `user_id`, `applied_at`, or `subscription_id`. The complete root gate
+remains green after the fix: Prettier, typecheck, lint (existing warnings only),
+build, and all unit-test tasks.
+
 ### 🟡 2026-09-03 — FOUNDING-OFFER MOBILE REFERRAL ENTRY (branch `codex/founding-referral-ota`)
 
 Work package B is implemented from store-build base `ea85b774` at app version

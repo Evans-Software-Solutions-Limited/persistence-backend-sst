@@ -19,6 +19,7 @@ import {
  */
 
 const RC_API_BASE = "https://api.revenuecat.com/v2";
+export const RC_FETCH_TIMEOUT_MS = 5_000;
 
 export function getRevenueCatApiKey(): string {
   return getEnv("REVENUECAT_API_KEY");
@@ -151,6 +152,7 @@ export async function fetchCustomerSubscriptions(
   const res = await fetch(url, {
     method: "GET",
     headers: { Authorization: `Bearer ${key}` },
+    signal: AbortSignal.timeout(RC_FETCH_TIMEOUT_MS),
   });
 
   if (!res.ok) {

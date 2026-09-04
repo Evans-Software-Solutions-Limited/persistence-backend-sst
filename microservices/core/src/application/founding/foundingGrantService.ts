@@ -252,6 +252,8 @@ export class FoundingGrantService {
           referralCodeId,
           grantedBy: actorId,
           notes: req.notes ?? null,
+          allowSupersedeStoreSubscription:
+            req.allowSupersedeStoreSubscription === true,
         },
         offer.pool,
         async ({ transaction, grant }) => {
@@ -329,6 +331,15 @@ export class FoundingGrantService {
     }
     if (outcome.kind === "pool_full") {
       return { ok: false, error: { code: "pool_full", seats: outcome.seats } };
+    }
+    if (outcome.kind === "active_store_subscription") {
+      return {
+        ok: false,
+        error: {
+          code: "active_store_subscription",
+          subscription: outcome.subscription,
+        },
+      };
     }
     if (outcome.kind === "duplicate")
       return { ok: false, error: { code: "duplicate" } };
@@ -584,6 +595,19 @@ export class FoundingGrantService {
             );
           },
         );
+        if (res.storeSubscription) {
+          await this.audit.recordOnce({
+            actorId: grant.grantedBy,
+            action: "founding_grant.apply_deferred",
+            entityType: "founding_grant",
+            entityId: grant.id,
+            after: { userId, reason: "active_store_subscription" },
+          });
+          console.warn(
+            `[founding] pending grant ${grant.id} deferred after transactional recheck: active store subscription for user=${userId}`,
+          );
+          continue;
+        }
         if (!res.applied) continue;
         appliedAny = true;
       }

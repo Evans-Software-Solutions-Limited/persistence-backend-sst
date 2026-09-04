@@ -10,6 +10,7 @@ import { getDb } from "@persistence/db/client";
 import { AdminAuditRepository } from "../adminAuditRepository";
 import { FoundingGrantRepository } from "../foundingGrantRepository";
 import { ReferralRepository } from "../referralRepository";
+import { SubscriptionRepository } from "../subscriptionRepository";
 import { FoundingGrantService } from "../../founding/foundingGrantService";
 
 const ADMIN = "00000000-0000-4000-8000-000000000001";
@@ -54,6 +55,9 @@ describe("founding/referral repository transaction invariants", () => {
       CREATE UNIQUE INDEX user_subscriptions_active_unique
         ON user_subscriptions (user_id)
         WHERE payment_status IN ('active', 'pending', 'trialing', 'past_due');
+      CREATE UNIQUE INDEX user_subscriptions_external_id_unique
+        ON user_subscriptions (external_subscription_id)
+        WHERE external_subscription_id IS NOT NULL;
       INSERT INTO profiles (id, email, role) VALUES
         ('${ADMIN}', 'admin@example.test', 'admin'),
         ('${USER}', 'user@example.test', 'user');
@@ -116,6 +120,186 @@ describe("founding/referral repository transaction invariants", () => {
       "SELECT code, redemption_count FROM referral_codes",
     );
     expect(counts.rows).toEqual([{ code: "FINAL", redemption_count: 1 }]);
+  });
+
+  it("leaves a pending founding seat unconsumed when a store write wins the user lock", async () => {
+    const grants = new FoundingGrantRepository();
+    const subscriptions = new SubscriptionRepository();
+    const grantId = "00000000-0000-4000-8000-000000000070";
+    await grants.create(
+      {
+        id: grantId,
+        userId: null,
+        email: "user@example.test",
+        tierName: "premium",
+        months: 6,
+        amountMinor: 3000,
+        currency: "GBP",
+        paymentMethod: "bank_transfer",
+        paymentReference: null,
+        paidAt: new Date(),
+        referralCodeId: null,
+        grantedBy: ADMIN,
+        notes: null,
+      },
+      "consumer",
+    );
+
+    let releaseStore!: () => void;
+    const storeMayCommit = new Promise<void>((resolve) => {
+      releaseStore = resolve;
+    });
+    let storeHasLock!: () => void;
+    const storeLocked = new Promise<void>((resolve) => {
+      storeHasLock = resolve;
+    });
+    const storeWrite = subscriptions.withUserSubscriptionLock(
+      USER,
+      async (transaction) => {
+        storeHasLock();
+        await storeMayCommit;
+        await subscriptions.upsertByExternalId(
+          {
+            userId: USER,
+            tierName: "premium",
+            paymentStatus: "active",
+            startsAt: new Date(),
+            expiresAt: new Date("2027-01-01T00:00:00.000Z"),
+            externalSubscriptionId: `rc_${USER}`,
+          },
+          transaction,
+        );
+      },
+    );
+    await storeLocked;
+
+    let applySettled = false;
+    const applying = grants.applyPending(grantId, USER).finally(() => {
+      applySettled = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(applySettled).toBe(false);
+
+    releaseStore();
+    await storeWrite;
+    const result = await applying;
+    expect(result).toMatchObject({
+      applied: false,
+      storeSubscription: { tierName: "premium" },
+    });
+    const rows = await pg.query<{
+      user_id: string | null;
+      applied_at: string | null;
+      subscription_id: string | null;
+    }>(
+      "SELECT user_id, applied_at, subscription_id FROM founding_grants WHERE id = $1",
+      [grantId],
+    );
+    expect(rows.rows[0]).toEqual({
+      user_id: null,
+      applied_at: null,
+      subscription_id: null,
+    });
+
+    const immediate = await grants.create(
+      {
+        id: "00000000-0000-4000-8000-000000000071",
+        userId: USER,
+        email: "user@example.test",
+        tierName: "premium",
+        months: 6,
+        amountMinor: 3000,
+        currency: "GBP",
+        paymentMethod: "bank_transfer",
+        paymentReference: null,
+        paidAt: new Date(),
+        referralCodeId: null,
+        grantedBy: ADMIN,
+        notes: null,
+      },
+      "consumer",
+    );
+    expect(immediate).toMatchObject({
+      kind: "active_store_subscription",
+      subscription: { tierName: "premium" },
+    });
+  });
+
+  it("linearizes a later store write after a founding application that owns the user lock", async () => {
+    const secondUser = "00000000-0000-4000-8000-000000000072";
+    const grantId = "00000000-0000-4000-8000-000000000073";
+    await pg.query(
+      "INSERT INTO profiles (id, email, role) VALUES ($1, 'second@example.test', 'user')",
+      [secondUser],
+    );
+    const grants = new FoundingGrantRepository();
+    const subscriptions = new SubscriptionRepository();
+    await grants.create(
+      {
+        id: grantId,
+        userId: null,
+        email: "second@example.test",
+        tierName: "premium",
+        months: 6,
+        amountMinor: 3000,
+        currency: "GBP",
+        paymentMethod: "bank_transfer",
+        paymentReference: null,
+        paidAt: new Date(),
+        referralCodeId: null,
+        grantedBy: ADMIN,
+        notes: null,
+      },
+      "consumer",
+    );
+
+    let releaseFounding!: () => void;
+    const foundingMayCommit = new Promise<void>((resolve) => {
+      releaseFounding = resolve;
+    });
+    let foundingHasLock!: () => void;
+    const foundingLocked = new Promise<void>((resolve) => {
+      foundingHasLock = resolve;
+    });
+    const applying = grants.applyPending(grantId, secondUser, async () => {
+      foundingHasLock();
+      await foundingMayCommit;
+    });
+    await foundingLocked;
+
+    let storeSettled = false;
+    const storeWrite = subscriptions
+      .withUserSubscriptionLock(secondUser, async (transaction) => {
+        await subscriptions.cancelLiveSubscriptions(secondUser, transaction);
+        await subscriptions.upsertByExternalId(
+          {
+            userId: secondUser,
+            tierName: "premium",
+            paymentStatus: "active",
+            startsAt: new Date(),
+            expiresAt: new Date("2027-01-01T00:00:00.000Z"),
+            externalSubscriptionId: `rc_${secondUser}`,
+          },
+          transaction,
+        );
+      })
+      .finally(() => {
+        storeSettled = true;
+      });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(storeSettled).toBe(false);
+
+    releaseFounding();
+    expect((await applying).applied).toBe(true);
+    await storeWrite;
+    const live = await pg.query<{ external_subscription_id: string }>(
+      `SELECT external_subscription_id FROM user_subscriptions
+       WHERE user_id = $1 AND payment_status = 'active'`,
+      [secondUser],
+    );
+    expect(live.rows).toEqual([
+      { external_subscription_id: `rc_${secondUser}` },
+    ]);
   });
 
   it("serializes a purchase lock against replacement and preserves honest counters", async () => {

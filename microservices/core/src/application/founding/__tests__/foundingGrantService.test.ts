@@ -360,6 +360,39 @@ describe("FoundingGrantService.grant", () => {
     expect(mailer).not.toHaveBeenCalled();
   });
 
+  it("maps a store subscription found by the transactional create recheck", async () => {
+    const { svc, grants } = makeRepos();
+    grants.findProfileByEmail.mockResolvedValue({
+      id: "u1",
+      email: "a@b.co",
+      role: "user",
+      deletedAt: null,
+    } as any);
+    grants.create.mockResolvedValue({
+      kind: "active_store_subscription",
+      subscription: {
+        tierName: "premium",
+        expiresAt: new Date("2027-01-01T00:00:00Z"),
+      },
+    });
+
+    expect(
+      await svc.grant(
+        { email: "a@b.co", tierName: "premium", paymentMethod: "other" },
+        "admin-1",
+      ),
+    ).toEqual({
+      ok: false,
+      error: {
+        code: "active_store_subscription",
+        subscription: {
+          tierName: "premium",
+          expiresAt: new Date("2027-01-01T00:00:00Z"),
+        },
+      },
+    });
+  });
+
   it.each(["bank_transfer", "stripe_link"] as const)(
     "requires a non-blank reference for %s",
     async (paymentMethod) => {
@@ -733,6 +766,35 @@ describe("FoundingGrantService.applyPendingForUser", () => {
     expect(await svc.applyPendingForUser("u1", "a@b.co")).toBe(false);
     expect(audit.recordOnce).toHaveBeenCalledTimes(2);
     expect(warnSpy).toHaveBeenCalledTimes(2);
+    warnSpy.mockRestore();
+  });
+
+  it("defers when the transactional recheck observes a concurrent store subscription", async () => {
+    const { svc, grants, audit } = makeRepos();
+    grants.findPendingByEmail.mockResolvedValue([
+      { id: "g1", grantedBy: "admin-1" },
+    ] as any);
+    grants.applyPending.mockResolvedValue({
+      applied: false,
+      expiresAt: null,
+      tierName: null,
+      storeSubscription: {
+        tierName: "premium",
+        expiresAt: new Date("2027-01-01T00:00:00Z"),
+      },
+    });
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    expect(await svc.applyPendingForUser("u1", "a@b.co")).toBe(false);
+    expect(grants.applyPending).toHaveBeenCalledOnce();
+    expect(audit.recordOnce).toHaveBeenCalledWith({
+      actorId: "admin-1",
+      action: "founding_grant.apply_deferred",
+      entityType: "founding_grant",
+      entityId: "g1",
+      after: { userId: "u1", reason: "active_store_subscription" },
+    });
+    expect(audit.record).not.toHaveBeenCalled();
     warnSpy.mockRestore();
   });
 });

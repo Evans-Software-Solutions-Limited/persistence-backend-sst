@@ -17,7 +17,11 @@ import {
   type FoundingPool,
   type FoundingTierName,
 } from "../founding/foundingOffer";
-import { LIVE_SUBSCRIPTION_STATUSES } from "./subscriptionRepository";
+import {
+  LIVE_SUBSCRIPTION_STATUSES,
+  liveSubscriptionFilter,
+  lockUserSubscriptionMutation,
+} from "./subscriptionRepository";
 import type { DatabaseTransaction } from "./referralRepository";
 
 /**
@@ -71,6 +75,7 @@ export interface CreateGrantInput {
   referralCodeId: string | null;
   grantedBy: string;
   notes: string | null;
+  allowSupersedeStoreSubscription?: boolean;
 }
 
 export type CreateGrantOutcome =
@@ -83,6 +88,10 @@ export type CreateGrantOutcome =
   | {
       kind: "pool_full";
       seats: { pool: FoundingPool; used: number; cap: number };
+    }
+  | {
+      kind: "active_store_subscription";
+      subscription: { tierName: string; expiresAt: Date | null };
     }
   | { kind: "duplicate" };
 
@@ -185,6 +194,28 @@ export class FoundingGrantRepository {
     return Number(rows[0]?.n ?? 0);
   }
 
+  private async findLiveStoreSubscriptionIn(
+    tx: Tx,
+    userId: string,
+  ): Promise<{ tierName: string; expiresAt: Date | null } | null> {
+    const rows = await tx
+      .select({
+        tierName: userSubscriptions.tierName,
+        expiresAt: userSubscriptions.expiresAt,
+      })
+      .from(userSubscriptions)
+      .where(
+        and(
+          eq(userSubscriptions.userId, userId),
+          liveSubscriptionFilter(),
+          sql`left(${userSubscriptions.externalSubscriptionId}, 3) = 'rc_'`,
+        ),
+      )
+      .orderBy(desc(userSubscriptions.createdAt))
+      .limit(1);
+    return rows[0] ?? null;
+  }
+
   async seatsForPool(
     pool: FoundingPool,
   ): Promise<{ pool: FoundingPool; used: number; cap: number }> {
@@ -269,6 +300,22 @@ export class FoundingGrantRepository {
       await tx.execute(
         sql`SELECT pg_advisory_xact_lock(hashtext(${"founding_pool_" + pool}))`,
       );
+
+      if (input.userId) {
+        await lockUserSubscriptionMutation(tx, input.userId);
+        if (!input.allowSupersedeStoreSubscription) {
+          const storeSubscription = await this.findLiveStoreSubscriptionIn(
+            tx,
+            input.userId,
+          );
+          if (storeSubscription) {
+            return {
+              kind: "active_store_subscription",
+              subscription: storeSubscription,
+            };
+          }
+        }
+      }
 
       const cap = FOUNDING_POOL_CAPS[pool];
       const used = await this.countLiveInPool(tx, pool);
@@ -372,9 +419,24 @@ export class FoundingGrantRepository {
     applied: boolean;
     expiresAt: Date | null;
     tierName: string | null;
+    storeSubscription?: { tierName: string; expiresAt: Date | null };
   }> {
     const db = getDb();
     return db.transaction(async (tx) => {
+      await lockUserSubscriptionMutation(tx, userId);
+      const storeSubscription = await this.findLiveStoreSubscriptionIn(
+        tx,
+        userId,
+      );
+      if (storeSubscription) {
+        return {
+          applied: false,
+          expiresAt: null,
+          tierName: null,
+          storeSubscription,
+        };
+      }
+
       const claimed = await tx
         .update(foundingGrants)
         .set({ userId, appliedAt: new Date() })

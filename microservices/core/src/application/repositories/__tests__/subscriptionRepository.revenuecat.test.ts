@@ -26,6 +26,31 @@ function makeUpsertChain(resolved: unknown) {
   return { chain: { insert }, insert, values, onConflictDoUpdate, returning };
 }
 
+describe("SubscriptionRepository.withUserSubscriptionLock", () => {
+  it("takes the namespaced transaction advisory lock before running the operation", async () => {
+    const execute = vi.fn().mockResolvedValue(undefined);
+    const operation = vi.fn().mockResolvedValue("done");
+    const transaction = vi.fn(async (callback) => callback({ execute }));
+    (getDb as any).mockReturnValue({ transaction });
+
+    const { SubscriptionRepository } =
+      await import("../subscriptionRepository");
+    await expect(
+      new SubscriptionRepository().withUserSubscriptionLock(
+        "user-1",
+        operation,
+      ),
+    ).resolves.toBe("done");
+
+    const query = new PgDialect().sqlToQuery(execute.mock.calls[0][0]);
+    expect(query.sql).toContain("pg_advisory_xact_lock(hashtext($1))");
+    expect(query.params).toEqual(["subscription_user_user-1"]);
+    expect(execute.mock.invocationCallOrder[0]).toBeLessThan(
+      operation.mock.invocationCallOrder[0],
+    );
+  });
+});
+
 describe("SubscriptionRepository.cancelLiveSubscriptions (M12 RevenueCat sync)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
