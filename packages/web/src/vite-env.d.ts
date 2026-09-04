@@ -18,8 +18,4 @@ interface ImportMetaEnv {
   readonly VITE_TURNSTILE_SITE_KEY?: string;
   readonly VITE_MARKETING_EDGE_URL?: string;
   readonly VITE_FOUNDING_SEATS_USED?: string;
-  readonly VITE_FOUNDING_BANK_DETAILS?: string;
-  readonly VITE_FOUNDING_STRIPE_PREMIUM_URL?: string;
-  readonly VITE_FOUNDING_STRIPE_PREMIUM_PLUS_URL?: string;
-  readonly VITE_FOUNDING_STRIPE_COACH_URL?: string;
 }

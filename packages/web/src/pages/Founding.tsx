@@ -2,50 +2,15 @@ import { Link } from "react-router";
 import { MarketingLayout } from "@/marketing/MarketingLayout";
 import { useSeo } from "@/marketing/seo";
 
-interface FoundingPaymentLinks {
-  premium?: string;
-  premiumPlus?: string;
-  coach?: string;
-}
-
-function optionalEnv(value: string | undefined): string | undefined {
-  const trimmed = value?.trim();
-  return trimmed ? trimmed : undefined;
-}
+export const FOUNDING_CONTACT_EMAIL = "admin@evans-software-solutions.com";
 
 function foundingSeatsUsed(): number {
   const parsed = Number(import.meta.env.VITE_FOUNDING_SEATS_USED ?? "0");
   return Number.isInteger(parsed) && parsed >= 0 ? parsed : 0;
 }
 
-function paymentLinks(): FoundingPaymentLinks {
-  return {
-    premium: optionalEnv(import.meta.env.VITE_FOUNDING_STRIPE_PREMIUM_URL),
-    premiumPlus: optionalEnv(
-      import.meta.env.VITE_FOUNDING_STRIPE_PREMIUM_PLUS_URL,
-    ),
-    coach: optionalEnv(import.meta.env.VITE_FOUNDING_STRIPE_COACH_URL),
-  };
-}
-
-function PaymentLink({ href, children }: { href?: string; children: string }) {
-  if (!href) return null;
-  return (
-    <a
-      className="btn btn-accent btn-block"
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-    >
-      {children}
-    </a>
-  );
-}
-
 export function Founding() {
   const seatsUsed = foundingSeatsUsed();
-  const bankDetails = optionalEnv(import.meta.env.VITE_FOUNDING_BANK_DETAILS);
-  const links = paymentLinks();
 
   useSeo({
     title: "Founding offer — Persistence",
@@ -70,15 +35,11 @@ export function Founding() {
               <span>Premium</span>
               <strong>£30</strong>
               <p>Six months. No automatic renewal.</p>
-              <PaymentLink href={links.premium}>Pay for Premium</PaymentLink>
             </article>
             <article className="founding-plan founding-plan-featured">
               <span>Premium+</span>
               <strong>£50</strong>
               <p>Six months. No automatic renewal.</p>
-              <PaymentLink href={links.premiumPlus}>
-                Pay for Premium+
-              </PaymentLink>
             </article>
           </div>
 
@@ -88,9 +49,6 @@ export function Founding() {
               <h2>Start Up Coach+ £99</h2>
               <p>Six months, with 20 founding coach places.</p>
             </div>
-            <PaymentLink href={links.coach}>
-              Pay for Start Up Coach+
-            </PaymentLink>
           </div>
 
           <p className="founding-counter">
@@ -106,20 +64,25 @@ export function Founding() {
               </p>
             </section>
             <section>
-              <h2>How redemption works</h2>
+              <h2>How to get a place</h2>
               <p>
-                Pay, then sign up in the app with the same email — access is on
-                within a day; we&apos;ll email you.
+                Speak to Brad in person at an event he attends, or email{" "}
+                <a href={`mailto:${FOUNDING_CONTACT_EMAIL}`}>
+                  {FOUNDING_CONTACT_EMAIL}
+                </a>
+                .
+              </p>
+            </section>
+            <section>
+              <h2>How access is switched on</h2>
+              <p>
+                We record your payment. You sign up in the app with the same
+                email address and confirm it. Access is on the first time the
+                app loads after that. Places must be redeemed within 90 days of
+                payment.
               </p>
             </section>
           </div>
-
-          {bankDetails && (
-            <section className="founding-bank">
-              <h2>Pay by bank transfer</h2>
-              <p>{bankDetails}</p>
-            </section>
-          )}
 
           <p className="founding-cancellation">
             By paying, you acknowledge your right to cancel this purchase within

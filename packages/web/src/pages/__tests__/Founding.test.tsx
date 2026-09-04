@@ -11,10 +11,6 @@ describe("Founding", () => {
 
   it("renders the offer with safe defaults when optional env is absent", () => {
     vi.stubEnv("VITE_FOUNDING_SEATS_USED", "");
-    vi.stubEnv("VITE_FOUNDING_BANK_DETAILS", "");
-    vi.stubEnv("VITE_FOUNDING_STRIPE_PREMIUM_URL", "");
-    vi.stubEnv("VITE_FOUNDING_STRIPE_PREMIUM_PLUS_URL", "");
-    vi.stubEnv("VITE_FOUNDING_STRIPE_COACH_URL", "");
 
     renderPage(<Founding />, { route: "/founding" });
 
@@ -38,37 +34,28 @@ describe("Founding", () => {
     ).toBeDefined();
   });
 
-  it("renders the configured counter, bank details and available payment links", () => {
+  it("renders the configured counter and explains the out-of-band access flow", () => {
     vi.stubEnv("VITE_FOUNDING_SEATS_USED", "37");
-    vi.stubEnv(
-      "VITE_FOUNDING_BANK_DETAILS",
-      "Account: Persistence\nReference: your email",
-    );
-    vi.stubEnv(
-      "VITE_FOUNDING_STRIPE_PREMIUM_URL",
-      "https://buy.stripe.com/premium",
-    );
-    vi.stubEnv("VITE_FOUNDING_STRIPE_PREMIUM_PLUS_URL", "");
-    vi.stubEnv(
-      "VITE_FOUNDING_STRIPE_COACH_URL",
-      "https://buy.stripe.com/coach",
-    );
 
     renderPage(<Founding />, { route: "/founding" });
 
     expect(screen.getByText("37 of 200")).toBeDefined();
-    expect(screen.getByText(/Account: Persistence/)).toBeDefined();
     expect(
-      screen
-        .getByRole("link", { name: "Pay for Premium" })
-        .getAttribute("href"),
-    ).toBe("https://buy.stripe.com/premium");
-    expect(screen.queryByRole("link", { name: "Pay for Premium+" })).toBeNull();
+      screen.getByRole("heading", { name: "How to get a place" }),
+    ).toBeDefined();
     expect(
-      screen
-        .getByRole("link", { name: "Pay for Start Up Coach+" })
-        .getAttribute("href"),
-    ).toBe("https://buy.stripe.com/coach");
+      screen.getByRole("link", {
+        name: "admin@evans-software-solutions.com",
+      }),
+    ).toBeDefined();
+    expect(
+      screen.getByRole("heading", { name: "How access is switched on" }),
+    ).toBeDefined();
+    expect(
+      screen.getByText(/redeemed within 90 days of payment/),
+    ).toBeDefined();
+    expect(screen.queryByRole("link", { name: /^Pay for/ })).toBeNull();
+    expect(screen.queryByText("Pay by bank transfer")).toBeNull();
   });
 
   it("falls back to zero for a malformed or fractional seat count", () => {

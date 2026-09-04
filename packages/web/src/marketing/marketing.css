@@ -4263,8 +4263,7 @@
   margin-top: 54px;
 }
 .mkt .founding-plan,
-.mkt .founding-coach,
-.mkt .founding-bank {
+.mkt .founding-coach {
   padding: 30px;
   border: 1px solid var(--m-line-2);
   border-radius: 22px;
@@ -4288,12 +4287,8 @@
   letter-spacing: -0.05em;
 }
 .mkt .founding-plan > p,
-.mkt .founding-coach p,
-.mkt .founding-bank p {
+.mkt .founding-coach p {
   color: var(--m-text-2);
-}
-.mkt .founding-plan .btn {
-  margin-top: 24px;
 }
 .mkt .founding-coach {
   display: flex;
@@ -4303,15 +4298,10 @@
   margin-top: 20px;
 }
 .mkt .founding-coach h2,
-.mkt .founding-details h2,
-.mkt .founding-bank h2 {
+.mkt .founding-details h2 {
   margin: 8px 0;
   font-family: var(--m-disp);
   font-size: 26px;
-}
-.mkt .founding-coach .btn {
-  width: auto;
-  min-width: 230px;
 }
 .mkt .founding-counter {
   margin: 44px 0;
@@ -4333,13 +4323,6 @@
 .mkt .founding-details p {
   color: var(--m-text-2);
   line-height: 1.7;
-}
-.mkt .founding-bank {
-  margin-top: 40px;
-}
-.mkt .founding-bank p {
-  margin-top: 14px;
-  white-space: pre-line;
 }
 .mkt .founding-cancellation {
   margin-top: 38px;
@@ -4365,9 +4348,5 @@
   .mkt .founding-coach {
     align-items: stretch;
     flex-direction: column;
-  }
-  .mkt .founding-coach .btn {
-    width: 100%;
-    min-width: 0;
   }
 }
