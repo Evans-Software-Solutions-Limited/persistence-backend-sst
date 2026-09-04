@@ -421,6 +421,11 @@ export const profiles = pgTable("profiles", {
   // (cross-cuts § 3.4). Migration 20260607120100_m4_progress_schema.sql.
   timezone: text("timezone").notNull().default("Europe/London"),
   isProfilePublic: boolean("is_profile_public").default(false),
+  // User-facing workout-library preference. Existing and new users retain
+  // the current behaviour unless they explicitly hide bundled templates.
+  showTemplateWorkouts: boolean("show_template_workouts")
+    .notNull()
+    .default(true),
   subscriptionId: uuid("subscription_id"),
   hasUsedUserTrial: boolean("has_used_user_trial").default(false),
   hasUsedTrainerTrial: boolean("has_used_trainer_trial").default(false),

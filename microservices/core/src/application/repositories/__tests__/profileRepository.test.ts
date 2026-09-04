@@ -338,6 +338,7 @@ describe("ProfileRepository.getProfilePageData", () => {
       weightUnit: "kg",
       heightUnit: "cm",
       isProfilePublic: false,
+      showTemplateWorkouts: true,
       createdAt: new Date("2024-01-15T10:00:00Z"),
       ...overrides,
     };
@@ -399,6 +400,7 @@ describe("ProfileRepository.getProfilePageData", () => {
     expect(result?.profile.weightKg).toBe(75.25);
     expect(result?.profile.dateOfBirth).toBe("1990-01-15");
     expect(result?.profile.gender).toBe("male");
+    expect(result?.profile.showTemplateWorkouts).toBe(true);
     expect(result?.subscription.tierName).toBe("premium");
     expect(result?.subscription.tierDisplayName).toBe("Premium");
     expect(result?.subscription.status).toBe("active");

@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter, type Href } from "expo-router";
-import { Alert } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useFocusEffect, useRouter, type Href } from "expo-router";
+import { Alert, BackHandler } from "react-native";
 
 import {
   type CoachClientBand,
@@ -39,12 +39,33 @@ export function OnboardingPageContainer({ page }: { page: OnboardingPage }) {
   const onboarding = useOnboarding();
   const subscription = useMySubscription();
   const [showOthers, setShowOthers] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
   const viewedRef = useRef<OnboardingPage | null>(null);
+  const navigationInFlightRef = useRef(false);
 
   const state = onboarding.state;
 
+  // Expo Router owns the navigation dependency, so this also works in a clean
+  // install without importing React Navigation transitively. The callback is
+  // stable: its cleanup runs on a real blur, not on each provider state update.
+  useFocusEffect(
+    useCallback(() => {
+      setIsFocused(true);
+      return () => {
+        setIsFocused(false);
+        navigationInFlightRef.current = false;
+      };
+    }, []),
+  );
+
   useEffect(() => {
-    if (!state || onboarding.isLoading || state.status !== "in_progress")
+    if (
+      !isFocused ||
+      navigationInFlightRef.current ||
+      !state ||
+      onboarding.isLoading ||
+      state.status !== "in_progress"
+    )
       return;
     if (state.currentPage !== page) {
       router.replace(ONBOARDING_ROUTES[state.currentPage] as Href);
@@ -57,25 +78,62 @@ export function OnboardingPageContainer({ page }: { page: OnboardingPage }) {
         onboarding.track("onboarding_recommendation_viewed");
       }
     }
-  }, [state, onboarding, page, router]);
+  }, [state, onboarding, page, router, isFocused]);
 
   const goTo = (next: OnboardingPage | null) => {
-    if (next) router.replace(ONBOARDING_ROUTES[next] as Href);
+    if (next) router.push(ONBOARDING_ROUTES[next] as Href);
   };
 
-  const complete = async () => goTo(await onboarding.completePage(page));
-  const skip = async () => {
-    const next = await onboarding.skipPage(page);
-    if (next) goTo(next);
-    else {
-      await onboarding.completeJourney();
-      router.replace("/(app)/(tabs)");
+  const complete = async () => {
+    navigationInFlightRef.current = true;
+    try {
+      goTo(await onboarding.completePage(page));
+    } catch (error) {
+      navigationInFlightRef.current = false;
+      throw error;
     }
   };
-  const back = async () => {
-    const previous = await onboarding.goBack();
-    router.replace(ONBOARDING_ROUTES[previous] as Href);
+  const skip = async () => {
+    navigationInFlightRef.current = true;
+    try {
+      const next = await onboarding.skipPage(page);
+      if (next) goTo(next);
+      else {
+        await onboarding.completeJourney();
+        router.replace("/(app)/(tabs)");
+      }
+    } catch (error) {
+      navigationInFlightRef.current = false;
+      throw error;
+    }
   };
+  const back = useCallback(async () => {
+    navigationInFlightRef.current = true;
+    try {
+      const previous = await onboarding.goBack();
+      // Pop to a previously visited onboarding page so the native stack uses
+      // its reverse transition. On a resumed journey where that page is not in
+      // this process's history, dismissTo safely falls back to replace.
+      router.dismissTo(ONBOARDING_ROUTES[previous] as Href);
+    } catch (error) {
+      navigationInFlightRef.current = false;
+      throw error;
+    }
+  }, [onboarding, router]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (page === "welcome") return;
+      const subscription = BackHandler.addEventListener(
+        "hardwareBackPress",
+        () => {
+          void back();
+          return true;
+        },
+      );
+      return () => subscription.remove();
+    }, [back, page]),
+  );
 
   const confirmDismissJourney = () => {
     Alert.alert(

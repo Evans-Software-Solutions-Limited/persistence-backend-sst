@@ -16,6 +16,7 @@ import {
 } from "@/domain/models/profilePage";
 import type { ApiPort } from "@/domain/ports/api.port";
 import type { StoragePort } from "@/domain/ports/storage.port";
+import { isAutoResolvableSyncEntry } from "@/domain/ports/sync.types";
 import { ok, type Result, type ApiError } from "@/shared/errors";
 
 export { PROFILE_PAGE_STALE_AFTER_MS };
@@ -25,6 +26,35 @@ export type ProfilePageQueryResult = {
   isStale: boolean;
   cached: CachedProfilePage | null;
 };
+
+/** Keep an explicit local template preference on top of older server truth. */
+export function reconcilePendingProfilePreferences(
+  storage: StoragePort,
+  userId: string,
+  payload: ProfilePageData,
+): ProfilePageData {
+  const queued = storage.getQueuedEntriesForEntity("profile", userId);
+  for (let index = queued.length - 1; index >= 0; index -= 1) {
+    if (!isAutoResolvableSyncEntry(queued[index])) continue;
+    try {
+      const update = JSON.parse(queued[index].payload) as {
+        showTemplateWorkouts?: unknown;
+      };
+      if (typeof update.showTemplateWorkouts === "boolean") {
+        return {
+          ...payload,
+          profile: {
+            ...payload.profile,
+            showTemplateWorkouts: update.showTemplateWorkouts,
+          },
+        };
+      }
+    } catch {
+      // Ignore an unrelated malformed entry; sync owns surfacing its failure.
+    }
+  }
+  return payload;
+}
 
 /**
  * Synchronous read. Returns whatever is in the cache (possibly null)
@@ -65,6 +95,11 @@ export async function refreshProfilePage(
 ): Promise<Result<ProfilePageData, ApiError>> {
   const result = await api.getProfilePage();
   if (!result.ok) return result;
-  storage.cacheProfilePage(userId, result.value);
-  return ok(result.value);
+  const payload = reconcilePendingProfilePreferences(
+    storage,
+    userId,
+    result.value,
+  );
+  storage.cacheProfilePage(userId, payload);
+  return ok(payload);
 }

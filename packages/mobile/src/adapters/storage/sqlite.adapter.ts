@@ -1329,6 +1329,16 @@ ${indentSyncQueueDdl(12)}
     );
   }
 
+  replaceInactiveMutationPayload(id: number, payload: unknown): void {
+    const db = this.getDb();
+    db.runSync(
+      `UPDATE sync_queue
+       SET payload = ?, updated_at = datetime('now')
+       WHERE id = ? AND status NOT IN ('in_flight', 'completed')`,
+      [JSON.stringify(payload), id],
+    );
+  }
+
   markMutationBlocked(id: number, verdict: EntitlementVerdict): void {
     const db = this.getDb();
     // M10.6: flip the entry to `blocked_entitlement` and stash the

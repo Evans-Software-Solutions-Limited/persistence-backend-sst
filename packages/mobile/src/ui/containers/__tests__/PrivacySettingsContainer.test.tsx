@@ -53,6 +53,9 @@ type AlertButton = { text?: string; onPress?: () => void | Promise<void> };
 const deleteAccount = jest.fn(async () => ({
   purgeAfter: "2026-08-12T00:00:00.000Z",
 }));
+const getCachedProfilePage = jest.fn();
+const cacheProfilePage = jest.fn();
+const enqueueMutation = jest.fn();
 
 /** Pull the button list out of the Nth Alert.alert invocation. */
 function alertButtons(callIndex: number): AlertButton[] {
@@ -73,7 +76,14 @@ describe("PrivacySettingsContainer — delete account", () => {
     });
     (useAdapters as jest.Mock).mockReturnValue({
       api: { updateProfile: jest.fn() },
-      storage: { invalidateProfilePage: jest.fn() },
+      storage: {
+        invalidateProfilePage: jest.fn(),
+        getCachedProfilePage,
+        cacheProfilePage,
+        enqueueMutation,
+        getQueuedEntriesForEntity: jest.fn(() => []),
+        updateMutationPayload: jest.fn(),
+      },
     });
     (useProfilePage as jest.Mock).mockReturnValue({
       payload: { profile: { isProfilePublic: false } },
@@ -82,6 +92,14 @@ describe("PrivacySettingsContainer — delete account", () => {
     (getMetaAttributionConsent as jest.Mock).mockResolvedValue("denied");
     (grantMetaAttributionConsent as jest.Mock).mockResolvedValue(false);
     (denyMetaAttributionConsent as jest.Mock).mockResolvedValue(true);
+    getCachedProfilePage.mockReturnValue({
+      payload: {
+        profile: {
+          isProfilePublic: false,
+          showTemplateWorkouts: true,
+        },
+      },
+    });
   });
 
   it("keeps the attribution switch off when ATT/native activation is denied", async () => {
@@ -92,6 +110,29 @@ describe("PrivacySettingsContainer — delete account", () => {
     await waitFor(() => {
       expect(mockProbe.props!.metaAttributionEnabled).toBe(false);
     });
+  });
+
+  it("optimistically persists the template-workout preference", () => {
+    render(<PrivacySettingsContainer />);
+
+    act(() => {
+      mockProbe.props!.onSetShowTemplateWorkouts(false);
+    });
+
+    expect(mockProbe.props!.showTemplateWorkouts).toBe(false);
+    expect(cacheProfilePage).toHaveBeenCalledWith(
+      "u1",
+      expect.objectContaining({
+        profile: expect.objectContaining({ showTemplateWorkouts: false }),
+      }),
+    );
+    expect(enqueueMutation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        endpoint: "/profile",
+        method: "PATCH",
+        payload: { showTemplateWorkouts: false },
+      }),
+    );
   });
 
   it("keeps attribution visibly enabled when withdrawal cannot be guaranteed", async () => {

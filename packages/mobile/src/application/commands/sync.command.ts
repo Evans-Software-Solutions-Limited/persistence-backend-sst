@@ -6,7 +6,10 @@ import type {
   StoragePort,
   SyncQueueEntry,
 } from "@/domain/ports/storage.port";
-import type { EntitlementVerdict } from "@/domain/ports/sync.types";
+import {
+  isAutoResolvableSyncEntry,
+  type EntitlementVerdict,
+} from "@/domain/ports/sync.types";
 import type { HabitConfigEntry } from "@/domain/ports/api.port";
 import { habitConfigFromEntry } from "@/domain/models/habit-config";
 import { normalizePreferences } from "@/domain/models/notification-preferences";
@@ -15,6 +18,10 @@ import { pendingPreferenceOverrides } from "@/application/notifications/queries/
 import { parseEntitlementDeniedResponseText } from "@/shared/errors/parseEntitlement";
 import { resolveExercisePayloadReferences } from "@/application/commands/resolveExerciseReferences";
 import { captureSyncFailure } from "@/lib/sentry";
+import {
+  hasTemplatePreference,
+  stripSupersededTemplatePreferences,
+} from "./template-preference-queue";
 
 /** A non-OK HTTP response from a sync POST/PUT/DELETE, carrying the status so
  * the drain can classify permanent vs transient failures. */
@@ -494,6 +501,38 @@ export function isMutationDue(
   return dueAt <= now;
 }
 
+/**
+ * The complete dispatch predicate shared by the drain and its worker loop.
+ * Keeping this in one place is load-bearing: if the worker calls the drain
+ * again for a row the drain must skip, its do/while loop becomes a hot spin.
+ */
+export function isMutationEligible(
+  storage: StoragePort,
+  entry: SyncQueueEntry,
+  now: number = Date.now(),
+): boolean {
+  if (!isMutationDue(entry, now)) return false;
+  if (
+    entry.entityType !== "profile" ||
+    entry.entityId === null ||
+    !hasTemplatePreference(entry.payload)
+  ) {
+    return true;
+  }
+
+  // A template-visibility PATCH is ordered intent: an older OFF must never
+  // arrive after a newer ON (or vice versa). Concurrent drains can claim
+  // different rows, so a per-row claim alone cannot preserve that order.
+  return !storage
+    .getQueuedEntriesForEntity("profile", entry.entityId)
+    .some(
+      (older) =>
+        older.id < entry.id &&
+        isAutoResolvableSyncEntry(older) &&
+        hasTemplatePreference(older.payload),
+    );
+}
+
 export type SyncResult = {
   processed: number;
   succeeded: number;
@@ -566,11 +605,25 @@ export async function processSyncQueue(
   let blocked = 0;
 
   for (let entry of entries) {
+    if (
+      entry.entityType === "profile" &&
+      entry.entityId !== null &&
+      hasTemplatePreference(entry.payload)
+    ) {
+      // An older request may have been in flight when this newer preference
+      // was written, then become terminal afterwards. Neutralise that stale
+      // field now, before eligibility and before a later manual Retry can
+      // replay it over the newer choice.
+      stripSupersededTemplatePreferences(storage, entry.entityId, entry.id);
+    }
+
     // Backoff: skip an entry whose retry window hasn't opened. Checked BEFORE
     // the claim so a not-yet-due entry stays `failed` (visible to the status UI
     // and to the coalescing paths) rather than being flipped to `in_flight` and
     // released again.
-    if (!isMutationDue(entry, now())) continue;
+    // The shared predicate also enforces per-preference FIFO; the app worker
+    // uses the same predicate for its loop continuation to prevent hot spins.
+    if (!isMutationEligible(storage, entry, now())) continue;
 
     // Atomic claim — `markMutationInFlight` is row-conditional at the
     // storage layer (only flips status when currently

@@ -367,6 +367,13 @@ export class InMemoryStorageAdapter implements StoragePort {
     entry.payload = JSON.stringify(payload);
   }
 
+  replaceInactiveMutationPayload(id: number, payload: unknown): void {
+    const entry = this.queue.find((e) => e.id === id);
+    if (!entry) return;
+    if (entry.status === "in_flight" || entry.status === "completed") return;
+    entry.payload = JSON.stringify(payload);
+  }
+
   markMutationBlocked(id: number, verdict: EntitlementVerdict): void {
     // M10.6: parity with SQLite — flip to blocked_entitlement and
     // persist the verdict. `errorMessage` + `retryCount` untouched so

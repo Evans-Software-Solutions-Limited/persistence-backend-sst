@@ -11,6 +11,44 @@ say so and fix this file.
 
 ## ▶ START HERE — next session (rewritten 2026-08-04, post-Mealprint-merge)
 
+### 🟡 2026-09-03 — ONBOARDING BACK TRANSITION + TEMPLATE VISIBILITY (branch `codex/profile-hide-template-workouts`)
+
+Onboarding forward navigation now pushes each next page and Back uses Expo
+Router `dismissTo`, producing the native reverse transition while retaining a
+safe replace fallback for journeys resumed without local stack history. Android
+hardware Back uses the same persisted transition, and pushed screens clear
+their navigation guard on blur before later state reconciliation. Profile
+Settings now exposes a default-on “Show template workouts” preference. The
+preference is stored on `profiles.show_template_workouts`, written through the
+offline sync queue, and applied when the Workouts tab regains focus; queued
+profile PATCHes coalesce and unresolved preference writes remain ordered so the
+latest user choice cannot be overwritten by an older retry. Migration
+`20260903120000_profile_show_template_workouts.sql` must be applied before
+deploying the matching core API projection. The full workspace test suite (21
+tasks, including 6,558 mobile tests), repo typecheck, lint, build and scoped
+formatting are green; the Settings screen also passed iPhone 17 Pro Max simulator
+visual QA. The final local Inspector Brad sweep is clean. The repository-wide
+formatter is blocked only by an unrelated untracked funding scratchpad, which
+remains untouched.
+PR #430's first clean-install CI run exposed a transitive-only
+`@react-navigation/native` import in the onboarding container. It now uses
+Expo Router's declared `useFocusEffect` API with a stable blur lifecycle; the
+fresh CI typecheck failure is covered by the focused navigation regression.
+The CI Inspector follow-up found terminal profile mutations were still treated
+as live intent. A shared auto-resolvable queue predicate now excludes exhausted,
+permanently-failed and entitlement-blocked rows from preference FIFO gating and
+both UI reconciliation paths, so dead history neither blocks a newer toggle nor
+shadows fresh server truth. New preference writes also bypass exhausted rows
+and remove the superseded preference field from older recoverable failures,
+preventing a later manual Retry from reversing the user's final choice while
+preserving unrelated failed profile edits.
+The follow-up CI coverage run exposed a timing-only test failure in the
+upgrade auto-retry case: it waited on a fixture assigned before render and
+then guessed that React Query would settle within 10ms. The regression now
+waits for the subscription cache itself and explicitly publishes the initial
+over-limit render before upgrading, preserving the product behaviour while
+removing the full-suite load race.
+
 ### 🟡 2026-09-02 — MOBILE RELEASE READINESS (branch `codex/mobile-release-drag-loader-meta`)
 
 Workout creation/editing and live sessions now use nestable draggable lists;
