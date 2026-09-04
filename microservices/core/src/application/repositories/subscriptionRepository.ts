@@ -257,6 +257,34 @@ export class SubscriptionRepository {
     return rows[0] ?? null;
   }
 
+  /** Return the user's live RevenueCat-mirrored store subscription, if any. */
+  async findLiveStoreSubscription(userId: string): Promise<{
+    id: string;
+    tierName: string;
+    expiresAt: Date | null;
+  } | null> {
+    const db = getDb();
+    const rows = await db
+      .select({
+        id: userSubscriptions.id,
+        tierName: userSubscriptions.tierName,
+        expiresAt: userSubscriptions.expiresAt,
+      })
+      .from(userSubscriptions)
+      .where(
+        and(
+          eq(userSubscriptions.userId, userId),
+          inArray(userSubscriptions.paymentStatus, [
+            ...LIVE_SUBSCRIPTION_STATUSES,
+          ]),
+          sql`left(${userSubscriptions.externalSubscriptionId}, 3) = 'rc_'`,
+        ),
+      )
+      .orderBy(desc(userSubscriptions.createdAt))
+      .limit(1);
+    return rows[0] ?? null;
+  }
+
   /**
    * Fetch ALL `user_subscriptions` rows for a user that carry a Stripe
    * subscription id (`sub_…`), regardless of local `payment_status`.

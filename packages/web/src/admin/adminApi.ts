@@ -131,6 +131,7 @@ export interface NewGrantInput {
   referralCode?: string | null;
   notes?: string | null;
   allowRoleChange?: boolean;
+  allowSupersedeStoreSubscription?: boolean;
   sendInvite?: boolean;
 }
 
@@ -163,6 +164,8 @@ export interface UserLookup {
       paymentStatus: string;
       expiresAt: string | null;
       cancelledAt: string | null;
+      externalSubscriptionId: string | null;
+      fromStore: boolean;
     } | null;
     attribution: {
       code: string;

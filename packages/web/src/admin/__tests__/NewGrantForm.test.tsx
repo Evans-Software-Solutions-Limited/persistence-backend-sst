@@ -36,6 +36,7 @@ vi.mock("../adminApi", async (importOriginal) => {
 });
 
 import { NewGrantForm } from "../pages/NewGrantForm";
+import { AdminApiError } from "../adminApi";
 
 describe("NewGrantForm", () => {
   beforeEach(() => {
@@ -77,13 +78,29 @@ describe("NewGrantForm", () => {
     fireEvent.change(screen.getByLabelText(/Payment reference/), {
       target: { value: "SUMUP-1" },
     });
+    fireEvent.change(screen.getByLabelText(/Amount paid/), {
+      target: { value: "49.50" },
+    });
+    fireEvent.change(screen.getByLabelText(/Paid by/), {
+      target: { value: "other" },
+    });
+    fireEvent.change(screen.getByLabelText(/Paid on/), {
+      target: { value: "2026-09-04" },
+    });
+    fireEvent.change(screen.getByLabelText(/Notes/), {
+      target: { value: "Founders fair" },
+    });
+    fireEvent.click(screen.getByLabelText(/Send them/));
 
-    // First click arms the confirmation, second submits.
+    // First click arms the confirmation; Back disarms it without submitting.
     fireEvent.click(screen.getByRole("button", { name: "Grant" }));
     expect(api.createGrant).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(screen.getByRole("button", { name: "Grant" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Grant" }));
     fireEvent.click(
       await screen.findByRole("button", {
-        name: /Confirm: Premium\+ for New@X.co — £50.00/,
+        name: /Confirm: Premium\+ for New@X.co — £49.50/,
       }),
     );
 
@@ -92,16 +109,23 @@ describe("NewGrantForm", () => {
       expect.objectContaining({
         email: "new@x.co",
         tierName: "premium_plus",
-        amountMinor: 5000,
-        paymentMethod: "card_in_person",
+        amountMinor: 4950,
+        paymentMethod: "other",
         paymentReference: "SUMUP-1",
+        paidAt: "2026-09-04T12:00:00.000Z",
         referralCode: "UONFRESHERS",
-        sendInvite: true,
+        notes: "Founders fair",
+        sendInvite: false,
         allowRoleChange: false,
+        allowSupersedeStoreSubscription: false,
       }),
     );
     expect(screen.getByText("197 of 200")).toBeTruthy();
     expect(screen.getByText(/UoN \(UONFRESHERS\)/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Next person" }));
+    expect(
+      (screen.getByLabelText(/Their email/) as HTMLInputElement).value,
+    ).toBe("");
   });
 
   it("blocks a consumer tier on a coach account until the role change is acknowledged", async () => {
@@ -159,5 +183,86 @@ describe("NewGrantForm", () => {
       (screen.getByRole("button", { name: "Grant" }) as HTMLButtonElement)
         .disabled,
     ).toBe(true);
+  });
+
+  it("blocks a store subscriber until the override is acknowledged and sends the flag", async () => {
+    api.lookupUser.mockResolvedValue({
+      account: {
+        id: "u1",
+        email: "store@x.co",
+        role: null,
+        subscription: {
+          tierName: "premium",
+          paymentStatus: "active",
+          expiresAt: "2026-10-01T00:00:00Z",
+          cancelledAt: null,
+          externalSubscriptionId: "rc_u1",
+          fromStore: true,
+        },
+        attribution: {
+          code: "STOREBUYER",
+          label: "Store buyer",
+          lockedAt: null,
+        },
+        foundingGrants: [],
+      },
+      pendingGrants: [],
+    });
+    api.createGrant.mockResolvedValue({
+      grantId: "g1",
+      status: "active",
+      email: "store@x.co",
+      userId: "u1",
+      tierName: "premium",
+      expiresAt: "2027-03-04T00:00:00Z",
+      invited: false,
+      inviteError: "delivery unavailable",
+      seats: { pool: "consumer", used: 1, cap: 200 },
+      referral: null,
+    });
+    renderPage(<NewGrantForm />);
+    await screen.findByText("Premium");
+    fireEvent.change(screen.getByLabelText(/Their email/), {
+      target: { value: "store@x.co" },
+    });
+    const checkbox = await screen.findByRole("checkbox", {
+      name: /live App Store subscription/,
+    });
+    expect(
+      (screen.getByRole("button", { name: "Grant" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    fireEvent.click(checkbox);
+    fireEvent.click(screen.getByRole("button", { name: "Grant" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Confirm: Premium/ }),
+    );
+    await screen.findByText(/access is live/);
+    expect(api.createGrant).toHaveBeenCalledWith(
+      expect.objectContaining({ allowSupersedeStoreSubscription: true }),
+    );
+  });
+
+  it("shows readable copy for a store-subscription conflict returned by the API", async () => {
+    api.lookupUser.mockResolvedValue({ account: null, pendingGrants: [] });
+    api.createGrant.mockRejectedValue(
+      new AdminApiError(409, {
+        code: "active_store_subscription",
+        message: "raw server message",
+      }),
+    );
+    renderPage(<NewGrantForm />);
+    await screen.findByText("Premium");
+    fireEvent.change(screen.getByLabelText(/Their email/), {
+      target: { value: "buyer@x.co" },
+    });
+    await screen.findByText(/No account yet/);
+    fireEvent.click(screen.getByRole("button", { name: "Grant" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Confirm: Premium/ }),
+    );
+    expect(
+      await screen.findByText(/tick the store-subscription override/),
+    ).toBeTruthy();
   });
 });

@@ -68,6 +68,8 @@ export function NewGrantForm({
   const [notes, setNotes] = useState("");
   const [sendInvite, setSendInvite] = useState(true);
   const [allowRoleChange, setAllowRoleChange] = useState(false);
+  const [allowSupersedeStoreSubscription, setAllowSupersedeStoreSubscription] =
+    useState(false);
   const [confirming, setConfirming] = useState(false);
   const [result, setResult] = useState<GrantResult | null>(null);
 
@@ -87,6 +89,7 @@ export function NewGrantForm({
   const account = lookup.data?.account ?? null;
   const isCoach = account ? COACH_ROLES.has(account.role ?? "") : false;
   const demotionRisk = isCoach && CONSUMER_TIERS.has(tierName);
+  const storeSubscriptionRisk = account?.subscription?.fromStore === true;
   const alreadyHasGrant =
     (account?.foundingGrants.some((g) => !g.revokedAt) ?? false) ||
     (lookup.data?.pendingGrants.length ?? 0) > 0;
@@ -121,6 +124,7 @@ export function NewGrantForm({
       referralCode: referralCode.trim() || null,
       notes: notes.trim() || null,
       allowRoleChange,
+      allowSupersedeStoreSubscription,
       sendInvite,
     });
   }
@@ -132,6 +136,7 @@ export function NewGrantForm({
     setReferralCode("");
     setNotes("");
     setAllowRoleChange(false);
+    setAllowSupersedeStoreSubscription(false);
     setConfirming(false);
     setResult(null);
     create.reset();
@@ -212,6 +217,7 @@ export function NewGrantForm({
             value={email}
             onChange={(e) => {
               setEmail(e.target.value);
+              setAllowSupersedeStoreSubscription(false);
               setConfirming(false);
             }}
           />
@@ -235,6 +241,22 @@ export function NewGrantForm({
             <p role="alert" className="text-xs text-destructive">
               This email already has a live founding grant.
             </p>
+          ) : null}
+          {storeSubscriptionRisk ? (
+            <label className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs">
+              <input
+                type="checkbox"
+                checked={allowSupersedeStoreSubscription}
+                onChange={(e) =>
+                  setAllowSupersedeStoreSubscription(e.target.checked)
+                }
+              />
+              <span>
+                This account has a live App Store subscription. A founding grant
+                can be undone by the next store sync. Tick to confirm the
+                override, or grant after the subscription expires.
+              </span>
+            </label>
           ) : null}
         </div>
 
@@ -375,7 +397,12 @@ export function NewGrantForm({
               ? new Error(
                   "Coach account — tick the role-change box or choose a coach tier.",
                 )
-              : create.error
+              : create.error instanceof AdminApiError &&
+                  create.error.body?.code === "active_store_subscription"
+                ? new Error(
+                    "Live App Store subscription — tick the store-subscription override or grant after it expires.",
+                  )
+                : create.error
           }
         />
       ) : null}
@@ -387,7 +414,8 @@ export function NewGrantForm({
             create.isPending ||
             !catalogue.data ||
             alreadyHasGrant ||
-            (demotionRisk && !allowRoleChange)
+            (demotionRisk && !allowRoleChange) ||
+            (storeSubscriptionRisk && !allowSupersedeStoreSubscription)
           }
         >
           {create.isPending

@@ -41,7 +41,14 @@ export const adminUsersLookupHandler = new Elysia().use(adminGuard).get(
           id: profile.id,
           email: profile.email,
           role: profile.role,
-          subscription,
+          subscription: subscription
+            ? {
+                ...subscription,
+                fromStore:
+                  subscription.externalSubscriptionId?.startsWith("rc_") ??
+                  false,
+              }
+            : null,
           attribution,
           foundingGrants: userGrants,
         },

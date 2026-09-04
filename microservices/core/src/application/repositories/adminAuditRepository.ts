@@ -18,6 +18,21 @@ export interface AuditInput {
 }
 
 export class AdminAuditRepository {
+  async exists(filter: { action: string; entityId: string }): Promise<boolean> {
+    const db = getDb();
+    const rows = await db
+      .select({ id: adminAuditLog.id })
+      .from(adminAuditLog)
+      .where(
+        and(
+          eq(adminAuditLog.action, filter.action),
+          eq(adminAuditLog.entityId, filter.entityId),
+        ),
+      )
+      .limit(1);
+    return rows.length > 0;
+  }
+
   async record(
     input: AuditInput,
     transaction?: DatabaseTransaction,

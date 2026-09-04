@@ -46,6 +46,16 @@ function grantErrorResponse(error: GrantError): {
           code: "coach_demotion",
         },
       };
+    case "active_store_subscription":
+      return {
+        status: 409,
+        body: {
+          message:
+            "This account has a live App Store subscription. A founding grant would be undone by the next store sync. Grant after it expires, or confirm the override.",
+          code: "active_store_subscription",
+          subscription: error.subscription,
+        },
+      };
     case "invalid_referral_code":
       return {
         status: 400,
@@ -119,6 +129,8 @@ export const adminFoundingGrantsHandler = new Elysia()
           referralCode: ctx.body.referralCode ?? null,
           notes: ctx.body.notes ?? null,
           allowRoleChange: ctx.body.allowRoleChange ?? false,
+          allowSupersedeStoreSubscription:
+            ctx.body.allowSupersedeStoreSubscription ?? false,
           sendInvite: ctx.body.sendInvite ?? true,
         },
         actorId,
@@ -144,6 +156,7 @@ export const adminFoundingGrantsHandler = new Elysia()
         referralCode: t.Optional(t.Nullable(t.String({ maxLength: 64 }))),
         notes: t.Optional(t.Nullable(t.String({ maxLength: 2000 }))),
         allowRoleChange: t.Optional(t.Boolean()),
+        allowSupersedeStoreSubscription: t.Optional(t.Boolean()),
         sendInvite: t.Optional(t.Boolean()),
       }),
     },

@@ -27,7 +27,13 @@ function makeRepos() {
     claim: vi.fn(async () => ({ kind: "applied" })),
     lock: vi.fn(async () => true),
   };
-  const audit = { record: vi.fn(async () => undefined) };
+  const audit = {
+    exists: vi.fn(async () => false),
+    record: vi.fn(async () => undefined),
+  };
+  const subscriptions = {
+    findLiveStoreSubscription: vi.fn(async () => null),
+  };
   const mailer = vi.fn(async () => undefined);
   const authUserLookup = vi.fn(
     async (
@@ -49,8 +55,17 @@ function makeRepos() {
     mailer as any,
     "https://example.test",
     authUserLookup,
+    subscriptions as any,
   );
-  return { svc, grants, referrals, audit, mailer, authUserLookup };
+  return {
+    svc,
+    grants,
+    referrals,
+    audit,
+    mailer,
+    authUserLookup,
+    subscriptions,
+  };
 }
 
 const created = (overrides: Partial<any> = {}) => ({
@@ -217,6 +232,53 @@ describe("FoundingGrantService.grant", () => {
       "coach",
       expect.any(Function),
     );
+  });
+
+  it("refuses a live store subscription unless the admin confirms the override", async () => {
+    const { svc, grants, subscriptions } = makeRepos();
+    grants.findProfileByEmail.mockResolvedValue({
+      id: "u1",
+      email: "buyer@example.com",
+      role: "user",
+    } as any);
+    subscriptions.findLiveStoreSubscription.mockResolvedValue({
+      id: "store-1",
+      tierName: "premium",
+      expiresAt: new Date("2026-10-01T00:00:00Z"),
+    } as any);
+
+    expect(
+      await svc.grant(
+        {
+          email: "buyer@example.com",
+          tierName: "premium_plus",
+          paymentMethod: "other",
+        },
+        "admin-1",
+      ),
+    ).toEqual({
+      ok: false,
+      error: {
+        code: "active_store_subscription",
+        subscription: {
+          tierName: "premium",
+          expiresAt: new Date("2026-10-01T00:00:00Z"),
+        },
+      },
+    });
+    expect(grants.create).not.toHaveBeenCalled();
+
+    mockGrantCreated(grants);
+    const overridden = await svc.grant(
+      {
+        email: "buyer@example.com",
+        tierName: "premium_plus",
+        paymentMethod: "other",
+        allowSupersedeStoreSubscription: true,
+      },
+      "admin-1",
+    );
+    expect(overridden.ok).toBe(true);
   });
 
   it("maps pool_full / duplicate / bad input to typed errors without side effects", async () => {
@@ -535,6 +597,36 @@ describe("FoundingGrantService.applyPendingForUser", () => {
     expect(await svc.applyPendingForUser("u1", "a@b.co")).toBe(false);
 
     expect(grants.applyPending).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledTimes(2);
+    warnSpy.mockRestore();
+  });
+
+  it("defers pending grants behind a live store subscription and audits only once", async () => {
+    const { svc, grants, subscriptions, audit } = makeRepos();
+    grants.findPendingByEmail.mockResolvedValue([
+      { id: "g1", grantedBy: "admin-1" },
+    ] as any);
+    subscriptions.findLiveStoreSubscription.mockResolvedValue({
+      id: "store-1",
+      tierName: "premium",
+      expiresAt: null,
+    } as any);
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    expect(await svc.applyPendingForUser("u1", "a@b.co")).toBe(false);
+    expect(audit.record).toHaveBeenCalledWith({
+      actorId: "admin-1",
+      action: "founding_grant.apply_deferred",
+      entityType: "founding_grant",
+      entityId: "g1",
+      after: { userId: "u1", reason: "active_store_subscription" },
+    });
+    expect(grants.applyPending).not.toHaveBeenCalled();
+
+    audit.exists.mockResolvedValue(true);
+    audit.record.mockClear();
+    expect(await svc.applyPendingForUser("u1", "a@b.co")).toBe(false);
+    expect(audit.record).not.toHaveBeenCalled();
     expect(warnSpy).toHaveBeenCalledTimes(2);
     warnSpy.mockRestore();
   });

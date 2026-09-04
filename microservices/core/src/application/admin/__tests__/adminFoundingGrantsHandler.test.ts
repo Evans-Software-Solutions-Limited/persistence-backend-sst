@@ -130,6 +130,7 @@ describe("adminFoundingGrantsHandler", () => {
         paymentMethod: "bank_transfer",
         sendInvite: true,
         allowRoleChange: false,
+        allowSupersedeStoreSubscription: false,
       }),
       "admin-1",
     );
@@ -168,6 +169,21 @@ describe("adminFoundingGrantsHandler", () => {
     const demote = await post(valid);
     expect(demote.status).toBe(409);
     expect(((await demote.json()) as any).code).toBe("coach_demotion");
+    grantMock.mockResolvedValueOnce({
+      ok: false,
+      error: {
+        code: "active_store_subscription",
+        subscription: { tierName: "premium", expiresAt: null },
+      },
+    });
+    const store = await post(valid);
+    expect(store.status).toBe(409);
+    expect(await store.json()).toEqual({
+      message:
+        "This account has a live App Store subscription. A founding grant would be undone by the next store sync. Grant after it expires, or confirm the override.",
+      code: "active_store_subscription",
+      subscription: { tierName: "premium", expiresAt: null },
+    });
     grantMock.mockResolvedValueOnce({
       ok: false,
       error: { code: "invalid_email" },

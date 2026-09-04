@@ -67,6 +67,52 @@ describe("SubscriptionRepository", () => {
     vi.clearAllMocks();
   });
 
+  describe("findLiveStoreSubscription", () => {
+    it("returns the latest live rc_ row and renders the store/live predicates", async () => {
+      const row = {
+        id: "store-1",
+        tierName: "premium",
+        expiresAt: new Date("2026-10-01T00:00:00Z"),
+      };
+      const where = vi.fn().mockReturnValue({
+        orderBy: vi.fn().mockReturnValue({
+          limit: vi.fn().mockResolvedValue([row]),
+        }),
+      });
+      (getDb as any).mockReturnValue({
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({ where }),
+        }),
+      });
+
+      const { SubscriptionRepository } =
+        await import("../subscriptionRepository");
+      expect(
+        await new SubscriptionRepository().findLiveStoreSubscription("user-1"),
+      ).toEqual(row);
+
+      const rendered = new PgDialect()
+        .sqlToQuery(where.mock.calls[0][0])
+        .sql.toLowerCase();
+      expect(rendered).toContain('"user_id" = $1');
+      expect(rendered).toContain('"payment_status" in');
+      expect(rendered).toContain(
+        'left("user_subscriptions"."external_subscription_id", 3) = \'rc_\'',
+      );
+    });
+
+    it("returns null when there is no live store row", async () => {
+      (getDb as any).mockReturnValue({
+        select: vi.fn().mockReturnValue(makeSelectChain([])),
+      });
+      const { SubscriptionRepository } =
+        await import("../subscriptionRepository");
+      expect(
+        await new SubscriptionRepository().findLiveStoreSubscription("user-1"),
+      ).toBeNull();
+    });
+  });
+
   describe("userExists", () => {
     it("returns true when a profile row matches the id", async () => {
       const mockDb = {

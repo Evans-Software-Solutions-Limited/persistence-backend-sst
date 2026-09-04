@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { AdminAuditRepository } from "../repositories/adminAuditRepository";
+import { SubscriptionRepository } from "../repositories/subscriptionRepository";
 import {
   FoundingGrantRepository,
   type CreateGrantOutcome,
@@ -36,6 +37,9 @@ import {
  *
  * A referral code given at grant time attaches (or replaces an unlocked)
  * attribution and locks it — the grant IS the paid conversion (BRIEF D5).
+ * `allowSupersedeStoreSubscription` is only for an admin who has told the
+ * buyer their store subscription will be superseded and understands that a
+ * later RevenueCat sync can supersede the founding row again.
  */
 
 export type GrantError =
@@ -44,6 +48,10 @@ export type GrantError =
   | { code: "invalid_email" }
   | { code: "user_not_found" }
   | { code: "coach_demotion" }
+  | {
+      code: "active_store_subscription";
+      subscription: { tierName: string; expiresAt: Date | null };
+    }
   | { code: "invalid_referral_code" }
   | { code: "referral_locked_elsewhere" }
   | { code: "pool_full"; seats: { pool: string; used: number; cap: number } }
@@ -61,6 +69,7 @@ export interface GrantRequest {
   referralCode?: string | null;
   notes?: string | null;
   allowRoleChange?: boolean;
+  allowSupersedeStoreSubscription?: boolean;
   sendInvite?: boolean;
 }
 
@@ -103,6 +112,7 @@ export class FoundingGrantService {
   private readonly grants: FoundingGrantRepository;
   private readonly referrals: ReferralRepository;
   private readonly audit: AdminAuditRepository;
+  private readonly subscriptions: SubscriptionRepository;
   private readonly mailer: typeof sendEmail;
   private readonly webOrigin: string;
   private readonly authUserLookup: (
@@ -119,6 +129,7 @@ export class FoundingGrantService {
     authUserLookup: (
       userId: string,
     ) => Promise<SupabaseAuthIdentity> = getAuthUserIdentity,
+    subscriptions: SubscriptionRepository = new SubscriptionRepository(),
   ) {
     this.grants = grants;
     this.referrals = referrals;
@@ -126,6 +137,7 @@ export class FoundingGrantService {
     this.mailer = mailer;
     this.webOrigin = webOrigin;
     this.authUserLookup = authUserLookup;
+    this.subscriptions = subscriptions;
   }
 
   async grant(
@@ -155,6 +167,23 @@ export class FoundingGrantService {
     if (!EMAIL_RE.test(email))
       return { ok: false, error: { code: "invalid_email" } };
     if (!profile) profile = await this.grants.findProfileByEmail(email);
+
+    if (profile) {
+      const storeSubscription =
+        await this.subscriptions.findLiveStoreSubscription(profile.id);
+      if (storeSubscription && !req.allowSupersedeStoreSubscription) {
+        return {
+          ok: false,
+          error: {
+            code: "active_store_subscription",
+            subscription: {
+              tierName: storeSubscription.tierName,
+              expiresAt: storeSubscription.expiresAt,
+            },
+          },
+        };
+      }
+    }
 
     // Trigger hazard (STATE.md): a consumer tier on a coach account flips
     // profiles.role to 'user' via update_subscription_limits_trigger.
@@ -455,6 +484,28 @@ export class FoundingGrantService {
       }
       let appliedAny = false;
       for (const grant of pending) {
+        const storeSubscription =
+          await this.subscriptions.findLiveStoreSubscription(userId);
+        if (storeSubscription) {
+          if (
+            !(await this.audit.exists({
+              action: "founding_grant.apply_deferred",
+              entityId: grant.id,
+            }))
+          ) {
+            await this.audit.record({
+              actorId: grant.grantedBy,
+              action: "founding_grant.apply_deferred",
+              entityType: "founding_grant",
+              entityId: grant.id,
+              after: { userId, reason: "active_store_subscription" },
+            });
+          }
+          console.warn(
+            `[founding] pending grant ${grant.id} deferred: active store subscription for user=${userId}`,
+          );
+          continue;
+        }
         const res = await this.grants.applyPending(
           grant.id,
           userId,
