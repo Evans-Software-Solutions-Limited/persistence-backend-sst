@@ -63,10 +63,10 @@ COMMENT ON TABLE referral_redemptions IS
 
 CREATE TABLE IF NOT EXISTS founding_grants (
   id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  -- NULL while PENDING: the buyer paid (at a fair, by transfer) before having an
-  -- account. The grant is keyed by email and applied on the buyer's first
-  -- authenticated GET /subscriptions/me after they sign up with that email.
-  user_id           uuid REFERENCES profiles(id) ON DELETE CASCADE,
+  -- NULL while PENDING, or after the linked profile is deleted. Applied grants
+  -- are retained for the six-year financial-record period; ON DELETE SET NULL
+  -- anonymises the account link without turning them back into pending grants.
+  user_id           uuid REFERENCES profiles(id) ON DELETE SET NULL,
   email             text NOT NULL,
   tier_name         text NOT NULL REFERENCES subscription_tiers(tier_name),
   months            integer NOT NULL DEFAULT 6,
@@ -94,9 +94,10 @@ CREATE TABLE IF NOT EXISTS founding_grants (
 CREATE INDEX IF NOT EXISTS founding_grants_user_id_idx ON founding_grants (user_id);
 CREATE UNIQUE INDEX IF NOT EXISTS founding_grants_user_active_uq
   ON founding_grants (user_id) WHERE revoked_at IS NULL AND user_id IS NOT NULL;
--- One live grant per email while it is pending (case-insensitive).
+-- One live grant per email while it is pending (case-insensitive). Applied
+-- grants whose profile was deleted have user_id NULL but applied_at remains set.
 CREATE UNIQUE INDEX IF NOT EXISTS founding_grants_email_pending_uq
-  ON founding_grants (lower(email)) WHERE revoked_at IS NULL AND user_id IS NULL;
+  ON founding_grants (lower(email)) WHERE revoked_at IS NULL AND applied_at IS NULL;
 CREATE INDEX IF NOT EXISTS founding_grants_email_idx ON founding_grants (lower(email));
 
 COMMENT ON TABLE founding_grants IS

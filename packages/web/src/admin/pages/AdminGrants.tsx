@@ -83,7 +83,14 @@ export function AdminGrants() {
             ]}
           >
             {grants.data.map((g) => (
-              <tr key={g.id}>
+              <tr
+                key={g.id}
+                className={
+                  g.status === "account_deleted"
+                    ? "text-muted-foreground"
+                    : undefined
+                }
+              >
                 <td className="whitespace-nowrap">{g.email}</td>
                 <td>{g.tierLabel ?? g.tierName}</td>
                 <td className="tabular-nums">
@@ -101,7 +108,9 @@ export function AdminGrants() {
                 <td className="whitespace-nowrap">
                   {g.status === "pending"
                     ? "on sign-up"
-                    : formatDate(g.subscriptionExpiresAt)}
+                    : g.status === "account_deleted"
+                      ? "account deleted"
+                      : formatDate(g.subscriptionExpiresAt)}
                 </td>
                 <td>
                   <StatusBadge status={g.status} />
@@ -110,7 +119,11 @@ export function AdminGrants() {
                   {g.invitedAt ? formatDate(g.invitedAt) : "not sent"}
                 </td>
                 <td className="whitespace-nowrap">
-                  {!g.revokedAt ? (
+                  {g.status === "account_deleted" ? (
+                    <span className="text-xs text-muted-foreground">
+                      no actions
+                    </span>
+                  ) : !g.revokedAt ? (
                     <div className="flex gap-1">
                       <Button
                         size="xs"

@@ -105,7 +105,7 @@ export interface GrantRow {
   revokeReason: string | null;
   notes: string | null;
   createdAt: string;
-  status: "pending" | "active" | "expired" | "revoked";
+  status: "pending" | "active" | "expired" | "revoked" | "account_deleted";
 }
 
 export interface GrantResult {

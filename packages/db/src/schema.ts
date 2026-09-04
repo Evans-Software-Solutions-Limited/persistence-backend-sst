@@ -2723,9 +2723,9 @@ export const foundingGrants = pgTable(
   "founding_grants",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    /** NULL while pending (buyer paid before signing up) — applied by email. */
+    /** NULL while pending or after profile deletion; appliedAt distinguishes them. */
     userId: uuid("user_id").references(() => profiles.id, {
-      onDelete: "cascade",
+      onDelete: "set null",
     }),
     /** Lower-cased. The key a pending grant is applied on. */
     email: text("email").notNull(),
@@ -2764,7 +2764,7 @@ export const foundingGrants = pgTable(
       .where(sql`revoked_at IS NULL AND user_id IS NOT NULL`),
     uniqueIndex("founding_grants_email_pending_uq")
       .on(sql`lower(${t.email})`)
-      .where(sql`revoked_at IS NULL AND user_id IS NULL`),
+      .where(sql`revoked_at IS NULL AND applied_at IS NULL`),
     index("founding_grants_email_idx").on(sql`lower(${t.email})`),
     check(
       "founding_grants_payment_method_ck",

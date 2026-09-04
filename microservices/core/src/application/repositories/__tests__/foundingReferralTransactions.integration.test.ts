@@ -635,6 +635,71 @@ describe("founding/referral repository transaction invariants", () => {
     expect(grantsAfter.rows).toEqual([]);
   });
 
+  it("retains an applied grant after account deletion without reapplying it", async () => {
+    const grants = new FoundingGrantRepository();
+    const firstGrantId = "00000000-0000-4000-8000-000000000070";
+    const input = {
+      id: firstGrantId,
+      userId: USER,
+      email: "user@example.test",
+      tierName: "premium" as const,
+      months: 6,
+      amountMinor: 3000,
+      currency: "GBP",
+      paymentMethod: "other" as const,
+      paymentReference: null,
+      paidAt: new Date(),
+      referralCodeId: null,
+      grantedBy: ADMIN,
+      notes: null,
+    };
+    expect((await grants.create(input, "consumer")).kind).toBe("created");
+
+    await pg.query("DELETE FROM profiles WHERE id = $1", [USER]);
+
+    const retained = await pg.query<{
+      user_id: string | null;
+      applied_at: string | null;
+    }>("SELECT user_id, applied_at FROM founding_grants WHERE id = $1", [
+      firstGrantId,
+    ]);
+    expect(retained.rows[0].user_id).toBeNull();
+    expect(retained.rows[0].applied_at).not.toBeNull();
+    expect((await grants.list({}))[0].status).toBe("account_deleted");
+    expect((await grants.seatsForPool("consumer")).used).toBe(1);
+
+    const replacementUser = "00000000-0000-4000-8000-000000000071";
+    await pg.query(
+      "INSERT INTO profiles (id, email, role) VALUES ($1, 'user@example.test', 'user')",
+      [replacementUser],
+    );
+    const service = new FoundingGrantService(
+      grants,
+      new ReferralRepository(),
+      new AdminAuditRepository(),
+      async () => undefined,
+      "https://example.test",
+      async () => ({
+        id: replacementUser,
+        email: "user@example.test",
+        emailConfirmedAt: "2026-09-04T08:00:00.000Z",
+      }),
+    );
+    expect(
+      await service.applyPendingForUser(replacementUser, "user@example.test"),
+    ).toBe(false);
+
+    const replacement = await grants.create(
+      {
+        ...input,
+        id: "00000000-0000-4000-8000-000000000072",
+        userId: replacementUser,
+      },
+      "consumer",
+    );
+    expect(replacement.kind).toBe("created");
+  });
+
   it("rolls back referral-code creation when its audit insert fails", async () => {
     const referrals = new ReferralRepository();
     const audit = new AdminAuditRepository();

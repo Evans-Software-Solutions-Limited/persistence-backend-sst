@@ -92,7 +92,7 @@ export function StatusBadge({ status }: { status: string }) {
     <Badge
       variant={variant as "default" | "secondary" | "destructive" | "outline"}
     >
-      {status}
+      {status === "account_deleted" ? "account deleted" : status}
     </Badge>
   );
 }

@@ -54,7 +54,7 @@ export interface GrantListRow {
   revokeReason: string | null;
   notes: string | null;
   createdAt: Date;
-  status: "pending" | "active" | "expired" | "revoked";
+  status: "pending" | "active" | "expired" | "revoked" | "account_deleted";
 }
 
 export interface CreateGrantInput {
@@ -103,11 +103,13 @@ export interface PendingGrantTransactionContext {
 
 function statusOf(row: {
   userId: string | null;
+  appliedAt: Date | null;
   revokedAt: Date | null;
   subscriptionExpiresAt: Date | null;
 }): GrantListRow["status"] {
   if (row.revokedAt) return "revoked";
-  if (!row.userId) return "pending";
+  if (!row.appliedAt) return "pending";
+  if (!row.userId) return "account_deleted";
   if (
     row.subscriptionExpiresAt &&
     row.subscriptionExpiresAt.getTime() <= Date.now()
@@ -263,8 +265,8 @@ export class FoundingGrantRepository {
           and(
             isNull(foundingGrants.revokedAt),
             input.userId
-              ? sql`(${foundingGrants.userId} = ${input.userId} OR lower(${foundingGrants.email}) = ${input.email})`
-              : sql`lower(${foundingGrants.email}) = ${input.email}`,
+              ? sql`(${foundingGrants.userId} = ${input.userId} OR (lower(${foundingGrants.email}) = ${input.email} AND ${foundingGrants.appliedAt} IS NULL))`
+              : sql`lower(${foundingGrants.email}) = ${input.email} AND ${foundingGrants.appliedAt} IS NULL`,
           ),
         )
         .limit(1);
@@ -333,7 +335,7 @@ export class FoundingGrantRepository {
       .from(foundingGrants)
       .where(
         and(
-          isNull(foundingGrants.userId),
+          isNull(foundingGrants.appliedAt),
           isNull(foundingGrants.revokedAt),
           sql`lower(${foundingGrants.email}) = ${email.toLowerCase()}`,
         ),
@@ -364,6 +366,7 @@ export class FoundingGrantRepository {
           and(
             eq(foundingGrants.id, grantId),
             isNull(foundingGrants.userId),
+            isNull(foundingGrants.appliedAt),
             isNull(foundingGrants.revokedAt),
           ),
         )
@@ -532,7 +535,7 @@ export class FoundingGrantRepository {
         tierName: foundingGrants.tierName,
         count: sql<number>`count(*)::int`,
         revenueMinor: sql<number>`coalesce(sum(${foundingGrants.amountMinor}), 0)::int`,
-        pending: sql<number>`count(*) FILTER (WHERE ${foundingGrants.userId} IS NULL)::int`,
+        pending: sql<number>`count(*) FILTER (WHERE ${foundingGrants.appliedAt} IS NULL)::int`,
       })
       .from(foundingGrants)
       .where(isNull(foundingGrants.revokedAt))
