@@ -9,6 +9,76 @@ items, and the four most recent sessions. Trimmed 2026-07-27 from 1554 lines.
 If anything here contradicts `git log --oneline -30`, the git history wins —
 say so and fix this file.
 
+### 🟢 2026-09-04 — FOUNDING-OFFER post-review hardening (branch `feat/founding-offer-admin`)
+
+Security review findings F1–F10 are now captured under
+`specs/milestones/FOUNDING-OFFER/SECURITY_REVIEW-2026-09-04.md`; its seven
+hardening work packages are implemented. The public founding page is
+informational only: bank details, Payment Link buttons, their build variables,
+and deploy wiring are removed. Payment remains out of band and privately
+coordinated.
+
+Founding grants now refuse a live `rc_` subscription unless an admin explicitly
+accepts the sync risk; pending redemption defers against one and writes one
+audit marker. Bank-transfer and privately sent Stripe-link grants require a
+trimmed payment reference. No-account invites and the public page state the
+90-day redemption window.
+
+Applied payment records survive profile deletion through `ON DELETE SET NULL`.
+`applied_at`, not a nullable `user_id`, defines pending state, so a retained
+`account_deleted` grant stays counted and cannot attach to a replacement
+account with the same email. A real PGlite lifecycle test covers retention,
+non-redemption, seat accounting, and a legitimate repurchase.
+
+The web and in-app Privacy Policy copies both carry the 4 September 2026
+founding-purchase retention disclosure. Visual baseline:
+`/Users/bradleysimms-evans/.codex/visualizations/2026/09/04/01a06cdf-2dcb-78e3-b9c3-b1b10954f357/founding-privacy-retention-wp6.png`.
+Production Confirm email was reported ON; staging remains Brad's dashboard task
+and is the first staging smoke-test precondition. The original founding
+migration was verified absent from the connected production migration history
+and founding tables were absent, so it was safely corrected in place.
+
+Verification after WP6: root typecheck **9/9** packages; lint zero errors
+(existing warnings only); root tests green after one isolated rerun of two
+unrelated web timeouts (**353 core files / 4,340 tests; 30 web files / 879
+tests; 523 mobile suites / 6,594 tests**); production web build green. Final
+full gates and the local Inspector Brad sweep remain the WP8 pre-push gate.
+
+WP8's first full-branch Inspector sweep found five additional release defects,
+all fixed before push: the CloudFront CSP now permits the stage Supabase origin
+used by admin magic-link auth; `granted_by` retains an immutable issuer UUID
+without an FK that could block administrator deletion; store-subscription
+guards use the shared expiry-aware live predicate; accounts inside the soft
+deletion window are refused a paid grant; and the once-only deferred audit is
+enforced by a partial unique index plus conflict-ignore insert. Behavioural
+tests cover the CSP input, user lookup/store provenance, deleted-account admin
+rendering, the new 409, expired store rows, issuer deletion, and concurrent
+audit deduplication. The final root gate is green: Prettier; typecheck **9/9**;
+lint zero errors (existing warnings only); build **14/14**; unit tests **21/21**
+tasks, including **354 core files / 4,352 tests**. Hardening-diff coverage is at
+least 90% for statements, branches, functions and lines; the pre-existing
+whole-PR coverage debt remains tracked separately from this post-review scope.
+
+The CI Inspector follow-up on `b0a77209` found a pending-grant/RevenueCat
+TOCTOU. RevenueCat activation and founding subscription writes now share a
+transaction-scoped per-user advisory lock, and both pending application and
+immediate grant creation recheck live store entitlement after taking that lock.
+The default path leaves the seat pending; the admin's explicit store override
+still permits supersession. Regression coverage proves a store winner does not
+populate `user_id`, `applied_at`, or `subscription_id`. The complete root gate
+remains green after the fix: Prettier, typecheck, lint (existing warnings only),
+build, and all unit-test tasks.
+
+The same PR now treats individual and coach pricing as live: every IAP plan
+card links to the existing cross-platform `/#download` section with “Get the
+app” instead of rendering a disabled “Coming soon” placeholder. The
+organisation sales CTAs are unchanged. Regression coverage is revert-checked.
+Visual baselines:
+`/Users/bradleysimms-evans/.codex/visualizations/2026/09/04/01a06cdf-2dcb-78e3-b9c3-b1b10954f357/pricing-live-cta-consumer-cards-light.png`,
+`/Users/bradleysimms-evans/.codex/visualizations/2026/09/04/01a06cdf-2dcb-78e3-b9c3-b1b10954f357/pricing-live-cta-coaches-dark.png`,
+and
+`/Users/bradleysimms-evans/.codex/visualizations/2026/09/04/01a06cdf-2dcb-78e3-b9c3-b1b10954f357/pricing-live-cta-consumer-mobile.png`.
+
 ### 🟡 2026-09-03 — FOUNDING-OFFER MOBILE REFERRAL ENTRY (branch `codex/founding-referral-ota`)
 
 Work package B is implemented from store-build base `ea85b774` at app version
@@ -36,6 +106,137 @@ manage screen uses the same semantics.
 
 ## ▶ START HERE — next session (rewritten 2026-08-04, post-Mealprint-merge)
 
+### 🟡 2026-09-03 — FOUNDING-OFFER website work package A implemented (branch `feat/founding-offer-admin`)
+
+Inspector follow-up hardened the founding/referral write paths before PR: all
+claim, remove and paid-conversion lock operations now share a transaction-scoped
+per-user advisory lock; same-code retries are idempotent even after a cap fills;
+and founding grants require an eligible referral plus a successful claim in the
+same transaction. Grant create/revoke and referral-code create/update now write
+their admin audit entry inside the mutation transaction, so an audit failure
+rolls the mutation back. PATCH rejects malformed dates instead of silently
+dropping them. Real PGlite repository tests cover cap retry, lock-vs-replace
+serialization, paused/future/expired/exhausted eligibility, and rollback for all
+four audited mutation families. Focused result: 3 files / 20 tests pass; core
+typecheck, touched-file ESLint/Prettier and `git diff --check` pass. The parent
+release session owns the full workspace gates and PR creation.
+
+A second Inspector pass closed the remaining cross-repository gaps. Pending
+grants now reserve capped referral capacity at sale time; ordinary app claims
+count those live pending reservations, while applying the reserved grant frees
+and consumes its own slot in one transaction. Pending grant binding,
+subscription creation, required attribution, lock and audit now commit or roll
+back together. Manual admin attribution performs its serialized before-read,
+claim and audit under the same per-user transaction. Referral-code PATCH takes
+`SELECT … FOR UPDATE` before deriving the audit `before` image, so concurrent
+PATCHes cannot both claim the same starting state. Real PGlite rollback/cap
+tests plus handler wiring tests bring the focused result to **3 files / 24
+tests**; core typecheck and touched-file format/lint/diff gates pass.
+
+Final Inspector follow-up clarified reservation lifetime: mutable code state is
+checked when a pending paid grant is recorded, not again when its buyer later
+creates an account. Applying that grant now consumes the exact reserved code id
+even if the campaign has since paused, archived or expired. If the account is
+already locked to another attribution, purchased access still applies, the
+existing attribution remains untouched, and the founding grant remains an
+outstanding capacity reservation for its paid code; the audit records
+`locked_conflict`. PGlite regressions cover all three mutable states and the
+conflict/counter policy. Focused result: **3 files / 27 tests**; core typecheck,
+touched ESLint/Prettier and diff-check pass.
+
+The final cap-boundary correction excludes only the immediate existing-user
+grant currently being finalized from the referral reservation subquery. It
+still performs ordinary active/window/cap validation and counts every other
+grant reservation. A direct real-repository regression proves a one-use code
+with zero prior claims accepts the first immediate grant, atomically produces
+one grant + one redemption + count 1, rejects the next grant, and leaves no
+partial row. Focused result: **3 files / 28 tests**; core typecheck and touched
+lint/format/diff gates pass.
+
+The PR Inspector's final two leads were valid. When an email-keyed pending grant
+exists, redemption now checks Supabase Auth's authoritative admin user record:
+the subject must match, the email must be confirmed, and it must match the grant
+email. Standard access tokens do not carry an invented `email_verified` claim.
+Invite delivery, `invited_at` bookkeeping and resend auditing are reported
+independently, so a successful Resend delivery is not presented as a failure
+(and immediately retried) solely because a follow-up database write failed.
+After a successful resend, `invited_at` and its mandatory admin audit now commit
+or roll back in one transaction. Focused and real PGlite regressions cover these
+cases.
+
+The PR Inspector's low-severity month-boundary finding was valid: native
+`Date.setUTCMonth` rolled late-month starts into the following month. Founding
+expiry calculation now uses date-fns with its official UTC context, clamping
+to the target month's final day while preserving the UTC time. Dedicated
+normal, month-end, leap-year and immutability tests cover the helper.
+
+The public `/founding` route now carries the approved £30 Premium, £50 Premium+
+and £99 Start Up Coach+ six-month offers, the static consumer seat counter,
+funding/redemption copy, optional bank instructions and per-tier Stripe Payment
+Link buttons, 14-day cancellation acknowledgement, terms link and route SEO.
+Home links to it from both the hero and download section; the route is in the
+sitemap. There is no mobile-app link to the off-app offer (Apple 3.1.3(b)).
+
+Every `MarketingLayout` route now normalises `?ref=` (upper-case, strips spaces
+and hyphens, `[A-Z0-9]{4,24}`), stores it under session key `persistence.ref`,
+and shows a dismissible referral notice without backend validation. Store-click
+beacons include the stored `ref`; `/store-click` bounds it to 24 characters and
+stores it in `analytics_events.properties`. A Meta-mapper regression test proves
+the referral value is never forwarded in Meta custom data.
+
+Verification: focused web and core suites pass (**52 core tests**); full web
+suite **30 files / 875 tests** passed. Changed web logic coverage was **100%**
+statements, **95.12%** branches, **100%** functions and **100%** lines. Root
+typecheck passed **9/9** packages; root lint passed with zero errors (existing /
+generated warnings only); web production build passed. Touched-file Prettier
+and `git diff --check` passed. Root Prettier remains blocked by the unrelated,
+pre-existing `adminFoundingGrantsHandler.test.ts`. Browser verification passed
+in light, dark and 390×844 mobile layouts.
+
+The approved public `VITE_FOUNDING_BANK_DETAILS` value is wired through both
+deploy workflows and SST alongside the other founding-page variables; no actual
+bank details are committed. Founding invite emails now set Resend `reply_to` to
+the monitored admin address, so the existing invitation to reply does not route
+to `no-reply@`. Brad approved the legal reconciliation on 2026-09-03: `/terms`
+now distinguishes renewable app-store subscriptions from paid-once fixed-term
+offers (including the founding offer), and its last-updated date is current.
+Both deploy workflows forward the public Supabase anon key from the environment
+variable `VITE_SUPABASE_ANON_KEY`; without it, `/admin/login` deliberately
+renders “not configured”.
+
+### 🟡 2026-09-03 — FOUNDING-OFFER backend (branch `feat/founding-offer-admin`, worktree `.claude/worktrees/founding-offer`)
+
+New milestone `specs/milestones/FOUNDING-OFFER/` (BRIEF + BACKEND/FRONTEND briefs +
+SMOKE_TEST) — a thin, **approved** slice of spec-32: founding-member offer (£30 →
+6 mo `premium`, £50 → 6 mo `premium_plus`, 200 seats; £99 → 6 mo
+`start_up_coach_plus`, 20 seats), internal admin API, referral codes with
+one-attribution-per-user, admin audit log. Backend PR contents are on the branch:
+migration `20260904120000_founding_offer_referrals.sql` (4 tables, additive),
+Drizzle schema, `requireAdmin` on the JWT `app_metadata.admin` claim (NOT
+`profiles.role` — the tier trigger rewrites it), `scripts/set-admin.ts`,
+`/admin/*` (summary, users lookup, referral codes, attributions, founding grants
+incl. **pending-by-email grants + Resend invite email**, audit log) and
+`/referrals/{claim,me}`. Founding grants write a direct `user_subscriptions` row
+(`external_subscription_id = founding_<grantId>`, `cancelled_at` set so the app
+shows "active until"); RC sync supersedes it on a real purchase and never
+revokes it (revocation only touches `rc_*`). Pending grants apply on the buyer's
+first `GET /subscriptions/me`. ⚠ `adminRoutes` is mounted from
+`subscriptionsRoutes`, not the root chain — a root `.use()` tripped TS2589.
+`WEB_ORIGIN` env added to the core Lambda (infra/api.ts). Container-verified:
+9-package typecheck, lint (pre-existing warnings only), core 349 files / 4,297
+tests, api-utils 27, scripts 116, prettier on touched files.
+**Web `/admin` panel landed the same day** (`packages/web/src/admin/`): magic-link
+sign-in via GoTrue REST (no new dependency; session in `sessionStorage`),
+`RequireAdmin` UX guard, dashboard (seat meters), founding grants with the
+at-the-stand **New grant** form (live email lookup → account/pending, coach
+demotion warning, confirm step, invite email, seats remaining), referral codes
+(create/pause/archive/uses/copy link), lookup, audit log. Env:
+`VITE_SUPABASE_URL` (from domains) + `VITE_SUPABASE_ANON_KEY` (deploy env) in
+infra/web.ts. Web: 26 files / 860 tests, typecheck/lint/build green. **Not
+yet**: `?ref=` capture + `/founding` landing section (FRONTEND_BRIEF § W3),
+mobile code entry (§ Mobile), Supabase redirect-URL allow-list for
+`/admin/callback`, staging smoke test, prod release. The worktree's `node_modules`
+dirs are VM-generated junk — `rm -rf` them and `bun install` before local use.
 ### 🟡 2026-09-03 — ONBOARDING BACK TRANSITION + TEMPLATE VISIBILITY (branch `codex/profile-hide-template-workouts`)
 
 Onboarding forward navigation now pushes each next page and Back uses Expo
@@ -73,7 +274,6 @@ then guessed that React Query would settle within 10ms. The regression now
 waits for the subscription cache itself and explicitly publishes the initial
 over-limit render before upgrading, preserving the product behaviour while
 removing the full-suite load race.
-
 ### 🟡 2026-09-02 — MOBILE RELEASE READINESS (branch `codex/mobile-release-drag-loader-meta`)
 
 Workout creation/editing and live sessions now use nestable draggable lists;
@@ -123,7 +323,6 @@ Meta app/client-token and bundle/package associations, reconcile captured payloa
 with App Store/Play disclosures, test Events Manager and consent/ATT on physical
 iOS/Android devices, and visually verify drag/autoscroll plus light/dark launch on
 both platforms. No store binary was submitted.
-
 ### 🔴 2026-09-01 — STAGING CORE API ROUTE STARTUP HOTFIX
 
 After Spec 31 backend #426 deployed, every staging core API request returned

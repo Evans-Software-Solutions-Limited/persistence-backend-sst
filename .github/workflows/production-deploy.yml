@@ -213,8 +213,11 @@ jobs:
       - name: Deploy
         # VITE_* are PUBLIC, build-time web vars (client-exposed by design), read
         # by infra/web.ts and baked into the marketing build. Empty ⇒ the pixel
-        # and Turnstile widget no-op. Safe to keep in GitHub env secrets.
+        # and Turnstile widget no-op. Founding values are public environment
+        # variables; pixel/Turnstile identifiers remain GitHub env secrets.
         env:
           VITE_META_PIXEL_ID: ${{ secrets.VITE_META_PIXEL_ID }}
           VITE_TURNSTILE_SITE_KEY: ${{ secrets.VITE_TURNSTILE_SITE_KEY }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+          VITE_FOUNDING_SEATS_USED: ${{ vars.VITE_FOUNDING_SEATS_USED }}
         run: bunx sst deploy --stage production

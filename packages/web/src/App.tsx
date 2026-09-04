@@ -9,6 +9,18 @@ import Privacy from "./pages/Privacy";
 import Terms from "./pages/Terms";
 import DeleteAccount from "./pages/DeleteAccount";
 import OrganisationAdmin from "./pages/OrganisationAdmin";
+import Founding from "./pages/Founding";
+import {
+  AdminAudit,
+  AdminCallback,
+  AdminCodes,
+  AdminDashboard,
+  AdminGrants,
+  AdminLayout,
+  AdminLogin,
+  AdminLookup,
+  RequireAdmin,
+} from "./admin";
 import { CAMPAIGN_LANDING_SLUGS } from "./marketing/campaign";
 import { ThemeProvider } from "./components/theme-provider";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -67,6 +79,7 @@ function App() {
           <Route path="/auth/callback" element={<AuthCallback />} />
           <Route path="/privacy" element={<Privacy />} />
           <Route path="/terms" element={<Terms />} />
+          <Route path="/founding" element={<Founding />} />
           <Route path="/delete-account" element={<DeleteAccount />} />
           {/*
            * Campaign landing routes (spec-30 R3.4): all render Home, and each
@@ -104,6 +117,27 @@ function App() {
             <Route key={slug} path={`/${slug}`} element={<Home />} />
           ))}
           <Route path="/qr/:slug" element={<Home />} />
+          {/*
+           * Internal admin (FOUNDING-OFFER). Server-enforced: every /admin API
+           * call needs the JWT `app_metadata.admin` claim; the RequireAdmin
+           * guard is UX only. Not linked from anywhere, noindex.
+           */}
+          <Route path="/admin/login" element={<AdminLogin />} />
+          <Route path="/admin/callback" element={<AdminCallback />} />
+          <Route
+            path="/admin"
+            element={
+              <RequireAdmin>
+                <AdminLayout />
+              </RequireAdmin>
+            }
+          >
+            <Route index element={<AdminDashboard />} />
+            <Route path="grants" element={<AdminGrants />} />
+            <Route path="codes" element={<AdminCodes />} />
+            <Route path="lookup" element={<AdminLookup />} />
+            <Route path="audit" element={<AdminAudit />} />
+          </Route>
           <Route
             path="/org-admin"
             element={

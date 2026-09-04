@@ -1,6 +1,7 @@
 import { SubscriptionRepository } from "../repositories/subscriptionRepository";
 import { fetchCustomerSubscriptions } from "./revenueCatClient";
 import { pickDesiredSubscription } from "./entitlements";
+import { lockReferralAttribution } from "../referrals/lockReferralAttribution";
 
 /**
  * Reconcile a single RevenueCat customer's `user_subscriptions` row from the
@@ -58,72 +59,82 @@ export async function syncRevenueCatCustomer(
     return "skipped";
   }
 
-  const subscriptions = await fetchCustomerSubscriptions(appUserId);
-  const desired = pickDesiredSubscription(subscriptions);
-
   const rcExternalId = `rc_${appUserId}`;
+  const outcome = await repo.withUserSubscriptionLock(
+    appUserId,
+    async (transaction): Promise<RevenueCatSyncOutcome> => {
+      // Take the shared mutation lock before the authoritative fetch. This
+      // makes an in-flight active sync visible as serialization intent: a
+      // pending founding redemption cannot slip between the RC snapshot and
+      // its local mirror write.
+      const subscriptions = await fetchCustomerSubscriptions(appUserId);
+      const desired = pickDesiredSubscription(subscriptions);
 
-  if (desired !== null) {
-    // Cosmetic "cancelled but active" flag: auto-renew OFF while still in the
-    // paid period, read from the same subscriptions snapshot. Drives the in-app
-    // "cancelled — active until X" banner. `cancelledAt` is set to now when off
-    // (the banner only needs it non-null; the date shown is `expiresAt`), and
-    // cleared when auto-renew is back on so an uncancellation removes the flag.
-    const autoRenewOff = desired.autoRenewOff;
+      if (desired !== null) {
+        // Cosmetic "cancelled but active" flag: auto-renew OFF while still in the
+        // paid period, read from the same subscriptions snapshot. Drives the in-app
+        // "cancelled — active until X" banner. `cancelledAt` is set to now when off
+        // (the banner only needs it non-null; the date shown is `expiresAt`), and
+        // cleared when auto-renew is back on so an uncancellation removes the flag.
+        const autoRenewOff = desired.autoRenewOff;
 
-    const values = {
-      tierName: desired.tier,
-      paymentStatus: "active",
-      expiresAt: desired.expiresAt,
-      billingCycle: desired.billingCycle,
-      cancelledAt: autoRenewOff ? new Date() : null,
-      externalSubscriptionId: rcExternalId,
-      metadata: {
-        source: "revenuecat",
-        store: desired.store,
-        product_id: desired.productId,
-      } as Record<string, unknown>,
-    };
+        const values = {
+          tierName: desired.tier,
+          paymentStatus: "active",
+          expiresAt: desired.expiresAt,
+          billingCycle: desired.billingCycle,
+          cancelledAt: autoRenewOff ? new Date() : null,
+          externalSubscriptionId: rcExternalId,
+          metadata: {
+            source: "revenuecat",
+            store: desired.store,
+            product_id: desired.productId,
+          } as Record<string, unknown>,
+        };
 
-    // Supersede ANY other live row for this user before the active write so we
-    // never leave two live rows (the `user_subscriptions_active_unique` partial
-    // index allows one). This MUST run even though the upsert below re-activates
-    // the rc_ mirror: the mirror may be `cancelled` while a sibling row (e.g. a
-    // Stripe-created mirror) is still live — re-activating the mirror without
-    // first cancelling the sibling would trip that index → 500 → RevenueCat
-    // retries forever. RevenueCat is the unifying source of truth across both
-    // rails, so a prior live row is safely superseded. Cancelling then
-    // re-activating the rc_ row itself (when it was already live) is a harmless
-    // extra write reconciled by the upsert's DO UPDATE.
-    await repo.cancelLiveSubscriptions(appUserId);
+        // Supersede ANY other live row for this user before the active write so we
+        // never leave two live rows (the `user_subscriptions_active_unique` partial
+        // index allows one). This MUST run even though the upsert below re-activates
+        // the rc_ mirror: the mirror may be `cancelled` while a sibling row (e.g. a
+        // Stripe-created mirror) is still live — re-activating the mirror without
+        // first cancelling the sibling would trip that index → 500 → RevenueCat
+        // retries forever. RevenueCat is the unifying source of truth across both
+        // rails, so a prior live row is safely superseded. Cancelling then
+        // re-activating the rc_ row itself (when it was already live) is a harmless
+        // extra write reconciled by the upsert's DO UPDATE.
+        await repo.cancelLiveSubscriptions(appUserId, transaction);
 
-    // Single ATOMIC upsert on external_subscription_id (spec-12.13). Replaces
-    // the former non-atomic findByExternalId→insert-or-update: under
-    // RevenueCat's at-least-once + unordered delivery, two concurrent FIRST
-    // deliveries for the same new customer both saw `existing === null` and both
-    // inserted, tripping the active-unique index (loser 500'd → retry). The
-    // partial unique index now makes the second writer take DO UPDATE instead.
-    await repo.upsertByExternalId({
-      userId: appUserId,
-      startsAt: new Date(),
-      ...values,
-    });
-    return "activated";
+        // Single ATOMIC upsert on external_subscription_id (spec-12.13). Replaces
+        // the former non-atomic findByExternalId→insert-or-update: under
+        // RevenueCat's at-least-once + unordered delivery, two concurrent FIRST
+        // deliveries for the same new customer both saw `existing === null` and both
+        // inserted, tripping the active-unique index (loser 500'd → retry). The
+        // partial unique index now makes the second writer take DO UPDATE instead.
+        await repo.upsertByExternalId(
+          {
+            userId: appUserId,
+            startsAt: new Date(),
+            ...values,
+          },
+          transaction,
+        );
+        return "activated";
+      }
+
+      // No active entitlement → revert to free by cancelling the live mirror.
+      // Keep this write under the same lock as the fetch so every RevenueCat
+      // reconciliation has one linearized per-user mutation boundary.
+      return (await repo.cancelLiveByExternalId(rcExternalId, transaction))
+        ? "revoked"
+        : "already_inactive";
+    },
+  );
+
+  if (outcome === "activated") {
+    // FOUNDING-OFFER D5: a live store subscription is a paid conversion, so
+    // the user's referral attribution (if any) freezes here. Best-effort —
+    // never fails the sync.
+    await lockReferralAttribution(appUserId);
   }
-
-  // No active entitlement → revert to free by cancelling the live mirror. This
-  // branch still needs the row lookup (nothing to cancel if there's no mirror,
-  // or the mirror is already terminal).
-  // ONE atomic write decides both the revocation and the outcome. A
-  // read-then-write here would make `revoked` a TOCTOU guess: two concurrent
-  // events for the same losing customer (separate `event.id`s, so both pass the
-  // webhook's claim) would both see `active` and both report a revocation,
-  // double-notifying. `cancelLiveByExternalId` returns true to exactly one caller.
-  //
-  // The caller distinguishes this from `already_inactive` because only an actual
-  // loss is worth telling the user about — a no-op sync on someone who was already
-  // free must stay silent.
-  return (await repo.cancelLiveByExternalId(rcExternalId))
-    ? "revoked"
-    : "already_inactive";
+  return outcome;
 }

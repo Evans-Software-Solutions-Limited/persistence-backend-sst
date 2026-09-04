@@ -50,7 +50,7 @@ export function Privacy() {
       <section className="legal">
         <span className="kicker c-accent legal-kicker">Legal</span>
         <h1>Privacy Policy</h1>
-        <p className="legal-updated">Last updated: 1 September 2026</p>
+        <p className="legal-updated">Last updated: 4 September 2026</p>
 
         <p>
           Persistence ("we", "us", "our") is a fitness-tracking application
@@ -444,6 +444,15 @@ export function Privacy() {
           position:
         </p>
         <ul>
+          <li>
+            <strong>Founding offer purchases</strong> — if you buy a founding
+            place, we keep a record of your email address, the tier bought, the
+            amount, the payment method and reference, and the date, for six
+            years after purchase to meet accounting and legal obligations. This
+            record is kept even if you later delete your account; the account
+            link itself is removed. If you paid before creating an account, we
+            hold your email address until the place is redeemed or released.
+          </li>
           <li>
             <strong>Transaction and subscription records</strong> — we keep the
             event records our payment and subscription providers send us when

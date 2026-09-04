@@ -14,6 +14,7 @@ import {
   userSubscriptions,
 } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
+import type { DatabaseTransaction } from "./referralRepository";
 
 /**
  * Subscription `payment_status` values that grant LIVE entitlement — the
@@ -154,6 +155,15 @@ export interface MySubscription {
  */
 export type NewUserSubscription = typeof userSubscriptions.$inferInsert;
 
+export async function lockUserSubscriptionMutation(
+  transaction: DatabaseTransaction,
+  userId: string,
+): Promise<void> {
+  await transaction.execute(
+    sql`SELECT pg_advisory_xact_lock(hashtext(${`subscription_user_${userId}`}))`,
+  );
+}
+
 /**
  * Repository for `user_subscriptions` reads + writes.
  *
@@ -175,6 +185,17 @@ export type NewUserSubscription = typeof userSubscriptions.$inferInsert;
  */
 export class SubscriptionRepository {
   static readonly key = "SubscriptionRepository";
+
+  async withUserSubscriptionLock<T>(
+    userId: string,
+    operation: (transaction: DatabaseTransaction) => Promise<T>,
+  ): Promise<T> {
+    const db = getDb();
+    return db.transaction(async (transaction) => {
+      await lockUserSubscriptionMutation(transaction, userId);
+      return operation(transaction);
+    });
+  }
 
   /**
    * Does a `profiles` row exist for this id?
@@ -252,6 +273,32 @@ export class SubscriptionRepository {
       .select()
       .from(userSubscriptions)
       .where(eq(userSubscriptions.userId, userId))
+      .orderBy(desc(userSubscriptions.createdAt))
+      .limit(1);
+    return rows[0] ?? null;
+  }
+
+  /** Return the user's live RevenueCat-mirrored store subscription, if any. */
+  async findLiveStoreSubscription(userId: string): Promise<{
+    id: string;
+    tierName: string;
+    expiresAt: Date | null;
+  } | null> {
+    const db = getDb();
+    const rows = await db
+      .select({
+        id: userSubscriptions.id,
+        tierName: userSubscriptions.tierName,
+        expiresAt: userSubscriptions.expiresAt,
+      })
+      .from(userSubscriptions)
+      .where(
+        and(
+          eq(userSubscriptions.userId, userId),
+          liveSubscriptionFilter(),
+          sql`left(${userSubscriptions.externalSubscriptionId}, 3) = 'rc_'`,
+        ),
+      )
       .orderBy(desc(userSubscriptions.createdAt))
       .limit(1);
     return rows[0] ?? null;
@@ -394,13 +441,14 @@ export class SubscriptionRepository {
    */
   async upsertByExternalId(
     data: NewUserSubscription & { externalSubscriptionId: string },
+    transaction?: DatabaseTransaction,
   ): Promise<UserSubscription> {
     if (!data.externalSubscriptionId) {
       throw new Error(
         "SubscriptionRepository.upsertByExternalId requires a non-null externalSubscriptionId",
       );
     }
-    const db = getDb();
+    const db = transaction ?? getDb();
     const rows = await db
       .insert(userSubscriptions)
       .values(data)
@@ -452,8 +500,11 @@ export class SubscriptionRepository {
    * reasoning, as the concurrency fix documented on the insert path in
    * `revenueCatSync`.
    */
-  async cancelLiveByExternalId(externalId: string): Promise<boolean> {
-    const db = getDb();
+  async cancelLiveByExternalId(
+    externalId: string,
+    transaction?: DatabaseTransaction,
+  ): Promise<boolean> {
+    const db = transaction ?? getDb();
     const rows = await db
       .update(userSubscriptions)
       .set({ paymentStatus: "cancelled", updatedAt: new Date() })
@@ -469,8 +520,11 @@ export class SubscriptionRepository {
     return rows.length > 0;
   }
 
-  async cancelLiveSubscriptions(userId: string): Promise<number> {
-    const db = getDb();
+  async cancelLiveSubscriptions(
+    userId: string,
+    transaction?: DatabaseTransaction,
+  ): Promise<number> {
+    const db = transaction ?? getDb();
     const rows = await db
       .update(userSubscriptions)
       .set({ paymentStatus: "cancelled", updatedAt: new Date() })

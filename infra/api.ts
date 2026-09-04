@@ -16,7 +16,7 @@ import {
   supabaseServiceRoleKey,
   turnstileSecret,
 } from "./secrets";
-import { coreApiDomain, hostedZoneId, supabaseUrl } from "./domains";
+import { coreApiDomain, hostedZoneId, supabaseUrl, webDomain } from "./domains";
 import { avatarsBucket } from "./storage";
 import { aiJobQueue } from "./jobs";
 
@@ -158,6 +158,13 @@ export const coreRoute = coreAPI.route("$default", {
     RESEND_API_KEY: resendApiKey.value,
     RESEND_ATHLETES_AUDIENCE_ID: resendAthletesAudienceId.value,
     RESEND_COACHES_AUDIENCE_ID: resendCoachesAudienceId.value,
+    // Public website origin — used to build the store/download link inside the
+    // founding-member invite email (FOUNDING-OFFER). Named stages get their
+    // real host; dev/personal stages fall back to the production site so a
+    // test invite still links somewhere that exists.
+    WEB_ORIGIN: webDomain
+      ? `https://${webDomain}`
+      : "https://persistence.evans-software-solutions.com",
     // Cloudflare Turnstile — bot challenge for the public /leads/* forms
     // (spec-30 WS3). OPTIONAL + fail-safe: empty = verification skipped (forms
     // behave as before). Set before the forms are publicly linked.

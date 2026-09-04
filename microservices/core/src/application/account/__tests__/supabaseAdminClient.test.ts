@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   getSupabaseAdminConfig,
+  getAuthUserIdentity,
   deleteAuthUser,
   deleteAuthUserWithRetry,
 } from "../supabaseAdminClient";
@@ -39,6 +40,53 @@ describe("getSupabaseAdminConfig", () => {
     process.env.SUPABASE_SERVICE_ROLE_KEY = "svc-key";
     expect(() => getSupabaseAdminConfig()).toThrow(
       /SUPABASE_URL is set but empty/,
+    );
+  });
+});
+
+describe("getAuthUserIdentity", () => {
+  beforeEach(() => {
+    process.env.SUPABASE_URL = "https://proj.supabase.co";
+    process.env.SUPABASE_SERVICE_ROLE_KEY = "svc-key";
+  });
+  afterEach(() => {
+    process.env = { ...ORIGINAL };
+    vi.restoreAllMocks();
+  });
+
+  it("reads authoritative email confirmation for the requested subject", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      json: async () => ({
+        id: "user-42",
+        email: "buyer@example.com",
+        email_confirmed_at: "2026-09-04T08:00:00.000Z",
+      }),
+    });
+    (globalThis as any).fetch = fetchMock;
+
+    await expect(getAuthUserIdentity("user-42")).resolves.toEqual({
+      id: "user-42",
+      email: "buyer@example.com",
+      emailConfirmedAt: "2026-09-04T08:00:00.000Z",
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://proj.supabase.co/auth/v1/admin/users/user-42",
+      expect.objectContaining({ method: "GET" }),
+    );
+  });
+
+  it("rejects a response for a different subject", async () => {
+    (globalThis as any).fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      json: async () => ({ id: "attacker", email: "buyer@example.com" }),
+    });
+    await expect(getAuthUserIdentity("user-42")).rejects.toThrow(
+      /unexpected subject/,
     );
   });
 });

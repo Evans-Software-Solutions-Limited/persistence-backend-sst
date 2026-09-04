@@ -10,6 +10,7 @@ const {
   insertMock,
   upsertByExternalIdMock,
   cancelLiveMock,
+  withUserSubscriptionLockMock,
   cancelLiveByExternalIdMock,
   userExistsMock,
   claimMock,
@@ -24,6 +25,7 @@ const {
   insertMock: vi.fn(),
   upsertByExternalIdMock: vi.fn(),
   cancelLiveMock: vi.fn(),
+  withUserSubscriptionLockMock: vi.fn(),
   cancelLiveByExternalIdMock: vi.fn(),
   userExistsMock: vi.fn(),
   claimMock: vi.fn(),
@@ -42,9 +44,15 @@ vi.mock("../../repositories/subscriptionRepository", () => ({
     insert: insertMock,
     upsertByExternalId: upsertByExternalIdMock,
     cancelLiveSubscriptions: cancelLiveMock,
+    withUserSubscriptionLock: withUserSubscriptionLockMock,
     cancelLiveByExternalId: cancelLiveByExternalIdMock,
     userExists: userExistsMock,
   })),
+}));
+
+// FOUNDING-OFFER: the sync's best-effort attribution lock is a DB write.
+vi.mock("../../referrals/lockReferralAttribution", () => ({
+  lockReferralAttribution: vi.fn(async () => true),
 }));
 
 vi.mock("../../repositories/revenuecatWebhookEventsRepository", () => ({
@@ -169,6 +177,9 @@ describe("handleRevenueCatWebhook", () => {
     insertMock.mockResolvedValue({ id: "us1" });
     upsertByExternalIdMock.mockResolvedValue({ id: "us1" });
     cancelLiveMock.mockResolvedValue(0);
+    withUserSubscriptionLockMock.mockImplementation(
+      async (_userId, operation) => operation({ kind: "subscription-tx" }),
+    );
     userExistsMock.mockResolvedValue(true);
     fetchSubsMock.mockResolvedValue([]);
     emitEventMock.mockResolvedValue(undefined);
@@ -298,7 +309,17 @@ describe("handleRevenueCatWebhook", () => {
     ]);
     const res = await handleRevenueCatWebhook(buildRequest());
     expect(res.status).toBe(200);
-    expect(cancelLiveMock).toHaveBeenCalledWith("user-1");
+    expect(withUserSubscriptionLockMock).toHaveBeenCalledWith(
+      "user-1",
+      expect.any(Function),
+    );
+    expect(
+      withUserSubscriptionLockMock.mock.invocationCallOrder[0],
+    ).toBeLessThan(fetchSubsMock.mock.invocationCallOrder[0]);
+    expect(cancelLiveMock).toHaveBeenCalledWith(
+      "user-1",
+      expect.objectContaining({ kind: "subscription-tx" }),
+    );
     expect(upsertByExternalIdMock).toHaveBeenCalledWith(
       expect.objectContaining({
         userId: "user-1",
@@ -307,6 +328,7 @@ describe("handleRevenueCatWebhook", () => {
         externalSubscriptionId: "rc_user-1",
         billingCycle: "monthly",
       }),
+      expect.objectContaining({ kind: "subscription-tx" }),
     );
     // spec-12.13: the active branch no longer does the non-atomic
     // findByExternalId→insert-or-update dance — a single upsert replaces it.
@@ -325,6 +347,7 @@ describe("handleRevenueCatWebhook", () => {
         productId: "prod1a5681d5cd",
         store: "app_store",
       }),
+      expect.objectContaining({ kind: "subscription-tx" }),
     ]);
     await handleRevenueCatWebhook(buildRequest());
     expect(upsertByExternalIdMock).toHaveBeenCalledWith(
@@ -337,6 +360,7 @@ describe("handleRevenueCatWebhook", () => {
           product_id: "prod1a5681d5cd",
         }),
       }),
+      expect.objectContaining({ kind: "subscription-tx" }),
     );
   });
 
@@ -374,6 +398,7 @@ describe("handleRevenueCatWebhook", () => {
         externalSubscriptionId: "rc_user-1",
         paymentStatus: "active",
       }),
+      expect.objectContaining({ kind: "subscription-tx" }),
     );
     expect(insertMock).not.toHaveBeenCalled();
     expect(updateByIdMock).not.toHaveBeenCalled();
@@ -420,7 +445,10 @@ describe("handleRevenueCatWebhook", () => {
     fetchSubsMock.mockResolvedValue([]);
     const res = await handleRevenueCatWebhook(buildRequest());
     expect(res.status).toBe(200);
-    expect(cancelLiveByExternalIdMock).toHaveBeenCalledWith("rc_user-1");
+    expect(cancelLiveByExternalIdMock).toHaveBeenCalledWith(
+      "rc_user-1",
+      expect.objectContaining({ kind: "subscription-tx" }),
+    );
   });
 
   it("no access-granting subscription + no existing row → no writes", async () => {

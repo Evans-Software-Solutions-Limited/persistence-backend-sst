@@ -6,7 +6,8 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test:unit": "vitest run",
-    "reconcile-stripe": "bun run reconcile-stripe.ts"
+    "reconcile-stripe": "bun run reconcile-stripe.ts",
+    "set-admin": "bun run set-admin.ts"
   },
   "dependencies": {
     "@persistence/db": "workspace:*",

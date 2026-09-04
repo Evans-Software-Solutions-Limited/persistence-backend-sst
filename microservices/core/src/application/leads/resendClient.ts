@@ -113,6 +113,7 @@ export interface SendEmailInput {
   to: string;
   subject: string;
   text: string;
+  replyTo?: string;
 }
 
 /**
@@ -138,6 +139,7 @@ export async function sendEmail(input: SendEmailInput): Promise<void> {
       to: input.to,
       subject: input.subject,
       text: input.text,
+      ...(input.replyTo ? { reply_to: input.replyTo } : {}),
     }),
   });
 

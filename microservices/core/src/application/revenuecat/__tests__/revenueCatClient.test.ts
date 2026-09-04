@@ -13,6 +13,7 @@ vi.mock("@persistence/api-utils/env", () => ({
 
 import {
   fetchCustomerSubscriptions,
+  RC_FETCH_TIMEOUT_MS,
   getRevenueCatApiKey,
   getRevenueCatProjectId,
   getRevenueCatWebhookSecret,
@@ -273,5 +274,23 @@ describe("fetchCustomerSubscriptions", () => {
     await expect(fetchCustomerSubscriptions("user-1")).rejects.toThrow(
       /RevenueCat subscriptions failed: 503/,
     );
+  });
+
+  it("aborts a stalled RevenueCat request before it can pin the sync transaction", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn(
+      async (_url: string, init: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init.signal?.addEventListener("abort", () => {
+            reject(init.signal?.reason);
+          });
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const request = fetchCustomerSubscriptions("user-1");
+    await vi.advanceTimersByTimeAsync(RC_FETCH_TIMEOUT_MS);
+    await expect(request).rejects.toMatchObject({ name: "TimeoutError" });
+    vi.useRealTimers();
   });
 });

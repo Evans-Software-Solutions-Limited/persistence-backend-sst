@@ -67,7 +67,7 @@ export function PrivacyPolicyPresenter({
       />
 
       <ScrollView style={styles.content} testID="privacy-policy-scroll">
-        <Text style={styles.lastUpdated}>Last Updated: 1 September 2026</Text>
+        <Text style={styles.lastUpdated}>Last Updated: 4 September 2026</Text>
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>1. Who we are</Text>
@@ -458,6 +458,15 @@ export function PrivacyPolicyPresenter({
             A limited amount of information is kept for longer, or on a separate
             clock, where we are required to keep it or need it to protect our
             position:
+          </Text>
+          <Text style={styles.listItem}>
+            • Founding offer purchases — if you buy a founding place, we keep a
+            record of your email address, the tier bought, the amount, the
+            payment method and reference, and the date, for six years after
+            purchase to meet accounting and legal obligations. This record is
+            kept even if you later delete your account; the account link itself
+            is removed. If you paid before creating an account, we hold your
+            email address until the place is redeemed or released.
           </Text>
           <Text style={styles.listItem}>
             • Transaction and subscription records — we keep the event records

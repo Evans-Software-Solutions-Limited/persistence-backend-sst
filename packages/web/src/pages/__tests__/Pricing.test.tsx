@@ -32,7 +32,7 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("Pricing", () => {
-  it("renders individual prices from the live API and disables web IAP calls to action", async () => {
+  it("renders live individual prices with working get-the-app calls to action", async () => {
     renderPage(<Pricing />);
     const premium = screen.getByTestId("pricing-tier-premium");
     const premiumPlus = screen.getByTestId("pricing-tier-premium_plus");
@@ -40,8 +40,16 @@ describe("Pricing", () => {
     expect(await within(premium).findByText("139.99")).toBeDefined();
     expect(await within(premiumPlus).findByText("249.99")).toBeDefined();
     expect(
-      within(premium).getByText("Coming soon").getAttribute("aria-disabled"),
-    ).toBe("true");
+      within(premium)
+        .getByRole("link", { name: "Get the app" })
+        .getAttribute("href"),
+    ).toBe("/#download");
+    expect(
+      within(premiumPlus)
+        .getByRole("link", { name: "Get the app" })
+        .getAttribute("href"),
+    ).toBe("/#download");
+    expect(screen.queryByText("Coming soon")).toBeNull();
   });
 
   it("derives savings per tier from live prices when cadence changes", async () => {

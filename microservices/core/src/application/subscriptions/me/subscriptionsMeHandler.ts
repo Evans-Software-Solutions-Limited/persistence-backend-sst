@@ -10,6 +10,7 @@ import {
   SubscriptionRepository,
   type MySubscription,
 } from "../../repositories/subscriptionRepository";
+import { FoundingGrantService } from "../../founding/foundingGrantService";
 
 /**
  * GET /subscriptions/me — current entitlement read.
@@ -43,7 +44,13 @@ export const subscriptionsMeHandler = new Elysia()
   .get(
     "/subscriptions/me",
     async (ctx): Promise<{ data: MySubscription } | MeError> => {
-      const { sub: userId } = getUser(ctx);
+      const { sub: userId, email } = getUser(ctx);
+
+      // FOUNDING-OFFER: a buyer who paid before having an account holds a
+      // PENDING grant keyed by email; their first authenticated read is where
+      // it becomes a subscription row. No-op (one indexed lookup) otherwise,
+      // and never throws.
+      await new FoundingGrantService().applyPendingForUser(userId, email);
 
       const repo = new SubscriptionRepository();
       let sub: MySubscription | null;

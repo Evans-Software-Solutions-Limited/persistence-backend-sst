@@ -202,6 +202,18 @@ describe("Privacy", () => {
     expect(screen.getByText(/at least six years from the/)).toBeTruthy();
   });
 
+  it("discloses the founding-purchase record and deletion treatment", () => {
+    renderPage(<Privacy />);
+    expect(screen.getByText("Last updated: 4 September 2026")).toBeTruthy();
+    expect(screen.getByText(/Founding offer purchases/)).toBeTruthy();
+    expect(
+      screen.getByText(/record is kept even if you later delete your account/),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(/until the place is redeemed or released/),
+    ).toBeTruthy();
+  });
+
   it("describes the consent-gated Meta cookie, not the old 'no cookies' claim", () => {
     renderPage(<Privacy />);
     // The superseded absolute claims are gone (the pixel now exists, behind a

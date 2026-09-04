@@ -1,6 +1,7 @@
 import { hasConsent } from "./consent";
 import { marketingApiBase } from "./marketingApiBase";
 import { getFbc, getFbp, newEventId, trackStoreClick } from "./metaPixel";
+import { storedReferralCode } from "../marketing/referral";
 
 export type StorePlatform = "ios" | "android";
 
@@ -37,6 +38,7 @@ export function reportStoreClick(store: StorePlatform): string {
     fbc: getFbc() ?? undefined,
     fbp: getFbp() ?? undefined,
     marketing_consent: hasConsent("advertising"),
+    ref: storedReferralCode(),
   });
 
   try {
