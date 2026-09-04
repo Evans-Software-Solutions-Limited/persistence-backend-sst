@@ -94,15 +94,34 @@ an optional location; those values, logged activity time and distance appear in
 the completed-workout summary. Distance and time records are calculated by the
 core service and rendered on exercise detail/progress surfaces. Canonical stored
 units remain seconds and metres. Migration
-`20260904120000_session_activity_metadata.sql` adds session environment and
-location metadata and must be applied before deploying the matching API.
+`20260904120000_session_activity_metadata.sql` adds session environment,
+location metadata and the per-session exercise-category snapshot, and must be
+applied before deploying the matching API.
 
 Formatting, all nine package typechecks, lint (zero errors), all fourteen build
-tasks and the full unit suite are green (**524 mobile suites / 6,616 tests**;
+tasks and the full unit suite are green (**524 mobile suites / 6,623 tests**;
 **21 workspace tasks**). Visual QA was attempted but is blocked locally: the
 generated iOS build cannot resolve the React-Core-prebuilt pod source, while the
 installed staging dev client lacks ExpoTrackingTransparency and cannot load
 this checkout's bundle. No generated native project was retained.
+
+The mandatory local Inspector Brad pre-PR pass found seven category and edge
+case defects. All are fixed with regressions: cardio PRs are category-gated,
+summary activity totals include completed cardio sets only, offline cardio PR
+prediction matches the server, retrospective mode survives pointer recovery,
+category edits recompute muscle arrays, malformed activity inputs clear stale
+values, and retrospective duration is bounded to 24 hours. The complete gate
+suite above was rerun after these fixes. The follow-up Inspector pass found two
+lifecycle-boundary defects: server PR semantics depended on an exercise's
+current category, and upgraded local active sessions could resume without a
+category. Session exercises now store the category snapshot used when they were
+logged, and SQLite upgrades/backward reads restore it from the cached exercise.
+The complete gate suite is green after both fixes; a closed Inspector re-sweep
+then caught two alternate-entry-path gaps. Trainer-recorded sessions now accept
+the same activity metadata/category fields as self-recording, and piecemeal
+session exercise creation resolves visibility and snapshots the source exercise
+category. Regressions cover both paths, the complete gate suite is green, and
+the final closed local Inspector Brad sweep returned clean.
 
 ### 🟡 2026-09-03 — FOUNDING-OFFER MOBILE REFERRAL ENTRY (branch `codex/founding-referral-ota`)
 

@@ -919,6 +919,7 @@ export const sessionExercises = pgTable("session_exercises", {
   exerciseId: uuid("exercise_id")
     .notNull()
     .references(() => exercises.id, { onDelete: "cascade" }),
+  exerciseCategory: exerciseCategoryEnum("exercise_category"),
   sortOrder: integer("sort_order").notNull(),
   supersetGroup: integer("superset_group"),
   isSubstituted: boolean("is_substituted").notNull().default(false),

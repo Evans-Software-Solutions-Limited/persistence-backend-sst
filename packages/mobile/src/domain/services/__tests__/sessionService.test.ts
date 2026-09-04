@@ -753,6 +753,8 @@ describe("detectPersonalRecords", () => {
     "10rm"?: number;
     max_weight?: number;
     max_volume?: number;
+    best_time?: number;
+    longest_distance?: number;
   }): PersonalRecord[] => {
     const out: PersonalRecord[] = [];
     for (const [recordType, value] of Object.entries(overrides)) {
@@ -876,6 +878,79 @@ describe("detectPersonalRecords", () => {
     const session = sessionWithBench(100, 5);
     const records = detectPersonalRecords(session, [], ctx(), idFactory(900));
     expect(records).toEqual([]);
+  });
+
+  it("predicts shorter-time and longer-distance cardio records", () => {
+    const strength = sessionWithBench(100, 5);
+    const session: WorkoutSession = {
+      ...strength,
+      exercises: strength.exercises.map((exercise, index) =>
+        index === 0
+          ? {
+              ...exercise,
+              category: "cardio",
+              sets: exercise.sets.map((set, setIndex) =>
+                setIndex === 0
+                  ? {
+                      ...set,
+                      weightKg: null,
+                      reps: null,
+                      durationSeconds: 1_500,
+                      distanceMeters: 5_000,
+                      isCompleted: true,
+                    }
+                  : set,
+              ),
+            }
+          : exercise,
+      ),
+    };
+
+    const records = detectPersonalRecords(
+      session,
+      priorsForBench({ best_time: 1_650, longest_distance: 4_000 }),
+      ctx(),
+      idFactory(900),
+    );
+    expect(records.map((record) => record.recordType).sort()).toEqual([
+      "best_time",
+      "longest_distance",
+    ]);
+  });
+
+  it("does not predict cardio records for plyometric jump distances", () => {
+    const strength = sessionWithBench(100, 5);
+    const session: WorkoutSession = {
+      ...strength,
+      exercises: strength.exercises.map((exercise, index) =>
+        index === 0
+          ? {
+              ...exercise,
+              category: "plyometric",
+              sets: exercise.sets.map((set, setIndex) =>
+                setIndex === 0
+                  ? {
+                      ...set,
+                      weightKg: null,
+                      reps: 5,
+                      distanceMeters: 2.5,
+                      isCompleted: true,
+                    }
+                  : set,
+              ),
+            }
+          : exercise,
+      ),
+    };
+
+    expect(
+      detectPersonalRecords(
+        session,
+        priorsForBench({ longest_distance: 2 }),
+        ctx(),
+        idFactory(900),
+      ),
+    ).toEqual([]);
   });
 
   it("emits no record when no candidate beats any prior", () => {

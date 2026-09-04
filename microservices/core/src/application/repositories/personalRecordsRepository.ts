@@ -156,28 +156,34 @@ function candidatesForSets(
     reps: number | null;
     durationSeconds: number | null;
     distanceMeters: string | null;
+    category: string | null | undefined;
   }>,
 ): PRCandidate[] {
   const candidates: PRCandidate[] = [];
   for (const set of sets) {
-    const distance =
-      set.distanceMeters == null ? null : parseFloat(set.distanceMeters);
-    if (distance != null && Number.isFinite(distance) && distance > 0) {
-      candidates.push({
-        exerciseId: set.exerciseId,
-        recordType: "longest_distance",
-        value: distance,
-        setId: set.setId,
-      });
-      if (set.durationSeconds != null && set.durationSeconds > 0) {
+    if (set.category === "cardio") {
+      const distance =
+        set.distanceMeters == null ? null : parseFloat(set.distanceMeters);
+      if (distance != null && Number.isFinite(distance) && distance > 0) {
         candidates.push({
           exerciseId: set.exerciseId,
-          recordType: "best_time",
-          value: set.durationSeconds,
+          recordType: "longest_distance",
+          value: distance,
           setId: set.setId,
         });
+        if (set.durationSeconds != null && set.durationSeconds > 0) {
+          candidates.push({
+            exerciseId: set.exerciseId,
+            recordType: "best_time",
+            value: set.durationSeconds,
+            setId: set.setId,
+          });
+        }
       }
+      continue;
     }
+
+    if (set.category === "plyometric") continue;
 
     if (set.weightKg == null || set.reps == null || set.reps <= 0) continue;
     const weight = parseFloat(set.weightKg);
@@ -359,6 +365,7 @@ export class PersonalRecordsRepository {
         reps: exerciseSets.reps,
         durationSeconds: exerciseSets.durationSeconds,
         distanceMeters: exerciseSets.distanceMeters,
+        category: sessionExercises.exerciseCategory,
       })
       .from(exerciseSets)
       .innerJoin(
@@ -667,6 +674,7 @@ export class PersonalRecordsRepository {
         reps: exerciseSets.reps,
         durationSeconds: exerciseSets.durationSeconds,
         distanceMeters: exerciseSets.distanceMeters,
+        category: sessionExercises.exerciseCategory,
       })
       .from(exerciseSets)
       .innerJoin(
@@ -723,6 +731,7 @@ export class PersonalRecordsRepository {
         reps: exerciseSets.reps,
         durationSeconds: exerciseSets.durationSeconds,
         distanceMeters: exerciseSets.distanceMeters,
+        category: sessionExercises.exerciseCategory,
       })
       .from(exerciseSets)
       .innerJoin(

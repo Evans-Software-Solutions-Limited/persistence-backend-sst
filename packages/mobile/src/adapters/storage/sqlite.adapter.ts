@@ -897,6 +897,23 @@ ${indentSyncQueueDdl(8)}
         "ALTER TABLE session_exercises ADD COLUMN exercise_category TEXT",
       );
     }
+    db.execSync(`
+      UPDATE session_exercises
+      SET exercise_category = (
+        SELECT json_extract(cached_exercises.data, '$.category')
+        FROM cached_exercises
+        WHERE cached_exercises.id = session_exercises.exercise_id
+          AND json_valid(cached_exercises.data)
+      )
+      WHERE exercise_category IS NULL
+        AND EXISTS (
+          SELECT 1
+          FROM cached_exercises
+          WHERE cached_exercises.id = session_exercises.exercise_id
+            AND json_valid(cached_exercises.data)
+            AND json_extract(cached_exercises.data, '$.category') IS NOT NULL
+        )
+    `);
     // Sessions created by an older app version predate the provenance column.
     // Recover it from the cached detail that originally seeded the session.
     db.execSync(`
@@ -2980,7 +2997,10 @@ ${indentSyncQueueDdl(12)}
       sessionId: row.session_id,
       exerciseId: row.exercise_id,
       exerciseName: row.exercise_name,
-      category: row.exercise_category as SessionExercise["category"],
+      category: (row.exercise_category ??
+        this.getCachedExercise(row.exercise_id)?.category) as
+        | SessionExercise["category"]
+        | undefined,
       sortOrder: row.sort_order,
       supersetGroup: row.superset_group,
       isSubstituted: row.is_substituted === 1,

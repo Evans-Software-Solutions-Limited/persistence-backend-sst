@@ -593,7 +593,19 @@ const COMPUTED_RECORD_TYPES = [
   "10rm",
   "max_weight",
   "max_volume",
+  "best_time",
+  "longest_distance",
 ] as const;
+
+function isBetterRecordValue(
+  recordType: RecordType,
+  candidate: number,
+  baseline: number,
+): boolean {
+  return recordType === "best_time"
+    ? candidate < baseline
+    : candidate > baseline;
+}
 
 /**
  * Maps an EXACT rep count to its `Xrm` record type, or null when the
@@ -665,7 +677,10 @@ export function detectPersonalRecords(
     if (!computedTypeSet.has(rec.recordType)) continue;
     const k = `${rec.exerciseId}|${rec.recordType}`;
     const current = priorByKey.get(k);
-    if (current == null || rec.value > current) {
+    if (
+      current == null ||
+      isBetterRecordValue(rec.recordType, rec.value, current)
+    ) {
       priorByKey.set(k, rec.value);
     }
   }
@@ -683,6 +698,28 @@ export function detectPersonalRecords(
     if (ex.isSubstituted) continue;
     for (const set of ex.sets) {
       if (!set.isCompleted) continue;
+      if (ex.category === "cardio") {
+        if (set.distanceMeters != null && set.distanceMeters > 0) {
+          candidates.push({
+            exerciseId: ex.exerciseId,
+            exerciseName: ex.exerciseName,
+            recordType: "longest_distance",
+            value: set.distanceMeters,
+            setId: set.id,
+          });
+          if (set.durationSeconds != null && set.durationSeconds > 0) {
+            candidates.push({
+              exerciseId: ex.exerciseId,
+              exerciseName: ex.exerciseName,
+              recordType: "best_time",
+              value: set.durationSeconds,
+              setId: set.id,
+            });
+          }
+        }
+        continue;
+      }
+      if (ex.category === "plyometric") continue;
       if (set.weightKg == null || set.weightKg <= 0) continue;
       if (set.reps == null || set.reps <= 0) continue;
       const weight = set.weightKg;
@@ -720,7 +757,10 @@ export function detectPersonalRecords(
   for (const c of candidates) {
     const k = `${c.exerciseId}|${c.recordType}`;
     const existing = bestPerKey.get(k);
-    if (!existing || c.value > existing.value) {
+    if (
+      !existing ||
+      isBetterRecordValue(c.recordType, c.value, existing.value)
+    ) {
       bestPerKey.set(k, c);
     }
   }
@@ -737,7 +777,7 @@ export function detectPersonalRecords(
     const prior = priorByKey.get(k);
     if (prior == null) continue;
     const valueAt2dp = parseFloat(candidate.value.toFixed(2));
-    if (valueAt2dp > prior) {
+    if (isBetterRecordValue(candidate.recordType, valueAt2dp, prior)) {
       records.push({
         id: `local-${idFactory()}`,
         userId: ctx.userId,

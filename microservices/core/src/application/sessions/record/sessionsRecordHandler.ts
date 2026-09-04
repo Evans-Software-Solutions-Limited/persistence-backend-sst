@@ -270,6 +270,18 @@ export const sessionsRecordHandler = new Elysia()
         exercises: t.Array(
           t.Object({
             exerciseId: t.String(),
+            category: t.Optional(
+              t.Union([
+                t.Literal("strength"),
+                t.Literal("cardio"),
+                t.Literal("flexibility"),
+                t.Literal("balance"),
+                t.Literal("plyometric"),
+                t.Literal("olympic"),
+                t.Literal("mobility"),
+                t.Null(),
+              ]),
+            ),
             sortOrder: t.Number(),
             supersetGroup: t.Optional(t.Union([t.Number(), t.Null()])),
             isSubstituted: t.Optional(t.Boolean()),

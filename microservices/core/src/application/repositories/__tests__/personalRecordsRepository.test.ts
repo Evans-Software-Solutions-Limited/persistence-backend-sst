@@ -34,15 +34,12 @@ function makeListChain(resolvedValue: unknown) {
  * session_exercises and workout_sessions to enforce userId scope.
  */
 function makeDoubleJoinSelectChain(resolvedValue: unknown) {
-  return {
-    from: vi.fn().mockReturnValue({
-      innerJoin: vi.fn().mockReturnValue({
-        innerJoin: vi.fn().mockReturnValue({
-          where: vi.fn().mockResolvedValue(resolvedValue),
-        }),
-      }),
-    }),
+  const joined: any = {
+    innerJoin: vi.fn(),
+    where: vi.fn().mockResolvedValue(resolvedValue),
   };
+  joined.innerJoin.mockReturnValue(joined);
+  return { from: vi.fn().mockReturnValue(joined) };
 }
 
 /**
@@ -350,6 +347,7 @@ describe("PersonalRecordsRepository", () => {
           reps: null,
           durationSeconds: 1500,
           distanceMeters: "5000.00",
+          category: "cardio",
         },
       ];
       const priorRecords = [
@@ -401,6 +399,40 @@ describe("PersonalRecordsRepository", () => {
         ]),
       );
       expect(mockDb.insert).toHaveBeenCalledTimes(2);
+    });
+
+    it("does not create cardio records from plyometric jump distance", async () => {
+      const completedSets = [
+        {
+          setId: "jump-set",
+          exerciseId: "exercise-broad-jump",
+          weightKg: null,
+          reps: 5,
+          durationSeconds: null,
+          distanceMeters: "2.50",
+          category: "plyometric",
+        },
+      ];
+      const mockDb = {
+        select: vi
+          .fn()
+          .mockReturnValueOnce(makeDoubleJoinSelectChain(completedSets))
+          .mockReturnValueOnce(makeWhereSelectChain([]))
+          .mockReturnValueOnce(makeSingleJoinSubquery()),
+        insert: vi.fn().mockReturnValue(makeUpsertChain()),
+        update: vi.fn().mockReturnValue(makeUpdateChain()),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const { PersonalRecordsRepository } =
+        await import("../personalRecordsRepository");
+      const result = await new PersonalRecordsRepository().recordPRsForSession(
+        "u1",
+        "session-jump",
+      );
+
+      expect(result).toEqual([]);
+      expect(mockDb.insert).not.toHaveBeenCalled();
     });
 
     it("returns PRs with previousValue for each computed record type that beat its prior (10rm + max_weight + max_volume)", async () => {
@@ -1050,18 +1082,15 @@ describe("PersonalRecordsRepository", () => {
           }
           // 3rd call: otherSets — capture the where predicate instead of
           // using the plain chain helper.
-          return {
-            from: vi.fn().mockReturnValue({
-              innerJoin: vi.fn().mockReturnValue({
-                innerJoin: vi.fn().mockReturnValue({
-                  where: vi.fn().mockImplementation((w: unknown) => {
-                    capturedOtherSetsWhere = w;
-                    return Promise.resolve([]);
-                  }),
-                }),
-              }),
+          const joined: any = {
+            innerJoin: vi.fn(),
+            where: vi.fn().mockImplementation((w: unknown) => {
+              capturedOtherSetsWhere = w;
+              return Promise.resolve([]);
             }),
           };
+          joined.innerJoin.mockReturnValue(joined);
+          return { from: vi.fn().mockReturnValue(joined) };
         }),
       };
       (getDb as any).mockReturnValue(mockDb);

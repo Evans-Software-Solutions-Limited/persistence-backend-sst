@@ -123,14 +123,18 @@ export function SetLogger(props: SetLoggerProps) {
     setDuration(text);
     if (text === "") return props.onChange({ durationSeconds: null });
     const seconds = parseDurationInput(text);
-    if (seconds != null) props.onChange({ durationSeconds: seconds });
+    props.onChange({ durationSeconds: seconds });
   };
 
   const handleDistanceChange = (text: string) => {
     setDistance(text);
     if (text === "") return props.onChange({ distanceMeters: null });
-    const value = Number.parseFloat(text);
-    if (!Number.isFinite(value)) return;
+    if (!/^(?:\d+(?:\.\d*)?|\.\d+)$/.test(text)) {
+      return props.onChange({ distanceMeters: null });
+    }
+    const value = Number(text);
+    if (!Number.isFinite(value))
+      return props.onChange({ distanceMeters: null });
     props.onChange({
       distanceMeters:
         trackingMode === "plyometric"

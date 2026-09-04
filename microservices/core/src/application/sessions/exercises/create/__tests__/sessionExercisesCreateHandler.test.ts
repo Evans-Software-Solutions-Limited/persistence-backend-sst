@@ -1,7 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const mocks = { getById: vi.fn(), addExercise: vi.fn() };
+const mocks = {
+  sessionGetById: vi.fn(),
+  exerciseGetById: vi.fn(),
+  addExercise: vi.fn(),
+};
 
 vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getAuthUser: vi.fn(async (authHeader: string | undefined) => {
@@ -24,7 +28,18 @@ vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
 }));
 
 vi.mock("../../../../repositories/sessionRepository", () => ({
-  SessionRepository: vi.fn().mockImplementation(() => mocks),
+  SessionRepository: vi.fn().mockImplementation(function () {
+    return {
+      getById: mocks.sessionGetById,
+      addExercise: mocks.addExercise,
+    };
+  }),
+}));
+
+vi.mock("../../../../repositories/exerciseRepository", () => ({
+  ExerciseRepository: vi.fn().mockImplementation(function () {
+    return { getById: mocks.exerciseGetById };
+  }),
 }));
 
 describe("SessionExercisesCreateHandler", () => {
@@ -37,6 +52,10 @@ describe("SessionExercisesCreateHandler", () => {
       sortOrder: 1,
       notes: null,
       createdAt: new Date(),
+    });
+    mocks.exerciseGetById.mockResolvedValue({
+      id: "ex1",
+      category: "cardio",
     });
   });
 
@@ -54,7 +73,7 @@ describe("SessionExercisesCreateHandler", () => {
   });
 
   it("should return 404 when session not found", async () => {
-    mocks.getById.mockResolvedValue(null);
+    mocks.sessionGetById.mockResolvedValue(null);
     const { sessionExercisesCreateHandler } =
       await import("../sessionExercisesCreateHandler");
     const response = await sessionExercisesCreateHandler.handle(
@@ -71,7 +90,7 @@ describe("SessionExercisesCreateHandler", () => {
   });
 
   it("should return 201 on successful creation", async () => {
-    mocks.getById.mockResolvedValue({ id: "s1", exercises: [] });
+    mocks.sessionGetById.mockResolvedValue({ id: "s1", exercises: [] });
     const { sessionExercisesCreateHandler } =
       await import("../sessionExercisesCreateHandler");
     const response = await sessionExercisesCreateHandler.handle(
@@ -85,5 +104,29 @@ describe("SessionExercisesCreateHandler", () => {
       }),
     );
     expect(response.status).toBe(201);
+    expect(mocks.exerciseGetById).toHaveBeenCalledWith("ex1", "test-user-id");
+    expect(mocks.addExercise).toHaveBeenCalledWith(
+      expect.objectContaining({ exerciseCategory: "cardio" }),
+    );
+  });
+
+  it("returns 404 when the exercise is not visible to the session owner", async () => {
+    mocks.sessionGetById.mockResolvedValue({ id: "s1", exercises: [] });
+    mocks.exerciseGetById.mockResolvedValue(null);
+    const { sessionExercisesCreateHandler } =
+      await import("../sessionExercisesCreateHandler");
+    const response = await sessionExercisesCreateHandler.handle(
+      new Request("http://localhost/sessions/s1/exercises", {
+        method: "POST",
+        body: JSON.stringify({ exerciseId: "hidden-exercise" }),
+        headers: {
+          authorization: "Bearer token",
+          "Content-Type": "application/json",
+        },
+      }),
+    );
+
+    expect(response.status).toBe(404);
+    expect(mocks.addExercise).not.toHaveBeenCalled();
   });
 });

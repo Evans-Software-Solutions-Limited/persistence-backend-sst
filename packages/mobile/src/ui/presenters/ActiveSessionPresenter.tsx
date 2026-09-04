@@ -473,11 +473,12 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
                           keyboardType="number-pad"
                           onChangeText={(value) => {
                             const minutes = Number.parseInt(value, 10);
-                            if (minutes > 0)
+                            if (minutes > 0 && minutes <= 24 * 60)
                               props.onRetrospectiveDurationChange?.(
                                 minutes * 60,
                               );
                           }}
+                          maxLength={4}
                           testID="retrospective-workout-duration"
                         />
                       </View>

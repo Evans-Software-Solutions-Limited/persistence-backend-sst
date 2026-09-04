@@ -102,17 +102,28 @@ export function finalizeSessionCommand(
     });
   }
 
-  const completedAt =
-    status === "completed" && session.retrospectiveCompletedAt
-      ? session.retrospectiveCompletedAt
-      : (deps.now?.() ?? new Date()).toISOString();
-  const startedAt =
+  const now = deps.now?.() ?? new Date();
+  const retrospectiveCompletedAt =
     status === "completed" &&
     session.retrospectiveCompletedAt &&
-    session.retrospectiveDurationSeconds
+    Number.isFinite(Date.parse(session.retrospectiveCompletedAt)) &&
+    Date.parse(session.retrospectiveCompletedAt) <= now.getTime()
+      ? session.retrospectiveCompletedAt
+      : null;
+  const completedAt = retrospectiveCompletedAt ?? now.toISOString();
+  const retrospectiveDurationSeconds =
+    session.retrospectiveDurationSeconds != null &&
+    Number.isFinite(session.retrospectiveDurationSeconds) &&
+    session.retrospectiveDurationSeconds > 0
+      ? Math.min(session.retrospectiveDurationSeconds, 24 * 60 * 60)
+      : null;
+  const startedAt =
+    status === "completed" &&
+    retrospectiveCompletedAt &&
+    retrospectiveDurationSeconds
       ? new Date(
-          Date.parse(session.retrospectiveCompletedAt) -
-            session.retrospectiveDurationSeconds * 1000,
+          Date.parse(retrospectiveCompletedAt) -
+            retrospectiveDurationSeconds * 1000,
         ).toISOString()
       : session.startedAt;
 
@@ -170,6 +181,7 @@ export function finalizeSessionCommand(
     difficultyRanking: rating,
     exercises: finalized.exercises.map((ex) => ({
       exerciseId: ex.exerciseId,
+      category: ex.category ?? null,
       sortOrder: ex.sortOrder,
       supersetGroup: ex.supersetGroup,
       isSubstituted: ex.isSubstituted,

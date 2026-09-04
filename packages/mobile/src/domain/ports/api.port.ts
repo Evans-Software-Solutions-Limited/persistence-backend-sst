@@ -2,6 +2,7 @@ import type { DashboardPayload } from "@/domain/models/dashboard";
 import type {
   CreateExerciseInput,
   Exercise,
+  ExerciseCategory,
   ExerciseFilters,
 } from "@/domain/models/exercise";
 import type { ExercisePerformanceSummary } from "@/domain/models/exercisePerformance";
@@ -2360,6 +2361,7 @@ export type RecordSessionInput = {
   difficultyRanking?: number | null;
   exercises: {
     exerciseId: string;
+    category?: ExerciseCategory | null;
     sortOrder: number;
     supersetGroup?: number | null;
     isSubstituted?: boolean;

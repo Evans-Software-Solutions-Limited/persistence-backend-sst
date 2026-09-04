@@ -1,5 +1,6 @@
 import Elysia, { t } from "elysia";
 import { SessionService } from "../../../repositories/sessionService";
+import { ExerciseService } from "../../../repositories/exerciseService";
 import {
   getAuthUser,
   requireAuth,
@@ -12,6 +13,7 @@ export const sessionExercisesCreateHandler = new Elysia()
   }))
   .onBeforeHandle(requireAuth)
   .use(SessionService)
+  .use(ExerciseService)
   .post(
     "/sessions/:sessionId/exercises",
     async (ctx) => {
@@ -26,9 +28,22 @@ export const sessionExercisesCreateHandler = new Elysia()
         return { error: "Session not found" };
       }
 
+      // Snapshot the visible exercise's category when it is attached. PR
+      // semantics must describe what the athlete logged in this session, even
+      // if the reusable exercise is recategorised later.
+      const sourceExercise = await ctx.ExerciseRepository.getById(
+        body.exerciseId as string,
+        userId,
+      );
+      if (!sourceExercise) {
+        ctx.set.status = 404;
+        return { error: "Exercise not found" };
+      }
+
       const exerciseData = {
         sessionId,
         exerciseId: body.exerciseId as string,
+        exerciseCategory: sourceExercise.category ?? "strength",
         sortOrder: (body.sortOrder as number) ?? 1,
         notes: body.notes as string | undefined,
         // M3 active-session fields. Defaults match the column defaults

@@ -202,7 +202,7 @@ describe("SetLogger", () => {
     });
   });
 
-  it("hydrates metric values and clears or ignores invalid activity input", () => {
+  it("hydrates metric values and clears invalid activity input", () => {
     const onChange = jest.fn();
     const baseProps = {
       set: buildSet(),
@@ -229,8 +229,9 @@ describe("SetLogger", () => {
     expect(onChange).toHaveBeenCalledWith({ distanceMeters: null });
     onChange.mockClear();
     fireEvent.changeText(getByTestId("set-logger-duration"), "1:99");
-    fireEvent.changeText(getByTestId("set-logger-distance"), "not-a-number");
-    expect(onChange).not.toHaveBeenCalled();
+    fireEvent.changeText(getByTestId("set-logger-distance"), "1.2.3");
+    expect(onChange).toHaveBeenNthCalledWith(1, { durationSeconds: null });
+    expect(onChange).toHaveBeenNthCalledWith(2, { distanceMeters: null });
 
     rerender(
       <SetLogger

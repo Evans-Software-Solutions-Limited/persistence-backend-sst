@@ -98,6 +98,7 @@ describe("SessionSummaryPresenter — Phase 3b legacy port", () => {
         {...baseProps}
         totalDistanceMeters={5_000}
         durationSeconds={1_500}
+        hasCardioActivity
         activityEnvironment="outdoor"
         locationName="Victoria Park"
       />,

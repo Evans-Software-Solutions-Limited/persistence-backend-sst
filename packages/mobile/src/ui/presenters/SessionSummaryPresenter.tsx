@@ -102,6 +102,7 @@ export type SessionSummaryPresenterProps = {
   weightUnit?: WeightUnit;
   durationSeconds?: number;
   totalDistanceMeters?: number;
+  hasCardioActivity?: boolean;
   activityEnvironment?: "indoor" | "outdoor" | null;
   locationName?: string | null;
   onSave: () => void;
@@ -145,6 +146,7 @@ export function SessionSummaryPresenter(props: SessionSummaryPresenterProps) {
     weightUnit = "kg",
     durationSeconds = 0,
     totalDistanceMeters = 0,
+    hasCardioActivity = false,
     activityEnvironment = null,
     locationName = null,
     onSave,
@@ -216,17 +218,17 @@ export function SessionSummaryPresenter(props: SessionSummaryPresenterProps) {
           <View style={styles.statCard} testID="summary-stat-total-volume">
             <IconDumbbell size={28} color={color.$info} />
             <Text style={styles.statValue}>
-              {totalDistanceMeters > 0
+              {hasCardioActivity
                 ? `${distanceValue.toFixed(2)} ${activityDistanceUnit(preferredUnits)}`
                 : formatVolumeShared(totalVolume, weightUnit)}
             </Text>
             <Text style={styles.statLabel}>
-              {totalDistanceMeters > 0 ? "Distance" : "Total Volume"}
+              {hasCardioActivity ? "Distance" : "Total Volume"}
             </Text>
           </View>
         </View>
 
-        {totalDistanceMeters > 0 && (
+        {hasCardioActivity && (
           <Text style={styles.cardioDuration} testID="summary-cardio-duration">
             Time {Math.floor(durationSeconds / 60)}:
             {Math.round(durationSeconds % 60)
