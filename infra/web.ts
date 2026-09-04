@@ -237,6 +237,5 @@ export const frontend = new sst.aws.StaticSite("web", {
     // /admin/login renders "not configured" and nothing else changes.
     VITE_SUPABASE_URL: supabaseUrl,
     VITE_SUPABASE_ANON_KEY: process.env.VITE_SUPABASE_ANON_KEY ?? "",
-    VITE_FOUNDING_SEATS_USED: process.env.VITE_FOUNDING_SEATS_USED ?? "0",
   },
 });

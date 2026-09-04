@@ -32,10 +32,22 @@ export function AdminGrants() {
     onSuccess: () =>
       void qc.invalidateQueries({ queryKey: ["admin", "grants"] }),
   });
+  const extend = useMutation({
+    mutationFn: ({
+      id,
+      months,
+      reason,
+    }: {
+      id: string;
+      months: number;
+      reason: string;
+    }) => adminApi.extendGrant(id, months, reason),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["admin"] }),
+  });
 
   return (
     <>
-      <PageHeader title="Founding grants">
+      <PageHeader title="Access grants">
         <label className="flex items-center gap-2 text-sm text-muted-foreground">
           <input
             type="checkbox"
@@ -48,7 +60,7 @@ export function AdminGrants() {
           variant={showNew ? "outline" : "default"}
           onClick={() => setParams(showNew ? {} : { new: "1" })}
         >
-          {showNew ? "Close form" : "New grant"}
+          {showNew ? "Close form" : "New access grant"}
         </Button>
       </PageHeader>
 
@@ -60,6 +72,7 @@ export function AdminGrants() {
 
       {revoke.isError ? <ErrorState error={revoke.error} /> : null}
       {resend.isError ? <ErrorState error={resend.error} /> : null}
+      {extend.isError ? <ErrorState error={extend.error} /> : null}
 
       <Panel>
         {grants.isError ? <ErrorState error={grants.error} /> : null}
@@ -71,11 +84,12 @@ export function AdminGrants() {
             head={[
               "Email",
               "Tier",
-              "Paid",
-              "Method",
-              "Ref",
+              "Kind",
+              "Length",
+              "Contribution",
+              "Reference",
               "Code",
-              "Paid on",
+              "Contributed on",
               "Access until",
               "Status",
               "Invite",
@@ -93,18 +107,28 @@ export function AdminGrants() {
               >
                 <td className="whitespace-nowrap">{g.email}</td>
                 <td>{g.tierLabel ?? g.tierName}</td>
-                <td className="tabular-nums">
-                  {formatMinor(g.amountMinor, g.currency)}
+                <td>
+                  {g.grantKind === "founding" ? "Founding" : "Complimentary"}
                 </td>
-                <td>{g.paymentMethod.replace(/_/g, " ")}</td>
+                <td>{g.months} months</td>
+                <td className="tabular-nums">
+                  {g.contributionAmountMinor > 0
+                    ? formatMinor(
+                        g.contributionAmountMinor,
+                        g.contributionCurrency,
+                      )
+                    : "None"}
+                </td>
                 <td
                   className="max-w-32 truncate"
-                  title={g.paymentReference ?? ""}
+                  title={g.contributionReference ?? ""}
                 >
-                  {g.paymentReference ?? "—"}
+                  {g.contributionReference ?? "—"}
                 </td>
                 <td title={g.referralLabel ?? ""}>{g.referralCode ?? "—"}</td>
-                <td className="whitespace-nowrap">{formatDate(g.paidAt)}</td>
+                <td className="whitespace-nowrap">
+                  {formatDate(g.contributedAt)}
+                </td>
                 <td className="whitespace-nowrap">
                   {g.status === "pending"
                     ? "on sign-up"
@@ -125,6 +149,36 @@ export function AdminGrants() {
                     </span>
                   ) : !g.revokedAt ? (
                     <div className="flex gap-1">
+                      <Button
+                        size="xs"
+                        variant="ghost"
+                        disabled={extend.isPending}
+                        onClick={() => {
+                          const rawMonths = window.prompt(
+                            "How many extra months?",
+                            "1",
+                          );
+                          if (!rawMonths) return;
+                          const months = Number(rawMonths);
+                          if (
+                            !Number.isInteger(months) ||
+                            months < 1 ||
+                            months > 120
+                          )
+                            return;
+                          const reason = window.prompt(
+                            `Why extend ${g.email}'s access?`,
+                          );
+                          if (reason && reason.trim().length >= 3)
+                            extend.mutate({
+                              id: g.id,
+                              months,
+                              reason: reason.trim(),
+                            });
+                        }}
+                      >
+                        Extend
+                      </Button>
                       <Button
                         size="xs"
                         variant="ghost"

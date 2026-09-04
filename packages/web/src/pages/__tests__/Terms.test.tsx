@@ -3,14 +3,19 @@ import { renderPage } from "@/test-utils";
 import Terms from "../Terms";
 
 describe("Terms", () => {
-  it("distinguishes renewable app-store subscriptions from fixed-term offers", () => {
+  it("distinguishes renewable subscriptions from administrative grants", () => {
     renderPage(<Terms />, { route: "/terms" });
 
     expect(
       screen.getByText(/Standard in-app subscriptions.*renew automatically/s),
     ).toBeDefined();
     expect(
-      screen.getByText(/founding offer.*do not renew automatically/s),
+      screen.getByText(
+        /grant is not a purchase.*does not renew automatically/s,
+      ),
+    ).toBeDefined();
+    expect(
+      screen.getByText(/crowdfunding contribution is separate/),
     ).toBeDefined();
   });
 });

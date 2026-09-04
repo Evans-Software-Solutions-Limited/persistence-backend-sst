@@ -1,31 +1,24 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen } from "@testing-library/react";
 import { renderPage } from "@/test-utils";
 
 const api = vi.hoisted(() => ({
   catalogue: vi.fn(async () => ({
     offers: {
-      premium: {
-        months: 6,
-        priceMinor: 3000,
-        pool: "consumer",
-        label: "Premium",
-      },
-      premium_plus: {
-        months: 6,
-        priceMinor: 5000,
-        pool: "consumer",
-        label: "Premium+",
-      },
+      premium: { months: 6, pool: "consumer", label: "Premium" },
+      premium_plus: { months: 6, pool: "consumer", label: "Premium+" },
       start_up_coach_plus: {
         months: 6,
-        priceMinor: 9900,
         pool: "coach",
         label: "Start Up Coach+",
       },
     },
     caps: { consumer: 200, coach: 20 },
-    paymentMethods: ["bank_transfer", "stripe_link", "card_in_person", "other"],
+    contributionMethods: [
+      "bank_transfer",
+      "stripe_link",
+      "card_in_person",
+      "other",
+    ],
   })),
   lookupUser: vi.fn(),
   createGrant: vi.fn(),
@@ -36,7 +29,6 @@ vi.mock("../adminApi", async (importOriginal) => {
 });
 
 import { NewGrantForm } from "../pages/NewGrantForm";
-import { AdminApiError } from "../adminApi";
 
 describe("NewGrantForm", () => {
   beforeEach(() => {
@@ -44,263 +36,188 @@ describe("NewGrantForm", () => {
     api.lookupUser.mockResolvedValue({ account: null, pendingGrants: [] });
   });
 
-  it("looks the email up, prefills the tier price, confirms, then submits the grant payload", async () => {
+  it("creates free complimentary access with a chosen duration", async () => {
     api.createGrant.mockResolvedValue({
       grantId: "g1",
       status: "pending",
-      email: "new@x.co",
+      email: "friend@x.co",
       userId: null,
       tierName: "premium_plus",
+      grantKind: "complimentary",
+      months: 18,
       expiresAt: null,
       invited: true,
       inviteError: null,
-      seats: { pool: "consumer", used: 3, cap: 200 },
-      referral: { code: "UONFRESHERS", label: "UoN" },
+      seats: null,
+      referral: null,
     });
     renderPage(<NewGrantForm />);
-    await screen.findByText("Premium+");
+    await screen.findByRole("option", { name: "Premium+" });
 
-    fireEvent.change(screen.getByLabelText(/Their email/), {
-      target: { value: "New@X.co" },
+    fireEvent.change(screen.getByLabelText(/Recipient email/), {
+      target: { value: "Friend@X.co" },
     });
     await screen.findByText(/No account yet/);
-    expect(api.lookupUser).toHaveBeenCalledWith("new@x.co");
-
-    fireEvent.click(screen.getByLabelText(/Premium\+/));
-    await waitFor(() =>
-      expect(
-        (screen.getByLabelText(/Amount paid/) as HTMLInputElement).value,
-      ).toBe("50.00"),
-    );
-    fireEvent.change(screen.getByLabelText(/Referral \/ vendor code/), {
-      target: { value: "uonfreshers" },
+    fireEvent.click(screen.getByLabelText(/Complimentary/));
+    fireEvent.change(screen.getByLabelText("Tier"), {
+      target: { value: "premium_plus" },
     });
-    fireEvent.change(screen.getByLabelText(/Payment reference/), {
-      target: { value: "SUMUP-1" },
+    fireEvent.change(screen.getByLabelText(/Access length/), {
+      target: { value: "18" },
     });
-    fireEvent.change(screen.getByLabelText(/Amount paid/), {
-      target: { value: "49.50" },
-    });
-    fireEvent.change(screen.getByLabelText(/Paid by/), {
-      target: { value: "other" },
-    });
-    fireEvent.change(screen.getByLabelText(/Paid on/), {
-      target: { value: "2026-09-04" },
-    });
-    fireEvent.change(screen.getByLabelText(/Notes/), {
-      target: { value: "Founders fair" },
-    });
-    fireEvent.click(screen.getByLabelText(/Send them/));
-
-    // First click arms the confirmation; Back disarms it without submitting.
-    fireEvent.click(screen.getByRole("button", { name: "Grant" }));
-    expect(api.createGrant).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Back" }));
-    expect(screen.getByRole("button", { name: "Grant" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Grant" }));
+    fireEvent.click(screen.getByRole("button", { name: "Grant access" }));
     fireEvent.click(
       await screen.findByRole("button", {
-        name: /Confirm: Premium\+ for New@X.co — £49.50/,
+        name: /Confirm complimentary Premium\+ for 18 months/,
       }),
     );
 
     await screen.findByText(/applies when they sign up/);
     expect(api.createGrant).toHaveBeenCalledWith(
       expect.objectContaining({
-        email: "new@x.co",
+        email: "friend@x.co",
         tierName: "premium_plus",
-        amountMinor: 4950,
-        paymentMethod: "other",
-        paymentReference: "SUMUP-1",
-        paidAt: "2026-09-04T12:00:00.000Z",
-        referralCode: "UONFRESHERS",
-        notes: "Founders fair",
-        sendInvite: false,
-        allowRoleChange: false,
-        allowSupersedeStoreSubscription: false,
+        grantKind: "complimentary",
+        months: 18,
       }),
     );
-    expect(screen.getByText("197 of 200")).toBeTruthy();
-    expect(screen.getByText(/UoN \(UONFRESHERS\)/)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Next person" }));
-    expect(
-      (screen.getByLabelText(/Their email/) as HTMLInputElement).value,
-    ).toBe("");
+    expect(api.createGrant.mock.calls[0][0]).not.toHaveProperty(
+      "contributionAmountMinor",
+    );
+    expect(screen.queryByText(/places left/)).toBeNull();
   });
 
-  it("blocks a consumer tier on a coach account until the role change is acknowledged", async () => {
+  it("records an optional contribution without using it to choose access", async () => {
+    api.createGrant.mockResolvedValue({
+      grantId: "g2",
+      status: "pending",
+      email: "founder@x.co",
+      userId: null,
+      tierName: "premium",
+      grantKind: "founding",
+      months: 9,
+      expiresAt: null,
+      invited: false,
+      inviteError: null,
+      seats: { pool: "consumer", used: 1, cap: 200 },
+      referral: null,
+    });
+    renderPage(<NewGrantForm />);
+    await screen.findByRole("option", { name: "Premium" });
+    fireEvent.change(screen.getByLabelText(/Recipient email/), {
+      target: { value: "founder@x.co" },
+    });
+    await screen.findByText(/No account yet/);
+    fireEvent.change(screen.getByLabelText(/Access length/), {
+      target: { value: "9" },
+    });
+    fireEvent.click(screen.getByLabelText(/Record a separate crowdfunding/));
+    expect(
+      screen.getByText(/does not buy, determine, or extend access/i),
+    ).toBeDefined();
+    fireEvent.change(screen.getByLabelText(/Contribution \(£\)/), {
+      target: { value: "42.50" },
+    });
+    fireEvent.change(screen.getByLabelText("Method"), {
+      target: { value: "other" },
+    });
+    fireEvent.change(screen.getByLabelText(/Reference/), {
+      target: { value: "CROWD-42" },
+    });
+    fireEvent.change(screen.getByLabelText(/Contribution date/), {
+      target: { value: "2026-09-04" },
+    });
+    fireEvent.change(screen.getByLabelText(/Referral code/), {
+      target: { value: "friends" },
+    });
+    fireEvent.change(screen.getByLabelText(/Notes/), {
+      target: { value: "Separate contribution" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Grant access" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    fireEvent.click(screen.getByRole("button", { name: "Grant access" }));
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: /Confirm founding Premium for 9 months/,
+      }),
+    );
+
+    await screen.findByText(/applies when they sign up/);
+    expect(api.createGrant).toHaveBeenCalledWith(
+      expect.objectContaining({
+        grantKind: "founding",
+        months: 9,
+        contributionAmountMinor: 4250,
+        contributionCurrency: "GBP",
+        contributionMethod: "other",
+        contributionReference: "CROWD-42",
+        referralCode: "FRIENDS",
+        notes: "Separate contribution",
+      }),
+    );
+    expect(screen.getByText("199 of 200")).toBeDefined();
+  });
+
+  it("blocks a coach with live store access from being displaced", async () => {
     api.lookupUser.mockResolvedValue({
       account: {
-        id: "c1",
+        id: "u1",
         email: "coach@x.co",
         role: "personal_trainer",
-        subscription: null,
+        subscription: {
+          tierName: "start_up_coach_plus",
+          paymentStatus: "active",
+          expiresAt: "2027-01-01",
+          cancelledAt: null,
+          externalSubscriptionId: "rc_1",
+          fromStore: true,
+        },
         attribution: null,
         foundingGrants: [],
       },
       pendingGrants: [],
     });
     renderPage(<NewGrantForm />);
-    await screen.findByText("Premium");
-    fireEvent.change(screen.getByLabelText(/Their email/), {
+    await screen.findByRole("option", { name: "Premium" });
+    fireEvent.change(screen.getByLabelText(/Recipient email/), {
       target: { value: "coach@x.co" },
     });
-    await screen.findByText(/Account exists \(personal_trainer\)/);
-    const warning = await screen.findByText(/This is a coach account/);
-    expect(warning).toBeTruthy();
     expect(
-      (screen.getByRole("button", { name: "Grant" }) as HTMLButtonElement)
-        .disabled,
+      await screen.findByText(/Account exists.*currently start_up_coach_plus/),
+    ).toBeDefined();
+    expect(
+      screen.getByText(/cannot be displaced by an admin grant/),
+    ).toBeDefined();
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Grant access",
+        }) as HTMLButtonElement
+      ).disabled,
     ).toBe(true);
-    fireEvent.click(
-      screen.getByRole("checkbox", { name: /This is a coach account/ }),
-    );
-    expect(
-      (screen.getByRole("button", { name: "Grant" }) as HTMLButtonElement)
-        .disabled,
-    ).toBe(false);
   });
 
-  it("refuses a second live grant for the same email", async () => {
+  it("directs duplicate recipients to extend the existing grant", async () => {
     api.lookupUser.mockResolvedValue({
       account: null,
       pendingGrants: [
-        {
-          id: "g0",
-          tierName: "premium",
-          paidAt: "2026-09-01",
-          invitedAt: null,
-        },
+        { id: "g0", tierName: "premium", months: 6, invitedAt: null },
       ],
     });
     renderPage(<NewGrantForm />);
-    await screen.findByText("Premium");
-    fireEvent.change(screen.getByLabelText(/Their email/), {
+    await screen.findByRole("option", { name: "Premium" });
+    fireEvent.change(screen.getByLabelText(/Recipient email/), {
       target: { value: "dup@x.co" },
     });
-    await screen.findByText(/already has a live founding grant/);
     expect(
-      (screen.getByRole("button", { name: "Grant" }) as HTMLButtonElement)
-        .disabled,
-    ).toBe(true);
-  });
-
-  it("requires a reference only for bank transfer and Stripe", async () => {
-    renderPage(<NewGrantForm />);
-    await screen.findByText("Premium");
-    const method = screen.getByLabelText(/Paid by/);
-
+      await screen.findByText(/Extend it from the grants table/),
+    ).toBeDefined();
     expect(
       (
-        screen.getByLabelText(
-          /Payment reference \(optional\)/,
-        ) as HTMLInputElement
-      ).required,
-    ).toBe(false);
-    fireEvent.change(method, { target: { value: "bank_transfer" } });
-    expect(
-      (
-        screen.getByLabelText(
-          /Payment reference \(required\)/,
-        ) as HTMLInputElement
-      ).required,
+        screen.getByRole("button", {
+          name: "Grant access",
+        }) as HTMLButtonElement
+      ).disabled,
     ).toBe(true);
-    fireEvent.change(method, { target: { value: "stripe_link" } });
-    expect(
-      (
-        screen.getByLabelText(
-          /Payment reference \(required\)/,
-        ) as HTMLInputElement
-      ).required,
-    ).toBe(true);
-    fireEvent.change(method, { target: { value: "other" } });
-    expect(
-      (
-        screen.getByLabelText(
-          /Payment reference \(optional\)/,
-        ) as HTMLInputElement
-      ).required,
-    ).toBe(false);
-  });
-
-  it("blocks a store subscriber until the override is acknowledged and sends the flag", async () => {
-    api.lookupUser.mockResolvedValue({
-      account: {
-        id: "u1",
-        email: "store@x.co",
-        role: null,
-        subscription: {
-          tierName: "premium",
-          paymentStatus: "active",
-          expiresAt: "2026-10-01T00:00:00Z",
-          cancelledAt: null,
-          externalSubscriptionId: "rc_u1",
-          fromStore: true,
-        },
-        attribution: {
-          code: "STOREBUYER",
-          label: "Store buyer",
-          lockedAt: null,
-        },
-        foundingGrants: [],
-      },
-      pendingGrants: [],
-    });
-    api.createGrant.mockResolvedValue({
-      grantId: "g1",
-      status: "active",
-      email: "store@x.co",
-      userId: "u1",
-      tierName: "premium",
-      expiresAt: "2027-03-04T00:00:00Z",
-      invited: false,
-      inviteError: "delivery unavailable",
-      seats: { pool: "consumer", used: 1, cap: 200 },
-      referral: null,
-    });
-    renderPage(<NewGrantForm />);
-    await screen.findByText("Premium");
-    fireEvent.change(screen.getByLabelText(/Their email/), {
-      target: { value: "store@x.co" },
-    });
-    const checkbox = await screen.findByRole("checkbox", {
-      name: /live App Store subscription/,
-    });
-    expect(
-      (screen.getByRole("button", { name: "Grant" }) as HTMLButtonElement)
-        .disabled,
-    ).toBe(true);
-    fireEvent.click(checkbox);
-    fireEvent.click(screen.getByRole("button", { name: "Grant" }));
-    fireEvent.click(
-      await screen.findByRole("button", { name: /Confirm: Premium/ }),
-    );
-    await screen.findByText(/access is live/);
-    expect(api.createGrant).toHaveBeenCalledWith(
-      expect.objectContaining({ allowSupersedeStoreSubscription: true }),
-    );
-  });
-
-  it("shows readable copy for a store-subscription conflict returned by the API", async () => {
-    api.lookupUser.mockResolvedValue({ account: null, pendingGrants: [] });
-    api.createGrant.mockRejectedValue(
-      new AdminApiError(409, {
-        code: "active_store_subscription",
-        message: "raw server message",
-      }),
-    );
-    renderPage(<NewGrantForm />);
-    await screen.findByText("Premium");
-    fireEvent.change(screen.getByLabelText(/Their email/), {
-      target: { value: "buyer@x.co" },
-    });
-    await screen.findByText(/No account yet/);
-    fireEvent.click(screen.getByRole("button", { name: "Grant" }));
-    fireEvent.click(
-      await screen.findByRole("button", { name: /Confirm: Premium/ }),
-    );
-    expect(
-      await screen.findByText(/tick the store-subscription override/),
-    ).toBeTruthy();
   });
 });

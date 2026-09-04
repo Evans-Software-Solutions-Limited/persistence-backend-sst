@@ -8,7 +8,6 @@ import {
 } from "../../founding/foundingGrantService";
 import {
   FOUNDING_OFFERS,
-  FOUNDING_POOL_CAPS,
   FOUNDING_PAYMENT_METHODS,
 } from "../../founding/foundingOffer";
 
@@ -35,12 +34,24 @@ function grantErrorResponse(error: GrantError): {
       };
     case "invalid_email":
       return { status: 400, body: { message: "Enter a valid email address" } };
-    case "payment_reference_required":
+    case "invalid_months":
+      return {
+        status: 400,
+        body: { message: "Months must be between 1 and 120" },
+      };
+    case "invalid_contribution":
       return {
         status: 400,
         body: {
-          message: "Enter the bank or Stripe reference for this payment",
-          code: "payment_reference_required",
+          message: "Contribution details are incomplete or inconsistent",
+        },
+      };
+    case "contribution_reference_required":
+      return {
+        status: 400,
+        body: {
+          message: "Enter the bank or Stripe reference for this contribution",
+          code: "contribution_reference_required",
         },
       };
     case "account_pending_deletion":
@@ -68,7 +79,7 @@ function grantErrorResponse(error: GrantError): {
         status: 409,
         body: {
           message:
-            "This account has a live App Store subscription. A founding grant would be undone by the next store sync. Grant after it expires, or confirm the override.",
+            "This account has a live App Store or Play Store subscription. Grant access after the store subscription expires.",
           code: "active_store_subscription",
           subscription: error.subscription,
         },
@@ -93,21 +104,35 @@ function grantErrorResponse(error: GrantError): {
     case "duplicate":
       return {
         status: 409,
-        body: { message: "This person already has a live founding grant" },
+        body: { message: "This person already has a live access grant" },
       };
   }
 }
 
 /** /admin/founding-grants — catalogue, list, create (+invite), revoke, resend. */
+const catalogueOffers = Object.fromEntries(
+  Object.entries(FOUNDING_OFFERS).map(([tier, offer]) => [
+    tier,
+    { months: offer.months, pool: offer.pool, label: offer.label },
+  ]),
+);
+
 export const adminFoundingGrantsHandler = new Elysia()
   .use(adminGuard)
-  .get("/admin/founding-grants/catalogue", () => ({
-    data: {
-      offers: FOUNDING_OFFERS,
-      caps: FOUNDING_POOL_CAPS,
-      paymentMethods: FOUNDING_PAYMENT_METHODS,
-    },
-  }))
+  .get("/admin/founding-grants/catalogue", async () => {
+    const repo = new FoundingGrantRepository();
+    const [consumer, coach] = await Promise.all([
+      repo.seatsForPool("consumer"),
+      repo.seatsForPool("coach"),
+    ]);
+    return {
+      data: {
+        offers: catalogueOffers,
+        caps: { consumer: consumer.cap, coach: coach.cap },
+        contributionMethods: FOUNDING_PAYMENT_METHODS,
+      },
+    };
+  })
   .get(
     "/admin/founding-grants",
     async ({ query }) => ({
@@ -128,26 +153,28 @@ export const adminFoundingGrantsHandler = new Elysia()
     "/admin/founding-grants",
     async (ctx) => {
       const { sub: actorId } = getUser(ctx);
-      const paidAt = ctx.body.paidAt ? new Date(ctx.body.paidAt) : undefined;
-      if (paidAt && Number.isNaN(paidAt.getTime())) {
+      const contributedAt = ctx.body.contributedAt
+        ? new Date(ctx.body.contributedAt)
+        : undefined;
+      if (contributedAt && Number.isNaN(contributedAt.getTime())) {
         ctx.set.status = 400;
-        return { message: "paidAt is not a valid date" };
+        return { message: "contributedAt is not a valid date" };
       }
       const outcome = await new FoundingGrantService().grant(
         {
           email: ctx.body.email,
           userId: ctx.body.userId,
           tierName: ctx.body.tierName,
-          amountMinor: ctx.body.amountMinor,
-          currency: ctx.body.currency,
-          paymentMethod: ctx.body.paymentMethod,
-          paymentReference: ctx.body.paymentReference ?? null,
-          paidAt,
+          grantKind: ctx.body.grantKind,
+          months: ctx.body.months,
+          contributionAmountMinor: ctx.body.contributionAmountMinor,
+          contributionCurrency: ctx.body.contributionCurrency,
+          contributionMethod: ctx.body.contributionMethod ?? null,
+          contributionReference: ctx.body.contributionReference ?? null,
+          contributedAt,
           referralCode: ctx.body.referralCode ?? null,
           notes: ctx.body.notes ?? null,
           allowRoleChange: ctx.body.allowRoleChange ?? false,
-          allowSupersedeStoreSubscription:
-            ctx.body.allowSupersedeStoreSubscription ?? false,
           sendInvite: ctx.body.sendInvite ?? true,
         },
         actorId,
@@ -165,16 +192,50 @@ export const adminFoundingGrantsHandler = new Elysia()
         email: t.Optional(t.String({ maxLength: 320 })),
         userId: t.Optional(t.String({ format: "uuid" })),
         tierName: t.String(),
-        amountMinor: t.Optional(t.Integer({ minimum: 0 })),
-        currency: t.Optional(t.String({ minLength: 3, maxLength: 3 })),
-        paymentMethod: PAYMENT_METHOD,
-        paymentReference: t.Optional(t.Nullable(t.String({ maxLength: 200 }))),
-        paidAt: t.Optional(t.String()),
+        grantKind: t.Union([t.Literal("founding"), t.Literal("complimentary")]),
+        months: t.Integer({ minimum: 1, maximum: 120 }),
+        contributionAmountMinor: t.Optional(t.Integer({ minimum: 0 })),
+        contributionCurrency: t.Optional(
+          t.String({ minLength: 3, maxLength: 3 }),
+        ),
+        contributionMethod: t.Optional(t.Nullable(PAYMENT_METHOD)),
+        contributionReference: t.Optional(
+          t.Nullable(t.String({ maxLength: 200 })),
+        ),
+        contributedAt: t.Optional(t.String()),
         referralCode: t.Optional(t.Nullable(t.String({ maxLength: 64 }))),
         notes: t.Optional(t.Nullable(t.String({ maxLength: 2000 }))),
         allowRoleChange: t.Optional(t.Boolean()),
-        allowSupersedeStoreSubscription: t.Optional(t.Boolean()),
         sendInvite: t.Optional(t.Boolean()),
+      }),
+    },
+  )
+  .post(
+    "/admin/founding-grants/:id/extend",
+    async (ctx) => {
+      const { sub: actorId } = getUser(ctx);
+      const res = await new FoundingGrantService().extend(
+        ctx.params.id,
+        ctx.body.additionalMonths,
+        ctx.body.reason,
+        actorId,
+      );
+      if (!res.ok) {
+        ctx.set.status =
+          res.error === "not_found"
+            ? 404
+            : res.error === "invalid_months"
+              ? 400
+              : 409;
+        return { message: res.error, code: res.error };
+      }
+      return { data: res.result };
+    },
+    {
+      params: t.Object({ id: t.String({ format: "uuid" }) }),
+      body: t.Object({
+        additionalMonths: t.Integer({ minimum: 1, maximum: 120 }),
+        reason: t.String({ minLength: 3, maxLength: 500 }),
       }),
     },
   )

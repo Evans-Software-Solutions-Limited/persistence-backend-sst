@@ -820,7 +820,7 @@ function ManageScreen(props: IOSPurchaseFlowPresenterProps) {
               >
                 <Text style={styles.manageCadence}>
                   {props.isFoundingAccess
-                    ? "Founding access"
+                    ? "Granted access"
                     : cadence === null
                       ? "Current billing period"
                       : cadence === "annual"

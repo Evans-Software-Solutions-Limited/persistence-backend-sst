@@ -1,6 +1,7 @@
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
   foundingGrants,
+  foundingPoolLimits,
   profiles,
   referralCodes,
   subscriptionTiers,
@@ -9,7 +10,6 @@ import {
 } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
 import {
-  FOUNDING_POOL_CAPS,
   addMonths,
   foundingExternalId,
   tiersInPool,
@@ -27,7 +27,8 @@ import type { DatabaseTransaction } from "./referralRepository";
 /**
  * Founding-member grants (FOUNDING-OFFER BACKEND_BRIEF § 1, § 5).
  *
- * A grant is the record of an off-app payment. It becomes an entitlement by
+ * A grant is a direct administrative entitlement. An optional contribution may
+ * be recorded alongside it but never determines access. A grant becomes active by
  * creating a direct `user_subscriptions` row (BRIEF D3) — either immediately
  * (the buyer already has an account) or later, when a PENDING grant is applied
  * on the buyer's first authenticated read after signing up with that email.
@@ -44,11 +45,12 @@ export interface GrantListRow {
   tierName: string;
   tierLabel: string | null;
   months: number;
-  amountMinor: number;
-  currency: string;
-  paymentMethod: string;
-  paymentReference: string | null;
-  paidAt: Date;
+  grantKind: "founding" | "complimentary";
+  contributionAmountMinor: number;
+  contributionCurrency: string;
+  contributionMethod: string | null;
+  contributionReference: string | null;
+  contributedAt: Date | null;
   referralCode: string | null;
   referralLabel: string | null;
   subscriptionExpiresAt: Date | null;
@@ -67,15 +69,15 @@ export interface CreateGrantInput {
   email: string;
   tierName: FoundingTierName;
   months: number;
+  grantKind?: "founding" | "complimentary";
   amountMinor: number;
   currency: string;
-  paymentMethod: FoundingPaymentMethod;
+  paymentMethod: FoundingPaymentMethod | null;
   paymentReference: string | null;
-  paidAt: Date;
+  paidAt: Date | null;
   referralCodeId: string | null;
   grantedBy: string;
   notes: string | null;
-  allowSupersedeStoreSubscription?: boolean;
 }
 
 export type CreateGrantOutcome =
@@ -83,7 +85,7 @@ export type CreateGrantOutcome =
       kind: "created";
       grant: FoundingGrant;
       subscriptionExpiresAt: Date | null;
-      seats: { pool: FoundingPool; used: number; cap: number };
+      seats: { pool: FoundingPool; used: number; cap: number } | null;
     }
   | {
       kind: "pool_full";
@@ -109,6 +111,16 @@ export interface PendingGrantTransactionContext {
   grant: FoundingGrant;
   expiresAt: Date;
 }
+
+export type ExtendGrantOutcome =
+  | { kind: "extended"; grant: FoundingGrant; expiresAt: Date | null }
+  | {
+      kind: "invalid_months" | "not_found" | "revoked" | "account_deleted";
+    }
+  | {
+      kind: "active_store_subscription";
+      subscription: { tierName: string; expiresAt: Date | null };
+    };
 
 function statusOf(row: {
   userId: string | null;
@@ -188,6 +200,7 @@ export class FoundingGrantRepository {
       .where(
         and(
           isNull(foundingGrants.revokedAt),
+          eq(foundingGrants.grantKind, "founding"),
           inArray(foundingGrants.tierName, tiersInPool(pool)),
         ),
       );
@@ -221,7 +234,13 @@ export class FoundingGrantRepository {
   ): Promise<{ pool: FoundingPool; used: number; cap: number }> {
     const db = getDb();
     const used = await this.countLiveInPool(db, pool);
-    return { pool, used, cap: FOUNDING_POOL_CAPS[pool] };
+    const limits = await db
+      .select({ cap: foundingPoolLimits.cap })
+      .from(foundingPoolLimits)
+      .where(eq(foundingPoolLimits.pool, pool))
+      .limit(1);
+    if (!limits[0]) throw new Error(`Missing founding pool limit: ${pool}`);
+    return { pool, used, cap: limits[0].cap };
   }
 
   /**
@@ -237,8 +256,8 @@ export class FoundingGrantRepository {
       userId: string;
       tierName: FoundingTierName;
       months: number;
-      paidAt: Date;
-      paymentMethod: string;
+      paidAt: Date | null;
+      paymentMethod: string | null;
       paymentReference: string | null;
       referralCodeId: string | null;
     },
@@ -269,12 +288,12 @@ export class FoundingGrantRepository {
         billingCycle: "monthly",
         externalSubscriptionId: foundingExternalId(input.grantId),
         metadata: {
-          source: "founding_offer",
+          source: "administrative_grant",
           grant_id: input.grantId,
-          payment_method: input.paymentMethod,
-          payment_reference: input.paymentReference,
+          contribution_method: input.paymentMethod,
+          contribution_reference: input.paymentReference,
           referral_code_id: input.referralCodeId,
-          paid_at: input.paidAt.toISOString(),
+          contributed_at: input.paidAt?.toISOString() ?? null,
         },
       })
       .returning({
@@ -287,7 +306,8 @@ export class FoundingGrantRepository {
 
   /**
    * Create a grant (and, when `userId` is set, its subscription row) under the
-   * pool's advisory lock. Returns `pool_full` without writing when the cap is
+   * pool's advisory lock for founding grants. Complimentary grants bypass the
+   * pool. Returns `pool_full` without writing when the cap is
    * reached, `duplicate` when the user/email already holds a live grant.
    */
   async create(
@@ -297,29 +317,42 @@ export class FoundingGrantRepository {
   ): Promise<CreateGrantOutcome> {
     const db = getDb();
     return db.transaction(async (tx) => {
-      await tx.execute(
-        sql`SELECT pg_advisory_xact_lock(hashtext(${"founding_pool_" + pool}))`,
-      );
+      const grantKind = input.grantKind ?? "founding";
+      if (grantKind === "founding") {
+        await tx.execute(
+          sql`SELECT pg_advisory_xact_lock(hashtext(${"founding_pool_" + pool}))`,
+        );
+      }
 
       if (input.userId) {
         await lockUserSubscriptionMutation(tx, input.userId);
-        if (!input.allowSupersedeStoreSubscription) {
-          const storeSubscription = await this.findLiveStoreSubscriptionIn(
-            tx,
-            input.userId,
-          );
-          if (storeSubscription) {
-            return {
-              kind: "active_store_subscription",
-              subscription: storeSubscription,
-            };
-          }
+        const storeSubscription = await this.findLiveStoreSubscriptionIn(
+          tx,
+          input.userId,
+        );
+        if (storeSubscription) {
+          return {
+            kind: "active_store_subscription",
+            subscription: storeSubscription,
+          };
         }
       }
 
-      const cap = FOUNDING_POOL_CAPS[pool];
-      const used = await this.countLiveInPool(tx, pool);
-      if (used >= cap) return { kind: "pool_full", seats: { pool, used, cap } };
+      let seats: { pool: FoundingPool; used: number; cap: number } | null =
+        null;
+      if (grantKind === "founding") {
+        const limits = await tx
+          .select({ cap: foundingPoolLimits.cap })
+          .from(foundingPoolLimits)
+          .where(eq(foundingPoolLimits.pool, pool))
+          .limit(1);
+        if (!limits[0]) throw new Error(`Missing founding pool limit: ${pool}`);
+        const cap = limits[0].cap;
+        const used = await this.countLiveInPool(tx, pool);
+        if (used >= cap)
+          return { kind: "pool_full", seats: { pool, used, cap } };
+        seats = { pool, used: used + 1, cap };
+      }
 
       const dupe = await tx
         .select({ id: foundingGrants.id })
@@ -360,6 +393,7 @@ export class FoundingGrantRepository {
           email: input.email,
           tierName: input.tierName,
           months: input.months,
+          grantKind,
           amountMinor: input.amountMinor,
           currency: input.currency,
           paymentMethod: input.paymentMethod,
@@ -385,12 +419,12 @@ export class FoundingGrantRepository {
         kind: "created",
         grant: rows[0],
         subscriptionExpiresAt,
-        seats: { pool, used: used + 1, cap },
+        seats,
       };
     });
   }
 
-  /** Pending grants (paid, no account yet) for an email, oldest first. */
+  /** Pending grants (no account yet) for an email, oldest first. */
   async findPendingByEmail(email: string): Promise<FoundingGrant[]> {
     const db = getDb();
     return db
@@ -505,6 +539,74 @@ export class FoundingGrantRepository {
     return rows[0] ?? null;
   }
 
+  async extend(
+    id: string,
+    additionalMonths: number,
+    finalize?: (
+      before: FoundingGrant,
+      after: FoundingGrant,
+      expiresAt: Date | null,
+      transaction: DatabaseTransaction,
+    ) => Promise<void>,
+  ): Promise<ExtendGrantOutcome> {
+    const db = getDb();
+    return db.transaction(async (tx) => {
+      const found = await tx
+        .select()
+        .from(foundingGrants)
+        .where(eq(foundingGrants.id, id))
+        .for("update")
+        .limit(1);
+      const before = found[0];
+      if (!before) return { kind: "not_found" };
+      if (before.revokedAt) return { kind: "revoked" };
+      if (before.appliedAt && !before.userId)
+        return { kind: "account_deleted" };
+      if (before.months + additionalMonths > 120)
+        return { kind: "invalid_months" };
+
+      let expiresAt: Date | null = null;
+      if (before.userId) {
+        await lockUserSubscriptionMutation(tx, before.userId);
+        const store = await this.findLiveStoreSubscriptionIn(tx, before.userId);
+        if (store)
+          return { kind: "active_store_subscription", subscription: store };
+        if (!before.subscriptionId) return { kind: "account_deleted" };
+        const subs = await tx
+          .select({ expiresAt: userSubscriptions.expiresAt })
+          .from(userSubscriptions)
+          .where(eq(userSubscriptions.id, before.subscriptionId))
+          .for("update")
+          .limit(1);
+        if (!subs[0]) return { kind: "account_deleted" };
+        const now = new Date();
+        const base =
+          subs[0].expiresAt && subs[0].expiresAt.getTime() > now.getTime()
+            ? subs[0].expiresAt
+            : now;
+        expiresAt = addMonths(base, additionalMonths);
+        await tx
+          .update(userSubscriptions)
+          .set({
+            paymentStatus: "active",
+            expiresAt,
+            cancelledAt: now,
+            updatedAt: now,
+          })
+          .where(eq(userSubscriptions.id, before.subscriptionId));
+      }
+
+      const updated = await tx
+        .update(foundingGrants)
+        .set({ months: before.months + additionalMonths })
+        .where(eq(foundingGrants.id, id))
+        .returning();
+      const after = updated[0];
+      await finalize?.(before, after, expiresAt, tx);
+      return { kind: "extended", grant: after, expiresAt };
+    });
+  }
+
   /**
    * Revoke: stamp the grant and cancel + expire its subscription row (the user
    * reverts to free-tier rules immediately). Idempotent.
@@ -554,11 +656,12 @@ export class FoundingGrantRepository {
         tierName: foundingGrants.tierName,
         tierLabel: subscriptionTiers.displayName,
         months: foundingGrants.months,
-        amountMinor: foundingGrants.amountMinor,
-        currency: foundingGrants.currency,
-        paymentMethod: foundingGrants.paymentMethod,
-        paymentReference: foundingGrants.paymentReference,
-        paidAt: foundingGrants.paidAt,
+        grantKind: foundingGrants.grantKind,
+        contributionAmountMinor: foundingGrants.amountMinor,
+        contributionCurrency: foundingGrants.currency,
+        contributionMethod: foundingGrants.paymentMethod,
+        contributionReference: foundingGrants.paymentReference,
+        contributedAt: foundingGrants.paidAt,
         referralCode: referralCodes.displayCode,
         referralLabel: referralCodes.label,
         subscriptionExpiresAt: userSubscriptions.expiresAt,
@@ -591,7 +694,11 @@ export class FoundingGrantRepository {
       )
       .orderBy(desc(foundingGrants.createdAt))
       .limit(filter.limit ?? 500);
-    return rows.map((r) => ({ ...r, status: statusOf(r) }));
+    return rows.map((r) => ({
+      ...r,
+      grantKind: r.grantKind as "founding" | "complimentary",
+      status: statusOf(r),
+    }));
   }
 
   async listForUser(userId: string): Promise<GrantListRow[]> {
@@ -603,8 +710,12 @@ export class FoundingGrantRepository {
 
   async summary(): Promise<{
     pools: Record<FoundingPool, { used: number; cap: number }>;
-    byTier: Array<{ tierName: string; count: number; revenueMinor: number }>;
-    revenueMinor: number;
+    byTier: Array<{
+      tierName: string;
+      count: number;
+      contributionMinor: number;
+    }>;
+    contributionMinor: number;
     pending: number;
   }> {
     const db = getDb();
@@ -612,7 +723,7 @@ export class FoundingGrantRepository {
       .select({
         tierName: foundingGrants.tierName,
         count: sql<number>`count(*)::int`,
-        revenueMinor: sql<number>`coalesce(sum(${foundingGrants.amountMinor}), 0)::int`,
+        contributionMinor: sql<number>`coalesce(sum(${foundingGrants.amountMinor}), 0)::int`,
         pending: sql<number>`count(*) FILTER (WHERE ${foundingGrants.appliedAt} IS NULL)::int`,
       })
       .from(foundingGrants)
@@ -621,22 +732,19 @@ export class FoundingGrantRepository {
     const byTier = rows.map((r) => ({
       tierName: r.tierName,
       count: Number(r.count ?? 0),
-      revenueMinor: Number(r.revenueMinor ?? 0),
+      contributionMinor: Number(r.contributionMinor ?? 0),
     }));
-    const usedIn = (pool: FoundingPool) =>
-      byTier
-        .filter((t) => (tiersInPool(pool) as string[]).includes(t.tierName))
-        .reduce((n, t) => n + t.count, 0);
+    const [consumer, coach] = await Promise.all([
+      this.seatsForPool("consumer"),
+      this.seatsForPool("coach"),
+    ]);
     return {
       pools: {
-        consumer: {
-          used: usedIn("consumer"),
-          cap: FOUNDING_POOL_CAPS.consumer,
-        },
-        coach: { used: usedIn("coach"), cap: FOUNDING_POOL_CAPS.coach },
+        consumer: { used: consumer.used, cap: consumer.cap },
+        coach: { used: coach.used, cap: coach.cap },
       },
       byTier,
-      revenueMinor: byTier.reduce((n, t) => n + t.revenueMinor, 0),
+      contributionMinor: byTier.reduce((n, t) => n + t.contributionMinor, 0),
       pending: rows.reduce((n, r) => n + Number(r.pending ?? 0), 0),
     };
   }

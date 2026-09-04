@@ -1,5 +1,9 @@
 # FOUNDING-OFFER — hardening brief (post security review)
 
+> **2026-09-04 product amendment:** the approved grant model in `BRIEF.md`
+> replaces the build-time founding-seat variable and mandatory payment record.
+> Security constraints in this brief still apply where they do not conflict.
+
 You are continuing PR #432 (`feat: launch founding offer and referral administration`) on its
 existing branch `feat/founding-offer-admin` in `Evans-Software-Solutions-Limited/persistence-backend-sst`.
 Base: `origin/feat/founding-offer-admin` @ `16831151` or later — `git fetch && git reset --hard origin/feat/founding-offer-admin`

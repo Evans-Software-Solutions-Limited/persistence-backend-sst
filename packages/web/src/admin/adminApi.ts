@@ -67,17 +67,21 @@ export type PaymentMethod =
 export interface Catalogue {
   offers: Record<
     FoundingTierName,
-    { months: number; priceMinor: number; pool: string; label: string }
+    { months: number; pool: string; label: string }
   >;
-  caps: Record<string, number>;
-  paymentMethods: PaymentMethod[];
+  caps: Record<"consumer" | "coach", number>;
+  contributionMethods: PaymentMethod[];
 }
 
 export interface Summary {
   founding: {
     pools: Record<"consumer" | "coach", { used: number; cap: number }>;
-    byTier: Array<{ tierName: string; count: number; revenueMinor: number }>;
-    revenueMinor: number;
+    byTier: Array<{
+      tierName: string;
+      count: number;
+      contributionMinor: number;
+    }>;
+    contributionMinor: number;
     pending: number;
   };
   referrals: { codes: number; claims: number; lockedClaims: number };
@@ -91,11 +95,12 @@ export interface GrantRow {
   tierName: string;
   tierLabel: string | null;
   months: number;
-  amountMinor: number;
-  currency: string;
-  paymentMethod: string;
-  paymentReference: string | null;
-  paidAt: string;
+  grantKind: "founding" | "complimentary";
+  contributionAmountMinor: number;
+  contributionCurrency: string;
+  contributionMethod: string | null;
+  contributionReference: string | null;
+  contributedAt: string | null;
   referralCode: string | null;
   referralLabel: string | null;
   subscriptionExpiresAt: string | null;
@@ -114,24 +119,28 @@ export interface GrantResult {
   email: string;
   userId: string | null;
   tierName: FoundingTierName;
+  grantKind: "founding" | "complimentary";
+  months: number;
   expiresAt: string | null;
   invited: boolean;
   inviteError: string | null;
-  seats: { pool: string; used: number; cap: number };
+  seats: { pool: string; used: number; cap: number } | null;
   referral: { code: string; label: string } | null;
 }
 
 export interface NewGrantInput {
   email: string;
   tierName: FoundingTierName;
-  amountMinor?: number;
-  paymentMethod: PaymentMethod;
-  paymentReference?: string | null;
-  paidAt?: string;
+  grantKind: "founding" | "complimentary";
+  months: number;
+  contributionAmountMinor?: number;
+  contributionCurrency?: string;
+  contributionMethod?: PaymentMethod;
+  contributionReference?: string | null;
+  contributedAt?: string;
   referralCode?: string | null;
   notes?: string | null;
   allowRoleChange?: boolean;
-  allowSupersedeStoreSubscription?: boolean;
   sendInvite?: boolean;
 }
 
@@ -177,7 +186,7 @@ export interface UserLookup {
   pendingGrants: Array<{
     id: string;
     tierName: string;
-    paidAt: string;
+    months: number;
     invitedAt: string | null;
   }>;
 }
@@ -230,6 +239,15 @@ export const adminApi = {
     adminFetch<{ data: unknown }>(
       `/admin/founding-grants/${id}/resend-invite`,
       { method: "POST" },
+    ),
+  extendGrant: (id: string, additionalMonths: number, reason: string) =>
+    data(
+      adminFetch<{
+        data: { id: string; months: number; expiresAt: string | null };
+      }>(`/admin/founding-grants/${id}/extend`, {
+        method: "POST",
+        body: JSON.stringify({ additionalMonths, reason }),
+      }),
     ),
   codes: (q?: string, status?: string) => {
     const params = new URLSearchParams();

@@ -4,11 +4,9 @@ import { addMonths as addCalendarMonths } from "date-fns";
 import type { SubscriptionTierName } from "../entitlement/assertEntitlement";
 
 /**
- * FOUNDING-OFFER catalogue (BRIEF D1). Prices are what Brad charges off-app
- * (bank transfer / Stripe Payment Link); `amount_minor` on a grant records what
- * was actually paid and defaults to these. Caps count NON-REVOKED grants per
- * pool — pending (not yet signed up) grants hold a seat too, because the money
- * has been taken.
+ * Founding tier catalogue. Access duration is chosen per administrative grant;
+ * these values are UI defaults only. Pool caps live in
+ * `founding_pool_limits`; only non-revoked `founding` grants consume them.
  */
 export type FoundingPool = "consumer" | "coach";
 
@@ -19,26 +17,19 @@ export type FoundingTierName = Extract<
 
 export const FOUNDING_OFFERS: Record<
   FoundingTierName,
-  { months: number; priceMinor: number; pool: FoundingPool; label: string }
+  { months: number; pool: FoundingPool; label: string }
 > = {
-  premium: { months: 6, priceMinor: 3000, pool: "consumer", label: "Premium" },
+  premium: { months: 6, pool: "consumer", label: "Premium" },
   premium_plus: {
     months: 6,
-    priceMinor: 5000,
     pool: "consumer",
     label: "Premium+",
   },
   start_up_coach_plus: {
     months: 6,
-    priceMinor: 9900,
     pool: "coach",
     label: "Start Up Coach+",
   },
-};
-
-export const FOUNDING_POOL_CAPS: Record<FoundingPool, number> = {
-  consumer: 200,
-  coach: 20,
 };
 
 export const FOUNDING_TIER_NAMES = Object.keys(

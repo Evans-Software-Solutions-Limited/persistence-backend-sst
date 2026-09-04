@@ -19,7 +19,45 @@ Today nothing in the codebase can do either: there is no admin surface (the web 
 is a static demo), no referral-code table, and no way to grant an entitlement
 outside RevenueCat.
 
-## 2. Decisions baked in (do not re-open)
+## 2. Decisions baked in
+
+### 2026-09-04 grant-model amendment (supersedes conflicting text below)
+
+The admin feature is an **access-grant tool**, not a checkout or proof-of-purchase
+system. Brad chooses the recipient email, tier, and access duration. A grant may
+be one of two kinds:
+
+- `founding` — consumes one place from the database-backed consumer or coach
+  campaign capacity;
+- `complimentary` — free access for Brad, friends, family, testers, or another
+  discretionary recipient and does not consume campaign capacity.
+
+An existing live or pending admin grant can be extended by a chosen number of
+months. The extension adds to remaining access rather than discarding it. A
+revoked grant or deleted account cannot be extended. A live App Store / Play
+subscription cannot be displaced by an admin grant; access may be granted once
+the store subscription expires.
+
+A crowdfunding contribution is optional, recorded only when useful, and is
+legally and technically separate from access. Its amount, method, reference,
+and date are evidence/notes only: contributing does not buy, guarantee, size,
+or extend a grant, and granting access does not imply a contribution. The
+platform never takes this money.
+
+Referral codes remain attribution identifiers. An admin grant may record the
+referral that led to it, but does not lock that referral as a paid conversion.
+Any future code-linked price reduction must be implemented as a native App
+Store / Google Play offer mapping; entering a referral code must never create
+an entitlement directly.
+
+Founding pool capacities and current usage are database-backed and exposed as
+aggregate public availability. They are not build-time environment variables.
+The public page must describe discretionary allocation and keep optional
+crowdfunding contributions separate; it must not present fixed prices or a
+purchase/cancellation flow.
+
+The original launch assumptions are retained below as history. This amendment
+controls wherever they conflict.
 
 | #   | Decision                                                  | Value                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | --- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

@@ -205,16 +205,18 @@ describe("PrivacyPolicyPresenter", () => {
     expect(getByText(/at least six years from the/)).toBeTruthy();
   });
 
-  it("discloses the founding-purchase record and deletion treatment", () => {
+  it("discloses grant and optional-contribution retention", () => {
     const { getByText } = renderWithTheme(
       <PrivacyPolicyPresenter onBack={jest.fn()} />,
     );
     expect(getByText("Last Updated: 4 September 2026")).toBeTruthy();
-    expect(getByText(/Founding offer purchases/)).toBeTruthy();
     expect(
-      getByText(/record is kept even if you later delete your account/),
+      getByText(/Administrative access grants and contributions/),
     ).toBeTruthy();
-    expect(getByText(/until the place is redeemed or released/)).toBeTruthy();
+    expect(
+      getByText(/A contribution is not required for a grant/),
+    ).toBeTruthy();
+    expect(getByText(/account link itself is removed/)).toBeTruthy();
   });
 
   it("states the 30-day deletion window and that restore needs confirming", () => {

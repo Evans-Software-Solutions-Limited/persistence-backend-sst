@@ -19,7 +19,7 @@ export function Terms() {
       <section className="legal">
         <span className="kicker c-accent legal-kicker">Legal</span>
         <h1>Terms of Service</h1>
-        <p className="legal-updated">Last updated: 3 September 2026</p>
+        <p className="legal-updated">Last updated: 4 September 2026</p>
 
         <h2>Acceptance of terms</h2>
         <p>
@@ -41,9 +41,11 @@ export function Terms() {
           Some features require payment. Standard in-app subscriptions are
           billed through your app store account and renew automatically unless
           cancelled; you can manage or cancel them through your app store
-          account settings. Separately identified fixed-term offers, including
-          the founding offer, are paid once, do not renew automatically, and
-          expire at the stated end of their access period.
+          account settings. We may also allocate administrative fixed-term
+          access, including founding or complimentary grants. A grant is not a
+          purchase, does not renew automatically, and expires at the recorded
+          end of its access period. Any crowdfunding contribution is separate
+          and does not buy or determine access.
         </p>
 
         <h2>Health disclaimer</h2>

@@ -30,7 +30,7 @@ describe("CurrentSubscriptionStatusCard", () => {
     expect(screen.getByText(/reinstate/)).toBeTruthy();
   });
 
-  it("renders fixed-term founding access without cancellation or reinstatement copy", () => {
+  it("renders fixed-term granted access without cancellation or reinstatement copy", () => {
     render(
       <CurrentSubscriptionStatusCard
         currentTierDisplayName="Premium"
@@ -41,6 +41,9 @@ describe("CurrentSubscriptionStatusCard", () => {
       />,
     );
     expect(screen.getByText("Access active: Premium")).toBeTruthy();
+    expect(
+      screen.getByText(/Your granted access is active until/),
+    ).toBeTruthy();
     expect(screen.getByText(/will not renew automatically/)).toBeTruthy();
     expect(screen.queryByText(/reinstate/)).toBeNull();
   });

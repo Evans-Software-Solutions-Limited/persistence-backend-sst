@@ -64,13 +64,13 @@ export function AdminLookup() {
           <EmptyState>
             No account for <strong>{email}</strong>.
             {q.data.pendingGrants.length > 0
-              ? ` A pending founding grant (${q.data.pendingGrants[0].tierName}) is waiting for them to sign up.`
+              ? ` A pending access grant (${q.data.pendingGrants[0].tierName}) is waiting for them to sign up.`
               : ""}
           </EmptyState>
           <div className="text-center">
             <Button asChild variant="outline">
               <Link to="/admin/grants?new=1">
-                Record a founding grant for them
+                Record an access grant for them
               </Link>
             </Button>
           </div>
@@ -127,20 +127,35 @@ export function AdminLookup() {
               </dd>
             </dl>
           </Panel>
-          <Panel title="Founding grants">
+          <Panel title="Access grants">
             {account.foundingGrants.length === 0 ? (
               <EmptyState>None.</EmptyState>
             ) : (
               <Table
-                head={["Tier", "Paid", "Paid on", "Access until", "Status"]}
+                head={[
+                  "Tier",
+                  "Kind",
+                  "Contribution",
+                  "Access until",
+                  "Status",
+                ]}
               >
                 {account.foundingGrants.map((g) => (
                   <tr key={g.id}>
                     <td>{g.tierLabel ?? g.tierName}</td>
                     <td className="tabular-nums">
-                      {formatMinor(g.amountMinor, g.currency)}
+                      {g.grantKind === "founding"
+                        ? "Founding"
+                        : "Complimentary"}
                     </td>
-                    <td>{formatDate(g.paidAt)}</td>
+                    <td>
+                      {g.contributionAmountMinor > 0
+                        ? formatMinor(
+                            g.contributionAmountMinor,
+                            g.contributionCurrency,
+                          )
+                        : "None"}
+                    </td>
                     <td>{formatDate(g.subscriptionExpiresAt)}</td>
                     <td>
                       <StatusBadge status={g.status} />

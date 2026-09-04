@@ -2736,12 +2736,13 @@ export const foundingGrants = pgTable(
       .notNull()
       .references(() => subscriptionTiers.tierName),
     months: integer("months").notNull().default(6),
-    /** Pence actually paid. */
-    amountMinor: integer("amount_minor").notNull(),
+    grantKind: text("grant_kind").notNull().default("founding"),
+    /** Optional contribution in pence; independent from entitlement. */
+    amountMinor: integer("amount_minor").notNull().default(0),
     currency: text("currency").notNull().default("GBP"),
-    paymentMethod: text("payment_method").notNull(),
+    paymentMethod: text("payment_method"),
     paymentReference: text("payment_reference"),
-    paidAt: timestamp("paid_at", { withTimezone: true }).notNull(),
+    paidAt: timestamp("paid_at", { withTimezone: true }),
     referralCodeId: uuid("referral_code_id").references(() => referralCodes.id),
     subscriptionId: uuid("subscription_id").references(
       () => userSubscriptions.id,
@@ -2772,11 +2773,41 @@ export const foundingGrants = pgTable(
       "founding_grants_payment_method_ck",
       sql`${t.paymentMethod} IN ('bank_transfer', 'stripe_link', 'card_in_person', 'other')`,
     ),
+    check(
+      "founding_grants_grant_kind_ck",
+      sql`${t.grantKind} IN ('founding', 'complimentary')`,
+    ),
+    check("founding_grants_months_ck", sql`${t.months} BETWEEN 1 AND 120`),
+    check(
+      "founding_grants_contribution_ck",
+      sql`(${t.amountMinor} = 0 AND ${t.paymentMethod} IS NULL AND ${t.paymentReference} IS NULL AND ${t.paidAt} IS NULL) OR (${t.amountMinor} > 0 AND ${t.paymentMethod} IS NOT NULL AND ${t.paidAt} IS NOT NULL)`,
+    ),
   ],
 );
 
 export type FoundingGrant = typeof foundingGrants.$inferSelect;
 export type NewFoundingGrant = typeof foundingGrants.$inferInsert;
+
+export const foundingPoolLimits = pgTable(
+  "founding_pool_limits",
+  {
+    pool: text("pool").primaryKey(),
+    cap: integer("cap").notNull(),
+    updatedBy: uuid("updated_by"),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    check(
+      "founding_pool_limits_pool_ck",
+      sql`${t.pool} IN ('consumer', 'coach')`,
+    ),
+    check("founding_pool_limits_cap_ck", sql`${t.cap} >= 0`),
+  ],
+);
+
+export type FoundingPoolLimit = typeof foundingPoolLimits.$inferSelect;
 
 export const adminAuditLog = pgTable(
   "admin_audit_log",

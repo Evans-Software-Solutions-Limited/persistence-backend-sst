@@ -15,6 +15,73 @@ import { FoundingGrantService } from "../../founding/foundingGrantService";
 
 const ADMIN = "00000000-0000-4000-8000-000000000001";
 const USER = "00000000-0000-4000-8000-000000000002";
+const ORIGINAL_MIGRATION = readFileSync(
+  new URL(
+    "../../../../../../supabase/migrations/20260904120000_founding_offer_referrals.sql",
+    import.meta.url,
+  ),
+  "utf8",
+);
+const GENERALISED_GRANT_MIGRATION = readFileSync(
+  new URL(
+    "../../../../../../supabase/migrations/20260904214114_generalise_founding_grants.sql",
+    import.meta.url,
+  ),
+  "utf8",
+);
+
+describe("generalized founding migration upgrade path", () => {
+  it("preserves a legacy zero-value founding seat while clearing payment metadata", async () => {
+    const pg = await PGlite.create();
+    try {
+      await pg.exec(`
+        CREATE TABLE profiles (id uuid PRIMARY KEY);
+        CREATE TABLE subscription_tiers (tier_name text PRIMARY KEY);
+        CREATE TABLE user_subscriptions (id uuid PRIMARY KEY);
+        INSERT INTO profiles (id) VALUES ('${ADMIN}');
+        INSERT INTO subscription_tiers (tier_name) VALUES ('premium');
+      `);
+      await pg.exec(ORIGINAL_MIGRATION);
+      await pg.query(
+        `INSERT INTO founding_grants
+          (email, tier_name, months, amount_minor, payment_method,
+           payment_reference, paid_at, granted_by)
+         VALUES ($1, 'premium', 6, 0, 'other', 'legacy-free', now(), $2)`,
+        ["legacy@example.test", ADMIN],
+      );
+
+      await pg.exec(GENERALISED_GRANT_MIGRATION);
+
+      const migrated = await pg.query<{
+        grant_kind: string;
+        payment_method: string | null;
+        payment_reference: string | null;
+        paid_at: Date | null;
+      }>(
+        `SELECT grant_kind, payment_method, payment_reference, paid_at
+         FROM founding_grants WHERE email = $1`,
+        ["legacy@example.test"],
+      );
+      expect(migrated.rows).toEqual([
+        {
+          grant_kind: "founding",
+          payment_method: null,
+          payment_reference: null,
+          paid_at: null,
+        },
+      ]);
+
+      const migrationDb = drizzle(pg, { schema });
+      vi.mocked(getDb).mockReturnValue(migrationDb as never);
+      expect(
+        await new FoundingGrantRepository().seatsForPool("consumer"),
+      ).toEqual({ pool: "consumer", used: 1, cap: 200 });
+    } finally {
+      await pg.close();
+      vi.restoreAllMocks();
+    }
+  });
+});
 
 describe("founding/referral repository transaction invariants", () => {
   let pg: PGlite;
@@ -64,14 +131,8 @@ describe("founding/referral repository transaction invariants", () => {
       INSERT INTO subscription_tiers (tier_name, display_name)
         VALUES ('premium', 'Premium');
     `);
-    const migration = readFileSync(
-      new URL(
-        "../../../../../../supabase/migrations/20260904120000_founding_offer_referrals.sql",
-        import.meta.url,
-      ),
-      "utf8",
-    );
-    await pg.exec(migration);
+    await pg.exec(ORIGINAL_MIGRATION);
+    await pg.exec(GENERALISED_GRANT_MIGRATION);
   });
 
   afterEach(async () => {
@@ -514,7 +575,6 @@ describe("founding/referral repository transaction invariants", () => {
       {
         email: "user@example.test",
         tierName: "premium",
-        paymentMethod: "other",
         referralCode: "DIRECTCAP",
         sendInvite: false,
       },
@@ -545,7 +605,6 @@ describe("founding/referral repository transaction invariants", () => {
       {
         email: "second@example.test",
         tierName: "premium",
-        paymentMethod: "other",
         referralCode: "DIRECTCAP",
         sendInvite: false,
       },
@@ -1079,5 +1138,125 @@ describe("founding/referral repository transaction invariants", () => {
       [grantId],
     );
     expect(grant.rows[0].invited_at).toBeNull();
+  });
+
+  it("does not consume or require a founding seat for a complimentary grant", async () => {
+    await pg.query(
+      "UPDATE founding_pool_limits SET cap = 0 WHERE pool = 'consumer'",
+    );
+    const repo = new FoundingGrantRepository();
+    const outcome = await repo.create(
+      {
+        id: crypto.randomUUID(),
+        userId: null,
+        email: "friend@example.test",
+        tierName: "premium",
+        months: 24,
+        grantKind: "complimentary",
+        amountMinor: 0,
+        currency: "GBP",
+        paymentMethod: null,
+        paymentReference: null,
+        paidAt: null,
+        referralCodeId: null,
+        grantedBy: ADMIN,
+        notes: "friends and family",
+      },
+      "consumer",
+    );
+    expect(outcome.kind).toBe("created");
+    if (outcome.kind !== "created") return;
+    expect(outcome.seats).toBeNull();
+    expect((await repo.seatsForPool("consumer")).used).toBe(0);
+  });
+
+  it("extends an active grant from its existing expiry and audits atomically", async () => {
+    const repo = new FoundingGrantRepository();
+    const audit = new AdminAuditRepository();
+    const grantId = crypto.randomUUID();
+    const created = await repo.create(
+      {
+        id: grantId,
+        userId: USER,
+        email: "user@example.test",
+        tierName: "premium",
+        months: 6,
+        grantKind: "complimentary",
+        amountMinor: 0,
+        currency: "GBP",
+        paymentMethod: null,
+        paymentReference: null,
+        paidAt: null,
+        referralCodeId: null,
+        grantedBy: ADMIN,
+        notes: null,
+      },
+      "consumer",
+    );
+    expect(created.kind).toBe("created");
+    if (created.kind !== "created" || !created.subscriptionExpiresAt) return;
+    const oldExpiry = created.subscriptionExpiresAt;
+
+    const extended = await repo.extend(
+      grantId,
+      3,
+      async (before, after, expiresAt, transaction) => {
+        await audit.record(
+          {
+            actorId: ADMIN,
+            action: "founding_grant.extend",
+            entityType: "founding_grant",
+            entityId: grantId,
+            before: { months: before.months },
+            after: { months: after.months, expiresAt },
+            reason: "bonus",
+          },
+          transaction,
+        );
+      },
+    );
+    expect(extended.kind).toBe("extended");
+    if (extended.kind !== "extended" || !extended.expiresAt) return;
+    expect(extended.grant.months).toBe(9);
+    expect(extended.expiresAt.getTime()).toBeGreaterThan(oldExpiry.getTime());
+    const entries = await pg.query<{ action: string }>(
+      "SELECT action FROM admin_audit_log WHERE entity_id = $1",
+      [grantId],
+    );
+    expect(entries.rows).toEqual([{ action: "founding_grant.extend" }]);
+  });
+
+  it("rejects an extension that would exceed 120 total months without changing access", async () => {
+    const repo = new FoundingGrantRepository();
+    const grantId = crypto.randomUUID();
+    const created = await repo.create(
+      {
+        id: grantId,
+        userId: USER,
+        email: "user@example.test",
+        tierName: "premium",
+        months: 6,
+        grantKind: "complimentary",
+        amountMinor: 0,
+        currency: "GBP",
+        paymentMethod: null,
+        paymentReference: null,
+        paidAt: null,
+        referralCodeId: null,
+        grantedBy: ADMIN,
+        notes: null,
+      },
+      "consumer",
+    );
+    expect(created.kind).toBe("created");
+    if (created.kind !== "created") return;
+
+    const outcome = await repo.extend(grantId, 120);
+    expect(outcome).toEqual({ kind: "invalid_months" });
+    const rows = await pg.query<{ months: number }>(
+      "SELECT months FROM founding_grants WHERE id = $1",
+      [grantId],
+    );
+    expect(rows.rows[0]?.months).toBe(6);
   });
 });

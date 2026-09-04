@@ -5,7 +5,7 @@ import { loadSession, signOut } from "./adminAuth";
 
 const NAV = [
   { to: "/admin", label: "Dashboard", end: true },
-  { to: "/admin/grants", label: "Founding grants" },
+  { to: "/admin/grants", label: "Access grants" },
   { to: "/admin/codes", label: "Referral codes" },
   { to: "/admin/lookup", label: "Lookup" },
   { to: "/admin/audit", label: "Audit log" },
