@@ -17,7 +17,7 @@ describe("PrivacyPolicyPresenter", () => {
       <PrivacyPolicyPresenter onBack={jest.fn()} />,
     );
     expect(getByText("Privacy Policy")).toBeTruthy();
-    expect(getByText("Last Updated: 1 September 2026")).toBeTruthy();
+    expect(getByText("Last Updated: 4 September 2026")).toBeTruthy();
   });
 
   it("renders all fourteen section titles verbatim", () => {
@@ -203,6 +203,18 @@ describe("PrivacyPolicyPresenter", () => {
     // are still never pruned, so "at least six years" stays a floor.
     expect(getAllByText(/deleted automatically each night/i).length).toBe(2);
     expect(getByText(/at least six years from the/)).toBeTruthy();
+  });
+
+  it("discloses the founding-purchase record and deletion treatment", () => {
+    const { getByText } = renderWithTheme(
+      <PrivacyPolicyPresenter onBack={jest.fn()} />,
+    );
+    expect(getByText("Last Updated: 4 September 2026")).toBeTruthy();
+    expect(getByText(/Founding offer purchases/)).toBeTruthy();
+    expect(
+      getByText(/record is kept even if you later delete your account/),
+    ).toBeTruthy();
+    expect(getByText(/until the place is redeemed or released/)).toBeTruthy();
   });
 
   it("states the 30-day deletion window and that restore needs confirming", () => {
