@@ -22,6 +22,7 @@ import type { SessionClientRef, WorkoutSession } from "@/domain/models/session";
 import type { Workout } from "@/domain/models/workout";
 import type { StoragePort } from "@/domain/ports/storage.port";
 import { fail, ok, type Result } from "@/shared/errors";
+import { set, subDays } from "date-fns";
 
 export type StartSessionCommandDeps = {
   storage: StoragePort;
@@ -64,9 +65,10 @@ export function startSessionCommand(
     });
   }
 
+  const startedNow = deps.now?.() ?? new Date();
   const ctx = {
     userId: deps.userId,
-    now: (deps.now?.() ?? new Date()).toISOString(),
+    now: startedNow.toISOString(),
     withClient: input.withClient ?? null,
   };
 
@@ -75,12 +77,14 @@ export function startSessionCommand(
     : createEmptySession(ctx, deps.generateId);
 
   if (input.retrospective) {
-    const completed = new Date(deps.now?.() ?? new Date());
-    completed.setDate(completed.getDate() - 1);
-    completed.setHours(12, 0, 0, 0);
+    const completed = set(subDays(startedNow, 1), {
+      hours: 12,
+      minutes: 0,
+      seconds: 0,
+      milliseconds: 0,
+    });
     session.retrospectiveCompletedAt = completed.toISOString();
     session.retrospectiveDurationSeconds = 3600;
-    session.startedAt = new Date(completed.getTime() - 3600_000).toISOString();
   }
 
   deps.storage.cacheActiveSession(deps.userId, session);

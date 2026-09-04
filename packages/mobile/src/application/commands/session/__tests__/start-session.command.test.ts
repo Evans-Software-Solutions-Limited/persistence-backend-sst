@@ -132,9 +132,9 @@ describe("startSessionCommand", () => {
     expect(completed.getDate()).toBe(4);
     expect(completed.getHours()).toBe(12);
     expect(result.value.retrospectiveDurationSeconds).toBe(3600);
-    expect(completed.getTime() - Date.parse(result.value.startedAt)).toBe(
-      3_600_000,
-    );
+    // Keep the live-session age anchor at the moment this flow was opened.
+    // Finalisation derives the historical workout start from duration.
+    expect(result.value.startedAt).toBe(now().toISOString());
   });
 
   it("invalidates the dashboard cache (M2 learning #3)", () => {

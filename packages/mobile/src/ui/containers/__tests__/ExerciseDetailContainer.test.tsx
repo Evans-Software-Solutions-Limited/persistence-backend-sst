@@ -160,6 +160,44 @@ describe("ExerciseDetailContainer", () => {
     expect(queryByText("20")).toBeNull();
   });
 
+  it("keeps an older exercise PR when newer records for other exercises exceed the limit", async () => {
+    const api = new InMemoryApiAdapter();
+    api.recentPRs = [
+      ...Array.from({ length: 101 }, (_, index) => ({
+        id: `pr-other-${index}`,
+        userId: "user-1",
+        exerciseId: `other-${index}`,
+        exerciseName: "Other Exercise",
+        recordType: "max_reps" as const,
+        value: index + 1,
+        setId: `set-${index}`,
+        sessionId: "session-newer",
+        achievedAt: "2026-09-02T08:00:00.000Z",
+      })),
+      {
+        id: "pr-run-old",
+        userId: "user-1",
+        exerciseId: "ex-1",
+        exerciseName: "Outdoor Run",
+        recordType: "longest_distance",
+        value: 5000,
+        setId: "set-run",
+        sessionId: "session-old",
+        achievedAt: "2026-08-01T08:00:00.000Z",
+      },
+    ];
+    const getRecentPRs = jest.spyOn(api, "getRecentPRs");
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheExercises([buildExercise({ name: "Outdoor Run" })]);
+
+    const { findByText } = renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <ExerciseDetailContainer />),
+    );
+
+    expect(await findByText("5.00")).toBeTruthy();
+    expect(getRecentPRs).toHaveBeenCalledWith(50, "ex-1");
+  });
+
   it("hides Edit for a system exercise the user doesn't own", async () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();

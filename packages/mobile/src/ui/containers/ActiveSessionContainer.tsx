@@ -65,7 +65,8 @@ import {
 import { buildTemplateMap } from "@/ui/containers/active-session-template";
 import { useLoadoutGate } from "@/ui/hooks/useLoadoutGate";
 import { AdaptiveSuiteRouteGuard } from "@/ui/components/subscription/AdaptiveSuiteRouteGuard";
-import { isIsoDateString, localDayISO } from "@/shared/utils";
+import { isIsoDateString } from "@/shared/utils";
+import { format, isAfter, isValid, parse, set } from "date-fns";
 
 // Default rest seconds when the workout template doesn't carry one.
 // FRONTEND_BRIEF "Out of scope" notes M6 ships the configurator; M3
@@ -76,12 +77,17 @@ export function retrospectiveCompletedAtForDay(
   day: string,
   now = new Date(),
 ): string | null {
-  if (!isIsoDateString(day) || day > localDayISO(now)) return null;
-  const completed = new Date(`${day}T12:00:00`);
-  if (!Number.isFinite(completed.getTime())) return null;
+  if (!isIsoDateString(day) || day > format(now, "yyyy-MM-dd")) return null;
+  const completed = set(parse(day, "yyyy-MM-dd", now), {
+    hours: 12,
+    minutes: 0,
+    seconds: 0,
+    milliseconds: 0,
+  });
+  if (!isValid(completed)) return null;
   // A same-day retrospective workout selected before local noon should
   // complete now, rather than being rejected as a future instant.
-  if (completed > now) completed.setTime(now.getTime());
+  if (isAfter(completed, now)) return now.toISOString();
   return completed.toISOString();
 }
 

@@ -26,6 +26,7 @@ import type { RecordSessionInput } from "@/domain/ports/api.port";
 import type { RecentSetEntry, StoragePort } from "@/domain/ports/storage.port";
 import { fail, ok, type Result } from "@/shared/errors";
 import type { SessionNotFoundError } from "./log-set.command";
+import { isAfter, isValid, parseISO, subSeconds } from "date-fns";
 
 export type CompleteSessionCommandDeps = {
   storage: StoragePort;
@@ -103,11 +104,14 @@ export function finalizeSessionCommand(
   }
 
   const now = deps.now?.() ?? new Date();
+  const retrospectiveCompleted = session.retrospectiveCompletedAt
+    ? parseISO(session.retrospectiveCompletedAt)
+    : null;
   const retrospectiveCompletedAt =
     status === "completed" &&
-    session.retrospectiveCompletedAt &&
-    Number.isFinite(Date.parse(session.retrospectiveCompletedAt)) &&
-    Date.parse(session.retrospectiveCompletedAt) <= now.getTime()
+    retrospectiveCompleted &&
+    isValid(retrospectiveCompleted) &&
+    !isAfter(retrospectiveCompleted, now)
       ? session.retrospectiveCompletedAt
       : null;
   const completedAt = retrospectiveCompletedAt ?? now.toISOString();
@@ -121,9 +125,9 @@ export function finalizeSessionCommand(
     status === "completed" &&
     retrospectiveCompletedAt &&
     retrospectiveDurationSeconds
-      ? new Date(
-          Date.parse(retrospectiveCompletedAt) -
-            retrospectiveDurationSeconds * 1000,
+      ? subSeconds(
+          parseISO(retrospectiveCompletedAt),
+          retrospectiveDurationSeconds,
         ).toISOString()
       : session.startedAt;
 

@@ -28,7 +28,10 @@ export function ExerciseDetailContainer() {
   const { exercise, isLoading, error, refresh } = useExercise(exerciseId);
   const performance = useExercisePerformanceSummary(exerciseId);
   const profile = useProfilePage();
-  const prHistory = useGetPRHistory(100);
+  // The server applies this limit after exercise scoping. Filtering a global
+  // top-N list here made long-standing records disappear once other exercises
+  // produced enough newer PRs.
+  const prHistory = useGetPRHistory(50, exerciseId);
   const { session } = useAuth();
   const trackedEstimateRef = useRef<string | null>(null);
 
@@ -74,9 +77,7 @@ export function ExerciseDetailContainer() {
       onRetry={onRetry}
       performanceSummary={performance.data}
       weightUnit={profile.payload?.profile.weightUnit ?? "kg"}
-      personalRecords={(prHistory.data ?? []).filter(
-        (record) => record.exerciseId === exerciseId,
-      )}
+      personalRecords={prHistory.data ?? []}
     />
   );
 }

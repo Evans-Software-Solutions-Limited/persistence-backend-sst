@@ -340,15 +340,25 @@ describe("Home/You endpoints", () => {
     await getRecentPRsHandler.handle(
       new Request("http://localhost/users/me/prs?limit=20", { headers: AUTH }),
     );
-    expect(homeMock.getRecentPRs).toHaveBeenCalledWith("u1", 20);
+    expect(homeMock.getRecentPRs).toHaveBeenCalledWith("u1", 20, undefined);
     await getRecentPRsHandler.handle(
       new Request("http://localhost/users/me/prs?limit=999", { headers: AUTH }),
     );
-    expect(homeMock.getRecentPRs).toHaveBeenCalledWith("u1", 50);
+    expect(homeMock.getRecentPRs).toHaveBeenCalledWith("u1", 50, undefined);
     await getRecentPRsHandler.handle(
       new Request("http://localhost/users/me/prs", { headers: AUTH }),
     );
-    expect(homeMock.getRecentPRs).toHaveBeenCalledWith("u1", 5);
+    expect(homeMock.getRecentPRs).toHaveBeenCalledWith("u1", 5, undefined);
+  });
+
+  it("GET /users/me/prs scopes by exercise before applying the limit", async () => {
+    await getRecentPRsHandler.handle(
+      new Request(
+        "http://localhost/users/me/prs?limit=50&exerciseId=exercise-42",
+        { headers: AUTH },
+      ),
+    );
+    expect(homeMock.getRecentPRs).toHaveBeenCalledWith("u1", 50, "exercise-42");
   });
 
   it("GET /users/me/body-trend parses the window", async () => {

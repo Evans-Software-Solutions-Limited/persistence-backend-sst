@@ -56,6 +56,7 @@ import type { ExerciseSet, SessionExercise } from "@/domain/models/session";
 import type { WeightUnit } from "@/shared/utils";
 import { localDayISO } from "@/shared/utils/date";
 import { DatePickerField } from "@/ui/components/DatePickerField";
+import { format, isValid, parseISO } from "date-fns";
 
 /**
  * Per-exercise template metadata threaded from the container's
@@ -75,8 +76,8 @@ export type SessionExerciseTemplate = {
 };
 
 export function retrospectiveDayValue(completedAt: string): string {
-  const completed = new Date(completedAt);
-  return Number.isFinite(completed.getTime()) ? localDayISO(completed) : "";
+  const completed = parseISO(completedAt);
+  return isValid(completed) ? format(completed, "yyyy-MM-dd") : "";
 }
 
 export type ActiveSessionPresenterProps = {

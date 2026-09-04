@@ -24,13 +24,18 @@ export const getRecentPRsHandler = new Elysia()
       const raw = Number(ctx.query.limit);
       const limit =
         Number.isFinite(raw) && raw > 0 ? Math.min(Math.floor(raw), 50) : 5;
-      const prs = await ctx.HomeReadRepository.getRecentPRs(userId, limit);
+      const prs = await ctx.HomeReadRepository.getRecentPRs(
+        userId,
+        limit,
+        ctx.query.exerciseId,
+      );
       return { data: prs };
     },
     {
       query: t.Object({
         limit: t.Optional(t.String()),
         order: t.Optional(t.String()),
+        exerciseId: t.Optional(t.String()),
       }),
     },
   );

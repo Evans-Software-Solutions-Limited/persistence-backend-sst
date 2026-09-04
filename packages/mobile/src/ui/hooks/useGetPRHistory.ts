@@ -10,13 +10,16 @@ import {
  */
 export function useGetPRHistory(
   limit = 20,
+  exerciseId?: string | null,
 ): CachedResourceState<PersonalRecord[]> {
   return useCachedResource<PersonalRecord[]>({
     read: (storage, userId) => ({
-      value: storage.getPersonalRecords(userId).slice(0, limit),
+      value: storage
+        .getPersonalRecords(userId, exerciseId ?? undefined)
+        .slice(0, limit),
       isStale: true,
     }),
-    fetcher: (api) => api.getRecentPRs(limit),
+    fetcher: (api) => api.getRecentPRs(limit, exerciseId ?? undefined),
     // Shares the `personal_records` slot with the Home carousel — safe because
     // cachePersonalRecords upserts by (userId, exerciseId, recordType) (see
     // StoragePort), so the 5-PR Home window updates those keys without dropping

@@ -94,7 +94,7 @@ an optional location; those values, logged activity time and distance appear in
 the completed-workout summary. Distance and time records are calculated by the
 core service and rendered on exercise detail/progress surfaces. Canonical stored
 units remain seconds and metres. Migration
-`20260904120000_session_activity_metadata.sql` adds session environment,
+`20260904130000_session_activity_metadata.sql` adds session environment,
 location metadata and the per-session exercise-category snapshot, and must be
 applied before deploying the matching API.
 
@@ -132,6 +132,17 @@ the current instant instead of rejecting the selected day. Focused regressions
 cover the command-echo and timezone/calendar-day paths. The full repository
 gate is green (**524 mobile suites / 6,627 tests; 21 workspace tasks**) and the
 local Inspector Brad follow-up is clean.
+
+A second PR #434 CI Inspector follow-up found that retrospective session setup
+backdated the still-live session clock, and that exercise detail filtered a
+globally limited PR response. Retrospective sessions now keep `startedAt` at
+the actual start instant and derive their historical interval only when they
+are finalised. The PR endpoint accepts an exercise scope that is applied in SQL
+before ordering/limiting, with matching offline-cache behaviour. The
+retrospective production date path now uses a direct `date-fns` dependency
+(`4.4.0`) for local-day parsing, validation and date arithmetic. Regression
+tests cover both review leads, and the full repository gate is green (**524
+mobile suites / 6,628 tests; 21 workspace tasks**).
 
 ### 🟡 2026-09-03 — FOUNDING-OFFER MOBILE REFERRAL ENTRY (branch `codex/founding-referral-ota`)
 

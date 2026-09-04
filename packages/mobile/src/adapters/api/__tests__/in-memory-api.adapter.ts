@@ -1269,9 +1269,12 @@ export class InMemoryApiAdapter implements ApiPort {
   async getVolumeStats(_window?: string) {
     return this.mayFail<VolumeStats>(this.nextVolumeStats);
   }
-  async getRecentPRs(limit?: number) {
+  async getRecentPRs(limit?: number, exerciseId?: string) {
+    const records = exerciseId
+      ? this.recentPRs.filter((record) => record.exerciseId === exerciseId)
+      : this.recentPRs;
     return this.mayFail<PersonalRecord[]>(
-      limit != null ? this.recentPRs.slice(0, limit) : this.recentPRs,
+      limit != null ? records.slice(0, limit) : records,
     );
   }
   async getBodyTrend(_window?: string) {

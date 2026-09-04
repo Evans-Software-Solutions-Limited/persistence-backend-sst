@@ -119,6 +119,27 @@ describe("HomeReadRepository", () => {
     });
   });
 
+  it("getRecentPRs applies exercise scoping before the result limit", async () => {
+    const capture: { where?: unknown } = {};
+    const recording: any = {};
+    for (const k of ["from", "innerJoin", "leftJoin", "orderBy", "limit"]) {
+      recording[k] = () => recording;
+    }
+    recording.where = (condition: unknown) => {
+      capture.where = condition;
+      return recording;
+    };
+    recording.then = (resolve: (rows: unknown[]) => unknown) =>
+      Promise.resolve([]).then(resolve);
+    (getDb as any).mockReturnValue({ select: () => recording });
+
+    await new HomeReadRepository().getRecentPRs("u1", 50, "exercise-42");
+
+    const where = new PgDialect().sqlToQuery(capture.where as never).sql;
+    expect(where).toContain('"personal_records"."user_id"');
+    expect(where).toContain('"personal_records"."exercise_id"');
+  });
+
   it("getAchievements maps rows + handles null requirements/unlockedAt", async () => {
     (getDb as any).mockReturnValue({
       select: () =>

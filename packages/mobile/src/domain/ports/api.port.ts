@@ -622,7 +622,10 @@ export interface ApiPort extends ReferralsPort {
   getWeeklyVolume(window?: string): Promise<Result<WeeklyVolume, ApiError>>;
   /** `window` ∈ month|quarter|year|lifetime (default month). */
   getVolumeStats(window?: string): Promise<Result<VolumeStats, ApiError>>;
-  getRecentPRs(limit?: number): Promise<Result<PersonalRecord[], ApiError>>;
+  getRecentPRs(
+    limit?: number,
+    exerciseId?: string,
+  ): Promise<Result<PersonalRecord[], ApiError>>;
   getBodyTrend(window?: string): Promise<Result<BodyTrendPoint[], ApiError>>;
   getAchievements(): Promise<Result<Achievement[], ApiError>>;
   /** Active streak rows for the You/Progress StreakHero. */
