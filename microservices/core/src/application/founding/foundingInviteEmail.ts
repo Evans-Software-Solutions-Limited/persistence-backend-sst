@@ -36,7 +36,7 @@ export function buildFoundingInviteEmail(input: InviteEmailInput): {
     ? `Your ${tier} access is already on. Open the app and you'll see it under You → Subscription${
         input.expiresAt ? `, active until ${formatDate(input.expiresAt)}` : ""
       }.`
-    : `Download Persistence and sign up with this email address (${input.email}). ${tier} switches on automatically the first time the app loads after you sign in — nothing to enter, no code.`;
+    : `Download Persistence and sign up with this email address (${input.email}). ${tier} switches on automatically the first time the app loads after you sign in — nothing to enter, no code. Please sign up within 90 days of payment — after that we may release your place.`;
 
   const text = [
     `Thanks for backing Persistence as a founding member.`,

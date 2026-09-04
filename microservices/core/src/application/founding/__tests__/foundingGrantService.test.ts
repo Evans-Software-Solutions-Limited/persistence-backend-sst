@@ -150,6 +150,9 @@ describe("FoundingGrantService.grant", () => {
       }),
     );
     expect((mailer.mock.calls[0] as any)[0].text).toMatch(/already on/);
+    expect((mailer.mock.calls[0] as any)[0].text).not.toMatch(
+      /sign up within 90 days/,
+    );
   });
 
   it("creates a PENDING grant when there is no account yet and sends the sign-up invite", async () => {
@@ -177,6 +180,9 @@ describe("FoundingGrantService.grant", () => {
     expect(referrals.lock).not.toHaveBeenCalled();
     expect((mailer.mock.calls[0] as any)[0].text).toMatch(
       /sign up with this email/,
+    );
+    expect((mailer.mock.calls[0] as any)[0].text).toMatch(
+      /Please sign up within 90 days of payment — after that we may release your place\./,
     );
   });
 
