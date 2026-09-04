@@ -22,6 +22,7 @@ import {
   IconX,
 } from "@tabler/icons-react";
 import { MarketingLayout } from "@/marketing/MarketingLayout";
+import { downloadSectionPath } from "@/marketing/campaign";
 import { TEAMS_MAILTO } from "@/marketing/config";
 import { useReveal } from "@/marketing/hooks";
 import { useSeo } from "@/marketing/seo";
@@ -152,11 +153,13 @@ function SuiteLine({ included }: { included: boolean }) {
 }
 
 function IapCta({ tier }: { tier: CatalogTier }) {
-  const cta = ctaFor(tier);
   return (
-    <span className="btn btn-line btn-block cta-soon" aria-disabled="true">
-      {cta.label}
-    </span>
+    <Link
+      to={downloadSectionPath("/pricing")}
+      className={`btn btn-block ${tier.highlight ? "btn-accent" : "btn-line"}`}
+    >
+      Get the app
+    </Link>
   );
 }
 

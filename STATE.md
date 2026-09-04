@@ -69,6 +69,16 @@ populate `user_id`, `applied_at`, or `subscription_id`. The complete root gate
 remains green after the fix: Prettier, typecheck, lint (existing warnings only),
 build, and all unit-test tasks.
 
+The same PR now treats individual and coach pricing as live: every IAP plan
+card links to the existing cross-platform `/#download` section with “Get the
+app” instead of rendering a disabled “Coming soon” placeholder. The
+organisation sales CTAs are unchanged. Regression coverage is revert-checked.
+Visual baselines:
+`/Users/bradleysimms-evans/.codex/visualizations/2026/09/04/01a06cdf-2dcb-78e3-b9c3-b1b10954f357/pricing-live-cta-consumer-cards-light.png`,
+`/Users/bradleysimms-evans/.codex/visualizations/2026/09/04/01a06cdf-2dcb-78e3-b9c3-b1b10954f357/pricing-live-cta-coaches-dark.png`,
+and
+`/Users/bradleysimms-evans/.codex/visualizations/2026/09/04/01a06cdf-2dcb-78e3-b9c3-b1b10954f357/pricing-live-cta-consumer-mobile.png`.
+
 ### 🟡 2026-09-03 — FOUNDING-OFFER MOBILE REFERRAL ENTRY (branch `codex/founding-referral-ota`)
 
 Work package B is implemented from store-build base `ea85b774` at app version
