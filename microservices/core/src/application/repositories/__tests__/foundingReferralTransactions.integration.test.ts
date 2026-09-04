@@ -27,7 +27,8 @@ describe("founding/referral repository transaction invariants", () => {
       CREATE TABLE profiles (
         id uuid PRIMARY KEY,
         email text,
-        role text
+        role text,
+        deleted_at timestamptz
       );
       CREATE TABLE subscription_tiers (
         tier_name text PRIMARY KEY,
@@ -637,6 +638,10 @@ describe("founding/referral repository transaction invariants", () => {
 
   it("retains an applied grant after account deletion without reapplying it", async () => {
     const grants = new FoundingGrantRepository();
+    expect(await grants.findProfileById(USER)).toMatchObject({
+      id: USER,
+      deletedAt: null,
+    });
     const firstGrantId = "00000000-0000-4000-8000-000000000070";
     const input = {
       id: firstGrantId,
@@ -698,6 +703,60 @@ describe("founding/referral repository transaction invariants", () => {
       "consumer",
     );
     expect(replacement.kind).toBe("created");
+  });
+
+  it("retains the issuer UUID when the granting admin profile is deleted", async () => {
+    const grants = new FoundingGrantRepository();
+    const id = "00000000-0000-4000-8000-000000000073";
+    expect(
+      (
+        await grants.create(
+          {
+            id,
+            userId: USER,
+            email: "user@example.test",
+            tierName: "premium",
+            months: 6,
+            amountMinor: 3000,
+            currency: "GBP",
+            paymentMethod: "other",
+            paymentReference: null,
+            paidAt: new Date(),
+            referralCodeId: null,
+            grantedBy: ADMIN,
+            notes: null,
+          },
+          "consumer",
+        )
+      ).kind,
+    ).toBe("created");
+
+    await expect(
+      pg.query("DELETE FROM profiles WHERE id = $1", [ADMIN]),
+    ).resolves.toBeDefined();
+    const retained = await pg.query<{ granted_by: string }>(
+      "SELECT granted_by FROM founding_grants WHERE id = $1",
+      [id],
+    );
+    expect(retained.rows[0].granted_by).toBe(ADMIN);
+  });
+
+  it("deduplicates concurrent apply-deferred audits in the database", async () => {
+    const audit = new AdminAuditRepository();
+    const event = {
+      actorId: ADMIN,
+      action: "founding_grant.apply_deferred",
+      entityType: "founding_grant",
+      entityId: "00000000-0000-4000-8000-000000000074",
+      after: { userId: USER, reason: "active_store_subscription" },
+    };
+
+    await Promise.all([audit.recordOnce(event), audit.recordOnce(event)]);
+    const rows = await pg.query<{ count: number }>(
+      "SELECT count(*)::int AS count FROM admin_audit_log WHERE action = 'founding_grant.apply_deferred' AND entity_id = $1",
+      [event.entityId],
+    );
+    expect(rows.rows[0].count).toBe(1);
   });
 
   it("rolls back referral-code creation when its audit insert fails", async () => {

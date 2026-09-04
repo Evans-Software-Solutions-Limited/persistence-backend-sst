@@ -49,6 +49,26 @@ export class AdminAuditRepository {
     });
   }
 
+  /**
+   * Atomically record an audit event protected by a matching unique index.
+   * Used for events that may be reached by concurrent subscription reads.
+   */
+  async recordOnce(input: AuditInput): Promise<void> {
+    const db = getDb();
+    await db
+      .insert(adminAuditLog)
+      .values({
+        actorId: input.actorId,
+        action: input.action,
+        entityType: input.entityType,
+        entityId: input.entityId ?? null,
+        before: input.before ?? null,
+        after: input.after ?? null,
+        reason: input.reason ?? null,
+      })
+      .onConflictDoNothing();
+  }
+
   async list(filter: {
     entityType?: string;
     entityId?: string;

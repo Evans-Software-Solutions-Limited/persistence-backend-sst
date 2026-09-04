@@ -274,9 +274,7 @@ export class SubscriptionRepository {
       .where(
         and(
           eq(userSubscriptions.userId, userId),
-          inArray(userSubscriptions.paymentStatus, [
-            ...LIVE_SUBSCRIPTION_STATUSES,
-          ]),
+          liveSubscriptionFilter(),
           sql`left(${userSubscriptions.externalSubscriptionId}, 3) = 'rc_'`,
         ),
       )

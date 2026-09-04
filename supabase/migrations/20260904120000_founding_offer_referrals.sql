@@ -77,7 +77,9 @@ CREATE TABLE IF NOT EXISTS founding_grants (
   paid_at           timestamptz NOT NULL,
   referral_code_id  uuid REFERENCES referral_codes(id),
   subscription_id   uuid REFERENCES user_subscriptions(id) ON DELETE SET NULL,
-  granted_by        uuid NOT NULL REFERENCES profiles(id),
+  -- Immutable issuer UUID: intentionally no profile FK, so deleting the admin
+  -- cannot erase or block deletion because of retained financial evidence.
+  granted_by        uuid NOT NULL,
   invited_at        timestamptz,
   applied_at        timestamptz,
   revoked_at        timestamptz,
@@ -119,6 +121,9 @@ CREATE INDEX IF NOT EXISTS admin_audit_log_entity_idx
   ON admin_audit_log (entity_type, entity_id);
 CREATE INDEX IF NOT EXISTS admin_audit_log_created_at_idx
   ON admin_audit_log (created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS admin_audit_log_founding_apply_deferred_uq
+  ON admin_audit_log (action, entity_id)
+  WHERE action = 'founding_grant.apply_deferred' AND entity_id IS NOT NULL;
 
 COMMENT ON TABLE admin_audit_log IS
   'Append-only. Every /admin mutation writes a row in the same transaction.';

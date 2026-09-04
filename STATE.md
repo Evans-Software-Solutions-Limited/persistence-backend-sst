@@ -44,6 +44,21 @@ unrelated web timeouts (**353 core files / 4,340 tests; 30 web files / 879
 tests; 523 mobile suites / 6,594 tests**); production web build green. Final
 full gates and the local Inspector Brad sweep remain the WP8 pre-push gate.
 
+WP8's first full-branch Inspector sweep found five additional release defects,
+all fixed before push: the CloudFront CSP now permits the stage Supabase origin
+used by admin magic-link auth; `granted_by` retains an immutable issuer UUID
+without an FK that could block administrator deletion; store-subscription
+guards use the shared expiry-aware live predicate; accounts inside the soft
+deletion window are refused a paid grant; and the once-only deferred audit is
+enforced by a partial unique index plus conflict-ignore insert. Behavioural
+tests cover the CSP input, user lookup/store provenance, deleted-account admin
+rendering, the new 409, expired store rows, issuer deletion, and concurrent
+audit deduplication. The final root gate is green: Prettier; typecheck **9/9**;
+lint zero errors (existing warnings only); build **14/14**; unit tests **21/21**
+tasks, including **354 core files / 4,352 tests**. Hardening-diff coverage is at
+least 90% for statements, branches, functions and lines; the pre-existing
+whole-PR coverage debt remains tracked separately from this post-review scope.
+
 ### 🟡 2026-09-03 — FOUNDING-OFFER MOBILE REFERRAL ENTRY (branch `codex/founding-referral-ota`)
 
 Work package B is implemented from store-build base `ea85b774` at app version

@@ -80,6 +80,29 @@ describe("AdminAuditRepository", () => {
     );
   });
 
+  it("records once with an atomic conflict-ignore insert", async () => {
+    const onConflictDoNothing = vi.fn().mockResolvedValue(undefined);
+    const values = vi.fn().mockReturnValue({ onConflictDoNothing });
+    const db = { insert: vi.fn().mockReturnValue({ values }) };
+    (getDb as any).mockReturnValue(db);
+
+    await new AdminAuditRepository().recordOnce({
+      actorId: "admin-1",
+      action: "founding_grant.apply_deferred",
+      entityType: "founding_grant",
+      entityId: "g1",
+      after: { userId: "u1" },
+    });
+
+    expect(values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "founding_grant.apply_deferred",
+        entityId: "g1",
+      }),
+    );
+    expect(onConflictDoNothing).toHaveBeenCalledOnce();
+  });
+
   it("lists without filters using defaults and bounds a filtered limit", async () => {
     const db = selectChain([{ id: "audit-1" }]);
     (getDb as any).mockReturnValue(db);

@@ -196,6 +196,17 @@ describe("adminFoundingGrantsHandler", () => {
     });
     grantMock.mockResolvedValueOnce({
       ok: false,
+      error: { code: "account_pending_deletion" },
+    });
+    const deleting = await post(valid);
+    expect(deleting.status).toBe(409);
+    expect(await deleting.json()).toEqual({
+      message:
+        "This account is pending deletion. Restore it before granting, or wait until deletion finishes and the buyer signs up again.",
+      code: "account_pending_deletion",
+    });
+    grantMock.mockResolvedValueOnce({
+      ok: false,
       error: { code: "invalid_email" },
     });
     expect((await post(valid)).status).toBe(400);

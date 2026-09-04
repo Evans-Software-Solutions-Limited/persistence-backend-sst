@@ -43,6 +43,15 @@ function grantErrorResponse(error: GrantError): {
           code: "payment_reference_required",
         },
       };
+    case "account_pending_deletion":
+      return {
+        status: 409 as const,
+        body: {
+          message:
+            "This account is pending deletion. Restore it before granting, or wait until deletion finishes and the buyer signs up again.",
+          code: "account_pending_deletion",
+        },
+      };
     case "user_not_found":
       return { status: 404, body: { message: "No account with that id" } };
     case "coach_demotion":

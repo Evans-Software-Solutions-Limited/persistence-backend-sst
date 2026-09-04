@@ -48,6 +48,7 @@ export type GrantError =
   | { code: "invalid_email" }
   | { code: "payment_reference_required" }
   | { code: "user_not_found" }
+  | { code: "account_pending_deletion" }
   | { code: "coach_demotion" }
   | {
       code: "active_store_subscription";
@@ -167,6 +168,7 @@ export class FoundingGrantService {
       id: string;
       email: string | null;
       role: string | null;
+      deletedAt: Date | null;
     } | null = null;
     if (req.userId) {
       profile = await this.grants.findProfileById(req.userId);
@@ -176,6 +178,10 @@ export class FoundingGrantService {
     if (!EMAIL_RE.test(email))
       return { ok: false, error: { code: "invalid_email" } };
     if (!profile) profile = await this.grants.findProfileByEmail(email);
+
+    if (profile?.deletedAt) {
+      return { ok: false, error: { code: "account_pending_deletion" } };
+    }
 
     if (profile) {
       const storeSubscription =
@@ -481,6 +487,13 @@ export class FoundingGrantService {
     try {
       const pending = await this.grants.findPendingByEmail(email);
       if (pending.length === 0) return false;
+      const profile = await this.grants.findProfileById(userId);
+      if (!profile || profile.deletedAt) {
+        console.warn(
+          `[founding] pending grant not applied: profile missing or pending deletion for user=${userId}`,
+        );
+        return false;
+      }
       const identity = await this.authUserLookup(userId);
       if (
         identity.emailConfirmedAt === null ||
@@ -496,20 +509,13 @@ export class FoundingGrantService {
         const storeSubscription =
           await this.subscriptions.findLiveStoreSubscription(userId);
         if (storeSubscription) {
-          if (
-            !(await this.audit.exists({
-              action: "founding_grant.apply_deferred",
-              entityId: grant.id,
-            }))
-          ) {
-            await this.audit.record({
-              actorId: grant.grantedBy,
-              action: "founding_grant.apply_deferred",
-              entityType: "founding_grant",
-              entityId: grant.id,
-              after: { userId, reason: "active_store_subscription" },
-            });
-          }
+          await this.audit.recordOnce({
+            actorId: grant.grantedBy,
+            action: "founding_grant.apply_deferred",
+            entityType: "founding_grant",
+            entityId: grant.id,
+            after: { userId, reason: "active_store_subscription" },
+          });
           console.warn(
             `[founding] pending grant ${grant.id} deferred: active store subscription for user=${userId}`,
           );

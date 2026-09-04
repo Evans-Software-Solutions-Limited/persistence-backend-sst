@@ -119,24 +119,40 @@ function statusOf(row: {
 }
 
 export class FoundingGrantRepository {
-  async findProfileByEmail(
-    email: string,
-  ): Promise<{ id: string; email: string | null; role: string | null } | null> {
+  async findProfileByEmail(email: string): Promise<{
+    id: string;
+    email: string | null;
+    role: string | null;
+    deletedAt: Date | null;
+  } | null> {
     const db = getDb();
     const rows = await db
-      .select({ id: profiles.id, email: profiles.email, role: profiles.role })
+      .select({
+        id: profiles.id,
+        email: profiles.email,
+        role: profiles.role,
+        deletedAt: profiles.deletedAt,
+      })
       .from(profiles)
       .where(sql`lower(${profiles.email}) = ${email.toLowerCase()}`)
       .limit(1);
     return rows[0] ?? null;
   }
 
-  async findProfileById(
-    id: string,
-  ): Promise<{ id: string; email: string | null; role: string | null } | null> {
+  async findProfileById(id: string): Promise<{
+    id: string;
+    email: string | null;
+    role: string | null;
+    deletedAt: Date | null;
+  } | null> {
     const db = getDb();
     const rows = await db
-      .select({ id: profiles.id, email: profiles.email, role: profiles.role })
+      .select({
+        id: profiles.id,
+        email: profiles.email,
+        role: profiles.role,
+        deletedAt: profiles.deletedAt,
+      })
       .from(profiles)
       .where(eq(profiles.id, id))
       .limit(1);

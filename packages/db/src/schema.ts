@@ -2744,9 +2744,8 @@ export const foundingGrants = pgTable(
       () => userSubscriptions.id,
       { onDelete: "set null" },
     ),
-    grantedBy: uuid("granted_by")
-      .notNull()
-      .references(() => profiles.id),
+    /** Immutable issuer UUID retained even if the administrator is deleted. */
+    grantedBy: uuid("granted_by").notNull(),
     invitedAt: timestamp("invited_at", { withTimezone: true }),
     appliedAt: timestamp("applied_at", { withTimezone: true }),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
@@ -2794,6 +2793,11 @@ export const adminAuditLog = pgTable(
   (t) => [
     index("admin_audit_log_entity_idx").on(t.entityType, t.entityId),
     index("admin_audit_log_created_at_idx").on(t.createdAt),
+    uniqueIndex("admin_audit_log_founding_apply_deferred_uq")
+      .on(t.action, t.entityId)
+      .where(
+        sql`action = 'founding_grant.apply_deferred' AND entity_id IS NOT NULL`,
+      ),
   ],
 );
 

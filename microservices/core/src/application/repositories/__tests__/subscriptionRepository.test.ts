@@ -96,9 +96,34 @@ describe("SubscriptionRepository", () => {
         .sql.toLowerCase();
       expect(rendered).toContain('"user_id" = $1');
       expect(rendered).toContain('"payment_status" in');
+      expect(rendered).toContain('"expires_at" > now()');
       expect(rendered).toContain(
         'left("user_subscriptions"."external_subscription_id", 3) = \'rc_\'',
       );
+    });
+
+    it("uses the shared live predicate so an expired rc_ row is excluded", async () => {
+      const where = vi.fn().mockReturnValue({
+        orderBy: vi.fn().mockReturnValue({
+          limit: vi.fn().mockResolvedValue([]),
+        }),
+      });
+      (getDb as any).mockReturnValue({
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({ where }),
+        }),
+      });
+
+      const { SubscriptionRepository } =
+        await import("../subscriptionRepository");
+      await expect(
+        new SubscriptionRepository().findLiveStoreSubscription("user-1"),
+      ).resolves.toBeNull();
+      const rendered = new PgDialect()
+        .sqlToQuery(where.mock.calls[0][0])
+        .sql.toLowerCase();
+      expect(rendered).toContain('"expires_at" is null');
+      expect(rendered).toContain('"expires_at" > now()');
     });
 
     it("returns null when there is no live store row", async () => {

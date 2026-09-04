@@ -5,7 +5,12 @@ import { FoundingGrantService } from "../foundingGrantService";
 function makeRepos() {
   const grants = {
     tierExists: vi.fn(async () => true),
-    findProfileById: vi.fn(async () => null),
+    findProfileById: vi.fn(async (id: string) => ({
+      id,
+      email: "a@b.co",
+      role: "user",
+      deletedAt: null,
+    })),
     findProfileByEmail: vi.fn(async () => null),
     create: vi.fn(),
     findPendingByEmail: vi.fn(async () => []),
@@ -30,6 +35,7 @@ function makeRepos() {
   const audit = {
     exists: vi.fn(async () => false),
     record: vi.fn(async () => undefined),
+    recordOnce: vi.fn(async () => undefined),
   };
   const subscriptions = {
     findLiveStoreSubscription: vi.fn(async () => null),
@@ -286,6 +292,31 @@ describe("FoundingGrantService.grant", () => {
       "admin-1",
     );
     expect(overridden.ok).toBe(true);
+  });
+
+  it("refuses to attach a paid grant to an account pending deletion", async () => {
+    const { svc, grants } = makeRepos();
+    grants.findProfileByEmail.mockResolvedValue({
+      id: "u-deleting",
+      email: "buyer@example.com",
+      role: "user",
+      deletedAt: new Date("2026-09-03T00:00:00Z"),
+    } as any);
+
+    await expect(
+      svc.grant(
+        {
+          email: "buyer@example.com",
+          tierName: "premium",
+          paymentMethod: "other",
+        },
+        "admin-1",
+      ),
+    ).resolves.toEqual({
+      ok: false,
+      error: { code: "account_pending_deletion" },
+    });
+    expect(grants.create).not.toHaveBeenCalled();
   });
 
   it("maps pool_full / duplicate / bad input to typed errors without side effects", async () => {
@@ -648,6 +679,35 @@ describe("FoundingGrantService.applyPendingForUser", () => {
     warnSpy.mockRestore();
   });
 
+  it.each([
+    ["missing", null],
+    [
+      "pending deletion",
+      {
+        id: "u1",
+        email: "a@b.co",
+        role: "user",
+        deletedAt: new Date("2026-09-04T00:00:00Z"),
+      },
+    ],
+  ])(
+    "does not apply a pending grant to a %s profile",
+    async (_label, profile) => {
+      const { svc, grants, authUserLookup } = makeRepos();
+      grants.findPendingByEmail.mockResolvedValue([{ id: "g1" }] as any);
+      grants.findProfileById.mockResolvedValue(profile as any);
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+      expect(await svc.applyPendingForUser("u1", "a@b.co")).toBe(false);
+      expect(authUserLookup).not.toHaveBeenCalled();
+      expect(grants.applyPending).not.toHaveBeenCalled();
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("profile missing or pending deletion"),
+      );
+      warnSpy.mockRestore();
+    },
+  );
+
   it("defers pending grants behind a live store subscription and audits only once", async () => {
     const { svc, grants, subscriptions, audit } = makeRepos();
     grants.findPendingByEmail.mockResolvedValue([
@@ -661,7 +721,7 @@ describe("FoundingGrantService.applyPendingForUser", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
     expect(await svc.applyPendingForUser("u1", "a@b.co")).toBe(false);
-    expect(audit.record).toHaveBeenCalledWith({
+    expect(audit.recordOnce).toHaveBeenCalledWith({
       actorId: "admin-1",
       action: "founding_grant.apply_deferred",
       entityType: "founding_grant",
@@ -670,10 +730,8 @@ describe("FoundingGrantService.applyPendingForUser", () => {
     });
     expect(grants.applyPending).not.toHaveBeenCalled();
 
-    audit.exists.mockResolvedValue(true);
-    audit.record.mockClear();
     expect(await svc.applyPendingForUser("u1", "a@b.co")).toBe(false);
-    expect(audit.record).not.toHaveBeenCalled();
+    expect(audit.recordOnce).toHaveBeenCalledTimes(2);
     expect(warnSpy).toHaveBeenCalledTimes(2);
     warnSpy.mockRestore();
   });
