@@ -59,6 +59,7 @@ export interface IOSPurchaseFlowPresenterProps {
   monthlyOnlyTiers: ReadonlySet<SubscriptionTierName>;
   subscriptionEndsAt: string | null;
   isCancelledButActive: boolean;
+  isFoundingAccess?: boolean;
   currentTierDisplayName: string;
   isProcessing: boolean;
   processingPhase: "purchasing" | "activating" | null;
@@ -75,6 +76,7 @@ export interface IOSPurchaseFlowPresenterProps {
   onRestore: () => void;
   onManageInAppStore: () => void;
   onboardingRecommendation?: OnboardingRecommendationMode;
+  referralCodeEntry?: React.ReactNode;
 }
 
 /** The only mobile component allowed to print a resolved subscription price. */
@@ -721,6 +723,8 @@ function PlansScreen(props: IOSPurchaseFlowPresenterProps) {
           ))}
         </View>
 
+        {props.referralCodeEntry}
+
         {recommendation && (
           <>
             <TouchableOpacity
@@ -794,7 +798,9 @@ function ManageScreen(props: IOSPurchaseFlowPresenterProps) {
           <View style={styles.manageHeroTop}>
             <Text style={styles.eyebrow}>YOUR PLAN</Text>
             <Text style={styles.activePill}>
-              {props.isCancelledButActive ? "CANCELLED" : "ACTIVE"}
+              {props.isCancelledButActive && !props.isFoundingAccess
+                ? "CANCELLED"
+                : "ACTIVE"}
             </Text>
           </View>
           <View
@@ -813,15 +819,22 @@ function ManageScreen(props: IOSPurchaseFlowPresenterProps) {
                 testID="subscription-manage-billing"
               >
                 <Text style={styles.manageCadence}>
-                  {cadence === null
-                    ? "Current billing period"
-                    : cadence === "annual"
-                      ? "Annual"
-                      : "Monthly"}
+                  {props.isFoundingAccess
+                    ? "Founding access"
+                    : cadence === null
+                      ? "Current billing period"
+                      : cadence === "annual"
+                        ? "Annual"
+                        : "Monthly"}
                 </Text>
                 {renewal && (
                   <Text style={styles.equivalentText}>
-                    {props.isCancelledButActive ? "ends" : "renews"} {renewal}
+                    {props.isFoundingAccess
+                      ? "active until"
+                      : props.isCancelledButActive
+                        ? "ends"
+                        : "renews"}{" "}
+                    {renewal}
                   </Text>
                 )}
               </View>
@@ -843,38 +856,56 @@ function ManageScreen(props: IOSPurchaseFlowPresenterProps) {
             <Text style={styles.manageRowLabel}>Change plan</Text>
             <Ionicons name="chevron-forward" size={17} color={color.$text4} />
           </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.manageRow}
-            onPress={props.onManageInAppStore}
-            testID="ios-purchase-manage"
-          >
-            <Ionicons
-              name={
-                Platform.OS === "android"
-                  ? "logo-google-playstore"
-                  : "logo-apple"
-              }
-              size={19}
-              color={color.$text3}
-            />
-            <Text style={styles.manageRowLabel}>
-              Payment, receipts and cancellation
-            </Text>
-            <Text style={styles.manageRowDetail}>
-              {Platform.OS === "android" ? "Google Play" : "App Store"}
-            </Text>
-          </TouchableOpacity>
-          <View style={styles.manageRow}>
-            <Ionicons name="calendar-outline" size={19} color={color.$text3} />
-            <Text style={styles.manageRowLabel}>Billing period</Text>
-            <Text style={styles.manageRowDetail}>
-              {cadence === null
-                ? "Not available"
-                : cadence === "annual"
-                  ? "Annual"
-                  : "Monthly"}
-            </Text>
-          </View>
+          {props.isFoundingAccess ? (
+            <View style={styles.manageRow} testID="founding-access-details">
+              <Ionicons
+                name="calendar-outline"
+                size={19}
+                color={color.$text3}
+              />
+              <Text style={styles.manageRowLabel}>Fixed-term access</Text>
+              <Text style={styles.manageRowDetail}>No automatic renewal</Text>
+            </View>
+          ) : (
+            <>
+              <TouchableOpacity
+                style={styles.manageRow}
+                onPress={props.onManageInAppStore}
+                testID="ios-purchase-manage"
+              >
+                <Ionicons
+                  name={
+                    Platform.OS === "android"
+                      ? "logo-google-playstore"
+                      : "logo-apple"
+                  }
+                  size={19}
+                  color={color.$text3}
+                />
+                <Text style={styles.manageRowLabel}>
+                  Payment, receipts and cancellation
+                </Text>
+                <Text style={styles.manageRowDetail}>
+                  {Platform.OS === "android" ? "Google Play" : "App Store"}
+                </Text>
+              </TouchableOpacity>
+              <View style={styles.manageRow}>
+                <Ionicons
+                  name="calendar-outline"
+                  size={19}
+                  color={color.$text3}
+                />
+                <Text style={styles.manageRowLabel}>Billing period</Text>
+                <Text style={styles.manageRowDetail}>
+                  {cadence === null
+                    ? "Not available"
+                    : cadence === "annual"
+                      ? "Annual"
+                      : "Monthly"}
+                </Text>
+              </View>
+            </>
+          )}
         </View>
       </ScrollView>
     </SafeAreaView>

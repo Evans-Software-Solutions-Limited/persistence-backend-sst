@@ -1,5 +1,6 @@
 import Constants from "expo-constants";
 import type { DashboardPayload } from "@/domain/models/dashboard";
+import type { AppliedReferral } from "@/domain/models/referral";
 import {
   SYSTEM_USER_ID,
   type CreateExerciseInput,
@@ -252,6 +253,7 @@ type RequestOptions = {
    * with a known UX cost of an open-ended hang opt in (see getDashboard).
    */
   timeoutMs?: number;
+  signal?: AbortSignal;
 };
 
 /**
@@ -335,7 +337,7 @@ export class SSTApiAdapter implements ApiPort {
     path: string,
     options: RequestOptions = {},
   ): Promise<Result<T, ApiError>> {
-    const { method = "GET", body, params, timeoutMs } = options;
+    const { method = "GET", body, params, timeoutMs, signal } = options;
 
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
@@ -363,7 +365,7 @@ export class SSTApiAdapter implements ApiPort {
         method,
         headers,
         body: body ? JSON.stringify(body) : undefined,
-        signal: controller?.signal,
+        signal: signal ?? controller?.signal,
       });
 
       if (!response.ok) {
@@ -1152,6 +1154,33 @@ export class SSTApiAdapter implements ApiPort {
 
   async getMySubscription() {
     return this.requestEnvelope<MySubscription>("/subscriptions/me");
+  }
+
+  async getAppliedReferral() {
+    return this.requestEnvelope<{ applied: AppliedReferral | null }>(
+      "/referrals/me",
+    ).then((result) =>
+      result.ok
+        ? ok(result.value.applied)
+        : (result as Result<AppliedReferral | null, ApiError>),
+    );
+  }
+
+  async claimReferral(code: string, signal?: AbortSignal) {
+    return this.requestEnvelope<{ applied: AppliedReferral }>(
+      "/referrals/claim",
+      { method: "POST", body: { code }, signal },
+    ).then((result) =>
+      result.ok
+        ? ok(result.value.applied)
+        : (result as Result<AppliedReferral, ApiError>),
+    );
+  }
+
+  async removeReferral() {
+    return this.requestEnvelope<{ removed: boolean }>("/referrals/me", {
+      method: "DELETE",
+    });
   }
 
   async syncSubscription() {

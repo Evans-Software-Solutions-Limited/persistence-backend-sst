@@ -9,6 +9,31 @@ items, and the four most recent sessions. Trimmed 2026-07-27 from 1554 lines.
 If anything here contradicts `git log --oneline -30`, the git history wins —
 say so and fix this file.
 
+### 🟡 2026-09-03 — FOUNDING-OFFER MOBILE REFERRAL ENTRY (branch `codex/founding-referral-ota`)
+
+Work package B is implemented from store-build base `ea85b774` at app version
+`1.1.2`, isolated from the native Meta/ATT/ExpoSQLite changes on
+`codex/mobile-release-drag-loader-meta`. The mobile adapter now covers
+`GET /referrals/me`, `POST /referrals/claim` and `DELETE /referrals/me`; the
+user-scoped React Query hooks use `['referral', userId]`. The shared plan
+surface shows optional referral entry on both native-IAP and catalogue rails,
+with onboarding success, unlocked Change, locked read-only, verbatim neutral
+server errors, and explicit abort of an in-flight claim when Skip is pressed.
+
+No package, Expo config, permission, runtime-version, or other native change was
+made. Mobile typecheck and lint pass (13 pre-existing warnings, zero errors),
+and the full non-coverage Jest suite passes (**516 suites / 6,516 tests**).
+Changed referral UI/hooks coverage is **100% statements/functions/lines** and
+**93.93% branches**. Staging/production EAS Updates and iOS/Android device checks
+remain deliberately unperformed pending release approval and a deployed staging
+backend.
+
+Brad approved the founding-access copy on 2026-09-03. Rows whose
+`externalSubscriptionId` starts with `founding_` now remain technically
+cancelled-at-period-end but render as active fixed-term access: “Access active”
+and “will not renew automatically”, with no reinstatement instruction. The iOS
+manage screen uses the same semantics.
+
 ## ▶ START HERE — next session (rewritten 2026-08-04, post-Mealprint-merge)
 
 ### 🟡 2026-09-03 — ONBOARDING BACK TRANSITION + TEMPLATE VISIBILITY (branch `codex/profile-hide-template-workouts`)
