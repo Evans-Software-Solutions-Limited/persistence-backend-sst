@@ -9,6 +9,31 @@ items, and the four most recent sessions. Trimmed 2026-07-27 from 1554 lines.
 If anything here contradicts `git log --oneline -30`, the git history wins —
 say so and fix this file.
 
+### 📝 2026-09-04 — MARKETING-PLANS BRIEFS (branch `docs/marketing-plans-briefs`, docs only)
+
+Four documents added under `specs/milestones/MARKETING-PLANS/`, no code:
+`BRIEF.md` (coding-agent brief: `meta` campaign slug, `campaign` on
+`store_click`, web-only store-offer CTA on `/meta`, and an admin "Marketing"
+section — plans, channels, linked codes, hand-entered metrics, derived
+attribution), `MARKETING_BRIEF.md` (the founders' offer × Meta plan in the
+marketing source-of-truth format), `EXECUTION_PLAN.md` and `CREATIVE_BRIEF.md`
+(structure and constraints only — Brad writes the ads). Decisions recorded:
+two lanes (founding access granted, not sold, for warm traffic; an App Store
+offer code, the only priced rail, for cold Meta traffic); Phase 0 decisions
+P1–P5 baked in (codes customised in `/admin`, partner codes for partner
+attribution, channel attribution from the campaign slug; four ASC pay-up-front
+offers — Premium £30/6 mo and £60/12 mo, Premium+ £50/6 mo and £100/12 mo —
+with caps/expiry set in ASC and mirrored into the plan; ESS not VAT-registered;
+£10/day, £210 hard cap, declared stop rule). `START_HERE.md` carries the
+kick-off prompt for the build agent. The build brief is based on
+`main` after `codex/auth-cardio-logging` (merged 4 Sep) — that branch amends the
+FOUNDING-OFFER grant model (`grant_kind`, optional contribution columns,
+`founding_pool_limits`, `GET /founding/availability`) and these briefs are
+written against it. Verified during drafting: `store_click` carries no
+campaign slug today; `CAMPAIGNS` has no `meta` entry; the Meta ad account's
+spending limit is £20/month and must be raised before any test; the Meta SDK
+build is not yet submitted and no `SKAdNetworkItems` were found.
+
 ### 🟢 2026-09-04 — FOUNDING-OFFER post-review hardening (branch `feat/founding-offer-admin`)
 
 Security review findings F1–F10 are now captured under
