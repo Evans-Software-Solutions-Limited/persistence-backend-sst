@@ -123,6 +123,16 @@ session exercise creation resolves visibility and snapshots the source exercise
 category. Regressions cover both paths, the complete gate suite is green, and
 the final closed local Inspector Brad sweep returned clean.
 
+The PR #434 CI Inspector follow-up found two mobile boundary cases. Cardio
+duration/distance fields now preserve focused, in-progress text while SQLite
+echoes canonical values back through the parent, then canonicalise on blur.
+Retrospective dates are displayed from device-local calendar components rather
+than a UTC string slice, and same-day logging before noon clamps completion to
+the current instant instead of rejecting the selected day. Focused regressions
+cover the command-echo and timezone/calendar-day paths. The full repository
+gate is green (**524 mobile suites / 6,627 tests; 21 workspace tasks**) and the
+local Inspector Brad follow-up is clean.
+
 ### 🟡 2026-09-03 — FOUNDING-OFFER MOBILE REFERRAL ENTRY (branch `codex/founding-referral-ota`)
 
 Work package B is implemented from store-build base `ea85b774` at app version

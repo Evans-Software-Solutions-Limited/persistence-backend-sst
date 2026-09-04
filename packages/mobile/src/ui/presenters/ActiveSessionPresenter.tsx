@@ -74,6 +74,11 @@ export type SessionExerciseTemplate = {
   restSeconds: number;
 };
 
+export function retrospectiveDayValue(completedAt: string): string {
+  const completed = new Date(completedAt);
+  return Number.isFinite(completed.getTime()) ? localDayISO(completed) : "";
+}
+
 export type ActiveSessionPresenterProps = {
   sessionName: string;
   startedAt: string;
@@ -451,7 +456,9 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
                     <>
                       <DatePickerField
                         label="Workout date"
-                        value={props.retrospectiveCompletedAt.slice(0, 10)}
+                        value={retrospectiveDayValue(
+                          props.retrospectiveCompletedAt,
+                        )}
                         maximumDate={today}
                         allowClear={false}
                         onChange={props.onRetrospectiveDateChange}

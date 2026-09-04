@@ -1,7 +1,10 @@
 import { act, fireEvent } from "@testing-library/react-native";
 import { AccessibilityInfo, AppState } from "react-native";
 import React from "react";
-import { ActiveSessionPresenter } from "../ActiveSessionPresenter";
+import {
+  ActiveSessionPresenter,
+  retrospectiveDayValue,
+} from "../ActiveSessionPresenter";
 import type { SessionExercise } from "@/domain/models/session";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 
@@ -580,6 +583,16 @@ describe("ActiveSessionPresenter (vertical scroll, legacy parity)", () => {
     expect(onActivityEnvironmentChange).toHaveBeenCalledWith("outdoor");
     fireEvent.changeText(getByTestId("session-location"), "Park");
     expect(onLocationNameChange).toHaveBeenCalledWith("Park");
+  });
+
+  it("derives the retrospective picker day from local calendar components", () => {
+    jest.spyOn(Date.prototype, "getFullYear").mockReturnValue(2026);
+    jest.spyOn(Date.prototype, "getMonth").mockReturnValue(5);
+    jest.spyOn(Date.prototype, "getDate").mockReturnValue(5);
+
+    expect(retrospectiveDayValue("2026-06-04T23:00:00.000Z")).toBe(
+      "2026-06-05",
+    );
   });
 
   it("does not force metric loggers into the strength-only superset table", () => {

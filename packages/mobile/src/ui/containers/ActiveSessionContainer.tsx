@@ -65,11 +65,25 @@ import {
 import { buildTemplateMap } from "@/ui/containers/active-session-template";
 import { useLoadoutGate } from "@/ui/hooks/useLoadoutGate";
 import { AdaptiveSuiteRouteGuard } from "@/ui/components/subscription/AdaptiveSuiteRouteGuard";
+import { isIsoDateString, localDayISO } from "@/shared/utils";
 
 // Default rest seconds when the workout template doesn't carry one.
 // FRONTEND_BRIEF "Out of scope" notes M6 ships the configurator; M3
 // just consumes a sensible default here.
 const DEFAULT_REST_SECONDS = 90;
+
+export function retrospectiveCompletedAtForDay(
+  day: string,
+  now = new Date(),
+): string | null {
+  if (!isIsoDateString(day) || day > localDayISO(now)) return null;
+  const completed = new Date(`${day}T12:00:00`);
+  if (!Number.isFinite(completed.getTime())) return null;
+  // A same-day retrospective workout selected before local noon should
+  // complete now, rather than being rejected as a future instant.
+  if (completed > now) completed.setTime(now.getTime());
+  return completed.toISOString();
+}
 
 export function ActiveSessionContainer() {
   const { storage, api } = useAdapters();
@@ -225,11 +239,10 @@ export function ActiveSessionContainer() {
 
   const onRetrospectiveDateChange = useCallback(
     (day: string) => {
-      const completed = new Date(`${day}T12:00:00`);
-      if (!Number.isFinite(completed.getTime()) || completed > new Date())
-        return;
+      const completedAt = retrospectiveCompletedAtForDay(day);
+      if (!completedAt) return;
       updateSessionMetadata({
-        retrospectiveCompletedAt: completed.toISOString(),
+        retrospectiveCompletedAt: completedAt,
       });
     },
     [updateSessionMetadata],

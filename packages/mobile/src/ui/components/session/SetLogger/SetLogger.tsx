@@ -79,6 +79,8 @@ export function SetLogger(props: SetLoggerProps) {
     return Number(value.toFixed(2)).toString();
   });
   const weightInputRef = useRef<TextInput | null>(null);
+  const durationInputFocusedRef = useRef(false);
+  const distanceInputFocusedRef = useRef(false);
 
   useEffect(() => {
     setReps(toInputString(props.set.reps));
@@ -86,9 +88,16 @@ export function SetLogger(props: SetLoggerProps) {
   }, [props.set.reps, props.set.weightKg]);
 
   useEffect(() => {
-    setDuration(formatDurationInput(props.set.durationSeconds));
-    if (props.set.distanceMeters == null) setDistance("");
-    else {
+    // Commands echo each valid keystroke back through SQLite. Do not replace
+    // the user's in-progress text (for example `2`, `25:3`, `1.`) with that
+    // canonical echo while the field is focused; canonicalise on blur instead.
+    if (!durationInputFocusedRef.current) {
+      setDuration(formatDurationInput(props.set.durationSeconds));
+    }
+    if (distanceInputFocusedRef.current) return;
+    if (props.set.distanceMeters == null) {
+      setDistance("");
+    } else {
       const value =
         trackingMode === "plyometric"
           ? jumpDistanceFromMeters(props.set.distanceMeters, preferredUnits)
@@ -175,6 +184,15 @@ export function SetLogger(props: SetLoggerProps) {
           trackingMode === "cardio" ? "numbers-and-punctuation" : "number-pad"
         }
         placeholder={trackingMode === "cardio" ? "mm:ss" : undefined}
+        onFocus={() => {
+          durationInputFocusedRef.current = trackingMode === "cardio";
+        }}
+        onBlur={() => {
+          durationInputFocusedRef.current = false;
+          if (trackingMode === "cardio") {
+            setDuration(formatDurationInput(props.set.durationSeconds));
+          }
+        }}
         returnKeyType="next"
         // `blurOnSubmit={false}` keeps the keyboard open across the
         // reps → weight focus hop. The default is `true` for single-
@@ -200,6 +218,25 @@ export function SetLogger(props: SetLoggerProps) {
             : handleDistanceChange
         }
         keyboardType="decimal-pad"
+        onFocus={() => {
+          distanceInputFocusedRef.current = trackingMode !== "strength";
+        }}
+        onBlur={() => {
+          distanceInputFocusedRef.current = false;
+          if (trackingMode === "strength") return;
+          if (props.set.distanceMeters == null) {
+            setDistance("");
+            return;
+          }
+          const value =
+            trackingMode === "plyometric"
+              ? jumpDistanceFromMeters(props.set.distanceMeters, preferredUnits)
+              : activityDistanceFromMeters(
+                  props.set.distanceMeters,
+                  preferredUnits,
+                );
+          setDistance(Number(value.toFixed(2)).toString());
+        }}
         returnKeyType="done"
         // Weight is the last field in the chain, so the default
         // `blurOnSubmit={true}` is correct here — Return/Done should

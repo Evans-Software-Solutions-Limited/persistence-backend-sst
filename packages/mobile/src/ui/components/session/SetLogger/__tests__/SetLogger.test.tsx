@@ -182,6 +182,45 @@ describe("SetLogger", () => {
     expect(onChange).toHaveBeenCalledWith({ distanceMeters: 5000 });
   });
 
+  it("preserves focused cardio text while command echoes update the set", () => {
+    const onChange = jest.fn();
+    const baseProps = {
+      setNumber: 1,
+      previous: null,
+      trackingMode: "cardio" as const,
+      preferredUnits: "metric" as const,
+      onChange,
+      onRemove: jest.fn(),
+      onFillPrevious: jest.fn(),
+    };
+    const { getByTestId, rerender } = renderWithTheme(
+      <SetLogger {...baseProps} set={buildSet()} />,
+    );
+    const durationInput = getByTestId("set-logger-duration");
+    fireEvent(durationInput, "focus");
+    fireEvent.changeText(durationInput, "2");
+    rerender(
+      <SetLogger {...baseProps} set={buildSet({ durationSeconds: 120 })} />,
+    );
+    expect(getByTestId("set-logger-duration").props.value).toBe("2");
+
+    fireEvent.changeText(getByTestId("set-logger-duration"), "25:3");
+    rerender(<SetLogger {...baseProps} set={buildSet()} />);
+    expect(getByTestId("set-logger-duration").props.value).toBe("25:3");
+    fireEvent(getByTestId("set-logger-duration"), "blur");
+    expect(getByTestId("set-logger-duration").props.value).toBe("");
+
+    const distanceInput = getByTestId("set-logger-distance");
+    fireEvent(distanceInput, "focus");
+    fireEvent.changeText(distanceInput, "1.");
+    rerender(
+      <SetLogger {...baseProps} set={buildSet({ distanceMeters: 1_000 })} />,
+    );
+    expect(getByTestId("set-logger-distance").props.value).toBe("1.");
+    fireEvent(getByTestId("set-logger-distance"), "blur");
+    expect(getByTestId("set-logger-distance").props.value).toBe("1");
+  });
+
   it("converts an imperial plyometric jump distance to metres", () => {
     const onChange = jest.fn();
     const { getByTestId } = renderWithTheme(
@@ -200,6 +239,26 @@ describe("SetLogger", () => {
     expect(onChange).toHaveBeenCalledWith({
       distanceMeters: expect.closeTo(0.6096, 8),
     });
+    fireEvent(getByTestId("set-logger-distance"), "focus");
+    fireEvent(getByTestId("set-logger-distance"), "blur");
+    expect(getByTestId("set-logger-distance").props.value).toBe("");
+  });
+
+  it("rejects a numeric distance that overflows JavaScript's finite range", () => {
+    const onChange = jest.fn();
+    const { getByTestId } = renderWithTheme(
+      <SetLogger
+        set={buildSet()}
+        setNumber={1}
+        previous={null}
+        trackingMode="cardio"
+        onChange={onChange}
+        onRemove={jest.fn()}
+        onFillPrevious={jest.fn()}
+      />,
+    );
+    fireEvent.changeText(getByTestId("set-logger-distance"), "9".repeat(400));
+    expect(onChange).toHaveBeenCalledWith({ distanceMeters: null });
   });
 
   it("hydrates metric values and clears invalid activity input", () => {
