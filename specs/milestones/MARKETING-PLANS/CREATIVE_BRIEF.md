@@ -12,7 +12,7 @@ New programme, new gym, or the moment they can't remember what they lifted last 
 
 ## Single claim (the only promise every asset makes)
 
-Founders' rate: six months of Premium at the price configured in App Store Connect. Renews at the standard price unless cancelled. Limited to the max redemptions you set in ASC — quote that number, never the founding pool cap. These ads are Lane B only; they must not mention founding places, grants or contributions.
+Founders' rate: six months of Premium for £30 (the year for £60; Premium+ £50 / £100 — nearest Apple tiers, read the exact figure back from ASC). Renews at the standard price unless cancelled. Limited to the max redemptions you set in ASC — quote that number, never the founding pool cap. Lead with one price in an ad (six months of Premium); the others live on the landing page. These ads are Lane B only; they must not mention founding places, grants or contributions.
 
 ## Mechanism (why it exists — this is the interesting part for cold traffic)
 
@@ -27,11 +27,11 @@ Not available, do not fabricate: testimonials, user counts, download figures, "t
 
 ## Three concepts to produce (one asset each for week 1)
 
-| # | Concept | Angle | What the viewer sees | Format |
-|---|---|---|---|---|
-| C1 | Founder story | Why the offer exists | You, talking to camera, then the app | 20–30 s talking head, burned-in captions |
-| C2 | Demonstration | Effort removed | Hands + phone: a full session logged, timer visible, no cuts that hide time | 15 s screen recording + voiceover |
-| C3 | Situation | Problem recognised | A recognisable "bad tracking" moment, then the app | 3-frame static or carousel |
+| #   | Concept       | Angle                | What the viewer sees                                                        | Format                                   |
+| --- | ------------- | -------------------- | --------------------------------------------------------------------------- | ---------------------------------------- |
+| C1  | Founder story | Why the offer exists | You, talking to camera, then the app                                        | 20–30 s talking head, burned-in captions |
+| C2  | Demonstration | Effort removed       | Hands + phone: a full session logged, timer visible, no cuts that hide time | 15 s screen recording + voiceover        |
+| C3  | Situation     | Problem recognised   | A recognisable "bad tracking" moment, then the app                          | 3-frame static or carousel               |
 
 Week 2: three opening variants of the winner (change the first 2 seconds only; body and CTA unchanged).
 
@@ -67,7 +67,7 @@ Fake urgency, invented numbers, testimonials of any kind, screenshots of other a
 
 ## Learning question per concept
 
-- C1: does the *reason* for the price out-perform the product itself with cold traffic?
+- C1: does the _reason_ for the price out-perform the product itself with cold traffic?
 - C2: does seeing the speed of logging drive clicks without a story?
 - C3: does problem recognition alone earn the click?
 

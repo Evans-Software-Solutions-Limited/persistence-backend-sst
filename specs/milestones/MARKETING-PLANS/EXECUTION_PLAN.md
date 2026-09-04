@@ -4,25 +4,26 @@ Owner: Brad. Agents: one coding agent on `feat/marketing-plans` (brief: `BRIEF.m
 
 Rule: nothing public until the step's gate is green. Gates in bold.
 
-## Phase 0 — land the prerequisites (5 Sep, Brad)
+## Phase 0 — decisions (made 4 Sep, Brad; recorded as P1–P5 in `MARKETING_BRIEF.md § 0`)
 
-- [ ] Merge `codex/auth-cardio-logging` (grant-model amendment + spec 33). MARKETING-PLANS depends on its schema.
+- [x] `codex/auth-cardio-logging` merged (grant-model amendment + spec 33).
 - [ ] Merge this briefs PR (`docs/marketing-plans-briefs`).
-- [ ] Decide code word(s): shared or one per avenue — your call. Create them in `/admin → Referral codes`.
-- [ ] Decide the Lane B ASC offer: pay-up-front, 6 months, price tier, new subscribers, max redemptions, expiry.
-- [ ] VAT status of ESS (Meta adds 20% otherwise; add VRN if registered).
-- [ ] Ad account spending limit £20 → **£210**.
+- [x] P1 Codes: created and customised in `/admin`; channel attribution mainly from the campaign slug; partner-specific codes for partner attribution. → **To do:** create the first code(s) in `/admin → Referral codes`.
+- [x] P2 Lane B offers: Premium £30 / 6 mo and £60 / 12 mo; Premium+ £50 / 6 mo and £100 / 12 mo (nearest tiers), pay up front, new subscribers. → **To do:** configure the four offers + custom codes in ASC.
+- [x] P3 Caps/expiry: set in ASC by Brad; mirrored into the plan's store-offer rows in `/admin/marketing` (ASC API control is a follow-up).
+- [x] P4 VAT: ESS not VAT-registered — Meta adds 20% (≈ £252 charged on a £210 cap).
+- [x] P5 Ad-account spending limit £210. → **To do:** change it in Ads Manager.
 
 ## Phase 1 — build (5–9 Sep)
 
-| Who | Work | Gate |
-|---|---|---|
-| Coding agent | MARKETING-PLANS WP1–WP7 on `feat/marketing-plans`, based on `main` post-amendment | repo gates green; local inspector clean; PR open |
-| Brad | Review + merge; apply migration on staging; deploy | `SMOKE_TEST.md` (a)–(h) on staging |
-| Brad | ASC: create offer + custom code(s); wait ≤ 1 h | redeemable |
-| Brad | **Redeem once on a fresh Apple ID + fresh account; confirm `user_subscriptions` row server-side** | present → Lane B live-able. Absent → stop; introductory-offer fallback, re-plan |
-| Brad | `VITE_STORE_OFFER_IOS_URL` on `staging` → smoke (a) → `Production`; prod migration; deploy | `/meta` on prod shows the CTA; one `analytics_events` row with `campaign='meta'` |
-| Brad | `/admin/marketing` → New plan "Founders' offer — Sep 2026": lanes both, cap £210, dates 10–28 Sep, paste `MARKETING_BRIEF.md`; channels `meta`, `ig`, `flyer`, `banner`, `uon`; link code(s) | plan visible with channels and codes |
+| Who          | Work                                                                                                                                                                                         | Gate                                                                             |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| Coding agent | MARKETING-PLANS WP1–WP7 on `feat/marketing-plans`, based on `main` post-amendment                                                                                                            | repo gates green; local inspector clean; PR open                                 |
+| Brad         | Review + merge; apply migration on staging; deploy                                                                                                                                           | `SMOKE_TEST.md` (a)–(h) on staging                                               |
+| Brad         | ASC: create the four offers + custom code(s) with caps/expiry; wait ≤ 1 h; mirror them into the plan's store-offer rows                                                                      | redeemable; rows visible in `/admin/marketing`                                   |
+| Brad         | **Redeem once on a fresh Apple ID + fresh account; confirm `user_subscriptions` row server-side**                                                                                            | present → Lane B live-able. Absent → stop; introductory-offer fallback, re-plan  |
+| Brad         | `VITE_STORE_OFFER_IOS_URL` on `staging` → smoke (a) → `Production`; prod migration; deploy                                                                                                   | `/meta` on prod shows the CTA; one `analytics_events` row with `campaign='meta'` |
+| Brad         | `/admin/marketing` → New plan "Founders' offer — Sep 2026": lanes both, cap £210, dates 10–28 Sep, paste `MARKETING_BRIEF.md`; channels `meta`, `ig`, `flyer`, `banner`, `uon`; link code(s) | plan visible with channels and codes                                             |
 
 ## Phase 2 — Meta plumbing (5–9 Sep, Brad in console)
 

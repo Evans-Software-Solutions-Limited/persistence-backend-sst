@@ -10,10 +10,10 @@ Source of truth for build state is `STATE.md` + `specs/milestones/FOUNDING-OFFER
 
 **Run the founders' offer on two rails and point Meta only at the rail a stranger can complete — and at the only rail that carries a price.**
 
-| Lane | Who it is for | Money | Rail | Attribution |
-|---|---|---|---|---|
-| **A — Founding access** (built, #432 + amendment) | Warm: people Brad meets at fairs, network, existing IG followers | **None required.** Access is granted at Brad's discretion for a period he sets. A crowdfunding contribution is optional, recorded as evidence only, and never buys, sizes or extends access. | Ask in person / by email → `/admin` grant (`founding` consumes a pool place; `complimentary` does not) → user signs up + confirms email → access on first load | Referral code recorded on the grant (attribution only; does not lock as a paid conversion) + `?ref=` + campaign slug on `/founding` |
-| **B — Store founders' rate** (config only, no build) | Cold: Meta/Instagram ads audiences who have never heard of Brad | Apple/Google pay Brad ~45 days after month end | Apple **custom offer code** (pay-up-front, 6 months) redeemed via redemption URL — installs the app as part of redemption | ASC per-code redemption report + `ct` campaign token + RevenueCat |
+| Lane                                                 | Who it is for                                                    | Money                                                                                                                                                                                        | Rail                                                                                                                                                           | Attribution                                                                                                                         |
+| ---------------------------------------------------- | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| **A — Founding access** (built, #432 + amendment)    | Warm: people Brad meets at fairs, network, existing IG followers | **None required.** Access is granted at Brad's discretion for a period he sets. A crowdfunding contribution is optional, recorded as evidence only, and never buys, sizes or extends access. | Ask in person / by email → `/admin` grant (`founding` consumes a pool place; `complimentary` does not) → user signs up + confirms email → access on first load | Referral code recorded on the grant (attribution only; does not lock as a paid conversion) + `?ref=` + campaign slug on `/founding` |
+| **B — Store founders' rate** (config only, no build) | Cold: Meta/Instagram ads audiences who have never heard of Brad  | Apple/Google pay Brad ~45 days after month end                                                                                                                                               | Apple **custom offer code** (pay-up-front, 6 months) redeemed via redemption URL — installs the app as part of redemption                                      | ASC per-code redemption report + `ct` campaign token + RevenueCat                                                                   |
 
 Why not Lane A for Meta: Lane A has no price, no checkout and no promise — by design (amendment; review F9). Its conversion is "email Brad and be granted a place". That is a warm-relationship mechanism, not a cold-click funnel, and putting a price on it in an ad would contradict the page it lands on. `DERIVED` from `BRIEF.md § 2` amendment, `SECURITY_REVIEW-2026-09-04.md § 3`, SoT § 8.1 and § 8.5.
 
@@ -21,7 +21,17 @@ Why Lane B matters beyond cash: Shipaton is RevenueCat's competition, judged on 
 
 **The only priced claim anywhere in this plan is Lane B's App Store offer.** Referral codes never change price or grant entitlement (D6 + amendment). Do not write ad copy that promises anything for "entering a code".
 
-**Codes are Brad's to choose.** They may differ per avenue (one per channel or partner) if he wants per-code attribution in ASC; the brief writes `<CODE>` throughout and never dictates a name. Channel attribution does not depend on the code word — it comes from the campaign slug (`meta`, `ig`, `flyer`…) via Apple `ct`, Play `utm_*` and, once MARKETING-PLANS lands, `store_click.properties.campaign`.
+**Phase 0 decisions (Brad, 4 Sep 2026 — baked in):**
+
+| #   | Decision                      | Value                                                                                                                                                                                                                                                                                                                                                                                    |
+| --- | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P1  | Codes                         | Created and customised in `/admin → Referral codes`, never by an agent. Channel attribution comes **mainly from the campaign slug**; Brad assigns **specific codes to partners** for partner attribution on top. Briefs write `<CODE>`.                                                                                                                                                  |
+| P2  | Store founders' rate (Lane B) | Four ASC pay-up-front offers on the existing monthly subscriptions, new subscribers only: **Premium £30 / 6 months, £60 / 12 months; Premium+ £50 / 6 months, £100 / 12 months** (nearest Apple price tiers — read the configured value back from ASC before it appears in copy). Play equivalents if trivial.                                                                           |
+| P3  | Redemption caps and expiry    | Brad sets them. Referral-code caps/dates are already editable in `/admin` (`max_redemptions`, `starts_at`, `ends_at`). **ASC offer-code caps and expiry live in App Store Connect** — the admin panel records and displays them per plan (hand-entered) but cannot set them in this milestone; an App Store Connect API integration is a listed follow-up, not part of the 30 Sep slice. |
+| P4  | VAT                           | ESS is **not VAT-registered**: Meta adds 20% to ad spend (£210 ex-VAT ≈ £252 charged); Apple handles VAT on Lane B, so net-per-sale is unaffected.                                                                                                                                                                                                                                       |
+| P5  | Ad-account spending limit     | **£210** (from £20/month).                                                                                                                                                                                                                                                                                                                                                               |
+
+Channel attribution does not depend on the code word — it comes from the campaign slug (`meta`, `ig`, `flyer`…) via Apple `ct`, Play `utm_*` and, once MARKETING-PLANS lands, `store_click.properties.campaign`.
 
 ---
 
@@ -35,18 +45,18 @@ Why Lane B matters beyond cash: Shipaton is RevenueCat's competition, judged on 
 
 **Message map (Lane B; Lane A copy is on `/founding` already and must not add a price):**
 
-| Element | Value |
-|---|---|
-| Buyer | People who lift and want their training history to actually mean something |
-| Trigger | New programme / new gym / can't remember last week's weights |
-| Problem | Tracking is either a chore or a monthly app they don't get value from |
-| Outcome | Every session logged in under a minute, PRs and streaks derived for you |
-| Claim (bounded, Lane B only) | Founders' rate: six months of Premium for the ASC-configured price, renews at the standard price unless cancelled. Read the number back from ASC; never from this brief. |
-| Mechanism | Built by one founder who lifts; launching with founders instead of investors |
-| Proof | Demonstration only. No testimonials exist — do not invent any (SoT § 1.5). |
-| Objection | "Another fitness app" → show the workflow. "Why so cheap?" → it's a launch-period founders' rate with a real redemption cap. |
-| CTA | Lane B: "Redeem the founders' rate" → offer-code redemption URL via the landing page. Lane A: "Ask for a founding place" → `/founding`. |
-| Disqualifier | Already subscribed in the store → not eligible |
+| Element                      | Value                                                                                                                                                                                                                              |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Buyer                        | People who lift and want their training history to actually mean something                                                                                                                                                         |
+| Trigger                      | New programme / new gym / can't remember last week's weights                                                                                                                                                                       |
+| Problem                      | Tracking is either a chore or a monthly app they don't get value from                                                                                                                                                              |
+| Outcome                      | Every session logged in under a minute, PRs and streaks derived for you                                                                                                                                                            |
+| Claim (bounded, Lane B only) | Founders' rate: six months of Premium for £30 (or a year for £60; Premium+ £50 / £100), renews at the standard price unless cancelled. Nearest Apple tier applies — read the exact figure back from ASC before it appears in copy. |
+| Mechanism                    | Built by one founder who lifts; launching with founders instead of investors                                                                                                                                                       |
+| Proof                        | Demonstration only. No testimonials exist — do not invent any (SoT § 1.5).                                                                                                                                                         |
+| Objection                    | "Another fitness app" → show the workflow. "Why so cheap?" → it's a launch-period founders' rate with a real redemption cap.                                                                                                       |
+| CTA                          | Lane B: "Redeem the founders' rate" → offer-code redemption URL via the landing page. Lane A: "Ask for a founding place" → `/founding`.                                                                                            |
+| Disqualifier                 | Already subscribed in the store → not eligible                                                                                                                                                                                     |
 
 Real urgency (SoT § 5.8): the ASC code's `max redemptions` and expiry; the DB-backed founding pool (`founding_pool_limits`, exposed as aggregate availability via `GET /founding/availability`); the fixed 30 Sep Shipaton date. Nothing else. No countdowns.
 
@@ -64,7 +74,7 @@ Real urgency (SoT § 5.8): the ASC code's `max redemptions` and expiry; the DB-b
 
 ### Lane B — Store founders' rate (to configure; VOLATILE — verify every line in ASC/Play Console before writing copy)
 
-- **Apple:** App Store Connect → Premium monthly subscription → Subscription offer codes → new offer: **pay up front**, **6 months**, price tier Brad chooses, eligibility **new subscribers**. Custom codes: Brad's words, one or several (per avenue if he wants per-code attribution). Set `max redemptions` and expiry. Codes take up to an hour to become redeemable. Redemption URL: `https://apps.apple.com/redeem?ctx=offercodes&id=<numeric app id>&code=<CODE>` — the App Store prompts the install if the app is missing (memory `persistence-offer-codes`).
+- **Apple:** App Store Connect → Subscription offer codes → four offers (P2): Premium monthly → pay up front 6 months at the £30 tier and 1 year at the £60 tier; Premium+ monthly → 6 months at £50 and 1 year at £100; eligibility **new subscribers**. Custom codes: Brad's words, one or several (per avenue/partner). Set `max redemptions` and expiry **in ASC** (P3) and mirror them into the plan in `/admin/marketing` so the panel shows what is live. Codes take up to an hour to become redeemable. Redemption URL: `https://apps.apple.com/redeem?ctx=offercodes&id=<numeric app id>&code=<CODE>` — the App Store prompts the install if the app is missing (memory `persistence-offer-codes`).
 - **Google:** Play Console → Monetise → Promo codes; check current limits. iOS first; Android only if trivial.
 - Naming in public copy: "founders' rate" (Lane B, priced, renews) vs "founding place / founding access" (Lane A, granted). Never let one lane's number or mechanism be claimed for the other.
 - **Before a single ad runs:** redeem one code end to end on a real device with a fresh Apple ID and fresh account → confirm a `user_subscriptions` row server-side (RC anonymous-id trap; `revenueCatWebhookHandler.ts` skips anonymous ids; whether `logIn`/TRANSFER repairs it is unverified). No row → Lane B is not launchable; fallback is an ASC introductory offer.
@@ -73,40 +83,40 @@ Real urgency (SoT § 5.8): the ASC code's `max redemptions` and expiry; the DB-b
 
 ## 3. Evidence register
 
-| Claim | Label | Source |
-|---|---|---|
-| Founding access is granted not sold; contributions optional and separate; no prices/purchase flow on `/founding` | PRIMARY | `BRIEF.md § 2` amendment + `Founding.tsx` on `codex/auth-cardio-logging`; migration `20260904214114_generalise_founding_grants.sql` |
-| Pool caps DB-backed, public aggregate availability | PRIMARY | `founding_pool_limits`; `GET /founding/availability` in `subscriptionsTiersHandler.ts` (same branch) |
-| Referral codes are attribution only; grant does not lock the referral as paid | PRIMARY | D6 + amendment; `referralsHandler.ts` |
-| `?ref=` captured on any `MarketingLayout` route and carried on `store_click` | PRIMARY | `MarketingLayout.tsx:34-41`, `storeClick.ts:41` |
-| `store_click` has no campaign slug today | PRIMARY | `leadsRoutes.ts` `storeClickEvent` (fixed by MARKETING-PLANS WP2) |
-| `CAMPAIGNS` has no `meta` slug | PRIMARY | `packages/web/src/marketing/config.ts` |
-| Meta SDK + ATT built, not submitted; no `SKAdNetworkItems` found | PRIMARY (grep 4 Sep) | `STATE.md` 2026-09-02 |
-| Founding grants bypass RC; store subs RC-visible | PRIMARY | D3 |
-| Shipaton: submit by 30 Sep 23:45 PDT | PRIMARY / VOLATILE | `STATE.md` 2026-08-12 |
-| Health & wellness dataset may restrict custom audiences, not cold interest targeting | PRIMARY / VOLATILE | memory `persistence-meta-capi-setup` |
-| Apple net ≈ 71% of a pay-up-front price after VAT and 15% | DERIVED | funding review § 1 |
-| Fitness UK CPC/CTR/install benchmarks | **UNKNOWN** | none first-party — do not forecast from them |
+| Claim                                                                                                            | Label                | Source                                                                                                                              |
+| ---------------------------------------------------------------------------------------------------------------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Founding access is granted not sold; contributions optional and separate; no prices/purchase flow on `/founding` | PRIMARY              | `BRIEF.md § 2` amendment + `Founding.tsx` on `codex/auth-cardio-logging`; migration `20260904214114_generalise_founding_grants.sql` |
+| Pool caps DB-backed, public aggregate availability                                                               | PRIMARY              | `founding_pool_limits`; `GET /founding/availability` in `subscriptionsTiersHandler.ts` (same branch)                                |
+| Referral codes are attribution only; grant does not lock the referral as paid                                    | PRIMARY              | D6 + amendment; `referralsHandler.ts`                                                                                               |
+| `?ref=` captured on any `MarketingLayout` route and carried on `store_click`                                     | PRIMARY              | `MarketingLayout.tsx:34-41`, `storeClick.ts:41`                                                                                     |
+| `store_click` has no campaign slug today                                                                         | PRIMARY              | `leadsRoutes.ts` `storeClickEvent` (fixed by MARKETING-PLANS WP2)                                                                   |
+| `CAMPAIGNS` has no `meta` slug                                                                                   | PRIMARY              | `packages/web/src/marketing/config.ts`                                                                                              |
+| Meta SDK + ATT built, not submitted; no `SKAdNetworkItems` found                                                 | PRIMARY (grep 4 Sep) | `STATE.md` 2026-09-02                                                                                                               |
+| Founding grants bypass RC; store subs RC-visible                                                                 | PRIMARY              | D3                                                                                                                                  |
+| Shipaton: submit by 30 Sep 23:45 PDT                                                                             | PRIMARY / VOLATILE   | `STATE.md` 2026-08-12                                                                                                               |
+| Health & wellness dataset may restrict custom audiences, not cold interest targeting                             | PRIMARY / VOLATILE   | memory `persistence-meta-capi-setup`                                                                                                |
+| Apple net ≈ 71% of a pay-up-front price after VAT and 15%                                                        | DERIVED              | funding review § 1                                                                                                                  |
+| Fitness UK CPC/CTR/install benchmarks                                                                            | **UNKNOWN**          | none first-party — do not forecast from them                                                                                        |
 
 ---
 
 ## 4. Economics
 
-Definitions per SoT § 10.1. VAT status of ESS: **UNKNOWN** (affects Meta spend by 20%).
+Definitions per SoT § 10.1. ESS is **not VAT-registered** (P4): Meta charges VAT on top of spend; Apple is merchant of record on Lane B.
 
-| | Lane A founding access | Lane B store code |
-|---|---|---|
-| Revenue | **None by design.** Contributions are voluntary, separate, and must not be forecast as sales. | ASC price × redemptions |
-| Net to Brad | n/a (contributions land directly, off-platform) | ≈ 71% of the configured price after VAT and Apple's 15% (Small Business Programme) |
-| Cash timing | as contributed | ~early/mid Nov for Sept sales |
-| Renewal | none (fixed months, extendable by admin) | auto at standard price unless cancelled |
-| Counts for Shipaton traction | no (bypasses RC) — but the cohort is real, report it separately | yes |
+|                              | Lane A founding access                                                                        | Lane B store code                                                                                                                               |
+| ---------------------------- | --------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Revenue                      | **None by design.** Contributions are voluntary, separate, and must not be forecast as sales. | ASC price × redemptions                                                                                                                         |
+| Net to Brad                  | n/a (contributions land directly, off-platform)                                               | ≈ 71% after VAT and Apple's 15%: **£30 → ≈ £21.25; £60 → ≈ £42.50; £50 → ≈ £35.40; £100 → ≈ £70.80** (DERIVED; exact tiers may differ by pence) |
+| Cash timing                  | as contributed                                                                                | ~early/mid Nov for Sept sales                                                                                                                   |
+| Renewal                      | none (fixed months, extendable by admin)                                                      | auto at standard price unless cancelled                                                                                                         |
+| Counts for Shipaton traction | no (bypasses RC) — but the cohort is real, report it separately                               | yes                                                                                                                                             |
 
-**Allowable paid CAC (DERIVED):** with no retention data and no buffer, cap at **≈ ½ of Lane B net per subscriber** (about £10 if the tier is near £29.99). Lane A has no CAC — it is not a paid-acquisition product.
+**Allowable paid CAC (DERIVED):** with no retention data and no buffer, cap at **≈ ½ of Lane B net per subscriber — £10 on a 6-month Premium redemption**, higher on the year or Premium+ but plan on the £10 figure. Lane A has no CAC — it is not a paid-acquisition product.
 
-**Test budget ceiling (Brad, 4 Sep):** **£10/day, 14–21 days → £140–£210 hard cap.** This can distinguish creative concepts on landing views and tell you *whether* redemptions happen. It cannot measure CAC with confidence — say so in the conclusion.
+**Test budget ceiling (Brad, 4 Sep):** **£10/day, 14–21 days → £140–£210 hard cap ex-VAT (≈ £252 charged, P4).** This can distinguish creative concepts on landing views and tell you _whether_ redemptions happen. It cannot measure CAC with confidence — say so in the conclusion.
 
-"Good" at £200 spend = **≥ 5 attributable conversions** (ASC redemptions on the plan's code(s) + founding grants recorded with the plan's code(s), counted as *places*, not revenue). Below 2 at £200 → stop; the offer/message is unproven.
+"Good" at £200 spend = **≥ 5 attributable conversions** (ASC redemptions on the plan's code(s) + founding grants recorded with the plan's code(s), counted as _places_, not revenue). Below 2 at £200 → stop; the offer/message is unproven.
 
 ---
 
@@ -126,15 +136,15 @@ IG Stories link sticker / Highlight / bio / print QR → /founding?ref=<CODE>   
 
 **Measurement chain (SoT § 12.7), owner = Brad:**
 
-| Stage | Event | Source | Lag |
-|---|---|---|---|
-| Impression / click | reach, link clicks, CPC | Meta Ads Manager | live |
-| Landing | `PageView` (browser pixel, consent only; nothing written to Postgres) | Meta | live |
-| Store intent | `store_click` with `properties.campaign` and `ref` | `analytics_events` → `/admin/marketing` | live |
-| Install | App Analytics by `ct`; Meta SDK installs only once the new build is live | ASC / Meta | 1–2 d |
-| Subscribe (B) | ASC offer-code redemptions per code; RC new customers | ASC / RC | daily |
-| Access (A) | `founding_grants` with the plan's referral code(s): pending/applied, kind, optional contribution | `/admin` | manual |
-| Retention | RC renewals month 7 | RC | 2027 |
+| Stage              | Event                                                                                            | Source                                  | Lag    |
+| ------------------ | ------------------------------------------------------------------------------------------------ | --------------------------------------- | ------ |
+| Impression / click | reach, link clicks, CPC                                                                          | Meta Ads Manager                        | live   |
+| Landing            | `PageView` (browser pixel, consent only; nothing written to Postgres)                            | Meta                                    | live   |
+| Store intent       | `store_click` with `properties.campaign` and `ref`                                               | `analytics_events` → `/admin/marketing` | live   |
+| Install            | App Analytics by `ct`; Meta SDK installs only once the new build is live                         | ASC / Meta                              | 1–2 d  |
+| Subscribe (B)      | ASC offer-code redemptions per code; RC new customers                                            | ASC / RC                                | daily  |
+| Access (A)         | `founding_grants` with the plan's referral code(s): pending/applied, kind, optional contribution | `/admin`                                | manual |
+| Retention          | RC renewals month 7                                                                              | RC                                      | 2027   |
 
 Reconcile weekly in `/admin/marketing`: spend · link clicks · `store_click` by channel · ASC redemptions · RC new subs · grants by code. Platform ROAS is diagnostic only. `meta_forwarded_at` set ≠ delivered to Meta (consent-dropped rows are stamped too).
 
@@ -144,7 +154,7 @@ Reconcile weekly in `/admin/marketing`: spend · link clicks · `store_click` by
 
 **Question:** does a founders'-rate store offer, presented by the founder, get cold UK gym-goers on Instagram to install and subscribe at a cost that could ever be below the allowable CAC?
 
-**Hypothesis (HYPOTHESIS):** a founder-led "launching with founders instead of investors" concept will out-click a product-demo concept for cold traffic because the *reason* for the offer is more interesting than the features.
+**Hypothesis (HYPOTHESIS):** a founder-led "launching with founders instead of investors" concept will out-click a product-demo concept for cold traffic because the _reason_ for the offer is more interesting than the features.
 
 **Week 1 — concepts:** 3 ads, one ad set, £10/day, **Traffic objective optimised for landing page views**, Advantage+ placements, 9:16 and 4:5 from one shoot. Never App promotion until the SDK build is live and installs show in Events Manager; do not optimise for `AppStoreClick` (≈ 50 conversions/ad set/week needed to exit learning — this budget cannot). Concepts: founder story (why the offer exists) · demonstration (logging speed) · situation (bad-tracking moment). Content is Brad's — see the creative brief.
 
@@ -216,20 +226,20 @@ Bank weekly: RC new customers / active subs / redemptions; ASC redemptions per c
 
 ## 11. Approvals and handback (Brad)
 
-- Merge `codex/auth-cardio-logging` (or rebase MARKETING-PLANS onto it) before the coding agent starts
-- Choose code word(s); create in `/admin`
-- Approve Lane B price/duration/cap in ASC; read values back into copy
-- Confirm VAT status
-- Raise the ad-account spending limit to £210
+- ~~Merge `codex/auth-cardio-logging`~~ — merged 4 Sep
+- Create code(s) in `/admin` (P1) — partner codes as partners come on
+- Configure the four ASC offers + custom codes with caps/expiry (P2, P3); read values back into copy
+- ~~VAT status~~ — not registered (P4)
+- Raise the ad-account spending limit to £210 (P5)
 - Keep print and the 25 Sep UoN freshers fair as September's primary channels (memory `persistence-meta-ads-strategy`); this test is justified by Shipaton timing and creative learning, not expected CAC
 
 ## 12. Suggested calendar
 
-| Dates | Work |
-|---|---|
-| 5–7 Sep | Merge amendment branch; MARKETING-PLANS agent starts; § 7 Meta plumbing; ASC offer + code(s); redemption test |
-| 8–9 Sep | MARKETING-PLANS merged + deployed; env var set; plan created in `/admin/marketing`; first `AppStoreClick`; creatives cut |
-| 10–16 Sep | Week 1 concepts, £10/day |
-| 17–23 Sep | Week 2 openings on the winner |
-| 24–28 Sep | Week 3 only if the rule says so |
-| 29–30 Sep | Devpost submission; experiment conclusion filed |
+| Dates     | Work                                                                                                                     |
+| --------- | ------------------------------------------------------------------------------------------------------------------------ |
+| 5–7 Sep   | MARKETING-PLANS agent starts (amendment merged); § 7 Meta plumbing; four ASC offers + code(s); redemption test           |
+| 8–9 Sep   | MARKETING-PLANS merged + deployed; env var set; plan created in `/admin/marketing`; first `AppStoreClick`; creatives cut |
+| 10–16 Sep | Week 1 concepts, £10/day                                                                                                 |
+| 17–23 Sep | Week 2 openings on the winner                                                                                            |
+| 24–28 Sep | Week 3 only if the rule says so                                                                                          |
+| 29–30 Sep | Devpost submission; experiment conclusion filed                                                                          |

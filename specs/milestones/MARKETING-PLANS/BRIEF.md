@@ -2,7 +2,9 @@
 
 Status: approved by Brad 4 Sep 2026. Thin slice; must land before the Shipaton submission (30 Sep 23:45 PDT), so scope is fixed — do not widen it.
 
-Branch: `feat/marketing-plans` off `origin/main` **after `codex/auth-cardio-logging` has merged** (it amends the FOUNDING-OFFER grant model, adds `founding_grants.grant_kind`, makes contribution columns optional, and adds `founding_pool_limits` + `GET /founding/availability`). If it has not merged when you start, branch from `origin/codex/auth-cardio-logging` and say so in the PR body; do not build against the pre-amendment schema. One PR. Base: `git fetch && git checkout -b feat/marketing-plans origin/main`.
+Branch: `feat/marketing-plans` off `origin/main`. `codex/auth-cardio-logging` **merged 4 Sep** — it amends the FOUNDING-OFFER grant model (`founding_grants.grant_kind`, optional contribution columns, `founding_pool_limits`, `GET /founding/availability`); confirm those are present on your base (`git log --oneline -5 origin/main`, `ls supabase/migrations | grep generalise_founding`) before starting. One PR. Base: `git fetch && git checkout -b feat/marketing-plans origin/main`.
+
+Companion documents in this folder: `MARKETING_BRIEF.md` (the plan this milestone serves — read § 0 for the Phase 0 decisions P1–P5), `EXECUTION_PLAN.md`, `CREATIVE_BRIEF.md`.
 
 Read, in order: root `CLAUDE.md`, `STATE.md` (top entries 2026-09-03/04), `specs/milestones/FOUNDING-OFFER/BRIEF.md` (§ 2 **2026-09-04 amendment controls**; D1–D9 are history where they conflict), `SECURITY_REVIEW-2026-09-04.md`, `.claude/skills/elysia-route-change/SKILL.md`, `specs/30-growth-instrumentation/requirements.md` (R3.8 store click), `packages/web/src/marketing/config.ts`, `packages/web/src/admin/*`, `microservices/core/src/application/adminRoutes.ts`.
 
@@ -14,17 +16,18 @@ Brad is running a founders' offer on two rails (discretionary founding access gr
 
 ## 2. Decisions (do not re-open)
 
-| # | Decision | Value |
-|---|---|---|
-| M1 | Codes are Brad's, never the agent's | Referral code words and App Store custom offer codes are chosen and created by Brad in `/admin` and ASC. They may be one per avenue or shared. Nothing in this milestone hard-codes, suggests or generates a code word; the UI links existing codes only. |
-| M2 | Channel attribution = campaign slug | The web `CAMPAIGNS` slug on the landing route (`meta`, `ig`, `tt`, `uon`, `flyer`, `banner`, …) is the channel key everywhere: Apple `ct`, Play `utm_*`, and — new — `store_click.properties.campaign`. It works whether or not codes differ per avenue. |
-| M3 | Referral codes stay attribution-only | D6 + amendment unchanged. Nothing here changes price or entitlement, and a grant does not lock a referral as a paid conversion. |
-| M3a | Grants are access, not sales | Per the amendment: `founding_grants` rows are access grants (`grant_kind` `founding`/`complimentary`); `amount_minor`/`payment_*`/`paid_at` are an **optional contribution**, separate from access. The admin UI must label them "contribution", never "revenue" or "sales", and must never derive price, CAC or ROAS from them. |
-| M4 | Marketing plans are admin-only data | New tables behind `adminGuard`, RLS enabled, no public read. Every mutation writes an `admin_audit_log` row in the same transaction (existing convention). |
-| M5 | Off-platform numbers are hand-entered | Meta spend/impressions/clicks and ASC offer-code redemptions live outside our systems. Admin enters them as dated rows. No Meta Marketing API, no ASC API, no Stripe webhooks. |
-| M6 | Nothing about the founding offer enters the mobile app | Apple 3.1.3(b). The store-offer CTA is web-only. Mobile is out of scope entirely. |
-| M7 | Brief text lives in the plan row | `brief_md` (markdown, ≤ 64 KB) rendered read-only in the admin panel. Brad pastes the brief; agents do not author ad copy. |
-| M8 | Existing routes and print slugs are immutable | Never rename/remove a `CAMPAIGNS` entry (print artwork depends on them). Adding `meta` is additive. |
+| #   | Decision                                               | Value                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| --- | ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M1  | Codes are Brad's, never the agent's                    | Referral code words and App Store custom offer codes are chosen and created by Brad in `/admin` and ASC. Channel attribution is mainly the campaign slug; Brad assigns specific codes to partners for partner attribution. Nothing in this milestone hard-codes, suggests or generates a code word; the UI links existing codes only.                                                                                        |
+| M1a | Store offers are recorded, not controlled              | The four ASC offers (Premium £30/6 mo, £60/12 mo; Premium+ £50/6 mo, £100/12 mo — nearest tiers) and their custom codes, caps and expiry are configured **in App Store Connect**. The admin panel stores and displays them per plan (`marketing_plan_store_offers`) so Brad can see what is live and edit the record; it does not call the App Store Connect API. An ASC API integration is a named follow-up, out of scope. |
+| M2  | Channel attribution = campaign slug                    | The web `CAMPAIGNS` slug on the landing route (`meta`, `ig`, `tt`, `uon`, `flyer`, `banner`, …) is the channel key everywhere: Apple `ct`, Play `utm_*`, and — new — `store_click.properties.campaign`. It works whether or not codes differ per avenue.                                                                                                                                                                     |
+| M3  | Referral codes stay attribution-only                   | D6 + amendment unchanged. Nothing here changes price or entitlement, and a grant does not lock a referral as a paid conversion.                                                                                                                                                                                                                                                                                              |
+| M3a | Grants are access, not sales                           | Per the amendment: `founding_grants` rows are access grants (`grant_kind` `founding`/`complimentary`); `amount_minor`/`payment_*`/`paid_at` are an **optional contribution**, separate from access. The admin UI must label them "contribution", never "revenue" or "sales", and must never derive price, CAC or ROAS from them.                                                                                             |
+| M4  | Marketing plans are admin-only data                    | New tables behind `adminGuard`, RLS enabled, no public read. Every mutation writes an `admin_audit_log` row in the same transaction (existing convention).                                                                                                                                                                                                                                                                   |
+| M5  | Off-platform numbers are hand-entered                  | Meta spend/impressions/clicks and ASC offer-code redemptions live outside our systems. Admin enters them as dated rows. No Meta Marketing API, no ASC API, no Stripe webhooks.                                                                                                                                                                                                                                               |
+| M6  | Nothing about the founding offer enters the mobile app | Apple 3.1.3(b). The store-offer CTA is web-only. Mobile is out of scope entirely.                                                                                                                                                                                                                                                                                                                                            |
+| M7  | Brief text lives in the plan row                       | `brief_md` (markdown, ≤ 64 KB) rendered read-only in the admin panel. Brad pastes the brief; agents do not author ad copy.                                                                                                                                                                                                                                                                                                   |
+| M8  | Existing routes and print slugs are immutable          | Never rename/remove a `CAMPAIGNS` entry (print artwork depends on them). Adding `meta` is additive.                                                                                                                                                                                                                                                                                                                          |
 
 ## 3. Work packages, in order (one conventional commit each)
 
@@ -56,7 +59,6 @@ marketing_plans (
   status text not null default 'draft' check (status in ('draft','active','paused','complete')),
   objective text, hypothesis text, decision_rule text,
   offer_lanes text[] not null default '{}',          -- e.g. {'founding_access','store_offer'}
-  store_offer_codes text[] not null default '{}',    -- ASC/Play code words Brad typed, display only
   budget_cap_minor integer check (budget_cap_minor is null or budget_cap_minor >= 0),
   currency text not null default 'GBP',
   starts_on date, ends_on date,
@@ -69,7 +71,21 @@ marketing_plan_channels (
   label text not null, placement text, notes text,
   unique (plan_id, campaign_slug)
 )
-marketing_plan_codes (                               -- codes linked to a plan; optionally pinned to one channel
+marketing_plan_store_offers (                        -- mirror of what Brad configured in ASC / Play; display + edit, never authoritative
+  id uuid pk, plan_id uuid not null references marketing_plans(id) on delete cascade,
+  platform text not null check (platform in ('ios','android')),
+  code text not null check (code ~ '^[A-Z0-9]{3,64}$'),
+  tier_name text not null references subscription_tiers(tier_name),
+  duration_months integer not null check (duration_months in (1,2,3,6,12)),
+  price_minor integer not null check (price_minor >= 0),
+  currency text not null default 'GBP',
+  max_redemptions integer check (max_redemptions is null or max_redemptions >= 0),
+  expires_on date, campaign_slug text check (campaign_slug is null or campaign_slug ~ '^[a-z0-9-]{1,32}$'),
+  redemption_url text, notes text,
+  created_at timestamptz default now(), updated_at timestamptz default now(),
+  unique (plan_id, platform, code)
+)
+marketing_plan_codes (                               -- referral codes linked to a plan; optionally pinned to one channel
   id uuid pk, plan_id uuid not null references marketing_plans(id) on delete cascade,
   referral_code_id uuid not null references referral_codes(id),
   campaign_slug text check (campaign_slug is null or campaign_slug ~ '^[a-z0-9-]{1,32}$'),
@@ -98,6 +114,7 @@ New handlers under `microservices/core/src/application/admin/marketing/`, mounte
 - `POST /admin/marketing/plans`, `PATCH /admin/marketing/plans/:id` (fields incl. `briefMd`, `status`).
 - `POST /admin/marketing/plans/:id/channels`, `DELETE …/channels/:channelId`.
 - `POST /admin/marketing/plans/:id/codes` (link an **existing** referral code, optional channel pin), `DELETE …/codes/:linkId`. No code creation here (M1).
+- `POST /admin/marketing/plans/:id/store-offers`, `PATCH …/store-offers/:offerId`, `DELETE …/store-offers/:offerId` — the ASC/Play mirror rows (M1a): platform, code, tier, duration, price, max redemptions, expiry, optional channel pin, redemption URL. The `store_redemptions` metric rows are entered against the same `campaign_slug`, so the detail view can show redemptions vs cap per offer.
 - `PUT /admin/marketing/plans/:id/metrics` (upsert by `(campaignSlug, metricDate)`).
 - `GET /admin/marketing/plans/:id` → plan + channels + metrics + **derived attribution**, all scoped to `[starts_on, ends_on ?? today]`:
   - per channel: `store_clicks` = `analytics_events` where `event_name='store_click'` and `properties->>'campaign' = slug`; split by `properties->>'store'`; `store_clicks_with_code` where `properties->>'ref'` is any of the plan's linked codes.
@@ -110,26 +127,26 @@ Repository: `microservices/core/src/application/repositories/marketingPlanReposi
 
 `packages/web/src/admin/pages/AdminMarketing.tsx` (list) and `AdminMarketingPlan.tsx` (detail); nav item "Marketing" in `AdminLayout.tsx` between "Referral codes" and "Lookup"; routes under the existing `/admin` `RequireAdmin` block in `App.tsx`; types + calls in `adminApi.ts`.
 
-List: name, status badge, lanes, channels, dates, spend vs cap (progress), store clicks, grants. "New plan" form: name, slug (suggested from name like `suggestReferralCode`), lanes (checkboxes: founding access / store offer), store offer codes (free text Brad types, comma separated), budget cap, dates, objective, hypothesis, decision rule, brief (textarea, monospace). Codes are linked on the detail page from the existing referral-code list — the form never creates or suggests one.
+List: name, status badge, lanes, channels, dates, spend vs cap (progress), store clicks, grants. "New plan" form: name, slug (suggested from name like `suggestReferralCode`), lanes (checkboxes: founding access / store offer), budget cap, dates, objective, hypothesis, decision rule, brief (textarea, monospace). Referral codes and store offers are added on the detail page — the form never creates or suggests a code word.
 
-Detail: header + status control (draft→active→paused/complete, audited); **Brief** panel rendering `brief_md` — `packages/web/package.json` has **no** markdown dependency today. Prefer a minimal in-repo renderer covering headings, paragraphs, lists, tables, code fences and bold/inline code as React elements (no raw HTML pass-through); only add a dependency if Brad approves it in the PR, and then pair it with sanitisation. **Never** `dangerouslySetInnerHTML` with unsanitised content. **Channels** table with add/remove (slug select from `/campaign-slugs`, label, placement). **Codes** table: link/unlink existing referral codes, optional channel pin. **Attribution** table per channel: store clicks (iOS/Android), clicks carrying a linked code, hand-entered spend/impressions/clicks/landing views/redemptions for the window, and a derived cost-per-store-click when both exist. **Per code**: referral claims (locked), grants by kind (pending/applied), contributions total labelled as such. **Plan totals** plus all-sources registrations (labelled "all sources"). **Weekly metrics** form: date, channel (or whole plan), spend, impressions, clicks, landing views, redemptions, notes — upsert. Copy is sentence case, no emojis; reuse `ui.tsx` primitives and the existing `formatMinor`/`formatDate`.
+Detail: header + status control (draft→active→paused/complete, audited); **Brief** panel rendering `brief_md` — `packages/web/package.json` has **no** markdown dependency today. Prefer a minimal in-repo renderer covering headings, paragraphs, lists, tables, code fences and bold/inline code as React elements (no raw HTML pass-through); only add a dependency if Brad approves it in the PR, and then pair it with sanitisation. **Never** `dangerouslySetInnerHTML` with unsanitised content. **Channels** table with add/remove (slug select from `/campaign-slugs`, label, placement). **Codes** table: link/unlink existing referral codes, optional channel pin. **Store offers** table (M1a): add/edit/remove the ASC/Play mirror rows — platform, code, tier, duration, price, max redemptions, expiry, channel, redemption URL — with a visible note "Configured in App Store Connect / Play Console; this is a record, not a control", plus redemptions-to-date vs cap from the metric rows. **Attribution** table per channel: store clicks (iOS/Android), clicks carrying a linked code, hand-entered spend/impressions/clicks/landing views/redemptions for the window, and a derived cost-per-store-click when both exist. **Per code**: referral claims (locked), grants by kind (pending/applied), contributions total labelled as such. **Plan totals** plus all-sources registrations (labelled "all sources"). **Weekly metrics** form: date, channel (or whole plan), spend, impressions, clicks, landing views, redemptions, notes — upsert. Copy is sentence case, no emojis; reuse `ui.tsx` primitives and the existing `formatMinor`/`formatDate`.
 
 Tests: rendering, form validation, API mocking, status transition, metrics upsert — same depth as `AdminGrants`/`AdminCodes` tests.
 
 ### WP7 — docs, smoke test, ledger
 
-- `specs/milestones/MARKETING-PLANS/` already holds `BRIEF.md` (this file), `MARKETING_BRIEF.md`, `EXECUTION_PLAN.md`, `CREATIVE_BRIEF.md`; add `SMOKE_TEST.md`: (a) visit `/meta?ref=<CODE>` on staging with consent granted → tap the store-offer CTA → one `analytics_events` row with `properties.campaign='meta'`, `ref='<CODE>'`, `store`; (b) `/` shows no store-offer CTA; (c) create plan → add channel `meta` → link the code → attribution shows that click; (d) upsert a metric row twice for the same date → one row; (e) non-admin JWT → 403 on every `/admin/marketing/*`; (f) audit rows present for each mutation; (g) `metaEventMap` never forwards `campaign`; (h) a `founding` grant with a linked code shows under that code with its contribution labelled "contribution".
+- `specs/milestones/MARKETING-PLANS/` already holds `BRIEF.md` (this file), `MARKETING_BRIEF.md`, `EXECUTION_PLAN.md`, `CREATIVE_BRIEF.md`; add `SMOKE_TEST.md`: (a) visit `/meta?ref=<CODE>` on staging with consent granted → tap the store-offer CTA → one `analytics_events` row with `properties.campaign='meta'`, `ref='<CODE>'`, `store`; (b) `/` shows no store-offer CTA; (c) create plan → add channel `meta` → link the code → attribution shows that click; (d) upsert a metric row twice for the same date → one row; (e) non-admin JWT → 403 on every `/admin/marketing/*`; (f) audit rows present for each mutation; (g) `metaEventMap` never forwards `campaign`; (h) a `founding` grant with a linked code shows under that code with its contribution labelled "contribution"; (i) add a store offer row (iOS, 6 months, £30 tier, cap, expiry) → it renders with the "record, not control" note and shows redemptions vs cap once a metric row exists.
 - `STATE.md` session entry with gate output. Migration must be applied to staging before the core deploy (additive; safe to apply first).
 
 ## 4. Out of scope — do not start
 
-Meta Marketing API / ASC API / RevenueCat API pulls; charts (tables only); editing referral codes from the plan page; Stripe; commission (spec-32 D–F); any mobile change; an `fbclid` → channel join; retention/cohort views; deleting plans (status `complete` instead); a public seat counter.
+Meta Marketing API / RevenueCat API pulls; **App Store Connect API** (creating or editing offer codes, caps or expiry from the panel — Brad wants this eventually; write it up as `FOLLOW_UPS.md` in this folder with the ASC API endpoints involved, but do not build it); charts (tables only); editing referral codes from the plan page; Stripe; commission (spec-32 D–F); any mobile change; an `fbclid` → channel join; retention/cohort views; deleting plans (status `complete` instead); a public seat counter.
 
 ## 5. Handback — Brad, not the agent
 
-- Merge `codex/auth-cardio-logging` first (or tell the agent to base on it).
-- Choose the code word(s) — shared or per avenue — and create them in `/admin → Referral codes`.
-- Create the ASC offer + custom code (pay-up-front, 6 months, new subscribers, max redemptions, expiry); redeem once end to end on a fresh Apple ID and confirm a `user_subscriptions` row exists (RC anonymous-id trap) **before** `VITE_STORE_OFFER_IOS_URL` is set in the `Production` GitHub environment.
+- Create the code word(s) in `/admin → Referral codes`; assign partner-specific codes as partners come on (P1).
+- Create the four ASC offers (Premium £30/6 mo, £60/12 mo; Premium+ £50/6 mo, £100/12 mo; pay up front; new subscribers) and their custom codes with max redemptions and expiry (P2, P3); redeem once end to end on a fresh Apple ID and confirm a `user_subscriptions` row exists (RC anonymous-id trap) **before** `VITE_STORE_OFFER_IOS_URL` is set in the `Production` GitHub environment.
+- Raise the Meta ad-account spending limit to £210 (P5). ESS is not VAT-registered (P4) — expect ≈ £252 charged.
 - Set `VITE_STORE_OFFER_IOS_URL` (and Android if used) in `staging` first, run the smoke test, then `Production`.
 - Apply the migration on staging → prod before the matching deploys.
 - Create the plan in `/admin/marketing`, paste the brief, add channels `meta`, `ig`, `flyer`, `banner`, `uon`, link the code.
