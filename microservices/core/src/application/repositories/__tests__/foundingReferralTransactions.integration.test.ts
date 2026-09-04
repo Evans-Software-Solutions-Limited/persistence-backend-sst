@@ -61,7 +61,7 @@ describe("founding/referral repository transaction invariants", () => {
     `);
     const migration = readFileSync(
       new URL(
-        "../../../../../../supabase/migrations/20260903120000_founding_offer_referrals.sql",
+        "../../../../../../supabase/migrations/20260904120000_founding_offer_referrals.sql",
         import.meta.url,
       ),
       "utf8",

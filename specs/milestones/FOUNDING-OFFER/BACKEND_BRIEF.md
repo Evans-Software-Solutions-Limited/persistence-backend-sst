@@ -6,7 +6,7 @@ Pattern, handler path `src/application/{domain}/{action}/{domain}{Action}Handler
 sub-app per domain mounted once in `src/api.ts` (root chain is at the TS2589
 ceiling — **never** add more than one root `.use()` per PR).
 
-## 1. Migration `supabase/migrations/20260903120000_founding_offer_referrals.sql`
+## 1. Migration `supabase/migrations/20260904120000_founding_offer_referrals.sql`
 
 Idempotent (`IF NOT EXISTS`), additive only. Tables:
 

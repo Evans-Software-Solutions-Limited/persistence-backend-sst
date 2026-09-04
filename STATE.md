@@ -130,7 +130,7 @@ SMOKE_TEST) — a thin, **approved** slice of spec-32: founding-member offer (£
 6 mo `premium`, £50 → 6 mo `premium_plus`, 200 seats; £99 → 6 mo
 `start_up_coach_plus`, 20 seats), internal admin API, referral codes with
 one-attribution-per-user, admin audit log. Backend PR contents are on the branch:
-migration `20260903120000_founding_offer_referrals.sql` (4 tables, additive),
+migration `20260904120000_founding_offer_referrals.sql` (4 tables, additive),
 Drizzle schema, `requireAdmin` on the JWT `app_metadata.admin` claim (NOT
 `profiles.role` — the tier trigger rewrites it), `scripts/set-admin.ts`,
 `/admin/*` (summary, users lookup, referral codes, attributions, founding grants

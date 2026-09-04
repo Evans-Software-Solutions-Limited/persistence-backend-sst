@@ -2634,7 +2634,7 @@ import { sql } from "drizzle-orm";
 
 // ─── FOUNDING-OFFER · referral attribution + founding grants + admin audit ────
 // specs/milestones/FOUNDING-OFFER/BACKEND_BRIEF.md § 1. Mirrors
-// 20260903120000_founding_offer_referrals.sql (index parity kept here so
+// 20260904120000_founding_offer_referrals.sql (index parity kept here so
 // drizzle-kit never flags the partial unique index for drop).
 
 export const referralCodes = pgTable(
