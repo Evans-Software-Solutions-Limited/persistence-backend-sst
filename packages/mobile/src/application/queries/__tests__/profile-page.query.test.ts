@@ -7,6 +7,7 @@ import { isProfilePageStale } from "@/domain/models/profilePage";
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
 import { PROFILE_PAGE_FIXTURE } from "@/adapters/api/__tests__/fixtures/profile-page.fixture";
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
+import { updateProfileCommand } from "@/application/commands/update-profile.command";
 
 describe("profile-page.query", () => {
   const USER_ID = "user-1";
@@ -65,6 +66,64 @@ describe("profile-page.query", () => {
       const result = await refreshProfilePage(api, storage, USER_ID);
       expect(result.ok).toBe(false);
       expect(storage.getCachedProfilePage(USER_ID)).toBeNull();
+    });
+
+    it("keeps a queued template preference over an older server response", async () => {
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      const serverPayload = {
+        ...PROFILE_PAGE_FIXTURE,
+        profile: {
+          ...PROFILE_PAGE_FIXTURE.profile,
+          showTemplateWorkouts: true,
+        },
+      };
+      storage.cacheProfilePage(USER_ID, serverPayload);
+      updateProfileCommand(
+        { storage, userId: USER_ID },
+        { showTemplateWorkouts: false },
+      );
+      api.profilePage = serverPayload;
+
+      const result = await refreshProfilePage(api, storage, USER_ID);
+
+      expect(result.ok && result.value.profile.showTemplateWorkouts).toBe(
+        false,
+      );
+      expect(
+        storage.getCachedProfilePage(USER_ID)?.payload.profile
+          .showTemplateWorkouts,
+      ).toBe(false);
+    });
+
+    it("does not apply a permanently failed preference over server truth", async () => {
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      const serverPayload = {
+        ...PROFILE_PAGE_FIXTURE,
+        profile: {
+          ...PROFILE_PAGE_FIXTURE.profile,
+          showTemplateWorkouts: true,
+        },
+      };
+      storage.cacheProfilePage(USER_ID, serverPayload);
+      updateProfileCommand(
+        { storage, userId: USER_ID },
+        { showTemplateWorkouts: false },
+      );
+      const [failed] = storage.getPendingMutations();
+      storage.patchQueueEntryForTest(failed.id, {
+        status: "permanently_failed",
+      });
+      api.profilePage = serverPayload;
+
+      const result = await refreshProfilePage(api, storage, USER_ID);
+
+      expect(result.ok && result.value.profile.showTemplateWorkouts).toBe(true);
+      expect(
+        storage.getCachedProfilePage(USER_ID)?.payload.profile
+          .showTemplateWorkouts,
+      ).toBe(true);
     });
 
     it("propagates the ApiError unchanged on failure", async () => {

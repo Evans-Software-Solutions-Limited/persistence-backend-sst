@@ -68,6 +68,8 @@ export type ProfilePageProfile = {
   weightUnit: ProfilePageWeightUnit;
   heightUnit: ProfilePageHeightUnit;
   isProfilePublic: boolean;
+  /** Optional for caches written before this preference shipped. */
+  showTemplateWorkouts?: boolean;
   /** ISO timestamp — drives the "member since" copy. */
   createdAt: string;
   /**

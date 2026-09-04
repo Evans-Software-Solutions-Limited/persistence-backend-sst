@@ -204,6 +204,14 @@ export interface StoragePort {
    */
   updateMutationPayload(id: number, payload: unknown): void;
   /**
+   * Replace the payload of a queued row without changing its lifecycle state.
+   * Unlike `updateMutationPayload`, this may touch terminal/blocked rows, but
+   * never an in-flight or completed row. Used when newer intent supersedes one
+   * field of an older recoverable mutation while the remaining failed payload
+   * must stay available to the user's retry flow.
+   */
+  replaceInactiveMutationPayload(id: number, payload: unknown): void;
+  /**
    * Every not-yet-`completed` queue entry for one entity, oldest first.
    *
    * Distinct from `getPendingMutations()`, which filters to

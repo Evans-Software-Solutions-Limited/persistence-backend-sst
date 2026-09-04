@@ -279,6 +279,35 @@ describe("useSyncWorker", () => {
     expect(processSpy).toHaveBeenCalledTimes(1);
   });
 
+  it("does not spin while a newer template preference waits behind a backed-off one", async () => {
+    const storage = new InMemoryStorageAdapter();
+    storage.initialize();
+    for (const showTemplateWorkouts of [false, true]) {
+      storage.enqueueMutation({
+        entityType: "profile",
+        entityId: session.userId,
+        operation: "update",
+        payload: { showTemplateWorkouts },
+        endpoint: "/profile",
+        method: "PATCH",
+      });
+    }
+    const [older] = storage.getPendingMutations();
+    expect(storage.markMutationInFlight(older.id)).toBe(true);
+    storage.markMutationFailed(older.id, "temporary failure");
+
+    const auth = new InMemoryAuthAdapter();
+    const adapters = makeAdapters(storage, auth, session);
+    const processSpy = jest.spyOn(syncCommandModule, "processSyncQueue");
+
+    renderHook(() => useSyncWorker(), { wrapper: wrap(adapters) });
+
+    await waitFor(() => expect(processSpy).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(processSpy).toHaveBeenCalledTimes(1);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
   // ── M13 sync-hardening — reconnect-triggered resurrect + flush ────────────
   describe("NetInfo reconnect (M13 sync-hardening)", () => {
     beforeEach(() => {

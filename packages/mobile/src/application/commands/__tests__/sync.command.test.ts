@@ -1,4 +1,5 @@
 import { processSyncQueue } from "../sync.command";
+import { updateProfileCommand } from "../update-profile.command";
 import { configureHabitCommand } from "../configure-habit.command";
 import { toggleHabitDayCommand } from "../toggle-habit.command";
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
@@ -92,6 +93,138 @@ describe("processSyncQueue", () => {
       "https://api.test/workouts",
       expect.objectContaining({ method: "POST" }),
     );
+  });
+
+  it("does not dispatch a newer template preference while an older one is unresolved", async () => {
+    for (const showTemplateWorkouts of [false, true]) {
+      storage.enqueueMutation({
+        entityType: "profile",
+        entityId: "user-1",
+        operation: "update",
+        payload: { showTemplateWorkouts },
+        endpoint: "/profile",
+        method: "PATCH",
+      });
+    }
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 500,
+      text: async () => "temporary failure",
+    });
+
+    const first = await processSyncQueue(storage, auth, "https://api.test");
+
+    expect(first).toMatchObject({ processed: 1, failed: 1 });
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(mockFetch.mock.calls[0][1].body)).toEqual({
+      showTemplateWorkouts: false,
+    });
+
+    mockFetch
+      .mockResolvedValueOnce({ ok: true })
+      .mockResolvedValueOnce({ ok: true });
+    const retry = await processSyncQueue(
+      storage,
+      auth,
+      "https://api.test",
+      AFTER_BACKOFF,
+    );
+
+    expect(retry).toMatchObject({ processed: 2, succeeded: 2 });
+    expect(
+      mockFetch.mock.calls.slice(1).map((call) => JSON.parse(call[1].body)),
+    ).toEqual([
+      { showTemplateWorkouts: false },
+      { showTemplateWorkouts: true },
+    ]);
+  });
+
+  it("prevents a manually retried terminal preference from reversing newer intent", async () => {
+    updateProfileCommand(
+      { storage, userId: "user-1" },
+      { fullName: "Recover me", showTemplateWorkouts: false },
+    );
+    const [older] = storage.getPendingMutations();
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 400,
+      text: async () => "unsupported field",
+    });
+    await processSyncQueue(storage, auth, "https://api.test");
+    expect(storage.getFailedExhaustedEntries()[0].status).toBe(
+      "permanently_failed",
+    );
+
+    updateProfileCommand(
+      { storage, userId: "user-1" },
+      { showTemplateWorkouts: true },
+    );
+    mockFetch.mockResolvedValueOnce({ ok: true });
+
+    const result = await processSyncQueue(storage, auth, "https://api.test");
+
+    expect(result).toMatchObject({ processed: 1, succeeded: 1 });
+    expect(JSON.parse(mockFetch.mock.calls[1][1].body)).toEqual({
+      showTemplateWorkouts: true,
+    });
+
+    storage.resetFailedEntries([older.id]);
+    mockFetch.mockResolvedValueOnce({ ok: true });
+    await processSyncQueue(storage, auth, "https://api.test");
+
+    expect(JSON.parse(mockFetch.mock.calls[2][1].body)).toEqual({
+      fullName: "Recover me",
+    });
+  });
+
+  it("neutralises older preference that becomes terminal after newer intent is queued", async () => {
+    updateProfileCommand(
+      { storage, userId: "user-1" },
+      { fullName: "Retry me", showTemplateWorkouts: false },
+    );
+    const [older] = storage.getPendingMutations();
+
+    let resolveOlder!: (response: {
+      ok: boolean;
+      status: number;
+      text: () => Promise<string>;
+    }) => void;
+    mockFetch.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveOlder = resolve;
+        }),
+    );
+    const olderDrain = processSyncQueue(storage, auth, "https://api.test");
+    for (let i = 0; i < 10 && mockFetch.mock.calls.length === 0; i++) {
+      await Promise.resolve();
+    }
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(storage.getMutationById(older.id)?.status).toBe("in_flight");
+
+    updateProfileCommand(
+      { storage, userId: "user-1" },
+      { showTemplateWorkouts: true },
+    );
+    resolveOlder({
+      ok: false,
+      status: 400,
+      text: async () => "unsupported field",
+    });
+    await olderDrain;
+
+    mockFetch.mockResolvedValueOnce({ ok: true });
+    await processSyncQueue(storage, auth, "https://api.test");
+    expect(JSON.parse(mockFetch.mock.calls[1][1].body)).toEqual({
+      showTemplateWorkouts: true,
+    });
+
+    storage.resetFailedEntries([older.id]);
+    mockFetch.mockResolvedValueOnce({ ok: true });
+    await processSyncQueue(storage, auth, "https://api.test");
+    expect(JSON.parse(mockFetch.mock.calls[2][1].body)).toEqual({
+      fullName: "Retry me",
+    });
   });
 
   it("reports a terminal sync failure to Sentry once the retry budget is exhausted", async () => {

@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Alert } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import type {
@@ -9,6 +15,7 @@ import {
   canCancelSubscription,
   getSubscriptionDisplayInfo,
   isCancelledButActive as isCancelledButActiveCheck,
+  isFoundingAccess as isFoundingAccessCheck,
   TRAINER_TIER_NAMES,
 } from "@/domain/services/subscriptionService";
 import { useCancelSubscription } from "@/ui/hooks/useCancelSubscription";
@@ -18,6 +25,10 @@ import { usePurchases } from "@/ui/hooks/usePurchases";
 import { useSubscriptionTiers } from "@/ui/hooks/useSubscriptionTiers";
 import { newIdempotencyKey } from "@/shared/utils";
 import { CancelSubscriptionModal } from "@/ui/components/subscription/CancelSubscriptionModal";
+import {
+  ReferralCodeEntry,
+  type ReferralCodeEntryHandle,
+} from "@/ui/components/subscription/ReferralCodeEntry";
 import { IOSPurchaseFlowContainer } from "@/ui/containers/IOSPurchaseFlowContainer";
 import { SubscriptionSelectionPresenter } from "@/ui/presenters/SubscriptionSelectionPresenter";
 import type { OnboardingRecommendationMode } from "@/ui/presenters/IOSPurchaseFlowPresenter";
@@ -78,20 +89,57 @@ export interface SubscriptionSelectionContainerProps {
   };
 }
 
+export function skipOnboardingWithReferralCancellation(
+  cancelPendingClaim: () => void,
+  onSkip: () => void,
+) {
+  cancelPendingClaim();
+  onSkip();
+}
+
+type SubscriptionCatalogueContainerProps =
+  SubscriptionSelectionContainerProps & {
+    referralCodeEntry: React.ReactNode;
+  };
+
 export function SubscriptionSelectionContainer({
   onboardingRecommendation,
 }: SubscriptionSelectionContainerProps = {}) {
+  const referralEntryRef = useRef<ReferralCodeEntryHandle>(null);
   const purchases = usePurchases();
+  const recommendationWithCancellableSkip = useMemo(
+    () =>
+      onboardingRecommendation
+        ? {
+            ...onboardingRecommendation,
+            onSkip: () => {
+              skipOnboardingWithReferralCancellation(
+                () => referralEntryRef.current?.cancelPendingClaim(),
+                onboardingRecommendation.onSkip,
+              );
+            },
+          }
+        : undefined,
+    [onboardingRecommendation],
+  );
+  const referralCodeEntry = (
+    <ReferralCodeEntry
+      ref={referralEntryRef}
+      onboarding={onboardingRecommendation !== undefined}
+    />
+  );
   if (purchases !== null) {
     return (
       <IOSPurchaseFlowContainer
-        onboardingRecommendation={onboardingRecommendation}
+        onboardingRecommendation={recommendationWithCancellableSkip}
+        referralCodeEntry={referralCodeEntry}
       />
     );
   }
   return (
     <SubscriptionCatalogueContainer
-      onboardingRecommendation={onboardingRecommendation}
+      onboardingRecommendation={recommendationWithCancellableSkip}
+      referralCodeEntry={referralCodeEntry}
     />
   );
 }
@@ -102,7 +150,8 @@ export function SubscriptionSelectionContainer({
  */
 function SubscriptionCatalogueContainer({
   onboardingRecommendation,
-}: SubscriptionSelectionContainerProps) {
+  referralCodeEntry,
+}: SubscriptionCatalogueContainerProps) {
   const router = useRouter();
   const isOnline = useOnlineStatus();
 
@@ -216,6 +265,7 @@ function SubscriptionCatalogueContainer({
   const subscriptionEndsAt = subscriptionData?.expiresAt ?? null;
   const canCancel = canCancelSubscription(subscriptionData);
   const isCancelledButActive = isCancelledButActiveCheck(subscriptionData);
+  const isFoundingAccess = isFoundingAccessCheck(subscriptionData);
 
   const tierDisplayNames = useMemo(() => {
     const map: Record<string, string> = {};
@@ -320,6 +370,7 @@ function SubscriptionCatalogueContainer({
         subscriptionEndsAt={subscriptionEndsAt}
         canCancel={canCancel}
         isCancelledButActive={isCancelledButActive}
+        isFoundingAccess={isFoundingAccess}
         scheduledChange={
           displayInfo.hasScheduledChange && displayInfo.effectiveAt
             ? {
@@ -334,6 +385,7 @@ function SubscriptionCatalogueContainer({
         isOffline={!isOnline}
         isSlowLoading={isSlowLoading}
         onboardingRecommendation={onboardingRecommendation}
+        referralCodeEntry={referralCodeEntry}
         onBillingCycleChange={setBillingCycle}
         onTierSelect={handleTierSelect}
         onRoleChange={setSelectedRole}

@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { getProfilePageQuery } from "@/application/queries/profile-page.query";
+import {
+  getProfilePageQuery,
+  reconcilePendingProfilePreferences,
+} from "@/application/queries/profile-page.query";
 import type { ProfilePageData } from "@/domain/models/profilePage";
 import type { ApiError } from "@/shared/errors";
 import { useAdapters } from "./useAdapters";
@@ -141,8 +144,13 @@ export function useProfilePage(enabled = true): ProfilePageState {
           return;
         }
         if (latestUserIdRef.current !== userId) return;
-        storage.cacheProfilePage(userId, result.value);
-        setPayload(result.value);
+        const reconciled = reconcilePendingProfilePreferences(
+          storage,
+          userId,
+          result.value,
+        );
+        storage.cacheProfilePage(userId, reconciled);
+        setPayload(reconciled);
         setIsStale(false);
         setSyncedAt(storage.getProfilePageAge(userId));
         setCacheVersion((v) => v + 1);

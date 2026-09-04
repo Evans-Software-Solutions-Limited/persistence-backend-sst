@@ -782,6 +782,75 @@ describe("SSTApiAdapter.getMySubscription (M10)", () => {
   });
 });
 
+describe("SSTApiAdapter referrals", () => {
+  const applied = {
+    code: "UONFRESHERS",
+    label: "UoN Freshers",
+    partnerName: "University of Nottingham",
+    lockedAt: null,
+  };
+
+  it("reads the applied referral from the data envelope", async () => {
+    const mock = installFetchMock(async () =>
+      Promise.resolve(
+        new Response(JSON.stringify({ data: { applied } }), { status: 200 }),
+      ),
+    );
+
+    const result = await new SSTApiAdapter().getAppliedReferral();
+
+    expect(result).toEqual({ ok: true, value: applied });
+    expect(mock.mock.calls[0][0]).toBe("http://test.local/referrals/me");
+    expect(mock.mock.calls[0][1]?.method).toBe("GET");
+  });
+
+  it("claims a referral and preserves the server's neutral error", async () => {
+    const mock = installFetchMock(async (_url, init) => {
+      if (JSON.parse(String(init?.body)).code === "NOPE") {
+        return new Response(
+          JSON.stringify({ message: "That code isn't valid" }),
+          {
+            status: 404,
+          },
+        );
+      }
+      return new Response(JSON.stringify({ data: { applied } }), {
+        status: 200,
+      });
+    });
+    const adapter = new SSTApiAdapter();
+
+    const success = await adapter.claimReferral("UONFRESHERS");
+    const failure = await adapter.claimReferral("NOPE");
+
+    expect(success).toEqual({ ok: true, value: applied });
+    expect(failure).toMatchObject({
+      ok: false,
+      error: { status: 404, message: "That code isn't valid" },
+    });
+    expect(mock.mock.calls[0][0]).toBe("http://test.local/referrals/claim");
+    expect(mock.mock.calls[0][1]).toMatchObject({
+      method: "POST",
+      body: JSON.stringify({ code: "UONFRESHERS" }),
+    });
+  });
+
+  it("removes an unlocked referral", async () => {
+    const mock = installFetchMock(async () =>
+      Promise.resolve(
+        new Response(JSON.stringify({ data: { removed: true } }), {
+          status: 200,
+        }),
+      ),
+    );
+
+    const result = await new SSTApiAdapter().removeReferral();
+
+    expect(result).toEqual({ ok: true, value: { removed: true } });
+    expect(mock.mock.calls[0][1]?.method).toBe("DELETE");
+  });
+});
+
 describe("SSTApiAdapter.syncSubscription", () => {
   it("POSTs /subscriptions/sync with no body and unwraps the refreshed subscription", async () => {
     const mock = installFetchMock(async () => {

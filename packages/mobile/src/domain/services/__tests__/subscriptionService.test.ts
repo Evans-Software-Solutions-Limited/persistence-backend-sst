@@ -6,6 +6,7 @@ import {
   canCancelSubscription,
   getSubscriptionDisplayInfo,
   isCancelledButActive,
+  isFoundingAccess,
   isFreeTier,
   isSubscriptionActive,
   isTrialing,
@@ -197,6 +198,18 @@ describe("isCancelledButActive", () => {
         }),
       ),
     ).toBe(true);
+  });
+});
+
+describe("isFoundingAccess", () => {
+  it("recognises only server-owned founding subscription identifiers", () => {
+    expect(isFoundingAccess(null)).toBe(false);
+    expect(
+      isFoundingAccess(makeSub({ externalSubscriptionId: "founding_grant-1" })),
+    ).toBe(true);
+    expect(
+      isFoundingAccess(makeSub({ externalSubscriptionId: "rc_customer-1" })),
+    ).toBe(false);
   });
 });
 

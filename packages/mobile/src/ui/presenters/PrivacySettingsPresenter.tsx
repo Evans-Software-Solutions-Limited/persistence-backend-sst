@@ -57,6 +57,8 @@ export type PrivacySettingsPresenterProps = {
   metaAttributionAvailable: boolean;
   metaAttributionEnabled: boolean;
   onSetMetaAttributionEnabled: (enabled: boolean) => void;
+  showTemplateWorkouts: boolean;
+  onSetShowTemplateWorkouts: (enabled: boolean) => void;
 };
 
 function PrivacySettingsHeader({ onBack }: { onBack: () => void }) {
@@ -88,6 +90,8 @@ export function PrivacySettingsPresenter({
   metaAttributionAvailable,
   metaAttributionEnabled,
   onSetMetaAttributionEnabled,
+  showTemplateWorkouts,
+  onSetShowTemplateWorkouts,
 }: PrivacySettingsPresenterProps) {
   const insets = useSafeAreaInsets();
 
@@ -111,6 +115,23 @@ export function PrivacySettingsPresenter({
             was public discoverability (no discovery UI / moderation yet;
             Apple Guideline 1.2 de-risk), leaving no real Private-vs-Public
             choice. Container wiring retained; see the module header. */}
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Workout library</Text>
+          <View style={styles.option} testID="settings-show-template-workouts">
+            <View style={styles.optionContent}>
+              <Text style={styles.optionTitle}>Show template workouts</Text>
+              <Text style={styles.optionDescription}>
+                Display Persistence templates below your saved workouts.
+              </Text>
+            </View>
+            <Switch
+              value={showTemplateWorkouts}
+              onValueChange={onSetShowTemplateWorkouts}
+              accessibilityLabel="Show template workouts"
+            />
+          </View>
+        </View>
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Data &amp; Privacy</Text>

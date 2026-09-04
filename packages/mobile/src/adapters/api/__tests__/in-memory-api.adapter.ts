@@ -1,4 +1,5 @@
 import type { DashboardPayload } from "@/domain/models/dashboard";
+import type { AppliedReferral } from "@/domain/models/referral";
 import type {
   CreateExerciseInput,
   Exercise,
@@ -960,6 +961,37 @@ export class InMemoryApiAdapter implements ApiPort {
 
   /** Per-user current subscription used by `getMySubscription`. */
   public mySubscription: MySubscription | null = null;
+  public appliedReferral: AppliedReferral | null = null;
+  public claimReferralCalls: string[] = [];
+
+  async getAppliedReferral() {
+    return this.mayFail<AppliedReferral | null>(this.appliedReferral);
+  }
+
+  async claimReferral(code: string, signal?: AbortSignal) {
+    this.claimReferralCalls.push(code);
+    if (signal?.aborted) {
+      return fail<ApiError>({
+        kind: "api",
+        code: "network",
+        message: "Request cancelled",
+      });
+    }
+    const result = this.mayFail<AppliedReferral>({
+      code,
+      label: code,
+      partnerName: null,
+      lockedAt: null,
+    });
+    if (result.ok) this.appliedReferral = result.value;
+    return result;
+  }
+
+  async removeReferral() {
+    const removed = this.appliedReferral !== null;
+    this.appliedReferral = null;
+    return this.mayFail({ removed });
+  }
 
   async getSubscriptionTiers() {
     return this.mayFail<SubscriptionTier[]>([...this.subscriptionTiers]);

@@ -39,6 +39,23 @@ export type SyncStatus =
   | "permanently_failed";
 
 /**
+ * Whether a queued row can still settle without explicit user intervention.
+ * Mirrors the storage drain's eligibility: exhausted/terminal/entitlement-
+ * blocked rows must not shadow server truth or hold newer intent behind them.
+ */
+export function isAutoResolvableSyncEntry(entry: {
+  status: SyncStatus;
+  retryCount: number;
+  maxRetries: number;
+}): boolean {
+  if (entry.status === "in_flight") return true;
+  return (
+    (entry.status === "pending" || entry.status === "failed") &&
+    entry.retryCount < entry.maxRetries
+  );
+}
+
+/**
  * Server's entitlement verdict captured on a `blocked_entitlement` entry.
  * Mirrors `ApiErrorEntitlementPayload` (the camelCase shape the
  * `SSTApiAdapter` already parses out of the 402 body) plus `blockedAt`

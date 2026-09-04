@@ -23,6 +23,7 @@ import { color } from "@/ui/theme/tokens";
 export interface CurrentSubscriptionStatusCardProps {
   currentTierDisplayName: string;
   isCancelledButActive: boolean;
+  isFoundingAccess?: boolean;
   /** ISO date — only used when isCancelledButActive. */
   subscriptionEndsAt: string | null;
   scheduledChange: {
@@ -45,6 +46,7 @@ function formatDate(dateString: string | null | undefined): string | null {
 export function CurrentSubscriptionStatusCard({
   currentTierDisplayName,
   isCancelledButActive,
+  isFoundingAccess = false,
   subscriptionEndsAt,
   scheduledChange,
 }: CurrentSubscriptionStatusCardProps) {
@@ -55,16 +57,34 @@ export function CurrentSubscriptionStatusCard({
     >
       <View style={styles.currentSubscriptionHeader}>
         <Ionicons
-          name={isCancelledButActive ? "alert-circle" : "checkmark-circle"}
+          name={
+            isCancelledButActive && !isFoundingAccess
+              ? "alert-circle"
+              : "checkmark-circle"
+          }
           size={20}
-          color={isCancelledButActive ? color.$warning : color.$success}
+          color={
+            isCancelledButActive && !isFoundingAccess
+              ? color.$warning
+              : color.$success
+          }
         />
         <View style={styles.currentSubscriptionContent}>
           <Text style={styles.currentSubscriptionText}>
-            {isCancelledButActive ? "Cancelled" : "Current"}:{" "}
-            {currentTierDisplayName}
+            {isFoundingAccess
+              ? "Access active"
+              : isCancelledButActive
+                ? "Cancelled"
+                : "Current"}
+            : {currentTierDisplayName}
           </Text>
-          {isCancelledButActive && subscriptionEndsAt && (
+          {isFoundingAccess && subscriptionEndsAt && (
+            <Text style={styles.currentSubscriptionSubtext}>
+              Your founding access is active until{" "}
+              {formatDate(subscriptionEndsAt)} and will not renew automatically.
+            </Text>
+          )}
+          {isCancelledButActive && !isFoundingAccess && subscriptionEndsAt && (
             <Text style={styles.currentSubscriptionSubtext}>
               Your subscription will remain active until{" "}
               {formatDate(subscriptionEndsAt)}. Click your plan card to

@@ -65,6 +65,7 @@ export interface SubscriptionSelectionPresenterProps {
   subscriptionEndsAt: string | null;
   canCancel: boolean;
   isCancelledButActive: boolean;
+  isFoundingAccess?: boolean;
   scheduledChange: {
     nextTierDisplayName: string;
     effectiveAt: string;
@@ -85,6 +86,7 @@ export interface SubscriptionSelectionPresenterProps {
   onRetry: () => void;
   onCancelSubscription: () => void;
   onboardingRecommendation?: OnboardingRecommendationMode;
+  referralCodeEntry?: React.ReactNode;
 }
 
 export function SubscriptionSelectionPresenter(
@@ -103,6 +105,7 @@ export function SubscriptionSelectionPresenter(
     subscriptionEndsAt,
     canCancel,
     isCancelledButActive,
+    isFoundingAccess = false,
     scheduledChange,
     currentTierDisplayName,
     isOffline,
@@ -114,6 +117,7 @@ export function SubscriptionSelectionPresenter(
     onRetry,
     onCancelSubscription,
     onboardingRecommendation,
+    referralCodeEntry,
   } = props;
 
   // User-tier cards: catalog-driven, not a hardcoded "premium" lookup —
@@ -441,6 +445,7 @@ export function SubscriptionSelectionPresenter(
             <CurrentSubscriptionStatusCard
               currentTierDisplayName={currentTierDisplayName}
               isCancelledButActive={isCancelledButActive}
+              isFoundingAccess={isFoundingAccess}
               subscriptionEndsAt={subscriptionEndsAt}
               scheduledChange={scheduledChange}
             />
@@ -511,6 +516,8 @@ export function SubscriptionSelectionPresenter(
               <View style={styles.tierCards}>{userTierCards}</View>
             )}
           </View>
+
+          {referralCodeEntry}
 
           {currentTier !== "free" && canCancel && !isCancelledButActive && (
             <View style={styles.cancelSubscriptionContainer}>

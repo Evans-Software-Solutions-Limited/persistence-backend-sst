@@ -53,6 +53,7 @@ const FULL_PAYLOAD = {
     weightUnit: "kg" as const,
     heightUnit: "cm" as const,
     isProfilePublic: false,
+    showTemplateWorkouts: true,
     createdAt: "2024-01-15T10:00:00.000Z",
   },
   subscription: {

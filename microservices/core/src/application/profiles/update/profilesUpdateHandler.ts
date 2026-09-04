@@ -77,6 +77,8 @@ export const profilesUpdateHandler = new Elysia()
         updateData.heightUnit = body.heightUnit;
       if (body.isProfilePublic !== undefined)
         updateData.isProfilePublic = body.isProfilePublic;
+      if (body.showTemplateWorkouts !== undefined)
+        updateData.showTemplateWorkouts = body.showTemplateWorkouts;
 
       if (Object.keys(updateData).length === 0) {
         ctx.set.status = 400;
@@ -126,6 +128,7 @@ export const profilesUpdateHandler = new Elysia()
         weightUnit: t.Optional(t.Union([t.Literal("kg"), t.Literal("lb")])),
         heightUnit: t.Optional(t.Union([t.Literal("cm"), t.Literal("ftin")])),
         isProfilePublic: t.Optional(t.Boolean()),
+        showTemplateWorkouts: t.Optional(t.Boolean()),
       }),
     },
   );

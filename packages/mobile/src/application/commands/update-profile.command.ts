@@ -26,8 +26,10 @@
 import type { ProfilePageData } from "@/domain/models/profilePage";
 import type { ApiProfile } from "@/domain/ports/api.port";
 import type { StoragePort } from "@/domain/ports/storage.port";
+import { isAutoResolvableSyncEntry } from "@/domain/ports/sync.types";
 import { fail, ok, type Result, type ValidationError } from "@/shared/errors";
 import { isIsoDateString } from "@/shared/utils/date";
+import { stripSupersededTemplatePreferences } from "./template-preference-queue";
 
 /** The subset of profile fields the Edit Profile screen can patch. */
 export type UpdateProfileInput = Partial<
@@ -41,6 +43,7 @@ export type UpdateProfileInput = Partial<
     | "weightUnit"
     | "heightUnit"
     | "isProfilePublic"
+    | "showTemplateWorkouts"
   >
 >;
 
@@ -125,9 +128,56 @@ export function updateProfileCommand(
         ...(input.isProfilePublic !== undefined
           ? { isProfilePublic: input.isProfilePublic }
           : {}),
+        ...(input.showTemplateWorkouts !== undefined
+          ? { showTemplateWorkouts: input.showTemplateWorkouts }
+          : {}),
       },
     };
     deps.storage.cacheProfilePage(deps.userId, merged);
+  }
+
+  // Coalesce edits into the newest rewritable profile PATCH. Besides keeping
+  // the queue small, this makes a rapid OFF -> ON preference change one
+  // latest-write-wins mutation instead of two requests whose failures could
+  // later replay the older value. In-flight/terminal rows are deliberately
+  // not rewritten by the storage port, so they receive a following PATCH.
+  const queuedUpdate = deps.storage
+    .getQueuedEntriesForEntity("profile", deps.userId)
+    .filter(
+      (entry) =>
+        entry.operation === "update" &&
+        entry.endpoint === "/profile" &&
+        entry.method === "PATCH" &&
+        (entry.status === "pending" || entry.status === "failed") &&
+        isAutoResolvableSyncEntry(entry),
+    )
+    .at(-1);
+
+  if (queuedUpdate) {
+    try {
+      const pending = JSON.parse(queuedUpdate.payload) as unknown;
+      if (
+        typeof pending === "object" &&
+        pending !== null &&
+        !Array.isArray(pending)
+      ) {
+        deps.storage.updateMutationPayload(queuedUpdate.id, {
+          ...(pending as Record<string, unknown>),
+          ...input,
+        });
+        return ok(undefined);
+      }
+    } catch {
+      // Leave malformed history for the sync failure surface and enqueue a
+      // clean patch rather than destroying evidence needed for recovery.
+    }
+  }
+
+  // A terminal older preference must not become live again through the manual
+  // Retry flow after this newer choice succeeds. Remove only the superseded
+  // field; unrelated failed profile edits remain recoverable in place.
+  if (input.showTemplateWorkouts !== undefined) {
+    stripSupersededTemplatePreferences(deps.storage, deps.userId);
   }
 
   deps.storage.enqueueMutation({

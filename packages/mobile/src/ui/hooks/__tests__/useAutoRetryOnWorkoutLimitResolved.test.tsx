@@ -287,8 +287,16 @@ describe("useAutoRetryOnWorkoutLimitResolved", () => {
     renderHook(() => useAutoRetryOnWorkoutLimitResolved(), {
       wrapper: wrapper(adapters, queryClient),
     });
-    await waitFor(() => expect(api.mySubscription).toBeDefined());
-    await new Promise((r) => setTimeout(r, 10));
+    await waitFor(() => {
+      expect(
+        queryClient.getQueryData<MySubscription>(["user-subscription", "u-1"]),
+      ).toMatchObject({ tierName: "free", workoutLimit: 3 });
+    });
+    // Re-announce the unchanged quota after the subscription has observably
+    // resolved. This guarantees the hook has rendered the real free-tier
+    // over-limit state and opened its episode before the upgrade transition;
+    // a fixed sleep raced React Query notifications under full CI load.
+    act(() => setWorkoutCount(storage, "u-1", 4, 3));
     expect(storage.getBlockedEntries()).toHaveLength(1);
 
     // Upgrade to premium — unlimited workoutLimit=null. Count stays at 4

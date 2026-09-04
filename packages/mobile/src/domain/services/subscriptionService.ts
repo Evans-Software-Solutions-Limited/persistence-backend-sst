@@ -94,6 +94,13 @@ export function isCancelledButActive(
   return new Date(subscription.expiresAt) > new Date();
 }
 
+/** Fixed-term founding grants use a server-owned subscription identifier. */
+export function isFoundingAccess(
+  subscription: MySubscription | null | undefined,
+): boolean {
+  return subscription?.externalSubscriptionId?.startsWith("founding_") ?? false;
+}
+
 /**
  * Trial-banner derivation. Mirrors legacy `shouldShowTrialBanner`.
  *

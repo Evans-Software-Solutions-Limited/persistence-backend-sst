@@ -1,4 +1,5 @@
 import React from "react";
+import { Text } from "react-native";
 import {
   fireEvent,
   render,
@@ -92,6 +93,17 @@ function defaultProps(): IOSPurchaseFlowPresenterProps {
 }
 
 describe("IOSPurchaseFlowPresenter", () => {
+  it("renders referral entry content beneath the native tier cards", () => {
+    render(
+      <IOSPurchaseFlowPresenter
+        {...defaultProps()}
+        referralCodeEntry={<Text testID="native-referral-entry">Referral</Text>}
+      />,
+    );
+
+    expect(screen.getByTestId("native-referral-entry")).toBeTruthy();
+  });
+
   it("uses the existing live-price plan surface for a locked onboarding recommendation", () => {
     const onToggleOtherPlans = jest.fn();
     const onContinueFree = jest.fn();
@@ -349,6 +361,28 @@ describe("IOSPurchaseFlowPresenter", () => {
     expect(screen.getByText("CANCELLED")).toBeTruthy();
     expect(screen.getByText(/ends 14 Mar 2027/i)).toBeTruthy();
     expect(screen.queryByText(/renews 14 Mar 2027/i)).toBeNull();
+  });
+
+  it("renders founding access as active fixed-term access", () => {
+    render(
+      <IOSPurchaseFlowPresenter
+        {...defaultProps()}
+        screen="manage"
+        currentTier="premium"
+        currentTierDisplayName="Premium"
+        isCancelledButActive
+        isFoundingAccess
+        subscriptionEndsAt="2027-03-03T00:00:00.000Z"
+      />,
+    );
+    expect(screen.getByText("ACTIVE")).toBeTruthy();
+    expect(screen.getByText("Founding access")).toBeTruthy();
+    expect(screen.getByText(/active until 3 Mar 2027/i)).toBeTruthy();
+    expect(screen.getByText("Fixed-term access")).toBeTruthy();
+    expect(screen.getByText("No automatic renewal")).toBeTruthy();
+    expect(screen.queryByTestId("ios-purchase-manage")).toBeNull();
+    expect(screen.queryByText("Billing period")).toBeNull();
+    expect(screen.queryByText("CANCELLED")).toBeNull();
   });
 
   it("stacks long plan details above billing metadata within the card", () => {
