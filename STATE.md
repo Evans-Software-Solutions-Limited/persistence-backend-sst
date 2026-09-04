@@ -42,6 +42,12 @@ shadows fresh server truth. New preference writes also bypass exhausted rows
 and remove the superseded preference field from older recoverable failures,
 preventing a later manual Retry from reversing the user's final choice while
 preserving unrelated failed profile edits.
+The follow-up CI coverage run exposed a timing-only test failure in the
+upgrade auto-retry case: it waited on a fixture assigned before render and
+then guessed that React Query would settle within 10ms. The regression now
+waits for the subscription cache itself and explicitly publishes the initial
+over-limit render before upgrading, preserving the product behaviour while
+removing the full-suite load race.
 
 ### 🟡 2026-09-02 — MOBILE RELEASE READINESS (branch `codex/mobile-release-drag-loader-meta`)
 
