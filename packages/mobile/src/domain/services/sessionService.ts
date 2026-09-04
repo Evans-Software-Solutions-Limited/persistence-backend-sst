@@ -10,7 +10,11 @@
  *       specs/milestones/M3-active-session/FRONTEND_BRIEF.md § Pure domain services
  */
 
-import type { Exercise } from "@/domain/models/exercise";
+import {
+  EXERCISE_CATEGORIES,
+  type Exercise,
+  type ExerciseCategory,
+} from "@/domain/models/exercise";
 import type { PersonalRecord, RecordType } from "@/domain/models/record";
 import type {
   ExerciseSet,
@@ -22,6 +26,12 @@ import type {
 import type { Workout } from "@/domain/models/workout";
 
 export type IdFactory = () => string;
+
+function exerciseCategory(
+  value: string | undefined,
+): ExerciseCategory | undefined {
+  return EXERCISE_CATEGORIES.find((category) => category === value);
+}
 
 /** Inputs the session-service can't derive (caller-supplied for testability). */
 export type SessionContext = {
@@ -68,6 +78,7 @@ export function createSessionFromWorkout(
         sessionId,
         exerciseId: wx.exerciseId,
         exerciseName: wx.exercise?.name ?? wx.exerciseId,
+        category: exerciseCategory(wx.exercise?.category),
         sortOrder: idx,
         supersetGroup: wx.supersetGroup,
         isSubstituted: false,
@@ -283,7 +294,7 @@ export function completeSet(
 }
 
 /**
- * Mark every set with both `weightKg` and `reps` as completed,
+ * Mark every valid logged set as completed according to its exercise type,
  * stamping `completedAt`. Mirrors legacy semantics: legacy has no
  * per-set "Mark Complete" UI — any set with data is "logged" — but
  * V2's calculateSummary / detectPersonalRecords / bulk-record
@@ -303,11 +314,17 @@ export function markLoggedSetsCompleted(
       if (ex.isSubstituted) return ex;
       return {
         ...ex,
-        sets: ex.sets.map((set) =>
-          !set.isCompleted && set.weightKg != null && set.reps != null
+        sets: ex.sets.map((set) => {
+          const hasLoggedValue =
+            ex.category === "cardio"
+              ? set.durationSeconds != null && set.durationSeconds > 0
+              : ex.category === "plyometric"
+                ? set.reps != null && set.reps > 0
+                : set.weightKg != null && set.reps != null;
+          return !set.isCompleted && hasLoggedValue
             ? { ...set, isCompleted: true, completedAt }
-            : set,
-        ),
+            : set;
+        }),
       };
     }),
   };
@@ -375,6 +392,7 @@ export function substituteExercise(
       ...ex,
       exerciseId: newExercise.id,
       exerciseName: newExercise.name,
+      category: newExercise.category,
       originalExerciseId: ex.originalExerciseId ?? ex.exerciseId,
       isSubstituted: false,
       sets: seededSets,
@@ -479,6 +497,7 @@ export function addExerciseToSession(
     sessionId: session.id,
     exerciseId: exercise.id,
     exerciseName: exercise.name,
+    category: exercise.category,
     sortOrder: nextSortOrder,
     supersetGroup: options.supersetGroup ?? null,
     isSubstituted: false,

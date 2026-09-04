@@ -215,8 +215,8 @@ export function validateExerciseInput(
     fields.difficulty = "Invalid difficulty level";
   }
 
-  // Primary muscles: at least one required, all must be valid
-  if (input.primaryMuscleGroups.length === 0) {
+  // Cardio is activity-based and does not require a fabricated muscle group.
+  if (input.category !== "cardio" && input.primaryMuscleGroups.length === 0) {
     fields.primaryMuscleGroups =
       "At least one primary muscle group is required";
   } else if (!input.primaryMuscleGroups.every(isValidMuscleGroup)) {

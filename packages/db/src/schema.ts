@@ -889,6 +889,8 @@ export const workoutSessions = pgTable(
     startedAt: timestamp("started_at", { withTimezone: true }).defaultNow(),
     completedAt: timestamp("completed_at", { withTimezone: true }),
     totalDurationSeconds: integer("total_duration_seconds"),
+    activityEnvironment: text("activity_environment"),
+    locationName: text("location_name"),
     userNotes: text("user_notes"),
     trainerFeedback: text("trainer_feedback"),
     sessionRating: integer("session_rating"),

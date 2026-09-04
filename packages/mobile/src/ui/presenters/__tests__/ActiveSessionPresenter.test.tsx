@@ -553,6 +553,62 @@ describe("ActiveSessionPresenter (vertical scroll, legacy parity)", () => {
     expect(getByTestId("rest-timer-display")).toBeTruthy();
   });
 
+  it("renders and updates retrospective cardio metadata", () => {
+    const onActivityEnvironmentChange = jest.fn();
+    const onLocationNameChange = jest.fn();
+    const onRetrospectiveDurationChange = jest.fn();
+    const { getByTestId, getByText } = renderWithTheme(
+      <ActiveSessionPresenter
+        {...baseProps}
+        retroactive
+        retrospectiveCompletedAt="2026-05-04T12:00:00.000Z"
+        retrospectiveDurationSeconds={1_800}
+        onRetrospectiveDateChange={jest.fn()}
+        onRetrospectiveDurationChange={onRetrospectiveDurationChange}
+        activityEnvironment="indoor"
+        onActivityEnvironmentChange={onActivityEnvironmentChange}
+        locationName="Track"
+        onLocationNameChange={onLocationNameChange}
+        templateByExercise={{ "se-1": { category: "cardio", restSeconds: 90 } }}
+      />,
+    );
+
+    expect(getByText("ENVIRONMENT")).toBeTruthy();
+    fireEvent.changeText(getByTestId("retrospective-workout-duration"), "45");
+    expect(onRetrospectiveDurationChange).toHaveBeenCalledWith(2_700);
+    fireEvent.press(getByTestId("session-environment-outdoor"));
+    expect(onActivityEnvironmentChange).toHaveBeenCalledWith("outdoor");
+    fireEvent.changeText(getByTestId("session-location"), "Park");
+    expect(onLocationNameChange).toHaveBeenCalledWith("Park");
+  });
+
+  it("does not force metric loggers into the strength-only superset table", () => {
+    const exercises = [
+      buildExercise({ id: "run", category: "cardio", supersetGroup: 2 }),
+      buildExercise({
+        id: "jumps",
+        exerciseId: "jumps",
+        exerciseName: "Box Jumps",
+        category: "plyometric",
+        supersetGroup: 2,
+        sortOrder: 1,
+      }),
+    ];
+    const { getByTestId, queryByTestId } = renderWithTheme(
+      <ActiveSessionPresenter
+        {...baseProps}
+        exercises={exercises}
+        templateByExercise={{
+          run: { category: "cardio", restSeconds: 90 },
+          jumps: { category: "plyometric", restSeconds: 90 },
+        }}
+      />,
+    );
+    expect(queryByTestId("superset-group-2")).toBeNull();
+    expect(getByTestId("session-exercise-run")).toBeTruthy();
+    expect(getByTestId("session-exercise-jumps")).toBeTruthy();
+  });
+
   // The KeyboardAvoidingView branch covers the bug where SetLogger TextInputs
   // were occluded by the keyboard mid-workout. We assert the platform-conditional
   // both ways so a regression to a single hard-coded behavior (or no KAV) shows

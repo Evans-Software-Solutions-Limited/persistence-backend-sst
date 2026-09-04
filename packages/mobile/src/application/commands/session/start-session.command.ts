@@ -40,6 +40,7 @@ export type StartSessionInput = {
    * live only on the AsyncStorage pointer).
    */
   withClient?: SessionClientRef | null;
+  retrospective?: boolean;
 };
 
 export type ActiveSessionExistsError = {
@@ -72,6 +73,15 @@ export function startSessionCommand(
   const session = input.workout
     ? createSessionFromWorkout(input.workout, ctx, deps.generateId)
     : createEmptySession(ctx, deps.generateId);
+
+  if (input.retrospective) {
+    const completed = new Date(deps.now?.() ?? new Date());
+    completed.setDate(completed.getDate() - 1);
+    completed.setHours(12, 0, 0, 0);
+    session.retrospectiveCompletedAt = completed.toISOString();
+    session.retrospectiveDurationSeconds = 3600;
+    session.startedAt = new Date(completed.getTime() - 3600_000).toISOString();
+  }
 
   deps.storage.cacheActiveSession(deps.userId, session);
   // M2 learning #3: every session-mutating command invalidates the

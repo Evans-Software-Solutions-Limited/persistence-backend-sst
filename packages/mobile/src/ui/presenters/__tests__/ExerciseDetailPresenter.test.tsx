@@ -142,6 +142,34 @@ describe("ExerciseDetailPresenter", () => {
     ).toBeNull();
   });
 
+  it("shows cardio personal records on the exercise page", () => {
+    const { getByTestId, getByText } = setup({
+      exercise: {
+        ...exercise,
+        id: "run",
+        name: "Outdoor Run",
+        category: "cardio",
+      },
+      personalRecords: [
+        {
+          id: "pr-distance",
+          userId: "user-1",
+          exerciseId: "run",
+          exerciseName: "Outdoor Run",
+          recordType: "longest_distance",
+          value: 5_000,
+          achievedAt: "2026-09-01T08:00:00.000Z",
+          sessionId: "session-1",
+          setId: "set-1",
+        },
+      ],
+    });
+
+    expect(getByTestId("exercise-personal-records")).toBeTruthy();
+    expect(getByText("5.00")).toBeTruthy();
+    expect(getByText("km")).toBeTruthy();
+  });
+
   it("omits empty sections (no resolved labels, no description/instructions)", () => {
     const { queryByTestId, queryByText } = setup({
       exercise: {

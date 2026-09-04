@@ -18,6 +18,7 @@ import {
   createEmptySession,
   createSessionFromWorkout,
   detectPersonalRecords,
+  markLoggedSetsCompleted,
   removeExerciseFromSession,
   removeSupersetSet,
   renumberSets,
@@ -336,6 +337,40 @@ describe("completeSet", () => {
     const { session } = sessionWithSet();
     const updated = completeSet(session, "missing", "ts");
     expect(updated.exercises[0].sets[0].isCompleted).toBe(false);
+  });
+});
+
+describe("markLoggedSetsCompleted", () => {
+  it("completes cardio time-only and plyometric reps-only sets", () => {
+    let session = createEmptySession(ctx(), idFactory());
+    session = addExerciseToSession(
+      session,
+      makeExercise({ id: "run", category: "cardio" }),
+      idFactory(20),
+    );
+    session = addExerciseToSession(
+      session,
+      makeExercise({ id: "jumps", category: "plyometric" }),
+      idFactory(30),
+    );
+    session.exercises[0].sets[0].durationSeconds = 1_500;
+    session.exercises[1].sets[0].reps = 12;
+
+    const completed = markLoggedSetsCompleted(session, ctx().now);
+
+    expect(completed.exercises[0].sets[0].isCompleted).toBe(true);
+    expect(completed.exercises[1].sets[0].isCompleted).toBe(true);
+  });
+
+  it("does not complete strength sets without both weight and reps", () => {
+    let session = createEmptySession(ctx(), idFactory());
+    session = addExerciseToSession(session, makeExercise(), idFactory(20));
+    session.exercises[0].sets[0].reps = 8;
+
+    expect(
+      markLoggedSetsCompleted(session, ctx().now).exercises[0].sets[0]
+        .isCompleted,
+    ).toBe(false);
   });
 });
 

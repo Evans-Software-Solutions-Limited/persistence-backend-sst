@@ -325,4 +325,24 @@ describe("SessionExerciseCard", () => {
     // 70 kg -> 154.3 lb (weightInUnit, 1dp).
     expect(getByText("10 reps • 154.3 lb")).toBeTruthy();
   });
+
+  it("renders cardio duration and distance columns instead of reps and weight", () => {
+    const { getByText, getByTestId, queryByText } = renderWithTheme(
+      <SessionExerciseCard
+        exercise={buildExercise({ category: "cardio" })}
+        category="cardio"
+        targetSets={1}
+        targetDurationSeconds={1_500}
+        preferredUnits="metric"
+        previousSetsBySetNumber={{}}
+        restSeconds={60}
+        {...baseHandlers}
+      />,
+    );
+    expect(getByText("1 set × 25:00")).toBeTruthy();
+    expect(getByText("TIME")).toBeTruthy();
+    expect(getByText("KM")).toBeTruthy();
+    expect(queryByText("REPS")).toBeNull();
+    expect(getByTestId("set-logger-duration")).toBeTruthy();
+  });
 });

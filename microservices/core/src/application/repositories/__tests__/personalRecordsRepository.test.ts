@@ -341,6 +341,68 @@ describe("PersonalRecordsRepository", () => {
       expect(mockDb.select).toHaveBeenCalledTimes(4);
     });
 
+    it("detects a shorter cardio time and longer distance for an exercise", async () => {
+      const completedSets = [
+        {
+          setId: "run-new",
+          exerciseId: "exercise-run",
+          weightKg: null,
+          reps: null,
+          durationSeconds: 1500,
+          distanceMeters: "5000.00",
+        },
+      ];
+      const priorRecords = [
+        {
+          exerciseId: "exercise-run",
+          recordType: "best_time",
+          value: "1650.00",
+        },
+        {
+          exerciseId: "exercise-run",
+          recordType: "longest_distance",
+          value: "4000.00",
+        },
+      ];
+      const mockDb = {
+        select: vi
+          .fn()
+          .mockReturnValueOnce(makeDoubleJoinSelectChain(completedSets))
+          .mockReturnValueOnce(makeWhereSelectChain(priorRecords))
+          .mockReturnValueOnce(makeWhereSelectChain([{ setId: "run-new" }]))
+          .mockReturnValueOnce(makeSingleJoinSubquery())
+          .mockReturnValueOnce(
+            makeWhereSelectChain([{ id: "exercise-run", name: "Running" }]),
+          ),
+        insert: vi.fn().mockReturnValue(makeUpsertChain()),
+        update: vi.fn().mockReturnValue(makeUpdateChain()),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const { PersonalRecordsRepository } =
+        await import("../personalRecordsRepository");
+      const result = await new PersonalRecordsRepository().recordPRsForSession(
+        "u1",
+        "session-run",
+      );
+
+      expect(result).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            recordType: "best_time",
+            newValue: 1500,
+            previousValue: 1650,
+          }),
+          expect.objectContaining({
+            recordType: "longest_distance",
+            newValue: 5000,
+            previousValue: 4000,
+          }),
+        ]),
+      );
+      expect(mockDb.insert).toHaveBeenCalledTimes(2);
+    });
+
     it("returns PRs with previousValue for each computed record type that beat its prior (10rm + max_weight + max_volume)", async () => {
       // One 10-rep set that beats prior values on ALL three record
       // types the new ladder emits for reps=10: max_weight,

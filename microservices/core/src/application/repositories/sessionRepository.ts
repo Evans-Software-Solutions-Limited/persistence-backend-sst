@@ -55,6 +55,8 @@ export interface RecordSessionInput {
   completedAt?: string | null;
   status: "completed" | "cancelled";
   totalDurationSeconds?: number | null;
+  activityEnvironment?: "indoor" | "outdoor" | null;
+  locationName?: string | null;
   userNotes?: string | null;
   /**
    * Deprecated compatibility alias for older mobile builds. The active workout
@@ -574,6 +576,8 @@ export class SessionRepository {
           startedAt: new Date(payload.startedAt),
           completedAt,
           totalDurationSeconds: payload.totalDurationSeconds ?? null,
+          activityEnvironment: payload.activityEnvironment ?? null,
+          locationName: payload.locationName?.trim() || null,
           userNotes: payload.userNotes ?? null,
           sessionRating: null,
           overallRpe: payload.overallRpe ?? null,

@@ -25,6 +25,8 @@ import {
 } from "@/ui/components/icons";
 import { color } from "@/ui/theme/tokens";
 import type { ApiError } from "@/shared/errors";
+import type { PersonalRecord } from "@/domain/models/record";
+import { PRHistoryPresenter } from "@/ui/presenters/PRHistoryPresenter";
 import { weightInUnit, type WeightUnit } from "@/shared/utils";
 
 /**
@@ -34,10 +36,9 @@ import { weightInUnit, type WeightUnit } from "@/shared/utils";
  *       design.md § <ExerciseDetailPresenter>
  *
  * Design-port to the foundation system (HeaderBar + Pill + Lucide), NOT a 1:1
- * port of the legacy `exercise-details` screen. The legacy PR-carousel /
- * recent-sets / accessibility sections are dropped — V2's `GET /exercises/:id`
- * carries no per-user history and there are no accessibility columns (see the
- * 04 design.md Revised 2026-06-05 note).
+ * port of the legacy `exercise-details` screen. Personal records come from the
+ * progress history query; recent-set and accessibility sections remain out of
+ * scope because the detail endpoint carries neither.
  *
  * Header: Back (leading) + an Edit button shown only to the owner (AC 7.3).
  * Body: photo (if any), name + level pill, then description / primary muscles /
@@ -77,6 +78,7 @@ export type ExerciseDetailProps = {
   onRetry: () => void;
   performanceSummary?: ExercisePerformanceSummary | null;
   weightUnit?: WeightUnit;
+  personalRecords?: PersonalRecord[];
 };
 
 export function ExerciseDetailPresenter({
@@ -90,6 +92,7 @@ export function ExerciseDetailPresenter({
   onRetry,
   performanceSummary = null,
   weightUnit = "kg",
+  personalRecords = [],
 }: ExerciseDetailProps) {
   return (
     <SafeAreaView
@@ -207,6 +210,16 @@ export function ExerciseDetailPresenter({
               value={performanceSummary.estimatedOneRepMax}
               weightUnit={weightUnit}
             />
+          ) : null}
+
+          {personalRecords.length > 0 ? (
+            <Section label="PERSONAL RECORDS">
+              <PRHistoryPresenter
+                prs={personalRecords}
+                weightUnit={weightUnit}
+                testID="exercise-personal-records"
+              />
+            </Section>
           ) : null}
 
           {/* Name + level */}

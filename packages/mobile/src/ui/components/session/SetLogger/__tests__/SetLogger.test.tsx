@@ -162,6 +162,88 @@ describe("SetLogger", () => {
     expect(onChange).toHaveBeenCalledWith({ reps: 8 });
   });
 
+  it("logs cardio duration and converts metric distance to metres", () => {
+    const onChange = jest.fn();
+    const { getByTestId } = renderWithTheme(
+      <SetLogger
+        set={buildSet()}
+        setNumber={1}
+        previous={null}
+        trackingMode="cardio"
+        preferredUnits="metric"
+        onChange={onChange}
+        onRemove={jest.fn()}
+        onFillPrevious={jest.fn()}
+      />,
+    );
+    fireEvent.changeText(getByTestId("set-logger-duration"), "25:30");
+    fireEvent.changeText(getByTestId("set-logger-distance"), "5");
+    expect(onChange).toHaveBeenCalledWith({ durationSeconds: 1530 });
+    expect(onChange).toHaveBeenCalledWith({ distanceMeters: 5000 });
+  });
+
+  it("converts an imperial plyometric jump distance to metres", () => {
+    const onChange = jest.fn();
+    const { getByTestId } = renderWithTheme(
+      <SetLogger
+        set={buildSet()}
+        setNumber={1}
+        previous={null}
+        trackingMode="plyometric"
+        preferredUnits="imperial"
+        onChange={onChange}
+        onRemove={jest.fn()}
+        onFillPrevious={jest.fn()}
+      />,
+    );
+    fireEvent.changeText(getByTestId("set-logger-distance"), "24");
+    expect(onChange).toHaveBeenCalledWith({
+      distanceMeters: expect.closeTo(0.6096, 8),
+    });
+  });
+
+  it("hydrates metric values and clears or ignores invalid activity input", () => {
+    const onChange = jest.fn();
+    const baseProps = {
+      set: buildSet(),
+      setNumber: 1,
+      previous: null,
+      onChange,
+      onRemove: jest.fn(),
+      onFillPrevious: jest.fn(),
+    };
+    const { getByTestId, rerender } = renderWithTheme(
+      <SetLogger
+        {...baseProps}
+        set={{ ...baseProps.set, durationSeconds: 90, distanceMeters: 5_000 }}
+        trackingMode="cardio"
+        onChange={onChange}
+      />,
+    );
+    expect(getByTestId("set-logger-duration").props.value).toBe("1:30");
+    expect(getByTestId("set-logger-distance").props.value).toBe("5");
+
+    fireEvent.changeText(getByTestId("set-logger-duration"), "");
+    expect(onChange).toHaveBeenCalledWith({ durationSeconds: null });
+    fireEvent.changeText(getByTestId("set-logger-distance"), "");
+    expect(onChange).toHaveBeenCalledWith({ distanceMeters: null });
+    onChange.mockClear();
+    fireEvent.changeText(getByTestId("set-logger-duration"), "1:99");
+    fireEvent.changeText(getByTestId("set-logger-distance"), "not-a-number");
+    expect(onChange).not.toHaveBeenCalled();
+
+    rerender(
+      <SetLogger
+        {...baseProps}
+        set={{ ...baseProps.set, distanceMeters: 0.6 }}
+        trackingMode="plyometric"
+        preferredUnits="metric"
+        onChange={onChange}
+      />,
+    );
+    expect(getByTestId("set-logger-distance").props.value).toBe("60");
+  });
+
   it("trash icon always fires onRemove (no completion gating)", () => {
     const onRemove = jest.fn();
     const { getByTestId } = renderWithTheme(

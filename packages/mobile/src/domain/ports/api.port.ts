@@ -2115,6 +2115,8 @@ export type ApiSession = {
   startedAt: string;
   completedAt: string | null;
   totalDurationSeconds: number | null;
+  activityEnvironment?: "indoor" | "outdoor" | null;
+  locationName?: string | null;
   userNotes: string | null;
   createdAt: string;
   updatedAt: string;
@@ -2350,6 +2352,8 @@ export type RecordSessionInput = {
   completedAt?: string | null;
   status: "completed" | "cancelled";
   totalDurationSeconds?: number | null;
+  activityEnvironment?: "indoor" | "outdoor" | null;
+  locationName?: string | null;
   userNotes?: string | null;
   sessionRating?: number | null;
   overallRpe?: number | null;

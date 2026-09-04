@@ -1,6 +1,7 @@
 import {
   EMPTY_NEW_EXERCISE,
   EQUIPMENT_OPTIONS,
+  EXERCISE_CATEGORIES,
   LEVELS,
   MUSCLES,
   type NewExerciseInput,
@@ -31,7 +32,7 @@ const base: NewExerciseInput = {
 };
 
 describe("exerciseForm constants", () => {
-  it("drops the Cardio chip (deferred to cardio-as-category work)", () => {
+  it("keeps cardio out of muscles and exposes it as an exercise category", () => {
     expect(MUSCLES).toEqual([
       "Chest",
       "Back",
@@ -41,6 +42,7 @@ describe("exerciseForm constants", () => {
       "Core",
     ]);
     expect(MUSCLES).not.toContain("Cardio");
+    expect(EXERCISE_CATEGORIES).toEqual(["Strength", "Cardio", "Plyometric"]);
   });
 
   it("offers the seven prototype equipment options", () => {
@@ -65,10 +67,17 @@ describe("exerciseForm constants", () => {
 });
 
 describe("toCreateExerciseInput", () => {
-  it("trims the name and always sets category=strength", () => {
+  it("trims the name and maps the selected category", () => {
     const out = toCreateExerciseInput(base);
     expect(out.name).toBe("Incline Press");
     expect(out.category).toBe("strength");
+    expect(toCreateExerciseInput({ ...base, categoryLabel: "Cardio" })).toEqual(
+      expect.objectContaining({
+        category: "cardio",
+        primaryMuscleGroups: [],
+        secondaryMuscleGroups: [],
+      }),
+    );
   });
 
   it("maps each coarse muscle label to its granular groups", () => {

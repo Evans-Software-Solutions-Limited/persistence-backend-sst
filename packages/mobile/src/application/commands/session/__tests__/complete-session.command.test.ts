@@ -125,6 +125,29 @@ describe("completeSessionCommand", () => {
     expect(payload.userNotes).toBe("Felt strong");
   });
 
+  it("records retrospective timestamps and cardio metadata in the flush payload", () => {
+    storage.cacheActiveSession(
+      "user-1",
+      buildSession({
+        retrospectiveCompletedAt: "2026-05-03T12:00:00.000Z",
+        retrospectiveDurationSeconds: 1_800,
+        activityEnvironment: "outdoor",
+        locationName: "  Victoria Park  ",
+      }),
+    );
+
+    const result = completeSessionCommand({ storage, userId: "user-1", now });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.session.startedAt).toBe("2026-05-03T11:30:00.000Z");
+    expect(result.value.session.completedAt).toBe("2026-05-03T12:00:00.000Z");
+
+    const payload = JSON.parse(storage.getPendingMutations()[0].payload);
+    expect(payload.totalDurationSeconds).toBe(1_800);
+    expect(payload.activityEnvironment).toBe("outdoor");
+    expect(payload.locationName).toBe("Victoria Park");
+  });
+
   it("synthesizes isCompleted on logged sets so summary stats are non-zero post-1A.1", () => {
     // Post-1A.1 the Mark-Complete UI is gone — sets enter finalize with
     // isCompleted=false. calculateSummary, detectPersonalRecords, and

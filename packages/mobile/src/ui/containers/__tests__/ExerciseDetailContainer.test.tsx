@@ -123,6 +123,43 @@ describe("ExerciseDetailContainer", () => {
     expect(getByTestId("exercise-detail-edit")).toBeTruthy();
   });
 
+  it("filters progress history to records for this exercise", async () => {
+    const api = new InMemoryApiAdapter();
+    api.recentPRs = [
+      {
+        id: "pr-run",
+        userId: "user-1",
+        exerciseId: "ex-1",
+        exerciseName: "Outdoor Run",
+        recordType: "longest_distance",
+        value: 5000,
+        setId: "set-1",
+        sessionId: "session-1",
+        achievedAt: "2026-09-01T08:00:00.000Z",
+      },
+      {
+        id: "pr-other",
+        userId: "user-1",
+        exerciseId: "other",
+        exerciseName: "Burpees",
+        recordType: "max_reps",
+        value: 20,
+        setId: "set-2",
+        sessionId: "session-1",
+        achievedAt: "2026-09-01T08:00:00.000Z",
+      },
+    ];
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheExercises([buildExercise({ name: "Outdoor Run" })]);
+
+    const { findByTestId, findByText, queryByText } = renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <ExerciseDetailContainer />),
+    );
+    expect(await findByTestId("exercise-personal-records")).toBeTruthy();
+    expect(await findByText("5.00")).toBeTruthy();
+    expect(queryByText("20")).toBeNull();
+  });
+
   it("hides Edit for a system exercise the user doesn't own", async () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();

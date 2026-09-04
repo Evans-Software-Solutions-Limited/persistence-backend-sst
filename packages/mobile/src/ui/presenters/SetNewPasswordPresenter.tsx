@@ -108,6 +108,9 @@ export function SetNewPasswordPresenter({
                 value={password}
                 onChangeText={onPasswordChange}
                 secureTextEntry
+                showPasswordToggle
+                autoCapitalize="none"
+                autoCorrect={false}
                 autoComplete="password-new"
                 testID="password"
               />
@@ -117,7 +120,20 @@ export function SetNewPasswordPresenter({
                 value={confirmPassword}
                 onChangeText={onConfirmPasswordChange}
                 secureTextEntry
+                showPasswordToggle
+                autoCapitalize="none"
+                autoCorrect={false}
                 autoComplete="password-new"
+                error={
+                  confirmPassword.length > 0 && password !== confirmPassword
+                    ? "Passwords do not match"
+                    : undefined
+                }
+                helperText={
+                  confirmPassword.length > 0 && password === confirmPassword
+                    ? "Passwords match"
+                    : undefined
+                }
                 testID="confirm-password"
               />
             </Column>

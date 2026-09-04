@@ -8,6 +8,7 @@ import { useExercise } from "@/ui/hooks/useExercise";
 import { useExercisePerformanceSummary } from "@/ui/hooks/useExercisePerformanceSummary";
 import { useProfilePage } from "@/ui/hooks/useProfilePage";
 import { useAdapters } from "@/ui/hooks/useAdapters";
+import { useGetPRHistory } from "@/ui/hooks/useGetPRHistory";
 
 /**
  * <ExerciseDetailContainer> — wires the `/(app)/exercises/[id]` route to the
@@ -27,6 +28,7 @@ export function ExerciseDetailContainer() {
   const { exercise, isLoading, error, refresh } = useExercise(exerciseId);
   const performance = useExercisePerformanceSummary(exerciseId);
   const profile = useProfilePage();
+  const prHistory = useGetPRHistory(100);
   const { session } = useAuth();
   const trackedEstimateRef = useRef<string | null>(null);
 
@@ -72,6 +74,9 @@ export function ExerciseDetailContainer() {
       onRetry={onRetry}
       performanceSummary={performance.data}
       weightUnit={profile.payload?.profile.weightUnit ?? "kg"}
+      personalRecords={(prHistory.data ?? []).filter(
+        (record) => record.exerciseId === exerciseId,
+      )}
     />
   );
 }

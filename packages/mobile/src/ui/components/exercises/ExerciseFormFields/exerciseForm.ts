@@ -2,6 +2,7 @@ import type {
   CreateExerciseInput,
   EquipmentType,
   Exercise,
+  ExerciseCategory,
   ExerciseDifficulty,
   MuscleGroup,
 } from "@/domain/models/exercise";
@@ -24,13 +25,8 @@ import {
  * module is the one-way (UI → domain) boundary, kept pure + framework-free
  * so the mapping is unit-testable in isolation.
  *
- * Revised 2026-06-02 (Phase 04.3): the prototype's `Cardio` primary-muscle
- * chip is DROPPED for now. V2's `validateExerciseInput` requires ≥1 primary
- * muscle group and there is no `cardio`/`full-body` entry in the MuscleGroup
- * enum, so the design's `Cardio → []` mapping would fail validation on Save.
- * Cardio-as-a-category is deferred to a dedicated future slice (Brad's call).
- * Every remaining label maps to ≥1 valid muscle group, and `category` is
- * always `"strength"`.
+ * Cardio is a category, not a fake muscle group. It intentionally maps to no
+ * primary muscles; validation permits that category-specific shape.
  */
 
 export type MuscleLabel =
@@ -70,6 +66,12 @@ export const EQUIPMENT_OPTIONS: EquipmentLabel[] = [
 ];
 
 export type LevelLabel = "Beginner" | "Intermediate" | "Advanced";
+export type ExerciseCategoryLabel = "Strength" | "Cardio" | "Plyometric";
+export const EXERCISE_CATEGORIES: ExerciseCategoryLabel[] = [
+  "Strength",
+  "Cardio",
+  "Plyometric",
+];
 
 /** Per-tier tone, matching `create-exercise.jsx:30-34`. */
 export const LEVELS: { id: LevelLabel; tone: "success" | "gold" | "error" }[] =
@@ -86,6 +88,7 @@ export const LEVELS: { id: LevelLabel; tone: "success" | "gold" | "error" }[] =
  */
 export type NewExerciseInput = {
   name: string;
+  categoryLabel: ExerciseCategoryLabel;
   primaryMuscleLabel: MuscleLabel;
   secondaryMuscleLabels: MuscleLabel[];
   equipmentLabel: EquipmentLabel;
@@ -98,6 +101,7 @@ export type NewExerciseInput = {
 /** Sheet/editor open defaults — matches `create-exercise.jsx:20-25`. */
 export const EMPTY_NEW_EXERCISE: NewExerciseInput = {
   name: "",
+  categoryLabel: "Strength",
   primaryMuscleLabel: "Chest",
   secondaryMuscleLabels: [],
   equipmentLabel: "Barbell",
@@ -130,6 +134,21 @@ const LEVEL_TO_DIFFICULTY: Record<LevelLabel, ExerciseDifficulty> = {
   Advanced: "advanced",
 };
 
+const CATEGORY_LABEL_TO_CATEGORY: Record<
+  ExerciseCategoryLabel,
+  ExerciseCategory
+> = {
+  Strength: "strength",
+  Cardio: "cardio",
+  Plyometric: "plyometric",
+};
+
+const CATEGORY_TO_LABEL = {
+  strength: "Strength",
+  cardio: "Cardio",
+  plyometric: "Plyometric",
+} as const satisfies Partial<Record<ExerciseCategory, ExerciseCategoryLabel>>;
+
 /**
  * Convert the coarse UI form value to the granular domain create input.
  * One-way: when the same exercise is later read for editing, the granular
@@ -147,12 +166,18 @@ export function toCreateExerciseInput(
   return {
     name: input.name.trim(),
     instructions: instructions.length > 0 ? instructions : undefined,
-    category: "strength",
+    category: CATEGORY_LABEL_TO_CATEGORY[input.categoryLabel],
     difficulty: LEVEL_TO_DIFFICULTY[input.level],
-    primaryMuscleGroups: MUSCLE_LABEL_TO_GROUPS[input.primaryMuscleLabel],
-    secondaryMuscleGroups: input.secondaryMuscleLabels.flatMap(
-      (label) => MUSCLE_LABEL_TO_GROUPS[label],
-    ),
+    primaryMuscleGroups:
+      input.categoryLabel === "Cardio"
+        ? []
+        : MUSCLE_LABEL_TO_GROUPS[input.primaryMuscleLabel],
+    secondaryMuscleGroups:
+      input.categoryLabel === "Cardio"
+        ? []
+        : input.secondaryMuscleLabels.flatMap(
+            (label) => MUSCLE_LABEL_TO_GROUPS[label],
+          ),
     equipment: [EQUIPMENT_LABEL_TO_ENUM[input.equipmentLabel]],
     thumbnailUrl: photoUrl && photoUrl.length > 0 ? photoUrl : undefined,
   };
@@ -273,6 +298,9 @@ export function toFormInput(exercise: Exercise): NewExerciseInput {
 
   return {
     name: exercise.name,
+    categoryLabel:
+      CATEGORY_TO_LABEL[exercise.category as keyof typeof CATEGORY_TO_LABEL] ??
+      "Strength",
     primaryMuscleLabel,
     secondaryMuscleLabels,
     equipmentLabel,

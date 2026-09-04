@@ -91,10 +91,12 @@ describe("buildTemplateMap", () => {
       defaultRestSeconds: 90,
     });
     expect(result["se-1"]).toEqual({
+      category: "strength",
       imageUrl: "https://cdn.example.com/bench.png",
       targetSets: 4,
       targetRepsMin: 6,
       targetRepsMax: 10,
+      targetDurationSeconds: undefined,
       restSeconds: 75,
     });
   });
@@ -130,10 +132,12 @@ describe("buildTemplateMap", () => {
       defaultRestSeconds: 90,
     });
     expect(result["se-1"]).toEqual({
+      category: "strength",
       imageUrl: undefined,
       targetSets: undefined,
       targetRepsMin: 8,
       targetRepsMax: 12,
+      targetDurationSeconds: undefined,
       restSeconds: 90,
     });
   });

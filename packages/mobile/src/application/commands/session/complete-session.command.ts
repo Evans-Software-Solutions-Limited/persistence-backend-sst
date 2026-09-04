@@ -102,7 +102,19 @@ export function finalizeSessionCommand(
     });
   }
 
-  const completedAt = (deps.now?.() ?? new Date()).toISOString();
+  const completedAt =
+    status === "completed" && session.retrospectiveCompletedAt
+      ? session.retrospectiveCompletedAt
+      : (deps.now?.() ?? new Date()).toISOString();
+  const startedAt =
+    status === "completed" &&
+    session.retrospectiveCompletedAt &&
+    session.retrospectiveDurationSeconds
+      ? new Date(
+          Date.parse(session.retrospectiveCompletedAt) -
+            session.retrospectiveDurationSeconds * 1000,
+        ).toISOString()
+      : session.startedAt;
 
   // Synthesize per-set completion at finalize time. Post-1A.1 the
   // Mark-Complete UI is gone (legacy parity) — no UI path flips
@@ -118,12 +130,13 @@ export function finalizeSessionCommand(
       ? markLoggedSetsCompleted(session, completedAt)
       : session;
   const summary = calculateSummary(
-    { ...sessionWithCompletion, completedAt },
+    { ...sessionWithCompletion, startedAt, completedAt },
     completedAt,
   );
 
   const finalized: WorkoutSession = {
     ...sessionWithCompletion,
+    startedAt,
     status,
     completedAt,
     notes,
@@ -150,6 +163,8 @@ export function finalizeSessionCommand(
     completedAt,
     status,
     totalDurationSeconds: summary.duration,
+    activityEnvironment: finalized.activityEnvironment ?? null,
+    locationName: finalized.locationName?.trim() || null,
     userNotes: notes,
     sessionRating: rating,
     difficultyRanking: rating,

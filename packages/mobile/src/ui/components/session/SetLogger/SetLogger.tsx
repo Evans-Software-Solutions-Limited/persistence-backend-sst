@@ -23,6 +23,14 @@ import { IconX } from "@/ui/components/icons";
 import { color } from "@/ui/theme/tokens";
 import type { ExerciseSet } from "@/domain/models/session";
 import { weightInUnit, type WeightUnit } from "@/shared/utils";
+import {
+  activityDistanceFromMeters,
+  activityDistanceToMeters,
+  formatDurationInput,
+  jumpDistanceFromMeters,
+  jumpDistanceToMeters,
+  parseDurationInput,
+} from "@/shared/utils/activityUnits";
 
 export type SetLoggerProps = {
   set: ExerciseSet;
@@ -36,7 +44,16 @@ export type SetLoggerProps = {
    * kg), not a display label. Defaults to "kg".
    */
   weightUnit?: WeightUnit;
-  onChange: (patch: Partial<Pick<ExerciseSet, "weightKg" | "reps">>) => void;
+  preferredUnits?: "metric" | "imperial";
+  trackingMode?: "strength" | "cardio" | "plyometric";
+  onChange: (
+    patch: Partial<
+      Pick<
+        ExerciseSet,
+        "weightKg" | "reps" | "durationSeconds" | "distanceMeters"
+      >
+    >,
+  ) => void;
   onRemove: () => void;
   onFillPrevious: () => void;
 };
@@ -46,14 +63,47 @@ const toInputString = (n: number | null): string =>
 
 export function SetLogger(props: SetLoggerProps) {
   const weightUnit = props.weightUnit ?? "kg";
+  const preferredUnits = props.preferredUnits ?? "metric";
+  const trackingMode = props.trackingMode ?? "strength";
   const [reps, setReps] = useState(toInputString(props.set.reps));
   const [weight_kg, setWeightKg] = useState(toInputString(props.set.weightKg));
+  const [duration, setDuration] = useState(
+    formatDurationInput(props.set.durationSeconds),
+  );
+  const [distance, setDistance] = useState(() => {
+    if (props.set.distanceMeters == null) return "";
+    const value =
+      trackingMode === "plyometric"
+        ? jumpDistanceFromMeters(props.set.distanceMeters, preferredUnits)
+        : activityDistanceFromMeters(props.set.distanceMeters, preferredUnits);
+    return Number(value.toFixed(2)).toString();
+  });
   const weightInputRef = useRef<TextInput | null>(null);
 
   useEffect(() => {
     setReps(toInputString(props.set.reps));
     setWeightKg(toInputString(props.set.weightKg));
   }, [props.set.reps, props.set.weightKg]);
+
+  useEffect(() => {
+    setDuration(formatDurationInput(props.set.durationSeconds));
+    if (props.set.distanceMeters == null) setDistance("");
+    else {
+      const value =
+        trackingMode === "plyometric"
+          ? jumpDistanceFromMeters(props.set.distanceMeters, preferredUnits)
+          : activityDistanceFromMeters(
+              props.set.distanceMeters,
+              preferredUnits,
+            );
+      setDistance(Number(value.toFixed(2)).toString());
+    }
+  }, [
+    preferredUnits,
+    props.set.distanceMeters,
+    props.set.durationSeconds,
+    trackingMode,
+  ]);
 
   const handleRepsChange = (text: string) => {
     setReps(text);
@@ -67,6 +117,26 @@ export function SetLogger(props: SetLoggerProps) {
     if (text === "") return props.onChange({ weightKg: null });
     const n = Number.parseFloat(text);
     if (!Number.isNaN(n)) props.onChange({ weightKg: n });
+  };
+
+  const handleDurationChange = (text: string) => {
+    setDuration(text);
+    if (text === "") return props.onChange({ durationSeconds: null });
+    const seconds = parseDurationInput(text);
+    if (seconds != null) props.onChange({ durationSeconds: seconds });
+  };
+
+  const handleDistanceChange = (text: string) => {
+    setDistance(text);
+    if (text === "") return props.onChange({ distanceMeters: null });
+    const value = Number.parseFloat(text);
+    if (!Number.isFinite(value)) return;
+    props.onChange({
+      distanceMeters:
+        trackingMode === "plyometric"
+          ? jumpDistanceToMeters(value, preferredUnits)
+          : activityDistanceToMeters(value, preferredUnits),
+    });
   };
 
   return (
@@ -93,9 +163,14 @@ export function SetLogger(props: SetLoggerProps) {
 
       <TextInput
         style={[styles.input, styles.repsInput]}
-        value={reps}
-        onChangeText={handleRepsChange}
-        keyboardType="number-pad"
+        value={trackingMode === "cardio" ? duration : reps}
+        onChangeText={
+          trackingMode === "cardio" ? handleDurationChange : handleRepsChange
+        }
+        keyboardType={
+          trackingMode === "cardio" ? "numbers-and-punctuation" : "number-pad"
+        }
+        placeholder={trackingMode === "cardio" ? "mm:ss" : undefined}
         returnKeyType="next"
         // `blurOnSubmit={false}` keeps the keyboard open across the
         // reps → weight focus hop. The default is `true` for single-
@@ -106,14 +181,20 @@ export function SetLogger(props: SetLoggerProps) {
         // visible content jump-down-and-back-up.
         blurOnSubmit={false}
         onSubmitEditing={() => weightInputRef.current?.focus()}
-        testID="set-logger-reps"
+        testID={
+          trackingMode === "cardio" ? "set-logger-duration" : "set-logger-reps"
+        }
       />
 
       <TextInput
         ref={weightInputRef}
         style={[styles.input, styles.weightInput]}
-        value={weight_kg}
-        onChangeText={handleWeightChange}
+        value={trackingMode === "strength" ? weight_kg : distance}
+        onChangeText={
+          trackingMode === "strength"
+            ? handleWeightChange
+            : handleDistanceChange
+        }
         keyboardType="decimal-pad"
         returnKeyType="done"
         // Weight is the last field in the chain, so the default
@@ -122,7 +203,11 @@ export function SetLogger(props: SetLoggerProps) {
         // belt-and-braces this on the platforms where blurring alone
         // doesn't suffice.
         onSubmitEditing={Keyboard.dismiss}
-        testID="set-logger-weight"
+        testID={
+          trackingMode === "strength"
+            ? "set-logger-weight"
+            : "set-logger-distance"
+        }
       />
 
       <View style={styles.trashContainer}>

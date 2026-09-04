@@ -82,17 +82,22 @@ export function ActiveSessionContainer() {
     clientId?: string;
     clientName?: string;
     clientInitials?: string;
+    retroactive?: string;
   }>();
   const requestedWorkoutId = params.workoutId ?? null;
 
   const { session, userId, rereadCache } = useActiveSession();
-  const weightUnit = useProfilePage().payload?.profile.weightUnit ?? "kg";
+  const profile = useProfilePage().payload?.profile;
+  const weightUnit = profile?.weightUnit ?? "kg";
+  const preferredUnits = weightUnit === "lb" ? "imperial" : "metric";
 
   // Coach on-behalf context for the trainer banner (STORY-004). Sourced from
   // the UI-state slice; undefined until M8 (`10-trainer-features`) seeds it via
   // the on-behalf start flow → no banner for athletes today.
   const withClient = useActiveWorkout((s) => s.active?.withClient);
-  const retroactive = useActiveWorkout((s) => s.active?.retroactive);
+  const pointerRetroactive = useActiveWorkout((s) => s.active?.retroactive);
+  const retroactive =
+    pointerRetroactive === true || params.retroactive === "true";
 
   // Stable id factory — empty deps, M2 learning #7.
   const generateId = useCallback(
@@ -165,7 +170,11 @@ export function ActiveSessionContainer() {
         : null;
       const result = startSessionCommand(
         { storage, generateId, userId },
-        { workout: detail.workout, withClient: clientRef },
+        {
+          workout: detail.workout,
+          withClient: clientRef,
+          retrospective: retroactive,
+        },
       );
       // Seed the UI pointer for an immediate trainer banner + on-behalf finalize
       // routing. pointerFromSession recovers withClient from the (just-created)
@@ -184,7 +193,10 @@ export function ActiveSessionContainer() {
 
     // Quick Start.
     startAttemptedRef.current = true;
-    startSessionCommand({ storage, generateId, userId }, {});
+    startSessionCommand(
+      { storage, generateId, userId },
+      { retrospective: retroactive },
+    );
     rereadCache();
   }, [
     userId,
@@ -199,7 +211,29 @@ export function ActiveSessionContainer() {
     params.clientId,
     params.clientName,
     params.clientInitials,
+    retroactive,
   ]);
+
+  const updateSessionMetadata = useCallback(
+    (patch: Partial<import("@/domain/models/session").WorkoutSession>) => {
+      if (!session || !userId) return;
+      storage.cacheActiveSession(userId, { ...session, ...patch });
+      rereadCache();
+    },
+    [rereadCache, session, storage, userId],
+  );
+
+  const onRetrospectiveDateChange = useCallback(
+    (day: string) => {
+      const completed = new Date(`${day}T12:00:00`);
+      if (!Number.isFinite(completed.getTime()) || completed > new Date())
+        return;
+      updateSessionMetadata({
+        retrospectiveCompletedAt: completed.toISOString(),
+      });
+    },
+    [updateSessionMetadata],
+  );
 
   // Rest timer is owned at the container level so the screen surface
   // can render the overlay regardless of which exercise card the user
@@ -239,15 +273,19 @@ export function ActiveSessionContainer() {
   // Drives the legacy "{N} sets × {min}-{max} reps" caption + thumbnail
   // + START NS REST button label. Quick-Start sessions land outside the
   // map and the presenter falls back to a default rest seconds.
-  const templateByExercise = useMemo(
-    () =>
-      buildTemplateMap({
-        sessionExercises: session?.exercises ?? [],
-        workout: detail.workout,
-        defaultRestSeconds: DEFAULT_REST_SECONDS,
-      }),
-    [session, detail.workout],
-  );
+  const templateByExercise = useMemo(() => {
+    const categoryByExerciseId = new Map(
+      storage
+        .getCachedExercises()
+        .map((exercise) => [exercise.id, exercise.category] as const),
+    );
+    return buildTemplateMap({
+      sessionExercises: session?.exercises ?? [],
+      workout: detail.workout,
+      defaultRestSeconds: DEFAULT_REST_SECONDS,
+      categoryByExerciseId,
+    });
+  }, [session, detail.workout, storage]);
 
   const onStartRest = useCallback(
     (sessionExerciseId: string) => {
@@ -584,19 +622,26 @@ export function ActiveSessionContainer() {
     // this gate the user can tap Complete on an empty session, Submit
     // on rating, and record a 0-set workout to the server.
     if (!session) return;
-    const hasLoggedSet = session.exercises.some((ex) =>
-      ex.sets.some((s) => s.weightKg != null && s.reps != null),
-    );
+    const hasLoggedSet = session.exercises.some((ex) => {
+      const category = templateByExercise[ex.id]?.category;
+      return ex.sets.some((set) =>
+        category === "cardio"
+          ? set.durationSeconds != null && set.durationSeconds > 0
+          : category === "plyometric"
+            ? set.reps != null && set.reps > 0
+            : set.weightKg != null && set.reps != null,
+      );
+    });
     if (!hasLoggedSet) {
       Alert.alert(
         "Add a set first",
-        "Log weight + reps on at least one set before completing the workout.",
+        "Log at least one complete set before completing the workout.",
         [{ text: "OK", style: "default" }],
       );
       return;
     }
     router.push("/(app)/session/rate" as never);
-  }, [session]);
+  }, [session, templateByExercise]);
 
   // 05.4: the header "End" pill opens the styled <EndConfirmDialogPresenter>
   // (replacing the legacy Alert.alert). Confirming fires cancelSessionCommand
@@ -677,6 +722,7 @@ export function ActiveSessionContainer() {
         exercises={session.exercises}
         previousSetsByExercise={previousSetsByExercise}
         weightUnit={weightUnit}
+        preferredUnits={preferredUnits}
         templateByExercise={templateByExercise}
         restTimer={{
           isActive: restTimer.isActive,
@@ -703,6 +749,22 @@ export function ActiveSessionContainer() {
         onStartRest={onStartRest}
         withClient={withClient}
         retroactive={retroactive}
+        activityEnvironment={session.activityEnvironment ?? null}
+        locationName={session.locationName ?? ""}
+        retrospectiveCompletedAt={session.retrospectiveCompletedAt ?? null}
+        retrospectiveDurationSeconds={
+          session.retrospectiveDurationSeconds ?? 3600
+        }
+        onActivityEnvironmentChange={(activityEnvironment) =>
+          updateSessionMetadata({ activityEnvironment })
+        }
+        onLocationNameChange={(locationName) =>
+          updateSessionMetadata({ locationName })
+        }
+        onRetrospectiveDateChange={onRetrospectiveDateChange}
+        onRetrospectiveDurationChange={(retrospectiveDurationSeconds) =>
+          updateSessionMetadata({ retrospectiveDurationSeconds })
+        }
         onMinimize={onMinimize}
         onDiscard={onDiscard}
         onFinish={onFinish}

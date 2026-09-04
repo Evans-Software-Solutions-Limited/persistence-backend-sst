@@ -55,6 +55,10 @@ import {
   formatWeight,
   type WeightUnit,
 } from "@/shared/utils";
+import {
+  activityDistanceFromMeters,
+  activityDistanceUnit,
+} from "@/shared/utils/activityUnits";
 
 const RECORD_TYPE_LABEL: Record<SummaryPersonalRecord["recordType"], string> = {
   "1rm": "1 Rep Max",
@@ -96,6 +100,10 @@ export type SessionSummaryPresenterProps = {
   personalRecords: SummaryPersonalRecord[];
   /** Athlete's weight-display preference. Defaults to "kg" when absent. */
   weightUnit?: WeightUnit;
+  durationSeconds?: number;
+  totalDistanceMeters?: number;
+  activityEnvironment?: "indoor" | "outdoor" | null;
+  locationName?: string | null;
   onSave: () => void;
   onClose: () => void;
 };
@@ -107,9 +115,7 @@ const formatPRValue = (
 ): string => {
   // Whitelist-style switch — every RecordType handled explicitly.
   // Inspector Brad PR #62 (low severity) caught the previous
-  // "everything-else → kg" fallthrough: if the backend ever emits
-  // best_time or longest_distance (it doesn't today, but the
-  // RecordType enum allows them), the card would render
+  // "everything-else → kg" fallthrough: a cardio record would render
   // "45.0 kg" for a 45-second time PR. Exhaustive switch + no
   // default branch means TS will flag this site at compile time if
   // a new record type lands without a chosen formatter.
@@ -137,9 +143,18 @@ export function SessionSummaryPresenter(props: SessionSummaryPresenterProps) {
     workoutsThisMonth,
     personalRecords,
     weightUnit = "kg",
+    durationSeconds = 0,
+    totalDistanceMeters = 0,
+    activityEnvironment = null,
+    locationName = null,
     onSave,
     onClose,
   } = props;
+  const preferredUnits = weightUnit === "lb" ? "imperial" : "metric";
+  const distanceValue = activityDistanceFromMeters(
+    totalDistanceMeters,
+    preferredUnits,
+  );
 
   return (
     <View style={styles.container} testID="session-summary-screen">
@@ -170,6 +185,13 @@ export function SessionSummaryPresenter(props: SessionSummaryPresenterProps) {
                 workoutsThisMonth === 1 ? "workout" : "workouts"
               } this month. Keep the momentum going!`}
         </Text>
+        {(activityEnvironment || locationName) && (
+          <Text style={styles.activityMeta} testID="summary-activity-meta">
+            {[activityEnvironment?.toUpperCase(), locationName]
+              .filter(Boolean)
+              .join(" · ")}
+          </Text>
+        )}
 
         {/* 3-stat strip — same flex-row of cards as legacy, third
             tile carries Total Volume (Brad's pick replacing legacy's
@@ -194,11 +216,24 @@ export function SessionSummaryPresenter(props: SessionSummaryPresenterProps) {
           <View style={styles.statCard} testID="summary-stat-total-volume">
             <IconDumbbell size={28} color={color.$info} />
             <Text style={styles.statValue}>
-              {formatVolumeShared(totalVolume, weightUnit)}
+              {totalDistanceMeters > 0
+                ? `${distanceValue.toFixed(2)} ${activityDistanceUnit(preferredUnits)}`
+                : formatVolumeShared(totalVolume, weightUnit)}
             </Text>
-            <Text style={styles.statLabel}>Total Volume</Text>
+            <Text style={styles.statLabel}>
+              {totalDistanceMeters > 0 ? "Distance" : "Total Volume"}
+            </Text>
           </View>
         </View>
+
+        {totalDistanceMeters > 0 && (
+          <Text style={styles.cardioDuration} testID="summary-cardio-duration">
+            Time {Math.floor(durationSeconds / 60)}:
+            {Math.round(durationSeconds % 60)
+              .toString()
+              .padStart(2, "0")}
+          </Text>
+        )}
 
         {personalRecords.length > 0 && (
           <View style={styles.section} testID="summary-pr-section">
@@ -289,6 +324,20 @@ const styles = StyleSheet.create({
     lineHeight: 24,
     color: color.$text2,
     textAlign: "center",
+  },
+  activityMeta: {
+    marginTop: -16,
+    textAlign: "center",
+    color: color.$primary,
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 1,
+  },
+  cardioDuration: {
+    textAlign: "center",
+    color: color.$text2,
+    fontSize: 14,
+    fontWeight: "600",
   },
   statsRow: {
     flexDirection: "row",

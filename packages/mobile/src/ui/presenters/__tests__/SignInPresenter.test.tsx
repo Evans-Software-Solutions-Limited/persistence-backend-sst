@@ -30,11 +30,12 @@ describe("SignInPresenter", () => {
   });
 
   it("renders email and password inputs", () => {
-    const { getByTestId } = renderWithTheme(
+    const { getByTestId, getByLabelText } = renderWithTheme(
       <SignInPresenter {...defaultProps} />,
     );
     expect(getByTestId("email")).toBeTruthy();
     expect(getByTestId("password")).toBeTruthy();
+    expect(getByLabelText("Show password")).toBeTruthy();
   });
 
   it("renders sign-in button", () => {

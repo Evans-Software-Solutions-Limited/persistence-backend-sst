@@ -46,6 +46,7 @@ export interface WorkoutsListPresenterProps {
   isAtLimit: boolean;
   currentUserId?: string;
   onCreate: () => void;
+  onLogPast?: () => void;
   onUpgrade: () => void;
   onOpen: (workoutId: string) => void;
   onStart: (workoutId: string) => void;
@@ -68,6 +69,7 @@ export function WorkoutsListPresenter({
   isAtLimit,
   currentUserId,
   onCreate,
+  onLogPast = () => {},
   onUpgrade,
   onOpen,
   onStart,
@@ -140,6 +142,17 @@ export function WorkoutsListPresenter({
           testID="create-workout-cta"
         >
           Create Workout
+        </Btn>
+
+        <Btn
+          full
+          variant="outline"
+          tone="primary"
+          size="md"
+          onPress={onLogPast}
+          testID="log-past-workout-cta"
+        >
+          Log past workout
         </Btn>
 
         {isAtLimit && (

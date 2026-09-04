@@ -31,6 +31,7 @@ import { color } from "@/ui/theme/tokens";
 import type { ExerciseSet, SessionExercise } from "@/domain/models/session";
 import type { WeightUnit } from "@/shared/utils";
 import { ExerciseReorderHandle } from "@/ui/components/workouts/ExerciseReorderHandle";
+import { formatDurationInput } from "@/shared/utils/activityUnits";
 
 export type SessionExerciseCardProps = {
   exercise: SessionExercise;
@@ -47,6 +48,8 @@ export type SessionExerciseCardProps = {
    * an input surface (writes kg), not a display label. Defaults to "kg".
    */
   weightUnit?: WeightUnit;
+  preferredUnits?: "metric" | "imperial";
+  category?: string;
   /** Optional thumbnail URL. A barbell-outline placeholder renders when missing. */
   exerciseImageUrl?: string;
   /**
@@ -57,12 +60,18 @@ export type SessionExerciseCardProps = {
   targetSets?: number;
   targetRepsMin?: number;
   targetRepsMax?: number;
+  targetDurationSeconds?: number;
   /** Used to label the START {N}S REST button. */
   restSeconds: number;
   onLogSet: () => void;
   onUpdateSet: (
     setId: string,
-    patch: Partial<Pick<ExerciseSet, "weightKg" | "reps" | "rpe">>,
+    patch: Partial<
+      Pick<
+        ExerciseSet,
+        "weightKg" | "reps" | "rpe" | "durationSeconds" | "distanceMeters"
+      >
+    >,
   ) => void;
   onRemoveSet: (setId: string) => void;
   onOpenNotes: () => void;
@@ -88,8 +97,18 @@ const formatRepsLabel = (
 
 export function SessionExerciseCard(props: SessionExerciseCardProps) {
   const weightUnit = props.weightUnit ?? "kg";
+  const trackingMode =
+    props.category === "cardio"
+      ? "cardio"
+      : props.category === "plyometric"
+        ? "plyometric"
+        : "strength";
   const repsLabel = formatRepsLabel(props.targetRepsMin, props.targetRepsMax);
-  const hasDescription = props.targetSets != null && repsLabel != null;
+  const targetLabel =
+    trackingMode === "cardio" && props.targetDurationSeconds != null
+      ? formatDurationInput(props.targetDurationSeconds)
+      : repsLabel;
+  const hasDescription = props.targetSets != null && targetLabel != null;
   const hasNotes =
     props.exercise.notes != null && props.exercise.notes.length > 0;
 
@@ -139,7 +158,8 @@ export function SessionExerciseCard(props: SessionExerciseCardProps) {
           {hasDescription && (
             <View style={styles.exerciseTitleRow}>
               <Text style={styles.exerciseDescription} numberOfLines={2}>
-                {props.targetSets} sets × {repsLabel}
+                {props.targetSets} {props.targetSets === 1 ? "set" : "sets"} ×{" "}
+                {targetLabel}
               </Text>
             </View>
           )}
@@ -181,9 +201,19 @@ export function SessionExerciseCard(props: SessionExerciseCardProps) {
         <Text style={[styles.columnHeader, styles.columnHeaderPrevious]}>
           PREV
         </Text>
-        <Text style={[styles.columnHeader, styles.columnHeaderReps]}>REPS</Text>
+        <Text style={[styles.columnHeader, styles.columnHeaderReps]}>
+          {trackingMode === "cardio" ? "TIME" : "REPS"}
+        </Text>
         <Text style={[styles.columnHeader, styles.columnHeaderKg]}>
-          {weightUnit.toUpperCase()}
+          {trackingMode === "strength"
+            ? weightUnit.toUpperCase()
+            : trackingMode === "cardio"
+              ? props.preferredUnits === "imperial"
+                ? "MI"
+                : "KM"
+              : props.preferredUnits === "imperial"
+                ? "IN"
+                : "CM"}
         </Text>
         <View style={styles.columnHeaderSpacer} />
       </View>
@@ -204,6 +234,8 @@ export function SessionExerciseCard(props: SessionExerciseCardProps) {
               setNumber={idx + 1}
               previous={previousForSet}
               weightUnit={weightUnit}
+              preferredUnits={props.preferredUnits}
+              trackingMode={trackingMode}
               onChange={(patch) => props.onUpdateSet(set.id, patch)}
               onRemove={() => props.onRemoveSet(set.id)}
               onFillPrevious={() => {

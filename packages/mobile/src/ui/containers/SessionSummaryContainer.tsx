@@ -151,6 +151,32 @@ export function SessionSummaryContainer() {
 
   const workoutsThisMonth = serverData?.workoutsThisMonth ?? null;
   const recordsHit = displayPersonalRecords.length;
+  const totalDistanceMeters = useMemo(
+    () =>
+      (snapshot?.exercises ?? []).reduce(
+        (sessionTotal, exercise) =>
+          sessionTotal +
+          exercise.sets.reduce(
+            (exerciseTotal, set) => exerciseTotal + (set.distanceMeters ?? 0),
+            0,
+          ),
+        0,
+      ),
+    [snapshot?.exercises],
+  );
+  const totalActivityDurationSeconds = useMemo(
+    () =>
+      (snapshot?.exercises ?? []).reduce(
+        (sessionTotal, exercise) =>
+          sessionTotal +
+          exercise.sets.reduce(
+            (exerciseTotal, set) => exerciseTotal + (set.durationSeconds ?? 0),
+            0,
+          ),
+        0,
+      ),
+    [snapshot?.exercises],
+  );
 
   const onContinue = useCallback(() => {
     if (!userId) return;
@@ -176,6 +202,14 @@ export function SessionSummaryContainer() {
       recordsHit={recordsHit}
       workoutsThisMonth={workoutsThisMonth}
       weightUnit={weightUnit}
+      durationSeconds={
+        totalActivityDurationSeconds > 0
+          ? totalActivityDurationSeconds
+          : localSummary.duration
+      }
+      totalDistanceMeters={totalDistanceMeters}
+      activityEnvironment={snapshot.activityEnvironment ?? null}
+      locationName={snapshot.locationName ?? null}
       onSave={onContinue}
       onClose={onClose}
     />

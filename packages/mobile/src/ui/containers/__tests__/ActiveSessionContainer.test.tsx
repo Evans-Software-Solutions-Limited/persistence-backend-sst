@@ -241,6 +241,24 @@ describe("ActiveSessionContainer", () => {
     expect(cached?.exercises).toHaveLength(2);
   });
 
+  it("starts retrospective quick logging and persists the chosen duration", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    mockUseLocalSearchParams.mockReturnValue({ retroactive: "true" });
+
+    const { findByTestId } = renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <ActiveSessionContainer />),
+    );
+    const duration = await findByTestId("retrospective-workout-duration");
+    fireEvent.changeText(duration, "45");
+
+    await waitFor(() =>
+      expect(
+        storage.getActiveSession("user-1")?.retrospectiveDurationSeconds,
+      ).toBe(2_700),
+    );
+  });
+
   it("does not seed a new session from a retained Loadout template after entitlement loss", async () => {
     const api = new InMemoryApiAdapter();
     const workout = buildWorkout({
@@ -608,7 +626,7 @@ describe("ActiveSessionContainer", () => {
 
     expect(alertSpy).toHaveBeenCalledWith(
       "Add a set first",
-      "Log weight + reps on at least one set before completing the workout.",
+      "Log at least one complete set before completing the workout.",
       expect.any(Array),
     );
     expect(mockRouterPush).not.toHaveBeenCalled();

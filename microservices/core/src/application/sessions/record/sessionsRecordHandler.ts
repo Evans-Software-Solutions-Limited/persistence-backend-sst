@@ -243,6 +243,12 @@ export const sessionsRecordHandler = new Elysia()
         completedAt: t.Optional(t.Union([t.String(), t.Null()])),
         status: t.Union([t.Literal("completed"), t.Literal("cancelled")]),
         totalDurationSeconds: t.Optional(t.Union([t.Number(), t.Null()])),
+        activityEnvironment: t.Optional(
+          t.Union([t.Literal("indoor"), t.Literal("outdoor"), t.Null()]),
+        ),
+        locationName: t.Optional(
+          t.Union([t.String({ maxLength: 120 }), t.Null()]),
+        ),
         userNotes: t.Optional(t.Union([t.String(), t.Null()])),
         // Deprecated compatibility alias: older app builds duplicated their
         // 1-10 difficulty answer into this field. The repository maps it to

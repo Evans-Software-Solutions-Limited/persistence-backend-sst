@@ -78,6 +78,31 @@ Visual baselines:
 `/Users/bradleysimms-evans/.codex/visualizations/2026/09/04/01a06cdf-2dcb-78e3-b9c3-b1b10954f357/pricing-live-cta-coaches-dark.png`,
 and
 `/Users/bradleysimms-evans/.codex/visualizations/2026/09/04/01a06cdf-2dcb-78e3-b9c3-b1b10954f357/pricing-live-cta-consumer-mobile.png`.
+### 🟡 2026-09-04 — AUTH + CARDIO/ACTIVITY LOGGING (branch `codex/auth-cardio-logging`)
+
+Password inputs on sign-in, sign-up and password reset now have accessible
+show/hide controls, disable keyboard correction/capitalisation, and show live
+confirmation match state without altering the submitted password. Exercise
+creation supports strength, cardio and plyometric categories; cardio no longer
+requires a muscle group. Active sessions persist each exercise category and
+show category-specific logging: weight/reps for strength, time plus km/mi for
+cardio, and reps plus jump distance in cm/in for plyometrics.
+
+The Workouts screen can start a retrospective workout with a past local date
+and explicit duration. Cardio sessions can be marked indoor/outdoor and given
+an optional location; those values, logged activity time and distance appear in
+the completed-workout summary. Distance and time records are calculated by the
+core service and rendered on exercise detail/progress surfaces. Canonical stored
+units remain seconds and metres. Migration
+`20260904120000_session_activity_metadata.sql` adds session environment and
+location metadata and must be applied before deploying the matching API.
+
+Formatting, all nine package typechecks, lint (zero errors), all fourteen build
+tasks and the full unit suite are green (**524 mobile suites / 6,616 tests**;
+**21 workspace tasks**). Visual QA was attempted but is blocked locally: the
+generated iOS build cannot resolve the React-Core-prebuilt pod source, while the
+installed staging dev client lacks ExpoTrackingTransparency and cannot load
+this checkout's bundle. No generated native project was retained.
 
 ### 🟡 2026-09-03 — FOUNDING-OFFER MOBILE REFERRAL ENTRY (branch `codex/founding-referral-ota`)
 
