@@ -302,6 +302,27 @@ yet**: `?ref=` capture + `/founding` landing section (FRONTEND_BRIEF § W3),
 mobile code entry (§ Mobile), Supabase redirect-URL allow-list for
 `/admin/callback`, staging smoke test, prod release. The worktree's `node_modules`
 dirs are VM-generated junk — `rm -rf` them and `bun install` before local use.
+### 📝 2026-09-04 — MARKETING-PLANS BRIEFS (branch `docs/marketing-plans-briefs`, docs only)
+
+Four documents added under `specs/milestones/MARKETING-PLANS/`, no code:
+`BRIEF.md` (coding-agent brief: `meta` campaign slug, `campaign` on
+`store_click`, web-only store-offer CTA on `/meta`, and an admin "Marketing"
+section — plans, channels, linked codes, hand-entered metrics, derived
+attribution), `MARKETING_BRIEF.md` (the founders' offer × Meta plan in the
+marketing source-of-truth format), `EXECUTION_PLAN.md` and `CREATIVE_BRIEF.md`
+(structure and constraints only — Brad writes the ads). Decisions recorded:
+two lanes (founding access granted, not sold, for warm traffic; an App Store
+offer code, the only priced rail, for cold Meta traffic); codes are Brad's to
+choose and may differ per avenue; channel attribution is the campaign slug;
+£10/day, £210 hard cap, declared stop rule. The build brief must be based on
+`main` after `codex/auth-cardio-logging` merges — that branch amends the
+FOUNDING-OFFER grant model (`grant_kind`, optional contribution columns,
+`founding_pool_limits`, `GET /founding/availability`) and these briefs are
+written against it. Verified during drafting: `store_click` carries no
+campaign slug today; `CAMPAIGNS` has no `meta` entry; the Meta ad account's
+spending limit is £20/month and must be raised before any test; the Meta SDK
+build is not yet submitted and no `SKAdNetworkItems` were found.
+
 ### 🟡 2026-09-03 — ONBOARDING BACK TRANSITION + TEMPLATE VISIBILITY (branch `codex/profile-hide-template-workouts`)
 
 Onboarding forward navigation now pushes each next page and Back uses Expo
