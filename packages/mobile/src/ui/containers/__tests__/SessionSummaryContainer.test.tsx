@@ -160,6 +160,71 @@ describe("SessionSummaryContainer", () => {
     expect(await findByTestId("summary-stat-total-volume")).toBeTruthy();
   });
 
+  it("summarises only completed cardio metrics and supports time-only cardio", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    seedActive(storage);
+    const active = storage.getActiveSession("user-1");
+    expect(active).not.toBeNull();
+    storage.cacheActiveSession("user-1", {
+      ...active!,
+      exercises: [
+        {
+          ...active!.exercises[0],
+          category: "cardio",
+          sets: [
+            {
+              ...active!.exercises[0].sets[0],
+              weightKg: null,
+              reps: null,
+              durationSeconds: 1_500,
+              distanceMeters: null,
+              isCompleted: true,
+            },
+            {
+              ...active!.exercises[0].sets[0],
+              id: "incomplete-distance",
+              durationSeconds: null,
+              distanceMeters: 10_000,
+              isCompleted: false,
+            },
+          ],
+        },
+        {
+          ...active!.exercises[0],
+          id: "se-jump",
+          exerciseId: "ex-jump",
+          category: "plyometric",
+          sets: [
+            {
+              ...active!.exercises[0].sets[0],
+              id: "jump-set",
+              sessionExerciseId: "se-jump",
+              weightKg: null,
+              reps: 5,
+              durationSeconds: null,
+              distanceMeters: 2.5,
+              isCompleted: true,
+            },
+          ],
+        },
+      ],
+    });
+
+    const { findByText, findByTestId, queryByText } = renderWithTheme(
+      <AdapterProvider adapters={makeAdapters(api, storage)}>
+        <SessionSummaryContainer />
+      </AdapterProvider>,
+    );
+
+    expect(await findByText("0.00 km")).toBeTruthy();
+    expect(
+      (await findByTestId("summary-cardio-duration")).props.children.join(""),
+    ).toBe("Time 25:00");
+    expect(queryByText("0 kg")).toBeNull();
+    expect(queryByText("10.00 km")).toBeNull();
+  });
+
   it("predicts a PR locally when the session beats the cached previous best (pre-server, no previousValue arrow)", async () => {
     // seedActive uses 120 kg × 5 reps. Post-PR-3 the predictor only
     // emits a `Xrm` candidate when reps matches the legacy ladder

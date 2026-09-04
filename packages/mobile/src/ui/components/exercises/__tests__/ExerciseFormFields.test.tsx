@@ -71,6 +71,18 @@ describe("ExerciseFormFields", () => {
     );
   });
 
+  it("selects cardio as a type and hides strength-only muscle fields", () => {
+    const { onChange, getByTestId } = setup();
+    fireEvent.press(getByTestId("exercise-form-category-Cardio"));
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ categoryLabel: "Cardio" }),
+    );
+
+    const cardio = setup({ categoryLabel: "Cardio" });
+    expect(cardio.queryByTestId("exercise-form-primary-Chest")).toBeNull();
+    expect(cardio.queryByTestId("exercise-form-secondary-Back")).toBeNull();
+  });
+
   it("selects a primary muscle and clears it from the secondary set", () => {
     const { onChange, getByTestId } = setup({
       primaryMuscleLabel: "Chest",

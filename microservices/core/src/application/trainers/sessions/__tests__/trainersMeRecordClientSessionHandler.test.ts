@@ -97,17 +97,41 @@ describe("trainersMeRecordClientSessionHandler", () => {
   });
 
   it("201s and delegates to the shared core with the parsed payload", async () => {
+    const activityBody = {
+      ...validBody,
+      activityEnvironment: "outdoor",
+      locationName: "Victoria Park",
+      exercises: [
+        {
+          ...validBody.exercises[0],
+          category: "cardio",
+          sets: [
+            {
+              setNumber: 1,
+              durationSeconds: 1_500,
+              distanceMeters: 5_000,
+              isCompleted: true,
+            },
+          ],
+        },
+      ],
+    };
     const { trainersMeRecordClientSessionHandler } =
       await import("../trainersMeRecordClientSessionHandler");
     const res = await trainersMeRecordClientSessionHandler.handle(
-      post("client-1", validBody),
+      post("client-1", activityBody),
     );
     expect(res.status).toBe(201);
     expect(((await res.json()) as any).data.id).toBe("s-1");
     expect(recordClientSessionOnBehalf).toHaveBeenCalledWith({
       trainerId: "trainer-id",
       clientId: "client-1",
-      payload: expect.objectContaining({ status: "completed" }),
+      payload: expect.objectContaining({
+        status: "completed",
+        activityEnvironment: "outdoor",
+        locationName: "Victoria Park",
+        exercises: [expect.objectContaining({ category: "cardio" })],
+      }),
     });
   });
 

@@ -654,6 +654,13 @@ describe("validateExerciseInput", () => {
       }
     });
 
+    it("allows cardio without a fabricated primary muscle group", () => {
+      const result = validateExerciseInput(
+        validInput({ category: "cardio", primaryMuscleGroups: [] }),
+      );
+      expect(result.ok).toBe(true);
+    });
+
     it("rejects invalid primary muscle group", () => {
       const result = validateExerciseInput(
         validInput({

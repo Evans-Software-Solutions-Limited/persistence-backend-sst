@@ -453,6 +453,22 @@ describe("WorkoutsListContainer", () => {
     expect(getWorkoutsSpy).toHaveBeenCalled();
   });
 
+  it("opens retrospective logging from the list CTA", async () => {
+    const storage = new InMemoryStorageAdapter();
+    seedSlices(storage);
+    const { findByTestId } = renderWithTheme(
+      withAdapters(
+        makeAdapters(new InMemoryApiAdapter(), storage),
+        <WorkoutsListContainer />,
+      ),
+    );
+
+    fireEvent.press(await findByTestId("log-past-workout-cta"));
+    expect(mockRouterPush).toHaveBeenCalledWith(
+      "/(app)/session?retroactive=true",
+    );
+  });
+
   it("renders the empty state when there is no authenticated user", async () => {
     const storage = new InMemoryStorageAdapter();
     seedSlices(storage);

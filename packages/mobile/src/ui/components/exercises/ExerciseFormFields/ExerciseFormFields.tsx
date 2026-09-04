@@ -8,6 +8,7 @@ import { color } from "@/ui/theme/tokens";
 
 import {
   EQUIPMENT_OPTIONS,
+  EXERCISE_CATEGORIES,
   LEVELS,
   MUSCLES,
   type MuscleLabel,
@@ -139,38 +140,39 @@ export function ExerciseFormFields({
         </View>
       ) : null}
 
-      {/* Primary muscle */}
       <View>
-        <FieldLabel>PRIMARY MUSCLE</FieldLabel>
-        <View flexDirection="row" flexWrap="wrap" gap={6}>
-          {MUSCLES.map((m) => {
-            const active = value.primaryMuscleLabel === m;
+        <FieldLabel required>TYPE</FieldLabel>
+        <View flexDirection="row" gap={6}>
+          {EXERCISE_CATEGORIES.map((category) => {
+            const active = value.categoryLabel === category;
             return (
               <Pressable
-                key={m}
-                onPress={() => setPrimary(m)}
+                key={category}
+                onPress={() => onChange({ ...value, categoryLabel: category })}
                 accessibilityRole="button"
                 accessibilityState={{ selected: active }}
-                style={formChipPressStyle}
-                testID={`exercise-form-primary-${m}`}
+                style={({ pressed }) => [
+                  formChipPressStyle({ pressed }),
+                  { flex: 1 },
+                ]}
+                testID={`exercise-form-category-${category}`}
               >
                 <View
-                  height={32}
-                  paddingHorizontal={14}
-                  borderRadius={9999}
+                  paddingVertical={10}
+                  paddingHorizontal={6}
+                  borderRadius={10}
                   alignItems="center"
-                  justifyContent="center"
-                  backgroundColor={active ? "$primary" : "$surface2"}
+                  backgroundColor={active ? "$primaryDim" : "$surface2"}
                   borderWidth={1}
                   borderColor={active ? "$primary" : "$border"}
                 >
                   <Text
                     fontFamily="$display"
                     fontWeight="600"
-                    fontSize={12.5}
-                    color={active ? "$primaryInk" : "$text2"}
+                    fontSize={12}
+                    color={active ? "$primary" : "$text2"}
                   >
-                    {m}
+                    {category}
                   </Text>
                 </View>
               </Pressable>
@@ -179,53 +181,97 @@ export function ExerciseFormFields({
         </View>
       </View>
 
-      {/* Secondary muscles — all muscles except the primary */}
-      <View>
-        <FieldLabel hint="· tap to add">SECONDARY</FieldLabel>
-        <View flexDirection="row" flexWrap="wrap" gap={6}>
-          {MUSCLES.filter((m) => m !== value.primaryMuscleLabel).map((m) => {
-            const active = value.secondaryMuscleLabels.includes(m);
-            return (
-              <Pressable
-                key={m}
-                onPress={() => toggleSecondary(m)}
-                accessibilityRole="button"
-                accessibilityState={{ selected: active }}
-                style={formChipPressStyle}
-                testID={`exercise-form-secondary-${m}`}
-              >
-                <View
-                  height={30}
-                  paddingHorizontal={12}
-                  borderRadius={9999}
-                  flexDirection="row"
-                  alignItems="center"
-                  gap={4}
-                  backgroundColor={active ? "$primaryDim" : "$surface2"}
-                  borderWidth={1}
-                  borderColor={active ? "$primary" : "$border"}
+      {/* Primary muscle */}
+      {value.categoryLabel !== "Cardio" ? (
+        <View>
+          <FieldLabel>PRIMARY MUSCLE</FieldLabel>
+          <View flexDirection="row" flexWrap="wrap" gap={6}>
+            {MUSCLES.map((m) => {
+              const active = value.primaryMuscleLabel === m;
+              return (
+                <Pressable
+                  key={m}
+                  onPress={() => setPrimary(m)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: active }}
+                  style={formChipPressStyle}
+                  testID={`exercise-form-primary-${m}`}
                 >
-                  {active ? (
-                    <IconCheck
-                      size={10}
-                      strokeWidth={3}
-                      color={color.$primary}
-                    />
-                  ) : null}
-                  <Text
-                    fontFamily="$display"
-                    fontWeight="500"
-                    fontSize={12}
-                    color={active ? "$primary" : "$text3"}
+                  <View
+                    height={32}
+                    paddingHorizontal={14}
+                    borderRadius={9999}
+                    alignItems="center"
+                    justifyContent="center"
+                    backgroundColor={active ? "$primary" : "$surface2"}
+                    borderWidth={1}
+                    borderColor={active ? "$primary" : "$border"}
                   >
-                    {m}
-                  </Text>
-                </View>
-              </Pressable>
-            );
-          })}
+                    <Text
+                      fontFamily="$display"
+                      fontWeight="600"
+                      fontSize={12.5}
+                      color={active ? "$primaryInk" : "$text2"}
+                    >
+                      {m}
+                    </Text>
+                  </View>
+                </Pressable>
+              );
+            })}
+          </View>
         </View>
-      </View>
+      ) : null}
+
+      {/* Secondary muscles — all muscles except the primary */}
+      {value.categoryLabel !== "Cardio" ? (
+        <View>
+          <FieldLabel hint="· tap to add">SECONDARY</FieldLabel>
+          <View flexDirection="row" flexWrap="wrap" gap={6}>
+            {MUSCLES.filter((m) => m !== value.primaryMuscleLabel).map((m) => {
+              const active = value.secondaryMuscleLabels.includes(m);
+              return (
+                <Pressable
+                  key={m}
+                  onPress={() => toggleSecondary(m)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: active }}
+                  style={formChipPressStyle}
+                  testID={`exercise-form-secondary-${m}`}
+                >
+                  <View
+                    height={30}
+                    paddingHorizontal={12}
+                    borderRadius={9999}
+                    flexDirection="row"
+                    alignItems="center"
+                    gap={4}
+                    backgroundColor={active ? "$primaryDim" : "$surface2"}
+                    borderWidth={1}
+                    borderColor={active ? "$primary" : "$border"}
+                  >
+                    {active ? (
+                      <IconCheck
+                        size={10}
+                        strokeWidth={3}
+                        color={color.$primary}
+                      />
+                    ) : null}
+                    <Text
+                      fontFamily="$display"
+                      fontWeight="500"
+                      fontSize={12}
+                      color={active ? "$primary" : "$text3"}
+                    >
+                      {m}
+                    </Text>
+                  </View>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+      ) : null}
 
       {/* Equipment — radio, gold tone when selected */}
       <View>

@@ -140,6 +140,8 @@ export function pointerFromSession(
      * the client's workout would be misattributed to the coach (Inspector Brad).
      */
     withClient?: ActiveWorkoutClientRef | null;
+    retrospectiveCompletedAt?: string | null;
+    retrospectiveDurationSeconds?: number | null;
   },
   trainer?: { withClient?: ActiveWorkoutClientRef; retroactive?: boolean },
 ): ActiveWorkoutPointer {
@@ -151,7 +153,11 @@ export function pointerFromSession(
     // Explicit trainer arg (coach-start) wins; otherwise recover from the
     // session row (rehydrate/adopt path).
     withClient: trainer?.withClient ?? session.withClient ?? undefined,
-    retroactive: trainer?.retroactive,
+    retroactive:
+      trainer?.retroactive ??
+      (session.retrospectiveCompletedAt || session.retrospectiveDurationSeconds
+        ? true
+        : undefined),
   };
 }
 

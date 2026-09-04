@@ -202,16 +202,16 @@ describe("Privacy", () => {
     expect(screen.getByText(/at least six years from the/)).toBeTruthy();
   });
 
-  it("discloses the founding-purchase record and deletion treatment", () => {
+  it("discloses grant and optional-contribution retention", () => {
     renderPage(<Privacy />);
     expect(screen.getByText("Last updated: 4 September 2026")).toBeTruthy();
-    expect(screen.getByText(/Founding offer purchases/)).toBeTruthy();
     expect(
-      screen.getByText(/record is kept even if you later delete your account/),
+      screen.getByText(/Administrative access grants and contributions/),
     ).toBeTruthy();
     expect(
-      screen.getByText(/until the place is redeemed or released/),
+      screen.getByText(/A contribution is not required for a grant/),
     ).toBeTruthy();
+    expect(screen.getByText(/account link itself is removed/)).toBeTruthy();
   });
 
   it("describes the consent-gated Meta cookie, not the old 'no cookies' claim", () => {

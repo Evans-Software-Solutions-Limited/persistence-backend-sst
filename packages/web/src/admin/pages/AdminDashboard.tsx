@@ -23,7 +23,7 @@ export function AdminDashboard() {
     <>
       <PageHeader title="Dashboard">
         <Button asChild>
-          <Link to="/admin/grants?new=1">New founding grant</Link>
+          <Link to="/admin/grants?new=1">New access grant</Link>
         </Button>
       </PageHeader>
       {q.isError ? <ErrorState error={q.error} /> : null}
@@ -51,9 +51,9 @@ export function AdminDashboard() {
               }
             />
             <Stat
-              label="Recorded revenue"
-              value={formatMinor(q.data.founding.revenueMinor)}
-              hint={`${q.data.founding.pending} pending (paid, not signed up yet)`}
+              label="Recorded contributions"
+              value={formatMinor(q.data.founding.contributionMinor)}
+              hint={`${q.data.founding.pending} grants pending sign-up`}
             />
             <Stat
               label="Referral claims"
@@ -65,13 +65,13 @@ export function AdminDashboard() {
             {q.data.founding.byTier.length === 0 ? (
               <EmptyState>No grants yet.</EmptyState>
             ) : (
-              <Table head={["Tier", "Grants", "Revenue"]}>
+              <Table head={["Tier", "Grants", "Contributions"]}>
                 {q.data.founding.byTier.map((t) => (
                   <tr key={t.tierName}>
                     <td>{t.tierName}</td>
                     <td className="tabular-nums">{t.count}</td>
                     <td className="tabular-nums">
-                      {formatMinor(t.revenueMinor)}
+                      {formatMinor(t.contributionMinor)}
                     </td>
                   </tr>
                 ))}
@@ -84,13 +84,32 @@ export function AdminDashboard() {
                 Nothing recorded yet — the first one is a button away.
               </EmptyState>
             ) : (
-              <Table head={["Email", "Tier", "Paid", "Status", "Invited"]}>
+              <Table
+                head={[
+                  "Email",
+                  "Tier",
+                  "Kind",
+                  "Contribution",
+                  "Status",
+                  "Invited",
+                ]}
+              >
                 {q.data.recentGrants.map((g) => (
                   <tr key={g.id}>
                     <td>{g.email}</td>
                     <td>{g.tierLabel ?? g.tierName}</td>
+                    <td>
+                      {g.grantKind === "founding"
+                        ? "Founding"
+                        : "Complimentary"}
+                    </td>
                     <td className="tabular-nums">
-                      {formatMinor(g.amountMinor, g.currency)}
+                      {g.contributionAmountMinor > 0
+                        ? formatMinor(
+                            g.contributionAmountMinor,
+                            g.contributionCurrency,
+                          )
+                        : "None"}
                     </td>
                     <td>
                       <StatusBadge status={g.status} />

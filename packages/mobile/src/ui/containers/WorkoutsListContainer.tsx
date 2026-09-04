@@ -178,6 +178,14 @@ export function WorkoutsListContainer() {
     [totalCapGate],
   );
 
+  const onLogPast = useCallback(() => {
+    if (totalCapGate.isOverLimit) {
+      totalCapGate.onLocked();
+      return;
+    }
+    router.push("/(app)/session?retroactive=true" as never);
+  }, [totalCapGate]);
+
   const confirmDelete = useCallback(
     (workout: Workout) => {
       Alert.alert(
@@ -247,6 +255,7 @@ export function WorkoutsListContainer() {
       isAtLimit={isAtLimit}
       currentUserId={userId ?? undefined}
       onCreate={onCreate}
+      onLogPast={onLogPast}
       onUpgrade={onUpgrade}
       onOpen={onOpen}
       onStart={onStart}

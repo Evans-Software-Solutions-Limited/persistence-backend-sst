@@ -10,6 +10,7 @@
  *       specs/milestones/M3-active-session/EXECUTION_PLAN.md § 2 Commit 1
  */
 
+import type { ExerciseCategory } from "./exercise";
 import type { PersonalRecord } from "./record";
 
 export type SessionStatus = "in_progress" | "completed" | "cancelled";
@@ -40,6 +41,11 @@ export type WorkoutSession = {
   status: SessionStatus;
   startedAt: string;
   completedAt: string | null;
+  activityEnvironment?: "indoor" | "outdoor" | null;
+  locationName?: string | null;
+  /** Local-only completion target used by the retrospective logging flow. */
+  retrospectiveCompletedAt?: string | null;
+  retrospectiveDurationSeconds?: number | null;
   exercises: SessionExercise[];
   notes: string | null;
   /**
@@ -60,6 +66,8 @@ export type SessionExercise = {
    * even if the underlying exercise is renamed or deleted mid-session.
    */
   exerciseName: string;
+  /** Snapshot used to select the right logging fields without another lookup. */
+  category?: ExerciseCategory;
   sortOrder: number;
   supersetGroup: number | null;
   isSubstituted: boolean;

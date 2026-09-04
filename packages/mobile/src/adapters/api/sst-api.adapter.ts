@@ -1286,9 +1286,13 @@ export class SSTApiAdapter implements ApiPort {
 
   async getRecentPRs(
     limit?: number,
+    exerciseId?: string,
   ): Promise<Result<PersonalRecord[], ApiError>> {
     const res = await this.requestEnvelope<PersonalRecord[]>("/users/me/prs", {
-      params: limit != null ? { limit } : undefined,
+      params: {
+        ...(limit != null ? { limit } : {}),
+        ...(exerciseId ? { exerciseId } : {}),
+      },
     });
     if (!res.ok) return res;
     return ok(res.value.map(normalizePersonalRecord));

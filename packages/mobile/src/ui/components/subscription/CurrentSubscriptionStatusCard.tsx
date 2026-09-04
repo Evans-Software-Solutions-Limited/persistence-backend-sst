@@ -80,7 +80,7 @@ export function CurrentSubscriptionStatusCard({
           </Text>
           {isFoundingAccess && subscriptionEndsAt && (
             <Text style={styles.currentSubscriptionSubtext}>
-              Your founding access is active until{" "}
+              Your granted access is active until{" "}
               {formatDate(subscriptionEndsAt)} and will not renew automatically.
             </Text>
           )}

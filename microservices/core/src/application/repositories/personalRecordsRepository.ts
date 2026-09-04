@@ -89,7 +89,19 @@ const COMPUTED_RECORD_TYPES = [
   "10rm",
   "max_weight",
   "max_volume",
+  "best_time",
+  "longest_distance",
 ] as const;
+
+function isBetterRecordValue(
+  recordType: RecordType,
+  candidate: number,
+  baseline: number,
+): boolean {
+  return recordType === "best_time"
+    ? candidate < baseline
+    : candidate > baseline;
+}
 
 /**
  * Maps an EXACT rep count to the corresponding `Xrm` record type, or
@@ -142,10 +154,37 @@ function candidatesForSets(
     exerciseId: string;
     weightKg: string | null;
     reps: number | null;
+    durationSeconds: number | null;
+    distanceMeters: string | null;
+    category: string | null | undefined;
   }>,
 ): PRCandidate[] {
   const candidates: PRCandidate[] = [];
   for (const set of sets) {
+    if (set.category === "cardio") {
+      const distance =
+        set.distanceMeters == null ? null : parseFloat(set.distanceMeters);
+      if (distance != null && Number.isFinite(distance) && distance > 0) {
+        candidates.push({
+          exerciseId: set.exerciseId,
+          recordType: "longest_distance",
+          value: distance,
+          setId: set.setId,
+        });
+        if (set.durationSeconds != null && set.durationSeconds > 0) {
+          candidates.push({
+            exerciseId: set.exerciseId,
+            recordType: "best_time",
+            value: set.durationSeconds,
+            setId: set.setId,
+          });
+        }
+      }
+      continue;
+    }
+
+    if (set.category === "plyometric") continue;
+
     if (set.weightKg == null || set.reps == null || set.reps <= 0) continue;
     const weight = parseFloat(set.weightKg);
     if (!Number.isFinite(weight) || weight <= 0) continue;
@@ -184,7 +223,8 @@ function bestCandidatePerKey(
   for (const c of candidates) {
     const k = `${c.exerciseId}|${c.recordType}`;
     const existing = best.get(k);
-    if (!existing || c.value > existing.value) best.set(k, c);
+    if (!existing || isBetterRecordValue(c.recordType, c.value, existing.value))
+      best.set(k, c);
   }
   return best;
 }
@@ -323,6 +363,9 @@ export class PersonalRecordsRepository {
         exerciseId: sessionExercises.exerciseId,
         weightKg: exerciseSets.weightKg,
         reps: exerciseSets.reps,
+        durationSeconds: exerciseSets.durationSeconds,
+        distanceMeters: exerciseSets.distanceMeters,
+        category: sessionExercises.exerciseCategory,
       })
       .from(exerciseSets)
       .innerJoin(
@@ -346,44 +389,10 @@ export class PersonalRecordsRepository {
     // ── Step 1: enumerate per-set candidates across the record types
     // the set qualifies for. `max_weight` + `max_volume` always apply;
     // `Xrm` only when reps matches the legacy ladder rung EXACTLY.
-    // Bodyweight exercises (no weight) and timed-only exercises don't
-    // fit this weight-based model; we just don't record PRs for those —
-    // M4's measurement / progress surface can use other signals.
-    type Candidate = {
-      exerciseId: string;
-      recordType: RecordType;
-      value: number;
-      setId: string;
-    };
-    const candidates: Candidate[] = [];
-    for (const set of completedSets) {
-      if (set.weightKg == null || set.reps == null || set.reps <= 0) continue;
-      const weight = parseFloat(set.weightKg);
-      if (!Number.isFinite(weight) || weight <= 0) continue;
-
-      candidates.push({
-        exerciseId: set.exerciseId,
-        recordType: "max_weight",
-        value: weight,
-        setId: set.setId,
-      });
-      candidates.push({
-        exerciseId: set.exerciseId,
-        recordType: "max_volume",
-        value: weight * set.reps,
-        setId: set.setId,
-      });
-
-      const repMaxType = repMaxTypeForReps(set.reps);
-      if (repMaxType !== null) {
-        candidates.push({
-          exerciseId: set.exerciseId,
-          recordType: repMaxType,
-          value: weight,
-          setId: set.setId,
-        });
-      }
-    }
+    // Strength candidates require weight + reps. Cardio candidates use
+    // completed duration/distance columns and stay exercise-scoped.
+    type Candidate = PRCandidate;
+    const candidates: Candidate[] = candidatesForSets(completedSets);
 
     // ── Step 2: collapse to one winner per (exerciseId, recordType).
     type Key = string;
@@ -393,7 +402,11 @@ export class PersonalRecordsRepository {
     for (const c of candidates) {
       const k = keyOf(c);
       const existing = bestPerKey.get(k);
-      if (!existing || c.value > existing.value) bestPerKey.set(k, c);
+      if (
+        !existing ||
+        isBetterRecordValue(c.recordType, c.value, existing.value)
+      )
+        bestPerKey.set(k, c);
     }
 
     const touchedExerciseIds = [
@@ -475,11 +488,21 @@ export class PersonalRecordsRepository {
             setId: sql`excluded.set_id`,
             achievedAt: sql`excluded.achieved_at`,
           },
-          where: sql`${personalRecords.value} < excluded.value`,
+          where:
+            candidate.recordType === "best_time"
+              ? sql`${personalRecords.value} > excluded.value`
+              : sql`${personalRecords.value} < excluded.value`,
         });
 
       const prior = priorByKey.get(k);
-      if (prior != null && candidateValueAtStoredPrecision > prior) {
+      if (
+        prior != null &&
+        isBetterRecordValue(
+          candidate.recordType,
+          candidateValueAtStoredPrecision,
+          prior,
+        )
+      ) {
         detected.push({
           exerciseId: candidate.exerciseId,
           recordType: candidate.recordType,
@@ -649,6 +672,9 @@ export class PersonalRecordsRepository {
         exerciseId: sessionExercises.exerciseId,
         weightKg: exerciseSets.weightKg,
         reps: exerciseSets.reps,
+        durationSeconds: exerciseSets.durationSeconds,
+        distanceMeters: exerciseSets.distanceMeters,
+        category: sessionExercises.exerciseCategory,
       })
       .from(exerciseSets)
       .innerJoin(
@@ -703,6 +729,9 @@ export class PersonalRecordsRepository {
         exerciseId: sessionExercises.exerciseId,
         weightKg: exerciseSets.weightKg,
         reps: exerciseSets.reps,
+        durationSeconds: exerciseSets.durationSeconds,
+        distanceMeters: exerciseSets.distanceMeters,
+        category: sessionExercises.exerciseCategory,
       })
       .from(exerciseSets)
       .innerJoin(
@@ -731,7 +760,7 @@ export class PersonalRecordsRepository {
 
       const newValue = parseFloat(rec.value);
       const previousValue = parseFloat(prior.value.toFixed(2));
-      if (newValue > previousValue) {
+      if (isBetterRecordValue(rec.recordType, newValue, previousValue)) {
         detected.push({
           exerciseId: rec.exerciseId,
           recordType: rec.recordType,

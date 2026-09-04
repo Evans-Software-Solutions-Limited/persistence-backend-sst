@@ -15,6 +15,7 @@ export type BuildTemplateMapInput = {
   sessionExercises: readonly SessionExercise[];
   workout: Workout | null | undefined;
   defaultRestSeconds: number;
+  categoryByExerciseId?: ReadonlyMap<string, string>;
 };
 
 /**
@@ -28,6 +29,7 @@ export function buildTemplateMap({
   sessionExercises,
   workout,
   defaultRestSeconds,
+  categoryByExerciseId,
 }: BuildTemplateMapInput): Record<string, SessionExerciseTemplate> {
   const map: Record<string, SessionExerciseTemplate> = {};
   const templateExercises = workout?.exercises ?? [];
@@ -38,12 +40,20 @@ export function buildTemplateMap({
     map[ex.id] = template
       ? {
           imageUrl: template.exercise?.thumbnailUrl ?? undefined,
+          category:
+            ex.category ??
+            template.exercise?.category ??
+            categoryByExerciseId?.get(ex.exerciseId),
           targetSets: template.targetSets ?? undefined,
           targetRepsMin: template.targetRepsMin,
           targetRepsMax: template.targetRepsMax,
+          targetDurationSeconds: template.targetDurationSeconds ?? undefined,
           restSeconds: template.restSeconds ?? defaultRestSeconds,
         }
-      : { restSeconds: defaultRestSeconds };
+      : {
+          category: ex.category ?? categoryByExerciseId?.get(ex.exerciseId),
+          restSeconds: defaultRestSeconds,
+        };
   }
   return map;
 }

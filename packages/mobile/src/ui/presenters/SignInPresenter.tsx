@@ -215,6 +215,9 @@ export function SignInPresenter({
                   value={password}
                   onChangeText={onPasswordChange}
                   secureTextEntry
+                  showPasswordToggle
+                  autoCapitalize="none"
+                  autoCorrect={false}
                   autoComplete="password"
                   testID="password"
                 />

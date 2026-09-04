@@ -53,6 +53,26 @@ describe("Input", () => {
     expect(getByTestId("password-input").props.secureTextEntry).toBe(true);
   });
 
+  it("reveals and re-hides a password without changing its value", () => {
+    const { getByTestId, getByLabelText } = renderWithTheme(
+      <Input
+        secureTextEntry
+        showPasswordToggle
+        value="pass word"
+        testID="password"
+      />,
+    );
+    const input = getByTestId("password-input");
+    expect(input.props.secureTextEntry).toBe(true);
+
+    fireEvent.press(getByLabelText("Show password"));
+    expect(getByTestId("password-input").props.secureTextEntry).toBe(false);
+    expect(getByTestId("password-input").props.value).toBe("pass word");
+
+    fireEvent.press(getByLabelText("Hide password"));
+    expect(getByTestId("password-input").props.secureTextEntry).toBe(true);
+  });
+
   it("handles focus and blur events", () => {
     const { getByTestId } = renderWithTheme(<Input testID="input" />);
     const input = getByTestId("input-input");

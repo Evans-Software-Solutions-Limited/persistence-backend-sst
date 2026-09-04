@@ -8,6 +8,7 @@ import { useExercise } from "@/ui/hooks/useExercise";
 import { useExercisePerformanceSummary } from "@/ui/hooks/useExercisePerformanceSummary";
 import { useProfilePage } from "@/ui/hooks/useProfilePage";
 import { useAdapters } from "@/ui/hooks/useAdapters";
+import { useGetPRHistory } from "@/ui/hooks/useGetPRHistory";
 
 /**
  * <ExerciseDetailContainer> — wires the `/(app)/exercises/[id]` route to the
@@ -27,6 +28,10 @@ export function ExerciseDetailContainer() {
   const { exercise, isLoading, error, refresh } = useExercise(exerciseId);
   const performance = useExercisePerformanceSummary(exerciseId);
   const profile = useProfilePage();
+  // The server applies this limit after exercise scoping. Filtering a global
+  // top-N list here made long-standing records disappear once other exercises
+  // produced enough newer PRs.
+  const prHistory = useGetPRHistory(50, exerciseId);
   const { session } = useAuth();
   const trackedEstimateRef = useRef<string | null>(null);
 
@@ -72,6 +77,7 @@ export function ExerciseDetailContainer() {
       onRetry={onRetry}
       performanceSummary={performance.data}
       weightUnit={profile.payload?.profile.weightUnit ?? "kg"}
+      personalRecords={prHistory.data ?? []}
     />
   );
 }

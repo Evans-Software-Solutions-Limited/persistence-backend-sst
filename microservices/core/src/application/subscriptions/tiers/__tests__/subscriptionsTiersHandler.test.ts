@@ -11,6 +11,15 @@ vi.mock("../../../repositories/subscriptionTiersRepository", () => ({
     .mockImplementation(() => subscriptionTiersRepositoryMocks),
 }));
 
+const seatsForPool = vi.fn(async (pool: "consumer" | "coach") => ({
+  pool,
+  used: pool === "consumer" ? 12 : 3,
+  cap: pool === "consumer" ? 200 : 20,
+}));
+vi.mock("../../../repositories/foundingGrantRepository", () => ({
+  FoundingGrantRepository: vi.fn().mockImplementation(() => ({ seatsForPool })),
+}));
+
 function tierRow(over: Partial<Record<string, unknown>> = {}) {
   return {
     id: "tier-uuid",
@@ -211,5 +220,23 @@ describe("subscriptionsTiersHandler — GET /subscription-tiers", () => {
     expect(body.data[0].priceMonthly).toBe(0);
     expect(body.data[2].aiAccess).toBe(true);
     expect(body.data[2].gymBuddyAccess).toBe(true);
+  });
+});
+
+describe("subscriptionsTiersHandler — GET /founding/availability", () => {
+  it("returns public database-backed pool usage with a short cache", async () => {
+    const { subscriptionsTiersHandler } =
+      await import("../subscriptionsTiersHandler");
+    const res = await subscriptionsTiersHandler.handle(
+      new Request("http://localhost/founding/availability"),
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get("cache-control")).toBe("public, max-age=30");
+    expect(await res.json()).toEqual({
+      data: {
+        consumer: { used: 12, cap: 200 },
+        coach: { used: 3, cap: 20 },
+      },
+    });
   });
 });

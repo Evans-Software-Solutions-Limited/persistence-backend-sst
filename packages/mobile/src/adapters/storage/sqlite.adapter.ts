@@ -511,6 +511,10 @@ ${indentSyncQueueDdl(8)}
         status TEXT NOT NULL,
         started_at TEXT NOT NULL,
         completed_at TEXT,
+        activity_environment TEXT,
+        location_name TEXT,
+        retrospective_completed_at TEXT,
+        retrospective_duration_seconds INTEGER,
         notes TEXT,
         rest_timer_started_at TEXT,
         rest_timer_total_seconds INTEGER,
@@ -531,6 +535,7 @@ ${indentSyncQueueDdl(8)}
         session_id TEXT NOT NULL REFERENCES active_sessions(id) ON DELETE CASCADE,
         exercise_id TEXT NOT NULL,
         exercise_name TEXT NOT NULL,
+        exercise_category TEXT,
         sort_order INTEGER NOT NULL,
         superset_group INTEGER,
         is_substituted INTEGER NOT NULL DEFAULT 0,
@@ -867,11 +872,48 @@ ${indentSyncQueueDdl(8)}
       "client_name",
       "client_initials",
       "template_variation_kind",
+      "activity_environment",
+      "location_name",
+      "retrospective_completed_at",
     ]) {
       if (!existingNames.has(col)) {
         db.execSync(`ALTER TABLE active_sessions ADD COLUMN ${col} TEXT`);
       }
     }
+    if (!existingNames.has("retrospective_duration_seconds")) {
+      db.execSync(
+        "ALTER TABLE active_sessions ADD COLUMN retrospective_duration_seconds INTEGER",
+      );
+    }
+    const sessionExerciseColumns = db.getAllSync(
+      `PRAGMA table_info(session_exercises)`,
+    ) as { name: string }[];
+    if (
+      !sessionExerciseColumns.some(
+        (column) => column.name === "exercise_category",
+      )
+    ) {
+      db.execSync(
+        "ALTER TABLE session_exercises ADD COLUMN exercise_category TEXT",
+      );
+    }
+    db.execSync(`
+      UPDATE session_exercises
+      SET exercise_category = (
+        SELECT json_extract(cached_exercises.data, '$.category')
+        FROM cached_exercises
+        WHERE cached_exercises.id = session_exercises.exercise_id
+          AND json_valid(cached_exercises.data)
+      )
+      WHERE exercise_category IS NULL
+        AND EXISTS (
+          SELECT 1
+          FROM cached_exercises
+          WHERE cached_exercises.id = session_exercises.exercise_id
+            AND json_valid(cached_exercises.data)
+            AND json_extract(cached_exercises.data, '$.category') IS NOT NULL
+        )
+    `);
     // Sessions created by an older app version predate the provenance column.
     // Recover it from the cached detail that originally seeded the session.
     db.execSync(`
@@ -2910,6 +2952,8 @@ ${indentSyncQueueDdl(12)}
       : `WHERE user_id = ?`;
     const sessionRows = db.getAllSync(
       `SELECT id, user_id, workout_id, template_variation_kind, name, status, started_at, completed_at, notes,
+              activity_environment, location_name, retrospective_completed_at,
+              retrospective_duration_seconds,
               client_id, client_name, client_initials
        FROM active_sessions
        ${where}
@@ -2921,7 +2965,7 @@ ${indentSyncQueueDdl(12)}
     if (!sessionRow) return null;
 
     const exerciseRows = db.getAllSync(
-      `SELECT id, session_id, exercise_id, exercise_name, sort_order,
+      `SELECT id, session_id, exercise_id, exercise_name, exercise_category, sort_order,
               superset_group, is_substituted, original_exercise_id, notes
        FROM session_exercises
        WHERE session_id = ?
@@ -2953,6 +2997,10 @@ ${indentSyncQueueDdl(12)}
       sessionId: row.session_id,
       exerciseId: row.exercise_id,
       exerciseName: row.exercise_name,
+      category: (row.exercise_category ??
+        this.getCachedExercise(row.exercise_id)?.category) as
+        | SessionExercise["category"]
+        | undefined,
       sortOrder: row.sort_order,
       supersetGroup: row.superset_group,
       isSubstituted: row.is_substituted === 1,
@@ -2970,6 +3018,13 @@ ${indentSyncQueueDdl(12)}
       status: sessionRow.status as SessionStatus,
       startedAt: sessionRow.started_at,
       completedAt: sessionRow.completed_at,
+      activityEnvironment: sessionRow.activity_environment as
+        | "indoor"
+        | "outdoor"
+        | null,
+      locationName: sessionRow.location_name,
+      retrospectiveCompletedAt: sessionRow.retrospective_completed_at,
+      retrospectiveDurationSeconds: sessionRow.retrospective_duration_seconds,
       notes: sessionRow.notes,
       exercises,
       // M18 coach Start-live context (null for a normal athlete session).
@@ -3015,8 +3070,10 @@ ${indentSyncQueueDdl(12)}
       db.runSync(
         `INSERT INTO active_sessions
            (id, user_id, workout_id, template_variation_kind, name, status, started_at, completed_at,
-            notes, client_id, client_name, client_initials, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            notes, activity_environment, location_name,
+            retrospective_completed_at, retrospective_duration_seconds,
+            client_id, client_name, client_initials, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            user_id = excluded.user_id,
            workout_id = excluded.workout_id,
@@ -3026,6 +3083,10 @@ ${indentSyncQueueDdl(12)}
            started_at = excluded.started_at,
            completed_at = excluded.completed_at,
            notes = excluded.notes,
+           activity_environment = excluded.activity_environment,
+           location_name = excluded.location_name,
+           retrospective_completed_at = excluded.retrospective_completed_at,
+           retrospective_duration_seconds = excluded.retrospective_duration_seconds,
            client_id = excluded.client_id,
            client_name = excluded.client_name,
            client_initials = excluded.client_initials,
@@ -3040,6 +3101,10 @@ ${indentSyncQueueDdl(12)}
           session.startedAt,
           session.completedAt,
           session.notes,
+          session.activityEnvironment ?? null,
+          session.locationName ?? null,
+          session.retrospectiveCompletedAt ?? null,
+          session.retrospectiveDurationSeconds ?? null,
           session.withClient?.id ?? null,
           session.withClient?.name ?? null,
           session.withClient?.initials ?? null,
@@ -3057,14 +3122,15 @@ ${indentSyncQueueDdl(12)}
       for (const ex of session.exercises) {
         db.runSync(
           `INSERT INTO session_exercises
-             (id, session_id, exercise_id, exercise_name, sort_order,
+             (id, session_id, exercise_id, exercise_name, exercise_category, sort_order,
               superset_group, is_substituted, original_exercise_id, notes)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             ex.id,
             session.id,
             ex.exerciseId,
             ex.exerciseName,
+            ex.category ?? null,
             ex.sortOrder,
             ex.supersetGroup,
             ex.isSubstituted ? 1 : 0,
@@ -3635,6 +3701,10 @@ type ActiveSessionRow = {
   started_at: string;
   completed_at: string | null;
   notes: string | null;
+  activity_environment: string | null;
+  location_name: string | null;
+  retrospective_completed_at: string | null;
+  retrospective_duration_seconds: number | null;
   client_id: string | null;
   client_name: string | null;
   client_initials: string | null;
@@ -3645,6 +3715,7 @@ type SessionExerciseRow = {
   session_id: string;
   exercise_id: string;
   exercise_name: string;
+  exercise_category: string | null;
   sort_order: number;
   superset_group: number | null;
   is_substituted: number;

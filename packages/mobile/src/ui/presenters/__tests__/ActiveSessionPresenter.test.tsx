@@ -1,7 +1,10 @@
 import { act, fireEvent } from "@testing-library/react-native";
 import { AccessibilityInfo, AppState } from "react-native";
 import React from "react";
-import { ActiveSessionPresenter } from "../ActiveSessionPresenter";
+import {
+  ActiveSessionPresenter,
+  retrospectiveDayValue,
+} from "../ActiveSessionPresenter";
 import type { SessionExercise } from "@/domain/models/session";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 
@@ -551,6 +554,72 @@ describe("ActiveSessionPresenter (vertical scroll, legacy parity)", () => {
       <ActiveSessionPresenter {...props} />,
     );
     expect(getByTestId("rest-timer-display")).toBeTruthy();
+  });
+
+  it("renders and updates retrospective cardio metadata", () => {
+    const onActivityEnvironmentChange = jest.fn();
+    const onLocationNameChange = jest.fn();
+    const onRetrospectiveDurationChange = jest.fn();
+    const { getByTestId, getByText } = renderWithTheme(
+      <ActiveSessionPresenter
+        {...baseProps}
+        retroactive
+        retrospectiveCompletedAt="2026-05-04T12:00:00.000Z"
+        retrospectiveDurationSeconds={1_800}
+        onRetrospectiveDateChange={jest.fn()}
+        onRetrospectiveDurationChange={onRetrospectiveDurationChange}
+        activityEnvironment="indoor"
+        onActivityEnvironmentChange={onActivityEnvironmentChange}
+        locationName="Track"
+        onLocationNameChange={onLocationNameChange}
+        templateByExercise={{ "se-1": { category: "cardio", restSeconds: 90 } }}
+      />,
+    );
+
+    expect(getByText("ENVIRONMENT")).toBeTruthy();
+    fireEvent.changeText(getByTestId("retrospective-workout-duration"), "45");
+    expect(onRetrospectiveDurationChange).toHaveBeenCalledWith(2_700);
+    fireEvent.press(getByTestId("session-environment-outdoor"));
+    expect(onActivityEnvironmentChange).toHaveBeenCalledWith("outdoor");
+    fireEvent.changeText(getByTestId("session-location"), "Park");
+    expect(onLocationNameChange).toHaveBeenCalledWith("Park");
+  });
+
+  it("derives the retrospective picker day from local calendar components", () => {
+    jest.spyOn(Date.prototype, "getFullYear").mockReturnValue(2026);
+    jest.spyOn(Date.prototype, "getMonth").mockReturnValue(5);
+    jest.spyOn(Date.prototype, "getDate").mockReturnValue(5);
+
+    expect(retrospectiveDayValue("2026-06-04T23:00:00.000Z")).toBe(
+      "2026-06-05",
+    );
+  });
+
+  it("does not force metric loggers into the strength-only superset table", () => {
+    const exercises = [
+      buildExercise({ id: "run", category: "cardio", supersetGroup: 2 }),
+      buildExercise({
+        id: "jumps",
+        exerciseId: "jumps",
+        exerciseName: "Box Jumps",
+        category: "plyometric",
+        supersetGroup: 2,
+        sortOrder: 1,
+      }),
+    ];
+    const { getByTestId, queryByTestId } = renderWithTheme(
+      <ActiveSessionPresenter
+        {...baseProps}
+        exercises={exercises}
+        templateByExercise={{
+          run: { category: "cardio", restSeconds: 90 },
+          jumps: { category: "plyometric", restSeconds: 90 },
+        }}
+      />,
+    );
+    expect(queryByTestId("superset-group-2")).toBeNull();
+    expect(getByTestId("session-exercise-run")).toBeTruthy();
+    expect(getByTestId("session-exercise-jumps")).toBeTruthy();
   });
 
   // The KeyboardAvoidingView branch covers the bug where SetLogger TextInputs

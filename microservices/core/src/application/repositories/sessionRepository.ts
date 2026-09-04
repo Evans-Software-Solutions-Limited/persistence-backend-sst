@@ -55,6 +55,8 @@ export interface RecordSessionInput {
   completedAt?: string | null;
   status: "completed" | "cancelled";
   totalDurationSeconds?: number | null;
+  activityEnvironment?: "indoor" | "outdoor" | null;
+  locationName?: string | null;
   userNotes?: string | null;
   /**
    * Deprecated compatibility alias for older mobile builds. The active workout
@@ -68,6 +70,15 @@ export interface RecordSessionInput {
   difficultyRanking?: number | null;
   exercises: Array<{
     exerciseId: string;
+    category?:
+      | "strength"
+      | "cardio"
+      | "flexibility"
+      | "balance"
+      | "plyometric"
+      | "olympic"
+      | "mobility"
+      | null;
     sortOrder: number;
     supersetGroup?: number | null;
     isSubstituted?: boolean;
@@ -309,6 +320,7 @@ export class SessionRepository {
         id: sessionExercises.id,
         sessionId: sessionExercises.sessionId,
         exerciseId: sessionExercises.exerciseId,
+        exerciseCategory: sessionExercises.exerciseCategory,
         sortOrder: sessionExercises.sortOrder,
         supersetGroup: sessionExercises.supersetGroup,
         isSubstituted: sessionExercises.isSubstituted,
@@ -574,6 +586,8 @@ export class SessionRepository {
           startedAt: new Date(payload.startedAt),
           completedAt,
           totalDurationSeconds: payload.totalDurationSeconds ?? null,
+          activityEnvironment: payload.activityEnvironment ?? null,
+          locationName: payload.locationName?.trim() || null,
           userNotes: payload.userNotes ?? null,
           sessionRating: null,
           overallRpe: payload.overallRpe ?? null,
@@ -632,6 +646,7 @@ export class SessionRepository {
           .values({
             sessionId: session.id,
             exerciseId: ex.exerciseId,
+            exerciseCategory: ex.category ?? null,
             sortOrder: ex.sortOrder,
             supersetGroup: ex.supersetGroup ?? null,
             isSubstituted: ex.isSubstituted ?? false,

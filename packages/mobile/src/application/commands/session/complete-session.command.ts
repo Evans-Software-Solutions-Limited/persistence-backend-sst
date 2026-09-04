@@ -26,6 +26,7 @@ import type { RecordSessionInput } from "@/domain/ports/api.port";
 import type { RecentSetEntry, StoragePort } from "@/domain/ports/storage.port";
 import { fail, ok, type Result } from "@/shared/errors";
 import type { SessionNotFoundError } from "./log-set.command";
+import { isAfter, isValid, parseISO, subSeconds } from "date-fns";
 
 export type CompleteSessionCommandDeps = {
   storage: StoragePort;
@@ -102,7 +103,33 @@ export function finalizeSessionCommand(
     });
   }
 
-  const completedAt = (deps.now?.() ?? new Date()).toISOString();
+  const now = deps.now?.() ?? new Date();
+  const retrospectiveCompleted = session.retrospectiveCompletedAt
+    ? parseISO(session.retrospectiveCompletedAt)
+    : null;
+  const retrospectiveCompletedAt =
+    status === "completed" &&
+    retrospectiveCompleted &&
+    isValid(retrospectiveCompleted) &&
+    !isAfter(retrospectiveCompleted, now)
+      ? session.retrospectiveCompletedAt
+      : null;
+  const completedAt = retrospectiveCompletedAt ?? now.toISOString();
+  const retrospectiveDurationSeconds =
+    session.retrospectiveDurationSeconds != null &&
+    Number.isFinite(session.retrospectiveDurationSeconds) &&
+    session.retrospectiveDurationSeconds > 0
+      ? Math.min(session.retrospectiveDurationSeconds, 24 * 60 * 60)
+      : null;
+  const startedAt =
+    status === "completed" &&
+    retrospectiveCompletedAt &&
+    retrospectiveDurationSeconds
+      ? subSeconds(
+          parseISO(retrospectiveCompletedAt),
+          retrospectiveDurationSeconds,
+        ).toISOString()
+      : session.startedAt;
 
   // Synthesize per-set completion at finalize time. Post-1A.1 the
   // Mark-Complete UI is gone (legacy parity) — no UI path flips
@@ -118,12 +145,13 @@ export function finalizeSessionCommand(
       ? markLoggedSetsCompleted(session, completedAt)
       : session;
   const summary = calculateSummary(
-    { ...sessionWithCompletion, completedAt },
+    { ...sessionWithCompletion, startedAt, completedAt },
     completedAt,
   );
 
   const finalized: WorkoutSession = {
     ...sessionWithCompletion,
+    startedAt,
     status,
     completedAt,
     notes,
@@ -150,11 +178,14 @@ export function finalizeSessionCommand(
     completedAt,
     status,
     totalDurationSeconds: summary.duration,
+    activityEnvironment: finalized.activityEnvironment ?? null,
+    locationName: finalized.locationName?.trim() || null,
     userNotes: notes,
     sessionRating: rating,
     difficultyRanking: rating,
     exercises: finalized.exercises.map((ex) => ({
       exerciseId: ex.exerciseId,
+      category: ex.category ?? null,
       sortOrder: ex.sortOrder,
       supersetGroup: ex.supersetGroup,
       isSubstituted: ex.isSubstituted,

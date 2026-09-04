@@ -363,7 +363,7 @@ describe("IOSPurchaseFlowPresenter", () => {
     expect(screen.queryByText(/renews 14 Mar 2027/i)).toBeNull();
   });
 
-  it("renders founding access as active fixed-term access", () => {
+  it("renders administrative access as active fixed-term access", () => {
     render(
       <IOSPurchaseFlowPresenter
         {...defaultProps()}
@@ -376,7 +376,7 @@ describe("IOSPurchaseFlowPresenter", () => {
       />,
     );
     expect(screen.getByText("ACTIVE")).toBeTruthy();
-    expect(screen.getByText("Founding access")).toBeTruthy();
+    expect(screen.getByText("Granted access")).toBeTruthy();
     expect(screen.getByText(/active until 3 Mar 2027/i)).toBeTruthy();
     expect(screen.getByText("Fixed-term access")).toBeTruthy();
     expect(screen.getByText("No automatic renewal")).toBeTruthy();

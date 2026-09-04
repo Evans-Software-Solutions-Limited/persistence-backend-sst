@@ -63,13 +63,17 @@ export function ExerciseEditorContainer() {
       // granular arrays for untouched ones (see container doc).
       const initial = toFormInput(exercise);
       const expanded = toCreateExerciseInput(value);
+      const categoryChanged = value.categoryLabel !== initial.categoryLabel;
 
       const primaryChanged =
+        categoryChanged ||
         value.primaryMuscleLabel !== initial.primaryMuscleLabel;
-      const secondaryChanged = !sameLabelSet(
-        value.secondaryMuscleLabels,
-        initial.secondaryMuscleLabels,
-      );
+      const secondaryChanged =
+        categoryChanged ||
+        !sameLabelSet(
+          value.secondaryMuscleLabels,
+          initial.secondaryMuscleLabels,
+        );
       const equipmentChanged = value.equipmentLabel !== initial.equipmentLabel;
       // The coarse Level picker has no "Expert" tier — DIFFICULTY_TO_LEVEL
       // collapses expert → "Advanced", so re-expanding an untouched picker

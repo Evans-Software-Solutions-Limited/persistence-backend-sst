@@ -1,5 +1,11 @@
 # FOUNDING-OFFER — backend brief
 
+> **2026-09-04 amendment:** `BRIEF.md`'s grant-model amendment supersedes the
+> mandatory-payment and fixed-six-month assumptions below. Contributions are
+> optional metadata independent of access; grants have an explicit kind,
+> configurable duration, database-backed capacity, and an audited extension
+> operation. Admin grants do not lock referral attribution as paid conversion.
+
 Read `BRIEF.md` first (decisions D1–D9 are binding). Conventions:
 `.claude/skills/elysia-route-change/SKILL.md`, root `CLAUDE.md` § Authorization
 Pattern, handler path `src/application/{domain}/{action}/{domain}{Action}Handler.ts`,

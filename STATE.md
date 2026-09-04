@@ -78,6 +78,71 @@ Visual baselines:
 `/Users/bradleysimms-evans/.codex/visualizations/2026/09/04/01a06cdf-2dcb-78e3-b9c3-b1b10954f357/pricing-live-cta-coaches-dark.png`,
 and
 `/Users/bradleysimms-evans/.codex/visualizations/2026/09/04/01a06cdf-2dcb-78e3-b9c3-b1b10954f357/pricing-live-cta-consumer-mobile.png`.
+### 🟡 2026-09-04 — AUTH + CARDIO/ACTIVITY LOGGING (branch `codex/auth-cardio-logging`)
+
+Password inputs on sign-in, sign-up and password reset now have accessible
+show/hide controls, disable keyboard correction/capitalisation, and show live
+confirmation match state without altering the submitted password. Exercise
+creation supports strength, cardio and plyometric categories; cardio no longer
+requires a muscle group. Active sessions persist each exercise category and
+show category-specific logging: weight/reps for strength, time plus km/mi for
+cardio, and reps plus jump distance in cm/in for plyometrics.
+
+The Workouts screen can start a retrospective workout with a past local date
+and explicit duration. Cardio sessions can be marked indoor/outdoor and given
+an optional location; those values, logged activity time and distance appear in
+the completed-workout summary. Distance and time records are calculated by the
+core service and rendered on exercise detail/progress surfaces. Canonical stored
+units remain seconds and metres. Migration
+`20260904130000_session_activity_metadata.sql` adds session environment,
+location metadata and the per-session exercise-category snapshot, and must be
+applied before deploying the matching API.
+
+Formatting, all nine package typechecks, lint (zero errors), all fourteen build
+tasks and the full unit suite are green (**524 mobile suites / 6,623 tests**;
+**21 workspace tasks**). Visual QA was attempted but is blocked locally: the
+generated iOS build cannot resolve the React-Core-prebuilt pod source, while the
+installed staging dev client lacks ExpoTrackingTransparency and cannot load
+this checkout's bundle. No generated native project was retained.
+
+The mandatory local Inspector Brad pre-PR pass found seven category and edge
+case defects. All are fixed with regressions: cardio PRs are category-gated,
+summary activity totals include completed cardio sets only, offline cardio PR
+prediction matches the server, retrospective mode survives pointer recovery,
+category edits recompute muscle arrays, malformed activity inputs clear stale
+values, and retrospective duration is bounded to 24 hours. The complete gate
+suite above was rerun after these fixes. The follow-up Inspector pass found two
+lifecycle-boundary defects: server PR semantics depended on an exercise's
+current category, and upgraded local active sessions could resume without a
+category. Session exercises now store the category snapshot used when they were
+logged, and SQLite upgrades/backward reads restore it from the cached exercise.
+The complete gate suite is green after both fixes; a closed Inspector re-sweep
+then caught two alternate-entry-path gaps. Trainer-recorded sessions now accept
+the same activity metadata/category fields as self-recording, and piecemeal
+session exercise creation resolves visibility and snapshots the source exercise
+category. Regressions cover both paths, the complete gate suite is green, and
+the final closed local Inspector Brad sweep returned clean.
+
+The PR #434 CI Inspector follow-up found two mobile boundary cases. Cardio
+duration/distance fields now preserve focused, in-progress text while SQLite
+echoes canonical values back through the parent, then canonicalise on blur.
+Retrospective dates are displayed from device-local calendar components rather
+than a UTC string slice, and same-day logging before noon clamps completion to
+the current instant instead of rejecting the selected day. Focused regressions
+cover the command-echo and timezone/calendar-day paths. The full repository
+gate is green (**524 mobile suites / 6,627 tests; 21 workspace tasks**) and the
+local Inspector Brad follow-up is clean.
+
+A second PR #434 CI Inspector follow-up found that retrospective session setup
+backdated the still-live session clock, and that exercise detail filtered a
+globally limited PR response. Retrospective sessions now keep `startedAt` at
+the actual start instant and derive their historical interval only when they
+are finalised. The PR endpoint accepts an exercise scope that is applied in SQL
+before ordering/limiting, with matching offline-cache behaviour. The
+retrospective production date path now uses a direct `date-fns` dependency
+(`4.4.0`) for local-day parsing, validation and date arithmetic. Regression
+tests cover both review leads, and the full repository gate is green (**524
+mobile suites / 6,628 tests; 21 workspace tasks**).
 
 ### 🟡 2026-09-03 — FOUNDING-OFFER MOBILE REFERRAL ENTRY (branch `codex/founding-referral-ota`)
 

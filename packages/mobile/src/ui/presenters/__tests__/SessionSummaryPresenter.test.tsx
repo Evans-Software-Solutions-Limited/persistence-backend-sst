@@ -92,6 +92,25 @@ describe("SessionSummaryPresenter — Phase 3b legacy port", () => {
     expect(getByText("0 kg")).toBeTruthy();
   });
 
+  it("shows cardio distance, time and optional environment metadata", () => {
+    const { getByText, getByTestId } = renderWithTheme(
+      <SessionSummaryPresenter
+        {...baseProps}
+        totalDistanceMeters={5_000}
+        durationSeconds={1_500}
+        hasCardioActivity
+        activityEnvironment="outdoor"
+        locationName="Victoria Park"
+      />,
+    );
+
+    expect(getByText("5.00 km")).toBeTruthy();
+    expect(getByTestId("summary-cardio-duration").props.children.join("")).toBe(
+      "Time 25:00",
+    );
+    expect(getByText("OUTDOOR · Victoria Park")).toBeTruthy();
+  });
+
   it("PR section header is the legacy 'Personal Records Hit! 🏆'", () => {
     const pr: SummaryPersonalRecord = {
       exerciseId: "ex-bench",

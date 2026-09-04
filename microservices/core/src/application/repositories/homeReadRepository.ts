@@ -244,7 +244,11 @@ export class HomeReadRepository {
   }
 
   /** Recent PRs joined to exercise name, newest-first. */
-  async getRecentPRs(userId: string, limit: number): Promise<RecentPR[]> {
+  async getRecentPRs(
+    userId: string,
+    limit: number,
+    exerciseId?: string,
+  ): Promise<RecentPR[]> {
     const db = getDb();
     const rows = await db
       .select({
@@ -257,7 +261,14 @@ export class HomeReadRepository {
       })
       .from(personalRecords)
       .innerJoin(exercises, eq(personalRecords.exerciseId, exercises.id))
-      .where(eq(personalRecords.userId, userId))
+      .where(
+        exerciseId
+          ? and(
+              eq(personalRecords.userId, userId),
+              eq(personalRecords.exerciseId, exerciseId),
+            )
+          : eq(personalRecords.userId, userId),
+      )
       .orderBy(desc(personalRecords.achievedAt))
       .limit(limit);
     return rows.map((r) => ({

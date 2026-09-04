@@ -19,12 +19,13 @@ describe("SetNewPasswordPresenter", () => {
   });
 
   it("renders the title and both password inputs", () => {
-    const { getByTestId } = renderWithTheme(
+    const { getByTestId, getAllByLabelText } = renderWithTheme(
       <SetNewPasswordPresenter {...defaultProps} />,
     );
     expect(getByTestId("screen-title")).toBeTruthy();
     expect(getByTestId("password")).toBeTruthy();
     expect(getByTestId("confirm-password")).toBeTruthy();
+    expect(getAllByLabelText("Show password")).toHaveLength(2);
   });
 
   it("fires onSubmit when the button is pressed", () => {

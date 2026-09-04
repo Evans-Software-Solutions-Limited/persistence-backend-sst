@@ -1,21 +1,49 @@
+import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router";
 import { MarketingLayout } from "@/marketing/MarketingLayout";
 import { useSeo } from "@/marketing/seo";
 
 export const FOUNDING_CONTACT_EMAIL = "admin@evans-software-solutions.com";
 
-function foundingSeatsUsed(): number {
-  const parsed = Number(import.meta.env.VITE_FOUNDING_SEATS_USED ?? "0");
-  return Number.isInteger(parsed) && parsed >= 0 ? parsed : 0;
+type Availability = {
+  consumer: { used: number; cap: number };
+  coach: { used: number; cap: number };
+};
+
+async function loadAvailability(): Promise<Availability> {
+  const base = (import.meta.env.VITE_CORE_API_URL ?? "").replace(/\/$/, "");
+  const response = await fetch(`${base}/founding/availability`);
+  if (!response.ok) throw new Error("Availability could not be loaded");
+  const body = (await response.json()) as { data: Availability };
+  return body.data;
+}
+
+function AvailabilityLine({
+  label,
+  value,
+}: {
+  label: string;
+  value: { used: number; cap: number } | undefined;
+}) {
+  return (
+    <span>
+      <strong>{value ? `${value.used} of ${value.cap}` : "Live count"}</strong>{" "}
+      {label} {value ? "allocated" : "temporarily unavailable"}
+    </span>
+  );
 }
 
 export function Founding() {
-  const seatsUsed = foundingSeatsUsed();
+  const availability = useQuery({
+    queryKey: ["founding", "availability"],
+    queryFn: loadAvailability,
+    staleTime: 30_000,
+  });
 
   useSeo({
-    title: "Founding offer — Persistence",
+    title: "Founding access — Persistence",
     description:
-      "Six months of Persistence Premium, Premium+ or Start Up Coach+ through the limited founding offer.",
+      "Limited founding access to Persistence, allocated personally and separate from optional crowdfunding support.",
     path: "/founding",
   });
 
@@ -23,50 +51,59 @@ export function Founding() {
     <MarketingLayout>
       <section className="founding-hero">
         <div className="c founding-shell">
-          <span className="kicker c-accent">Founding offer</span>
-          <h1>I turn 30 this month. 200 founding places.</h1>
+          <span className="kicker c-accent">Founding access</span>
+          <h1>I turn 30 this month. A limited number of founding places.</h1>
           <p className="founding-intro">
-            Pay once for six months of Persistence. There is no automatic
-            renewal on a founding place.
+            Founding access is allocated personally for a specific Persistence
+            tier and period. It does not renew automatically.
           </p>
 
-          <div className="founding-plans" aria-label="Founding plans">
+          <div className="founding-plans" aria-label="Available access tiers">
             <article className="founding-plan">
               <span>Premium</span>
-              <strong>£30</strong>
-              <p>Six months. No automatic renewal.</p>
+              <strong>Build consistency</strong>
+              <p>Consumer access for the period agreed with Brad.</p>
             </article>
             <article className="founding-plan founding-plan-featured">
               <span>Premium+</span>
-              <strong>£50</strong>
-              <p>Six months. No automatic renewal.</p>
+              <strong>Go further</strong>
+              <p>Full consumer access for the period agreed with Brad.</p>
             </article>
           </div>
 
           <div className="founding-coach">
             <div>
               <span className="kicker">For coaches</span>
-              <h2>Start Up Coach+ £99</h2>
-              <p>Six months, with 20 founding coach places.</p>
+              <h2>Start Up Coach+</h2>
+              <p>Coach access is allocated from its own limited pool.</p>
             </div>
           </div>
 
-          <p className="founding-counter">
-            <strong>{seatsUsed} of 200</strong> places taken
+          <p className="founding-counter" aria-live="polite">
+            <AvailabilityLine
+              label="consumer places"
+              value={availability.data?.consumer}
+            />
+            {" · "}
+            <AvailabilityLine
+              label="coach places"
+              value={availability.data?.coach}
+            />
           </p>
 
           <div className="founding-details">
             <section>
-              <h2>What the money funds</h2>
+              <h2>Access is granted, not sold here</h2>
               <p>
-                The founding offer funds launch banners, the QR subscription,
-                and places at founders&apos; fairs.
+                There is no checkout or payment code on this website. Brad
+                records the tier and access period, then the grant is applied to
+                the email you use in the app.
               </p>
             </section>
             <section>
-              <h2>How to get a place</h2>
+              <h2>How to ask for a place</h2>
               <p>
-                Speak to Brad in person at an event he attends, or email{" "}
+                Speak to Brad in person, or email{" "}
                 <a href={`mailto:${FOUNDING_CONTACT_EMAIL}`}>
                   {FOUNDING_CONTACT_EMAIL}
                 </a>
@@ -74,20 +111,14 @@ export function Founding() {
               </p>
             </section>
             <section>
-              <h2>How access is switched on</h2>
+              <h2>Crowdfunding is separate</h2>
               <p>
-                We record your payment. You sign up in the app with the same
-                email address and confirm it. Access is on the first time the
-                app loads after that. Places must be redeemed within 90 days of
-                payment.
+                You may choose to contribute to the wider launch separately. A
+                contribution does not buy, guarantee, size, or extend access.
               </p>
             </section>
           </div>
 
-          <p className="founding-cancellation">
-            By paying, you acknowledge your right to cancel this purchase within
-            14 days.
-          </p>
           <p className="founding-terms">
             Read the <Link to="/terms">terms and conditions</Link>.
           </p>

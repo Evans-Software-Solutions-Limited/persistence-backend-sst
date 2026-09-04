@@ -283,6 +283,9 @@ export function SignUpPresenter({
                       value={password}
                       onChangeText={onPasswordChange}
                       secureTextEntry
+                      showPasswordToggle
+                      autoCapitalize="none"
+                      autoCorrect={false}
                       autoComplete="new-password"
                       testID="password"
                     />
@@ -292,7 +295,22 @@ export function SignUpPresenter({
                       value={confirmPassword}
                       onChangeText={onConfirmPasswordChange}
                       secureTextEntry
+                      showPasswordToggle
+                      autoCapitalize="none"
+                      autoCorrect={false}
                       autoComplete="new-password"
+                      error={
+                        confirmPassword.length > 0 &&
+                        password !== confirmPassword
+                          ? "Passwords do not match"
+                          : undefined
+                      }
+                      helperText={
+                        confirmPassword.length > 0 &&
+                        password === confirmPassword
+                          ? "Passwords match"
+                          : undefined
+                      }
                       testID="confirm-password"
                     />
                   </Column>

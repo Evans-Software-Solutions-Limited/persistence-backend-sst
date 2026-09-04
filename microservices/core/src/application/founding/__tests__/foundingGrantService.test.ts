@@ -19,6 +19,7 @@ function makeRepos() {
       await finalize?.({ kind: "test-transaction" });
     }),
     findById: vi.fn(),
+    extend: vi.fn(),
     revoke: vi.fn(),
     list: vi.fn(async () => []),
   };
@@ -98,7 +99,7 @@ function mockGrantCreated(
 describe("FoundingGrantService.grant", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("creates an ACTIVE grant + subscription when the account exists, locks attribution, audits, invites", async () => {
+  it("creates an ACTIVE grant + subscription when the account exists, leaves attribution unlocked, audits, invites", async () => {
     const { svc, grants, referrals, audit, mailer } = makeRepos();
     grants.findProfileByEmail.mockResolvedValue({
       id: "u1",
@@ -111,8 +112,9 @@ describe("FoundingGrantService.grant", () => {
       {
         email: " Buyer@Example.com ",
         tierName: "premium",
-        paymentMethod: "bank_transfer",
-        paymentReference: "REF1",
+        contributionAmountMinor: 3000,
+        contributionMethod: "bank_transfer",
+        contributionReference: "REF1",
       },
       "admin-1",
     );
@@ -122,7 +124,7 @@ describe("FoundingGrantService.grant", () => {
     expect(res.result.status).toBe("active");
     expect(res.result.email).toBe("buyer@example.com");
     expect(res.result.invited).toBe(true);
-    // Defaults: 6 months, £30 for premium, consumer pool.
+    // Defaults: 6 months and the consumer pool; contribution is explicit.
     expect(grants.create).toHaveBeenCalledWith(
       expect.objectContaining({
         userId: "u1",
@@ -135,10 +137,7 @@ describe("FoundingGrantService.grant", () => {
       "consumer",
       expect.any(Function),
     );
-    expect(referrals.lock).toHaveBeenCalledWith(
-      "u1",
-      expect.objectContaining({ kind: "test-transaction" }),
-    );
+    expect(referrals.lock).not.toHaveBeenCalled();
     expect(audit.record).toHaveBeenCalledWith(
       expect.objectContaining({
         action: "founding_grant.create",
@@ -161,6 +160,37 @@ describe("FoundingGrantService.grant", () => {
     );
   });
 
+  it("creates a configurable complimentary grant without contribution metadata or a founding seat", async () => {
+    const { svc, grants } = makeRepos();
+    grants.findProfileByEmail.mockResolvedValue(null);
+    mockGrantCreated(
+      grants,
+      created({ amountMinor: 0, paymentMethod: null, paidAt: null }),
+    );
+    const res = await svc.grant(
+      {
+        email: "friend@example.com",
+        tierName: "premium_plus",
+        grantKind: "complimentary",
+        months: 18,
+        sendInvite: false,
+      },
+      "admin-1",
+    );
+    expect(res.ok).toBe(true);
+    expect(grants.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        grantKind: "complimentary",
+        months: 18,
+        amountMinor: 0,
+        paymentMethod: null,
+        paidAt: null,
+      }),
+      "consumer",
+      expect.any(Function),
+    );
+  });
+
   it("creates a PENDING grant when there is no account yet and sends the sign-up invite", async () => {
     const { svc, grants, referrals, mailer } = makeRepos();
     mockGrantCreated(grants, created({ id: "g2" }));
@@ -169,7 +199,8 @@ describe("FoundingGrantService.grant", () => {
       {
         email: "new@example.com",
         tierName: "premium_plus",
-        paymentMethod: "card_in_person",
+        contributionAmountMinor: 5000,
+        contributionMethod: "card_in_person",
       },
       "admin-1",
     );
@@ -187,8 +218,8 @@ describe("FoundingGrantService.grant", () => {
     expect((mailer.mock.calls[0] as any)[0].text).toMatch(
       /sign up with this email/,
     );
-    expect((mailer.mock.calls[0] as any)[0].text).toMatch(
-      /Please sign up within 90 days of payment — after that we may release your place\./,
+    expect((mailer.mock.calls[0] as any)[0].text).not.toMatch(
+      /payment|paid in full|90 days/,
     );
   });
 
@@ -200,7 +231,7 @@ describe("FoundingGrantService.grant", () => {
       role: "personal_trainer",
     } as any);
     const res = await svc.grant(
-      { email: "coach@x.co", tierName: "premium", paymentMethod: "other" },
+      { email: "coach@x.co", tierName: "premium" },
       "a",
     );
     expect(res).toEqual({ ok: false, error: { code: "coach_demotion" } });
@@ -211,7 +242,6 @@ describe("FoundingGrantService.grant", () => {
       {
         email: "coach@x.co",
         tierName: "premium",
-        paymentMethod: "other",
         allowRoleChange: true,
       },
       "a",
@@ -234,8 +264,9 @@ describe("FoundingGrantService.grant", () => {
       {
         email: "coach@x.co",
         tierName: "start_up_coach_plus",
-        paymentMethod: "bank_transfer",
-        paymentReference: "BANK-COACH",
+        contributionAmountMinor: 9900,
+        contributionMethod: "bank_transfer",
+        contributionReference: "BANK-COACH",
       },
       "a",
     );
@@ -247,7 +278,7 @@ describe("FoundingGrantService.grant", () => {
     );
   });
 
-  it("refuses a live store subscription unless the admin confirms the override", async () => {
+  it("always refuses a live store subscription", async () => {
     const { svc, grants, subscriptions } = makeRepos();
     grants.findProfileByEmail.mockResolvedValue({
       id: "u1",
@@ -265,7 +296,6 @@ describe("FoundingGrantService.grant", () => {
         {
           email: "buyer@example.com",
           tierName: "premium_plus",
-          paymentMethod: "other",
         },
         "admin-1",
       ),
@@ -280,21 +310,9 @@ describe("FoundingGrantService.grant", () => {
       },
     });
     expect(grants.create).not.toHaveBeenCalled();
-
-    mockGrantCreated(grants);
-    const overridden = await svc.grant(
-      {
-        email: "buyer@example.com",
-        tierName: "premium_plus",
-        paymentMethod: "other",
-        allowSupersedeStoreSubscription: true,
-      },
-      "admin-1",
-    );
-    expect(overridden.ok).toBe(true);
   });
 
-  it("refuses to attach a paid grant to an account pending deletion", async () => {
+  it("refuses to attach a grant to an account pending deletion", async () => {
     const { svc, grants } = makeRepos();
     grants.findProfileByEmail.mockResolvedValue({
       id: "u-deleting",
@@ -308,7 +326,6 @@ describe("FoundingGrantService.grant", () => {
         {
           email: "buyer@example.com",
           tierName: "premium",
-          paymentMethod: "other",
         },
         "admin-1",
       ),
@@ -326,10 +343,7 @@ describe("FoundingGrantService.grant", () => {
       seats: { pool: "consumer", used: 200, cap: 200 },
     });
     expect(
-      await svc.grant(
-        { email: "a@b.co", tierName: "premium", paymentMethod: "other" },
-        "a",
-      ),
+      await svc.grant({ email: "a@b.co", tierName: "premium" }, "a"),
     ).toEqual({
       ok: false,
       error: {
@@ -339,22 +353,13 @@ describe("FoundingGrantService.grant", () => {
     });
     grants.create.mockResolvedValueOnce({ kind: "duplicate" });
     expect(
-      await svc.grant(
-        { email: "a@b.co", tierName: "premium", paymentMethod: "other" },
-        "a",
-      ),
+      await svc.grant({ email: "a@b.co", tierName: "premium" }, "a"),
     ).toEqual({ ok: false, error: { code: "duplicate" } });
     expect(
-      await svc.grant(
-        { email: "a@b.co", tierName: "coach", paymentMethod: "other" },
-        "a",
-      ),
+      await svc.grant({ email: "a@b.co", tierName: "coach" }, "a"),
     ).toEqual({ ok: false, error: { code: "invalid_tier" } });
     expect(
-      await svc.grant(
-        { email: "not-an-email", tierName: "premium", paymentMethod: "other" },
-        "a",
-      ),
+      await svc.grant({ email: "not-an-email", tierName: "premium" }, "a"),
     ).toEqual({ ok: false, error: { code: "invalid_email" } });
     expect(audit.record).not.toHaveBeenCalled();
     expect(mailer).not.toHaveBeenCalled();
@@ -377,10 +382,7 @@ describe("FoundingGrantService.grant", () => {
     });
 
     expect(
-      await svc.grant(
-        { email: "a@b.co", tierName: "premium", paymentMethod: "other" },
-        "admin-1",
-      ),
+      await svc.grant({ email: "a@b.co", tierName: "premium" }, "admin-1"),
     ).toEqual({
       ok: false,
       error: {
@@ -395,22 +397,23 @@ describe("FoundingGrantService.grant", () => {
 
   it.each(["bank_transfer", "stripe_link"] as const)(
     "requires a non-blank reference for %s",
-    async (paymentMethod) => {
+    async (contributionMethod) => {
       const { svc, grants } = makeRepos();
-      for (const paymentReference of [undefined, "   "]) {
+      for (const contributionReference of [undefined, "   "]) {
         expect(
           await svc.grant(
             {
               email: "a@b.co",
               tierName: "premium",
-              paymentMethod,
-              paymentReference,
+              contributionAmountMinor: 3000,
+              contributionMethod,
+              contributionReference,
             },
             "a",
           ),
         ).toEqual({
           ok: false,
-          error: { code: "payment_reference_required" },
+          error: { code: "contribution_reference_required" },
         });
       }
       expect(grants.create).not.toHaveBeenCalled();
@@ -418,14 +421,19 @@ describe("FoundingGrantService.grant", () => {
   );
 
   it.each(["card_in_person", "other"] as const)(
-    "allows %s without a payment reference",
-    async (paymentMethod) => {
+    "allows %s without a contribution reference",
+    async (contributionMethod) => {
       const { svc, grants } = makeRepos();
       mockGrantCreated(grants);
       expect(
         (
           await svc.grant(
-            { email: "a@b.co", tierName: "premium", paymentMethod },
+            {
+              email: "a@b.co",
+              tierName: "premium",
+              contributionAmountMinor: 3000,
+              contributionMethod,
+            },
             "a",
           )
         ).ok,
@@ -445,7 +453,6 @@ describe("FoundingGrantService.grant", () => {
         {
           email: "a@b.co",
           tierName: "premium",
-          paymentMethod: "other",
           referralCode: "nope!",
         },
         "a",
@@ -472,7 +479,6 @@ describe("FoundingGrantService.grant", () => {
       {
         email: "a@b.co",
         tierName: "premium",
-        paymentMethod: "other",
         referralCode: "uon freshers",
       },
       "a",
@@ -491,10 +497,7 @@ describe("FoundingGrantService.grant", () => {
       }),
       expect.objectContaining({ kind: "test-transaction" }),
     );
-    expect(referrals.lock).toHaveBeenCalledWith(
-      "u1",
-      expect.objectContaining({ kind: "test-transaction" }),
-    );
+    expect(referrals.lock).not.toHaveBeenCalled();
   });
 
   it("rolls the grant back when the transactional referral claim is no longer eligible", async () => {
@@ -518,7 +521,6 @@ describe("FoundingGrantService.grant", () => {
         {
           email: "a@b.co",
           tierName: "premium",
-          paymentMethod: "other",
           referralCode: "EXPIRED",
         },
         "admin-1",
@@ -532,10 +534,7 @@ describe("FoundingGrantService.grant", () => {
     const { svc, grants, mailer } = makeRepos();
     mockGrantCreated(grants);
     mailer.mockRejectedValueOnce(new Error("Resend 500"));
-    const res = await svc.grant(
-      { email: "a@b.co", tierName: "premium", paymentMethod: "other" },
-      "a",
-    );
+    const res = await svc.grant({ email: "a@b.co", tierName: "premium" }, "a");
     expect(res.ok).toBe(true);
     if (!res.ok) return;
     expect(res.result.invited).toBe(false);
@@ -549,10 +548,7 @@ describe("FoundingGrantService.grant", () => {
     grants.markInvited.mockRejectedValueOnce(new Error("database unavailable"));
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    const res = await svc.grant(
-      { email: "a@b.co", tierName: "premium", paymentMethod: "other" },
-      "a",
-    );
+    const res = await svc.grant({ email: "a@b.co", tierName: "premium" }, "a");
 
     expect(res.ok).toBe(true);
     if (!res.ok) return;
@@ -615,10 +611,7 @@ describe("FoundingGrantService.applyPendingForUser", () => {
       expect.objectContaining({ userId: "u9", canonicalCode: "UONFRESHERS" }),
       expect.objectContaining({ kind: "test-transaction" }),
     );
-    expect(referrals.lock).toHaveBeenCalledWith(
-      "u9",
-      expect.objectContaining({ kind: "test-transaction" }),
-    );
+    expect(referrals.lock).not.toHaveBeenCalled();
     expect(audit.record).toHaveBeenCalledWith(
       expect.objectContaining({
         action: "founding_grant.apply_pending",
@@ -891,6 +884,60 @@ describe("FoundingGrantService.revoke", () => {
     expect(await svc.revoke("nope", "x", "admin-1")).toEqual({
       ok: false,
       error: "not_found",
+    });
+  });
+});
+
+describe("FoundingGrantService.extend", () => {
+  it("extends access and records the reason in the same transaction", async () => {
+    const { svc, grants, audit } = makeRepos();
+    grants.extend.mockImplementationOnce(async (_id, _months, finalize) => {
+      const before = { id: "g1", months: 6 } as any;
+      const after = { id: "g1", months: 9 } as any;
+      const expiresAt = new Date("2027-06-03T00:00:00Z");
+      await finalize(before, after, expiresAt, {
+        kind: "test-transaction",
+      });
+      return { kind: "extended", grant: after, expiresAt };
+    });
+
+    const result = await svc.extend("g1", 3, "thank you", "admin-1");
+
+    expect(result).toEqual({
+      ok: true,
+      result: {
+        id: "g1",
+        months: 9,
+        expiresAt: new Date("2027-06-03T00:00:00Z"),
+      },
+    });
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "founding_grant.extend",
+        reason: "thank you",
+        before: { months: 6 },
+        after: expect.objectContaining({ additionalMonths: 3, months: 9 }),
+      }),
+      expect.objectContaining({ kind: "test-transaction" }),
+    );
+  });
+
+  it("rejects invalid lengths before writing", async () => {
+    const { svc, grants } = makeRepos();
+    expect(await svc.extend("g1", 0, "nope", "admin-1")).toEqual({
+      ok: false,
+      error: "invalid_months",
+    });
+    expect(grants.extend).not.toHaveBeenCalled();
+  });
+
+  it("returns invalid_months when an extension would exceed the total cap", async () => {
+    const { svc, grants } = makeRepos();
+    grants.extend.mockResolvedValueOnce({ kind: "invalid_months" });
+
+    expect(await svc.extend("g1", 120, "bonus", "admin-1")).toEqual({
+      ok: false,
+      error: "invalid_months",
     });
   });
 });

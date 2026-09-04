@@ -22,6 +22,7 @@ import type { SessionClientRef, WorkoutSession } from "@/domain/models/session";
 import type { Workout } from "@/domain/models/workout";
 import type { StoragePort } from "@/domain/ports/storage.port";
 import { fail, ok, type Result } from "@/shared/errors";
+import { set, subDays } from "date-fns";
 
 export type StartSessionCommandDeps = {
   storage: StoragePort;
@@ -40,6 +41,7 @@ export type StartSessionInput = {
    * live only on the AsyncStorage pointer).
    */
   withClient?: SessionClientRef | null;
+  retrospective?: boolean;
 };
 
 export type ActiveSessionExistsError = {
@@ -63,15 +65,27 @@ export function startSessionCommand(
     });
   }
 
+  const startedNow = deps.now?.() ?? new Date();
   const ctx = {
     userId: deps.userId,
-    now: (deps.now?.() ?? new Date()).toISOString(),
+    now: startedNow.toISOString(),
     withClient: input.withClient ?? null,
   };
 
   const session = input.workout
     ? createSessionFromWorkout(input.workout, ctx, deps.generateId)
     : createEmptySession(ctx, deps.generateId);
+
+  if (input.retrospective) {
+    const completed = set(subDays(startedNow, 1), {
+      hours: 12,
+      minutes: 0,
+      seconds: 0,
+      milliseconds: 0,
+    });
+    session.retrospectiveCompletedAt = completed.toISOString();
+    session.retrospectiveDurationSeconds = 3600;
+  }
 
   deps.storage.cacheActiveSession(deps.userId, session);
   // M2 learning #3: every session-mutating command invalidates the

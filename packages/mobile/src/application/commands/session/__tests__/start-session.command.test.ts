@@ -118,6 +118,25 @@ describe("startSessionCommand", () => {
     expect(result.value.name).toBe("Quick Workout");
   });
 
+  it("seeds a retrospective session on the previous local day", () => {
+    const result = startSessionCommand(
+      { storage, generateId, userId: "user-1", now },
+      { retrospective: true },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const completed = new Date(result.value.retrospectiveCompletedAt!);
+    expect(completed.getFullYear()).toBe(2026);
+    expect(completed.getMonth()).toBe(4);
+    expect(completed.getDate()).toBe(4);
+    expect(completed.getHours()).toBe(12);
+    expect(result.value.retrospectiveDurationSeconds).toBe(3600);
+    // Keep the live-session age anchor at the moment this flow was opened.
+    // Finalisation derives the historical workout start from duration.
+    expect(result.value.startedAt).toBe(now().toISOString());
+  });
+
   it("invalidates the dashboard cache (M2 learning #3)", () => {
     const spy = jest.spyOn(storage, "invalidateDashboard");
     startSessionCommand({ storage, generateId, userId: "user-1", now });

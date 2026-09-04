@@ -8,6 +8,7 @@ import { FOUNDING_OFFERS, type FoundingTierName } from "./foundingOffer";
  */
 export interface InviteEmailInput {
   tierName: FoundingTierName;
+  grantKind: "founding" | "complimentary";
   months: number;
   expiresAt: Date | null;
   hasAccount: boolean;
@@ -30,18 +31,26 @@ export function buildFoundingInviteEmail(input: InviteEmailInput): {
 } {
   const tier = FOUNDING_OFFERS[input.tierName].label;
   const downloadUrl = `${input.webOrigin.replace(/\/$/, "")}/qr/founding`;
-  const subject = `You're a Persistence founding member — ${tier} for ${input.months} months`;
+  const subject =
+    input.grantKind === "founding"
+      ? `You're a Persistence founding member — ${tier} for ${input.months} months`
+      : `Your Persistence access — ${tier} for ${input.months} months`;
 
   const access = input.hasAccount
     ? `Your ${tier} access is already on. Open the app and you'll see it under You → Subscription${
         input.expiresAt ? `, active until ${formatDate(input.expiresAt)}` : ""
       }.`
-    : `Download Persistence and sign up with this email address (${input.email}). ${tier} switches on automatically the first time the app loads after you sign in — nothing to enter, no code. Please sign up within 90 days of payment — after that we may release your place.`;
+    : `Download Persistence and sign up with this email address (${input.email}). ${tier} switches on automatically the first time the app loads after you sign in — nothing to enter, no code.`;
+
+  const introduction =
+    input.grantKind === "founding"
+      ? `Thanks for backing Persistence as a founding member.`
+      : `You've been given complimentary Persistence access.`;
 
   const text = [
-    `Thanks for backing Persistence as a founding member.`,
+    introduction,
     ``,
-    `What you have: ${tier}, ${input.months} months, paid in full. It does not auto-renew — when it ends you choose whether to continue.`,
+    `What you have: ${tier}, ${input.months} months. This access was granted directly and does not auto-renew — when it ends you choose whether to continue.`,
     ``,
     access,
     ``,

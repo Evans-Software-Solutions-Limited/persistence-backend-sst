@@ -16,9 +16,13 @@ import type { Exercise } from "@/domain/models/exercise";
 import type { Workout } from "@/domain/models/workout";
 import type { NotificationsPort } from "@/domain/ports/notifications.port";
 import { ok } from "@/shared/errors";
+import { localDayISO } from "@/shared/utils";
 import type { Adapters } from "@/shared/types";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
-import { ActiveSessionContainer } from "@/ui/containers/ActiveSessionContainer";
+import {
+  ActiveSessionContainer,
+  retrospectiveCompletedAtForDay,
+} from "@/ui/containers/ActiveSessionContainer";
 import { useActiveWorkout } from "@/state/active-workout";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 
@@ -220,6 +224,21 @@ describe("ActiveSessionContainer", () => {
     jest.restoreAllMocks();
   });
 
+  it("keeps retrospective completion on the selected local day", () => {
+    const beforeNoon = new Date(2026, 5, 5, 10, 0, 0, 0);
+    const today = localDayISO(beforeNoon);
+    const priorDay = new Date(2026, 5, 4, 12, 0, 0, 0);
+
+    expect(retrospectiveCompletedAtForDay(today, beforeNoon)).toBe(
+      beforeNoon.toISOString(),
+    );
+    expect(
+      retrospectiveCompletedAtForDay(localDayISO(priorDay), beforeNoon),
+    ).toBe(priorDay.toISOString());
+    expect(retrospectiveCompletedAtForDay("2026-06-06", beforeNoon)).toBeNull();
+    expect(retrospectiveCompletedAtForDay("not-a-day", beforeNoon)).toBeNull();
+  });
+
   it("seeds a session from a workout template when ?workoutId= is present and no active session exists", async () => {
     const api = new InMemoryApiAdapter();
     const workout = buildWorkout();
@@ -239,6 +258,24 @@ describe("ActiveSessionContainer", () => {
     const cached = storage.getActiveSession("user-1");
     expect(cached?.status).toBe("in_progress");
     expect(cached?.exercises).toHaveLength(2);
+  });
+
+  it("starts retrospective quick logging and persists the chosen duration", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    mockUseLocalSearchParams.mockReturnValue({ retroactive: "true" });
+
+    const { findByTestId } = renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <ActiveSessionContainer />),
+    );
+    const duration = await findByTestId("retrospective-workout-duration");
+    fireEvent.changeText(duration, "45");
+
+    await waitFor(() =>
+      expect(
+        storage.getActiveSession("user-1")?.retrospectiveDurationSeconds,
+      ).toBe(2_700),
+    );
   });
 
   it("does not seed a new session from a retained Loadout template after entitlement loss", async () => {
@@ -608,7 +645,7 @@ describe("ActiveSessionContainer", () => {
 
     expect(alertSpy).toHaveBeenCalledWith(
       "Add a set first",
-      "Log weight + reps on at least one set before completing the workout.",
+      "Log at least one complete set before completing the workout.",
       expect.any(Array),
     );
     expect(mockRouterPush).not.toHaveBeenCalled();

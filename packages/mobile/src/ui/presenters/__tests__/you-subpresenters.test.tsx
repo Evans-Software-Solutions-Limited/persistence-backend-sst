@@ -74,7 +74,7 @@ describe("PRHistoryPresenter", () => {
     expect(getByTestId("pr-history")).toBeTruthy();
   });
 
-  it("labels each row's unit by record type (s for best_time, not kg)", () => {
+  it("formats best_time as a readable duration, not a weight", () => {
     const { getByText, queryByText } = renderWithTheme(
       <PRHistoryPresenter
         prs={[
@@ -92,7 +92,7 @@ describe("PRHistoryPresenter", () => {
         ]}
       />,
     );
-    expect(getByText("s")).toBeTruthy();
+    expect(getByText("30:00")).toBeTruthy();
     expect(queryByText("kg")).toBeNull();
   });
 });

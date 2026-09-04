@@ -1,5 +1,12 @@
 # FOUNDING-OFFER — frontend brief (web + mobile)
 
+> **2026-09-04 amendment:** `BRIEF.md`'s grant-model amendment supersedes the
+> fixed-price/payment form and build-time seat counter below. The admin creates
+> a founding or complimentary grant with a chosen tier and duration, may record
+> a wholly optional crowdfunding contribution, and may extend an existing
+> grant. Public availability comes from the API. Referral codes remain
+> attribution only; native store discount mapping is future work.
+
 Read `BRIEF.md` first. Backend contract is in `BACKEND_BRIEF.md § 4`.
 
 ## Web (`packages/web`) — ships first

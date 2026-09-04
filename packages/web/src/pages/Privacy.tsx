@@ -445,13 +445,14 @@ export function Privacy() {
         </p>
         <ul>
           <li>
-            <strong>Founding offer purchases</strong> — if you buy a founding
-            place, we keep a record of your email address, the tier bought, the
-            amount, the payment method and reference, and the date, for six
-            years after purchase to meet accounting and legal obligations. This
-            record is kept even if you later delete your account; the account
-            link itself is removed. If you paid before creating an account, we
-            hold your email address until the place is redeemed or released.
+            <strong>Administrative access grants and contributions</strong> — if
+            we allocate fixed-term access, we keep your email address, tier,
+            grant type and duration while needed to provide and audit that
+            access. If you separately make a crowdfunding contribution, we may
+            also record its amount, method, reference and date for six years to
+            meet accounting and legal obligations. Contribution information is
+            kept even if you later delete your account; the account link itself
+            is removed. A contribution is not required for a grant.
           </li>
           <li>
             <strong>Transaction and subscription records</strong> — we keep the

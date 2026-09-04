@@ -18,6 +18,7 @@ import {
   createEmptySession,
   createSessionFromWorkout,
   detectPersonalRecords,
+  markLoggedSetsCompleted,
   removeExerciseFromSession,
   removeSupersetSet,
   renumberSets,
@@ -336,6 +337,40 @@ describe("completeSet", () => {
     const { session } = sessionWithSet();
     const updated = completeSet(session, "missing", "ts");
     expect(updated.exercises[0].sets[0].isCompleted).toBe(false);
+  });
+});
+
+describe("markLoggedSetsCompleted", () => {
+  it("completes cardio time-only and plyometric reps-only sets", () => {
+    let session = createEmptySession(ctx(), idFactory());
+    session = addExerciseToSession(
+      session,
+      makeExercise({ id: "run", category: "cardio" }),
+      idFactory(20),
+    );
+    session = addExerciseToSession(
+      session,
+      makeExercise({ id: "jumps", category: "plyometric" }),
+      idFactory(30),
+    );
+    session.exercises[0].sets[0].durationSeconds = 1_500;
+    session.exercises[1].sets[0].reps = 12;
+
+    const completed = markLoggedSetsCompleted(session, ctx().now);
+
+    expect(completed.exercises[0].sets[0].isCompleted).toBe(true);
+    expect(completed.exercises[1].sets[0].isCompleted).toBe(true);
+  });
+
+  it("does not complete strength sets without both weight and reps", () => {
+    let session = createEmptySession(ctx(), idFactory());
+    session = addExerciseToSession(session, makeExercise(), idFactory(20));
+    session.exercises[0].sets[0].reps = 8;
+
+    expect(
+      markLoggedSetsCompleted(session, ctx().now).exercises[0].sets[0]
+        .isCompleted,
+    ).toBe(false);
   });
 });
 
@@ -718,6 +753,8 @@ describe("detectPersonalRecords", () => {
     "10rm"?: number;
     max_weight?: number;
     max_volume?: number;
+    best_time?: number;
+    longest_distance?: number;
   }): PersonalRecord[] => {
     const out: PersonalRecord[] = [];
     for (const [recordType, value] of Object.entries(overrides)) {
@@ -841,6 +878,79 @@ describe("detectPersonalRecords", () => {
     const session = sessionWithBench(100, 5);
     const records = detectPersonalRecords(session, [], ctx(), idFactory(900));
     expect(records).toEqual([]);
+  });
+
+  it("predicts shorter-time and longer-distance cardio records", () => {
+    const strength = sessionWithBench(100, 5);
+    const session: WorkoutSession = {
+      ...strength,
+      exercises: strength.exercises.map((exercise, index) =>
+        index === 0
+          ? {
+              ...exercise,
+              category: "cardio",
+              sets: exercise.sets.map((set, setIndex) =>
+                setIndex === 0
+                  ? {
+                      ...set,
+                      weightKg: null,
+                      reps: null,
+                      durationSeconds: 1_500,
+                      distanceMeters: 5_000,
+                      isCompleted: true,
+                    }
+                  : set,
+              ),
+            }
+          : exercise,
+      ),
+    };
+
+    const records = detectPersonalRecords(
+      session,
+      priorsForBench({ best_time: 1_650, longest_distance: 4_000 }),
+      ctx(),
+      idFactory(900),
+    );
+    expect(records.map((record) => record.recordType).sort()).toEqual([
+      "best_time",
+      "longest_distance",
+    ]);
+  });
+
+  it("does not predict cardio records for plyometric jump distances", () => {
+    const strength = sessionWithBench(100, 5);
+    const session: WorkoutSession = {
+      ...strength,
+      exercises: strength.exercises.map((exercise, index) =>
+        index === 0
+          ? {
+              ...exercise,
+              category: "plyometric",
+              sets: exercise.sets.map((set, setIndex) =>
+                setIndex === 0
+                  ? {
+                      ...set,
+                      weightKg: null,
+                      reps: 5,
+                      distanceMeters: 2.5,
+                      isCompleted: true,
+                    }
+                  : set,
+              ),
+            }
+          : exercise,
+      ),
+    };
+
+    expect(
+      detectPersonalRecords(
+        session,
+        priorsForBench({ longest_distance: 2 }),
+        ctx(),
+        idFactory(900),
+      ),
+    ).toEqual([]);
   });
 
   it("emits no record when no candidate beats any prior", () => {

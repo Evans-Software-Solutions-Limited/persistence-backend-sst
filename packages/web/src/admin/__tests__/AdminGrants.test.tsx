@@ -6,6 +6,7 @@ const api = vi.hoisted(() => ({
   grants: vi.fn(),
   revokeGrant: vi.fn(),
   resendInvite: vi.fn(),
+  extendGrant: vi.fn(),
 }));
 vi.mock("../adminApi", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../adminApi")>();
@@ -24,11 +25,12 @@ const baseGrant = {
   tierName: "premium",
   tierLabel: "Premium",
   months: 6,
-  amountMinor: 3000,
-  currency: "GBP",
-  paymentMethod: "bank_transfer",
-  paymentReference: "BANK-1",
-  paidAt: "2026-09-01T00:00:00Z",
+  grantKind: "founding" as const,
+  contributionAmountMinor: 3000,
+  contributionCurrency: "GBP",
+  contributionMethod: "bank_transfer",
+  contributionReference: "BANK-1",
+  contributedAt: "2026-09-01T00:00:00Z",
   referralCode: null,
   referralLabel: null,
   subscriptionExpiresAt: "2027-03-01T00:00:00Z",
@@ -46,6 +48,20 @@ describe("AdminGrants", () => {
     vi.clearAllMocks();
     api.revokeGrant.mockResolvedValue({ ok: true });
     api.resendInvite.mockResolvedValue({ ok: true });
+    api.extendGrant.mockResolvedValue({
+      id: "g1",
+      months: 8,
+      expiresAt: "2027-05-01",
+    });
+  });
+
+  it("labels the contribution reference column", async () => {
+    api.grants.mockResolvedValue([baseGrant]);
+    renderPage(<AdminGrants />);
+
+    expect(
+      await screen.findByRole("columnheader", { name: "Reference" }),
+    ).toBeTruthy();
   });
 
   it("renders account-deleted grants as muted and non-actionable", async () => {
@@ -93,7 +109,7 @@ describe("AdminGrants", () => {
     expect(screen.getByTitle("refund BANK-2").textContent).toContain(
       "revoked 3 Sept 2026",
     );
-    fireEvent.click(screen.getByRole("button", { name: "New grant" }));
+    fireEvent.click(screen.getByRole("button", { name: "New access grant" }));
     expect(await screen.findByText("new grant form")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Close form" }));
     expect(screen.queryByText("new grant form")).toBeNull();
@@ -111,6 +127,42 @@ describe("AdminGrants", () => {
     await waitFor(() =>
       expect(api.revokeGrant).toHaveBeenCalledWith("g1", "refunded"),
     );
+    prompt.mockRestore();
+  });
+
+  it("extends a live grant with an audited reason", async () => {
+    api.grants.mockResolvedValue([baseGrant]);
+    const prompt = vi
+      .spyOn(window, "prompt")
+      .mockReturnValueOnce("3")
+      .mockReturnValueOnce("Friends and family extension");
+    renderPage(<AdminGrants />);
+    await screen.findByText("buyer@example.com");
+    fireEvent.click(screen.getByRole("button", { name: "Extend" }));
+    await waitFor(() =>
+      expect(api.extendGrant).toHaveBeenCalledWith(
+        "g1",
+        3,
+        "Friends and family extension",
+      ),
+    );
+    prompt.mockRestore();
+  });
+
+  it("does not extend when the month or reason prompt is invalid", async () => {
+    api.grants.mockResolvedValue([baseGrant]);
+    const prompt = vi.spyOn(window, "prompt").mockReturnValueOnce("0");
+    const view = renderPage(<AdminGrants />);
+    await screen.findByText("buyer@example.com");
+    fireEvent.click(screen.getByRole("button", { name: "Extend" }));
+    expect(api.extendGrant).not.toHaveBeenCalled();
+
+    view.unmount();
+    prompt.mockReset().mockReturnValueOnce("2").mockReturnValueOnce(null);
+    renderPage(<AdminGrants />);
+    await screen.findByText("buyer@example.com");
+    fireEvent.click(screen.getByRole("button", { name: "Extend" }));
+    expect(api.extendGrant).not.toHaveBeenCalled();
     prompt.mockRestore();
   });
 

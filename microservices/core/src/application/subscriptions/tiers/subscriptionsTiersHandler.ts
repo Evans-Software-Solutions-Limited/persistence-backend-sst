@@ -4,6 +4,7 @@ import {
   SubscriptionTiersRepository,
   type SubscriptionTierRow,
 } from "../../repositories/subscriptionTiersRepository";
+import { FoundingGrantRepository } from "../../repositories/foundingGrantRepository";
 
 /**
  * GET /subscription-tiers — public read of the active tier catalog.
@@ -105,14 +106,29 @@ export function mapTierRowToWire(
   };
 }
 
-export const subscriptionsTiersHandler = new Elysia().get(
-  "/subscription-tiers",
-  async (): Promise<{ data: SubscriptionTierWire[] }> => {
-    const repo = new SubscriptionTiersRepository();
-    const rows = await repo.listActive();
-    return { data: rows.map(mapTierRowToWire) };
-  },
-);
+export const subscriptionsTiersHandler = new Elysia()
+  .get(
+    "/subscription-tiers",
+    async (): Promise<{ data: SubscriptionTierWire[] }> => {
+      const repo = new SubscriptionTiersRepository();
+      const rows = await repo.listActive();
+      return { data: rows.map(mapTierRowToWire) };
+    },
+  )
+  .get("/founding/availability", async ({ set }) => {
+    const repo = new FoundingGrantRepository();
+    const [consumer, coach] = await Promise.all([
+      repo.seatsForPool("consumer"),
+      repo.seatsForPool("coach"),
+    ]);
+    set.headers["cache-control"] = "public, max-age=30";
+    return {
+      data: {
+        consumer: { used: consumer.used, cap: consumer.cap },
+        coach: { used: coach.used, cap: coach.cap },
+      },
+    };
+  });
 
 // Export pure internals for direct unit tests.
 export const __internals = {

@@ -151,6 +151,53 @@ export function SessionSummaryContainer() {
 
   const workoutsThisMonth = serverData?.workoutsThisMonth ?? null;
   const recordsHit = displayPersonalRecords.length;
+  const hasCardioActivity = useMemo(
+    () =>
+      (snapshot?.exercises ?? []).some(
+        (exercise) =>
+          exercise.category === "cardio" &&
+          exercise.sets.some(
+            (set) =>
+              set.isCompleted &&
+              ((set.durationSeconds ?? 0) > 0 || (set.distanceMeters ?? 0) > 0),
+          ),
+      ),
+    [snapshot?.exercises],
+  );
+  const totalDistanceMeters = useMemo(
+    () =>
+      (snapshot?.exercises ?? []).reduce(
+        (sessionTotal, exercise) =>
+          exercise.category === "cardio"
+            ? sessionTotal +
+              exercise.sets.reduce(
+                (exerciseTotal, set) =>
+                  exerciseTotal +
+                  (set.isCompleted ? (set.distanceMeters ?? 0) : 0),
+                0,
+              )
+            : sessionTotal,
+        0,
+      ),
+    [snapshot?.exercises],
+  );
+  const totalActivityDurationSeconds = useMemo(
+    () =>
+      (snapshot?.exercises ?? []).reduce(
+        (sessionTotal, exercise) =>
+          exercise.category === "cardio"
+            ? sessionTotal +
+              exercise.sets.reduce(
+                (exerciseTotal, set) =>
+                  exerciseTotal +
+                  (set.isCompleted ? (set.durationSeconds ?? 0) : 0),
+                0,
+              )
+            : sessionTotal,
+        0,
+      ),
+    [snapshot?.exercises],
+  );
 
   const onContinue = useCallback(() => {
     if (!userId) return;
@@ -176,6 +223,13 @@ export function SessionSummaryContainer() {
       recordsHit={recordsHit}
       workoutsThisMonth={workoutsThisMonth}
       weightUnit={weightUnit}
+      durationSeconds={
+        hasCardioActivity ? totalActivityDurationSeconds : localSummary.duration
+      }
+      totalDistanceMeters={totalDistanceMeters}
+      hasCardioActivity={hasCardioActivity}
+      activityEnvironment={snapshot.activityEnvironment ?? null}
+      locationName={snapshot.locationName ?? null}
       onSave={onContinue}
       onClose={onClose}
     />

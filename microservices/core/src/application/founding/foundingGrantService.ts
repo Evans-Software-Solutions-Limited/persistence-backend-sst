@@ -27,7 +27,7 @@ import {
  * Founding-grant orchestration (BACKEND_BRIEF § 5, extended for the
  * "take an email at the stand and invite them" flow):
  *
- *   admin records payment ──► account exists?  ──yes──► subscription row now
+ *   admin creates grant ──► account exists?  ──yes──► subscription row now
  *                                   │                    + invite/"you're in" email
  *                                   └──no──► PENDING grant keyed by email
  *                                             + invite email
@@ -35,18 +35,19 @@ import {
  *                                             first GET /subscriptions/me
  *                                             ──► applyPendingForUser() writes the row
  *
- * A referral code given at grant time attaches (or replaces an unlocked)
- * attribution and locks it — the grant IS the paid conversion (BRIEF D5).
- * `allowSupersedeStoreSubscription` is only for an admin who has told the
- * buyer their store subscription will be superseded and understands that a
- * later RevenueCat sync can supersede the founding row again.
+ * A referral code given at grant time records attribution but is not a paid
+ * conversion and therefore remains unlocked until a native-store purchase.
+ * A live native-store subscription always wins. Administrative grants wait
+ * until it expires and never cancel or displace paid IAP access.
  */
 
 export type GrantError =
   | { code: "invalid_tier" }
   | { code: "tier_missing" }
   | { code: "invalid_email" }
-  | { code: "payment_reference_required" }
+  | { code: "invalid_months" }
+  | { code: "invalid_contribution" }
+  | { code: "contribution_reference_required" }
   | { code: "user_not_found" }
   | { code: "account_pending_deletion" }
   | { code: "coach_demotion" }
@@ -63,15 +64,16 @@ export interface GrantRequest {
   email?: string;
   userId?: string;
   tierName: string;
-  amountMinor?: number;
-  currency?: string;
-  paymentMethod: FoundingPaymentMethod;
-  paymentReference?: string | null;
-  paidAt?: Date;
+  grantKind?: "founding" | "complimentary";
+  months?: number;
+  contributionAmountMinor?: number;
+  contributionCurrency?: string;
+  contributionMethod?: FoundingPaymentMethod | null;
+  contributionReference?: string | null;
+  contributedAt?: Date;
   referralCode?: string | null;
   notes?: string | null;
   allowRoleChange?: boolean;
-  allowSupersedeStoreSubscription?: boolean;
   sendInvite?: boolean;
 }
 
@@ -81,10 +83,12 @@ export interface GrantResult {
   email: string;
   userId: string | null;
   tierName: FoundingTierName;
+  grantKind: "founding" | "complimentary";
+  months: number;
   expiresAt: Date | null;
   invited: boolean;
   inviteError: string | null;
-  seats: { pool: string; used: number; cap: number };
+  seats: { pool: string; used: number; cap: number } | null;
   referral: { code: string; label: string } | null;
 }
 
@@ -148,17 +152,43 @@ export class FoundingGrantService {
   ): Promise<
     { ok: true; result: GrantResult } | { ok: false; error: GrantError }
   > {
-    const paymentReference = req.paymentReference?.trim() || null;
-    if (
-      (req.paymentMethod === "bank_transfer" ||
-        req.paymentMethod === "stripe_link") &&
-      !paymentReference
-    ) {
-      return { ok: false, error: { code: "payment_reference_required" } };
-    }
     if (!isFoundingTier(req.tierName))
       return { ok: false, error: { code: "invalid_tier" } };
     const tierName: FoundingTierName = req.tierName;
+    const offer = FOUNDING_OFFERS[tierName];
+    const grantKind = req.grantKind ?? "founding";
+    const months = req.months ?? offer.months;
+    if (!Number.isInteger(months) || (months ?? 0) < 1 || (months ?? 0) > 120) {
+      return { ok: false, error: { code: "invalid_months" } };
+    }
+    const contributionAmountMinor = req.contributionAmountMinor ?? 0;
+    const contributionMethod = req.contributionMethod ?? null;
+    const contributionCurrency = (
+      req.contributionCurrency ?? "GBP"
+    ).toUpperCase();
+    const paymentReference = req.contributionReference?.trim() || null;
+    const contributedAt =
+      req.contributedAt ??
+      (contributionAmountMinor > 0 ? new Date() : undefined);
+    if (
+      !Number.isInteger(contributionAmountMinor) ||
+      contributionAmountMinor < 0 ||
+      !/^[A-Z]{3}$/.test(contributionCurrency) ||
+      (contributionAmountMinor === 0 &&
+        (contributionMethod !== null ||
+          paymentReference !== null ||
+          contributedAt)) ||
+      (contributionAmountMinor > 0 && (!contributionMethod || !contributedAt))
+    ) {
+      return { ok: false, error: { code: "invalid_contribution" } };
+    }
+    if (
+      (contributionMethod === "bank_transfer" ||
+        contributionMethod === "stripe_link") &&
+      !paymentReference
+    ) {
+      return { ok: false, error: { code: "contribution_reference_required" } };
+    }
     if (!(await this.grants.tierExists(tierName))) {
       return { ok: false, error: { code: "tier_missing" } };
     }
@@ -186,7 +216,7 @@ export class FoundingGrantService {
     if (profile) {
       const storeSubscription =
         await this.subscriptions.findLiveStoreSubscription(profile.id);
-      if (storeSubscription && !req.allowSupersedeStoreSubscription) {
+      if (storeSubscription) {
         return {
           ok: false,
           error: {
@@ -233,7 +263,6 @@ export class FoundingGrantService {
       referralOut = { code: code.displayCode, label: code.label };
     }
 
-    const offer = FOUNDING_OFFERS[tierName];
     const grantId = randomUUID();
     let outcome: CreateGrantOutcome;
     try {
@@ -243,17 +272,16 @@ export class FoundingGrantService {
           userId: profile?.id ?? null,
           email,
           tierName,
-          months: offer.months,
-          amountMinor: req.amountMinor ?? offer.priceMinor,
-          currency: req.currency ?? "GBP",
-          paymentMethod: req.paymentMethod,
+          months: months!,
+          grantKind,
+          amountMinor: contributionAmountMinor,
+          currency: contributionCurrency,
+          paymentMethod: contributionMethod,
           paymentReference,
-          paidAt: req.paidAt ?? new Date(),
+          paidAt: contributedAt ?? null,
           referralCodeId,
           grantedBy: actorId,
           notes: req.notes ?? null,
-          allowSupersedeStoreSubscription:
-            req.allowSupersedeStoreSubscription === true,
         },
         offer.pool,
         async ({ transaction, grant }) => {
@@ -278,7 +306,6 @@ export class FoundingGrantService {
               ) {
                 throw new ReferralClaimRejected("locked_elsewhere");
               }
-              await this.referrals.lock(profile.id, transaction);
             } else if (
               !(await this.referrals.isCodeEligibleForPendingGrant(
                 referralCodeId,
@@ -288,10 +315,6 @@ export class FoundingGrantService {
             ) {
               throw new ReferralClaimRejected("invalid");
             }
-          } else if (profile) {
-            // A pre-existing unlocked attribution becomes final when this paid
-            // grant is recorded, even if the admin did not re-enter its code.
-            await this.referrals.lock(profile.id, transaction);
           }
 
           await this.audit.record(
@@ -304,9 +327,11 @@ export class FoundingGrantService {
                 email,
                 userId: profile?.id ?? null,
                 tierName,
-                amountMinor: grant.amountMinor,
-                paymentMethod: req.paymentMethod,
-                paymentReference,
+                grantKind,
+                months,
+                contributionAmountMinor: grant.amountMinor,
+                contributionMethod,
+                contributionReference: paymentReference,
                 referralCodeId,
                 pending: !profile,
               },
@@ -351,7 +376,8 @@ export class FoundingGrantService {
         grantId,
         email,
         tierName,
-        months: offer.months,
+        grantKind,
+        months: months!,
         expiresAt: outcome.subscriptionExpiresAt,
         hasAccount: profile !== null,
       });
@@ -367,6 +393,8 @@ export class FoundingGrantService {
         email,
         userId: profile?.id ?? null,
         tierName,
+        grantKind,
+        months: months!,
         expiresAt: outcome.subscriptionExpiresAt,
         invited,
         inviteError,
@@ -398,6 +426,7 @@ export class FoundingGrantService {
         grantId,
         email: grant.email,
         tierName: grant.tierName as FoundingTierName,
+        grantKind: grant.grantKind as "founding" | "complimentary",
         months: grant.months,
         expiresAt: row?.subscriptionExpiresAt ?? null,
         hasAccount: grant.userId !== null,
@@ -441,6 +470,7 @@ export class FoundingGrantService {
       grantId: string;
       email: string;
       tierName: FoundingTierName;
+      grantKind: "founding" | "complimentary";
       months: number;
       expiresAt: Date | null;
       hasAccount: boolean;
@@ -449,6 +479,7 @@ export class FoundingGrantService {
   ): Promise<{ ok: true } | { ok: false; error: string }> {
     const mail = buildFoundingInviteEmail({
       tierName: input.tierName,
+      grantKind: input.grantKind,
       months: input.months,
       expiresAt: input.expiresAt,
       hasAccount: input.hasAccount,
@@ -575,9 +606,6 @@ export class FoundingGrantService {
                 }
               }
             }
-            if (referralApplication !== "locked_conflict") {
-              await this.referrals.lock(userId, transaction);
-            }
             await this.audit.record(
               {
                 actorId: grant.grantedBy,
@@ -651,5 +679,65 @@ export class FoundingGrantService {
     );
     if (!revoked) return { ok: false, error: "already_revoked" };
     return { ok: true };
+  }
+
+  async extend(
+    grantId: string,
+    additionalMonths: number,
+    reason: string,
+    actorId: string,
+  ): Promise<
+    | {
+        ok: true;
+        result: { id: string; months: number; expiresAt: Date | null };
+      }
+    | {
+        ok: false;
+        error:
+          | "invalid_months"
+          | "not_found"
+          | "revoked"
+          | "account_deleted"
+          | "active_store_subscription";
+      }
+  > {
+    if (
+      !Number.isInteger(additionalMonths) ||
+      additionalMonths < 1 ||
+      additionalMonths > 120
+    ) {
+      return { ok: false, error: "invalid_months" };
+    }
+    const outcome = await this.grants.extend(
+      grantId,
+      additionalMonths,
+      async (before, after, expiresAt, transaction) => {
+        await this.audit.record(
+          {
+            actorId,
+            action: "founding_grant.extend",
+            entityType: "founding_grant",
+            entityId: grantId,
+            before: { months: before.months },
+            after: {
+              months: after.months,
+              additionalMonths,
+              expiresAt: expiresAt?.toISOString() ?? null,
+            },
+            reason,
+          },
+          transaction,
+        );
+      },
+    );
+    if (outcome.kind !== "extended") return { ok: false, error: outcome.kind };
+    return {
+      ok: true,
+      result: {
+        id: grantId,
+        months: outcome.grant.months,
+        expiresAt: outcome.expiresAt,
+      },
+    };
   }
 }

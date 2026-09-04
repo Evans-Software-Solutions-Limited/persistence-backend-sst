@@ -2,6 +2,7 @@ import type { DashboardPayload } from "@/domain/models/dashboard";
 import type {
   CreateExerciseInput,
   Exercise,
+  ExerciseCategory,
   ExerciseFilters,
 } from "@/domain/models/exercise";
 import type { ExercisePerformanceSummary } from "@/domain/models/exercisePerformance";
@@ -621,7 +622,10 @@ export interface ApiPort extends ReferralsPort {
   getWeeklyVolume(window?: string): Promise<Result<WeeklyVolume, ApiError>>;
   /** `window` ∈ month|quarter|year|lifetime (default month). */
   getVolumeStats(window?: string): Promise<Result<VolumeStats, ApiError>>;
-  getRecentPRs(limit?: number): Promise<Result<PersonalRecord[], ApiError>>;
+  getRecentPRs(
+    limit?: number,
+    exerciseId?: string,
+  ): Promise<Result<PersonalRecord[], ApiError>>;
   getBodyTrend(window?: string): Promise<Result<BodyTrendPoint[], ApiError>>;
   getAchievements(): Promise<Result<Achievement[], ApiError>>;
   /** Active streak rows for the You/Progress StreakHero. */
@@ -2115,6 +2119,8 @@ export type ApiSession = {
   startedAt: string;
   completedAt: string | null;
   totalDurationSeconds: number | null;
+  activityEnvironment?: "indoor" | "outdoor" | null;
+  locationName?: string | null;
   userNotes: string | null;
   createdAt: string;
   updatedAt: string;
@@ -2350,12 +2356,15 @@ export type RecordSessionInput = {
   completedAt?: string | null;
   status: "completed" | "cancelled";
   totalDurationSeconds?: number | null;
+  activityEnvironment?: "indoor" | "outdoor" | null;
+  locationName?: string | null;
   userNotes?: string | null;
   sessionRating?: number | null;
   overallRpe?: number | null;
   difficultyRanking?: number | null;
   exercises: {
     exerciseId: string;
+    category?: ExerciseCategory | null;
     sortOrder: number;
     supersetGroup?: number | null;
     isSubstituted?: boolean;

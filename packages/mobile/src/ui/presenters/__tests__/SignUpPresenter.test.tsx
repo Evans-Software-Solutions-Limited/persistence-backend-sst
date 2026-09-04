@@ -32,12 +32,34 @@ describe("SignUpPresenter", () => {
   });
 
   it("renders email, password, and confirm password inputs", () => {
-    const { getByTestId } = renderWithTheme(
+    const { getByTestId, getAllByLabelText } = renderWithTheme(
       <SignUpPresenter {...defaultProps} />,
     );
     expect(getByTestId("email")).toBeTruthy();
     expect(getByTestId("password")).toBeTruthy();
     expect(getByTestId("confirm-password")).toBeTruthy();
+    expect(getAllByLabelText("Show password")).toHaveLength(2);
+  });
+
+  it("shows live confirmation when the password values match", () => {
+    const { getByText, queryByText, rerender } = renderWithTheme(
+      <SignUpPresenter
+        {...defaultProps}
+        password="correct horse"
+        confirmPassword="correct horse"
+      />,
+    );
+    expect(getByText("Passwords match")).toBeTruthy();
+
+    rerender(
+      <SignUpPresenter
+        {...defaultProps}
+        password="correct horse"
+        confirmPassword="correct house"
+      />,
+    );
+    expect(queryByText("Passwords match")).toBeNull();
+    expect(getByText("Passwords do not match")).toBeTruthy();
   });
 
   it("renders create account button", () => {

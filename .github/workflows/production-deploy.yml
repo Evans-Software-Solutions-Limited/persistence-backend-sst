@@ -219,5 +219,4 @@ jobs:
           VITE_META_PIXEL_ID: ${{ secrets.VITE_META_PIXEL_ID }}
           VITE_TURNSTILE_SITE_KEY: ${{ secrets.VITE_TURNSTILE_SITE_KEY }}
           VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
-          VITE_FOUNDING_SEATS_USED: ${{ vars.VITE_FOUNDING_SEATS_USED }}
         run: bunx sst deploy --stage production

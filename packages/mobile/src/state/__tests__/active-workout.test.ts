@@ -246,6 +246,19 @@ describe("pointerFromSession", () => {
     expect(p.withClient).toEqual({ id: "c1", initials: "AB", name: "Alex B" });
     expect(p.retroactive).toBe(true);
   });
+
+  it("recovers retrospective mode from persisted session metadata", () => {
+    const p = pointerFromSession({
+      id: "s-retro",
+      workoutId: null,
+      name: "Past workout",
+      startedAt: "2026-06-06T11:00:00Z",
+      retrospectiveCompletedAt: "2026-06-06T12:00:00Z",
+      retrospectiveDurationSeconds: 3_600,
+    });
+
+    expect(p.retroactive).toBe(true);
+  });
 });
 
 describe("activeWorkoutElapsedSeconds", () => {

@@ -5,7 +5,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  AdminApiError,
   adminApi,
   formatDate,
   formatMinor,
@@ -16,30 +15,22 @@ import {
 } from "../adminApi";
 import { ErrorState, selectClass } from "../ui";
 
-/**
- * The at-the-stand flow (Brad, 2026-09-03): email → tier → payment → Grant.
- * Live lookup on the email shows whether the account exists (so we know if
- * this becomes an ACTIVE grant or a PENDING one applied at sign-up), its role
- * (coach → consumer-tier demotion warning), and any existing subscription.
- */
-
 const METHOD_LABEL: Record<PaymentMethod, string> = {
   bank_transfer: "Bank transfer",
   stripe_link: "Stripe payment link",
   card_in_person: "Card in person",
   other: "Other",
 };
-
 const COACH_ROLES = new Set(["personal_trainer", "physiotherapist"]);
 const CONSUMER_TIERS = new Set<FoundingTierName>(["premium", "premium_plus"]);
 
 function useDebounced<T>(value: T, ms: number): T {
-  const [v, setV] = useState(value);
+  const [debounced, setDebounced] = useState(value);
   useEffect(() => {
-    const t = setTimeout(() => setV(value), ms);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => setDebounced(value), ms);
+    return () => clearTimeout(timer);
   }, [value, ms]);
-  return v;
+  return debounced;
 }
 
 export function NewGrantForm({
@@ -51,31 +42,27 @@ export function NewGrantForm({
   const catalogue = useQuery({
     queryKey: ["admin", "catalogue"],
     queryFn: adminApi.catalogue,
-    staleTime: Infinity,
   });
-
   const [email, setEmail] = useState("");
   const [tierName, setTierName] = useState<FoundingTierName>("premium");
-  // Amount shows the tier's list price until the admin edits it.
-  const [amountOverride, setAmountOverride] = useState<string | null>(null);
-  const [paymentMethod, setPaymentMethod] =
-    useState<PaymentMethod>("card_in_person");
-  const [paymentReference, setPaymentReference] = useState("");
-  const [paidAt, setPaidAt] = useState(() =>
+  const [grantKind, setGrantKind] = useState<"founding" | "complimentary">(
+    "founding",
+  );
+  const [months, setMonths] = useState(6);
+  const [hasContribution, setHasContribution] = useState(false);
+  const [contributionAmount, setContributionAmount] = useState("");
+  const [contributionMethod, setContributionMethod] =
+    useState<PaymentMethod>("other");
+  const [contributionReference, setContributionReference] = useState("");
+  const [contributedAt, setContributedAt] = useState(() =>
     new Date().toISOString().slice(0, 10),
   );
   const [referralCode, setReferralCode] = useState("");
   const [notes, setNotes] = useState("");
   const [sendInvite, setSendInvite] = useState(true);
   const [allowRoleChange, setAllowRoleChange] = useState(false);
-  const [allowSupersedeStoreSubscription, setAllowSupersedeStoreSubscription] =
-    useState(false);
   const [confirming, setConfirming] = useState(false);
   const [result, setResult] = useState<GrantResult | null>(null);
-
-  const offer = catalogue.data?.offers[tierName];
-  const amount =
-    amountOverride ?? (offer ? (offer.priceMinor / 100).toFixed(2) : "");
 
   const debouncedEmail = useDebounced(email.trim().toLowerCase(), 400);
   const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(debouncedEmail);
@@ -85,63 +72,56 @@ export function NewGrantForm({
     enabled: emailValid,
     staleTime: 10_000,
   });
-
   const account = lookup.data?.account ?? null;
-  const isCoach = account ? COACH_ROLES.has(account.role ?? "") : false;
-  const demotionRisk = isCoach && CONSUMER_TIERS.has(tierName);
+  const demotionRisk =
+    !!account &&
+    COACH_ROLES.has(account.role ?? "") &&
+    CONSUMER_TIERS.has(tierName);
   const storeSubscriptionRisk = account?.subscription?.fromStore === true;
-  const paymentReferenceRequired =
-    paymentMethod === "bank_transfer" || paymentMethod === "stripe_link";
   const alreadyHasGrant =
-    (account?.foundingGrants.some((g) => !g.revokedAt) ?? false) ||
+    (account?.foundingGrants.some((grant) => !grant.revokedAt) ?? false) ||
     (lookup.data?.pendingGrants.length ?? 0) > 0;
+  const contributionAmountMinor = useMemo(
+    () => Math.round(Number.parseFloat(contributionAmount || "0") * 100),
+    [contributionAmount],
+  );
+  const contributionReferenceRequired =
+    hasContribution &&
+    (contributionMethod === "bank_transfer" ||
+      contributionMethod === "stripe_link");
 
   const create = useMutation({
     mutationFn: (input: NewGrantInput) => adminApi.createGrant(input),
-    onSuccess: (res) => {
-      setResult(res);
+    onSuccess: (value) => {
+      setResult(value);
       setConfirming(false);
       void qc.invalidateQueries({ queryKey: ["admin"] });
-      onDone?.(res);
+      onDone?.(value);
     },
   });
 
-  const amountMinor = useMemo(
-    () => Math.round(Number.parseFloat(amount || "0") * 100),
-    [amount],
-  );
-
-  function submit(e: FormEvent) {
-    e.preventDefault();
+  function submit(event: FormEvent) {
+    event.preventDefault();
     if (!confirming) return setConfirming(true);
     create.mutate({
       email: email.trim().toLowerCase(),
       tierName,
-      amountMinor: Number.isFinite(amountMinor) ? amountMinor : undefined,
-      paymentMethod,
-      paymentReference: paymentReference.trim() || null,
-      paidAt: paidAt
-        ? new Date(`${paidAt}T12:00:00Z`).toISOString()
-        : undefined,
+      grantKind,
+      months,
+      ...(hasContribution
+        ? {
+            contributionAmountMinor,
+            contributionCurrency: "GBP",
+            contributionMethod,
+            contributionReference: contributionReference.trim() || null,
+            contributedAt: new Date(`${contributedAt}T12:00:00Z`).toISOString(),
+          }
+        : {}),
       referralCode: referralCode.trim() || null,
       notes: notes.trim() || null,
       allowRoleChange,
-      allowSupersedeStoreSubscription,
       sendInvite,
     });
-  }
-
-  function reset() {
-    setEmail("");
-    setAmountOverride(null);
-    setPaymentReference("");
-    setReferralCode("");
-    setNotes("");
-    setAllowRoleChange(false);
-    setAllowSupersedeStoreSubscription(false);
-    setConfirming(false);
-    setResult(null);
-    create.reset();
   }
 
   if (result) {
@@ -158,42 +138,34 @@ export function NewGrantForm({
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
           <dt className="text-muted-foreground">Email</dt>
           <dd>{result.email}</dd>
+          <dt className="text-muted-foreground">Grant</dt>
+          <dd>
+            {result.grantKind === "founding"
+              ? "Founding place"
+              : "Complimentary"}
+          </dd>
           <dt className="text-muted-foreground">Tier</dt>
           <dd>
             {catalogue.data?.offers[result.tierName]?.label ?? result.tierName}
           </dd>
+          <dt className="text-muted-foreground">Duration</dt>
+          <dd>{result.months} months</dd>
           <dt className="text-muted-foreground">Access until</dt>
           <dd>
             {result.expiresAt
               ? formatDate(result.expiresAt)
-              : "6 months from their first sign-in"}
+              : `${result.months} months from first sign-in`}
           </dd>
-          <dt className="text-muted-foreground">Invite email</dt>
-          <dd>
-            {result.invited
-              ? "sent"
-              : `not sent${result.inviteError ? ` — ${result.inviteError}` : ""}`}
-          </dd>
-          <dt className="text-muted-foreground">Places left</dt>
-          <dd className="tabular-nums">
-            {result.seats.cap - result.seats.used} of {result.seats.cap}
-          </dd>
-          {result.referral ? (
+          {result.seats ? (
             <>
-              <dt className="text-muted-foreground">Attributed to</dt>
+              <dt className="text-muted-foreground">Founding places left</dt>
               <dd>
-                {result.referral.label} ({result.referral.code})
+                {result.seats.cap - result.seats.used} of {result.seats.cap}
               </dd>
             </>
           ) : null}
         </dl>
-        {result.status === "pending" ? (
-          <p className="text-xs text-muted-foreground">
-            Tell them: download the app and sign up with{" "}
-            <strong>{result.email}</strong> — nothing to enter.
-          </p>
-        ) : null}
-        <Button onClick={reset}>Next person</Button>
+        <Button onClick={() => setResult(null)}>Next person</Button>
       </div>
     );
   }
@@ -202,24 +174,18 @@ export function NewGrantForm({
     <form
       onSubmit={submit}
       className="space-y-4 rounded-xl border border-border bg-card p-4"
-      aria-label="New founding grant"
+      aria-label="New access grant"
     >
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-1.5 sm:col-span-2">
-          <Label htmlFor="grant-email">
-            Their email (the one they'll use in the app)
-          </Label>
+          <Label htmlFor="grant-email">Recipient email used in the app</Label>
           <Input
             id="grant-email"
             type="email"
-            inputMode="email"
-            autoComplete="off"
-            autoCapitalize="none"
             required
             value={email}
             onChange={(e) => {
               setEmail(e.target.value);
-              setAllowSupersedeStoreSubscription(false);
               setConfirming(false);
             }}
           />
@@ -232,151 +198,175 @@ export function NewGrantForm({
               : lookup.isPending
                 ? "Checking…"
                 : account
-                  ? `Account exists (${account.role ?? "user"})${
-                      account.subscription
-                        ? ` · currently ${account.subscription.tierName}`
-                        : ""
-                    }${account.attribution ? ` · referral ${account.attribution.code}` : ""} — access switches on immediately.`
-                  : "No account yet — they'll get access the moment they sign up with this email."}
+                  ? `Account exists${account.subscription ? ` · currently ${account.subscription.tierName}` : ""}. Access switches on immediately.`
+                  : "No account yet — access applies when they sign up with this email."}
           </p>
           {alreadyHasGrant ? (
             <p role="alert" className="text-xs text-destructive">
-              This email already has a live founding grant.
+              This email already has a live grant. Extend it from the grants
+              table instead.
             </p>
-          ) : null}
-          {storeSubscriptionRisk ? (
-            <label className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs">
-              <input
-                type="checkbox"
-                checked={allowSupersedeStoreSubscription}
-                onChange={(e) =>
-                  setAllowSupersedeStoreSubscription(e.target.checked)
-                }
-              />
-              <span>
-                This account has a live App Store subscription. A founding grant
-                can be undone by the next store sync. Tick to confirm the
-                override, or grant after the subscription expires.
-              </span>
-            </label>
           ) : null}
         </div>
 
-        <fieldset className="space-y-1.5 sm:col-span-2">
-          <legend className="text-sm font-medium">Tier</legend>
-          <div className="grid gap-2 sm:grid-cols-3">
-            {(
-              Object.keys(catalogue.data?.offers ?? {}) as FoundingTierName[]
-            ).map((t) => {
-              const o = catalogue.data!.offers[t];
-              const active = t === tierName;
-              return (
-                <label
-                  key={t}
-                  className={`cursor-pointer rounded-lg border p-3 text-sm ${
-                    active
-                      ? "border-primary bg-primary/10"
-                      : "border-border hover:bg-muted/50"
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="tier"
-                    value={t}
-                    checked={active}
-                    onChange={() => {
-                      setTierName(t);
-                      setConfirming(false);
-                    }}
-                    className="sr-only"
-                  />
-                  <div className="font-medium">{o.label}</div>
-                  <div className="text-muted-foreground">
-                    {formatMinor(o.priceMinor)} · {o.months} months
-                  </div>
-                </label>
-              );
-            })}
-          </div>
-          {demotionRisk ? (
-            <label className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs">
+        <fieldset className="space-y-2 sm:col-span-2">
+          <legend className="text-sm font-medium">Grant type</legend>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <label className="rounded-lg border border-border p-3 text-sm">
               <input
-                type="checkbox"
-                checked={allowRoleChange}
-                onChange={(e) => setAllowRoleChange(e.target.checked)}
-              />
-              <span>
-                This is a coach account. A consumer tier switches it to a
-                regular user and it loses coach mode. Tick to do it anyway, or
-                pick Start Up Coach+.
+                type="radio"
+                name="kind"
+                checked={grantKind === "founding"}
+                onChange={() => setGrantKind("founding")}
+              />{" "}
+              <strong>Founding place</strong>
+              <span className="block text-muted-foreground">
+                Counts against campaign capacity.
               </span>
             </label>
-          ) : null}
+            <label className="rounded-lg border border-border p-3 text-sm">
+              <input
+                type="radio"
+                name="kind"
+                checked={grantKind === "complimentary"}
+                onChange={() => setGrantKind("complimentary")}
+              />{" "}
+              <strong>Complimentary</strong>
+              <span className="block text-muted-foreground">
+                Free access; no founding place used.
+              </span>
+            </label>
+          </div>
         </fieldset>
 
         <div className="space-y-1.5">
-          <Label htmlFor="grant-amount">Amount paid (£)</Label>
-          <Input
-            id="grant-amount"
-            type="number"
-            step="0.01"
-            min="0"
-            inputMode="decimal"
-            value={amount}
-            onChange={(e) => setAmountOverride(e.target.value)}
-          />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="grant-method">Paid by</Label>
+          <Label htmlFor="grant-tier">Tier</Label>
           <select
-            id="grant-method"
+            id="grant-tier"
             className={selectClass}
-            value={paymentMethod}
+            value={tierName}
             onChange={(e) => {
-              setPaymentMethod(e.target.value as PaymentMethod);
-              setConfirming(false);
+              const tier = e.target.value as FoundingTierName;
+              setTierName(tier);
+              setMonths(catalogue.data?.offers[tier]?.months ?? 6);
             }}
           >
             {(
-              catalogue.data?.paymentMethods ??
-              (Object.keys(METHOD_LABEL) as PaymentMethod[])
-            ).map((m) => (
-              <option key={m} value={m}>
-                {METHOD_LABEL[m]}
+              Object.keys(catalogue.data?.offers ?? {}) as FoundingTierName[]
+            ).map((tier) => (
+              <option key={tier} value={tier}>
+                {catalogue.data!.offers[tier].label}
               </option>
             ))}
           </select>
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="grant-ref">
-            Payment reference (
-            {paymentReferenceRequired ? "required" : "optional"})
-          </Label>
+          <Label htmlFor="grant-months">Access length (months)</Label>
           <Input
-            id="grant-ref"
-            required={paymentReferenceRequired}
-            value={paymentReference}
-            onChange={(e) => setPaymentReference(e.target.value)}
-            placeholder="Bank ref / Stripe id"
+            id="grant-months"
+            type="number"
+            min="1"
+            max="120"
+            required
+            value={months}
+            onChange={(e) => setMonths(Number(e.target.value))}
           />
         </div>
+
+        {demotionRisk ? (
+          <label className="sm:col-span-2 text-xs">
+            <input
+              type="checkbox"
+              checked={allowRoleChange}
+              onChange={(e) => setAllowRoleChange(e.target.checked)}
+            />{" "}
+            This consumer tier changes the coach account role. Continue anyway.
+          </label>
+        ) : null}
+        {storeSubscriptionRisk ? (
+          <p className="sm:col-span-2 text-xs text-destructive">
+            This account has live App Store or Play Store access. It cannot be
+            displaced by an admin grant; grant access after it expires.
+          </p>
+        ) : null}
+
+        <label className="flex items-center gap-2 text-sm sm:col-span-2">
+          <input
+            type="checkbox"
+            checked={hasContribution}
+            onChange={(e) => setHasContribution(e.target.checked)}
+          />{" "}
+          Record a separate crowdfunding contribution
+        </label>
+        {hasContribution ? (
+          <>
+            <p className="sm:col-span-2 text-xs text-muted-foreground">
+              Optional accounting evidence only. It does not buy, determine, or
+              extend access.
+            </p>
+            <div className="space-y-1.5">
+              <Label htmlFor="contribution-amount">Contribution (£)</Label>
+              <Input
+                id="contribution-amount"
+                type="number"
+                min="0.01"
+                step="0.01"
+                required
+                value={contributionAmount}
+                onChange={(e) => setContributionAmount(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="contribution-method">Method</Label>
+              <select
+                id="contribution-method"
+                className={selectClass}
+                value={contributionMethod}
+                onChange={(e) =>
+                  setContributionMethod(e.target.value as PaymentMethod)
+                }
+              >
+                {(
+                  catalogue.data?.contributionMethods ??
+                  (Object.keys(METHOD_LABEL) as PaymentMethod[])
+                ).map((method) => (
+                  <option key={method} value={method}>
+                    {METHOD_LABEL[method]}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="contribution-ref">
+                Reference (
+                {contributionReferenceRequired ? "required" : "optional"})
+              </Label>
+              <Input
+                id="contribution-ref"
+                required={contributionReferenceRequired}
+                value={contributionReference}
+                onChange={(e) => setContributionReference(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="contributed-at">Contribution date</Label>
+              <Input
+                id="contributed-at"
+                type="date"
+                required
+                value={contributedAt}
+                onChange={(e) => setContributedAt(e.target.value)}
+              />
+            </div>
+          </>
+        ) : null}
+
         <div className="space-y-1.5">
-          <Label htmlFor="grant-paid">Paid on</Label>
-          <Input
-            id="grant-paid"
-            type="date"
-            value={paidAt}
-            onChange={(e) => setPaidAt(e.target.value)}
-          />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="grant-code">Referral / vendor code (optional)</Label>
+          <Label htmlFor="grant-code">Referral code (optional)</Label>
           <Input
             id="grant-code"
             value={referralCode}
             onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
-            placeholder="Which stand or partner sent them"
-            autoCapitalize="characters"
           />
         </div>
         <div className="space-y-1.5">
@@ -393,45 +383,31 @@ export function NewGrantForm({
             type="checkbox"
             checked={sendInvite}
             onChange={(e) => setSendInvite(e.target.checked)}
-          />
-          Send them the founding-member email now
+          />{" "}
+          Send the access email now
         </label>
       </div>
 
-      {create.isError ? (
-        <ErrorState
-          error={
-            create.error instanceof AdminApiError &&
-            create.error.body?.code === "coach_demotion"
-              ? new Error(
-                  "Coach account — tick the role-change box or choose a coach tier.",
-                )
-              : create.error instanceof AdminApiError &&
-                  create.error.body?.code === "active_store_subscription"
-                ? new Error(
-                    "Live App Store subscription — tick the store-subscription override or grant after it expires.",
-                  )
-                : create.error
-          }
-        />
-      ) : null}
-
-      <div className="flex flex-wrap items-center gap-3">
+      {create.isError ? <ErrorState error={create.error} /> : null}
+      <div className="flex gap-3">
         <Button
           type="submit"
           disabled={
             create.isPending ||
             !catalogue.data ||
             alreadyHasGrant ||
+            !Number.isInteger(months) ||
+            months < 1 ||
+            months > 120 ||
             (demotionRisk && !allowRoleChange) ||
-            (storeSubscriptionRisk && !allowSupersedeStoreSubscription)
+            storeSubscriptionRisk
           }
         >
           {create.isPending
             ? "Granting…"
             : confirming
-              ? `Confirm: ${offer?.label ?? tierName} for ${email.trim() || "…"} — ${formatMinor(Number.isFinite(amountMinor) ? amountMinor : 0)}`
-              : "Grant"}
+              ? `Confirm ${grantKind} ${catalogue.data?.offers[tierName]?.label ?? tierName} for ${months} months`
+              : "Grant access"}
         </Button>
         {confirming ? (
           <Button
@@ -443,6 +419,13 @@ export function NewGrantForm({
           </Button>
         ) : null}
       </div>
+      {hasContribution &&
+      Number.isFinite(contributionAmountMinor) &&
+      contributionAmountMinor > 0 ? (
+        <p className="text-xs text-muted-foreground">
+          Separate contribution recorded: {formatMinor(contributionAmountMinor)}
+        </p>
+      ) : null}
     </form>
   );
 }

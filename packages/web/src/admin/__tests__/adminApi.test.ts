@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AdminApiError, adminFetch, formatMinor } from "../adminApi";
+import { AdminApiError, adminApi, adminFetch, formatMinor } from "../adminApi";
 import { loadSession, saveSession, sessionFromTokens } from "../adminAuth";
 
 function jwt(payload: Record<string, unknown>): string {
@@ -74,5 +74,37 @@ describe("adminFetch", () => {
   it("formats pence as GBP", () => {
     expect(formatMinor(3000)).toBe("£30.00");
     expect(formatMinor(9900)).toBe("£99.00");
+  });
+
+  it("posts an audited grant extension", async () => {
+    saveSession(
+      sessionFromTokens(
+        jwt({ exp: farFuture, app_metadata: { admin: true } }),
+        "rt",
+      ),
+    );
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({ data: { id: "g1", months: 9, expiresAt: null } }),
+        ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      adminApi.extendGrant("g1", 3, "family grant"),
+    ).resolves.toEqual({
+      id: "g1",
+      months: 9,
+      expiresAt: null,
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/admin/founding-grants/g1/extend"),
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ additionalMonths: 3, reason: "family grant" }),
+      }),
+    );
+    vi.unstubAllGlobals();
   });
 });

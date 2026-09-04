@@ -190,6 +190,55 @@ describe("ExerciseEditorContainer", () => {
     ]);
   });
 
+  it("recomputes muscle arrays when the exercise category changes", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheExercises([buildExercise()]);
+
+    const { getByTestId } = renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <ExerciseEditorContainer />),
+    );
+
+    fireEvent.press(getByTestId("exercise-form-category-Cardio"));
+    await act(async () => {
+      fireEvent.press(getByTestId("exercise-editor-save"));
+    });
+
+    const [pending] = storage.getPendingMutations();
+    const payload = JSON.parse(pending.payload);
+    expect(payload.category).toBe("cardio");
+    expect(payload.primary_muscles).toEqual([]);
+    expect(payload.secondary_muscles).toEqual([]);
+  });
+
+  it("uses the displayed primary muscle when changing cardio to strength", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheExercises([
+      buildExercise({
+        category: "cardio",
+        primaryMuscleGroups: [],
+        secondaryMuscleGroups: [],
+        primaryMuscleGroupLabels: [],
+        secondaryMuscleGroupLabels: [],
+      }),
+    ]);
+
+    const { getByTestId } = renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <ExerciseEditorContainer />),
+    );
+
+    fireEvent.press(getByTestId("exercise-form-category-Strength"));
+    await act(async () => {
+      fireEvent.press(getByTestId("exercise-editor-save"));
+    });
+
+    const [pending] = storage.getPendingMutations();
+    const payload = JSON.parse(pending.payload);
+    expect(payload.category).toBe("strength");
+    expect(payload.primary_muscles).toEqual(["chest"]);
+  });
+
   it("preserves an expert difficulty when the Level picker is untouched", async () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();

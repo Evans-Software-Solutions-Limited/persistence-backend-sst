@@ -38,18 +38,27 @@ vi.mock("@persistence/api-utils/auth/supabaseAuth", async (importOriginal) => {
 
 const grantMock = vi.fn();
 const revokeMock = vi.fn();
+const extendMock = vi.fn();
+const resendMock = vi.fn();
 const listMock = vi.fn(async () => []);
+const seatsForPoolMock = vi.fn(async (pool: "consumer" | "coach") => ({
+  pool,
+  used: 0,
+  cap: pool === "consumer" ? 200 : 20,
+}));
 vi.mock("../../founding/foundingGrantService", () => ({
   FoundingGrantService: vi.fn().mockImplementation(() => ({
     grant: grantMock,
     revoke: revokeMock,
-    resendInvite: vi.fn(),
+    extend: extendMock,
+    resendInvite: resendMock,
   })),
 }));
 vi.mock("../../repositories/foundingGrantRepository", () => ({
-  FoundingGrantRepository: vi
-    .fn()
-    .mockImplementation(() => ({ list: listMock })),
+  FoundingGrantRepository: vi.fn().mockImplementation(() => ({
+    list: listMock,
+    seatsForPool: seatsForPoolMock,
+  })),
 }));
 
 function req(path: string, init: RequestInit & { auth?: string } = {}) {
@@ -92,6 +101,19 @@ describe("adminFoundingGrantsHandler", () => {
     expect(listMock).toHaveBeenCalledWith({ revoked: false, limit: undefined });
   });
 
+  it("returns the database-backed catalogue caps", async () => {
+    const { adminFoundingGrantsHandler } =
+      await import("../founding-grants/adminFoundingGrantsHandler");
+    const res = await adminFoundingGrantsHandler.handle(
+      req("/admin/founding-grants/catalogue", { auth: "Bearer admin" }),
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      data: { caps: { consumer: number; coach: number } };
+    };
+    expect(body.data.caps).toEqual({ consumer: 200, coach: 20 });
+  });
+
   it("creates a grant with the JWT subject as actor and returns 201", async () => {
     grantMock.mockResolvedValue({
       ok: true,
@@ -101,6 +123,8 @@ describe("adminFoundingGrantsHandler", () => {
         email: "a@b.co",
         userId: null,
         tierName: "premium",
+        grantKind: "founding",
+        months: 6,
         expiresAt: null,
         invited: true,
         inviteError: null,
@@ -117,8 +141,12 @@ describe("adminFoundingGrantsHandler", () => {
         body: JSON.stringify({
           email: "a@b.co",
           tierName: "premium",
-          paymentMethod: "bank_transfer",
-          paymentReference: "REF",
+          grantKind: "founding",
+          months: 6,
+          contributionAmountMinor: 3000,
+          contributionMethod: "bank_transfer",
+          contributionReference: "REF",
+          contributedAt: "2026-09-04T12:00:00.000Z",
         }),
       }),
     );
@@ -127,10 +155,11 @@ describe("adminFoundingGrantsHandler", () => {
       expect.objectContaining({
         email: "a@b.co",
         tierName: "premium",
-        paymentMethod: "bank_transfer",
+        grantKind: "founding",
+        months: 6,
+        contributionMethod: "bank_transfer",
         sendInvite: true,
         allowRoleChange: false,
-        allowSupersedeStoreSubscription: false,
       }),
       "admin-1",
     );
@@ -151,7 +180,8 @@ describe("adminFoundingGrantsHandler", () => {
     const valid = {
       email: "a@b.co",
       tierName: "premium",
-      paymentMethod: "other",
+      grantKind: "founding",
+      months: 6,
     };
 
     grantMock.mockResolvedValueOnce({
@@ -180,19 +210,19 @@ describe("adminFoundingGrantsHandler", () => {
     expect(store.status).toBe(409);
     expect(await store.json()).toEqual({
       message:
-        "This account has a live App Store subscription. A founding grant would be undone by the next store sync. Grant after it expires, or confirm the override.",
+        "This account has a live App Store or Play Store subscription. Grant access after the store subscription expires.",
       code: "active_store_subscription",
       subscription: { tierName: "premium", expiresAt: null },
     });
     grantMock.mockResolvedValueOnce({
       ok: false,
-      error: { code: "payment_reference_required" },
+      error: { code: "contribution_reference_required" },
     });
     const reference = await post(valid);
     expect(reference.status).toBe(400);
     expect(await reference.json()).toEqual({
-      message: "Enter the bank or Stripe reference for this payment",
-      code: "payment_reference_required",
+      message: "Enter the bank or Stripe reference for this contribution",
+      code: "contribution_reference_required",
     });
     grantMock.mockResolvedValueOnce({
       ok: false,
@@ -215,6 +245,18 @@ describe("adminFoundingGrantsHandler", () => {
       error: { code: "duplicate" },
     });
     expect((await post(valid)).status).toBe(409);
+    for (const [code, status] of [
+      ["invalid_tier", 400],
+      ["tier_missing", 500],
+      ["invalid_months", 400],
+      ["invalid_contribution", 400],
+      ["user_not_found", 404],
+      ["invalid_referral_code", 400],
+      ["referral_locked_elsewhere", 409],
+    ] as const) {
+      grantMock.mockResolvedValueOnce({ ok: false, error: { code } });
+      expect((await post(valid)).status).toBe(status);
+    }
 
     // Schema-level rejection never reaches the service.
     const bad = await post({
@@ -223,6 +265,96 @@ describe("adminFoundingGrantsHandler", () => {
       paymentMethod: "cash",
     });
     expect(bad.status).toBe(422);
+  });
+
+  it("extends a grant with an audited reason", async () => {
+    extendMock.mockResolvedValueOnce({
+      ok: true,
+      result: {
+        id: "00000000-0000-4000-8000-000000000009",
+        months: 9,
+        expiresAt: null,
+      },
+    });
+    const { adminFoundingGrantsHandler } =
+      await import("../founding-grants/adminFoundingGrantsHandler");
+    const res = await adminFoundingGrantsHandler.handle(
+      req(
+        "/admin/founding-grants/00000000-0000-4000-8000-000000000009/extend",
+        {
+          method: "POST",
+          auth: "Bearer admin",
+          body: JSON.stringify({ additionalMonths: 3, reason: "bonus access" }),
+        },
+      ),
+    );
+    expect(res.status).toBe(200);
+    expect(extendMock).toHaveBeenCalledWith(
+      "00000000-0000-4000-8000-000000000009",
+      3,
+      "bonus access",
+      "admin-1",
+    );
+  });
+
+  it("maps extension, revocation and resend failures", async () => {
+    const { adminFoundingGrantsHandler } =
+      await import("../founding-grants/adminFoundingGrantsHandler");
+    const id = "11111111-1111-4111-8111-111111111111";
+    for (const [error, status] of [
+      ["not_found", 404],
+      ["invalid_months", 400],
+      ["revoked", 409],
+    ] as const) {
+      extendMock.mockResolvedValueOnce({ ok: false, error });
+      const response = await adminFoundingGrantsHandler.handle(
+        req(`/admin/founding-grants/${id}/extend`, {
+          method: "POST",
+          auth: "Bearer admin",
+          body: JSON.stringify({ additionalMonths: 3, reason: "test failure" }),
+        }),
+      );
+      expect(response.status).toBe(status);
+    }
+
+    revokeMock.mockResolvedValueOnce({ ok: false, error: "not_found" });
+    expect(
+      (
+        await adminFoundingGrantsHandler.handle(
+          req(`/admin/founding-grants/${id}/revoke`, {
+            method: "POST",
+            auth: "Bearer admin",
+            body: JSON.stringify({ reason: "not found" }),
+          }),
+        )
+      ).status,
+    ).toBe(404);
+
+    for (const [error, status] of [
+      ["not_found", 404],
+      ["revoked", 409],
+      ["send_failed", 502],
+    ] as const) {
+      resendMock.mockResolvedValueOnce({ ok: false, error });
+      const response = await adminFoundingGrantsHandler.handle(
+        req(`/admin/founding-grants/${id}/resend-invite`, {
+          method: "POST",
+          auth: "Bearer admin",
+        }),
+      );
+      expect(response.status).toBe(status);
+    }
+    resendMock.mockResolvedValueOnce({ ok: true });
+    expect(
+      (
+        await adminFoundingGrantsHandler.handle(
+          req(`/admin/founding-grants/${id}/resend-invite`, {
+            method: "POST",
+            auth: "Bearer admin",
+          }),
+        )
+      ).status,
+    ).toBe(200);
   });
 
   it("revokes with a mandatory reason", async () => {

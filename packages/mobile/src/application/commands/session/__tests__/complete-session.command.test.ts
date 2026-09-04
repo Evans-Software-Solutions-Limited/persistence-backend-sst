@@ -23,6 +23,7 @@ const buildSession = (
       sessionId: "local-1",
       exerciseId: "ex-bench",
       exerciseName: "Bench Press",
+      category: "strength",
       sortOrder: 0,
       supersetGroup: null,
       isSubstituted: false,
@@ -78,6 +79,7 @@ describe("completeSessionCommand", () => {
 
     const payload = JSON.parse(queue[0].payload);
     expect(payload.status).toBe("completed");
+    expect(payload.exercises[0].category).toBe("strength");
     expect(payload.totalDurationSeconds).toBe(3600);
     expect(payload.workoutId).toBe("wk-1");
     expect(payload.exercises).toHaveLength(1);
@@ -123,6 +125,46 @@ describe("completeSessionCommand", () => {
     expect(result.value.session.notes).toBe("Felt strong");
     const payload = JSON.parse(storage.getPendingMutations()[0].payload);
     expect(payload.userNotes).toBe("Felt strong");
+  });
+
+  it("records retrospective timestamps and cardio metadata in the flush payload", () => {
+    storage.cacheActiveSession(
+      "user-1",
+      buildSession({
+        retrospectiveCompletedAt: "2026-05-03T12:00:00.000Z",
+        retrospectiveDurationSeconds: 1_800,
+        activityEnvironment: "outdoor",
+        locationName: "  Victoria Park  ",
+      }),
+    );
+
+    const result = completeSessionCommand({ storage, userId: "user-1", now });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.session.startedAt).toBe("2026-05-03T11:30:00.000Z");
+    expect(result.value.session.completedAt).toBe("2026-05-03T12:00:00.000Z");
+
+    const payload = JSON.parse(storage.getPendingMutations()[0].payload);
+    expect(payload.totalDurationSeconds).toBe(1_800);
+    expect(payload.activityEnvironment).toBe("outdoor");
+    expect(payload.locationName).toBe("Victoria Park");
+  });
+
+  it("bounds corrupt retrospective duration instead of throwing on completion", () => {
+    storage.cacheActiveSession(
+      "user-1",
+      buildSession({
+        retrospectiveCompletedAt: "2026-05-03T12:00:00.000Z",
+        retrospectiveDurationSeconds: 999_999_999_999 * 60,
+      }),
+    );
+
+    const result = completeSessionCommand({ storage, userId: "user-1", now });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.session.startedAt).toBe("2026-05-02T12:00:00.000Z");
+    const payload = JSON.parse(storage.getPendingMutations()[0].payload);
+    expect(payload.totalDurationSeconds).toBe(24 * 60 * 60);
   });
 
   it("synthesizes isCompleted on logged sets so summary stats are non-zero post-1A.1", () => {

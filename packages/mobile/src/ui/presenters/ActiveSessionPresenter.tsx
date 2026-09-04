@@ -30,6 +30,7 @@ import {
   Platform,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -53,6 +54,9 @@ import { IconCheck } from "@/ui/components/icons";
 import { color } from "@/ui/theme/tokens";
 import type { ExerciseSet, SessionExercise } from "@/domain/models/session";
 import type { WeightUnit } from "@/shared/utils";
+import { localDayISO } from "@/shared/utils/date";
+import { DatePickerField } from "@/ui/components/DatePickerField";
+import { format, isValid, parseISO } from "date-fns";
 
 /**
  * Per-exercise template metadata threaded from the container's
@@ -62,12 +66,19 @@ import type { WeightUnit } from "@/shared/utils";
  * + thumbnail when present.
  */
 export type SessionExerciseTemplate = {
+  category?: string;
   imageUrl?: string;
   targetSets?: number;
   targetRepsMin?: number;
   targetRepsMax?: number;
+  targetDurationSeconds?: number;
   restSeconds: number;
 };
+
+export function retrospectiveDayValue(completedAt: string): string {
+  const completed = parseISO(completedAt);
+  return isValid(completed) ? format(completed, "yyyy-MM-dd") : "";
+}
 
 export type ActiveSessionPresenterProps = {
   sessionName: string;
@@ -90,6 +101,7 @@ export type ActiveSessionPresenterProps = {
    * of display unit. Defaults to "kg".
    */
   weightUnit?: WeightUnit;
+  preferredUnits?: "metric" | "imperial";
   /**
    * Map of `sessionExerciseId → template metadata`. Container builds it
    * from `useWorkout`; missing entries fall back to a default
@@ -108,7 +120,12 @@ export type ActiveSessionPresenterProps = {
   onUpdateSet: (
     sessionExerciseId: string,
     setId: string,
-    patch: Partial<Pick<ExerciseSet, "weightKg" | "reps" | "rpe">>,
+    patch: Partial<
+      Pick<
+        ExerciseSet,
+        "weightKg" | "reps" | "rpe" | "durationSeconds" | "distanceMeters"
+      >
+    >,
   ) => void;
   onRemoveSet: (sessionExerciseId: string, setId: string) => void;
   onOpenNotes: (sessionExerciseId: string) => void;
@@ -160,6 +177,14 @@ export type ActiveSessionPresenterProps = {
    */
   withClient?: { initials: string; name: string };
   retroactive?: boolean;
+  activityEnvironment?: "indoor" | "outdoor" | null;
+  locationName?: string;
+  retrospectiveCompletedAt?: string | null;
+  retrospectiveDurationSeconds?: number;
+  onActivityEnvironmentChange?: (value: "indoor" | "outdoor" | null) => void;
+  onLocationNameChange?: (value: string) => void;
+  onRetrospectiveDateChange?: (value: string) => void;
+  onRetrospectiveDurationChange?: (seconds: number) => void;
   /** Collapse the session to the floating bar (header chevron-down). */
   onMinimize: () => void;
   /**
@@ -200,6 +225,17 @@ function buildDisplayItems(exercises: SessionExercise[]): DisplayItem[] {
       const peers = sorted.filter(
         (candidate) => candidate.supersetGroup === group,
       );
+      if (
+        peers.some(
+          (peer) =>
+            peer.category === "cardio" || peer.category === "plyometric",
+        )
+      ) {
+        // Metric-based rows need the dedicated logger rather than the
+        // strength-only compact superset table.
+        items.push({ kind: "exercise", exercise: ex });
+        continue;
+      }
       usedGroups.add(group);
       // A "superset" of one is rendered as a plain exercise card.
       if (peers.length < 2) {
@@ -245,6 +281,10 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
     () => buildDisplayItems(props.exercises),
     [props.exercises],
   );
+  const hasCardio = Object.values(props.templateByExercise).some(
+    (template) => template.category === "cardio",
+  );
+  const today = localDayISO(new Date());
 
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (nextState) => {
@@ -406,6 +446,93 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
                   retroactive={props.retroactive}
                 />
               )}
+              {(hasCardio || props.retroactive) && (
+                <View
+                  style={styles.activityMeta}
+                  testID="session-activity-meta"
+                >
+                  {props.retroactive &&
+                  props.retrospectiveCompletedAt &&
+                  props.onRetrospectiveDateChange ? (
+                    <>
+                      <DatePickerField
+                        label="Workout date"
+                        value={retrospectiveDayValue(
+                          props.retrospectiveCompletedAt,
+                        )}
+                        maximumDate={today}
+                        allowClear={false}
+                        onChange={props.onRetrospectiveDateChange}
+                        testID="retrospective-workout-date"
+                      />
+                      <View style={styles.metaField}>
+                        <Text style={styles.metaLabel}>DURATION (MIN)</Text>
+                        <TextInput
+                          style={styles.metaInput}
+                          value={String(
+                            Math.max(
+                              1,
+                              Math.round(
+                                (props.retrospectiveDurationSeconds ?? 3600) /
+                                  60,
+                              ),
+                            ),
+                          )}
+                          keyboardType="number-pad"
+                          onChangeText={(value) => {
+                            const minutes = Number.parseInt(value, 10);
+                            if (minutes > 0 && minutes <= 24 * 60)
+                              props.onRetrospectiveDurationChange?.(
+                                minutes * 60,
+                              );
+                          }}
+                          maxLength={4}
+                          testID="retrospective-workout-duration"
+                        />
+                      </View>
+                    </>
+                  ) : null}
+                  {hasCardio ? (
+                    <>
+                      <Text style={styles.metaLabel}>ENVIRONMENT</Text>
+                      <View style={styles.environmentRow}>
+                        {(["indoor", "outdoor"] as const).map((value) => (
+                          <TouchableOpacity
+                            key={value}
+                            style={[
+                              styles.environmentButton,
+                              props.activityEnvironment === value &&
+                                styles.environmentButtonActive,
+                            ]}
+                            onPress={() =>
+                              props.onActivityEnvironmentChange?.(value)
+                            }
+                            testID={`session-environment-${value}`}
+                          >
+                            <Text style={styles.environmentText}>
+                              {value.toUpperCase()}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                      <View style={styles.metaField}>
+                        <Text style={styles.metaLabel}>
+                          LOCATION (OPTIONAL)
+                        </Text>
+                        <TextInput
+                          style={styles.metaInput}
+                          value={props.locationName ?? ""}
+                          onChangeText={props.onLocationNameChange}
+                          placeholder="Park, route or gym"
+                          placeholderTextColor={color.$text4}
+                          maxLength={120}
+                          testID="session-location"
+                        />
+                      </View>
+                    </>
+                  ) : null}
+                </View>
+              )}
               {dragAnchorPadding > 0 ? (
                 <View
                   style={{ height: dragAnchorPadding }}
@@ -543,10 +670,13 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
                           props.previousSetsByExercise[ex.id] ?? {}
                         }
                         weightUnit={weightUnit}
+                        preferredUnits={props.preferredUnits}
+                        category={template.category}
                         exerciseImageUrl={template.imageUrl}
                         targetSets={template.targetSets}
                         targetRepsMin={template.targetRepsMin}
                         targetRepsMax={template.targetRepsMax}
+                        targetDurationSeconds={template.targetDurationSeconds}
                         restSeconds={template.restSeconds}
                         onLogSet={() => props.onLogSet(ex.id)}
                         onUpdateSet={(setId, patch) =>
@@ -660,6 +790,54 @@ const styles = StyleSheet.create({
   },
   dragBlock: {
     backgroundColor: color.$bg,
+  },
+  activityMeta: {
+    marginHorizontal: 16,
+    marginBottom: 16,
+    padding: 14,
+    gap: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: color.$border,
+    backgroundColor: color.$surface,
+  },
+  metaField: { gap: 6 },
+  metaLabel: {
+    fontSize: 10,
+    fontWeight: "700",
+    letterSpacing: 1.2,
+    color: color.$text3,
+  },
+  metaInput: {
+    minHeight: 42,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: color.$border,
+    backgroundColor: color.$surface2,
+    color: color.$text,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    fontSize: 14,
+  },
+  environmentRow: { flexDirection: "row", gap: 8 },
+  environmentButton: {
+    flex: 1,
+    alignItems: "center",
+    paddingVertical: 9,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: color.$border,
+    backgroundColor: color.$surface2,
+  },
+  environmentButtonActive: {
+    borderColor: color.$primary,
+    backgroundColor: color.$primaryDim,
+  },
+  environmentText: {
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 1,
+    color: color.$text2,
   },
   dragPlaceholder: {
     flex: 1,
