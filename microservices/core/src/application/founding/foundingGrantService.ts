@@ -7,6 +7,10 @@ import {
 import { ReferralRepository } from "../repositories/referralRepository";
 import { RESEND_NOTIFICATION_TO, sendEmail } from "../leads/resendClient";
 import {
+  getAuthUserIdentity,
+  type SupabaseAuthIdentity,
+} from "../account/supabaseAdminClient";
+import {
   normalizeReferralCode,
   isValidReferralCode,
 } from "../referrals/referralCode";
@@ -101,6 +105,9 @@ export class FoundingGrantService {
   private readonly audit: AdminAuditRepository;
   private readonly mailer: typeof sendEmail;
   private readonly webOrigin: string;
+  private readonly authUserLookup: (
+    userId: string,
+  ) => Promise<SupabaseAuthIdentity>;
 
   constructor(
     grants: FoundingGrantRepository = new FoundingGrantRepository(),
@@ -109,12 +116,16 @@ export class FoundingGrantService {
     mailer: typeof sendEmail = sendEmail,
     webOrigin: string = process.env.WEB_ORIGIN ??
       "https://persistence.evans-software-solutions.com",
+    authUserLookup: (
+      userId: string,
+    ) => Promise<SupabaseAuthIdentity> = getAuthUserIdentity,
   ) {
     this.grants = grants;
     this.referrals = referrals;
     this.audit = audit;
     this.mailer = mailer;
     this.webOrigin = webOrigin;
+    this.authUserLookup = authUserLookup;
   }
 
   async grant(
@@ -327,34 +338,60 @@ export class FoundingGrantService {
     if (grant.revokedAt) return { ok: false, error: "revoked" };
     const list = await this.grants.list({ limit: 1000 });
     const row = list.find((g) => g.id === grantId);
-    const sent = await this.sendInvite({
-      grantId,
-      email: grant.email,
-      tierName: grant.tierName as FoundingTierName,
-      months: grant.months,
-      expiresAt: row?.subscriptionExpiresAt ?? null,
-      hasAccount: grant.userId !== null,
-    });
-    await this.audit.record({
-      actorId,
-      action: "founding_grant.resend_invite",
-      entityType: "founding_grant",
-      entityId: grantId,
-      after: { ok: sent.ok },
-    });
+    const sent = await this.sendInvite(
+      {
+        grantId,
+        email: grant.email,
+        tierName: grant.tierName as FoundingTierName,
+        months: grant.months,
+        expiresAt: row?.subscriptionExpiresAt ?? null,
+        hasAccount: grant.userId !== null,
+      },
+      async (transaction) => {
+        await this.audit.record(
+          {
+            actorId,
+            action: "founding_grant.resend_invite",
+            entityType: "founding_grant",
+            entityId: grantId,
+            after: { ok: true },
+          },
+          transaction,
+        );
+      },
+    );
+    if (!sent.ok) {
+      try {
+        await this.audit.record({
+          actorId,
+          action: "founding_grant.resend_invite",
+          entityType: "founding_grant",
+          entityId: grantId,
+          after: { ok: false },
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(
+          `[founding] failed-resend audit failed for grant ${grantId}: ${message}`,
+        );
+      }
+    }
     return sent.ok
       ? { ok: true }
       : { ok: false, error: "send_failed", detail: sent.error };
   }
 
-  private async sendInvite(input: {
-    grantId: string;
-    email: string;
-    tierName: FoundingTierName;
-    months: number;
-    expiresAt: Date | null;
-    hasAccount: boolean;
-  }): Promise<{ ok: true } | { ok: false; error: string }> {
+  private async sendInvite(
+    input: {
+      grantId: string;
+      email: string;
+      tierName: FoundingTierName;
+      months: number;
+      expiresAt: Date | null;
+      hasAccount: boolean;
+    },
+    afterMarked?: Parameters<FoundingGrantRepository["markInvited"]>[1],
+  ): Promise<{ ok: true } | { ok: false; error: string }> {
     const mail = buildFoundingInviteEmail({
       tierName: input.tierName,
       months: input.months,
@@ -370,8 +407,6 @@ export class FoundingGrantService {
         text: mail.text,
         replyTo: RESEND_NOTIFICATION_TO,
       });
-      await this.grants.markInvited(input.grantId);
-      return { ok: true };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error(
@@ -379,6 +414,19 @@ export class FoundingGrantService {
       );
       return { ok: false, error: message };
     }
+
+    // Delivery succeeded, so report that truth even if recording invited_at
+    // fails. Treating a bookkeeping failure as a send failure invites an
+    // immediate retry and can send the buyer a duplicate email.
+    try {
+      await this.grants.markInvited(input.grantId, afterMarked);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(
+        `[founding] invite bookkeeping failed for grant ${input.grantId}: ${message}`,
+      );
+    }
+    return { ok: true };
   }
 
   /**
@@ -395,6 +443,16 @@ export class FoundingGrantService {
     try {
       const pending = await this.grants.findPendingByEmail(email);
       if (pending.length === 0) return false;
+      const identity = await this.authUserLookup(userId);
+      if (
+        identity.emailConfirmedAt === null ||
+        identity.email?.trim().toLowerCase() !== email.trim().toLowerCase()
+      ) {
+        console.warn(
+          `[founding] pending grant not applied: unconfirmed or mismatched auth email for user=${userId}`,
+        );
+        return false;
+      }
       let appliedAny = false;
       for (const grant of pending) {
         const res = await this.grants.applyPending(

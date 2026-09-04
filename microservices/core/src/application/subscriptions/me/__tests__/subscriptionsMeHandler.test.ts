@@ -11,17 +11,16 @@ vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
     return {
       sub: "user-1",
       email: "test@example.com",
-      email_verified: true,
       iat: 0,
       exp: 9999999999,
     };
   }),
-  requireAuth: vi.fn((ctx: any) => {
+  requireAuth: (ctx: any) => {
     if (!ctx.user) {
       ctx.set.status = 401;
       return { message: "Unauthorized" };
     }
-  }),
+  },
   getUser: vi.fn((ctx) => ctx.user || { sub: "user-1" }),
 }));
 
@@ -98,6 +97,7 @@ describe("subscriptionsMeHandler — GET /subscriptions/me", () => {
     expect(subscriptionRepositoryMocks.findForUser).toHaveBeenCalledWith(
       "user-1",
     );
+    expect(applyPendingMock).toHaveBeenCalledWith("user-1", "test@example.com");
   });
 
   it("returns 200 with the synthesised free shape when the user has no sub row", async () => {

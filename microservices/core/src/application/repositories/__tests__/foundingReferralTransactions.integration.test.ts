@@ -727,4 +727,49 @@ describe("founding/referral repository transaction invariants", () => {
     expect(codeAfter.rows[0].status).toBe("active");
     expect(grantAfter.rows[0].revoked_at).toBeNull();
   });
+
+  it("rolls back invited-at when the resend audit cannot be written", async () => {
+    const grants = new FoundingGrantRepository();
+    const audit = new AdminAuditRepository();
+    const grantId = "00000000-0000-4000-8000-000000000050";
+    await grants.create(
+      {
+        id: grantId,
+        userId: null,
+        email: "invite@example.test",
+        tierName: "premium",
+        months: 6,
+        amountMinor: 3000,
+        currency: "GBP",
+        paymentMethod: "bank_transfer",
+        paymentReference: null,
+        paidAt: new Date(),
+        referralCodeId: null,
+        grantedBy: ADMIN,
+        notes: null,
+      },
+      "consumer",
+    );
+
+    await expect(
+      grants.markInvited(grantId, (transaction) =>
+        audit.record(
+          {
+            actorId: null as never,
+            action: "founding_grant.resend_invite",
+            entityType: "founding_grant",
+            entityId: grantId,
+            after: { ok: true },
+          },
+          transaction,
+        ),
+      ),
+    ).rejects.toThrow();
+
+    const grant = await pg.query<{ invited_at: string | null }>(
+      "SELECT invited_at FROM founding_grants WHERE id = $1",
+      [grantId],
+    );
+    expect(grant.rows[0].invited_at).toBeNull();
+  });
 });

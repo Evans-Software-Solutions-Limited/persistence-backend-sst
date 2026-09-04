@@ -83,6 +83,17 @@ one grant + one redemption + count 1, rejects the next grant, and leaves no
 partial row. Focused result: **3 files / 28 tests**; core typecheck and touched
 lint/format/diff gates pass.
 
+The PR Inspector's final two leads were valid. When an email-keyed pending grant
+exists, redemption now checks Supabase Auth's authoritative admin user record:
+the subject must match, the email must be confirmed, and it must match the grant
+email. Standard access tokens do not carry an invented `email_verified` claim.
+Invite delivery, `invited_at` bookkeeping and resend auditing are reported
+independently, so a successful Resend delivery is not presented as a failure
+(and immediately retried) solely because a follow-up database write failed.
+After a successful resend, `invited_at` and its mandatory admin audit now commit
+or roll back in one transaction. Focused and real PGlite regressions cover these
+cases.
+
 The PR Inspector's low-severity month-boundary finding was valid: native
 `Date.setUTCMonth` rolled late-month starts into the following month. Founding
 expiry calculation now uses date-fns with its official UTC context, clamping

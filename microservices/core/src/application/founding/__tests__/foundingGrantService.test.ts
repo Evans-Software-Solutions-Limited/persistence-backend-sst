@@ -10,7 +10,9 @@ function makeRepos() {
     create: vi.fn(),
     findPendingByEmail: vi.fn(async () => []),
     applyPending: vi.fn(),
-    markInvited: vi.fn(async () => undefined),
+    markInvited: vi.fn(async (_grantId, finalize?) => {
+      await finalize?.({ kind: "test-transaction" });
+    }),
     findById: vi.fn(),
     revoke: vi.fn(),
     list: vi.fn(async () => []),
@@ -27,14 +29,28 @@ function makeRepos() {
   };
   const audit = { record: vi.fn(async () => undefined) };
   const mailer = vi.fn(async () => undefined);
+  const authUserLookup = vi.fn(
+    async (
+      userId: string,
+    ): Promise<{
+      id: string;
+      email: string | null;
+      emailConfirmedAt: string | null;
+    }> => ({
+      id: userId,
+      email: "a@b.co",
+      emailConfirmedAt: "2026-09-04T08:00:00.000Z",
+    }),
+  );
   const svc = new FoundingGrantService(
     grants as any,
     referrals as any,
     audit as any,
     mailer as any,
     "https://example.test",
+    authUserLookup,
   );
-  return { svc, grants, referrals, audit, mailer };
+  return { svc, grants, referrals, audit, mailer, authUserLookup };
 }
 
 const created = (overrides: Partial<any> = {}) => ({
@@ -353,6 +369,29 @@ describe("FoundingGrantService.grant", () => {
     expect(res.result.inviteError).toBe("Resend 500");
     expect(grants.markInvited).not.toHaveBeenCalled();
   });
+
+  it("reports a delivered invite when only invited-at bookkeeping fails", async () => {
+    const { svc, grants, mailer } = makeRepos();
+    mockGrantCreated(grants);
+    grants.markInvited.mockRejectedValueOnce(new Error("database unavailable"));
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const res = await svc.grant(
+      { email: "a@b.co", tierName: "premium", paymentMethod: "other" },
+      "a",
+    );
+
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(mailer).toHaveBeenCalledOnce();
+    expect(grants.markInvited).toHaveBeenCalledOnce();
+    expect(res.result.invited).toBe(true);
+    expect(res.result.inviteError).toBeNull();
+    expect(errSpy).toHaveBeenCalledWith(
+      expect.stringContaining("invite bookkeeping failed for grant"),
+    );
+    errSpy.mockRestore();
+  });
 });
 
 describe("FoundingGrantService.applyPendingForUser", () => {
@@ -418,7 +457,12 @@ describe("FoundingGrantService.applyPendingForUser", () => {
   });
 
   it("applies purchased access while preserving a conflicting locked attribution", async () => {
-    const { svc, grants, referrals, audit } = makeRepos();
+    const { svc, grants, referrals, audit, authUserLookup } = makeRepos();
+    authUserLookup.mockResolvedValueOnce({
+      id: "u9",
+      email: "buyer@example.test",
+      emailConfirmedAt: "2026-09-04T08:00:00.000Z",
+    });
     const grant = {
       id: "g10",
       tierName: "premium",
@@ -469,6 +513,89 @@ describe("FoundingGrantService.applyPendingForUser", () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     expect(await svc.applyPendingForUser("u1", "a@b.co")).toBe(false);
     spy.mockRestore();
+  });
+
+  it("does not apply a pending grant until the authoritative auth email is confirmed and matches", async () => {
+    const { svc, grants, authUserLookup } = makeRepos();
+    grants.findPendingByEmail.mockResolvedValue([{ id: "g1" }] as any);
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    authUserLookup.mockResolvedValueOnce({
+      id: "u1",
+      email: "a@b.co",
+      emailConfirmedAt: null,
+    });
+    expect(await svc.applyPendingForUser("u1", "a@b.co")).toBe(false);
+
+    authUserLookup.mockResolvedValueOnce({
+      id: "u1",
+      email: "other@example.com",
+      emailConfirmedAt: "2026-09-04T08:00:00.000Z",
+    });
+    expect(await svc.applyPendingForUser("u1", "a@b.co")).toBe(false);
+
+    expect(grants.applyPending).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledTimes(2);
+    warnSpy.mockRestore();
+  });
+});
+
+describe("FoundingGrantService.resendInvite", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("reports success after delivery when only invited-at bookkeeping fails", async () => {
+    const { svc, grants, audit, mailer } = makeRepos();
+    grants.findById.mockResolvedValue({
+      id: "g1",
+      email: "buyer@example.com",
+      tierName: "premium",
+      months: 6,
+      revokedAt: null,
+      userId: null,
+    } as any);
+    grants.markInvited.mockRejectedValueOnce(new Error("database unavailable"));
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const res = await svc.resendInvite("g1", "admin-1");
+
+    expect(res).toEqual({ ok: true });
+    expect(mailer).toHaveBeenCalledOnce();
+    expect(audit.record).not.toHaveBeenCalled();
+    expect(errSpy).toHaveBeenCalledWith(
+      expect.stringContaining("invite bookkeeping failed for grant g1"),
+    );
+    errSpy.mockRestore();
+  });
+
+  it("reports success and rolls bookkeeping back together when resend auditing fails", async () => {
+    const { svc, grants, audit, mailer } = makeRepos();
+    grants.findById.mockResolvedValue({
+      id: "g1",
+      email: "buyer@example.com",
+      tierName: "premium",
+      months: 6,
+      revokedAt: null,
+      userId: null,
+    } as any);
+    audit.record.mockRejectedValueOnce(new Error("audit unavailable"));
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const res = await svc.resendInvite("g1", "admin-1");
+
+    expect(res).toEqual({ ok: true });
+    expect(mailer).toHaveBeenCalledOnce();
+    expect(grants.markInvited).toHaveBeenCalledWith("g1", expect.any(Function));
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "founding_grant.resend_invite",
+        after: { ok: true },
+      }),
+      expect.objectContaining({ kind: "test-transaction" }),
+    );
+    expect(errSpy).toHaveBeenCalledWith(
+      expect.stringContaining("invite bookkeeping failed for grant g1"),
+    );
+    errSpy.mockRestore();
   });
 });
 

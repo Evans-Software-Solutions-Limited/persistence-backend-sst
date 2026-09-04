@@ -4,7 +4,8 @@ import { createRemoteJWKSet, jwtVerify } from "jose";
 export type SupabaseUser = {
   sub: string; // user UUID
   email: string;
-  email_verified: boolean;
+  /** OIDC ID-token claim; normally absent from Supabase access tokens. */
+  email_verified?: boolean;
   iat: number;
   exp: number;
   /**

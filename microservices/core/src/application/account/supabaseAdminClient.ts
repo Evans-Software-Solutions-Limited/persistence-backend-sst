@@ -16,6 +16,12 @@ export interface SupabaseAdminConfig {
   serviceRoleKey: string;
 }
 
+export interface SupabaseAuthIdentity {
+  id: string;
+  email: string | null;
+  emailConfirmedAt: string | null;
+}
+
 /**
  * Read + validate the Supabase admin config. Throws (via `getEnv`) when
  * `SUPABASE_URL` or `SUPABASE_SERVICE_ROLE_KEY` is unset — the delete handler
@@ -64,6 +70,41 @@ export async function deleteAuthUser(userId: string): Promise<void> {
       `Supabase admin deleteUser failed: ${res.status} ${res.statusText}`,
     );
   }
+}
+
+/** Read authoritative email-confirmation state for an authenticated subject. */
+export async function getAuthUserIdentity(
+  userId: string,
+): Promise<SupabaseAuthIdentity> {
+  const { url, serviceRoleKey } = getSupabaseAdminConfig();
+  const res = await fetch(
+    `${url}/auth/v1/admin/users/${encodeURIComponent(userId)}`,
+    {
+      method: "GET",
+      headers: {
+        apikey: serviceRoleKey,
+        Authorization: `Bearer ${serviceRoleKey}`,
+      },
+    },
+  );
+  if (!res.ok) {
+    throw new Error(
+      `Supabase admin getUser failed: ${res.status} ${res.statusText}`,
+    );
+  }
+
+  const body = (await res.json()) as Record<string, unknown>;
+  if (body.id !== userId) {
+    throw new Error("Supabase admin getUser returned an unexpected subject");
+  }
+  return {
+    id: userId,
+    email: typeof body.email === "string" ? body.email : null,
+    emailConfirmedAt:
+      typeof body.email_confirmed_at === "string"
+        ? body.email_confirmed_at
+        : null,
+  };
 }
 
 /**

@@ -400,12 +400,18 @@ export class FoundingGrantRepository {
     });
   }
 
-  async markInvited(grantId: string): Promise<void> {
+  async markInvited(
+    grantId: string,
+    finalize?: (transaction: DatabaseTransaction) => Promise<void>,
+  ): Promise<void> {
     const db = getDb();
-    await db
-      .update(foundingGrants)
-      .set({ invitedAt: new Date() })
-      .where(eq(foundingGrants.id, grantId));
+    await db.transaction(async (tx) => {
+      await tx
+        .update(foundingGrants)
+        .set({ invitedAt: new Date() })
+        .where(eq(foundingGrants.id, grantId));
+      await finalize?.(tx);
+    });
   }
 
   async findById(id: string): Promise<FoundingGrant | null> {
