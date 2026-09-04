@@ -58,6 +58,12 @@ one grant + one redemption + count 1, rejects the next grant, and leaves no
 partial row. Focused result: **3 files / 28 tests**; core typecheck and touched
 lint/format/diff gates pass.
 
+The PR Inspector's low-severity month-boundary finding was valid: native
+`Date.setUTCMonth` rolled late-month starts into the following month. Founding
+expiry calculation now uses date-fns with its official UTC context, clamping
+to the target month's final day while preserving the UTC time. Dedicated
+normal, month-end, leap-year and immutability tests cover the helper.
+
 The public `/founding` route now carries the approved £30 Premium, £50 Premium+
 and £99 Start Up Coach+ six-month offers, the static consumer seat counter,
 funding/redemption copy, optional bank instructions and per-tier Stripe Payment

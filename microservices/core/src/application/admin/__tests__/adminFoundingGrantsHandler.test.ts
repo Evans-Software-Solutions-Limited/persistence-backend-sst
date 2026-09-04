@@ -40,13 +40,11 @@ const grantMock = vi.fn();
 const revokeMock = vi.fn();
 const listMock = vi.fn(async () => []);
 vi.mock("../../founding/foundingGrantService", () => ({
-  FoundingGrantService: vi
-    .fn()
-    .mockImplementation(() => ({
-      grant: grantMock,
-      revoke: revokeMock,
-      resendInvite: vi.fn(),
-    })),
+  FoundingGrantService: vi.fn().mockImplementation(() => ({
+    grant: grantMock,
+    revoke: revokeMock,
+    resendInvite: vi.fn(),
+  })),
 }));
 vi.mock("../../repositories/foundingGrantRepository", () => ({
   FoundingGrantRepository: vi

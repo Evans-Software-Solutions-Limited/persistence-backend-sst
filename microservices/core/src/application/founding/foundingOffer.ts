@@ -1,3 +1,6 @@
+import { utc } from "@date-fns/utc";
+import { addMonths as addCalendarMonths } from "date-fns";
+
 import type { SubscriptionTierName } from "../entitlement/assertEntitlement";
 
 /**
@@ -66,7 +69,5 @@ export function foundingExternalId(grantId: string): string {
 }
 
 export function addMonths(from: Date, months: number): Date {
-  const d = new Date(from.getTime());
-  d.setUTCMonth(d.getUTCMonth() + months);
-  return d;
+  return new Date(addCalendarMonths(from, months, { in: utc }).getTime());
 }
