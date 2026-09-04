@@ -185,6 +185,44 @@ describe("NewGrantForm", () => {
     ).toBe(true);
   });
 
+  it("requires a reference only for bank transfer and Stripe", async () => {
+    renderPage(<NewGrantForm />);
+    await screen.findByText("Premium");
+    const method = screen.getByLabelText(/Paid by/);
+
+    expect(
+      (
+        screen.getByLabelText(
+          /Payment reference \(optional\)/,
+        ) as HTMLInputElement
+      ).required,
+    ).toBe(false);
+    fireEvent.change(method, { target: { value: "bank_transfer" } });
+    expect(
+      (
+        screen.getByLabelText(
+          /Payment reference \(required\)/,
+        ) as HTMLInputElement
+      ).required,
+    ).toBe(true);
+    fireEvent.change(method, { target: { value: "stripe_link" } });
+    expect(
+      (
+        screen.getByLabelText(
+          /Payment reference \(required\)/,
+        ) as HTMLInputElement
+      ).required,
+    ).toBe(true);
+    fireEvent.change(method, { target: { value: "other" } });
+    expect(
+      (
+        screen.getByLabelText(
+          /Payment reference \(optional\)/,
+        ) as HTMLInputElement
+      ).required,
+    ).toBe(false);
+  });
+
   it("blocks a store subscriber until the override is acknowledged and sends the flag", async () => {
     api.lookupUser.mockResolvedValue({
       account: {

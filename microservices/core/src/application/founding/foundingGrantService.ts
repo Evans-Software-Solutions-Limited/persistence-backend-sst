@@ -46,6 +46,7 @@ export type GrantError =
   | { code: "invalid_tier" }
   | { code: "tier_missing" }
   | { code: "invalid_email" }
+  | { code: "payment_reference_required" }
   | { code: "user_not_found" }
   | { code: "coach_demotion" }
   | {
@@ -146,6 +147,14 @@ export class FoundingGrantService {
   ): Promise<
     { ok: true; result: GrantResult } | { ok: false; error: GrantError }
   > {
+    const paymentReference = req.paymentReference?.trim() || null;
+    if (
+      (req.paymentMethod === "bank_transfer" ||
+        req.paymentMethod === "stripe_link") &&
+      !paymentReference
+    ) {
+      return { ok: false, error: { code: "payment_reference_required" } };
+    }
     if (!isFoundingTier(req.tierName))
       return { ok: false, error: { code: "invalid_tier" } };
     const tierName: FoundingTierName = req.tierName;
@@ -232,7 +241,7 @@ export class FoundingGrantService {
           amountMinor: req.amountMinor ?? offer.priceMinor,
           currency: req.currency ?? "GBP",
           paymentMethod: req.paymentMethod,
-          paymentReference: req.paymentReference ?? null,
+          paymentReference,
           paidAt: req.paidAt ?? new Date(),
           referralCodeId,
           grantedBy: actorId,
@@ -289,7 +298,7 @@ export class FoundingGrantService {
                 tierName,
                 amountMinor: grant.amountMinor,
                 paymentMethod: req.paymentMethod,
-                paymentReference: req.paymentReference ?? null,
+                paymentReference,
                 referralCodeId,
                 pending: !profile,
               },

@@ -90,6 +90,8 @@ export function NewGrantForm({
   const isCoach = account ? COACH_ROLES.has(account.role ?? "") : false;
   const demotionRisk = isCoach && CONSUMER_TIERS.has(tierName);
   const storeSubscriptionRisk = account?.subscription?.fromStore === true;
+  const paymentReferenceRequired =
+    paymentMethod === "bank_transfer" || paymentMethod === "stripe_link";
   const alreadyHasGrant =
     (account?.foundingGrants.some((g) => !g.revokedAt) ?? false) ||
     (lookup.data?.pendingGrants.length ?? 0) > 0;
@@ -330,7 +332,10 @@ export function NewGrantForm({
             id="grant-method"
             className={selectClass}
             value={paymentMethod}
-            onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}
+            onChange={(e) => {
+              setPaymentMethod(e.target.value as PaymentMethod);
+              setConfirming(false);
+            }}
           >
             {(
               catalogue.data?.paymentMethods ??
@@ -343,9 +348,13 @@ export function NewGrantForm({
           </select>
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="grant-ref">Payment reference (optional)</Label>
+          <Label htmlFor="grant-ref">
+            Payment reference (
+            {paymentReferenceRequired ? "required" : "optional"})
+          </Label>
           <Input
             id="grant-ref"
+            required={paymentReferenceRequired}
             value={paymentReference}
             onChange={(e) => setPaymentReference(e.target.value)}
             placeholder="Bank ref / Stripe id"

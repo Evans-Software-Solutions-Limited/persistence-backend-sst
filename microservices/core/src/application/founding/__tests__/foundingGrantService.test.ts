@@ -223,6 +223,7 @@ describe("FoundingGrantService.grant", () => {
         email: "coach@x.co",
         tierName: "start_up_coach_plus",
         paymentMethod: "bank_transfer",
+        paymentReference: "BANK-COACH",
       },
       "a",
     );
@@ -321,6 +322,46 @@ describe("FoundingGrantService.grant", () => {
     expect(audit.record).not.toHaveBeenCalled();
     expect(mailer).not.toHaveBeenCalled();
   });
+
+  it.each(["bank_transfer", "stripe_link"] as const)(
+    "requires a non-blank reference for %s",
+    async (paymentMethod) => {
+      const { svc, grants } = makeRepos();
+      for (const paymentReference of [undefined, "   "]) {
+        expect(
+          await svc.grant(
+            {
+              email: "a@b.co",
+              tierName: "premium",
+              paymentMethod,
+              paymentReference,
+            },
+            "a",
+          ),
+        ).toEqual({
+          ok: false,
+          error: { code: "payment_reference_required" },
+        });
+      }
+      expect(grants.create).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["card_in_person", "other"] as const)(
+    "allows %s without a payment reference",
+    async (paymentMethod) => {
+      const { svc, grants } = makeRepos();
+      mockGrantCreated(grants);
+      expect(
+        (
+          await svc.grant(
+            { email: "a@b.co", tierName: "premium", paymentMethod },
+            "a",
+          )
+        ).ok,
+      ).toBe(true);
+    },
+  );
 
   it("validates the referral code before taking a seat and attaches it via claim", async () => {
     const { svc, grants, referrals } = makeRepos();

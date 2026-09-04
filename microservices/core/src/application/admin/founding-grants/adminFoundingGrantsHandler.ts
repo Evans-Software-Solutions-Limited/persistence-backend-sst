@@ -35,6 +35,14 @@ function grantErrorResponse(error: GrantError): {
       };
     case "invalid_email":
       return { status: 400, body: { message: "Enter a valid email address" } };
+    case "payment_reference_required":
+      return {
+        status: 400,
+        body: {
+          message: "Enter the bank or Stripe reference for this payment",
+          code: "payment_reference_required",
+        },
+      };
     case "user_not_found":
       return { status: 404, body: { message: "No account with that id" } };
     case "coach_demotion":

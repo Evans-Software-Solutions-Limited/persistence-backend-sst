@@ -186,6 +186,16 @@ describe("adminFoundingGrantsHandler", () => {
     });
     grantMock.mockResolvedValueOnce({
       ok: false,
+      error: { code: "payment_reference_required" },
+    });
+    const reference = await post(valid);
+    expect(reference.status).toBe(400);
+    expect(await reference.json()).toEqual({
+      message: "Enter the bank or Stripe reference for this payment",
+      code: "payment_reference_required",
+    });
+    grantMock.mockResolvedValueOnce({
+      ok: false,
       error: { code: "invalid_email" },
     });
     expect((await post(valid)).status).toBe(400);
