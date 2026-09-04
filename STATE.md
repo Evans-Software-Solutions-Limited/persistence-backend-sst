@@ -9,6 +9,41 @@ items, and the four most recent sessions. Trimmed 2026-07-27 from 1554 lines.
 If anything here contradicts `git log --oneline -30`, the git history wins —
 say so and fix this file.
 
+### 🟢 2026-09-04 — FOUNDING-OFFER post-review hardening (branch `feat/founding-offer-admin`)
+
+Security review findings F1–F10 are now captured under
+`specs/milestones/FOUNDING-OFFER/SECURITY_REVIEW-2026-09-04.md`; its seven
+hardening work packages are implemented. The public founding page is
+informational only: bank details, Payment Link buttons, their build variables,
+and deploy wiring are removed. Payment remains out of band and privately
+coordinated.
+
+Founding grants now refuse a live `rc_` subscription unless an admin explicitly
+accepts the sync risk; pending redemption defers against one and writes one
+audit marker. Bank-transfer and privately sent Stripe-link grants require a
+trimmed payment reference. No-account invites and the public page state the
+90-day redemption window.
+
+Applied payment records survive profile deletion through `ON DELETE SET NULL`.
+`applied_at`, not a nullable `user_id`, defines pending state, so a retained
+`account_deleted` grant stays counted and cannot attach to a replacement
+account with the same email. A real PGlite lifecycle test covers retention,
+non-redemption, seat accounting, and a legitimate repurchase.
+
+The web and in-app Privacy Policy copies both carry the 4 September 2026
+founding-purchase retention disclosure. Visual baseline:
+`/Users/bradleysimms-evans/.codex/visualizations/2026/09/04/01a06cdf-2dcb-78e3-b9c3-b1b10954f357/founding-privacy-retention-wp6.png`.
+Production Confirm email was reported ON; staging remains Brad's dashboard task
+and is the first staging smoke-test precondition. The original founding
+migration was verified absent from the connected production migration history
+and founding tables were absent, so it was safely corrected in place.
+
+Verification after WP6: root typecheck **9/9** packages; lint zero errors
+(existing warnings only); root tests green after one isolated rerun of two
+unrelated web timeouts (**353 core files / 4,340 tests; 30 web files / 879
+tests; 523 mobile suites / 6,594 tests**); production web build green. Final
+full gates and the local Inspector Brad sweep remain the WP8 pre-push gate.
+
 ### 🟡 2026-09-03 — FOUNDING-OFFER MOBILE REFERRAL ENTRY (branch `codex/founding-referral-ota`)
 
 Work package B is implemented from store-build base `ea85b774` at app version

@@ -31,12 +31,12 @@ Prettier on touched files. Add a STATE.md session entry before finishing.
    `import.meta.env.VITE_FOUNDING_SEATS_USED`, default 0; add it to
    `vite-env.d.ts` and `infra/web.ts` like `VITE_META_PIXEL_ID`), what the money
    funds (banners, QR subscription, founders' fairs — plain list in prose), how
-   redemption works ("pay, then sign up in the app with the same email — access
-   is on within a day; we'll email you"), payment: bank-transfer details and
-   Stripe Payment Link buttons read from `VITE_FOUNDING_BANK_DETAILS` /
-   `VITE_FOUNDING_STRIPE_PREMIUM_URL` / `VITE_FOUNDING_STRIPE_PREMIUM_PLUS_URL` /
-   `VITE_FOUNDING_STRIPE_COACH_URL` (all optional; hide a button whose URL is
-   empty), the 14-day cancellation acknowledgement sentence, T&Cs link. Copy
+   to get a place in person or by emailing the monitored address, and how access
+   switches on after the buyer signs up with and confirms the payment email.
+   Include the 90-day redemption deadline, the 14-day cancellation
+   acknowledgement sentence, and T&Cs link. Payment is out of band and the page
+   carries no bank details or payment buttons; Payment Links may be sent
+   privately only. Copy
    rules: sentence case, no emojis, no hype, no mention of financial pressure.
    `useSeo` like the other pages; add to `sitemap.xml`.
    **⚠ Apple 3.1.3(b):** this page may be linked from the website, QR codes and
@@ -112,13 +112,13 @@ Implementation:
    migration since v1.8.0 (all additive; review the `--dry-run` output), then the
    RevenueCat production webhook check, `set-admin` on prod, web env, redirect
    URL, and Brad's first real grant before any public announcement.
-4. Ops notes for Brad (put them in the PR description): Stripe Payment Links
-   (one per tier, cap 200 across the two consumer links is NOT enforceable in
-   Stripe — the panel's seat meter is the cap; set each link's limit
-   generously and watch the dashboard), bank details for the landing page, and
-   the reply-to for the invite email (`RESEND_FROM` is `no-reply@` — replies
-   bounce; either add a `reply_to` in `foundingGrantService.sendInvite` or
-   change the email copy to point at a support address).
+4. Ops notes for Brad (put them in the PR description): take payment out of
+   band, wait for cleared funds, confirm the exact app email, and record the
+   real amount, method, and bank/Stripe reference in `/admin`. Payment Links are
+   sent privately only. The website has no public bank details or payment
+   buttons. Buyers sign up with and confirm the same email; incorrect emails are
+   corrected by revoke + re-grant. Reconcile the grant export against bank and
+   Stripe weekly.
 
 ## Out of scope (do not start)
 
