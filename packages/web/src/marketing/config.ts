@@ -180,6 +180,44 @@ export function playStoreUrl(campaign?: string): string | null {
 }
 
 /**
+ * App Store / Play offer-code redemption URLs for the founders' rate.
+ *
+ * Read at CALL time, not module load, so a stage without them simply renders
+ * no offer CTA — the same fail-quiet shape as the pixel id and the Turnstile
+ * site key. Both are genuinely public: the redemption URL is what an ad would
+ * link to.
+ *
+ * The offers themselves — price, duration, eligibility, redemption cap and
+ * expiry — are configured in App Store Connect / the Play Console and are NOT
+ * represented here. Nothing on this side can enforce or even read them, which
+ * is why the CTA copy names no price: the figure Apple actually charges is the
+ * nearest Apple tier, and it is read back from ASC before it appears anywhere.
+ *
+ * ⚠ iOS must not be switched on until one code has been redeemed end to end on
+ * a fresh Apple ID and a `user_subscriptions` row confirmed server-side —
+ * RevenueCat skips anonymous ids, so a redemption that never reaches our
+ * database would be an invisible sale (MARKETING_BRIEF § 2, Lane B).
+ */
+export function storeOfferUrl(platform: "ios" | "android"): string | null {
+  const raw =
+    platform === "ios"
+      ? import.meta.env.VITE_STORE_OFFER_IOS_URL
+      : import.meta.env.VITE_STORE_OFFER_ANDROID_URL;
+  return (raw ?? "").trim() || null;
+}
+
+/**
+ * Campaign slugs whose landing page offers the store founders' rate.
+ *
+ * Cold ad traffic gets the offer; an organic visitor on `/` keeps the plain
+ * store CTA. Deliberately an allow-list rather than "every campaign": the
+ * printed slugs (`flyer`, `banner`, `uon`) are fixed for the life of a print
+ * run and predate the offer, so quietly turning them into offer routes would
+ * change what artwork already in the world means.
+ */
+export const STORE_OFFER_CAMPAIGNS: readonly string[] = ["meta"];
+
+/**
  * Hero phone screenshot. Null → the pure-CSS app mock renders in the tilting
  * frame. When real screenshots are ready, drop the image in `public/` and set
  * this to its path (e.g. "/hero-screenshot.png", ideally a 9:19.5 portrait
