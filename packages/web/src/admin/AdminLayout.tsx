@@ -7,6 +7,7 @@ const NAV = [
   { to: "/admin", label: "Dashboard", end: true },
   { to: "/admin/grants", label: "Access grants" },
   { to: "/admin/codes", label: "Referral codes" },
+  { to: "/admin/marketing", label: "Marketing" },
   { to: "/admin/lookup", label: "Lookup" },
   { to: "/admin/audit", label: "Audit log" },
 ];

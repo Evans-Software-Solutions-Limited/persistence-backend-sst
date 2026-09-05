@@ -191,6 +191,135 @@ export interface UserLookup {
   }>;
 }
 
+// ─── Marketing plans (MARKETING-PLANS) ────────────────────────────────────
+
+export type PlanStatus = "draft" | "active" | "paused" | "complete";
+/** The rails a plan runs. `founding_access` has no price; `store_offer` does. */
+export type OfferLane = "founding_access" | "store_offer";
+
+export interface MarketingPlanRow {
+  id: string;
+  name: string;
+  slug: string;
+  status: PlanStatus;
+  objective: string | null;
+  hypothesis: string | null;
+  decisionRule: string | null;
+  offerLanes: string[];
+  budgetCapMinor: number | null;
+  currency: string;
+  startsOn: string | null;
+  endsOn: string | null;
+  briefMd: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MarketingPlanListRow extends MarketingPlanRow {
+  channelsCount: number;
+  spendMinor: number;
+  storeClicks: number;
+  grants: number;
+}
+
+export interface PlanChannel {
+  id: string;
+  campaignSlug: string;
+  label: string;
+  placement: string | null;
+  notes: string | null;
+}
+
+export interface PlanLinkedCode {
+  linkId: string;
+  codeId: string;
+  code: string;
+  displayCode: string;
+  label: string;
+  partnerName: string | null;
+  campaignSlug: string | null;
+}
+
+/**
+ * A record of an offer configured in App Store Connect / the Play Console.
+ * Never authoritative — see the note the detail page renders beside the table.
+ */
+export interface PlanStoreOffer {
+  id: string;
+  platform: "ios" | "android";
+  code: string;
+  tierName: string;
+  durationMonths: number;
+  priceMinor: number;
+  currency: string;
+  maxRedemptions: number | null;
+  expiresOn: string | null;
+  campaignSlug: string | null;
+  redemptionUrl: string | null;
+  notes: string | null;
+}
+
+export interface PlanMetric {
+  id: string;
+  campaignSlug: string | null;
+  metricDate: string;
+  spendMinor: number | null;
+  impressions: number | null;
+  clicks: number | null;
+  landingViews: number | null;
+  storeRedemptions: number | null;
+  notes: string | null;
+}
+
+export interface ChannelAttribution {
+  campaignSlug: string;
+  storeClicks: number;
+  storeClicksIos: number;
+  storeClicksAndroid: number;
+  storeClicksWithCode: number;
+}
+
+export interface CodeAttribution {
+  codeId: string;
+  referralClaims: number;
+  referralClaimsLocked: number;
+  grantsFounding: number;
+  grantsComplimentary: number;
+  grantsPending: number;
+  grantsApplied: number;
+  /** Optional contributions. Not revenue — never label it as such. */
+  contributionMinor: number;
+}
+
+export interface MarketingPlanDetail {
+  plan: MarketingPlanRow;
+  channels: PlanChannel[];
+  codes: PlanLinkedCode[];
+  storeOffers: PlanStoreOffer[];
+  metrics: PlanMetric[];
+  attribution: {
+    /** Plain calendar days (`YYYY-MM-DD`); render with `formatDay`. */
+    window: { from: string; to: string };
+    channels: ChannelAttribution[];
+    codes: CodeAttribution[];
+    /** Cannot be split by channel — display as "all sources". */
+    registrationsAllSources: number;
+  };
+}
+
+export interface NewPlanInput {
+  name: string;
+  slug: string;
+  objective?: string | null;
+  hypothesis?: string | null;
+  decisionRule?: string | null;
+  offerLanes: OfferLane[];
+  budgetCapMinor?: number | null;
+  startsOn?: string | null;
+  endsOn?: string | null;
+  briefMd?: string | null;
+}
+
 export interface AuditRow {
   id: string;
   actorId: string;
@@ -307,6 +436,106 @@ export const adminApi = {
       method: "POST",
       body: JSON.stringify({ userId, code, reason }),
     }),
+  campaignSlugs: () =>
+    data(
+      adminFetch<{ data: { slugs: string[] } }>(
+        "/admin/marketing/campaign-slugs",
+      ),
+    ).then((d) => d.slugs),
+  marketingPlans: (status?: string) =>
+    data(
+      adminFetch<{ data: MarketingPlanListRow[] }>(
+        `/admin/marketing/plans${status ? `?status=${status}` : ""}`,
+      ),
+    ),
+  marketingPlan: (id: string) =>
+    data(
+      adminFetch<{ data: MarketingPlanDetail }>(`/admin/marketing/plans/${id}`),
+    ),
+  createMarketingPlan: (input: NewPlanInput) =>
+    data(
+      adminFetch<{ data: MarketingPlanRow }>("/admin/marketing/plans", {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
+    ),
+  updateMarketingPlan: (
+    id: string,
+    patch: Partial<NewPlanInput> & { status?: PlanStatus },
+  ) =>
+    data(
+      adminFetch<{ data: MarketingPlanRow }>(`/admin/marketing/plans/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(patch),
+      }),
+    ),
+  addPlanChannel: (
+    id: string,
+    input: { campaignSlug: string; label: string; placement?: string | null },
+  ) =>
+    data(
+      adminFetch<{ data: PlanChannel }>(
+        `/admin/marketing/plans/${id}/channels`,
+        { method: "POST", body: JSON.stringify(input) },
+      ),
+    ),
+  removePlanChannel: (id: string, channelId: string) =>
+    adminFetch<{ data: unknown }>(
+      `/admin/marketing/plans/${id}/channels/${channelId}`,
+      { method: "DELETE" },
+    ),
+  // Link only — the code must already exist in /admin → Referral codes.
+  linkPlanCode: (
+    id: string,
+    input: { referralCodeId: string; campaignSlug?: string | null },
+  ) =>
+    data(
+      adminFetch<{ data: { id: string; code: string } }>(
+        `/admin/marketing/plans/${id}/codes`,
+        { method: "POST", body: JSON.stringify(input) },
+      ),
+    ),
+  unlinkPlanCode: (id: string, linkId: string) =>
+    adminFetch<{ data: unknown }>(
+      `/admin/marketing/plans/${id}/codes/${linkId}`,
+      { method: "DELETE" },
+    ),
+  addPlanStoreOffer: (
+    id: string,
+    input: Omit<PlanStoreOffer, "id" | "currency"> & { currency?: string },
+  ) =>
+    data(
+      adminFetch<{ data: PlanStoreOffer }>(
+        `/admin/marketing/plans/${id}/store-offers`,
+        { method: "POST", body: JSON.stringify(input) },
+      ),
+    ),
+  updatePlanStoreOffer: (
+    id: string,
+    offerId: string,
+    patch: Partial<Omit<PlanStoreOffer, "id" | "platform" | "code">>,
+  ) =>
+    data(
+      adminFetch<{ data: PlanStoreOffer }>(
+        `/admin/marketing/plans/${id}/store-offers/${offerId}`,
+        { method: "PATCH", body: JSON.stringify(patch) },
+      ),
+    ),
+  removePlanStoreOffer: (id: string, offerId: string) =>
+    adminFetch<{ data: unknown }>(
+      `/admin/marketing/plans/${id}/store-offers/${offerId}`,
+      { method: "DELETE" },
+    ),
+  upsertPlanMetric: (
+    id: string,
+    input: Omit<PlanMetric, "id"> & { campaignSlug: string | null },
+  ) =>
+    data(
+      adminFetch<{ data: PlanMetric }>(`/admin/marketing/plans/${id}/metrics`, {
+        method: "PUT",
+        body: JSON.stringify(input),
+      }),
+    ),
   audit: (entityType?: string, entityId?: string) => {
     const params = new URLSearchParams();
     if (entityType) params.set("entityType", entityType);
@@ -322,6 +551,31 @@ export function formatMinor(minor: number, currency = "GBP"): string {
   return new Intl.NumberFormat("en-GB", { style: "currency", currency }).format(
     minor / 100,
   );
+}
+
+/**
+ * A plain calendar day (`YYYY-MM-DD`, as every DATE column serialises) in the
+ * site's display format.
+ *
+ * NOT `formatDate`: `new Date("2026-09-12")` is midnight UTC, which is the
+ * 11th anywhere west of Greenwich, so an instant formatter silently shifts
+ * campaign start and end dates by a day for some viewers. Parsing the parts
+ * into a LOCAL date keeps the day the admin typed the day the admin sees.
+ */
+export function formatDay(day: string | null | undefined): string {
+  if (!day) return "—";
+  const parts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day);
+  if (!parts) return formatDate(day);
+  const [, year, month, date] = parts;
+  return new Date(
+    Number(year),
+    Number(month) - 1,
+    Number(date),
+  ).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
 }
 
 export function formatDate(iso: string | null | undefined): string {
