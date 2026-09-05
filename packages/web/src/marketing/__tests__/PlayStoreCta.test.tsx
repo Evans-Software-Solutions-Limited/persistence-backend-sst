@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import * as storeClick from "@/lib/storeClick";
+import { CampaignContext } from "../campaign";
 import { PlayStoreCta } from "../PlayStoreCta";
 
 vi.mock("../config", async () => {
@@ -54,6 +55,23 @@ describe("PlayStoreCta", () => {
     render(<PlayStoreCta variant="hero" />);
 
     fireEvent.click(screen.getByRole("link", { name: "Get it on Google Play" }));
-    expect(reportStoreClick).toHaveBeenCalledWith("android");
+    expect(reportStoreClick).toHaveBeenCalledWith("android", undefined);
+  });
+
+  it("reports the route's campaign so the click is attributable to a channel", () => {
+    vi.mocked(playStoreUrl).mockReturnValue(
+      "https://play.google.com/store/apps/details?id=com.example.app",
+    );
+    const reportStoreClick = vi
+      .spyOn(storeClick, "reportStoreClick")
+      .mockReturnValue("evt_2");
+    render(
+      <CampaignContext.Provider value="meta">
+        <PlayStoreCta variant="hero" />
+      </CampaignContext.Provider>,
+    );
+
+    fireEvent.click(screen.getByRole("link", { name: "Get it on Google Play" }));
+    expect(reportStoreClick).toHaveBeenCalledWith("android", "meta");
   });
 });

@@ -1,6 +1,7 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { AppStoreCta } from "../AppStoreCta";
 import * as storeClick from "@/lib/storeClick";
+import { CampaignContext } from "../campaign";
 
 vi.mock("../config", async () => {
   const actual = await vi.importActual<typeof import("../config")>(
@@ -59,7 +60,36 @@ describe("AppStoreCta", () => {
       render(<AppStoreCta variant="hero" />);
       const link = screen.getByRole("link");
       fireEvent.click(link);
-      expect(spy).toHaveBeenCalledWith("ios");
+      // No CampaignContext above it → no channel to report. Undefined, not a
+      // placeholder: an organic tap must not be credited to a campaign.
+      expect(spy).toHaveBeenCalledWith("ios", undefined);
+    });
+
+    it("reports the campaign it links with, so ct and store_click agree", () => {
+      const spy = vi
+        .spyOn(storeClick, "reportStoreClick")
+        .mockReturnValue("evt_2");
+      render(
+        <CampaignContext.Provider value="meta">
+          <AppStoreCta variant="hero" />
+        </CampaignContext.Provider>,
+      );
+      fireEvent.click(screen.getByRole("link"));
+      expect(spy).toHaveBeenCalledWith("ios", "meta");
+    });
+
+    it("an explicit campaign prop beats the route's, on the link and the beacon", () => {
+      const spy = vi
+        .spyOn(storeClick, "reportStoreClick")
+        .mockReturnValue("evt_3");
+      render(
+        <CampaignContext.Provider value="meta">
+          <AppStoreCta variant="hero" campaign="flyer" />
+        </CampaignContext.Provider>,
+      );
+      fireEvent.click(screen.getByRole("link"));
+      expect(vi.mocked(appStoreUrl)).toHaveBeenCalledWith("flyer");
+      expect(spy).toHaveBeenCalledWith("ios", "flyer");
     });
   });
 });

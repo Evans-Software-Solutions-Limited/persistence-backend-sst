@@ -13,6 +13,13 @@ export type StorePlatform = "ios" | "android";
  * visitor's current marketing-consent choice (R2.7) so the server can
  * consent-gate its own Meta CAPI forward.
  *
+ * `campaign` is the landing route's slug (`meta`, `uon`, …) read from
+ * `useCampaign()` at the call-site. It is the CHANNEL key: `ref` identifies a
+ * partner's code and is often absent, and neither Apple's `ct` nor Google's
+ * install `referrer` comes back to us, so without this the first-party row
+ * cannot say which channel drove the click. Persisted server-side only — it is
+ * deliberately not forwarded to Meta (see `analytics/metaEventMap.ts`).
+ *
  * The click navigates away immediately, so a plain `fetch` risks being
  * cancelled mid-flight; `navigator.sendBeacon` is used when available since
  * it's designed to survive page unload, with a `keepalive: true` fetch as
@@ -28,13 +35,17 @@ export type StorePlatform = "ios" | "android";
  * response, which this fire-and-forget beacon never does. The server parses the
  * text as JSON (see `parseBeaconBody` in leadsRoutes.ts).
  */
-export function reportStoreClick(store: StorePlatform): string {
+export function reportStoreClick(
+  store: StorePlatform,
+  campaign?: string,
+): string {
   const eventId = newEventId();
   trackStoreClick(eventId, store);
 
   const body = JSON.stringify({
     event_id: eventId,
     store,
+    campaign,
     fbc: getFbc() ?? undefined,
     fbp: getFbp() ?? undefined,
     marketing_consent: hasConsent("advertising"),

@@ -174,6 +174,15 @@ interface WebAttribution {
   store?: "ios" | "android";
   /** First-party referral attribution. Persisted, never forwarded to Meta. */
   ref?: string;
+  /**
+   * The marketing site's campaign slug (`meta`, `uon`, `flyer`, …) — the
+   * CHANNEL key. `ref` names a partner's code and is usually absent, and
+   * neither Apple's `ct` nor Google's install `referrer` ever comes back to
+   * us, so this is the only thing that lets a first-party row say which
+   * channel produced the click. Persisted, never forwarded to Meta
+   * (see `analytics/metaEventMap.ts`).
+   */
+  campaign?: string;
 }
 
 /**
@@ -210,6 +219,7 @@ function storeClickEvent(attribution: WebAttribution): AnalyticsEventInput {
   if (attribution.fbp) properties.fbp = attribution.fbp;
   if (attribution.store) properties.store = attribution.store;
   if (attribution.ref) properties.ref = attribution.ref;
+  if (attribution.campaign) properties.campaign = attribution.campaign;
   return {
     name: "store_click",
     source: "web",
@@ -225,7 +235,18 @@ interface StoreClickBody {
   marketing_consent?: boolean;
   store?: "ios" | "android";
   ref?: string;
+  campaign?: string;
 }
+
+/**
+ * The marketing site's campaign slugs are a code-level map (`CAMPAIGNS` in
+ * packages/web), not a table, so this endpoint cannot check membership. It
+ * bounds the SHAPE instead — the same character class every slug in that map
+ * already uses — so an attacker cannot smuggle arbitrary text into
+ * `properties.campaign` and the column stays groupable in the admin
+ * attribution queries.
+ */
+const CAMPAIGN_SLUG_RE = /^[a-z0-9-]{1,32}$/;
 
 /**
  * Parse the `/store-click` body from EITHER a `text/plain` beacon — the
@@ -269,6 +290,10 @@ function parseBeaconBody(raw: unknown): StoreClickBody {
     store:
       obj.store === "ios" || obj.store === "android" ? obj.store : undefined,
     ref: str(obj.ref, 24),
+    campaign:
+      typeof obj.campaign === "string" && CAMPAIGN_SLUG_RE.test(obj.campaign)
+        ? obj.campaign
+        : undefined,
   };
 }
 
@@ -511,7 +536,7 @@ export const leadsRoutes = new Elysia()
       // No `body` schema: the production beacon is `text/plain` (so sendBeacon
       // delivers cross-origin — see parseBeaconBody), which a `t.Object` JSON
       // schema would 422. parseBeaconBody accepts text/plain OR json and bounds.
-      const { fbc, fbp, event_id, marketing_consent, store, ref } =
+      const { fbc, fbp, event_id, marketing_consent, store, ref, campaign } =
         parseBeaconBody(ctx.body);
       // Best-effort conversion emit (spec-30 R3.8). Public + anonymous, no email
       // — so no honeypot / Turnstile (it is not an email-amplification vector).
@@ -525,6 +550,7 @@ export const leadsRoutes = new Elysia()
           marketingConsent: marketing_consent,
           store,
           ref,
+          campaign,
         }),
       );
       return { ok: true as const };

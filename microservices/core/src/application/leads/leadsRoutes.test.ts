@@ -449,6 +449,76 @@ describe("POST /store-click (spec-30 R3.8)", () => {
     });
   });
 
+  it("records the campaign slug so a click can be attributed to a channel", async () => {
+    const res = await post("/store-click", {
+      event_id: "evt-campaign",
+      store: "ios",
+      campaign: "meta",
+    });
+    expect(res.status).toBe(200);
+    expect(emitEventMock).toHaveBeenCalledWith({
+      name: "store_click",
+      source: "web",
+      eventId: "evt-campaign",
+      properties: {
+        marketing_consent: false,
+        store: "ios",
+        campaign: "meta",
+      },
+    });
+  });
+
+  it("carries the campaign through the production text/plain beacon too", async () => {
+    const res = await postText(
+      "/store-click",
+      JSON.stringify({ event_id: "evt-campaign-beacon", campaign: "uon" }),
+    );
+    expect(res.status).toBe(200);
+    expect(emitEventMock).toHaveBeenCalledWith({
+      name: "store_click",
+      source: "web",
+      eventId: "evt-campaign-beacon",
+      properties: { marketing_consent: false, campaign: "uon" },
+    });
+  });
+
+  it.each([
+    ["upper case", "META"],
+    ["an underscore", "meta_founders"],
+    ["a space", "meta founders"],
+    ["over 32 characters", "a".repeat(33)],
+    ["empty", ""],
+  ])("drops a campaign slug with %s", async (_label, campaign) => {
+    // The slug ends up in `properties.campaign`, which the admin attribution
+    // queries GROUP BY — arbitrary text there both pollutes those groupings
+    // and is unbounded input on a public endpoint.
+    const res = await post("/store-click", {
+      event_id: `evt-bad-${_label}`,
+      campaign,
+    });
+    expect(res.status).toBe(200);
+    expect(emitEventMock).toHaveBeenCalledWith({
+      name: "store_click",
+      source: "web",
+      eventId: `evt-bad-${_label}`,
+      properties: { marketing_consent: false },
+    });
+  });
+
+  it("drops a non-string campaign", async () => {
+    const res = await post("/store-click", {
+      event_id: "evt-campaign-wrong-type",
+      campaign: { slug: "meta" },
+    });
+    expect(res.status).toBe(200);
+    expect(emitEventMock).toHaveBeenCalledWith({
+      name: "store_click",
+      source: "web",
+      eventId: "evt-campaign-wrong-type",
+      properties: { marketing_consent: false },
+    });
+  });
+
   it("drops an oversized beacon body but still emits the bare conversion", async () => {
     const res = await postText(
       "/store-click",

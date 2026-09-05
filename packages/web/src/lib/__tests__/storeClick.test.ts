@@ -98,6 +98,28 @@ describe("reportStoreClick", () => {
     expect(body).not.toHaveProperty("ref");
   });
 
+  it("includes the campaign slug the caller resolved from the route", async () => {
+    const sendBeacon = vi.fn().mockReturnValue(true);
+    vi.stubGlobal("navigator", { ...navigator, sendBeacon });
+
+    reportStoreClick("ios", "meta");
+
+    const [, blob] = sendBeacon.mock.calls[0];
+    const body = JSON.parse(await (blob as Blob).text());
+    expect(body.campaign).toBe("meta");
+  });
+
+  it("omits campaign entirely when the click came from no campaign route", async () => {
+    const sendBeacon = vi.fn().mockReturnValue(true);
+    vi.stubGlobal("navigator", { ...navigator, sendBeacon });
+
+    reportStoreClick("ios");
+
+    const [, blob] = sendBeacon.mock.calls[0];
+    const body = JSON.parse(await (blob as Blob).text());
+    expect(body).not.toHaveProperty("campaign");
+  });
+
   it("falls back to a keepalive fetch when sendBeacon is unavailable", () => {
     const withoutBeacon: Record<string, unknown> = { ...navigator };
     delete withoutBeacon.sendBeacon;

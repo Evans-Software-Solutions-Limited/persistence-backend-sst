@@ -127,6 +127,26 @@ describe("mapPendingToMetaEvents — event mapping", () => {
     expect(event!.custom_data).toEqual({ store: "android" });
   });
 
+  it("never forwards the campaign slug to Meta", () => {
+    // MARKETING-PLANS WP2. `properties.campaign` exists so OUR admin panel can
+    // group first-party store clicks by channel. Meta attributes on its own
+    // click ids and has no use for it, and every field added to custom_data is
+    // another thing shipped to a third party — so it stays first-party only.
+    const [event] = mapPendingToMetaEvents(
+      pending({
+        eventName: "store_click",
+        properties: {
+          marketing_consent: true,
+          fbp: "fb.1.1.campaign",
+          store: "ios",
+          campaign: "meta",
+        },
+      }),
+    );
+    expect(event!.custom_data).toEqual({ store: "ios" });
+    expect(JSON.stringify(event)).not.toContain("meta");
+  });
+
   it("a consented web purchase → Purchase + Subscribe w/ value/currency, hashes em+external_id", () => {
     const events = mapPendingToMetaEvents(
       pending({
