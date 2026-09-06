@@ -141,6 +141,7 @@ describe("RevenueCatPurchasesAdapter — configured flows", () => {
           pricePerMonthString: "£9.99",
           // No introPrice on the fixture → no free-trial length.
           introTrialDays: null,
+          payUpFrontIntroOffer: null,
         },
       ]);
     }
@@ -169,6 +170,39 @@ describe("RevenueCatPurchasesAdapter — configured flows", () => {
     const r = await a.getPurchasablePackages();
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.value[0].introTrialDays).toBe(14);
+  });
+
+  it("derives payUpFrontIntroOffer from a pay-up-front introductory offer", async () => {
+    const a = configured();
+    mockPurchases.getOfferings.mockResolvedValue(
+      offeringWith([
+        {
+          identifier: "$rc_annual",
+          packageType: "ANNUAL",
+          product: {
+            identifier: "app.persistence.premium.annual",
+            price: 139.99,
+            priceString: "£139.99",
+            introPrice: {
+              price: 30,
+              priceString: "£30.00",
+              cycles: 1,
+              periodUnit: "MONTH",
+              periodNumberOfUnits: 6,
+            },
+          },
+        },
+      ]),
+    );
+    const r = await a.getPurchasablePackages();
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value[0].introTrialDays).toBeNull();
+      expect(r.value[0].payUpFrontIntroOffer).toEqual({
+        priceString: "£30.00",
+        periodLabel: "6 months",
+      });
+    }
   });
 
   it("normalises a Google Play base plan and its selected free-trial phase", async () => {
@@ -203,6 +237,46 @@ describe("RevenueCatPurchasesAdapter — configured flows", () => {
         tier: "premium",
         billingCycle: "monthly",
         introTrialDays: 14,
+      });
+    }
+  });
+
+  it("normalises a Google Play base plan's pay-up-front intro phase", async () => {
+    const a = configured();
+    mockPurchases.getOfferings.mockResolvedValue(
+      offeringWith([
+        {
+          identifier: "premium-annual",
+          packageType: "CUSTOM",
+          product: {
+            identifier: "app.persistence.premium",
+            price: 139.99,
+            priceString: "£139.99",
+            defaultOption: {
+              storeProductId: "app.persistence.premium:annual",
+              introPhase: {
+                offerPaymentMode: "SINGLE_PAYMENT",
+                billingPeriod: { unit: "MONTH", value: 6 },
+                price: { amountMicros: 30_000_000, formatted: "£30.00" },
+              },
+            },
+          },
+        },
+      ]),
+    );
+    const r = await a.getPurchasablePackages();
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value[0]).toMatchObject({
+        packageId: "premium-annual",
+        productId: "app.persistence.premium:annual",
+        tier: "premium",
+        billingCycle: "yearly",
+        introTrialDays: null,
+        payUpFrontIntroOffer: {
+          priceString: "£30.00",
+          periodLabel: "6 months",
+        },
       });
     }
   });

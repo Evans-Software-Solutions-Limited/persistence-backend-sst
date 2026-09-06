@@ -69,7 +69,9 @@ function defaultProps(): IOSPurchaseFlowPresenterProps {
     selectedRole: "user",
     purchasableTiers: new Set(),
     isTierTrialEligible: () => false,
+    isTierIntroOfferEligible: () => true,
     tierTrialDays: () => null,
+    tierPayUpFrontOffer: () => null,
     hasTrialEligibilityData: false,
     monthlyOnlyTiers: new Set(),
     subscriptionEndsAt: null,
@@ -189,6 +191,91 @@ describe("IOSPurchaseFlowPresenter", () => {
     expect(screen.getByText("£139.99")).toBeTruthy();
     expect(screen.getByText("£249.99")).toBeTruthy();
     expect(screen.getAllByText(/save 31%/i).length).toBeGreaterThan(0);
+  });
+
+  it("renders a pay-up-front intro price and its renewal note, taking priority over a trial banner", () => {
+    const props = defaultProps();
+    render(
+      <IOSPurchaseFlowPresenter
+        {...props}
+        hasTrialEligibilityData
+        isTierTrialEligible={(tier) => tier === "premium"}
+        tierTrialDays={(tier) => (tier === "premium" ? 7 : null)}
+        tierPayUpFrontOffer={(tier) =>
+          tier === "premium"
+            ? { priceString: "£30.00", periodLabel: "6 months" }
+            : null
+        }
+      />,
+    );
+
+    expect(screen.getByText("£30.00 for 6 months")).toBeTruthy();
+    expect(
+      screen.getByText("Renews at the standard price after that."),
+    ).toBeTruthy();
+    expect(screen.queryByText("7-day free trial")).toBeNull();
+  });
+
+  it("renders a pay-up-front offer on a product with NO free trial", () => {
+    // The Android case this exists for. `isTierTrialEligible` there is defined
+    // as "has a free trial", so gating the banner on it would have hidden a
+    // single-payment Play offer — exactly the offer type being rendered.
+    const props = defaultProps();
+    render(
+      <IOSPurchaseFlowPresenter
+        {...props}
+        hasTrialEligibilityData
+        isTierTrialEligible={() => false}
+        isTierIntroOfferEligible={() => true}
+        tierTrialDays={() => null}
+        tierPayUpFrontOffer={(tier) =>
+          tier === "premium"
+            ? { priceString: "£30.00", periodLabel: "6 months" }
+            : null
+        }
+      />,
+    );
+
+    expect(screen.getByText("£30.00 for 6 months")).toBeTruthy();
+    expect(
+      screen.getByText("Renews at the standard price after that."),
+    ).toBeTruthy();
+  });
+
+  it("renders no intro price to a customer who has already used an intro offer", () => {
+    // RevenueCat's per-product eligibility is the authority on iOS. Showing
+    // the banner regardless would advertise a price they cannot have.
+    const props = defaultProps();
+    render(
+      <IOSPurchaseFlowPresenter
+        {...props}
+        hasTrialEligibilityData
+        isTierIntroOfferEligible={() => false}
+        tierPayUpFrontOffer={() => ({
+          priceString: "£30.00",
+          periodLabel: "6 months",
+        })}
+      />,
+    );
+
+    expect(screen.queryByText("£30.00 for 6 months")).toBeNull();
+  });
+
+  it("renders no intro banner for the tier the account is already on", () => {
+    const props = defaultProps();
+    render(
+      <IOSPurchaseFlowPresenter
+        {...props}
+        hasTrialEligibilityData
+        currentTier="premium"
+        tierPayUpFrontOffer={() => ({
+          priceString: "£30.00",
+          periodLabel: "6 months",
+        })}
+      />,
+    );
+
+    expect(screen.queryByTestId("intro-offer-banner-premium")).toBeNull();
   });
 
   it("renders every paid IAP action as non-interactive Coming soon", () => {

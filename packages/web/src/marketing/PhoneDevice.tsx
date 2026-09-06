@@ -33,17 +33,26 @@ export function PhoneDevice({
     >
       <div
         className="phone-halo"
-        style={haloColor ? ({ "--halo": haloColor } as CSSProperties) : undefined}
+        style={
+          haloColor ? ({ "--halo": haloColor } as CSSProperties) : undefined
+        }
       />
       <div className="phone-frame">
         <div className="phone-notch" />
         <div className="phone-screen">
           {screenshot ? (
-            <img className="phone-shot" src={screenshot} alt="Persistence app screen" />
+            <img
+              className="phone-shot"
+              src={screenshot}
+              alt="Persistence app screen"
+            />
           ) : (
             <div className="app-screens">
               {screens.map((screen, i) => (
-                <div key={i} className={`app-screen${i === index ? " active" : ""}`}>
+                <div
+                  key={i}
+                  className={`app-screen${i === index ? " active" : ""}`}
+                >
                   {screen}
                 </div>
               ))}

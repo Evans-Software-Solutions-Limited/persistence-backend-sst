@@ -111,6 +111,10 @@ export const CAMPAIGNS: Record<string, Campaign> = {
   // Meta is that the link lands on the marketing site at all, so the pixel can
   // fire — which is the reason none of these point straight at apps.apple.com.
   social: { ct: "social", utm_source: "social", utm_campaign: "launch" },
+  // Paid Meta/Instagram placements. Distinct from `ig`, which is the ORGANIC
+  // bio link — keeping them apart is what lets the founders'-offer ad spend be
+  // read separately from the profile's own traffic.
+  meta: { ct: "meta", utm_source: "meta", utm_campaign: "founders" },
   tt: { ct: "tt", utm_source: "tiktok", utm_campaign: "bio" },
   ig: { ct: "ig", utm_source: "instagram", utm_campaign: "bio" },
   li: { ct: "li", utm_source: "linkedin", utm_campaign: "bio" },

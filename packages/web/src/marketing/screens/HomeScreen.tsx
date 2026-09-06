@@ -10,9 +10,21 @@ const rings = [
 const days = ["M", "T", "W", "T", "F", "S", "S"];
 // Habit rows: which days are done (specs mirror HabitsGridPresenter "This week").
 const habits = [
-  { name: "Train", tone: "cyan", done: [true, true, false, true, true, false, false] },
-  { name: "Protein", tone: "ember", done: [true, true, true, true, false, false, false] },
-  { name: "Steps", tone: "gold", done: [true, false, true, true, true, false, false] },
+  {
+    name: "Train",
+    tone: "cyan",
+    done: [true, true, false, true, true, false, false],
+  },
+  {
+    name: "Protein",
+    tone: "ember",
+    done: [true, true, true, true, false, false, false],
+  },
+  {
+    name: "Steps",
+    tone: "gold",
+    done: [true, false, true, true, true, false, false],
+  },
 ];
 
 export function HomeScreen() {
@@ -32,13 +44,22 @@ export function HomeScreen() {
           </span>
         </div>
         <span className="app-bell">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+          >
             <path
               d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"
               strokeLinecap="round"
               strokeLinejoin="round"
             />
-            <path d="M13.7 21a2 2 0 0 1-3.4 0" strokeLinecap="round" strokeLinejoin="round" />
+            <path
+              d="M13.7 21a2 2 0 0 1-3.4 0"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
           </svg>
         </span>
       </div>
@@ -138,7 +159,10 @@ export function HomeScreen() {
             <div className="app-habit-row" key={habit.name}>
               <span className="hn">{habit.name}</span>
               {habit.done.map((done, i) => (
-                <span key={i} className={`hc ${habit.tone}${done ? " on" : ""}`} />
+                <span
+                  key={i}
+                  className={`hc ${habit.tone}${done ? " on" : ""}`}
+                />
               ))}
             </div>
           ))}
@@ -148,14 +172,27 @@ export function HomeScreen() {
       {/* Bottom tab bar */}
       <nav className="app-tabs" aria-hidden="true">
         <span className="app-tab active">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
             <path d="M3 10.5 12 3l9 7.5" />
             <path d="M5 9.5V21h14V9.5" />
           </svg>
           Home
         </span>
         <span className="app-tab">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+          >
             <rect x="2" y="9" width="4" height="6" rx="1" />
             <rect x="18" y="9" width="4" height="6" rx="1" />
             <line x1="6" y1="12" x2="18" y2="12" />
@@ -163,14 +200,28 @@ export function HomeScreen() {
           Train
         </span>
         <span className="app-tab">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
             <path d="M12 7c1-2 3-3 5-2 2 2 1 6-1 9-1 1.5-2 3-4 3s-3-1.5-4-3c-2-3-3-7-1-9 2-1 4 0 5 2z" />
             <path d="M12 7c0-2 1-4 3-4" />
           </svg>
           Fuel
         </span>
         <span className="app-tab">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
             <line x1="18" y1="20" x2="18" y2="10" />
             <line x1="12" y1="20" x2="12" y2="4" />
             <line x1="6" y1="20" x2="6" y2="14" />

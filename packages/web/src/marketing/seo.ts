@@ -9,7 +9,12 @@ import { useEffect } from "react";
  */
 const SITE_URL = "https://persistence.evans-software-solutions.com";
 
-function upsertMeta(selector: string, attr: "name" | "property", key: string, content: string) {
+function upsertMeta(
+  selector: string,
+  attr: "name" | "property",
+  key: string,
+  content: string,
+) {
   let el = document.head.querySelector<HTMLMetaElement>(selector);
   if (!el) {
     el = document.createElement("meta");
@@ -20,7 +25,9 @@ function upsertMeta(selector: string, attr: "name" | "property", key: string, co
 }
 
 function upsertCanonical(href: string) {
-  let el = document.head.querySelector<HTMLLinkElement>('link[rel="canonical"]');
+  let el = document.head.querySelector<HTMLLinkElement>(
+    'link[rel="canonical"]',
+  );
   if (!el) {
     el = document.createElement("link");
     el.setAttribute("rel", "canonical");
@@ -33,10 +40,17 @@ export function useSeo({
   title,
   description,
   path,
+  noindex = false,
 }: {
   title: string;
   description: string;
   path: string;
+  /**
+   * Keep the page out of search results. For pages whose URL carries a
+   * per-visitor token — a checkout session id, say — which has no business in
+   * an index and would be useless to anyone who found it there.
+   */
+  noindex?: boolean;
 }) {
   useEffect(() => {
     const url = `${SITE_URL}${path}`;
@@ -44,9 +58,24 @@ export function useSeo({
     upsertMeta('meta[name="description"]', "name", "description", description);
     upsertCanonical(url);
     upsertMeta('meta[property="og:title"]', "property", "og:title", title);
-    upsertMeta('meta[property="og:description"]', "property", "og:description", description);
+    upsertMeta(
+      'meta[property="og:description"]',
+      "property",
+      "og:description",
+      description,
+    );
     upsertMeta('meta[property="og:url"]', "property", "og:url", url);
     upsertMeta('meta[name="twitter:title"]', "name", "twitter:title", title);
-    upsertMeta('meta[name="twitter:description"]', "name", "twitter:description", description);
-  }, [title, description, path]);
+    upsertMeta(
+      'meta[name="twitter:description"]',
+      "name",
+      "twitter:description",
+      description,
+    );
+    if (noindex) {
+      upsertMeta('meta[name="robots"]', "name", "robots", "noindex, nofollow");
+    } else {
+      document.head.querySelector('meta[name="robots"]')?.remove();
+    }
+  }, [title, description, path, noindex]);
 }

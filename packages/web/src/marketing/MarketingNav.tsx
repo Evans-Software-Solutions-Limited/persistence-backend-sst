@@ -9,7 +9,12 @@ import { SectionLink } from "./SectionLink";
 function Logo() {
   return (
     <Link to="/" className="logo">
-      <img className="logo-mark" src="/apple-touch-icon.png" alt="" aria-hidden="true" />
+      <img
+        className="logo-mark"
+        src="/apple-touch-icon.png"
+        alt=""
+        aria-hidden="true"
+      />
       Persistence
     </Link>
   );
@@ -41,7 +46,10 @@ export function MarketingNav({ current }: { current?: "pricing" }) {
             <SectionLink hash="pillars">Product</SectionLink>
             <SectionLink hash="loadout">Loadout</SectionLink>
             <SectionLink hash="coach">For coaches</SectionLink>
-            <Link to="/pricing" className={current === "pricing" ? "current" : undefined}>
+            <Link
+              to="/pricing"
+              className={current === "pricing" ? "current" : undefined}
+            >
               Pricing
             </Link>
           </div>
@@ -49,7 +57,9 @@ export function MarketingNav({ current }: { current?: "pricing" }) {
             type="button"
             className="theme-toggle"
             onClick={() => setTheme(isDark ? "light" : "dark")}
-            aria-label={isDark ? "Switch to light theme" : "Switch to dark theme"}
+            aria-label={
+              isDark ? "Switch to light theme" : "Switch to dark theme"
+            }
           >
             {isDark ? <SunIcon /> : <MoonIcon />}
           </button>

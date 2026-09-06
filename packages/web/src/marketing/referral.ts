@@ -11,9 +11,11 @@ export function normalizeReferralCode(value: string | null): string | null {
 export function storedReferralCode(): string | undefined {
   if (typeof window === "undefined") return undefined;
   try {
-    return normalizeReferralCode(
-      window.sessionStorage.getItem(REFERRAL_STORAGE_KEY),
-    ) ?? undefined;
+    return (
+      normalizeReferralCode(
+        window.sessionStorage.getItem(REFERRAL_STORAGE_KEY),
+      ) ?? undefined
+    );
   } catch {
     return undefined;
   }

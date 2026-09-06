@@ -28,6 +28,9 @@ describe("META_FORWARDED_EVENT_NAMES", () => {
   it("includes lead_captured + store_click; excludes cancellation/expiration", () => {
     expect(META_FORWARDED_EVENT_NAMES).toContain("lead_captured");
     expect(META_FORWARDED_EVENT_NAMES).toContain("store_click");
+    // The founding web rail (2026-09-05 amendment).
+    expect(META_FORWARDED_EVENT_NAMES).toContain("checkout_started");
+    expect(META_FORWARDED_EVENT_NAMES).toContain("purchase");
     expect(META_FORWARDED_EVENT_NAMES).not.toContain("cancellation");
     expect(META_FORWARDED_EVENT_NAMES).not.toContain("expiration");
   });
@@ -125,6 +128,82 @@ describe("mapPendingToMetaEvents — event mapping", () => {
     // Referral attribution is first-party analytics only and is not consented
     // advertising data. The mapper must never copy it into Meta custom_data.
     expect(event!.custom_data).toEqual({ store: "android" });
+  });
+
+  it("never forwards the campaign slug to Meta", () => {
+    // MARKETING-PLANS WP2. `properties.campaign` exists so OUR admin panel can
+    // group first-party store clicks by channel. Meta attributes on its own
+    // click ids and has no use for it, and every field added to custom_data is
+    // another thing shipped to a third party — so it stays first-party only.
+    const [event] = mapPendingToMetaEvents(
+      pending({
+        eventName: "store_click",
+        properties: {
+          marketing_consent: true,
+          fbp: "fb.1.1.campaign",
+          store: "ios",
+          campaign: "meta",
+        },
+      }),
+    );
+    expect(event!.custom_data).toEqual({ store: "ios" });
+    expect(JSON.stringify(event)).not.toContain("meta");
+  });
+
+  it("checkout_started → InitiateCheckout with the value", () => {
+    // The intent signal Meta optimises towards until there is enough Purchase
+    // volume to optimise on the conversion itself.
+    const events = mapPendingToMetaEvents(
+      pending({
+        eventName: "checkout_started",
+        properties: {
+          marketing_consent: true,
+          fbp: "fb.1.1.checkout",
+          value: 30,
+          currency: "GBP",
+          tier: "premium",
+        },
+      }),
+    );
+    expect(events.map((e) => e.event_name)).toEqual(["InitiateCheckout"]);
+    expect(events[0]!.custom_data).toEqual({ value: 30, currency: "GBP" });
+  });
+
+  it("purchase → Purchase ALONE, never Subscribe", () => {
+    // A founding purchase is one fixed term that does not renew. Telling Meta
+    // a subscription began would make the two rails indistinguishable in
+    // reporting and teach the model the wrong lifetime value.
+    const events = mapPendingToMetaEvents(
+      pending({
+        eventName: "purchase",
+        properties: {
+          marketing_consent: true,
+          fbp: "fb.1.1.purchase",
+          value: 30,
+          currency: "GBP",
+        },
+      }),
+    );
+    expect(events.map((e) => e.event_name)).toEqual(["Purchase"]);
+  });
+
+  it("never forwards the tier, term or referral code with a purchase", () => {
+    const [event] = mapPendingToMetaEvents(
+      pending({
+        eventName: "purchase",
+        properties: {
+          marketing_consent: true,
+          fbp: "fb.1.1.purchase",
+          value: 30,
+          currency: "GBP",
+          tier: "premium_plus",
+          months: 12,
+          ref: "METAFOUND",
+          campaign: "meta",
+        },
+      }),
+    );
+    expect(event!.custom_data).toEqual({ value: 30, currency: "GBP" });
   });
 
   it("a consented web purchase → Purchase + Subscribe w/ value/currency, hashes em+external_id", () => {

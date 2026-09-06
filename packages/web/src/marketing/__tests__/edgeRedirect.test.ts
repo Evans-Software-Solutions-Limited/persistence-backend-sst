@@ -1,4 +1,9 @@
-import { APPLE_PROVIDER_TOKEN, CAMPAIGNS, appStore, playStore } from "../config";
+import {
+  APPLE_PROVIDER_TOKEN,
+  CAMPAIGNS,
+  appStore,
+  playStore,
+} from "../config";
 import {
   EDGE_REDIRECT_PREFIX,
   buildRedirectTable,
@@ -64,7 +69,8 @@ const UA = {
     "Mozilla/5.0 (iPhone; CPU iPhone OS 14_7_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.2 Mobile/15E148 Safari/604.1 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
   googlebotAndroid:
     "Mozilla/5.0 (Linux; Android 6.0.1; Nexus 5X Build/MMB29P) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.6422.175 Mobile Safari/537.36 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
-  facebookUnfurl: "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)",
+  facebookUnfurl:
+    "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)",
   whatsapp: "WhatsApp/2.23.20.0 A",
   // Crawlers the narrowed pattern still has to catch — via `bot/`, `bot.html`,
   // or an explicit name. Pinterest's is the interesting one: bare `pinterest` is
@@ -74,7 +80,8 @@ const UA = {
   applebotIphone:
     "Mozilla/5.0 (iPhone; CPU iPhone OS 14_7_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.2 Mobile/15E148 Safari/604.1 (Applebot/0.1; +http://www.apple.com/go/applebot)",
   slackbot: "Slackbot-LinkExpanding 1.0 (+https://api.slack.com/robots)",
-  discordbot: "Mozilla/5.0 (compatible; Discordbot/2.0; +https://discordapp.com)",
+  discordbot:
+    "Mozilla/5.0 (compatible; Discordbot/2.0; +https://discordapp.com)",
   twitterbot: "Twitterbot/1.0",
   storebot: "Mozilla/5.0 (compatible; Storebot-Google/1.0)",
   pinterestCrawler: "Pinterest/0.2 (+http://www.pinterest.com/bot.html)",
@@ -445,9 +452,9 @@ describe("Android is gated on the Play listing being live", () => {
 
   it("still sends iOS to the App Store once Play is live", () => {
     const table = playLiveTable();
-    expect(resolveRedirect("/g/flyer", UA.iphone, { table }).location).toContain(
-      "apps.apple.com",
-    );
+    expect(
+      resolveRedirect("/g/flyer", UA.iphone, { table }).location,
+    ).toContain("apps.apple.com");
   });
 
   it("degrades iOS to the landing page if the App Store listing is pulled", () => {
@@ -550,7 +557,9 @@ describe("the generated CloudFront Function", () => {
   it("embeds the live Play listing and encoded install referrers", () => {
     const source = buildEdgeFunctionSource();
     expect(source).toContain("play.google.com");
-    expect(source).toContain("referrer=utm_source%3Dflyer%26utm_campaign%3Dprint");
+    expect(source).toContain(
+      "referrer=utm_source%3Dflyer%26utm_campaign%3Dprint",
+    );
   });
 
   /**

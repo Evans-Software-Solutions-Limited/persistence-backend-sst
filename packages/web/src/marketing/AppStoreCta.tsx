@@ -26,11 +26,19 @@ export interface AppStoreCtaProps {
  * `reportStoreClick()` (browser pixel `AppStoreClick` + server beacon, deduped
  * by a shared event id — see `lib/storeClick.ts`) without blocking navigation.
  */
-export function AppStoreCta({ variant, campaign, className }: AppStoreCtaProps) {
+export function AppStoreCta({
+  variant,
+  campaign,
+  className,
+}: AppStoreCtaProps) {
   // An explicit prop wins; otherwise inherit the landing route's campaign, so
   // a CTA on /uon attributes without every call-site having to know the route.
   const routeCampaign = useCampaign();
-  const href = appStoreUrl(campaign ?? routeCampaign);
+  // ONE resolved slug for both the outbound link and the first-party beacon:
+  // Apple's `ct` and our own `store_click.campaign` have to name the same
+  // channel or the two attribution surfaces disagree about the same tap.
+  const attributedCampaign = campaign ?? routeCampaign;
+  const href = appStoreUrl(attributedCampaign);
   const extra = className ? ` ${className}` : "";
   // BOTH flags, not just the URL. This read `href !== null` alone, which meant
   // setting `appStore.available = false` — the documented way to pull the
@@ -51,7 +59,7 @@ export function AppStoreCta({ variant, campaign, className }: AppStoreCtaProps) 
       <a
         href={href!}
         className={`btn btn-fill${extra}`}
-        onClick={() => reportStoreClick("ios")}
+        onClick={() => reportStoreClick("ios", attributedCampaign)}
       >
         {content}
       </a>
@@ -67,7 +75,9 @@ export function AppStoreCta({ variant, campaign, className }: AppStoreCtaProps) 
       <>
         <AppleIcon />
         <div className="store-btn-text">
-          <span className="small">{live ? "Download on the" : "Coming soon to"}</span>
+          <span className="small">
+            {live ? "Download on the" : "Coming soon to"}
+          </span>
           <span className="big">App Store</span>
         </div>
       </>
@@ -76,7 +86,7 @@ export function AppStoreCta({ variant, campaign, className }: AppStoreCtaProps) 
       <a
         href={href!}
         className={`store-btn${extra}`}
-        onClick={() => reportStoreClick("ios")}
+        onClick={() => reportStoreClick("ios", attributedCampaign)}
       >
         {content}
       </a>
@@ -92,7 +102,7 @@ export function AppStoreCta({ variant, campaign, className }: AppStoreCtaProps) 
     <a
       href={href!}
       className={`nav-btn${extra}`}
-      onClick={() => reportStoreClick("ios")}
+      onClick={() => reportStoreClick("ios", attributedCampaign)}
     >
       Get the app
     </a>

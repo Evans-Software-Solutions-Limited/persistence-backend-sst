@@ -39,3 +39,7 @@ STATE.md
 STATE-ARCHIVE.md
 app-store-tracker.html
 marketing/
+
+# Cowork mirrors session outputs here at the repo root. Untracked working
+# copies of documents whose home is specs/ — never committed, never reflowed.
+Claude outputs/

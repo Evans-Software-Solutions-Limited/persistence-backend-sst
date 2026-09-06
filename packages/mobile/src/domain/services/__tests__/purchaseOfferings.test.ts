@@ -7,6 +7,8 @@ import {
   freeTrialDaysFromIntroOffer,
   offeringTrialDays,
   parseStoreProductId,
+  payUpFrontIntroOfferFromGooglePlayOption,
+  payUpFrontIntroOfferFromIntroPrice,
   purchasableTiers,
   tierFromProductId,
 } from "@/domain/services/purchaseOfferings";
@@ -68,6 +70,7 @@ function pkg(overrides: Partial<PurchaseProduct>): PurchaseProduct {
     priceString: "£9.99",
     pricePerMonthString: "£9.99",
     introTrialDays: null,
+    payUpFrontIntroOffer: null,
     ...overrides,
   };
 }
@@ -229,6 +232,52 @@ describe("freeTrialDaysFromGooglePlayOption", () => {
         freePhase: {
           billingPeriod: { unit: "UNKNOWN", value: 7 },
           price: { amountMicros: 0 },
+        },
+      }),
+    ).toBeNull();
+  });
+});
+
+describe("payUpFrontIntroOfferFromGooglePlayOption", () => {
+  it("summarises a pay-up-front intro phase", () => {
+    expect(
+      payUpFrontIntroOfferFromGooglePlayOption({
+        introPhase: {
+          offerPaymentMode: "SINGLE_PAYMENT",
+          billingPeriod: { unit: "MONTH", value: 6 },
+          price: { amountMicros: 30_000_000, formatted: "£30.00" },
+        },
+      }),
+    ).toEqual({ priceString: "£30.00", periodLabel: "6 months" });
+  });
+
+  it("rejects absent, zero-priced, non-single-payment, or unknown-unit phases", () => {
+    expect(payUpFrontIntroOfferFromGooglePlayOption(null)).toBeNull();
+    expect(payUpFrontIntroOfferFromGooglePlayOption(undefined)).toBeNull();
+    expect(
+      payUpFrontIntroOfferFromGooglePlayOption({
+        introPhase: {
+          offerPaymentMode: "SINGLE_PAYMENT",
+          billingPeriod: { unit: "MONTH", value: 6 },
+          price: { amountMicros: 0, formatted: "£0.00" },
+        },
+      }),
+    ).toBeNull();
+    expect(
+      payUpFrontIntroOfferFromGooglePlayOption({
+        introPhase: {
+          offerPaymentMode: "DISCOUNTED_RECURRING_PAYMENT",
+          billingPeriod: { unit: "MONTH", value: 1 },
+          price: { amountMicros: 5_000_000, formatted: "£5.00" },
+        },
+      }),
+    ).toBeNull();
+    expect(
+      payUpFrontIntroOfferFromGooglePlayOption({
+        introPhase: {
+          offerPaymentMode: "SINGLE_PAYMENT",
+          billingPeriod: { unit: "FORTNIGHT", value: 6 },
+          price: { amountMicros: 30_000_000, formatted: "£30.00" },
         },
       }),
     ).toBeNull();
@@ -410,6 +459,76 @@ describe("freeTrialDaysFromIntroOffer", () => {
         price: 0,
         periodUnit: "FORTNIGHT",
         periodNumberOfUnits: 1,
+      }),
+    ).toBeNull();
+  });
+});
+
+describe("payUpFrontIntroOfferFromIntroPrice", () => {
+  it("summarises a one-off pay-up-front offer", () => {
+    expect(
+      payUpFrontIntroOfferFromIntroPrice({
+        price: 30,
+        priceString: "£30.00",
+        cycles: 1,
+        periodUnit: "MONTH",
+        periodNumberOfUnits: 6,
+      }),
+    ).toEqual({ priceString: "£30.00", periodLabel: "6 months" });
+    expect(
+      payUpFrontIntroOfferFromIntroPrice({
+        price: 60,
+        priceString: "£60.00",
+        cycles: 1,
+        periodUnit: "YEAR",
+        periodNumberOfUnits: 1,
+      }),
+    ).toEqual({ priceString: "£60.00", periodLabel: "1 year" });
+  });
+
+  it("returns null for a free trial (price 0)", () => {
+    expect(
+      payUpFrontIntroOfferFromIntroPrice({
+        price: 0,
+        priceString: "£0.00",
+        cycles: 1,
+        periodUnit: "DAY",
+        periodNumberOfUnits: 14,
+      }),
+    ).toBeNull();
+  });
+
+  it("returns null for a discounted-recurring 'pay as you go' offer (cycles > 1)", () => {
+    expect(
+      payUpFrontIntroOfferFromIntroPrice({
+        price: 4.99,
+        priceString: "£4.99",
+        cycles: 3,
+        periodUnit: "MONTH",
+        periodNumberOfUnits: 1,
+      }),
+    ).toBeNull();
+  });
+
+  it("returns null for absent, zero-length, or unknown-unit offers", () => {
+    expect(payUpFrontIntroOfferFromIntroPrice(null)).toBeNull();
+    expect(payUpFrontIntroOfferFromIntroPrice(undefined)).toBeNull();
+    expect(
+      payUpFrontIntroOfferFromIntroPrice({
+        price: 30,
+        priceString: "£30.00",
+        cycles: 1,
+        periodUnit: "MONTH",
+        periodNumberOfUnits: 0,
+      }),
+    ).toBeNull();
+    expect(
+      payUpFrontIntroOfferFromIntroPrice({
+        price: 30,
+        priceString: "£30.00",
+        cycles: 1,
+        periodUnit: "FORTNIGHT",
+        periodNumberOfUnits: 6,
       }),
     ).toBeNull();
   });

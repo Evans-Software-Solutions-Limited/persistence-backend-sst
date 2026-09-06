@@ -1,4 +1,4 @@
-import { screen } from "@testing-library/react";
+import { fireEvent, screen } from "@testing-library/react";
 import { renderPage } from "@/test-utils";
 import Home from "@/pages/Home";
 import App from "@/App";
@@ -10,6 +10,7 @@ import {
 } from "../config";
 import { CAMPAIGN_LANDING_SLUGS, campaignFromPath } from "../campaign";
 import { buildRedirectTable } from "../edgeRedirect";
+import * as storeClick from "@/lib/storeClick";
 
 /**
  * The gap this file exists to close.
@@ -84,9 +85,9 @@ describe("campaign attribution is wired to the landing routes", () => {
         );
       }
 
-      expect(screen.getByRole("link", { name: "Get" }).getAttribute("href")).toBe(
-        `/${slug}#download`,
-      );
+      expect(
+        screen.getByRole("link", { name: "Get" }).getAttribute("href"),
+      ).toBe(`/${slug}#download`);
       expect(
         screen.getByRole("link", { name: "Get the app" }).getAttribute("href"),
       ).toBe(`/${slug}#download`);
@@ -135,6 +136,43 @@ describe("campaign attribution is wired to the landing routes", () => {
       }
     },
   );
+
+  it.each(LANDING_SLUGS)(
+    "reports /%s's slug on every store click, so the click is attributable",
+    (slug) => {
+      // The same wiring gap this file exists for, on the OTHER surface. Apple's
+      // `ct` and Google's `referrer` never come back to us, so `store_click`'s
+      // own `campaign` property is the only record of which channel drove a
+      // tap — and it is what the admin attribution tables group by. A CTA that
+      // links correctly but beacons an undefined campaign looks fine and
+      // reports nothing.
+      const spy = vi
+        .spyOn(storeClick, "reportStoreClick")
+        .mockReturnValue("evt");
+      renderPage(<Home />, { route: `/${slug}` });
+      for (const link of [...appStoreLinks(), ...playStoreLinks()]) {
+        fireEvent.click(link);
+      }
+      expect(spy).toHaveBeenCalled();
+      for (const call of spy.mock.calls) {
+        expect(call[1]).toBe(slug);
+      }
+      spy.mockRestore();
+    },
+  );
+
+  it("reports no campaign for a store click on the undecorated homepage", () => {
+    const spy = vi.spyOn(storeClick, "reportStoreClick").mockReturnValue("evt");
+    renderPage(<Home />, { route: "/" });
+    for (const link of [...appStoreLinks(), ...playStoreLinks()]) {
+      fireEvent.click(link);
+    }
+    expect(spy).toHaveBeenCalled();
+    for (const call of spy.mock.calls) {
+      expect(call[1]).toBeUndefined();
+    }
+    spy.mockRestore();
+  });
 
   it("keeps campaign.ts and edgeRedirect.ts agreed on which slugs are real channels", () => {
     // Narrow on purpose, and titled for what it actually covers. Both lists

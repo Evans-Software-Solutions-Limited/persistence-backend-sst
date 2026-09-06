@@ -1,9 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { MarketingLayout } from "@/marketing/MarketingLayout";
 import { useSeo } from "@/marketing/seo";
+import { FoundingPlans } from "@/marketing/FoundingPlans";
+import {
+  FOUNDING_CONTACT_EMAIL,
+  FOUNDING_COPY,
+  foundingOfferIsOpen,
+} from "@/marketing/foundingOffer";
 
-export const FOUNDING_CONTACT_EMAIL = "admin@evans-software-solutions.com";
+export { FOUNDING_CONTACT_EMAIL };
 
 type Availability = {
   consumer: { used: number; cap: number };
@@ -28,95 +34,92 @@ function AvailabilityLine({
   return (
     <span>
       <strong>{value ? `${value.used} of ${value.cap}` : "Live count"}</strong>{" "}
-      {label} {value ? "allocated" : "temporarily unavailable"}
+      {label} {value ? "taken" : "temporarily unavailable"}
     </span>
   );
 }
 
+/**
+ * The founding offer page (FOUNDING-OFFER BRIEF § 2, 2026-09-05 amendment).
+ *
+ * Sells fixed-term, non-renewing access through Stripe Checkout. Every string
+ * comes from `FOUNDING_COPY`; the approved wording lands with
+ * `LANDING_PAGE.md` and replaces those constants without touching this file.
+ *
+ * Two things are decided here and enforced again on the server, which is the
+ * authority in both cases: whether the offer is still open (a client clock can
+ * be wrong, so the checkout route answers 410 regardless), and whether any
+ * places are left (the seat count here is a cached read; the route re-checks
+ * under the pool lock).
+ */
 export function Founding() {
+  const [params] = useSearchParams();
+  const cancelled = params.get("cancelled") === "1";
+  const open = foundingOfferIsOpen();
+
   const availability = useQuery({
     queryKey: ["founding", "availability"],
     queryFn: loadAvailability,
     staleTime: 30_000,
+    enabled: open,
   });
 
   useSeo({
-    title: "Founding access — Persistence",
+    title: "Founding offer — Persistence",
     description:
-      "Limited founding access to Persistence, allocated personally and separate from optional crowdfunding support.",
+      "A founding place in Persistence: one payment, a fixed term of access, no renewal. Open until 30 September 2026.",
     path: "/founding",
   });
+
+  const consumer = availability.data?.consumer;
+  const soldOut = consumer !== undefined && consumer.used >= consumer.cap;
 
   return (
     <MarketingLayout>
       <section className="founding-hero">
         <div className="c founding-shell">
-          <span className="kicker c-accent">Founding access</span>
-          <h1>I turn 30 this month. A limited number of founding places.</h1>
-          <p className="founding-intro">
-            Founding access is allocated personally for a specific Persistence
-            tier and period. It does not renew automatically.
-          </p>
+          <span className="kicker c-accent">{FOUNDING_COPY.kicker}</span>
 
-          <div className="founding-plans" aria-label="Available access tiers">
-            <article className="founding-plan">
-              <span>Premium</span>
-              <strong>Build consistency</strong>
-              <p>Consumer access for the period agreed with Brad.</p>
-            </article>
-            <article className="founding-plan founding-plan-featured">
-              <span>Premium+</span>
-              <strong>Go further</strong>
-              <p>Full consumer access for the period agreed with Brad.</p>
-            </article>
-          </div>
+          {open ? (
+            <>
+              <h1>{FOUNDING_COPY.heading}</h1>
+              <p className="founding-intro">{FOUNDING_COPY.intro}</p>
+
+              {cancelled ? (
+                <p className="founding-note" role="status">
+                  {FOUNDING_COPY.cancelledNote}
+                </p>
+              ) : null}
+
+              <FoundingPlans soldOut={soldOut} />
+
+              <p className="founding-counter" aria-live="polite">
+                <AvailabilityLine label="founding places" value={consumer} />
+                {" · "}
+                <AvailabilityLine
+                  label="coach places"
+                  value={availability.data?.coach}
+                />
+              </p>
+            </>
+          ) : (
+            <>
+              <h1>{FOUNDING_COPY.closedHeading}</h1>
+              <p className="founding-intro">{FOUNDING_COPY.closedBody}</p>
+            </>
+          )}
 
           <div className="founding-coach">
             <div>
-              <span className="kicker">For coaches</span>
-              <h2>Start Up Coach+</h2>
-              <p>Coach access is allocated from its own limited pool.</p>
-            </div>
-          </div>
-
-          <p className="founding-counter" aria-live="polite">
-            <AvailabilityLine
-              label="consumer places"
-              value={availability.data?.consumer}
-            />
-            {" · "}
-            <AvailabilityLine
-              label="coach places"
-              value={availability.data?.coach}
-            />
-          </p>
-
-          <div className="founding-details">
-            <section>
-              <h2>Access is granted, not sold here</h2>
+              <span className="kicker">{FOUNDING_COPY.coachHeading}</span>
               <p>
-                There is no checkout or payment code on this website. Brad
-                records the tier and access period, then the grant is applied to
-                the email you use in the app.
-              </p>
-            </section>
-            <section>
-              <h2>How to ask for a place</h2>
-              <p>
-                Speak to Brad in person, or email{" "}
+                {FOUNDING_COPY.coachBody}{" "}
                 <a href={`mailto:${FOUNDING_CONTACT_EMAIL}`}>
                   {FOUNDING_CONTACT_EMAIL}
                 </a>
                 .
               </p>
-            </section>
-            <section>
-              <h2>Crowdfunding is separate</h2>
-              <p>
-                You may choose to contribute to the wider launch separately. A
-                contribution does not buy, guarantee, size, or extend access.
-              </p>
-            </section>
+            </div>
           </div>
 
           <p className="founding-terms">

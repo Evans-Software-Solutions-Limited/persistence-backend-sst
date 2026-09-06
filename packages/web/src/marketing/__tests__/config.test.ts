@@ -1,4 +1,5 @@
 import {
+  CAMPAIGNS,
   appStore,
   playStore,
   appStoreUrl,
@@ -114,9 +115,7 @@ describe("shipped config", () => {
   it("uses a storefront-agnostic App Store url", () => {
     // A /gb/ or any other country-locked path would send all 175 territories
     // to the UK store.
-    expect(SHIPPED.appStore.url).not.toMatch(
-      /apps\.apple\.com\/[a-z]{2}\//,
-    );
+    expect(SHIPPED.appStore.url).not.toMatch(/apps\.apple\.com\/[a-z]{2}\//);
   });
 
   it("has Google Play live with the production package listing", () => {
@@ -124,5 +123,22 @@ describe("shipped config", () => {
     expect(SHIPPED.playStore.url).toBe(
       "https://play.google.com/store/apps/details?id=com.bradleyevans96.persistence",
     );
+  });
+});
+
+describe("the paid Meta channel is its own slug", () => {
+  // `meta` is the destination of the founders'-offer ad spend; `ig` is the
+  // organic bio link. Sharing one token would make the paid spend unreadable
+  // in App Analytics, which is the only place Lane B's installs surface.
+  it("carries its own Apple ct and Play UTMs", () => {
+    expect(CAMPAIGNS.meta).toEqual({
+      ct: "meta",
+      utm_source: "meta",
+      utm_campaign: "founders",
+    });
+  });
+
+  it("does not share a ct with the organic Instagram slug", () => {
+    expect(CAMPAIGNS.meta.ct).not.toBe(CAMPAIGNS.ig.ct);
   });
 });

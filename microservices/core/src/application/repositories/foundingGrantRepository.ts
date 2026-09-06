@@ -243,6 +243,98 @@ export class FoundingGrantRepository {
     return { pool, used, cap: limits[0].cap };
   }
 
+  /** Does this address already hold a live or pending founding grant? */
+  async hasLiveOrPendingGrantForEmail(email: string): Promise<boolean> {
+    const db = getDb();
+    const rows = await db
+      .select({ id: foundingGrants.id })
+      .from(foundingGrants)
+      .where(
+        and(
+          sql`lower(${foundingGrants.email}) = ${email.toLowerCase()}`,
+          isNull(foundingGrants.revokedAt),
+        ),
+      )
+      .limit(1);
+    return rows.length > 0;
+  }
+
+  /**
+   * Take a pool seat atomically: capacity check AND the write that consumes
+   * it, in ONE transaction under the pool's advisory lock.
+   *
+   * `decide` runs inside that transaction. It reports how many seats are held
+   * by checkouts in flight and hands back the write to perform if there is
+   * room — so the count and the reservation can never straddle a concurrent
+   * purchase. Returning `"pool_full"` or the caller's own refusal string
+   * commits nothing.
+   */
+  async reserveSeatUnderPoolLock<TRow, TRefusal extends string>(
+    pool: FoundingPool,
+    decide: (
+      tx: Tx,
+    ) => Promise<{ held: number; reserve: () => Promise<TRow> } | TRefusal>,
+  ): Promise<TRow | TRefusal | "pool_full"> {
+    const db = getDb();
+    return db.transaction(async (tx) => {
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtext(${"founding_pool_" + pool}))`,
+      );
+      const decision = await decide(tx);
+      if (typeof decision === "string") return decision;
+      const limits = await tx
+        .select({ cap: foundingPoolLimits.cap })
+        .from(foundingPoolLimits)
+        .where(eq(foundingPoolLimits.pool, pool))
+        .limit(1);
+      if (!limits[0]) throw new Error(`Missing founding pool limit: ${pool}`);
+      const used = await this.countLiveInPool(tx, pool);
+      if (used + decision.held >= limits[0].cap) return "pool_full" as const;
+      return decision.reserve();
+    });
+  }
+
+  /**
+   * Seats left in `pool`, counting BOTH non-revoked grants and the checkout
+   * holds passed in by `countHeld`, under the pool's advisory lock.
+   *
+   * The lock and the single transaction are the point. A web purchase decides
+   * "is there a seat?" minutes before the grant that consumes it exists, so the
+   * two counts have to be taken together and no other purchase may slip
+   * between them — otherwise the last place is sold twice and someone gets
+   * refunded by hand.
+   *
+   * `countHeld` is injected rather than imported so this repository stays
+   * about `founding_grants`; the caller supplies the checkout-hold read.
+   */
+  async freeSeatsWithHolds(
+    pool: FoundingPool,
+    countHeld: (tx: Tx) => Promise<number>,
+  ): Promise<{
+    pool: FoundingPool;
+    used: number;
+    held: number;
+    cap: number;
+    free: number;
+  }> {
+    const db = getDb();
+    return db.transaction(async (tx) => {
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtext(${"founding_pool_" + pool}))`,
+      );
+      const limits = await tx
+        .select({ cap: foundingPoolLimits.cap })
+        .from(foundingPoolLimits)
+        .where(eq(foundingPoolLimits.pool, pool))
+        .limit(1);
+      if (!limits[0]) throw new Error(`Missing founding pool limit: ${pool}`);
+      const cap = limits[0].cap;
+      const used = await this.countLiveInPool(tx, pool);
+      const held = await countHeld(tx);
+      return { pool, used, held, cap, free: Math.max(0, cap - used - held) };
+    });
+  }
+
   /**
    * Insert the `user_subscriptions` row for a grant (BRIEF D3) inside `tx`:
    * cancel every live row for the user first (the `user_subscriptions_active_unique`
@@ -422,6 +514,33 @@ export class FoundingGrantRepository {
         seats,
       };
     });
+  }
+
+  /**
+   * The live grant a Stripe payment paid for, found by the payment-intent id
+   * stored as its contribution reference.
+   *
+   * Scoped to `stripe_checkout`: `payment_reference` is a free-text field that
+   * also holds hand-typed bank references, and a refund must never revoke a
+   * grant just because somebody's bank reference happened to collide with a
+   * Stripe id.
+   */
+  async findLiveByPaymentReference(
+    reference: string,
+  ): Promise<FoundingGrant | null> {
+    const db = getDb();
+    const rows = await db
+      .select()
+      .from(foundingGrants)
+      .where(
+        and(
+          eq(foundingGrants.paymentReference, reference),
+          eq(foundingGrants.paymentMethod, "stripe_checkout"),
+          isNull(foundingGrants.revokedAt),
+        ),
+      )
+      .limit(1);
+    return rows[0] ?? null;
   }
 
   /** Pending grants (no account yet) for an email, oldest first. */

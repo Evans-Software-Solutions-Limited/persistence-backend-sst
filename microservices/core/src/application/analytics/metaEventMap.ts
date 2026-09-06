@@ -14,6 +14,7 @@ export type MetaStandardEventName =
   | "StartTrial"
   | "CompleteRegistration"
   | "Lead"
+  | "InitiateCheckout"
   // Custom (not a Meta standard event) — the optimisable web install signal
   // (spec-30 R3.8). Sent via `fbq('trackCustom', …)` on the browser side.
   | "AppStoreClick";
@@ -32,6 +33,8 @@ export const META_FORWARDED_EVENT_NAMES = [
   "registration_completed",
   "lead_captured",
   "store_click",
+  "checkout_started",
+  "purchase",
 ] as const;
 
 interface MetaEventSkeleton {
@@ -72,6 +75,17 @@ function skeletonsFor(
       return [{ eventName: "CompleteRegistration" }];
     case "lead_captured":
       return [{ eventName: "Lead" }];
+    // Founding web checkout. `InitiateCheckout` is the intent signal Meta
+    // optimises towards until enough `Purchase` volume exists to optimise on
+    // the conversion itself.
+    case "checkout_started":
+      return [{ eventName: "InitiateCheckout", customData }];
+    // A one-off fixed-term purchase. Purchase ONLY — no `Subscribe`, unlike
+    // `subscription_purchased`: nothing here renews, and telling Meta a
+    // subscription began would make the two rails indistinguishable in
+    // reporting and teach the model the wrong lifetime value.
+    case "purchase":
+      return [{ eventName: "Purchase", customData }];
     case "store_click":
       return [
         {

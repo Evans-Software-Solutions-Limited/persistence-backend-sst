@@ -49,7 +49,13 @@ export function GooglePlayIcon(props: IconProps) {
 
 export function CheckIcon(props: IconProps) {
   return (
-    <svg viewBox="0 0 24 24" {...stroke} strokeWidth={2.4} aria-hidden="true" {...props}>
+    <svg
+      viewBox="0 0 24 24"
+      {...stroke}
+      strokeWidth={2.4}
+      aria-hidden="true"
+      {...props}
+    >
       <polyline points="20 6 9 17 4 12" />
     </svg>
   );
@@ -57,7 +63,13 @@ export function CheckIcon(props: IconProps) {
 
 export function DumbbellIcon(props: IconProps) {
   return (
-    <svg viewBox="0 0 24 24" {...stroke} strokeWidth={1.8} aria-hidden="true" {...props}>
+    <svg
+      viewBox="0 0 24 24"
+      {...stroke}
+      strokeWidth={1.8}
+      aria-hidden="true"
+      {...props}
+    >
       <rect x="2" y="9" width="4" height="6" rx="1" />
       <rect x="18" y="9" width="4" height="6" rx="1" />
       <line x1="6" y1="12" x2="18" y2="12" />
@@ -69,7 +81,13 @@ export function DumbbellIcon(props: IconProps) {
 
 export function FlameIcon(props: IconProps) {
   return (
-    <svg viewBox="0 0 24 24" {...stroke} strokeWidth={1.8} aria-hidden="true" {...props}>
+    <svg
+      viewBox="0 0 24 24"
+      {...stroke}
+      strokeWidth={1.8}
+      aria-hidden="true"
+      {...props}
+    >
       <path d="M12 2C8 6 4 10 4 14a8 8 0 0016 0c0-4-4-8-8-12z" />
       <path d="M12 22c-2 0-4-2-4-4 0-2 2-4 4-6 2 2 4 4 4 6 0 2-2 4-4 4z" />
     </svg>
@@ -78,7 +96,13 @@ export function FlameIcon(props: IconProps) {
 
 export function TrendIcon(props: IconProps) {
   return (
-    <svg viewBox="0 0 24 24" {...stroke} strokeWidth={1.8} aria-hidden="true" {...props}>
+    <svg
+      viewBox="0 0 24 24"
+      {...stroke}
+      strokeWidth={1.8}
+      aria-hidden="true"
+      {...props}
+    >
       <polyline points="4 18 9 12 13 15 20 6" />
       <polyline points="16 6 20 6 20 10" />
     </svg>
@@ -185,7 +209,13 @@ export function LifeBuoyIcon(props: IconProps) {
 /** Marquee feature-tag icons, keyed by tag label. */
 export function MarqueeIcon({ d, ...props }: IconProps & { d: string }) {
   return (
-    <svg viewBox="0 0 24 24" {...stroke} strokeWidth={1.8} aria-hidden="true" {...props}>
+    <svg
+      viewBox="0 0 24 24"
+      {...stroke}
+      strokeWidth={1.8}
+      aria-hidden="true"
+      {...props}
+    >
       <path d={d} />
     </svg>
   );

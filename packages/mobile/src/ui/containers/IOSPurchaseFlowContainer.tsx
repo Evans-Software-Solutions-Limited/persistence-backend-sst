@@ -22,6 +22,7 @@ import {
   isFoundingAccess as isFoundingAccessCheck,
   TRAINER_TIER_NAMES,
 } from "@/domain/services/subscriptionService";
+import type { PayUpFrontIntroOffer } from "@/domain/ports/purchases.port";
 import {
   findPackageForTier,
   purchasableTiers as derivePurchasableTiers,
@@ -292,6 +293,18 @@ export function IOSPurchaseFlowContainer({
     [packages, billingCycle],
   );
 
+  // Pay-up-front intro price advertised on EACH card — same per-tier shape as
+  // `tierTrialDays`, but for a one-off introductory payment (ASC "Pay Up
+  // Front" offers) rather than a free trial. `null` when the tier's product
+  // carries no such offer.
+  const tierPayUpFrontOffer = useCallback(
+    (tier: SubscriptionTierName): PayUpFrontIntroOffer | null => {
+      const pkg = findPackageForTier(packages, tier, billingCycle);
+      return pkg?.payUpFrontIntroOffer ?? null;
+    },
+    [packages, billingCycle],
+  );
+
   // Trial eligibility = Apple's real on-device answer (per Apple ID, per
   // subscription group), NOT the backend `isEligibleFor*Trial` flags. Those
   // flags are only ever set by the Stripe rail, so on iOS they'd always read
@@ -318,6 +331,28 @@ export function IOSPurchaseFlowContainer({
       return pkg !== null && (introEligibility[pkg.productId] ?? false);
     },
     [introEligibility, packages, billingCycle, tierTrialDays],
+  );
+  /**
+   * Can this customer use an INTRODUCTORY offer on this tier's product —
+   * whether that offer is a free trial or a one-off up-front payment?
+   *
+   * Distinct from `isTierTrialEligible` on Android, where that function means
+   * "has a free trial phase". A Play offer configured as a single up-front
+   * payment with no trial has no free phase at all, so trial eligibility would
+   * be false for exactly the offer we most want to show. Play already picks
+   * the option this customer qualifies for, so the offer being present IS the
+   * eligibility there. On iOS, RevenueCat's per-product check is the
+   * authority — advertising an intro price to somebody who has already used
+   * one shows a price they cannot have.
+   */
+  const isTierIntroOfferEligible = useCallback(
+    (tier: SubscriptionTierName): boolean => {
+      if (Platform.OS === "android") return true;
+      if (introEligibility === null) return false;
+      const pkg = findPackageForTier(packages, tier, billingCycle);
+      return pkg !== null && (introEligibility[pkg.productId] ?? false);
+    },
+    [introEligibility, packages, billingCycle],
   );
   const hasTrialEligibilityData =
     Platform.OS === "android"
@@ -551,7 +586,9 @@ export function IOSPurchaseFlowContainer({
       selectedRole={selectedRole}
       purchasableTiers={purchasableTiers}
       isTierTrialEligible={isTierTrialEligible}
+      isTierIntroOfferEligible={isTierIntroOfferEligible}
       tierTrialDays={tierTrialDays}
+      tierPayUpFrontOffer={tierPayUpFrontOffer}
       hasTrialEligibilityData={hasTrialEligibilityData}
       monthlyOnlyTiers={MONTHLY_ONLY_TIERS}
       subscriptionEndsAt={subscriptionData?.expiresAt ?? null}

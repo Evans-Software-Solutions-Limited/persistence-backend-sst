@@ -52,7 +52,7 @@ export function PlayStoreCta({
         href={href!}
         className={`btn btn-fill${extra}`}
         aria-label="Get it on Google Play"
-        onClick={() => reportStoreClick("android")}
+        onClick={() => reportStoreClick("android", campaign)}
       >
         <GooglePlayIcon />
         Get it on Google Play
@@ -69,7 +69,7 @@ export function PlayStoreCta({
       href={href!}
       className={`store-btn${extra}`}
       aria-label="Get it on Google Play"
-      onClick={() => reportStoreClick("android")}
+      onClick={() => reportStoreClick("android", campaign)}
     >
       <GooglePlayIcon />
       <div className="store-btn-text">

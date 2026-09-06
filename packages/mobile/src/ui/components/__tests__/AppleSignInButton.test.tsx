@@ -173,12 +173,32 @@ describe("<AppleSignInButton>", () => {
     expect(style.marginTop).toBe(8);
   });
 
+  /**
+   * These two are the only assertions in this file that live entirely inside
+   * an async window: the button starts OPTIMISTIC and collapses only once
+   * `isAvailableAsync()` settles. RTL-native's `waitFor` caps at one second by
+   * default — jest's `testTimeout` does not govern it, as the note beside that
+   * setting in package.json says — and on a two-core CI runner working through
+   * 525 suites with coverage, a promise-then plus a re-render can miss that
+   * window purely because the box is busy. It failed exactly that way on CI.
+   *
+   * Widened here rather than through the global `asyncUtilTimeout`: raising
+   * the ceiling for every `waitFor` in the package was tried and made things
+   * worse, turning fast assertions in other container suites into long polls
+   * (32 failures and one suite past ten minutes). The poll still exits the
+   * instant the expectation holds, so this costs nothing when it passes.
+   */
+  const COLLAPSE_TIMEOUT = { timeout: 5000 };
+
   it("collapses instead of leaving a gap when Sign in with Apple is unavailable", async () => {
     isAvailableAsync.mockResolvedValue(false);
     const { queryByTestId } = renderWithTheme(
       <AppleSignInButton {...defaultProps} />,
     );
-    await waitFor(() => expect(queryByTestId("apple-oauth")).toBeNull());
+    await waitFor(
+      () => expect(queryByTestId("apple-oauth")).toBeNull(),
+      COLLAPSE_TIMEOUT,
+    );
   });
 
   it("collapses when the availability check rejects", async () => {
@@ -186,6 +206,9 @@ describe("<AppleSignInButton>", () => {
     const { queryByTestId } = renderWithTheme(
       <AppleSignInButton {...defaultProps} />,
     );
-    await waitFor(() => expect(queryByTestId("apple-oauth")).toBeNull());
+    await waitFor(
+      () => expect(queryByTestId("apple-oauth")).toBeNull(),
+      COLLAPSE_TIMEOUT,
+    );
   });
 });

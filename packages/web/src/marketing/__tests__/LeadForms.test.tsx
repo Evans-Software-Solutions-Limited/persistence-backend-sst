@@ -159,7 +159,9 @@ describe("Turnstile widget", () => {
       fireEvent.click(screen.getByRole("checkbox"));
       fireEvent.click(screen.getByText("Notify me at launch"));
 
-      await waitFor(() => expect(screen.getByText(/went wrong/i)).toBeDefined());
+      await waitFor(() =>
+        expect(screen.getByText(/went wrong/i)).toBeDefined(),
+      );
       expect(resetMock).toHaveBeenCalledWith("widget-1");
 
       // Retry without solving a new challenge — the already-consumed token
@@ -186,7 +188,9 @@ describe("Turnstile widget", () => {
       fireEvent.click(screen.getByRole("checkbox"));
       fireEvent.click(screen.getByText("Notify me at launch"));
 
-      await waitFor(() => expect(screen.getByText(/on the list/i)).toBeDefined());
+      await waitFor(() =>
+        expect(screen.getByText(/on the list/i)).toBeDefined(),
+      );
       expect(resetMock).not.toHaveBeenCalled();
     });
 

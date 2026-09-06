@@ -26,6 +26,13 @@ export type AnalyticsEventName =
   // Web-origin: an outbound App Store CTA click (spec-30 R3.8) — the optimisable
   // ads signal in the absence of an install SDK.
   | "store_click"
+  // Web-origin, founding checkout (FOUNDING-OFFER 2026-09-05 amendment).
+  // `checkout_started` is INTENT — the buyer was sent to Stripe; `purchase` is
+  // the conversion, emitted by the webhook once Stripe confirms payment.
+  // Distinct from `subscription_purchased`, which is a recurring native-store
+  // purchase: this one is a single fixed-term payment that never renews.
+  | "checkout_started"
+  | "purchase"
   | "onboarding_page_viewed"
   | "onboarding_page_completed"
   | "onboarding_page_skipped"

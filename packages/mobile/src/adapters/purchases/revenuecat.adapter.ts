@@ -19,6 +19,8 @@ import {
   freeTrialDaysFromGooglePlayOption,
   freeTrialDaysFromIntroOffer,
   parseStoreProductId,
+  payUpFrontIntroOfferFromGooglePlayOption,
+  payUpFrontIntroOfferFromIntroPrice,
   tierFromProductId,
 } from "@/domain/services/purchaseOfferings";
 import { fail, ok, type Result } from "@/shared/errors";
@@ -287,6 +289,9 @@ function toPurchaseProduct(pkg: PurchasesPackage): PurchaseProduct | null {
     introTrialDays:
       freeTrialDaysFromGooglePlayOption(pkg.product.defaultOption) ??
       freeTrialDaysFromIntroOffer(pkg.product.introPrice),
+    payUpFrontIntroOffer:
+      payUpFrontIntroOfferFromGooglePlayOption(pkg.product.defaultOption) ??
+      payUpFrontIntroOfferFromIntroPrice(pkg.product.introPrice),
   };
 }
 
