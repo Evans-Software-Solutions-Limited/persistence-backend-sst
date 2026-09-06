@@ -15,6 +15,7 @@ import { SubscriptionSelectionContainer } from "@/ui/containers/SubscriptionSele
 import { useMySubscription } from "@/ui/hooks/useMySubscription";
 import {
   NUTRITION_ONBOARDING_OPTIONS,
+  OnboardingAccountConfirmationPresenter,
   OnboardingIntentPresenter,
   OnboardingRolePresenter,
   OnboardingWelcomePresenter,
@@ -38,6 +39,21 @@ export function OnboardingPageContainer({ page }: { page: OnboardingPage }) {
   const router = useRouter();
   const onboarding = useOnboarding();
   const subscription = useMySubscription();
+  // Still in flight: treat as UNKNOWN, never as free. The read applies a
+  // pending founding grant server-side, so the journey waits on it rather
+  // than risk showing the paywall to somebody who has already paid.
+  //
+  // A SETTLED FAILURE is not "unknown", though — it is an answer we could not
+  // get, and it never becomes one on its own (the query retries three times
+  // and then stops). Blocking on it would strand a new user on a loading
+  // screen for the rest of the session over one bad request or a moment
+  // offline, which is a worse failure than the one this guard exists to
+  // prevent: an entitlement that arrives late is applied on the next launch,
+  // whereas an onboarding that never renders leaves nowhere to go.
+  const isSubscriptionUnknown =
+    subscription.data === undefined && !subscription.isError;
+  const isEntitled =
+    subscription.data !== undefined && subscription.data.tierName !== "free";
   const [showOthers, setShowOthers] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
   const viewedRef = useRef<OnboardingPage | null>(null);
@@ -75,10 +91,29 @@ export function OnboardingPageContainer({ page }: { page: OnboardingPage }) {
       viewedRef.current = page;
       onboarding.track("onboarding_page_viewed", { page });
       if (page === "recommendation") {
-        onboarding.track("onboarding_recommendation_viewed");
+        onboarding.track(
+          "onboarding_recommendation_viewed",
+          isEntitled ? { onboarding_mode: "account_only" } : undefined,
+        );
       }
     }
-  }, [state, onboarding, page, router, isFocused]);
+  }, [state, onboarding, page, router, isFocused, isEntitled]);
+
+  // Re-check the entitlement on arrival at the recommendation page, in case
+  // it landed mid-journey (e.g. the user confirmed their email — and the
+  // founding grant redeemed against it — in another app while onboarding).
+  // The subscription read is otherwise only kept fresh by a foreground
+  // listener mounted at the authenticated app root, which isn't mounted
+  // while this onboarding stack is.
+  useEffect(() => {
+    if (page === "recommendation" && isFocused) {
+      void subscription.refetch();
+    }
+    // Deliberately keyed on [page, isFocused] only — `subscription` is a new
+    // Tanstack Query result object on every render (including the refetch
+    // this effect itself triggers), so including it would refetch in a loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, isFocused]);
 
   const goTo = (next: OnboardingPage | null) => {
     if (next) router.push(ONBOARDING_ROUTES[next] as Href);
@@ -124,14 +159,14 @@ export function OnboardingPageContainer({ page }: { page: OnboardingPage }) {
   useFocusEffect(
     useCallback(() => {
       if (page === "welcome") return;
-      const subscription = BackHandler.addEventListener(
+      const backHandlerSubscription = BackHandler.addEventListener(
         "hardwareBackPress",
         () => {
           void back();
           return true;
         },
       );
-      return () => subscription.remove();
+      return () => backHandlerSubscription.remove();
     }, [back, page]),
   );
 
@@ -164,7 +199,12 @@ export function OnboardingPageContainer({ page }: { page: OnboardingPage }) {
     });
   }, [state, subscription.data?.tierName]);
 
-  if (onboarding.isLoading || !state || !recommendation) {
+  if (
+    onboarding.isLoading ||
+    isSubscriptionUnknown ||
+    !state ||
+    !recommendation
+  ) {
     return (
       <View
         flex={1}
@@ -249,6 +289,21 @@ export function OnboardingPageContainer({ page }: { page: OnboardingPage }) {
         onBack={() => void back()}
         onContinue={() => void complete()}
         onSkip={() => void skip()}
+      />
+    );
+  }
+
+  if (isEntitled) {
+    const finishAccountOnlyJourney = async () => {
+      await onboarding.completePage("recommendation");
+      await onboarding.completeJourney();
+      router.replace("/(app)/(tabs)");
+    };
+    return (
+      <OnboardingAccountConfirmationPresenter
+        tierDisplayName={subscription.data?.tierDisplayName ?? "Premium"}
+        expiresAt={subscription.data?.expiresAt ?? null}
+        onContinue={() => void finishAccountOnlyJourney()}
       />
     );
   }

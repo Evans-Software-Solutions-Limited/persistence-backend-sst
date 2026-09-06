@@ -65,6 +65,22 @@ export const TRAINING_ONBOARDING_OPTIONS: readonly IntentOption[] = [
   },
 ];
 
+/**
+ * Copy for the confirmation screen shown in place of plan recommendation /
+ * selection when the user already carries a paid entitlement at the end of
+ * onboarding (a founding-offer grant applied server-side, or an admin
+ * grant). Centralised as data so the presenter has no ad-hoc inline strings.
+ */
+export const ACCOUNT_ONLY_CONFIRMATION_COPY = {
+  eyebrow: "YOU'RE ALL SET",
+  title: "Your access is ready",
+  bodyWithExpiry: (tierDisplayName: string, expiresAtLabel: string) =>
+    `Your ${tierDisplayName} access is active until ${expiresAtLabel}.`,
+  bodyWithoutExpiry: (tierDisplayName: string) =>
+    `Your ${tierDisplayName} access is active.`,
+  continueLabel: "Continue",
+} as const;
+
 function StickyActions({ children }: { children: React.ReactNode }) {
   const insets = useSafeAreaInsets();
   return (
@@ -598,6 +614,110 @@ export function OnboardingIntentPresenter({
           testID={`onboarding-${kind}-continue`}
         >
           Continue
+        </Btn>
+      </StickyActions>
+    </View>
+  );
+}
+
+/**
+ * Replaces the recommendation / subscription-selection page for a user who
+ * already carries a paid entitlement (account-only mode) — a founding-offer
+ * grant applied server-side, or an admin grant, resolved via
+ * `useMySubscription` before this page can render. No plan is offered: the
+ * user already has one.
+ */
+export function OnboardingAccountConfirmationPresenter({
+  tierDisplayName,
+  expiresAt,
+  onContinue,
+}: {
+  tierDisplayName: string;
+  expiresAt: string | null;
+  onContinue: () => void;
+}) {
+  const insets = useSafeAreaInsets();
+  const expiresAtLabel = expiresAt
+    ? new Date(expiresAt).toLocaleDateString("en-GB", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      })
+    : null;
+  return (
+    <View
+      flex={1}
+      backgroundColor="$bg"
+      paddingTop={insets.top}
+      testID="onboarding-account-confirmation"
+    >
+      <ScrollView
+        contentContainerStyle={{
+          flexGrow: 1,
+          justifyContent: "center",
+          padding: 24,
+        }}
+      >
+        <View alignItems="center" marginBottom={20}>
+          <View
+            width={64}
+            height={64}
+            borderRadius={32}
+            backgroundColor="$primaryDim"
+            alignItems="center"
+            justifyContent="center"
+          >
+            <IconCheck size={32} color="#22D3EE" />
+          </View>
+        </View>
+        <Text
+          textAlign="center"
+          color="$primary"
+          fontSize={11}
+          fontWeight="700"
+          letterSpacing={1.6}
+          textTransform="uppercase"
+        >
+          {ACCOUNT_ONLY_CONFIRMATION_COPY.eyebrow}
+        </Text>
+        <Text
+          fontFamily="$display"
+          fontSize={28}
+          fontWeight="800"
+          letterSpacing={-1}
+          lineHeight={34}
+          textAlign="center"
+          color="$text"
+          marginTop={8}
+        >
+          {ACCOUNT_ONLY_CONFIRMATION_COPY.title}
+        </Text>
+        <Text
+          fontFamily="$body"
+          fontSize={14}
+          lineHeight={21}
+          textAlign="center"
+          color="$text2"
+          marginTop={10}
+        >
+          {expiresAtLabel
+            ? ACCOUNT_ONLY_CONFIRMATION_COPY.bodyWithExpiry(
+                tierDisplayName,
+                expiresAtLabel,
+              )
+            : ACCOUNT_ONLY_CONFIRMATION_COPY.bodyWithoutExpiry(tierDisplayName)}
+        </Text>
+      </ScrollView>
+      <StickyActions>
+        <Btn
+          variant="filled"
+          tone="primary"
+          size="lg"
+          full
+          onPress={onContinue}
+          testID="onboarding-account-confirmation-continue"
+        >
+          {ACCOUNT_ONLY_CONFIRMATION_COPY.continueLabel}
         </Btn>
       </StickyActions>
     </View>
