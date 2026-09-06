@@ -1,6 +1,10 @@
 # MARKETING-PLANS — start here (next session)
 
+> **Superseded in part on 5 Sep 2026.** Read `ADDENDUM-2026-09-05-paid-founding-offer.md` first: the founding offer is now a paid web purchase (Stripe Checkout, Premium £30/6 mo · £60/12 mo, Premium+ £50/6 mo · £100/12 mo, live until 30 September), WP8 is withdrawn, WP10–WP12 are added, and `LANDING_PAGE.md` v2 carries the sales-page copy. Where this file conflicts with the addendum, the addendum wins.
+
 Everything needed to run this milestone is in this folder. Read in this order, then act.
+
+0. `ADDENDUM-2026-09-05-paid-founding-offer.md` — the current decision (paid web checkout, WP10–WP12, sprint order). Then `LANDING_PAGE.md` (v2, sales page).
 
 1. `BRIEF.md` — the coding-agent brief. Hand it to the coding agent verbatim, or paste the prompt below.
 2. `MARKETING_BRIEF.md` § 0 — the decision and the Phase 0 values P1–P5 (codes, the four store offers, caps/expiry ownership, VAT, £210 cap).

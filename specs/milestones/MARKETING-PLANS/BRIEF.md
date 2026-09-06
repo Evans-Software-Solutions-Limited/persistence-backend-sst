@@ -1,5 +1,7 @@
 # Milestone MARKETING-PLANS — founders' offer attribution + admin "Marketing" section
 
+> **Superseded in part on 5 Sep 2026.** Read `ADDENDUM-2026-09-05-paid-founding-offer.md` first: the founding offer is now a paid web purchase (Stripe Checkout, Premium £30/6 mo · £60/12 mo, Premium+ £50/6 mo · £100/12 mo, live until 30 September), WP8 is withdrawn, WP10–WP12 are added, and `LANDING_PAGE.md` v2 carries the sales-page copy. Where this file conflicts with the addendum, the addendum wins.
+
 Status: approved by Brad 4 Sep 2026. Thin slice; must land before the Shipaton submission (30 Sep 23:45 PDT), so scope is fixed — do not widen it.
 
 Branch: `feat/marketing-plans` off `origin/main`. `codex/auth-cardio-logging` **merged 4 Sep** — it amends the FOUNDING-OFFER grant model (`founding_grants.grant_kind`, optional contribution columns, `founding_pool_limits`, `GET /founding/availability`); confirm those are present on your base (`git log --oneline -5 origin/main`, `ls supabase/migrations | grep generalise_founding`) before starting. One PR. Base: `git fetch && git checkout -b feat/marketing-plans origin/main`.

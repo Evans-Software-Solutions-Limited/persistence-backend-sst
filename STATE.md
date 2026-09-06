@@ -9,6 +9,22 @@ items, and the four most recent sessions. Trimmed 2026-07-27 from 1554 lines.
 If anything here contradicts `git log --oneline -30`, the git history wins —
 say so and fix this file.
 
+### 📝 2026-09-05 — PAID FOUNDING OFFER DECISION + LANDING PAGE COPY (branch `docs/marketing-plans-launch-page`, docs only)
+
+Brad reversed the "granted, not sold" page model: the founding offer is a paid
+web purchase via Stripe Checkout (Premium £30/6 mo · £60/12 mo, Premium+
+£50/6 mo · £100/12 mo), live until 30 September 2026, with admin grants as the
+second route and matching in-app introductory offers as a separate path.
+Recorded as a dated amendment in `specs/milestones/FOUNDING-OFFER/BRIEF.md § 2`
+and as `specs/milestones/MARKETING-PLANS/ADDENDUM-2026-09-05-paid-founding-offer.md`
+(WP8 withdrawn; WP10 web checkout, WP11 entitlement-aware onboarding, WP12
+pay-up-front intro prices on the paywall; Sprint 1 = WP1, WP2, WP10–WP12).
+`LANDING_PAGE.md` v2 is the approved sales-page copy for WP9. Session A in
+Claude Code received the same course correction. Deploy blocker: solicitor
+text for Terms (fixed-term, non-renewing, 14-day right, immediate-supply
+consent). Web purchases bypass RevenueCat — Shipaton evidence must cite
+`/admin` and Stripe alongside RC.
+
 ### 📝 2026-09-04 — MARKETING-PLANS BRIEFS (branch `docs/marketing-plans-briefs`, docs only)
 
 Four documents added under `specs/milestones/MARKETING-PLANS/`, no code:
