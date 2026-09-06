@@ -48,6 +48,67 @@ describe("FoundingBanner", () => {
     expect(banner()).toBeNull();
   });
 
+  describe("the room it reserves", () => {
+    /**
+     * The nav is fixed at `top: var(--m-topbar-h, 0px)` and `.mkt` carries the
+     * matching padding, so this variable is the whole of what keeps the strip
+     * and the nav out of one another's band.
+     */
+    const topbar = () =>
+      document.documentElement.style.getPropertyValue("--m-topbar-h");
+
+    it("reserves its own height, and gives the room back when dismissed", () => {
+      const height = vi
+        .spyOn(HTMLElement.prototype, "offsetHeight", "get")
+        .mockReturnValue(44);
+      renderPage(<FoundingBanner />, { route: "/" });
+      expect(topbar()).toBe("44px");
+
+      fireEvent.click(
+        screen.getByRole("button", { name: /dismiss the founding offer/i }),
+      );
+      expect(topbar()).toBe("");
+      height.mockRestore();
+    });
+
+    it("reserves nothing on the page it points at", () => {
+      renderPage(<FoundingBanner />, { route: "/founding" });
+      expect(topbar()).toBe("");
+    });
+
+    it("re-measures when the strip changes height", () => {
+      // Copy wraps to a second line on a narrow viewport and shifts again when
+      // the display font swaps in, so a height read once at mount goes stale.
+      let notify: (() => void) | undefined;
+      const observe = vi.fn();
+      const disconnect = vi.fn();
+      vi.stubGlobal(
+        "ResizeObserver",
+        class {
+          constructor(cb: () => void) {
+            notify = cb;
+          }
+          observe = observe;
+          disconnect = disconnect;
+        },
+      );
+      const height = vi
+        .spyOn(HTMLElement.prototype, "offsetHeight", "get")
+        .mockReturnValue(44);
+
+      renderPage(<FoundingBanner />, { route: "/" });
+      expect(observe).toHaveBeenCalledTimes(1);
+      expect(topbar()).toBe("44px");
+
+      height.mockReturnValue(72);
+      notify?.();
+      expect(topbar()).toBe("72px");
+
+      height.mockRestore();
+      vi.unstubAllGlobals();
+    });
+  });
+
   it("still renders when the browser refuses storage", () => {
     // A locked-down browser should lose the dismissal, not the page.
     // Scoped to this banner's own key: the theme provider above it uses

@@ -138,6 +138,9 @@
 
 /* ── Root scope ───────────────────────────────────────────────────────── */
 .mkt {
+  /* Matches `.nav`'s offset: the strip is fixed, so the room it occupies has
+     to be reserved for in-flow content explicitly. `0px` when there is none. */
+  padding-top: var(--m-topbar-h, 0px);
   background: var(--m-bg);
   color: var(--m-text);
   font-family: var(--m-font);
@@ -260,7 +263,10 @@
 /* ── Nav ──────────────────────────────────────────────────────────────── */
 .mkt .nav {
   position: fixed;
-  top: 0;
+  /* Below the founding announcement strip when one is up, flush with the top
+     of the viewport otherwise. FoundingBanner.tsx publishes the measurement;
+     the `0px` fallback is every other page. */
+  top: var(--m-topbar-h, 0px);
   left: 0;
   right: 0;
   z-index: 100;
@@ -4356,35 +4362,77 @@
   font-size: 13px;
   color: var(--m-text-3);
 }
+/* The founding announcement strip.
+
+   FIXED above the nav, with the nav and the page pushed down by the strip's
+   own height (`--m-topbar-h`). Two earlier arrangements were wrong: in normal
+   flow with no z-index the nav painted straight through the strip, and in
+   normal flow above the nav it covered the top half of the nav's 72px band,
+   slicing the logo and the CTA through the middle. */
 .mkt .founding-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 200;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 12px;
+  gap: 4px 14px;
   flex-wrap: wrap;
-  padding: 10px 44px 10px 16px;
-  position: relative;
-  background: var(--m-surface);
-  border-bottom: 1px solid var(--m-line-2);
-  font-size: 14px;
-  color: var(--m-text-2);
+  padding: 11px 52px;
+  /* Opaque by construction: `--m-surface` is a solid colour in both themes and
+     `color-mix` with a solid accent keeps it solid. Nothing behind the strip
+     may show through it. */
+  background: color-mix(in srgb, var(--m-accent) 14%, var(--m-surface));
+  border-bottom: 1px solid color-mix(in srgb, var(--m-accent) 40%, transparent);
+  color: var(--m-text);
+  font-size: 13.5px;
+  line-height: 1.4;
+  text-align: center;
 }
 .mkt .founding-banner a {
   color: var(--m-accent-t);
+  font-weight: 600;
   text-decoration: underline;
-  text-underline-offset: 2px;
+  text-underline-offset: 3px;
+  /* The CTA reads as one unit; only the sentence before it may wrap. */
+  white-space: nowrap;
+}
+.mkt .founding-banner a:hover {
+  text-decoration-thickness: 2px;
 }
 .mkt .founding-banner button {
   position: absolute;
   right: 12px;
   top: 50%;
   transform: translateY(-50%);
-  background: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
   border: 0;
-  color: var(--m-text-3);
-  font-size: 18px;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--m-text-2);
+  font-size: 20px;
   line-height: 1;
   cursor: pointer;
+}
+.mkt .founding-banner button:hover {
+  background: color-mix(in srgb, var(--m-text) 10%, transparent);
+  color: var(--m-text);
+}
+.mkt .founding-banner button:focus-visible {
+  outline: 2px solid var(--m-accent-t);
+  outline-offset: 2px;
+}
+@media (max-width: 600px) {
+  .mkt .founding-banner {
+    padding: 10px 44px;
+    font-size: 12.5px;
+  }
 }
 
 .mkt .store-founding {
