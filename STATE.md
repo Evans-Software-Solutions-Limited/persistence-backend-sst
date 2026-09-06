@@ -9,6 +9,73 @@ items, and the four most recent sessions. Trimmed 2026-07-27 from 1554 lines.
 If anything here contradicts `git log --oneline -30`, the git history wins —
 say so and fix this file.
 
+### 🟢 2026-09-06 — MARKETING-PLANS Sprint 1 (branch `feat/marketing-plans`, PR 1)
+
+**The founding offer is a paid web purchase again.** Brad reversed the
+2026-09-04 "granted, not sold" wording mid-session; the reversal is recorded
+as a dated **2026-09-05 amendment** appended to
+`specs/milestones/FOUNDING-OFFER/BRIEF.md § 2` (the older text is kept as
+history). `/founding` now sells fixed-term, NON-RENEWING access through Stripe
+Checkout in one-off `payment` mode — Premium £30/6mo and £60/12mo, Premium+
+£50/6mo and £100/12mo — open until **30 September 2026**, then a closed state.
+The coach tier stays admin/enquiry only. Admin grants (`founding` /
+`complimentary`) remain the second route in.
+
+Shipped (five commits, one per work package): WP1 `meta` campaign slug; WP2
+`campaign` on `store_click`; WP10 the web checkout; WP11 entitlement-aware
+onboarding; WP12 pay-up-front intro prices on the paywall.
+
+**Scope changes Brad made mid-session — do not re-derive:**
+- **WP8 (launch-access requests) is DROPPED.** It was built and then reverted;
+  there is no `founding_requests` table, no `POST /leads/founding`, no
+  `/admin/requests`.
+- **WP3–WP6 (store-offer CTA + the admin Marketing section) are BUILT AND
+  PARKED** on branch `feat/marketing-plans-admin` (4 commits, gates green at
+  the time). That is PR 2 / Sprint 2 — do not rebuild them. WP3 is now
+  optional.
+- **WP9 (the sales page) is still blocked** on `LANDING_PAGE.md` landing in
+  `specs/milestones/MARKETING-PLANS/`. A draft exists at
+  `scratchpad/_lp_check/LANDING_PAGE.md` but has NOT been approved or moved.
+  Every user-facing string on `/founding` and `/founding/thanks` is a
+  `PLACEHOLDER` constant in `packages/web/src/marketing/foundingOffer.ts`;
+  dropping the approved copy in is an edit to that one file.
+
+**Things that will bite if forgotten:**
+- `POST /founding/checkout` REQUIRES Turnstile — it returns 503 when
+  `TURNSTILE_SECRET` is unset, unlike the lead routes which fail open. A hold
+  there takes a place out of a capped pool for free, so an unguarded stage can
+  be emptied by a script. `TURNSTILE_SECRET` (backend) and
+  `VITE_TURNSTILE_SITE_KEY` (web build) are separate GitHub values; setting one
+  without the other breaks every checkout while the lead forms keep working.
+- Stripe Price ids come from four GitHub **variables**
+  (`STRIPE_PRICE_FOUNDING_PREMIUM_6M` etc). Unset ⇒ that term answers
+  `not_configured`. Nothing in the repo carries an amount — Stripe's Price is
+  the authority and the stored figure is read back off the Session.
+- The webhook needs `checkout.session.completed`, `checkout.session.expired`
+  AND `checkout.session.async_payment_succeeded` on the Stripe endpoint.
+- **Do not enable Adaptive Pricing** on the Stripe account: the Session is
+  created with a GBP Price and a converted currency would put the recorded
+  amount out of step with the bank.
+- `founding_checkout_sessions` holds a pool seat between "Buy" and the webhook.
+  The reservation is taken INSIDE the pool advisory lock (`reserveSeatUnderPoolLock`)
+  with a `reserved_<uuid>` placeholder, bound to the real Session afterwards.
+  Check-then-act here oversells the last place.
+- Migrations to apply staging → prod before the deploys:
+  `20260905140000_founding_checkout_sessions.sql` (also widens the
+  `founding_grants` payment-method CHECK to accept `stripe_checkout`).
+
+Two local Inspector Brad sweeps found ten and then seven issues; all are fixed
+except two deferrals written up in
+`specs/milestones/MARKETING-PLANS/FOLLOW_UPS.md` § 1 (pre-flight checks for a
+live store subscription and for coach demotion — both land in the audited
+`needs_review` path with an alert and an email; pre-checking them on a public
+unauthenticated route is a user-enumeration surface). Smoke test:
+`specs/milestones/MARKETING-PLANS/SMOKE_TEST.md`.
+
+Gates on the final tree: prettier clean; typecheck 9/9 packages; lint zero
+errors; build 14/14; `bun run test:unit` **21/21 tasks** — core 357 files /
+4,497 tests, web 36 files / 984 tests, mobile 525 suites / 6,655 tests.
+
 ### 📝 2026-09-04 — MARKETING-PLANS BRIEFS (branch `docs/marketing-plans-briefs`, docs only)
 
 Four documents added under `specs/milestones/MARKETING-PLANS/`, no code:
