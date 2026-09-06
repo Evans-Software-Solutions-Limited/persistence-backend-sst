@@ -67,6 +67,21 @@ export interface PurchasesError {
 }
 
 /**
+ * A pay-up-front introductory offer, already reduced to display-ready
+ * strings — a one-off payment covering a fixed introductory period before
+ * the subscription reverts to its standard renewal price (App Store
+ * Connect's "Pay Up Front" offer type, e.g. Premium 6 months for a one-off
+ * £30). See `payUpFrontIntroOfferFromIntroPrice` /
+ * `payUpFrontIntroOfferFromGooglePlayOption` in `purchaseOfferings.ts`.
+ */
+export interface PayUpFrontIntroOffer {
+  /** Localised, currency-formatted intro price (e.g. `£30.00`). */
+  priceString: string;
+  /** Human-readable intro period, e.g. `6 months`. */
+  periodLabel: string;
+}
+
+/**
  * A purchasable package, normalised from a RevenueCat `PurchasesPackage` into
  * the fields the UI needs. `tier` + `billingCycle` are derived from the store
  * product identifier (see `domain/services/purchaseOfferings`) so the iOS
@@ -95,6 +110,13 @@ export interface PurchaseProduct {
    * no trial banner (never a guessed duration). See `freeTrialDaysFromIntroOffer`.
    */
   introTrialDays: number | null;
+  /**
+   * A pay-up-front introductory offer on this product (a one-off payment,
+   * not a free trial), or `null` when the product carries no such offer
+   * (free-trial-only, no offer, or a discounted-recurring "pay as you go"
+   * offer we don't advertise). See `PayUpFrontIntroOffer`.
+   */
+  payUpFrontIntroOffer: PayUpFrontIntroOffer | null;
 }
 
 /**

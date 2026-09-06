@@ -2,7 +2,10 @@ import type {
   BillingCycle,
   SubscriptionTierName,
 } from "@/domain/models/subscription";
-import type { PurchaseProduct } from "@/domain/ports/purchases.port";
+import type {
+  PayUpFrontIntroOffer,
+  PurchaseProduct,
+} from "@/domain/ports/purchases.port";
 
 /**
  * Pure mapping between RevenueCat store products and our domain tiers (M12,
@@ -237,6 +240,71 @@ export function freeTrialDaysFromIntroOffer(
   }
 }
 
+/**
+ * The full RevenueCat `PurchasesIntroPrice` shape — `IntroOffer` above plus
+ * the fields `payUpFrontIntroOfferFromIntroPrice` needs. Kept as a separate
+ * type (rather than widening `IntroOffer`) so `freeTrialDaysFromIntroOffer`'s
+ * signature stays minimal; any real `PurchasesIntroPrice` value satisfies
+ * both structurally.
+ */
+export interface RawIntroPrice extends IntroOffer {
+  /** Localised, currency-formatted price, e.g. `£30.00`. */
+  priceString: string;
+  /** Number of billing periods this discount is given for. */
+  cycles: number;
+}
+
+/**
+ * Format an intro-offer period into copy, e.g. `(MONTH, 6)` → `"6 months"`.
+ * Empty string for a non-finite/non-positive count or an unrecognised unit —
+ * callers treat that as "no offer to advertise" rather than render odd copy.
+ */
+function formatIntroOfferPeriod(
+  periodUnit: string,
+  periodNumberOfUnits: number,
+): string {
+  if (!Number.isFinite(periodNumberOfUnits) || periodNumberOfUnits <= 0) {
+    return "";
+  }
+  const unitWord: Record<string, string> = {
+    DAY: "day",
+    WEEK: "week",
+    MONTH: "month",
+    YEAR: "year",
+  };
+  const word = unitWord[periodUnit];
+  if (word === undefined) return "";
+  return `${periodNumberOfUnits} ${word}${periodNumberOfUnits === 1 ? "" : "s"}`;
+}
+
+/**
+ * Convert a product's introductory offer into a pay-up-front summary — but
+ * ONLY when it's a genuine one-off payment for the whole intro period
+ * (`price > 0`, `cycles === 1`). A free trial (`price === 0`) returns `null`
+ * (see `freeTrialDaysFromIntroOffer`), and so does a discounted-recurring
+ * "pay as you go" offer (`cycles > 1`) — we don't advertise that class of
+ * offer today.
+ *
+ * RevenueCat's cross-platform `introPrice` shape has no explicit
+ * `paymentMode` field the way Apple's native `SKProductDiscount` does, so
+ * `cycles === 1` is how a one-off up-front payment surfaces here: the whole
+ * intro period is paid for once, vs. a pay-as-you-go offer which bills the
+ * discounted amount on every one of several cycles.
+ */
+export function payUpFrontIntroOfferFromIntroPrice(
+  introPrice: RawIntroPrice | null | undefined,
+): PayUpFrontIntroOffer | null {
+  if (!introPrice || introPrice.price <= 0 || introPrice.cycles !== 1) {
+    return null;
+  }
+  const periodLabel = formatIntroOfferPeriod(
+    introPrice.periodUnit,
+    introPrice.periodNumberOfUnits,
+  );
+  if (periodLabel === "") return null;
+  return { priceString: introPrice.priceString, periodLabel };
+}
+
 type GooglePlaySubscriptionOption = {
   readonly freePhase?: {
     readonly billingPeriod: {
@@ -244,6 +312,23 @@ type GooglePlaySubscriptionOption = {
       readonly value: number;
     };
     readonly price: { readonly amountMicros: number };
+  } | null;
+  /**
+   * Play's paid introductory phase (distinct from `freePhase`) — present
+   * alongside a free trial phase, or on its own for a pay-up-front-only
+   * offer. `offerPaymentMode` mirrors Apple's `SINGLE_PAYMENT` mode: the
+   * discount applies once, up front, for the whole period.
+   */
+  readonly introPhase?: {
+    readonly offerPaymentMode?: string | null;
+    readonly billingPeriod: {
+      readonly unit: string;
+      readonly value: number;
+    };
+    readonly price: {
+      readonly amountMicros: number;
+      readonly formatted: string;
+    };
   } | null;
 } | null;
 
@@ -272,6 +357,26 @@ export function freeTrialDaysFromGooglePlayOption(
     default:
       return null;
   }
+}
+
+/**
+ * Derive the pay-up-front introductory price selected by Google Play for
+ * this customer, mirroring `freeTrialDaysFromGooglePlayOption`. Only
+ * `introPhase` entries flagged `SINGLE_PAYMENT` count — a `DISCOUNTED_
+ * RECURRING_PAYMENT` phase is a "pay as you go" offer we don't advertise.
+ */
+export function payUpFrontIntroOfferFromGooglePlayOption(
+  option: GooglePlaySubscriptionOption | undefined,
+): PayUpFrontIntroOffer | null {
+  const phase = option?.introPhase;
+  if (!phase || phase.offerPaymentMode !== "SINGLE_PAYMENT") return null;
+  if (phase.price.amountMicros <= 0) return null;
+  const periodLabel = formatIntroOfferPeriod(
+    phase.billingPeriod.unit,
+    phase.billingPeriod.value,
+  );
+  if (periodLabel === "") return null;
+  return { priceString: phase.price.formatted, periodLabel };
 }
 
 /**

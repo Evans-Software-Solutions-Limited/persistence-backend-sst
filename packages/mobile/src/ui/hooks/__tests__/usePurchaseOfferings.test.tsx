@@ -57,6 +57,7 @@ const PKG: PurchaseProduct = {
   priceString: "£9.99",
   pricePerMonthString: "£9.99",
   introTrialDays: null,
+  payUpFrontIntroOffer: null,
 };
 
 describe("usePurchaseOfferings", () => {

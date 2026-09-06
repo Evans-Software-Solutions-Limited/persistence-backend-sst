@@ -27,6 +27,7 @@ import type {
   BillingCycle,
   SubscriptionTierName,
 } from "@/domain/models/subscription";
+import type { PayUpFrontIntroOffer } from "@/domain/ports/purchases.port";
 import { PLogoDrawLoader } from "@/ui/components/PLogoDrawLoader";
 import { SubscriptionLegalFooter } from "@/ui/components/subscription/SubscriptionLegalFooter";
 import { color } from "@/ui/theme/tokens";
@@ -55,6 +56,14 @@ export interface IOSPurchaseFlowPresenterProps {
   purchasableTiers: ReadonlySet<SubscriptionTierName>;
   isTierTrialEligible: (tier: SubscriptionTierName) => boolean;
   tierTrialDays: (tier: SubscriptionTierName) => number | null;
+  /**
+   * Whether this customer can use an introductory offer on the tier — a free
+   * trial or a one-off up-front payment. See the container.
+   */
+  isTierIntroOfferEligible: (tier: SubscriptionTierName) => boolean;
+  tierPayUpFrontOffer: (
+    tier: SubscriptionTierName,
+  ) => PayUpFrontIntroOffer | null;
   hasTrialEligibilityData: boolean;
   monthlyOnlyTiers: ReadonlySet<SubscriptionTierName>;
   subscriptionEndsAt: string | null;
@@ -416,6 +425,7 @@ function TierCard({
   onTierSelect,
   trialDays,
   showTrial,
+  payUpFrontOffer,
   isOnboardingRecommendation = false,
 }: {
   tier: CatalogTier;
@@ -430,6 +440,7 @@ function TierCard({
   onTierSelect: () => void;
   trialDays: number | null;
   showTrial: boolean;
+  payUpFrontOffer: PayUpFrontIntroOffer | null;
   isOnboardingRecommendation?: boolean;
 }) {
   const saving = annualSaving(pricing);
@@ -533,11 +544,31 @@ function TierCard({
         ))}
       </View>
 
-      {showTrial && trialDays !== null && (
-        <View style={styles.trialBanner} testID={`trial-banner-${tier.id}`}>
-          <Ionicons name="gift-outline" size={15} color={color.$primary} />
-          <Text style={styles.trialBannerText}>{trialDays}-day free trial</Text>
+      {payUpFrontOffer ? (
+        <View
+          style={styles.introOfferBanner}
+          testID={`intro-offer-banner-${tier.id}`}
+        >
+          <Ionicons name="pricetag-outline" size={15} color={color.$primary} />
+          <View style={styles.introOfferTextWrap}>
+            <Text style={styles.introOfferPriceText}>
+              {payUpFrontOffer.priceString} for {payUpFrontOffer.periodLabel}
+            </Text>
+            <Text style={styles.introOfferRenewalText}>
+              Renews at the standard price after that.
+            </Text>
+          </View>
         </View>
+      ) : (
+        showTrial &&
+        trialDays !== null && (
+          <View style={styles.trialBanner} testID={`trial-banner-${tier.id}`}>
+            <Ionicons name="gift-outline" size={15} color={color.$primary} />
+            <Text style={styles.trialBannerText}>
+              {trialDays}-day free trial
+            </Text>
+          </View>
+        )
       )}
 
       {tier.id === "free" ? (
@@ -715,6 +746,20 @@ function PlansScreen(props: IOSPurchaseFlowPresenterProps) {
                 props.hasTrialEligibilityData &&
                 props.currentTier !== tier.id &&
                 props.isTierTrialEligible(tier.id as SubscriptionTierName)
+              }
+              // Gated on INTRO eligibility, not trial eligibility. On Android
+              // `isTierTrialEligible` means "has a free trial", so a Play
+              // offer configured as a single up-front payment with no trial
+              // phase could never be shown — the exact offer type this
+              // renders. Dropping the gate entirely is not the answer either:
+              // on iOS it would advertise an intro price to somebody who has
+              // already used one and cannot have it.
+              payUpFrontOffer={
+                props.hasTrialEligibilityData &&
+                props.currentTier !== tier.id &&
+                props.isTierIntroOfferEligible(tier.id as SubscriptionTierName)
+                  ? props.tierPayUpFrontOffer(tier.id as SubscriptionTierName)
+                  : null
               }
               isOnboardingRecommendation={
                 recommendation?.recommendedTier === tier.id
@@ -1313,6 +1358,27 @@ const styles = StyleSheet.create({
     color: color.$primary,
     fontSize: 12,
     fontWeight: "700",
+  },
+  introOfferBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 12,
+    paddingVertical: 9,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    backgroundColor: color.$primaryDim,
+  },
+  introOfferTextWrap: { flex: 1 },
+  introOfferPriceText: {
+    color: color.$primary,
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  introOfferRenewalText: {
+    marginTop: 2,
+    color: color.$text3,
+    fontSize: 10.5,
   },
   featureRow: { flexDirection: "row", alignItems: "flex-start", gap: 7 },
   featureText: { flex: 1, color: color.$text2, fontSize: 12, lineHeight: 17 },

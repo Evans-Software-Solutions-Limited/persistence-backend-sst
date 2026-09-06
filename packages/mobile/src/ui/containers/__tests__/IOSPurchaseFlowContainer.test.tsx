@@ -137,6 +137,7 @@ function makeAdapters(current = subscription()): {
       priceString: "£16.99",
       pricePerMonthString: "£16.99",
       introTrialDays: null,
+      payUpFrontIntroOffer: null,
     },
   ];
   auth.currentSession = {
@@ -425,6 +426,43 @@ describe("IOSPurchaseFlowContainer", () => {
     expect(await screen.findByText("7-day free trial")).toBeTruthy();
   });
 
+  it("shows a real, eligible pay-up-front introductory price and its renewal note", async () => {
+    mockParams = { tier: "premium", cycle: "monthly" };
+    const { adapters, purchases } = makeAdapters();
+    purchases.packages[0] = {
+      ...purchases.packages[0]!,
+      payUpFrontIntroOffer: { priceString: "£30.00", periodLabel: "6 months" },
+    };
+    purchases.introEligibility = {
+      "app.persistence.premium.monthly": true,
+    };
+
+    renderContainer(adapters);
+    expect(await screen.findByText("£30.00 for 6 months")).toBeTruthy();
+    expect(
+      screen.getByText("Renews at the standard price after that."),
+    ).toBeTruthy();
+    // The pay-up-front banner wins over the free-trial one when both are
+    // somehow present, and the standard trial copy must not also render.
+    expect(screen.queryByText(/free trial/)).toBeNull();
+  });
+
+  it("does not show the pay-up-front banner when the customer isn't intro-eligible", async () => {
+    mockParams = { tier: "premium", cycle: "monthly" };
+    const { adapters, purchases } = makeAdapters();
+    purchases.packages[0] = {
+      ...purchases.packages[0]!,
+      payUpFrontIntroOffer: { priceString: "£30.00", periodLabel: "6 months" },
+    };
+    purchases.introEligibility = {
+      "app.persistence.premium.monthly": false,
+    };
+
+    renderContainer(adapters);
+    await screen.findByTestId("subscription-card-premium-subscribe");
+    expect(screen.queryByText("£30.00 for 6 months")).toBeNull();
+  });
+
   it.each([
     ["cancelled", "Purchase cancelled", null],
     ["pending", "Awaiting approval", "Purchase Pending"],
@@ -555,6 +593,7 @@ describe("IOSPurchaseFlowContainer", () => {
         priceString: "£34.99",
         pricePerMonthString: "£34.99",
         introTrialDays: null,
+        payUpFrontIntroOffer: null,
       },
     ];
     purchases.nextPurchaseResponse = {
