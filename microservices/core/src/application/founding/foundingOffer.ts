@@ -115,30 +115,40 @@ export const FOUNDING_CHECKOUT_TTL_MS = 30 * 60 * 1000;
 export const FOUNDING_WEB_ACTOR_ID = "00000000-0000-0000-0000-000000000000";
 
 /**
- * Stripe Price ids for the four web terms, read from the environment.
+ * Stripe **lookup keys** for the four web terms, and the amount each must
+ * charge.
  *
- * Prices live in Stripe, not here: the amount charged is whatever the Price
- * says, so this file must never carry a figure that could drift from it. Read
- * at call time (not module load) so a stage without them still boots — the
- * route answers `not_configured` instead of the process failing to start.
+ * Lookup keys rather than Price ids, and a constant rather than configuration,
+ * because a lookup key is identical in test and live mode. That leaves
+ * `STRIPE_SECRET_KEY` as the only thing that differs per environment — nothing
+ * to set per stage, nothing to set WRONG per stage, and no way for staging to
+ * point at a live Price by a copy-paste slip.
  *
- * Returns `null` for an unconfigured term, which the route treats as "this
- * term is not on sale here".
+ * `amountMinor` is not what gets charged: Stripe's Price is. It is here to be
+ * CHECKED against, so a dashboard edit that changes a price cannot silently
+ * change what this page sells — see `resolveFoundingPrices`.
  */
-export function foundingWebPriceId(
-  tier: FoundingWebTier,
-  months: FoundingWebMonths,
-): string | null {
-  const key =
-    tier === "premium"
-      ? months === 6
-        ? "STRIPE_PRICE_FOUNDING_PREMIUM_6M"
-        : "STRIPE_PRICE_FOUNDING_PREMIUM_12M"
-      : months === 6
-        ? "STRIPE_PRICE_FOUNDING_PREMIUM_PLUS_6M"
-        : "STRIPE_PRICE_FOUNDING_PREMIUM_PLUS_12M";
-  return process.env[key]?.trim() || null;
-}
+export const FOUNDING_PRICE_LOOKUP_KEYS: Record<
+  FoundingWebTier,
+  Record<FoundingWebMonths, { lookupKey: string; amountMinor: number }>
+> = {
+  premium: {
+    6: { lookupKey: "founding_premium_6m", amountMinor: 3000 },
+    12: { lookupKey: "founding_premium_12m", amountMinor: 6000 },
+  },
+  premium_plus: {
+    6: { lookupKey: "founding_premium_plus_6m", amountMinor: 5000 },
+    12: { lookupKey: "founding_premium_plus_12m", amountMinor: 10000 },
+  },
+};
+
+/** Every lookup key, for the single list call that resolves them all. */
+export const ALL_FOUNDING_LOOKUP_KEYS: string[] = Object.values(
+  FOUNDING_PRICE_LOOKUP_KEYS,
+).flatMap((byTerm) => Object.values(byTerm).map((entry) => entry.lookupKey));
+
+/** The currency every founding Price must be denominated in. */
+export const FOUNDING_PRICE_CURRENCY = "gbp";
 
 /**
  * Marks a `founding_checkout_sessions` row that holds a seat but has no Stripe

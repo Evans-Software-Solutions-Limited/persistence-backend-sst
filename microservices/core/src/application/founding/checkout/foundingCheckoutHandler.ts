@@ -9,13 +9,13 @@ import {
 } from "../../referrals/referralCode";
 import { FoundingCheckoutRepository } from "../../repositories/foundingCheckoutRepository";
 import { ReferralRepository } from "../../repositories/referralRepository";
+import { resolveFoundingPrice } from "./foundingPrices";
 import { FoundingGrantRepository } from "../../repositories/foundingGrantRepository";
 import {
   FOUNDING_CHECKOUT_TTL_MS,
   FOUNDING_OFFERS,
   RESERVATION_PREFIX,
   foundingOfferIsOpen,
-  foundingWebPriceId,
   isFoundingWebMonths,
   isFoundingWebTier,
   type FoundingWebMonths,
@@ -258,16 +258,20 @@ export const foundingCheckoutHandler = new Elysia()
       const tier: FoundingWebTier = ctx.body.tier;
       const months: FoundingWebMonths = ctx.body.months;
 
-      const priceId = foundingWebPriceId(tier, months);
-      if (!priceId) {
-        // The stage has no Price configured for this term. A 503 rather than a
-        // 400: the buyer did nothing wrong and a retry may well work.
-        console.error(
-          `[founding:checkout] no Stripe price configured for ${tier}/${months}m`,
-        );
+      // Resolved from Stripe by lookup key, and verified against the amount
+      // this offer advertises. A key re-pointed at a different Price in the
+      // dashboard would otherwise change what the page charges silently, so a
+      // Price that cannot be verified is refused rather than used. A 503, not
+      // a 400: the buyer did nothing wrong.
+      const price = await resolveFoundingPrice(tier, months);
+      if (!price.ok) {
         ctx.set.status = 503;
-        return { ok: false as const, error: "not_configured" as const };
+        return {
+          ok: false as const,
+          error: "founding_prices_unavailable" as const,
+        };
       }
+      const priceId = price.priceId;
 
       // A malformed referral code is DROPPED, not rejected: it is attribution
       // only and changes neither price nor entitlement (BRIEF D6), so a typo

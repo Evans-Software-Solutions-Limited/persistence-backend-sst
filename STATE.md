@@ -47,10 +47,16 @@ onboarding; WP12 pay-up-front intro prices on the paywall.
   be emptied by a script. `TURNSTILE_SECRET` (backend) and
   `VITE_TURNSTILE_SITE_KEY` (web build) are separate GitHub values; setting one
   without the other breaks every checkout while the lead forms keep working.
-- Stripe Price ids come from four GitHub **variables**
-  (`STRIPE_PRICE_FOUNDING_PREMIUM_6M` etc). Unset ⇒ that term answers
-  `not_configured`. Nothing in the repo carries an amount — Stripe's Price is
-  the authority and the stored figure is read back off the Session.
+- Stripe Prices are resolved at RUNTIME by **lookup key**
+  (`founding_premium_6m`, `_premium_12m`, `_premium_plus_6m`,
+  `_premium_plus_12m`) — identical in test and live mode, so
+  `STRIPE_SECRET_KEY` is the only per-environment value in the whole rail.
+  There are no price env vars; do not reintroduce them. The resolver verifies
+  each Price's amount and currency against
+  `FOUNDING_PRICE_LOOKUP_KEYS` and fails closed with 503
+  `founding_prices_unavailable`, so a dashboard edit cannot silently change
+  what the page charges. The amount stored on a checkout is still read back
+  off the Session.
 - The webhook needs `checkout.session.completed`, `checkout.session.expired`
   AND `checkout.session.async_payment_succeeded` on the Stripe endpoint.
 - **Do not enable Adaptive Pricing** on the Stripe account: the Session is

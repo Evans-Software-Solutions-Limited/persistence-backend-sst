@@ -11,14 +11,23 @@ production account.
 1. Apply both migrations on staging, in this order (they are additive and safe
    to apply ahead of the deploy):
    - `20260905140000_founding_checkout_sessions.sql`
-2. In Stripe **test mode**, create four one-off Prices in GBP — Premium £30 and
-   £60, Premium+ £50 and £100 — and set their ids as staging GitHub
-   **variables** (not secrets):
-   `STRIPE_PRICE_FOUNDING_PREMIUM_6M`, `_PREMIUM_12M`,
-   `_PREMIUM_PLUS_6M`, `_PREMIUM_PLUS_12M`.
+2. In Stripe, confirm the four one-off GBP Prices carry these **lookup keys**
+   in **both** test and live mode — there is nothing to set per stage, because
+   a lookup key is the same in both:
+
+   | Lookup key                  | Amount | Term                |
+   | --------------------------- | ------ | ------------------- |
+   | `founding_premium_6m`       | £30    | Premium, 6 months   |
+   | `founding_premium_12m`      | £60    | Premium, 12 months  |
+   | `founding_premium_plus_6m`  | £50    | Premium+, 6 months  |
+   | `founding_premium_plus_12m` | £100   | Premium+, 12 months |
+
+   The amounts are checked at runtime, so a Price whose figure or currency does
+   not match this table is refused rather than used.
    ⚠ Do **not** enable Adaptive Pricing on the account: the Session is created
    with a GBP Price and a converted currency would make the recorded amount and
    the bank disagree.
+
 3. Add `checkout.session.completed` and `checkout.session.expired` to the
    staging Stripe webhook endpoint's event list. Without them nothing grants.
 4. Set **both** Turnstile values on staging — `TURNSTILE_SECRET` (backend) and
@@ -118,6 +127,19 @@ Visit `/meta` and tap a store button. Expect one `analytics_events` row,
 button from `/` and expect a row with **no** `campaign` property.
 
 Confirm `campaign` is absent from anything forwarded to Meta.
+
+## (u) The prices resolve against the sandbox
+
+With `STRIPE_SECRET_KEY` pointing at the **test-mode** account, load `/founding`
+and start one checkout. Expect it to succeed with no price configuration of any
+kind, and the CloudWatch log for that invocation to show the four resolved
+`price_…` ids (one `prices.list` call, then nothing on subsequent checkouts —
+the set is memoised per container).
+
+Then check the guard: in the Stripe dashboard, move `founding_premium_6m` to a
+Price with a different amount. The next checkout must answer **503**
+`founding_prices_unavailable` and log which key mismatched — not sell at the
+new figure. Put it back afterwards.
 
 ## (j) The needs-review path — optional, worth doing once
 

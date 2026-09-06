@@ -40,6 +40,20 @@ The only effect is a false "sold out" for a concurrent buyer when the pool is
 on its very last seat, for a second or so. It errs the safe way — it can never
 oversell — so it is left alone rather than restructured.
 
+## 1c. The price check is a floor, not a lock
+
+`resolveFoundingPrice` refuses a Price whose amount or currency does not match
+`FOUNDING_PRICE_LOOKUP_KEYS`, so a dashboard edit cannot silently change what
+the page charges — it takes the offer offline instead, loudly.
+
+What it does not do is notice a change made _between_ two container lifetimes
+while the amounts still match the table (there is nothing to notice), or verify
+anything else about the Price — recurring vs one-off, tax behaviour, currency
+options. Stripe's own configuration is the authority on those.
+
+If the offer is ever run with prices that change during its life, the table
+becomes the thing to update, and it is the only place to update it.
+
 ## 2. App Store Connect API
 
 Offer codes, their caps and their expiry are configured by hand in App Store

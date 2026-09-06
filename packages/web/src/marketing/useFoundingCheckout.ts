@@ -123,6 +123,7 @@ function errorMessage(code: string | undefined): string {
       // Reachable when the earlier session cannot be recovered from Stripe.
       return "You already have a checkout open. Finish it, or try again in half an hour.";
     case "not_configured":
+    case "founding_prices_unavailable":
       return "Payments aren't available right now. Please try again later.";
     case "invalid_email":
       return "That email address doesn't look right.";

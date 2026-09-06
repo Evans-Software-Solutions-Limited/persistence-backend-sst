@@ -165,20 +165,6 @@ export const coreRoute = coreAPI.route("$default", {
     WEB_ORIGIN: webDomain
       ? `https://${webDomain}`
       : "https://persistence.evans-software-solutions.com",
-    // Founding web checkout Stripe Price ids (FOUNDING-OFFER 2026-09-05
-    // amendment). NOT secrets — a Price id is public the moment a Checkout
-    // Session is created — so they are plain deploy-time config read from the
-    // deploy job's env. OPTIONAL + fail-safe: an unset term is simply not on
-    // sale, and `POST /founding/checkout` answers `not_configured` for it
-    // rather than the stage failing to boot.
-    STRIPE_PRICE_FOUNDING_PREMIUM_6M:
-      process.env.STRIPE_PRICE_FOUNDING_PREMIUM_6M ?? "",
-    STRIPE_PRICE_FOUNDING_PREMIUM_12M:
-      process.env.STRIPE_PRICE_FOUNDING_PREMIUM_12M ?? "",
-    STRIPE_PRICE_FOUNDING_PREMIUM_PLUS_6M:
-      process.env.STRIPE_PRICE_FOUNDING_PREMIUM_PLUS_6M ?? "",
-    STRIPE_PRICE_FOUNDING_PREMIUM_PLUS_12M:
-      process.env.STRIPE_PRICE_FOUNDING_PREMIUM_PLUS_12M ?? "",
     // Cloudflare Turnstile — bot challenge for the public /leads/* forms
     // (spec-30 WS3). OPTIONAL + fail-safe: empty = verification skipped (forms
     // behave as before). Set before the forms are publicly linked.

@@ -17,6 +17,14 @@ vi.mock("../../../stripe/stripeClient", () => ({
   }),
 }));
 
+const priceMocks = vi.hoisted(() => ({
+  resolveFoundingPrice: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
+}));
+vi.mock("../foundingPrices", () => ({
+  resolveFoundingPrice: (...args: unknown[]) =>
+    priceMocks.resolveFoundingPrice(...args),
+}));
+
 const referralMocks = vi.hoisted(() => ({
   findCodeByCanonical: vi.fn<(...args: unknown[]) => Promise<unknown>>(
     async () => ({ id: "code-1" }),
@@ -89,13 +97,6 @@ interface Handler {
   handle: (request: Request) => Promise<Response>;
 }
 
-const PRICE_ENV = {
-  STRIPE_PRICE_FOUNDING_PREMIUM_6M: "price_p6",
-  STRIPE_PRICE_FOUNDING_PREMIUM_12M: "price_p12",
-  STRIPE_PRICE_FOUNDING_PREMIUM_PLUS_6M: "price_pp6",
-  STRIPE_PRICE_FOUNDING_PREMIUM_PLUS_12M: "price_pp12",
-};
-
 const VALID = {
   tier: "premium",
   months: 6,
@@ -130,7 +131,6 @@ describe("POST /founding/checkout", () => {
     vi.clearAllMocks();
     resetRateLimits();
     vi.useRealTimers();
-    for (const [k, v] of Object.entries(PRICE_ENV)) vi.stubEnv(k, v);
     vi.stubEnv("WEB_ORIGIN", "https://example.test");
     turnstileMock.mockResolvedValue("passed");
     // Explicit, not inherited from the `vi.fn(default)` argument: a test that
@@ -145,6 +145,12 @@ describe("POST /founding/checkout", () => {
     repoMocks.findOpenHoldForEmail.mockResolvedValue(null);
     stripeMocks.expire.mockResolvedValue({});
     referralMocks.findCodeByCanonical.mockResolvedValue({ id: "code-1" });
+    priceMocks.resolveFoundingPrice.mockImplementation(
+      async (tier: unknown, months: unknown) => ({
+        ok: true,
+        priceId: `price_${String(tier)}_${String(months)}`,
+      }),
+    );
     // Runs the caller's own `decide` so the reservation the route builds is
     // the thing under test, not a stub of it.
     repoMocks.reserveSeatUnderPoolLock.mockImplementation(
@@ -218,7 +224,9 @@ describe("POST /founding/checkout", () => {
       unknown
     >;
     expect(args.mode).toBe("payment");
-    expect(args.line_items).toEqual([{ price: "price_p6", quantity: 1 }]);
+    expect(args.line_items).toEqual([
+      { price: "price_premium_6", quantity: 1 },
+    ]);
   });
 
   it("fixes the email server-side so it cannot be edited on Stripe's page", async () => {
@@ -274,17 +282,24 @@ describe("POST /founding/checkout", () => {
   });
 
   it.each([
-    ["premium", 6, "price_p6"],
-    ["premium", 12, "price_p12"],
-    ["premium_plus", 6, "price_pp6"],
-    ["premium_plus", 12, "price_pp12"],
-  ])("uses the %s/%im Price id", async (tier, months, priceId) => {
-    await post({ ...VALID, tier, months });
-    const args = stripeMocks.create.mock.calls[0]![0] as {
-      line_items: Array<{ price: string }>;
-    };
-    expect(args.line_items[0]!.price).toBe(priceId);
-  });
+    ["premium", 6],
+    ["premium", 12],
+    ["premium_plus", 6],
+    ["premium_plus", 12],
+  ])(
+    "resolves the %s/%im Price and builds the Session from it",
+    async (tier, months) => {
+      await post({ ...VALID, tier, months });
+      expect(priceMocks.resolveFoundingPrice).toHaveBeenCalledWith(
+        tier,
+        months,
+      );
+      const args = stripeMocks.create.mock.calls[0]![0] as {
+        line_items: Array<{ price: string }>;
+      };
+      expect(args.line_items[0]!.price).toBe(`price_${tier}_${months}`);
+    },
+  );
 
   it("emits checkout_started as intent, with the value and the attribution", async () => {
     await post(VALID);
@@ -510,13 +525,21 @@ describe("POST /founding/checkout", () => {
       vi.useRealTimers();
     });
 
-    it("503s when the stage has no Price for that term", async () => {
-      // The buyer did nothing wrong, so this is not a 400.
-      vi.stubEnv("STRIPE_PRICE_FOUNDING_PREMIUM_12M", "");
-      vi.spyOn(console, "error").mockImplementation(() => {});
-      const res = await post({ ...VALID, months: 12 });
+    it("503s when the Price cannot be resolved or verified", async () => {
+      // The buyer did nothing wrong, so this is not a 400. And it refuses
+      // rather than creating a Session with a Price we could not vouch for —
+      // that would charge somebody the wrong amount.
+      priceMocks.resolveFoundingPrice.mockResolvedValue({
+        ok: false,
+        reason: "unavailable",
+      });
+      const res = await post(VALID);
       expect(res.status).toBe(503);
-      expect(await res.json()).toEqual({ ok: false, error: "not_configured" });
+      expect(await res.json()).toEqual({
+        ok: false,
+        error: "founding_prices_unavailable",
+      });
+      expect(stripeMocks.create).not.toHaveBeenCalled();
     });
 
     it("503s and stores nothing when Stripe itself fails", async () => {

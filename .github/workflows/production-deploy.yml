@@ -219,10 +219,4 @@ jobs:
           VITE_META_PIXEL_ID: ${{ secrets.VITE_META_PIXEL_ID }}
           VITE_TURNSTILE_SITE_KEY: ${{ secrets.VITE_TURNSTILE_SITE_KEY }}
           VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
-          # Founding web checkout Stripe Price ids (2026-09-05 amendment).
-          # Public config, not secrets: an unset term is simply not on sale.
-          STRIPE_PRICE_FOUNDING_PREMIUM_6M: ${{ vars.STRIPE_PRICE_FOUNDING_PREMIUM_6M }}
-          STRIPE_PRICE_FOUNDING_PREMIUM_12M: ${{ vars.STRIPE_PRICE_FOUNDING_PREMIUM_12M }}
-          STRIPE_PRICE_FOUNDING_PREMIUM_PLUS_6M: ${{ vars.STRIPE_PRICE_FOUNDING_PREMIUM_PLUS_6M }}
-          STRIPE_PRICE_FOUNDING_PREMIUM_PLUS_12M: ${{ vars.STRIPE_PRICE_FOUNDING_PREMIUM_PLUS_12M }}
         run: bunx sst deploy --stage production
