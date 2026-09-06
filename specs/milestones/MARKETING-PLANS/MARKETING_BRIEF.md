@@ -1,5 +1,7 @@
 # Persistence — Founders' offer × Meta: marketing setup brief
 
+> **Superseded in part on 5 Sep 2026.** Read `ADDENDUM-2026-09-05-paid-founding-offer.md` first: the founding offer is now a paid web purchase (Stripe Checkout, Premium £30/6 mo · £60/12 mo, Premium+ £50/6 mo · £100/12 mo, live until 30 September), WP8 is withdrawn, WP10–WP12 are added, and `LANDING_PAGE.md` v2 carries the sales-page copy. Where this file conflicts with the addendum, the addendum wins.
+
 Written 4 Sep 2026; realigned the same day to the FOUNDING-OFFER grant-model amendment on `codex/auth-cardio-logging` (founding access is granted, not sold; contributions are optional and separate). Format follows `MARKETING_SOURCE_OF_TRUTH_GENERIC.md` § 1.4 / § 11 (Decision → Buyer → Offer → Evidence → Economics → Experiment → Measurement → Stop/scale → Policy → Approvals). Evidence labels: `PRIMARY` `CORROBORATED` `DERIVED` `HYPOTHESIS` `VOLATILE` `SELF_REPORTED`.
 
 Source of truth for build state is `STATE.md` + `specs/milestones/FOUNDING-OFFER/*` (PR #432 merged 4 Sep; the 2026-09-04 amendment in `BRIEF.md § 2` controls wherever the older D1–D9 text conflicts). Where this brief and those disagree on a build fact, they win and this brief gets corrected.

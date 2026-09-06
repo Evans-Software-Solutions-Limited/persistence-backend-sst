@@ -1,5 +1,7 @@
 # Founders' offer — execution plan (Sep 2026)
 
+> **Superseded in part on 5 Sep 2026.** Read `ADDENDUM-2026-09-05-paid-founding-offer.md` first: the founding offer is now a paid web purchase (Stripe Checkout, Premium £30/6 mo · £60/12 mo, Premium+ £50/6 mo · £100/12 mo, live until 30 September), WP8 is withdrawn, WP10–WP12 are added, and `LANDING_PAGE.md` v2 carries the sales-page copy. Where this file conflicts with the addendum, the addendum wins.
+
 Owner: Brad. Agents: one coding agent on `feat/marketing-plans` (brief: `BRIEF.md` in this folder). Source of truth for build facts: `STATE.md`; for the grant model: `specs/milestones/FOUNDING-OFFER/BRIEF.md § 2` (2026-09-04 amendment — access is granted, not sold; contributions optional and separate). Ads content: Brad only (`CREATIVE_BRIEF.md`). Hard dates: Meta test window 10–28 Sep; Shipaton submission 30 Sep 23:45 PDT.
 
 Rule: nothing public until the step's gate is green. Gates in bold.

@@ -59,6 +59,23 @@ purchase/cancellation flow.
 The original launch assumptions are retained below as history. This amendment
 controls wherever they conflict.
 
+### 2026-09-05 amendment — paid web founding offer (supersedes the 2026-09-04 wording on prices and purchase flow)
+
+The founding offer is sold on the website for a fixed period ending 30 September
+2026: Premium £30 / 6 months or £60 / 12 months; Premium+ £50 / 6 months or
+£100 / 12 months. Payment is taken by Stripe Checkout in one-off payment mode;
+fulfilment is a `founding` grant created by the `checkout.session.completed`
+webhook through `FoundingGrantService.grant`, so redemption, email confirmation,
+seat caps, the live-store-subscription refusal and revocation behave exactly as
+reviewed on 2026-09-04. The public page therefore **does** present fixed prices
+and a purchase flow. Administrative grants (`founding` for cash taken in person,
+`complimentary` for discretionary access) continue unchanged as the second
+route. Contributions recorded on web-checkout grants are the Stripe amount and
+payment reference. Referral codes remain attribution only. In-app introductory
+offers at the same prices are configured in App Store Connect and Google Play as
+a separate path; nothing inside the mobile app references the website offer.
+Specification: `specs/milestones/MARKETING-PLANS/ADDENDUM-2026-09-05-paid-founding-offer.md`.
+
 | #   | Decision                                                  | Value                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | --- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | D1  | Founding offer                                            | **£30 → 6 months `premium`**, **£50 → 6 months `premium_plus`**, **200 seats total** across both consumer tiers. Separate **20-seat coach line: 6 months `start_up_coach_plus` for £99**.                                                                                                                                                                                                                                                                                                   |

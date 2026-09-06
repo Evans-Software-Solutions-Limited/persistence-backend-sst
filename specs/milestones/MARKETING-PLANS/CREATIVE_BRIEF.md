@@ -1,5 +1,7 @@
 # Creative brief — founders' offer, Meta/Instagram test (Sep 2026)
 
+> **Superseded in part on 5 Sep 2026.** Read `ADDENDUM-2026-09-05-paid-founding-offer.md` first: the founding offer is now a paid web purchase (Stripe Checkout, Premium £30/6 mo · £60/12 mo, Premium+ £50/6 mo · £100/12 mo, live until 30 September), WP8 is withdrawn, WP10–WP12 are added, and `LANDING_PAGE.md` v2 carries the sales-page copy. Where this file conflicts with the addendum, the addendum wins.
+
 For Brad to make the ads himself. This brief gives structure, constraints and the checks; it deliberately contains no ad copy, hooks or scripts. Format follows SoT § 14.2.
 
 ## Buyer and awareness
@@ -11,6 +13,8 @@ UK, 18–40, trains 2–4× a week, already tracks workouts somewhere they don't
 New programme, new gym, or the moment they can't remember what they lifted last week. The status-quo cost is friction (tracking is a chore) or price (a monthly app they don't get value from).
 
 ## Single claim (the only promise every asset makes)
+
+**5 Sep update:** the ads now sell the web founding offer on `/founding` — six months of Premium for £30 (a year for £60; Premium+ £50 / £100), paid once, nothing renews, until 30 September. Ads may state the price because the page states it. Never mention the App Store introductory offer in an ad that lands on the website, and never mention the website offer inside the app. Conversion event is `Purchase`.
 
 Founders' rate: six months of Premium for £30 (the year for £60; Premium+ £50 / £100 — nearest Apple tiers, read the exact figure back from ASC). Renews at the standard price unless cancelled. Limited to the max redemptions you set in ASC — quote that number, never the founding pool cap. Lead with one price in an ad (six months of Premium); the others live on the landing page. These ads are Lane B only; they must not mention founding places, grants or contributions.
 
