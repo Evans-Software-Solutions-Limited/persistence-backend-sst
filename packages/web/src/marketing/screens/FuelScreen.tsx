@@ -28,7 +28,14 @@ export function FuelScreen() {
         <div className="fuel-top">
           <div className="fuel-ring">
             <svg viewBox="0 0 120 120" aria-hidden="true">
-              <circle cx="60" cy="60" r="40" fill="none" stroke="rgba(244,241,234,0.08)" strokeWidth="11" />
+              <circle
+                cx="60"
+                cy="60"
+                r="40"
+                fill="none"
+                stroke="rgba(244,241,234,0.08)"
+                strokeWidth="11"
+              />
               <circle
                 className="app-ring-fg"
                 cx="60"
@@ -57,7 +64,9 @@ export function FuelScreen() {
                   </span>
                 </div>
                 <div className="fmac-bar">
-                  <i style={{ width: `${m.pct * 100}%`, background: m.color }} />
+                  <i
+                    style={{ width: `${m.pct * 100}%`, background: m.color }}
+                  />
                 </div>
               </div>
             ))}
@@ -79,13 +88,26 @@ export function FuelScreen() {
       {/* Quick add */}
       <div className="fuel-qa">
         <span className="fuel-qa-btn">
-          <svg viewBox="0 0 24 24" fill="none" stroke="#4FE3F0" strokeWidth="2" strokeLinecap="round">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="#4FE3F0"
+            strokeWidth="2"
+            strokeLinecap="round"
+          >
             <path d="M3 5v14M8 5v14M12 5v14M17 5v14M21 5v14" />
           </svg>
           Scan
         </span>
         <span className="fuel-qa-btn">
-          <svg viewBox="0 0 24 24" fill="none" stroke="#F2C94C" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="#F2C94C"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
             <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
             <circle cx="12" cy="13" r="4" />
           </svg>
@@ -93,14 +115,27 @@ export function FuelScreen() {
           <i className="fuel-qa-lock" />
         </span>
         <span className="fuel-qa-btn">
-          <svg viewBox="0 0 24 24" fill="none" stroke="#4FE3F0" strokeWidth="2" strokeLinecap="round">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="#4FE3F0"
+            strokeWidth="2"
+            strokeLinecap="round"
+          >
             <circle cx="11" cy="11" r="7" />
             <path d="m21 21-4.3-4.3" />
           </svg>
           Search
         </span>
         <span className="fuel-qa-btn">
-          <svg viewBox="0 0 24 24" fill="none" stroke="#4FE3F0" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="#4FE3F0"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
             <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
             <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
           </svg>
@@ -138,14 +173,27 @@ export function FuelScreen() {
 
       <nav className="app-tabs" aria-hidden="true">
         <span className="app-tab">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
             <path d="M3 10.5 12 3l9 7.5" />
             <path d="M5 9.5V21h14V9.5" />
           </svg>
           Home
         </span>
         <span className="app-tab">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+          >
             <rect x="2" y="9" width="4" height="6" rx="1" />
             <rect x="18" y="9" width="4" height="6" rx="1" />
             <line x1="6" y1="12" x2="18" y2="12" />
@@ -153,14 +201,28 @@ export function FuelScreen() {
           Train
         </span>
         <span className="app-tab active">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
             <path d="M12 7c1-2 3-3 5-2 2 2 1 6-1 9-1 1.5-2 3-4 3s-3-1.5-4-3c-2-3-3-7-1-9 2-1 4 0 5 2z" />
             <path d="M12 7c0-2 1-4 3-4" />
           </svg>
           Fuel
         </span>
         <span className="app-tab">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
             <line x1="18" y1="20" x2="18" y2="10" />
             <line x1="12" y1="20" x2="12" y2="4" />
             <line x1="6" y1="20" x2="6" y2="14" />

@@ -20,8 +20,8 @@ export function MarketingFooter() {
             </Link>
             <div className="footer-brand-text">
               <p>
-                The training and nutrition companion for serious athletes and the coaches
-                who guide them.
+                The training and nutrition companion for serious athletes and
+                the coaches who guide them.
               </p>
             </div>
           </div>

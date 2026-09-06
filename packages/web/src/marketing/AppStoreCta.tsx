@@ -26,7 +26,11 @@ export interface AppStoreCtaProps {
  * `reportStoreClick()` (browser pixel `AppStoreClick` + server beacon, deduped
  * by a shared event id — see `lib/storeClick.ts`) without blocking navigation.
  */
-export function AppStoreCta({ variant, campaign, className }: AppStoreCtaProps) {
+export function AppStoreCta({
+  variant,
+  campaign,
+  className,
+}: AppStoreCtaProps) {
   // An explicit prop wins; otherwise inherit the landing route's campaign, so
   // a CTA on /uon attributes without every call-site having to know the route.
   const routeCampaign = useCampaign();
@@ -71,7 +75,9 @@ export function AppStoreCta({ variant, campaign, className }: AppStoreCtaProps) 
       <>
         <AppleIcon />
         <div className="store-btn-text">
-          <span className="small">{live ? "Download on the" : "Coming soon to"}</span>
+          <span className="small">
+            {live ? "Download on the" : "Coming soon to"}
+          </span>
           <span className="big">App Store</span>
         </div>
       </>

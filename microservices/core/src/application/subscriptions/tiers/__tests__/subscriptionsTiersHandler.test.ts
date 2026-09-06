@@ -20,6 +20,19 @@ vi.mock("../../../repositories/foundingGrantRepository", () => ({
   FoundingGrantRepository: vi.fn().mockImplementation(() => ({ seatsForPool })),
 }));
 
+// Web checkouts in flight hold pool places too (2026-09-05 amendment), so the
+// public count has to include them or the page advertises a seat somebody is
+// at that moment paying for.
+const countHeldInPool = vi.fn(async (_db: unknown, pool: string) =>
+  pool === "consumer" ? 2 : 0,
+);
+vi.mock("../../../repositories/foundingCheckoutRepository", () => ({
+  FoundingCheckoutRepository: vi
+    .fn()
+    .mockImplementation(() => ({ countHeldInPool })),
+}));
+vi.mock("@persistence/db/client", () => ({ getDb: vi.fn(() => ({})) }));
+
 function tierRow(over: Partial<Record<string, unknown>> = {}) {
   return {
     id: "tier-uuid",
@@ -224,19 +237,38 @@ describe("subscriptionsTiersHandler — GET /subscription-tiers", () => {
 });
 
 describe("subscriptionsTiersHandler — GET /founding/availability", () => {
-  it("returns public database-backed pool usage with a short cache", async () => {
+  async function availability() {
     const { subscriptionsTiersHandler } =
       await import("../subscriptionsTiersHandler");
-    const res = await subscriptionsTiersHandler.handle(
+    return subscriptionsTiersHandler.handle(
       new Request("http://localhost/founding/availability"),
     );
+  }
+
+  it("counts checkouts in flight as places taken", async () => {
+    const res = await availability();
     expect(res.status).toBe(200);
     expect(res.headers.get("cache-control")).toBe("public, max-age=30");
     expect(await res.json()).toEqual({
       data: {
-        consumer: { used: 12, cap: 200 },
+        // 12 granted + 2 held.
+        consumer: { used: 14, cap: 200 },
         coach: { used: 3, cap: 20 },
       },
     });
+  });
+
+  it("never reports more places used than the pool holds", async () => {
+    // Grants and holds are counted separately and can briefly overlap the cap;
+    // "201 of 200 taken" would read as a bug to anyone looking at the page.
+    seatsForPool.mockResolvedValueOnce({
+      pool: "consumer",
+      used: 200,
+      cap: 200,
+    });
+    const body = (await (await availability()).json()) as {
+      data: { consumer: { used: number } };
+    };
+    expect(body.data.consumer.used).toBe(200);
   });
 });

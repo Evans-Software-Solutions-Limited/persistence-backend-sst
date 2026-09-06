@@ -138,6 +138,43 @@ export function trackStoreClick(
   window.fbq!("trackCustom", "AppStoreClick", { store }, { eventID: eventId });
 }
 
+/**
+ * Fire `InitiateCheckout` with an explicit `eventID`, matching the server's
+ * `checkout_started` (FOUNDING-OFFER 2026-09-05 amendment). The pair dedups at
+ * Meta on the shared id. No-op without consent or when the pixel isn't loaded.
+ */
+export function trackInitiateCheckout(
+  eventId: string,
+  value: number,
+  currency: string,
+): void {
+  if (!hasConsent("advertising") || !isLoaded()) return;
+  window.fbq!(
+    "track",
+    "InitiateCheckout",
+    { value, currency },
+    { eventID: eventId },
+  );
+}
+
+/**
+ * Fire `Purchase` with an explicit `eventID`.
+ *
+ * The id comes back from the checkout STATUS endpoint rather than being
+ * generated here, because the server already used it on its own `purchase`
+ * event before this page ever loaded. Minting a new one would send Meta two
+ * unlinked purchases for one sale and double-count the conversion the ads are
+ * optimised on. No-op without consent or when the pixel isn't loaded.
+ */
+export function trackPurchase(
+  eventId: string,
+  value: number,
+  currency: string,
+): void {
+  if (!hasConsent("advertising") || !isLoaded()) return;
+  window.fbq!("track", "Purchase", { value, currency }, { eventID: eventId });
+}
+
 function readCookie(name: string): string | null {
   if (typeof document === "undefined") return null;
   const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`));

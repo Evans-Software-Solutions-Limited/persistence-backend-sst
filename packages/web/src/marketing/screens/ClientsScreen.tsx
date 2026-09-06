@@ -2,11 +2,46 @@
 import { CoachTabs, Avatar, StatusBar } from "./coachData";
 
 const roster = [
-  { in: "TH", name: "Tom Hayward", pct: 38, band: "Crisis", tone: "#F87171", flag: "4d idle" },
-  { in: "MR", name: "Marcus Reid", pct: 64, band: "At risk", tone: "#FF9A5A", flag: "2 missed" },
-  { in: "JB", name: "Jonas Berg", pct: 78, band: "Wobbling", tone: "#F2C94C", flag: null },
-  { in: "AW", name: "Aisha Williams", pct: 88, band: "Strong", tone: "#5FD9A6", flag: null },
-  { in: "PS", name: "Priya Shah", pct: 100, band: "Stellar", tone: "#F2C94C", flag: "New PR" },
+  {
+    in: "TH",
+    name: "Tom Hayward",
+    pct: 38,
+    band: "Crisis",
+    tone: "#F87171",
+    flag: "4d idle",
+  },
+  {
+    in: "MR",
+    name: "Marcus Reid",
+    pct: 64,
+    band: "At risk",
+    tone: "#FF9A5A",
+    flag: "2 missed",
+  },
+  {
+    in: "JB",
+    name: "Jonas Berg",
+    pct: 78,
+    band: "Wobbling",
+    tone: "#F2C94C",
+    flag: null,
+  },
+  {
+    in: "AW",
+    name: "Aisha Williams",
+    pct: 88,
+    band: "Strong",
+    tone: "#5FD9A6",
+    flag: null,
+  },
+  {
+    in: "PS",
+    name: "Priya Shah",
+    pct: 100,
+    band: "Stellar",
+    tone: "#F2C94C",
+    flag: "New PR",
+  },
 ];
 
 export function ClientsScreen() {
@@ -31,7 +66,10 @@ export function ClientsScreen() {
       <div className="co-roster">
         {roster.map((c) => (
           <div className="co-crow" key={c.in}>
-            <Avatar initials={c.in} tone="linear-gradient(150deg,#CDBCFF,#7C5CE0)" />
+            <Avatar
+              initials={c.in}
+              tone="linear-gradient(150deg,#CDBCFF,#7C5CE0)"
+            />
             <div className="co-crow-main">
               <div className="co-crow-top">
                 <b>{c.name}</b>

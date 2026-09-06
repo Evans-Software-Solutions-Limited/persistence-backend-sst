@@ -10,6 +10,7 @@ import Terms from "./pages/Terms";
 import DeleteAccount from "./pages/DeleteAccount";
 import OrganisationAdmin from "./pages/OrganisationAdmin";
 import Founding from "./pages/Founding";
+import FoundingThanks from "./pages/FoundingThanks";
 import {
   AdminAudit,
   AdminCallback,
@@ -80,6 +81,7 @@ function App() {
           <Route path="/privacy" element={<Privacy />} />
           <Route path="/terms" element={<Terms />} />
           <Route path="/founding" element={<Founding />} />
+          <Route path="/founding/thanks" element={<FoundingThanks />} />
           <Route path="/delete-account" element={<DeleteAccount />} />
           {/*
            * Campaign landing routes (spec-30 R3.4): all render Home, and each

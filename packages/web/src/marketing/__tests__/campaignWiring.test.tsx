@@ -85,9 +85,9 @@ describe("campaign attribution is wired to the landing routes", () => {
         );
       }
 
-      expect(screen.getByRole("link", { name: "Get" }).getAttribute("href")).toBe(
-        `/${slug}#download`,
-      );
+      expect(
+        screen.getByRole("link", { name: "Get" }).getAttribute("href"),
+      ).toBe(`/${slug}#download`);
       expect(
         screen.getByRole("link", { name: "Get the app" }).getAttribute("href"),
       ).toBe(`/${slug}#download`);

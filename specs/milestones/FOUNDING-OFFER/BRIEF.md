@@ -56,6 +56,37 @@ The public page must describe discretionary allocation and keep optional
 crowdfunding contributions separate; it must not present fixed prices or a
 purchase/cancellation flow.
 
+### 2026-09-05 amendment — the offer is sold on the web again
+
+Supersedes the "no fixed prices, no purchase/cancellation flow" wording of the
+2026-09-04 amendment above, which stands in every other respect.
+
+`/founding` sells **fixed-term, non-renewing** access through Stripe Checkout in
+one-off **payment** mode — not a Stripe subscription, so nothing auto-renews and
+there is no cancellation flow to build:
+
+| Tier     | 6 months | 12 months |
+| -------- | -------- | --------- |
+| Premium  | £30      | £60       |
+| Premium+ | £50      | £100      |
+
+The coach tier is not sold on the web; it stays admin/enquiry only. The page is
+live until **30 September 2026**, after which the plan buttons and the checkout
+route refuse with a closed state.
+
+A completed checkout creates an ordinary `founding_grants` row
+(`grant_kind = 'founding'`, so it consumes a pool place) with the payment
+recorded through the existing contribution columns and a new
+`stripe_checkout` method. Everything downstream — the invite email, applying a
+pending grant on sign-up, the pool caps, `GET /founding/availability` — is
+unchanged. An open Checkout Session holds a pool place until it expires, so the
+last seat cannot be sold twice while someone is on Stripe's page.
+
+Admin grants remain the second route in, for cash taken in person and for
+friends, family and testers. `complimentary` still bypasses the pool.
+
+Nothing about this reaches the mobile app (Apple 3.1.3(b)).
+
 The original launch assumptions are retained below as history. This amendment
 controls wherever they conflict.
 

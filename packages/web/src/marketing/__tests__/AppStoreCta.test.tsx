@@ -4,9 +4,7 @@ import * as storeClick from "@/lib/storeClick";
 import { CampaignContext } from "../campaign";
 
 vi.mock("../config", async () => {
-  const actual = await vi.importActual<typeof import("../config")>(
-    "../config",
-  );
+  const actual = await vi.importActual<typeof import("../config")>("../config");
   return { ...actual, appStoreUrl: vi.fn(() => null) };
 });
 
@@ -39,7 +37,9 @@ describe("AppStoreCta", () => {
 
   describe("when the store is live (appStoreUrl returns a URL)", () => {
     beforeEach(() => {
-      vi.mocked(appStoreUrl).mockReturnValue("https://apps.apple.com/app/id123");
+      vi.mocked(appStoreUrl).mockReturnValue(
+        "https://apps.apple.com/app/id123",
+      );
     });
 
     it.each(["hero", "store", "nav"] as const)(

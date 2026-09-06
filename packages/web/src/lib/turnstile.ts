@@ -96,3 +96,20 @@ export function loadTurnstileScript(): Promise<void> {
 
   return scriptPromise;
 }
+
+/**
+ * The Turnstile site key this build was compiled with, if any.
+ *
+ * Lives beside the loader rather than in `LeadForms.tsx`: exporting a
+ * non-component from a component module breaks react-refresh, and the founding
+ * checkout needs to know whether a challenge will render at all — its route
+ * requires a real token, so the submit waits for one.
+ */
+export function turnstileSiteKey(): string {
+  return (import.meta.env.VITE_TURNSTILE_SITE_KEY ?? "").trim();
+}
+
+/** True when this build renders a Turnstile challenge at all. */
+export function turnstileConfigured(): boolean {
+  return turnstileSiteKey().length > 0;
+}

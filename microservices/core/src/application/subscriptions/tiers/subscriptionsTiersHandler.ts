@@ -5,6 +5,8 @@ import {
   type SubscriptionTierRow,
 } from "../../repositories/subscriptionTiersRepository";
 import { FoundingGrantRepository } from "../../repositories/foundingGrantRepository";
+import { FoundingCheckoutRepository } from "../../repositories/foundingCheckoutRepository";
+import { getDb } from "@persistence/db/client";
 
 /**
  * GET /subscription-tiers — public read of the active tier catalog.
@@ -117,15 +119,30 @@ export const subscriptionsTiersHandler = new Elysia()
   )
   .get("/founding/availability", async ({ set }) => {
     const repo = new FoundingGrantRepository();
-    const [consumer, coach] = await Promise.all([
-      repo.seatsForPool("consumer"),
-      repo.seatsForPool("coach"),
-    ]);
+    const checkouts = new FoundingCheckoutRepository();
+    const db = getDb();
+    const now = new Date();
+    // Sequential, not `Promise.all`: four concurrent multi-row reads on one
+    // pooled connection is the shape that hangs (memory
+    // `reference_postgresjs_max1_concurrency_deadlock`), and this endpoint is
+    // cached for 30s so the extra round trips cost nothing anyone notices.
+    const consumer = await repo.seatsForPool("consumer");
+    const coach = await repo.seatsForPool("coach");
+    // Seats held by web checkouts still in flight count as taken. Without this
+    // the page advertises a place that somebody is at that moment paying for.
+    const consumerHeld = await checkouts.countHeldInPool(db, "consumer", now);
+    const coachHeld = await checkouts.countHeldInPool(db, "coach", now);
     set.headers["cache-control"] = "public, max-age=30";
     return {
       data: {
-        consumer: { used: consumer.used, cap: consumer.cap },
-        coach: { used: coach.used, cap: coach.cap },
+        consumer: {
+          used: Math.min(consumer.cap, consumer.used + consumerHeld),
+          cap: consumer.cap,
+        },
+        coach: {
+          used: Math.min(coach.cap, coach.used + coachHeld),
+          cap: coach.cap,
+        },
       },
     };
   });

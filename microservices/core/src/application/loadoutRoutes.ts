@@ -36,6 +36,7 @@ import { aiEquipmentScanHandler } from "./loadout/scan/aiEquipmentScanHandler";
 // root `.use()` before moving it here. Both routes declare absolute paths, so
 // nesting adds no prefix and no ordering risk.
 import { leadsRoutes } from "./leads/leadsRoutes";
+import { foundingCheckoutHandler } from "./founding/checkout/foundingCheckoutHandler";
 // `GET /sessions/recent-sets` — the server source for the mobile "Previous"
 // hint cache (fresh-install hydration). Unrelated to loadout, but nested here
 // for the SAME reason as `leadsRoutes` above: the api.ts root `.use()` chain is
@@ -70,6 +71,10 @@ export const loadoutRoutes = new Elysia()
   // Marketing lead capture — PUBLIC (no auth) waitlist + coach-enquiry
   // endpoints backing the website forms. See ./leads/leadsRoutes.
   .use(leadsRoutes)
+  // Public founding checkout (2026-09-05 amendment). Nested here for the same
+  // TS2589 reason as `leadsRoutes`, and it declares absolute paths so nesting
+  // adds no prefix.
+  .use(foundingCheckoutHandler)
   // Recent-sets hydration (see the import comment for why this lives here).
   .use(sessionsRecentSetsHandler)
   .use(experiencePolishRoutes);

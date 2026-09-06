@@ -118,9 +118,9 @@ describe("store-availability copy tracks the store flags", () => {
       const { container } = renderPage(<Home />);
       expect(bodyText()).toMatch(/out now on google play/i);
       expect(bodyText()).not.toMatch(/out now on the app store/i);
-      expect(container.querySelectorAll('a[href*="apps.apple.com"]')).toHaveLength(
-        0,
-      );
+      expect(
+        container.querySelectorAll('a[href*="apps.apple.com"]'),
+      ).toHaveLength(0);
     });
   });
 

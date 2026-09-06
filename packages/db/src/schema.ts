@@ -2771,7 +2771,7 @@ export const foundingGrants = pgTable(
     index("founding_grants_email_idx").on(sql`lower(${t.email})`),
     check(
       "founding_grants_payment_method_ck",
-      sql`${t.paymentMethod} IN ('bank_transfer', 'stripe_link', 'card_in_person', 'other')`,
+      sql`${t.paymentMethod} IN ('bank_transfer', 'stripe_link', 'card_in_person', 'stripe_checkout', 'other')`,
     ),
     check(
       "founding_grants_grant_kind_ck",
@@ -2837,3 +2837,81 @@ export const adminAuditLog = pgTable(
 
 export type AdminAuditLogEntry = typeof adminAuditLog.$inferSelect;
 export type NewAdminAuditLogEntry = typeof adminAuditLog.$inferInsert;
+
+/**
+ * A founding purchase in flight (FOUNDING-OFFER BRIEF § 2, 2026-09-05
+ * amendment). Mirrors 20260905140000_founding_checkout_sessions.sql.
+ *
+ * Two things Stripe cannot hold for us: a POOL SEAT while the buyer is on
+ * Stripe's page — capacity counts grants, and a grant only exists after
+ * payment — and the ATTRIBUTION the webhook needs when it comes back
+ * (referral code, campaign slug, Meta click ids, consent).
+ *
+ * `stripeSessionId` is UNIQUE: webhook delivery is at-least-once, so it is
+ * what makes a redelivered completion land on the same row.
+ */
+export const foundingCheckoutSessions = pgTable(
+  "founding_checkout_sessions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    stripeSessionId: text("stripe_session_id").notNull().unique(),
+    email: text("email").notNull(),
+    tierName: text("tier_name")
+      .notNull()
+      .references(() => subscriptionTiers.tierName),
+    months: integer("months").notNull(),
+    amountMinor: integer("amount_minor").notNull(),
+    currency: text("currency").notNull().default("GBP"),
+    referralCode: text("referral_code"),
+    campaignSlug: text("campaign_slug"),
+    status: text("status").notNull().default("open"),
+    /** Mirrors the Session's own expiry; a lapsed hold counts for nothing. */
+    holdExpiresAt: timestamp("hold_expires_at", {
+      withTimezone: true,
+    }).notNull(),
+    grantId: uuid("grant_id").references(() => foundingGrants.id, {
+      onDelete: "set null",
+    }),
+    eventId: text("event_id"),
+    fbc: text("fbc"),
+    fbp: text("fbp"),
+    marketingConsent: boolean("marketing_consent").notNull().default(false),
+  },
+  (t) => [
+    index("founding_checkout_sessions_hold_idx").on(
+      t.status,
+      t.holdExpiresAt,
+      t.tierName,
+    ),
+    index("founding_checkout_sessions_email_idx").on(t.email),
+    check(
+      "founding_checkout_sessions_email_lower_ck",
+      sql`${t.email} = lower(${t.email})`,
+    ),
+    check("founding_checkout_sessions_months_ck", sql`${t.months} IN (6, 12)`),
+    check("founding_checkout_sessions_amount_ck", sql`${t.amountMinor} >= 0`),
+    check(
+      "founding_checkout_sessions_status_ck",
+      sql`${t.status} IN ('open', 'completed', 'expired', 'refunded')`,
+    ),
+    check(
+      "founding_checkout_sessions_code_ck",
+      sql`${t.referralCode} IS NULL OR ${t.referralCode} ~ '^[A-Z0-9]{4,24}$'`,
+    ),
+    check(
+      "founding_checkout_sessions_campaign_ck",
+      sql`${t.campaignSlug} IS NULL OR ${t.campaignSlug} ~ '^[a-z0-9-]{1,32}$'`,
+    ),
+  ],
+);
+
+export type FoundingCheckoutSession =
+  typeof foundingCheckoutSessions.$inferSelect;
+export type NewFoundingCheckoutSession =
+  typeof foundingCheckoutSessions.$inferInsert;

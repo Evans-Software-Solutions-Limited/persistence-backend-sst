@@ -1,6 +1,8 @@
 import type Stripe from "stripe";
 import { handleChargeDisputeCreated } from "./chargeDisputeCreated";
 import { handleChargeRefunded } from "./chargeRefunded";
+import { handleCheckoutSessionCompleted } from "./checkoutSessionCompleted";
+import { handleCheckoutSessionExpired } from "./checkoutSessionExpired";
 import { handleInvoicePaymentFailed } from "./invoicePaymentFailed";
 import { handleInvoicePaymentSucceeded } from "./invoicePaymentSucceeded";
 import { handleSubscriptionCreated } from "./subscriptionCreated";
@@ -47,6 +49,17 @@ export const eventHandlers: Record<string, StripeEventHandler> = {
   // disputes for ops review; they do not auto-mutate subscription state.
   "charge.refunded": handleChargeRefunded,
   "charge.dispute.created": handleChargeDisputeCreated,
+  // Founding web checkout (2026-09-05 amendment). One-off `payment` mode, so
+  // these never produce a Stripe subscription — `completed` turns a payment
+  // into a founding grant, `expired` releases the pool seat it was holding.
+  "checkout.session.completed": handleCheckoutSessionCompleted,
+  // A delayed payment method completes LATER, with the Session arriving
+  // `unpaid` on `completed` and this event carrying the settlement. The
+  // Session is pinned to cards so it should not arise — but if the dashboard
+  // ever enables one, an unhandled event here means money taken and no grant.
+  // The handler is idempotent, so sharing it is safe.
+  "checkout.session.async_payment_succeeded": handleCheckoutSessionCompleted,
+  "checkout.session.expired": handleCheckoutSessionExpired,
 };
 
 /**

@@ -115,9 +115,7 @@ describe("shipped config", () => {
   it("uses a storefront-agnostic App Store url", () => {
     // A /gb/ or any other country-locked path would send all 175 territories
     // to the UK store.
-    expect(SHIPPED.appStore.url).not.toMatch(
-      /apps\.apple\.com\/[a-z]{2}\//,
-    );
+    expect(SHIPPED.appStore.url).not.toMatch(/apps\.apple\.com\/[a-z]{2}\//);
   });
 
   it("has Google Play live with the production package listing", () => {

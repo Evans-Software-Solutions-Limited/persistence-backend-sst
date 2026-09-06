@@ -4,9 +4,7 @@ import { CampaignContext } from "../campaign";
 import { PlayStoreCta } from "../PlayStoreCta";
 
 vi.mock("../config", async () => {
-  const actual = await vi.importActual<typeof import("../config")>(
-    "../config",
-  );
+  const actual = await vi.importActual<typeof import("../config")>("../config");
   return { ...actual, playStoreUrl: vi.fn(() => null) };
 });
 
@@ -24,7 +22,9 @@ describe("PlayStoreCta", () => {
       const { container } = render(<PlayStoreCta variant={variant} />);
 
       expect(container.querySelector("a")).toBeNull();
-      expect(container.querySelector("span[aria-disabled='true']")).not.toBeNull();
+      expect(
+        container.querySelector("span[aria-disabled='true']"),
+      ).not.toBeNull();
       expect(container.querySelector("img, svg")).toBeNull();
     },
   );
@@ -54,7 +54,9 @@ describe("PlayStoreCta", () => {
       .mockReturnValue("evt_1");
     render(<PlayStoreCta variant="hero" />);
 
-    fireEvent.click(screen.getByRole("link", { name: "Get it on Google Play" }));
+    fireEvent.click(
+      screen.getByRole("link", { name: "Get it on Google Play" }),
+    );
     expect(reportStoreClick).toHaveBeenCalledWith("android", undefined);
   });
 
@@ -71,7 +73,9 @@ describe("PlayStoreCta", () => {
       </CampaignContext.Provider>,
     );
 
-    fireEvent.click(screen.getByRole("link", { name: "Get it on Google Play" }));
+    fireEvent.click(
+      screen.getByRole("link", { name: "Get it on Google Play" }),
+    );
     expect(reportStoreClick).toHaveBeenCalledWith("android", "meta");
   });
 });

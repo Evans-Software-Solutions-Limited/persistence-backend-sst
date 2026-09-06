@@ -29,9 +29,24 @@ describe("resolveEventHandler", () => {
   });
 
   it("returns null for unknown event types", () => {
-    expect(resolveEventHandler("checkout.session.completed")).toBeNull();
+    // `checkout.session.completed` used to be listed here as an example of an
+    // unhandled type. It is handled now — the founding web checkout is what
+    // turns it into a grant (2026-09-05 amendment) — so the examples are ones
+    // Stripe can send and we still have no use for.
+    expect(resolveEventHandler("payment_intent.created")).toBeNull();
     expect(resolveEventHandler("not.a.real.event")).toBeNull();
     expect(resolveEventHandler("")).toBeNull();
+  });
+
+  it("handles every founding checkout event", () => {
+    expect(resolveEventHandler("checkout.session.completed")).not.toBeNull();
+    expect(resolveEventHandler("checkout.session.expired")).not.toBeNull();
+    // A delayed payment method settles on a DIFFERENT event; leaving it
+    // unhandled would mean money taken and no grant, with a 200 back to
+    // Stripe so it never retries.
+    expect(
+      resolveEventHandler("checkout.session.async_payment_succeeded"),
+    ).toBe(resolveEventHandler("checkout.session.completed"));
   });
 
   it("exposes the same set of handlers via `eventHandlers` map and `resolveEventHandler`", () => {

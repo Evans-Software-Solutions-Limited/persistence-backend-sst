@@ -8,7 +8,7 @@ import {
 } from "react";
 import { Link } from "react-router";
 import { useLeadSubmit, isValidEmail } from "./useLeadSubmit";
-import { loadTurnstileScript } from "../lib/turnstile";
+import { loadTurnstileScript, turnstileSiteKey } from "../lib/turnstile";
 
 /**
  * Marketing lead-capture forms — an Android notify list (email only; was the
@@ -21,8 +21,14 @@ import { loadTurnstileScript } from "../lib/turnstile";
  * .lead-*` in marketing.css so nothing leaks onto /privacy or /terms.
  */
 
-/** Visually-hidden anti-bot field. A real user never sees or fills it. */
-function Honeypot({
+/**
+ * Visually-hidden anti-bot field. A real user never sees or fills it.
+ *
+ * Exported so the founding checkout uses the SAME field name and shape the
+ * server already drops on — a second, subtly different honeypot would be a
+ * second thing to keep in step.
+ */
+export function Honeypot({
   value,
   onChange,
 }: {
@@ -46,7 +52,7 @@ function Honeypot({
   );
 }
 
-function ConsentRow({
+export function ConsentRow({
   checked,
   onChange,
   id,
@@ -81,12 +87,8 @@ function ConsentRow({
   );
 }
 
-function turnstileSiteKey(): string {
-  return (import.meta.env.VITE_TURNSTILE_SITE_KEY ?? "").trim();
-}
-
 /** Imperative handle exposed by {@link TurnstileWidget} to its parent form. */
-interface TurnstileHandle {
+export interface TurnstileHandle {
   /**
    * Resets the underlying widget so Turnstile issues a fresh token. Call
    * this after a failed submit — Cloudflare tokens are single-use, so
@@ -108,7 +110,7 @@ interface TurnstileHandle {
  * for clearing its own token state on a failed submit and calling
  * `ref.current.reset()` so a retry gets a fresh challenge.
  */
-const TurnstileWidget = forwardRef<
+export const TurnstileWidget = forwardRef<
   TurnstileHandle,
   { onToken: (token: string) => void }
 >(function TurnstileWidget({ onToken }, ref) {

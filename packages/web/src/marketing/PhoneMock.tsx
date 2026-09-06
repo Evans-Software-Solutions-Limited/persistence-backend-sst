@@ -11,7 +11,11 @@ export function PhoneMock({ screenshot }: { screenshot?: string | null }) {
   return (
     <PhoneDevice
       screenshot={screenshot}
-      screens={[<HomeScreen key="home" />, <ActiveWorkoutScreen key="aw" />, <FuelScreen key="fuel" />]}
+      screens={[
+        <HomeScreen key="home" />,
+        <ActiveWorkoutScreen key="aw" />,
+        <FuelScreen key="fuel" />,
+      ]}
     />
   );
 }

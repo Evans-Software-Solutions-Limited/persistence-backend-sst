@@ -6,6 +6,8 @@ import {
   getFbc,
   getFbp,
   newEventId,
+  trackInitiateCheckout,
+  trackPurchase,
 } from "../metaPixel";
 import { setConsent } from "../consent";
 
@@ -156,6 +158,70 @@ describe("metaPixel", () => {
           "AppStoreClick",
           { store: "android" },
           { eventID: "evt_store" },
+        ],
+      ]);
+    });
+  });
+
+  describe("trackInitiateCheckout / trackPurchase", () => {
+    it.each([
+      ["trackInitiateCheckout", trackInitiateCheckout],
+      ["trackPurchase", trackPurchase],
+    ])("%s no-ops without consent", (_name, fire) => {
+      vi.stubEnv("VITE_META_PIXEL_ID", "123456789");
+      setConsent({ advertising: false });
+      expect(() => fire("evt_1", 30, "GBP")).not.toThrow();
+      expect(window.fbq).toBeUndefined();
+    });
+
+    it.each([
+      ["trackInitiateCheckout", trackInitiateCheckout],
+      ["trackPurchase", trackPurchase],
+    ])("%s no-ops when the pixel never loaded", (_name, fire) => {
+      // No pixel id configured, so `initMetaPixel` never ran.
+      expect(() => fire("evt_1", 30, "GBP")).not.toThrow();
+      expect(window.fbq).toBeUndefined();
+    });
+
+    it("fires InitiateCheckout with value, currency and a dedup eventID", () => {
+      vi.stubEnv("VITE_META_PIXEL_ID", "123456789");
+      initMetaPixel();
+      const calls: unknown[][] = [];
+      window.fbq = Object.assign(
+        (...args: unknown[]) => calls.push(args),
+        window.fbq,
+      );
+
+      trackInitiateCheckout("evt_checkout", 30, "GBP");
+
+      expect(calls).toEqual([
+        [
+          "track",
+          "InitiateCheckout",
+          { value: 30, currency: "GBP" },
+          { eventID: "evt_checkout" },
+        ],
+      ]);
+    });
+
+    it("fires Purchase with the id the server already used", () => {
+      // A fresh id here would send Meta two unlinked purchases for one sale.
+      vi.stubEnv("VITE_META_PIXEL_ID", "123456789");
+      initMetaPixel();
+      const calls: unknown[][] = [];
+      window.fbq = Object.assign(
+        (...args: unknown[]) => calls.push(args),
+        window.fbq,
+      );
+
+      trackPurchase("evt_from_server", 60, "GBP");
+
+      expect(calls).toEqual([
+        [
+          "track",
+          "Purchase",
+          { value: 60, currency: "GBP" },
+          { eventID: "evt_from_server" },
         ],
       ]);
     });

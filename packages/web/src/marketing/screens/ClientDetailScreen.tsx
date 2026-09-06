@@ -42,7 +42,14 @@ export function ClientDetailScreen() {
       <div className="cd-qa">
         {actions.map((a) => (
           <span className="cd-qa-btn" key={a.k}>
-            <svg viewBox="0 0 24 24" fill="none" stroke={a.tone} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke={a.tone}
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <circle cx="12" cy="12" r="9" />
               <circle cx="12" cy="12" r="4" />
               <circle cx="12" cy="12" r="0.5" fill={a.tone} />
@@ -56,7 +63,14 @@ export function ClientDetailScreen() {
       <div className="cd-ai">
         <div className="cd-ai-head">
           <span className="cd-ai-title">
-            <svg viewBox="0 0 24 24" fill="none" stroke="#B7A0FF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="#B7A0FF"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.6z" />
               <path d="M19 14l.8 2.2L22 17l-2.2.8L19 20l-.8-2.2L16 17l2.2-.8z" />
             </svg>
@@ -66,9 +80,9 @@ export function ClientDetailScreen() {
         </div>
         <p className="cd-ai-text">
           Marcus hit all 4 sessions — bench and squat each up ~2.5 kg. Protein
-          averaged 148 g against a 180 g target, so breakfast is the gap to close.
-          Sleep dipped midweek, which lines up with the lighter Thursday session.
-          Hold the current block; a deload is due in two weeks.
+          averaged 148 g against a 180 g target, so breakfast is the gap to
+          close. Sleep dipped midweek, which lines up with the lighter Thursday
+          session. Hold the current block; a deload is due in two weeks.
         </p>
         <span className="cd-ai-btn">Regenerate</span>
       </div>
