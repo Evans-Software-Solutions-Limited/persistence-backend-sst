@@ -4358,6 +4358,23 @@
   color: var(--m-text);
 }
 .mkt .founding-terms-note,
+.mkt .founding-scarcity {
+  margin-top: 10px;
+  font-size: 14px;
+  color: var(--m-text-3);
+}
+.mkt .founding-plans-heading {
+  margin: 40px 0 6px;
+  font-family: var(--m-disp);
+  font-size: clamp(24px, 3vw, 32px);
+  letter-spacing: -0.02em;
+}
+.mkt .founding-plans-caption {
+  margin-top: 16px;
+  max-width: 60ch;
+  font-size: 13.5px;
+  color: var(--m-text-3);
+}
 .mkt .founding-note {
   font-size: 13px;
   color: var(--m-text-3);

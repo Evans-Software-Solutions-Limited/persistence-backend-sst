@@ -36,21 +36,31 @@ describe("Founding", () => {
 
   it("offers all four terms while the offer is open", async () => {
     renderPage(<Founding />, { route: "/founding" });
-    const plans = await screen.findByLabelText("Founding plans");
+    const plans = await screen.findByLabelText("Founding prices");
     const buttons = within(plans).getAllByRole("button");
+    // The VISIBLE label is term + price (LANDING_PAGE.md § 4); the tier is
+    // carried in the accessible name, which is what tells the two cards'
+    // buttons apart for a screen reader.
     expect(buttons.map((b) => b.textContent)).toEqual([
-      "Choose Premium · 6 months",
-      "Choose Premium · 12 months",
-      "Choose Premium+ · 6 months",
-      "Choose Premium+ · 12 months",
+      "Six months — £30",
+      "One year — £60",
+      "Six months — £50",
+      "One year — £100",
+    ]);
+    expect(buttons.map((b) => b.getAttribute("aria-label"))).toEqual([
+      "Premium, Six months — £30",
+      "Premium, One year — £60",
+      "Premium+, Six months — £50",
+      "Premium+, One year — £100",
     ]);
   });
 
   it("shows each term's price", async () => {
     renderPage(<Founding />, { route: "/founding" });
-    const plans = await screen.findByLabelText("Founding plans");
+    const plans = await screen.findByLabelText("Founding prices");
     for (const price of ["£30", "£60", "£50", "£100"]) {
-      expect(within(plans).getByText(new RegExp(price))).toBeDefined();
+      // Twice each: the card's headline figure and its own buy button.
+      expect(within(plans).getAllByText(new RegExp(price))).toHaveLength(2);
     }
   });
 
@@ -73,9 +83,9 @@ describe("Founding", () => {
     // checkout route re-checks the pool under its lock anyway.
     vi.mocked(fetch).mockResolvedValue(new Response(null, { status: 503 }));
     renderPage(<Founding />, { route: "/founding" });
-    expect(await screen.findByLabelText("Founding plans")).toBeDefined();
+    expect(await screen.findByLabelText("Founding prices")).toBeDefined();
     const buttons = within(
-      screen.getByLabelText("Founding plans"),
+      screen.getByLabelText("Founding prices"),
     ).getAllByRole("button");
     expect(buttons.every((b) => !b.hasAttribute("disabled"))).toBe(true);
   });
@@ -85,18 +95,16 @@ describe("Founding", () => {
     renderPage(<Founding />, { route: "/founding" });
     // Wait for the count to arrive — the page renders the plans first and only
     // learns the pool is full once the availability read lands.
-    expect(
-      await screen.findByText(/all founding places have been taken/i),
-    ).toBeDefined();
+    expect(await screen.findByText(/just sold out/i)).toBeDefined();
     const buttons = within(
-      screen.getByLabelText("Founding plans"),
+      screen.getByLabelText("Founding prices"),
     ).getAllByRole("button");
     expect(buttons.every((b) => b.hasAttribute("disabled"))).toBe(true);
   });
 
   it("says so when the buyer came back from a cancelled payment", async () => {
     renderPage(<Founding />, { route: "/founding?cancelled=1" });
-    expect(await screen.findByText(/nothing has been charged/i)).toBeDefined();
+    expect(await screen.findByText(/no payment was taken/i)).toBeDefined();
   });
 
   describe("after 30 September", () => {
@@ -107,7 +115,7 @@ describe("Founding", () => {
 
     it("shows the closed state and no way to pay", () => {
       renderPage(<Founding />, { route: "/founding" });
-      expect(screen.queryByLabelText("Founding plans")).toBeNull();
+      expect(screen.queryByLabelText("Founding prices")).toBeNull();
       expect(screen.queryByRole("button", { name: /^Choose/ })).toBeNull();
     });
 
@@ -120,13 +128,13 @@ describe("Founding", () => {
     it("still shows the plans on the last second before the close", () => {
       vi.setSystemTime(FOUNDING_OFFER_CLOSES);
       renderPage(<Founding />, { route: "/founding" });
-      expect(screen.getByLabelText("Founding plans")).toBeDefined();
+      expect(screen.getByLabelText("Founding prices")).toBeDefined();
     });
   });
 
   it("routes /founding to the founding page", () => {
     renderPage(<App />, { route: "/founding" });
-    expect(screen.getAllByText("Founding offer").length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Founding offer/).length).toBeGreaterThan(0);
   });
 
   it("routes /founding/thanks to the thanks page", () => {

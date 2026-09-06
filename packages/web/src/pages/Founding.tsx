@@ -64,10 +64,11 @@ export function Founding() {
     enabled: open,
   });
 
+  // LANDING_PAGE.md § 11.
   useSeo({
-    title: "Founding offer — Persistence",
+    title: "Founding offer — Persistence gym & coaching app",
     description:
-      "A founding place in Persistence: one payment, a fixed term of access, no renewal. Open until 30 September 2026.",
+      "Six months of Persistence Premium for £30, or a year for £60. Training, nutrition and progress in one app. Founding prices until 30 September, paid once, nothing renews.",
     path: "/founding",
   });
 
@@ -84,6 +85,7 @@ export function Founding() {
             <>
               <h1>{FOUNDING_COPY.heading}</h1>
               <p className="founding-intro">{FOUNDING_COPY.intro}</p>
+              <p className="founding-scarcity">{FOUNDING_COPY.scarcityNote}</p>
 
               {cancelled ? (
                 <p className="founding-note" role="status">
@@ -91,7 +93,13 @@ export function Founding() {
                 </p>
               ) : null}
 
+              <h2 className="founding-plans-heading">
+                {FOUNDING_COPY.plansHeading}
+              </h2>
               <FoundingPlans soldOut={soldOut} />
+              <p className="founding-plans-caption">
+                {FOUNDING_COPY.plansCaption}
+              </p>
 
               <p className="founding-counter" aria-live="polite">
                 <AvailabilityLine label="founding places" value={consumer} />

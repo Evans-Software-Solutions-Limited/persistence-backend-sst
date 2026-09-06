@@ -95,7 +95,7 @@ export function FoundingBanner() {
       <Link to="/founding">{FOUNDING_COPY.bannerCta}</Link>
       <button
         type="button"
-        aria-label="Dismiss the founding offer notice"
+        aria-label={FOUNDING_COPY.bannerDismissLabel}
         onClick={() => {
           setDismissed(true);
           try {

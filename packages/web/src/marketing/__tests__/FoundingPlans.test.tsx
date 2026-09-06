@@ -32,7 +32,7 @@ function renderPlans(campaign?: string) {
 
 async function choosePremium6() {
   fireEvent.click(
-    await screen.findByRole("button", { name: "Choose Premium · 6 months" }),
+    await screen.findByRole("button", { name: "Premium, Six months — £30" }),
   );
   return screen.findByLabelText("Founding checkout");
 }
@@ -72,7 +72,7 @@ describe("FoundingPlans", () => {
     stubFetch();
     renderPlans();
     await choosePremium6();
-    expect(screen.getByText("Premium · 6 months · £30")).toBeDefined();
+    expect(screen.getByText("Premium · Six months · £30")).toBeDefined();
   });
 
   it("lets the buyer go back and pick a different term", async () => {
@@ -80,9 +80,9 @@ describe("FoundingPlans", () => {
     renderPlans();
     await choosePremium6();
     fireEvent.click(
-      screen.getByRole("button", { name: "Choose a different plan" }),
+      screen.getByRole("button", { name: "Change plan" }),
     );
-    expect(await screen.findByLabelText("Founding plans")).toBeDefined();
+    expect(await screen.findByLabelText("Founding prices")).toBeDefined();
     expect(screen.queryByLabelText("Email address")).toBeNull();
   });
 
@@ -234,11 +234,11 @@ describe("FoundingPlans", () => {
     fireEvent.submit(form);
     await screen.findByRole("alert");
     fireEvent.click(
-      screen.getByRole("button", { name: "Choose a different plan" }),
+      screen.getByRole("button", { name: "Change plan" }),
     );
     fireEvent.click(
       await screen.findByRole("button", {
-        name: "Choose Premium+ · 12 months",
+        name: "Premium+, One year — £100",
       }),
     );
     expect(screen.queryByRole("alert")).toBeNull();
@@ -249,7 +249,7 @@ describe("FoundingPlans", () => {
     renderPlans();
     fireEvent.click(
       await screen.findByRole("button", {
-        name: "Choose Premium+ · 12 months",
+        name: "Premium+, One year — £100",
       }),
     );
     const form = await screen.findByLabelText("Founding checkout");
@@ -298,7 +298,7 @@ describe("FoundingPlans", () => {
   it("does nothing at all when a sold-out plan button is clicked", () => {
     renderPage(<FoundingPlans soldOut />, { route: "/founding" });
     fireEvent.click(
-      screen.getByRole("button", { name: "Choose Premium · 6 months" }),
+      screen.getByRole("button", { name: "Premium, Six months — £30" }),
     );
     expect(screen.queryByLabelText("Founding checkout")).toBeNull();
   });
@@ -356,6 +356,6 @@ describe("FoundingPlans", () => {
     renderPage(<FoundingPlans soldOut />, { route: "/founding" });
     const buttons = screen.getAllByRole("button");
     expect(buttons.every((b) => b.hasAttribute("disabled"))).toBe(true);
-    expect(screen.getByRole("status").textContent).toMatch(/taken/i);
+    expect(screen.getByRole("status").textContent).toMatch(/just sold out/i);
   });
 });

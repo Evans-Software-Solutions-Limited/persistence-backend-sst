@@ -2,10 +2,12 @@
  * The founding offer as the WEBSITE presents it (FOUNDING-OFFER BRIEF § 2,
  * 2026-09-05 amendment).
  *
- * Everything here is DATA. The approved wording arrives with `LANDING_PAGE.md`
- * and will be dropped straight into these constants; the components below read
- * them and hold no copy of their own, so that swap is an edit to this file and
- * nothing else. Strings still awaiting that document are marked `PLACEHOLDER`.
+ * Everything here is DATA. The wording is Brad's, transcribed from
+ * `specs/milestones/MARKETING-PLANS/LANDING_PAGE.md` § 5 — the components read
+ * these constants and hold no copy of their own, so a revision to that document
+ * is an edit to this file and nothing else. Nothing here is written by an
+ * agent, and nothing should be: if a string is missing, it is missing from
+ * LANDING_PAGE.md and belongs there first.
  *
  * ⚠ The prices below are for DISPLAY. Stripe's Price object decides what a
  * buyer is actually charged, and the server never reads a figure from here —
@@ -24,7 +26,7 @@ export interface FoundingPlan {
   priceMinor: number;
   tierLabel: string;
   termLabel: string;
-  /** PLACEHOLDER until LANDING_PAGE.md. */
+  /** The tier's one-line positioning (LANDING_PAGE.md § 5.5). */
   blurb: string;
   featured?: boolean;
 }
@@ -35,24 +37,24 @@ export const FOUNDING_PLANS: FoundingPlan[] = [
     months: 6,
     priceMinor: 3000,
     tierLabel: "Premium",
-    termLabel: "6 months",
-    blurb: "PLACEHOLDER — six months of Premium, paid once.",
+    termLabel: "Six months",
+    blurb: "For consistent training",
   },
   {
     tier: "premium",
     months: 12,
     priceMinor: 6000,
     tierLabel: "Premium",
-    termLabel: "12 months",
-    blurb: "PLACEHOLDER — a full year of Premium, paid once.",
+    termLabel: "One year",
+    blurb: "For consistent training",
   },
   {
     tier: "premium_plus",
     months: 6,
     priceMinor: 5000,
     tierLabel: "Premium+",
-    termLabel: "6 months",
-    blurb: "PLACEHOLDER — six months of Premium+, paid once.",
+    termLabel: "Six months",
+    blurb: "Everything in Premium, plus the adaptive suite",
     featured: true,
   },
   {
@@ -60,8 +62,8 @@ export const FOUNDING_PLANS: FoundingPlan[] = [
     months: 12,
     priceMinor: 10000,
     tierLabel: "Premium+",
-    termLabel: "12 months",
-    blurb: "PLACEHOLDER — a full year of Premium+, paid once.",
+    termLabel: "One year",
+    blurb: "Everything in Premium, plus the adaptive suite",
   },
 ];
 
@@ -87,56 +89,80 @@ export function formatPrice(minor: number): string {
   }).format(minor / 100);
 }
 
-/** Copy. Every string here is PLACEHOLDER until `LANDING_PAGE.md` lands. */
+/**
+ * Every user-facing string on `/founding`, transcribed from LANDING_PAGE.md
+ * § 5. Section numbers are noted so a revision can be traced back.
+ */
 export const FOUNDING_COPY = {
-  kicker: "Founding offer",
-  heading: "PLACEHOLDER — a founding place, until 30 September",
+  // § 5.2 — hero
+  kicker: "Founding offer · until 30 September",
+  heading: "Train with a plan. Fuel to match. See it add up.",
   intro:
-    "PLACEHOLDER — one payment for a fixed term of access. It does not renew, and there is nothing to cancel.",
-  plansLabel: "Founding plans",
-  chooseCta: "Choose",
-  emailStepHeading: "PLACEHOLDER — where should we send your access?",
+    "Persistence brings training, nutrition and progress into one loop. The founding offer — six months of Premium for £30, or a year for £60 — is open until 30 September. Fixed term, nothing renews.",
+  scarcityNote:
+    "Founding places are limited. The offer closes on 30 September 2026, or earlier if they're gone.",
+
+  // § 5.5 — founding prices
+  plansLabel: "Founding prices",
+  plansHeading: "Pick your access. Pay once.",
+  plansCaption:
+    "Prices in GBP, paid once. No renewal, no card stored. You'll sign up in the app with the email you pay with.",
+
+  // § 5.6 — before checkout
   emailStepBody:
-    "PLACEHOLDER — use the address you'll sign in with in the app. We'll email your invite as soon as the payment clears.",
+    "Use the address you'll sign in with in the app. Your access is linked to it.",
   emailLabel: "Email address",
   submitCta: "Continue to payment",
-  submittingCta: "Taking you to payment…",
-  backCta: "Choose a different plan",
+  submittingCta: "Opening secure payment…",
+  backCta: "Change plan",
   termsNote:
-    "PLACEHOLDER — access starts as soon as your payment clears, so you agree to immediate supply and to losing the 14-day right to cancel once it does.",
-  cancelledNote: "Payment cancelled — nothing has been charged.",
+    "By continuing you agree to the terms and conditions and ask us to start your access as soon as you sign up in the app. You keep a 14-day right to cancel for a full refund, unless you've started using the app in that time.",
+  soldOutNote:
+    "That plan has just sold out — pick another or check back after 30 September.",
   // Shown when the bot check has not produced a token. The checkout route
   // requires a real one, so without it the button cannot do anything — and a
   // dead button with no explanation is the worst version of that.
   challengeUnavailable:
     "The security check hasn't loaded yet. Give it a moment, or reload the page if it doesn't appear.",
-  closedHeading: "PLACEHOLDER — the founding offer has closed",
-  closedBody:
-    "PLACEHOLDER — thank you to everyone who took a place. The app is on the App Store and Google Play.",
-  soldOutNote: "PLACEHOLDER — all founding places have been taken.",
-  coachHeading: "For coaches",
+
+  // § 5.5 — coach line
+  coachHeading: "Coaches",
   coachBody:
-    "PLACEHOLDER — coach access is allocated from its own pool. Get in touch.",
-  bannerText: "Founding offer — until 30 September",
-  bannerCta: "See the plans",
+    "Founding places for Start Up Coach+ are arranged directly. Send a coach enquiry at",
+
+  // § 5.12 — closed state, from 1 October
+  closedHeading: "The founding offer has closed.",
+  closedBody:
+    "Thanks to everyone who joined during launch. Persistence is available on the App Store and Google Play, and founding members' feedback is already shaping what comes next.",
+
+  // § 5.1 — banner on every marketing page except /founding
+  bannerText:
+    "Founding offer: six months of Premium for £30, until 30 September",
+  bannerCta: "See founding prices",
+  bannerDismissLabel: "Hide founding offer banner",
+
+  // § 5.8 — thanks page
   thanks: {
-    paidHeading: "PLACEHOLDER — payment received",
+    paidHeading: "Payment received — you're in.",
     paidBody:
-      "PLACEHOLDER — check your email for your invite, then sign up in the app with the same address.",
-    pendingHeading: "PLACEHOLDER — finishing up…",
+      "Thanks. We've emailed you an invite with your access details. Next: install Persistence, sign up with that exact email address, confirm it, and your access is on the first time you open the app. Nothing else to do.",
+    pendingHeading: "Finishing up…",
     pendingBody:
-      "PLACEHOLDER — this usually takes a few seconds. You can leave this page open.",
-    unfinishedHeading: "PLACEHOLDER — this checkout didn't complete",
+      "Your payment is being confirmed. This usually takes a few seconds.",
+    unfinishedHeading: "No payment was taken.",
     unfinishedBody:
-      "PLACEHOLDER — nothing has been charged. Pick a plan to try again.",
+      "Your session ended before payment completed.",
     // Separate from "didn't complete": this page is only reachable after a
     // payment, so telling somebody who has just paid that nothing was charged
     // because WE could not reach our own API would be a lie.
-    unreachableHeading: "PLACEHOLDER — we can't confirm this just yet",
+    unreachableHeading: "Finishing up…",
     unreachableBody:
-      "PLACEHOLDER — your payment may well have gone through. Check your email for the invite, and get in touch if nothing arrives.",
-    backCta: "Back to the plans",
+      "We can't confirm your payment just yet. Check your email for the invite, then email us if nothing arrives within a few minutes.",
+    backCta: "Back to founding prices",
   },
+
+  // § 5.8 — shown on /founding?cancelled=1
+  cancelledNote: "No payment was taken. Your session ended before payment completed.",
 } as const;
 
 export const FOUNDING_CONTACT_EMAIL = "admin@evans-software-solutions.com";

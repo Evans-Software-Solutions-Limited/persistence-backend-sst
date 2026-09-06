@@ -50,13 +50,17 @@ function PlanCard({ plan, onChoose, disabled }: PlanCardProps) {
         {formatPrice(plan.priceMinor)} · {plan.termLabel}
       </strong>
       <p>{plan.blurb}</p>
+      {/* The price is ON the button (LANDING_PAGE.md § 4) so the click is
+          informed; the tier is in the accessible name, which the visible
+          label alone would not carry between two cards. */}
       <button
         type="button"
         className="btn btn-fill"
         disabled={disabled}
+        aria-label={`${plan.tierLabel}, ${plan.termLabel} — ${formatPrice(plan.priceMinor)}`}
         onClick={() => onChoose(plan)}
       >
-        {FOUNDING_COPY.chooseCta} {plan.tierLabel} · {plan.termLabel}
+        {plan.termLabel} — {formatPrice(plan.priceMinor)}
       </button>
     </article>
   );
@@ -152,11 +156,12 @@ export function FoundingPlans({ soldOut = false }: FoundingPlansProps) {
       onSubmit={onSubmit}
       noValidate
     >
-      <h2>{FOUNDING_COPY.emailStepHeading}</h2>
-      <p className="founding-chosen" aria-live="polite">
+      {/* The chosen plan IS the heading (LANDING_PAGE.md § 5.6), so it is
+          also what `aria-live` announces when the step opens. */}
+      <h2 className="founding-chosen" aria-live="polite">
         {chosen.tierLabel} · {chosen.termLabel} ·{" "}
         {formatPrice(chosen.priceMinor)}
-      </p>
+      </h2>
       <p>{FOUNDING_COPY.emailStepBody}</p>
       <div className="lead-row">
         <input

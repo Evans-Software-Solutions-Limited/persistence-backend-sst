@@ -16,7 +16,7 @@ describe("FoundingBanner", () => {
     renderPage(<FoundingBanner />, { route: "/" });
     expect(banner()).not.toBeNull();
     expect(
-      screen.getByRole("link", { name: /see the plans/i }).getAttribute("href"),
+      screen.getByRole("link", { name: /see founding prices/i }).getAttribute("href"),
     ).toBe("/founding");
   });
 
@@ -40,7 +40,7 @@ describe("FoundingBanner", () => {
   it("is dismissible, and stays dismissed on the next visit", () => {
     renderPage(<FoundingBanner />, { route: "/" });
     fireEvent.click(
-      screen.getByRole("button", { name: /dismiss the founding offer/i }),
+      screen.getByRole("button", { name: /hide founding offer banner/i }),
     );
     expect(banner()).toBeNull();
 
@@ -65,7 +65,7 @@ describe("FoundingBanner", () => {
       expect(topbar()).toBe("44px");
 
       fireEvent.click(
-        screen.getByRole("button", { name: /dismiss the founding offer/i }),
+        screen.getByRole("button", { name: /hide founding offer banner/i }),
       );
       expect(topbar()).toBe("");
       height.mockRestore();
@@ -129,7 +129,7 @@ describe("FoundingBanner", () => {
     expect(banner()).not.toBeNull();
     expect(() =>
       fireEvent.click(
-        screen.getByRole("button", { name: /dismiss the founding offer/i }),
+        screen.getByRole("button", { name: /hide founding offer banner/i }),
       ),
     ).not.toThrow();
     getItem.mockRestore();

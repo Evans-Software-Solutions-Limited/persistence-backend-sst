@@ -39,7 +39,7 @@ describe("FoundingThanks", () => {
     stubStatus(COMPLETED);
     render();
     expect(await screen.findByText(/payment received/i)).toBeDefined();
-    expect(screen.getByText(/check your email/i)).toBeDefined();
+    expect(screen.getByText(/install Persistence/i)).toBeDefined();
   });
 
   it("shows only the masked address it was given", async () => {
@@ -90,7 +90,7 @@ describe("FoundingThanks", () => {
     async (status) => {
       stubStatus({ ...COMPLETED, status });
       render();
-      expect(await screen.findByText(/didn't complete/i)).toBeDefined();
+      expect(await screen.findByText(/no payment was taken/i)).toBeDefined();
     },
   );
 
@@ -101,15 +101,15 @@ describe("FoundingThanks", () => {
     stubStatus({}, 404);
     render();
     expect(
-      await screen.findByText(/can't confirm this just yet/i),
+      await screen.findByText(/can't confirm your payment just yet/i),
     ).toBeDefined();
-    expect(screen.queryByText(/nothing has been charged/i)).toBeNull();
+    expect(screen.queryByText(/no payment was taken/i)).toBeNull();
   });
 
   it("does not spin forever when there is no session id at all", () => {
     const mock = stubStatus(COMPLETED);
     renderPage(<FoundingThanks />, { route: "/founding/thanks" });
-    expect(screen.getByText(/didn't complete/i)).toBeDefined();
+    expect(screen.getByText(/no payment was taken/i)).toBeDefined();
     expect(mock).not.toHaveBeenCalled();
   });
 
@@ -145,7 +145,7 @@ describe("FoundingThanks", () => {
     stubStatus(COMPLETED);
     render();
     expect(
-      await screen.findByRole("link", { name: /back to the plans/i }),
+      await screen.findByRole("link", { name: /back to founding prices/i }),
     ).toBeDefined();
   });
 });
