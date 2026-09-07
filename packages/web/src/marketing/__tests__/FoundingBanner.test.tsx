@@ -20,7 +20,9 @@ describe("FoundingBanner", () => {
     renderPage(<FoundingBanner />, { route: "/" });
     expect(banner()).not.toBeNull();
     expect(
-      screen.getByRole("link", { name: /see founding prices/i }).getAttribute("href"),
+      screen
+        .getByRole("link", { name: /see founding prices/i })
+        .getAttribute("href"),
     ).toBe("/founding");
   });
 
@@ -62,8 +64,9 @@ describe("FoundingBanner", () => {
       screen.getByRole("button", { name: /hide founding offer banner/i }),
     );
     expect(window.sessionStorage.length).toBe(1);
-    expect(window.localStorage.getItem("persistence.founding-banner-dismissed"))
-      .toBeNull();
+    expect(
+      window.localStorage.getItem("persistence.founding-banner-dismissed"),
+    ).toBeNull();
 
     // Ending the session is what clears it — nothing else does.
     window.sessionStorage.clear();

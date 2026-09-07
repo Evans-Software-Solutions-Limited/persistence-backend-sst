@@ -130,9 +130,7 @@ export function FoundingPlans({ soldOut = false }: FoundingPlansProps) {
   if (soldOut) {
     return (
       <div className="founding-plans-shell">
-        <h2 className="founding-plans-heading">
-          {FOUNDING_COPY.plansHeading}
-        </h2>
+        <h2 className="founding-plans-heading">{FOUNDING_COPY.plansHeading}</h2>
         <div className="founding-plans" aria-label={FOUNDING_COPY.plansLabel}>
           {FOUNDING_PLANS.map((plan) => (
             <PlanCard
@@ -153,9 +151,7 @@ export function FoundingPlans({ soldOut = false }: FoundingPlansProps) {
   if (!chosen) {
     return (
       <div className="founding-plans-shell">
-        <h2 className="founding-plans-heading">
-          {FOUNDING_COPY.plansHeading}
-        </h2>
+        <h2 className="founding-plans-heading">{FOUNDING_COPY.plansHeading}</h2>
         <div className="founding-plans" aria-label={FOUNDING_COPY.plansLabel}>
           {FOUNDING_PLANS.map((plan) => (
             <PlanCard

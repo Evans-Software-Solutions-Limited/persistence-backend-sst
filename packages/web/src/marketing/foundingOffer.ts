@@ -158,8 +158,7 @@ export const FOUNDING_COPY = {
     pendingBody:
       "Your payment is being confirmed. This usually takes a few seconds.",
     unfinishedHeading: "No payment was taken.",
-    unfinishedBody:
-      "Your session ended before payment completed.",
+    unfinishedBody: "Your session ended before payment completed.",
     // ⚠ NOT FROM LANDING_PAGE.md. § 5.8 defines three states (paid / still
     // processing / cancelled-expired); this is a fourth the code needs and the
     // doc does not cover. It exists because the page is only reachable after a
@@ -177,7 +176,8 @@ export const FOUNDING_COPY = {
   },
 
   // § 5.8 — shown on /founding?cancelled=1
-  cancelledNote: "No payment was taken. Your session ended before payment completed.",
+  cancelledNote:
+    "No payment was taken. Your session ended before payment completed.",
 } as const;
 
 export const FOUNDING_CONTACT_EMAIL = "admin@evans-software-solutions.com";

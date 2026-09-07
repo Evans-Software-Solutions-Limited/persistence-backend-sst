@@ -80,9 +80,7 @@ describe("FoundingPlans", () => {
     stubFetch();
     renderPlans();
     await choosePremium6();
-    fireEvent.click(
-      screen.getByRole("button", { name: "Change plan" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Change plan" }));
     expect(await screen.findByLabelText("Founding prices")).toBeDefined();
     expect(screen.queryByLabelText("Email address")).toBeNull();
   });
@@ -226,7 +224,6 @@ describe("FoundingPlans", () => {
     );
   });
 
-
   it("moves focus to the email field when a plan is chosen", async () => {
     // Choosing REPLACES the cards, so the button that was just pressed leaves
     // the DOM and focus falls back to <body> — a keyboard user's next Tab
@@ -269,9 +266,7 @@ describe("FoundingPlans", () => {
     typeEmail("buyer@example.test");
     fireEvent.submit(form);
     await screen.findByRole("alert");
-    fireEvent.click(
-      screen.getByRole("button", { name: "Change plan" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Change plan" }));
     fireEvent.click(
       await screen.findByRole("button", {
         name: "Premium+, One year — £100",
@@ -368,10 +363,9 @@ describe("FoundingPlans", () => {
       renderPlans();
       const form = await choosePremium6();
       typeEmail("buyer@example.test");
-      expect(screen.getByRole("button", { name: /continue to payment/i })).toHaveProperty(
-        "disabled",
-        true,
-      );
+      expect(
+        screen.getByRole("button", { name: /continue to payment/i }),
+      ).toHaveProperty("disabled", true);
       fireEvent.submit(form);
       expect(
         await screen.findByText(/security check hasn't loaded/i),
