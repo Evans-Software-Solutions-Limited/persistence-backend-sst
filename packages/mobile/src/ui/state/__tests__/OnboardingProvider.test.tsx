@@ -76,6 +76,50 @@ describe("OnboardingProvider", () => {
     expect(mockCache.has("user-b")).toBe(false);
   });
 
+  it("clears the boot gate from the offline mirror without awaiting the server", async () => {
+    // The read that hangs offline. AuthGate refuses to route while
+    // `isLoading` is true, so a cached mirror MUST resolve the gate on its
+    // own — waiting on the network here is what stranded the app on an
+    // infinite spinner with no connection.
+    mockGetOnboarding.mockReturnValue(new Promise(() => {}));
+    mockCache.set("user-a", {
+      userId: "user-a",
+      status: "completed",
+      path: "athlete",
+      currentPage: "welcome",
+      intentKeys: [],
+      updatedAt: "2026-09-01T12:00:00.000Z",
+    });
+
+    render(
+      <OnboardingProvider>
+        <Probe />
+      </OnboardingProvider>,
+    );
+
+    await waitFor(() => expect(context.isLoading).toBe(false));
+    expect(context.state).toMatchObject({
+      userId: "user-a",
+      status: "completed",
+    });
+    expect(context.loadError).toBeNull();
+  });
+
+  it("holds the boot gate only while there is nothing at all to route on", async () => {
+    mockGetOnboarding.mockReturnValue(new Promise(() => {}));
+
+    render(
+      <OnboardingProvider>
+        <Probe />
+      </OnboardingProvider>,
+    );
+
+    // No cache and no server answer yet: there is genuinely no verdict, so
+    // the gate stays up (bounded by the request timeout, not by this flag).
+    expect(context.isLoading).toBe(true);
+    expect(context.state).toBeNull();
+  });
+
   it("does not seed a fresh journey when the server read fails without a cache", async () => {
     const failure = new Error("onboarding unavailable");
     mockGetOnboarding.mockResolvedValueOnce({ ok: false, error: failure });

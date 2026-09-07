@@ -18,6 +18,20 @@ import type {
 import { ok, fail, type Result, type AuthError } from "@/shared/errors";
 
 /**
+ * How long a token read may block an API request before we fall back to the
+ * persisted session. Sits comfortably above a healthy refresh round-trip and
+ * well below the 10s onboarding-read budget it has to fit inside.
+ */
+export const GET_ACCESS_TOKEN_TIMEOUT_MS = 3_000;
+
+/**
+ * Sentinel for "the live read did not give us an answer" — it timed out or
+ * threw. Distinct from a resolved `null`, which is real evidence that the
+ * user is signed out and must NOT be papered over with a persisted token.
+ */
+const TOKEN_UNRESOLVED = Symbol("token-unresolved");
+
+/**
  * Derive Supabase's default auth storage key (`sb-<project-ref>-auth-token`)
  * from the project URL. The project ref is the first hostname label of the
  * Supabase URL. We compute it ourselves and pass it to `createClient` as an
@@ -636,11 +650,45 @@ export class SupabaseAuthAdapter implements AuthPort {
     return ok(this.mapSession(data.session));
   }
 
+  /**
+   * The bearer token every API request awaits, so it must never hang.
+   *
+   * `getSession()` refreshes over the network whenever the token is inside
+   * supabase's 90s expiry margin, is serialized behind the global auth lock,
+   * and carries no timeout of its own. On a captive portal or a dead network
+   * that refresh `fetch` never settles, so the lock is never released and
+   * every request in the app queues behind a promise that will not resolve —
+   * which is what stranded the boot gate on an infinite spinner.
+   *
+   * Bound it, and fall back to the token supabase has already persisted. A
+   * slightly stale JWT that earns a 401 is a far better outcome than a
+   * request that never returns: a 401 is a `Result` the caller can handle,
+   * and offline callers read through the SQLite cache anyway.
+   */
   async getAccessToken(): Promise<string | null> {
-    const {
-      data: { session },
-    } = await this.client.auth.getSession();
-    return session?.access_token ?? null;
+    const live = this.client.auth
+      .getSession()
+      .then(({ data: { session } }) => session?.access_token ?? null)
+      .catch(() => TOKEN_UNRESOLVED);
+
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+    const timedOut = new Promise<typeof TOKEN_UNRESOLVED>((resolve) => {
+      timeoutHandle = setTimeout(
+        () => resolve(TOKEN_UNRESOLVED),
+        GET_ACCESS_TOKEN_TIMEOUT_MS,
+      );
+    });
+
+    try {
+      const token = await Promise.race([live, timedOut]);
+      // A resolved `null` is a real signed-out verdict — return it as-is.
+      if (token !== TOKEN_UNRESOLVED) return token;
+    } finally {
+      if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
+    }
+
+    const persisted = await this.getPersistedSession();
+    return persisted?.accessToken ?? null;
   }
 
   private mapSession(session: {

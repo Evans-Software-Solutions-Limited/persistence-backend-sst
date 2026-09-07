@@ -67,6 +67,10 @@ function withoutServerFields(state: OnboardingState): OnboardingUpdateInput {
 
 export type OnboardingContextValue = {
   state: OnboardingState | null;
+  /**
+   * True only while there is no state to act on at all — not while a
+   * background refresh is in flight. A cached offline mirror clears it.
+   */
   isLoading: boolean;
   loadError: unknown | null;
   retryLoad: () => void;
@@ -106,7 +110,6 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
   userIdRef.current = userId;
   const [state, setState] = useState<OnboardingState | null>(null);
   const stateRef = useRef<OnboardingState | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
   const [loadFailure, setLoadFailure] = useState<{
     userId: string;
     error: unknown;
@@ -146,14 +149,12 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     let active = true;
     if (!userId) {
       setState(null);
-      setIsLoading(false);
       setLoadFailure(null);
       return () => {
         active = false;
       };
     }
 
-    setIsLoading(true);
     setLoadFailure(null);
     const cached = storage.getCachedOnboarding(userId);
     if (cached) setState(cached);
@@ -167,7 +168,6 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
         // the failure so AuthGate can fail open without replaying the journey.
         setState(cached);
         setLoadFailure({ userId, error: remote.error });
-        setIsLoading(false);
         return;
       }
       const serverState = normalizeRemoteState(userId, remote.value);
@@ -179,7 +179,6 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
           : (cached ?? makeInitialState(userId));
       setState(next);
       storage.cacheOnboarding(userId, next);
-      setIsLoading(false);
 
       // A newer offline mirror wins and is reconciled server-side. Terminal
       // server states cannot be reverted, so never upload over one.
@@ -354,10 +353,13 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
       loadFailure?.userId === userId ? loadFailure.error : null;
     return {
       state: visibleState,
+      // "Nothing to route on yet" — deliberately NOT "a read is in flight".
+      // A cached offline mirror is sufficient to decide where a signed-in
+      // user belongs, so the background refresh must not hold the boot gate:
+      // waiting on it bought nothing and cost an unbounded spinner offline.
+      // A read failure is not pending either; AuthGate fails open on it.
       isLoading:
-        userId !== null &&
-        visibleLoadError === null &&
-        (isLoading || visibleState === null),
+        userId !== null && visibleLoadError === null && visibleState === null,
       loadError: visibleLoadError,
       retryLoad,
       goBack,
@@ -371,7 +373,6 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     };
   }, [
     state,
-    isLoading,
     loadFailure,
     retryLoad,
     userId,

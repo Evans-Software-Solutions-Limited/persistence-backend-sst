@@ -85,7 +85,11 @@ import * as AppleAuthentication from "expo-apple-authentication";
 // eslint-disable-next-line import/first
 import AsyncStorage from "@react-native-async-storage/async-storage";
 // eslint-disable-next-line import/first
-import { SupabaseAuthAdapter, deriveAuthStorageKey } from "../supabase.adapter";
+import {
+  SupabaseAuthAdapter,
+  deriveAuthStorageKey,
+  GET_ACCESS_TOKEN_TIMEOUT_MS,
+} from "../supabase.adapter";
 
 const MOCK_SUPABASE_SESSION = {
   access_token: "access-123",
@@ -956,6 +960,77 @@ describe("SupabaseAuthAdapter", () => {
       const token = await adapter.getAccessToken();
 
       expect(token).toBeNull();
+    });
+
+    it("falls back to the persisted token when getSession never settles", async () => {
+      // A captive portal / dead network: supabase's refresh fetch hangs, so
+      // getSession() never resolves and never releases the global auth lock.
+      // Every API request awaits this token, so an unbounded wait here is what
+      // stranded the boot gate on an infinite spinner.
+      jest.useFakeTimers();
+      try {
+        mockGetSession.mockReturnValue(new Promise(() => {}));
+        (AsyncStorage.getItem as jest.Mock).mockResolvedValue(
+          JSON.stringify(MOCK_SUPABASE_SESSION),
+        );
+
+        const pending = adapter.getAccessToken();
+        await jest.advanceTimersByTimeAsync(GET_ACCESS_TOKEN_TIMEOUT_MS);
+
+        await expect(pending).resolves.toBe("access-123");
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it("returns null when getSession hangs and nothing is persisted", async () => {
+      jest.useFakeTimers();
+      try {
+        mockGetSession.mockReturnValue(new Promise(() => {}));
+        (AsyncStorage.getItem as jest.Mock).mockResolvedValue(null);
+
+        const pending = adapter.getAccessToken();
+        await jest.advanceTimersByTimeAsync(GET_ACCESS_TOKEN_TIMEOUT_MS);
+
+        await expect(pending).resolves.toBeNull();
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it("prefers the live token and does not read storage when the session resolves", async () => {
+      mockGetSession.mockResolvedValue({
+        data: { session: MOCK_SUPABASE_SESSION },
+        error: null,
+      });
+      const getItem = AsyncStorage.getItem as jest.Mock;
+      getItem.mockClear();
+
+      await expect(adapter.getAccessToken()).resolves.toBe("access-123");
+
+      expect(getItem).not.toHaveBeenCalled();
+    });
+
+    it("keeps a resolved null as a real signed-out verdict, ignoring storage", async () => {
+      mockGetSession.mockResolvedValue({
+        data: { session: null },
+        error: null,
+      });
+      (AsyncStorage.getItem as jest.Mock).mockResolvedValue(
+        JSON.stringify(MOCK_SUPABASE_SESSION),
+      );
+
+      // A stale persisted token must not resurrect a signed-out session.
+      await expect(adapter.getAccessToken()).resolves.toBeNull();
+    });
+
+    it("falls back to the persisted token when getSession rejects", async () => {
+      mockGetSession.mockRejectedValue(new Error("Network request failed"));
+      (AsyncStorage.getItem as jest.Mock).mockResolvedValue(
+        JSON.stringify(MOCK_SUPABASE_SESSION),
+      );
+
+      await expect(adapter.getAccessToken()).resolves.toBe("access-123");
     });
   });
 
