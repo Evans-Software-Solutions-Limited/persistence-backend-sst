@@ -20,6 +20,8 @@ import {
   AdminLayout,
   AdminLogin,
   AdminLookup,
+  AdminMarketing,
+  AdminMarketingPlan,
   RequireAdmin,
 } from "./admin";
 import { CAMPAIGN_LANDING_SLUGS } from "./marketing/campaign";
@@ -137,6 +139,8 @@ function App() {
             <Route index element={<AdminDashboard />} />
             <Route path="grants" element={<AdminGrants />} />
             <Route path="codes" element={<AdminCodes />} />
+            <Route path="marketing" element={<AdminMarketing />} />
+            <Route path="marketing/:id" element={<AdminMarketingPlan />} />
             <Route path="lookup" element={<AdminLookup />} />
             <Route path="audit" element={<AdminAudit />} />
           </Route>

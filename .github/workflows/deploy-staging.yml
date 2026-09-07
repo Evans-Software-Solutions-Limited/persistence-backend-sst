@@ -219,4 +219,8 @@ jobs:
           VITE_META_PIXEL_ID: ${{ secrets.VITE_META_PIXEL_ID }}
           VITE_TURNSTILE_SITE_KEY: ${{ secrets.VITE_TURNSTILE_SITE_KEY }}
           VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+          # Store founders'-rate redemption URLs (MARKETING-PLANS). Public
+          # environment variables, not secrets. Unset ⇒ no offer CTA renders.
+          VITE_STORE_OFFER_IOS_URL: ${{ vars.VITE_STORE_OFFER_IOS_URL }}
+          VITE_STORE_OFFER_ANDROID_URL: ${{ vars.VITE_STORE_OFFER_ANDROID_URL }}
         run: bunx sst deploy --stage staging

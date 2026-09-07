@@ -4462,6 +4462,31 @@
   text-align: center;
 }
 
+/* Store founders'-rate CTA (MARKETING-PLANS WP3). Mobile-only by construction
+   — the component returns null on desktop — so it never has to survive a wide
+   viewport, but it does sit in two different parents: the hero's button row
+   and the centred store section. Column layout keeps the renewal note under
+   the button in both. */
+.mkt .store-offer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin: 16px 0 0;
+}
+.mkt .store-offer-hero {
+  align-items: flex-start;
+}
+.mkt .store-offer-note {
+  margin: 0;
+  font-size: 13px;
+  color: var(--m-text-3);
+  max-width: 340px;
+}
+.mkt .store-offer-hero .store-offer-note {
+  text-align: left;
+}
+
 @media (max-width: 700px) {
   .mkt .founding-hero {
     padding: 124px 0 72px;

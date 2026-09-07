@@ -5,5 +5,7 @@ export { AdminCallback } from "./pages/AdminCallback";
 export { AdminDashboard } from "./pages/AdminDashboard";
 export { AdminGrants } from "./pages/AdminGrants";
 export { AdminCodes } from "./pages/AdminCodes";
+export { AdminMarketing } from "./pages/AdminMarketing";
+export { AdminMarketingPlan } from "./pages/AdminMarketingPlan";
 export { AdminLookup } from "./pages/AdminLookup";
 export { AdminAudit } from "./pages/AdminAudit";

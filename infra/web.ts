@@ -237,5 +237,15 @@ export const frontend = new sst.aws.StaticSite("web", {
     // /admin/login renders "not configured" and nothing else changes.
     VITE_SUPABASE_URL: supabaseUrl,
     VITE_SUPABASE_ANON_KEY: process.env.VITE_SUPABASE_ANON_KEY ?? "",
+    // Store founders'-rate redemption URLs (MARKETING-PLANS WP3). PUBLIC — a
+    // redemption URL is what an ad links to. Empty ⇒ no offer CTA renders on
+    // that stage, which is the correct default: iOS must stay unset until one
+    // code has been redeemed end to end on a fresh Apple ID and a
+    // `user_subscriptions` row confirmed server-side (RevenueCat skips
+    // anonymous ids). Configured in App Store Connect / Play Console; nothing
+    // here reads or enforces the offer's price, cap or expiry.
+    VITE_STORE_OFFER_IOS_URL: process.env.VITE_STORE_OFFER_IOS_URL ?? "",
+    VITE_STORE_OFFER_ANDROID_URL:
+      process.env.VITE_STORE_OFFER_ANDROID_URL ?? "",
   },
 });

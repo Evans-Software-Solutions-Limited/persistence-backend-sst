@@ -11,10 +11,17 @@
 // `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` (FOUNDING-OFFER): the public
 // Supabase project URL + anon key, used ONLY by the internal /admin sign-in
 // (magic link via GoTrue REST). Unset → /admin/login shows "not configured".
+// `VITE_STORE_OFFER_IOS_URL` / `VITE_STORE_OFFER_ANDROID_URL`
+// (MARKETING-PLANS): the App Store / Play offer-code redemption URLs for the
+// founders' rate. Public values — they are what an ad links to. Unset in a
+// stage means no offer CTA renders there, which is the correct state until a
+// code has been redeemed end to end and confirmed server-side.
 interface ImportMetaEnv {
   readonly VITE_SUPABASE_URL?: string;
   readonly VITE_SUPABASE_ANON_KEY?: string;
   readonly VITE_META_PIXEL_ID?: string;
   readonly VITE_TURNSTILE_SITE_KEY?: string;
   readonly VITE_MARKETING_EDGE_URL?: string;
+  readonly VITE_STORE_OFFER_IOS_URL?: string;
+  readonly VITE_STORE_OFFER_ANDROID_URL?: string;
 }

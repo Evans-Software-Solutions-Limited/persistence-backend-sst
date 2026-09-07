@@ -10,6 +10,7 @@ import { adminReferralCodesHandler } from "./admin/referral-codes/adminReferralC
 import { adminAttributionsHandler } from "./admin/attributions/adminAttributionsHandler";
 import { adminFoundingGrantsHandler } from "./admin/founding-grants/adminFoundingGrantsHandler";
 import { adminAuditLogHandler } from "./admin/audit/adminAuditLogHandler";
+import { adminMarketingHandler } from "./admin/marketing/adminMarketingHandler";
 
 export const adminRoutes = new Elysia()
   .use(adminSummaryHandler)
@@ -17,4 +18,5 @@ export const adminRoutes = new Elysia()
   .use(adminReferralCodesHandler)
   .use(adminAttributionsHandler)
   .use(adminFoundingGrantsHandler)
-  .use(adminAuditLogHandler);
+  .use(adminAuditLogHandler)
+  .use(adminMarketingHandler);

@@ -8,9 +8,17 @@ production account.
 
 ## Preconditions — Brad, before any of this
 
-1. Apply both migrations on staging, in this order (they are additive and safe
-   to apply ahead of the deploy):
-   - `20260905140000_founding_checkout_sessions.sql`
+1. Nothing to apply by hand. Both deploy workflows run `supabase db push
+--linked` (a dry run, then the real thing) before the SST deploy, so
+   `20260905140000_founding_checkout_sessions.sql` and
+   `20260905120000_marketing_plans.sql` land with the deploy that carries them.
+   Confirm from the run log rather than applying them yourself:
+
+   ```
+   Migrate database   Applying migration 20260905140000_founding_checkout_sessions.sql...
+   Migrate database   Finished supabase db push.
+   ```
+
 2. In Stripe, confirm the four one-off GBP Prices carry these **lookup keys**
    in **both** test and live mode — there is nothing to set per stage, because
    a lookup key is the same in both:
@@ -28,8 +36,32 @@ production account.
    with a GBP Price and a converted currency would make the recorded amount and
    the bank disagree.
 
-3. Add `checkout.session.completed` and `checkout.session.expired` to the
-   staging Stripe webhook endpoint's event list. Without them nothing grants.
+3. Stripe webhook destinations — **one per mode**, each with its own
+   `whsec_` signing secret, which goes into that stage's GitHub environment as
+   `STRIPE_WEBHOOK_SECRET` (the handler reads exactly that name).
+
+   | Mode | Destination URL                                                               |
+   | ---- | ----------------------------------------------------------------------------- |
+   | test | `https://api.staging.persistence.evans-software-solutions.com/stripe/webhook` |
+   | live | `https://api.persistence.evans-software-solutions.com/stripe/webhook`         |
+
+   Both need the full set the dispatch table handles — 13 event types, of which
+   the last four are new with this milestone:
+
+   ```
+   customer.subscription.created      invoice.payment_succeeded
+   customer.subscription.updated      invoice.payment_failed
+   customer.subscription.deleted      customer.subscription.trial_will_end
+   customer.subscription.paused       charge.dispute.created
+   customer.subscription.resumed
+   checkout.session.completed         checkout.session.expired
+   checkout.session.async_payment_succeeded
+   charge.refunded
+   ```
+
+   Without `checkout.session.completed` nothing grants; without
+   `charge.refunded` a refund leaves access in place.
+
 4. Set **both** Turnstile values on staging — `TURNSTILE_SECRET` (backend) and
    `VITE_TURNSTILE_SITE_KEY` (web build). `/founding/checkout` REQUIRES a real
    challenge, unlike the lead forms, because a hold there takes a place out of a

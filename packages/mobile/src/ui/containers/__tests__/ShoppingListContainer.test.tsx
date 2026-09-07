@@ -107,8 +107,19 @@ describe("ShoppingListContainer", () => {
     const { probe } = await mount((api) => {
       api.shoppingListByPlanId.set("plan-1", fixtureList());
     });
-    await waitFor(() => expect(probe().loading).toBe(false));
-    expect(probe().list).not.toBeNull();
+    // Waits on the LIST, then asserts `loading` — not the other way round.
+    // `useShoppingList` is `enabled: userId !== null && planId !== null`, and
+    // `useAuth` starts with a null session it fills in asynchronously, so
+    // there is a window on mount where the query is DISABLED: `isLoading` is
+    // false and `data` is undefined together. Waiting on `loading` could
+    // therefore pass on its first poll inside that window and then assert
+    // against a list that had not been fetched yet — which is what made this
+    // fail intermittently on CI while passing locally. The test below,
+    // "does not fetch when there is no planId route param", asserts exactly
+    // that pairing on purpose, which is the proof `loading: false` never
+    // meant "resolved".
+    await waitFor(() => expect(probe().list).not.toBeNull());
+    expect(probe().loading).toBe(false);
   });
 
   it("surfaces a 404 as a not-found error message and no list", async () => {

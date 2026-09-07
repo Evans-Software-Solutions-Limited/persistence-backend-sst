@@ -2915,3 +2915,267 @@ export type FoundingCheckoutSession =
   typeof foundingCheckoutSessions.$inferSelect;
 export type NewFoundingCheckoutSession =
   typeof foundingCheckoutSessions.$inferInsert;
+
+// ─── MARKETING-PLANS · admin marketing plans, channels, codes, metrics ───────
+// specs/milestones/MARKETING-PLANS/BRIEF.md § WP4. Mirrors
+// 20260905120000_marketing_plans.sql. Admin-only: RLS is enabled with no
+// policies, so every read and write goes through the core API behind
+// adminGuard. `campaign_slug` is deliberately NOT an FK anywhere below — the
+// slug map lives in packages/web as code, and printed artwork depends on those
+// slugs outliving any row.
+
+export const marketingPlans = pgTable(
+  "marketing_plans",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull(),
+    slug: text("slug").notNull().unique(),
+    status: text("status").notNull().default("draft"),
+    objective: text("objective"),
+    hypothesis: text("hypothesis"),
+    decisionRule: text("decision_rule"),
+    /** Rails this plan runs, e.g. `['founding_access', 'store_offer']`. */
+    offerLanes: text("offer_lanes").array().notNull().default([]),
+    budgetCapMinor: integer("budget_cap_minor"),
+    currency: text("currency").notNull().default("GBP"),
+    startsOn: date("starts_on"),
+    endsOn: date("ends_on"),
+    /** The brief, pasted as markdown and rendered read-only. ≤ 64 KB. */
+    briefMd: text("brief_md"),
+    createdBy: uuid("created_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index("marketing_plans_status_idx").on(t.status, t.createdAt),
+    check("marketing_plans_slug_ck", sql`${t.slug} ~ '^[a-z0-9-]{3,48}$'`),
+    check(
+      "marketing_plans_status_ck",
+      sql`${t.status} IN ('draft', 'active', 'paused', 'complete')`,
+    ),
+    check(
+      "marketing_plans_budget_ck",
+      sql`${t.budgetCapMinor} IS NULL OR ${t.budgetCapMinor} >= 0`,
+    ),
+    check(
+      "marketing_plans_brief_ck",
+      sql`${t.briefMd} IS NULL OR length(${t.briefMd}) <= 65536`,
+    ),
+    check(
+      "marketing_plans_dates_ck",
+      sql`${t.endsOn} IS NULL OR ${t.startsOn} IS NULL OR ${t.endsOn} >= ${t.startsOn}`,
+    ),
+  ],
+);
+
+export type MarketingPlan = typeof marketingPlans.$inferSelect;
+export type NewMarketingPlan = typeof marketingPlans.$inferInsert;
+
+export const marketingPlanChannels = pgTable(
+  "marketing_plan_channels",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    planId: uuid("plan_id")
+      .notNull()
+      .references(() => marketingPlans.id, { onDelete: "cascade" }),
+    campaignSlug: text("campaign_slug").notNull(),
+    label: text("label").notNull(),
+    placement: text("placement"),
+    notes: text("notes"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index("marketing_plan_channels_plan_idx").on(t.planId),
+    uniqueIndex("marketing_plan_channels_plan_slug_uq").on(
+      t.planId,
+      t.campaignSlug,
+    ),
+    check(
+      "marketing_plan_channels_slug_ck",
+      sql`${t.campaignSlug} ~ '^[a-z0-9-]{1,32}$'`,
+    ),
+  ],
+);
+
+export type MarketingPlanChannel = typeof marketingPlanChannels.$inferSelect;
+export type NewMarketingPlanChannel = typeof marketingPlanChannels.$inferInsert;
+
+/**
+ * A MIRROR of an offer configured in App Store Connect / the Play Console.
+ * Display and edit only — price, cap, expiry and eligibility are set there,
+ * nothing in this milestone calls the ASC API, and these rows can drift.
+ */
+export const marketingPlanStoreOffers = pgTable(
+  "marketing_plan_store_offers",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    planId: uuid("plan_id")
+      .notNull()
+      .references(() => marketingPlans.id, { onDelete: "cascade" }),
+    platform: text("platform").notNull(),
+    code: text("code").notNull(),
+    tierName: text("tier_name")
+      .notNull()
+      .references(() => subscriptionTiers.tierName),
+    durationMonths: integer("duration_months").notNull(),
+    priceMinor: integer("price_minor").notNull(),
+    currency: text("currency").notNull().default("GBP"),
+    maxRedemptions: integer("max_redemptions"),
+    expiresOn: date("expires_on"),
+    campaignSlug: text("campaign_slug"),
+    redemptionUrl: text("redemption_url"),
+    notes: text("notes"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index("marketing_plan_store_offers_plan_idx").on(t.planId),
+    uniqueIndex("marketing_plan_store_offers_plan_code_uq").on(
+      t.planId,
+      t.platform,
+      t.code,
+    ),
+    check(
+      "marketing_plan_store_offers_platform_ck",
+      sql`${t.platform} IN ('ios', 'android')`,
+    ),
+    check(
+      "marketing_plan_store_offers_code_ck",
+      sql`${t.code} ~ '^[A-Z0-9]{3,64}$'`,
+    ),
+    check(
+      "marketing_plan_store_offers_months_ck",
+      sql`${t.durationMonths} IN (1, 2, 3, 6, 12)`,
+    ),
+    check("marketing_plan_store_offers_price_ck", sql`${t.priceMinor} >= 0`),
+    check(
+      "marketing_plan_store_offers_max_ck",
+      sql`${t.maxRedemptions} IS NULL OR ${t.maxRedemptions} >= 0`,
+    ),
+    check(
+      "marketing_plan_store_offers_slug_ck",
+      sql`${t.campaignSlug} IS NULL OR ${t.campaignSlug} ~ '^[a-z0-9-]{1,32}$'`,
+    ),
+  ],
+);
+
+export type MarketingPlanStoreOffer =
+  typeof marketingPlanStoreOffers.$inferSelect;
+export type NewMarketingPlanStoreOffer =
+  typeof marketingPlanStoreOffers.$inferInsert;
+
+/** Existing referral codes linked to a plan. Link only — never creation. */
+export const marketingPlanCodes = pgTable(
+  "marketing_plan_codes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    planId: uuid("plan_id")
+      .notNull()
+      .references(() => marketingPlans.id, { onDelete: "cascade" }),
+    referralCodeId: uuid("referral_code_id")
+      .notNull()
+      .references(() => referralCodes.id),
+    campaignSlug: text("campaign_slug"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index("marketing_plan_codes_plan_idx").on(t.planId),
+    index("marketing_plan_codes_code_idx").on(t.referralCodeId),
+    uniqueIndex("marketing_plan_codes_plan_code_uq").on(
+      t.planId,
+      t.referralCodeId,
+    ),
+    check(
+      "marketing_plan_codes_slug_ck",
+      sql`${t.campaignSlug} IS NULL OR ${t.campaignSlug} ~ '^[a-z0-9-]{1,32}$'`,
+    ),
+  ],
+);
+
+export type MarketingPlanCode = typeof marketingPlanCodes.$inferSelect;
+export type NewMarketingPlanCode = typeof marketingPlanCodes.$inferInsert;
+
+/**
+ * Off-platform numbers, hand-entered. `campaignSlug` NULL = the whole plan.
+ *
+ * The upsert key is a UNIQUE INDEX on `(plan_id, COALESCE(campaign_slug, '*'),
+ * metric_date)`, not a UNIQUE constraint on the three columns: NULL is
+ * distinct from NULL under UNIQUE, so a plain constraint would let every
+ * whole-plan row for a date duplicate — the row the weekly form writes most
+ * often. Recorded here in bare-column form (Drizzle's `.on()` takes columns,
+ * not expressions); the migration carries the real COALESCE expression, the
+ * same convention `analyticsEvents` and `aiJobs` use for their partial
+ * indexes.
+ */
+export const marketingPlanMetrics = pgTable(
+  "marketing_plan_metrics",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    planId: uuid("plan_id")
+      .notNull()
+      .references(() => marketingPlans.id, { onDelete: "cascade" }),
+    campaignSlug: text("campaign_slug"),
+    metricDate: date("metric_date").notNull(),
+    spendMinor: integer("spend_minor"),
+    impressions: integer("impressions"),
+    clicks: integer("clicks"),
+    landingViews: integer("landing_views"),
+    /** ASC / Play offer-code redemptions, read off their dashboards. */
+    storeRedemptions: integer("store_redemptions"),
+    notes: text("notes"),
+    recordedBy: uuid("recorded_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index("marketing_plan_metrics_plan_date_idx").on(t.planId, t.metricDate),
+    uniqueIndex("marketing_plan_metrics_upsert_uq").on(
+      t.planId,
+      t.campaignSlug,
+      t.metricDate,
+    ),
+    check(
+      "marketing_plan_metrics_slug_ck",
+      sql`${t.campaignSlug} IS NULL OR ${t.campaignSlug} ~ '^[a-z0-9-]{1,32}$'`,
+    ),
+    check(
+      "marketing_plan_metrics_spend_ck",
+      sql`${t.spendMinor} IS NULL OR ${t.spendMinor} >= 0`,
+    ),
+    check(
+      "marketing_plan_metrics_impressions_ck",
+      sql`${t.impressions} IS NULL OR ${t.impressions} >= 0`,
+    ),
+    check(
+      "marketing_plan_metrics_clicks_ck",
+      sql`${t.clicks} IS NULL OR ${t.clicks} >= 0`,
+    ),
+    check(
+      "marketing_plan_metrics_landing_views_ck",
+      sql`${t.landingViews} IS NULL OR ${t.landingViews} >= 0`,
+    ),
+    check(
+      "marketing_plan_metrics_redemptions_ck",
+      sql`${t.storeRedemptions} IS NULL OR ${t.storeRedemptions} >= 0`,
+    ),
+  ],
+);
+
+export type MarketingPlanMetric = typeof marketingPlanMetrics.$inferSelect;
+export type NewMarketingPlanMetric = typeof marketingPlanMetrics.$inferInsert;

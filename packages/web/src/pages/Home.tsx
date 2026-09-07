@@ -16,6 +16,7 @@ import {
 import { WaitlistForm, CoachEnquiryForm } from "@/marketing/LeadForms";
 import { AppStoreCta } from "@/marketing/AppStoreCta";
 import { PlayStoreCta } from "@/marketing/PlayStoreCta";
+import { StoreOfferCta } from "@/marketing/StoreOfferCta";
 import {
   CheckIcon,
   DumbbellIcon,
@@ -107,6 +108,13 @@ export function Home() {
                     For coaches
                   </a>
                 </div>
+                {/*
+                 * Renders nothing unless the route's campaign is in
+                 * STORE_OFFER_CAMPAIGNS, the visitor is on iOS/Android, AND
+                 * that platform's redemption URL is configured — so on `/` and
+                 * on every print slug this is inert. See StoreOfferCta.
+                 */}
+                <StoreOfferCta variant="hero" />
                 <div className="hero-proof" data-reveal style={d(380)}>
                   <span className="proof-chip">
                     <WifiOffIcon />
@@ -638,6 +646,7 @@ export function Home() {
               <AppStoreCta variant="store" />
               <PlayStoreCta />
             </div>
+            <StoreOfferCta variant="store" />
             <p className="store-founding" data-reveal style={d(220)}>
               Looking for six months with no automatic renewal?{" "}
               <Link to="/founding">See the founding offer</Link>.
