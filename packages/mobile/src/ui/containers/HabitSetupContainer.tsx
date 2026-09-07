@@ -5,6 +5,7 @@ import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useAuth } from "@/ui/hooks/useAuth";
 import { useDashboard } from "@/ui/hooks/useDashboard";
 import { useGetHabitConfig } from "@/ui/hooks/useGetHabitConfig";
+import { useFuelSheets } from "@/state/fuel-sheets";
 import { useGetClientHabitConfig } from "@/ui/hooks/useGetClientHabitConfig";
 import {
   useConfigureHabit,
@@ -290,6 +291,30 @@ export function HabitSetupContainer({
   const disableMutate = disable.mutate;
   const reloadSelfConfig = selfConfig.reload;
   const refreshClientConfig = clientConfig.refresh;
+
+  /**
+   * Re-read the config after the Fuel targets are edited.
+   *
+   * The Calories habit's target is resolved server-side from `daily_kcal`, so
+   * this screen only learns a new one by refetching. It used to get that for
+   * free: the "Adjust in Nutrition" link pushed into `(app)`, which unmounted
+   * this screen, and the remount refetched. The `(onboarding)` detour route
+   * deliberately keeps it mounted to preserve the habit draft, and
+   * `useCachedResource`'s mount refresh is one-shot with no focus re-read — so
+   * without this the card kept showing the old target (typically the 2,000
+   * kcal default) after saving a new one. Display-only: the server substitutes
+   * the canonical target on write regardless.
+   *
+   * Heals on reconnect only, since the resolved value is server-side.
+   */
+  const fuelRev = useFuelSheets((state) => state.rev);
+  const seenFuelRev = useRef(fuelRev);
+  useEffect(() => {
+    if (isCoachView) return;
+    if (fuelRev === seenFuelRev.current) return;
+    seenFuelRev.current = fuelRev;
+    reloadSelfConfig();
+  }, [fuelRev, isCoachView, reloadSelfConfig]);
 
   // Commit the draft: one write per category that diverges from the baseline.
   //  - draft enabled            → configure PUT (enable/edit).

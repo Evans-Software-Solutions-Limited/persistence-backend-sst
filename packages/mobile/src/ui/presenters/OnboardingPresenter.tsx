@@ -86,8 +86,9 @@ export const OFFLINE_PLANS_COPY = {
   eyebrow: "NO CONNECTION",
   title: "Plans need a connection",
   body:
-    "We can't load subscription plans while you're offline. Everything else " +
-    "in your setup is saved on this device and will sync when you reconnect.",
+    "We can't load subscription plans while you're offline. Finish setup and " +
+    "the rest of your answers are saved on this device, then synced when you " +
+    "reconnect.",
   hint: "You can pick a plan any time from Settings.",
   finishLabel: "Finish setup without a plan",
   retryLabel: "Try again",
