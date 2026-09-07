@@ -38,6 +38,35 @@ import { aiJobQueue } from "./jobs";
 //
 // See docs/mobile-release-pipeline.md and packages/api-utils/src/domains/.
 export const coreAPI = new sst.aws.ApiGatewayV2("api-core", {
+  // CORS is owned by the LAMBDA, not the gateway. This must stay `false`.
+  //
+  // SST defaults an unspecified `cors` to
+  // `{ allowHeaders: ["*"], allowMethods: ["*"], allowOrigins: ["*"] }`
+  // (`normalizeCors()` in .sst/platform/…/apigatewayv2.ts), and an HTTP API
+  // with CORS configured does two things that break this API:
+  //
+  //  1. it answers preflight `OPTIONS` ITSELF, without invoking the
+  //     integration — so the `.options()` routes in `leadsRoutes` /
+  //     `foundingCheckoutHandler` and the `/admin/*` policy in `adminCors`
+  //     never run; and
+  //  2. it DISCARDS CORS headers returned by the integration — so a
+  //     per-route policy cannot exist at all.
+  //
+  // And the default is not merely redundant, it is wrong: per the Fetch spec a
+  // `*` in `Access-Control-Allow-Headers` matches every header name EXCEPT
+  // `Authorization`, which has to be named explicitly. That is why the admin
+  // panel could not reach a single endpoint while `/leads` (Content-Type only)
+  // worked — the gateway's own `*` answer failed the preflight for
+  // `authorization`.
+  //
+  // With `cors: false` the `$default` route below receives OPTIONS like any
+  // other method and Elysia answers it. Every browser-facing route therefore
+  // has to set its own headers: `/admin/*` via `adminCors`, `/leads/*` and
+  // `/store-click` and `/founding/checkout*` via their own `withCors`, and
+  // `/subscription-tiers` + `/founding/availability` via `publicCors`. A new
+  // browser-facing route with none of those will fail in the browser and
+  // nowhere else, so add it there at the same time.
+  cors: false,
   domain:
     coreApiDomain != null && hostedZoneId
       ? {

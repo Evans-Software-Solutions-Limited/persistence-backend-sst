@@ -10,6 +10,7 @@ import {
 import { FoundingCheckoutRepository } from "../../repositories/foundingCheckoutRepository";
 import { ReferralRepository } from "../../repositories/referralRepository";
 import { resolveFoundingPrice } from "./foundingPrices";
+import { webOrigin } from "../../../shared/webOrigin";
 import { FoundingGrantRepository } from "../../repositories/foundingGrantRepository";
 import {
   FOUNDING_CHECKOUT_TTL_MS,
@@ -96,22 +97,6 @@ export const CHECKOUT_TERMS =
 export interface CheckoutRefusal {
   status: number;
   body: { ok: false; error: string };
-}
-
-/**
- * The web origin the buyer is returned to. Same value the invite email uses.
- *
- * Falls back on an EMPTY value, not just an absent one: `infra/api.ts` sets
- * optional vars to `""` rather than leaving them unset, and `??` would happily
- * pass that through — making `success_url` a relative path, which Stripe
- * rejects when the Session is created. A stage without the variable has to
- * send buyers somewhere real.
- */
-function webOrigin(): string {
-  return (
-    process.env.WEB_ORIGIN?.trim() ||
-    "https://persistence.evans-software-solutions.com"
-  );
 }
 
 /**

@@ -11,7 +11,7 @@ production account.
 1. Nothing to apply by hand. Both deploy workflows run `supabase db push
 --linked` (a dry run, then the real thing) before the SST deploy, so
    `20260905140000_founding_checkout_sessions.sql` and
-   `20260905120000_marketing_plans.sql` land with the deploy that carries them.
+   `20260907120000_marketing_plans.sql` land with the deploy that carries them.
    Confirm from the run log rather than applying them yourself:
 
    ```

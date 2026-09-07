@@ -43,7 +43,7 @@ const FOUNDING_MIGRATION = migrationSql(
 const GENERALISE_MIGRATION = migrationSql(
   "20260904214114_generalise_founding_grants.sql",
 );
-const MARKETING_MIGRATION = migrationSql("20260905120000_marketing_plans.sql");
+const MARKETING_MIGRATION = migrationSql("20260907120000_marketing_plans.sql");
 
 /**
  * `/admin/marketing/*` end to end against a real Postgres (PGlite), with the

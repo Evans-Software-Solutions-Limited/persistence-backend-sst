@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { webOrigin as sharedWebOrigin } from "../../shared/webOrigin";
 import { AdminAuditRepository } from "../repositories/adminAuditRepository";
 import { SubscriptionRepository } from "../repositories/subscriptionRepository";
 import {
@@ -130,8 +131,11 @@ export class FoundingGrantService {
     referrals: ReferralRepository = new ReferralRepository(),
     audit: AdminAuditRepository = new AdminAuditRepository(),
     mailer: typeof sendEmail = sendEmail,
-    webOrigin: string = process.env.WEB_ORIGIN ??
-      "https://persistence.evans-software-solutions.com",
+    // The SHARED definition, not a third copy. This one used `??`, so an
+    // empty `WEB_ORIGIN` — which `infra/api.ts` really does set for an unset
+    // optional var — passed straight through and made the invite email's
+    // download link the relative `/qr/founding`: a dead link in an email.
+    webOrigin: string = sharedWebOrigin(),
     authUserLookup: (
       userId: string,
     ) => Promise<SupabaseAuthIdentity> = getAuthUserIdentity,

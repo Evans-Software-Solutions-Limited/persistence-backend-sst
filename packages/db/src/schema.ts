@@ -2918,7 +2918,7 @@ export type NewFoundingCheckoutSession =
 
 // ─── MARKETING-PLANS · admin marketing plans, channels, codes, metrics ───────
 // specs/milestones/MARKETING-PLANS/BRIEF.md § WP4. Mirrors
-// 20260905120000_marketing_plans.sql. Admin-only: RLS is enabled with no
+// 20260907120000_marketing_plans.sql. Admin-only: RLS is enabled with no
 // policies, so every read and write goes through the core API behind
 // adminGuard. `campaign_slug` is deliberately NOT an FK anywhere below — the
 // slug map lives in packages/web as code, and printed artwork depends on those

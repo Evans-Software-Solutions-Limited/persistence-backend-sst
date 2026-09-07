@@ -1,4 +1,5 @@
 import Elysia from "elysia";
+import { publicPreflight, withPublicCors } from "../../../shared/publicCors";
 
 import {
   SubscriptionTiersRepository,
@@ -109,15 +110,25 @@ export function mapTierRowToWire(
 }
 
 export const subscriptionsTiersHandler = new Elysia()
+  // Both routes below are read by the WEBSITE from a different origin, and the
+  // gateway no longer supplies CORS (`infra/api.ts` sets `cors: false`). A GET
+  // with no custom headers is never preflighted, but the browser still hides
+  // the response body from the page without an allow-origin header — so these
+  // are needed for the pricing table and the founding counter to render at
+  // all, even though neither request is "complex".
+  .options("/subscription-tiers", () => publicPreflight())
+  .options("/founding/availability", () => publicPreflight())
   .get(
     "/subscription-tiers",
-    async (): Promise<{ data: SubscriptionTierWire[] }> => {
+    async ({ set }): Promise<{ data: SubscriptionTierWire[] }> => {
+      withPublicCors({ set });
       const repo = new SubscriptionTiersRepository();
       const rows = await repo.listActive();
       return { data: rows.map(mapTierRowToWire) };
     },
   )
   .get("/founding/availability", async ({ set }) => {
+    withPublicCors({ set });
     const repo = new FoundingGrantRepository();
     const checkouts = new FoundingCheckoutRepository();
     const db = getDb();
