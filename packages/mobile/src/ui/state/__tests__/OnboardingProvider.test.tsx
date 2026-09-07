@@ -399,6 +399,120 @@ describe("OnboardingProvider", () => {
     });
   });
 
+  it("keeps offline work when the reconnect retry ALSO fails", async () => {
+    // `useOnlineStatus` flips the moment NetInfo reports a connection, which
+    // routinely precedes real reachability — so the retry failing again is the
+    // common case, and the in-memory journey is the only copy of itself.
+    mockIsConnected = false;
+    mockGetOnboarding.mockResolvedValue({
+      ok: false,
+      error: { kind: "api", code: "network", message: "Network error" },
+    });
+
+    render(
+      <OnboardingProvider>
+        <Probe />
+      </OnboardingProvider>,
+    );
+    await waitFor(() => expect(context.loadError).not.toBeNull());
+
+    await act(async () => {
+      await context.completePage("welcome");
+    });
+    expect(context.state?.completedPages).toEqual(["welcome"]);
+
+    // A blip: NetInfo says online, the read fails again.
+    await act(async () => {
+      mockNetInfoListeners.forEach((listener) => listener(true));
+    });
+    await waitFor(() => expect(mockGetOnboarding).toHaveBeenCalledTimes(2));
+
+    expect(context.state?.completedPages).toEqual(["welcome"]);
+  });
+
+  it("does not let a re-seed inherit the edited flag and clobber the server", async () => {
+    // The compounding bug: re-seeding while leaving `hasProvisionalEdits` set
+    // promoted a FRESH seed to the local candidate on the next success, and
+    // PUT its defaults over the account's real row.
+    mockIsConnected = false;
+    mockGetOnboarding.mockResolvedValue({
+      ok: false,
+      error: { kind: "api", code: "network", message: "Network error" },
+    });
+
+    render(
+      <OnboardingProvider>
+        <Probe />
+      </OnboardingProvider>,
+    );
+    await waitFor(() => expect(context.loadError).not.toBeNull());
+
+    // Edits, then a SERVER-ERROR read, which nulls the state and is not
+    // "unreachable" — so nothing provisional should survive it.
+    await act(async () => {
+      await context.completePage("welcome");
+    });
+    mockGetOnboarding.mockResolvedValueOnce({
+      ok: false,
+      error: { kind: "api", code: "server", message: "Boom" },
+    });
+    await act(async () => {
+      context.retryLoad();
+    });
+    await waitFor(() => expect(context.state).toBeNull());
+
+    // Now a real read lands with the account's genuine progress.
+    mockGetOnboarding.mockResolvedValue({
+      ok: true,
+      value: {
+        userId: "user-a",
+        status: "in_progress",
+        path: "coach",
+        currentPage: "train",
+        completedPages: ["welcome", "profile", "role", "habits"],
+        skippedPages: [],
+        intentKeys: [],
+        updatedAt: "2026-09-01T12:00:00.000Z",
+      },
+    });
+    await act(async () => {
+      context.retryLoad();
+    });
+
+    await waitFor(() => expect(context.state?.currentPage).toBe("train"));
+    expect(context.state?.path).toBe("coach");
+    expect(mockUpdateOnboarding).not.toHaveBeenCalled();
+  });
+
+  it("mirrors a provisional journey once the user finishes it", async () => {
+    // The offline plan picker promises the setup is saved on the device. It
+    // has to be true across a cold start, or the user is walked through the
+    // whole journey again having just been told it was saved.
+    mockGetOnboarding.mockResolvedValue({
+      ok: false,
+      error: { kind: "api", code: "network", message: "Network error" },
+    });
+
+    render(
+      <OnboardingProvider>
+        <Probe />
+      </OnboardingProvider>,
+    );
+    await waitFor(() => expect(context.isLoading).toBe(false));
+
+    await act(async () => {
+      await context.completePage("welcome");
+    });
+    // Still in progress: memory only, so it cannot outrank the server.
+    expect(mockCache.has("user-a")).toBe(false);
+
+    await act(async () => {
+      await context.completeJourney();
+    });
+
+    expect(mockCache.get("user-a")).toMatchObject({ status: "completed" });
+  });
+
   it("still refuses to let an UNTOUCHED seed overwrite the server", async () => {
     // The other half of the same trade-off: promoting a seed the user never
     // advanced would put back the clobber that withholding it prevented.

@@ -228,9 +228,27 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
         // PUT the seed's defaults over whatever real in-progress row the
         // server holds, and `onboardingStateRepository.put` would accept it:
         // its guard only protects a terminal row, not an in-progress one.
+        //
+        // A RETRY that fails again must not re-seed over work already done on
+        // a provisional journey. `useOnlineStatus` flips the moment NetInfo
+        // reports a connection, which routinely precedes real reachability
+        // (captive portal, weak cell, lift doors), so the auto-retry firing
+        // into another failure is the common case, not the rare one — and the
+        // in-memory journey is the only copy of itself. Re-seeding it also
+        // used to leave `hasProvisionalEditsRef` set, which then promoted a
+        // FRESH seed to the local candidate on the next success and PUT its
+        // defaults over the server's real row. Keep the journey, or clear the
+        // flag with it; never one without the other.
         const unreachable = isUnreachableError(remote.error);
+        const keepProvisional =
+          unreachable &&
+          hasProvisionalEditsRef.current &&
+          stateRef.current?.userId === userId;
         isProvisionalRef.current = unreachable;
-        setState(unreachable ? makeInitialState(userId) : null);
+        if (!keepProvisional) {
+          hasProvisionalEditsRef.current = false;
+          setState(unreachable ? makeInitialState(userId) : null);
+        }
         setLoadFailure({ userId, error: remote.error });
         return;
       }
@@ -346,6 +364,16 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
       // successful read (retried on reconnect) clears the flag.
       if (isProvisionalRef.current) {
         hasProvisionalEditsRef.current = true;
+        // A journey the user has FINISHED offline is durable, and the offline
+        // plan picker tells them so ("saved on this device and will sync when
+        // you reconnect"). Mirroring only the terminal state keeps that
+        // promise across a cold start without reopening the clobber: a
+        // terminal local state cannot un-finish anything, the reconcile
+        // weighs it as the local candidate, and the upload guard still
+        // refuses to write over a terminal server row.
+        if (optimistic.status !== "in_progress") {
+          storage.cacheOnboarding(userId, optimistic);
+        }
         return optimistic;
       }
       storage.cacheOnboarding(userId, optimistic);
