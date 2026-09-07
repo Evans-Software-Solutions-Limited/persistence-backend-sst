@@ -135,9 +135,28 @@ one was a bug before it was fixed:**
    component on a hash of the _sorted_ ids so add/remove remounts and a plain
    reorder does not.
 
-Not yet spiked, still to verify during the port: mid-drag app backgrounding,
-and dynamic (non-uniform) item heights — needed because real exercise cards
-are not uniform, see § 5.3.
+5. **Non-uniform heights: pass `itemHeight` as a RESOLVER, never
+   `enableDynamicHeights`.** Real exercise cards and superset blocks are not
+   uniform, so this matters. `enableDynamicHeights: true` is the _async
+   measurement_ path and it is **broken** — spiked with rows of 96/168/240pt,
+   it rendered rows overlapping each other and left `contentHeight` stuck at
+   the estimate (20 x 72 = 1440) because measured heights never converged.
+   Passing `itemHeight` as a function instead gives known heights with no
+   measurement at all (`needsMeasurement` is gated on `enableDynamicHeights`
+   alone): `contentHeight` came out at the exact sum (3120), rows laid out at
+   their true heights, and a drag across differently-sized rows dropped
+   precisely. Supply the resolver from heights the app measures itself with a
+   plain `onLayout` on each row, and give it a fresh identity when those
+   heights change so the hook's effect recomputes.
+6. **Drag is already a single gesture, and a `Handle` confines it.** The pan is
+   `Gesture.Pan().activateAfterLongPress(200)`, so a normal swipe still scrolls
+   and a 200ms hold starts the drag — no mode, no second gesture, which is
+   exactly the requested model. It is also `.enabled(!hasHandle)`: registering
+   a `SortableItem.Handle` disables the whole-item pan and drags only from the
+   handle. **Use the Handle** — session cards contain weight/reps `TextInput`s
+   and a whole-card pan would fight them.
+
+Not yet spiked, still to verify during the port: mid-drag app backgrounding.
 
 ## 4. WP2 — Rip out
 
