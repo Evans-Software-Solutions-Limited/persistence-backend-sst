@@ -8,6 +8,10 @@ This directory holds the current planning docs for getting Persistence to a prod
 - [`mobile-v2-offline-first-plan.md`](./mobile-v2-offline-first-plan.md) — the rebuilt frontend plan using the existing `persistence-mobile` app as the basis/reference, but reworked for offline-first, performance, and battery efficiency
 - [`claude-implementation-brief.md`](./claude-implementation-brief.md) — a practical work order for the implementation lane / Claude agent
 
+## Product Specs
+
+- [`ai-pt-spec-pack/`](./ai-pt-spec-pack/) — AI PT / health-fitness-nutrition coaching product spec pack (working title: Reps Coach). Spec-driven design docs covering requirements, architecture, agent behaviour, and steering context. This is a separate product track from Persistence.
+
 ## Current Direction
 
 - Keep the database in Supabase
