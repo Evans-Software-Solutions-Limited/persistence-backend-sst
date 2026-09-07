@@ -93,29 +93,51 @@ different sets of magic numbers.
 
 ---
 
-## 3. WP1 — Device spike FIRST (hard gate, do not skip)
+## 3. WP1 — Device spike: DONE, verdict GO (2026-09-07)
 
-**Do not port anything until the package is proven on a device.** If
-`reanimated-dnd` also fails on this stack we must learn it in an hour, not
-after a full migration.
+Run on the iPhone 17 Pro Max simulator against the live dev build, 20 rows of
+72pt inside a scroller carrying a 220pt header. Results:
 
-Build a throwaway screen with ~20 fixed-height rows in a `Sortable`, inside the
-app (so it inherits the real gesture host, Tamagui, and the real navigator) and:
+| Check                                | Result                                                                            |
+| ------------------------------------ | --------------------------------------------------------------------------------- |
+| Long-press + drag moves a row        | **PASS** — one continuous gesture, no mode, no second press                       |
+| Drop lands where released            | **PASS** — 3-row and 2-row drags both landed exactly                              |
+| Auto-scroll at the bottom edge       | **PASS** — held at the edge, list scrolled to the end and carried the row to last |
+| Auto-scroll at the top edge          | **PASS** — scrolled back to the top                                               |
+| Consistent across consecutive drags  | **PASS** — two drags in a row, committed order matched the screen both times      |
+| Header above the list skews the drop | **NO** — the 220pt header did not affect drop accuracy                            |
 
-1. Long-press a row and drag it 3 positions. Does it move?
-2. Drag to the bottom edge with the list longer than the viewport. **Does it
-   auto-scroll?**
-3. Drag to the top edge. Does it auto-scroll back?
-4. Release mid-drag, and background the app mid-drag. Does the row settle, and
-   is the list still usable? (RNDFL 4.0.3 did **not** finalize a native
-   CANCELLED pan — `c80b5a0c` needed an `AppState` listener and a list remount
-   to work around it. Verify the replacement does not share this defect.)
+Four integration rules the spike established. **These are not optional; each
+one was a bug before it was fixed:**
 
-**Report results to Brad and stop for a go/no-go.** If any of 1–3 fails, the
-fallback is the move-up/down-buttons model the coach program editor already
-uses (`ProgramEditorPresenter.tsx:415`) — a decision for Brad, not the agent.
+1. **`onDrop` is the commit hook, NOT `onMove`.** `onMove` fires per item as
+   rows shuffle _mid-drag_ (`useSortable` guards it with `!movingSV.value`, so
+   it fires for the items being displaced, not the one being dragged). Treating
+   it as "apply this move" corrupted the order immediately — the spike's first
+   run produced `4,1,6,3,8,…` against a screen showing `2,3,4,1,…`. Use
+   `onDrop(id, position, allPositions)` from `onFinalize` and rebuild the order
+   by sorting on `allPositions`.
+2. **Pass `containerHeight` explicitly.** `useSortable` defaults it to **500**
+   and captures it once in a `useRef`; the library's own `Sortable` wrapper
+   never passes it. Left at the default, the auto-scroll trigger edge sits
+   ~200pt above the real bottom of the list on a tall phone. Measure the
+   viewport with `onLayout` and pass it.
+3. **Do NOT use the `Sortable` wrapper component.** Its scroll view hardcodes
+   `backgroundColor: "white"` (glaring on this dark theme), it has no header
+   slot, it cannot pass `containerHeight`, and it force-remounts on every data
+   change via `key={dataHash(data)}` — which resets scroll position after every
+   drop. Compose `useSortableList` + `SortableItem` instead.
+4. **`positions` is initialised once and never re-synced to `data`.** That is
+   why the wrapper force-remounts. Composing the hooks directly, a remount is
+   NOT needed for a reorder: `positions` is keyed by id, so once the committed
+   array is re-sorted the two agree (verified over consecutive drags). But the
+   id **set** changing (add/remove an exercise) WILL desync it — key the
+   component on a hash of the _sorted_ ids so add/remove remounts and a plain
+   reorder does not.
 
----
+Not yet spiked, still to verify during the port: mid-drag app backgrounding,
+and dynamic (non-uniform) item heights — needed because real exercise cards
+are not uniform, see § 5.3.
 
 ## 4. WP2 — Rip out
 
