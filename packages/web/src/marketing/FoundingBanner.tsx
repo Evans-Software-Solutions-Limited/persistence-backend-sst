@@ -15,14 +15,19 @@ const TOPBAR_VAR = "--m-topbar-h";
  *  - after the close date, so it disappears on its own rather than needing a
  *    deploy on 1 October;
  *  - on `/founding` itself, where it would advertise the page it is already on;
- *  - once dismissed, remembered per browser so it does not nag on every visit.
+ *  - once dismissed, remembered for the rest of the browsing session so it does
+ *    not nag on every page.
  *
- * `localStorage` is wrapped in try/catch: a locked-down browser must lose the
- * dismissal, not the page.
+ * `sessionStorage`, per LANDING_PAGE.md § 5.1, NOT `localStorage`: the offer
+ * runs for weeks and one idle dismissal should not silently retire the banner
+ * for that browser for the whole window.
+ *
+ * Wrapped in try/catch: a locked-down browser must lose the dismissal, not the
+ * page.
  */
 function wasDismissed(): boolean {
   try {
-    return window.localStorage.getItem(DISMISSED_KEY) === "1";
+    return window.sessionStorage.getItem(DISMISSED_KEY) === "1";
   } catch {
     return false;
   }
@@ -99,7 +104,7 @@ export function FoundingBanner() {
         onClick={() => {
           setDismissed(true);
           try {
-            window.localStorage.setItem(DISMISSED_KEY, "1");
+            window.sessionStorage.setItem(DISMISSED_KEY, "1");
           } catch {
             // A browser that refuses storage still gets the banner closed for
             // this page view; it simply returns on the next one.

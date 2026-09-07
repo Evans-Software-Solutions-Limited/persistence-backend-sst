@@ -2,6 +2,7 @@ import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { renderPage } from "@/test-utils";
 import { FoundingPlans } from "../FoundingPlans";
 import { CampaignContext } from "../campaign";
+import { FOUNDING_COPY } from "../foundingOffer";
 import * as metaPixel from "@/lib/metaPixel";
 import { setConsent } from "@/lib/consent";
 
@@ -210,11 +211,46 @@ describe("FoundingPlans", () => {
     expect(lastBody(mock)).toHaveProperty("hp", "");
   });
 
-  it("states the immediate-supply position before the buyer pays", async () => {
+  it("states the cancellation position, verbatim, before the buyer pays", async () => {
+    // Pinned to the whole sentence on purpose. The earlier assertion was
+    // /14-day right to cancel/i, which matches both "LOSING the 14-day right"
+    // and "you KEEP a 14-day right" — it survived that exact reversal without
+    // a murmur. This is legally operative text; the test has to see the words
+    // that flip its meaning.
     stubFetch();
     renderPlans();
     await choosePremium6();
-    expect(screen.getByText(/14-day right to cancel/i)).toBeDefined();
+    expect(screen.getByText(FOUNDING_COPY.termsNote)).toBeDefined();
+    expect(FOUNDING_COPY.termsNote).toMatch(
+      /You keep a 14-day right to cancel for a full refund, unless you've started using the app in that time\./,
+    );
+  });
+
+
+  it("moves focus to the email field when a plan is chosen", async () => {
+    // Choosing REPLACES the cards, so the button that was just pressed leaves
+    // the DOM and focus falls back to <body> — a keyboard user's next Tab
+    // restarts at the top of the page, past the field they were sent here to
+    // fill in. LANDING_PAGE.md § 6 requires the move.
+    stubFetch();
+    renderPlans();
+    await choosePremium6();
+    expect(document.activeElement).toBe(
+      screen.getByLabelText(FOUNDING_COPY.emailLabel),
+    );
+  });
+
+  it("keeps the heading and caption with the cards they describe", async () => {
+    // Both once rendered as siblings AROUND this component, so choosing a plan
+    // left "Pick your access. Pay once." sitting above the email form and the
+    // price caption sitting below it, captioning a form neither describes.
+    stubFetch();
+    renderPlans();
+    expect(await screen.findByText(FOUNDING_COPY.plansHeading)).toBeDefined();
+    expect(screen.getByText(FOUNDING_COPY.plansCaption)).toBeDefined();
+    await choosePremium6();
+    expect(screen.queryByText(FOUNDING_COPY.plansHeading)).toBeNull();
+    expect(screen.queryByText(FOUNDING_COPY.plansCaption)).toBeNull();
   });
 
   it("asks for no marketing consent — buying is not a sign-up", async () => {

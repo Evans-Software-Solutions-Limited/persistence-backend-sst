@@ -79,7 +79,9 @@ export function Founding() {
     <MarketingLayout>
       <section className="founding-hero">
         <div className="c founding-shell">
-          <span className="kicker c-accent">{FOUNDING_COPY.kicker}</span>
+          <span className="kicker c-accent">
+            {open ? FOUNDING_COPY.kicker : FOUNDING_COPY.kickerNoDeadline}
+          </span>
 
           {open ? (
             <>
@@ -93,13 +95,11 @@ export function Founding() {
                 </p>
               ) : null}
 
-              <h2 className="founding-plans-heading">
-                {FOUNDING_COPY.plansHeading}
-              </h2>
+              {/* The heading and caption live INSIDE `FoundingPlans`: the
+                  checkout step replaces the cards in place (LANDING_PAGE.md
+                  § 6), so anything rendered around them here would stay behind
+                  and caption a form it no longer describes. */}
               <FoundingPlans soldOut={soldOut} />
-              <p className="founding-plans-caption">
-                {FOUNDING_COPY.plansCaption}
-              </p>
 
               <p className="founding-counter" aria-live="polite">
                 <AvailabilityLine label="founding places" value={consumer} />
@@ -122,10 +122,7 @@ export function Founding() {
               <span className="kicker">{FOUNDING_COPY.coachHeading}</span>
               <p>
                 {FOUNDING_COPY.coachBody}{" "}
-                <a href={`mailto:${FOUNDING_CONTACT_EMAIL}`}>
-                  {FOUNDING_CONTACT_EMAIL}
-                </a>
-                .
+                <Link to="/#coach">{FOUNDING_COPY.coachCta}</Link>.
               </p>
             </div>
           </div>

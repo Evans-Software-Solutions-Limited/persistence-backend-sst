@@ -96,6 +96,12 @@ export function formatPrice(minor: number): string {
 export const FOUNDING_COPY = {
   // § 5.2 — hero
   kicker: "Founding offer · until 30 September",
+  // The same label with the deadline clause dropped, for the two places a
+  // deadline is wrong: the closed state (§ 5.12, live from 1 October) and the
+  // thanks page, where the buyer has already paid. Advertising "until 30
+  // September" directly above "The founding offer has closed." is the failure
+  // this exists to prevent.
+  kickerNoDeadline: "Founding offer",
   heading: "Train with a plan. Fuel to match. See it add up.",
   intro:
     "Persistence brings training, nutrition and progress into one loop. The founding offer — six months of Premium for £30, or a year for £60 — is open until 30 September. Fixed term, nothing renews.",
@@ -125,10 +131,12 @@ export const FOUNDING_COPY = {
   challengeUnavailable:
     "The security check hasn't loaded yet. Give it a moment, or reload the page if it doesn't appear.",
 
-  // § 5.5 — coach line
+  // § 5.5 — coach line. The enquiry goes to the coach FORM on Home, which the
+  // doc names explicitly and which is a tracked `Lead` conversion (§ 9); a
+  // `mailto:` would look equivalent and report nothing.
   coachHeading: "Coaches",
-  coachBody:
-    "Founding places for Start Up Coach+ are arranged directly. Send a coach enquiry at",
+  coachBody: "Founding places for Start Up Coach+ are arranged directly —",
+  coachCta: "send a coach enquiry",
 
   // § 5.12 — closed state, from 1 October
   closedHeading: "The founding offer has closed.",
@@ -152,10 +160,17 @@ export const FOUNDING_COPY = {
     unfinishedHeading: "No payment was taken.",
     unfinishedBody:
       "Your session ended before payment completed.",
-    // Separate from "didn't complete": this page is only reachable after a
-    // payment, so telling somebody who has just paid that nothing was charged
-    // because WE could not reach our own API would be a lie.
-    unreachableHeading: "Finishing up…",
+    // ⚠ NOT FROM LANDING_PAGE.md. § 5.8 defines three states (paid / still
+    // processing / cancelled-expired); this is a fourth the code needs and the
+    // doc does not cover. It exists because the page is only reachable after a
+    // payment, so telling somebody who has just paid that nothing was charged —
+    // when the real fault is that WE could not reach our own API — would be a
+    // lie. The wording below is a stand-in and belongs in § 5.8 first.
+    //
+    // It must not read "Finishing up…": that is `pendingHeading` verbatim, and
+    // a buyer whose status read FAILED would be shown the same screen as one
+    // whose payment is genuinely mid-flight.
+    unreachableHeading: "We can't confirm this just yet.",
     unreachableBody:
       "We can't confirm your payment just yet. Check your email for the invite, then email us if nothing arrives within a few minutes.",
     backCta: "Back to founding prices",

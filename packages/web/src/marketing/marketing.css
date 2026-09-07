@@ -4400,7 +4400,11 @@
   padding: 11px 52px;
   /* Opaque by construction: `--m-surface` is a solid colour in both themes and
      `color-mix` with a solid accent keeps it solid. Nothing behind the strip
-     may show through it. */
+     may show through it — which is load-bearing here, not decorative, because
+     the strip is `fixed` over scrolling content. The flat colour first is the
+     floor an engine that cannot parse `color-mix` lands on, instead of
+     dropping the declaration and leaving the strip transparent. */
+  background: var(--m-surface);
   background: color-mix(in srgb, var(--m-accent) 14%, var(--m-surface));
   border-bottom: 1px solid color-mix(in srgb, var(--m-accent) 40%, transparent);
   color: var(--m-text);

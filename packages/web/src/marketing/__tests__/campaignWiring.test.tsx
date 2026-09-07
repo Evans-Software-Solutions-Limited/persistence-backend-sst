@@ -92,6 +92,11 @@ describe("campaign attribution is wired to the landing routes", () => {
         screen.getByRole("link", { name: "Get the app" }).getAttribute("href"),
       ).toBe(`/${slug}#download`);
     },
+    // Renders the whole Home page once per campaign slug. It comfortably
+    // clears the 5s default alone, but not always when vitest runs this file
+    // in parallel with the rest of the package — which is a CI flake, not a
+    // real failure.
+    20_000,
   );
 
   it("leaves organic traffic on / undecorated", () => {
