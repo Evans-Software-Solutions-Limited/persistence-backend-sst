@@ -13,10 +13,12 @@ import { EditProfileContainer } from "@/ui/containers/EditProfileContainer";
 import { HabitSetupContainer } from "@/ui/containers/HabitSetupContainer";
 import { SubscriptionSelectionContainer } from "@/ui/containers/SubscriptionSelectionContainer";
 import { useMySubscription } from "@/ui/hooks/useMySubscription";
+import { useOnlineStatus } from "@/ui/hooks/useOnlineStatus";
 import {
   NUTRITION_ONBOARDING_OPTIONS,
   OnboardingAccountConfirmationPresenter,
   OnboardingIntentPresenter,
+  OnboardingOfflinePlansPresenter,
   OnboardingRolePresenter,
   OnboardingWelcomePresenter,
   TRAINING_ONBOARDING_OPTIONS,
@@ -50,8 +52,14 @@ export function OnboardingPageContainer({ page }: { page: OnboardingPage }) {
   // offline, which is a worse failure than the one this guard exists to
   // prevent: an entitlement that arrives late is applied on the next launch,
   // whereas an onboarding that never renders leaves nowhere to go.
+  const isOnline = useOnlineStatus();
   const isSubscriptionUnknown =
     subscription.data === undefined && !subscription.isError;
+  // Offline, the entitlement read cannot settle at all — a hanging request
+  // never even becomes `isError`. Waiting on it is how the plan picker turned
+  // into an indefinite spinner, so offline we stop waiting and degrade the one
+  // page that needs the network (see the `recommendation` branch below).
+  const isWaitingOnSubscription = isSubscriptionUnknown && isOnline;
   const isEntitled =
     subscription.data !== undefined && subscription.data.tierName !== "free";
   const [showOthers, setShowOthers] = useState(false);
@@ -201,7 +209,7 @@ export function OnboardingPageContainer({ page }: { page: OnboardingPage }) {
 
   if (
     onboarding.isLoading ||
-    isSubscriptionUnknown ||
+    isWaitingOnSubscription ||
     !state ||
     !recommendation
   ) {
@@ -289,6 +297,29 @@ export function OnboardingPageContainer({ page }: { page: OnboardingPage }) {
         onBack={() => void back()}
         onContinue={() => void complete()}
         onSkip={() => void skip()}
+      />
+    );
+  }
+
+  // The plan picker is the only page that genuinely cannot work offline:
+  // plans and entitlements are both server-owned. Everything before it is
+  // local-first and has already been saved. So rather than block the journey,
+  // offer the two honest outcomes — finish now and pick a plan later, or
+  // reconnect and retry.
+  //
+  // `isEntitled` is checked first below, but only ever true from a read that
+  // succeeded; offline it is false because the data is absent, not free.
+  if (!isEntitled && !isOnline) {
+    const finishWithoutPlan = async () => {
+      await onboarding.completePage("recommendation");
+      await onboarding.completeJourney();
+      router.replace("/(app)/(tabs)");
+    };
+    return (
+      <OnboardingOfflinePlansPresenter
+        onFinish={() => void finishWithoutPlan()}
+        onRetry={() => void subscription.refetch()}
+        onBack={() => void back()}
       />
     );
   }

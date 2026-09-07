@@ -25,13 +25,6 @@ import { ok, fail, type Result, type AuthError } from "@/shared/errors";
 export const GET_ACCESS_TOKEN_TIMEOUT_MS = 3_000;
 
 /**
- * Sentinel for "the live read did not give us an answer" — it timed out or
- * threw. Distinct from a resolved `null`, which is real evidence that the
- * user is signed out and must NOT be papered over with a persisted token.
- */
-const TOKEN_UNRESOLVED = Symbol("token-unresolved");
-
-/**
  * Derive Supabase's default auth storage key (`sb-<project-ref>-auth-token`)
  * from the project URL. The project ref is the first hostname label of the
  * Supabase URL. We compute it ourselves and pass it to `createClient` as an
@@ -666,23 +659,31 @@ export class SupabaseAuthAdapter implements AuthPort {
    * and offline callers read through the SQLite cache anyway.
    */
   async getAccessToken(): Promise<string | null> {
+    // `answered` distinguishes "the session read gave us a verdict" from
+    // "it never did". A resolved `null` IS a verdict — the user is signed out —
+    // and must not be papered over with a persisted token, so it cannot be
+    // collapsed into the same shape as a timeout.
     const live = this.client.auth
       .getSession()
-      .then(({ data: { session } }) => session?.access_token ?? null)
-      .catch(() => TOKEN_UNRESOLVED);
+      .then(({ data: { session } }) => ({
+        answered: true as const,
+        token: session?.access_token ?? null,
+      }))
+      .catch(() => ({ answered: false as const, token: null }));
 
     let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
-    const timedOut = new Promise<typeof TOKEN_UNRESOLVED>((resolve) => {
-      timeoutHandle = setTimeout(
-        () => resolve(TOKEN_UNRESOLVED),
-        GET_ACCESS_TOKEN_TIMEOUT_MS,
-      );
-    });
+    const timedOut = new Promise<{ answered: false; token: null }>(
+      (resolve) => {
+        timeoutHandle = setTimeout(
+          () => resolve({ answered: false, token: null }),
+          GET_ACCESS_TOKEN_TIMEOUT_MS,
+        );
+      },
+    );
 
     try {
-      const token = await Promise.race([live, timedOut]);
-      // A resolved `null` is a real signed-out verdict — return it as-is.
-      if (token !== TOKEN_UNRESOLVED) return token;
+      const result = await Promise.race([live, timedOut]);
+      if (result.answered) return result.token;
     } finally {
       if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
     }

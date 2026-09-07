@@ -77,6 +77,7 @@ import {
   TriangleAlert as IconWarning,
   User as IconUser,
   Users as IconUsers,
+  WifiOff as IconWifiOff,
   X as IconX,
   Zap as IconBolt,
 } from "lucide-react-native";
@@ -146,6 +147,7 @@ export {
   IconUser,
   IconUsers,
   IconWarning,
+  IconWifiOff,
   IconX,
 };
 

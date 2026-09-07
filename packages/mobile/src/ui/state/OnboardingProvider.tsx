@@ -40,6 +40,19 @@ function makeInitialState(userId: string): OnboardingState {
   };
 }
 
+/**
+ * True when a failed read never reached the server — offline, a captive
+ * portal, DNS, or our own timeout. `sst-api.adapter` maps every transport
+ * failure to `network`/`timeout` and every answer the server actually gave to
+ * some other code, so this cleanly separates "we could not ask" from "we
+ * asked and it went wrong".
+ */
+function isUnreachableError(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const code = (error as { code?: unknown }).code;
+  return code === "network" || code === "timeout";
+}
+
 function normalizeRemoteState(
   userId: string,
   remote: OnboardingState | null,
@@ -163,17 +176,41 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
       const remote = await api.getOnboarding();
       if (!active) return;
       if (!remote.ok) {
-        // A failed read is not evidence that onboarding has never started.
-        // Keep a user-scoped offline mirror when one exists; otherwise expose
-        // the failure so AuthGate can fail open without replaying the journey.
-        setState(cached);
+        // A failed read is not evidence that onboarding has never started, so
+        // a user-scoped offline mirror always wins when we have one.
+        //
+        // With no mirror we have to choose, and the two failures are not the
+        // same thing. If the request never reached the server, the journey is
+        // still completable entirely on-device, so seed it locally rather than
+        // wall the account off behind an error — every page but the plan
+        // picker works offline, and that one degrades (Brad's call,
+        // 2026-09-07). The seed is deliberately NOT written to the mirror: it
+        // is a guess about an account we could not read, and it must never
+        // later outrank the server's own record of it.
+        //
+        // A server that answered with an error is different. That IS evidence
+        // the account read is broken, and replaying onboarding over real
+        // progress could clobber it — so keep the error wall for that.
+        setState(
+          cached ??
+            (isUnreachableError(remote.error)
+              ? makeInitialState(userId)
+              : null),
+        );
         setLoadFailure({ userId, error: remote.error });
         return;
       }
       const serverState = normalizeRemoteState(userId, remote.value);
+      // A journey the server considers finished cannot be un-finished by a
+      // local one that is merely newer. Without this, an offline seed (or an
+      // offline replay) carrying a fresh `updatedAt` would outrank a genuine
+      // `completed` and march the user back through setup on reconnect.
+      const serverIsTerminal =
+        serverState !== null && serverState.status !== "in_progress";
       const next =
         serverState &&
         (!cached ||
+          (serverIsTerminal && cached.status === "in_progress") ||
           Date.parse(serverState.updatedAt) >= Date.parse(cached.updatedAt))
           ? serverState
           : (cached ?? makeInitialState(userId));
