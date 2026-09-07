@@ -11,8 +11,13 @@ import { adminAttributionsHandler } from "./admin/attributions/adminAttributions
 import { adminFoundingGrantsHandler } from "./admin/founding-grants/adminFoundingGrantsHandler";
 import { adminAuditLogHandler } from "./admin/audit/adminAuditLogHandler";
 import { adminMarketingHandler } from "./admin/marketing/adminMarketingHandler";
+import { adminCors } from "./admin/adminCors";
 
 export const adminRoutes = new Elysia()
+  // FIRST, and before every handler: the panel is on the website's origin and
+  // calls this API on `api.<host>`, so each admin request is preceded by an
+  // `OPTIONS` preflight that must be answered before the guard sees it.
+  .use(adminCors)
   .use(adminSummaryHandler)
   .use(adminUsersLookupHandler)
   .use(adminReferralCodesHandler)
