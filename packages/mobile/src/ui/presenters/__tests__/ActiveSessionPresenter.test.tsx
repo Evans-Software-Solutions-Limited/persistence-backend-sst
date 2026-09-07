@@ -135,20 +135,20 @@ describe("ActiveSessionPresenter (vertical scroll, legacy parity)", () => {
       flex: 1,
       backgroundColor: "rgba(34,211,238,0.10)",
     });
-    const activeCellSize = { value: 412 };
-    fireEvent(list, "animValInit", { activeCellSize });
-
+    // Holding a card's grip ENTERS reorder mode. It no longer starts a drag:
+    // collapsing the list in the same gesture that the library had already
+    // measured is what made dragging unreliable.
     fireEvent(getByTestId("reorder-1"), "longPress");
     expect(queryByTestId("active-session-finish")).toBeNull();
-    expect(
-      getByTestId("active-session-draggable-list").props.scrollEnabled,
-    ).toBe(false);
     expect(getAllByTestId("compact-reorder-row")).toHaveLength(3);
-    fireEvent(list, "dragBegin", 0);
-    expect(activeCellSize.value).toBe(72);
     expect(getAllByTestId("compact-reorder-row-names")[0].props.children).toBe(
       "Bench Press",
     );
+    // Scrollable in compact mode. It was disabled before only because the
+    // mode belonged to an in-flight gesture.
+    expect(
+      getByTestId("active-session-draggable-list").props.scrollEnabled,
+    ).not.toBe(false);
 
     fireEvent(list, "dragEnd", {
       from: 0,
@@ -159,6 +159,12 @@ describe("ActiveSessionPresenter (vertical scroll, legacy parity)", () => {
     expect(announce).toHaveBeenCalledWith(
       "Bench Press moved to position 3 of 3",
     );
+    // Reorder mode SURVIVES the drop, so several moves can be made without
+    // re-entering it. Done is the only way out.
+    expect(getAllByTestId("compact-reorder-row")).toHaveLength(3);
+    expect(queryByTestId("active-session-finish")).toBeNull();
+
+    fireEvent.press(getByTestId("active-session-reorder-done"));
     expect(getByTestId("session-exercise-se-1")).toBeTruthy();
     expect(getByTestId("active-session-finish")).toBeTruthy();
   });
@@ -327,7 +333,17 @@ describe("ActiveSessionPresenter (vertical scroll, legacy parity)", () => {
     );
   });
 
-  it("keeps a non-first dragged row anchored to the same screen coordinate", () => {
+  it("gives the reordering list exact, uniform geometry instead of measuring it", () => {
+    // What replaced ~60 lines of scroll compensation.
+    //
+    // The old design collapsed the cards DURING a drag and then tried to
+    // predict the collapse, summing how much height each cell above the
+    // dragged one would lose from a map filled in by `onLayout`. A cell that
+    // had never been laid out contributed nothing, so the correction
+    // under-shot and the row slid out from under the finger — worse the
+    // further down the list you grabbed, because the error accumulated with
+    // every row above it. Uniform rows of a known height need no measuring at
+    // all, which is the only arrangement this library is built for.
     const props = {
       ...baseProps,
       onReorderExercise: jest.fn(),
@@ -340,29 +356,43 @@ describe("ActiveSessionPresenter (vertical scroll, legacy parity)", () => {
     const { getByTestId } = renderWithTheme(
       <ActiveSessionPresenter {...props} />,
     );
-    const list = getByTestId("active-session-draggable-list");
-    const activeCellOffset = { value: 316 };
-    const scrollOffset = { value: 250 };
-    fireEvent(list, "animValInit", {
-      activeCellOffset,
-      activeCellSize: { value: 180 },
-      scrollOffset,
-    });
-    fireEvent(getByTestId("active-session-drag-block-1"), "layout", {
-      nativeEvent: {
-        layout: { x: 0, y: 0, width: 320, height: 300 },
-      },
-    });
 
-    const originalScreenY = activeCellOffset.value - scrollOffset.value;
-    fireEvent(getByTestId("reorder-2"), "longPress");
+    // Not supplied for the full cards — they genuinely vary in height.
+    expect(
+      getByTestId("active-session-draggable-list").props.getItemLayout,
+    ).toBeUndefined();
 
-    expect(activeCellOffset.value).toBe(88);
-    expect(scrollOffset.value).toBe(22);
-    expect(activeCellOffset.value - scrollOffset.value).toBe(originalScreenY);
+    fireEvent(getByTestId("reorder-1"), "longPress");
+
+    const getItemLayout = getByTestId("active-session-draggable-list").props
+      .getItemLayout as (
+      data: unknown,
+      index: number,
+    ) => { length: number; offset: number; index: number };
+    expect(getItemLayout).toEqual(expect.any(Function));
+    // Every row the same height, and each one a full pitch further down.
+    expect(getItemLayout(null, 0)).toEqual({
+      length: 72,
+      offset: 0,
+      index: 0,
+    });
+    expect(getItemLayout(null, 1)).toEqual({
+      length: 72,
+      offset: 88,
+      index: 1,
+    });
+    // The row a drag used to drift on. Its position is arithmetic now, so it
+    // cannot depend on whether anything above it was ever rendered.
+    expect(getItemLayout(null, 9).offset).toBe(88 * 9);
   });
 
-  it("preserves enough scroll extent to anchor a lower compact row", () => {
+  it("does not reserve extra content height or scroll when reorder mode opens", () => {
+    // The old design propped the content up to its pre-collapse height and
+    // scrolled to a computed offset, to stop native scrolling clamping a lower
+    // row away from the finger. Nothing collapses under a finger any more, so
+    // there is nothing to prop up or scroll to — and the absence is worth
+    // pinning, because reintroducing either would silently reintroduce the
+    // arithmetic that was wrong.
     const props = {
       ...baseProps,
       onReorderExercise: jest.fn(),
@@ -373,55 +403,28 @@ describe("ActiveSessionPresenter (vertical scroll, legacy parity)", () => {
     const { getByTestId } = renderWithTheme(
       <ActiveSessionPresenter {...props} />,
     );
+
+    fireEvent(getByTestId("reorder-1"), "longPress");
+
     const list = getByTestId("active-session-draggable-list");
-    const activeCellOffset = { value: 1264 };
-    const scrollOffset = { value: 976 };
-    fireEvent(list, "animValInit", {
-      activeCellOffset,
-      activeCellSize: { value: 300 },
-      scrollOffset,
-    });
-    fireEvent(list, "contentSizeChange", 320, 1800);
-    for (let position = 1; position <= 4; position += 1) {
-      fireEvent(
-        getByTestId(`active-session-drag-block-${position}`),
-        "layout",
-        {
-          nativeEvent: {
-            layout: { x: 0, y: 0, width: 320, height: 300 },
-          },
-        },
-      );
-    }
-
-    const originalScreenY = activeCellOffset.value - scrollOffset.value;
-    fireEvent(getByTestId("reorder-5"), "longPress");
-
-    expect(activeCellOffset.value).toBe(352);
-    expect(scrollOffset.value).toBe(64);
-    expect(activeCellOffset.value - scrollOffset.value).toBe(originalScreenY);
-    expect(
-      getByTestId("active-session-draggable-list").props.contentContainerStyle,
-    ).toEqual(expect.arrayContaining([{ minHeight: 1800 }]));
+    expect(list.props.contentContainerStyle).toEqual(
+      expect.not.objectContaining({ minHeight: expect.anything() }),
+    );
+    expect(list.props.testScrollToOffset).not.toHaveBeenCalled();
   });
 
-  it("leaves compact mode when the OS interrupts an active drag", () => {
+  it("an OS interruption cannot strand the screen in reorder mode", () => {
+    // The inverse of the old invariant, and the reason a whole recovery path
+    // could be deleted.
+    //
+    // Reorder mode used to be owned by the drag gesture, and RNDFL 4.0.3 does
+    // not finalize a native CANCELLED pan — so backgrounding the app mid-drag
+    // left the workout compact with its scroll and Finish action disabled, and
+    // an AppState listener had to reset and remount the list to recover. The
+    // mode is now owned by the user, so an interrupted pan changes nothing:
+    // the compact rows and their Done button are exactly where they were, and
+    // Done still works.
     let onAppStateChange: ((state: "background") => void) | undefined;
-    let nextFrame = 1;
-    const frames = new Map<number, FrameRequestCallback>();
-    jest
-      .spyOn(globalThis, "requestAnimationFrame")
-      .mockImplementation((callback: FrameRequestCallback) => {
-        const frame = nextFrame;
-        nextFrame += 1;
-        frames.set(frame, callback);
-        return frame;
-      });
-    jest
-      .spyOn(globalThis, "cancelAnimationFrame")
-      .mockImplementation((frame: number) => {
-        frames.delete(frame);
-      });
     jest
       .spyOn(AppState, "addEventListener")
       .mockImplementation((_type, listener) => {
@@ -436,40 +439,57 @@ describe("ActiveSessionPresenter (vertical scroll, legacy parity)", () => {
         buildExercise({ id: "se-2", sortOrder: 1 }),
       ],
     };
-    const { getByTestId, queryByTestId } = renderWithTheme(
+    const { getAllByTestId, getByTestId, queryByTestId } = renderWithTheme(
       <ActiveSessionPresenter {...props} />,
     );
-    const list = getByTestId("active-session-draggable-list");
-    const scrollOffset = { value: 240 };
-    fireEvent(list, "animValInit", {
-      activeCellOffset: { value: 280 },
-      activeCellSize: { value: 300 },
-      scrollOffset,
-    });
 
     fireEvent(getByTestId("reorder-1"), "longPress");
-    expect(queryByTestId("active-session-finish")).toBeNull();
-    expect(
-      getByTestId("active-session-draggable-list").props.scrollEnabled,
-    ).toBe(false);
+    expect(getAllByTestId("compact-reorder-row")).toHaveLength(2);
 
     act(() => onAppStateChange?.("background"));
-    act(() => {
-      for (const callback of [...frames.values()]) callback(0);
-      frames.clear();
-    });
 
-    const restoredList = getByTestId("active-session-draggable-list");
-    expect(restoredList.props.testScrollToOffset).toHaveBeenCalledWith({
-      offset: 240,
-      animated: false,
-    });
-    expect(scrollOffset.value).toBe(240);
-    expect(getByTestId("active-session-finish")).toBeTruthy();
+    // Still usable, not stuck: the rows, the exit, and scrolling are intact.
+    expect(getAllByTestId("compact-reorder-row")).toHaveLength(2);
+    expect(getByTestId("active-session-reorder-done")).toBeTruthy();
     expect(
       getByTestId("active-session-draggable-list").props.scrollEnabled,
     ).not.toBe(false);
+    expect(queryByTestId("active-session-finish")).toBeNull();
+
+    fireEvent.press(getByTestId("active-session-reorder-done"));
+    expect(getByTestId("active-session-finish")).toBeTruthy();
     expect(getByTestId("session-exercise-se-1")).toBeTruthy();
+  });
+
+  it("offers an explicit Reorder control alongside Add Exercise", () => {
+    // Long-pressing a grip is not discoverable on its own, and it is the only
+    // way in for someone who does not think to try it.
+    const props = {
+      ...baseProps,
+      onReorderExercise: jest.fn(),
+      exercises: [
+        buildExercise({ id: "se-1" }),
+        buildExercise({ id: "se-2", sortOrder: 1 }),
+      ],
+    };
+    const { getAllByTestId, getByTestId } = renderWithTheme(
+      <ActiveSessionPresenter {...props} />,
+    );
+
+    fireEvent.press(getByTestId("active-session-reorder"));
+    expect(getAllByTestId("compact-reorder-row")).toHaveLength(2);
+  });
+
+  it("offers no Reorder control when there is nothing to reorder", () => {
+    // One exercise, or no handler: the control would do nothing.
+    const { queryByTestId } = renderWithTheme(
+      <ActiveSessionPresenter
+        {...baseProps}
+        onReorderExercise={jest.fn()}
+        exercises={[buildExercise({ id: "se-1" })]}
+      />,
+    );
+    expect(queryByTestId("active-session-reorder")).toBeNull();
   });
 
   it("Add paired set button on an ActiveSupersetRow fires onLogSupersetSet with all peer ids", () => {

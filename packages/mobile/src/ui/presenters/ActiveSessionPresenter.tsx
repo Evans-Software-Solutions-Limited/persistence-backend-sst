@@ -50,8 +50,9 @@ import {
 import { SessionHeader } from "@/ui/components/session/SessionHeader";
 import { TrainerBannerPresenter } from "@/ui/presenters/TrainerBannerPresenter";
 import { Btn } from "@/ui/components/foundation/Btn";
-import { IconCheck } from "@/ui/components/icons";
+import { IconCheck, IconGrip } from "@/ui/components/icons";
 import { color } from "@/ui/theme/tokens";
+import { compactReorderItemLayout } from "@/ui/presenters/session/compactReorderLayout";
 import type { ExerciseSet, SessionExercise } from "@/domain/models/session";
 import type { WeightUnit } from "@/shared/utils";
 import { localDayISO } from "@/shared/utils/date";
@@ -259,19 +260,7 @@ function displayItemKey(item: DisplayItem) {
 export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
   const insets = useSafeAreaInsets();
   const [isReordering, setIsReordering] = useState(false);
-  const [dragAnchorPadding, setDragAnchorPadding] = useState(0);
-  const [dragContentMinHeight, setDragContentMinHeight] = useState(0);
-  const [dragListEpoch, setDragListEpoch] = useState(0);
   const listRef = useRef<FlatList<DisplayItem>>(null);
-  const fullCellHeightsRef = useRef(new Map<string, number>());
-  const fullContentHeightRef = useRef(0);
-  const isReorderingRef = useRef(false);
-  const pendingScrollFrameRef = useRef<number | null>(null);
-  const restoreAfterRemountRef = useRef(false);
-  const restoreScrollOffsetRef = useRef(0);
-  const activeCellSizeRef = useRef<SharedValue<number> | null>(null);
-  const activeCellOffsetRef = useRef<SharedValue<number> | null>(null);
-  const scrollOffsetRef = useRef<SharedValue<number> | null>(null);
   const weightUnit = props.weightUnit ?? "kg";
   const orderedExercises = useMemo(
     () => [...props.exercises].sort((a, b) => a.sortOrder - b.sortOrder),
@@ -286,49 +275,41 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
   );
   const today = localDayISO(new Date());
 
-  useEffect(() => {
-    const subscription = AppState.addEventListener("change", (nextState) => {
-      if (nextState === "active" || !isReorderingRef.current) return;
+  /**
+   * Reorder mode is entered and left DELIBERATELY, by the control in the list
+   * footer — never by a gesture.
+   *
+   * That is the whole fix. Every cell's height changes when the full exercise
+   * cards become fixed-height compact rows, and the library measures the
+   * dragged cell (`measureLayout` → `activeCellOffset` / `activeCellSize`) at
+   * the moment the drag starts. Collapsing the list DURING a drag therefore
+   * left every measurement it was holding stale, and no amount of external
+   * scroll compensation could reliably correct it — the previous version
+   * predicted the collapse by summing the height each cell above the dragged
+   * one would lose, which under-shot whenever a cell had never been laid out
+   * and drifted worse the further down the list you grabbed.
+   *
+   * With the collapse finished before any drag begins, the library measures a
+   * list whose geometry is already settled and uniform, which is the only
+   * arrangement it is built for (its own example is fixed-height rows). The
+   * compensation, the three mutated shared values, the reserved content
+   * height, the scroll restore and the remount-on-cancel recovery all went
+   * with it: a cancelled pan can no longer strand the screen in compact mode,
+   * because compact mode is not owned by the pan.
+   */
+  /**
+   * Holding a full card's grip ENTERS reorder mode; it no longer starts a
+   * drag.
+   *
+   * This is what makes the gesture safe. Starting a drag and collapsing the
+   * list in the same breath left the library animating from measurements it
+   * had already taken of the taller cards. Entering the mode first means the
+   * next gesture is measured against a settled, uniform list — and the drag
+   * itself is a separate press on a compact row, which is also why nothing
+   * needs to undo a layout change when it ends.
+   */
+  const enterReorder = () => setIsReordering(true);
 
-      // RNDFL 4.0.3 does not finalize a native CANCELLED pan. Resetting and
-      // remounting prevents an OS interruption from leaving the workout in
-      // compact mode with its scroll and Finish action disabled.
-      if (pendingScrollFrameRef.current !== null) {
-        cancelAnimationFrame(pendingScrollFrameRef.current);
-        pendingScrollFrameRef.current = null;
-      }
-      isReorderingRef.current = false;
-      restoreAfterRemountRef.current = true;
-      setIsReordering(false);
-      setDragAnchorPadding(0);
-      setDragContentMinHeight(0);
-      setDragListEpoch((epoch) => epoch + 1);
-    });
-
-    return () => {
-      subscription.remove();
-      if (pendingScrollFrameRef.current !== null) {
-        cancelAnimationFrame(pendingScrollFrameRef.current);
-        pendingScrollFrameRef.current = null;
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!restoreAfterRemountRef.current) return;
-    restoreAfterRemountRef.current = false;
-    pendingScrollFrameRef.current = requestAnimationFrame(() => {
-      const restoreScrollOffset = restoreScrollOffsetRef.current;
-      if (scrollOffsetRef.current) {
-        scrollOffsetRef.current.value = restoreScrollOffset;
-      }
-      listRef.current?.scrollToOffset?.({
-        offset: restoreScrollOffset,
-        animated: false,
-      });
-      pendingScrollFrameRef.current = null;
-    });
-  }, [dragListEpoch]);
   const canReorder =
     displayItems.length > 1 && props.onReorderExercise !== undefined;
 
@@ -346,92 +327,31 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         <DraggableFlatList
-          key={`active-session-drag-list-${dragListEpoch}`}
           ref={listRef}
           testID="active-session-draggable-list"
           containerStyle={styles.scroll}
           style={styles.scroll}
-          contentContainerStyle={[
-            styles.scrollContent,
-            dragContentMinHeight > 0
-              ? { minHeight: dragContentMinHeight }
-              : undefined,
-          ]}
-          onContentSizeChange={(_width, height) => {
-            if (!isReorderingRef.current) {
-              fullContentHeightRef.current = height;
-            }
-          }}
+          contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
           automaticallyAdjustKeyboardInsets
-          scrollEnabled={!isReordering}
+          // Scrollable in BOTH modes. The compact list is a normal list; it
+          // was only disabled before because the mode belonged to an in-flight
+          // gesture.
+          scrollEnabled
           data={displayItems}
           extraData={isReordering}
-          onAnimValInit={({
-            activeCellOffset,
-            activeCellSize,
-            scrollOffset,
-          }) => {
-            activeCellOffsetRef.current = activeCellOffset;
-            activeCellSizeRef.current = activeCellSize;
-            scrollOffsetRef.current = scrollOffset;
-          }}
           keyExtractor={displayItemKey}
           autoscrollThreshold={48}
           autoscrollSpeed={60}
           activationDistance={20}
           renderPlaceholder={() => <View style={styles.dragPlaceholder} />}
-          onDragBegin={(index) => {
-            const shrinkAbove = displayItems
-              .slice(0, index)
-              .reduce(
-                (total, item) =>
-                  total +
-                  Math.max(
-                    0,
-                    (fullCellHeightsRef.current.get(displayItemKey(item)) ??
-                      COMPACT_REORDER_ROW_HEIGHT) - COMPACT_REORDER_ROW_HEIGHT,
-                  ),
-                0,
-              );
-            const originalScrollOffset = scrollOffsetRef.current?.value ?? 0;
-            const compactScrollOffset = Math.max(
-              0,
-              originalScrollOffset - shrinkAbove,
-            );
-            const anchorPadding = Math.max(
-              0,
-              shrinkAbove - originalScrollOffset,
-            );
-            restoreScrollOffsetRef.current = originalScrollOffset;
-            if (activeCellSizeRef.current) {
-              activeCellSizeRef.current.value = COMPACT_REORDER_ROW_HEIGHT;
-            }
-            if (activeCellOffsetRef.current) {
-              activeCellOffsetRef.current.value =
-                activeCellOffsetRef.current.value - shrinkAbove + anchorPadding;
-            }
-            if (scrollOffsetRef.current) {
-              scrollOffsetRef.current.value = compactScrollOffset;
-            }
-            // Keep the full list's scroll extent while its cells and footer
-            // collapse. Without this lower anchor, native scrolling clamps a
-            // lower item to the compact content boundary and pulls it away
-            // from the stationary finger.
-            isReorderingRef.current = true;
-            setDragContentMinHeight(fullContentHeightRef.current);
-            setDragAnchorPadding(anchorPadding);
-            setIsReordering(true);
-            pendingScrollFrameRef.current = requestAnimationFrame(() => {
-              listRef.current?.scrollToOffset?.({
-                offset: compactScrollOffset,
-                animated: false,
-              });
-              pendingScrollFrameRef.current = null;
-            });
-          }}
+          // Exact geometry while reordering: every cell is a
+          // `CompactReorderRow` of known height, so the list needs to measure
+          // nothing. This is also what keeps a virtualised cell that has never
+          // been laid out from having no frame at all.
+          getItemLayout={isReordering ? compactReorderItemLayout : undefined}
           ListHeaderComponent={
             <>
               <SessionHeader
@@ -533,12 +453,6 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
                   ) : null}
                 </View>
               )}
-              {dragAnchorPadding > 0 ? (
-                <View
-                  style={{ height: dragAnchorPadding }}
-                  testID="active-session-drag-anchor"
-                />
-              ) : null}
             </>
           }
           ListEmptyComponent={
@@ -578,28 +492,24 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
                   />
                   <Text style={styles.addExerciseText}>Add Exercise</Text>
                 </TouchableOpacity>
+                {canReorder ? (
+                  <TouchableOpacity
+                    onPress={() => setIsReordering(true)}
+                    style={styles.addExerciseLink}
+                    testID="active-session-reorder"
+                    accessibilityLabel="Reorder exercises"
+                  >
+                    <IconGrip size={18} color={color.$primary} />
+                    <Text style={styles.addExerciseText}>Reorder</Text>
+                  </TouchableOpacity>
+                ) : null}
               </View>
             ) : null
           }
           onDragEnd={({ from, to }) => {
-            const restoreScrollOffset = restoreScrollOffsetRef.current;
-            isReorderingRef.current = false;
-            setIsReordering(false);
-            setDragAnchorPadding(0);
-            setDragContentMinHeight(0);
-            if (pendingScrollFrameRef.current !== null) {
-              cancelAnimationFrame(pendingScrollFrameRef.current);
-            }
-            pendingScrollFrameRef.current = requestAnimationFrame(() => {
-              if (scrollOffsetRef.current) {
-                scrollOffsetRef.current.value = restoreScrollOffset;
-              }
-              listRef.current?.scrollToOffset?.({
-                offset: restoreScrollOffset,
-                animated: false,
-              });
-              pendingScrollFrameRef.current = null;
-            });
+            // Reorder mode deliberately SURVIVES the drop, so several moves
+            // can be made without re-entering it — and nothing here has to
+            // undo a layout change, because the drag never caused one.
             if (from === to) return;
             const item = displayItems[from];
             const lead =
@@ -650,12 +560,6 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
               <View
                 style={styles.dragBlock}
                 testID={`active-session-drag-block-${itemIndex + 1}`}
-                onLayout={({ nativeEvent: { layout } }) => {
-                  fullCellHeightsRef.current.set(
-                    displayItemKey(item),
-                    layout.height,
-                  );
-                }}
               >
                 {(() => {
                   if (item.kind === "exercise") {
@@ -696,7 +600,7 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
                                 props.onMoveExercise?.(ex.id, direction)
                             : undefined
                         }
-                        onDrag={canReorder ? drag : undefined}
+                        onDrag={canReorder ? enterReorder : undefined}
                         isDragging={isActive}
                       />
                     );
@@ -728,7 +632,7 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
                               )
                           : undefined
                       }
-                      onDrag={canReorder ? drag : undefined}
+                      onDrag={canReorder ? enterReorder : undefined}
                       isDragging={isActive}
                     />
                   );
@@ -742,8 +646,25 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
       {/* Sticky Finish CTA — floats above the content per the prototype
           (`active-workout.jsx:110–112`). Discard moved to the header "End"
           pill (STORY-002). */}
-      {!isReordering && (
-        <View style={styles.finishContainer} pointerEvents="box-none">
+      <View style={styles.finishContainer} pointerEvents="box-none">
+        {isReordering ? (
+          // The only way out of reorder mode. Deliberately in the same slot as
+          // the Finish CTA it replaces: leaving the screen with no visible
+          // exit is what made the old gesture-scoped mode feel broken when a
+          // cancelled pan stranded it.
+          <Btn
+            full
+            variant="filled"
+            tone="primary"
+            size="lg"
+            icon={<IconCheck size={16} color={color.$primaryInk} />}
+            onPress={() => setIsReordering(false)}
+            testID="active-session-reorder-done"
+            accessibilityLabel="Done reordering"
+          >
+            Done
+          </Btn>
+        ) : (
           <Btn
             full
             variant="filled"
@@ -756,8 +677,8 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
           >
             Finish Workout
           </Btn>
-        </View>
-      )}
+        )}
+      </View>
 
       <RestTimerDisplay
         isActive={props.restTimer.isActive}
