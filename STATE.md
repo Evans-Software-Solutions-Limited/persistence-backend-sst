@@ -9,6 +9,93 @@ items, and the four most recent sessions. Trimmed 2026-07-27 from 1554 lines.
 If anything here contradicts `git log --oneline -30`, the git history wins —
 say so and fix this file.
 
+### 🟢 2026-09-07 — Offline boot fix + reorder rebuild brief (branch `fix/onboarding-calorie-target-redirect`)
+
+**Not pushed, no PR raised.** Branch now carries four commits: the earlier
+onboarding/Fuel-Targets redirect fix and the two compact-reorder commits
+(`c80b5a0c`, `f4858de0`), then this session's `c1e2bcff` (offline fix) and
+`cb99b6aa` (brief, docs only).
+
+**The offline permanent-loader bug is FIXED (`c1e2bcff`).** Reported on the
+production build: with no connection the app sat on an infinite spinner and
+never reached Home, even for a signed-in user with a valid account. Two causes
+on the same path:
+
+- `SupabaseAuthAdapter.getAccessToken()` awaited `getSession()` unbounded.
+  That call refreshes over the network inside supabase's 90s expiry margin,
+  is serialized behind the **global auth lock**, and has no timeout of its
+  own — so on a captive portal / dead network its fetch never settles, the
+  lock is never released, and **every** API request queues behind a promise
+  that will not resolve. It also defeated the one guard meant to stop this:
+  `getOnboarding()` opts into a 10s budget, but the adapter awaited the token
+  *before* arming its `AbortController`, so the timer never started. Now
+  bounded (`GET_ACCESS_TOKEN_TIMEOUT_MS = 3_000`) with a fallback to the
+  persisted session. ⚠ A resolved `null` is still honoured as a real
+  signed-out verdict — only a timeout or a throw falls back. Do not "simplify"
+  that distinction away; a stale token must never resurrect a signed-out user.
+- `OnboardingProvider.isLoading` stayed true until the server read settled,
+  and `AuthGate` refuses to route while it is true (`app/_layout.tsx:197`,
+  `:314`), leaving the user on the bare spinner at `app/index.tsx`. It now
+  means "nothing to route on at all", which a cached offline mirror clears.
+  The internal in-flight flag had no remaining consumer and was removed.
+
+**REFUTED, do not chase again:** TanStack `networkMode: 'online'` causing
+permanent `isPending`. `onlineManager` only listens for `window`
+online/offline events, which React Native never emits, so it is permanently
+"online" and queries are never paused — and no boot gate reads a TanStack
+pending state anyway. Related but separate: `onlineManager` is **not** wired
+to NetInfo and there is **no query persister**, so `useMySubscription` and the
+whole entitlement surface have no offline fallback (non-blocking; open item).
+
+Still-standing offline gap: a signed-in user with **no** `cached_onboarding`
+row who is offline gets the "Persistence is temporarily unavailable"
+`ErrorState` with Retry after ~13s. Bounded and honest, but not offline-first.
+`cached_onboarding` is created empty via `CREATE TABLE IF NOT EXISTS`, so this
+is the first launch of a new build for every existing user. Brad's call
+whether to fail open to Home instead.
+
+**Reorder: brief authored, nothing built (`cb99b6aa`).**
+`specs/milestones/REORDER-REBUILD/{BRIEF.md,SMOKE_TEST.md}`. Three findings
+worth not re-deriving:
+
+- **Reorder is NOT a legacy port.** `grep -rn "reorder" -i` over
+  `../persistence-mobile/` returns **zero matches** — no drag dependency, no
+  move buttons, no grip icon; `sort_order` is an append counter never mutated.
+  CLAUDE.md's 1:1 fidelity rule therefore gives **no answer** here. Authority
+  is `specs/31-onboarding-and-experience-polish/requirements.md:229-245`
+  (STORY-012). ⚠ Unresolved contradiction:
+  `specs/milestones/WORKOUT-AUTHORING-V2/requirements.md:215` forbids
+  "drag-and-drop beyond the legacy reorder already present", and legacy has
+  none.
+- **The missing auto-scroll is a nesting bug, editor/creator only.**
+  `NestableDraggableFlatList` inside RNDFL's own `NestableScrollContainer`,
+  bridged by a one-shot async `measureLayout` whose `listVerticalOffset` goes
+  stale when reorder mode changes every height around it. RNDFL also disables
+  the outer scroll during a drag, so that one hook is the only thing that can
+  scroll. Fix is to **remove the nesting** (list becomes the form's only
+  scroller, fields into `ListHeaderComponent`), not to repair the measure.
+  The session surface is already un-nested and its auto-scroll is not broken.
+- **Why it keeps recurring is the test layer, not the package.**
+  `react-native-draggable-flatlist`, Reanimated and Gesture Handler are all
+  jest-mocked (`__tests__/setup.ts:655`, `:17`, `:78`); the mock hard-codes
+  `isActive: false` and ignores `getItemLayout` and the autoscroll props, and
+  there is no Detox/Maestro. **No test in this repo can prove a drag works** —
+  every prior attempt shipped on gates that could not fail.
+
+Brad's locked decisions: inline drag kept (not a reorder route, not
+buttons-only); swap `react-native-draggable-flatlist@4.0.3` (built for React
+17 / RN 0.64 / Reanimated 2.8) for `react-native-reanimated-dnd@2.0.0`; the
+acceptance gate is a **human device pass**, explicitly stated — green gates do
+not land the PR. Package swap was verified, not assumed: every peer is already
+satisfied (reanimated 4.2.1, worklets 0.7.2, gesture-handler 2.31.1, RN 0.83.4,
+React 19.2.0). WP1 is a device spike with a go/no-go **before** any porting;
+the no-go fallback is the move-up/down model the coach program editor uses.
+
+Gates on the tree: prettier clean; typecheck 9/9; lint 0 errors (17 pre-existing
+warnings, 4 of them dead imports in `ActiveSessionPresenter.tsx` left by
+`c80b5a0c` — WP2 of the brief clears them); mobile jest **526 suites / 6677
+tests pass**. Inspector Brad has NOT been run — no PR raised yet.
+
 ### 🟢 2026-09-06 — MARKETING-PLANS Sprint 1 (branch `feat/marketing-plans`, PR 1)
 
 **The founding offer is a paid web purchase again.** Brad reversed the
