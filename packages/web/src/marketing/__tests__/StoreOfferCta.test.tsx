@@ -163,9 +163,9 @@ describe("StoreOfferCta on the marketing Home", () => {
     vi.stubEnv("VITE_STORE_OFFER_IOS_URL", IOS_OFFER);
     useAgent(IPHONE);
     renderPage(<Home />, { route: "/" });
+    expect(screen.queryByRole("link", { name: /founders' rate/i })).toBeNull();
     expect(
-      screen.queryByRole("link", { name: /founders' rate/i }),
-    ).toBeNull();
-    expect(screen.getAllByRole("link", { name: /App Store/i }).length).toBeGreaterThan(0);
+      screen.getAllByRole("link", { name: /App Store/i }).length,
+    ).toBeGreaterThan(0);
   });
 });

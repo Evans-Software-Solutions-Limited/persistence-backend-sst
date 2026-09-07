@@ -8,6 +8,7 @@ import {
   adminApi,
   formatDate,
   formatMinor,
+  todayIsoDay,
   type FoundingTierName,
   type GrantResult,
   type NewGrantInput,
@@ -54,9 +55,7 @@ export function NewGrantForm({
   const [contributionMethod, setContributionMethod] =
     useState<PaymentMethod>("other");
   const [contributionReference, setContributionReference] = useState("");
-  const [contributedAt, setContributedAt] = useState(() =>
-    new Date().toISOString().slice(0, 10),
-  );
+  const [contributedAt, setContributedAt] = useState(todayIsoDay);
   const [referralCode, setReferralCode] = useState("");
   const [notes, setNotes] = useState("");
   const [sendInvite, setSendInvite] = useState(true);

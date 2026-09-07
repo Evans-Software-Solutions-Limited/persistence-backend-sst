@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { renderPage } from "@/test-utils";
 import type { MarketingPlanDetail } from "../adminApi";
@@ -131,6 +131,14 @@ async function panel(title: string): Promise<HTMLElement> {
 }
 
 describe("AdminMarketingPlan", () => {
+  // A test that installs fake timers or stubs TZ and then fails leaves both in
+  // place for every test after it — one real regression turning into a spray
+  // of unrelated timeouts. Restore unconditionally.
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     api.marketingPlan.mockResolvedValue(detail);
@@ -442,6 +450,44 @@ describe("AdminMarketingPlan", () => {
         campaignSlug: null,
         spendMinor: 1250,
       });
+    });
+
+    it("shows a recorded row's spend in the plan's own currency", async () => {
+      // The Attribution panel was fixed for this and the metric row was not,
+      // so a USD plan rendered the SAME underlying figure with a £ in one
+      // table and a $ in another, two panels apart.
+      api.marketingPlan.mockResolvedValue({
+        ...detail,
+        plan: { ...detail.plan, currency: "USD" },
+      });
+      renderPage(<AdminMarketingPlan />);
+      // Scoped to this panel: the Attribution table renders the same figure,
+      // so a document-wide query matches two nodes and says nothing about
+      // which one was fixed.
+      const section = within(await panel("Weekly numbers"));
+      await waitFor(() => section.getByText("US$10.00"));
+      expect(section.queryByText("£10.00")).toBeNull();
+    });
+
+    it("prefills the date with the admin's local day, not the UTC day", async () => {
+      // Rows are upserted BY DAY, so an admin who tabs past the picker files a
+      // day's spend under its neighbour — and the later, correct value then
+      // overwrites it. `todayIsoDay`'s own day maths is pinned across zones in
+      // adminApi.test.ts; this proves the form is wired to it.
+      vi.stubEnv("TZ", "Asia/Tokyo");
+      // `shouldAdvanceTime` is not optional here: testing-library's `findBy*`
+      // polls on a timer, so plain fake timers deadlock the query and the
+      // whole file inherits the frozen clock.
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      // 2026-09-11T23:00Z is already the 12th in Tokyo. The UTC day is the
+      // 11th, which is what the old default rendered.
+      vi.setSystemTime(new Date("2026-09-11T23:00:00Z"));
+      renderPage(<AdminMarketingPlan />);
+      await screen.findByLabelText("Record weekly numbers");
+      expect(screen.getByLabelText("Date")).toHaveProperty(
+        "value",
+        "2026-09-12",
+      );
     });
 
     it("sends the chosen channel's slug when one is picked", async () => {

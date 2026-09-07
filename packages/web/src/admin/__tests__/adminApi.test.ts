@@ -5,6 +5,7 @@ import {
   adminFetch,
   formatDate,
   formatDay,
+  todayIsoDay,
   formatMinor,
 } from "../adminApi";
 import { loadSession, saveSession, sessionFromTokens } from "../adminAuth";
@@ -81,6 +82,47 @@ describe("adminFetch", () => {
   it("formats pence as GBP", () => {
     expect(formatMinor(3000)).toBe("£30.00");
     expect(formatMinor(9900)).toBe("£99.00");
+  });
+
+  describe("todayIsoDay", () => {
+    afterEach(() => vi.unstubAllEnvs());
+
+    /**
+     * The counterpart trap to `formatDay`'s. A date input prefilled from
+     * `new Date().toISOString().slice(0, 10)` carries the UTC day, so it reads
+     * yesterday in Tokyo and tomorrow in Los Angeles. Marketing metric rows
+     * are upserted BY DAY, so that default silently files a day's spend under
+     * its neighbour.
+     */
+    it("reports the local day either side of the UTC boundary", () => {
+      // Already the 12th in Tokyo, still the 11th in Los Angeles, and the 11th
+      // in UTC — so Tokyo is the case that catches an ISO-string default.
+      const at = new Date("2026-09-11T23:00:00Z");
+      expect(at.toISOString().slice(0, 10)).toBe("2026-09-11");
+
+      vi.stubEnv("TZ", "Asia/Tokyo");
+      expect(todayIsoDay(at)).toBe("2026-09-12");
+
+      vi.stubEnv("TZ", "America/Los_Angeles");
+      expect(todayIsoDay(at)).toBe("2026-09-11");
+    });
+
+    it("zero-pads month and day so the value parses as a date input", () => {
+      vi.stubEnv("TZ", "UTC");
+      expect(todayIsoDay(new Date("2026-01-05T12:00:00Z"))).toBe("2026-01-05");
+    });
+
+    it("round-trips through formatDay", () => {
+      vi.stubEnv("TZ", "America/Los_Angeles");
+      const at = new Date("2026-09-11T23:00:00Z");
+      expect(formatDay(todayIsoDay(at))).toBe(
+        new Date(2026, 8, 11).toLocaleDateString("en-GB", {
+          day: "numeric",
+          month: "short",
+          year: "numeric",
+        }),
+      );
+    });
   });
 
   describe("formatDay", () => {

@@ -578,6 +578,23 @@ export function formatDay(day: string | null | undefined): string {
   });
 }
 
+/**
+ * Today as a plain calendar day (`YYYY-MM-DD`), in the ADMIN'S timezone.
+ *
+ * The counterpart to `formatDay`, for prefilling a date input. NOT
+ * `new Date().toISOString().slice(0, 10)`, which is the UTC day: at 08:00 in
+ * Tokyo that reads yesterday, and at 18:00 in Los Angeles it reads tomorrow.
+ * A form defaulted that way records the row against the wrong `metric_date`
+ * for anyone who tabs past the picker — and because those rows are upserted by
+ * day, the correct value later overwrites, so a day's spend is silently filed
+ * under its neighbour.
+ */
+export function todayIsoDay(now = new Date()): string {
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${now.getFullYear()}-${month}-${day}`;
+}
+
 export function formatDate(iso: string | null | undefined): string {
   if (!iso) return "—";
   const d = new Date(iso);

@@ -10,10 +10,7 @@ import {
 } from "../../repositories/marketingPlanRepository";
 import { isUniqueViolation } from "../../stripe/pgErrors";
 import { normalizeReferralCode } from "../../referrals/referralCode";
-import {
-  ADMIN_CAMPAIGN_SLUGS,
-  isKnownCampaignSlug,
-} from "./campaignSlugs";
+import { ADMIN_CAMPAIGN_SLUGS, isKnownCampaignSlug } from "./campaignSlugs";
 
 /**
  * `/admin/marketing/*` — marketing plans, their channels, linked referral
@@ -147,7 +144,9 @@ export const adminMarketingHandler = new Elysia()
       const slug = ctx.body.slug.trim().toLowerCase();
       if (!/^[a-z0-9-]{3,48}$/.test(slug)) {
         ctx.set.status = 400;
-        return { message: "Slug must be 3–48 lower-case letters, digits or hyphens" };
+        return {
+          message: "Slug must be 3–48 lower-case letters, digits or hyphens",
+        };
       }
       const lanes = parseLanes(ctx.body.offerLanes ?? []);
       if (lanes === null) {
@@ -214,7 +213,9 @@ export const adminMarketingHandler = new Elysia()
         objective: t.Optional(t.Nullable(t.String({ maxLength: 2000 }))),
         hypothesis: t.Optional(t.Nullable(t.String({ maxLength: 2000 }))),
         decisionRule: t.Optional(t.Nullable(t.String({ maxLength: 2000 }))),
-        offerLanes: t.Optional(t.Array(t.String({ maxLength: 40 }), { maxItems: 8 })),
+        offerLanes: t.Optional(
+          t.Array(t.String({ maxLength: 40 }), { maxItems: 8 }),
+        ),
         budgetCapMinor: t.Optional(t.Nullable(t.Integer({ minimum: 0 }))),
         currency: t.Optional(t.String({ pattern: "^[A-Za-z]{3}$" })),
         startsOn: t.Optional(t.Nullable(t.String({ maxLength: 10 }))),
@@ -250,7 +251,8 @@ export const adminMarketingHandler = new Elysia()
         if (!before) return null;
         const nextStart = startsOn === undefined ? before.startsOn : startsOn;
         const nextEnd = endsOn === undefined ? before.endsOn : endsOn;
-        if (nextStart && nextEnd && nextEnd < nextStart) return "bad_dates" as const;
+        if (nextStart && nextEnd && nextEnd < nextStart)
+          return "bad_dates" as const;
         const updated = await repo.updatePlanIn(tx, ctx.params.id, {
           name: ctx.body.name?.trim(),
           status: ctx.body.status,
@@ -271,7 +273,8 @@ export const adminMarketingHandler = new Elysia()
           currency: ctx.body.currency,
           startsOn: startsOn === undefined ? undefined : startsOn,
           endsOn: endsOn === undefined ? undefined : endsOn,
-          briefMd: ctx.body.briefMd === undefined ? undefined : ctx.body.briefMd,
+          briefMd:
+            ctx.body.briefMd === undefined ? undefined : ctx.body.briefMd,
         });
         // A status change is the decision worth being able to reconstruct
         // later ("when did we pause this?"), so it gets its own action.
@@ -320,7 +323,9 @@ export const adminMarketingHandler = new Elysia()
         objective: t.Optional(t.Nullable(t.String({ maxLength: 2000 }))),
         hypothesis: t.Optional(t.Nullable(t.String({ maxLength: 2000 }))),
         decisionRule: t.Optional(t.Nullable(t.String({ maxLength: 2000 }))),
-        offerLanes: t.Optional(t.Array(t.String({ maxLength: 40 }), { maxItems: 8 })),
+        offerLanes: t.Optional(
+          t.Array(t.String({ maxLength: 40 }), { maxItems: 8 }),
+        ),
         budgetCapMinor: t.Optional(t.Nullable(t.Integer({ minimum: 0 }))),
         currency: t.Optional(t.String({ pattern: "^[A-Za-z]{3}$" })),
         startsOn: t.Optional(t.Nullable(t.String({ maxLength: 10 }))),
@@ -347,18 +352,20 @@ export const adminMarketingHandler = new Elysia()
         repo.listStoreOffers(plan.id),
         repo.listMetrics(plan.id),
       ]);
-      const [channelClicks, codeAttribution, registrations] = await Promise.all([
-        repo.storeClicksByChannel(
-          channels.map((c) => c.campaignSlug),
-          codes.map((c) => c.code),
-          window,
-        ),
-        repo.attributionByCode(
-          codes.map((c) => c.codeId),
-          window,
-        ),
-        repo.registrationsInWindow(window),
-      ]);
+      const [channelClicks, codeAttribution, registrations] = await Promise.all(
+        [
+          repo.storeClicksByChannel(
+            channels.map((c) => c.campaignSlug),
+            codes.map((c) => c.code),
+            window,
+          ),
+          repo.attributionByCode(
+            codes.map((c) => c.codeId),
+            window,
+          ),
+          repo.registrationsInWindow(window),
+        ],
+      );
       return {
         data: {
           plan,
@@ -649,7 +656,9 @@ export const adminMarketingHandler = new Elysia()
       } catch (err) {
         if (isUniqueViolation(err)) {
           ctx.set.status = 409;
-          return { message: "That offer code is already recorded on this plan" };
+          return {
+            message: "That offer code is already recorded on this plan",
+          };
         }
         throw err;
       }

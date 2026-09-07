@@ -8,6 +8,7 @@ import {
   adminApi,
   formatDay,
   formatMinor,
+  todayIsoDay,
   type ChannelAttribution,
   type MarketingPlanDetail,
   type PlanMetric,
@@ -682,9 +683,7 @@ function MetricsPanel({
   onChanged: () => void;
 }) {
   const [scope, setScope] = useState(WHOLE_PLAN);
-  const [metricDate, setMetricDate] = useState(() =>
-    new Date().toISOString().slice(0, 10),
-  );
+  const [metricDate, setMetricDate] = useState(todayIsoDay);
   const [spend, setSpend] = useState("");
   const [impressions, setImpressions] = useState("");
   const [clicks, setClicks] = useState("");
@@ -741,7 +740,9 @@ function MetricsPanel({
                 {m.campaignSlug ?? "whole plan"}
               </td>
               <td className="tabular-nums">
-                {m.spendMinor === null ? "—" : formatMinor(m.spendMinor)}
+                {m.spendMinor === null
+                  ? "—"
+                  : formatMinor(m.spendMinor, detail.plan.currency)}
               </td>
               <td className="tabular-nums">{m.impressions ?? "—"}</td>
               <td className="tabular-nums">{m.clicks ?? "—"}</td>
