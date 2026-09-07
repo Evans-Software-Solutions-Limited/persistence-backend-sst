@@ -56,9 +56,14 @@ export type ReorderableItem = { id: string };
 export type ReorderableRenderProps = {
   /** Wrap the drag grip in this. Nothing else starts a drag. */
   Handle: (props: { children: ReactNode }) => ReactNode;
-  isActive: boolean;
   index: number;
 };
+
+// NOTE: no `isActive`. The lifted-row state is knowable — `useSortable`
+// returns `isMoving` — but `SortableItem` does not pass it down to its
+// children, so there is no honest way to surface it from here yet. A prop
+// hardcoded to `false` would silently strip the drag affordance from every
+// consumer that styled on it, so it is left out until it can be wired.
 
 export type ReorderableListProps<TItem extends ReorderableItem> = {
   data: TItem[];
@@ -263,7 +268,7 @@ function ReorderableRow<TItem extends ReorderableItem>({
       onDrop={onDrop}
     >
       <View onLayout={(event) => onMeasure(item.id, event)}>
-        {renderItem(item, { Handle, isActive: false, index })}
+        {renderItem(item, { Handle, index })}
       </View>
     </SortableItem>
   );

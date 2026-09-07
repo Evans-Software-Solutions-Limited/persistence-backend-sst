@@ -33,5 +33,5 @@ import { FuelTargetsContainer } from "@/ui/containers/FuelTargetsContainer";
  * whose CHECK constraint permits only the seven real pages — never holds it.
  */
 export default function OnboardingFuelTargetsScreen() {
-  return <FuelTargetsContainer />;
+  return <FuelTargetsContainer onboarding />;
 }

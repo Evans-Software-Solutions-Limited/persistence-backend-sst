@@ -22,10 +22,9 @@
  */
 
 import { Ionicons } from "@expo/vector-icons";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import {
   AccessibilityInfo,
-  AppState,
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
@@ -38,15 +37,11 @@ import DraggableFlatList, {
   type RenderItemParams,
 } from "react-native-draggable-flatlist";
 import type { FlatList } from "react-native-gesture-handler";
-import type { SharedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ActiveSupersetRow } from "@/ui/components/session/ActiveSupersetRow";
 import { RestTimerDisplay } from "@/ui/components/session/RestTimerDisplay";
 import { SessionExerciseCard } from "@/ui/components/session/SessionExerciseCard";
-import {
-  COMPACT_REORDER_ROW_HEIGHT,
-  CompactReorderRow,
-} from "@/ui/components/workouts/CompactReorderRow";
+import { CompactReorderRow } from "@/ui/components/workouts/CompactReorderRow";
 import { SessionHeader } from "@/ui/components/session/SessionHeader";
 import { TrainerBannerPresenter } from "@/ui/presenters/TrainerBannerPresenter";
 import { Btn } from "@/ui/components/foundation/Btn";
@@ -492,7 +487,7 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
                   />
                   <Text style={styles.addExerciseText}>Add Exercise</Text>
                 </TouchableOpacity>
-                {canReorder ? (
+                {!isReordering && canReorder ? (
                   <TouchableOpacity
                     onPress={() => setIsReordering(true)}
                     style={styles.addExerciseLink}

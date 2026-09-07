@@ -444,9 +444,32 @@ describe("FuelTargetsContainer", () => {
     );
     await waitFor(() => expect(mockProbe.last).not.toBeNull());
     await act(async () => {
-      mockProbe.last?.onOpenProfile();
+      mockProbe.last?.onOpenProfile?.();
     });
     expect(mockPush).toHaveBeenCalledWith("/(app)/profile/edit");
+  });
+
+  it("withholds both routes out of the journey on the onboarding mount", async () => {
+    // Pushing into `(app)` from `(onboarding)` unmounts the journey and
+    // discards HabitSetupContainer's unsaved habit draft — the exact bug the
+    // detour route exists to avoid, so the links must not merely be
+    // redirected, they must not be offered.
+    const { adapters, storage } = makeAdapters();
+    storage.cacheProfilePage("user-1", makeProfilePagePayload());
+    render(
+      <AdapterProvider adapters={adapters}>
+        <FuelTargetsContainer onboarding />
+      </AdapterProvider>,
+    );
+    await waitFor(() => expect(mockProbe.last).not.toBeNull());
+
+    expect(mockProbe.last?.onOpenProfile).toBeUndefined();
+    expect(mockProbe.last?.showFoodPreferences).toBe(false);
+
+    await act(async () => {
+      mockProbe.last?.onOpenFoodPreferences();
+    });
+    expect(mockPush).not.toHaveBeenCalled();
   });
 
   it("onCancel routes back", async () => {

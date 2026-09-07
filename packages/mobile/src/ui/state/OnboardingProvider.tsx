@@ -21,6 +21,7 @@ import {
   type OnboardingUpdateInput,
 } from "@/domain/models/onboarding";
 import { useAdapters } from "@/ui/hooks/useAdapters";
+import { useOnlineStatus } from "@/ui/hooks/useOnlineStatus";
 import { useAuth } from "@/ui/hooks/useAuth";
 
 function makeInitialState(userId: string): OnboardingState {
@@ -130,6 +131,11 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
   const [loadRevision, setLoadRevision] = useState(0);
   const writeQueueRef = useRef<Promise<void>>(Promise.resolve());
   const revisionRef = useRef(0);
+  /**
+   * True while the state on hand is a locally seeded guess rather than
+   * anything the server has confirmed. Gates every outbound write.
+   */
+  const isProvisionalRef = useRef(false);
 
   const enqueueUpdate = useCallback(
     (input: OnboardingUpdateInput, requestUserId: string, epoch: number) => {
@@ -161,6 +167,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let active = true;
     if (!userId) {
+      isProvisionalRef.current = false;
       setState(null);
       setLoadFailure(null);
       return () => {
@@ -191,15 +198,28 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
         // A server that answered with an error is different. That IS evidence
         // the account read is broken, and replaying onboarding over real
         // progress could clobber it — so keep the error wall for that.
-        setState(
-          cached ??
-            (isUnreachableError(remote.error)
-              ? makeInitialState(userId)
-              : null),
-        );
+        if (cached) {
+          setState(cached);
+          setLoadFailure({ userId, error: remote.error });
+          return;
+        }
+        // No mirror and the server was never reached: seed a journey so the
+        // user is not walled off, but treat it as PROVISIONAL. It is a guess
+        // about an account we could not read, so for as long as it stands it
+        // lives in memory only — `persist` neither mirrors it nor uploads it
+        // (see `isProvisionalRef`). Without that, the first Continue would
+        // PUT the seed's defaults over whatever real in-progress row the
+        // server holds, and `onboardingStateRepository.put` would accept it:
+        // its guard only protects a terminal row, not an in-progress one.
+        const unreachable = isUnreachableError(remote.error);
+        isProvisionalRef.current = unreachable;
+        setState(unreachable ? makeInitialState(userId) : null);
         setLoadFailure({ userId, error: remote.error });
         return;
       }
+      // A real answer supersedes any provisional seed, so local writes may
+      // reach the mirror and the server again from here.
+      isProvisionalRef.current = false;
       const serverState = normalizeRemoteState(userId, remote.value);
       // A journey the server considers finished cannot be un-finished by a
       // local one that is merely newer. Without this, an offline seed (or an
@@ -242,6 +262,33 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     setLoadRevision((revision) => revision + 1);
   }, []);
 
+  /**
+   * Self-heal on reconnect.
+   *
+   * A seeded journey suppresses the error wall (state is no longer null), so
+   * `retryLoad`'s only caller is unreachable in exactly the case that needs it
+   * most — and the load effect keys on nothing to do with connectivity. Left
+   * alone, a user seeded in a lift would be marched through a journey they may
+   * already have finished for the rest of the session. Retry the read the
+   * moment the connection actually comes back.
+   *
+   * Keyed on the offline→online TRANSITION, not on `isOnline` itself, because
+   * `useOnlineStatus` starts optimistically `true` and a bare truthy check
+   * would re-fire the read immediately after every failure.
+   */
+  const isOnline = useOnlineStatus();
+  const hasBeenOffline = useRef(false);
+  useEffect(() => {
+    if (!isOnline) {
+      hasBeenOffline.current = true;
+      return;
+    }
+    if (hasBeenOffline.current && loadFailure !== null) {
+      hasBeenOffline.current = false;
+      setLoadRevision((revision) => revision + 1);
+    }
+  }, [isOnline, loadFailure]);
+
   const persist = useCallback(
     async (derive: (current: OnboardingState) => OnboardingState) => {
       if (!userId) return null;
@@ -259,6 +306,13 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
       const revision = ++revisionRef.current;
       stateRef.current = optimistic;
       setState(optimistic);
+      // A provisional journey stays in memory. Mirroring it would let it
+      // outrank the server's own record on the next launch, and uploading it
+      // would overwrite a real in-progress row with the seed's defaults —
+      // the server only refuses writes over a TERMINAL row. The journey is
+      // still fully usable; it is just not evidence of anything yet, and a
+      // successful read (retried on reconnect) clears the flag.
+      if (isProvisionalRef.current) return optimistic;
       storage.cacheOnboarding(userId, optimistic);
       const result = await enqueueUpdate(
         withoutServerFields(optimistic),

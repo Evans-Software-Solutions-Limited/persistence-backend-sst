@@ -14,6 +14,17 @@ const mockApi = {
   updateOnboarding: mockUpdateOnboarding,
   trackAnalyticsEvent: mockTrackAnalyticsEvent,
 };
+// `useOnlineStatus` drives the reconnect retry; default to online so the
+// existing tests are unaffected, and flip it per test where it matters.
+let mockIsConnected = true;
+const mockNetInfoListeners = new Set<(connected: boolean) => void>();
+const mockNetInfo = {
+  isConnected: () => Promise.resolve(mockIsConnected),
+  subscribe: (listener: (connected: boolean) => void) => {
+    mockNetInfoListeners.add(listener);
+    return () => mockNetInfoListeners.delete(listener);
+  },
+};
 const mockStorage = {
   getCachedOnboarding: (id: string) => mockCache.get(id) ?? null,
   cacheOnboarding: (id: string, state: unknown) => mockCache.set(id, state),
@@ -30,6 +41,7 @@ jest.mock("@/ui/hooks/useAdapters", () => ({
   useAdapters: () => ({
     api: mockApi,
     storage: mockStorage,
+    netInfo: mockNetInfo,
   }),
 }));
 
@@ -42,6 +54,8 @@ function Probe() {
 describe("OnboardingProvider", () => {
   beforeEach(() => {
     mockCache.clear();
+    mockIsConnected = true;
+    mockNetInfoListeners.clear();
     mockUserId = "user-a";
     mockGetOnboarding.mockReset().mockResolvedValue({ ok: true, value: null });
     mockUpdateOnboarding.mockReset().mockImplementation(async (input) => ({
@@ -268,6 +282,110 @@ describe("OnboardingProvider", () => {
     );
 
     await waitFor(() => expect(context.state?.currentPage).toBe("train"));
+  });
+
+  it("keeps a seeded journey off the mirror AND off the server as it advances", async () => {
+    // The data-loss path: the seed's defaults must never be PUT over a real
+    // in-progress row. The server only refuses writes over a terminal row, so
+    // an upload here would be accepted and would reset the account.
+    mockGetOnboarding.mockResolvedValue({
+      ok: false,
+      error: { kind: "api", code: "network", message: "Network error" },
+    });
+
+    render(
+      <OnboardingProvider>
+        <Probe />
+      </OnboardingProvider>,
+    );
+    await waitFor(() => expect(context.isLoading).toBe(false));
+
+    await act(async () => {
+      await context.completePage("welcome");
+    });
+
+    // The journey still advances locally — it is usable offline.
+    expect(context.state?.completedPages).toContain("welcome");
+    // But nothing has escaped the process.
+    expect(mockUpdateOnboarding).not.toHaveBeenCalled();
+    expect(mockCache.has("user-a")).toBe(false);
+  });
+
+  it("resumes mirroring and uploading once a real read confirms the account", async () => {
+    mockGetOnboarding.mockResolvedValueOnce({
+      ok: false,
+      error: { kind: "api", code: "network", message: "Network error" },
+    });
+
+    render(
+      <OnboardingProvider>
+        <Probe />
+      </OnboardingProvider>,
+    );
+    await waitFor(() => expect(context.isLoading).toBe(false));
+
+    // The connection returns and the retry lands a real answer.
+    mockGetOnboarding.mockResolvedValue({
+      ok: true,
+      value: {
+        userId: "user-a",
+        status: "in_progress",
+        path: "athlete",
+        currentPage: "welcome",
+        completedPages: [],
+        skippedPages: [],
+        intentKeys: [],
+        updatedAt: "2026-09-01T12:00:00.000Z",
+      },
+    });
+    await act(async () => {
+      context.retryLoad();
+    });
+    await waitFor(() => expect(context.loadError).toBeNull());
+
+    await act(async () => {
+      await context.completePage("welcome");
+    });
+
+    expect(mockUpdateOnboarding).toHaveBeenCalled();
+    expect(mockCache.has("user-a")).toBe(true);
+  });
+
+  it("retries the read when the connection comes back", async () => {
+    // A seed suppresses the error wall, so its Retry button is unreachable in
+    // exactly this case. Without this the user is stuck in a replayed journey
+    // for the rest of the session.
+    mockIsConnected = false;
+    mockGetOnboarding.mockResolvedValueOnce({
+      ok: false,
+      error: { kind: "api", code: "network", message: "Network error" },
+    });
+
+    render(
+      <OnboardingProvider>
+        <Probe />
+      </OnboardingProvider>,
+    );
+    await waitFor(() => expect(context.loadError).not.toBeNull());
+    expect(mockGetOnboarding).toHaveBeenCalledTimes(1);
+
+    mockGetOnboarding.mockResolvedValue({
+      ok: true,
+      value: {
+        userId: "user-a",
+        status: "completed",
+        path: "athlete",
+        currentPage: "recommendation",
+        intentKeys: [],
+        updatedAt: "2026-09-06T12:00:00.000Z",
+      },
+    });
+    await act(async () => {
+      mockNetInfoListeners.forEach((listener) => listener(true));
+    });
+
+    await waitFor(() => expect(context.state?.status).toBe("completed"));
+    expect(mockGetOnboarding).toHaveBeenCalledTimes(2);
   });
 
   it("does not seed a fresh journey when the server read fails without a cache", async () => {

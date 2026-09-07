@@ -1041,7 +1041,16 @@ export class InMemoryStorageAdapter implements StoragePort {
       if (slice.userId !== userId) continue;
       const filtered = slice.workouts.filter((w) => w.id !== workoutId);
       if (filtered.length !== slice.workouts.length) {
-        this.workoutsListCache.set(key, { ...slice, workouts: filtered });
+        // Parity with the SQLite adapter: the quota moves with the list, or
+        // the cached count outlives the workouts it counted.
+        const removed = slice.workouts.length - filtered.length;
+        this.workoutsListCache.set(key, {
+          ...slice,
+          workouts: filtered,
+          quota: slice.quota
+            ? { ...slice.quota, used: Math.max(0, slice.quota.used - removed) }
+            : null,
+        });
       }
     }
   }

@@ -54,7 +54,17 @@ const DEFAULT_WATER_CUPS = 8;
 const DEFAULT_GOAL = 0;
 const DEFAULT_MACRO_MODE: MacroPresetMode = "recommended";
 
-export function FuelTargetsContainer() {
+/**
+ * `onboarding` marks the `(onboarding)/fuel-targets` mount. The root layout
+ * renders a `<Slot/>`, so ANY push into `(app)` from there unmounts the
+ * journey and throws away `HabitSetupContainer`'s unsaved habit draft — the
+ * exact failure the detour route exists to avoid. So on that mount the two
+ * links out are withheld rather than pointed somewhere; see the docstring on
+ * `app/(onboarding)/fuel-targets.tsx`.
+ */
+export function FuelTargetsContainer({
+  onboarding = false,
+}: { onboarding?: boolean } = {}) {
   const router = useRouter();
   const profilePage = useProfilePage();
   // Device-QA #5/#7 — the water goal's display unit follows the user's
@@ -222,8 +232,9 @@ export function FuelTargetsContainer() {
   }, [router]);
 
   const onOpenProfile = useCallback(() => {
+    if (onboarding) return;
     router.push("/(app)/profile/edit");
-  }, [router]);
+  }, [onboarding, router]);
 
   const onSave = useCallback(async () => {
     // Guarded by the presenter's disabled Save button too (incomplete
@@ -283,7 +294,7 @@ export function FuelTargetsContainer() {
       weightKg={weightKg}
       weightUnit={profile?.weightUnit ?? "kg"}
       heightUnit={profile?.heightUnit ?? "cm"}
-      onOpenProfile={onOpenProfile}
+      onOpenProfile={onboarding ? undefined : onOpenProfile}
       calorieMode={calorieMode}
       onCalorieModeChange={onCalorieModeChange}
       manualKcalText={manualKcalText}
@@ -306,8 +317,11 @@ export function FuelTargetsContainer() {
       onWaterCupsChange={onWaterCupsChange}
       volumeUnit={volumeUnit}
       foodPreferencesSummary={foodPreferencesSummary}
-      showFoodPreferences={mealprintGate.allowed}
-      onOpenFoodPreferences={() => router.push("/(app)/fuel/preferences")}
+      showFoodPreferences={mealprintGate.allowed && !onboarding}
+      onOpenFoodPreferences={() => {
+        if (onboarding) return;
+        router.push("/(app)/fuel/preferences");
+      }}
     />
   );
 }

@@ -89,6 +89,7 @@ import {
   SupabaseAuthAdapter,
   deriveAuthStorageKey,
   GET_ACCESS_TOKEN_TIMEOUT_MS,
+  GET_ACCESS_TOKEN_EXPIRED_TIMEOUT_MS,
 } from "../supabase.adapter";
 
 const MOCK_SUPABASE_SESSION = {
@@ -962,11 +963,15 @@ describe("SupabaseAuthAdapter", () => {
       expect(token).toBeNull();
     });
 
-    it("falls back to the persisted token when getSession never settles", async () => {
+    it("falls back to an expired persisted token only after the full budget", async () => {
       // A captive portal / dead network: supabase's refresh fetch hangs, so
       // getSession() never resolves and never releases the global auth lock.
       // Every API request awaits this token, so an unbounded wait here is what
       // stranded the boot gate on an infinite spinner.
+      //
+      // MOCK_SUPABASE_SESSION expired in 2023, so it is a last resort, not a
+      // fast path: shipping it early would earn a non-retryable 401 across a
+      // whole cold start.
       jest.useFakeTimers();
       try {
         mockGetSession.mockReturnValue(new Promise(() => {}));
@@ -976,8 +981,68 @@ describe("SupabaseAuthAdapter", () => {
 
         const pending = adapter.getAccessToken();
         await jest.advanceTimersByTimeAsync(GET_ACCESS_TOKEN_TIMEOUT_MS);
+        await jest.advanceTimersByTimeAsync(
+          GET_ACCESS_TOKEN_EXPIRED_TIMEOUT_MS,
+        );
 
         await expect(pending).resolves.toBe("access-123");
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it("returns a still-valid persisted token as soon as the live read stalls", async () => {
+      jest.useFakeTimers();
+      try {
+        mockGetSession.mockReturnValue(new Promise(() => {}));
+        (AsyncStorage.getItem as jest.Mock).mockResolvedValue(
+          JSON.stringify({
+            ...MOCK_SUPABASE_SESSION,
+            access_token: "fresh-token",
+            expires_at: Math.floor(Date.now() / 1000) + 3600,
+          }),
+        );
+
+        const pending = adapter.getAccessToken();
+        await jest.advanceTimersByTimeAsync(GET_ACCESS_TOKEN_TIMEOUT_MS);
+
+        // No need to wait out the extended budget — this token works.
+        await expect(pending).resolves.toBe("fresh-token");
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it("prefers a slow live refresh over shipping an expired token", async () => {
+      // The regression this guards: a 4.5s refresh on 3G used to lose to the
+      // 3s bound and fan out 401s that nothing retries.
+      jest.useFakeTimers();
+      try {
+        mockGetSession.mockReturnValue(
+          new Promise((resolve) =>
+            setTimeout(
+              () =>
+                resolve({
+                  data: {
+                    session: {
+                      ...MOCK_SUPABASE_SESSION,
+                      access_token: "refreshed-token",
+                    },
+                  },
+                  error: null,
+                }),
+              4_500,
+            ),
+          ),
+        );
+        (AsyncStorage.getItem as jest.Mock).mockResolvedValue(
+          JSON.stringify(MOCK_SUPABASE_SESSION),
+        );
+
+        const pending = adapter.getAccessToken();
+        await jest.advanceTimersByTimeAsync(5_000);
+
+        await expect(pending).resolves.toBe("refreshed-token");
       } finally {
         jest.useRealTimers();
       }
@@ -990,7 +1055,9 @@ describe("SupabaseAuthAdapter", () => {
         (AsyncStorage.getItem as jest.Mock).mockResolvedValue(null);
 
         const pending = adapter.getAccessToken();
-        await jest.advanceTimersByTimeAsync(GET_ACCESS_TOKEN_TIMEOUT_MS);
+        await jest.advanceTimersByTimeAsync(
+          GET_ACCESS_TOKEN_EXPIRED_TIMEOUT_MS,
+        );
 
         await expect(pending).resolves.toBeNull();
       } finally {
