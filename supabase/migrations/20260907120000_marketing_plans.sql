@@ -1,3 +1,13 @@
+-- ⚠ RENAMED from 20260905120000 on 2026-09-07. Do NOT move it back.
+-- #438 carried this migration but merged AFTER #437, whose
+-- 20260905140000_founding_checkout_sessions.sql was already applied to
+-- staging. `supabase db push` refuses a local migration that sorts BEFORE the
+-- last applied one ("Found local migration files to be inserted before the
+-- last migration on remote database"), which failed the staging deploy. The
+-- timestamp is a sort key, not a date: it has to be later than everything
+-- already applied. This file was applied nowhere when it was renamed, so the
+-- rename is safe; renaming an APPLIED migration would re-run it.
+--
 -- MARKETING-PLANS § WP4. A marketing plan is the admin-only record of one
 -- campaign: the brief behind it, the channels it runs on, the referral codes
 -- and store offers linked to it, and the off-platform numbers Brad types in by

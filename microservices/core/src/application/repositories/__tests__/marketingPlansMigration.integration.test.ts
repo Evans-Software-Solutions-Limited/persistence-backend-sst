@@ -23,7 +23,7 @@ const migrationSql = (file: string): string =>
 const FOUNDING_MIGRATION = migrationSql(
   "20260904120000_founding_offer_referrals.sql",
 );
-const MARKETING_MIGRATION = migrationSql("20260905120000_marketing_plans.sql");
+const MARKETING_MIGRATION = migrationSql("20260907120000_marketing_plans.sql");
 
 const ADMIN = "00000000-0000-4000-8000-000000000001";
 
@@ -53,7 +53,7 @@ async function insertPlan(
   return res.rows[0]!.id;
 }
 
-describe("20260905120000_marketing_plans.sql", () => {
+describe("20260907120000_marketing_plans.sql", () => {
   let pg: PGlite;
 
   beforeEach(async () => {
