@@ -389,8 +389,18 @@ export function HabitSetupContainer({
     // Calories deep-link → the Fuel Targets editor (M9). Coach view has no
     // equivalent client-side editor, so it's a no-op there.
     if (isCoachView) return;
-    router.push("/(app)/fuel/targets");
-  }, [router, isCoachView]);
+    // Inside the journey, stay inside the journey's own Stack. The root layout
+    // is a `<Slot/>`, so pushing to the editor's usual `(app)` home unmounts
+    // the whole `(onboarding)` group — and with it THIS container's habit
+    // draft, which is the only place the Calories toggle lives until step 3 is
+    // saved. The user would return to find Calories off again and no habit
+    // created: target saved, habit silently lost. `(onboarding)` is a Stack,
+    // so a detour route there keeps this screen mounted and the toggle intact.
+    // See `app/(onboarding)/fuel-targets.tsx`.
+    router.push(
+      onboarding ? "/(onboarding)/fuel-targets" : "/(app)/fuel/targets",
+    );
+  }, [router, isCoachView, onboarding]);
 
   return (
     <HabitSetupPresenter

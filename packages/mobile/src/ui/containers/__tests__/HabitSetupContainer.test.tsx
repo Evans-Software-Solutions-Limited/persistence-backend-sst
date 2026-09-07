@@ -166,7 +166,30 @@ describe("HabitSetupContainer (self)", () => {
     renderContainer();
     await waitFor(() => expect(captured.props).not.toBeNull());
     act(() => props().onAdjustNutrition());
+    // Outside the journey there is no onboarding stack to stay inside, so the
+    // editor's own home is the right destination.
     expect(mockPush).toHaveBeenCalledWith("/(app)/fuel/targets");
+  });
+
+  it("keeps the Calories deep-link inside the journey's own stack", async () => {
+    // Step 3 of onboarding renders this container with `onboarding`. The root
+    // layout is a `<Slot/>`, so pushing to the editor's `(app)` home unmounts
+    // the whole `(onboarding)` group — taking THIS container's habit draft
+    // with it, and the draft is the only place the Calories toggle lives until
+    // step 3 is saved. The user would come back to Calories switched off with
+    // no habit created: the target saved, the habit silently lost.
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    render(<HabitSetupContainer onboarding />, {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <AdapterProvider adapters={makeAdapters(api, storage)}>
+          {children}
+        </AdapterProvider>
+      ),
+    });
+    await waitFor(() => expect(captured.props).not.toBeNull());
+    act(() => props().onAdjustNutrition());
+    expect(mockPush).toHaveBeenCalledWith("/(onboarding)/fuel-targets");
   });
 
   it("surfaces deferredChangesPending when a loaded config has a pending change", async () => {
