@@ -34,8 +34,13 @@ export const GET_ACCESS_TOKEN_TIMEOUT_MS = 3_000;
  * `isError` is what shows a paying user the free plan picker. A slow refresh
  * is worth waiting longer for than that; only a dead one is worth giving up
  * on.
+ *
+ * Kept deliberately tight. Callers that opt into a `timeoutMs` now arm their
+ * AbortController BEFORE awaiting the token, so their budget governs this wait
+ * rather than being added to it — but the many callers with no timeout at all
+ * have only this bound standing between them and a hung refresh.
  */
-export const GET_ACCESS_TOKEN_EXPIRED_TIMEOUT_MS = 12_000;
+export const GET_ACCESS_TOKEN_EXPIRED_TIMEOUT_MS = 6_000;
 
 /**
  * Treat a persisted token expiring within this window as already unusable —

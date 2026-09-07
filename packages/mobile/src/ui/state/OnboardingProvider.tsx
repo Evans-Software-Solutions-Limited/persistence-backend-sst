@@ -115,11 +115,33 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
   const userId = session?.userId ?? null;
   const userIdRef = useRef(userId);
   const identityRef = useRef({ userId, epoch: 0 });
+  /**
+   * True while the state on hand is a locally seeded guess rather than
+   * anything the server has confirmed. Gates every outbound write.
+   */
+  const isProvisionalRef = useRef(false);
+  /**
+   * True once the user has actually ADVANCED a provisional journey.
+   *
+   * The distinction matters at reconcile time. An untouched seed is pure
+   * guesswork and must lose to whatever the server says, or its defaults
+   * would overwrite a real in-progress row. A journey the user walked offline
+   * is their genuine, most recent intent and has to survive the reconnect —
+   * without this, four pages of work were discarded by the very retry that
+   * was added to recover from being offline.
+   */
+  const hasProvisionalEditsRef = useRef(false);
   if (identityRef.current.userId !== userId) {
     identityRef.current = {
       userId,
       epoch: identityRef.current.epoch + 1,
     };
+    // Cleared here, not only on sign-out: `useAuth` can hand us B directly
+    // from A with no intervening null (a confirmation or recovery deep link
+    // for a second account). Left set, A's provisional flag would swallow B's
+    // first write.
+    isProvisionalRef.current = false;
+    hasProvisionalEditsRef.current = false;
   }
   userIdRef.current = userId;
   const [state, setState] = useState<OnboardingState | null>(null);
@@ -131,11 +153,6 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
   const [loadRevision, setLoadRevision] = useState(0);
   const writeQueueRef = useRef<Promise<void>>(Promise.resolve());
   const revisionRef = useRef(0);
-  /**
-   * True while the state on hand is a locally seeded guess rather than
-   * anything the server has confirmed. Gates every outbound write.
-   */
-  const isProvisionalRef = useRef(false);
 
   const enqueueUpdate = useCallback(
     (input: OnboardingUpdateInput, requestUserId: string, epoch: number) => {
@@ -217,9 +234,24 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
         setLoadFailure({ userId, error: remote.error });
         return;
       }
+      // Work done on a provisional journey is real work, and it is the only
+      // copy of itself — it was deliberately never mirrored. Promote it to
+      // the local candidate so the merge below can weigh it, otherwise the
+      // reconnect read discards every page the user completed offline and
+      // writes the reset over it. An UNTOUCHED seed is not promoted: it is
+      // guesswork, and letting its defaults compete would put back the
+      // clobber that keeping it out of the mirror was protecting against.
+      const provisional =
+        isProvisionalRef.current &&
+        hasProvisionalEditsRef.current &&
+        stateRef.current?.userId === userId
+          ? stateRef.current
+          : null;
+      const local = cached ?? provisional;
       // A real answer supersedes any provisional seed, so local writes may
       // reach the mirror and the server again from here.
       isProvisionalRef.current = false;
+      hasProvisionalEditsRef.current = false;
       const serverState = normalizeRemoteState(userId, remote.value);
       // A journey the server considers finished cannot be un-finished by a
       // local one that is merely newer. Without this, an offline seed (or an
@@ -229,24 +261,24 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
         serverState !== null && serverState.status !== "in_progress";
       const next =
         serverState &&
-        (!cached ||
-          (serverIsTerminal && cached.status === "in_progress") ||
-          Date.parse(serverState.updatedAt) >= Date.parse(cached.updatedAt))
+        (!local ||
+          (serverIsTerminal && local.status === "in_progress") ||
+          Date.parse(serverState.updatedAt) >= Date.parse(local.updatedAt))
           ? serverState
-          : (cached ?? makeInitialState(userId));
+          : (local ?? makeInitialState(userId));
       setState(next);
       storage.cacheOnboarding(userId, next);
 
-      // A newer offline mirror wins and is reconciled server-side. Terminal
+      // A newer local journey wins and is reconciled server-side. Terminal
       // server states cannot be reverted, so never upload over one.
       if (
-        cached &&
+        local &&
         (!serverState ||
           (serverState.status === "in_progress" &&
-            Date.parse(cached.updatedAt) > Date.parse(serverState.updatedAt)))
+            Date.parse(local.updatedAt) > Date.parse(serverState.updatedAt)))
       ) {
         void enqueueUpdate(
-          withoutServerFields(cached),
+          withoutServerFields(local),
           userId,
           identityRef.current.epoch,
         );
@@ -312,7 +344,10 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
       // the server only refuses writes over a TERMINAL row. The journey is
       // still fully usable; it is just not evidence of anything yet, and a
       // successful read (retried on reconnect) clears the flag.
-      if (isProvisionalRef.current) return optimistic;
+      if (isProvisionalRef.current) {
+        hasProvisionalEditsRef.current = true;
+        return optimistic;
+      }
       storage.cacheOnboarding(userId, optimistic);
       const result = await enqueueUpdate(
         withoutServerFields(optimistic),

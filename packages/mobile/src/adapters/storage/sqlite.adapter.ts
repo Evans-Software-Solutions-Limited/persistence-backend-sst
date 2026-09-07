@@ -2234,6 +2234,17 @@ ${indentSyncQueueDdl(12)}
         `DELETE FROM cached_workout_history WHERE user_id = ? AND workout_id = ?`,
         [userId, workoutId],
       );
+      // ⚠ INVARIANT: the cached quota counts every workout the user CREATED
+      // (mirroring the server's `COUNT(*) WHERE created_by = userId`), so
+      // `createWorkoutCommand` increments for all of them — including
+      // coach-authored rows that deliberately never enter the `mine` slice.
+      // The decrement below only fires when the row is found in a slice
+      // payload. Those two agree today because the only delete affordance is
+      // the owner long-press in `WorkoutsListContainer`, and everything
+      // reachable there is in `mine`. Add a delete path for a row that is NOT
+      // in `mine` (a coach-authored workout, a loadout variation) and the
+      // count will ratchet up without coming down, reproducing the lock this
+      // fix removed — decrement against the `mine` quota there too.
       // List slices store full payloads; rewrite the slice without the row.
       const slices = db.getAllSync(
         `SELECT type, payload, quota, synced_at FROM cached_workouts WHERE user_id = ?`,
