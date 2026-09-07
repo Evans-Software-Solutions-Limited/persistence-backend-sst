@@ -40,6 +40,8 @@ jest.mock("@/adapters/api", () => ({
 
 // eslint-disable-next-line import/first
 import { HabitSetupContainer } from "@/ui/containers/HabitSetupContainer";
+// eslint-disable-next-line import/first
+import { useFuelSheets } from "@/state/fuel-sheets";
 
 const USER = "user-1";
 
@@ -190,6 +192,69 @@ describe("HabitSetupContainer (self)", () => {
     await waitFor(() => expect(captured.props).not.toBeNull());
     act(() => props().onAdjustNutrition());
     expect(mockPush).toHaveBeenCalledWith("/(onboarding)/fuel-targets");
+  });
+
+  it("picks up a new Calories target after the Fuel editor saves", async () => {
+    // The detour route deliberately keeps this screen MOUNTED to preserve the
+    // habit draft, so there is no remount to refetch on. The target is
+    // resolved server-side from `daily_kcal`, so only a network refresh can
+    // see the new value — a cache re-read returns byte-identical rows, which
+    // is why the first attempt at this fix was inert.
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    api.habitConfigs = [
+      {
+        category: "calories",
+        enabled: true,
+        goalId: null,
+        assignedByCoach: false,
+        locked: false,
+        targetValue: 2000,
+        unit: "kcal",
+        period: "day",
+        completionRule: "at_least",
+        daysPerWeek: 7,
+        tolerancePct: 10,
+        pending: null,
+      },
+    ];
+
+    render(<HabitSetupContainer onboarding />, {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <AdapterProvider adapters={makeAdapters(api, storage)}>
+          {children}
+        </AdapterProvider>
+      ),
+    });
+    await waitFor(() => expect(captured.props).not.toBeNull());
+    await waitFor(() =>
+      expect(props().configs.calories.targetValue).toBe(2000),
+    );
+
+    // The Fuel editor saves a new target and ticks the store it already ticks.
+    api.habitConfigs = [
+      {
+        category: "calories",
+        enabled: true,
+        goalId: null,
+        assignedByCoach: false,
+        locked: false,
+        targetValue: 2600,
+        unit: "kcal",
+        period: "day",
+        completionRule: "at_least",
+        daysPerWeek: 7,
+        tolerancePct: 10,
+        pending: null,
+      },
+    ];
+    await act(async () => {
+      useFuelSheets.getState().notifyMutated();
+    });
+
+    await waitFor(() =>
+      expect(props().configs.calories.targetValue).toBe(2600),
+    );
   });
 
   it("surfaces deferredChangesPending when a loaded config has a pending change", async () => {

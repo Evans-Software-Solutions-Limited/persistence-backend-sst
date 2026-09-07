@@ -290,7 +290,12 @@ export function HabitSetupContainer({
   const configureMutate = configure.mutate;
   const disableMutate = disable.mutate;
   const reloadSelfConfig = selfConfig.reload;
+  const refreshSelfConfig = selfConfig.refresh;
   const refreshClientConfig = clientConfig.refresh;
+  // Read inside the post-refresh callback, where `configsList` from this
+  // render is already stale.
+  const selfConfigRef = useRef(configsList);
+  selfConfigRef.current = configsList;
 
   /**
    * Re-read the config after the Fuel targets are edited.
@@ -313,8 +318,24 @@ export function HabitSetupContainer({
     if (isCoachView) return;
     if (fuelRev === seenFuelRev.current) return;
     seenFuelRev.current = fuelRev;
-    reloadSelfConfig();
-  }, [fuelRev, isCoachView, reloadSelfConfig]);
+    // `refresh`, NOT `reload`: `reload` only re-reads the cache, and
+    // `setTargetCommand` writes `cached_nutrition_target` — never
+    // `cached_habit_configs` — so a cache re-read returns byte-identical rows.
+    // Only the server recomputes this value.
+    void refreshSelfConfig({ silent: true }).then(() => {
+      // Re-seeding the draft is not enough on its own: reaching the editor
+      // requires toggling Calories ON, which dirties the draft, and the
+      // re-seed guard above deliberately preserves a dirty draft. The target
+      // is server-owned and read-only in this UI, so patching just that field
+      // cannot clobber a user edit — there is no user edit of it to clobber.
+      const refreshed = selfConfigRef.current.find(
+        (config) => config.category === "calories",
+      );
+      if (refreshed) {
+        patchDraft("calories", { targetValue: refreshed.targetValue });
+      }
+    });
+  }, [fuelRev, isCoachView, refreshSelfConfig, patchDraft]);
 
   // Commit the draft: one write per category that diverges from the baseline.
   //  - draft enabled            → configure PUT (enable/edit).

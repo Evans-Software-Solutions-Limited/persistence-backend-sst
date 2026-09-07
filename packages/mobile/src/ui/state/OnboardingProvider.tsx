@@ -215,10 +215,22 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
         // A server that answered with an error is different. That IS evidence
         // the account read is broken, and replaying onboarding over real
         // progress could clobber it — so keep the error wall for that.
-        if (cached) {
-          setState(cached);
-          setLoadFailure({ userId, error: remote.error });
-          return;
+        //
+        // ⚠ `cached` was read BEFORE the await and must not be used here.
+        // `isLoading` now clears as soon as there is anything to route on, so
+        // the journey page is interactive while this read is in flight — and
+        // the reconnect retry fires exactly that read mid-journey. Writing the
+        // pre-await snapshot back would roll live progress backwards, and the
+        // next `persist` would then mirror and upload the rollback.
+        const liveState =
+          stateRef.current?.userId === userId ? stateRef.current : null;
+        if (!isProvisionalRef.current) {
+          const localNow = liveState ?? storage.getCachedOnboarding(userId);
+          if (localNow) {
+            setState(localNow);
+            setLoadFailure({ userId, error: remote.error });
+            return;
+          }
         }
         // No mirror and the server was never reached: seed a journey so the
         // user is not walled off, but treat it as PROVISIONAL. It is a guess
@@ -241,9 +253,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
         // flag with it; never one without the other.
         const unreachable = isUnreachableError(remote.error);
         const keepProvisional =
-          unreachable &&
-          hasProvisionalEditsRef.current &&
-          stateRef.current?.userId === userId;
+          unreachable && hasProvisionalEditsRef.current && liveState !== null;
         isProvisionalRef.current = unreachable;
         if (!keepProvisional) {
           hasProvisionalEditsRef.current = false;
@@ -259,13 +269,18 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
       // writes the reset over it. An UNTOUCHED seed is not promoted: it is
       // guesswork, and letting its defaults compete would put back the
       // clobber that keeping it out of the mirror was protecting against.
-      const provisional =
-        isProvisionalRef.current &&
-        hasProvisionalEditsRef.current &&
-        stateRef.current?.userId === userId
-          ? stateRef.current
-          : null;
-      const local = cached ?? provisional;
+      //
+      // Same rule as the failure branch: re-derive AFTER the await. The
+      // pre-await `cached` snapshot is stale the moment the user advances a
+      // page during the read, and taking it would overwrite both the mirror
+      // and the server with the older state.
+      const liveState =
+        stateRef.current?.userId === userId ? stateRef.current : null;
+      const local = isProvisionalRef.current
+        ? hasProvisionalEditsRef.current
+          ? liveState
+          : null
+        : (liveState ?? storage.getCachedOnboarding(userId));
       // A real answer supersedes any provisional seed, so local writes may
       // reach the mirror and the server again from here.
       isProvisionalRef.current = false;
