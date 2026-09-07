@@ -1,4 +1,4 @@
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useCampaign } from "./campaign";
 import {
   FOUNDING_COPY,
@@ -50,13 +50,17 @@ function PlanCard({ plan, onChoose, disabled }: PlanCardProps) {
         {formatPrice(plan.priceMinor)} · {plan.termLabel}
       </strong>
       <p>{plan.blurb}</p>
+      {/* The price is ON the button (LANDING_PAGE.md § 4) so the click is
+          informed; the tier is in the accessible name, which the visible
+          label alone would not carry between two cards. */}
       <button
         type="button"
         className="btn btn-fill"
         disabled={disabled}
+        aria-label={`${plan.tierLabel}, ${plan.termLabel} — ${formatPrice(plan.priceMinor)}`}
         onClick={() => onChoose(plan)}
       >
-        {FOUNDING_COPY.chooseCta} {plan.tierLabel} · {plan.termLabel}
+        {plan.termLabel} — {formatPrice(plan.priceMinor)}
       </button>
     </article>
   );
@@ -76,6 +80,21 @@ export function FoundingPlans({ soldOut = false }: FoundingPlansProps) {
   const [hp, setHp] = useState("");
   const [turnstileToken, setTurnstileToken] = useState("");
   const turnstileRef = useRef<TurnstileHandle>(null);
+  const emailRef = useRef<HTMLInputElement>(null);
+
+  /**
+   * Choosing a plan REPLACES the cards with the checkout step, so the button
+   * the buyer just pressed leaves the DOM and focus falls back to `<body>` —
+   * their next Tab would restart at the top of the page. Move it to the email
+   * field, as LANDING_PAGE.md § 6 specifies.
+   *
+   * In an effect rather than in the click handler because the input does not
+   * exist until the render `setChosen` triggers has committed. Guarded on
+   * `chosen` so going back to the cards does not steal focus again.
+   */
+  useEffect(() => {
+    if (chosen) emailRef.current?.focus();
+  }, [chosen]);
 
   const emailOk = isValidEmail(email);
   const submitting = checkout.status === "submitting";
@@ -111,6 +130,7 @@ export function FoundingPlans({ soldOut = false }: FoundingPlansProps) {
   if (soldOut) {
     return (
       <div className="founding-plans-shell">
+        <h2 className="founding-plans-heading">{FOUNDING_COPY.plansHeading}</h2>
         <div className="founding-plans" aria-label={FOUNDING_COPY.plansLabel}>
           {FOUNDING_PLANS.map((plan) => (
             <PlanCard
@@ -131,6 +151,7 @@ export function FoundingPlans({ soldOut = false }: FoundingPlansProps) {
   if (!chosen) {
     return (
       <div className="founding-plans-shell">
+        <h2 className="founding-plans-heading">{FOUNDING_COPY.plansHeading}</h2>
         <div className="founding-plans" aria-label={FOUNDING_COPY.plansLabel}>
           {FOUNDING_PLANS.map((plan) => (
             <PlanCard
@@ -141,6 +162,7 @@ export function FoundingPlans({ soldOut = false }: FoundingPlansProps) {
             />
           ))}
         </div>
+        <p className="founding-plans-caption">{FOUNDING_COPY.plansCaption}</p>
       </div>
     );
   }
@@ -152,17 +174,24 @@ export function FoundingPlans({ soldOut = false }: FoundingPlansProps) {
       onSubmit={onSubmit}
       noValidate
     >
-      <h2>{FOUNDING_COPY.emailStepHeading}</h2>
-      <p className="founding-chosen" aria-live="polite">
+      {/* The chosen plan IS the heading (LANDING_PAGE.md § 5.6).
+          Deliberately NOT an `aria-live` region: this element is inserted
+          together with its own content, and a live region that did not exist
+          before the mutation is not announced by NVDA, JAWS or VoiceOver. What
+          actually tells a screen-reader user where they are is the focus move
+          to the email field below (§ 6), which reads this heading as the
+          field's group context. */}
+      <h2 className="founding-chosen">
         {chosen.tierLabel} · {chosen.termLabel} ·{" "}
         {formatPrice(chosen.priceMinor)}
-      </p>
+      </h2>
       <p>{FOUNDING_COPY.emailStepBody}</p>
       <div className="lead-row">
         <input
           type="email"
           className="lead-input"
           placeholder="you@email.com"
+          ref={emailRef}
           aria-label={FOUNDING_COPY.emailLabel}
           value={email}
           onChange={(e) => setEmail(e.target.value)}

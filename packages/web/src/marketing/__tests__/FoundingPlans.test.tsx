@@ -2,6 +2,7 @@ import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { renderPage } from "@/test-utils";
 import { FoundingPlans } from "../FoundingPlans";
 import { CampaignContext } from "../campaign";
+import { FOUNDING_COPY } from "../foundingOffer";
 import * as metaPixel from "@/lib/metaPixel";
 import { setConsent } from "@/lib/consent";
 
@@ -32,7 +33,7 @@ function renderPlans(campaign?: string) {
 
 async function choosePremium6() {
   fireEvent.click(
-    await screen.findByRole("button", { name: "Choose Premium · 6 months" }),
+    await screen.findByRole("button", { name: "Premium, Six months — £30" }),
   );
   return screen.findByLabelText("Founding checkout");
 }
@@ -72,17 +73,15 @@ describe("FoundingPlans", () => {
     stubFetch();
     renderPlans();
     await choosePremium6();
-    expect(screen.getByText("Premium · 6 months · £30")).toBeDefined();
+    expect(screen.getByText("Premium · Six months · £30")).toBeDefined();
   });
 
   it("lets the buyer go back and pick a different term", async () => {
     stubFetch();
     renderPlans();
     await choosePremium6();
-    fireEvent.click(
-      screen.getByRole("button", { name: "Choose a different plan" }),
-    );
-    expect(await screen.findByLabelText("Founding plans")).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Change plan" }));
+    expect(await screen.findByLabelText("Founding prices")).toBeDefined();
     expect(screen.queryByLabelText("Email address")).toBeNull();
   });
 
@@ -210,11 +209,45 @@ describe("FoundingPlans", () => {
     expect(lastBody(mock)).toHaveProperty("hp", "");
   });
 
-  it("states the immediate-supply position before the buyer pays", async () => {
+  it("states the cancellation position, verbatim, before the buyer pays", async () => {
+    // Pinned to the whole sentence on purpose. The earlier assertion was
+    // /14-day right to cancel/i, which matches both "LOSING the 14-day right"
+    // and "you KEEP a 14-day right" — it survived that exact reversal without
+    // a murmur. This is legally operative text; the test has to see the words
+    // that flip its meaning.
     stubFetch();
     renderPlans();
     await choosePremium6();
-    expect(screen.getByText(/14-day right to cancel/i)).toBeDefined();
+    expect(screen.getByText(FOUNDING_COPY.termsNote)).toBeDefined();
+    expect(FOUNDING_COPY.termsNote).toMatch(
+      /You keep a 14-day right to cancel for a full refund, unless you've started using the app in that time\./,
+    );
+  });
+
+  it("moves focus to the email field when a plan is chosen", async () => {
+    // Choosing REPLACES the cards, so the button that was just pressed leaves
+    // the DOM and focus falls back to <body> — a keyboard user's next Tab
+    // restarts at the top of the page, past the field they were sent here to
+    // fill in. LANDING_PAGE.md § 6 requires the move.
+    stubFetch();
+    renderPlans();
+    await choosePremium6();
+    expect(document.activeElement).toBe(
+      screen.getByLabelText(FOUNDING_COPY.emailLabel),
+    );
+  });
+
+  it("keeps the heading and caption with the cards they describe", async () => {
+    // Both once rendered as siblings AROUND this component, so choosing a plan
+    // left "Pick your access. Pay once." sitting above the email form and the
+    // price caption sitting below it, captioning a form neither describes.
+    stubFetch();
+    renderPlans();
+    expect(await screen.findByText(FOUNDING_COPY.plansHeading)).toBeDefined();
+    expect(screen.getByText(FOUNDING_COPY.plansCaption)).toBeDefined();
+    await choosePremium6();
+    expect(screen.queryByText(FOUNDING_COPY.plansHeading)).toBeNull();
+    expect(screen.queryByText(FOUNDING_COPY.plansCaption)).toBeNull();
   });
 
   it("asks for no marketing consent — buying is not a sign-up", async () => {
@@ -233,12 +266,10 @@ describe("FoundingPlans", () => {
     typeEmail("buyer@example.test");
     fireEvent.submit(form);
     await screen.findByRole("alert");
-    fireEvent.click(
-      screen.getByRole("button", { name: "Choose a different plan" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Change plan" }));
     fireEvent.click(
       await screen.findByRole("button", {
-        name: "Choose Premium+ · 12 months",
+        name: "Premium+, One year — £100",
       }),
     );
     expect(screen.queryByRole("alert")).toBeNull();
@@ -249,7 +280,7 @@ describe("FoundingPlans", () => {
     renderPlans();
     fireEvent.click(
       await screen.findByRole("button", {
-        name: "Choose Premium+ · 12 months",
+        name: "Premium+, One year — £100",
       }),
     );
     const form = await screen.findByLabelText("Founding checkout");
@@ -298,7 +329,7 @@ describe("FoundingPlans", () => {
   it("does nothing at all when a sold-out plan button is clicked", () => {
     renderPage(<FoundingPlans soldOut />, { route: "/founding" });
     fireEvent.click(
-      screen.getByRole("button", { name: "Choose Premium · 6 months" }),
+      screen.getByRole("button", { name: "Premium, Six months — £30" }),
     );
     expect(screen.queryByLabelText("Founding checkout")).toBeNull();
   });
@@ -332,10 +363,9 @@ describe("FoundingPlans", () => {
       renderPlans();
       const form = await choosePremium6();
       typeEmail("buyer@example.test");
-      expect(screen.getByRole("button", { name: /continue to payment/i })).toHaveProperty(
-        "disabled",
-        true,
-      );
+      expect(
+        screen.getByRole("button", { name: /continue to payment/i }),
+      ).toHaveProperty("disabled", true);
       fireEvent.submit(form);
       expect(
         await screen.findByText(/security check hasn't loaded/i),
@@ -356,6 +386,6 @@ describe("FoundingPlans", () => {
     renderPage(<FoundingPlans soldOut />, { route: "/founding" });
     const buttons = screen.getAllByRole("button");
     expect(buttons.every((b) => b.hasAttribute("disabled"))).toBe(true);
-    expect(screen.getByRole("status").textContent).toMatch(/taken/i);
+    expect(screen.getByRole("status").textContent).toMatch(/just sold out/i);
   });
 });

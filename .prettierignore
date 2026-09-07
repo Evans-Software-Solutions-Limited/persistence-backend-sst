@@ -35,10 +35,16 @@ packages/seed/data/off-uk.jsonl.gz
 # the marketing scratch dir. Appended by hand every session; reflowing them
 # would just re-break the whole-tree `prettier --check .` (the staging deploy
 # runs it over the full checkout) on the next manual edit. Not code.
+#
+# `/marketing/` is ANCHORED. These patterns use gitignore semantics, where a
+# bare `marketing/` matches a directory of that name at ANY depth — which
+# silently exempted all 48 source files in packages/web/src/marketing (the
+# whole founding-offer and campaign surface) from the format gate, while
+# `prettier --check .` still reported the tree clean.
 STATE.md
 STATE-ARCHIVE.md
 app-store-tracker.html
-marketing/
+/marketing/
 
 # Cowork mirrors session outputs here at the repo root. Untracked working
 # copies of documents whose home is specs/ — never committed, never reflowed.

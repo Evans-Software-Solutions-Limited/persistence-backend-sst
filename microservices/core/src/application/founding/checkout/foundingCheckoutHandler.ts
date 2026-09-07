@@ -77,15 +77,21 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const CAMPAIGN_SLUG_RE = /^[a-z0-9-]{1,32}$/;
 
 /**
- * Consumer-facing terms text Stripe shows on the Checkout page.
+ * Consumer-facing terms text Stripe shows on the Checkout page, transcribed
+ * from `LANDING_PAGE.md` § 5.7.
  *
- * PLACEHOLDER. The approved wording arrives with `LANDING_PAGE.md`; this is a
- * factually correct stand-in so the field is never empty in a stage that goes
- * live early. It states the two things a UK distance sale must: that supply
- * begins immediately, and what that does to the 14-day cancellation right.
+ * This is the sentence the buyer TICKS, so it is the one that forms the
+ * contract. It must not drift from `FOUNDING_COPY.termsNote` (§ 5.6) on the
+ * page that sent them here — the earlier placeholder said the buyer LOST the
+ * 14-day right, while the page said they keep it, which is exactly the
+ * contradiction a distance-selling complaint is made of. Change the two
+ * together or not at all.
+ *
+ * ⚠ § 5.7 carries a `[confirm with solicitor]` marker, and § 14.1 lists that
+ * confirmation as deploy-blocking. Approved as WORDING, not yet as advice.
  */
-export const CHECKOUT_TERMS_PLACEHOLDER =
-  "Access starts as soon as your payment clears, so you agree to immediate supply and to losing the 14-day right to cancel once it does. This is a one-off payment for a fixed term — it does not renew.";
+export const CHECKOUT_TERMS =
+  "I agree to the Persistence terms and ask for my access to start when I sign up. I understand I can cancel within 14 days for a full refund unless I've started using the app.";
 
 export interface CheckoutRefusal {
   status: number;
@@ -406,7 +412,7 @@ export const foundingCheckoutHandler = new Elysia()
           consent_collection: { terms_of_service: "required" },
           custom_text: {
             terms_of_service_acceptance: {
-              message: CHECKOUT_TERMS_PLACEHOLDER,
+              message: CHECKOUT_TERMS,
             },
           },
           metadata: {

@@ -90,7 +90,11 @@ vi.mock("../../../repositories/foundingCheckoutRepository", () => ({
 }));
 
 import { resetRateLimits } from "../../../leads/rateLimit";
-import { foundingCheckoutHandler, maskEmail } from "../foundingCheckoutHandler";
+import {
+  CHECKOUT_TERMS,
+  foundingCheckoutHandler,
+  maskEmail,
+} from "../foundingCheckoutHandler";
 import { FOUNDING_OFFER_CLOSES } from "../../foundingOffer";
 
 interface Handler {
@@ -271,13 +275,25 @@ describe("POST /founding/checkout", () => {
     vi.useRealTimers();
   });
 
-  it("requires terms acceptance and states the immediate-supply position", async () => {
+  it("requires terms acceptance and states the cancellation position", async () => {
     const args = await post(VALID).then(
       () => stripeMocks.create.mock.calls[0]![0] as Record<string, never>,
     );
     expect(args.consent_collection).toEqual({ terms_of_service: "required" });
-    expect(JSON.stringify(args.custom_text)).toMatch(
-      /immediate supply|14-day/i,
+    expect(JSON.stringify(args.custom_text)).toContain(CHECKOUT_TERMS);
+  });
+
+  it("ticks the buyer into the SAME cancellation position the page sold them", () => {
+    // LANDING_PAGE.md § 5.7, and it must agree with `FOUNDING_COPY.termsNote`
+    // (§ 5.6) on the page that sent the buyer here. The two strings live in
+    // different packages and cannot import each other, so each is pinned to
+    // the doc; this is the half that forms the contract.
+    //
+    // The earlier assertion was /immediate supply|14-day/i, which matched the
+    // old placeholder saying the buyer LOSES the right and would equally have
+    // matched anything else mentioning "14-day".
+    expect(CHECKOUT_TERMS).toBe(
+      "I agree to the Persistence terms and ask for my access to start when I sign up. I understand I can cancel within 14 days for a full refund unless I've started using the app.",
     );
   });
 

@@ -7,6 +7,10 @@ const banner = () => screen.queryByRole("region", { name: "Founding offer" });
 
 describe("FoundingBanner", () => {
   beforeEach(() => {
+    // The banner dismisses into sessionStorage (LANDING_PAGE.md § 5.1), which
+    // jsdom keeps for the whole file — without this, the first test that
+    // dismisses the banner hides it from every test after it.
+    window.sessionStorage.clear();
     window.localStorage.clear();
     vi.useRealTimers();
   });
@@ -16,7 +20,9 @@ describe("FoundingBanner", () => {
     renderPage(<FoundingBanner />, { route: "/" });
     expect(banner()).not.toBeNull();
     expect(
-      screen.getByRole("link", { name: /see the plans/i }).getAttribute("href"),
+      screen
+        .getByRole("link", { name: /see founding prices/i })
+        .getAttribute("href"),
     ).toBe("/founding");
   });
 
@@ -40,7 +46,7 @@ describe("FoundingBanner", () => {
   it("is dismissible, and stays dismissed on the next visit", () => {
     renderPage(<FoundingBanner />, { route: "/" });
     fireEvent.click(
-      screen.getByRole("button", { name: /dismiss the founding offer/i }),
+      screen.getByRole("button", { name: /hide founding offer banner/i }),
     );
     expect(banner()).toBeNull();
 
@@ -48,10 +54,92 @@ describe("FoundingBanner", () => {
     expect(banner()).toBeNull();
   });
 
+  it("forgets the dismissal when the browsing session ends", () => {
+    // LANDING_PAGE.md § 5.1 specifies sessionStorage. The offer runs for
+    // weeks; in localStorage one idle dismissal would retire the banner for
+    // that browser for the entire window, which is not what "dismiss" means
+    // on a strip advertising a deadline.
+    renderPage(<FoundingBanner />, { route: "/" });
+    fireEvent.click(
+      screen.getByRole("button", { name: /hide founding offer banner/i }),
+    );
+    expect(window.sessionStorage.length).toBe(1);
+    expect(
+      window.localStorage.getItem("persistence.founding-banner-dismissed"),
+    ).toBeNull();
+
+    // Ending the session is what clears it — nothing else does.
+    window.sessionStorage.clear();
+    renderPage(<FoundingBanner />, { route: "/" });
+    expect(banner()).not.toBeNull();
+  });
+
+  describe("the room it reserves", () => {
+    /**
+     * The nav is fixed at `top: var(--m-topbar-h, 0px)` and `.mkt` carries the
+     * matching padding, so this variable is the whole of what keeps the strip
+     * and the nav out of one another's band.
+     */
+    const topbar = () =>
+      document.documentElement.style.getPropertyValue("--m-topbar-h");
+
+    it("reserves its own height, and gives the room back when dismissed", () => {
+      const height = vi
+        .spyOn(HTMLElement.prototype, "offsetHeight", "get")
+        .mockReturnValue(44);
+      renderPage(<FoundingBanner />, { route: "/" });
+      expect(topbar()).toBe("44px");
+
+      fireEvent.click(
+        screen.getByRole("button", { name: /hide founding offer banner/i }),
+      );
+      expect(topbar()).toBe("");
+      height.mockRestore();
+    });
+
+    it("reserves nothing on the page it points at", () => {
+      renderPage(<FoundingBanner />, { route: "/founding" });
+      expect(topbar()).toBe("");
+    });
+
+    it("re-measures when the strip changes height", () => {
+      // Copy wraps to a second line on a narrow viewport and shifts again when
+      // the display font swaps in, so a height read once at mount goes stale.
+      let notify: (() => void) | undefined;
+      const observe = vi.fn();
+      const disconnect = vi.fn();
+      vi.stubGlobal(
+        "ResizeObserver",
+        class {
+          constructor(cb: () => void) {
+            notify = cb;
+          }
+          observe = observe;
+          disconnect = disconnect;
+        },
+      );
+      const height = vi
+        .spyOn(HTMLElement.prototype, "offsetHeight", "get")
+        .mockReturnValue(44);
+
+      renderPage(<FoundingBanner />, { route: "/" });
+      expect(observe).toHaveBeenCalledTimes(1);
+      expect(topbar()).toBe("44px");
+
+      height.mockReturnValue(72);
+      notify?.();
+      expect(topbar()).toBe("72px");
+
+      height.mockRestore();
+      vi.unstubAllGlobals();
+    });
+  });
+
   it("still renders when the browser refuses storage", () => {
     // A locked-down browser should lose the dismissal, not the page.
-    // Scoped to this banner's own key: the theme provider above it uses
-    // localStorage too, and breaking that would test the harness, not this.
+    // Scoped to this banner's own key, and spied on `Storage.prototype` so it
+    // covers sessionStorage and localStorage alike: the theme provider above
+    // it uses storage too, and breaking that would test the harness, not this.
     const blocked = (key: string) => {
       if (key.startsWith("persistence.founding")) throw new Error("blocked");
       return null;
@@ -68,7 +156,7 @@ describe("FoundingBanner", () => {
     expect(banner()).not.toBeNull();
     expect(() =>
       fireEvent.click(
-        screen.getByRole("button", { name: /dismiss the founding offer/i }),
+        screen.getByRole("button", { name: /hide founding offer banner/i }),
       ),
     ).not.toThrow();
     getItem.mockRestore();

@@ -135,7 +135,9 @@ export function FoundingThanks() {
     <MarketingLayout>
       <section className="founding-hero">
         <div className="c founding-shell">
-          <span className="kicker c-accent">{FOUNDING_COPY.kicker}</span>
+          <span className="kicker c-accent">
+            {FOUNDING_COPY.kickerNoDeadline}
+          </span>
           <h1>
             {noSession
               ? FOUNDING_COPY.thanks.unfinishedHeading

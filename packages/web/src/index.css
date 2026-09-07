@@ -164,11 +164,14 @@
     @apply font-sans;
     @apply font-sans;
   }
-  /* Smooth in-page anchor scrolling for the marketing pages (nav sits at 72px);
-     scoped so it doesn't alter /privacy, /terms, /login. */
+  /* Smooth in-page anchor scrolling for the marketing pages (72px nav + 16px
+     of breathing room); scoped so it doesn't alter /privacy, /terms, /login.
+     The founding banner pushes the nav down by its own measured height, so
+     jump targets have to clear that too — without the term, every `#anchor`
+     lands behind the nav for as long as the banner is up. */
   html:has(.mkt) {
     scroll-behavior: smooth;
-    scroll-padding-top: 88px;
+    scroll-padding-top: calc(88px + var(--m-topbar-h, 0px));
   }
   @media (prefers-reduced-motion: reduce) {
     html:has(.mkt) {
