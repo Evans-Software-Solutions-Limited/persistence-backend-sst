@@ -38,35 +38,47 @@ import { aiJobQueue } from "./jobs";
 //
 // See docs/mobile-release-pipeline.md and packages/api-utils/src/domains/.
 export const coreAPI = new sst.aws.ApiGatewayV2("api-core", {
-  // CORS is owned by the LAMBDA, not the gateway. This must stay `false`.
+  // CORS is owned by the GATEWAY. Do not set `cors: false`.
   //
-  // SST defaults an unspecified `cors` to
-  // `{ allowHeaders: ["*"], allowMethods: ["*"], allowOrigins: ["*"] }`
-  // (`normalizeCors()` in .sst/platform/…/apigatewayv2.ts), and an HTTP API
-  // with CORS configured does two things that break this API:
+  // Three attempts got this wrong, so the whole reasoning is here:
   //
-  //  1. it answers preflight `OPTIONS` ITSELF, without invoking the
-  //     integration — so the `.options()` routes in `leadsRoutes` /
-  //     `foundingCheckoutHandler` and the `/admin/*` policy in `adminCors`
-  //     never run; and
-  //  2. it DISCARDS CORS headers returned by the integration — so a
-  //     per-route policy cannot exist at all.
+  //  1. Unset. SST defaults to `{ allowHeaders: ["*"], allowMethods: ["*"],
+  //     allowOrigins: ["*"] }`. Per the Fetch spec a `*` in
+  //     `Access-Control-Allow-Headers` matches every header name EXCEPT
+  //     `Authorization`, which must be named explicitly — so the admin panel
+  //     (which sends `Authorization: Bearer …`) failed every preflight while
+  //     `/leads` (Content-Type only) worked. That asymmetry was the clue.
   //
-  // And the default is not merely redundant, it is wrong: per the Fetch spec a
-  // `*` in `Access-Control-Allow-Headers` matches every header name EXCEPT
-  // `Authorization`, which has to be named explicitly. That is why the admin
-  // panel could not reach a single endpoint while `/leads` (Content-Type only)
-  // worked — the gateway's own `*` answer failed the preflight for
-  // `authorization`.
+  //  2. `cors: false`. This does NOT remove CORS. `normalizeCors()` returns
+  //     `{}`, and an empty `corsConfiguration` still counts as "CORS
+  //     configured" on an HTTP API — which means the gateway keeps STRIPPING
+  //     `access-control-*` headers returned by the integration while adding
+  //     none itself. That broke CORS on every route, including the public
+  //     `/subscription-tiers` and `/founding/availability` the marketing site
+  //     reads. Observable on the wire as `vary` and `cache-control` surviving
+  //     while only the `access-control-*` headers disappear.
   //
-  // With `cors: false` the `$default` route below receives OPTIONS like any
-  // other method and Elysia answers it. Every browser-facing route therefore
-  // has to set its own headers: `/admin/*` via `adminCors`, `/leads/*` and
-  // `/store-click` and `/founding/checkout*` via their own `withCors`, and
-  // `/subscription-tiers` + `/founding/availability` via `publicCors`. A new
-  // browser-facing route with none of those will fail in the browser and
-  // nowhere else, so add it there at the same time.
-  cors: false,
+  //  3. Setting the headers in the Lambda. Cannot work while the gateway has
+  //     any CORS configuration, for the same stripping reason. The `withCors`
+  //     helpers and `.options()` routes in `leadsRoutes` /
+  //     `foundingCheckoutHandler` predate this comment and are inert for the
+  //     same reason — they are not load-bearing, whatever they look like.
+  //
+  // Hence: configure it here, once, and name `authorization` explicitly.
+  //
+  // `*` rather than one origin because every consumer is either anonymous
+  // (`/leads`, `/founding/*`, `/subscription-tiers`) or authenticates with a
+  // bearer token in a header. No cookies are used and `allowCredentials` is
+  // deliberately NOT set, so a page on another origin can issue a request but
+  // cannot attach a victim's credentials to it, and cannot read a token it
+  // does not already have. A move to cookie auth would have to revisit this.
+  cors: {
+    allowOrigins: ["*"],
+    allowMethods: ["GET", "HEAD", "OPTIONS", "POST", "PUT", "PATCH", "DELETE"],
+    // `authorization` is the whole point — see (1) above.
+    allowHeaders: ["authorization", "content-type"],
+    maxAge: "1 day",
+  },
   domain:
     coreApiDomain != null && hostedZoneId
       ? {
