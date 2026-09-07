@@ -1,9 +1,15 @@
 import { COMPACT_REORDER_ROW_HEIGHT } from "@/ui/components/workouts/CompactReorderRow";
 import {
-  COMPACT_REORDER_GAP,
-  COMPACT_REORDER_PITCH,
+  ACTIVE_SESSION_REORDER_GAP,
+  WORKOUT_EDITOR_REORDER_GAP,
   compactReorderItemLayout,
+  editorCompactReorderItemLayout,
+  makeCompactReorderItemLayout,
 } from "../compactReorderLayout";
+
+const COMPACT_REORDER_GAP = ACTIVE_SESSION_REORDER_GAP;
+const COMPACT_REORDER_PITCH =
+  COMPACT_REORDER_ROW_HEIGHT + ACTIVE_SESSION_REORDER_GAP;
 
 /**
  * The geometry that let ~60 lines of scroll compensation be deleted.
@@ -58,6 +64,29 @@ describe("compactReorderItemLayout", () => {
 
   it("echoes the index back, as FlatList requires", () => {
     expect(compactReorderItemLayout(null, 9).index).toBe(9);
+  });
+
+  it("uses each surface's own spacing, which is not the same", () => {
+    // The active session separates rows with a 16pt container `gap`; the
+    // workout editor with a 10pt separator. Sharing one constant would drift
+    // by 6pt per row on whichever list it was wrong for — the same
+    // accumulating, index-dependent error as the bug being fixed.
+    expect(WORKOUT_EDITOR_REORDER_GAP).not.toBe(ACTIVE_SESSION_REORDER_GAP);
+    expect(compactReorderItemLayout(null, 4).offset).toBe(
+      (COMPACT_REORDER_ROW_HEIGHT + ACTIVE_SESSION_REORDER_GAP) * 4,
+    );
+    expect(editorCompactReorderItemLayout(null, 4).offset).toBe(
+      (COMPACT_REORDER_ROW_HEIGHT + WORKOUT_EDITOR_REORDER_GAP) * 4,
+    );
+  });
+
+  it("keeps the row height fixed whatever the gap", () => {
+    // Only the pitch varies by surface; the row itself is one known height.
+    for (const gap of [0, 10, 16, 40]) {
+      expect(makeCompactReorderItemLayout(gap)(null, 3).length).toBe(
+        COMPACT_REORDER_ROW_HEIGHT,
+      );
+    }
   });
 
   it("does not depend on the data it is handed", () => {

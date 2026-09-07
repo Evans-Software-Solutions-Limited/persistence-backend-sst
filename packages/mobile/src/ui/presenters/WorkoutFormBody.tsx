@@ -1,5 +1,5 @@
 import { Text, View } from "@tamagui/core";
-import React from "react";
+import React, { useState } from "react";
 import {
   AccessibilityInfo,
   KeyboardAvoidingView,
@@ -14,6 +14,8 @@ import {
   ScaleDecorator,
   type RenderItemParams,
 } from "react-native-draggable-flatlist";
+import { CompactReorderRow } from "@/ui/components/workouts/CompactReorderRow";
+import { editorCompactReorderItemLayout } from "@/ui/presenters/session/compactReorderLayout";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AddExercisePopover } from "@/ui/components/workouts/AddExercisePopover";
@@ -168,6 +170,20 @@ export function WorkoutFormBody({
   const supersetLetters = buildSupersetLetterMap(
     exercises.map((ex) => ex.superset_group),
   );
+  /**
+   * Reorder mode is entered and left DELIBERATELY — by the Reorder control
+   * below, or by holding a card's grip — and never by the drag gesture.
+   *
+   * `react-native-draggable-flatlist` measures the dragged cell when a drag
+   * begins and animates from those measurements, so it wants a list whose
+   * geometry is settled and uniform (its own example is fixed-height rows).
+   * This editor was dragging full exercise cards of wildly different heights,
+   * which is why reordering from part-way down the list fought the finger.
+   * Collapsing to fixed rows FIRST means the library measures a list that is
+   * already uniform, and `getItemLayout` then describes it exactly.
+   */
+  const [isReordering, setIsReordering] = useState(false);
+
   const reorderBlocks: WorkoutFormExercise[][] = [];
   const seenReorderGroups = new Set<number>();
   for (const exercise of exercises) {
@@ -193,6 +209,8 @@ export function WorkoutFormBody({
     formState.visibility === "public"
       ? [...VISIBILITY_OPTIONS, PUBLIC_READONLY_OPTION]
       : VISIBILITY_OPTIONS;
+
+  const canReorder = reorderBlocks.length > 1;
 
   return (
     <>
@@ -465,6 +483,14 @@ export function WorkoutFormBody({
                         />
                       )}
                       ItemSeparatorComponent={() => <View height={10} />}
+                      // Exact geometry for the uniform compact rows, so the
+                      // list measures nothing. Absent for the full cards,
+                      // which genuinely vary in height.
+                      getItemLayout={
+                        isReordering
+                          ? editorCompactReorderItemLayout
+                          : undefined
+                      }
                       onDragEnd={({ from, to }) => {
                         if (from === to) return;
                         const block = reorderBlocks[from];
@@ -486,6 +512,32 @@ export function WorkoutFormBody({
                         getIndex,
                       }: RenderItemParams<WorkoutFormExercise[]>) => {
                         const blockPosition = (getIndex() ?? 0) + 1;
+                        if (isReordering) {
+                          // Fixed-height rows, so nothing resizes under the
+                          // finger and `getItemLayout` above can describe the
+                          // list exactly. Dragging full cards of wildly
+                          // different heights is what made this unreliable.
+                          const lead = block[0];
+                          return (
+                            <ScaleDecorator activeScale={1.015}>
+                              <CompactReorderRow
+                                exerciseNames={block.map(
+                                  (exercise) => exercise.exercise_name,
+                                )}
+                                position={blockPosition}
+                                total={reorderBlocks.length}
+                                onMove={
+                                  onMoveExercise && lead
+                                    ? (direction) =>
+                                        onMoveExercise(lead.id, direction)
+                                    : undefined
+                                }
+                                onDrag={drag}
+                                isDragging={isActive}
+                              />
+                            </ScaleDecorator>
+                          );
+                        }
                         return (
                           <ScaleDecorator activeScale={1.015}>
                             <View gap={10} opacity={isActive ? 0.96 : 1}>
@@ -545,9 +597,14 @@ export function WorkoutFormBody({
                                               )
                                           : undefined
                                       }
+                                      // ENTERS reorder mode; it does not
+                                      // start a drag. The drag is a second
+                                      // press, on a settled compact list.
                                       onDrag={
-                                        !hasSupersetGroup || isSupersetStart
-                                          ? drag
+                                        (!hasSupersetGroup ||
+                                          isSupersetStart) &&
+                                        canReorder
+                                          ? () => setIsReordering(true)
                                           : undefined
                                       }
                                       isDragging={isActive}
@@ -561,6 +618,66 @@ export function WorkoutFormBody({
                       }}
                     />
                   )}
+
+                  {isReordering ? (
+                    // The only way out. In the same slot the Add Exercise
+                    // button occupies, so the exit is where the eye already
+                    // is.
+                    <Pressable
+                      onPress={() => setIsReordering(false)}
+                      testID="workout-reorder-done"
+                      accessibilityLabel="Done reordering"
+                      style={({ pressed }) => ({
+                        opacity: pressed ? 0.8 : 1,
+                      })}
+                    >
+                      <View
+                        flexDirection="row"
+                        alignItems="center"
+                        justifyContent="center"
+                        gap={8}
+                        marginTop={12}
+                        padding={14}
+                        borderRadius={12}
+                        borderWidth={1.5}
+                        borderColor="$primary"
+                        backgroundColor="$surface"
+                      >
+                        <Text fontFamily="$body" fontSize={14} color="$primary">
+                          Done reordering
+                        </Text>
+                      </View>
+                    </Pressable>
+                  ) : null}
+
+                  {!isReordering && canReorder ? (
+                    <Pressable
+                      onPress={() => setIsReordering(true)}
+                      testID="workout-reorder"
+                      accessibilityLabel="Reorder exercises"
+                      style={({ pressed }) => ({
+                        opacity: pressed ? 0.8 : 1,
+                      })}
+                    >
+                      <View
+                        flexDirection="row"
+                        alignItems="center"
+                        justifyContent="center"
+                        gap={8}
+                        marginTop={12}
+                        padding={14}
+                        borderRadius={12}
+                        borderWidth={1.5}
+                        borderStyle="dashed"
+                        borderColor="$border3"
+                        backgroundColor="$surface"
+                      >
+                        <Text fontFamily="$body" fontSize={14} color="$text2">
+                          Reorder exercises
+                        </Text>
+                      </View>
+                    </Pressable>
+                  ) : null}
 
                   <Pressable
                     onPress={onAddExerciseTap}
