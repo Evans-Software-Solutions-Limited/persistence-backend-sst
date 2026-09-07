@@ -5,6 +5,7 @@ import openapi from "@elysiajs/openapi";
 
 import { captureFatal, initSentry, wrapLambda } from "./shared/sentry";
 import { coreErrorHandler } from "./shared/errorHandler";
+import { fatalCorsHeaders } from "./shared/fatalCors";
 import { exercisesListHandler } from "./application/exercises/list/exercisesListHandler";
 import { exercisesSearchHandler } from "./application/exercises/search/exercisesSearchHandler";
 import { exercisesGetHandler } from "./application/exercises/get/exercisesGetHandler";
@@ -336,9 +337,20 @@ const baseHandler: typeof honoHandler = async (event, context) => {
     // 500 is a fixed shape that's structurally compatible at runtime
     // but doesn't unify with that generic at the type layer. The `as`
     // cast is scoped to this single backstop path.
+    // CORS on the backstop too. `adminGuard` calls `getAuthUser` inside
+    // `.derive`, and a JWKS fetch failing there is one of the errors known to
+    // ESCAPE Elysia's lifecycle and land here — so this is a likely 500 for
+    // the admin panel specifically. Without the header the browser reports an
+    // opaque CORS failure and `adminFetch` never sees the 500 at all, which
+    // turns a readable outage into an unexplainable one.
+    const fatalHeaders: Record<string, string> = {
+      "content-type": "application/json",
+      ...fatalCorsHeaders(event),
+    };
+
     return {
       statusCode: 500,
-      headers: { "content-type": "application/json" },
+      headers: fatalHeaders,
       body: JSON.stringify({
         code: "FATAL",
         error: "Internal server error",

@@ -15,7 +15,13 @@
  */
 export function webOrigin(): string {
   return (
-    process.env.WEB_ORIGIN?.trim() ||
+    // Trailing slashes are stripped because a browser's `Origin` never has
+    // one: `WEB_ORIGIN=https://host/` would refuse the whole admin panel
+    // through a string comparison that never matches, with nothing logged.
+    // Two other consumers already defend against exactly this input
+    // (`foundingInviteEmail.ts`, `admin/adminApi.ts`), which is why it is
+    // handled here rather than assumed away.
+    process.env.WEB_ORIGIN?.trim().replace(/\/+$/, "") ||
     "https://persistence.evans-software-solutions.com"
   );
 }

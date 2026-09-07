@@ -28,6 +28,24 @@ import { adminCorsHeaders, isAllowedAdminOrigin } from "../adminCors";
 const WEB = "https://persistence.evans-software-solutions.com";
 const app = new Elysia().use(adminRoutes);
 
+/**
+ * Every HTTP method the mounted admin routes actually serve.
+ *
+ * Read off the router so the allow-list is checked against reality rather than
+ * against a list somebody remembered to update.
+ */
+function adminMethodsInUse(): string[] {
+  const methods = new Set<string>();
+  for (const route of app.routes) {
+    if (route.path === "/admin" || route.path.startsWith("/admin/")) {
+      methods.add(route.method.toUpperCase());
+    }
+  }
+  methods.delete("OPTIONS");
+  methods.delete("ALL");
+  return [...methods].sort();
+}
+
 const call = (
   method: string,
   path: string,
@@ -61,14 +79,25 @@ describe("the admin preflight", () => {
   });
 
   it("allows every method the panel actually uses", async () => {
-    // `adminFetch` issues GET, POST, PATCH and DELETE. A method missing here
-    // fails only the calls that use it, so a partial list looks fine until
-    // somebody tries to revoke a grant.
+    // Derived from the ROUTES, not from a hand-written list. The earlier
+    // version looped a literal ["GET","POST","PATCH","DELETE"] and so was
+    // vacuous for the one verb that was actually missing: PUT, which is how
+    // `PUT /admin/marketing/plans/:id/metrics` saves the off-platform numbers.
     const res = await call("OPTIONS", "/admin/summary", WEB);
     const allowed = res.headers.get("access-control-allow-methods") ?? "";
-    for (const method of ["GET", "POST", "PATCH", "DELETE"]) {
-      expect(allowed).toContain(method);
+    for (const method of adminMethodsInUse()) {
+      expect(allowed, `${method} is missing from the allow-list`).toContain(
+        method,
+      );
     }
+  });
+
+  it("allows PUT, which the off-platform metrics form uses", async () => {
+    // Named explicitly as well as covered above: this is the verb that was
+    // wrong, and a regression here breaks saving a week's spend and nothing
+    // else, which is easy to miss.
+    const res = await call("OPTIONS", "/admin/summary", WEB);
+    expect(res.headers.get("access-control-allow-methods")).toContain("PUT");
   });
 
   it("refuses to name an origin it does not know", async () => {
@@ -95,6 +124,13 @@ describe("CORS on the admin responses themselves", () => {
     // Without this the page sees a CORS error rather than 401, so
     // `adminFetch` never clears the stored session and the user is stuck on a
     // dead panel instead of being sent back to sign in.
+    //
+    // NOTE: in the real app this is carried by `onRequest`'s
+    // `Object.assign(set.headers, …)` surviving into the error response, NOT
+    // by this plugin's `onError` — `coreErrorHandler` is mounted first on the
+    // root app and Elysia stops at the first error hook that returns a value.
+    // `onError` here is a backstop for a chain without it. The outcome is the
+    // same, which is what this asserts.
     getAuthUserMock.mockRejectedValue(
       Object.assign(new Error("no token"), { status: 401 }),
     );
@@ -138,6 +174,22 @@ describe("CORS on the admin responses themselves", () => {
     expect(res.headers.get("vary")).toBeNull();
   });
 
+  it("does not claim a route that merely starts with the same letters", async () => {
+    // `/administrators` is not an admin route. A prefix test would apply this
+    // policy to it and swallow its preflight; the check is on the path
+    // SEGMENT for that reason.
+    const bare = new Elysia()
+      .use(adminRoutes)
+      .get("/administrators", () => ({ ok: true }));
+    const res = await bare.handle(
+      new Request("http://localhost/administrators", {
+        headers: { origin: WEB },
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get("access-control-allow-origin")).toBeNull();
+  });
+
   it("does not answer a non-admin OPTIONS", async () => {
     const bare = new Elysia()
       .use(adminRoutes)
@@ -168,6 +220,20 @@ describe("the allowed origin", () => {
     // Same-origin and server-to-server callers send no Origin. Echoing
     // anything there would be meaningless at best.
     expect(adminCorsHeaders(undefined)).toEqual({ vary: "Origin" });
+  });
+
+  it("ignores a trailing slash on WEB_ORIGIN", () => {
+    // A browser's `Origin` never has one, so an env value that does would
+    // refuse the entire admin panel through a comparison that never matches,
+    // silently.
+    vi.stubEnv("WEB_ORIGIN", "https://staging.persistence.example/");
+    try {
+      expect(isAllowedAdminOrigin("https://staging.persistence.example")).toBe(
+        true,
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("tracks WEB_ORIGIN rather than hard-coding a host", () => {

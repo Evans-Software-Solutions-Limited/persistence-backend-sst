@@ -33,7 +33,11 @@ import { webOrigin } from "../../shared/webOrigin";
  * cookie, so the browser never needs to attach ambient credentials — and not
  * setting it keeps the door shut if auth ever moves to cookies.
  */
-const ALLOWED_METHODS = "GET, POST, PATCH, DELETE, OPTIONS";
+// PUT is here because `PUT /admin/marketing/plans/:id/metrics` is how the
+// off-platform numbers form saves. Omitting one verb breaks only the calls
+// that use it, so a partial list looks healthy until somebody records a
+// week's spend.
+const ALLOWED_METHODS = "GET, POST, PUT, PATCH, DELETE, OPTIONS";
 const ALLOWED_HEADERS = "authorization, content-type";
 
 /** True when `origin` is the one host allowed to drive the admin API. */
@@ -82,7 +86,11 @@ export function adminCorsHeaders(
  */
 function isAdminPath(url: string): boolean {
   try {
-    return new URL(url).pathname.startsWith("/admin");
+    const { pathname } = new URL(url);
+    // Segment match, not a prefix match: `startsWith("/admin")` would also
+    // claim a future `/administrators` route, silently applying the admin
+    // allow-list to it and swallowing its preflight.
+    return pathname === "/admin" || pathname.startsWith("/admin/");
   } catch {
     // A URL Elysia could parse but `URL` cannot is not an admin route.
     return false;
