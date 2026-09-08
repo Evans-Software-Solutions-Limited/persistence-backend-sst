@@ -293,6 +293,9 @@ export function WorkoutFormBody({
                 itemHeight={COMPACT_REORDER_ROW_HEIGHT + EDITOR_REORDER_GAP}
                 data={rows}
                 onReorder={handleReorder}
+                // Ends the mode on EVERY drag end, not just a committed move: a
+                // lift-in-place otherwise left no way out at all.
+                onDragEnd={() => setIsReordering(false)}
                 renderItem={(
                   row,
                   { Handle, index }: ReorderableRenderProps,
@@ -304,12 +307,11 @@ export function WorkoutFormBody({
                       )}
                       position={index + 1}
                       total={rows.length}
-                      onMove={
-                        onMoveExercise && row.block[0]
-                          ? (direction) =>
-                              onMoveExercise(row.block[0].id, direction)
-                          : undefined
-                      }
+                      // No `onMove` here on purpose. The sortable seeds its `positions` map
+                      // once, so a reorder arriving from OUTSIDE the drag (a VoiceOver Move
+                      // up/down) would leave the rendered order and that map disagreeing, and
+                      // the next drop would commit against the stale one. Idle mode carries
+                      // those actions already.
                       DragHandle={Handle}
                     />
                   </RNView>

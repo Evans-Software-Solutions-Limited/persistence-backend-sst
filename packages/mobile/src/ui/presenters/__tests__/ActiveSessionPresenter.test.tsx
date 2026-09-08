@@ -152,6 +152,78 @@ describe("ActiveSessionPresenter (vertical scroll, legacy parity)", () => {
     expect(queryByTestId("compact-reorder-row")).toBeNull();
   });
 
+  it("leaves the mode even when the drop changes nothing", () => {
+    // The library fires its drop for a cancelled pan and a lift-in-place too.
+    // With no button to tap, a drop that commits nothing has to end the mode
+    // anyway or the user is stuck in compact rows with no way out.
+    const onReorderExercise = jest.fn();
+    const props = {
+      ...baseProps,
+      onReorderExercise,
+      exercises: [
+        buildExercise({ id: "se-1" }),
+        buildExercise({ id: "se-2", sortOrder: 1 }),
+      ],
+    };
+    const { getByTestId, queryByTestId } = renderWithTheme(
+      <ActiveSessionPresenter {...props} />,
+    );
+
+    fireEvent(getByTestId("reorder-1"), "longPress");
+    expect(queryByTestId("session-exercise-se-1")).toBeNull();
+
+    // Released in its own slot.
+    fireEvent(getByTestId("sortable-item-se-1"), "drop", "se-1", 0, {
+      "se-1": 0,
+      "se-2": 1,
+    });
+
+    expect(onReorderExercise).not.toHaveBeenCalled();
+    expect(getByTestId("session-exercise-se-1")).toBeTruthy();
+    expect(queryByTestId("compact-reorder-row")).toBeNull();
+  });
+
+  it("keeps drag rows in the command's index space when a superset holds cardio", () => {
+    // `buildDisplayItems` splits a cardio-bearing superset into separate
+    // DISPLAY rows, but the reorder command groups purely by supersetGroup.
+    // Deriving drag rows from the display items handed the command an index
+    // from the wrong space — silently no-oping past the end, or landing the
+    // row after the wrong exercise.
+    const onReorderExercise = jest.fn();
+    const props = {
+      ...baseProps,
+      onReorderExercise,
+      templateByExercise: {
+        "se-2": { restSeconds: 90, category: "cardio" as const },
+      },
+      exercises: [
+        buildExercise({ id: "se-1" }),
+        buildExercise({ id: "se-2", sortOrder: 1, supersetGroup: 1 }),
+        buildExercise({ id: "se-3", sortOrder: 2, supersetGroup: 1 }),
+        buildExercise({ id: "se-4", sortOrder: 3 }),
+      ],
+    };
+    const { getAllByTestId, getByTestId } = renderWithTheme(
+      <ActiveSessionPresenter {...props} />,
+    );
+
+    fireEvent(getByTestId("reorder-1"), "longPress");
+
+    // THREE blocks, matching the command: se-1, the group, se-4 — even though
+    // the full-card view renders the cardio peers as separate rows.
+    expect(getAllByTestId("compact-reorder-row")).toHaveLength(3);
+    expect(getByTestId("sortable-item-superset-1")).toBeTruthy();
+
+    fireEvent(getByTestId("sortable-item-se-1"), "drop", "se-1", 2, {
+      "se-1": 2,
+      "superset-1": 0,
+      "se-4": 1,
+    });
+
+    // A valid block index, so the command can act on it.
+    expect(onReorderExercise).toHaveBeenCalledWith("se-1", 2);
+  });
+
   it("maps a dropped superset back to its lead exercise", () => {
     const onReorderExercise = jest.fn();
     const props = {

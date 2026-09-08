@@ -162,7 +162,6 @@ Not yet spiked, still to verify during the port: mid-drag app backgrounding.
 
 Delete outright (exclusive to the current reorder):
 
-- `src/ui/presenters/session/compactReorderLayout.ts` + its test
 - `src/ui/components/workouts/CompactReorderRow.tsx`
 - `src/ui/navigation/reorderModalOptions.ts` + its test, and the three spreads
   at `app/(app)/_layout.tsx:183, 197, 208`
@@ -308,3 +307,43 @@ the PR says "⚠ awaiting device pass" and stops there.
   `ActiveWorkoutScreen` 83-113). Reordering may change; **rendering must not**.
 - **Scope creep into "improving" these screens.** Reorder is V2-original, but
   the cards it reorders are ported. Do not redesign them.
+
+---
+
+## 8. What actually shipped (2026-09-08)
+
+Reorder is: **hold a card's grip → the list collapses to uniform
+`CompactReorderRow`s → hold and drag a row → on drop the order commits and the
+mode ends itself.** No button in, no button out, no tap-out, no timer.
+
+The one thing this brief got wrong: § 5.3's "one gesture, no sticky mode" is
+not achievable with this library. Bisected on the real session screen — the
+sortable drags only when EVERY row is a single uniform height. Real per-card
+heights engage the drag and move nothing, measured or handed in. Collapsing to
+uniform rows first is therefore forced, and collapsing changes geometry that
+the library seeds once per mount, so the hold that collapses and the hold that
+drags are necessarily different gestures. Neither is a button, which is the
+part that actually mattered.
+
+So the previous implementation's `CompactReorderRow` was right; its mistake was
+the two buttons and a mode that outlived the drop.
+
+Other findings worth keeping:
+
+- `containerHeight` must be passed AND must never be 0. It is frozen on first
+  render, and `0` does not fall back to the library's 500 default — it makes
+  the scroll-down edge test unconditionally true, so any list long enough to
+  scroll runs to the end and commits the row at the last index. Seeded from the
+  window height and re-keyed on the measurement.
+- `onDrop` is the commit hook. `onMove` fires per DISPLACED row mid-drag.
+- The grip must be a plain View (with `accessible`) while dragging: RN's press
+  responder claims the touch before Gesture Handler's pan otherwise. Idle it is
+  a Pressable, which is right — that hold only collapses the list.
+- Row spacing must be padding INSIDE the measured row, never margin.
+- `buildReorderBlocks` is now shared by the command and the session presenter.
+  They disagreed: the presenter splits a cardio-bearing superset into separate
+  display rows, the command groups purely by `supersetGroup`, and a drop index
+  from one space addressed the wrong block in the other.
+- `reorderModalOptions` was NOT dead code. It carried
+  `presentation: "fullScreenModal"` and `gestureEnabled: false`; the latter is
+  what stops the iOS modal dismiss gesture eating a vertical pan.

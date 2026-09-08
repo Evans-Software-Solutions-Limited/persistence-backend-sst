@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
-import { View, type StyleProp, type ViewStyle } from "react-native";
+import { Dimensions, View, type StyleProp, type ViewStyle } from "react-native";
 import Animated from "react-native-reanimated";
 import { ScrollView as GestureScrollView } from "react-native-gesture-handler";
 import * as Haptics from "expo-haptics";
@@ -68,6 +68,13 @@ export type ReorderableListProps<TItem extends ReorderableItem> = {
   onReorder: (movedId: string, toIndex: number, orderedIds: string[]) => void;
   /** Fired when a drag actually engages. */
   onDragStart?: () => void;
+  /**
+   * Fired on EVERY drag end, including a cancelled pan or a release in the same
+   * slot — unlike `onReorder`, which only fires when the index changed. A
+   * caller that collapses into this list must leave that mode here, or a
+   * lift-in-place strands the user with nothing to exit by.
+   */
+  onDragEnd?: () => void;
   header?: ReactNode;
   footer?: ReactNode;
   style?: StyleProp<ViewStyle>;
@@ -102,13 +109,30 @@ function ReorderableListInner<TItem extends ReorderableItem>({
   renderItem,
   onReorder,
   onDragStart,
+  onDragEnd,
   header,
   footer,
   style,
   contentContainerStyle,
   testID,
 }: ReorderableListProps<TItem>) {
-  const [viewportHeight, setViewportHeight] = useState(0);
+  /**
+   * NEVER 0, and never left at the measurement's initial value.
+   *
+   * `useSortable` freezes `containerHeight` on first render
+   * (`useRef(containerHeight).current`) and derives the auto-scroll edge from
+   * it as `lowerBound + containerHeight`. Starting at 0 froze 0 — and 0 is not
+   * `undefined`, so the library's own 500 default did not apply either. That
+   * makes the scroll-down test unconditionally true, so any drag on a list long
+   * enough to scroll runs it to the end and commits the row at the LAST index.
+   * It only looked correct on a list too short to scroll.
+   *
+   * So: seed with the window height (a close over-estimate) and re-key the rows
+   * on the measured value, so they re-freeze against the truth.
+   */
+  const [viewportHeight, setViewportHeight] = useState(
+    () => Dimensions.get("window").height,
+  );
   const dataRef = useRef(data);
   dataRef.current = data;
 
@@ -130,6 +154,9 @@ function ReorderableListInner<TItem extends ReorderableItem>({
 
   const handleDrop = useCallback(
     (id: string, position: number, allPositions?: Record<string, number>) => {
+      // Always first: the library's `onFinalize` fires this for a cancelled
+      // pan and for a lift-in-place too, and both must still end the mode.
+      onDragEnd?.();
       if (!allPositions) return;
       const from = dataRef.current.findIndex((item) => item.id === id);
       if (from === position) return;
@@ -138,7 +165,7 @@ function ReorderableListInner<TItem extends ReorderableItem>({
         .map((item) => item.id);
       onReorder(id, position, ordered);
     },
-    [onReorder],
+    [onReorder, onDragEnd],
   );
 
   // Matches the feel the old handle gave on long-press, but fired at the
@@ -169,7 +196,10 @@ function ReorderableListInner<TItem extends ReorderableItem>({
       >
         {header}
 
-        <View style={{ height: contentHeight }}>
+        <View
+          key={`viewport-${viewportHeight}`}
+          style={{ height: contentHeight }}
+        >
           {data.map((item, index) => (
             <ReorderableRow
               key={item.id}

@@ -201,12 +201,15 @@ describe("WorkoutFormBody drag reorder", () => {
       paddingTop: 44,
       paddingBottom: 34,
     });
-    fireEvent(getByTestId("reorder-1"), "longPress");
-
+    // The accessible Move actions live on the IDLE grip. They are withheld in
+    // compact mode on purpose: the sortable seeds its positions map once, so a
+    // move arriving from outside the drag would desync it.
     fireEvent(getByTestId("reorder-1"), "accessibilityAction", {
       nativeEvent: { actionName: "increment" },
     });
     expect(onMoveExercise).toHaveBeenCalledWith("standalone-a", 1);
+
+    fireEvent(getByTestId("reorder-1"), "longPress");
 
     // Four exercises become three draggable blocks: standalone, superset,
     // standalone. The superset's members collapse into ONE row, addressed by

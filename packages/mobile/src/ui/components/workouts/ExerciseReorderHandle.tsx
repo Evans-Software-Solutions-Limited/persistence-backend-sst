@@ -86,7 +86,14 @@ export function ExerciseReorderHandle({
   if (DragHandle) {
     return (
       <DragHandle>
-        <View {...a11y}>
+        {/*
+          `accessible` is required: a View carrying accessibilityRole/actions
+          without it is not an accessibility element on iOS, so VoiceOver
+          could not focus the grip and the Move up / Move down actions were
+          unreachable in drag mode. It was a Pressable before (accessible by
+          default) and lost that when it had to stop being one.
+        */}
+        <View accessible {...a11y}>
           <IconGrip size={20} color={color.$text3} />
         </View>
       </DragHandle>

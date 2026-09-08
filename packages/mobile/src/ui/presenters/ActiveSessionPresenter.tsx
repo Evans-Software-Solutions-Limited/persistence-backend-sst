@@ -47,6 +47,7 @@ import {
   type ReorderableRenderProps,
 } from "@/ui/components/workouts/ReorderableList";
 import { SessionHeader } from "@/ui/components/session/SessionHeader";
+import { buildReorderBlocks } from "@/domain/services/workout.service";
 import { TrainerBannerPresenter } from "@/ui/presenters/TrainerBannerPresenter";
 import { Btn } from "@/ui/components/foundation/Btn";
 import { IconCheck } from "@/ui/components/icons";
@@ -324,11 +325,27 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
   const canReorder =
     displayItems.length > 1 && props.onReorderExercise !== undefined;
 
-  // The sortable addresses rows by a stable id; a superset block has none of
-  // its own, so `displayItemKey` supplies one.
+  /**
+   * Reorder rows are NOT the display items.
+   *
+   * `buildDisplayItems` splits a superset containing a cardio or plyometric
+   * exercise into individual rows, because those need the metric logger rather
+   * than the strength table. The reorder command groups purely by
+   * `supersetGroup`. Deriving the drag rows from the display items therefore
+   * handed the command an index from a different index space: past the end it
+   * silently no-oped, and inside it the row landed after the wrong exercise.
+   * `buildReorderBlocks` is the command's own grouping, shared.
+   */
   const rows = useMemo(
-    () => displayItems.map((item) => ({ id: displayItemKey(item), item })),
-    [displayItems],
+    () =>
+      buildReorderBlocks(orderedExercises).map((block) => ({
+        id:
+          block[0].supersetGroup != null
+            ? `superset-${block[0].supersetGroup}`
+            : block[0].id,
+        exercises: block,
+      })),
+    [orderedExercises],
   );
 
   /**
@@ -341,14 +358,11 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
    */
   const handleReorder = (movedId: string, toIndex: number) => {
     const moved = rows.find((row) => row.id === movedId);
-    if (!moved) return;
-    const lead =
-      moved.item.kind === "exercise"
-        ? moved.item.exercise
-        : moved.item.exercises[0];
+    const lead = moved?.exercises[0];
+    if (!lead) return;
     props.onReorderExercise?.(lead.id, toIndex);
     const label =
-      moved.item.kind === "superset"
+      moved.exercises.length > 1
         ? `Superset starting with ${lead.exerciseName}`
         : lead.exerciseName;
     void AccessibilityInfo.announceForAccessibility(
@@ -385,29 +399,22 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
             itemHeight={COMPACT_REORDER_ROW_HEIGHT + REORDER_ROW_GAP}
             data={rows}
             onReorder={handleReorder}
+            // Ends the mode on EVERY drag end, not just a committed move: a
+            // lift-in-place otherwise left no way out at all.
+            onDragEnd={() => setIsReordering(false)}
             renderItem={(row, { Handle, index }: ReorderableRenderProps) => (
               <View style={{ paddingBottom: REORDER_ROW_GAP }}>
                 <CompactReorderRow
-                  exerciseNames={
-                    row.item.kind === "exercise"
-                      ? [row.item.exercise.exerciseName]
-                      : row.item.exercises.map(
-                          (exercise) => exercise.exerciseName,
-                        )
-                  }
+                  exerciseNames={row.exercises.map(
+                    (exercise) => exercise.exerciseName,
+                  )}
                   position={index + 1}
                   total={rows.length}
-                  onMove={
-                    props.onMoveExercise
-                      ? (direction) => {
-                          const lead =
-                            row.item.kind === "exercise"
-                              ? row.item.exercise
-                              : row.item.exercises[0];
-                          props.onMoveExercise?.(lead.id, direction);
-                        }
-                      : undefined
-                  }
+                  // No `onMove` here on purpose. The sortable seeds its `positions` map
+                  // once, so a reorder arriving from OUTSIDE the drag (a VoiceOver Move
+                  // up/down) would leave the rendered order and that map disagreeing, and
+                  // the next drop would commit against the stale one. Idle mode carries
+                  // those actions already.
                   DragHandle={Handle}
                 />
               </View>
@@ -715,18 +722,6 @@ const styles = StyleSheet.create({
   },
   dragBlock: {
     backgroundColor: color.$bg,
-  },
-  reorderHint: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    paddingVertical: 12,
-  },
-  reorderHintText: {
-    fontFamily: "Geist",
-    fontSize: 13,
-    color: color.$primary,
   },
   activityMeta: {
     marginHorizontal: 16,

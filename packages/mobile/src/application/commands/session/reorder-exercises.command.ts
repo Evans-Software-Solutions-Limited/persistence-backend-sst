@@ -1,4 +1,7 @@
-import { reorderExercises } from "@/domain/services/workout.service";
+import {
+  reorderExercises,
+  buildReorderBlocks,
+} from "@/domain/services/workout.service";
 import type { WorkoutSession } from "@/domain/models/session";
 import type { StoragePort } from "@/domain/ports/storage.port";
 import { fail, ok, type Result } from "@/shared/errors";
@@ -27,19 +30,7 @@ export function reorderSessionExercisesCommand(
   );
   if (sourceIndex < 0) return ok(session);
   const source = ordered[sourceIndex];
-  const blocks: (typeof ordered)[] = [];
-  const used = new Set<number>();
-  for (const exercise of ordered) {
-    if (exercise.supersetGroup == null) blocks.push([exercise]);
-    else if (!used.has(exercise.supersetGroup)) {
-      used.add(exercise.supersetGroup);
-      blocks.push(
-        ordered.filter(
-          (candidate) => candidate.supersetGroup === exercise.supersetGroup,
-        ),
-      );
-    }
-  }
+  const blocks = buildReorderBlocks(ordered);
   const sourceBlock = blocks.findIndex((block) => block.includes(source));
   const targetBlock =
     input.toPosition == null ? sourceBlock + input.direction : input.toPosition;

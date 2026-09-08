@@ -6,6 +6,7 @@ import {
   groupAsSuperSet,
   ungroupSuperSet,
   propagateSupersetSharedFields,
+  buildReorderBlocks,
 } from "../workout.service";
 import type {
   CreateWorkoutInput,
@@ -321,5 +322,48 @@ describe("propagateSupersetSharedFields", () => {
     expect(result.find((e) => e.id === "B")?.targetSets).toBe(5);
     // Standalone exercise untouched
     expect(result.find((e) => e.id === "C")?.targetSets).toBe(3);
+  });
+});
+
+describe("buildReorderBlocks", () => {
+  it("moves a superset as one block and everything else alone", () => {
+    const blocks = buildReorderBlocks([
+      { id: "a", supersetGroup: null },
+      { id: "b", supersetGroup: 1 },
+      { id: "c", supersetGroup: 1 },
+      { id: "d", supersetGroup: null },
+    ]);
+
+    expect(blocks.map((block) => block.map((e) => e.id))).toEqual([
+      ["a"],
+      ["b", "c"],
+      ["d"],
+    ]);
+  });
+
+  it("groups by supersetGroup VALUE, not contiguity", () => {
+    // Legacy data can interleave a group. The command has always grouped this
+    // way, and the presenter now shares it, so the two cannot disagree.
+    const blocks = buildReorderBlocks([
+      { id: "a", supersetGroup: 1 },
+      { id: "b", supersetGroup: 2 },
+      { id: "c", supersetGroup: 1 },
+    ]);
+
+    expect(blocks.map((block) => block.map((e) => e.id))).toEqual([
+      ["a", "c"],
+      ["b"],
+    ]);
+  });
+
+  it("emits each group exactly once", () => {
+    const blocks = buildReorderBlocks([
+      { id: "a", supersetGroup: 3 },
+      { id: "b", supersetGroup: 3 },
+      { id: "c", supersetGroup: 3 },
+    ]);
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].map((e) => e.id)).toEqual(["a", "b", "c"]);
   });
 });

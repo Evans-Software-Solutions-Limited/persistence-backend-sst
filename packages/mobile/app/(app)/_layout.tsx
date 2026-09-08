@@ -180,11 +180,11 @@ export default function AppLayout() {
           name="workouts/create"
           options={{
             title: "New workout",
-            // The screen's drag-to-reorder list pans vertically, and on iOS a
-            // modally-presented screen's swipe-to-dismiss gesture claims that
-            // pan first — the drag then simply never engages. This was
-            // previously a shared `reorderModalOptions` spread; it is inlined
-            // here so the reason travels with the screen it protects.
+            // `presentation` and `gestureEnabled` both came from the
+            // deleted `reorderModalOptions`. The gesture flag stops the iOS
+            // modal dismiss swipe eating this screen's vertical reorder pan;
+            // the presentation is how the screen has always appeared.
+            presentation: "fullScreenModal" as const,
             gestureEnabled: false,
           }}
         />
@@ -199,11 +199,11 @@ export default function AppLayout() {
           name="workouts/[id]/edit"
           options={{
             title: "Edit workout",
-            // The screen's drag-to-reorder list pans vertically, and on iOS a
-            // modally-presented screen's swipe-to-dismiss gesture claims that
-            // pan first — the drag then simply never engages. This was
-            // previously a shared `reorderModalOptions` spread; it is inlined
-            // here so the reason travels with the screen it protects.
+            // `presentation` and `gestureEnabled` both came from the
+            // deleted `reorderModalOptions`. The gesture flag stops the iOS
+            // modal dismiss swipe eating this screen's vertical reorder pan;
+            // the presentation is how the screen has always appeared.
+            presentation: "fullScreenModal" as const,
             gestureEnabled: false,
           }}
         />
@@ -215,8 +215,8 @@ export default function AppLayout() {
           name="session/index"
           options={{
             title: "Active session",
-            // See `workouts/[id]/edit` above: the reorder pan and the modal
-            // dismiss gesture are the same gesture, and the navigator wins.
+            // See `workouts/[id]/edit` above.
+            presentation: "fullScreenModal" as const,
             gestureEnabled: false,
           }}
         />
