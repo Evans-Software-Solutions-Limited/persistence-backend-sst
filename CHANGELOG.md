@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.20.0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.19.0...persistence-v1.20.0) (2026-09-08)
+
+
+### Features
+
+* add cardio and retrospective workout logging ([#434](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/434)) ([732d053](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/732d0531ccb51eac37f5dda5159b47b812d52090))
+* launch founding offer and referral administration ([#432](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/432)) ([38a3b8e](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/38a3b8e3114a3e956d5fb9bd5331abdac0067a68))
+* **marketing:** founding web checkout, campaign attribution and entitlement-aware onboarding ([#437](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/437)) ([eadb253](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/eadb253080965cb3887be6ef922f57ddbdb5d526))
+* **marketing:** marketing plans, admin surfaces and store-offer CTA ([#438](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/438)) ([d7b1f26](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/d7b1f268a05bc5dcce87be9d09974502effc8f33))
+* **mobile:** add founding referral code entry ([#431](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/431)) ([e5d042f](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/e5d042ffee27e4f5185ad503f0a843c6329abccf))
+* **mobile:** add template workout visibility setting ([#430](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/430)) ([1901531](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/190153162efa63b06308ff5f106af6b5af21a53e))
+
+
+### Bug Fixes
+
+* **infra:** give the gateway CORS that allows Authorization ([#441](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/441)) ([0eec29c](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/0eec29cdf7696f477fcb3e8503b1cb8f6a6359c8))
+* **mobile:** offline-first boot + onboarding, reorder rebuilt on reanimated-dnd, stale workout quota ([#442](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/442)) ([2797821](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/279782156fb1d7bc405d5eabd30ae8086881d832))
+* unblock the staging deploy, and let the admin panel reach the API ([#440](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/440)) ([7f868c1](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/7f868c13ead39f6e5aa775cc837beca5d2d3cb2d))
+* **web:** founding banner layout, and the approved founding copy ([#439](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/439)) ([3b2ec21](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/3b2ec216881ffcc2e7fa838a3633cbbd061bbe52))
+
 ## [1.19.0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.18.2...persistence-v1.19.0) (2026-09-03)
 
 
