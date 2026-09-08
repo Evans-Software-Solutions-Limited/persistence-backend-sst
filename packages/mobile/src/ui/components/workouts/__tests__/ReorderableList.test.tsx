@@ -109,6 +109,7 @@ describe("ReorderableList geometry", () => {
       />,
     );
 
+    fireEvent(getByTestId("sortable-item-a"), "dragStart");
     fireEvent(getByTestId("sortable-item-a"), "drop", "a", 2, {
       a: 2,
       b: 0,
@@ -139,6 +140,7 @@ describe("ReorderableList geometry", () => {
       />,
     );
 
+    fireEvent(getByTestId("sortable-item-a"), "dragStart");
     fireEvent(getByTestId("sortable-item-a"), "drop", "a", 0, {
       a: 0,
       b: 1,
@@ -154,5 +156,59 @@ describe("ReorderableList geometry", () => {
 
     // Registering a handle is what disables the whole-item pan.
     expect(getAllByTestId("sortable-handle")).toHaveLength(ROWS.length);
+  });
+
+  it("does not report a drag end for a pan that never activated", () => {
+    // Gesture Handler finalizes FAILED and CANCELLED pans too, and the library
+    // forwards them here. Reporting those as drag ends meant a tap — or a
+    // scroll-swipe starting on a grip — kicked the caller out of its mode: the
+    // tap-out, back by the side door.
+    const onDragEnd = jest.fn();
+    const { getByTestId } = renderWithTheme(
+      <ReorderableList
+        testID="list"
+        data={ROWS}
+        itemHeight={ROW_HEIGHT}
+        onReorder={jest.fn()}
+        onDragEnd={onDragEnd}
+        renderItem={(row: Row, { Handle }) => (
+          <Handle>
+            <View testID={`grip-${row.id}`} />
+          </Handle>
+        )}
+      />,
+    );
+
+    // No `dragStart` — the pan never reached ACTIVE.
+    fireEvent(getByTestId("sortable-item-a"), "drop", "a", 0, {
+      a: 0,
+      b: 1,
+      c: 2,
+    });
+
+    expect(onDragEnd).not.toHaveBeenCalled();
+  });
+
+  it("ignores a layout change while a drag is in flight", () => {
+    // The rows are keyed on the measured height, so accepting a measurement
+    // mid-drag would remount them and kill the gesture before the library
+    // finalizes it — no drop, and so no mode exit for the caller.
+    const many = Array.from({ length: 20 }, (_, i) => ({
+      id: `r${i}`,
+      label: `R${i}`,
+    }));
+    const { getByTestId } = renderList(many);
+
+    fireEvent(getByTestId("list"), "layout", {
+      nativeEvent: { layout: { height: 700, width: 400, x: 0, y: 0 } },
+    });
+    expect(getByTestId("sortable-item-r0").props.containerHeight).toBe(700);
+
+    fireEvent(getByTestId("sortable-item-r0"), "dragStart");
+    fireEvent(getByTestId("list"), "layout", {
+      nativeEvent: { layout: { height: 400, width: 400, x: 0, y: 0 } },
+    });
+
+    expect(getByTestId("sortable-item-r0").props.containerHeight).toBe(700);
   });
 });

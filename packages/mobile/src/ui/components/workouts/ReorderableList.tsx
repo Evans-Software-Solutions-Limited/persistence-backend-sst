@@ -168,10 +168,16 @@ function ReorderableListInner<TItem extends ReorderableItem>({
 
   const handleDrop = useCallback(
     (id: string, position: number, allPositions?: Record<string, number>) => {
-      // Always first: the library's `onFinalize` fires this for a cancelled
-      // pan and for a lift-in-place too, and both must still end the mode.
+      // Gesture Handler calls `onFinalize` for FAILED and CANCELLED as well as
+      // END, and the library forwards all of them here — so this also fires
+      // for a pan that never activated. Reporting those as drag ends made a
+      // tap, or a scroll-swipe starting on a grip, kick the caller out of its
+      // mode: the tap-out, back again by the side door. `onDragStart` only
+      // runs from the pan's `onStart`, so gating on it still reports a
+      // lift-in-place and a post-activation cancel, both of which must exit.
+      const wasDragging = isDraggingRef.current;
       isDraggingRef.current = false;
-      onDragEnd?.();
+      if (wasDragging) onDragEnd?.();
       if (!allPositions) return;
       const from = dataRef.current.findIndex((item) => item.id === id);
       if (from === position) return;

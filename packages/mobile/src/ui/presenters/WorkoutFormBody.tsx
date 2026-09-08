@@ -233,12 +233,12 @@ export function WorkoutFormBody({
     // out for the compact list silently discarded whatever was being typed.
     // `keyboardShouldPersistTaps="handled"` means pressing the grip does not
     // blur it either.
+    // `Stepper` and `RepRange` commit their buffers on unmount now, so the
+    // value survives the swap on its own — a `setTimeout` here could never
+    // outwait a native blur round trip anyway. Dismissing is still worth doing
+    // so the keyboard is not left over the compact list.
     Keyboard.dismiss();
-    // Deferred a tick on purpose. `Keyboard.dismiss()` only DISPATCHES a
-    // native blur; the JS `onBlur` that commits the buffer arrives on a later
-    // turn, and flipping the mode in this one unmounts the input before it
-    // lands — which is the very thing the dismiss is here to avoid.
-    setTimeout(() => setIsReordering(true), 0);
+    setIsReordering(true);
   };
 
   /**
@@ -306,8 +306,10 @@ export function WorkoutFormBody({
                 itemHeight={COMPACT_REORDER_ROW_HEIGHT + EDITOR_REORDER_GAP}
                 data={rows}
                 onReorder={handleReorder}
-                // Ends the mode on EVERY drag end, not just a committed move: a
-                // lift-in-place otherwise left no way out at all.
+                // Ends the mode on any real drop, committed move or not: a
+                // lift-in-place otherwise left no way out at all. A tap or
+                // scroll-swipe on a grip is not a drop and does not exit —
+                // `ReorderableList` filters those out.
                 onDragEnd={() => setIsReordering(false)}
                 renderItem={(
                   row,

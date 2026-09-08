@@ -1,5 +1,5 @@
 import { fireEvent } from "@testing-library/react-native";
-import { AccessibilityInfo } from "react-native";
+import { AccessibilityInfo, StyleSheet } from "react-native";
 import React from "react";
 import {
   ActiveSessionPresenter,
@@ -152,10 +152,39 @@ describe("ActiveSessionPresenter (vertical scroll, legacy parity)", () => {
     expect(queryByTestId("compact-reorder-row")).toBeNull();
   });
 
+  it("gives the compact list a content style with no top inset and no gap", () => {
+    // The sortable derives every slot from `itemHeight`, so the rendered pitch
+    // has to match it exactly. Reusing the full-card `scrollContent` (padding
+    // 16 + gap 16 on top of each row's own spacer) shifted every row down and
+    // made the true pitch 104 against a declared 88 — a whole slot of error by
+    // the fifth row. Drag geometry is mocked here, so assert the style.
+    const props = {
+      ...baseProps,
+      onReorderExercise: jest.fn(),
+      exercises: [
+        buildExercise({ id: "se-1" }),
+        buildExercise({ id: "se-2", sortOrder: 1 }),
+      ],
+    };
+    const { getByTestId } = renderWithTheme(
+      <ActiveSessionPresenter {...props} />,
+    );
+
+    fireEvent(getByTestId("reorder-1"), "longPress");
+
+    const content = StyleSheet.flatten(
+      getByTestId("active-session-reorder-list").props.contentContainerStyle,
+    );
+    expect(content.paddingTop).toBeUndefined();
+    expect(content.padding).toBeUndefined();
+    expect(content.gap).toBeUndefined();
+    expect(content.paddingHorizontal).toBe(16);
+  });
+
   it("leaves the mode even when the drop changes nothing", () => {
-    // The library fires its drop for a cancelled pan and a lift-in-place too.
-    // With no button to tap, a drop that commits nothing has to end the mode
-    // anyway or the user is stuck in compact rows with no way out.
+    // A lift-and-release in the same slot commits nothing. With no button to
+    // tap, that still has to end the mode or the user is stuck in compact rows
+    // with no way out.
     const onReorderExercise = jest.fn();
     const props = {
       ...baseProps,
@@ -173,6 +202,7 @@ describe("ActiveSessionPresenter (vertical scroll, legacy parity)", () => {
     expect(queryByTestId("session-exercise-se-1")).toBeNull();
 
     // Released in its own slot.
+    fireEvent(getByTestId("sortable-item-se-1"), "dragStart");
     fireEvent(getByTestId("sortable-item-se-1"), "drop", "se-1", 0, {
       "se-1": 0,
       "se-2": 1,

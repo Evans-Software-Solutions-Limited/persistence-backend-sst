@@ -11,8 +11,15 @@ say so and fix this file.
 
 ### 🟢 2026-09-08 — Offline hardening + reorder rebuild (branch `fix/onboarding-calorie-target-redirect`)
 
-**Not pushed at time of writing; one PR intended.** Twenty-odd commits. Three
-workstreams, all device-verified where device-verifiable.
+**One PR intended.** Twenty-odd commits, four workstreams.
+
+⚠ **Device status, precisely:** the reorder interaction was driven on the iOS
+simulator during the bisection, which is how the constraints below were found.
+The FINAL tree is not device-verified — the last fixes (the drag-start gate on
+the mode exit, the unmount commit in `Stepper`/`RepRange`, the session's own
+compact content style, hiding the pill on the workout screens) landed after
+that pass. Workstreams 1–3 were reasoned + unit-tested, not device-verified.
+`SMOKE_TEST.md` is the gate and it is Brad's to run.
 
 **1. Offline boot hang — FIXED.** With no connection the app sat on an
 infinite spinner and never reached Home, even signed in with a valid cached
@@ -58,7 +65,7 @@ even SELECTed the column and ignored it); `createWorkoutCommand` had the
 mirror-image gap. Both directions now move together, in-memory adapter at
 parity.
 
-**4. Reorder rebuilt — SHIPPED, device-verified.** `react-native-draggable-flatlist`
+**4. Reorder rebuilt.** `react-native-draggable-flatlist`
 is GONE, replaced by `react-native-reanimated-dnd` behind
 `src/ui/components/workouts/ReorderableList.tsx`.
 
@@ -78,14 +85,25 @@ Hard-won constraints — all bisected on device, all recorded in
   makes the scroll-down edge test unconditionally true (every drag commits at
   the last index). Unclamped on a short list it yields a negative scroll
   target.
-- **Nothing may sit inside the sortable's scroll content above the rows.** Row
-  space and scroll space then differ by its height and the auto-scroll edges
-  go with it. The session header is a SIBLING above the list for this reason.
+- **Nothing may sit inside the sortable's scroll content above the rows, and
+  the rendered pitch must equal `itemHeight` exactly.** Row space and scroll
+  space otherwise differ and the auto-scroll edges go with them. Two ways this
+  bit: the session header (now a SIBLING above the list), and reusing the
+  full-card `contentContainerStyle`, whose `padding: 16` insets every row and
+  whose `gap: 16` stacks on the row's own spacer — real pitch 104 against a
+  declared 88, a whole slot of drift by the fifth row. The compact list has
+  its own content style; keep spacing as padding INSIDE the row.
 - **The grip is a plain View (with `accessible`) while dragging** — RN's press
   responder claims the touch before Gesture Handler's pan otherwise. Idle it
   is a Pressable, which is right: that hold only collapses the list.
 - `onDrop` is the commit hook; `onMove` fires per displaced row mid-drag.
-- Row spacing is padding INSIDE the measured row, never margin.
+- **Gesture Handler's `onFinalize` fires for FAILED and CANCELLED pans too**,
+  so forwarding it as a drag end let a tap — or a scroll-swipe starting on a
+  grip — exit the mode: the rejected tap-out, back by the side door.
+  `ReorderableList` reports a drag end only after a real drag start.
+- **Inputs that commit on blur lose the edit when the mode flips**, because
+  unmounting a focused `TextInput` delivers no blur, and no `setTimeout` can
+  outwait a native one. `Stepper`/`RepRange` commit their buffer on unmount.
 - `buildReorderBlocks` (in `workout.service.ts`) is shared by the command and
   the session presenter. They disagreed: the presenter splits a cardio-bearing
   superset into separate display rows, the command groups purely by
@@ -103,7 +121,7 @@ offerings" LogBox error opens on the simulator (no StoreKit config) and
 **LogBox swallows every touch** — it presents as "taps do nothing / navigation
 takes many clicks". Dismiss it before concluding anything about the app.
 
-Six Inspector Brad sweeps. They caught genuine defects in my own fixes each
+Eight Inspector Brad sweeps. They caught genuine defects in my own fixes each
 time — including a provisional-seed path that would have uploaded a reset over
 real server-side onboarding progress, and the frozen-0 `containerHeight` that
 made my own 6-row device check pass while any scrollable list would have
@@ -115,7 +133,7 @@ is the acceptance gate and is Brad's to run.** The drag library is jest-mocked
 prove gesture or auto-scroll behaviour.
 
 Gates on the final tree: prettier clean; typecheck 9/9; lint 0 errors;
-build 14/14; `bun run test:unit` 21/21 tasks (mobile 526 suites / 6721 tests).
+build 14/14; `bun run test:unit` 21/21 tasks.
 
 ### 🟢 2026-09-06 — MARKETING-PLANS Sprint 1 (branch `feat/marketing-plans`, PR 1)
 

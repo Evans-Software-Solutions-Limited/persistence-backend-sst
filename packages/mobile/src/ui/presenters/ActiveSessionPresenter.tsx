@@ -436,12 +436,19 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
             <ReorderableList
               testID="active-session-reorder-list"
               style={styles.scroll}
-              contentContainerStyle={styles.scrollContent}
+              // NOT the full-card `scrollContent`: that has `padding: 16` and
+              // `gap: 16`. The top inset shifts every row off the offsets the
+              // sortable derives from `itemHeight`, and the gap stacks on the
+              // row's own spacer, making the real pitch 104 against a declared
+              // 88 — by the fifth row the drop lands a whole slot out.
+              contentContainerStyle={styles.reorderContent}
               itemHeight={COMPACT_REORDER_ROW_HEIGHT + REORDER_ROW_GAP}
               data={rows}
               onReorder={handleReorder}
-              // Ends the mode on EVERY drag end, not just a committed move: a
-              // lift-in-place otherwise left no way out at all.
+              // Ends the mode on any real drop, committed move or not: a
+              // lift-in-place otherwise left no way out at all. A tap or
+              // scroll-swipe on a grip is not a drop and does not exit —
+              // `ReorderableList` filters those out.
               onDragEnd={() => setIsReordering(false)}
               renderItem={(row, { Handle, index }: ReorderableRenderProps) => (
                 <View style={{ paddingBottom: REORDER_ROW_GAP }}>
@@ -756,6 +763,13 @@ const styles = StyleSheet.create({
   },
   keyboardAvoider: { flex: 1 },
   scroll: { flex: 1 },
+  reorderContent: {
+    // Horizontal only — see the contentContainerStyle note on the reorder
+    // list. The bottom clearance is for the floating Finish CTA, which keeps
+    // floating in compact mode; content BELOW the rows is harmless.
+    paddingHorizontal: 16,
+    paddingBottom: 100,
+  },
   scrollContent: {
     padding: 16,
     // Clear the floating "Finish Workout" CTA (52pt + 24pt offset + breathing
