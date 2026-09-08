@@ -13,7 +13,8 @@
  * by the existence authority (SQLite via `useActiveSession`) gated on the
  * current route segment:
  *
- *   showBar = hasActiveSession && !onSessionScreen && !inAuth && !drawerOpen
+ *   showBar = hasActiveSession && !onSessionScreen && !onWorkoutScreen &&
+ *             !inAuth && !drawerOpen
  *
  * "Minimise" = the session screen's chevron dismisses the modal → the segment
  * no longer includes "session" → the bar reappears (no manually-synced flag to
@@ -59,7 +60,6 @@ const ACTIVE_WORKOUT_BAR_GAP = 12;
 // the geometric contract with 14-navigation; this is a glow-only presentation
 // margin owned by this bar.
 const BAR_GLOW_CLEARANCE = 10;
-
 export function ActiveWorkoutOverlay() {
   const { session, rereadCache } = useActiveSession();
   const { storage } = useAdapters();
@@ -82,6 +82,25 @@ export function ActiveWorkoutOverlay() {
   const onSessionScreen = segments.some((s) => s === "session");
   const inAuth = segments.includes("(auth)");
   const inTabs = segments.includes("(tabs)");
+  /**
+   * The workout detail, create and edit screens hide the bar entirely.
+   *
+   * It floats over whatever is beneath it, and on those three it read as
+   * sitting oddly on top of the content — over the sticky Cancel/Save row on
+   * the two form screens, and over the plan list on detail. Lifting it clear
+   * was worse than not showing it: you are already looking at a workout, so a
+   * pill telling you a workout is in progress earns nothing there. Matched as
+   * a PAIR, because bare `create`/`edit` segments also occur under exercises
+   * and programs.
+   */
+  const lastSegment = segments.at(-1);
+  const onWorkoutScreen =
+    segments.includes("workouts") &&
+    // No `index`: expo-router pops a trailing `index` before this hook sees
+    // the segments, so the detail route arrives as `[…, "workouts", "[id]"]`.
+    (lastSegment === "create" ||
+      lastSegment === "edit" ||
+      lastSegment === "[id]");
 
   // The ProfileDrawer is a root-mounted sibling that renders BEFORE this overlay
   // in `app/(app)/_layout.tsx`, so with no z-index the floating bar paints on
@@ -102,6 +121,7 @@ export function ActiveWorkoutOverlay() {
     session != null &&
     !loadoutLocked &&
     !onSessionScreen &&
+    !onWorkoutScreen &&
     !inAuth &&
     !drawerOpen;
 

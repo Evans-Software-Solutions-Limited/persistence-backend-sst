@@ -46,7 +46,7 @@ function cached<T>(
     isStale: false,
     isRefreshing: false,
     error: null,
-    refresh: jest.fn(async () => {}),
+    refresh: jest.fn(async () => true),
     reload: jest.fn(),
     ...over,
   } as CachedResourceState<T>;
@@ -153,8 +153,8 @@ describe("AchievementsContainer", () => {
   });
 
   it("onRefresh refreshes both achievements and PR history", () => {
-    const refreshAchievements = jest.fn(async () => {});
-    const refreshPRs = jest.fn(async () => {});
+    const refreshAchievements = jest.fn(async () => true);
+    const refreshPRs = jest.fn(async () => true);
     mockAchievementsState = cached<Achievement[]>({
       refresh: refreshAchievements,
     });

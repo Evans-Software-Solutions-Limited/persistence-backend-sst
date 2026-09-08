@@ -21,6 +21,7 @@ import {
   type OnboardingUpdateInput,
 } from "@/domain/models/onboarding";
 import { useAdapters } from "@/ui/hooks/useAdapters";
+import { useOnlineStatus } from "@/ui/hooks/useOnlineStatus";
 import { useAuth } from "@/ui/hooks/useAuth";
 
 function makeInitialState(userId: string): OnboardingState {
@@ -38,6 +39,19 @@ function makeInitialState(userId: string): OnboardingState {
     dismissedAt: null,
     updatedAt: new Date().toISOString(),
   };
+}
+
+/**
+ * True when a failed read never reached the server — offline, a captive
+ * portal, DNS, or our own timeout. `sst-api.adapter` maps every transport
+ * failure to `network`/`timeout` and every answer the server actually gave to
+ * some other code, so this cleanly separates "we could not ask" from "we
+ * asked and it went wrong".
+ */
+function isUnreachableError(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const code = (error as { code?: unknown }).code;
+  return code === "network" || code === "timeout";
 }
 
 function normalizeRemoteState(
@@ -67,6 +81,10 @@ function withoutServerFields(state: OnboardingState): OnboardingUpdateInput {
 
 export type OnboardingContextValue = {
   state: OnboardingState | null;
+  /**
+   * True only while there is no state to act on at all — not while a
+   * background refresh is in flight. A cached offline mirror clears it.
+   */
   isLoading: boolean;
   loadError: unknown | null;
   retryLoad: () => void;
@@ -97,16 +115,37 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
   const userId = session?.userId ?? null;
   const userIdRef = useRef(userId);
   const identityRef = useRef({ userId, epoch: 0 });
+  /**
+   * True while the state on hand is a locally seeded guess rather than
+   * anything the server has confirmed. Gates every outbound write.
+   */
+  const isProvisionalRef = useRef(false);
+  /**
+   * True once the user has actually ADVANCED a provisional journey.
+   *
+   * The distinction matters at reconcile time. An untouched seed is pure
+   * guesswork and must lose to whatever the server says, or its defaults
+   * would overwrite a real in-progress row. A journey the user walked offline
+   * is their genuine, most recent intent and has to survive the reconnect —
+   * without this, four pages of work were discarded by the very retry that
+   * was added to recover from being offline.
+   */
+  const hasProvisionalEditsRef = useRef(false);
   if (identityRef.current.userId !== userId) {
     identityRef.current = {
       userId,
       epoch: identityRef.current.epoch + 1,
     };
+    // Cleared here, not only on sign-out: `useAuth` can hand us B directly
+    // from A with no intervening null (a confirmation or recovery deep link
+    // for a second account). Left set, A's provisional flag would swallow B's
+    // first write.
+    isProvisionalRef.current = false;
+    hasProvisionalEditsRef.current = false;
   }
   userIdRef.current = userId;
   const [state, setState] = useState<OnboardingState | null>(null);
   const stateRef = useRef<OnboardingState | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
   const [loadFailure, setLoadFailure] = useState<{
     userId: string;
     error: unknown;
@@ -145,15 +184,14 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let active = true;
     if (!userId) {
+      isProvisionalRef.current = false;
       setState(null);
-      setIsLoading(false);
       setLoadFailure(null);
       return () => {
         active = false;
       };
     }
 
-    setIsLoading(true);
     setLoadFailure(null);
     const cached = storage.getCachedOnboarding(userId);
     if (cached) setState(cached);
@@ -162,35 +200,128 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
       const remote = await api.getOnboarding();
       if (!active) return;
       if (!remote.ok) {
-        // A failed read is not evidence that onboarding has never started.
-        // Keep a user-scoped offline mirror when one exists; otherwise expose
-        // the failure so AuthGate can fail open without replaying the journey.
-        setState(cached);
+        // A failed read is not evidence that onboarding has never started, so
+        // a user-scoped offline mirror always wins when we have one.
+        //
+        // With no mirror we have to choose, and the two failures are not the
+        // same thing. If the request never reached the server, the journey is
+        // still completable entirely on-device, so seed it locally rather than
+        // wall the account off behind an error — every page but the plan
+        // picker works offline, and that one degrades (Brad's call,
+        // 2026-09-07). The seed is deliberately NOT written to the mirror: it
+        // is a guess about an account we could not read, and it must never
+        // later outrank the server's own record of it.
+        //
+        // A server that answered with an error is different. That IS evidence
+        // the account read is broken, and replaying onboarding over real
+        // progress could clobber it — so keep the error wall for that.
+        //
+        // ⚠ `cached` was read BEFORE the await and must not be used here.
+        // `isLoading` now clears as soon as there is anything to route on, so
+        // the journey page is interactive while this read is in flight — and
+        // the reconnect retry fires exactly that read mid-journey. Writing the
+        // pre-await snapshot back would roll live progress backwards, and the
+        // next `persist` would then mirror and upload the rollback.
+        const liveState =
+          stateRef.current?.userId === userId ? stateRef.current : null;
+        if (!isProvisionalRef.current) {
+          const localNow = liveState ?? storage.getCachedOnboarding(userId);
+          if (localNow) {
+            setState(localNow);
+            setLoadFailure({ userId, error: remote.error });
+            return;
+          }
+        }
+        // No mirror and the server was never reached: seed a journey so the
+        // user is not walled off, but treat it as PROVISIONAL. It is a guess
+        // about an account we could not read, so for as long as it stands it
+        // lives in memory only — `persist` neither mirrors it nor uploads it
+        // (see `isProvisionalRef`). Without that, the first Continue would
+        // PUT the seed's defaults over whatever real in-progress row the
+        // server holds, and `onboardingStateRepository.put` would accept it:
+        // its guard only protects a terminal row, not an in-progress one.
+        //
+        // A RETRY that fails again must not re-seed over work already done on
+        // a provisional journey. `useOnlineStatus` flips the moment NetInfo
+        // reports a connection, which routinely precedes real reachability
+        // (captive portal, weak cell, lift doors), so the auto-retry firing
+        // into another failure is the common case, not the rare one — and the
+        // in-memory journey is the only copy of itself. Re-seeding it also
+        // used to leave `hasProvisionalEditsRef` set, which then promoted a
+        // FRESH seed to the local candidate on the next success and PUT its
+        // defaults over the server's real row. Keep the journey, or clear the
+        // flag with it; never one without the other.
+        //
+        // Only an UNREACHABLE error keeps it. A 5xx is contact with the
+        // server, so the account row it holds may carry real progress that
+        // this local guess must not outrank — and a kept journey IS promoted
+        // to the local candidate on the next successful read, where a newer
+        // `updatedAt` would win the merge and then PUT over that row. So a
+        // reconnect answered by a 503 does drop pages walked on a provisional
+        // journey. That is a deliberate choice between two losses, taken in
+        // favour of the account's real data; revisit it only with a way to
+        // merge rather than pick.
+        const unreachable = isUnreachableError(remote.error);
+        const keepProvisional =
+          unreachable && hasProvisionalEditsRef.current && liveState !== null;
+        isProvisionalRef.current = unreachable;
+        if (!keepProvisional) {
+          hasProvisionalEditsRef.current = false;
+          setState(unreachable ? makeInitialState(userId) : null);
+        }
         setLoadFailure({ userId, error: remote.error });
-        setIsLoading(false);
         return;
       }
+      // Work done on a provisional journey is real work, and it is the only
+      // copy of itself — it was deliberately never mirrored. Promote it to
+      // the local candidate so the merge below can weigh it, otherwise the
+      // reconnect read discards every page the user completed offline and
+      // writes the reset over it. An UNTOUCHED seed is not promoted: it is
+      // guesswork, and letting its defaults compete would put back the
+      // clobber that keeping it out of the mirror was protecting against.
+      //
+      // Same rule as the failure branch: re-derive AFTER the await. The
+      // pre-await `cached` snapshot is stale the moment the user advances a
+      // page during the read, and taking it would overwrite both the mirror
+      // and the server with the older state.
+      const liveState =
+        stateRef.current?.userId === userId ? stateRef.current : null;
+      const local = isProvisionalRef.current
+        ? hasProvisionalEditsRef.current
+          ? liveState
+          : null
+        : (liveState ?? storage.getCachedOnboarding(userId));
+      // A real answer supersedes any provisional seed, so local writes may
+      // reach the mirror and the server again from here.
+      isProvisionalRef.current = false;
+      hasProvisionalEditsRef.current = false;
       const serverState = normalizeRemoteState(userId, remote.value);
+      // A journey the server considers finished cannot be un-finished by a
+      // local one that is merely newer. Without this, an offline seed (or an
+      // offline replay) carrying a fresh `updatedAt` would outrank a genuine
+      // `completed` and march the user back through setup on reconnect.
+      const serverIsTerminal =
+        serverState !== null && serverState.status !== "in_progress";
       const next =
         serverState &&
-        (!cached ||
-          Date.parse(serverState.updatedAt) >= Date.parse(cached.updatedAt))
+        (!local ||
+          (serverIsTerminal && local.status === "in_progress") ||
+          Date.parse(serverState.updatedAt) >= Date.parse(local.updatedAt))
           ? serverState
-          : (cached ?? makeInitialState(userId));
+          : (local ?? makeInitialState(userId));
       setState(next);
       storage.cacheOnboarding(userId, next);
-      setIsLoading(false);
 
-      // A newer offline mirror wins and is reconciled server-side. Terminal
+      // A newer local journey wins and is reconciled server-side. Terminal
       // server states cannot be reverted, so never upload over one.
       if (
-        cached &&
+        local &&
         (!serverState ||
           (serverState.status === "in_progress" &&
-            Date.parse(cached.updatedAt) > Date.parse(serverState.updatedAt)))
+            Date.parse(local.updatedAt) > Date.parse(serverState.updatedAt)))
       ) {
         void enqueueUpdate(
-          withoutServerFields(cached),
+          withoutServerFields(local),
           userId,
           identityRef.current.epoch,
         );
@@ -205,6 +336,33 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
   const retryLoad = useCallback(() => {
     setLoadRevision((revision) => revision + 1);
   }, []);
+
+  /**
+   * Self-heal on reconnect.
+   *
+   * A seeded journey suppresses the error wall (state is no longer null), so
+   * `retryLoad`'s only caller is unreachable in exactly the case that needs it
+   * most — and the load effect keys on nothing to do with connectivity. Left
+   * alone, a user seeded in a lift would be marched through a journey they may
+   * already have finished for the rest of the session. Retry the read the
+   * moment the connection actually comes back.
+   *
+   * Keyed on the offline→online TRANSITION, not on `isOnline` itself, because
+   * `useOnlineStatus` starts optimistically `true` and a bare truthy check
+   * would re-fire the read immediately after every failure.
+   */
+  const isOnline = useOnlineStatus();
+  const hasBeenOffline = useRef(false);
+  useEffect(() => {
+    if (!isOnline) {
+      hasBeenOffline.current = true;
+      return;
+    }
+    if (hasBeenOffline.current && loadFailure !== null) {
+      hasBeenOffline.current = false;
+      setLoadRevision((revision) => revision + 1);
+    }
+  }, [isOnline, loadFailure]);
 
   const persist = useCallback(
     async (derive: (current: OnboardingState) => OnboardingState) => {
@@ -223,6 +381,26 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
       const revision = ++revisionRef.current;
       stateRef.current = optimistic;
       setState(optimistic);
+      // A provisional journey stays in memory. Mirroring it would let it
+      // outrank the server's own record on the next launch, and uploading it
+      // would overwrite a real in-progress row with the seed's defaults —
+      // the server only refuses writes over a TERMINAL row. The journey is
+      // still fully usable; it is just not evidence of anything yet, and a
+      // successful read (retried on reconnect) clears the flag.
+      if (isProvisionalRef.current) {
+        hasProvisionalEditsRef.current = true;
+        // A journey the user has FINISHED offline is durable, and the offline
+        // plan picker tells them so ("saved on this device and will sync when
+        // you reconnect"). Mirroring only the terminal state keeps that
+        // promise across a cold start without reopening the clobber: a
+        // terminal local state cannot un-finish anything, the reconcile
+        // weighs it as the local candidate, and the upload guard still
+        // refuses to write over a terminal server row.
+        if (optimistic.status !== "in_progress") {
+          storage.cacheOnboarding(userId, optimistic);
+        }
+        return optimistic;
+      }
       storage.cacheOnboarding(userId, optimistic);
       const result = await enqueueUpdate(
         withoutServerFields(optimistic),
@@ -354,10 +532,13 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
       loadFailure?.userId === userId ? loadFailure.error : null;
     return {
       state: visibleState,
+      // "Nothing to route on yet" — deliberately NOT "a read is in flight".
+      // A cached offline mirror is sufficient to decide where a signed-in
+      // user belongs, so the background refresh must not hold the boot gate:
+      // waiting on it bought nothing and cost an unbounded spinner offline.
+      // A read failure is not pending either; AuthGate fails open on it.
       isLoading:
-        userId !== null &&
-        visibleLoadError === null &&
-        (isLoading || visibleState === null),
+        userId !== null && visibleLoadError === null && visibleState === null,
       loadError: visibleLoadError,
       retryLoad,
       goBack,
@@ -371,7 +552,6 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     };
   }, [
     state,
-    isLoading,
     loadFailure,
     retryLoad,
     userId,

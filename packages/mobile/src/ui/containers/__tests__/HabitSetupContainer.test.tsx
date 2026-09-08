@@ -40,6 +40,8 @@ jest.mock("@/adapters/api", () => ({
 
 // eslint-disable-next-line import/first
 import { HabitSetupContainer } from "@/ui/containers/HabitSetupContainer";
+// eslint-disable-next-line import/first
+import { useFuelSheets } from "@/state/fuel-sheets";
 
 const USER = "user-1";
 
@@ -166,7 +168,186 @@ describe("HabitSetupContainer (self)", () => {
     renderContainer();
     await waitFor(() => expect(captured.props).not.toBeNull());
     act(() => props().onAdjustNutrition());
+    // Outside the journey there is no onboarding stack to stay inside, so the
+    // editor's own home is the right destination.
     expect(mockPush).toHaveBeenCalledWith("/(app)/fuel/targets");
+  });
+
+  it("keeps the Calories deep-link inside the journey's own stack", async () => {
+    // Step 3 of onboarding renders this container with `onboarding`. The root
+    // layout is a `<Slot/>`, so pushing to the editor's `(app)` home unmounts
+    // the whole `(onboarding)` group — taking THIS container's habit draft
+    // with it, and the draft is the only place the Calories toggle lives until
+    // step 3 is saved. The user would come back to Calories switched off with
+    // no habit created: the target saved, the habit silently lost.
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    render(<HabitSetupContainer onboarding />, {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <AdapterProvider adapters={makeAdapters(api, storage)}>
+          {children}
+        </AdapterProvider>
+      ),
+    });
+    await waitFor(() => expect(captured.props).not.toBeNull());
+    act(() => props().onAdjustNutrition());
+    expect(mockPush).toHaveBeenCalledWith("/(onboarding)/fuel-targets");
+  });
+
+  it("picks up a new Calories target after the Fuel editor saves", async () => {
+    // The detour route deliberately keeps this screen MOUNTED to preserve the
+    // habit draft, so there is no remount to refetch on. The target is
+    // resolved server-side from `daily_kcal`, so only a network refresh can
+    // see the new value — a cache re-read returns byte-identical rows, which
+    // is why the first attempt at this fix was inert.
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    api.habitConfigs = [
+      {
+        category: "calories",
+        // Off to begin with, as it is for a user arriving at step 3 — so the
+        // toggle below genuinely dirties the draft.
+        enabled: false,
+        goalId: null,
+        assignedByCoach: false,
+        locked: false,
+        targetValue: 2000,
+        unit: "kcal",
+        period: "day",
+        completionRule: "at_least",
+        daysPerWeek: 7,
+        tolerancePct: 10,
+        pending: null,
+      },
+    ];
+
+    render(<HabitSetupContainer onboarding />, {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <AdapterProvider adapters={makeAdapters(api, storage)}>
+          {children}
+        </AdapterProvider>
+      ),
+    });
+    await waitFor(() => expect(captured.props).not.toBeNull());
+    await waitFor(() =>
+      expect(props().configs.calories.targetValue).toBe(2000),
+    );
+
+    // Dirty the draft, exactly as the product does: the "Adjust in Nutrition"
+    // link only appears once Calories is toggled ON, and that toggle dirties
+    // it. The automatic re-seed deliberately preserves a dirty draft, so this
+    // is the ONLY path that reaches the post-refresh patch — without it the
+    // test passes against an inert fix (the re-seed supplies the new value
+    // instead), which is how the first version of this shipped broken twice.
+    await act(async () => {
+      props().onToggle("calories", true);
+    });
+    // Proof this exercises the patch and not the re-seed: the draft now says
+    // enabled while the baseline still says disabled, and it is exactly that
+    // divergence — a dirty draft — that makes the re-seed stand aside.
+    expect(props().configs.calories.enabled).toBe(true);
+
+    // The Fuel editor saves a new target and ticks the store it already ticks.
+    api.habitConfigs = [
+      {
+        category: "calories",
+        enabled: true,
+        goalId: null,
+        assignedByCoach: false,
+        locked: false,
+        targetValue: 2600,
+        unit: "kcal",
+        period: "day",
+        completionRule: "at_least",
+        daysPerWeek: 7,
+        tolerancePct: 10,
+        pending: null,
+      },
+    ];
+    await act(async () => {
+      useFuelSheets.getState().notifyMutated();
+    });
+
+    await waitFor(() =>
+      expect(props().configs.calories.targetValue).toBe(2600),
+    );
+  });
+
+  it("re-issues the refresh when the mount fetch is still holding the lock", async () => {
+    // The collision this fix has now been inert against three times: step 3's
+    // OWN mount fetch still has `useCachedResource`'s in-flight lock when the
+    // Fuel save ticks `rev`, so the refresh is dropped outright — and that
+    // in-flight GET was issued BEFORE the save, so it cannot carry the new
+    // target. Both the re-issue and the second landing are load-bearing here.
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+
+    const caloriesAt = (targetValue: number): HabitConfigEntry => ({
+      category: "calories",
+      // Off to begin with, so the toggle below dirties the draft.
+      enabled: false,
+      goalId: null,
+      assignedByCoach: false,
+      locked: false,
+      targetValue,
+      unit: "kcal",
+      period: "day",
+      completionRule: "at_least",
+      daysPerWeek: 7,
+      tolerancePct: 10,
+      pending: null,
+    });
+
+    let releaseMount: (() => void) | null = null;
+    const mountGate = new Promise<void>((resolve) => {
+      releaseMount = resolve;
+    });
+    let call = 0;
+    api.getHabitConfigs = jest.fn(async () => {
+      call += 1;
+      if (call === 1) {
+        // The slow cold-start GET. It resolves with the target as it stood
+        // BEFORE the user edited it — 2,200, not the 2,000 in cache and not
+        // the 2,600 they just saved.
+        await mountGate;
+        return ok([caloriesAt(2200)]);
+      }
+      return ok([caloriesAt(2600)]);
+    });
+
+    render(<HabitSetupContainer onboarding />, {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <AdapterProvider adapters={makeAdapters(api, storage)}>
+          {children}
+        </AdapterProvider>
+      ),
+    });
+    await waitFor(() => expect(captured.props).not.toBeNull());
+    await waitFor(() => expect(api.getHabitConfigs).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      props().onToggle("calories", true);
+    });
+    expect(props().configs.calories.enabled).toBe(true);
+
+    // Save in the Fuel editor while the mount GET is STILL out: this refresh
+    // is refused, and the retry ladder is the only thing that recovers it.
+    await act(async () => {
+      useFuelSheets.getState().notifyMutated();
+    });
+
+    await act(async () => {
+      releaseMount?.();
+      await mountGate;
+    });
+
+    // 2,200 lands first. Disarming on it — the bug this test pins — would
+    // leave the card showing 2,200 permanently, because the re-seed leaves a
+    // dirty draft alone.
+    await waitFor(() =>
+      expect(props().configs.calories.targetValue).toBe(2600),
+    );
+    expect(api.getHabitConfigs).toHaveBeenCalledTimes(2);
   });
 
   it("surfaces deferredChangesPending when a loaded config has a pending change", async () => {

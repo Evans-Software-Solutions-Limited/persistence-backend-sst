@@ -1,19 +1,24 @@
 import { Text, View } from "@tamagui/core";
-import React from "react";
+import React, { useState, type ReactNode } from "react";
 import {
   AccessibilityInfo,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
+  ScrollView,
   Switch,
   TextInput,
+  View as RNView,
 } from "react-native";
 import {
-  NestableDraggableFlatList,
-  NestableScrollContainer,
-  ScaleDecorator,
-  type RenderItemParams,
-} from "react-native-draggable-flatlist";
+  COMPACT_REORDER_ROW_HEIGHT,
+  CompactReorderRow,
+} from "@/ui/components/workouts/CompactReorderRow";
+import {
+  ReorderableList,
+  type ReorderableRenderProps,
+} from "@/ui/components/workouts/ReorderableList";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AddExercisePopover } from "@/ui/components/workouts/AddExercisePopover";
@@ -137,6 +142,24 @@ export type WorkoutFormBodyProps = {
   readonly ownerToggleSub: string;
 };
 
+/**
+ * Gap between compact reorder rows. It has to live INSIDE the height the
+ * sortable is told about, because absolutely-positioned rows ignore the
+ * container's `gap`.
+ */
+/**
+ * Spacing between drag rows. It is padding INSIDE the measured row, never
+ * margin or the container's `gap`: the rows are absolutely positioned, so only
+ * their own height reaches the sortable.
+ */
+const EDITOR_ROW_GAP = 10;
+
+/**
+ * Seed height for a row before it reports its own. A lead card with its
+ * superset connector is taller, a plain one shorter.
+ */
+const ESTIMATED_EDITOR_BLOCK_HEIGHT = 190;
+
 export function WorkoutFormBody({
   formState,
   isSubmitting,
@@ -168,6 +191,19 @@ export function WorkoutFormBody({
   const supersetLetters = buildSupersetLetterMap(
     exercises.map((ex) => ex.superset_group),
   );
+  /**
+   * Reorder mode is entered and left DELIBERATELY — by the Reorder control
+   * below, or by holding a card's grip — and never by the drag gesture.
+   *
+   * `react-native-draggable-flatlist` measures the dragged cell when a drag
+   * begins and animates from those measurements, so it wants a list whose
+   * geometry is settled and uniform (its own example is fixed-height rows).
+   * This editor was dragging full exercise cards of wildly different heights,
+   * which is why reordering from part-way down the list fought the finger.
+   * Collapsing to fixed rows FIRST means the library measures a list that is
+   * already uniform, and `getItemLayout` then describes it exactly.
+   */
+
   const reorderBlocks: WorkoutFormExercise[][] = [];
   const seenReorderGroups = new Set<number>();
   for (const exercise of exercises) {
@@ -193,6 +229,342 @@ export function WorkoutFormBody({
     formState.visibility === "public"
       ? [...VISIBILITY_OPTIONS, PUBLIC_READONLY_OPTION]
       : VISIBILITY_OPTIONS;
+
+  // Mirrors the session presenter: without a commit callback every drop would
+  // be swallowed by `onReorderExercise?.(…)`, so there is no mode to offer.
+  const canReorder =
+    reorderBlocks.length > 1 && onReorderExercise !== undefined;
+  const rows = reorderBlocks.map((block) => ({ id: block[0].id, block }));
+
+  /**
+   * Commit a drop and LEAVE reorder mode. Exiting here is the point — the
+   * previous version kept the mode alive after the drop and hid the only exit
+   * behind a Done button.
+   */
+  const handleReorder = (movedId: string, toIndex: number) => {
+    const moved = rows.find((row) => row.id === movedId);
+    const lead = moved?.block[0];
+    if (!lead) return;
+    onReorderExercise?.(lead.id, toIndex);
+    void AccessibilityInfo.announceForAccessibility(
+      `${
+        moved.block.length > 1
+          ? `Superset starting with ${lead.exercise_name}`
+          : lead.exercise_name
+      } moved to position ${toIndex + 1} of ${rows.length}`,
+    );
+  };
+
+  /**
+   * One drag block: a standalone exercise, or every member of a superset. The
+   * grip goes to the block's LEAD card, wrapped in the sortable's `Handle` —
+   * holding it drags the real cards, with no mode in between.
+   */
+  const renderBlock = (
+    block: WorkoutFormExercise[],
+    blockIndex: number,
+    draggable: boolean,
+  ) => {
+    const blockPosition = blockIndex + 1;
+    return (
+      <View key={block[0].id}>
+        <View gap={10}>
+          {block.map((exercise) => {
+            const index = exercises.indexOf(exercise);
+            const hasSupersetGroup = exercise.superset_group !== null;
+            const supersetExercises = hasSupersetGroup ? block : [];
+            const isSupersetStart =
+              hasSupersetGroup && supersetExercises[0]?.id === exercise.id;
+            const isSupersetEnd =
+              hasSupersetGroup && supersetExercises.at(-1)?.id === exercise.id;
+
+            return (
+              <View key={exercise.id}>
+                <ExerciseConfigCard
+                  exercise={exercise}
+                  index={index}
+                  onRemove={() => onRemoveExercise(exercise.id)}
+                  onConfigChange={(field, value) =>
+                    onExerciseConfigChange(exercise.id, field, value)
+                  }
+                  isSupersetStart={isSupersetStart}
+                  isSupersetEnd={isSupersetEnd}
+                  supersetGroupNumber={exercise.superset_group ?? undefined}
+                  supersetLetter={
+                    exercise.superset_group !== null
+                      ? supersetLetters.get(exercise.superset_group)
+                      : undefined
+                  }
+                  supersetLeadExercise={supersetExercises[0]}
+                  reorderPosition={blockPosition}
+                  reorderTotal={reorderBlocks.length}
+                  onMove={
+                    onMoveExercise && (!hasSupersetGroup || isSupersetStart)
+                      ? (direction) => onMoveExercise(exercise.id, direction)
+                      : undefined
+                  }
+                  draggable={
+                    (!hasSupersetGroup || isSupersetStart) &&
+                    canReorder &&
+                    draggable
+                  }
+                />
+              </View>
+            );
+          })}
+        </View>
+      </View>
+    );
+  };
+
+  /** Everything above the exercise rows; it scrolls with them. */
+  const formHeader = (
+    <View gap={18} paddingTop={6}>
+      <Field label="Workout name" required>
+        <TextInput
+          value={formState.name}
+          onChangeText={onSetName}
+          placeholder="e.g. Upper Body"
+          placeholderTextColor="#5C5C68"
+          testID="workout-name-input"
+          style={{
+            backgroundColor: "#1A1D29",
+            borderRadius: 10,
+            borderWidth: 1,
+            borderColor: nameError
+              ? toneHex("error").base
+              : "rgba(255,255,255,0.06)",
+            paddingHorizontal: 14,
+            paddingVertical: 12,
+            color: "#F4F4F8",
+            fontFamily: "Geist",
+            fontSize: 15,
+            fontWeight: "600",
+          }}
+        />
+        {nameError ? (
+          <Text fontFamily="$body" fontSize={12} color="$error" marginTop={4}>
+            {nameError}
+          </Text>
+        ) : null}
+      </Field>
+
+      <Field label="Description" optional>
+        <TextInput
+          value={formState.description}
+          onChangeText={onSetDescription}
+          placeholder="Optional notes — tempo, focus, coaching cues…"
+          placeholderTextColor="#5C5C68"
+          multiline
+          numberOfLines={3}
+          testID="workout-description-input"
+          style={{
+            backgroundColor: "#1A1D29",
+            borderRadius: 10,
+            borderWidth: 1,
+            borderColor: "rgba(255,255,255,0.06)",
+            paddingHorizontal: 14,
+            paddingVertical: 12,
+            minHeight: 72,
+            textAlignVertical: "top",
+            color: "#F4F4F8",
+            fontFamily: "Geist",
+            fontSize: 13.5,
+            fontWeight: "400",
+            lineHeight: 20,
+          }}
+        />
+      </Field>
+
+      <Field label="Visibility">
+        <View flexDirection="row" gap={6}>
+          {visibilityOptions.map((opt) => {
+            const selected = formState.visibility === opt.value;
+            const Icon = VISIBILITY_ICON[opt.value];
+            // The read-only "Public" chip (legacy/seeded workouts)
+            // is disabled — it shows the current value but can't be
+            // (re-)selected. See PUBLIC_READONLY_OPTION.
+            const readOnly = opt.value === "public";
+            return (
+              <Pressable
+                key={opt.value}
+                onPress={
+                  readOnly ? undefined : () => onSetVisibility(opt.value)
+                }
+                disabled={readOnly}
+                testID={`visibility-${opt.value}`}
+                style={({ pressed }) => ({
+                  flex: 1,
+                  opacity: pressed ? 0.85 : 1,
+                })}
+              >
+                <View
+                  alignItems="center"
+                  gap={4}
+                  paddingVertical={11}
+                  paddingHorizontal={6}
+                  borderRadius={12}
+                  borderWidth={1}
+                  borderColor={selected ? "$primary" : "$border"}
+                  backgroundColor={selected ? "$primaryDim" : "$surface2"}
+                >
+                  <Icon
+                    size={14}
+                    color={selected ? toneHex("primary").base : "#C2C2CE"}
+                  />
+                  <Text
+                    fontFamily="$display"
+                    fontWeight="600"
+                    fontSize={12.5}
+                    color={selected ? "$primary" : "$text2"}
+                  >
+                    {opt.label}
+                  </Text>
+                  <Text
+                    fontFamily="$body"
+                    fontSize={9.5}
+                    color={selected ? "$primary" : "$text4"}
+                  >
+                    {opt.hint}
+                  </Text>
+                </View>
+              </Pressable>
+            );
+          })}
+        </View>
+      </Field>
+
+      {isCoachContext ? (
+        <View
+          flexDirection="row"
+          alignItems="center"
+          gap={12}
+          padding={14}
+          borderRadius={12}
+          borderWidth={1}
+          borderColor="$border"
+          backgroundColor="$surface2"
+        >
+          <View flex={1}>
+            <Text
+              fontFamily="$display"
+              fontWeight="600"
+              fontSize={13.5}
+              color="$text"
+            >
+              Show in my workouts
+            </Text>
+            <Text
+              fontFamily="$body"
+              fontSize={11.5}
+              color="$text3"
+              marginTop={2}
+            >
+              {ownerToggleSub}
+            </Text>
+          </View>
+          <Switch
+            value={formState.showInOwnerLibrary}
+            onValueChange={onSetShowInOwnerLibrary}
+            trackColor={{
+              false: color.$surface3,
+              true: color.$primary,
+            }}
+            testID="show-in-owner-library-toggle"
+          />
+        </View>
+      ) : null}
+      <View>
+        <View
+          flexDirection="row"
+          alignItems="center"
+          justifyContent="space-between"
+          paddingHorizontal={2}
+          marginBottom={10}
+        >
+          <Text
+            fontFamily="$display"
+            fontSize={10.5}
+            fontWeight="600"
+            letterSpacing={1.7}
+            textTransform="uppercase"
+            color="$text3"
+          >
+            {`Exercises · ${exercises.length}`}
+          </Text>
+        </View>
+      </View>
+    </View>
+  );
+
+  /** Everything below the rows. */
+  const formFooter = (
+    <View>
+      <Pressable
+        onPress={onAddExerciseTap}
+        testID="add-exercise-button"
+        style={({ pressed }) => ({ opacity: pressed ? 0.8 : 1 })}
+      >
+        <View
+          flexDirection="row"
+          alignItems="center"
+          justifyContent="center"
+          gap={8}
+          marginTop={12}
+          padding={14}
+          borderRadius={12}
+          borderWidth={1.5}
+          borderStyle="dashed"
+          borderColor="$border3"
+          backgroundColor="$surface"
+        >
+          <IconPlus
+            size={16}
+            strokeWidth={2.5}
+            color={toneHex("primary").base}
+          />
+          <Text
+            fontFamily="$display"
+            fontWeight="600"
+            fontSize={13.5}
+            color="$primary"
+          >
+            Add exercise
+          </Text>
+        </View>
+      </Pressable>
+
+      {submitError ? (
+        <Text fontFamily="$body" fontSize={13} color="$error" marginTop={10}>
+          {submitError}
+        </Text>
+      ) : null}
+    </View>
+  );
+
+  /** Shown instead of the rows when there is nothing to configure yet. */
+  const emptyExercises = (
+    <View alignItems="center" paddingVertical={32} gap={8}>
+      <IconDumbbell
+        size={40}
+        color={hasAttemptedSubmit ? toneHex("error").base : "#5C5C68"}
+      />
+      <Text
+        fontFamily="$display"
+        fontWeight="700"
+        fontSize={16}
+        color={hasAttemptedSubmit ? "$error" : "$text"}
+      >
+        {hasAttemptedSubmit
+          ? "Please add at least one exercise"
+          : "No exercises added"}
+      </Text>
+      <Text fontFamily="$body" fontSize={13} color="$text3" textAlign="center">
+        Tap &quot;Add Exercise&quot; to browse and select exercises for your
+        workout
+      </Text>
+    </View>
+  );
 
   return (
     <>
@@ -223,392 +595,48 @@ export function WorkoutFormBody({
             style={{ flex: 1 }}
             behavior={Platform.OS === "ios" ? "padding" : undefined}
           >
-            <NestableScrollContainer
+            <ReorderableList
+              testID="workout-form-scroll"
               style={{ flex: 1, paddingHorizontal: 16 }}
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-              keyboardDismissMode="on-drag"
               contentContainerStyle={{ paddingBottom: 24 }}
+              // Only the seed used before each card reports its own height.
+              // Cards differ — a superset member is shorter than a lead with
+              // its connector — and the list measures them.
+              estimatedItemHeight={ESTIMATED_EDITOR_BLOCK_HEIGHT}
+              compactItemHeight={COMPACT_REORDER_ROW_HEIGHT + EDITOR_ROW_GAP}
+              keyboardDismissMode="on-drag"
               automaticallyAdjustKeyboardInsets
-            >
-              <View gap={18} paddingTop={6}>
-                <Field label="Workout name" required>
-                  <TextInput
-                    value={formState.name}
-                    onChangeText={onSetName}
-                    placeholder="e.g. Upper Body"
-                    placeholderTextColor="#5C5C68"
-                    testID="workout-name-input"
-                    style={{
-                      backgroundColor: "#1A1D29",
-                      borderRadius: 10,
-                      borderWidth: 1,
-                      borderColor: nameError
-                        ? toneHex("error").base
-                        : "rgba(255,255,255,0.06)",
-                      paddingHorizontal: 14,
-                      paddingVertical: 12,
-                      color: "#F4F4F8",
-                      fontFamily: "Geist",
-                      fontSize: 15,
-                      fontWeight: "600",
-                    }}
-                  />
-                  {nameError ? (
-                    <Text
-                      fontFamily="$body"
-                      fontSize={12}
-                      color="$error"
-                      marginTop={4}
-                    >
-                      {nameError}
-                    </Text>
-                  ) : null}
-                </Field>
-
-                <Field label="Description" optional>
-                  <TextInput
-                    value={formState.description}
-                    onChangeText={onSetDescription}
-                    placeholder="Optional notes — tempo, focus, coaching cues…"
-                    placeholderTextColor="#5C5C68"
-                    multiline
-                    numberOfLines={3}
-                    testID="workout-description-input"
-                    style={{
-                      backgroundColor: "#1A1D29",
-                      borderRadius: 10,
-                      borderWidth: 1,
-                      borderColor: "rgba(255,255,255,0.06)",
-                      paddingHorizontal: 14,
-                      paddingVertical: 12,
-                      minHeight: 72,
-                      textAlignVertical: "top",
-                      color: "#F4F4F8",
-                      fontFamily: "Geist",
-                      fontSize: 13.5,
-                      fontWeight: "400",
-                      lineHeight: 20,
-                    }}
-                  />
-                </Field>
-
-                <Field label="Visibility">
-                  <View flexDirection="row" gap={6}>
-                    {visibilityOptions.map((opt) => {
-                      const selected = formState.visibility === opt.value;
-                      const Icon = VISIBILITY_ICON[opt.value];
-                      // The read-only "Public" chip (legacy/seeded workouts)
-                      // is disabled — it shows the current value but can't be
-                      // (re-)selected. See PUBLIC_READONLY_OPTION.
-                      const readOnly = opt.value === "public";
-                      return (
-                        <Pressable
-                          key={opt.value}
-                          onPress={
-                            readOnly
-                              ? undefined
-                              : () => onSetVisibility(opt.value)
-                          }
-                          disabled={readOnly}
-                          testID={`visibility-${opt.value}`}
-                          style={({ pressed }) => ({
-                            flex: 1,
-                            opacity: pressed ? 0.85 : 1,
-                          })}
-                        >
-                          <View
-                            alignItems="center"
-                            gap={4}
-                            paddingVertical={11}
-                            paddingHorizontal={6}
-                            borderRadius={12}
-                            borderWidth={1}
-                            borderColor={selected ? "$primary" : "$border"}
-                            backgroundColor={
-                              selected ? "$primaryDim" : "$surface2"
-                            }
-                          >
-                            <Icon
-                              size={14}
-                              color={
-                                selected ? toneHex("primary").base : "#C2C2CE"
-                              }
-                            />
-                            <Text
-                              fontFamily="$display"
-                              fontWeight="600"
-                              fontSize={12.5}
-                              color={selected ? "$primary" : "$text2"}
-                            >
-                              {opt.label}
-                            </Text>
-                            <Text
-                              fontFamily="$body"
-                              fontSize={9.5}
-                              color={selected ? "$primary" : "$text4"}
-                            >
-                              {opt.hint}
-                            </Text>
-                          </View>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                </Field>
-
-                {isCoachContext ? (
-                  <View
-                    flexDirection="row"
-                    alignItems="center"
-                    gap={12}
-                    padding={14}
-                    borderRadius={12}
-                    borderWidth={1}
-                    borderColor="$border"
-                    backgroundColor="$surface2"
-                  >
-                    <View flex={1}>
-                      <Text
-                        fontFamily="$display"
-                        fontWeight="600"
-                        fontSize={13.5}
-                        color="$text"
-                      >
-                        Show in my workouts
-                      </Text>
-                      <Text
-                        fontFamily="$body"
-                        fontSize={11.5}
-                        color="$text3"
-                        marginTop={2}
-                      >
-                        {ownerToggleSub}
-                      </Text>
-                    </View>
-                    <Switch
-                      value={formState.showInOwnerLibrary}
-                      onValueChange={onSetShowInOwnerLibrary}
-                      trackColor={{
-                        false: color.$surface3,
-                        true: color.$primary,
-                      }}
-                      testID="show-in-owner-library-toggle"
-                    />
-                  </View>
-                ) : null}
-
-                <View>
-                  <View
-                    flexDirection="row"
-                    alignItems="center"
-                    justifyContent="space-between"
-                    paddingHorizontal={2}
-                    marginBottom={10}
-                  >
-                    <Text
-                      fontFamily="$display"
-                      fontSize={10.5}
-                      fontWeight="600"
-                      letterSpacing={1.7}
-                      textTransform="uppercase"
-                      color="$text3"
-                    >
-                      {`Exercises · ${exercises.length}`}
-                    </Text>
-                  </View>
-
-                  {exercises.length === 0 ? (
-                    <View alignItems="center" paddingVertical={32} gap={8}>
-                      <IconDumbbell
-                        size={40}
-                        color={
-                          hasAttemptedSubmit ? toneHex("error").base : "#5C5C68"
-                        }
-                      />
-                      <Text
-                        fontFamily="$display"
-                        fontWeight="700"
-                        fontSize={16}
-                        color={hasAttemptedSubmit ? "$error" : "$text"}
-                      >
-                        {hasAttemptedSubmit
-                          ? "Please add at least one exercise"
-                          : "No exercises added"}
-                      </Text>
-                      <Text
-                        fontFamily="$body"
-                        fontSize={13}
-                        color="$text3"
-                        textAlign="center"
-                      >
-                        Tap &quot;Add Exercise&quot; to browse and select
-                        exercises for your workout
-                      </Text>
-                    </View>
-                  ) : (
-                    <NestableDraggableFlatList
-                      testID="workout-exercise-draggable-list"
-                      data={reorderBlocks}
-                      keyExtractor={(block) => block[0].id}
-                      scrollEnabled={false}
-                      autoscrollThreshold={72}
-                      autoscrollSpeed={80}
-                      activationDistance={6}
-                      renderPlaceholder={() => (
-                        <View
-                          flex={1}
-                          borderRadius={14}
-                          borderWidth={1}
-                          borderColor="$primary"
-                          backgroundColor="$primaryDim"
-                        />
+              data={rows}
+              onReorder={handleReorder}
+              header={formHeader}
+              footer={
+                <>
+                  {exercises.length === 0 ? emptyExercises : null}
+                  {formFooter}
+                </>
+              }
+              renderItem={(
+                row,
+                { index, isCompact }: ReorderableRenderProps,
+              ) => (
+                <RNView style={{ paddingBottom: EDITOR_ROW_GAP }}>
+                  {isCompact ? (
+                    <CompactReorderRow
+                      exerciseNames={row.block.map(
+                        (exercise) => exercise.exercise_name,
                       )}
-                      ItemSeparatorComponent={() => <View height={10} />}
-                      onDragEnd={({ from, to }) => {
-                        if (from === to) return;
-                        const block = reorderBlocks[from];
-                        const lead = block?.[0];
-                        if (!lead) return;
-                        onReorderExercise?.(lead.id, to);
-                        const label =
-                          block.length > 1
-                            ? `Superset starting with ${lead.exercise_name}`
-                            : lead.exercise_name;
-                        void AccessibilityInfo.announceForAccessibility(
-                          `${label} moved to position ${to + 1} of ${reorderBlocks.length}`,
-                        );
-                      }}
-                      renderItem={({
-                        item: block,
-                        drag,
-                        isActive,
-                        getIndex,
-                      }: RenderItemParams<WorkoutFormExercise[]>) => {
-                        const blockPosition = (getIndex() ?? 0) + 1;
-                        return (
-                          <ScaleDecorator activeScale={1.015}>
-                            <View gap={10} opacity={isActive ? 0.96 : 1}>
-                              {block.map((exercise) => {
-                                const index = exercises.indexOf(exercise);
-                                const hasSupersetGroup =
-                                  exercise.superset_group !== null;
-                                const supersetExercises = hasSupersetGroup
-                                  ? block
-                                  : [];
-                                const isSupersetStart =
-                                  hasSupersetGroup &&
-                                  supersetExercises[0]?.id === exercise.id;
-                                const isSupersetEnd =
-                                  hasSupersetGroup &&
-                                  supersetExercises.at(-1)?.id === exercise.id;
-
-                                return (
-                                  <View key={exercise.id}>
-                                    <ExerciseConfigCard
-                                      exercise={exercise}
-                                      index={index}
-                                      onRemove={() =>
-                                        onRemoveExercise(exercise.id)
-                                      }
-                                      onConfigChange={(field, value) =>
-                                        onExerciseConfigChange(
-                                          exercise.id,
-                                          field,
-                                          value,
-                                        )
-                                      }
-                                      isSupersetStart={isSupersetStart}
-                                      isSupersetEnd={isSupersetEnd}
-                                      supersetGroupNumber={
-                                        exercise.superset_group ?? undefined
-                                      }
-                                      supersetLetter={
-                                        exercise.superset_group !== null
-                                          ? supersetLetters.get(
-                                              exercise.superset_group,
-                                            )
-                                          : undefined
-                                      }
-                                      supersetLeadExercise={
-                                        supersetExercises[0]
-                                      }
-                                      reorderPosition={blockPosition}
-                                      reorderTotal={reorderBlocks.length}
-                                      onMove={
-                                        onMoveExercise &&
-                                        (!hasSupersetGroup || isSupersetStart)
-                                          ? (direction) =>
-                                              onMoveExercise(
-                                                exercise.id,
-                                                direction,
-                                              )
-                                          : undefined
-                                      }
-                                      onDrag={
-                                        !hasSupersetGroup || isSupersetStart
-                                          ? drag
-                                          : undefined
-                                      }
-                                      isDragging={isActive}
-                                    />
-                                  </View>
-                                );
-                              })}
-                            </View>
-                          </ScaleDecorator>
-                        );
-                      }}
+                      position={index + 1}
+                      total={rows.length}
+                      // No `onMove` in compact mode: a move from outside the
+                      // drag would desync the sortable's position map. The
+                      // full cards carry the accessible Move actions.
                     />
+                  ) : (
+                    renderBlock(row.block, index, true)
                   )}
-
-                  <Pressable
-                    onPress={onAddExerciseTap}
-                    testID="add-exercise-button"
-                    style={({ pressed }) => ({ opacity: pressed ? 0.8 : 1 })}
-                  >
-                    <View
-                      flexDirection="row"
-                      alignItems="center"
-                      justifyContent="center"
-                      gap={8}
-                      marginTop={12}
-                      padding={14}
-                      borderRadius={12}
-                      borderWidth={1.5}
-                      borderStyle="dashed"
-                      borderColor="$border3"
-                      backgroundColor="$surface"
-                    >
-                      <IconPlus
-                        size={16}
-                        strokeWidth={2.5}
-                        color={toneHex("primary").base}
-                      />
-                      <Text
-                        fontFamily="$display"
-                        fontWeight="600"
-                        fontSize={13.5}
-                        color="$primary"
-                      >
-                        Add exercise
-                      </Text>
-                    </View>
-                  </Pressable>
-
-                  {submitError ? (
-                    <Text
-                      fontFamily="$body"
-                      fontSize={13}
-                      color="$error"
-                      marginTop={10}
-                    >
-                      {submitError}
-                    </Text>
-                  ) : null}
-                </View>
-              </View>
-            </NestableScrollContainer>
+                </RNView>
+              )}
+            />
           </KeyboardAvoidingView>
 
           <View

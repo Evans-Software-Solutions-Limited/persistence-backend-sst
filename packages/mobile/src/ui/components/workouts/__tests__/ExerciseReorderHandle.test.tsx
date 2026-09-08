@@ -1,5 +1,6 @@
+import type { ReactNode } from "react";
+import { View } from "react-native";
 import { fireEvent } from "@testing-library/react-native";
-import * as Haptics from "expo-haptics";
 import { ExerciseReorderHandle } from "../ExerciseReorderHandle";
 import { renderWithTheme } from "../../../../../__tests__/test-utils";
 
@@ -27,23 +28,58 @@ describe("ExerciseReorderHandle", () => {
     expect(onMove).toHaveBeenCalledWith(-1);
   });
 
-  it("starts a real drag from a long press and gives start haptics", () => {
-    const onDrag = jest.fn();
+  it("draws the grip and owns its accessibility, but never the gesture", () => {
+    // The drag belongs to `ReorderableList`, which puts an invisible Gesture
+    // Handler target over the row's corner on top of this grip. A target in
+    // here would unmount when the row collapses to a compact one mid-gesture
+    // and take the drag with it — and a Pressable would never drag at all,
+    // since RN's press responder claims the touch before the pan activates.
     const { getByTestId } = renderWithTheme(
       <ExerciseReorderHandle
         label="Bench"
         position={1}
         total={3}
         onMove={jest.fn()}
-        onDrag={onDrag}
+        draggable
       />,
     );
 
-    fireEvent(getByTestId("reorder-1"), "longPress");
-
-    expect(Haptics.impactAsync).toHaveBeenCalledWith(
-      Haptics.ImpactFeedbackStyle.Medium,
+    const grip = getByTestId("reorder-1");
+    expect(grip.props.accessibilityRole).toBe("adjustable");
+    expect(grip.props.accessibilityLabel).toBe(
+      "Reorder Bench, position 1 of 3",
     );
-    expect(onDrag).toHaveBeenCalledTimes(1);
+    expect(grip.props.onStartShouldSetResponder).toBeUndefined();
+  });
+
+  it("advertises the hold gesture in its hint only when draggable", () => {
+    const { getByTestId, rerender } = renderWithTheme(
+      <ExerciseReorderHandle
+        label="Bench"
+        position={1}
+        total={3}
+        onMove={jest.fn()}
+        draggable
+      />,
+    );
+
+    expect(getByTestId("reorder-1").props.accessibilityHint).toBe(
+      "Hold and drag to move, or use Move up and Move down actions",
+    );
+
+    // The coach surfaces reorder with buttons, so their grip is accessibility
+    // only and must not promise a drag.
+    rerender(
+      <ExerciseReorderHandle
+        label="Bench"
+        position={1}
+        total={3}
+        onMove={jest.fn()}
+      />,
+    );
+
+    expect(getByTestId("reorder-1").props.accessibilityHint).toBe(
+      "Use Move up and Move down actions",
+    );
   });
 });

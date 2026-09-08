@@ -1,6 +1,10 @@
 import { fireEvent } from "@testing-library/react-native";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
-import { OnboardingAccountConfirmationPresenter } from "@/ui/presenters/OnboardingPresenter";
+import {
+  OFFLINE_PLANS_COPY,
+  OnboardingAccountConfirmationPresenter,
+  OnboardingOfflinePlansPresenter,
+} from "@/ui/presenters/OnboardingPresenter";
 
 /**
  * Covers only `OnboardingAccountConfirmationPresenter` — the account-only
@@ -49,5 +53,68 @@ describe("OnboardingAccountConfirmationPresenter", () => {
 
     fireEvent.press(getByTestId("onboarding-account-confirmation-continue"));
     expect(onContinue).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("OnboardingOfflinePlansPresenter", () => {
+  it("explains why plans are missing and that earlier setup is safe", () => {
+    const { getByText } = renderWithTheme(
+      <OnboardingOfflinePlansPresenter
+        onFinish={jest.fn()}
+        onRetry={jest.fn()}
+        onBack={jest.fn()}
+      />,
+    );
+
+    expect(getByText(OFFLINE_PLANS_COPY.title)).toBeTruthy();
+    expect(getByText(OFFLINE_PLANS_COPY.body)).toBeTruthy();
+    // The user must be told the journey so far is not lost, and where plans
+    // live afterwards — otherwise "finish without a plan" reads as giving up.
+    expect(getByText(OFFLINE_PLANS_COPY.hint)).toBeTruthy();
+  });
+
+  it("offers finishing without a plan as the primary action", () => {
+    const onFinish = jest.fn();
+    const { getByTestId } = renderWithTheme(
+      <OnboardingOfflinePlansPresenter
+        onFinish={onFinish}
+        onRetry={jest.fn()}
+        onBack={jest.fn()}
+      />,
+    );
+
+    fireEvent.press(getByTestId("onboarding-offline-plans-finish"));
+
+    expect(onFinish).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers a retry for a connection that has come back", () => {
+    const onRetry = jest.fn();
+    const { getByTestId } = renderWithTheme(
+      <OnboardingOfflinePlansPresenter
+        onFinish={jest.fn()}
+        onRetry={onRetry}
+        onBack={jest.fn()}
+      />,
+    );
+
+    fireEvent.press(getByTestId("onboarding-offline-plans-retry"));
+
+    expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a Back route so the page is not a dead end", () => {
+    const onBack = jest.fn();
+    const { getByLabelText } = renderWithTheme(
+      <OnboardingOfflinePlansPresenter
+        onFinish={jest.fn()}
+        onRetry={jest.fn()}
+        onBack={onBack}
+      />,
+    );
+
+    fireEvent.press(getByLabelText("Back"));
+
+    expect(onBack).toHaveBeenCalledTimes(1);
   });
 });

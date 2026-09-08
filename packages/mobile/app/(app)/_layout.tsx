@@ -29,7 +29,6 @@ import { useNotificationBadge } from "../../src/ui/hooks/useNotificationBadge";
 import { useNotificationDeepLink } from "../../src/ui/hooks/useNotificationDeepLink";
 import { useOfflineDataBootstrap } from "../../src/ui/hooks/useOfflineDataBootstrap";
 import { useSyncWorker } from "../../src/ui/hooks/useSyncWorker";
-import { reorderModalOptions } from "../../src/ui/navigation/reorderModalOptions";
 import { colorPalette } from "../../src/ui/theme";
 
 /**
@@ -180,8 +179,15 @@ export default function AppLayout() {
         <Stack.Screen
           name="workouts/create"
           options={{
-            ...reorderModalOptions,
             title: "New workout",
+            // All three came from the deleted `reorderModalOptions`. The
+            // gesture flag stops the iOS modal dismiss swipe eating this
+            // screen's vertical reorder pan; the other two are how the screen
+            // has always appeared, and a `fullScreenModal` without
+            // `headerShown: false` grows a native header.
+            presentation: "fullScreenModal" as const,
+            headerShown: false,
+            gestureEnabled: false,
           }}
         />
         <Stack.Screen
@@ -194,8 +200,15 @@ export default function AppLayout() {
         <Stack.Screen
           name="workouts/[id]/edit"
           options={{
-            ...reorderModalOptions,
             title: "Edit workout",
+            // All three came from the deleted `reorderModalOptions`. The
+            // gesture flag stops the iOS modal dismiss swipe eating this
+            // screen's vertical reorder pan; the other two are how the screen
+            // has always appeared, and a `fullScreenModal` without
+            // `headerShown: false` grows a native header.
+            presentation: "fullScreenModal" as const,
+            headerShown: false,
+            gestureEnabled: false,
           }}
         />
         <Stack.Screen
@@ -205,8 +218,11 @@ export default function AppLayout() {
         <Stack.Screen
           name="session/index"
           options={{
-            ...reorderModalOptions,
             title: "Active session",
+            // See `workouts/[id]/edit` above.
+            presentation: "fullScreenModal" as const,
+            headerShown: false,
+            gestureEnabled: false,
           }}
         />
         <Stack.Screen

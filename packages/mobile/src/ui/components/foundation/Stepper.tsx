@@ -1,5 +1,5 @@
 import { Text, View } from "@tamagui/core";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { TextInput } from "react-native";
 
 import { IconMinus, IconPlus } from "@/ui/components/icons";
@@ -51,6 +51,25 @@ export function Stepper({
   testID,
 }: StepperProps) {
   const [buffer, setBuffer] = useState(String(value));
+
+  /**
+   * Commit on unmount as well as on blur.
+   *
+   * `onBlur` only arrives after a native round trip, so anything that unmounts
+   * a focused input silently drops what was typed — `Keyboard.dismiss()`
+   * followed by a state change cannot outwait it. The workout editor's
+   * reorder collapse did exactly that and ate the value.
+   */
+  const bufferRef = useRef(buffer);
+  bufferRef.current = buffer;
+  const onBlurRef = useRef(onBlur);
+  onBlurRef.current = onBlur;
+  useEffect(
+    () => () => {
+      onBlurRef.current?.(bufferRef.current);
+    },
+    [],
+  );
   useEffect(() => {
     setBuffer(String(value));
   }, [value]);

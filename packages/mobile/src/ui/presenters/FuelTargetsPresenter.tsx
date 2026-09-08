@@ -96,7 +96,7 @@ export type FuelTargetsPresenterProps = {
   weightUnit?: WeightUnit;
   /** Display-unit preference for the profile-strip height tile. Defaults to "cm". */
   heightUnit?: HeightUnit;
-  onOpenProfile: () => void;
+  onOpenProfile?: () => void;
 
   /** Calculator vs direct kcal entry — manual swaps the profile/activity/
    * goal sections for a single kcal input; macros work identically. */
@@ -575,7 +575,7 @@ function ProfileStrip({
   weightKg: number | null;
   weightUnit: WeightUnit;
   heightUnit: HeightUnit;
-  onOpenProfile: () => void;
+  onOpenProfile?: () => void;
 }) {
   const genderLabel =
     gender === "male"
@@ -604,16 +604,23 @@ function ProfileStrip({
         >
           FROM PROFILE
         </Text>
-        <Pressable
-          onPress={onOpenProfile}
-          testID="fuel-targets-open-profile"
-          accessibilityRole="button"
-          accessibilityLabel="Update your profile"
-        >
-          <Text fontFamily="$body" fontSize={11} color="$text3">
-            Update in settings
-          </Text>
-        </Pressable>
+        {/*
+          Omitted when there is nowhere safe to send them. The onboarding
+          mount of this editor has no route into `(app)` that would not
+          unmount the journey and discard the habit draft.
+        */}
+        {onOpenProfile ? (
+          <Pressable
+            onPress={onOpenProfile}
+            testID="fuel-targets-open-profile"
+            accessibilityRole="button"
+            accessibilityLabel="Update your profile"
+          >
+            <Text fontFamily="$body" fontSize={11} color="$text3">
+              Update in settings
+            </Text>
+          </Pressable>
+        ) : null}
       </View>
       <Card pad={0} radius={12} style={{ overflow: "hidden" }}>
         <View flexDirection="row">

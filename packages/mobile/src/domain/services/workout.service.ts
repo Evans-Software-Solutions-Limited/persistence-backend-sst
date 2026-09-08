@@ -267,3 +267,37 @@ function nextSupersetGroup(exercises: readonly WorkoutExercise[]): number {
   }
   return max + 1;
 }
+
+/**
+ * Group exercises into REORDER BLOCKS: a superset moves as one unit, anything
+ * else moves alone. Exercises must already be in sort order.
+ *
+ * Shared deliberately. The session presenter and
+ * `reorderSessionExercisesCommand` each used to derive this themselves, and
+ * they disagreed: the presenter splits a superset containing a cardio or
+ * plyometric exercise into individual DISPLAY rows (those need the metric
+ * logger, not the strength table) while the command groups purely by
+ * `supersetGroup`. A drop index from one index space then addressed the wrong
+ * block in the other — silently no-oping past the end, or landing the row
+ * after the wrong exercise. Grouping is by `supersetGroup` VALUE, not
+ * contiguity, which is what the command has always done.
+ */
+export function buildReorderBlocks<T extends { supersetGroup?: number | null }>(
+  ordered: readonly T[],
+): T[][] {
+  const blocks: T[][] = [];
+  const used = new Set<number>();
+  for (const exercise of ordered) {
+    const group = exercise.supersetGroup;
+    if (group == null) {
+      blocks.push([exercise]);
+      continue;
+    }
+    if (used.has(group)) continue;
+    used.add(group);
+    blocks.push(
+      ordered.filter((candidate) => candidate.supersetGroup === group),
+    );
+  }
+  return blocks;
+}

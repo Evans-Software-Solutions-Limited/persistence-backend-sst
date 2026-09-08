@@ -114,6 +114,22 @@ describe("createWorkoutCommand", () => {
     expect(result.value.exercises[0].exercise).toBeNull();
   });
 
+  it("takes the cached quota up with the new workout", () => {
+    // Same invariant as the delete path: the count and the list must not be
+    // able to disagree, since `useWorkoutTotalCapGate` reads the count.
+    storage.cacheWorkoutsList("user-1", "mine", [], { used: 2, limit: 3 });
+
+    const result = createWorkoutCommand(
+      { storage, generateId, userId: "user-1" },
+      { name: "Push", exercises: [{ exerciseId: "ex-1", sortOrder: 0 }] },
+    );
+
+    expect(result.ok).toBe(true);
+    const slice = storage.getCachedWorkoutsList("user-1", "mine");
+    expect(slice?.workouts).toHaveLength(1);
+    expect(slice?.quota?.used).toBe(3);
+  });
+
   it("prepends the new workout to existing mine list", () => {
     const existing: Workout = {
       id: "wo-existing",
@@ -392,6 +408,36 @@ describe("deleteWorkoutCommand", () => {
     expect(pending).toHaveLength(1);
     expect(pending[0].operation).toBe("delete");
     expect(pending[0].method).toBe("DELETE");
+  });
+
+  it("takes the cached quota down with the workout", () => {
+    // The reported bug: after deleting, My Workouts showed 3 while the
+    // limit screen still said "You have 4 workouts", which kept a free user
+    // locked out of starting a session even though they had just resolved it.
+    const w2: Workout = {
+      id: "w-2",
+      name: "Pull",
+      description: null,
+      createdBy: "user-1",
+      visibility: "private",
+      estimatedDurationMinutes: 30,
+      showInOwnerLibrary: true,
+      exercises: [],
+      createdAt: "2026-04-27T00:00:00Z",
+      updatedAt: "2026-04-27T00:00:00Z",
+    };
+    const existing =
+      storage.getCachedWorkoutsList("user-1", "mine")?.workouts ?? [];
+    storage.cacheWorkoutsList("user-1", "mine", [...existing, w2], {
+      used: 4,
+      limit: 3,
+    });
+
+    deleteWorkoutCommand({ storage, userId: "user-1" }, "w-2");
+
+    const slice = storage.getCachedWorkoutsList("user-1", "mine");
+    expect(slice?.workouts.map((w) => w.id)).toEqual(["w-1"]);
+    expect(slice?.quota?.used).toBe(3);
   });
 });
 

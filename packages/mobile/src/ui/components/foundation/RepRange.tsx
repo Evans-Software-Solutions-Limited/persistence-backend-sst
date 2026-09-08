@@ -1,5 +1,5 @@
 import { Text, View } from "@tamagui/core";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { TextInput, type TextStyle } from "react-native";
 
 /**
@@ -38,6 +38,23 @@ export function RepRange({
 }: RepRangeProps) {
   const [minBuffer, setMinBuffer] = useState(String(min));
   const [maxBuffer, setMaxBuffer] = useState(String(max));
+
+  /**
+   * Commit both buffers on unmount as well as on blur — `onBlur` only arrives
+   * after a native round trip, so anything that unmounts a focused input drops
+   * what was typed. The editor's reorder collapse did exactly that.
+   */
+  const buffersRef = useRef({ min: minBuffer, max: maxBuffer });
+  buffersRef.current = { min: minBuffer, max: maxBuffer };
+  const commitRef = useRef({ onMinBlur, onMaxBlur });
+  commitRef.current = { onMinBlur, onMaxBlur };
+  useEffect(
+    () => () => {
+      commitRef.current.onMinBlur?.(buffersRef.current.min);
+      commitRef.current.onMaxBlur?.(buffersRef.current.max);
+    },
+    [],
+  );
   useEffect(() => setMinBuffer(String(min)), [min]);
   useEffect(() => setMaxBuffer(String(max)), [max]);
 

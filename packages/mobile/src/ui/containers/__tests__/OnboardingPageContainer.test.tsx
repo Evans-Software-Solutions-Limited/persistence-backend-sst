@@ -24,6 +24,11 @@ let mockConfirmationProps: {
   expiresAt: string | null;
   onContinue: () => void;
 } | null = null;
+let mockOfflinePlansProps: {
+  onFinish: () => void;
+  onRetry: () => void;
+  onBack: () => void;
+} | null = null;
 let mockCurrentPage: OnboardingPage = "recommendation";
 let mockIsFocused = true;
 const mockRefetch = jest.fn();
@@ -31,6 +36,7 @@ let mockSubscriptionData:
   | { tierName: string; tierDisplayName?: string; expiresAt?: string | null }
   | undefined = { tierName: "free" };
 let mockSubscriptionIsError = false;
+let mockIsOnline = true;
 
 jest.mock("expo-router", () => ({
   useRouter: () => ({
@@ -67,6 +73,14 @@ jest.mock("@/ui/presenters/OnboardingPresenter", () => {
       mockIntentProps = props;
       return null;
     },
+    OnboardingOfflinePlansPresenter: (props: {
+      onFinish: () => void;
+      onRetry: () => void;
+      onBack: () => void;
+    }) => {
+      mockOfflinePlansProps = props;
+      return null;
+    },
     OnboardingAccountConfirmationPresenter: (props: {
       tierDisplayName: string;
       expiresAt: string | null;
@@ -87,6 +101,10 @@ jest.mock("@/ui/hooks/useMySubscription", () => ({
     isError: mockSubscriptionIsError,
     refetch: mockRefetch,
   }),
+}));
+
+jest.mock("@/ui/hooks/useOnlineStatus", () => ({
+  useOnlineStatus: () => mockIsOnline,
 }));
 
 jest.mock("@/ui/state/OnboardingProvider", () => ({
@@ -152,6 +170,7 @@ describe("OnboardingPageContainer recommendation", () => {
     mockSubscriptionProps = null;
     mockIntentProps = null;
     mockConfirmationProps = null;
+    mockOfflinePlansProps = null;
     mockCurrentPage = "recommendation";
     mockIsFocused = true;
     mockSkipPage.mockResolvedValue(null);
@@ -161,7 +180,93 @@ describe("OnboardingPageContainer recommendation", () => {
     mockCompletePage.mockResolvedValue("recommendation");
     mockSubscriptionData = { tierName: "free" };
     mockSubscriptionIsError = false;
+    mockIsOnline = true;
     mockRefetch.mockReset();
+  });
+
+  it("offers the offline plan picker instead of the paywall when offline", async () => {
+    mockIsOnline = false;
+    mockSubscriptionData = undefined;
+
+    render(<OnboardingPageContainer page="recommendation" />);
+
+    // The paywall needs plans and an entitlement, neither of which exists.
+    expect(mockOfflinePlansProps).not.toBeNull();
+    expect(mockSubscriptionProps).toBeNull();
+    expect(mockConfirmationProps).toBeNull();
+  });
+
+  it("does not wait on an entitlement read that cannot settle while offline", async () => {
+    // `data === undefined && !isError` is the "still unknown" shape. Online
+    // that must hold the loader; offline it never resolves, so it must not.
+    mockIsOnline = false;
+    mockSubscriptionData = undefined;
+    mockSubscriptionIsError = false;
+
+    render(<OnboardingPageContainer page="recommendation" />);
+
+    expect(mockOfflinePlansProps).not.toBeNull();
+  });
+
+  it("completes the journey from the offline plan picker and opens Home", async () => {
+    mockIsOnline = false;
+    mockSubscriptionData = undefined;
+    render(<OnboardingPageContainer page="recommendation" />);
+
+    await act(async () => {
+      mockOfflinePlansProps?.onFinish();
+    });
+
+    // Both writes are local-first and survive being offline.
+    expect(mockCompletePage).toHaveBeenCalledWith("recommendation");
+    expect(mockCompleteJourney).toHaveBeenCalled();
+    expect(mockReplace).toHaveBeenCalledWith("/(app)/(tabs)");
+  });
+
+  it("retries the entitlement read from the offline plan picker", async () => {
+    mockIsOnline = false;
+    mockSubscriptionData = undefined;
+    render(<OnboardingPageContainer page="recommendation" />);
+
+    await act(async () => {
+      mockOfflinePlansProps?.onRetry();
+    });
+
+    expect(mockRefetch).toHaveBeenCalled();
+  });
+
+  it("goes back from the offline plan picker through persisted state", async () => {
+    mockIsOnline = false;
+    mockSubscriptionData = undefined;
+    render(<OnboardingPageContainer page="recommendation" />);
+
+    await act(async () => {
+      mockOfflinePlansProps?.onBack();
+    });
+
+    expect(mockGoBack).toHaveBeenCalled();
+  });
+
+  it("still honours a known paid entitlement while offline", async () => {
+    // A cached entitlement is a real answer — do not downgrade it to the
+    // offline state just because the device currently has no connection.
+    mockIsOnline = false;
+    mockSubscriptionData = { tierName: "premium", tierDisplayName: "Premium" };
+
+    render(<OnboardingPageContainer page="recommendation" />);
+
+    expect(mockConfirmationProps).not.toBeNull();
+    expect(mockOfflinePlansProps).toBeNull();
+  });
+
+  it("shows the paywall, not the offline state, when online", async () => {
+    mockIsOnline = true;
+    mockSubscriptionData = { tierName: "free" };
+
+    render(<OnboardingPageContainer page="recommendation" />);
+
+    expect(mockOfflinePlansProps).toBeNull();
+    expect(mockSubscriptionProps).not.toBeNull();
   });
 
   it("warns before dismissing the whole journey from the Welcome header", async () => {

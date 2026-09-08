@@ -107,8 +107,14 @@ export type CachedResourceState<T> = {
    * Network refresh: drain the queue, fetch server-truth, reconcile cache.
    * Pass `{ silent: true }` for a background/focus refresh that updates data
    * WITHOUT toggling `isRefreshing` (so it doesn't flash the RefreshControl).
+   *
+   * Resolves `false` when the call was DROPPED rather than performed — no
+   * user, or another fetch already in flight. Most callers can ignore that
+   * (their refresh is opportunistic), but a caller refreshing to observe a
+   * specific server-side change cannot: the in-flight fetch it collided with
+   * was issued before that change, so its result will not contain it.
    */
-  refresh: (opts?: { silent?: boolean }) => Promise<void>;
+  refresh: (opts?: { silent?: boolean }) => Promise<boolean>;
   /**
    * Synchronous cache re-read: re-runs `read` and pushes the result into local
    * state, with NO network call. This is the reactive bridge for optimistic
@@ -200,7 +206,7 @@ export function useCachedResource<T>(
 
   const refresh = useCallback(
     async (opts?: { silent?: boolean }) => {
-      if (!userId || inFlightRef.current) return;
+      if (!userId || inFlightRef.current) return false;
       inFlightRef.current = true;
       // `silent` fetches server-truth WITHOUT toggling `isRefreshing`, so a
       // background/focus refresh doesn't flash the RefreshControl spinner (a
@@ -216,6 +222,7 @@ export function useCachedResource<T>(
         if (showSpinner) setIsRefreshing(false);
         inFlightRef.current = false;
       }
+      return true;
     },
     [userId, attemptFetch],
   );

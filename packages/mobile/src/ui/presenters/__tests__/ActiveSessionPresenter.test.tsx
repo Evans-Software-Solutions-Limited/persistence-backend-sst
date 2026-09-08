@@ -1,5 +1,5 @@
-import { act, fireEvent } from "@testing-library/react-native";
-import { AccessibilityInfo, AppState } from "react-native";
+import { fireEvent } from "@testing-library/react-native";
+import { AccessibilityInfo, StyleSheet } from "react-native";
 import React from "react";
 import {
   ActiveSessionPresenter,
@@ -7,6 +7,7 @@ import {
 } from "../ActiveSessionPresenter";
 import type { SessionExercise } from "@/domain/models/session";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
+import { reorderableTestApi } from "../../../../__tests__/reorderable-test-api";
 
 const buildExercise = (
   overrides: Partial<SessionExercise> = {},
@@ -104,7 +105,11 @@ describe("ActiveSessionPresenter (vertical scroll, legacy parity)", () => {
     expect(queryByTestId("exercise-tab-strip")).toBeNull();
   });
 
-  it("persists the exact destination and announces a multi-position drop", () => {
+  it("collapses on the hold, commits on the drop, and expands again", () => {
+    // ONE gesture: the hold collapses the rows so the list can be seen at a
+    // glance, the same finger drags, and the drop commits and puts the cards
+    // back. Nothing is tapped, in or out. The collapse fires BEFORE the drag
+    // activates on purpose — see `ReorderableList`.
     const onReorderExercise = jest.fn();
     const announce = jest
       .spyOn(AccessibilityInfo, "announceForAccessibility")
@@ -122,45 +127,187 @@ describe("ActiveSessionPresenter (vertical scroll, legacy parity)", () => {
       <ActiveSessionPresenter {...props} />,
     );
 
-    const list = getByTestId("active-session-draggable-list");
     expect(getByTestId("active-session-screen").props.style).toContainEqual({
       paddingTop: 44,
     });
-    expect(list.props.activationDistance).toBe(20);
-    expect(list.props.containerStyle).toEqual({ flex: 1 });
-    expect(list.props.scrollEnabled).not.toBe(false);
-    expect(list.props.dragItemOverflow).toBeUndefined();
-    expect(list.props.renderPlaceholder).toEqual(expect.any(Function));
-    expect(list.props.renderPlaceholder().props.style).toMatchObject({
-      flex: 1,
-      backgroundColor: "rgba(34,211,238,0.10)",
-    });
-    const activeCellSize = { value: 412 };
-    fireEvent(list, "animValInit", { activeCellSize });
+    // At rest: the real cards, and no reorder control of any kind.
+    expect(getByTestId("session-exercise-se-1")).toBeTruthy();
+    expect(queryByTestId("active-session-reorder")).toBeNull();
+    expect(queryByTestId("compact-reorder-row")).toBeNull();
 
-    fireEvent(getByTestId("reorder-1"), "longPress");
-    expect(queryByTestId("active-session-finish")).toBeNull();
-    expect(
-      getByTestId("active-session-draggable-list").props.scrollEnabled,
-    ).toBe(false);
+    reorderableTestApi.collapse("se-1");
     expect(getAllByTestId("compact-reorder-row")).toHaveLength(3);
-    fireEvent(list, "dragBegin", 0);
-    expect(activeCellSize.value).toBe(72);
-    expect(getAllByTestId("compact-reorder-row-names")[0].props.children).toBe(
-      "Bench Press",
-    );
+    expect(queryByTestId("session-exercise-se-1")).toBeNull();
+    // Finish is never replaced by a Done button.
+    expect(getByTestId("active-session-finish")).toBeTruthy();
 
-    fireEvent(list, "dragEnd", {
-      from: 0,
-      to: 2,
-    });
+    reorderableTestApi.dragStart("se-1");
+    reorderableTestApi.drop("se-1", 2, { "se-1": 2, "se-2": 0, "se-3": 1 });
 
     expect(onReorderExercise).toHaveBeenCalledWith("se-1", 2);
     expect(announce).toHaveBeenCalledWith(
       "Bench Press moved to position 3 of 3",
     );
+    // Back to the cards on the drop — no way to be left stranded in compact.
     expect(getByTestId("session-exercise-se-1")).toBeTruthy();
-    expect(getByTestId("active-session-finish")).toBeTruthy();
+    expect(queryByTestId("compact-reorder-row")).toBeNull();
+  });
+
+  it("puts the rows back when a hold never becomes a drag", () => {
+    // A press that collapsed the list but never dragged has to undo itself, or
+    // a tap on the grip would leave the list compact with nothing to restore
+    // it. The drop covers a pan that activated; this covers one that did not.
+    const props = {
+      ...baseProps,
+      onReorderExercise: jest.fn(),
+      exercises: [
+        buildExercise({ id: "se-1" }),
+        buildExercise({ id: "se-2", sortOrder: 1 }),
+      ],
+    };
+    const { getAllByTestId, getByTestId, queryByTestId } = renderWithTheme(
+      <ActiveSessionPresenter {...props} />,
+    );
+
+    reorderableTestApi.collapse("se-1");
+    expect(getAllByTestId("compact-reorder-row")).toHaveLength(2);
+
+    reorderableTestApi.collapseEnd("se-1");
+
+    expect(getByTestId("session-exercise-se-1")).toBeTruthy();
+    expect(queryByTestId("compact-reorder-row")).toBeNull();
+  });
+
+  it("commits nothing, and still expands, when the drop changes nothing", () => {
+    const onReorderExercise = jest.fn();
+    const props = {
+      ...baseProps,
+      onReorderExercise,
+      exercises: [
+        buildExercise({ id: "se-1" }),
+        buildExercise({ id: "se-2", sortOrder: 1 }),
+      ],
+    };
+    const { getByTestId, queryByTestId } = renderWithTheme(
+      <ActiveSessionPresenter {...props} />,
+    );
+
+    reorderableTestApi.collapse("se-1");
+    reorderableTestApi.dragStart("se-1");
+    // Released in its own slot.
+    reorderableTestApi.drop("se-1", 0, { "se-1": 0, "se-2": 1 });
+
+    expect(onReorderExercise).not.toHaveBeenCalled();
+    expect(getByTestId("session-exercise-se-1")).toBeTruthy();
+    expect(queryByTestId("compact-reorder-row")).toBeNull();
+  });
+
+  it("ignores a drop from a pan that never activated", () => {
+    // Gesture Handler finalizes FAILED and CANCELLED pans too, and the library
+    // forwards those as drops — a tap, or a scroll swipe starting on the grip.
+    const onReorderExercise = jest.fn();
+    const props = {
+      ...baseProps,
+      onReorderExercise,
+      exercises: [
+        buildExercise({ id: "se-1" }),
+        buildExercise({ id: "se-2", sortOrder: 1 }),
+      ],
+    };
+    renderWithTheme(<ActiveSessionPresenter {...props} />);
+
+    // No `dragStart`.
+    reorderableTestApi.drop("se-1", 1, { "se-1": 1, "se-2": 0 });
+
+    expect(onReorderExercise).not.toHaveBeenCalled();
+  });
+
+  it("keeps drag rows in the command's index space when a superset holds cardio", () => {
+    // `buildDisplayItems` splits a cardio-bearing superset into separate
+    // DISPLAY rows, but the reorder command groups purely by supersetGroup.
+    // Deriving drag rows from the display items handed the command an index
+    // from the wrong space — silently no-oping past the end, or landing the
+    // row after the wrong exercise.
+    const onReorderExercise = jest.fn();
+    const props = {
+      ...baseProps,
+      onReorderExercise,
+      templateByExercise: {
+        "se-2": { restSeconds: 90, category: "cardio" as const },
+      },
+      exercises: [
+        buildExercise({ id: "se-1" }),
+        buildExercise({ id: "se-2", sortOrder: 1, supersetGroup: 1 }),
+        buildExercise({ id: "se-3", sortOrder: 2, supersetGroup: 1 }),
+        buildExercise({ id: "se-4", sortOrder: 3 }),
+      ],
+    };
+    const { getAllByTestId, getByTestId } = renderWithTheme(
+      <ActiveSessionPresenter {...props} />,
+    );
+
+    reorderableTestApi.collapse("se-1");
+
+    // THREE blocks, matching the command: se-1, the group, se-4 — even though
+    // the full-card view renders the cardio peers as separate rows.
+    expect(getAllByTestId("compact-reorder-row")).toHaveLength(3);
+    expect(getByTestId("sortable-item-superset-1")).toBeTruthy();
+
+    reorderableTestApi.dragStart("se-1");
+    reorderableTestApi.drop("se-1", 2, {
+      "se-1": 2,
+      "superset-1": 0,
+      "se-4": 1,
+    });
+
+    // A valid block index, so the command can act on it.
+    expect(onReorderExercise).toHaveBeenCalledWith("se-1", 2);
+  });
+
+  it("maps a dropped superset back to its lead exercise", () => {
+    const onReorderExercise = jest.fn();
+    const props = {
+      ...baseProps,
+      onReorderExercise,
+      exercises: [
+        buildExercise({ id: "se-1", supersetGroup: 1 }),
+        buildExercise({ id: "se-2", sortOrder: 1, supersetGroup: 1 }),
+        buildExercise({ id: "se-3", sortOrder: 2 }),
+      ],
+    };
+    const { getByTestId } = renderWithTheme(
+      <ActiveSessionPresenter {...props} />,
+    );
+
+    // The block's row id is the superset key, but the command takes the LEAD
+    // exercise — two index spaces that used to be converted twice.
+    reorderableTestApi.dragStart("superset-1");
+    reorderableTestApi.drop("superset-1", 1, {
+      "superset-1": 1,
+      "se-3": 0,
+    });
+
+    expect(onReorderExercise).toHaveBeenCalledWith("se-1", 1);
+  });
+
+  it("puts the drag on its own target, so set inputs still work", () => {
+    const props = {
+      ...baseProps,
+      onReorderExercise: jest.fn(),
+      exercises: [
+        buildExercise({ id: "se-1" }),
+        buildExercise({ id: "se-2", sortOrder: 1 }),
+      ],
+    };
+    const { getByTestId } = renderWithTheme(
+      <ActiveSessionPresenter {...props} />,
+    );
+
+    // The drag target is its own view over the row's corner, not the row: a
+    // card-wide pan would fight the weight and reps TextInputs. It also sits
+    // OUTSIDE the body, so the collapse cannot unmount it mid-gesture.
+    expect(getByTestId("sortable-handle-se-1")).toBeTruthy();
+    expect(getByTestId("sortable-handle-se-2")).toBeTruthy();
   });
 
   it("threads weightUnit='lb' into the previous-set chip (device-QA #8b)", () => {
@@ -266,11 +413,12 @@ describe("ActiveSessionPresenter (vertical scroll, legacy parity)", () => {
     expect(queryByTestId("superset-group-2")).toBeNull();
   });
 
-  it("keeps a large superset compact regardless of its exercise count", () => {
+  it("makes a large superset ONE draggable row, led by its first exercise", () => {
+    const onReorderExercise = jest.fn();
     const props = {
       ...baseProps,
       onMoveExercise: jest.fn(),
-      onReorderExercise: jest.fn(),
+      onReorderExercise,
       exercises: [
         buildExercise({
           id: "se-1",
@@ -306,128 +454,30 @@ describe("ActiveSessionPresenter (vertical scroll, legacy parity)", () => {
       <ActiveSessionPresenter {...props} />,
     );
 
-    fireEvent(getByTestId("reorder-1"), "longPress");
+    // Grouped as one block while idle...
+    expect(getByTestId("superset-group-7")).toBeTruthy();
+    // The block's row id is the superset key — se-1..se-4 are all inside it.
+    reorderableTestApi.collapse("superset-7");
 
-    expect(queryByTestId("superset-group-7")).toBeNull();
-    const compactRows = getAllByTestId("compact-reorder-row");
-    expect(compactRows).toHaveLength(2);
-    expect(compactRows[0].props.style).toEqual(
-      expect.arrayContaining([expect.objectContaining({ height: 72 })]),
-    );
-    const names = getAllByTestId("compact-reorder-row-names")[0];
-    expect(names.props.numberOfLines).toBe(2);
-    expect(names.props.children).toBe("Bench Press + Row + Pulldown + Curl");
-    expect(compactRows[0].props.style).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          borderLeftWidth: 4,
-          borderLeftColor: "#22D3EE",
-        }),
-      ]),
-    );
-  });
+    // ...and still one row once collapsed: the block moves as a unit.
+    expect(getAllByTestId("compact-reorder-row")).toHaveLength(2);
+    expect(getByTestId("sortable-item-superset-7")).toBeTruthy();
+    expect(getByTestId("sortable-item-se-5")).toBeTruthy();
+    expect(queryByTestId("sortable-item-se-2")).toBeNull();
 
-  it("keeps a non-first dragged row anchored to the same screen coordinate", () => {
-    const props = {
-      ...baseProps,
-      onReorderExercise: jest.fn(),
-      exercises: [
-        buildExercise({ id: "se-1" }),
-        buildExercise({ id: "se-2", sortOrder: 1 }),
-        buildExercise({ id: "se-3", sortOrder: 2 }),
-      ],
-    };
-    const { getByTestId } = renderWithTheme(
-      <ActiveSessionPresenter {...props} />,
-    );
-    const list = getByTestId("active-session-draggable-list");
-    const activeCellOffset = { value: 316 };
-    const scrollOffset = { value: 250 };
-    fireEvent(list, "animValInit", {
-      activeCellOffset,
-      activeCellSize: { value: 180 },
-      scrollOffset,
-    });
-    fireEvent(getByTestId("active-session-drag-block-1"), "layout", {
-      nativeEvent: {
-        layout: { x: 0, y: 0, width: 320, height: 300 },
-      },
+    reorderableTestApi.dragStart("superset-7");
+    reorderableTestApi.drop("superset-7", 1, {
+      "superset-7": 1,
+      "se-5": 0,
     });
 
-    const originalScreenY = activeCellOffset.value - scrollOffset.value;
-    fireEvent(getByTestId("reorder-2"), "longPress");
-
-    expect(activeCellOffset.value).toBe(88);
-    expect(scrollOffset.value).toBe(22);
-    expect(activeCellOffset.value - scrollOffset.value).toBe(originalScreenY);
+    expect(onReorderExercise).toHaveBeenCalledWith("se-1", 1);
   });
 
-  it("preserves enough scroll extent to anchor a lower compact row", () => {
-    const props = {
-      ...baseProps,
-      onReorderExercise: jest.fn(),
-      exercises: Array.from({ length: 5 }, (_, index) =>
-        buildExercise({ id: `se-${index + 1}`, sortOrder: index }),
-      ),
-    };
-    const { getByTestId } = renderWithTheme(
-      <ActiveSessionPresenter {...props} />,
-    );
-    const list = getByTestId("active-session-draggable-list");
-    const activeCellOffset = { value: 1264 };
-    const scrollOffset = { value: 976 };
-    fireEvent(list, "animValInit", {
-      activeCellOffset,
-      activeCellSize: { value: 300 },
-      scrollOffset,
-    });
-    fireEvent(list, "contentSizeChange", 320, 1800);
-    for (let position = 1; position <= 4; position += 1) {
-      fireEvent(
-        getByTestId(`active-session-drag-block-${position}`),
-        "layout",
-        {
-          nativeEvent: {
-            layout: { x: 0, y: 0, width: 320, height: 300 },
-          },
-        },
-      );
-    }
-
-    const originalScreenY = activeCellOffset.value - scrollOffset.value;
-    fireEvent(getByTestId("reorder-5"), "longPress");
-
-    expect(activeCellOffset.value).toBe(352);
-    expect(scrollOffset.value).toBe(64);
-    expect(activeCellOffset.value - scrollOffset.value).toBe(originalScreenY);
-    expect(
-      getByTestId("active-session-draggable-list").props.contentContainerStyle,
-    ).toEqual(expect.arrayContaining([{ minHeight: 1800 }]));
-  });
-
-  it("leaves compact mode when the OS interrupts an active drag", () => {
-    let onAppStateChange: ((state: "background") => void) | undefined;
-    let nextFrame = 1;
-    const frames = new Map<number, FrameRequestCallback>();
-    jest
-      .spyOn(globalThis, "requestAnimationFrame")
-      .mockImplementation((callback: FrameRequestCallback) => {
-        const frame = nextFrame;
-        nextFrame += 1;
-        frames.set(frame, callback);
-        return frame;
-      });
-    jest
-      .spyOn(globalThis, "cancelAnimationFrame")
-      .mockImplementation((frame: number) => {
-        frames.delete(frame);
-      });
-    jest
-      .spyOn(AppState, "addEventListener")
-      .mockImplementation((_type, listener) => {
-        onAppStateChange = listener as (state: "background") => void;
-        return { remove: jest.fn() };
-      });
+  it("offers NO reorder button — the grip is the whole affordance", () => {
+    // The button existed only to enter a mode. Holding the grip drags
+    // directly now, so a separate control would be a second way to do
+    // nothing.
     const props = {
       ...baseProps,
       onReorderExercise: jest.fn(),
@@ -439,36 +489,70 @@ describe("ActiveSessionPresenter (vertical scroll, legacy parity)", () => {
     const { getByTestId, queryByTestId } = renderWithTheme(
       <ActiveSessionPresenter {...props} />,
     );
-    const list = getByTestId("active-session-draggable-list");
-    const scrollOffset = { value: 240 };
-    fireEvent(list, "animValInit", {
-      activeCellOffset: { value: 280 },
-      activeCellSize: { value: 300 },
-      scrollOffset,
-    });
 
-    fireEvent(getByTestId("reorder-1"), "longPress");
-    expect(queryByTestId("active-session-finish")).toBeNull();
-    expect(
-      getByTestId("active-session-draggable-list").props.scrollEnabled,
-    ).toBe(false);
-
-    act(() => onAppStateChange?.("background"));
-    act(() => {
-      for (const callback of [...frames.values()]) callback(0);
-      frames.clear();
-    });
-
-    const restoredList = getByTestId("active-session-draggable-list");
-    expect(restoredList.props.testScrollToOffset).toHaveBeenCalledWith({
-      offset: 240,
-      animated: false,
-    });
-    expect(scrollOffset.value).toBe(240);
+    // Asserting the old button testIDs is worthless now they are deleted —
+    // `queryByTestId` matches exactly, so those assertions pass whatever the
+    // presenter renders. Assert the grip's own contract instead: it is the
+    // ONLY way in, and it announces a hold rather than a button.
+    // No `onMoveExercise` on these props, so the grip drags and offers no
+    // VoiceOver Move actions — and says exactly that.
+    const grip = getByTestId("reorder-1");
+    expect(grip.props.accessibilityHint).toBe("Hold and drag to move");
+    // Add Exercise is still there, and so is Finish.
+    expect(getByTestId("active-session-add-exercise")).toBeTruthy();
     expect(getByTestId("active-session-finish")).toBeTruthy();
-    expect(
-      getByTestId("active-session-draggable-list").props.scrollEnabled,
-    ).not.toBe(false);
+  });
+
+  it("shows no grip at all on a one-block list", () => {
+    // One exercise: nothing to move, so the card renders no handle. This
+    // asserted a deleted testID, so it passed unconditionally and left the
+    // path untested.
+    const { queryByTestId } = renderWithTheme(
+      <ActiveSessionPresenter
+        {...baseProps}
+        onReorderExercise={jest.fn()}
+        exercises={[buildExercise({ id: "se-1" })]}
+      />,
+    );
+
+    expect(queryByTestId("reorder-1")).toBeNull();
+    expect(queryByTestId("active-session-reorder-list")).toBeNull();
+  });
+
+  it("shows no grip on a one-block list even with the move handler wired", () => {
+    // Production always wires `onMoveExercise`, so the card's own guard passes
+    // and the grip used to render at "position 1 of 1" with empty action
+    // filters: a drag affordance that cannot drag, and an `adjustable` control
+    // whose VoiceOver swipes were silent no-ops.
+    const { queryByTestId } = renderWithTheme(
+      <ActiveSessionPresenter
+        {...baseProps}
+        onReorderExercise={jest.fn()}
+        onMoveExercise={jest.fn()}
+        exercises={[buildExercise({ id: "se-1" })]}
+      />,
+    );
+
+    expect(queryByTestId("reorder-1")).toBeNull();
+  });
+
+  it("offers no reorder at all without a commit callback", () => {
+    // Two blocks, but every drop would be swallowed by
+    // `onReorderExercise?.()`, so there is no mode to enter — and with no
+    // Move actions either, no grip is rendered at all.
+    const { getByTestId, queryByTestId } = renderWithTheme(
+      <ActiveSessionPresenter
+        {...baseProps}
+        onReorderExercise={undefined}
+        exercises={[
+          buildExercise({ id: "se-1" }),
+          buildExercise({ id: "se-2", sortOrder: 1 }),
+        ]}
+      />,
+    );
+
+    expect(queryByTestId("reorder-1")).toBeNull();
+    expect(queryByTestId("active-session-reorder-list")).toBeNull();
     expect(getByTestId("session-exercise-se-1")).toBeTruthy();
   });
 

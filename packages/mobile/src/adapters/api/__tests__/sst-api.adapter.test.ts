@@ -53,6 +53,31 @@ describe("SSTApiAdapter API Gateway error mapping", () => {
     });
   });
 
+  it("counts a hanging token read against the caller's timeout, not on top of it", async () => {
+    // The abort controller is armed BEFORE the token is awaited. Allocating it
+    // afterwards left the token wait outside the budget and simply added to
+    // it, so a caller asking for 10s could wait 10s plus the whole token
+    // bound — and the guard this endpoint opted into never started its timer.
+    jest.useFakeTimers();
+    const fetchMock = installFetchMock(() => {
+      throw new Error("fetch must never be reached without a token");
+    });
+    const adapter = new SSTApiAdapter();
+    adapter.setTokenProvider(() => new Promise<string>(() => {}));
+
+    const promise = adapter.getOnboarding();
+    await jest.advanceTimersByTimeAsync(ONBOARDING_REQUEST_TIMEOUT_MS + 100);
+    const result = await promise;
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toMatchObject({
+      code: "timeout",
+      message: `Request timed out after ${ONBOARDING_REQUEST_TIMEOUT_MS}ms`,
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("times out a stalled onboarding bootstrap so AuthGate can offer Retry", async () => {
     jest.useFakeTimers();
     installFetchMock((_url, init) => {

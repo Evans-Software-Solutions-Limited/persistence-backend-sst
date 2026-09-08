@@ -75,6 +75,8 @@ const EXPECTED_ICON_NAMES = [
   "IconAlert",
   "IconMail",
   "IconClock",
+  // Vocabulary extension (2026-09-07) — offline onboarding plan picker.
+  "IconWifiOff",
 ] as const;
 
 describe("icons module", () => {

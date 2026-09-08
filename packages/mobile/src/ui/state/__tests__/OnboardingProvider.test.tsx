@@ -14,6 +14,17 @@ const mockApi = {
   updateOnboarding: mockUpdateOnboarding,
   trackAnalyticsEvent: mockTrackAnalyticsEvent,
 };
+// `useOnlineStatus` drives the reconnect retry; default to online so the
+// existing tests are unaffected, and flip it per test where it matters.
+let mockIsConnected = true;
+const mockNetInfoListeners = new Set<(connected: boolean) => void>();
+const mockNetInfo = {
+  isConnected: () => Promise.resolve(mockIsConnected),
+  subscribe: (listener: (connected: boolean) => void) => {
+    mockNetInfoListeners.add(listener);
+    return () => mockNetInfoListeners.delete(listener);
+  },
+};
 const mockStorage = {
   getCachedOnboarding: (id: string) => mockCache.get(id) ?? null,
   cacheOnboarding: (id: string, state: unknown) => mockCache.set(id, state),
@@ -30,6 +41,7 @@ jest.mock("@/ui/hooks/useAdapters", () => ({
   useAdapters: () => ({
     api: mockApi,
     storage: mockStorage,
+    netInfo: mockNetInfo,
   }),
 }));
 
@@ -42,6 +54,8 @@ function Probe() {
 describe("OnboardingProvider", () => {
   beforeEach(() => {
     mockCache.clear();
+    mockIsConnected = true;
+    mockNetInfoListeners.clear();
     mockUserId = "user-a";
     mockGetOnboarding.mockReset().mockResolvedValue({ ok: true, value: null });
     mockUpdateOnboarding.mockReset().mockImplementation(async (input) => ({
@@ -74,6 +88,505 @@ describe("OnboardingProvider", () => {
     });
     expect(mockCache.has("user-a")).toBe(true);
     expect(mockCache.has("user-b")).toBe(false);
+  });
+
+  it("clears the boot gate from the offline mirror without awaiting the server", async () => {
+    // The read that hangs offline. AuthGate refuses to route while
+    // `isLoading` is true, so a cached mirror MUST resolve the gate on its
+    // own — waiting on the network here is what stranded the app on an
+    // infinite spinner with no connection.
+    mockGetOnboarding.mockReturnValue(new Promise(() => {}));
+    mockCache.set("user-a", {
+      userId: "user-a",
+      status: "completed",
+      path: "athlete",
+      currentPage: "welcome",
+      intentKeys: [],
+      updatedAt: "2026-09-01T12:00:00.000Z",
+    });
+
+    render(
+      <OnboardingProvider>
+        <Probe />
+      </OnboardingProvider>,
+    );
+
+    await waitFor(() => expect(context.isLoading).toBe(false));
+    expect(context.state).toMatchObject({
+      userId: "user-a",
+      status: "completed",
+    });
+    expect(context.loadError).toBeNull();
+  });
+
+  it("holds the boot gate only while there is nothing at all to route on", async () => {
+    mockGetOnboarding.mockReturnValue(new Promise(() => {}));
+
+    render(
+      <OnboardingProvider>
+        <Probe />
+      </OnboardingProvider>,
+    );
+
+    // No cache and no server answer yet: there is genuinely no verdict, so
+    // the gate stays up (bounded by the request timeout, not by this flag).
+    expect(context.isLoading).toBe(true);
+    expect(context.state).toBeNull();
+  });
+
+  it("seeds a local journey when the read never reached the server", async () => {
+    // Offline / captive portal / our own timeout. The journey is completable
+    // on-device, so walling the account off behind an error is the wrong
+    // trade — seed it and let the user through.
+    mockGetOnboarding.mockResolvedValue({
+      ok: false,
+      error: { kind: "api", code: "network", message: "Network error" },
+    });
+
+    render(
+      <OnboardingProvider>
+        <Probe />
+      </OnboardingProvider>,
+    );
+
+    await waitFor(() => expect(context.isLoading).toBe(false));
+    expect(context.state).toMatchObject({
+      userId: "user-a",
+      status: "in_progress",
+      currentPage: "welcome",
+    });
+    // The seed is a guess about an account we could not read. Persisting it
+    // would let it outrank the server's own record on a later launch.
+    expect(mockCache.has("user-a")).toBe(false);
+  });
+
+  it("seeds a local journey when the request timed out", async () => {
+    mockGetOnboarding.mockResolvedValue({
+      ok: false,
+      error: { kind: "api", code: "timeout", message: "Request timed out" },
+    });
+
+    render(
+      <OnboardingProvider>
+        <Probe />
+      </OnboardingProvider>,
+    );
+
+    await waitFor(() => expect(context.isLoading).toBe(false));
+    expect(context.state).toMatchObject({ status: "in_progress" });
+  });
+
+  it("prefers an existing offline mirror over seeding a fresh journey", async () => {
+    mockGetOnboarding.mockResolvedValue({
+      ok: false,
+      error: { kind: "api", code: "network", message: "Network error" },
+    });
+    mockCache.set("user-a", {
+      userId: "user-a",
+      status: "in_progress",
+      path: "coach",
+      currentPage: "habits",
+      intentKeys: [],
+      updatedAt: "2026-09-01T12:00:00.000Z",
+    });
+
+    render(
+      <OnboardingProvider>
+        <Probe />
+      </OnboardingProvider>,
+    );
+
+    await waitFor(() => expect(context.isLoading).toBe(false));
+    // Real progress beats a guess: resume where they were, not at welcome.
+    expect(context.state).toMatchObject({ currentPage: "habits" });
+  });
+
+  it("does not seed when the server answered with an error", async () => {
+    // A reachable server that failed IS evidence the account read is broken.
+    // Replaying onboarding over real progress could clobber it, so this case
+    // keeps the error wall rather than seeding.
+    mockGetOnboarding.mockResolvedValue({
+      ok: false,
+      error: { kind: "api", code: "server_error", message: "Boom" },
+    });
+
+    render(
+      <OnboardingProvider>
+        <Probe />
+      </OnboardingProvider>,
+    );
+
+    await waitFor(() => expect(context.loadError).not.toBeNull());
+    expect(context.state).toBeNull();
+  });
+
+  it("lets a finished server journey overrule a newer local replay", async () => {
+    // The hazard the offline seed introduces: a locally-seeded journey always
+    // carries a fresher `updatedAt` than the server's older `completed`, and
+    // "newest wins" would march a done user back through setup on reconnect.
+    mockCache.set("user-a", {
+      userId: "user-a",
+      status: "in_progress",
+      path: "athlete",
+      currentPage: "welcome",
+      intentKeys: [],
+      updatedAt: "2026-09-07T12:00:00.000Z",
+    });
+    mockGetOnboarding.mockResolvedValue({
+      ok: true,
+      value: {
+        userId: "user-a",
+        status: "completed",
+        path: "athlete",
+        currentPage: "recommendation",
+        intentKeys: [],
+        updatedAt: "2026-09-01T12:00:00.000Z",
+      },
+    });
+
+    render(
+      <OnboardingProvider>
+        <Probe />
+      </OnboardingProvider>,
+    );
+
+    await waitFor(() => expect(context.state?.status).toBe("completed"));
+    expect(mockUpdateOnboarding).not.toHaveBeenCalled();
+  });
+
+  it("still lets newer local progress win over an unfinished server journey", async () => {
+    mockCache.set("user-a", {
+      userId: "user-a",
+      status: "in_progress",
+      path: "athlete",
+      currentPage: "train",
+      intentKeys: [],
+      updatedAt: "2026-09-07T12:00:00.000Z",
+    });
+    mockGetOnboarding.mockResolvedValue({
+      ok: true,
+      value: {
+        userId: "user-a",
+        status: "in_progress",
+        path: "athlete",
+        currentPage: "role",
+        intentKeys: [],
+        updatedAt: "2026-09-01T12:00:00.000Z",
+      },
+    });
+
+    render(
+      <OnboardingProvider>
+        <Probe />
+      </OnboardingProvider>,
+    );
+
+    await waitFor(() => expect(context.state?.currentPage).toBe("train"));
+  });
+
+  it("keeps a seeded journey off the mirror AND off the server as it advances", async () => {
+    // The data-loss path: the seed's defaults must never be PUT over a real
+    // in-progress row. The server only refuses writes over a terminal row, so
+    // an upload here would be accepted and would reset the account.
+    mockGetOnboarding.mockResolvedValue({
+      ok: false,
+      error: { kind: "api", code: "network", message: "Network error" },
+    });
+
+    render(
+      <OnboardingProvider>
+        <Probe />
+      </OnboardingProvider>,
+    );
+    await waitFor(() => expect(context.isLoading).toBe(false));
+
+    await act(async () => {
+      await context.completePage("welcome");
+    });
+
+    // The journey still advances locally — it is usable offline.
+    expect(context.state?.completedPages).toContain("welcome");
+    // But nothing has escaped the process.
+    expect(mockUpdateOnboarding).not.toHaveBeenCalled();
+    expect(mockCache.has("user-a")).toBe(false);
+  });
+
+  it("resumes mirroring and uploading once a real read confirms the account", async () => {
+    mockGetOnboarding.mockResolvedValueOnce({
+      ok: false,
+      error: { kind: "api", code: "network", message: "Network error" },
+    });
+
+    render(
+      <OnboardingProvider>
+        <Probe />
+      </OnboardingProvider>,
+    );
+    await waitFor(() => expect(context.isLoading).toBe(false));
+
+    // The connection returns and the retry lands a real answer.
+    mockGetOnboarding.mockResolvedValue({
+      ok: true,
+      value: {
+        userId: "user-a",
+        status: "in_progress",
+        path: "athlete",
+        currentPage: "welcome",
+        completedPages: [],
+        skippedPages: [],
+        intentKeys: [],
+        updatedAt: "2026-09-01T12:00:00.000Z",
+      },
+    });
+    await act(async () => {
+      context.retryLoad();
+    });
+    await waitFor(() => expect(context.loadError).toBeNull());
+
+    await act(async () => {
+      await context.completePage("welcome");
+    });
+
+    expect(mockUpdateOnboarding).toHaveBeenCalled();
+    expect(mockCache.has("user-a")).toBe(true);
+  });
+
+  it("carries offline progress through the reconnect instead of discarding it", async () => {
+    // The trap in sealing the seed away from the mirror: the provisional
+    // journey is the ONLY copy of itself, so a reconcile that only weighs the
+    // mirror throws away every page the user completed offline.
+    mockIsConnected = false;
+    mockGetOnboarding.mockResolvedValueOnce({
+      ok: false,
+      error: { kind: "api", code: "network", message: "Network error" },
+    });
+
+    render(
+      <OnboardingProvider>
+        <Probe />
+      </OnboardingProvider>,
+    );
+    await waitFor(() => expect(context.loadError).not.toBeNull());
+
+    await act(async () => {
+      await context.completePage("welcome");
+    });
+    expect(context.state?.completedPages).toContain("welcome");
+
+    // The connection returns and the server still holds an untouched row.
+    mockGetOnboarding.mockResolvedValue({
+      ok: true,
+      value: {
+        userId: "user-a",
+        status: "in_progress",
+        path: "athlete",
+        currentPage: "welcome",
+        completedPages: [],
+        skippedPages: [],
+        intentKeys: [],
+        updatedAt: "2026-09-01T12:00:00.000Z",
+      },
+    });
+    await act(async () => {
+      mockNetInfoListeners.forEach((listener) => listener(true));
+    });
+
+    await waitFor(() => expect(mockUpdateOnboarding).toHaveBeenCalled());
+    // The work survived, and reached the server.
+    expect(context.state?.completedPages).toContain("welcome");
+    expect(mockCache.get("user-a")).toMatchObject({
+      completedPages: ["welcome"],
+    });
+  });
+
+  it("keeps offline work when the reconnect retry ALSO fails", async () => {
+    // `useOnlineStatus` flips the moment NetInfo reports a connection, which
+    // routinely precedes real reachability — so the retry failing again is the
+    // common case, and the in-memory journey is the only copy of itself.
+    mockIsConnected = false;
+    mockGetOnboarding.mockResolvedValue({
+      ok: false,
+      error: { kind: "api", code: "network", message: "Network error" },
+    });
+
+    render(
+      <OnboardingProvider>
+        <Probe />
+      </OnboardingProvider>,
+    );
+    await waitFor(() => expect(context.loadError).not.toBeNull());
+
+    await act(async () => {
+      await context.completePage("welcome");
+    });
+    expect(context.state?.completedPages).toEqual(["welcome"]);
+
+    // A blip: NetInfo says online, the read fails again.
+    await act(async () => {
+      mockNetInfoListeners.forEach((listener) => listener(true));
+    });
+    await waitFor(() => expect(mockGetOnboarding).toHaveBeenCalledTimes(2));
+
+    expect(context.state?.completedPages).toEqual(["welcome"]);
+  });
+
+  it("does not let a re-seed inherit the edited flag and clobber the server", async () => {
+    // The compounding bug: re-seeding while leaving `hasProvisionalEdits` set
+    // promoted a FRESH seed to the local candidate on the next success, and
+    // PUT its defaults over the account's real row.
+    mockIsConnected = false;
+    mockGetOnboarding.mockResolvedValue({
+      ok: false,
+      error: { kind: "api", code: "network", message: "Network error" },
+    });
+
+    render(
+      <OnboardingProvider>
+        <Probe />
+      </OnboardingProvider>,
+    );
+    await waitFor(() => expect(context.loadError).not.toBeNull());
+
+    // Edits, then a SERVER-ERROR read, which nulls the state and is not
+    // "unreachable" — so nothing provisional should survive it.
+    await act(async () => {
+      await context.completePage("welcome");
+    });
+    mockGetOnboarding.mockResolvedValueOnce({
+      ok: false,
+      error: { kind: "api", code: "server", message: "Boom" },
+    });
+    await act(async () => {
+      context.retryLoad();
+    });
+    await waitFor(() => expect(context.state).toBeNull());
+
+    // Now a real read lands with the account's genuine progress.
+    mockGetOnboarding.mockResolvedValue({
+      ok: true,
+      value: {
+        userId: "user-a",
+        status: "in_progress",
+        path: "coach",
+        currentPage: "train",
+        completedPages: ["welcome", "profile", "role", "habits"],
+        skippedPages: [],
+        intentKeys: [],
+        updatedAt: "2026-09-01T12:00:00.000Z",
+      },
+    });
+    await act(async () => {
+      context.retryLoad();
+    });
+
+    await waitFor(() => expect(context.state?.currentPage).toBe("train"));
+    expect(context.state?.path).toBe("coach");
+    expect(mockUpdateOnboarding).not.toHaveBeenCalled();
+  });
+
+  it("mirrors a provisional journey once the user finishes it", async () => {
+    // The offline plan picker promises the setup is saved on the device. It
+    // has to be true across a cold start, or the user is walked through the
+    // whole journey again having just been told it was saved.
+    mockGetOnboarding.mockResolvedValue({
+      ok: false,
+      error: { kind: "api", code: "network", message: "Network error" },
+    });
+
+    render(
+      <OnboardingProvider>
+        <Probe />
+      </OnboardingProvider>,
+    );
+    await waitFor(() => expect(context.isLoading).toBe(false));
+
+    await act(async () => {
+      await context.completePage("welcome");
+    });
+    // Still in progress: memory only, so it cannot outrank the server.
+    expect(mockCache.has("user-a")).toBe(false);
+
+    await act(async () => {
+      await context.completeJourney();
+    });
+
+    expect(mockCache.get("user-a")).toMatchObject({ status: "completed" });
+  });
+
+  it("still refuses to let an UNTOUCHED seed overwrite the server", async () => {
+    // The other half of the same trade-off: promoting a seed the user never
+    // advanced would put back the clobber that withholding it prevented.
+    mockIsConnected = false;
+    mockGetOnboarding.mockResolvedValueOnce({
+      ok: false,
+      error: { kind: "api", code: "network", message: "Network error" },
+    });
+
+    render(
+      <OnboardingProvider>
+        <Probe />
+      </OnboardingProvider>,
+    );
+    await waitFor(() => expect(context.loadError).not.toBeNull());
+
+    // Real progress on the server, older than the seed but never superseded.
+    mockGetOnboarding.mockResolvedValue({
+      ok: true,
+      value: {
+        userId: "user-a",
+        status: "in_progress",
+        path: "coach",
+        currentPage: "train",
+        completedPages: ["welcome", "profile", "role", "habits"],
+        skippedPages: [],
+        intentKeys: [],
+        updatedAt: "2026-09-01T12:00:00.000Z",
+      },
+    });
+    await act(async () => {
+      mockNetInfoListeners.forEach((listener) => listener(true));
+    });
+
+    await waitFor(() => expect(context.state?.currentPage).toBe("train"));
+    expect(context.state?.path).toBe("coach");
+    expect(mockUpdateOnboarding).not.toHaveBeenCalled();
+  });
+
+  it("retries the read when the connection comes back", async () => {
+    // A seed suppresses the error wall, so its Retry button is unreachable in
+    // exactly this case. Without this the user is stuck in a replayed journey
+    // for the rest of the session.
+    mockIsConnected = false;
+    mockGetOnboarding.mockResolvedValueOnce({
+      ok: false,
+      error: { kind: "api", code: "network", message: "Network error" },
+    });
+
+    render(
+      <OnboardingProvider>
+        <Probe />
+      </OnboardingProvider>,
+    );
+    await waitFor(() => expect(context.loadError).not.toBeNull());
+    expect(mockGetOnboarding).toHaveBeenCalledTimes(1);
+
+    mockGetOnboarding.mockResolvedValue({
+      ok: true,
+      value: {
+        userId: "user-a",
+        status: "completed",
+        path: "athlete",
+        currentPage: "recommendation",
+        intentKeys: [],
+        updatedAt: "2026-09-06T12:00:00.000Z",
+      },
+    });
+    await act(async () => {
+      mockNetInfoListeners.forEach((listener) => listener(true));
+    });
+
+    await waitFor(() => expect(context.state?.status).toBe("completed"));
+    expect(mockGetOnboarding).toHaveBeenCalledTimes(2);
   });
 
   it("does not seed a fresh journey when the server read fails without a cache", async () => {

@@ -15,6 +15,7 @@
  */
 
 import React from "react";
+import type { ReactNode } from "react";
 import { Text, TouchableOpacity, View } from "react-native";
 import { Image } from "expo-image";
 import { SetLogger } from "../SetLogger";
@@ -82,8 +83,8 @@ export type SessionExerciseCardProps = {
   reorderPosition?: number;
   reorderTotal?: number;
   onMove?: (direction: -1 | 1) => void;
-  onDrag?: () => void;
-  isDragging?: boolean;
+  /** Inside a `ReorderableList`: the grip says it can be dragged. */
+  draggable?: boolean;
 };
 
 const formatRepsLabel = (
@@ -118,7 +119,7 @@ export function SessionExerciseCard(props: SessionExerciseCardProps) {
       testID={`session-exercise-${props.exercise.id}`}
     >
       <View style={styles.exerciseHeader}>
-        {(props.onMove || props.onDrag) &&
+        {(props.onMove || props.draggable) &&
         props.reorderPosition &&
         props.reorderTotal ? (
           <ExerciseReorderHandle
@@ -126,8 +127,7 @@ export function SessionExerciseCard(props: SessionExerciseCardProps) {
             position={props.reorderPosition}
             total={props.reorderTotal}
             onMove={props.onMove}
-            onDrag={props.onDrag}
-            isDragging={props.isDragging}
+            draggable={props.draggable}
           />
         ) : null}
         {props.exerciseImageUrl ? (

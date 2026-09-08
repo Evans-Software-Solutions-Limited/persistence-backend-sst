@@ -5,6 +5,7 @@ import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useAuth } from "@/ui/hooks/useAuth";
 import { useDashboard } from "@/ui/hooks/useDashboard";
 import { useGetHabitConfig } from "@/ui/hooks/useGetHabitConfig";
+import { useFuelSheets } from "@/state/fuel-sheets";
 import { useGetClientHabitConfig } from "@/ui/hooks/useGetClientHabitConfig";
 import {
   useConfigureHabit,
@@ -48,6 +49,13 @@ import { preferredVolumeUnit } from "@/shared/utils";
  * At-risk is derived from the offline mirror (this week not yet safe + no
  * freeze queued) so the banner shows without a round-trip.
  */
+/**
+ * Backoff for re-issuing the post-Fuel-save config refresh, ~12.4s in total —
+ * sized against a cold-Lambda GET holding `useCachedResource`'s in-flight
+ * guard, which is the only thing this retry is waiting out.
+ */
+const FUEL_REFRESH_BACKOFF_MS = [400, 800, 1600, 3200, 6400];
+
 export function HabitSetupContainer({
   clientId,
   clientName,
@@ -289,7 +297,106 @@ export function HabitSetupContainer({
   const configureMutate = configure.mutate;
   const disableMutate = disable.mutate;
   const reloadSelfConfig = selfConfig.reload;
+  const refreshSelfConfig = selfConfig.refresh;
   const refreshClientConfig = clientConfig.refresh;
+
+  /**
+   * Re-read the config after the Fuel targets are edited.
+   *
+   * The Calories habit's target is resolved server-side from `daily_kcal`, so
+   * this screen only learns a new one by refetching. It used to get that for
+   * free: the "Adjust in Nutrition" link pushed into `(app)`, which unmounted
+   * this screen, and the remount refetched. The `(onboarding)` detour route
+   * deliberately keeps it mounted to preserve the habit draft, and
+   * `useCachedResource`'s mount refresh is one-shot with no focus re-read — so
+   * without this the card kept showing the old target (typically the 2,000
+   * kcal default) after saving a new one. Display-only: the server substitutes
+   * the canonical target on write regardless.
+   *
+   * Heals on reconnect only, since the resolved value is server-side.
+   */
+  const fuelRev = useFuelSheets((state) => state.rev);
+  const seenFuelRev = useRef(fuelRev);
+  const awaitingFuelRefresh = useRef(false);
+  /** Set once a re-issued refresh was actually accepted (not dropped). */
+  const fuelRefreshPerformed = useRef(false);
+  useEffect(() => {
+    if (isCoachView) return;
+    if (fuelRev === seenFuelRev.current) return;
+    seenFuelRev.current = fuelRev;
+    awaitingFuelRefresh.current = true;
+    fuelRefreshPerformed.current = false;
+    let cancelled = false;
+    /*
+      `refresh`, NOT `reload`: `reload` only re-reads the cache, and
+      `setTargetCommand` writes `cached_nutrition_target` — never
+      `cached_habit_configs` — so a cache re-read returns byte-identical rows.
+      Only the server recomputes this value.
+
+      And re-issue if it was DROPPED. `useCachedResource.refresh` refuses while
+      another fetch is in flight, and on a slow cold start that is exactly the
+      collision here: step 3's own mount refresh is still out, was sent BEFORE
+      the target changed, and so cannot carry the new one. Dropping the retry
+      leaves the card showing the old target for the rest of the mount.
+
+      The ladder is sized against what actually holds `inFlightRef` — a cold
+      Lambda GET, which this repo has seen take ~10s — not against a round
+      number. A fetch still out when the user has been to the editor and back
+      is by definition a slow one, so a flat 5 × 400ms would expire inside the
+      window it is waiting on.
+    */
+    void (async () => {
+      for (const delay of FUEL_REFRESH_BACKOFF_MS) {
+        if (cancelled) return;
+        // `refresh` has no internal catch, so a throwing fetcher rejects it.
+        // Treat that as "not performed" and keep laddering rather than dying
+        // as an unhandled rejection off this `void`.
+        const performed = await refreshSelfConfig({ silent: true }).catch(
+          () => false,
+        );
+        if (performed) {
+          fuelRefreshPerformed.current = true;
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [fuelRev, isCoachView, refreshSelfConfig]);
+
+  /**
+   * Push the refreshed target into a dirty draft.
+   *
+   * Re-seeding the draft is not enough on its own: reaching the editor
+   * requires toggling Calories ON, which dirties the draft, and the re-seed
+   * guard above deliberately preserves a dirty draft. The target is
+   * server-owned and read-only in this UI, so patching just that field cannot
+   * clobber a user edit — there is no user edit of it to clobber.
+   *
+   * Keyed on the refreshed value rather than chained onto the refresh promise:
+   * that promise resolves as a microtask, BEFORE React has committed the new
+   * config, so anything reading state or a render-assigned ref there sees the
+   * pre-refresh target and writes the old number straight back.
+   */
+  const caloriesTarget = configsList.find(
+    (config) => config.category === "calories",
+  )?.targetValue;
+  useEffect(() => {
+    if (isCoachView) return;
+    if (!awaitingFuelRefresh.current) return;
+    if (caloriesTarget == null) return;
+    // The retry makes MORE than one landing possible, and the first can be the
+    // collided fetch that was issued before the save — carrying the account's
+    // previous target. Disarming on it would pin that value for the rest of
+    // the mount, since the re-seed deliberately leaves a dirty draft alone. So
+    // stay armed until a refresh this effect asked for was actually accepted;
+    // patching more than once is free, because the field is server-owned and
+    // read-only here, so there is never a user edit to clobber.
+    if (fuelRefreshPerformed.current) awaitingFuelRefresh.current = false;
+    patchDraft("calories", { targetValue: caloriesTarget });
+  }, [caloriesTarget, isCoachView, patchDraft]);
 
   // Commit the draft: one write per category that diverges from the baseline.
   //  - draft enabled            → configure PUT (enable/edit).
@@ -389,8 +496,18 @@ export function HabitSetupContainer({
     // Calories deep-link → the Fuel Targets editor (M9). Coach view has no
     // equivalent client-side editor, so it's a no-op there.
     if (isCoachView) return;
-    router.push("/(app)/fuel/targets");
-  }, [router, isCoachView]);
+    // Inside the journey, stay inside the journey's own Stack. The root layout
+    // is a `<Slot/>`, so pushing to the editor's usual `(app)` home unmounts
+    // the whole `(onboarding)` group — and with it THIS container's habit
+    // draft, which is the only place the Calories toggle lives until step 3 is
+    // saved. The user would return to find Calories off again and no habit
+    // created: target saved, habit silently lost. `(onboarding)` is a Stack,
+    // so a detour route there keeps this screen mounted and the toggle intact.
+    // See `app/(onboarding)/fuel-targets.tsx`.
+    router.push(
+      onboarding ? "/(onboarding)/fuel-targets" : "/(app)/fuel/targets",
+    );
+  }, [router, isCoachView, onboarding]);
 
   return (
     <HabitSetupPresenter

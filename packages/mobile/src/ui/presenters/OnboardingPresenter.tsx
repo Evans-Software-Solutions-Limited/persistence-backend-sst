@@ -9,6 +9,7 @@ import {
   IconCheck,
   IconDumbbell,
   IconUsers,
+  IconWifiOff,
 } from "@/ui/components/icons";
 import type {
   CoachClientBand,
@@ -79,6 +80,18 @@ export const ACCOUNT_ONLY_CONFIRMATION_COPY = {
   bodyWithoutExpiry: (tierDisplayName: string) =>
     `Your ${tierDisplayName} access is active.`,
   continueLabel: "Continue",
+} as const;
+
+export const OFFLINE_PLANS_COPY = {
+  eyebrow: "NO CONNECTION",
+  title: "Plans need a connection",
+  body:
+    "We can't load subscription plans while you're offline. Finish setup and " +
+    "the rest of your answers are saved on this device, then synced when you " +
+    "reconnect.",
+  hint: "You can pick a plan any time from Settings.",
+  finishLabel: "Finish setup without a plan",
+  retryLabel: "Try again",
 } as const;
 
 function StickyActions({ children }: { children: React.ReactNode }) {
@@ -718,6 +731,134 @@ export function OnboardingAccountConfirmationPresenter({
           testID="onboarding-account-confirmation-continue"
         >
           {ACCOUNT_ONLY_CONFIRMATION_COPY.continueLabel}
+        </Btn>
+      </StickyActions>
+    </View>
+  );
+}
+
+/**
+ * The plan picker's offline state — the one onboarding page that genuinely
+ * cannot work without a network, since plans and entitlements are both
+ * server-owned.
+ *
+ * Everything else in the journey is local-first, so this degrades rather than
+ * blocking: finish setup now and choose a plan later, or reconnect and retry.
+ * Brad's call, 2026-09-07 — the alternative was walling the whole account off
+ * behind "temporarily unavailable".
+ *
+ * Deliberately NOT an ErrorState: nothing has gone wrong with the account, and
+ * "Finish setup" is a real, complete outcome rather than a way out of a fault.
+ */
+export function OnboardingOfflinePlansPresenter({
+  onFinish,
+  onRetry,
+  onBack,
+}: {
+  onFinish: () => void;
+  onRetry: () => void;
+  onBack: () => void;
+}) {
+  const insets = useSafeAreaInsets();
+  return (
+    <View
+      flex={1}
+      backgroundColor="$bg"
+      paddingTop={insets.top}
+      testID="onboarding-offline-plans"
+    >
+      <HeaderBar
+        leading={
+          <IconBtn
+            icon={<IconBack size={18} />}
+            tone="ghost"
+            onPress={onBack}
+            accessibilityLabel="Back"
+          />
+        }
+      />
+      <ScrollView
+        contentContainerStyle={{
+          flexGrow: 1,
+          justifyContent: "center",
+          padding: 24,
+        }}
+      >
+        <View alignItems="center" marginBottom={20}>
+          <View
+            width={64}
+            height={64}
+            borderRadius={32}
+            backgroundColor="rgba(251,191,36,0.10)"
+            alignItems="center"
+            justifyContent="center"
+          >
+            <IconWifiOff size={32} color="#FBBF24" />
+          </View>
+        </View>
+        <Text
+          textAlign="center"
+          color="$warning"
+          fontSize={11}
+          fontWeight="700"
+          letterSpacing={1.6}
+          textTransform="uppercase"
+        >
+          {OFFLINE_PLANS_COPY.eyebrow}
+        </Text>
+        <Text
+          fontFamily="$display"
+          fontSize={28}
+          fontWeight="800"
+          letterSpacing={-1}
+          lineHeight={34}
+          textAlign="center"
+          color="$text"
+          marginTop={8}
+        >
+          {OFFLINE_PLANS_COPY.title}
+        </Text>
+        <Text
+          fontFamily="$body"
+          fontSize={14}
+          lineHeight={21}
+          textAlign="center"
+          color="$text2"
+          marginTop={10}
+        >
+          {OFFLINE_PLANS_COPY.body}
+        </Text>
+        <Text
+          fontFamily="$body"
+          fontSize={13}
+          lineHeight={20}
+          textAlign="center"
+          color="$text3"
+          marginTop={12}
+        >
+          {OFFLINE_PLANS_COPY.hint}
+        </Text>
+      </ScrollView>
+      <StickyActions>
+        <Btn
+          variant="filled"
+          tone="primary"
+          size="lg"
+          full
+          onPress={onFinish}
+          testID="onboarding-offline-plans-finish"
+        >
+          {OFFLINE_PLANS_COPY.finishLabel}
+        </Btn>
+        <Btn
+          variant="ghost"
+          tone="primary"
+          size="lg"
+          full
+          onPress={onRetry}
+          testID="onboarding-offline-plans-retry"
+        >
+          {OFFLINE_PLANS_COPY.retryLabel}
         </Btn>
       </StickyActions>
     </View>

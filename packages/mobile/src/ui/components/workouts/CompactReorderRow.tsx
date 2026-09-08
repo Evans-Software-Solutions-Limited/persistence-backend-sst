@@ -8,14 +8,12 @@ type CompactReorderRowProps = {
   position: number;
   total: number;
   onMove?: (direction: -1 | 1) => void;
-  onDrag: () => void;
-  isDragging: boolean;
 };
 
 export const COMPACT_REORDER_ROW_HEIGHT = 72;
 
 /**
- * Fixed-size row used before and during drag. Supersets are deliberately
+ * The compact row the list collapses to while a drag is in flight. Supersets are deliberately
  * capped at two lines, so neither exercise count nor visible set count can
  * produce a draggable item taller than the viewport.
  */
@@ -24,8 +22,6 @@ export function CompactReorderRow({
   position,
   total,
   onMove,
-  onDrag,
-  isDragging,
 }: CompactReorderRowProps) {
   const isSuperset = exerciseNames.length > 1;
   const label = isSuperset
@@ -34,11 +30,7 @@ export function CompactReorderRow({
 
   return (
     <View
-      style={[
-        styles.card,
-        isSuperset && styles.supersetCard,
-        isDragging && styles.cardDragging,
-      ]}
+      style={[styles.card, isSuperset && styles.supersetCard]}
       testID="compact-reorder-row"
     >
       <ExerciseReorderHandle
@@ -46,8 +38,7 @@ export function CompactReorderRow({
         position={position}
         total={total}
         onMove={onMove}
-        onDrag={onDrag}
-        isDragging={isDragging}
+        draggable
       />
 
       <View style={styles.content}>
@@ -82,15 +73,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: color.$border2,
     backgroundColor: color.$surface2,
-  },
-  cardDragging: {
-    borderColor: color.$primary,
-    backgroundColor: color.$surface3,
-    shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.42,
-    shadowRadius: 14,
-    elevation: 12,
   },
   supersetCard: {
     borderLeftWidth: 4,

@@ -22,10 +22,10 @@
  */
 
 import { Ionicons } from "@expo/vector-icons";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useMemo, type ReactNode } from "react";
 import {
   AccessibilityInfo,
-  AppState,
+  FlatList,
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
@@ -34,11 +34,6 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import DraggableFlatList, {
-  type RenderItemParams,
-} from "react-native-draggable-flatlist";
-import type { FlatList } from "react-native-gesture-handler";
-import type { SharedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ActiveSupersetRow } from "@/ui/components/session/ActiveSupersetRow";
 import { RestTimerDisplay } from "@/ui/components/session/RestTimerDisplay";
@@ -47,7 +42,12 @@ import {
   COMPACT_REORDER_ROW_HEIGHT,
   CompactReorderRow,
 } from "@/ui/components/workouts/CompactReorderRow";
+import {
+  ReorderableList,
+  type ReorderableRenderProps,
+} from "@/ui/components/workouts/ReorderableList";
 import { SessionHeader } from "@/ui/components/session/SessionHeader";
+import { buildReorderBlocks } from "@/domain/services/workout.service";
 import { TrainerBannerPresenter } from "@/ui/presenters/TrainerBannerPresenter";
 import { Btn } from "@/ui/components/foundation/Btn";
 import { IconCheck } from "@/ui/components/icons";
@@ -200,6 +200,13 @@ export type ActiveSessionPresenterProps = {
 
 const DEFAULT_TEMPLATE: SessionExerciseTemplate = { restSeconds: 90 };
 
+/**
+ * Gap between compact rows. It lives INSIDE the measured row height the
+ * sortable is told about, because absolutely-positioned rows ignore the
+ * container's `gap`.
+ */
+const REORDER_ROW_GAP = 16;
+
 type DisplayItem =
   | { kind: "exercise"; exercise: SessionExercise }
   | {
@@ -256,22 +263,15 @@ function displayItemKey(item: DisplayItem) {
     : `superset-${item.supersetGroup}`;
 }
 
+/**
+ * Seed height for a drag row, used only for the frame or two before the rows
+ * report their own. A logged strength card is taller, an unstarted one
+ * shorter; the list measures each of them.
+ */
+const ESTIMATED_BLOCK_HEIGHT = 220;
+
 export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
   const insets = useSafeAreaInsets();
-  const [isReordering, setIsReordering] = useState(false);
-  const [dragAnchorPadding, setDragAnchorPadding] = useState(0);
-  const [dragContentMinHeight, setDragContentMinHeight] = useState(0);
-  const [dragListEpoch, setDragListEpoch] = useState(0);
-  const listRef = useRef<FlatList<DisplayItem>>(null);
-  const fullCellHeightsRef = useRef(new Map<string, number>());
-  const fullContentHeightRef = useRef(0);
-  const isReorderingRef = useRef(false);
-  const pendingScrollFrameRef = useRef<number | null>(null);
-  const restoreAfterRemountRef = useRef(false);
-  const restoreScrollOffsetRef = useRef(0);
-  const activeCellSizeRef = useRef<SharedValue<number> | null>(null);
-  const activeCellOffsetRef = useRef<SharedValue<number> | null>(null);
-  const scrollOffsetRef = useRef<SharedValue<number> | null>(null);
   const weightUnit = props.weightUnit ?? "kg";
   const orderedExercises = useMemo(
     () => [...props.exercises].sort((a, b) => a.sortOrder - b.sortOrder),
@@ -286,51 +286,184 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
   );
   const today = localDayISO(new Date());
 
-  useEffect(() => {
-    const subscription = AppState.addEventListener("change", (nextState) => {
-      if (nextState === "active" || !isReorderingRef.current) return;
+  /**
+   * Reorder is ONE gesture on the real card: hold the grip and drag.
+   *
+   * There is no reorder mode any more, and nothing to tap in or out. The two
+   * earlier designs both existed to work around a belief that the sortable
+   * could only drag uniform rows — first by collapsing the list mid-drag
+   * (which left the library holding stale measurements of the taller cards),
+   * then by making the collapse a mode you entered with one hold and dragged
+   * with a second. The belief was wrong: the library measures rows when told
+   * to (`enableDynamicHeights`), so the cards themselves drag. See
+   * `ReorderableList`.
+   */
 
-      // RNDFL 4.0.3 does not finalize a native CANCELLED pan. Resetting and
-      // remounting prevents an OS interruption from leaving the workout in
-      // compact mode with its scroll and Finish action disabled.
-      if (pendingScrollFrameRef.current !== null) {
-        cancelAnimationFrame(pendingScrollFrameRef.current);
-        pendingScrollFrameRef.current = null;
-      }
-      isReorderingRef.current = false;
-      restoreAfterRemountRef.current = true;
-      setIsReordering(false);
-      setDragAnchorPadding(0);
-      setDragContentMinHeight(0);
-      setDragListEpoch((epoch) => epoch + 1);
-    });
+  /**
+   * Reorder rows are NOT the display items.
+   *
+   * `buildDisplayItems` splits a superset containing a cardio or plyometric
+   * exercise into individual rows, because those need the metric logger rather
+   * than the strength table. The reorder command groups purely by
+   * `supersetGroup`. Deriving the drag rows from the display items therefore
+   * handed the command an index from a different index space: past the end it
+   * silently no-oped, and inside it the row landed after the wrong exercise.
+   * `buildReorderBlocks` is the command's own grouping, shared.
+   */
+  const rows = useMemo(
+    () =>
+      buildReorderBlocks(orderedExercises).map((block) => ({
+        id:
+          block[0].supersetGroup != null
+            ? `superset-${block[0].supersetGroup}`
+            : block[0].id,
+        exercises: block,
+      })),
+    [orderedExercises],
+  );
 
-    return () => {
-      subscription.remove();
-      if (pendingScrollFrameRef.current !== null) {
-        cancelAnimationFrame(pendingScrollFrameRef.current);
-        pendingScrollFrameRef.current = null;
-      }
+  // Counts BLOCKS, not display rows: a session of one cardio-bearing superset
+  // renders two cards but is a single block, so there is nothing to move.
+  const canReorder = rows.length > 1 && props.onReorderExercise !== undefined;
+
+  /**
+   * Block position for a display row, and whether it leads its block.
+   *
+   * The accessible Move up/down actions go through the same command as a drag,
+   * which works in BLOCK space — but the cards render in DISPLAY space, which
+   * splits a cardio-bearing superset into separate rows. Announcing
+   * `index + 1` of `displayItems.length` therefore described a move the command
+   * would not make, and offered "Move up" on a peer the command rejects. Only
+   * the block lead carries a grip, and it speaks block numbers.
+   */
+  const blockOf = (exerciseId: string) => {
+    const blockIndex = rows.findIndex((row) =>
+      row.exercises.some((exercise) => exercise.id === exerciseId),
+    );
+    if (blockIndex < 0) return null;
+    return {
+      position: blockIndex + 1,
+      total: rows.length,
+      isLead: rows[blockIndex].exercises[0].id === exerciseId,
     };
-  }, []);
+  };
 
-  useEffect(() => {
-    if (!restoreAfterRemountRef.current) return;
-    restoreAfterRemountRef.current = false;
-    pendingScrollFrameRef.current = requestAnimationFrame(() => {
-      const restoreScrollOffset = restoreScrollOffsetRef.current;
-      if (scrollOffsetRef.current) {
-        scrollOffsetRef.current.value = restoreScrollOffset;
-      }
-      listRef.current?.scrollToOffset?.({
-        offset: restoreScrollOffset,
-        animated: false,
-      });
-      pendingScrollFrameRef.current = null;
+  /**
+   * Commit a drop. `toIndex` is a BLOCK index — a superset moves as one — and
+   * `onReorderExercise` takes that block's lead exercise.
+   */
+  const handleReorder = (movedId: string, toIndex: number) => {
+    const moved = rows.find((row) => row.id === movedId);
+    const lead = moved?.exercises[0];
+    if (!lead) return;
+    props.onReorderExercise?.(lead.id, toIndex);
+    const label =
+      moved.exercises.length > 1
+        ? `Superset starting with ${lead.exerciseName}`
+        : lead.exerciseName;
+    void AccessibilityInfo.announceForAccessibility(
+      `${label} moved to position ${toIndex + 1} of ${rows.length}`,
+    );
+  };
+
+  /**
+   * The display items that belong to each drag block.
+   *
+   * A block is what MOVES (`buildReorderBlocks`, shared with the command); a
+   * display item is what RENDERS (`buildDisplayItems`, which splits a superset
+   * containing a cardio or plyometric exercise into separate rows so they get
+   * the metric logger instead of the strength table). So a block can render
+   * more than one card, and all of them travel together.
+   */
+  const displayItemsByBlock = useMemo(() => {
+    const byBlock = new Map<string, DisplayItem[]>();
+    displayItems.forEach((item) => {
+      const leadId =
+        item.kind === "exercise" ? item.exercise.id : item.exercises[0].id;
+      const block = rows.find((row) =>
+        row.exercises.some((exercise) => exercise.id === leadId),
+      );
+      if (!block) return;
+      const existing = byBlock.get(block.id);
+      if (existing) existing.push(item);
+      else byBlock.set(block.id, [item]);
     });
-  }, [dragListEpoch]);
-  const canReorder =
-    displayItems.length > 1 && props.onReorderExercise !== undefined;
+    return byBlock;
+  }, [displayItems, rows]);
+
+  const displayItemsOfBlock = (blockId: string) =>
+    displayItemsByBlock.get(blockId) ?? [];
+
+  /**
+   * One display item. Only the block LEAD advertises a draggable grip — the
+   * gesture itself belongs to `ReorderableList`, which puts an invisible
+   * target over the row's top-left corner.
+   */
+  const renderDisplayItem = (item: DisplayItem, draggable: boolean) => {
+    if (item.kind === "exercise") {
+      const ex = item.exercise;
+      const template = props.templateByExercise[ex.id] ?? DEFAULT_TEMPLATE;
+      return (
+        <SessionExerciseCard
+          key={ex.id}
+          exercise={ex}
+          previousSetsBySetNumber={props.previousSetsByExercise[ex.id] ?? {}}
+          weightUnit={weightUnit}
+          preferredUnits={props.preferredUnits}
+          category={template.category}
+          exerciseImageUrl={template.imageUrl}
+          targetSets={template.targetSets}
+          targetRepsMin={template.targetRepsMin}
+          targetRepsMax={template.targetRepsMax}
+          targetDurationSeconds={template.targetDurationSeconds}
+          restSeconds={template.restSeconds}
+          onLogSet={() => props.onLogSet(ex.id)}
+          onUpdateSet={(setId, patch) => props.onUpdateSet(ex.id, setId, patch)}
+          onRemoveSet={(setId) => props.onRemoveSet(ex.id, setId)}
+          onOpenNotes={() => props.onOpenNotes(ex.id)}
+          onSubstitute={() => props.onSubstitute(ex.id)}
+          onRemoveExercise={() => props.onRemoveExercise(ex.id)}
+          onTapExercise={() => props.onTapExercise(ex.exerciseId)}
+          onStartRest={() => props.onStartRest(ex.id)}
+          reorderPosition={blockOf(ex.id)?.position}
+          reorderTotal={rows.length}
+          onMove={
+            props.onMoveExercise && blockOf(ex.id)?.isLead
+              ? (direction) => props.onMoveExercise?.(ex.id, direction)
+              : undefined
+          }
+          draggable={draggable && blockOf(ex.id)?.isLead === true}
+        />
+      );
+    }
+    return (
+      <ActiveSupersetRow
+        key={`superset-${item.supersetGroup}`}
+        supersetGroup={item.supersetGroup}
+        exercises={item.exercises}
+        previousSetsByExercise={props.previousSetsByExercise}
+        weightUnit={weightUnit}
+        templateByExercise={props.templateByExercise}
+        onLogSupersetSet={props.onLogSupersetSet}
+        onUpdateSet={props.onUpdateSet}
+        onRemoveSupersetSet={props.onRemoveSupersetSet}
+        onStartRest={props.onStartRest}
+        onSubstitute={props.onSubstitute}
+        onRemoveExercise={props.onRemoveExercise}
+        onOpenSupersetNotes={props.onOpenSupersetNotes}
+        onAddExerciseToSuperset={props.onAddExerciseToSuperset}
+        reorderPosition={blockOf(item.exercises[0].id)?.position}
+        reorderTotal={rows.length}
+        onMove={
+          props.onMoveExercise
+            ? (direction) =>
+                props.onMoveExercise?.(item.exercises[0].id, direction)
+            : undefined
+        }
+        draggable={draggable}
+      />
+    );
+  };
 
   return (
     <View
@@ -345,94 +478,20 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
         style={styles.keyboardAvoider}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <DraggableFlatList
-          key={`active-session-drag-list-${dragListEpoch}`}
-          ref={listRef}
-          testID="active-session-draggable-list"
-          containerStyle={styles.scroll}
+        <ReorderableList
+          testID="active-session-list"
           style={styles.scroll}
-          contentContainerStyle={[
-            styles.scrollContent,
-            dragContentMinHeight > 0
-              ? { minHeight: dragContentMinHeight }
-              : undefined,
-          ]}
-          onContentSizeChange={(_width, height) => {
-            if (!isReorderingRef.current) {
-              fullContentHeightRef.current = height;
-            }
-          }}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={styles.scrollContent}
+          // Only the seed used before the rows report their own heights, so a
+          // rough average of a card is right. Cards are NOT this tall and do
+          // not match each other; the list measures them.
+          estimatedItemHeight={ESTIMATED_BLOCK_HEIGHT}
+          compactItemHeight={COMPACT_REORDER_ROW_HEIGHT + REORDER_ROW_GAP}
           keyboardDismissMode="on-drag"
           automaticallyAdjustKeyboardInsets
-          scrollEnabled={!isReordering}
-          data={displayItems}
-          extraData={isReordering}
-          onAnimValInit={({
-            activeCellOffset,
-            activeCellSize,
-            scrollOffset,
-          }) => {
-            activeCellOffsetRef.current = activeCellOffset;
-            activeCellSizeRef.current = activeCellSize;
-            scrollOffsetRef.current = scrollOffset;
-          }}
-          keyExtractor={displayItemKey}
-          autoscrollThreshold={48}
-          autoscrollSpeed={60}
-          activationDistance={20}
-          renderPlaceholder={() => <View style={styles.dragPlaceholder} />}
-          onDragBegin={(index) => {
-            const shrinkAbove = displayItems
-              .slice(0, index)
-              .reduce(
-                (total, item) =>
-                  total +
-                  Math.max(
-                    0,
-                    (fullCellHeightsRef.current.get(displayItemKey(item)) ??
-                      COMPACT_REORDER_ROW_HEIGHT) - COMPACT_REORDER_ROW_HEIGHT,
-                  ),
-                0,
-              );
-            const originalScrollOffset = scrollOffsetRef.current?.value ?? 0;
-            const compactScrollOffset = Math.max(
-              0,
-              originalScrollOffset - shrinkAbove,
-            );
-            const anchorPadding = Math.max(
-              0,
-              shrinkAbove - originalScrollOffset,
-            );
-            restoreScrollOffsetRef.current = originalScrollOffset;
-            if (activeCellSizeRef.current) {
-              activeCellSizeRef.current.value = COMPACT_REORDER_ROW_HEIGHT;
-            }
-            if (activeCellOffsetRef.current) {
-              activeCellOffsetRef.current.value =
-                activeCellOffsetRef.current.value - shrinkAbove + anchorPadding;
-            }
-            if (scrollOffsetRef.current) {
-              scrollOffsetRef.current.value = compactScrollOffset;
-            }
-            // Keep the full list's scroll extent while its cells and footer
-            // collapse. Without this lower anchor, native scrolling clamps a
-            // lower item to the compact content boundary and pulls it away
-            // from the stationary finger.
-            isReorderingRef.current = true;
-            setDragContentMinHeight(fullContentHeightRef.current);
-            setDragAnchorPadding(anchorPadding);
-            setIsReordering(true);
-            pendingScrollFrameRef.current = requestAnimationFrame(() => {
-              listRef.current?.scrollToOffset?.({
-                offset: compactScrollOffset,
-                animated: false,
-              });
-              pendingScrollFrameRef.current = null;
-            });
-          }}
-          ListHeaderComponent={
+          data={rows}
+          onReorder={handleReorder}
+          header={
             <>
               <SessionHeader
                 startedAt={props.startedAt}
@@ -533,33 +592,10 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
                   ) : null}
                 </View>
               )}
-              {dragAnchorPadding > 0 ? (
-                <View
-                  style={{ height: dragAnchorPadding }}
-                  testID="active-session-drag-anchor"
-                />
-              ) : null}
             </>
           }
-          ListEmptyComponent={
-            <View style={styles.emptyWrap} testID="active-session-empty">
-              <Text style={styles.emptyTitle}>No exercises yet</Text>
-              <Text style={styles.emptyBody}>
-                Add exercises from the library to start logging sets.
-              </Text>
-              <TouchableOpacity
-                onPress={props.onAddExercise}
-                style={styles.emptyAddButton}
-                testID="active-session-empty-add"
-                accessibilityLabel="Add exercise"
-              >
-                <Ionicons name="add" size={18} color={color.$text} />
-                <Text style={styles.emptyAddLabel}>Add exercise</Text>
-              </TouchableOpacity>
-            </View>
-          }
-          ListFooterComponent={
-            orderedExercises.length > 0 && !isReordering ? (
+          footer={
+            orderedExercises.length > 0 ? (
               <View
                 style={styles.addExerciseSection}
                 testID="active-session-add-exercise-row"
@@ -579,185 +615,75 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
                   <Text style={styles.addExerciseText}>Add Exercise</Text>
                 </TouchableOpacity>
               </View>
-            ) : null
-          }
-          onDragEnd={({ from, to }) => {
-            const restoreScrollOffset = restoreScrollOffsetRef.current;
-            isReorderingRef.current = false;
-            setIsReordering(false);
-            setDragAnchorPadding(0);
-            setDragContentMinHeight(0);
-            if (pendingScrollFrameRef.current !== null) {
-              cancelAnimationFrame(pendingScrollFrameRef.current);
-            }
-            pendingScrollFrameRef.current = requestAnimationFrame(() => {
-              if (scrollOffsetRef.current) {
-                scrollOffsetRef.current.value = restoreScrollOffset;
-              }
-              listRef.current?.scrollToOffset?.({
-                offset: restoreScrollOffset,
-                animated: false,
-              });
-              pendingScrollFrameRef.current = null;
-            });
-            if (from === to) return;
-            const item = displayItems[from];
-            const lead =
-              item?.kind === "exercise" ? item.exercise : item?.exercises[0];
-            if (!lead) return;
-            props.onReorderExercise?.(lead.id, to);
-            const label =
-              item.kind === "superset"
-                ? `Superset starting with ${lead.exerciseName}`
-                : lead.exerciseName;
-            void AccessibilityInfo.announceForAccessibility(
-              `${label} moved to position ${to + 1} of ${displayItems.length}`,
-            );
-          }}
-          renderItem={({
-            item,
-            drag,
-            isActive,
-            getIndex,
-          }: RenderItemParams<DisplayItem>) => {
-            const itemIndex = getIndex() ?? 0;
-            const lead =
-              item.kind === "exercise" ? item.exercise : item.exercises[0];
-            const exerciseNames =
-              item.kind === "exercise"
-                ? [item.exercise.exerciseName]
-                : item.exercises.map((exercise) => exercise.exerciseName);
-
-            if (isReordering) {
-              return (
-                <CompactReorderRow
-                  exerciseNames={exerciseNames}
-                  position={itemIndex + 1}
-                  total={displayItems.length}
-                  onMove={
-                    props.onMoveExercise
-                      ? (direction) =>
-                          props.onMoveExercise?.(lead.id, direction)
-                      : undefined
-                  }
-                  onDrag={drag}
-                  isDragging={isActive}
-                />
-              );
-            }
-
-            return (
-              <View
-                style={styles.dragBlock}
-                testID={`active-session-drag-block-${itemIndex + 1}`}
-                onLayout={({ nativeEvent: { layout } }) => {
-                  fullCellHeightsRef.current.set(
-                    displayItemKey(item),
-                    layout.height,
-                  );
-                }}
-              >
-                {(() => {
-                  if (item.kind === "exercise") {
-                    const ex = item.exercise;
-                    const template =
-                      props.templateByExercise[ex.id] ?? DEFAULT_TEMPLATE;
-                    return (
-                      <SessionExerciseCard
-                        key={ex.id}
-                        exercise={ex}
-                        previousSetsBySetNumber={
-                          props.previousSetsByExercise[ex.id] ?? {}
-                        }
-                        weightUnit={weightUnit}
-                        preferredUnits={props.preferredUnits}
-                        category={template.category}
-                        exerciseImageUrl={template.imageUrl}
-                        targetSets={template.targetSets}
-                        targetRepsMin={template.targetRepsMin}
-                        targetRepsMax={template.targetRepsMax}
-                        targetDurationSeconds={template.targetDurationSeconds}
-                        restSeconds={template.restSeconds}
-                        onLogSet={() => props.onLogSet(ex.id)}
-                        onUpdateSet={(setId, patch) =>
-                          props.onUpdateSet(ex.id, setId, patch)
-                        }
-                        onRemoveSet={(setId) => props.onRemoveSet(ex.id, setId)}
-                        onOpenNotes={() => props.onOpenNotes(ex.id)}
-                        onSubstitute={() => props.onSubstitute(ex.id)}
-                        onRemoveExercise={() => props.onRemoveExercise(ex.id)}
-                        onTapExercise={() => props.onTapExercise(ex.exerciseId)}
-                        onStartRest={() => props.onStartRest(ex.id)}
-                        reorderPosition={itemIndex + 1}
-                        reorderTotal={displayItems.length}
-                        onMove={
-                          props.onMoveExercise
-                            ? (direction) =>
-                                props.onMoveExercise?.(ex.id, direction)
-                            : undefined
-                        }
-                        onDrag={canReorder ? drag : undefined}
-                        isDragging={isActive}
-                      />
-                    );
-                  }
-                  return (
-                    <ActiveSupersetRow
-                      key={`superset-${item.supersetGroup}`}
-                      supersetGroup={item.supersetGroup}
-                      exercises={item.exercises}
-                      previousSetsByExercise={props.previousSetsByExercise}
-                      weightUnit={weightUnit}
-                      templateByExercise={props.templateByExercise}
-                      onLogSupersetSet={props.onLogSupersetSet}
-                      onUpdateSet={props.onUpdateSet}
-                      onRemoveSupersetSet={props.onRemoveSupersetSet}
-                      onStartRest={props.onStartRest}
-                      onSubstitute={props.onSubstitute}
-                      onRemoveExercise={props.onRemoveExercise}
-                      onOpenSupersetNotes={props.onOpenSupersetNotes}
-                      onAddExerciseToSuperset={props.onAddExerciseToSuperset}
-                      reorderPosition={itemIndex + 1}
-                      reorderTotal={displayItems.length}
-                      onMove={
-                        props.onMoveExercise
-                          ? (direction) =>
-                              props.onMoveExercise?.(
-                                item.exercises[0].id,
-                                direction,
-                              )
-                          : undefined
-                      }
-                      onDrag={canReorder ? drag : undefined}
-                      isDragging={isActive}
-                    />
-                  );
-                })()}
+            ) : (
+              <View style={styles.emptyWrap} testID="active-session-empty">
+                <Text style={styles.emptyTitle}>No exercises yet</Text>
+                <Text style={styles.emptyBody}>
+                  Add exercises from the library to start logging sets.
+                </Text>
+                <TouchableOpacity
+                  onPress={props.onAddExercise}
+                  style={styles.emptyAddButton}
+                  testID="active-session-empty-add"
+                  accessibilityLabel="Add exercise"
+                >
+                  <Ionicons name="add" size={18} color={color.$text} />
+                  <Text style={styles.emptyAddLabel}>Add exercise</Text>
+                </TouchableOpacity>
               </View>
-            );
-          }}
+            )
+          }
+          renderItem={(row, { index, isCompact }: ReorderableRenderProps) => (
+            <View
+              style={styles.dragBlock}
+              testID={`active-session-drag-block-${index + 1}`}
+            >
+              {isCompact ? (
+                /*
+                 * Collapsed for the drag, so the whole list is visible while
+                 * you move a row. The swap happens on the hold, BEFORE the
+                 * drag activates — see `ReorderableList`.
+                 */
+                <View style={{ paddingBottom: REORDER_ROW_GAP }}>
+                  <CompactReorderRow
+                    exerciseNames={row.exercises.map(
+                      (exercise) => exercise.exerciseName,
+                    )}
+                    position={index + 1}
+                    total={rows.length}
+                    // No `onMove` in compact mode: a move arriving from
+                    // outside the drag would desync the sortable's position
+                    // map against what is on screen. The full cards carry the
+                    // accessible Move actions.
+                  />
+                </View>
+              ) : (
+                displayItemsOfBlock(row.id).map((item) =>
+                  renderDisplayItem(item, canReorder),
+                )
+              )}
+            </View>
+          )}
         />
       </KeyboardAvoidingView>
 
       {/* Sticky Finish CTA — floats above the content per the prototype
           (`active-workout.jsx:110–112`). Discard moved to the header "End"
           pill (STORY-002). */}
-      {!isReordering && (
-        <View style={styles.finishContainer} pointerEvents="box-none">
-          <Btn
-            full
-            variant="filled"
-            tone="primary"
-            size="lg"
-            icon={<IconCheck size={16} color={color.$primaryInk} />}
-            onPress={props.onFinish}
-            testID="active-session-finish"
-            accessibilityLabel="Finish workout"
-          >
-            Finish Workout
-          </Btn>
-        </View>
-      )}
+      <View style={styles.finishContainer} pointerEvents="box-none">
+        <Btn
+          full
+          variant="filled"
+          tone="primary"
+          size="lg"
+          icon={<IconCheck size={16} color={color.$primaryInk} />}
+          onPress={props.onFinish}
+          testID="active-session-finish"
+          accessibilityLabel="Finish workout"
+        >
+          Finish Workout
+        </Btn>
+      </View>
 
       <RestTimerDisplay
         isActive={props.restTimer.isActive}
@@ -781,6 +707,13 @@ const styles = StyleSheet.create({
   },
   keyboardAvoider: { flex: 1 },
   scroll: { flex: 1 },
+  reorderContent: {
+    // Horizontal only — see the contentContainerStyle note on the reorder
+    // list. The bottom clearance is for the floating Finish CTA, which keeps
+    // floating in compact mode; content BELOW the rows is harmless.
+    paddingHorizontal: 16,
+    paddingBottom: 100,
+  },
   scrollContent: {
     padding: 16,
     // Clear the floating "Finish Workout" CTA (52pt + 24pt offset + breathing

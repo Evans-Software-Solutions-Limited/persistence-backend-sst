@@ -276,6 +276,36 @@ export const ONBOARDING_REQUEST_TIMEOUT_MS = 10_000;
  * app bootstrap from the auth layer. This keeps the API client decoupled
  * from Supabase.
  */
+/** Sentinel for "the caller's budget expired while we waited". */
+const TIMED_OUT = Symbol("timed-out");
+
+/**
+ * Await `promise`, giving up after `timeoutMs`.
+ *
+ * A timer rather than the request's `AbortSignal`, deliberately: the signal's
+ * `abort` event does not reach an `addEventListener` listener under the React
+ * Native jest environment, so hanging this off it would have been untestable
+ * — and silently inert if the same ever holds on a device. This timer and the
+ * fetch controller's are armed at the same moment, so the two waits share one
+ * budget instead of stacking.
+ *
+ * The losing promise is left to settle on its own; nothing rejects, so there
+ * is no unhandled rejection.
+ */
+function withDeadline<T>(
+  promise: Promise<T>,
+  timeoutMs: number | undefined,
+): Promise<T | typeof TIMED_OUT> {
+  if (timeoutMs == null) return promise;
+  let handle: ReturnType<typeof setTimeout> | undefined;
+  const timer = new Promise<typeof TIMED_OUT>((resolve) => {
+    handle = setTimeout(() => resolve(TIMED_OUT), timeoutMs);
+  });
+  return Promise.race([promise, timer]).finally(() => {
+    if (handle !== undefined) clearTimeout(handle);
+  });
+}
+
 export class SSTApiAdapter implements ApiPort {
   private tokenProvider: (() => Promise<string | null>) | null = null;
 
@@ -343,17 +373,18 @@ export class SSTApiAdapter implements ApiPort {
       "Content-Type": "application/json",
     };
 
-    if (this.tokenProvider) {
-      const token = await this.tokenProvider();
-      if (token) {
-        headers["Authorization"] = `Bearer ${token}`;
-      }
-    }
-
     // Per-request abort wiring. Only allocated when a caller opts into
     // a timeout — fetch otherwise behaves exactly as before, so non-
     // dashboard endpoints are unaffected by this change. The timer is
     // always cleared in `finally`, even if the request rejects.
+    //
+    // ARMED BEFORE THE TOKEN IS READ, deliberately. The token read is itself a
+    // network operation (supabase refreshes the session inside its expiry
+    // margin), so starting the clock afterwards left that wait OUTSIDE the
+    // caller's budget and simply added to it — a caller asking for 10s could
+    // wait 10s plus the whole token bound. It also meant the stated intent for
+    // the onboarding read ("cannot remain pending forever") did not hold,
+    // because the timer had not started when the wait began.
     const controller = timeoutMs != null ? new AbortController() : null;
     const timeoutHandle =
       controller != null
@@ -361,6 +392,20 @@ export class SSTApiAdapter implements ApiPort {
         : null;
 
     try {
+      if (this.tokenProvider) {
+        const token = await withDeadline(this.tokenProvider(), timeoutMs);
+        if (token === TIMED_OUT) {
+          return fail({
+            kind: "api",
+            code: "timeout",
+            message: `Request timed out after ${timeoutMs}ms`,
+          });
+        }
+        if (token) {
+          headers["Authorization"] = `Bearer ${token}`;
+        }
+      }
+
       const response = await fetch(this.buildUrl(path, params), {
         method,
         headers,
@@ -2442,10 +2487,6 @@ export class SSTApiAdapter implements ApiPort {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
     };
-    if (this.tokenProvider) {
-      const token = await this.tokenProvider();
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-    }
     // Per-request abort wiring, mirroring `request()`. Added for the Loadout
     // model-backed calls, which need the full API Gateway window AND the domain
     // `code` off the body — before this, `timeoutMs` was silently dropped here, so
@@ -2458,6 +2499,19 @@ export class SSTApiAdapter implements ApiPort {
         ? setTimeout(() => controller.abort(), timeoutMs)
         : null;
     try {
+      // Read inside the armed window, same reasoning as `request()`.
+      if (this.tokenProvider) {
+        const token = await withDeadline(this.tokenProvider(), timeoutMs);
+        if (token === TIMED_OUT) {
+          return fail({
+            kind: "api",
+            code: "timeout",
+            message: `Request timed out after ${timeoutMs}ms`,
+          });
+        }
+        if (token) headers["Authorization"] = `Bearer ${token}`;
+      }
+
       const response = await fetch(this.buildUrl(path, params), {
         method,
         headers,

@@ -9,6 +9,171 @@ items, and the four most recent sessions. Trimmed 2026-07-27 from 1554 lines.
 If anything here contradicts `git log --oneline -30`, the git history wins —
 say so and fix this file.
 
+### 🟢 2026-09-08 — Offline hardening + reorder rebuild (branch `fix/onboarding-calorie-target-redirect`)
+
+**One PR intended.** Twenty-odd commits, four workstreams.
+
+⚠ **Device status, precisely:** the reorder interaction is device-verified on
+the simulator (see workstream 4). Workstreams 1–3 and 5 were reasoned and
+unit-tested only. `SMOKE_TEST.md` is the acceptance gate and it is Brad's to
+run — the drag library is jest-mocked, so no test can prove gesture, geometry
+or auto-scroll behaviour.
+
+**1. Offline boot hang — FIXED.** With no connection the app sat on an
+infinite spinner and never reached Home, even signed in with a valid cached
+account.
+
+- `SupabaseAuthAdapter.getAccessToken()` awaited `getSession()` unbounded. It
+  refreshes over the network inside supabase's 90s expiry margin, is
+  serialized behind the **global auth lock**, and has no timeout — so on a
+  captive portal the lock is never released and EVERY request queues behind a
+  promise that will not resolve. It also defeated the one guard meant to stop
+  this, because `request()` awaited the token BEFORE arming its
+  AbortController. Both fixed: the token read is bounded
+  (`GET_ACCESS_TOKEN_TIMEOUT_MS` 3s, `..._EXPIRED_TIMEOUT_MS` 6s) with a
+  fallback to the persisted session, and `request`/`requestRaw` now arm the
+  abort wiring first so the caller's budget covers the whole operation.
+  ⚠ A resolved `null` is still honoured as a real signed-out verdict — only a
+  timeout or throw falls back. Do not collapse that distinction.
+- `OnboardingProvider.isLoading` blocked AuthGate's redirect until the server
+  read settled. It now means "nothing to route on at all", which a cached
+  mirror clears.
+- **REFUTED, do not chase:** TanStack `networkMode: 'online'`. `onlineManager`
+  listens for `window` online/offline events that RN never emits, so it is
+  permanently "online" and queries are never paused. Separately, it is NOT
+  wired to NetInfo and there is no query persister, so the entitlement surface
+  has no offline fallback (non-blocking; open).
+
+**2. Offline onboarding journey — FIXED.** With no cached row and no network
+the user hit a "temporarily unavailable" wall. The provider now seeds a local
+journey when the read never reached the server (`network`/`timeout` only — a
+reachable server that errored keeps the wall, since that IS evidence the
+account read is broken). The seed is PROVISIONAL: memory-only, no upload,
+until a real read confirms the account — otherwise the first Continue PUT its
+defaults over a real in-progress row, which the repository accepts (its guard
+only protects a terminal row). Provisional work survives a reconnect (and a
+retry that fails again), an untouched seed never competes, and a terminal
+local state is mirrored so "finish setup offline" survives a cold start. The
+plan picker degrades to `OnboardingOfflinePlansPresenter`.
+
+**3. Stale workout count — FIXED.** Four workouts on free, delete one, list
+showed 3 but the limit screen still said 4 and kept the user locked out.
+`removeCachedWorkout` rewrote each slice's payload without its `quota` (it
+even SELECTed the column and ignored it); `createWorkoutCommand` had the
+mirror-image gap. Both directions now move together, in-memory adapter at
+parity.
+
+**4. Reorder rebuilt — ONE gesture, with the compact view.**
+`react-native-draggable-flatlist` is GONE, replaced by
+`react-native-reanimated-dnd` behind
+`src/ui/components/workouts/ReorderableList.tsx`.
+
+**Hold a card's grip → the rows collapse to compact rows under your finger →
+the same finger drags → the drop commits and the cards come back.** No button
+in, no button out, no tap-out, no second hold.
+
+⚠ **The "this library only drags uniform rows" claim was WRONG** — it is in
+older versions of the brief and in earlier commits on this branch. The library
+has a measured-height path and the real cards drag fine. The original failure
+was passing ONE height for rows that were not that height. Two designs were
+built on that wrong belief before it was checked.
+
+How the single gesture is possible (the part worth keeping):
+
+- `ReorderableList` composes its own `Gesture.LongPress` at **90ms**
+  `Gesture.Simultaneous` with the sortable's pan, which activates at 200ms. The
+  collapse therefore lands BEFORE the library measures anything. Collapsing
+  after the drag starts is what made the first attempt drift — the row stayed
+  anchored to heights that no longer existed.
+- **The drag target sits OUTSIDE the row's body** — an invisible 56×56 Gesture
+  Handler target over the row's top-left corner. A touch goes to the view the
+  finger landed on, so a target inside the body would unmount when the body
+  swaps and take the gesture with it. The cards keep drawing their own grip and
+  keep its accessibility.
+- **Compact heights are uniform and known**, so the new geometry is published
+  synchronously — a measured height could not land inside the 110ms available.
+- It drives `useSortable` directly rather than `SortableItem`, because that is
+  what makes both of the above reachable.
+
+⚠ **Two geometry rules that WILL bite again:**
+
+1. **A row's resting top is computed once, at mount**, as
+   `index × estimatedItemHeight`, and corrected only when the measured heights
+   CHANGE afterwards. So NOTHING may remount the rows after the heights are
+   known — that strands every row at the estimate (cards overlapping in the
+   session, ~50pt of dead gaps in the editor). This is why `containerHeight`
+   comes from the window at mount instead of being measured: measuring it means
+   re-freezing it, re-freezing needs a remount, and the remount is fatal.
+2. **The library compares the dragged row's TOP against the auto-scroll edges,
+   in a row space whose origin is the first row**, while the scroll offset it
+   compares to is the scroller's own. Content above the rows makes those differ
+   and takes the edges with it — with a header and no compensation, the
+   down-trigger sits below where a finger can reach. `ReorderableList` measures
+   the rows' own offset and shifts the offset it hands them.
+
+Also: heights are measured by `ReorderableList`, not the library — the
+library's own `onLayout` measurement did not always fire. And Gesture Handler
+finalizes FAILED/CANCELLED pans too, which the library forwards as drops, so a
+real drag start has to be recorded before a drop is believed.
+
+Device-verified on the simulator (iPhone 17 Pro Max), both surfaces: hold →
+collapse → drag → drop commits, auto-scroll at both edges, a scroll swipe
+starting on a grip still scrolls, and even card spacing. The compact swap was
+verified indirectly — a 290pt drag moved a card 3 slots, which is compact
+pitch, not full-card pitch.
+
+**5. Onboarding Calories target (the branch's original bug) — FIXED, on the
+third attempt.** Worth reading before touching it, because it was shipped
+INERT twice with a passing test each time:
+
+- Attempt 1 used `selfConfig.reload` — cache-only, and the target is computed
+  server-side, so a cache re-read returns byte-identical rows.
+- Attempt 2 chained the patch onto `refresh().then(...)` and read a
+  render-assigned ref inside it. That callback runs as a microtask, BEFORE
+  React commits the refreshed config, so it wrote the PRE-refresh target back.
+- `useCachedResource.refresh` also REFUSES while another fetch is in flight and
+  used to resolve `void` either way, so the one read this depends on could be
+  dropped silently. It now resolves `false` when dropped, and the container
+  ladders retries (~12.4s, sized against a cold-Lambda GET).
+- The retry makes two landings possible and the first can be the collided
+  fetch, carrying the OLD target — so the arm flag is not one-shot.
+- ⚠ Every version passed its test until the test was made to dirty the draft
+  first. Reaching the Fuel editor requires toggling Calories ON, which dirties
+  the draft, and a dirty draft is exactly what makes the automatic re-seed
+  stand aside — so an un-dirtied test never runs the patch at all. Both tests
+  are now checked against the pre-fix container (they fail 2000/2200).
+
+⚠ **Known trade-off, left as-is (documented in `OnboardingProvider`):** a
+reconnect answered by a 5xx drops pages walked on a provisional onboarding
+journey. Keeping them lets a local guess outrank the account's real row on the
+next successful read and PUT over it. Fixing it properly needs a merge rather
+than a pick — keep-but-do-not-promote, promoting only when the server's row
+shows no progress of its own.
+
+⚠ **Simulator gotcha that cost real time:** a RevenueCat "Error fetching
+offerings" LogBox error opens on the simulator (no StoreKit config) and
+**LogBox swallows every touch** — it presents as "taps do nothing / navigation
+takes many clicks". Dismiss it before concluding anything about the app.
+
+Ten Inspector Brad sweeps up to the first push; They caught genuine defects in my own fixes each
+time — including a provisional-seed path that would have uploaded a reset over
+real server-side onboarding progress, and the frozen-0 `containerHeight` that
+made my own 6-row device check pass while any scrollable list would have
+committed at the wrong index. Worth every pass.
+
+⚠ **The device smoke test (`specs/milestones/REORDER-REBUILD/SMOKE_TEST.md`)
+is the acceptance gate and is Brad's to run.** The drag library is jest-mocked
+(it reaches react-native-worklets' native module at import), so NO test can
+prove gesture or auto-scroll behaviour.
+
+Gates on the final tree: prettier clean; typecheck 9/9; lint 0 errors;
+build 14/14; mobile 526 suites / 6730 tests.
+
+Test seam: `packages/mobile/__tests__/reorderable-test-api.ts`. The drag lives
+in a HOOK (`useSortable`), so its callbacks cannot be fired through a rendered
+view — the jest mock registers them per row id and tests drive
+`collapse → dragStart → drop` through that API.
+
 ### 🟢 2026-09-06 — MARKETING-PLANS Sprint 1 (branch `feat/marketing-plans`, PR 1)
 
 **The founding offer is a paid web purchase again.** Brad reversed the

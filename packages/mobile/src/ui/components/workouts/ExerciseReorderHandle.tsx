@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { AccessibilityInfo, Pressable } from "react-native";
+import { AccessibilityInfo, View } from "react-native";
 import * as Haptics from "expo-haptics";
 import { IconGrip } from "@/ui/components/icons";
 import { color } from "@/ui/theme/tokens";
@@ -9,18 +9,27 @@ export type ExerciseReorderHandleProps = {
   position: number;
   total: number;
   onMove?: (direction: -1 | 1) => void;
-  onDrag?: () => void;
-  isDragging?: boolean;
+  /**
+   * True when this grip can be dragged, i.e. the row is inside a
+   * `ReorderableList`. It only changes what the hint says: the DRAG itself is
+   * not wired here.
+   *
+   * `ReorderableList` puts an invisible Gesture Handler target over the row's
+   * top-left corner, on top of this grip, because a target inside the row's
+   * body would unmount when the body collapses to a compact row mid-gesture
+   * and take the drag with it. So this component draws the grip and owns its
+   * accessibility; the list owns the gesture.
+   */
+  draggable?: boolean;
 };
 
-/** OTA-safe gesture + accessibility control shared by form and live rows. */
+/** The grip: what it looks like, what it says, and its Move actions. */
 export function ExerciseReorderHandle({
   label,
   position,
   total,
   onMove,
-  onDrag,
-  isDragging = false,
+  draggable = false,
 }: ExerciseReorderHandleProps) {
   const move = useCallback(
     (direction: -1 | 1) => {
@@ -34,17 +43,38 @@ export function ExerciseReorderHandle({
     },
     [label, onMove, position, total],
   );
+
+  // A one-item list has nothing to move: both action filters below collapse to
+  // empty, so advertising the actions in the hint promised VoiceOver users two
+  // gestures that do nothing. Treat "can move" as the actions actually
+  // existing, not merely as `onMove` being wired.
+  const canMove = onMove != null && total > 1;
+
+  // Nothing this grip can do: no drag, and no Move actions. Rendering it
+  // anyway gave sighted users a drag affordance that does not drag and
+  // VoiceOver an `adjustable` control whose adjust swipes are silent no-ops.
+  if (!canMove && !draggable) return null;
+
   return (
-    <Pressable
+    <View
+      accessible
       testID={`reorder-${position}`}
       accessibilityRole="adjustable"
       accessibilityLabel={`Reorder ${label}, position ${position} of ${total}`}
-      accessibilityHint="Long press and drag, or use Move up and Move down actions"
+      accessibilityHint={
+        draggable
+          ? canMove
+            ? "Hold and drag to move, or use Move up and Move down actions"
+            : "Hold and drag to move"
+          : canMove
+            ? "Use Move up and Move down actions"
+            : undefined
+      }
       accessibilityActions={[
-        ...(onMove && position > 1
+        ...(canMove && position > 1
           ? [{ name: "decrement" as const, label: "Move up" }]
           : []),
-        ...(onMove && position < total
+        ...(canMove && position < total
           ? [{ name: "increment" as const, label: "Move down" }]
           : []),
       ]}
@@ -52,22 +82,14 @@ export function ExerciseReorderHandle({
         if (event.nativeEvent.actionName === "decrement") move(-1);
         if (event.nativeEvent.actionName === "increment") move(1);
       }}
-      onLongPress={() => {
-        if (!onDrag || isDragging) return;
-        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-        onDrag();
-      }}
-      delayLongPress={180}
-      disabled={isDragging}
       style={{
         minWidth: 44,
         minHeight: 44,
         alignItems: "center",
         justifyContent: "center",
-        opacity: isDragging ? 0.7 : 1,
       }}
     >
       <IconGrip size={20} color={color.$text3} />
-    </Pressable>
+    </View>
   );
 }

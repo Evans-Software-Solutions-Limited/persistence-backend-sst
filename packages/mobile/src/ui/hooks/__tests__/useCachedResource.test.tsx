@@ -227,7 +227,7 @@ describe("useCachedResource — reload() reactive bridge (regression)", () => {
     );
     expect(result.current.data).toBe(1);
 
-    let done: Promise<void>;
+    let done: Promise<boolean>;
     act(() => {
       done = result.current.refresh({ silent: true });
     });
@@ -241,6 +241,53 @@ describe("useCachedResource — reload() reactive bridge (regression)", () => {
     });
     await waitFor(() => expect(result.current.data).toBe(99));
     expect(result.current.isRefreshing).toBe(false);
+  });
+
+  it("reports a refresh DROPPED because one was already in flight", async () => {
+    // A caller refreshing to observe a specific server-side change has to know
+    // this happened: the fetch it collided with was issued BEFORE the change,
+    // so its result cannot contain it. `HabitSetupContainer` re-issues on a
+    // false, which is the only way the post-Fuel-save Calories target lands
+    // when step 3's own mount refresh is still out.
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    writeCache(storage, 1);
+    let release: (() => void) | null = null;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    const fetcher = jest.fn(async () => {
+      await gate;
+      return ok(99);
+    });
+
+    const { result } = renderHook(
+      () => useCachedResource(scalarConfig(fetcher)),
+      { wrapper: wrap(makeAdapters(api, storage)) },
+    );
+
+    let first: Promise<boolean>;
+    let second: Promise<boolean>;
+    act(() => {
+      first = result.current.refresh({ silent: true });
+      second = result.current.refresh({ silent: true });
+    });
+
+    await expect(second!).resolves.toBe(false);
+
+    await act(async () => {
+      release?.();
+      await expect(first!).resolves.toBe(true);
+    });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+
+    // And once it is clear, a retry is accepted.
+    await act(async () => {
+      await expect(result.current.refresh({ silent: true })).resolves.toBe(
+        true,
+      );
+    });
+    expect(fetcher).toHaveBeenCalledTimes(2);
   });
 });
 

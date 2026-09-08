@@ -190,7 +190,7 @@ const mockNavigate = jest.fn();
 const mockSwitchMode = jest.fn();
 const mockOpenDrawer = jest.fn();
 const mockOpenSheet = jest.fn();
-const mockRefreshClients = jest.fn(async () => {});
+const mockRefreshClients = jest.fn(async () => true);
 const mockProbe: { last: CoachHomePresenterProps | null } = { last: null };
 
 let mockClientsState: CachedResourceState<TrainerClient[]>;
@@ -251,7 +251,7 @@ function cached<T>(
     isStale: false,
     isRefreshing: false,
     error: null,
-    refresh: jest.fn(async () => {}),
+    refresh: jest.fn(async () => true),
     reload: jest.fn(),
     ...over,
   } as CachedResourceState<T>;

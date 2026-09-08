@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Text, View } from "@tamagui/core";
 
 import { IconBtn, Pill, RepRange, Stepper } from "@/ui/components/foundation";
@@ -42,8 +43,8 @@ interface ExerciseConfigCardProps {
   readonly reorderPosition?: number;
   readonly reorderTotal?: number;
   readonly onMove?: (direction: -1 | 1) => void;
-  readonly onDrag?: () => void;
-  readonly isDragging?: boolean;
+  /** Inside a `ReorderableList`: the grip says it can be dragged. */
+  readonly draggable?: boolean;
 }
 
 export default function ExerciseConfigCard({
@@ -59,8 +60,7 @@ export default function ExerciseConfigCard({
   reorderPosition,
   reorderTotal,
   onMove,
-  onDrag,
-  isDragging,
+  draggable,
 }: ExerciseConfigCardProps) {
   const isInSuperset =
     isSupersetStart ||
@@ -172,14 +172,13 @@ export default function ExerciseConfigCard({
         padding={12}
       >
         <View flexDirection="row" alignItems="center" gap={9} marginBottom={11}>
-          {onMove && reorderPosition && reorderTotal ? (
+          {(onMove || draggable) && reorderPosition && reorderTotal ? (
             <ExerciseReorderHandle
               label={exercise.exercise_name}
               position={reorderPosition}
               total={reorderTotal}
               onMove={onMove}
-              onDrag={onDrag}
-              isDragging={isDragging}
+              draggable={draggable}
             />
           ) : null}
           <View

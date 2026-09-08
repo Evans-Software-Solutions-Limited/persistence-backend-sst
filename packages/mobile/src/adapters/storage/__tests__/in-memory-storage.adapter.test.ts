@@ -1310,6 +1310,47 @@ describe("InMemoryStorageAdapter", () => {
       expect(slice?.workouts.map((w) => w.id)).toEqual(["w-keep"]);
     });
 
+    it("removeCachedWorkout moves the quota down with the list", () => {
+      // The bug this guards: the payload was rewritten and the quota was not,
+      // so a free user who deleted their way back under the cap was still
+      // told "You have 4 workouts" over a list of 3 — and stayed locked out
+      // of starting a session by `useWorkoutTotalCapGate`.
+      const wKeep = buildWorkout({ id: "w-keep" });
+      const wDrop = buildWorkout({ id: "w-drop" });
+      storage.cacheWorkoutsList("user-1", "mine", [wKeep, wDrop], {
+        used: 2,
+        limit: 3,
+      });
+
+      storage.removeCachedWorkout("user-1", "w-drop");
+
+      const slice = storage.getCachedWorkoutsList("user-1", "mine");
+      expect(slice?.workouts).toHaveLength(1);
+      expect(slice?.quota).toEqual({ used: 1, limit: 3 });
+    });
+
+    it("removeCachedWorkout never drives the cached count below zero", () => {
+      const w = buildWorkout({ id: "w-only" });
+      storage.cacheWorkoutsList("user-1", "mine", [w], { used: 0, limit: 3 });
+
+      storage.removeCachedWorkout("user-1", "w-only");
+
+      expect(storage.getCachedWorkoutsList("user-1", "mine")?.quota).toEqual({
+        used: 0,
+        limit: 3,
+      });
+    });
+
+    it("removeCachedWorkout leaves a slice with no quota alone", () => {
+      const wKeep = buildWorkout({ id: "w-keep" });
+      const wDrop = buildWorkout({ id: "w-drop" });
+      storage.cacheWorkoutsList("user-1", "mine", [wKeep, wDrop], null);
+
+      storage.removeCachedWorkout("user-1", "w-drop");
+
+      expect(storage.getCachedWorkoutsList("user-1", "mine")?.quota).toBeNull();
+    });
+
     it("removeCachedWorkout leaves other users' caches intact", () => {
       const w = buildWorkout({ id: "w-shared" });
       storage.cacheWorkoutsList("user-1", "mine", [w], null);

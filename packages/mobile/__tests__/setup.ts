@@ -16,12 +16,15 @@ jest.mock("react-native-fbsdk-next", () => ({
 
 // Mock react-native-reanimated
 jest.mock("react-native-reanimated", () => {
-  const { View, Text } = require("react-native");
+  const { View, Text, ScrollView } = require("react-native");
   return {
     __esModule: true,
     default: {
       View,
       Text,
+      // `ReorderableList` is an Animated.ScrollView, so this has to exist or
+      // the whole reorder surface renders `undefined`.
+      ScrollView,
       createAnimatedComponent: (component: unknown) => component,
     },
     useSharedValue: (init: unknown) => ({ value: init }),
@@ -33,6 +36,12 @@ jest.mock("react-native-reanimated", () => {
     // device); the slider's pure math lives in Constants.ts and is
     // unit-tested separately.
     useDerivedValue: (fn: () => unknown) => ({ value: fn() }),
+    // `ReorderableList` keeps the sortable's scroll offset in step with the
+    // row space it works in, and drives auto-scroll from it. Neither is
+    // observable off-device, so the reaction is registered and never fired,
+    // and `scrollTo` is a no-op.
+    useAnimatedReaction: (_prepare: unknown, _react: unknown) => undefined,
+    scrollTo: () => undefined,
     withSpring: (val: unknown) => val,
     runOnJS:
       <Args extends unknown[], R>(fn: (...args: Args) => R) =>
@@ -76,16 +85,40 @@ jest.mock("react-native-reanimated", () => {
 // so the SemiCircleSlider mounts in tests; gesture behaviour isn't
 // asserted (it's pixel-driven on device).
 jest.mock("react-native-gesture-handler", () => {
-  const { View } = require("react-native");
+  const { View, ScrollView: RNScrollView } = require("react-native");
   const React = require("react");
   const noop = () => undefined;
+  const { mockSortableRows } =
+    require("./reorderable-test-api") as typeof import("./reorderable-test-api");
+
+  /**
+   * A chainable gesture stub that REMEMBERS its handlers.
+   *
+   * `ReorderableList` composes a collapse long-press simultaneously with the
+   * sortable's own pan, and that collapse is what swaps the rows for compact
+   * ones before the drag activates. Recording the handlers lets a test fire
+   * that sequence (see `reorderable-test-api.ts`); the gesture recognition
+   * itself is only checkable on a device.
+   */
   const builder = () => {
-    const fn = () => builder();
-    fn.onStart = builder;
-    fn.onUpdate = builder;
-    fn.onEnd = builder;
-    fn.activateAfterLongPress = builder;
-    fn.maxDuration = builder;
+    const handlers: Record<string, (...args: unknown[]) => unknown> = {};
+    const fn: any = () => fn;
+    fn.__mockHandlers = handlers;
+    const record =
+      (name: string) => (handler: (...args: unknown[]) => unknown) => {
+        handlers[name] = handler;
+        return fn;
+      };
+    fn.onStart = record("start");
+    fn.onEnd = record("end");
+    fn.onFinalize = record("finalize");
+    fn.onUpdate = record("update");
+    fn.activateAfterLongPress = () => fn;
+    fn.minDuration = () => fn;
+    fn.maxDuration = () => fn;
+    fn.maxDistance = () => fn;
+    fn.shouldCancelWhenOutside = () => fn;
+    fn.enabled = () => fn;
     return fn;
   };
   return {
@@ -93,6 +126,27 @@ jest.mock("react-native-gesture-handler", () => {
     Gesture: {
       Pan: builder,
       Tap: builder,
+      LongPress: builder,
+      /**
+       * Pairs the collapse long-press with its row. The mocked `useSortable`
+       * tags its handle gesture with the row id, which is the only place both
+       * halves are visible at once.
+       */
+      Simultaneous: (...gestures: any[]) => {
+        const row = gestures.find((gesture) => gesture?.__mockRowId);
+        const collapse = gestures.find(
+          (gesture) => gesture?.__mockHandlers?.start,
+        );
+        if (row && collapse) {
+          const existing = mockSortableRows.get(row.__mockRowId) ?? {};
+          mockSortableRows.set(row.__mockRowId, {
+            ...existing,
+            onCollapse: collapse.__mockHandlers.start as () => void,
+            onCollapseEnd: collapse.__mockHandlers.finalize as () => void,
+          });
+        }
+        return gestures[0];
+      },
       Race: noop,
     },
     GestureDetector: ({ children }: { children: React.ReactNode }) =>
@@ -102,6 +156,9 @@ jest.mock("react-native-gesture-handler", () => {
     // boilerplate.
     GestureHandlerRootView: ({ children }: { children: React.ReactNode }) =>
       React.createElement(View, null, children),
+    // `ReorderableList` scrolls with Gesture Handler's ScrollView, not RN's,
+    // so the pan and the scroll can coordinate (`simultaneousHandlers`).
+    ScrollView: RNScrollView,
   };
 });
 
@@ -650,74 +707,93 @@ jest.mock("@expo/vector-icons", () => {
   );
 });
 
-// Native drag mechanics are covered on-device. Tests render each row and can
-// invoke `onDragEnd` on the host View to verify exact-position persistence.
-jest.mock("react-native-draggable-flatlist", () => {
+// `react-native-reanimated-dnd` reaches `react-native-worklets`' native module
+// at import time, which cannot initialise under jest — so the library itself is
+// mocked and the REAL `ReorderableList` renders on top of it. That keeps its
+// composition (header, rows, footer, compact swap, commit mapping) under test
+// while leaving the gesture where it can only honestly be checked: on a
+// device. `specs/milestones/REORDER-REBUILD/SMOKE_TEST.md` is that gate.
+//
+// `useSortable` is a HOOK, so its callbacks cannot be fired through a rendered
+// view. The mock registers them per row id and exposes them on
+// `reorderableTestApi`, which is how a test drives a drag:
+//
+//   reorderableTestApi.dragStart("row-1");
+//   reorderableTestApi.drop("row-1", 2, { "row-1": 2, "row-2": 0, "row-3": 1 });
+//
+// The registry itself lives in `__tests__/reorderable-test-api.ts` so both the
+// mock and the tests can reach the same instance.
+// `react-native-worklets` has no native part under jest. `ReorderableList`
+// uses `scheduleOnRN` to hop a gesture callback from the UI thread to JS;
+// calling it straight through is the same thing, one tick earlier.
+jest.mock("react-native-worklets", () => ({
+  __esModule: true,
+  scheduleOnRN: (fn: (...args: unknown[]) => unknown, ...args: unknown[]) =>
+    fn(...args),
+}));
+
+jest.mock("react-native-reanimated-dnd", () => {
   const React = require("react");
   const { View } = require("react-native");
-  const NestableScrollContainer = ({ children, ...props }: any) =>
-    React.createElement(View, props, children);
-  const NestableDraggableFlatList = React.forwardRef(
-    (allProps: any, ref: any) => {
-      const {
-        data,
-        renderItem,
-        keyExtractor,
-        onDragBegin,
-        onDragEnd,
-        ListHeaderComponent,
-        ListEmptyComponent,
-        ListFooterComponent,
-        ...props
-      } = allProps;
-      const scrollToOffset = React.useMemo(() => jest.fn(), []);
-      React.useImperativeHandle(ref, () => ({ scrollToOffset }), [
-        scrollToOffset,
-      ]);
-      const dragMocks = data.map((_: unknown, index: number) =>
-        jest.fn(() => onDragBegin?.(index)),
-      );
-      const renderSlot = (slot: any) => {
-        if (!slot) return null;
-        return React.isValidElement(slot) ? slot : React.createElement(slot);
-      };
-      const children = [
-        renderSlot(ListHeaderComponent),
-        data.length === 0 ? renderSlot(ListEmptyComponent) : null,
-        ...data.map((item: any, index: number) =>
-          React.createElement(
-            View,
-            { key: keyExtractor(item, index) },
-            renderItem({
-              item,
-              drag: dragMocks[index],
-              isActive: false,
-              getIndex: () => index,
-            }),
-          ),
-        ),
-        renderSlot(ListFooterComponent),
-      ].filter(Boolean);
-      return React.createElement(
-        View,
-        {
-          ...props,
-          onDragBegin,
-          onDragEnd,
-          testScrollToOffset: scrollToOffset,
-        },
-        ...children,
-      );
-    },
-  );
-  const ScaleDecorator = ({ children }: any) => children;
-  return {
-    __esModule: true,
-    default: NestableDraggableFlatList,
-    NestableDraggableFlatList,
-    NestableScrollContainer,
-    ScaleDecorator,
+  const { mockSortableRows, mockSortableList } =
+    require("./reorderable-test-api") as typeof import("./reorderable-test-api");
+
+  const useSortableList = ({
+    data,
+    itemHeight,
+  }: {
+    data: { id: string }[];
+    itemHeight?: number | number[] | ((item: unknown, i: number) => number);
+  }) => {
+    // Keep the height resolver where a test can read it. This is the value
+    // the real hook lays every row out from, and getting it wrong is what put
+    // rows at `index × estimate` — overlapping cards in the session, dead
+    // gaps in the editor. Throwing it away here left that untestable.
+    mockSortableList.itemHeight = itemHeight;
+    return {
+      positions: { value: {} },
+      scrollY: { value: 0 },
+      autoScroll: { value: "none" },
+      scrollViewRef: { current: null },
+      dropProviderRef: { current: null },
+      handleScroll: () => {},
+      handleScrollEnd: () => {},
+      contentHeight: data.length * 100,
+      isDynamicHeight: true,
+      itemHeights: { value: {} },
+      scheduleHeightUpdate: () => {},
+      getItemProps: (item: { id: string }) => ({ id: item.id }),
+    };
   };
+
+  const useSortable = ({
+    id,
+    onDragStart,
+    onDrop,
+  }: {
+    id: string;
+    onDragStart?: () => void;
+    onDrop?: (
+      id: string,
+      position: number,
+      positions?: Record<string, number>,
+    ) => void;
+  }) => {
+    const existing = mockSortableRows.get(id) ?? {};
+    mockSortableRows.set(id, { ...existing, onDragStart, onDrop });
+    return {
+      animatedStyle: {},
+      panGestureHandler: { __mockRowId: id, __mockGesture: "pan" },
+      handlePanGestureHandler: { __mockRowId: id, __mockGesture: "handle" },
+      registerHandle: () => {},
+      isMoving: false,
+    };
+  };
+
+  const DropProvider = ({ children }: { children: unknown }) =>
+    React.createElement(View, null, children);
+
+  return { __esModule: true, DropProvider, useSortable, useSortableList };
 });
 
 // Silence known-noisy warnings in tests unless debugging.

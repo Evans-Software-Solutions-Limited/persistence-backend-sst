@@ -144,6 +144,21 @@ export function createWorkoutCommand(
     ]);
   }
 
+  // The cached quota has to move with the list, in BOTH directions. It counts
+  // every workout the user created (the server's own
+  // `COUNT(*) WHERE created_by = userId`), so it advances even for a
+  // coach-authored one that never lands in `mine` — and it is what
+  // `useWorkoutTotalCapGate` reads. Leaving it behind is what let the count
+  // and the list disagree; see the matching decrement in
+  // `removeCachedWorkout`.
+  const mine = deps.storage.getCachedWorkoutsList(deps.userId, "mine");
+  if (mine?.quota) {
+    deps.storage.cacheWorkoutsList(deps.userId, "mine", mine.workouts, {
+      ...mine.quota,
+      used: mine.quota.used + 1,
+    });
+  }
+
   deps.storage.enqueueMutation({
     entityType: "workout",
     entityId: workoutId,

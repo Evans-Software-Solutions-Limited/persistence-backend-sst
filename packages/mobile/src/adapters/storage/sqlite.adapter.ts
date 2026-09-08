@@ -2234,6 +2234,17 @@ ${indentSyncQueueDdl(12)}
         `DELETE FROM cached_workout_history WHERE user_id = ? AND workout_id = ?`,
         [userId, workoutId],
       );
+      // ⚠ INVARIANT: the cached quota counts every workout the user CREATED
+      // (mirroring the server's `COUNT(*) WHERE created_by = userId`), so
+      // `createWorkoutCommand` increments for all of them — including
+      // coach-authored rows that deliberately never enter the `mine` slice.
+      // The decrement below only fires when the row is found in a slice
+      // payload. Those two agree today because the only delete affordance is
+      // the owner long-press in `WorkoutsListContainer`, and everything
+      // reachable there is in `mine`. Add a delete path for a row that is NOT
+      // in `mine` (a coach-authored workout, a loadout variation) and the
+      // count will ratchet up without coming down, reproducing the lock this
+      // fix removed — decrement against the `mine` quota there too.
       // List slices store full payloads; rewrite the slice without the row.
       const slices = db.getAllSync(
         `SELECT type, payload, quota, synced_at FROM cached_workouts WHERE user_id = ?`,
@@ -2248,9 +2259,27 @@ ${indentSyncQueueDdl(12)}
         const list = JSON.parse(slice.payload) as Workout[];
         const filtered = list.filter((w) => w.id !== workoutId);
         if (filtered.length === list.length) continue;
+        // The quota travels WITH the slice and has to move with it. Rewriting
+        // the payload alone left `quota.used` reporting the pre-delete count,
+        // so a free user who deleted their way back under the cap stayed
+        // locked out by `useWorkoutTotalCapGate` ("You have 4 workouts" over a
+        // list of 3) until the next successful refresh. Decrement by the
+        // number actually removed, and never below zero.
+        const removed = list.length - filtered.length;
+        const quota = slice.quota
+          ? (JSON.parse(slice.quota) as WorkoutQuota)
+          : null;
+        const nextQuota: WorkoutQuota | null = quota
+          ? { ...quota, used: Math.max(0, quota.used - removed) }
+          : null;
         db.runSync(
-          `UPDATE cached_workouts SET payload = ? WHERE user_id = ? AND type = ?`,
-          [JSON.stringify(filtered), userId, slice.type],
+          `UPDATE cached_workouts SET payload = ?, quota = ? WHERE user_id = ? AND type = ?`,
+          [
+            JSON.stringify(filtered),
+            nextQuota ? JSON.stringify(nextQuota) : null,
+            userId,
+            slice.type,
+          ],
         );
       }
     });

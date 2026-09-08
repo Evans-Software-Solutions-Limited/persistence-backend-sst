@@ -18,6 +18,66 @@ import type {
 import { ok, fail, type Result, type AuthError } from "@/shared/errors";
 
 /**
+ * How long a token read may block an API request before we consider falling
+ * back to the persisted session. Sits comfortably above a healthy refresh
+ * round-trip and well below the 10s onboarding-read budget it fits inside.
+ */
+export const GET_ACCESS_TOKEN_TIMEOUT_MS = 3_000;
+
+/**
+ * The total budget when the persisted token is itself unusable.
+ *
+ * Falling back to an EXPIRED token is not a safe default: it earns a 401,
+ * which `defaultQueryRetry` and `useCachedResource` both treat as
+ * non-retryable, so a whole cold start's worth of requests would land in
+ * terminal error states instead of retrying — and `useMySubscription` going
+ * `isError` is what shows a paying user the free plan picker. A slow refresh
+ * is worth waiting longer for than that; only a dead one is worth giving up
+ * on.
+ *
+ * Kept deliberately tight. Callers that opt into a `timeoutMs` now arm their
+ * AbortController BEFORE awaiting the token, so their budget governs this wait
+ * rather than being added to it — but the many callers with no timeout at all
+ * have only this bound standing between them and a hung refresh.
+ */
+export const GET_ACCESS_TOKEN_EXPIRED_TIMEOUT_MS = 6_000;
+
+/**
+ * Treat a persisted token expiring within this window as already unusable —
+ * it would very likely expire in flight.
+ */
+const PERSISTED_TOKEN_EXPIRY_MARGIN_MS = 30_000;
+
+/** `expiresAt` is a UNIX time in SECONDS, and 0 means "unknown" (not 1970). */
+function isTokenStillUsable(expiresAt: number): boolean {
+  if (!expiresAt) return false;
+  return expiresAt * 1000 - Date.now() > PERSISTED_TOKEN_EXPIRY_MARGIN_MS;
+}
+
+/**
+ * Resolve with whatever `promise` gives, or an unanswered result once
+ * `deadlineMs` passes. Never rejects, and always clears its timer — the losing
+ * side of the race is left to settle on its own.
+ */
+async function raceWithDeadline(
+  promise: Promise<{ answered: boolean; token: string | null }>,
+  deadlineMs: number,
+): Promise<{ answered: boolean; token: string | null }> {
+  let handle: ReturnType<typeof setTimeout> | undefined;
+  const timedOut = new Promise<{ answered: false; token: null }>((resolve) => {
+    handle = setTimeout(
+      () => resolve({ answered: false, token: null }),
+      deadlineMs,
+    );
+  });
+  try {
+    return await Promise.race([promise, timedOut]);
+  } finally {
+    if (handle !== undefined) clearTimeout(handle);
+  }
+}
+
+/**
  * Derive Supabase's default auth storage key (`sb-<project-ref>-auth-token`)
  * from the project URL. The project ref is the first hostname label of the
  * Supabase URL. We compute it ourselves and pass it to `createClient` as an
@@ -636,11 +696,56 @@ export class SupabaseAuthAdapter implements AuthPort {
     return ok(this.mapSession(data.session));
   }
 
+  /**
+   * The bearer token every API request awaits, so it must never hang.
+   *
+   * `getSession()` refreshes over the network whenever the token is inside
+   * supabase's 90s expiry margin, is serialized behind the global auth lock,
+   * and carries no timeout of its own. On a captive portal or a dead network
+   * that refresh `fetch` never settles, so the lock is never released and
+   * every request in the app queues behind a promise that will not resolve —
+   * which is what stranded the boot gate on an infinite spinner.
+   *
+   * Bound it, and fall back to the token supabase has already persisted. A
+   * slightly stale JWT that earns a 401 is a far better outcome than a
+   * request that never returns: a 401 is a `Result` the caller can handle,
+   * and offline callers read through the SQLite cache anyway.
+   */
   async getAccessToken(): Promise<string | null> {
-    const {
-      data: { session },
-    } = await this.client.auth.getSession();
-    return session?.access_token ?? null;
+    // `answered` distinguishes "the session read gave us a verdict" from
+    // "it never did". A resolved `null` IS a verdict — the user is signed out —
+    // and must not be papered over with a persisted token, so it cannot be
+    // collapsed into the same shape as a timeout.
+    const live = this.client.auth
+      .getSession()
+      .then(({ data: { session } }) => ({
+        answered: true as const,
+        token: session?.access_token ?? null,
+      }))
+      .catch(() => ({ answered: false as const, token: null }));
+
+    const first = await raceWithDeadline(live, GET_ACCESS_TOKEN_TIMEOUT_MS);
+    if (first.answered) return first.token;
+
+    // A still-valid persisted token is a genuinely good answer: it works, and
+    // it unblocks every request queued behind the auth lock immediately.
+    const persisted = await this.getPersistedSession();
+    if (persisted !== null && isTokenStillUsable(persisted.expiresAt)) {
+      return persisted.accessToken;
+    }
+
+    // Nothing usable on disk, so the only good outcome left is the live
+    // refresh actually landing. Keep waiting for it rather than firing off a
+    // token we know is dead.
+    const second = await raceWithDeadline(
+      live,
+      GET_ACCESS_TOKEN_EXPIRED_TIMEOUT_MS - GET_ACCESS_TOKEN_TIMEOUT_MS,
+    );
+    if (second.answered) return second.token;
+
+    // Last resort. An expired token earns a 401, but that is still a `Result`
+    // the caller can act on, unlike a request that never returns.
+    return persisted?.accessToken ?? null;
   }
 
   private mapSession(session: {

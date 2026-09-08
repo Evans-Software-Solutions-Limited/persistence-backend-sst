@@ -196,6 +196,39 @@ it("hides on the session screen (expanded surface owns the view)", async () => {
   });
 });
 
+it.each([
+  ["workout detail", ["(app)", "workouts", "[id]"]],
+  ["workout edit", ["(app)", "workouts", "[id]", "edit"]],
+  ["workout creator", ["(app)", "workouts", "create"]],
+])("hides on the %s screen", async (_label, segments) => {
+  // The pill floats over whatever is under it, and on these three it read as
+  // sitting on top of the content — over the sticky Cancel/Save row on the
+  // form screens. You are already looking at a workout there.
+  mockSegments = segments;
+  const { adapters, storage, auth } = makeAdapters();
+  signIn(auth);
+  storage.cacheActiveSession(USER, makeSession());
+
+  const { queryByTestId } = renderOverlay(adapters);
+  await waitFor(() => {
+    expect(queryByTestId("active-workout-bar")).toBeNull();
+  });
+});
+
+it("still shows on other create/edit screens, which have no sticky footer", async () => {
+  // A bare `create`/`edit` segment also occurs under exercises and programs;
+  // the match is a PAIR with `workouts` so those keep the bar.
+  mockSegments = ["(app)", "exercises", "create"];
+  const { adapters, storage, auth } = makeAdapters();
+  signIn(auth);
+  storage.cacheActiveSession(USER, makeSession());
+
+  const { getByTestId } = renderOverlay(adapters);
+  await waitFor(() => {
+    expect(getByTestId("active-workout-bar")).toBeTruthy();
+  });
+});
+
 it("hides while the profile drawer is open (drawer paints over the bar otherwise)", async () => {
   const { adapters, storage, auth } = makeAdapters();
   signIn(auth);
