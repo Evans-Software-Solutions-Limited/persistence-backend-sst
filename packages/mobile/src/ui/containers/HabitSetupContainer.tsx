@@ -292,10 +292,6 @@ export function HabitSetupContainer({
   const reloadSelfConfig = selfConfig.reload;
   const refreshSelfConfig = selfConfig.refresh;
   const refreshClientConfig = clientConfig.refresh;
-  // Read inside the post-refresh callback, where `configsList` from this
-  // render is already stale.
-  const selfConfigRef = useRef(configsList);
-  selfConfigRef.current = configsList;
 
   /**
    * Re-read the config after the Fuel targets are edited.
@@ -314,28 +310,43 @@ export function HabitSetupContainer({
    */
   const fuelRev = useFuelSheets((state) => state.rev);
   const seenFuelRev = useRef(fuelRev);
+  const awaitingFuelRefresh = useRef(false);
   useEffect(() => {
     if (isCoachView) return;
     if (fuelRev === seenFuelRev.current) return;
     seenFuelRev.current = fuelRev;
+    awaitingFuelRefresh.current = true;
     // `refresh`, NOT `reload`: `reload` only re-reads the cache, and
     // `setTargetCommand` writes `cached_nutrition_target` — never
     // `cached_habit_configs` — so a cache re-read returns byte-identical rows.
     // Only the server recomputes this value.
-    void refreshSelfConfig({ silent: true }).then(() => {
-      // Re-seeding the draft is not enough on its own: reaching the editor
-      // requires toggling Calories ON, which dirties the draft, and the
-      // re-seed guard above deliberately preserves a dirty draft. The target
-      // is server-owned and read-only in this UI, so patching just that field
-      // cannot clobber a user edit — there is no user edit of it to clobber.
-      const refreshed = selfConfigRef.current.find(
-        (config) => config.category === "calories",
-      );
-      if (refreshed) {
-        patchDraft("calories", { targetValue: refreshed.targetValue });
-      }
-    });
-  }, [fuelRev, isCoachView, refreshSelfConfig, patchDraft]);
+    void refreshSelfConfig({ silent: true });
+  }, [fuelRev, isCoachView, refreshSelfConfig]);
+
+  /**
+   * Push the refreshed target into a dirty draft.
+   *
+   * Re-seeding the draft is not enough on its own: reaching the editor
+   * requires toggling Calories ON, which dirties the draft, and the re-seed
+   * guard above deliberately preserves a dirty draft. The target is
+   * server-owned and read-only in this UI, so patching just that field cannot
+   * clobber a user edit — there is no user edit of it to clobber.
+   *
+   * Keyed on the refreshed value rather than chained onto the refresh promise:
+   * that promise resolves as a microtask, BEFORE React has committed the new
+   * config, so anything reading state or a render-assigned ref there sees the
+   * pre-refresh target and writes the old number straight back.
+   */
+  const caloriesTarget = configsList.find(
+    (config) => config.category === "calories",
+  )?.targetValue;
+  useEffect(() => {
+    if (isCoachView) return;
+    if (!awaitingFuelRefresh.current) return;
+    if (caloriesTarget == null) return;
+    awaitingFuelRefresh.current = false;
+    patchDraft("calories", { targetValue: caloriesTarget });
+  }, [caloriesTarget, isCoachView, patchDraft]);
 
   // Commit the draft: one write per category that diverges from the baseline.
   //  - draft enabled            → configure PUT (enable/edit).

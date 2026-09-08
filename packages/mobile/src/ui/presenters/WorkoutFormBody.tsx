@@ -220,7 +220,10 @@ export function WorkoutFormBody({
       ? [...VISIBILITY_OPTIONS, PUBLIC_READONLY_OPTION]
       : VISIBILITY_OPTIONS;
 
-  const canReorder = reorderBlocks.length > 1;
+  // Mirrors the session presenter: without a commit callback every drop would
+  // be swallowed by `onReorderExercise?.(…)`, so there is no mode to offer.
+  const canReorder =
+    reorderBlocks.length > 1 && onReorderExercise !== undefined;
   const rows = reorderBlocks.map((block) => ({ id: block[0].id, block }));
 
   /**

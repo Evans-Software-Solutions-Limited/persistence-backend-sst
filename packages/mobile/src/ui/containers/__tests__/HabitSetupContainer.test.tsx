@@ -205,7 +205,9 @@ describe("HabitSetupContainer (self)", () => {
     api.habitConfigs = [
       {
         category: "calories",
-        enabled: true,
+        // Off to begin with, as it is for a user arriving at step 3 — so the
+        // toggle below genuinely dirties the draft.
+        enabled: false,
         goalId: null,
         assignedByCoach: false,
         locked: false,
@@ -230,6 +232,20 @@ describe("HabitSetupContainer (self)", () => {
     await waitFor(() =>
       expect(props().configs.calories.targetValue).toBe(2000),
     );
+
+    // Dirty the draft, exactly as the product does: the "Adjust in Nutrition"
+    // link only appears once Calories is toggled ON, and that toggle dirties
+    // it. The automatic re-seed deliberately preserves a dirty draft, so this
+    // is the ONLY path that reaches the post-refresh patch — without it the
+    // test passes against an inert fix (the re-seed supplies the new value
+    // instead), which is how the first version of this shipped broken twice.
+    await act(async () => {
+      props().onToggle("calories", true);
+    });
+    // Proof this exercises the patch and not the re-seed: the draft now says
+    // enabled while the baseline still says disabled, and it is exactly that
+    // divergence — a dirty draft — that makes the re-seed stand aside.
+    expect(props().configs.calories.enabled).toBe(true);
 
     // The Fuel editor saves a new target and ticks the store it already ticks.
     api.habitConfigs = [

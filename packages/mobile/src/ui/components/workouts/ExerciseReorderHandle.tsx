@@ -53,6 +53,12 @@ export function ExerciseReorderHandle({
     [label, onMove, position, total],
   );
 
+  // A one-item list has nothing to move: both action filters below collapse to
+  // empty, so advertising the actions in the hint promised VoiceOver users two
+  // gestures that do nothing. Treat "can move" as the actions actually
+  // existing, not merely as `onMove` being wired.
+  const canMove = onMove != null && total > 1;
+
   const a11y = {
     testID: `reorder-${position}`,
     accessibilityRole: "adjustable" as const,
@@ -60,21 +66,21 @@ export function ExerciseReorderHandle({
     // Compact mode withholds `onMove`, so advertising those actions there left
     // VoiceOver's increment/decrement swipes as silent no-ops.
     accessibilityHint: DragHandle
-      ? onMove
+      ? canMove
         ? "Hold and drag to move, or use Move up and Move down actions"
         : "Hold and drag to move"
       : onLongPressReorder
-        ? onMove
+        ? canMove
           ? "Hold to reorder, or use Move up and Move down actions"
           : "Hold to reorder"
-        : onMove
+        : canMove
           ? "Use Move up and Move down actions"
           : undefined,
     accessibilityActions: [
-      ...(onMove && position > 1
+      ...(canMove && position > 1
         ? [{ name: "decrement" as const, label: "Move up" }]
         : []),
-      ...(onMove && position < total
+      ...(canMove && position < total
         ? [{ name: "increment" as const, label: "Move down" }]
         : []),
     ],
