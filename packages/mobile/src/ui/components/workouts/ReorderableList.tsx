@@ -134,18 +134,21 @@ function ReorderableListInner<TItem extends ReorderableItem>({
     () => Dimensions.get("window").height,
   );
   /**
-   * The FIRST usable measurement wins, and later ones are ignored.
+   * The rows are keyed on this height, so a remount mid-drag would kill the
+   * gesture before the library's `onFinalize` runs — no drop, and therefore no
+   * mode exit. But refusing every later measurement is wrong too: both entry
+   * points mount this list while the keyboard may still be up, so the first
+   * layout can be a couple of hundred points short, and that shortfall lands
+   * straight in the auto-scroll edge and `maxScroll`.
    *
-   * The rows are keyed on this height, so accepting every layout pass would
-   * remount every row whenever the list resized — killing an in-flight gesture
-   * before the library's `onFinalize` runs, which means no drop and therefore
-   * no mode exit. A keyboard dismissal on the session screen does exactly that
-   * mid-hold, and rotation does it deterministically. A single zero-height pass
-   * would also re-freeze 0 and restore the last-index bug outright.
+   * So: take every usable measurement EXCEPT while a drag is in flight. Zero
+   * is always refused — freezing 0 restores the last-index bug outright.
    */
-  const measuredRef = useRef(false);
+  const isDraggingRef = useRef(false);
   const dataRef = useRef(data);
   dataRef.current = data;
+
+  const containerHeight = Math.min(viewportHeight, data.length * itemHeight);
 
   const {
     scrollViewRef,
@@ -163,12 +166,11 @@ function ReorderableListInner<TItem extends ReorderableItem>({
     itemKeyExtractor: itemId,
   });
 
-  const containerHeight = Math.min(viewportHeight, data.length * itemHeight);
-
   const handleDrop = useCallback(
     (id: string, position: number, allPositions?: Record<string, number>) => {
       // Always first: the library's `onFinalize` fires this for a cancelled
       // pan and for a lift-in-place too, and both must still end the mode.
+      isDraggingRef.current = false;
       onDragEnd?.();
       if (!allPositions) return;
       const from = dataRef.current.findIndex((item) => item.id === id);
@@ -185,6 +187,7 @@ function ReorderableListInner<TItem extends ReorderableItem>({
   // moment the drag actually engages rather than by a Pressable that only
   // pretended to start one.
   const handleDragStart = useCallback(() => {
+    isDraggingRef.current = true;
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     onDragStart?.();
   }, [onDragStart]);
@@ -204,10 +207,9 @@ function ReorderableListInner<TItem extends ReorderableItem>({
         contentContainerStyle={contentContainerStyle}
         simultaneousHandlers={dropProviderRef}
         onLayout={(event) => {
-          if (measuredRef.current) return;
+          if (isDraggingRef.current) return;
           const measured = Math.round(event.nativeEvent.layout.height);
           if (measured <= 0) return;
-          measuredRef.current = true;
           setViewportHeight(measured);
         }}
       >

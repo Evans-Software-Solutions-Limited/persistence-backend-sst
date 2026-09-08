@@ -1,5 +1,5 @@
-import { act, fireEvent } from "@testing-library/react-native";
-import { AccessibilityInfo, AppState } from "react-native";
+import { fireEvent } from "@testing-library/react-native";
+import { AccessibilityInfo } from "react-native";
 import React from "react";
 import {
   ActiveSessionPresenter,

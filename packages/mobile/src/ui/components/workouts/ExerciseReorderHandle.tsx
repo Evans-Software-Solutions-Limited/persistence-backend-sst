@@ -63,7 +63,13 @@ export function ExerciseReorderHandle({
       ? onMove
         ? "Hold and drag to move, or use Move up and Move down actions"
         : "Hold and drag to move"
-      : "Hold to reorder, or use Move up and Move down actions",
+      : onLongPressReorder
+        ? onMove
+          ? "Hold to reorder, or use Move up and Move down actions"
+          : "Hold to reorder"
+        : onMove
+          ? "Use Move up and Move down actions"
+          : undefined,
     accessibilityActions: [
       ...(onMove && position > 1
         ? [{ name: "decrement" as const, label: "Move up" }]

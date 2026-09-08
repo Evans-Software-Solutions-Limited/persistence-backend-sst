@@ -20,6 +20,8 @@ list is longer than the viewport.
 - [ ] A4 — **Drag to the bottom edge of the screen. The list auto-scrolls.**
       Keep holding until the last row is reached.
 - [ ] A5 — **Drag to the top edge. The list auto-scrolls back up.**
+- [ ] A5b — With the keyboard open from a reps field, hold a grip to collapse,
+      then drag to the bottom edge. It still auto-scrolls.
 - [ ] A6 — Drag a **superset** block. The whole block moves together and stays
       contiguous.
 - [ ] A7 — A superset containing a cardio or plyometric exercise still renders
@@ -45,6 +47,12 @@ Set up: open an existing workout with **8+ exercises**.
       present and editable above the list, and the page scrolls as one surface.
 - [ ] B3 — Focus the name field so the keyboard is open, dismiss it, then drag.
       Auto-scroll still works.
+- [ ] B3b — With the keyboard STILL OPEN, hold a grip to collapse. Auto-scroll
+      to the bottom still works. (The list is measured as it mounts, so a
+      keyboard-shrunk first measurement used to stick for the whole mode.)
+- [ ] B3c — Focus a Sets field, type a new number, then hold a grip WITHOUT
+      tapping elsewhere. On exit the new number is still there. (Those fields
+      commit on blur, and unmounting a focused input never delivers one.)
 - [ ] B4 — Trigger the name validation error, then drag. The drag frame is not
       offset by the error text appearing.
 - [ ] B5 — Reorder, Save, reopen. The new order persisted.

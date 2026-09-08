@@ -1,4 +1,4 @@
-import { fireEvent } from "@testing-library/react-native";
+import { fireEvent, waitFor } from "@testing-library/react-native";
 import { AccessibilityInfo } from "react-native";
 import { WorkoutFormBody } from "../WorkoutFormBody";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
@@ -120,7 +120,7 @@ function renderReorderableForm() {
 }
 
 describe("WorkoutFormBody reorder", () => {
-  it("holds a grip to collapse into uniform rows, with no buttons", () => {
+  it("holds a grip to collapse into uniform rows, with no buttons", async () => {
     // The editor used to hide reorder behind a Reorder button and keep its
     // list nested inside the form's scroller, whose stale offset broke
     // auto-scroll. Holding a grip now collapses to uniform rows — uniform
@@ -137,18 +137,23 @@ describe("WorkoutFormBody reorder", () => {
 
     fireEvent(getByTestId("reorder-1"), "longPress");
 
-    expect(getByTestId("workout-exercise-reorder-list")).toBeTruthy();
+    // The flip is deferred a tick so the focused input's blur can commit.
+    await waitFor(() =>
+      expect(getByTestId("workout-exercise-reorder-list")).toBeTruthy(),
+    );
     expect(getAllByTestId("compact-reorder-row").length).toBeGreaterThan(1);
     // The form is out of the way, so there is no nested scroller at all.
     expect(queryByTestId("workout-name-input")).toBeNull();
   });
 
-  it("puts the drag on a handle, never the whole row", () => {
+  it("puts the drag on a handle, never the whole row", async () => {
     const { getAllByTestId, getByTestId } = renderReorderableForm();
 
     fireEvent(getByTestId("reorder-1"), "longPress");
 
-    expect(getAllByTestId("sortable-handle").length).toBeGreaterThan(0);
+    await waitFor(() =>
+      expect(getAllByTestId("sortable-handle").length).toBeGreaterThan(0),
+    );
   });
 
   it("offers no Reorder control when there is only one block", () => {
@@ -163,7 +168,7 @@ describe("WorkoutFormBody reorder", () => {
 });
 
 describe("WorkoutFormBody drag reorder", () => {
-  it("renders a superset as one draggable block and persists its exact drop", () => {
+  it("renders a superset as one draggable block and persists its exact drop", async () => {
     const onReorderExercise = jest.fn();
     const onMoveExercise = jest.fn();
     const announce = jest
@@ -213,8 +218,11 @@ describe("WorkoutFormBody drag reorder", () => {
 
     // Four exercises become three draggable blocks: standalone, superset,
     // standalone. The superset's members collapse into ONE row, addressed by
-    // its LEAD exercise's id.
-    expect(getByTestId("sortable-item-standalone-a")).toBeTruthy();
+    // its LEAD exercise's id. The flip is deferred a tick so a focused input's
+    // blur can commit first.
+    await waitFor(() =>
+      expect(getByTestId("sortable-item-standalone-a")).toBeTruthy(),
+    );
     expect(getByTestId("sortable-item-superset-lead")).toBeTruthy();
     fireEvent(
       getByTestId("sortable-item-superset-lead"),

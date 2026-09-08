@@ -416,45 +416,52 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
            * Entered by HOLDING a card's grip, left automatically on the drop.
            * There is no button either way.
            */
-          <ReorderableList
-            testID="active-session-reorder-list"
-            style={styles.scroll}
-            contentContainerStyle={styles.scrollContent}
-            itemHeight={COMPACT_REORDER_ROW_HEIGHT + REORDER_ROW_GAP}
-            data={rows}
-            // Minimize and End stay reachable while reordering — the mode has
-            // no exit control of its own, so removing the header too would
-            // leave only the floating Finish.
-            header={
-              <SessionHeader
-                startedAt={props.startedAt}
-                sessionName={props.sessionName}
-                onMinimize={props.onMinimize}
-                onEnd={props.onDiscard}
-              />
-            }
-            onReorder={handleReorder}
-            // Ends the mode on EVERY drag end, not just a committed move: a
-            // lift-in-place otherwise left no way out at all.
-            onDragEnd={() => setIsReordering(false)}
-            renderItem={(row, { Handle, index }: ReorderableRenderProps) => (
-              <View style={{ paddingBottom: REORDER_ROW_GAP }}>
-                <CompactReorderRow
-                  exerciseNames={row.exercises.map(
-                    (exercise) => exercise.exerciseName,
-                  )}
-                  position={index + 1}
-                  total={rows.length}
-                  // No `onMove` here on purpose. The sortable seeds its `positions` map
-                  // once, so a reorder arriving from OUTSIDE the drag (a VoiceOver Move
-                  // up/down) would leave the rendered order and that map disagreeing, and
-                  // the next drop would commit against the stale one. Idle mode carries
-                  // those actions already.
-                  DragHandle={Handle}
-                />
-              </View>
-            )}
-          />
+          <>
+            {/*
+              ABOVE the list, never inside it as a `header`.
+              The library compares the dragged row's position (row-container
+              space) against the scroller's contentOffset (scroll space) to
+              decide when to auto-scroll. Content above the rows offsets those
+              two spaces by its height, which pushes the down-trigger below the
+              bottom of the viewport — the exact "dragging to the bottom does
+              not scroll" bug this rebuild set out to fix. Pinned here, the
+              spaces align and Minimize/End stay reachable.
+            */}
+            <SessionHeader
+              startedAt={props.startedAt}
+              sessionName={props.sessionName}
+              onMinimize={props.onMinimize}
+              onEnd={props.onDiscard}
+            />
+            <ReorderableList
+              testID="active-session-reorder-list"
+              style={styles.scroll}
+              contentContainerStyle={styles.scrollContent}
+              itemHeight={COMPACT_REORDER_ROW_HEIGHT + REORDER_ROW_GAP}
+              data={rows}
+              onReorder={handleReorder}
+              // Ends the mode on EVERY drag end, not just a committed move: a
+              // lift-in-place otherwise left no way out at all.
+              onDragEnd={() => setIsReordering(false)}
+              renderItem={(row, { Handle, index }: ReorderableRenderProps) => (
+                <View style={{ paddingBottom: REORDER_ROW_GAP }}>
+                  <CompactReorderRow
+                    exerciseNames={row.exercises.map(
+                      (exercise) => exercise.exerciseName,
+                    )}
+                    position={index + 1}
+                    total={rows.length}
+                    // No `onMove` here on purpose. The sortable seeds its `positions` map
+                    // once, so a reorder arriving from OUTSIDE the drag (a VoiceOver Move
+                    // up/down) would leave the rendered order and that map disagreeing, and
+                    // the next drop would commit against the stale one. Idle mode carries
+                    // those actions already.
+                    DragHandle={Handle}
+                  />
+                </View>
+              )}
+            />
+          </>
         ) : (
           <FlatList
             testID="active-session-list"

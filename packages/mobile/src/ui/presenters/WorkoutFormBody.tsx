@@ -234,7 +234,11 @@ export function WorkoutFormBody({
     // `keyboardShouldPersistTaps="handled"` means pressing the grip does not
     // blur it either.
     Keyboard.dismiss();
-    setIsReordering(true);
+    // Deferred a tick on purpose. `Keyboard.dismiss()` only DISPATCHES a
+    // native blur; the JS `onBlur` that commits the buffer arrives on a later
+    // turn, and flipping the mode in this one unmounts the input before it
+    // lands — which is the very thing the dismiss is here to avoid.
+    setTimeout(() => setIsReordering(true), 0);
   };
 
   /**
