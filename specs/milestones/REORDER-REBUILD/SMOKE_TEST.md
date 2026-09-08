@@ -10,8 +10,11 @@ Record device + OS version. Every box must be ticked by a human.
 
 ## A. Active session (`session/index`)
 
-Set up: start a session with **8+ exercises**, including one superset, so the
-list is longer than the viewport.
+Set up: start a session with **12+ exercises**, including one superset.
+
+⚠ Twelve, not eight: the rows COLLAPSE for the drag, so a list of eight fits
+the screen entirely once compact and has nothing to auto-scroll. A4/A5 only
+mean anything on a list that is still taller than the screen at ~88pt a row.
 
 - [ ] A1 — Hold a grip. The rows collapse to compact rows **under your
       finger**, without you lifting it. No button was tapped to get here.
@@ -21,8 +24,13 @@ list is longer than the viewport.
 - [ ] A2 — Drag it down 3 positions and release. It lands where dropped.
 - [ ] A3 — Drag it back up 3 positions. It lands where dropped.
 - [ ] A4 — **Drag to the bottom edge of the screen. The list auto-scrolls.**
-      Keep holding until the last row is reached.
-- [ ] A5 — **Drag to the top edge. The list auto-scrolls back up.**
+      Keep holding until the last row is reached, then drop. It commits THERE —
+      not several rows above, and the list is not left scrolled off its own top.
+- [ ] A5 — **Drag to the top edge. The list auto-scrolls back up**, and the row
+      commits where dropped.
+- [ ] A5c — On a SHORT list (fits the screen when compact), drag the last row
+      hard against the bottom edge and hold. Nothing should lurch: there is
+      nothing to scroll, so the row must simply stay under your finger.
 - [ ] A5b — With the keyboard open from a reps field, hold a grip and drag to
       the bottom edge. It still auto-scrolls.
 - [ ] A6 — Drag a **superset** block. The whole block is ONE compact row, moves
@@ -61,6 +69,10 @@ Set up: open an existing workout with **8+ exercises**.
       They stay put while the rows are collapsed.
 - [ ] B3 — Focus the name field so the keyboard is open, dismiss it, then drag.
       Auto-scroll still works.
+- [ ] B3d — Scroll the form so the fields are partly off the top, then drag a
+      row. The drop lands where you released it — not a row or two out. (The
+      offset between the rows and the scroller is compensated for; a bug there
+      shows up as a consistent bias, worse the further you have scrolled.)
 - [ ] B3b — With the keyboard STILL OPEN, hold a grip to collapse. Auto-scroll
       to the bottom still works. (The list is measured as it mounts, so a
       keyboard-shrunk first measurement used to stick for the whole mode.)

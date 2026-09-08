@@ -735,24 +735,36 @@ jest.mock("react-native-worklets", () => ({
 jest.mock("react-native-reanimated-dnd", () => {
   const React = require("react");
   const { View } = require("react-native");
-
-  const useSortableList = ({ data }: { data: { id: string }[] }) => ({
-    positions: { value: {} },
-    scrollY: { value: 0 },
-    autoScroll: { value: "none" },
-    scrollViewRef: { current: null },
-    dropProviderRef: { current: null },
-    handleScroll: () => {},
-    handleScrollEnd: () => {},
-    contentHeight: data.length * 100,
-    isDynamicHeight: true,
-    itemHeights: { value: {} },
-    scheduleHeightUpdate: () => {},
-    getItemProps: (item: { id: string }) => ({ id: item.id }),
-  });
-
-  const { mockSortableRows } =
+  const { mockSortableRows, mockSortableList } =
     require("./reorderable-test-api") as typeof import("./reorderable-test-api");
+
+  const useSortableList = ({
+    data,
+    itemHeight,
+  }: {
+    data: { id: string }[];
+    itemHeight?: number | number[] | ((item: unknown, i: number) => number);
+  }) => {
+    // Keep the height resolver where a test can read it. This is the value
+    // the real hook lays every row out from, and getting it wrong is what put
+    // rows at `index × estimate` — overlapping cards in the session, dead
+    // gaps in the editor. Throwing it away here left that untestable.
+    mockSortableList.itemHeight = itemHeight;
+    return {
+      positions: { value: {} },
+      scrollY: { value: 0 },
+      autoScroll: { value: "none" },
+      scrollViewRef: { current: null },
+      dropProviderRef: { current: null },
+      handleScroll: () => {},
+      handleScrollEnd: () => {},
+      contentHeight: data.length * 100,
+      isDynamicHeight: true,
+      itemHeights: { value: {} },
+      scheduleHeightUpdate: () => {},
+      getItemProps: (item: { id: string }) => ({ id: item.id }),
+    };
+  };
 
   const useSortable = ({
     id,

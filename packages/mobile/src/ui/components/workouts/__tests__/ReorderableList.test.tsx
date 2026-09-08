@@ -1,7 +1,10 @@
 import { Text, View } from "react-native";
 import { fireEvent } from "@testing-library/react-native";
 import { renderWithTheme } from "../../../../../__tests__/test-utils";
-import { reorderableTestApi } from "../../../../../__tests__/reorderable-test-api";
+import {
+  mockRowHeight,
+  reorderableTestApi,
+} from "../../../../../__tests__/reorderable-test-api";
 import { ReorderableList } from "../ReorderableList";
 
 /**
@@ -146,19 +149,62 @@ describe("ReorderableList", () => {
     expect(getByTestId("list-footer")).toBeTruthy();
   });
 
-  it("measures each row's height instead of trusting the estimate", () => {
-    // The library's own `onLayout` measurement did not always fire, which
-    // left every row laid out at `index × estimate` — cards overlapping in
-    // the session, dead space between editor cards. So the rows are measured
-    // here and the height handed to the library as a resolver.
+  it("lays rows out at their MEASURED height, and at the compact height for a drag", () => {
+    // This is the whole geometry contract. The library positions every row
+    // from the height it is given, and the two bugs this component exists to
+    // work around both showed up here: the library's own measurement did not
+    // always fire, and a row's resting top is computed once at mount from the
+    // estimate. Rows measured at 340 laid out at 120 overlapped in the
+    // session; the editor got dead gaps.
     const { getByTestId } = renderList();
+
+    // Before any layout, the estimate is all there is.
+    expect(mockRowHeight("a")).toBe(120);
 
     fireEvent(getByTestId("sortable-item-a"), "layout", {
       nativeEvent: { layout: { height: 340, width: 400, x: 0, y: 0 } },
     });
 
-    // The measurement is reported to the library, not rendered, so the proof
-    // is that the row survives it and stays draggable.
-    expect(getByTestId("sortable-handle-a")).toBeTruthy();
+    expect(mockRowHeight("a")).toBe(340);
+    // Not yet measured, so still the estimate — never another row's height.
+    expect(mockRowHeight("b")).toBe(120);
+
+    // Collapsed, every row is the uniform compact height, published without
+    // waiting for a layout pass: that is what lets the collapse land inside
+    // the 110ms before the drag activates.
+    reorderableTestApi.collapse("a");
+    expect(mockRowHeight("a")).toBe(72);
+    expect(mockRowHeight("b")).toBe(72);
+  });
+
+  it("stays collapsed when the hold's own gesture ends mid-drag", () => {
+    // The collapse long-press and the drag are two gestures on one finger, and
+    // the long press finalizes first if it hits its own distance or duration
+    // limits. Expanding then would put the full cards back UNDER an active
+    // drag — the exact failure both earlier designs died of.
+    const { getByTestId, queryByTestId } = renderList();
+
+    reorderableTestApi.collapse("a");
+    reorderableTestApi.dragStart("a");
+    reorderableTestApi.collapseEnd("a");
+
+    expect(getByTestId("compact-a")).toBeTruthy();
+    expect(queryByTestId("full-a")).toBeNull();
+
+    // And the drop still ends it.
+    reorderableTestApi.drop("a", 1, { a: 1, b: 0, c: 2 });
+    expect(getByTestId("full-a")).toBeTruthy();
+  });
+
+  it("gives no drag target to a list with nothing to reorder", () => {
+    // The cards draw no grip on a one-row list, and an invisible target with
+    // no grip under it swallows touches meant for the card beneath it — RN
+    // hit-tests the topmost view and walks up its ancestors, never down.
+    const { queryByTestId } = renderList({
+      data: [{ id: "only", label: "Only" }],
+    });
+
+    expect(queryByTestId("sortable-handle-only")).toBeNull();
+    expect(queryByTestId("full-only")).toBeTruthy();
   });
 });

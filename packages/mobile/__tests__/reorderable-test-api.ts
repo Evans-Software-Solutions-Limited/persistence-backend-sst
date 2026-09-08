@@ -31,6 +31,34 @@ export type MockSortableRow = {
 
 export const mockSortableRows = new Map<string, MockSortableRow>();
 
+/**
+ * The height resolver the list handed the library on its last render. This is
+ * what every row's position is computed from, so it is the one place a test
+ * can see whether a row is laid out at its measured height, at the compact
+ * height, or (the bug) at the estimate.
+ */
+export const mockSortableList: {
+  itemHeight?: number | number[] | ((item: unknown, index: number) => number);
+} = {};
+
+/** The resolved height for one row, as the library would see it. */
+export function mockRowHeight(id: string, index = 0) {
+  const resolver = mockSortableList.itemHeight;
+  if (typeof resolver === "function") return resolver({ id }, index);
+  if (Array.isArray(resolver)) return resolver[index];
+  return resolver;
+}
+
+/**
+ * Rows register on render and are never unregistered, so a file that mounts
+ * several lists would otherwise accumulate ids — and a drop fired on a stale
+ * one would drive an unmounted component's closure. Cleared between tests.
+ */
+afterEach(() => {
+  mockSortableRows.clear();
+  delete mockSortableList.itemHeight;
+});
+
 export const reorderableTestApi = {
   /**
    * The collapse long-press, which fires BEFORE the drag activates and swaps

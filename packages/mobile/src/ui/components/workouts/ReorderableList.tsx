@@ -79,6 +79,24 @@ const AnimatedScrollView = Animated.createAnimatedComponent(GestureScrollView);
 /** Shorter than the drag's own 200ms, so the collapse lands first. */
 const COLLAPSE_LONG_PRESS_MS = 90;
 
+/**
+ * The scroll offset in the row space the library works in — and FLOORED AT 0.
+ *
+ * The floor is not tidiness. The library's up-edge target is the constant `0`,
+ * an absolute scroll-space value: from a negative row-space offset (which is
+ * what any visible header produces) `withTiming(0)` animates the wrong way,
+ * scrolling the header off and adding its height to the dragged row's
+ * position. In the session that fired on almost every drag of the top rows; in
+ * the editor, whose header is the whole form, it was worth two compact slots.
+ * Flooring costs a little reach at the DOWN edge while the header is on
+ * screen, which is the direction that merely feels stiff instead of committing
+ * the wrong order.
+ */
+function toRowSpace(scrollOffset: number, rowsOffset: number) {
+  "worklet";
+  return Math.max(0, scrollOffset - rowsOffset);
+}
+
 /** Module scope so its identity never changes between renders. */
 const itemId = (item: ReorderableItem) => item.id;
 
@@ -192,6 +210,15 @@ function ReorderableListInner<TItem extends ReorderableItem>({
    * from the header, so content-container padding counts too.
    */
   const [rowsOffset, setRowsOffset] = useState(0);
+  /**
+   * A layout that lands DURING a drag, held until the drag ends.
+   *
+   * `onLayout` only fires again when the layout actually changes, so simply
+   * discarding one — a trainer banner mounting, the cardio meta block
+   * appearing — left `rowsOffset` wrong for every later drag, and the whole
+   * auto-scroll window with it.
+   */
+  const deferredRowsOffset = useRef<number | null>(null);
   /** Measured row heights, by id. Ours, not the library's. */
   const [heights, setHeights] = useState<Record<string, number>>({});
   const [isCompact, setIsCompact] = useState(false);
@@ -282,7 +309,7 @@ function ReorderableListInner<TItem extends ReorderableItem>({
    */
   useEffect(() => {
     if (isDraggingRef.current) return;
-    rowSpaceOffset.value = scrollY.value - rowsOffset;
+    rowSpaceOffset.value = toRowSpace(scrollY.value, rowsOffset);
   }, [rowsOffset, rowSpaceOffset, scrollY]);
 
   useAnimatedReaction(
@@ -293,7 +320,7 @@ function ReorderableListInner<TItem extends ReorderableItem>({
       // assigning over a running `withTiming` cancels it — auto-scroll would
       // stall after a single frame.
       if (isDraggingSV.value) return;
-      rowSpaceOffset.value = offset - rowsOffsetSV.value;
+      rowSpaceOffset.value = toRowSpace(offset, rowsOffsetSV.value);
     },
   );
 
@@ -306,14 +333,27 @@ function ReorderableListInner<TItem extends ReorderableItem>({
   );
 
   /**
-   * Clamped to the content: the library computes
-   * `maxScroll = contentHeight - containerHeight` with no floor, so on a list
-   * that does not fill the viewport a real viewport height gives a NEGATIVE
-   * scroll target — the list gets pushed off its own top and the dragged row
-   * yanked back up, committing nothing. A no-op for any list long enough to
-   * scroll.
+   * Clamped to the COMPACT content, not the full content.
+   *
+   * The library computes `maxScroll = <current content> - containerHeight`
+   * with no floor, and it does that at DRAG time — by which point the rows are
+   * compact, so the content is `n × compactItemHeight`. Clamping against the
+   * full-height content (which is all that exists at the row's first render,
+   * the only one that counts, since `useSortable` freezes this in a ref) left
+   * `maxScroll` NEGATIVE for any list under about ten rows: dragging the last
+   * row toward the bottom then animated the offset to a negative target, which
+   * both shoved the scroller off its own top and subtracted that distance from
+   * the dragged row's position — committing it several slots above where it
+   * was dropped.
+   *
+   * NEVER 0: 0 is not `undefined`, so the library's own 500 default would not
+   * apply, and a 0 window makes the scroll-down test unconditionally true —
+   * every drag then runs to the end and commits at the LAST index.
    */
-  const containerHeight = Math.min(windowHeight, Math.max(contentHeight, 1));
+  const containerHeight = Math.min(
+    windowHeight,
+    Math.max(data.length * compactItemHeight, 1),
+  );
 
   const handleDrop = useCallback(
     (id: string, position: number, allPositions?: Record<string, number>) => {
@@ -324,6 +364,15 @@ function ReorderableListInner<TItem extends ReorderableItem>({
       isDraggingRef.current = false;
       isDraggingSV.value = false;
       setIsCompact(false);
+      // The library animated the offset wherever its 1500ms auto-scroll got
+      // to, and the scroll reaction only re-syncs when `scrollY` next CHANGES
+      // — which never happens if the platform clamped that scroll. Put it back
+      // explicitly, and take any layout the drag made us hold.
+      if (deferredRowsOffset.current !== null) {
+        setRowsOffset(deferredRowsOffset.current);
+        deferredRowsOffset.current = null;
+      }
+      rowSpaceOffset.value = toRowSpace(scrollY.value, rowsOffsetSV.value);
       if (!wasDragging || !allPositions) return;
       const from = dataRef.current.findIndex((item) => item.id === id);
       if (from === position) return;
@@ -332,7 +381,7 @@ function ReorderableListInner<TItem extends ReorderableItem>({
         .map((item) => item.id);
       onReorder(id, position, ordered);
     },
-    [onReorder, isDraggingSV],
+    [onReorder, isDraggingSV, rowSpaceOffset, rowsOffsetSV, scrollY],
   );
 
   const handleDragStart = useCallback(() => {
@@ -388,8 +437,12 @@ function ReorderableListInner<TItem extends ReorderableItem>({
           onLayout={(event) => {
             // `y` is relative to the scroll content, so this is exactly the
             // offset the rows sit at — header, padding and all.
-            if (isDraggingRef.current) return;
-            setRowsOffset(Math.round(event.nativeEvent.layout.y));
+            const measured = Math.round(event.nativeEvent.layout.y);
+            if (isDraggingRef.current) {
+              deferredRowsOffset.current = measured;
+              return;
+            }
+            setRowsOffset(measured);
           }}
         >
           {data.map((item, index) => (
@@ -400,7 +453,16 @@ function ReorderableListInner<TItem extends ReorderableItem>({
               itemProps={getItemProps(item, index)}
               rowSpaceOffset={rowSpaceOffset}
               containerHeight={containerHeight}
+              compactItemHeight={compactItemHeight}
               isCompact={isCompact}
+              // Nothing to reorder, so no target. The cards draw no grip in
+              // that case either (`ExerciseReorderHandle` renders null), and
+              // an invisible target with no grip under it is worse than
+              // useless: RN hit-tests the topmost view and walks up its
+              // ANCESTORS, so it swallows touches meant for the card beneath
+              // — the top of the editor's Sets stepper, a strip of the
+              // session card's "open details" row.
+              draggable={data.length > 1}
               onMeasure={measureRow}
               onDrop={handleDrop}
               onDragStart={handleDragStart}
@@ -445,7 +507,9 @@ function ReorderableRow<TItem extends ReorderableItem>({
   itemProps,
   rowSpaceOffset,
   containerHeight,
+  compactItemHeight,
   isCompact,
+  draggable,
   onMeasure,
   onDrop,
   onDragStart,
@@ -458,7 +522,9 @@ function ReorderableRow<TItem extends ReorderableItem>({
   itemProps: ItemProps;
   rowSpaceOffset: ItemProps["lowerBound"];
   containerHeight: number;
+  compactItemHeight: number;
   isCompact: boolean;
+  draggable: boolean;
   onMeasure: (id: string, height: number) => void;
   onDrop: (
     id: string,
@@ -475,6 +541,12 @@ function ReorderableRow<TItem extends ReorderableItem>({
       ...itemProps,
       lowerBound: rowSpaceOffset,
       containerHeight,
+      // The library uses this BOTH as the auto-scroll trigger threshold and
+      // as the fallback for an unmeasured row. Drags only ever happen with
+      // compact rows, so the compact height is the honest value for both: the
+      // list's own (full-card) estimate made the trigger zone two and a half
+      // compact rows deep.
+      estimatedItemHeight: compactItemHeight,
       onDrop,
       onDragStart,
     });
@@ -530,9 +602,11 @@ function ReorderableRow<TItem extends ReorderableItem>({
         press responder claims the touch before Gesture Handler's pan can
         activate, so a Pressable here simply never drags.
       */}
-      <GestureDetector gesture={gesture}>
-        <View style={GRIP_TARGET} testID={`sortable-handle-${item.id}`} />
-      </GestureDetector>
+      {draggable && (
+        <GestureDetector gesture={gesture}>
+          <View style={GRIP_TARGET} testID={`sortable-handle-${item.id}`} />
+        </GestureDetector>
+      )}
     </Animated.View>
   );
 }
