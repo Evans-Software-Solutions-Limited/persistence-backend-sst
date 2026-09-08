@@ -317,13 +317,11 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
    * Holding a grip collapses the list to uniform rows; dropping a row ends the
    * mode. That is the whole interaction — there is deliberately nothing to
    * tap, in or out. No timer either: being yanked out mid-thought is its own
-   * annoyance, and nothing is trapped by the mode (the header and Finish are
-   * both still there, and leaving the screen resets it).
+   * annoyance, and nothing is trapped by the mode: the session header
+   * (Minimize / End) and Finish are both still rendered, and leaving the
+   * screen resets it.
    */
   const enterReorder = () => setIsReordering(true);
-
-  const canReorder =
-    displayItems.length > 1 && props.onReorderExercise !== undefined;
 
   /**
    * Reorder rows are NOT the display items.
@@ -347,6 +345,32 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
       })),
     [orderedExercises],
   );
+
+  // Counts BLOCKS, not display rows: a session of one cardio-bearing superset
+  // renders two cards but is a single block, so there is nothing to move.
+  const canReorder = rows.length > 1 && props.onReorderExercise !== undefined;
+
+  /**
+   * Block position for a display row, and whether it leads its block.
+   *
+   * The accessible Move up/down actions go through the same command as a drag,
+   * which works in BLOCK space — but the cards render in DISPLAY space, which
+   * splits a cardio-bearing superset into separate rows. Announcing
+   * `index + 1` of `displayItems.length` therefore described a move the command
+   * would not make, and offered "Move up" on a peer the command rejects. Only
+   * the block lead carries a grip, and it speaks block numbers.
+   */
+  const blockOf = (exerciseId: string) => {
+    const blockIndex = rows.findIndex((row) =>
+      row.exercises.some((exercise) => exercise.id === exerciseId),
+    );
+    if (blockIndex < 0) return null;
+    return {
+      position: blockIndex + 1,
+      total: rows.length,
+      isLead: rows[blockIndex].exercises[0].id === exerciseId,
+    };
+  };
 
   /**
    * Commit a drop AND leave reorder mode.
@@ -398,6 +422,17 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
             contentContainerStyle={styles.scrollContent}
             itemHeight={COMPACT_REORDER_ROW_HEIGHT + REORDER_ROW_GAP}
             data={rows}
+            // Minimize and End stay reachable while reordering — the mode has
+            // no exit control of its own, so removing the header too would
+            // leave only the floating Finish.
+            header={
+              <SessionHeader
+                startedAt={props.startedAt}
+                sessionName={props.sessionName}
+                onMinimize={props.onMinimize}
+                onEnd={props.onDiscard}
+              />
+            }
             onReorder={handleReorder}
             // Ends the mode on EVERY drag end, not just a committed move: a
             // lift-in-place otherwise left no way out at all.
@@ -578,7 +613,6 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
             renderItem={({ item, index }) => {
               const lead =
                 item.kind === "exercise" ? item.exercise : item.exercises[0];
-              void lead;
               return (
                 <View
                   style={styles.dragBlock}
@@ -619,16 +653,18 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
                             props.onTapExercise(ex.exerciseId)
                           }
                           onStartRest={() => props.onStartRest(ex.id)}
-                          reorderPosition={index + 1}
-                          reorderTotal={displayItems.length}
+                          reorderPosition={blockOf(ex.id)?.position}
+                          reorderTotal={rows.length}
                           onMove={
-                            props.onMoveExercise
+                            props.onMoveExercise && blockOf(ex.id)?.isLead
                               ? (direction) =>
                                   props.onMoveExercise?.(ex.id, direction)
                               : undefined
                           }
                           onLongPressReorder={
-                            canReorder ? enterReorder : undefined
+                            canReorder && blockOf(ex.id)?.isLead
+                              ? enterReorder
+                              : undefined
                           }
                         />
                       );
@@ -649,8 +685,8 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
                         onRemoveExercise={props.onRemoveExercise}
                         onOpenSupersetNotes={props.onOpenSupersetNotes}
                         onAddExerciseToSuperset={props.onAddExerciseToSuperset}
-                        reorderPosition={index + 1}
-                        reorderTotal={displayItems.length}
+                        reorderPosition={blockOf(lead.id)?.position}
+                        reorderTotal={rows.length}
                         onMove={
                           props.onMoveExercise
                             ? (direction) =>

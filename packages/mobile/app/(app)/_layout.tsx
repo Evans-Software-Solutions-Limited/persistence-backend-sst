@@ -180,11 +180,13 @@ export default function AppLayout() {
           name="workouts/create"
           options={{
             title: "New workout",
-            // `presentation` and `gestureEnabled` both came from the
-            // deleted `reorderModalOptions`. The gesture flag stops the iOS
-            // modal dismiss swipe eating this screen's vertical reorder pan;
-            // the presentation is how the screen has always appeared.
+            // All three came from the deleted `reorderModalOptions`. The
+            // gesture flag stops the iOS modal dismiss swipe eating this
+            // screen's vertical reorder pan; the other two are how the screen
+            // has always appeared, and a `fullScreenModal` without
+            // `headerShown: false` grows a native header.
             presentation: "fullScreenModal" as const,
+            headerShown: false,
             gestureEnabled: false,
           }}
         />
@@ -199,11 +201,13 @@ export default function AppLayout() {
           name="workouts/[id]/edit"
           options={{
             title: "Edit workout",
-            // `presentation` and `gestureEnabled` both came from the
-            // deleted `reorderModalOptions`. The gesture flag stops the iOS
-            // modal dismiss swipe eating this screen's vertical reorder pan;
-            // the presentation is how the screen has always appeared.
+            // All three came from the deleted `reorderModalOptions`. The
+            // gesture flag stops the iOS modal dismiss swipe eating this
+            // screen's vertical reorder pan; the other two are how the screen
+            // has always appeared, and a `fullScreenModal` without
+            // `headerShown: false` grows a native header.
             presentation: "fullScreenModal" as const,
+            headerShown: false,
             gestureEnabled: false,
           }}
         />
@@ -217,6 +221,7 @@ export default function AppLayout() {
             title: "Active session",
             // See `workouts/[id]/edit` above.
             presentation: "fullScreenModal" as const,
+            headerShown: false,
             gestureEnabled: false,
           }}
         />

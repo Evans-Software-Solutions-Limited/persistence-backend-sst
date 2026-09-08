@@ -2,6 +2,7 @@ import { Text, View } from "@tamagui/core";
 import React, { useState } from "react";
 import {
   AccessibilityInfo,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -226,7 +227,15 @@ export function WorkoutFormBody({
    * Holding a grip collapses the list to uniform rows; dropping a row ends the
    * mode. Nothing to tap, in or out.
    */
-  const enterReorder = () => setIsReordering(true);
+  const enterReorder = () => {
+    // `Stepper` and `RepRange` hold their text locally and commit on BLUR, and
+    // unmounting a focused TextInput never delivers one — so swapping the form
+    // out for the compact list silently discarded whatever was being typed.
+    // `keyboardShouldPersistTaps="handled"` means pressing the grip does not
+    // blur it either.
+    Keyboard.dismiss();
+    setIsReordering(true);
+  };
 
   /**
    * Commit a drop and LEAVE reorder mode. Exiting here is the point — the

@@ -57,8 +57,12 @@ export function ExerciseReorderHandle({
     testID: `reorder-${position}`,
     accessibilityRole: "adjustable" as const,
     accessibilityLabel: `Reorder ${label}, position ${position} of ${total}`,
+    // Compact mode withholds `onMove`, so advertising those actions there left
+    // VoiceOver's increment/decrement swipes as silent no-ops.
     accessibilityHint: DragHandle
-      ? "Hold and drag to move, or use Move up and Move down actions"
+      ? onMove
+        ? "Hold and drag to move, or use Move up and Move down actions"
+        : "Hold and drag to move"
       : "Hold to reorder, or use Move up and Move down actions",
     accessibilityActions: [
       ...(onMove && position > 1

@@ -133,6 +133,17 @@ function ReorderableListInner<TItem extends ReorderableItem>({
   const [viewportHeight, setViewportHeight] = useState(
     () => Dimensions.get("window").height,
   );
+  /**
+   * The FIRST usable measurement wins, and later ones are ignored.
+   *
+   * The rows are keyed on this height, so accepting every layout pass would
+   * remount every row whenever the list resized — killing an in-flight gesture
+   * before the library's `onFinalize` runs, which means no drop and therefore
+   * no mode exit. A keyboard dismissal on the session screen does exactly that
+   * mid-hold, and rotation does it deterministically. A single zero-height pass
+   * would also re-freeze 0 and restore the last-index bug outright.
+   */
+  const measuredRef = useRef(false);
   const dataRef = useRef(data);
   dataRef.current = data;
 
@@ -151,6 +162,8 @@ function ReorderableListInner<TItem extends ReorderableItem>({
     // it out re-runs that effect on every render.
     itemKeyExtractor: itemId,
   });
+
+  const containerHeight = Math.min(viewportHeight, data.length * itemHeight);
 
   const handleDrop = useCallback(
     (id: string, position: number, allPositions?: Record<string, number>) => {
@@ -190,9 +203,13 @@ function ReorderableListInner<TItem extends ReorderableItem>({
         style={[{ flex: 1 }, style]}
         contentContainerStyle={contentContainerStyle}
         simultaneousHandlers={dropProviderRef}
-        onLayout={(event) =>
-          setViewportHeight(Math.round(event.nativeEvent.layout.height))
-        }
+        onLayout={(event) => {
+          if (measuredRef.current) return;
+          const measured = Math.round(event.nativeEvent.layout.height);
+          if (measured <= 0) return;
+          measuredRef.current = true;
+          setViewportHeight(measured);
+        }}
       >
         {header}
 
@@ -206,7 +223,7 @@ function ReorderableListInner<TItem extends ReorderableItem>({
               item={item}
               index={index}
               itemProps={getItemProps(item, index)}
-              viewportHeight={viewportHeight}
+              containerHeight={containerHeight}
               onDrop={handleDrop}
               onDragStart={handleDragStart}
               renderItem={renderItem}
@@ -228,7 +245,7 @@ function ReorderableRow<TItem extends ReorderableItem>({
   item,
   index,
   itemProps,
-  viewportHeight,
+  containerHeight,
   onDrop,
   onDragStart,
   renderItem,
@@ -236,7 +253,7 @@ function ReorderableRow<TItem extends ReorderableItem>({
   item: TItem;
   index: number;
   itemProps: ItemProps;
-  viewportHeight: number;
+  containerHeight: number;
   onDrop: (
     id: string,
     position: number,
@@ -262,7 +279,13 @@ function ReorderableRow<TItem extends ReorderableItem>({
       // the real bottom of a tall phone's list. That is why dragging DOWN to
       // the bottom did not scroll while dragging up did: the upward edge keys
       // off the scroll offset instead.
-      containerHeight={viewportHeight}
+      // Clamped to the content: the library computes
+      // `maxScroll = itemsCount * itemHeight - containerHeight` with no floor,
+      // so on a list that does not fill the viewport a real viewport height
+      // gives a NEGATIVE scroll target — the list gets pushed off its own top
+      // and the dragged row yanked back up, committing nothing. A no-op for
+      // any list long enough to scroll.
+      containerHeight={containerHeight}
       onDrop={onDrop}
       onDragStart={onDragStart}
     >

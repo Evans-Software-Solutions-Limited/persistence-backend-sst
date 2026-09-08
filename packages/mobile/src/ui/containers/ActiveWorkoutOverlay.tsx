@@ -96,9 +96,10 @@ export function ActiveWorkoutOverlay() {
   const lastSegment = segments.at(-1);
   const onWorkoutScreen =
     segments.includes("workouts") &&
+    // No `index`: expo-router pops a trailing `index` before this hook sees
+    // the segments, so the detail route arrives as `[…, "workouts", "[id]"]`.
     (lastSegment === "create" ||
       lastSegment === "edit" ||
-      lastSegment === "index" ||
       lastSegment === "[id]");
 
   // The ProfileDrawer is a root-mounted sibling that renders BEFORE this overlay

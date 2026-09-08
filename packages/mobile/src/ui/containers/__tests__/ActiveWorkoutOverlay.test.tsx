@@ -197,7 +197,7 @@ it("hides on the session screen (expanded surface owns the view)", async () => {
 });
 
 it.each([
-  ["workout detail", ["(app)", "workouts", "[id]", "index"]],
+  ["workout detail", ["(app)", "workouts", "[id]"]],
   ["workout edit", ["(app)", "workouts", "[id]", "edit"]],
   ["workout creator", ["(app)", "workouts", "create"]],
 ])("hides on the %s screen", async (_label, segments) => {
