@@ -9,6 +9,174 @@ items, and the four most recent sessions. Trimmed 2026-07-27 from 1554 lines.
 If anything here contradicts `git log --oneline -30`, the git history wins —
 say so and fix this file.
 
+### 🟢 2026-09-08 — Build 49 Meta SDK: PRESENT (verified on EAS, pre-submission)
+
+**Question settled: the Meta SDK IS compiled into iOS build 49.** Both gating
+env vars exist as **EAS project environment variables** (not `eas.json`, which
+only carries `APP_VARIANT` — the `production` profile's
+`"environment": "production"` pulls the rest from EAS):
+
+- `EXPO_PUBLIC_META_APP_ID=1502579917743484` — PUBLIC, created **Sep 03 21:45**
+- `EXPO_PUBLIC_META_CLIENT_TOKEN` — SENSITIVE (builder-readable), created **Sep 03 21:45**
+- Both scoped `PROJECT`, environments `preview, production`.
+
+Build 49 (`5d00f2fa-1832-4c5f-8466-1d3df5c67153`, appVersion 1.1.2, profile
+`production`, channel `production`) ran **Sep 08 16:51** from commit
+`27978215` — five days AFTER the vars were created, so they were injected.
+`app.config.ts` and `app.json` are byte-identical between `27978215` and HEAD,
+so a local `expo config` eval is authoritative for that binary.
+
+Resolved Info.plist with those vars (`expo config --type introspect`):
+`FacebookAppID` 1502579917743484, `FacebookClientToken` set,
+`NSUserTrackingUsageDescription` set, `FacebookAutoLogAppEventsEnabled` false,
+`FacebookAdvertiserIDCollectionEnabled` false, URL scheme
+`fb1502579917743484`, `SKAdNetworkItems` = Meta's two IDs. Privacy manifest
+flips to `NSPrivacyTracking: true` + `NSPrivacyTrackingDomains:
+["ep1.facebook.com"]` + `DeviceID` marked `Tracking: true` with
+ThirdPartyAdvertising/Analytics purposes. Without the vars every one of those
+is absent/false — the gate works in both directions.
+
+**Consequences.**
+
+- ⚠ **App Privacy in App Store Connect MUST be updated before submitting
+  build 49.** The binary declares tracking; the ASC answers still describe the
+  non-tracking build. Declare *Identifiers → Device ID* as **used to track
+  you**, purposes Third-Party Advertising + Analytics. A tracking binary
+  against a no-tracking declaration is a rejection risk.
+- The **ATT paragraph in the review notes is accurate** — not a false
+  statement. `metaAttribution.ts` calls `requestTrackingPermissionsAsync()`
+  (`expo-tracking-transparency`, a dependency) on iOS before any transmission,
+  and fails closed on denial.
+- **SKAdNetwork needs no work.** See the correction above: the plugin injects
+  Meta's two IDs. Nothing to add, no rebuild needed on that account.
+
+Runtime posture (unchanged, worth restating): consent-gated, `initializeSDK()`
+never called until affirmative consent, auto-logging off, only the
+parameter-free `fb_mobile_activate_app` event, withdrawable in Privacy
+Settings.
+
+### 🟠 2026-09-08 — Workout cap: entitlement divergence + phantom creates (branch `fix/workout-cap-entitlements`)
+
+Off `main` after #442. Two commits, PR not yet raised. Chased "a 4th workout
+on a 3-workout free tier" and found the cap was fine — the *tier resolution*
+was not.
+
+**⚠ The headline: `assertEntitlement` and `/subscriptions/me` disagreed about
+the same row, in opposite directions.** `subscriptionRepository
+.liveSubscriptionFilter()` applies `expires_at IS NULL OR expires_at > NOW()`
+unconditionally (mirroring the DB's `get_user_subscription()`, which drives the
+`update_subscription_limits` role-sync trigger).
+`classifySubscriptionStatus` did not: it gated the expiry check on a
+`cancelled_at` stamp, so a live `payment_status` counted as entitlement however
+long ago the paid period ended. One row, two verdicts — the app badged the user
+FREE with a 3-workout limit while the create gate resolved their paid tier's
+NULL limit and allowed unlimited creates. **This is the same dual-authority
+trap `liveSubscriptionFilter`'s own docstring was written for, in the one
+function that never got the guard.** FIXED: `hasLapsed()` lapses such a row
+(reason `'expired'`; a `cancelled_at` stamp still wins so mobile keeps offering
+reinstate over fix-your-card).
+
+- **Verified on staging, not inferred.** `marcus.whitfield@demo.persistence.app`:
+  `coach`, `payment_status: 'active'`, `cancelled_at: null`, `expires_at`
+  2026-09-07 — one day past. Build confirmed pointing at staging
+  `nxkhlrvjxotyjulodxzk` (local `.env` + eas.json staging profile).
+- ⚠ **A period-end TIER CHANGE leaves the identical row shape** mid-window
+  (status `active`, `cancelled_at` null, old `expires_at` past). The guard
+  stands down when `resolveEffectiveScheduledTier` explains the boundary —
+  without that, a paying user renewing onto another plan drops to free for as
+  long as the provider webhook is late. Every caller now projects
+  `cancelled_at` + `metadata`, so the rule is uniform across create_workout,
+  ai_access, loadout, meal_ai, trainer_clients and the record-lock.
+
+**⚠ `workout_limit IS NULL` meant two different things and only one was
+handled.** The tier LEFT JOIN returns null both for a real catalog row that is
+explicitly uncapped (premium, premium_plus, the coach ladder) and for NO ROW
+JOINED. The code's own comment said the second case was "treated as 0 below";
+it returned `allowed: true`. So anyone holding an off-catalog `tier_name`
+created workouts without limit — reachable from
+`20260526120000_simplify_tier_model.sql`'s DELETE of the retired rows, and from
+any IAP/webhook write of a tier_name the catalog lacks. The status clamp cannot
+catch it: an `active` row never clamps. FIXED via `tierRowJoined()`, which
+discriminates on the join key and resolves the orphan case to the free tier.
+It reads an UNPROJECTED column as "not joined", so a caller that forgets the
+discriminator never gets handed the unlimited branch.
+
+**Blast radius, measured:** production has **zero** rows of either shape today
+(4 sub rows, 10 workouts total) — the fix is preventive there. Staging has
+**7 of 11** sub rows lapsed-but-live, because the whole demo cohort's
+`expires_at` fell on **2026-09-07**. That is why this surfaced on 09-08 and not
+before.
+
+**⚠ OPEN — staging demo cohort will read as FREE once this deploys.** All 7
+demo accounts revert to free-tier rules. `alicia.bennett` (premium_plus, 7
+workouts) lands OVER the free total and hits `evaluateWorkoutTotalCapLock` —
+locked out of recording. Marcus (3 owned) sits AT the cap, so no new creates.
+The cohort is NOT seeded from the repo (applied manually), so the fix is a
+manual SQL bump of `expires_at`, Brad's to run:
+`update user_subscriptions set expires_at = now() + interval '1 year' where user_id in (select id from auth.users where email like '%@demo.persistence.app');`
+
+**Phantom creates (mobile) — FIXED.** `createWorkoutCommand` is optimistic
+twice: it caches the workout AND bumps `quota.used`. Nothing undid either bet
+when the create died, so a workout that never reached the server stayed on
+screen looking synced and kept counting — locked out at "4 of 3" over a list
+the server saw as 3. The drain now drops the row at every terminal transition
+(permanent 4xx, exhausted retries, **exhausted DEFERRAL ceiling** — the route
+an offline create actually takes, which raises no `SyncHttpError` and had no
+coverage — and 402-blocked), and `removeCachedWorkout`'s decrement takes the
+count with it. Not destructive: the payload stays on the queue entry, listed by
+`/sync-failed` with a Retry that re-POSTs it, and `useAutoRetryOnUpgrade` fires
+it after a 402 on upgrade. CREATEs only — a dead edit's row is last-known-good
+server state, not a fabrication.
+
+- ⚠ `removeCachedWorkout` now sweeps `cached_coach_workout_library` too.
+  **#442's invariant comment predicted exactly this**: the quota counts
+  coach-authored rows, but the decrement only fires where the row is FOUND, and
+  a `?ctx=coach` create lives ONLY in the dedicated library slot.
+
+**Two ungated create entry points — FIXED.** `CoachLibraryHubContainer`'s
+contextual action and `CoachWorkoutLibraryContainer`'s Create pushed the
+creator with no cap check, though those creates count server-side like any
+other (`assertEntitlement` counts `created_by`, not the screen). Both now use
+the new `useWorkoutCreateCapGate`, which reads the cached `mine` quota at
+**press time** — reusing `useWorkoutTotalCapGate` would drag `useWorkouts()`
+into the always-mounted coach hub, i.e. the launch fan-out #341 removed. It
+fails open on a never-cached quota, matching the existing stance on an
+unresolved read.
+
+**Copy that stated a cap the client doesn't enforce — FIXED.**
+`ProfilePresenter` hardcoded "Limit of 3 custom workouts" behind
+`isFreeTier ?? true`, so it also showed whenever the subscription hadn't
+loaded; and both it and `SubscriptionSelectionPresenter` advertised "N workouts
+per month", promising a renewing allowance the backend does not grant (the cap
+is a TOTAL).
+
+**Tests.** The two joined NULLs are now pinned apart rather than sidestepped
+(the old test mocked `workoutLimit: 1` with the comment "catalog still has the
+row joined"); 14 sub-row fixtures gained the `catalogTierName` the real
+projection returns; new `workoutsCreateHandler.entitlement.test.ts` runs the
+REAL gate through the handler against a queued `COUNT(*)` — the handler suite
+mocked the gate and the gate's suite mocked the DB, so "the 4th create is
+refused" was asserted nowhere.
+
+**Gates:** workspace typecheck (incl. web), prettier, lint 0 errors, core
+4679 tests @ 97.14% lines / 92.55% branches, mobile 6748 tests @ 96.01% /
+90.71%. ⚠ `SubscriptionSelectionContainer.test.tsx` flakes under the parallel
+coverage run (passes standalone 23/23; "worker failed to exit gracefully" in
+the same run) — pre-existing, not this branch.
+
+**⚠ NOT device-verified, and one diagnostic left open.** Why Brad's 4th create
+never reached the server is still unknown: it was NOT a 402 and NOT the cap
+(the fail-open would have allowed it), and nothing landed in staging that day.
+The device `sync_queue` was not readable from the session and the staging API
+Gateway logs were unreachable (`aws sts` — session expired, needs `aws login`).
+The reconcile fix is correct regardless of the cause.
+
+**Left deliberately unfixed (flagged, not changed):**
+`resolveTrainerClientsEntitlement` has the identical orphan-tier NULL
+conflation on `trainer_client_limit`. It fails closed on `isTrainerTier`
+today, and `trainer_client_limit` enforcement is its own chipped workstream —
+out of this brief's scope.
+
 ### 🟢 2026-09-08 — Offline hardening + reorder rebuild (branch `fix/onboarding-calorie-target-redirect`)
 
 **One PR intended.** Twenty-odd commits, four workstreams.
@@ -270,7 +438,16 @@ FOUNDING-OFFER grant model (`grant_kind`, optional contribution columns,
 written against it. Verified during drafting: `store_click` carries no
 campaign slug today; `CAMPAIGNS` has no `meta` entry; the Meta ad account's
 spending limit is £20/month and must be raised before any test; the Meta SDK
-build is not yet submitted and no `SKAdNetworkItems` were found.
+build is not yet submitted.
+
+⚠ **Correction (2026-09-08):** the "no `SKAdNetworkItems` were found" note
+above was a false negative — it grepped `app.json`/`app.config.ts` only. The
+IDs are injected by the `react-native-fbsdk-next` config plugin
+(`plugin/build/withFacebook.js` → `withSKAdNetworkIdentifiers`), which pushes
+Meta's two IDs (`v9wttpbfk9.skadnetwork`, `n38lu8286q.skadnetwork`) onto
+`ios.infoPlist.SKAdNetworkItems`. Confirmed present via
+`expo config --type introspect`. Do NOT hand-add them to `app.json` — that
+duplicates the plugin's output. See the build-49 entry below.
 
 ### 🟢 2026-09-04 — FOUNDING-OFFER post-review hardening (branch `feat/founding-offer-admin`)
 
