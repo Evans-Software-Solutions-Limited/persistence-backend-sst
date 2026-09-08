@@ -419,7 +419,9 @@ describe("getFeaturesList", () => {
       { ...PREMIUM, workoutLimit: 10, features: { workouts: 25 } },
       false,
     );
-    expect(features).toContain("25 workouts per month");
+    // The cap is a TOTAL, not a monthly allowance — advertising it as
+    // monthly promised a renewing allowance the backend never grants.
+    expect(features).toContain("25 workouts");
   });
 
   it("falls back to workoutLimit when features.workouts is absent", () => {
@@ -431,7 +433,7 @@ describe("getFeaturesList", () => {
       aiAccess: true,
     };
     const features = getFeaturesList(tier, false);
-    expect(features).toContain("5 workouts per month");
+    expect(features).toContain("5 workouts");
     expect(features).toContain(
       "AI nutrition logging from a photo or free text",
     );

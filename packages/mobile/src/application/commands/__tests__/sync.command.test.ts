@@ -303,6 +303,188 @@ describe("processSyncQueue", () => {
     expect(captureSyncFailure).toHaveBeenCalledTimes(1);
   });
 
+  // ── The phantom create ─────────────────────────────────────────────
+  //
+  // `createWorkoutCommand` is optimistic twice over: it writes the workout
+  // into the caches AND bumps `quota.used`, both betting the POST lands.
+  // Nothing used to undo either bet when the create died, so a workout that
+  // never reached the server stayed on screen looking synced and kept counting
+  // against the cap — a free user locked out at "4 of 3" over a list the
+  // server saw as 3, being asked to upgrade for a workout that existed nowhere
+  // but this cache.
+  describe("a dead workout create reconciles its optimistic row", () => {
+    const seedCreatedWorkout = (workoutId: string) => {
+      // The post-create cache state `createWorkoutCommand` leaves behind:
+      // 3 owned workouts on a free tier's limit of 3, the third being the
+      // optimistic one, and `used` already bumped to 3.
+      storage.cacheWorkoutsList(
+        "test-user",
+        "mine",
+        [
+          { id: workoutId, name: "Fourth" } as never,
+          { id: "w-server-1", name: "One" } as never,
+        ],
+        { used: 3, limit: 3 },
+      );
+      storage.cacheWorkoutDetail("test-user", {
+        id: workoutId,
+        name: "Fourth",
+      } as never);
+      storage.enqueueMutation({
+        entityType: "workout",
+        entityId: workoutId,
+        operation: "create",
+        payload: { name: "Fourth" },
+        endpoint: "/workouts",
+        method: "POST",
+      });
+    };
+
+    beforeEach(async () => {
+      await auth.signInWithEmail("test@example.com", "password");
+    });
+
+    it("removes the row and gives the quota bump back on a permanent 4xx", async () => {
+      seedCreatedWorkout("local-w4");
+      mockFetch.mockResolvedValue({
+        ok: false,
+        status: 400,
+        text: async () => "invalid payload",
+      });
+
+      await processSyncQueue(storage, auth, "https://api.test");
+
+      const mine = storage.getCachedWorkoutsList("test-user", "mine");
+      expect(mine?.workouts.map((w) => w.id)).toEqual(["w-server-1"]);
+      // Back to the server's own count, which is what `quota` means.
+      expect(mine?.quota).toEqual({ used: 2, limit: 3 });
+      expect(
+        storage.getCachedWorkoutDetail("test-user", "local-w4"),
+      ).toBeNull();
+      // NOT destroyed: the create's payload is still on the queue, listed by
+      // /sync-failed with a Retry that re-POSTs it verbatim.
+      const exhausted = storage.getFailedExhaustedEntries();
+      expect(exhausted).toHaveLength(1);
+      expect(JSON.parse(exhausted[0].payload)).toEqual({ name: "Fourth" });
+    });
+
+    it("reconciles when a 402 blocks the create, so the cap it reports is the server's", async () => {
+      seedCreatedWorkout("local-w4");
+      mockFetch.mockResolvedValue({
+        ok: false,
+        status: 402,
+        text: async () =>
+          JSON.stringify({
+            code: "ENTITLEMENT_DENIED",
+            feature: "create_workout",
+            reason: "limit",
+            current_tier: "free",
+            upgrade_to: "premium",
+            upgrade_price_monthly: 16.99,
+          }),
+      });
+
+      const result = await processSyncQueue(storage, auth, "https://api.test");
+
+      expect(result.blocked).toBe(1);
+      const mine = storage.getCachedWorkoutsList("test-user", "mine");
+      expect(mine?.workouts.map((w) => w.id)).toEqual(["w-server-1"]);
+      expect(mine?.quota).toEqual({ used: 2, limit: 3 });
+      // Still recoverable — useAutoRetryOnUpgrade re-sends it on upgrade.
+      expect(storage.getBlockedEntries()).toHaveLength(1);
+    });
+
+    it("reconciles when an OFFLINE create exhausts the deferral ceiling", async () => {
+      // The route a create enqueued with no connection actually takes: every
+      // drain defers on a transport throw until MAX_TRANSPORT_DEFERRALS, and
+      // only then charges the budget. It never raises a SyncHttpError, so this
+      // terminal transition is a different branch from the 4xx one above — and
+      // it was the branch left uncovered.
+      seedCreatedWorkout("local-w4");
+      mockFetch.mockRejectedValue(new TypeError("Network request failed"));
+
+      // MAX_TRANSPORT_DEFERRALS (12) drains defer without charging; from then
+      // on every drain charges the budget, so maxRetries (3) more exhaust it.
+      // Each drain needs the clock past the previous backoff window.
+      for (let attempt = 0; attempt < 12 + 3; attempt += 1) {
+        await processSyncQueue(storage, auth, "https://api.test", {
+          now: () => Date.now() + (attempt + 1) * 10 * 60_000,
+        });
+      }
+
+      expect(storage.getFailedExhaustedEntries()).toHaveLength(1);
+      const mine = storage.getCachedWorkoutsList("test-user", "mine");
+      expect(mine?.workouts.map((w) => w.id)).toEqual(["w-server-1"]);
+      expect(mine?.quota).toEqual({ used: 2, limit: 3 });
+    });
+
+    it("leaves a coach-authored create's library row and the mine quota consistent", async () => {
+      // A `?ctx=coach` create is written ONLY to the coach library — it never
+      // enters the `mine` slice — yet it still took a `mine`-quota bump,
+      // because the server counts every row the user created. #442 flagged
+      // that asymmetry as a hazard for any delete path reaching such a row;
+      // this reconciliation is that path.
+      storage.cacheWorkoutsList("test-user", "mine", [], {
+        used: 3,
+        limit: 3,
+      });
+      storage.cacheCoachWorkoutLibrary("test-user", [
+        { id: "local-c1", name: "For a client" } as never,
+      ]);
+      storage.enqueueMutation({
+        entityType: "workout",
+        entityId: "local-c1",
+        operation: "create",
+        payload: { name: "For a client", showInOwnerLibrary: false },
+        endpoint: "/workouts",
+        method: "POST",
+      });
+      mockFetch.mockResolvedValue({
+        ok: false,
+        status: 400,
+        text: async () => "invalid payload",
+      });
+
+      await processSyncQueue(storage, auth, "https://api.test");
+
+      expect(storage.getCachedCoachWorkoutLibrary("test-user")).toEqual([]);
+      expect(storage.getCachedWorkoutsList("test-user", "mine")?.quota).toEqual(
+        { used: 2, limit: 3 },
+      );
+    });
+
+    it("leaves a dead workout EDIT's cached row alone", async () => {
+      // An edit never moved the count, and its cached row is last-known-good
+      // server state rather than a fabrication — removing it would delete a
+      // real workout from the user's list over a failed rename.
+      storage.cacheWorkoutsList(
+        "test-user",
+        "mine",
+        [{ id: "w-server-1", name: "One" } as never],
+        { used: 1, limit: 3 },
+      );
+      storage.enqueueMutation({
+        entityType: "workout",
+        entityId: "w-server-1",
+        operation: "update",
+        payload: { name: "Renamed" },
+        endpoint: "/workouts/w-server-1",
+        method: "PUT",
+      });
+      mockFetch.mockResolvedValue({
+        ok: false,
+        status: 400,
+        text: async () => "invalid payload",
+      });
+
+      await processSyncQueue(storage, auth, "https://api.test");
+
+      const mine = storage.getCachedWorkoutsList("test-user", "mine");
+      expect(mine?.workouts.map((w) => w.id)).toEqual(["w-server-1"]);
+      expect(mine?.quota).toEqual({ used: 1, limit: 3 });
+    });
+  });
+
   it("keeps 401 retryable (transient auth blip), not permanently_failed", async () => {
     storage.enqueueMutation({
       entityType: "workout",

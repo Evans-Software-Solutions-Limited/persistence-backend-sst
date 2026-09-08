@@ -583,9 +583,12 @@ export function getFeaturesList(
   if (tier.features.workouts === "unlimited" || tier.workoutLimit === null) {
     features.push("Unlimited workouts");
   } else if (typeof tier.features.workouts === "number") {
-    features.push(`${tier.features.workouts} workouts per month`);
+    // A TOTAL, not a monthly allowance — see ProfilePresenter's note and
+    // `evaluateWorkoutTotalCapLock`. Advertising it as monthly promised a
+    // renewing allowance the backend does not grant.
+    features.push(`${tier.features.workouts} workouts`);
   } else if (tier.workoutLimit !== null) {
-    features.push(`${tier.workoutLimit} workouts per month`);
+    features.push(`${tier.workoutLimit} workouts`);
   }
 
   if (tier.features.progress) features.push("Progress tracking");

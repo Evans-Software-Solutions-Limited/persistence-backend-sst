@@ -1037,6 +1037,7 @@ export class InMemoryStorageAdapter implements StoragePort {
   removeCachedWorkout(userId: string, workoutId: string): void {
     this.workoutDetailCache.delete(this.workoutDetailKey(userId, workoutId));
     this.workoutHistoryCache.delete(this.workoutDetailKey(userId, workoutId));
+    let removedFromMine = 0;
     for (const [key, slice] of this.workoutsListCache.entries()) {
       if (slice.userId !== userId) continue;
       const filtered = slice.workouts.filter((w) => w.id !== workoutId);
@@ -1044,6 +1045,7 @@ export class InMemoryStorageAdapter implements StoragePort {
         // Parity with the SQLite adapter: the quota moves with the list, or
         // the cached count outlives the workouts it counted.
         const removed = slice.workouts.length - filtered.length;
+        if (slice.type === "mine") removedFromMine = removed;
         this.workoutsListCache.set(key, {
           ...slice,
           workouts: filtered,
@@ -1051,6 +1053,31 @@ export class InMemoryStorageAdapter implements StoragePort {
             ? { ...slice.quota, used: Math.max(0, slice.quota.used - removed) }
             : null,
         });
+      }
+    }
+
+    // Parity with the SQLite adapter's coach-library sweep: a coach-authored
+    // workout lives only in this dedicated slot, but its create still took a
+    // `mine`-quota bump, so removing it gives that bump back against `mine`.
+    const library = this.getCachedCoachWorkoutLibrary(userId);
+    if (library) {
+      const filteredLibrary = library.filter((w) => w.id !== workoutId);
+      const removedFromLibrary = library.length - filteredLibrary.length;
+      if (removedFromLibrary > 0) {
+        this.cacheCoachWorkoutLibrary(userId, filteredLibrary);
+        if (removedFromMine === 0) {
+          for (const [key, slice] of this.workoutsListCache.entries()) {
+            if (slice.userId !== userId || slice.type !== "mine") continue;
+            if (!slice.quota) continue;
+            this.workoutsListCache.set(key, {
+              ...slice,
+              quota: {
+                ...slice.quota,
+                used: Math.max(0, slice.quota.used - removedFromLibrary),
+              },
+            });
+          }
+        }
       }
     }
   }
