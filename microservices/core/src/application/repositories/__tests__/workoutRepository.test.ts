@@ -144,6 +144,13 @@ function makeQuotaSubChain(
   row: {
     paymentStatus?: string;
     expiresAt?: Date | null;
+    cancelledAt?: Date | null;
+    metadata?: Record<string, unknown> | null;
+    // Null models "the LEFT JOIN found no catalog row for this tier_name" —
+    // which makes every joined tier column null, `workoutLimit` included.
+    // Defaults to a joined row, so an explicit `workoutLimit: null` keeps
+    // meaning "this tier is unlimited".
+    catalogTierName?: string | null;
     workoutLimit: number | null;
   } | null,
 ) {
@@ -159,6 +166,12 @@ function makeQuotaSubChain(
                     {
                       paymentStatus: row.paymentStatus ?? "active",
                       expiresAt: row.expiresAt ?? null,
+                      cancelledAt: row.cancelledAt ?? null,
+                      metadata: row.metadata ?? null,
+                      catalogTierName:
+                        row.catalogTierName === undefined
+                          ? "premium"
+                          : row.catalogTierName,
                       workoutLimit: row.workoutLimit,
                     },
                   ],
@@ -2332,6 +2345,94 @@ describe("WorkoutRepository", () => {
       const quota = await new WorkoutRepository().getQuota("user-1");
 
       expect(quota).toEqual({ used: 5, limit: 3 });
+    });
+
+    // ⚠ getQuota is what mobile renders as "N of 3 workouts" AND what the
+    // create gate reads. It MUST agree with `assertEntitlement` — the comment
+    // above the query calls that lockstep out. Both of the gate's resolution
+    // holes therefore have to be closed here too, or the client hides a cap
+    // the server enforces (or shows one it doesn't).
+    it("reverts an off-catalog tier_name to the free-tier limit rather than reporting unlimited", async () => {
+      const mockDb = {
+        select: vi
+          .fn()
+          .mockReturnValueOnce(makeQuotaUsedChain(3))
+          .mockReturnValueOnce(
+            makeQuotaSubChain({
+              paymentStatus: "active",
+              expiresAt: null,
+              // Catalog row DELETEd (20260526120000_simplify_tier_model.sql)
+              // while the sub kept pointing at it: every tier column is null.
+              catalogTierName: null,
+              workoutLimit: null,
+            }),
+          )
+          .mockReturnValueOnce(makeQuotaFreeChain(3)),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const quota = await new WorkoutRepository().getQuota("user-1");
+
+      expect(quota).toEqual({ used: 3, limit: 3 });
+      expect(mockDb.select).toHaveBeenCalledTimes(3);
+    });
+
+    it("reverts a lapsed-but-still-'active' subscription to the free-tier limit", async () => {
+      // Staging marcus.whitfield (2026-09-08): `coach`, payment_status
+      // 'active', expires_at a day past, cancelled_at null. This reported
+      // limit=null, so the workouts list computed isAtLimit=false and offered
+      // Create — while `/subscriptions/me` badged the same user FREE.
+      const mockDb = {
+        select: vi
+          .fn()
+          .mockReturnValueOnce(makeQuotaUsedChain(3))
+          .mockReturnValueOnce(
+            makeQuotaSubChain({
+              paymentStatus: "active",
+              expiresAt: new Date(Date.now() - 86_400_000),
+              cancelledAt: null,
+              catalogTierName: "coach",
+              workoutLimit: null,
+            }),
+          )
+          .mockReturnValueOnce(makeQuotaFreeChain(3)),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const quota = await new WorkoutRepository().getQuota("user-1");
+
+      expect(quota).toEqual({ used: 3, limit: 3 });
+    });
+
+    it("keeps a mid-window scheduled tier change on its own limit, not free's", async () => {
+      // Period-end tier change whose renewal webhook is late: same row shape
+      // as a lapse, but the user is paying. Must not be clamped to free.
+      const mockDb = {
+        select: vi
+          .fn()
+          .mockReturnValueOnce(makeQuotaUsedChain(9))
+          .mockReturnValueOnce(
+            makeQuotaSubChain({
+              paymentStatus: "active",
+              expiresAt: new Date(Date.now() - 60_000),
+              cancelledAt: null,
+              metadata: {
+                scheduled_change: {
+                  next_tier_name: "premium",
+                  effective_at: new Date(Date.now() - 60_000).toISOString(),
+                },
+              },
+              catalogTierName: "premium_plus",
+              workoutLimit: null,
+            }),
+          ),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const quota = await new WorkoutRepository().getQuota("user-1");
+
+      expect(quota).toEqual({ used: 9, limit: null });
+      expect(mockDb.select).toHaveBeenCalledTimes(2);
     });
 
     it("keeps full entitlement for a cancelled-but-still-paid-through subscription", async () => {

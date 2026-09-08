@@ -30,7 +30,10 @@ import {
   estimateWorkoutDurationMinutes,
   resolveEstimatedDurationMinutes,
 } from "../workouts/estimateDuration";
-import { classifySubscriptionStatus } from "../entitlement/assertEntitlement";
+import {
+  classifySubscriptionStatus,
+  resolveEffectiveScheduledTier,
+} from "../entitlement/assertEntitlement";
 
 export type WorkoutListType = "mine" | "assigned" | "default";
 
@@ -321,6 +324,16 @@ export class WorkoutRepository {
         .select({
           paymentStatus: userSubscriptions.paymentStatus,
           expiresAt: userSubscriptions.expiresAt,
+          cancelledAt: userSubscriptions.cancelledAt,
+          // Tells a period-end tier change apart from a genuine lapse — see
+          // `classifySubscriptionStatus`'s `hasEffectiveScheduledChange`.
+          metadata: userSubscriptions.metadata,
+          // Catalog-row discriminator: null exactly when the LEFT JOIN found
+          // no tier row. See `tierRowJoined` in assertEntitlement.ts — without
+          // it, an off-catalog `tier_name`'s joined-null `workout_limit` reads
+          // as "unlimited" and this endpoint reports no cap for a user the
+          // create gate now (correctly) holds to the free allowance.
+          catalogTierName: subscriptionTiers.tierName,
           workoutLimit: subscriptionTiers.workoutLimit,
         })
         .from(userSubscriptions)
@@ -336,14 +349,20 @@ export class WorkoutRepository {
     const used = usedRow[0].value;
     const subRow = subRows[0] ?? null;
 
-    // No sub row, or a cancelled/expired one (classify returns a non-null deny
-    // reason) → the free-tier limit applies. An active/trialing sub — or a
+    // No sub row, a tier with no catalog row, or a cancelled/expired one
+    // (classify returns a non-null deny reason) → the free-tier limit applies.
+    // An active/trialing sub still inside its paid period — or a
     // cancelled-but-still-paid-through one (classify returns null) — keeps its
     // own tier limit.
     const reverted =
       subRow !== null &&
-      classifySubscriptionStatus(subRow.paymentStatus, subRow.expiresAt) !==
-        null;
+      (subRow.catalogTierName === null ||
+        classifySubscriptionStatus(
+          subRow.paymentStatus,
+          subRow.expiresAt,
+          subRow.cancelledAt,
+          resolveEffectiveScheduledTier(subRow.metadata) !== null,
+        ) !== null);
 
     let limit: number | null;
     if (subRow === null || reverted) {
