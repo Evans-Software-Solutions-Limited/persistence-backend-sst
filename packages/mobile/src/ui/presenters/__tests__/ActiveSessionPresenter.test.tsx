@@ -517,11 +517,12 @@ describe("ActiveSessionPresenter (vertical scroll, legacy parity)", () => {
     expect(queryByTestId("active-session-reorder-list")).toBeNull();
   });
 
-  it("promises no VoiceOver Move actions on a one-block list", () => {
-    // With `onMoveExercise` wired the grip DOES render on a single block, at
-    // "position 1 of 1" — and both action filters are empty there, so the hint
-    // must not advertise them or VoiceOver offers two swipes that do nothing.
-    const { getByTestId } = renderWithTheme(
+  it("shows no grip on a one-block list even with the move handler wired", () => {
+    // Production always wires `onMoveExercise`, so the card's own guard passes
+    // and the grip used to render at "position 1 of 1" with empty action
+    // filters: a drag affordance that cannot drag, and an `adjustable` control
+    // whose VoiceOver swipes were silent no-ops.
+    const { queryByTestId } = renderWithTheme(
       <ActiveSessionPresenter
         {...baseProps}
         onReorderExercise={jest.fn()}
@@ -530,9 +531,7 @@ describe("ActiveSessionPresenter (vertical scroll, legacy parity)", () => {
       />,
     );
 
-    const grip = getByTestId("reorder-1");
-    expect(grip.props.accessibilityActions).toEqual([]);
-    expect(grip.props.accessibilityHint).toBeUndefined();
+    expect(queryByTestId("reorder-1")).toBeNull();
   });
 
   it("offers no reorder at all without a commit callback", () => {

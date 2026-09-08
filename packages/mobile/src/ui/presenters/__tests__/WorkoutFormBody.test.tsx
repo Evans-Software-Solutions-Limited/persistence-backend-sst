@@ -160,29 +160,25 @@ describe("WorkoutFormBody reorder", () => {
     );
   });
 
-  it("does not collapse, or promise VoiceOver actions, on a one-block list", async () => {
-    // Nothing to reorder. This used to assert `queryByTestId("workout-reorder")`
-    // was null — a testID deleted with the Reorder button earlier on this
-    // branch, so it passed no matter what the presenter did, leaving the
-    // one-block path untested.
+  it("shows no grip at all on a one-block list", async () => {
+    // Nothing to reorder, so no affordance: no drag, no mode to enter, and no
+    // Move actions (both filters are empty at "position 1 of 1"). This used to
+    // assert `queryByTestId("workout-reorder")` was null — a testID deleted
+    // with the Reorder button earlier on this branch, so it passed no matter
+    // what the presenter did, leaving the one-block path untested.
     const single = {
       ...formState,
       exercises: [formState.exercises[0]!],
     };
     const { getByTestId, queryByTestId } = renderBody({ formState: single });
 
-    fireEvent(getByTestId("reorder-1"), "longPress");
-
+    expect(queryByTestId("reorder-1")).toBeNull();
+    expect(queryByTestId("compact-reorder-row")).toBeNull();
+    // The form itself is untouched and still the only scroller.
+    expect(getByTestId("workout-name-input")).toBeTruthy();
     await waitFor(() =>
       expect(queryByTestId("workout-exercise-reorder-list")).toBeNull(),
     );
-    expect(queryByTestId("compact-reorder-row")).toBeNull();
-    // The two action filters are empty here, so nothing may be advertised:
-    // VoiceOver would otherwise offer two swipes and a hold that do nothing.
-    // The grip keeps its descriptive label ("position 1 of 1") and no hint.
-    const grip = getByTestId("reorder-1");
-    expect(grip.props.accessibilityActions).toEqual([]);
-    expect(grip.props.accessibilityHint).toBeUndefined();
   });
 
   it("offers no reorder at all without a commit callback", async () => {

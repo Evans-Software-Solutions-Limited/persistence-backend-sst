@@ -96,6 +96,14 @@ export function ExerciseReorderHandle({
     },
   };
 
+  // Nothing this grip can do: no drag (no `DragHandle`), no mode to enter (no
+  // `onLongPressReorder`) and no Move actions (`canMove` false — a one-item
+  // list). Rendering it anyway gave sighted users a drag affordance that does
+  // not drag and VoiceOver an `adjustable` control whose adjust swipes are
+  // silent no-ops. The callers still pass `onMove`, so this is the only place
+  // that can tell.
+  if (!canMove && !DragHandle && !onLongPressReorder) return null;
+
   // While DRAGGING the grip must be a plain View: `SortableItem.Handle` wraps
   // it in a GestureDetector, and RN's press responder claims the touch before
   // Gesture Handler's pan can activate, so a Pressable simply never drags.

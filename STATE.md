@@ -114,14 +114,44 @@ Hard-won constraints — all bisected on device, all recorded in
   a vertical pan. Inlined on the three screens.
 
 Also: the active-workout pill is hidden on the workout detail/edit/create
-screens (it floated over their content).
+screens (it floated over their content). And a grip with nothing to do — a
+one-block list — renders nothing at all now, instead of an `adjustable`
+control whose VoiceOver swipes were silent no-ops.
+
+**5. Onboarding Calories target (the branch's original bug) — FIXED, on the
+third attempt.** Worth reading before touching it, because it was shipped
+INERT twice with a passing test each time:
+
+- Attempt 1 used `selfConfig.reload` — cache-only, and the target is computed
+  server-side, so a cache re-read returns byte-identical rows.
+- Attempt 2 chained the patch onto `refresh().then(...)` and read a
+  render-assigned ref inside it. That callback runs as a microtask, BEFORE
+  React commits the refreshed config, so it wrote the PRE-refresh target back.
+- `useCachedResource.refresh` also REFUSES while another fetch is in flight and
+  used to resolve `void` either way, so the one read this depends on could be
+  dropped silently. It now resolves `false` when dropped, and the container
+  ladders retries (~12.4s, sized against a cold-Lambda GET).
+- The retry makes two landings possible and the first can be the collided
+  fetch, carrying the OLD target — so the arm flag is not one-shot.
+- ⚠ Every version passed its test until the test was made to dirty the draft
+  first. Reaching the Fuel editor requires toggling Calories ON, which dirties
+  the draft, and a dirty draft is exactly what makes the automatic re-seed
+  stand aside — so an un-dirtied test never runs the patch at all. Both tests
+  are now checked against the pre-fix container (they fail 2000/2200).
+
+⚠ **Known trade-off, left as-is (documented in `OnboardingProvider`):** a
+reconnect answered by a 5xx drops pages walked on a provisional onboarding
+journey. Keeping them lets a local guess outrank the account's real row on the
+next successful read and PUT over it. Fixing it properly needs a merge rather
+than a pick — keep-but-do-not-promote, promoting only when the server's row
+shows no progress of its own.
 
 ⚠ **Simulator gotcha that cost real time:** a RevenueCat "Error fetching
 offerings" LogBox error opens on the simulator (no StoreKit config) and
 **LogBox swallows every touch** — it presents as "taps do nothing / navigation
 takes many clicks". Dismiss it before concluding anything about the app.
 
-Eight Inspector Brad sweeps. They caught genuine defects in my own fixes each
+Ten Inspector Brad sweeps. They caught genuine defects in my own fixes each
 time — including a provisional-seed path that would have uploaded a reset over
 real server-side onboarding progress, and the frozen-0 `containerHeight` that
 made my own 6-row device check pass while any scrollable list would have

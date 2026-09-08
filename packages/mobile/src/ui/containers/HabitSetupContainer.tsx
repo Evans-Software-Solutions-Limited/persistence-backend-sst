@@ -49,6 +49,13 @@ import { preferredVolumeUnit } from "@/shared/utils";
  * At-risk is derived from the offline mirror (this week not yet safe + no
  * freeze queued) so the banner shows without a round-trip.
  */
+/**
+ * Backoff for re-issuing the post-Fuel-save config refresh, ~12.4s in total —
+ * sized against a cold-Lambda GET holding `useCachedResource`'s in-flight
+ * guard, which is the only thing this retry is waiting out.
+ */
+const FUEL_REFRESH_BACKOFF_MS = [400, 800, 1600, 3200, 6400];
+
 export function HabitSetupContainer({
   clientId,
   clientName,
@@ -311,11 +318,14 @@ export function HabitSetupContainer({
   const fuelRev = useFuelSheets((state) => state.rev);
   const seenFuelRev = useRef(fuelRev);
   const awaitingFuelRefresh = useRef(false);
+  /** Set once a re-issued refresh was actually accepted (not dropped). */
+  const fuelRefreshPerformed = useRef(false);
   useEffect(() => {
     if (isCoachView) return;
     if (fuelRev === seenFuelRev.current) return;
     seenFuelRev.current = fuelRev;
     awaitingFuelRefresh.current = true;
+    fuelRefreshPerformed.current = false;
     let cancelled = false;
     /*
       `refresh`, NOT `reload`: `reload` only re-reads the cache, and
@@ -328,11 +338,27 @@ export function HabitSetupContainer({
       collision here: step 3's own mount refresh is still out, was sent BEFORE
       the target changed, and so cannot carry the new one. Dropping the retry
       leaves the card showing the old target for the rest of the mount.
+
+      The ladder is sized against what actually holds `inFlightRef` — a cold
+      Lambda GET, which this repo has seen take ~10s — not against a round
+      number. A fetch still out when the user has been to the editor and back
+      is by definition a slow one, so a flat 5 × 400ms would expire inside the
+      window it is waiting on.
     */
     void (async () => {
-      for (let attempt = 0; attempt < 5 && !cancelled; attempt++) {
-        if (await refreshSelfConfig({ silent: true })) return;
-        await new Promise((resolve) => setTimeout(resolve, 400));
+      for (const delay of FUEL_REFRESH_BACKOFF_MS) {
+        if (cancelled) return;
+        // `refresh` has no internal catch, so a throwing fetcher rejects it.
+        // Treat that as "not performed" and keep laddering rather than dying
+        // as an unhandled rejection off this `void`.
+        const performed = await refreshSelfConfig({ silent: true }).catch(
+          () => false,
+        );
+        if (performed) {
+          fuelRefreshPerformed.current = true;
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, delay));
       }
     })();
     return () => {
@@ -361,7 +387,14 @@ export function HabitSetupContainer({
     if (isCoachView) return;
     if (!awaitingFuelRefresh.current) return;
     if (caloriesTarget == null) return;
-    awaitingFuelRefresh.current = false;
+    // The retry makes MORE than one landing possible, and the first can be the
+    // collided fetch that was issued before the save — carrying the account's
+    // previous target. Disarming on it would pin that value for the rest of
+    // the mount, since the re-seed deliberately leaves a dirty draft alone. So
+    // stay armed until a refresh this effect asked for was actually accepted;
+    // patching more than once is free, because the field is server-owned and
+    // read-only here, so there is never a user edit to clobber.
+    if (fuelRefreshPerformed.current) awaitingFuelRefresh.current = false;
     patchDraft("calories", { targetValue: caloriesTarget });
   }, [caloriesTarget, isCoachView, patchDraft]);
 
