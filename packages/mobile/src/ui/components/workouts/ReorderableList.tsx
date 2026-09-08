@@ -6,31 +6,25 @@ import {
   type ViewStyle,
 } from "react-native";
 import Animated from "react-native-reanimated";
-import { SortableItem, useSortableList } from "react-native-reanimated-dnd";
+import { ScrollView as GestureScrollView } from "react-native-gesture-handler";
+import * as Haptics from "expo-haptics";
+import {
+  DropProvider,
+  SortableItem,
+  useSortableList,
+} from "react-native-reanimated-dnd";
 
 /**
- * ⚠ NOT YET WIRED TO ANY SCREEN. This is the verified foundation for the
- * reorder rebuild, landed ahead of the surface ports so the device findings
- * behind it are not lost. The session, editor and creator still use
- * `react-native-draggable-flatlist`; swapping them over, and ripping that
- * dependency out, is the remaining work (BRIEF.md § 4 and § 5).
- *
- * Verified on an iPhone 17 Pro Max against the live dev build: drag from the
- * handle, a plain swipe still scrolls, non-uniform row heights lay out and
- * drop, auto-scroll fires at both edges. One known gap: on non-uniform rows a
- * drop can still land a position or two further than the drag distance, so the
- * position maths needs finishing before this drives a real screen.
- *
- * Intended to be the one drag-to-reorder list in the app — session, workout
- * editor and workout creator all consuming this, with nothing else talking to
+ * The one drag-to-reorder list in the app. The active session, the workout
+ * editor and the workout creator all consume this; nothing else may talk to
  * `react-native-reanimated-dnd` directly.
  *
  * Replaces `react-native-draggable-flatlist`, whose auto-scroll never worked
- * on this stack, and the two-gesture "compact reorder mode" that was built to
- * work around it. Authority: specs/milestones/REORDER-REBUILD/BRIEF.md, whose
- * § 3 records the device spike this implementation is built on. Every unusual
- * choice below is one of that spike's findings — read it before changing any
- * of them, because each was a bug first.
+ * on this stack, and the two-gesture "reorder mode" that was built to work
+ * around it. Authority: specs/milestones/REORDER-REBUILD/BRIEF.md, whose § 3
+ * records the device spike this is built on. Every unusual choice below is one
+ * of that spike's findings — read it before changing any of them, because each
+ * was a bug first.
  *
  * The shape is deliberate:
  *
@@ -44,12 +38,35 @@ import { SortableItem, useSortableList } from "react-native-reanimated-dnd";
  *   `enableDynamicHeights` measurement path renders overlapping rows and never
  *   converges. Instead each row reports its natural height with a plain
  *   `onLayout` and we hand the library a resolver over those heights, so it is
- *   always working from known geometry.
+ *   always working from known geometry. Row spacing must therefore be PADDING
+ *   inside the measured row, never margin — `onLayout` excludes margin, and a
+ *   short measurement overlaps the next row.
  * - **Drag is confined to a handle.** `renderItem` receives a `Handle`
- *   wrapper; put the grip in it. Registering a handle disables the whole-item
- *   pan, which the session's cards need because they contain weight and reps
- *   inputs that a card-wide pan would fight.
+ *   wrapper; put the grip in it. Registering a handle disables the library's
+ *   whole-item pan, which the session's cards need because they contain
+ *   weight and reps inputs that a card-wide pan would fight. The pan is
+ *   `activateAfterLongPress(200)`, so holding the grip drags it while a plain
+ *   swipe still scrolls.
  */
+
+/**
+ * Stand-in until the scroller reports its real height. Only ever used for one
+ * render — the rows are re-keyed on the measurement — but it must not be the
+ * library's own 500 default, which is wrong on every current phone.
+ */
+const FALLBACK_VIEWPORT_HEIGHT = 600;
+
+/** Module-scope so its identity never changes across renders. */
+const itemId = (item: ReorderableItem) => item.id;
+
+/**
+ * Gesture Handler's ScrollView, not React Native's, and wrapped for Reanimated
+ * — the same composition the library's own `Sortable` uses. A vertical pan
+ * inside a vertical scroller is the one genuinely contended case, and this is
+ * what lets the two coordinate (see `simultaneousHandlers` below). With RN's
+ * ScrollView the drag simply never engaged from a handle.
+ */
+const AnimatedScrollView = Animated.createAnimatedComponent(GestureScrollView);
 
 export type ReorderableItem = { id: string };
 
@@ -69,11 +86,12 @@ export type ReorderableListProps<TItem extends ReorderableItem> = {
   data: TItem[];
   renderItem: (item: TItem, props: ReorderableRenderProps) => ReactNode;
   /**
-   * Fired once on drop, with the committed order. Derived from the library's
-   * `onDrop` (its `onMove` fires per displaced row mid-drag and is NOT a
-   * commit hook — treating it as one corrupts the order).
+   * Fired once on drop with the item that moved, its new index, and the whole
+   * committed order. Derived from the library's `onDrop` — its `onMove` fires
+   * per DISPLACED row mid-drag and is not a commit hook; treating it as one
+   * corrupts the order.
    */
-  onReorder: (orderedIds: string[]) => void;
+  onReorder: (movedId: string, toIndex: number, orderedIds: string[]) => void;
   header?: ReactNode;
   footer?: ReactNode;
   /** Used only until a row has reported its real height. */
@@ -131,6 +149,7 @@ function ReorderableListInner<TItem extends ReorderableItem>({
 
   const {
     scrollViewRef,
+    dropProviderRef,
     handleScroll,
     handleScrollEnd,
     contentHeight,
@@ -139,6 +158,10 @@ function ReorderableListInner<TItem extends ReorderableItem>({
     data,
     itemHeight,
     estimatedItemHeight,
+    // Stable identity on purpose. The hook defaults this to a fresh arrow on
+    // every call and then lists it in its geometry effect's deps, so leaving
+    // it out re-runs that effect on every single render.
+    itemKeyExtractor: itemId,
   });
 
   const measure = useCallback((id: string, event: LayoutChangeEvent) => {
@@ -150,67 +173,83 @@ function ReorderableListInner<TItem extends ReorderableItem>({
   }, []);
 
   const handleDrop = useCallback(
-    (_id: string, _position: number, allPositions?: Record<string, number>) => {
+    (id: string, position: number, allPositions?: Record<string, number>) => {
       if (!allPositions) return;
       const ordered = [...dataRef.current]
         .sort((a, b) => (allPositions[a.id] ?? 0) - (allPositions[b.id] ?? 0))
         .map((item) => item.id);
-      onReorder(ordered);
+      const from = dataRef.current.findIndex((item) => item.id === id);
+      if (from === position) return;
+      onReorder(id, position, ordered);
     },
     [onReorder],
   );
 
-  return (
-    <Animated.ScrollView
-      ref={scrollViewRef}
-      testID={testID}
-      onScroll={handleScroll}
-      scrollEventThrottle={16}
-      onScrollEndDrag={handleScrollEnd}
-      onMomentumScrollEnd={handleScrollEnd}
-      scrollEnabled={scrollEnabled}
-      showsVerticalScrollIndicator={false}
-      keyboardShouldPersistTaps="handled"
-      keyboardDismissMode="on-drag"
-      automaticallyAdjustKeyboardInsets
-      style={[{ flex: 1 }, style]}
-      contentContainerStyle={contentContainerStyle}
-      onLayout={(event) =>
-        setViewportHeight(Math.round(event.nativeEvent.layout.height))
-      }
-    >
-      {header}
+  // Matches the feel the old handle gave on long-press, now fired by the
+  // library at the moment the drag actually engages rather than by a Pressable
+  // that only pretended to start one.
+  const handleDragStart = useCallback(() => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  }, []);
 
-      {/*
-        Rows are withheld until the viewport has been measured, and this is
-        NOT a cosmetic loading gate.
+  return (
+    <DropProvider ref={dropProviderRef}>
+      <AnimatedScrollView
+        ref={scrollViewRef}
+        testID={testID}
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
+        onScrollEndDrag={handleScrollEnd}
+        onMomentumScrollEnd={handleScrollEnd}
+        scrollEnabled={scrollEnabled}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        automaticallyAdjustKeyboardInsets
+        style={[{ flex: 1 }, style]}
+        contentContainerStyle={contentContainerStyle}
+        simultaneousHandlers={dropProviderRef}
+        onLayout={(event) =>
+          setViewportHeight(Math.round(event.nativeEvent.layout.height))
+        }
+      >
+        {header}
+
+        {/*
+        Keyed on the measured viewport, and that is load-bearing.
 
         `useSortable` freezes `containerHeight` on first render
         (`useRef(containerHeight).current`) and derives the auto-scroll edge
-        from it as `lowerBound + containerHeight`. Mount a row while the
-        measurement is still 0 and that row's edge is pinned at the scroll
-        offset itself, so auto-scroll-down stays true for the whole drag: the
-        list runs away and a two-row drag travels a dozen positions. Measure
-        first, mount second, and every row captures the real viewport.
+        from it as `lowerBound + containerHeight`. So a row that mounts before
+        the measurement lands keeps the wrong edge for its whole life: with the
+        library's own default of 500 the downward trigger sits ~200pt above the
+        real bottom of a tall phone's list — dragging to the bottom does not
+        scroll, while dragging to the top still does, because the upward edge
+        keys off the scroll offset instead. Re-keying remounts the rows once
+        the real height is known, and again if it changes (rotation, keyboard).
       */}
-      <View style={{ height: contentHeight }}>
-        {viewportHeight > 0 &&
-          data.map((item, index) => (
+        <View
+          key={`viewport-${viewportHeight}`}
+          style={{ height: contentHeight }}
+        >
+          {data.map((item, index) => (
             <ReorderableRow
               key={item.id}
               item={item}
               index={index}
               itemProps={getItemProps(item, index)}
-              viewportHeight={viewportHeight}
+              viewportHeight={viewportHeight || FALLBACK_VIEWPORT_HEIGHT}
               onDrop={handleDrop}
+              onDragStart={handleDragStart}
               onMeasure={measure}
               renderItem={renderItem}
             />
           ))}
-      </View>
+        </View>
 
-      {footer}
-    </Animated.ScrollView>
+        {footer}
+      </AnimatedScrollView>
+    </DropProvider>
   );
 }
 
@@ -224,6 +263,7 @@ function ReorderableRow<TItem extends ReorderableItem>({
   itemProps,
   viewportHeight,
   onDrop,
+  onDragStart,
   onMeasure,
   renderItem,
 }: {
@@ -236,6 +276,7 @@ function ReorderableRow<TItem extends ReorderableItem>({
     position: number,
     allPositions?: Record<string, number>,
   ) => void;
+  onDragStart: () => void;
   onMeasure: (id: string, event: LayoutChangeEvent) => void;
   renderItem: (item: TItem, props: ReorderableRenderProps) => ReactNode;
 }) {
@@ -266,6 +307,7 @@ function ReorderableRow<TItem extends ReorderableItem>({
       // the real bottom of a tall phone's list.
       containerHeight={viewportHeight}
       onDrop={onDrop}
+      onDragStart={onDragStart}
     >
       <View onLayout={(event) => onMeasure(item.id, event)}>
         {renderItem(item, { Handle, index })}

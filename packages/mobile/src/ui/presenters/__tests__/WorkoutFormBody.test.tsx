@@ -100,52 +100,47 @@ function renderBody(
   );
 }
 
-describe("WorkoutFormBody reorder mode", () => {
-  it("drags fixed-height rows with exact geometry, not full cards", () => {
-    // The bug: this list dragged full exercise cards whose heights vary with
-    // set count, so the library — which measures the dragged cell when the
-    // drag begins and animates from that — fought the finger from part-way
-    // down the list. Compact rows of one known height, described exactly by
-    // `getItemLayout`, leave it nothing to get wrong.
-    const { getByTestId, getAllByTestId, queryAllByTestId } = renderBody();
-
-    // Full cards: no fixed geometry, because there is none to state.
-    expect(
-      getByTestId("workout-exercise-draggable-list").props.getItemLayout,
-    ).toBeUndefined();
-    expect(queryAllByTestId("compact-reorder-row")).toHaveLength(0);
-
-    fireEvent.press(getByTestId("workout-reorder"));
-
-    expect(getAllByTestId("compact-reorder-row").length).toBeGreaterThan(0);
-    const getItemLayout = getByTestId("workout-exercise-draggable-list").props
-      .getItemLayout as (
-      data: unknown,
-      index: number,
-    ) => { length: number; offset: number; index: number };
-    expect(getItemLayout(null, 0)).toEqual({ length: 72, offset: 0, index: 0 });
-    // 72pt rows separated by this list's OWN 10pt separator — not the active
-    // session's 16pt gap, which would drift 6pt per row.
-    expect(getItemLayout(null, 1).offset).toBe(82);
-    expect(getItemLayout(null, 4).offset).toBe(82 * 4);
+/** Two blocks, so there is something to reorder. */
+function renderReorderableForm() {
+  return renderBody({
+    formState: {
+      ...formState,
+      exercises: [
+        ...formState.exercises,
+        {
+          ...formState.exercises[0],
+          id: "second-block",
+          exercise_id: "ex-2",
+          exercise_name: "Row",
+          sort_order: 1,
+        },
+      ],
+    },
   });
+}
 
-  it("leaves reorder mode by an explicit Done", () => {
-    const { getByTestId, queryAllByTestId } = renderBody();
-    fireEvent.press(getByTestId("workout-reorder"));
-    expect(queryAllByTestId("compact-reorder-row").length).toBeGreaterThan(0);
+describe("WorkoutFormBody reorder", () => {
+  it("drags full cards from the grip, with no mode and no buttons", () => {
+    // The editor used to collapse to fixed-height rows behind an explicit
+    // Reorder button because its list was nested inside the form's scroller
+    // and the library measured the dragged cell up front. The list IS the
+    // form's scroller now, so the cards stay cards and the grip drags them.
+    const { getByTestId, queryByTestId } = renderReorderableForm();
 
-    fireEvent.press(getByTestId("workout-reorder-done"));
-
-    expect(queryAllByTestId("compact-reorder-row")).toHaveLength(0);
+    expect(getByTestId("workout-exercise-reorderable-list")).toBeTruthy();
+    expect(queryByTestId("workout-reorder")).toBeNull();
+    expect(queryByTestId("workout-reorder-done")).toBeNull();
+    expect(queryByTestId("compact-reorder-row")).toBeNull();
+    // The form fields live in the same scroller as the rows — that is what
+    // un-nesting means, and what makes auto-scroll work.
+    expect(getByTestId("workout-name-input")).toBeTruthy();
     expect(getByTestId("add-exercise-button")).toBeTruthy();
   });
 
-  it("hides the Reorder control while reordering, so Done is the only exit", () => {
-    const { getByTestId, queryByTestId } = renderBody();
-    fireEvent.press(getByTestId("workout-reorder"));
-    expect(queryByTestId("workout-reorder")).toBeNull();
-    expect(getByTestId("workout-reorder-done")).toBeTruthy();
+  it("puts the grip on the block lead only", () => {
+    const { getAllByTestId } = renderReorderableForm();
+    // One handle per BLOCK, not per exercise.
+    expect(getAllByTestId("sortable-handle").length).toBeGreaterThan(0);
   });
 
   it("offers no Reorder control when there is only one block", () => {
@@ -198,10 +193,7 @@ describe("WorkoutFormBody drag reorder", () => {
       paddingTop: 44,
       paddingBottom: 34,
     });
-    const list = getByTestId("workout-exercise-draggable-list");
-    expect(list.props.dragItemOverflow).toBeUndefined();
-    expect(list.props.renderPlaceholder).toEqual(expect.any(Function));
-    expect(list.props.renderPlaceholder()).toBeTruthy();
+    expect(getByTestId("workout-exercise-reorderable-list")).toBeTruthy();
 
     fireEvent(getByTestId("reorder-1"), "accessibilityAction", {
       nativeEvent: { actionName: "increment" },
@@ -209,9 +201,17 @@ describe("WorkoutFormBody drag reorder", () => {
     expect(onMoveExercise).toHaveBeenCalledWith("standalone-a", 1);
 
     // Four exercises become three draggable blocks: standalone, superset,
-    // standalone. The superset's members render together inside block 2.
-    expect(list.props.children).toHaveLength(3);
-    fireEvent(list, "dragEnd", { from: 1, to: 0 });
+    // standalone. The superset's members render together inside one row, which
+    // is addressed by its LEAD exercise's id.
+    expect(getByTestId("sortable-item-standalone-a")).toBeTruthy();
+    expect(getByTestId("sortable-item-superset-lead")).toBeTruthy();
+    fireEvent(
+      getByTestId("sortable-item-superset-lead"),
+      "drop",
+      "superset-lead",
+      0,
+      { "superset-lead": 0, "standalone-a": 1 },
+    );
 
     expect(onReorderExercise).toHaveBeenCalledWith("superset-lead", 0);
     expect(announce).toHaveBeenCalledWith(

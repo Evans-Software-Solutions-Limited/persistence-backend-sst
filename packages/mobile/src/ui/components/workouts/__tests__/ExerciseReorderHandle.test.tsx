@@ -1,5 +1,6 @@
+import type { ReactNode } from "react";
+import { View } from "react-native";
 import { fireEvent } from "@testing-library/react-native";
-import * as Haptics from "expo-haptics";
 import { ExerciseReorderHandle } from "../ExerciseReorderHandle";
 import { renderWithTheme } from "../../../../../__tests__/test-utils";
 
@@ -27,23 +28,59 @@ describe("ExerciseReorderHandle", () => {
     expect(onMove).toHaveBeenCalledWith(-1);
   });
 
-  it("starts a real drag from a long press and gives start haptics", () => {
-    const onDrag = jest.fn();
+  it("wraps the grip in the drag handle when one is supplied", () => {
+    // The gesture is the library's now, not a Pressable's `onLongPress`. All
+    // this component does is let itself be wrapped, so the drag lives on the
+    // grip and nowhere else.
+    const DragHandle = jest.fn(({ children }: { children: ReactNode }) => (
+      <View testID="drag-handle">{children}</View>
+    ));
     const { getByTestId } = renderWithTheme(
       <ExerciseReorderHandle
         label="Bench"
         position={1}
         total={3}
         onMove={jest.fn()}
-        onDrag={onDrag}
+        DragHandle={DragHandle}
       />,
     );
 
-    fireEvent(getByTestId("reorder-1"), "longPress");
+    expect(getByTestId("drag-handle")).toBeTruthy();
+    // The grip is INSIDE the handle, or holding it would not drag.
+    expect(
+      getByTestId("drag-handle").findByProps({ testID: "reorder-1" }),
+    ).toBeTruthy();
+  });
 
-    expect(Haptics.impactAsync).toHaveBeenCalledWith(
-      Haptics.ImpactFeedbackStyle.Medium,
+  it("stays accessibility-only where no drag handle is given", () => {
+    const { getByTestId, queryByTestId } = renderWithTheme(
+      <ExerciseReorderHandle
+        label="Bench"
+        position={1}
+        total={3}
+        onMove={jest.fn()}
+      />,
     );
-    expect(onDrag).toHaveBeenCalledTimes(1);
+
+    expect(queryByTestId("drag-handle")).toBeNull();
+    expect(getByTestId("reorder-1").props.accessibilityHint).toBe(
+      "Use Move up and Move down actions",
+    );
+  });
+
+  it("advertises the hold gesture in its hint only when draggable", () => {
+    const { getByTestId } = renderWithTheme(
+      <ExerciseReorderHandle
+        label="Bench"
+        position={1}
+        total={3}
+        onMove={jest.fn()}
+        DragHandle={({ children }: { children: ReactNode }) => <>{children}</>}
+      />,
+    );
+
+    expect(getByTestId("reorder-1").props.accessibilityHint).toBe(
+      "Hold and drag to move, or use Move up and Move down actions",
+    );
   });
 });

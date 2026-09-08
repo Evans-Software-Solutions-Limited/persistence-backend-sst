@@ -29,7 +29,6 @@ import { useNotificationBadge } from "../../src/ui/hooks/useNotificationBadge";
 import { useNotificationDeepLink } from "../../src/ui/hooks/useNotificationDeepLink";
 import { useOfflineDataBootstrap } from "../../src/ui/hooks/useOfflineDataBootstrap";
 import { useSyncWorker } from "../../src/ui/hooks/useSyncWorker";
-import { reorderModalOptions } from "../../src/ui/navigation/reorderModalOptions";
 import { colorPalette } from "../../src/ui/theme";
 
 /**
@@ -180,8 +179,13 @@ export default function AppLayout() {
         <Stack.Screen
           name="workouts/create"
           options={{
-            ...reorderModalOptions,
             title: "New workout",
+            // The screen's drag-to-reorder list pans vertically, and on iOS a
+            // modally-presented screen's swipe-to-dismiss gesture claims that
+            // pan first — the drag then simply never engages. This was
+            // previously a shared `reorderModalOptions` spread; it is inlined
+            // here so the reason travels with the screen it protects.
+            gestureEnabled: false,
           }}
         />
         <Stack.Screen
@@ -194,8 +198,13 @@ export default function AppLayout() {
         <Stack.Screen
           name="workouts/[id]/edit"
           options={{
-            ...reorderModalOptions,
             title: "Edit workout",
+            // The screen's drag-to-reorder list pans vertically, and on iOS a
+            // modally-presented screen's swipe-to-dismiss gesture claims that
+            // pan first — the drag then simply never engages. This was
+            // previously a shared `reorderModalOptions` spread; it is inlined
+            // here so the reason travels with the screen it protects.
+            gestureEnabled: false,
           }}
         />
         <Stack.Screen
@@ -205,8 +214,10 @@ export default function AppLayout() {
         <Stack.Screen
           name="session/index"
           options={{
-            ...reorderModalOptions,
             title: "Active session",
+            // See `workouts/[id]/edit` above: the reorder pan and the modal
+            // dismiss gesture are the same gesture, and the navigator wins.
+            gestureEnabled: false,
           }}
         />
         <Stack.Screen

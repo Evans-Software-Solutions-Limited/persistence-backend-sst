@@ -58,7 +58,6 @@
     "lucide-react-native": "^1.17.0",
     "react": "19.2.0",
     "react-native": "0.83.4",
-    "react-native-draggable-flatlist": "4.0.3",
     "react-native-fbsdk-next": "13.4.3",
     "react-native-gesture-handler": "2.31.1",
     "react-native-health-connect": "4.1.3",
@@ -103,7 +102,7 @@
       "<rootDir>/__tests__/setup.ts"
     ],
     "transformIgnorePatterns": [
-      "node_modules/(?!(.bun/.*/)?(react-native|@react-native|@react-native-community|expo|expo-[^/]*|@expo|expo-modules-core|@expo-google-fonts|react-navigation|@react-navigation|@sentry/react-native|native-base|react-native-svg|react-native-qrcode-svg|tamagui|@tamagui|react-native-reanimated|react-native-worklets)/)"
+      "node_modules/(?!(.bun/.*/)?(react-native|@react-native|@react-native-community|expo|expo-[^/]*|@expo|expo-modules-core|@expo-google-fonts|react-navigation|@react-navigation|@sentry/react-native|native-base|react-native-svg|react-native-qrcode-svg|tamagui|@tamagui|react-native-reanimated|react-native-reanimated-dnd|react-native-worklets)/)"
     ],
     "moduleNameMapper": {
       "^@/(.*)$": "<rootDir>/src/$1"

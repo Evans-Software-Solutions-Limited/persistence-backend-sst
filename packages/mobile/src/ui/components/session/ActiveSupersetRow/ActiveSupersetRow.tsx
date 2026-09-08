@@ -26,6 +26,7 @@
  */
 
 import React, { useMemo } from "react";
+import type { ReactNode } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { ActiveSupersetExerciseRow } from "./ActiveSupersetExerciseRow";
 import {
@@ -86,8 +87,7 @@ export type ActiveSupersetRowProps = {
   reorderPosition?: number;
   reorderTotal?: number;
   onMove?: (direction: -1 | 1) => void;
-  onDrag?: () => void;
-  isDragging?: boolean;
+  DragHandle?: (props: { children: ReactNode }) => ReactNode;
 };
 
 const DEFAULT_TEMPLATE: SessionExerciseTemplate = { restSeconds: 90 };
@@ -135,7 +135,7 @@ export function ActiveSupersetRow(props: ActiveSupersetRowProps) {
       testID={`superset-group-${props.supersetGroup}`}
     >
       <View style={styles.supersetConnector}>
-        {(props.onMove || props.onDrag) &&
+        {(props.onMove || props.DragHandle) &&
         props.reorderPosition &&
         props.reorderTotal &&
         leadExercise ? (
@@ -144,8 +144,7 @@ export function ActiveSupersetRow(props: ActiveSupersetRowProps) {
             position={props.reorderPosition}
             total={props.reorderTotal}
             onMove={props.onMove}
-            onDrag={props.onDrag}
-            isDragging={props.isDragging}
+            DragHandle={props.DragHandle}
           />
         ) : null}
         <View style={styles.supersetLineStart} />
