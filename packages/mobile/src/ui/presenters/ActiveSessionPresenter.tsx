@@ -49,7 +49,7 @@ import {
 import { SessionHeader } from "@/ui/components/session/SessionHeader";
 import { TrainerBannerPresenter } from "@/ui/presenters/TrainerBannerPresenter";
 import { Btn } from "@/ui/components/foundation/Btn";
-import { IconCheck, IconGrip } from "@/ui/components/icons";
+import { IconCheck } from "@/ui/components/icons";
 import { color } from "@/ui/theme/tokens";
 import type { ExerciseSet, SessionExercise } from "@/domain/models/session";
 import type { WeightUnit } from "@/shared/utils";
@@ -312,6 +312,13 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
    * itself is a separate press on a compact row, which is also why nothing
    * needs to undo a layout change when it ends.
    */
+  /**
+   * Holding a grip collapses the list to uniform rows; dropping a row ends the
+   * mode. That is the whole interaction — there is deliberately nothing to
+   * tap, in or out. No timer either: being yanked out mid-thought is its own
+   * annoyance, and nothing is trapped by the mode (the header and Finish are
+   * both still there, and leaving the screen resets it).
+   */
   const enterReorder = () => setIsReordering(true);
 
   const canReorder =
@@ -378,19 +385,6 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
             itemHeight={COMPACT_REORDER_ROW_HEIGHT + REORDER_ROW_GAP}
             data={rows}
             onReorder={handleReorder}
-            header={
-              <TouchableOpacity
-                onPress={() => setIsReordering(false)}
-                style={styles.reorderHint}
-                testID="active-session-reorder-hint"
-                accessibilityLabel="Done reordering"
-              >
-                <IconGrip size={16} color={color.$primary} />
-                <Text style={styles.reorderHintText}>
-                  Hold a row and drag to reorder — tap here when done
-                </Text>
-              </TouchableOpacity>
-            }
             renderItem={(row, { Handle, index }: ReorderableRenderProps) => (
               <View style={{ paddingBottom: REORDER_ROW_GAP }}>
                 <CompactReorderRow

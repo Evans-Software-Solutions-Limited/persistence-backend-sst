@@ -223,6 +223,12 @@ export function WorkoutFormBody({
   const rows = reorderBlocks.map((block) => ({ id: block[0].id, block }));
 
   /**
+   * Holding a grip collapses the list to uniform rows; dropping a row ends the
+   * mode. Nothing to tap, in or out.
+   */
+  const enterReorder = () => setIsReordering(true);
+
+  /**
    * Commit a drop and LEAVE reorder mode. Exiting here is the point — the
    * previous version kept the mode alive after the drop and hid the only exit
    * behind a Done button.
@@ -287,19 +293,6 @@ export function WorkoutFormBody({
                 itemHeight={COMPACT_REORDER_ROW_HEIGHT + EDITOR_REORDER_GAP}
                 data={rows}
                 onReorder={handleReorder}
-                header={
-                  <Pressable
-                    onPress={() => setIsReordering(false)}
-                    testID="workout-reorder-hint"
-                    accessibilityLabel="Done reordering"
-                  >
-                    <View paddingVertical={14} alignItems="center">
-                      <Text fontFamily="$body" fontSize={13} color="$primary">
-                        Hold a row and drag to reorder — tap here when done
-                      </Text>
-                    </View>
-                  </Pressable>
-                }
                 renderItem={(
                   row,
                   { Handle, index }: ReorderableRenderProps,
@@ -617,7 +610,7 @@ export function WorkoutFormBody({
                                           (!hasSupersetGroup ||
                                             isSupersetStart) &&
                                           canReorder
-                                            ? () => setIsReordering(true)
+                                            ? enterReorder
                                             : undefined
                                         }
                                       />

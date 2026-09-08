@@ -59,6 +59,13 @@ const ACTIVE_WORKOUT_BAR_GAP = 12;
 // the geometric contract with 14-navigation; this is a glow-only presentation
 // margin owned by this bar.
 const BAR_GLOW_CLEARANCE = 10;
+/**
+ * Height of the sticky Cancel/Save row on the workout create + edit screens
+ * (`padding: 16` twice plus a `size="lg"` Btn). Mirrored locally for the same
+ * reason as the tab-bar contract above: the bar floats over whatever is
+ * beneath it, and without this it sat directly on top of those two buttons.
+ */
+const FORM_ACTION_BAR_HEIGHT = 76;
 
 export function ActiveWorkoutOverlay() {
   const { session, rereadCache } = useActiveSession();
@@ -82,6 +89,9 @@ export function ActiveWorkoutOverlay() {
   const onSessionScreen = segments.some((s) => s === "session");
   const inAuth = segments.includes("(auth)");
   const inTabs = segments.includes("(tabs)");
+  // Screens whose own sticky footer the bar would otherwise cover.
+  const overFormActionBar =
+    segments.includes("create") || segments.includes("edit");
 
   // The ProfileDrawer is a root-mounted sibling that renders BEFORE this overlay
   // in `app/(app)/_layout.tsx`, so with no z-index the floating bar paints on
@@ -168,6 +178,7 @@ export function ActiveWorkoutOverlay() {
     TAB_BAR_CONTENT_HEIGHT + insets.bottom + TAB_BAR_BOTTOM_GAP;
   const bottom =
     (inTabs ? tabBarHeight : insets.bottom) +
+    (overFormActionBar ? FORM_ACTION_BAR_HEIGHT : 0) +
     ACTIVE_WORKOUT_BAR_GAP +
     BAR_GLOW_CLEARANCE;
 

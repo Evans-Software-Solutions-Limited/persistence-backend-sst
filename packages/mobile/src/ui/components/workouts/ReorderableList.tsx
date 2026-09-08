@@ -66,6 +66,8 @@ export type ReorderableListProps<TItem extends ReorderableItem> = {
    * corrupts the order.
    */
   onReorder: (movedId: string, toIndex: number, orderedIds: string[]) => void;
+  /** Fired when a drag actually engages. */
+  onDragStart?: () => void;
   header?: ReactNode;
   footer?: ReactNode;
   style?: StyleProp<ViewStyle>;
@@ -99,6 +101,7 @@ function ReorderableListInner<TItem extends ReorderableItem>({
   itemHeight,
   renderItem,
   onReorder,
+  onDragStart,
   header,
   footer,
   style,
@@ -143,7 +146,8 @@ function ReorderableListInner<TItem extends ReorderableItem>({
   // pretended to start one.
   const handleDragStart = useCallback(() => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-  }, []);
+    onDragStart?.();
+  }, [onDragStart]);
 
   return (
     <DropProvider ref={dropProviderRef}>
