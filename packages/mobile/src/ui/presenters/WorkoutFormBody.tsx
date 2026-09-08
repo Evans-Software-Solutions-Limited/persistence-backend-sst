@@ -5,17 +5,23 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
+  ScrollView,
   Switch,
   TextInput,
+  View as RNView,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-
-import { AddExercisePopover } from "@/ui/components/workouts/AddExercisePopover";
-import { ExerciseConfigCard } from "@/ui/components/workouts/ExerciseConfigCard";
+import {
+  COMPACT_REORDER_ROW_HEIGHT,
+  CompactReorderRow,
+} from "@/ui/components/workouts/CompactReorderRow";
 import {
   ReorderableList,
   type ReorderableRenderProps,
 } from "@/ui/components/workouts/ReorderableList";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+
+import { AddExercisePopover } from "@/ui/components/workouts/AddExercisePopover";
+import { ExerciseConfigCard } from "@/ui/components/workouts/ExerciseConfigCard";
 import { buildSupersetLetterMap } from "@/ui/presenters/supersetLetters";
 import type {
   WorkoutFormExercise,
@@ -135,6 +141,13 @@ export type WorkoutFormBodyProps = {
   readonly ownerToggleSub: string;
 };
 
+/**
+ * Gap between compact reorder rows. It has to live INSIDE the height the
+ * sortable is told about, because absolutely-positioned rows ignore the
+ * container's `gap`.
+ */
+const EDITOR_REORDER_GAP = 10;
+
 export function WorkoutFormBody({
   formState,
   isSubmitting,
@@ -166,6 +179,19 @@ export function WorkoutFormBody({
   const supersetLetters = buildSupersetLetterMap(
     exercises.map((ex) => ex.superset_group),
   );
+  /**
+   * Reorder mode is entered and left DELIBERATELY — by the Reorder control
+   * below, or by holding a card's grip — and never by the drag gesture.
+   *
+   * `react-native-draggable-flatlist` measures the dragged cell when a drag
+   * begins and animates from those measurements, so it wants a list whose
+   * geometry is settled and uniform (its own example is fixed-height rows).
+   * This editor was dragging full exercise cards of wildly different heights,
+   * which is why reordering from part-way down the list fought the finger.
+   * Collapsing to fixed rows FIRST means the library measures a list that is
+   * already uniform, and `getItemLayout` then describes it exactly.
+   */
+  const [isReordering, setIsReordering] = useState(false);
 
   const reorderBlocks: WorkoutFormExercise[][] = [];
   const seenReorderGroups = new Set<number>();
@@ -194,30 +220,26 @@ export function WorkoutFormBody({
       : VISIBILITY_OPTIONS;
 
   const canReorder = reorderBlocks.length > 1;
-  // The sortable addresses rows by a stable id; a block's lead exercise
-  // supplies one, which is also the id the reorder command expects back.
-  const rows = React.useMemo(
-    () => reorderBlocks.map((block) => ({ id: block[0].id, block })),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [exercises],
-  );
+  const rows = reorderBlocks.map((block) => ({ id: block[0].id, block }));
 
   /**
-   * Commit a drop. `toIndex` is a BLOCK index — a superset moves as one — and
-   * the block's lead exercise is what `onReorderExercise` takes.
+   * Commit a drop and LEAVE reorder mode. Exiting here is the point — the
+   * previous version kept the mode alive after the drop and hid the only exit
+   * behind a Done button.
    */
   const handleReorder = (movedId: string, toIndex: number) => {
     const moved = rows.find((row) => row.id === movedId);
     const lead = moved?.block[0];
     if (!lead) return;
     onReorderExercise?.(lead.id, toIndex);
-    const label =
-      moved.block.length > 1
-        ? `Superset starting with ${lead.exercise_name}`
-        : lead.exercise_name;
     void AccessibilityInfo.announceForAccessibility(
-      `${label} moved to position ${toIndex + 1} of ${rows.length}`,
+      `${
+        moved.block.length > 1
+          ? `Superset starting with ${lead.exercise_name}`
+          : lead.exercise_name
+      } moved to position ${toIndex + 1} of ${rows.length}`,
     );
+    setIsReordering(false);
   };
 
   return (
@@ -249,14 +271,67 @@ export function WorkoutFormBody({
             style={{ flex: 1 }}
             behavior={Platform.OS === "ios" ? "padding" : undefined}
           >
-            <ReorderableList
-              testID="workout-exercise-reorderable-list"
-              style={{ flex: 1, paddingHorizontal: 16 }}
-              contentContainerStyle={{ paddingBottom: 24 }}
-              estimatedItemHeight={180}
-              data={rows}
-              onReorder={handleReorder}
-              header={
+            {isReordering ? (
+              /*
+               * Reorder mode: uniform compact rows and nothing else on screen,
+               * so this list is the only scroller. The sortable only drags
+               * reliably when every row is the same height, and the form
+               * fields are what forced the old nested-scroller arrangement
+               * whose stale offset broke auto-scroll. Entered by HOLDING a
+               * card's grip, left on the drop. No buttons either way.
+               */
+              <ReorderableList
+                testID="workout-exercise-reorder-list"
+                style={{ flex: 1, paddingHorizontal: 16 }}
+                contentContainerStyle={{ paddingBottom: 24 }}
+                itemHeight={COMPACT_REORDER_ROW_HEIGHT + EDITOR_REORDER_GAP}
+                data={rows}
+                onReorder={handleReorder}
+                header={
+                  <Pressable
+                    onPress={() => setIsReordering(false)}
+                    testID="workout-reorder-hint"
+                    accessibilityLabel="Done reordering"
+                  >
+                    <View paddingVertical={14} alignItems="center">
+                      <Text fontFamily="$body" fontSize={13} color="$primary">
+                        Hold a row and drag to reorder — tap here when done
+                      </Text>
+                    </View>
+                  </Pressable>
+                }
+                renderItem={(
+                  row,
+                  { Handle, index }: ReorderableRenderProps,
+                ) => (
+                  <RNView style={{ paddingBottom: EDITOR_REORDER_GAP }}>
+                    <CompactReorderRow
+                      exerciseNames={row.block.map(
+                        (exercise) => exercise.exercise_name,
+                      )}
+                      position={index + 1}
+                      total={rows.length}
+                      onMove={
+                        onMoveExercise && row.block[0]
+                          ? (direction) =>
+                              onMoveExercise(row.block[0].id, direction)
+                          : undefined
+                      }
+                      DragHandle={Handle}
+                    />
+                  </RNView>
+                )}
+              />
+            ) : (
+              <ScrollView
+                style={{ flex: 1, paddingHorizontal: 16 }}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="on-drag"
+                contentContainerStyle={{ paddingBottom: 24 }}
+                automaticallyAdjustKeyboardInsets
+                testID="workout-form-scroll"
+              >
                 <View gap={18} paddingTop={6}>
                   <Field label="Workout name" required>
                     <TextInput
@@ -423,6 +498,7 @@ export function WorkoutFormBody({
                       />
                     </View>
                   ) : null}
+
                   <View>
                     <View
                       flexDirection="row"
@@ -442,6 +518,7 @@ export function WorkoutFormBody({
                         {`Exercises · ${exercises.length}`}
                       </Text>
                     </View>
+
                     {exercises.length === 0 ? (
                       <View alignItems="center" paddingVertical={32} gap={8}>
                         <IconDumbbell
@@ -472,120 +549,136 @@ export function WorkoutFormBody({
                           exercises for your workout
                         </Text>
                       </View>
+                    ) : (
+                      <View gap={10}>
+                        {reorderBlocks.map((block, blockIndex) => {
+                          const blockPosition = blockIndex + 1;
+                          return (
+                            <View key={block[0].id}>
+                              <View gap={10}>
+                                {block.map((exercise) => {
+                                  const index = exercises.indexOf(exercise);
+                                  const hasSupersetGroup =
+                                    exercise.superset_group !== null;
+                                  const supersetExercises = hasSupersetGroup
+                                    ? block
+                                    : [];
+                                  const isSupersetStart =
+                                    hasSupersetGroup &&
+                                    supersetExercises[0]?.id === exercise.id;
+                                  const isSupersetEnd =
+                                    hasSupersetGroup &&
+                                    supersetExercises.at(-1)?.id ===
+                                      exercise.id;
+
+                                  return (
+                                    <View key={exercise.id}>
+                                      <ExerciseConfigCard
+                                        exercise={exercise}
+                                        index={index}
+                                        onRemove={() =>
+                                          onRemoveExercise(exercise.id)
+                                        }
+                                        onConfigChange={(field, value) =>
+                                          onExerciseConfigChange(
+                                            exercise.id,
+                                            field,
+                                            value,
+                                          )
+                                        }
+                                        isSupersetStart={isSupersetStart}
+                                        isSupersetEnd={isSupersetEnd}
+                                        supersetGroupNumber={
+                                          exercise.superset_group ?? undefined
+                                        }
+                                        supersetLetter={
+                                          exercise.superset_group !== null
+                                            ? supersetLetters.get(
+                                                exercise.superset_group,
+                                              )
+                                            : undefined
+                                        }
+                                        supersetLeadExercise={
+                                          supersetExercises[0]
+                                        }
+                                        reorderPosition={blockPosition}
+                                        reorderTotal={reorderBlocks.length}
+                                        onMove={
+                                          onMoveExercise &&
+                                          (!hasSupersetGroup || isSupersetStart)
+                                            ? (direction) =>
+                                                onMoveExercise(
+                                                  exercise.id,
+                                                  direction,
+                                                )
+                                            : undefined
+                                        }
+                                        onLongPressReorder={
+                                          (!hasSupersetGroup ||
+                                            isSupersetStart) &&
+                                          canReorder
+                                            ? () => setIsReordering(true)
+                                            : undefined
+                                        }
+                                      />
+                                    </View>
+                                  );
+                                })}
+                              </View>
+                            </View>
+                          );
+                        })}
+                      </View>
+                    )}
+
+                    <Pressable
+                      onPress={onAddExerciseTap}
+                      testID="add-exercise-button"
+                      style={({ pressed }) => ({ opacity: pressed ? 0.8 : 1 })}
+                    >
+                      <View
+                        flexDirection="row"
+                        alignItems="center"
+                        justifyContent="center"
+                        gap={8}
+                        marginTop={12}
+                        padding={14}
+                        borderRadius={12}
+                        borderWidth={1.5}
+                        borderStyle="dashed"
+                        borderColor="$border3"
+                        backgroundColor="$surface"
+                      >
+                        <IconPlus
+                          size={16}
+                          strokeWidth={2.5}
+                          color={toneHex("primary").base}
+                        />
+                        <Text
+                          fontFamily="$display"
+                          fontWeight="600"
+                          fontSize={13.5}
+                          color="$primary"
+                        >
+                          Add exercise
+                        </Text>
+                      </View>
+                    </Pressable>
+
+                    {submitError ? (
+                      <Text
+                        fontFamily="$body"
+                        fontSize={13}
+                        color="$error"
+                        marginTop={10}
+                      >
+                        {submitError}
+                      </Text>
                     ) : null}
                   </View>
                 </View>
-              }
-              footer={
-                <View>
-                  <Pressable
-                    onPress={onAddExerciseTap}
-                    testID="add-exercise-button"
-                    style={({ pressed }) => ({ opacity: pressed ? 0.8 : 1 })}
-                  >
-                    <View
-                      flexDirection="row"
-                      alignItems="center"
-                      justifyContent="center"
-                      gap={8}
-                      marginTop={12}
-                      padding={14}
-                      borderRadius={12}
-                      borderWidth={1.5}
-                      borderStyle="dashed"
-                      borderColor="$border3"
-                      backgroundColor="$surface"
-                    >
-                      <IconPlus
-                        size={16}
-                        strokeWidth={2.5}
-                        color={toneHex("primary").base}
-                      />
-                      <Text
-                        fontFamily="$display"
-                        fontWeight="600"
-                        fontSize={13.5}
-                        color="$primary"
-                      >
-                        Add exercise
-                      </Text>
-                    </View>
-                  </Pressable>
-
-                  {submitError ? (
-                    <Text
-                      fontFamily="$body"
-                      fontSize={13}
-                      color="$error"
-                      marginTop={10}
-                    >
-                      {submitError}
-                    </Text>
-                  ) : null}
-                </View>
-              }
-              renderItem={(row, { Handle, index }: ReorderableRenderProps) => {
-                const block = row.block;
-                const blockPosition = index + 1;
-                const lead = block[0];
-                return (
-                  <View gap={10} paddingBottom={10}>
-                    {block.map((exercise) => {
-                      const index = exercises.indexOf(exercise);
-                      const hasSupersetGroup = exercise.superset_group !== null;
-                      const supersetExercises = hasSupersetGroup ? block : [];
-                      const isSupersetStart =
-                        hasSupersetGroup &&
-                        supersetExercises[0]?.id === exercise.id;
-                      const isSupersetEnd =
-                        hasSupersetGroup &&
-                        supersetExercises.at(-1)?.id === exercise.id;
-
-                      return (
-                        <View key={exercise.id}>
-                          <ExerciseConfigCard
-                            exercise={exercise}
-                            index={index}
-                            onRemove={() => onRemoveExercise(exercise.id)}
-                            onConfigChange={(field, value) =>
-                              onExerciseConfigChange(exercise.id, field, value)
-                            }
-                            isSupersetStart={isSupersetStart}
-                            isSupersetEnd={isSupersetEnd}
-                            supersetGroupNumber={
-                              exercise.superset_group ?? undefined
-                            }
-                            supersetLetter={
-                              exercise.superset_group !== null
-                                ? supersetLetters.get(exercise.superset_group)
-                                : undefined
-                            }
-                            supersetLeadExercise={supersetExercises[0]}
-                            reorderPosition={blockPosition}
-                            reorderTotal={reorderBlocks.length}
-                            onMove={
-                              onMoveExercise &&
-                              (!hasSupersetGroup || isSupersetStart)
-                                ? (direction) =>
-                                    onMoveExercise(exercise.id, direction)
-                                : undefined
-                            }
-                            // Only a block's LEAD exercise carries the grip: a
-                            // superset moves as one row.
-                            DragHandle={
-                              (!hasSupersetGroup || isSupersetStart) &&
-                              canReorder
-                                ? Handle
-                                : undefined
-                            }
-                          />
-                        </View>
-                      );
-                    })}
-                  </View>
-                );
-              }}
-            />
+              </ScrollView>
+            )}
           </KeyboardAvoidingView>
 
           <View

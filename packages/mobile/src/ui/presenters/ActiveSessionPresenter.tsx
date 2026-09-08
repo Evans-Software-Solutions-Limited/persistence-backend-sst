@@ -22,9 +22,10 @@
  */
 
 import { Ionicons } from "@expo/vector-icons";
-import React, { useMemo, useRef, useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   AccessibilityInfo,
+  FlatList,
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
@@ -37,6 +38,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ActiveSupersetRow } from "@/ui/components/session/ActiveSupersetRow";
 import { RestTimerDisplay } from "@/ui/components/session/RestTimerDisplay";
 import { SessionExerciseCard } from "@/ui/components/session/SessionExerciseCard";
+import {
+  COMPACT_REORDER_ROW_HEIGHT,
+  CompactReorderRow,
+} from "@/ui/components/workouts/CompactReorderRow";
 import {
   ReorderableList,
   type ReorderableRenderProps,
@@ -194,6 +199,13 @@ export type ActiveSessionPresenterProps = {
 
 const DEFAULT_TEMPLATE: SessionExerciseTemplate = { restSeconds: 90 };
 
+/**
+ * Gap between compact rows. It lives INSIDE the measured row height the
+ * sortable is told about, because absolutely-positioned rows ignore the
+ * container's `gap`.
+ */
+const REORDER_ROW_GAP = 16;
+
 type DisplayItem =
   | { kind: "exercise"; exercise: SessionExercise }
   | {
@@ -252,6 +264,7 @@ function displayItemKey(item: DisplayItem) {
 
 export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
   const insets = useSafeAreaInsets();
+  const [isReordering, setIsReordering] = useState(false);
   const weightUnit = props.weightUnit ?? "kg";
   const orderedExercises = useMemo(
     () => [...props.exercises].sort((a, b) => a.sortOrder - b.sortOrder),
@@ -261,26 +274,63 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
     () => buildDisplayItems(props.exercises),
     [props.exercises],
   );
-  // The sortable addresses rows by a stable id, and a superset block has no
-  // id of its own — `displayItemKey` supplies one.
-  const rows = useMemo(
-    () => displayItems.map((item) => ({ id: displayItemKey(item), item })),
-    [displayItems],
-  );
   const hasCardio = Object.values(props.templateByExercise).some(
     (template) => template.category === "cardio",
   );
   const today = localDayISO(new Date());
 
-  const canReorder = rows.length > 1 && props.onReorderExercise !== undefined;
+  /**
+   * Reorder mode is entered and left DELIBERATELY, by the control in the list
+   * footer — never by a gesture.
+   *
+   * That is the whole fix. Every cell's height changes when the full exercise
+   * cards become fixed-height compact rows, and the library measures the
+   * dragged cell (`measureLayout` → `activeCellOffset` / `activeCellSize`) at
+   * the moment the drag starts. Collapsing the list DURING a drag therefore
+   * left every measurement it was holding stale, and no amount of external
+   * scroll compensation could reliably correct it — the previous version
+   * predicted the collapse by summing the height each cell above the dragged
+   * one would lose, which under-shot whenever a cell had never been laid out
+   * and drifted worse the further down the list you grabbed.
+   *
+   * With the collapse finished before any drag begins, the library measures a
+   * list whose geometry is already settled and uniform, which is the only
+   * arrangement it is built for (its own example is fixed-height rows). The
+   * compensation, the three mutated shared values, the reserved content
+   * height, the scroll restore and the remount-on-cancel recovery all went
+   * with it: a cancelled pan can no longer strand the screen in compact mode,
+   * because compact mode is not owned by the pan.
+   */
+  /**
+   * Holding a full card's grip ENTERS reorder mode; it no longer starts a
+   * drag.
+   *
+   * This is what makes the gesture safe. Starting a drag and collapsing the
+   * list in the same breath left the library animating from measurements it
+   * had already taken of the taller cards. Entering the mode first means the
+   * next gesture is measured against a settled, uniform list — and the drag
+   * itself is a separate press on a compact row, which is also why nothing
+   * needs to undo a layout change when it ends.
+   */
+  const enterReorder = () => setIsReordering(true);
+
+  const canReorder =
+    displayItems.length > 1 && props.onReorderExercise !== undefined;
+
+  // The sortable addresses rows by a stable id; a superset block has none of
+  // its own, so `displayItemKey` supplies one.
+  const rows = useMemo(
+    () => displayItems.map((item) => ({ id: displayItemKey(item), item })),
+    [displayItems],
+  );
 
   /**
-   * Commit a drop.
+   * Commit a drop AND leave reorder mode.
    *
-   * `toIndex` is a BLOCK index, which is the unit the user actually drags — a
-   * superset moves as one — and `onReorderExercise` takes the block's lead
-   * exercise. There is no mode to leave and no layout to undo afterwards,
-   * because the drag never changed the list's geometry.
+   * Exiting here is the point: the previous version made the mode outlive the
+   * drop and put the only way out behind a Done button, which is what made it
+   * feel stuck. `toIndex` is a BLOCK index — a superset moves as one — and
+   * `onReorderExercise` takes that block's lead exercise.
    */
   const handleReorder = (movedId: string, toIndex: number) => {
     const moved = rows.find((row) => row.id === movedId);
@@ -297,6 +347,7 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
     void AccessibilityInfo.announceForAccessibility(
       `${label} moved to position ${toIndex + 1} of ${rows.length}`,
     );
+    setIsReordering(false);
   };
 
   return (
@@ -312,136 +363,196 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
         style={styles.keyboardAvoider}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <ReorderableList
-          testID="active-session-reorderable-list"
-          style={styles.scroll}
-          contentContainerStyle={styles.scrollContent}
-          estimatedItemHeight={220}
-          data={rows}
-          onReorder={handleReorder}
-          header={
-            <>
-              <SessionHeader
-                startedAt={props.startedAt}
-                sessionName={props.sessionName}
-                onMinimize={props.onMinimize}
-                onEnd={props.onDiscard}
-              />
-              {props.withClient && (
-                <TrainerBannerPresenter
-                  withClient={props.withClient}
-                  retroactive={props.retroactive}
+        {isReordering ? (
+          /*
+           * Reorder mode: uniform compact rows, because the sortable only
+           * drags reliably when every row is the same height (bisected on
+           * device — real per-card heights engage the drag and move nothing).
+           * Entered by HOLDING a card's grip, left automatically on the drop.
+           * There is no button either way.
+           */
+          <ReorderableList
+            testID="active-session-reorder-list"
+            style={styles.scroll}
+            contentContainerStyle={styles.scrollContent}
+            itemHeight={COMPACT_REORDER_ROW_HEIGHT + REORDER_ROW_GAP}
+            data={rows}
+            onReorder={handleReorder}
+            header={
+              <TouchableOpacity
+                onPress={() => setIsReordering(false)}
+                style={styles.reorderHint}
+                testID="active-session-reorder-hint"
+                accessibilityLabel="Done reordering"
+              >
+                <IconGrip size={16} color={color.$primary} />
+                <Text style={styles.reorderHintText}>
+                  Hold a row and drag to reorder — tap here when done
+                </Text>
+              </TouchableOpacity>
+            }
+            renderItem={(row, { Handle, index }: ReorderableRenderProps) => (
+              <View style={{ paddingBottom: REORDER_ROW_GAP }}>
+                <CompactReorderRow
+                  exerciseNames={
+                    row.item.kind === "exercise"
+                      ? [row.item.exercise.exerciseName]
+                      : row.item.exercises.map(
+                          (exercise) => exercise.exerciseName,
+                        )
+                  }
+                  position={index + 1}
+                  total={rows.length}
+                  onMove={
+                    props.onMoveExercise
+                      ? (direction) => {
+                          const lead =
+                            row.item.kind === "exercise"
+                              ? row.item.exercise
+                              : row.item.exercises[0];
+                          props.onMoveExercise?.(lead.id, direction);
+                        }
+                      : undefined
+                  }
+                  DragHandle={Handle}
                 />
-              )}
-              {(hasCardio || props.retroactive) && (
-                <View
-                  style={styles.activityMeta}
-                  testID="session-activity-meta"
-                >
-                  {props.retroactive &&
-                  props.retrospectiveCompletedAt &&
-                  props.onRetrospectiveDateChange ? (
-                    <>
-                      <DatePickerField
-                        label="Workout date"
-                        value={retrospectiveDayValue(
-                          props.retrospectiveCompletedAt,
-                        )}
-                        maximumDate={today}
-                        allowClear={false}
-                        onChange={props.onRetrospectiveDateChange}
-                        testID="retrospective-workout-date"
-                      />
-                      <View style={styles.metaField}>
-                        <Text style={styles.metaLabel}>DURATION (MIN)</Text>
-                        <TextInput
-                          style={styles.metaInput}
-                          value={String(
-                            Math.max(
-                              1,
-                              Math.round(
-                                (props.retrospectiveDurationSeconds ?? 3600) /
-                                  60,
-                              ),
-                            ),
-                          )}
-                          keyboardType="number-pad"
-                          onChangeText={(value) => {
-                            const minutes = Number.parseInt(value, 10);
-                            if (minutes > 0 && minutes <= 24 * 60)
-                              props.onRetrospectiveDurationChange?.(
-                                minutes * 60,
-                              );
-                          }}
-                          maxLength={4}
-                          testID="retrospective-workout-duration"
-                        />
-                      </View>
-                    </>
-                  ) : null}
-                  {hasCardio ? (
-                    <>
-                      <Text style={styles.metaLabel}>ENVIRONMENT</Text>
-                      <View style={styles.environmentRow}>
-                        {(["indoor", "outdoor"] as const).map((value) => (
-                          <TouchableOpacity
-                            key={value}
-                            style={[
-                              styles.environmentButton,
-                              props.activityEnvironment === value &&
-                                styles.environmentButtonActive,
-                            ]}
-                            onPress={() =>
-                              props.onActivityEnvironmentChange?.(value)
-                            }
-                            testID={`session-environment-${value}`}
-                          >
-                            <Text style={styles.environmentText}>
-                              {value.toUpperCase()}
-                            </Text>
-                          </TouchableOpacity>
-                        ))}
-                      </View>
-                      <View style={styles.metaField}>
-                        <Text style={styles.metaLabel}>
-                          LOCATION (OPTIONAL)
-                        </Text>
-                        <TextInput
-                          style={styles.metaInput}
-                          value={props.locationName ?? ""}
-                          onChangeText={props.onLocationNameChange}
-                          placeholder="Park, route or gym"
-                          placeholderTextColor={color.$text4}
-                          maxLength={120}
-                          testID="session-location"
-                        />
-                      </View>
-                    </>
-                  ) : null}
-                </View>
-              )}
-            </>
-          }
-          footer={
-            <>
-              {rows.length === 0 ? (
-                <View style={styles.emptyWrap} testID="active-session-empty">
-                  <Text style={styles.emptyTitle}>No exercises yet</Text>
-                  <Text style={styles.emptyBody}>
-                    Add exercises from the library to start logging sets.
-                  </Text>
-                  <TouchableOpacity
-                    onPress={props.onAddExercise}
-                    style={styles.emptyAddButton}
-                    testID="active-session-empty-add"
-                    accessibilityLabel="Add exercise"
+              </View>
+            )}
+          />
+        ) : (
+          <FlatList
+            testID="active-session-list"
+            style={styles.scroll}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            automaticallyAdjustKeyboardInsets
+            data={displayItems}
+            extraData={weightUnit}
+            keyExtractor={displayItemKey}
+            ListHeaderComponent={
+              <>
+                <SessionHeader
+                  startedAt={props.startedAt}
+                  sessionName={props.sessionName}
+                  onMinimize={props.onMinimize}
+                  onEnd={props.onDiscard}
+                />
+                {props.withClient && (
+                  <TrainerBannerPresenter
+                    withClient={props.withClient}
+                    retroactive={props.retroactive}
+                  />
+                )}
+                {(hasCardio || props.retroactive) && (
+                  <View
+                    style={styles.activityMeta}
+                    testID="session-activity-meta"
                   >
-                    <Ionicons name="add" size={18} color={color.$text} />
-                    <Text style={styles.emptyAddLabel}>Add exercise</Text>
-                  </TouchableOpacity>
-                </View>
-              ) : null}
-              {orderedExercises.length > 0 ? (
+                    {props.retroactive &&
+                    props.retrospectiveCompletedAt &&
+                    props.onRetrospectiveDateChange ? (
+                      <>
+                        <DatePickerField
+                          label="Workout date"
+                          value={retrospectiveDayValue(
+                            props.retrospectiveCompletedAt,
+                          )}
+                          maximumDate={today}
+                          allowClear={false}
+                          onChange={props.onRetrospectiveDateChange}
+                          testID="retrospective-workout-date"
+                        />
+                        <View style={styles.metaField}>
+                          <Text style={styles.metaLabel}>DURATION (MIN)</Text>
+                          <TextInput
+                            style={styles.metaInput}
+                            value={String(
+                              Math.max(
+                                1,
+                                Math.round(
+                                  (props.retrospectiveDurationSeconds ?? 3600) /
+                                    60,
+                                ),
+                              ),
+                            )}
+                            keyboardType="number-pad"
+                            onChangeText={(value) => {
+                              const minutes = Number.parseInt(value, 10);
+                              if (minutes > 0 && minutes <= 24 * 60)
+                                props.onRetrospectiveDurationChange?.(
+                                  minutes * 60,
+                                );
+                            }}
+                            maxLength={4}
+                            testID="retrospective-workout-duration"
+                          />
+                        </View>
+                      </>
+                    ) : null}
+                    {hasCardio ? (
+                      <>
+                        <Text style={styles.metaLabel}>ENVIRONMENT</Text>
+                        <View style={styles.environmentRow}>
+                          {(["indoor", "outdoor"] as const).map((value) => (
+                            <TouchableOpacity
+                              key={value}
+                              style={[
+                                styles.environmentButton,
+                                props.activityEnvironment === value &&
+                                  styles.environmentButtonActive,
+                              ]}
+                              onPress={() =>
+                                props.onActivityEnvironmentChange?.(value)
+                              }
+                              testID={`session-environment-${value}`}
+                            >
+                              <Text style={styles.environmentText}>
+                                {value.toUpperCase()}
+                              </Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                        <View style={styles.metaField}>
+                          <Text style={styles.metaLabel}>
+                            LOCATION (OPTIONAL)
+                          </Text>
+                          <TextInput
+                            style={styles.metaInput}
+                            value={props.locationName ?? ""}
+                            onChangeText={props.onLocationNameChange}
+                            placeholder="Park, route or gym"
+                            placeholderTextColor={color.$text4}
+                            maxLength={120}
+                            testID="session-location"
+                          />
+                        </View>
+                      </>
+                    ) : null}
+                  </View>
+                )}
+              </>
+            }
+            ListEmptyComponent={
+              <View style={styles.emptyWrap} testID="active-session-empty">
+                <Text style={styles.emptyTitle}>No exercises yet</Text>
+                <Text style={styles.emptyBody}>
+                  Add exercises from the library to start logging sets.
+                </Text>
+                <TouchableOpacity
+                  onPress={props.onAddExercise}
+                  style={styles.emptyAddButton}
+                  testID="active-session-empty-add"
+                  accessibilityLabel="Add exercise"
+                >
+                  <Ionicons name="add" size={18} color={color.$text} />
+                  <Text style={styles.emptyAddLabel}>Add exercise</Text>
+                </TouchableOpacity>
+              </View>
+            }
+            ListFooterComponent={
+              orderedExercises.length > 0 ? (
                 <View
                   style={styles.addExerciseSection}
                   testID="active-session-add-exercise-row"
@@ -461,126 +572,104 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
                     <Text style={styles.addExerciseText}>Add Exercise</Text>
                   </TouchableOpacity>
                 </View>
-              ) : null}
-            </>
-          }
-          renderItem={(row, { Handle, index }: ReorderableRenderProps) => {
-            const item = row.item;
-            const lead =
-              item.kind === "exercise" ? item.exercise : item.exercises[0];
-            const dragHandle = canReorder ? Handle : undefined;
-
-            return (
-              <View
-                style={styles.dragBlock}
-                testID={`active-session-drag-block-${index + 1}`}
-              >
-                {item.kind === "exercise" ? (
-                  <SessionExerciseCard
-                    exercise={item.exercise}
-                    previousSetsBySetNumber={
-                      props.previousSetsByExercise[item.exercise.id] ?? {}
+              ) : null
+            }
+            renderItem={({ item, index }) => {
+              const lead =
+                item.kind === "exercise" ? item.exercise : item.exercises[0];
+              void lead;
+              return (
+                <View
+                  style={styles.dragBlock}
+                  testID={`active-session-drag-block-${index + 1}`}
+                >
+                  {(() => {
+                    if (item.kind === "exercise") {
+                      const ex = item.exercise;
+                      const template =
+                        props.templateByExercise[ex.id] ?? DEFAULT_TEMPLATE;
+                      return (
+                        <SessionExerciseCard
+                          key={ex.id}
+                          exercise={ex}
+                          previousSetsBySetNumber={
+                            props.previousSetsByExercise[ex.id] ?? {}
+                          }
+                          weightUnit={weightUnit}
+                          preferredUnits={props.preferredUnits}
+                          category={template.category}
+                          exerciseImageUrl={template.imageUrl}
+                          targetSets={template.targetSets}
+                          targetRepsMin={template.targetRepsMin}
+                          targetRepsMax={template.targetRepsMax}
+                          targetDurationSeconds={template.targetDurationSeconds}
+                          restSeconds={template.restSeconds}
+                          onLogSet={() => props.onLogSet(ex.id)}
+                          onUpdateSet={(setId, patch) =>
+                            props.onUpdateSet(ex.id, setId, patch)
+                          }
+                          onRemoveSet={(setId) =>
+                            props.onRemoveSet(ex.id, setId)
+                          }
+                          onOpenNotes={() => props.onOpenNotes(ex.id)}
+                          onSubstitute={() => props.onSubstitute(ex.id)}
+                          onRemoveExercise={() => props.onRemoveExercise(ex.id)}
+                          onTapExercise={() =>
+                            props.onTapExercise(ex.exerciseId)
+                          }
+                          onStartRest={() => props.onStartRest(ex.id)}
+                          reorderPosition={index + 1}
+                          reorderTotal={displayItems.length}
+                          onMove={
+                            props.onMoveExercise
+                              ? (direction) =>
+                                  props.onMoveExercise?.(ex.id, direction)
+                              : undefined
+                          }
+                          onLongPressReorder={
+                            canReorder ? enterReorder : undefined
+                          }
+                        />
+                      );
                     }
-                    weightUnit={weightUnit}
-                    preferredUnits={props.preferredUnits}
-                    category={
-                      (
-                        props.templateByExercise[item.exercise.id] ??
-                        DEFAULT_TEMPLATE
-                      ).category
-                    }
-                    exerciseImageUrl={
-                      (
-                        props.templateByExercise[item.exercise.id] ??
-                        DEFAULT_TEMPLATE
-                      ).imageUrl
-                    }
-                    targetSets={
-                      (
-                        props.templateByExercise[item.exercise.id] ??
-                        DEFAULT_TEMPLATE
-                      ).targetSets
-                    }
-                    targetRepsMin={
-                      (
-                        props.templateByExercise[item.exercise.id] ??
-                        DEFAULT_TEMPLATE
-                      ).targetRepsMin
-                    }
-                    targetRepsMax={
-                      (
-                        props.templateByExercise[item.exercise.id] ??
-                        DEFAULT_TEMPLATE
-                      ).targetRepsMax
-                    }
-                    targetDurationSeconds={
-                      (
-                        props.templateByExercise[item.exercise.id] ??
-                        DEFAULT_TEMPLATE
-                      ).targetDurationSeconds
-                    }
-                    restSeconds={
-                      (
-                        props.templateByExercise[item.exercise.id] ??
-                        DEFAULT_TEMPLATE
-                      ).restSeconds
-                    }
-                    onLogSet={() => props.onLogSet(item.exercise.id)}
-                    onUpdateSet={(setId, patch) =>
-                      props.onUpdateSet(item.exercise.id, setId, patch)
-                    }
-                    onRemoveSet={(setId) =>
-                      props.onRemoveSet(item.exercise.id, setId)
-                    }
-                    onOpenNotes={() => props.onOpenNotes(item.exercise.id)}
-                    onSubstitute={() => props.onSubstitute(item.exercise.id)}
-                    onRemoveExercise={() =>
-                      props.onRemoveExercise(item.exercise.id)
-                    }
-                    onTapExercise={() =>
-                      props.onTapExercise(item.exercise.exerciseId)
-                    }
-                    onStartRest={() => props.onStartRest(item.exercise.id)}
-                    reorderPosition={index + 1}
-                    reorderTotal={rows.length}
-                    onMove={
-                      props.onMoveExercise
-                        ? (direction) =>
-                            props.onMoveExercise?.(item.exercise.id, direction)
-                        : undefined
-                    }
-                    DragHandle={dragHandle}
-                  />
-                ) : (
-                  <ActiveSupersetRow
-                    supersetGroup={item.supersetGroup}
-                    exercises={item.exercises}
-                    previousSetsByExercise={props.previousSetsByExercise}
-                    weightUnit={weightUnit}
-                    templateByExercise={props.templateByExercise}
-                    onLogSupersetSet={props.onLogSupersetSet}
-                    onUpdateSet={props.onUpdateSet}
-                    onRemoveSupersetSet={props.onRemoveSupersetSet}
-                    onStartRest={props.onStartRest}
-                    onSubstitute={props.onSubstitute}
-                    onRemoveExercise={props.onRemoveExercise}
-                    onOpenSupersetNotes={props.onOpenSupersetNotes}
-                    onAddExerciseToSuperset={props.onAddExerciseToSuperset}
-                    reorderPosition={index + 1}
-                    reorderTotal={rows.length}
-                    onMove={
-                      props.onMoveExercise
-                        ? (direction) =>
-                            props.onMoveExercise?.(lead.id, direction)
-                        : undefined
-                    }
-                    DragHandle={dragHandle}
-                  />
-                )}
-              </View>
-            );
-          }}
-        />
+                    return (
+                      <ActiveSupersetRow
+                        key={`superset-${item.supersetGroup}`}
+                        supersetGroup={item.supersetGroup}
+                        exercises={item.exercises}
+                        previousSetsByExercise={props.previousSetsByExercise}
+                        weightUnit={weightUnit}
+                        templateByExercise={props.templateByExercise}
+                        onLogSupersetSet={props.onLogSupersetSet}
+                        onUpdateSet={props.onUpdateSet}
+                        onRemoveSupersetSet={props.onRemoveSupersetSet}
+                        onStartRest={props.onStartRest}
+                        onSubstitute={props.onSubstitute}
+                        onRemoveExercise={props.onRemoveExercise}
+                        onOpenSupersetNotes={props.onOpenSupersetNotes}
+                        onAddExerciseToSuperset={props.onAddExerciseToSuperset}
+                        reorderPosition={index + 1}
+                        reorderTotal={displayItems.length}
+                        onMove={
+                          props.onMoveExercise
+                            ? (direction) =>
+                                props.onMoveExercise?.(
+                                  item.exercises[0].id,
+                                  direction,
+                                )
+                            : undefined
+                        }
+                        onLongPressReorder={
+                          canReorder ? enterReorder : undefined
+                        }
+                      />
+                    );
+                  })()}
+                </View>
+              );
+            }}
+          />
+        )}
       </KeyboardAvoidingView>
 
       {/* Sticky Finish CTA — floats above the content per the prototype
@@ -632,10 +721,18 @@ const styles = StyleSheet.create({
   },
   dragBlock: {
     backgroundColor: color.$bg,
-    // NOT margin: rows are absolutely positioned, so the container's `gap`
-    // never applies between them, and `onLayout` excludes margin — which
-    // would make the measured height short and overlap the next row.
-    paddingBottom: 16,
+  },
+  reorderHint: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 12,
+  },
+  reorderHintText: {
+    fontFamily: "Geist",
+    fontSize: 13,
+    color: color.$primary,
   },
   activityMeta: {
     marginHorizontal: 16,

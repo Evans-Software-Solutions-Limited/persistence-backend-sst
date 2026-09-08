@@ -104,7 +104,7 @@ describe("ActiveSessionPresenter (vertical scroll, legacy parity)", () => {
     expect(queryByTestId("exercise-tab-strip")).toBeNull();
   });
 
-  it("persists the exact destination and announces a multi-position drop", () => {
+  it("holds to collapse, drops to commit, and leaves the mode by itself", () => {
     const onReorderExercise = jest.fn();
     const announce = jest
       .spyOn(AccessibilityInfo, "announceForAccessibility")
@@ -118,19 +118,25 @@ describe("ActiveSessionPresenter (vertical scroll, legacy parity)", () => {
         buildExercise({ id: "se-3", sortOrder: 2 }),
       ],
     };
-    const { getByTestId } = renderWithTheme(
+    const { getAllByTestId, getByTestId, queryByTestId } = renderWithTheme(
       <ActiveSessionPresenter {...props} />,
     );
 
     expect(getByTestId("active-session-screen").props.style).toContainEqual({
       paddingTop: 44,
     });
-    // Full cards throughout — there is no compact mode to enter, and the
-    // Finish CTA is never replaced by a "Done reordering" button.
+    // Full cards, and no button to enter reorder.
     expect(getByTestId("session-exercise-se-1")).toBeTruthy();
+    expect(queryByTestId("active-session-reorder")).toBeNull();
+
+    // HOLDING the grip collapses to uniform rows. Uniform is not cosmetic:
+    // the sortable only drags reliably when every row is the same height.
+    fireEvent(getByTestId("reorder-1"), "longPress");
+    expect(getAllByTestId("compact-reorder-row")).toHaveLength(3);
+    expect(queryByTestId("session-exercise-se-1")).toBeNull();
+    // Finish is never replaced by a Done button.
     expect(getByTestId("active-session-finish")).toBeTruthy();
 
-    // A drop, committed the way the library commits one.
     fireEvent(getByTestId("sortable-item-se-1"), "drop", "se-1", 2, {
       "se-1": 2,
       "se-2": 0,
@@ -141,9 +147,9 @@ describe("ActiveSessionPresenter (vertical scroll, legacy parity)", () => {
     expect(announce).toHaveBeenCalledWith(
       "Bench Press moved to position 3 of 3",
     );
-    // Nothing to exit: the cards are still cards and Finish is still Finish.
+    // Leaves the mode ON THE DROP — no Done button, and no way to be stranded.
     expect(getByTestId("session-exercise-se-1")).toBeTruthy();
-    expect(getByTestId("active-session-finish")).toBeTruthy();
+    expect(queryByTestId("compact-reorder-row")).toBeNull();
   });
 
   it("maps a dropped superset back to its lead exercise", () => {
@@ -161,6 +167,7 @@ describe("ActiveSessionPresenter (vertical scroll, legacy parity)", () => {
       <ActiveSessionPresenter {...props} />,
     );
 
+    fireEvent(getByTestId("reorder-1"), "longPress");
     // The block's row id is the superset key, but the command takes the LEAD
     // exercise — two index spaces that used to be converted twice.
     fireEvent(
@@ -186,10 +193,12 @@ describe("ActiveSessionPresenter (vertical scroll, legacy parity)", () => {
         buildExercise({ id: "se-2", sortOrder: 1 }),
       ],
     };
-    const { getAllByTestId } = renderWithTheme(
+    const { getAllByTestId, getByTestId } = renderWithTheme(
       <ActiveSessionPresenter {...props} />,
     );
 
+    fireEvent(getByTestId("reorder-1"), "longPress");
+    fireEvent(getByTestId("reorder-1"), "longPress");
     // Registering a handle disables the library's whole-item pan. Without it a
     // card-wide drag would fight the weight and reps TextInputs.
     expect(getAllByTestId("sortable-handle").length).toBeGreaterThan(0);
@@ -335,15 +344,19 @@ describe("ActiveSessionPresenter (vertical scroll, legacy parity)", () => {
         }),
       ],
     };
-    const { getByTestId, queryByTestId } = renderWithTheme(
+    const { getAllByTestId, getByTestId, queryByTestId } = renderWithTheme(
       <ActiveSessionPresenter {...props} />,
     );
 
-    // Four peers, but two rows: the block moves as a unit.
+    // Grouped as one block while idle...
+    expect(getByTestId("superset-group-7")).toBeTruthy();
+    fireEvent(getByTestId("reorder-1"), "longPress");
+
+    // ...and still one row once collapsed: the block moves as a unit.
+    expect(getAllByTestId("compact-reorder-row")).toHaveLength(2);
     expect(getByTestId("sortable-item-superset-7")).toBeTruthy();
     expect(getByTestId("sortable-item-se-5")).toBeTruthy();
     expect(queryByTestId("sortable-item-se-2")).toBeNull();
-    expect(getByTestId("superset-group-7")).toBeTruthy();
 
     fireEvent(
       getByTestId("sortable-item-superset-7"),

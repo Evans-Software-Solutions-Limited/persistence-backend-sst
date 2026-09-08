@@ -1,5 +1,5 @@
 import { useCallback, type ReactNode } from "react";
-import { AccessibilityInfo, View } from "react-native";
+import { AccessibilityInfo, Pressable, View } from "react-native";
 import * as Haptics from "expo-haptics";
 import { IconGrip } from "@/ui/components/icons";
 import { color } from "@/ui/theme/tokens";
@@ -21,6 +21,14 @@ export type ExerciseReorderHandleProps = {
    * drags it directly while a plain swipe still scrolls the list.
    */
   DragHandle?: (props: { children: ReactNode }) => ReactNode;
+  /**
+   * Idle-mode counterpart to `DragHandle`: holding the grip asks the screen to
+   * enter reorder mode. Only one of the two is ever supplied — the rows have
+   * to be a uniform height before the library can drag them at all, so the
+   * hold that collapses the list and the hold that drags are necessarily
+   * different gestures. Neither is a button, and the mode leaves on the drop.
+   */
+  onLongPressReorder?: () => void;
 };
 
 /** Gesture + accessibility control shared by the form and live rows. */
@@ -30,6 +38,7 @@ export function ExerciseReorderHandle({
   total,
   onMove,
   DragHandle,
+  onLongPressReorder,
 }: ExerciseReorderHandleProps) {
   const move = useCallback(
     (direction: -1 | 1) => {
@@ -44,44 +53,59 @@ export function ExerciseReorderHandle({
     [label, onMove, position, total],
   );
 
-  // A View, NOT a Pressable. `SortableItem.Handle` wraps this in a
-  // GestureDetector, and RN's press responder claims the touch before Gesture
-  // Handler's pan can activate — so a Pressable grip simply never drags. The
-  // accessibility contract does not need one: role, actions and hint all work
-  // on a plain View, and nothing here handles onPress any more.
-  const grip = (
-    <View
-      accessible
-      testID={`reorder-${position}`}
-      accessibilityRole="adjustable"
-      accessibilityLabel={`Reorder ${label}, position ${position} of ${total}`}
-      accessibilityHint={
-        DragHandle
-          ? "Hold and drag to move, or use Move up and Move down actions"
-          : "Use Move up and Move down actions"
-      }
-      accessibilityActions={[
-        ...(onMove && position > 1
-          ? [{ name: "decrement" as const, label: "Move up" }]
-          : []),
-        ...(onMove && position < total
-          ? [{ name: "increment" as const, label: "Move down" }]
-          : []),
-      ]}
-      onAccessibilityAction={(event) => {
-        if (event.nativeEvent.actionName === "decrement") move(-1);
-        if (event.nativeEvent.actionName === "increment") move(1);
+  const a11y = {
+    testID: `reorder-${position}`,
+    accessibilityRole: "adjustable" as const,
+    accessibilityLabel: `Reorder ${label}, position ${position} of ${total}`,
+    accessibilityHint: DragHandle
+      ? "Hold and drag to move, or use Move up and Move down actions"
+      : "Hold to reorder, or use Move up and Move down actions",
+    accessibilityActions: [
+      ...(onMove && position > 1
+        ? [{ name: "decrement" as const, label: "Move up" }]
+        : []),
+      ...(onMove && position < total
+        ? [{ name: "increment" as const, label: "Move down" }]
+        : []),
+    ],
+    onAccessibilityAction: (event: { nativeEvent: { actionName: string } }) => {
+      if (event.nativeEvent.actionName === "decrement") move(-1);
+      if (event.nativeEvent.actionName === "increment") move(1);
+    },
+    style: {
+      minWidth: 44,
+      minHeight: 44,
+      alignItems: "center" as const,
+      justifyContent: "center" as const,
+    },
+  };
+
+  // While DRAGGING the grip must be a plain View: `SortableItem.Handle` wraps
+  // it in a GestureDetector, and RN's press responder claims the touch before
+  // Gesture Handler's pan can activate, so a Pressable simply never drags.
+  if (DragHandle) {
+    return (
+      <DragHandle>
+        <View {...a11y}>
+          <IconGrip size={20} color={color.$text3} />
+        </View>
+      </DragHandle>
+    );
+  }
+
+  // Idle: a Pressable is exactly right, since the hold only has to ask the
+  // screen to collapse into uniform rows.
+  return (
+    <Pressable
+      {...a11y}
+      onLongPress={() => {
+        if (!onLongPressReorder) return;
+        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        onLongPressReorder();
       }}
-      style={{
-        minWidth: 44,
-        minHeight: 44,
-        alignItems: "center",
-        justifyContent: "center",
-      }}
+      delayLongPress={180}
     >
       <IconGrip size={20} color={color.$text3} />
-    </View>
+    </Pressable>
   );
-
-  return DragHandle ? <DragHandle>{grip}</DragHandle> : grip;
 }

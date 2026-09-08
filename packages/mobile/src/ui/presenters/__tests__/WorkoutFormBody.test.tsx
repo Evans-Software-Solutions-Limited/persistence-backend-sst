@@ -120,26 +120,34 @@ function renderReorderableForm() {
 }
 
 describe("WorkoutFormBody reorder", () => {
-  it("drags full cards from the grip, with no mode and no buttons", () => {
-    // The editor used to collapse to fixed-height rows behind an explicit
-    // Reorder button because its list was nested inside the form's scroller
-    // and the library measured the dragged cell up front. The list IS the
-    // form's scroller now, so the cards stay cards and the grip drags them.
-    const { getByTestId, queryByTestId } = renderReorderableForm();
+  it("holds a grip to collapse into uniform rows, with no buttons", () => {
+    // The editor used to hide reorder behind a Reorder button and keep its
+    // list nested inside the form's scroller, whose stale offset broke
+    // auto-scroll. Holding a grip now collapses to uniform rows — uniform
+    // because the sortable only drags reliably that way — and the compact
+    // list is the only scroller while it is up.
+    const { getAllByTestId, getByTestId, queryByTestId } =
+      renderReorderableForm();
 
-    expect(getByTestId("workout-exercise-reorderable-list")).toBeTruthy();
+    // Idle: the form and full cards, and no way in but the grip.
+    expect(getByTestId("workout-name-input")).toBeTruthy();
     expect(queryByTestId("workout-reorder")).toBeNull();
     expect(queryByTestId("workout-reorder-done")).toBeNull();
     expect(queryByTestId("compact-reorder-row")).toBeNull();
-    // The form fields live in the same scroller as the rows — that is what
-    // un-nesting means, and what makes auto-scroll work.
-    expect(getByTestId("workout-name-input")).toBeTruthy();
-    expect(getByTestId("add-exercise-button")).toBeTruthy();
+
+    fireEvent(getByTestId("reorder-1"), "longPress");
+
+    expect(getByTestId("workout-exercise-reorder-list")).toBeTruthy();
+    expect(getAllByTestId("compact-reorder-row").length).toBeGreaterThan(1);
+    // The form is out of the way, so there is no nested scroller at all.
+    expect(queryByTestId("workout-name-input")).toBeNull();
   });
 
-  it("puts the grip on the block lead only", () => {
-    const { getAllByTestId } = renderReorderableForm();
-    // One handle per BLOCK, not per exercise.
+  it("puts the drag on a handle, never the whole row", () => {
+    const { getAllByTestId, getByTestId } = renderReorderableForm();
+
+    fireEvent(getByTestId("reorder-1"), "longPress");
+
     expect(getAllByTestId("sortable-handle").length).toBeGreaterThan(0);
   });
 
@@ -193,7 +201,7 @@ describe("WorkoutFormBody drag reorder", () => {
       paddingTop: 44,
       paddingBottom: 34,
     });
-    expect(getByTestId("workout-exercise-reorderable-list")).toBeTruthy();
+    fireEvent(getByTestId("reorder-1"), "longPress");
 
     fireEvent(getByTestId("reorder-1"), "accessibilityAction", {
       nativeEvent: { actionName: "increment" },
@@ -201,8 +209,8 @@ describe("WorkoutFormBody drag reorder", () => {
     expect(onMoveExercise).toHaveBeenCalledWith("standalone-a", 1);
 
     // Four exercises become three draggable blocks: standalone, superset,
-    // standalone. The superset's members render together inside one row, which
-    // is addressed by its LEAD exercise's id.
+    // standalone. The superset's members collapse into ONE row, addressed by
+    // its LEAD exercise's id.
     expect(getByTestId("sortable-item-standalone-a")).toBeTruthy();
     expect(getByTestId("sortable-item-superset-lead")).toBeTruthy();
     fireEvent(

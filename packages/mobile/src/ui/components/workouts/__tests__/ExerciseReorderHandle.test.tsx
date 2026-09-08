@@ -52,20 +52,28 @@ describe("ExerciseReorderHandle", () => {
     ).toBeTruthy();
   });
 
-  it("stays accessibility-only where no drag handle is given", () => {
+  it("asks the screen to enter reorder mode when held, with no drag handle", () => {
+    // Idle the grip is a Pressable, which is correct here: the hold only has
+    // to collapse the list into uniform rows. It must NOT be a Pressable once
+    // dragging, since RN's press responder would claim the touch.
+    const onLongPressReorder = jest.fn();
     const { getByTestId, queryByTestId } = renderWithTheme(
       <ExerciseReorderHandle
         label="Bench"
         position={1}
         total={3}
         onMove={jest.fn()}
+        onLongPressReorder={onLongPressReorder}
       />,
     );
 
     expect(queryByTestId("drag-handle")).toBeNull();
     expect(getByTestId("reorder-1").props.accessibilityHint).toBe(
-      "Use Move up and Move down actions",
+      "Hold to reorder, or use Move up and Move down actions",
     );
+
+    fireEvent(getByTestId("reorder-1"), "longPress");
+    expect(onLongPressReorder).toHaveBeenCalledTimes(1);
   });
 
   it("advertises the hold gesture in its hint only when draggable", () => {

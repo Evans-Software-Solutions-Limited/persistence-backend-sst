@@ -44,6 +44,7 @@ interface ExerciseConfigCardProps {
   readonly reorderTotal?: number;
   readonly onMove?: (direction: -1 | 1) => void;
   readonly DragHandle?: (props: { children: ReactNode }) => ReactNode;
+  readonly onLongPressReorder?: () => void;
 }
 
 export default function ExerciseConfigCard({
@@ -60,6 +61,7 @@ export default function ExerciseConfigCard({
   reorderTotal,
   onMove,
   DragHandle,
+  onLongPressReorder,
 }: ExerciseConfigCardProps) {
   const isInSuperset =
     isSupersetStart ||
@@ -171,13 +173,16 @@ export default function ExerciseConfigCard({
         padding={12}
       >
         <View flexDirection="row" alignItems="center" gap={9} marginBottom={11}>
-          {(onMove || DragHandle) && reorderPosition && reorderTotal ? (
+          {(onMove || DragHandle || onLongPressReorder) &&
+          reorderPosition &&
+          reorderTotal ? (
             <ExerciseReorderHandle
               label={exercise.exercise_name}
               position={reorderPosition}
               total={reorderTotal}
               onMove={onMove}
               DragHandle={DragHandle}
+              onLongPressReorder={onLongPressReorder}
             />
           ) : null}
           <View

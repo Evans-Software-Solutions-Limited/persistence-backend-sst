@@ -84,6 +84,7 @@ export type SessionExerciseCardProps = {
   reorderTotal?: number;
   onMove?: (direction: -1 | 1) => void;
   DragHandle?: (props: { children: ReactNode }) => ReactNode;
+  onLongPressReorder?: () => void;
 };
 
 const formatRepsLabel = (
@@ -118,7 +119,7 @@ export function SessionExerciseCard(props: SessionExerciseCardProps) {
       testID={`session-exercise-${props.exercise.id}`}
     >
       <View style={styles.exerciseHeader}>
-        {(props.onMove || props.DragHandle) &&
+        {(props.onMove || props.DragHandle || props.onLongPressReorder) &&
         props.reorderPosition &&
         props.reorderTotal ? (
           <ExerciseReorderHandle
@@ -127,6 +128,7 @@ export function SessionExerciseCard(props: SessionExerciseCardProps) {
             total={props.reorderTotal}
             onMove={props.onMove}
             DragHandle={props.DragHandle}
+            onLongPressReorder={props.onLongPressReorder}
           />
         ) : null}
         {props.exerciseImageUrl ? (
