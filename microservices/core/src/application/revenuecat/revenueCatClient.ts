@@ -49,6 +49,10 @@ interface RawCustomerSubscription {
   current_period_starts_at?: unknown;
   current_period_ends_at?: unknown;
   ends_at?: unknown;
+  // Set by RevenueCat while the store is retrying a failed renewal and access
+  // is still granted. Read defensively (every field here is `unknown`), so an
+  // API shape without it simply yields null.
+  grace_period_expires_at?: unknown;
   product_id?: unknown;
   store?: unknown;
   entitlements?: { items?: RawSubscriptionEntitlement[] };
@@ -85,6 +89,52 @@ export function parseRcTimestamp(raw: unknown): Date | null {
 }
 
 /**
+ * The `expires_at` to mirror locally: the instant access should be considered
+ * over, for a subscription RevenueCat has ALREADY told us grants access.
+ *
+ * ⚠ This is the whole reason the mirror is trustworthy. Every caller of this
+ * helper has passed the `gives_access !== true` guard, so the store is saying
+ * "this user has access right now" — and `user_subscriptions.expires_at` is
+ * what the entire backend reads as the access boundary
+ * (`liveSubscriptionFilter`, `get_user_subscription()`,
+ * `classifySubscriptionStatus`, `computeIsFreeTier`). Copying a period end
+ * that has ALREADY PASSED into that column therefore writes "lapsed" for a
+ * paying customer, and the store's own verdict — the one field that could tell
+ * the two apart — was being thrown away.
+ *
+ * It is not a rare shape. Apple retries a failed renewal for up to 60 days
+ * with access intact; through all of it RevenueCat reports
+ * `gives_access: true` with `current_period_ends_at` in the past. The same
+ * shape appears, briefly, between any renewal instant and the webhook that
+ * advances the period.
+ *
+ * So: a future period end is the boundary (the ordinary case, unchanged). A
+ * past one is NOT — prefer RevenueCat's `grace_period_expires_at` when it
+ * gives a real future boundary, and otherwise fall back to `null`, which every
+ * reader already treats as open-ended. Null is honest here rather than
+ * permissive: we know access is granted and we do not know until when, and
+ * `parseRcTimestamp`'s docstring already assigns null exactly that meaning.
+ * The row stops being live when RevenueCat says so — `gives_access: false`
+ * drops the subscription in `normalizeSubscription`, and the sync's
+ * no-desired-subscription branch cancels the mirror.
+ *
+ * Exported for direct testing: the interesting cases are all boundary
+ * conditions around `now`.
+ */
+export function resolveAccessBoundaryMs(
+  periodEndMs: number | null,
+  gracePeriodEndMs: number | null,
+  now: number = Date.now(),
+): number | null {
+  if (periodEndMs === null) return null;
+  if (periodEndMs > now) return periodEndMs;
+  if (gracePeriodEndMs !== null && gracePeriodEndMs > now) {
+    return gracePeriodEndMs;
+  }
+  return null;
+}
+
+/**
  * Normalise one raw subscription; `null` when it grants no access or carries no
  * entitlement we model. Picks the highest-ranked modelled entitlement on the
  * subscription (a sub can list several; the tier is the best one).
@@ -113,10 +163,16 @@ export function normalizeSubscription(
 
   const startMs = asEpochMs(raw.current_period_starts_at);
   const endMs = asEpochMs(raw.current_period_ends_at) ?? asEpochMs(raw.ends_at);
+  const accessUntilMs = resolveAccessBoundaryMs(
+    endMs,
+    asEpochMs(raw.grace_period_expires_at),
+  );
 
   return {
     tier,
-    expiresAt: endMs === null ? null : new Date(endMs),
+    expiresAt: accessUntilMs === null ? null : new Date(accessUntilMs),
+    // Inferred from the REAL period, not the access boundary — the boundary may
+    // have been widened for grace, which would misread as a longer plan.
     billingCycle: billingCycleFromPeriodMs(startMs, endMs),
     productId: typeof raw.product_id === "string" ? raw.product_id : null,
     store: typeof raw.store === "string" ? raw.store : null,

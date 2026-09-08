@@ -453,6 +453,95 @@ describe("processSyncQueue", () => {
       );
     });
 
+    // ⚠ The property that matters most, and the one the other cases can't
+    // prove: an ORDINARY deferral (below the ceiling) must leave everything
+    // alone. This is the single commonest path through the reconcile code —
+    // every drain while offline takes it — and a wrong boolean out of
+    // `deferOrCharge` would make every offline create flicker out of existence.
+    it("leaves the row and the quota UNTOUCHED on an ordinary deferral", async () => {
+      seedCreatedWorkout("local-w4");
+      mockFetch.mockRejectedValue(new TypeError("Network request failed"));
+
+      await processSyncQueue(storage, auth, "https://api.test");
+
+      const mine = storage.getCachedWorkoutsList("test-user", "mine");
+      expect(mine?.workouts.map((w) => w.id)).toEqual([
+        "local-w4",
+        "w-server-1",
+      ]);
+      expect(mine?.quota).toEqual({ used: 3, limit: 3 });
+      expect(
+        storage.getCachedWorkoutDetail("test-user", "local-w4"),
+      ).not.toBeNull();
+      // Still retryable — deferral does not charge the budget.
+      expect(storage.getFailedExhaustedEntries()).toHaveLength(0);
+    });
+
+    // The symmetric half: a revived create puts the workout (and the count)
+    // back, rather than leaving both missing until the next network refresh —
+    // which would wave a capped user who just paid straight into a server 402.
+    it("restores the workout and the quota when a dead create later lands", async () => {
+      seedCreatedWorkout("local-w4");
+      mockFetch.mockResolvedValue({
+        ok: false,
+        status: 400,
+        text: async () => "invalid payload",
+      });
+      await processSyncQueue(storage, auth, "https://api.test");
+      expect(storage.getCachedWorkoutsList("test-user", "mine")?.quota).toEqual(
+        { used: 2, limit: 3 },
+      );
+
+      // The user taps Retry on /sync-failed, and this time it lands.
+      const failed = storage.getFailedExhaustedEntries();
+      storage.resetFailedEntries([failed[0].id]);
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 201,
+        json: async () => ({
+          data: { id: "w-server-4", name: "Fourth", showInOwnerLibrary: true },
+        }),
+        text: async () => "",
+      });
+
+      await processSyncQueue(storage, auth, "https://api.test");
+
+      const mine = storage.getCachedWorkoutsList("test-user", "mine");
+      expect(mine?.workouts.map((w) => w.id)).toEqual([
+        "w-server-4",
+        "w-server-1",
+      ]);
+      expect(mine?.quota).toEqual({ used: 3, limit: 3 });
+      expect(
+        storage.getCachedWorkoutDetail("test-user", "w-server-4"),
+      ).not.toBeNull();
+    });
+
+    it("does NOT double-insert on an ordinary first-attempt success", async () => {
+      // The optimistic row is present and the id swap has just rewritten it, so
+      // the restore must stand down.
+      seedCreatedWorkout("local-w4");
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 201,
+        json: async () => ({
+          data: { id: "w-server-4", name: "Fourth", showInOwnerLibrary: true },
+        }),
+        text: async () => "",
+      });
+
+      await processSyncQueue(storage, auth, "https://api.test");
+
+      const mine = storage.getCachedWorkoutsList("test-user", "mine");
+      expect(mine?.workouts.map((w) => w.id)).toEqual([
+        "w-server-4",
+        "w-server-1",
+      ]);
+      // Unchanged: the create already counted it at enqueue time.
+      expect(mine?.quota).toEqual({ used: 3, limit: 3 });
+    });
+
     it("leaves a dead workout EDIT's cached row alone", async () => {
       // An edit never moved the count, and its cached row is last-known-good
       // server state rather than a fabrication — removing it would delete a

@@ -19,6 +19,7 @@ import {
   getRevenueCatWebhookSecret,
   normalizeSubscription,
   parseRcTimestamp,
+  resolveAccessBoundaryMs,
 } from "../revenueCatClient";
 
 /**
@@ -26,13 +27,23 @@ import {
  * parse (captured from a live sandbox response 2026-07-22). The human
  * entitlement id lives at `entitlements.items[].lookup_key`.
  */
+// ⚠ The captured period (2026-07-22 → 07-23) was in the FUTURE when this
+// fixture was recorded and is now in the past, which silently turned every
+// "ordinary subscription" assertion below into a lapsed-period one once
+// `resolveAccessBoundaryMs` started distinguishing them. Anchor the period to
+// `now` so the fixture keeps meaning "a live subscription" as time passes; the
+// past-period shapes get their own explicit cases.
+const DAY_MS = 86_400_000;
+const PERIOD_START_MS = Date.now() - DAY_MS;
+const PERIOD_END_MS = Date.now() + 29 * DAY_MS;
+
 function realSubscriptionItem(over: Record<string, unknown> = {}) {
   return {
     gives_access: true,
     auto_renewal_status: "will_renew",
-    current_period_starts_at: 1784721019000,
-    current_period_ends_at: 1784807419000,
-    ends_at: 1784807419000,
+    current_period_starts_at: PERIOD_START_MS,
+    current_period_ends_at: PERIOD_END_MS,
+    ends_at: PERIOD_END_MS,
     product_id: "prod1a5681d5cd",
     store: "app_store",
     status: "trialing",
@@ -77,11 +88,50 @@ describe("parseRcTimestamp", () => {
   });
 });
 
+describe("resolveAccessBoundaryMs", () => {
+  const NOW = 1_800_000_000_000;
+  const HOUR = 3_600_000;
+
+  it("keeps a future period end (the ordinary case)", () => {
+    expect(resolveAccessBoundaryMs(NOW + HOUR, null, NOW)).toBe(NOW + HOUR);
+  });
+
+  it("passes through a null period end unchanged (no expiry known)", () => {
+    expect(resolveAccessBoundaryMs(null, null, NOW)).toBeNull();
+  });
+
+  it("refuses a past period end, since the caller already knows access is granted", () => {
+    expect(resolveAccessBoundaryMs(NOW - HOUR, null, NOW)).toBeNull();
+  });
+
+  it("uses a future grace window as the boundary instead", () => {
+    expect(resolveAccessBoundaryMs(NOW - HOUR, NOW + 5 * HOUR, NOW)).toBe(
+      NOW + 5 * HOUR,
+    );
+  });
+
+  it("ignores a grace window that has also passed", () => {
+    expect(resolveAccessBoundaryMs(NOW - 5 * HOUR, NOW - HOUR, NOW)).toBeNull();
+  });
+
+  it("does not let a grace window shorten a still-valid period", () => {
+    // A future period end wins outright — grace is only consulted once the
+    // period itself has run out.
+    expect(resolveAccessBoundaryMs(NOW + 5 * HOUR, NOW + HOUR, NOW)).toBe(
+      NOW + 5 * HOUR,
+    );
+  });
+
+  it("treats the exact boundary instant as passed", () => {
+    expect(resolveAccessBoundaryMs(NOW, null, NOW)).toBeNull();
+  });
+});
+
 describe("normalizeSubscription", () => {
   it("normalises a real access-granting subscription via its nested lookup_key", () => {
     expect(normalizeSubscription(realSubscriptionItem())).toEqual({
       tier: "individual_trainer",
-      expiresAt: new Date(1784807419000),
+      expiresAt: new Date(PERIOD_END_MS),
       billingCycle: "monthly",
       productId: "prod1a5681d5cd",
       store: "app_store",
@@ -172,13 +222,71 @@ describe("normalizeSubscription", () => {
   });
 
   it("tolerates an ISO-string timestamp (shape-change insurance)", () => {
+    const iso = new Date(PERIOD_END_MS).toISOString();
+    expect(
+      normalizeSubscription(
+        realSubscriptionItem({ current_period_ends_at: iso, ends_at: iso }),
+      )?.expiresAt,
+    ).toEqual(new Date(iso));
+  });
+
+  // ── Access boundary vs period end ────────────────────────────────────
+  //
+  // Every item reaching `normalizeSubscription` has passed the
+  // `gives_access !== true` guard, so the store is saying the user HAS access
+  // now. Copying an already-past period end into `expires_at` therefore wrote
+  // "lapsed" for a paying customer — and `expires_at` is what
+  // `liveSubscriptionFilter`, `get_user_subscription()`,
+  // `classifySubscriptionStatus` and `computeIsFreeTier` all read as the access
+  // boundary. Apple retries a failed renewal for up to 60 days with access
+  // intact, reporting exactly this shape throughout.
+  it("does NOT mirror an already-past period end as the access boundary", () => {
     expect(
       normalizeSubscription(
         realSubscriptionItem({
-          current_period_ends_at: "2026-07-01T00:00:00.000Z",
+          current_period_ends_at: Date.now() - DAY_MS,
+          ends_at: Date.now() - DAY_MS,
         }),
       )?.expiresAt,
-    ).toEqual(new Date("2026-07-01T00:00:00.000Z"));
+    ).toBeNull();
+  });
+
+  it("prefers RevenueCat's grace_period_expires_at when the period has passed", () => {
+    const graceEnd = Date.now() + 14 * DAY_MS;
+    expect(
+      normalizeSubscription(
+        realSubscriptionItem({
+          current_period_ends_at: Date.now() - DAY_MS,
+          ends_at: Date.now() - DAY_MS,
+          grace_period_expires_at: graceEnd,
+        }),
+      )?.expiresAt,
+    ).toEqual(new Date(graceEnd));
+  });
+
+  it("ignores a grace window that has ALSO passed", () => {
+    expect(
+      normalizeSubscription(
+        realSubscriptionItem({
+          current_period_ends_at: Date.now() - 30 * DAY_MS,
+          ends_at: Date.now() - 30 * DAY_MS,
+          grace_period_expires_at: Date.now() - DAY_MS,
+        }),
+      )?.expiresAt,
+    ).toBeNull();
+  });
+
+  it("infers the billing cycle from the REAL period, not the widened boundary", () => {
+    // A grace window must not stretch a monthly plan into an annual one.
+    const normalised = normalizeSubscription(
+      realSubscriptionItem({
+        current_period_starts_at: Date.now() - 30 * DAY_MS,
+        current_period_ends_at: Date.now() - DAY_MS,
+        ends_at: Date.now() - DAY_MS,
+        grace_period_expires_at: Date.now() + 60 * DAY_MS,
+      }),
+    );
+    expect(normalised?.billingCycle).toBe("monthly");
   });
 
   it("returns null (never throws) for a null / non-object item", () => {
@@ -222,7 +330,7 @@ describe("fetchCustomerSubscriptions", () => {
     expect(result).toEqual([
       {
         tier: "individual_trainer",
-        expiresAt: new Date(1784807419000),
+        expiresAt: new Date(PERIOD_END_MS),
         billingCycle: "monthly",
         productId: "prod1a5681d5cd",
         store: "app_store",

@@ -14,6 +14,7 @@ import type { HabitConfigEntry } from "@/domain/ports/api.port";
 import { habitConfigFromEntry } from "@/domain/models/habit-config";
 import { normalizePreferences } from "@/domain/models/notification-preferences";
 import type { MealprintPreferences } from "@/domain/models/mealprint";
+import type { Workout } from "@/domain/models/workout";
 import { pendingPreferenceOverrides } from "@/application/notifications/queries/preferences.query";
 import { parseEntitlementDeniedResponseText } from "@/shared/errors/parseEntitlement";
 import { resolveExercisePayloadReferences } from "@/application/commands/resolveExerciseReferences";
@@ -341,6 +342,64 @@ function reportTerminalFailure(entry: SyncQueueEntry, message: string): void {
 }
 
 /**
+ * Put a reconciled workout back once its create finally lands.
+ *
+ * The symmetric half of `discardOptimisticRowForDeadWorkoutCreate`. When a dead
+ * create is later revived — the user taps Retry on `/sync-failed`, or
+ * `useAutoRetryOnUpgrade` re-sends a 402-blocked entry the moment they upgrade
+ * — the POST succeeds and the server now holds the workout, but the local cache
+ * row was removed when the entry went terminal. `swapLocalWorkoutId` only
+ * rewrites rows keyed BY the local id, so it no-ops on an absent row, and
+ * nothing else would put the workout back until the next network list refresh.
+ *
+ * That is not merely cosmetic: `quota.used` also stays one below the server's
+ * count, and `useWorkoutCreateCapGate` reads it — so a capped free user who
+ * just paid would be waved straight past the cap into a server 402.
+ *
+ * Only fires when the row really is missing under BOTH ids, so the ordinary
+ * first-attempt success (where the optimistic row is present and the swap has
+ * just rewritten it) is untouched.
+ */
+function restoreReconciledWorkout(
+  storage: StoragePort,
+  userId: string,
+  localId: string,
+  serverWorkout: Workout,
+): void {
+  const alreadyCached =
+    storage.getCachedWorkoutDetail(userId, serverWorkout.id) !== null ||
+    storage.getCachedWorkoutDetail(userId, localId) !== null;
+  if (alreadyCached) return;
+
+  storage.cacheWorkoutDetail(userId, serverWorkout);
+
+  // Same slice choice `createWorkoutCommand` makes: a coach-authored workout
+  // belongs to the coach library, everything else to `mine`.
+  if (serverWorkout.showInOwnerLibrary === false) {
+    const library = storage.getCachedCoachWorkoutLibrary(userId) ?? [];
+    storage.cacheCoachWorkoutLibrary(userId, [serverWorkout, ...library]);
+  } else {
+    const mine = storage.getCachedWorkoutsList(userId, "mine");
+    storage.cacheWorkoutsList(
+      userId,
+      "mine",
+      [serverWorkout, ...(mine?.workouts ?? [])],
+      mine?.quota ?? null,
+    );
+  }
+
+  // The server's count went up by one, so the mirror must too — the reconcile
+  // gave this bump back when the create died.
+  const mine = storage.getCachedWorkoutsList(userId, "mine");
+  if (mine?.quota) {
+    storage.cacheWorkoutsList(userId, "mine", mine.workouts, {
+      ...mine.quota,
+      used: mine.quota.used + 1,
+    });
+  }
+}
+
+/**
  * Drop the optimistic row a workout create left behind when that create dies.
  *
  * `createWorkoutCommand` is optimistic in two ways: it writes the workout into
@@ -364,6 +423,22 @@ function reportTerminalFailure(entry: SyncQueueEntry, message: string): void {
  * dead edit's row is the last-known-good server state rather than a
  * fabrication. Best-effort throughout — failing to resolve the session must
  * not change the drain's outcome for an entry that is already marked.
+ *
+ * ⚠ One case this CANNOT distinguish: a POST that the server committed but
+ * whose response was lost. `dispatch_count` is deliberately pessimistic
+ * ("could the server have seen this?") and cannot separate that from a request
+ * that never left an offline device, so both reach here. The narrow window
+ * needs the whole retry budget to drain without one attempt succeeding, because
+ * every entry carries an `Idempotency-Key` and `workoutsCreateHandler` resolves
+ * a replay to 201 with the committed row ahead of its entitlement gate — so an
+ * ordinary retry after a lost response SUCCEEDS and never becomes terminal.
+ *
+ * Removing the row is still the better trade in that window. If the server does
+ * hold the workout, the next successful list refresh brings it back under its
+ * server id, and `restoreReconciledWorkout` puts it back the moment a Retry
+ * lands — so the outcome is a transient disappearance. Keeping the row instead
+ * would leave a PERMANENT phantom in the far more common case where the server
+ * holds nothing, which is the bug being fixed.
  */
 async function discardOptimisticRowForDeadWorkoutCreate(
   storage: StoragePort,
@@ -937,10 +1012,25 @@ export async function processSyncQueue(
         entry.entityId !== null
       ) {
         try {
-          const body = (await response.json()) as { data?: { id?: string } };
-          const serverId = body.data?.id;
+          const body = (await response.json()) as { data?: Workout };
+          const serverWorkout = body.data ?? null;
+          const serverId = serverWorkout?.id;
           if (serverId && serverId !== entry.entityId) {
             storage.swapLocalWorkoutId(entry.entityId, serverId);
+          }
+          // If this entry had gone terminal, its optimistic row was removed —
+          // put the server's copy back rather than leaving the workout (and
+          // the quota) missing until the next network refresh.
+          if (serverWorkout && serverId) {
+            const session = await auth.getSession();
+            if (session.ok && session.value) {
+              restoreReconciledWorkout(
+                storage,
+                session.value.userId,
+                entry.entityId,
+                serverWorkout,
+              );
+            }
           }
         } catch (err) {
           console.warn(

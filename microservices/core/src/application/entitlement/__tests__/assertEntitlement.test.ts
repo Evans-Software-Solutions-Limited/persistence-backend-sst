@@ -1361,11 +1361,55 @@ describe("assertEntitlement — create_workout, active sub", () => {
             workoutLimit: null,
           },
         ],
+        // The scheduled tier's OWN limit is resolved, not the outgoing tier's
+        // — `premium` is also unlimited here, so the verdict is `allowed`.
+        BASIC_TIER_ROW,
       ]),
     );
 
     expect(await assertEntitlement("user-1", "create_workout")).toEqual({
       allowed: true,
+    });
+  });
+
+  // Suppressing the lapse must not also hand over the OUTGOING tier's
+  // allowance: a user downgrading to a capped tier is held to the new cap as
+  // soon as `effective_at` passes, rather than keeping the old one for as long
+  // as the renewal webhook is late.
+  it("holds a scheduled downgrade to the SCHEDULED tier's limit, not the outgoing one", async () => {
+    (getDb as any).mockReturnValue(
+      makeQueueDb([
+        PROFILE_USER,
+        [
+          {
+            tierName: "premium",
+            catalogTierName: "premium",
+            paymentStatus: "active",
+            expiresAt: new Date(Date.now() - 60_000),
+            cancelledAt: null,
+            metadata: {
+              scheduled_change: {
+                next_tier_name: "free",
+                effective_at: new Date(Date.now() - 60_000).toISOString(),
+              },
+            },
+            // The outgoing tier is unlimited...
+            workoutLimit: null,
+          },
+        ],
+        // ...but the scheduled one is free, limit 3.
+        FREE_TIER_ROW,
+        [{ value: 3 }],
+        BASIC_TIER_ROW,
+      ]),
+    );
+
+    expect(await assertEntitlement("user-1", "create_workout")).toEqual({
+      allowed: false,
+      reason: "limit",
+      currentTier: "free",
+      upgradeTo: "premium",
+      upgradePriceMonthly: 7.99,
     });
   });
 
@@ -1926,6 +1970,27 @@ describe("pure helpers", () => {
           new Date(Date.now() - 60_000),
           new Date(Date.now() - 120_000),
           true,
+        ),
+      ).toBe("cancelled");
+    });
+    // The `cancelled_at` branch shares `hasLapsed` too, so a NULL expiry is
+    // open-ended there as well. It used to deny — the opposite of the rule for
+    // an unstamped row, and of `liveSubscriptionFilter`. The RevenueCat mirror
+    // stamps `cancelledAt` for ANY auto-renew-off sub (the ordinary
+    // "cancelled, still paid through" state) while `expiresAt` can be null
+    // whenever no period end parses, so the pair denied a customer who still
+    // had access.
+    it("keeps an active, auto-renew-off sub with NO expires_at entitled", () => {
+      expect(
+        classifySubscriptionStatus("active", null, new Date(Date.now() - 1000)),
+      ).toBeNull();
+    });
+    it("still denies an auto-renew-off sub once its expires_at has passed", () => {
+      expect(
+        classifySubscriptionStatus(
+          "active",
+          new Date(Date.now() - 60_000),
+          new Date(Date.now() - 120_000),
         ),
       ).toBe("cancelled");
     });

@@ -158,9 +158,81 @@ REAL gate through the handler against a queued `COUNT(*)` — the handler suite
 mocked the gate and the gate's suite mocked the DB, so "the 4th create is
 refused" was asserted nowhere.
 
+**⚠ Inspector Brad round 1 found the fix was two-thirds of a fix.** Four
+material follow-ups, all landed:
+
+1. **The lapse guard would have de-entitled PAYING customers.** RevenueCat
+   reports `gives_access: true` with `current_period_ends_at` in the PAST for
+   the whole of Apple's billing-retry window (up to 60 days, access intact),
+   and `revenueCatSync` discarded `gives_access` and mirrored only
+   `expires_at` — so a grace-period customer's row is byte-identical to
+   Marcus's genuinely-lapsed one. Brad's call: **fix it at ingestion.** New
+   `resolveAccessBoundaryMs` (revenueCatClient) refuses to mirror an
+   already-past period end as the access boundary while the store still grants
+   access — preferring RC's `grace_period_expires_at` when it gives a real
+   future boundary, else `null` (open-ended, the meaning `parseRcTimestamp`
+   already assigns it). ⚠ `billingCycle` is still inferred from the REAL
+   period, or a grace window would stretch a monthly plan into an annual one.
+2. **`computeIsFreeTier` was a THIRD, unaligned lapse rule** — and the only
+   lenient one. It deliberately excluded `active` rows ("renewal in flight …
+   kicking the user out would be hostile"), so Profile's card and Home's
+   greeting badge rendered "Unlimited workouts" for the exact row every gate
+   was 402ing and the record-lock was refusing. Now shares `hasLapsed`. The
+   renewal-in-flight concern is answered at ingestion (item 1), where the
+   store's verdict actually lives, instead of by a lenient exception in one
+   display reader.
+3. **The `cancelled_at` branch contradicted `hasLapsed` on a NULL expiry** —
+   it denied, while the unstamped path treats absent as open-ended. The RC
+   mirror stamps `cancelledAt` for ANY auto-renew-off sub (the ordinary
+   "cancelled, still paid through" state) and `expiresAt` can be null when no
+   period end parses, so the pair denied a customer who still had access. Now
+   `cancelledAt != null && hasLapsed(expiresAt)`.
+4. **The scheduled-change carve-out kept the OUTGOING tier's limits.**
+   Suppressing the lapse for a resolved `scheduled_change` (correct) also left
+   `workoutLimit` on the old tier, so a downgrading user kept their larger
+   allowance for as long as the renewal webhook was late. Both workout paths
+   now resolve the SCHEDULED tier's limit. ⚠ My first attempt at that wrote
+   `scheduled?.workoutLimit ?? free` — **the two-NULLs bug again, in a third
+   place**; a test caught it. Use `scheduled === null` for "no catalog row".
+
+**⚠ CORRECTION to the orphan-tier claim above.** The brief billed it as the
+"real backend hole", and it is NOT reachable through the database:
+`user_subscriptions.tier_name` is NOT NULL with
+`REFERENCES subscription_tiers(tier_name)` and NO ACTION on delete (verified
+against staging), so an off-catalog write fails 23503 and a referenced tier row
+cannot be deleted — which is why `simplify_tier_model`'s DELETE succeeded at
+all. `tierRowJoined` stays as defence (the code no longer contradicts its own
+comment) but it closed no live leak. **The Marcus incident was the lapse guard
+alone.** Docstring softened accordingly; don't go hunting the FK-forbidden leak.
+
+**Also from the sweep:** `getQuota` was re-deriving `tierRowJoined` inline as
+`=== null` (fails open in exactly the way the helper exists to prevent) — now
+calls the helper; the "all three agree on what live means" docstring overclaimed
+(they still disagree on the STATUS dimension — `LIVE_SUBSCRIPTION_STATUSES`
+counts `pending`/`past_due` as live while `classifySubscriptionStatus` denies
+them; left alone deliberately, it's a product question and dormant while the
+Stripe rail is parked); and `restoreReconciledWorkout` now puts a revived
+create's workout AND quota back, since leaving `quota.used` one low waved a
+capped user who just paid straight into a server 402.
+
+**Justified rather than changed** (both argued in comments): the bare paywall
+route in `useWorkoutCreateCapGate` is CORRECT for a coach surface —
+pre-selecting `premium` is the wrong-ladder harm `pickUpgradeTier` exists to
+prevent; and the ambiguous "POST landed, response lost" window can't be
+distinguished (`dispatch_count` is deliberately pessimistic), but removing the
+row is the better trade — the workout returns on the next refresh or via
+`restoreReconciledWorkout`, whereas keeping it leaves a PERMANENT phantom in the
+common case.
+
 **Gates:** workspace typecheck (incl. web), prettier, lint 0 errors, core
-4679 tests @ 97.14% lines / 92.55% branches, mobile 6748 tests @ 96.01% /
-90.71%. ⚠ `SubscriptionSelectionContainer.test.tsx` flakes under the parallel
+4696 tests @ 97.09% lines / 92.51% branches, mobile 6751 tests @ 95.98% /
+90.68%. ⚠ Five heavy mobile container suites (EditProfile, Clients,
+ProgramEditor, SubscriptionSelection ×2, useMySubscription) intermittently
+time out under the parallel coverage run and pass standalone (64 tests, 5/5) —
+`jest.config`'s own `_testTimeout_note` documents this exact pattern
+("heavy container suites tip over jest's 5s default under parallel load").
+Pre-existing, unrelated to this branch; verify standalone before believing a
+FAIL from `bun run test:unit` at the workspace root. ⚠ `SubscriptionSelectionContainer.test.tsx` flakes under the parallel
 coverage run (passes standalone 23/23; "worker failed to exit gracefully" in
 the same run) — pre-existing, not this branch.
 

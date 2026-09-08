@@ -405,6 +405,29 @@ export async function assertEntitlement(
   } else {
     effectiveTierName = coerceTierName(subRow.tierName);
     workoutLimit = subRow.workoutLimit ?? null;
+
+    // A period-end tier change that has already taken effect wins over the
+    // row's own `tier_name`, which the renewal webhook has not rewritten yet.
+    // Resolving the LIMIT too, not just suppressing the lapse below: keeping
+    // the outgoing tier's allowance would hand a downgrading user their old,
+    // larger entitlement for as long as the webhook is late. Mirrors
+    // `assertLoadout` / `assertMealprint`, which already re-read their flag
+    // from the scheduled tier.
+    const scheduledTier = resolveEffectiveScheduledTier(subRow.metadata);
+    if (scheduledTier !== null) {
+      effectiveTierName = coerceTierName(scheduledTier);
+      // ⚠ The two NULLs again, in a third place: `scheduled === null` means
+      // the scheduled tier has NO catalog row (resolve to free, same as an
+      // off-catalog current tier — see `tierRowJoined`), while
+      // `scheduled.workoutLimit === null` means that tier is legitimately
+      // uncapped. A `??` here would collapse them and clamp every unlimited
+      // scheduled tier to the free allowance.
+      const scheduled = await loadTier(db, scheduledTier);
+      workoutLimit =
+        scheduled === null
+          ? await requireFreeTierWorkoutLimit(db)
+          : scheduled.workoutLimit;
+    }
   }
 
   // 3. Status check BEFORE the count check. A cancelled or expired sub
@@ -927,6 +950,17 @@ export async function evaluateWorkoutTotalCapLock(
   } else {
     currentTier = coerceTierName(subRow.tierName);
     workoutLimit = subRow.workoutLimit ?? null;
+
+    // Same scheduled-change resolution as `create_workout` — see there.
+    const scheduledTier = resolveEffectiveScheduledTier(subRow.metadata);
+    if (scheduledTier !== null) {
+      currentTier = coerceTierName(scheduledTier);
+      const scheduled = await loadTier(executor, scheduledTier);
+      workoutLimit =
+        scheduled === null
+          ? await requireFreeTierWorkoutLimit(executor)
+          : scheduled.workoutLimit;
+    }
   }
 
   // 3. Cancelled/expired → revert to free-tier rules, same clamp as
@@ -1006,8 +1040,8 @@ export async function evaluateWorkoutTotalCapLock(
  * ⚠ The lapse rule (`hasLapsed`) is the same one
  * `subscriptionRepository.liveSubscriptionFilter()` applies in SQL, which in
  * turn mirrors the DB's `get_user_subscription()` — the function driving the
- * `update_subscription_limits` role-sync trigger. All three MUST agree on what
- * "live" means, and until this guard landed they did not: this helper read a
+ * `update_subscription_limits` role-sync trigger. All three now agree on the
+ * EXPIRY dimension, and until this guard landed they did not: this helper read a
  * live `payment_status` as entitled no matter how long ago `expires_at` passed,
  * so an expired-but-never-transitioned row (the provider's terminal webhook
  * delayed or lost — the failure mode `liveSubscriptionFilter`'s own docstring
@@ -1017,6 +1051,17 @@ export async function evaluateWorkoutTotalCapLock(
  * `payment_status: 'active'`, `cancelled_at: null`, `expires_at` a day past —
  * the app badged FREE and quoted a 3-workout limit while `create_workout` was
  * resolving to `coach`'s NULL limit and allowing unlimited creates.
+ *
+ * ⚠ They still DISAGREE on the STATUS dimension, deliberately left alone here.
+ * `LIVE_SUBSCRIPTION_STATUSES` counts `'pending'` and `'past_due'` as live, so
+ * `GET /subscriptions/me` reports a `past_due` premium row with a future
+ * `expires_at` as fully premium — while this helper falls both statuses through
+ * to `'expired'` and reverts to free. Whether a card-failed user should keep
+ * their plan VISIBLE (to fix it) but lose gated actions is a product question,
+ * not a bug to quietly resolve; today it is dormant because the RevenueCat sync
+ * only ever writes `'active'` or `'cancelled'` and the Stripe rail is parked.
+ * Do not read the paragraph above as a claim that these two functions agree
+ * about everything.
  */
 export function classifySubscriptionStatus(
   paymentStatus: string | null,
@@ -1030,9 +1075,17 @@ export function classifySubscriptionStatus(
     // signal that `expires_at` is an access boundary, even if the terminal
     // webhook is delayed or lost. Checked FIRST so a cancellation keeps
     // reporting `'cancelled'` (mobile offers reinstate-this-plan) rather than
-    // the `'expired'` fix-your-card CTA — including the no-`expires_at` case,
-    // which is lapsed with no open-ended grace.
-    if (cancelledAt != null && !isExpiresInFuture(expiresAt)) {
+    // the `'expired'` fix-your-card CTA.
+    //
+    // ⚠ Shares `hasLapsed`, so a NULL `expires_at` is open-ended here too. It
+    // used to deny on `!isExpiresInFuture(...)`, which reads null as lapsed —
+    // the opposite of the rule two lines below, and of
+    // `liveSubscriptionFilter`. That mattered because the RevenueCat mirror
+    // stamps `cancelledAt` for ANY auto-renew-off subscription (the ordinary
+    // "cancelled, still paid through" state) while `expiresAt` can be null
+    // whenever `parseRcTimestamp` finds no period end — so the pair denied a
+    // customer who still had access.
+    if (cancelledAt != null && hasLapsed(expiresAt)) {
       return "cancelled";
     }
     // A past `expires_at` lapses the row on its own, with no cancellation
@@ -1104,6 +1157,26 @@ export function isExpiresInFuture(
 }
 
 /**
+ * The free tier's `workout_limit`, or a 500 if the catalog has no free row.
+ *
+ * A missing free tier means revert-to-free has no rules to enforce, and
+ * silently allowing or denying on incomplete data is worse than a 500 — the
+ * same guard the inline branches use, factored out for the scheduled-tier
+ * fallbacks.
+ */
+async function requireFreeTierWorkoutLimit(
+  db: Pick<Db, "select">,
+): Promise<number | null> {
+  const freeTier = await loadTier(db, "free");
+  if (!freeTier) {
+    throw new Error(
+      "assertEntitlement: subscription_tiers row for tier_name='free' is missing — catalog misconfiguration",
+    );
+  }
+  return freeTier.workoutLimit ?? null;
+}
+
+/**
  * Did the `subscription_tiers` LEFT JOIN actually find a catalog row?
  *
  * Every limit-bearing entitlement read LEFT-JOINs the catalog so a sub with an
@@ -1118,14 +1191,27 @@ export function isExpiresInFuture(
  *      column is NULL, `workout_limit` among them. Says nothing about the
  *      user's entitlement.
  *
- * Reading (2) as (1) grants uncapped creation to anyone holding an off-catalog
- * `tier_name`. `subscriptionTiers.tierName` is the join key and NOT NULL in the
- * catalog, so its nullness in the result is an exact discriminator: null ⇒ no
- * row joined. Callers resolve that to the free tier — matching both
+ * Reading (2) as (1) would grant uncapped creation to anyone holding an
+ * off-catalog `tier_name`. `subscriptionTiers.tierName` is the join key and NOT
+ * NULL in the catalog, so its nullness in the result is an exact discriminator:
+ * null ⇒ no row joined. Callers resolve that to the free tier — matching both
  * `coerceTierName`'s collapse of an unknown tier to `'free'` and what
  * `GET /subscriptions/me` already does via its INNER join.
+ *
+ * ⚠ Case (2) is NOT reachable through the database today, and this helper is
+ * defence rather than a fix for a live leak. `user_subscriptions.tier_name` is
+ * NOT NULL with `REFERENCES subscription_tiers(tier_name)` and NO ACTION on
+ * delete (`schema.ts`, verified against staging), so Postgres rejects both
+ * halves: an off-catalog write fails 23503, and a catalog row cannot be deleted
+ * while any subscription references it — which is why
+ * `20260526120000_simplify_tier_model.sql`'s DELETE of the retired tiers
+ * succeeded at all. The value here is that the code no longer CONTRADICTS its
+ * own comment (which said case (c) was "treated as 0 below" while returning
+ * `allowed: true`), so a future migration that drops the FK, or a raw-SQL
+ * backfill that bypasses it, cannot silently reopen the unlimited branch. Do
+ * not go looking for a leak the schema forbids.
  */
-function tierRowJoined(row: {
+export function tierRowJoined(row: {
   catalogTierName: string | null | undefined;
 }): boolean {
   // `!= null` on purpose, so an UNPROJECTED column (undefined) reads as "no
@@ -1147,9 +1233,17 @@ function tierRowJoined(row: {
  * from a `timestamptz` column through Drizzle, and denying on data we can't
  * read beats granting on it.
  */
-function hasLapsed(expiresAt: Date | string | null | undefined): boolean {
+export function hasLapsed(
+  expiresAt: Date | string | null | undefined,
+  now: number = Date.now(),
+): boolean {
   if (expiresAt === null || expiresAt === undefined) return false;
-  return !isExpiresInFuture(expiresAt);
+  const date = expiresAt instanceof Date ? expiresAt : new Date(expiresAt);
+  // Unreadable, but present: conservative. Denying on data we cannot parse
+  // beats granting on it. (Matches the previous `!isExpiresInFuture(...)`
+  // formulation, which returned false for NaN.)
+  if (Number.isNaN(date.getTime())) return true;
+  return date.getTime() <= now;
 }
 
 /**

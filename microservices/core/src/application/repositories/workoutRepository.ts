@@ -33,6 +33,7 @@ import {
 import {
   classifySubscriptionStatus,
   resolveEffectiveScheduledTier,
+  tierRowJoined,
 } from "../entitlement/assertEntitlement";
 
 export type WorkoutListType = "mine" | "assigned" | "default";
@@ -356,7 +357,10 @@ export class WorkoutRepository {
     // own tier limit.
     const reverted =
       subRow !== null &&
-      (subRow.catalogTierName === null ||
+      // `tierRowJoined` rather than an inline `=== null`: the helper treats an
+      // UNPROJECTED column as "not joined" on purpose, and re-deriving the
+      // check here would fail open in exactly the way it exists to prevent.
+      (!tierRowJoined(subRow) ||
         classifySubscriptionStatus(
           subRow.paymentStatus,
           subRow.expiresAt,

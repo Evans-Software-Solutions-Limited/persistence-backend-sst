@@ -65,6 +65,16 @@ export function useWorkoutCreateCapGate(): WorkoutCreateCapGate {
     if (quota === null || quota.limit === null) return false;
     if (quota.used < quota.limit) return false;
 
+    // BARE route, deliberately — no `?tier=…&cycle=…`. `useWorkoutTotalCapGate`
+    // and the feature gates pre-select a tier, but they can: they hold the
+    // subscription, so they know which LADDER the user is on. This gate reads
+    // only the cached quota, and both its call sites are COACH surfaces — so
+    // pre-selecting the consumer default `premium` would do the precise harm
+    // `pickUpgradeTier` exists to prevent (a coach who pays and lands on a plan
+    // that strips their coaching role). An unselected list lets the selection
+    // screen resolve the right ladder itself. This also matches
+    // `WorkoutsListContainer.onUpgrade`, the create gate this one mirrors,
+    // which pushes the same bare route.
     router.push("/(auth)/subscription-selection" as Href);
     return true;
   }, [storage, userId]);
