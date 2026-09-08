@@ -490,15 +490,21 @@ describe("ActiveSessionPresenter (vertical scroll, legacy parity)", () => {
       <ActiveSessionPresenter {...props} />,
     );
 
-    expect(queryByTestId("active-session-reorder")).toBeNull();
-    expect(queryByTestId("active-session-reorder-done")).toBeNull();
+    // Asserting the old button testIDs is worthless now they are deleted —
+    // `queryByTestId` matches exactly, so those assertions pass whatever the
+    // presenter renders. Assert the grip's own contract instead: it is the
+    // ONLY way in, and it announces a hold rather than a button.
+    const grip = getByTestId("reorder-1");
+    expect(grip.props.accessibilityHint).toBe("Hold to reorder");
     // Add Exercise is still there, and so is Finish.
     expect(getByTestId("active-session-add-exercise")).toBeTruthy();
     expect(getByTestId("active-session-finish")).toBeTruthy();
   });
 
-  it("offers no Reorder control when there is nothing to reorder", () => {
-    // One exercise, or no handler: the control would do nothing.
+  it("shows no grip at all on a one-block list", () => {
+    // One exercise: nothing to move, so the card renders no handle. This
+    // asserted a deleted testID, so it passed unconditionally and left the
+    // path untested.
     const { queryByTestId } = renderWithTheme(
       <ActiveSessionPresenter
         {...baseProps}
@@ -506,7 +512,47 @@ describe("ActiveSessionPresenter (vertical scroll, legacy parity)", () => {
         exercises={[buildExercise({ id: "se-1" })]}
       />,
     );
-    expect(queryByTestId("active-session-reorder")).toBeNull();
+
+    expect(queryByTestId("reorder-1")).toBeNull();
+    expect(queryByTestId("active-session-reorder-list")).toBeNull();
+  });
+
+  it("promises no VoiceOver Move actions on a one-block list", () => {
+    // With `onMoveExercise` wired the grip DOES render on a single block, at
+    // "position 1 of 1" — and both action filters are empty there, so the hint
+    // must not advertise them or VoiceOver offers two swipes that do nothing.
+    const { getByTestId } = renderWithTheme(
+      <ActiveSessionPresenter
+        {...baseProps}
+        onReorderExercise={jest.fn()}
+        onMoveExercise={jest.fn()}
+        exercises={[buildExercise({ id: "se-1" })]}
+      />,
+    );
+
+    const grip = getByTestId("reorder-1");
+    expect(grip.props.accessibilityActions).toEqual([]);
+    expect(grip.props.accessibilityHint).toBeUndefined();
+  });
+
+  it("offers no reorder at all without a commit callback", () => {
+    // Two blocks, but every drop would be swallowed by
+    // `onReorderExercise?.()`, so there is no mode to enter — and with no
+    // Move actions either, no grip is rendered at all.
+    const { getByTestId, queryByTestId } = renderWithTheme(
+      <ActiveSessionPresenter
+        {...baseProps}
+        onReorderExercise={undefined}
+        exercises={[
+          buildExercise({ id: "se-1" }),
+          buildExercise({ id: "se-2", sortOrder: 1 }),
+        ]}
+      />,
+    );
+
+    expect(queryByTestId("reorder-1")).toBeNull();
+    expect(queryByTestId("active-session-reorder-list")).toBeNull();
+    expect(getByTestId("session-exercise-se-1")).toBeTruthy();
   });
 
   it("Add paired set button on an ActiveSupersetRow fires onLogSupersetSet with all peer ids", () => {

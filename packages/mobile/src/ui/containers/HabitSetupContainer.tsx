@@ -316,11 +316,28 @@ export function HabitSetupContainer({
     if (fuelRev === seenFuelRev.current) return;
     seenFuelRev.current = fuelRev;
     awaitingFuelRefresh.current = true;
-    // `refresh`, NOT `reload`: `reload` only re-reads the cache, and
-    // `setTargetCommand` writes `cached_nutrition_target` — never
-    // `cached_habit_configs` — so a cache re-read returns byte-identical rows.
-    // Only the server recomputes this value.
-    void refreshSelfConfig({ silent: true });
+    let cancelled = false;
+    /*
+      `refresh`, NOT `reload`: `reload` only re-reads the cache, and
+      `setTargetCommand` writes `cached_nutrition_target` — never
+      `cached_habit_configs` — so a cache re-read returns byte-identical rows.
+      Only the server recomputes this value.
+
+      And re-issue if it was DROPPED. `useCachedResource.refresh` refuses while
+      another fetch is in flight, and on a slow cold start that is exactly the
+      collision here: step 3's own mount refresh is still out, was sent BEFORE
+      the target changed, and so cannot carry the new one. Dropping the retry
+      leaves the card showing the old target for the rest of the mount.
+    */
+    void (async () => {
+      for (let attempt = 0; attempt < 5 && !cancelled; attempt++) {
+        if (await refreshSelfConfig({ silent: true })) return;
+        await new Promise((resolve) => setTimeout(resolve, 400));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [fuelRev, isCoachView, refreshSelfConfig]);
 
   /**

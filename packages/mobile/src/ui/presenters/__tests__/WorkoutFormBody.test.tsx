@@ -131,9 +131,13 @@ describe("WorkoutFormBody reorder", () => {
 
     // Idle: the form and full cards, and no way in but the grip.
     expect(getByTestId("workout-name-input")).toBeTruthy();
-    expect(queryByTestId("workout-reorder")).toBeNull();
-    expect(queryByTestId("workout-reorder-done")).toBeNull();
     expect(queryByTestId("compact-reorder-row")).toBeNull();
+    // The grip is the only way in, and it says so. (Asserting the deleted
+    // button testIDs proves nothing — `queryByTestId` matches exactly, so
+    // those assertions pass whatever the presenter renders.)
+    expect(getByTestId("reorder-1").props.accessibilityHint).toBe(
+      "Hold to reorder, or use Move up and Move down actions",
+    );
 
     fireEvent(getByTestId("reorder-1"), "longPress");
 
@@ -156,14 +160,57 @@ describe("WorkoutFormBody reorder", () => {
     );
   });
 
-  it("offers no Reorder control when there is only one block", () => {
-    // Nothing to reorder; the control would do nothing.
+  it("does not collapse, or promise VoiceOver actions, on a one-block list", async () => {
+    // Nothing to reorder. This used to assert `queryByTestId("workout-reorder")`
+    // was null — a testID deleted with the Reorder button earlier on this
+    // branch, so it passed no matter what the presenter did, leaving the
+    // one-block path untested.
     const single = {
       ...formState,
       exercises: [formState.exercises[0]!],
     };
-    const { queryByTestId } = renderBody({ formState: single });
-    expect(queryByTestId("workout-reorder")).toBeNull();
+    const { getByTestId, queryByTestId } = renderBody({ formState: single });
+
+    fireEvent(getByTestId("reorder-1"), "longPress");
+
+    await waitFor(() =>
+      expect(queryByTestId("workout-exercise-reorder-list")).toBeNull(),
+    );
+    expect(queryByTestId("compact-reorder-row")).toBeNull();
+    // The two action filters are empty here, so nothing may be advertised:
+    // VoiceOver would otherwise offer two swipes and a hold that do nothing.
+    // The grip keeps its descriptive label ("position 1 of 1") and no hint.
+    const grip = getByTestId("reorder-1");
+    expect(grip.props.accessibilityActions).toEqual([]);
+    expect(grip.props.accessibilityHint).toBeUndefined();
+  });
+
+  it("offers no reorder at all without a commit callback", async () => {
+    // Two blocks, but nothing to persist a drop with: `onReorderExercise?.()`
+    // would swallow every drop, so collapsing into compact rows would be a
+    // mode the user cannot get anything out of.
+    const { getByTestId, queryByTestId } = renderBody({
+      formState: {
+        ...formState,
+        exercises: [
+          ...formState.exercises,
+          {
+            ...formState.exercises[0]!,
+            id: "second-block",
+            exercise_id: "ex-2",
+            exercise_name: "Row",
+          },
+        ],
+      },
+      onReorderExercise: undefined,
+    });
+
+    fireEvent(getByTestId("reorder-1"), "longPress");
+
+    await waitFor(() =>
+      expect(queryByTestId("workout-exercise-reorder-list")).toBeNull(),
+    );
+    expect(getByTestId("workout-name-input")).toBeTruthy();
   });
 });
 

@@ -251,6 +251,16 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
         // FRESH seed to the local candidate on the next success and PUT its
         // defaults over the server's real row. Keep the journey, or clear the
         // flag with it; never one without the other.
+        //
+        // Only an UNREACHABLE error keeps it. A 5xx is contact with the
+        // server, so the account row it holds may carry real progress that
+        // this local guess must not outrank — and a kept journey IS promoted
+        // to the local candidate on the next successful read, where a newer
+        // `updatedAt` would win the merge and then PUT over that row. So a
+        // reconnect answered by a 503 does drop pages walked on a provisional
+        // journey. That is a deliberate choice between two losses, taken in
+        // favour of the account's real data; revisit it only with a way to
+        // merge rather than pick.
         const unreachable = isUnreachableError(remote.error);
         const keepProvisional =
           unreachable && hasProvisionalEditsRef.current && liveState !== null;
