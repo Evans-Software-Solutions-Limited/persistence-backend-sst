@@ -120,7 +120,42 @@ export function ReorderableList<TItem extends ReorderableItem>(
         .join("|"),
     [props.data],
   );
-  return <ReorderableListInner key={identityKey} {...props} />;
+
+  /**
+   * Row heights are measured HERE, above the hook, because the hook seeds its
+   * own geometry once per mount (`initialHeights` is a `useMemo(…, [])`, and
+   * each row's initial top offset likewise). Measured heights necessarily
+   * arrive after that, so a hook mounted against estimates keeps them for
+   * life — the drag engages and then moves nothing, which is precisely what it
+   * did. Re-keying the hook on the settled heights makes it seed from the real
+   * geometry instead.
+   */
+  const [heights, setHeights] = useState<Record<string, number>>({});
+  const measure = useCallback((id: string, event: LayoutChangeEvent) => {
+    const next = Math.round(event.nativeEvent.layout.height);
+    if (next <= 0) return;
+    setHeights((current) =>
+      current[id] === next ? current : { ...current, [id]: next },
+    );
+  }, []);
+
+  // Only once EVERY row has reported does the token change, so the hook
+  // remounts once on settle rather than once per row.
+  const settled =
+    props.data.length > 0 &&
+    props.data.every((item) => heights[item.id] != null);
+  const geometryKey = settled
+    ? props.data.map((item) => heights[item.id]).join(",")
+    : "estimating";
+
+  return (
+    <ReorderableListInner
+      key={`${identityKey}::${geometryKey}`}
+      {...props}
+      heights={heights}
+      onMeasureRow={measure}
+    />
+  );
 }
 
 function ReorderableListInner<TItem extends ReorderableItem>({
@@ -134,8 +169,12 @@ function ReorderableListInner<TItem extends ReorderableItem>({
   contentContainerStyle,
   scrollEnabled = true,
   testID,
-}: ReorderableListProps<TItem>) {
-  const [heights, setHeights] = useState<Record<string, number>>({});
+  heights,
+  onMeasureRow,
+}: ReorderableListProps<TItem> & {
+  heights: Record<string, number>;
+  onMeasureRow: (id: string, event: LayoutChangeEvent) => void;
+}) {
   const [viewportHeight, setViewportHeight] = useState(0);
   const dataRef = useRef(data);
   dataRef.current = data;
@@ -163,14 +202,6 @@ function ReorderableListInner<TItem extends ReorderableItem>({
     // it out re-runs that effect on every single render.
     itemKeyExtractor: itemId,
   });
-
-  const measure = useCallback((id: string, event: LayoutChangeEvent) => {
-    const next = Math.round(event.nativeEvent.layout.height);
-    if (next <= 0) return;
-    setHeights((current) =>
-      current[id] === next ? current : { ...current, [id]: next },
-    );
-  }, []);
 
   const handleDrop = useCallback(
     (id: string, position: number, allPositions?: Record<string, number>) => {
@@ -228,10 +259,7 @@ function ReorderableListInner<TItem extends ReorderableItem>({
         keys off the scroll offset instead. Re-keying remounts the rows once
         the real height is known, and again if it changes (rotation, keyboard).
       */}
-        <View
-          key={`viewport-${viewportHeight}`}
-          style={{ height: contentHeight }}
-        >
+        <View style={{ height: contentHeight }}>
           {data.map((item, index) => (
             <ReorderableRow
               key={item.id}
@@ -241,7 +269,7 @@ function ReorderableListInner<TItem extends ReorderableItem>({
               viewportHeight={viewportHeight || FALLBACK_VIEWPORT_HEIGHT}
               onDrop={handleDrop}
               onDragStart={handleDragStart}
-              onMeasure={measure}
+              onMeasure={onMeasureRow}
               renderItem={renderItem}
             />
           ))}
