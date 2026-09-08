@@ -1,4 +1,3 @@
-import type { ReactNode } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
 import { ExerciseReorderHandle } from "@/ui/components/workouts/ExerciseReorderHandle";
@@ -9,13 +8,12 @@ type CompactReorderRowProps = {
   position: number;
   total: number;
   onMove?: (direction: -1 | 1) => void;
-  DragHandle: (props: { children: ReactNode }) => ReactNode;
 };
 
 export const COMPACT_REORDER_ROW_HEIGHT = 72;
 
 /**
- * Fixed-size row used before and during drag. Supersets are deliberately
+ * The compact row the list collapses to while a drag is in flight. Supersets are deliberately
  * capped at two lines, so neither exercise count nor visible set count can
  * produce a draggable item taller than the viewport.
  */
@@ -24,7 +22,6 @@ export function CompactReorderRow({
   position,
   total,
   onMove,
-  DragHandle,
 }: CompactReorderRowProps) {
   const isSuperset = exerciseNames.length > 1;
   const label = isSuperset
@@ -41,7 +38,7 @@ export function CompactReorderRow({
         position={position}
         total={total}
         onMove={onMove}
-        DragHandle={DragHandle}
+        draggable
       />
 
       <View style={styles.content}>

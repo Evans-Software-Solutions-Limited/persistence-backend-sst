@@ -2,6 +2,7 @@ import { fireEvent, waitFor } from "@testing-library/react-native";
 import { AccessibilityInfo } from "react-native";
 import { WorkoutFormBody } from "../WorkoutFormBody";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
+import { reorderableTestApi } from "../../../../__tests__/reorderable-test-api";
 import type { WorkoutFormState } from "@/ui/hooks/useWorkoutForm";
 
 jest.mock("expo-router", () => ({
@@ -120,44 +121,35 @@ function renderReorderableForm() {
 }
 
 describe("WorkoutFormBody reorder", () => {
-  it("holds a grip to collapse into uniform rows, with no buttons", async () => {
-    // The editor used to hide reorder behind a Reorder button and keep its
-    // list nested inside the form's scroller, whose stale offset broke
-    // auto-scroll. Holding a grip now collapses to uniform rows — uniform
-    // because the sortable only drags reliably that way — and the compact
-    // list is the only scroller while it is up.
+  it("collapses on the hold and keeps the form in the same scroller", async () => {
+    // The editor used to hide reorder behind a Reorder button, and then behind
+    // a mode you entered with one hold and dragged with a second. Now the hold
+    // collapses the rows and the same finger drags them. The form scrolls with
+    // the rows — one scroller — because nesting this list inside the form's
+    // own scroller is what broke auto-scroll.
     const { getAllByTestId, getByTestId, queryByTestId } =
       renderReorderableForm();
 
-    // Idle: the form and full cards, and no way in but the grip.
     expect(getByTestId("workout-name-input")).toBeTruthy();
+    expect(queryByTestId("workout-reorder")).toBeNull();
     expect(queryByTestId("compact-reorder-row")).toBeNull();
-    // The grip is the only way in, and it says so. (Asserting the deleted
-    // button testIDs proves nothing — `queryByTestId` matches exactly, so
-    // those assertions pass whatever the presenter renders.)
-    expect(getByTestId("reorder-1").props.accessibilityHint).toBe(
-      "Hold to reorder, or use Move up and Move down actions",
-    );
 
-    fireEvent(getByTestId("reorder-1"), "longPress");
+    reorderableTestApi.collapse("standalone-a");
 
-    // The flip is deferred a tick so the focused input's blur can commit.
-    await waitFor(() =>
-      expect(getByTestId("workout-exercise-reorder-list")).toBeTruthy(),
-    );
     expect(getAllByTestId("compact-reorder-row").length).toBeGreaterThan(1);
-    // The form is out of the way, so there is no nested scroller at all.
-    expect(queryByTestId("workout-name-input")).toBeNull();
+    // The form is still there, and still in the same scroller.
+    expect(getByTestId("workout-name-input")).toBeTruthy();
+    expect(getByTestId("workout-form-scroll")).toBeTruthy();
   });
 
-  it("puts the drag on a handle, never the whole row", async () => {
-    const { getAllByTestId, getByTestId } = renderReorderableForm();
+  it("gives every block its own drag target", async () => {
+    const { getByTestId } = renderReorderableForm();
 
-    fireEvent(getByTestId("reorder-1"), "longPress");
-
-    await waitFor(() =>
-      expect(getAllByTestId("sortable-handle").length).toBeGreaterThan(0),
-    );
+    // Four exercises, three blocks: the superset's members share one row,
+    // addressed by its LEAD.
+    expect(getByTestId("sortable-handle-standalone-a")).toBeTruthy();
+    expect(getByTestId("sortable-handle-superset-lead")).toBeTruthy();
+    expect(getByTestId("sortable-handle-standalone-d")).toBeTruthy();
   });
 
   it("shows no grip at all on a one-block list", async () => {
@@ -217,63 +209,28 @@ describe("WorkoutFormBody drag reorder", () => {
     const announce = jest
       .spyOn(AccessibilityInfo, "announceForAccessibility")
       .mockImplementation(jest.fn());
-    const { getByTestId } = renderWithTheme(
-      <WorkoutFormBody
-        formState={formState}
-        isSubmitting={false}
-        hasAttemptedSubmit={false}
-        submitError={null}
-        pickerVisible={false}
-        isCoachContext={false}
-        onSetName={jest.fn()}
-        onSetDescription={jest.fn()}
-        onSetVisibility={jest.fn()}
-        onSetShowInOwnerLibrary={jest.fn()}
-        onAddExerciseTap={jest.fn()}
-        onClosePicker={jest.fn()}
-        onAddExercises={jest.fn()}
-        onAddSuperset={jest.fn()}
-        onRemoveExercise={jest.fn()}
-        onExerciseConfigChange={jest.fn()}
-        onMoveExercise={onMoveExercise}
-        onReorderExercise={onReorderExercise}
-        onSubmit={jest.fn()}
-        onCancel={jest.fn()}
-        headerTitle="Create Workout"
-        backTestID="creator-back-button"
-        saveLabel="Save workout"
-        ownerToggleSub="Owner copy"
-      />,
-    );
+    const { getByTestId } = renderBody({ onMoveExercise, onReorderExercise });
+
     expect(getByTestId("workout-form-screen").props.style).toMatchObject({
       paddingTop: 44,
       paddingBottom: 34,
     });
-    // The accessible Move actions live on the IDLE grip. They are withheld in
-    // compact mode on purpose: the sortable seeds its positions map once, so a
-    // move arriving from outside the drag would desync it.
+    // The accessible Move actions live on the grip the card draws. The drag
+    // itself belongs to the list's own target, over the row's corner.
     fireEvent(getByTestId("reorder-1"), "accessibilityAction", {
       nativeEvent: { actionName: "increment" },
     });
     expect(onMoveExercise).toHaveBeenCalledWith("standalone-a", 1);
 
-    fireEvent(getByTestId("reorder-1"), "longPress");
-
-    // Four exercises become three draggable blocks: standalone, superset,
-    // standalone. The superset's members collapse into ONE row, addressed by
-    // its LEAD exercise's id. The flip is deferred a tick so a focused input's
-    // blur can commit first.
-    await waitFor(() =>
-      expect(getByTestId("sortable-item-standalone-a")).toBeTruthy(),
-    );
-    expect(getByTestId("sortable-item-superset-lead")).toBeTruthy();
-    fireEvent(
-      getByTestId("sortable-item-superset-lead"),
-      "drop",
-      "superset-lead",
-      0,
-      { "superset-lead": 0, "standalone-a": 1 },
-    );
+    // Four exercises, three blocks: standalone, superset, standalone. The
+    // superset collapses into ONE row, addressed by its LEAD exercise's id.
+    reorderableTestApi.collapse("superset-lead");
+    reorderableTestApi.dragStart("superset-lead");
+    reorderableTestApi.drop("superset-lead", 0, {
+      "superset-lead": 0,
+      "standalone-a": 1,
+      "standalone-d": 2,
+    });
 
     expect(onReorderExercise).toHaveBeenCalledWith("superset-lead", 0);
     expect(announce).toHaveBeenCalledWith(

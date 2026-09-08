@@ -312,34 +312,83 @@ the PR says "⚠ awaiting device pass" and stops there.
 
 ## 8. What actually shipped (2026-09-08)
 
-Reorder is: **hold a card's grip → the list collapses to uniform
-`CompactReorderRow`s → hold and drag a row → on drop the order commits and the
-mode ends itself.** No button in, no button out, no tap-out, no timer.
+Reorder is **one gesture**: hold a card's grip → the rows collapse to uniform
+`CompactReorderRow`s under your finger → the same finger drags → the drop
+commits and the cards come back. No button in, no button out, no tap-out, no
+timer, no second hold.
 
-The one thing this brief got wrong: § 5.3's "one gesture, no sticky mode" is
-not achievable with this library. Bisected on the real session screen — the
-sortable drags only when EVERY row is a single uniform height. Real per-card
-heights engage the drag and move nothing, measured or handed in. Collapsing to
-uniform rows first is therefore forced, and collapsing changes geometry that
-the library seeds once per mount, so the hold that collapses and the hold that
-drags are necessarily different gestures. Neither is a button, which is the
-part that actually mattered.
+§ 5.3's "one gesture, no sticky mode" is therefore met, and the compact view
+Brad asked for is kept. Getting both took three attempts, and the reasons the
+first two failed are the useful part of this document.
 
-So the previous implementation's `CompactReorderRow` was right; its mistake was
-the two buttons and a mode that outlived the drop.
+**Attempt 1 — collapse during the drag.** The library seeds the dragged row's
+anchor when the pan activates, so collapsing after that left it anchored to
+heights that no longer existed. Predicting the shrink (summing what each row
+above would lose) under-shot whenever a row had never been laid out, and drifted
+worse the further down the list you grabbed.
+
+**Attempt 2 — collapse as a mode, drag as a second gesture.** Correct, and
+rejected: two holds to move one row. Brad's words, twice.
+
+**Attempt 3 — collapse BEFORE the drag activates.** `ReorderableList` composes
+its own `Gesture.LongPress` at 90ms `Gesture.Simultaneous` with the sortable's
+pan, which activates at 200ms. The rows are compact and their heights published
+before the library measures anything, so there is nothing to compensate for. Two
+things make it work:
+
+- **The drag target lives outside the row's body.** A touch goes to the view the
+  finger landed on, so a target inside the body would unmount when the body
+  swaps and take the gesture with it. `ReorderableList` puts an invisible 56×56
+  Gesture Handler target over the row's top-left corner — where all three
+  layouts draw their grip — and swaps only the body beneath it. The cards keep
+  drawing their own grip and keep its accessibility.
+- **Compact heights need no measurement.** They are uniform and known, so the
+  new geometry is published synchronously; a measured height could not land in
+  the 110ms available.
+
+**The `itemHeight` claim in earlier versions of this brief was wrong.** The
+library is not limited to uniform rows: `enableDynamicHeights` and a per-item
+height resolver both exist, and the real cards drag fine. The original failure
+was passing ONE height for rows that were not that height, so the slot maths and
+the row's own offset disagreed and the drag moved nothing.
+
+Heights are measured by `ReorderableList` itself, not the library:
+
+- The library's own `onLayout` measurement did not always fire. When it does
+  not, every row is laid out at `index × estimatedItemHeight` — cards
+  overlapping in the session, ~50pt of dead space between editor cards.
+- **A row's resting top is computed ONCE, at mount**, as
+  `index × estimatedItemHeight`, and corrected only when the measured heights
+  CHANGE afterwards. So nothing may remount the rows after the heights are
+  known, or every row is stranded at the estimate. This is why
+  `containerHeight` is taken from the window at mount rather than measured: a
+  measured value has to be re-frozen, re-freezing needs a remount, and the
+  remount is fatal.
 
 Other findings worth keeping:
 
 - `containerHeight` must be passed AND must never be 0. It is frozen on first
   render, and `0` does not fall back to the library's 500 default — it makes
   the scroll-down edge test unconditionally true, so any list long enough to
-  scroll runs to the end and commits the row at the last index. Seeded from the
-  window height and re-keyed on the measurement.
+  scroll runs to the end and commits the row at the last index.
+- **What the library compares against the auto-scroll edges is the dragged
+  row's TOP, in a row space whose origin is the first row** — while the scroll
+  offset it compares it to is the scroller's own. Anything above the rows (a
+  header, content padding) makes those differ, and the edges go with it. The
+  rows' wrapper measures its own offset and the offset handed to the rows is
+  shifted by it, which is why the session header no longer has to be pinned
+  outside the list.
 - `onDrop` is the commit hook. `onMove` fires per DISPLACED row mid-drag.
-- The grip must be a plain View (with `accessible`) while dragging: RN's press
-  responder claims the touch before Gesture Handler's pan otherwise. Idle it is
-  a Pressable, which is right — that hold only collapses the list.
-- Row spacing must be padding INSIDE the measured row, never margin.
+- **Gesture Handler finalizes FAILED and CANCELLED pans too**, and the library
+  forwards them as drops. Treating those as drag ends made a tap, or a scroll
+  swipe starting on the grip, behave like a mode exit.
+- The grip must never be a Pressable: RN's press responder claims the touch
+  before Gesture Handler's pan can activate.
+- Row spacing must be padding INSIDE the measured row, never margin — the rows
+  are absolutely positioned, so only their own height reaches the sortable.
+- Inputs that commit on blur (`Stepper`, `RepRange`) lose the edit when the
+  body swaps: unmounting a focused `TextInput` delivers no blur, and no timer
+  outwaits a native one. They commit on unmount.
 - `buildReorderBlocks` is now shared by the command and the session presenter.
   They disagreed: the presenter splits a cardio-bearing superset into separate
   display rows, the command groups purely by `supersetGroup`, and a drop index

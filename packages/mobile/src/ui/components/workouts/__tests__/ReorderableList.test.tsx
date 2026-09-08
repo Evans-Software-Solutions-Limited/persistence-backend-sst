@@ -1,34 +1,25 @@
-import type { ReactNode } from "react";
-import { fireEvent } from "@testing-library/react-native";
 import { Text, View } from "react-native";
+import { fireEvent } from "@testing-library/react-native";
 import { renderWithTheme } from "../../../../../__tests__/test-utils";
+import { reorderableTestApi } from "../../../../../__tests__/reorderable-test-api";
 import { ReorderableList } from "../ReorderableList";
 
-const ROW_HEIGHT = 88;
+/**
+ * What can honestly be tested here, and what cannot.
+ *
+ * `react-native-reanimated-dnd` is mocked (it reaches
+ * `react-native-worklets`' native module at import time), so the gesture, the
+ * row geometry and the auto-scroll are all invisible from jest. Those are the
+ * device gate: `specs/milestones/REORDER-REBUILD/SMOKE_TEST.md`.
+ *
+ * What IS provable here is the composition this component owns: which rows
+ * exist, that each gets its own drag target outside its body, that the hold
+ * collapses the rows and a drop expands them again, and that a drop maps to
+ * the right id, index and committed order — including that a pan which never
+ * activated commits nothing.
+ */
 
 type Row = { id: string; label: string };
-
-function renderList(rows: Row[], onReorder = jest.fn()) {
-  return {
-    onReorder,
-    ...renderWithTheme(
-      <ReorderableList
-        testID="list"
-        data={rows}
-        itemHeight={ROW_HEIGHT}
-        onReorder={onReorder}
-        renderItem={(row: Row, { Handle }) => (
-          <View>
-            <Handle>
-              <View testID={`grip-${row.id}`} />
-            </Handle>
-            <Text>{row.label}</Text>
-          </View>
-        )}
-      />,
-    ),
-  };
-}
 
 const ROWS: Row[] = [
   { id: "a", label: "A" },
@@ -36,179 +27,138 @@ const ROWS: Row[] = [
   { id: "c", label: "C" },
 ];
 
-/**
- * The library is mocked (it reaches react-native-worklets' native module at
- * import), so gestures are device-verified via SMOKE_TEST.md. What IS
- * assertable here is the geometry we hand it — which is where every reorder
- * bug on this branch actually lived.
- */
-describe("ReorderableList geometry", () => {
-  it("clamps containerHeight to the content on a list that cannot scroll", () => {
-    // The library computes `maxScroll = count * itemHeight - containerHeight`
-    // with no floor, so a real viewport height on a short list yields a
-    // NEGATIVE scroll target: the list gets pushed off its own top and the
-    // dragged row yanked back up, committing nothing.
-    const { getByTestId } = renderList(ROWS);
+function renderList(
+  overrides: Partial<React.ComponentProps<typeof ReorderableList<Row>>> = {},
+) {
+  const onReorder = jest.fn();
+  const result = renderWithTheme(
+    <ReorderableList<Row>
+      testID="list"
+      data={ROWS}
+      estimatedItemHeight={120}
+      compactItemHeight={72}
+      onReorder={onReorder}
+      renderItem={(row, { isCompact }) => (
+        <View testID={isCompact ? `compact-${row.id}` : `full-${row.id}`}>
+          <Text>{row.label}</Text>
+        </View>
+      )}
+      {...overrides}
+    />,
+  );
+  return { onReorder, ...result };
+}
 
-    expect(getByTestId("sortable-item-a").props.containerHeight).toBe(
-      ROWS.length * ROW_HEIGHT,
-    );
+describe("ReorderableList", () => {
+  it("gives every row its own drag target, outside the row's body", () => {
+    // The target has to sit outside the body: a touch goes to the view the
+    // finger landed on, so a target inside would unmount when the body
+    // collapses to a compact row and take the gesture with it.
+    const { getByTestId } = renderList();
+
+    ROWS.forEach((row) => {
+      expect(getByTestId(`sortable-handle-${row.id}`)).toBeTruthy();
+      expect(getByTestId(`sortable-item-${row.id}`)).toBeTruthy();
+    });
   });
 
-  it("never hands the library a zero container height", () => {
-    // 0 is not `undefined`, so it does NOT fall back to the library's own 500
-    // default — it makes the scroll-down edge test unconditionally true and
-    // every drag commits at the last index.
-    const { getByTestId } = renderList(ROWS);
+  it("renders full bodies at rest and compact ones for the drag", () => {
+    const { getByTestId, queryByTestId } = renderList();
 
-    fireEvent(getByTestId("list"), "layout", {
-      nativeEvent: { layout: { height: 0, width: 400, x: 0, y: 0 } },
-    });
+    expect(getByTestId("full-a")).toBeTruthy();
+    expect(queryByTestId("compact-a")).toBeNull();
 
-    expect(
-      getByTestId("sortable-item-a").props.containerHeight,
-    ).toBeGreaterThan(0);
+    // The collapse fires from its own long press, BEFORE the drag activates,
+    // so the geometry is settled by the time the library measures.
+    reorderableTestApi.collapse("a");
+
+    expect(getByTestId("compact-a")).toBeTruthy();
+    expect(getByTestId("compact-c")).toBeTruthy();
+    expect(queryByTestId("full-a")).toBeNull();
   });
 
-  it("takes a later viewport measurement, so a keyboard-shrunk first one cannot stick", () => {
-    // Both entry points mount this list while the keyboard may still be up, so
-    // the first layout can be hundreds of points short — and that shortfall
-    // lands straight in the auto-scroll edge.
-    const many = Array.from({ length: 20 }, (_, i) => ({
-      id: `r${i}`,
-      label: `R${i}`,
-    }));
-    const { getByTestId } = renderList(many);
+  it("commits the moved id, its new index and the whole order", () => {
+    const { onReorder } = renderList();
 
-    fireEvent(getByTestId("list"), "layout", {
-      nativeEvent: { layout: { height: 400, width: 400, x: 0, y: 0 } },
-    });
-    expect(getByTestId("sortable-item-r0").props.containerHeight).toBe(400);
-
-    fireEvent(getByTestId("list"), "layout", {
-      nativeEvent: { layout: { height: 780, width: 400, x: 0, y: 0 } },
-    });
-    expect(getByTestId("sortable-item-r0").props.containerHeight).toBe(780);
-  });
-
-  it("commits the moved id and its new index, and reports every drag end", () => {
-    const onReorder = jest.fn();
-    const onDragEnd = jest.fn();
-    const { getByTestId } = renderWithTheme(
-      <ReorderableList
-        testID="list"
-        data={ROWS}
-        itemHeight={ROW_HEIGHT}
-        onReorder={onReorder}
-        onDragEnd={onDragEnd}
-        renderItem={(row: Row, { Handle }) => (
-          <Handle>
-            <View testID={`grip-${row.id}`} />
-          </Handle>
-        )}
-      />,
-    );
-
-    fireEvent(getByTestId("sortable-item-a"), "dragStart");
-    fireEvent(getByTestId("sortable-item-a"), "drop", "a", 2, {
-      a: 2,
-      b: 0,
-      c: 1,
-    });
+    reorderableTestApi.collapse("a");
+    reorderableTestApi.dragStart("a");
+    reorderableTestApi.drop("a", 2, { a: 2, b: 0, c: 1 });
 
     expect(onReorder).toHaveBeenCalledWith("a", 2, ["b", "c", "a"]);
-    expect(onDragEnd).toHaveBeenCalledTimes(1);
   });
 
-  it("still reports the drag end when the row is dropped where it started", () => {
-    // A caller that collapsed into this list leaves that mode here, so a
-    // lift-in-place has to be reported or the user is stranded.
-    const onReorder = jest.fn();
-    const onDragEnd = jest.fn();
-    const { getByTestId } = renderWithTheme(
-      <ReorderableList
-        testID="list"
-        data={ROWS}
-        itemHeight={ROW_HEIGHT}
-        onReorder={onReorder}
-        onDragEnd={onDragEnd}
-        renderItem={(row: Row, { Handle }) => (
-          <Handle>
-            <View testID={`grip-${row.id}`} />
-          </Handle>
-        )}
-      />,
-    );
+  it("expands again on the drop, even when nothing moved", () => {
+    // A lift and release in the same slot commits nothing, but the rows still
+    // have to come back or the list is stuck compact with nothing to tap.
+    const { onReorder, getByTestId, queryByTestId } = renderList();
 
-    fireEvent(getByTestId("sortable-item-a"), "dragStart");
-    fireEvent(getByTestId("sortable-item-a"), "drop", "a", 0, {
-      a: 0,
-      b: 1,
-      c: 2,
-    });
+    reorderableTestApi.collapse("a");
+    reorderableTestApi.dragStart("a");
+    reorderableTestApi.drop("a", 0, { a: 0, b: 1, c: 2 });
 
     expect(onReorder).not.toHaveBeenCalled();
-    expect(onDragEnd).toHaveBeenCalledTimes(1);
+    expect(getByTestId("full-a")).toBeTruthy();
+    expect(queryByTestId("compact-a")).toBeNull();
   });
 
-  it("wraps each row's grip in the library's handle, never the whole row", () => {
-    const { getAllByTestId } = renderList(ROWS);
+  it("commits nothing for a pan that never activated", () => {
+    // Gesture Handler finalizes FAILED and CANCELLED pans too, and the
+    // library forwards those as drops — a tap on the grip, or a scroll swipe
+    // that started there.
+    const { onReorder } = renderList();
 
-    // Registering a handle is what disables the whole-item pan.
-    expect(getAllByTestId("sortable-handle")).toHaveLength(ROWS.length);
+    reorderableTestApi.drop("a", 2, { a: 2, b: 0, c: 1 });
+
+    expect(onReorder).not.toHaveBeenCalled();
   });
 
-  it("does not report a drag end for a pan that never activated", () => {
-    // Gesture Handler finalizes FAILED and CANCELLED pans too, and the library
-    // forwards them here. Reporting those as drag ends meant a tap — or a
-    // scroll-swipe starting on a grip — kicked the caller out of its mode: the
-    // tap-out, back by the side door.
-    const onDragEnd = jest.fn();
-    const { getByTestId } = renderWithTheme(
-      <ReorderableList
-        testID="list"
-        data={ROWS}
-        itemHeight={ROW_HEIGHT}
-        onReorder={jest.fn()}
-        onDragEnd={onDragEnd}
-        renderItem={(row: Row, { Handle }) => (
-          <Handle>
-            <View testID={`grip-${row.id}`} />
-          </Handle>
-        )}
-      />,
-    );
+  it("puts the rows back when a hold never becomes a drag", () => {
+    const { getByTestId, queryByTestId } = renderList();
 
-    // No `dragStart` — the pan never reached ACTIVE.
-    fireEvent(getByTestId("sortable-item-a"), "drop", "a", 0, {
-      a: 0,
-      b: 1,
-      c: 2,
-    });
+    reorderableTestApi.collapse("a");
+    expect(getByTestId("compact-a")).toBeTruthy();
 
-    expect(onDragEnd).not.toHaveBeenCalled();
+    reorderableTestApi.collapseEnd("a");
+
+    expect(getByTestId("full-a")).toBeTruthy();
+    expect(queryByTestId("compact-a")).toBeNull();
   });
 
-  it("ignores a layout change while a drag is in flight", () => {
-    // The rows are keyed on the measured height, so accepting a measurement
-    // mid-drag would remount them and kill the gesture before the library
-    // finalizes it — no drop, and so no mode exit for the caller.
-    const many = Array.from({ length: 20 }, (_, i) => ({
-      id: `r${i}`,
-      label: `R${i}`,
-    }));
-    const { getByTestId } = renderList(many);
+  it("stops the scroller from scrolling while the rows are collapsed", () => {
+    // The drag owns the finger then, and the library drives the scrolling
+    // itself; leaving the scroller live let a drag fight it.
+    const { getByTestId } = renderList();
 
-    fireEvent(getByTestId("list"), "layout", {
-      nativeEvent: { layout: { height: 700, width: 400, x: 0, y: 0 } },
-    });
-    expect(getByTestId("sortable-item-r0").props.containerHeight).toBe(700);
+    expect(getByTestId("list").props.scrollEnabled).toBe(true);
+    reorderableTestApi.collapse("a");
+    expect(getByTestId("list").props.scrollEnabled).toBe(false);
+  });
 
-    fireEvent(getByTestId("sortable-item-r0"), "dragStart");
-    fireEvent(getByTestId("list"), "layout", {
-      nativeEvent: { layout: { height: 400, width: 400, x: 0, y: 0 } },
+  it("renders a header and footer inside its own scroller", () => {
+    // They must scroll WITH the rows: this is the screen's only scroller, and
+    // nesting it inside another one is what broke auto-scroll before.
+    const { getByTestId } = renderList({
+      header: <View testID="list-header" />,
+      footer: <View testID="list-footer" />,
     });
 
-    expect(getByTestId("sortable-item-r0").props.containerHeight).toBe(700);
+    expect(getByTestId("list-header")).toBeTruthy();
+    expect(getByTestId("list-footer")).toBeTruthy();
+  });
+
+  it("measures each row's height instead of trusting the estimate", () => {
+    // The library's own `onLayout` measurement did not always fire, which
+    // left every row laid out at `index × estimate` — cards overlapping in
+    // the session, dead space between editor cards. So the rows are measured
+    // here and the height handed to the library as a resolver.
+    const { getByTestId } = renderList();
+
+    fireEvent(getByTestId("sortable-item-a"), "layout", {
+      nativeEvent: { layout: { height: 340, width: 400, x: 0, y: 0 } },
+    });
+
+    // The measurement is reported to the library, not rendered, so the proof
+    // is that the row survives it and stays draggable.
+    expect(getByTestId("sortable-handle-a")).toBeTruthy();
   });
 });

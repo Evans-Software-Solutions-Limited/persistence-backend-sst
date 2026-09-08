@@ -13,13 +13,11 @@ say so and fix this file.
 
 **One PR intended.** Twenty-odd commits, four workstreams.
 
-⚠ **Device status, precisely:** the reorder interaction was driven on the iOS
-simulator during the bisection, which is how the constraints below were found.
-The FINAL tree is not device-verified — the last fixes (the drag-start gate on
-the mode exit, the unmount commit in `Stepper`/`RepRange`, the session's own
-compact content style, hiding the pill on the workout screens) landed after
-that pass. Workstreams 1–3 were reasoned + unit-tested, not device-verified.
-`SMOKE_TEST.md` is the gate and it is Brad's to run.
+⚠ **Device status, precisely:** the reorder interaction is device-verified on
+the simulator (see workstream 4). Workstreams 1–3 and 5 were reasoned and
+unit-tested only. `SMOKE_TEST.md` is the acceptance gate and it is Brad's to
+run — the drag library is jest-mocked, so no test can prove gesture, geometry
+or auto-scroll behaviour.
 
 **1. Offline boot hang — FIXED.** With no connection the app sat on an
 infinite spinner and never reached Home, even signed in with a valid cached
@@ -65,58 +63,64 @@ even SELECTed the column and ignored it); `createWorkoutCommand` had the
 mirror-image gap. Both directions now move together, in-memory adapter at
 parity.
 
-**4. Reorder rebuilt.** `react-native-draggable-flatlist`
-is GONE, replaced by `react-native-reanimated-dnd` behind
+**4. Reorder rebuilt — ONE gesture, with the compact view.**
+`react-native-draggable-flatlist` is GONE, replaced by
+`react-native-reanimated-dnd` behind
 `src/ui/components/workouts/ReorderableList.tsx`.
 
-The interaction: **hold a card's grip → the list collapses to uniform
-`CompactReorderRow`s → hold and drag → on drop the order commits and the mode
-ends itself.** No button in, no button out, no tap-out, no timer.
+**Hold a card's grip → the rows collapse to compact rows under your finger →
+the same finger drags → the drop commits and the cards come back.** No button
+in, no button out, no tap-out, no second hold.
 
-Hard-won constraints — all bisected on device, all recorded in
-`specs/milestones/REORDER-REBUILD/BRIEF.md § 8`:
+⚠ **The "this library only drags uniform rows" claim was WRONG** — it is in
+older versions of the brief and in earlier commits on this branch. The library
+has a measured-height path and the real cards drag fine. The original failure
+was passing ONE height for rows that were not that height. Two designs were
+built on that wrong belief before it was checked.
 
-- **Rows MUST be one uniform height.** Real per-card heights engage the drag
-  and move nothing. This is why `CompactReorderRow` exists; the old
-  implementation's mistake was the buttons and a mode that outlived the drop,
-  not the uniform rows.
-- **`containerHeight` must be passed, non-zero, and clamped to the content.**
-  It is frozen on first render; 0 does not fall back to the library's 500, and
-  makes the scroll-down edge test unconditionally true (every drag commits at
-  the last index). Unclamped on a short list it yields a negative scroll
-  target.
-- **Nothing may sit inside the sortable's scroll content above the rows, and
-  the rendered pitch must equal `itemHeight` exactly.** Row space and scroll
-  space otherwise differ and the auto-scroll edges go with them. Two ways this
-  bit: the session header (now a SIBLING above the list), and reusing the
-  full-card `contentContainerStyle`, whose `padding: 16` insets every row and
-  whose `gap: 16` stacks on the row's own spacer — real pitch 104 against a
-  declared 88, a whole slot of drift by the fifth row. The compact list has
-  its own content style; keep spacing as padding INSIDE the row.
-- **The grip is a plain View (with `accessible`) while dragging** — RN's press
-  responder claims the touch before Gesture Handler's pan otherwise. Idle it
-  is a Pressable, which is right: that hold only collapses the list.
-- `onDrop` is the commit hook; `onMove` fires per displaced row mid-drag.
-- **Gesture Handler's `onFinalize` fires for FAILED and CANCELLED pans too**,
-  so forwarding it as a drag end let a tap — or a scroll-swipe starting on a
-  grip — exit the mode: the rejected tap-out, back by the side door.
-  `ReorderableList` reports a drag end only after a real drag start.
-- **Inputs that commit on blur lose the edit when the mode flips**, because
-  unmounting a focused `TextInput` delivers no blur, and no `setTimeout` can
-  outwait a native one. `Stepper`/`RepRange` commit their buffer on unmount.
-- `buildReorderBlocks` (in `workout.service.ts`) is shared by the command and
-  the session presenter. They disagreed: the presenter splits a cardio-bearing
-  superset into separate display rows, the command groups purely by
-  `supersetGroup`.
-- `reorderModalOptions` was NOT dead code. It carried
-  `presentation: "fullScreenModal"`, `headerShown: false` and
-  `gestureEnabled: false`; the last stops the iOS modal dismiss gesture eating
-  a vertical pan. Inlined on the three screens.
+How the single gesture is possible (the part worth keeping):
 
-Also: the active-workout pill is hidden on the workout detail/edit/create
-screens (it floated over their content). And a grip with nothing to do — a
-one-block list — renders nothing at all now, instead of an `adjustable`
-control whose VoiceOver swipes were silent no-ops.
+- `ReorderableList` composes its own `Gesture.LongPress` at **90ms**
+  `Gesture.Simultaneous` with the sortable's pan, which activates at 200ms. The
+  collapse therefore lands BEFORE the library measures anything. Collapsing
+  after the drag starts is what made the first attempt drift — the row stayed
+  anchored to heights that no longer existed.
+- **The drag target sits OUTSIDE the row's body** — an invisible 56×56 Gesture
+  Handler target over the row's top-left corner. A touch goes to the view the
+  finger landed on, so a target inside the body would unmount when the body
+  swaps and take the gesture with it. The cards keep drawing their own grip and
+  keep its accessibility.
+- **Compact heights are uniform and known**, so the new geometry is published
+  synchronously — a measured height could not land inside the 110ms available.
+- It drives `useSortable` directly rather than `SortableItem`, because that is
+  what makes both of the above reachable.
+
+⚠ **Two geometry rules that WILL bite again:**
+
+1. **A row's resting top is computed once, at mount**, as
+   `index × estimatedItemHeight`, and corrected only when the measured heights
+   CHANGE afterwards. So NOTHING may remount the rows after the heights are
+   known — that strands every row at the estimate (cards overlapping in the
+   session, ~50pt of dead gaps in the editor). This is why `containerHeight`
+   comes from the window at mount instead of being measured: measuring it means
+   re-freezing it, re-freezing needs a remount, and the remount is fatal.
+2. **The library compares the dragged row's TOP against the auto-scroll edges,
+   in a row space whose origin is the first row**, while the scroll offset it
+   compares to is the scroller's own. Content above the rows makes those differ
+   and takes the edges with it — with a header and no compensation, the
+   down-trigger sits below where a finger can reach. `ReorderableList` measures
+   the rows' own offset and shifts the offset it hands them.
+
+Also: heights are measured by `ReorderableList`, not the library — the
+library's own `onLayout` measurement did not always fire. And Gesture Handler
+finalizes FAILED/CANCELLED pans too, which the library forwards as drops, so a
+real drag start has to be recorded before a drop is believed.
+
+Device-verified on the simulator (iPhone 17 Pro Max), both surfaces: hold →
+collapse → drag → drop commits, auto-scroll at both edges, a scroll swipe
+starting on a grip still scrolls, and even card spacing. The compact swap was
+verified indirectly — a 290pt drag moved a card 3 slots, which is compact
+pitch, not full-card pitch.
 
 **5. Onboarding Calories target (the branch's original bug) — FIXED, on the
 third attempt.** Worth reading before touching it, because it was shipped
@@ -151,7 +155,7 @@ offerings" LogBox error opens on the simulator (no StoreKit config) and
 **LogBox swallows every touch** — it presents as "taps do nothing / navigation
 takes many clicks". Dismiss it before concluding anything about the app.
 
-Ten Inspector Brad sweeps. They caught genuine defects in my own fixes each
+Ten Inspector Brad sweeps up to the first push; They caught genuine defects in my own fixes each
 time — including a provisional-seed path that would have uploaded a reset over
 real server-side onboarding progress, and the frozen-0 `containerHeight` that
 made my own 6-row device check pass while any scrollable list would have
@@ -163,7 +167,12 @@ is the acceptance gate and is Brad's to run.** The drag library is jest-mocked
 prove gesture or auto-scroll behaviour.
 
 Gates on the final tree: prettier clean; typecheck 9/9; lint 0 errors;
-build 14/14; `bun run test:unit` 21/21 tasks.
+build 14/14; mobile 526 suites / 6730 tests.
+
+Test seam: `packages/mobile/__tests__/reorderable-test-api.ts`. The drag lives
+in a HOOK (`useSortable`), so its callbacks cannot be fired through a rendered
+view — the jest mock registers them per row id and tests drive
+`collapse → dragStart → drop` through that API.
 
 ### 🟢 2026-09-06 — MARKETING-PLANS Sprint 1 (branch `feat/marketing-plans`, PR 1)
 

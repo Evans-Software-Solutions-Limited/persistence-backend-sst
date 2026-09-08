@@ -22,7 +22,7 @@
  */
 
 import { Ionicons } from "@expo/vector-icons";
-import React, { useMemo, useState } from "react";
+import React, { useMemo, type ReactNode } from "react";
 import {
   AccessibilityInfo,
   FlatList,
@@ -263,9 +263,15 @@ function displayItemKey(item: DisplayItem) {
     : `superset-${item.supersetGroup}`;
 }
 
+/**
+ * Seed height for a drag row, used only for the frame or two before the rows
+ * report their own. A logged strength card is taller, an unstarted one
+ * shorter; the list measures each of them.
+ */
+const ESTIMATED_BLOCK_HEIGHT = 220;
+
 export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
   const insets = useSafeAreaInsets();
-  const [isReordering, setIsReordering] = useState(false);
   const weightUnit = props.weightUnit ?? "kg";
   const orderedExercises = useMemo(
     () => [...props.exercises].sort((a, b) => a.sortOrder - b.sortOrder),
@@ -281,47 +287,17 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
   const today = localDayISO(new Date());
 
   /**
-   * Reorder mode is entered and left DELIBERATELY, by the control in the list
-   * footer — never by a gesture.
+   * Reorder is ONE gesture on the real card: hold the grip and drag.
    *
-   * That is the whole fix. Every cell's height changes when the full exercise
-   * cards become fixed-height compact rows, and the library measures the
-   * dragged cell (`measureLayout` → `activeCellOffset` / `activeCellSize`) at
-   * the moment the drag starts. Collapsing the list DURING a drag therefore
-   * left every measurement it was holding stale, and no amount of external
-   * scroll compensation could reliably correct it — the previous version
-   * predicted the collapse by summing the height each cell above the dragged
-   * one would lose, which under-shot whenever a cell had never been laid out
-   * and drifted worse the further down the list you grabbed.
-   *
-   * With the collapse finished before any drag begins, the library measures a
-   * list whose geometry is already settled and uniform, which is the only
-   * arrangement it is built for (its own example is fixed-height rows). The
-   * compensation, the three mutated shared values, the reserved content
-   * height, the scroll restore and the remount-on-cancel recovery all went
-   * with it: a cancelled pan can no longer strand the screen in compact mode,
-   * because compact mode is not owned by the pan.
+   * There is no reorder mode any more, and nothing to tap in or out. The two
+   * earlier designs both existed to work around a belief that the sortable
+   * could only drag uniform rows — first by collapsing the list mid-drag
+   * (which left the library holding stale measurements of the taller cards),
+   * then by making the collapse a mode you entered with one hold and dragged
+   * with a second. The belief was wrong: the library measures rows when told
+   * to (`enableDynamicHeights`), so the cards themselves drag. See
+   * `ReorderableList`.
    */
-  /**
-   * Holding a full card's grip ENTERS reorder mode; it no longer starts a
-   * drag.
-   *
-   * This is what makes the gesture safe. Starting a drag and collapsing the
-   * list in the same breath left the library animating from measurements it
-   * had already taken of the taller cards. Entering the mode first means the
-   * next gesture is measured against a settled, uniform list — and the drag
-   * itself is a separate press on a compact row, which is also why nothing
-   * needs to undo a layout change when it ends.
-   */
-  /**
-   * Holding a grip collapses the list to uniform rows; dropping a row ends the
-   * mode. That is the whole interaction — there is deliberately nothing to
-   * tap, in or out. No timer either: being yanked out mid-thought is its own
-   * annoyance, and nothing is trapped by the mode: the session header
-   * (Minimize / End) and Finish are both still rendered, and leaving the
-   * screen resets it.
-   */
-  const enterReorder = () => setIsReordering(true);
 
   /**
    * Reorder rows are NOT the display items.
@@ -373,11 +349,7 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
   };
 
   /**
-   * Commit a drop AND leave reorder mode.
-   *
-   * Exiting here is the point: the previous version made the mode outlive the
-   * drop and put the only way out behind a Done button, which is what made it
-   * feel stuck. `toIndex` is a BLOCK index — a superset moves as one — and
+   * Commit a drop. `toIndex` is a BLOCK index — a superset moves as one — and
    * `onReorderExercise` takes that block's lead exercise.
    */
   const handleReorder = (movedId: string, toIndex: number) => {
@@ -392,7 +364,105 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
     void AccessibilityInfo.announceForAccessibility(
       `${label} moved to position ${toIndex + 1} of ${rows.length}`,
     );
-    setIsReordering(false);
+  };
+
+  /**
+   * The display items that belong to each drag block.
+   *
+   * A block is what MOVES (`buildReorderBlocks`, shared with the command); a
+   * display item is what RENDERS (`buildDisplayItems`, which splits a superset
+   * containing a cardio or plyometric exercise into separate rows so they get
+   * the metric logger instead of the strength table). So a block can render
+   * more than one card, and all of them travel together.
+   */
+  const displayItemsByBlock = useMemo(() => {
+    const byBlock = new Map<string, DisplayItem[]>();
+    displayItems.forEach((item) => {
+      const leadId =
+        item.kind === "exercise" ? item.exercise.id : item.exercises[0].id;
+      const block = rows.find((row) =>
+        row.exercises.some((exercise) => exercise.id === leadId),
+      );
+      if (!block) return;
+      const existing = byBlock.get(block.id);
+      if (existing) existing.push(item);
+      else byBlock.set(block.id, [item]);
+    });
+    return byBlock;
+  }, [displayItems, rows]);
+
+  const displayItemsOfBlock = (blockId: string) =>
+    displayItemsByBlock.get(blockId) ?? [];
+
+  /**
+   * One display item. Only the block LEAD advertises a draggable grip — the
+   * gesture itself belongs to `ReorderableList`, which puts an invisible
+   * target over the row's top-left corner.
+   */
+  const renderDisplayItem = (item: DisplayItem, draggable: boolean) => {
+    if (item.kind === "exercise") {
+      const ex = item.exercise;
+      const template = props.templateByExercise[ex.id] ?? DEFAULT_TEMPLATE;
+      return (
+        <SessionExerciseCard
+          key={ex.id}
+          exercise={ex}
+          previousSetsBySetNumber={props.previousSetsByExercise[ex.id] ?? {}}
+          weightUnit={weightUnit}
+          preferredUnits={props.preferredUnits}
+          category={template.category}
+          exerciseImageUrl={template.imageUrl}
+          targetSets={template.targetSets}
+          targetRepsMin={template.targetRepsMin}
+          targetRepsMax={template.targetRepsMax}
+          targetDurationSeconds={template.targetDurationSeconds}
+          restSeconds={template.restSeconds}
+          onLogSet={() => props.onLogSet(ex.id)}
+          onUpdateSet={(setId, patch) => props.onUpdateSet(ex.id, setId, patch)}
+          onRemoveSet={(setId) => props.onRemoveSet(ex.id, setId)}
+          onOpenNotes={() => props.onOpenNotes(ex.id)}
+          onSubstitute={() => props.onSubstitute(ex.id)}
+          onRemoveExercise={() => props.onRemoveExercise(ex.id)}
+          onTapExercise={() => props.onTapExercise(ex.exerciseId)}
+          onStartRest={() => props.onStartRest(ex.id)}
+          reorderPosition={blockOf(ex.id)?.position}
+          reorderTotal={rows.length}
+          onMove={
+            props.onMoveExercise && blockOf(ex.id)?.isLead
+              ? (direction) => props.onMoveExercise?.(ex.id, direction)
+              : undefined
+          }
+          draggable={draggable && blockOf(ex.id)?.isLead === true}
+        />
+      );
+    }
+    return (
+      <ActiveSupersetRow
+        key={`superset-${item.supersetGroup}`}
+        supersetGroup={item.supersetGroup}
+        exercises={item.exercises}
+        previousSetsByExercise={props.previousSetsByExercise}
+        weightUnit={weightUnit}
+        templateByExercise={props.templateByExercise}
+        onLogSupersetSet={props.onLogSupersetSet}
+        onUpdateSet={props.onUpdateSet}
+        onRemoveSupersetSet={props.onRemoveSupersetSet}
+        onStartRest={props.onStartRest}
+        onSubstitute={props.onSubstitute}
+        onRemoveExercise={props.onRemoveExercise}
+        onOpenSupersetNotes={props.onOpenSupersetNotes}
+        onAddExerciseToSuperset={props.onAddExerciseToSuperset}
+        reorderPosition={blockOf(item.exercises[0].id)?.position}
+        reorderTotal={rows.length}
+        onMove={
+          props.onMoveExercise
+            ? (direction) =>
+                props.onMoveExercise?.(item.exercises[0].id, direction)
+            : undefined
+        }
+        draggable={draggable}
+      />
+    );
   };
 
   return (
@@ -408,183 +478,144 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
         style={styles.keyboardAvoider}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        {isReordering ? (
-          /*
-           * Reorder mode: uniform compact rows, because the sortable only
-           * drags reliably when every row is the same height (bisected on
-           * device — real per-card heights engage the drag and move nothing).
-           * Entered by HOLDING a card's grip, left automatically on the drop.
-           * There is no button either way.
-           */
-          <>
-            {/*
-              ABOVE the list, never inside it as a `header`.
-              The library compares the dragged row's position (row-container
-              space) against the scroller's contentOffset (scroll space) to
-              decide when to auto-scroll. Content above the rows offsets those
-              two spaces by its height, which pushes the down-trigger below the
-              bottom of the viewport — the exact "dragging to the bottom does
-              not scroll" bug this rebuild set out to fix. Pinned here, the
-              spaces align and Minimize/End stay reachable.
-            */}
-            <SessionHeader
-              startedAt={props.startedAt}
-              sessionName={props.sessionName}
-              onMinimize={props.onMinimize}
-              onEnd={props.onDiscard}
-            />
-            <ReorderableList
-              testID="active-session-reorder-list"
-              style={styles.scroll}
-              // NOT the full-card `scrollContent`: that has `padding: 16` and
-              // `gap: 16`. The top inset shifts every row off the offsets the
-              // sortable derives from `itemHeight`, and the gap stacks on the
-              // row's own spacer, making the real pitch 104 against a declared
-              // 88 — by the fifth row the drop lands a whole slot out.
-              contentContainerStyle={styles.reorderContent}
-              itemHeight={COMPACT_REORDER_ROW_HEIGHT + REORDER_ROW_GAP}
-              data={rows}
-              onReorder={handleReorder}
-              // Ends the mode on any real drop, committed move or not: a
-              // lift-in-place otherwise left no way out at all. A tap or
-              // scroll-swipe on a grip is not a drop and does not exit —
-              // `ReorderableList` filters those out.
-              onDragEnd={() => setIsReordering(false)}
-              renderItem={(row, { Handle, index }: ReorderableRenderProps) => (
-                <View style={{ paddingBottom: REORDER_ROW_GAP }}>
-                  <CompactReorderRow
-                    exerciseNames={row.exercises.map(
-                      (exercise) => exercise.exerciseName,
-                    )}
-                    position={index + 1}
-                    total={rows.length}
-                    // No `onMove` here on purpose. The sortable seeds its `positions` map
-                    // once, so a reorder arriving from OUTSIDE the drag (a VoiceOver Move
-                    // up/down) would leave the rendered order and that map disagreeing, and
-                    // the next drop would commit against the stale one. Idle mode carries
-                    // those actions already.
-                    DragHandle={Handle}
-                  />
+        <ReorderableList
+          testID="active-session-list"
+          style={styles.scroll}
+          contentContainerStyle={styles.scrollContent}
+          // Only the seed used before the rows report their own heights, so a
+          // rough average of a card is right. Cards are NOT this tall and do
+          // not match each other; the list measures them.
+          estimatedItemHeight={ESTIMATED_BLOCK_HEIGHT}
+          compactItemHeight={COMPACT_REORDER_ROW_HEIGHT + REORDER_ROW_GAP}
+          keyboardDismissMode="on-drag"
+          automaticallyAdjustKeyboardInsets
+          data={rows}
+          onReorder={handleReorder}
+          header={
+            <>
+              <SessionHeader
+                startedAt={props.startedAt}
+                sessionName={props.sessionName}
+                onMinimize={props.onMinimize}
+                onEnd={props.onDiscard}
+              />
+              {props.withClient && (
+                <TrainerBannerPresenter
+                  withClient={props.withClient}
+                  retroactive={props.retroactive}
+                />
+              )}
+              {(hasCardio || props.retroactive) && (
+                <View
+                  style={styles.activityMeta}
+                  testID="session-activity-meta"
+                >
+                  {props.retroactive &&
+                  props.retrospectiveCompletedAt &&
+                  props.onRetrospectiveDateChange ? (
+                    <>
+                      <DatePickerField
+                        label="Workout date"
+                        value={retrospectiveDayValue(
+                          props.retrospectiveCompletedAt,
+                        )}
+                        maximumDate={today}
+                        allowClear={false}
+                        onChange={props.onRetrospectiveDateChange}
+                        testID="retrospective-workout-date"
+                      />
+                      <View style={styles.metaField}>
+                        <Text style={styles.metaLabel}>DURATION (MIN)</Text>
+                        <TextInput
+                          style={styles.metaInput}
+                          value={String(
+                            Math.max(
+                              1,
+                              Math.round(
+                                (props.retrospectiveDurationSeconds ?? 3600) /
+                                  60,
+                              ),
+                            ),
+                          )}
+                          keyboardType="number-pad"
+                          onChangeText={(value) => {
+                            const minutes = Number.parseInt(value, 10);
+                            if (minutes > 0 && minutes <= 24 * 60)
+                              props.onRetrospectiveDurationChange?.(
+                                minutes * 60,
+                              );
+                          }}
+                          maxLength={4}
+                          testID="retrospective-workout-duration"
+                        />
+                      </View>
+                    </>
+                  ) : null}
+                  {hasCardio ? (
+                    <>
+                      <Text style={styles.metaLabel}>ENVIRONMENT</Text>
+                      <View style={styles.environmentRow}>
+                        {(["indoor", "outdoor"] as const).map((value) => (
+                          <TouchableOpacity
+                            key={value}
+                            style={[
+                              styles.environmentButton,
+                              props.activityEnvironment === value &&
+                                styles.environmentButtonActive,
+                            ]}
+                            onPress={() =>
+                              props.onActivityEnvironmentChange?.(value)
+                            }
+                            testID={`session-environment-${value}`}
+                          >
+                            <Text style={styles.environmentText}>
+                              {value.toUpperCase()}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                      <View style={styles.metaField}>
+                        <Text style={styles.metaLabel}>
+                          LOCATION (OPTIONAL)
+                        </Text>
+                        <TextInput
+                          style={styles.metaInput}
+                          value={props.locationName ?? ""}
+                          onChangeText={props.onLocationNameChange}
+                          placeholder="Park, route or gym"
+                          placeholderTextColor={color.$text4}
+                          maxLength={120}
+                          testID="session-location"
+                        />
+                      </View>
+                    </>
+                  ) : null}
                 </View>
               )}
-            />
-          </>
-        ) : (
-          <FlatList
-            testID="active-session-list"
-            style={styles.scroll}
-            contentContainerStyle={styles.scrollContent}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-            keyboardDismissMode="on-drag"
-            automaticallyAdjustKeyboardInsets
-            data={displayItems}
-            extraData={weightUnit}
-            keyExtractor={displayItemKey}
-            ListHeaderComponent={
-              <>
-                <SessionHeader
-                  startedAt={props.startedAt}
-                  sessionName={props.sessionName}
-                  onMinimize={props.onMinimize}
-                  onEnd={props.onDiscard}
-                />
-                {props.withClient && (
-                  <TrainerBannerPresenter
-                    withClient={props.withClient}
-                    retroactive={props.retroactive}
+            </>
+          }
+          footer={
+            orderedExercises.length > 0 ? (
+              <View
+                style={styles.addExerciseSection}
+                testID="active-session-add-exercise-row"
+              >
+                <View style={styles.divider} />
+                <TouchableOpacity
+                  onPress={props.onAddExercise}
+                  style={styles.addExerciseLink}
+                  testID="active-session-add-exercise"
+                  accessibilityLabel="Add exercise"
+                >
+                  <Ionicons
+                    name="add-circle-outline"
+                    size={20}
+                    color={color.$primary}
                   />
-                )}
-                {(hasCardio || props.retroactive) && (
-                  <View
-                    style={styles.activityMeta}
-                    testID="session-activity-meta"
-                  >
-                    {props.retroactive &&
-                    props.retrospectiveCompletedAt &&
-                    props.onRetrospectiveDateChange ? (
-                      <>
-                        <DatePickerField
-                          label="Workout date"
-                          value={retrospectiveDayValue(
-                            props.retrospectiveCompletedAt,
-                          )}
-                          maximumDate={today}
-                          allowClear={false}
-                          onChange={props.onRetrospectiveDateChange}
-                          testID="retrospective-workout-date"
-                        />
-                        <View style={styles.metaField}>
-                          <Text style={styles.metaLabel}>DURATION (MIN)</Text>
-                          <TextInput
-                            style={styles.metaInput}
-                            value={String(
-                              Math.max(
-                                1,
-                                Math.round(
-                                  (props.retrospectiveDurationSeconds ?? 3600) /
-                                    60,
-                                ),
-                              ),
-                            )}
-                            keyboardType="number-pad"
-                            onChangeText={(value) => {
-                              const minutes = Number.parseInt(value, 10);
-                              if (minutes > 0 && minutes <= 24 * 60)
-                                props.onRetrospectiveDurationChange?.(
-                                  minutes * 60,
-                                );
-                            }}
-                            maxLength={4}
-                            testID="retrospective-workout-duration"
-                          />
-                        </View>
-                      </>
-                    ) : null}
-                    {hasCardio ? (
-                      <>
-                        <Text style={styles.metaLabel}>ENVIRONMENT</Text>
-                        <View style={styles.environmentRow}>
-                          {(["indoor", "outdoor"] as const).map((value) => (
-                            <TouchableOpacity
-                              key={value}
-                              style={[
-                                styles.environmentButton,
-                                props.activityEnvironment === value &&
-                                  styles.environmentButtonActive,
-                              ]}
-                              onPress={() =>
-                                props.onActivityEnvironmentChange?.(value)
-                              }
-                              testID={`session-environment-${value}`}
-                            >
-                              <Text style={styles.environmentText}>
-                                {value.toUpperCase()}
-                              </Text>
-                            </TouchableOpacity>
-                          ))}
-                        </View>
-                        <View style={styles.metaField}>
-                          <Text style={styles.metaLabel}>
-                            LOCATION (OPTIONAL)
-                          </Text>
-                          <TextInput
-                            style={styles.metaInput}
-                            value={props.locationName ?? ""}
-                            onChangeText={props.onLocationNameChange}
-                            placeholder="Park, route or gym"
-                            placeholderTextColor={color.$text4}
-                            maxLength={120}
-                            testID="session-location"
-                          />
-                        </View>
-                      </>
-                    ) : null}
-                  </View>
-                )}
-              </>
-            }
-            ListEmptyComponent={
+                  <Text style={styles.addExerciseText}>Add Exercise</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
               <View style={styles.emptyWrap} testID="active-session-empty">
                 <Text style={styles.emptyTitle}>No exercises yet</Text>
                 <Text style={styles.emptyBody}>
@@ -600,127 +631,40 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
                   <Text style={styles.emptyAddLabel}>Add exercise</Text>
                 </TouchableOpacity>
               </View>
-            }
-            ListFooterComponent={
-              orderedExercises.length > 0 ? (
-                <View
-                  style={styles.addExerciseSection}
-                  testID="active-session-add-exercise-row"
-                >
-                  <View style={styles.divider} />
-                  <TouchableOpacity
-                    onPress={props.onAddExercise}
-                    style={styles.addExerciseLink}
-                    testID="active-session-add-exercise"
-                    accessibilityLabel="Add exercise"
-                  >
-                    <Ionicons
-                      name="add-circle-outline"
-                      size={20}
-                      color={color.$primary}
-                    />
-                    <Text style={styles.addExerciseText}>Add Exercise</Text>
-                  </TouchableOpacity>
+            )
+          }
+          renderItem={(row, { index, isCompact }: ReorderableRenderProps) => (
+            <View
+              style={styles.dragBlock}
+              testID={`active-session-drag-block-${index + 1}`}
+            >
+              {isCompact ? (
+                /*
+                 * Collapsed for the drag, so the whole list is visible while
+                 * you move a row. The swap happens on the hold, BEFORE the
+                 * drag activates — see `ReorderableList`.
+                 */
+                <View style={{ paddingBottom: REORDER_ROW_GAP }}>
+                  <CompactReorderRow
+                    exerciseNames={row.exercises.map(
+                      (exercise) => exercise.exerciseName,
+                    )}
+                    position={index + 1}
+                    total={rows.length}
+                    // No `onMove` in compact mode: a move arriving from
+                    // outside the drag would desync the sortable's position
+                    // map against what is on screen. The full cards carry the
+                    // accessible Move actions.
+                  />
                 </View>
-              ) : null
-            }
-            renderItem={({ item, index }) => {
-              const lead =
-                item.kind === "exercise" ? item.exercise : item.exercises[0];
-              return (
-                <View
-                  style={styles.dragBlock}
-                  testID={`active-session-drag-block-${index + 1}`}
-                >
-                  {(() => {
-                    if (item.kind === "exercise") {
-                      const ex = item.exercise;
-                      const template =
-                        props.templateByExercise[ex.id] ?? DEFAULT_TEMPLATE;
-                      return (
-                        <SessionExerciseCard
-                          key={ex.id}
-                          exercise={ex}
-                          previousSetsBySetNumber={
-                            props.previousSetsByExercise[ex.id] ?? {}
-                          }
-                          weightUnit={weightUnit}
-                          preferredUnits={props.preferredUnits}
-                          category={template.category}
-                          exerciseImageUrl={template.imageUrl}
-                          targetSets={template.targetSets}
-                          targetRepsMin={template.targetRepsMin}
-                          targetRepsMax={template.targetRepsMax}
-                          targetDurationSeconds={template.targetDurationSeconds}
-                          restSeconds={template.restSeconds}
-                          onLogSet={() => props.onLogSet(ex.id)}
-                          onUpdateSet={(setId, patch) =>
-                            props.onUpdateSet(ex.id, setId, patch)
-                          }
-                          onRemoveSet={(setId) =>
-                            props.onRemoveSet(ex.id, setId)
-                          }
-                          onOpenNotes={() => props.onOpenNotes(ex.id)}
-                          onSubstitute={() => props.onSubstitute(ex.id)}
-                          onRemoveExercise={() => props.onRemoveExercise(ex.id)}
-                          onTapExercise={() =>
-                            props.onTapExercise(ex.exerciseId)
-                          }
-                          onStartRest={() => props.onStartRest(ex.id)}
-                          reorderPosition={blockOf(ex.id)?.position}
-                          reorderTotal={rows.length}
-                          onMove={
-                            props.onMoveExercise && blockOf(ex.id)?.isLead
-                              ? (direction) =>
-                                  props.onMoveExercise?.(ex.id, direction)
-                              : undefined
-                          }
-                          onLongPressReorder={
-                            canReorder && blockOf(ex.id)?.isLead
-                              ? enterReorder
-                              : undefined
-                          }
-                        />
-                      );
-                    }
-                    return (
-                      <ActiveSupersetRow
-                        key={`superset-${item.supersetGroup}`}
-                        supersetGroup={item.supersetGroup}
-                        exercises={item.exercises}
-                        previousSetsByExercise={props.previousSetsByExercise}
-                        weightUnit={weightUnit}
-                        templateByExercise={props.templateByExercise}
-                        onLogSupersetSet={props.onLogSupersetSet}
-                        onUpdateSet={props.onUpdateSet}
-                        onRemoveSupersetSet={props.onRemoveSupersetSet}
-                        onStartRest={props.onStartRest}
-                        onSubstitute={props.onSubstitute}
-                        onRemoveExercise={props.onRemoveExercise}
-                        onOpenSupersetNotes={props.onOpenSupersetNotes}
-                        onAddExerciseToSuperset={props.onAddExerciseToSuperset}
-                        reorderPosition={blockOf(lead.id)?.position}
-                        reorderTotal={rows.length}
-                        onMove={
-                          props.onMoveExercise
-                            ? (direction) =>
-                                props.onMoveExercise?.(
-                                  item.exercises[0].id,
-                                  direction,
-                                )
-                            : undefined
-                        }
-                        onLongPressReorder={
-                          canReorder ? enterReorder : undefined
-                        }
-                      />
-                    );
-                  })()}
-                </View>
-              );
-            }}
-          />
-        )}
+              ) : (
+                displayItemsOfBlock(row.id).map((item) =>
+                  renderDisplayItem(item, canReorder),
+                )
+              )}
+            </View>
+          )}
+        />
       </KeyboardAvoidingView>
 
       {/* Sticky Finish CTA — floats above the content per the prototype

@@ -43,8 +43,8 @@ interface ExerciseConfigCardProps {
   readonly reorderPosition?: number;
   readonly reorderTotal?: number;
   readonly onMove?: (direction: -1 | 1) => void;
-  readonly DragHandle?: (props: { children: ReactNode }) => ReactNode;
-  readonly onLongPressReorder?: () => void;
+  /** Inside a `ReorderableList`: the grip says it can be dragged. */
+  readonly draggable?: boolean;
 }
 
 export default function ExerciseConfigCard({
@@ -60,8 +60,7 @@ export default function ExerciseConfigCard({
   reorderPosition,
   reorderTotal,
   onMove,
-  DragHandle,
-  onLongPressReorder,
+  draggable,
 }: ExerciseConfigCardProps) {
   const isInSuperset =
     isSupersetStart ||
@@ -173,16 +172,13 @@ export default function ExerciseConfigCard({
         padding={12}
       >
         <View flexDirection="row" alignItems="center" gap={9} marginBottom={11}>
-          {(onMove || DragHandle || onLongPressReorder) &&
-          reorderPosition &&
-          reorderTotal ? (
+          {(onMove || draggable) && reorderPosition && reorderTotal ? (
             <ExerciseReorderHandle
               label={exercise.exercise_name}
               position={reorderPosition}
               total={reorderTotal}
               onMove={onMove}
-              DragHandle={DragHandle}
-              onLongPressReorder={onLongPressReorder}
+              draggable={draggable}
             />
           ) : null}
           <View

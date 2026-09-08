@@ -28,67 +28,58 @@ describe("ExerciseReorderHandle", () => {
     expect(onMove).toHaveBeenCalledWith(-1);
   });
 
-  it("wraps the grip in the drag handle when one is supplied", () => {
-    // The gesture is the library's now, not a Pressable's `onLongPress`. All
-    // this component does is let itself be wrapped, so the drag lives on the
-    // grip and nowhere else.
-    const DragHandle = jest.fn(({ children }: { children: ReactNode }) => (
-      <View testID="drag-handle">{children}</View>
-    ));
+  it("draws the grip and owns its accessibility, but never the gesture", () => {
+    // The drag belongs to `ReorderableList`, which puts an invisible Gesture
+    // Handler target over the row's corner on top of this grip. A target in
+    // here would unmount when the row collapses to a compact one mid-gesture
+    // and take the drag with it — and a Pressable would never drag at all,
+    // since RN's press responder claims the touch before the pan activates.
     const { getByTestId } = renderWithTheme(
       <ExerciseReorderHandle
         label="Bench"
         position={1}
         total={3}
         onMove={jest.fn()}
-        DragHandle={DragHandle}
+        draggable
       />,
     );
 
-    expect(getByTestId("drag-handle")).toBeTruthy();
-    // The grip is INSIDE the handle, or holding it would not drag.
-    expect(
-      getByTestId("drag-handle").findByProps({ testID: "reorder-1" }),
-    ).toBeTruthy();
-  });
-
-  it("asks the screen to enter reorder mode when held, with no drag handle", () => {
-    // Idle the grip is a Pressable, which is correct here: the hold only has
-    // to collapse the list into uniform rows. It must NOT be a Pressable once
-    // dragging, since RN's press responder would claim the touch.
-    const onLongPressReorder = jest.fn();
-    const { getByTestId, queryByTestId } = renderWithTheme(
-      <ExerciseReorderHandle
-        label="Bench"
-        position={1}
-        total={3}
-        onMove={jest.fn()}
-        onLongPressReorder={onLongPressReorder}
-      />,
+    const grip = getByTestId("reorder-1");
+    expect(grip.props.accessibilityRole).toBe("adjustable");
+    expect(grip.props.accessibilityLabel).toBe(
+      "Reorder Bench, position 1 of 3",
     );
-
-    expect(queryByTestId("drag-handle")).toBeNull();
-    expect(getByTestId("reorder-1").props.accessibilityHint).toBe(
-      "Hold to reorder, or use Move up and Move down actions",
-    );
-
-    fireEvent(getByTestId("reorder-1"), "longPress");
-    expect(onLongPressReorder).toHaveBeenCalledTimes(1);
+    expect(grip.props.onStartShouldSetResponder).toBeUndefined();
   });
 
   it("advertises the hold gesture in its hint only when draggable", () => {
-    const { getByTestId } = renderWithTheme(
+    const { getByTestId, rerender } = renderWithTheme(
       <ExerciseReorderHandle
         label="Bench"
         position={1}
         total={3}
         onMove={jest.fn()}
-        DragHandle={({ children }: { children: ReactNode }) => <>{children}</>}
+        draggable
       />,
     );
 
     expect(getByTestId("reorder-1").props.accessibilityHint).toBe(
       "Hold and drag to move, or use Move up and Move down actions",
+    );
+
+    // The coach surfaces reorder with buttons, so their grip is accessibility
+    // only and must not promise a drag.
+    rerender(
+      <ExerciseReorderHandle
+        label="Bench"
+        position={1}
+        total={3}
+        onMove={jest.fn()}
+      />,
+    );
+
+    expect(getByTestId("reorder-1").props.accessibilityHint).toBe(
+      "Use Move up and Move down actions",
     );
   });
 });

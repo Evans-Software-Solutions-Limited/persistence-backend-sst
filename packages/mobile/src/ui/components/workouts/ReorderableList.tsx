@@ -1,11 +1,27 @@
-import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { Dimensions, View, type StyleProp, type ViewStyle } from "react-native";
-import Animated from "react-native-reanimated";
-import { ScrollView as GestureScrollView } from "react-native-gesture-handler";
+import Animated, {
+  scrollTo,
+  useAnimatedReaction,
+  useSharedValue,
+} from "react-native-reanimated";
+import {
+  Gesture,
+  GestureDetector,
+  ScrollView as GestureScrollView,
+} from "react-native-gesture-handler";
+import { scheduleOnRN } from "react-native-worklets";
 import * as Haptics from "expo-haptics";
 import {
   DropProvider,
-  SortableItem,
+  useSortable,
   useSortableList,
 } from "react-native-reanimated-dnd";
 
@@ -14,34 +30,54 @@ import {
  * the workout creator all reorder through this; nothing else may talk to
  * `react-native-reanimated-dnd` directly.
  *
- * ⚠ ROWS MUST BE A SINGLE UNIFORM HEIGHT, and that is not a stylistic
- * preference — it is the one thing that makes the drag work at all.
+ * ── The interaction ─────────────────────────────────────────────────────────
+ * ONE gesture. Hold the grip: the rows collapse to uniform compact rows so the
+ * list can be seen at a glance, and the SAME finger then drags. Release to
+ * commit; the rows expand again. No button in, no button out, no second hold.
  *
- * Bisected on device against the real session screen: with a uniform
- * `itemHeight` a held grip drags the row and commits the order; with real
- * per-card heights the drag engages and moves nothing, whether those heights
- * are measured or handed in. The library's varying-height sortable is simply
- * broken — the same spike also rendered rows of 96/168/240pt overlapping each
- * other. So this component takes ONE number and the callers collapse to
- * uniform rows while reordering. Do not reintroduce a height resolver.
+ * The collapse fires from a long press of its own at
+ * `COLLAPSE_LONG_PRESS_MS`, deliberately SHORTER than the drag's own
+ * `activateAfterLongPress(200)`, and composed `Gesture.Simultaneous` with it
+ * so neither cancels the other. That ordering is the whole trick: the library
+ * takes its measurements when the pan activates, so the geometry has to be
+ * settled BEFORE that. Collapsing after the drag had started is what made
+ * every earlier attempt drift — the drag was anchored to heights that no
+ * longer existed. And because compact rows are a known uniform height, the new
+ * geometry is published synchronously, with no layout round-trip to lose.
  *
- * The rest of the shape is deliberate too:
+ * ── Why this drives `useSortable` directly ──────────────────────────────────
+ * Not `SortableItem`, for two reasons:
+ *  1. **The touch target must outlive the collapse.** A touch is delivered to
+ *     the view the finger went down on, so a target inside the body would
+ *     unmount when the body swaps and take the gesture with it. This component
+ *     puts an INVISIBLE target over the row's top-left corner — where every
+ *     one of these layouts draws its grip — and swaps only the body beneath
+ *     it. The cards keep drawing their own grip, and keep its accessibility.
+ *  2. **`SortableItem` owns the gesture and the measuring.** Its own
+ *     `onLayout` measurement proved unreliable — on some mounts it simply
+ *     never fired, leaving every row at the estimate (rows overlapping in the
+ *     session, ~50pt of dead space in the editor). Heights are measured here
+ *     instead and handed to the hook as a resolver, which is also what lets
+ *     compact mode publish its heights up front.
  *
- * - **This list is the screen's only scroller while it is mounted.** Never
- *   nest it in another ScrollView. The previous implementation nested its list
- *   inside the form's scroller and bridged them with a one-shot async
- *   `measureLayout` that went stale whenever anything above it changed height,
- *   which is why dragging to the bottom never scrolled. Put surrounding
- *   content in `header`/`footer` instead.
+ * ── The rest, all learned the hard way ──────────────────────────────────────
+ * - **This list is the screen's only scroller.** Never nest it in another
+ *   ScrollView. Surrounding content goes in `header`/`footer`, which scroll
+ *   with the rows.
+ * - **Content above the rows is compensated for, not forbidden.** The library
+ *   works in a row space whose origin is the first row, while the scroll
+ *   offset it compares against is the scroller's own. Anything above the rows
+ *   — a header, the content style's padding — makes those differ, which used
+ *   to take the auto-scroll edges with it. The rows' wrapper measures its own
+ *   offset and the scroll offset handed to the rows is shifted by it.
  * - **Gesture Handler's ScrollView, wrapped for Reanimated**, with
  *   `simultaneousHandlers` — the composition the library's own `Sortable`
  *   uses. A vertical pan inside a vertical scroller is genuinely contended.
- * - **Drag is confined to a handle.** `renderItem` receives a `Handle`
- *   wrapper; put the grip inside it. Registering a handle disables the
- *   whole-item pan, and the pan is `activateAfterLongPress(200)`, so holding
- *   the grip drags while a plain swipe still scrolls.
  */
 const AnimatedScrollView = Animated.createAnimatedComponent(GestureScrollView);
+
+/** Shorter than the drag's own 200ms, so the collapse lands first. */
+const COLLAPSE_LONG_PRESS_MS = 90;
 
 /** Module scope so its identity never changes between renders. */
 const itemId = (item: ReorderableItem) => item.id;
@@ -49,15 +85,26 @@ const itemId = (item: ReorderableItem) => item.id;
 export type ReorderableItem = { id: string };
 
 export type ReorderableRenderProps = {
-  /** Wrap the drag grip in this. Nothing else starts a drag. */
-  Handle: (props: { children: ReactNode }) => ReactNode;
   index: number;
+  /** True while the list is collapsed for a drag. */
+  isCompact: boolean;
 };
 
 export type ReorderableListProps<TItem extends ReorderableItem> = {
   data: TItem[];
-  /** Uniform row height, including any spacing. See the note above. */
-  itemHeight: number;
+  /**
+   * Seed height for a row, used only until it has been measured. Rows are NOT
+   * required to be this tall, or to match each other.
+   */
+  estimatedItemHeight: number;
+  /** Uniform height of a compact row, including its spacing. */
+  compactItemHeight: number;
+  /**
+   * The row's body — the real card, or the compact row while `isCompact`. Draw
+   * the grip wherever it belongs in that layout; this component puts an
+   * invisible touch target over the row's top-left corner and wires the
+   * gestures to it.
+   */
   renderItem: (item: TItem, props: ReorderableRenderProps) => ReactNode;
   /**
    * Fired once on drop with the item that moved, its new index, and the whole
@@ -66,28 +113,23 @@ export type ReorderableListProps<TItem extends ReorderableItem> = {
    * corrupts the order.
    */
   onReorder: (movedId: string, toIndex: number, orderedIds: string[]) => void;
-  /** Fired when a drag actually engages. */
-  onDragStart?: () => void;
-  /**
-   * Fired on EVERY drag end, including a cancelled pan or a release in the same
-   * slot — unlike `onReorder`, which only fires when the index changed. A
-   * caller that collapses into this list must leave that mode here, or a
-   * lift-in-place strands the user with nothing to exit by.
-   */
-  onDragEnd?: () => void;
+  /** Scrolls with the rows. Its height is compensated for; see above. */
   header?: ReactNode;
   footer?: ReactNode;
   style?: StyleProp<ViewStyle>;
   contentContainerStyle?: StyleProp<ViewStyle>;
+  /** Forwarded to the scroller. The session logs sets into it. */
+  keyboardDismissMode?: "none" | "on-drag" | "interactive";
+  automaticallyAdjustKeyboardInsets?: boolean;
   testID?: string;
 };
 
 /**
- * `positions` inside `useSortableList` is seeded from the data order ONCE and
- * never re-synced, so the hook must remount when the id *set* changes (a row
- * added or removed) — but must NOT remount on a plain reorder, or the list
- * would jump back to the top after every drop. Keying on the SORTED ids draws
- * exactly that line.
+ * `positions` inside `useSortableList` is seeded from the data order ONCE, so
+ * the hook must remount when the id *set* changes (a row added or removed).
+ * A plain reorder must NOT remount it — the list would lose its scroll offset
+ * after every drop — and does not need to: the inner component re-seeds
+ * `positions` in place when the order changes underneath it.
  */
 export function ReorderableList<TItem extends ReorderableItem>(
   props: ReorderableListProps<TItem>,
@@ -105,52 +147,86 @@ export function ReorderableList<TItem extends ReorderableItem>(
 
 function ReorderableListInner<TItem extends ReorderableItem>({
   data,
-  itemHeight,
+  estimatedItemHeight,
+  compactItemHeight,
   renderItem,
   onReorder,
-  onDragStart,
-  onDragEnd,
   header,
   footer,
   style,
   contentContainerStyle,
+  keyboardDismissMode,
+  automaticallyAdjustKeyboardInsets,
   testID,
 }: ReorderableListProps<TItem>) {
   /**
-   * NEVER 0, and never left at the measurement's initial value.
+   * The auto-scroll window, taken from the WINDOW at mount — deliberately not
+   * measured.
    *
-   * `useSortable` freezes `containerHeight` on first render
+   * `useSortable` freezes this on its first render
    * (`useRef(containerHeight).current`) and derives the auto-scroll edge from
-   * it as `lowerBound + containerHeight`. Starting at 0 froze 0 — and 0 is not
-   * `undefined`, so the library's own 500 default did not apply either. That
-   * makes the scroll-down test unconditionally true, so any drag on a list long
-   * enough to scroll runs it to the end and commits the row at the LAST index.
-   * It only looked correct on a list too short to scroll.
+   * it as `lowerBound + containerHeight`. It must therefore be right on that
+   * first render, and measuring it is what made everything worse: the rows had
+   * to be keyed on the measurement so they could re-freeze, and that remount
+   * is fatal. The library computes a row's resting top ONCE, as
+   * `index × estimatedItemHeight`, and only corrects it when the measured
+   * heights CHANGE afterwards — so a remount that happens after the heights
+   * are known strands every row at the estimate (rows overlapping in the
+   * session, ~50pt of dead space between editor cards). No remount, no
+   * stranding.
    *
-   * So: seed with the window height (a close over-estimate) and re-key the rows
-   * on the measured value, so they re-freeze against the truth.
+   * The cost is that the window is the SCREEN rather than this scroller, so
+   * it over-estimates by whatever chrome sits outside it (~60pt here). That
+   * makes the auto-scroll trigger slightly harder to reach and `maxScroll`
+   * slightly generous, which `scrollTo` clamps. Both are far cheaper than a
+   * list whose rows are laid out at a guess. NEVER 0: 0 is not `undefined`, so
+   * the library's own 500 default would not apply, and a 0 window makes the
+   * scroll-down test unconditionally true — every drag then runs to the end
+   * and commits at the LAST index.
    */
-  const [viewportHeight, setViewportHeight] = useState(
-    () => Dimensions.get("window").height,
-  );
+  const windowHeight = useRef(Dimensions.get("window").height).current;
+
   /**
-   * The rows are keyed on this height, so a remount mid-drag would kill the
-   * gesture before the library's `onFinalize` runs — no drop, and therefore no
-   * mode exit. But refusing every later measurement is wrong too: both entry
-   * points mount this list while the keyboard may still be up, so the first
-   * layout can be a couple of hundred points short, and that shortfall lands
-   * straight in the auto-scroll edge and `maxScroll`.
-   *
-   * So: take every usable measurement EXCEPT while a drag is in flight. Zero
-   * is always refused — freezing 0 restores the last-index bug outright.
+   * The rows' own offset inside the scroll content — the row space ↔ scroll
+   * space difference. Measured from the wrapper's layout rather than computed
+   * from the header, so content-container padding counts too.
    */
+  const [rowsOffset, setRowsOffset] = useState(0);
+  /** Measured row heights, by id. Ours, not the library's. */
+  const [heights, setHeights] = useState<Record<string, number>>({});
+  const [isCompact, setIsCompact] = useState(false);
+
   const isDraggingRef = useRef(false);
   const dataRef = useRef(data);
   dataRef.current = data;
 
-  const containerHeight = Math.min(viewportHeight, data.length * itemHeight);
+  const measureRow = useCallback((id: string, height: number) => {
+    const rounded = Math.round(height);
+    if (rounded <= 0) return;
+    setHeights((previous) =>
+      Math.abs((previous[id] ?? 0) - rounded) < 1
+        ? previous
+        : { ...previous, [id]: rounded },
+    );
+  }, []);
+
+  /**
+   * The height resolver handed to the hook.
+   *
+   * Compact rows report their uniform height immediately — no measurement, so
+   * the drag that is about to activate already has the right geometry. Full
+   * rows report what they measured, falling back to the estimate for the frame
+   * before that lands.
+   */
+  const resolveHeight = useCallback(
+    (item: TItem) =>
+      isCompact ? compactItemHeight : (heights[item.id] ?? estimatedItemHeight),
+    [isCompact, compactItemHeight, heights, estimatedItemHeight],
+  );
 
   const {
+    positions,
+    scrollY,
     scrollViewRef,
     dropProviderRef,
     handleScroll,
@@ -159,26 +235,96 @@ function ReorderableListInner<TItem extends ReorderableItem>({
     getItemProps,
   } = useSortableList<TItem>({
     data,
-    itemHeight,
+    itemHeight: resolveHeight,
+    estimatedItemHeight,
     // Stable identity on purpose: the hook defaults this to a fresh arrow on
     // every call and then lists it in its geometry effect's deps, so leaving
     // it out re-runs that effect on every render.
     itemKeyExtractor: itemId,
   });
 
+  /**
+   * Re-seed the library's position map from the rendered order.
+   *
+   * It is seeded once at mount, so any reorder arriving from OUTSIDE a drag —
+   * a VoiceOver "Move down", a coach editing elsewhere — left the map
+   * disagreeing with what is on screen, and the next drop committed against
+   * the stale one. Never while dragging: the map IS the drag's state then.
+   */
+  const orderKey = data.map((item) => item.id).join("|");
+  useEffect(() => {
+    if (isDraggingRef.current) return;
+    const seeded: Record<string, number> = {};
+    dataRef.current.forEach((item, index) => {
+      seeded[item.id] = index;
+    });
+    positions.value = seeded;
+  }, [orderKey, positions]);
+
+  /**
+   * Row space starts at the first row; the scroll offset the library compares
+   * it against starts at the top of the content. Hand the rows a shifted
+   * offset so both edges of the auto-scroll window, and `maxScroll`, land
+   * where they actually are on screen.
+   */
+  const rowSpaceOffset = useSharedValue(0);
+  const isDraggingSV = useSharedValue(false);
+  const rowsOffsetSV = useSharedValue(0);
+  rowsOffsetSV.value = rowsOffset;
+
+  /**
+   * Seed the shift, and re-seed it when the offset is measured. Doing this
+   * only from the scroll reaction below was a real bug: at rest the list sits
+   * at offset 0, `scrollY` never changes, the reaction never fires, and the
+   * rows compare against an unshifted window. Since what the library compares
+   * is the dragged row's TOP, that put the auto-scroll trigger about a
+   * header's height below where a finger can reach.
+   */
+  useEffect(() => {
+    if (isDraggingRef.current) return;
+    rowSpaceOffset.value = scrollY.value - rowsOffset;
+  }, [rowsOffset, rowSpaceOffset, scrollY]);
+
+  useAnimatedReaction(
+    () => scrollY.value,
+    (offset) => {
+      // Not while dragging: the row animates this value itself (the library
+      // drives auto-scroll by writing to the offset it was given), and
+      // assigning over a running `withTiming` cancels it — auto-scroll would
+      // stall after a single frame.
+      if (isDraggingSV.value) return;
+      rowSpaceOffset.value = offset - rowsOffsetSV.value;
+    },
+  );
+
+  useAnimatedReaction(
+    () => rowSpaceOffset.value,
+    (offset) => {
+      if (!isDraggingSV.value) return;
+      scrollTo(scrollViewRef, 0, offset + rowsOffsetSV.value, false);
+    },
+  );
+
+  /**
+   * Clamped to the content: the library computes
+   * `maxScroll = contentHeight - containerHeight` with no floor, so on a list
+   * that does not fill the viewport a real viewport height gives a NEGATIVE
+   * scroll target — the list gets pushed off its own top and the dragged row
+   * yanked back up, committing nothing. A no-op for any list long enough to
+   * scroll.
+   */
+  const containerHeight = Math.min(windowHeight, Math.max(contentHeight, 1));
+
   const handleDrop = useCallback(
     (id: string, position: number, allPositions?: Record<string, number>) => {
       // Gesture Handler calls `onFinalize` for FAILED and CANCELLED as well as
       // END, and the library forwards all of them here — so this also fires
-      // for a pan that never activated. Reporting those as drag ends made a
-      // tap, or a scroll-swipe starting on a grip, kick the caller out of its
-      // mode: the tap-out, back again by the side door. `onDragStart` only
-      // runs from the pan's `onStart`, so gating on it still reports a
-      // lift-in-place and a post-activation cancel, both of which must exit.
+      // for a pan that never activated.
       const wasDragging = isDraggingRef.current;
       isDraggingRef.current = false;
-      if (wasDragging) onDragEnd?.();
-      if (!allPositions) return;
+      isDraggingSV.value = false;
+      setIsCompact(false);
+      if (!wasDragging || !allPositions) return;
       const from = dataRef.current.findIndex((item) => item.id === id);
       if (from === position) return;
       const ordered = [...dataRef.current]
@@ -186,17 +332,30 @@ function ReorderableListInner<TItem extends ReorderableItem>({
         .map((item) => item.id);
       onReorder(id, position, ordered);
     },
-    [onReorder, onDragEnd],
+    [onReorder, isDraggingSV],
   );
 
-  // Matches the feel the old handle gave on long-press, but fired at the
-  // moment the drag actually engages rather than by a Pressable that only
-  // pretended to start one.
   const handleDragStart = useCallback(() => {
     isDraggingRef.current = true;
+    isDraggingSV.value = true;
+  }, [isDraggingSV]);
+
+  /** Fired by the collapse long press, BEFORE the drag activates. */
+  const handleCollapse = useCallback(() => {
+    setIsCompact(true);
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    onDragStart?.();
-  }, [onDragStart]);
+  }, []);
+
+  /**
+   * A press that collapsed the list but never became a drag has to put it
+   * back, or a tap on the grip would leave the list compact with nothing to
+   * undo it. The library's `onDrop` covers a pan that activated; this covers
+   * one that never did.
+   */
+  const handleCollapseEnd = useCallback(() => {
+    if (isDraggingRef.current) return;
+    setIsCompact(false);
+  }, []);
 
   return (
     <DropProvider ref={dropProviderRef}>
@@ -209,21 +368,29 @@ function ReorderableListInner<TItem extends ReorderableItem>({
         onMomentumScrollEnd={handleScrollEnd}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode={keyboardDismissMode}
+        automaticallyAdjustKeyboardInsets={automaticallyAdjustKeyboardInsets}
         style={[{ flex: 1 }, style]}
         contentContainerStyle={contentContainerStyle}
         simultaneousHandlers={dropProviderRef}
-        onLayout={(event) => {
-          if (isDraggingRef.current) return;
-          const measured = Math.round(event.nativeEvent.layout.height);
-          if (measured <= 0) return;
-          setViewportHeight(measured);
-        }}
+        scrollEnabled={!isCompact}
       >
         {header}
 
+        {/*
+          NOT keyed on anything measured. A remount here re-runs each row's
+          one-shot resting-top calculation against heights that are already
+          known, which strands every row at the estimate — see the note on
+          `windowHeight`.
+        */}
         <View
-          key={`viewport-${viewportHeight}`}
           style={{ height: contentHeight }}
+          onLayout={(event) => {
+            // `y` is relative to the scroll content, so this is exactly the
+            // offset the rows sit at — header, padding and all.
+            if (isDraggingRef.current) return;
+            setRowsOffset(Math.round(event.nativeEvent.layout.y));
+          }}
         >
           {data.map((item, index) => (
             <ReorderableRow
@@ -231,9 +398,14 @@ function ReorderableListInner<TItem extends ReorderableItem>({
               item={item}
               index={index}
               itemProps={getItemProps(item, index)}
+              rowSpaceOffset={rowSpaceOffset}
               containerHeight={containerHeight}
+              isCompact={isCompact}
+              onMeasure={measureRow}
               onDrop={handleDrop}
               onDragStart={handleDragStart}
+              onCollapse={handleCollapse}
+              onCollapseEnd={handleCollapseEnd}
               renderItem={renderItem}
             />
           ))}
@@ -249,55 +421,118 @@ type ItemProps = ReturnType<
   ReturnType<typeof useSortableList<ReorderableItem>>["getItemProps"]
 >;
 
+/**
+ * The invisible drag target, over the row's top-left corner.
+ *
+ * Deliberately generous (56×56): it has to cover wherever the body beneath it
+ * draws its grip — the session card's, the editor card's and the compact
+ * row's all sit inside this corner — and a target that misses the grip is a
+ * grip that does not drag. It stops short of the row number and the name, and
+ * the destructive controls are all on the right.
+ */
+const GRIP_TARGET = {
+  position: "absolute" as const,
+  left: 0,
+  top: 0,
+  width: 56,
+  height: 56,
+  zIndex: 2,
+};
+
 function ReorderableRow<TItem extends ReorderableItem>({
   item,
   index,
   itemProps,
+  rowSpaceOffset,
   containerHeight,
+  isCompact,
+  onMeasure,
   onDrop,
   onDragStart,
+  onCollapse,
+  onCollapseEnd,
   renderItem,
 }: {
   item: TItem;
   index: number;
   itemProps: ItemProps;
+  rowSpaceOffset: ItemProps["lowerBound"];
   containerHeight: number;
+  isCompact: boolean;
+  onMeasure: (id: string, height: number) => void;
   onDrop: (
     id: string,
     position: number,
     allPositions?: Record<string, number>,
   ) => void;
   onDragStart: () => void;
+  onCollapse: () => void;
+  onCollapseEnd: () => void;
   renderItem: (item: TItem, props: ReorderableRenderProps) => ReactNode;
 }) {
-  const Handle = useCallback(
-    ({ children }: { children: ReactNode }) => (
-      <SortableItem.Handle>{children}</SortableItem.Handle>
-    ),
-    [],
-  );
+  const { animatedStyle, handlePanGestureHandler, registerHandle } =
+    useSortable<TItem>({
+      ...itemProps,
+      lowerBound: rowSpaceOffset,
+      containerHeight,
+      onDrop,
+      onDragStart,
+    });
+
+  // Tells the hook a handle exists, which disables the row-wide pan — the
+  // whole row must not drag, only the grip.
+  useEffect(() => {
+    registerHandle(true);
+  }, [registerHandle]);
+
+  /**
+   * The collapse gesture, composed SIMULTANEOUS with the drag so neither
+   * cancels the other. Its 90ms beats the drag's 200ms, so by the time the
+   * pan activates the rows are compact and their heights already published.
+   */
+  const gesture = useMemo(() => {
+    const collapse = Gesture.LongPress()
+      .minDuration(COLLAPSE_LONG_PRESS_MS)
+      // A drag travels far; without this the long press bails out and takes
+      // its `onEnd` with it, putting the rows back mid-drag.
+      .maxDistance(10_000)
+      .shouldCancelWhenOutside(false)
+      .onStart(() => {
+        "worklet";
+        scheduleOnRN(onCollapse);
+      })
+      .onFinalize(() => {
+        "worklet";
+        scheduleOnRN(onCollapseEnd);
+      });
+    return Gesture.Simultaneous(handlePanGestureHandler, collapse);
+  }, [handlePanGestureHandler, onCollapse, onCollapseEnd]);
+
+  const renderProps = { index, isCompact };
 
   return (
-    <SortableItem
-      data={item}
-      {...itemProps}
-      // Defaults to 500 and is frozen on first render
-      // (`useRef(containerHeight).current`), and the library's own wrapper
-      // never passes it — which puts the auto-scroll trigger edge ~200pt above
-      // the real bottom of a tall phone's list. That is why dragging DOWN to
-      // the bottom did not scroll while dragging up did: the upward edge keys
-      // off the scroll offset instead.
-      // Clamped to the content: the library computes
-      // `maxScroll = itemsCount * itemHeight - containerHeight` with no floor,
-      // so on a list that does not fill the viewport a real viewport height
-      // gives a NEGATIVE scroll target — the list gets pushed off its own top
-      // and the dragged row yanked back up, committing nothing. A no-op for
-      // any list long enough to scroll.
-      containerHeight={containerHeight}
-      onDrop={onDrop}
-      onDragStart={onDragStart}
+    <Animated.View
+      style={animatedStyle}
+      onLayout={(event) => {
+        // Ours, because the library's own measurement did not always fire —
+        // and when it does not, every row is left at the estimate.
+        if (isCompact) return;
+        onMeasure(item.id, event.nativeEvent.layout.height);
+      }}
+      testID={`sortable-item-${item.id}`}
     >
-      {renderItem(item, { Handle, index })}
-    </SortableItem>
+      {renderItem(item, renderProps)}
+
+      {/*
+        OUTSIDE the body and never re-created by the collapse: a touch goes to
+        the view the finger landed on, so a target that unmounts when the body
+        swaps takes the gesture with it. A plain View, never a Pressable — RN's
+        press responder claims the touch before Gesture Handler's pan can
+        activate, so a Pressable here simply never drags.
+      */}
+      <GestureDetector gesture={gesture}>
+        <View style={GRIP_TARGET} testID={`sortable-handle-${item.id}`} />
+      </GestureDetector>
+    </Animated.View>
   );
 }
