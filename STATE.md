@@ -141,11 +141,56 @@ requires the switch to already read `true`, i.e. after `"activated"`, by which
 point `grantInFlight` is null). Worth a fourth `"cancelled"` outcome only if a
 second entry point to the grant is added.
 
-⚠ One 🟢 left standing deliberately: `workoutRepository.getQuota` reports
-"unlimited" where `assertEntitlement` throws when the `free` tier row is
-absent. It is **pre-existing, in the unstaged entitlement WIP**, not this fix —
-fixing it would mean committing another session's in-progress work. Chipped for
-its own pass.
+🟢 **`getQuota` unlimited-on-missing-free-row — now FIXED** (`863e51fa`,
+Brad's call). Both free-tier fallback sites route through
+`resolveFreeTierLimit()` returning `FREE_TIER_WORKOUT_LIMIT_FALLBACK = 3`; a
+real `free` row with an explicitly NULL `workout_limit` fails closed too (free
+is not a tier this product sells uncapped). Two mutation-checked tests. ⚠ The
+two NULLs stay distinct for every OTHER tier — do not generalise this.
+The retry-affordance half is deliberately NOT done: a missing catalog row is a
+server misconfiguration, so "retry the connection" is the wrong message and an
+upgrade prompt is worse. It needs a degraded-read field on `WorkoutQuota`,
+which flows through the Eden type, the mobile model and the SQLite cache — its
+own change.
+
+That commit also carries the parallel session's uncommitted entitlement work
+(cancelled-without-future-end now lapsed in `computeIsFreeTier`; revocations
+stamping `expires_at = COALESCE(expires_at, NOW())`;
+`APPLE_BILLING_RETRY_CEILING_MS` bounding the billing-retry grace;
+`restoreReconciledWorkout`'s slice check; a shared `hasLapsed` duplicated into
+`useLoadoutGate`/`useMealprintGate`). It shares `workoutRepository.ts` and
+could not be cleanly split.
+
+### 🟢 2026-09-09 — LOCAL iOS BUILDS UNWEDGED, and the ATT prompt is confirmed
+
+Both blockers recorded earlier the same day had fixes:
+
+1. **CocoaPods 1.16.2 → 1.17.0** (`brew upgrade cocoapods`). 1.16 crashes on
+   Ruby 4.0.5 in `String#unicode_normalize`; 1.17 does not. Run pod/expo
+   commands with `LANG=en_US.UTF-8` — CocoaPods hints for it.
+2. **`fmt` vs Xcode 26** — clang rejects `FMT_STRING`'s consteval path in the
+   `fmt` version RN pins ("call to consteval function … is not a constant
+   expression"). Fixed with a `post_install` hook in `ios/Podfile` defining
+   `FMT_USE_CONSTEVAL=0` for the `fmt` pod ONLY.
+   ⚠ **Deliberately NOT an Expo config plugin** (unlike
+   `withExpoSQLiteHeader`): a plugin would apply to EAS production builds too,
+   and those already compile on EAS's Xcode. `ios/` is gitignored, so this is
+   local-only and will need reapplying after a clean prebuild.
+3. Third failure was Sentry's source-map upload wanting an org/token —
+   `SENTRY_DISABLE_AUTO_UPLOAD=true`, which the error itself prescribes.
+
+Working command (staging, iPad Air 11-inch (M3) simulator `FF45CA91-…`):
+
+```
+LANG=en_US.UTF-8 SENTRY_DISABLE_AUTO_UPLOAD=true APP_VARIANT=staging \
+EXPO_PUBLIC_META_APP_ID=<id> EXPO_PUBLIC_META_CLIENT_TOKEN=<tok> \
+npx expo run:ios --device FF45CA91-C5A6-4EE5-BCC0-54EB6314E776
+```
+
+The app builds and runs. **Brad confirmed the ATT prompt appears and is happy
+with it** — so the 5.1.2(i) fix is no longer test-only. (RevenueCat offerings
+are empty on a simulator with no StoreKit config; expected, not a fault.)
+This supersedes `reference_local_ios_native_build_wedged` in memory.
 
 **Remaining:** commit → build 50 → upload → resubmit with the new Review Notes.
 Brad's call: keep it on `fix/workout-cap-entitlements` and PR from there
