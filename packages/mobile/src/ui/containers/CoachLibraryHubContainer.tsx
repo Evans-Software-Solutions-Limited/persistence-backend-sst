@@ -11,6 +11,7 @@ import { IconPlus } from "@/ui/components/icons";
 import { ProgramsListContainer } from "@/ui/containers/ProgramsListContainer";
 import { CoachWorkoutLibraryContainer } from "@/ui/containers/CoachWorkoutLibraryContainer";
 import { ExerciseListContainer } from "@/ui/containers/ExerciseListContainer";
+import { useWorkoutCreateCapGate } from "@/ui/hooks/useWorkoutCreateCapGate";
 
 /**
  * <CoachLibraryHubContainer> — the coach Programs-tab hub.
@@ -53,9 +54,15 @@ export function CoachLibraryHubContainer() {
   // The hub applies the top safe-area inset itself so the header doesn't
   // overlap the status bar (mirrors TrainHubContainer).
   const insets = useSafeAreaInsets();
+  const capGate = useWorkoutCreateCapGate();
 
   const action = CONTEXTUAL_ACTION[segment];
   const onPressAction = () => {
+    // Only the Workouts action creates a workout, and it counts against the
+    // same server-side cap as the athlete Create it bypassed —
+    // `assertEntitlement` counts `created_by`, not the entry point. The
+    // Programmes and Exercises actions have no such cap.
+    if (segment === "Workouts" && capGate.blockIfAtLimit()) return;
     // `router.push` typed routes don't cover the query-string variant used
     // by the Workouts action — cast, matching CoachWorkoutLibraryContainer's
     // own `onCreate`.

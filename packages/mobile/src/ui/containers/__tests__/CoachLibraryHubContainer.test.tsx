@@ -20,6 +20,14 @@ jest.mock("expo-router", () => ({
   router: { push: (...args: unknown[]) => mockPush(...args) },
 }));
 
+// The cap gate reads the cached quota through `useAdapters`, and this suite
+// renders the hub bare (bodies mocked, no adapters provider) to assert the
+// hub's own behaviour. Mock the gate the same way, and drive it per test.
+const mockBlockIfAtLimit = jest.fn(() => false);
+jest.mock("@/ui/hooks/useWorkoutCreateCapGate", () => ({
+  useWorkoutCreateCapGate: () => ({ blockIfAtLimit: mockBlockIfAtLimit }),
+}));
+
 const mockCoachWorkoutLibraryContainer = jest.fn();
 jest.mock("@/ui/containers/ProgramsListContainer", () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -78,6 +86,9 @@ beforeEach(() => {
   mockCoachWorkoutLibraryContainer.mockReset();
   mockSetItem.mockReset();
   mockSetItem.mockResolvedValue(undefined);
+  mockBlockIfAtLimit.mockReset();
+  // Default: not capped, so the create routes through as before.
+  mockBlockIfAtLimit.mockReturnValue(false);
   // Reset the segment store to its default each test.
   useCoachLibrarySegment.setState({ segment: "Programmes", hydrated: true });
 });
@@ -138,7 +149,34 @@ describe("CoachLibraryHubContainer", () => {
     useCoachLibrarySegment.setState({ segment: "Workouts", hydrated: true });
     const { getByText } = renderWithTheme(<CoachLibraryHubContainer />);
     fireEvent.press(getByText("Create workout"));
+    expect(mockBlockIfAtLimit).toHaveBeenCalled();
     expect(mockPush).toHaveBeenCalledWith("/(app)/workouts/create?ctx=coach");
+  });
+
+  // This entry point pushed the creator with NO cap check, so a capped coach
+  // wrote a workout the POST would refuse — and, before the drain learned to
+  // reconcile, the optimistic row stayed on screen counting against them.
+  it("Create workout does NOT open the creator when the cap gate blocks", () => {
+    mockBlockIfAtLimit.mockReturnValueOnce(true);
+    useCoachLibrarySegment.setState({ segment: "Workouts", hydrated: true });
+    const { getByText } = renderWithTheme(<CoachLibraryHubContainer />);
+
+    fireEvent.press(getByText("Create workout"));
+
+    expect(mockPush).not.toHaveBeenCalledWith(
+      "/(app)/workouts/create?ctx=coach",
+    );
+  });
+
+  it("does not consult the workout cap for the Programmes action", () => {
+    // Only a workout create is capped; a programme is not.
+    useCoachLibrarySegment.setState({ segment: "Programmes", hydrated: true });
+    const { getByText } = renderWithTheme(<CoachLibraryHubContainer />);
+
+    fireEvent.press(getByText("New programme"));
+
+    expect(mockBlockIfAtLimit).not.toHaveBeenCalled();
+    expect(mockPush).toHaveBeenCalledWith("/(app)/programs/create");
   });
 
   it("switches to Exercises: title, body, contextual action + persists the segment", () => {

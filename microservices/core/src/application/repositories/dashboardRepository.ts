@@ -13,6 +13,7 @@ import {
 } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
 import { SYSTEM_USER_ID } from "./exerciseRepository";
+import { hasLapsed } from "../entitlement/assertEntitlement";
 import { ProgramAssignmentRepository } from "./programAssignmentRepository";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -164,29 +165,44 @@ export function deriveFirstName(fullName: string | null): string | null {
 }
 
 /**
- * Legacy `isFreeTier` rule:
+ * `isFreeTier` — "is this user effectively on free-tier rules right now":
  *   - no subscription row → true
  *   - tier_name = 'free' (either side of the join) → true
- *   - payment_status = 'cancelled' AND expires_at <= now → true
- *   - payment_status = 'trialing' AND expires_at <= now → true (M6)
+ *   - `expires_at` present and in the past → true, whatever the status
  *   - otherwise → false
  *
- * `now` is injected so the cancellation-grace branch is testable.
+ * `now` is injected so the expiry branch is testable.
  *
- * The trialing-past-expiry branch is a belt-and-braces guard against
- * missed Stripe webhooks: V2 backend doesn't yet handle the
- * `customer.subscription.*` events that move a row out of `trialing`
- * (still served by the legacy Supabase Edge Functions, which can
- * silently fail). Without this rule, a trial whose expiry has passed
- * still renders as a Trial badge with a stale "renew on DD/MM/YYYY"
- * date — confusing for the user and gating premium features off a
- * subscription they no longer have. Treating expired trials as free
- * tier means the user sees the correct upgrade CTA + workout limits
- * even when the upstream payment state hasn't been synced. Active /
- * past_due rows are intentionally NOT included: an `active` row past
- * expiry is the classic "renewal in flight" window where Stripe
- * extends the period before the next invoice — kicking the user out
- * of premium there would be hostile.
+ * ⚠ The expiry branch used to fire only for `cancelled` / `trialing` rows.
+ * `active` and `past_due` were EXCLUDED on the reasoning that "an `active` row
+ * past expiry is the classic renewal-in-flight window where Stripe extends the
+ * period before the next invoice — kicking the user out of premium there would
+ * be hostile." The concern was real; the placement was not. This is a DISPLAY
+ * reader (Profile card, Home greeting badge), and it was the only reader being
+ * lenient: `liveSubscriptionFilter()`, `get_user_subscription()` and
+ * `classifySubscriptionStatus` all treat a past `expires_at` as lapsed. So a
+ * user in that window was shown "Unlimited workouts" on a paid card while
+ * every gate denied them and the record-lock refused to save their session —
+ * the contradiction, not a protection.
+ *
+ * Renewal-in-flight is now handled where the evidence actually lives:
+ * `resolveAccessBoundaryMs` (revenueCatClient) refuses to mirror a past period
+ * end as the access boundary while the store still reports `gives_access`, so a
+ * genuinely-paying customer mid-grace no longer HAS a past `expires_at` to be
+ * kicked out on. What reaches this function with one is a row nobody claims is
+ * live.
+ *
+ * The trialing branch's original purpose survives inside the general rule: a
+ * trial whose expiry passed because the upstream `customer.subscription.*`
+ * webhook silently failed still reads as free, so the user sees the correct
+ * upgrade CTA instead of a Trial badge with a stale renewal date.
+ *
+ * ⚠ Still deliberately NOT aligned: the STATUS dimension.
+ * `LIVE_SUBSCRIPTION_STATUSES` counts `pending` / `past_due` as live (so
+ * `/subscriptions/me` keeps showing a card-failed user their plan) while
+ * `classifySubscriptionStatus` denies them. Whether that is right is a product
+ * question — see the note on `classifySubscriptionStatus`. This function
+ * matches `/subscriptions/me` there.
  */
 export function computeIsFreeTier(
   row: SubscriptionRow | null,
@@ -195,10 +211,17 @@ export function computeIsFreeTier(
   if (row === null) return true;
   const tier = row.tierDbName ?? row.tierName;
   if (tier === "free") return true;
+  // Shared with the entitlement layer rather than re-derived, so the two
+  // cannot drift apart again. A NULL `expires_at` is open-ended, not lapsed.
+  if (hasLapsed(row.expiresAt, now.getTime())) return true;
+  // ⚠ The one place status still matters, mirroring `liveSubscriptionFilter`'s
+  // cancelled branch: a `cancelled` row is live ONLY while `expires_at` is
+  // non-null AND in the future. Without this, a cancelled row carrying no
+  // boundary at all reads as a paid tier here while every other reader calls it
+  // free — the contradiction this function was just aligned to remove.
   if (
-    (row.paymentStatus === "cancelled" || row.paymentStatus === "trialing") &&
-    row.expiresAt !== null &&
-    row.expiresAt.getTime() <= now.getTime()
+    row.paymentStatus === "cancelled" &&
+    !(row.expiresAt !== null && row.expiresAt.getTime() > now.getTime())
   ) {
     return true;
   }

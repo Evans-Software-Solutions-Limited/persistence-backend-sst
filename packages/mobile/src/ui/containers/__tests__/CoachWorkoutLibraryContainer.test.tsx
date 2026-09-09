@@ -182,6 +182,56 @@ describe("CoachWorkoutLibraryContainer", () => {
     expect(getByTestId("coach-library-empty")).toBeTruthy();
   });
 
+  // This CTA pushed the creator with no cap check, so a coach on the free
+  // allowance (a lapsed sub reverts to it) wrote a workout the POST would
+  // refuse — and the optimistic row then sat in the library counting against
+  // them. The cap lives on the cached `mine` quota, which carries the server's
+  // own used/limit pair.
+  it("Create workout routes to the paywall instead of the creator when at the cap", async () => {
+    const api = new InMemoryApiAdapter();
+    jest
+      .spyOn(api, "getWorkouts")
+      .mockResolvedValue(ok({ workouts: [], total: 0, quota: null }));
+    const storage = new InMemoryStorageAdapter();
+    storage.initialize();
+    storage.cacheWorkoutsList("user-1", "mine", [], { used: 3, limit: 3 });
+
+    const { findByTestId } = renderWithTheme(
+      withAdapters(
+        makeAdapters(api, storage),
+        <CoachWorkoutLibraryContainer />,
+      ),
+    );
+    fireEvent.press(await findByTestId("coach-library-create"));
+
+    expect(mockPush).toHaveBeenCalledWith("/(auth)/subscription-selection");
+    expect(mockPush).not.toHaveBeenCalledWith(
+      "/(app)/workouts/create?ctx=coach",
+    );
+  });
+
+  it("Create workout is unaffected on an unlimited tier", async () => {
+    const api = new InMemoryApiAdapter();
+    jest
+      .spyOn(api, "getWorkouts")
+      .mockResolvedValue(ok({ workouts: [], total: 0, quota: null }));
+    const storage = new InMemoryStorageAdapter();
+    storage.initialize();
+    // `limit: null` is an explicitly unlimited tier — premium, premium_plus,
+    // or any rung of the coach ladder.
+    storage.cacheWorkoutsList("user-1", "mine", [], { used: 40, limit: null });
+
+    const { findByTestId } = renderWithTheme(
+      withAdapters(
+        makeAdapters(api, storage),
+        <CoachWorkoutLibraryContainer />,
+      ),
+    );
+    fireEvent.press(await findByTestId("coach-library-create"));
+
+    expect(mockPush).toHaveBeenCalledWith("/(app)/workouts/create?ctx=coach");
+  });
+
   it("tapping a row edits it in coach context", async () => {
     const api = new InMemoryApiAdapter();
     jest

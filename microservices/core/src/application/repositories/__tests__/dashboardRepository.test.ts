@@ -301,6 +301,59 @@ describe("DashboardRepository pure helpers", () => {
       expect(computeIsFreeTier(row, now)).toBe(true);
     });
 
+    // ── The third-classifier fix ──────────────────────────────────────
+    //
+    // This function used to exclude `active` (and `past_due`) from the expiry
+    // check, on the reasoning that a past `expires_at` there is a
+    // renewal-in-flight window and dropping the user would be hostile. But
+    // `liveSubscriptionFilter()`, `get_user_subscription()` and
+    // `classifySubscriptionStatus` all lapse such a row — so this DISPLAY
+    // reader was the only lenient one, and it rendered "Unlimited workouts" on
+    // a paid card for the exact row every gate was denying. Renewal-in-flight
+    // is now handled at ingestion (`resolveAccessBoundaryMs`), where the
+    // store's own `gives_access` verdict lives.
+    it("returns true for an ACTIVE subscription whose expires_at has passed", () => {
+      // Staging marcus.whitfield, 2026-09-08: coach / active / no cancel stamp
+      // / expires_at a day past. Profile said "Unlimited workouts" while
+      // create_workout returned 402 and the record-lock refused the session.
+      const row: SubscriptionRow = {
+        tierName: "coach",
+        paymentStatus: "active",
+        expiresAt: new Date("2026-04-21T00:00:00Z"),
+        cancelledAt: null,
+        isTrainerTier: true,
+        tierDbName: "coach",
+      };
+      expect(computeIsFreeTier(row, now)).toBe(true);
+    });
+
+    it("returns true for a past_due subscription whose expires_at has passed", () => {
+      const row: SubscriptionRow = {
+        tierName: "premium",
+        paymentStatus: "past_due",
+        expiresAt: new Date("2026-04-01T00:00:00Z"),
+        cancelledAt: null,
+        isTrainerTier: false,
+        tierDbName: "premium",
+      };
+      expect(computeIsFreeTier(row, now)).toBe(true);
+    });
+
+    it("keeps an ACTIVE subscription with a NULL expires_at paid (open-ended, not lapsed)", () => {
+      // Shares `hasLapsed`, which treats absent as open-ended — matching
+      // `liveSubscriptionFilter`'s `expires_at IS NULL OR …`. This is the shape
+      // the RevenueCat mirror now writes mid-grace, so it must NOT read free.
+      const row: SubscriptionRow = {
+        tierName: "premium",
+        paymentStatus: "active",
+        expiresAt: null,
+        cancelledAt: null,
+        isTrainerTier: false,
+        tierDbName: "premium",
+      };
+      expect(computeIsFreeTier(row, now)).toBe(false);
+    });
+
     it("returns true for a cancelled subscription whose billing window has ended", () => {
       const row: SubscriptionRow = {
         tierName: "pro",
@@ -396,11 +449,30 @@ describe("DashboardRepository pure helpers", () => {
       expect(computeIsFreeTier(row, now)).toBe(false);
     });
 
-    it("returns false for a cancelled subscription with a null expiresAt", () => {
+    // ⚠ Was asserted as `false` (still paid). That encoded the divergence, not
+    // a decision: `liveSubscriptionFilter`'s cancelled branch requires
+    // `expires_at IS NOT NULL AND > NOW()`, and its docstring says outright
+    // that "a cancelled row with no `expires_at` is treated as lapsed (no
+    // open-ended grace)" — so `/subscriptions/me` already called this user
+    // free while this function called them paid. Same class of split as the
+    // `active`-past-expiry one above, in the same lenient reader.
+    it("returns TRUE for a cancelled subscription with a null expiresAt (no open-ended grace)", () => {
       const row: SubscriptionRow = {
         tierName: "pro",
         paymentStatus: "cancelled",
         expiresAt: null,
+        cancelledAt: new Date("2026-04-10T00:00:00Z"),
+        isTrainerTier: false,
+        tierDbName: "pro",
+      };
+      expect(computeIsFreeTier(row, now)).toBe(true);
+    });
+
+    it("keeps a cancelled subscription paid while its expires_at is still in the future", () => {
+      const row: SubscriptionRow = {
+        tierName: "pro",
+        paymentStatus: "cancelled",
+        expiresAt: new Date("2026-05-01T00:00:00Z"),
         cancelledAt: new Date("2026-04-10T00:00:00Z"),
         isTrainerTier: false,
         tierDbName: "pro",

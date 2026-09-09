@@ -94,6 +94,7 @@ const TRAINER_TIER_ROW = [
 const PREMIUM_SUB_ACTIVE = [
   {
     tierName: "premium",
+    catalogTierName: "premium",
     paymentStatus: "active",
     expiresAt: null,
     workoutLimit: null,
@@ -103,6 +104,7 @@ const PREMIUM_SUB_ACTIVE = [
 const FREE_SUB_ACTIVE_WITH_LIMIT_3 = [
   {
     tierName: "free",
+    catalogTierName: "free",
     paymentStatus: "active",
     expiresAt: null,
     workoutLimit: 3,
@@ -112,6 +114,7 @@ const FREE_SUB_ACTIVE_WITH_LIMIT_3 = [
 const CANCELLED_SUB_FUTURE = [
   {
     tierName: "premium",
+    catalogTierName: "premium",
     paymentStatus: "cancelled",
     expiresAt: new Date(Date.now() + 86_400_000), // +1 day
     workoutLimit: null,
@@ -121,6 +124,7 @@ const CANCELLED_SUB_FUTURE = [
 const CANCELLED_SUB_EXPIRED = [
   {
     tierName: "premium",
+    catalogTierName: "premium",
     paymentStatus: "cancelled",
     expiresAt: new Date(Date.now() - 86_400_000), // -1 day
     workoutLimit: null,
@@ -130,6 +134,7 @@ const CANCELLED_SUB_EXPIRED = [
 const PAST_DUE_SUB = [
   {
     tierName: "premium",
+    catalogTierName: "premium",
     paymentStatus: "past_due",
     expiresAt: null,
     workoutLimit: null,
@@ -139,6 +144,7 @@ const PAST_DUE_SUB = [
 const TRAINER_SUB_ACTIVE = [
   {
     tierName: "individual_trainer",
+    catalogTierName: "individual_trainer",
     paymentStatus: "active",
     expiresAt: null,
     workoutLimit: null,
@@ -1127,6 +1133,7 @@ describe("assertEntitlement — create_workout, active sub", () => {
     const trialingSub = [
       {
         tierName: "premium",
+        catalogTierName: "premium",
         paymentStatus: "trialing",
         expiresAt: null,
         workoutLimit: null,
@@ -1173,6 +1180,7 @@ describe("assertEntitlement — create_workout, active sub", () => {
         [
           {
             tierName: "deprecated_legacy_tier",
+            catalogTierName: "deprecated_legacy_tier",
             paymentStatus: "active",
             expiresAt: null,
             workoutLimit: 1, // catalog still has the row joined
@@ -1190,6 +1198,248 @@ describe("assertEntitlement — create_workout, active sub", () => {
       currentTier: "free",
       upgradeTo: "premium",
       upgradePriceMonthly: 7.99,
+    });
+  });
+
+  // ── The two joined NULLs ───────────────────────────────────────────
+  //
+  // A LEFT JOIN returns `workoutLimit: null` for two unrelated reasons, and
+  // the pair below pins them apart. Reading the second as the first is what
+  // handed uncapped creation to any user holding an off-catalog `tier_name`.
+  //
+  // Reachable: `20260526120000_simplify_tier_model.sql` DELETEs the retired
+  // catalog rows (`basic`, the three `_standard`, the three `_pro`) while
+  // leaving `user_subscriptions.tier_name` pointing at them, and any
+  // IAP/webhook write of a tier_name the catalog doesn't carry lands the same
+  // shape. The status clamp cannot catch it — an `active` row never clamps.
+  it("DENIES an off-catalog tier_name (no joined tier row) once the free allowance is used", async () => {
+    (getDb as any).mockReturnValue(
+      makeQueueDb([
+        PROFILE_USER,
+        [
+          {
+            // The sub still names a tier...
+            tierName: "medium_enterprise",
+            // ...but nothing joined, so EVERY tier column came back null.
+            catalogTierName: null,
+            paymentStatus: "active",
+            expiresAt: null,
+            cancelledAt: null,
+            metadata: null,
+            workoutLimit: null,
+          },
+        ],
+        FREE_TIER_ROW, // resolved to free instead of "unlimited"
+        [{ value: 3 }], // at the free cap
+        BASIC_TIER_ROW, // upgrade target for the deny verdict
+      ]),
+    );
+
+    expect(await assertEntitlement("user-1", "create_workout")).toEqual({
+      allowed: false,
+      reason: "limit",
+      currentTier: "free",
+      upgradeTo: "premium",
+      upgradePriceMonthly: 7.99,
+    });
+  });
+
+  it("still ALLOWS a tier whose catalog row explicitly sets workout_limit NULL", async () => {
+    (getDb as any).mockReturnValue(
+      makeQueueDb([
+        PROFILE_USER,
+        [
+          {
+            tierName: "coach",
+            // A real catalog row DID join — this null means "unlimited".
+            catalogTierName: "coach",
+            paymentStatus: "active",
+            expiresAt: null,
+            cancelledAt: null,
+            metadata: null,
+            workoutLimit: null,
+          },
+        ],
+      ]),
+    );
+
+    expect(await assertEntitlement("user-1", "create_workout")).toEqual({
+      allowed: true,
+    });
+  });
+
+  // ── The lapse guard ────────────────────────────────────────────────
+  //
+  // Staging `marcus.whitfield@demo.persistence.app`, verified 2026-09-08: a
+  // `coach` row, `payment_status: 'active'`, `cancelled_at: null`, `expires_at`
+  // one day past. `liveSubscriptionFilter()` (and so `GET /subscriptions/me`,
+  // and so the drawer badge and every client gate) treated it as lapsed and
+  // reported the user as FREE with a 3-workout limit; this helper treated the
+  // live `payment_status` as entitlement and resolved `coach`'s NULL limit,
+  // allowing unlimited creates. One row, two opposite verdicts.
+  it("reverts an 'active' sub whose expires_at has PASSED to free-tier rules", async () => {
+    (getDb as any).mockReturnValue(
+      makeQueueDb([
+        PROFILE_TRAINER,
+        [
+          {
+            tierName: "coach",
+            catalogTierName: "coach",
+            paymentStatus: "active",
+            // Provider never sent the terminal webhook, so the status still
+            // reads live — but the paid period ended.
+            expiresAt: new Date(Date.now() - 86_400_000),
+            cancelledAt: null,
+            metadata: null,
+            workoutLimit: null,
+          },
+        ],
+        FREE_TIER_ROW, // the revert-to-free clamp
+        [{ value: 3 }], // at the free cap
+        TRAINER_TIER_ROW,
+      ]),
+    );
+
+    expect(await assertEntitlement("user-1", "create_workout")).toEqual({
+      allowed: false,
+      // 'expired' and not 'cancelled': nothing was cancelled, so mobile must
+      // not offer a reinstate-this-plan CTA.
+      reason: "expired",
+      currentTier: "coach",
+      upgradeTo: null,
+      upgradePriceMonthly: null,
+    });
+  });
+
+  it("keeps a lapsed 'active' sub UNDER the free allowance allowed", async () => {
+    (getDb as any).mockReturnValue(
+      makeQueueDb([
+        PROFILE_USER,
+        [
+          {
+            tierName: "premium",
+            catalogTierName: "premium",
+            paymentStatus: "active",
+            expiresAt: new Date(Date.now() - 60_000),
+            cancelledAt: null,
+            metadata: null,
+            workoutLimit: null,
+          },
+        ],
+        FREE_TIER_ROW,
+        [{ value: 2 }], // 2 of 3 — reverting to free is not cutting them off
+      ]),
+    );
+
+    expect(await assertEntitlement("user-1", "create_workout")).toEqual({
+      allowed: true,
+    });
+  });
+
+  // A period-end TIER CHANGE leaves the identical row shape mid-window
+  // (status `active`, `cancelled_at` null, old `expires_at` now past). The
+  // `scheduled_change` marker exists because the renewal webhook may be late,
+  // so lapsing here would drop a PAYING user to free for as long as the
+  // provider is slow.
+  it("does NOT lapse a past expires_at that a resolved scheduled_change explains", async () => {
+    (getDb as any).mockReturnValue(
+      makeQueueDb([
+        PROFILE_USER,
+        [
+          {
+            tierName: "premium_plus",
+            catalogTierName: "premium_plus",
+            paymentStatus: "active",
+            expiresAt: new Date(Date.now() - 60_000),
+            cancelledAt: null,
+            metadata: {
+              scheduled_change: {
+                next_tier_name: "premium",
+                effective_at: new Date(Date.now() - 60_000).toISOString(),
+              },
+            },
+            workoutLimit: null,
+          },
+        ],
+        // The scheduled tier's OWN limit is resolved, not the outgoing tier's
+        // — `premium` is also unlimited here, so the verdict is `allowed`.
+        BASIC_TIER_ROW,
+      ]),
+    );
+
+    expect(await assertEntitlement("user-1", "create_workout")).toEqual({
+      allowed: true,
+    });
+  });
+
+  // Suppressing the lapse must not also hand over the OUTGOING tier's
+  // allowance: a user downgrading to a capped tier is held to the new cap as
+  // soon as `effective_at` passes, rather than keeping the old one for as long
+  // as the renewal webhook is late.
+  it("holds a scheduled downgrade to the SCHEDULED tier's limit, not the outgoing one", async () => {
+    (getDb as any).mockReturnValue(
+      makeQueueDb([
+        PROFILE_USER,
+        [
+          {
+            tierName: "premium",
+            catalogTierName: "premium",
+            paymentStatus: "active",
+            expiresAt: new Date(Date.now() - 60_000),
+            cancelledAt: null,
+            metadata: {
+              scheduled_change: {
+                next_tier_name: "free",
+                effective_at: new Date(Date.now() - 60_000).toISOString(),
+              },
+            },
+            // The outgoing tier is unlimited...
+            workoutLimit: null,
+          },
+        ],
+        // ...but the scheduled one is free, limit 3.
+        FREE_TIER_ROW,
+        [{ value: 3 }],
+        BASIC_TIER_ROW,
+      ]),
+    );
+
+    expect(await assertEntitlement("user-1", "create_workout")).toEqual({
+      allowed: false,
+      reason: "limit",
+      currentTier: "free",
+      upgradeTo: "premium",
+      upgradePriceMonthly: 7.99,
+    });
+  });
+
+  it("still reports 'cancelled' (not 'expired') when a cancellation stamp explains the lapse", async () => {
+    (getDb as any).mockReturnValue(
+      makeQueueDb([
+        PROFILE_USER,
+        [
+          {
+            tierName: "premium",
+            catalogTierName: "premium",
+            paymentStatus: "active",
+            expiresAt: new Date(Date.now() - 60_000),
+            cancelledAt: new Date(Date.now() - 120_000),
+            metadata: null,
+            workoutLimit: null,
+          },
+        ],
+        FREE_TIER_ROW,
+        [{ value: 3 }],
+        BASIC_TIER_ROW,
+      ]),
+    );
+
+    expect(await assertEntitlement("user-1", "create_workout")).toEqual({
+      allowed: false,
+      reason: "cancelled",
+      currentTier: "premium",
+      upgradeTo: null,
+      upgradePriceMonthly: null,
     });
   });
 });
@@ -1274,6 +1524,7 @@ describe("assertEntitlement — cancelled / expired subscriptions", () => {
     const cancelledNoExpiry = [
       {
         tierName: "premium",
+        catalogTierName: "premium",
         paymentStatus: "cancelled",
         expiresAt: null,
         workoutLimit: null,
@@ -1325,6 +1576,7 @@ describe("assertEntitlement — cancelled / expired subscriptions", () => {
     const exotic = [
       {
         tierName: "premium",
+        catalogTierName: "premium",
         paymentStatus: "vendor_specific_new_status_2026",
         expiresAt: null,
         workoutLimit: null,
@@ -1372,6 +1624,69 @@ describe("assertEntitlement — cancelled / expired subscriptions", () => {
 describe("evaluateWorkoutTotalCapLock — over-limit RECORD lock", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  // Both NULL-conflation and lapse guards apply here too — this is the
+  // /sessions/record backstop, so a hole here means an over-stocked user can
+  // keep recording against workouts the create gate would now refuse.
+  it("denies an off-catalog tier_name (no joined tier row) that is over the free total", async () => {
+    (getDb as any).mockReturnValue(
+      makeQueueDb([
+        PROFILE_USER,
+        [
+          {
+            tierName: "small_business",
+            catalogTierName: null,
+            paymentStatus: "active",
+            expiresAt: null,
+            cancelledAt: null,
+            metadata: null,
+            workoutLimit: null,
+          },
+        ],
+        FREE_TIER_ROW,
+        [{ value: 4 }],
+        BASIC_TIER_ROW,
+      ]),
+    );
+
+    expect(await evaluateWorkoutTotalCapLock("user-1")).toEqual({
+      allowed: false,
+      reason: "workout_limit_exceeded",
+      currentTier: "free",
+      upgradeTo: "premium",
+      upgradePriceMonthly: 7.99,
+    });
+  });
+
+  it("denies a lapsed 'active' sub that is over the free total", async () => {
+    (getDb as any).mockReturnValue(
+      makeQueueDb([
+        PROFILE_TRAINER,
+        [
+          {
+            tierName: "coach",
+            catalogTierName: "coach",
+            paymentStatus: "active",
+            expiresAt: new Date(Date.now() - 86_400_000),
+            cancelledAt: null,
+            metadata: null,
+            workoutLimit: null,
+          },
+        ],
+        FREE_TIER_ROW,
+        [{ value: 4 }],
+        TRAINER_TIER_ROW,
+      ]),
+    );
+
+    expect(await evaluateWorkoutTotalCapLock("user-1")).toEqual({
+      allowed: false,
+      reason: "workout_limit_exceeded",
+      currentTier: "coach",
+      upgradeTo: "individual_trainer",
+      upgradePriceMonthly: 9.99,
+    });
   });
 
   it("allows a free user who is UNDER the limit", async () => {
@@ -1603,6 +1918,81 @@ describe("pure helpers", () => {
           new Date(),
         ),
       ).toBeNull();
+    });
+    // ── The lapse rule ──────────────────────────────────────────────
+    //
+    // Mirrors `liveSubscriptionFilter()`'s `expires_at IS NULL OR expires_at >
+    // NOW()`, which mirrors the DB's `get_user_subscription()`. Until this
+    // landed, a live `payment_status` was read as entitlement however long ago
+    // the paid period ended, so the API and the role-sync trigger disagreed
+    // about the same row.
+    it("returns 'expired' for an active sub whose expires_at has passed, with no cancellation stamp", () => {
+      expect(
+        classifySubscriptionStatus(
+          "active",
+          new Date(Date.now() - 86_400_000),
+          null,
+        ),
+      ).toBe("expired");
+    });
+    it("returns 'expired' for a trialing sub whose expires_at has passed", () => {
+      // The 4-month-expired `trialing` `individual_trainer` row from staging
+      // that `liveSubscriptionFilter`'s docstring describes.
+      expect(
+        classifySubscriptionStatus("trialing", new Date(Date.now() - 60_000)),
+      ).toBe("expired");
+    });
+    it("treats a NULL expires_at as open-ended, not as lapsed", () => {
+      // `hasLapsed` is deliberately not `!isExpiresInFuture(...)`: no expiry
+      // means nothing to lapse, and that negation would report it as lapsed.
+      expect(classifySubscriptionStatus("active", null, null)).toBeNull();
+    });
+    it("keeps an active sub entitled while expires_at is still in the future", () => {
+      expect(
+        classifySubscriptionStatus("active", new Date(Date.now() + 60_000)),
+      ).toBeNull();
+    });
+    it("does not lapse a past expires_at explained by a resolved scheduled change", () => {
+      expect(
+        classifySubscriptionStatus(
+          "active",
+          new Date(Date.now() - 60_000),
+          null,
+          true,
+        ),
+      ).toBeNull();
+    });
+    it("prefers 'cancelled' over 'expired' when both a stamp and a past expiry are present", () => {
+      // Reason drives the mobile CTA: reinstate-this-plan vs fix-your-card.
+      expect(
+        classifySubscriptionStatus(
+          "active",
+          new Date(Date.now() - 60_000),
+          new Date(Date.now() - 120_000),
+          true,
+        ),
+      ).toBe("cancelled");
+    });
+    // The `cancelled_at` branch shares `hasLapsed` too, so a NULL expiry is
+    // open-ended there as well. It used to deny — the opposite of the rule for
+    // an unstamped row, and of `liveSubscriptionFilter`. The RevenueCat mirror
+    // stamps `cancelledAt` for ANY auto-renew-off sub (the ordinary
+    // "cancelled, still paid through" state) while `expiresAt` can be null
+    // whenever no period end parses, so the pair denied a customer who still
+    // had access.
+    it("keeps an active, auto-renew-off sub with NO expires_at entitled", () => {
+      expect(
+        classifySubscriptionStatus("active", null, new Date(Date.now() - 1000)),
+      ).toBeNull();
+    });
+    it("still denies an auto-renew-off sub once its expires_at has passed", () => {
+      expect(
+        classifySubscriptionStatus(
+          "active",
+          new Date(Date.now() - 60_000),
+          new Date(Date.now() - 120_000),
+        ),
+      ).toBe("cancelled");
     });
     it("returns null for cancelled-with-future-expires_at", () => {
       expect(

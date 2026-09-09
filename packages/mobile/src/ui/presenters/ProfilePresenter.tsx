@@ -308,7 +308,17 @@ export function ProfilePresenter({
             {isFreeUser ? (
               <>
                 <Text style={styles.subscriptionSubtitle}>
-                  Limit of 3 custom workouts.
+                  {/* The number comes from the server's tier catalog via
+                      `workoutLimit`, never a client constant: the cap is
+                      `subscription_tiers.workout_limit` (3 today) and this
+                      screen is not the thing enforcing it. A hardcoded "3"
+                      stated a limit the client didn't own, and it stayed on
+                      screen even when `subscription` had failed to load —
+                      which is how a lapsed coach account came to be told it
+                      was free with a 3-workout limit. */}
+                  {subscription?.workoutLimit != null
+                    ? `Limit of ${subscription.workoutLimit} custom workouts.`
+                    : "Limited custom workouts."}
                 </Text>
                 <View style={styles.subscriptionFooter}>
                   <Text style={styles.subscriptionFooterText}>
@@ -327,10 +337,17 @@ export function ProfilePresenter({
             ) : (
               <>
                 <Text style={styles.subscriptionSubtitle}>
+                  {/* "per month" was wrong: the workout cap is a TOTAL, not
+                      a monthly allowance (Brad, locked — see
+                      `evaluateWorkoutTotalCapLock`). The monthly
+                      `subscription_limits` counter it echoed is the legacy
+                      one the create path stopped reading, and whose resets
+                      were the unbounded-accumulation bug the total cap
+                      closed. */}
                   {subscription?.isUnlimited ||
                   subscription?.workoutLimit === null
                     ? "Unlimited workouts"
-                    : `${subscription?.workoutLimit ?? 0} workouts per month`}
+                    : `${subscription?.workoutLimit ?? 0} workouts`}
                 </Text>
                 {subscription?.expiresAt && (
                   <Text style={styles.subscriptionDate}>

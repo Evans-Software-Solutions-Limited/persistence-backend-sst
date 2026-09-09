@@ -2238,13 +2238,15 @@ ${indentSyncQueueDdl(12)}
       // (mirroring the server's `COUNT(*) WHERE created_by = userId`), so
       // `createWorkoutCommand` increments for all of them — including
       // coach-authored rows that deliberately never enter the `mine` slice.
-      // The decrement below only fires when the row is found in a slice
-      // payload. Those two agree today because the only delete affordance is
-      // the owner long-press in `WorkoutsListContainer`, and everything
-      // reachable there is in `mine`. Add a delete path for a row that is NOT
-      // in `mine` (a coach-authored workout, a loadout variation) and the
-      // count will ratchet up without coming down, reproducing the lock this
-      // fix removed — decrement against the `mine` quota there too.
+      //
+      // #442 documented the hazard that follows: the decrement only fires
+      // where the row is FOUND, so a delete path reaching a row that is not in
+      // `mine` would ratchet the count up without bringing it down. The sync
+      // drain's terminal-failure reconciliation is exactly that path — a
+      // coach-authored create (`?ctx=coach`) lives only in the coach library —
+      // so the coach library is now swept here too, and its removal
+      // decrements the `mine` quota that carried the bump.
+      let removedFromMine = 0;
       // List slices store full payloads; rewrite the slice without the row.
       const slices = db.getAllSync(
         `SELECT type, payload, quota, synced_at FROM cached_workouts WHERE user_id = ?`,
@@ -2266,6 +2268,7 @@ ${indentSyncQueueDdl(12)}
         // list of 3) until the next successful refresh. Decrement by the
         // number actually removed, and never below zero.
         const removed = list.length - filtered.length;
+        if (slice.type === "mine") removedFromMine = removed;
         const quota = slice.quota
           ? (JSON.parse(slice.quota) as WorkoutQuota)
           : null;
@@ -2281,6 +2284,44 @@ ${indentSyncQueueDdl(12)}
             slice.type,
           ],
         );
+      }
+
+      // The coach library is a DEDICATED slot, not a `cached_workouts` slice,
+      // so the loop above never sees it. A coach-authored workout
+      // (`showInOwnerLibrary: false`) is written only here, yet it still took
+      // a `mine`-quota bump on create — so removing it has to give that back,
+      // against `mine`, where the bump lives.
+      const library = this.getCachedCoachWorkoutLibrary(userId);
+      if (library) {
+        const filteredLibrary = library.filter((w) => w.id !== workoutId);
+        const removedFromLibrary = library.length - filteredLibrary.length;
+        if (removedFromLibrary > 0) {
+          this.cacheCoachWorkoutLibrary(userId, filteredLibrary);
+          // Only when the row was NOT also in `mine`: a workout cannot
+          // legitimately sit in both, but if it somehow did, the slice loop
+          // has already decremented for it and doing so again would report
+          // fewer workouts than the server holds.
+          if (removedFromMine === 0) {
+            const mineRows = db.getAllSync(
+              `SELECT quota FROM cached_workouts WHERE user_id = ? AND type = 'mine'`,
+              [userId],
+            ) as { quota: string | null }[];
+            const rawQuota = mineRows[0]?.quota;
+            if (rawQuota) {
+              const quota = JSON.parse(rawQuota) as WorkoutQuota;
+              db.runSync(
+                `UPDATE cached_workouts SET quota = ? WHERE user_id = ? AND type = 'mine'`,
+                [
+                  JSON.stringify({
+                    ...quota,
+                    used: Math.max(0, quota.used - removedFromLibrary),
+                  }),
+                  userId,
+                ],
+              );
+            }
+          }
+        }
       }
     });
   }

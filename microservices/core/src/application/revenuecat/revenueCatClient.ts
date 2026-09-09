@@ -49,6 +49,10 @@ interface RawCustomerSubscription {
   current_period_starts_at?: unknown;
   current_period_ends_at?: unknown;
   ends_at?: unknown;
+  // Set by RevenueCat while the store is retrying a failed renewal and access
+  // is still granted. Read defensively (every field here is `unknown`), so an
+  // API shape without it simply yields null.
+  grace_period_expires_at?: unknown;
   product_id?: unknown;
   store?: unknown;
   entitlements?: { items?: RawSubscriptionEntitlement[] };
@@ -85,6 +89,91 @@ export function parseRcTimestamp(raw: unknown): Date | null {
 }
 
 /**
+ * How far past a period end access may be extended when the store still grants
+ * it but gives no explicit grace window.
+ *
+ * Apple retries a failed renewal for up to 60 days with access intact, so this
+ * is the platform's own documented ceiling rather than a product decision of
+ * ours. It exists to keep the fallback in `resolveAccessBoundaryMs` BOUNDED —
+ * see the note there on why an unbounded (null) extension is unsafe.
+ */
+export const APPLE_BILLING_RETRY_CEILING_MS = 60 * 24 * 60 * 60 * 1000;
+
+/**
+ * The `expires_at` to mirror locally: the instant access should be considered
+ * over, for a subscription RevenueCat has ALREADY told us grants access.
+ *
+ * ⚠ This is the whole reason the mirror is trustworthy. Every caller of this
+ * helper has passed the `gives_access !== true` guard, so the store is saying
+ * "this user has access right now" — and `user_subscriptions.expires_at` is
+ * what the entire backend reads as the access boundary
+ * (`liveSubscriptionFilter`, `get_user_subscription()`,
+ * `classifySubscriptionStatus`, `computeIsFreeTier`). Copying a period end
+ * that has ALREADY PASSED into that column therefore writes "lapsed" for a
+ * paying customer, and the store's own verdict — the one field that could tell
+ * the two apart — was being thrown away.
+ *
+ * It is not a rare shape. Apple retries a failed renewal for up to 60 days
+ * with access intact; through all of it RevenueCat reports
+ * `gives_access: true` with `current_period_ends_at` in the past. The same
+ * shape appears, briefly, between any renewal instant and the webhook that
+ * advances the period.
+ *
+ * So: a future period end is the boundary (the ordinary case, unchanged). A
+ * past one is NOT — prefer RevenueCat's `grace_period_expires_at` when it gives
+ * a real future boundary, and otherwise extend the period end by
+ * `APPLE_BILLING_RETRY_CEILING_MS`. The row also stops being live the moment
+ * RevenueCat says so — `gives_access: false` drops the subscription in
+ * `normalizeSubscription` and the sync's no-desired-subscription branch cancels
+ * the mirror — but the bounded boundary means it expires on its own even if
+ * that event never arrives.
+ *
+ * Exported for direct testing: the interesting cases are all boundary
+ * conditions around `now`.
+ */
+export function resolveAccessBoundaryMs(
+  periodEndMs: number | null,
+  gracePeriodEndMs: number | null,
+  now: number = Date.now(),
+): number | null {
+  // The ordinary case: the period is still running and IS the boundary.
+  if (periodEndMs !== null && periodEndMs > now) return periodEndMs;
+
+  // The store told us when grace ends — believe it over anything derived.
+  // Checked before the null-period short-circuit: a payload can carry a real
+  // grace window without a parseable period end, and throwing the one boundary
+  // we do have away in favour of "unknown" would be strictly worse.
+  if (gracePeriodEndMs !== null && gracePeriodEndMs > now) {
+    return gracePeriodEndMs;
+  }
+
+  // No period end at all — nothing to bound, and nothing to lapse. Unchanged
+  // from before this helper existed.
+  if (periodEndMs === null) return null;
+
+  // Past period end, no grace window given, but `gives_access` is true. Bound
+  // the extension rather than returning null.
+  //
+  // ⚠ Null would be the obvious answer and it is the wrong one: every reader
+  // treats an absent `expires_at` as OPEN-ENDED, so nothing about the passage
+  // of time would ever revoke it — only a later successful sync could. That
+  // hands indefinite paid access to exactly the case
+  // `liveSubscriptionFilter`'s docstring warns about, a terminal event that
+  // never arrives: RevenueCat exhausting its retries against a 5xx, the
+  // shared-project `userExists` skip swallowing the event as a no-op success,
+  // or `RC_FETCH_TIMEOUT_MS` burning the budget. Before this helper the row
+  // carried a past `expires_at` and self-lapsed; a null fallback would have
+  // removed the last time-based backstop while fixing the grace bug.
+  //
+  // Anchored to the PERIOD END, not to `now`: `now + ceiling` would ratchet
+  // forward on every sync and never expire either. This expires on its own a
+  // fixed distance past the period the customer actually paid for, and if that
+  // instant has already passed the readers lapse the row — correctly, since
+  // the store is then claiming access beyond its own documented maximum.
+  return periodEndMs + APPLE_BILLING_RETRY_CEILING_MS;
+}
+
+/**
  * Normalise one raw subscription; `null` when it grants no access or carries no
  * entitlement we model. Picks the highest-ranked modelled entitlement on the
  * subscription (a sub can list several; the tier is the best one).
@@ -113,10 +202,16 @@ export function normalizeSubscription(
 
   const startMs = asEpochMs(raw.current_period_starts_at);
   const endMs = asEpochMs(raw.current_period_ends_at) ?? asEpochMs(raw.ends_at);
+  const accessUntilMs = resolveAccessBoundaryMs(
+    endMs,
+    asEpochMs(raw.grace_period_expires_at),
+  );
 
   return {
     tier,
-    expiresAt: endMs === null ? null : new Date(endMs),
+    expiresAt: accessUntilMs === null ? null : new Date(accessUntilMs),
+    // Inferred from the REAL period, not the access boundary — the boundary may
+    // have been widened for grace, which would misread as a longer plan.
     billingCycle: billingCycleFromPeriodMs(startMs, endMs),
     productId: typeof raw.product_id === "string" ? raw.product_id : null,
     store: typeof raw.store === "string" ? raw.store : null,

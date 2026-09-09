@@ -14,6 +14,7 @@ import type { HabitConfigEntry } from "@/domain/ports/api.port";
 import { habitConfigFromEntry } from "@/domain/models/habit-config";
 import { normalizePreferences } from "@/domain/models/notification-preferences";
 import type { MealprintPreferences } from "@/domain/models/mealprint";
+import type { Workout } from "@/domain/models/workout";
 import { pendingPreferenceOverrides } from "@/application/notifications/queries/preferences.query";
 import { parseEntitlementDeniedResponseText } from "@/shared/errors/parseEntitlement";
 import { resolveExercisePayloadReferences } from "@/application/commands/resolveExerciseReferences";
@@ -267,7 +268,7 @@ function deferOrCharge(
   entry: SyncQueueEntry,
   reason: string,
   kind: DeferKind,
-): void {
+): boolean {
   if (entry.deferCount >= MAX_TRANSPORT_DEFERRALS) {
     // Computed BEFORE the mark. `entry` is a snapshot for the SQLite adapter, so
     // `retryCount + 1` is this attempt's number — but the in-memory double returns
@@ -293,9 +294,14 @@ function deferOrCharge(
       // `markMutationPermanentlyFailed`.
       collapseStrandedLocalIdSiblings(storage, entry, false);
     }
-    return;
+    // Reported to the caller rather than handled here: quota reconciliation
+    // needs `auth` (for the userId) and is therefore async, while this
+    // function is sync and called from two places. Returning the fact keeps
+    // both call sites able to release the optimistic count.
+    return willExhaust;
   }
   storage.markMutationDeferred(entry.id, reason, kind);
+  return false;
 }
 
 /**
@@ -332,6 +338,136 @@ function reportTerminalFailure(entry: SyncQueueEntry, message: string): void {
     });
   } catch {
     // swallow — telemetry is not allowed to affect sync outcomes
+  }
+}
+
+/**
+ * Put a reconciled workout back once its create finally lands.
+ *
+ * The symmetric half of `discardOptimisticRowForDeadWorkoutCreate`. When a dead
+ * create is later revived — the user taps Retry on `/sync-failed`, or
+ * `useAutoRetryOnUpgrade` re-sends a 402-blocked entry the moment they upgrade
+ * — the POST succeeds and the server now holds the workout, but the local cache
+ * row was removed when the entry went terminal. `swapLocalWorkoutId` only
+ * rewrites rows keyed BY the local id, so it no-ops on an absent row, and
+ * nothing else would put the workout back until the next network list refresh.
+ *
+ * That is not merely cosmetic: `quota.used` also stays one below the server's
+ * count, and `useWorkoutCreateCapGate` reads it — so a capped free user who
+ * just paid would be waved straight past the cap into a server 402.
+ *
+ * Only fires when the row really is missing under BOTH ids, so the ordinary
+ * first-attempt success (where the optimistic row is present and the swap has
+ * just rewritten it) is untouched.
+ */
+function restoreReconciledWorkout(
+  storage: StoragePort,
+  userId: string,
+  localId: string,
+  serverWorkout: Workout,
+): void {
+  const alreadyCached =
+    storage.getCachedWorkoutDetail(userId, serverWorkout.id) !== null ||
+    storage.getCachedWorkoutDetail(userId, localId) !== null;
+
+  // ⚠ The detail cache alone is NOT a sufficient guard. `refreshWorkouts`
+  // splatters a detail row for everything in a list payload, so the `mine`
+  // path is covered by it — but `CoachWorkoutLibraryContainer` writes ONLY
+  // `cacheCoachWorkoutLibrary`, with no detail splatter. So a coach-authored
+  // create that died, was swept from the library, then came back via a library
+  // refresh would have no detail row, and a later Retry would prepend a SECOND
+  // copy and push `quota.used` one ABOVE the server's real count — tripping
+  // the total-cap lock a workout early. Check the slices this function
+  // actually writes.
+  const inASlice = [
+    ...(storage.getCachedCoachWorkoutLibrary(userId) ?? []),
+    ...(storage.getCachedWorkoutsList(userId, "mine")?.workouts ?? []),
+  ].some((w) => w.id === serverWorkout.id || w.id === localId);
+
+  if (alreadyCached || inASlice) return;
+
+  storage.cacheWorkoutDetail(userId, serverWorkout);
+
+  // Same slice choice `createWorkoutCommand` makes: a coach-authored workout
+  // belongs to the coach library, everything else to `mine`.
+  if (serverWorkout.showInOwnerLibrary === false) {
+    const library = storage.getCachedCoachWorkoutLibrary(userId) ?? [];
+    storage.cacheCoachWorkoutLibrary(userId, [serverWorkout, ...library]);
+  } else {
+    const mine = storage.getCachedWorkoutsList(userId, "mine");
+    storage.cacheWorkoutsList(
+      userId,
+      "mine",
+      [serverWorkout, ...(mine?.workouts ?? [])],
+      mine?.quota ?? null,
+    );
+  }
+
+  // The server's count went up by one, so the mirror must too — the reconcile
+  // gave this bump back when the create died.
+  const mine = storage.getCachedWorkoutsList(userId, "mine");
+  if (mine?.quota) {
+    storage.cacheWorkoutsList(userId, "mine", mine.workouts, {
+      ...mine.quota,
+      used: mine.quota.used + 1,
+    });
+  }
+}
+
+/**
+ * Drop the optimistic row a workout create left behind when that create dies.
+ *
+ * `createWorkoutCommand` is optimistic in two ways: it writes the workout into
+ * the detail + list caches, and it bumps `quota.used`. Both bet that the POST
+ * will land. When it doesn't — retries exhausted, a permanent 4xx, or a 402
+ * entitlement block — nothing used to undo either, so the workout stayed on
+ * screen forever, indistinguishable from a synced one, and kept counting
+ * against the cap. A free user was then locked out at "4 of 3" over a list the
+ * server saw as 3, and the create they were being asked to upgrade for did not
+ * exist anywhere but this device's cache.
+ *
+ * The row goes, and `removeCachedWorkout`'s decrement takes the bump with it.
+ * That is NOT throwing the user's work away: the create's payload lives on the
+ * queue entry, which `/sync-failed` (or `/sync-blocked`) still lists with a
+ * Retry that re-POSTs it verbatim — and for a 402, `useAutoRetryOnUpgrade`
+ * fires it automatically the moment the user upgrades. The cache row was only
+ * ever a preview of a mutation; the mutation is the artifact worth keeping, and
+ * the queue is where this app has always kept it.
+ *
+ * Scoped to workout CREATEs: an edit or delete never moved the count, and a
+ * dead edit's row is the last-known-good server state rather than a
+ * fabrication. Best-effort throughout — failing to resolve the session must
+ * not change the drain's outcome for an entry that is already marked.
+ *
+ * ⚠ One case this CANNOT distinguish: a POST that the server committed but
+ * whose response was lost. `dispatch_count` is deliberately pessimistic
+ * ("could the server have seen this?") and cannot separate that from a request
+ * that never left an offline device, so both reach here. The narrow window
+ * needs the whole retry budget to drain without one attempt succeeding, because
+ * every entry carries an `Idempotency-Key` and `workoutsCreateHandler` resolves
+ * a replay to 201 with the committed row ahead of its entitlement gate — so an
+ * ordinary retry after a lost response SUCCEEDS and never becomes terminal.
+ *
+ * Removing the row is still the better trade in that window. If the server does
+ * hold the workout, the next successful list refresh brings it back under its
+ * server id, and `restoreReconciledWorkout` puts it back the moment a Retry
+ * lands — so the outcome is a transient disappearance. Keeping the row instead
+ * would leave a PERMANENT phantom in the far more common case where the server
+ * holds nothing, which is the bug being fixed.
+ */
+async function discardOptimisticRowForDeadWorkoutCreate(
+  storage: StoragePort,
+  auth: AuthPort,
+  entry: SyncQueueEntry,
+): Promise<void> {
+  if (entry.entityType !== "workout" || entry.operation !== "create") return;
+  if (entry.entityId === null) return;
+  try {
+    const session = await auth.getSession();
+    if (!session.ok || !session.value) return;
+    storage.removeCachedWorkout(session.value.userId, entry.entityId);
+  } catch {
+    // swallow — reconciliation is not allowed to affect sync outcomes
   }
 }
 
@@ -705,12 +841,20 @@ export async function processSyncQueue(
           // that simply doesn't exist), and deferring that forever would keep the
           // exercise invisible in the queue instead of surfacing it where the user
           // can see the named members and discard or retry it.
-          deferOrCharge(
-            storage,
-            entry,
-            prepared.deferReason,
-            prepared.deferKind,
-          );
+          if (
+            deferOrCharge(
+              storage,
+              entry,
+              prepared.deferReason,
+              prepared.deferKind,
+            )
+          ) {
+            await discardOptimisticRowForDeadWorkoutCreate(
+              storage,
+              auth,
+              entry,
+            );
+          }
           failed++;
           continue;
         }
@@ -750,6 +894,14 @@ export async function processSyncQueue(
           const verdict = parseEntitlementBlockedVerdict(body);
           if (verdict !== null) {
             storage.markMutationBlocked(entry.id, verdict);
+            // The server refused the create, so it exists nowhere but
+            // this cache. Drop the row (and with it the count) — the entry
+            // stays on /sync-blocked and auto-retries on upgrade.
+            await discardOptimisticRowForDeadWorkoutCreate(
+              storage,
+              auth,
+              entry,
+            );
             blocked++;
             continue;
           }
@@ -875,10 +1027,25 @@ export async function processSyncQueue(
         entry.entityId !== null
       ) {
         try {
-          const body = (await response.json()) as { data?: { id?: string } };
-          const serverId = body.data?.id;
+          const body = (await response.json()) as { data?: Workout };
+          const serverWorkout = body.data ?? null;
+          const serverId = serverWorkout?.id;
           if (serverId && serverId !== entry.entityId) {
             storage.swapLocalWorkoutId(entry.entityId, serverId);
+          }
+          // If this entry had gone terminal, its optimistic row was removed —
+          // put the server's copy back rather than leaving the workout (and
+          // the quota) missing until the next network refresh.
+          if (serverWorkout && serverId) {
+            const session = await auth.getSession();
+            if (session.ok && session.value) {
+              restoreReconciledWorkout(
+                storage,
+                session.value.userId,
+                entry.entityId,
+                serverWorkout,
+              );
+            }
           }
         } catch (err) {
           console.warn(
@@ -1100,7 +1267,12 @@ export async function processSyncQueue(
       // code, which lands here too and would otherwise loop invisibly forever —
       // still exhausts and still reaches the user.
       if (!(err instanceof SyncHttpError)) {
-        deferOrCharge(storage, entry, message, "transport");
+        // The deferral ceiling is the OTHER route to a terminal state, and the
+        // one an offline create takes — a workout enqueued with no connection
+        // exhausts here, not through a SyncHttpError.
+        if (deferOrCharge(storage, entry, message, "transport")) {
+          await discardOptimisticRowForDeadWorkoutCreate(storage, auth, entry);
+        }
         failed++;
         continue;
       }
@@ -1141,6 +1313,10 @@ export async function processSyncQueue(
       if (isTerminalFailure) {
         reportTerminalFailure(entry, message);
         collapseStrandedLocalIdSiblings(storage, entry, isPermanent);
+        // The drain will never pick this entry up again without an
+        // explicit Retry, so the workout it would have created does not exist
+        // server-side. Drop the optimistic row it left on screen.
+        await discardOptimisticRowForDeadWorkoutCreate(storage, auth, entry);
       }
     }
   }

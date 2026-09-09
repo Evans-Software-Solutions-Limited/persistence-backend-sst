@@ -10,6 +10,7 @@ import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useCacheRevision } from "@/ui/hooks/useCacheRevision";
 import { useWorkoutLibrary } from "@/ui/hooks/useWorkoutLibrary";
 import { useAuth } from "@/ui/hooks/useAuth";
+import { useWorkoutCreateCapGate } from "@/ui/hooks/useWorkoutCreateCapGate";
 import { CoachWorkoutLibraryPresenter } from "@/ui/presenters/coach/CoachWorkoutLibraryPresenter";
 
 /**
@@ -137,10 +138,17 @@ export function CoachWorkoutLibraryContainer({
     }, [load]),
   );
 
+  const capGate = useWorkoutCreateCapGate();
+
   const onBack = useCallback(() => router.back(), []);
   const onCreate = useCallback(() => {
+    // A coach-authored create counts against the same server-side cap as any
+    // other (`assertEntitlement` counts `created_by`, not the screen), so it
+    // has to face the same gate. Skipping it sent a capped coach into the
+    // creator to write a workout the POST would refuse.
+    if (capGate.blockIfAtLimit()) return;
     router.push("/(app)/workouts/create?ctx=coach" as never);
-  }, []);
+  }, [capGate]);
   const onOpen = useCallback((workoutId: string) => {
     router.push(`/(app)/workouts/${workoutId}/edit?ctx=coach` as never);
   }, []);

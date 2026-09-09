@@ -1,19 +1,56 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
-import { requestTrackingPermissionsAsync } from "expo-tracking-transparency";
+import {
+  getTrackingPermissionsAsync,
+  requestTrackingPermissionsAsync,
+} from "expo-tracking-transparency";
 import { Platform } from "react-native";
 import { AppEventsLogger, Settings } from "react-native-fbsdk-next";
 
 export type MetaAttributionConsent = "unknown" | "granted" | "denied";
 
+/**
+ * Why an activation attempt ended the way it did.
+ *
+ * A bare boolean conflated "the user declined ATT" with "the user allowed ATT
+ * and then a storage/native step threw". Callers that show UI need those apart:
+ * the first is the user's answer and needs no error, the second is a real
+ * failure — and inferring it afterwards from the permission status is
+ * impossible, because both leave ATT determined.
+ */
+export type MetaGrantOutcome = "activated" | "declined" | "failed";
+
 const CONSENT_KEY = "persistence.meta-attribution-consent.v1";
 let initialized = false;
-let grantInFlight: Promise<boolean> | null = null;
+let grantInFlight: Promise<MetaGrantOutcome> | null = null;
 let revocationInFlight: Promise<boolean> | null = null;
 let consentGeneration = 0;
 
 export function isMetaAttributionConfigured(): boolean {
   return Constants.expoConfig?.extra?.metaConfigured === true;
+}
+
+/**
+ * Can the system App Tracking Transparency dialog still be shown?
+ *
+ * iOS presents it once per install: after the user answers, or when
+ * "Allow Apps to Request to Track" is off device-wide, `request…Async()`
+ * returns the settled status and presents NOTHING. Callers that offer a
+ * user-facing control need to tell that apart from a transient failure, so
+ * they can point the user at iOS Settings instead of silently doing nothing.
+ *
+ * Non-iOS has no ATT, so the answer is vacuously true.
+ */
+export async function canRequestSystemTracking(): Promise<boolean> {
+  if (Platform.OS !== "ios") return true;
+  try {
+    const { status, canAskAgain } = await getTrackingPermissionsAsync();
+    return status === "undetermined" && canAskAgain;
+  } catch {
+    // The optional native module may be absent; treat as not-askable rather
+    // than claiming a prompt is available that will never appear.
+    return false;
+  }
 }
 
 export async function getMetaAttributionConsent(): Promise<MetaAttributionConsent> {
@@ -27,24 +64,26 @@ export async function getMetaAttributionConsent(): Promise<MetaAttributionConsen
  * events remain RevenueCat-webhook authoritative, and health/workout/load/DOB,
  * names, free text and internal identifiers cannot enter this integration.
  */
-export function grantMetaAttributionConsent(): Promise<boolean> {
+export function grantMetaAttributionConsent(): Promise<MetaGrantOutcome> {
   return grantMetaAttributionConsentForGeneration(consentGeneration);
 }
 
 function grantMetaAttributionConsentForGeneration(
   requestedGeneration: number,
-): Promise<boolean> {
+): Promise<MetaGrantOutcome> {
   if (!isMetaAttributionConfigured() || initialized) {
-    return Promise.resolve(initialized);
+    return Promise.resolve(initialized ? "activated" : "failed");
   }
   if (revocationInFlight) {
     return revocationInFlight.then((revoked) =>
       revoked && requestedGeneration === consentGeneration
         ? grantMetaAttributionConsentForGeneration(requestedGeneration)
-        : false,
+        : "failed",
     );
   }
-  if (requestedGeneration !== consentGeneration) return Promise.resolve(false);
+  if (requestedGeneration !== consentGeneration) {
+    return Promise.resolve("failed");
+  }
   if (grantInFlight) return grantInFlight;
   grantInFlight = activateMetaAttribution(requestedGeneration).finally(() => {
     grantInFlight = null;
@@ -52,25 +91,39 @@ function grantMetaAttributionConsentForGeneration(
   return grantInFlight;
 }
 
-async function activateMetaAttribution(generation: number): Promise<boolean> {
+async function activateMetaAttribution(
+  generation: number,
+): Promise<MetaGrantOutcome> {
   try {
     if (Platform.OS === "ios") {
       const permission = await requestTrackingPermissionsAsync();
-      if (generation !== consentGeneration) return false;
+      if (generation !== consentGeneration) return "failed";
       if (!permission.granted) {
+        // Tell a real decline apart from "iOS presented nothing at all". ATT
+        // is only shown while the app is active, and `bootstrapMetaAttribution`
+        // runs on mount with no such gate — so a stored grant plus an
+        // `undetermined` status (device restored from a backup, which carries
+        // AsyncStorage but NOT the ATT authorisation; or Reset Location &
+        // Privacy) would otherwise be overwritten with a denial the user never
+        // gave. That is durable: every later launch reads "denied" and returns
+        // early, silently opting them out of a choice they were never offered.
+        // After a genuine in-dialog decline the status is `denied`, so
+        // `canRequestSystemTracking()` is false and the write proceeds.
+        if (await canRequestSystemTracking()) return "failed";
         await AsyncStorage.setItem(CONSENT_KEY, "denied").catch(
           () => undefined,
         );
-        return false;
+        // The user's answer, not an error. Everything after this point is.
+        return "declined";
       }
     }
     // A durable affirmative record must exist before any transmission. If
     // storage is unavailable, fail closed and leave the SDK uninitialized.
     await AsyncStorage.setItem(CONSENT_KEY, "granted");
-    if (generation !== consentGeneration) return false;
+    if (generation !== consentGeneration) return "failed";
     if (Platform.OS === "ios") {
       await Settings.setAdvertiserTrackingEnabled(true);
-      if (generation !== consentGeneration) return false;
+      if (generation !== consentGeneration) return "failed";
     }
     Settings.setAdvertiserIDCollectionEnabled(true);
     // Keep Meta automatic events disabled: the native SDK can otherwise log
@@ -81,7 +134,7 @@ async function activateMetaAttribution(generation: number): Promise<boolean> {
     Settings.initializeSDK();
     AppEventsLogger.logEvent("fb_mobile_activate_app");
     initialized = true;
-    return true;
+    return "activated";
   } catch {
     initialized = false;
     try {
@@ -95,7 +148,9 @@ async function activateMetaAttribution(generation: number): Promise<boolean> {
     }
     await AsyncStorage.setItem(CONSENT_KEY, "denied").catch(() => undefined);
     // Attribution is optional and must never affect app startup or usability.
-    return false;
+    // ATT itself was granted by this point (a denial returned above), so this
+    // is a genuine failure and callers may surface it.
+    return "failed";
   }
 }
 
@@ -111,7 +166,9 @@ export async function denyMetaAttributionConsent(): Promise<boolean> {
 }
 
 async function revokeMetaAttribution(
-  pendingGrant: Promise<boolean> | null,
+  // Only awaited, never inspected — the outcome of an activation this
+  // withdrawal has already invalidated is irrelevant.
+  pendingGrant: Promise<MetaGrantOutcome> | null,
 ): Promise<boolean> {
   // Let any invalidated activation finish its current native await before the
   // final disable/write, so it cannot resume and overwrite this withdrawal.

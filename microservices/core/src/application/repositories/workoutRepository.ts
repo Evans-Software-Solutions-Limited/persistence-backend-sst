@@ -30,7 +30,11 @@ import {
   estimateWorkoutDurationMinutes,
   resolveEstimatedDurationMinutes,
 } from "../workouts/estimateDuration";
-import { classifySubscriptionStatus } from "../entitlement/assertEntitlement";
+import {
+  classifySubscriptionStatus,
+  resolveEffectiveScheduledTier,
+  tierRowJoined,
+} from "../entitlement/assertEntitlement";
 
 export type WorkoutListType = "mine" | "assigned" | "default";
 
@@ -84,6 +88,28 @@ export interface WorkoutQuota {
   used: number;
   limit: number | null;
 }
+
+/**
+ * Last-resort workout cap when the `free` catalog row cannot be read.
+ *
+ * `subscription_tiers` is the source of truth and this duplicates it, which is
+ * deliberate and narrow: it is used ONLY where the row is absent, i.e. a
+ * catalog misconfiguration. `assertEntitlement` THROWS in that situation
+ * (`requireFreeTierWorkoutLimit`), but `getQuota` used to resolve it to `null`
+ * — and every reader treats a null limit as UNCAPPED. So a missing row made
+ * the app show no limit while create 402s, and via `evaluateWorkoutTotalCapLock`
+ * let a user finish a session that could never be saved: exactly the
+ * display-vs-gate split `getQuota`'s docstring exists to prevent.
+ *
+ * Failing closed to the free allowance is the safe direction. The worst case
+ * is a user with a genuinely higher limit briefly seeing this one; the
+ * alternative offers creates the server will refuse.
+ *
+ * ⚠ Applies ONLY to a missing row. A real `free` row whose `workout_limit` is
+ * explicitly NULL still means uncapped, because that is what the gate does —
+ * see `resolveFreeTierLimit`.
+ */
+export const FREE_TIER_WORKOUT_LIMIT_FALLBACK = 3;
 
 export interface ListWorkoutsResult {
   workouts: WorkoutWithExercises[];
@@ -321,6 +347,16 @@ export class WorkoutRepository {
         .select({
           paymentStatus: userSubscriptions.paymentStatus,
           expiresAt: userSubscriptions.expiresAt,
+          cancelledAt: userSubscriptions.cancelledAt,
+          // Tells a period-end tier change apart from a genuine lapse — see
+          // `classifySubscriptionStatus`'s `hasEffectiveScheduledChange`.
+          metadata: userSubscriptions.metadata,
+          // Catalog-row discriminator: null exactly when the LEFT JOIN found
+          // no tier row. See `tierRowJoined` in assertEntitlement.ts — without
+          // it, an off-catalog `tier_name`'s joined-null `workout_limit` reads
+          // as "unlimited" and this endpoint reports no cap for a user the
+          // create gate now (correctly) holds to the free allowance.
+          catalogTierName: subscriptionTiers.tierName,
           workoutLimit: subscriptionTiers.workoutLimit,
         })
         .from(userSubscriptions)
@@ -336,25 +372,88 @@ export class WorkoutRepository {
     const used = usedRow[0].value;
     const subRow = subRows[0] ?? null;
 
-    // No sub row, or a cancelled/expired one (classify returns a non-null deny
-    // reason) → the free-tier limit applies. An active/trialing sub — or a
+    // No sub row, a tier with no catalog row, or a cancelled/expired one
+    // (classify returns a non-null deny reason) → the free-tier limit applies.
+    // An active/trialing sub still inside its paid period — or a
     // cancelled-but-still-paid-through one (classify returns null) — keeps its
     // own tier limit.
     const reverted =
       subRow !== null &&
-      classifySubscriptionStatus(subRow.paymentStatus, subRow.expiresAt) !==
-        null;
+      // `tierRowJoined` rather than an inline `=== null`: the helper treats an
+      // UNPROJECTED column as "not joined" on purpose, and re-deriving the
+      // check here would fail open in exactly the way it exists to prevent.
+      (!tierRowJoined(subRow) ||
+        classifySubscriptionStatus(
+          subRow.paymentStatus,
+          subRow.expiresAt,
+          subRow.cancelledAt,
+          resolveEffectiveScheduledTier(subRow.metadata) !== null,
+        ) !== null);
+
+    const loadTierLimit = async (tierName: string) => {
+      const rows = await db
+        .select({ workoutLimit: subscriptionTiers.workoutLimit })
+        .from(subscriptionTiers)
+        .where(eq(subscriptionTiers.tierName, tierName))
+        .limit(1);
+      return rows[0] ?? null;
+    };
+
+    /**
+     * The free-tier limit, keeping the SAME two NULLs apart that the rest of
+     * this file does — because the gate does.
+     *
+     *   - **Missing `free` ROW** → the fallback constant, never `null`.
+     *     `assertEntitlement` throws here (`requireFreeTierWorkoutLimit`), so
+     *     reporting "uncapped" made the app offer creates the server refuses.
+     *     Both sides are degraded on a broken catalog; neither is permissive.
+     *   - **Row present, `workout_limit` explicitly NULL** → `null`
+     *     (uncapped), because that is what the gate does:
+     *     `assertEntitlement` resolves free to `freeTier.workoutLimit ?? null`
+     *     and allows on `null`, pinned by its own "treats free tier with
+     *     workoutLimit=null as unlimited (catalog drift)" test, and
+     *     `evaluateWorkoutTotalCapLock` names the case too.
+     *
+     * ⚠ An earlier cut of this collapsed the second case into the constant on
+     * the reasoning that "free is never sold uncapped". True commercially, but
+     * it opened the display-vs-gate split in the OPPOSITE direction — the app
+     * showing "3 of 3" and locking create plus session-finish while the server
+     * would have accepted every one. Parity with the gate is what matters
+     * here, not what the price list says. If free-with-null should really be
+     * capped, change `assertEntitlement` and this together.
+     */
+    const resolveFreeTierLimit = async (): Promise<number | null> => {
+      const row = await loadTierLimit("free");
+      if (row === null) return FREE_TIER_WORKOUT_LIMIT_FALLBACK;
+      return row.workoutLimit ?? null;
+    };
 
     let limit: number | null;
     if (subRow === null || reverted) {
-      const freeRows = await db
-        .select({ workoutLimit: subscriptionTiers.workoutLimit })
-        .from(subscriptionTiers)
-        .where(eq(subscriptionTiers.tierName, "free"))
-        .limit(1);
-      limit = freeRows[0]?.workoutLimit ?? null;
+      limit = await resolveFreeTierLimit();
     } else {
       limit = subRow.workoutLimit ?? null;
+
+      // A period-end tier change that has already taken effect wins over the
+      // row's own `tier_name`, which the renewal webhook has not rewritten
+      // yet — and it is what suppressed the lapse in `classify…` above, so
+      // NOT resolving its limit here leaves the outgoing tier's allowance in
+      // place. This endpoint is the mobile "N of 3 workouts" display AND what
+      // the client create gate reads, so a split from `assertEntitlement`
+      // means the app offers a create the server then 402s — and, worse via
+      // `evaluateWorkoutTotalCapLock`, lets a user finish a session that
+      // cannot be saved. The docstring above requires this to mirror the gate.
+      const scheduledTier = resolveEffectiveScheduledTier(subRow.metadata);
+      if (scheduledTier !== null) {
+        // ⚠ Row-missing vs limit-NULL, the same two NULLs `tierRowJoined`
+        // separates: an absent scheduled tier falls back to free, an
+        // explicitly-uncapped one stays uncapped.
+        const scheduled = await loadTierLimit(scheduledTier);
+        limit =
+          scheduled === null
+            ? await resolveFreeTierLimit()
+            : (scheduled.workoutLimit ?? null);
+      }
     }
 
     return { used, limit };
