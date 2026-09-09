@@ -2592,7 +2592,14 @@ describe("WorkoutRepository", () => {
       expect(quota.limit).not.toBeNull();
     });
 
-    it("fails closed when a real free row carries an explicitly null limit — free is never uncapped", async () => {
+    // Parity with the gate, NOT with the price list. `assertEntitlement`
+    // resolves a real free row's explicit NULL to unlimited and allows on it
+    // ("treats free tier with workoutLimit=null as unlimited (catalog drift)"),
+    // and `evaluateWorkoutTotalCapLock` names the case too. An earlier cut of
+    // this file capped it at 3, which opened the display-vs-gate split in the
+    // opposite direction: the app locking create and session-finish while the
+    // server accepted everything.
+    it("reports unlimited for a real free row with an explicitly null limit, matching assertEntitlement", async () => {
       const mockDb = {
         select: vi
           .fn()
@@ -2604,10 +2611,7 @@ describe("WorkoutRepository", () => {
 
       const quota = await new WorkoutRepository().getQuota("user-1");
 
-      expect(quota).toEqual({
-        used: 0,
-        limit: FREE_TIER_WORKOUT_LIMIT_FALLBACK,
-      });
+      expect(quota).toEqual({ used: 0, limit: null });
     });
   });
 });

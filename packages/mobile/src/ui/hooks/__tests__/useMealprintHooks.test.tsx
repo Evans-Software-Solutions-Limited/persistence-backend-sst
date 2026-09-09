@@ -127,6 +127,28 @@ function harness<T>(
 // ─── computeMealprintVerdict ────────────────────────────────────────────────
 
 describe("computeMealprintVerdict", () => {
+  // ⚠ Mirrors the loadout gate's test of the same rule. `revenueCatSync`
+  // stamps `cancelledAt` for ANY auto-renew-off subscription — the ordinary
+  // "cancelled, still paid through" state — and the boundary can legitimately
+  // be NULL. `isExpiresAtInFuture(null)` is false, so the old formulation
+  // denied while the server's `classifySubscriptionStatus` (which reads an
+  // absent boundary as OPEN-ENDED) granted: a padlocked Mealprint beside a
+  // plan card still reading Premium Plus. `hasLapsed` exists to close that.
+  //
+  // Without this case the mealprint suite passed with line 143 reverted — the
+  // only other `cancelledAt` test uses a PAST `expiresAt`, which behaves
+  // identically under either formulation.
+  it("entitles an auto-renew-off subscription with NO expiresAt (open-ended, not lapsed)", () => {
+    expect(
+      computeMealprintVerdict(
+        subscription("premium_plus", {
+          expiresAt: null,
+          cancelledAt: new Date(Date.now() - 86_400_000).toISOString(),
+        }),
+      ),
+    ).toBe(true);
+  });
+
   it("denies an unresolved (null) subscription", () => {
     // Denied is the safe answer — the alternative is flashing the entry point as
     // unlocked and then 402-ing. Consumers tell this apart from a real denial via

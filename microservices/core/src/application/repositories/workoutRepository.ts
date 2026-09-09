@@ -104,6 +104,10 @@ export interface WorkoutQuota {
  * Failing closed to the free allowance is the safe direction. The worst case
  * is a user with a genuinely higher limit briefly seeing this one; the
  * alternative offers creates the server will refuse.
+ *
+ * ⚠ Applies ONLY to a missing row. A real `free` row whose `workout_limit` is
+ * explicitly NULL still means uncapped, because that is what the gate does —
+ * see `resolveFreeTierLimit`.
  */
 export const FREE_TIER_WORKOUT_LIMIT_FALLBACK = 3;
 
@@ -396,18 +400,33 @@ export class WorkoutRepository {
     };
 
     /**
-     * The free allowance, never "uncapped".
+     * The free-tier limit, keeping the SAME two NULLs apart that the rest of
+     * this file does — because the gate does.
      *
-     * ⚠ Two different NULLs, as everywhere in this file. A missing `free` ROW
-     * is a catalog misconfiguration and must NOT become `null`/uncapped —
-     * `assertEntitlement` throws on it, so reporting no cap here splits the
-     * display from the gate. An explicitly-NULL `workout_limit` on a real
-     * `free` row would be a catalog saying "free is uncapped", which is not a
-     * thing this product sells, so it is treated the same way.
+     *   - **Missing `free` ROW** → the fallback constant, never `null`.
+     *     `assertEntitlement` throws here (`requireFreeTierWorkoutLimit`), so
+     *     reporting "uncapped" made the app offer creates the server refuses.
+     *     Both sides are degraded on a broken catalog; neither is permissive.
+     *   - **Row present, `workout_limit` explicitly NULL** → `null`
+     *     (uncapped), because that is what the gate does:
+     *     `assertEntitlement` resolves free to `freeTier.workoutLimit ?? null`
+     *     and allows on `null`, pinned by its own "treats free tier with
+     *     workoutLimit=null as unlimited (catalog drift)" test, and
+     *     `evaluateWorkoutTotalCapLock` names the case too.
+     *
+     * ⚠ An earlier cut of this collapsed the second case into the constant on
+     * the reasoning that "free is never sold uncapped". True commercially, but
+     * it opened the display-vs-gate split in the OPPOSITE direction — the app
+     * showing "3 of 3" and locking create plus session-finish while the server
+     * would have accepted every one. Parity with the gate is what matters
+     * here, not what the price list says. If free-with-null should really be
+     * capped, change `assertEntitlement` and this together.
      */
-    const resolveFreeTierLimit = async (): Promise<number> =>
-      (await loadTierLimit("free"))?.workoutLimit ??
-      FREE_TIER_WORKOUT_LIMIT_FALLBACK;
+    const resolveFreeTierLimit = async (): Promise<number | null> => {
+      const row = await loadTierLimit("free");
+      if (row === null) return FREE_TIER_WORKOUT_LIMIT_FALLBACK;
+      return row.workoutLimit ?? null;
+    };
 
     let limit: number | null;
     if (subRow === null || reverted) {
