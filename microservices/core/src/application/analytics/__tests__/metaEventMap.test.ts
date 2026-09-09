@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   FOUNDING_PLAN_CONTENT_IDS,
   META_FORWARDED_EVENT_NAMES,
@@ -364,4 +364,121 @@ describe("the RevenueCat rail keeps its own custom_data", () => {
       }
     },
   );
+});
+
+describe("event_source_url (Meta requires it for action_source: website)", () => {
+  // Meta's parameter table calls it optional and then states it IS required for
+  // website events sent through the Conversions API, and that it must match the
+  // verified domain. Sending an `action_source: "website"` event without one is
+  // accepted by the HTTP call and can still fail to register server-side.
+  it("points a checkout at /founding and a purchase at /founding/thanks", () => {
+    const checkout = mapPendingToMetaEvents(
+      pending({
+        eventName: "checkout_started",
+        properties: { marketing_consent: true, fbp: "fb.1.1.c" },
+      }),
+    );
+    const purchase = mapPendingToMetaEvents(
+      pending({
+        eventName: "purchase",
+        properties: { marketing_consent: true, fbp: "fb.1.1.p" },
+      }),
+    );
+    expect(checkout[0]!.event_source_url).toBe(
+      "https://persistence.evans-software-solutions.com/founding",
+    );
+    expect(purchase[0]!.event_source_url).toBe(
+      "https://persistence.evans-software-solutions.com/founding/thanks",
+    );
+  });
+
+  it("rides ALONGSIDE the commerce params, not instead of them", () => {
+    // These two arrived on separate branches and were merged by hand into the
+    // same two `case` arms. A resolution that kept one and dropped the other
+    // would still typecheck and still pass both of their own suites, so this
+    // pins them together on one event.
+    const [event] = mapPendingToMetaEvents(
+      pending({
+        eventName: "purchase",
+        properties: {
+          marketing_consent: true,
+          fbp: "fb.1.1.p",
+          value: 60,
+          currency: "GBP",
+          tier: "premium_plus",
+          months: 12,
+        },
+      }),
+    );
+    expect(event!.event_source_url).toBe(
+      "https://persistence.evans-software-solutions.com/founding/thanks",
+    );
+    expect(event!.custom_data).toEqual({
+      value: 60,
+      currency: "GBP",
+      content_name: "plus_12m",
+      content_ids: ["plus_12m"],
+      content_type: "product",
+      num_items: 1,
+    });
+  });
+
+  it("carries no query string", () => {
+    // The campaign and referral params that ride on a real landing URL are our
+    // own attribution and have no business at Meta.
+    const [event] = mapPendingToMetaEvents(
+      pending({
+        eventName: "checkout_started",
+        properties: {
+          marketing_consent: true,
+          fbp: "fb.1.1.c",
+          campaign: "meta",
+          ref: "METAFOUND",
+        },
+      }),
+    );
+    expect(event!.event_source_url).not.toContain("?");
+  });
+
+  it("follows WEB_ORIGIN when the stage sets one", () => {
+    // `finally`, not a trailing call: this config does not set `unstubEnvs`, so
+    // a failed assertion here would otherwise leak the staging origin into
+    // every later test in the file and turn one failure into a cascade.
+    vi.stubEnv("WEB_ORIGIN", "https://staging.example.test/");
+    try {
+      const [event] = mapPendingToMetaEvents(
+        pending({
+          eventName: "purchase",
+          properties: { marketing_consent: true, fbp: "fb.1.1.p" },
+        }),
+      );
+      // Trailing slash stripped by `webOrigin()`, so no double slash in the path.
+      expect(event!.event_source_url).toBe(
+        "https://staging.example.test/founding/thanks",
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("is ABSENT on the events whose page we do not know", () => {
+    // A guessed URL that failed Meta's verified-domain check would be worse
+    // than an absent one, and `store_click` already registers server-side.
+    for (const eventName of ["store_click", "lead_captured"]) {
+      const events = mapPendingToMetaEvents(
+        pending({
+          eventName,
+          properties: {
+            marketing_consent: true,
+            fbp: "fb.1.1.s",
+            store: "ios",
+          },
+        }),
+      );
+      expect(events.length).toBeGreaterThan(0);
+      for (const event of events) {
+        expect(event).not.toHaveProperty("event_source_url");
+      }
+    }
+  });
 });

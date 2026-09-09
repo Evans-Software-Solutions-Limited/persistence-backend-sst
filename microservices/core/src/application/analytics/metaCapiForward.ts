@@ -1,5 +1,5 @@
 import type { PendingMetaEvent } from "../repositories/analyticsEventRepository";
-import type { MetaServerEvent } from "./metaCapiClient";
+import type { MetaSendResult, MetaServerEvent } from "./metaCapiClient";
 import {
   META_FORWARDED_EVENT_NAMES,
   mapPendingToMetaEvents,
@@ -34,7 +34,7 @@ export interface MetaForwardDeps {
   markExpired: (cutoff: Date) => Promise<number>;
   listPending: (names: string[], limit: number) => Promise<PendingMetaEvent[]>;
   markForwarded: (ids: string[]) => Promise<void>;
-  send: (events: MetaServerEvent[]) => Promise<boolean>;
+  send: (events: MetaServerEvent[]) => Promise<MetaSendResult>;
   configured: () => boolean;
   /** Max outbox rows per drain (default 200). */
   batchLimit?: number;
@@ -52,6 +52,19 @@ export interface MetaForwardSummary {
   skipped: number;
   /** Meta events actually sent (a row can produce 0–2). */
   metaEvents: number;
+  /**
+   * Meta's `events_received` — what it ACCEPTED AND PARSED, which normally just
+   * equals `metaEvents`. Not a retention count, so a matching number is not
+   * proof Meta kept anything (see `MetaSendResult`). Null when nothing was sent
+   * or the body did not parse; a number BELOW `metaEvents` means Meta did not
+   * even take delivery of part of the batch, which is worth shouting about.
+   */
+  eventsReceived: number | null;
+  /**
+   * Meta's warnings about the batch, redacted — the only place a data-quality
+   * drop actually surfaces, and so the field to alarm on. Empty on a clean send.
+   */
+  metaMessages: string[];
 }
 
 export async function forwardPendingToMeta(
@@ -64,6 +77,8 @@ export async function forwardPendingToMeta(
       forwarded: 0,
       skipped: 0,
       metaEvents: 0,
+      eventsReceived: null,
+      metaMessages: [],
     };
   }
 
@@ -88,14 +103,51 @@ export async function forwardPendingToMeta(
       forwarded: 0,
       skipped,
       metaEvents: 0,
+      eventsReceived: null,
+      metaMessages: [],
     };
   }
 
   const events = pending.flatMap(mapPendingToMetaEvents);
+  let receipt: MetaSendResult | null = null;
   if (events.length > 0) {
     // Throws on a Graph non-2xx → fresh rows not marked below, retried next
     // drain (still within their window); the expired rows above stay retired.
-    await deps.send(events);
+    receipt = await deps.send(events);
+
+    // A send that reports it POSTed nothing must not retire the rows it was
+    // given. Today `configured()` and the client share one config check so they
+    // cannot disagree, but "we mapped events, nothing went out, mark them done"
+    // is a silent data-loss shape and it costs one branch to refuse it.
+    if (!receipt.sent) {
+      throw new Error(
+        "Meta CAPI reported no send for a non-empty batch; leaving rows pending",
+      );
+    }
+
+    // The receipt is EVIDENCE, so put it where it will be seen rather than
+    // only in the info-level summary. `messages` is where a data-quality drop
+    // surfaces, and a short `events_received` means part of the batch was not
+    // even taken; both would otherwise need somebody to go and grep CloudWatch.
+    if (
+      receipt.messages.length > 0 ||
+      // `null` is the LEAST-known state — a 200 with an empty body, an
+      // interstitial from a proxy, a read that failed mid-stream. Defaulting it
+      // to "as many as we sent" would silence the alarm precisely where we know
+      // nothing, and the rows are stamped unretryable immediately after: the
+      // same "assume it landed, destroy the evidence" shape this change exists
+      // to remove.
+      receipt.eventsReceived === null ||
+      receipt.eventsReceived < events.length
+    ) {
+      console.error(
+        `[meta-capi-forward:receipt] ${JSON.stringify({
+          metaEvents: events.length,
+          eventsReceived: receipt.eventsReceived,
+          messages: receipt.messages,
+        })}`,
+      );
+    }
   }
   // Stamp every pulled row (including any that mapped to 0 events — they matched
   // the filter, so they must not re-scan forever).
@@ -107,5 +159,7 @@ export async function forwardPendingToMeta(
     forwarded: pending.length,
     skipped,
     metaEvents: events.length,
+    eventsReceived: receipt?.eventsReceived ?? null,
+    metaMessages: receipt?.messages ?? [],
   };
 }

@@ -60,8 +60,15 @@ export class AnalyticsEventRepository {
       })
       // Idempotency: an at-least-once path (the RC webhook emits before
       // mark-done, so a crash-then-retry re-emits the same event.id) must not
-      // double-count the funnel. The partial unique index on event_id makes the
-      // second insert a no-op; NULL event_ids are exempt and still insert.
+      // double-count the funnel. The partial unique index on
+      // (event_name, event_id) makes that second insert a no-op; NULL event_ids
+      // are exempt and still insert.
+      //
+      // ⚠ Scoped BY NAME for a reason. When that index was unique on `event_id`
+      // alone, this clause silently discarded the founding webhook's `purchase`
+      // row, because `checkout_started` had already claimed the buyer's shared
+      // id — one checkout deliberately reuses ONE id across both events, since
+      // Meta dedups per (event_name, event_id). Never widen it back.
       .onConflictDoNothing();
   }
 
