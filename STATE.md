@@ -199,6 +199,78 @@ old custom-prompt code, which is not a Play violation (ATT is iOS-only), but
 the Android consent gate above means a rebuilt Play release should ship this
 same corrected code rather than diverging.
 
+### 🟢 2026-09-09 — Meta CAPI: the server-side `Purchase` was never WRITTEN, not lost in transit
+
+The brief assumed a forwarding problem. It was an INSERT problem, and the
+pipeline was healthy the whole time. Diagnosed against prod CloudWatch + the
+prod and staging databases; fix on `fix/meta-capi-purchase-server-copy`.
+
+**Root cause.** `analytics_events_event_id_key` was `UNIQUE (event_id)` — global,
+not scoped by name. One founding checkout deliberately reuses ONE event id
+across both of its events, because Meta dedups per `(event_name, event_id)`. So
+the Stripe webhook's `purchase` insert collided with the `checkout_started` row
+written half an hour earlier, and `ON CONFLICT DO NOTHING` in
+`AnalyticsEventRepository.insert` threw it away. No error, no log line. Every
+server-side purchase, every environment, since the feature shipped.
+
+**Proof (not inference).** Staging had 2 founding checkouts that COMPLETED and
+created grants; for both of their event ids `analytics_events` held
+`checkout_started` and nothing else. Re-running the webhook's exact insert in a
+rolled-back transaction reproduced the silent no-op; applying the migration
+inside that same transaction made the row land, and a retry of the same
+name+id stayed a no-op — so the idempotency the index exists for survives.
+
+**Fix:** uniqueness scoped to `(event_name, event_id)`, still partial on
+`event_id IS NOT NULL`. Strictly a relaxation, so it cannot fail on existing
+data. Migration `20260909120000_analytics_events_event_id_per_name.sql`.
+⚠ **PROD MIGRATION IS MANUAL** (Brad).
+
+**What the diagnosis RULED OUT** — record these so nobody re-checks them:
+
+- Cron deployed and healthy on prod: log group
+  `/aws/lambda/persistence-a-production-metacapiforwardHandlerFunction-barmwrxu`,
+  a summary every 5 min, `configured: true`.
+- `MetaTestEventCode` is EMPTY on production (staging has one, correctly). Not a
+  Test-Events diversion.
+- No stuck backlog and no poison row: `pending: 0` on every recent tick.
+- The consent/`fbp` capture race was NOT the cause — the one prod
+  `checkout_started` carried consent, `fbp` AND `fbc`, and forwarded with
+  `metaEvents: 1` on a 2xx.
+- Meta secrets bound; `VITE_META_PIXEL_ID` is environment-scoped, so staging is
+  not writing browser events into the prod dataset by config.
+
+**Also fixed, because the bug hid behind them:**
+
+- **No `event_source_url` on any event.** Meta's parameter table calls it
+  optional then states it IS required for website events via the Conversions
+  API, and must match the verified domain. Added for the two events whose page
+  we know (`/founding`, `/founding/thanks`) from `webOrigin()`. ⚠ `WEB_ORIGIN`
+  was never bound to the cron — it is now, so the URL is stage-correct instead of
+  silently claiming a prod page from staging.
+- **A 2xx was read as acceptance.** The drainer now reads Meta's receipt back
+  and escalates `messages` (and a short `events_received`) to `console.error`;
+  a non-2xx now reports Meta's REASON, not just a status code. ⚠ Note for
+  future debugging: `events_received` is what Meta ACCEPTED AND PARSED and
+  normally just equals what you sent — it is **not** a retention count, so a
+  matching number is not exoneration. `messages` is the signal.
+- Everything leaving that path goes through `redactMetaDiagnostic` (emails, 32+
+  hex hashes, `fb.1.…` click tokens, control chars), input bounded to 4KB BEFORE
+  the regexes — unbounded, the email pattern is quadratic and measured 17.6s on
+  a 200KB body, on the throw path, which would have stalled the drainer.
+
+**Gotcha worth keeping:** every test touching `analytics_events` mocks `getDb`,
+so no unit test could ever see an index — this defect shipped green. The
+regression guard asserts the schema + migration TEXT, whitespace-insensitively,
+and was verified to fail on a revert. Same blind spot as
+`reference_drizzle_groupby_param_bug`.
+
+**Still open:** `Initiate checkout` reading "Meta pixel only" is NOT explained by
+this bug — that one server copy demonstrably sent on a 2xx. Missing
+`event_source_url` is the leading candidate and is now fixed; confirm in Events
+Manager after deploy. And no prod purchase has EVER completed (the single prod
+checkout expired unpaid), so the `Purchase` acceptance criterion can only be met
+by a real prod sale or a staged one.
+
 ### 🟢 2026-09-09 — Meta CAPI: the plan is now on `InitiateCheckout` / `Purchase`
 
 Both events — browser AND server copy — carry the subscription level, so a Sales

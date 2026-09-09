@@ -1,4 +1,5 @@
 import type { PendingMetaEvent } from "../repositories/analyticsEventRepository";
+import { webOrigin } from "../../shared/webOrigin";
 import { buildUserData, type MetaServerEvent } from "./metaCapiClient";
 
 /**
@@ -80,6 +81,14 @@ export function foundingPlanContentId(
 interface MetaEventSkeleton {
   eventName: MetaStandardEventName;
   customData?: Record<string, unknown>;
+  /**
+   * Path on the website this conversion happened on, composed with `webOrigin()`
+   * into Meta's `event_source_url`. Set only where we actually KNOW the page:
+   * the two founding events have exactly one route each. Left undefined for the
+   * events that carry no page in `properties` — a guessed URL that failed
+   * Meta's verified-domain check would be worse than an absent one.
+   */
+  sourcePath?: string;
 }
 
 /** Which Meta standard event(s) a given analytics event becomes (0, 1 or 2). */
@@ -141,13 +150,25 @@ function skeletonsFor(
     // optimises towards until enough `Purchase` volume exists to optimise on
     // the conversion itself.
     case "checkout_started":
-      return [{ eventName: "InitiateCheckout", customData: commerceData() }];
+      return [
+        {
+          eventName: "InitiateCheckout",
+          customData: commerceData(),
+          sourcePath: "/founding",
+        },
+      ];
     // A one-off fixed-term purchase. Purchase ONLY — no `Subscribe`, unlike
     // `subscription_purchased`: nothing here renews, and telling Meta a
     // subscription began would make the two rails indistinguishable in
     // reporting and teach the model the wrong lifetime value.
     case "purchase":
-      return [{ eventName: "Purchase", customData: commerceData() }];
+      return [
+        {
+          eventName: "Purchase",
+          customData: commerceData(),
+          sourcePath: "/founding/thanks",
+        },
+      ];
     case "store_click":
       return [
         {
@@ -221,11 +242,19 @@ export function mapPendingToMetaEvents(
 
   const eventTime = Math.floor(pending.occurredAt.getTime() / 1000);
 
+  const origin = webOrigin();
+
   return skeletons.map((s) => ({
     event_name: s.eventName,
     event_time: eventTime,
     ...(pending.eventId != null ? { event_id: pending.eventId } : {}),
     action_source: "website" as const,
+    // Origin + path, no query string: Meta matches this against the verified
+    // domain, and the campaign/referral params that ride on a real landing URL
+    // are our own attribution and have no business at Meta.
+    ...(s.sourcePath !== undefined
+      ? { event_source_url: `${origin}${s.sourcePath}` }
+      : {}),
     user_data: userData,
     ...(s.customData !== undefined ? { custom_data: s.customData } : {}),
   }));

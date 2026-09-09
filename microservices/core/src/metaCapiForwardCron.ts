@@ -1,6 +1,9 @@
 import { initSentry, wrapLambda } from "./shared/sentry";
 import { AnalyticsEventRepository } from "./application/repositories/analyticsEventRepository";
-import { forwardPendingToMeta } from "./application/analytics/metaCapiForward";
+import {
+  forwardPendingToMeta,
+  type MetaForwardSummary,
+} from "./application/analytics/metaCapiForward";
 import {
   isMetaCapiConfigured,
   sendConversionEvents,
@@ -15,13 +18,7 @@ import {
  * `forwardPendingToMeta`. No-ops immediately (one config check, no DB read) when
  * Meta is unconfigured — so an unset-secret stage costs effectively nothing.
  */
-async function baseHandler(): Promise<{
-  configured: boolean;
-  pending: number;
-  forwarded: number;
-  skipped: number;
-  metaEvents: number;
-}> {
+async function baseHandler(): Promise<MetaForwardSummary> {
   const repo = new AnalyticsEventRepository();
   const summary = await forwardPendingToMeta({
     markExpired: (cutoff) => repo.markExpiredForwarded(cutoff),

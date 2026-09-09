@@ -2510,10 +2510,19 @@ export const analyticsEvents = pgTable(
     index("analytics_events_name_occurred_idx").on(t.eventName, t.occurredAt),
     index("analytics_events_created_at_idx").on(t.createdAt),
     index("analytics_events_meta_pending_idx").on(t.occurredAt),
-    // Partial UNIQUE on event_id (idempotency for at-least-once emit paths).
+    // Partial UNIQUE on (event_name, event_id) — idempotency for at-least-once
+    // emit paths. Scoped BY NAME, not on `event_id` alone: one founding checkout
+    // reuses a single id for both `checkout_started` and `purchase`, because the
+    // browser pixel and the server CAPI copy dedupe at Meta per
+    // (event_name, event_id). A global unique on `event_id` made the webhook's
+    // `purchase` insert a silent no-op under `ON CONFLICT DO NOTHING`, and the
+    // funnel lost every server-side purchase.
     // Recorded name+shape only — the real `WHERE event_id IS NOT NULL` predicate
     // lives in the migration (Drizzle `.on()` takes columns, not expressions).
-    uniqueIndex("analytics_events_event_id_key").on(t.eventId),
+    uniqueIndex("analytics_events_name_event_id_key").on(
+      t.eventName,
+      t.eventId,
+    ),
   ],
 );
 

@@ -453,6 +453,13 @@ export const metaCapiForwardCron = new sst.aws.Cron("meta-capi-forward", {
     timeout: "120 seconds",
     environment: {
       DATABASE_URL: databaseUrl.value,
+      // Meta matches `event_source_url` against the verified domain, so the
+      // drainer needs the SAME origin the API route uses (identical expression
+      // deliberately). Without this binding it fell back to the production URL
+      // on every stage, so a staging event would have claimed a prod page.
+      WEB_ORIGIN: webDomain
+        ? `https://${webDomain}`
+        : "https://persistence.evans-software-solutions.com",
       // Meta CAPI — OPTIONAL + fail-safe (empty = drainer no-ops, mirrors
       // RESEND_API_KEY/SENTRY_DSN, not the fail-fast secrets).
       META_DATASET_ID: metaDatasetId.value,
