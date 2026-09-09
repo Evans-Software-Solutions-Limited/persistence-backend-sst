@@ -518,6 +518,93 @@ describe("processSyncQueue", () => {
       ).not.toBeNull();
     });
 
+    // ⚠ The coach-library branch of the restore, and the double-insert it can
+    // cause. `CoachWorkoutLibraryContainer` writes ONLY the library slice — no
+    // detail splatter — so after a library refresh brings the server row back,
+    // the detail cache is still empty under both ids. Guarding on the detail
+    // cache alone would prepend a SECOND copy and push `quota.used` one ABOVE
+    // the server's real count, tripping the total-cap lock a workout early.
+    it("does not double-insert a coach-authored workout already back in the library", async () => {
+      storage.cacheWorkoutsList("test-user", "mine", [], {
+        used: 2,
+        limit: 3,
+      });
+      // The library refresh has already merged the server row back in, with no
+      // detail row alongside it.
+      storage.cacheCoachWorkoutLibrary("test-user", [
+        { id: "w-server-c1", name: "For a client" } as never,
+      ]);
+      storage.enqueueMutation({
+        entityType: "workout",
+        entityId: "local-c1",
+        operation: "create",
+        payload: { name: "For a client", showInOwnerLibrary: false },
+        endpoint: "/workouts",
+        method: "POST",
+      });
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 201,
+        json: async () => ({
+          data: {
+            id: "w-server-c1",
+            name: "For a client",
+            showInOwnerLibrary: false,
+          },
+        }),
+        text: async () => "",
+      });
+
+      await processSyncQueue(storage, auth, "https://api.test");
+
+      expect(storage.getCachedCoachWorkoutLibrary("test-user")).toHaveLength(1);
+      expect(storage.getCachedWorkoutsList("test-user", "mine")?.quota).toEqual(
+        { used: 2, limit: 3 },
+      );
+    });
+
+    it("restores a coach-authored workout to the LIBRARY, not to mine", async () => {
+      storage.cacheWorkoutsList("test-user", "mine", [], {
+        used: 2,
+        limit: 3,
+      });
+      storage.cacheCoachWorkoutLibrary("test-user", []);
+      storage.enqueueMutation({
+        entityType: "workout",
+        entityId: "local-c1",
+        operation: "create",
+        payload: { name: "For a client", showInOwnerLibrary: false },
+        endpoint: "/workouts",
+        method: "POST",
+      });
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 201,
+        json: async () => ({
+          data: {
+            id: "w-server-c1",
+            name: "For a client",
+            showInOwnerLibrary: false,
+          },
+        }),
+        text: async () => "",
+      });
+
+      await processSyncQueue(storage, auth, "https://api.test");
+
+      expect(
+        storage.getCachedCoachWorkoutLibrary("test-user")?.map((w) => w.id),
+      ).toEqual(["w-server-c1"]);
+      // Never enters `mine`, but the quota bump DOES live on `mine` — the
+      // invariant `removeCachedWorkout` documents.
+      expect(
+        storage.getCachedWorkoutsList("test-user", "mine")?.workouts,
+      ).toEqual([]);
+      expect(storage.getCachedWorkoutsList("test-user", "mine")?.quota).toEqual(
+        { used: 3, limit: 3 },
+      );
+    });
+
     it("does NOT double-insert on an ordinary first-attempt success", async () => {
       // The optimistic row is present and the id swap has just rewritten it, so
       // the restore must stand down.

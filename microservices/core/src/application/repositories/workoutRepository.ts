@@ -89,6 +89,24 @@ export interface WorkoutQuota {
   limit: number | null;
 }
 
+/**
+ * Last-resort workout cap when the `free` catalog row cannot be read.
+ *
+ * `subscription_tiers` is the source of truth and this duplicates it, which is
+ * deliberate and narrow: it is used ONLY where the row is absent, i.e. a
+ * catalog misconfiguration. `assertEntitlement` THROWS in that situation
+ * (`requireFreeTierWorkoutLimit`), but `getQuota` used to resolve it to `null`
+ * — and every reader treats a null limit as UNCAPPED. So a missing row made
+ * the app show no limit while create 402s, and via `evaluateWorkoutTotalCapLock`
+ * let a user finish a session that could never be saved: exactly the
+ * display-vs-gate split `getQuota`'s docstring exists to prevent.
+ *
+ * Failing closed to the free allowance is the safe direction. The worst case
+ * is a user with a genuinely higher limit briefly seeing this one; the
+ * alternative offers creates the server will refuse.
+ */
+export const FREE_TIER_WORKOUT_LIMIT_FALLBACK = 3;
+
 export interface ListWorkoutsResult {
   workouts: WorkoutWithExercises[];
   total: number;
@@ -368,16 +386,55 @@ export class WorkoutRepository {
           resolveEffectiveScheduledTier(subRow.metadata) !== null,
         ) !== null);
 
-    let limit: number | null;
-    if (subRow === null || reverted) {
-      const freeRows = await db
+    const loadTierLimit = async (tierName: string) => {
+      const rows = await db
         .select({ workoutLimit: subscriptionTiers.workoutLimit })
         .from(subscriptionTiers)
-        .where(eq(subscriptionTiers.tierName, "free"))
+        .where(eq(subscriptionTiers.tierName, tierName))
         .limit(1);
-      limit = freeRows[0]?.workoutLimit ?? null;
+      return rows[0] ?? null;
+    };
+
+    /**
+     * The free allowance, never "uncapped".
+     *
+     * ⚠ Two different NULLs, as everywhere in this file. A missing `free` ROW
+     * is a catalog misconfiguration and must NOT become `null`/uncapped —
+     * `assertEntitlement` throws on it, so reporting no cap here splits the
+     * display from the gate. An explicitly-NULL `workout_limit` on a real
+     * `free` row would be a catalog saying "free is uncapped", which is not a
+     * thing this product sells, so it is treated the same way.
+     */
+    const resolveFreeTierLimit = async (): Promise<number> =>
+      (await loadTierLimit("free"))?.workoutLimit ??
+      FREE_TIER_WORKOUT_LIMIT_FALLBACK;
+
+    let limit: number | null;
+    if (subRow === null || reverted) {
+      limit = await resolveFreeTierLimit();
     } else {
       limit = subRow.workoutLimit ?? null;
+
+      // A period-end tier change that has already taken effect wins over the
+      // row's own `tier_name`, which the renewal webhook has not rewritten
+      // yet — and it is what suppressed the lapse in `classify…` above, so
+      // NOT resolving its limit here leaves the outgoing tier's allowance in
+      // place. This endpoint is the mobile "N of 3 workouts" display AND what
+      // the client create gate reads, so a split from `assertEntitlement`
+      // means the app offers a create the server then 402s — and, worse via
+      // `evaluateWorkoutTotalCapLock`, lets a user finish a session that
+      // cannot be saved. The docstring above requires this to mirror the gate.
+      const scheduledTier = resolveEffectiveScheduledTier(subRow.metadata);
+      if (scheduledTier !== null) {
+        // ⚠ Row-missing vs limit-NULL, the same two NULLs `tierRowJoined`
+        // separates: an absent scheduled tier falls back to free, an
+        // explicitly-uncapped one stays uncapped.
+        const scheduled = await loadTierLimit(scheduledTier);
+        limit =
+          scheduled === null
+            ? await resolveFreeTierLimit()
+            : (scheduled.workoutLimit ?? null);
+      }
     }
 
     return { used, limit };

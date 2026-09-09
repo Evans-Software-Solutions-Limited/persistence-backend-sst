@@ -369,7 +369,22 @@ function restoreReconciledWorkout(
   const alreadyCached =
     storage.getCachedWorkoutDetail(userId, serverWorkout.id) !== null ||
     storage.getCachedWorkoutDetail(userId, localId) !== null;
-  if (alreadyCached) return;
+
+  // ⚠ The detail cache alone is NOT a sufficient guard. `refreshWorkouts`
+  // splatters a detail row for everything in a list payload, so the `mine`
+  // path is covered by it — but `CoachWorkoutLibraryContainer` writes ONLY
+  // `cacheCoachWorkoutLibrary`, with no detail splatter. So a coach-authored
+  // create that died, was swept from the library, then came back via a library
+  // refresh would have no detail row, and a later Retry would prepend a SECOND
+  // copy and push `quota.used` one ABOVE the server's real count — tripping
+  // the total-cap lock a workout early. Check the slices this function
+  // actually writes.
+  const inASlice = [
+    ...(storage.getCachedCoachWorkoutLibrary(userId) ?? []),
+    ...(storage.getCachedWorkoutsList(userId, "mine")?.workouts ?? []),
+  ].some((w) => w.id === serverWorkout.id || w.id === localId);
+
+  if (alreadyCached || inASlice) return;
 
   storage.cacheWorkoutDetail(userId, serverWorkout);
 

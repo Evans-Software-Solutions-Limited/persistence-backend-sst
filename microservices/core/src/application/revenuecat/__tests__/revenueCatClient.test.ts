@@ -20,6 +20,7 @@ import {
   normalizeSubscription,
   parseRcTimestamp,
   resolveAccessBoundaryMs,
+  APPLE_BILLING_RETRY_CEILING_MS,
 } from "../revenueCatClient";
 
 /**
@@ -100,8 +101,35 @@ describe("resolveAccessBoundaryMs", () => {
     expect(resolveAccessBoundaryMs(null, null, NOW)).toBeNull();
   });
 
-  it("refuses a past period end, since the caller already knows access is granted", () => {
-    expect(resolveAccessBoundaryMs(NOW - HOUR, null, NOW)).toBeNull();
+  // ⚠ NOT null. Null reads as OPEN-ENDED everywhere, so nothing about the
+  // passage of time would revoke it — a terminal RevenueCat event that never
+  // arrives would grant indefinite paid access, which is the very failure mode
+  // `liveSubscriptionFilter`'s docstring names. The extension is bounded so it
+  // expires on its own.
+  it("extends a past period end by the store's retry ceiling, not indefinitely", () => {
+    expect(resolveAccessBoundaryMs(NOW - HOUR, null, NOW)).toBe(
+      NOW - HOUR + APPLE_BILLING_RETRY_CEILING_MS,
+    );
+  });
+
+  it("anchors the extension to the PERIOD END, so repeated syncs cannot ratchet it forward", () => {
+    const periodEnd = NOW - 30 * 24 * HOUR;
+    const first = resolveAccessBoundaryMs(periodEnd, null, NOW);
+    const laterSync = resolveAccessBoundaryMs(periodEnd, null, NOW + 5 * HOUR);
+    expect(first).toBe(laterSync);
+  });
+
+  it("lapses once the extension itself has run out", () => {
+    // Past the store's own documented maximum, so a `gives_access` claim is no
+    // longer something to honour — the boundary returned is in the past and
+    // every reader treats it as lapsed.
+    const boundary = resolveAccessBoundaryMs(
+      NOW - APPLE_BILLING_RETRY_CEILING_MS - HOUR,
+      null,
+      NOW,
+    );
+    expect(boundary).not.toBeNull();
+    expect(boundary as number).toBeLessThan(NOW);
   });
 
   it("uses a future grace window as the boundary instead", () => {
@@ -110,8 +138,18 @@ describe("resolveAccessBoundaryMs", () => {
     );
   });
 
-  it("ignores a grace window that has also passed", () => {
-    expect(resolveAccessBoundaryMs(NOW - 5 * HOUR, NOW - HOUR, NOW)).toBeNull();
+  it("falls back to the bounded extension when the grace window has also passed", () => {
+    expect(resolveAccessBoundaryMs(NOW - 5 * HOUR, NOW - HOUR, NOW)).toBe(
+      NOW - 5 * HOUR + APPLE_BILLING_RETRY_CEILING_MS,
+    );
+  });
+
+  it("uses a real grace window even when the period end is unparseable", () => {
+    // The early `periodEndMs === null` return used to throw away the one
+    // boundary the payload actually carried.
+    expect(resolveAccessBoundaryMs(null, NOW + 5 * HOUR, NOW)).toBe(
+      NOW + 5 * HOUR,
+    );
   });
 
   it("does not let a grace window shorten a still-valid period", () => {
@@ -123,7 +161,9 @@ describe("resolveAccessBoundaryMs", () => {
   });
 
   it("treats the exact boundary instant as passed", () => {
-    expect(resolveAccessBoundaryMs(NOW, null, NOW)).toBeNull();
+    expect(resolveAccessBoundaryMs(NOW, null, NOW)).toBe(
+      NOW + APPLE_BILLING_RETRY_CEILING_MS,
+    );
   });
 });
 
@@ -241,14 +281,15 @@ describe("normalizeSubscription", () => {
   // boundary. Apple retries a failed renewal for up to 60 days with access
   // intact, reporting exactly this shape throughout.
   it("does NOT mirror an already-past period end as the access boundary", () => {
+    const periodEnd = Date.now() - DAY_MS;
     expect(
       normalizeSubscription(
         realSubscriptionItem({
-          current_period_ends_at: Date.now() - DAY_MS,
-          ends_at: Date.now() - DAY_MS,
+          current_period_ends_at: periodEnd,
+          ends_at: periodEnd,
         }),
       )?.expiresAt,
-    ).toBeNull();
+    ).toEqual(new Date(periodEnd + APPLE_BILLING_RETRY_CEILING_MS));
   });
 
   it("prefers RevenueCat's grace_period_expires_at when the period has passed", () => {
@@ -264,16 +305,17 @@ describe("normalizeSubscription", () => {
     ).toEqual(new Date(graceEnd));
   });
 
-  it("ignores a grace window that has ALSO passed", () => {
+  it("falls back to the bounded extension when the grace window has ALSO passed", () => {
+    const periodEnd = Date.now() - 30 * DAY_MS;
     expect(
       normalizeSubscription(
         realSubscriptionItem({
-          current_period_ends_at: Date.now() - 30 * DAY_MS,
-          ends_at: Date.now() - 30 * DAY_MS,
+          current_period_ends_at: periodEnd,
+          ends_at: periodEnd,
           grace_period_expires_at: Date.now() - DAY_MS,
         }),
       )?.expiresAt,
-    ).toBeNull();
+    ).toEqual(new Date(periodEnd + APPLE_BILLING_RETRY_CEILING_MS));
   });
 
   it("infers the billing cycle from the REAL period, not the widened boundary", () => {

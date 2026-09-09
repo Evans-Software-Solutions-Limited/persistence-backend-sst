@@ -89,6 +89,17 @@ export function parseRcTimestamp(raw: unknown): Date | null {
 }
 
 /**
+ * How far past a period end access may be extended when the store still grants
+ * it but gives no explicit grace window.
+ *
+ * Apple retries a failed renewal for up to 60 days with access intact, so this
+ * is the platform's own documented ceiling rather than a product decision of
+ * ours. It exists to keep the fallback in `resolveAccessBoundaryMs` BOUNDED —
+ * see the note there on why an unbounded (null) extension is unsafe.
+ */
+export const APPLE_BILLING_RETRY_CEILING_MS = 60 * 24 * 60 * 60 * 1000;
+
+/**
  * The `expires_at` to mirror locally: the instant access should be considered
  * over, for a subscription RevenueCat has ALREADY told us grants access.
  *
@@ -109,14 +120,13 @@ export function parseRcTimestamp(raw: unknown): Date | null {
  * advances the period.
  *
  * So: a future period end is the boundary (the ordinary case, unchanged). A
- * past one is NOT — prefer RevenueCat's `grace_period_expires_at` when it
- * gives a real future boundary, and otherwise fall back to `null`, which every
- * reader already treats as open-ended. Null is honest here rather than
- * permissive: we know access is granted and we do not know until when, and
- * `parseRcTimestamp`'s docstring already assigns null exactly that meaning.
- * The row stops being live when RevenueCat says so — `gives_access: false`
- * drops the subscription in `normalizeSubscription`, and the sync's
- * no-desired-subscription branch cancels the mirror.
+ * past one is NOT — prefer RevenueCat's `grace_period_expires_at` when it gives
+ * a real future boundary, and otherwise extend the period end by
+ * `APPLE_BILLING_RETRY_CEILING_MS`. The row also stops being live the moment
+ * RevenueCat says so — `gives_access: false` drops the subscription in
+ * `normalizeSubscription` and the sync's no-desired-subscription branch cancels
+ * the mirror — but the bounded boundary means it expires on its own even if
+ * that event never arrives.
  *
  * Exported for direct testing: the interesting cases are all boundary
  * conditions around `now`.
@@ -126,12 +136,41 @@ export function resolveAccessBoundaryMs(
   gracePeriodEndMs: number | null,
   now: number = Date.now(),
 ): number | null {
-  if (periodEndMs === null) return null;
-  if (periodEndMs > now) return periodEndMs;
+  // The ordinary case: the period is still running and IS the boundary.
+  if (periodEndMs !== null && periodEndMs > now) return periodEndMs;
+
+  // The store told us when grace ends — believe it over anything derived.
+  // Checked before the null-period short-circuit: a payload can carry a real
+  // grace window without a parseable period end, and throwing the one boundary
+  // we do have away in favour of "unknown" would be strictly worse.
   if (gracePeriodEndMs !== null && gracePeriodEndMs > now) {
     return gracePeriodEndMs;
   }
-  return null;
+
+  // No period end at all — nothing to bound, and nothing to lapse. Unchanged
+  // from before this helper existed.
+  if (periodEndMs === null) return null;
+
+  // Past period end, no grace window given, but `gives_access` is true. Bound
+  // the extension rather than returning null.
+  //
+  // ⚠ Null would be the obvious answer and it is the wrong one: every reader
+  // treats an absent `expires_at` as OPEN-ENDED, so nothing about the passage
+  // of time would ever revoke it — only a later successful sync could. That
+  // hands indefinite paid access to exactly the case
+  // `liveSubscriptionFilter`'s docstring warns about, a terminal event that
+  // never arrives: RevenueCat exhausting its retries against a 5xx, the
+  // shared-project `userExists` skip swallowing the event as a no-op success,
+  // or `RC_FETCH_TIMEOUT_MS` burning the budget. Before this helper the row
+  // carried a past `expires_at` and self-lapsed; a null fallback would have
+  // removed the last time-based backstop while fixing the grace bug.
+  //
+  // Anchored to the PERIOD END, not to `now`: `now + ceiling` would ratchet
+  // forward on every sync and never expire either. This expires on its own a
+  // fixed distance past the period the customer actually paid for, and if that
+  // instant has already passed the readers lapse the row — correctly, since
+  // the store is then claiming access beyond its own documented maximum.
+  return periodEndMs + APPLE_BILLING_RETRY_CEILING_MS;
 }
 
 /**

@@ -507,7 +507,19 @@ export class SubscriptionRepository {
     const db = transaction ?? getDb();
     const rows = await db
       .update(userSubscriptions)
-      .set({ paymentStatus: "cancelled", updatedAt: new Date() })
+      .set({
+        paymentStatus: "cancelled",
+        // ⚠ Close the access boundary too. `resolveAccessBoundaryMs` can
+        // legitimately mirror a NULL `expires_at` (a subscription the store
+        // grants with no period end at all), and NULL reads as OPEN-ENDED
+        // everywhere — so a revoked row that kept it would go on reporting a
+        // paid tier to `computeIsFreeTier` forever, with nothing to heal it.
+        // COALESCE rather than an unconditional stamp: a row that already has
+        // a real boundary keeps it, so a cancel inside a paid-through period
+        // still honours that period.
+        expiresAt: sql`COALESCE(${userSubscriptions.expiresAt}, NOW())`,
+        updatedAt: new Date(),
+      })
       .where(
         and(
           eq(userSubscriptions.externalSubscriptionId, externalId),
@@ -527,7 +539,19 @@ export class SubscriptionRepository {
     const db = transaction ?? getDb();
     const rows = await db
       .update(userSubscriptions)
-      .set({ paymentStatus: "cancelled", updatedAt: new Date() })
+      .set({
+        paymentStatus: "cancelled",
+        // ⚠ Close the access boundary too. `resolveAccessBoundaryMs` can
+        // legitimately mirror a NULL `expires_at` (a subscription the store
+        // grants with no period end at all), and NULL reads as OPEN-ENDED
+        // everywhere — so a revoked row that kept it would go on reporting a
+        // paid tier to `computeIsFreeTier` forever, with nothing to heal it.
+        // COALESCE rather than an unconditional stamp: a row that already has
+        // a real boundary keeps it, so a cancel inside a paid-through period
+        // still honours that period.
+        expiresAt: sql`COALESCE(${userSubscriptions.expiresAt}, NOW())`,
+        updatedAt: new Date(),
+      })
       .where(
         and(
           eq(userSubscriptions.userId, userId),

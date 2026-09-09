@@ -449,11 +449,30 @@ describe("DashboardRepository pure helpers", () => {
       expect(computeIsFreeTier(row, now)).toBe(false);
     });
 
-    it("returns false for a cancelled subscription with a null expiresAt", () => {
+    // ⚠ Was asserted as `false` (still paid). That encoded the divergence, not
+    // a decision: `liveSubscriptionFilter`'s cancelled branch requires
+    // `expires_at IS NOT NULL AND > NOW()`, and its docstring says outright
+    // that "a cancelled row with no `expires_at` is treated as lapsed (no
+    // open-ended grace)" — so `/subscriptions/me` already called this user
+    // free while this function called them paid. Same class of split as the
+    // `active`-past-expiry one above, in the same lenient reader.
+    it("returns TRUE for a cancelled subscription with a null expiresAt (no open-ended grace)", () => {
       const row: SubscriptionRow = {
         tierName: "pro",
         paymentStatus: "cancelled",
         expiresAt: null,
+        cancelledAt: new Date("2026-04-10T00:00:00Z"),
+        isTrainerTier: false,
+        tierDbName: "pro",
+      };
+      expect(computeIsFreeTier(row, now)).toBe(true);
+    });
+
+    it("keeps a cancelled subscription paid while its expires_at is still in the future", () => {
+      const row: SubscriptionRow = {
+        tierName: "pro",
+        paymentStatus: "cancelled",
+        expiresAt: new Date("2026-05-01T00:00:00Z"),
         cancelledAt: new Date("2026-04-10T00:00:00Z"),
         isTrainerTier: false,
         tierDbName: "pro",

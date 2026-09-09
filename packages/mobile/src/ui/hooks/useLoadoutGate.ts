@@ -90,6 +90,16 @@ const ACTIVE_STATUSES = new Set<MySubscription["paymentStatus"]>([
  * `expires_at` has not passed is still entitled — the user paid through that date
  * and the server honours it, so showing them a paywall would be wrong.
  */
+/**
+ * Mirror of the server's `hasLapsed` (assertEntitlement.ts): a boundary that is
+ * ABSENT means open-ended, and only a present one now in the past is lapsed.
+ * Deliberately not `!isExpiresAtInFuture(...)`, which reads null as lapsed.
+ */
+function hasLapsed(expiresAt: string | null, nowMs: number): boolean {
+  if (expiresAt === null) return false;
+  return !isExpiresAtInFuture(expiresAt, nowMs);
+}
+
 function isExpiresAtInFuture(expiresAt: string | null, nowMs: number): boolean {
   if (expiresAt === null) return false;
   const parsed = Date.parse(expiresAt);
@@ -119,7 +129,16 @@ export function computeLoadoutVerdict(
   const entitled =
     (ACTIVE_STATUSES.has(subscription.paymentStatus) &&
       (subscription.cancelledAt === null ||
-        isExpiresAtInFuture(subscription.expiresAt, nowMs))) ||
+        // ⚠ `!hasLapsed`, NOT `isExpiresAtInFuture` — a NULL `expires_at` is
+        // OPEN-ENDED, not lapsed, which is what the server's
+        // `classifySubscriptionStatus` decides on the same row. `revenueCatSync`
+        // stamps `cancelledAt` for ANY auto-renew-off subscription (the ordinary
+        // "cancelled, still paid through" state) and `resolveAccessBoundaryMs`
+        // can legitimately mirror a null boundary, so this pair is reachable —
+        // and `isExpiresAtInFuture(null)` being false locked a paying customer
+        // out of a feature the server was granting them, next to a plan card
+        // still showing their tier.
+        !hasLapsed(subscription.expiresAt, nowMs))) ||
     (subscription.paymentStatus === "cancelled" &&
       isExpiresAtInFuture(subscription.expiresAt, nowMs));
   if (!entitled) return false;

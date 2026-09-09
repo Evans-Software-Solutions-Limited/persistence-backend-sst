@@ -213,7 +213,19 @@ export function computeIsFreeTier(
   if (tier === "free") return true;
   // Shared with the entitlement layer rather than re-derived, so the two
   // cannot drift apart again. A NULL `expires_at` is open-ended, not lapsed.
-  return hasLapsed(row.expiresAt, now.getTime());
+  if (hasLapsed(row.expiresAt, now.getTime())) return true;
+  // ⚠ The one place status still matters, mirroring `liveSubscriptionFilter`'s
+  // cancelled branch: a `cancelled` row is live ONLY while `expires_at` is
+  // non-null AND in the future. Without this, a cancelled row carrying no
+  // boundary at all reads as a paid tier here while every other reader calls it
+  // free — the contradiction this function was just aligned to remove.
+  if (
+    row.paymentStatus === "cancelled" &&
+    !(row.expiresAt !== null && row.expiresAt.getTime() > now.getTime())
+  ) {
+    return true;
+  }
+  return false;
 }
 
 /**

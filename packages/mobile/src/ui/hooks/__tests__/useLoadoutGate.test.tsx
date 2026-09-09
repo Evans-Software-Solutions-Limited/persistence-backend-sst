@@ -163,6 +163,22 @@ describe("computeLoadoutVerdict", () => {
     ).toBe(false);
   });
 
+  // ⚠ The client/server split Inspector Brad found. `revenueCatSync` stamps
+  // `cancelledAt` for ANY auto-renew-off subscription — the ordinary
+  // "cancelled, still paid through" state — and `resolveAccessBoundaryMs` can
+  // legitimately mirror a NULL boundary. `isExpiresAtInFuture(null)` is false,
+  // so this gate denied while the server's `classifySubscriptionStatus`
+  // (whose `hasLapsed` reads absent as OPEN-ENDED) granted: a padlocked
+  // Loadout next to a plan card still showing Premium Plus.
+  it("entitles an auto-renew-off subscription with NO expiresAt (open-ended, not lapsed)", () => {
+    expect(
+      computeLoadoutVerdict({
+        ...sub("premium_plus", "active", null),
+        cancelledAt: new Date(Date.now() - 86_400_000).toISOString(),
+      }),
+    ).toBe(true);
+  });
+
   it("uses the scheduled tier at effectiveAt even when the cached row is stale", () => {
     const base = sub("premium_plus");
     expect(

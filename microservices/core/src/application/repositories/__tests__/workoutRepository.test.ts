@@ -1,7 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { PgDialect } from "drizzle-orm/pg-core";
-import { WorkoutRepository } from "../workoutRepository";
+import {
+  FREE_TIER_WORKOUT_LIMIT_FALLBACK,
+  WorkoutRepository,
+} from "../workoutRepository";
 
 vi.mock("@persistence/db/client", () => ({
   getDb: vi.fn(),
@@ -192,6 +195,25 @@ function makeQuotaFreeChain(workoutLimit: number | null) {
         limit: vi
           .fn()
           .mockResolvedValue(workoutLimit === null ? [] : [{ workoutLimit }]),
+      }),
+    }),
+  };
+}
+
+/**
+ * A tier row that EXISTS in the catalog, carrying an explicit limit which may
+ * legitimately be `null` (uncapped).
+ *
+ * ⚠ Deliberately distinct from `makeQuotaFreeChain(null)`, which resolves to
+ * `[]` — "no catalog row at all". Those are the two different NULLs
+ * `tierRowJoined` exists to separate, and modelling one with the other is how
+ * a test silently stops exercising what it claims to.
+ */
+function makeQuotaExistingTierChain(workoutLimit: number | null) {
+  return {
+    from: vi.fn().mockReturnValue({
+      where: vi.fn().mockReturnValue({
+        limit: vi.fn().mockResolvedValue([{ workoutLimit }]),
       }),
     }),
   };
@@ -2404,9 +2426,11 @@ describe("WorkoutRepository", () => {
       expect(quota).toEqual({ used: 3, limit: 3 });
     });
 
-    it("keeps a mid-window scheduled tier change on its own limit, not free's", async () => {
+    it("resolves a mid-window scheduled tier change to the SCHEDULED tier's limit", async () => {
       // Period-end tier change whose renewal webhook is late: same row shape
-      // as a lapse, but the user is paying. Must not be clamped to free.
+      // as a lapse, but the user is paying, so the lapse is suppressed. The
+      // limit must then come from the tier they are moving TO — premium_plus
+      // → premium here, both uncapped.
       const mockDb = {
         select: vi
           .fn()
@@ -2425,14 +2449,84 @@ describe("WorkoutRepository", () => {
               catalogTierName: "premium_plus",
               workoutLimit: null,
             }),
-          ),
+          )
+          .mockReturnValueOnce(makeQuotaExistingTierChain(null)),
       };
       (getDb as any).mockReturnValue(mockDb);
 
       const quota = await new WorkoutRepository().getQuota("user-1");
 
       expect(quota).toEqual({ used: 9, limit: null });
-      expect(mockDb.select).toHaveBeenCalledTimes(2);
+    });
+
+    // ⚠ The case that makes this matter, and the split Inspector Brad found:
+    // getQuota is BOTH the "N of 3 workouts" display and what the client cap
+    // gate reads. Left on the outgoing tier's limit, the app offers a create
+    // the server 402s — and via `evaluateWorkoutTotalCapLock` lets the user
+    // finish a session that then cannot be saved.
+    it("clamps to a scheduled DOWNGRADE's limit, not the outgoing tier's", async () => {
+      const mockDb = {
+        select: vi
+          .fn()
+          .mockReturnValueOnce(makeQuotaUsedChain(20))
+          .mockReturnValueOnce(
+            makeQuotaSubChain({
+              paymentStatus: "active",
+              expiresAt: new Date(Date.now() - 60_000),
+              cancelledAt: null,
+              metadata: {
+                scheduled_change: {
+                  next_tier_name: "free",
+                  effective_at: new Date(Date.now() - 60_000).toISOString(),
+                },
+              },
+              catalogTierName: "premium",
+              // The outgoing tier is uncapped…
+              workoutLimit: null,
+            }),
+          )
+          // …but the scheduled one is free, limit 3.
+          .mockReturnValueOnce(makeQuotaExistingTierChain(3)),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      expect(await new WorkoutRepository().getQuota("user-1")).toEqual({
+        used: 20,
+        limit: 3,
+      });
+    });
+
+    it("falls back to free when the scheduled tier has no catalog row", async () => {
+      const mockDb = {
+        select: vi
+          .fn()
+          .mockReturnValueOnce(makeQuotaUsedChain(5))
+          .mockReturnValueOnce(
+            makeQuotaSubChain({
+              paymentStatus: "active",
+              expiresAt: null,
+              cancelledAt: null,
+              metadata: {
+                scheduled_change: {
+                  next_tier_name: "retired_tier",
+                  effective_at: new Date(Date.now() - 60_000).toISOString(),
+                },
+              },
+              catalogTierName: "premium",
+              workoutLimit: null,
+            }),
+          )
+          // No row for `retired_tier`…
+          .mockReturnValueOnce(makeQuotaFreeChain(null))
+          // …so free's limit applies.
+          .mockReturnValueOnce(makeQuotaFreeChain(3)),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      expect(await new WorkoutRepository().getQuota("user-1")).toEqual({
+        used: 5,
+        limit: 3,
+      });
     });
 
     it("keeps full entitlement for a cancelled-but-still-paid-through subscription", async () => {
@@ -2470,6 +2564,50 @@ describe("WorkoutRepository", () => {
       const quota = await new WorkoutRepository().getQuota("user-1");
 
       expect(quota).toEqual({ used: 0, limit: 3 });
+    });
+
+    // Regression: a MISSING `free` catalog row resolved to `null`, and every
+    // reader treats a null limit as uncapped — while `assertEntitlement`
+    // THROWS on the same misconfiguration. So the app showed no limit and
+    // create 402'd, and `evaluateWorkoutTotalCapLock` let a session be
+    // finished that could never be saved. Fails closed to the free allowance
+    // now. ⚠ `makeQuotaFreeChain(null)` is "no row at all", not "row with a
+    // null limit" — see the fixture comments.
+    it("fails closed to the free allowance when the free catalog row is MISSING, rather than reporting unlimited", async () => {
+      const mockDb = {
+        select: vi
+          .fn()
+          .mockReturnValueOnce(makeQuotaUsedChain(1))
+          .mockReturnValueOnce(makeQuotaSubChain(null))
+          .mockReturnValueOnce(makeQuotaFreeChain(null)),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const quota = await new WorkoutRepository().getQuota("user-1");
+
+      expect(quota).toEqual({
+        used: 1,
+        limit: FREE_TIER_WORKOUT_LIMIT_FALLBACK,
+      });
+      expect(quota.limit).not.toBeNull();
+    });
+
+    it("fails closed when a real free row carries an explicitly null limit — free is never uncapped", async () => {
+      const mockDb = {
+        select: vi
+          .fn()
+          .mockReturnValueOnce(makeQuotaUsedChain(0))
+          .mockReturnValueOnce(makeQuotaSubChain(null))
+          .mockReturnValueOnce(makeQuotaExistingTierChain(null)),
+      };
+      (getDb as any).mockReturnValue(mockDb);
+
+      const quota = await new WorkoutRepository().getQuota("user-1");
+
+      expect(quota).toEqual({
+        used: 0,
+        limit: FREE_TIER_WORKOUT_LIMIT_FALLBACK,
+      });
     });
   });
 });
