@@ -131,7 +131,8 @@ describe("FoundingPlans", () => {
     fireEvent.submit(form);
     await waitFor(() => expect(spy).toHaveBeenCalled());
     expect(spy.mock.calls[0]![0]).toBe(lastBody(mock).event_id);
-    expect(spy.mock.calls[0]!.slice(1)).toEqual([30, "GBP"]);
+    // …and the plan, so a Sales campaign can tell which term converted.
+    expect(spy.mock.calls[0]!.slice(1)).toEqual([30, "GBP", "premium_6m"]);
   });
 
   it("does not report an intent when the request failed", async () => {

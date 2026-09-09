@@ -170,7 +170,7 @@ describe("metaPixel", () => {
     ])("%s no-ops without consent", (_name, fire) => {
       vi.stubEnv("VITE_META_PIXEL_ID", "123456789");
       setConsent({ advertising: false });
-      expect(() => fire("evt_1", 30, "GBP")).not.toThrow();
+      expect(() => fire("evt_1", 30, "GBP", "premium_6m")).not.toThrow();
       expect(window.fbq).toBeUndefined();
     });
 
@@ -179,7 +179,7 @@ describe("metaPixel", () => {
       ["trackPurchase", trackPurchase],
     ])("%s no-ops when the pixel never loaded", (_name, fire) => {
       // No pixel id configured, so `initMetaPixel` never ran.
-      expect(() => fire("evt_1", 30, "GBP")).not.toThrow();
+      expect(() => fire("evt_1", 30, "GBP", "premium_6m")).not.toThrow();
       expect(window.fbq).toBeUndefined();
     });
 
@@ -192,13 +192,23 @@ describe("metaPixel", () => {
         window.fbq,
       );
 
-      trackInitiateCheckout("evt_checkout", 30, "GBP");
+      trackInitiateCheckout("evt_checkout", 30, "GBP", "premium_6m");
 
       expect(calls).toEqual([
         [
           "track",
           "InitiateCheckout",
-          { value: 30, currency: "GBP" },
+          {
+            value: 30,
+            currency: "GBP",
+            // Meta's STANDARD commerce parameters, never a custom `tier` key:
+            // the dataset is self-declared Health & wellness, and Meta
+            // restricts custom parameters under that category.
+            content_name: "premium_6m",
+            content_ids: ["premium_6m"],
+            content_type: "product",
+            num_items: 1,
+          },
           { eventID: "evt_checkout" },
         ],
       ]);
@@ -214,17 +224,53 @@ describe("metaPixel", () => {
         window.fbq,
       );
 
-      trackPurchase("evt_from_server", 60, "GBP");
+      trackPurchase("evt_from_server", 60, "GBP", "plus_12m");
 
       expect(calls).toEqual([
         [
           "track",
           "Purchase",
-          { value: 60, currency: "GBP" },
+          {
+            value: 60,
+            currency: "GBP",
+            content_name: "plus_12m",
+            content_ids: ["plus_12m"],
+            content_type: "product",
+            num_items: 1,
+          },
           { eventID: "evt_from_server" },
         ],
       ]);
     });
+
+    it.each([
+      ["trackInitiateCheckout", trackInitiateCheckout, "InitiateCheckout"],
+      ["trackPurchase", trackPurchase, "Purchase"],
+    ])(
+      "%s omits the commerce params entirely for an unknown plan",
+      (_name, fire, eventName) => {
+        // Not a placeholder id and not a dropped event: the money still goes,
+        // Meta just cannot segment this one by term.
+        vi.stubEnv("VITE_META_PIXEL_ID", "123456789");
+        initMetaPixel();
+        const calls: unknown[][] = [];
+        window.fbq = Object.assign(
+          (...args: unknown[]) => calls.push(args),
+          window.fbq,
+        );
+
+        fire("evt_1", 30, "GBP", undefined);
+
+        expect(calls).toEqual([
+          [
+            "track",
+            eventName,
+            { value: 30, currency: "GBP" },
+            { eventID: "evt_1" },
+          ],
+        ]);
+      },
+    );
   });
 
   describe("getFbc", () => {

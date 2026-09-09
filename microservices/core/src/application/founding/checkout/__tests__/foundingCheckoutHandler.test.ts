@@ -835,6 +835,18 @@ describe("GET /founding/checkout/:id/status", () => {
     expect(JSON.stringify(body)).not.toContain("buyer@example.test");
   });
 
+  it("returns the tier and term the browser Purchase needs to name the plan", async () => {
+    // The thanks page derives Meta's `content_name`/`content_ids` from these
+    // two, and the server derives the SAME id for its own copy of the purchase.
+    // Drop them from this response and the browser copy loses the plan while
+    // the server copy keeps it — one sale, two different reported terms.
+    const body = (await (await status("cs_test_1")).json()) as {
+      data: { tier: string; months: number };
+    };
+    expect(body.data.tier).toBe("premium");
+    expect(body.data.months).toBe(6);
+  });
+
   it("returns the server's event id so the browser Purchase dedupes", async () => {
     const body = (await (await status("cs_test_1")).json()) as {
       data: { eventId: string; status: string };

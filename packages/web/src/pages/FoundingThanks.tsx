@@ -5,7 +5,10 @@ import { MarketingLayout } from "@/marketing/MarketingLayout";
 import { useSeo } from "@/marketing/seo";
 import { marketingApiBase } from "@/lib/marketingApiBase";
 import { trackPurchase } from "@/lib/metaPixel";
-import { FOUNDING_COPY } from "@/marketing/foundingOffer";
+import {
+  FOUNDING_COPY,
+  foundingPlanContentId,
+} from "@/marketing/foundingOffer";
 
 interface CheckoutStatus {
   status: "open" | "completed" | "expired" | "refunded";
@@ -106,7 +109,15 @@ export function FoundingThanks() {
     if (fired.current) return;
     if (data?.status !== "completed" || !data.eventId) return;
     fired.current = true;
-    trackPurchase(data.eventId, data.amountMinor / 100, data.currency);
+    trackPurchase(
+      data.eventId,
+      data.amountMinor / 100,
+      data.currency,
+      // The plan bought, from the same `tier`/`months` the server put on its
+      // own `purchase` event — so the deduped browser/server pair reports one
+      // term, not two.
+      foundingPlanContentId(data.tier, data.months),
+    );
   }, [data]);
 
   const heading =

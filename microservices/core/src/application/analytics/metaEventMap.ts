@@ -37,6 +37,46 @@ export const META_FORWARDED_EVENT_NAMES = [
   "purchase",
 ] as const;
 
+/**
+ * The four founding terms as ONE canonical product id, shared with the browser
+ * pixel (`packages/web/src/marketing/foundingOffer.ts`, held in step by
+ * `foundingPlanContentIdParity.test.ts`).
+ *
+ * Meta needs the plan on the purchase signal so a Sales campaign can learn and
+ * report which term converts, and so value optimisation has something to
+ * segment on. It has to ride on Meta's STANDARD commerce parameters —
+ * `content_name` / `content_ids` / `content_type` / `num_items` — and never on
+ * a custom key like `tier`: this dataset is self-declared Health & wellness, a
+ * category under which Meta restricts custom parameters.
+ *
+ * Keyed `"<tier>:<months>"` and FLAT on purpose. The web mirror is compared
+ * against this literal by reading this file as text (the core package is
+ * outside the web TypeScript project, so it cannot be imported), so the table
+ * has to stay trivially parseable: keep it a flat object of string -> string.
+ */
+export const FOUNDING_PLAN_CONTENT_IDS: Record<string, string> = {
+  "premium:6": "premium_6m",
+  "premium:12": "premium_12m",
+  "premium_plus:6": "plus_6m",
+  "premium_plus:12": "plus_12m",
+};
+
+/**
+ * The canonical plan id for a `tier` x `months` pair, or `undefined` for
+ * anything not sold on the website: the admin/enquiry-only
+ * `start_up_coach_plus`, a term nobody offers, or a row that predates these
+ * properties. `undefined` means "send value/currency alone" — never a guessed
+ * id, which would teach Meta that a plan converted which nobody bought.
+ */
+export function foundingPlanContentId(
+  tier: unknown,
+  months: unknown,
+): string | undefined {
+  if (typeof tier !== "string") return undefined;
+  if (typeof months !== "number" || !Number.isInteger(months)) return undefined;
+  return FOUNDING_PLAN_CONTENT_IDS[`${tier}:${months}`];
+}
+
 interface MetaEventSkeleton {
   eventName: MetaStandardEventName;
   customData?: Record<string, unknown>;
@@ -51,13 +91,35 @@ function skeletonsFor(
     typeof properties.value === "number" ? properties.value : undefined;
   const currency =
     typeof properties.currency === "string" ? properties.currency : undefined;
-  const customData =
-    value !== undefined || currency !== undefined
-      ? {
-          ...(value !== undefined ? { value } : {}),
-          ...(currency !== undefined ? { currency } : {}),
-        }
-      : undefined;
+  const money = {
+    ...(value !== undefined ? { value } : {}),
+    ...(currency !== undefined ? { currency } : {}),
+  };
+  const customData = Object.keys(money).length > 0 ? money : undefined;
+
+  /**
+   * `custom_data` for the two WEB founding events: the money, plus Meta's
+   * standard commerce parameters naming which plan it was.
+   *
+   * Only these two. The RevenueCat rail (`subscription_purchased`/`renewal`)
+   * deliberately does not get them — those are different products on a
+   * different store, and labelling an App Store subscription with one of the
+   * four founding terms would merge two rails into one unreadable report.
+   *
+   * Falls back to money alone when the pair names no web plan, rather than
+   * omitting the value too.
+   */
+  const commerceData = (): Record<string, unknown> | undefined => {
+    const planId = foundingPlanContentId(properties.tier, properties.months);
+    if (planId === undefined) return customData;
+    return {
+      ...money,
+      content_name: planId,
+      content_ids: [planId],
+      content_type: "product",
+      num_items: 1,
+    };
+  };
 
   switch (eventName) {
     case "subscription_purchased":
@@ -79,13 +141,13 @@ function skeletonsFor(
     // optimises towards until enough `Purchase` volume exists to optimise on
     // the conversion itself.
     case "checkout_started":
-      return [{ eventName: "InitiateCheckout", customData }];
+      return [{ eventName: "InitiateCheckout", customData: commerceData() }];
     // A one-off fixed-term purchase. Purchase ONLY — no `Subscribe`, unlike
     // `subscription_purchased`: nothing here renews, and telling Meta a
     // subscription began would make the two rails indistinguishable in
     // reporting and teach the model the wrong lifetime value.
     case "purchase":
-      return [{ eventName: "Purchase", customData }];
+      return [{ eventName: "Purchase", customData: commerceData() }];
     case "store_click":
       return [
         {

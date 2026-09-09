@@ -199,6 +199,49 @@ old custom-prompt code, which is not a Play violation (ATT is iOS-only), but
 the Android consent gate above means a rebuilt Play release should ship this
 same corrected code rather than diverging.
 
+### 🟢 2026-09-09 — Meta CAPI: the plan is now on `InitiateCheckout` / `Purchase`
+
+Both events — browser AND server copy — carry the subscription level, so a Sales
+campaign can learn and report which term converts. Meta's **standard** commerce
+parameters only (`content_name`, `content_ids`, `content_type`, `num_items`);
+never a custom key such as `tier`, because the dataset is self-declared
+Health & wellness and Meta restricts custom parameters under that category.
+
+One canonical plan id from the existing `tier` × `months` pair:
+`premium_6m` / `premium_12m` / `plus_6m` / `plus_12m`.
+
+- `metaEventMap.ts` — new `FOUNDING_PLAN_CONTENT_IDS` + `foundingPlanContentId()`.
+  Applied to `checkout_started` and `purchase` ONLY. The RevenueCat rail
+  (`subscription_purchased`/`renewal`) is untouched, with a test pinning that:
+  different products on a different store, and labelling an App Store
+  subscription with a founding term would merge two rails into one unreadable
+  report.
+- `packages/web/src/marketing/foundingOffer.ts` — the mirror, with
+  `foundingPlanContentIdParity.test.ts` reading the core file as TEXT (core is
+  outside the web TS project) and failing on drift. **Drift-check was executed**,
+  not assumed: injecting `plus_12m_DRIFT` into the core table fails the parity
+  assertion.
+- `metaPixel.ts` — `trackInitiateCheckout`/`trackPurchase` take the plan id as a
+  **required** 4th parameter typed `FoundingPlanId | undefined`. Required, not
+  optional: a call site that cannot name the plan has to say so rather than omit
+  it by accident.
+- An unknown pair (the admin-only `start_up_coach_plus`, a term nobody sells, an
+  older row with no `months`) sends value/currency alone — never a guessed id,
+  and never a dropped conversion.
+- The status endpoint already returned `tier`/`months`; nothing to add. It now
+  has a contract test saying so, because the thanks page's plan id depends on it.
+
+⚠ **Not verified at Meta.** Needs a staged checkout with `META_TEST_EVENT_CODE`
+on staging, showing `content_name` on both the Browser and Server rows of one
+event id.
+
+**The missing server copies were a SEPARATE bug, and it is diagnosed** — see the
+`fix/meta-capi-purchase-server-copy` entry: `analytics_events` was UNIQUE on
+`event_id` alone, so the webhook's `purchase` insert collided with
+`checkout_started` and was silently discarded. Until that lands there is no
+server-side `Purchase` row to carry these parameters at all, so this change
+cannot be observed end-to-end on the purchase side.
+
 ### 🟢 2026-09-08 — Build 49 Meta SDK: PRESENT (verified on EAS, pre-submission)
 
 **Question settled: the Meta SDK IS compiled into iOS build 49.** Both gating
