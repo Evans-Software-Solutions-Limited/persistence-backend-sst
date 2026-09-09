@@ -9,6 +9,151 @@ items, and the four most recent sessions. Trimmed 2026-07-27 from 1554 lines.
 If anything here contradicts `git log --oneline -30`, the git history wins —
 say so and fix this file.
 
+### 🔴 2026-09-09 — APP STORE REJECTION 5.1.2(i): our own Alert was the ATT violation
+
+**Submission `9e5d1d8d-ca34-4d4e-987a-21540dad7c58`, 1.1.2 (49), reviewed on
+iPad Air 11-inch (M3). Rejected under Guideline 5.1.2(i).** Apple: the app
+shows "a custom prompt that requests the user to allow tracking" instead of
+using App Tracking Transparency.
+
+**Root cause — ours, in JS, not config.** `useMetaAttribution` fired a
+React Native `Alert.alert` ("Help us measure advertising" / "Allow Meta to
+measure app installs using your device's advertising identifier?" /
+`Not now` | `Allow`) mounted at `app/_layout.tsx` as a sibling of `AuthGate`,
+so it appeared on first launch **before sign-in**. ATT lived downstream of it,
+inside `grantMetaAttributionConsent()` — so "Not now" meant ATT never ran at
+all. Two violations in one: a custom prompt collecting tracking permission,
+and (from Apple's view) an app that does not use the framework.
+
+⚠ The 2026-09-08 entry below verified the SDK, ATT usage string and
+SKAdNetwork were **compiled in** — all true, and none of it could catch this.
+The defect was prompt ORDERING in JS. The "test consent/ATT on physical
+devices" item this ledger already carried was the gap.
+
+**Fix (Brad chose: ATT becomes the only prompt).** Uncommitted, 6 files:
+
+- `useMetaAttribution.ts` rewritten: the `Alert` is **gone**; the system ATT
+  dialog is the sole permission request. Do NOT reintroduce a pre-prompt here,
+  not even an explanatory one — the rationale belongs in
+  `NSUserTrackingUsageDescription`.
+- ⚠ ATT is only presented while the app is **active**. Requested during launch
+  iOS presents nothing and resolves the status unchanged — indistinguishable
+  from a decline, and it burns the one prompt per install. The hook now waits
+  for the first `active` AppState, and guards "exactly once" locally rather
+  than trusting subscription-removal semantics (a test caught that).
+- New `canRequestSystemTracking()` in `metaAttribution.ts` (wraps
+  `getTrackingPermissionsAsync`): true only while `undetermined` + askable.
+- `PrivacySettingsContainer` consequence fix: first-launch ATT now consumes the
+  single prompt, so the Settings switch could no longer grant tracking and
+  would spring back silently forever. It now distinguishes declined-in-dialog
+  (stay silent — their answer) from not-askable (offer
+  Settings → Privacy & Security → Tracking via `Linking.openSettings()`) from
+  never-presented (real error).
+
+Gates: prettier, 9/9 typechecks, lint (0 errors; 9 pre-existing `core`
+warnings), **527 suites / 6767 mobile tests** all green.
+
+⚠ **NOT verified on device.** The prompt itself is unproven — exactly the class
+of bug that caused this rejection. Local native build is blocked by the known
+staging wedge: Xcode's ReactCodegen "Generate Specs" phase dies with
+`Cannot find module '@react-native/codegen/package.json'` even though it
+resolves fine from the shell and is a declared dep. Verify on an EAS build
+before submitting.
+
+⚠ **Android regression this fix introduced, then fixed.** Removing the alert
+made ATT the consent mechanism — but `activateMetaAttribution()` has **no
+permission check on Android at all**: it stores "granted", enables the
+advertiser ID, calls `initializeSDK()` and logs `fb_mobile_activate_app`
+outright. Auto-requesting on first launch therefore turned Meta measurement on
+with **zero consent** on Android, where the removed alert had lawfully been
+providing it. The hook is now gated to `Platform.OS === "ios"`; Android opts in
+explicitly from Privacy Settings, and until then consent stays "unknown" and
+the SDK is never initialised. Pinned by a named regression test. **Do not drop
+that platform gate.**
+
+**Status of Apple's three next steps:**
+1. App Privacy — **DONE, already published** (Brad, ~18h before this session):
+   "Data Used to Track You: Identifiers", and Data Linked to You across
+   Identifiers, Diagnostics, User Content, Purchases, Health & Fitness,
+   Contact Info. Matches the binary's manifest exactly. Nothing owed.
+   (The ASC Account-Holder/Admin caveat is moot — it is already published under
+   Brad's account. Unrelated to this repo's `app_metadata.admin` claim.)
+2. Implement ATT — done, this session.
+3. Remove the custom prompt + say in Review Notes where ATT fires — code done;
+   the Review Notes text is drafted and must be pasted into ASC on resubmit.
+   ⚠ The notes attached to build 49 are now STALE and predate this fix.
+
+**Inspector Brad (local) found two real defects in the first cut of this fix,
+both now fixed:**
+
+- 🟠 The one surviving app-authored alert was titled "Allow tracking in iOS
+  Settings" with a "Not now" button — structurally the same shape as the
+  prompt that got 49 rejected, sitting in the tracking flow. Reframed as a
+  statement of fact: "iOS has already been asked" / `Close` |
+  `Open iOS Settings`. A test now asserts no dialog in this flow has an
+  "Allow…" title or a "Not now"/"Allow" button. **Keep it that way.**
+- 🟡 The container inferred *why* activation failed by re-probing ATT
+  afterwards, so "user allowed it, then a storage/native step threw" was
+  indistinguishable from "user declined" — it fell silent, and every retry
+  then took the other branch and told the user to allow tracking in iOS
+  Settings where it was **already allowed**. A permanent dead end with wrong
+  advice. `grantMetaAttributionConsent()` now returns a typed
+  `MetaGrantOutcome` (`"activated" | "declined" | "failed"`) instead of a
+  boolean; `canRequestSystemTracking()` is used only to tell whether iOS
+  actually presented the dialog on this tap. Do not go back to inferring it.
+
+Also fixed: the once-guard test could not fail (the faithful mock spliced the
+listener before the second dispatch, so removal — not the guard — was doing the
+work); it now dispatches twice ignoring removal, and I verified it fails with
+the guard deleted. Plus an unhandled `Linking.openSettings()` rejection and an
+`AppState.currentState` leak across tests.
+
+**A second sweep confirmed those fixed (by mutation, not by reading) and found
+the sibling of the original bug — now fixed too:**
+
+🟡 `bootstrapMetaAttribution()` runs on mount with **no AppState gate**, so it
+re-requested ATT during launch whenever stored consent was `"granted"` — the
+exact situation where iOS presents nothing and resolves the status unchanged.
+`!permission.granted` then wrote `"denied"` **durably**. Trigger: restore from
+an iCloud/iTunes backup (AsyncStorage is backed up; the ATT authorisation is
+not), or Reset Location & Privacy. Stored consent `"granted"` + ATT
+`undetermined` ⇒ the user is silently and permanently opted out of a choice
+they were never shown, recoverable only via Privacy Settings. The durable
+denial is now guarded by `canRequestSystemTracking()`: a real in-dialog decline
+leaves the status `denied` (so the write proceeds), while a non-answer leaves it
+`undetermined` (so the stored grant survives and the outcome is `"failed"`).
+Two named tests pin both halves. **Never write a denial off a non-answer.**
+
+Also from that sweep: the 5.1.2(i) shape guard only inspected one of the three
+dialogs the flow can raise — it now runs over every outcome plus the withdrawal
+path; the container test doubles carried a stale boolean default that would have
+sent any newly added test silently down the *declined* branch (`jest.Mock` is
+untyped, so tsc stays quiet); and the "only once per install" copy was a dead
+end for a `restricted` ATT status (MDM/Screen Time — reachable on a child
+account, which matters for a 9+ rating), so it now says iOS "is no longer
+asking" and treats the Settings pointer as conditional.
+
+🔵 Left as a known latent mislabel: `"failed"` also covers
+generation-mismatch cancellations and the unconfigured branch, either of which
+would show the error alert for a user-initiated cancellation. Both are
+UI-unreachable today (the row is hidden when unconfigured; a withdrawal
+requires the switch to already read `true`, i.e. after `"activated"`, by which
+point `grantInFlight` is null). Worth a fourth `"cancelled"` outcome only if a
+second entry point to the grant is added.
+
+⚠ One 🟢 left standing deliberately: `workoutRepository.getQuota` reports
+"unlimited" where `assertEntitlement` throws when the `free` tier row is
+absent. It is **pre-existing, in the unstaged entitlement WIP**, not this fix —
+fixing it would mean committing another session's in-progress work. Chipped for
+its own pass.
+
+**Remaining:** commit → build 50 → upload → resubmit with the new Review Notes.
+Brad's call: keep it on `fix/workout-cap-entitlements` and PR from there
+(chosen). **Play is a separate track** — release 8 (1.1.2) carries the same
+old custom-prompt code, which is not a Play violation (ATT is iOS-only), but
+the Android consent gate above means a rebuilt Play release should ship this
+same corrected code rather than diverging.
+
 ### 🟢 2026-09-08 — Build 49 Meta SDK: PRESENT (verified on EAS, pre-submission)
 
 **Question settled: the Meta SDK IS compiled into iOS build 49.** Both gating
@@ -214,6 +359,65 @@ them; left alone deliberately, it's a product question and dormant while the
 Stripe rail is parked); and `restoreReconciledWorkout` now puts a revived
 create's workout AND quota back, since leaving `quota.used` one low waved a
 capped user who just paid straight into a server 402.
+
+**⚠ Inspector Brad round 2 found the grace fix traded one failure for
+another.** Five more, all landed:
+
+1. **Writing `expires_at: NULL` mid-grace removed the last TIME-BASED
+   backstop.** NULL reads as open-ended everywhere, so nothing about the
+   passage of time revokes it — only a later successful sync could. That hands
+   indefinite paid access to the very case `liveSubscriptionFilter`'s docstring
+   names (a terminal event that never arrives: RC exhausting retries on a 5xx,
+   the shared-project `userExists` skip swallowing it, `RC_FETCH_TIMEOUT_MS`
+   burning the budget). Fixed by BOUNDING the fallback:
+   `periodEndMs + APPLE_BILLING_RETRY_CEILING_MS` (60 days — Apple's own
+   documented retry maximum, not a product decision). ⚠ Anchored to the PERIOD
+   END, not `now`, or repeated syncs ratchet it forward and it never expires
+   either. Also fixed: the early `periodEndMs === null` return was discarding a
+   real `grace_period_expires_at`.
+2. **A revoked mirror kept reading as paid.** `cancelLiveByExternalId` /
+   `cancelLiveSubscriptions` flip status to `cancelled` and never touched
+   `expires_at`, so a row that passed through the NULL-boundary shape and was
+   then genuinely revoked reported a paid tier to `computeIsFreeTier` forever,
+   with nothing to heal it. Both now stamp
+   `expiresAt: COALESCE(expires_at, NOW())` — COALESCE so a cancel inside a
+   paid-through period still honours that period.
+3. **`computeIsFreeTier` had lost the STATUS half.** Aligning it on expiry
+   alone dropped `liveSubscriptionFilter`'s cancelled branch (live only while
+   `expires_at` is non-null AND future). Restored. ⚠ A PRE-EXISTING test
+   asserted `cancelled` + NULL expiry → NOT free; that encoded the divergence,
+   not a decision — `liveSubscriptionFilter`'s docstring says outright that a
+   cancelled row with no `expires_at` is lapsed.
+4. **Loadout + Mealprint client gates denied the shape the server now grants.**
+   Both used `cancelledAt === null || isExpiresAtInFuture(expiresAt)`, and
+   `isExpiresAtInFuture(null)` is false — while `revenueCatSync` stamps
+   `cancelledAt` for ANY auto-renew-off sub. Result: padlocked Loadout next to
+   a plan card still showing Premium Plus. Both now mirror `hasLapsed`
+   (absent = open-ended). ⚠ `useFeatureGate` is NOT affected — it ignores
+   `cancelledAt` on an active row.
+5. **`getQuota` still used the OUTGOING tier after a scheduled change.**
+   `assertEntitlement` and the record-lock resolved the scheduled tier;
+   `getQuota` did not, and it is both the "N of 3" display AND what the client
+   cap gate reads — so the app would offer a create the server 402s, and via
+   `evaluateWorkoutTotalCapLock` let a user finish a session that cannot be
+   saved. Fixed. ⚠ `/subscriptions/me` still reports the outgoing tier's
+   `workoutLimit`; dormant (scheduled_change is written only by the parked
+   Stripe path, and RC sync overwrites `metadata` wholesale) but NOT closed.
+6. **`restoreReconciledWorkout`'s dedupe guard missed the coach library.** It
+   consulted only the detail cache, and `CoachWorkoutLibraryContainer` writes
+   ONLY the library slice (no detail splatter) — so a coach-authored workout
+   already back in the library would be prepended a SECOND time and
+   `quota.used` pushed one ABOVE the server's count, tripping the cap a workout
+   early. Guard now checks the slices it actually writes.
+
+**Round 2 confirmed clean:** no import cycle; `hasLapsed` ≡ the old
+`!isExpiresInFuture` apart from the injected clock; `requireFreeTierWorkoutLimit`
+adds no round-trip on the common path (both `loadTier` calls sit inside
+`scheduledTier !== null`); `user_subscriptions_active_unique` doesn't reference
+`expires_at`; coach-mode eligibility feeds from `/subscriptions/me`, so the
+`computeIsFreeTier` change cannot drop anyone out of coach mode; and
+`body.data as Workout` is safe (both the create and the idempotent-replay
+short-circuit return a full `WorkoutWithExercises`).
 
 **Justified rather than changed** (both argued in comments): the bare paywall
 route in `useWorkoutCreateCapGate` is CORRECT for a coach surface —

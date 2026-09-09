@@ -1,6 +1,6 @@
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Alert } from "react-native";
+import { Alert, Linking } from "react-native";
 import {
   PrivacySettingsPresenter,
   type PrivacyVisibility,
@@ -10,6 +10,7 @@ import { useAuth } from "@/ui/hooks/useAuth";
 import { useDeleteAccountFlow } from "@/ui/hooks/useDeleteAccountFlow";
 import { useProfilePage } from "@/ui/hooks/useProfilePage";
 import {
+  canRequestSystemTracking,
   denyMetaAttributionConsent,
   getMetaAttributionConsent,
   grantMetaAttributionConsent,
@@ -142,10 +143,58 @@ export function PrivacySettingsContainer() {
   // action — one implementation, two entry points.
   const onDeleteAccount = useDeleteAccountFlow();
 
+  /**
+   * Turning this on asks iOS, via App Tracking Transparency, and nothing else
+   * — the switch is a settings control, not a permission prompt (Guideline
+   * 5.1.2(i)).
+   *
+   * iOS presents that dialog once per install, so once it has been answered
+   * this switch can no longer grant tracking and would otherwise spring back
+   * unexplained. The dialog below therefore STATES a fact and offers to open
+   * iOS Settings; it must never read as the app asking permission to track,
+   * which is what got 1.1.2 (49) rejected. Keep the title a statement, and
+   * keep "tracking" out of any affirmative-sounding button.
+   *
+   * `wasPresentable` is used ONLY to tell whether iOS actually presented the
+   * dialog on this tap. Why the attempt failed comes from the returned
+   * `MetaGrantOutcome`, not from re-probing the permission afterwards: a
+   * granted-then-failed activation leaves ATT determined exactly as a decline
+   * does, so re-probing reported "declined" for a real failure and then sent
+   * the user to Settings to allow something already allowed.
+   */
   const onSetMetaAttributionEnabled = useCallback(async (enabled: boolean) => {
     if (enabled) {
-      const activated = await grantMetaAttributionConsent();
-      setMetaAttributionEnabled(activated);
+      const wasPresentable = await canRequestSystemTracking();
+      const outcome = await grantMetaAttributionConsent();
+      setMetaAttributionEnabled(outcome === "activated");
+      if (outcome === "activated") return;
+
+      if (outcome === "failed") {
+        Alert.alert(
+          "Couldn't enable advertising measurement",
+          "We couldn't safely save that change. Please try again.",
+        );
+        return;
+      }
+
+      // Declined. If iOS just showed the dialog, that is the user's answer and
+      // needs no follow-up. If it could not be shown, the only remaining
+      // control lives in iOS Settings, so say where.
+      if (!wasPresentable) {
+        Alert.alert(
+          "iOS is no longer asking about tracking",
+          "iOS asks about tracking only once per install, and tracking can also be restricted device-wide. If it is available, you can switch advertising measurement on for Persistence in Settings \u2192 Privacy & Security \u2192 Tracking.",
+          [
+            { text: "Close", style: "cancel" },
+            {
+              text: "Open iOS Settings",
+              onPress: () => {
+                void Linking.openSettings().catch(() => undefined);
+              },
+            },
+          ],
+        );
+      }
     } else {
       const revoked = await denyMetaAttributionConsent();
       setMetaAttributionEnabled(!revoked);
