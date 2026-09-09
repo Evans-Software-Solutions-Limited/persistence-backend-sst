@@ -8,6 +8,7 @@ import {
   trackInitiateCheckout,
 } from "@/lib/metaPixel";
 import { storedReferralCode } from "./referral";
+import { foundingPlanContentId } from "./foundingOffer";
 import type { FoundingMonths, FoundingTier } from "./foundingOffer";
 
 /**
@@ -88,7 +89,15 @@ export function useFoundingCheckout() {
         return false;
       }
 
-      trackInitiateCheckout(eventId, request.priceMinor / 100, "GBP");
+      trackInitiateCheckout(
+        eventId,
+        request.priceMinor / 100,
+        "GBP",
+        // The plan, on Meta's standard commerce parameters. The server's
+        // `checkout_started` derives the same id from the same pair, so the
+        // deduped pair agrees on which term this was.
+        foundingPlanContentId(request.tier, request.months),
+      );
       // A full navigation, not the router: the destination is Stripe's domain.
       window.location.assign(body.url);
       return true;

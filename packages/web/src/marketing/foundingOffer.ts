@@ -31,6 +31,54 @@ export interface FoundingPlan {
   featured?: boolean;
 }
 
+/**
+ * The four founding terms as ONE canonical product id, sent to Meta as the
+ * standard commerce parameters (`content_name` / `content_ids`) on
+ * `InitiateCheckout` and `Purchase` so a Sales campaign can learn and report
+ * which term converts.
+ *
+ * ⚠ A MIRROR of `FOUNDING_PLAN_CONTENT_IDS` in
+ * `microservices/core/src/application/analytics/metaEventMap.ts`, which sends
+ * the server copy of the same two events. If the two tables disagree, one plan
+ * arrives at Meta under two names and neither number is trustworthy.
+ * `__tests__/foundingPlanContentIdParity.test.ts` reads the core file and fails
+ * on any drift — it is duplicated rather than imported because the core package
+ * is outside this package's TypeScript project.
+ *
+ * Never a custom parameter such as `tier`: the dataset is self-declared
+ * Health & wellness, a category under which Meta restricts custom parameters.
+ */
+export type FoundingPlanId =
+  | "premium_6m"
+  | "premium_12m"
+  | "plus_6m"
+  | "plus_12m";
+
+export const FOUNDING_PLAN_CONTENT_IDS: Record<string, FoundingPlanId> = {
+  "premium:6": "premium_6m",
+  "premium:12": "premium_12m",
+  "premium_plus:6": "plus_6m",
+  "premium_plus:12": "plus_12m",
+};
+
+/**
+ * The canonical plan id for a `tier` x `months` pair, or `undefined` when the
+ * pair names nothing sold here. Deliberately loose in its inputs: the thanks
+ * page reads both off the checkout STATUS endpoint, where they are a plain
+ * string and number rather than the literal unions above.
+ *
+ * `undefined` means "send value/currency alone". Never a guessed id — that
+ * would report a conversion for a plan nobody bought.
+ */
+export function foundingPlanContentId(
+  tier: string | undefined,
+  months: number | undefined,
+): FoundingPlanId | undefined {
+  if (typeof tier !== "string") return undefined;
+  if (typeof months !== "number" || !Number.isInteger(months)) return undefined;
+  return FOUNDING_PLAN_CONTENT_IDS[`${tier}:${months}`];
+}
+
 export const FOUNDING_PLANS: FoundingPlan[] = [
   {
     tier: "premium",

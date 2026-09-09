@@ -58,7 +58,24 @@ describe("FoundingThanks", () => {
     stubStatus(COMPLETED);
     render();
     await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
-    expect(spy).toHaveBeenCalledWith("evt-checkout-1", 30, "GBP");
+    expect(spy).toHaveBeenCalledWith(
+      "evt-checkout-1",
+      30,
+      "GBP",
+      // Derived from the status endpoint's own tier/months, so the browser and
+      // server copies of this purchase agree on the plan.
+      "premium_6m",
+    );
+  });
+
+  it("still reports a purchase whose plan it cannot name", async () => {
+    // A term the website no longer sells must not silence the conversion —
+    // better an unsegmentable Purchase than none at all.
+    const spy = vi.spyOn(metaPixel, "trackPurchase");
+    stubStatus({ ...COMPLETED, tier: "start_up_coach_plus" });
+    render();
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    expect(spy).toHaveBeenCalledWith("evt-checkout-1", 30, "GBP", undefined);
   });
 
   it("fires no Purchase while the webhook has not landed", async () => {

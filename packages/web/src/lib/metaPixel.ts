@@ -21,6 +21,7 @@
  */
 
 import { clearMetaCookies, hasConsent } from "./consent";
+import type { FoundingPlanId } from "@/marketing/foundingOffer";
 
 type FbqArgs = unknown[];
 
@@ -139,20 +140,51 @@ export function trackStoreClick(
 }
 
 /**
+ * Meta's STANDARD commerce parameters naming which founding plan an event is
+ * about — the subscription level a Sales campaign needs in order to learn and
+ * report which term converts.
+ *
+ * Standard parameters only, never a custom key like `tier`: this dataset is
+ * self-declared Health & wellness, a category under which Meta restricts custom
+ * parameters. The SAME four fields, with the same values, go on the server copy
+ * of each event (`metaEventMap.ts`) — a browser/server pair that disagreed
+ * would dedupe on the id and then report whichever copy Meta kept.
+ *
+ * An unknown plan contributes nothing rather than a placeholder: better a
+ * purchase Meta cannot segment than one it segments wrongly.
+ */
+function planParams(
+  planId: FoundingPlanId | undefined,
+): Record<string, unknown> {
+  if (planId === undefined) return {};
+  return {
+    content_name: planId,
+    content_ids: [planId],
+    content_type: "product",
+    num_items: 1,
+  };
+}
+
+/**
  * Fire `InitiateCheckout` with an explicit `eventID`, matching the server's
  * `checkout_started` (FOUNDING-OFFER 2026-09-05 amendment). The pair dedups at
  * Meta on the shared id. No-op without consent or when the pixel isn't loaded.
+ *
+ * `planId` is required rather than optional even though it may be `undefined`:
+ * a call site that cannot name the plan should have to say so, not omit it by
+ * accident and quietly send Meta an unsegmentable conversion.
  */
 export function trackInitiateCheckout(
   eventId: string,
   value: number,
   currency: string,
+  planId: FoundingPlanId | undefined,
 ): void {
   if (!hasConsent("advertising") || !isLoaded()) return;
   window.fbq!(
     "track",
     "InitiateCheckout",
-    { value, currency },
+    { value, currency, ...planParams(planId) },
     { eventID: eventId },
   );
 }
@@ -170,9 +202,15 @@ export function trackPurchase(
   eventId: string,
   value: number,
   currency: string,
+  planId: FoundingPlanId | undefined,
 ): void {
   if (!hasConsent("advertising") || !isLoaded()) return;
-  window.fbq!("track", "Purchase", { value, currency }, { eventID: eventId });
+  window.fbq!(
+    "track",
+    "Purchase",
+    { value, currency, ...planParams(planId) },
+    { eventID: eventId },
+  );
 }
 
 function readCookie(name: string): string | null {

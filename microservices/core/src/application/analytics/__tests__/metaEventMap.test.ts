@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
+  FOUNDING_PLAN_CONTENT_IDS,
   META_FORWARDED_EVENT_NAMES,
+  foundingPlanContentId,
   mapPendingToMetaEvents,
 } from "../metaEventMap";
 import { hashEmail, hashExternalId } from "../metaCapiClient";
@@ -150,7 +152,7 @@ describe("mapPendingToMetaEvents — event mapping", () => {
     expect(JSON.stringify(event)).not.toContain("meta");
   });
 
-  it("checkout_started → InitiateCheckout with the value", () => {
+  it("checkout_started → InitiateCheckout with the value and the plan", () => {
     // The intent signal Meta optimises towards until there is enough Purchase
     // volume to optimise on the conversion itself.
     const events = mapPendingToMetaEvents(
@@ -162,10 +164,38 @@ describe("mapPendingToMetaEvents — event mapping", () => {
           value: 30,
           currency: "GBP",
           tier: "premium",
+          months: 6,
         },
       }),
     );
     expect(events.map((e) => e.event_name)).toEqual(["InitiateCheckout"]);
+    expect(events[0]!.custom_data).toEqual({
+      value: 30,
+      currency: "GBP",
+      content_name: "premium_6m",
+      content_ids: ["premium_6m"],
+      content_type: "product",
+      num_items: 1,
+    });
+  });
+
+  it("sends the money alone when the tier/term names no web plan", () => {
+    // A tier nobody sells on the website (the admin-only coach tier), or a row
+    // written before `months` existed. Better an unsegmentable conversion than
+    // a guessed plan id reporting a sale nobody made.
+    const events = mapPendingToMetaEvents(
+      pending({
+        eventName: "checkout_started",
+        properties: {
+          marketing_consent: true,
+          fbp: "fb.1.1.checkout",
+          value: 30,
+          currency: "GBP",
+          tier: "start_up_coach_plus",
+          months: 6,
+        },
+      }),
+    );
     expect(events[0]!.custom_data).toEqual({ value: 30, currency: "GBP" });
   });
 
@@ -187,14 +217,18 @@ describe("mapPendingToMetaEvents — event mapping", () => {
     expect(events.map((e) => e.event_name)).toEqual(["Purchase"]);
   });
 
-  it("never forwards the tier, term or referral code with a purchase", () => {
+  it("forwards the plan on a purchase, but never the referral code or campaign", () => {
+    // The tier/term DO go now (2026-09-09) — a Sales campaign cannot learn
+    // which plan converts without them — but only as the plan id, on Meta's
+    // standard commerce parameters. `ref` and `campaign` are our own
+    // attribution and stay ours.
     const [event] = mapPendingToMetaEvents(
       pending({
         eventName: "purchase",
         properties: {
           marketing_consent: true,
           fbp: "fb.1.1.purchase",
-          value: 30,
+          value: 60,
           currency: "GBP",
           tier: "premium_plus",
           months: 12,
@@ -203,7 +237,18 @@ describe("mapPendingToMetaEvents — event mapping", () => {
         },
       }),
     );
-    expect(event!.custom_data).toEqual({ value: 30, currency: "GBP" });
+    expect(event!.custom_data).toEqual({
+      value: 60,
+      currency: "GBP",
+      content_name: "plus_12m",
+      content_ids: ["plus_12m"],
+      content_type: "product",
+      num_items: 1,
+    });
+    // Neither the raw tier nor our attribution reaches Meta under any key.
+    expect(JSON.stringify(event)).not.toContain("premium_plus");
+    expect(JSON.stringify(event)).not.toContain("METAFOUND");
+    expect(JSON.stringify(event)).not.toContain('"campaign"');
   });
 
   it("a consented web purchase → Purchase + Subscribe w/ value/currency, hashes em+external_id", () => {
@@ -267,4 +312,56 @@ describe("mapPendingToMetaEvents — event mapping", () => {
     expect(ev!.custom_data).toBeUndefined();
     expect(ev!.event_id).toBeUndefined();
   });
+});
+
+describe("foundingPlanContentId", () => {
+  it("names all four web terms and nothing else", () => {
+    expect(foundingPlanContentId("premium", 6)).toBe("premium_6m");
+    expect(foundingPlanContentId("premium", 12)).toBe("premium_12m");
+    expect(foundingPlanContentId("premium_plus", 6)).toBe("plus_6m");
+    expect(foundingPlanContentId("premium_plus", 12)).toBe("plus_12m");
+    expect(Object.keys(FOUNDING_PLAN_CONTENT_IDS)).toHaveLength(4);
+  });
+
+  it("is undefined for anything not sold on the website", () => {
+    // The admin/enquiry-only coach tier, a term nobody offers, and the shapes a
+    // JSONB `properties` blob can actually hand it.
+    expect(foundingPlanContentId("start_up_coach_plus", 6)).toBeUndefined();
+    expect(foundingPlanContentId("premium", 3)).toBeUndefined();
+    expect(foundingPlanContentId("premium", 6.5)).toBeUndefined();
+    expect(foundingPlanContentId("premium", undefined)).toBeUndefined();
+    expect(foundingPlanContentId(undefined, 6)).toBeUndefined();
+    expect(foundingPlanContentId("premium", "6")).toBeUndefined();
+    // A key from `Object.prototype` must not resolve to a plan.
+    expect(foundingPlanContentId("constructor", 6)).toBeUndefined();
+  });
+});
+
+describe("the RevenueCat rail keeps its own custom_data", () => {
+  // Different products on a different store. Labelling an App Store
+  // subscription with one of the four founding terms would merge two rails into
+  // one unreadable report — so the commerce params are the WEB events' alone,
+  // even when a row happens to carry a matching tier/months pair.
+  it.each(["subscription_purchased", "renewal", "trial_started"])(
+    "%s carries value/currency only",
+    (eventName) => {
+      const events = mapPendingToMetaEvents(
+        pending({
+          eventName,
+          properties: {
+            marketing_consent: true,
+            fbp: "fb.1.1.rc",
+            value: 30,
+            currency: "GBP",
+            tier: "premium",
+            months: 6,
+          },
+        }),
+      );
+      expect(events.length).toBeGreaterThan(0);
+      for (const event of events) {
+        expect(event.custom_data).toEqual({ value: 30, currency: "GBP" });
+      }
+    },
+  );
 });
