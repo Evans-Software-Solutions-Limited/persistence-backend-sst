@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.21.0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.20.0...persistence-v1.21.0) (2026-09-09)
+
+
+### Features
+
+* **analytics:** put the plan on the Meta checkout and purchase events ([#443](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/443)) ([ee47c9f](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/ee47c9f94fd1865861d0620c10afb8f7304398a4))
+
+
+### Bug Fixes
+
+* **analytics:** the server-side purchase never existed, and we could not see why ([#445](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/445)) ([d487829](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/d48782946ff9573257e66acb4802e0d51d48cb61))
+* ATT is the only tracking prompt (App Store 5.1.2(i)), plus workout-cap entitlement divergence ([#444](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/444)) ([07d42d1](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/07d42d14d13145662650b0c1148bce1b85eccc25))
+
 ## [1.20.0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.19.0...persistence-v1.20.0) (2026-09-08)
 
 
