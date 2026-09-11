@@ -6,14 +6,22 @@ Meta app-install/activation measurement is optional advertising tracking. The
 lawful basis is UK GDPR consent, with PECR consent obtained before SDK storage
 or identifier access. The default is off. Refusal cannot affect startup,
 authentication, onboarding, purchases or entitlements, and consent can be
-withdrawn. On iOS, Persistence asks for ATT only after its own plain-language
-opt-in; an ATT refusal means the Meta SDK is not initialized. The consent copy
-names the device advertising identifier used for this measurement.
+withdrawn. On iOS, the system ATT dialog is the only consent prompt; there is
+no app-authored opt-in alert before it. The description comes from
+`NSUserTrackingUsageDescription`. Android requires an explicit opt-in from
+Privacy Settings and never auto-enables measurement on launch.
 
-The plain-language choice is mounted beside (not inside) the authentication
-gate so a clean-install opening can be attributed. It is a dismissible native
-alert and never withholds the React tree or any auth/onboarding work; choosing
-"Not now" records denial and the app continues unchanged.
+ATT and notification permission requests share one iOS queue, including
+requests made by push registration and Privacy Settings. Each native request
+waits until the app has been active continuously for 300ms. ATT responses that
+remain undetermined can retry twice, for three attempts total per activation;
+a refusal is never retried automatically. A technical failure does not overwrite
+consent with a denial. Saved grants use the same queue when restoring the SDK,
+and withdrawal cancels an ATT request waiting for its turn or foreground.
+
+The consent bootstrap remains outside authentication. Requests do not block
+rendering, sign-in or onboarding. Meta stays uninitialized until ATT is granted
+and affirmative consent has been saved successfully.
 
 The native integration has no generic event API. Automatic events stay disabled
 to prevent Meta from observing in-app purchases. The adapter emits only Meta's
@@ -48,8 +56,10 @@ Before release, on physical iOS and Android devices:
 
 1. Confirm no Meta request or storage occurs before consent, after refusal, or
    with configuration absent.
-2. Confirm iOS ATT appears only after the Persistence opt-in and refusal leaves
-   the app fully usable.
+2. On a fresh iOS install, confirm notification permission and ATT never
+   overlap, ATT is shown without a custom pre-prompt, and refusing either
+   leaves the app fully usable. Test both notification answers, ATT answers,
+   background/foreground during requests, and saved-consent restoration.
 3. Confirm install/activation in Meta Events Manager Test Events for a clean
    install; check diagnostics and app/platform association.
 4. Reconfirm RevenueCat sandbox purchases emit only the authoritative webhook

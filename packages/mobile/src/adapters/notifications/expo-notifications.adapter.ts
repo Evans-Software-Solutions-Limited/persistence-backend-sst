@@ -18,6 +18,7 @@
 
 import * as Notifications from "expo-notifications";
 import Constants from "expo-constants";
+import { runNativePermissionRequest } from "@/lib/nativePermissionQueue";
 import type {
   LocalNotification,
   NotificationsPort,
@@ -53,7 +54,11 @@ export class ExpoNotificationsAdapter implements NotificationsPort {
     Result<"granted" | "denied", NotificationError>
   > {
     try {
-      const result = await Notifications.requestPermissionsAsync();
+      const result = await runNativePermissionRequest(async () => {
+        const current = await Notifications.getPermissionsAsync();
+        if (current.status !== "undetermined") return current;
+        return Notifications.requestPermissionsAsync();
+      });
       return ok(result.status === "granted" ? "granted" : "denied");
     } catch (err) {
       return fail({

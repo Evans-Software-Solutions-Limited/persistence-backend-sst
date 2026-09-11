@@ -1,5 +1,18 @@
 # Project memory · persistence-backend-sst
 
+### 2026-09-11 — PR: fix ATT startup permission sequencing
+
+Isolated fix for build 50 review: notifications and ATT share an iOS queue,
+wait for 300ms continuous active state, and retry undetermined ATT at most twice.
+Technical errors no longer become saved denials; saved-grant restoration and
+withdrawal use the same queue/cancellation. Android explicit consent unchanged.
+Evidence: docs/att-startup-fix-2026-09-11.md. Apple reply/notes draft:
+docs/app-review-att-response.md. Prior checkout validation: 142 focused tests,
+530 mobile suites / 6,835 tests; changed runtime files >90% in all coverage
+metrics; root typecheck/lint/build and iOS JS export passed. Five new regression
+cases fail against the original service. Native production rebuild and physical
+recording/network verification are required before review resubmission.
+
 ### 2026-09-11 — Email branding follow-up
 
 Brad requested matching website colours and including its logo. Verified all

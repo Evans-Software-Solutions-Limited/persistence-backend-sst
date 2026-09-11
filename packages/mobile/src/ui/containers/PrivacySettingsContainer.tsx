@@ -169,6 +169,14 @@ export function PrivacySettingsContainer() {
       setMetaAttributionEnabled(outcome === "activated");
       if (outcome === "activated") return;
 
+      if (outcome === "pending") {
+        Alert.alert(
+          "Tracking permission was not shown",
+          "iOS has not returned a decision. Advertising measurement remains off. Please try again when the app is active.",
+        );
+        return;
+      }
+
       if (outcome === "failed") {
         Alert.alert(
           "Couldn't enable advertising measurement",

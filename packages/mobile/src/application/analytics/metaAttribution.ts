@@ -5,6 +5,7 @@ import {
   requestTrackingPermissionsAsync,
 } from "expo-tracking-transparency";
 import { Platform } from "react-native";
+import { runNativePermissionRequest } from "@/lib/nativePermissionQueue";
 import { AppEventsLogger, Settings } from "react-native-fbsdk-next";
 
 export type MetaAttributionConsent = "unknown" | "granted" | "denied";
@@ -18,11 +19,12 @@ export type MetaAttributionConsent = "unknown" | "granted" | "denied";
  * failure — and inferring it afterwards from the permission status is
  * impossible, because both leave ATT determined.
  */
-export type MetaGrantOutcome = "activated" | "declined" | "failed";
+export type MetaGrantOutcome = "activated" | "declined" | "pending" | "failed";
 
 const CONSENT_KEY = "persistence.meta-attribution-consent.v1";
 let initialized = false;
 let grantInFlight: Promise<MetaGrantOutcome> | null = null;
+let grantAbort: AbortController | null = null;
 let revocationInFlight: Promise<boolean> | null = null;
 let consentGeneration = 0;
 
@@ -85,31 +87,45 @@ function grantMetaAttributionConsentForGeneration(
     return Promise.resolve("failed");
   }
   if (grantInFlight) return grantInFlight;
-  grantInFlight = activateMetaAttribution(requestedGeneration).finally(() => {
+  grantAbort = new AbortController();
+  grantInFlight = activateMetaAttribution(
+    requestedGeneration,
+    grantAbort.signal,
+  ).finally(() => {
     grantInFlight = null;
+    grantAbort = null;
   });
   return grantInFlight;
 }
 
 async function activateMetaAttribution(
   generation: number,
+  signal: AbortSignal,
 ): Promise<MetaGrantOutcome> {
   try {
     if (Platform.OS === "ios") {
-      const permission = await requestTrackingPermissionsAsync();
+      // iOS drops ATT while another permission is pending. Every attempt joins
+      // the same queue as notifications and waits for a stable active state.
+      // A non-answer may retry, but a real refusal must never be re-prompted.
+      let permission = await runNativePermissionRequest(
+        requestTrackingPermissionsAsync,
+        signal,
+      );
+      for (
+        let attempt = 1;
+        permission.status === "undetermined" && attempt < 3;
+        attempt += 1
+      ) {
+        permission = await runNativePermissionRequest(
+          requestTrackingPermissionsAsync,
+          signal,
+        );
+      }
       if (generation !== consentGeneration) return "failed";
       if (!permission.granted) {
-        // Tell a real decline apart from "iOS presented nothing at all". ATT
-        // is only shown while the app is active, and `bootstrapMetaAttribution`
-        // runs on mount with no such gate — so a stored grant plus an
-        // `undetermined` status (device restored from a backup, which carries
-        // AsyncStorage but NOT the ATT authorisation; or Reset Location &
-        // Privacy) would otherwise be overwritten with a denial the user never
-        // gave. That is durable: every later launch reads "denied" and returns
-        // early, silently opting them out of a choice they were never offered.
-        // After a genuine in-dialog decline the status is `denied`, so
-        // `canRequestSystemTracking()` is false and the write proceeds.
-        if (await canRequestSystemTracking()) return "failed";
+        if (permission.status === "undetermined") return "pending";
+        // Use the response itself. A failed second status read is not consent.
+        if (permission.status !== "denied") return "failed";
         await AsyncStorage.setItem(CONSENT_KEY, "denied").catch(
           () => undefined,
         );
@@ -146,16 +162,16 @@ async function activateMetaAttribution(
     } catch {
       // Best-effort rollback: the optional native bridge may itself be absent.
     }
-    await AsyncStorage.setItem(CONSENT_KEY, "denied").catch(() => undefined);
-    // Attribution is optional and must never affect app startup or usability.
-    // ATT itself was granted by this point (a denial returned above), so this
-    // is a genuine failure and callers may surface it.
+    // An exception is not the user's refusal. Preserve their previous choice;
+    // an unanswered request stays unknown and a granted request can recover on
+    // a later launch. The SDK remains disabled until activation succeeds.
     return "failed";
   }
 }
 
 export async function denyMetaAttributionConsent(): Promise<boolean> {
   consentGeneration += 1;
+  grantAbort?.abort();
   initialized = false;
   if (revocationInFlight) return revocationInFlight;
   const pendingGrant = grantInFlight;
@@ -216,6 +232,8 @@ export async function bootstrapMetaAttribution(): Promise<MetaAttributionConsent
 
 /** Test-only reset for the module-lifetime idempotency guard. */
 export function resetMetaAttributionForTests(): void {
+  grantAbort?.abort();
+  grantAbort = null;
   initialized = false;
   grantInFlight = null;
   revocationInFlight = null;
