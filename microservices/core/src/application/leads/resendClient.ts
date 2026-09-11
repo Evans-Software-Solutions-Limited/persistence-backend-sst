@@ -113,12 +113,13 @@ export interface SendEmailInput {
   to: string;
   subject: string;
   text: string;
+  html?: string;
   replyTo?: string;
 }
 
 /**
  * Send a transactional/notification email via `POST /emails`. Used only for
- * the coach-enquiry internal notification — callers wrap this in their own
+ * app grant confirmations and internal notifications — callers wrap this in their own
  * try/catch (best-effort; a delivery failure must not fail the lead-capture
  * request, since the contact is already in the audience).
  */
@@ -139,6 +140,7 @@ export async function sendEmail(input: SendEmailInput): Promise<void> {
       to: input.to,
       subject: input.subject,
       text: input.text,
+      ...(input.html ? { html: input.html } : {}),
       ...(input.replyTo ? { reply_to: input.replyTo } : {}),
     }),
   });

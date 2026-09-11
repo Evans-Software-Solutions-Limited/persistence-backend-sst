@@ -178,6 +178,7 @@ describe("POST /leads/coach", () => {
       to: "admin@evans-software-solutions.com",
       subject: "New coach enquiry",
       text: expect.stringContaining("coach@example.com"),
+      html: expect.stringContaining("coach@example.com"),
     });
   });
 
