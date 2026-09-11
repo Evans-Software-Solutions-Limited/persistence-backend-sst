@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.22.1](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.22.0...persistence-v1.22.1) (2026-09-11)
+
+
+### Bug Fixes
+
+* **db:** restore applied production auth repair migration ([#450](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/450)) ([f99412b](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/f99412b52a48b58bfdc7f2e37396d8f50c91e16f))
+
 ## [1.22.0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.21.0...persistence-v1.22.0) (2026-09-11)
 
 
