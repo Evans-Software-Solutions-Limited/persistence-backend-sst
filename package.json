@@ -8,6 +8,8 @@
     "scripts"
   ],
   "scripts": {
+    "email:templates": "bun run scripts/email-auth-templates.ts",
+    "email:preview": "bun run scripts/email-preview.ts",
     "dev": "sst dev",
     "prettier:check": "prettier --check .",
     "prettier:write": "prettier --write .",

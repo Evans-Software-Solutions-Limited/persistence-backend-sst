@@ -382,6 +382,12 @@ export class FoundingGrantService {
         tierName,
         grantKind,
         months: months!,
+        amountMinor: contributionAmountMinor,
+        currency: contributionCurrency,
+        purchaseSource:
+          contributionMethod === "stripe_checkout"
+            ? "web_checkout"
+            : "admin_grant",
         expiresAt: outcome.subscriptionExpiresAt,
         hasAccount: profile !== null,
       });
@@ -432,6 +438,12 @@ export class FoundingGrantService {
         tierName: grant.tierName as FoundingTierName,
         grantKind: grant.grantKind as "founding" | "complimentary",
         months: grant.months,
+        amountMinor: grant.amountMinor,
+        currency: grant.currency,
+        purchaseSource:
+          grant.paymentMethod === "stripe_checkout"
+            ? "web_checkout"
+            : "admin_grant",
         expiresAt: row?.subscriptionExpiresAt ?? null,
         hasAccount: grant.userId !== null,
       },
@@ -476,25 +488,32 @@ export class FoundingGrantService {
       tierName: FoundingTierName;
       grantKind: "founding" | "complimentary";
       months: number;
+      amountMinor: number;
+      currency: string;
+      purchaseSource: "web_checkout" | "admin_grant";
       expiresAt: Date | null;
       hasAccount: boolean;
     },
     afterMarked?: Parameters<FoundingGrantRepository["markInvited"]>[1],
   ): Promise<{ ok: true } | { ok: false; error: string }> {
-    const mail = buildFoundingInviteEmail({
-      tierName: input.tierName,
-      grantKind: input.grantKind,
-      months: input.months,
-      expiresAt: input.expiresAt,
-      hasAccount: input.hasAccount,
-      email: input.email,
-      webOrigin: this.webOrigin,
-    });
     try {
+      const mail = buildFoundingInviteEmail({
+        tierName: input.tierName,
+        grantKind: input.grantKind,
+        months: input.months,
+        expiresAt: input.expiresAt,
+        hasAccount: input.hasAccount,
+        email: input.email,
+        webOrigin: this.webOrigin,
+        amountMinor: input.amountMinor,
+        currency: input.currency,
+        purchaseSource: input.purchaseSource,
+      });
       await this.mailer({
         to: input.email,
         subject: mail.subject,
         text: mail.text,
+        html: mail.html,
         replyTo: RESEND_NOTIFICATION_TO,
       });
     } catch (err) {

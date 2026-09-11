@@ -1,3 +1,4 @@
+import { buildInternalEmail } from "../email/emailShell";
 import Elysia, { t } from "elysia";
 import {
   addContactToAudience,
@@ -493,8 +494,7 @@ export const leadsRoutes = new Elysia()
         ];
         await sendEmail({
           to: RESEND_NOTIFICATION_TO,
-          subject: "New coach enquiry",
-          text: lines.join("\n"),
+          ...buildInternalEmail("New coach enquiry", lines.join("\n")),
         });
       } catch (err) {
         console.error(

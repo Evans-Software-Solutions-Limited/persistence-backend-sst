@@ -345,7 +345,11 @@ describe("handleCheckoutSessionCompleted", () => {
       );
       expect(line).toContain("founding_checkout.needs_review");
       expect(sendEmailMock).toHaveBeenCalledTimes(1);
-      const mail = sendEmailMock.mock.calls[0]![0] as { text: string };
+      const mail = sendEmailMock.mock.calls[0]![0] as {
+        text: string;
+        html: string;
+      };
+      expect(mail.html).toContain("Founding checkout needs review");
       expect(mail.text).toContain("buyer@example.test");
       expect(mail.text).toContain("active_store_subscription");
     });

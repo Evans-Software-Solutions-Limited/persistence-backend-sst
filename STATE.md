@@ -1,5 +1,21 @@
 # Project memory · persistence-backend-sst
 
+### 2026-09-11 — Transactional email styling, draft PR
+
+Branch `codex/transactional-email-styling`, isolated worktree
+`/private/tmp/persistence-email-styling`, based on main `7f5fdbe5`.
+Brad approved inventory/internal notifications and activation-based pending copy.
+Shared app shell + HTML/text, actual grant/resend payment data, six generated Auth
+templates, 29 KB one-play GIF, 17 offline previews and 52 browser screenshots.
+No entitlement/send-trigger changes. Company details from Companies House 16938357.
+Validation evidence: `docs/email-validation.md`; rollout: `docs/transactional-emails.md`.
+144 focused app tests + 15 Auth tests pass. Full core 4747 passed. Typecheck/lint/build
+and formatting pass. Full mobile had SIGSEGV and an iOS loading-wait failure; serial
+13/13 diagnostic passed, so full-run flakiness is recorded, not hidden. Grant service
+and checkout handler whole-file branch coverage below90 also recorded. Inspector Brad
+local clean. Draft only: legal copy approval, real email-client matrix, Auth multipart
+delivery implementation decision and hosted provider verification remain. No deploy.
+
 **Canonical state ledger. Read at session start; update before ending a session.**
 
 Older sessions live in [`STATE-ARCHIVE.md`](./STATE-ARCHIVE.md) (2026-07-24 and

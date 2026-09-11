@@ -99,6 +99,31 @@ function mockGrantCreated(
 describe("FoundingGrantService.grant", () => {
   beforeEach(() => vi.clearAllMocks());
 
+  it("carries a web checkout's actual payment into the pending confirmation", async () => {
+    const { svc, grants, mailer } = makeRepos();
+    mockGrantCreated(grants, created());
+    const result = await svc.grant(
+      {
+        email: "buyer@example.com",
+        tierName: "premium_plus",
+        months: 12,
+        contributionAmountMinor: 7654,
+        contributionCurrency: "EUR",
+        contributionMethod: "stripe_checkout",
+        contributionReference: "pi_example",
+      },
+      "admin-1",
+    );
+    expect(result.ok).toBe(true);
+    const mail = (mailer.mock.calls[0] as any)[0];
+    expect(mail.text).toContain("Paid: €76.54");
+    expect(mail.html).toContain("€76.54");
+    expect(mail.text).toContain(
+      "Your 12-month term starts when you activate access.",
+    );
+    expect(mail.text).toContain("Does not renew");
+  });
+
   it("creates an ACTIVE grant + subscription when the account exists, leaves attribution unlocked, audits, invites", async () => {
     const { svc, grants, referrals, audit, mailer } = makeRepos();
     grants.findProfileByEmail.mockResolvedValue({
@@ -155,6 +180,8 @@ describe("FoundingGrantService.grant", () => {
       }),
     );
     expect((mailer.mock.calls[0] as any)[0].text).toMatch(/already on/);
+    expect((mailer.mock.calls[0] as any)[0].text).toContain("Paid: £30.00");
+    expect((mailer.mock.calls[0] as any)[0].html).toContain("£30.00");
     expect((mailer.mock.calls[0] as any)[0].text).not.toMatch(
       /sign up within 90 days/,
     );
@@ -793,6 +820,57 @@ describe("FoundingGrantService.applyPendingForUser", () => {
 });
 
 describe("FoundingGrantService.resendInvite", () => {
+  it("reports a render failure without sending or marking the grant invited", async () => {
+    const { svc, grants, mailer } = makeRepos();
+    grants.findById.mockResolvedValue({
+      id: "g1",
+      email: "buyer@example.com",
+      tierName: "premium",
+      grantKind: "founding",
+      months: 6,
+      amountMinor: -1,
+      currency: "GBP",
+      revokedAt: null,
+      userId: null,
+    } as any);
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(await svc.resendInvite("g1", "admin-1")).toMatchObject({
+      ok: false,
+      error: "send_failed",
+      detail: "Valid actual payment amount and currency are required",
+    });
+    expect(mailer).not.toHaveBeenCalled();
+    expect(grants.markInvited).not.toHaveBeenCalled();
+    errSpy.mockRestore();
+  });
+
+  it("resends actual stored payment, term and expiry rather than catalogue defaults", async () => {
+    const { svc, grants, mailer } = makeRepos();
+    grants.findById.mockResolvedValue({
+      id: "g1",
+      email: "buyer@example.com",
+      tierName: "premium_plus",
+      grantKind: "founding",
+      months: 12,
+      amountMinor: 7654,
+      currency: "EUR",
+      paymentMethod: "stripe_checkout",
+      revokedAt: null,
+      userId: "u1",
+    } as any);
+    grants.list.mockResolvedValue([
+      { id: "g1", subscriptionExpiresAt: new Date("2028-04-09T12:00:00Z") },
+    ] as any);
+    expect(await svc.resendInvite("g1", "admin-1")).toEqual({ ok: true });
+    const mail = (mailer.mock.calls[0] as any)[0];
+    expect(mail.text).toContain(
+      "Plan: Premium+\nTerm: 12 months\nPaid: €76.54",
+    );
+    expect(mail.text).toContain("9 April 2028");
+    expect(mail.html).toContain("€76.54");
+    expect(mailer).toHaveBeenCalledOnce();
+  });
+
   beforeEach(() => vi.clearAllMocks());
 
   it("reports success after delivery when only invited-at bookkeeping fails", async () => {
@@ -802,6 +880,10 @@ describe("FoundingGrantService.resendInvite", () => {
       email: "buyer@example.com",
       tierName: "premium",
       months: 6,
+      grantKind: "founding",
+      amountMinor: 3000,
+      currency: "GBP",
+      paymentMethod: "stripe_checkout",
       revokedAt: null,
       userId: null,
     } as any);
@@ -826,6 +908,10 @@ describe("FoundingGrantService.resendInvite", () => {
       email: "buyer@example.com",
       tierName: "premium",
       months: 6,
+      grantKind: "founding",
+      amountMinor: 3000,
+      currency: "GBP",
+      paymentMethod: "stripe_checkout",
       revokedAt: null,
       userId: null,
     } as any);

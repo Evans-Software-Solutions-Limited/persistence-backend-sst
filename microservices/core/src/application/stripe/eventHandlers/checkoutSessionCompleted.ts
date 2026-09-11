@@ -1,3 +1,4 @@
+import { buildInternalEmail } from "../../email/emailShell";
 import type Stripe from "stripe";
 import { emitStripeAlert } from "../alerts";
 import { emitEvent } from "../../analytics/emitEvent";
@@ -241,17 +242,19 @@ async function flagForReview(
   try {
     await sendEmail({
       to: RESEND_NOTIFICATION_TO,
-      subject: "Founding checkout needs review",
-      text: [
-        `A founding purchase was paid for but access could not be granted.`,
-        ``,
-        `Email: ${email}`,
-        `Reason: ${reason}`,
-        `Stripe session: ${stripeSessionId}`,
-        ``,
-        `Resolve it by hand in /admin — grant access once any store`,
-        `subscription has expired, or refund the payment in Stripe.`,
-      ].join("\n"),
+      ...buildInternalEmail(
+        "Founding checkout needs review",
+        [
+          `A founding purchase was paid for but access could not be granted.`,
+          ``,
+          `Email: ${email}`,
+          `Reason: ${reason}`,
+          `Stripe session: ${stripeSessionId}`,
+          ``,
+          `Resolve it by hand in /admin — grant access once any store`,
+          `subscription has expired, or refund the payment in Stripe.`,
+        ].join("\n"),
+      ),
     });
   } catch (err) {
     console.error(

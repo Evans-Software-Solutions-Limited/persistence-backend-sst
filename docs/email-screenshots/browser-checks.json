@@ -1,0 +1,325 @@
+[
+  {
+    "name": "premium-6m-pending",
+    "width": 600,
+    "contentWidth": 600,
+    "heading": "You're in."
+  },
+  {
+    "name": "premium-6m-active",
+    "width": 600,
+    "contentWidth": 600,
+    "heading": "You're in."
+  },
+  {
+    "name": "premium-12m-pending",
+    "width": 600,
+    "contentWidth": 600,
+    "heading": "You're in."
+  },
+  {
+    "name": "premium-12m-active",
+    "width": 600,
+    "contentWidth": 600,
+    "heading": "You're in."
+  },
+  {
+    "name": "premium_plus-6m-pending",
+    "width": 600,
+    "contentWidth": 600,
+    "heading": "You're in."
+  },
+  {
+    "name": "premium_plus-6m-active",
+    "width": 600,
+    "contentWidth": 600,
+    "heading": "You're in."
+  },
+  {
+    "name": "premium_plus-12m-pending",
+    "width": 600,
+    "contentWidth": 600,
+    "heading": "You're in."
+  },
+  {
+    "name": "premium_plus-12m-active",
+    "width": 600,
+    "contentWidth": 600,
+    "heading": "You're in."
+  },
+  {
+    "name": "complimentary",
+    "width": 600,
+    "contentWidth": 600,
+    "heading": "Your access is ready."
+  },
+  {
+    "name": "coach-enquiry",
+    "width": 600,
+    "contentWidth": 600,
+    "heading": "New coach enquiry"
+  },
+  {
+    "name": "checkout-needs-review",
+    "width": 600,
+    "contentWidth": 600,
+    "heading": "Founding checkout needs review"
+  },
+  {
+    "name": "auth-confirmation",
+    "width": 600,
+    "contentWidth": 600,
+    "heading": "Confirm your email address"
+  },
+  {
+    "name": "auth-invite",
+    "width": 600,
+    "contentWidth": 600,
+    "heading": "Your Persistence invitation"
+  },
+  {
+    "name": "auth-magic_link",
+    "width": 600,
+    "contentWidth": 600,
+    "heading": "Your Persistence sign-in link"
+  },
+  {
+    "name": "auth-recovery",
+    "width": 600,
+    "contentWidth": 600,
+    "heading": "Reset your Persistence password"
+  },
+  {
+    "name": "auth-email_change",
+    "width": 600,
+    "contentWidth": 600,
+    "heading": "Confirm your email change"
+  },
+  {
+    "name": "auth-reauthentication",
+    "width": 600,
+    "contentWidth": 600,
+    "heading": "Your Persistence verification code"
+  },
+  {
+    "name": "premium-6m-pending",
+    "width": 320,
+    "contentWidth": 320,
+    "heading": "You're in."
+  },
+  {
+    "name": "premium-6m-active",
+    "width": 320,
+    "contentWidth": 320,
+    "heading": "You're in."
+  },
+  {
+    "name": "premium-12m-pending",
+    "width": 320,
+    "contentWidth": 320,
+    "heading": "You're in."
+  },
+  {
+    "name": "premium-12m-active",
+    "width": 320,
+    "contentWidth": 320,
+    "heading": "You're in."
+  },
+  {
+    "name": "premium_plus-6m-pending",
+    "width": 320,
+    "contentWidth": 320,
+    "heading": "You're in."
+  },
+  {
+    "name": "premium_plus-6m-active",
+    "width": 320,
+    "contentWidth": 320,
+    "heading": "You're in."
+  },
+  {
+    "name": "premium_plus-12m-pending",
+    "width": 320,
+    "contentWidth": 320,
+    "heading": "You're in."
+  },
+  {
+    "name": "premium_plus-12m-active",
+    "width": 320,
+    "contentWidth": 320,
+    "heading": "You're in."
+  },
+  {
+    "name": "complimentary",
+    "width": 320,
+    "contentWidth": 320,
+    "heading": "Your access is ready."
+  },
+  {
+    "name": "coach-enquiry",
+    "width": 320,
+    "contentWidth": 320,
+    "heading": "New coach enquiry"
+  },
+  {
+    "name": "checkout-needs-review",
+    "width": 320,
+    "contentWidth": 320,
+    "heading": "Founding checkout needs review"
+  },
+  {
+    "name": "auth-confirmation",
+    "width": 320,
+    "contentWidth": 320,
+    "heading": "Confirm your email address"
+  },
+  {
+    "name": "auth-invite",
+    "width": 320,
+    "contentWidth": 320,
+    "heading": "Your Persistence invitation"
+  },
+  {
+    "name": "auth-magic_link",
+    "width": 320,
+    "contentWidth": 320,
+    "heading": "Your Persistence sign-in link"
+  },
+  {
+    "name": "auth-recovery",
+    "width": 320,
+    "contentWidth": 320,
+    "heading": "Reset your Persistence password"
+  },
+  {
+    "name": "auth-email_change",
+    "width": 320,
+    "contentWidth": 320,
+    "heading": "Confirm your email change"
+  },
+  {
+    "name": "auth-reauthentication",
+    "width": 320,
+    "contentWidth": 320,
+    "heading": "Your Persistence verification code"
+  },
+  {
+    "name": "premium-6m-pending",
+    "width": 320,
+    "imagesBlocked": true,
+    "contentWidth": 320,
+    "imageCount": 0
+  },
+  {
+    "name": "premium-6m-active",
+    "width": 320,
+    "imagesBlocked": true,
+    "contentWidth": 320,
+    "imageCount": 0
+  },
+  {
+    "name": "premium-12m-pending",
+    "width": 320,
+    "imagesBlocked": true,
+    "contentWidth": 320,
+    "imageCount": 0
+  },
+  {
+    "name": "premium-12m-active",
+    "width": 320,
+    "imagesBlocked": true,
+    "contentWidth": 320,
+    "imageCount": 0
+  },
+  {
+    "name": "premium_plus-6m-pending",
+    "width": 320,
+    "imagesBlocked": true,
+    "contentWidth": 320,
+    "imageCount": 0
+  },
+  {
+    "name": "premium_plus-6m-active",
+    "width": 320,
+    "imagesBlocked": true,
+    "contentWidth": 320,
+    "imageCount": 0
+  },
+  {
+    "name": "premium_plus-12m-pending",
+    "width": 320,
+    "imagesBlocked": true,
+    "contentWidth": 320,
+    "imageCount": 0
+  },
+  {
+    "name": "premium_plus-12m-active",
+    "width": 320,
+    "imagesBlocked": true,
+    "contentWidth": 320,
+    "imageCount": 0
+  },
+  {
+    "name": "complimentary",
+    "width": 320,
+    "imagesBlocked": true,
+    "contentWidth": 320,
+    "imageCount": 0
+  },
+  {
+    "name": "coach-enquiry",
+    "width": 320,
+    "imagesBlocked": true,
+    "contentWidth": 320,
+    "imageCount": 0
+  },
+  {
+    "name": "checkout-needs-review",
+    "width": 320,
+    "imagesBlocked": true,
+    "contentWidth": 320,
+    "imageCount": 0
+  },
+  {
+    "name": "auth-confirmation",
+    "width": 320,
+    "imagesBlocked": true,
+    "contentWidth": 320,
+    "imageCount": 0
+  },
+  {
+    "name": "auth-invite",
+    "width": 320,
+    "imagesBlocked": true,
+    "contentWidth": 320,
+    "imageCount": 0
+  },
+  {
+    "name": "auth-magic_link",
+    "width": 320,
+    "imagesBlocked": true,
+    "contentWidth": 320,
+    "imageCount": 0
+  },
+  {
+    "name": "auth-recovery",
+    "width": 320,
+    "imagesBlocked": true,
+    "contentWidth": 320,
+    "imageCount": 0
+  },
+  {
+    "name": "auth-email_change",
+    "width": 320,
+    "imagesBlocked": true,
+    "contentWidth": 320,
+    "imageCount": 0
+  },
+  {
+    "name": "auth-reauthentication",
+    "width": 320,
+    "imagesBlocked": true,
+    "contentWidth": 320,
+    "imageCount": 0
+  }
+]

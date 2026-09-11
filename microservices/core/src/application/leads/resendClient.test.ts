@@ -251,3 +251,22 @@ describe("sendEmail", () => {
     ).rejects.toBeInstanceOf(ResendNotConfiguredError);
   });
 });
+
+it("sends HTML alongside the required plain-text alternative", async () => {
+  envMap.RESEND_API_KEY = "test-key";
+  const fetchMock = vi
+    .spyOn(globalThis, "fetch")
+    .mockResolvedValue(new Response("{}", { status: 200 }));
+  await sendEmail({
+    to: "a@b.com",
+    subject: "Receipt",
+    text: "Your access",
+    html: "<p>Your access</p>",
+  });
+  const body = JSON.parse(String(fetchMock.mock.calls[0]![1]!.body));
+  expect(body).toMatchObject({
+    text: "Your access",
+    html: "<p>Your access</p>",
+  });
+  fetchMock.mockRestore();
+});

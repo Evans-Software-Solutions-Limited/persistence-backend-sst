@@ -1,0 +1,16 @@
+Confirm your email change
+
+Confirm the requested change to your Persistence account email address.
+
+Confirm email change: {{ .ConfirmationURL }}
+
+This link expires in 1 hour.
+
+If you did not request this, you can ignore this email.
+
+Need help? admin@evans-software-solutions.com
+
+Evans Software Solutions Limited · Company number 16938357 · Registered in England and Wales
+Registered office: 320 Loughborough Road, West Bridgford, Nottingham, England, NG2 7FB
+Terms: https://persistence.evans-software-solutions.com/terms
+Privacy: https://persistence.evans-software-solutions.com/privacy
