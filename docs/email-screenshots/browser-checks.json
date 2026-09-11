@@ -3,205 +3,239 @@
     "name": "premium-6m-pending",
     "width": 600,
     "contentWidth": 600,
-    "heading": "You're in."
+    "heading": "You're in.",
+    "logoLoaded": true
   },
   {
     "name": "premium-6m-active",
     "width": 600,
     "contentWidth": 600,
-    "heading": "You're in."
+    "heading": "You're in.",
+    "logoLoaded": true
   },
   {
     "name": "premium-12m-pending",
     "width": 600,
     "contentWidth": 600,
-    "heading": "You're in."
+    "heading": "You're in.",
+    "logoLoaded": true
   },
   {
     "name": "premium-12m-active",
     "width": 600,
     "contentWidth": 600,
-    "heading": "You're in."
+    "heading": "You're in.",
+    "logoLoaded": true
   },
   {
     "name": "premium_plus-6m-pending",
     "width": 600,
     "contentWidth": 600,
-    "heading": "You're in."
+    "heading": "You're in.",
+    "logoLoaded": true
   },
   {
     "name": "premium_plus-6m-active",
     "width": 600,
     "contentWidth": 600,
-    "heading": "You're in."
+    "heading": "You're in.",
+    "logoLoaded": true
   },
   {
     "name": "premium_plus-12m-pending",
     "width": 600,
     "contentWidth": 600,
-    "heading": "You're in."
+    "heading": "You're in.",
+    "logoLoaded": true
   },
   {
     "name": "premium_plus-12m-active",
     "width": 600,
     "contentWidth": 600,
-    "heading": "You're in."
+    "heading": "You're in.",
+    "logoLoaded": true
   },
   {
     "name": "complimentary",
     "width": 600,
     "contentWidth": 600,
-    "heading": "Your access is ready."
+    "heading": "Your access is ready.",
+    "logoLoaded": true
   },
   {
     "name": "coach-enquiry",
     "width": 600,
     "contentWidth": 600,
-    "heading": "New coach enquiry"
+    "heading": "New coach enquiry",
+    "logoLoaded": true
   },
   {
     "name": "checkout-needs-review",
     "width": 600,
     "contentWidth": 600,
-    "heading": "Founding checkout needs review"
+    "heading": "Founding checkout needs review",
+    "logoLoaded": true
   },
   {
     "name": "auth-confirmation",
     "width": 600,
     "contentWidth": 600,
-    "heading": "Confirm your email address"
+    "heading": "Confirm your email address",
+    "logoLoaded": true
   },
   {
     "name": "auth-invite",
     "width": 600,
     "contentWidth": 600,
-    "heading": "Your Persistence invitation"
+    "heading": "Your Persistence invitation",
+    "logoLoaded": true
   },
   {
     "name": "auth-magic_link",
     "width": 600,
     "contentWidth": 600,
-    "heading": "Your Persistence sign-in link"
+    "heading": "Your Persistence sign-in link",
+    "logoLoaded": true
   },
   {
     "name": "auth-recovery",
     "width": 600,
     "contentWidth": 600,
-    "heading": "Reset your Persistence password"
+    "heading": "Reset your Persistence password",
+    "logoLoaded": true
   },
   {
     "name": "auth-email_change",
     "width": 600,
     "contentWidth": 600,
-    "heading": "Confirm your email change"
+    "heading": "Confirm your email change",
+    "logoLoaded": true
   },
   {
     "name": "auth-reauthentication",
     "width": 600,
     "contentWidth": 600,
-    "heading": "Your Persistence verification code"
+    "heading": "Your Persistence verification code",
+    "logoLoaded": true
   },
   {
     "name": "premium-6m-pending",
     "width": 320,
     "contentWidth": 320,
-    "heading": "You're in."
+    "heading": "You're in.",
+    "logoLoaded": true
   },
   {
     "name": "premium-6m-active",
     "width": 320,
     "contentWidth": 320,
-    "heading": "You're in."
+    "heading": "You're in.",
+    "logoLoaded": true
   },
   {
     "name": "premium-12m-pending",
     "width": 320,
     "contentWidth": 320,
-    "heading": "You're in."
+    "heading": "You're in.",
+    "logoLoaded": true
   },
   {
     "name": "premium-12m-active",
     "width": 320,
     "contentWidth": 320,
-    "heading": "You're in."
+    "heading": "You're in.",
+    "logoLoaded": true
   },
   {
     "name": "premium_plus-6m-pending",
     "width": 320,
     "contentWidth": 320,
-    "heading": "You're in."
+    "heading": "You're in.",
+    "logoLoaded": true
   },
   {
     "name": "premium_plus-6m-active",
     "width": 320,
     "contentWidth": 320,
-    "heading": "You're in."
+    "heading": "You're in.",
+    "logoLoaded": true
   },
   {
     "name": "premium_plus-12m-pending",
     "width": 320,
     "contentWidth": 320,
-    "heading": "You're in."
+    "heading": "You're in.",
+    "logoLoaded": true
   },
   {
     "name": "premium_plus-12m-active",
     "width": 320,
     "contentWidth": 320,
-    "heading": "You're in."
+    "heading": "You're in.",
+    "logoLoaded": true
   },
   {
     "name": "complimentary",
     "width": 320,
     "contentWidth": 320,
-    "heading": "Your access is ready."
+    "heading": "Your access is ready.",
+    "logoLoaded": true
   },
   {
     "name": "coach-enquiry",
     "width": 320,
     "contentWidth": 320,
-    "heading": "New coach enquiry"
+    "heading": "New coach enquiry",
+    "logoLoaded": true
   },
   {
     "name": "checkout-needs-review",
     "width": 320,
     "contentWidth": 320,
-    "heading": "Founding checkout needs review"
+    "heading": "Founding checkout needs review",
+    "logoLoaded": true
   },
   {
     "name": "auth-confirmation",
     "width": 320,
     "contentWidth": 320,
-    "heading": "Confirm your email address"
+    "heading": "Confirm your email address",
+    "logoLoaded": true
   },
   {
     "name": "auth-invite",
     "width": 320,
     "contentWidth": 320,
-    "heading": "Your Persistence invitation"
+    "heading": "Your Persistence invitation",
+    "logoLoaded": true
   },
   {
     "name": "auth-magic_link",
     "width": 320,
     "contentWidth": 320,
-    "heading": "Your Persistence sign-in link"
+    "heading": "Your Persistence sign-in link",
+    "logoLoaded": true
   },
   {
     "name": "auth-recovery",
     "width": 320,
     "contentWidth": 320,
-    "heading": "Reset your Persistence password"
+    "heading": "Reset your Persistence password",
+    "logoLoaded": true
   },
   {
     "name": "auth-email_change",
     "width": 320,
     "contentWidth": 320,
-    "heading": "Confirm your email change"
+    "heading": "Confirm your email change",
+    "logoLoaded": true
   },
   {
     "name": "auth-reauthentication",
     "width": 320,
     "contentWidth": 320,
-    "heading": "Your Persistence verification code"
+    "heading": "Your Persistence verification code",
+    "logoLoaded": true
   },
   {
     "name": "premium-6m-pending",

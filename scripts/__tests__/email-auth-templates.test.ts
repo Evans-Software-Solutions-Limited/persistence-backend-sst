@@ -17,8 +17,11 @@ describe("Auth email distribution artifacts", () => {
       if (definition.action)
         expect(mail.html).toContain('href="{{ .ConfirmationURL }}"');
       expect(mail.html).not.toContain("example.invalid");
+      expect(mail.html).toContain(
+        '/apple-touch-icon.png" width="30" height="30" alt="Persistence logo"',
+      );
       expect(mail.html).not.toMatch(
-        /<img|<script|<form|<link|@import|founding member/i,
+        /<script|<form|<link|@import|founding member|founding-welcome\.gif/i,
       );
       expect(mail.text).toContain("expires in 1 hour.");
       expect(mail.text).toContain("16938357");

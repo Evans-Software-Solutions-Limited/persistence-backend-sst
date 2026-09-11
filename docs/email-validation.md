@@ -1,5 +1,13 @@
 # Email PR validation — 11 September 2026
 
+## Website branding follow-up
+
+After the logo-only update, 15 app template tests and 15 Auth artifact tests pass;
+typecheck passes across all nine workspaces and changed-file formatting passes.
+The shared shell remains at 100% coverage across all metrics. The 34 normal-width
+browser captures verify the actual website logo loaded; all 52 captures were
+refreshed. The existing full-suite and rollout limitations below are unchanged.
+
 ## Passing checks
 
 ```text

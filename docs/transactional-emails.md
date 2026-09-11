@@ -2,6 +2,10 @@
 
 Draft PR for copy/design review. Brad approved the discovery inventory (including the two internal notifications) and activation-based wording for pending grants on 11 September 2026. Company details are verified in the [discovery record](transactional-email-discovery-2026-09-10.md). No grant/entitlement rules or send triggers are changed.
 
+## Website brand match
+
+The published website stylesheet (`/assets/index-Bvr-zIZC.css`) was checked against these emails: the paper `#f5f2eb`, card `#fffefb`, inset `#f1ece2`, footer `#efeae0`, ink `#17161a` and navy `#002c62` match its light-theme/brand tokens exactly, as requested in the original brief. The header now uses the same `/apple-touch-icon.png` P mark as `MarketingNav.tsx`, at the site's 30×30 size beside the Persistence wordmark. The image has explicit dimensions, block display and alt text; the wordmark remains live text when images are blocked. No recreated or recoloured logo is used. This is the website's light palette, not its alternate dark theme.
+
 ## Maintenance and preview
 
 `microservices/core/src/application/email/emailShell.ts` owns the shared light-paper shell, escaping, URL validation, button, summary and company footer. Pass only composed trusted markup to `bodyHtml`; use the escaping helpers for all data. App sends provide HTML **and** text to Resend. Purchase source is explicit and unsupported sources fail rendering; native store offer codes do not enter this grant renderer. Active access uses the stored expiry; pending access describes when the term begins. Complimentary grants do not display a paid amount.

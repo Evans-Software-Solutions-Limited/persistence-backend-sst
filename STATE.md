@@ -1,5 +1,13 @@
 # Project memory · persistence-backend-sst
 
+### 2026-09-11 — Email branding follow-up
+
+Brad requested matching website colours and including its logo. Verified all
+existing email palette values against the live published stylesheet; retained the
+approved light palette. Added the exact website P mark (/apple-touch-icon.png),
+30×30, beside live Persistence text in the shared shell and all Auth exports.
+Regenerated previews/screenshots. PR #447 updated; rollout blockers unchanged.
+
 ### 2026-09-11 — Transactional email styling, draft PR
 
 Branch `codex/transactional-email-styling`, isolated worktree

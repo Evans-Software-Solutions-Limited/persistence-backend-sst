@@ -109,7 +109,10 @@ describe("transactional email templates", () => {
     });
     expect(mail.text).toContain("Access: Complimentary");
     expect(mail.text).not.toContain("Paid:");
-    expect(mail.html).not.toContain("<img");
+    expect(mail.html).not.toContain("founding-welcome.gif");
+    expect(mail.html).toContain(
+      '/apple-touch-icon.png" width="30" height="30" alt="Persistence logo"',
+    );
     expect(mail.subject).not.toContain("founding member");
   });
 

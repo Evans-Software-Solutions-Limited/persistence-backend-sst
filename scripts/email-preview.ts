@@ -16,6 +16,10 @@ await copyFile(
   resolve(root, "packages/web/public/email/founding-welcome.gif"),
   resolve(output, "email/founding-welcome.gif"),
 );
+await copyFile(
+  resolve(root, "packages/web/public/apple-touch-icon.png"),
+  resolve(output, "email/apple-touch-icon.png"),
+);
 const examples: Array<{
   name: string;
   mail: { subject: string; text: string; html: string };
@@ -98,10 +102,15 @@ for (const definition of authEmailDefinitions) {
 
 for (const { name, mail } of examples) {
   // Preview-only asset substitution. Sent HTML retains the stable HTTPS URL.
-  const html = mail.html.replaceAll(
-    "https://persistence.evans-software-solutions.com/email/founding-welcome.gif",
-    "./email/founding-welcome.gif",
-  );
+  const html = mail.html
+    .replaceAll(
+      "https://persistence.evans-software-solutions.com/apple-touch-icon.png",
+      "./email/apple-touch-icon.png",
+    )
+    .replaceAll(
+      "https://persistence.evans-software-solutions.com/email/founding-welcome.gif",
+      "./email/founding-welcome.gif",
+    );
   await writeFile(resolve(output, `${name}.html`), html);
   await writeFile(resolve(output, `${name}.txt`), mail.text);
   await writeFile(
