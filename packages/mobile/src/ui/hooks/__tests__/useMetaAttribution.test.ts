@@ -9,7 +9,7 @@ import { useMetaAttribution } from "../useMetaAttribution";
 
 jest.mock("@/application/analytics/metaAttribution", () => ({
   bootstrapMetaAttribution: jest.fn(),
-  grantMetaAttributionConsent: jest.fn(async () => true),
+  grantMetaAttributionConsent: jest.fn(async () => "activated"),
   isMetaAttributionConfigured: jest.fn(),
 }));
 
@@ -78,7 +78,7 @@ describe("useMetaAttribution", () => {
     jest.clearAllMocks();
     (bootstrapMetaAttribution as jest.Mock).mockResolvedValue("unknown");
     (isMetaAttributionConfigured as jest.Mock).mockReturnValue(true);
-    (grantMetaAttributionConsent as jest.Mock).mockResolvedValue(true);
+    (grantMetaAttributionConsent as jest.Mock).mockResolvedValue("activated");
     jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
     Object.defineProperty(Platform, "OS", { configurable: true, value: "ios" });
   });

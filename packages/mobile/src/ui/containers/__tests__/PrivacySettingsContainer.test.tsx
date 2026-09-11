@@ -24,8 +24,9 @@ jest.mock("@/ui/presenters/PrivacySettingsPresenter", () => ({
   },
 }));
 
+const mockRouter = { back: jest.fn(), push: jest.fn() };
 jest.mock("expo-router", () => ({
-  useRouter: () => ({ back: jest.fn(), push: jest.fn() }),
+  useRouter: () => mockRouter,
 }));
 jest.mock("@/ui/hooks/useAdapters");
 jest.mock("@/ui/hooks/useAuth");
@@ -101,7 +102,7 @@ describe("PrivacySettingsContainer — delete account", () => {
     });
     jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
     (getMetaAttributionConsent as jest.Mock).mockResolvedValue("denied");
-    (grantMetaAttributionConsent as jest.Mock).mockResolvedValue(false);
+    (grantMetaAttributionConsent as jest.Mock).mockResolvedValue("declined");
     (denyMetaAttributionConsent as jest.Mock).mockResolvedValue(true);
     getCachedProfilePage.mockReturnValue({
       payload: {
@@ -111,6 +112,62 @@ describe("PrivacySettingsContainer — delete account", () => {
         },
       },
     });
+  });
+
+  it("keeps privacy navigation working", async () => {
+    render(<PrivacySettingsContainer />);
+    await act(async () => {
+      mockProbe.props!.onBack();
+      mockProbe.props!.onOpenPrivacyPolicy();
+      mockProbe.props!.onOpenTerms();
+    });
+    expect(mockRouter.back).toHaveBeenCalledTimes(1);
+    expect(mockRouter.push.mock.calls).toEqual([
+      ["/(app)/profile/privacy"],
+      ["/(app)/profile/terms"],
+    ]);
+  });
+
+  it("persists visibility changes and skips an unchanged selection", async () => {
+    render(<PrivacySettingsContainer />);
+    const { api, storage } = (useAdapters as jest.Mock).mock.results[0].value;
+    api.updateProfile.mockResolvedValue({ ok: true });
+    await act(async () => {
+      await mockProbe.props!.onUpdateVisibility("private");
+    });
+    expect(api.updateProfile).not.toHaveBeenCalled();
+    await act(async () => {
+      await mockProbe.props!.onUpdateVisibility("public");
+    });
+    expect(api.updateProfile).toHaveBeenCalledWith({ isProfilePublic: true });
+    expect(mockProbe.props!.isProfilePublic).toBe(true);
+    expect(storage.invalidateProfilePage).toHaveBeenCalledWith("u1");
+  });
+
+  it("rolls visibility back when saving fails", async () => {
+    render(<PrivacySettingsContainer />);
+    const { api } = (useAdapters as jest.Mock).mock.results[0].value;
+    api.updateProfile.mockResolvedValue({ ok: false });
+    await act(async () => {
+      await mockProbe.props!.onUpdateVisibility("public");
+    });
+    expect(mockProbe.props!.isProfilePublic).toBe(false);
+    expect(Alert.alert).toHaveBeenCalledWith(
+      "Error",
+      "Failed to update privacy settings",
+    );
+  });
+
+  it("leaves template preferences alone while signed out and profile hydration is pending", async () => {
+    (useAuth as jest.Mock).mockReturnValue({ session: null, deleteAccount });
+    (useProfilePage as jest.Mock).mockReturnValue({ payload: null });
+    render(<PrivacySettingsContainer />);
+    await act(async () => {
+      mockProbe.props!.onSetShowTemplateWorkouts(false);
+    });
+    expect(mockProbe.props!.isLoading).toBe(true);
+    expect(mockProbe.props!.showTemplateWorkouts).toBe(true);
+    expect(enqueueMutation).not.toHaveBeenCalled();
   });
 
   it("keeps the attribution switch off, and stays silent, when the user declines the system dialog", async () => {
@@ -164,6 +221,25 @@ describe("PrivacySettingsContainer — delete account", () => {
   // from a decline, so it fell silent — and every retry then took the other
   // branch and told the user to allow tracking in Settings where it was
   // already allowed. The outcome is now reported, not inferred.
+  it("keeps measurement off without blaming a refusal when ATT stays pending", async () => {
+    (grantMetaAttributionConsent as jest.Mock).mockResolvedValue("pending");
+    (canRequestSystemTracking as jest.Mock).mockResolvedValue(false);
+    render(<PrivacySettingsContainer />);
+    await act(async () => {
+      await mockProbe.props!.onSetMetaAttributionEnabled(true);
+    });
+    expect(mockProbe.props!.metaAttributionEnabled).toBe(false);
+    expect(Alert.alert).toHaveBeenCalledWith(
+      "Tracking permission was not shown",
+      expect.stringContaining("Advertising measurement remains off"),
+    );
+    expect(Alert.alert).not.toHaveBeenCalledWith(
+      "iOS is no longer asking about tracking",
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
   it("reports a real failure when ATT was granted but activation failed", async () => {
     (canRequestSystemTracking as jest.Mock).mockResolvedValue(true);
     (grantMetaAttributionConsent as jest.Mock).mockResolvedValue("failed");
@@ -223,6 +299,7 @@ describe("PrivacySettingsContainer — delete account", () => {
     ["declined", false, true],
     ["failed", true, true],
     ["failed", false, true],
+    ["pending", false, true],
   ] as Array<[string, boolean, boolean]>)(
     "never shows a permission-request-shaped dialog (outcome %s, presentable %s)",
     async (outcome, presentable) => {
@@ -329,7 +406,9 @@ describe("PrivacySettingsContainer — delete account", () => {
     expect(Alert.alert).toHaveBeenCalledTimes(2);
     const [, secondBody] = (Alert.alert as jest.Mock).mock.calls[1];
     expect(secondBody).toContain("30 days");
-    await pressByText(alertButtons(1), "Delete");
+    await act(async () => {
+      await pressByText(alertButtons(1), "Delete");
+    });
 
     expect(deleteAccount).toHaveBeenCalledTimes(1);
   });
@@ -338,7 +417,9 @@ describe("PrivacySettingsContainer — delete account", () => {
     render(<PrivacySettingsContainer />);
     mockProbe.props!.onDeleteAccount();
     pressByText(alertButtons(0), "Delete Account");
-    await pressByText(alertButtons(1), "Delete");
+    await act(async () => {
+      await pressByText(alertButtons(1), "Delete");
+    });
 
     await waitFor(() => {
       expect(Alert.alert).toHaveBeenCalledWith(
@@ -348,20 +429,26 @@ describe("PrivacySettingsContainer — delete account", () => {
     });
   });
 
-  it("does nothing when the user cancels the first dialog", () => {
+  it("does nothing when the user cancels the first dialog", async () => {
     render(<PrivacySettingsContainer />);
     mockProbe.props!.onDeleteAccount();
     pressByText(alertButtons(0), "Cancel");
     expect(Alert.alert).toHaveBeenCalledTimes(1);
     expect(deleteAccount).not.toHaveBeenCalled();
+    await act(async () => {
+      await Promise.resolve();
+    });
   });
 
-  it("does not delete if the user cancels the second dialog", () => {
+  it("does not delete if the user cancels the second dialog", async () => {
     render(<PrivacySettingsContainer />);
     mockProbe.props!.onDeleteAccount();
     pressByText(alertButtons(0), "Delete Account");
     pressByText(alertButtons(1), "Cancel");
     expect(deleteAccount).not.toHaveBeenCalled();
+    await act(async () => {
+      await Promise.resolve();
+    });
   });
 
   it("shows a non-destructive retry alert when deletion fails", async () => {
@@ -369,7 +456,9 @@ describe("PrivacySettingsContainer — delete account", () => {
     render(<PrivacySettingsContainer />);
     mockProbe.props!.onDeleteAccount();
     pressByText(alertButtons(0), "Delete Account");
-    await pressByText(alertButtons(1), "Delete");
+    await act(async () => {
+      await pressByText(alertButtons(1), "Delete");
+    });
 
     await waitFor(() => {
       expect(Alert.alert).toHaveBeenCalledWith(

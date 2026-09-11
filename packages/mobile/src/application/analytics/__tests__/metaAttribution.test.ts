@@ -14,6 +14,12 @@ import {
   resetMetaAttributionForTests,
 } from "../metaAttribution";
 
+jest.mock("@/lib/nativePermissionQueue", () => ({
+  runNativePermissionRequest: jest.fn((request: () => Promise<unknown>) =>
+    request(),
+  ),
+}));
+
 jest.mock("expo-tracking-transparency", () => ({
   requestTrackingPermissionsAsync: jest.fn(),
   getTrackingPermissionsAsync: jest.fn(),
@@ -33,6 +39,31 @@ jest.mock("react-native-fbsdk-next", () => ({
 }));
 
 const extra = Constants.expoConfig!.extra!;
+
+// Reset implementations as well as call counts: an unconsumed one-shot native
+// or storage failure must not leak into the next scenario.
+beforeEach(() => {
+  (AsyncStorage.getItem as jest.Mock).mockReset().mockResolvedValue(null);
+  (AsyncStorage.setItem as jest.Mock).mockReset().mockResolvedValue(undefined);
+  (AsyncStorage.removeItem as jest.Mock)
+    .mockReset()
+    .mockResolvedValue(undefined);
+  (Settings.initializeSDK as jest.Mock).mockReset();
+  (Settings.setAutoLogAppEventsEnabled as jest.Mock).mockReset();
+  (Settings.setAdvertiserIDCollectionEnabled as jest.Mock).mockReset();
+  (Settings.setAdvertiserTrackingEnabled as jest.Mock)
+    .mockReset()
+    .mockResolvedValue(true);
+  (requestTrackingPermissionsAsync as jest.Mock)
+    .mockReset()
+    .mockResolvedValue({ status: "granted", granted: true });
+  (getTrackingPermissionsAsync as jest.Mock).mockReset().mockResolvedValue({
+    status: "denied",
+    granted: false,
+    canAskAgain: false,
+  });
+  extra.metaConfigured = true;
+});
 
 describe("Meta attribution consent gate", () => {
   beforeEach(async () => {
@@ -77,6 +108,7 @@ describe("Meta attribution consent gate", () => {
   it("does not initialize when ATT is denied", async () => {
     (requestTrackingPermissionsAsync as jest.Mock).mockResolvedValue({
       granted: false,
+      status: "denied",
     });
     await expect(grantMetaAttributionConsent()).resolves.toBe("declined");
     expect(Settings.initializeSDK).not.toHaveBeenCalled();
@@ -90,6 +122,7 @@ describe("Meta attribution consent gate", () => {
   it("fails closed when a denied ATT decision cannot be persisted", async () => {
     (requestTrackingPermissionsAsync as jest.Mock).mockResolvedValue({
       granted: false,
+      status: "denied",
     });
     (AsyncStorage.setItem as jest.Mock).mockRejectedValueOnce(
       new Error("storage unavailable"),
@@ -111,14 +144,14 @@ describe("Meta attribution consent gate", () => {
     );
   });
 
-  it("restores denied when native initialization fails", async () => {
+  it("preserves granted consent when native initialization fails", async () => {
     (Settings.initializeSDK as jest.Mock).mockImplementationOnce(() => {
       throw new Error("native init failed");
     });
     await expect(grantMetaAttributionConsent()).resolves.toBe("failed");
     expect(AsyncStorage.setItem).toHaveBeenLastCalledWith(
       "persistence.meta-attribution-consent.v1",
-      "denied",
+      "granted",
     );
     expect(AppEventsLogger.logEvent).not.toHaveBeenCalled();
     expect(Settings.setAdvertiserIDCollectionEnabled).toHaveBeenLastCalledWith(
@@ -129,7 +162,7 @@ describe("Meta attribution consent gate", () => {
     );
   });
 
-  it("stays denied when both initialization and native rollback fail", async () => {
+  it("preserves granted consent when both initialization and native rollback fail", async () => {
     (Settings.initializeSDK as jest.Mock).mockImplementationOnce(() => {
       throw new Error("native init failed");
     });
@@ -142,7 +175,7 @@ describe("Meta attribution consent gate", () => {
     await expect(grantMetaAttributionConsent()).resolves.toBe("failed");
     expect(AsyncStorage.setItem).toHaveBeenLastCalledWith(
       "persistence.meta-attribution-consent.v1",
-      "denied",
+      "granted",
     );
   });
 
@@ -553,7 +586,7 @@ describe("a non-answer from ATT is never recorded as a decline", () => {
       canAskAgain: true,
     });
 
-    await expect(grantMetaAttributionConsent()).resolves.toBe("failed");
+    await expect(grantMetaAttributionConsent()).resolves.toBe("pending");
 
     expect(AsyncStorage.setItem).not.toHaveBeenCalledWith(
       expect.stringContaining("meta-attribution-consent"),
@@ -580,5 +613,67 @@ describe("a non-answer from ATT is never recorded as a decline", () => {
       "denied",
     );
     expect(Settings.initializeSDK).not.toHaveBeenCalled();
+  });
+});
+
+describe("ATT pending/error recovery", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    resetMetaAttributionForTests();
+    extra.metaConfigured = true;
+    Object.defineProperty(Platform, "OS", { configurable: true, value: "ios" });
+  });
+
+  it("retries an unanswered request and initializes only after the later grant", async () => {
+    (requestTrackingPermissionsAsync as jest.Mock)
+      .mockResolvedValueOnce({ status: "undetermined", granted: false })
+      .mockImplementationOnce(async () => {
+        expect(Settings.initializeSDK).not.toHaveBeenCalled();
+        return { status: "granted", granted: true };
+      });
+    await expect(grantMetaAttributionConsent()).resolves.toBe("activated");
+    expect(requestTrackingPermissionsAsync).toHaveBeenCalledTimes(2);
+    expect(Settings.initializeSDK).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops after three unanswered requests without recording denial or activating", async () => {
+    (requestTrackingPermissionsAsync as jest.Mock).mockResolvedValue({
+      status: "undetermined",
+      granted: false,
+    });
+    await expect(grantMetaAttributionConsent()).resolves.toBe("pending");
+    expect(requestTrackingPermissionsAsync).toHaveBeenCalledTimes(3);
+    expect(AsyncStorage.setItem).not.toHaveBeenCalled();
+    expect(Settings.initializeSDK).not.toHaveBeenCalled();
+  });
+
+  it("stops retrying immediately when the user declines", async () => {
+    (requestTrackingPermissionsAsync as jest.Mock)
+      .mockResolvedValueOnce({ status: "undetermined", granted: false })
+      .mockResolvedValueOnce({ status: "denied", granted: false });
+    await expect(grantMetaAttributionConsent()).resolves.toBe("declined");
+    expect(requestTrackingPermissionsAsync).toHaveBeenCalledTimes(2);
+    expect(AsyncStorage.setItem).toHaveBeenCalledWith(
+      "persistence.meta-attribution-consent.v1",
+      "denied",
+    );
+    expect(Settings.initializeSDK).not.toHaveBeenCalled();
+  });
+
+  it("does not turn a native request exception into a saved refusal", async () => {
+    (requestTrackingPermissionsAsync as jest.Mock).mockRejectedValueOnce(
+      new Error("native unavailable"),
+    );
+    await expect(grantMetaAttributionConsent()).resolves.toBe("failed");
+    expect(AsyncStorage.setItem).not.toHaveBeenCalled();
+    expect(Settings.initializeSDK).not.toHaveBeenCalled();
+  });
+
+  it("does not interpret a malformed native response as refusal", async () => {
+    (requestTrackingPermissionsAsync as jest.Mock).mockResolvedValueOnce({
+      granted: false,
+    });
+    await expect(grantMetaAttributionConsent()).resolves.toBe("failed");
+    expect(AsyncStorage.setItem).not.toHaveBeenCalled();
   });
 });

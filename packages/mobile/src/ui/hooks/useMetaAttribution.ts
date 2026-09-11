@@ -25,11 +25,10 @@ import {
  * `requestTrackingPermissionsAsync()` and stores the answer, so a denial is
  * recorded durably and this never asks twice.
  *
- * ⚠ ATT is only presented while the app is **active**. Requested during launch
- * — or while `inactive`/`background` — iOS presents nothing and resolves with
- * the status unchanged, which is indistinguishable from the user declining and
- * would burn the one chance to ask. So the request waits for the first
- * `active` state rather than firing on mount.
+ * The service serializes ATT with notification requests and waits for a stable
+ * active state for every native call, including saved-grant restoration. It
+ * retries an undetermined response at most twice; it never retries a refusal.
+ * This hook starts one bounded activation per mount, not one native ATT call.
  */
 export function useMetaAttribution(): void {
   useEffect(() => {
@@ -37,8 +36,7 @@ export function useMetaAttribution(): void {
     let requested = false;
     let unsubscribe: (() => void) | undefined;
 
-    // Asking is idempotent downstream, but keep "exactly once" provable here
-    // rather than inherited from AppState subscription-removal semantics.
+    // Start only one activation per mount; native retries belong to the service.
     const request = () => {
       if (cancelled || requested) return;
       requested = true;
@@ -64,7 +62,7 @@ export function useMetaAttribution(): void {
     };
 
     void bootstrapMetaAttribution().then((consent) => {
-      // "granted" already re-initialized inside bootstrap; "denied" is the
+      // "granted" already attempted restoration inside bootstrap; "denied" is the
       // user's settled answer and must never be re-asked outside Settings.
       if (cancelled || consent !== "unknown") return;
       if (!isMetaAttributionConfigured()) return;
