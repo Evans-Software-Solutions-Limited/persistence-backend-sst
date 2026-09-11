@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.22.0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.21.0...persistence-v1.22.0) (2026-09-11)
+
+
+### Features
+
+* **email:** style transactional emails and add review previews ([#447](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/447)) ([57cbb09](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/57cbb09371311d498dfb0e086d0cd65dc2bff446))
+
+
+### Bug Fixes
+
+* **mobile:** serialize ATT and notification permission requests ([#449](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/449)) ([da609f5](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/da609f575e1f9028cc8470911cf0bd49a914c7b9))
+
 ## [1.21.0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.20.0...persistence-v1.21.0) (2026-09-09)
 
 
