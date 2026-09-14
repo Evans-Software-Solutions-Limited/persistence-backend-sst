@@ -1,5 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Navigate, useLocation } from "react-router";
+import { AdminBrand } from "./AdminBrand";
+import "./admin.css";
 import { getAccessToken, loadSession } from "./adminAuth";
 
 /**
@@ -29,7 +31,8 @@ export function RequireAdmin({ children }: { children: ReactNode }) {
 
   if (state === "checking") {
     return (
-      <div className="flex min-h-screen items-center justify-center text-sm text-muted-foreground">
+      <div className="persistence-admin admin-auth-state text-sm" role="status">
+        <AdminBrand />
         Checking your session…
       </div>
     );
@@ -41,18 +44,21 @@ export function RequireAdmin({ children }: { children: ReactNode }) {
   }
   if (state === "not-admin") {
     return (
-      <main className="flex min-h-screen flex-col items-center justify-center gap-3 p-8 text-center">
-        <h1 className="text-xl font-semibold">This account isn't an admin</h1>
-        <p className="max-w-md text-sm text-muted-foreground">
-          You're signed in, but this account has no admin access. Sign out and
-          use the admin account, or ask for the claim to be added.
-        </p>
-        <a
-          href="/admin/login"
-          className="text-sm font-medium text-primary underline"
-        >
-          Back to sign in
-        </a>
+      <main className="persistence-admin admin-auth-state">
+        <div className="admin-panel space-y-4">
+          <AdminBrand />
+          <h1 className="text-xl font-semibold">This account isn't an admin</h1>
+          <p className="max-w-md text-sm text-muted-foreground">
+            You're signed in, but this account has no admin access. Sign out and
+            use the admin account, or ask for the claim to be added.
+          </p>
+          <a
+            href="/admin/login"
+            className="text-sm font-medium text-primary underline"
+          >
+            Back to sign in
+          </a>
+        </div>
       </main>
     );
   }

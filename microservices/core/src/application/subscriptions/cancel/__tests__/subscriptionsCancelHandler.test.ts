@@ -453,3 +453,16 @@ describe("subscriptionsCancelHandler", () => {
     });
   });
 });
+
+it("does not send prepaid voucher cancellation to Stripe", async () => {
+  subscriptionRepositoryMocks.findByIdForUser.mockResolvedValue(
+    fakeRow({
+      metadata: { source: "business_voucher" },
+      externalSubscriptionId: "business_voucher_123",
+    }),
+  );
+  const response = await postCancel("us_1");
+  expect(response.status).toBe(409);
+  expect(stripeMock.subscriptions.cancel).not.toHaveBeenCalled();
+  expect(stripeMock.subscriptions.update).not.toHaveBeenCalled();
+});

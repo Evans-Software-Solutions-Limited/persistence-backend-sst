@@ -1,4 +1,5 @@
-import { useState, type FormEvent } from "react";
+import { useAdminDialogs } from "../useAdminDialogs";
+import { Fragment, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -170,6 +171,7 @@ function Redemptions({ code }: { code: ReferralCodeRow }) {
 }
 
 export function AdminCodes() {
+  const { prompt, confirm } = useAdminDialogs();
   const qc = useQueryClient();
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("");
@@ -197,7 +199,7 @@ export function AdminCodes() {
       setCopied(code.id);
       setTimeout(() => setCopied(null), 1500);
     } catch {
-      window.prompt("Copy this link", shareLink(code));
+      await prompt("Copy this link", shareLink(code));
     }
   }
 
@@ -256,7 +258,7 @@ export function AdminCodes() {
               ]}
             >
               {codes.data.map((c) => (
-                <>
+                <Fragment key={c.id}>
                   <tr key={c.id}>
                     <td className="font-mono">{c.displayCode}</td>
                     <td>{c.label}</td>
@@ -320,9 +322,9 @@ export function AdminCodes() {
                           <Button
                             size="xs"
                             variant="destructive"
-                            onClick={() => {
+                            onClick={async () => {
                               if (
-                                window.confirm(
+                                await confirm(
                                   `Archive ${c.displayCode}? It can't be claimed again.`,
                                 )
                               ) {
@@ -346,7 +348,7 @@ export function AdminCodes() {
                       </td>
                     </tr>
                   ) : null}
-                </>
+                </Fragment>
               ))}
             </Table>
           ) : null}

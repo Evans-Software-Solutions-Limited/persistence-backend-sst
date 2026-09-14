@@ -221,7 +221,8 @@ export class FoundingGrantRepository {
         and(
           eq(userSubscriptions.userId, userId),
           liveSubscriptionFilter(),
-          sql`left(${userSubscriptions.externalSubscriptionId}, 3) = 'rc_'`,
+          // Business vouchers are prepaid and must not be displaced by grants.
+          sql`(left(${userSubscriptions.externalSubscriptionId}, 3) = 'rc_' OR ${userSubscriptions.metadata}->>'source' = 'business_voucher')`,
         ),
       )
       .orderBy(desc(userSubscriptions.createdAt))

@@ -3001,3 +3001,21 @@ describe("subscriptionsCreateHandler — no-payment-method change-path (M10)", (
     expect(body.change_type).toBe("upgrade");
   });
 });
+
+it("blocks a second purchase while prepaid voucher access is live", async () => {
+  mockPriceLookup({
+    priceMonthly: "price_premium",
+    currency: "GBP",
+    isTrainerTier: false,
+  });
+  subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValue({
+    id: "voucher-sub",
+    metadata: { source: "business_voucher" },
+    paymentStatus: "active",
+    expiresAt: new Date(Date.now() + 86400000),
+  });
+  const response = await postCreate(validBody);
+  expect(response.status).toBe(409);
+  expect(stripeMock.subscriptions.create).not.toHaveBeenCalled();
+  expect(stripeMock.paymentMethods.attach).not.toHaveBeenCalled();
+});

@@ -1,5 +1,24 @@
 # Project memory · persistence-backend-sst
 
+### 2026-09-14 — Business membership vouchers and complete admin redesign
+
+Single isolated review branch `codex/business-vouchers-admin`, based on main
+`10792f1b`, worktree `/private/tmp/persistence-business-vouchers`. Implements
+bulk single-use business vouchers with optional domain/exact employee email
+restrictions, separately verified eligibility/destination identities, web
+signup/sign-in/redemption, atomic prepaid entitlement and permanent audit.
+Admin batch/CSV/assignment/revocation tools and all admin surfaces use current
+Persistence dark/cyan/Geist styling and the actual logo, including dialogs.
+No native changes/builds or deployment. Server hashes codes; pending issuance
+CSV receipts have temporary same-admin/tab recovery. Existing mobile and admin
+callbacks remain unchanged; add separate HTTPS `/redeem/callback` at rollout.
+Scope, API and release/device-smoke checklist:
+`specs/milestones/BUSINESS-VOUCHERS/`. Local browser previews used labelled
+synthetic data and were removed. Full core suite4799 passed before the final
+cleanup fix;40 database integration cases verify cleanup and permanent audit.
+Live email delivery and existing-app access must still be verified on staging.
+
+
 ### 2026-09-11 — PR: fix ATT startup permission sequencing
 
 Isolated fix for build 50 review: notifications and ATT share an iOS queue,

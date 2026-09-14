@@ -1315,6 +1315,19 @@ export const subscriptionsCreateHandler = new Elysia()
 
       const subRepo = new SubscriptionRepository();
       const existing = await subRepo.findMostRecentForUser(userId);
+      if (
+        existing?.metadata?.source === "business_voucher" &&
+        (!existing.expiresAt || existing.expiresAt > new Date()) &&
+        ["active", "pending", "trialing", "past_due", "cancelled"].includes(
+          existing.paymentStatus ?? "",
+        )
+      ) {
+        ctx.set.status = 409;
+        return {
+          error:
+            "This account has a prepaid business membership. Contact support before purchasing another subscription.",
+        };
+      }
       const existingStripeSubId =
         existing !== null
           ? readStringMeta(readMetadata(existing), "stripe_subscription_id")

@@ -1,6 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
-import { renderPage } from "@/test-utils";
+import { renderPage as renderBasePage } from "@/test-utils";
+import type { ReactElement } from "react";
+import { AdminDialogProvider } from "../AdminDialogs";
+const renderPage = (
+  ui: ReactElement,
+  options?: Parameters<typeof renderBasePage>[1],
+) => renderBasePage(<AdminDialogProvider>{ui}</AdminDialogProvider>, options);
+async function answer(value: string) {
+  fireEvent.change(await screen.findByRole("textbox"), { target: { value } });
+  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+}
 
 const api = vi.hoisted(() => ({
   grants: vi.fn(),
@@ -117,28 +127,25 @@ describe("AdminGrants", () => {
 
   it("resends and revokes active grants after a meaningful prompt reason", async () => {
     api.grants.mockResolvedValue([{ ...baseGrant, invitedAt: "2026-09-02" }]);
-    const prompt = vi.spyOn(window, "prompt").mockReturnValue("  refunded  ");
     renderPage(<AdminGrants />);
     await screen.findByText("buyer@example.com");
 
     fireEvent.click(screen.getByRole("button", { name: "Resend email" }));
     await waitFor(() => expect(api.resendInvite).toHaveBeenCalledWith("g1"));
     fireEvent.click(screen.getByRole("button", { name: "Revoke" }));
+    await answer("  refunded  ");
     await waitFor(() =>
       expect(api.revokeGrant).toHaveBeenCalledWith("g1", "refunded"),
     );
-    prompt.mockRestore();
   });
 
   it("extends a live grant with an audited reason", async () => {
     api.grants.mockResolvedValue([baseGrant]);
-    const prompt = vi
-      .spyOn(window, "prompt")
-      .mockReturnValueOnce("3")
-      .mockReturnValueOnce("Friends and family extension");
     renderPage(<AdminGrants />);
     await screen.findByText("buyer@example.com");
     fireEvent.click(screen.getByRole("button", { name: "Extend" }));
+    await answer("3");
+    await answer("Friends and family extension");
     await waitFor(() =>
       expect(api.extendGrant).toHaveBeenCalledWith(
         "g1",
@@ -146,24 +153,23 @@ describe("AdminGrants", () => {
         "Friends and family extension",
       ),
     );
-    prompt.mockRestore();
   });
 
   it("does not extend when the month or reason prompt is invalid", async () => {
     api.grants.mockResolvedValue([baseGrant]);
-    const prompt = vi.spyOn(window, "prompt").mockReturnValueOnce("0");
     const view = renderPage(<AdminGrants />);
     await screen.findByText("buyer@example.com");
     fireEvent.click(screen.getByRole("button", { name: "Extend" }));
+    await answer("0");
     expect(api.extendGrant).not.toHaveBeenCalled();
 
     view.unmount();
-    prompt.mockReset().mockReturnValueOnce("2").mockReturnValueOnce(null);
     renderPage(<AdminGrants />);
     await screen.findByText("buyer@example.com");
     fireEvent.click(screen.getByRole("button", { name: "Extend" }));
+    await answer("2");
+    fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
     expect(api.extendGrant).not.toHaveBeenCalled();
-    prompt.mockRestore();
   });
 
   it("renders empty and failed queries", async () => {
@@ -178,4 +184,53 @@ describe("AdminGrants", () => {
       "grants unavailable",
     );
   });
+  it("renders complimentary grants, missing references and the revoked filter", async () => {
+    api.grants.mockResolvedValue([
+      {
+        ...baseGrant,
+        grantKind: "complimentary",
+        tierLabel: null,
+        contributionAmountMinor: 0,
+        contributionReference: null,
+        referralCode: "TEAM",
+        referralLabel: "Team",
+        revokeReason: "Cancelled",
+      },
+    ]);
+    renderPage(<AdminGrants />);
+    expect(await screen.findByText("Complimentary")).toBeTruthy();
+    expect(screen.getByText("None")).toBeTruthy();
+    fireEvent.click(screen.getByRole("checkbox"));
+    await waitFor(() => expect(api.grants).toHaveBeenCalledWith(undefined));
+  });
+
+  it.each(["revoke", "resend", "extend"])(
+    "shows audited action failure: %s",
+    async (action) => {
+      api.grants.mockResolvedValue([baseGrant]);
+      const mutation =
+        action === "revoke"
+          ? api.revokeGrant
+          : action === "resend"
+            ? api.resendInvite
+            : api.extendGrant;
+      mutation.mockRejectedValueOnce(new Error("Action unavailable"));
+      renderPage(<AdminGrants />);
+      fireEvent.click(
+        await screen.findByRole("button", {
+          name:
+            action === "revoke"
+              ? "Revoke"
+              : action === "resend"
+                ? "Resend email"
+                : "Extend",
+        }),
+      );
+      if (action === "extend") await answer("1");
+      if (action !== "resend") await answer("Support correction");
+      expect((await screen.findByRole("alert")).textContent).toBe(
+        "Action unavailable",
+      );
+    },
+  );
 });
